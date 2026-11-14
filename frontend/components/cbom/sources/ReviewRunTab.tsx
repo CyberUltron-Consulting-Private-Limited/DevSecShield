@@ -46,6 +46,7 @@ import {
   Truncate,
   type Tone,
 } from "./shared";
+import { InfoTip } from "@/components/ui/info-tip";
 
 type IncludeState = Record<CbomIncludeKey, boolean>;
 
@@ -316,18 +317,18 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
         Everything this scan will cover, what it will skip and why. Nothing is skipped silently.
       </p>
 
-      <SectionCard title="Coverage" description={`${pluralize(totalSources, "source")} configured`}>
+      <SectionCard infoId="cbsrc.rr.coverage" title="Coverage" description={`${pluralize(totalSources, "source")} configured`}>
         <ScrollArea className="w-full border rounded-lg">
           <div className="min-w-max">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Source</TableHead>
-                  <TableHead>In scope</TableHead>
-                  <TableHead>Reached through</TableHead>
-                  <TableHead>Last test</TableHead>
-                  <TableHead>Credits</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>Source <InfoTip id="cbsrc.rr.col.source" /></TableHead>
+                  <TableHead>In scope <InfoTip id="cbsrc.rr.col.in_scope" /></TableHead>
+                  <TableHead>Reached through <InfoTip id="cbsrc.rr.col.through" /></TableHead>
+                  <TableHead>Last test <InfoTip id="cbsrc.col.last_test" /></TableHead>
+                  <TableHead>Credits <InfoTip id="cbsrc.rr.col.credits" /></TableHead>
+                  <TableHead>Status <InfoTip id="cbsrc.rr.col.status" /></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -355,7 +356,7 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
         <div className="xl:col-span-2 min-w-0">
-          <SectionCard title="Will be skipped unless you fix it" description={pluralize(skipped.length, "item")}>
+          <SectionCard infoId="cbsrc.rr.skipped" title="Will be skipped unless you fix it" description={pluralize(skipped.length, "item")}>
             {skipped.length === 0 ? (
               <EmptyState title="Nothing will be skipped" body="Every configured source can be collected and every evidence area has an answer." />
             ) : (
@@ -391,7 +392,7 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
           </SectionCard>
         </div>
 
-        <SectionCard title="What you get after the scan">
+        <SectionCard infoId="cbsrc.rr.after" title="What you get after the scan">
           <ul className="list-disc pl-5 space-y-2 text-sm text-zinc-700 dark:text-zinc-300">
             <li>Collection jobs queued per source for your scan nodes</li>
             <li>A run record with the credits charged and refunded</li>
@@ -406,7 +407,7 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
       </div>
 
       {totalSources === 0 ? (
-        <SectionCard title="Start a scan" id="cbom-review-start">
+        <SectionCard infoId="cbsrc.rr.start" title="Start a scan" id="cbom-review-start">
           <EmptyState
             title="Nothing to scan yet"
             body="Add a scan node inside the network you want covered, then the servers, clusters, databases or ranges it can reach."
@@ -421,7 +422,7 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
         <StartCard key={`start-${teamId}`} teamId={teamId} overview={overview} />
       )}
 
-      <SectionCard title="Runs" description="The 50 most recent collection runs for this team">
+      <SectionCard infoId="cbsrc.rr.runs" title="Runs" description="The 50 most recent collection runs for this team">
         {runsQuery.isLoading ? (
           <LoadingBlock />
         ) : runsQuery.isError && !runsQuery.data ? (
@@ -447,12 +448,12 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Run</TableHead>
-                    <TableHead>Started</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Jobs</TableHead>
-                    <TableHead className="text-right">Assets</TableHead>
-                    <TableHead>Credits</TableHead>
+                    <TableHead>Run <InfoTip id="cbsrc.rr.col.run" /></TableHead>
+                    <TableHead>Started <InfoTip id="cbsrc.rr.col.started" /></TableHead>
+                    <TableHead>Status <InfoTip id="cbsrc.rr.col.run_status" /></TableHead>
+                    <TableHead>Jobs <InfoTip id="cbsrc.rr.col.jobs" /></TableHead>
+                    <TableHead className="text-right">Assets <InfoTip id="cbsrc.rr.col.assets" /></TableHead>
+                    <TableHead>Credits <InfoTip id="cbsrc.rr.col.run_credits" /></TableHead>
                     <TableHead>
                       <span className="sr-only">Actions</span>
                     </TableHead>
@@ -633,13 +634,13 @@ function StartCard({ teamId, overview }: { teamId: number; overview: CbomSources
   };
 
   return (
-    <SectionCard title="Start a scan" description="Choose what to collect, estimate the credits, then start." id="cbom-review-start">
+    <SectionCard infoId="cbsrc.rr.start" title="Start a scan" description="Choose what to collect, estimate the credits, then start." id="cbom-review-start">
       <div className="space-y-5">
         <div className="flex flex-wrap gap-x-6 gap-y-3" role="group" aria-label="Groups to include" data-testid="review-include">
           {INCLUDE_OPTIONS.map((opt) => {
             const queuedCount = opt.groups.reduce((sum, g) => sum + (planGroups[g]?.queued ?? 0), 0);
             return (
-              <Checkbox2 key={opt.key} id={`review-include-${opt.key}`} checked={include[opt.key]} onChange={(v) => toggle(opt.key, v)}>
+              <Checkbox2 infoId="cbsrc.rr.include" key={opt.key} id={`review-include-${opt.key}`} checked={include[opt.key]} onChange={(v) => toggle(opt.key, v)}>
                 {opt.label} <span className="text-zinc-500">· {queuedCount} ready</span>
               </Checkbox2>
             );
@@ -704,6 +705,7 @@ function StartCard({ teamId, overview }: { teamId: number; overview: CbomSources
 
         <div className="space-y-1.5">
           <Checkbox2
+            infoId="cbsrc.rr.soc_ack"
             id="review-soc-ack"
             checked={socAck}
             onChange={(v) => {
@@ -812,13 +814,13 @@ function RunDetailsDialog({ teamId, runId, onClose }: { teamId: number; runId: n
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Source</TableHead>
-                      <TableHead>Runs on</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Assets</TableHead>
-                      <TableHead className="text-right">Credits</TableHead>
-                      <TableHead className="text-right">Attempts</TableHead>
-                      <TableHead>Error</TableHead>
+                      <TableHead>Source <InfoTip id="cbsrc.rr.job.source" /></TableHead>
+                      <TableHead>Runs on <InfoTip id="cbsrc.rr.job.runs_on" /></TableHead>
+                      <TableHead>Status <InfoTip id="cbsrc.rr.job.status" /></TableHead>
+                      <TableHead className="text-right">Assets <InfoTip id="cbsrc.rr.job.assets" /></TableHead>
+                      <TableHead className="text-right">Credits <InfoTip id="cbsrc.rr.job.credits" /></TableHead>
+                      <TableHead className="text-right">Attempts <InfoTip id="cbsrc.rr.job.attempts" /></TableHead>
+                      <TableHead>Error <InfoTip id="cbsrc.rr.job.error" /></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -861,7 +863,7 @@ function RunDetailsDialog({ teamId, runId, onClose }: { teamId: number; runId: n
 
           {skippedAtStart.length > 0 && (
             <div className="space-y-1.5">
-              <p className="text-sm font-medium text-zinc-900 dark:text-white">Skipped when the run started</p>
+              <p className="text-sm font-medium text-zinc-900 dark:text-white">Skipped when the run started <InfoTip id="cbsrc.rr.skipped_start" /></p>
               <ul className="list-disc pl-5 space-y-1 text-sm text-zinc-600 dark:text-zinc-400">
                 {skippedAtStart.map((item, index) => (
                   <li key={`${item.source_id ?? item.name}-${index}`} className="break-words">
@@ -873,7 +875,7 @@ function RunDetailsDialog({ teamId, runId, onClose }: { teamId: number; runId: n
           )}
           {run && jobs.length > 0 && (
             <div className="border-t border-zinc-200 dark:border-zinc-800 pt-4 space-y-2">
-              <p className="text-sm font-medium text-zinc-900 dark:text-white">Changes</p>
+              <p className="text-sm font-medium text-zinc-900 dark:text-white">Changes <InfoTip id="cbsrc.rr.changes" /></p>
               <RunChanges teamId={teamId} runId={runId} finished={TERMINAL_RUN.has(run.status)} />
             </div>
           )}

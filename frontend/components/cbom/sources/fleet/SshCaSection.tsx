@@ -41,6 +41,7 @@ import { readinessText } from "./sshCaLogic";
 import { formatDateTime } from "../logic";
 import { CodeSnippet, ConfirmDialog, EmptyState, ErrorBlock, Field, LoadingBlock, SectionCard, StatusBadge, type Tone } from "../shared";
 import type { FleetSectionProps } from "./sections";
+import { InfoTip } from "@/components/ui/info-tip";
 
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$/;
 const GROUP_RE = /^[a-z0-9][a-z0-9._-]{0,47}$/;
@@ -176,6 +177,7 @@ export function SshCaSection({ teamId, isAdmin }: { teamId: number; isAdmin: boo
 
   return (
     <SectionCard
+      infoId="cbsrc.sshca.card"
       id="fleet-ssh-ca"
       title="SSH certificate authority"
       description="ZeroShield signs each scan node's own key into a short-lived certificate for every job (5 minutes by default, principals zs-<team>-<group>, bound to the node's address, no forwarding or terminal). Your servers trust the CA for the zs-cbom login only; every certificate is listed below."
@@ -188,10 +190,10 @@ export function SshCaSection({ teamId, isAdmin }: { teamId: number; isAdmin: boo
       {open && (
         <div className="mb-6 space-y-4 rounded-lg border border-zinc-200 dark:border-zinc-800 p-4" data-testid="ssh-ca-form">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Field label="Name" htmlFor="ssh-ca-name" required error={formError}>
+            <Field infoId="cbsrc.sshca.name" label="Name" htmlFor="ssh-ca-name" required error={formError}>
               <Input id="ssh-ca-name" value={name} maxLength={64} placeholder="prod-servers-ca" onChange={(e) => setName(e.target.value)} />
             </Field>
-            <Field label="Where the CA key lives" htmlFor="ssh-ca-provider" hint="Built in: ZeroShield holds the key, encrypted (AWS KMS when this deployment has a key). Vault: your HashiCorp Vault SSH engine signs.">
+            <Field infoId="cbsrc.sshca.provider" label="Where the CA key lives" htmlFor="ssh-ca-provider" hint="Built in: ZeroShield holds the key, encrypted (AWS KMS when this deployment has a key). Vault: your HashiCorp Vault SSH engine signs.">
               <Select value={provider} onValueChange={(v) => setProvider(v as "builtin" | "vault")}>
                 <SelectTrigger id="ssh-ca-provider" className="w-full cursor-pointer"><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -200,12 +202,12 @@ export function SshCaSection({ teamId, isAdmin }: { teamId: number; isAdmin: boo
                 </SelectContent>
               </Select>
             </Field>
-            <Field label="Certificate lifetime (seconds)" htmlFor="ssh-ca-ttl" hint="60 to 3600. A job renews its certificate before it runs out.">
+            <Field infoId="cbsrc.sshca.ttl" label="Certificate lifetime (seconds)" htmlFor="ssh-ca-ttl" hint="60 to 3600. A job renews its certificate before it runs out.">
               <Input id="ssh-ca-ttl" type="number" min={60} max={3600} value={ttl} onChange={(e) => setTtl(e.target.value)} />
             </Field>
             {provider === "builtin" ? (
               <>
-                <Field label="Key type" htmlFor="ssh-ca-alg">
+                <Field infoId="cbsrc.sshca.alg" label="Key type" htmlFor="ssh-ca-alg">
                   <Select value={alg} onValueChange={(v) => setAlg(v as "ed25519" | "ecdsa-p256")}>
                     <SelectTrigger id="ssh-ca-alg" className="w-full cursor-pointer"><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -214,7 +216,7 @@ export function SshCaSection({ teamId, isAdmin }: { teamId: number; isAdmin: boo
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field label="Key encryption" htmlFor="ssh-ca-wrap" hint={kmsKeys.length ? "This deployment wraps CA keys with AWS KMS" : "This deployment has no AWS KMS key configured"}>
+                <Field infoId="cbsrc.sshca.wrap" label="Key encryption" htmlFor="ssh-ca-wrap" hint={kmsKeys.length ? "This deployment wraps CA keys with AWS KMS" : "This deployment has no AWS KMS key configured"}>
                   <Select value={kmsKeys.length ? "aws_kms" : (wrap || "fernet")} onValueChange={(v) => setWrap(v as SshCaKeyWrap)} disabled={kmsKeys.length > 0}>
                     <SelectTrigger id="ssh-ca-wrap" className="w-full cursor-pointer"><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -225,7 +227,7 @@ export function SshCaSection({ teamId, isAdmin }: { teamId: number; isAdmin: boo
                   </Select>
                 </Field>
                 {kmsKeys.length > 1 && (
-                  <Field label="KMS key" htmlFor="ssh-ca-kms" hint="Labels of the KMS keys this deployment allows">
+                  <Field infoId="cbsrc.sshca.kms" label="KMS key" htmlFor="ssh-ca-kms" hint="Labels of the KMS keys this deployment allows">
                     <Select value={kmsKey || (kmsKeys.find((k) => k.default) ?? kmsKeys[0]).label} onValueChange={setKmsKey}>
                       <SelectTrigger id="ssh-ca-kms" className="w-full cursor-pointer"><SelectValue /></SelectTrigger>
                       <SelectContent>{kmsKeys.map((k) => <SelectItem key={k.label} value={k.label} className="cursor-pointer font-mono text-xs">{k.label}{k.default ? " (default)" : ""}</SelectItem>)}</SelectContent>
@@ -235,16 +237,16 @@ export function SshCaSection({ teamId, isAdmin }: { teamId: number; isAdmin: boo
               </>
             ) : (
               <>
-                <Field label="Vault address" htmlFor="ssh-ca-vault-addr" required hint="https://vault.example:8200 (the active node)">
+                <Field infoId="cbsrc.sshca.vault_addr" label="Vault address" htmlFor="ssh-ca-vault-addr" required hint="https://vault.example:8200 (the active node)">
                   <Input id="ssh-ca-vault-addr" value={vaultAddr} onChange={(e) => setVaultAddr(e.target.value)} />
                 </Field>
-                <Field label="SSH engine mount" htmlFor="ssh-ca-vault-mount">
+                <Field infoId="cbsrc.sshca.vault_mount" label="SSH engine mount" htmlFor="ssh-ca-vault-mount">
                   <Input id="ssh-ca-vault-mount" value={vaultMount} onChange={(e) => setVaultMount(e.target.value)} />
                 </Field>
-                <Field label="Signing role" htmlFor="ssh-ca-vault-role" required hint="allowed_critical_options must include source-address; default_extensions {}">
+                <Field infoId="cbsrc.sshca.vault_role" label="Signing role" htmlFor="ssh-ca-vault-role" required hint="allowed_critical_options must include source-address; default_extensions {}">
                   <Input id="ssh-ca-vault-role" value={vaultRole} onChange={(e) => setVaultRole(e.target.value)} />
                 </Field>
-                <Field label="Vault token" htmlFor="ssh-ca-vault-token" required hint="Write-only; may only call <mount>/sign/<role>">
+                <Field infoId="cbsrc.sshca.vault_token" label="Vault token" htmlFor="ssh-ca-vault-token" required hint="Write-only; may only call <mount>/sign/<role>">
                   <Input id="ssh-ca-vault-token" type="password" autoComplete="off" value={vaultToken} onChange={(e) => setVaultToken(e.target.value)} />
                 </Field>
               </>
@@ -274,8 +276,8 @@ export function SshCaSection({ teamId, isAdmin }: { teamId: number; isAdmin: boo
           <Table data-testid="ssh-ca-table">
             <TableHeader>
               <TableRow>
-                <TableHead>Name</TableHead><TableHead>State</TableHead><TableHead>Key</TableHead>
-                <TableHead>Lifetime</TableHead><TableHead>Certificates</TableHead><TableHead className="text-right">Actions</TableHead>
+                <TableHead>Name</TableHead><TableHead>State <InfoTip id="cbsrc.sshca.col.state" /></TableHead><TableHead>Key <InfoTip id="cbsrc.sshca.col.key" /></TableHead>
+                <TableHead>Lifetime <InfoTip id="cbsrc.sshca.col.lifetime" /></TableHead><TableHead>Certificates <InfoTip id="cbsrc.sshca.col.certs" /></TableHead><TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -323,7 +325,7 @@ export function SshCaSection({ teamId, isAdmin }: { teamId: number; isAdmin: boo
           <Button size="sm" variant="outline" className="cursor-pointer" onClick={() => show("trusted_user_ca_keys", "trusted-keys")}>Trusted keys</Button>
           <Button size="sm" variant="outline" className="cursor-pointer"
             onClick={async () => saveText(`zs-team${teamId}-revoked.krl`, await getSshCaKrl(teamId))}><Download className="h-3.5 w-3.5 mr-1" />Revocation list (KRL)</Button>
-          <Field label="Server group" htmlFor="ssh-ca-group" className="w-40" error={group && !GROUP_RE.test(group) ? "lowercase letters, digits, . _ -" : null}>
+          <Field infoId="cbsrc.sshca.group" label="Server group" htmlFor="ssh-ca-group" className="w-40" error={group && !GROUP_RE.test(group) ? "lowercase letters, digits, . _ -" : null}>
             <Input id="ssh-ca-group" value={group} placeholder="prod" onChange={(e) => setGroup(e.target.value.trim())} />
           </Field>
           <Button size="sm" variant="outline" className="cursor-pointer" disabled={!!group && !GROUP_RE.test(group)}
@@ -341,14 +343,14 @@ export function SshCaSection({ teamId, isAdmin }: { teamId: number; isAdmin: boo
       </div>
 
       <div className="mt-6 space-y-2" data-testid="ssh-ca-trust-tokens">
-        <h4 className="text-sm font-semibold">Trust tokens</h4>
+        <h4 className="text-sm font-semibold">Trust tokens <InfoTip id="cbsrc.sshca.trust_tokens" /></h4>
         <p className="text-xs text-zinc-500">
           A trust token lets your servers (or your configuration management) read this team&apos;s trusted keys, revocation list and principals, and nothing else.
           It is shown once. Each server sends its name, so a rotation shows how many servers already have the new key.
         </p>
         {isAdmin && (
           <div className="flex flex-wrap items-end gap-2">
-            <Field label="Token name" htmlFor="ssh-ca-token-name" className="w-56">
+            <Field infoId="cbsrc.sshca.token_name" label="Token name" htmlFor="ssh-ca-token-name" className="w-56">
               <Input id="ssh-ca-token-name" value={tokenName} maxLength={64} placeholder="prod-servers" onChange={(e) => setTokenName(e.target.value)} />
             </Field>
             <Button size="sm" variant="outline" className="cursor-pointer" disabled={!NAME_RE.test(tokenName.trim()) || makeToken.isPending}
@@ -360,7 +362,7 @@ export function SshCaSection({ teamId, isAdmin }: { teamId: number; isAdmin: boo
         {makeToken.isError && <p className="text-sm text-red-600" role="alert">{errorText(makeToken.error, "The token was not created")}</p>}
         {newToken && (
           <div className="space-y-1" data-testid="ssh-ca-new-token">
-            <p className="text-xs font-medium">Copy it now: it is not shown again. Keep it in a file only root can read (ZS_TRUST_TOKEN).</p>
+            <p className="text-xs font-medium">Copy it now: it is not shown again. Keep it in a file only root can read (ZS_TRUST_TOKEN). <InfoTip id="cbsrc.sshca.new_token" /></p>
             <CodeSnippet code={newToken} language="bash" />
           </div>
         )}
@@ -368,7 +370,7 @@ export function SshCaSection({ teamId, isAdmin }: { teamId: number; isAdmin: boo
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
-                <TableRow><TableHead>Name</TableHead><TableHead>Token</TableHead><TableHead>Servers (24 h)</TableHead><TableHead>Last used</TableHead><TableHead>Status</TableHead><TableHead /></TableRow>
+                <TableRow><TableHead>Name</TableHead><TableHead>Token <InfoTip id="cbsrc.sshca.col.token" /></TableHead><TableHead>Servers (24 h) <InfoTip id="cbsrc.sshca.col.servers" /></TableHead><TableHead>Last used <InfoTip id="cbsrc.sshca.col.last_used" /></TableHead><TableHead>Status <InfoTip id="cbsrc.sshca.col.token_status" /></TableHead><TableHead /></TableRow>
               </TableHeader>
               <TableBody>
                 {(tokens.data?.tokens ?? []).map((t) => (
@@ -403,8 +405,8 @@ export function SshCaSection({ teamId, isAdmin }: { teamId: number; isAdmin: boo
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Issued</TableHead><TableHead>Serial</TableHead><TableHead>Principals</TableHead>
-                  <TableHead>From</TableHead><TableHead>Node / job</TableHead><TableHead>Valid until</TableHead><TableHead>Status</TableHead><TableHead />
+                  <TableHead>Issued <InfoTip id="cbsrc.sshca.col.issued" /></TableHead><TableHead>Serial <InfoTip id="cbsrc.sshca.col.serial" /></TableHead><TableHead>Principals <InfoTip id="cbsrc.sshca.col.principals" /></TableHead>
+                  <TableHead>From <InfoTip id="cbsrc.sshca.col.from" /></TableHead><TableHead>Node / job <InfoTip id="cbsrc.sshca.col.node_job" /></TableHead><TableHead>Valid until <InfoTip id="cbsrc.sshca.col.valid_until" /></TableHead><TableHead>Status <InfoTip id="cbsrc.sshca.col.cert_status" /></TableHead><TableHead />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -448,13 +450,19 @@ export function SshCaSection({ teamId, isAdmin }: { teamId: number; isAdmin: boo
                     <span>Every server already has the new trusted keys: promote now</span>
                   </label>
                 )}
+                {pendingReady?.early && (
+                  <InfoTip id="cbsrc.sshca.promote_now" />
+                )}
               </span>
             )}
             {pending?.kind === "revoke" && "It signs nothing more and goes into the revocation list; servers refuse its certificates once they have the new list. Sources using this CA stop until a new CA in the lineage is promoted."}
             {pending?.kind === "revoke-cert" && `Serial ${pending.cert.serial} goes into the revocation list; servers refuse it once they have the new list. This run of job #${pending.cert.job_id ?? "?"} stops and gets no new certificate. The scan node's other jobs still get certificates: to stop the node itself, reset or delete it on the Scan nodes tab.`}
             {pending?.kind === "revoke-token" && `Servers using ${pending.token.name} (${pending.token.prefix}…) get 401 from now on and keep their current files until they get a new token.`}
             {reasonNeeded && (
-              <Input aria-label="Reason" className="mt-2" placeholder="Reason (recorded in the audit)" value={reason} maxLength={512} onChange={(e) => setReason(e.target.value)} />
+              <span className="mt-2 flex items-center gap-1">
+                <Input aria-label="Reason" placeholder="Reason (recorded in the audit)" value={reason} maxLength={512} onChange={(e) => setReason(e.target.value)} />
+                <InfoTip id="cbsrc.sshca.reason" />
+              </span>
             )}
             {act.isError && <span className="block text-red-600 text-sm" role="alert">{errorText(act.error, "That did not work")}</span>}
           </span>

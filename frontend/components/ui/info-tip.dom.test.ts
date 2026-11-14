@@ -60,6 +60,7 @@ async function main() {
         "div",
         null,
         React.createElement(InfoTip, { id }),
+        React.createElement(InfoTip, { id: "cbsrc.meta.lifetime" }),
         React.createElement(FieldLabel, { htmlFor: "title", infoId: "scan.new.title" } as Parameters<typeof FieldLabel>[0], "Scan title"),
         React.createElement("input", { id: "title" }),
       ),
@@ -130,6 +131,18 @@ async function main() {
   assert.equal(isOpen(), true, "a mouse click does not close what the user is reading");
   await key("Escape");
   assert.equal(isOpen(), false);
+
+  // a tip with "why": what, then "Why it matters: …", then the example; a tip without one has no such line
+  assert.equal(described!.textContent!.includes("Why it matters"), false, "no why line for a tip without one");
+  const withWhy = doc.querySelector('[data-infotip="cbsrc.meta.lifetime"]') as HTMLButtonElement;
+  const whyTip = INFO_TIPS["cbsrc.meta.lifetime"];
+  await act(async () => withWhy.focus());
+  await settle();
+  const whyText = doc.getElementById(withWhy.getAttribute("aria-describedby") ?? "")?.textContent ?? "";
+  assert.ok(whyText.includes(whyTip.what) && whyText.includes(`Why it matters: ${whyTip.why}`) && whyText.includes(whyTip.example), "what, why and example are shown");
+  assert.ok(whyText.indexOf(whyTip.what) < whyText.indexOf("Why it matters") && whyText.indexOf("Why it matters") < whyText.indexOf("Example:"), "in that order");
+  await key("Escape");
+  assert.equal(doc.querySelector('[role="tooltip"]'), null, "Escape closes it");
 
   // FieldLabel: the label names the input; the (i) is beside the <label>, not inside it
   const label = doc.querySelector('label[for="title"]');

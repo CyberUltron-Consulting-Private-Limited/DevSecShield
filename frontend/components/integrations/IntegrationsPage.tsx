@@ -40,11 +40,15 @@ import {
   type IntegrationEventKind,
   type IntegrationKind,
 } from "@/utils/api/integrations";
+import { InfoTip } from "@/components/ui/info-tip";
+import type { InfoTipId } from "@/content/infotips";
 
 type Form = Record<string, string>;
 type FieldDef = {
   key: string;
   label: string;
+  /** Its (i) tip (content/infotips.ts). */
+  infoId: InfoTipId;
   type?: "text" | "number" | "select" | "textarea";
   options?: [string, string][];
   hint?: string;
@@ -65,62 +69,70 @@ const EVENT_LABEL: Record<IntegrationEventKind, string> = {
 };
 
 const CA_FIELD: FieldDef = {
-  key: "ca_pem", label: "CA certificate (optional)", type: "textarea",
+  key: "ca_pem", label: "CA certificate (optional)", type: "textarea", infoId: "int.common.ca_pem",
   hint: "PEM of the CA that signed the destination's certificate, when it is not publicly trusted. Certificates are always verified.",
 };
 
 const FIELDS: Record<IntegrationKind, FieldDef[]> = {
   servicenow: [
-    { key: "instance_url", label: "Instance URL", placeholder: "https://acme.service-now.com", required: true },
-    { key: "table", label: "Table", placeholder: "incident", hint: "incident, or sn_vul_vulnerable_item with Vulnerability Response" },
-    { key: "auth", label: "Authentication", type: "select", options: [["basic", "User and password"], ["oauth", "OAuth client credentials"]] },
-    { key: "username", label: "User", show: (f) => (f.auth || "basic") === "basic", required: true },
-    { key: "client_id", label: "OAuth client ID", show: (f) => f.auth === "oauth", required: true },
-    { key: "assignment_group", label: "Assignment group (optional)" },
-    { key: "category", label: "Category (optional)" },
-    { key: "resolve_state", label: "Resolved state value", placeholder: "6", hint: "incident: 6 (Resolved)" },
-    { key: "close_code", label: "Resolution code", placeholder: "Solution provided" },
-    { key: "min_severity", label: "Open records from severity", type: "select",
+    { infoId: "int.sn.instance_url", key: "instance_url", label: "Instance URL", placeholder: "https://acme.service-now.com", required: true },
+    { infoId: "int.sn.table", key: "table", label: "Table", placeholder: "incident", hint: "incident, or sn_vul_vulnerable_item with Vulnerability Response" },
+    { infoId: "int.sn.auth", key: "auth", label: "Authentication", type: "select", options: [["basic", "User and password"], ["oauth", "OAuth client credentials"]] },
+    { infoId: "int.sn.username", key: "username", label: "User", show: (f) => (f.auth || "basic") === "basic", required: true },
+    { infoId: "int.sn.client_id", key: "client_id", label: "OAuth client ID", show: (f) => f.auth === "oauth", required: true },
+    { infoId: "int.sn.assignment_group", key: "assignment_group", label: "Assignment group (optional)" },
+    { infoId: "int.sn.category", key: "category", label: "Category (optional)" },
+    { infoId: "int.sn.resolve_state", key: "resolve_state", label: "Resolved state value", placeholder: "6", hint: "incident: 6 (Resolved)" },
+    { infoId: "int.sn.close_code", key: "close_code", label: "Resolution code", placeholder: "Solution provided" },
+    { infoId: "int.sn.min_severity", key: "min_severity", label: "Open records from severity", type: "select",
       options: [["Low", "Low and above"], ["Medium", "Medium and above"], ["High", "High and above"], ["Critical", "Critical only"]],
       hint: "Resolving a record always goes through" },
-    { key: "correlation_field", label: "Correlation field", placeholder: "correlation_id",
+    { infoId: "int.sn.correlation_field", key: "correlation_field", label: "Correlation field", placeholder: "correlation_id",
       hint: "One record per finding: looked up by this field before a record is created" },
-    { key: "cmdb_table", label: "CMDB table (import)", placeholder: "cmdb_ci_server" },
-    { key: "cmdb_query", label: "CMDB filter (encoded query, optional)", placeholder: "operational_status=1" },
-    { key: "cmdb_mapping.host", label: "CMDB host fields", placeholder: "fqdn, ip_address, host_name, name" },
-    { key: "cmdb_mapping.owner", label: "CMDB owner field", placeholder: "owned_by" },
-    { key: "cmdb_mapping.application", label: "CMDB application field", placeholder: "u_application" },
-    { key: "cmdb_mapping.environment", label: "CMDB environment field", placeholder: "used_for" },
-    { key: "cmdb_mapping.criticality", label: "CMDB criticality field (optional)" },
-    { key: "cmdb_mapping.exposure", label: "CMDB exposure field (optional)" },
-    { key: "cmdb_mapping.data_classification", label: "CMDB data classification field (optional)" },
+    { infoId: "int.sn.cmdb_table", key: "cmdb_table", label: "CMDB table (import)", placeholder: "cmdb_ci_server" },
+    { infoId: "int.sn.cmdb_query", key: "cmdb_query", label: "CMDB filter (encoded query, optional)", placeholder: "operational_status=1" },
+    { infoId: "int.sn.cmdb_host", key: "cmdb_mapping.host", label: "CMDB host fields", placeholder: "fqdn, ip_address, host_name, name" },
+    { infoId: "int.sn.cmdb_owner", key: "cmdb_mapping.owner", label: "CMDB owner field", placeholder: "owned_by" },
+    { infoId: "int.sn.cmdb_application", key: "cmdb_mapping.application", label: "CMDB application field", placeholder: "u_application" },
+    { infoId: "int.sn.cmdb_environment", key: "cmdb_mapping.environment", label: "CMDB environment field", placeholder: "used_for" },
+    { infoId: "int.sn.cmdb_criticality", key: "cmdb_mapping.criticality", label: "CMDB criticality field (optional)" },
+    { infoId: "int.sn.cmdb_exposure", key: "cmdb_mapping.exposure", label: "CMDB exposure field (optional)" },
+    { infoId: "int.sn.cmdb_classification", key: "cmdb_mapping.data_classification", label: "CMDB data classification field (optional)" },
     CA_FIELD,
   ],
   syslog: [
-    { key: "host", label: "Collector host", placeholder: "siem.corp.local", required: true },
-    { key: "transport", label: "Transport", type: "select",
+    { infoId: "int.sys.host", key: "host", label: "Collector host", placeholder: "siem.corp.local", required: true },
+    { infoId: "int.sys.transport", key: "transport", label: "Transport", type: "select",
       options: [["tls", "TLS (RFC 5425, port 6514)"], ["tcp", "TCP (octet counting)"], ["udp", "UDP (RFC 5426, no confirmation)"]] },
-    { key: "port", label: "Port (optional)", type: "number", hint: "Default 6514 for TLS, 514 for TCP and UDP" },
-    { key: "format", label: "Message format", type: "select", options: [["cef", "CEF (ArcSight)"], ["json", "JSON"]] },
-    { key: "facility", label: "Facility", type: "number", placeholder: "16", hint: "16 = local0" },
-    { key: "sender_name", label: "Sender name (HOSTNAME field)", placeholder: "zeroshield" },
+    { infoId: "int.sys.port", key: "port", label: "Port (optional)", type: "number", hint: "Default 6514 for TLS, 514 for TCP and UDP" },
+    { infoId: "int.sys.format", key: "format", label: "Message format", type: "select", options: [["cef", "CEF (ArcSight)"], ["json", "JSON"]] },
+    { infoId: "int.sys.facility", key: "facility", label: "Facility", type: "number", placeholder: "16", hint: "16 = local0" },
+    { infoId: "int.sys.sender", key: "sender_name", label: "Sender name (HOSTNAME field)", placeholder: "zeroshield" },
     { ...CA_FIELD, show: (f) => (f.transport || "tls") === "tls" },
   ],
   splunk_hec: [
-    { key: "url", label: "HEC URL", placeholder: "https://splunk.corp.local:8088", required: true },
-    { key: "index", label: "Index (optional)" },
-    { key: "sourcetype", label: "Sourcetype", placeholder: "zeroshield:cbom" },
-    { key: "source", label: "Source", placeholder: "zeroshield" },
+    { infoId: "int.hec.url", key: "url", label: "HEC URL", placeholder: "https://splunk.corp.local:8088", required: true },
+    { infoId: "int.hec.index", key: "index", label: "Index (optional)" },
+    { infoId: "int.hec.sourcetype", key: "sourcetype", label: "Sourcetype", placeholder: "zeroshield:cbom" },
+    { infoId: "int.hec.source", key: "source", label: "Source", placeholder: "zeroshield" },
     CA_FIELD,
   ],
   webhook: [
-    { key: "url", label: "Receiver URL", placeholder: "https://soar.corp.local/hooks/zeroshield", required: true },
+    { infoId: "int.webhook.url", key: "url", label: "Receiver URL", placeholder: "https://soar.corp.local/hooks/zeroshield", required: true },
     CA_FIELD,
   ],
   oscal: [
-    { key: "url", label: "GRC endpoint URL", placeholder: "https://grc.corp.local/api/oscal", required: true },
+    { infoId: "int.oscal.url", key: "url", label: "GRC endpoint URL", placeholder: "https://grc.corp.local/api/oscal", required: true },
     CA_FIELD,
   ],
+};
+
+const CARD_TIP: Record<IntegrationKind, InfoTipId> = {
+  servicenow: "int.card.servicenow",
+  syslog: "int.card.syslog",
+  splunk_hec: "int.card.splunk_hec",
+  webhook: "int.card.webhook",
+  oscal: "int.card.oscal",
 };
 
 const DESCRIPTION: Record<IntegrationKind, string> = {
@@ -131,10 +143,14 @@ const DESCRIPTION: Record<IntegrationKind, string> = {
   oscal: "When a run or a CBOM code scan finishes, pushes its OSCAL 1.2.3 assessment results (schema-validated), signed like the webhook.",
 };
 
-function secretsFor(kind: IntegrationKind, f: Form): { key: string; label: string }[] {
-  if (kind === "servicenow") return f.auth === "oauth" ? [{ key: "client_secret", label: "OAuth client secret" }] : [{ key: "password", label: "Password" }];
-  if (kind === "splunk_hec") return [{ key: "token", label: "HEC token" }];
-  if (kind === "webhook" || kind === "oscal") return [{ key: "signing_secret", label: "Signing secret (16+ characters)" }];
+function secretsFor(kind: IntegrationKind, f: Form): { key: string; label: string; infoId: InfoTipId }[] {
+  if (kind === "servicenow") {
+    return f.auth === "oauth"
+      ? [{ key: "client_secret", label: "OAuth client secret", infoId: "int.secret.client_secret" }]
+      : [{ key: "password", label: "Password", infoId: "int.secret.password" }];
+  }
+  if (kind === "splunk_hec") return [{ key: "token", label: "HEC token", infoId: "int.secret.hec_token" }];
+  if (kind === "webhook" || kind === "oscal") return [{ key: "signing_secret", label: "Signing secret (16+ characters)", infoId: "int.secret.signing" }];
   return [];
 }
 
@@ -242,6 +258,7 @@ function IntegrationCard({ teamId, integration, isAdmin, snippet }: {
   return (
     <SectionCard
       id={prefix}
+      infoId={CARD_TIP[kind]}
       title={
         <span className="flex flex-wrap items-center gap-2">
           {integration.label}
@@ -266,7 +283,7 @@ function IntegrationCard({ teamId, integration, isAdmin, snippet }: {
         {lastTest?.message && lastTest.status !== "never" && (
           <p className="text-xs text-zinc-500">Last test {ago(lastTest.at)}: {lastTest.message}</p>
         )}
-        <Checkbox2 id={`${prefix}-enabled`} checked={enabled} onChange={(v) => isAdmin && setEnabled(v)}>
+        <Checkbox2 infoId="int.enabled" id={`${prefix}-enabled`} checked={enabled} onChange={(v) => isAdmin && setEnabled(v)}>
           Forward events to {integration.label}
         </Checkbox2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -275,7 +292,7 @@ function IntegrationCard({ teamId, integration, isAdmin, snippet }: {
             const value = form[def.key] ?? "";
             if (def.type === "select") {
               return (
-                <Field key={def.key} label={def.label} htmlFor={id} hint={def.hint}>
+                <Field key={def.key} infoId={def.infoId} label={def.label} htmlFor={id} hint={def.hint}>
                   <Select value={value || def.options![0][0]} onValueChange={(v) => set(def.key, v)} disabled={disabled}>
                     <SelectTrigger id={id} className="w-full cursor-pointer"><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -287,14 +304,14 @@ function IntegrationCard({ teamId, integration, isAdmin, snippet }: {
             }
             if (def.type === "textarea") {
               return (
-                <Field key={def.key} label={def.label} htmlFor={id} hint={def.hint} className="md:col-span-2">
+                <Field key={def.key} infoId={def.infoId} label={def.label} htmlFor={id} hint={def.hint} className="md:col-span-2">
                   <Textarea id={id} value={value} onChange={(e) => set(def.key, e.target.value)} disabled={disabled}
                             spellCheck={false} className="font-mono text-xs min-h-[72px]" placeholder="-----BEGIN CERTIFICATE-----" />
                 </Field>
               );
             }
             return (
-              <Field key={def.key} label={def.label} htmlFor={id} hint={def.hint} required={def.required}>
+              <Field key={def.key} infoId={def.infoId} label={def.label} htmlFor={id} hint={def.hint} required={def.required}>
                 <Input id={id} value={value} inputMode={def.type === "number" ? "numeric" : undefined}
                        placeholder={def.placeholder} onChange={(e) => set(def.key, e.target.value)} disabled={disabled} />
               </Field>
@@ -304,7 +321,7 @@ function IntegrationCard({ teamId, integration, isAdmin, snippet }: {
             const isSet = integration.secrets_set.includes(s.key);
             const id = `${prefix}-secret-${s.key}`;
             return (
-              <Field key={s.key} label={s.label} htmlFor={id} required={!isSet}
+              <Field key={s.key} infoId={s.infoId} label={s.label} htmlFor={id} required={!isSet}
                      hint="Encrypted at rest; never shown again. Changing the URL, host or user clears it unless you enter it again.">
                 <div className="flex gap-2">
                   <Input id={id} type="password" autoComplete="new-password" value={secrets[s.key] ?? ""} disabled={disabled}
@@ -332,9 +349,12 @@ function IntegrationCard({ teamId, integration, isAdmin, snippet }: {
         )}
         {kind !== "oscal" && (
           <fieldset className="space-y-2">
-            <legend className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Events</legend>
+            <legend className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+              Events <InfoTip id="int.events" />
+            </legend>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
               {integration.allowed_events.map((e) => (
+                /* infotip-shared: one event of the list; the Events tip above explains each */
                 <Checkbox2 key={e} id={`${prefix}-event-${e}`} checked={events.includes(e)}
                            onChange={(v) => isAdmin && setEvents((cur) => (v ? [...cur, e] : cur.filter((x) => x !== e)))}>
                   {EVENT_LABEL[e]}
@@ -402,6 +422,7 @@ function DeliveryLog({ teamId, isAdmin, labels }: { teamId: number; isAdmin: boo
   const rows = q.data?.deliveries ?? [];
   return (
     <SectionCard
+      infoId="int.log"
       title="Delivery log"
       description="Every event is delivered at least once, in order per destination, with the same event id on each retry. A failing destination is retried with back-off for 24 hours; events it refused, or that could not be delivered in time, are dead-lettered here."
       actions={
@@ -413,6 +434,7 @@ function DeliveryLog({ teamId, isAdmin, labels }: { teamId: number; isAdmin: boo
               {Object.entries(labels).map(([k, l]) => <SelectItem key={k} value={k} className="cursor-pointer">{l}</SelectItem>)}
             </SelectContent>
           </Select>
+          <InfoTip id="int.log.filter_kind" className="self-center" />
           <Select value={status} onValueChange={setStatus}>
             <SelectTrigger className="w-[150px] cursor-pointer" aria-label="Status"><SelectValue /></SelectTrigger>
             <SelectContent>
@@ -421,6 +443,7 @@ function DeliveryLog({ teamId, isAdmin, labels }: { teamId: number; isAdmin: boo
               ))}
             </SelectContent>
           </Select>
+          <InfoTip id="int.log.filter_status" className="self-center" />
           {isAdmin && status === "dead" && kind !== "all" && rows.length > 0 && (
             <Button variant="outline" className="cursor-pointer" disabled={retry.isPending}
                     onClick={() => retry.mutate({ kind, all_dead: true })}>
@@ -437,12 +460,12 @@ function DeliveryLog({ teamId, isAdmin, labels }: { teamId: number; isAdmin: boo
           <Table data-testid="delivery-log">
             <TableHeader>
               <TableRow>
-                <TableHead>Queued</TableHead>
-                <TableHead>Integration</TableHead>
-                <TableHead>Event</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Attempts</TableHead>
-                <TableHead>Result</TableHead>
+                <TableHead>Queued <InfoTip id="int.log.col.queued" /></TableHead>
+                <TableHead>Integration <InfoTip id="int.log.col.integration" /></TableHead>
+                <TableHead>Event <InfoTip id="int.log.col.event" /></TableHead>
+                <TableHead>Status <InfoTip id="int.log.col.status" /></TableHead>
+                <TableHead>Attempts <InfoTip id="int.log.col.attempts" /></TableHead>
+                <TableHead>Result <InfoTip id="int.log.col.result" /></TableHead>
                 {isAdmin && <TableHead />}
               </TableRow>
             </TableHeader>

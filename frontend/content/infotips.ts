@@ -2097,6 +2097,2771 @@ export const INFO_TIPS = {
     what: "Selects rows of this list for a Jira ticket. These rows are not stored findings, so all the selected rows go into one combined Jira issue.",
     example: "Select 4 rows, Create Jira ticket: one issue listing the 4 vulnerabilities.",
   },
+  // ────────────────────────────────────────────────────────────── CBOM Sources: shared by the tabs, and Servers (components/cbom/sources/ServersTab.tsx)
+  // src: frontend/components/cbom/sources/ServersTab.tsx:173-174, backend/utilities/cbom_sources/kinds.py:26 — 1-64 letters, digits, spaces, dots, dashes, underscores
+  "cbsrc.common.name": {
+    label: "Source name",
+    what: "A name for this source, 1 to 64 letters, digits, spaces, dots, dashes or underscores. It labels the source in lists, run results, the CBOM and reports.",
+    why: "Every asset a run finds records the source it came from, so a clear name tells an auditor where a weak key or certificate lives.",
+    example: "dc-mumbai-linux for the Linux servers of the Mumbai data centre.",
+  },
+  // src: frontend/components/cbom/sources/ServersTab.tsx:963-972, backend/utilities/cbom_sources/jobs.py:302 — jobs of the source run on this node
+  "cbsrc.common.node": {
+    label: "Scan node",
+    what: "The scan node, inside your network, that connects to these targets and collects their crypto. Every job of this source (connection tests and collection) runs on it.",
+    why: "Only a node that can reach the targets on the right port can read them; a node in the wrong network segment makes every target unreachable.",
+    example: "node-dc1 in the 10.20.0.0/16 segment for servers in 10.20.5.0/24.",
+  },
+  // src: frontend/components/cbom/sources/ServersTab.tsx:976-982, frontend/components/cbom/sources/ServersTab.tsx:176-177 — 1,000 lines; ranges up to /16; 262,144 addresses per source
+  "cbsrc.servers.targets": {
+    label: "Targets",
+    what: "The servers to read: IP addresses, CIDR ranges or hostnames, one per line, up to 1,000 lines. A range may be at most a /16 and a source at most 262,144 addresses. Import CSV adds the first column of a file.",
+    why: "Only listed targets are scanned, so a server left out is a blind spot in the CBOM.",
+    example: "10.20.0.0/24, 10.20.5.17 and app-01.bank.local: 256 + 1 + 1 targets.",
+  },
+  // src: frontend/components/cbom/sources/teamNeverScan.ts:96-97 — per-source exclusions; never-scan always wins
+  "cbsrc.common.never_scan": {
+    label: "Never scan",
+    what: "Addresses, ranges or hostnames this source must never touch, one per line or comma-separated. A hostname also covers every address it resolves to from the scan node. The team never-scan list on the Network tab applies as well. Never-scan always wins over targets.",
+    why: "Keeps fragile or out-of-scope systems (a core banking host, a partner's range) out of every job.",
+    example: "10.20.0.1, 10.20.0.254 keeps the two gateways out of 10.20.0.0/24.",
+  },
+  // src: frontend/components/cbom/sources/ServersTab.tsx:120-123 — SSH 22, WinRM over HTTPS 5986, LDAPS 636 by default
+  "cbsrc.servers.port": {
+    label: "Port",
+    what: "The port the scan node connects to: SSH for Linux (default 22), WinRM over HTTPS for Windows (5986), LDAPS for Active Directory (636).",
+    why: "A port that is closed or filtered from the node fails the connection test for every server.",
+    example: "2222 when your Linux servers run sshd on a non-standard port.",
+  },
+  // src: frontend/components/cbom/sources/ServersTab.tsx:1072-1078, backend/utilities/cbom_sources/kinds.py:27 — up to 64 characters; DOMAIN\\user accepted for Windows and AD
+  "cbsrc.servers.login": {
+    label: "Login user",
+    what: "The account the scan node logs in as, up to 64 characters. For Linux a read-only account on each server (zs-cbom by default); for Windows and Active Directory a local or domain account, DOMAIN\\user accepted.",
+    why: "A dedicated read-only account limits what a leaked credential could do and makes the scan easy to spot in audit logs.",
+    example: "zs-cbom on Linux; BANK\\svc-zscbom for Active Directory.",
+  },
+  // src: frontend/components/cbom/sources/ServersTab.tsx:1093-1110 — trust on first use or pinned known_hosts; a password forces pinning
+  "cbsrc.servers.host_key_policy": {
+    label: "Host key policy",
+    what: "How the node checks each server's SSH host key before logging in. Trust on first use remembers the key on first contact and refuses and alerts if it changes. Pin fingerprints accepts only the keys you paste. A password credential requires pinned keys.",
+    why: "The host key check stops a machine impersonating the server from capturing the credential.",
+    example: "Pin fingerprints with the output of ssh-keyscan for servers you already trust.",
+  },
+  // src: frontend/components/cbom/sources/ServersTab.tsx:1114-1120 — public keys only
+  "cbsrc.servers.known_hosts": {
+    label: "known_hosts lines",
+    what: "The SSH host keys to accept, in known_hosts format: the output of ssh-keyscan or your existing known_hosts file. Public keys only; upload a file or paste the lines.",
+    why: "A server whose key is not listed is refused, so a spoofed server never receives the login.",
+    example: "10.20.0.11 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA...",
+  },
+  // src: frontend/components/cbom/sources/ServersTab.tsx:1153-1160, backend/utilities/cbom_sources/kinds.py:21 — PEM up to 64 KB, checked before the login is sent
+  "cbsrc.servers.ca_pem": {
+    label: "CA certificate",
+    what: "Optional PEM certificate of the CA that issued the WinRM (HTTPS) or LDAPS certificate of the servers. The server's certificate is checked against it before the login is sent. Needed when an internal CA issued it.",
+    why: "Without the right CA the TLS check fails and the node never sends the password.",
+    example: "The root certificate of BANK-ISSUING-CA, as -----BEGIN CERTIFICATE-----...",
+  },
+  // src: frontend/components/cbom/sources/ServersTab.tsx:127-133, frontend/components/cbom/sources/ServersTab.tsx:1200-1212 — node key, SSH CA, SSH certificate, vault reference or password; vault and SSH CA for admins only
+  "cbsrc.servers.credential": {
+    label: "Credential",
+    what: "How the node proves who it is. Node-generated SSH key (recommended, the private key never leaves the node), SSH CA certificate (signed per job for minutes), your own SSH certificate, a vault reference, or a password. Only team admins choose vault or SSH CA.",
+    why: "The credential is the most sensitive thing a source holds; options that keep secrets off ZeroShield reduce what a breach could expose.",
+    example: "Linux: Node-generated SSH key, then install the shown public key for zs-cbom.",
+  },
+  // src: frontend/components/cbom/sources/ServersTab.tsx:1266-1277, backend/utilities/cbom_sources/kinds.py:20 — secrets up to 256 KB, encrypted at rest
+  "cbsrc.servers.ssh_certificate": {
+    label: "SSH certificate",
+    what: "An OpenSSH user certificate signed by your own SSH CA, used together with the private key below. Encrypted at rest and sent only to the scan node that runs the job.",
+    why: "A short-lived certificate expires on its own, so a copied credential stops working.",
+    example: "ssh-ed25519-cert-v01@openssh.com AAAA... zs-cbom valid for 8 hours.",
+  },
+  // src: frontend/components/cbom/sources/ServersTab.tsx:1278-1289, backend/utilities/cbom_sources/kinds.py:20 — secrets up to 256 KB, encrypted at rest
+  "cbsrc.servers.private_key": {
+    label: "Private key",
+    what: "The private key that goes with the SSH certificate, in OpenSSH or PEM format. Encrypted at rest, never shown again, sent only to the scan node that runs the job.",
+    why: "Without the matching private key the certificate cannot be used to log in.",
+    example: "-----BEGIN OPENSSH PRIVATE KEY----- ....",
+  },
+  // src: frontend/components/cbom/sources/ServersTab.tsx:1296-1306 — the CA's active key signs the node's key for each job
+  "cbsrc.servers.ssh_ca": {
+    label: "SSH CA",
+    what: "The ZeroShield SSH CA (created on Fleet > SSH CA) whose active key signs the scan node's own key for each job; the certificate lives for minutes. Rotating the CA needs no change here.",
+    why: "Servers trust one CA instead of a key per node, and no long-lived credential exists to steal.",
+    example: "prod-ssh-ca, trusted on the servers through TrustedUserCAKeys.",
+  },
+  // src: frontend/components/cbom/sources/ServersTab.tsx:175, frontend/components/cbom/sources/ServersTab.tsx:1309-1312 — zs-<team>-<name>, one per line
+  "cbsrc.servers.principals": {
+    label: "Principals",
+    what: "The principals written into each job's certificate, one per line, in the form zs-<team id>-<name>. A server accepts the certificate only for a login whose principals file lists one of them.",
+    why: "Principals decide which servers accept the certificate, so prod and test servers can trust different ones.",
+    example: "zs-12-prod, listed in /etc/ssh/zs-cbom/principals/zs-cbom on the production servers.",
+  },
+  // src: frontend/components/cbom/sources/ServersTab.tsx:1314-1318 — source-address of the certificate; /16 or narrower (IPv6 /48)
+  "cbsrc.servers.source_addresses": {
+    label: "Addresses the servers see the node as",
+    what: "The source-address restriction written into each certificate: the addresses or networks (/16 or narrower, IPv6 /48) the servers see the node connect from. Blank uses the node's own addresses.",
+    why: "A certificate copied off the node cannot be used from anywhere else.",
+    example: "10.20.1.15, or 10.20.1.0/28 when the node sits behind a NAT pool.",
+  },
+  // src: frontend/components/cbom/sources/ServersTab.tsx:135-140 — HashiCorp Vault, CyberArk, AWS Secrets Manager, Azure Key Vault
+  "cbsrc.common.vault_provider": {
+    label: "Vault",
+    what: "The secrets manager the scan node reads the credential from when a job runs: HashiCorp Vault, CyberArk, AWS Secrets Manager or Azure Key Vault.",
+    why: "The password stays in your vault and is never stored by ZeroShield.",
+    example: "CyberArk, where the svc-zscbom password is already rotated daily.",
+  },
+  // src: frontend/components/cbom/sources/ServersTab.tsx:1344-1351 — only the reference is stored
+  "cbsrc.common.vault_path": {
+    label: "Secret path",
+    what: "Where the secret lives in your vault. The scan node reads it when the job runs; ZeroShield stores only this reference. Only a team admin can add or change it.",
+    why: "A wrong path fails every job of the source at the login step.",
+    example: "secret/data/cbom/linux-prod for HashiCorp Vault KV v2.",
+  },
+  // src: frontend/components/cbom/sources/ServersTab.tsx:1367-1376, backend/utilities/cbom_sources/kinds.py:20 — encrypted at rest; blank on edit keeps the saved one
+  "cbsrc.common.password": {
+    label: "Password",
+    what: "The account's password. Encrypted at rest by ZeroShield, sent only to the scan node that runs the job and never shown again. When editing, leave it blank to keep the saved one.",
+    why: "Changing the targets, port, login or node clears a stored password, so it is never sent to a host it was not meant for.",
+    example: "The password of svc-zscbom, rotated every 90 days.",
+  },
+  // src: frontend/components/cbom/sources/ServersTab.tsx:141-170, frontend/components/cbom/sources/ServersTab.tsx:1384-1398 — Tier 1 read-only commands; Tier 2 adds an exact sudo allowlist
+  "cbsrc.servers.tier": {
+    label: "Privilege tier",
+    what: "Tier 1 runs read-only commands as the login user: packages, crypto configs, readable keys, certificates and keystores. Tier 2 adds an exact sudo allowlist (no wildcards) to see which process loads which crypto library, socket owners, the effective SSH config and disk encryption.",
+    why: "Tier 2 finds crypto in use at runtime that config files alone do not show, at the cost of a sudoers entry.",
+    example: "Tier 2 shows that java on port 8443 loads libssl 1.1.1 with TLS 1.0 enabled.",
+  },
+  // src: frontend/components/cbom/sources/ServersTab.tsx:1231-1240 — the public key for the login user
+  "cbsrc.servers.node_key_install": {
+    label: "Install the node's key",
+    what: "Copy this public key into authorized_keys of the login user on every server of this source.",
+    why: "Until the key is installed, the connection test reports Login failed for each server.",
+    example: "ssh-copy-id is not needed: echo 'ssh-ed25519 AAAA...' >> ~zs-cbom/.ssh/authorized_keys.",
+  },
+  // src: backend/utilities/cbom_sources/kinds.py:171 — 1 to 64, default 8
+  "cbsrc.servers.parallel": {
+    label: "Servers in parallel",
+    what: "How many servers the scan node reads at the same time, 1 to 64 (default 8).",
+    why: "Higher finishes large ranges sooner but adds load on the node and the network.",
+    example: "8 reads a /24 of 254 servers in about 32 rounds.",
+  },
+  // src: backend/utilities/cbom_sources/kinds.py:172 — 10 to 3,600 s, default 300
+  "cbsrc.servers.timeout": {
+    label: "Timeout per server",
+    what: "How long the node may spend on one server, 10 to 3,600 seconds (default 300). A server that takes longer is reported as timed out and the job moves on.",
+    why: "One hung server cannot stall the whole run.",
+    example: "600 for servers with very large keystores to read.",
+  },
+  // src: frontend/components/cbom/sources/ServersTab.tsx:1514-1545 — team network window, any time, or a custom copy
+  "cbsrc.common.window": {
+    label: "Scan window",
+    what: "When collection may run: the team scan window set on the Network tab, any time, or a custom copy of the weekly hours for this source. Connection tests always run straight away.",
+    why: "Keeps scans out of business hours or change freezes on production systems.",
+    example: "Network window (team): weekdays 22:00 to 06:00 IST.",
+  },
+  // src: frontend/components/cbom/sources/ServersTab.tsx:919-923, frontend/components/cbom/sources/ServersTab.tsx:117-124 — Linux, Windows or Active Directory sources
+  "cbsrc.servers.form": {
+    label: "Add servers",
+    what: "A server source is one list of Linux servers, Windows servers or an Active Directory, read through one scan node with a read-only account. Pick the type, then where the servers are and how to log in.",
+    why: "Servers hold most of the keys, certificates and crypto libraries an inventory has to cover.",
+    example: "Linux: 10.20.0.0/24 through node-dc1, login zs-cbom with the node's SSH key.",
+  },
+  // src: frontend/components/cbom/sources/ServersTab.tsx:513-546 — each source with its target count after exclusions
+  "cbsrc.servers.list": {
+    label: "Configured server sources",
+    what: "The server sources of this team with their type, target count after exclusions, scan node, privilege tier and last connection test.",
+    why: "Sources here are what a run on the Review & Run tab collects from.",
+    example: "dc-mumbai-linux · Linux · 256 targets · node-dc1 · Tier 1 · Passed.",
+  },
+  // src: frontend/components/cbom/sources/ServersTab.tsx:141-170, frontend/components/cbom/sources/ServersTab.tsx:1594-1598 — the command lists; nothing is installed
+  "cbsrc.servers.what_runs": {
+    label: "Exactly what runs on each server",
+    what: "The exact commands the node runs on each server for the chosen type and tier. Nothing is installed; output is parsed on the node.",
+    why: "Your change board can review every command before approving the scan.",
+    example: "Tier 1 runs openssl version -a and cat /etc/ssh/sshd_config, among others.",
+  },
+  // src: backend/utilities/cbom_sources/jobs.py:302, backend/utilities/cbom_sources/jobs.py:670-674 — up to 5 sampled targets
+  "cbsrc.servers.test": {
+    label: "Connection test",
+    what: "The result of the last connection test: up to 5 sampled targets, each checked for reachability, login and privilege. Passed when every sample is ready, Partly ready when some are.",
+    why: "It proves the node, network path and credential work before a full run spends credits.",
+    example: "4 of 5 samples ready: 10.20.0.9 refused the login.",
+  },
+  // src: frontend/components/cbom/sources/ServersTab.tsx:117-124 — the source kind
+  "cbsrc.col.type": {
+    label: "Type",
+    what: "The kind of source: what it reads and how.",
+    why: "Each type uses a different protocol, port and credential.",
+    example: "Linux servers over SSH; Active Directory over LDAPS.",
+  },
+  // src: backend/utilities/cbom_sources/jobs.py:302 — targets after exclusions
+  "cbsrc.col.targets": {
+    label: "Targets",
+    what: "How many addresses or names this source covers after its never-scan list and the team never-scan list are removed.",
+    why: "Collection credits and run time grow with the number of targets.",
+    example: "254 for 10.20.0.0/24 minus the two gateways.",
+  },
+  // src: frontend/components/cbom/sources/ServersTab.tsx:963-972 — the scan node that runs the source's jobs
+  "cbsrc.col.node": {
+    label: "Node",
+    what: "The scan node that runs this source's jobs.",
+    why: "An offline node means the source cannot be tested or collected.",
+    example: "node-dc1 · Online.",
+  },
+  // src: frontend/components/cbom/sources/ServersTab.tsx:1384-1398 — Tier 1 or Tier 2
+  "cbsrc.col.tier": {
+    label: "Tier",
+    what: "The privilege tier of a Linux source: Tier 1 without sudo, Tier 2 with the exact sudo allowlist.",
+    why: "Tier 2 sees runtime crypto use that Tier 1 cannot.",
+    example: "Tier 2 on the application servers, Tier 1 elsewhere.",
+  },
+  // src: backend/utilities/cbom_sources/jobs.py:670-684 — passed, partial, failed, could not test
+  "cbsrc.col.last_test": {
+    label: "Last test",
+    what: "The result of the latest connection test: Not tested, Testing, Passed (every sample ready), Partly ready, Failed or Could not test, with its summary below.",
+    why: "A source that has not passed a test is likely to fail its collection jobs.",
+    example: "Partly ready · 3 of 5 samples ready.",
+  },
+  // src: backend/utilities/cbom_sources/jobs.py:302 — sampled target
+  "cbsrc.test.server": {
+    label: "Server",
+    what: "One of the targets sampled for the connection test.",
+    why: "Samples stand in for the whole range, so fix their failures before running.",
+    example: "10.20.0.17.",
+  },
+  // src: frontend/components/cbom/sources/ServersTab.tsx:1764-1766 — yes, no, or waiting
+  "cbsrc.test.reachable": {
+    label: "Reachable",
+    what: "Whether the scan node could open a connection to the server on the configured port.",
+    why: "No here points at routing, a firewall or the wrong port, not the credential.",
+    example: "No: port 22 is filtered between node-dc1 and 10.20.0.17.",
+  },
+  // src: frontend/components/cbom/sources/ServersTab.tsx:1764-1767 — yes, no, or waiting
+  "cbsrc.test.login": {
+    label: "Login",
+    what: "Whether the login user could authenticate with the configured credential.",
+    why: "No here means the key, certificate or password is not accepted on that server.",
+    example: "No: the node's key is not in authorized_keys of zs-cbom.",
+  },
+  // src: frontend/components/cbom/sources/ServersTab.tsx:1755, frontend/components/cbom/sources/ServersTab.tsx:1768 — sudo allowlist (Linux Tier 2) or Windows group
+  "cbsrc.test.privilege": {
+    label: "Privilege",
+    what: "Linux Tier 2: whether the sudo allowlist works. Windows: whether the account may open a WinRM shell (Remote Management Users with WinRM access). Not needed for Linux Tier 1.",
+    why: "Without it, runtime crypto use is not collected even though the login works.",
+    example: "No: the sudoers file was not installed on 10.20.0.17.",
+  },
+  // src: frontend/components/cbom/sources/ServersTab.tsx:1769-1774 — the sample's status and note
+  "cbsrc.test.result": {
+    label: "Result",
+    what: "The sample's overall status with the node's note, for example Ready, Unreachable or Login failed.",
+    why: "The note names the exact cause to fix.",
+    example: "Login failed · Permission denied (publickey).",
+  },
+  // ────────────────────────────────────────────────────────────── CBOM Sources: source metadata (components/cbom/sources/SourceMetadata.tsx)
+  // src: backend/utilities/cbom_sources/kinds.py:55-56, backend/utilities/cbom_sources/kinds.py:67, backend/utilities/cbom_sources/waves.py:120 — up to 128 characters; the default remediation owner
+  "cbsrc.meta.owner": {
+    label: "Owner",
+    what: "The team or person who answers for this source, up to 128 characters. Remediation waves use it as the owner of this source's findings.",
+    why: "A finding without an owner is rarely fixed; this routes it to the right people.",
+    example: "Payments platform team.",
+  },
+  // src: backend/utilities/cbom_sources/kinds.py:55-56, backend/utilities/cbom_sources/kinds.py:68 — up to 128 characters
+  "cbsrc.meta.application": {
+    label: "Application",
+    what: "The business application this source serves, up to 128 characters, shown with its findings in reports and the roadmap.",
+    why: "Migration is planned per application, so findings grouped by it are easier to schedule.",
+    example: "UPI switch.",
+  },
+  // src: backend/utilities/cbom_sources/kinds.py:55-56, backend/utilities/cbom_sources/kinds.py:69 — public, internal, confidential or restricted
+  "cbsrc.meta.classification": {
+    label: "Data classification",
+    what: "How sensitive the data this source handles is: Public, Internal, Confidential or Restricted.",
+    why: "Sensitive data protected by quantum-vulnerable crypto is the first thing to migrate.",
+    example: "Restricted for systems holding card or Aadhaar data.",
+  },
+  // src: backend/utilities/cbom_sources/kinds.py:70, backend/utilities/cbom_sources/posture.py:10-11 — 0 to 100 years; Mosca's X
+  "cbsrc.meta.lifetime": {
+    label: "Data must stay secret for (years)",
+    what: "How many years this source's data must stay confidential, 0 to 100: Mosca's X. With the team's migration time (Y) and quantum timeline (Z), X + Y > Z means the data is already at risk.",
+    why: "Long-lived data encrypted with RSA or ECDH today can be recorded now and decrypted later (harvest now, decrypt later).",
+    example: "10 for loan records kept a decade: with Y = 3 and Z = 10, 13 > 10, so it is at risk now.",
+  },
+  // src: backend/utilities/cbom_sources/kinds.py:57, backend/utilities/cbom_sources/kinds.py:71 — up to 32 characters, as the CMDB names it
+  "cbsrc.meta.environment": {
+    label: "Environment",
+    what: "The environment of this source as your CMDB names it, up to 32 characters. A CMDB import fills it in.",
+    why: "Lets you plan production fixes separately from test systems.",
+    example: "production.",
+  },
+  // src: backend/utilities/cbom_sources/kinds.py:54, backend/utilities/cbom_sources/posture.py:39, backend/utilities/cbom_sources/posture.py:99 — overrides the derived exposure; internet x1.5
+  "cbsrc.meta.exposure": {
+    label: "Internet exposure",
+    what: "Overrides the internet exposure worked out from the collected facts: From collected facts (no override), Internet-facing, Internal or Unknown. Internet-facing multiplies the risk score of this source's findings by 1.5.",
+    why: "Systems reachable from the internet are attacked first, so their weak crypto ranks higher.",
+    example: "Internet-facing for the API gateway servers behind the public load balancer.",
+  },
+  // src: backend/utilities/cbom_sources/kinds.py:53, backend/utilities/cbom_sources/posture.py:36, backend/utilities/cbom_sources/posture.py:192-193 — low 0.5, medium 1, high 1.5, critical 2
+  "cbsrc.meta.criticality": {
+    label: "Business criticality",
+    what: "How critical the systems of the selected sources are to the business. It scales the risk score of their findings: Low x0.5, Medium x1 (the default), High x1.5, Critical x2.",
+    why: "The same weak cipher matters more on a payment switch than on a test box.",
+    example: "Critical: a High finding (7) on an internet-facing source scores 7 x 2 x 1.5 = 21.",
+  },
+  // src: backend/utilities/cbom_sources/kinds.py:59-62 — metadata never cancels a job or resets the test
+  "cbsrc.meta.bulk": {
+    label: "Owners, applications and data",
+    what: "Set the owner, application, data classification, data lifetime, environment and criticality of several sources at once. These describe the source, so saving them never cancels a job or resets its connection test.",
+    why: "Ownership and sensitivity drive risk scores and remediation waves for every run that follows.",
+    example: "Select the 4 Mumbai sources and set Owner to Payments platform team.",
+  },
+  // src: frontend/components/cbom/sources/SourceMetadata.tsx:200-210 — which sources the bulk edit changes
+  "cbsrc.meta.select": {
+    label: "Select sources",
+    what: "Choose the sources the values below are written to; the first box selects every source.",
+    why: "Only selected sources change; the others keep their values.",
+    example: "Tick dc-mumbai-linux and dc-mumbai-windows, then Apply.",
+  },
+  // ────────────────────────────────────────────────────────────── CBOM Sources: Kubernetes, databases, HSMs and key managers (components/cbom/sources/ClustersDatabasesTab.tsx)
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:373 — read through a scan node
+  "cbsrc.k8sdb.intro": {
+    label: "Kubernetes clusters and databases",
+    what: "Kubernetes clusters, databases, HSMs and key managers, each read through a scan node inside your network.",
+    why: "Clusters and databases terminate much of your TLS and store keys and certificates that servers alone do not show.",
+    example: "prod-payments cluster and pg-core-01 database, both through node-dc1.",
+  },
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:425-470 — clusters, databases, HSMs and key managers of the team
+  "cbsrc.k8sdb.list": {
+    label: "Configured clusters and databases",
+    what: "The cluster, database, HSM and key manager sources of this team with their endpoint, access level or login, scan node and last connection test.",
+    why: "These sources are what a run collects from on the Review & Run tab.",
+    example: "pg-core-01 · PostgreSQL · pg-core-01.bank.local:5432 · zs_cbom · Passed.",
+  },
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:466 — API server URL, host and port, module or KMIP host
+  "cbsrc.col.endpoint": {
+    label: "Endpoint",
+    what: "Where the source is reached: the cluster's API server URL, the database host and port, the PKCS#11 module, or the KMIP server.",
+    why: "The scan node must reach this endpoint for the source's jobs to succeed.",
+    example: "https://10.30.0.5:6443 for a cluster.",
+  },
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:467 — tier for clusters, login for databases
+  "cbsrc.col.access": {
+    label: "Access / login",
+    what: "How the source is read: the access tier of a cluster (Tier 1 without Secrets, Tier 2 with) or the login of a database.",
+    why: "It shows how much each source's credential can see.",
+    example: "Tier 1 for prod-payments; zs_cbom for pg-core-01.",
+  },
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:906-911 — read through the Kubernetes API with a read-only ClusterRole
+  "cbsrc.k8s.form": {
+    label: "Kubernetes cluster",
+    what: "A Kubernetes cluster read through its API with a read-only ClusterRole: versions, API server and ingress TLS, cert-manager certificates, keys in ConfigMaps and service mesh mTLS policy.",
+    why: "Clusters hold many certificates that rotate on their own and are easy to lose track of.",
+    example: "prod-payments, https://10.30.0.5:6443, Tier 1, through node-dc1.",
+  },
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:914-915 — 1-64 characters
+  "cbsrc.k8s.name": {
+    label: "Cluster name",
+    what: "A name for this cluster, 1 to 64 letters, digits, spaces, dots, dashes or underscores, shown in lists, run results and reports.",
+    why: "Each asset found records it as its source.",
+    example: "prod-payments.",
+  },
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:917-928 — the Kubernetes API endpoint
+  "cbsrc.k8s.api_url": {
+    label: "API server URL",
+    what: "The HTTPS address of the cluster's Kubernetes API server, as in the server field of your kubeconfig.",
+    why: "The scan node talks only to this URL; it must be reachable from the node.",
+    example: "https://10.30.0.5:6443.",
+  },
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:930-936, backend/utilities/cbom_sources/kinds.py:21 — PEM up to 64 KB; optional with certificate-authority-data
+  "cbsrc.k8s.ca": {
+    label: "Cluster CA certificate",
+    what: "The PEM certificate of the cluster's CA, used to verify the API server before the token is sent. Optional when the kubeconfig embeds certificate-authority-data.",
+    why: "Without verification a spoofed API server could capture the service account token.",
+    example: "The ca.crt from /etc/kubernetes/pki on a control plane node.",
+  },
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:982-991 — kubeconfig or token from vault
+  "cbsrc.k8s.credential": {
+    label: "Cluster credential",
+    what: "Upload kubeconfig: encrypted at rest and sent only to the scan node. Token from vault: the node fetches it when the job runs (team admins only).",
+    why: "A token kept in your vault never rests on ZeroShield.",
+    example: "A kubeconfig for the service account zs-cbom bound to the ClusterRole below.",
+  },
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:887-891, frontend/components/cbom/sources/ClustersDatabasesTab.tsx:999-1010 — exec and auth-provider plugins refused
+  "cbsrc.k8s.kubeconfig": {
+    label: "Kubeconfig file",
+    what: "The kubeconfig of the zs-cbom service account. It is sent once, encrypted at rest and sent only to the scan node that runs the job. Configs that use exec or auth-provider plugins are refused.",
+    why: "Plugins would run commands on the scan node; a static token keeps the node's footprint read-only.",
+    example: "zs-cbom.kubeconfig with a token for the zs-cbom service account.",
+  },
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1045-1046 — up to 128 characters; blank uses current-context
+  "cbsrc.k8s.context": {
+    label: "Context",
+    what: "Which context of the kubeconfig to use, up to 128 characters. Blank uses its current-context.",
+    why: "A kubeconfig with several clusters would otherwise read whichever was last selected.",
+    example: "prod-payments-admin.",
+  },
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1065-1086 — Tier 1 without Secrets; Tier 2 reads TLS Secrets, private keys dropped unparsed
+  "cbsrc.k8s.tier": {
+    label: "Access tier",
+    what: "Tier 1 reads versions, API server and ingress TLS, Secret names, cert-manager Certificates, certificates in ConfigMaps and mesh mTLS policy. Tier 2 also reads the certificates of TLS Secrets; their private keys are dropped unparsed and never stored or sent.",
+    why: "Tier 2 covers certificates kept only in Secrets, but its token can read Secret values.",
+    example: "Tier 2 finds the expiring ingress certificate stored in secret payments-tls.",
+  },
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1088-1096 — Kubernetes cannot grant Secret names without values
+  "cbsrc.k8s.tier2_warning": {
+    label: "Tier 2 can read Secret values",
+    what: "Kubernetes cannot grant access to Secret names without their values, so a Tier 2 token can read them. Only metadata such as fingerprints is sent to ZeroShield.",
+    why: "The token is as sensitive as the Secrets it can read; protect it accordingly.",
+    example: "Try Tier 2 on a staging cluster before production.",
+  },
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1129-1131 — link the cloud account that runs it
+  "cbsrc.k8s.managed": {
+    label: "Managed cluster",
+    what: "Tick for EKS, AKS or GKE clusters to link the cloud account source that runs the cluster.",
+    why: "The cloud account holds the encryption-at-rest settings of the cluster's Secrets.",
+    example: "EKS cluster prod-payments, linked to the AWS account aws-prod.",
+  },
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1134-1139 — stored as a link until cloud collection reads it
+  "cbsrc.k8s.cloud": {
+    label: "Cloud account",
+    what: "The cloud account source that runs this managed cluster. Secret encryption at rest is read from this account once cloud collection is available; until then it is stored as a link.",
+    why: "Ties the cluster's findings to the account where the fix is made.",
+    example: "aws-prod · AWS account.",
+  },
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1379-1383, backend/utilities/cbom_sources/kinds.py:347-356 — read-only login
+  "cbsrc.db.form": {
+    label: "Database",
+    what: "A database server read with a read-only login: its TLS setup, certificates and encryption settings. Run the grant shown below once as an admin.",
+    why: "Databases hold the most sensitive data; weak TLS or unencrypted storage there is a top finding.",
+    example: "pg-core-01.bank.local:5432, login zs_cbom, Require TLS with the bank CA.",
+  },
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1387-1388 — 1-64 characters
+  "cbsrc.db.name": {
+    label: "Name",
+    what: "A name for this database source, 1 to 64 characters, shown in lists, run results and reports.",
+    why: "Each asset found records it as its source.",
+    example: "pg-core-01.",
+  },
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:61-68, backend/utilities/cbom_sources/kinds.py:344 — PostgreSQL, MySQL/MariaDB, SQL Server, Oracle, MongoDB, Redis
+  "cbsrc.db.engine": {
+    label: "Engine",
+    what: "The database engine: PostgreSQL, MySQL / MariaDB, SQL Server, Oracle, MongoDB or Redis. It sets the default port, the grant to run and how the login is protected.",
+    why: "Each engine exposes its crypto settings differently, so the wrong engine reads nothing.",
+    example: "SQL Server, default port 1433.",
+  },
+  // src: backend/utilities/cbom_sources/kinds.py:349 — up to 253 characters
+  "cbsrc.db.host": {
+    label: "Host",
+    what: "The database server's hostname or IP address, up to 253 characters, as the scan node reaches it.",
+    why: "Use the name in the server's certificate so the TLS check passes.",
+    example: "pg-core-01.bank.local.",
+  },
+  // src: backend/utilities/cbom_sources/kinds.py:344, backend/utilities/cbom_sources/kinds.py:350 — 1-65535; engine default when blank
+  "cbsrc.db.port": {
+    label: "Port",
+    what: "The database port, 1 to 65535. Blank uses the engine's default: PostgreSQL 5432, MySQL 3306, SQL Server 1433, Oracle 1521, MongoDB 27017, Redis 6379.",
+    why: "A wrong port fails the connection test before the login is tried.",
+    example: "6432 when PostgreSQL sits behind PgBouncer.",
+  },
+  // src: backend/utilities/cbom_sources/kinds.py:351, backend/utilities/cbom_sources/kinds.py:27 — up to 64 characters; optional for engines that run without authentication
+  "cbsrc.db.login": {
+    label: "Login",
+    what: "The read-only login the node connects with, up to 64 characters. Optional for MongoDB and Redis servers that run without authentication.",
+    why: "A dedicated login with only the grants below limits what a leaked password can do.",
+    example: "zs_cbom.",
+  },
+  // src: backend/utilities/cbom_sources/kinds.py:356 — up to 128 characters; required for Oracle
+  "cbsrc.db.database": {
+    label: "Database or service name",
+    what: "For Oracle, the service (PDB) the login and grants belong to (required). For other engines, the database to connect to first (optional); server-wide settings are read from there.",
+    why: "Oracle logins exist per service, so a wrong name fails the login.",
+    example: "ORCLPDB1 for Oracle; postgres for PostgreSQL.",
+  },
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1444-1452 — password or password from vault
+  "cbsrc.db.credential": {
+    label: "Database credential",
+    what: "Password: encrypted at rest and sent only to the scan node. Password from vault: the node fetches it when the job runs (team admins only).",
+    why: "A vault reference keeps the password out of ZeroShield entirely.",
+    example: "Password from vault at secret/zs-cbom/db/pg-core-01.",
+  },
+  // src: backend/utilities/cbom_sources/kinds.py:20, backend/utilities/cbom_sources/kinds.py:262-271 — encrypted at rest; MySQL, Redis and SQL Server need TLS with a CA
+  "cbsrc.db.password": {
+    label: "Database password",
+    what: "The password of the login. Encrypted at rest, never shown again, sent only to the scan node. MySQL, Redis and SQL Server logins also need Require TLS and the CA certificate, so the password only goes to the real server.",
+    why: "Those engines would otherwise send the password in a form an impostor can read.",
+    example: "The password of zs_cbom, with the bank CA uploaded below.",
+  },
+  // src: backend/utilities/cbom_sources/kinds.py:354 — on by default
+  "cbsrc.db.require_tls": {
+    label: "Require TLS to the database",
+    what: "On (the default): the node connects only over TLS. Off: it may connect without TLS and records that the server allows plaintext.",
+    why: "TLS keeps the login and the data in transit away from anyone on the network path.",
+    example: "Leave on; turn off only for a legacy server you are documenting as plaintext.",
+  },
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1489-1505, backend/utilities/cbom_sources/kinds.py:355 — PEM up to 64 KB; required with a password for MySQL, Redis, SQL Server
+  "cbsrc.db.ca": {
+    label: "Database CA certificate",
+    what: "The PEM certificate of the CA that signed the database server's certificate. The node checks the server against it before sending a password. Required with a password for MySQL, Redis and SQL Server; optional otherwise.",
+    why: "It proves the node is talking to the real database, not an impostor collecting credentials.",
+    example: "bank-root-ca.pem.",
+  },
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1775-1779, frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1615-1626 — attributes only, never key values
+  "cbsrc.km.form": {
+    label: "HSM or key manager",
+    what: "An HSM or token read through PKCS#11, or a KMIP key manager. Keys are inventoried by their attributes only: type, size, flags, state and dates. No key value ever leaves the device.",
+    why: "Keys in HSMs sign payments and certificates; their algorithms and sizes decide the post-quantum migration work.",
+    example: "hsm-payments-01, a Luna HSM read through module luna.",
+  },
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1782-1783 — 1-64 characters
+  "cbsrc.km.name": {
+    label: "Name",
+    what: "A name for this HSM or key manager source, 1 to 64 characters, shown in lists, run results and reports.",
+    why: "Each key found records it as its source.",
+    example: "hsm-payments-01.",
+  },
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1786-1795 — PKCS#11 or KMIP
+  "cbsrc.km.provider": {
+    label: "Kind of key manager",
+    what: "HSM or token (PKCS#11): read through the vendor library on the scan node. KMIP server: read over TLS with a client certificate.",
+    why: "It decides how the node connects and which credential it needs.",
+    example: "KMIP for a Thales CipherTrust Manager.",
+  },
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1801-1808 — mapped in ZS_PKCS11_MODULES on the node
+  "cbsrc.km.module": {
+    label: "Module name",
+    what: "The name the scan node's operator maps to a PKCS#11 library in ZS_PKCS11_MODULES on the node. ZeroShield never sends a library path.",
+    why: "Only libraries the node's operator approved can be loaded.",
+    example: "luna, mapped to /usr/safenet/lunaclient/lib/libCryptoki2_64.so.",
+  },
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1810-1811 — up to 32 characters; blank reads every initialised token
+  "cbsrc.km.token": {
+    label: "Token label",
+    what: "The label of the token or partition to read, up to 32 characters. Blank reads every initialised token the module shows.",
+    why: "Limits the read to the partition you mean when an HSM is shared.",
+    example: "payments-partition.",
+  },
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1816-1822 — PIN, PIN from vault; optional
+  "cbsrc.km.pin_source": {
+    label: "PIN source",
+    what: "The crypto user PIN, typed here (encrypted at rest) or fetched from your vault when the job runs. Optional: without it only public objects are read.",
+    why: "Private and secret keys are only listed after a login with the PIN.",
+    example: "PIN from vault for the crypto user of payments-partition.",
+  },
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1827, backend/utilities/cbom_sources/kinds.py:20 — encrypted at rest
+  "cbsrc.km.pin": {
+    label: "User PIN",
+    what: "The PIN of the crypto user or partition role. Encrypted at rest, never shown again, sent only to the scan node; the session it opens is read-only.",
+    why: "Without it the inventory misses the private keys, which matter most.",
+    example: "The crypto user PIN of payments-partition.",
+  },
+  // src: backend/utilities/cbom_sources/kinds.py:26 — up to 253 characters
+  "cbsrc.km.host": {
+    label: "KMIP host",
+    what: "The KMIP server's hostname or IP address as the scan node reaches it.",
+    why: "Use the name in the server's certificate so the TLS check passes.",
+    example: "kms01.bank.local.",
+  },
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1847 — default 5696
+  "cbsrc.km.port": {
+    label: "KMIP port",
+    what: "The KMIP port, default 5696.",
+    why: "A wrong port fails the connection test before TLS starts.",
+    example: "5696.",
+  },
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1851-1857 — optional PEM; verifies the KMIP server
+  "cbsrc.km.ca": {
+    label: "Server CA certificate",
+    what: "Optional PEM certificate of the CA that issued the KMIP server's certificate. With it the node verifies the server; TLS client authentication never reveals the client key either way.",
+    why: "Verifying the server proves the inventory comes from your real key manager.",
+    example: "The CipherTrust root CA certificate.",
+  },
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1860, backend/utilities/cbom_sources/kinds.py:20 — PEM, encrypted at rest
+  "cbsrc.km.client_cert": {
+    label: "Client certificate",
+    what: "The PEM client certificate the node presents to the KMIP server. Encrypted at rest and sent only to the scan node.",
+    why: "KMIP servers admit only clients with a certificate they trust.",
+    example: "zs-cbom-client.crt issued by the KMIP server's CA.",
+  },
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1861, backend/utilities/cbom_sources/kinds.py:20 — PEM, unencrypted; encrypted at rest
+  "cbsrc.km.client_key": {
+    label: "Client private key",
+    what: "The unencrypted PEM private key of the client certificate. Encrypted at rest by ZeroShield, never shown again, sent only to the scan node.",
+    why: "Give the KMIP client read-only rights so this key can list objects but not export them.",
+    example: "-----BEGIN PRIVATE KEY----- ....",
+  },
+  // ────────────────────────────────────────────────────────────── CBOM Sources: Cloud & Identity (components/cbom/sources/CloudIdentityTab.tsx)
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:70-74 — AWS by role, Azure by app registration, Google Cloud by service account
+  "cbsrc.cloud.connect": {
+    label: "Connect a cloud account",
+    what: "Connect an AWS account (ZeroShield assumes a read-only role with your external ID, no keys exchanged), an Azure subscription (Key Vault metadata through an app registration) or Google Cloud (KMS, CA Service and Secret Manager metadata through a service account).",
+    why: "Cloud KMS keys, certificates and secrets are a large part of the crypto estate and are invisible to network scans.",
+    example: "AWS account 111122223333 with the ZeroShieldCBOMReader role in eu-west-1 and ap-south-1.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:500-512 — the checks of the last validation
+  "cbsrc.cloud.validation": {
+    label: "Validation",
+    what: "The checks of the last validation of the selected account: each read-only call ZeroShield tried and whether it passed, failed, was skipped or hit an error.",
+    why: "An account that fails a check is collected only partly, so fix the role or permission it names.",
+    example: "kms:ListKeys in ap-south-1 · Fail: the role is missing kms:ListKeys.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:516-519 — 4 credits per account per run
+  "cbsrc.cloud.list": {
+    label: "Connected cloud accounts",
+    what: "The cloud accounts of this team. Accounts that pass validation are scanned read-only from ZeroShield's cloud, 4 credits per account per run.",
+    why: "Only accounts listed here are part of a run's cloud inventory.",
+    example: "payments-prod · AWS · One account · 2 regions · Valid.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:543 — the provider's account or tenant
+  "cbsrc.cloud.col.account": {
+    label: "Account",
+    what: "The cloud provider and the account, subscription or project identifier.",
+    why: "Tells you where to make a fix in the provider's console.",
+    example: "AWS 111122223333.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1003-1012 — one account or a whole AWS Organization
+  "cbsrc.cloud.col.scope": {
+    label: "Scope",
+    what: "What the connection covers: one account, or every member account of an AWS Organization through a StackSet.",
+    why: "An Organization connection picks up new member accounts without another setup.",
+    example: "Whole AWS Organization · 37 accounts.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1143-1150 — regions read in each run
+  "cbsrc.cloud.col.regions": {
+    label: "Regions",
+    what: "For an AWS account, how many regions are read in each run; resources in other regions are not inventoried. A dash for Azure and Google Cloud.",
+    why: "Keys and certificates in a forgotten region are a common blind spot.",
+    example: "2: eu-west-1 and ap-south-1.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:547 — time of the last validation
+  "cbsrc.cloud.col.validated": {
+    label: "Last validated",
+    what: "When the account was last validated (ZeroShield tried each read-only call), or Never.",
+    why: "A role changed since then may make the next run fail.",
+    example: "12 Nov 2026, 10:42 am IST.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:123-128, frontend/components/cbom/sources/CloudIdentityTab.tsx:548 — result of the last validation
+  "cbsrc.cloud.col.status": {
+    label: "Status",
+    what: "The result of the last validation: Not tested, Testing, Passed (every check passed), Partly ready (some checks failed), Failed or Could not test. Hover the badge for its summary.",
+    why: "Only valid accounts are scanned fully in a run.",
+    example: "Partly ready: KMS passed, ACM was denied.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:614 — CAs, CLM tools and your domains
+  "cbsrc.cloud.certificates": {
+    label: "Certificates",
+    what: "Where your certificates come from: certificate authorities and CLM tools you connect, and the domains you own (searched in Certificate Transparency logs where available).",
+    why: "Certificates issued outside your managed CAs are the ones that expire unnoticed.",
+    example: "AD CS through node-dc1, and bank.in searched in CT logs.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:84-95, frontend/components/cbom/sources/CloudIdentityTab.tsx:141, backend/utilities/cbom_sources/kinds.py:478 — AD CS, Vault and EJBCA read by a scan node; others stored only
+  "cbsrc.cloud.cas": {
+    label: "Certificate authorities and CLM",
+    what: "Microsoft AD CS, HashiCorp Vault PKI and EJBCA are read by a scan node inside your network. AWS Private CA, Venafi, Keyfactor, DigiCert and others are saved for the certificate collector; they are not validated or collected yet.",
+    why: "Your CA knows every certificate it issued, including ones on hosts no scan reaches.",
+    example: "AD CS on ca01.bank.local, read by node-dc1 over WinRM.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:663, frontend/components/cbom/sources/CloudIdentityTab.tsx:142 — public OIDC and SAML metadata, free
+  "cbsrc.cloud.idps": {
+    label: "Identity providers",
+    what: "Signing keys and certificates of your identity providers, read by ZeroShield's cloud from each provider's public OIDC and SAML metadata. Free.",
+    why: "An IdP signing with RSA-2048 or SHA-1 signs every login; it is a key migration target.",
+    example: "Okta at https://bank.okta.com: 2 signing keys, RS256, one expiring in 30 days.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1003-1012 — CloudFormation stack or StackSet
+  "cbsrc.aws.scope": {
+    label: "Scope",
+    what: "One account: create a CloudFormation stack in that account. Whole AWS Organization: deploy a StackSet from the management account to every member account.",
+    why: "It decides which template you deploy and which accounts are inventoried.",
+    example: "Whole AWS Organization for 37 accounts managed by Control Tower.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1039-1070 — off by default; template parameters follow the switches
+  "cbsrc.aws.optional_reads": {
+    label: "Optional reads",
+    what: "Extra permissions you may grant the read-only role, off by default. The template's parameters follow these switches; changing one later means updating the stack and validating again.",
+    why: "Each adds coverage but also a permission that could, in a misconfigured account, return a secret.",
+    example: "Turn on Read Glue connections to see which connections skip TLS.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1040-1054 — kms:Decrypt for Lambda environments; only their shape is kept
+  "cbsrc.aws.lambda_cmk": {
+    label: "Decrypt Lambda environment variables",
+    what: "Lets the role decrypt Lambda environment variables so ZeroShield can check them for keys and passwords; only their shape is kept, never the values. Off: each function's environment is listed as not inspected.",
+    why: "Hard-coded keys in Lambda environments are a frequent finding.",
+    example: "On: a function with DB_PASSWORD set in plain text is flagged.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1056-1068 — TLS enforcement and password storage of each connection
+  "cbsrc.aws.glue": {
+    label: "Read Glue connections",
+    what: "Reports whether each Glue connection enforces TLS and where its password is stored. ZeroShield asks with HidePassword and keeps only those settings.",
+    why: "If Data Catalog password encryption is off, this permission could return a password in plain text.",
+    example: "jdbc-core-banking: TLS not enforced, password in the connection.",
+  },
+  // src: backend/utilities/cbom_sources/kinds.py:29, frontend/components/cbom/sources/CloudIdentityTab.tsx:1124-1138 — arn:aws:iam::<12 digits>:role/<name>
+  "cbsrc.aws.role_arn": {
+    label: "Role ARN",
+    what: "The ARN of the read-only role the stack created (the RoleArn output). For an Organization, the role in the management account.",
+    why: "ZeroShield assumes this role with your external ID; nothing else gives it access.",
+    example: "arn:aws:iam::111122223333:role/ZeroShieldCBOMReader.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:133, frontend/components/cbom/sources/CloudIdentityTab.tsx:1143-1160 — AWS region codes; the first one is used for the test read
+  "cbsrc.aws.regions": {
+    label: "Regions",
+    what: "The AWS regions to read, as region codes; press Enter or Add region after each. The first region is used for the validation read.",
+    why: "Resources in regions not listed are not inventoried.",
+    example: "ap-south-1 and ap-south-2 for the Mumbai and Hyderabad regions.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1177-1183 — up to 64 characters; blank uses aws-<account id>
+  "cbsrc.aws.name": {
+    label: "Name",
+    what: "A name for this account, up to 64 characters. Blank uses aws-<account id>.",
+    why: "Each asset found records it as its source.",
+    example: "payments-prod.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1347-1348 — up to 64 characters
+  "cbsrc.azure.name": {
+    label: "Name",
+    what: "A name for this Azure connection, 1 to 64 characters, shown in lists, run results and reports.",
+    why: "Each asset found records it as its source.",
+    example: "azure-prod.",
+  },
+  // src: backend/utilities/cbom_sources/kinds.py:28, frontend/components/cbom/sources/CloudIdentityTab.tsx:1350-1360 — a GUID
+  "cbsrc.azure.tenant": {
+    label: "Directory (tenant) ID",
+    what: "The GUID of your Microsoft Entra directory (tenant), from the app registration's Overview page.",
+    why: "The app registration signs in to this tenant only.",
+    example: "72f988bf-86f1-41af-91ab-2d7cd011db47.",
+  },
+  // src: backend/utilities/cbom_sources/kinds.py:28, frontend/components/cbom/sources/CloudIdentityTab.tsx:1362-1372 — a GUID
+  "cbsrc.azure.client": {
+    label: "Application (client) ID",
+    what: "The GUID of the app registration that the reader script gave Key Vault Reader access.",
+    why: "ZeroShield signs in as this app; its roles decide what can be read.",
+    example: "0f3c6a2e-1b5d-4c8e-9a7f-2d4e6b8c0a1f.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1375-1386 — client secret or certificate
+  "cbsrc.azure.credential": {
+    label: "Credential",
+    what: "Client secret: from Certificates & secrets in the app registration. Certificate: a PEM certificate with its private key; ZeroShield signs a client assertion with it.",
+    why: "A certificate credential never sends a reusable secret over the network.",
+    example: "Certificate, with the same certificate uploaded to the app registration.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:144, frontend/components/cbom/sources/CloudIdentityTab.tsx:1389-1397 — encrypted at rest; changing tenant, client ID or credential clears it
+  "cbsrc.azure.secret": {
+    label: "Client secret or certificate",
+    what: "The client secret, or the PEM certificate with its private key. Encrypted at rest by ZeroShield and never shown again; changing the tenant, client ID or credential type clears it.",
+    why: "It is the only credential of the connection; rotate it in Azure and paste the new one here.",
+    example: "A client secret value created today, valid for 6 months.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1400-1410 — one GUID per line, optional
+  "cbsrc.azure.subs": {
+    label: "Subscription IDs",
+    what: "Optional: the subscriptions to read, one GUID per line. Blank reads every subscription the app can see.",
+    why: "Narrowing it keeps a shared app registration from inventorying another unit's subscriptions.",
+    example: "11111111-2222-3333-4444-555555555555.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1512-1513 — up to 64 characters
+  "cbsrc.gcp.name": {
+    label: "Name",
+    what: "A name for this Google Cloud connection, 1 to 64 characters, shown in lists, run results and reports.",
+    why: "Each asset found records it as its source.",
+    example: "gcp-payments.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1515-1525 — numeric; blank lists projects instead
+  "cbsrc.gcp.org": {
+    label: "Organization ID",
+    what: "The numeric ID of your Google Cloud organization. Leave blank to list the projects below instead.",
+    why: "With an organization ID every project under it is read, including new ones.",
+    example: "123456789012.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1527-1536 — one per line; needed without an organization ID
+  "cbsrc.gcp.projects": {
+    label: "Project IDs",
+    what: "The project IDs to read, one per line. Needed when there is no organization ID.",
+    why: "Projects not listed are not inventoried.",
+    example: "payments-prod and core-banking-dr.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1538-1548 — up to 254 characters
+  "cbsrc.gcp.email": {
+    label: "Service account",
+    what: "The email of the service account that the gcloud script granted the viewer roles to.",
+    why: "ZeroShield reads as this account; its roles decide what is visible.",
+    example: "zs-cbom@payments-prod.iam.gserviceaccount.com.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:144, frontend/components/cbom/sources/CloudIdentityTab.tsx:1550-1562 — encrypted at rest; changing the service account clears it
+  "cbsrc.gcp.key": {
+    label: "Service account key (JSON)",
+    what: "The JSON key of the service account, pasted or uploaded. Encrypted at rest by ZeroShield and never shown again; changing the service account clears it.",
+    why: "Anyone with this key can act as the service account, so it should hold viewer roles only.",
+    example: "The .json file from IAM > Service accounts > Keys.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1564-1575 — .json up to 64 KB
+  "cbsrc.gcp.key_file": {
+    label: "Upload the key file",
+    what: "Pick the .json key file instead of pasting it; it fills the key field above. Up to 64 KB.",
+    why: "Uploading avoids copy-paste errors in the long key.",
+    example: "zs-cbom-payments-prod-3f2a.json.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:139, frontend/components/cbom/sources/CloudIdentityTab.tsx:1672-1677 — up to 200 domains; saved, not yet searched
+  "cbsrc.cert.domains": {
+    label: "Domains to search in Certificate Transparency logs",
+    what: "Domains you own, up to 200. They are saved for the certificate collector; ZeroShield does not query Certificate Transparency logs on this deployment yet.",
+    why: "CT logs list every public certificate issued for your domains, including ones nobody registered with IT.",
+    example: "bank.in and bankonline.co.in.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1786-1795 — searched every run from ZeroShield's cloud; credits per domain
+  "cbsrc.ct.discovery": {
+    label: "Certificate Transparency",
+    what: "Every run, ZeroShield's cloud searches public Certificate Transparency logs for certificates issued for these domains, including hosts no scan node reaches. Expiring, expired, revoked and weak certificates, and certificates from CAs you have not listed, are flagged. Charged per domain searched, per run.",
+    why: "A certificate issued by a CA you do not use can mean a mis-issuance or a shadow IT service.",
+    example: "bank.in: 412 certificates found, 3 from an unexpected CA.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1721, frontend/components/cbom/sources/CloudIdentityTab.tsx:1797-1830 — up to 1,000 domains; a leading *. is dropped
+  "cbsrc.ct.domains": {
+    label: "Domains",
+    what: "The domains to search, up to 1,000. A leading *. is dropped; add each registered domain once.",
+    why: "Each domain is one search per run, so list the ones you own.",
+    example: "bank.in.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1849-1852 — search subdomains too
+  "cbsrc.ct.subdomains": {
+    label: "Include subdomains",
+    what: "Also search certificates for every subdomain of the listed domains.",
+    why: "Most forgotten certificates sit on subdomains such as uat-api.bank.in.",
+    example: "On: certificates for netbanking.bank.in are found too.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1722, frontend/components/cbom/sources/CloudIdentityTab.tsx:1854-1856 — up to 50; matched on name, organisation or CN
+  "cbsrc.ct.issuers": {
+    label: "Certificate authorities you use",
+    what: "Optional, up to 50: the CAs you expect. A certificate from any other CA is flagged as unexpected. Matched against the CA's name, organisation or CN: the whole value or its first words (at least 3 characters).",
+    why: "Unexpected issuers point at mis-issuance or teams buying certificates outside policy.",
+    example: "DigiCert and Let's Encrypt.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2173-2190 — Sectigo or other
+  "cbsrc.ca.product": {
+    label: "Product",
+    what: "Which certificate product this connection is for, when the row covers several.",
+    why: "It names the source in reports.",
+    example: "Sectigo Certificate Manager.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2195-2196 — up to 64 characters
+  "cbsrc.ca.name": {
+    label: "Name",
+    what: "A name for this CA connection, 1 to 64 characters, shown in lists, run results and reports.",
+    why: "Each certificate found records it as its source.",
+    example: "AD CS Mumbai.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2201-2203, backend/utilities/cbom_sources/kinds.py:478 — AD CS, Vault, EJBCA are read through a node
+  "cbsrc.ca.node": {
+    label: "Scan node",
+    what: "The scan node, in a segment that reaches the certificate authority, that reads it.",
+    why: "Internal CAs are rarely reachable from the internet, so a node inside the network reads them.",
+    example: "node-dc1, which reaches ca01.bank.local on 5986.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2222-2223 — reached over WinRM HTTPS (5986)
+  "cbsrc.ca.host": {
+    label: "CA server",
+    what: "The AD CS server's hostname, reached over WinRM HTTPS (5986). Run the Windows setup script from the Servers tab on it first.",
+    why: "The CA database lists every certificate it issued, including ones on hosts no scan reaches.",
+    example: "ca01.bank.local.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2225-2226, backend/utilities/cbom_sources/kinds.py:27 — up to 64 characters
+  "cbsrc.ca.login": {
+    label: "Read-only Windows account",
+    what: "A read-only Windows account on the CA server, in Remote Management Users; DOMAIN\\user is accepted.",
+    why: "A non-admin account limits what a leaked password can do on your CA.",
+    example: "BANK\\svc-zscbom.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2228-2236 — encrypted at rest; changing server, account, CA or node clears it
+  "cbsrc.ca.password": {
+    label: "Password",
+    what: "The password of the read-only account. Encrypted at rest and sent only to the scan node; changing the server, account, CA or node clears it.",
+    why: "Clearing it on change keeps the password from going to a host it was not meant for.",
+    example: "The password of svc-zscbom.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2242-2258 — read through a connected AWS account's role
+  "cbsrc.ca.aws": {
+    label: "AWS account",
+    what: "The connected AWS account whose read-only role reads AWS Private CA. No new credential is needed.",
+    why: "Private CAs in AWS issue internal certificates that never appear in CT logs.",
+    example: "payments-prod · 111122223333.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2263-2273 — HTTPS, up to 512 characters
+  "cbsrc.ca.api_url": {
+    label: "API address",
+    what: "The HTTPS address of the CA or CLM API, up to 512 characters.",
+    why: "The scan node or the certificate collector calls only this address.",
+    example: "https://vault.corp.example.com:8200 for Vault PKI.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2278-2286 — read-only policy; encrypted at rest
+  "cbsrc.ca.vault_token": {
+    label: "Vault token",
+    what: "A Vault token bound to the read-only policy shown below. Encrypted at rest and sent only to the scan node; changing the address, CA or node clears it.",
+    why: "The policy lets it list PKI mounts and transit keys without signing or decrypting.",
+    example: "A periodic token created with vault token create -policy=zs-cbom-read.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2287-2295 — the read-only HCL policy
+  "cbsrc.ca.vault_policy": {
+    label: "Policy for the token",
+    what: "The Vault policy to bind to the token: read and list on PKI and transit metadata only.",
+    why: "Review it before creating the token; it grants no sign, issue or decrypt rights.",
+    example: "vault policy write zs-cbom-read zs-cbom-read.hcl.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2303 — PEM, encrypted at rest
+  "cbsrc.ca.client_cert": {
+    label: "Client certificate",
+    what: "The PEM client certificate the scan node presents to the EJBCA REST API. Encrypted at rest and sent only to the scan node.",
+    why: "EJBCA admits only clients whose certificate maps to an administrator role.",
+    example: "zs-cbom-reader.crt issued by the EJBCA ManagementCA.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2304-2312 — PEM, unencrypted; encrypted at rest
+  "cbsrc.ca.client_key": {
+    label: "Client private key",
+    what: "The unencrypted PEM private key of the client certificate. Encrypted at rest and sent only to the scan node; changing the address, CA or node clears it.",
+    why: "Give the matching EJBCA role read-only rights so the key cannot issue certificates.",
+    example: "-----BEGIN PRIVATE KEY----- ....",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2319-2326 — optional PEM; verified before signing in
+  "cbsrc.ca.ca_pem": {
+    label: "CA of the server certificate",
+    what: "Optional PEM certificate of the CA that issued the server's TLS (or WinRM) certificate. The node verifies the server with it before signing in.",
+    why: "Needed when the server uses a private CA; without it the TLS check fails.",
+    example: "bank-root-ca.pem.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2330-2338 — encrypted at rest; changing the address clears it
+  "cbsrc.ca.api_key": {
+    label: "API key",
+    what: "The CLM tool's API key. Encrypted at rest by ZeroShield and never shown again; changing the address clears it.",
+    why: "Use a key scoped to read-only access to the certificate inventory.",
+    example: "A Venafi API key with the certificate:discover scope.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2453-2454 — up to 64 characters
+  "cbsrc.idp.name": {
+    label: "Name",
+    what: "A name for this identity provider, 1 to 64 characters, shown in lists, run results and reports.",
+    why: "Each signing key found records it as its source.",
+    example: "Okta workforce.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2457-2465 — a GUID
+  "cbsrc.idp.tenant": {
+    label: "Directory (tenant) ID",
+    what: "The GUID of your Microsoft Entra directory (tenant).",
+    why: "The app registration signs in to this tenant only.",
+    example: "72f988bf-86f1-41af-91ab-2d7cd011db47.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2470-2479 — HTTPS, up to 512 characters
+  "cbsrc.idp.base_url": {
+    label: "Okta domain or base URL",
+    what: "Okta: your Okta domain. Keycloak: the base URL of the server. HTTPS, up to 512 characters.",
+    why: "Signing keys are read from this address's public metadata.",
+    example: "https://bank.okta.com.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2482-2484 — up to 128 characters
+  "cbsrc.idp.realm": {
+    label: "Realm",
+    what: "The Keycloak realm whose clients and keys are read, up to 128 characters.",
+    why: "Each realm has its own signing keys.",
+    example: "corp.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2487-2489 — Entra application ID or Keycloak client ID
+  "cbsrc.idp.client": {
+    label: "Client ID",
+    what: "Entra ID: the application (client) ID of the app registration with Application.Read.All. Keycloak: the confidential client with read-only access to clients and keys.",
+    why: "With it ZeroShield also reads the app registrations' certificates and secrets metadata.",
+    example: "zs-cbom-reader.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:142, frontend/components/cbom/sources/CloudIdentityTab.tsx:2399, frontend/components/cbom/sources/CloudIdentityTab.tsx:2491-2498 — optional; encrypted at rest
+  "cbsrc.idp.secret": {
+    label: "Client secret or API token",
+    what: "Optional. The Okta API token or the client secret. Signing keys are read from public metadata without it; with it, more is read. Encrypted at rest and never shown again.",
+    why: "Without it, only the provider's published signing keys are inventoried.",
+    example: "A read-only Okta API token.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2538-2560 — HTTPS, up to 1,000 characters
+  "cbsrc.idp.saml_url": {
+    label: "SAML metadata URL",
+    what: "The HTTPS address of an identity provider's SAML metadata, up to 1,000 characters. Its signing and encryption certificates are read from it.",
+    why: "Covers identity providers without a dedicated connector, such as ADFS.",
+    example: "https://adfs.bank.in/FederationMetadata/2007-06/FederationMetadata.xml.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2538-2560 — HTTPS, up to 1,000 characters
+  "cbsrc.idp.oidc_url": {
+    label: "OIDC discovery URL",
+    what: "The HTTPS address of an OpenID Connect discovery document, up to 1,000 characters. Its JWKS signing keys are read from it.",
+    why: "Covers any OIDC provider, including in-house ones.",
+    example: "https://sso.bank.in/.well-known/openid-configuration.",
+  },
+  // ────────────────────────────────────────────────────────────── CBOM Sources: Network TLS (components/cbom/sources/NetworkTab.tsx)
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:450-458 — the team emergency stop
+  "cbsrc.net.stopped": {
+    label: "All network scanning is stopped",
+    what: "A team admin stopped all network scanning. Scan nodes skip network ranges and discovery sweeps until a team admin resumes it; other sources are not affected.",
+    why: "The emergency stop exists so the SOC can halt probing at once if a device misbehaves.",
+    example: "Stopped 12 minutes ago after a PLC on 10.50.0.0/24 raised an alarm.",
+  },
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:469, frontend/components/cbom/sources/NetworkTab.tsx:471-500 — allowed ranges, never scan, SNI names, ports
+  "cbsrc.net.scope": {
+    label: "Scope",
+    what: "What the network scan may touch and how: the allowed ranges and their scan nodes, the never-scan list, hostnames for SNI and the ports and protocols to probe.",
+    why: "Nothing outside the allowed ranges is ever probed, and never-scan always wins.",
+    example: "10.20.0.0/16 through node-dc1, except 10.20.99.0/24 (OT), on ports 443, 8443 and 22.",
+  },
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:471-500, frontend/components/cbom/sources/NetworkTab.tsx:1153-1160 — nothing is scanned until a range is allowed
+  "cbsrc.net.ranges": {
+    label: "Allowed ranges",
+    what: "The address ranges the network scan may probe, each with the scan node that reaches it. Nothing is scanned until you allow a range.",
+    why: "An explicit allow list keeps scans inside the networks you approved.",
+    example: "10.20.0.0/16 through node-dc1, Full mode.",
+  },
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:1153 — a /16 or smaller, one IP, or a-b
+  "cbsrc.net.col.range": {
+    label: "Range",
+    what: "The addresses: a CIDR range of /16 or smaller, one IP address, or a first-last range.",
+    why: "Each address in it may be probed on every listed port.",
+    example: "10.20.5.0/24.",
+  },
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:530, frontend/components/cbom/sources/NetworkTab.tsx:1176-1190 — Full or Fragile (version check only)
+  "cbsrc.net.col.mode": {
+    label: "Mode",
+    what: "Full: complete TLS and SSH handshakes on every listed port. Fragile: a version check only, for OT or devices that may not cope with many handshakes.",
+    why: "Old PLCs and medical devices can crash under repeated handshakes.",
+    example: "Fragile for the SCADA network 10.50.0.0/24.",
+  },
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:115, frontend/components/cbom/sources/NetworkTab.tsx:580-680 — up to 500 entries; always wins in every job of the team
+  "cbsrc.net.never_scan": {
+    label: "Never scan",
+    what: "Addresses and ranges, up to 500, that no job of this team may touch. The node refuses them even if a job asks; a server, database, registry or Kubernetes API whose name resolves to a listed address is skipped as a whole. Add each with a reason.",
+    why: "It protects OT networks, core routers and partner systems from any probe, whatever a source says.",
+    example: "10.20.99.0/24 · OT plant network.",
+  },
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:591, frontend/components/cbom/sources/NetworkTab.tsx:659-668 — up to 120 characters
+  "cbsrc.net.col.reason": {
+    label: "Reason",
+    what: "Why the range is excluded, up to 120 characters, so others know not to remove it.",
+    why: "An exclusion without a reason tends to be deleted during clean-ups.",
+    example: "OT plant network, no active scanning per IT-OT policy.",
+  },
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:114, frontend/components/cbom/sources/NetworkTab.tsx:689-698 — up to 10,000 names
+  "cbsrc.net.sni": {
+    label: "Hostnames for SNI",
+    what: "Hostnames, up to 10,000, sent as SNI in TLS handshakes so servers that host several sites return each site's certificate.",
+    why: "Without SNI a shared server shows only its default certificate and the others go uninventoried.",
+    example: "www.bank.in and api.bank.in on the same load balancer address.",
+  },
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:76-90, frontend/components/cbom/sources/NetworkTab.tsx:113, frontend/components/cbom/sources/NetworkTab.tsx:700-770 — up to 64 ports; TLS, StartTLS, SSH, RDP, IKE, OT
+  "cbsrc.net.ports": {
+    label: "Ports and protocols",
+    what: "The ports probed on each address, up to 64, each with its protocol: TLS, StartTLS for LDAP, SMTP, IMAP, PostgreSQL or MySQL, SQL Server, SSH, RDP, IKE, and OT protocols (OPC UA, Modbus). Add a port, its protocol and an optional label.",
+    why: "A service on a port that is not listed is never seen.",
+    example: "7443 · TLS · admin console.",
+  },
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:770-772 — passive read of what clients negotiate
+  "cbsrc.net.zeek": {
+    label: "Zeek ssl.log from a SPAN port",
+    what: "Also read Zeek's ssl.log from a SPAN port to see the protocol versions and cipher suites clients actually negotiate.",
+    why: "A server may allow TLS 1.0 but only passive data shows whether anything still uses it.",
+    example: "Shows 3% of connections to core-api still use TLS 1.0 with CBC ciphers.",
+  },
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:781 — window, rates, SOC contacts
+  "cbsrc.net.safety": {
+    label: "Safety",
+    what: "When network scans may run, how fast they may go, and who your SOC should call.",
+    why: "Probing at the wrong hour or speed can set off alarms or disturb fragile devices.",
+    example: "Weekday nights only, 50 connections per second per node.",
+  },
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:783-830 — weekly hours in a time zone; work pauses at the end
+  "cbsrc.net.window": {
+    label: "Scan window",
+    what: "The weekly hours, in the chosen time zone, when network scans and sources set to the team window may run. Work pauses at the end of the window and resumes in the next one.",
+    why: "Keeps probes out of business hours and change freezes.",
+    example: "Weekday nights, 22:00 to 06:00 Asia/Kolkata: 40 hours a week.",
+  },
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:109 — 1 to 500
+  "cbsrc.net.rate_conn": {
+    label: "Connections/s per node",
+    what: "The most new connections per second each scan node opens, 1 to 500.",
+    why: "Lower values avoid tripping IDS alerts and connection limits on firewalls.",
+    example: "50 for a branch network behind a small firewall.",
+  },
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:110 — 1 to 32
+  "cbsrc.net.rate_parallel": {
+    label: "Parallel per server",
+    what: "The most connections a node keeps open to one server at a time, 1 to 32.",
+    why: "Protects small servers from being overloaded by parallel handshakes.",
+    example: "4 for older appliances that limit concurrent TLS sessions.",
+  },
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:111 — 1 to 200
+  "cbsrc.net.rate_handshakes": {
+    label: "Handshakes per endpoint",
+    what: "The most TLS or SSH handshakes made to one endpoint (address and port), 1 to 200. More handshakes test more protocol versions and cipher suites.",
+    why: "A full cipher-suite enumeration needs many handshakes; fewer is gentler but less complete.",
+    example: "60 enumerates TLS 1.0 to 1.3 suites on a typical web server.",
+  },
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:861-915 — each node's source IPs and your contacts
+  "cbsrc.net.soc": {
+    label: "Tell your SOC",
+    what: "The source IP addresses of each scan node, to give your SOC so the scans are recognised, and the contacts they can reach.",
+    why: "An unannounced scan looks like an attack and may be blocked mid-run.",
+    example: "node-dc1 scans from 10.20.1.15.",
+  },
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:879 — the node
+  "cbsrc.net.col.node": {
+    label: "Scan node",
+    what: "The scan node whose source addresses are listed.",
+    why: "Each node scans from its own addresses.",
+    example: "node-dc1.",
+  },
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:880 — addresses the node reported
+  "cbsrc.net.col.source_ips": {
+    label: "Source IPs",
+    what: "The addresses the node reported it connects from, to whitelist or recognise in your SOC tools.",
+    why: "Behind NAT the address seen by targets may differ; check with your network team.",
+    example: "10.20.1.15, fd00:20::15.",
+  },
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:118, frontend/components/cbom/sources/NetworkTab.tsx:894-902 — up to 254 characters
+  "cbsrc.net.soc_email": {
+    label: "SOC email",
+    what: "Your SOC's email address, up to 254 characters, recorded with the team's network settings as the contact for these scans.",
+    why: "Gives operators one place to send questions about a scan they see.",
+    example: "soc@bank.in.",
+  },
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:119, frontend/components/cbom/sources/NetworkTab.tsx:905-913 — a phone number, up to 64 characters
+  "cbsrc.net.emergency": {
+    label: "Emergency stop contact",
+    what: "A phone number, up to 64 characters, for whoever can stop the scans at once.",
+    why: "If a device misbehaves during a scan, someone must be reachable to stop it.",
+    example: "+91 22 5555 0100 (NOC, 24x7).",
+  },
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:1171-1174 — the node that reaches the range
+  "cbsrc.net.range_form_node": {
+    label: "Scan node",
+    what: "The scan node that probes this range. It must reach every address in it on the listed ports.",
+    why: "A node in another segment sees every address as silent.",
+    example: "node-dc1 for 10.20.0.0/16.",
+  },
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:116, frontend/components/cbom/sources/NetworkTab.tsx:1392-1393 — BIND export up to 8 MB; A, AAAA, CNAME names
+  "cbsrc.net.sni_zone": {
+    label: "Import a DNS zone file",
+    what: "Add hostnames from a BIND zone export, up to 8 MB: the names of its A, AAAA and CNAME records.",
+    why: "A zone file lists names nobody remembers to type in.",
+    example: "bank.in.zone exported from the DNS server.",
+  },
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:1395-1396 — text or CSV; first column
+  "cbsrc.net.sni_list": {
+    label: "Import a plain list",
+    what: "Add hostnames from a text or CSV file; the first column of each row is used.",
+    why: "Reuse an existing asset list instead of typing names.",
+    example: "hosts.csv exported from the CMDB.",
+  },
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:114, frontend/components/cbom/sources/NetworkTab.tsx:1399-1406 — one per line, up to 10,000; duplicates dropped
+  "cbsrc.net.sni_text": {
+    label: "Hostnames",
+    what: "One hostname per line, up to 10,000; duplicates are dropped.",
+    why: "Each name is sent as SNI so the right certificate is returned.",
+    example: "www.bank.in, api.bank.in, mail.bank.in.",
+  },
+  // ────────────────────────────────────────────────────────────── CBOM Sources: Evidence (components/cbom/sources/EvidenceTab.tsx)
+  // src: frontend/components/cbom/sources/shared.tsx:127-132, frontend/components/cbom/sources/EvidenceTab.tsx:275-284 — areas at Q0
+  "cbsrc.ev.q0": {
+    label: "Q0 Unknown",
+    what: "Areas with no usable answer: never answered, answered without evidence where evidence is needed, or with evidence older than 12 months.",
+    why: "Q0 areas are open gaps in the CBOM and are listed as such on Review & Run.",
+    example: "3 areas: the payment HSM vendor has not answered.",
+  },
+  // src: frontend/components/cbom/sources/shared.tsx:127-132, frontend/components/cbom/sources/EvidenceTab.tsx:275-284 — areas at Q1
+  "cbsrc.ev.q1": {
+    label: "Q1 Self-attested",
+    what: "Areas answered by their owner or vendor without supporting evidence.",
+    why: "A self-attested answer is better than nothing but would not satisfy an auditor.",
+    example: "The card vendor says its terminals use AES-256, with no document.",
+  },
+  // src: frontend/components/cbom/sources/shared.tsx:127-132, frontend/components/cbom/sources/EvidenceTab.tsx:275-284 — areas at Q2
+  "cbsrc.ev.q2": {
+    label: "Q2 Documented",
+    what: "Areas answered with a dated evidence document, such as a policy, certificate or report.",
+    why: "Documented answers can be shown to an auditor and re-checked when the document is renewed.",
+    example: "Key management policy v3 (PDF), dated March 2026.",
+  },
+  // src: frontend/components/cbom/sources/shared.tsx:127-132, frontend/components/cbom/sources/EvidenceTab.tsx:275-284 — areas at Q3
+  "cbsrc.ev.q3": {
+    label: "Q3 Verified",
+    what: "Areas whose evidence your team has checked and confirmed.",
+    why: "Verified evidence carries the same weight as a scan result.",
+    example: "The HSM's FIPS 140-3 certificate checked against the NIST CMVP list.",
+  },
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:268-272, frontend/components/cbom/sources/EvidenceTab.tsx:287-312 — owner questionnaires with a confidence level
+  "cbsrc.ev.areas": {
+    label: "Areas that cannot be scanned",
+    what: "Parts of your crypto estate no scan can read, such as vendor services and offline key ceremonies. Each has an owner questionnaire, a confidence level and an optional evidence link; a missing answer stays a visible gap.",
+    why: "A CBOM that only lists what scans can see overstates your readiness.",
+    example: "Card personalisation bureau: owner Cards ops, Q1, due 30 Nov.",
+  },
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:307 — the evidence area
+  "cbsrc.ev.col.area": {
+    label: "Area",
+    what: "The part of the estate the questionnaire covers.",
+    why: "Each area is one gap until it is answered.",
+    example: "Offline root CA key ceremony.",
+  },
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:308, frontend/components/cbom/sources/EvidenceTab.tsx:768 — who answers
+  "cbsrc.ev.col.owner": {
+    label: "Owner",
+    what: "The person or team asked to answer for this area.",
+    why: "An area without an owner is never answered.",
+    example: "PKI team.",
+  },
+  // src: frontend/components/cbom/sources/shared.tsx:127-132 — Q0 Unknown to Q3 Verified
+  "cbsrc.ev.col.confidence": {
+    label: "Confidence",
+    what: "How much the answer can be trusted: Q0 Unknown, Q1 Self-attested, Q2 Documented (evidence document), Q3 Verified (evidence checked by your team).",
+    why: "Reports and the run's coverage weigh answers by this level.",
+    example: "Q2 Documented.",
+  },
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:310, frontend/components/cbom/sources/EvidenceTab.tsx:848-873 — the evidence document and its date
+  "cbsrc.ev.col.evidence": {
+    label: "Evidence",
+    what: "The supporting document's title and link, and its date. Evidence older than 12 months drops back to Q0 until renewed.",
+    why: "Dated evidence shows the answer was true recently, not years ago.",
+    example: "HSM FIPS certificate (PDF), 4 Feb 2026.",
+  },
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:311, frontend/components/cbom/sources/EvidenceTab.tsx:881 — when the owner should answer by
+  "cbsrc.ev.col.due": {
+    label: "Due",
+    what: "When the owner should answer by.",
+    why: "Overdue areas are the gaps to chase before an audit.",
+    example: "30 Nov 2026.",
+  },
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:397-400 — single-use links, no login, 14 days
+  "cbsrc.ev.vendors": {
+    label: "Vendors",
+    what: "Vendors asked to answer a questionnaire through a single-use link, with no login; the link expires in 14 days. A vendor who does not answer stays Q0.",
+    why: "Third-party services use crypto you cannot scan but still answer for in an audit.",
+    example: "Acme Payments, link sent 2 Nov, answered 6 Nov, Q2.",
+  },
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:424 — vendor name
+  "cbsrc.ev.col.vendor": {
+    label: "Vendor",
+    what: "The vendor asked to answer.",
+    why: "Each vendor is one evidence area of its own.",
+    example: "Acme Payments.",
+  },
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:425 — the single-use link
+  "cbsrc.ev.col.link": {
+    label: "Link status",
+    what: "The state of the vendor's single-use link: not sent, sent and waiting, answered, or expired (after 14 days).",
+    why: "An expired link needs a new one before the vendor can answer.",
+    example: "Expired: press New link and send the vendor the fresh link.",
+  },
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:508, frontend/components/cbom/sources/EvidenceTab.tsx:640-670 — read-only preview
+  "cbsrc.ev.preview": {
+    label: "Questionnaire preview",
+    what: "Read-only view of exactly what an owner or vendor is asked for the chosen area.",
+    why: "Check the questions before sending a link to a vendor.",
+    example: "Preview Card personalisation bureau: 5 questions and an evidence link.",
+  },
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:511-513 — which area to preview
+  "cbsrc.ev.preview_area": {
+    label: "Area",
+    what: "The evidence area whose questionnaire is shown below.",
+    why: "Each area asks different questions.",
+    example: "Offline root CA key ceremony.",
+  },
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:783-816, frontend/components/cbom/sources/EvidenceTab.tsx:644-662 — yes/no/unknown or a free-text answer
+  "cbsrc.ev.question": {
+    label: "Question",
+    what: "One question of the area's questionnaire, answered with a choice or in free text.",
+    why: "Each answer feeds the area's confidence; an unanswered question keeps it a gap.",
+    example: "Are keys generated inside a FIPS 140-3 Level 3 HSM? Yes.",
+  },
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:664-666 — Q2 and Q3 need one
+  "cbsrc.ev.preview_link": {
+    label: "Link to supporting evidence",
+    what: "Where the person answering links a policy, certificate or report. Documented (Q2) and Verified (Q3) need one.",
+    why: "Without evidence an answer stays Self-attested at best.",
+    example: "https://intranet.bank.in/pki/ceremony-2026.pdf.",
+  },
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:768-770 — the person or team who answers
+  "cbsrc.ev.owner": {
+    label: "Owner",
+    what: "Who answers for this area: a person or team. The area may suggest a usual owner.",
+    why: "Named owners are who auditors ask, and who remediation is routed to.",
+    example: "PKI team (usually: Information security).",
+  },
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:822-829 — Documented and Verified need a document and date
+  "cbsrc.ev.confidence": {
+    label: "Confidence",
+    what: "The confidence of this area's answer: Q0 Unknown, Q1 Self-attested, Q2 Documented or Q3 Verified. Documented and Verified need an evidence document and its date.",
+    why: "It decides how the area counts in coverage and reports.",
+    example: "Q3 after you checked the vendor's certificate yourself.",
+  },
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:848-849 — up to 200 characters
+  "cbsrc.ev.title": {
+    label: "Evidence title",
+    what: "A short title for the evidence document, up to 200 characters.",
+    why: "Auditors find the document by its title in the evidence pack.",
+    example: "Key management policy v3 (PDF).",
+  },
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:851-858 — http or https, up to 1,000 characters
+  "cbsrc.ev.url": {
+    label: "Evidence link",
+    what: "An http:// or https:// link to the document, up to 1,000 characters.",
+    why: "The link lets a reviewer open the evidence in one click.",
+    example: "https://intranet.bank.in/policies/kms-v3.pdf.",
+  },
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:861-873 — evidence older than 12 months drops to Q0
+  "cbsrc.ev.date": {
+    label: "Evidence date",
+    what: "The date of the document, not later than today. Evidence older than 12 months drops back to Q0 until renewed.",
+    why: "Crypto policies change; old evidence may describe a setup that no longer exists.",
+    example: "14 Mar 2026.",
+  },
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:881-882 — when the owner should answer by
+  "cbsrc.ev.due": {
+    label: "Due date",
+    what: "When the owner should answer by.",
+    why: "A due date turns an open gap into a tracked task.",
+    example: "30 Nov 2026.",
+  },
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:954-955 — required
+  "cbsrc.ev.vendor_name": {
+    label: "Vendor name",
+    what: "The vendor's name, as shown in lists and reports.",
+    why: "Each vendor becomes an evidence area of its own.",
+    example: "Acme Payments Pvt Ltd.",
+  },
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:964-965 — for your records only
+  "cbsrc.ev.vendor_email": {
+    label: "Contact email",
+    what: "Optional: the vendor contact's email, for your records only. ZeroShield does not email the vendor; you send the link yourself.",
+    why: "Keeps who was asked next to the answer.",
+    example: "security@acmepayments.in.",
+  },
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:1054-1060 — Q1 when answered, Q2 with a link, Q3 once verified
+  "cbsrc.ev.vendor_confidence": {
+    label: "Confidence",
+    what: "The confidence of the vendor's answer. Set Q1 when answered, Q2 when the vendor gave an evidence link, Q3 once you have verified the evidence.",
+    why: "It decides how much the vendor's answer counts.",
+    example: "Q2: the vendor linked its PCI PIN attestation.",
+  },
+  // ────────────────────────────────────────────────────────────── CBOM Sources: Review & Run (components/cbom/sources/ReviewRunTab.tsx)
+  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:235-309, frontend/components/cbom/sources/ReviewRunTab.tsx:319 — one row per source group
+  "cbsrc.rr.coverage": {
+    label: "Coverage",
+    what: "Every kind of source and what a run would collect from it: how much is in scope, what reaches it (scan nodes, ZeroShield's cloud or questionnaires), failed tests, the credits it costs per run and whether it is ready.",
+    why: "Shows at a glance which parts of the estate the next run covers and which it leaves out.",
+    example: "Servers · 3 sources, 612 targets · node-dc1 · No failed tests · 6.12 · Ready.",
+  },
+  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:325 — the source group
+  "cbsrc.rr.col.source": {
+    label: "Source",
+    what: "The group of sources: servers, Kubernetes, databases, cloud, network, identity, evidence or code scans.",
+    why: "A run is started per group with the boxes under Start a scan.",
+    example: "Databases.",
+  },
+  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:326 — what the group covers
+  "cbsrc.rr.col.in_scope": {
+    label: "In scope",
+    what: "How much of the group a run would cover: sources, targets, accounts or areas.",
+    why: "Zero in scope means the group adds nothing to the CBOM yet.",
+    example: "2 sources, 4 databases.",
+  },
+  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:327 — scan nodes or ZeroShield's cloud
+  "cbsrc.rr.col.through": {
+    label: "Reached through",
+    what: "What does the collecting: the scan nodes for in-network sources, or ZeroShield's cloud for cloud accounts, CT logs and identity providers.",
+    why: "An offline node here means that group's jobs wait.",
+    example: "node-dc1, node-dr1.",
+  },
+  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:243, frontend/components/cbom/sources/ReviewRunTab.tsx:267, frontend/components/cbom/sources/ReviewRunTab.tsx:309 — estimated credits per run for the group
+  "cbsrc.rr.col.credits": {
+    label: "Credits",
+    what: "The credits one run of this group is estimated to charge; code scans are charged per scan and evidence costs nothing.",
+    why: "Credits come off the team balance when the run starts and are refunded for jobs that fail or expire.",
+    example: "4.00 for one AWS account (4 credits per account per run).",
+  },
+  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:328 — ready, needs attention or not set up
+  "cbsrc.rr.col.status": {
+    label: "Status",
+    what: "Ready, a count of issues to fix (for example an offline node or a failed test), Not configured, or for evidence the number of gaps.",
+    why: "Groups that are not ready are skipped and listed below with the fix.",
+    example: "1 issue: a source has a failed connection test.",
+  },
+  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:358 — sources the plan would skip
+  "cbsrc.rr.skipped": {
+    label: "Will be skipped unless you fix it",
+    what: "Sources the next run would skip, each with the reason: an offline or missing node, a failed or missing test, a missing credential, or a closed scan window.",
+    why: "A skipped source is a gap in the CBOM; fixing it before starting saves a second run.",
+    example: "dc-mumbai-windows: the connection test failed (Login failed).",
+  },
+  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:394-405 — jobs, run record, proof trail, evidence gaps
+  "cbsrc.rr.after": {
+    label: "What you get after the scan",
+    what: "What a run produces: collection jobs per source for your scan nodes, a run record with the credits charged and refunded, a proof trail (audit log, node source IPs, the AWS role's CloudTrail calls) and evidence gaps listed as Q0.",
+    why: "The proof trail lets your SOC and auditors confirm exactly what was touched.",
+    example: "Run #42: 9 jobs, 1,284 assets, 12.40 credits charged, 1.00 refunded.",
+  },
+  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:636, frontend/components/cbom/sources/ReviewRunTab.tsx:52-58 — choose groups, estimate the credits, start
+  "cbsrc.rr.start": {
+    label: "Start a scan",
+    what: "Choose which groups to collect, estimate the credits, confirm the SOC agreement for network scans, then start the run.",
+    why: "Credits are charged when the run starts; the estimate shows the cost and what will be skipped first.",
+    example: "Servers and Cloud: 10.12 credits for 4 sources.",
+  },
+  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:52-58, frontend/components/cbom/sources/ReviewRunTab.tsx:640-646 — one box per group; how many sources are ready
+  "cbsrc.rr.include": {
+    label: "Include in the run",
+    what: "Tick each group of sources to collect in this run; the count shows how many of its sources are ready.",
+    why: "Leave out groups whose systems are in a change freeze.",
+    example: "Servers · 3 ready.",
+  },
+  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:705-716 — required when Network is included
+  "cbsrc.rr.soc_ack": {
+    label: "SOC agreement",
+    what: "Confirm that your SOC has agreed the network ranges and scan windows. Required when the run includes Network.",
+    why: "Active network probing without SOC agreement is often treated as an incident.",
+    example: "Tick after the SOC acknowledged ranges 10.20.0.0/16 and the 22:00-06:00 window.",
+  },
+  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:424 — the 50 most recent runs
+  "cbsrc.rr.runs": {
+    label: "Runs",
+    what: "The 50 most recent collection runs of this team, newest first, with their status, jobs, assets and credits. Open Results for a run's findings, or Compare two finished runs.",
+    why: "Comparing runs shows what changed: new weak keys, fixed ones, expired certificates.",
+    example: "Run #42 · Done · 9 done · 1,284 assets · 12.40 charged / 1.00 refunded.",
+  },
+  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:450 — run number
+  "cbsrc.rr.col.run": {
+    label: "Run",
+    what: "The run's number, unique within ZeroShield.",
+    why: "Reports and exports name the run by this number.",
+    example: "#42, the run started on 13 Nov.",
+  },
+  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:451 — when the run was created
+  "cbsrc.rr.col.started": {
+    label: "Started",
+    what: "When the run was started.",
+    why: "Findings reflect the estate at this time.",
+    example: "13 Nov 2026, 11:05 pm IST.",
+  },
+  // src: frontend/components/cbom/sources/shared.tsx:114-121 — queued, running, done, partial, failed, cancelled
+  "cbsrc.rr.col.run_status": {
+    label: "Status",
+    what: "Queued, Running, Done (every job succeeded), Partial (some jobs failed or expired), Failed or Cancelled.",
+    why: "A Partial run's results miss the sources whose jobs failed.",
+    example: "Partial: 8 of 9 jobs done, 1 expired.",
+  },
+  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:160-164 — job counts by status
+  "cbsrc.rr.col.jobs": {
+    label: "Jobs",
+    what: "The run's collection jobs (one per source) counted by status.",
+    why: "Waiting jobs usually mean an offline scan node.",
+    example: "8 done · 1 failed.",
+  },
+  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:470-472 — assets collected
+  "cbsrc.rr.col.assets": {
+    label: "Assets",
+    what: "How many crypto assets the run collected: certificates, keys, protocols, libraries and other items.",
+    why: "A sudden drop between runs can mean a source stopped reporting.",
+    example: "1,284.",
+  },
+  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:473-475, backend/utilities/cbom_sources/jobs.py:85-107 — charged and refunded
+  "cbsrc.rr.col.run_credits": {
+    label: "Credits",
+    what: "Credits charged when the run started, and credits refunded for jobs that failed, expired or were cancelled.",
+    why: "You pay only for jobs that completed.",
+    example: "12.40 charged / 1.00 refunded.",
+  },
+  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:828-830 — scan node or ZeroShield cloud
+  "cbsrc.rr.job.runs_on": {
+    label: "Runs on",
+    what: "Where the job ran: a scan node, or ZeroShield's cloud for cloud accounts, CT logs and identity providers.",
+    why: "Points you at the node to check when a job fails.",
+    example: "node-dc1.",
+  },
+  // src: frontend/components/cbom/sources/shared.tsx:96-103 — waiting, running, done, failed, cancelled, expired
+  "cbsrc.rr.job.status": {
+    label: "Status",
+    what: "Waiting (for its node or window), Running, Done, Failed, Cancelled or Expired (never claimed in time; refunded). The note below says why it waits.",
+    why: "Expired and failed jobs are refunded and their source has no new results in this run.",
+    example: "Waiting · outside the scan window; starts at 22:00.",
+  },
+  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:838 — assets the job collected
+  "cbsrc.rr.job.assets": {
+    label: "Assets",
+    what: "How many assets this job collected from its source.",
+    why: "Zero from a source that had assets before deserves a look.",
+    example: "212 from dc-mumbai-linux.",
+  },
+  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:839-842 — charged for the job; refunded marker
+  "cbsrc.rr.job.credits": {
+    label: "Credits",
+    what: "The credits charged for this job, marked refunded when it failed, expired or was cancelled.",
+    why: "Shows which part of the run's cost came back.",
+    example: "2.56 refunded.",
+  },
+  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:843 — how many times the job was tried
+  "cbsrc.rr.job.attempts": {
+    label: "Attempts",
+    what: "How many times a node tried this job. A job is retried after a transient failure.",
+    why: "Many attempts point at a flaky network path or an overloaded node.",
+    example: "2: the first try timed out, the second finished.",
+  },
+  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:844-846 — the job's last error
+  "cbsrc.rr.job.error": {
+    label: "Error",
+    what: "The last error the job reported, if any.",
+    why: "It names the exact failure to fix before the next run.",
+    example: "connect timeout to 10.20.0.17:22.",
+  },
+  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:862-872 — sources skipped at start
+  "cbsrc.rr.skipped_start": {
+    label: "Skipped when the run started",
+    what: "Sources that were not queued when the run started, each with the reason.",
+    why: "They are not in this run's results and were not charged.",
+    example: "dc-mumbai-windows: the scan node was offline.",
+  },
+  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:874-878 — what changed since the previous run
+  "cbsrc.rr.changes": {
+    label: "Changes",
+    what: "What changed in this run compared with the previous run of the same sources: assets added, removed or changed.",
+    why: "Drift shows new weak crypto as soon as it appears.",
+    example: "+3 certificates, -1 SSH host key, 2 changed.",
+  },
+  // ────────────────────────────────────────────────────────────── CBOM Sources: Review & Run, run details
+  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:825-827 — one job per source
+  "cbsrc.rr.job.source": {
+    label: "Source",
+    what: "The source this job collected from; each source in the run has one job.",
+    why: "Open the source's tab to fix a failed job.",
+    example: "dc-mumbai-linux.",
+  },
+  // ────────────────────────────────────────────────────────────── CBOM Sources: Scan nodes (components/cbom/sources/ScanNodesTab.tsx)
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:265 — nodes of the team
+  "cbsrc.nodes.count": {
+    label: "Scan nodes",
+    what: "How many scan nodes this team has registered or is registering.",
+    why: "Each network segment you want to scan needs a node inside it.",
+    example: "3: one per data centre and one in the DMZ.",
+  },
+  // src: backend/utilities/cbom_sources/planning.py:21, backend/utilities/cbom_sources/planning.py:35-44 — heartbeat within the last 120 s
+  "cbsrc.nodes.online": {
+    label: "Online",
+    what: "Nodes that sent a heartbeat in the last 2 minutes and can take jobs now.",
+    why: "Jobs for sources behind an offline node wait and expire.",
+    example: "2 of 3 online.",
+  },
+  // src: backend/utilities/cbom_sources/planning.py:21, backend/utilities/cbom_sources/planning.py:35-44 — registered, no heartbeat for 120 s
+  "cbsrc.nodes.offline": {
+    label: "Offline",
+    what: "Registered nodes with no heartbeat for more than 2 minutes: stopped, unable to reach ZeroShield, or their host is down.",
+    why: "An offline node silently removes its whole segment from the next run.",
+    example: "node-dr1 offline since the DR site's proxy changed.",
+  },
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:268 — servers and addresses routed through these nodes
+  "cbsrc.nodes.assigned": {
+    label: "Targets assigned",
+    what: "Servers and addresses routed through these nodes by your sources and network ranges.",
+    why: "Shows how much depends on each node staying online.",
+    example: "4,612 targets across 3 nodes.",
+  },
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:271-273 — one per segment; outbound only
+  "cbsrc.nodes.list": {
+    label: "Registered scan nodes",
+    what: "Your scan nodes: small read-only collectors inside your network, one per network segment. Each connects out to ZeroShield on one HTTPS port only and opens no inbound ports.",
+    why: "Nodes are how ZeroShield reads systems that are not reachable from the internet.",
+    example: "node-dc1 · DC1-core · Online · Docker container.",
+  },
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:312 — node name
+  "cbsrc.nodes.col.node": {
+    label: "Node",
+    what: "The node's name, as chosen when it was added.",
+    why: "Sources and ranges pick their node by this name.",
+    example: "node-dc1.",
+  },
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:313, frontend/components/cbom/sources/ScanNodesTab.tsx:430-433 — the network segment it sits in
+  "cbsrc.nodes.col.segment": {
+    label: "Segment",
+    what: "The network segment the node sits in.",
+    why: "A source must use a node in a segment that reaches its targets.",
+    example: "DC1-core.",
+  },
+  // src: frontend/components/cbom/sources/shared.tsx:62-67 — online, offline, waiting to register, token expired
+  "cbsrc.nodes.col.status": {
+    label: "Status",
+    what: "Online (heartbeat in the last 2 minutes), Offline, Waiting to register (installed with a token that was not used yet) or Token expired (create a new registration token).",
+    why: "Only online nodes take jobs.",
+    example: "Token expired: the install command was not run within 24 hours.",
+  },
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:64-70, frontend/components/cbom/sources/ScanNodesTab.tsx:337-345 — Docker, OVA, AMI or Helm; host agent mode
+  "cbsrc.nodes.col.runs_as": {
+    label: "Runs as",
+    what: "How the node runs: Docker container, OVA appliance, AWS AMI or Helm chart. Host agent means it collects only its own host from read-only mounts and is never given a credential.",
+    why: "It tells you where to look when a node needs restarting or upgrading.",
+    example: "Helm chart in the prod-payments cluster.",
+  },
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:342 — node_version reported by the node
+  "cbsrc.nodes.col.version": {
+    label: "Version",
+    what: "The software version the node reported.",
+    why: "Old versions may miss newer collectors; upgrade them with the install command.",
+    example: "1.8.2.",
+  },
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:343, frontend/components/cbom/sources/ScanNodesTab.tsx:789-791 — signed or legacy unsigned
+  "cbsrc.nodes.col.requests": {
+    label: "Requests",
+    what: "Whether the node signs every request with a key made at enrollment (Signed), or is a legacy node that does not.",
+    why: "With signing, a copied node token alone cannot act as the node.",
+    example: "Legacy: unsigned. Reset the node and register it again to sign.",
+  },
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:344 — last heartbeat
+  "cbsrc.nodes.col.last_seen": {
+    label: "Last seen",
+    what: "How long ago the node's last heartbeat arrived.",
+    why: "More than 2 minutes means it is offline.",
+    example: "12 seconds ago.",
+  },
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:345 — targets routed through the node
+  "cbsrc.nodes.col.targets": {
+    label: "Targets",
+    what: "How many servers and addresses are routed through this node.",
+    why: "A heavily loaded node may need the parallel limits lowered or a second node.",
+    example: "2,304.",
+  },
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:405-409 — run on any VM or cluster inside the segment
+  "cbsrc.nodes.add": {
+    label: "Add a scan node",
+    what: "Register a new scan node: name it, choose how to run it, allow its outbound traffic, then run the install command on a VM or cluster inside the segment you want to scan.",
+    why: "Without a node, servers, clusters, databases and network ranges cannot be collected.",
+    example: "node-dc1 as a Docker container on a Linux VM in DC1-core.",
+  },
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:426-427 — up to 64 characters
+  "cbsrc.nodes.name": {
+    label: "Node name",
+    what: "A name for the node, up to 64 characters, shown wherever a source picks its node.",
+    why: "Name it after its location so the right node is picked for each source.",
+    example: "node-dc1.",
+  },
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:430-433 — pick one or type your own
+  "cbsrc.nodes.segment": {
+    label: "Network segment",
+    what: "The network segment the node sits in; pick an existing one or type your own, up to 64 characters.",
+    why: "Segments group nodes and appear in run results, so findings can be traced to a network.",
+    example: "DC1-core.",
+  },
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:435-437 — the node's time zone
+  "cbsrc.nodes.tz": {
+    label: "Time zone",
+    what: "The time zone of the node's location, used in its install settings.",
+    why: "Makes the node's own logs line up with your local time.",
+    example: "Asia/Kolkata.",
+  },
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:64-70 — Docker, OVA, AMI, Helm
+  "cbsrc.nodes.deploy": {
+    label: "Deployment",
+    what: "How to run the node: a Docker container on any Linux VM, an OVA appliance for VMware, an AWS AMI in your VPC, or a Helm chart in your Kubernetes cluster. Docker and Helm are the proven ways; the others you build from the published template.",
+    why: "It decides the install command you get.",
+    example: "Docker container on an existing RHEL 9 VM.",
+  },
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:503-508 — ZeroShield API and your targets
+  "cbsrc.nodes.col.destination": {
+    label: "Destination",
+    what: "Where the node connects to: ZeroShield's API host, and the targets it reads.",
+    why: "Firewalls must allow these connections from the node, and nothing inbound.",
+    example: "api.zeroshield.ai.",
+  },
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:503-508 — HTTPS to ZeroShield; 22, 5986, 6443, database and TLS ports to targets
+  "cbsrc.nodes.col.port": {
+    label: "Port",
+    what: "The destination port: HTTPS to ZeroShield, and 22, 5986, 6443 and your database and TLS ports to targets.",
+    why: "A blocked port shows up as unreachable targets in the connection test.",
+    example: "443 to api.zeroshield.ai.",
+  },
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:503-508 — jobs in, results out; read-only collection
+  "cbsrc.nodes.col.used_for": {
+    label: "Used for",
+    what: "What the connection is for: jobs in and results out (HTTPS to ZeroShield), or read-only collection from your targets.",
+    why: "Lets your firewall team approve each rule for a stated purpose.",
+    example: "Jobs in, results out (HTTPS).",
+  },
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:512-513, frontend/components/cbom/sources/ScanNodesTab.tsx:726-727 — an http proxy URL
+  "cbsrc.nodes.proxy": {
+    label: "Proxy",
+    what: "Optional: the HTTP proxy the node uses to reach ZeroShield.",
+    why: "Nodes in locked-down segments often reach the internet only through a proxy.",
+    example: "http://proxy.bank.local:8080.",
+  },
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:516-525 — PEM up to 64 KB
+  "cbsrc.nodes.proxy_ca": {
+    label: "Proxy CA certificate",
+    what: "Only if your proxy inspects TLS: the PEM certificate of the proxy's CA, up to 64 KB.",
+    why: "Without it the node refuses the proxy's re-signed certificate and cannot connect.",
+    example: "bank-proxy-ca.pem.",
+  },
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:532-534 — trust the proxy CA only for ZeroShield hostnames
+  "cbsrc.nodes.tls_inspect": {
+    label: "Proxy inspects TLS",
+    what: "Tick if your proxy decrypts TLS. The node then trusts the proxy's CA, and only for ZeroShield's hostnames.",
+    why: "Limiting the extra trust to ZeroShield's hostnames keeps the node's other TLS checks strict.",
+    example: "Tick for a Zscaler or Blue Coat proxy with SSL inspection on.",
+  },
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:572-583 — outbound only, read-only, metadata only
+  "cbsrc.nodes.does": {
+    label: "What the node does, and never does",
+    what: "The node opens no inbound ports, uses each credential only on its targets, reads with read-only accounts, and sends metadata only: algorithms, key sizes, versions and locations, never private keys.",
+    why: "These are the guarantees your security team reviews before approving a node.",
+    example: "For a private key file, only its public half and type are sent.",
+  },
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:702-708 — the node's own SSH key
+  "cbsrc.nodes.ssh_key": {
+    label: "Node SSH public key",
+    what: "The public half of the SSH key this node generated. Install it for the login user on servers that use the node-generated key.",
+    why: "The private key never leaves the node, so nothing secret is stored by ZeroShield.",
+    example: "ssh-ed25519 AAAAC3Nza... zs-node-7.",
+  },
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:789-800 — require signed scan nodes
+  "cbsrc.nodes.signing": {
+    label: "Request signing",
+    what: "Scan nodes sign every request with a key made at enrollment. A team admin can require it, so nodes that do not sign are refused.",
+    why: "A copied node token alone is then not enough to act as the node.",
+    example: "Turn on once every node shows Signed.",
+  },
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:795-797 — refuse unsigned nodes
+  "cbsrc.nodes.require_signed": {
+    label: "Require signed scan nodes",
+    what: "Refuse requests from nodes that do not sign them. Legacy unsigned nodes stop working until reset and registered again.",
+    why: "Closes the gap of a stolen node token being replayed from another machine.",
+    example: "On, after resetting the one legacy node.",
+  },
+  // ────────────────────────────────────────────────────────────── CBOM Sources: agent pools, schedules, run comparison, scan sidebar, remediation waves
+  // src: frontend/components/cbom/sources/AgentPoolsCard.tsx:1-2, frontend/components/cbom/sources/AgentPoolsCard.tsx:92-95 — one token for a Helm DaemonSet
+  "cbsrc.pool.card": {
+    label: "Host agents on Kubernetes",
+    what: "One token for a Helm DaemonSet: every pod enrolls as its own agent-mode scan node named after its Kubernetes node, reads only that node's files through a read-only mount, and is never given a credential.",
+    why: "Covers every worker node's crypto (keys, certificates, libraries) without SSH access to each one.",
+    example: "A pool token for prod-cluster enrolls 24 host agents, one per worker node.",
+  },
+  // src: frontend/components/cbom/sources/AgentPoolsCard.tsx:112-113 — up to 64 characters
+  "cbsrc.pool.name": {
+    label: "Name",
+    what: "A name for the pool, up to 64 characters; its agents are named after their Kubernetes nodes.",
+    why: "Identifies which cluster the agents belong to.",
+    example: "prod-cluster.",
+  },
+  // src: frontend/components/cbom/sources/AgentPoolsCard.tsx:116-117 — up to 64 characters
+  "cbsrc.pool.segment": {
+    label: "Network segment",
+    what: "The network segment recorded for every agent of the pool, up to 64 characters.",
+    why: "Findings from the agents are grouped by segment in run results.",
+    example: "DC1-k8s.",
+  },
+  // src: frontend/components/cbom/sources/AgentPoolsCard.tsx:119-126 — enrolled nodes keep working
+  "cbsrc.pool.expiry": {
+    label: "Token expires in",
+    what: "How long the pool token can enroll new agents. Agents that already enrolled keep working after it expires.",
+    why: "A short expiry limits the damage if the token leaks from the Helm values.",
+    example: "24 hours: long enough to roll out the DaemonSet.",
+  },
+  // src: frontend/components/cbom/sources/AgentPoolsCard.tsx:127-128 — 1 to 1,000; at least the number of Kubernetes nodes
+  "cbsrc.pool.max": {
+    label: "Nodes that may enroll",
+    what: "The most agents the token may enroll, 1 to 1,000. Set at least the number of Kubernetes nodes.",
+    why: "A cap stops a leaked token from enrolling unlimited fake nodes.",
+    example: "30 for a 24-node cluster that may grow.",
+  },
+  // src: frontend/components/cbom/sources/AgentPoolsCard.tsx:162 — the pool token's name
+  "cbsrc.pool.col.token": {
+    label: "Token",
+    what: "The pool token, by name. The token value itself is shown once, when it is created.",
+    why: "Revoke a token here if it may have leaked.",
+    example: "prod-cluster.",
+  },
+  // src: frontend/components/cbom/sources/AgentPoolsCard.tsx:163 — active, expired or revoked
+  "cbsrc.pool.col.status": {
+    label: "Status",
+    what: "Whether the token can still enroll agents: Active, All enrollments used, Expired or Revoked.",
+    why: "Only active tokens accept new agents; enrolled agents keep working either way.",
+    example: "Expired.",
+  },
+  // src: frontend/components/cbom/sources/AgentPoolsCard.tsx:164 — agents enrolled out of the maximum
+  "cbsrc.pool.col.enrolled": {
+    label: "Enrolled",
+    what: "How many agents enrolled with this token, out of the maximum allowed.",
+    why: "Fewer than your node count means some pods did not start or could not reach ZeroShield.",
+    example: "22 of 30.",
+  },
+  // src: frontend/components/cbom/sources/AgentPoolsCard.tsx:165 — when the token stops enrolling
+  "cbsrc.pool.col.expires": {
+    label: "Expires",
+    what: "When the token stops enrolling new agents.",
+    why: "Create a new token before scaling the cluster after this time.",
+    example: "15 Nov 2026, 11:00 am IST.",
+  },
+  // src: frontend/components/cbom/sources/AgentPoolsCard.tsx:166 — agent nodes of the pool
+  "cbsrc.pool.col.nodes": {
+    label: "Nodes",
+    what: "The agent scan nodes this token enrolled, as listed under Registered scan nodes.",
+    why: "Each agent appears as its own node with its own status.",
+    example: "prod-cluster-ip-10-30-1-12, prod-cluster-ip-10-30-1-13, ...",
+  },
+  // src: frontend/components/cbom/sources/SchedulesCard.tsx:1-3, frontend/components/cbom/sources/SchedulesCard.tsx:166 — daily, weekly or monthly; charged like Start scan
+  "cbsrc.sched.card": {
+    label: "Scheduled runs",
+    what: "Collection runs that start on their own, daily, weekly or monthly, at a time in the team's time zone. Each run charges credits like Start a scan and is skipped, with the reason, when the team has too few.",
+    why: "Regular runs show what changed and prove fixes landed.",
+    example: "Weekly, Sunday 02:00 Asia/Kolkata: servers, databases and cloud.",
+  },
+  // src: frontend/components/cbom/sources/SchedulesCard.tsx:68-69 — up to 64 characters
+  "cbsrc.sched.name": {
+    label: "Name",
+    what: "A name for the schedule, up to 64 characters.",
+    why: "Runs started by a schedule are labelled with it.",
+    example: "Weekly full collection.",
+  },
+  // src: frontend/components/cbom/sources/SchedulesCard.tsx:71-80 — daily, weekly, monthly
+  "cbsrc.sched.repeat": {
+    label: "Repeat",
+    what: "How often the schedule starts a run: daily, weekly or monthly.",
+    why: "More frequent runs catch drift sooner but cost more credits.",
+    example: "Weekly.",
+  },
+  // src: frontend/components/cbom/sources/SchedulesCard.tsx:82-90 — day of the week
+  "cbsrc.sched.day": {
+    label: "Day",
+    what: "The day of the week a weekly schedule runs.",
+    why: "Pick a day inside your scan window.",
+    example: "Sunday.",
+  },
+  // src: frontend/components/cbom/sources/SchedulesCard.tsx:92-95 — 1 to 28
+  "cbsrc.sched.monthday": {
+    label: "Day of month",
+    what: "The day of the month a monthly schedule runs, 1 to 28 so it exists in every month.",
+    why: "Align it with your monthly patch cycle to prove fixes.",
+    example: "5: the run after the monthly patch weekend.",
+  },
+  // src: frontend/components/cbom/sources/SchedulesCard.tsx:98-101 — team time zone; the scan window still applies
+  "cbsrc.sched.time": {
+    label: "Time",
+    what: "The time the run starts, in the team's time zone (set with the scan window on Network TLS). The scan window still applies: work outside it waits.",
+    why: "A start time outside the window only queues jobs that wait.",
+    example: "02:00.",
+  },
+  // src: frontend/components/cbom/sources/scheduleForm.ts:9, frontend/components/cbom/sources/scheduleForm.ts:27 — servers, Kubernetes, databases, cloud, network
+  "cbsrc.sched.groups": {
+    label: "Groups",
+    what: "Which groups of sources each scheduled run collects. Network is off by default and needs the SOC agreement.",
+    why: "Leave out groups that should only run on demand.",
+    example: "Servers, Kubernetes, databases and cloud.",
+  },
+  // src: frontend/components/cbom/sources/scheduleForm.ts:19 — any, or at least low, medium, high, critical
+  "cbsrc.sched.min_crit": {
+    label: "Only sources with criticality",
+    what: "Limit the schedule to sources whose business criticality is at least this level, or Any.",
+    why: "Scan critical systems more often without paying for every source each time.",
+    example: "High: a daily run of only high and critical sources.",
+  },
+  // src: frontend/components/cbom/sources/SchedulesCard.tsx:1-3, frontend/components/cbom/sources/SchedulesCard.tsx:125-127 — kept with the schedule
+  "cbsrc.sched.soc": {
+    label: "SOC agreement for schedules",
+    what: "Confirm that your SOC has agreed the network ranges and scan windows for every scheduled run. It is kept with the schedule.",
+    why: "Unattended network scans need standing SOC approval.",
+    example: "Tick after the SOC approved weekly scans of 10.20.0.0/16.",
+  },
+  // src: frontend/components/cbom/sources/ChangesPanel.tsx:1-3, frontend/components/cbom/sources/ChangesPanel.tsx:228-232 — the previous complete run or a chosen one
+  "cbsrc.compare.with": {
+    label: "Compare with",
+    what: "The run to compare this one with: by default each source's previous complete collection, or a run you choose. Partial or failed jobs show as not compared, never as everything removed.",
+    why: "Comparing shows exactly what changed between two points in time.",
+    example: "Run #38, before the TLS hardening change.",
+  },
+  // src: frontend/components/cbom/sources/SidebarSources.tsx:1-3 — off by default; adds the group's run and credits to the estimate
+  "cbsrc.sidebar.include": {
+    label: "Include CBOM Sources",
+    what: "Also run a collection of this group of CBOM Sources with this scan. Off by default; turning it on adds that group's collection run and its credits to the estimate. Sources are managed on the CBOM Sources page.",
+    why: "One action then covers the code and the infrastructure that runs it.",
+    example: "Include servers: adds 6.12 credits for 3 server sources.",
+  },
+  // src: frontend/components/cbom/sources/SidebarSources.tsx:160-165 — required with network TLS
+  "cbsrc.sidebar.soc": {
+    label: "SOC agreement",
+    what: "Confirm that your SOC has agreed the network ranges and scan windows. Required when network TLS is included.",
+    why: "Active network probing without SOC agreement is often treated as an incident.",
+    example: "Tick after the SOC acknowledged the ranges.",
+  },
+  // src: frontend/components/cbom/sources/WavesControls.tsx:1-3 — suggested wave per asset and the team's assignment
+  "cbsrc.waves.card": {
+    label: "Remediation waves",
+    what: "Each asset's suggested wave: 1 exposed or harvest-now-decrypt-later critical/high, 2 other critical/high, 3 medium/low, 4 post-quantum migration. Assign a wave, owner, target date and status; plans follow the asset to later runs and scans.",
+    why: "Waves turn a long findings list into an ordered plan with owners and dates.",
+    example: "Wave 1: RSA-2048 key exchange on api.bank.in:443, owner Payments, due 31 Dec.",
+  },
+  // src: frontend/components/cbom/sources/WavesControls.tsx:142-145 — hides assets without a wave
+  "cbsrc.waves.only_planned": {
+    label: "Only assets that need action",
+    what: "Show only assets that have a wave, hiding those that need no action.",
+    why: "Keeps the list to what someone has to fix.",
+    example: "On: 1,284 assets narrow to 96.",
+  },
+  // src: frontend/components/cbom/sources/WavesControls.tsx:160-164 — selection for the bulk bar
+  "cbsrc.waves.select": {
+    label: "Select asset",
+    what: "Select assets to assign together with the bar above.",
+    why: "Assign a whole group to one owner and date in one step.",
+    example: "Tick the 12 wave-1 certificates of api.bank.in.",
+  },
+  // src: frontend/components/cbom/sources/WavesControls.tsx:93-99 — set or keep the wave
+  "cbsrc.waves.bulk_wave": {
+    label: "Wave",
+    what: "The wave to give the selected assets: 1 to 4, Use suggested (the wave worked out from impact and exposure), or Keep wave.",
+    why: "Override the suggestion when you know better, for example a system due to be retired.",
+    example: "Wave 2.",
+  },
+  // src: frontend/components/cbom/sources/WavesControls.tsx:100-101 — up to 128 characters
+  "cbsrc.waves.bulk_owner": {
+    label: "Owner",
+    what: "Who fixes the selected assets, up to 128 characters. Blank keeps each one's owner.",
+    why: "Each fix needs a named owner to happen.",
+    example: "Payments platform team.",
+  },
+  // src: frontend/components/cbom/sources/WavesControls.tsx:102-103 — date
+  "cbsrc.waves.bulk_date": {
+    label: "Target date",
+    what: "When the selected assets should be fixed by. Blank keeps each one's date.",
+    why: "Dates let you track the plan against regulator deadlines.",
+    example: "31 Mar 2027.",
+  },
+  // src: frontend/components/cbom/sources/WavesControls.tsx:27, frontend/components/cbom/sources/WavesControls.tsx:105-112 — open, in progress, done, risk accepted
+  "cbsrc.waves.bulk_status": {
+    label: "Status",
+    what: "The status to set: Open, In progress, Done or Risk accepted; or Keep status.",
+    why: "Done items should disappear from the next run; Risk accepted records a decision.",
+    example: "In progress.",
+  },
+  // ────────────────────────────────────────────────────────────── CBOM Sources: network appliances, container images, CMDB import
+  // src: frontend/components/cbom/sources/AppliancesSection.tsx:1-3, frontend/components/cbom/sources/AppliancesSection.tsx:59-61, backend/utilities/cbom_sources/kinds.py:673-674 — Cisco IOS/ASA, FortiOS over SSH; PAN-OS, F5 over API
+  "cbsrc.app.card": {
+    label: "Network appliances",
+    what: "Read-only configuration pulls from routers, firewalls and load balancers through a scan node: Cisco IOS and ASA and FortiOS over SSH show commands, PAN-OS and F5 BIG-IP over API reads. TLS, SSH and IKE/IPsec settings and key sizes are inventoried.",
+    why: "VPN tunnels and load balancers carry most traffic; weak IKE groups there are harvest-now-decrypt-later targets.",
+    example: "fw-dc1 (FortiGate): IKE phase 1 uses DH group 14 (2048-bit MODP), quantum-vulnerable.",
+  },
+  // src: frontend/components/cbom/sources/AppliancesSection.tsx:28-35 — the appliance platform
+  "cbsrc.app.col.vendor": {
+    label: "Vendor",
+    what: "The appliance platform and how it is read (SSH show commands or API).",
+    why: "Each platform has its own read commands and credential type.",
+    example: "Cisco ASA.",
+  },
+  // src: frontend/components/cbom/sources/AppliancesSection.tsx:216 — devices of the source
+  "cbsrc.app.col.targets": {
+    label: "Targets",
+    what: "The devices this source reads, all with the same account.",
+    why: "Group devices that share an account and platform into one source.",
+    example: "3 devices.",
+  },
+  // src: frontend/components/cbom/sources/shared.tsx:76-84 — last connection test
+  "cbsrc.col.test": {
+    label: "Test",
+    what: "The result of the last connection test: Not tested, Testing, Passed, Partly ready, Failed or Could not test.",
+    why: "A source that has not passed a test is likely to fail its collection jobs.",
+    example: "Passed.",
+  },
+  // src: frontend/components/cbom/sources/AppliancesSection.tsx:28-35, frontend/components/cbom/sources/AppliancesSection.tsx:199-210 — what is read on each platform
+  "cbsrc.app.vendor": {
+    label: "Vendor",
+    what: "The platform of the devices. The hint lists exactly what is read: show commands for Cisco IOS, ASA and FortiOS; read-only API calls for PAN-OS and F5 BIG-IP.",
+    why: "Only the listed reads are sent, so your change board can approve them up front.",
+    example: "F5 BIG-IP: GET client-ssl profiles and key type and size only.",
+  },
+  // src: frontend/components/cbom/sources/AppliancesSection.tsx:213-214 — up to 64 characters
+  "cbsrc.app.name": {
+    label: "Name",
+    what: "A name for this appliance source, up to 64 characters, shown in lists, run results and reports.",
+    why: "Each finding records it as its source.",
+    example: "dc1-firewalls.",
+  },
+  // src: frontend/components/cbom/sources/AppliancesSection.tsx:216-218 — one address or host name per line
+  "cbsrc.app.devices": {
+    label: "Devices",
+    what: "The devices to read, one address or host name per line; all use the same account.",
+    why: "Devices not listed keep their weak VPN settings unseen.",
+    example: "10.20.0.1 and fw-dc1.bank.local.",
+  },
+  // src: frontend/components/cbom/sources/AppliancesSection.tsx:221-222 — default 22 for SSH, 443 for API
+  "cbsrc.app.port": {
+    label: "Port",
+    what: "The management port: 22 by default for SSH platforms, 443 for API platforms.",
+    why: "A management interface on a custom port fails the test until it is set here.",
+    example: "8443 for a BIG-IP management port.",
+  },
+  // src: frontend/components/cbom/sources/AppliancesSection.tsx:225-226 — a read-only account, up to 64 characters
+  "cbsrc.app.login": {
+    label: "Login",
+    what: "A read-only account on the devices, up to 64 characters. On Cisco ASA it must land in privileged EXEC.",
+    why: "A read-only role limits what a leaked password could change.",
+    example: "zs-cbom with privilege 15 view-only.",
+  },
+  // src: frontend/components/cbom/sources/AppliancesSection.tsx:230, backend/utilities/cbom_sources/kinds.py:258-260 — encrypted at rest; SSH passwords need a pinned host key
+  "cbsrc.app.secret": {
+    label: "Password or API key",
+    what: "The account's password, or the API key for PAN-OS. Encrypted at rest and sent only to the scan node. SSH platforms require the pinned host key below, so the password only goes to the real device.",
+    why: "Pinning stops a spoofed device from capturing the password.",
+    example: "The PAN-OS API key generated for zs-cbom.",
+  },
+  // src: frontend/components/cbom/sources/AppliancesSection.tsx:231-232 — the node that reaches the management interface
+  "cbsrc.app.node": {
+    label: "Scan node",
+    what: "The scan node that reaches the devices' management interfaces.",
+    why: "Management networks are usually isolated; the node must sit where it can reach them.",
+    example: "node-mgmt in the out-of-band network.",
+  },
+  // src: frontend/components/cbom/sources/AppliancesSection.tsx:235-238 — known_hosts lines, required for SSH
+  "cbsrc.app.known_hosts": {
+    label: "Pinned host key",
+    what: "The devices' SSH host keys in known_hosts format. Required for SSH platforms.",
+    why: "A device whose key does not match is refused before the password is sent.",
+    example: "fw-dc1.bank.local ssh-rsa AAAAB3Nza...",
+  },
+  // src: frontend/components/cbom/sources/AppliancesSection.tsx:241-242 — PEM, for a privately issued management certificate
+  "cbsrc.app.ca": {
+    label: "CA certificate",
+    what: "Optional PEM certificate of the CA that issued the management certificate of API platforms. The certificate is always verified.",
+    why: "Needed when the management interface uses an internal CA.",
+    example: "bank-root-ca.pem.",
+  },
+  // src: frontend/components/cbom/sources/ContainerImagesSection.tsx:1-5, frontend/components/cbom/sources/ContainerImagesSection.tsx:54-56 — pulled over HTTPS, 1 credit per image per run
+  "cbsrc.img.card": {
+    label: "Container images",
+    what: "The scan node pulls images from your registry over HTTPS (verified by digest, never written to disk) and lists the crypto packages inside with package URLs. 1 credit per image per run.",
+    why: "Images ship their own OpenSSL and crypto libraries, often older than the host's.",
+    example: "registry.bank.in/payments/api:2.4.1 contains openssl 1.1.1k.",
+  },
+  // src: backend/utilities/cbom_sources/kinds.py:735, backend/utilities/cbom_sources/kinds.py:741 — up to 50 per source
+  "cbsrc.img.col.images": {
+    label: "Images",
+    what: "How many images this source pulls, up to 50.",
+    why: "Each image costs 1 credit per run.",
+    example: "12 images: 12 credits per run.",
+  },
+  // src: frontend/components/cbom/sources/ContainerImagesSection.tsx:1-5 — anonymous or a vault reference
+  "cbsrc.img.col.credentials": {
+    label: "Credentials",
+    what: "How the registry is accessed: anonymous, or a credential read from your vault on the node. ZeroShield never stores a registry password.",
+    why: "Private registries need a credential; keeping it in your vault keeps it off ZeroShield.",
+    example: "Vault: secret/zs-cbom/registry.",
+  },
+  // src: frontend/components/cbom/sources/ContainerImagesSection.tsx:179-180 — up to 64 characters
+  "cbsrc.img.name": {
+    label: "Name",
+    what: "A name for this image source, up to 64 characters, shown in lists, run results and reports.",
+    why: "Each package found records it as its source.",
+    example: "payments-images.",
+  },
+  // src: frontend/components/cbom/sources/ContainerImagesSection.tsx:182-183 — an agentless node that reaches the registry
+  "cbsrc.img.node": {
+    label: "Scan node",
+    what: "An agentless scan node that reaches the registry over HTTPS.",
+    why: "Host-agent nodes never pull images.",
+    example: "node-dc1.",
+  },
+  // src: frontend/components/cbom/sources/ContainerImagesSection.tsx:185-187, backend/utilities/cbom_sources/kinds.py:735 — up to 50; registry/repository:tag or @sha256
+  "cbsrc.img.refs": {
+    label: "Images",
+    what: "Up to 50 images, one per line: registry/repository:tag or @sha256:digest. Docker Hub is used when no registry is named.",
+    why: "A digest pins exactly what was scanned; a tag may move.",
+    example: "registry.bank.in/payments/api@sha256:4f1c...",
+  },
+  // src: frontend/components/cbom/sources/ContainerImagesSection.tsx:190-200 — anonymous or from a vault (admins)
+  "cbsrc.img.cred": {
+    label: "Registry credentials",
+    what: "Anonymous for public pulls, or From a vault (team admins): the node reads the credential from your vault and sends it only to the registry's own host or its token service.",
+    why: "The credential never passes through ZeroShield.",
+    example: "From a vault for the private registry.bank.in.",
+  },
+  // src: frontend/components/cbom/sources/ContainerImagesSection.tsx:213-214 — up to 512 characters; under ZS_VAULT_PATH_PREFIX on the node
+  "cbsrc.img.vault_path": {
+    label: "Secret path",
+    what: "Where the registry credential lives in your vault, up to 512 characters, under the prefix the node's operator allows (ZS_VAULT_PATH_PREFIX).",
+    why: "The prefix keeps a source from reading arbitrary secrets through the node.",
+    example: "secret/zs-cbom/registry/bank.",
+  },
+  // src: backend/utilities/cbom_sources/kinds.py:745 — 1 to 8,192 MB, default 2,048
+  "cbsrc.img.max": {
+    label: "Largest image",
+    what: "The largest image to pull, compressed, 1 to 8,192 MB (default 2,048). Bigger images are reported as not read.",
+    why: "Caps the node's bandwidth and time on one huge image.",
+    example: "4096 for ML images with large CUDA layers.",
+  },
+  // src: frontend/components/cbom/sources/ContainerImagesSection.tsx:222-223 — only for a private CA
+  "cbsrc.img.ca": {
+    label: "Registry CA certificate",
+    what: "Optional PEM certificate of the CA that issued the registry's certificate. The registry's certificate is always verified.",
+    why: "Needed for an internal registry with a private CA.",
+    example: "bank-root-ca.pem.",
+  },
+  // src: frontend/components/cbom/sources/CmdbImportDialog.tsx:1-4, frontend/components/cbom/sources/CmdbImportDialog.tsx:44-55 — existing sources keep how they connect
+  "cbsrc.cmdb.updates": {
+    label: "Metadata updates",
+    what: "Existing sources whose owner, application, criticality, exposure, data classification or environment would change. How they connect is untouched, so running and queued jobs are kept.",
+    why: "Keeps CBOM ownership in line with your CMDB without re-testing sources.",
+    example: "dc-mumbai-linux: owner none → Payments platform team.",
+  },
+  // src: frontend/components/cbom/sources/CmdbImportDialog.tsx:1-4, frontend/components/cbom/sources/CmdbImportDialog.tsx:57-68 — new Linux server sources or network ranges
+  "cbsrc.cmdb.creates": {
+    label: "New sources",
+    what: "Sources the import would create: hosts not yet in any server source become Linux server sources on the chosen node; CIDRs become network ranges.",
+    why: "New sources still need a credential and a passing test before they are collected.",
+    example: "cmdb-import-1 (14 Linux hosts) · owner: Cards ops.",
+  },
+  // src: frontend/components/cbom/sources/CmdbImportDialog.tsx:70-80 — left unchanged
+  "cbsrc.cmdb.conflicts": {
+    label: "Conflicts",
+    what: "Rows that disagree with what is already set, for example a host in two sources with different owners. They are left unchanged.",
+    why: "Resolve them in the CMDB or by hand so the right owner gets the findings.",
+    example: "10.20.5.17: owner Payments in one source, Cards in another.",
+  },
+  // src: frontend/components/cbom/sources/CmdbImportDialog.tsx:82-92 — rows that could not be used
+  "cbsrc.cmdb.skipped": {
+    label: "Skipped or partly read rows",
+    what: "CSV or CMDB rows that could not be used, or were only partly read, with the reason.",
+    why: "Fix them at the source so the next import covers them.",
+    example: "Row 37: criticality \"P1\" is not low, medium, high or critical.",
+  },
+  // src: frontend/components/cbom/sources/CmdbImportDialog.tsx:142-151 — CSV or ServiceNow CMDB
+  "cbsrc.cmdb.source": {
+    label: "Import from",
+    what: "CSV file: columns host / fqdn / ip / cidr, owner, application, criticality, exposure, data_classification, environment, os. ServiceNow CMDB: reads the CMDB table set in Settings > Integrations (default cmdb_ci_server).",
+    why: "Importing keeps owners and criticality in one place instead of typing them per source.",
+    example: "ServiceNow CMDB, table cmdb_ci_server.",
+  },
+  // src: frontend/components/cbom/sources/CmdbImportDialog.tsx:153-168 — up to 5,000 rows and 2 MB, header row required
+  "cbsrc.cmdb.csv": {
+    label: "CSV",
+    what: "The CSV to import, pasted or uploaded: up to 5,000 rows and 2 MB, with a header row.",
+    why: "The header names the columns, so their order does not matter.",
+    example: "host,owner,criticality\\napp-01.bank.local,Payments,high.",
+  },
+  // src: frontend/components/cbom/sources/CmdbImportDialog.tsx:1-4, frontend/components/cbom/sources/CmdbImportDialog.tsx:171-173 — new hosts become Linux server sources
+  "cbsrc.cmdb.create": {
+    label: "Create sources for new hosts",
+    what: "Also create sources for hosts and CIDRs that are not in any source yet. Off: only existing sources are updated.",
+    why: "Bringing every CMDB host into scope closes blind spots.",
+    example: "On: 14 new hosts become a Linux server source on node-dc1.",
+  },
+  // src: frontend/components/cbom/sources/CmdbImportDialog.tsx:175-176 — the node that can reach the new hosts
+  "cbsrc.cmdb.node": {
+    label: "Scan node for new sources",
+    what: "The scan node new sources use: it must reach the new hosts.",
+    why: "A node that cannot reach them makes every new source fail its test.",
+    example: "node-dc1.",
+  },
+  // src: frontend/components/cbom/sources/CmdbImportDialog.tsx:1-4, frontend/components/cbom/sources/CmdbImportDialog.tsx:134 — admins only; preview, then confirm
+  "cbsrc.cmdb.dialog": {
+    label: "Import sources and metadata from a CMDB",
+    what: "Upload a CSV or pull the ServiceNow CMDB, preview what changes, then confirm. Team admins only.",
+    why: "Nothing changes until you confirm the preview.",
+    example: "Preview: 12 metadata updates, 1 new source, 2 conflicts.",
+  },
+  // ────────────────────────────────────────────────────────────── CBOM Sources: Fleet > SSH CA (components/cbom/sources/fleet/SshCaSection.tsx)
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:1-5, frontend/components/cbom/sources/fleet/SshCaSection.tsx:178-181 — short-lived per-job certificates for the node's own key
+  "cbsrc.sshca.card": {
+    label: "SSH certificate authority",
+    what: "ZeroShield signs each scan node's own key into a short-lived certificate for every job (5 minutes by default), with principals zs-<team>-<group>, bound to the node's address and with no forwarding or terminal. Servers trust this CA for the zs-cbom login only; every certificate issued is listed below.",
+    why: "Servers trust one CA instead of every node key, and a stolen certificate is useless within minutes.",
+    example: "prod-servers-ca, Ed25519, 300-second certificates.",
+  },
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:191-192 — up to 64 characters
+  "cbsrc.sshca.name": {
+    label: "Name",
+    what: "A name for the CA, up to 64 characters.",
+    why: "Linux sources pick their SSH CA by this name.",
+    example: "prod-servers-ca.",
+  },
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:194-201 — built in or HashiCorp Vault SSH engine
+  "cbsrc.sshca.provider": {
+    label: "Where the CA key lives",
+    what: "Built in: ZeroShield holds the CA key, encrypted (with AWS KMS when this deployment has a key). Vault: your HashiCorp Vault SSH secrets engine signs and the key never leaves Vault.",
+    why: "With Vault, the signing key stays under your own controls and audit.",
+    example: "Vault, using the ssh-client-signer mount.",
+  },
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:203-205 — 60 to 3,600 seconds; renewed during a job
+  "cbsrc.sshca.ttl": {
+    label: "Certificate lifetime",
+    what: "How long each job certificate is valid, 60 to 3,600 seconds. A job renews its certificate before it runs out.",
+    why: "Shorter lifetimes shrink the window in which a copied certificate works.",
+    example: "300 seconds.",
+  },
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:208-214 — Ed25519 or ECDSA P-256
+  "cbsrc.sshca.alg": {
+    label: "Key type",
+    what: "The CA key's algorithm: Ed25519 (recommended) or ECDSA P-256.",
+    why: "Both are widely supported by OpenSSH; neither is quantum-safe, so plan a rotation when post-quantum SSH keys are supported.",
+    example: "Ed25519.",
+  },
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:217-225 — AWS KMS or the deployment key
+  "cbsrc.sshca.wrap": {
+    label: "Key encryption",
+    what: "How the built-in CA key is encrypted at rest: with AWS KMS when this deployment has a KMS key, otherwise with the deployment key (ENCRYPTION_KEY).",
+    why: "KMS keeps the CA key unusable without access to your KMS key.",
+    example: "AWS KMS.",
+  },
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:228-233 — labels of the allowed KMS keys
+  "cbsrc.sshca.kms": {
+    label: "KMS key",
+    what: "Which of this deployment's allowed AWS KMS keys wraps the CA key.",
+    why: "Separate keys per environment limit the reach of one KMS policy.",
+    example: "cbom-sshca-prod (default).",
+  },
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:238-239 — https, the active node
+  "cbsrc.sshca.vault_addr": {
+    label: "Vault address",
+    what: "The HTTPS address of your Vault's active node.",
+    why: "Signing requests go only to this address.",
+    example: "https://vault.bank.in:8200.",
+  },
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:241-242 — the SSH secrets engine path
+  "cbsrc.sshca.vault_mount": {
+    label: "SSH engine mount",
+    what: "The path where the SSH secrets engine is mounted in Vault.",
+    why: "The token below is limited to signing under this mount.",
+    example: "ssh-client-signer.",
+  },
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:244-245 — allowed_critical_options must include source-address
+  "cbsrc.sshca.vault_role": {
+    label: "Signing role",
+    what: "The Vault SSH role that signs. Its allowed_critical_options must include source-address and its default_extensions must be empty.",
+    why: "Without source-address the certificates would work from any machine.",
+    example: "zs-cbom-signer.",
+  },
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:247-248 — write-only; may only call <mount>/sign/<role>
+  "cbsrc.sshca.vault_token": {
+    label: "Vault token",
+    what: "A Vault token that may only call <mount>/sign/<role>. Write-only: it is never shown again.",
+    why: "A token limited to signing cannot read secrets or change the CA.",
+    example: "A periodic token with a policy allowing update on ssh-client-signer/sign/zs-cbom-signer.",
+  },
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:47-52 — active, rotation, retired, revoked
+  "cbsrc.sshca.col.state": {
+    label: "State",
+    what: "Active (signs), Rotation (trusted, not signing yet), Retired (still trusted during the overlap) or Revoked.",
+    why: "Promote a rotation only once every server trusts the new key, or scan logins fail.",
+    example: "Rotation: trusted, not signing yet.",
+  },
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:285 — algorithm and fingerprint
+  "cbsrc.sshca.col.key": {
+    label: "Key",
+    what: "The CA key's algorithm and SHA-256 fingerprint.",
+    why: "Compare the fingerprint with TrustedUserCAKeys on a server to confirm it trusts this CA.",
+    example: "ssh-ed25519 SHA256:3f9c...",
+  },
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:286 — default certificate lifetime in seconds
+  "cbsrc.sshca.col.lifetime": {
+    label: "Lifetime",
+    what: "The default lifetime of the certificates this CA issues, in seconds.",
+    why: "Shorter is safer; jobs renew as needed.",
+    example: "300 s.",
+  },
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:287-290 — certificates issued by this CA
+  "cbsrc.sshca.col.certs": {
+    label: "Certificates",
+    what: "How many certificates this CA has issued.",
+    why: "Each one is listed in the certificate audit below.",
+    example: "1,284.",
+  },
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:326-327 — lowercase letters, digits, . _ -
+  "cbsrc.sshca.group": {
+    label: "Server group",
+    what: "The server group for the principals file: certificates carry zs-<team>-<group>, and a server accepts only the groups in its file. Lowercase letters, digits, dots, underscores and dashes.",
+    why: "Groups let production servers refuse certificates meant for test servers.",
+    example: "prod.",
+  },
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:340-345 — read trusted keys, KRL and principals only
+  "cbsrc.sshca.trust_tokens": {
+    label: "Trust tokens",
+    what: "A trust token lets your servers or configuration management fetch this team's trusted keys, revocation list and principals, and nothing else. It is shown once.",
+    why: "Servers keep their trust files current on their own, so rotations need no manual roll-out.",
+    example: "prod-servers, used by 212 servers in the last 24 hours.",
+  },
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:351-352 — up to 64 characters
+  "cbsrc.sshca.token_name": {
+    label: "Token name",
+    what: "A name for the trust token, up to 64 characters.",
+    why: "Name it after the servers that will use it, so you know what breaks if it is revoked.",
+    example: "prod-servers.",
+  },
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:361-364 — shown once; keep it root-only
+  "cbsrc.sshca.new_token": {
+    label: "Copy it now",
+    what: "The new trust token is shown only once. Store it in a file only root can read and point ZS_TRUST_TOKEN at it.",
+    why: "Anyone with the token can read your trusted keys and revocation list.",
+    example: "/etc/zs-cbom/trust-token, mode 0600.",
+  },
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:375 — the token's prefix
+  "cbsrc.sshca.col.token": {
+    label: "Token",
+    what: "The first characters of the token, to match it with the file on your servers.",
+    why: "The full value is never shown again.",
+    example: "zst_4f1c...",
+  },
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:376 — servers that fetched in the last 24 hours
+  "cbsrc.sshca.col.servers": {
+    label: "Servers (24 h)",
+    what: "How many servers fetched their trust files with this token in the last 24 hours.",
+    why: "During a rotation it shows how many servers already have the new key.",
+    example: "212 of your 230 production servers.",
+  },
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:377 — last fetch
+  "cbsrc.sshca.col.last_used": {
+    label: "Last used",
+    what: "When a server last fetched with this token.",
+    why: "A token unused for weeks may belong to retired servers; revoke it.",
+    example: "14 Nov 2026, 02:05 am IST.",
+  },
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:378 — active or revoked
+  "cbsrc.sshca.col.token_status": {
+    label: "Status",
+    what: "Whether the token still works: active, or revoked (servers using it get 401 and keep their current files).",
+    why: "Revoke a token as soon as it may have leaked.",
+    example: "Active.",
+  },
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:409 — when the certificate was issued
+  "cbsrc.sshca.col.issued": {
+    label: "Issued",
+    what: "When the certificate was issued.",
+    why: "Match it with sshd's log on a server to trace a scan login.",
+    example: "14 Nov 2026, 02:00:07 am IST.",
+  },
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:410 — serial and CA
+  "cbsrc.sshca.col.serial": {
+    label: "Serial",
+    what: "The certificate's serial number and the CA that issued it.",
+    why: "sshd logs the serial, so you can tie each login to a job.",
+    example: "88213 · CA #3.",
+  },
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:411 — principals in the certificate
+  "cbsrc.sshca.col.principals": {
+    label: "Principals",
+    what: "The principals written into the certificate.",
+    why: "A server accepts it only if its principals file lists one of them.",
+    example: "zs-12-prod.",
+  },
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:412 — source-address restriction
+  "cbsrc.sshca.col.from": {
+    label: "From",
+    what: "The source-address restriction: the only addresses the certificate works from.",
+    why: "A certificate copied elsewhere is refused.",
+    example: "10.20.1.15/32.",
+  },
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:413 — node, job, at claim or renewal
+  "cbsrc.sshca.col.node_job": {
+    label: "Node / job",
+    what: "The scan node and job the certificate was issued for, and whether at the job's claim or as a renewal.",
+    why: "Lets you trace every login back to a specific collection job.",
+    example: "node #7 · job #4410 · at claim.",
+  },
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:414 — valid_before
+  "cbsrc.sshca.col.valid_until": {
+    label: "Valid until",
+    what: "When the certificate stops working.",
+    why: "After this time it cannot be used even if copied.",
+    example: "14 Nov 2026, 02:05:07 am IST.",
+  },
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:53, frontend/components/cbom/sources/fleet/SshCaSection.tsx:415 — valid, expired, revoked
+  "cbsrc.sshca.col.cert_status": {
+    label: "Status",
+    what: "valid, expired or revoked (in the revocation list; servers refuse it once they have the new list).",
+    why: "Revoke a certificate if its node may be compromised before it expires.",
+    example: "expired.",
+  },
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:444-449 — promote before the readiness check passes
+  "cbsrc.sshca.promote_now": {
+    label: "Promote now",
+    what: "Promote the new key now, before the readiness check shows every server has it. Servers that do not trust it yet refuse every scan login.",
+    why: "Use only when you know every server already has the new trusted keys.",
+    example: "Tick after your Ansible run pushed the new trusted keys everywhere.",
+  },
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:456-458 — recorded in the audit, up to 512 characters
+  "cbsrc.sshca.reason": {
+    label: "Reason",
+    what: "Why you are revoking, up to 512 characters. It is recorded in the audit.",
+    why: "Auditors and teammates see why a CA, certificate or token was revoked.",
+    example: "Node VM snapshot copied to an untrusted host.",
+  },
+  // ────────────────────────────────────────────────────────────── CBOM Sources: Review & Run, business criticality
+  // src: backend/utilities/cbom_sources/posture.py:12-14, backend/utilities/cbom_sources/posture.py:35-39 — impact weight x criticality x exposure
+  "cbsrc.rr.criticality": {
+    label: "Business criticality and exposure",
+    what: "Per source: business criticality (Low x0.5, Medium x1 by default, High x1.5, Critical x2) and internet exposure (from the collected facts, or set; internet-facing x1.5). A finding's risk score is its impact weight times both. Runs snapshot them when they start.",
+    why: "Ranks the same weak cipher higher on a critical, internet-facing system than on an internal test box.",
+    example: "High finding (7) on a Critical, internet-facing source: 7 x 2 x 1.5 = 21.",
+  },
+  // ────────────────────────────────────────────────────────────── Settings > Integrations (components/integrations/IntegrationsPage.tsx)
+  // src: frontend/components/integrations/IntegrationsPage.tsx:126-127 — one record per finding; resolved when a later complete run no longer finds it
+  "int.card.servicenow": {
+    label: "ServiceNow",
+    what: "Opens one ServiceNow record per new finding (de-duplicated by a correlation id) and resolves it when a later complete run no longer finds it. Also the source for the CMDB import on CBOM Sources.",
+    why: "Findings land in the queue your teams already work from, and close themselves when fixed.",
+    example: "INC0012345: RSA-1024 certificate on api.bank.in:443, assigned to Payments.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:128 — RFC 5424 with CEF or JSON
+  "int.card.syslog": {
+    label: "Syslog (SIEM)",
+    what: "Sends every event as an RFC 5424 syslog message with a CEF or JSON payload to your SIEM or SOAR.",
+    why: "Your SOC sees crypto findings next to other security alerts.",
+    example: "A CEF event Finding opened, severity High, to ArcSight on 6514.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:129 — batched JSON events
+  "int.card.splunk_hec": {
+    label: "Splunk HEC",
+    what: "Sends every event to a Splunk HTTP Event Collector, batched as JSON events.",
+    why: "Lets you build Splunk dashboards and alerts on crypto findings.",
+    example: "sourcetype zeroshield:cbom in index security.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:130 — HMAC-SHA256 over timestamp and body
+  "int.card.webhook": {
+    label: "Signed webhook",
+    what: "POSTs every event as JSON to your receiver, signed with HMAC-SHA256 over the timestamp and the body.",
+    why: "Any SOAR or in-house tool can act on events and prove they came from ZeroShield.",
+    example: "A Certificate expiring event POSTed to https://soar.bank.in/hooks/zeroshield.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:131 — OSCAL 1.2.3 assessment results, schema-validated, signed
+  "int.card.oscal": {
+    label: "OSCAL push",
+    what: "When a Sources run or a CBOM code scan finishes, pushes its OSCAL 1.2.3 assessment results (schema-validated) to your GRC tool, signed like the webhook.",
+    why: "Auditors get machine-readable evidence without exports by hand.",
+    example: "Run #42's assessment results pushed to https://grc.bank.in/api/oscal.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:271-273 — on or off per integration
+  "int.enabled": {
+    label: "Forward events",
+    what: "On: events are queued and delivered to this destination. Off: nothing is sent; the settings are kept.",
+    why: "Turn it off during a destination's maintenance instead of deleting the integration.",
+    example: "Off while the SIEM is being migrated.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:51-54 — PEM; certificates are always verified
+  "int.common.ca_pem": {
+    label: "CA certificate",
+    what: "Optional PEM certificate of the CA that signed the destination's certificate, when it is not publicly trusted. The destination's certificate is always verified.",
+    why: "Without it, a destination with an internal CA fails every delivery on the TLS check.",
+    example: "bank-root-ca.pem for siem.bank.local.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:57 — https://<instance>.service-now.com
+  "int.sn.instance_url": {
+    label: "Instance URL",
+    what: "Your ServiceNow instance's address.",
+    why: "Records are created only on this instance.",
+    example: "https://bank.service-now.com.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:58 — incident or sn_vul_vulnerable_item
+  "int.sn.table": {
+    label: "Table",
+    what: "The table records are created in: incident, or sn_vul_vulnerable_item with Vulnerability Response.",
+    why: "Use the table your remediation teams work from.",
+    example: "sn_vul_vulnerable_item.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:59 — user and password or OAuth client credentials
+  "int.sn.auth": {
+    label: "Authentication",
+    what: "How ZeroShield signs in to ServiceNow: a user and password, or OAuth client credentials.",
+    why: "OAuth credentials can be scoped and rotated without a user account.",
+    example: "OAuth client credentials for the zeroshield-integration app.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:60 — basic authentication user
+  "int.sn.username": {
+    label: "User",
+    what: "The ServiceNow user for basic authentication, with rights to create and update records in the table.",
+    why: "A dedicated integration user makes the records' origin clear in audit history.",
+    example: "svc_zeroshield.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:61 — OAuth client credentials
+  "int.sn.client_id": {
+    label: "OAuth client ID",
+    what: "The client ID of the OAuth application registered in ServiceNow.",
+    why: "Pairs with the client secret below.",
+    example: "3f9c1e2a7b...",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:62 — optional
+  "int.sn.assignment_group": {
+    label: "Assignment group",
+    what: "Optional: the group new records are assigned to.",
+    why: "Records without a group may sit unassigned.",
+    example: "PKI Operations.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:63 — optional
+  "int.sn.category": {
+    label: "Category",
+    what: "Optional: the category set on new records.",
+    why: "Lets you filter and report crypto findings in ServiceNow.",
+    example: "Security.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:64 — incident: 6 (Resolved)
+  "int.sn.resolve_state": {
+    label: "Resolved state value",
+    what: "The state value set when a finding is no longer found by a later complete run.",
+    why: "A wrong value leaves fixed findings open in ServiceNow.",
+    example: "6 (Resolved) for incident.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:65 — close code on resolve
+  "int.sn.close_code": {
+    label: "Resolution code",
+    what: "The resolution (close) code set when a record is resolved.",
+    why: "Some instances refuse to resolve a record without a close code.",
+    example: "Solution provided.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:66-68 — resolving always goes through
+  "int.sn.min_severity": {
+    label: "Open records from severity",
+    what: "The lowest severity that opens a new record. Resolving a record always goes through.",
+    why: "Keeps low findings out of the ticket queue while still closing records that exist.",
+    example: "High and above.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:69-70 — one record per finding
+  "int.sn.correlation_field": {
+    label: "Correlation field",
+    what: "The field that stores ZeroShield's finding id. Before creating a record, ZeroShield looks it up by this field, so each finding has one record.",
+    why: "Prevents duplicates when a finding is seen in every run.",
+    example: "correlation_id.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:71 — the table the CMDB import reads
+  "int.sn.cmdb_table": {
+    label: "CMDB table",
+    what: "The CMDB table the CMDB import on CBOM Sources reads.",
+    why: "Point it at the class that holds your servers.",
+    example: "cmdb_ci_server.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:72 — encoded query, optional
+  "int.sn.cmdb_query": {
+    label: "CMDB filter",
+    what: "Optional: a ServiceNow encoded query that limits which CMDB records are imported.",
+    why: "Leaves decommissioned or non-production CIs out.",
+    example: "operational_status=1.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:73 — fields tried in order
+  "int.sn.cmdb_host": {
+    label: "CMDB host fields",
+    what: "The CMDB fields that hold the host, tried in order.",
+    why: "The first non-empty field becomes the target the import matches or adds.",
+    example: "fqdn, ip_address, host_name, name.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:74 — maps to the source owner
+  "int.sn.cmdb_owner": {
+    label: "CMDB owner field",
+    what: "The CMDB field mapped to the source owner.",
+    why: "Owners from the CMDB become the remediation owners.",
+    example: "owned_by.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:75 — maps to the source application
+  "int.sn.cmdb_application": {
+    label: "CMDB application field",
+    what: "The CMDB field mapped to the source application.",
+    why: "Groups findings by the application they affect.",
+    example: "u_application.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:76 — maps to the source environment
+  "int.sn.cmdb_environment": {
+    label: "CMDB environment field",
+    what: "The CMDB field mapped to the source environment.",
+    why: "Separates production from test in plans and reports.",
+    example: "used_for.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:77 — optional; maps to business criticality
+  "int.sn.cmdb_criticality": {
+    label: "CMDB criticality field",
+    what: "Optional: the CMDB field mapped to business criticality (low, medium, high or critical).",
+    why: "Criticality scales the risk score of every finding of the source.",
+    example: "busines_criticality.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:78 — optional; maps to internet exposure
+  "int.sn.cmdb_exposure": {
+    label: "CMDB exposure field",
+    what: "Optional: the CMDB field mapped to internet exposure.",
+    why: "Internet-facing multiplies the risk score by 1.5.",
+    example: "u_internet_facing.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:79 — optional
+  "int.sn.cmdb_classification": {
+    label: "CMDB data classification field",
+    what: "Optional: the CMDB field mapped to the data classification (public, internal, confidential, restricted).",
+    why: "Sensitive data under weak crypto is migrated first.",
+    example: "u_data_classification.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:83 — syslog collector
+  "int.sys.host": {
+    label: "Collector host",
+    what: "The hostname or address of your syslog collector.",
+    why: "Every event is sent here.",
+    example: "siem.bank.local.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:84-85 — TLS, TCP, UDP
+  "int.sys.transport": {
+    label: "Transport",
+    what: "TLS (RFC 5425, port 6514), TCP with octet counting, or UDP (RFC 5426, no delivery confirmation).",
+    why: "Only TLS protects the events in transit; UDP may lose them silently.",
+    example: "TLS to siem.bank.local on 6514.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:86 — default 6514 for TLS, 514 for TCP and UDP
+  "int.sys.port": {
+    label: "Port",
+    what: "Optional: the collector's port. Default 6514 for TLS, 514 for TCP and UDP.",
+    why: "A wrong port fails the test event.",
+    example: "6514.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:87 — CEF or JSON
+  "int.sys.format": {
+    label: "Message format",
+    what: "The payload format: CEF (ArcSight) or JSON.",
+    why: "Pick the one your SIEM parses without a custom parser.",
+    example: "CEF for ArcSight; JSON for Elastic.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:88 — syslog facility number
+  "int.sys.facility": {
+    label: "Facility",
+    what: "The syslog facility number set on each message; 16 is local0.",
+    why: "Lets the collector route ZeroShield events to their own file or index.",
+    example: "16 (local0).",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:89 — the HOSTNAME field
+  "int.sys.sender": {
+    label: "Sender name",
+    what: "The name put in the HOSTNAME field of each message.",
+    why: "Identifies the events as ZeroShield's in the SIEM.",
+    example: "zeroshield.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:93 — https
+  "int.hec.url": {
+    label: "HEC URL",
+    what: "The address of your Splunk HTTP Event Collector.",
+    why: "Events are posted only here.",
+    example: "https://splunk.bank.local:8088.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:94 — optional
+  "int.hec.index": {
+    label: "Index",
+    what: "Optional: the Splunk index to write to. Blank uses the token's default index.",
+    why: "Keeps crypto events in the index your SOC searches.",
+    example: "security.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:95 — sourcetype of each event
+  "int.hec.sourcetype": {
+    label: "Sourcetype",
+    what: "The sourcetype set on each event.",
+    why: "Splunk searches and field extraction key off the sourcetype.",
+    example: "zeroshield:cbom.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:96 — source of each event
+  "int.hec.source": {
+    label: "Source",
+    what: "The source set on each event.",
+    why: "Tells events from different ZeroShield teams or deployments apart.",
+    example: "zeroshield-prod.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:100 — https
+  "int.webhook.url": {
+    label: "Receiver URL",
+    what: "The HTTPS address that receives the signed JSON events.",
+    why: "Events are posted only here.",
+    example: "https://soar.bank.local/hooks/zeroshield.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:121 — https
+  "int.oscal.url": {
+    label: "GRC endpoint URL",
+    what: "The HTTPS address of your GRC tool's OSCAL endpoint.",
+    why: "Assessment results are pushed only here.",
+    example: "https://grc.bank.local/api/oscal.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:135, frontend/components/integrations/IntegrationsPage.tsx:307-310 — write-only
+  "int.secret.password": {
+    label: "Password",
+    what: "The ServiceNow user's password. Encrypted at rest and never shown again; changing the URL or user clears it unless you enter it again.",
+    why: "Clearing it on change keeps it from going to a host it was not meant for.",
+    example: "The svc_zeroshield password.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:135, frontend/components/integrations/IntegrationsPage.tsx:307-310 — write-only
+  "int.secret.client_secret": {
+    label: "OAuth client secret",
+    what: "The OAuth application's client secret. Encrypted at rest and never shown again.",
+    why: "With the client ID it obtains tokens to create records.",
+    example: "The secret shown when the OAuth app was created.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:136, frontend/components/integrations/IntegrationsPage.tsx:307-310 — write-only
+  "int.secret.hec_token": {
+    label: "HEC token",
+    what: "The Splunk HEC token. Encrypted at rest and never shown again.",
+    why: "Anyone with it can write events to your Splunk; scope it to one index.",
+    example: "A token created under Data inputs > HTTP Event Collector.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:137, frontend/components/integrations/IntegrationsPage.tsx:307-310 — 16 or more characters; write-only
+  "int.secret.signing": {
+    label: "Signing secret",
+    what: "The shared secret, 16 characters or more, used to sign each request (HMAC-SHA256). Generate creates one; copy it to your receiver before saving, as it is never shown again.",
+    why: "Your receiver uses it to reject requests not sent by ZeroShield.",
+    example: "A 43-character random value from Generate.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:31-40, frontend/components/integrations/IntegrationsPage.tsx:333-343 — which events are sent
+  "int.events": {
+    label: "Events",
+    what: "Which events this destination receives: finding opened or resolved, asset added or removed, certificate renewed or expiring in 30 days, scheduled run skipped, run or code scan finished.",
+    why: "Send only what the destination acts on, to keep noise down.",
+    example: "Finding opened and Certificate expiring for the SOC.",
+  },
+  // src: backend/utilities/integrations/dispatch.py:1-11 — at least once, in order, back-off, dead-letter
+  "int.log": {
+    label: "Delivery log",
+    what: "Every event is delivered at least once, in order per destination, with the same event id on each retry. A failing destination is retried with back-off (30 s doubling to 30 min); events it refuses for good go to the dead-letter list, from where you can retry them.",
+    why: "Shows whether your SIEM or ServiceNow actually received each event.",
+    example: "Dead-lettered: HTTP 400 from ServiceNow, field u_category not found.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:410-416 — one integration or all
+  "int.log.filter_kind": {
+    label: "Integration filter",
+    what: "Show deliveries of one integration, or of all.",
+    why: "Retry all needs one integration chosen.",
+    example: "ServiceNow.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:417-423 — pending, delivered, dead-lettered
+  "int.log.filter_status": {
+    label: "Status filter",
+    what: "Show deliveries by status: pending, delivered or dead-lettered.",
+    why: "Dead-lettered events were not received and may need a retry.",
+    example: "Dead-lettered.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:440 — when the event was queued
+  "int.log.col.queued": {
+    label: "Queued",
+    what: "When the event was queued for this destination.",
+    why: "Events are delivered oldest first.",
+    example: "14 Nov 2026, 02:31 am IST.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:441 — destination
+  "int.log.col.integration": {
+    label: "Integration",
+    what: "The destination the event is for.",
+    why: "Each destination has its own queue.",
+    example: "Splunk HEC.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:31-40, frontend/components/integrations/IntegrationsPage.tsx:442 — event type
+  "int.log.col.event": {
+    label: "Event",
+    what: "What happened: finding opened or resolved, asset added or removed, certificate renewed or expiring, scheduled run skipped, run or scan finished.",
+    why: "Lets you check a specific finding reached the destination.",
+    example: "Finding resolved.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:443 — pending, delivered, dead
+  "int.log.col.status": {
+    label: "Status",
+    what: "Pending (queued or backing off), delivered, or dead-lettered (refused for good, or still undelivered after the maximum age).",
+    why: "Dead-lettered events need fixing at the destination, then a retry.",
+    example: "Pending: next attempt in 4 minutes.",
+  },
+  // src: backend/utilities/integrations/dispatch.py:46, frontend/components/integrations/IntegrationsPage.tsx:444 — delivery attempts
+  "int.log.col.attempts": {
+    label: "Attempts",
+    what: "How many times delivery was tried.",
+    why: "Many attempts point at a destination that is down or refusing the credentials.",
+    example: "3: two timeouts, then delivered.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:445 — last response or error
+  "int.log.col.result": {
+    label: "Result",
+    what: "The destination's last answer or the error.",
+    why: "Names the exact cause to fix at the destination.",
+    example: "HTTP 401: the HEC token is disabled.",
+  },
 } as const satisfies Record<string, InfoTipEntry>;
 
 export type InfoTipId = keyof typeof INFO_TIPS;

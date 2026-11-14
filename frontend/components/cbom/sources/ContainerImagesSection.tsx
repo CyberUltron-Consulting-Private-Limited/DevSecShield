@@ -26,6 +26,7 @@ import {
 
 import { cbomSourcesKeys } from "./keys";
 import { ConfirmDialog, EmptyState, Field, NodeSelect, SectionCard, TestStatusBadge, Truncate } from "./shared";
+import { InfoTip } from "@/components/ui/info-tip";
 
 // registry/repository:tag or @sha256:digest (same grammar as the API and the node)
 const IMAGE_RE = /^(?:(?:[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+(?::\d{1,5})?|localhost(?::\d{1,5})?|[A-Za-z0-9-]+:\d{1,5})\/)?[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*(?:\/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?(?:@sha256:[0-9a-f]{64})?$/;
@@ -52,6 +53,7 @@ export default function ContainerImagesSection({ teamId, nodes, isAdmin }: { tea
 
   return (
     <SectionCard
+      infoId="cbsrc.img.card"
       title="Container images"
       description="The scan node pulls images from your registry over HTTPS (manifests and layers, verified by digest, never written to disk) and lists the crypto packages in them with package URLs. 1 credit per image per run."
       actions={
@@ -74,10 +76,10 @@ export default function ContainerImagesSection({ teamId, nodes, isAdmin }: { tea
                 <TableHeader>
                   <TableRow>
                     <TableHead>Name</TableHead>
-                    <TableHead>Images</TableHead>
-                    <TableHead>Credentials</TableHead>
-                    <TableHead>Node</TableHead>
-                    <TableHead>Test</TableHead>
+                    <TableHead>Images <InfoTip id="cbsrc.img.col.images" /></TableHead>
+                    <TableHead>Credentials <InfoTip id="cbsrc.img.col.credentials" /></TableHead>
+                    <TableHead>Node <InfoTip id="cbsrc.col.node" /></TableHead>
+                    <TableHead>Test <InfoTip id="cbsrc.col.test" /></TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -176,18 +178,18 @@ function ImagesForm({ teamId, nodes, isAdmin, onDone, onSaved }: {
   return (
     <div className="space-y-4 rounded-lg border border-zinc-200 dark:border-zinc-800 p-4" data-testid="images-form">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Field label="Name" htmlFor="images-name" required error={errors.name}>
+        <Field infoId="cbsrc.img.name" label="Name" htmlFor="images-name" required error={errors.name}>
           <Input id="images-name" value={name} maxLength={64} onChange={(e) => setName(e.target.value)} placeholder="Payments images" />
         </Field>
-        <Field label="Scan node" htmlFor="images-node" required error={errors.node} hint="An agentless node that reaches the registry">
+        <Field infoId="cbsrc.img.node" label="Scan node" htmlFor="images-node" required error={errors.node} hint="An agentless node that reaches the registry">
           <NodeSelect id="images-node" nodes={nodes} value={nodeId} onChange={setNodeId} />
         </Field>
-        <Field label="Images" htmlFor="images-refs" required error={errors.images} hint="One per line: registry/repository:tag or @sha256:digest (Docker Hub when no registry is named)">
+        <Field infoId="cbsrc.img.refs" label="Images" htmlFor="images-refs" required error={errors.images} hint="One per line: registry/repository:tag or @sha256:digest (Docker Hub when no registry is named)">
           <Textarea id="images-refs" className="font-mono text-sm min-h-[88px]" value={images} spellCheck={false}
             onChange={(e) => setImages(e.target.value)} placeholder={"harbor.corp.example/payments/api:2.4.1\nghcr.io/org/worker@sha256:..."} />
         </Field>
         <div className="space-y-4">
-          <Field label="Registry credentials" htmlFor="images-cred"
+          <Field infoId="cbsrc.img.cred" label="Registry credentials" htmlFor="images-cred"
             hint={cred === "vault"
               ? "Read on the scan node (ZS_VAULT_PATH_PREFIX). Sent only to the registry's own host, or to the token service of Docker Hub (auth.docker.io) or GitLab.com (gitlab.com). A token service on any other host gets an anonymous request, so a private image there is not read (for example a self-managed GitLab whose registry has its own host name)"
               : "Public or anonymous pulls"}>
@@ -201,7 +203,7 @@ function ImagesForm({ teamId, nodes, isAdmin, onDone, onSaved }: {
           </Field>
           {cred === "vault" && (
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Vault" htmlFor="images-vault-provider">
+              <Field infoId="cbsrc.common.vault_provider" label="Vault" htmlFor="images-vault-provider">
                 <Select value={vaultProvider} onValueChange={(v) => setVaultProvider(v as "hashicorp" | "aws_secrets_manager")}>
                   <SelectTrigger id="images-vault-provider" className="w-full cursor-pointer"><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -210,16 +212,16 @@ function ImagesForm({ teamId, nodes, isAdmin, onDone, onSaved }: {
                   </SelectContent>
                 </Select>
               </Field>
-              <Field label="Secret path" htmlFor="images-vault-path" error={errors.vault}>
+              <Field infoId="cbsrc.img.vault_path" label="Secret path" htmlFor="images-vault-path" error={errors.vault}>
                 <Input id="images-vault-path" value={vaultPath} maxLength={512} onChange={(e) => setVaultPath(e.target.value)} placeholder="secret/zs/registry" />
               </Field>
             </div>
           )}
-          <Field label="Largest image (MB, compressed)" htmlFor="images-max" error={errors.maxMb} hint="Bigger images are reported as not read">
+          <Field infoId="cbsrc.img.max" label="Largest image (MB, compressed)" htmlFor="images-max" error={errors.maxMb} hint="Bigger images are reported as not read">
             <Input id="images-max" inputMode="numeric" value={maxMb} onChange={(e) => setMaxMb(e.target.value.replace(/\D/g, "").slice(0, 4))} />
           </Field>
         </div>
-        <Field label="Registry CA certificate (PEM)" htmlFor="images-ca" hint="Only for a registry with a private CA; the registry's certificate is always verified">
+        <Field infoId="cbsrc.img.ca" label="Registry CA certificate (PEM)" htmlFor="images-ca" hint="Only for a registry with a private CA; the registry's certificate is always verified">
           <Textarea id="images-ca" className="font-mono text-xs min-h-[72px]" value={caPem} spellCheck={false} onChange={(e) => setCaPem(e.target.value)} />
         </Field>
       </div>

@@ -62,7 +62,20 @@ export const COVERED: string[] = [
   "components/ticketing-integrations-settings.tsx",
   "app/[team_id]/account/page.tsx",
   "app/admin/page.tsx",
+  // CBOM Sources: every tab (Scan nodes, Servers, Kubernetes & Databases, Cloud & Identity, Network TLS, Evidence,
+  // Fleet, Review & Run), their dialogs, the scan sidebar's Sources section and remediation waves (issue #43)
+  "app/[team_id]/cbom/sources/page.tsx",
+  "components/cbom/sources",
+  // Settings > Integrations: ServiceNow, syslog, Splunk HEC, webhook, OSCAL and the delivery log (issue #43)
+  "app/[team_id]/settings/integrations/page.tsx",
+  "components/integrations/IntegrationsPage.tsx",
 ];
+/** Files under a covered directory that are not covered yet, each with the reason. */
+export const NOT_YET_COVERED = new Map<string, string>([
+  // The run results view: CB-38 PR #120 moves it to components/cbom/results; its tips follow there.
+  ["components/cbom/sources/RunResults.tsx", "run results view, replaced by components/cbom/results (CB-38 #120)"],
+  ["components/cbom/sources/RunPosture.tsx", "run posture view, replaced by components/cbom/results (CB-38 #120)"],
+]);
 /** Dashboards: their h2/h3 chart titles need a tip as well. */
 export const DASHBOARDS = new Set<string>(["app/[team_id]/page.tsx"]);
 
@@ -73,7 +86,7 @@ function expand(entry: string): string[] {
   return fs.readdirSync(abs, { withFileTypes: true }).flatMap((e) => {
     const rel = path.join(entry, e.name);
     if (e.isDirectory()) return expand(rel);
-    return e.name.endsWith(".tsx") ? [rel] : [];
+    return e.name.endsWith(".tsx") && !NOT_YET_COVERED.has(rel) ? [rel] : [];
   });
 }
 
@@ -287,6 +300,39 @@ const PROBES: { name: string; file: string; anchor: string; insert: string; wher
     anchor: `<TableHead`,
     insert: `<TableHead>Fix version</TableHead>`,
     where: "before",
+    gaps: ["heading"],
+  },
+  // CBOM Sources and Settings > Integrations (issue #43): the building blocks must pass an infoId of their own
+  {
+    name: "Sources: a Field without an infoId in the Servers form",
+    file: "components/cbom/sources/ServersTab.tsx",
+    anchor: `<FormSection title="Connection">`,
+    insert: `<Field label="Jump host" htmlFor="servers-jump"><Input id="servers-jump" /></Field>`,
+    where: "after",
+    gaps: ["control", "heading"],
+  },
+  {
+    name: "Sources: a SectionCard without an infoId on Network TLS",
+    file: "components/cbom/sources/NetworkTab.tsx",
+    anchor: `<SectionCard infoId="cbsrc.net.safety"`,
+    insert: `<SectionCard title="Throttling">{null}</SectionCard>`,
+    where: "before",
+    gaps: ["heading"],
+  },
+  {
+    name: "Sources: a Checkbox2 without a tip on Review & Run",
+    file: "components/cbom/sources/ReviewRunTab.tsx",
+    anchor: `<div className="space-y-1.5">\n          <Checkbox2`,
+    insert: `<Checkbox2 id="review-dry-run" checked={false} onChange={() => {}}>Dry run</Checkbox2>`,
+    where: "before",
+    gaps: ["control"],
+  },
+  {
+    name: "Integrations: a delivery-log column without a tip",
+    file: "components/integrations/IntegrationsPage.tsx",
+    anchor: `<TableHead>Queued <InfoTip id="int.log.col.queued" /></TableHead>`,
+    insert: `<TableHead>Latency</TableHead>`,
+    where: "after",
     gaps: ["heading"],
   },
 ];

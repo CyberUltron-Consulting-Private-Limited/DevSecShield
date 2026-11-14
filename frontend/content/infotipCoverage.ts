@@ -21,6 +21,7 @@
  *               `<p>` whose className has `font-medium` and whose content is literal text (KPI and metric labels)
  *               contains an `<InfoTip>`, or an `infotip-shared: <reason>` comment when the field right below it carries
  *               the tip.
+ *               Every SectionCard, StatCard, Field and SecretField (NEEDS_INFO_ID) passes an `infoId`.
  *  - "h2":      in dashboard files, every `<h2>`/`<h3>` with visible text contains an `<InfoTip>`.
  */
 import ts from "typescript";
@@ -43,12 +44,17 @@ export const CONTROL_WINDOW_LINES = 25;
 export const MAX_CLIMB = 3;
 
 /** Table headers whose meaning is the word itself; everything else gets a tip. */
-export const SELF_EXPLANATORY_HEADERS = new Set(["Actions", "Title", "Name", "#", "View scan metadata"]);
+export const SELF_EXPLANATORY_HEADERS = new Set(["Actions", "Title", "Name", "#", "View scan metadata", "Remove", "Action"]);
 
 export const CONTROL_TAGS = new Set([
   "Input", "Textarea", "SelectTrigger", "Switch", "Checkbox", "input", "select", "textarea",
   "PathArraysInput", "NodeSelect", "DropdownMenuTrigger",
+  // CBOM Sources building blocks (components/cbom/sources/shared.tsx)
+  "ChoiceCards", "Checkbox2",
 ]);
+
+/** Components that render their own (i) from an `infoId` prop: in a covered file each use must pass one. */
+export const NEEDS_INFO_ID = new Set(["SectionCard", "StatCard", "Field", "SecretField"]);
 
 /** Elements whose (i) explains their own text; a tip directly inside one never serves a control. */
 export const TEXT_TIP_PARENTS = new Set([
@@ -289,7 +295,7 @@ function analyse(source: string) {
 }
 
 export function findGaps(source: string, opts: { dashboard?: boolean } = {}): Gap[] {
-  const { gaps, need } = analyse(source);
+  const { gaps, need, els } = analyse(source);
   need("CardTitle", "heading", () => true);
   need("TableHead", "heading", (el) => {
     const text = visible(el.node);
@@ -303,6 +309,10 @@ export function findGaps(source: string, opts: { dashboard?: boolean } = {}): Ga
     const valueInside = el.node.children.some((ch) => ts.isJsxExpression(ch) && ch.expression);
     return !valueInside && visible(el.node) !== "";
   });
+  // the infoId itself is required: a tip somewhere in the card's body does not explain its title
+  for (const el of els) {
+    if (NEEDS_INFO_ID.has(el.tag) && !hasAttr(el.attrs, "infoId")) gaps.push({ rule: "heading", line: el.line, snippet: source.slice(el.start, el.start + 80).replace(/\s+/g, " ") });
+  }
   if (opts.dashboard) {
     for (const h of ["h2", "h3"]) need(h, "h2", (el) => visible(el.node) !== "");
   }

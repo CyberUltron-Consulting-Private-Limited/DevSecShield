@@ -26,6 +26,7 @@ import {
 import { ASSET_TYPE_LABEL } from "./RunResults";
 import { formatDateTime, groupNotRead, pluralize } from "./logic";
 import { ErrorBlock, LoadingBlock, StatusBadge, type Tone } from "./shared";
+import { InfoTip } from "@/components/ui/info-tip";
 
 export const DRIFT_LABEL: Record<CbomDriftKind, [string, Tone]> = {
   opened: ["Finding opened", "red"],
@@ -225,7 +226,7 @@ export function CompareDialog({ teamId, runId, runs, onClose }: {
           </DialogDescription>
         </DialogHeader>
         <div className="flex items-center gap-2 text-sm">
-          <span className="text-zinc-600 dark:text-zinc-400">Compare with</span>
+          <span className="text-zinc-600 dark:text-zinc-400">Compare with</span> <InfoTip id="cbsrc.compare.with" />
           <Select value={against ? String(against) : "prev"} onValueChange={(v) => setAgainst(v === "prev" ? undefined : Number(v))}>
             <SelectTrigger className="w-[220px] cursor-pointer" aria-label="Run to compare with" data-testid="compare-against">
               <SelectValue />

@@ -397,7 +397,7 @@ export function CriticalityCard({ teamId }: { teamId: number }) {
   const sources = query.data?.sources ?? [];
   if (query.isLoading || sources.length === 0) return null;
   return (
-    <SectionCard title="Business criticality and exposure"
+    <SectionCard infoId="cbsrc.rr.criticality" title="Business criticality and exposure"
                  description="Weights each source's findings in the risk ranking of the next run (default: medium; exposure from the collected facts, internet-facing x1.5)">
       <ul className="divide-y divide-zinc-200 dark:divide-zinc-800" data-testid="criticality-card">
         {sources.map((src) => (
