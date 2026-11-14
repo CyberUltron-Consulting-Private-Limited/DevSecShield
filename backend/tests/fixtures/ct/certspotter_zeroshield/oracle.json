@@ -1,0 +1,691 @@
+{
+ "kind": "certspotter",
+ "rows": [
+  {
+   "cert_sha256": "ca5369cf9a5b90c323e6127193f277f3f15f94a54d0ea2421c05766b12999e02",
+   "curve": "P-256",
+   "dns_names": [
+    "devsecshield.zeroshield.ai",
+    "devsecshieldapi.zeroshield.ai"
+   ],
+   "id": "16738190599",
+   "issuer": "CN=YE2,O=Let's Encrypt,C=US",
+   "issuer_cn": "YE2",
+   "issuer_friendly_name": "Let's Encrypt",
+   "key_bits": 256,
+   "not_after": "2026-11-22T09:54:09Z",
+   "not_before": "2026-08-24T09:54:10Z",
+   "precert_poison": false,
+   "provider_dns_names": [
+    "devsecshield.zeroshield.ai",
+    "devsecshieldapi.zeroshield.ai"
+   ],
+   "pubkey_alg": "id-ecPublicKey",
+   "revoked": false,
+   "serial": "6b874f5ff3b646678eb6b47a6952b395ba4",
+   "sha256": "ca5369cf9a5b90c323e6127193f277f3f15f94a54d0ea2421c05766b12999e02",
+   "sig_alg": "ecdsa-with-SHA384",
+   "subject": "CN=devsecshield.zeroshield.ai",
+   "subject_cn": "devsecshield.zeroshield.ai",
+   "tbs_sha256": "cc2ddcc03e483cbc806820376ab51251428dc5b759f3cf227e82d0fcb1469662"
+  },
+  {
+   "cert_sha256": "604cbdbe678e30970854e79466b0e16785db1dea1cc8bbe79facf7a8409e6186",
+   "curve": null,
+   "dns_names": [
+    "aimeshbackend.zeroshield.ai",
+    "aimeshfirewall.zeroshield.ai",
+    "aimeshgateway.zeroshield.ai"
+   ],
+   "id": "16771658307",
+   "issuer": "CN=WR3,O=Google Trust Services,C=US",
+   "issuer_cn": "WR3",
+   "issuer_friendly_name": "Google Trust Services",
+   "key_bits": 2048,
+   "not_after": "2026-11-23T16:16:55Z",
+   "not_before": "2026-08-25T15:22:41Z",
+   "precert_poison": false,
+   "provider_dns_names": [
+    "aimeshbackend.zeroshield.ai",
+    "aimeshfirewall.zeroshield.ai",
+    "aimeshgateway.zeroshield.ai"
+   ],
+   "pubkey_alg": "rsaEncryption",
+   "revoked": false,
+   "serial": "229f43d64861bfde0a8290883f5fce1c",
+   "sha256": "604cbdbe678e30970854e79466b0e16785db1dea1cc8bbe79facf7a8409e6186",
+   "sig_alg": "sha256WithRSAEncryption",
+   "subject": "CN=aimeshfirewall.zeroshield.ai",
+   "subject_cn": "aimeshfirewall.zeroshield.ai",
+   "tbs_sha256": "c51d1f3730280b5984de24ade4809d90d7bb24f1e3b582cbe1fb40b7f0441b56"
+  },
+  {
+   "cert_sha256": "344f3a9793ed85bd4a8ca4048344135c10984a54de02c52acecf05657979eb8d",
+   "curve": null,
+   "dns_names": [
+    "dpdplawshield.zeroshield.ai"
+   ],
+   "id": "16894468682",
+   "issuer": "CN=YR1,O=Let's Encrypt,C=US",
+   "issuer_cn": "YR1",
+   "issuer_friendly_name": "Let's Encrypt",
+   "key_bits": 2048,
+   "not_after": "2026-11-28T22:55:45Z",
+   "not_before": "2026-08-30T22:55:46Z",
+   "precert_poison": false,
+   "provider_dns_names": [
+    "dpdplawshield.zeroshield.ai"
+   ],
+   "pubkey_alg": "rsaEncryption",
+   "revoked": false,
+   "serial": "644b3013b13bc692e2d10445c72c4634953",
+   "sha256": "344f3a9793ed85bd4a8ca4048344135c10984a54de02c52acecf05657979eb8d",
+   "sig_alg": "sha256WithRSAEncryption",
+   "subject": "CN=dpdplawshield.zeroshield.ai",
+   "subject_cn": "dpdplawshield.zeroshield.ai",
+   "tbs_sha256": "e9896193e65eb7e8b18569fb67f12bf94a50ff47f719a03a1f1bb7bc77b16937"
+  },
+  {
+   "cert_sha256": "006c5e8a6016124b0a4b5fd8345281912841cdc86e86a91c927d0a092be83949",
+   "curve": null,
+   "dns_names": [
+    "aisecshield.zeroshield.ai",
+    "aisecshieldbackend.zeroshield.ai",
+    "aisecshieldgateway.zeroshield.ai"
+   ],
+   "id": "16987606040",
+   "issuer": "CN=WR3,O=Google Trust Services,C=US",
+   "issuer_cn": "WR3",
+   "issuer_friendly_name": "Google Trust Services",
+   "key_bits": 2048,
+   "not_after": "2026-12-03T18:02:08Z",
+   "not_before": "2026-09-04T17:20:01Z",
+   "precert_poison": true,
+   "provider_dns_names": [
+    "aisecshield.zeroshield.ai",
+    "aisecshieldbackend.zeroshield.ai",
+    "aisecshieldgateway.zeroshield.ai"
+   ],
+   "pubkey_alg": "rsaEncryption",
+   "revoked": false,
+   "serial": "1238e52d7849da8712a1bac3fd41236c",
+   "sha256": "006c5e8a6016124b0a4b5fd8345281912841cdc86e86a91c927d0a092be83949",
+   "sig_alg": "sha256WithRSAEncryption",
+   "subject": "CN=aisecshield.zeroshield.ai",
+   "subject_cn": "aisecshield.zeroshield.ai",
+   "tbs_sha256": "d03a99df541096e7ffb852f115f22b3ffeeafdb52d536b54bf7405126391e91f"
+  },
+  {
+   "cert_sha256": "0533592d4a1bd16176235446b1505a61f22d9cb7ccead18db926f1661d6a7749",
+   "curve": "P-256",
+   "dns_names": [
+    "threatshieldbackend.zeroshield.ai"
+   ],
+   "id": "17120310860",
+   "issuer": "CN=YE1,O=Let's Encrypt,C=US",
+   "issuer_cn": "YE1",
+   "issuer_friendly_name": "Let's Encrypt",
+   "key_bits": 256,
+   "not_after": "2026-12-10T12:32:00Z",
+   "not_before": "2026-09-11T12:32:01Z",
+   "precert_poison": false,
+   "provider_dns_names": [
+    "threatshieldbackend.zeroshield.ai"
+   ],
+   "pubkey_alg": "id-ecPublicKey",
+   "revoked": false,
+   "serial": "67152484e1898701f59316a3b4c83285c35",
+   "sha256": "0533592d4a1bd16176235446b1505a61f22d9cb7ccead18db926f1661d6a7749",
+   "sig_alg": "ecdsa-with-SHA384",
+   "subject": "CN=threatshieldbackend.zeroshield.ai",
+   "subject_cn": "threatshieldbackend.zeroshield.ai",
+   "tbs_sha256": "753dc56f25c0da187afb734f604f0b9af619c8abd1dba92f5bfe4e4eb6d65694"
+  },
+  {
+   "cert_sha256": "bf1d9ae5105d2722d46861f613065ac677de51fc0567faa2f11d1e1a94d8e480",
+   "curve": "P-256",
+   "dns_names": [
+    "threatshield.zeroshield.ai"
+   ],
+   "id": "17120323737",
+   "issuer": "CN=YE2,O=Let's Encrypt,C=US",
+   "issuer_cn": "YE2",
+   "issuer_friendly_name": "Let's Encrypt",
+   "key_bits": 256,
+   "not_after": "2026-12-10T12:32:00Z",
+   "not_before": "2026-09-11T12:32:01Z",
+   "precert_poison": false,
+   "provider_dns_names": [
+    "threatshield.zeroshield.ai"
+   ],
+   "pubkey_alg": "id-ecPublicKey",
+   "revoked": false,
+   "serial": "6d0dde705c5623ae2c3f3329a73b527499e",
+   "sha256": "bf1d9ae5105d2722d46861f613065ac677de51fc0567faa2f11d1e1a94d8e480",
+   "sig_alg": "ecdsa-with-SHA384",
+   "subject": "CN=threatshield.zeroshield.ai",
+   "subject_cn": "threatshield.zeroshield.ai",
+   "tbs_sha256": "4ec0b1fe2f4ca561dc6150cb2c4529c122a5154eb1dee67bb8cfe2047ea21fe9"
+  },
+  {
+   "cert_sha256": "15f2b48c3e0c8f5e8797b5e656c037fcac260e512a03fa3c83a38d2da3e59e18",
+   "curve": null,
+   "dns_names": [
+    "docs.zeroshield.ai"
+   ],
+   "id": "17253617342",
+   "issuer": "CN=WR1,O=Google Trust Services,C=US",
+   "issuer_cn": "WR1",
+   "issuer_friendly_name": "Google Trust Services",
+   "key_bits": 2048,
+   "not_after": "2026-12-17T10:20:25Z",
+   "not_before": "2026-09-18T09:21:36Z",
+   "precert_poison": true,
+   "provider_dns_names": [
+    "docs.zeroshield.ai"
+   ],
+   "pubkey_alg": "rsaEncryption",
+   "revoked": false,
+   "serial": "ce8bef9c71a221c0137d501f2fc848e0",
+   "sha256": "15f2b48c3e0c8f5e8797b5e656c037fcac260e512a03fa3c83a38d2da3e59e18",
+   "sig_alg": "sha256WithRSAEncryption",
+   "subject": "CN=docs.zeroshield.ai",
+   "subject_cn": "docs.zeroshield.ai",
+   "tbs_sha256": "28bc64cc112183ed1c5e38030fa8f872d44a59b1536346ffd194f4ddd2b4571d"
+  },
+  {
+   "cert_sha256": "be42d4e635cdcdca57bad123351ca2ce56b4832b80226dd5fbf73ee811ccd3b6",
+   "curve": "P-256",
+   "dns_names": [
+    "docs.zeroshield.ai"
+   ],
+   "id": "17253619324",
+   "issuer": "CN=WE1,O=Google Trust Services,C=US",
+   "issuer_cn": "WE1",
+   "issuer_friendly_name": "Google Trust Services",
+   "key_bits": 256,
+   "not_after": "2026-12-17T10:21:42Z",
+   "not_before": "2026-09-18T09:21:47Z",
+   "precert_poison": true,
+   "provider_dns_names": [
+    "docs.zeroshield.ai"
+   ],
+   "pubkey_alg": "id-ecPublicKey",
+   "revoked": false,
+   "serial": "57e5a97e063902d40e7471c5e5f5ef33",
+   "sha256": "be42d4e635cdcdca57bad123351ca2ce56b4832b80226dd5fbf73ee811ccd3b6",
+   "sig_alg": "ecdsa-with-SHA256",
+   "subject": "CN=docs.zeroshield.ai",
+   "subject_cn": "docs.zeroshield.ai",
+   "tbs_sha256": "fb462417534df4a47677a776a7d36bc3afb36d4d565f34dabb6d4821694a047f"
+  },
+  {
+   "cert_sha256": "4e014fc46e31d4d3f5c35cea61bb8d595782ca6d6d3a35bef662752a33a221be",
+   "curve": null,
+   "dns_names": [
+    "docs.zeroshield.ai"
+   ],
+   "id": "17253822306",
+   "issuer": "CN=WR1,O=Google Trust Services,C=US",
+   "issuer_cn": "WR1",
+   "issuer_friendly_name": "Google Trust Services",
+   "key_bits": 2048,
+   "not_after": "2026-12-17T10:37:02Z",
+   "not_before": "2026-09-18T09:37:08Z",
+   "precert_poison": true,
+   "provider_dns_names": [
+    "docs.zeroshield.ai"
+   ],
+   "pubkey_alg": "rsaEncryption",
+   "revoked": false,
+   "serial": "55f2e7548b82f9713a35c6ba8892fff",
+   "sha256": "4e014fc46e31d4d3f5c35cea61bb8d595782ca6d6d3a35bef662752a33a221be",
+   "sig_alg": "sha256WithRSAEncryption",
+   "subject": "CN=docs.zeroshield.ai",
+   "subject_cn": "docs.zeroshield.ai",
+   "tbs_sha256": "40650e525938462599bed84731f83555840ab0ef28e62964e5608bcdc38fb7a1"
+  },
+  {
+   "cert_sha256": "a7f371a8fe27c1f5925dcafeff4249a1df5f553afd043c34b9974f06a627f499",
+   "curve": "P-256",
+   "dns_names": [
+    "docs.zeroshield.ai"
+   ],
+   "id": "17253822805",
+   "issuer": "CN=WE1,O=Google Trust Services,C=US",
+   "issuer_cn": "WE1",
+   "issuer_friendly_name": "Google Trust Services",
+   "key_bits": 256,
+   "not_after": "2026-12-17T10:37:14Z",
+   "not_before": "2026-09-18T09:37:19Z",
+   "precert_poison": false,
+   "provider_dns_names": [
+    "docs.zeroshield.ai"
+   ],
+   "pubkey_alg": "id-ecPublicKey",
+   "revoked": false,
+   "serial": "fec4591446ab50130e2d3d732853d144",
+   "sha256": "a7f371a8fe27c1f5925dcafeff4249a1df5f553afd043c34b9974f06a627f499",
+   "sig_alg": "ecdsa-with-SHA256",
+   "subject": "CN=docs.zeroshield.ai",
+   "subject_cn": "docs.zeroshield.ai",
+   "tbs_sha256": "304e87efdcd3d653f00e7c6920e57e8f924e17c0890ecc62bca42fa3a96c982e"
+  },
+  {
+   "cert_sha256": "d11a32aa2308bc9b1836875c767dd228be385311ace0c40e84da2aa5102bb11c",
+   "curve": "P-256",
+   "dns_names": [
+    "*.zeroshield.ai",
+    "zeroshield.ai"
+   ],
+   "id": "17325244757",
+   "issuer": "CN=YE1,O=Let's Encrypt,C=US",
+   "issuer_cn": "YE1",
+   "issuer_friendly_name": "Let's Encrypt",
+   "key_bits": 256,
+   "not_after": "2026-12-20T17:44:50Z",
+   "not_before": "2026-09-21T17:44:51Z",
+   "precert_poison": false,
+   "provider_dns_names": [
+    "*.zeroshield.ai",
+    "zeroshield.ai"
+   ],
+   "pubkey_alg": "id-ecPublicKey",
+   "revoked": false,
+   "serial": "54579bf10e4c8d3282b06e6b1caadd0b392",
+   "sha256": "d11a32aa2308bc9b1836875c767dd228be385311ace0c40e84da2aa5102bb11c",
+   "sig_alg": "ecdsa-with-SHA384",
+   "subject": "CN=zeroshield.ai",
+   "subject_cn": "zeroshield.ai",
+   "tbs_sha256": "63ba0cd3c2dfeac7607c6ae44155f722b7ff318da8cfc34a700ef494e7c27ee7"
+  },
+  {
+   "cert_sha256": "226bae9298c6626c19dd1640cd032863c286063315b250b8d8eb7b2872963f3b",
+   "curve": "P-256",
+   "dns_names": [
+    "*.zeroshield.ai",
+    "zeroshield.ai"
+   ],
+   "id": "17464881186",
+   "issuer": "CN=WE1,O=Google Trust Services,C=US",
+   "issuer_cn": "WE1",
+   "issuer_friendly_name": "Google Trust Services",
+   "key_bits": 256,
+   "not_after": "2026-12-27T16:34:21Z",
+   "not_before": "2026-09-28T15:36:35Z",
+   "precert_poison": false,
+   "provider_dns_names": [
+    "*.zeroshield.ai",
+    "zeroshield.ai"
+   ],
+   "pubkey_alg": "id-ecPublicKey",
+   "revoked": false,
+   "serial": "c50473a69c73cc4a0ed6668106558eff",
+   "sha256": "226bae9298c6626c19dd1640cd032863c286063315b250b8d8eb7b2872963f3b",
+   "sig_alg": "ecdsa-with-SHA256",
+   "subject": "CN=zeroshield.ai",
+   "subject_cn": "zeroshield.ai",
+   "tbs_sha256": "4d7276d1dba6bda17acdb53246f402a3f8121687d067a477b456f8df60e3925c"
+  },
+  {
+   "cert_sha256": "25ff6cf7016e61ff35106d7cf279bd58deade23362dc43b87a52cc567fd24205",
+   "curve": null,
+   "dns_names": [
+    "aidspm.zeroshield.ai"
+   ],
+   "id": "17493332537",
+   "issuer": "CN=WR1,O=Google Trust Services,C=US",
+   "issuer_cn": "WR1",
+   "issuer_friendly_name": "Google Trust Services",
+   "key_bits": 2048,
+   "not_after": "2026-12-29T04:38:22Z",
+   "not_before": "2026-09-30T03:39:40Z",
+   "precert_poison": true,
+   "provider_dns_names": [
+    "aidspm.zeroshield.ai"
+   ],
+   "pubkey_alg": "rsaEncryption",
+   "revoked": false,
+   "serial": "66e511e834819d2513d8b4655af00918",
+   "sha256": "25ff6cf7016e61ff35106d7cf279bd58deade23362dc43b87a52cc567fd24205",
+   "sig_alg": "sha256WithRSAEncryption",
+   "subject": "CN=aidspm.zeroshield.ai",
+   "subject_cn": "aidspm.zeroshield.ai",
+   "tbs_sha256": "64897adae549cf72d1266e415b4493ff87588da0a401a4eff4ce74c69aeee946"
+  },
+  {
+   "cert_sha256": "aea28d2a29fea5bace91d1d1951ef41356dd106f3668f087ce7d364da0cb061f",
+   "curve": "P-256",
+   "dns_names": [
+    "aidspm.zeroshield.ai"
+   ],
+   "id": "17493336211",
+   "issuer": "CN=WE1,O=Google Trust Services,C=US",
+   "issuer_cn": "WE1",
+   "issuer_friendly_name": "Google Trust Services",
+   "key_bits": 256,
+   "not_after": "2026-12-29T04:39:46Z",
+   "not_before": "2026-09-30T03:39:50Z",
+   "precert_poison": true,
+   "provider_dns_names": [
+    "aidspm.zeroshield.ai"
+   ],
+   "pubkey_alg": "id-ecPublicKey",
+   "revoked": false,
+   "serial": "b5abc7b5d9fd8d2d1310ceb7b63ff5c2",
+   "sha256": "aea28d2a29fea5bace91d1d1951ef41356dd106f3668f087ce7d364da0cb061f",
+   "sig_alg": "ecdsa-with-SHA256",
+   "subject": "CN=aidspm.zeroshield.ai",
+   "subject_cn": "aidspm.zeroshield.ai",
+   "tbs_sha256": "274347ef1b5b780af01b6f4469fe0e7e884742eab34ba1d48a941348b52a3c91"
+  },
+  {
+   "cert_sha256": "3906de96bbbc00c9b8db2b841a1e555aa514546afd2e996f1776d32142684009",
+   "curve": "P-256",
+   "dns_names": [
+    "devsecshield.zeroshield.ai",
+    "devsecshieldapi.zeroshield.ai"
+   ],
+   "id": "17503093305",
+   "issuer": "CN=YE2,O=Let's Encrypt,C=US",
+   "issuer_cn": "YE2",
+   "issuer_friendly_name": "Let's Encrypt",
+   "key_bits": 256,
+   "not_after": "2026-12-29T15:15:28Z",
+   "not_before": "2026-09-30T15:15:29Z",
+   "precert_poison": false,
+   "provider_dns_names": [
+    "devsecshield.zeroshield.ai",
+    "devsecshieldapi.zeroshield.ai"
+   ],
+   "pubkey_alg": "id-ecPublicKey",
+   "revoked": false,
+   "serial": "5fc743c029a0517f5a2dd9e447cb831a6af",
+   "sha256": "3906de96bbbc00c9b8db2b841a1e555aa514546afd2e996f1776d32142684009",
+   "sig_alg": "ecdsa-with-SHA384",
+   "subject": "CN=devsecshield.zeroshield.ai",
+   "subject_cn": "devsecshield.zeroshield.ai",
+   "tbs_sha256": "6a27de430a63cd05b33e6823033269cfa6864aa4c58eae96c03ec82211413f32"
+  },
+  {
+   "cert_sha256": "04e8328ee8d93b7d4e8b8080a581091ddfd534573809aef53cc504bf24ee7021",
+   "curve": "P-256",
+   "dns_names": [
+    "www.zeroshield.ai",
+    "zeroshield.ai"
+   ],
+   "id": "17556894825",
+   "issuer": "CN=YE1,O=Let's Encrypt,C=US",
+   "issuer_cn": "YE1",
+   "issuer_friendly_name": "Let's Encrypt",
+   "key_bits": 256,
+   "not_after": "2027-01-01T07:01:15Z",
+   "not_before": "2026-10-03T07:01:16Z",
+   "precert_poison": false,
+   "provider_dns_names": [
+    "www.zeroshield.ai",
+    "zeroshield.ai"
+   ],
+   "pubkey_alg": "id-ecPublicKey",
+   "revoked": false,
+   "serial": "57e16555eff69194a49740453f988d20870",
+   "sha256": "04e8328ee8d93b7d4e8b8080a581091ddfd534573809aef53cc504bf24ee7021",
+   "sig_alg": "ecdsa-with-SHA384",
+   "subject": "CN=zeroshield.ai",
+   "subject_cn": "zeroshield.ai",
+   "tbs_sha256": "304cfb8c5b2565d5353074c2bd445ace160faaa81d516e07503c7efc07abc0de"
+  },
+  {
+   "cert_sha256": "d39e47298915e0e8cf5baf66cdf38a7e96fb442c861b6deac6cc00b7797c56a4",
+   "curve": "P-256",
+   "dns_names": [
+    "apisecurity.zeroshield.ai",
+    "apisecuritybackend.zeroshield.ai"
+   ],
+   "id": "17560240357",
+   "issuer": "CN=YE2,O=Let's Encrypt,C=US",
+   "issuer_cn": "YE2",
+   "issuer_friendly_name": "Let's Encrypt",
+   "key_bits": 256,
+   "not_after": "2027-01-01T11:22:06Z",
+   "not_before": "2026-10-03T11:22:07Z",
+   "precert_poison": false,
+   "provider_dns_names": [
+    "apisecurity.zeroshield.ai",
+    "apisecuritybackend.zeroshield.ai"
+   ],
+   "pubkey_alg": "id-ecPublicKey",
+   "revoked": false,
+   "serial": "6bf6f63e80cd2b85da91d3765caf13280d1",
+   "sha256": "d39e47298915e0e8cf5baf66cdf38a7e96fb442c861b6deac6cc00b7797c56a4",
+   "sig_alg": "ecdsa-with-SHA384",
+   "subject": "CN=apisecurity.zeroshield.ai",
+   "subject_cn": "apisecurity.zeroshield.ai",
+   "tbs_sha256": "8d24b372d50d84908c55ef157ab0b0b50469b943ef23ecf8c8451fafcc2b7771"
+  },
+  {
+   "cert_sha256": "4ad88e92899eacd1d70ac38abaf3a488c1dac7be2c723ad64f8119e96a01a193",
+   "curve": null,
+   "dns_names": [
+    "aimeshbackend.zeroshield.ai",
+    "aimeshfirewall.zeroshield.ai",
+    "aimeshgateway.zeroshield.ai"
+   ],
+   "id": "17838949845",
+   "issuer": "CN=WR3,O=Google Trust Services,C=US",
+   "issuer_cn": "WR3",
+   "issuer_friendly_name": "Google Trust Services",
+   "key_bits": 2048,
+   "not_after": "2027-01-15T17:39:59Z",
+   "not_before": "2026-10-17T16:47:06Z",
+   "precert_poison": true,
+   "provider_dns_names": [
+    "aimeshbackend.zeroshield.ai",
+    "aimeshfirewall.zeroshield.ai",
+    "aimeshgateway.zeroshield.ai"
+   ],
+   "pubkey_alg": "rsaEncryption",
+   "revoked": false,
+   "serial": "fdd444bc2cd3d38a106d8f6915c143a2",
+   "sha256": "4ad88e92899eacd1d70ac38abaf3a488c1dac7be2c723ad64f8119e96a01a193",
+   "sig_alg": "sha256WithRSAEncryption",
+   "subject": "CN=aimeshfirewall.zeroshield.ai",
+   "subject_cn": "aimeshfirewall.zeroshield.ai",
+   "tbs_sha256": "18453b5e0fe5411ed19b3aca62734df723c1eadba9d55398fef4c121c9e8bf00"
+  },
+  {
+   "cert_sha256": "12801d303302f757cad62b40295d1fb2dc1bcfafe28c011dceedec0f3f68c8af",
+   "curve": "P-256",
+   "dns_names": [
+    "extremeaiguardx.zeroshield.ai",
+    "extremeaiguardxbackend.zeroshield.ai"
+   ],
+   "id": "17864953648",
+   "issuer": "CN=YE1,O=Let's Encrypt,C=US",
+   "issuer_cn": "YE1",
+   "issuer_friendly_name": "Let's Encrypt",
+   "key_bits": 256,
+   "not_after": "2027-01-17T07:31:32Z",
+   "not_before": "2026-10-19T07:31:33Z",
+   "precert_poison": false,
+   "provider_dns_names": [
+    "extremeaiguardx.zeroshield.ai",
+    "extremeaiguardxbackend.zeroshield.ai"
+   ],
+   "pubkey_alg": "id-ecPublicKey",
+   "revoked": false,
+   "serial": "5a8b9ab3b974da003c3924644ce6ff50e66",
+   "sha256": "12801d303302f757cad62b40295d1fb2dc1bcfafe28c011dceedec0f3f68c8af",
+   "sig_alg": "ecdsa-with-SHA384",
+   "subject": "CN=extremeaiguardx.zeroshield.ai",
+   "subject_cn": "extremeaiguardx.zeroshield.ai",
+   "tbs_sha256": "13b7b4a9d1794c65f1591caba9833689f49a1beea1a0cafc9141b125078122d5"
+  },
+  {
+   "cert_sha256": "7c76f22aecf1a3730628aeacd96ec5060825f500940d6d2c24adf745e780cf4f",
+   "curve": "P-256",
+   "dns_names": [
+    "threatshield.zeroshield.ai",
+    "threatshieldbackend.zeroshield.ai"
+   ],
+   "id": "17919453082",
+   "issuer": "CN=YE1,O=Let's Encrypt,C=US",
+   "issuer_cn": "YE1",
+   "issuer_friendly_name": "Let's Encrypt",
+   "key_bits": 256,
+   "not_after": "2027-01-20T06:43:50Z",
+   "not_before": "2026-10-22T06:43:51Z",
+   "precert_poison": false,
+   "provider_dns_names": [
+    "threatshield.zeroshield.ai",
+    "threatshieldbackend.zeroshield.ai"
+   ],
+   "pubkey_alg": "id-ecPublicKey",
+   "revoked": false,
+   "serial": "5567087642233d76b28791928e6e59aad8c",
+   "sha256": "7c76f22aecf1a3730628aeacd96ec5060825f500940d6d2c24adf745e780cf4f",
+   "sig_alg": "ecdsa-with-SHA384",
+   "subject": "CN=threatshield.zeroshield.ai",
+   "subject_cn": "threatshield.zeroshield.ai",
+   "tbs_sha256": "59baec45a85904878f1c9f625c15606c2b5d198f63f5205117768b739ba83e5c"
+  },
+  {
+   "cert_sha256": "e2c12290af364407e1327eca8a8190d176b14bc0d0a67510b067b16e8618f5f8",
+   "curve": null,
+   "dns_names": [
+    "dpdplawshield.zeroshield.ai"
+   ],
+   "id": "18037816390",
+   "issuer": "CN=YR2,O=Let's Encrypt,C=US",
+   "issuer_cn": "YR2",
+   "issuer_friendly_name": "Let's Encrypt",
+   "key_bits": 2048,
+   "not_after": "2027-01-26T17:14:32Z",
+   "not_before": "2026-10-28T17:14:33Z",
+   "precert_poison": false,
+   "provider_dns_names": [
+    "dpdplawshield.zeroshield.ai"
+   ],
+   "pubkey_alg": "rsaEncryption",
+   "revoked": false,
+   "serial": "54f2eaad24fea27e395462948dd85cf0f42",
+   "sha256": "e2c12290af364407e1327eca8a8190d176b14bc0d0a67510b067b16e8618f5f8",
+   "sig_alg": "sha256WithRSAEncryption",
+   "subject": "CN=dpdplawshield.zeroshield.ai",
+   "subject_cn": "dpdplawshield.zeroshield.ai",
+   "tbs_sha256": "9af1560d1b5affc1046ca75d6b12059668a42fbe1b8cc0ed4a400e9a7c2b9ddb"
+  },
+  {
+   "cert_sha256": "d509e15a6181eac8215b08de92c238c8876b31bac4a1f2137ffd6ea26022f63e",
+   "curve": "P-256",
+   "dns_names": [
+    "aiguardx.zeroshield.ai",
+    "aiguardxbackend.zeroshield.ai"
+   ],
+   "id": "18068474745",
+   "issuer": "CN=YE2,O=Let's Encrypt,C=US",
+   "issuer_cn": "YE2",
+   "issuer_friendly_name": "Let's Encrypt",
+   "key_bits": 256,
+   "not_after": "2027-01-28T08:47:27Z",
+   "not_before": "2026-10-30T08:47:28Z",
+   "precert_poison": false,
+   "provider_dns_names": [
+    "aiguardx.zeroshield.ai",
+    "aiguardxbackend.zeroshield.ai"
+   ],
+   "pubkey_alg": "id-ecPublicKey",
+   "revoked": false,
+   "serial": "568b176f34e526abff655a25f3b47f917fa",
+   "sha256": "d509e15a6181eac8215b08de92c238c8876b31bac4a1f2137ffd6ea26022f63e",
+   "sig_alg": "ecdsa-with-SHA384",
+   "subject": "CN=aiguardx.zeroshield.ai",
+   "subject_cn": "aiguardx.zeroshield.ai",
+   "tbs_sha256": "6e9a4e45b476c9c925a23f30f3189ee550f134cf20f6586956c82caa307de6e0"
+  },
+  {
+   "cert_sha256": "18b49702e34b2acfa1ee62481507962f3bc0ba699b0a91343bcc0a8e1582dc7c",
+   "curve": "P-256",
+   "dns_names": [
+    "dlp.zeroshield.ai"
+   ],
+   "id": "18142881202",
+   "issuer": "CN=YE2,O=Let's Encrypt,C=US",
+   "issuer_cn": "YE2",
+   "issuer_friendly_name": "Let's Encrypt",
+   "key_bits": 256,
+   "not_after": "2027-02-01T05:30:17Z",
+   "not_before": "2026-11-03T05:30:18Z",
+   "precert_poison": false,
+   "provider_dns_names": [
+    "dlp.zeroshield.ai"
+   ],
+   "pubkey_alg": "id-ecPublicKey",
+   "revoked": false,
+   "serial": "54d142ae547b77601edfd05b70e51d00d8e",
+   "sha256": "18b49702e34b2acfa1ee62481507962f3bc0ba699b0a91343bcc0a8e1582dc7c",
+   "sig_alg": "ecdsa-with-SHA384",
+   "subject": "CN=dlp.zeroshield.ai",
+   "subject_cn": "dlp.zeroshield.ai",
+   "tbs_sha256": "a4a1e823dc6a129c8ee031b3b8b4475588e3dc39deae996335ca4e44d5e6e4ba"
+  },
+  {
+   "cert_sha256": "620c45c607f5529be20c21eaa7b83c2ecada21162e272ed8c5a63359185d02d9",
+   "curve": null,
+   "dns_names": [
+    "*.zeroshield.ai",
+    "zeroshield.ai"
+   ],
+   "id": "18311411645",
+   "issuer": "CN=Amazon RSA 2048 S21,O=Amazon,C=US",
+   "issuer_cn": "Amazon RSA 2048 S21",
+   "issuer_friendly_name": "Amazon Trust Services",
+   "key_bits": 2048,
+   "not_after": "2027-05-28T13:04:33Z",
+   "not_before": "2026-11-11T12:04:33Z",
+   "precert_poison": true,
+   "provider_dns_names": [
+    "*.zeroshield.ai",
+    "zeroshield.ai"
+   ],
+   "pubkey_alg": "rsaEncryption",
+   "revoked": false,
+   "serial": "416010ac7d616d1ff10332923ce4177d",
+   "sha256": "620c45c607f5529be20c21eaa7b83c2ecada21162e272ed8c5a63359185d02d9",
+   "sig_alg": "sha256WithRSAEncryption",
+   "subject": "CN=zeroshield.ai",
+   "subject_cn": "zeroshield.ai",
+   "tbs_sha256": "423f57ea6b0502eefd1913bdfba1729286618a1ebac53c7804347d351f99ca59"
+  },
+  {
+   "cert_sha256": "2d54e66315e8d1a3203f890734b4d7bf29d28798c22c0151c464ff952a21cb9f",
+   "curve": "P-256",
+   "dns_names": [
+    "devsec-staging-api.zeroshield.ai",
+    "devsec-staging.zeroshield.ai"
+   ],
+   "id": "18327491097",
+   "issuer": "CN=YE2,O=Let's Encrypt,C=US",
+   "issuer_cn": "YE2",
+   "issuer_friendly_name": "Let's Encrypt",
+   "key_bits": 256,
+   "not_after": "2027-02-10T07:14:36Z",
+   "not_before": "2026-11-12T07:14:37Z",
+   "precert_poison": false,
+   "provider_dns_names": [
+    "devsec-staging-api.zeroshield.ai",
+    "devsec-staging.zeroshield.ai"
+   ],
+   "pubkey_alg": "id-ecPublicKey",
+   "revoked": false,
+   "serial": "6344577a808ec533960991a82e88005555b",
+   "sha256": "2d54e66315e8d1a3203f890734b4d7bf29d28798c22c0151c464ff952a21cb9f",
+   "sig_alg": "ecdsa-with-SHA384",
+   "subject": "CN=devsec-staging.zeroshield.ai",
+   "subject_cn": "devsec-staging.zeroshield.ai",
+   "tbs_sha256": "86566ff356560fd0b3053073d913224643c85a40c4b2f6b12ddd764df79bfbc9"
+  }
+ ],
+ "source": "certspotter_zeroshield",
+ "tool": "openssl x509"
+}

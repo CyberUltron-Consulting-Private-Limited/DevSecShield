@@ -17,6 +17,7 @@ from sqlmodel import Session, select
 
 from backend.new_models import CbomCollectedAsset, CbomCollectionJob, CbomCollectionRun, CbomCollectionSource
 from backend.utilities.build_info import build_sha, build_version
+from backend.utilities.cbom_sources import agility as AGILITY
 from backend.utilities.cbom_sources import crypto_kb
 from backend.utilities.cbom_sources import qgrade as QG
 from backend.utilities.cbom_sources.classify import DATED_TYPES, classify, shown
@@ -161,7 +162,8 @@ def list_assets(session: Session, *, team_id: int, run_id: int | None = None, jo
     grades = {r.id: grading.grade_row(r, views[r.id]["finding_codes"], explain=False).fields() for r in rows}
     return {
         "total": total, "all_total": all_total, "page": page, "page_size": page_size,
-        "items": [public_asset(r, names, job_names, views[r.id], grades[r.id]) for r in rows],
+        "items": AGILITY.annotate_assets(session, team_id, jobs,  # CB-24: fix class per asset
+                                         [public_asset(r, names, job_names, views[r.id], grades[r.id]) for r in rows]),
         "grade_model_version": QG.GRADE_MODEL_VERSION, "grade_inputs": grading.inputs(),
         "facets": {"type": by_type, "impact": by_impact, "quantum_vulnerable": quantum_count},
         "targets": [_job_targets(job, names) for job in jobs],
@@ -280,6 +282,23 @@ def vulnerabilities(rows: list[CbomCollectedAsset], views: dict[int, dict[str, A
                                    ". A version or configuration match is not proof of exposure."},
             "affects": [{"ref": f"zs-asset-{rid}"} for rid in list(dict.fromkeys(r.id for r in hit["rows"]))[:5000]],
         })
+    return out
+
+
+def ct_properties(facts: dict[str, Any]) -> list[dict[str, str]]:
+    """What a certificate found in Certificate Transparency logs (ct_collect) adds to its component.  ``zs:collector``
+    (``ct``), ``zs:method`` and the rest of the provenance come from provenance.py like every other row's (one emitter,
+    CB-06); ``zs:source`` keeps meaning the source's name."""
+    out: list[dict[str, str]] = []
+    for prop, key in (("zs:ct_provider", "ct_provider"), ("zs:ct_entry_id", "ct_provider_id"), ("zs:ct_detail", "ct_detail"),
+                      ("zs:tbs_sha256", "tbs_sha256"), ("zs:fingerprint_sha256", "fingerprint_sha256"),
+                      ("zs:precert_sha256", "precert_sha256"), ("zs:serial", "serial")):
+        if facts.get(key):
+            out.append({"name": prop, "value": str(facts[key])[:255]})
+    for domain in (facts.get("matched_domains") or [])[:20]:
+        out.append({"name": "zs:ct_matched_domain", "value": str(domain)[:253]})
+    if facts.get("revoked") is not None:
+        out.append({"name": "zs:revoked", "value": str(bool(facts["revoked"])).lower()})
     return out
 
 
@@ -626,6 +645,8 @@ def _component(row: CbomCollectedAsset, source_name: str | None, view: dict[str,
     if row.protocol:  # the asset table's protocol column as stored (protocolProperties.type is CycloneDX's enum)
         props.append({"name": "zs:protocol", "value": row.protocol})
     props += _detail_properties(row, facts, crypto, size, curve, signature, view) + provenance
+    if facts.get("source") == "ct":
+        props += ct_properties(facts)
     return {"type": "cryptographic-asset", "bom-ref": ref, "name": str(name)[:255], "cryptoProperties": crypto,
             "evidence": {"occurrences": [{"location": row.location}]}, "properties": props}
 

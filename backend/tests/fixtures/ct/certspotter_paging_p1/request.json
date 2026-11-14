@@ -1,0 +1,7 @@
+{
+ "url": "https://api.certspotter.com/v1/issuances?domain=google.com&include_subdomains=true&expand=dns_names&expand=issuer&expand=revocation&expand=cert_der&expand=pubkey",
+ "method": "GET",
+ "started": "2026-11-12T17:58:56.295640Z",
+ "duration_ms": 664,
+ "user_agent": "zeroshield-ct-capture/1 (+https://zeroshield.ai)"
+}
