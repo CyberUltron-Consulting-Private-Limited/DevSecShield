@@ -17,6 +17,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { allowedDiff, allowedTokens, cellsHaveIp, engineMatchesBuild, ipTokens, sameTokens, splitCommand, tokenDiff } from "./command.mjs";
 import { inCidr, plannedCharge } from "./rates.mjs";
+import { collectRunRows, runRowFromDom } from "./rows.mjs";
 import { createConnection } from "node:net";
 
 const R6 = process.env.R6 || "/home/claude/round6";
@@ -560,12 +561,8 @@ try {
     const rows = [];
     let prevIds = null, stuck = false;
     for (let p = 1; p < 200; p++) {
-      const got = await page.$$eval('[data-testid^="run-asset-"]', (trs) => trs.filter((tr) => /^run-asset-\d+$/.test(tr.dataset.testid)).map((tr) => {
-        const td = [...tr.querySelectorAll("td")];
-        const where = td[4] ? [...td[4].querySelectorAll("span")].map((x) => x.textContent.trim()) : [];
-        return { id: Number(tr.dataset.testid.slice(10)), impact: td[2]?.textContent.trim(), type: td[3]?.textContent.trim(),
-          location: where[0] ?? null, target: where[1] ?? null, algorithm: td[5]?.textContent.trim(), finding: td[6]?.textContent.trim(), quantum: td[7]?.textContent.trim() };
-      }));
+      // each row from its data-* attributes (rows.mjs), not by column position: columns are hidden per user (#267)
+      const got = (await page.$$eval('[data-testid^="run-asset-"]', collectRunRows)).map(runRowFromDom);
       const ids = got.map((r) => r.id).join(",");
       if (prevIds !== null && ids === prevIds) { stuck = true; break; }
       prevIds = ids;
@@ -589,11 +586,14 @@ try {
     }
     s.check("dom_rows_eq_api", rows.length === items.length && !stuck, { expected: items.length, observed: { rows: rows.length, paging_stuck: stuck } });
     await s.shot(page, "results");
-    // drill-down of the first row (detail panel opens)
+    // drill-down of the first row: a row click opens the finding dialog (#267); close it again (Escape), or its modal
+    // overlay blocks G12's download buttons on this same page
     if (rows[0]) {
       await page.getByTestId(`run-asset-${rows[0].id}`).click().catch(() => {});
       await page.waitForTimeout(1000);
       await s.shot(page, "drilldown");
+      await page.keyboard.press("Escape").catch(() => {});
+      await page.getByTestId("run-finding-dialog").waitFor({ state: "hidden", timeout: 10000 }).catch(() => {});
     }
   });
 

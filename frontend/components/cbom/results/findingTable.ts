@@ -85,9 +85,11 @@ export function toggleColumn<Id extends string>(defs: readonly ColumnDef<Id>[], 
   return defs.filter((d) => on.has(d.id)).map((d) => d.id);
 }
 
-/** Per user (the signed-in email, case-folded) and per table; versioned so a later default change can start fresh. */
-export function columnPrefsKey(table: "run" | "scan", user: string | null | undefined): string {
-  return `dss.cbom.results.columns.v1.${table}.${(user ?? "").trim().toLowerCase() || "_"}`;
+/** Per user (the signed-in email, case-folded) and per table; versioned so a later default change can start fresh.
+ * null while the user is not known yet: nothing is read or stored under a key shared by everyone on the device. */
+export function columnPrefsKey(table: "run" | "scan", user: string | null | undefined): string | null {
+  const who = (user ?? "").trim().toLowerCase();
+  return who ? `dss.cbom.results.columns.v1.${table}.${who}` : null;
 }
 
 /** The subset of Storage the prefs use (window.localStorage in the browser; a Map-backed fake in tests). */
@@ -115,6 +117,20 @@ export function saveColumns(storage: PrefsStorage | null | undefined, key: strin
   }
 }
 
+/**
+ * The columns once the user is known: a choice made before the profile loaded (kept in memory only) is the user's
+ * latest and is stored under their key; otherwise their stored choice (or the defaults) is loaded.
+ */
+export function columnsForUser<Id extends string>(storage: PrefsStorage | null | undefined, key: string,
+                                                  defs: readonly ColumnDef<Id>[], pending: readonly Id[] | null): Id[] {
+  if (pending) {
+    const next = normalizeColumns(defs, pending);
+    saveColumns(storage, key, next);
+    return next;
+  }
+  return loadColumns(storage, key, defs);
+}
+
 /** window.localStorage, or null where reading it throws (sandboxed iframe, disabled storage) or there is no window. */
 export function browserStorage(): PrefsStorage | null {
   try {
@@ -138,6 +154,14 @@ export interface RowEventLike {
 export const ROW_INTERACTIVE_SELECTOR =
   "button, a[href], input, select, textarea, label, [role=checkbox], [role=menuitem], [role=menu], [data-row-click-ignore]";
 
+function windowSelectionText(): string {
+  try {
+    return typeof window === "undefined" ? "" : window.getSelection()?.toString() ?? "";
+  } catch {
+    return "";
+  }
+}
+
 function insideControl(target: unknown, row: unknown): boolean {
   const el = target as { closest?: (s: string) => unknown } | null;
   if (!el || typeof el.closest !== "function") return false;
@@ -150,13 +174,14 @@ function insideControl(target: unknown, row: unknown): boolean {
  * opens the finding dialog. Keys pressed on a control inside the row (Action menu, checkbox) are left alone, and so
  * are clicks on those controls.
  */
-export function rowOpenProps(open: () => void, label: string) {
+export function rowOpenProps(open: () => void, label: string, selectedText: () => string = windowSelectionText) {
   return {
     tabIndex: 0,
     "aria-haspopup": "dialog" as const,
     "aria-label": label,
     onClick: (e: RowEventLike) => {
       if (insideControl(e.target, e.currentTarget)) return;
+      if (selectedText()) return;  // the click ended a drag that selected text in the row (to copy it)
       open();
     },
     onKeyDown: (e: RowEventLike) => {
