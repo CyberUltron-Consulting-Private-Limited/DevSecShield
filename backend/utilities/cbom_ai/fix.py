@@ -755,7 +755,9 @@ _UTF8_NAMES = ("utf-8", "utf8", "utf-8-sig", "ascii", "us-ascii")
 
 
 def _utf8(enc: str | None) -> bool:
-    return enc is None or enc.lower().replace("_", "-") in _UTF8_NAMES
+    """A recorded cookie that is UTF-8. ``None`` (not recorded: findings stored before the scanner kept the cookie)
+    is NOT UTF-8 here: the cookie is unknown, so the escape rule applies (fail closed; a rescan records it)."""
+    return enc is not None and enc.lower().replace("_", "-") in _UTF8_NAMES
 
 
 def _py_encoding_problems(before: list[str], after: list[str], start: int, recorded: str | None = None) -> list[str]:
@@ -763,8 +765,8 @@ def _py_encoding_problems(before: list[str], after: list[str], start: int, recor
     an added coding declaration (anywhere), a declared encoding other than UTF-8 (a cookie the window shows, or one
     a rewrite of line 1 / 2 would give), an added comment with a non-ASCII character, a backslash escape or a UTF-7
     shift (``+AAo-``): those are code under ``utf-7`` / ``unicode_escape``. When lines 1 - 2 are outside the window
-    the cookie is the one the scanner recorded with the finding (``recorded``); not recorded means UTF-8, Python's
-    default. Added lines must decode the same under another codec only when that cookie is not UTF-8."""
+    the cookie is the one the scanner recorded with the finding (``recorded``); not recorded means unknown (the
+    escape rule applies; a rescan records it). Added lines must decode the same under another codec only when that cookie is not UTF-8."""
     out: list[str] = []
     text = "\n".join(after)
     if "\ufeff" in text or "\ufffe" in text:
@@ -782,10 +784,16 @@ def _py_encoding_problems(before: list[str], after: list[str], start: int, recor
     if start > 2 and not _utf8(recorded):  # lines 1 - 2 are outside the window and the file declares another
         # codec: an added line that is other code under unicode_escape / utf-7 (``'v1\\x27\\x0a...'`` is a quote
         # and a newline) may be a hidden statement
+        why = "" if recorded is not None else " (file encoding not recorded: rescan the repository)"
         for j in sorted(added):
             if _py_decodes_differently(after[j]):
-                out.append(f"line {start + j} that decodes differently under another source encoding")
-    if start == 2 and not _utf8(recorded):  # line 1 (outside the window) declares the codec
+                out.append(f"line {start + j} that decodes differently under another source encoding{why}")
+    if start == 2 and recorded is None:  # line 1 is outside the window and its cookie was not recorded
+        for j in sorted(added):
+            if _py_decodes_differently(after[j]):
+                out.append(f"line {start + j} that decodes differently under another source encoding "
+                           "(file encoding not recorded: rescan the repository)")
+    elif start == 2 and not _utf8(recorded):  # line 1 (outside the window) declares the codec
         out.append(f"source encoding {recorded}")
     if start <= 2:  # the window holds line 1 / 2: the encoding the interpreter would use (line 1 above a window
         # that starts on line 2 is taken to be a comment, the case where a cookie on line 2 counts)

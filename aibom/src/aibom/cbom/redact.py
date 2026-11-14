@@ -184,7 +184,8 @@ def source_encoding(text: str) -> str:
     CPython rejects. Stored with the finding, so the AI fix validator knows the file's
     real cookie even when the code window starts below line 2.
     """
-    head = "\n".join(text.split("\n")[:2]) + "\n"
+    # lines as CPython's tokenizer splits them: \r\n, a bare \r and \n all end a line
+    head = "\n".join(re.split(r"\r\n|\r|\n", text, maxsplit=2)[:2]) + "\n"
     try:
         readline = io.BytesIO(head.encode("utf-8", "replace")).readline
         enc, _ = tokenize.detect_encoding(readline)

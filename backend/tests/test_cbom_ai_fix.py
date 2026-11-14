@@ -1425,7 +1425,7 @@ def test_round6_kotlin_function_parameters_are_its_parameters_not_its_name():
     ("cipher string with a plus", "    suite = 'ECDHE+AESGCM:!aNULL'\n", "utf-7", "ok"),
     ("concatenation", "    tag = b'v1' + b'x'\n", "unicode_escape", "ok"),
     ("escapes in a recorded utf-8 file", "    tag = 'v1\\x27\\x0a_ = \\x27'\n", "utf-8", "ok"),
-    ("escapes with no recorded cookie (UTF-8)", "    tag = 'v1\\x27\\x0a_ = \\x27'\n", None, "ok"),
+    ("escapes with no recorded cookie (unknown: fail closed)", "    tag = 'v1\\x27\\x0a_ = \\x27'\n", None, "withheld"),
     ("the same escapes under a recorded unicode_escape cookie", "    tag = 'v1\\x27\\x0a_ = \\x27'\n", "unicode_escape",
      "withheld"),
 ])
@@ -1437,7 +1437,7 @@ def test_round6_unseen_cookie_added_lines_must_decode_the_same(name, line, encod
         assert "decodes differently" in out["withheld_reason"], out["withheld_reason"]
 
 
-@pytest.mark.parametrize("encoding", [None, "utf-8", "utf-8-sig", "ascii"])
+@pytest.mark.parametrize("encoding", ["utf-8", "utf-8-sig", "ascii"])
 @pytest.mark.parametrize("name, line", [
     ("newline escape", "    sep = '\\n'\n"),
     ("zero bytes", "    pad = b'\\x00' * 4\n"),
@@ -1455,6 +1455,18 @@ def test_round7_a_recorded_non_utf8_cookie_on_line_1_counts_for_a_window_from_li
     assert _check("python", _ECB1, 6, code, start=2, encoding="utf-8")["status"] == "ok"
     out = _check("python", _ECB1, 6, code, start=2, encoding="iso-8859-1")
     assert out["status"] == "withheld" and "source encoding iso-8859-1" in out["withheld_reason"]
+
+
+@pytest.mark.parametrize("start", [2, 40])
+def test_round8_old_findings_without_a_recorded_cookie_fail_closed(start):
+    """Findings stored before the scanner recorded the cookie have none: unknown, so a unicode_escape payload in a
+    string literal on an added line is withheld (with a rescan hint), while plain lines still pass."""
+    payload = "    tag = 'v1\\x27\\x0aos.system(\\x27id\\x27)\\x0a_ = \\x27'\n"
+    bad = _GCM1.replace("def encrypt(data, key):\n", "def encrypt(data, key):\n" + payload)
+    out = _check("python", _ECB1, start + 4, bad, start=start, encoding=None)
+    assert out["status"] == "withheld" and "rescan" in out["withheld_reason"], out.get("withheld_reason")
+    plain = _GCM1.replace("def encrypt(data, key):\n", "def encrypt(data, key):\n    suite = 'ECDHE+AESGCM'\n")
+    assert _check("python", _ECB1, start + 4, plain, start=start, encoding=None)["status"] == "ok"
 
 
 def test_round7_the_window_carries_the_recorded_source_encoding():
@@ -1477,6 +1489,9 @@ def test_round7_the_scanner_records_the_python_cookie_from_lines_1_and_2(tmp_pat
     assert redact.source_encoding("import os\n") == "utf-8"
     assert redact.source_encoding("#!/usr/bin/env python\n# -*- coding: latin-1 -*-\nx = 1\n") == "iso-8859-1"
     assert redact.source_encoding("# vim: set fileencoding=utf-7 :\n") == "utf-7"
+    # CPython also ends a line at a bare \r (round 8): the cookie after it still counts
+    assert redact.source_encoding("#!/usr/bin/python\r# -*- coding: utf-7 -*-\rx = 1\r") == "utf-7"
+    assert redact.source_encoding("#!/usr/bin/python\r\n# coding: latin-1\r\n") == "iso-8859-1"
     assert redact.source_encoding("x = 1\ny = 2\n# coding: utf-7\n") == "utf-8"  # line 3 is not a cookie
     assert redact.source_encoding("# coding: no-such-codec\n") == "invalid"
     src = "# coding: unicode_escape\n" + "\n" * 30 + "from Crypto.Cipher import AES\nAES.new(k, AES.MODE_ECB)\n"
