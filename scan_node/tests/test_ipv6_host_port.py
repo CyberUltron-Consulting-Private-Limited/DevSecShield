@@ -34,9 +34,11 @@ class _Ctx:
 
     def __init__(self):
         self.rows = []
+        self.names = {}
 
     def emit(self, asset_type, target, location, **kw):
         self.rows.append((asset_type, target, location))
+        self.names[asset_type] = kw.get("name")
 
 
 def _der() -> bytes:
@@ -84,6 +86,7 @@ def test_kmip_locations(monkeypatch, label, ip, host):
     places = {t: loc for t, _, loc in ctx.rows}
     assert places["certificate"] == f"{host}:5696#chain[0]"
     assert places["tls_endpoint"] == f"{host}:5696"
+    assert ctx.names["tls_endpoint"] == f"kmip {host}:5696"
     assert seen["where"] == f"kmip://{host}:5696"
     assert places["key_store"] == f"kmip://{host}:5696"
 

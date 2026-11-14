@@ -209,7 +209,7 @@ def run(ctx: JobContext, config: dict, secrets: dict, test_only: bool = False) -
             ctx.emit("certificate", target.label, f"{hp}#chain[0]", name=f.get("subject", ""),
                      algorithm=f.get("key_alg"), key_size=f.get("key_size"), facts={**f, "chain_index": 0, "role": "kmip"})
             n += 1
-        ctx.emit("tls_endpoint", target.label, hp, name=f"kmip {target.ip}:{port}",
+        ctx.emit("tls_endpoint", target.label, hp, name=f"kmip {host_port(target.ip, port)}",
                  algorithm=tls.get("negotiated_cipher"), protocol=tls.get("negotiated_version") or "kmip",
                  facts={**tls, "service": "kmip", "tls": True, "client_certificate": True,
                         "server_verified": bool(config.get("ca_pem"))})
