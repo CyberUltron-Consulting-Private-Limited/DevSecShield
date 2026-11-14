@@ -38,26 +38,32 @@ def parse_reported(value: str | None) -> tuple[str | None, str | None]:
     return match.group("version"), match.group("build")
 
 
-def _semver_key(version: str) -> tuple | None:
-    """A sort key for ``1.2.3`` / ``2.0.0-rc.1`` (a pre-release sorts before its release); None when not semver-like."""
+def _semver_key(version: str) -> tuple[list[int], tuple] | None:
+    """(numeric core, pre-release key) of ``1.2.3`` / ``1.2.3.4`` / ``2.0.0-rc.1`` (a pre-release sorts before its
+    release); None when not semver-like.  The core keeps its length: ``_compare`` pads both to the same width."""
     match = _SEMVER.fullmatch(version)
     if not match:
         return None
     core = [int(part) for part in match.group("core").split(".")]
-    core += [0] * (3 - len(core))
     pre = match.group("pre")
+    # numeric identifiers sort before alphanumeric ones; each part is (0, int) or (1, str), so they always compare
     pre_key: tuple = (1,) if pre is None else (0, *((0, int(p)) if p.isdigit() else (1, p) for p in pre.split(".")))
-    return (*core, pre_key)
+    return core, pre_key
 
 
 def _compare(a: str, b: str) -> int | None:
-    """-1 / 0 / 1 for two versions, None when either is not semver-like and they differ."""
+    """-1 / 0 / 1 for two versions, None when either is not semver-like and they differ.  Cores of different lengths
+    are zero-padded to the same width first (``1.2.3`` == ``1.2.3.0`` < ``1.2.3.4``), so an int is never compared with
+    the pre-release tuple (review of PR #286: ``1.2.3.4`` vs ``1.2.3`` raised TypeError)."""
     if a == b:
         return 0
     ka, kb = _semver_key(a), _semver_key(b)
     if ka is None or kb is None:
         return None
-    return (ka > kb) - (ka < kb)
+    width = max(len(ka[0]), len(kb[0]), 3)
+    full_a = (*ka[0], *[0] * (width - len(ka[0])), ka[1])
+    full_b = (*kb[0], *[0] * (width - len(kb[0])), kb[1])
+    return (full_a > full_b) - (full_a < full_b)
 
 
 def server_label(version: str | None, build: str | None) -> str | None:

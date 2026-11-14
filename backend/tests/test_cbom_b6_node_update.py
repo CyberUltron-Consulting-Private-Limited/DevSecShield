@@ -54,6 +54,42 @@ def test_node_update_states(reported, server, build, state, reason):
     assert (got["message"] is not None) == (state in ("update_available", "newer"))
 
 
+@pytest.mark.parametrize("reported, server, state, reason", [
+    # review of PR #286: a core longer than 3 parts compared an int with the pre-release tuple (TypeError)
+    ("1.2.3.4", "1.2.3", "newer", "newer_version"),
+    ("1.2.3", "1.2.3.4", "update_available", "older_version"),
+    ("1.2.3.0", "1.2.3", "update_available", "no_build_id"),  # 1.2.3.0 == 1.2.3, so the build id decides
+    ("1.2.3-rc.1", "1.2.3.4", "update_available", "older_version"),
+    ("1.2.3.4-rc.1", "1.2.3", "newer", "newer_version"),
+    ("1.2.3.4.5.6.7.8.9.1", "1.2.3", "newer", "newer_version"),  # the longest version a node can report (19)
+    ("1.2.3", "1.2.3.4.5.6.7.8.9.1", "update_available", "older_version"),
+    ("9999999999999999999", "1.0.0", "newer", "newer_version"),
+    ("1.0.0-1", "1.0.0-a", "update_available", "older_version"),  # numeric pre-release parts sort first
+    ("1.0.0-a.1", "1.0.0-a", "newer", "newer_version"),
+    ("1.0.0", "garbage", "update_available", "different_version"),  # not semver-like: just "not the same"
+    ("", "1.0.0", "unknown", "not_reported"),
+    ("   ", "1.0.0", "unknown", "not_reported"),
+    ("1.٢.3", "1.2.3", "unknown", "not_reported"),  # non-ASCII digits are not a node version
+    ("1.0.0\u200b", "1.0.0", "unknown", "not_reported"),
+    ("1.2.3" + "0" * 40, "1.2.3", "unknown", "not_reported"),  # longer than a node can report
+])
+def test_node_update_never_raises_on_odd_versions(reported, server, state, reason):
+    got = NR.node_update(reported, server, SHA)
+    assert (got["state"], got["reason"]) == (state, reason), got
+
+
+def test_node_update_total_over_every_pair():
+    """Any two versions (node and server, either order) give a state, never an exception."""
+    versions = ["1", "1.0", "1.0.0", "1.0.0.0", "1.2.3.4", "1.2.3.4.5", "0.9", "10.0.0", "1.0.0-rc", "1.0.0-rc.1",
+                "1.0.0-1", "1.0.0-rc-1", "1.2.3.4-1.a", "2.0.0-0.a.1", "1.0.0-a.b.c.1", "x", "", "1..2", "1.0.0-",
+                "1.٢", "١", "1.0.0+abc", f"1.0.0+{SHA[:12]}", "9" * 19, "1." * 9 + "1"]
+    for a in versions:
+        for b in versions:
+            got = NR.node_update(a, b, SHA)
+            assert got["state"] in ("current", "update_available", "newer", "unknown"), (a, b, got)
+            assert NR._compare(a, b) in (-1, 0, 1, None), (a, b)
+
+
 def test_the_lab_node_message_says_what_is_missing():
     msg = NR.node_update("1.0.0", "1.0.0", SHA)["message"]
     assert msg == ("Runs 1.0.0 with no build id (an image built by hand or before build ids existed), so it is older "
@@ -184,6 +220,59 @@ def test_scan_nodes_say_which_node_needs_an_update(api, world, shipped):  # noqa
     (shipped / "manifest.json").write_text(json.dumps({"version": "1.0.0", "build": OTHER, "files": {}}))
     os.utime(shipped / "manifest.json", ns=(1, 1))  # a different mtime even within the same clock tick
     assert {_node(api, n)["update"]["reason"] for n in (lab, fresh)} == {"different_build"}
+
+
+def test_a_four_part_node_version_does_not_take_the_list_down(api, world, shipped):  # noqa: F811
+    """Review of PR #286: node_version is node-controlled text; "1.2.3.4" against a server build 1.2.3 500'd GET /nodes
+    for the whole team."""
+    (shipped / "manifest.json").write_text(json.dumps({"version": "1.2.3", "build": SHA, "files": {}}))
+    odd, odd_token, _ = enroll_node(api, name="four-part")
+    plain, plain_token, _ = enroll_node(api, name="plain")
+    hb = api("POST", "/cbom/node/heartbeat", None, headers={"X-ZS-Node-Token": odd_token}, json={"version": "1.2.3.4"})
+    assert hb.status_code == 200, hb.text
+    api("POST", "/cbom/node/heartbeat", None, headers={"X-ZS-Node-Token": plain_token}, json={"version": "1.0.0"})
+    listed = api("GET", "/1/cbom/sources/nodes")
+    assert listed.status_code == 200, listed.text
+    by_id = {n["id"]: n for n in listed.json()["nodes"]}
+    assert by_id[odd]["update"]["state"] == "newer" and by_id[odd]["node_version"] == "1.2.3.4"
+    assert by_id[plain]["update"]["reason"] == "older_version"
+    assert api("GET", f"/1/cbom/sources/nodes/{odd}").status_code == 200
+
+
+def test_a_comparison_error_is_unknown_not_a_500(api, world, shipped, monkeypatch):  # noqa: F811
+    """Whatever goes wrong comparing one node, the list still answers and that node says "unknown"."""
+    from backend.utilities.cbom_sources import serialize
+
+    def boom(*_a, **_k):
+        raise TypeError("'>' not supported between instances of 'int' and 'tuple'")
+
+    node_id, token, _ = enroll_node(api)
+    api("POST", "/cbom/node/heartbeat", None, headers={"X-ZS-Node-Token": token}, json={"version": "1.0.0"})
+    monkeypatch.setattr(serialize, "node_update", boom)
+    listed = api("GET", "/1/cbom/sources/nodes")
+    assert listed.status_code == 200, listed.text
+    assert _node(api, node_id)["update"] == {"state": "unknown", "reason": "compare_failed", "message": None,
+                                             "server_build": f"1.0.0+{SHA[:12]}"}
+
+
+def test_the_manifest_is_read_once_per_list(api, world, shipped, monkeypatch):  # noqa: F811
+    """Review nit on PR #286: one server_release() per GET /nodes, not one per node."""
+    from backend.routers import cbom_sources as router
+    from backend.utilities.cbom_sources import serialize
+
+    for i in range(4):
+        enroll_node(api, name=f"n{i}")
+    calls = []
+
+    def counted():
+        calls.append(1)
+        return NR.server_release()
+
+    monkeypatch.setattr(serialize, "server_release", counted)
+    monkeypatch.setattr(router, "server_release", counted)
+    nodes = api("GET", "/1/cbom/sources/nodes").json()["nodes"]
+    assert len(nodes) >= 4 and len(calls) == 1
+    assert {n["update"]["server_build"] for n in nodes} == {f"1.0.0+{SHA[:12]}"}
 
 
 def test_without_node_downloads_nothing_is_claimed(api, world, monkeypatch):  # noqa: F811

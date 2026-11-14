@@ -116,8 +116,10 @@ node token and keys live in its state volume):
 # 1. this deploy's node image (either one)
 docker pull ghcr.io/cyberultron-consulting-private-limited/devsecshield-scan-node:staging-<sha12>
 #    or: sha256sum -c scan-node-1.0.0.tar.gz.sha256 && docker load -i scan-node-1.0.0.tar.gz   (from Add scan node)
-# 2. note how the container runs now (env without ZS_REGISTRATION_TOKEN, volumes, networks, restart policy)
-docker inspect staging-lab-node --format '{{json .Config.Env}} {{json .Mounts}} {{json .NetworkSettings.Networks}}'
+# 2. note how the container runs now: name, restart policy, state volume, networks (printed without its environment)
+docker inspect staging-lab-node --format '{{.Name}} restart={{.HostConfig.RestartPolicy.Name}} {{range .Mounts}}{{.Type}}:{{if .Name}}{{.Name}}{{else}}{{.Source}}{{end}}->{{.Destination}} {{end}}{{range $net, $_ := .NetworkSettings.Networks}}network:{{$net}} {{end}}'
+#    Its env file stays where the node was set up; read it there and never paste the env (docker inspect's .Config.Env,
+#    `docker exec env`) into tickets, chat or logs: it holds the node's settings and the registration token it enrolled with.
 # 3. recreate it from the new image with the same name, env, state volume and networks
 docker rm -f staging-lab-node
 docker run -d --name staging-lab-node --restart unless-stopped --env-file <its env, no registration token> \

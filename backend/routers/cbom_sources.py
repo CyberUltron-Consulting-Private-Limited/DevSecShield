@@ -100,6 +100,7 @@ from backend.utilities.cbom_sources.schemas import (
     VendorCreate,
     VendorUpdate,
 )
+from backend.utilities.cbom_sources.node_release import server_release
 from backend.utilities.cbom_sources.serialize import (
     last_collects,
     public_area,
@@ -257,9 +258,10 @@ def _list_nodes(engine, team_id: int) -> dict:
         settings = get_or_create_settings(session, team_id)
         counts = _node_counts(session, team_id, settings)
         rows = session.exec(select(CbomScanNode).where(CbomScanNode.team_id == team_id).order_by(CbomScanNode.id)).all()
+        server = server_release()  # the shipped node build, read once per list (not per node)
         return {"server_time": iso_z(now), "nodes": [
             public_node(n, now, assigned_targets=counts.get(n.id, {}).get("targets", 0),
-                        sources=counts.get(n.id, {}).get("sources", 0)) for n in rows]}
+                        sources=counts.get(n.id, {}).get("sources", 0), server=server) for n in rows]}
 
 
 @router.get(BASE + "/nodes", dependencies=READ, summary="List scan nodes")
