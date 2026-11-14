@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { accepts, AWS_NOT_CONFIGURED_TEXT, g10Charge, g11uListRow, g11uRuleP, g9Skipped, isResultsPage, listDbCounts, openRunResults, parseRiskCell,
-  RATES_C, readListRow, readRunRows, RUNTIME_SKIPS, VEX_FUTURE_RISK } from "./cb05.mjs";
+  RATES_C, readinessValue, readListRow, readRunRows, RUNTIME_SKIPS, VEX_FUTURE_RISK } from "./cb05.mjs";
 import { plannedCharge } from "./rates.mjs";
 
 function lab(dir, lines) {
@@ -202,12 +202,17 @@ const POSTURE = { posture: { pqc_readiness_pct: 28.6, pqc_classes: { "quantum-vu
 // the posture card's innerText (a line per <p>, as the browser lays it out)
 const CARD = "Post-quantum and risk posture\nPQC readiness\n28.6%\nAssets with a quantum verdict\nCritical / High\n2 / 3\n1 medium, 1 low\n"
   + "Quantum-vulnerable 5\nQuantum-safe 1\nGrover-weakened 1\nNot applicable 2";
+// the card's class chips as gate.mjs reads them (posture-class-<class>: data-count and innerText); hybrid 0 is not shown
+const chip = (cls, n, text) => ({ cls, count: String(n), text: text ?? `${{ "quantum-vulnerable": "Quantum-vulnerable", "quantum-safe": "Quantum-safe",
+  "grover-weakened": "Grover-weakened", "not-applicable": "Not applicable", hybrid: "Hybrid PQC", unknown: "Unknown" }[cls]} ${n}` });
+const CHIPS = [chip("quantum-vulnerable", 5), chip("quantum-safe", 1), chip("grover-weakened", 1), chip("not-applicable", 2)];
 
 test("G11u: the page's readiness, classes, Critical/High and row grades equal /posture and /assets", () => {
   const s = stepStub();
   const rows = [{ id: 1, reader: "data-attributes", q_grade: "Q1" }, { id: 2, reader: "data-attributes" }];
   const items = [{ id: 1, q_grade: "Q1", fix_class: null }, { id: 2, q_grade: null }];
-  g11uRuleP(s, "1", POSTURE, { posture: CARD, readiness: "PQC readiness\n28.6%", dashboard: "Crypto assets\n9\nQuantum ready\n28.6%\nAvg risk" }, rows, items);
+  g11uRuleP(s, "1", POSTURE, { posture: CARD, readiness: "PQC readiness\n28.6%\nOf 7 judged assets, the share not quantum-vulnerable",
+    dashboard: "Crypto assets\n9\nQuantum ready\n28.6%\nAvg risk", classChips: CHIPS }, rows, items);
   assert.deepEqual(s.checks.map((c) => [c.name, c.ok ?? "not-run"]), [["g11u_posture_readiness_run1", true], ["g11u_dashboard_readiness_run1", true],
     ["g11u_classes_run1", true], ["g11u_critical_high_run1", true], ["g11u_q_distribution_run1", "not-run"], ["g11u_row_grades_run1", true]]);
 });
@@ -228,13 +233,49 @@ test("G11u Q distribution: every posture-q-<bucket> count == /posture q_grades; 
 
 test("G11u fails on a recount (14.3 % where posture says 28.6 %), a wrong class or severity, and a wrong row grade", () => {
   const s = stepStub();
-  g11uRuleP(s, "1", POSTURE, { posture: CARD.replace("Quantum-vulnerable 5", "Quantum-vulnerable 4").replace("2 / 3", "2 / 4"),
+  g11uRuleP(s, "1", POSTURE, { posture: CARD.replace("2 / 3", "2 / 4"), classChips: [chip("quantum-vulnerable", 4), ...CHIPS.slice(1)],
     readiness: "PQC readiness\n14.3%", dashboard: "Quantum ready\n14.3%" }, [{ id: 1, reader: "data-attributes", q_grade: "Q2" }], [{ id: 1, q_grade: "Q1" }]);
   assert.ok(s.checks.filter((c) => !c.notRun).every((c) => c.ok === false), JSON.stringify(s.checks.map((c) => [c.name, c.ok])));
   const s2 = stepStub();
   g11uRuleP(s2, "1", { pqc_readiness_pct: null, pqc_classes: {}, impacts: {} }, { posture: "", readiness: "PQC readiness\n—", dashboard: null }, [], []);
   assert.deepEqual(s2.checks.map((c) => [c.name, c.ok ?? "not-run"]), [["g11u_posture_readiness_run1", true], ["g11u_dashboard_readiness_run1", "not-run"],
     ["g11u_classes_run1", false], ["g11u_critical_high_run1", false], ["g11u_q_distribution_run1", "not-run"], ["g11u_row_grades_run1", false]]);
+});
+
+test("G11u readiness is the exact value, never a substring: 0 % vs 100 %, 8.6 % vs 28.6 % fail", () => {
+  const readiness = (pct, shown, extra = {}) => {
+    const s = stepStub();
+    g11uRuleP(s, "1", { posture: { ...POSTURE.posture, pqc_readiness_pct: pct, ...extra } }, { posture: CARD, readiness: shown, dashboard: null, classChips: CHIPS }, [], []);
+    return s.checks.find((c) => c.name === "g11u_posture_readiness_run1").ok;
+  };
+  assert.equal(readiness(0, "PQC readiness\n100%\nOf 7 judged assets"), false, "api 0 %, page 100 %");
+  assert.equal(readiness(8.6, "PQC readiness\n28.6%\nOf 7 judged assets"), false, "api 8.6 %, page 28.6 %");
+  assert.equal(readiness(0, "PQC readiness\n10%"), false, "api 0 %, page 10 %");
+  assert.equal(readiness(0, "PQC readiness\n0%\nOf 7 judged assets, 10% unknown"), true);
+  assert.equal(readiness(null, "PQC readiness\n—\nNo asset with a quantum verdict"), true);
+  assert.equal(readiness(null, "PQC readiness\nNot enough identified\n1 of 9 public-key assets judged", { readiness_basis: { status: "not_enough_identified" } }), true);
+  assert.equal(readiness(null, "PQC readiness\n—", { readiness_basis: { status: "not_enough_identified" } }), false);
+  assert.equal(readinessValue("28.6%"), "28.6%");
+  assert.equal(readinessValue(""), null);
+});
+
+test("G11u classes are exact: a chip showing 12 for an API 1 fails, and a class the API counts as 0 must not show a count", () => {
+  const classes = (chips) => {
+    const s = stepStub();
+    g11uRuleP(s, "1", POSTURE, { posture: CARD, readiness: "28.6%", dashboard: null, classChips: chips }, [], []);
+    return s.checks.find((c) => c.name === "g11u_classes_run1");
+  };
+  assert.equal(classes(CHIPS).ok, true);
+  assert.equal(classes([chip("quantum-vulnerable", 5), chip("quantum-safe", 12), ...CHIPS.slice(2)]).ok, false, "api 1, page 12");
+  assert.equal(classes([chip("quantum-vulnerable", 25), ...CHIPS.slice(1)]).ok, false, "api 5, page 25");
+  assert.equal(classes([...CHIPS, chip("hybrid", 3)]).ok, false, "api 0, page 3");
+  assert.equal(classes([...CHIPS, chip("unknown", 2)]).ok, false, "a class the API does not have, shown as 2");
+  assert.equal(classes([...CHIPS, chip("hybrid", 0)]).ok, true, "api 0 shown as 0");
+  assert.equal(classes(CHIPS.slice(1)).ok, false, "a class the API counts missing from the card");
+  const lying = classes([chip("quantum-vulnerable", 5), chip("quantum-safe", 1, "Quantum-safe 12"), ...CHIPS.slice(2)]);
+  assert.equal(lying.ok, false, "data-count 1 but the chip reads 12");
+  assert.deepEqual(lying.observed.bad_chip_text, [{ class: "quantum-safe", count: "1", text: "Quantum-safe 12" }]);
+  assert.equal(classes([]).ok, false, "no chips at all");
 });
 
 test("G11u reads Critical / High from line-separated text, not digits glued to the next line", () => {

@@ -261,13 +261,22 @@ def test_attribute_rendering_equals_ui_expected(field, api):
     from harness import fieldmap as F
     row = _attrs(api)
     assert field in F.ui_fields(row)
-    assert F.ui_observed(field, row) == F.ui_expected(field, api), (field, api, row)
+    assert F.ui_observed(field, row) == F.ui_expected(field, api, F.ATTR_READER), (field, api, row)
+
+
+@pytest.mark.parametrize("api_type, cell", [("", ""), (None, None), ("certificate", "Certificate")])
+def test_old_dialog_type_rendering_unchanged(api_type, cell):
+    """Only attribute rows map an empty type to None; the old run dialog's cell keeps ui_expected's old rendering."""
+    from harness import fieldmap as F
+    assert F.ui_expected("asset_type", {"type": api_type}) == cell
+    assert F.ui_observed("asset_type", {"type": cell}) == F.ui_expected("asset_type", {"type": api_type})
 
 
 def test_attribute_values_are_not_trimmed():
     """A page that pads (or trims) a value differs from the API string: the attribute is compared verbatim."""
     from harness import fieldmap as F
-    assert F.ui_observed("location", {"reader": "data-attributes", "location": " a:443"}) != F.ui_expected("location", {"location": "a:443"})
+    assert F.ui_observed("location", {"reader": "data-attributes", "location": " a:443"}) != \
+        F.ui_expected("location", {"location": "a:443"}, F.ATTR_READER)
 
 
 @pytest.mark.parametrize("token", ["true", "Vulnerable", "unknown"])
@@ -282,6 +291,16 @@ def test_target_is_compared_only_for_attribute_rows():
     from harness import fieldmap as F
     assert "target" in F.ui_fields({"reader": "data-attributes"})
     assert "target" not in F.ui_fields({"impact": "High"})
+
+
+def test_join_renders_attribute_rows_with_their_reader(tmp_path, empty_ledger):
+    """join passes the row's reader: an empty API type on the results page (data-type="") is no mismatch there."""
+    fr = FakeRun(tmp_path, ui_attrs=True)
+    fr.write()
+    fr.edit_json("api/assets-run1.json", lambda d: d["items"][0].__setitem__("type", ""))
+    fr.edit_json("ui/assets-run1.json", lambda d: d["rows"][0].__setitem__("type", ""))
+    _, blocking, _ = judge(fr.dir, empty_ledger)
+    assert "G11/join/run1/asset/101/asset_type/ui" not in blocking, blocking.get("G11/join/run1/asset/101/asset_type/ui")
 
 
 def test_attribute_row_missing_attribute_fails(tmp_path, empty_ledger):

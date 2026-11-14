@@ -603,8 +603,10 @@ try {
     const qCounts = (await page.getByTestId("posture-q-distribution").count())
       ? await page.$$eval('[data-testid="posture-q-distribution"] [data-count]', (els) => Object.fromEntries(els.map((e) => [e.dataset.testid.replace(/^posture-q-/, ""), Number(e.dataset.count)])))
       : null;
+    const classChips = await page.$$eval('[data-testid="run-posture"] [data-testid^="posture-class-"]',
+      (els) => els.map((e) => ({ cls: e.dataset.testid.slice("posture-class-".length), count: e.dataset.count, text: e.innerText })));
     cb05.g11uRuleP(s, "1", posture.body, { posture: await textOf("run-posture"), readiness: await textOf("posture-readiness"),
-      dashboard: await textOf("run-section-dashboard"), qCounts }, rows, items);
+      dashboard: await textOf("run-section-dashboard"), classChips, qCounts }, rows, items);
     // G11u, the list: Risks cell == runs_list_data row == the DB (non-coverage assets by impact; every asset counted)
     const scans = await apiGet(A, `/${A.team}/cbom/scans`);
     const listApi = (scans.body?.runs_list_data || []).find((r) => r.id === runId) || null;

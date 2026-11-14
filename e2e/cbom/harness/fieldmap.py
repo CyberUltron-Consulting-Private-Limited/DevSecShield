@@ -525,11 +525,15 @@ def ui_fields(row: dict[str, Any]) -> tuple[str, ...]:
     return UI_FIELDS + UI_ATTR_FIELDS if row.get("reader") == ATTR_READER else UI_FIELDS
 
 
-def ui_expected(field: str, api: dict[str, Any]) -> Any:
+def ui_expected(field: str, api: dict[str, Any], reader: str | None = None) -> Any:
+    """How the page shows ``field`` of the API item. ``reader``: the UI row's reader (ATTR_READER for the results page's
+    data attributes; None for the old run dialog's cells, whose rendering is unchanged)."""
     if field == "asset_type":
         t = api.get("type")
-        # no type (null or ""): None; the page writes data-type="" for both, so both must render alike
-        return TYPE_LABELS.get(t, t) if t else None
+        if reader == ATTR_READER:
+            # no type (null or ""): None; the page writes data-type="" for both, so both must render alike
+            return TYPE_LABELS.get(t, t) if t else None
+        return TYPE_LABELS.get(t, t)
     if field == "impact":
         return api.get("impact") or "Info"
     if field == "location":

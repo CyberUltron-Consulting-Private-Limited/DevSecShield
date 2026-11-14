@@ -175,7 +175,7 @@ def join(run: Path, k: str, checks: Checks) -> list[dict[str, Any]]:
         ui_row = (views["ui"] or {}).get(aid)
         if ui_row is not None:
             for field in F.ui_fields(ui_row):
-                want, got = F.ui_expected(field, item), F.ui_observed(field, ui_row)
+                want, got = F.ui_expected(field, item, ui_row.get("reader")), F.ui_observed(field, ui_row)
                 row_diff.setdefault(f"ui:{field}", {"api": want})["ui"] = _show(got)
                 checks.verdict(f"{prefix}/asset/{aid}/{field}/ui", GATE, "join", want == got, "mismatch",
                                _subject(k, aid, item, field, "ui"), expected=want, observed=_show(got))

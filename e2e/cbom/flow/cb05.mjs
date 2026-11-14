@@ -662,24 +662,34 @@ export async function openRunResults(ctx, s, runId, { via = "review", tag = "" }
 }
 
 /** PQC class labels as the posture card prints them (RunPosture.tsx CLASS_LABEL). PRODUCT COPY, read-only: G11u
- * reads the card's text with them; it never feeds an oracle value. */
+ * checks each chip's text with them; it never feeds an oracle value. */
 export const POSTURE_CLASS_LABEL = { "quantum-vulnerable": "Quantum-vulnerable", hybrid: "Hybrid PQC", "quantum-safe": "Quantum-safe",
-  "grover-weakened": "Grover-weakened", "not-applicable": "Not applicable" };
+  "grover-weakened": "Grover-weakened", unknown: "Unknown", "not-applicable": "Not applicable" };
+
+/** The value line of the posture card's "PQC readiness" stat (its innerText: label, value, hint, a line each); the
+ * first line when the label is not in the text. Exact, never a substring: "100%" is not "0%". */
+export function readinessValue(text) {
+  const lines = String(text ?? "").split("\n").map((l) => l.trim()).filter(Boolean);
+  const i = lines.indexOf("PQC readiness");
+  return (i >= 0 ? lines[i + 1] : lines[0]) ?? null;
+}
 
 /** G11u (PLAN §11, Rule P): the results page prints the run posture's figures, never its own recount. Readiness on
  * the posture card and on the dashboard's "Quantum ready" card == /posture pqc_readiness_pct; class chips ==
  * pqc_classes; "Critical / High" == impacts; per row data-q-grade / data-fix-class == the /assets item of that id.
  * ``texts``: the innerText (line breaks kept) of {posture: run-posture, readiness: posture-readiness, dashboard:
- * run-section-dashboard, or null when that section is not on the page}, and ``qCounts``: {bucket: data-count} of the
+ * run-section-dashboard, or null when that section is not on the page}, ``classChips``: [{cls, count, text}] of the
+ * card's posture-class-<class> chips (data-count, innerText), and ``qCounts``: {bucket: data-count} of the
  * posture-q-<bucket> items (null when the distribution is not on the page). Pure (no browser), so it is unit-tested. */
 export function g11uRuleP(s, k, postureBody, texts, rows, items) {
   const p = postureBody?.posture ?? postureBody ?? {};
   const pct = p.pqc_readiness_pct;
   const subject = (check) => ({ check, run: k });
-  const readiness = String(texts.readiness || "").replace(/\s+/g, " ");
-  const wantCard = pct == null ? "—" : `${pct}%`;
-  s.check(`g11u_posture_readiness_run${k}`, readiness.includes(wantCard),
-    { expected: wantCard, observed: readiness.slice(0, 120), subject: subject("g11u_posture_readiness") });
+  // the card prints readiness_basis "not enough identified" in place of a number (RunPosture readinessText)
+  const wantCard = p.readiness_basis?.status === "not_enough_identified" ? "Not enough identified" : pct == null ? "—" : `${pct}%`;
+  const shownCard = readinessValue(texts.readiness);
+  s.check(`g11u_posture_readiness_run${k}`, shownCard === wantCard,
+    { expected: wantCard, observed: shownCard, subject: subject("g11u_posture_readiness") });
   if (texts.dashboard == null) {
     s.notRun(`g11u_dashboard_readiness_run${k}`, "the dashboard section (run results summary) is not on the page", subject("g11u_dashboard_readiness"));
   } else {
@@ -688,10 +698,21 @@ export function g11uRuleP(s, k, postureBody, texts, rows, items) {
     s.check(`g11u_dashboard_readiness_run${k}`, !!m && m[1] === want, { expected: want, observed: m ? m[1] : "no Quantum ready card", subject: subject("g11u_dashboard_readiness") });
   }
   const card = String(texts.posture || "").replace(/\s+/g, " ");
+  // class chips (posture-class-<class>, data-count): every class's shown count == the API's, a class the API counts
+  // as 0 shown as 0 or not at all, and each chip's text exactly "<label> <count>" (so 12 is never read as 1)
   const classes = p.pqc_classes || {};
-  const wrong = Object.entries(POSTURE_CLASS_LABEL).filter(([c, label]) => (classes[c] || 0) > 0 && !card.includes(`${label} ${classes[c]}`))
-    .map(([c]) => ({ class: c, api: classes[c] }));
-  s.check(`g11u_classes_run${k}`, Object.keys(classes).length > 0 && wrong.length === 0, { expected: classes, observed: { not_on_card: wrong }, subject: subject("g11u_classes") });
+  const chips = texts.classChips || [];
+  const shown = {}, badChip = [];
+  for (const ch of chips) {
+    const n = Number(ch.count);
+    shown[ch.cls] = n;
+    const text = String(ch.text ?? "").replace(/\s+/g, " ").trim();
+    if (!/^\d+$/.test(String(ch.count)) || text !== `${POSTURE_CLASS_LABEL[ch.cls] ?? ch.cls} ${n}`) badChip.push({ class: ch.cls, count: ch.count, text });
+  }
+  const wrong = [...new Set([...Object.keys(classes), ...Object.keys(shown)])].filter((c) => (shown[c] ?? 0) !== (Number(classes[c]) || 0))
+    .map((c) => ({ class: c, api: Number(classes[c]) || 0, page: shown[c] ?? 0 }));
+  s.check(`g11u_classes_run${k}`, Object.keys(classes).length > 0 && chips.length > 0 && wrong.length === 0 && badChip.length === 0,
+    { expected: classes, observed: { shown, wrong, bad_chip_text: badChip }, subject: subject("g11u_classes") });
   const im = p.impacts || {};
   const sev = card.match(/Critical \/ High\s*(\d+) \/ (\d+)/);
   s.check(`g11u_critical_high_run${k}`, !!sev && Number(sev[1]) === (im.Critical || 0) && Number(sev[2]) === (im.High || 0),
