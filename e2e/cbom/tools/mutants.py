@@ -163,6 +163,13 @@ M = [  # (id, file, exact old text (must occur once), new text, what it breaks)
      '"job_id": norm_int,', "key_size equal in every view join"),
     ("F2", "harness/fieldmap.py", 'SAMPLED = {"cipher_suites", "groups"}',
      'SAMPLED = {"cipher_suites", "groups", "protocol_versions"}', "protocol versions judged as a sample"),
+    # ---- CB-38: results-page rows read from data attributes
+    ("F3", "harness/fieldmap.py", '    if row.get("reader") == ATTR_READER:\n        return ui_from_attrs(field, row)',
+     '    if False:\n        return ui_from_attrs(field, row)', "attribute rows read as rendered cells"),
+    ("F4", "harness/fieldmap.py", 'return v if v is MISSING else _ATTR_QUANTUM.get(v, "—")', 'return "Vulnerable"',
+     "the quantum attribute is never compared"),
+    ("F5", "harness/fieldmap.py", 'return f"{head} {size}" if size not in (MISSING, None, "") else head', "return head",
+     "the key size attribute is ignored"),
     ("S1", "harness/standards.py", "    if flags == {True}:\n        return False", "    if flags == {True}:\n"
      "        return True", "all-PQ key exchange called vulnerable"),
     ("S2", "harness/standards.py", "    if flags == {False}:\n        return True", "    if flags == {False}:\n"

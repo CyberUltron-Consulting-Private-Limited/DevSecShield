@@ -183,6 +183,42 @@ def test_db_compares_with_run_verdict_when_a_date_rule_changed_it(tmp_path, empt
     assert "G11/join/run1/asset/101/impact/export" not in blocking
 
 
+# ---------------------------------------------------------------- CB-38: rows read from data attributes
+def test_attribute_rows_judge_like_rendered_rows(tmp_path, empty_ledger):
+    """The unified results page: the same correct run read through data-* attributes passes the same way."""
+    run = FakeRun(tmp_path, ui_attrs=True).write()
+    _, blocking, report = judge(run, empty_ledger)
+    assert set(blocking) == {"G11/derived/run1/posture"}, blocking
+    assert report["counts"]["FAIL"] == 0
+
+
+@pytest.mark.parametrize("field, value, expect_id", [
+    ("algorithm", "RSA", "G11/join/run1/asset/101/algorithm_cell/ui"),
+    ("key_size", "384", "G11/join/run1/asset/101/algorithm_cell/ui"),
+    ("quantum", "safe", "G11/join/run1/asset/101/quantum_vulnerable/ui"),
+    ("quantum", "", "G11/join/run1/asset/101/quantum_vulnerable/ui"),
+    ("impact", "", "G11/join/run1/asset/101/impact/ui"),
+    ("type", "tls_endpoint", "G11/join/run1/asset/101/asset_type/ui"),
+    ("location", "", "G11/join/run1/asset/101/location/ui"),
+    ("finding", "", "G11/join/run1/asset/101/finding/ui"),
+])
+def test_attribute_rows_wrong_value_fails(tmp_path, empty_ledger, field, value, expect_id):
+    fr = FakeRun(tmp_path, ui_attrs=True)
+    fr.write()
+    fr.edit_json("ui/assets-run1.json", lambda d: d["rows"][0].__setitem__(field, value))
+    passed, blocking, _ = judge(fr.dir, empty_ledger)
+    assert not passed
+    assert blocking[expect_id]["reason"] == "mismatch", blocking.get(expect_id)
+
+
+def test_attribute_row_missing_attribute_fails(tmp_path, empty_ledger):
+    fr = FakeRun(tmp_path, ui_attrs=True)
+    fr.write()
+    fr.edit_json("ui/assets-run1.json", lambda d: d["rows"][0].pop("algorithm"))
+    _, blocking, _ = judge(fr.dir, empty_ledger)
+    assert "G11/join/run1/asset/101/algorithm_cell/ui" in blocking
+
+
 def test_cli_exit_codes(tmp_path, empty_ledger, capsys):
     fr = FakeRun(tmp_path)
     fr.write()

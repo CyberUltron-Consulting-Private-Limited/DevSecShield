@@ -537,6 +537,44 @@ def ui_expected(field: str, api: dict[str, Any]) -> Any:
 
 
 def ui_observed(field: str, row: dict[str, Any]) -> Any:
+    if row.get("reader") == ATTR_READER:
+        return ui_from_attrs(field, row)
     key = {"asset_type": "type", "algorithm_cell": "algorithm", "quantum_vulnerable": "quantum"}.get(field, field)
     value = row.get(key, MISSING)
     return value.strip() if isinstance(value, str) else value
+
+
+# CB-38: the unified results page (/{team}/cbom/runs/{run}/results) carries each row's values as data attributes
+# (data-impact, -type, -location, -target, -algorithm, -key-size, -finding, -quantum, -status) instead of fixed
+# column positions. The gate reads those raw values (``reader: "data-attributes"``); they are rendered here exactly as
+# ui_expected renders the API item, so the same cell comparison holds for both readers.
+ATTR_READER = "data-attributes"
+_ATTR_QUANTUM = {"vulnerable": "Vulnerable", "safe": "Safe"}
+
+
+def ui_from_attrs(field: str, row: dict[str, Any]) -> Any:
+    def raw(key: str) -> Any:
+        value = row.get(key, MISSING)
+        return value.strip() if isinstance(value, str) else value
+    if field == "asset_type":
+        t = raw("type")
+        return t if t is MISSING else TYPE_LABELS.get(t, t)
+    if field == "impact":
+        v = raw("impact")
+        return v if v is MISSING else (v or "Info")
+    if field == "location":
+        v = raw("location")
+        return v if v is MISSING else (v or "—")
+    if field == "algorithm_cell":
+        head, size = raw("algorithm"), raw("key_size")
+        if head is MISSING:
+            return MISSING
+        head = head or "—"
+        return f"{head} {size}" if size not in (MISSING, None, "") else head
+    if field == "finding":
+        v = raw("finding")
+        return v if v is MISSING else (v or "—")
+    if field == "quantum_vulnerable":
+        v = raw("quantum")
+        return v if v is MISSING else _ATTR_QUANTUM.get(v, "—")
+    raise KeyError(field)

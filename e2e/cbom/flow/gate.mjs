@@ -554,9 +554,9 @@ try {
     const runId = state.runs?.[0];
     if (!runId) { s.check("run_exists", false, { expected: "a run", observed: null }); return; }
     const { page } = A;
-    await page.goto(`${UI}/${A.team}/cbom/sources?tab=review`, { waitUntil: "networkidle" });
-    await page.getByTestId(`review-run-details-${runId}`).click();
-    await page.getByTestId("run-results").waitFor({ timeout: 30000 });
+    // CB-38: the Results button opens /{team}/cbom/runs/{run}/results; the same URL also opens directly
+    await cb05.openRunResults(ctx, s, runId, { via: "direct" });
+    await cb05.openRunResults(ctx, s, runId, { via: "review" });
     // every page of the API with the customer's own token
     // raw pages: an id the product serves twice stays twice (the judge fails duplicates, m1)
     const items = []; let first = null;
@@ -578,12 +578,8 @@ try {
     const rows = [];
     let prevIds = null, stuck = false;
     for (let p = 1; p < 200; p++) {
-      const got = await page.$$eval('[data-testid^="run-asset-"]', (trs) => trs.filter((tr) => /^run-asset-\d+$/.test(tr.dataset.testid)).map((tr) => {
-        const td = [...tr.querySelectorAll("td")];
-        const where = td[4] ? [...td[4].querySelectorAll("span")].map((x) => x.textContent.trim()) : [];
-        return { id: Number(tr.dataset.testid.slice(10)), impact: td[2]?.textContent.trim(), type: td[3]?.textContent.trim(),
-          location: where[0] ?? null, target: where[1] ?? null, algorithm: td[5]?.textContent.trim(), finding: td[6]?.textContent.trim(), quantum: td[7]?.textContent.trim() };
-      }));
+      // rows by their data-* attributes on the unified page (cell positions only for the old run dialog)
+      const got = await page.$$eval('[data-testid^="run-asset-"]', cb05.readRunRows);
       const ids = got.map((r) => r.id).join(",");
       if (prevIds !== null && ids === prevIds) { stuck = true; break; }
       prevIds = ids;

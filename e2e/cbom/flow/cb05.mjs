@@ -555,13 +555,63 @@ export function g12Validate(ctx, s, k = "1", { vex = true, gap = true } = {}) {
   }
 }
 
+// ------------------------------------------------------------------------------------------------ CB-38 results page
+/** A run's results are a page since CB-38 (PLAN §11): /{team}/cbom/runs/{run}/results. ``via: "review"`` clicks the
+ * Review & Run "Results" button (a link to that page), ``via: "direct"`` opens the URL. Either way the URL is judged,
+ * and the table is switched to "All assets" (the judge compares every API item, coverage rows included). */
+export async function openRunResults(ctx, s, runId, { via = "review", tag = "" } = {}) {
+  const { page } = ctx.A;
+  const want = `/${ctx.A.team}/cbom/runs/${runId}/results`;
+  if (via === "direct") {
+    await page.goto(`${ctx.UI}${want}`, { waitUntil: "networkidle" });
+  } else {
+    await page.goto(`${ctx.UI}/${ctx.A.team}/cbom/sources?tab=review`, { waitUntil: "networkidle" });
+    await page.getByTestId(`review-run-details-${runId}`).click();
+    await page.waitForURL((u) => u.pathname === want, { timeout: 30000 }).catch(() => {});
+  }
+  await page.getByTestId("run-results").waitFor({ timeout: 30000 });
+  const path = new URL(page.url()).pathname;
+  s.check(`results_url_${via}${tag}`, path === want, { expected: want, observed: path, subject: { check: "results_url", via, run: runId } });
+  const all = page.getByTestId("run-results-view-all");
+  if (await all.count()) {
+    if ((await all.getAttribute("aria-pressed")) !== "true" && !(await all.isDisabled())) {
+      await all.click();
+      await page.waitForLoadState("networkidle"); await page.waitForTimeout(500);
+    }
+    const pressed = (await all.getAttribute("aria-pressed")) === "true";
+    s.check(`results_view_all${tag}`, pressed, { expected: "All assets view", observed: pressed ? "all" : "findings", subject: { check: "results_view_all", run: runId } });
+  }
+  return path;
+}
+
+/** Rows of the results table as the customer's DOM holds them. The unified page carries each row's values as
+ * data-* attributes (read raw; the judge renders them, fieldmap.ui_from_attrs); the old run dialog's rows are read by
+ * cell position. An attribute the page does not set is left out (the judge reports it missing). */
+export function readRunRows(trs) {
+  return trs.filter((tr) => /^run-asset-\d+$/.test(tr.dataset.testid)).map((tr) => {
+    const id = Number(tr.dataset.testid.slice(10));
+    if (tr.hasAttribute("data-impact")) {
+      const d = tr.dataset;
+      const row = { id, reader: "data-attributes" };
+      for (const [key, attr] of [["impact", "impact"], ["type", "type"], ["location", "location"], ["target", "target"],
+        ["algorithm", "algorithm"], ["key_size", "keySize"], ["finding", "finding"], ["quantum", "quantum"],
+        ["status", "status"], ["q_grade", "qGrade"], ["fix_class", "fixClass"]]) {
+        if (attr in d) row[key] = d[attr];
+      }
+      return row;
+    }
+    const td = [...tr.querySelectorAll("td")];
+    const where = td[4] ? [...td[4].querySelectorAll("span")].map((x) => x.textContent.trim()) : [];
+    return { id, impact: td[2]?.textContent.trim(), type: td[3]?.textContent.trim(),
+      location: where[0] ?? null, target: where[1] ?? null, algorithm: td[5]?.textContent.trim(), finding: td[6]?.textContent.trim(), quantum: td[7]?.textContent.trim() };
+  });
+}
+
 // ------------------------------------------------------------------------------------------------ G13 / G13b drift
 /** The run's results as the customer sees them (DOM rows of every page) and the API pages with the same token. */
 export async function captureRun(ctx, s, k, runId) {
   const { page } = ctx.A;
-  await page.goto(`${ctx.UI}/${ctx.A.team}/cbom/sources?tab=review`, { waitUntil: "networkidle" });
-  await page.getByTestId(`review-run-details-${runId}`).click();
-  await page.getByTestId("run-results").waitFor({ timeout: 30000 });
+  await openRunResults(ctx, s, runId, { via: "direct", tag: `_run${k}` });
   const items = []; let first = null;
   for (let p = 1; p < 500; p++) {
     const r = await ctx.apiGet(ctx.A, `/${ctx.A.team}/cbom/sources/runs/${runId}/assets?page=${p}&page_size=200`);
@@ -576,12 +626,7 @@ export async function captureRun(ctx, s, k, runId) {
   const rows = [];
   let prevIds = null, stuck = false;
   for (let p = 1; p < 200; p++) {
-    const got = await page.$$eval('[data-testid^="run-asset-"]', (trs) => trs.filter((tr) => /^run-asset-\d+$/.test(tr.dataset.testid)).map((tr) => {
-      const td = [...tr.querySelectorAll("td")];
-      const where = td[4] ? [...td[4].querySelectorAll("span")].map((x) => x.textContent.trim()) : [];
-      return { id: Number(tr.dataset.testid.slice(10)), impact: td[2]?.textContent.trim(), type: td[3]?.textContent.trim(),
-        location: where[0] ?? null, target: where[1] ?? null, algorithm: td[5]?.textContent.trim(), finding: td[6]?.textContent.trim(), quantum: td[7]?.textContent.trim() };
-    }));
+    const got = await page.$$eval('[data-testid^="run-asset-"]', readRunRows);
     const ids = got.map((r) => r.id).join(",");
     if (prevIds !== null && ids === prevIds) { stuck = true; break; }
     prevIds = ids;
