@@ -15,7 +15,7 @@ from backend.new_models import (
 )
 from backend.utilities.cbom_sources.agility import evidence_area_fields, evidence_vendor_fields
 from backend.utilities.cbom_sources.common import iso_z
-from backend.utilities.cbom_sources.evidence import AREAS, CONFIDENCE_LABEL, effective_confidence, vendor_status
+from backend.utilities.cbom_sources.evidence import AREAS, CONFIDENCE_LABEL, area_level, level, vendor_level, vendor_status
 from backend.utilities.cbom_sources.jobs import job_waiting_reason, run_credit_summary
 from backend.utilities.cbom_sources.kinds import KINDS
 from backend.utilities.cbom_sources.planning import node_status, source_targets
@@ -217,13 +217,12 @@ def public_settings(row: CbomCollectionSettings, now: _dt.datetime) -> dict[str,
 
 
 def public_area(row: CbomEvidenceArea, today: _dt.date, vendor_levels: list[str] | None = None) -> dict[str, Any]:
+    """An evidence area. ``confidence`` is the level a user set, ``effective_confidence`` the level it counts at today
+    (both E0..E3, whatever spelling is stored); ``q0_gap`` says why an E0 item is a Q0 gap (null otherwise);
+    ``q0_gap_rollup``: the third-party-vendors area's gap only repeats its vendors' gaps (not counted)."""
     spec = AREAS.get(row.area_key, {})
-    effective = effective_confidence(row.confidence, row.evidence_date, today)
-    if row.area_key == "third_party_vendors" and vendor_levels is not None:
-        from backend.utilities.cbom_sources.evidence import lowest
-
-        effective = lowest(vendor_levels) if vendor_levels else effective
-    overdue = bool(row.due_date and row.due_date < today.isoformat() and effective == "Q0")
+    effective, gap, rollup = area_level(row, today, vendor_levels)
+    overdue = bool(row.due_date and row.due_date < today.isoformat() and effective == "E0")
     return {
         "id": row.id,
         "area_key": row.area_key,
@@ -231,10 +230,12 @@ def public_area(row: CbomEvidenceArea, today: _dt.date, vendor_levels: list[str]
         "owner_hint": spec.get("owner_hint"),
         "questions": spec.get("questions", []),
         "owner": row.owner,
-        "confidence": row.confidence,
+        "confidence": level(row.confidence),
         "effective_confidence": effective,
         "confidence_label": CONFIDENCE_LABEL.get(effective, "Unknown"),
         "confidence_set_by": row.confidence_set_by,
+        "q0_gap": gap,
+        "q0_gap_rollup": rollup,
         "answers": row.answers or {},
         "evidence_title": row.evidence_title,
         "evidence_url": row.evidence_url,
@@ -248,6 +249,7 @@ def public_area(row: CbomEvidenceArea, today: _dt.date, vendor_levels: list[str]
 
 
 def public_vendor(row: CbomEvidenceVendor, now: _dt.datetime) -> dict[str, Any]:
+    effective, gap = vendor_level(row, now)
     return {
         "id": row.id,
         "name": row.name,
@@ -258,7 +260,10 @@ def public_vendor(row: CbomEvidenceVendor, now: _dt.datetime) -> dict[str, Any]:
         "link_expires_at": iso_z(row.link_expires_at),
         "answered_at": iso_z(row.answered_at),
         "answers": row.answers or {},
-        "confidence": row.confidence,
+        "confidence": level(row.confidence),  # the level a user set or the answer gave; it counts once answered
+        "effective_confidence": effective,
+        "confidence_label": CONFIDENCE_LABEL.get(effective, "Unknown"),
+        "q0_gap": gap,
         "evidence_url": row.evidence_url,
         "row_version": row.row_version,
         "created_at": iso_z(row.created_at),

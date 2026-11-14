@@ -48,6 +48,7 @@ from backend.utilities.cbom_sources import targets as T
 from backend.utilities.cbom_sources.aws_validate import validate_aws_role
 from backend.utilities.cbom_sources.common import audit, iso_z, log, new_ref, new_token, sha256_hex, utcnow
 from backend.utilities.cbom_sources.crypto import decrypt_secrets, encrypt_secrets, scrub, warn_if_key_is_weak
+from backend.utilities.cbom_sources import evidence as EVIDENCE
 from backend.utilities.cbom_sources.evidence import AREAS, CONFIDENCE, VENDOR_LINK_DAYS, clean_answers
 from backend.utilities.cbom_sources.sshca import sources as SSHCA_SOURCES  # F1.4
 from backend.utilities.cbom_sources.http import (
@@ -190,13 +191,7 @@ def _overview(engine, team_id: int, user_id: int) -> dict:
                 g["failed_tests"] += 1
         everything = {"servers": True, "kubernetes": True, "databases": True, "cloud": True, "network": True}
         plan = plan_run(session, team_id, settings, now, include=everything)
-        areas = ensure_evidence_areas(session, team_id)
-        vendors = session.exec(select(CbomEvidenceVendor).where(CbomEvidenceVendor.team_id == team_id)).all()
-        vendor_levels = [v.confidence if v.answered_at else "Q0" for v in vendors]
-        area_rows = [public_area(a, _today(now), vendor_levels) for a in areas]
-        by_q = {q: 0 for q in CONFIDENCE}
-        for row in area_rows:
-            by_q[row["effective_confidence"]] += 1
+        state = _evidence_state(session, team_id, now)
         skipped = plan.public()["skipped"]
         for node, status in zip(nodes, statuses):
             if status == "offline":
@@ -205,10 +200,12 @@ def _overview(engine, team_id: int, user_id: int) -> dict:
             elif status == "registration_expired":
                 skipped.append({"kind": "scan_node", "name": node.name, "node_id": node.id, "status": "skipped",
                                 "reason": f"Scan node {node.name}: registration token expired; generate a new one"})
-        for row in area_rows:
-            if row["effective_confidence"] == "Q0":
-                skipped.append({"kind": "evidence", "name": row["title"], "area_key": row["area_key"], "status": "gap",
-                                "reason": f"{row['title']} is unanswered and will appear as a Q0 gap"})
+        for gap in state["q0_gaps"]:  # one row per counted gap, with its own reason (FP-5, OB-3)
+            if gap["counted"]:
+                skipped.append({"kind": "evidence", "name": gap["title"], "area_key": gap["area_key"],
+                                "vendor_id": gap["vendor_id"], "gap_id": gap["id"], "status": "gap",
+                                "gap_reason": gap["reason"],
+                                "reason": f"{gap['title']}: {gap['text']}. It will appear as a Q0 gap"})
         if settings.stop_all_network:
             skipped.append({"kind": "network", "name": "Network TLS", "status": "skipped",
                             "reason": "Network scanning is stopped"})
@@ -225,8 +222,9 @@ def _overview(engine, team_id: int, user_id: int) -> dict:
                       "pending": statuses.count("pending_registration") + statuses.count("registration_expired")},
             "groups": groups,
             "plan": {**plan.public(), "skipped": skipped},
-            "evidence": {"areas": len(area_rows), "answered": sum(1 for r in area_rows if r["effective_confidence"] != "Q0"),
-                         "by_confidence": by_q, "vendors": len(vendors)},
+            "evidence": {"areas": len(state["areas"]), "answered": state["answered"],
+                         "by_confidence": state["by_confidence"], "vendors": len(state["vendors"]),
+                         "q0_gap_count": state["q0_gap_count"]},
             "code": {"cbom_scans": int(code_scans or 0)},
             "settings": {k: v for k, v in public_settings(settings, now).items()
                          if k in ("stop_all_network", "next_window_start", "in_window_now", "window_timezone",
@@ -1165,19 +1163,28 @@ async def discovery(team_id: TeamId, Authorization: AuthHeader = None):
 
 
 # ============================================================================ evidence
+def _evidence_state(session: Session, team_id: int, now: _dt.datetime) -> dict:
+    """Areas, vendors, levels and Q0 gaps as one state: the Evidence tab, the overview (Review & Run, the sidebar) and
+    the run all read the same counts (CB-18 OB-3)."""
+    areas = ensure_evidence_areas(session, team_id)
+    vendors = session.exec(select(CbomEvidenceVendor).where(CbomEvidenceVendor.team_id == team_id)
+                           .order_by(CbomEvidenceVendor.id)).all()
+    vendor_rows = [public_vendor(v, now) for v in vendors]
+    rows = [public_area(a, _today(now), [v["effective_confidence"] for v in vendor_rows]) for a in areas]
+    by_q = {q: 0 for q in CONFIDENCE}
+    for row in rows:
+        by_q[row["effective_confidence"]] += 1
+    gaps, count = EVIDENCE.q0_gaps(rows, vendor_rows, _today(now))
+    return {"areas": rows, "vendors": vendor_rows, "by_confidence": by_q,
+            "answered": sum(1 for r in rows if r["effective_confidence"] != "E0"), "q0_gaps": gaps,
+            "q0_gap_count": count}
+
+
 def _evidence(engine, team_id: int) -> dict:
     now = utcnow()
     with Session(engine) as session:
-        areas = ensure_evidence_areas(session, team_id)
-        vendors = session.exec(select(CbomEvidenceVendor).where(CbomEvidenceVendor.team_id == team_id)
-                               .order_by(CbomEvidenceVendor.id)).all()
-        levels = [v.confidence if v.answered_at else "Q0" for v in vendors]
-        rows = [public_area(a, _today(now), levels) for a in areas]
-        by_q = {q: 0 for q in CONFIDENCE}
-        for row in rows:
-            by_q[row["effective_confidence"]] += 1
-        return {"server_time": iso_z(now), "areas": rows, "vendors": [public_vendor(v, now) for v in vendors],
-                "by_confidence": by_q, "answered": sum(1 for r in rows if r["effective_confidence"] != "Q0")}
+        state = _evidence_state(session, team_id, now)
+        return {"server_time": iso_z(now), **state}
 
 
 @router.get(BASE + "/evidence", dependencies=READ, summary="Evidence areas and vendors")
@@ -1205,9 +1212,9 @@ def _update_area(engine, team_id: int, user_id: int, area_key: str, body: AreaUp
             raise HTTPException(status_code=400, detail="evidence_date: cannot be in the future")
         for key, value in changes.items():
             setattr(row, key, value)
-        if row.confidence in ("Q2", "Q3") and not (row.evidence_url or row.evidence_title):
+        if EVIDENCE.level(row.confidence) in EVIDENCE.DOCUMENTED and not (row.evidence_url or row.evidence_title):
             raise HTTPException(status_code=400, detail="confidence: Documented and Verified need an evidence document")
-        if row.confidence in ("Q2", "Q3") and not row.evidence_date:
+        if EVIDENCE.level(row.confidence) in EVIDENCE.DOCUMENTED and not row.evidence_date:
             raise HTTPException(status_code=400, detail="evidence_date: enter the date of the evidence document")
         if "confidence" in changes:
             row.confidence_set_by = user_id
@@ -1220,10 +1227,13 @@ def _update_area(engine, team_id: int, user_id: int, area_key: str, body: AreaUp
                   object_type="evidence", object_id=row.id, changed_fields=changes.keys())
             session.commit()
             session.refresh(row)
-            log("evidence updated", team=team_id, area=area_key, by=user_id)
         vendors = session.exec(select(CbomEvidenceVendor).where(CbomEvidenceVendor.team_id == team_id)).all()
-        levels = [v.confidence if v.answered_at else "Q0" for v in vendors]
-        return {"area": public_area(row, _today(now), levels)}
+        levels = [EVIDENCE.vendor_level(v, now)[0] for v in vendors]
+        area = public_area(row, _today(now), levels)
+        if changes:  # the level it counts at and why, so an operator can tell E1 from E2 from the log (OB-5)
+            log("evidence updated", team=team_id, area=area_key, by=user_id, level=area["effective_confidence"],
+                set=area["confidence"], gap=(area["q0_gap"] or {}).get("reason"))
+        return {"area": area}
 
 
 @router.patch(BASE + "/evidence/{area_key}", dependencies=WRITE, summary="Answer or update an evidence area")
@@ -1275,7 +1285,11 @@ def _update_vendor(engine, team_id: int, user_id: int, vendor_id: int, body: Ven
                   object_type="vendor", object_id=row.id, changed_fields=changes.keys())
             session.commit()
             session.refresh(row)
-        return {"vendor": public_vendor(row, now)}
+        out = public_vendor(row, now)
+        if changes:
+            log("vendor updated", team=team_id, vendor=row.id, by=user_id, level=out["effective_confidence"],
+                set=out["confidence"], gap=(out["q0_gap"] or {}).get("reason"))
+        return {"vendor": out}
 
 
 @router.patch(BASE + "/evidence/vendors/{vendor_id}", dependencies=WRITE, summary="Edit a vendor")
@@ -1309,9 +1323,8 @@ def _vendor_link(engine, team_id: int, user_id: int, vendor_id: int) -> dict:
         row.link_token_hash = sha256_hex(token)
         row.link_created_at = now
         row.link_expires_at = now + _dt.timedelta(days=VENDOR_LINK_DAYS)
-        row.answered_at = None
-        row.answers = {}
-        row.confidence = "Q0"
+        # a new link keeps an earlier answer and its level until the new answer replaces it (CB-18 EC-5): renewing
+        # vendor evidence must not turn a vendor that answered into "did not respond"
         row.row_version += 1
         row.last_updated = now
         session.add(row)
@@ -1319,7 +1332,7 @@ def _vendor_link(engine, team_id: int, user_id: int, vendor_id: int) -> dict:
               object_type="vendor", object_id=row.id)
         session.commit()
         session.refresh(row)
-        log("vendor link created", team=team_id, vendor=row.id, by=user_id)
+        log("vendor link created", team=team_id, vendor=row.id, by=user_id, refresh=bool(row.answered_at))
         base = (os.environ.get("CBOM_PUBLIC_APP_URL") or "https://devsecshield.zeroshield.ai").rstrip("/")
         return {"vendor": public_vendor(row, now), "url": f"{base}/q/{token}", "path": f"/q/{token}"}
 
@@ -1550,10 +1563,11 @@ def _asset_detail(engine, team_id: int, asset_id: int) -> dict:
         node = session.get(CbomScanNode, source.node_id) if source is not None and source.node_id else None
         if node is not None and node.team_id != team_id:
             node = None
-        asset = POSTURE.asset_detail(row, source, job=job if job and job.team_id == team_id else None, node=node)
+        asset = POSTURE.asset_detail(row, source, job=job if job and job.team_id == team_id else None, node=node,
+                                     session=session)
         # the quantum risk grade, from the same context loader as the run's list and posture (CB-19)
         grading = QGRADE.load_context(session, team_id=team_id, run_id=row.run_id, job_id=row.job_id)
-        graded = grading.grade_row(row, asset["finding_codes"])
+        graded = grading.grade_row(row, asset["finding_codes"], cls=asset["pqc_class"])
         return {"asset": {**asset, **graded.fields(), "q_explain": graded.explain}}
 
 

@@ -115,6 +115,9 @@ def run_heatmap(session: Session, team_id: int, run_id: int, *, by: str = "sourc
         CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run_id)).all()
     from backend.utilities.cbom_sources.classify import shown
 
+    from backend.utilities.cbom_sources.posture import PQC_CLASSES, JudgedElsewhere, classify_pqc
+
+    elsewhere = JudgedElsewhere(rows)
     cells: dict[tuple[str, str], dict[str, Any]] = {}
     columns: dict[str, int] = {}
     certs: list[dict[str, Any]] = []
@@ -122,14 +125,18 @@ def run_heatmap(session: Session, team_id: int, run_id: int, *, by: str = "sourc
     for row in rows:
         if row.asset_type == "coverage":
             continue
-        shown_impact = shown(row, today)["impact"]  # date-based findings (expiry, end of life) judged today
+        view = shown(row, today)
+        shown_impact = view["impact"]  # date-based findings (expiry, end of life) judged today
         job = jobs.get(row.job_id)
         src = sources.get((job.source_id if job else None) or 0)
         column = (ID.job_source_name(job, src) if job else "Unknown source") if by == "source" else row.asset_type
         family = algorithm_family(row.algorithm, row.asset_type, row.facts)
         impact = shown_impact if shown_impact in _RANK else "none"
-        cell = cells.setdefault((family, column), {"count": 0, "worst": "none", "by_impact": {k: 0 for k in IMPACTS}})
+        cell = cells.setdefault((family, column), {"count": 0, "worst": "none", "by_impact": {k: 0 for k in IMPACTS},
+                                                   "pqc_classes": {c: 0 for c in PQC_CLASSES}})
         cell["count"] += 1
+        # the one class function (CB-18): a cell can say how many of its assets the scan could not identify
+        cell["pqc_classes"][classify_pqc(row, list(view["finding_codes"]), elsewhere=elsewhere)[0]] += 1
         cell["by_impact"][impact] += 1
         cell["worst"] = _worst(cell["worst"], impact)
         columns[column] = columns.get(column, 0) + 1
