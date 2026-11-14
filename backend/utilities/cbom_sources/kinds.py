@@ -270,6 +270,41 @@ def credential_target_problem(kind: str, cfg: Any, secrets: dict[str, str]) -> s
             name = {"mysql": "MySQL", "redis": "Redis", "mssql": "SQL Server"}[cfg.engine]
             return (f"ca_pem: {name} logins need TLS and the CA certificate that signed the server's certificate, so "
                     "the password only goes to the real server")
+    if kind == "ca_connector" and cfg.provider == "ejbca" and secrets.get("client_cert") and secrets.get("client_key"):
+        return client_pair_problem(secrets["client_cert"], secrets["client_key"])
+    return None
+
+
+def client_pair_problem(cert_pem: str, key_pem: str) -> str | None:
+    """Why a PEM client certificate and private key cannot sign in together (both must parse and the key must be the
+    certificate's), or None.  Checked at save so a wrong pair is refused there, not first found by a connection test.
+    The first certificate is the client's own (a chain may follow it).  Messages never echo the PEM text."""
+    from cryptography import x509
+    from cryptography.exceptions import UnsupportedAlgorithm
+    from cryptography.hazmat.primitives import serialization
+
+    try:
+        certs = x509.load_pem_x509_certificates(cert_pem.encode())
+    except (ValueError, UnsupportedAlgorithm):
+        certs = []
+    if not certs:
+        return "secrets.client_cert: the certificate could not be read; paste the PEM client certificate"
+    try:
+        key = serialization.load_pem_private_key(key_pem.encode(), password=None)
+    except TypeError:
+        return "secrets.client_key: the private key could not be read: it is encrypted; paste it without a passphrase"
+    except (ValueError, UnsupportedAlgorithm):
+        return ("secrets.client_key: the private key could not be read; paste the unencrypted PEM private key "
+                "(RSA, EC or Ed25519)")
+    spki = serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
+    try:
+        mine = key.public_key().public_bytes(*spki)
+        theirs = certs[0].public_key().public_bytes(*spki)
+    except (ValueError, UnsupportedAlgorithm):
+        return "secrets.client_cert: the certificate's public key could not be read"
+    if mine != theirs:
+        return ("secrets.client_key: the private key does not belong to the client certificate; paste the key that "
+                "was created with this certificate")
     return None
 
 
@@ -538,7 +573,10 @@ def _ca_secrets(cfg: CaConnectorConfig) -> set[str]:
         return {"token"}  # a read-only Vault token (policy template on the source's Privilege section)
     if cfg.provider == "ejbca":
         return {"client_cert", "client_key"}  # the EJBCA REST API authenticates clients by certificate
-    return {"api_key"}
+    # Venafi, Keyfactor, DigiCert, Sectigo and "other" have no collector (not collectable): nothing would read a key,
+    # so none is asked for or stored.  A key stored before is dropped on the source's next save (_merge_secrets keeps
+    # only the fields this returns) and is never sent anywhere meanwhile.
+    return set()
 
 
 def _ca_on_node(cfg: Any) -> bool:

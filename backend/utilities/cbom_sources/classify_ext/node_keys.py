@@ -241,12 +241,19 @@ def _days(seconds: Any) -> float | None:
     return seconds / 86400 if isinstance(seconds, (int, float)) and seconds > 0 else None
 
 
+def _allowed_algs(facts: dict[str, Any]) -> list[str]:
+    """Every key algorithm a template or profile allows (EJBCA ``available_key_algs``), upper-cased."""
+    return [str(a).upper() for a in C.fact_list(facts.get("available_key_algs")) if str(a).strip()]
+
+
 def ca_template(out, facts: dict[str, Any], algorithm: Any, key_size: Any, now) -> bool | None:
     name = facts.get("name") or "template"
     key_type = str(facts.get("key_type") or algorithm or "").upper()
+    allowed = _allowed_algs(facts)
     bits = facts.get("key_bits") if isinstance(facts.get("key_bits"), int) else key_size
     if isinstance(bits, int) and bits > 0:
-        if "RSA" in key_type and bits < 2048:
+        # key_bits is the smallest RSA size an EJBCA profile allows, also when its label is a post-quantum algorithm
+        if ("RSA" in key_type or "RSA" in allowed) and bits < 2048:
             out.add("CA_ALLOWS_WEAK_KEY", "Critical" if bits < 1024 else "High", f"{name} issues certificates for RSA-{bits} keys")
         elif key_type.startswith("EC") and bits < 224:
             out.add("CA_ALLOWS_WEAK_KEY", "High", f"{name} issues certificates for {bits}-bit EC keys")
@@ -285,6 +292,11 @@ def ca_template(out, facts: dict[str, Any], algorithm: Any, key_size: Any, now) 
         out.add("CA_LONG_VALIDITY", "Low", f"{name} issues server certificates valid for up to {int(days)} days, more "
                                            f"than the {INTERNAL_TLS_MAX_DAYS} days Apple platforms accept from any "
                                            "CA, enterprise roots included")
+    if any(algid.family_label(a) == "PQ" for a in allowed):
+        # A profile that offers a post-quantum algorithm can issue post-quantum certificates (owner bug C10d: such a
+        # profile was labelled RSA, also in rows stored by scan nodes from before the fix).  The classical algorithms
+        # it still allows keep their size rules above; each certificate it issued is judged on its own key.
+        return False
     if not key_type or key_type in ("ANY",):
         return None
     return C.quantum_vulnerable(key_type)

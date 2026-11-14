@@ -4323,6 +4323,8 @@ export interface CbomSource {
     last_test_summary: string | null
     last_test_job_id: number | null
     last_test_result: { samples?: CbomTestSample[]; checks?: CbomAwsCheck[]; member_accounts?: number; summary?: string; status?: string }
+    // the newest finished collection of this source (list and get only; null on save responses and before the first)
+    last_collect?: { status: "ok" | "partial" | "failed"; at: string | null; summary: string | null; job_id: number; run_id: number | null } | null
     row_version: number
     created_at: string | null
     last_updated: string | null
