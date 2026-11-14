@@ -4369,6 +4369,8 @@ export interface CbomSource {
     last_test_summary: string | null
     last_test_job_id: number | null
     last_test_result: { samples?: CbomTestSample[]; checks?: CbomAwsCheck[]; member_accounts?: number; summary?: string; status?: string; estimate?: CbomOrgEstimate }
+    // the newest finished collection of this source (list and get only; null on save responses and before the first)
+    last_collect?: { status: "ok" | "partial" | "failed"; at: string | null; summary: string | null; job_id: number; run_id: number | null } | null
     row_version: number
     created_at: string | null
     last_updated: string | null
@@ -4841,7 +4843,12 @@ const getCbomNodeArtifactLink = async (team_id: number, kind: string): Promise<{
     return response.data
 }
 
-const listCbomSources = async (team_id: number, group?: CbomSourceGroup): Promise<{ sources: CbomSource[]; server_time: string }> => {
+// network_totals (N7): unique addresses the team's ENABLED network ranges sweep after the never-scan list; present on
+// unfiltered and network lists
+const listCbomSources = async (team_id: number, group?: CbomSourceGroup): Promise<{
+    sources: CbomSource[]; server_time: string;
+    network_totals?: { addresses: number; ranges_enabled: number; ranges_disabled: number }
+}> => {
     const response = await api.get(`${cbomSourcesBase(team_id)}/items`, { params: group ? { group } : {} })
     return response.data
 }

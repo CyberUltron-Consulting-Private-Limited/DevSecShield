@@ -956,7 +956,7 @@ def test_migration_chains_on_the_single_head():
     cfg.set_main_option("script_location", str(_REPO_ROOT / "prod_database_migrations" / "migrations"))
     script = ScriptDirectory.from_config(cfg)
     assert script.get_heads() == ["w9cloudpool001"]
-    assert script.get_revision("w9cloudpool001").down_revision == "cb23q0gap001"
+    assert script.get_revision("w9cloudpool001").down_revision == "cb25agility001"
 
 
 def _validate_org(monkeypatch, accounts: int, *, throttle_first: int = 0, page_seconds: float = 0.0):
@@ -1027,10 +1027,13 @@ def test_a_new_member_count_is_recorded_on_the_source_with_its_change_before_the
 
     user = _team(engine, 1)
     src_id = _source(engine, 1, accounts=200)  # validated before F1: the count stopped at 200
-    counts = iter([1000, 1000, 1200])
+    counts = iter([1000, 1000, None, 1200])
 
     def validate(*a, **k):
         n = next(counts)
+        if n is None:  # a failed validation (the role was changed, AWS was down...)
+            return {"status": "failed", "checks": [{"check": "Role assumed with external ID", "status": "fail",
+                                                    "detail": "AccessDenied"}]}
         return {"status": "passed", "checks": [{"check": "Organization member accounts listed", "status": "pass",
                                                 "detail": f"Found {n} member accounts"}], "member_accounts": n}
 
@@ -1048,8 +1051,27 @@ def test_a_new_member_count_is_recorded_on_the_source_with_its_change_before_the
         assert src.last_test_result["estimate"] == again
         plan = plan_run(s, 1, get_or_create_settings(s, 1), utcnow(), include={"cloud": True}, source_ids=None)
         assert plan.total_c == 400_000  # what a schedule's next run would charge: 1,000 x 4 credits
+    failed = R._test_aws(engine, 1, user, src_id)
+    assert failed["status"] == "failed" and failed["estimate"] == again  # the panel keeps showing the last estimate
+    with Session(engine) as s:  # the last estimate and its "changed from" are kept on the source
+        assert s.get(CbomCollectionSource, src_id).last_test_result["estimate"] == again
     third = R._test_aws(engine, 1, user, src_id)["estimate"]
     assert third["accounts"] == 1200 and third["changed_from"] == {"accounts": 1000, "credits_per_run": 4000.0}
+
+
+def test_an_org_validated_before_f1_is_flagged_for_re_validation(engine, capsys):
+    from backend.utilities.cbom_sources.planning import org_estimate_stale, plan_run
+
+    user = _team(engine, 1)
+    _source(engine, 1, accounts=200, name="old-org")  # validated before F1: no estimate recorded
+    with Session(engine) as s:
+        src = s.exec(select(CbomCollectionSource)).one()
+        assert org_estimate_stale(src)
+        plan_run(s, 1, get_or_create_settings(s, 1), utcnow(), include={"cloud": True}, source_ids=None)
+        src.last_test_result = {**src.last_test_result, "estimate": {"accounts": 200}}
+        assert not org_estimate_stale(src)
+    assert f"cbom sources aws org estimate stale: re-validate team=1 source={src.id} accounts=200" in capsys.readouterr().out
+    assert user
 
 
 def _store(engine, source_id, status, result) -> bool:

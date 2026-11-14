@@ -702,6 +702,41 @@ class CbomQ0Gap(SQLModel, table=True):
     run_id: int | None = Field(default=None)  # the run that last saw it (scope / asset / inputs items)
 
 
+class CbomRiskRegister(SQLModel, table=True):
+    """The team's quantum risk register (CB-23 PR-B): one row per estate asset key (CB-20/CB-21) with its CURRENT
+    grade (the team's inputs now, the current grade model) and what a CISO filters on. Written by the estate hook
+    only for keys whose graded content, inputs or model changed (``grade_digest``), and by the background re-grade
+    after an inputs or model change. ``q_rank``: Q1 1 .. Q4 4, Q0 5, no grade 6 (the list's keyset order)."""
+    __tablename__ = "cbomriskregister"
+    __table_args__ = (UniqueConstraint("team_id", "item_key", name="uq_cbomriskregister_team_key"),
+                      _SaIndex("ix_cbomriskregister_team_rank_key", "team_id", "q_rank", "item_key"),
+                      _SaIndex("ix_cbomriskregister_team_reason", "team_id", "q_reason"),
+                      _SaIndex("ix_cbomriskregister_team_family_source_grade", "team_id", "family", "source_ref",
+                               "q_grade"))
+    id: int | None = Field(default=None, primary_key=True)
+    team_id: int = Field(foreign_key="team.id")
+    item_key: str = Field(max_length=64)  # the estate asset key
+    item_kind: str = Field(default="asset", max_length=16)
+    q_grade: str | None = Field(default=None, max_length=2)  # Q0..Q4, NULL = no grade
+    q_rank: int = Field(default=6)
+    q_reason: str = Field(max_length=32)
+    label: str | None = Field(default=None, max_length=255)
+    asset_type: str | None = Field(default=None, max_length=32)
+    family: str | None = Field(default=None, max_length=32)
+    source_ref: str | None = Field(default=None, max_length=255)  # the observation the grade comes from
+    source_name: str | None = Field(default=None, max_length=255)
+    application: str | None = Field(default=None, max_length=128)
+    exposure: str | None = Field(default=None, max_length=16)
+    presence: str = Field(default="present", max_length=16)
+    sources: int = Field(default=1)  # observations (sources) of the key
+    last_run_id: int | None = Field(default=None)
+    last_observed_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    model_version: str = Field(max_length=32)
+    inputs_digest: str = Field(max_length=16)
+    grade_digest: str = Field(max_length=16)
+    updated_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+
+
 # ========================================= estate store (CB-20) =========================================
 class CbomEstateSource(SQLModel, table=True):
     """Per team and source (``source_ref`` = the source uid): the newest collect job the estate store has written.
@@ -722,6 +757,26 @@ class CbomEstateSource(SQLModel, table=True):
     latest_status: str = Field(max_length=16)  # the job's status: success | failed | cancelled ...
     latest_comparable: bool = Field(default=False)  # drift.job_comparable: a complete collection
     updated_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+
+
+class CbomAgilityBaseline(SQLModel, table=True):
+    """CB-25: the team's crypto-agility baseline written once per run (``agility_store``, an estate hook): what
+    ``GET /{team}/cbom/agility`` said when the run's estate write finished."""
+    __tablename__ = "cbomagilitybaseline"
+    __table_args__ = (UniqueConstraint("team_id", "run_id", name="uq_cbomagilitybaseline_team_run"),)
+    id: int | None = Field(default=None, primary_key=True)
+    team_id: int = Field(foreign_key="team.id")
+    run_id: int = Field()
+    scope: str = Field(default="enterprise", max_length=16)
+    agility_version: str = Field(max_length=32)
+    assets: int = Field(default=0)
+    self_fixable_pct: float | None = Field(default=None)
+    counts: Dict | None = Field(default_factory=dict, sa_column=Column(JSON))
+    counts_excl_pq: Dict | None = Field(default_factory=dict, sa_column=Column(JSON))
+    unknown_reasons: Dict | None = Field(default_factory=dict, sa_column=Column(JSON))
+    systems: list | None = Field(default_factory=list, sa_column=Column(JSON))  # at most 2,000, largest first
+    systems_truncated: bool = Field(default=False)
+    created_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
 
 
 class CbomEstateTeam(SQLModel, table=True):
@@ -748,7 +803,8 @@ class CbomEstateAsset(SQLModel, table=True):
     __table_args__ = (UniqueConstraint("team_id", "asset_key", name="uq_cbomestateasset_team_key"),
                       _SaIndex("ix_cbomestateasset_team_type_key", "team_id", "asset_type", "asset_key"),
                       _SaIndex("ix_cbomestateasset_team_presence_key", "team_id", "presence", "asset_key"),
-                      _SaIndex("ix_cbomestateasset_team_updated", "team_id", "updated_run_id"))
+                      _SaIndex("ix_cbomestateasset_team_updated", "team_id", "updated_run_id"),
+                      _SaIndex("ix_cbomestateasset_team_system_fix", "team_id", "system_key", "fix_class"))
     id: int | None = Field(default=None, primary_key=True)
     team_id: int = Field(foreign_key="team.id")
     asset_key: str = Field(max_length=64)
@@ -762,6 +818,19 @@ class CbomEstateAsset(SQLModel, table=True):
     first_seen_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
     updated_run_id: int = Field(default=0)  # the run whose write last changed the row
     updated_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    # CB-25 crypto-agility (``agility_store``): the asset's fix class, hardest across its observations; its system is
+    # its latest observation's. Roll-ups are a GROUP BY on (team_id, system_key, fix_class). NULL = not computed yet.
+    fix_class: str | None = Field(default=None, max_length=16)
+    fix_class_excl_pq: str | None = Field(default=None, max_length=16)
+    fix_floor: str | None = Field(default=None, max_length=16)
+    fix_reasons: str | None = Field(default=None, max_length=200)  # unknown reasons, comma-joined, sorted
+    fix_codes: str | None = Field(default=None, max_length=300)  # the codes that decided the class, comma-joined
+    fix_version: str | None = Field(default=None, max_length=32)  # agility.version() it was computed with
+    fix_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)  # its latest observation's time
+    system_key: str | None = Field(default=None, max_length=300)
+    system_label: str | None = Field(default=None, max_length=255)
+    system_kind: str | None = Field(default=None, max_length=16)
+    fix_observations: int | None = Field(default=None)
 
 
 class CbomEstateObservation(SQLModel, table=True):
@@ -789,6 +858,22 @@ class CbomEstateObservation(SQLModel, table=True):
     first_seen_run_id: int | None = Field(default=None)
     state_run_id: int = Field(default=0)  # the run whose write last changed the row
     updated_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    # CB-25 crypto-agility of this observation's latest row (``agility_store``), with the job it was computed from
+    fix_class: str | None = Field(default=None, max_length=16)
+    fix_class_excl_pq: str | None = Field(default=None, max_length=16)
+    fix_floor: str | None = Field(default=None, max_length=16)
+    fix_reasons: str | None = Field(default=None, max_length=200)
+    fix_codes: str | None = Field(default=None, max_length=300)
+    fix_version: str | None = Field(default=None, max_length=32)
+    fix_job_id: int | None = Field(default=None)
+    fix_attempt: int | None = Field(default=None)
+    fix_recheck_on: datetime.date | None = Field(default=None)  # a date-based rule may change the class from then
+    fix_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    system_key: str | None = Field(default=None, max_length=300)
+    system_label: str | None = Field(default=None, max_length=255)
+    system_kind: str | None = Field(default=None, max_length=16)
+    cert_cnb_key: str | None = Field(default=None, max_length=46)  # what a code-scan certificate matches (CN+dates)
+    cert_cn_key: str | None = Field(default=None, max_length=46)  # CN + notAfter, only when no notBefore was read
 
 
 # ========================================= integrations (WP11) =========================================

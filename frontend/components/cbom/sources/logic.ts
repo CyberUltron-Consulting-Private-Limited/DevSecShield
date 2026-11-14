@@ -649,6 +649,15 @@ export function orgEstimateLines(est: { accounts: number; credits_per_account: n
   return { estimate, change }
 }
 
+/** An AWS organisation source validated before F1: its stored count stopped at 200 accounts and it has no recorded
+ * estimate, so its charge per run is not yet what F1 reads and charges. Its row asks for a re-validation. */
+export function orgEstimateStale(source: { kind: string; config?: Record<string, unknown> | null;
+  last_test_result?: { member_accounts?: number; estimate?: unknown } | null }): boolean {
+  if (source.kind !== "aws_account" || source.config?.scope !== "organization") return false
+  const r = source.last_test_result
+  return !!r && typeof r.member_accounts === "number" && r.member_accounts <= 200 && !r.estimate
+}
+
 /** A YYYY-MM-DD date shown without time-zone shifting. */
 export function formatDay(day: string | null | undefined): string {
   if (!day || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return "—"

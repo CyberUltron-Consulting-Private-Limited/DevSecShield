@@ -977,34 +977,41 @@ def store_rows(session: Session, owner: CbomCollectionJob, counter: CbomCollecti
     fresh = [r for r in rows if r["asset_key"] not in existing]
     room = max(MAX_ASSETS_PER_ATTEMPT - (counter.asset_count or 0), 0)
     shared = counter.id != owner.id and owner_cap is not None
-    if shared:
-        for _try in range(5):  # the parent's counter is shared by every slice: take room with a guarded UPDATE
-            # (it fails only when another slice took the last room meanwhile: read the count again)
-            have = int(session.exec(select(CbomCollectionJob.asset_count).where(CbomCollectionJob.id == owner.id)).one())
-            take = min(len(fresh), room, max(owner_cap - have, 0))  # type: ignore[operator]
-            if take == 0 or session.exec(
-                    update(CbomCollectionJob)
-                    .where(CbomCollectionJob.id == owner.id, CbomCollectionJob.status == "claimed",
-                           CbomCollectionJob.asset_count + take <= owner_cap)
-                    .values(asset_count=CbomCollectionJob.asset_count + take)).rowcount:
-                break
-        else:
-            take = 0
-        room = take
-    cap_reached = len(fresh) > room
-    dropped = max(len(fresh) - room, 0)
-    fresh = fresh[:room]
-    if fresh:
-        # the counter update re-checks the lease, so a batch racing the reaper or the result is refused
+    want = min(len(fresh), room)
+    if want:
+        # the counter (lease-checked) first, then the parent: every writer locks the two rows in the same order, and
+        # a batch racing the reaper or the result is refused before it takes any of the parent's room
         changed = session.exec(
             update(CbomCollectionJob)
             .where(CbomCollectionJob.id == counter.id, CbomCollectionJob.status == "claimed",
                    CbomCollectionJob.lease_id == lease_id,
-                   CbomCollectionJob.asset_count + len(fresh) <= MAX_ASSETS_PER_ATTEMPT)
-            .values(asset_count=CbomCollectionJob.asset_count + len(fresh))
+                   CbomCollectionJob.asset_count + want <= MAX_ASSETS_PER_ATTEMPT)
+            .values(asset_count=CbomCollectionJob.asset_count + want)
         ).rowcount
         if not changed:
             raise HTTPException(status_code=409, detail="This job is no longer leased to this node")
+    take = want
+    if shared and want:
+        take = 0
+        for _try in range(5):  # the parent's counter is shared by every slice: take room with a guarded UPDATE
+            # (it fails only when another slice took the last room meanwhile: read the count again)
+            have = int(session.exec(select(CbomCollectionJob.asset_count).where(CbomCollectionJob.id == owner.id)).one())
+            grant = min(want, max(owner_cap - have, 0))  # type: ignore[operator]
+            if grant == 0:
+                break
+            if session.exec(
+                    update(CbomCollectionJob)
+                    .where(CbomCollectionJob.id == owner.id, CbomCollectionJob.status == "claimed",
+                           CbomCollectionJob.asset_count + grant <= owner_cap)
+                    .values(asset_count=CbomCollectionJob.asset_count + grant)).rowcount:
+                take = grant
+                break
+        if take < want:  # give the slice back what the parent's cap did not grant
+            session.exec(update(CbomCollectionJob).where(CbomCollectionJob.id == counter.id)
+                         .values(asset_count=CbomCollectionJob.asset_count - (want - take)))
+    cap_reached = len(fresh) > take
+    dropped = max(len(fresh) - take, 0)
+    fresh = fresh[:take]
     inserted = _insert_ignore(session, fresh)
     if inserted < len(fresh):  # another request stored some of these keys first
         for job_id in ((counter.id, owner.id) if shared else (counter.id,)):
