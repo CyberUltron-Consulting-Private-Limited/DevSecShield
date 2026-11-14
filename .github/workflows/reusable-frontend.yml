@@ -67,7 +67,7 @@ on:
       runs-on:
         description: "Runner label. Empty: the self-hosted dss-vm runners, or ubuntu-latest for a fork's pull request."
         type: string
-        default: \"\"
+        default: ""
 
 permissions:
   contents: read

@@ -123,7 +123,7 @@ on:
       runs-on:
         description: "Runner label. Empty: the self-hosted dss-vm runners, or ubuntu-latest for a fork's pull request."
         type: string
-        default: \"\"
+        default: ""
       artifact-paths:
         description: Optional newline-separated paths (relative to the repository root) uploaded after the run.
         type: string
