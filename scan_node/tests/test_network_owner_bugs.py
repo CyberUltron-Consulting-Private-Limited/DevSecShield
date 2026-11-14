@@ -374,16 +374,21 @@ def test_n10_an_appliance_on_a_never_scan_address_is_a_skipped_sample_with_the_r
 # ----------------------------------------------------------------------------- N8: rate limiter
 def test_n8_no_one_second_window_starts_more_connections_than_the_rate():
     rate = 20
-    limiter = RateLimiter(per_second=rate, per_server=64)
-    stamps: list[float] = []
-    lock = threading.Lock()
+    stamps: list[float] = []  # the limiter's own start times, taken under its lock (a busy CI box cannot skew them)
+
+    class Recording(RateLimiter):
+        def _wait(self, now):
+            wait = super()._wait(now)
+            if wait <= 0:
+                stamps.append(now)
+            return wait
+
+    limiter = Recording(per_second=rate, per_server=64)
     end = time.monotonic() + 2.6
 
     def worker():
         while time.monotonic() < end:
-            if limiter.acquire():
-                with lock:
-                    stamps.append(time.monotonic())
+            limiter.acquire()
 
     threads = [threading.Thread(target=worker) for _ in range(16)]
     for t in threads:
