@@ -8,6 +8,7 @@
 import type { ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
+import { COMPLIANCE_KEY_TO_LABEL, OWASP_KEY_TO_LABEL } from "@/lib/owasp-compliance-labels";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { CbomJob, CbomRunAssetItem } from "@/utils/backend_api";
@@ -17,7 +18,13 @@ import { AssetDetailPanel } from "@/components/cbom/sources/RunPosture";
 import { ASSET_TYPE_LABEL } from "@/components/cbom/sources/RunResults";
 
 import { getFindingStatusBadgeClass, getImpactBadgeClass, getRiskScoreBoxClass, getStrengthBadgeClass } from "./badgeClasses";
-import { findingStatusOf } from "./model";
+import RemediationPanel from "@/components/RemediationPanel";
+import AiRemediationPanel from "./AiRemediationPanel";
+import { findingChips, findingStatusOf } from "./model";
+import { useQuery } from "@tanstack/react-query";
+import { getCbomAssetDetail } from "@/utils/backend_api";
+import type { CbomAssetDetailWithExposure } from "@/utils/api/cbom_outputs";
+import { cbomSourcesKeys } from "@/components/cbom/sources/keys";
 import { assetName, AsOfRunNote, CollectedFacts } from "./RunFindingsTable";
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
@@ -32,8 +39,9 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 /** What the dialog shows for an asset: a table row, or (from top risks / certificates) only its id. */
 export type DialogSubject = { item: CbomRunAssetItem } | { assetId: number; label?: string };
 
-export function RunFindingDialog({ teamId, subject, jobs, waveOf, onClose }: {
+export function RunFindingDialog({ teamId, runId, subject, jobs, waveOf, onClose }: {
   teamId: number;
+  runId: number;
   subject: DialogSubject | null;
   jobs: CbomJob[];
   /** the row's wave entry from the run plan (an older backend's rows carry no status of their own) */
@@ -44,6 +52,15 @@ export function RunFindingDialog({ teamId, subject, jobs, waveOf, onClose }: {
   const assetId = item ? item.id : subject && "assetId" in subject ? subject.assetId : null;
   const job = item ? jobs.find((j) => j.id === item.job_id) : undefined;
   const title = item ? assetName(item) : subject && "assetId" in subject ? subject.label ?? `Asset ${subject.assetId}` : "Finding details";
+  // the asset's KB entries (the same query AssetDetailPanel runs, so one request): fallback for the dialog's chips
+  const detailQ = useQuery({
+    queryKey: cbomSourcesKeys.asset(teamId, assetId ?? 0),
+    queryFn: async () => (await getCbomAssetDetail(teamId, assetId as number)) as unknown as CbomAssetDetailWithExposure,
+    enabled: assetId != null,
+    retry: 1,
+    staleTime: 60_000,
+  });
+  const chips = findingChips(item, detailQ.data?.details);
   const status = item && item.type !== "coverage" ? findingStatusOf(item, item.wave ?? waveOf?.(item)) : null;
   return (
     <Dialog open={!!subject} onOpenChange={(open) => !open && onClose()}>
@@ -113,6 +130,34 @@ export function RunFindingDialog({ teamId, subject, jobs, waveOf, onClose }: {
                 )}
                 {item && <AsOfRunNote item={item} />}
 
+                {/* the code dialog's OWASP Top 10 / Compliance controls / Suggested fix: the /assets item's fields (W2b),
+                    else the same facts from the asset's knowledge-base entries */}
+                {chips.owasp.length > 0 && (
+                  <Field label="OWASP Top 10">
+                    <div className="flex flex-wrap gap-1" data-testid="run-finding-owasp">
+                      {chips.owasp.map(([key, value]) => (
+                        <Badge key={key} variant="secondary" className="text-xs whitespace-normal max-w-full text-left bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-200">
+                          {OWASP_KEY_TO_LABEL[key] ?? value}
+                        </Badge>
+                      ))}
+                    </div>
+                  </Field>
+                )}
+                {chips.controls.length > 0 && (
+                  <Field label="Compliance controls">
+                    <div className="flex flex-wrap gap-1" data-testid="run-finding-controls">
+                      {chips.controls.map(([key, value]) => (
+                        <Badge key={key} variant="outline" className="text-xs whitespace-normal max-w-full text-left">{COMPLIANCE_KEY_TO_LABEL[key] ?? value}</Badge>
+                      ))}
+                    </div>
+                  </Field>
+                )}
+                {chips.suggestedFix && (
+                  <Field label="Suggested fix">
+                    <p className="text-sm text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap" data-testid="run-finding-suggested-fix">{chips.suggestedFix}</p>
+                  </Field>
+                )}
+
                 {item && (
                   <Field label="Where it came from">
                     <p className="text-sm text-zinc-700 dark:text-zinc-300" data-testid="run-finding-provenance">
@@ -126,11 +171,15 @@ export function RunFindingDialog({ teamId, subject, jobs, waveOf, onClose }: {
 
                 <AssetDetailPanel teamId={teamId} assetId={assetId} />
 
-                {item && <CollectedFacts item={item} />}
+                {/* the code page's "Remediation, fix code and exploit demo" panel (Fix code / Diff / Exploit demo /
+                    Standards), from GET /runs/{id}/assets/{asset}/remediation; hidden on an older backend */}
+                <RemediationPanel key={`rem-${assetId}`} teamId={String(teamId)} scanType="cbom" scanId={0} findingId={String(assetId)}
+                                  runAsset={{ runId, assetId }} />
 
-                {/* AI remediation mount point (lane W5): components/cbom/results/AiRemediationPanel.tsx, default export,
-                    props {teamId, subject: {kind: "run_asset", assetId}}; renders nothing when the assistant is off.
-                    Mount it here, below the knowledge-base fix: <AiRemediationPanel teamId={teamId} subject={{ kind: "run_asset", assetId }} /> */}
+                {/* AI remediation assistant (CB-38 PR-6), below the knowledge-base fix; renders nothing when it is off */}
+                <AiRemediationPanel teamId={teamId} subject={{ kind: "run_asset", assetId }} />
+
+                {item && <CollectedFacts item={item} />}
               </div>
             </ScrollArea>
           </div>

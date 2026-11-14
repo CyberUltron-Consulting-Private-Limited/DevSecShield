@@ -15,6 +15,7 @@ import { getCbomNodeArtifactLink } from "@/utils/backend_api";
 import { apiBaseURL } from "@/utils/interceptors";
 
 import {
+  KIT_NEEDS_INTERNET,
   KIT_STEPS,
   downloadKinds,
   downloadLabel,
@@ -83,7 +84,7 @@ export function NodeDownloads({
                   <Button
                     variant={kind === downloadKinds(method)[0] ? "default" : "outline"}
                     size="sm"
-                    className="cursor-pointer"
+                    className="cursor-pointer h-auto max-w-full whitespace-normal break-words text-left"
                     disabled={!ok || link.isPending}
                     title={a?.sha256 ? `SHA-256 ${a.sha256}` : undefined}
                     onClick={() => link.mutate(kind)}
@@ -116,6 +117,11 @@ export function NodeDownloads({
             );
           })}
         </ul>
+      )}
+      {kit && (
+        <p role="note" className="text-xs font-medium text-amber-700 dark:text-amber-400" data-testid={`node-kit-internet-${kit}`}>
+          {KIT_NEEDS_INTERNET[kit]}
+        </p>
       )}
       {kit && (
         <ol className="list-decimal pl-5 space-y-1 text-xs text-zinc-600 dark:text-zinc-400" data-testid={`node-kit-steps-${kit}`}>

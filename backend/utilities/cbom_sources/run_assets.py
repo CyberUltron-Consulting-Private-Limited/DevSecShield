@@ -195,6 +195,24 @@ def enrich_items(session: Session, team_id: int, run: CbomCollectionRun, items: 
         item["risk_score"] = 0.0 if coverage else cbom_finding_risk_score(code_row)
         for key in ("algorithm_name", "algorithm_type", "crypto_strength", "quantum_safe", "description"):
             item[key] = code_row.get(key)
+    for item in items:
+        add_code_page_fields(item)
+
+
+def add_code_page_fields(item: dict[str, Any]) -> None:
+    """The code page's ``CbomFinding`` fields a run item lacks (CB-38 W2b parity): ``bom_ref`` (``zs-asset-<id>``: the
+    ref the run's distributions, dependency graph and compliance requirement refs use), ``title``, and from the
+    knowledge base ``owasp_top_10`` / ``compliance_controls`` (the code page's ``{key: label}`` form) and
+    ``suggested_fix``."""
+    from backend.utilities.cbom_sources import crypto_kb
+
+    codes = [c for c in item.get("finding_codes") or [] if isinstance(c, str) and not c.startswith("COVERAGE_")]
+    finding = bool(codes) and item.get("type") != COVERAGE
+    item["bom_ref"] = f"zs-asset-{item['id']}"
+    item["title"] = item.get("algorithm_name") or item.get("algorithm") or item.get("name") or item.get("location")
+    item["owasp_top_10"] = crypto_kb.owasp_legacy("node", codes) if finding else {}
+    item["compliance_controls"] = crypto_kb.controls_legacy("node", codes) if finding else {}
+    item["suggested_fix"] = crypto_kb.summary_fix("node", codes) if finding else None
 
 
 # ----------------------------------------------------------------------------- the page

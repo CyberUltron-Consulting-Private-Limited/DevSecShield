@@ -62,6 +62,7 @@ const EVENT_LABEL: Record<IntegrationEventKind, string> = {
   cert_expiring: "Certificate expiring (30 days)",
   schedule_skipped: "Scheduled run skipped",
   scan_finished: "Run or code scan finished",
+  q0_closed: "Quantum risk Q0 gap closed",
 };
 
 const CA_FIELD: FieldDef = {

@@ -38,7 +38,7 @@ Launch it in the VPC that reaches your targets and paste the cloud-config from *
 data. cloud-init writes `/etc/zs-node/env` (mode 0600):
 
 ```
-ZS_API_URL=https://api.zeroshield.ai
+ZS_API_URL=<the API URL shown in the Add scan node wizard>
 ZS_REGISTRATION_TOKEN=zsr_...
 HTTPS_PROXY=http://proxy.example.local:8080     (optional)
 ZS_MODE=agent                                   (optional: collect only this instance)

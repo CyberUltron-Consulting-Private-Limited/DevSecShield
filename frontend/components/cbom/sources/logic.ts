@@ -171,6 +171,10 @@ export interface NodeImage {
   /** the downloaded image file and Helm chart (the server's names; default scan-node-<tag>.tar.gz, cbom-scan-node-<tag>.tgz) */
   archive?: string
   chart?: string
+  /** the server's SHA-256 of the image file and of the chart: written into the command, so the check cannot be skipped
+   * by a missing .sha256 file (#228) */
+  archiveSha256?: string
+  chartSha256?: string
 }
 
 /** The name scripts/release/scan_node_image.sh saves the image under (SCAN_NODE_IMAGE's default) for the scan node's
@@ -191,15 +195,25 @@ export interface NodeArtifacts {
   version: string | null
   image_ref: string | null
   pull_image_ref: string | null
+  /** the Helm chart in the same registry (CBOM_NODE_CHART_REF): oci://... and its version; only with pull_image_ref */
+  pull_chart_ref?: string | null
+  pull_chart_version?: string | null
   artifacts: NodeArtifact[]
 }
 
 /** The image the commands load and run, and the registry image when one is configured. */
 export function nodeImages(data: NodeArtifacts | undefined | null, buildPullRef?: string | null): { loaded: NodeImage; pulled: NodeImage | null } {
-  const file = (kind: NodeArtifact["kind"]) => data?.artifacts.find((a) => a.kind === kind && a.available)?.filename ?? undefined
-  const loaded: NodeImage = { image: data?.image_ref || DEFAULT_NODE_IMAGE, pull: false, archive: file("image"), chart: file("helm-chart") }
+  const found = (kind: NodeArtifact["kind"]) => data?.artifacts.find((a) => a.kind === kind && a.available) ?? null
+  const sha = (kind: NodeArtifact["kind"]) => {
+    const value = found(kind)?.sha256
+    return value && /^[0-9a-f]{64}$/.test(value) ? value : undefined
+  }
+  const loaded: NodeImage = {
+    image: data?.image_ref || DEFAULT_NODE_IMAGE, pull: false, archive: found("image")?.filename ?? undefined,
+    chart: found("helm-chart")?.filename ?? undefined, archiveSha256: sha("image"), chartSha256: sha("helm-chart"),
+  }
   const ref = (data?.pull_image_ref || buildPullRef || "").trim()
-  return { loaded, pulled: ref ? { image: ref, pull: true, chart: loaded.chart } : null }
+  return { loaded, pulled: ref ? { image: ref, pull: true, chart: loaded.chart, chartSha256: loaded.chartSha256 } : null }
 }
 
 function splitImage(image: string): [string, string] {
@@ -215,22 +229,37 @@ export function nodeFiles(img: NodeImage): { archive: string; chart: string; tag
 
 /** Where the Helm chart comes from and which image it runs: the downloaded chart always; the image either pushed by
  * the customer to their own registry ($REGISTRY, set in the first line) or the configured registry image. */
+/** The check of a downloaded file, written to gate the next command (`check && \`): the server's SHA-256 inline when
+ * known (a missing .sha256 file cannot skip it), else the file's .sha256 (missing: sha256sum fails, nothing runs). */
+export function checkFile(file: string, sha256?: string): string {
+  return sha256 && /^[0-9a-f]{64}$/.test(sha256) ? `echo '${sha256}  ${file}' | sha256sum -c -` : `sha256sum -c ${file}.sha256`
+}
+
+/** Where the Helm chart comes from and which image it runs: the downloaded chart always; the image either pushed by
+ * the customer to their own registry ($REGISTRY, set in the first line) or the configured registry image. Every
+ * step is chained with && from the checks on (#228): a file that fails its SHA-256 check is never loaded, pushed or
+ * installed. */
 function helmSource(img: NodeImage): { steps: string[]; chart: string; repoArg: string; tag: string } {
   const { archive, chart, tag } = nodeFiles(img)
+  const chartCheck = `${checkFile(chart, img.chartSha256)} && \\`
   if (img.pull) {
     const [repo, ptag] = splitImage(img.image)
-    return { steps: [], chart: `./${chart}`, repoArg: shQuote(repo), tag: ptag }
+    return {
+      steps: ["# The chart you downloaded (Download Helm chart); nothing is installed if its check fails:", chartCheck],
+      chart: `./${chart}`, repoArg: shQuote(repo), tag: ptag,
+    }
   }
   const base = splitImage(img.image)[0].split("/").pop() || "cbom-scan-node"
   return {
     steps: [
-      "# 1. The image, from the file you downloaded (Download scan node image), pushed to a registry your cluster pulls from:",
+      "# The image file and the chart you downloaded (Download scan node image, Download Helm chart): the image is pushed",
+      "# to a registry your cluster pulls from, then the chart installed. Nothing is loaded, pushed or installed if a check fails.",
       "REGISTRY=registry.example.internal/zeroshield   # change to your registry",
-      `sha256sum -c ${archive}.sha256`,
-      `docker load -i ${archive}`,
-      `docker tag ${img.image} "$REGISTRY/${base}:${tag}"`,
-      `docker push "$REGISTRY/${base}:${tag}"`,
-      "# 2. The chart you downloaded (Download Helm chart):",
+      `${checkFile(archive, img.archiveSha256)} && \\`,
+      chartCheck,
+      `docker load -i ${archive} && \\`,
+      `docker tag ${img.image} "$REGISTRY/${base}:${tag}" && \\`,
+      `docker push "$REGISTRY/${base}:${tag}" && \\`,
     ],
     chart: `./${chart}`,
     repoArg: `"$REGISTRY/${base}"`,
@@ -238,43 +267,60 @@ function helmSource(img: NodeImage): { steps: string[]; chart: string; repoArg: 
   }
 }
 
+type NodeCommandOpts = { token: string; apiUrl: string; proxyUrl?: string | null; image: string; name: string; insecureHttp?: boolean }
+
+/** `docker run` of one node (pullNever: the image was just loaded from the file, never one from a registry). */
+function dockerRunLines(opts: NodeCommandOpts, pullNever: boolean): string[] {
+  const proxy = opts.proxyUrl ? opts.proxyUrl : ""
+  const names = nodeInstallNames(opts.name)
+  return [
+    `docker run -d${pullNever ? " --pull never" : ""} --name ${names.container} --restart unless-stopped \\`,
+    `  -e ZS_API_URL=${shQuote(opts.apiUrl)} \\`,
+    `  -e ZS_REGISTRATION_TOKEN=${shQuote(opts.token)} \\`,
+    ...(opts.insecureHttp ? ["  -e ZS_ALLOW_INSECURE_HTTP=1 \\"] : []),
+    ...(proxy ? [`  -e HTTPS_PROXY=${shQuote(proxy)} \\`] : []),
+    `  -v ${names.volume}:/var/lib/zs-node \\`,
+    `  ${opts.image}`,
+  ]
+}
+
+/** `helm upgrade --install` of one node from <chart> (a downloaded .tgz or an oci:// reference with its --version). */
+function helmInstallLines(release: string, chart: string, repoArg: string, tag: string, opts: NodeCommandOpts): string[] {
+  const proxy = opts.proxyUrl ? opts.proxyUrl : ""
+  return [
+    `helm upgrade --install ${release} ${chart} \\`,
+    "  --namespace zs-cbom --create-namespace \\",
+    `  --set image.repository=${repoArg} --set image.tag=${shQuote(tag)} \\`,
+    `  --set apiUrl=${shQuote(opts.apiUrl)} \\`,
+    ...(opts.insecureHttp ? ["  --set allowInsecureHttp=true \\"] : []),
+    `  --set registrationToken=${shQuote(opts.token)}${proxy ? " \\" : ""}`,
+    ...(proxy ? [`  --set httpsProxy=${shQuote(proxy)}`] : []),
+  ]
+}
+
 export function installCommand(
   method: DeployMethod,
-  opts: { token: string; apiUrl: string; proxyUrl?: string | null; image: string; name: string; insecureHttp?: boolean; pull?: boolean; archive?: string; chart?: string },
+  opts: { token: string; apiUrl: string; proxyUrl?: string | null; image: string; name: string; insecureHttp?: boolean; pull?: boolean; archive?: string; chart?: string; archiveSha256?: string; chartSha256?: string },
 ): string {
   const proxy = opts.proxyUrl ? opts.proxyUrl : ""
   const names = nodeInstallNames(opts.name)
-  const img: NodeImage = { image: opts.image, pull: opts.pull, archive: opts.archive, chart: opts.chart }
+  const img: NodeImage = { image: opts.image, pull: opts.pull, archive: opts.archive, chart: opts.chart,
+    archiveSha256: opts.archiveSha256, chartSha256: opts.chartSha256 }
   if (method === "docker") {
     const { archive } = nodeFiles(img)
     return [
       ...(opts.pull ? [] : [
-        "# 1. Check and load the image file you downloaded (Download scan node image):",
-        `sha256sum -c ${archive}.sha256`,
-        `docker load -i ${archive}`,
-        "# 2. Run the node (--pull never: the image just loaded, never one from a registry):",
+        "# Check, load and run the image file you downloaded (Download scan node image); nothing is loaded or run if",
+        "# the check fails. --pull never: the image just loaded, never one from a registry.",
+        `${checkFile(archive, img.archiveSha256)} && \\`,
+        `docker load -i ${archive} && \\`,
       ]),
-      `docker run -d${opts.pull ? "" : " --pull never"} --name ${names.container} --restart unless-stopped \\`,
-      `  -e ZS_API_URL=${shQuote(opts.apiUrl)} \\`,
-      `  -e ZS_REGISTRATION_TOKEN=${shQuote(opts.token)} \\`,
-      ...(opts.insecureHttp ? ["  -e ZS_ALLOW_INSECURE_HTTP=1 \\"] : []),
-      ...(proxy ? [`  -e HTTPS_PROXY=${shQuote(proxy)} \\`] : []),
-      `  -v ${names.volume}:/var/lib/zs-node \\`,
-      `  ${opts.image}`,
+      ...dockerRunLines(opts, !opts.pull),
     ].join("\n")
   }
   if (method === "helm") {
     const src = helmSource(img)
-    return [
-      ...src.steps,
-      `helm upgrade --install ${names.release} ${src.chart} \\`,
-      "  --namespace zs-cbom --create-namespace \\",
-      `  --set image.repository=${src.repoArg} --set image.tag=${shQuote(src.tag)} \\`,
-      `  --set apiUrl=${shQuote(opts.apiUrl)} \\`,
-      ...(opts.insecureHttp ? ["  --set allowInsecureHttp=true \\"] : []),
-      `  --set registrationToken=${shQuote(opts.token)}${proxy ? " \\" : ""}`,
-      ...(proxy ? [`  --set httpsProxy=${shQuote(proxy)}`] : []),
-    ].join("\n")
+    return [...src.steps, ...helmInstallLines(names.release, src.chart, src.repoArg, src.tag, opts)].join("\n")
   }
   if (method === "ami") {
     return [
@@ -297,6 +343,133 @@ export function installCommand(
   ].join("\n")
 }
 
+/** One file of a node's install links (POST /nodes, /registration-token, /reset: install_links; backend
+ * routers/cbom_node_artifacts.py install_links): a link that works only while the node's registration token does. */
+export interface InstallFile {
+  kind: NodeArtifact["kind"]
+  filename: string
+  size: number
+  sha256: string
+  /** a path on the API: /<team>/cbom/node-artifacts/<kind>?node_ticket=... */
+  url: string
+}
+export interface InstallLinks {
+  version: string | null
+  expires_at: string | null
+  files: InstallFile[]
+}
+
+export type Fetcher = "curl" | "wget"
+
+/** The proxy CA a TLS-inspecting proxy needs, as a file next to the command; curl/wget use it for these downloads
+ * from ZeroShield only (--cacert / --ca-certificate apply to that one command, nothing is installed system-wide). */
+export const DEFAULT_PROXY_CA_FILE = "zs-proxy-ca.pem"
+
+export interface FetchOpts {
+  apiUrl: string
+  proxyUrl?: string | null
+  /** set only when the proxy inspects TLS and its CA was given (the wizard's "trust its CA only for ZeroShield
+   * hostnames"): the CA file's name on the host */
+  caFile?: string | null
+  fetcher?: Fetcher
+  /** a plain-HTTP test-lab API (CB-08): curl may not be held to https */
+  insecureHttp?: boolean
+}
+
+/** Download one install file from ZeroShield and check it: `curl ... -o <file> && echo '<sha256>  <file>' | sha256sum -c -`
+ * (or wget). The proxy and CA settings of the wizard apply; the link goes to the ZeroShield API only. */
+export function fetchCommand(file: InstallFile, o: FetchOpts): string {
+  const url = shQuote(`${o.apiUrl.trim().replace(/\/+$/, "")}${file.url}`)
+  const proxy = o.proxyUrl?.trim() || ""
+  const parts = (o.fetcher ?? "curl") === "wget"
+    ? ["wget -q", ...(proxy ? ["-e use_proxy=yes", `-e https_proxy=${shQuote(proxy)}`] : []),
+      ...(o.caFile ? [`--ca-certificate=${shQuote(o.caFile)}`] : []), `-O ${file.filename}`, url]
+    : ["curl -fsSL", o.insecureHttp ? "--proto '=http,https'" : "--proto '=https'", ...(proxy ? [`--proxy ${shQuote(proxy)}`] : []),
+      ...(o.caFile ? [`--cacert ${shQuote(o.caFile)}`] : []), url, `-o ${file.filename}`]
+  return `${parts.join(" ")} && echo '${file.sha256}  ${file.filename}' | sha256sum -c -`
+}
+
+/** The one-paste install of a node on a terminal-only host: fetch its files from ZeroShield with its install links,
+ * check their SHA-256, then load and run (Docker), push and install (Helm), or unzip and build (OVA/AMI kits). Null
+ * when the server sent no links or not every file the method needs. */
+export function onePasteInstall(
+  method: DeployMethod,
+  links: InstallLinks | null | undefined,
+  opts: NodeCommandOpts & FetchOpts,
+): string | null {
+  const file = (kind: NodeArtifact["kind"]) => links?.files.find((f) => f.kind === kind) ?? null
+  const image = file("image")
+  if (!image) return null
+  const fetch = (f: InstallFile) => `${fetchCommand(f, opts)} && \\`
+  const tool = (opts.fetcher ?? "curl") === "wget" ? "wget" : "curl"
+  const ca = opts.caFile
+    ? [`# ${opts.caFile}: your proxy's CA certificate (the file you uploaded), in this directory; ${tool} trusts it for these downloads only`]
+    : []
+  if (method === "docker") {
+    return [
+      ...ca,
+      fetch(image),
+      `docker load -i ${image.filename} && \\`,
+      ...dockerRunLines(opts, true),
+    ].join("\n")
+  }
+  if (method === "helm") {
+    const chart = file("helm-chart")
+    if (!chart) return null
+    const [repo, tag] = splitImage(opts.image)
+    const base = repo.split("/").pop() || "cbom-scan-node"
+    return [
+      "REGISTRY=registry.example.internal/zeroshield   # change to the registry your cluster pulls from",
+      ...ca,
+      fetch(image),
+      fetch(chart),
+      `docker load -i ${image.filename} && \\`,
+      `docker tag ${opts.image} "$REGISTRY/${base}:${tag}" && \\`,
+      `docker push "$REGISTRY/${base}:${tag}" && \\`,
+      ...helmInstallLines(nodeInstallNames(opts.name).release, `./${chart.filename}`, `"$REGISTRY/${base}"`, tag, opts),
+    ].join("\n")
+  }
+  const kit = file(method === "ova" ? "ova-kit" : "ami-kit")
+  if (!kit) return null
+  const dir = kit.filename.replace(/\.zip$/, "")
+  const template = method === "ova" ? "ova.pkr.hcl" : "ami.pkr.hcl"
+  const build = method === "ova"
+    ? `packer build -var build_password="$(openssl rand -hex 16)" ${template}`
+    : `packer build -var region="\${AWS_REGION:-ap-south-1}" ${template}   # your region; AWS credentials from the environment`
+  return [
+    `# Build the ${method === "ova" ? "OVA" : "AMI"} once (needs ${tool}, unzip and Packer; the kit's README.md has the details):`,
+    ...ca,
+    fetch(kit),
+    fetch(image),
+    `unzip -q ${kit.filename} && mv ${image.filename} ${dir}/ && cd ${dir} && \\`,
+    `packer init ${template} && ${build}`,
+  ].join("\n")
+}
+
+/** The node from a registry customers can pull from (only when the server names one: CBOM_NODE_IMAGE_REF, set by the
+ * staging deploy only while the GHCR packages are public): `docker pull` + `docker run`, or Helm straight from the
+ * chart's oci:// reference. Null when the server names no such image (or, for Helm, no chart). */
+export function registryInstall(
+  method: DeployMethod,
+  data: NodeArtifacts | null | undefined,
+  opts: Omit<NodeCommandOpts, "image">,
+): string | null {
+  const image = data?.pull_image_ref?.trim()
+  if (!image) return null
+  if (method === "docker") {
+    return [`docker pull ${image} && \\`, ...dockerRunLines({ ...opts, image }, false)].join("\n")
+  }
+  if (method === "helm") {
+    const chart = data?.pull_chart_ref?.trim()
+    const version = data?.pull_chart_version?.trim()
+    if (!chart || !version) return null
+    const [repo, tag] = splitImage(image)
+    return helmInstallLines(nodeInstallNames(opts.name).release, `${chart} --version ${shQuote(version)}`, shQuote(repo), tag,
+      { ...opts, image }).join("\n")
+  }
+  return null
+}
+
 /** How far each way of running a node has been proven. Docker and the Helm chart (Deployment and the agent
  * DaemonSet) ran end to end on k3s; the AMI and OVA are Packer build kits the customer downloads and builds. */
 export const DEPLOY_SUPPORT: Record<DeployMethod, { proven: boolean; note: string }> = {
@@ -309,16 +482,30 @@ export const DEPLOY_SUPPORT: Record<DeployMethod, { proven: boolean; note: strin
 /** The three steps under a build kit's download button (Add scan node, OVA and AMI). */
 export const KIT_STEPS: Record<"ova" | "ami", string[]> = {
   ova: [
-    "Download the OVA build kit and the scan node image file, unzip the kit and put the image file (and its .sha256) in its folder.",
+    "Download the OVA build kit and the scan node image file, unzip the kit, put the image file and its .sha256 in its folder and check it: sha256sum -c must print OK (never build from a file that fails).",
     "On a Linux machine with KVM, qemu-img and Packer: packer init ova.pkr.hcl, then packer build -var build_password=<random> ova.pkr.hcl (the kit's README.md has the details).",
     "Deploy the OVA in vSphere and set the vApp properties shown after you create the node.",
   ],
   ami: [
-    "Download the AMI build kit and the scan node image file, unzip the kit and put the image file (and its .sha256) in its folder.",
+    "Download the AMI build kit and the scan node image file, unzip the kit, put the image file and its .sha256 in its folder and check it: sha256sum -c must print OK (never build from a file that fails).",
     "With Packer and AWS credentials: packer init ami.pkr.hcl, then packer build -var region=<your region> ami.pkr.hcl (the kit's README.md has the details).",
     "Launch the AMI in the VPC that reaches your targets, with the cloud-config shown after you create the node as user data.",
   ],
 }
+
+/** The OVA/AMI build needs internet access (#230): the wizard says so next to the kit, with the offline ways. */
+export const KIT_NEEDS_INTERNET: Record<"ova" | "ami", string> = {
+  ova: "Building the OVA needs internet access on the build machine: it downloads the Ubuntu 24.04 cloud image (cloud-images.ubuntu.com), Packer's plugin (packer init, from GitHub) and Ubuntu packages (apt-get: Docker and updates). No internet there? Use the Docker image file (docker load on any Linux host with Docker), or the Helm chart with the image pushed to your own registry: neither needs internet at install time.",
+  ami: "Building the AMI needs internet access: Packer's plugin (packer init, from GitHub), AWS APIs, Canonical's Ubuntu 24.04 AMI, and Ubuntu packages (apt-get: Docker and updates) on the build instance. No internet there? Use the Docker image file (docker load on any Linux host with Docker), or the Helm chart with the image pushed to your own registry: neither needs internet at install time.",
+}
+
+/** What needs network access, for restricted networks (#230): shown on the Scan nodes tab. */
+export const NETWORK_REQUIREMENTS: string[] = [
+  "A scan node always needs outbound HTTPS to the ZeroShield API (nothing calls in); it reaches your targets directly.",
+  "Installing it from the image file or the Helm chart (both downloaded from ZeroShield) needs nothing else; pulling the image from a public registry, when the page offers it, needs access to that registry.",
+  "Building the OVA or AMI from the build kits needs internet access (Ubuntu image, Packer plugin, Ubuntu packages).",
+  "Cloud and identity sources (AWS, Azure, GCP, IdPs) are read from ZeroShield's servers, so those providers' APIs must be reachable from ZeroShield.",
+]
 
 /** The downloads Add scan node offers for each way of running a node, main one first. */
 export function downloadKinds(method: DeployMethod): NodeArtifact["kind"][] {
@@ -335,8 +522,10 @@ const DOWNLOAD_LABEL: Record<NodeArtifact["kind"], string> = {
   "ami-kit": "Download AMI build kit",
 }
 
-export function formatMB(bytes: number): string {
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+/** "79.6 MB"; a file under 1 MB in KB ("10 KB"), so a small build kit is never labelled "0.0 MB". */
+export function formatSize(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  return `${bytes > 0 ? Math.max(1, Math.round(bytes / 1024)) : 0} KB`
 }
 
 /** "Download scan node image (63.2 MB, sha256 3f9a1c2b7d4e…)"; without its size and hash while the server does
@@ -344,7 +533,7 @@ export function formatMB(bytes: number): string {
 export function downloadLabel(kind: NodeArtifact["kind"], artifact?: NodeArtifact | null): string {
   const base = DOWNLOAD_LABEL[kind]
   if (!artifact?.available || artifact.size == null) return base
-  return artifact.sha256 ? `${base} (${formatMB(artifact.size)}, sha256 ${artifact.sha256.slice(0, 12)}…)` : `${base} (${formatMB(artifact.size)})`
+  return artifact.sha256 ? `${base} (${formatSize(artifact.size)}, sha256 ${artifact.sha256.slice(0, 12)}…)` : `${base} (${formatSize(artifact.size)})`
 }
 
 /** What the wizard says for a file the server does not hold (the server's own sentence when it sent one). */
@@ -356,9 +545,10 @@ export function notAvailable(kind: NodeArtifact["kind"], artifact?: NodeArtifact
 
 /** The Helm command for agent mode: a DaemonSet whose pods each enroll with the agent pool token as their own node
  * (named after the Kubernetes node) and read only that node, from a read-only mount of its file system. */
-export function helmAgentCommand(opts: { poolToken: string; apiUrl: string; proxyUrl?: string | null; image: string; insecureHttp?: boolean; pull?: boolean; archive?: string; chart?: string }): string {
+export function helmAgentCommand(opts: { poolToken: string; apiUrl: string; proxyUrl?: string | null; image: string; insecureHttp?: boolean; pull?: boolean; archive?: string; chart?: string; archiveSha256?: string; chartSha256?: string }): string {
   const proxy = opts.proxyUrl ? opts.proxyUrl : ""
-  const src = helmSource({ image: opts.image, pull: opts.pull, archive: opts.archive, chart: opts.chart })
+  const src = helmSource({ image: opts.image, pull: opts.pull, archive: opts.archive, chart: opts.chart,
+    archiveSha256: opts.archiveSha256, chartSha256: opts.chartSha256 })
   return [
     ...src.steps,
     `helm upgrade --install zs-host-agents ${src.chart} \\`,
@@ -471,13 +661,43 @@ export function formatDateTime(iso: string | null | undefined, timeZone?: string
   }
 }
 
-/** "120 of 254 addresses" for a network range while it runs; null when the scan node does not report it (an older
- * node, another kind of job) or the job is not running, so those rows show what they showed before. */
-export function addressProgress(job: { status: string; progress?: { done: number; total: number } | null }): string | null {
+/** "120 of 254 addresses" for a network range while it runs, "377 of 1,200 account-regions" for an AWS source the
+ * cloud pool collects one account x region at a time (``unit`` from the API); null when the job does not report it (an
+ * older node, another kind of job) or is not running, so those rows show what they showed before. */
+export function addressProgress(job: { status: string; progress?: { done: number; total: number; unit?: string } | null }): string | null {
   const p = job.progress
   if (job.status !== "claimed" || !p || !Number.isFinite(p.total) || p.total <= 0) return null
   const done = Math.min(Math.max(0, Math.floor(p.done)), p.total)
+  if (p.unit === "account-regions") return `${done.toLocaleString()} of ${pluralize(p.total, "account-region", "account-regions")}`
   return `${done.toLocaleString()} of ${pluralize(p.total, "address", "addresses")}`
+}
+
+/** An AWS organisation's charge per run, as recorded at its last validation: "Estimated per run: 1,000 accounts × 4
+ * credits = 4,000 credits", and, when the count changed, "changed from 200 accounts (800 credits) on 14 Nov 2026", so
+ * a new charge is visible before the next scheduled run takes it. */
+export function orgEstimateLines(est: { accounts: number; credits_per_account: number; credits_per_run: number;
+  changed_from?: { accounts: number; credits_per_run: number }; changed_at?: string | null } | null | undefined,
+  timeZone?: string): { estimate: string; change: string | null } | null {
+  if (!est || !Number.isFinite(est.accounts) || !Number.isFinite(est.credits_per_run)) return null
+  const estimate = `Estimated per run: ${pluralize(est.accounts, "account")} × ${credits(est.credits_per_account)} credits = ${credits(est.credits_per_run)} credits`
+  let change: string | null = null
+  if (est.changed_from && Number.isFinite(est.changed_from.accounts)) {
+    const when = est.changed_at ? new Date(est.changed_at) : null
+    const day = when && !Number.isNaN(when.getTime())
+      ? when.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric", timeZone: timeZone ?? "UTC" })
+      : null
+    change = `Changed from ${pluralize(est.changed_from.accounts, "account")} (${credits(est.changed_from.credits_per_run)} credits)${day ? ` on ${day}` : ""}`
+  }
+  return { estimate, change }
+}
+
+/** An AWS organisation source validated before F1: its stored count stopped at 200 accounts and it has no recorded
+ * estimate, so its charge per run is not yet what F1 reads and charges. Its row asks for a re-validation. */
+export function orgEstimateStale(source: { kind: string; config?: Record<string, unknown> | null;
+  last_test_result?: { member_accounts?: number; estimate?: unknown } | null }): boolean {
+  if (source.kind !== "aws_account" || source.config?.scope !== "organization") return false
+  const r = source.last_test_result
+  return !!r && typeof r.member_accounts === "number" && r.member_accounts <= 200 && !r.estimate
 }
 
 /** A YYYY-MM-DD date shown without time-zone shifting. */

@@ -4,36 +4,44 @@
 // dialog. Each takes API payloads as they are; a section without data says so in one line (`SectionNote`).
 // Rule P: no section here counts rows. Figures come from /runs/{id} (jobs), /posture, /results and /remediation.
 
-import { ExternalLink, Info, Network, Server, Timer, Waypoints } from "lucide-react";
-import type { ReactNode } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useRef, useState, type ReactNode } from "react";
+import { BadgeCheck, Download, ExternalLink, GitCompare, Info, Loader2, Network, Server, SlidersHorizontal, Timer, Waypoints } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { CbomCryptoCharts } from "@/components/cbom/CbomCryptoCharts";
-import type { CbomCertRef, CbomJobTargets, CbomRun, CbomRunResults } from "@/utils/backend_api";
-import { EXPOSURE_LABEL, type CbomPostureWithExposure } from "@/utils/api/cbom_outputs";
+import { downloadCbomRunCbom, verifyCbomRunSignature, type CbomCertRef, type CbomJobTargets, type CbomRun, type CbomRunResults } from "@/utils/backend_api";
+import { downloadCbomRunBom, EXPOSURE_LABEL, type CbomPostureWithExposure } from "@/utils/api/cbom_outputs";
+import { downloadOscal } from "@/utils/api/integrations";
 
-import { RunChanges } from "@/components/cbom/sources/ChangesPanel";
+import { DiffView, RunChanges } from "@/components/cbom/sources/ChangesPanel";
+import { cbomOpsKeys, getCbomRunDiff } from "@/utils/api/cbom_ops";
+import { useQuery } from "@tanstack/react-query";
 import { TERMINAL_RUN } from "@/components/cbom/sources/keys";
-import { formatDateTime, formatDay, pluralize } from "@/components/cbom/sources/logic";
+import { credits, formatDateTime, formatDay, pluralize } from "@/components/cbom/sources/logic";
 import { TargetsBlock } from "@/components/cbom/sources/RunResults";
-import { EmptyState, StatusBadge, Truncate, type Tone } from "@/components/cbom/sources/shared";
+import { EmptyState, RunStatusBadge, StatusBadge, Truncate, type Tone } from "@/components/cbom/sources/shared";
 
 import { CbomDashboardCharts } from "./CbomDashboardCharts";
 import { getImpactBadgeClass } from "./badgeClasses";
 import {
-  applyPostureToDistributions,
   certCountText,
   certListView,
   complianceRows,
   formatDuration,
-  resolveMigrationRows,
+  isActiveRunStatus,
+  verifyResultText,
   waveChips,
   type RunDashboardModel,
   type SectionView,
 } from "./model";
+import RunDeliverablesMenu from "./RunDeliverablesMenu";
 import { RunJobsTable, SkippedAtStart } from "./RunJobsTable";
+import { toast } from "@/utils/toast";
+import { showErrorToast } from "@/utils/error-handler";
 import { Badge } from "@/components/ui/badge";
 
 /** Bounds the Radix viewport (not the root, which grows with its content). Read by results/scrollBounds.test.ts. */
@@ -64,6 +72,131 @@ function SectionShell({ title, description, testId, children, actions }: {
   );
 }
 
+// ---------------------------------------------------------------------------- S0 header (in the code page's header)
+
+/** The line under the title: run status, start / finish, credits, linked scan, sources, live note. */
+export function RunHeaderMeta({ teamId, run, sources }: { teamId: number; run: CbomRun; sources: { id: number | null; name: string }[] }) {
+  const active = isActiveRunStatus(run.status);
+  return (
+    <>
+      <span data-testid="run-results-status"><RunStatusBadge status={run.status} /></span>
+      <span>Started {formatDateTime(run.created_at)}</span>
+      {run.finished_at ? <span>Finished {formatDateTime(run.finished_at)}</span> : active ? <span>Running</span> : null}
+      <span data-testid="run-results-credits">{credits(run.credits?.charged)} credits charged, {credits(run.credits?.refunded)} refunded</span>
+      {run.scan_id != null && (
+        <Link href={`/${teamId}/cbom/${run.scan_id}`} className="text-blue-600 dark:text-blue-400 hover:underline" data-testid="run-results-linked-scan">
+          Linked scan #{run.scan_id}
+        </Link>
+      )}
+      {sources.length > 0 && (
+        <span className="flex flex-wrap gap-1.5 basis-full" data-testid="run-results-sources">
+          {sources.map((s) => (
+            <Badge key={`${s.id ?? "x"}-${s.name}`} variant="outline" className="border-zinc-300 text-zinc-600 dark:border-zinc-700 dark:text-zinc-400 max-w-[260px] truncate">
+              <Network className="h-3 w-3 mr-1" /> {s.name}
+            </Badge>
+          ))}
+        </span>
+      )}
+      {active && (
+        <span className="basis-full text-xs text-zinc-500" data-testid="run-results-live">
+          The run is still collecting: this page updates every few seconds and the downloads hold what was collected so far.
+        </span>
+      )}
+    </>
+  );
+}
+
+/** The run's buttons in the code page's header row: its CycloneDX JSON / XML and OSCAL (test ids kept for the gate),
+ * Compare…, and "Open in CBOM Sources" where a code scan has "Scan settings". */
+export function RunHeaderActions({ teamId, run, assetTotal, canCompare, onCompare, children }: {
+  teamId: number; run: CbomRun; assetTotal: number | null; canCompare: boolean; onCompare: () => void;
+  /** more download buttons (the run deliverables) */
+  children?: ReactNode;
+}) {
+  const router = useRouter();
+  const [busy, setBusy] = useState<string | null>(null);
+  const active = isActiveRunStatus(run.status);
+  const empty = assetTotal === 0;
+  const go = (id: string, fn: () => Promise<unknown>) => async () => {
+    setBusy(id);
+    try { await fn(); } catch { /* the download helpers showed the error */ } finally { setBusy(null); }
+  };
+  const downloads = [
+    { id: "run-results-download", label: `CycloneDX JSON${active ? " (so far)" : ""}`, title: "The run's CycloneDX 1.6 CBOM as JSON",
+      disabled: empty, run: go("run-results-download", () => downloadCbomRunCbom(teamId, run.id)) },
+    { id: "run-results-download-xml", label: "CycloneDX XML", title: "The same CycloneDX 1.6 CBOM as XML, valid against the official schema",
+      disabled: empty, run: go("run-results-download-xml", () => downloadCbomRunBom(teamId, run.id, "xml")) },
+    { id: "run-results-download-oscal", label: "OSCAL", title: active ? "Available when the run has finished" : "OSCAL 1.2.3 assessment results for a GRC tool (validated against the official schema)",
+      disabled: active, run: go("run-results-download-oscal", () => downloadOscal(teamId, { runId: run.id })) },
+  ];
+  return (
+    <div className="flex items-center gap-2 flex-wrap lg:justify-end" data-testid="run-results-header-actions">
+      {downloads.map((d) => (
+        <Button key={d.id} variant="outline" className="cursor-pointer" title={d.title} disabled={d.disabled || busy === d.id}
+                data-testid={d.id} onClick={() => void d.run()}>
+          {busy === d.id ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+          {d.label}
+        </Button>
+      ))}
+      {/* VEX, Signature, Evidence pack, PDF Report (CB-38 PR-8), as on the code page's header */}
+      <RunDeliverablesMenu teamId={teamId} runId={run.id} active={active} />
+      <RunVerifyButton teamId={teamId} runId={run.id} />
+      {children}
+      {canCompare && (
+        <Button variant="outline" className="cursor-pointer" onClick={onCompare} data-testid="run-results-compare">
+          <GitCompare className="h-4 w-4 mr-2" /> Compare…
+        </Button>
+      )}
+      <Button variant="default" className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white"
+              onClick={() => router.push(`/${teamId}/cbom/sources?tab=review`)} data-testid="run-results-open-sources">
+        <SlidersHorizontal className="h-4 w-4 mr-2" /> Open in CBOM Sources
+      </Button>
+    </div>
+  );
+}
+
+/** "Verify file…": checks a downloaded CycloneDX JSON of this run against its signature (the key stays on the server). */
+export function RunVerifyButton({ teamId, runId }: { teamId: number; runId: number }) {
+  const input = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const verify = async (file: File | undefined) => {
+    if (!file) return;
+    setBusy(true);
+    try {
+      const out = await verifyCbomRunSignature(teamId, runId, file);
+      if (out.valid) toast.success(verifyResultText(out));
+      else toast.error(verifyResultText(out));
+    } catch (err) {
+      showErrorToast(err, "Could not verify the file");
+    } finally {
+      setBusy(false);
+      if (input.current) input.current.value = "";
+    }
+  };
+  return (
+    <>
+      <input ref={input} type="file" accept=".json,application/json" className="hidden" data-testid="run-verify-signature-file"
+             onChange={(e) => void verify(e.target.files?.[0])} />
+      <Button variant="outline" className="cursor-pointer" disabled={busy} data-testid="run-verify-signature"
+              title="Check a downloaded CycloneDX JSON of this run against its signature (the key stays on the server)"
+              onClick={() => input.current?.click()}>
+        {busy ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <BadgeCheck className="h-4 w-4 mr-2" />}
+        Verify file…
+      </Button>
+    </>
+  );
+}
+
+export function RunNotFound({ teamId }: { teamId: number }) {
+  return (
+    <div className="flex min-h-[60vh] w-full flex-col items-center justify-center gap-3 px-6 text-center" data-testid="run-results-not-found">
+      <p className="text-lg font-semibold text-zinc-900 dark:text-white">Run not found</p>
+      <p className="text-sm text-zinc-600 dark:text-zinc-400 max-w-md">This CBOM Sources run does not exist or belongs to another team.</p>
+      <a href={`/${teamId}/cbom`} className="text-sm text-blue-600 dark:text-blue-400 hover:underline">Back to CBOM scans</a>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------- S1 what was covered
 export function RunCoverageSection({ run, targets, provenance }: {
   run: CbomRun;
@@ -73,7 +206,7 @@ export function RunCoverageSection({ run, targets, provenance }: {
   const jobs = run.jobs ?? [];
   const skipped = run.breakdown?.skipped ?? [];
   return (
-    <SectionShell title="What was covered" testId="run-section-coverage"
+    <SectionShell title="Collection jobs and targets" testId="run-section-coverage"
                   description="Every job of the run with where it ran and how it ended, the sources skipped at the start, and each target's outcome">
       {jobs.length === 0 ? <EmptyState title="No jobs in this run" /> : <RunJobsTable jobs={jobs} testIdPrefix="run-job" />}
       <SkippedAtStart items={skipped} />
@@ -224,24 +357,6 @@ export function RunCertificatesSection({ view, results, onOpenAsset }: {
   );
 }
 
-// ---------------------------------------------------------------------------- S7 crypto charts
-export function RunCryptoChartsSection({ view, results, posture }: {
-  view: SectionView; results: CbomRunResults | null; posture: CbomPostureWithExposure | null | undefined;
-}) {
-  if (!view.show) return null;
-  const dist = results?.distributions ?? null;
-  return (
-    <div className="space-y-3" data-testid="run-section-crypto-charts">
-      {dist ? (
-        // Rows are not passed (findings / inventory empty): the PQC gauge reads the run's posture figures, never a
-        // recount of the table (Rule P). The heat-map and calendar come from RunInsights (S5).
-        <CbomCryptoCharts distributions={applyPostureToDistributions(resolveMigrationRows(dist), posture)} findings={[]} inventory={[]} showCodeHeatmap={false} />
-      ) : null}
-      {view.note && <SectionNote testId="run-crypto-charts-note">{view.note}</SectionNote>}
-    </div>
-  );
-}
-
 // ---------------------------------------------------------------------------- S8 changes
 export function RunChangesSection({ teamId, run, canCompare, onCompare }: { teamId: number; run: CbomRun; canCompare: boolean; onCompare: () => void }) {
   return (
@@ -252,8 +367,36 @@ export function RunChangesSection({ teamId, run, canCompare, onCompare }: { team
                       Compare with another run…
                     </button>
                   ) : undefined}>
+      <RunDiffBlock teamId={teamId} runId={run.id} />
       <RunChanges teamId={teamId} runId={run.id} finished={TERMINAL_RUN.has(run.status)} />
     </SectionShell>
+  );
+}
+
+/** The code page's CodeChanges block for a run: the same collapsible DiffView (resolved / opened / added / removed /
+ * changed, readiness delta, rule changes, not read), over GET /runs/{id}/diff against the previous complete run. The
+ * run's drift events (opened, resolved, renewed, expiring ...) are listed below it from /changes, which the run page
+ * has always used and which W2b's /diff ``events`` duplicate. */
+export function RunDiffBlock({ teamId, runId }: { teamId: number; runId: number }) {
+  const [open, setOpen] = useState(false);
+  const q = useQuery({ queryKey: cbomOpsKeys.diff(teamId, runId, undefined), queryFn: () => getCbomRunDiff(teamId, runId), enabled: open, retry: 1 });
+  return (
+    <details className="rounded-lg border border-zinc-200 dark:border-zinc-800 p-4" data-testid="run-diff"
+             onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
+      <summary className="cursor-pointer text-sm font-medium text-zinc-900 dark:text-white">
+        Changes since the previous complete run of these sources
+      </summary>
+      <div className="mt-3">
+        {!open ? null : q.isLoading ? <p className="text-xs text-zinc-500">Loading…</p> : q.isError || !q.data ? (
+          <p className="text-xs text-zinc-500">The comparison could not be loaded.</p>
+        ) : (
+          <>
+            {q.data.against_run_id && <p className="text-xs text-zinc-500 mb-2">Compared with run #{q.data.against_run_id}.</p>}
+            <DiffView diff={q.data} />
+          </>
+        )}
+      </div>
+    </details>
   );
 }
 

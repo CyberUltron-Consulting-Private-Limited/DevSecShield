@@ -36,7 +36,8 @@ import {
 import AppliancesSection from "./AppliancesSection";
 import { cbomSourcesKeys } from "./keys";
 import { MetadataFields, metadataConfig, metadataFrom, type SourceMetadata } from "./SourceMetadata";
-import { exclusionSaveError, hostnameError, rangeError, storedExclusionIssue, teamExclusionError } from "./teamNeverScan";
+import { exclusionSaveError, hostnameError, RANGE_HINT, rangeError, storedExclusionIssue, teamExclusionError } from "./teamNeverScan";
+import { sampleDetail, sweepTotals, totalsLine } from "./networkEstimate";
 import {
   addressProgress,
   ago,
@@ -358,7 +359,8 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
   const errorFor = (key: string) => (showErrors ? plan.errors[key] ?? null : null);
   const unsaved = (section: string) => plan.changed.has(section) && <StatusBadge tone="amber">Not saved</StatusBadge>;
 
-  const addresses = ranges.reduce((sum, r) => sum + (r.target_count || 0), 0);
+  // N7: unique addresses over enabled ranges (the API's count), not the sum of every range's own count
+  const totals = sweepTotals(ranges, rangesQuery.data?.network_totals);
 
   const updateGrid = (update: (g: WindowGrid) => WindowGrid) =>
     setDraft((d) => ({ ...d, scan_window: update(d.scan_window ?? savedGrid) }));
@@ -509,10 +511,23 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
                             const cidr = typeof r.config?.cidr === "string" ? r.config.cidr : r.name;
                             const testing = testMutation.isPending && testMutation.variables?.id === r.id;
                             return (
-                              <TableRow key={r.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800">
+                              <TableRow
+                                key={r.id}
+                                className={cn("hover:bg-zinc-50 dark:hover:bg-zinc-800", !r.enabled && "opacity-60")}
+                                data-testid="network-range-row"
+                                data-disabled={r.enabled ? undefined : "true"}
+                              >
                                 <TableCell>
-                                  <span className="font-mono text-xs text-zinc-900 dark:text-white">{cidr}</span>
-                                  <span className="block text-xs text-zinc-500">{pluralize(r.target_count, "address", "addresses")}</span>
+                                  <span className={cn("font-mono text-xs", r.enabled ? "text-zinc-900 dark:text-white" : "text-zinc-500 line-through")}>{cidr}</span>
+                                  {!r.enabled && (
+                                    <span className="ml-2 align-middle">
+                                      <StatusBadge tone="zinc" title="Disabled ranges are not swept and not counted in Before the first run">Disabled</StatusBadge>
+                                    </span>
+                                  )}
+                                  <span className="block text-xs text-zinc-500">
+                                    {pluralize(r.target_count, "address", "addresses")}
+                                    {!r.enabled && " · not swept"}
+                                  </span>
                                 </TableCell>
                                 <TableCell className="max-w-[180px]">
                                   <Truncate className="text-zinc-700 dark:text-zinc-300" text={r.node_name ?? "No node"} />
@@ -619,8 +634,8 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
                               <TableRow className="hover:bg-transparent" data-testid="network-exclusion-hostname">
                                 <TableCell colSpan={3} className="pt-0 whitespace-normal">
                                   <div id={noteId} className="space-y-1">
-                                    <StatusBadge tone="red" title={issue}>Host name: not allowed here</StatusBadge>
-                                    <p className="text-xs text-red-600 dark:text-red-400">{issue}</p>
+                                    <StatusBadge tone="amber" title={issue}>Host name: resolved on the scan node</StatusBadge>
+                                    <p className="text-xs text-zinc-600 dark:text-zinc-400">{issue}</p>
                                   </div>
                                 </TableCell>
                               </TableRow>
@@ -639,7 +654,7 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
                   className="font-mono text-sm"
                   value={exclusion.cidr}
                   maxLength={64}
-                  placeholder="10.20.99.0/24"
+                  placeholder="10.20.99.0/24 or shop.example.internal"
                   onChange={(e) => setExclusion({ ...exclusion, cidr: e.target.value })}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
@@ -671,10 +686,10 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
               <p className="text-xs text-zinc-500">
                 This list always wins. The node refuses these addresses even if a job asks for them, in every job of
                 this team: a server, database, registry or Kubernetes API whose name resolves to a listed address is
-                skipped as a whole, and ranges are checked one address at a time. This list takes addresses and
-                ranges. A hostname listed in a server source&apos;s own Never scan field also covers every address
-                it resolves to from the scan node (until it resolves there, that source scans nothing; localhost and
-                the other loopback names cover only 127.0.0.0/8 and ::1).
+                skipped as a whole, and ranges are checked one address at a time. This list takes addresses, ranges
+                and hostnames. A listed hostname covers every address it resolves to from the scan node, in range
+                sweeps too; until it resolves there, the node scans nothing for this team (localhost and the other
+                loopback names cover only 127.0.0.0/8 and ::1 and are never looked up).
               </p>
             </Section>
 
@@ -842,7 +857,10 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
                   </Field>
                 ))}
               </div>
-              <p className="text-xs text-zinc-500">Lower them for fragile or busy networks.</p>
+              <p className="text-xs text-zinc-500" data-testid="network-rate-note">
+                Lower them for fragile or busy networks. Connections/s is a hard cap: the node spaces new connections
+                evenly and never starts more than this many in any one second, across all its jobs (no bursts).
+              </p>
             </Section>
 
             <Section title="Tell your SOC" badge={unsaved("soc")}>
@@ -906,7 +924,7 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
 
             <Section title="Before the first run" last>
               <p className="text-sm text-zinc-900 dark:text-white" data-testid="network-totals">
-                {pluralize(addresses, "address", "addresses")} after the never-scan list, {pluralize(settings.ports.length, "port")}.
+                {totalsLine(totals, settings.ports.length)}
               </p>
               <p className="text-xs text-zinc-500">
                 A discovery sweep asks each scan node that has ranges to find open ports first.
@@ -1036,7 +1054,15 @@ function RangeTestCell({ teamId, source, serverNow }: { teamId: number; source: 
       : null;
   return (
     <div className="space-y-1">
-      {pendingJobId && job.data ? <JobStatusBadge status={job.data.status} /> : <TestStatusBadge status={source.last_test_status} title={source.last_test_summary} />}
+      {pendingJobId && job.data ? (
+        <JobStatusBadge status={job.data.status} />
+      ) : (
+        <TestStatusBadge
+          status={source.last_test_status}
+          title={source.last_test_summary}
+          detail={sampleDetail(source.last_test_status, source.last_test_result)}
+        />
+      )}
       {detail && <span className="block text-xs text-zinc-500">{detail}</span>}
     </div>
   );
@@ -1137,7 +1163,7 @@ function AddRangeForm({
   return (
     <div className="space-y-4 rounded-lg border border-zinc-200 dark:border-zinc-800 p-4" data-testid="network-range-form">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Field label="Range" htmlFor="range-cidr" required error={errors.cidr} hint="A /16 or smaller, one IP, or a-b">
+        <Field label="Range" htmlFor="range-cidr" required error={errors.cidr} hint={RANGE_HINT}>
           <Input
             id="range-cidr"
             data-testid="network-range-cidr"
