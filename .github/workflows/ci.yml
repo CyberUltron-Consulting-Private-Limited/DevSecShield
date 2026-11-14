@@ -10,6 +10,7 @@
 #   backend      backend/ pytest on Python 3.12 with PostgreSQL 15, ruff "no new findings"
 #   aibom        aibom/ pytest (AI-BOM + CBOM gates), ruff + mypy "no new findings", representative-repo gates
 #   cbom-action  .github/actions/cbom-scan: a clean tree passes, a vulnerable tree is blocked (exit 1, not 127)
+#   cbom-d1      CBOM code-lane accuracy on CryptoAPI-Bench, OWASP Benchmark and a labelled corpus (bench/cbom/d1)
 #   scan-node    scan_node/ pytest from the hash-pinned lock
 #   worker       RabbitMQ/worker pytest (tests/, helpers/tests/test_*, the sca_sbom_agent tests)
 #   dast-worker  RabbitMQ/dast_worker pytest (helpers/tests/test_*)
@@ -59,6 +60,7 @@ jobs:
       backend: ${{ steps.decide.outputs.backend }}
       aibom: ${{ steps.decide.outputs.aibom }}
       cbom-action: ${{ steps.decide.outputs.cbom-action }}
+      cbom-d1: ${{ steps.decide.outputs.cbom-d1 }}
       scan-node: ${{ steps.decide.outputs.scan-node }}
       worker: ${{ steps.decide.outputs.worker }}
       dast-worker: ${{ steps.decide.outputs.dast-worker }}
@@ -120,6 +122,16 @@ jobs:
               - 'aibom/tests/fixtures/code-supply/**'
               - 'aibom/pyproject.toml'
               - 'aibom/uv.lock'
+            cbom-d1:
+              - *pipeline
+              - 'bench/cbom/d1/**'
+              - 'e2e/fixtures/cbom-d1-corpus/**'
+              # the engine loads more than aibom/cbom: model, scan, emit, compliance, score and aibom/config
+              - 'aibom/src/**'
+              - 'aibom/config/**'
+              - 'aibom/pyproject.toml'
+              - 'aibom/uv.lock'
+              - 'RabbitMQ/worker/helpers/tools/cbom_agent/**'
             scan-node:
               - *pipeline
               - 'scan_node/**'
@@ -224,7 +236,7 @@ jobs:
           if [ "$EVENT" = push ] && [ "$REF" != dev ]; then suites=false; fi
           [ "$BROAD" = true ] && F=$(jq -c '.backend = "true"' <<< "$F")
           f() { [ "$all" = true ] || [ "$(jq -r --arg k "$1" '.[$k] // "false"' <<< "$F")" = true ]; }
-          for s in backend aibom cbom-action scan-node worker dast-worker worker-locks frontend code; do
+          for s in backend aibom cbom-action cbom-d1 scan-node worker dast-worker worker-locks frontend code; do
             if [ "$suites" = true ] && f "$s"; then v=true; else v=false; fi
             echo "$s=$v" >> "$GITHUB_OUTPUT"; echo "$s=$v"
           done
@@ -376,6 +388,27 @@ jobs:
           if [ "$CODE" != 1 ]; then echo "::error::expected the scan to block with exit 1, got '${CODE:-none}'"; exit 1; fi
           echo "blocked the vulnerable tree (exit 1)"
 
+
+  # CB-07: accuracy of the CBOM code lane against ground truth that never comes from the product (the public
+  # benchmarks' own labels, an independently labelled corpus, OSV at test time). Fails on a regression below the
+  # non-regression floors or when a track's target floor starts passing (bench/cbom/d1/README.md).
+  cbom-d1:
+    name: cbom-d1
+    needs: changes
+    if: needs.changes.outputs.cbom-d1 == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/reusable-python-tests.yml
+    with:
+      suite-name: cbom-d1
+      working-directory: aibom
+      python-version: "3.12"
+      install-command: uv sync --frozen --all-extras --dev
+      test-command: bash ../bench/cbom/d1/ci.sh
+      # 2: the merge commit and its first parent (the base branch), for `d1.py check-floors --base HEAD^1`
+      fetch-depth: 2
+      artifact-paths: test-reports/
+      timeout-minutes: 15
   scan-node:
     name: scan-node
     needs: changes
@@ -527,7 +560,7 @@ jobs:
   ci-gate:
     name: ci-gate
     if: always()
-    needs: [changes, ci-selftest, pr-checks, backend, aibom, cbom-action, scan-node, worker, dast-worker, worker-locks,
+    needs: [changes, ci-selftest, pr-checks, backend, aibom, cbom-action, cbom-d1, scan-node, worker, dast-worker, worker-locks,
             frontend, security, codeql, images]
     runs-on: ubuntu-latest
     timeout-minutes: 5

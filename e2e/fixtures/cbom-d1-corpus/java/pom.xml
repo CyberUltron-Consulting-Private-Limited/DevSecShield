@@ -1,0 +1,5 @@
+<project><modelVersion>4.0.0</modelVersion><groupId>com.bank</groupId><artifactId>pay</artifactId><version>1</version>
+<dependencies>
+ <dependency><groupId>org.bouncycastle</groupId><artifactId>bcprov-jdk15on</artifactId><version>1.60</version></dependency>
+ <dependency><groupId>commons-codec</groupId><artifactId>commons-codec</artifactId><version>1.10</version></dependency>
+</dependencies></project>

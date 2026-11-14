@@ -27,7 +27,7 @@ pull_request into dev / staging / main, merge_group, push to dev / staging / mai
         ├── ci-selftest (pipeline changes)  backend      aibom        worker       scan-node    frontend
         ├── pr-checks (PRs only)            (pytest +    (pytest +    dast-worker  (pytest)     (tsc, eslint,
         │     ├── branch-flow               PostgreSQL,  ruff/mypy,   (pytest)     cbom-action   tests, build)
-        │     └── pr-hygiene                ruff)        true-miss)   worker-locks              codeql
+        │     └── pr-hygiene                ruff)        true-miss)   worker-locks  cbom-d1      codeql
         ├── security                          images (backend, frontend, scan-node, scan-worker, dast-worker)
         │     └── scanners (semgrep, osv, trivy, checkov, hadolint, shellcheck, actionlint)
         ▼
@@ -221,6 +221,57 @@ merging one, because an action update runs new third-party code with the workflo
 | `cbom-nightly.yml` | **weekly** (Mon 07:30 UTC), manual | Live CBOM benchmark against IBM cbomkit-theia |
 | `deploy-staging.yml` | push to `staging`; manual | Build the production images; deploy them to staging on every push to `staging` (manual: optional), one run at a time, never cancelled; a push deploys only while its commit is still the tip of `staging` (an older re-run fails "superseded") |
 | `scan-node-image.yml` | manual | Release the CBOM scan-node image as a file |
+| `publish-ghcr.yml` | push to dev / staging; PR with label `publish-preview`; manual | Publish all images to GHCR (amd64 + arm64, provenance attested); see [Publish images](#publish-images-ghcr) |
+
+### Publish images (GHCR)
+
+`publish-ghcr.yml` pushes `ghcr.io/<owner>/devsecshield-{backend,frontend,scan-worker,dast-worker,scan-node,minio}`
+(private packages) for linux/amd64 and linux/arm64. `deploy/local/README.md` runs them on one machine.
+
+| Trigger | Immutable tag | Moving tag |
+|---|---|---|
+| push to `dev` / `staging` (not docs-only) | `dev-<sha12>` / `staging-<sha12>` | `dev` / `staging` |
+| PR from this repository with the label `publish-preview` (labeled, synchronize, reopened) | `pr-<n>-<head sha12>` | `pr-<n>` |
+| `workflow_dispatch` (inputs `ref` = branch, tag or full commit, `api_url`; needs the file on `main`) | `manual-<sha12>`, or `manual-<sha12>-<8 hex of sha256(api_url)>` for another `api_url` | none |
+
+Immutable tags are written once (first write wins); moving tags only move forward.
+
+* **meta** (`contents: read`) decides with `.github/ci/ghcr_meta.py` (self-tested in `.github/tests/test_publish_ghcr.py`):
+  fork PRs, PRs without the label, other branches and other events publish nothing; dispatch inputs are validated
+  (an abbreviated commit is refused: `actions/checkout` would take it for a branch name).
+* **exists** (`packages: read`) checks the six immutable tags. When all exist (a re-run, the label added again, a
+  reopened PR) contexts and build are skipped; merge still runs, then promote.
+* **contexts** runs `scripts/deploy/check_image_contexts.sh` before any build.
+* **build** (`packages: write`) builds each image per architecture on a native runner (`ubuntu-24.04`,
+  `ubuntu-24.04-arm`; no QEMU) and pushes it by digest only, with OCI labels `source`, `revision`, `version`, `title`
+  and BuildKit's own provenance/SBOM manifests off.
+* **merge** runs after the builds, or without them when every immutable tag existed (then it downloads no digest). It
+  reuses an existing immutable tag as it is, after checking its two platforms; otherwise it plans the index
+  (`imagetools create --dry-run`), refuses it unless it lists exactly linux/amd64 and linux/arm64, then writes the
+  tag. A registry error is never taken for a missing tag. It attests SLSA build provenance on the index digest
+  (`actions/attest-build-provenance`, pushed to the registry; private repositories need GitHub Enterprise Cloud), a
+  reused index too, so a tag whose first attestation failed is attested by the next run before any moving tag can
+  point at it.
+* **promote** (`packages: write`, `contents: read`, `pull-requests: read`) runs only after merge succeeded for all
+  six. It first checks that the branch or PR head is still this commit, or ahead of it by docs only (`compare` API);
+  else it leaves the moving tags to the newer run, so a re-run of an older run never moves them back. Then it records
+  where each moving tag points, moves them one by one (a copy of the same index: same digest, same attestation),
+  retries a move 3 times, and on a lasting failure puts back the tags it moved and the failing one (a failed write can
+  still have landed), then reads all six and names any that is not where it was. The six tags still move one after
+  another (about 20 s), so deployments pin the immutable tag.
+* Concurrency: on a PR a newer push cancels the older run; on `dev` and `staging` runs queue (GitHub keeps the newest
+  pending one), so no dev or staging run is killed while it moves tags. A PR run cancelled while it moves tags leaves
+  `pr-<n>` mixed until the next run. Re-run only the newest run of a branch: a re-run of an older one replaces the
+  newer waiting run (on a PR, cancels it) and leaves the moving tag alone. Manual runs are grouped by `ref` and
+  `api_url`. A `labeled` event for another label, or a push to a PR without the label, cannot cancel a running publish.
+* Only `GITHUB_TOKEN`; the jobs that can write packages run no repository script, and each checks for forks itself.
+* The frontend has `http://localhost:8000` inlined (manual runs: `api_url`) and names the scan-node image of the same
+  build in its install command (`NEXT_PUBLIC_CBOM_NODE_IMAGE`).
+* The image definitions (context, Dockerfile, named contexts) of `ci.yml` "Decide", `scripts/deploy/build_images.sh`,
+  `scripts/deploy/check_image_contexts.sh` and this matrix are compared by a self-test (`OneDefinitionOfEachImage`).
+* Verify an image: `gh attestation verify oci://ghcr.io/<owner>/devsecshield-backend:dev -R <owner>/<repo>`.
+* Not yet: a layer cache (the 10 GB Actions cache is shared with `ci.yml`'s image caches) and retention of `pr-<n>`
+  versions after the PR closes (follow-ups).
 
 ### What each `ci.yml` suite runs
 
@@ -232,6 +283,7 @@ merging one, because an action update runs new third-party code with the workflo
 | dast-worker | `RabbitMQ/dast_worker/` | `uv lock --check`; `uv sync --frozen`; `pytest helpers/tests/test_*.py` (6 files, including test_egress_pinning). Deselect list: `.github/ci/pytest-deselect-dast-worker.txt` |
 | worker-locks | `RabbitMQ/guardrail_worker/` | `uv lock --check` (it has no pytest suite) |
 | cbom-action | `.github/actions/cbom-scan` | The composite action passes on `code-supply/clean` and returns exit code 1 on `code-supply/vulnerable` |
+| cbom-d1 | `aibom/` (runs `bench/cbom/d1/ci.sh`) | `uv sync --frozen --all-extras --dev`; `d1.py check-floors` (floors.json may only rise against the base, HEAD^1 of the fetch-depth-2 checkout); fetches CryptoAPI-Bench and the OWASP Benchmark Java crypto/hash/weakrand subset at pinned commits, runs the CBOM code engine as the scan-worker does, scores it against the benchmarks' own labels, the labelled corpus in `e2e/fixtures/cbom-d1-corpus/` and OSV; fails on a non-regression floor, on a target floor that starts passing, or on a floor loosened without a `lowered`/`removed` record (`bench/cbom/d1/README.md`). `report.md` goes to the job summary, the report and work files to the `cbom-d1-artifacts` artifact. Needs network to github.com and api.osv.dev |
 | scan-node | `scan_node/` | Hash-pinned `requirements.lock` install, `pytest tests` |
 | frontend | `frontend/` | `npm ci`, `tsc --noEmit`, ESLint (no new errors), 47 `*.test.ts` files run with `npx tsx`, `next build` |
 | images | repository root | `scripts/deploy/check_image_contexts.sh`, then a buildx build and a Trivy scan of each changed image |
@@ -244,6 +296,7 @@ merging one, because an action update runs new third-party code with the workflo
 | backend | everything except `docs/`, `*.md`, `.github/`, root CI configs and `frontend/` outside `app/`, `components/`, `utils/` | its tests read deploy/staging compose and nginx, scripts/deploy and scripts/crypto_kb, e2e/, compose/, RabbitMQ Dockerfiles and helpers, scan_node collectors, aibom, bench/certin, migrations, and search the frontend sources for banned words |
 | aibom | `aibom/`, `bench/`, every `.py` under `backend/`, `RabbitMQ/`, `e2e/`; `backend/utilities/cbom_sources/data/crypto_kb.json`; the CBOM, CERT-In and SEBI ledgers under `docs/` | test_only_cbom_code_imports_posture reads all that Python; other tests compare the KB and the ledgers |
 | cbom-action | the action, the aibom CLI and CBOM code, its fixtures, `aibom/pyproject.toml`, `aibom/uv.lock` | |
+| cbom-d1 | `bench/cbom/d1/`, `e2e/fixtures/cbom-d1-corpus/`, `aibom/src/`, `aibom/config/`, `RabbitMQ/worker/helpers/tools/cbom_agent/`, `aibom/pyproject.toml`, `aibom/uv.lock` | the engine (a scan also loads `aibom.model`, `scan`, `emit`, `compliance`, `score` and `aibom/config/crypto-risk-weights.yaml`), the scan-worker's call into it, and the lane (round 7 wave W-D1) |
 | scan-node | `scan_node/`, `deploy/node-images/`, `backend/utilities/cbom_sources/{node_auth,templates}.py`, `aibom/src/aibom/cbom/pkgdb.py`, `frontend/components/cbom/sources/logic.ts` | the node tests pin those server and wizard files |
 | worker | `RabbitMQ/worker/`, `aibom/src/`, its deselect list | the SBOM agent tests import aibom from source |
 | dast-worker | `RabbitMQ/dast_worker/`, `compose/worker-compose/docker-compose.yml`, its deselect list | test_nuclei_process_cleanup reads the compose file |
@@ -430,6 +483,7 @@ grants `pull-requests: write`.
 | `CODEQL_ENABLED` | repository variable (`true`) | codeql | CodeQL job skipped (see [Known limits](#known-limits)) |
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | repository secrets | aibom-nightly (Bedrock) | Weekly benchmark cannot call Bedrock |
 | `STAGING_SSH_KEY`, `STAGING_SSH_KNOWN_HOSTS`, `STAGING_SSH_TARGET`; `STAGING_DIR` | `staging` environment secrets / variable | deploy-staging | Deploy step unavailable (the build still works). Give the environment deployment-branch rules (`staging` only) |
+| `publish-preview` | PR label | publish-ghcr | The PR's images are not published |
 
 No other workflow needs a secret. CI tests use dummy values that are marked as such.
 

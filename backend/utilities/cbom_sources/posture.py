@@ -25,8 +25,10 @@ from typing import Any
 from sqlmodel import Session, select
 
 from backend.new_models import CbomCollectedAsset, CbomCollectionJob, CbomCollectionSource, CbomScanNode
+from backend.utilities.cbom_sources import agility as AGILITY
 from backend.utilities.cbom_sources import crypto_kb
 from backend.utilities.cbom_sources.cbom_metrics import quantum_readiness_pct
+from backend.utilities.cbom_sources.classify import pq_kex_evidence
 
 IN_TRANSIT = {"tls_endpoint", "ssh_endpoint", "ssh_server_config", "database_tls", "load_balancer_tls", "cdn_tls",
               "api_tls", "k8s_ingress_tls"}
@@ -48,7 +50,7 @@ def pqc_class(asset_type: str, quantum_vulnerable: bool | None, codes: list[str]
     if quantum_vulnerable is True:
         return "quantum-vulnerable"
     if quantum_vulnerable is False:
-        if facts.get("pq_hybrid") or facts.get("pq_group_supported"):
+        if pq_kex_evidence(facts):  # the raw facts, as stored: classify reads the same evidence (CB-04)
             return "hybrid"
         return "quantum-safe"
     return "not-applicable"
@@ -116,15 +118,16 @@ def asset_exposure(facts: dict[str, Any] | None, target: str | None, location: s
 
 def job_metadata(params: dict[str, Any] | None, source: CbomCollectionSource | None,
                  node: CbomScanNode | None) -> dict[str, Any]:
-    """Business criticality, exposure override and node segment for one job: the values snapshotted in the job when
-    the run was created, else (jobs created before the snapshot) the source's and node's current values."""
+    """Business criticality, exposure override, node segment and data lifetime (Mosca X of the source) for one job:
+    the values snapshotted in the job when the run was created, else (jobs created before the snapshot) the source's
+    and node's current values."""
     snap = (params or {}).get("metadata")
     if isinstance(snap, dict):
         return {"criticality": snap.get("business_criticality"), "exposure": snap.get("exposure"),
-                "segment": snap.get("node_segment")}
+                "segment": snap.get("node_segment"), "data_lifetime_years": snap.get("data_lifetime_years")}
     cfg = (source.config or {}) if source else {}
     return {"criticality": cfg.get("business_criticality"), "exposure": cfg.get("exposure"),
-            "segment": node.segment if node else None}
+            "segment": node.segment if node else None, "data_lifetime_years": cfg.get("data_lifetime_years")}
 
 
 def _job_context(session: Session, team_id: int, run_id: int, sources: dict[int, CbomCollectionSource]
@@ -139,6 +142,7 @@ def _job_context(session: Session, team_id: int, run_id: int, sources: dict[int,
 def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict[str, Any] | None,
                 top: int = 10) -> dict[str, Any]:
     from backend.utilities.cbom_sources.classify import shown
+    from backend.utilities.cbom_sources.qgrade import RunGrades
 
     rows = session.exec(select(CbomCollectedAsset)
                         .where(CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run_id)).all()
@@ -146,6 +150,8 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
     sources = {s.id: s for s in session.exec(select(CbomCollectionSource).where(
         CbomCollectionSource.team_id == team_id)).all()}
     job_ctx = _job_context(session, team_id, run_id, sources)
+    agility = AGILITY.RunAgility(session, team_id, run_id, sources)  # CB-24: fix class per asset, at view time
+    grades = RunGrades(session, team_id=team_id, run_id=run_id, risk_model=risk_model)  # quantum risk grade (CB-19)
     exposure_counts: Counter[str] = Counter()
     classes: Counter[str] = Counter()
     impacts: Counter[str] = Counter()
@@ -163,8 +169,10 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
         impact, a_codes, finding = view["impact"], view["finding_codes"], view["finding"]
         a_codes = [c for c in a_codes if not c.startswith("COVERAGE_")]
         if a_type == "coverage":
+            grades.add(row, a_codes)
             continue
         classes[pqc_class(a_type, qv, a_codes, facts or {})] += 1
+        agility.add(row, a_codes)
         if impact:
             impacts[impact] += 1
         codes.update(a_codes)
@@ -175,6 +183,7 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
         crit = str(ctx.get("criticality") or "medium").lower()
         exposure, basis = asset_exposure(facts, target, location, override=ctx.get("exposure"),
                                          node_segment=ctx.get("segment"))
+        grades.add(row, a_codes, (exposure, basis))  # the quantum risk grade reuses the score's exposure (CB-19)
         exposure_counts[exposure] += 1
         if impact:
             risky.append({"id": aid, "type": a_type, "name": name or location, "location": location, "impact": impact,
@@ -212,8 +221,10 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
         "exposure_factors": dict(EXPOSURE_FACTOR),
         "compliance": [{"framework": fw, "clauses": items} for fw, items in sorted(frameworks.items())],
         "kb_version": crypto_kb.version(),
+        **agility.result(),
         "pqc_context": {k: v for k, v in crypto_kb.pqc_context().items() if k in ("mosca", "expert_survey",
                                                                                  "nist_ir_8547", "z_note")},
+        **grades.result(),
     }
 
 
@@ -289,6 +300,7 @@ def asset_detail(row: CbomCollectedAsset, source: CbomCollectionSource | None, *
         "exposure": exposure,
         "exposure_basis": exposure_basis,
         "exposure_factor": EXPOSURE_FACTOR[exposure],
+        "agility": AGILITY.detail(row.asset_type, codes, facts, AGILITY.node_context(job, source), row.location),
         "facts": facts,
         "details": [{**d, "impact": verdict["impacts"].get(d["code"]) or d["impact"]}
                     for d in crypto_kb.render("node", ordered, context=ctx, evidence=view["finding"] or "", texts=texts,

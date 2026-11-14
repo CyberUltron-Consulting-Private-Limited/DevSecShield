@@ -101,6 +101,14 @@ class Tables:
         self.openssl_text: dict[str, str] = {}
         self.alias: dict[str, str] = {}
         self.grease: set[int] = set()
+        self.gcp: dict[str, str] = {}
+        self.kmip: dict[int, str] = {}
+        self.pkcs11_key_types: dict[int, str] = {}
+        self.pkcs11_parameter_sets: dict[int, dict[int, str]] = {}
+        self.jose_key_types: tuple[str, ...] = ()
+        self.jose_kty: dict[str, str] = {}
+        self.jose_crv: dict[str, str] = {}
+        self.jose_alg: dict[str, str] = {}
 
     def add(self, name: str, attrs: list | tuple) -> str:
         attrs = tuple(tuple(a) if isinstance(a, list) else a for a in attrs)
@@ -248,7 +256,9 @@ def build_pkix(t: Tables, raw: bytes) -> None:
             t.oid[oid] = "XMSS^MT"
         elif name.startswith(("dhPop", "dh-sig")):
             t.oid[oid] = t.add(name, _classical("DH", "signature", status=status))
-        elif name.startswith(("ecdhPop", "eccsi")):
+        elif name.startswith("ecdhPop"):  # RFC 6955: proof of possession of an ECDH key
+            t.oid[oid] = t.add(name, _classical("ECDH", "signature", status=status))
+        elif name.startswith("eccsi"):
             t.oid[oid] = t.add(name, _classical("EC", "signature", status=status))
         elif name.startswith("RSASSA-PSS"):
             t.oid[oid] = t.add(name, _classical("RSA", "signature", status=status))
@@ -447,6 +457,63 @@ def build_aws(t: Tables, enums: bytes, elb_extract: bytes, apigw_extract: bytes)
     t.aws_tls_policy["apigateway"] = {n: () for n in sorted(api_names)}
 
 
+def _mapped(t: Tables, section: str, curated: dict, names: list[str]) -> dict[str, str]:
+    """{source name: row} for a curated section that must list every name the source defines (mapped or null)."""
+    listed = {k: v for k, v in curated.items() if not k.startswith("_")}
+    if set(listed) != set(names):
+        raise SourceError(f"{section}: curated names differ from the source: {sorted(set(listed) ^ set(names))}")
+    for name, row in listed.items():
+        if row is not None and row not in t.algs:
+            raise SourceError(f"{section} {name} names unknown {row!r}")
+    return {k: v for k, v in listed.items() if v is not None}
+
+
+def build_gcp(t: Tables, extract: bytes) -> None:
+    values = [v for v, _desc in json.loads(extract)["algorithms"]]
+    t.gcp = _mapped(t, "gcp", t.curated["gcp"], values)
+
+
+def build_kmip(t: Tables, extract: bytes) -> None:
+    rows = json.loads(extract)["algorithms"]
+    mapped = _mapped(t, "kmip", t.curated["kmip"], [n for n, _v in rows])
+    t.kmip = {value: mapped[name] for name, value in rows if name in mapped}
+
+
+def build_pkcs11(t: Tables, extract: bytes) -> None:
+    doc = json.loads(extract)
+    key_types = {name: value for name, value in doc["key_types"]}
+    c = t.curated["pkcs11"]
+    mapped = _mapped(t, "pkcs11.key_types", c["key_types"], list(key_types))
+    for name, row in mapped.items():
+        old = t.pkcs11_key_types.get(key_types[name])
+        if old is not None and old != row:  # CKK_ECDSA is CKK_EC: aliases must agree
+            raise SourceError(f"PKCS#11 value {key_types[name]:#x} maps to {old!r} and {row!r}")
+        t.pkcs11_key_types[key_types[name]] = row
+    params = {name: value for name, value in doc["parameter_sets"]}
+    for ckk, sets in c["parameter_sets"].items():
+        out: dict[int, str] = {}
+        for ckp, row in sets.items():
+            if ckp not in params or row not in t.algs:
+                raise SourceError(f"PKCS#11 parameter set {ckp} -> {row!r}: not in the header or not a row")
+            if not ckp.startswith(f"CKP_{ckk[4:]}_"):
+                raise SourceError(f"PKCS#11 parameter set {ckp} listed under {ckk}")
+            out[params[ckp]] = row
+        t.pkcs11_parameter_sets[key_types[ckk]] = out
+    listed = {ckp for sets in c["parameter_sets"].values() for ckp in sets}
+    if listed != set(params):  # a new CKP_* (a new ML-DSA/SLH-DSA/ML-KEM set) must be mapped, not read as the family
+        raise SourceError(f"PKCS#11 parameter sets differ from the header: {sorted(listed ^ set(params))}")
+
+
+def build_jose(t: Tables, key_types: bytes, curves: bytes, algs: bytes) -> None:
+    c = t.curated["jose"]
+    kty = [r['"kty" Parameter Value'] for r in _csv(key_types)]
+    t.jose_key_types = tuple(kty)
+    t.jose_kty = _mapped(t, "jose.kty", c["kty"], kty)
+    t.jose_crv = _mapped(t, "jose.crv", c["crv"], [r["Curve Name"] for r in _csv(curves)])
+    # every registered alg, as for kty and crv: the ones that name a key's algorithm mapped, the rest null
+    t.jose_alg = _mapped(t, "jose.alg", c["alg"], [r["Algorithm Name"] for r in _csv(algs)])
+
+
 def build_openssl_text(t: Tables, *captures: bytes) -> None:
     for raw in captures:
         for row in json.loads(raw)["rows"]:
@@ -498,6 +565,10 @@ def build(data: dict[str, bytes]) -> Tables:
     build_aws(t, data["botocore-enums.json"], data["aws-elb-pq-policies.json"],
               data["aws-apigw-pq-policies.json"])
     build_openssl_text(t, data["openssl-3.0-text.json"], data["openssl-3.5-text.json"])
+    build_gcp(t, data["gcp-kms-algorithms.json"])
+    build_kmip(t, data["kmip-3.0-algorithms.json"])
+    build_pkcs11(t, data["pkcs11-3.2-constants.json"])
+    build_jose(t, data["iana-jose-key-types.csv"], data["iana-jose-curves.csv"], data["iana-jose-algs.csv"])
     build_aliases(t)
     for oid, name in t.oid.items():
         if name not in t.algs:
@@ -637,7 +708,22 @@ def emit(t: Tables, digest: str) -> str:
     lines += ["})", ""]
     lines += _mapping("OPENSSL_TEXT", "Mapping[str, str]",
                       [(_lit(x), _lit(t.openssl_text[x])) for x in sorted(t.openssl_text)])
-    lines += [""] + _mapping("ALIASES", "Mapping[str, str]", [(_lit(k), _lit(t.alias[k])) for k in sorted(t.alias)])
+    lines += [""] + _mapping("ALIASES", "Mapping[str, str]",
+                             [(_lit(k), _lit(t.alias[k])) for k in sorted(t.alias)])
+    lines += [""] + _mapping("GCP", "Mapping[str, str]", [(_lit(k), _lit(t.gcp[k])) for k in sorted(t.gcp)])
+    lines += [""] + _mapping("KMIP", "Mapping[int, str]", [(_hex(k), _lit(t.kmip[k])) for k in sorted(t.kmip)])
+    lines += [""] + _mapping("PKCS11_KEY_TYPES", "Mapping[int, str]",
+                             [(_hex(k), _lit(t.pkcs11_key_types[k])) for k in sorted(t.pkcs11_key_types)])
+    lines += ["", "PKCS11_PARAMETER_SETS: Mapping[int, Mapping[int, str]] = MappingProxyType({"]
+    for ckk in sorted(t.pkcs11_parameter_sets):
+        lines.append(f"    {_hex(ckk)}: MappingProxyType({{")
+        for ckp in sorted(t.pkcs11_parameter_sets[ckk]):
+            lines += _entry(_hex(ckp), _lit(t.pkcs11_parameter_sets[ckk][ckp]), 8)
+        lines.append("    }),")
+    lines += ["})", ""]
+    lines += _seq("JOSE_KEY_TYPES", list(t.jose_key_types))
+    for name, table in (("JOSE_KTY", t.jose_kty), ("JOSE_CRV", t.jose_crv), ("JOSE_ALG", t.jose_alg)):
+        lines += [""] + _mapping(name, "Mapping[str, str]", [(_lit(k), _lit(table[k])) for k in sorted(table)])
     lines += ["", "OID_PREFIXES: tuple[tuple[str, str, str | None], ...] = ("]
     for prefix, spec in c["oid_prefixes"].items():
         if not prefix.startswith("_"):

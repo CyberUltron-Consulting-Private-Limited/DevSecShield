@@ -1,0 +1,131 @@
+#!/usr/bin/env python3
+"""Fake `docker buildx imagetools` for the publish-ghcr.yml step tests (test_publish_ghcr.py). A tiny registry in
+$FAKE_STATE: blobs/<sha256 hex> (manifest bytes) and tags.json {"<image>:<tag>": "<hex>"}. Every call is appended to
+calls.log. Knobs (files in $FAKE_STATE):
+  create-fail.json             {"<destination ref>": <number of create calls that fail before one succeeds>}
+  create-lands-but-fails.json  {"<destination ref>": n}: the next n creates WRITE the tag, then report a failure
+                               (the registry kept the write but the response was lost: a 502 or a client timeout)
+  create-wrong.json            {"<destination ref>": n}: the next n creates store other bytes than were sent and
+                               report success (only the read-back can tell)
+  inspect-error.json           ["<ref>", ...]  inspect fails with a registry error that is not "not found"
+"""
+import hashlib
+import json
+import os
+import sys
+from pathlib import Path
+
+STATE = Path(os.environ["FAKE_STATE"])
+BLOBS = STATE / "blobs"
+TAGS = STATE / "tags.json"
+
+
+def load(name, default):
+    p = STATE / name
+    return json.loads(p.read_text()) if p.exists() else default
+
+
+def save(name, value):
+    (STATE / name).write_text(json.dumps(value, indent=1, sort_keys=True))
+
+
+def take(name, dest):
+    """True (and one less left) while the knob file `name` still has calls left for `dest`."""
+    counts = load(name, {})
+    if counts.get(dest, 0) <= 0:
+        return False
+    counts[dest] -= 1
+    save(name, counts)
+    return True
+
+
+def resolve(ref):
+    if "@sha256:" in ref:
+        hexd = ref.split("@sha256:", 1)[1]
+        return hexd if (BLOBS / hexd).exists() else None
+    return load("tags.json", {}).get(ref)
+
+
+def store(data: bytes) -> str:
+    BLOBS.mkdir(parents=True, exist_ok=True)
+    hexd = hashlib.sha256(data).hexdigest()
+    (BLOBS / hexd).write_bytes(data)
+    return hexd
+
+
+def main(argv):
+    with open(STATE / "calls.log", "a") as log:
+        log.write(" ".join(argv) + "\n")
+    if argv[:3] != ["buildx", "imagetools", "inspect"] and argv[:3] != ["buildx", "imagetools", "create"]:
+        print(f"fake docker: unsupported {argv}", file=sys.stderr)
+        return 2
+    args = argv[3:]
+    if argv[2] == "inspect":
+        ref = [a for a in args if not a.startswith("--")][-1]
+        if ref in load("inspect-error.json", []):
+            print(f"ERROR: unexpected status from HEAD request to https://ghcr.io/v2/x: 500 Internal Server Error",
+                  file=sys.stderr)
+            return 1
+        hexd = resolve(ref)
+        if hexd is None:
+            print(f"ERROR: {ref}: not found", file=sys.stderr)
+            return 1
+        sys.stdout.buffer.write((BLOBS / hexd).read_bytes())
+        return 0
+    dry = "--dry-run" in args
+    dest, sources, annotations, i = None, [], [], 0
+    while i < len(args):
+        a = args[i]
+        if a == "-t":
+            dest = args[i + 1]
+            i += 2
+        elif a == "--annotation":
+            annotations.append(args[i + 1])
+            i += 2
+        elif a == "--dry-run":
+            i += 1
+        else:
+            sources.append(a)
+            i += 1
+    fails = load("create-fail.json", {})
+    if dest and fails.get(dest, 0) > 0:
+        fails[dest] -= 1
+        save("create-fail.json", fails)
+        print(f"ERROR: failed to push {dest}: 503 Service Unavailable", file=sys.stderr)
+        return 1
+    blobs = []
+    for s in sources:
+        hexd = resolve(s)
+        if hexd is None:
+            print(f"ERROR: {s}: not found", file=sys.stderr)
+            return 1
+        blobs.append((hexd, (BLOBS / hexd).read_bytes()))
+    if len(blobs) == 1 and not annotations:
+        data = blobs[0][1]  # one source, no annotations: buildx copies the bytes
+    else:
+        manifests = []
+        for hexd, raw in blobs:
+            arch = json.loads(raw).get("arch", "unknown")
+            manifests.append({"mediaType": "application/vnd.oci.image.manifest.v1+json", "digest": f"sha256:{hexd}",
+                              "platform": {"os": "linux", "architecture": arch}})
+        ann = dict(a.split("=", 1) for a in annotations)
+        data = json.dumps({"schemaVersion": 2, "mediaType": "application/vnd.oci.image.index.v1+json",
+                           "manifests": manifests, "annotations": ann}).encode()
+    if dry:
+        sys.stdout.buffer.write(data)
+        return 0
+    if dest and take("create-wrong.json", dest):
+        data += b"\n"
+    hexd = store(data)
+    if dest:
+        tags = load("tags.json", {})
+        tags[dest] = hexd
+        save("tags.json", tags)
+    if dest and take("create-lands-but-fails.json", dest):
+        print(f"ERROR: failed to push {dest}: 502 Bad Gateway", file=sys.stderr)
+        return 1
+    print(f"#1 pushing sha256:{hexd} to {dest}", file=sys.stderr)
+    return 0
+
+
+sys.exit(main(sys.argv[1:]))
