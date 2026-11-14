@@ -2,8 +2,8 @@
 
 Two providers:
 
-* ``bedrock`` (primary; ``CBOM_AI_PROVIDER=bedrock``): AWS Bedrock Converse in ``CBOM_AI_BEDROCK_REGION`` with the
-  standard AWS credential chain. The product's only outbound call: HTTPS to ``bedrock-runtime.<region>.amazonaws.com``
+* ``bedrock`` (primary; ``CBOM_AI_PROVIDER=bedrock``): AWS Bedrock Converse in ``CBOM_AI_BEDROCK_REGION``, with
+  credentials from exactly one source (``CBOM_AI_AWS_CREDENTIALS``: env, profile, instance, container, web_identity). The product's only outbound call: HTTPS to ``bedrock-runtime.<region>.amazonaws.com``
   (or a Bedrock PrivateLink endpoint set in ``CBOM_AI_BEDROCK_ENDPOINT_URL``).
 * ``openai_compat`` (``CBOM_AI_PROVIDER=openai_compat``, or ``CBOM_AI_BASE_URL`` set without a provider): an
   OpenAI-compatible model on a private address (Ollama, vLLM, llama.cpp server, TGI); nothing leaves the network.
@@ -25,6 +25,11 @@ DEFAULT_CONCURRENCY = 2
 DEFAULT_BEDROCK_MODEL = "openai.gpt-oss-120b-1:0"
 DEFAULT_BEDROCK_REGION = "ap-south-1"
 PROVIDERS = ("bedrock", "openai_compat")
+CREDENTIAL_SOURCES = ("env", "profile", "instance", "container", "web_identity")
+# non-secret AWS settings the credential sources need (the key values themselves are read by botocore only)
+_AWS_SETTING_KEYS = ("AWS_SHARED_CREDENTIALS_FILE", "AWS_CONFIG_FILE", "AWS_CONTAINER_CREDENTIALS_FULL_URI",
+                     "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "AWS_ROLE_ARN", "AWS_WEB_IDENTITY_TOKEN_FILE",
+                     "AWS_ROLE_SESSION_NAME", "AWS_EC2_METADATA_DISABLED")
 _REGION = re.compile(r"^[a-z]{2}(-gov|-iso[a-z]*)?-[a-z]+-\d$")
 
 
@@ -44,6 +49,15 @@ class AiConfig:
     region: str | None = None          # bedrock only
     endpoint_override: bool = False    # bedrock: CBOM_AI_BEDROCK_ENDPOINT_URL was set
     aws_profile: str | None = None     # bedrock: a named profile (then AWS_* environment keys are not used)
+    # bedrock: where credentials come from, explicitly (no fall-through to other sources): env | profile | instance |
+    # container | web_identity
+    aws_credentials: str = "env"
+    # bedrock: the non-secret settings of that source, read once here (paths, URIs, role ARN; never key values)
+    aws_settings: tuple[tuple[str, str], ...] = ()
+    allow_loopback: bool = False       # bedrock: CBOM_AI_BEDROCK_ENDPOINT_URL may be a loopback forwarder
+
+    def aws(self, key: str) -> str:
+        return dict(self.aws_settings).get(key, "")
 
     @property
     def scheme(self) -> str:
@@ -118,10 +132,19 @@ def load() -> AiConfig | None:
         override = (os.environ.get("CBOM_AI_BEDROCK_ENDPOINT_URL") or "").strip().rstrip("/")
         if override and not _url_ok(override, ("https",)):
             return None
+        profile = (os.environ.get("CBOM_AI_AWS_PROFILE") or "").strip() or None
+        source = (os.environ.get("CBOM_AI_AWS_CREDENTIALS") or ("profile" if profile else "env")).strip().lower()
+        if source not in CREDENTIAL_SOURCES:
+            return None
+        settings = tuple((k, os.environ.get(k, "").strip()) for k in _AWS_SETTING_KEYS if os.environ.get(k, "").strip())
+        settings += (("env_keys_present", "1" if os.environ.get("AWS_ACCESS_KEY_ID") and
+                      os.environ.get("AWS_SECRET_ACCESS_KEY") else ""),)
         return AiConfig(provider="bedrock", base_url=override or f"https://{bedrock_host(region)}",
+                        aws_credentials=source, aws_settings=settings,
+                        allow_loopback=_flag("CBOM_AI_BEDROCK_ALLOW_LOOPBACK"),
                         model=(model or DEFAULT_BEDROCK_MODEL)[:200], region=region,
                         endpoint_override=bool(override),
-                        aws_profile=(os.environ.get("CBOM_AI_AWS_PROFILE") or "").strip() or None,
+                        aws_profile=profile,
                         # the prompt leaves the network here: host names are hidden unless the operator says otherwise
                         redact_hosts=_flag("CBOM_AI_REDACT_HOSTS", default=True), **common)
     if not base or not model or not _url_ok(base, ("http", "https")):

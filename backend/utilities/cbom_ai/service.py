@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import ipaddress
 import logging
 import re
 import threading
@@ -31,6 +32,8 @@ if not log.handlers:
     log.propagate = False
 
 TIMEOUT_TEXT = "AI assistant did not answer in time. The knowledge-base remediation above is unaffected."
+BUSY_TEXT = "AI assistant is busy with other requests; try again in a moment. The knowledge-base remediation above " \
+            "is unaffected."
 ERROR_TEXT = "AI assistant is unavailable right now. The knowledge-base remediation above is unaffected."
 CACHE_SIZE = 256
 CACHE_TTL_S = 24 * 3600
@@ -39,7 +42,6 @@ COUNTERS: Counter[str] = Counter()
 _counter_lock = threading.Lock()
 _cache: OrderedDict[tuple, tuple[float, dict[str, Any]]] = OrderedDict()
 _cache_lock = threading.Lock()
-_semaphores: dict[tuple[int, int], asyncio.Semaphore] = {}
 
 # tests swap these for a stub endpoint
 resolve = T.system_resolve
@@ -57,38 +59,82 @@ def reset() -> None:
         COUNTERS.clear()
     with _cache_lock:
         _cache.clear()
-    _semaphores.clear()
     T.reset_bedrock_clients()
 
 
-def _semaphore(cfg: AiConfig) -> asyncio.Semaphore:
-    loop = asyncio.get_running_loop()
-    key = (id(loop), cfg.concurrency)
-    sem = _semaphores.get(key)
-    if sem is None:
-        sem = _semaphores[key] = asyncio.Semaphore(cfg.concurrency)
-    return sem
+_ARN = re.compile(r"arn:aws[\w-]*:([a-z0-9-]+):([a-z0-9-]*):(\d{12})?:([A-Za-z0-9_+=,.@/:*-]+)")
+_ALIAS = re.compile(r"(?<![\w/])alias/[\w/+=,.@-]+")
+_EMAIL = re.compile(r"(?<![\w.+-])[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+_ACCOUNT = re.compile(r"(?<!\d)\d{12}(?!\d)")
+_V6_CANDIDATE = re.compile(r"(?<![\w:])[0-9A-Fa-f:]*:[0-9A-Fa-f:]*:[0-9A-Fa-f:.]*(?![\w:])")
+
+
+def _boundary(value: str) -> str:
+    # whole values only: 10.20.0.1 must not eat the start of 10.20.0.15
+    return r"(?<![\w.\-])" + re.escape(value) + r"(?![\w\-]|\.\w)"
 
 
 def redact(grounding: Grounding) -> tuple[Grounding, dict[str, str]]:
-    """Host names and addresses replaced by HOST_n in every item, command and URL; the map restores them."""
+    """Identifying values replaced by tokens in every item, command and allowed command: host names and addresses
+    (IPv4 and IPv6) -> HOST_n, asset / source / DN names and non-network locations -> NAME_n, ARNs ->
+    arn:aws:<service>:<region>:ACCOUNT_n:<resource type>/RESOURCE_n, key aliases -> alias/ALIAS_n, account ids ->
+    ACCOUNT_n, e-mail addresses -> EMAIL_n. The returned map restores them after validation."""
     mapping: dict[str, str] = {}
-    for n, host in enumerate(grounding.hosts, start=1):
-        mapping[host] = f"HOST_{n}"
+    counters: Counter[str] = Counter()
+
+    def token(original: str, kind: str) -> str:
+        if original not in mapping:
+            counters[kind] += 1
+            mapping[original] = f"{kind}_{counters[kind]}"
+        return mapping[original]
+
+    texts = [i.text for i in grounding.items] + [i.command for i in grounding.items if i.command] + \
+        list(grounding.commands)
+    blob = "\n".join(texts)
+    arns: dict[str, str] = {}
+    for m in _ARN.finditer(blob):
+        if m.group(0) in arns:
+            continue
+        service, region, account, resource = m.groups()
+        rtype = re.split(r"[/:]", resource, maxsplit=1)[0] if re.search(r"[/:]", resource) else "resource"
+        acct = token(account, "ACCOUNT") if account else ""
+        counters["RESOURCE"] += 1
+        arns[m.group(0)] = f"arn:aws:{service}:{region}:{acct}:{rtype}/RESOURCE_{counters['RESOURCE']}"
+    for host in grounding.hosts:
+        token(host, "HOST")
+    for name in grounding.names:
+        if name not in mapping and not _ARN.fullmatch(name):
+            token(name, "NAME")
+    for m in _ALIAS.finditer(blob):
+        counters["ALIAS"] += 1
+        mapping.setdefault(m.group(0), f"alias/ALIAS_{counters['ALIAS']}")
+    for m in _EMAIL.finditer(blob):
+        token(m.group(0), "EMAIL")
+    for m in _V6_CANDIDATE.finditer(blob):
+        candidate = m.group(0).strip(":") if m.group(0).count(":") >= 2 else ""
+        for value in (m.group(0), candidate):
+            try:
+                if value and ipaddress.ip_address(value).version == 6:
+                    token(value, "HOST")
+                    break
+            except ValueError:
+                continue
+    for m in _ACCOUNT.finditer(blob):
+        token(m.group(0), "ACCOUNT")
+    ordered = sorted(list(arns.items()) + list(mapping.items()), key=lambda kv: len(kv[0]), reverse=True)
+    pattern = re.compile("|".join(_boundary(o) for o, _t in ordered)) if ordered else None
+    lookup = dict(ordered)
 
     def sub(text: str | None) -> str | None:
-        if text is None:
-            return None
-        for host, token in mapping.items():
-            # whole names only: 10.20.0.1 must not eat the start of 10.20.0.15
-            text = re.sub(r"(?<![\w.\-])" + re.escape(host) + r"(?![\w\-]|\.\w)", token, text)
-        return text
+        if text is None or pattern is None:
+            return text
+        return pattern.sub(lambda m: lookup[m.group(0)], text)
 
     items = [Item(i.id, i.label, sub(i.text) or "", sub(i.command)) for i in grounding.items]
-    base = grounding.baseline
-    red = Grounding(subject_key=grounding.subject_key, items=items, baseline=base,
-                    commands={sub(c) or "" for c in grounding.commands}, urls=set(grounding.urls), hosts=[])
-    return red, {token: host for host, token in mapping.items()}
+    red = Grounding(subject_key=grounding.subject_key, items=items, baseline=grounding.baseline,
+                    commands={sub(c) or "" for c in grounding.commands}, urls=set(grounding.urls), hosts=[],
+                    allowed_ids=set(grounding.allowed_ids), names=[])
+    return red, {t: o for o, t in ordered}
 
 
 def restore(value: Any, back: dict[str, str]) -> Any:
@@ -105,9 +151,10 @@ def restore(value: Any, back: dict[str, str]) -> Any:
     return value
 
 
-def cache_key(cfg: AiConfig, grounding: Grounding, mode: str, question: str | None, kb_version: str) -> tuple:
+def cache_key(cfg: AiConfig, grounding: Grounding, mode: str, question: str | None, kb_version: str,
+              team_id: int) -> tuple:
     qsha = hashlib.sha256(P.clean_question(question).encode()).hexdigest() if mode == "question" else ""
-    return (grounding.subject_key, kb_version, cfg.provider, cfg.model, P.PROMPT_VERSION, mode, qsha,
+    return (team_id, grounding.subject_key, kb_version, cfg.provider, cfg.model, P.PROMPT_VERSION, mode, qsha,
             grounding.digest(),
             cfg.redact_hosts)
 
@@ -140,7 +187,7 @@ def _items(grounding: Grounding) -> list[dict[str, str]]:
 async def assist(cfg: AiConfig, grounding: Grounding, *, mode: str, question: str | None, kb_version: str,
                  team_id: int, user_id: int) -> dict[str, Any]:
     started = time.monotonic()
-    key = cache_key(cfg, grounding, mode, question, kb_version)
+    key = cache_key(cfg, grounding, mode, question, kb_version, team_id)
     outcome = "ok"
     cached = _cache_get(key)
     result: dict[str, Any]
@@ -151,13 +198,27 @@ async def assist(cfg: AiConfig, grounding: Grounding, *, mode: str, question: st
         sent, back = redact(fitted) if cfg.redact_hosts else (fitted, {})
         messages = P.build(sent, mode, question)
         try:
-            async def call() -> str:
-                async with _semaphore(cfg):
-                    if cfg.provider == "bedrock":
-                        return await asyncio.to_thread(T.bedrock_chat, cfg, messages, resolve)
-                    return await T.chat(cfg, messages, resolve=resolve, transport=transport)
-
-            raw = await asyncio.wait_for(call(), timeout=cfg.timeout_s + 1)
+            if cfg.provider == "bedrock":
+                # the boto call cannot be cancelled: its slot is taken and released inside the worker thread
+                # (transport.bedrock_chat; a slot wait of at most SLOT_WAIT_S, then "busy"), botocore's connect +
+                # read timeouts add up to CBOM_AI_TIMEOUT_S, and the wait covers both
+                raw = await asyncio.wait_for(asyncio.to_thread(T.bedrock_chat, cfg, messages, resolve),
+                                             timeout=T.bedrock_deadline_s(cfg))
+            else:
+                # one process-wide slot pool for both providers (not per event loop); the queue wait is not part of
+                # the model's time: no slot within SLOT_WAIT_S -> "busy", nothing sent
+                slot = T._slot(cfg)
+                if not await asyncio.to_thread(slot.acquire, True, T.SLOT_WAIT_S):
+                    raise T.Busy()
+                try:
+                    raw = await asyncio.wait_for(T.chat(cfg, messages, resolve=resolve, transport=transport),
+                                                 timeout=cfg.timeout_s + 1)
+                finally:
+                    slot.release()
+        except T.Busy:
+            outcome, raw = "busy", None
+            result = {"status": "busy", "summary": "", "steps": [], "commands": [], "caveats": [BUSY_TEXT],
+                      "baseline": False, "dropped_commands": 0}
         except (asyncio.TimeoutError, httpx.TimeoutException):
             outcome, raw = "timeout", None
             result = {"status": "timeout", "summary": "", "steps": [], "commands": [], "caveats": [TIMEOUT_TEXT],

@@ -19,7 +19,9 @@ import {
   type CbomAiMode,
   type CbomAiSubject,
 } from "@/utils/backend_api";
-import { MAX_QUESTION, aiPanelVisible, answerBadge, canAsk, citationLabel, egressNote, outcomeNote } from "./aiPanelLogic";
+import {
+  MAX_QUESTION, aiPanelVisible, answerBadge, canAsk, citationLabel, egressLines, egressNote, outcomeNote,
+} from "./aiPanelLogic";
 
 export interface AiRemediationPanelProps {
   teamId: number;
@@ -68,6 +70,11 @@ export default function AiRemediationPanel({ teamId, subject }: AiRemediationPan
         <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">AI assistant</span>
         <span className="text-[11px] text-zinc-500" data-testid="cbom-ai-egress">{egressNote(status.data)}</span>
       </div>
+      {egressLines(status.data).length > 1 && (
+        <ul className="list-disc pl-5 text-[11px] text-zinc-500" data-testid="cbom-ai-egress-list">
+          {egressLines(status.data).map((line) => <li key={line} className="break-all">{line}</li>)}
+        </ul>
+      )}
       <div className="flex flex-wrap gap-2">
         <Button size="sm" variant="outline" className="h-7 text-xs" disabled={ask.isPending} onClick={() => run("explain")}
           data-testid="cbom-ai-explain">Explain</Button>
@@ -127,7 +134,8 @@ export default function AiRemediationPanel({ teamId, subject }: AiRemediationPan
             <ul className="list-disc space-y-0.5 pl-5 text-xs text-zinc-500">{answer.caveats.map((c, i) => <li key={i}>{c}</li>)}</ul>
           )}
           {(answer.status === "ok" || answer.status === "withheld") && (
-            <Badge variant="outline" className="text-[10px] font-normal" data-testid="cbom-ai-badge">{answerBadge(answer)}</Badge>
+            <Badge variant="outline" className="h-auto max-w-full whitespace-normal break-words text-left text-[10px] font-normal"
+              data-testid="cbom-ai-badge">{answerBadge(answer)}</Badge>
           )}
         </div>
       )}

@@ -5032,12 +5032,15 @@ export interface CbomAiStatus {
     model?: string
     region?: string | null
     kb_version?: string
-    /** every host the assistant will contact */
+    /** every host the assistant will contact (Bedrock runtime plus the configured credential endpoint, if any) */
     egress?: { host: string; port: number; purpose: string }[]
+    /** openai_compat: the endpoint may be outside the private ranges (CBOM_AI_ALLOW_NONPRIVATE=1) */
+    allow_nonprivate?: boolean
 }
 
 export interface CbomAiAnswer {
-    status: "ok" | "withheld" | "timeout" | "error"
+    /** busy: no free slot within ~2 s, nothing was sent to the model */
+    status: "ok" | "withheld" | "timeout" | "error" | "busy"
     summary: string
     steps: { text: string; cites: string[] }[]
     commands: { command: string; cite: string }[]

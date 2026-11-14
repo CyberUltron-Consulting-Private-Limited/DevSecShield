@@ -57,18 +57,19 @@ class Grounding:
     commands: set[str] = field(default_factory=set)      # normalised KB step / verify commands
     urls: set[str] = field(default_factory=set)          # KB reference URLs
     hosts: list[str] = field(default_factory=list)       # host names / addresses (for CBOM_AI_REDACT_HOSTS)
+    # CVE / CWE ids the knowledge base attaches to this subject (structured fields only, never free text)
+    allowed_ids: set[str] = field(default_factory=set)
+    names: list[str] = field(default_factory=list)       # other identifying values (names, DN parts) to redact
 
     @property
     def ids(self) -> set[str]:
         return {i.id for i in self.items}
 
     def identifiers(self) -> set[str]:
-        """Every CVE / CWE id present in the items (the only ones an answer may name)."""
-        out: set[str] = set()
-        for item in self.items:
-            out |= {f"CVE-{a}-{b}" for a, b in CVE_RE.findall(item.text)}
-            out |= {f"CWE-{int(a)}" for a in CWE_RE.findall(item.text)}
-        return out
+        """The CVE / CWE ids an answer may name: the ones the knowledge base attaches to this subject (its entries'
+        ``cwe`` and ``cves`` lists, the library's version-range CVEs). Never ids found in item text: facts, file
+        paths and certificate names are written by whoever runs the scanned system."""
+        return set(self.allowed_ids)
 
     def trimmed(self, max_chars: int) -> "Grounding":
         """The same grounding with the least important items left out until the item text fits ``max_chars`` (a
@@ -109,7 +110,7 @@ class Grounding:
         text = " ".join(i.text for i in items)
         urls = {u for u in self.urls if u in text}
         return Grounding(subject_key=self.subject_key, items=items, baseline=self.baseline, commands=commands,
-                         urls=urls, hosts=self.hosts)
+                         urls=urls, hosts=self.hosts, allowed_ids=self.allowed_ids, names=self.names)
 
     def digest(self) -> str:
         blob = json.dumps([[i.id, i.text, i.command] for i in self.items], sort_keys=True)
@@ -164,8 +165,28 @@ def _fact_value(value: Any) -> str | None:
     return None
 
 
-def _kb_items(entries: list[dict[str, Any]], start: int = 1) -> tuple[list[Item], set[str], set[str], dict]:
-    """K items for each rendered KB entry, plus the command and URL allow-lists and the KB baseline."""
+def canonical_id(kind: str, a: str, b: str | None = None) -> str:
+    return f"CVE-{a}-{b}" if kind == "CVE" else f"CWE-{int(a)}"
+
+
+def _ids_of(values: list[Any]) -> set[str]:
+    out: set[str] = set()
+    for v in values:
+        text = str(v.get("id") if isinstance(v, dict) else v or "")
+        m = re.fullmatch(r"\s*CVE-(\d{4})-(\d{4,7})\s*", text, re.I)
+        if m:
+            out.add(canonical_id("CVE", m.group(1), m.group(2)))
+        m = re.fullmatch(r"\s*CWE-(\d{1,5})\s*", text, re.I)
+        if m:
+            out.add(canonical_id("CWE", m.group(1)))
+    return out
+
+
+def _kb_items(entries: list[dict[str, Any]], start: int = 1
+              ) -> tuple[list[Item], set[str], set[str], dict, set[str]]:
+    """K items for each rendered KB entry, plus the command and URL allow-lists, the KB baseline and the CVE / CWE
+    ids the entries attach (structured fields only)."""
+    allowed: set[str] = set()
     items: list[Item] = []
     commands: set[str] = set()
     urls: set[str] = set()
@@ -204,6 +225,7 @@ def _kb_items(entries: list[dict[str, Any]], start: int = 1) -> tuple[list[Item]
             commands.add(norm_command(v.get("command")))
             verify.append({"command": str(v.get("command") or ""), "cite": vid})
         cwes = e.get("cwe") or []
+        allowed |= _ids_of(cwes) | _ids_of(e.get("cves") or [])
         if cwes:
             items.append(Item(f"{k}.cwe", f"{k} {code} · CWE",
                               _cap("; ".join(f"{c['id']} {c.get('name') or ''}".strip() for c in cwes), MAX_ITEM)))
@@ -227,7 +249,7 @@ def _kb_items(entries: list[dict[str, Any]], start: int = 1) -> tuple[list[Item]
     commands.discard("")
     baseline = {"summary": " ".join(dict.fromkeys(s for s, _ in summaries)),
                 "summary_cites": [c for _, c in summaries], "steps": steps, "commands": verify}
-    return items, commands, urls, baseline
+    return items, commands, urls, baseline, allowed
 
 
 def _host_of(location: str) -> str | None:
@@ -281,9 +303,45 @@ def _hosts(values: list[Any], items: list[Item]) -> list[str]:
     return sorted((h for h in found if len(h) >= 3), key=len, reverse=True)
 
 
-def for_run_asset(detail: dict[str, Any]) -> Grounding:
-    """detail: ``posture.asset_detail(...)`` for one asset the caller already loaded team-scoped."""
-    k_items, commands, urls, baseline = _kb_items(list(detail.get("details") or []))
+_DN_VALUE = re.compile(r"(?:^|[,/])\s*(?:CN|O|OU|L|ST|C|DC|UID|E|emailAddress|serialNumber|street|title)\s*=\s*([^,/]+)",
+                       re.I)
+_OS_FAMILY = re.compile(
+    r"(Windows Server \d{4}(?: R2)?|Windows \d{1,2}|Ubuntu(?: \d+\.\d+)?|Debian(?: \d+)?|Red Hat Enterprise Linux(?: \d+(?:\.\d+)?)?|"
+    r"RHEL ?\d+|CentOS(?: Stream)?(?: \d+)?|Rocky Linux(?: \d+)?|AlmaLinux(?: \d+)?|Amazon Linux(?: \d+)?|"
+    r"SUSE Linux Enterprise(?: Server)?(?: \d+)?|Oracle Linux(?: \d+)?|macOS(?: \d+)?|FreeBSD(?: \d+)?|AIX(?: \d+)?|"
+    r"Solaris(?: \d+)?)", re.I)
+
+
+def os_family(value: Any) -> str | None:
+    """'Windows Server 2016 on PAYSRV-01' -> 'Windows Server 2016'; anything unrecognised -> None (not sent)."""
+    text = _fact_value(value)
+    m = _OS_FAMILY.search(text or "")
+    return m.group(1) if m else None
+
+
+def _dn_values(*values: Any) -> list[str]:
+    out = []
+    for v in values:
+        for m in _DN_VALUE.finditer(str(v or "")):
+            if m.group(1).strip():
+                out.append(m.group(1).strip())
+    return out
+
+
+def _names(values: list[Any]) -> list[str]:
+    seen = []
+    for v in values:
+        s = " ".join(str(v or "").split())
+        if len(s) >= 3 and s not in seen:
+            seen.append(s)
+    return sorted(seen, key=len, reverse=True)
+
+
+def for_run_asset(detail: dict[str, Any], *, minimise: bool = False) -> Grounding:
+    """detail: ``posture.asset_detail(...)`` for one asset the caller already loaded team-scoped. ``minimise``
+    (the prompt leaves the network, AWS Bedrock): the asset's name, its source's name and a location that is not
+    host:port are not sent, the OS is reduced to its family, and every identifying value is listed for redaction."""
+    k_items, commands, urls, baseline, allowed = _kb_items(list(detail.get("details") or []))
     library = detail.get("library") or None
     if library:
         n = len(detail.get("details") or []) + 1
@@ -292,6 +350,7 @@ def for_run_asset(detail: dict[str, Any]) -> Grounding:
                  f"{library.get('package_version')} (upstream {library.get('upstream_version')})."]
         if library.get("cves"):
             parts.append("Knowledge-base version ranges list: " + ", ".join(library["cves"][:40]) + ".")
+            allowed |= _ids_of(list(library["cves"]))
         eol = library.get("eol") or {}
         if eol:
             parts.append(f"Branch {eol.get('branch')} end of life {eol.get('date')}"
@@ -304,19 +363,31 @@ def for_run_asset(detail: dict[str, Any]) -> Grounding:
     if library:
         pairs += [("library", library.get("library")), ("library_version", library.get("upstream_version")),
                   ("library_end_of_life", (library.get("eol") or {}).get("date"))]
+    location = str(detail.get("location") or "")
+    if minimise:
+        drop = {"name", "source_name"} | ({"location"} if not _host_of(location) else set())
+        pairs = [(k, os_family(v) if k == "os" else v) for k, v in pairs if k not in drop]
     f_items = _fact_items(pairs)
     items = k_items + f_items
     host_values = [detail.get(k) for k in _HOST_KEYS] + [facts.get("host"), facts.get("subject"), facts.get("issuer")]
+    # a library's "name" is its package (openssl), which identifies nothing about the customer
+    library_asset = detail.get("type") in ("crypto_library", "process_library")
+    own_name = [] if library_asset else [detail.get("name"), facts.get("name")]
+    names = _names(own_name + [detail.get("source_name"), facts.get("resource"),
+                    facts.get("arn"), facts.get("key_id"), None if _host_of(location) else location]
+                   + _dn_values(facts.get("subject"), facts.get("issuer"), detail.get("finding")))
     return Grounding(subject_key=f"run_asset:{detail.get('id')}", items=items, baseline=baseline, commands=commands,
-                     urls=urls, hosts=_hosts(host_values, items))
+                     urls=urls, hosts=_hosts(host_values, items), allowed_ids=allowed, names=names)
 
 
 def for_code_finding(scan_id: int, finding_id: str, finding: dict[str, Any],
-                     entries: list[dict[str, Any]]) -> Grounding:
-    """finding: the stored ``finding_data`` of one code-scan finding; entries: ``kb_remediation.explain(finding)``."""
-    k_items, commands, urls, baseline = _kb_items(entries)
-    pairs = [(k, finding.get(k)) for k in CODE_FINDING_FIELDS]
+                     entries: list[dict[str, Any]], *, minimise: bool = False) -> Grounding:
+    """finding: the stored ``finding_data`` of one code-scan finding; entries: ``kb_remediation.explain(finding)``.
+    ``minimise``: the file path is not sent (its language is)."""
+    k_items, commands, urls, baseline, allowed = _kb_items(entries)
+    pairs = [(k, finding.get(k)) for k in CODE_FINDING_FIELDS if not (minimise and k == "location")]
     f_items = _fact_items(pairs)
     items = k_items + f_items
     return Grounding(subject_key=f"scan_finding:{scan_id}:{finding_id}", items=items, baseline=baseline,
-                     commands=commands, urls=urls, hosts=_hosts([finding.get("location")], items))
+                     commands=commands, urls=urls, hosts=_hosts([finding.get("location")], items),
+                     allowed_ids=allowed, names=_names([finding.get("location")]))

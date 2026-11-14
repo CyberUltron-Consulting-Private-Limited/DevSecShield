@@ -74,7 +74,8 @@ class AssistBody(BaseModel):
 def _egress(cfg: C.AiConfig) -> list[dict] | None:
     """Where the assistant will connect, or None when it may not / cannot (address policy, endpoint override rule, no
     AWS credentials). Checked at most once a minute per configuration (status is polled by every panel)."""
-    key = (cfg.provider, cfg.base_url, cfg.region, cfg.allow_nonprivate, cfg.endpoint_override, cfg.aws_profile)
+    key = (cfg.provider, cfg.base_url, cfg.region, cfg.allow_nonprivate, cfg.endpoint_override, cfg.aws_profile,
+           cfg.aws_credentials, cfg.aws_settings, cfg.allow_loopback)
     hit = _address_ok.get(key)
     now = time.monotonic()
     if hit and now - hit[0] < ADDRESS_TTL_S:
@@ -82,14 +83,13 @@ def _egress(cfg: C.AiConfig) -> list[dict] | None:
     egress: list[dict] | None
     try:
         if cfg.provider == "bedrock":
+            # configuration only: no credential lookup here (that may call IMDS / STS; it happens on the first assist)
             T.check_bedrock_endpoint(cfg, S.resolve)
-            method = T.credential_method(cfg)
-            if method is None:
-                raise T.EndpointRefused("no AWS credentials in the standard chain")
-            egress = T.bedrock_egress(cfg, method)
+            egress = T.bedrock_egress(cfg)
         else:
             T.pin_address(cfg, S.resolve)
-            egress = [{"host": cfg.host, "port": cfg.port, "purpose": f"on-prem model {cfg.model} (private address)"}]
+            where = "any address (CBOM_AI_ALLOW_NONPRIVATE=1)" if cfg.allow_nonprivate else "private address"
+            egress = [{"host": cfg.host, "port": cfg.port, "purpose": f"model {cfg.model} on {where}"}]
     except T.EndpointRefused as exc:
         S.log.warning("cbom_ai endpoint not usable: %s", exc)
         egress = None
@@ -119,16 +119,18 @@ async def ai_status(team_id: TeamId, Authorization: AuthHeader = None):
         return JSONResponse({"available": False}, headers=PRIVATE)
     cfg, egress = found
     return JSONResponse({"available": True, "provider": cfg.provider, "model": cfg.model, "region": cfg.region,
-                         "kb_version": crypto_kb.version(), "egress": egress}, headers=PRIVATE)
+                         "kb_version": crypto_kb.version(), "egress": egress,
+                         "allow_nonprivate": cfg.allow_nonprivate if cfg.provider == "openai_compat" else False},
+                        headers=PRIVATE)
 
 
-def _run_asset_grounding(engine, team_id: int, asset_id: int) -> G.Grounding:
+def _run_asset_grounding(engine, team_id: int, asset_id: int, minimise: bool) -> G.Grounding:
     from backend.routers.cbom_sources import _asset_detail  # team-scoped (_get_owned): another team's asset is a 404
 
-    return G.for_run_asset(_asset_detail(engine, team_id, asset_id)["asset"])
+    return G.for_run_asset(_asset_detail(engine, team_id, asset_id)["asset"], minimise=minimise)
 
 
-def _scan_finding_grounding(engine, team_id: int, scan_id: int, finding_id: str) -> G.Grounding:
+def _scan_finding_grounding(engine, team_id: int, scan_id: int, finding_id: str, minimise: bool) -> G.Grounding:
     from backend.get_db import get_mongo_client_db
     from backend.utilities.cbom_sources.kb_remediation import explain
 
@@ -145,7 +147,7 @@ def _scan_finding_grounding(engine, team_id: int, scan_id: int, finding_id: str)
     if not finding or finding.get("scan_id") != scan_id:
         raise HTTPException(status_code=404, detail="Finding not found")
     data = finding.get("finding_data") or {}
-    return G.for_code_finding(scan_id, finding_id, data, explain(data, "code"))
+    return G.for_code_finding(scan_id, finding_id, data, explain(data, "code"), minimise=minimise)
 
 
 @router.post(BASE + "/assist", dependencies=[Depends(assist_limiter)],
@@ -159,10 +161,11 @@ async def ai_assist(team_id: TeamId, body: AssistBody, Authorization: AuthHeader
     subject = body.subject
     try:
         if isinstance(subject, RunAssetSubject):
-            grounding = await run_in_threadpool(_run_asset_grounding, engine, team_id, subject.asset_id)
+            grounding = await run_in_threadpool(_run_asset_grounding, engine, team_id, subject.asset_id,
+                                                cfg.redact_hosts)
         else:
             grounding = await run_in_threadpool(_scan_finding_grounding, engine, team_id, subject.scan_id,
-                                                subject.finding_id)
+                                                subject.finding_id, cfg.redact_hosts)
         result = await S.assist(cfg, grounding, mode=body.mode, question=body.question, kb_version=crypto_kb.version(),
                                 team_id=team_id, user_id=user.id)
     except HTTPException:
