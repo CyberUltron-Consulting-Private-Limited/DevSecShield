@@ -52,9 +52,9 @@ FIELDS_CS = ("not_before", "not_after", "sig_alg", "key_bits", "dns_names", "sub
 def _expected(o: dict, provider: str) -> dict:
     if provider == "crtsh":
         return {"not_before": (o["not_before"] or "").split(".")[0] + "Z", "not_after": (o["not_after"] or "").split(".")[0] + "Z",
-                "dns_names": sorted(o["dns_names"])[:50]}
+                "dns_names": sorted(o["dns_names"])}
     return {"not_before": o.get("not_before"), "not_after": o.get("not_after"), "sig_alg": o.get("sig_alg"),
-            "key_bits": o.get("key_bits"), "dns_names": o.get("dns_names", [])[:50], "subject_cn": o.get("subject_cn"),
+            "key_bits": o.get("key_bits"), "dns_names": sorted(o.get("dns_names", [])), "subject_cn": o.get("subject_cn"),
             "issuer_cn": o.get("issuer_cn"), "tbs_sha256": o.get("tbs_sha256"), "revoked": o.get("revoked"),
             "der_sha256": o.get("sha256"), "precert": o.get("precert_poison")}
 
@@ -70,6 +70,22 @@ def _actual(row: dict, provider: str) -> dict:
             "key_bits": row.get("key_size"), "dns_names": sorted(f.get("san") or []), "subject_cn": cn(f.get("subject")),
             "issuer_cn": cn(f.get("issuer")), "tbs_sha256": f.get("tbs_sha256"), "revoked": f.get("revoked"),
             "der_sha256": f.get("fingerprint_sha256") or f.get("precert_sha256"), "precert": f.get("precertificate_only")}
+
+
+STORED_NAMES = 50  # the collector keeps the first 50 names of a certificate and their total in san_count
+
+
+def _names_problem(want: list[str], got: list[str], san_count) -> list[str]:
+    """Every name, or for a certificate with more than 50: 50 of its names and the right total."""
+    if len(want) <= STORED_NAMES:
+        return [] if want == got else [f"dns_names: want {want!r} got {got!r}"]
+    out = []
+    if len(got) != STORED_NAMES or not set(got) <= set(want):
+        out.append(f"dns_names: want {STORED_NAMES} of {len(want)} names, got {len(got)} "
+                   f"({sorted(set(got) - set(want))[:5]} not in the certificate)")
+    if san_count != len(want):
+        out.append(f"san_count: want {len(want)} got {san_count!r}")
+    return out
 
 
 CT_CODES = ("CERT_UNEXPECTED_CA", "CERT_REVOKED", "CERT_WILDCARD_SPRAWL")
@@ -138,7 +154,8 @@ def main() -> int:
     code_counts = {c: 0 for c in CT_CODES}
     for serial in sorted(stable & set(stored)):
         want, got = _expected(after[serial], args.provider), _actual(stored[serial], args.provider)
-        bad = [f"{k}: want {want[k]!r} got {got.get(k)!r}" for k in want if want[k] != got.get(k)]
+        bad = [f"{k}: want {want[k]!r} got {got.get(k)!r}" for k in want if k != "dns_names" and want[k] != got.get(k)]
+        bad += _names_problem(want["dns_names"], got.get("dns_names") or [], stored[serial]["facts"].get("san_count"))
         if serial in codes_want:  # the three CT finding codes, judged on the stored, classified row
             have = {c for c in stored[serial].get("finding_codes") or [] if c in CT_CODES}
             if have != codes_want[serial]:

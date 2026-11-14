@@ -93,10 +93,9 @@ class Cert:
     algorithm: str | None
     key_size: int | None
     matched: set[str] = field(default_factory=set)
-
-    @property
-    def wildcards(self) -> list[str]:
-        return sorted({n for n in self.facts.get("san") or [] if isinstance(n, str) and n.startswith("*.")})
+    # every wildcard name the certificate carries: facts["san"] keeps the first 50 names only (san_count says how
+    # many), but sprawl is judged on all of them
+    wildcards: list[str] = field(default_factory=list)
 
 
 def _pubkey(pubkey: dict[str, Any] | None) -> tuple[str | None, int | None, str | None]:
@@ -163,7 +162,7 @@ def details(iss: P.Issuance) -> tuple[dict[str, Any], str | None, int | None]:
     if iss.revoked:
         facts["revocation_time"] = _iso(iss.revocation_time)
         facts["revocation_reason"] = iss.revocation_reason if isinstance(iss.revocation_reason, (int, str)) else None
-    facts["wildcard"] = any(isinstance(n, str) and n.startswith("*.") for n in facts.get("san") or [])
+    facts["wildcard"] = bool(wildcard_names(iss, facts))
     if algorithm is None and facts.get("key_alg"):
         algorithm = str(facts["key_alg"])
     if key_size is None and isinstance(facts.get("key_size"), int):
@@ -177,6 +176,13 @@ def _issuer_values(facts: dict[str, Any]) -> list[str]:
     org = _O.search(dn)
     values = (str(facts.get("issuer_name") or ""), org.group(1) if org else "", cn_of(dn))
     return [" ".join(v.split()).casefold() for v in values if v and v.strip()]
+
+
+def wildcard_names(iss: P.Issuance, facts: dict[str, Any]) -> list[str]:
+    """Every wildcard name of an issuance: the provider's whole name list and the DER's (both may be longer than the
+    50 names the facts keep)."""
+    names = list(iss.dns_names or []) + list(facts.get("san") or [])
+    return sorted({n for n in names if isinstance(n, str) and n.startswith("*.")})
 
 
 def issuer_matches(facts: dict[str, Any], expected: list[str]) -> bool:
@@ -282,10 +288,11 @@ def collect_ct(cfg: dict[str, Any], label: str, emit: Callable[[dict[str, Any]],
                     if len(certs) >= MAX_CERTS:
                         dropped += 1  # counted, not held: the store would refuse it anyway
                         continue
-                    certs[key] = Cert(key, facts, algorithm, key_size, {name})
+                    certs[key] = Cert(key, facts, algorithm, key_size, {name}, wildcard_names(iss, facts))
                     found += 1
                 else:
                     held.matched.add(name)
+                    held.wildcards = sorted(set(held.wildcards) | set(wildcard_names(iss, facts)))
                     if _better(held, facts):
                         held.facts, held.algorithm, held.key_size = facts, algorithm, key_size
             not_stored += dropped

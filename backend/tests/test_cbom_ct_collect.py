@@ -332,3 +332,21 @@ def test_expected_issuers_match_whole_attribute_values_or_their_leading_words(ex
 def test_an_expected_issuer_shorter_than_three_characters_is_refused():
     with pytest.raises(ValueError, match="at least 3 characters"):
         CtLogsConfig.model_validate({"domains": ["example.com"], "expected_issuers": ["R1"]})
+
+
+def test_wildcards_past_the_fiftieth_name_still_count_for_sprawl():
+    """Live run 43568796502 (www.google.com, 404 certificates with up to 135 names): facts keep the first 50 names
+    (san_count says how many), but sprawl and the wildcard flag must read every name the provider listed."""
+    def row(i):
+        names = [f"h{n}.example.org" for n in range(54)] + ["*.deep.example.org"] + [f"z{n}.example.org" for n in range(5)]
+        return {"id": f"9{i}", "tbs_sha256": f"{i:064x}", "dns_names": names, "pubkey": {"type": "ecdsa", "curve": "P-256"},
+                "issuer": {"friendly_name": "Let's Encrypt", "name": "C=US, O=Let's Encrypt, CN=R11"},
+                "not_before": "2026-10-01T00:00:00Z", "not_after": "2026-12-30T00:00:00Z", "revoked": False}
+
+    body = json.dumps([row(i) for i in range(4)]).encode()
+    replay = Replay({("certspotter", "example.org", "true", None): lambda req: httpx.Response(200, content=body)})
+    _r, certs, _g, _ = run(["example.org"], replay=replay)
+    assert len(certs) == 4 and all(len(a["facts"]["san"]) == 50 and a["facts"]["san_count"] == 60 for a in certs)
+    for asset in certs:
+        assert asset["facts"]["wildcard"] is True
+        assert asset["facts"]["wildcard_sprawl"] == {"name": "*.deep.example.org", "certificates": 4, "threshold": 3}
