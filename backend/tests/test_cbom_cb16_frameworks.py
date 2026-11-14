@@ -78,7 +78,7 @@ def test_failing_counts_assets_not_parts():
 
 
 def test_the_requirement_titles_are_the_code_lanes():
-    """The Sources requirements are the code lane's (same ids, same titles), so pooled rows read as one requirement."""
+    """The Sources requirements are the code lane's (same ids and titles), so pooled rows read as one requirement."""
     tree = ast.parse(CODE_COMPLIANCE.read_text(encoding="utf-8"))
     titles = {}
     for node in ast.walk(tree):
@@ -90,7 +90,8 @@ def test_the_requirement_titles_are_the_code_lanes():
                 except ValueError:
                     pass
     for req, (_framework, title) in S.REQUIREMENTS.items():
-        assert titles.get(req) == title, req
+        # CNSA-2's code-lane title goes on to list the parameter sets, which only algid may name
+        assert titles.get(req) == title or (req == "CNSA-2" and titles.get(req, "").startswith(title + " (")), req
 
 
 def test_the_code_lane_checks_call_the_shared_predicates():
