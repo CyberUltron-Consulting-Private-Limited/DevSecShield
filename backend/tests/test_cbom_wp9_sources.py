@@ -122,14 +122,17 @@ def test_internet_exposure_raises_the_risk_and_the_run_keeps_its_snapshot(api, w
 
 def test_a_job_without_a_snapshot_reads_the_current_source():
     class _Src:
-        config = {"business_criticality": "high", "exposure": "internet"}
+        config = {"business_criticality": "high", "exposure": "internet", "data_lifetime_years": 7}
 
     class _Node:
         segment = "DMZ"
 
-    assert P.job_metadata({}, _Src(), _Node()) == {"criticality": "high", "exposure": "internet", "segment": "DMZ"}
-    snap = {"metadata": {"business_criticality": "low", "exposure": None, "node_segment": "Core"}}
-    assert P.job_metadata(snap, _Src(), _Node()) == {"criticality": "low", "exposure": None, "segment": "Core"}
+    assert P.job_metadata({}, _Src(), _Node()) == {"criticality": "high", "exposure": "internet", "segment": "DMZ",
+                                                   "data_lifetime_years": 7}
+    snap = {"metadata": {"business_criticality": "low", "exposure": None, "node_segment": "Core",
+                         "data_lifetime_years": 0}}
+    assert P.job_metadata(snap, _Src(), _Node()) == {"criticality": "low", "exposure": None, "segment": "Core",
+                                                     "data_lifetime_years": 0}  # CB-19: the source's Mosca X
 
 
 # ------------------------------------------------------------------------------------------- Mosca merge
