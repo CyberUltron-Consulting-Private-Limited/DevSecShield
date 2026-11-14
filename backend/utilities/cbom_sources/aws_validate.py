@@ -319,7 +319,9 @@ def validate_aws_role(team_id: int, role_arn: str, external_id: str, regions: li
                 org = assumed_session.client("organizations", config=cfg)
                 count = 0
                 token = None
-                for _ in range(10):
+                # every page while the check has time (it used to stop at 10 pages, 200 accounts, and runs are charged
+                # per member account counted here); 500 pages is 10,000 accounts
+                for _ in range(500):
                     page = org.list_accounts(**({"NextToken": token} if token else {}))
                     count += len(page.get("Accounts", []))
                     token = page.get("NextToken")

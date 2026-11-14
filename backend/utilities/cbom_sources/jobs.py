@@ -9,11 +9,12 @@ from __future__ import annotations
 import datetime as _dt
 import hashlib
 import json
+import os
 import secrets
 from typing import Any
 
 from fastapi import HTTPException
-from sqlalchemy import case, delete, func, update
+from sqlalchemy import and_, case, delete, func, or_, update
 from sqlmodel import Session, select
 
 from backend.new_models import (
@@ -147,14 +148,31 @@ def recompute_run(session: Session, run_id: int | None, now: _dt.datetime) -> Cb
 # ----------------------------------------------------------------------------- reaper
 def reap(session: Session, now: _dt.datetime, *, team_id: int | None = None, node_id: int | None = None) -> int:
     """Apply lease and age rules.  The caller commits.  Returns the number of jobs moved."""
-    query = select(CbomCollectionJob).where(CbomCollectionJob.status.in_(OPEN))  # type: ignore[attr-defined]
+    from backend.utilities.cbom_sources import slices as S
+
+    # Only rows one of the rules below can act on (a superset of each rule's own test): with an AWS organisation
+    # fanned out into thousands of pending slices, loading every open job each minute in every replica is the cost.
+    claimed_due = and_(CbomCollectionJob.status == "claimed",
+                       or_(CbomCollectionJob.lease_expires_at < now,
+                           CbomCollectionJob.claimed_at < now - min(MAX_RUNTIME.values()),
+                           CbomCollectionJob.cancel_requested_at.is_not(None),  # type: ignore[union-attr]
+                           CbomCollectionJob.lease_id.like(S.FANOUT_PREFIX + "%")))  # type: ignore[union-attr]
+    pending_due = and_(CbomCollectionJob.status == "pending",
+                       CbomCollectionJob.created_at < now - min(TEST_JOB_TTL, COLLECT_JOB_TTL))
+    query = select(CbomCollectionJob).where(or_(claimed_due, pending_due))
     if team_id is not None:
         query = query.where(CbomCollectionJob.team_id == team_id)
     if node_id is not None:
         query = query.where(CbomCollectionJob.node_id == node_id)
     moved = 0
     runs: set[int] = set()
+    parents: set[int] = set()
     for job in session.exec(query).all():
+        if job.status == "claimed" and S.is_parent(job):  # a fanned-out AWS collection: its slices decide
+            moved += S.reap_parent(session, job, now)
+            continue
+        if job.parent_job_id is not None:
+            parents.add(job.parent_job_id)
         started = job.claimed_at
         too_long = job.status == "claimed" and started is not None and started < now - MAX_RUNTIME.get(job.kind, MAX_RUNTIME["collect"])
         stale_cancel = job.status == "claimed" and job.cancel_requested_at is not None and job.cancel_requested_at < now - CANCEL_GRACE
@@ -206,7 +224,7 @@ def reap(session: Session, now: _dt.datetime, *, team_id: int | None = None, nod
                 if job.run_id:
                     runs.add(job.run_id)
         elif job.status == "pending":
-            ttl = COLLECT_JOB_TTL if job.kind == "collect" else TEST_JOB_TTL
+            ttl = COLLECT_JOB_TTL if job.kind in CLOUD_KINDS else TEST_JOB_TTL
             if job.created_at is not None and job.created_at < now - ttl:
                 changed = session.exec(
                     update(CbomCollectionJob)
@@ -227,6 +245,8 @@ def reap(session: Session, now: _dt.datetime, *, team_id: int | None = None, nod
                         runs.add(job.run_id)
     for run_id in runs:
         recompute_run(session, run_id, now)
+    for parent_id in parents:  # a slice the reaper ended may have been its parent's last open one
+        S.maybe_finalize(session, parent_id, now)
     return moved
 
 
@@ -758,6 +778,10 @@ def finish_job(
 ) -> CbomCollectionJob:
     """Record a job's end.  ``node`` None is the cloud worker.  Failed or cancelled collect jobs are refunded."""
     job = _owned_job(session, node, job_id, team_id)
+    if job.kind == "slice":  # F1 cloud pool: the slice ends; its parent ends with the last one (cbom_sources.slices)
+        from backend.utilities.cbom_sources import slices as S
+
+        return S.finish_slice(session, job, lease_id, status, result, error, now, known_secrets=known_secrets)
     source = session.get(CbomCollectionSource, job.source_id) if job.source_id else None
     known = list(decrypt_secrets(source.secret_encrypted).values()) if source is not None else []
     known += [s for s in (known_secrets or []) if isinstance(s, str)]
@@ -845,6 +869,10 @@ def add_assets(
     """Store one batch of a running job's assets (and a network range's progress, when the node sends it).  Team,
     run and source always come from the job row."""
     job = _owned_job(session, node, job_id, team_id)
+    if job.kind == "slice":  # F1 cloud pool: stored under the parent collect job (cbom_sources.slices)
+        from backend.utilities.cbom_sources import slices as S
+
+        return S.add_assets(session, job, lease_id, assets, now, known_secrets=known_secrets)
     if job.status != "claimed" or job.lease_id != lease_id:
         raise HTTPException(status_code=409, detail="This job is no longer leased to this node")
     source = session.get(CbomCollectionSource, job.source_id) if job.source_id else None
@@ -872,6 +900,26 @@ def add_assets(
                 "cap_reached": False, "ignored": "connection tests do not store assets"}
     known = list(decrypt_secrets(source.secret_encrypted).values()) if source is not None else []
     known += [s for s in (known_secrets or []) if isinstance(s, str)]
+    rows, rejected, in_batch_dups = asset_rows(job, assets, known, now)
+    inserted, existing, dropped, cap_reached = store_rows(session, job, job, lease_id, rows)
+    total = int(session.exec(select(func.count()).select_from(CbomCollectedAsset).where(
+        CbomCollectedAsset.job_id == job.id, CbomCollectedAsset.attempt == job.attempts)).one())
+    duplicate = in_batch_dups + existing
+    log("assets stored", team=job.team_id, run=job.run_id, job=job.id, attempt=job.attempts, accepted=inserted,
+        duplicate=duplicate, rejected=rejected, dropped=dropped, total=total, cap_reached=cap_reached)
+    if cap_reached and isinstance(job.result, dict):
+        job.result = {**job.result, "truncated": True}
+        session.add(job)
+    if progress is not None:
+        _record_progress(session, job, lease_id, progress, now)
+    return {"accepted": inserted, "duplicate": duplicate, "rejected": rejected, "dropped": dropped,
+            "total_for_attempt": total, "cap_reached": cap_reached}
+
+
+def asset_rows(owner: CbomCollectionJob, assets: list[dict[str, Any]], known: list[str],
+               now: _dt.datetime) -> tuple[list[dict[str, Any]], int, int]:
+    """Validate, scrub and classify a batch into rows of ``owner``'s current attempt.  Returns (rows, rejected,
+    duplicates inside the batch)."""
     rows: list[dict[str, Any]] = []
     rejected = 0
     in_batch_dups = 0
@@ -898,25 +946,33 @@ def add_assets(
             verdict = classify(asset_type, algorithm, key_size, protocol, facts, now)
         except Exception as exc:  # one malformed asset must not cost the rest of the batch
             # `log` here is the module's greppable-line function (common.log), not a logging.Logger
-            log("classify FAILED; asset stored without a verdict", asset_type=asset_type, job=job.id,
+            log("classify FAILED; asset stored without a verdict", asset_type=asset_type, job=owner.id,
                 error=type(exc).__name__)
             verdict = {"cdx_type": "other", "quantum_vulnerable": None, "impact": None, "finding_codes": [],
                        "finding": "Not judged: the collected facts could not be read"}
         rows.append({
-            "team_id": job.team_id, "run_id": job.run_id, "job_id": job.id, "source_id": job.source_id,
-            "attempt": job.attempts, "asset_key": key, "asset_type": asset_type, "cdx_type": verdict["cdx_type"],
+            "team_id": owner.team_id, "run_id": owner.run_id, "job_id": owner.id, "source_id": owner.source_id,
+            "attempt": owner.attempts, "asset_key": key, "asset_type": asset_type, "cdx_type": verdict["cdx_type"],
             "target": target,
             "location": location, "name": name, "algorithm": algorithm, "key_size": key_size, "protocol": protocol,
             "quantum_vulnerable": verdict["quantum_vulnerable"], "impact": verdict["impact"],
             "finding_codes": verdict["finding_codes"], "finding": verdict["finding"], "facts": facts, "created_at": now,
         })
+    return rows, rejected, in_batch_dups
+
+
+def store_rows(session: Session, owner: CbomCollectionJob, counter: CbomCollectionJob, lease_id: str,
+               rows: list[dict[str, Any]]) -> tuple[int, int, int, bool]:
+    """Insert rows into ``owner``'s attempt; ``counter`` (the job itself, or a slice of it) carries the lease and the
+    per-attempt asset cap.  Rows already stored are skipped, so a batch sent twice (or by a re-run slice) stores
+    nothing new.  Returns (inserted, already stored, dropped at the cap, cap reached)."""
     existing = set()
     if rows:
         existing = set(session.exec(select(CbomCollectedAsset.asset_key).where(
-            CbomCollectedAsset.job_id == job.id, CbomCollectedAsset.attempt == job.attempts,
+            CbomCollectedAsset.job_id == owner.id, CbomCollectedAsset.attempt == owner.attempts,
             CbomCollectedAsset.asset_key.in_([r["asset_key"] for r in rows]))).all())  # type: ignore[attr-defined]
     fresh = [r for r in rows if r["asset_key"] not in existing]
-    room = max(MAX_ASSETS_PER_ATTEMPT - (job.asset_count or 0), 0)
+    room = max(MAX_ASSETS_PER_ATTEMPT - (counter.asset_count or 0), 0)
     cap_reached = len(fresh) > room
     dropped = max(len(fresh) - room, 0)
     fresh = fresh[:room]
@@ -924,7 +980,7 @@ def add_assets(
         # the counter update re-checks the lease, so a batch racing the reaper or the result is refused
         changed = session.exec(
             update(CbomCollectionJob)
-            .where(CbomCollectionJob.id == job.id, CbomCollectionJob.status == "claimed",
+            .where(CbomCollectionJob.id == counter.id, CbomCollectionJob.status == "claimed",
                    CbomCollectionJob.lease_id == lease_id,
                    CbomCollectionJob.asset_count + len(fresh) <= MAX_ASSETS_PER_ATTEMPT)
             .values(asset_count=CbomCollectionJob.asset_count + len(fresh))
@@ -933,71 +989,158 @@ def add_assets(
             raise HTTPException(status_code=409, detail="This job is no longer leased to this node")
     inserted = _insert_ignore(session, fresh)
     if inserted < len(fresh):  # another request stored some of these keys first
-        session.exec(update(CbomCollectionJob).where(CbomCollectionJob.id == job.id)
+        session.exec(update(CbomCollectionJob).where(CbomCollectionJob.id == counter.id)
                      .values(asset_count=CbomCollectionJob.asset_count - (len(fresh) - inserted)))
-    total = int(session.exec(select(func.count()).select_from(CbomCollectedAsset).where(
-        CbomCollectedAsset.job_id == job.id, CbomCollectedAsset.attempt == job.attempts)).one())
-    duplicate = in_batch_dups + len(existing) + (len(fresh) - inserted)
-    log("assets stored", team=job.team_id, run=job.run_id, job=job.id, attempt=job.attempts, accepted=inserted,
-        duplicate=duplicate, rejected=rejected, dropped=dropped, total=total, cap_reached=cap_reached)
-    if cap_reached and isinstance(job.result, dict):
-        job.result = {**job.result, "truncated": True}
-        session.add(job)
-    if progress is not None:
-        _record_progress(session, job, lease_id, progress, now)
-    return {"accepted": inserted, "duplicate": duplicate, "rejected": rejected, "dropped": dropped,
-            "total_for_attempt": total, "cap_reached": cap_reached}
+    return inserted, len(existing) + (len(fresh) - inserted), dropped, cap_reached
 
 
 # ----------------------------------------------------------------------------- cloud worker
-def claim_cloud_job(session: Session, now: _dt.datetime, worker: str) -> dict | None:
-    """Claim the oldest node-less collect job (AWS accounts, identity providers) for the cloud worker."""
+CLOUD_KINDS = ("collect", "slice")  # what the cloud worker runs: node-less collect jobs and their F1 slices
+_CLAIM_LOCK_NS = 0x5A53  # pg_advisory_xact_lock(namespace, team_id): one claim at a time per team (the cap check)
+
+
+def cloud_lease() -> _dt.timedelta:
+    """Cloud-worker lease (CBOM_CLOUD_LEASE_S, default 900 s = LEASE).  The worker renews it every third of it."""
+    try:
+        seconds = int(os.environ.get("CBOM_CLOUD_LEASE_S", "") or LEASE.total_seconds())
+    except ValueError:
+        seconds = int(LEASE.total_seconds())
+    return _dt.timedelta(seconds=max(5, min(seconds, 6 * 3600)))
+
+
+def team_max_concurrency() -> int:
+    """Most cloud jobs (collections and slices) one team may have running at once, across every worker replica and
+    thread (CBOM_CLOUD_TEAM_MAX_CONCURRENCY, default 8).  One 1,000-account tenant then never holds the whole pool."""
+    try:
+        value = int(os.environ.get("CBOM_CLOUD_TEAM_MAX_CONCURRENCY", "") or 8)
+    except ValueError:
+        value = 8
+    return max(1, min(value, 10_000))
+
+
+def _cloud_queue():
+    return (CbomCollectionJob.node_id.is_(None),  # type: ignore[union-attr]
+            CbomCollectionJob.kind.in_(CLOUD_KINDS))  # type: ignore[attr-defined]
+
+
+def _running_cond():
+    """Claimed cloud jobs that occupy a worker: a fanned-out parent (``fo…`` lease) is held by its slices, not by a
+    worker, so it is not counted."""
+    return (*_cloud_queue(), CbomCollectionJob.status == "claimed",
+            or_(CbomCollectionJob.lease_id.is_(None),  # type: ignore[union-attr]
+                ~CbomCollectionJob.lease_id.like("fo%")))  # type: ignore[union-attr]
+
+
+def _cloud_running(session: Session, team_id: int | None = None) -> dict[int, int]:
+    query = (select(CbomCollectionJob.team_id, func.count())
+             .where(*_running_cond()).group_by(CbomCollectionJob.team_id))
+    if team_id is not None:
+        query = query.where(CbomCollectionJob.team_id == team_id)
+    return {int(t): int(n) for t, n in session.exec(query).all()}
+
+
+def claim_cloud_job(session: Session, now: _dt.datetime, worker: str, *, team_cap: int | None = None) -> dict | None:
+    """Claim the next node-less job (a cloud collection, or one F1 slice of an AWS collection) for a cloud worker.
+
+    Fair share: teams with pending work are tried in order of how few jobs they have running (then whose oldest
+    pending job is oldest), and a team already running ``team_cap`` jobs is passed over, so a team with one job is
+    served by the next free worker however many slices another team has queued.  On PostgreSQL the team's rows are
+    taken ``FOR UPDATE SKIP LOCKED`` and the cap is re-checked under a per-team transaction advisory lock (two
+    replicas can never both take a team's last free place); the guarded ``status = 'pending'`` UPDATE keeps SQLite
+    (tests) exclusive too.  The caller commits."""
+    cap = team_cap or team_max_concurrency()
+    pg = session.get_bind().dialect.name == "postgresql"
+    running = _cloud_running(session)
+    waiting = session.exec(
+        select(CbomCollectionJob.team_id, func.min(CbomCollectionJob.id))
+        .where(*_cloud_queue(), CbomCollectionJob.status == "pending").group_by(CbomCollectionJob.team_id)).all()
+    for team_id, _oldest in sorted(waiting, key=lambda row: (running.get(int(row[0]), 0), row[1])):
+        if running.get(int(team_id), 0) >= cap:
+            continue
+        if pg:
+            session.exec(select(func.pg_advisory_xact_lock(_CLAIM_LOCK_NS, int(team_id))))
+            if _cloud_running(session, int(team_id)).get(int(team_id), 0) >= cap:
+                continue
+        payload = _claim_for_team(session, now, worker, int(team_id), pg, cap)
+        if payload is not None:
+            return payload
+    return None
+
+
+def _claim_for_team(session: Session, now: _dt.datetime, worker: str, team_id: int, pg: bool,
+                    cap: int) -> dict | None:
     query = (
         select(CbomCollectionJob)
-        .where(CbomCollectionJob.node_id.is_(None), CbomCollectionJob.kind == "collect",  # type: ignore[union-attr]
-               CbomCollectionJob.status == "pending")
+        .where(*_cloud_queue(), CbomCollectionJob.team_id == team_id, CbomCollectionJob.status == "pending")
         .order_by(CbomCollectionJob.id)
         .limit(25)
     )
-    if session.get_bind().dialect.name == "postgresql":
+    if pg:
         query = query.with_for_update(skip_locked=True)
     for job in session.exec(query).all():
         source = session.get(CbomCollectionSource, job.source_id) if job.source_id else None
         spec = KINDS.get(source.kind) if source is not None else None
-        reason = _invalid_reason(job, source, None)
+        if job.kind == "slice":
+            from backend.utilities.cbom_sources import slices as S
+
+            reason = S.slice_invalid_reason(session, job, source)
+        else:
+            reason = _invalid_reason(job, source, None)
         if reason is None and (spec is None or not spec.node_less):
             reason = "This source needs a scan node"
         if reason:
             changed = session.exec(
                 update(CbomCollectionJob).where(CbomCollectionJob.id == job.id, CbomCollectionJob.status == "pending")
-                .values(status="cancelled", finished_at=now, error=reason, outcome="failed")
+                .values(status="cancelled", finished_at=now, error=reason[:1024], outcome="failed")
             ).rowcount
             if changed:
                 session.refresh(job)
-                refund_job(session, job, _run_of(session, job))
-                recompute_run(session, job.run_id, now)
-                audit(session, team_id=job.team_id, actor_type="system", actor_id=None, action="job.cancelled",
-                      object_type="job", object_id=job.id, changed_fields=["stale_source"])
+                if job.kind == "slice":
+                    from backend.utilities.cbom_sources import slices as S
+
+                    S.maybe_finalize(session, job.parent_job_id, now)
+                else:
+                    refund_job(session, job, _run_of(session, job))
+                    recompute_run(session, job.run_id, now)
+                    audit(session, team_id=job.team_id, actor_type="system", actor_id=None, action="job.cancelled",
+                          object_type="job", object_id=job.id, changed_fields=["stale_source"])
             continue
         lease_id = secrets.token_hex(12)
+        # the team's cap, checked again inside the claiming UPDATE (on SQLite the UPDATE holds the write lock, so this
+        # is exact; on PostgreSQL the advisory lock above serialises the team's claims)
+        team_running = (select(func.count()).select_from(CbomCollectionJob)
+                        .where(CbomCollectionJob.team_id == team_id, *_running_cond()).scalar_subquery())
         changed = session.exec(
             update(CbomCollectionJob)
-            .where(CbomCollectionJob.id == job.id, CbomCollectionJob.status == "pending")
-            .values(status="claimed", lease_id=lease_id, lease_expires_at=now + LEASE, claimed_at=now,
+            .where(CbomCollectionJob.id == job.id, CbomCollectionJob.status == "pending", team_running < cap)
+            .values(status="claimed", lease_id=lease_id, lease_expires_at=now + cloud_lease(), claimed_at=now,
                     attempts=CbomCollectionJob.attempts + 1, asset_count=0, outcome=None)
         ).rowcount
         if not changed:
-            continue
+            session.refresh(job)
+            if job.status == "pending":
+                break  # the team reached its cap meanwhile: try the next team
+            continue  # another worker took this one
         session.refresh(job)
-        _start_attempt(session, job, now)
-        recompute_run(session, job.run_id, now)
-        audit(session, team_id=job.team_id, actor_type="system", actor_id=None, action="job.claim",
-              object_type="job", object_id=job.id, changed_fields=["cloud_worker"])
-        log("job claimed", team=job.team_id, run=job.run_id, job=job.id, node="cloud", worker=worker,
-            kind=source.kind, attempt=job.attempts)
+        params = job.params or {}
+        if job.kind == "slice":  # slices are many and short: a log line each, no audit row (the parent has those)
+            if job.first_claimed_at is None:
+                job.first_claimed_at = now
+                session.add(job)
+        else:
+            _start_attempt(session, job, now)
+            recompute_run(session, job.run_id, now)
+            audit(session, team_id=job.team_id, actor_type="system", actor_id=None, action="job.claim",
+                  object_type="job", object_id=job.id, changed_fields=["cloud_worker"])
+        log("cloud claim", team=job.team_id, run=job.run_id, job=job.id, parent=job.parent_job_id, worker=worker,
+            kind=source.kind, job_kind=job.kind, account=params.get("account_id"), region=params.get("region"),
+            attempt=job.attempts, wait_ms=int((now - job.created_at).total_seconds() * 1000) if job.created_at else None)
         return {
             "job": {"id": job.id, "team_id": job.team_id, "run_id": job.run_id, "lease_id": lease_id,
-                    "attempt": job.attempts, "max_runtime_s": int(MAX_RUNTIME["collect"].total_seconds())},
+                    "attempt": job.attempts, "max_runtime_s": int(MAX_RUNTIME["collect"].total_seconds()),
+                    "kind": job.kind, "parent_job_id": job.parent_job_id,
+                    "slice": ({k: params.get(k) for k in ("account_id", "role_arn", "region")}
+                              if job.kind == "slice" else None)},
             "source": {"id": source.id, "kind": source.kind, "name": source.name, "config": source.config or {},
                        "last_test_status": source.last_test_status,
                        "secrets": decrypt_secrets(source.secret_encrypted)},
@@ -1006,19 +1149,57 @@ def claim_cloud_job(session: Session, now: _dt.datetime, worker: str) -> dict | 
 
 
 def renew_cloud_lease(session: Session, job_id: int, lease_id: str, now: _dt.datetime) -> str | None:
-    """Extend a cloud job's lease.  Returns why it must stop, or None to carry on."""
+    """Extend a cloud job's lease (the worker's heartbeat).  Returns why it must stop, or None to carry on."""
     job = session.get(CbomCollectionJob, job_id)
     if job is None or job.node_id is not None or job.status != "claimed" or job.lease_id != lease_id:
         return "This job is no longer leased to the cloud worker"
     source = session.get(CbomCollectionSource, job.source_id) if job.source_id else None
-    reason = _invalid_reason(job, source, None)
+    if job.kind == "slice":
+        from backend.utilities.cbom_sources import slices as S
+
+        reason = S.slice_invalid_reason(session, job, source)
+    else:
+        reason = _invalid_reason(job, source, None)
     if reason:
         return reason
     session.exec(update(CbomCollectionJob)
                  .where(CbomCollectionJob.id == job_id, CbomCollectionJob.lease_id == lease_id,
                         CbomCollectionJob.status == "claimed")
-                 .values(lease_expires_at=now + LEASE))
+                 .values(lease_expires_at=now + cloud_lease()))
     return None
+
+
+def release_cloud_job(session: Session, job_id: int, lease_id: str, now: _dt.datetime, reason: str) -> bool:
+    """Give a claimed cloud job back to the queue now (a worker shutting down), instead of letting its lease run out.
+    The attempt it used stays counted; its next claim starts a new attempt.  Returns whether it was released."""
+    changed = session.exec(
+        update(CbomCollectionJob)
+        .where(CbomCollectionJob.id == job_id, CbomCollectionJob.node_id.is_(None),  # type: ignore[union-attr]
+               CbomCollectionJob.status == "claimed", CbomCollectionJob.lease_id == lease_id)
+        .values(status="pending", lease_id=None, lease_expires_at=None)
+    ).rowcount
+    if changed:
+        job = session.get(CbomCollectionJob, job_id)
+        if job is not None:
+            session.refresh(job)
+            recompute_run(session, job.run_id, now)
+            log("cloud job released", team=job.team_id, job=job.id, parent=job.parent_job_id, reason=reason[:80])
+    return bool(changed)
+
+
+def cloud_queue_stats(session: Session, now: _dt.datetime) -> dict[str, Any]:
+    """Queue depth and age of the cloud worker's queue: pending / running jobs, the oldest pending job's age, and
+    the teams with the most pending (for the periodic queue log line)."""
+    pending = session.exec(
+        select(CbomCollectionJob.team_id, func.count(), func.min(CbomCollectionJob.created_at))
+        .where(*_cloud_queue(), CbomCollectionJob.status == "pending").group_by(CbomCollectionJob.team_id)).all()
+    running = _cloud_running(session)
+    oldest = min((row[2] for row in pending if row[2] is not None), default=None)
+    top = sorted(((int(t), int(n)) for t, n, _o in pending), key=lambda tn: -tn[1])[:5]
+    return {"pending": sum(int(n) for _t, n, _o in pending), "running": sum(running.values()),
+            "teams_waiting": len(pending), "teams_running": len(running),
+            "oldest_pending_s": int((now - oldest).total_seconds()) if oldest is not None else 0,
+            "top": ",".join(f"{t}:{n}" for t, n in top) or None}
 
 
 # ----------------------------------------------------------------------------- runs

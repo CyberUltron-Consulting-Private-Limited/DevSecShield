@@ -183,6 +183,34 @@ every service: it ignores `AWS_ENDPOINT_URL_S3` (here the local MinIO, for the p
 before that fix (`pr-92-de22b950885a`, `pr-92-f4f9b8a92971`) sent the account's S3 calls to MinIO, so their CBOM shows
 no S3 buckets.
 
+### Cloud worker pool (F1)
+
+The cloud worker collects node-less sources (AWS, Azure, Google Cloud, identity providers, CT logs). It runs as a pool:
+`CBOM_CLOUD_REPLICAS` containers, each with `CBOM_CLOUD_WORKERS` claim loops. The defaults (1 x 1) behave as before.
+Set these in this folder's `.env` (compose interpolation; a value in `backend.env` would be overridden by the service's
+`environment:` default), then `docker compose up -d cbom-cloud-worker`.
+
+| Variable | Default | Effect |
+|---|---|---|
+| `CBOM_CLOUD_REPLICAS` | `1` | Cloud-worker containers (`deploy.replicas`; `docker compose up -d --scale cbom-cloud-worker=N` does the same). |
+| `CBOM_CLOUD_WORKERS` | `1` | Claim loops (threads) per container. Each uses up to two database connections from the backend engine's pool (30); keep it at 8 or less and add replicas beyond that. |
+| `CBOM_CLOUD_TEAM_MAX_CONCURRENCY` | `8` | Most cloud jobs one team may have running at once across the whole pool. Teams with pending work are served least-busy first, so a 1,000-account organisation never holds every worker while another team waits. |
+| `CBOM_CLOUD_LEASE_S` | `900` | Lease of a claimed cloud job. A heartbeat renews it every third of it; a job whose worker died is queued again within one lease (the reaper runs every minute). |
+| `CBOM_CLOUD_SHUTDOWN_GRACE_S` | `20` | On SIGTERM (`docker compose stop`, a deploy) a container stops claiming, lets running jobs finish for this long, then gives their leases back so another replica takes them at once. `stop_grace_period` is 60 s. |
+| `CBOM_CLOUD_QUEUE_LOG_S` | `60` | Period of the `cbom sources cloud queue` log line (pending, running, oldest pending age, busiest teams); `0` turns it off. |
+| `CBOM_AWS_SLICES` | `1` | `1`: an AWS source is collected as one job per account x region (below). `0`: the serial walk in one job, as before. |
+| `CBOM_AWS_ORG_WORKERS` | `16` | Threads that check an organisation's member roles in parallel during the organisation walk. |
+| `CBOM_AWS_THROTTLE_RETRIES` | `6` | Tries of an AWS call that is throttled (capped exponential backoff with jitter), on top of botocore's own retries. |
+
+AWS at organisation scale: the worker that takes an AWS source's job runs the safety checks, lists every member account
+(paged to the end; it used to stop at 200), checks each member's reader role in parallel, then queues one *slice* job per
+account x region (`global` for IAM, S3 and CloudFront, plus each region). Any replica runs slices. The run, its
+credits, its results, drift and exports still see one job per source: slices store their assets under it, and the
+worker that ends the last slice ends it (the reaper does it if that worker died). A run's job shows `result.slices`
+(`done` / `total`) while it runs. Each claim and each end is one log line:
+`cbom sources cloud claim team=… job=… account=… region=… wait_ms=…` and
+`cbom sources cloud finish team=… job=… account=… region=… ms=… outcome=…`.
+
 Other scans: SAST, IaC and the SCA + SBOM chat need Amazon Bedrock and a Qdrant store (`QDRANT_*`, `LLM_MODEL`); without
 them they end as "failed". CBOM and AI-BOM code scans need neither.
 
