@@ -9,8 +9,8 @@
   none < configurable < code-fixed < vendor-fixed < unknown < hardware-fixed this is exactly the asset rule over the
   union of their codes (an observation is unknown only when it has an unknown code and no hardware-fixed one), so
   the asset class is a MAX over stored values, never a re-read. Its system is its latest observation's.
-* **Roll-up**: ``GROUP BY system_key, fix_class, fix_class_excl_pq, fix_reasons`` over the team's assets (index
-  ``(team_id, system_key, fix_class)``), plus the code scans and evidence items (``agility_rollup``).
+* **Roll-up**: ``GROUP BY system_key, fix_class, fix_class_excl_pq, fix_reasons`` over the team's assets (the
+  covering partial index ``ix_cbomestateasset_agility_groups``, an index-only scan; CB-32), plus the code scans and evidence items (``agility_rollup``).
 * **Written** by an estate hook (``on_estate_write``) in each run's estate write: the observations of the sources the
   run wrote are re-judged, their assets re-aggregated, and the run's baseline row is written. **Healed** when read
   (``heal``): an observation whose row moved on, whose class was never computed, computed by another model version,
@@ -270,15 +270,58 @@ def _stale_condition(now: _dt.datetime) -> Any:
                   eo.c.fix_job_id != pointer_job, eo.c.fix_attempt != pointer_attempt)
 
 
+STALE_IDS_MAX = 50_000  # more stale observations than this (a new model version): one scan instead of id lists
+
+
+def _other_than(column: Any, value: Any) -> list[Any]:
+    """``column IS NULL OR column <> value`` as three conditions, each an index range (run one statement each: an
+    OR of ranges is read as a filter over the whole team)."""
+    return [column.is_(None), column < value, column > value]
+
+
+def stale_ids(session: Any, team_id: int, now: _dt.datetime) -> list[int] | None:
+    """The ids of the observations ``_stale_condition`` selects, found through indexes (CB-32: the condition joins
+    every observation of the team to its source, 1.5M rows on each roll-up). None when there are more than
+    ``STALE_IDS_MAX`` (heal then scans with ``_stale_condition``)."""
+    eo, es, _ea, _row = _tables()
+    live = (eo.c.team_id == team_id, eo.c.presence != "removed")
+    probes = [sa.select(eo.c.id).where(*live, cond) for cond in _other_than(eo.c.fix_version, AG.version())]
+    probes.append(sa.select(eo.c.id).where(*live, eo.c.fix_recheck_on.is_not(None),
+                                           eo.c.fix_recheck_on <= _naive(now).date()))
+    # not read any more: its pointer is its own last reading job (ix_cbomestateobs_unread_fix_moved)
+    probes.append(sa.select(eo.c.id).where(eo.c.team_id == team_id, eo.c.presence == "not_read", sa.or_(
+        eo.c.fix_job_id != eo.c.seen_job_id, eo.c.fix_attempt != eo.c.seen_attempt)))
+    for ref, job, attempt in session.execute(sa.select(es.c.source_ref, es.c.latest_job_id, es.c.latest_attempt)
+                                             .where(es.c.team_id == team_id)).all():
+        # present: computed from another row than the source's latest job's (ix_cbomestateobs_present_fix)
+        base = (eo.c.team_id == team_id, eo.c.presence == "present", eo.c.source_ref == ref)
+        for cond in (eo.c.fix_job_id < job, eo.c.fix_job_id > job,
+                     sa.and_(eo.c.fix_job_id == job, eo.c.fix_attempt < attempt),
+                     sa.and_(eo.c.fix_job_id == job, eo.c.fix_attempt > attempt)):
+            probes.append(sa.select(eo.c.id).where(*base, cond))
+    ids: set[int] = set()
+    for probe in probes:
+        ids.update(session.execute(probe.limit(STALE_IDS_MAX + 1 - len(ids))).scalars())
+        if len(ids) > STALE_IDS_MAX:
+            return None
+    return sorted(ids)
+
+
 def heal(session: Any, team_id: int, now: _dt.datetime) -> int:
     """Re-judge every stale observation of the team (see the module docstring) and re-aggregate its assets, plus any
     asset never aggregated or aggregated by another version. Returns the assets re-aggregated (0 in steady state).
-    The caller commits."""
-    _eo, _es, ea, _row = _tables()
-    keys = judge_observations(session, team_id, now, _stale_condition(now))
-    keys |= {k for k, in session.execute(sa.select(ea.c.asset_key).where(
-        ea.c.team_id == team_id, ea.c.presence != "removed",
-        sa.or_(ea.c.fix_version.is_(None), ea.c.fix_version != AG.version()))).all()}
+    Steady state costs a few index probes (``stale_ids``), not a scan of the team. The caller commits."""
+    eo, _es, ea, _row = _tables()
+    ids = stale_ids(session, team_id, now)
+    if ids is None:
+        keys = judge_observations(session, team_id, now, _stale_condition(now))
+    else:
+        keys = set()
+        for chunk in _chunks(ids, 5_000):
+            keys |= judge_observations(session, team_id, now, eo.c.id.in_(chunk))
+    for cond in _other_than(ea.c.fix_version, AG.version()):
+        keys |= set(session.execute(sa.select(ea.c.asset_key).where(
+            ea.c.team_id == team_id, ea.c.presence != "removed", cond)).scalars())
     return aggregate_assets(session, team_id, keys) if keys else 0
 
 
