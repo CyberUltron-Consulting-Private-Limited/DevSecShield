@@ -361,8 +361,9 @@ def _date_time(value: Any) -> str | None:
     text = text.upper()
     match = _DATE_TIME.match(text)
     if match:
-        try:
-            _dt.datetime.strptime(text[:19], "%Y-%m-%dT%H:%M:%S")
+        try:  # a real calendar time (strptime's check, without its parser: the pattern already fixed the digits)
+            _dt.datetime(int(text[0:4]), int(text[5:7]), int(text[8:10]), int(text[11:13]), int(text[14:16]),
+                         int(text[17:19]))
         except ValueError:
             return None
         if match.group(3) is not None:

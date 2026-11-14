@@ -318,3 +318,20 @@ def test_the_streamed_download_is_still_the_in_memory_document(seeded):
         inventory.write_cyclonedx(s, run, now, "json", buf)
     assert buf.getvalue() == JSONResponse(doc).body
     assert _one(doc["metadata"], "zs:grade_model") == "qg-1"
+
+
+@pytest.mark.parametrize("value", ["2026-01-01T00:00:00Z", "2024-02-29T23:59:59Z", "2026-02-29T00:00:00Z",
+                                   "2026-01-01T00:00:60Z", "0000-01-01T00:00:00Z", "2026-00-01T00:00:00Z",
+                                   "2026-13-01T00:00:00Z", "2026-04-31T00:00:00Z", "2026-01-01T24:00:00Z",
+                                   "2026-01-01T00:60:00Z", "2026-01-01T00:00:00.123+05:30", "2026-01-01T00:00:00+14:30"])
+def test_certificate_dates_are_checked_as_strptime_checked_them(value):
+    """_date_time's calendar check (made cheaper to pay for the grade pass at 50,000 components) accepts exactly what
+    datetime.strptime(..., "%Y-%m-%dT%H:%M:%S") accepted."""
+    from backend.utilities.cbom_sources import inventory as INV
+
+    try:
+        dt.datetime.strptime(value[:19], "%Y-%m-%dT%H:%M:%S")
+        valid = not value.endswith("+14:30")
+    except ValueError:
+        valid = False
+    assert (INV._date_time(value) is not None) == valid, value
