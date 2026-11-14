@@ -655,8 +655,8 @@ def test_the_migration_is_the_one_head():
         revs.add(rev.group(1))
         if down:
             downs.add(down.group(1))
-    assert revs - downs == {"cb20estate001"}
-    assert _migration().down_revision in revs
+    assert len(revs - downs) == 1  # one head (later migrations chain after this one)
+    assert _migration().down_revision in revs and "cb20estate001" in revs
 
 
 def _schema(engine) -> dict:
