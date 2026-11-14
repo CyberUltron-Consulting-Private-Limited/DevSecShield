@@ -45,8 +45,6 @@ from backend.utilities.cbom_sources import estate as E  # noqa: E402
 NOW = dt.datetime(2026, 11, 14, 9, 0)
 PG = os.environ.get("CBOM_TEST_PG_URL")
 needs_pg = pytest.mark.skipif(not PG, reason="set CBOM_TEST_PG_URL to run against PostgreSQL")
-REAL_KEYS = getattr(E.AK, "__name__", "").endswith(".asset_keys")
-needs_cb21 = pytest.mark.skipif(not REAL_KEYS, reason="CB-21 asset_keys (#137) not on this branch yet")
 MIGRATION = _REPO_ROOT / "prod_database_migrations/migrations/versions/cb20estate001_estate_store.py"
 
 # one certificate: serial >= 64 bits, the notAfter, its DER fingerprints
@@ -182,8 +180,7 @@ PARTIAL = {"outcome": "partial", "counts": {"ok": 1, "partial": 1}}
 
 # ----------------------------------------------------------------------------- one row per key across sources
 def test_one_certificate_seen_by_four_collectors_is_one_row_with_four_observations(world):
-    """Every collector reports the fingerprint: one estate asset, one observation per source (works with the
-    stand-in keys and with CB-21's)."""
+    """Every collector reports the fingerprint: one estate asset, one observation per source."""
     src = [world.source(k, n) for k, n in (("network", "prober"), ("linux_servers", "linux"),
                                            ("windows_servers", "win"), ("aws_account", "aws"))]
     facts = {"serial": SERIAL, "not_after": NOT_AFTER, "fingerprint_sha256": SHA256, "subject": SUBJECT,
@@ -210,7 +207,6 @@ def test_one_certificate_seen_by_four_collectors_is_one_row_with_four_observatio
                 for o in latest["observations"].values()} == set(src)
 
 
-@needs_cb21
 def test_cb21_keys_join_the_windows_thumbprint_and_the_acm_amazon_issuer(world):
     """The DA-P3 case: ACM says Issuer "Amazon", Windows has only a thumbprint; CB-21 correlates all four."""
     src = [world.source(k, n) for k, n in (("network", "prober"), ("linux_servers", "linux"),
@@ -229,7 +225,6 @@ def test_cb21_keys_join_the_windows_thumbprint_and_the_acm_amazon_issuer(world):
     assert len({o.asset_key for o in world.observations()}) == 1 and len(world.observations()) == 4
 
 
-@needs_cb21
 def test_an_observation_whose_key_got_stronger_moves_and_is_never_removed(world):
     """Run 1: the Windows store alone (thumbprint key). Run 2: a Linux file with serial + SHA-1 joins it under the
     serial key: the Windows observation moves to that key; nothing reads "removed"."""

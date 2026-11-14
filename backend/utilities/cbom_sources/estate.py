@@ -61,14 +61,10 @@ from backend.new_models import (
     CbomEstateObservation,
     CbomEstateSource,
 )
+from backend.utilities.cbom_sources import asset_keys as AK  # CB-21: the one cross-source identity module
 from backend.utilities.cbom_sources import drift as D
 from backend.utilities.cbom_sources import identity as ID
 from backend.utilities.cbom_sources.common import iso_z, log
-
-try:  # CB-21 (#137): the one cross-source identity module
-    from backend.utilities.cbom_sources import asset_keys as AK
-except ImportError:  # pragma: no cover - until #137 lands (same signatures)
-    from backend.utilities.cbom_sources import estate_keys_shim as AK  # type: ignore[no-redef]
 
 PRESENCE = ("present", "not_read", "removed")
 KEY_KINDS = ("cross", "source", "not_correlated")
@@ -79,8 +75,6 @@ _ROW_COLUMNS = (CbomCollectedAsset.id, CbomCollectedAsset.job_id, CbomCollectedA
                 CbomCollectedAsset.target, CbomCollectedAsset.location, CbomCollectedAsset.name,
                 CbomCollectedAsset.algorithm, CbomCollectedAsset.facts, CbomCollectedAsset.created_at)
 _PREFIX_BASIS = {"cert": "certificate", "ep": "endpoint", "cloud": "cloud"}
-_OBSERVATION = getattr(AK, "Observation", None)
-_SCOPED = _OBSERVATION is not None and "scope" in getattr(_OBSERVATION, "__dataclass_fields__", {})
 
 
 # ----------------------------------------------------------------------------- hooks (CB-23 registers here)
@@ -197,14 +191,9 @@ def _observation(row: Any, ref: str) -> Any:
     """What CB-21 keys: the row as an ``Observation`` scoped to its source (a private or loopback endpoint address is
     one asset only within the source that saw it). Built directly: reading an ORM object attribute by attribute
     through ``asset_keys.observation`` cost more than the keys themselves (CB-20 bench)."""
-    if _OBSERVATION is None:
-        return row
     facts = row.facts if isinstance(row.facts, dict) else {}
-    kw: dict[str, Any] = {"kind": str(row.asset_type or ""), "facts": facts, "location": str(row.location or ""),
-                          "target": str(row.target or ""), "cdx_type": str(row.cdx_type or "")}
-    if _SCOPED:
-        kw["scope"] = ref
-    return _OBSERVATION(**kw)
+    return AK.Observation(kind=str(row.asset_type or ""), facts=facts, location=str(row.location or ""),
+                          target=str(row.target or ""), cdx_type=str(row.cdx_type or ""), scope=ref)
 
 
 def _view(asset_type: str, target: str | None, location: str | None) -> D.View:

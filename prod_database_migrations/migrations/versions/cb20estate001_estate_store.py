@@ -1,7 +1,7 @@
 """cbom estate store (CB-20 PR-1): ``cbomestatesource``, ``cbomestateasset``, ``cbomestateobservation``
 
 Revision ID: cb20estate001
-Revises: r6f13trn001
+Revises: cb18evconf001
 Create Date: 2026-11-14 12:00:00.000000
 
 Three new tables, no change to existing ones (so no lock on a busy table): one row per (team, source) with the newest
@@ -19,7 +19,7 @@ import sqlmodel
 
 
 revision: str = 'cb20estate001'
-down_revision: Union[str, Sequence[str], None] = 'r6f13trn001'
+down_revision: Union[str, Sequence[str], None] = 'cb18evconf001'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
