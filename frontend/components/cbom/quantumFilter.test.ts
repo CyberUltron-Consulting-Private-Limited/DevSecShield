@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { inventoryRows, isBrokenToday, isUnidentified, matchesQuantumFilter, quantumCounts, round1 } from "./quantumFilter";
+import { quantumReadinessBars } from "../../utils/cbomReadiness";
 
 // rows as the lab scan returned them (u2-zip-full-opts)
 const md5 = { quantum_safe: true, crypto_strength: "weak" };
@@ -78,5 +79,16 @@ console.log("quantumCounts tests passed");
   // CB-38: one template for code scans and Sources runs; a code scan still hands every row to the gauge (a run passes
   // none: its gauge reads the run posture, Rule P)
   assert.ok(results.includes("inventory={run ? [] : allRows}"), "the results page hands every row to the gauge");
+}
+// review M1 (#135): the Quantum readiness charts draw every verdict the backend sends, Broken today included
+{
+  assert.deepEqual(quantumReadinessBars({ quantum_safe: 30, quantum_vulnerable: 9, broken_today: 3 }).map((b) => [b.name, b.count]),
+    [["Safe", 30], ["Vulnerable", 9], ["Broken today", 3]]);
+  assert.deepEqual(quantumReadinessBars({ quantum_safe: 2, quantum_vulnerable: 0 }).map((b) => b.name), ["Safe"], "empty bars are left out");
+  assert.deepEqual(quantumReadinessBars(null), []);
+  for (const file of [path.join(__dirname, "results", "CbomDashboardCharts.tsx"), path.join(__dirname, "..", "..", "app", "[team_id]", "cbom", "page.tsx")]) {
+    const text = fs.readFileSync(file, "utf8");
+    assert.ok(text.includes("quantumReadinessBars("), `${path.basename(file)} builds its Quantum readiness chart with quantumReadinessBars`);
+  }
 }
 console.log("readiness parity tests passed");

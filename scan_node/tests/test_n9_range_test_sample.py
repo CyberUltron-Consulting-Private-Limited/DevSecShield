@@ -44,18 +44,19 @@ def _last_octet(ip: str) -> int:
 
 def test_a_25_sample_spread_over_the_whole_range(monkeypatch):
     # the reported shape: a /25 whose first addresses are unused and whose live hosts sit further up (.40 - .126)
-    live = {f"10.232.0.{i}" for i in range(40, 127)}
+    live = {f"10.232.0.{i}" for i in range(40, 128)}  # .40 - .127 (.127 is a host of the split /25, N3)
     probed = _fake_tcp(monkeypatch, live)
     ctx = _ctx()
     summary = N.test_range(ctx, {**SCOPE, "ranges": [{"cidr": "10.232.0.0/25", "mode": "full"}]})
     targets = [s["target"] for s in ctx.samples]
     assert len(targets) == 25 == len(set(targets)) and sorted(set(probed)) == sorted(targets)
     octets = [_last_octet(t) for t in targets]
-    assert octets == sorted(octets) and octets[0] == 1 and octets[-1] == 126  # first and last host of the /25
+    # first and last address of the /25 (a /25 is scanned whole, N3: half of a split /24 has no network/broadcast)
+    assert octets == sorted(octets) and octets[0] == 0 and octets[-1] == 127
     assert max(b - a for a, b in zip(octets, octets[1:])) <= 6  # evenly spread, not bunched at the start
     ready = sum(s["status"] == "ready" for s in ctx.samples)
     assert ready == sum(t in live for t in targets) >= 17  # the old first-5 sample saw 0 of these hosts
-    assert summary == f"{ready} of 25 sample addresses answered (spread across 126 addresses)"
+    assert summary == f"{ready} of 25 sample addresses answered (spread across 128 addresses)"
 
 
 def test_the_sample_is_the_same_on_every_retest(monkeypatch):
@@ -70,8 +71,8 @@ def test_a_small_range_is_probed_whole(monkeypatch):
     _fake_tcp(monkeypatch, {"10.0.0.3"})
     ctx = _ctx()
     summary = N.test_range(ctx, {**SCOPE, "ranges": [{"cidr": "10.0.0.0/29", "mode": "full"}]})
-    assert [s["target"] for s in ctx.samples] == [f"10.0.0.{i}" for i in range(1, 7)]
-    assert summary == "1 of 6 sample addresses answered"
+    assert [s["target"] for s in ctx.samples] == [f"10.0.0.{i}" for i in range(0, 8)]  # a /29 whole (N3)
+    assert summary == "1 of 8 sample addresses answered"
 
 
 def test_never_scan_addresses_are_never_sampled(monkeypatch):
@@ -79,7 +80,7 @@ def test_never_scan_addresses_are_never_sampled(monkeypatch):
     ctx = _ctx(["10.232.0.0/26", "10.232.0.100"])
     N.test_range(ctx, {**SCOPE, "ranges": [{"cidr": "10.232.0.0/25", "mode": "full"}]})
     octets = [_last_octet(s["target"]) for s in ctx.samples]
-    assert len(octets) == 25 and min(octets) == 64 and max(octets) == 126 and 100 not in octets
+    assert len(octets) == 25 and min(octets) == 64 and max(octets) == 127 and 100 not in octets
     assert all(_last_octet(ip) >= 64 and _last_octet(ip) != 100 for ip in probed)
 
 

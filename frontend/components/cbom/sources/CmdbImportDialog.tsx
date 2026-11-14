@@ -19,6 +19,7 @@ import { applyCmdbImport, previewCmdbImport, type CmdbPlan, type CmdbRequest } f
 
 import { cbomSourcesKeys } from "./keys";
 import { ChoiceCards, Checkbox2, Field, NodeSelect, StatusBadge } from "./shared";
+import { InfoTip } from "@/components/ui/info-tip";
 
 const MAX_CSV = 2 * 1024 * 1024;
 const SAMPLE = "hostname,ip_address,owner,application,criticality,exposure,data_classification,environment,os\n" +
@@ -38,10 +39,22 @@ function PlanView({ plan }: { plan: CmdbPlan }) {
         <StatusBadge tone="zinc">{plan.unchanged} unchanged</StatusBadge>
         {plan.counts.conflict > 0 && <StatusBadge tone="amber">{plan.counts.conflict} conflicts</StatusBadge>}
         {plan.counts.skipped > 0 && <StatusBadge tone="red">{plan.counts.skipped} rows skipped</StatusBadge>}
+        {(plan.counts.over_limit ?? 0) > 0 && (
+          <StatusBadge tone="red">{plan.counts.over_limit} over the source limit (not created)</StatusBadge>
+        )}
       </div>
+      {plan.limit && (
+        <p className="text-xs text-zinc-600 dark:text-zinc-400" data-testid="cmdb-limit">
+          Source limit: this team has {plan.limit.used.toLocaleString("en-US")} of {plan.limit.max.toLocaleString("en-US")} sources
+          ({plan.limit.remaining.toLocaleString("en-US")} more allowed, set by {plan.limit.setting}).
+        </p>
+      )}
+      {(plan.warnings ?? []).map((w) => (
+        <p key={w} className="text-sm text-amber-700 dark:text-amber-400" role="alert">{w}</p>
+      ))}
       {plan.updates.length > 0 && (
         <div>
-          <p className="font-medium mb-1">Metadata updates</p>
+          <p className="font-medium mb-1">Metadata updates <InfoTip id="cbsrc.cmdb.updates" /></p>
           <ul className="space-y-1 text-xs">
             {plan.updates.map((u) => (
               <li key={u.source_id}>
@@ -54,7 +67,7 @@ function PlanView({ plan }: { plan: CmdbPlan }) {
       )}
       {plan.creates.length > 0 && (
         <div>
-          <p className="font-medium mb-1">New sources</p>
+          <p className="font-medium mb-1">New sources <InfoTip id="cbsrc.cmdb.creates" /></p>
           <ul className="space-y-1 text-xs">
             {plan.creates.map((c) => (
               <li key={c.name}>
@@ -65,9 +78,22 @@ function PlanView({ plan }: { plan: CmdbPlan }) {
           </ul>
         </div>
       )}
+      {(plan.over_limit ?? []).length > 0 && (
+        <div data-testid="cmdb-over-limit">
+          <p className="font-medium mb-1 text-red-600 dark:text-red-400">Over the source limit (will not be created)</p>
+          <p className="text-xs text-zinc-500 mb-1">{plan.over_limit![0].reason}</p>
+          <ul className="space-y-1 text-xs max-h-40 overflow-y-auto">
+            {plan.over_limit!.map((c) => (
+              <li key={c.name}>
+                <span className="font-medium">{c.name}</span> ({c.kind === "network_range" ? `network range ${c.cidr}` : `${c.targets?.length} hosts`})
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {plan.conflicts.length > 0 && (
         <div>
-          <p className="font-medium mb-1 text-amber-600 dark:text-amber-400">Conflicts (left unchanged)</p>
+          <p className="font-medium mb-1 text-amber-600 dark:text-amber-400">Conflicts (left unchanged) <InfoTip id="cbsrc.cmdb.conflicts" /></p>
           <ul className="space-y-1 text-xs">
             {plan.conflicts.map((c) => (
               <li key={`${c.source_id}-${c.field}`}>
@@ -79,7 +105,7 @@ function PlanView({ plan }: { plan: CmdbPlan }) {
       )}
       {plan.skipped.length > 0 && (
         <div>
-          <p className="font-medium mb-1 text-red-600 dark:text-red-400">Skipped or partly read rows</p>
+          <p className="font-medium mb-1 text-red-600 dark:text-red-400">Skipped or partly read rows <InfoTip id="cbsrc.cmdb.skipped" /></p>
           <ul className="space-y-1 text-xs max-h-40 overflow-y-auto">
             {plan.skipped.map((s, i) => (
               <li key={i}>{s.line ? `Line ${s.line}` : s.label ?? "Row"}: {s.reason}</li>
@@ -112,7 +138,8 @@ export default function CmdbImportDialog({ teamId }: { teamId: number }) {
   const apply = useMutation({
     mutationFn: () => applyCmdbImport(teamId, request(plan?.digest)),
     onSuccess: (r) => {
-      toast.success(`CMDB import: ${r.result.created} sources created, ${r.result.updated} updated`);
+      const over = r.result.over_limit ? `; ${r.result.over_limit} over the source limit were not created` : "";
+      toast.success(`CMDB import: ${r.result.created} sources created, ${r.result.updated} updated${over}`);
       queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) });
       setOpen(false);
       setPlan(null);
@@ -131,7 +158,7 @@ export default function CmdbImportDialog({ teamId }: { teamId: number }) {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Import sources and metadata from a CMDB</DialogTitle>
+            <DialogTitle>Import sources and metadata from a CMDB <InfoTip id="cbsrc.cmdb.dialog" /></DialogTitle>
             <DialogDescription>
               Preview first: nothing changes until you confirm. Hosts already in a server source get its owner, application,
               criticality, exposure, data classification and environment updated; running and queued collections are not
@@ -140,6 +167,7 @@ export default function CmdbImportDialog({ teamId }: { teamId: number }) {
           </DialogHeader>
           <div className="space-y-4">
             <ChoiceCards
+              infoId="cbsrc.cmdb.source"
               name="cmdb-source"
               label="Import from"
               value={source}
@@ -150,11 +178,12 @@ export default function CmdbImportDialog({ teamId }: { teamId: number }) {
               ]}
             />
             {source === "csv" && (
-              <Field label="CSV" htmlFor="cmdb-csv" hint="Up to 5,000 rows and 2 MB. A header row is required.">
+              <Field infoId="cbsrc.cmdb.csv" label="CSV" htmlFor="cmdb-csv" hint="Up to 5,000 rows and 2 MB. A header row is required.">
                 <div className="space-y-2">
                   <label className="inline-flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 cursor-pointer">
                     <Upload className="h-4 w-4" />
                     Choose a file
+                    {/* infotip-shared: file picker behind Choose a file; the CSV field's tip covers it */}
                     <input type="file" accept=".csv,text/csv" className="sr-only" data-testid="cmdb-file" onChange={async (e) => {
                       const file = e.target.files?.[0];
                       if (!file) return;
@@ -168,11 +197,11 @@ export default function CmdbImportDialog({ teamId }: { teamId: number }) {
                 </div>
               </Field>
             )}
-            <Checkbox2 id="cmdb-create" checked={createMissing} onChange={(v) => { setCreateMissing(v); reset(); }}>
+            <Checkbox2 infoId="cbsrc.cmdb.create" id="cmdb-create" checked={createMissing} onChange={(v) => { setCreateMissing(v); reset(); }}>
               Create sources for hosts that are not in any source yet (Linux servers, scan-node key login; CIDRs as network ranges)
             </Checkbox2>
             {createMissing && (
-              <Field label="Scan node for new sources" htmlFor="cmdb-node" hint="The node that can reach the new hosts">
+              <Field infoId="cbsrc.cmdb.node" label="Scan node for new sources" htmlFor="cmdb-node" hint="The node that can reach the new hosts">
                 <NodeSelect id="cmdb-node" nodes={nodes.data?.nodes ?? []} value={nodeId} onChange={(v) => { setNodeId(v); reset(); }} />
               </Field>
             )}

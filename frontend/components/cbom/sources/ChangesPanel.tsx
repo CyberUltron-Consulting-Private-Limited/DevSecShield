@@ -26,6 +26,7 @@ import {
 import { ASSET_TYPE_LABEL } from "./RunResults";
 import { formatDateTime, groupNotRead, pluralize } from "./logic";
 import { ErrorBlock, LoadingBlock, StatusBadge, type Tone } from "./shared";
+import { InfoTip } from "@/components/ui/info-tip";
 
 export const DRIFT_LABEL: Record<CbomDriftKind, [string, Tone]> = {
   opened: ["Finding opened", "red"],
@@ -36,6 +37,8 @@ export const DRIFT_LABEL: Record<CbomDriftKind, [string, Tone]> = {
   cert_expiring: ["Certificate expiring", "amber"],
   schedule_skipped: ["Scheduled run skipped", "amber"],
   q0_closed: ["Q0 gap closed", "green"],
+  agility_asset_moved: ["Fix class changed", "amber"],
+  agility_system_changed: ["System fix-class mix changed", "amber"],
 };
 
 export function RunChanges({ teamId, runId, finished }: { teamId: number; runId: number; finished: boolean }) {
@@ -73,6 +76,14 @@ export function RunChanges({ teamId, runId, finished }: { teamId: number; runId:
               <span className="text-zinc-800 dark:text-zinc-200 break-all">{e.asset_label}</span>
               <span className="text-zinc-500">{e.source_name}</span>
               {typeof e.detail?.cause === "string" && <span className="text-amber-700 dark:text-amber-400">({e.detail.cause})</span>}
+              {typeof e.detail?.old_class === "string" && typeof e.detail?.new_class === "string" && (
+                <span className="text-amber-700 dark:text-amber-400">({e.detail.old_class} → {e.detail.new_class})</span>
+              )}
+              {typeof e.detail?.old_hardest !== "undefined" && e.kind === "agility_system_changed" && (
+                <span className="text-amber-700 dark:text-amber-400">
+                  (hardest {String(e.detail.old_hardest ?? "—")} → {String(e.detail.new_hardest ?? "—")})
+                </span>
+              )}
             </li>
           ))}
         </ul>
@@ -238,7 +249,7 @@ export function CompareDialog({ teamId, runId, runs, onClose }: {
           </DialogDescription>
         </DialogHeader>
         <div className="flex items-center gap-2 text-sm">
-          <span className="text-zinc-600 dark:text-zinc-400">Compare with</span>
+          <span className="text-zinc-600 dark:text-zinc-400">Compare with</span> <InfoTip id="cbsrc.compare.with" />
           <Select value={against ? String(against) : "prev"} onValueChange={(v) => setAgainst(v === "prev" ? undefined : Number(v))}>
             <SelectTrigger className="w-[220px] cursor-pointer" aria-label="Run to compare with" data-testid="compare-against">
               <SelectValue />

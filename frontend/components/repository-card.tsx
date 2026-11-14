@@ -1,6 +1,6 @@
 "use client";
 
-import { Dispatch, SetStateAction } from "react";
+import { Dispatch, SetStateAction, useId, type ReactNode } from "react";
 import {
   Accordion,
   AccordionContent,
@@ -8,7 +8,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { FolderGit2, FileArchive, Github, GitBranch, GitCommit } from "lucide-react";
 
@@ -32,24 +32,84 @@ export interface RepositoryCardProps {
   setMode: Dispatch<SetStateAction<RepositoryMode>>;
 }
 
-export function RepositoryCard({
-  uploadedFile,
-  setUploadedFile,
-  repoUrl,
-  setRepoUrl,
-  pat,
-  setPat,
-  branch,
-  setBranch,
-  mode,
-  setMode,
-}: RepositoryCardProps) {
+const inputClass = "bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 text-sm";
+const labelClass = "text-zinc-300 text-xs";
+
+/** URL, branch and token of one provider; each field has a visible label and its (i) tip. */
+function ProviderFields({
+  provider,
+  icon,
+  label,
+  props,
+}: {
+  provider: Exclude<RepositoryMode, "unknown">;
+  icon: ReactNode;
+  label: string;
+  props: RepositoryCardProps;
+}) {
+  const id = useId();
+  const { repoUrl, setRepoUrl, branch, setBranch, pat, setPat, setMode } = props;
+  return (
+    <AccordionItem value={provider} className="border-zinc-800">
+      <AccordionTrigger className="text-zinc-300 hover:text-white cursor-pointer text-sm">
+        <div className="flex items-center gap-2">
+          {icon}
+          <span>{label}</span>
+        </div>
+      </AccordionTrigger>
+      <AccordionContent className="pt-3 space-y-3">
+        <div className="space-y-1">
+          <FieldLabel htmlFor={`${id}-url`} infoId="repo.url" labelClassName={labelClass}>Repository URL</FieldLabel>
+          <Input
+            id={`${id}-url`}
+            value={repoUrl}
+            placeholder="Repository URL"
+            className={inputClass}
+            onChange={(e) => { setRepoUrl(e.target.value); setMode(provider); }}
+          />
+        </div>
+        <div className="space-y-1">
+          <FieldLabel htmlFor={`${id}-branch`} infoId="repo.branch" labelClassName={labelClass}>Branch</FieldLabel>
+          <Input
+            id={`${id}-branch`}
+            value={branch}
+            placeholder="Branch name (leave empty for main)"
+            className={inputClass}
+            onChange={(e) => setBranch(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1">
+          <FieldLabel
+            htmlFor={`${id}-token`}
+            infoId={provider === "github" ? "repo.pat.github" : "repo.pat.required"}
+            labelClassName={labelClass}
+          >
+            {provider === "github" ? "Access token (optional for public repos)" : "Access token"}
+          </FieldLabel>
+          <Input
+            id={`${id}-token`}
+            type="password"
+            value={pat}
+            placeholder={provider === "github" ? "PAT (optional for public repos)" : "Personal Access Token"}
+            className={inputClass}
+            onChange={(e) => setPat(e.target.value)}
+          />
+        </div>
+      </AccordionContent>
+    </AccordionItem>
+  );
+}
+
+export function RepositoryCard(props: RepositoryCardProps) {
+  const { uploadedFile, setUploadedFile } = props;
+  const zipId = useId();
   return (
     <Card className="border-zinc-700 bg-zinc-800/50 py-4 shadow-none">
       <CardHeader className="pb-2 px-4">
         <CardTitle className="text-sm font-medium text-zinc-300 flex items-center gap-2">
           <FolderGit2 className="h-4 w-4 text-zinc-400 shrink-0" />
           Repository
+          <InfoTip id="repo.source" />
         </CardTitle>
         <CardDescription className="text-zinc-500 text-xs">
           Upload a zip of your code or connect a repository (GitHub, GitLab, Bitbucket).
@@ -65,8 +125,11 @@ export function RepositoryCard({
               </div>
             </AccordionTrigger>
             <AccordionContent className="pt-3 space-y-2">
-              <Label className="text-zinc-300 text-sm">Upload zip file <span className="text-red-500">*</span></Label>
+              <FieldLabel htmlFor={zipId} infoId="repo.zip" labelClassName="text-zinc-300 text-sm" required>
+                Upload zip file
+              </FieldLabel>
               <Input
+                id={zipId}
                 type="file"
                 accept=".zip"
                 className="bg-zinc-800 h-fit p-2 border-zinc-700 text-white file:mr-2 file:rounded file:border-0 file:bg-blue-600 file:cursor-pointer file:px-3 file:py-1 file:text-sm file:text-white"
@@ -86,93 +149,9 @@ export function RepositoryCard({
             </AccordionTrigger>
             <AccordionContent className="pt-2">
               <Accordion type="single" collapsible className="w-full">
-                <AccordionItem value="github" className="border-zinc-800">
-                  <AccordionTrigger className="text-zinc-300 hover:text-white cursor-pointer text-sm">
-                    <div className="flex items-center gap-2">
-                      <Github className="h-4 w-4" />
-                      <span>GitHub</span>
-                    </div>
-                  </AccordionTrigger>
-                  <AccordionContent className="pt-3 space-y-3">
-                    <Input
-                      value={repoUrl}
-                      placeholder="Repository URL"
-                      className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 text-sm"
-                      onChange={(e) => { setRepoUrl(e.target.value); setMode("github"); }}
-                    />
-                    <Input
-                      value={branch}
-                      placeholder="Branch name (leave empty for main)"
-                      className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 text-sm"
-                      onChange={(e) => setBranch(e.target.value)}
-                    />
-                    <Input
-                      type="password"
-                      value={pat}
-                      placeholder="PAT (optional for public repos)"
-                      className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 text-sm"
-                      onChange={(e) => setPat(e.target.value)}
-                    />
-                  </AccordionContent>
-                </AccordionItem>
-                <AccordionItem value="gitlab" className="border-zinc-800">
-                  <AccordionTrigger className="text-zinc-300 hover:text-white cursor-pointer text-sm">
-                    <div className="flex items-center gap-2">
-                      <GitBranch className="h-4 w-4" />
-                      <span>GitLab</span>
-                    </div>
-                  </AccordionTrigger>
-                  <AccordionContent className="pt-3 space-y-3">
-                    <Input
-                      value={repoUrl}
-                      placeholder="Repository URL"
-                      className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 text-sm"
-                      onChange={(e) => { setRepoUrl(e.target.value); setMode("gitlab"); }}
-                    />
-                    <Input
-                      value={branch}
-                      placeholder="Branch name (leave empty for main)"
-                      className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 text-sm"
-                      onChange={(e) => setBranch(e.target.value)}
-                    />
-                    <Input
-                      type="password"
-                      value={pat}
-                      placeholder="Personal Access Token"
-                      className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 text-sm"
-                      onChange={(e) => setPat(e.target.value)}
-                    />
-                  </AccordionContent>
-                </AccordionItem>
-                <AccordionItem value="bitbucket" className="border-zinc-800">
-                  <AccordionTrigger className="text-zinc-300 hover:text-white cursor-pointer text-sm">
-                    <div className="flex items-center gap-2">
-                      <GitCommit className="h-4 w-4" />
-                      <span>Bitbucket</span>
-                    </div>
-                  </AccordionTrigger>
-                  <AccordionContent className="pt-3 space-y-3">
-                    <Input
-                      value={repoUrl}
-                      placeholder="Repository URL"
-                      className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 text-sm"
-                      onChange={(e) => { setRepoUrl(e.target.value); setMode("bitbucket"); }}
-                    />
-                    <Input
-                      value={branch}
-                      placeholder="Branch name (leave empty for main)"
-                      className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 text-sm"
-                      onChange={(e) => setBranch(e.target.value)}
-                    />
-                    <Input
-                      type="password"
-                      value={pat}
-                      placeholder="Personal Access Token"
-                      className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 text-sm"
-                      onChange={(e) => setPat(e.target.value)}
-                    />
-                  </AccordionContent>
-                </AccordionItem>
+                <ProviderFields provider="github" icon={<Github className="h-4 w-4" />} label="GitHub" props={props} />
+                <ProviderFields provider="gitlab" icon={<GitBranch className="h-4 w-4" />} label="GitLab" props={props} />
+                <ProviderFields provider="bitbucket" icon={<GitCommit className="h-4 w-4" />} label="Bitbucket" props={props} />
               </Accordion>
             </AccordionContent>
           </AccordionItem>

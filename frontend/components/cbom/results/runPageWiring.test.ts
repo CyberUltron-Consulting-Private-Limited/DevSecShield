@@ -60,6 +60,31 @@ assert.match(template, /const scanMetadata = run \? run\.parity\?\.scan_metadata
 const adapter = read("source.ts");
 assert.match(adapter, /queryFn: \(\) => getCbomRunParity\(teamId, runId\)/);
 
+// finding dialog: the code page's "Remediation, fix code and exploit demo" panel in run mode (PARITY.md S15), between the
+// KB details and the AI panel; the panel's existing props are unchanged (run mode is one optional prop)
+const rd = read("RunFindingDialog.tsx");
+const remAt = rd.indexOf("<RemediationPanel key={`rem-${assetId}`} teamId={String(teamId)} scanType=\"cbom\" scanId={0} findingId={String(assetId)}");
+assert.ok(remAt > rd.indexOf("<AssetDetailPanel") && remAt < rd.indexOf("<AiRemediationPanel"), "RemediationPanel between the KB details and the AI panel");
+assert.match(rd, /runAsset=\{\{ runId, assetId \}\}/);
+const panel = read("..", "..", "RemediationPanel.tsx");
+assert.match(panel, /runAsset\?: \{ runId: number; assetId: number \} \| null;/);
+assert.match(panel, /\? getCbomRunAssetRemediation\(parseInt\(teamId, 10\), runAsset\.runId, runAsset\.assetId\)\n\s*: generateFindingRemediation\(/);
+assert.match(panel, /if \(runAsset && load\.isError && remediationRouteMissing\(load\.error\) && !data\) return null;/, "older backend: hidden");
+for (const prop of ["teamId: string;", "scanType:", "scanId: number;", "findingId: string;", "existingRemediation?:", "onRemediationGenerated?:", "snippetStart?:", "line?:"]) {
+  assert.ok(panel.includes(prop), `RemediationPanel keeps ${prop}`);
+}
+
+// Changes: the code page's DiffView over /runs/{id}/diff, then the run's drift events (/changes)
+assert.match(sections, /export function RunDiffBlock[\s\S]*getCbomRunDiff\(teamId, runId\)[\s\S]*<DiffView diff=\{q\.data\} \/>/);
+assert.match(sections, /<RunDiffBlock teamId=\{teamId\} runId=\{run\.id\} \/>\n\s*<RunChanges/);
+
+// the dialog's chips come from findingChips (item fields, else the same fields of GET /assets/{id}, else its KB entries)
+assert.match(rd, /const chips = findingChips\(item, detailQ\.data\?\.details, detailQ\.data\);/);
+// /parity notes: graph / compliance readiness under the charts, RBI CSF and CERT-In next to their roll-ups
+assert.match(template, /const runParityNotes = run \? parityNotes\(run\.parityState, run\.parity\) : null;/);
+for (const id of ["run-graph-note", "run-compliance-readiness-note", "run-rbi-note", "run-certin-note"]) assert.ok(template.includes(`testId="${id}"`), id);
+assert.ok(!template.includes("chartsCodeOnly"), "no 'shown on code scans only' note: under PARITY a run has the graph and compliance");
+
 // the Ticketing tab is on exactly when lane W6's component is in the tree
 assert.equal(RUN_TICKETING_TAB_AVAILABLE, existsSync(join(__dirname, "RunTicketingTab.tsx")), "Ticketing tab <=> RunTicketingTab.tsx");
 

@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
 import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Clock, Play, CheckCircle, XCircle, CalendarPlus, CalendarCheck, Search, X, Shield, Percent, Bug, ChevronDown, ArrowUpDown, Check, Filter, DollarSign, TrendingUp, TrendingDown, AlertTriangle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { singleFlight } from "@/utils/single_flight";
@@ -222,7 +223,7 @@ function ScanListDashboardLLM({ dashboardData }: { dashboardData: LLMListDashboa
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-4">
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Not Started</CardTitle>
+            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Not Started <InfoTip id="llm.kpi.status" /></CardTitle>
             <Clock className="h-4 w-4 text-zinc-400" />
           </CardHeader>
           <CardContent>
@@ -232,7 +233,7 @@ function ScanListDashboardLLM({ dashboardData }: { dashboardData: LLMListDashboa
         </Card>
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Pending</CardTitle>
+            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Pending <InfoTip id="llm.kpi.status" /></CardTitle>
             <Clock className="h-4 w-4 text-zinc-500" />
           </CardHeader>
           <CardContent>
@@ -242,7 +243,7 @@ function ScanListDashboardLLM({ dashboardData }: { dashboardData: LLMListDashboa
         </Card>
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Started</CardTitle>
+            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Started <InfoTip id="llm.kpi.status" /></CardTitle>
             <Play className="h-4 w-4 text-blue-500" />
           </CardHeader>
           <CardContent>
@@ -252,7 +253,7 @@ function ScanListDashboardLLM({ dashboardData }: { dashboardData: LLMListDashboa
         </Card>
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Success</CardTitle>
+            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Success <InfoTip id="llm.kpi.status" /></CardTitle>
             <CheckCircle className="h-4 w-4 text-green-500" />
           </CardHeader>
           <CardContent>
@@ -262,7 +263,7 @@ function ScanListDashboardLLM({ dashboardData }: { dashboardData: LLMListDashboa
         </Card>
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Failure</CardTitle>
+            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Failure <InfoTip id="llm.kpi.status" /></CardTitle>
             <XCircle className="h-4 w-4 text-red-500" />
           </CardHeader>
           <CardContent>
@@ -272,7 +273,7 @@ function ScanListDashboardLLM({ dashboardData }: { dashboardData: LLMListDashboa
         </Card>
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Created today</CardTitle>
+            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Created today <InfoTip id="llm.kpi.status" /></CardTitle>
             <CalendarPlus className="h-4 w-4 text-zinc-500" />
           </CardHeader>
           <CardContent>
@@ -282,12 +283,12 @@ function ScanListDashboardLLM({ dashboardData }: { dashboardData: LLMListDashboa
         </Card>
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Updated today</CardTitle>
+            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Updated today <InfoTip id="llm.kpi.status" /></CardTitle>
             <CalendarCheck className="h-4 w-4 text-zinc-500" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-zinc-900 dark:text-white">{updatedToday}</div>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">Last 24h</p>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">Since 00:00 UTC</p>
           </CardContent>
         </Card>
       </div>
@@ -296,7 +297,7 @@ function ScanListDashboardLLM({ dashboardData }: { dashboardData: LLMListDashboa
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Scans (success)</CardTitle>
+            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Scans (success) <InfoTip id="llm.kpi.success" /></CardTitle>
             <CheckCircle className="h-4 w-4 text-green-500" />
           </CardHeader>
           <CardContent>
@@ -306,7 +307,7 @@ function ScanListDashboardLLM({ dashboardData }: { dashboardData: LLMListDashboa
         </Card>
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Avg Risk Score</CardTitle>
+            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Avg Risk Score <InfoTip id="llm.kpi.avg_risk" /></CardTitle>
             <Shield className="h-4 w-4 text-zinc-500" />
           </CardHeader>
           <CardContent>
@@ -316,7 +317,7 @@ function ScanListDashboardLLM({ dashboardData }: { dashboardData: LLMListDashboa
         </Card>
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Critical Vulns</CardTitle>
+            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Critical Vulns <InfoTip id="llm.kpi.vulns" /></CardTitle>
             <Bug className="h-4 w-4 text-red-500" />
           </CardHeader>
           <CardContent>
@@ -326,7 +327,7 @@ function ScanListDashboardLLM({ dashboardData }: { dashboardData: LLMListDashboa
         </Card>
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Total Vulns</CardTitle>
+            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Total Vulns <InfoTip id="llm.kpi.vulns" /></CardTitle>
             <Bug className="h-4 w-4 text-zinc-500" />
           </CardHeader>
           <CardContent>
@@ -336,7 +337,7 @@ function ScanListDashboardLLM({ dashboardData }: { dashboardData: LLMListDashboa
         </Card>
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">OWASP Score</CardTitle>
+            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">OWASP Score <InfoTip id="llm.kpi.owasp" /></CardTitle>
             <Shield className="h-4 w-4 text-zinc-500" />
           </CardHeader>
           <CardContent>
@@ -346,7 +347,7 @@ function ScanListDashboardLLM({ dashboardData }: { dashboardData: LLMListDashboa
         </Card>
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Passed Rate</CardTitle>
+            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Passed Rate <InfoTip id="llm.kpi.passed_rate" /></CardTitle>
             <Percent className="h-4 w-4 text-green-500" />
           </CardHeader>
           <CardContent>
@@ -360,7 +361,7 @@ function ScanListDashboardLLM({ dashboardData }: { dashboardData: LLMListDashboa
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Risk Level Distribution</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Risk Level Distribution <InfoTip id="llm.chart.risk_level" /></CardTitle>
             <CardDescription>Vulnerability severity across scans</CardDescription>
           </CardHeader>
           <CardContent>
@@ -382,7 +383,7 @@ function ScanListDashboardLLM({ dashboardData }: { dashboardData: LLMListDashboa
         </Card>
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Attack Vector Test Results</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Attack Vector Test Results <InfoTip id="llm.chart.attack_vectors" /></CardTitle>
             <CardDescription>Passed vs failed per probe</CardDescription>
           </CardHeader>
           <CardContent>
@@ -404,7 +405,7 @@ function ScanListDashboardLLM({ dashboardData }: { dashboardData: LLMListDashboa
         </Card>
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Model Risk Comparison</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Model Risk Comparison <InfoTip id="llm.chart.model_risk" /></CardTitle>
             <CardDescription>Average risk score per model</CardDescription>
           </CardHeader>
           <CardContent>
@@ -429,7 +430,7 @@ function ScanListDashboardLLM({ dashboardData }: { dashboardData: LLMListDashboa
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">AI Security Posture Overview</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">AI Security Posture Overview <InfoTip id="llm.chart.posture" /></CardTitle>
             <CardDescription>Resistance scores across categories</CardDescription>
           </CardHeader>
           <CardContent>
@@ -449,7 +450,7 @@ function ScanListDashboardLLM({ dashboardData }: { dashboardData: LLMListDashboa
         </Card>
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">OWASP Top 10 LLM Metrics</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">OWASP Top 10 LLM Metrics <InfoTip id="llm.chart.owasp" /></CardTitle>
             <CardDescription>Issues by OWASP LLM category</CardDescription>
           </CardHeader>
           <CardContent>
@@ -470,7 +471,7 @@ function ScanListDashboardLLM({ dashboardData }: { dashboardData: LLMListDashboa
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Scans Per Day</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Scans Per Day <InfoTip id="llm.chart.scans_per_day" /></CardTitle>
             <CardDescription>Number of scans created each day</CardDescription>
           </CardHeader>
           <CardContent>
@@ -491,7 +492,7 @@ function ScanListDashboardLLM({ dashboardData }: { dashboardData: LLMListDashboa
         </Card>
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="items-center pb-2">
-            <CardTitle className="text-base">Scan Status Breakdown</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Scan Status Breakdown <InfoTip id="llm.chart.status" /></CardTitle>
             <CardDescription>Distribution of scan outcomes</CardDescription>
           </CardHeader>
           <CardContent>
@@ -720,6 +721,7 @@ export default function LLMPage() {
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
                       <Input placeholder="Search by title..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9 h-9 cursor-text" />
                     </div>
+                    <InfoTip id="scan.filter.search" className="-ml-2" />
                     <Select value={statusFilter} onValueChange={setStatusFilter}>
                       <SelectTrigger className="h-9 min-w-[150px] cursor-pointer"><SelectValue placeholder="Scan status" /></SelectTrigger>
                       <SelectContent>
@@ -732,6 +734,7 @@ export default function LLMPage() {
                         <SelectItem value="failure">Failure</SelectItem>
                       </SelectContent>
                     </Select>
+                    <InfoTip id="scan.status" className="-ml-2" />
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button
@@ -754,6 +757,7 @@ export default function LLMPage() {
                           <ChevronDown className="h-3 w-3 opacity-70 shrink-0" />
                         </Button>
                       </DropdownMenuTrigger>
+                      <InfoTip id="scan.filter.risk" className="-ml-2" />
                       <DropdownMenuContent align="start" className="min-w-[180px]">
                         <DropdownMenuLabel className="text-xs font-normal text-zinc-500">Filter by risk score</DropdownMenuLabel>
                         <DropdownMenuSeparator />
@@ -795,6 +799,7 @@ export default function LLMPage() {
                           <ChevronDown className="h-3 w-3 opacity-70 shrink-0" />
                         </Button>
                       </DropdownMenuTrigger>
+                      <InfoTip id="scan.filter.sort" className="-ml-2" />
                       <DropdownMenuContent align="start" className="min-w-[200px]">
                         <DropdownMenuLabel className="text-xs font-normal text-zinc-500">Sort by</DropdownMenuLabel>
                         <DropdownMenuSeparator />
@@ -856,17 +861,17 @@ export default function LLMPage() {
                         <TableHeader>
                           <TableRow>
                             <TableHead className="w-[160px] min-w-[120px]">Title</TableHead>
-                            <TableHead>Created at</TableHead>
-                            <TableHead>Last updated</TableHead>
-                            <TableHead>Scan status</TableHead>
-                            <TableHead className="w-[180px]">Vulnerabilities</TableHead>
-                            <TableHead className="w-[90px]">Risk score</TableHead>
-                            <TableHead className="w-[100px]">Model type</TableHead>
-                            <TableHead className="w-[140px]">Model name</TableHead>
-                            <TableHead className="w-[80px]">Probes</TableHead>
-                            <TableHead className="w-[70px]">MITRE</TableHead>
-                            <TableHead className="w-[80px]">Credits</TableHead>
-                            <TableHead>Owner</TableHead>
+                            <TableHead><span className="inline-flex items-center gap-1">Created at <InfoTip id="scan.table.created" /></span></TableHead>
+                            <TableHead><span className="inline-flex items-center gap-1">Last updated <InfoTip id="scan.table.updated" /></span></TableHead>
+                            <TableHead><span className="inline-flex items-center gap-1">Scan status <InfoTip id="scan.status" /></span></TableHead>
+                            <TableHead className="w-[180px]"><span className="inline-flex items-center gap-1">Vulnerabilities <InfoTip id="llm.table.vulns" /></span></TableHead>
+                            <TableHead className="w-[90px]"><span className="inline-flex items-center gap-1">Risk score <InfoTip id="llm.table.risk" /></span></TableHead>
+                            <TableHead className="w-[100px]"><span className="inline-flex items-center gap-1">Model type <InfoTip id="llm.table.model_type" /></span></TableHead>
+                            <TableHead className="w-[140px]"><span className="inline-flex items-center gap-1">Model name <InfoTip id="llm.table.model_name" /></span></TableHead>
+                            <TableHead className="w-[80px]"><span className="inline-flex items-center gap-1">Probes <InfoTip id="llm.table.probes" /></span></TableHead>
+                            <TableHead className="w-[70px]"><span className="inline-flex items-center gap-1">MITRE <InfoTip id="llm.table.mitre" /></span></TableHead>
+                            <TableHead className="w-[80px]"><span className="inline-flex items-center gap-1">Credits <InfoTip id="scan.table.credits" /></span></TableHead>
+                            <TableHead><span className="inline-flex items-center gap-1">Owner <InfoTip id="scan.table.owner" /></span></TableHead>
                             <TableHead className="text-right w-[80px]">Actions</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -1007,8 +1012,9 @@ export default function LLMPage() {
             <DialogTitle>Rename scan</DialogTitle>
             <DialogDescription>Enter a new name for this scan.</DialogDescription>
           </DialogHeader>
-          <div className="py-4">
-            <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Scan name" onKeyDown={(e) => { if (e.key === "Enter") confirmRename(); }} />
+          <div className="py-4 space-y-2">
+            <FieldLabel htmlFor="rename-scan-title" infoId="scan.rename.title">Scan name</FieldLabel>
+            <Input id="rename-scan-title" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Scan name" onKeyDown={(e) => { if (e.key === "Enter") confirmRename(); }} />
           </div>
           <DialogFooter>
             <Button variant="outline" className="cursor-pointer" onClick={() => { setRenameDialogOpen(false); setNewName(""); }}>Cancel</Button>
@@ -1040,8 +1046,9 @@ export default function LLMPage() {
             <DialogTitle>Create New Scan</DialogTitle>
             <DialogDescription>Enter a title for your new LLM scan.</DialogDescription>
           </DialogHeader>
-          <div className="py-4">
-            <Input value={newScanTitle} onChange={(e) => setNewScanTitle(e.target.value)} placeholder="Scan title" onKeyDown={(e) => { if (e.key === "Enter") confirmCreate(); }} />
+          <div className="py-4 space-y-2">
+            <FieldLabel htmlFor="new-scan-title" infoId="scan.new.title">Scan title</FieldLabel>
+            <Input id="new-scan-title" value={newScanTitle} onChange={(e) => setNewScanTitle(e.target.value)} placeholder="Scan title" onKeyDown={(e) => { if (e.key === "Enter") confirmCreate(); }} />
           </div>
           <DialogFooter>
             <Button variant="outline" className="cursor-pointer" onClick={() => { setCreateDialogOpen(false); setNewScanTitle(""); }}>Cancel</Button>
