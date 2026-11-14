@@ -38,6 +38,7 @@ import { toast } from "@/utils/toast";
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { DASTConversationResponse, DASTScanResponse, getSastConversationMessages, IACConversationResponse, LLMConversationResponse, SCASBOMConversationResponse, CBOMConversationResponse, AIBOMConversationResponse, sendMessageToScan } from '@/utils/backend_api';
 import { showErrorToast } from '@/utils/error-handler';
+import { refreshCreditBalance } from '@/utils/creditBalance';
 import ScanStatusIndicator from '@/components/ai/ScanStatusIndicator';
 import { SastConversationResponse } from '@/utils/backend_api';
 import { UseQueryResult } from '@tanstack/react-query';
@@ -142,6 +143,7 @@ const ChatWindow = ({
       toast.error('Invalid conversation type');
   }
 
+  const queryClient = useQueryClient();
   const handleSubmit: FormEventHandler<HTMLFormElement> = useCallback( async (event) => {
     event.preventDefault();
 
@@ -189,6 +191,8 @@ const ChatWindow = ({
       );
     } catch (error) { 
       showErrorToast(error);
+    } finally {
+      refreshCreditBalance(queryClient); // a message is charged (0.006 credits, backend deduct_credits_from_team_for_message)
     }
 
     // Start streaming response from the chatbot ( removed )
@@ -197,9 +201,8 @@ const ChatWindow = ({
     setIsTyping(false);
     setStreamingMessageId(null);
 
-  }, [inputValue, isTyping]);
+  }, [inputValue, isTyping, queryClient]);
 
-  const queryClient = useQueryClient();
   const refreshQuery = useCallback(() => {
     if (type === 'sast') {
       queryClient.invalidateQueries({ queryKey: ['sast-conversation-data', team_id, scan_id] });

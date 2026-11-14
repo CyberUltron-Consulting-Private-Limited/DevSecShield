@@ -1378,29 +1378,21 @@ const getTeam = async (team_id: number): Promise<TeamDetails> => {
     }
 }
 
+// updateTeam, removeOrAddTeamMembers and deleteTeam only throw on a refusal: the caller's onError shows the error
+// (app/[team_id]/settings/page.tsx). Both used to, so one refused save showed two identical toasts (#12).
 const updateTeam = async (team_id: number, data: UpdateTeamData) => {
-    try {
-        const response = await api.put(`/team/${team_id}`, data)
-        toast.success("Team updated")
-        return response.data
-    } catch (error) {
-        showErrorToast(error, "Error updating team")
-        throw error
-    }
+    const response = await api.put(`/team/${team_id}`, data)
+    toast.success("Team updated")
+    return response.data
 }
 
 const removeOrAddTeamMembers = async (team_id: number, data: RemoveOrAddMembersToTeamData) => {
-    try {
-        const response = await api.patch(`/team/${team_id}`, data)
-        // "add" invites: nobody joins until they accept the mailed link
-        toast.success(data.intent === "add"
-            ? (response.data?.message ?? "Invitation sent")
-            : "Members removed successfully")
-        return response.data
-    } catch (error) {
-        showErrorToast(error, data.intent === "add" ? "Error sending the invitation" : "Error removing members")
-        throw error
-    }
+    const response = await api.patch(`/team/${team_id}`, data)
+    // "add" invites: nobody joins until they accept the mailed link
+    toast.success(data.intent === "add"
+        ? (response.data?.message ?? "Invitation sent")
+        : "Members removed successfully")
+    return response.data
 }
 
 /** An open invitation to the team, as its admins see it (backend utilities/team/invitations.py). */
@@ -1442,13 +1434,8 @@ const revokeTeamInvitation = async (team_id: number, invitation_id: number) => {
 }
 
 const deleteTeam = async (team_id: number) => {
-    try {
-        await api.delete(`/team/${team_id}`)
-        toast.success("Team deleted")
-    } catch (error) {
-        showErrorToast(error, "Error deleting team")
-        throw error
-    }
+    await api.delete(`/team/${team_id}`)
+    toast.success("Team deleted")
 }
 
 export {

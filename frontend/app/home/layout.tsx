@@ -4,8 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Loader2,
-  LogOut,
-  ChevronDown,
   ShieldCheck,
   Users,
   Plus,
@@ -24,14 +22,7 @@ import {
   SidebarProvider,
   SidebarInset,
 } from "@/components/ui/sidebar";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -56,97 +47,10 @@ import {
 } from "@tanstack/react-query";
 import { makeQueryClient } from "@/utils/query_client"
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
-import { getUserProfile, logout, getTeams, createTeam, type TeamListItem, type CreateTeamData } from "@/utils/backend_api";
+import { getTeams, createTeam, type TeamListItem, type CreateTeamData } from "@/utils/backend_api";
 import { showErrorToast } from "@/utils/error-handler";
 import { MobileNavBar } from "@/components/mobile-nav-bar";
-
-function UserFooter() {
-  const router = useRouter();
-  const queryClient = useQueryClient();
-
-  const { data: userProfile, isLoading } = useQuery({
-    queryKey: ["user-profile"],
-    queryFn: getUserProfile,
-  });
-
-  const logoutMutation = useMutation({
-    mutationFn: logout,
-    onSuccess: () => {
-      queryClient.clear();
-      router.push("/login");
-    },
-    onError: () => {
-      queryClient.clear();
-      router.push("/login");
-    },
-  });
-
-  const handleLogout = () => {
-    logoutMutation.mutate();
-  };
-
-  const getInitials = (
-    firstName: string | undefined,
-    lastName: string | undefined
-  ) => {
-    const first = firstName?.charAt(0).toUpperCase() || "";
-    const last = lastName?.charAt(0).toUpperCase() || "";
-    return first + last || "U";
-  };
-
-  if (isLoading) {
-    return (
-      <div className="p-4">
-        <div className="flex items-center gap-3 px-3 py-2">
-          <Skeleton className="h-10 w-10 shrink-0 rounded-full" />
-          <div className="flex-1 min-w-0 space-y-1">
-            <Skeleton className="h-4 w-24" />
-            <Skeleton className="h-3 w-32" />
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!userProfile) {
-    return null;
-  }
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          className="w-full flex items-center gap-3 px-3 py-2 h-auto rounded-md hover:bg-zinc-800 text-zinc-300 hover:text-white cursor-pointer"
-        >
-          <Avatar className="h-10 w-10 shrink-0 rounded-full bg-blue-600">
-            <AvatarFallback className="rounded-full bg-blue-600 text-white font-semibold text-sm">
-              {getInitials(userProfile.first_name, userProfile.last_name)}
-            </AvatarFallback>
-          </Avatar>
-          <div className="flex-1 min-w-0 text-left">
-            <p className="text-sm font-medium text-white truncate">
-              {userProfile.first_name} {userProfile.last_name}
-            </p>
-            <p className="text-xs text-zinc-400 truncate">
-              {userProfile.email}
-            </p>
-          </div>
-          <ChevronDown className="h-4 w-4 text-zinc-400 shrink-0" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-56 bg-zinc-800 border-zinc-700">
-        <DropdownMenuItem
-          onClick={handleLogout}
-          className="text-red-400 focus:text-red-300 focus:bg-red-500/10 cursor-pointer bg-zinc-800"
-        >
-          <LogOut className="h-4 w-4" />
-          <span>Logout</span>
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
+import { UserMenu } from "@/components/user-menu";
 
 function CreateTeamTriggerWithDialog() {
   const router = useRouter();
@@ -364,7 +268,7 @@ export default function HomeLayout({
           </SidebarContent>
 
           <SidebarFooter>
-            <UserFooter />
+            <UserMenu />
           </SidebarFooter>
         </Sidebar>
 

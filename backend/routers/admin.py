@@ -3,7 +3,7 @@ from fastapi import Depends, FastAPI, HTTPException, Header, status, APIRouter
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, select
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from backend.utilities.auth.auth_schema import NoEchoValidationRoute, clean_email, clean_new_password
 import datetime
 from backend.utilities.auth.auth_utils import (
@@ -41,9 +41,17 @@ class UpdateUserPlanData(BaseModel):
     user_id: int
     plan: str
 
+# The highest balance an admin sets, the console's too (frontend/utils/adminCredits.ts MAX_CREDIT_BALANCE). Below it a
+# float keeps a 0.006-credit charge exact to well under a cent, and the console shows it without an exponent.
+MAX_CREDIT_BALANCE = 1_000_000_000
+
 class UpdateTeamCreditBalanceData(BaseModel):
-    team_id: int
-    credit_balance: int
+    team_id: int = Field(strict=True)
+    # credits are fractional (Team.credit_balance is a float; prices are to the cent, a server is 0.2, a chat message
+    # 0.006). A JSON number only: strict, so text ("12.5", "1e3") and booleans are 422 (lax mode took false as 0, so a
+    # client bug zeroed a team); NaN / Infinity, which Python's JSON parser accepts, would break every later comparison.
+    # Negative or above MAX_CREDIT_BALANCE: 400 below. The admin console checks the same (frontend/utils/adminCredits.ts).
+    credit_balance: float = Field(strict=True, allow_inf_nan=False)
 
 class ToggleAdminAccessData(BaseModel):
     user_id: int
@@ -325,8 +333,13 @@ async def update_team_credit_balance(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Credit balance cannot be negative"
                 )
-            
-            team.credit_balance = data.credit_balance
+            if data.credit_balance > MAX_CREDIT_BALANCE:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Credit balance cannot be more than {MAX_CREDIT_BALANCE:,}"
+                )
+
+            team.credit_balance = data.credit_balance + 0.0  # -0.0 is stored as 0
             session.add(team)
             session.commit()
             session.refresh(team)

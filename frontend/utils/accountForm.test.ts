@@ -26,8 +26,9 @@ assert.ok(page.includes("changePassword(current, next)"), "the form calls POST /
 assert.ok(page.includes("mutationFn: logout"), "sign out everywhere uses /logout (it revokes every token)");
 assert.ok(page.includes("6-digit code we email"), "says sign-in already uses an emailed code");
 assert.ok(page.includes('data-testid="account-email"'));
-const layout = fs.readFileSync(path.join(root, "app", "[team_id]", "layout.tsx"), "utf8");
-assert.ok(layout.includes("router.push(`/${teamId}/account`)"), "the user menu opens the Account page");
+// the user menu both layouts render (components/user-menu.tsx, #14) opens the Account page
+const menu = fs.readFileSync(path.join(root, "components", "user-menu.tsx"), "utf8");
+assert.ok(menu.includes("router.push(accountPath(teamId))"), "the user menu opens the Account page");
 const api = fs.readFileSync(path.join(root, "utils", "backend_api.ts"), "utf8");
 const fn = api.slice(api.indexOf("const changePassword = async"), api.indexOf("const logout = async"));
 assert.ok(fn.includes('api.post("/account/password"') && fn.includes('localStorage.setItem("access_token"'),

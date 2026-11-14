@@ -91,6 +91,7 @@ import {
   usePolledJob,
   type Tone,
 } from "./shared";
+import { refreshCreditBalance } from "@/utils/creditBalance";
 
 // ---------------------------------------------------------------------------- constants (mirror backend kinds.py / templates.py)
 type ServerKind = "linux_servers" | "windows_servers" | "active_directory";
@@ -404,7 +405,10 @@ export default function ServersTab({ teamId, onNavigate }: { teamId: number; onN
     mutationFn: (source: CbomSource) => updateCbomSource(teamId, source.id, { enabled: !source.enabled, expected_version: source.row_version }),
     // Keep an open edit form on the new version so its next save does not hit a 409.
     onSuccess: (data) => setEditing((cur) => (cur && cur.id === data.source.id ? data.source : cur)),
-    onSettled: invalidate,
+    onSettled: () => {
+      invalidate();
+      refreshCreditBalance(queryClient); // every source edit (only a changed connection refunds; utils/creditBalance.ts)
+    },
   });
   const deleteMutation = useMutation({
     mutationFn: (source: CbomSource) => deleteCbomSource(teamId, source.id),
@@ -413,7 +417,10 @@ export default function ServersTab({ teamId, onNavigate }: { teamId: number; onN
       setEditing((cur) => (cur && cur.id === source.id ? null : cur));
       setTestView((cur) => (cur && cur.sourceId === source.id ? null : cur));
     },
-    onSettled: invalidate,
+    onSettled: () => {
+      invalidate();
+      refreshCreditBalance(queryClient); // deleting a source refunds its pending collect jobs
+    },
   });
 
   // Scroll after the re-render: the form is remounted (new key) and the test panel opens, so a scroll started before
@@ -773,7 +780,10 @@ function ServerForm({
       const status = httpStatus(err);
       if (source && (status === 409 || status === 404)) onStale();
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) }),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) });
+      refreshCreditBalance(queryClient); // a changed connection refunds the source's pending collect jobs
+    },
   });
 
   const changeKind = (kind: ServerKind) => {

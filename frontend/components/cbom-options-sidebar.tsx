@@ -44,6 +44,7 @@ import {
 import { toast } from "@/utils/toast";
 import { useParams, useRouter } from "next/navigation";
 import { handleApiError } from "@/utils/error-handler";
+import { refreshCreditBalance } from "@/utils/creditBalance";
 import { stateAfterError } from "@/utils/scanErrorRecovery";
 import { ScanRequestError } from "@/components/scan-request-error";
 import { scanFailureMessage } from "@/utils/scanFailure";
@@ -215,7 +216,7 @@ export function CBOMOptionsSidebar({
       }),
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(team_id) });
-      queryClient.invalidateQueries({ queryKey: ["teams"] });
+      refreshCreditBalance(queryClient);
     },
   });
 
@@ -228,8 +229,6 @@ export function CBOMOptionsSidebar({
       setEstimationProcessDone(false);
       setOptionsSidebarState("scanning");
       queryClient.invalidateQueries({ queryKey: ["cbom-conversation-data", team_id, scan_id] });
-      // the credits are charged at start: the team balance in the app sidebar must show it now, not after a reload
-      queryClient.invalidateQueries({ queryKey: ["teams"] });
       // The code scan is running; queue the included sources as a linked run (its failure only toasts).
       if (snapshot && snapshot.estimate.items.some((i) => i.status === "queued")) {
         startSourcesRunMutation.mutate(snapshot);
@@ -247,6 +246,10 @@ export function CBOMOptionsSidebar({
       }
       setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("ready");
+    },
+    // the start charges credits: the balance in the app sidebar shows it without a reload (#13)
+    onSettled: () => {
+      refreshCreditBalance(queryClient);
     },
   });
 
@@ -324,14 +327,6 @@ export function CBOMOptionsSidebar({
     }
   }, [query.data?.scan_status, query.data?.scan_metadata, failureMessage]);
 
-  // A finished scan settles its credits (a failed one is refunded): refresh the team balance in the app sidebar,
-  // which otherwise kept showing the balance from before the scan until a reload.
-  useEffect(() => {
-    if (query.data?.scan_status === "success" || query.data?.scan_status === "failure") {
-      queryClient.invalidateQueries({ queryKey: ["teams"] });
-    }
-  }, [query.data?.scan_status, queryClient]);
-
   const exportMutation = useMutation({
     mutationFn: () => getCBOMExportResults(team_id, scan_id),
     onSuccess: (data) => {
@@ -365,6 +360,10 @@ export function CBOMOptionsSidebar({
     onError: (err) => {
       setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("error");
+    },
+    // a re-run can move credits (PR #57 charges the price difference): the balance shows what the server did
+    onSettled: () => {
+      refreshCreditBalance(queryClient);
     },
   });
 

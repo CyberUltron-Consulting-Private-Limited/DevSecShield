@@ -40,6 +40,7 @@ import {
 import { toast } from "@/utils/toast";
 import { useRouter } from "next/navigation";
 import { handleApiError } from "@/utils/error-handler";
+import { refreshCreditBalance } from "@/utils/creditBalance";
 import { scanFailureMessage } from "@/utils/scanFailure";
 import { stateAfterError } from "@/utils/scanErrorRecovery";
 import { DAST_RERUN_NOTE, readDastRerun } from "@/utils/dastRerun";
@@ -239,6 +240,10 @@ export function DASTOptionsSidebar({
       setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("ready");
     },
+    // the start charges credits: the balance in the app sidebar shows it without a reload (#13)
+    onSettled: () => {
+      refreshCreditBalance(queryClient);
+    },
   });
 
   /** Reset estimation when key scan inputs change so user must re-run estimate for new config. */
@@ -324,6 +329,10 @@ export function DASTOptionsSidebar({
     onError: (err) => {
       setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("error");
+    },
+    // a re-run can move credits (PR #57 charges the price difference): the balance shows what the server did
+    onSettled: () => {
+      refreshCreditBalance(queryClient);
     },
   });
 
