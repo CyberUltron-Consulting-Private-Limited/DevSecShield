@@ -15,7 +15,8 @@ from typing import Any, BinaryIO, Callable, Iterator
 from sqlalchemy import and_, func, or_
 from sqlmodel import Session, select
 
-from backend.new_models import CbomCollectedAsset, CbomCollectionJob, CbomCollectionRun, CbomCollectionSource
+from backend.new_models import (CbomCollectedAsset, CbomCollectionJob, CbomCollectionRun, CbomCollectionSettings,
+                                 CbomCollectionSource)
 from backend.utilities.build_info import build_sha, build_version
 from backend.utilities.cbom_sources import agility as AGILITY
 from backend.utilities.cbom_sources import crypto_kb
@@ -34,10 +35,17 @@ EXPORT_CAP = 50_000
 _SERIAL_NS = uuid.uuid5(uuid.NAMESPACE_URL, "https://zeroshield.ai/cbom/sources/run")
 
 
-def export_serial(run_id: int, kb_version: str, judged_on: str | None = None) -> str:
+def export_serial(run_id: int, kb_version: str, judged_on: str | None = None, *, grade_model_version: str | None = None,
+                  grade_inputs_digest: str | None = None, agility_version: str | None = None) -> str:
     """``judged_on``: the day a date-based rule (certificate expiry, library end of life) changed a finding since the
-    run; the export then differs from the run's own record, so it gets its own serial."""
+    run; the export then differs from the run's own record, so it gets its own serial. The quantum risk grade model
+    version and its inputs digest (CB-19 cx3 ST-A) and the agility version (CB-24) are in the key too: an export whose
+    grade or fix-class content differs never reuses a serial."""
     key = f"{run_id}:{kb_version}" + (f":{judged_on}" if judged_on else "")
+    if grade_model_version is not None or grade_inputs_digest is not None:
+        key += f":qg={grade_model_version}:gi={grade_inputs_digest}"
+    if agility_version is not None:
+        key += f":fx={agility_version}"
     return f"urn:uuid:{uuid.uuid5(_SERIAL_NS, key)}"
 _IMPACT_ORDER = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
 
@@ -528,10 +536,95 @@ def _certificate_parts(row: CbomCollectedAsset, facts: dict[str, Any], size: int
     return refs
 
 
+FIX_CLASS_BASIS_CAP = 512
+
+
+def _compact(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def fix_class_basis(per_code: Any) -> str:
+    """``zs:fix_class_basis``: compact JSON ``[{"code","class","rule"}]`` of an asset's codes (``agility.evaluate``'s
+    ``by_code``), at most ``FIX_CLASS_BASIS_CAP`` characters; when cut, the list ends with the string ``…+<n>`` (n:
+    the codes left out), so the value is always JSON."""
+    items = [{"code": p["code"], "class": p["class"], "rule": p["rule"]} for p in per_code]
+    out = _compact(items)
+    if len(out) <= FIX_CLASS_BASIS_CAP:
+        return out
+    for keep in range(len(items) - 1, -1, -1):
+        out = _compact([*items[:keep], f"…+{len(items) - keep}"])
+        if len(out) <= FIX_CLASS_BASIS_CAP:
+            return out
+    return _compact([f"…+{len(items)}"])
+
+
+class Assessment:
+    """One export's quantum risk grade (CB-19) and fix class (CB-24) per asset, from the same view-time functions the
+    run API uses: ``qgrade.load_context`` / ``GradeContext.grade_row`` (the run asset list's grade) and
+    ``agility.RunAgility`` (the run posture's accumulator, whose per-asset result is ``agility.evaluate``'s, the list's
+    fix class). Contexts are loaded once per export; ``add`` grades one row and counts it. The property list of a
+    component is shared by every asset with the same values (a few dozen lists for 50,000 assets), like provenance."""
+
+    def __init__(self, session: Session, run: CbomCollectionRun) -> None:
+        self.grading = QG.load_context(session, team_id=run.team_id, run_id=run.id)  # the team's Mosca, as the list
+        self.agility = AGILITY.RunAgility(session, run.team_id, run.id, self.grading.sources)
+        self.q_grades: dict[str, int] = {g: 0 for g in (*QG.GRADES, "none")}
+        self._basis: dict[int, tuple[Any, str]] = {}  # id(by_code tuple) -> (the tuple, kept alive; its JSON)
+        self._lists: dict[tuple, list[dict[str, str]]] = {}
+
+    def add(self, row: CbomCollectedAsset, codes: list[str]) -> list[dict[str, str]]:
+        graded = self.grading.grade_row(row, codes, explain=False)
+        whole, per = self.agility.add(row, codes)
+        self.q_grades[graded.q_grade or "none"] += 1
+        held = self._basis.get(id(per))
+        if held is None or held[0] is not per:
+            held = self._basis[id(per)] = (per, fix_class_basis(per))
+        key = (graded.q_grade, graded.q_reason, whole["fix_class"], whole["floor"], whole["confidence"], held[1])
+        props = self._lists.get(key)
+        if props is None:  # "none": the API's null (no grade, no floor, no confidence); every property always present
+            props = self._lists[key] = [
+                {"name": "zs:q_grade", "value": graded.q_grade or "none"},
+                {"name": "zs:q_label", "value": graded.q_label or "none"},
+                {"name": "zs:q_reason", "value": graded.q_reason},
+                {"name": "zs:fix_class", "value": whole["fix_class"]},
+                {"name": "zs:fix_class_floor", "value": whole["floor"] or "none"},
+                {"name": "zs:fix_class_confidence", "value": whole["confidence"] or "none"},
+                {"name": "zs:fix_class_basis", "value": held[1]},
+            ]
+        return props
+
+    def metadata(self, session: Session, team_id: int) -> list[dict[str, str]]:
+        """The run-level values, equal to the run posture API's (``grade_*``, ``q_grades``, ``fix_classes*``,
+        ``fix_class_self_fixable_pct``, ``agility_version``) over the exported components.
+
+        ``zs:grade_inputs`` is the posture's ``grade_inputs`` plus ``captured_at``: with ``source`` "current" (the
+        team's Mosca as it is now; CB-19 PR-2 snapshots it per run) that is when the team's settings were last written
+        (null when the team has none), never the request time, so repeat downloads of a run stay byte-identical."""
+        agility = self.agility.result()
+        pct = agility["fix_class_self_fixable_pct"]
+        settings = session.exec(select(CbomCollectionSettings).where(CbomCollectionSettings.team_id == team_id)).first()
+        written = (settings.last_updated or settings.created_at) if settings is not None else None
+        inputs = {**self.grading.inputs(), "captured_at": iso_z(written) if written else None}
+        return [
+            {"name": "zs:grade_model", "value": QG.GRADE_MODEL},
+            {"name": "zs:grade_model_version", "value": QG.GRADE_MODEL_VERSION},
+            {"name": "zs:grade_model_sha256", "value": hashlib.sha256(QG.FORMULA_TEXT.encode("utf-8")).hexdigest()},
+            {"name": "zs:grade_inputs", "value": _compact(inputs)},
+            {"name": "zs:q_distribution", "value": _compact(self.q_grades)},
+            {"name": "zs:agility_model", "value": AGILITY.MODEL},
+            {"name": "zs:agility_version", "value": agility["agility_version"]},
+            {"name": "zs:fix_class_distribution", "value": _compact(agility["fix_classes"])},
+            {"name": "zs:fix_class_distribution_excl_pq", "value": _compact(agility["fix_classes_excl_pq"])},
+            {"name": "zs:fix_class_self_fixable_pct", "value": "none" if pct is None else str(pct)},
+        ]
+
+
 def _detail_properties(row: CbomCollectedAsset, facts: dict[str, Any], crypto: dict[str, Any], size: int | None,
-                       curve: str | None, signature: str | None, view: dict[str, Any]) -> list[dict[str, str]]:
+                       curve: str | None, signature: str | None, view: dict[str, Any],
+                       assessed: list[dict[str, str]] | None = None) -> list[dict[str, str]]:
     """The values the asset table and the oracle compare that CycloneDX has no field for (or not on this asset type):
-    PQC class, key size, curve, signature algorithm, key-exchange groups, SSH algorithm lists, CB-04 identity facts."""
+    PQC class, then the quantum risk grade and fix class (``assessed``: ``Assessment.add``'s list), key size, curve,
+    signature algorithm, key-exchange groups, SSH algorithm lists, CB-04 identity facts."""
     out: list[tuple[str, str | None]] = [
         ("zs:pqc_class", pqc_class(row.asset_type, row.quantum_vulnerable, list(view["finding_codes"]), facts)),
         ("zs:key_size", str(size) if size else None), ("zs:curve", curve), ("zs:signature_algorithm", signature),
@@ -553,17 +646,20 @@ def _detail_properties(row: CbomCollectedAsset, facts: dict[str, Any], crypto: d
                                                                    "pq_group"))))))
         negotiated = _named([v for v in (_text(facts.get("negotiated_group")), _text(facts.get("group"))) if v])
         out += [("zs:groups", ",".join(groups) or None), ("zs:groups_negotiated", negotiated[0] if negotiated else None)]
-    return [{"name": name, "value": value} for name, value in out if value]
+    props = [{"name": name, "value": value} for name, value in out if value]
+    at = 1 if props and props[0]["name"] == "zs:pqc_class" else 0
+    props[at:at] = assessed or ()  # the shared (read-only) dicts as they are: next to zs:pqc_class
+    return props
 
 
 def _component(row: CbomCollectedAsset, source_name: str | None, view: dict[str, Any] | None = None,
                prov: PROV.JobProvenance | None = None, shared: dict[tuple, list] | None = None,
-               parts: CertificateParts | None = None) -> dict[str, Any]:
+               parts: CertificateParts | None = None, assessed: list[dict[str, str]] | None = None) -> dict[str, Any]:
     """One asset as a CycloneDX component. ``shared``: one export's cache of provenance property lists. Rows of one
     job attempt stored in one batch have the same provenance, so their components share the same (read-only)
     property objects: a 50k-asset export then holds a few hundred provenance lists instead of 50,000. ``parts``: the
     export's certificate parts; a certificate references them, and the document lists ``parts.components()`` after
-    the assets."""
+    the assets. ``assessed``: the asset's quantum risk grade and fix class properties (``Assessment.add``)."""
     facts = row.facts or {}
     view = view or shown(row)
     ref = f"zs-asset-{row.id}"
@@ -600,7 +696,7 @@ def _component(row: CbomCollectedAsset, source_name: str | None, view: dict[str,
         from backend.utilities.cbom_sources.sbom_link import ecosystem_of, library_purl
 
         package, version = str(facts.get("package") or name)[:255], str(facts.get("version") or "")
-        props += _detail_properties(row, facts, {}, size, curve, signature, view) + provenance
+        props += _detail_properties(row, facts, {}, size, curve, signature, view, assessed) + provenance
         out = {"type": "library", "bom-ref": ref, "name": package, "version": version,
                "evidence": {"occurrences": [{"location": row.location}]}, "properties": props}
         # an OS package the node read from a package database carries its own purl (pkg:deb/ubuntu/libssl3@...,
@@ -647,7 +743,7 @@ def _component(row: CbomCollectedAsset, source_name: str | None, view: dict[str,
         props.append({"name": "zs:algorithm", "value": row.algorithm})
     if row.protocol:  # the asset table's protocol column as stored (protocolProperties.type is CycloneDX's enum)
         props.append({"name": "zs:protocol", "value": row.protocol})
-    props += _detail_properties(row, facts, crypto, size, curve, signature, view) + provenance
+    props += _detail_properties(row, facts, crypto, size, curve, signature, view, assessed) + provenance
     if facts.get("source") == "ct":
         props += ct_properties(facts)
     return {"type": "cryptographic-asset", "bom-ref": ref, "name": str(name)[:255], "cryptoProperties": crypto,
@@ -706,12 +802,18 @@ def _document(session: Session, run: CbomCollectionRun, now: _dt.datetime
                 gaps.append(f"{info['source_name']}: {target.get('target')} {target.get('status')}")
         if job.status != "success":
             gaps.append(f"{info['source_name']}: job {job.status}")
+    # CB-19 / CB-24: grade and fix class of every asset before the head (its metadata holds their distributions);
+    # each asset keeps a reference to a shared property list, its component is still made in the stream below
+    assessment = Assessment(session, run)
+    assessed = {row.id: assessment.add(row, views[row.id]["finding_codes"]) for row in rows}
     kb_version = crypto_kb.version()
     versions = [(name, value) for name, value in (("zs:run_kb_version", run.kb_version),
                                                    ("zs:classifier_version", run.classifier_version),
                                                    ("zs:engine_version", run.engine_version)) if value]
+    serial = export_serial(run.id or 0, kb_version, judged_on, grade_model_version=QG.GRADE_MODEL_VERSION,
+                           grade_inputs_digest=assessment.grading.digest, agility_version=AGILITY.version())
     head = {
-        "bomFormat": "CycloneDX", "specVersion": "1.6", "serialNumber": export_serial(run.id or 0, kb_version, judged_on),
+        "bomFormat": "CycloneDX", "specVersion": "1.6", "serialNumber": serial,
         "version": 1,
         "metadata": {
             "timestamp": iso_z(now),
@@ -723,6 +825,7 @@ def _document(session: Session, run: CbomCollectionRun, now: _dt.datetime
                 {"name": "zs:kb_version", "value": kb_version}, {"name": "zs:build", "value": build_sha()},
                 *[{"name": name, "value": str(value)} for name, value in versions],
                 *([{"name": "zs:judged_on", "value": judged_on}] if judged_on else []),
+                *assessment.metadata(session, run.team_id),
                 *[{"name": "zs:gap", "value": gap[:255]} for gap in gaps[:500]],
                 *coverage_gaps(coverage, names, job_names, provs),
             ],
@@ -732,7 +835,7 @@ def _document(session: Session, run: CbomCollectionRun, now: _dt.datetime
     def components() -> Iterator[dict[str, Any]]:
         for row in rows:  # the assets, then the certificate parts they reference
             yield _component(row, names.get(row.source_id or 0) or job_names.get(row.job_id), views[row.id],
-                             provs.get(row.job_id), shared, parts)
+                             provs.get(row.job_id), shared, parts, assessed[row.id])
         yield from parts.components()
 
     return head, components(), lambda: vulnerabilities(list(rows), views)

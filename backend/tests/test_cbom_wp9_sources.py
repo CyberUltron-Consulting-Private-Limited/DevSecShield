@@ -6,6 +6,7 @@ Uses the same SQLite + real-router harness as test_cbom_sources_api.py.
 from __future__ import annotations
 
 import datetime as dt
+import json
 import sys
 from pathlib import Path
 
@@ -295,9 +296,12 @@ def test_run_records_versions_and_the_export_serial_is_deterministic(api, world)
     assert detail["versions"]["engine"]
     first = api("GET", f"/1/cbom/sources/runs/{run['id']}/cbom").json()
     second = api("GET", f"/1/cbom/sources/runs/{run['id']}/cbom").json()
-    assert first["serialNumber"] == second["serialNumber"] == export_serial(run["id"], crypto_kb.version())
-    assert export_serial(run["id"], "2099.1.1.1") != first["serialNumber"]  # a new KB re-judges: new serial
     props = {p["name"]: p["value"] for p in first["metadata"]["properties"]}
+    # the grade model, its inputs and the agility version are in the key too (CB-19 cx3 ST-A, CB-24 §11)
+    graded = {"grade_model_version": props["zs:grade_model_version"], "agility_version": props["zs:agility_version"],
+              "grade_inputs_digest": json.loads(props["zs:grade_inputs"])["digest"]}
+    assert first["serialNumber"] == second["serialNumber"] == export_serial(run["id"], crypto_kb.version(), **graded)
+    assert export_serial(run["id"], "2099.1.1.1", **graded) != first["serialNumber"]  # a new KB re-judges: new serial
     assert props["zs:run_kb_version"] == crypto_kb.version() and props["zs:classifier_version"] == CLASSIFIER_VERSION
 
 
