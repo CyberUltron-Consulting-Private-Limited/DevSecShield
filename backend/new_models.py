@@ -3,6 +3,7 @@ import uuid
 from typing import Dict, Literal
 from sqlmodel import JSON, Column, DateTime, Field, SQLModel, String, Relationship
 from sqlalchemy import Text, UniqueConstraint
+from sqlalchemy.types import TypeDecorator as _SaTypeDecorator
 from sqlalchemy import Index as _SaIndex, func as _sa_func
 scan_types = Literal["sast", "llm", "mcp" , "iac" , "leakage" , "sbom_sca" , "agent_discovery", "dast", "cbom", "ai_bom"]
 
@@ -264,6 +265,19 @@ class CicdIntegration(SQLModel,table=True):
 # No Relationship attributes are declared on Team/User on purpose (no implicit cascades).
 
 
+class CbomFactsJSON(_SaTypeDecorator):
+    """A collected asset's facts as the rules read them: a JSON object.  A stored value that is no object (a list, a
+    number or a string, written before facts were validated as an object, or by hand) is read as ``{}``, unread, so
+    every view and the classifier get the one shape they read instead of an HTTP 500.  The column, its SQL type and
+    what is written are unchanged (JSON); only what a read returns is."""
+
+    impl = JSON
+    cache_ok = True
+
+    def process_result_value(self, value, dialect):
+        return value if value is None or isinstance(value, dict) else {}
+
+
 def _cbom_utcnow() -> datetime.datetime:
     return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
 
@@ -469,7 +483,7 @@ class CbomCollectedAsset(SQLModel, table=True):
     impact: str | None = Field(default=None, max_length=16, index=True)
     finding_codes: list | None = Field(default_factory=list, sa_column=Column(JSON))
     finding: str | None = Field(default=None, max_length=512)
-    facts: Dict | None = Field(default_factory=dict, sa_column=Column(JSON))
+    facts: Dict | None = Field(default_factory=dict, sa_column=Column(CbomFactsJSON))
     created_at: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
 
 

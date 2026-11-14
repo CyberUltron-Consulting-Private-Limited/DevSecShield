@@ -2378,6 +2378,50 @@ export interface CBOMListResponse {
   dashboard_data: CBOMDashboardData
   /** each CBOM Sources source's latest completed collection (one entry per source) */
   sources_runs?: CbomSourcesRun[]
+  /** CB-38: the team's newest CBOM Sources runs (at most 200, newest first), one row per run; absent on older backends */
+  runs_list_data?: RunListRow[]
+  /** CB-38: how many runs the team has in total (more than runs_list_data.length when older runs were not loaded) */
+  runs_total?: number
+  /** CB-38: true when the backend could not list the runs (runs_list_data is then empty; sources_runs is still sent) */
+  runs_list_error?: boolean
+}
+
+/** CB-38: one CBOM Sources run as a row of the CBOM Scans table (GET /{team_id}/cbom/scans `runs_list_data`). */
+export interface RunListRow {
+  kind: "run"
+  id: number
+  /** "Sources run #<id> · <source names joined ', '>" */
+  title: string
+  created_at: string
+  last_updated: string | null
+  finished_at: string | null
+  /** the run status mapped to the scan statuses (contracts/cbom/status_buckets.json `run_to_unified`) */
+  scan_status: "not_started" | "pending" | "started" | "success" | "partial" | "failure" | "cancelled"
+  run_status: "queued" | "running" | "done" | "partial" | "failed" | "cancelled"
+  risk_data: {
+    total_critical: number
+    total_high: number
+    total_medium: number
+    total_low: number
+    total_informational: number
+    total_quantum_vulnerable: number
+  } | null
+  average_risk_score: number | null
+  sources: { id: number; name: string; kind: string }[]
+  repo_url: null
+  branch: null
+  /** credits charged for the run */
+  estimated_credits: number | null
+  credits_refunded: number | null
+  owner_user_email: string | null
+  owner_user_full_name: string | null
+  asset_count: number
+  endpoints_probed: number
+  jobs_total: number
+  jobs_done: number
+  linked_scan_id: number | null
+  /** the severity counts are those judged when the run collected the assets */
+  counts_basis: "as_collected"
 }
 
 export interface CBOMConversationResponse {
@@ -2393,13 +2437,13 @@ export interface CBOMConversationResponse {
   info?: ScanInfoField | null
 }
 
-/** Team-scoped: GET /{team_id}/cbom/scans */
-const getCBOMScans = async (team_id: number): Promise<CBOMListResponse> => {
+/** Team-scoped: GET /{team_id}/cbom/scans. `toast: false` leaves the error toast to the caller (once per outage). */
+const getCBOMScans = async (team_id: number, opts: { toast?: boolean } = {}): Promise<CBOMListResponse> => {
   try {
     const response = await api.get(`/${team_id}/cbom/scans`);
     return response.data as CBOMListResponse;
   } catch (error) {
-    showErrorToast(error, "Error fetching CBOM scans");
+    if (opts.toast !== false) showErrorToast(error, "Error fetching CBOM scans");
     throw error;
   }
 };
@@ -4253,7 +4297,7 @@ export interface CbomTestSample {
 
 export interface CbomAwsCheck {
     check: string
-    status: "pass" | "fail" | "skipped" | "error"
+    status: "pass" | "fail" | "skipped" | "error" | "warning"
     detail: string
 }
 
@@ -4542,7 +4586,8 @@ export interface CbomPlanItem {
     units?: number
     unit?: string
     credits?: number
-    status: "queued" | "skipped" | "waiting" | "gap"
+    /** covered: read by another source of the plan (an AWS Private CA connector, by its AWS account) */
+    status: "queued" | "skipped" | "covered" | "waiting" | "gap"
     reason: string | null
     waiting_for_node?: boolean
     /** a scan-node job waits for its scan window (team or server's own) */

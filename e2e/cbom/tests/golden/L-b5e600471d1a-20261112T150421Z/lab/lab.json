@@ -1,0 +1,341 @@
+{
+ "authoritative_command_log": "lab/forcecommand.authoritative.jsonl (from the cb02-host container log)",
+ "ca_pem": "lab/ca.pem",
+ "deferred": [
+  {
+   "address": "10.231.0.42",
+   "deferred": true,
+   "gate": [
+    "G7"
+   ],
+   "issue": "#93",
+   "issue_draft": "round6/cbom/cb-02/issue-deferred.md",
+   "part": "idp",
+   "reason": "OIDC discovery + JWKS target not in the CB-02 brief's target list"
+  },
+  {
+   "address": "10.231.0.43",
+   "deferred": true,
+   "gate": [
+    "G13",
+    "W-INT"
+   ],
+   "issue": "#93",
+   "issue_draft": "round6/cbom/cb-02/issue-deferred.md",
+   "part": "receiver",
+   "reason": "webhook receiver (scripts/integrations_lab) not in the CB-02 brief's target list"
+  },
+  {
+   "address": "10.231.0.40",
+   "deferred": true,
+   "gate": [
+    "G4",
+    "G15"
+   ],
+   "issue": "#93",
+   "issue_draft": "round6/cbom/cb-02/issue-deferred.md",
+   "part": "ubuntu-tier2",
+   "reason": ".40 is Alpine + OpenSSH 10 without the product's Tier-2 sudoers; sshd, host keys and planted files belong to the login user, so a Tier-1 login reads more than on a real host and can write the file copy of the command log (the container log is the authoritative record)"
+  },
+  {
+   "address": null,
+   "deferred": true,
+   "gate": [
+    "W-HOST"
+   ],
+   "issue": "#93",
+   "issue_draft": "round6/cbom/cb-02/issue-deferred.md",
+   "part": "k8s",
+   "reason": "kind node image needs ~2.5 GB of disk; the shared machine had 3.8-7 GB free (rule: keep >= 3 GB)"
+  }
+ ],
+ "generated_at": "2026-11-12T15:21:45Z",
+ "generator": {
+  "commit": "052e94dd550755ddaf87a890e360b934f64eceba",
+  "wave": "core"
+ },
+ "hosts": {
+  "host": {
+   "address": "10.231.0.40",
+   "container": "cb02-host",
+   "forcecommand_log": "lab/forcecommand.log",
+   "login": "zs-cbom"
+  }
+ },
+ "lab_addresses": [
+  "10.231.0.11",
+  "10.231.0.12"
+ ],
+ "listeners": [
+  {
+   "address": "10.231.0.33",
+   "container": "cb02-canary",
+   "lab_log": "lab/listeners/canary.lab.jsonl",
+   "log": "lab/listeners/canary.jsonl",
+   "name": "canary",
+   "names": [
+    "cbom-e2e-canary"
+   ],
+   "ports": [
+    443
+   ],
+   "role": "canary"
+  },
+  {
+   "address": "10.231.0.34",
+   "container": "cb02-control",
+   "lab_log": "lab/listeners/control.lab.jsonl",
+   "log": "lab/listeners/control.jsonl",
+   "name": "control",
+   "names": [
+    "cbom-e2e-control"
+   ],
+   "ports": [
+    443
+   ],
+   "role": "control"
+  },
+  {
+   "address": "10.231.0.44",
+   "container": "cb02-idn-fass",
+   "lab_log": "lab/listeners/idn-fass.lab.jsonl",
+   "log": "lab/listeners/idn-fass.jsonl",
+   "name": "idn-fass",
+   "names": [
+    "fass.lab"
+   ],
+   "ports": [
+    443
+   ],
+   "role": "canary"
+  },
+  {
+   "address": "10.231.0.45",
+   "container": "cb02-idn-punycode",
+   "lab_log": "lab/listeners/idn-punycode.lab.jsonl",
+   "log": "lab/listeners/idn-punycode.jsonl",
+   "name": "idn-punycode",
+   "names": [
+    "xn--fa-hia.lab"
+   ],
+   "ports": [
+    443
+   ],
+   "role": "control"
+  }
+ ],
+ "network": "cbom-e2e-net",
+ "never_scan": [
+  "cbom-e2e-canary"
+ ],
+ "node_ip": "10.231.0.5",
+ "schema": "zs-cbom-lab/1",
+ "sources": [
+  {
+   "kind": "network",
+   "name": "S-zoo",
+   "ranges": [
+    "10.231.0.16/28"
+   ],
+   "sni": [
+    "sni.lab"
+   ]
+  },
+  {
+   "kind": "linux_servers",
+   "name": "S-canary",
+   "ports": [
+    443
+   ],
+   "targets": [
+    "10.231.0.33",
+    "10.231.0.34"
+   ]
+  },
+  {
+   "kind": "network",
+   "name": "R-canary",
+   "ranges": [
+    "10.231.0.32/30"
+   ]
+  },
+  {
+   "expect_resolves_to": "10.231.0.45",
+   "kind": "linux_servers",
+   "name": "S-idn",
+   "ports": [
+    443
+   ],
+   "targets": [
+    "faß.lab"
+   ]
+  },
+  {
+   "auth": "node key (CB-05 installs the node's public key)",
+   "kind": "linux_servers",
+   "login": "zs-cbom",
+   "name": "S-host",
+   "targets": [
+    "10.231.0.40"
+   ]
+  },
+  {
+   "address": "10.231.0.41",
+   "ca_pem": "lab/ca.pem",
+   "engine": "postgres",
+   "kind": "database",
+   "name": "DB-pg-tls",
+   "port": 5432,
+   "require_tls": true,
+   "secret_ref": "pg-tls-cbom_reader",
+   "user": "cbom_reader"
+  }
+ ],
+ "subnet": "10.231.0.0/24",
+ "targets": [
+  {
+   "address": "10.231.0.17",
+   "container": "cb02-z01",
+   "kind": "tls",
+   "names": [
+    "z01.lab"
+   ],
+   "ports": [
+    443
+   ],
+   "profile": "core",
+   "target_id": "z01"
+  },
+  {
+   "address": "10.231.0.18",
+   "container": "cb02-z02",
+   "kind": "tls",
+   "names": [
+    "z02.lab"
+   ],
+   "ports": [
+    443
+   ],
+   "profile": "core",
+   "target_id": "z02"
+  },
+  {
+   "address": "10.231.0.19",
+   "container": "cb02-z04",
+   "kind": "tls",
+   "names": [
+    "z04.lab"
+   ],
+   "ports": [
+    443
+   ],
+   "profile": "core",
+   "target_id": "z04"
+  },
+  {
+   "address": "10.231.0.20",
+   "container": "cb02-z05",
+   "kind": "tls",
+   "names": [
+    "z05.lab"
+   ],
+   "ports": [
+    443
+   ],
+   "profile": "core",
+   "target_id": "z05"
+  },
+  {
+   "address": "10.231.0.21",
+   "container": "cb02-z05b",
+   "kind": "tls",
+   "names": [
+    "z05b.lab"
+   ],
+   "ports": [
+    443
+   ],
+   "profile": "core",
+   "target_id": "z05b"
+  },
+  {
+   "address": "10.231.0.22",
+   "container": "cb02-z09",
+   "kind": "tls",
+   "names": [
+    "z09.lab",
+    "sni.lab"
+   ],
+   "ports": [
+    443
+   ],
+   "profile": "core",
+   "target_id": "z09"
+  },
+  {
+   "address": "10.231.0.26",
+   "container": "cb02-z16",
+   "kind": "tls",
+   "names": [
+    "z16.lab"
+   ],
+   "ports": [
+    443
+   ],
+   "profile": "core",
+   "target_id": "z16"
+  },
+  {
+   "address": "10.231.0.23",
+   "container": "cb02-sshd-legacy",
+   "kind": "ssh",
+   "names": [
+    "sshd-legacy.lab"
+   ],
+   "ports": [
+    22
+   ],
+   "profile": "core",
+   "target_id": "sshd-legacy"
+  },
+  {
+   "address": "10.231.0.24",
+   "container": "cb02-sshd-pq",
+   "kind": "ssh",
+   "names": [
+    "sshd-pq.lab"
+   ],
+   "ports": [
+    22
+   ],
+   "profile": "core",
+   "target_id": "sshd-pq"
+  },
+  {
+   "address": "10.231.0.40",
+   "container": "cb02-host",
+   "kind": "host",
+   "names": [
+    "host.lab"
+   ],
+   "ports": [
+    22
+   ],
+   "profile": "core",
+   "target_id": "host"
+  },
+  {
+   "address": "10.231.0.41",
+   "container": "cb02-pg-tls",
+   "kind": "postgres",
+   "names": [
+    "pg-tls.lab"
+   ],
+   "ports": [
+    5432
+   ],
+   "profile": "core",
+   "target_id": "pg-tls"
+  }
+ ]
+}

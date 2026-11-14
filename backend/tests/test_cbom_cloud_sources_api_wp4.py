@@ -168,3 +168,27 @@ def test_azure_run_is_collected_by_the_cloud_worker(api, monkeypatch):
     assert by_type["key_vault"][0].finding_codes == ["KV_NO_PURGE_PROTECTION", "KV_PUBLIC_NETWORK"]
     assert by_type["kms_key"][0].key_size == 2048 and by_type["certificate"][0].cdx_type == "certificate"
     assert all(recorded.CLIENT_SECRET not in repr(r.facts) for r in rows)
+
+
+def test_azure_and_gcp_are_not_available_until_the_tenant_is_connected(api, monkeypatch):
+    """Saved without a passing Save and validate (no tenant connected yet): listed, never collected or charged."""
+    _azure_source(api, test=False)
+    api("POST", "/1/cbom/sources/items", json={
+        "kind": "gcp_project", "name": "gcp-prod", "test_after_save": False,
+        "config": {"project_ids": [recorded.PROJECT], "service_account_email": recorded.GCP_CFG["service_account_email"]},
+        "secrets": {"service_account_key": recorded.SA_JSON}})
+    est = api("POST", "/1/cbom/sources/estimate", json={"include": {"cloud": True}}).json()
+    assert est["total_credits"] == 0
+    reasons = sorted(s["reason"] for s in est["skipped"])
+    assert reasons == ["Not available until the Azure tenant is connected: Save and validate must pass first",
+                       "Not available until the Google Cloud project is connected: Save and validate must pass first"]
+    # the worker refuses too, should a job for an unvalidated source ever be claimed
+    from backend.utilities.cbom_sources.planning import CLOUD_NOT_CONNECTED
+
+    job = cbom_cloud_worker._Job(api.engine, {"job": {"id": 0, "team_id": 1, "lease_id": "x", "attempt": 1},
+                                             "source": {"id": 0, "kind": "gcp_project", "config": {}, "last_test_status": "never"}})
+    finished = {}
+    monkeypatch.setattr(cbom_cloud_worker.J, "finish_job", lambda *a, **kw: finished.update(status=a[4], error=a[6]) or
+                        type("J", (), {"asset_count": 0})())
+    job.run()
+    assert finished == {"status": "failure", "error": CLOUD_NOT_CONNECTED["gcp_project"]}

@@ -1,0 +1,196 @@
+{
+  "checks": [
+    {
+      "expected": ">= 1536 MB available",
+      "gate": "G0",
+      "id": "G0/memory",
+      "kind": "preflight",
+      "observed": "4185 MB",
+      "reason": "",
+      "subject": {
+        "check": "memory"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "expected": "GET /health 200",
+      "gate": "G0",
+      "id": "G0/health",
+      "kind": "preflight",
+      "observed": 200,
+      "reason": "",
+      "subject": {
+        "check": "health"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "expected": "b5e600471d1a6a81fe6eb19c8d5b3cc46428546a",
+      "gate": "G0",
+      "id": "G0/build_health",
+      "kind": "preflight",
+      "observed": "<no build field>",
+      "reason": "mismatch",
+      "subject": {
+        "check": "build_health"
+      },
+      "verdict": "FAIL"
+    },
+    {
+      "expected": "b5e600471d1a6a81fe6eb19c8d5b3cc46428546a",
+      "gate": "G0",
+      "id": "G0/build_header",
+      "kind": "preflight",
+      "observed": "<no header>",
+      "reason": "mismatch",
+      "subject": {
+        "check": "build_header"
+      },
+      "verdict": "FAIL"
+    },
+    {
+      "expected": "b5e600471d1a6a81fe6eb19c8d5b3cc46428546a",
+      "gate": "G0",
+      "id": "G0/build_frontend_meta",
+      "kind": "preflight",
+      "observed": "<no zs-build meta> (GET /login 200)",
+      "reason": "mismatch",
+      "subject": {
+        "check": "build_frontend_meta"
+      },
+      "verdict": "FAIL"
+    },
+    {
+      "expected": "b5e600471d1a6a81fe6eb19c8d5b3cc46428546a",
+      "gate": "G0",
+      "id": "G0/build_node_label",
+      "kind": "preflight",
+      "observed": {
+        "ZS_NODE_BUILD": null,
+        "image": "dss-staging/scan-node:stack",
+        "org.opencontainers.image.revision": "3df26fd8ec020f44d9cdbec1e793b29327e03d39"
+      },
+      "reason": "mismatch",
+      "subject": {
+        "check": "build_node_label"
+      },
+      "verdict": "FAIL"
+    },
+    {
+      "expected": "b5e600471d1a6a81fe6eb19c8d5b3cc46428546a",
+      "gate": "G0",
+      "id": "G0/image_revision_backend",
+      "kind": "preflight",
+      "observed": "3df26fd8ec020f44d9cdbec1e793b29327e03d39 (11 changed path(s), none an image input (.coderabbit.yaml, .github, docs))",
+      "reason": "",
+      "subject": {
+        "check": "image_revision_backend"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "expected": "b5e600471d1a6a81fe6eb19c8d5b3cc46428546a",
+      "gate": "G0",
+      "id": "G0/image_revision_frontend",
+      "kind": "preflight",
+      "observed": "3df26fd8ec020f44d9cdbec1e793b29327e03d39 (11 changed path(s), none an image input (.coderabbit.yaml, .github, docs))",
+      "reason": "",
+      "subject": {
+        "check": "image_revision_frontend"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "expected": "b5e600471d1a6a81fe6eb19c8d5b3cc46428546a",
+      "gate": "G0",
+      "id": "G0/image_revision_cbom-cloud-worker",
+      "kind": "preflight",
+      "observed": "3df26fd8ec020f44d9cdbec1e793b29327e03d39 (11 changed path(s), none an image input (.coderabbit.yaml, .github, docs))",
+      "reason": "",
+      "subject": {
+        "check": "image_revision_cbom-cloud-worker"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "expected": [
+        "rv6p1nodename001"
+      ],
+      "gate": "G0",
+      "id": "G0/alembic_head",
+      "kind": "preflight",
+      "observed": "rv6p1nodename001",
+      "reason": "",
+      "subject": {
+        "check": "alembic_head"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "expected": "'cbom sources cloud worker started' in the cloud-worker log",
+      "gate": "G0",
+      "id": "G0/cloud_worker_started",
+      "kind": "preflight",
+      "observed": "found",
+      "reason": "",
+      "subject": {
+        "check": "cloud_worker_started"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "expected": "'cbom sources scheduler started' in the cloud-worker log",
+      "gate": "G0",
+      "id": "G0/scheduler_started",
+      "kind": "preflight",
+      "observed": "found",
+      "reason": "",
+      "subject": {
+        "check": "scheduler_started"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "expected": "'cbom sources integration dispatcher started' in the cloud-worker log",
+      "gate": "G0",
+      "id": "G0/dispatcher_started",
+      "kind": "preflight",
+      "observed": "found",
+      "reason": "",
+      "subject": {
+        "check": "dispatcher_started"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "expected": "every target agrees",
+      "gate": "G0",
+      "id": "G0/lab_selfcheck",
+      "kind": "preflight",
+      "observed": "all agree",
+      "reason": "",
+      "subject": {
+        "check": "lab_selfcheck"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "expected": "MANIFEST.oracle.sha256 set",
+      "gate": "G0",
+      "id": "G0/oracle_frozen_before_start",
+      "kind": "preflight",
+      "observed": "29572bdd189b5e8840bae777f78a3844555c625134b37dffd305b3ed34fceb88",
+      "reason": "",
+      "subject": {
+        "check": "oracle_frozen_before_start"
+      },
+      "verdict": "PASS"
+    }
+  ],
+  "ended": "2026-11-12T15:22:45Z",
+  "gate": "G0",
+  "note": "",
+  "seconds": 0.7,
+  "started": "2026-11-12T15:22:45Z",
+  "status": "ran"
+}
