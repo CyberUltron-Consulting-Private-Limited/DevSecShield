@@ -58,11 +58,12 @@ export interface CbomDiff {
 
 export type CbomDriftKind =
   | "opened" | "resolved" | "new_asset" | "removed_asset" | "cert_renewed" | "cert_expiring" | "schedule_skipped"
+  | "q0_closed"
 
 export interface CbomDriftEvent {
   id: number
   at: string
-  scope: "node" | "code"
+  scope: "node" | "code" | "register"
   kind: CbomDriftKind
   run_id: number | null
   baseline_run_id: number | null

@@ -15,6 +15,7 @@ from sqlmodel import Session, select
 
 from backend.get_db import get_db
 from backend.new_models import CbomEvidenceVendor, Team
+from backend.utilities.cbom_sources import q0register as Q0REG
 from backend.utilities.cbom_sources.common import audit, iso_z, log, sha256_hex, utcnow
 from backend.utilities.cbom_sources.evidence import AREAS, clean_answers
 from backend.utilities.cbom_sources.http import CbomRoute, bad_request, read_capped_json, server_error, vendor_limiter
@@ -80,8 +81,11 @@ def _answer(token: str, body: VendorAnswer) -> dict:
             raise _GONE
         audit(session, team_id=row.team_id, actor_type="vendor", actor_id=row.id, action="vendor.answer",
               object_type="vendor", object_id=row.id, changed_fields=answers.keys())
+        team_id, vendor_id, refresh = row.team_id, row.id, bool(row.answered_at)
+        session.expire_all()  # the UPDATE above bypassed the ORM: re-read the vendor's level for the register
+        Q0REG.sync_evidence_safely(session, team_id, now)  # CB-23: the vendor's gap closes (cause evidence)
         session.commit()
-        log("vendor answered", team=row.team_id, vendor=row.id, level=confidence, refresh=bool(row.answered_at))
+        log("vendor answered", team=team_id, vendor=vendor_id, level=confidence, refresh=refresh)
         return {"received": True}  # the vendor is not told the team's internal level (CB-18 EC-12)
 
 
