@@ -755,6 +755,11 @@ def emit(t: Tables, digest: str) -> str:
         rest = rest[cut:]
     lines += [")", ""]
     lines += _seq("TLS_CLASSICAL_SIGSCHEME_NAMES", p["TLS_CLASSICAL_SIGSCHEME_NAMES"], per_line=2)
+    unknown = [n for n in p["SSH_PQ_PROBE_KEX"] if n not in t.ssh_kex]
+    if unknown:
+        raise SourceError(f"prober SSH_PQ_PROBE_KEX names with no SSH_KEX row: {unknown}")
+    lines += ["", "# the CB-13 SSH host-key reader's post-quantum and hybrid key exchanges, in its order"]
+    lines += _seq("SSH_PQ_PROBE_KEX", p["SSH_PQ_PROBE_KEX"], per_line=2)
     for line in lines:
         if len(line) > WIDTH:
             raise SourceError(f"generated line over {WIDTH} columns: {line}")
