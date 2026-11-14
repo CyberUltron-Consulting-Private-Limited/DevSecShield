@@ -49,6 +49,11 @@ class FetchError(Exception):
     """``str(err)`` is safe to show to the customer."""
 
 
+class FetchTimeout(FetchError):
+    """The fetch ran out of time (one read, or the whole fetch): callers report it as a timeout, never as a bad
+    document."""
+
+
 @dataclass
 class Fetched:
     url: str
@@ -241,18 +246,43 @@ class _PinnedHTTPS(http.client.HTTPSConnection):
     def connect(self) -> None:  # connect to a checked address, verify the certificate for the name
         sock = connect_first(self._addresses, self.port, TIMEOUT)
         self.sock = self._context.wrap_socket(sock, server_hostname=self.host)  # type: ignore[attr-defined]
+        self.pinned_sock = self.sock  # kept: http.client drops ``sock`` once a response says it closes the connection
+
+
+def _live_sock(conn: http.client.HTTPConnection) -> socket.socket | None:
+    """The connection's socket, also after http.client set ``conn.sock`` to None: it does that for every response that
+    closes the connection (HTTP/1.0, ``Connection: close``), and then neither the per-read timeout below nor the
+    deadline timer (``_abort``) reached the socket the body is still read from."""
+    return conn.sock if conn.sock is not None else getattr(conn, "pinned_sock", None)
+
+
+def _too_slow() -> FetchError:
+    return FetchTimeout(f"the server took longer than {int(TOTAL_TIMEOUT)} s to send the document (timed out)")
 
 
 def _read_capped(resp: http.client.HTTPResponse, conn: http.client.HTTPConnection, deadline: float) -> bytes:
+    """The body, or FetchError.  An end of the stream is the end of the document only when it is a real one: the
+    deadline timer (``_abort``) shuts the socket, after which a read returns b"" as if the server had finished, and a
+    server that hangs up early also returns b"".  Returning that cut body made a 30 s timeout read as "not JSON" /
+    "not XML" further up (C10a); both are reported for what they are."""
     body = bytearray()
     while True:
         left = deadline - time.monotonic()
         if left <= 0:
-            raise FetchError(f"the server took longer than {int(TOTAL_TIMEOUT)} s to send the document")
-        if conn.sock is not None:
-            conn.sock.settimeout(min(TIMEOUT, left))
+            raise _too_slow()
+        sock = _live_sock(conn)
+        if sock is not None and not resp.isclosed():  # the whole body read: http.client closed the socket itself
+            try:
+                sock.settimeout(min(TIMEOUT, left))
+            except OSError:
+                pass
         chunk = resp.read1(min(65536, MAX_BYTES + 1 - len(body)))  # one socket read at most, then re-check
         if not chunk:
+            if time.monotonic() >= deadline:
+                raise _too_slow()
+            if resp.length:  # Content-Length promised more than arrived
+                raise FetchError(f"the server closed the connection after {len(body)} of {len(body) + resp.length} "
+                                 "bytes of the document")
             return bytes(body)
         body += chunk
         if len(body) > MAX_BYTES:
@@ -261,7 +291,7 @@ def _read_capped(resp: http.client.HTTPResponse, conn: http.client.HTTPConnectio
 
 def _abort(conn: http.client.HTTPConnection) -> None:
     """Deadline reached: shut the socket so a blocked handshake or header read returns at once."""
-    sock = conn.sock
+    sock = _live_sock(conn)
     if sock is not None:
         try:
             sock.shutdown(socket.SHUT_RDWR)
@@ -289,7 +319,7 @@ def fetch(url: str, *, accept: str = "application/json", private_allowlist: Priv
         path = (parts.path or "/") + (f"?{parts.query}" if parts.query else "")
         left = deadline - time.monotonic()
         if left <= 0:
-            raise FetchError(f"the server took longer than {int(TOTAL_TIMEOUT)} s to send the document")
+            raise _too_slow()
         # the per-read timeout alone lets a server drip handshake or header bytes for ever; this bounds the hop
         timer = threading.Timer(left, _abort, (conn,))
         timer.daemon = True
@@ -310,7 +340,9 @@ def fetch(url: str, *, accept: str = "application/json", private_allowlist: Priv
             raise FetchError(f"TLS certificate of {parts.hostname} is not trusted ({exc.verify_message})") from exc
         except (OSError, http.client.HTTPException) as exc:
             if time.monotonic() >= deadline:
-                raise FetchError(f"the server took longer than {int(TOTAL_TIMEOUT)} s to send the document") from exc
+                raise _too_slow() from exc
+            if isinstance(exc, (TimeoutError, socket.timeout)):  # one read waited TIMEOUT s for a byte
+                raise FetchTimeout(f"{parts.hostname} did not answer within {int(TIMEOUT)} s (timed out)") from exc
             raise FetchError(f"could not read {parts.hostname}: {type(exc).__name__}") from exc
         finally:
             timer.cancel()

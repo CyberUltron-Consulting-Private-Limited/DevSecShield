@@ -45,7 +45,8 @@ def _codes(asset_type, facts, algorithm=None, key_size=None):
     ("kmip", "AES", 256, {"key_class": "secret", "state": "Compromised"}, {"KEY_COMPROMISED"}),
     ("kmip", "3DES", 168, {"key_class": "secret", "state": "Active"}, {"KEY_WEAK_SYMMETRIC"}),
     ("kmip", "RC4", 128, {"key_class": "secret"}, {"KEY_WEAK_SYMMETRIC"}),
-    ("vault_transit", "AES", 256, {"key_class": "secret", "auto_rotate_period_s": 0}, {"KEY_NO_ROTATION"}),
+    # the same finding as a cloud KMS key without rotation (C9)
+    ("vault_transit", "AES", 256, {"key_class": "secret", "auto_rotate_period_s": 0}, {"KMS_NO_ROTATION"}),
     ("vault_transit", "RSA", 2048, {"key_class": "private", "exportable": True, "auto_rotate_period_s": 2592000},
      {"KEY_PLAINTEXT_EXPORT", "QUANTUM_VULNERABLE"}),
     ("vault_transit", "ChaCha20", 256, {"key_class": "secret", "allow_plaintext_backup": True,

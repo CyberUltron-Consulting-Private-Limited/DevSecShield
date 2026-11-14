@@ -119,7 +119,9 @@ def managed_key(out, facts: dict[str, Any], algorithm: Any, key_size: Any, now) 
             out.add("KEY_PLAINTEXT_EXPORT", "High", "Vault transit key allows a plaintext backup of its key material")
         period = facts.get("auto_rotate_period_s")
         if isinstance(period, (int, float)) and period == 0:
-            out.add("KEY_NO_ROTATION", "Low", "Vault transit key has no automatic rotation (auto_rotate_period 0)")
+            # the same finding as a cloud KMS key without rotation (AWS, Google Cloud, Azure Key Vault): same code and
+            # severity wherever the key lives (C9); the text names the Vault setting
+            out.add("KMS_NO_ROTATION", "Medium", C.VAULT_NO_ROTATION_TEXT)
     state = str(facts.get("state") or facts.get("key_state") or "")
     if state == "Compromised":
         out.add("KEY_COMPROMISED", "High", f"{what} {where} is marked compromised but is still stored".replace("  ", " "))

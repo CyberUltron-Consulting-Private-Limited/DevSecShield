@@ -293,6 +293,11 @@ def _kms_no_rotation_text(facts: dict[str, Any]) -> str:
     return text
 
 
+AZURE_NO_ROTATION_TEXT = ("Key Vault key has no automatic rotation (its rotation policy has no Rotate action); set one "
+                          "with az keyvault key rotation-policy update")
+VAULT_NO_ROTATION_TEXT = "Vault transit key has no automatic rotation (auto_rotate_period 0)"
+
+
 KMS_MATERIAL_WINDOW = _dt.timedelta(days=30)  # owner decision (CB-33 OQ-2): Medium, 30 days ahead
 
 
@@ -730,6 +735,11 @@ def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, fact
             if facts.get("rotation_enabled") is False and facts.get("key_spec") == "SYMMETRIC_DEFAULT" \
                     and facts.get("key_manager") == "CUSTOMER" and facts.get("origin") in (None, "AWS_KMS"):
                 out.add("KMS_NO_ROTATION", "Medium", _kms_no_rotation_text(facts))
+            elif facts.get("provider") == "azure" and facts.get("rotation_enabled") is False:
+                # Azure Key Vault rotates any key type (RSA, EC, oct-HSM) by its rotation policy: a key whose policy has
+                # no Rotate action never rotates.  Same code and severity as AWS / Google Cloud KMS and Vault transit
+                # (C9); a policy that could not be read (rotation_enabled None) is unknown, not "off".
+                out.add("KMS_NO_ROTATION", "Medium", AZURE_NO_ROTATION_TEXT)
             if facts.get("key_state") == "PendingDeletion":
                 out.add("KMS_PENDING_DELETION", "Low", "KMS key is pending deletion")
             _kms_material_rules(out, facts, now)

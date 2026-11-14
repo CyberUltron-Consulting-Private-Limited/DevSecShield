@@ -96,14 +96,15 @@ class CloudHttp:
         self.close()
 
     def request(self, method: str, url: str, *, token: str | None = None, data: dict[str, str] | None = None,
-                params: dict[str, Any] | None = None) -> dict[str, Any]:
+                params: dict[str, Any] | None = None, json_body: dict[str, Any] | None = None) -> dict[str, Any]:
         if not host_allowed(url):
             raise CloudHttpError(0, "HostNotAllowed", urlsplit(url).hostname or "")
         headers = {"Authorization": f"Bearer {token}"} if token else {}
         for attempt in range(ATTEMPTS):
             last = attempt == ATTEMPTS - 1
             try:
-                with self._client.stream(method, url, headers=headers, data=data, params=params) as response:
+                with self._client.stream(method, url, headers=headers, data=data, params=params,
+                                         json=json_body) as response:
                     if response.status_code in (429, 503):
                         if not last:
                             time.sleep(_backoff(response.headers.get("Retry-After"), attempt))

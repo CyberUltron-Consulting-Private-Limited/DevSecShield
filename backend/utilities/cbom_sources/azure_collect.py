@@ -229,7 +229,8 @@ def _vault_data_plane(http: CloudHttp, data_token: str, vault: dict[str, Any], l
                   f"{exc}: give the app Key Vault Reader (RBAC vaults) or list/get access policies" if status == "denied"
                   else str(exc))
         emit({"type": "coverage", "target": label, "location": f"{vault.get('id') or uri}#{part}",
-              "facts": {"check": f"key vault {name} {part}", "status": status, "detail": detail[:200]}})
+              "facts": {"check": f"key vault {name} {part}", "status": status, "detail": detail[:200],
+                        "scope": [f"{uri}/{part}/"]}})
 
     host = urlsplit(uri).hostname
 
@@ -390,7 +391,9 @@ def collect_azure(team_id: int, cfg: dict[str, Any], secrets: dict[str, str], em
                 continue
             bad = sorted(n for n, s in parts.items() if s == "error")
             # a cut list (vaults, or a vault's keys / certificates / secrets) or an unparsable certificate: read, not
-            # complete -- the target is partial, never "ok"; each gap row carries the scope drift must not call gone
+            # complete -- the target is partial, never "ok"; each gap row carries the scope drift must not call gone.
+            # A vault whose keys, certificates or secrets were refused (access policy, firewall) is a gap of that vault:
+            # its settings and every other vault were read, so the subscription is read with gaps, not failed (C4).
             gappy = sorted(n for n, s in parts.items() if s == "partial") + (["(vault list)"] if truncated else [])
             # a control-plane service the reader role from before this release cannot read is a gap (its coverage row
             # names the action to add), never a failed subscription: Key Vault was read as before
@@ -399,11 +402,11 @@ def collect_azure(team_id: int, cfg: dict[str, Any], secrets: dict[str, str], em
             gappy += [f"{svc}: {st}" for svc, st in services.items() if st in ("truncated", "partial", "denied")]
             if vault_status != "ok":
                 failed.insert(0, f"keyvault: {vault_status}")
-            keyvault = (vault_status if vault_status != "ok" else "error" if bad else
-                        "partial" if truncated or "partial" in parts.values() else "ok")
+            keyvault = (vault_status if vault_status != "ok" else
+                        "partial" if bad or truncated or "partial" in parts.values() else "ok")
             denied_everywhere = vault_status == "denied" and all(st == "denied" for st in services.values())
-            status = ("auth_failed" if denied_everywhere else "error") if (bad or failed or denied_everywhere) else (
-                "partial" if gappy else "ok")
+            status = ("auth_failed" if denied_everywhere else "error") if (failed or denied_everywhere) else (
+                "partial" if gappy or bad else "ok")
             error = "; ".join(failed + ([f"{len(bad)} vault(s) not fully read: " + ", ".join(bad)] if bad else [])
                               + ([f"read with gaps: {', '.join(gappy)}"] if gappy else [])) or None
             targets.append({"target": label, "status": status, "error": error[:256] if error else None,
@@ -436,20 +439,38 @@ def test_azure(cfg: dict[str, Any], secrets: dict[str, str], *, transport: Any =
             checks.append({"check": "Signed in to the Key Vault data plane", "status": "fail", "detail": str(exc)[:240]})
         try:
             subs = _subscriptions(http, arm_token, cfg)
-            first = subs[0] if subs else None
-            if first is None:
-                checks.append({"check": "List key vaults", "status": "fail", "detail": "No subscription is visible to this app"})
-            else:
-                vaults, _t = http.azure_pages(
-                    f"{ARM}/subscriptions/{first}/providers/Microsoft.KeyVault/vaults?api-version={ARM_VAULTS_API}", arm_token, cap=VAULT_CAP)
-                checks.append({"check": "List key vaults", "status": "pass",
-                               "detail": f"{len(vaults)} vault(s) in subscription {first}"})
         except CloudHttpError as exc:
             checks.append({"check": "List key vaults", "status": "fail", "detail": str(exc)[:240]})
-            first = None
-        if first:
-            checks += _probe_control_plane(http, arm_token, first)
+            subs = []
+        else:
+            if not subs:
+                checks.append({"check": "List key vaults", "status": "fail", "detail": "No subscription is visible to this app"})
+        # every configured subscription is read once (the collector lists its vaults the same way): one the app cannot
+        # read fails the validation, instead of passing on the first subscription alone (C1)
+        readable = []
+        for sub in subs[:VALIDATE_SUBSCRIPTION_CAP]:
+            check = "List key vaults" if len(subs) == 1 else f"List key vaults in {sub}"
+            try:
+                vaults, _t = http.azure_pages(
+                    f"{ARM}/subscriptions/{sub}/providers/Microsoft.KeyVault/vaults?api-version={ARM_VAULTS_API}", arm_token, cap=VAULT_CAP)
+                checks.append({"check": check, "status": "pass", "detail": f"{len(vaults)} vault(s) in subscription {sub}"})
+                readable.append(sub)
+            except CloudHttpError as exc:
+                status = _status(exc)
+                checks.append({"check": check, "status": "fail", "detail": (
+                    f"The app cannot read subscription {sub} ({exc}): give it the Reader role there (run the ZeroShield "
+                    "reader script), or remove the subscription from the source" if status in ("denied", "not_found")
+                    else str(exc))[:240]})
+        if len(subs) > VALIDATE_SUBSCRIPTION_CAP:
+            checks.append({"check": "Subscriptions checked", "status": "warning", "detail": (
+                f"The first {VALIDATE_SUBSCRIPTION_CAP} of {len(subs)} subscriptions were checked; one the app cannot "
+                "read is reported as a failed target on the run")[:240]})
+        if readable:
+            checks += _probe_control_plane(http, arm_token, readable[0])
     return _verdict(checks)
+
+
+VALIDATE_SUBSCRIPTION_CAP = 25  # subscriptions read one by one at Save and validate
 
 
 def _probe_control_plane(http: CloudHttp, arm_token: str, sub: str) -> list[dict[str, str]]:

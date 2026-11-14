@@ -62,6 +62,7 @@ class _Job:
         self.last_renew = time.monotonic()
         self.deadline = time.monotonic() + int(self.job.get("max_runtime_s") or 8 * 3600) - 120
         self.emitted = 0
+        self.read = 0  # emitted rows that are assets, not coverage gaps
         self.store_failed: str | None = None  # an asset batch was lost to an error that is not the API's refusal
         self.lab_mode: str | None = None  # "same_account": an AWS source collected in lab mode (lab_mode.py)
 
@@ -85,6 +86,8 @@ class _Job:
             return
         self.buffer.append(asset)
         self.emitted += 1
+        if asset.get("type") != "coverage":
+            self.read += 1
         if len(self.buffer) >= BATCH:
             self.flush()
 
@@ -163,6 +166,9 @@ class _Job:
                 result = self._ssm()
             else:
                 status, error = "failure", f"The cloud worker cannot collect {kind}"
+            unread = _nothing_read(result, self.read)
+            if unread:  # a job that read 0 of N targets is a failure (refunded), never "success" (C2)
+                raise _Refused(unread)
         except _Refused as exc:
             status, error = "failure", str(exc)
         except Exception as exc:
@@ -261,6 +267,23 @@ class _Job:
 
 class _Refused(Exception):
     """A reason that is safe to show the customer."""
+
+
+def _nothing_read(result: dict[str, Any], read: int) -> str | None:
+    """The failure reason when a collector read none of its targets and stored no asset (only coverage rows: denied,
+    API not enabled, unreachable), else None.  Such a job fails, so it is refunded like any failed job and the source's
+    last good collection stays the current one; its coverage rows stay on the run and say what was refused.  Targets
+    that were all skipped (a stop, the deadline) are not "unread": the job ends cancelled instead."""
+    counts = result.get("counts") if isinstance(result.get("counts"), dict) else {}
+    total = counts.get("total")
+    if read or not isinstance(total, int) or total <= 0 or counts.get("ok") or counts.get("partial"):
+        return None
+    targets = [t for t in result.get("targets") or [] if isinstance(t, dict)]
+    if targets and all(str(t.get("status") or "").startswith("skipped") for t in targets):
+        return None
+    first = next((t for t in targets if t.get("error") and not str(t.get("status") or "").startswith("skipped")), None)
+    reason = f"{first.get('target')}: {first.get('error')}" if first else "every target failed"
+    return f"No target could be read (0 of {total}): {reason}"[:500]
 
 
 def run_once(engine, worker: str) -> bool:

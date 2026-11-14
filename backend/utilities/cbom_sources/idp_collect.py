@@ -14,7 +14,7 @@ import re
 import xml.etree.ElementTree as ET
 from typing import Any
 
-from backend.utilities.cbom_sources.safe_fetch import FetchError, fetch, idp_private_allowlist
+from backend.utilities.cbom_sources.safe_fetch import FetchError, FetchTimeout, fetch, idp_private_allowlist
 
 _NS = {"md": "urn:oasis:names:tc:SAML:2.0:metadata", "ds": "http://www.w3.org/2000/09/xmldsig#"}
 _DTD = re.compile(rb"<!\s*(DOCTYPE|ENTITY)", re.I)
@@ -234,10 +234,11 @@ def collect_idp(cfg: dict[str, Any], label: str) -> dict[str, Any]:
         except FetchError as exc:
             # A provider without one of the two documents (e.g. Okta has no tenant SAML metadata) is not a failure
             # of the whole source; it is listed, never silent.
-            targets.append({"target": url, "status": "error", "error": str(exc)[:256], "assets": 0,
+            status = "timeout" if isinstance(exc, FetchTimeout) else "error"  # a timeout is never "not JSON" (C10a)
+            targets.append({"target": url, "status": status, "error": str(exc)[:256], "assets": 0,
                             "duration_ms": int((_dt.datetime.utcnow() - t0).total_seconds() * 1000)})
             assets.append({"type": "coverage", "target": label, "location": url,
-                           "facts": {"check": f"{kind.upper()} metadata", "status": "error", "detail": str(exc)[:200]}})
+                           "facts": {"check": f"{kind.upper()} metadata", "status": status, "detail": str(exc)[:200]}})
     ok = sum(1 for t in targets if t["status"] == "ok")
     return {"assets": assets, "targets": targets,
             "counts": {"total": len(targets), "ok": ok, "failed": len(targets) - ok, "skipped": 0},
