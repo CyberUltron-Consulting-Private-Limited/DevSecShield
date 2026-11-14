@@ -956,7 +956,7 @@ def test_migration_chains_on_the_single_head():
     cfg.set_main_option("script_location", str(_REPO_ROOT / "prod_database_migrations" / "migrations"))
     script = ScriptDirectory.from_config(cfg)
     assert script.get_heads() == ["w9cloudpool001"]
-    assert script.get_revision("w9cloudpool001").down_revision == "cb38ticket001"
+    assert script.get_revision("w9cloudpool001").down_revision == "cb23q0gap001"
 
 
 def _validate_org(monkeypatch, accounts: int, *, throttle_first: int = 0, page_seconds: float = 0.0):
