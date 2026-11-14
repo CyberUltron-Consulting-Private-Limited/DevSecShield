@@ -13,7 +13,7 @@ Assets (SPEC section 4):
 * facts read from the DER with the ``cryptography`` package when the provider gives it (``ct_detail=full``); crt.sh
   rows have no key, signature or fingerprint (``ct_detail=summary``) and a coverage row says which checks were not run;
 * ``fingerprint_sha256`` only for a final certificate: a precertificate's hash never matches what a server presents
-  (``precert_sha256`` then), and ``serial`` + ``not_after`` still correlate it (collections_view link keys);
+  (``precert_sha256`` then), and ``serial`` + ``not_after`` still correlate it (asset_keys serial link key);
 * ``coverage`` rows for names that could not be read, so drift never reads them as removed certificates.
 """
 from __future__ import annotations
