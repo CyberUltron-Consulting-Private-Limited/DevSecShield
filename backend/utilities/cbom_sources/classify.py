@@ -286,7 +286,7 @@ def _cert_unused_applies(facts: dict[str, Any]) -> bool:
     """Whether "not attached to any resource" means orphaned (CB-33 B7). Not for a certificate that was never issued,
     a PRIVATE (AWS Private CA) certificate, whose key is meant to be exported and used outside AWS, a certificate
     whose key was exported (it is in use where AWS cannot see), or an ACME certificate, managed by its ACME client."""
-    return (str(facts.get("status") or "ISSUED") == "ISSUED" and facts.get("aws_type") != "PRIVATE"
+    return (str(facts.get("status") or "ISSUED") not in _ACM_NEVER_ISSUED and facts.get("aws_type") != "PRIVATE"
             and facts.get("exported") is not True and facts.get("key_pair_origin") != "ACME")
 
 

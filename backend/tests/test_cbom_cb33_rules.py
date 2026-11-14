@@ -90,6 +90,9 @@ def test_t_dis_a_disabled_key_keeps_the_finding_and_says_enable_it_first():
     ({"status": "FAILED"}, False),
     ({"status": "VALIDATION_TIMED_OUT"}, False),
     ({"aws_type": "IMPORTED"}, True),  # controls: an orphaned certificate is still one
+    ({"aws_type": "IMPORTED", "status": "EXPIRED"}, True),  # issued, then expired / revoked: still an orphan
+    ({"aws_type": "IMPORTED", "status": "REVOKED"}, True),
+    ({"status": "INACTIVE"}, True),
     ({"aws_type": "AMAZON_ISSUED", "exported": False, "export_option": "DISABLED"}, True),  # c6c669ef's shape (L-3)
     ({}, True),
 ])
