@@ -18,7 +18,7 @@ Checks on a code fix (any failure withholds the fix and returns the knowledge-ba
   the language's list of crypto-configuration APIs (ciphers, hashes, MACs, KDFs, randomness, key generation,
   encodings, TLS context options); nothing that connects, opens, requests or executes is on any list (Python: every
   call target and attribute chain from the tree, module members resolved through the window's imports, one hop
-  only, built-ins passed as values or used as decorators count as calls, ``os.environ`` may only be read; other
+  only, built-ins passed as values or used as decorators count as calls, the environment may only be read; other
   languages: every call / member chain judged by its receiver - ``Type.member`` / ``pkg.Func`` pairs, members of a
   local only when the local was made by a listed call -, with interpolations ``${...}`` / ``$"{...}"`` checked as
   code; JS / TS computed member access only with a plain identifier-character literal key). A call that is not on
@@ -368,7 +368,7 @@ def _py_refs(tree: ast.AST) -> Counter[str]:
                    and isinstance(node.value, ast.Name) and node.value.id in os_names) or (
             isinstance(node, ast.Name) and node.id in environ_names)
         if environ and not _py_environ_read(node, parents):
-            refs["os.environ (written or aliased)"] += 1
+            refs["environ (written or aliased)"] += 1
         if isinstance(node, ast.Import):
             refs.update(f"import {a.name}" for a in node.names if a.name.split(".")[0] in _PY_DANGER_NAMES)
         elif isinstance(node, ast.ImportFrom):
@@ -397,8 +397,9 @@ def _py_refs(tree: ast.AST) -> Counter[str]:
 
 
 def _py_environ_read(node: ast.AST, parents: dict[ast.AST, ast.AST]) -> bool:
-    """``os.environ`` only read: ``os.environ['X']`` (load), ``os.environ.get(...)``, ``'X' in os.environ``. A store,
-    ``del``, ``update`` / ``setdefault`` / ``pop`` or binding it to a name (``e := os.environ``) is not a read."""
+    """The process environment only read: ``environ['X']`` (load), ``environ.get(...)``, ``'X' in environ``. A
+    store, ``del``, ``update`` / ``setdefault`` / ``pop`` or binding it to a name (``e := environ``) is not a read
+    (``environ`` here is ``os``'s, by any alias)."""
     parent = parents.get(node)
     if isinstance(parent, ast.Subscript) and parent.value is node:
         return isinstance(parent.ctx, ast.Load)
