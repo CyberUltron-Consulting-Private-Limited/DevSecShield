@@ -6,6 +6,10 @@
     PYTHONPATH=<repo> python bench/cb06_export/bench.py time /tmp/cb06.db --iterations 1
     # 3. A/B, interleaved so machine noise hits both sides alike: A = base tree, B = head tree
     python bench/cb06_export/bench.py ab /tmp/cb06.db --a <base repo> --b <head repo> --rounds 10 --out result.json
+    # 4. peak memory (RSS) and size of ONE download, a fresh process per format, as the route builds it: the streamed
+    #    writer (inventory.write_cyclonedx) when the tree has it, else the whole dict + json.dumps / to_xml
+    PYTHONPATH=<repo> python bench/cb06_export/bench.py memory /tmp/cb06.db --format xml
+    (a 200,000-asset database's first 50,000 rows are certificates: the export's worst case at the 50,000 cap)
 
 One export = what the route does: ``inventory.cyclonedx`` then ``json.dumps`` (format json) or ``cdx_xml.to_xml``
 (format xml); each iteration builds once and times both serialisations of that build. The database is read-only during timing. The mix (certificates, TLS and SSH endpoints, private keys,
@@ -142,6 +146,32 @@ def time_export(path: str, iterations: int) -> None:
                           "components": len(doc["components"])}), flush=True)
 
 
+def memory(path: str, fmt: str) -> None:
+    """One download of ``fmt`` in this process: peak RSS (MB), bytes, wall and CPU seconds."""
+    import tempfile
+
+    from sqlmodel import Session, create_engine
+
+    from backend.new_models import CbomCollectionRun
+    from backend.utilities.cbom_sources import cdx_xml, inventory
+
+    engine = create_engine(f"sqlite:///{path}")
+    now = dt.datetime(2026, 11, 12, 13, 0, 0)
+    t0, c0 = time.perf_counter(), time.process_time()
+    with Session(engine) as s, tempfile.TemporaryFile() as out:
+        run = s.get(CbomCollectionRun, 1)
+        writer = getattr(inventory, "write_cyclonedx", None)
+        if writer is not None:
+            writer(s, run, now, fmt, out)
+        else:
+            doc = inventory.cyclonedx(s, run, now)
+            out.write(json.dumps(doc).encode() if fmt == "json" else cdx_xml.to_xml(doc))
+        size = out.tell()
+    print(json.dumps({"format": fmt, "streamed": writer is not None, "bytes": size,
+                      "seconds": round(time.perf_counter() - t0, 2), "cpu_s": round(time.process_time() - c0, 2),
+                      "maxrss_mb": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss // 1024}), flush=True)
+
+
 def _p95(values: list[float]) -> float:
     ordered = sorted(values)
     return ordered[max(0, int(round(0.95 * len(ordered))) - 1)]
@@ -196,9 +226,14 @@ def main() -> None:
     c.add_argument("--b", required=True)
     c.add_argument("--rounds", type=int, default=10)
     c.add_argument("--out")
+    mem = sub.add_parser("memory")
+    mem.add_argument("db")
+    mem.add_argument("--format", choices=("json", "xml"), default="xml")
     args = p.parse_args()
     if args.cmd == "make-db":
         make_db(args.db, args.assets)
+    elif args.cmd == "memory":
+        memory(args.db, args.format)
     elif args.cmd == "time":
         time_export(args.db, args.iterations)
     else:

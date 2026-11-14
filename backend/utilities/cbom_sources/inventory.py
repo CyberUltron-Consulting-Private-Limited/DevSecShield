@@ -10,7 +10,7 @@ import hashlib
 import json
 import re
 import uuid
-from typing import Any
+from typing import Any, BinaryIO, Callable, Iterator
 
 from sqlalchemy import and_, func, or_
 from sqlmodel import Session, select
@@ -645,7 +645,11 @@ def coverage_gaps(rows: list[CbomCollectedAsset], names: dict[int, str], job_nam
     return out
 
 
-def cyclonedx(session: Session, run: CbomCollectionRun, now: _dt.datetime) -> dict[str, Any]:
+def _document(session: Session, run: CbomCollectionRun, now: _dt.datetime
+              ) -> tuple[dict[str, Any], Iterator[dict[str, Any]], Callable[[], list[dict[str, Any]]]]:
+    """The run's CycloneDX document in three parts, for writing it piece by piece: the head (every key before
+    ``components``), the components (made one at a time: the assets, one ``zs-asset-<id>`` component each, then the
+    certificate parts they reference) and the vulnerabilities (call it once the components are consumed)."""
     rows = session.exec(select(CbomCollectedAsset).where(CbomCollectedAsset.team_id == run.team_id,
                                                          CbomCollectedAsset.run_id == run.id)
                         .order_by(CbomCollectedAsset.id).limit(EXPORT_CAP + 1)).all()
@@ -674,7 +678,7 @@ def cyclonedx(session: Session, run: CbomCollectionRun, now: _dt.datetime) -> di
     versions = [(name, value) for name, value in (("zs:run_kb_version", run.kb_version),
                                                    ("zs:classifier_version", run.classifier_version),
                                                    ("zs:engine_version", run.engine_version)) if value]
-    return {
+    head = {
         "bomFormat": "CycloneDX", "specVersion": "1.6", "serialNumber": export_serial(run.id or 0, kb_version, judged_on),
         "version": 1,
         "metadata": {
@@ -691,8 +695,37 @@ def cyclonedx(session: Session, run: CbomCollectionRun, now: _dt.datetime) -> di
                 *coverage_gaps(coverage, names, job_names, provs),
             ],
         },
-        # the assets (one zs-asset-<id> component each), then the certificate parts they reference
-        "components": [_component(row, names.get(row.source_id or 0) or job_names.get(row.job_id), views[row.id],
-                                  provs.get(row.job_id), shared, parts) for row in rows] + parts.components(),
-        "vulnerabilities": vulnerabilities(list(rows), views),
     }
+
+    def components() -> Iterator[dict[str, Any]]:
+        for row in rows:  # the assets, then the certificate parts they reference
+            yield _component(row, names.get(row.source_id or 0) or job_names.get(row.job_id), views[row.id],
+                             provs.get(row.job_id), shared, parts)
+        yield from parts.components()
+
+    return head, components(), lambda: vulnerabilities(list(rows), views)
+
+
+def cyclonedx(session: Session, run: CbomCollectionRun, now: _dt.datetime) -> dict[str, Any]:
+    """The run's CycloneDX 1.6 document as one dict (what ``write_cyclonedx`` writes, piece by piece)."""
+    head, components, vulns = _document(session, run, now)
+    return {**head, "components": list(components), "vulnerabilities": vulns()}
+
+
+def write_cyclonedx(session: Session, run: CbomCollectionRun, now: _dt.datetime, fmt: str, out: BinaryIO) -> None:
+    """Write the run's CycloneDX document to ``out`` as JSON or XML (``cdx_xml``), one component at a time: the same
+    document as ``cyclonedx``, but neither the whole dict, nor an XML tree, nor the encoded bytes is ever held in
+    memory at once (review 5879114669 major 2: a 50,000-component XML export peaked near 2.2 GB)."""
+    head, components, vulns = _document(session, run, now)
+    if fmt == "xml":
+        from backend.utilities.cbom_sources import cdx_xml
+
+        cdx_xml.write_xml(out, head, components, vulns)
+        return
+    def dumps(value: Any) -> bytes:  # what starlette's JSONResponse writes (the route's JSON before streaming)
+        return json.dumps(value, ensure_ascii=False, allow_nan=False, indent=None, separators=(",", ":")).encode()
+
+    out.write(dumps(head)[:-1] + b',"components":[')
+    for index, component in enumerate(components):
+        out.write((b"," if index else b"") + dumps(component))
+    out.write(b'],"vulnerabilities":' + dumps(vulns()) + b"}")

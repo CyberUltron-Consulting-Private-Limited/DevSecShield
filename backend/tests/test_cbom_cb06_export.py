@@ -934,3 +934,79 @@ def test_another_teams_node_or_source_is_never_used():
                                 signing_public_key="A" * 43 + "=")
     got = PV.values(_row(), PV.job_provenance(job, foreign_source, foreign_node))
     assert got["zs:collector"] == "unknown" and got["zs:signed"] == "unknown"
+
+
+# ----------------------------------------------------------------------------- streamed export (review major 2)
+def _same_xml(a: bytes, b: bytes) -> bool:
+    """Equal XML documents: the same elements, attributes and text (whitespace between elements and namespace
+    declarations already in scope do not count: C14N)."""
+    from lxml import etree
+
+    parser = etree.XMLParser(remove_blank_text=True)
+    return etree.tostring(etree.fromstring(a, parser), method="c14n") == \
+        etree.tostring(etree.fromstring(b, parser), method="c14n")
+
+
+def test_the_streamed_download_is_the_in_memory_document(exported):
+    """[major 2] The route writes the document piece by piece (inventory.write_cyclonedx): the JSON is byte for byte
+    what JSONResponse made of the whole dict, the XML is to_xml's document, and Content-Length is the body's."""
+    import io
+
+    from starlette.responses import JSONResponse
+
+    from backend.new_models import CbomCollectionRun
+    from backend.utilities.cbom_sources import cdx_xml, inventory
+
+    now = dt.datetime(2026, 11, 14, 9, 30, 0)
+    with Session(exported["engine"]) as s:
+        run = s.get(CbomCollectionRun, exported["ids"]["run"]["id"])
+        doc = inventory.cyclonedx(s, run, now)
+        streamed = {}
+        for fmt in ("json", "xml"):
+            buf = io.BytesIO()
+            inventory.write_cyclonedx(s, run, now, fmt, buf)
+            streamed[fmt] = buf.getvalue()
+    assert len(doc["components"]) > len(_assets(doc)) > 20  # assets and certificate parts both streamed
+    assert streamed["json"] == JSONResponse(doc).body
+    assert _same_xml(streamed["xml"], cdx_xml.to_xml(doc, strict=True))
+    assert xml_errors(streamed["xml"]) == []
+    for response in (exported["xml"],):
+        assert int(response.headers["content-length"]) == len(response.content)
+    r = exported["call"]("GET", f"/1/cbom/sources/runs/{exported['ids']['run']['id']}/cbom")
+    assert int(r.headers["content-length"]) == len(r.content) and r.headers["content-type"] == "application/json"
+    assert 'filename="cbom-sources-run-' in r.headers["content-disposition"]
+
+
+@pytest.mark.parametrize("fmt", ["json", "xml"])
+def test_the_export_is_written_while_its_components_are_made(monkeypatch, fmt):
+    """[major 2] Nothing waits for the whole document: when the last component is asked for, the output already
+    holds (nearly) every earlier one, so memory holds one component at a time, not the document, a tree or its
+    bytes. A repeated bom-ref is still renamed (the XSD makes them unique)."""
+    import io
+
+    from lxml import etree
+
+    from backend.utilities.cbom_sources import cdx_xml, inventory
+
+    out, sizes, count = io.BytesIO(), [], 400
+    head = {"bomFormat": "CycloneDX", "specVersion": "1.6", "serialNumber": "urn:uuid:3e671687-395b-41f5-a30f-a58921a69b79",
+            "version": 1, "metadata": {"timestamp": "2026-11-14T09:30:00Z"}}
+
+    def components():
+        for i in range(count):
+            sizes.append(out.tell())
+            yield {"type": "cryptographic-asset", "bom-ref": "zs-dup" if i < 2 else f"zs-asset-{i}", "name": "x" * 400,
+                   "cryptoProperties": {"assetType": "algorithm"},
+                   "properties": [{"name": f"zs:p{j}", "value": "v" * 40} for j in range(10)]}
+
+    monkeypatch.setattr(inventory, "_document", lambda *_a: (head, components(), lambda: []))
+    inventory.write_cyclonedx(None, None, None, fmt, out)
+    body = out.getvalue()
+    assert len(sizes) == count and sizes[-1] >= 0.9 * len(body), (sizes[-1], len(body))
+    if fmt == "json":
+        doc = json.loads(body)
+        assert len(doc["components"]) == count and doc["vulnerabilities"] == []
+        return
+    assert cdx_xml.validate_xml(body) == []
+    refs = [c.get("bom-ref") for c in etree.fromstring(body).iter(f"{{{cdx_xml.NS}}}component")]
+    assert len(refs) == count == len(set(refs)) and refs[:2] == ["zs-dup", "zs-dup#2"]

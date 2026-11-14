@@ -34,7 +34,7 @@ import logging
 import os
 import re
 from functools import lru_cache
-from typing import Any
+from typing import Any, BinaryIO, Callable, Iterable
 
 log = logging.getLogger(__name__)
 
@@ -187,7 +187,7 @@ def _all_refs(value: Any) -> set[str]:
 
 
 class _Writer:
-    def __init__(self, bom: dict[str, Any]) -> None:
+    def __init__(self, bom: dict[str, Any] | None) -> None:
         from lxml import etree
 
         self.etree = etree
@@ -206,7 +206,8 @@ class _Writer:
         that is at the first repeated or empty ref: a full walk of a large document costs as much as writing a third
         of it, and most documents have neither."""
         if self._taken is None:
-            self._taken = _all_refs(self._bom)
+            # written piece by piece (write_xml) there is no whole document to walk: the refs written so far
+            self._taken = _all_refs(self._bom) if self._bom is not None else set(self.used)
             self._empty_ref = self._free(EMPTY_REF)
             self._taken.add(self._empty_ref)
         return self._taken
@@ -365,6 +366,11 @@ def to_xml(bom: dict[str, Any], *, strict: bool = False) -> bytes:
     writer = _Writer(bom)
     root = etree.Element(f"{{{NS}}}bom", nsmap={None: NS})
     writer.fill(root, bom, BOM, "$")
+    _report(writer, strict)
+    return etree.tostring(root, xml_declaration=True, encoding="UTF-8", pretty_print=True)
+
+
+def _report(writer: _Writer, strict: bool) -> None:
     if writer.dropped:
         if strict:
             raise ValueError(f"no XML mapping for: {sorted(set(writer.dropped))[:20]}")
@@ -372,7 +378,49 @@ def to_xml(bom: dict[str, Any], *, strict: bool = False) -> bytes:
                     ", ".join(sorted(set(writer.dropped))[:20]))
     if writer.renamed:
         log.warning("cyclonedx xml: %d repeated bom-ref(s) renamed to stay unique", len(writer.renamed))
-    return etree.tostring(root, xml_declaration=True, encoding="UTF-8", pretty_print=True)
+
+
+def write_xml(out: BinaryIO, head: dict[str, Any], components: Iterable[dict[str, Any]],
+              vulnerabilities: Callable[[], list[dict[str, Any]]], *, strict: bool = False) -> None:
+    """The same XML as ``to_xml({**head, "components": [...], "vulnerabilities": [...]})``, written to ``out`` one
+    top-level element at a time (lxml ``xmlfile``): at most one component's element tree is in memory, whatever the
+    document's size. ``head`` holds the keys before ``components`` (bomFormat, specVersion, serialNumber, version,
+    metadata); ``vulnerabilities`` is called once every component is written. A repeated ``bom-ref`` is renamed to
+    a name not written before it (``to_xml`` also avoids names written after it: it sees the whole document)."""
+    from lxml import etree
+
+    writer = _Writer(None)
+    known = {"bomFormat", "specVersion", "serialNumber", "version", "metadata"}
+    writer.dropped += [f"$.{key}" for key in head if key not in known]
+    attrs = {name: clean_text(head[name]) for name in ("serialNumber", "version") if head.get(name) is not None}
+    nsmap = {None: NS}
+
+    def element(name: str, data: Any, spec: Spec, path: str) -> Any:
+        node = etree.Element(writer.tag(name), nsmap=nsmap)
+        if isinstance(data, dict):
+            writer.fill(node, data, spec, path)
+        else:
+            writer.dropped.append(path)
+        return node
+
+    with etree.xmlfile(out, encoding="UTF-8") as xf:
+        xf.write_declaration()
+        with xf.element(writer.tag("bom"), attrs, nsmap=nsmap):
+            xf.write("\n")
+            if head.get("metadata") is not None:
+                xf.write(element("metadata", head["metadata"], METADATA, "$.metadata"), pretty_print=True)
+            with xf.element(writer.tag("components")):
+                xf.write("\n")
+                for index, component in enumerate(components):
+                    xf.write(element("component", component, COMPONENT, f"$.components[{index}]"), pretty_print=True)
+            xf.write("\n")
+            with xf.element(writer.tag("vulnerabilities")):
+                xf.write("\n")
+                for index, item in enumerate(vulnerabilities()):
+                    xf.write(element("vulnerability", item, VULNERABILITY, f"$.vulnerabilities[{index}]"),
+                             pretty_print=True)
+            xf.write("\n")
+    _report(writer, strict)
 
 
 # ---------------------------------------------------------------------------------------------------- validation
@@ -408,4 +456,4 @@ def validate_xml(xml: bytes) -> list[str]:
     return [f"line {e.line}: {e.message}" for e in list(schema.error_log)[:50]]
 
 
-__all__ = ["NS", "SIGNATURE_SCOPE", "XML_MEDIA_TYPE", "clean_text", "to_xml", "validate_xml"]
+__all__ = ["NS", "SIGNATURE_SCOPE", "XML_MEDIA_TYPE", "clean_text", "to_xml", "validate_xml", "write_xml"]
