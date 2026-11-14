@@ -999,6 +999,7 @@
   "CWE-329": "Generation of Predictable IV with CBC Mode",
   "CWE-330": "Use of Insufficiently Random Values",
   "CWE-338": "Use of Cryptographically Weak Pseudo-Random Number Generator (PRNG)",
+  "CWE-345": "Insufficient Verification of Data Authenticity",
   "CWE-347": "Improper Verification of Cryptographic Signature",
   "CWE-522": "Insufficiently Protected Credentials",
   "CWE-668": "Exposure of Resource to Wrong Sphere",
@@ -3958,6 +3959,87 @@
      }
     ]
    },
+   "CERT_REVOKED": {
+    "attack": "Revocation is usually the right outcome (a replaced or compromised key). It becomes a problem if a server still presents the certificate: clients that check revocation refuse the connection, and clients that do not are exposed if the key was compromised.",
+    "category": "certificate",
+    "compliance": [
+     "certificates"
+    ],
+    "cve_rules": [],
+    "cves": [],
+    "cwe": [
+     "CWE-295"
+    ],
+    "default_impact": "Low",
+    "description": "The certificate is logged in Certificate Transparency and its CA reports it as revoked.",
+    "owasp": [
+     "crypto"
+    ],
+    "owasp_2021": [
+     {
+      "basis": "CWE-295 is in OWASP's mapped CWE list",
+      "id": "A07:2021",
+      "label": "A07:2021 - Identification and Authentication Failures"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A02:2021",
+      "label": "A02:2021 - Cryptographic Failures"
+     }
+    ],
+    "owasp_2025": [
+     {
+      "basis": "CWE-295 is in OWASP's mapped CWE list",
+      "id": "A07:2025",
+      "label": "A07:2025 - Authentication Failures"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A04:2025",
+      "label": "A04:2025 - Cryptographic Failures"
+     }
+    ],
+    "pqc": null,
+    "references": [
+     "https://www.rfc-editor.org/rfc/rfc5280#section-5.3.1"
+    ],
+    "remediation": {
+     "steps": [
+      {
+       "how": "Re-issue the certificate with an RSA-3072 or ECDSA P-256/P-384 key and a SHA-256/384 signature, deploy it, then revoke the old one",
+       "platform": "Any CA"
+      },
+      {
+       "how": "openssl req -new -newkey ec -pkeyopt ec_paramgen_curve:P-256 -sha256 -nodes -keyout new.key -out new.csr -subj \"/CN={host}\"",
+       "platform": "OpenSSL CSR"
+      },
+      {
+       "how": "Request an ACM certificate with RSA_2048+ or EC_prime256v1 key algorithm and re-associate the listener",
+       "platform": "AWS ACM"
+      }
+     ],
+     "summary": "Make sure no server still presents it; if the revocation was for key compromise, rotate the key everywhere it was used."
+    },
+    "standards": [
+     "RFC 5280"
+    ],
+    "summary_rules": [],
+    "title": "Certificate revoked",
+    "verify": [
+     {
+      "command": "openssl s_client -connect {host}:{port} -servername {host} </dev/null 2>/dev/null | openssl x509 -noout -subject -issuer -dates -text | grep -E 'Subject:|Issuer:|Not After|Signature Algorithm|Public-Key'",
+      "label": "Certificate the endpoint presents"
+     },
+     {
+      "command": "curl -s 'https://api.certspotter.com/v1/issuances?domain={name}&include_subdomains=true&match_wildcards=true&expand=dns_names&expand=issuer&expand=revocation' | jq -r '.[] | [.not_before, .not_after, .issuer.friendly_name, .revoked, (.dns_names|join(\" \"))] | @tsv'",
+      "label": "Every logged certificate for the name (Cert Spotter, unexpired; no key needed for a few queries)"
+     },
+     {
+      "command": "curl -s 'https://crt.sh/?q={name}&output=json&exclude=expired&deduplicate=Y' | jq -r '.[] | [.not_before, .not_after, .issuer_name, .name_value] | @tsv'",
+      "label": "The same name in crt.sh (best effort: often slow or 502)"
+     }
+    ]
+   },
    "CERT_SELF_SHA1": {
     "attack": "None through the self-signature itself. Policy engines and scanners that flag every SHA-1 signature will keep reporting it, and some clients refuse SHA-1 anywhere in a chain.",
     "category": "certificate",
@@ -4092,6 +4174,110 @@
      }
     ]
    },
+   "CERT_UNEXPECTED_CA": {
+    "attack": "A certificate from an unexpected CA is either shadow IT (a team or vendor buying certificates outside the process, often unmanaged and left to expire) or mis-issuance: someone who could pass that CA's domain validation can impersonate the name to every browser.",
+    "category": "certificate",
+    "compliance": [
+     "certificates"
+    ],
+    "cve_rules": [],
+    "cves": [],
+    "cwe": [
+     "CWE-295",
+     "CWE-345"
+    ],
+    "default_impact": "Medium",
+    "description": "Certificate Transparency logs hold a certificate for one of the team's domains issued by a certificate authority that is not in the team's list of expected CAs.",
+    "owasp": [
+     "crypto",
+     "misconfig"
+    ],
+    "owasp_2021": [
+     {
+      "basis": "CWE-295 is in OWASP's mapped CWE list",
+      "id": "A07:2021",
+      "label": "A07:2021 - Identification and Authentication Failures"
+     },
+     {
+      "basis": "CWE-345 is in OWASP's mapped CWE list",
+      "id": "A08:2021",
+      "label": "A08:2021 - Software and Data Integrity Failures"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A02:2021",
+      "label": "A02:2021 - Cryptographic Failures"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A05:2021",
+      "label": "A05:2021 - Security Misconfiguration"
+     }
+    ],
+    "owasp_2025": [
+     {
+      "basis": "CWE-295 is in OWASP's mapped CWE list",
+      "id": "A07:2025",
+      "label": "A07:2025 - Authentication Failures"
+     },
+     {
+      "basis": "CWE-345 is in OWASP's mapped CWE list",
+      "id": "A08:2025",
+      "label": "A08:2025 - Software or Data Integrity Failures"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A04:2025",
+      "label": "A04:2025 - Cryptographic Failures"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A02:2025",
+      "label": "A02:2025 - Security Misconfiguration"
+     }
+    ],
+    "pqc": null,
+    "references": [
+     "https://www.rfc-editor.org/rfc/rfc8659"
+    ],
+    "remediation": {
+     "steps": [
+      {
+       "how": "Publish CAA records naming only your CAs, e.g. example.com. CAA 0 issue \"letsencrypt.org\"",
+       "platform": "DNS"
+      },
+      {
+       "how": "Report mis-issuance to the CA's problem-reporting address (Cert Spotter shows it per issuance)",
+       "platform": "Any CA"
+      },
+      {
+       "how": "Cloud & Identity > Certificate Transparency: add the CA to the expected issuers if it is approved",
+       "platform": "ZeroShield"
+      }
+     ],
+     "summary": "Find who requested it. If it is legitimate, add the CA to the expected list; if not, ask the CA to revoke it and publish CAA records that allow only your CAs."
+    },
+    "standards": [
+     "RFC 6962",
+     "RFC 8659 (CAA)"
+    ],
+    "summary_rules": [],
+    "title": "Certificate from a CA the team does not use",
+    "verify": [
+     {
+      "command": "curl -s 'https://api.certspotter.com/v1/issuances?domain={name}&include_subdomains=true&match_wildcards=true&expand=dns_names&expand=issuer&expand=revocation' | jq -r '.[] | [.not_before, .not_after, .issuer.friendly_name, .revoked, (.dns_names|join(\" \"))] | @tsv'",
+      "label": "Every logged certificate for the name (Cert Spotter, unexpired; no key needed for a few queries)"
+     },
+     {
+      "command": "curl -s 'https://crt.sh/?q={name}&output=json&exclude=expired&deduplicate=Y' | jq -r '.[] | [.not_before, .not_after, .issuer_name, .name_value] | @tsv'",
+      "label": "The same name in crt.sh (best effort: often slow or 502)"
+     },
+     {
+      "command": "dig +short CAA {name}",
+      "label": "CAs allowed to issue for the name (CAA)"
+     }
+    ]
+   },
    "CERT_UNUSED": {
     "attack": "Orphaned certificates with live private keys are unmanaged credentials: if the key leaks, the certificate can still be used to impersonate the name.",
     "category": "certificate",
@@ -4142,6 +4328,89 @@
      {
       "command": "aws acm describe-certificate --certificate-arn {resource} --query Certificate.InUseBy",
       "label": "Where the certificate is used"
+     }
+    ]
+   },
+   "CERT_WILDCARD_SPRAWL": {
+    "attack": "A wildcard key copied to many servers, vendors or CDNs is only as safe as the weakest of them; one leak allows impersonating every subdomain, including ones that never used the certificate.",
+    "category": "certificate",
+    "compliance": [
+     "key_mgmt"
+    ],
+    "cve_rules": [],
+    "cves": [],
+    "cwe": [
+     "CWE-1104",
+     "CWE-320"
+    ],
+    "default_impact": "Low",
+    "description": "More than three unexpired, unrevoked wildcard certificates cover the same name. Every copy of a wildcard key can impersonate every subdomain, so each extra certificate is another place the key lives.",
+    "owasp": [
+     "crypto",
+     "misconfig"
+    ],
+    "owasp_2021": [
+     {
+      "basis": "CWE-1104 is in OWASP's mapped CWE list",
+      "id": "A06:2021",
+      "label": "A06:2021 - Vulnerable and Outdated Components"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A02:2021",
+      "label": "A02:2021 - Cryptographic Failures"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A05:2021",
+      "label": "A05:2021 - Security Misconfiguration"
+     }
+    ],
+    "owasp_2025": [
+     {
+      "basis": "CWE-1104 is in OWASP's mapped CWE list",
+      "id": "A03:2025",
+      "label": "A03:2025 - Software Supply Chain Failures"
+     },
+     {
+      "basis": "CWE-320 is in OWASP's mapped CWE list",
+      "id": "A04:2025",
+      "label": "A04:2025 - Cryptographic Failures"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A02:2025",
+      "label": "A02:2025 - Security Misconfiguration"
+     }
+    ],
+    "pqc": null,
+    "references": [],
+    "remediation": {
+     "steps": [
+      {
+       "how": "Issue a certificate per host name instead of *.{name}",
+       "platform": "ACME / cert-manager"
+      },
+      {
+       "how": "Revoke wildcard certificates no deployed server presents",
+       "platform": "Any CA"
+      }
+     ],
+     "summary": "Replace wildcards with per-service certificates where you can (ACME makes this cheap), keep one owner per wildcard, and revoke the ones nobody uses."
+    },
+    "standards": [
+     "NIST SP 800-57 Part 1"
+    ],
+    "summary_rules": [],
+    "title": "Many live wildcard certificates for one name",
+    "verify": [
+     {
+      "command": "curl -s 'https://api.certspotter.com/v1/issuances?domain={name}&include_subdomains=true&match_wildcards=true&expand=dns_names&expand=issuer&expand=revocation' | jq -r '.[] | [.not_before, .not_after, .issuer.friendly_name, .revoked, (.dns_names|join(\" \"))] | @tsv'",
+      "label": "Every logged certificate for the name (Cert Spotter, unexpired; no key needed for a few queries)"
+     },
+     {
+      "command": "curl -s 'https://crt.sh/?q={name}&output=json&exclude=expired&deduplicate=Y' | jq -r '.[] | [.not_before, .not_after, .issuer_name, .name_value] | @tsv'",
+      "label": "The same name in crt.sh (best effort: often slow or 502)"
      }
     ]
    },
@@ -11871,7 +12140,7 @@
    }
   }
  },
- "kb_version": "2026.11.10.1",
+ "kb_version": "2026.11.12.1",
  "legacy_controls": {
   "access": {
    "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control",

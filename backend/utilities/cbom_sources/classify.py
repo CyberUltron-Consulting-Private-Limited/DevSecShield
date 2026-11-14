@@ -247,6 +247,19 @@ def _cert_rules(out: _Out, facts: dict[str, Any], algorithm: Any, size: Any, now
         out.add("CERT_SELF_SHA1", None, f"Self-signed {what}: {sha1_note}")
     if facts.get("in_use") is False:
         out.add("CERT_UNUSED", "Low", "Certificate is not attached to any resource (orphaned)")
+    # Certificate Transparency facts (ct_collect): the team's expected issuers, revocation, wildcard sprawl
+    if facts.get("issuer_expected") is False:
+        issuer = facts.get("issuer_name") or facts.get("issuer") or "an unknown issuer"
+        out.add("CERT_UNEXPECTED_CA", "Medium",
+                f"Issued by {str(issuer)[:80]}, which is not in the team's list of certificate authorities")
+    if facts.get("revoked") is True:
+        when = str(facts.get("revocation_time") or "")[:10]
+        out.add("CERT_REVOKED", "Low", "Certificate is revoked" + (f" (since {when})" if when else "")
+                + "; a server that still presents it fails for clients that check revocation")
+    sprawl = facts.get("wildcard_sprawl")
+    if isinstance(sprawl, dict) and isinstance(sprawl.get("certificates"), int):
+        out.add("CERT_WILDCARD_SPRAWL", "Low",
+                f"One of {sprawl['certificates']} live wildcard certificates for {str(sprawl.get('name'))[:80]}")
     _key_rules(out, algorithm or facts.get("key_alg"), size or facts.get("key_size"), "Certificate key")
 
 
