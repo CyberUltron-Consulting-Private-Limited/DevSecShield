@@ -69,6 +69,12 @@ export const COVERED: string[] = [
   // Settings > Integrations: ServiceNow, syslog, Splunk HEC, webhook, OSCAL and the delivery log (issue #43)
   "app/[team_id]/settings/integrations/page.tsx",
   "components/integrations/IntegrationsPage.tsx",
+  // CBOM code-scan results: KPIs, charts, remediation, findings filters and table, top risks
+  "components/CbomResults.tsx",
+  "components/cbom/CbomCryptoCharts.tsx",
+  "components/cbom/CertCalendar.tsx",
+  "components/cbom/CryptoHeatmap.tsx",
+  "components/cbom/KbFindingDetails.tsx",
 ];
 /** Files under a covered directory that are not covered yet, each with the reason. */
 export const NOT_YET_COVERED = new Map<string, string>([
@@ -332,6 +338,14 @@ const PROBES: { name: string; file: string; anchor: string; insert: string; wher
     file: "components/integrations/IntegrationsPage.tsx",
     anchor: `<TableHead>Queued <InfoTip id="int.log.col.queued" /></TableHead>`,
     insert: `<TableHead>Latency</TableHead>`,
+    where: "after",
+    gaps: ["heading"],
+  },
+  {
+    name: "CBOM results: a chart card title without a tip",
+    file: "components/CbomResults.tsx",
+    anchor: `{/* Top Cryptographic Risks */}`,
+    insert: `<Card><CardHeader><CardTitle>Key sizes</CardTitle></CardHeader></Card>`,
     where: "after",
     gaps: ["heading"],
   },

@@ -4862,6 +4862,330 @@ export const INFO_TIPS = {
     why: "Names the exact cause to fix at the destination.",
     example: "HTTP 401: the HEC token is disabled.",
   },
+  // ────────────────────────────────────────────────────────────── CBOM code-scan results (components/CbomResults.tsx)
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:162-170, backend/utilities/dashboard/scan.py:1207-1208 — every row of the inventory table: findings and clean inventory
+  "cbom.res.kpi.assets": {
+    label: "Crypto assets",
+    what: "Every cryptographic asset this scan found: algorithms, keys, certificates, protocols and libraries in use, whether or not it is a finding.",
+    why: "This is your cryptographic bill of materials; everything else on the page is a view of it.",
+    example: "57 assets: 41 clean (such as AES-256-GCM) and 16 findings.",
+  },
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:118-125 — crypto_strength weak
+  "cbom.res.kpi.weak": {
+    label: "Weak",
+    what: "Assets whose cryptographic strength is weak today: broken or deprecated algorithms and too-short keys.",
+    why: "Weak crypto can be attacked now, without a quantum computer.",
+    example: "MD5 password hashing in auth/legacy.py.",
+  },
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:126-131 — the Quantum column's verdict
+  "cbom.res.kpi.qv": {
+    label: "Quantum vulnerable",
+    what: "Assets that a large quantum computer could break: public-key algorithms such as RSA, Diffie-Hellman and elliptic curves (ECDH, ECDSA).",
+    why: "Data encrypted with them today can be recorded now and decrypted later (harvest now, decrypt later).",
+    example: "RSA-2048 key exchange on api.bank.in:443: a future quantum computer could recover the key, so recorded traffic is at risk.",
+  },
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:132-133 — algorithm_type certificate
+  "cbom.res.kpi.certs": {
+    label: "Certificates",
+    what: "X.509 certificates found in the code and files of this scan.",
+    why: "Certificates expire and carry keys and signature algorithms that need migrating.",
+    example: "3: two in config/tls, one test certificate in fixtures.",
+  },
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:134-135 — algorithm_type key or secret
+  "cbom.res.kpi.keys": {
+    label: "Keys",
+    what: "Keys and secrets found: private keys, symmetric keys and key material in code or files.",
+    why: "A key committed to a repository should be treated as exposed and rotated.",
+    example: "A PEM private key in deploy/certs/server.key.",
+  },
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:29-43, backend/utilities/cbom_sources/cbom_metrics.py:171-175, frontend/utils/cbomReadiness.ts:19-21 — quantum-safe share of judged assets; n/a when none judged
+  "cbom.res.kpi.ready": {
+    label: "Quantum ready",
+    what: "The share of judged assets that are quantum-safe: post-quantum, hybrid or symmetric with enough margin. Assets that are quantum-vulnerable or broken today count against it; assets without a quantum verdict (hashes, settings) are left out. n/a when no asset was judged.",
+    why: "It tracks your post-quantum migration in one number.",
+    example: "12 judged: 9 safe, 2 RSA, 1 DES: 9 / 12 = 75%.",
+  },
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:26, backend/utilities/cbom_sources/cbom_metrics.py:78-84 — 0-10 over findings: critical 9, high 7, medium 5, low 2
+  "cbom.res.kpi.avg_risk": {
+    label: "Avg risk score",
+    what: "The average risk over this scan's findings, 0 to 10: Critical 9, High 7, Medium 5, Low 2. Clean inventory is left out. One decimal.",
+    why: "A quick severity summary that can be compared across scans.",
+    example: "1 Critical and 1 Low: (9 + 2) / 2 = 5.5.",
+  },
+  // src: backend/utilities/dashboard/scan.py:1233-1239 — finding rows by status
+  "cbom.res.remediation": {
+    label: "Remediation progress",
+    what: "This scan's findings by the status your team set: Fixed, In progress, Not started, Ignored, with a count and a share each.",
+    why: "Shows how far the fixing has got.",
+    example: "16 findings: 4 Fixed (25%), 2 In progress, 10 Not started.",
+  },
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:142-143 — owasp_top_10 values of the findings
+  "cbom.res.owasp": {
+    label: "OWASP Top 10 issues",
+    what: "How many findings map to each OWASP Top 10 category; most crypto findings fall under A02 Cryptographic Failures.",
+    why: "Lets you report crypto findings in the framework your AppSec team uses.",
+    example: "A02:2021 Cryptographic Failures: 14.",
+  },
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:178-181 — findings by severity
+  "cbom.res.severity": {
+    label: "Risk metrics",
+    what: "This scan's findings by impact: Critical, High, Medium and Low.",
+    why: "Fix Critical and High first.",
+    example: "Critical 1, High 5, Medium 7, Low 3.",
+  },
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:144-145, backend/utilities/dashboard/scan.py:1213-1224 — controls the findings map to, and framework fails
+  "cbom.res.compliance": {
+    label: "Compliance controls",
+    what: "Findings mapped to compliance controls and frameworks (for example CERT-In, RBI, NIST, PCI DSS): the 10 with the most findings.",
+    why: "Shows which audit requirements the crypto weaknesses put at risk.",
+    example: "PCI DSS 4.2.1 (strong cryptography in transit): 6.",
+  },
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:112-116 — algorithm_type of every row
+  "cbom.res.algo_types": {
+    label: "Algorithm types",
+    what: "Every asset by type of cryptography: symmetric cipher, asymmetric, hash, signature, key exchange, certificate, key, protocol and others.",
+    why: "Shows where your crypto is concentrated and which migration work dominates.",
+    example: "hash 18, symmetric 12, asymmetric 9, certificate 3.",
+  },
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:117-125 — weak, moderate, strong, quantum_safe
+  "cbom.res.strength": {
+    label: "Crypto strength",
+    what: "Every asset by strength today: weak, moderate, strong or quantum-safe.",
+    why: "Weak and moderate assets are the near-term fixes.",
+    example: "weak 4, moderate 6, strong 40, quantum-safe 2.",
+  },
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:96-131 — quantum-safe, quantum-vulnerable, broken today
+  "cbom.res.quantum": {
+    label: "Quantum readiness",
+    what: "Every judged asset by its quantum verdict: quantum-safe, quantum-vulnerable (public-key crypto a quantum computer breaks), or broken today (already weak, such as MD5 or DES).",
+    why: "Quantum-vulnerable assets are your post-quantum migration list.",
+    example: "safe 30, quantum-vulnerable 9, broken today 3.",
+  },
+  // src: frontend/components/CbomResults.tsx:305-314, backend/utilities/dashboard/bom_risk_score.py:101-120 — top 24 by score
+  "cbom.res.risk_scores": {
+    label: "Risk scores per finding",
+    what: "The 24 highest-scoring findings, highest first (F1 is the highest). Each score is 0 to 10: the impact's base plus additions for weak strength, quantum vulnerability and the finding's codes.",
+    why: "Shows whether risk is concentrated in a few findings or spread out.",
+    example: "F1: RSA-1024 signing key, 9.8.",
+  },
+  // src: backend/utilities/dashboard/scan.py:1230-1231, backend/utilities/dashboard/remediation_metrics.py:17-90 — from the status of this scan's findings
+  "cbom.res.remed.section": {
+    label: "Remediation metrics",
+    what: "Measured from the status your team sets on this scan's findings. The targets are fixed goals shown for comparison.",
+    why: "Shows whether fixes keep pace with what the scans find.",
+    example: "Mark a finding Fixed in the table below and these numbers update.",
+  },
+  // src: frontend/components/CbomResults.tsx:1281-1301 — the CycloneDX import report
+  "cbom.res.import_notes": {
+    label: "About the uploaded CBOM file",
+    what: "What happened when your uploaded CycloneDX CBOM was read: how many cryptographic assets were imported, and which components were skipped as not crypto, unreadable, duplicate or past the limit.",
+    why: "Skipped components are missing from the results, so check them.",
+    example: "40 of 42 cryptographic assets imported · CycloneDX 1.6 · 2 unreadable.",
+  },
+  // src: frontend/components/CbomResults.tsx:1304-1326 — coverage notes of the scan
+  "cbom.res.coverage": {
+    label: "What this scan covered",
+    what: "Which files and languages the scan read and what it skipped, with the reason.",
+    why: "Skipped files are not in the inventory, so a clean result may be incomplete.",
+    example: "312 files read; 14 skipped as larger than the size limit.",
+  },
+  // src: frontend/components/CbomResults.tsx:1410-1421 — an uploaded CBOM file
+  "cbom.res.input": {
+    label: "Input",
+    what: "This scan read an uploaded CycloneDX CBOM file instead of source code.",
+    why: "Results are only as complete as the file.",
+    example: "CBOM file.",
+  },
+  // src: frontend/components/CbomResults.tsx:1470-1478 — finding rows; clean inventory is not listed here
+  "cbom.res.findings": {
+    label: "Cryptographic findings",
+    what: "This scan's findings, one per row, each with a status your team sets. Clean assets (for example AES-GCM or SHA-256) are in the charts and the CycloneDX download, not in this table.",
+    why: "Each row is something to fix, accept or plan for migration.",
+    example: "RSA-2048 in src/crypto/keys.py:42, High, quantum-vulnerable, Not started.",
+  },
+  // src: frontend/components/CbomResults.tsx:836-850 — algorithm, description, location or id
+  "cbom.res.search": {
+    label: "Search",
+    what: "Shows only the findings whose algorithm, description, location or id contains this text (upper or lower case does not matter).",
+    why: "Find every use of one algorithm or file quickly.",
+    example: "\"rsa\" keeps RSA-2048 and RSA-1024 findings.",
+  },
+  // src: frontend/components/CbomResults.tsx:858, frontend/components/SASTResults.tsx:692-700 — tiers on the 0-10 risk score
+  "cbom.res.filter.risk": {
+    label: "Risk score filter",
+    what: "Shows only findings whose risk score (0 to 10) is in a tier: Critical 9 or more, High 7 to 9, Medium 5 to 7, Low under 5.",
+    why: "Focus on the findings that score highest.",
+    example: "High keeps a finding scored 7.6 and hides one scored 9.4.",
+  },
+  // src: frontend/components/CbomResults.tsx:854 — exact crypto_strength
+  "cbom.res.filter.strength": {
+    label: "Strength filter",
+    what: "Shows only findings of one strength: weak, moderate, strong or quantum-safe.",
+    why: "Weak findings are exploitable today.",
+    example: "Weak.",
+  },
+  // src: frontend/components/CbomResults.tsx:855 — exact algorithm_type
+  "cbom.res.filter.type": {
+    label: "Type filter",
+    what: "Shows only findings of one algorithm type, from the types found in this scan.",
+    why: "Plan migration work one type at a time.",
+    example: "certificate.",
+  },
+  // src: frontend/components/cbom/quantumFilter.ts:10-23 — safe, broken today, vulnerable
+  "cbom.res.filter.quantum": {
+    label: "Quantum filter",
+    what: "Shows only findings that are quantum-safe, broken today (weak even without a quantum computer, such as MD5) or quantum-vulnerable.",
+    why: "Vulnerable gives your post-quantum migration list; Broken today the fixes that cannot wait.",
+    example: "Vulnerable: the RSA and ECDH findings.",
+  },
+  // src: frontend/components/CbomResults.tsx:1576-1585 — selects the rows shown
+  "cbom.res.select_all": {
+    label: "Select all",
+    what: "Selects every finding the table shows (after search and filters), for the actions above the table: change their status or file Jira tickets.",
+    why: "Handle a group of similar findings in one step.",
+    example: "Filter Type: certificate, select all, mark In progress.",
+  },
+  // src: frontend/components/CbomResults.tsx:1587 — algorithm name
+  "cbom.res.col.algorithm": {
+    label: "Algorithm",
+    what: "The algorithm, key, certificate or protocol found, as named in the code or file. Click it for the details and the suggested fix.",
+    why: "Names exactly what to replace.",
+    example: "RSA-2048.",
+  },
+  // src: frontend/components/CbomResults.tsx:1588 — algorithm_type
+  "cbom.res.col.type": {
+    label: "Type",
+    what: "The kind of cryptography: symmetric, asymmetric, hash, signature, key exchange, certificate, key, protocol or other.",
+    why: "Each type has its own replacement path.",
+    example: "asymmetric.",
+  },
+  // src: frontend/components/CbomResults.tsx:1590, backend/utilities/cbom_sources/cbom_metrics.py:117-125 — weak, moderate, strong, quantum-safe
+  "cbom.res.col.strength": {
+    label: "Strength",
+    what: "How strong it is today: weak (broken or deprecated), moderate, strong, or quantum-safe.",
+    why: "Weak is exploitable now; moderate is due for an upgrade.",
+    example: "weak for SHA-1 signatures.",
+  },
+  // src: frontend/components/cbom/quantumFilter.ts:10-23 — safe, broken today, vulnerable
+  "cbom.res.col.quantum": {
+    label: "Quantum",
+    what: "Whether a quantum computer breaks it: Quantum-safe, Vulnerable (RSA, Diffie-Hellman, elliptic curves) or Broken today (weak even without one).",
+    why: "Vulnerable assets need a post-quantum replacement such as ML-KEM or ML-DSA.",
+    example: "Vulnerable for ECDSA P-256 signing.",
+  },
+  // src: backend/utilities/dashboard/bom_risk_score.py:101-120 — 0-10 per finding
+  "cbom.res.col.risk": {
+    label: "Risk score",
+    what: "This finding's risk, 0 to 10: the impact's base plus additions for weak strength, quantum vulnerability and its finding codes.",
+    why: "Orders findings of the same impact by how much they matter.",
+    example: "9.8 for an RSA-1024 signing key.",
+  },
+  // src: frontend/components/CbomResults.tsx:1593 — file and line
+  "cbom.res.col.location": {
+    label: "Location",
+    what: "Where it was found: the file and line, or the component in an uploaded CBOM.",
+    why: "Takes you straight to the code to change.",
+    example: "src/crypto/keys.py:42.",
+  },
+  // src: backend/utilities/dashboard/scan.py:1256, backend/utilities/cbom_sources/cbom_metrics.py:182-184 — the 10 highest risk scores
+  "cbom.res.top": {
+    label: "Top cryptographic risks",
+    what: "The 10 findings with the highest risk scores in this scan.",
+    why: "Start here when you have time for only a few fixes.",
+    example: "RSA-1024 signing key, weak, not quantum-safe, Critical.",
+  },
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:146-153 — quantum_safe of the finding
+  "cbom.res.col.quantum_safe": {
+    label: "Quantum safe",
+    what: "Whether the asset is quantum-safe: Yes or No.",
+    why: "No means it needs a post-quantum replacement.",
+    example: "No for RSA-2048.",
+  },
+  // ────────────────────────────────────────────────────────────── CBOM crypto-asset charts (components/cbom/CbomCryptoCharts.tsx, CertCalendar.tsx)
+  // src: frontend/components/cbom/CbomCryptoCharts.tsx:306-310 — algorithms by primitive
+  "cbom.chart.algorithms": {
+    label: "Algorithm distribution",
+    what: "Cryptographic algorithms found, grouped by primitive: block cipher, hash, signature, key agreement, public-key encryption and others.",
+    why: "Shows which primitives your migration has to cover and how often each is used.",
+    example: "signature 14, hash 11, key agreement 6.",
+  },
+  // src: frontend/components/cbom/CbomCryptoCharts.tsx:343-347 — weak or deprecated crypto by category
+  "cbom.chart.weak": {
+    label: "Weak-crypto findings",
+    what: "Weak or deprecated cryptography by category, coloured by severity (High red, Medium orange).",
+    why: "These can be attacked today and are the first fixes.",
+    example: "Deprecated hash (SHA-1): 4 High.",
+  },
+  // src: frontend/components/cbom/CbomCryptoCharts.tsx:125, frontend/components/cbom/CbomCryptoCharts.tsx:390-394 — share by NIST quantum security level; broken today counts as not ready
+  "cbom.chart.pqc": {
+    label: "PQC readiness",
+    what: "The quantum-safe share of every crypto asset (findings and clean inventory), from each algorithm's NIST quantum security level. Algorithms broken today are not quantum-ready.",
+    why: "One view of how much of your crypto survives a quantum computer.",
+    example: "62% ready: 31 of 50 assets at NIST level 1 or above.",
+  },
+  // src: frontend/components/cbom/CbomCryptoCharts.tsx:585-597 — NIST level 0 public-key assets
+  "cbom.chart.qv": {
+    label: "Quantum-vulnerable algorithms",
+    what: "Public-key algorithms a cryptographically relevant quantum computer breaks (NIST level 0), each with where it is used.",
+    why: "Data protected by them can be harvested now and decrypted later.",
+    example: "RSA-2048 key exchange on api.bank.in:443: a future quantum computer could recover the key; harvest-now-decrypt-later applies.",
+  },
+  // src: frontend/components/cbom/CbomCryptoCharts.tsx:600-608 — no NIST level 0 assets
+  "cbom.chart.qv_none": {
+    label: "No quantum-vulnerable algorithms",
+    what: "No algorithm in this inventory is broken by a quantum computer at its parameter size.",
+    why: "Keep scanning: new code can add RSA or ECDH again.",
+    example: "Only AES-256-GCM, SHA-384 and ML-KEM-768 found.",
+  },
+  // src: frontend/components/cbom/CbomCryptoCharts.tsx:693-704 — NIST replacement per algorithm against CNSA 2.0
+  "cbom.chart.roadmap": {
+    label: "PQC migration roadmap",
+    what: "The NIST-standardised replacement for each quantum-vulnerable algorithm, against the CNSA 2.0 timeline.",
+    why: "Turns the inventory into a migration plan with dates regulators recognise.",
+    example: "RSA-2048 signatures → ML-DSA-65; ECDH P-256 → ML-KEM-768.",
+  },
+  // src: frontend/components/cbom/CbomCryptoCharts.tsx:271-276, frontend/components/cbom/CbomCryptoCharts.tsx:708-716 — 2025 signing, 2030 networking, 2033 OS, 2035 all NSS
+  "cbom.chart.cnsa": {
+    label: "CNSA 2.0 transition milestones",
+    what: "The NSA CNSA 2.0 dates by which systems should use quantum-resistant algorithms: software and firmware signing 2025, networking and traditional protocols 2030, operating systems 2033, all national security systems 2035.",
+    why: "Many regulators and vendors plan against these dates.",
+    example: "A VPN gateway falls under networking: 2030.",
+  },
+  // src: frontend/components/cbom/CbomCryptoCharts.tsx:734-740 — replacement per algorithm
+  "cbom.chart.replacements": {
+    label: "Recommended replacements",
+    what: "For each quantum-vulnerable algorithm found, the recommended post-quantum replacement and where the old one is used.",
+    why: "Gives each owner a concrete target, not just a finding.",
+    example: "ECDSA P-256 code signing → ML-DSA-65 (FIPS 204).",
+  },
+  // src: frontend/components/cbom/CbomCryptoCharts.tsx:936-942 — X.509 validity and related keys
+  "cbom.chart.cert_expiry": {
+    label: "Certificate expiry",
+    what: "X.509 certificates by validity (expired, expiring soon, valid) with related key and keystore material.",
+    why: "An expired certificate breaks a service; a long-lived one delays migration to post-quantum signatures.",
+    example: "2 expired, 3 expiring within 30 days, 18 valid.",
+  },
+  // src: frontend/components/cbom/CbomCryptoCharts.tsx:1083-1087 — transport-security protocols in use
+  "cbom.chart.protocols": {
+    label: "Protocol / TLS",
+    what: "Transport-security protocols and versions found in use: TLS, SSH, IPsec and others.",
+    why: "Old versions such as TLS 1.0 or SSLv3 are exploitable today.",
+    example: "TLS 1.2: 9, TLS 1.3: 4, TLS 1.0: 1.",
+  },
+  // src: frontend/components/cbom/CbomCryptoCharts.tsx:1130-1134 — CycloneDX asset classes
+  "cbom.chart.asset_types": {
+    label: "Asset types",
+    what: "The crypto inventory by CycloneDX asset class: algorithm, certificate, protocol, related crypto material (keys, secrets).",
+    why: "Mirrors the CBOM file you can download.",
+    example: "algorithm 40, certificate 6, protocol 5, related material 3.",
+  },
+  // src: frontend/components/cbom/CertCalendar.tsx:1-3, frontend/components/cbom/CertCalendar.tsx:95-99 — month calendar, 30/60/90 days
+  "cbom.cal.expiry": {
+    label: "Certificate expiry calendar",
+    what: "A month calendar of certificate expiry dates (UTC), coloured for 30, 60 and 90 days ahead. Choose a day to list its certificates; arrow keys move by day and week, Page Up and Page Down change the month.",
+    why: "Renewals planned ahead avoid outages.",
+    example: "Three certificates expire on 2 Dec: api.bank.in, mail.bank.in, vpn.bank.in.",
+  },
 } as const satisfies Record<string, InfoTipEntry>;
 
 export type InfoTipId = keyof typeof INFO_TIPS;
