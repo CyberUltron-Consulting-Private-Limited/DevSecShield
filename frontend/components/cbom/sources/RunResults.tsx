@@ -87,12 +87,12 @@ const TARGET_LABEL: Record<string, string> = {
   skipped_deadline: "Skipped: time limit", skipped_cancelled: "Skipped: cancelled",
 };
 
-function ImpactBadge({ impact }: { impact: CbomImpact | null }) {
+export function ImpactBadge({ impact }: { impact: CbomImpact | null }) {
   if (!impact) return <span className="text-xs text-zinc-500">Info</span>;
   return <StatusBadge tone={IMPACT_TONE[impact]}>{impact}</StatusBadge>;
 }
 
-function factsRows(asset: CbomAsset): [string, string][] {
+export function factsRows(asset: CbomAsset): [string, string][] {
   const out: [string, string][] = [];
   for (const [key, value] of Object.entries(asset.facts ?? {})) {
     if (value === null || value === undefined || value === "" || (Array.isArray(value) && value.length === 0)) continue;
@@ -119,7 +119,7 @@ export function TargetProblemRow({ t }: { t: { target: string; status: string; e
   );
 }
 
-function TargetsBlock({ jobs }: { jobs: CbomJobTargets[] }) {
+export function TargetsBlock({ jobs }: { jobs: CbomJobTargets[] }) {
   const [open, setOpen] = useState<number | null>(null);
   if (jobs.length === 0) return null;
   return (

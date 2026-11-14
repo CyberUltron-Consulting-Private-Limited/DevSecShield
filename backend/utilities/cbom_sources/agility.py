@@ -596,7 +596,8 @@ class RunAgility:
         name = getattr(source, "name", None) or params.get("source_name") or str(uid)
         return ("source", str(uid)), str(name)
 
-    def add(self, row: Any, codes: list[str]) -> None:
+    def add(self, row: Any, codes: list[str]) -> tuple[dict[str, Any], tuple[dict[str, Any], ...]]:
+        """Count one asset; returns its (asset class, per-code results), ``evaluate``'s values (shared: read only)."""
         key = (row.job_id, row.source_id)
         entry = self._ctx.get(key)
         if entry is None:
@@ -617,6 +618,7 @@ class RunAgility:
         if reasons:
             self.reasons.update(reasons)
         system_counts[cls] += 1
+        return whole, _per
 
     def result(self) -> dict[str, Any]:
         systems = []
