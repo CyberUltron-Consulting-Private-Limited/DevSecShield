@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Loader2, RefreshCcw, CheckCircle2, XCircle, Clock, PlayCircle, AlertCircle, Eye, Copy, Check, BarChart2, BookOpen, Settings, Ticket, Save, ChevronLeft, ChevronRight, TrendingUp } from "lucide-react";
+import { Loader2, RefreshCcw, CheckCircle2, XCircle, Clock, PlayCircle, AlertCircle, Eye, BarChart2, BookOpen, Settings, Ticket, Save, ChevronLeft, ChevronRight, TrendingUp } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/utils/toast";
@@ -26,6 +26,7 @@ import { JenkinsGuide } from "@/components/JenkinsIntegrationGuide";
 import { JenkinsDastGuide } from "@/components/JenkinsDastGuide";
 import { BambooGuide } from "@/components/BambooIntegrationGuide";
 import { GitLabCiGuide } from "@/components/GitLabCiIntegrationGuide";
+import ApiKeyPanel from "@/components/cicd/ApiKeyPanel";
 import { PolicyGateBadge } from "@/components/cicd/PolicyGateBadge";
 import { DastProfilesTab } from "@/components/dast/DastProfilesTab";
 import { Input } from "@/components/ui/input";
@@ -72,7 +73,6 @@ export default function CicdIntegrationDashboardPage() {
   const team_id = pathParts[0] ?? '';
   const integration_id = pathParts[2] ?? pathname.split('/').pop() ?? '';
   const queryClient = useQueryClient();
-  const [copied, setCopied] = useState(false);
   const [activeTab, setActiveTab] = useState<"dashboard" | "integration-guide" | "scan-settings" | "ticketing">("dashboard");
   const [activeSubTab, setActiveSubTab] = useState<"github-actions" | "jenkins" | "bamboo" | "gitlab">("jenkins");
   const [logsPage, setLogsPage] = useState(1);
@@ -127,29 +127,6 @@ export default function CicdIntegrationDashboardPage() {
     },
   });
 
-
-  const redactApiKey = (apiKey: string) => {
-    if (apiKey.length <= 8) {
-      return "•".repeat(apiKey.length);
-    }
-    // Show first 4 and last 4 characters, redact the middle
-    const start = apiKey.substring(0, 4);
-    const end = apiKey.substring(apiKey.length - 4);
-    return `${start}${"**********"}${end}`;
-  };
-
-  const copyApiKey = async (apiKey: string) => {
-    try {
-      await navigator.clipboard.writeText(apiKey);
-      setCopied(true);
-      toast.success("API key copied to clipboard");
-      setTimeout(() => {
-        setCopied(false);
-      }, 2000);
-    } catch (error) {
-      toast.error("Failed to copy API key");
-    }
-  };
 
   const getStatusBadge = (status: string) => {
     const statusLower = status.toLowerCase();
@@ -320,27 +297,16 @@ export default function CicdIntegrationDashboardPage() {
                   </span>
                 </div>
               </div>
-              <div className="flex flex-row items-center gap-2 mt-4">
-                <p className="text-zinc-600 dark:text-zinc-400 text-sm font-medium">Copy API Key:</p>
-                <div className="flex items-center gap-2 max-w-md">
-                  <code className="text-sm bg-zinc-100 dark:bg-zinc-800 px-3 py-1.5 rounded font-mono text-zinc-900 dark:text-zinc-100">
-                    {dashboardData.api_key ? redactApiKey(dashboardData.api_key) : "Loading..."}
-                  </code>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 cursor-pointer"
-                    onClick={() => dashboardData.api_key && copyApiKey(dashboardData.api_key)}
-                    title="Copy API key"
-                  >
-                    {copied ? (
-                      <Check className="h-4 w-4 text-green-600" />
-                    ) : (
-                      <Copy className="h-4 w-4" />
-                    )}
-                  </Button>
-                </div>
-              </div>
+              {/* issue #99: the key's state, never the key (it is shown once, when issued) */}
+              {query.data && (
+                <ApiKeyPanel
+                  teamId={Number(team_id)}
+                  integrationId={Number(integration_id)}
+                  scanType={dashboardData.scan_type}
+                  view={dashboardData}
+                  onChanged={() => queryClient.invalidateQueries({ queryKey: ['cicd-integration-dashboard', team_id, integration_id] })}
+                />
+              )}
             </div>
             <Button 
               onClick={handleRefresh} 
@@ -747,7 +713,7 @@ export default function CicdIntegrationDashboardPage() {
           {activeTab === "integration-guide" && (
             <div className="space-y-6">
               {isDast ? (
-                <JenkinsDastGuide apiKey={dashboardData.api_key} teamId={Number(team_id)} />
+                <JenkinsDastGuide teamId={Number(team_id)} />
               ) : (
                 <>
               {/* Sub-tabs */}
@@ -796,19 +762,19 @@ export default function CicdIntegrationDashboardPage() {
 
               {/* Sub-tab Content */}
               {activeSubTab === "github-actions" && (
-                <GitHubActionsGuide apiKey={dashboardData.api_key} scanType={dashboardData.scan_type} />
+                <GitHubActionsGuide scanType={dashboardData.scan_type} />
               )}
 
               {activeSubTab === "jenkins" && (
-                <JenkinsGuide apiKey={dashboardData.api_key} teamId={Number(team_id)} scanType={dashboardData.scan_type} />
+                <JenkinsGuide teamId={Number(team_id)} scanType={dashboardData.scan_type} />
               )}
 
               {activeSubTab === "bamboo" && (
-                <BambooGuide apiKey={dashboardData.api_key} scanType={dashboardData.scan_type} />
+                <BambooGuide scanType={dashboardData.scan_type} />
               )}
 
               {activeSubTab === "gitlab" && (
-                <GitLabCiGuide apiKey={dashboardData.api_key} scanType={dashboardData.scan_type} />
+                <GitLabCiGuide scanType={dashboardData.scan_type} />
               )}
                 </>
               )}

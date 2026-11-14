@@ -618,7 +618,8 @@ class RunAgility:
     def _system(self, job: Any, source: Any, ctx: dict[str, Any]) -> tuple[tuple[str, str], str]:
         return system_of(job, source, ctx)
 
-    def add(self, row: Any, codes: list[str]) -> None:
+    def add(self, row: Any, codes: list[str]) -> tuple[dict[str, Any], tuple[dict[str, Any], ...]]:
+        """Count one asset; returns its (asset class, per-code results), ``evaluate``'s values (shared: read only)."""
         key = (row.job_id, row.source_id)
         entry = self._ctx.get(key)
         if entry is None:
@@ -639,6 +640,7 @@ class RunAgility:
         if reasons:
             self.reasons.update(reasons)
         system_counts[cls] += 1
+        return whole, _per
 
     def result(self) -> dict[str, Any]:
         systems = []
