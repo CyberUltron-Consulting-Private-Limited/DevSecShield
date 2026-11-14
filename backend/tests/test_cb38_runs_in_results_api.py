@@ -1,5 +1,5 @@
 """CB-38 PR-1a: every CBOM Sources run is a row of the CBOM Scans -> Table list, and a run's assets carry the unified
-results table's fields (PLAN cb-38 §3 PR-1 rows, §5.1, §5.4; tests B1-B5, B7 of §9).
+results table's fields (PLAN cb-38 §3 PR-1 rows, §5.1, §5.4; tests B1-B5 of §9; B7, the library_status memo, is PR #127).
 
 Same SQLite + real-router harness as test_cbom_sources_api.py: real JWTs, real routers, foreign keys enforced.
 """
@@ -28,7 +28,6 @@ from backend.new_models import (  # noqa: E402
 )
 from backend.utilities.cbom_sources import cbom_metrics as M  # noqa: E402
 from backend.utilities.cbom_sources import collections_view as CV  # noqa: E402
-from backend.utilities.cbom_sources import crypto_kb  # noqa: E402
 from backend.utilities.cbom_sources import inventory as INV  # noqa: E402
 from backend.utilities.cbom_sources import waves as WAVES  # noqa: E402
 
@@ -511,49 +510,6 @@ def test_b5_run_asset_item_has_stable_key_and_status(api, world):
         rerun_id = rerun.id
     again = _assets(api, rerun_id)["items"]
     assert len(again) == 1 and again[0]["status"] == "fixed" and again[0]["asset_key"] == target["asset_key"]
-
-
-# ----------------------------------------------------------------------------------------------- B7 KB memo
-def test_b7_library_status_called_once_per_package(api, world, monkeypatch):
-    engine, ids = world
-    packages = [("openssl", "3.0.2"), ("libssl1.1", "1.1.1f"), ("gnutls", "3.7.3"), ("openssl", "1.0.2k")]
-    with Session(engine) as s:
-        src = _source(s, 1, ids["alice"], "libs")
-        run = CbomCollectionRun(team_id=1, owner_user_id=ids["alice"], client_request_id="libs", status="done",
-                                created_at=NOW, last_updated=NOW, finished_at=NOW)
-        s.add(run)
-        s.flush()
-        job = CbomCollectionJob(team_id=1, run_id=run.id, source_id=src.id, kind="collect", status="success",
-                                attempts=1, params={"source_uid": src.source_uid, "source_name": "libs"})
-        s.add(job)
-        s.flush()
-        for n in range(200):
-            name, version = packages[n % len(packages)]
-            s.add(_asset(1, run, job, n, asset_type="crypto_library", cdx_type="library", location=f"package:{n}",
-                         name=name, algorithm=None, key_size=None, quantum_vulnerable=None,
-                         facts={"name": name, "version": version, "source": "package"}))
-        s.commit()
-        run_id = run.id
-    cached = getattr(crypto_kb, "_library_status_cached", None)
-    if cached is not None:
-        cached.cache_clear()
-    calls: list[str] = []
-    real = crypto_kb.library_for
-
-    def counting(package):
-        calls.append(package)
-        return real(package)
-
-    monkeypatch.setattr(crypto_kb, "library_for", counting)
-    page = _assets(api, run_id, page_size=200)
-    assert len(page["items"]) == 200
-    days = {NOW.date(), dt.datetime.utcnow().date()}  # as of the run, and today (the same day unless at midnight)
-    assert len(calls) <= len(packages) * len(days), f"{len(calls)} uncached library_status calls for 200 rows"
-    assert {c for c in calls} == {p for p, _v in packages}
-    # every caller gets its own copy: changing one answer never changes the next
-    first = crypto_kb.library_status("openssl", "3.0.2")
-    first["cves"].append("CVE-0000-0000")
-    assert "CVE-0000-0000" not in crypto_kb.library_status("openssl", "3.0.2")["cves"]
 
 
 # ----------------------------------------------------------------------------------------------- owner names, code scans

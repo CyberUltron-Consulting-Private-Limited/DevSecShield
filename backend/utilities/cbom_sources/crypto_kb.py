@@ -13,7 +13,6 @@ update may add or change entries, never drop one). Anything else falls back to t
 from __future__ import annotations
 
 import base64
-import copy
 import datetime as _dt
 import json
 import logging
@@ -348,28 +347,6 @@ def library_for(package: str) -> str | None:
 
 def library_status(package: str, package_version: str, *, today: _dt.date | None = None) -> dict[str, Any] | None:
     """CVE ranges and upstream end-of-life for a crypto library package; None when the package is not tracked."""
-    # Memoised per (package, version, day, KB in force): every view of a run judges
-    # each library row "as of the run" and "today", so one 200-row page asked the
-    # same question hundreds of times (CB-19 F-1). Callers get their own copy.
-    today = today or _dt.date.today()
-    kb = load()
-    hit = _library_status_cached(
-        str(package or ""), str(package_version or ""), today,
-        id(kb), str(kb.get("kb_version") or ""),
-    )
-    return copy.deepcopy(hit) if hit is not None else None
-
-
-@lru_cache(maxsize=4096)
-def _library_status_cached(
-    package: str, package_version: str, today: _dt.date, _kb_id: int, _kb_version: str
-) -> dict[str, Any] | None:
-    return _library_status_uncached(package, package_version, today)
-
-
-def _library_status_uncached(
-    package: str, package_version: str, today: _dt.date
-) -> dict[str, Any] | None:
     lib = library_for(package)
     if not lib or not package_version:
         return None
@@ -385,6 +362,7 @@ def _library_status_uncached(
         branch = f"{nums[0]}.{nums[1]}" if nums[0] >= 3 else f"{nums[0]}.{nums[1]}.{nums[2]}"
         date = table.get(branch)
         if date:
+            today = today or _dt.date.today()
             eol = {"branch": branch, "date": date, "passed": _dt.date.fromisoformat(date) < today,
                    "sources": rules.get("eol_sources") or []}
     return {"library": lib, "package": package, "package_version": package_version, "upstream_version": version,
