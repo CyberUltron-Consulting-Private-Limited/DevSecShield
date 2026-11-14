@@ -51,6 +51,8 @@ _CBOM_FLAG_DELTA: dict[str, float] = {
     # CB-27 (Java literal flow): weight 4 like CUSTOM_CRYPTO
     "STATIC_SALT": 0.8,
     "WEAK_KDF_ITERATIONS": 0.8,
+    # CB-28: weight 8 like WEAK_KEY_SIZE
+    "WEAK_RSA_EXPONENT": 1.5,
 }
 
 _AIBOM_CATEGORY_DELTA: dict[str, float] = {

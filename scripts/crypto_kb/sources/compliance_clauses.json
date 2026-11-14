@@ -1506,7 +1506,7 @@
     "rbi-md-2023-para-16",
     "rbi-cb-2026-para-140"
    ],
-   "basis": "an iteration count below the published minimum for the KDF (NIST SP 800-132 section 5.2: 1,000) is a configuration that does not follow internationally accepted standards and is demonstrated to be insecure against offline guessing: RBI; the KDF itself may be an approved one, so no SEBI clause",
+   "basis": "an iteration count below the published minimum for the KDF is a configuration that does not follow internationally accepted guidance and is demonstrated to be insecure against offline guessing: below 1,000 for Java PBE (NIST SP 800-132 section 5.2), below 100,000 for .NET Rfc2898DeriveBytes, whose default is 1,000 (Microsoft CA5387, OWASP Password Storage Cheat Sheet: 600,000 for PBKDF2-HMAC-SHA256): RBI; the KDF itself may be an approved one, so no SEBI clause",
    "rules": []
   },
   "WEAK_KEY_SIZE": {
@@ -1559,6 +1559,14 @@
     "rbi-cb-2026-para-140"
    ],
    "basis": "a non-cryptographic generator for key material is an algorithm demonstrated to be insecure",
+   "rules": []
+  },
+  "WEAK_RSA_EXPONENT": {
+   "clauses": [
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140"
+   ],
+   "basis": "RSA keys with public exponent 3 are outside the published standard (FIPS 186-5 requires 2^16 < e < 2^256) and demonstrated to be insecure (Bleichenbacher's e = 3 signature forgery, cube-root recovery of small unpadded messages): RBI; RSA itself with e = 65537 is an approved algorithm, so no SEBI clause",
    "rules": []
   }
  }

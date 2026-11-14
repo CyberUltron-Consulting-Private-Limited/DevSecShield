@@ -220,6 +220,8 @@ ALLOW: dict[str, dict[str, set[tuple[str, str]]]] = {
         "WEAK_KEY_SIZE": {NIST_112, RBI_140, RBI_16},
         "WEAK_PADDING": {NIST_PKCS1, RBI_140, RBI_16},
         "WEAK_PROTOCOL": {CERTIN_8422, RBI_140, RBI_16, SEBI_I},
+        # CB-28: RSA public exponent 3 (FIPS 186-5)
+        "WEAK_RSA_EXPONENT": {RBI_140, RBI_16},
         "WEAK_RNG": {RBI_140, RBI_16},
     },
 }

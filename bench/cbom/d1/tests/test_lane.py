@@ -288,7 +288,7 @@ def test_floors_file_is_valid_and_every_target_has_an_owner():
     doc = floors.load(D1 / "floors.json")
     assert doc["version"] >= 1
     targets = [f for f in doc["floors"] if f["kind"] == "target"]
-    assert targets and {f["owner"] for f in targets} == {"CB-27", "CB-28"}  # CB-29 met: a floor now
+    assert targets and {f["owner"] for f in targets} == {"CB-27"}  # CB-28 and CB-29 met: floors now
     assert {f["bench"] for f in doc["floors"]} <= {"cryptoapi-bench", "owasp-benchmark", "corpus", "libraries"}
 
 
@@ -354,23 +354,27 @@ def corpus_floors() -> dict:
     return doc
 
 
-def test_corpus_targets_fail_on_todays_product_and_floors_hold():
-    """Failing-first (CB-07): on dev's code-lane output (baseline/observed-corpus.json, dev 3df26fd plus the CB-29
-    library rows) every CB-28 target fails and every non-regression floor holds (CB-29's became one)."""
+def test_corpus_floors_hold_on_todays_product():
+    """On the baseline product (baseline/observed-corpus.json, the CB-28 build) every corpus and library floor holds.
+    CB-28 met its four corpus targets (N6, N8, N10-N12, C3, C4, C7, T5, T7, K1, K2 hit; NFP1 no longer a false
+    positive) and they are non-regression floors now; CB-29's library row was the first."""
     rows = observed.load(D1 / "baseline" / "observed-corpus.json", "corpus")["rows"]
     res, extras = corpus_results(rows, OSV_TODAY)
     ev = {e["id"]: e for e in floors.evaluate(corpus_floors(), res, extras)}
-    targets = [e for e in ev.values() if e["kind"] == "target"]
-    assert len(targets) == 4 and all(e["status"] == "expected-fail" for e in targets)
+    assert not [e for e in ev.values() if e["kind"] == "target"]
     assert all(e["status"] == "pass" for e in ev.values() if e["kind"] == "non-regression")
-    assert ev["T28-dotnet-trustall-fp"]["observed"] == 0.0 and ev["T29-libraries"]["observed"] == 1.0
+    assert ev["T28-dotnet-trustall-fp"]["observed"] == 1.0 and ev["T29-libraries"]["observed"] == 1.0
 
 
 def test_a_met_target_fails_the_lane_until_it_becomes_a_floor():
+    """A target the product meets is UNEXPECTED-PASS and fails the lane: CB-28's NFP1 row, put back as a target."""
     rows = observed.load(D1 / "baseline" / "observed-corpus.json", "corpus")["rows"]
-    rows = [r for r in rows if not (r["location"] == "dotnet/Crypto.cs" and r["line"] == 16)]  # CB-28 removes the FP
     res, extras = corpus_results(rows, OSV_TODAY)
-    ev = {e["id"]: e for e in floors.evaluate(corpus_floors(), res, extras)}
+    doc = corpus_floors()
+    for f in doc["floors"]:
+        if f["id"] == "T28-dotnet-trustall-fp":
+            f["kind"], f["owner"] = "target", "CB-28"
+    ev = {e["id"]: e for e in floors.evaluate(doc, res, extras)}
     assert ev["T28-dotnet-trustall-fp"]["status"] == "unexpected-pass"
     assert floors.verdict(list(ev.values())) == "fail"
 
