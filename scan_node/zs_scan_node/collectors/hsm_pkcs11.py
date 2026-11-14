@@ -168,6 +168,39 @@ def key_facts(attrs: dict[str, Any]) -> tuple[str, str | None, int | None, dict[
     return key_class, algorithm, size, facts
 
 
+# Token class (CB-24 PR-4b): whether a token's keys live in hardware, for the fix class (agility R-HW, R-HW-UNREAD,
+# R-TYPE). Decided, never guessed, in this order:
+# 1. a reviewed software token, by the token's manufacturerID and model: SoftHSM v2 reports manufacturerID
+#    "SoftHSM project" and model "SoftHSM v2" (recorded from SoftHSM 2.6.1, Ubuntu softhsm2 2.6.1-2.2ubuntu3,
+#    2026-11-14; its slots carry only CKF_TOKEN_PRESENT);
+# 2. the slot's CKF_HW_SLOT flag: "TRUE if the slot is a hardware slot, as opposed to a software slot implementing a
+#    'soft token'" (PKCS#11 CK_SLOT_INFO, https://www.cryptsoft.com/pkcs11doc/v211/structCK__SLOT__INFO.html). A
+#    hardware slot whose reader takes removable devices (CKF_REMOVABLE_DEVICE) is reported as a smart card or USB
+#    token, any other hardware slot as an HSM; both are "hardware";
+# 3. anything else (no CKF_HW_SLOT and not a reviewed software token, or flags not read): not read (token_class None),
+#    so R-HW-UNREAD says "unknown" rather than calling it software.
+SOFTWARE_TOKENS: tuple[tuple[str, str], ...] = (("softhsm project", "softhsm"),)  # (manufacturerID, model prefix)
+
+
+def token_classification(info: dict[str, Any], slot_flags: list[str] | None) -> dict[str, Any]:
+    """{token_class: hardware | software | None, token_kind: hsm | smartcard | software | unknown, token_class_basis}
+    from a token's info strings and its slot's flags (names as python-pkcs11 gives them, e.g. HW_SLOT)."""
+    maker = str(info.get("token_manufacturer") or "").strip().lower()
+    model = str(info.get("token_model") or "").strip().lower()
+    for want_maker, model_prefix in SOFTWARE_TOKENS:
+        if maker == want_maker or model.startswith(model_prefix):
+            return {"token_class": "software", "token_kind": "software",
+                    "token_class_basis": f"software token {info.get('token_model') or info.get('token_manufacturer')}"}
+    flags = set(slot_flags or [])
+    if "HW_SLOT" in flags:
+        removable = "REMOVABLE_DEVICE" in flags
+        return {"token_class": "hardware", "token_kind": "smartcard" if removable else "hsm",
+                "token_class_basis": "slot flag CKF_HW_SLOT" + (" with CKF_REMOVABLE_DEVICE" if removable else "")}
+    reason = ("slot flags not read" if slot_flags is None else
+              "the slot is not flagged CKF_HW_SLOT and the token is not a reviewed software token")
+    return {"token_class": None, "token_kind": "unknown", "token_class_basis": f"not read: {reason}"}
+
+
 def _token_info(module: str, lib, slot, token) -> dict[str, Any]:
     info: dict[str, Any] = {"store": "pkcs11", "module": module}
     for key, getter in (("library_manufacturer", lambda: lib.manufacturer_id),
@@ -176,6 +209,7 @@ def _token_info(module: str, lib, slot, token) -> dict[str, Any]:
                         ("cryptoki_version", lambda: _version(lib.cryptoki_version)),
                         ("slot_description", lambda: slot.slot_description),
                         ("slot_manufacturer", lambda: slot.manufacturer_id),
+                        ("slot_flags", lambda: _flags(slot.flags)),
                         ("token_label", lambda: token.label), ("token_manufacturer", lambda: token.manufacturer_id),
                         ("token_model", lambda: token.model), ("token_serial", lambda: token.serial),
                         ("hardware_version", lambda: _version(token.hardware_version)),
@@ -190,6 +224,7 @@ def _token_info(module: str, lib, slot, token) -> dict[str, Any]:
                                                      "library_description", "token_manufacturer"))
     # PKCS#11 has no standard FIPS flag; only say what the vendor's own strings say
     info["fips_hint"] = "FIPS" in text.upper() or None
+    info.update(token_classification(info, info.get("slot_flags") if "slot_flags" in info else None))
     return info
 
 
@@ -227,7 +262,9 @@ def _read_token(ctx: JobContext, module: str, lib, slot, token, pin: str | None)
                 key_class, algorithm, size, facts = key_facts(attrs)
                 name = _text(attrs.get("LABEL")) or (f"id {facts['id']}" if facts.get("id") else f"object {i}")
                 ctx.emit("managed_key", label, f"{where}/{key_class}/{name}", name=name, algorithm=algorithm, key_size=size,
-                         facts={**facts, "module": module, "token": label, "token_serial": info.get("token_serial")})
+                         facts={**facts, "module": module, "token": label, "token_serial": info.get("token_serial"),
+                                "token_class": info.get("token_class"), "token_kind": info.get("token_kind"),
+                                "token_class_basis": info.get("token_class_basis")})
                 n += 1
             elif klass == ObjectClass.CERTIFICATE:
                 attrs = read_attributes(obj, ("LABEL", "ID"))
