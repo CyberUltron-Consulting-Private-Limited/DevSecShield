@@ -95,8 +95,10 @@ DSS_REPOS=(devsecshield-backend devsecshield-frontend scan-worker dast-worker)
 # classic-store builder holds uncompressed layer tars and needs about 4x: set STAGING_DISK_FACTOR=4 for one.
 DEFAULT_DISK_FACTOR=3.3
 DEFAULT_DISK_RESERVE_MB=1024  # left free on every filesystem after the copy and the load (the host is shared)
-# The only backend.env keys a deploy may set (push -> backend-env): the AWS collector identity and the lab switch.
-BACKEND_ENV_KEYS=(CBOM_AWS_ACCESS_KEY_ID CBOM_AWS_SECRET_ACCESS_KEY CBOM_AWS_PRINCIPAL_ARN CBOM_AWS_LAB_SAME_ACCOUNT)
+# The only backend.env keys a deploy may set (push -> backend-env): the AWS collector identity, the lab switch, and
+# the AI remediation provider (CB-38: AWS Bedrock with the AWS_* the SAST chat already uses; no secret among them).
+BACKEND_ENV_KEYS=(CBOM_AWS_ACCESS_KEY_ID CBOM_AWS_SECRET_ACCESS_KEY CBOM_AWS_PRINCIPAL_ARN CBOM_AWS_LAB_SAME_ACCOUNT
+  CBOM_AI_PROVIDER CBOM_AI_BEDROCK_REGION CBOM_AI_AWS_CREDENTIALS)
 
 log() { printf '[staging %s] %s\n' "$(date -u +%H:%M:%S)" "$*"; }
 die() { printf '[staging] ERROR: %s\n' "$*" >&2; exit 1; }

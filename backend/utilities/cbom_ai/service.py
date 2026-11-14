@@ -6,8 +6,10 @@ latency, outcome; never the question, the prompt or the answer).
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import hashlib
 import ipaddress
+import json
 import logging
 import re
 import threading
@@ -17,6 +19,7 @@ from typing import Any
 
 import httpx
 
+from backend.utilities.cbom_ai import fix as FIX
 from backend.utilities.cbom_ai import prompt as P
 from backend.utilities.cbom_ai import transport as T
 from backend.utilities.cbom_ai import validator as V
@@ -184,10 +187,21 @@ def _items(grounding: Grounding) -> list[dict[str, str]]:
     return [{"id": i.id, "label": i.label} for i in grounding.items]
 
 
+def public(cfg: AiConfig, grounding: Grounding, result: dict[str, Any], kb_version: str, *, cached: bool,
+           mode: str = "") -> dict[str, Any]:
+    """The response: the result without internal fields, plus where it came from and the citation labels."""
+    out = {k: v for k, v in result.items() if k not in ("unknown_ids",)}
+    return {**out, "provider": cfg.provider, "model": cfg.model, "region": cfg.region, "kb_version": kb_version,
+            "prompt_version": FIX.FIX_PROMPT_VERSION if mode == "fix" else P.PROMPT_VERSION,
+            "items": _items(grounding), "cached": cached}
+
+
 async def assist(cfg: AiConfig, grounding: Grounding, *, mode: str, question: str | None, kb_version: str,
-                 team_id: int, user_id: int) -> dict[str, Any]:
+                 team_id: int, user_id: int, window: dict[str, Any] | None = None) -> dict[str, Any]:
     started = time.monotonic()
-    key = cache_key(cfg, grounding, mode, question, kb_version, team_id)
+    key = cache_key(cfg, grounding, mode, question, kb_version, team_id) + (
+        (FIX.FIX_PROMPT_VERSION, hashlib.sha256(json.dumps(window, sort_keys=True).encode()).hexdigest())
+        if mode == "fix" else ())
     outcome = "ok"
     cached = _cache_get(key)
     result: dict[str, Any]
@@ -196,13 +210,19 @@ async def assist(cfg: AiConfig, grounding: Grounding, *, mode: str, question: st
     else:
         fitted = grounding.trimmed(P.MAX_PROMPT_CHARS)
         sent, back = redact(fitted) if cfg.redact_hosts else (fitted, {})
-        messages = P.build(sent, mode, question)
+        if mode == "fix":
+            # the rewritten window needs more room than an explanation
+            messages = FIX.build(sent, window)
+            call_cfg = dataclasses.replace(cfg, max_tokens=max(cfg.max_tokens, FIX.FIX_MAX_TOKENS))
+        else:
+            messages = P.build(sent, mode, question)
+            call_cfg = cfg
         try:
             if cfg.provider == "bedrock":
                 # the boto call cannot be cancelled: its slot is taken and released inside the worker thread
                 # (transport.bedrock_chat; a slot wait of at most SLOT_WAIT_S, then "busy"), botocore's connect +
                 # read timeouts add up to CBOM_AI_TIMEOUT_S, and the wait covers both
-                raw = await asyncio.wait_for(asyncio.to_thread(T.bedrock_chat, cfg, messages, resolve),
+                raw = await asyncio.wait_for(asyncio.to_thread(T.bedrock_chat, call_cfg, messages, resolve),
                                              timeout=T.bedrock_deadline_s(cfg))
             else:
                 # one process-wide slot pool for both providers (not per event loop); the queue wait is not part of
@@ -211,7 +231,7 @@ async def assist(cfg: AiConfig, grounding: Grounding, *, mode: str, question: st
                 if not await asyncio.to_thread(slot.acquire, True, T.SLOT_WAIT_S):
                     raise T.Busy()
                 try:
-                    raw = await asyncio.wait_for(T.chat(cfg, messages, resolve=resolve, transport=transport),
+                    raw = await asyncio.wait_for(T.chat(call_cfg, messages, resolve=resolve, transport=transport),
                                                  timeout=cfg.timeout_s + 1)
                 finally:
                     slot.release()
@@ -235,12 +255,12 @@ async def assist(cfg: AiConfig, grounding: Grounding, *, mode: str, question: st
             result = {"status": "error", "summary": "", "steps": [], "commands": [], "caveats": [ERROR_TEXT],
                       "baseline": False, "dropped_commands": 0}
         if raw is not None:
-            checked = V.validate(raw, sent)
+            checked = FIX.validate(raw, sent, window) if mode == "fix" else V.validate(raw, sent)
             if checked["status"] == "withheld":
                 checked = {**checked, **V.baseline(grounding)}  # baseline from the real (unredacted) items
                 outcome = {V.WITHHELD_UNKNOWN_ID: "withheld_unknown_id", V.WITHHELD_FORMAT: "withheld_format",
                            V.WITHHELD_UNCITED: "withheld_uncited"}.get(checked.get("withheld_reason") or "",
-                                                                       "withheld")
+                                                                       "withheld_fix" if mode == "fix" else "withheld")
             else:
                 checked = restore(checked, back)
             result = checked
@@ -254,7 +274,4 @@ async def assist(cfg: AiConfig, grounding: Grounding, *, mode: str, question: st
              grounding.subject_key, mode, cfg.provider, cfg.model, P.PROMPT_VERSION, kb_version, latency_ms,
              result.get("dropped_commands", 0),
              len(result.get("unknown_ids") or []), dict(COUNTERS))
-    public = {k: v for k, v in result.items() if k not in ("unknown_ids",)}
-    return {**public, "provider": cfg.provider, "model": cfg.model, "region": cfg.region, "kb_version": kb_version,
-            "prompt_version": P.PROMPT_VERSION,
-            "items": _items(grounding), "cached": outcome == "cache_hit"}
+    return public(cfg, grounding, result, kb_version, cached=outcome == "cache_hit", mode=mode)

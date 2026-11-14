@@ -5391,7 +5391,22 @@ export type CbomAiSubject =
     | { kind: "run_asset"; assetId: number }
     | { kind: "scan_finding"; scanId: number; findingId: string }
 
-export type CbomAiMode = "explain" | "plan" | "question"
+export type CbomAiMode = "explain" | "plan" | "question" | "fix"
+
+/** Mode "fix": the model's rewrite of the finding's code window (or a run asset's configuration change), after the
+ * backend's deterministic checks. */
+export interface CbomAiFix {
+    kind: "code" | "config"
+    language: string
+    original_code: string
+    fixed_code: string
+    diff: string
+    path: string | null
+    start_line: number | null
+    explanation: { text: string; cites: string[] }[]
+    notes: string[]
+    new_imports?: string[]
+}
 
 export interface CbomAiStatus {
     available: boolean
@@ -5424,6 +5439,9 @@ export interface CbomAiAnswer {
     prompt_version: string
     items: { id: string; label: string }[]
     cached?: boolean
+    /** mode "fix" only: the checked rewrite (null when withheld) and the checks it passed */
+    fix?: CbomAiFix | null
+    checks?: { name: string; ok: boolean; note: string }[]
 }
 
 /** The UI gives the model 90 s (the backend's own limit is 60 s, CBOM_AI_TIMEOUT_S). */
