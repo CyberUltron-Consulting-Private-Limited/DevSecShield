@@ -24,7 +24,6 @@ from backend.utilities.db.functions import get_messages_from_scan, return_scan_l
 from backend.utilities.db.metadata import get_scan_metadata_for_type
 from backend.utilities.db.findings import get_findings_for_scan_type, is_ticketable_finding
 from backend.utilities.pdf import UnsupportedPdfExport, prepare_pdf_export_payload, write_scan_pdf
-from backend.utilities.ai.chatbot import create_response
 from backend.utilities.team import (
     check_if_user_is_in_team,
 )
@@ -203,6 +202,14 @@ async def send_message_to_scan(
             return {"content": "Chat is turned off for CBOM scans: CBOM runs without any AI model. Every finding "
                                "has its explanation, CVE / CWE / OWASP mapping, remediation steps and proof "
                                "commands on the results page."}
+        # The chatbot needs AWS credentials at import, so it is imported here (not at module level: an air-gapped
+        # install without AWS must still start the backend, CB-38 PLAN §0), before anything is written or charged.
+        try:
+            from backend.utilities.ai.chatbot import create_response
+        except Exception as exc:
+            console.print(f"AI chat unavailable: {exc.__class__.__name__}", style="bold red")
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                                detail="AI chat is not configured on this deployment")
         if not check_if_team_has_enough_credits(team_id, 0.006):
             return { "content" : "Team does not have enough credits to send a message" }
 

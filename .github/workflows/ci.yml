@@ -156,6 +156,7 @@ jobs:
             frontend:
               - *pipeline
               - 'frontend/**'
+              - 'contracts/**'         # backend<->UI contract files (gradeContract.test.ts reads cbom/grade_keys.json)
             code:
               - *pipeline
               - '**/*.py'

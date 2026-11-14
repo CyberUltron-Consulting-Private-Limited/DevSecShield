@@ -1,0 +1,2499 @@
+{
+ "_about": "Answers the Google Cloud APIs gave ZeroShield's collector on 2026-11-14 for the owner's test project zeroshield-cbom-testing (read-only service account; gcp_collect run live, see PR). Empty lists are left out (the replay answers {} for them). Errors keep the provider's code and message; the replay serves them in the google.rpc error shape. Never a token: the oauth2 endpoint was not recorded.",
+ "calls": [
+  {
+   "method": "GET",
+   "url": "https://cloudkms.googleapis.com/v1/projects/zeroshield-cbom-testing/locations",
+   "params": {},
+   "status": 200,
+   "body": {
+    "locations": [
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/africa-south1",
+      "labels": {
+       "cloud.googleapis.com/region": "africa-south1",
+       "cloud.googleapis.com/country": "ZA",
+       "cloud.googleapis.com/location": "africa-south1"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "africa-south1",
+      "displayName": "Johannesburg"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia",
+      "labels": {
+       "cloud.googleapis.com/location": "asia",
+       "cloud.googleapis.com/country": "SG"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "asia"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia-east1",
+      "labels": {
+       "cloud.googleapis.com/country": "TW",
+       "cloud.googleapis.com/location": "asia-east1",
+       "cloud.googleapis.com/region": "asia-east1"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "asia-east1",
+      "displayName": "Taiwan"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia-east2",
+      "labels": {
+       "cloud.googleapis.com/country": "HK",
+       "cloud.googleapis.com/region": "asia-east2",
+       "cloud.googleapis.com/location": "asia-east2"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "asia-east2",
+      "displayName": "Hong Kong"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia-northeast1",
+      "labels": {
+       "cloud.googleapis.com/country": "JP",
+       "cloud.googleapis.com/region": "asia-northeast1",
+       "cloud.googleapis.com/location": "asia-northeast1"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "asia-northeast1",
+      "displayName": "Tokyo"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia-northeast2",
+      "labels": {
+       "cloud.googleapis.com/country": "JP",
+       "cloud.googleapis.com/location": "asia-northeast2",
+       "cloud.googleapis.com/region": "asia-northeast2"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "asia-northeast2",
+      "displayName": "Osaka"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia-northeast3",
+      "labels": {
+       "cloud.googleapis.com/country": "KR",
+       "cloud.googleapis.com/region": "asia-northeast3",
+       "cloud.googleapis.com/location": "asia-northeast3"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "asia-northeast3",
+      "displayName": "Seoul"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia-south1",
+      "labels": {
+       "cloud.googleapis.com/location": "asia-south1",
+       "cloud.googleapis.com/region": "asia-south1",
+       "cloud.googleapis.com/country": "IN"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true,
+       "hsmSingleTenantAvailable": true
+      },
+      "locationId": "asia-south1",
+      "displayName": "Mumbai"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia-south2",
+      "labels": {
+       "cloud.googleapis.com/location": "asia-south2",
+       "cloud.googleapis.com/region": "asia-south2",
+       "cloud.googleapis.com/country": "IN"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true,
+       "hsmSingleTenantAvailable": true
+      },
+      "locationId": "asia-south2",
+      "displayName": "Delhi"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia-southeast1",
+      "labels": {
+       "cloud.googleapis.com/region": "asia-southeast1",
+       "cloud.googleapis.com/location": "asia-southeast1",
+       "cloud.googleapis.com/country": "SG"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "asia-southeast1",
+      "displayName": "Singapore"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia-southeast2",
+      "labels": {
+       "cloud.googleapis.com/location": "asia-southeast2",
+       "cloud.googleapis.com/region": "asia-southeast2",
+       "cloud.googleapis.com/country": "ID"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "asia-southeast2",
+      "displayName": "Jakarta"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia-southeast3",
+      "labels": {
+       "cloud.googleapis.com/location": "asia-southeast3",
+       "cloud.googleapis.com/region": "asia-southeast3",
+       "cloud.googleapis.com/country": "TH"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true
+      },
+      "locationId": "asia-southeast3",
+      "displayName": "Bangkok"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia1",
+      "labels": {
+       "cloud.googleapis.com/location": "asia1",
+       "cloud.googleapis.com/country": "JP"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "asia1"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/au",
+      "labels": {
+       "cloud.googleapis.com/location": "au"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "au"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/australia-southeast1",
+      "labels": {
+       "cloud.googleapis.com/country": "AU",
+       "cloud.googleapis.com/region": "australia-southeast1",
+       "cloud.googleapis.com/location": "australia-southeast1"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "australia-southeast1",
+      "displayName": "Sydney"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/australia-southeast2",
+      "labels": {
+       "cloud.googleapis.com/location": "australia-southeast2",
+       "cloud.googleapis.com/country": "AU",
+       "cloud.googleapis.com/region": "australia-southeast2"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "australia-southeast2",
+      "displayName": "Melbourne"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/ca",
+      "labels": {
+       "cloud.googleapis.com/location": "ca"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "ca"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/de",
+      "labels": {
+       "cloud.googleapis.com/location": "de"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "de"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/eur3",
+      "labels": {
+       "cloud.googleapis.com/location": "eur3"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "eur3"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/eur4",
+      "labels": {
+       "cloud.googleapis.com/location": "eur4",
+       "cloud.googleapis.com/country": "IE"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "eur4"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/eur5",
+      "labels": {
+       "cloud.googleapis.com/location": "eur5",
+       "cloud.googleapis.com/country": "GB"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "eur5"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/eur6",
+      "labels": {
+       "cloud.googleapis.com/location": "eur6"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "eur6"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/eur7",
+      "labels": {
+       "cloud.googleapis.com/location": "eur7"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "ekmAvailable": true
+      },
+      "locationId": "eur7"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/eur8",
+      "labels": {
+       "cloud.googleapis.com/location": "eur8"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "ekmAvailable": true
+      },
+      "locationId": "eur8"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/europe",
+      "labels": {
+       "cloud.googleapis.com/country": "IE",
+       "cloud.googleapis.com/location": "europe"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "europe"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/europe-central2",
+      "labels": {
+       "cloud.googleapis.com/location": "europe-central2",
+       "cloud.googleapis.com/region": "europe-central2",
+       "cloud.googleapis.com/country": "PL"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "europe-central2",
+      "displayName": "Warsaw"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/europe-north1",
+      "labels": {
+       "cloud.googleapis.com/region": "europe-north1",
+       "cloud.googleapis.com/location": "europe-north1",
+       "cloud.googleapis.com/country": "FI"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "europe-north1",
+      "displayName": "Finland"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/europe-north2",
+      "labels": {
+       "cloud.googleapis.com/location": "europe-north2",
+       "cloud.googleapis.com/region": "europe-north2",
+       "cloud.googleapis.com/country": "SE"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "europe-north2",
+      "displayName": "Stockholm"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/europe-southwest1",
+      "labels": {
+       "cloud.googleapis.com/region": "europe-southwest1",
+       "cloud.googleapis.com/country": "ES",
+       "cloud.googleapis.com/location": "europe-southwest1"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "europe-southwest1",
+      "displayName": "Madrid"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/europe-west1",
+      "labels": {
+       "cloud.googleapis.com/location": "europe-west1",
+       "cloud.googleapis.com/country": "BE",
+       "cloud.googleapis.com/region": "europe-west1"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true,
+       "hsmSingleTenantAvailable": true
+      },
+      "locationId": "europe-west1",
+      "displayName": "Belgium"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/europe-west10",
+      "labels": {
+       "cloud.googleapis.com/country": "DE",
+       "cloud.googleapis.com/region": "europe-west10",
+       "cloud.googleapis.com/location": "europe-west10"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true,
+       "hsmSingleTenantAvailable": true
+      },
+      "locationId": "europe-west10",
+      "displayName": "Berlin"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/europe-west12",
+      "labels": {
+       "cloud.googleapis.com/country": "IT",
+       "cloud.googleapis.com/region": "europe-west12",
+       "cloud.googleapis.com/location": "europe-west12"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "europe-west12",
+      "displayName": "Turin"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/europe-west2",
+      "labels": {
+       "cloud.googleapis.com/location": "europe-west2",
+       "cloud.googleapis.com/country": "GB",
+       "cloud.googleapis.com/region": "europe-west2"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "europe-west2",
+      "displayName": "London"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/europe-west3",
+      "labels": {
+       "cloud.googleapis.com/location": "europe-west3",
+       "cloud.googleapis.com/region": "europe-west3",
+       "cloud.googleapis.com/country": "DE"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true,
+       "hsmSingleTenantAvailable": true
+      },
+      "locationId": "europe-west3",
+      "displayName": "Frankfurt"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/europe-west4",
+      "labels": {
+       "cloud.googleapis.com/region": "europe-west4",
+       "cloud.googleapis.com/location": "europe-west4",
+       "cloud.googleapis.com/country": "NL"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true,
+       "hsmSingleTenantAvailable": true
+      },
+      "locationId": "europe-west4",
+      "displayName": "Netherlands"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/europe-west6",
+      "labels": {
+       "cloud.googleapis.com/country": "CH",
+       "cloud.googleapis.com/location": "europe-west6",
+       "cloud.googleapis.com/region": "europe-west6"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "europe-west6",
+      "displayName": "Zurich"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/europe-west8",
+      "labels": {
+       "cloud.googleapis.com/location": "europe-west8",
+       "cloud.googleapis.com/country": "IT",
+       "cloud.googleapis.com/region": "europe-west8"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "europe-west8",
+      "displayName": "Milan"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/europe-west9",
+      "labels": {
+       "cloud.googleapis.com/country": "FR",
+       "cloud.googleapis.com/region": "europe-west9",
+       "cloud.googleapis.com/location": "europe-west9"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true,
+       "hsmSingleTenantAvailable": true
+      },
+      "locationId": "europe-west9",
+      "displayName": "Paris"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/global",
+      "labels": {
+       "cloud.googleapis.com/location": "global"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true
+      },
+      "locationId": "global"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/in",
+      "labels": {
+       "cloud.googleapis.com/location": "in"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "in"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/it",
+      "labels": {
+       "cloud.googleapis.com/location": "it"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "it"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/jp",
+      "labels": {
+       "cloud.googleapis.com/location": "jp"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata"
+      },
+      "locationId": "jp"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/me-central1",
+      "labels": {
+       "cloud.googleapis.com/location": "me-central1",
+       "cloud.googleapis.com/country": "QA",
+       "cloud.googleapis.com/region": "me-central1"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "me-central1",
+      "displayName": "Doha"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/me-central2",
+      "labels": {
+       "cloud.googleapis.com/location": "me-central2",
+       "cloud.googleapis.com/region": "me-central2",
+       "cloud.googleapis.com/country": "SA",
+       "cloud.googleapis.com/location_restrictions": "INCOMPATIBLE_GOOGLE_ENTITY"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true,
+       "hsmSingleTenantAvailable": true
+      },
+      "locationId": "me-central2",
+      "displayName": "Dammam"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/me-west1",
+      "labels": {
+       "cloud.googleapis.com/location": "me-west1",
+       "cloud.googleapis.com/country": "IL",
+       "cloud.googleapis.com/region": "me-west1"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true,
+       "hsmSingleTenantAvailable": true
+      },
+      "locationId": "me-west1",
+      "displayName": "Tel Aviv"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/nam-eur-asia1",
+      "labels": {
+       "cloud.googleapis.com/location": "nam-eur-asia1"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true
+      },
+      "locationId": "nam-eur-asia1"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/nam10",
+      "labels": {
+       "cloud.googleapis.com/location": "nam10"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "nam10"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/nam11",
+      "labels": {
+       "cloud.googleapis.com/location": "nam11"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "nam11"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/nam12",
+      "labels": {
+       "cloud.googleapis.com/location": "nam12"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "nam12"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/nam3",
+      "labels": {
+       "cloud.googleapis.com/location": "nam3"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "nam3"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/nam4",
+      "labels": {
+       "cloud.googleapis.com/country": "US",
+       "cloud.googleapis.com/location": "nam4"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "nam4"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/nam6",
+      "labels": {
+       "cloud.googleapis.com/location": "nam6"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "nam6"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/nam7",
+      "labels": {
+       "cloud.googleapis.com/location": "nam7"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "nam7"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/nam8",
+      "labels": {
+       "cloud.googleapis.com/location": "nam8"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "nam8"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/nam9",
+      "labels": {
+       "cloud.googleapis.com/location": "nam9"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "nam9"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/northamerica-northeast1",
+      "labels": {
+       "cloud.googleapis.com/country": "CA",
+       "cloud.googleapis.com/region": "northamerica-northeast1",
+       "cloud.googleapis.com/location": "northamerica-northeast1"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "northamerica-northeast1",
+      "displayName": "Montr\u00e9al"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/northamerica-northeast2",
+      "labels": {
+       "cloud.googleapis.com/location": "northamerica-northeast2",
+       "cloud.googleapis.com/country": "CA",
+       "cloud.googleapis.com/region": "northamerica-northeast2"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "northamerica-northeast2",
+      "displayName": "Toronto"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/northamerica-south1",
+      "labels": {
+       "cloud.googleapis.com/country": "MX",
+       "cloud.googleapis.com/location": "northamerica-south1",
+       "cloud.googleapis.com/region": "northamerica-south1"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true
+      },
+      "locationId": "northamerica-south1",
+      "displayName": "Mexico"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/southamerica-east1",
+      "labels": {
+       "cloud.googleapis.com/location": "southamerica-east1",
+       "cloud.googleapis.com/region": "southamerica-east1",
+       "cloud.googleapis.com/country": "BR"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "southamerica-east1",
+      "displayName": "S\u00e3o Paulo"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/southamerica-west1",
+      "labels": {
+       "cloud.googleapis.com/region": "southamerica-west1",
+       "cloud.googleapis.com/location": "southamerica-west1",
+       "cloud.googleapis.com/country": "CL"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "southamerica-west1",
+      "displayName": "Santiago"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/us",
+      "labels": {
+       "cloud.googleapis.com/country": "US",
+       "cloud.googleapis.com/location": "us"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "us"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/us-central1",
+      "labels": {
+       "cloud.googleapis.com/location": "us-central1",
+       "cloud.googleapis.com/region": "us-central1",
+       "cloud.googleapis.com/country": "US"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true,
+       "hsmSingleTenantAvailable": true
+      },
+      "locationId": "us-central1",
+      "displayName": "Iowa"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/us-east1",
+      "labels": {
+       "cloud.googleapis.com/location": "us-east1",
+       "cloud.googleapis.com/region": "us-east1",
+       "cloud.googleapis.com/country": "US"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "us-east1",
+      "displayName": "South Carolina"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/us-east4",
+      "labels": {
+       "cloud.googleapis.com/region": "us-east4",
+       "cloud.googleapis.com/location": "us-east4",
+       "cloud.googleapis.com/country": "US"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true,
+       "hsmSingleTenantAvailable": true
+      },
+      "locationId": "us-east4",
+      "displayName": "Northern Virginia"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/us-east5",
+      "labels": {
+       "cloud.googleapis.com/country": "US",
+       "cloud.googleapis.com/region": "us-east5",
+       "cloud.googleapis.com/location": "us-east5"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "us-east5",
+      "displayName": "Columbus"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/us-south1",
+      "labels": {
+       "cloud.googleapis.com/location": "us-south1",
+       "cloud.googleapis.com/country": "US",
+       "cloud.googleapis.com/region": "us-south1"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true,
+       "hsmSingleTenantAvailable": true
+      },
+      "locationId": "us-south1",
+      "displayName": "Dallas"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/us-west1",
+      "labels": {
+       "cloud.googleapis.com/country": "US",
+       "cloud.googleapis.com/region": "us-west1",
+       "cloud.googleapis.com/location": "us-west1"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "us-west1",
+      "displayName": "Oregon"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/us-west2",
+      "labels": {
+       "cloud.googleapis.com/country": "US",
+       "cloud.googleapis.com/region": "us-west2",
+       "cloud.googleapis.com/location": "us-west2"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true,
+       "hsmSingleTenantAvailable": true
+      },
+      "locationId": "us-west2",
+      "displayName": "Los Angeles"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/us-west3",
+      "labels": {
+       "cloud.googleapis.com/country": "US",
+       "cloud.googleapis.com/location": "us-west3",
+       "cloud.googleapis.com/region": "us-west3"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "us-west3",
+      "displayName": "Salt Lake City"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/us-west4",
+      "labels": {
+       "cloud.googleapis.com/country": "US",
+       "cloud.googleapis.com/region": "us-west4",
+       "cloud.googleapis.com/location": "us-west4"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "us-west4",
+      "displayName": "Las Vegas"
+     }
+    ]
+   }
+  },
+  {
+   "method": "GET",
+   "url": "https://cloudkms.googleapis.com/v1/projects/zeroshield-cbom-testing/locations",
+   "params": {},
+   "status": 200,
+   "body": {
+    "locations": [
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/africa-south1",
+      "labels": {
+       "cloud.googleapis.com/location": "africa-south1",
+       "cloud.googleapis.com/region": "africa-south1",
+       "cloud.googleapis.com/country": "ZA"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "africa-south1",
+      "displayName": "Johannesburg"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia",
+      "labels": {
+       "cloud.googleapis.com/country": "SG",
+       "cloud.googleapis.com/location": "asia"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "asia"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia-east1",
+      "labels": {
+       "cloud.googleapis.com/region": "asia-east1",
+       "cloud.googleapis.com/country": "TW",
+       "cloud.googleapis.com/location": "asia-east1"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "asia-east1",
+      "displayName": "Taiwan"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia-east2",
+      "labels": {
+       "cloud.googleapis.com/location": "asia-east2",
+       "cloud.googleapis.com/region": "asia-east2",
+       "cloud.googleapis.com/country": "HK"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "asia-east2",
+      "displayName": "Hong Kong"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia-northeast1",
+      "labels": {
+       "cloud.googleapis.com/region": "asia-northeast1",
+       "cloud.googleapis.com/country": "JP",
+       "cloud.googleapis.com/location": "asia-northeast1"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "asia-northeast1",
+      "displayName": "Tokyo"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia-northeast2",
+      "labels": {
+       "cloud.googleapis.com/country": "JP",
+       "cloud.googleapis.com/region": "asia-northeast2",
+       "cloud.googleapis.com/location": "asia-northeast2"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "asia-northeast2",
+      "displayName": "Osaka"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia-northeast3",
+      "labels": {
+       "cloud.googleapis.com/country": "KR",
+       "cloud.googleapis.com/region": "asia-northeast3",
+       "cloud.googleapis.com/location": "asia-northeast3"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "asia-northeast3",
+      "displayName": "Seoul"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia-south1",
+      "labels": {
+       "cloud.googleapis.com/region": "asia-south1",
+       "cloud.googleapis.com/country": "IN",
+       "cloud.googleapis.com/location": "asia-south1"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true,
+       "hsmSingleTenantAvailable": true
+      },
+      "locationId": "asia-south1",
+      "displayName": "Mumbai"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia-south2",
+      "labels": {
+       "cloud.googleapis.com/location": "asia-south2",
+       "cloud.googleapis.com/region": "asia-south2",
+       "cloud.googleapis.com/country": "IN"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true,
+       "hsmSingleTenantAvailable": true
+      },
+      "locationId": "asia-south2",
+      "displayName": "Delhi"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia-southeast1",
+      "labels": {
+       "cloud.googleapis.com/region": "asia-southeast1",
+       "cloud.googleapis.com/location": "asia-southeast1",
+       "cloud.googleapis.com/country": "SG"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "asia-southeast1",
+      "displayName": "Singapore"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia-southeast2",
+      "labels": {
+       "cloud.googleapis.com/region": "asia-southeast2",
+       "cloud.googleapis.com/country": "ID",
+       "cloud.googleapis.com/location": "asia-southeast2"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "asia-southeast2",
+      "displayName": "Jakarta"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia-southeast3",
+      "labels": {
+       "cloud.googleapis.com/location": "asia-southeast3",
+       "cloud.googleapis.com/region": "asia-southeast3",
+       "cloud.googleapis.com/country": "TH"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true
+      },
+      "locationId": "asia-southeast3",
+      "displayName": "Bangkok"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia1",
+      "labels": {
+       "cloud.googleapis.com/country": "JP",
+       "cloud.googleapis.com/location": "asia1"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "asia1"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/au",
+      "labels": {
+       "cloud.googleapis.com/location": "au"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "au"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/australia-southeast1",
+      "labels": {
+       "cloud.googleapis.com/country": "AU",
+       "cloud.googleapis.com/region": "australia-southeast1",
+       "cloud.googleapis.com/location": "australia-southeast1"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "australia-southeast1",
+      "displayName": "Sydney"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/australia-southeast2",
+      "labels": {
+       "cloud.googleapis.com/region": "australia-southeast2",
+       "cloud.googleapis.com/location": "australia-southeast2",
+       "cloud.googleapis.com/country": "AU"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "australia-southeast2",
+      "displayName": "Melbourne"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/ca",
+      "labels": {
+       "cloud.googleapis.com/location": "ca"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "ca"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/de",
+      "labels": {
+       "cloud.googleapis.com/location": "de"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "de"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/eur3",
+      "labels": {
+       "cloud.googleapis.com/location": "eur3"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "eur3"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/eur4",
+      "labels": {
+       "cloud.googleapis.com/country": "IE",
+       "cloud.googleapis.com/location": "eur4"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "eur4"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/eur5",
+      "labels": {
+       "cloud.googleapis.com/location": "eur5",
+       "cloud.googleapis.com/country": "GB"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "eur5"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/eur6",
+      "labels": {
+       "cloud.googleapis.com/location": "eur6"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "eur6"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/eur7",
+      "labels": {
+       "cloud.googleapis.com/location": "eur7"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "ekmAvailable": true
+      },
+      "locationId": "eur7"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/eur8",
+      "labels": {
+       "cloud.googleapis.com/location": "eur8"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "ekmAvailable": true
+      },
+      "locationId": "eur8"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/europe",
+      "labels": {
+       "cloud.googleapis.com/country": "IE",
+       "cloud.googleapis.com/location": "europe"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "europe"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/europe-central2",
+      "labels": {
+       "cloud.googleapis.com/region": "europe-central2",
+       "cloud.googleapis.com/location": "europe-central2",
+       "cloud.googleapis.com/country": "PL"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "europe-central2",
+      "displayName": "Warsaw"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/europe-north1",
+      "labels": {
+       "cloud.googleapis.com/region": "europe-north1",
+       "cloud.googleapis.com/country": "FI",
+       "cloud.googleapis.com/location": "europe-north1"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "europe-north1",
+      "displayName": "Finland"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/europe-north2",
+      "labels": {
+       "cloud.googleapis.com/region": "europe-north2",
+       "cloud.googleapis.com/location": "europe-north2",
+       "cloud.googleapis.com/country": "SE"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "europe-north2",
+      "displayName": "Stockholm"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/europe-southwest1",
+      "labels": {
+       "cloud.googleapis.com/region": "europe-southwest1",
+       "cloud.googleapis.com/country": "ES",
+       "cloud.googleapis.com/location": "europe-southwest1"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "europe-southwest1",
+      "displayName": "Madrid"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/europe-west1",
+      "labels": {
+       "cloud.googleapis.com/location": "europe-west1",
+       "cloud.googleapis.com/country": "BE",
+       "cloud.googleapis.com/region": "europe-west1"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true,
+       "hsmSingleTenantAvailable": true
+      },
+      "locationId": "europe-west1",
+      "displayName": "Belgium"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/europe-west10",
+      "labels": {
+       "cloud.googleapis.com/location": "europe-west10",
+       "cloud.googleapis.com/region": "europe-west10",
+       "cloud.googleapis.com/country": "DE"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true,
+       "hsmSingleTenantAvailable": true
+      },
+      "locationId": "europe-west10",
+      "displayName": "Berlin"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/europe-west12",
+      "labels": {
+       "cloud.googleapis.com/region": "europe-west12",
+       "cloud.googleapis.com/location": "europe-west12",
+       "cloud.googleapis.com/country": "IT"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "europe-west12",
+      "displayName": "Turin"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/europe-west2",
+      "labels": {
+       "cloud.googleapis.com/region": "europe-west2",
+       "cloud.googleapis.com/location": "europe-west2",
+       "cloud.googleapis.com/country": "GB"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "europe-west2",
+      "displayName": "London"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/europe-west3",
+      "labels": {
+       "cloud.googleapis.com/country": "DE",
+       "cloud.googleapis.com/location": "europe-west3",
+       "cloud.googleapis.com/region": "europe-west3"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true,
+       "hsmSingleTenantAvailable": true
+      },
+      "locationId": "europe-west3",
+      "displayName": "Frankfurt"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/europe-west4",
+      "labels": {
+       "cloud.googleapis.com/region": "europe-west4",
+       "cloud.googleapis.com/country": "NL",
+       "cloud.googleapis.com/location": "europe-west4"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true,
+       "hsmSingleTenantAvailable": true
+      },
+      "locationId": "europe-west4",
+      "displayName": "Netherlands"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/europe-west6",
+      "labels": {
+       "cloud.googleapis.com/region": "europe-west6",
+       "cloud.googleapis.com/country": "CH",
+       "cloud.googleapis.com/location": "europe-west6"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "europe-west6",
+      "displayName": "Zurich"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/europe-west8",
+      "labels": {
+       "cloud.googleapis.com/region": "europe-west8",
+       "cloud.googleapis.com/location": "europe-west8",
+       "cloud.googleapis.com/country": "IT"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "europe-west8",
+      "displayName": "Milan"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/europe-west9",
+      "labels": {
+       "cloud.googleapis.com/region": "europe-west9",
+       "cloud.googleapis.com/location": "europe-west9",
+       "cloud.googleapis.com/country": "FR"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true,
+       "hsmSingleTenantAvailable": true
+      },
+      "locationId": "europe-west9",
+      "displayName": "Paris"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/global",
+      "labels": {
+       "cloud.googleapis.com/location": "global"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true
+      },
+      "locationId": "global"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/in",
+      "labels": {
+       "cloud.googleapis.com/location": "in"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "in"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/it",
+      "labels": {
+       "cloud.googleapis.com/location": "it"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "it"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/jp",
+      "labels": {
+       "cloud.googleapis.com/location": "jp"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata"
+      },
+      "locationId": "jp"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/me-central1",
+      "labels": {
+       "cloud.googleapis.com/country": "QA",
+       "cloud.googleapis.com/region": "me-central1",
+       "cloud.googleapis.com/location": "me-central1"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "me-central1",
+      "displayName": "Doha"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/me-central2",
+      "labels": {
+       "cloud.googleapis.com/country": "SA",
+       "cloud.googleapis.com/location": "me-central2",
+       "cloud.googleapis.com/region": "me-central2",
+       "cloud.googleapis.com/location_restrictions": "INCOMPATIBLE_GOOGLE_ENTITY"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true,
+       "hsmSingleTenantAvailable": true
+      },
+      "locationId": "me-central2",
+      "displayName": "Dammam"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/me-west1",
+      "labels": {
+       "cloud.googleapis.com/country": "IL",
+       "cloud.googleapis.com/region": "me-west1",
+       "cloud.googleapis.com/location": "me-west1"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true,
+       "hsmSingleTenantAvailable": true
+      },
+      "locationId": "me-west1",
+      "displayName": "Tel Aviv"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/nam-eur-asia1",
+      "labels": {
+       "cloud.googleapis.com/location": "nam-eur-asia1"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true
+      },
+      "locationId": "nam-eur-asia1"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/nam10",
+      "labels": {
+       "cloud.googleapis.com/location": "nam10"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "nam10"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/nam11",
+      "labels": {
+       "cloud.googleapis.com/location": "nam11"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "nam11"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/nam12",
+      "labels": {
+       "cloud.googleapis.com/location": "nam12"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "nam12"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/nam3",
+      "labels": {
+       "cloud.googleapis.com/location": "nam3"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "nam3"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/nam4",
+      "labels": {
+       "cloud.googleapis.com/country": "US",
+       "cloud.googleapis.com/location": "nam4"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "nam4"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/nam6",
+      "labels": {
+       "cloud.googleapis.com/location": "nam6"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "nam6"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/nam7",
+      "labels": {
+       "cloud.googleapis.com/location": "nam7"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "nam7"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/nam8",
+      "labels": {
+       "cloud.googleapis.com/location": "nam8"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "nam8"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/nam9",
+      "labels": {
+       "cloud.googleapis.com/location": "nam9"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "nam9"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/northamerica-northeast1",
+      "labels": {
+       "cloud.googleapis.com/country": "CA",
+       "cloud.googleapis.com/region": "northamerica-northeast1",
+       "cloud.googleapis.com/location": "northamerica-northeast1"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "northamerica-northeast1",
+      "displayName": "Montr\u00e9al"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/northamerica-northeast2",
+      "labels": {
+       "cloud.googleapis.com/region": "northamerica-northeast2",
+       "cloud.googleapis.com/location": "northamerica-northeast2",
+       "cloud.googleapis.com/country": "CA"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "northamerica-northeast2",
+      "displayName": "Toronto"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/northamerica-south1",
+      "labels": {
+       "cloud.googleapis.com/country": "MX",
+       "cloud.googleapis.com/location": "northamerica-south1",
+       "cloud.googleapis.com/region": "northamerica-south1"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true
+      },
+      "locationId": "northamerica-south1",
+      "displayName": "Mexico"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/southamerica-east1",
+      "labels": {
+       "cloud.googleapis.com/location": "southamerica-east1",
+       "cloud.googleapis.com/region": "southamerica-east1",
+       "cloud.googleapis.com/country": "BR"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "southamerica-east1",
+      "displayName": "S\u00e3o Paulo"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/southamerica-west1",
+      "labels": {
+       "cloud.googleapis.com/location": "southamerica-west1",
+       "cloud.googleapis.com/region": "southamerica-west1",
+       "cloud.googleapis.com/country": "CL"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "southamerica-west1",
+      "displayName": "Santiago"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/us",
+      "labels": {
+       "cloud.googleapis.com/country": "US",
+       "cloud.googleapis.com/location": "us"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "us"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/us-central1",
+      "labels": {
+       "cloud.googleapis.com/location": "us-central1",
+       "cloud.googleapis.com/region": "us-central1",
+       "cloud.googleapis.com/country": "US"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true,
+       "hsmSingleTenantAvailable": true
+      },
+      "locationId": "us-central1",
+      "displayName": "Iowa"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/us-east1",
+      "labels": {
+       "cloud.googleapis.com/region": "us-east1",
+       "cloud.googleapis.com/location": "us-east1",
+       "cloud.googleapis.com/country": "US"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "us-east1",
+      "displayName": "South Carolina"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/us-east4",
+      "labels": {
+       "cloud.googleapis.com/region": "us-east4",
+       "cloud.googleapis.com/country": "US",
+       "cloud.googleapis.com/location": "us-east4"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true,
+       "hsmSingleTenantAvailable": true
+      },
+      "locationId": "us-east4",
+      "displayName": "Northern Virginia"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/us-east5",
+      "labels": {
+       "cloud.googleapis.com/country": "US",
+       "cloud.googleapis.com/region": "us-east5",
+       "cloud.googleapis.com/location": "us-east5"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "us-east5",
+      "displayName": "Columbus"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/us-south1",
+      "labels": {
+       "cloud.googleapis.com/location": "us-south1",
+       "cloud.googleapis.com/country": "US",
+       "cloud.googleapis.com/region": "us-south1"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true,
+       "hsmSingleTenantAvailable": true
+      },
+      "locationId": "us-south1",
+      "displayName": "Dallas"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/us-west1",
+      "labels": {
+       "cloud.googleapis.com/location": "us-west1",
+       "cloud.googleapis.com/country": "US",
+       "cloud.googleapis.com/region": "us-west1"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "us-west1",
+      "displayName": "Oregon"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/us-west2",
+      "labels": {
+       "cloud.googleapis.com/country": "US",
+       "cloud.googleapis.com/region": "us-west2",
+       "cloud.googleapis.com/location": "us-west2"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true,
+       "hsmSingleTenantAvailable": true
+      },
+      "locationId": "us-west2",
+      "displayName": "Los Angeles"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/us-west3",
+      "labels": {
+       "cloud.googleapis.com/country": "US",
+       "cloud.googleapis.com/location": "us-west3",
+       "cloud.googleapis.com/region": "us-west3"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "us-west3",
+      "displayName": "Salt Lake City"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/us-west4",
+      "labels": {
+       "cloud.googleapis.com/country": "US",
+       "cloud.googleapis.com/location": "us-west4",
+       "cloud.googleapis.com/region": "us-west4"
+      },
+      "metadata": {
+       "@type": "type.googleapis.com/google.cloud.kms.v1.LocationMetadata",
+       "hsmAvailable": true,
+       "ekmAvailable": true
+      },
+      "locationId": "us-west4",
+      "displayName": "Las Vegas"
+     }
+    ]
+   }
+  },
+  {
+   "method": "GET",
+   "url": "https://cloudkms.googleapis.com/v1/projects/zeroshield-cbom-testing/locations/asia-south1/keyRings",
+   "params": {},
+   "status": 200,
+   "body": {
+    "keyRings": [
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia-south1/keyRings/zs-cbom-demo-keyring",
+      "createTime": "2026-11-13T12:56:51.035983713Z"
+     }
+    ],
+    "totalSize": 1
+   }
+  },
+  {
+   "method": "GET",
+   "url": "https://cloudkms.googleapis.com/v1/projects/zeroshield-cbom-testing/locations/asia-south1/keyRings/zs-cbom-demo-keyring/cryptoKeys",
+   "params": {},
+   "status": 200,
+   "body": {
+    "cryptoKeys": [
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia-south1/keyRings/zs-cbom-demo-keyring/cryptoKeys/key-asymmetric-decrypt-rsa3072",
+      "purpose": "ASYMMETRIC_DECRYPT",
+      "createTime": "2026-11-13T12:56:51.516469609Z",
+      "versionTemplate": {
+       "protectionLevel": "SOFTWARE",
+       "algorithm": "RSA_DECRYPT_OAEP_3072_SHA256"
+      },
+      "destroyScheduledDuration": "2592000s"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia-south1/keyRings/zs-cbom-demo-keyring/cryptoKeys/key-asymmetric-sign-ec256",
+      "purpose": "ASYMMETRIC_SIGN",
+      "createTime": "2026-11-13T12:56:51.532491481Z",
+      "versionTemplate": {
+       "protectionLevel": "SOFTWARE",
+       "algorithm": "EC_SIGN_P256_SHA256"
+      },
+      "destroyScheduledDuration": "2592000s"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia-south1/keyRings/zs-cbom-demo-keyring/cryptoKeys/key-symmetric-rotated",
+      "primary": {
+       "name": "projects/zeroshield-cbom-testing/locations/asia-south1/keyRings/zs-cbom-demo-keyring/cryptoKeys/key-symmetric-rotated/cryptoKeyVersions/1",
+       "state": "ENABLED",
+       "createTime": "2026-11-13T12:56:51.529984594Z",
+       "protectionLevel": "SOFTWARE",
+       "algorithm": "GOOGLE_SYMMETRIC_ENCRYPTION",
+       "generateTime": "2026-11-13T12:56:51.529984594Z"
+      },
+      "purpose": "ENCRYPT_DECRYPT",
+      "createTime": "2026-11-13T12:56:51.529984594Z",
+      "nextRotationTime": "2027-02-11T12:56:51.131575Z",
+      "rotationPeriod": "7776000s",
+      "versionTemplate": {
+       "protectionLevel": "SOFTWARE",
+       "algorithm": "GOOGLE_SYMMETRIC_ENCRYPTION"
+      },
+      "destroyScheduledDuration": "2592000s"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia-south1/keyRings/zs-cbom-demo-keyring/cryptoKeys/key-symmetric-unrotated",
+      "primary": {
+       "name": "projects/zeroshield-cbom-testing/locations/asia-south1/keyRings/zs-cbom-demo-keyring/cryptoKeys/key-symmetric-unrotated/cryptoKeyVersions/1",
+       "state": "ENABLED",
+       "createTime": "2026-11-13T12:56:51.540046964Z",
+       "protectionLevel": "SOFTWARE",
+       "algorithm": "GOOGLE_SYMMETRIC_ENCRYPTION",
+       "generateTime": "2026-11-13T12:56:51.540046964Z"
+      },
+      "purpose": "ENCRYPT_DECRYPT",
+      "createTime": "2026-11-13T12:56:51.540046964Z",
+      "versionTemplate": {
+       "protectionLevel": "SOFTWARE",
+       "algorithm": "GOOGLE_SYMMETRIC_ENCRYPTION"
+      },
+      "destroyScheduledDuration": "2592000s"
+     }
+    ],
+    "totalSize": 4
+   }
+  },
+  {
+   "method": "GET",
+   "url": "https://cloudkms.googleapis.com/v1/projects/zeroshield-cbom-testing/locations/asia-south1/keyRings/zs-cbom-demo-keyring/cryptoKeys/key-asymmetric-decrypt-rsa3072/cryptoKeyVersions",
+   "params": {},
+   "status": 200,
+   "body": {
+    "cryptoKeyVersions": [
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia-south1/keyRings/zs-cbom-demo-keyring/cryptoKeys/key-asymmetric-decrypt-rsa3072/cryptoKeyVersions/1",
+      "state": "ENABLED",
+      "createTime": "2026-11-13T12:56:51.516469609Z",
+      "protectionLevel": "SOFTWARE",
+      "algorithm": "RSA_DECRYPT_OAEP_3072_SHA256",
+      "generateTime": "2026-11-13T12:56:52.132874489Z"
+     }
+    ],
+    "totalSize": 1
+   }
+  },
+  {
+   "method": "GET",
+   "url": "https://cloudkms.googleapis.com/v1/projects/zeroshield-cbom-testing/locations/asia-south1/keyRings/zs-cbom-demo-keyring/cryptoKeys/key-asymmetric-sign-ec256/cryptoKeyVersions",
+   "params": {},
+   "status": 200,
+   "body": {
+    "cryptoKeyVersions": [
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia-south1/keyRings/zs-cbom-demo-keyring/cryptoKeys/key-asymmetric-sign-ec256/cryptoKeyVersions/1",
+      "state": "ENABLED",
+      "createTime": "2026-11-13T12:56:51.532491481Z",
+      "protectionLevel": "SOFTWARE",
+      "algorithm": "EC_SIGN_P256_SHA256",
+      "generateTime": "2026-11-13T12:56:51.601410177Z"
+     }
+    ],
+    "totalSize": 1
+   }
+  },
+  {
+   "method": "GET",
+   "url": "https://cloudkms.googleapis.com/v1/projects/zeroshield-cbom-testing/locations/asia-south1/keyRings/zs-cbom-demo-keyring/cryptoKeys/key-symmetric-rotated/cryptoKeyVersions",
+   "params": {},
+   "status": 200,
+   "body": {
+    "cryptoKeyVersions": [
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia-south1/keyRings/zs-cbom-demo-keyring/cryptoKeys/key-symmetric-rotated/cryptoKeyVersions/1",
+      "state": "ENABLED",
+      "createTime": "2026-11-13T12:56:51.529984594Z",
+      "protectionLevel": "SOFTWARE",
+      "algorithm": "GOOGLE_SYMMETRIC_ENCRYPTION",
+      "generateTime": "2026-11-13T12:56:51.529984594Z"
+     }
+    ],
+    "totalSize": 1
+   }
+  },
+  {
+   "method": "GET",
+   "url": "https://cloudkms.googleapis.com/v1/projects/zeroshield-cbom-testing/locations/asia-south1/keyRings/zs-cbom-demo-keyring/cryptoKeys/key-symmetric-unrotated/cryptoKeyVersions",
+   "params": {},
+   "status": 200,
+   "body": {
+    "cryptoKeyVersions": [
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia-south1/keyRings/zs-cbom-demo-keyring/cryptoKeys/key-symmetric-unrotated/cryptoKeyVersions/1",
+      "state": "ENABLED",
+      "createTime": "2026-11-13T12:56:51.540046964Z",
+      "protectionLevel": "SOFTWARE",
+      "algorithm": "GOOGLE_SYMMETRIC_ENCRYPTION",
+      "generateTime": "2026-11-13T12:56:51.540046964Z"
+     }
+    ],
+    "totalSize": 1
+   }
+  },
+  {
+   "method": "GET",
+   "url": "https://privateca.googleapis.com/v1/projects/zeroshield-cbom-testing/locations",
+   "params": {},
+   "status": 200,
+   "body": {
+    "locations": [
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/africa-south1",
+      "locationId": "africa-south1"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia-east1",
+      "locationId": "asia-east1"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia-east2",
+      "locationId": "asia-east2"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia-northeast1",
+      "locationId": "asia-northeast1"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia-northeast2",
+      "locationId": "asia-northeast2"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia-northeast3",
+      "locationId": "asia-northeast3"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia-south1",
+      "locationId": "asia-south1"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia-south2",
+      "locationId": "asia-south2"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia-southeast1",
+      "locationId": "asia-southeast1"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia-southeast2",
+      "locationId": "asia-southeast2"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia-southeast3",
+      "locationId": "asia-southeast3"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/australia-southeast1",
+      "locationId": "australia-southeast1"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/australia-southeast2",
+      "locationId": "australia-southeast2"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/europe-central2",
+      "locationId": "europe-central2"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/europe-north1",
+      "locationId": "europe-north1"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/europe-north2",
+      "locationId": "europe-north2"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/europe-southwest1",
+      "locationId": "europe-southwest1"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/europe-west1",
+      "locationId": "europe-west1"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/europe-west10",
+      "locationId": "europe-west10"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/europe-west12",
+      "locationId": "europe-west12"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/europe-west2",
+      "locationId": "europe-west2"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/europe-west3",
+      "locationId": "europe-west3"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/europe-west4",
+      "locationId": "europe-west4"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/europe-west6",
+      "locationId": "europe-west6"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/europe-west8",
+      "locationId": "europe-west8"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/europe-west9",
+      "locationId": "europe-west9"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/me-central1",
+      "locationId": "me-central1"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/me-central2",
+      "locationId": "me-central2"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/me-west1",
+      "locationId": "me-west1"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/northamerica-northeast1",
+      "locationId": "northamerica-northeast1"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/northamerica-northeast2",
+      "locationId": "northamerica-northeast2"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/northamerica-south1",
+      "locationId": "northamerica-south1"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/southamerica-east1",
+      "locationId": "southamerica-east1"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/southamerica-west1",
+      "locationId": "southamerica-west1"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/us-central1",
+      "locationId": "us-central1"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/us-east1",
+      "locationId": "us-east1"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/us-east4",
+      "locationId": "us-east4"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/us-east5",
+      "locationId": "us-east5"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/us-south1",
+      "locationId": "us-south1"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/us-west1",
+      "locationId": "us-west1"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/us-west2",
+      "locationId": "us-west2"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/us-west3",
+      "locationId": "us-west3"
+     },
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/us-west4",
+      "locationId": "us-west4"
+     }
+    ]
+   }
+  },
+  {
+   "method": "GET",
+   "url": "https://privateca.googleapis.com/v1/projects/zeroshield-cbom-testing/locations/asia-south1/caPools",
+   "params": {},
+   "status": 200,
+   "body": {
+    "caPools": [
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia-south1/caPools/zs-cbom-devops-ca-pool",
+      "tier": "DEVOPS",
+      "publishingOptions": {
+       "publishCaCert": true
+      }
+     }
+    ]
+   }
+  },
+  {
+   "method": "GET",
+   "url": "https://privateca.googleapis.com/v1/projects/zeroshield-cbom-testing/locations/asia-south1/caPools/zs-cbom-devops-ca-pool/certificateAuthorities",
+   "params": {},
+   "status": 200,
+   "body": {
+    "certificateAuthorities": [
+     {
+      "name": "projects/zeroshield-cbom-testing/locations/asia-south1/caPools/zs-cbom-devops-ca-pool/certificateAuthorities/zs-cbom-root-ca",
+      "type": "SELF_SIGNED",
+      "config": {
+       "subjectConfig": {
+        "subject": {
+         "commonName": "ZeroShield Test Root CA",
+         "organization": "ZeroShield Demo Lab"
+        }
+       },
+       "x509Config": {
+        "keyUsage": {
+         "baseKeyUsage": {
+          "certSign": true,
+          "crlSign": true
+         }
+        },
+        "caOptions": {
+         "isCa": true
+        }
+       }
+      },
+      "lifetime": "31536000s",
+      "keySpec": {
+       "algorithm": "EC_P256_SHA256"
+      },
+      "tier": "DEVOPS",
+      "state": "ENABLED",
+      "pemCaCertificates": [
+       "-----BEGIN CERTIFICATE-----\nMIIB5DCCAYqgAwIBAgITDd+n/AL8vcSJeeDJXoS1ftwzeTAKBggqhkjOPQQDAjBA\nMRwwGgYDVQQKExNaZXJvU2hpZWxkIERlbW8gTGFiMSAwHgYDVQQDExdaZXJvU2hp\nZWxkIFRlc3QgUm9vdCBDQTAeFw0yNjExMTMxMjU3MDRaFw0yNzExMTMxMjU3MDNa\nMEAxHDAaBgNVBAoTE1plcm9TaGllbGQgRGVtbyBMYWIxIDAeBgNVBAMTF1plcm9T\naGllbGQgVGVzdCBSb290IENBMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAESzzm\n7s0FCREWhP90+68w5rv/Uv6SYGloxjyCbu7Xsfp68sK3dF6oOb/Qb9dcQKwQhuXQ\nnnYIt/GW8O/x2ashoaNjMGEwDgYDVR0PAQH/BAQDAgEGMA8GA1UdEwEB/wQFMAMB\nAf8wHQYDVR0OBBYEFGFOY8u713n9BSKCkiQs0nAGMWFYMB8GA1UdIwQYMBaAFGFO\nY8u713n9BSKCkiQs0nAGMWFYMAoGCCqGSM49BAMCA0gAMEUCIQCI0Fut490GZRl4\nGjjAFi27xGzoFb7HXk2j0PHYAKY2ZwIgX15lUEreDo3drswP2yAbn8jZH+GJuCE2\nDy+SW4esWes=\n-----END CERTIFICATE-----\n"
+      ],
+      "caCertificateDescriptions": [
+       {
+        "subjectDescription": {
+         "subject": {
+          "commonName": "ZeroShield Test Root CA",
+          "organization": "ZeroShield Demo Lab"
+         },
+         "subjectAltName": {},
+         "hexSerialNumber": "000ddfa7fc02fcbdc48979e0c95e84b57edc3379",
+         "lifetime": "31536000s",
+         "notBeforeTime": "2026-11-13T12:57:04.703785668Z",
+         "notAfterTime": "2027-11-13T12:57:03.703785668Z"
+        },
+        "x509Description": {
+         "keyUsage": {
+          "baseKeyUsage": {
+           "certSign": true,
+           "crlSign": true
+          }
+         },
+         "caOptions": {
+          "isCa": true
+         }
+        },
+        "publicKey": {
+         "key": "LS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS0KTUZrd0V3WUhLb1pJemowQ0FRWUlLb1pJemowREFRY0RRZ0FFU3p6bTdzMEZDUkVXaFA5MCs2OHc1cnYvVXY2UwpZR2xveGp5Q2J1N1hzZnA2OHNLM2RGNm9PYi9RYjlkY1FLd1FodVhRbm5ZSXQvR1c4Ty94MmFzaG9RPT0KLS0tLS1FTkQgUFVCTElDIEtFWS0tLS0tCg=="
+        },
+        "subjectKeyId": {
+         "keyId": "614e63cbbbd779fd05228292242cd27006316158"
+        },
+        "authorityKeyId": {
+         "keyId": "614e63cbbbd779fd05228292242cd27006316158"
+        },
+        "certFingerprint": {
+         "sha256Hash": "1233e1d623d9d8bc42a503ae79c944ed5f821b645aeb9800930a4cc42ad8a37f"
+        },
+        "tbsCertificateDigest": "6bbd57233df02d64f676076982d1a514a843a0caec63d41775bd0e3199c75974"
+       }
+      ],
+      "accessUrls": {
+       "caCertificateAccessUrl": "http://privateca-content-6af6ef4a-0000-292f-983c-d43a2cfd217f.storage.googleapis.com/86ce9ea0a37bca63e6c3/ca.crt"
+      },
+      "createTime": "2026-11-13T12:57:01.393434577Z",
+      "updateTime": "2026-11-13T12:57:13.599777523Z",
+      "satisfiesPzs": true,
+      "satisfiesPzi": true
+     }
+    ]
+   }
+  },
+  {
+   "method": "GET",
+   "url": "https://secretmanager.googleapis.com/v1/projects/zeroshield-cbom-testing/secrets",
+   "params": {},
+   "status": 200,
+   "body": {
+    "secrets": [
+     {
+      "name": "projects/749998518357/secrets/dummy-api-key-with-expiry",
+      "replication": {
+       "automatic": {}
+      },
+      "createTime": "2026-11-13T12:56:51.032397Z",
+      "expireTime": "2027-01-12T12:50:14Z",
+      "etag": "\"166027f66ccba3\""
+     },
+     {
+      "name": "projects/749998518357/secrets/dummy-db-password-no-expiry",
+      "replication": {
+       "automatic": {}
+      },
+      "createTime": "2026-11-13T12:56:51.025916Z",
+      "etag": "\"166027f6509bcc\""
+     }
+    ],
+    "totalSize": 2
+   }
+  },
+  {
+   "method": "GET",
+   "url": "https://certificatemanager.googleapis.com/v1/projects/zeroshield-cbom-testing/locations",
+   "params": {},
+   "status": 403,
+   "error": {
+    "code": "SERVICE_DISABLED",
+    "message": "Certificate Manager API has not been used in project zeroshield-cbom-testing before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/certificatemanager.googleapi"
+   }
+  },
+  {
+   "method": "GET",
+   "url": "https://compute.googleapis.com/compute/v1/projects/zeroshield-cbom-testing/aggregated/sslPolicies",
+   "params": {
+    "maxResults": 500,
+    "returnPartialSuccess": "true"
+   },
+   "status": 403,
+   "error": {
+    "code": "SERVICE_DISABLED",
+    "message": "Compute Engine API has not been used in project zeroshield-cbom-testing before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/compute.googleapis.com/overview?p"
+   }
+  },
+  {
+   "method": "GET",
+   "url": "https://storage.googleapis.com/storage/v1/b",
+   "params": {
+    "project": "zeroshield-cbom-testing"
+   },
+   "status": 403,
+   "error": {
+    "code": "403",
+    "message": "zs-cbom@zeroshield-cbom-testing.iam.gserviceaccount.com does not have storage.buckets.list access to the Google Cloud project. Permission 'storage.buckets.list' denied on resource (or it may not exist"
+   }
+  }
+ ]
+}

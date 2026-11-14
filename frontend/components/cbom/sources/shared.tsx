@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 import {
   getCbomJob,
   type CbomConfidence,
+  type CbomQ0Gap,
   type CbomJob,
   type CbomJobStatus,
   type CbomNodeStatus,
@@ -123,18 +124,39 @@ export function RunStatusBadge({ status }: { status: CbomRunStatus }) {
   return <StatusBadge tone={tone}>{label}</StatusBadge>;
 }
 
+/** Evidence confidence (CB-18, DA §2.3): E0..E3. Its own indigo palette with rising emphasis (E0 dashed outline, E1
+ * outline, E2 tinted, E3 filled), never the risk-grade colours (red, orange, amber, green, grey). */
 export const CONFIDENCE_LABEL: Record<CbomConfidence, string> = {
-  Q0: "Unknown",
-  Q1: "Self-attested",
-  Q2: "Documented",
-  Q3: "Verified",
+  E0: "Unknown",
+  E1: "Self-attested",
+  E2: "Documented",
+  E3: "Verified",
 };
-const CONFIDENCE_TONE: Record<CbomConfidence, Tone> = { Q0: "red", Q1: "amber", Q2: "blue", Q3: "green" };
-export function ConfidenceBadge({ level }: { level: CbomConfidence }) {
+export const CONFIDENCE_LEVELS: CbomConfidence[] = ["E0", "E1", "E2", "E3"];
+const CONFIDENCE_STYLE: Record<CbomConfidence, string> = {
+  E0: "border-dashed border-indigo-400/70 text-indigo-600 dark:text-indigo-300",
+  E1: "border-indigo-500/60 text-indigo-700 dark:text-indigo-300",
+  E2: "border-indigo-500/60 bg-indigo-50 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-200",
+  E3: "border-indigo-700 bg-indigo-700 text-white dark:bg-indigo-500 dark:border-indigo-500",
+};
+export function ConfidenceBadge({ level, testId }: { level: CbomConfidence; testId?: string }) {
+  const known = CONFIDENCE_LABEL[level] ? level : "E0";
   return (
-    <StatusBadge tone={CONFIDENCE_TONE[level] ?? "zinc"}>
-      {level} {CONFIDENCE_LABEL[level] ?? ""}
-    </StatusBadge>
+    <Badge variant="outline" className={CONFIDENCE_STYLE[known]} data-testid={testId} data-level={known}>
+      {known} {CONFIDENCE_LABEL[known]}
+    </Badge>
+  );
+}
+
+/** The risk-register entry an E0 item creates (DA §2.3): printed only as "Q0 gap", in the risk palette
+ * (grey), with the server's reason as its tooltip and accessible name. */
+export function Q0GapBadge({ gap, testId }: { gap: CbomQ0Gap | null | undefined; testId?: string }) {
+  if (!gap) return null;
+  const why = `Q0 gap: ${gap.text}${gap.detail ? ` (${gap.detail})` : ""}`;
+  return (
+    <span title={why} aria-label={why} data-testid={testId} data-reason={gap.reason}>
+      <StatusBadge tone="zinc">Q0 gap</StatusBadge>
+    </span>
   );
 }
 

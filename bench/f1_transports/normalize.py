@@ -6,19 +6,35 @@ same document); compare assets sorted by the backend's ``jobs._asset_key`` formu
 returns an empty list.
 
 Two more things are run-specific and dropped, on both sides alike:
-* ``process_library.facts.pids``: process ids differ between any two runs (and the SSH path's own sshd session
-  processes join the sshd daemon's group under other pids).  The group itself, its exe, library, ports and the
-  ``deleted`` flag are compared.
+* ``process_library.facts.pids``: process ids differ between any two runs, so ``diff()`` compares the group itself,
+  its exe, library, ports and the ``deleted`` flag, not its pids.  ``pid_differences()`` reports them separately (every
+  bench report carries it per host), so a transport's own processes joining a group, or a service's processes that
+  zs-collect left out, stay visible: on a lab whose services keep their pids between runs the report should be empty.
 * the per-target ``duration_ms`` and the run's ``duration_s`` / ``elapsed_s`` (timings).
+* the thread id OpenSSL 3 puts in front of each error line (``80DB4734FD7E0000:error:1E08010C:DECODER routines...``)
+  in a fact such as ``detail`` of a key file it could not read: it is the address of the openssl process's thread
+  and differs between any two runs, SSH or not.  The rest of the line (code, library, reason) is compared.
 """
 from __future__ import annotations
 
 import copy
 import hashlib
 import json
+import re
 from typing import Any
 
 LOCAL_HOST_KEY = "<this host's own host key>"
+_OPENSSL_TID = re.compile(r"\b[0-9A-F]{8,16}(?=:error:)")
+
+
+def _no_thread_ids(value: Any) -> Any:
+    if isinstance(value, str):
+        return _OPENSSL_TID.sub("<tid>", value)
+    if isinstance(value, dict):
+        return {k: _no_thread_ids(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_no_thread_ids(v) for v in value]
+    return value
 
 
 def asset_key(asset: dict) -> str:
@@ -46,6 +62,8 @@ def normalise_assets(assets: list[dict], target: str | None = None) -> list[dict
                 facts["host_key"] = LOCAL_HOST_KEY
         if a.get("type") == "process_library":
             facts.pop("pids", None)
+        if facts:
+            a["facts"] = _no_thread_ids(facts)
         out.append(a)
     return sorted(out, key=lambda a: (asset_key(a), json.dumps(a, sort_keys=True, default=str)))
 
@@ -83,4 +101,24 @@ def diff(a: dict, b: dict) -> list[str]:
         out.append(f"outcomes differ: A={a['outcomes']} B={b['outcomes']}")
     if len(a["assets"]) != len(ka) or len(b["assets"]) != len(kb):
         out.append("duplicate asset keys in one document")
+    return out
+
+
+def pid_differences(a_doc: dict, b_doc: dict, target: str | None = None) -> list[str]:
+    """``process_library`` groups present on both sides (same asset key) whose process ids differ, one line each:
+    ``pids differ: <name> <location>: only A [..]; only B [..]``.  ``diff()`` ignores pids; this is the report that
+    keeps them from hiding (review 5874466030: the salt-minion's own long-lived processes were left out, and the
+    transport's SSH session added, on every host, with an empty normalised diff)."""
+    def groups(doc: dict) -> dict[str, dict]:
+        return {asset_key(x): x for x in doc.get("assets") or []
+                if x.get("type") == "process_library" and (target is None or x.get("target") == target)}
+
+    ga, gb = groups(a_doc), groups(b_doc)
+    out = []
+    for k in sorted(set(ga) & set(gb)):
+        pa = set((ga[k].get("facts") or {}).get("pids") or [])
+        pb = set((gb[k].get("facts") or {}).get("pids") or [])
+        if pa != pb:
+            out.append(f"pids differ: {ga[k].get('name')} {ga[k].get('location')}: only A {sorted(pa - pb)}; "
+                       f"only B {sorted(pb - pa)}")
     return out
