@@ -711,6 +711,20 @@ class CbomRiskRegister(SQLModel, table=True):
     __table_args__ = (UniqueConstraint("team_id", "item_key", name="uq_cbomriskregister_team_key"),
                       _SaIndex("ix_cbomriskregister_team_rank_key", "team_id", "q_rank", "item_key"),
                       _SaIndex("ix_cbomriskregister_team_reason", "team_id", "q_reason"),
+                      # CB-32 (1.5M rows): a filtered list walks its filter's index in list order; the summary is one
+                      # index-only GROUP BY
+                      _SaIndex("ix_cbomriskregister_team_source_rank", "team_id", "source_ref", "q_rank", "item_key"),
+                      _SaIndex("ix_cbomriskregister_team_app_rank", "team_id", "application", "q_rank", "item_key"),
+                      _SaIndex("ix_cbomriskregister_team_reason_rank", "team_id", "q_reason", "q_rank", "item_key"),
+                      _SaIndex("ix_cbomriskregister_team_unpresent_rank", "team_id", "presence", "q_rank", "item_key",
+                               postgresql_where=_sa_text("presence <> 'present'"),
+                               sqlite_where=_sa_text("presence <> 'present'")),
+                      _SaIndex("ix_cbomriskregister_team_summary", "team_id", "q_grade", "q_reason", "family",
+                               "presence"),
+                      _SaIndex("ix_cbomriskregister_team_model_inputs", "team_id", "model_version", "inputs_digest"),
+                      _SaIndex("ix_cbomriskregister_team_live", "team_id",
+                               postgresql_where=_sa_text("presence <> 'removed'"),
+                               sqlite_where=_sa_text("presence <> 'removed'")),
                       _SaIndex("ix_cbomriskregister_team_family_source_grade", "team_id", "family", "source_ref",
                                "q_grade"))
     id: int | None = Field(default=None, primary_key=True)
@@ -738,6 +752,12 @@ class CbomRiskRegister(SQLModel, table=True):
 
 
 # ========================================= estate store (CB-20) =========================================
+# CB-32 partial-index predicates (the queries in estate / agility_store / agility_rollup repeat them verbatim, so the
+# planner matches them)
+_AGILITY_LIVE = "presence <> 'removed' AND fix_class IS NOT NULL"
+_NOT_CORRELATED_LIVE = "key_kind = 'not_correlated' AND presence <> 'removed'"
+_RECHECK = "presence <> 'removed' AND fix_recheck_on IS NOT NULL"
+_UNREAD_MOVED = ("presence = 'not_read' AND (fix_job_id <> seen_job_id OR fix_attempt <> seen_attempt)")
 class CbomEstateSource(SQLModel, table=True):
     """Per team and source (``source_ref`` = the source uid): the newest collect job the estate store has written.
     A PRESENT observation of the source was read in this job (its row: ``(latest_job_id, latest_attempt,
@@ -833,7 +853,23 @@ class CbomEstateAsset(SQLModel, table=True):
                       _SaIndex("ix_cbomestateasset_team_type_key", "team_id", "asset_type", "asset_key"),
                       _SaIndex("ix_cbomestateasset_team_presence_key", "team_id", "presence", "asset_key"),
                       _SaIndex("ix_cbomestateasset_team_updated", "team_id", "updated_run_id"),
-                      _SaIndex("ix_cbomestateasset_team_system_fix", "team_id", "system_key", "fix_class"))
+                      # CB-32: the agility roll-up is one index-only GROUP BY over the live classed assets; its pages
+                      # walk a class index in key order; heal finds stale versions and counts not-correlated ones
+                      _SaIndex("ix_cbomestateasset_agility_groups", "team_id", "system_key", "fix_class",
+                               "fix_class_excl_pq", "fix_reasons", postgresql_include=["system_label", "system_kind"],
+                               postgresql_where=_sa_text(_AGILITY_LIVE), sqlite_where=_sa_text(_AGILITY_LIVE)),
+                      _SaIndex("ix_cbomestateasset_agility_class", "team_id", "fix_class", "asset_key",
+                               postgresql_where=_sa_text(_AGILITY_LIVE), sqlite_where=_sa_text(_AGILITY_LIVE)),
+                      _SaIndex("ix_cbomestateasset_agility_class_excl", "team_id", "fix_class_excl_pq", "asset_key",
+                               postgresql_where=_sa_text(_AGILITY_LIVE), sqlite_where=_sa_text(_AGILITY_LIVE)),
+                      _SaIndex("ix_cbomestateasset_team_fix_version", "team_id", "fix_version",
+                               postgresql_where=_sa_text("presence <> 'removed'"),
+                               sqlite_where=_sa_text("presence <> 'removed'")),
+                      _SaIndex("ix_cbomestateasset_team_live", "team_id", postgresql_where=_sa_text("presence <> 'removed'"),
+                               sqlite_where=_sa_text("presence <> 'removed'")),
+                      _SaIndex("ix_cbomestateasset_team_not_correlated", "team_id",
+                               postgresql_where=_sa_text(_NOT_CORRELATED_LIVE),
+                               sqlite_where=_sa_text(_NOT_CORRELATED_LIVE)))
     id: int | None = Field(default=None, primary_key=True)
     team_id: int = Field(foreign_key="team.id")
     asset_key: str = Field(max_length=64)
@@ -867,7 +903,21 @@ class CbomEstateObservation(SQLModel, table=True):
     is not present any more (a present one was read in the source's latest job, ``CbomEstateSource``)."""
     __tablename__ = "cbomestateobservation"
     __table_args__ = (UniqueConstraint("team_id", "asset_key", "source_ref", name="uq_cbomestateobs_team_key_source"),
-                      _SaIndex("ix_cbomestateobs_team_source", "team_id", "source_ref"))
+                      # CB-32: a source's observations in key order (present_keys, the source filter of the estate
+                      # list); the live count; heal's stale probes (version, recheck day, pointer moved)
+                      _SaIndex("ix_cbomestateobs_team_source_key", "team_id", "source_ref", "asset_key"),
+                      _SaIndex("ix_cbomestateobs_team_live", "team_id", postgresql_where=_sa_text("presence <> 'removed'"),
+                               sqlite_where=_sa_text("presence <> 'removed'")),
+                      _SaIndex("ix_cbomestateobs_team_fix_version", "team_id", "fix_version",
+                               postgresql_where=_sa_text("presence <> 'removed'"),
+                               sqlite_where=_sa_text("presence <> 'removed'")),
+                      _SaIndex("ix_cbomestateobs_team_recheck", "team_id", "fix_recheck_on",
+                               postgresql_where=_sa_text(_RECHECK), sqlite_where=_sa_text(_RECHECK)),
+                      _SaIndex("ix_cbomestateobs_present_fix", "team_id", "source_ref", "fix_job_id", "fix_attempt",
+                               postgresql_where=_sa_text("presence = 'present'"),
+                               sqlite_where=_sa_text("presence = 'present'")),
+                      _SaIndex("ix_cbomestateobs_unread_fix_moved", "team_id", postgresql_where=_sa_text(_UNREAD_MOVED),
+                               sqlite_where=_sa_text(_UNREAD_MOVED)))
     id: int | None = Field(default=None, primary_key=True)
     team_id: int = Field(foreign_key="team.id")
     asset_key: str = Field(max_length=64)

@@ -1,0 +1,22 @@
+{"seeded": 1500000, "s": 675}
+{"sizes": {"cbomestateasset": "921 MB", "cbomestateobservation": "939 MB", "cbomriskregister": "682 MB", "cbomcollectedasset": "75 MB"}}
+{"query": "estate.list (no filter)", "p50": 121.1, "p95": 224.5, "max": 401.4}
+{"query": "estate.list type=certificate", "p50": 4.7, "p95": 79.0, "max": 105.5}
+{"query": "estate.list presence=removed", "p50": 69.4, "p95": 151.0, "max": 253.9}
+{"query": "estate.list presence=not_read", "p50": 112.2, "p95": 280.5, "max": 546.3}
+{"query": "estate.list source=src3", "p50": 253.2, "p95": 643.5, "max": 1863.0}
+{"query": "estate.asset (drill-down)", "p50": 13.8, "p95": 32.0, "max": 34.9}
+{"query": "estate.asset removed (drill-down)", "p50": 7.2, "p95": 15.7, "max": 18.5}
+{"query": "estate.present_keys page 5000", "p50": 40.9, "p95": 70.5, "max": 89.0}
+{"query": "register.list (default)", "p50": 177.4, "p95": 279.7, "max": 331.4}
+{"query": "register.list next page", "p50": 615.1, "p95": 1192.6, "max": 1957.2}
+{"query": "register.list grade=Q1", "p50": 18.0, "p95": 32.1, "max": 41.7}
+{"query": "register.list source=src3", "p50": 236.0, "p95": 327.6, "max": 624.1}
+{"query": "register.list application=app-7", "p50": 760.7, "p95": 1369.7, "max": 1810.2}
+{"query": "register.list presence=removed", "p50": 546.2, "p95": 1145.0, "max": 2073.2}
+{"query": "register.summary", "p50": 3668.3, "p95": 5373.9, "max": 5921.1}
+{"query": "register.item (drill-down)", "p50": 4.6, "p95": 5.0, "max": 9.4}
+{"query": "agility.heal (steady state)", "p50": 1528.0, "p95": 2158.3, "max": 2774.0}
+{"query": "agility.rollup GROUP BY", "p50": 3466.6, "p95": 4660.6, "max": 5253.6}
+{"query": "agility.page fix_class=code", "p50": 284.3, "p95": 391.5, "max": 439.4}
+{"query": "agility.page system=sys-42", "p50": 7.1, "p95": 9.0, "max": 12.9}

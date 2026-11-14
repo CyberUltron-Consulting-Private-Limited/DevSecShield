@@ -248,14 +248,17 @@ def test_register_api_list_summary_item_and_csv(api, two_runs):
     with Session(engine) as s:
         keys = {a.asset_key for a in s.exec(select(CbomEstateAsset).where(CbomEstateAsset.team_id == 1,
                                                                           CbomEstateAsset.presence != "removed"))}
-    listed, after = [], None
+    listed, after, totals = [], None, []
     while True:
         page = _get(api, "/1/cbom/register", limit=2, **({"after": after} if after else {})).json()
         listed += page["items"]
+        totals.append(page["total"])
         after = page["next_after"]
         if not after:
             break
-    assert {i["item_key"] for i in listed} == keys and len(listed) == len(keys) == page["total"]
+    # CB-32: the total is counted on the first page only
+    assert {i["item_key"] for i in listed} == keys and len(listed) == len(keys) == totals[0]
+    assert all(t is None for t in totals[1:])
     ranks = [REG.RANK.get(i["q_grade"], 6) for i in listed]
     assert ranks == sorted(ranks)  # worst first
     summary = _get(api, "/1/cbom/register/summary").json()
