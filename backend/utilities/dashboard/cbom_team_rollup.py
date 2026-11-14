@@ -330,6 +330,10 @@ class AssetAgg:
     # (QUANTUM_VULNERABLE on a host key) that ``finding_codes`` leaves out (collections_view.node_row). The run API
     # maps all of them to compliance clauses, so the deliverables' clause counts read them too.
     collector_codes: tuple[str, ...] = ()
+    # CBOM Sources rows only: code -> the algorithms its compliance clause rules read (the ciphers, transforms or hashes
+    # the classifier flagged; collections_view.SourcesRow.clause_evidence), so the deliverables cite as the run API
+    # does and never on the asset's title or sentence (#289); None or a missing code: not recorded
+    clause_evidence: Mapping[str, Any] | None = field(default=None, compare=False, repr=False)
 
 
 @dataclass
@@ -3102,7 +3106,7 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
                           last_updated=agg.observed_at, source_key=agg.key, source_label=agg.label,
                           source_kind=SOURCE_SOURCES, tier=TIER_A, fidelity=FIDELITY_FULL)
         asset = replace(_asset_from_row(item.row, shell), current=True, tier=TIER_A, latest_scan_id=None,
-                        scan_ids=())
+                        scan_ids=(), clause_evidence=getattr(item, "clause_evidence", None) or None)
         assets.append(asset)
         if asset.asset_type == ASSET_CERTIFICATE:
             f = item.facts if isinstance(item.facts, Mapping) else {}

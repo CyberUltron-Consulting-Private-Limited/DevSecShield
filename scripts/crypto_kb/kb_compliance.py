@@ -20,6 +20,7 @@ def owasp_tables(r: dict) -> dict:
 
 
 def refs(r: dict) -> dict:
+    """``_clauses``: every clause by stable key; and the compliance areas, each a list of clause keys."""
     n, c, ci, s, rb = r["nist"], r["cnsa2"], r["certin"], r["sebi_cscrf"], r["rbi"]
     a131 = n["sp800_131a_rev2"]
     bom = ci["bom_guidelines"]
@@ -69,7 +70,23 @@ def refs(r: dict) -> dict:
     nist_pqc = ref("NIST", "IR 8547 (final, 2026)", ir["quote"], ir["pdf"])
     cnsa = ref("NSA CNSA 2.0", "CNSA 2.0 FAQ (April 2024)", c["overall_goal_quote"] + ". Algorithms: AES-256, ML-KEM-1024, "
                "ML-DSA-87, SHA-384/512, LMS/XMSS.", c["source"])
-    return {
+    # the clause catalog (#269): one stable key per clause; each finding code names the keys it breaks in
+    # sources/compliance_clauses.json, so a code never inherits the other clauses of an area
+    catalog = {
+        "nist-800-131a-sha1-signatures": nist_sha1, "nist-800-131a-tdea": nist_tdea,
+        "nist-800-131a-pkcs1-v1_5": nist_pkcs1, "nist-800-131a-below-112-bit": nist_112, "nist-ir-8547": nist_pqc,
+        "cnsa-2.0": cnsa, "certin-bom-8.4.2.2": certin_tls, "certin-bom-8.4.1.6": certin_vex,
+        "certin-bom-8.5.1": certin_shor, "certin-gov-6.1.7": certin_617, "certin-gov-6.2.7": certin_627,
+        "certin-gov-7.1": certin_71, "certin-gov-4.5.7": certin_457, "rbi-md-2023-para-16": rbi_md,
+        "rbi-cb-2026-para-140": rbi_26, "rbi-cb-2026-para-106": rbi_26_106, "sebi-pr-ds-standard-1": sebi_prds,
+        "sebi-pr-ds-s1-s3-1a": sebi_prds13, "sebi-pr-ds-s4-item-5": sebi_cert, "sebi-annexure-h-5": sebi_h,
+        "sebi-annexure-i": sebi_i, "sebi-box-item-7": sebi_pqc, "sebi-id-ra-standard-2": sebi_ra,
+        "sebi-gv-sc-s5": sebi_sbom,
+    }
+    # compliance areas: groups of clause keys, kept for the NIST SP 800-53 control families (OSCAL); a finding's cited
+    # clauses come from its own "clauses" / "clause_rules", never from a whole area. Keys, not copies: each clause's
+    # text is stored once (the catalog).
+    areas = {
         "tls_min": [certin_tls, sebi_i, rbi_md, rbi_26, certin_617],
         "algorithms": [nist_sha1, nist_tdea, nist_pkcs1, certin_tls, rbi_md, rbi_26, sebi_h],
         "keysize": [nist_112, rbi_md, rbi_26],
@@ -81,6 +98,8 @@ def refs(r: dict) -> dict:
         "components": [certin_vex, sebi_sbom],
         "pqc": [nist_pqc, cnsa, sebi_pqc, sebi_ra, certin_shor],
     }
+    key_of = {id(ref): key for key, ref in catalog.items()}
+    return {"_clauses": catalog, **{area: [key_of[id(ref)] for ref in items] for area, items in areas.items()}}
 
 
 def pqc_context(r: dict) -> dict:

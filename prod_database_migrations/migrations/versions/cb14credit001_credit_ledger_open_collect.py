@@ -1,7 +1,7 @@
 """cbom run concurrency and billing (CB-14): credit ledger, refunded amount, one open collection per source
 
 Revision ID: cb14credit001
-Revises: cb226apikey001
+Revises: cb32index001
 Create Date: 2026-11-15 06:00:00.000000
 
 * ``cbomcreditentry``: one row per credit movement (charge at Start, a job's one refund), unique ``idem_key``
@@ -25,7 +25,7 @@ import sqlmodel
 
 # revision identifiers, used by Alembic.
 revision: str = 'cb14credit001'
-down_revision: Union[str, Sequence[str], None] = 'cb226apikey001'
+down_revision: Union[str, Sequence[str], None] = 'cb32index001'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
