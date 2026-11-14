@@ -1,7 +1,7 @@
 """cbom ops counters (CB-31, GAP-MATRIX X1): platform-wide operational counters for the admin metrics endpoint
 
 Revision ID: cb31opsctr001
-Revises: cb226apikey001
+Revises: cbcorr001
 Create Date: 2026-11-15 06:00:00.000000
 
 * ``cbomopscounter``: one row per counter (``name`` is the key), its ``value`` (bigint, monotonic) and when it last
@@ -20,7 +20,7 @@ import sqlmodel
 
 # revision identifiers, used by Alembic.
 revision: str = 'cb31opsctr001'
-down_revision: Union[str, Sequence[str], None] = 'cb226apikey001'
+down_revision: Union[str, Sequence[str], None] = 'cbcorr001'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

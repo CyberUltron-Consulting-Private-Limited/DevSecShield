@@ -54,6 +54,20 @@ FIXTURE = Path(__file__).resolve().parent / "fixtures" / "cb33_a2_dev_rows.json"
 # 2026-11-14); none is on AWS's "Supported security policies" page yet
 NEWER_APIGW_POLICIES = ("SecurityPolicy_TLS13_1_2_FIPS_PFS_PQ_2025_09", "SecurityPolicy_TLS13_1_2_Ext2_PQ_2025_09",
                         "SecurityPolicy_TLS13_1_2_Ext2_FIPS_PQ_2025_09")
+# The order T19b's estate was recorded in (fixtures/cb33_a2_dev_rows.json: domain d<i> is policy i, None at d14): the
+# 1.41.5 model's SecurityPolicy enum, then the newer three. botocore 1.44.3 lists those three INSIDE its enum, so taking
+# the order from the installed model moved every domain after d6 to another policy and T19b compared different rows.
+# Values a later botocore adds go after d14 (not in the fixture, so not compared).
+RECORDED_APIGW_ORDER = ("TLS_1_0", "TLS_1_2", "SecurityPolicy_TLS13_1_3_2025_09", "SecurityPolicy_TLS13_1_3_FIPS_2025_09",
+                        "SecurityPolicy_TLS13_1_2_PFS_PQ_2025_09", "SecurityPolicy_TLS13_1_2_FIPS_PQ_2025_09",
+                        "SecurityPolicy_TLS13_1_2_PQ_2025_09", "SecurityPolicy_TLS13_1_2_2021_06",
+                        "SecurityPolicy_TLS13_2025_EDGE", "SecurityPolicy_TLS12_PFS_2025_EDGE",
+                        "SecurityPolicy_TLS12_2018_EDGE") + NEWER_APIGW_POLICIES
+
+
+def _every_apigw_policy() -> list[str]:
+    """Every SecurityPolicy this test knows, once: the recorded order, then any value the installed model adds."""
+    return list(RECORDED_APIGW_ORDER) + [p for p in _APIGW.shape_for("SecurityPolicy").enum if p not in RECORDED_APIGW_ORDER]
 
 
 def _enum(model, shape: str, value: str, *, newer: tuple[str, ...] = ()) -> str:
@@ -405,7 +419,7 @@ def test_hf10_a_private_and_a_public_domain_with_one_name_are_two_rows(private_f
 
 
 # ============================================================================ B10 API Gateway min_version
-@pytest.mark.parametrize("policy", list(_APIGW.shape_for("SecurityPolicy").enum) + list(NEWER_APIGW_POLICIES))
+@pytest.mark.parametrize("policy", _every_apigw_policy())
 def test_b10_every_known_security_policy_has_a_min_version_and_says_where_it_came_from(policy):
     facts = aws_collect._apigw_tls_facts(policy)
     assert facts["min_version"] in ("TLSv1.0", "TLSv1.2", "TLSv1.3"), (policy, facts)
@@ -444,7 +458,8 @@ def test_b11_every_cloudfront_policy_is_hybrid_post_quantum_viewer_to_edge(minim
 # ============================================================================ T19b no code vanishes
 def t19b_estate() -> tuple[_Acct, _Acct]:
     """API Gateway domains on every policy (and none), CloudFront on every minimum: the estate T19b compares."""
-    names = list(_APIGW.shape_for("SecurityPolicy").enum) + list(NEWER_APIGW_POLICIES) + [None]
+    extra = _every_apigw_policy()[len(RECORDED_APIGW_ORDER):]
+    names = list(RECORDED_APIGW_ORDER) + [None] + extra  # d<i> as recorded (None at d14) under any botocore
     domains = [domain(f"d{i}.bank.example", p) for i, p in enumerate(names)]
     regional_acct = _Acct({("apigateway", None): [("get_domain_names", {"items": domains}, None)]})
     minimums = list(_CF.shape_for("MinimumProtocolVersion").enum)
