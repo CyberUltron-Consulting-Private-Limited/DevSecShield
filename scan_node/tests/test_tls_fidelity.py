@@ -706,3 +706,144 @@ def test_postgres_tls_versions_are_every_version_the_server_accepts(monkeypatch)
     assert facts["negotiated_cipher"] == "TLS_AES_256_GCM_SHA384" and facts["negotiated_cipher_code"] == "0x1302"
     assert facts["groups"] == ["x25519"] and facts["handshakes_used"] <= D.DB_TLS_BUDGET
     assert all(h["legacy_version"] for h in srv.hellos)  # every probe went through the SSLRequest preamble
+
+
+def _db_ctx():
+    return JobContext(job_id=1, attempt=1, run_id=None, kind="collect", source_kind="database", scrubber=Scrubber(),
+                      never_scan=NeverScan([]), deadline=time.monotonic() + 60)
+
+
+def test_database_probes_go_through_the_node_rate_limiter_one_at_a_time(monkeypatch):
+    from zs_scan_node.collectors import database as D
+
+    srv = FakePostgres(suites={T.TLS12: [C("TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384")]}, suites13=[0x1302],
+                           groups13=[29], curves=(29,))
+    limiter = netutil.RateLimiter(per_second=1000, per_server=4)
+    monkeypatch.setattr(netutil, "shared_limiter", lambda: limiter)
+    active, peak, lock, real_probe = [0], [0], threading.Lock(), T.probe
+
+    def probe(*a, **k):  # probes in flight to the endpoint, as the node sees them
+        with lock:
+            active[0] += 1
+            peak[0] = max(peak[0], active[0])
+        try:
+            return real_probe(*a, **k)
+        finally:
+            with lock:
+                active[0] -= 1
+    monkeypatch.setattr(T, "probe", probe)
+    monkeypatch.setattr(T, "have_openssl", lambda: True)
+    monkeypatch.setattr(T, "s_client", lambda *a, **k: T.FullHandshake(ok=True, version="TLSv1.3",
+                                                                        cipher="TLS_AES_256_GCM_SHA384", group="X25519"))
+    try:
+        import concurrent.futures as cf
+
+        with cf.ThreadPoolExecutor(2) as pool:  # two jobs reading the same database at once
+            results = list(pool.map(lambda _: D._server_tls(_db_ctx(), D.Target("db.test", "127.0.0.1"), srv.port,
+                                                              "postgres")[0], range(2)))
+    finally:
+        srv.close()
+    assert limiter.connections == sum(f["handshakes_used"] for f in results)  # every handshake took a token
+    assert peak[0] == 1  # one probe at a time per database endpoint, across jobs
+
+
+def test_database_pq_hybrid_is_unknown_when_the_pq_pass_got_no_answer(monkeypatch):
+    from zs_scan_node.collectors import database as D
+
+    srv = FakePostgres(suites={T.TLS12: [C("TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384")]}, suites13=[0x1302], groups13=[29])
+    monkeypatch.setattr(T, "have_openssl", lambda: True)
+    monkeypatch.setattr(T, "s_client", lambda *a, **k: T.FullHandshake(ok=True, version="TLSv1.3",
+                                                                        cipher="TLS_AES_256_GCM_SHA384", group="X25519"))
+    monkeypatch.setattr(D, "DB_TLS_BUDGET", 4)  # the four version probes, then nothing for the PQ pass
+    try:
+        facts, _n = D._server_tls(_db_ctx(), D.Target("db.test", "127.0.0.1"), srv.port, "postgres")
+    finally:
+        srv.close()
+    assert facts["versions"]["TLSv1.3"] is True and facts["pq_hybrid"] is None
+    assert facts["pq_groups_enumerated"] is False and facts["enumeration"]["complete"] is False
+
+
+class FakeMySQL(FakeTls):
+    """MySQL's TLS upgrade (greeting with CLIENT_SSL, the client's SSL request) in front of FakeTls, and MySQL's host
+    blocking: every connection counts as unfinished (a probe never logs in) and, at ``max_connect_errors``, the host
+    gets error 1129 instead of a greeting.  ``login()`` is what a successful login does to the count."""
+
+    def __init__(self, max_connect_errors=10, **kw):
+        self.max_errors, self.errors, self.peak, self.blocked, self.mlock = max_connect_errors, 0, 0, 0, threading.Lock()
+        super().__init__(**kw)
+
+    def login(self) -> bool:
+        with self.mlock:
+            self.errors = 0
+        return True
+
+    def _one(self, conn):
+        with self.mlock:
+            blocked = self.errors >= self.max_errors
+            if not blocked:
+                self.errors += 1
+                self.peak = max(self.peak, self.errors)
+            else:
+                self.blocked += 1
+        try:
+            if blocked:
+                msg = b"\xff" + struct.pack("<H", 1129) + b"Host is blocked because of many connection errors"
+                conn.sendall(len(msg).to_bytes(3, "little") + b"\x00" + msg)
+                return conn.close()
+            greeting = (b"\x0a" + b"8.4.0-fake\x00" + b"\x01\x00\x00\x00" + b"abcdefgh" + b"\x00" +
+                        struct.pack("<H", 0xFFFF) + b"\x21" + b"\x02\x00" + b"\xff\xff" + b"\x15" + b"\x00" * 10 +
+                        b"ijklmnopqrst\x00")
+            conn.sendall(len(greeting).to_bytes(3, "little") + b"\x00" + greeting)
+            conn.settimeout(3)
+            head = conn.recv(4)
+            conn.recv(int.from_bytes(head[:3], "little"))  # the SSL request
+        except OSError:
+            return conn.close()
+        super()._one(conn)
+
+
+@pytest.mark.parametrize("limit", [10, 100])
+def test_mysql_probes_never_reach_max_connect_errors_and_leave_the_count_at_zero(monkeypatch, limit):
+    from zs_scan_node.collectors import database as D
+
+    srv = FakeMySQL(max_connect_errors=limit, suites={T.TLS12: TLS12_SUITES[:3]}, suites13=[0x1302, 0x1301],
+                    groups13=[29, 23], curves=(29,))
+    try:
+        facts = D.mysql_accepted_tls(_db_ctx(), D.Target("db.test", "127.0.0.1"), srv.port, "TLSv1.3", 0x1302,
+                                     str(limit), srv.login)
+    finally:
+        srv.close()
+    assert srv.blocked == 0 and srv.peak <= limit // 2 and srv.errors == 0
+    assert facts["versions"] == {"SSLv3": False, "TLSv1.0": False, "TLSv1.1": False, "TLSv1.2": True, "TLSv1.3": True}
+    assert {e["name"] for e in facts["cipher_suites"]["TLSv1.2"]} == {R.suite_name(c) for c in TLS12_SUITES[:3]}
+    assert facts["groups"] == ["secp256r1", "x25519"] and facts["enumeration"]["complete"] is True
+
+
+def test_mysql_without_a_login_gets_no_probes(monkeypatch):
+    from zs_scan_node.collectors import database as D
+
+    srv = FakeMySQL(max_connect_errors=10, suites={T.TLS12: TLS12_SUITES[:3]}, suites13=[0x1302], groups13=[29])
+    monkeypatch.setattr(T, "have_openssl", lambda: True)
+    monkeypatch.setattr(T, "s_client", lambda *a, **k: T.FullHandshake(ok=True, version="TLSv1.3",
+                                                                        cipher="TLS_AES_256_GCM_SHA384", group="X25519"))
+    ctx = _db_ctx()
+    try:
+        target, status, err, n = D._one(ctx, {"engine": "mysql", "host": "127.0.0.1", "port": srv.port,
+                                              "login": "scan"}, {})
+    finally:
+        srv.close()
+    ctx.flush()
+    # the TLS-offered check and the login attempt (its own TLS handshake): no probe
+    assert status != "ok" and len(srv.hellos) <= 1 and srv.errors <= 2
+    tls = _rows(ctx.collected, "tls_endpoint")
+    assert len(tls) == 1 and tls[0]["facts"]["enumeration"]["complete"] is False
+    assert "max_connect_errors" in tls[0]["facts"]["enumeration"]["not_complete"][0]
+
+
+def test_a_mysql_limit_that_one_probe_would_reach_sends_none():
+    from zs_scan_node.collectors import database as D
+
+    calls = []
+    facts = D.mysql_accepted_tls(_db_ctx(), D.Target("db.test", "127.0.0.1"), 9, "TLSv1.3", 0x1302, "1",
+                                 lambda: calls.append(1) or True)
+    assert calls == [] and facts["enumeration"]["complete"] is False and "versions" not in facts
