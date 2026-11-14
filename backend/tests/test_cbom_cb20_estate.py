@@ -36,6 +36,7 @@ from backend.new_models import (  # noqa: E402
     CbomCollectionSource,
     CbomEstateAsset,
     CbomEstateObservation,
+    CbomEstateSource,
     Team,
 )
 from backend.utilities.cbom_sources import drift as D  # noqa: E402
@@ -121,16 +122,24 @@ class World:
             return list(s.exec(select(CbomEstateObservation).where(CbomEstateObservation.team_id == team_id)
                                .order_by(CbomEstateObservation.asset_key, CbomEstateObservation.source_ref)))
 
-    def dump(self) -> list[tuple]:
+    def latest(self, team_id: int = 1) -> dict[str, dict]:
+        with Session(self.engine) as s:
+            return E.latest_rows(s, team_id, sorted(self.assets(team_id)))
+
+    def dump(self, pointers: bool = True) -> list[tuple]:
         """The store's content without row ids / write times (to compare two worlds)."""
-        assets = sorted((a.team_id, a.asset_key, a.key_kind, a.asset_type, a.presence, a.presence_reason,
-                         a.latest_asset_id, a.latest_job_id, a.latest_run_id, a.latest_source_ref,
-                         a.first_seen_run_id, a.last_seen_run_id, a.updated_run_id)
-                        for a in list(self.assets(1).values()) + list(self.assets(2).values()))
-        obs = sorted((o.team_id, o.asset_key, o.source_ref, o.observation_key, o.asset_id, o.job_id, o.run_id,
-                      o.presence, o.presence_reason, o.first_seen_run_id, o.last_seen_run_id, o.state_run_id)
-                     for o in self.observations(1) + self.observations(2))
-        return assets + obs
+        out: list[tuple] = []
+        for team in (1, 2):
+            latest = self.latest(team)
+            for a in self.assets(team).values():
+                ptr = latest.get(a.asset_key, {}).get("latest") or {}
+                out.append((team, a.asset_key, a.key_kind, a.asset_type, a.presence, a.presence_reason,
+                            a.first_seen_run_id) + ((ptr.get("asset_id"), ptr.get("job_id"), ptr.get("run_id"),
+                                                     ptr.get("source_ref")) if pointers else ()))
+            for o in self.observations(team):
+                out.append((team, o.asset_key, o.source_ref, o.observation_key, o.row_key, o.presence,
+                            o.presence_reason, o.first_seen_run_id))
+        return sorted(out, key=repr)
 
 
 def _sqlite(path: Path):
@@ -139,10 +148,17 @@ def _sqlite(path: Path):
     return engine
 
 
-@pytest.fixture()
-def world(tmp_path):
-    engine = _sqlite(tmp_path / "estate.db")
+@pytest.fixture(params=["sqlite", pytest.param("postgresql", marks=needs_pg)])
+def world(request, tmp_path):
+    if request.param == "sqlite":
+        engine = _sqlite(tmp_path / "estate.db")
+    else:
+        engine = create_engine(PG, pool_size=8)
+        SQLModel.metadata.drop_all(engine)
+        SQLModel.metadata.create_all(engine)
     yield World(engine)
+    if request.param != "sqlite":
+        SQLModel.metadata.drop_all(engine)
     engine.dispose()
 
 
@@ -182,11 +198,16 @@ def test_one_certificate_seen_by_four_collectors_is_one_row_with_four_observatio
     (key, asset), = assets.items()
     assert re.fullmatch(r"cert:[0-9a-f]{40}", key) and asset.key_kind == "cross" and asset.presence == "present"
     obs = world.observations()
-    assert len(obs) == 4 and {o.asset_key for o in obs} == {key} and {o.run_id for o in obs} == {run}
-    assert asset.latest_asset_id in {o.asset_id for o in obs} and asset.first_seen_run_id == run == asset.last_seen_run_id
+    assert len(obs) == 4 and {o.asset_key for o in obs} == {key} and {o.seen_run_id for o in obs} == {run}
+    latest = world.latest()[key]
+    assert asset.first_seen_run_id == run and len(latest["observations"]) == 4
+    assert {o["run_id"] for o in latest["observations"].values()} == {run}
     with Session(world.engine) as s:  # the latest stored row is where the grade inputs are re-read
-        row = s.get(CbomCollectedAsset, asset.latest_asset_id)
-        assert row.asset_type == "certificate" and s.get(CbomCollectionJob, asset.latest_job_id).run_id == run
+        row = s.get(CbomCollectedAsset, latest["latest"]["asset_id"])
+        assert row.asset_type == "certificate" and row.job_id == latest["latest"]["job_id"]
+        assert s.get(CbomCollectionJob, row.job_id).run_id == run
+        assert {s.get(CbomCollectedAsset, o["asset_id"]).source_id
+                for o in latest["observations"].values()} == set(src)
 
 
 @needs_cb21
@@ -254,8 +275,7 @@ def test_presence_present_then_not_read_under_a_gap_then_removed_then_present_ag
     a, b = endpoint("10.0.0.1"), endpoint("10.0.0.2")
     r1 = world.run({net: {"rows": [a, b]}})
     world.finalise(r1)
-    keys = {x.target: k for k, x in ((k, o) for o in world.observations() for k in [o.asset_key])}
-    kb = keys["10.0.0.2"]
+    kb = next(o.asset_key for o in world.observations() if o.target == "10.0.0.2")
     assert {x.presence for x in world.assets().values()} == {"present"}
 
     r2 = world.run({net: {"rows": [a, gap("10.0.0.2", "10.0.0.2 did not answer on any listed port"),
@@ -264,9 +284,12 @@ def test_presence_present_then_not_read_under_a_gap_then_removed_then_present_ag
     world.finalise(r2)
     b2 = world.assets()[kb]
     assert (b2.presence, b2.presence_reason) == ("not_read", "lab: 10.0.0.2 did not answer on any listed port")
-    assert b2.last_seen_run_id == r1 and b2.latest_run_id == r1  # last known observation kept
+    latest = world.latest()[kb]["latest"]
+    assert latest["run_id"] == r1 and latest["asset_id"] is not None  # the last known observation is kept
     (ob,) = [o for o in world.observations() if o.asset_key == kb]
-    assert (ob.presence, ob.presence_reason, ob.run_id) == ("not_read", "10.0.0.2 did not answer on any listed port", r1)
+    assert (ob.presence, ob.presence_reason) == ("not_read", "10.0.0.2 did not answer on any listed port")
+    ka = next(k for k in world.assets() if k != kb)
+    assert world.latest()[ka]["latest"]["run_id"] == r2  # re-read: the latest row is run 2's (no rewrite needed)
 
     r3 = world.run({net: {"rows": [a]}})  # complete, no gap: really gone
     world.finalise(r3)
@@ -276,7 +299,7 @@ def test_presence_present_then_not_read_under_a_gap_then_removed_then_present_ag
     r4 = world.run({net: {"rows": [a, b]}})
     world.finalise(r4)
     back = world.assets()[kb]
-    assert (back.presence, back.first_seen_run_id, back.last_seen_run_id) == ("present", r1, r4)
+    assert (back.presence, back.first_seen_run_id, world.latest()[kb]["latest"]["run_id"]) == ("present", r1, r4)
     assert {x.presence for x in world.assets().values()} == {"present"}
 
 
@@ -308,12 +331,12 @@ def test_an_asset_still_seen_by_another_source_stays_present(world):
 
 def test_other_teams_never_mix(world):
     mine, theirs = world.source("network", "lab"), world.source("network", "lab", team_id=2)
-    world.finalise(world.run({mine: {"rows": [endpoint("10.0.0.1")]}}))
-    world.finalise(world.run({theirs: {"rows": [endpoint("10.0.0.1")]}}, team_id=2))
+    world.finalise(world.run({mine: {"rows": [endpoint("52.95.0.1")]}}))
+    world.finalise(world.run({theirs: {"rows": [endpoint("52.95.0.1")]}}, team_id=2))
     world.finalise(world.run({mine: {"rows": []}}))
     assert [a.presence for a in world.assets(1).values()] == ["removed"]
     assert [a.presence for a in world.assets(2).values()] == ["present"]
-    assert set(world.assets(1)) == set(world.assets(2))  # same endpoint key, one row per team
+    assert set(world.assets(1)) == set(world.assets(2))  # same (public) endpoint key, one row per team
 
 
 # ----------------------------------------------------------------------------- hook, transaction, exactly once
@@ -325,8 +348,8 @@ def test_the_hook_runs_in_the_drift_transaction_exactly_once_per_run(world):
     def hook(session, write):
         assert session.in_transaction()
         drift_at = session.execute(sa.select(CbomCollectionRun.drift_at).where(CbomCollectionRun.id == run)).scalar()
-        stored = list(E.touched_keys(session, write.team_id, write.run_id))
-        calls.append((write.run_id, drift_at, len(stored), write.counts["assets"]))
+        stored = list(E.present_keys(session, write.team_id, write.source_refs))  # the write is visible here
+        calls.append((write.run_id, drift_at, len(stored), len(write.changed)))
 
     E.register_hook(hook)
     try:
@@ -394,7 +417,12 @@ def test_runs_finalised_out_of_order_end_in_the_newer_runs_state(tmp_path):
         runs = _three_runs(w)
         for i in order:
             w.finalise(runs[i])
-    assert reversed_.dump() == in_order.dump()
+    # the newer run decides: same keys, presence and reasons; only the "last read" of the endpoint the newer run
+    # removed stays run 1's (run 2's reading of that source came after run 3's and is skipped: newest job wins)
+    assert reversed_.dump(pointers=False) == in_order.dump(pointers=False)
+    for w in (in_order, reversed_):
+        present = [k for k, a in w.assets().items() if a.presence == "present"]
+        assert [w.latest()[k]["latest"]["run_id"] for k in present] == [3]
     presence = sorted((a.asset_type, a.presence) for a in in_order.assets().values())
     assert presence == [("tls_endpoint", "not_read"), ("tls_endpoint", "present"), ("tls_endpoint", "removed")]
 
@@ -465,8 +493,9 @@ def test_retention_keeps_the_latest_comparable_job_per_source_and_what_the_store
     assert deleted == 2  # lab's rows of runs 1 and 2
     assert left == {(runs[0], dmz), (runs[2], net), (runs[3], net)}
     with Session(world.engine) as s:  # every row the store points at is still there
-        for o in world.observations():
-            assert s.get(CbomCollectedAsset, o.asset_id) is not None
+        for item in world.latest().values():
+            for o in item["observations"].values():
+                assert o["asset_id"] is not None and s.get(CbomCollectedAsset, o["asset_id"]) is not None
     with pytest.raises(ValueError):
         with Session(world.engine) as s:
             E.prune_collected_assets(s, 1, keep_runs=0)
@@ -497,7 +526,7 @@ def test_the_migration_is_the_one_head():
 def _schema(engine) -> dict:
     insp = sa.inspect(engine)
     out = {}
-    for table in ("cbomestateasset", "cbomestateobservation"):
+    for table in ("cbomestatesource", "cbomestateasset", "cbomestateobservation"):
         cols = {c["name"]: c["nullable"] for c in insp.get_columns(table)}
         idx = {i["name"]: tuple(i["column_names"]) for i in insp.get_indexes(table)}
         uq = {u["name"]: tuple(u["column_names"]) for u in insp.get_unique_constraints(table)}
@@ -515,13 +544,16 @@ def _migrate(engine, *steps: str) -> None:
                 getattr(_migration(), step)()
 
 
+TABLES = ("cbomestatesource", "cbomestateasset", "cbomestateobservation")
+
+
 def _up_down_up(engine) -> None:
     with engine.begin() as conn:
         Team.__table__.create(conn, checkfirst=True)
     _migrate(engine, "upgrade")
-    assert {"cbomestateasset", "cbomestateobservation"} <= set(sa.inspect(engine).get_table_names())
+    assert set(TABLES) <= set(sa.inspect(engine).get_table_names())
     _migrate(engine, "downgrade")
-    assert not {"cbomestateasset", "cbomestateobservation"} & set(sa.inspect(engine).get_table_names())
+    assert not set(TABLES) & set(sa.inspect(engine).get_table_names())
     _migrate(engine, "upgrade")
 
 
@@ -530,7 +562,8 @@ def test_migration_up_down_up_matches_the_models_sqlite(tmp_path):
     _up_down_up(migrated)
     modelled = create_engine(f"sqlite:///{tmp_path / 'n.db'}")
     with modelled.begin() as conn:
-        for t in (Team.__table__, CbomEstateAsset.__table__, CbomEstateObservation.__table__):
+        for t in (Team.__table__, CbomEstateSource.__table__, CbomEstateAsset.__table__,
+                  CbomEstateObservation.__table__):
             t.create(conn)
     assert _schema(migrated) == _schema(modelled)
 
@@ -545,5 +578,6 @@ def test_migration_up_down_up_on_postgresql():
         assert set(CbomEstateObservation.__table__.columns.keys()) == cols
     finally:
         with engine.begin() as conn:
-            conn.execute(sa.text("DROP TABLE IF EXISTS cbomestateobservation, cbomestateasset, team CASCADE"))
+            conn.execute(sa.text("DROP TABLE IF EXISTS cbomestateobservation, cbomestateasset, cbomestatesource, "
+                                 "team CASCADE"))
         engine.dispose()

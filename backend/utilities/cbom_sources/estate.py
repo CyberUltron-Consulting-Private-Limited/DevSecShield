@@ -1,18 +1,22 @@
 """Per-team estate store (CB-20): one row per cross-source asset key with its latest observation per source.
 
-Two tables (``new_models``):
+Three tables (``new_models``):
 
 * ``cbomestateasset`` (unique ``(team_id, asset_key)``): the asset's key (CB-21 ``asset_keys.asset_key``; an asset
   with no cross-source identity, or whose correlation is missing, is keyed ``obs:<observation key>`` and marked
-  ``key_kind`` ``source`` / ``not_correlated``), its presence over all sources, the LATEST stored row id
-  (``latest_asset_id``: ``cbomcollectedasset.id``, from which CB-19/CB-23 re-read the grade inputs: type, verdict,
-  codes, facts), that row's job (``latest_job_id``: the job's ``params.metadata`` is the metadata snapshot: exposure
-  override, segment), first / last seen run.
-* ``cbomestateobservation`` (unique ``(team_id, asset_key, source_ref)``): per source, the latest observation
-  (``asset_id``, ``job_id``, ``run_id``, ``observed_at``, provenance: target, location, occurrences, source kind) and
-  its presence: ``present`` (read in the source's latest collection), ``not_read`` (the latest collection did not
-  read it: under one of its coverage gaps, or the collection was incomplete or failed; the reason says which) or
-  ``removed`` (a complete collection read the place and it was gone).
+  ``key_kind`` ``source`` / ``not_correlated``), its presence over all sources, first seen run.
+* ``cbomestateobservation`` (unique ``(team_id, asset_key, source_ref)``): the asset as one source last read it (the
+  row's per-job key ``row_key``, target, location, occurrences) and its presence there: ``present`` (read in the
+  source's latest collection), ``not_read`` (the latest collection did not read it: under one of its coverage gaps,
+  or the collection was incomplete or failed; the reason says which) or ``removed`` (a complete collection read the
+  place and it was gone).
+* ``cbomestatesource`` (unique ``(team_id, source_ref)``): the newest collect job written per source.
+
+The latest observation of a source is the row ``(job, attempt, row_key)`` of ``cbomcollectedasset`` (unique per job
+attempt): for a PRESENT observation the job is the source's latest job, otherwise the observation's ``seen_job_id``.
+``latest_rows`` resolves the stored row ids (from which CB-19/CB-23 re-read the grade inputs: type, verdict, codes,
+facts; the job's ``params.metadata`` is the metadata snapshot: exposure override, segment) for any set of keys in one
+query per 500 keys; the API shows them.
 
 Rules:
 
@@ -20,17 +24,20 @@ Rules:
   compare-and-set, in the same transaction (the caller commits). Registered hooks (``register_hook``; CB-23's risk
   register) run in that transaction too, exactly once per run; a hook that raises rolls the whole recording back (the
   scheduler retries it), so the register never disagrees with the store.
+* Only what changed is written (scale: 1.5M assets per team): a new key, an observation whose row, place or presence
+  changed, the assets those touch, and one row per source. An asset re-read unchanged costs its key computation and
+  one compare, no write.
 * Presence follows the drift rules (``drift`` module docstring): only a complete (``job_comparable``) collection
   removes anything; what its coverage gaps cover is ``not_read`` with the gap's reason, never removed; an incomplete
   or failed collection makes the unseen ``not_read``.
 * An observation whose asset key changed (a stronger key joined it, CB-21 ``correlate``) MOVES to the new key: the
   old observation row is deleted (and the old asset row when nothing is left), listed in ``EstateWrite.rekeyed``,
   never read as a removal.
-* Order-safe: every row carries the run that last changed it (``state_run_id`` / ``updated_run_id``) and a write only
-  changes rows last changed by the same or an older run, so two runs finalised concurrently or out of order end in
-  the state of the newer one, and re-running a run's write (``backfill``) changes nothing.
-* No grading here (CB-19's ``qgrade`` reads ``latest_asset_id``), and no per-row SELECT: one bulk read of the run's
-  rows (or the rows drift already loaded), batched upserts, and one read of the source's rows the run did NOT see.
+* Per source, newest job wins: a source whose newer job is already written is skipped (a run finalised after a newer
+  one changes nothing of that source), and its row is locked first (sources in one order), so concurrent
+  finalisations serialise per source and re-running a run's write (``backfill``) changes nothing.
+* No grading here, no per-row SELECT: one bulk read of the run's rows (or the rows drift already read), one read of
+  the stored observations of each source the run wrote, batched writes of the changes.
 * Retention (``protected_job_ids`` / ``prune_collected_assets``): pruning old collected rows never deletes the latest
   comparable job of any source, nor any row the store points at.
 """
@@ -52,10 +59,11 @@ from backend.new_models import (
     CbomCollectionSource,
     CbomEstateAsset,
     CbomEstateObservation,
+    CbomEstateSource,
 )
 from backend.utilities.cbom_sources import drift as D
 from backend.utilities.cbom_sources import identity as ID
-from backend.utilities.cbom_sources.common import log
+from backend.utilities.cbom_sources.common import iso_z, log
 
 try:  # CB-21 (#137): the one cross-source identity module
     from backend.utilities.cbom_sources import asset_keys as AK
@@ -65,29 +73,36 @@ except ImportError:  # pragma: no cover - until #137 lands (same signatures)
 PRESENCE = ("present", "not_read", "removed")
 KEY_KINDS = ("cross", "source", "not_correlated")
 BATCH = 500
-_EO = CbomEstateObservation.__table__
-_EA = CbomEstateAsset.__table__
+_EO, _EA, _ES = CbomEstateObservation.__table__, CbomEstateAsset.__table__, CbomEstateSource.__table__
 _ROW_COLUMNS = (CbomCollectedAsset.id, CbomCollectedAsset.job_id, CbomCollectedAsset.attempt,
                 CbomCollectedAsset.asset_key, CbomCollectedAsset.asset_type, CbomCollectedAsset.cdx_type,
                 CbomCollectedAsset.target, CbomCollectedAsset.location, CbomCollectedAsset.name,
                 CbomCollectedAsset.algorithm, CbomCollectedAsset.facts, CbomCollectedAsset.created_at)
 _PREFIX_BASIS = {"cert": "certificate", "ep": "endpoint", "cloud": "cloud"}
+_OBSERVATION = getattr(AK, "Observation", None)
+_SCOPED = _OBSERVATION is not None and "scope" in getattr(_OBSERVATION, "__dataclass_fields__", {})
 
 
 # ----------------------------------------------------------------------------- hooks (CB-23 registers here)
 @dataclass
 class EstateWrite:
-    """What one run's write did. Hooks get it with the session, inside the transaction. The assets the run saw are
-    the rows with ``updated_run_id == run_id`` (``touched_keys``), so a 1.5M-asset run never builds a key list here;
-    ``changed`` lists only the keys NOT seen this run whose presence changed (not_read / removed)."""
+    """What one run's write did; hooks get it with the session, inside the transaction.
+
+    * ``source_refs``: the sources this run wrote (a source whose newer job was already written is not listed).
+      Every PRESENT observation of these sources was re-read in this run, so its latest row is new
+      (``latest_rows``): a consumer that grades rows re-grades the present assets of these sources
+      (``present_keys``).
+    * ``changed``: asset key -> its presence now, for every asset row this run inserted or whose presence changed.
+    * ``rekeyed``: (old key, new key, source_ref) for observations that moved to a stronger key; ``removed_keys``:
+      asset rows deleted because every observation moved away."""
     team_id: int
     run_id: int
     at: _dt.datetime
     counts: dict[str, int] = field(default_factory=dict)
-    changed: dict[str, str] = field(default_factory=dict)  # asset key -> new presence (keys not seen this run)
-    rekeyed: list[tuple[str, str, str]] = field(default_factory=list)  # (old key, new key, source_ref)
-    removed_keys: list[str] = field(default_factory=list)  # asset rows deleted (every observation moved away)
-    source_refs: list[str] = field(default_factory=list)  # the sources this run wrote
+    changed: dict[str, str] = field(default_factory=dict)
+    rekeyed: list[tuple[str, str, str]] = field(default_factory=list)
+    removed_keys: list[str] = field(default_factory=list)
+    source_refs: list[str] = field(default_factory=list)
 
 
 Hook = Callable[[Session, EstateWrite], None]
@@ -106,39 +121,69 @@ def unregister_hook(fn: Hook) -> None:
         HOOKS.remove(fn)
 
 
-def touched_keys(session: Session, team_id: int, run_id: int, *, batch: int = 5_000) -> Iterable[str]:
-    """The asset keys a run's write changed, streamed in key order (keyset pages)."""
-    after = ""
-    while True:
-        keys = list(session.exec(select(CbomEstateAsset.asset_key).where(
-            CbomEstateAsset.team_id == team_id, CbomEstateAsset.updated_run_id == run_id,
-            CbomEstateAsset.asset_key > after).order_by(CbomEstateAsset.asset_key).limit(batch)).all())
-        yield from keys
-        if len(keys) < batch:
+def present_keys(session: Session, team_id: int, source_refs: Sequence[str], *, batch: int = 5_000
+                 ) -> Iterable[str]:
+    """The keys of the present observations of these sources, streamed in key order per source (keyset pages; a key
+    two of the sources see is listed twice)."""
+    for ref in source_refs:
+        after = ""
+        while True:
+            keys = list(session.execute(sa.select(_EO.c.asset_key).where(
+                _EO.c.team_id == team_id, _EO.c.source_ref == ref, _EO.c.presence == "present",
+                _EO.c.asset_key > after).order_by(_EO.c.asset_key).limit(batch)).scalars())
+            yield from keys
+            if len(keys) < batch:
+                break
+            after = keys[-1]
+
+
+# ----------------------------------------------------------------------------- raw batched SQL (no ORM per row)
+class _Sql:
+    """Batched statements on the session's own connection (same transaction): ``executemany`` on SQLite,
+    ``execute_values`` / ``execute_batch`` on PostgreSQL. SQLAlchemy's per-row parameter processing cost more than
+    the database work at 50k rows (CB-20 bench), so the store's few statement shapes are written out here."""
+
+    def __init__(self, session: Session):
+        self.pg = session.get_bind().dialect.name == "postgresql"
+        self.cur = session.connection().connection.dbapi_connection.cursor()
+
+    def ts(self, value: _dt.datetime | None) -> Any:
+        if value is None or self.pg:
+            return value
+        return value.strftime("%Y-%m-%d %H:%M:%S.%f")  # SQLAlchemy's SQLite DATETIME storage format
+
+    def _q(self, sql: str) -> str:
+        return sql.replace("?", "%s") if self.pg else sql
+
+    def query(self, sql: str, params: Sequence[Any]) -> list[tuple]:
+        self.cur.execute(self._q(sql), tuple(params))
+        return list(self.cur.fetchall())
+
+    def insert(self, table: str, columns: Sequence[str], rows: list[tuple], tail: str = "") -> None:
+        if not rows:
             return
-        after = keys[-1]
+        head = f"INSERT INTO {table} ({', '.join(columns)}) VALUES "
+        if self.pg:
+            from psycopg2.extras import execute_values
 
+            execute_values(self.cur, head + "%s " + tail, rows, page_size=1000)
+        else:
+            self.cur.executemany(head + f"({', '.join('?' for _ in columns)}) " + tail, rows)
 
-# ----------------------------------------------------------------------------- helpers
-def _insert(session: Session):
-    if session.get_bind().dialect.name == "postgresql":
-        from sqlalchemy.dialects.postgresql import insert
-    else:
-        from sqlalchemy.dialects.sqlite import insert
-    return insert
+    def many(self, sql: str, rows: list[tuple]) -> None:
+        if not rows:
+            return
+        if self.pg:
+            from psycopg2.extras import execute_batch
+
+            execute_batch(self.cur, self._q(sql), rows, page_size=BATCH)
+        else:
+            self.cur.executemany(sql, rows)
 
 
 def _chunks(items: Sequence[Any], size: int = BATCH) -> Iterable[Sequence[Any]]:
     for start in range(0, len(items), size):
         yield items[start:start + size]
-
-
-def _least(a, b):
-    return sa.case((a.is_(None), b), (b.is_(None), a), (a <= b, a), else_=b)
-
-
-def _greatest(a, b):
-    return sa.case((a.is_(None), b), (b.is_(None), a), (a >= b, a), else_=b)
 
 
 def _rows(session: Session, job: CbomCollectionJob) -> list[Any]:
@@ -148,28 +193,48 @@ def _rows(session: Session, job: CbomCollectionJob) -> list[Any]:
         CbomCollectedAsset.attempt == job.attempts)).all())
 
 
+def _observation(row: Any, ref: str) -> Any:
+    """What CB-21 keys: the row as an ``Observation`` scoped to its source (a private or loopback endpoint address is
+    one asset only within the source that saw it). Built directly: reading an ORM object attribute by attribute
+    through ``asset_keys.observation`` cost more than the keys themselves (CB-20 bench)."""
+    if _OBSERVATION is None:
+        return row
+    facts = row.facts if isinstance(row.facts, dict) else {}
+    kw: dict[str, Any] = {"kind": str(row.asset_type or ""), "facts": facts, "location": str(row.location or ""),
+                          "target": str(row.target or ""), "cdx_type": str(row.cdx_type or "")}
+    if _SCOPED:
+        kw["scope"] = ref
+    return _OBSERVATION(**kw)
+
+
 def _view(asset_type: str, target: str | None, location: str | None) -> D.View:
     return D.View(identity="", key="", label="", asset_type=asset_type, codes=frozenset(), impact=None,
                   quantum_vulnerable=None, finding=False, judged=False,
                   extra={"target": target or "", "location": location or ""})
 
 
-def _key_of(key: Any, row: Any, ref: str, obs_key: str) -> tuple[str, str, str | None]:
-    """(estate key, key kind, key basis) of one observation."""
-    if isinstance(key, str) and key:
-        return key, "cross", _PREFIX_BASIS.get(key.split(":", 1)[0])
-    return f"obs:{obs_key}", ("not_correlated" if key is AK.NOT_CORRELATED else "source"), None
-
-
 @dataclass
 class _Seen:
-    row: Any
-    ref: str
-    obs_key: str
+    row: Any  # the representative row (lowest per-job row key: stable from run to run)
     kind: str
     basis: str | None
-    job: CbomCollectionJob
     occurrences: int = 1
+
+
+def _key_of(key: Any) -> tuple[str | None, str, str | None]:
+    if isinstance(key, str) and key:
+        return key, "cross", _PREFIX_BASIS.get(key.split(":", 1)[0])
+    return None, ("not_correlated" if key is AK.NOT_CORRELATED else "source"), None
+
+
+def _lock_source(session: Session, sql: _Sql, team_id: int, ref: str) -> Any:
+    """The source's stored row, locked until commit (PostgreSQL; on SQLite the drift compare-and-set already holds
+    the database write lock), or None."""
+    q = sa.select(_ES.c.latest_job_id, _ES.c.latest_attempt, _ES.c.latest_run_id, _ES.c.latest_at).where(
+        _ES.c.team_id == team_id, _ES.c.source_ref == ref)
+    if sql.pg:
+        q = q.with_for_update()
+    return session.execute(q).first()
 
 
 # ----------------------------------------------------------------------------- the per-run write
@@ -179,17 +244,29 @@ def record_run(session: Session, run: CbomCollectionRun, now: _dt.datetime, *,
     attempt's rows already read by the caller (drift), so they are not read twice. The caller commits."""
     t0 = time.perf_counter()
     team_id, run_id = run.team_id, int(run.id or 0)
+    sql = _Sql(session)
     sources: dict[int, CbomCollectionSource] = D._sources(session, team_id)
-    jobs: dict[str, CbomCollectionJob] = {}
+    by_ref: dict[str, CbomCollectionJob] = {}
     for job in D._run_jobs(session, run):  # one job per source in a run; the newest wins if there are more
-        jobs[ID.job_source_ref(job, sources.get(job.source_id or 0))] = job
-    write = EstateWrite(team_id=team_id, run_id=run_id, at=now, source_refs=sorted(jobs))
+        by_ref[ID.job_source_ref(job, sources.get(job.source_id or 0))] = job
+    write = EstateWrite(team_id=team_id, run_id=run_id, at=now)
+
+    # 0. per source, newest job wins: lock the source row (sources in one order), skip one already written newer
+    jobs: dict[str, tuple[CbomCollectionJob, Any]] = {}
+    for ref in sorted(by_ref):
+        job = by_ref[ref]
+        prev = _lock_source(session, sql, team_id, ref)
+        if prev is not None and prev[0] >= int(job.id or 0):
+            continue
+        jobs[ref] = (job, prev)
+    write.source_refs = sorted(jobs)
+    marks = {"sources": time.perf_counter()}
 
     # 1. what the run read: rows of its successful collections, keyed across sources
     job_rows: dict[str, list[Any]] = {}
     observed: list[Any] = []
-    refs: list[str] = []
-    for ref, job in jobs.items():
+    seen_rows: list[tuple[Any, str]] = []
+    for ref, (job, _prev) in jobs.items():
         if job.status != "success":
             continue
         rows = loaded.get(int(job.id or 0)) if loaded else None
@@ -197,196 +274,251 @@ def record_run(session: Session, run: CbomCollectionRun, now: _dt.datetime, *,
         job_rows[ref] = rows
         for row in rows:
             if row.asset_type != "coverage":
-                observed.append(row)
-                refs.append(ref)
+                observed.append(_observation(row, ref))
+                seen_rows.append((row, ref))
+    marks["read"] = time.perf_counter()
     corr = AK.correlate_detail(observed)
     alias_to_key: dict[str, str] = {}
-    seen_groups: set[int] = set()
+    groups_done: set[int] = set()
     seen: dict[tuple[str, str], _Seen] = {}
-    for i, row in enumerate(observed):
-        ref = refs[i]
+    for i, (row, ref) in enumerate(seen_rows):
         aliases = corr.aliases[i]
-        if aliases and id(aliases) not in seen_groups:
-            seen_groups.add(id(aliases))
+        if aliases and id(aliases) not in groups_done:
+            groups_done.add(id(aliases))
             for alias in aliases:
                 alias_to_key[alias] = corr.keys[i]
-        obs_key = ID.stable_key("node", ref, ID.node_identity(row))
-        key, kind, basis = _key_of(corr.keys[i], row, ref, obs_key)
-        old = seen.get((key, ref))
-        if old is None:
-            seen[(key, ref)] = _Seen(row, ref, obs_key, kind, basis, jobs[ref])
+        key, kind, basis = _key_of(corr.keys[i])
+        if key is None:
+            key = "obs:" + ID.stable_key("node", ref, ID.node_identity(row))
+        s = seen.get((key, ref))
+        if s is None:
+            seen[(key, ref)] = _Seen(row, kind, basis)
         else:
-            old.occurrences += 1
-            if row.id > old.row.id:
-                old.row, old.obs_key = row, obs_key
+            s.occurrences += 1
+            if row.asset_key < s.row.asset_key:
+                s.row = row
+    marks["keys"] = time.perf_counter()
 
-    # 2. upsert the observations seen (sorted: concurrent writers lock rows in one order)
-    obs_values = []
-    for (key, ref), s in sorted(seen.items()):
-        job, src = s.job, sources.get(s.job.source_id or 0)
-        obs_values.append({
-            "team_id": team_id, "asset_key": key, "source_ref": ref, "source_id": job.source_id,
-            "source_name": ID.job_source_name(job, src)[:255], "observation_key": s.obs_key, "asset_id": s.row.id,
-            "job_id": job.id, "run_id": run_id, "attempt": s.row.attempt, "observed_at": s.row.created_at,
-            "asset_type": s.row.asset_type, "target": s.row.target, "location": (s.row.location or "")[:512],
-            "provenance": {"source_kind": src.kind if src is not None else (job.params or {}).get("kind"),
-                           "occurrences": s.occurrences, "cdx_type": s.row.cdx_type},
-            "presence": "present", "presence_reason": None, "first_seen_run_id": run_id, "last_seen_run_id": run_id,
-            "state_run_id": run_id, "updated_at": now})
-    insert = _insert(session)
-    if obs_values:
-        stmt = insert(_EO)
-        ex = stmt.excluded
-        newer_row = _EO.c.job_id < ex.job_id  # a later observation (also from a run finalised out of order)
-        newer_state = _EO.c.state_run_id <= ex.state_run_id  # no later run has decided the presence yet
-        stmt = stmt.on_conflict_do_update(
-            index_elements=["team_id", "asset_key", "source_ref"],
-            set_={**{c: sa.case((newer_row, ex[c]), else_=_EO.c[c])
-                     for c in ("source_id", "source_name", "observation_key", "asset_id", "job_id", "run_id",
-                               "attempt", "observed_at", "asset_type", "target", "location", "provenance")},
-                  **{c: sa.case((newer_state, ex[c]), else_=_EO.c[c])
-                     for c in ("presence", "presence_reason", "state_run_id", "updated_at")},
-                  "first_seen_run_id": _least(_EO.c.first_seen_run_id, ex.first_seen_run_id),
-                  "last_seen_run_id": _greatest(_EO.c.last_seen_run_id, ex.last_seen_run_id)},
-            where=sa.or_(newer_row, newer_state))
-        for chunk in _chunks(obs_values):
-            session.execute(stmt, list(chunk))
-
-    # 3. what each source of the run did NOT see this time: moved, not read (gap / incomplete / failed) or removed
-    unseen_changed: set[str] = set()
+    # 2. compare with the stored observations of each source written: insert new, update changed, settle the unseen
+    inserts: list[tuple] = []
+    updates: list[tuple] = []
+    transitions: dict[tuple[str, str | None], list[tuple[int, tuple | None]]] = {}
     moved_ids: list[int] = []
-    updates: dict[tuple[str, str | None], list[int]] = {}
-    for ref, job in jobs.items():
+    touched: dict[str, str | None] = {}  # asset key -> "present" (seen again or new), None (settle from its rows)
+    stamp = sql.ts(now)
+    by_source: dict[str, dict[str, _Seen]] = {}
+    for (key, ref), s in seen.items():
+        by_source.setdefault(ref, {})[key] = s
+    for ref, (job, prev) in jobs.items():
+        stored = {r[1]: r for r in sql.query(
+            "SELECT id, asset_key, row_key, occurrences, presence, presence_reason, asset_type, target, location "
+            "FROM cbomestateobservation WHERE team_id = ? AND source_ref = ?", (team_id, ref))}
+        mine = by_source.get(ref, {})
+        when = sql.ts(job.finished_at or job.created_at)
+        for key, s in mine.items():
+            row, old = s.row, stored.get(key)
+            if old is None:
+                inserts.append((team_id, key, ref, ID.stable_key("node", ref, ID.node_identity(row)), row.asset_key,
+                                row.asset_type, row.target or None, (row.location or "")[:512], s.occurrences,
+                                "present", None, job.id, row.attempt, run_id, when, run_id, run_id, stamp))
+                touched[key] = "present"
+            elif (old[2], old[3], old[4]) != (row.asset_key, s.occurrences, "present"):
+                updates.append((ID.stable_key("node", ref, ID.node_identity(row)), row.asset_key, row.asset_type,
+                                row.target or None, (row.location or "")[:512], s.occurrences, job.id, row.attempt,
+                                run_id, when, run_id, stamp, old[0]))
+                if old[4] != "present":
+                    touched[key] = "present"
+        # what the source did not see this time
         if job.status == "success":
             ok, why = D.job_comparable(job)
             gaps = D.job_gaps(job_rows.get(ref, ())) if ok else []
         else:
             ok, why, gaps = False, f"collection {job.status}", []
-        candidates = session.execute(sa.select(
-            _EO.c.id, _EO.c.asset_key, _EO.c.asset_type, _EO.c.target, _EO.c.location, _EO.c.presence,
-            _EO.c.presence_reason).where(
-            _EO.c.team_id == team_id, _EO.c.source_ref == ref, _EO.c.state_run_id < run_id,
-            _EO.c.presence != "removed")).all()
-        for c in candidates:
-            new_key = alias_to_key.get(c.asset_key)
-            if new_key is not None and new_key != c.asset_key and (new_key, ref) in seen:
-                moved_ids.append(c.id)
-                write.rekeyed.append((c.asset_key, new_key, ref))
-                unseen_changed.add(c.asset_key)
+        for key, old in stored.items():
+            if key in mine or old[4] == "removed":
+                continue
+            new_key = alias_to_key.get(key)
+            if new_key is not None and new_key != key and new_key in mine:
+                moved_ids.append(old[0])
+                write.rekeyed.append((key, new_key, ref))
+                touched.setdefault(key, None)
                 continue
             if ok:
-                gap = next((g for g in gaps if g.covers(_view(c.asset_type, c.target, c.location), listed=False)),
-                           None)
+                gap = next((g for g in gaps if g.covers(_view(old[6], old[7], old[8]), listed=False)), None)
                 presence, reason = ("not_read", gap.reason) if gap is not None else ("removed", None)
             else:
                 presence, reason = "not_read", why
-            reason = reason[:300] if reason else reason
-            if (presence, reason) != (c.presence, c.presence_reason):
-                updates.setdefault((presence, reason), []).append(c.id)
-                unseen_changed.add(c.asset_key)
+            reason = reason[:300] if reason else None
+            if (presence, reason) == (old[4], old[5]):
+                continue
+            # leaving "present": it was last read in the source's previous latest job
+            last = (prev[0], prev[1], prev[2], sql.ts(prev[3])) if old[4] == "present" and prev is not None else None
+            transitions.setdefault((presence, reason), []).append((old[0], last))
+            touched.setdefault(key, None)
+    obs_cols = ("team_id", "asset_key", "source_ref", "observation_key", "row_key", "asset_type", "target", "location",
+                "occurrences", "presence", "presence_reason", "seen_job_id", "seen_attempt", "seen_run_id", "seen_at",
+                "first_seen_run_id", "state_run_id", "updated_at")
+    sql.insert("cbomestateobservation", obs_cols, inserts, "ON CONFLICT (team_id, asset_key, source_ref) DO NOTHING")
+    sql.many("UPDATE cbomestateobservation SET observation_key = ?, row_key = ?, asset_type = ?, target = ?, "
+             "location = ?, occurrences = ?, presence = 'present', presence_reason = NULL, seen_job_id = ?, "
+             "seen_attempt = ?, seen_run_id = ?, seen_at = ?, state_run_id = ?, updated_at = ? WHERE id = ?", updates)
+    for (presence, reason), items in transitions.items():
+        sql.many("UPDATE cbomestateobservation SET presence = ?, presence_reason = ?, state_run_id = ?, updated_at = ? "
+                 "WHERE id = ?", [(presence, reason, run_id, stamp, i) for i, last in items if last is None])
+        sql.many("UPDATE cbomestateobservation SET presence = ?, presence_reason = ?, seen_job_id = ?, "
+                 "seen_attempt = ?, seen_run_id = ?, seen_at = ?, state_run_id = ?, updated_at = ? WHERE id = ?",
+                 [(presence, reason, *last, run_id, stamp, i) for i, last in items if last is not None])
     for chunk in _chunks(moved_ids):
-        session.execute(sa.delete(_EO).where(_EO.c.id.in_(chunk), _EO.c.state_run_id < run_id))
-    for (presence, reason), ids in updates.items():
-        for chunk in _chunks(ids):
-            session.execute(sa.update(_EO).where(_EO.c.id.in_(chunk), _EO.c.state_run_id < run_id).values(
-                presence=presence, presence_reason=reason, state_run_id=run_id, updated_at=now))
+        session.execute(sa.delete(_EO).where(_EO.c.id.in_(chunk)))
+    marks["observations"] = time.perf_counter()
 
-    # 4. the asset rows: every key seen this run (present, latest row), then the unseen keys whose presence changed
-    best: dict[str, _Seen] = {}
-    for (key, _ref), s in seen.items():
-        cur = best.get(key)
-        if cur is None or s.row.id > cur.row.id:  # row ids grow with ingest: the newest stored row
-            best[key] = s
-    asset_values = [{
-        "team_id": team_id, "asset_key": key, "key_kind": s.kind, "key_basis": s.basis,
-        "asset_type": s.row.asset_type, "label": ID.node_label(s.row)[:255], "presence": "present",
-        "presence_reason": None, "latest_asset_id": s.row.id, "latest_job_id": s.job.id, "latest_run_id": run_id,
-        "latest_source_ref": s.ref, "observed_at": s.row.created_at, "first_seen_run_id": run_id,
-        "last_seen_run_id": run_id, "first_seen_at": s.row.created_at, "last_seen_at": s.row.created_at,
-        "updated_run_id": run_id, "updated_at": now} for key, s in sorted(best.items())]
-    if asset_values:
-        stmt = insert(_EA)
-        ex = stmt.excluded
-        newer_row = _EA.c.latest_asset_id < ex.latest_asset_id
-        newer_state = _EA.c.updated_run_id <= ex.updated_run_id
-        stmt = stmt.on_conflict_do_update(
-            index_elements=["team_id", "asset_key"],
-            set_={**{c: sa.case((newer_row, ex[c]), else_=_EA.c[c])
-                     for c in ("key_kind", "key_basis", "asset_type", "label", "latest_asset_id", "latest_job_id",
-                               "latest_run_id", "latest_source_ref", "observed_at")},
-                  **{c: sa.case((newer_state, ex[c]), else_=_EA.c[c])
-                     for c in ("presence", "presence_reason", "updated_run_id", "updated_at")},
-                  "first_seen_run_id": _least(_EA.c.first_seen_run_id, ex.first_seen_run_id),
-                  "first_seen_at": _least(_EA.c.first_seen_at, ex.first_seen_at),
-                  "last_seen_run_id": _greatest(_EA.c.last_seen_run_id, ex.last_seen_run_id),
-                  "last_seen_at": _greatest(_EA.c.last_seen_at, ex.last_seen_at)},
-            where=sa.or_(newer_row, newer_state))
-        for chunk in _chunks(asset_values):
-            session.execute(stmt, list(chunk))
-    _settle(session, write, sorted(unseen_changed - set(best)), now)
+    # 3. the sources' rows: their newest job
+    for ref, (job, prev) in jobs.items():
+        src = sources.get(job.source_id or 0)
+        kind = src.kind if src is not None else str((job.params or {}).get("kind") or "")
+        values = (job.source_id, ID.job_source_name(job, src)[:255], kind[:32] or None, job.id, job.attempts or 1,
+                  run_id, sql.ts(job.finished_at or job.created_at), str(job.status)[:16],
+                  bool(job.status == "success" and D.job_comparable(job)[0]), stamp)
+        if prev is None:
+            sql.insert("cbomestatesource", ("team_id", "source_ref", "source_id", "source_name", "source_kind",
+                                            "latest_job_id", "latest_attempt", "latest_run_id", "latest_at",
+                                            "latest_status", "latest_comparable", "updated_at"),
+                       [(team_id, ref, *values)])
+        else:
+            sql.many("UPDATE cbomestatesource SET source_id = ?, source_name = ?, source_kind = ?, latest_job_id = ?, "
+                     "latest_attempt = ?, latest_run_id = ?, latest_at = ?, latest_status = ?, latest_comparable = ?, "
+                     "updated_at = ? WHERE team_id = ? AND source_ref = ?", [(*values, team_id, ref)])
 
-    write.counts = {"observations": len(obs_values), "assets": len(asset_values), "moved": len(moved_ids),
+    # 4. the asset rows the changes touch: present ones upserted, the others' presence recomputed over every source
+    present: list[tuple] = []
+    done: set[str] = set()
+    for (key, _ref), s in sorted(seen.items()):
+        if touched.get(key) == "present" and key not in done:
+            done.add(key)
+            present.append((team_id, key, s.kind, s.basis, s.row.asset_type, ID.node_label(s.row)[:255], "present",
+                            None, run_id, sql.ts(s.row.created_at), run_id, stamp))
+    sql.insert("cbomestateasset", ("team_id", "asset_key", "key_kind", "key_basis", "asset_type", "label", "presence",
+                                   "presence_reason", "first_seen_run_id", "first_seen_at", "updated_run_id",
+                                   "updated_at"), present,
+               "ON CONFLICT (team_id, asset_key) DO UPDATE SET presence = 'present', presence_reason = NULL, "
+               "key_kind = excluded.key_kind, key_basis = excluded.key_basis, asset_type = excluded.asset_type, "
+               "label = excluded.label, updated_run_id = excluded.updated_run_id, updated_at = excluded.updated_at")
+    for a in present:
+        write.changed[a[1]] = "present"
+    seen_keys = {key for key, _ref in seen}
+    _settle(session, sql, write, sorted(k for k, v in touched.items() if v is None and k not in seen_keys), now)
+    marks["assets"] = time.perf_counter()
+
+    write.counts = {"sources": len(jobs), "seen": len(seen), "inserted": len(inserts), "updated": len(updates),
+                    "moved": len(moved_ids), "assets_changed": len(write.changed),
                     "not_read": sum(1 for p in write.changed.values() if p == "not_read"),
                     "removed": sum(1 for p in write.changed.values() if p == "removed"),
                     "deleted": len(write.removed_keys)}
     if hooks:
         for hook in list(HOOKS):
             hook(session, write)
-    log("estate recorded", team=team_id, run=run_id, ms=round(1000 * (time.perf_counter() - t0)), **write.counts)
+    phases, last_mark = {}, t0
+    for name, at in marks.items():  # where the time went (the scale budget's evidence, CB-20)
+        phases[f"{name}_ms"], last_mark = round(1000 * (at - last_mark)), at
+    log("estate recorded", team=team_id, run=run_id, ms=round(1000 * (time.perf_counter() - t0)), **write.counts,
+        **phases)
     return write
 
 
-def _settle(session: Session, write: EstateWrite, keys: list[str], now: _dt.datetime) -> None:
+def _settle(session: Session, sql: _Sql, write: EstateWrite, keys: list[str], now: _dt.datetime) -> None:
     """Recompute the presence of assets the run did not see but whose observations changed (or moved away)."""
     if not keys:
         return
     team_id, run_id = write.team_id, write.run_id
     by_key: dict[str, list[Any]] = {k: [] for k in keys}
+    current: dict[str, tuple] = {}
     for chunk in _chunks(keys):
         for obs in session.execute(sa.select(_EO.c.asset_key, _EO.c.presence, _EO.c.presence_reason,
-                                             _EO.c.source_name).where(
-                _EO.c.team_id == team_id, _EO.c.asset_key.in_(chunk))).all():
+                                             _ES.c.source_name).select_from(_EO.outerjoin(_ES, sa.and_(
+                _ES.c.team_id == _EO.c.team_id, _ES.c.source_ref == _EO.c.source_ref))).where(
+                _EO.c.team_id == team_id, _EO.c.asset_key.in_(chunk)).order_by(_EO.c.source_ref)).all():
             by_key[obs.asset_key].append(obs)
-    groups: dict[tuple[str, str | None], list[str]] = {}
+        current.update({k: (p, r) for k, p, r in session.execute(sa.select(
+            _EA.c.asset_key, _EA.c.presence, _EA.c.presence_reason).where(
+            _EA.c.team_id == team_id, _EA.c.asset_key.in_(chunk))).all()})
+    changes: list[tuple] = []
     gone: list[str] = []
     for key, observations in by_key.items():
         if not observations:
             gone.append(key)
             continue
-        present = [o for o in observations if o.presence == "present"]
-        not_read = [o for o in observations if o.presence == "not_read"]
-        if present:
+        if any(o.presence == "present" for o in observations):
             presence, reason = "present", None
-        elif not_read:
+        elif not_read := [o for o in observations if o.presence == "not_read"]:
             o = not_read[0]
             presence, reason = "not_read", (f"{o.source_name}: {o.presence_reason}" if o.source_name and
                                             o.presence_reason else o.presence_reason)
         else:
             presence, reason = "removed", None
-        groups.setdefault((presence, reason[:300] if reason else None), []).append(key)
-        if presence != "present":
+        reason = reason[:300] if reason else None
+        if current.get(key) != (presence, reason):
+            changes.append((presence, reason, run_id, sql.ts(now), team_id, key))
             write.changed[key] = presence
-    for (presence, reason), group in groups.items():
-        for chunk in _chunks(group):
-            session.execute(sa.update(_EA).where(
-                _EA.c.team_id == team_id, _EA.c.asset_key.in_(chunk), _EA.c.updated_run_id <= run_id).values(
-                presence=presence, presence_reason=reason, updated_run_id=run_id, updated_at=now))
+    sql.many("UPDATE cbomestateasset SET presence = ?, presence_reason = ?, updated_run_id = ?, updated_at = ? "
+             "WHERE team_id = ? AND asset_key = ?", changes)
     for chunk in _chunks(gone):
-        session.execute(sa.delete(_EA).where(_EA.c.team_id == team_id, _EA.c.asset_key.in_(chunk),
-                                             _EA.c.updated_run_id <= run_id))
-    write.removed_keys = gone
+        session.execute(sa.delete(_EA).where(_EA.c.team_id == team_id, _EA.c.asset_key.in_(chunk)))
+    write.removed_keys = [k for k in gone if k in current]
+
+
+# ----------------------------------------------------------------------------- the latest stored rows
+def latest_rows(session: Session, team_id: int, keys: Sequence[str]) -> dict[str, dict[str, Any]]:
+    """Per asset key: ``latest``, its latest observation over all sources (present observations first, then the
+    newest job), and ``observations``, the same per source: the stored row id (``asset_id``:
+    ``cbomcollectedasset.id``, where the grade inputs are re-read), ``job_id``, ``attempt``, ``run_id``,
+    ``source_ref``, ``presence``, ``observed_at``. Two queries per 500 keys."""
+    out: dict[str, dict[str, Any]] = {}
+    for chunk in _chunks(list(keys)):
+        rows = session.execute(sa.select(
+            _EO.c.asset_key, _EO.c.source_ref, _EO.c.row_key, _EO.c.presence, _EO.c.seen_job_id, _EO.c.seen_attempt,
+            _EO.c.seen_run_id, _EO.c.seen_at, _ES.c.latest_job_id, _ES.c.latest_attempt, _ES.c.latest_run_id,
+            _ES.c.latest_at).select_from(_EO.outerjoin(_ES, sa.and_(
+                _ES.c.team_id == _EO.c.team_id, _ES.c.source_ref == _EO.c.source_ref))).where(
+            _EO.c.team_id == team_id, _EO.c.asset_key.in_(chunk))).all()
+        pointers = []
+        for r in rows:
+            if r.presence == "present" and r.latest_job_id is not None:
+                p = (r.latest_job_id, r.latest_attempt, r.latest_run_id, r.latest_at)
+            else:
+                p = (r.seen_job_id, r.seen_attempt, r.seen_run_id, r.seen_at)
+            pointers.append((r, p))
+        ids: dict[tuple, int] = {}
+        wanted = sorted({(p[0], p[1], r.row_key) for r, p in pointers})
+        for part in _chunks(wanted, 300):
+            for i, job_id, attempt, row_key in session.execute(sa.select(
+                    CbomCollectedAsset.id, CbomCollectedAsset.job_id, CbomCollectedAsset.attempt,
+                    CbomCollectedAsset.asset_key).where(
+                    CbomCollectedAsset.team_id == team_id,
+                    sa.tuple_(CbomCollectedAsset.job_id, CbomCollectedAsset.attempt,
+                              CbomCollectedAsset.asset_key).in_(part))).all():
+                ids[(job_id, attempt, row_key)] = i
+        for r, p in pointers:
+            entry = {"source_ref": r.source_ref, "presence": r.presence, "asset_id": ids.get((p[0], p[1], r.row_key)),
+                     "job_id": p[0], "attempt": p[1], "run_id": p[2], "observed_at": p[3]}
+            item = out.setdefault(r.asset_key, {"observations": {}})
+            item["observations"][r.source_ref] = entry
+            best = item.get("latest")
+            if best is None or (r.presence == "present", p[0] or 0) > (best["presence"] == "present",
+                                                                         best["job_id"] or 0):
+                item["latest"] = entry
+    return out
 
 
 # ----------------------------------------------------------------------------- backfill
 def backfill(engine, now: _dt.datetime, *, team_id: int | None = None, hooks: bool = False) -> dict[str, int]:
-    """Write every run whose drift is recorded, oldest first, each in its own transaction. Idempotent: a run already
-    written changes nothing (``state_run_id`` / ``updated_run_id`` guards), so it can be re-run or interrupted."""
+    """Write every run whose drift is recorded, oldest first, each in its own transaction. Idempotent: a source whose
+    job is already written is skipped, so it can be re-run or interrupted."""
     with Session(engine) as session:
         query = select(CbomCollectionRun.id).where(CbomCollectionRun.drift_at.is_not(None))  # type: ignore[union-attr]
         if team_id is not None:
             query = query.where(CbomCollectionRun.team_id == team_id)
         ids = list(session.exec(query.order_by(CbomCollectionRun.id)).all())
-    out = {"runs": 0, "observations": 0, "assets": 0}
+    out = {"runs": 0, "sources": 0, "inserted": 0}
     for run_id in ids:
         with Session(engine) as session:
             run = session.get(CbomCollectionRun, run_id)
@@ -395,8 +527,8 @@ def backfill(engine, now: _dt.datetime, *, team_id: int | None = None, hooks: bo
             write = record_run(session, run, now, hooks=hooks)
             session.commit()
         out["runs"] += 1
-        out["observations"] += write.counts.get("observations", 0)
-        out["assets"] += write.counts.get("assets", 0)
+        out["sources"] += write.counts.get("sources", 0)
+        out["inserted"] += write.counts.get("inserted", 0)
     log("estate backfill", team=team_id, **out)
     return out
 
@@ -404,7 +536,8 @@ def backfill(engine, now: _dt.datetime, *, team_id: int | None = None, hooks: bo
 # ----------------------------------------------------------------------------- retention
 def protected_job_ids(session: Session, team_id: int) -> set[int]:
     """Jobs whose rows retention must keep: the latest comparable collect job of every source (drift's baseline),
-    and every job the store points at (latest observation per source, latest row per asset)."""
+    and every job the store points at (each source's latest job, the last reading job of each observation that is
+    not present any more)."""
     keep: set[int] = set()
     sources = D._sources(session, team_id)
     newest: dict[str, int] = {}
@@ -415,16 +548,16 @@ def protected_job_ids(session: Session, team_id: int) -> set[int]:
         if ref not in newest and D.job_comparable(job)[0]:
             newest[ref] = int(job.id or 0)
     keep.update(newest.values())
-    keep.update(j for j in session.execute(sa.select(_EO.c.job_id).where(_EO.c.team_id == team_id).distinct())
-                .scalars() if j is not None)
-    keep.update(j for j in session.execute(sa.select(_EA.c.latest_job_id).where(_EA.c.team_id == team_id)
-                                           .distinct()).scalars() if j is not None)
+    keep.update(session.execute(sa.select(_ES.c.latest_job_id).where(_ES.c.team_id == team_id)).scalars())
+    keep.update(session.execute(sa.select(_EO.c.seen_job_id).where(  # a present one was read in its source's latest
+        _EO.c.team_id == team_id, _EO.c.presence != "present").distinct()).scalars())
     return keep
 
 
 def prune_collected_assets(session: Session, team_id: int, *, keep_runs: int) -> int:
     """Delete the collected rows of collect jobs outside the team's newest ``keep_runs`` runs, except protected jobs
-    (``protected_job_ids``). Opt-in (the backfill command's ``prune``); nothing schedules it. The caller commits."""
+    (``protected_job_ids``). Opt-in (``python -m backend.utilities.cbom_sources.estate prune``); nothing schedules
+    it. The caller commits."""
     if keep_runs < 1:
         raise ValueError("keep_runs must be at least 1")
     recent = list(session.exec(select(CbomCollectionRun.id).where(CbomCollectionRun.team_id == team_id)
@@ -444,27 +577,24 @@ def prune_collected_assets(session: Session, team_id: int, *, keep_runs: int) ->
 
 
 # ----------------------------------------------------------------------------- read side
-def public_asset(a: CbomEstateAsset) -> dict[str, Any]:
-    from backend.utilities.cbom_sources.common import iso_z
+def _public_pointer(entry: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    if entry is None:
+        return None
+    observed = entry.get("observed_at")
+    if isinstance(observed, str):
+        observed = _dt.datetime.fromisoformat(observed)
+    return {"asset_id": entry["asset_id"], "job_id": entry["job_id"], "attempt": entry["attempt"],
+            "run_id": entry["run_id"], "source_ref": entry["source_ref"], "observed_at": iso_z(observed)}
 
+
+def public_asset(a: CbomEstateAsset, latest: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    observations = (latest or {}).get("observations") or {}
+    runs = [o["run_id"] for o in observations.values() if o.get("run_id") is not None]
     return {"asset_key": a.asset_key, "key_kind": a.key_kind, "key_basis": a.key_basis, "type": a.asset_type,
             "label": a.label, "presence": a.presence, "presence_reason": a.presence_reason,
-            "latest": {"asset_id": a.latest_asset_id, "job_id": a.latest_job_id, "run_id": a.latest_run_id,
-                       "source_ref": a.latest_source_ref, "observed_at": iso_z(a.observed_at)},
-            "first_seen_run_id": a.first_seen_run_id, "last_seen_run_id": a.last_seen_run_id,
-            "first_seen_at": iso_z(a.first_seen_at), "last_seen_at": iso_z(a.last_seen_at),
-            "updated_run_id": a.updated_run_id}
-
-
-def public_observation(o: CbomEstateObservation) -> dict[str, Any]:
-    from backend.utilities.cbom_sources.common import iso_z
-
-    return {"source_ref": o.source_ref, "source_id": o.source_id, "source_name": o.source_name,
-            "observation_key": o.observation_key, "asset_id": o.asset_id, "job_id": o.job_id, "run_id": o.run_id,
-            "attempt": o.attempt, "observed_at": iso_z(o.observed_at), "type": o.asset_type, "target": o.target,
-            "location": o.location, "provenance": o.provenance or {}, "presence": o.presence,
-            "presence_reason": o.presence_reason, "first_seen_run_id": o.first_seen_run_id,
-            "last_seen_run_id": o.last_seen_run_id}
+            "latest": _public_pointer((latest or {}).get("latest")), "sources": len(observations),
+            "first_seen_run_id": a.first_seen_run_id, "first_seen_at": iso_z(a.first_seen_at),
+            "last_seen_run_id": max(runs, default=None), "updated_run_id": a.updated_run_id}
 
 
 def list_estate(session: Session, team_id: int, *, after: str | None = None, limit: int = 200,
@@ -485,7 +615,9 @@ def list_estate(session: Session, team_id: int, *, after: str | None = None, lim
     rows = list(session.exec(query.order_by(CbomEstateAsset.asset_key).limit(limit + 1)).all())
     more = len(rows) > limit
     rows = rows[:limit]
-    return {"items": [public_asset(a) for a in rows], "next": rows[-1].asset_key if more else None, "limit": limit}
+    latest = latest_rows(session, team_id, [a.asset_key for a in rows])
+    return {"items": [public_asset(a, latest.get(a.asset_key)) for a in rows],
+            "next": rows[-1].asset_key if more else None, "limit": limit}
 
 
 def get_estate_asset(session: Session, team_id: int, asset_key: str) -> dict[str, Any] | None:
@@ -493,10 +625,22 @@ def get_estate_asset(session: Session, team_id: int, asset_key: str) -> dict[str
                                                        CbomEstateAsset.asset_key == asset_key)).first()
     if asset is None:
         return None
-    observations = session.exec(select(CbomEstateObservation).where(
-        CbomEstateObservation.team_id == team_id, CbomEstateObservation.asset_key == asset_key)
-        .order_by(CbomEstateObservation.source_ref)).all()
-    return {**public_asset(asset), "observations": [public_observation(o) for o in observations]}
+    latest = latest_rows(session, team_id, [asset_key]).get(asset_key) or {}
+    rows = session.execute(sa.select(_EO, _ES.c.source_id, _ES.c.source_name, _ES.c.source_kind).select_from(
+        _EO.outerjoin(_ES, sa.and_(_ES.c.team_id == _EO.c.team_id, _ES.c.source_ref == _EO.c.source_ref))).where(
+        _EO.c.team_id == team_id, _EO.c.asset_key == asset_key).order_by(_EO.c.source_ref)).all()
+    observations = []
+    for o in rows:
+        ptr = _public_pointer((latest.get("observations") or {}).get(o.source_ref)) or {}
+        observations.append({
+            "source_ref": o.source_ref, "source_id": o.source_id, "source_name": o.source_name,
+            "observation_key": o.observation_key, "asset_id": ptr.get("asset_id"), "job_id": ptr.get("job_id"),
+            "attempt": ptr.get("attempt"), "run_id": ptr.get("run_id"), "observed_at": ptr.get("observed_at"),
+            "type": o.asset_type, "presence": o.presence, "presence_reason": o.presence_reason,
+            "first_seen_run_id": o.first_seen_run_id,
+            "provenance": {"source_kind": o.source_kind, "target": o.target, "location": o.location,
+                           "occurrences": o.occurrences, "row_key": o.row_key}})
+    return {**public_asset(asset, latest), "observations": observations}
 
 
 # ----------------------------------------------------------------------------- command line

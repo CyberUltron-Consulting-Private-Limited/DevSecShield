@@ -51,7 +51,9 @@ def test_estate_api_pages_filters_and_reads_one_asset(world, api):  # noqa: F811
     one = api("GET", f"/1/cbom/estate/{removed[0]['asset_key']}").json()
     assert one["presence"] == "removed" and [o["presence"] for o in one["observations"]] == ["removed"]
     assert set(one["observations"][0]) >= {"source_ref", "job_id", "asset_id", "observed_at", "provenance"}
-    assert set(one["latest"]) == {"asset_id", "job_id", "run_id", "source_ref", "observed_at"}
+    assert set(one["latest"]) == {"asset_id", "job_id", "attempt", "run_id", "source_ref", "observed_at"}
+    assert one["latest"]["asset_id"] == one["observations"][0]["asset_id"] is not None
+    assert one["observations"][0]["provenance"]["source_kind"] == "network"
 
 
 def test_estate_api_is_team_scoped_and_validates(world, api):  # noqa: F811

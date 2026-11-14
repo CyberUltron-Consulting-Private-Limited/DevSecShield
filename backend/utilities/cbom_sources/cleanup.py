@@ -23,6 +23,7 @@ from backend.new_models import (
     CbomDriftEvent,
     CbomEstateAsset,
     CbomEstateObservation,
+    CbomEstateSource,
     CbomEvidenceArea,
     CbomEvidenceVendor,
     CbomRemediationAssignment,
@@ -39,6 +40,7 @@ _ORDER = (
     CbomDriftEvent,
     CbomEstateObservation,  # CB-20 estate store
     CbomEstateAsset,
+    CbomEstateSource,
     CbomRemediationAssignment,
     CbomCollectionSchedule,
     CbomCollectedAsset,
