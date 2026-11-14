@@ -688,9 +688,12 @@
    "op": "superset",
    "value": [
     "L1",
-    "L5"
+    "L3",
+    "L4",
+    "L5",
+    "L6"
    ],
-   "why": "OSV-vulnerable libraries flagged on dev 3df26fd stay flagged",
+   "why": "OSV-vulnerable libraries flagged on dev 3df26fd (L1, L5) and since CB-29 (L3, L4, L6) stay flagged",
    "not_run_ok": "OSV.dev did not answer: library rows need the live oracle (O-2) and are reported NOT-RUN"
   },
   {
@@ -1042,7 +1045,7 @@
   },
   {
    "id": "T29-libraries",
-   "kind": "target",
+   "kind": "non-regression",
    "owner": "CB-29",
    "bench": "libraries",
    "where": {
@@ -1056,7 +1059,7 @@
    "mode": "matched",
    "op": ">=",
    "value": 1.0,
-   "why": "CB-29 failing-first: BouncyCastle 1.8.1 (NuGet), System.IdentityModel.Tokens.Jwt 5.1.4, dgrijalva/jwt-go v3.2.0 flagged (oracle: OSV at test time)",
+   "why": "CB-29 met (offline OSV snapshot + .csproj PackageReference): BouncyCastle 1.8.1 (NuGet), System.IdentityModel.Tokens.Jwt 5.1.4, dgrijalva/jwt-go v3.2.0 flagged (oracle: OSV at test time); was a target",
    "not_run_ok": "OSV.dev did not answer: library rows need the live oracle (O-2) and are reported NOT-RUN"
   }
  ]

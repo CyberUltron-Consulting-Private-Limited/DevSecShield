@@ -100,6 +100,7 @@ import {
 } from "@/components/cbom/results/RunSections";
 import RunTicketingTab from "@/components/cbom/results/RunTicketingTab";
 import type { ResultsSource } from "@/components/cbom/results/source";
+import { advisoryLine, readAdvisoryData, staleNote } from "@/components/cbom/advisoryData";
 
 interface CbomResultsProps {
   data: unknown;
@@ -500,6 +501,8 @@ export default function CbomResults({
   const importReport = ((scanMetadata as Record<string, unknown> | null)?.cbom_input ?? null) as CbomImportReport | null;
   // A code scan's coverage: archives, images, binaries and firmware it skipped or only counted (null when none)
   const coverageReport = ((scanMetadata as Record<string, unknown> | null)?.cbom_coverage ?? null) as CbomCoverageReport | null;
+  // CB-29: the crypto-library advisory data the code scan matched (offline OSV snapshot version and date)
+  const advisoryData = run ? null : readAdvisoryData(data, scanMetadata);
   const informationalRows = dashboard?.card_data?.total_informational ?? 0;
   // Every crypto asset (findings + clean inventory) for the readiness gauge, as the PDF and the scan list count them
   const allRows = useMemo(() => inventoryRows(data, findingsList ?? []), [data, findingsList]);
@@ -745,6 +748,14 @@ export default function CbomResults({
             </ul>
           </CardContent>
         </Card>
+      )}
+
+      {advisoryData && (
+        <p className={`mb-6 text-xs ${advisoryData.stale ? "text-amber-800 dark:text-amber-300" : "text-zinc-500 dark:text-zinc-400"}`}
+           data-testid="cbom-advisory-data" data-stale={advisoryData.stale ? "true" : "false"}
+           role={advisoryData.stale ? "status" : undefined}>
+          {advisoryLine(advisoryData)}{staleNote(advisoryData) ? ` ${staleNote(advisoryData)}` : ""}
+        </p>
       )}
 
       {run && run.run && <RunCoverageSection run={run.run} targets={run.page?.targets ?? null} provenance={run.results?.provenance} />}
