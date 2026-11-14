@@ -55,6 +55,7 @@ TARGET_STATUSES = frozenset({
     "sudoers_missing", "sudo_denied", "rbac_denied", "winrm_denied", "tls_unavailable", "not_supported", "error",
     "skipped_never_scan",
     "skipped_window", "skipped_stop", "skipped_deadline", "skipped_cancelled", "skipped_cap",
+    "skipped_credential_refused",  # CB-10: the node stopped using a credential after K refused logins in a row
 })
 
 
@@ -725,6 +726,52 @@ def _test_result_from_job(session: Session, job: CbomCollectionJob, now: _dt.dat
     )
 
 
+def _refused_counts(value: Any) -> dict[str, int] | None:
+    """The node's ``credential_refused`` report (CB-10), as small whole numbers, or None."""
+    if not isinstance(value, dict):
+        return None
+    out = {}
+    for key in ("failures", "skipped", "limit"):
+        number = value.get(key)
+        out[key] = min(int(number), 1_000_000) if isinstance(number, int) and not isinstance(number, bool) and number >= 0 else 0
+    return out if out["failures"] > 0 else None
+
+
+def credential_refused_summary(refused: dict[str, Any]) -> str:
+    """What the source card says (and why its runs are skipped) after the node stopped using the credential."""
+    failures, skipped = int(refused.get("failures") or 0), int(refused.get("skipped") or 0)
+    head = (f"{failures} logins in a row were refused" if failures > 1 else "the login was refused")
+    tail = f"; {skipped} target{'s' if skipped != 1 else ''} not tried" if skipped else ""
+    return (f"Credential refused: {head} in job #{refused.get('job_id')}{tail}. Runs and schedules skip this source "
+            "until its credential is edited or a connection test passes, so the account is not locked out")
+
+
+def _credential_refused_from_job(session: Session, job: CbomCollectionJob, status: str, result: Any,
+                                 now: _dt.datetime) -> None:
+    """CB-10: a collect job whose node stopped using the credential (its breaker tripped, or every login was refused)
+    marks the source "credential refused": its connection test becomes failed with the reason, so plan_run skips it
+    for manual runs and schedules.  Editing the credential changes the connection version, which resets the test;
+    a passing connection test overwrites it.  A job finished under settings that no longer apply ends cancelled
+    (finish_job), so a result for an old credential never pauses an edited source."""
+    if job.kind != "collect" or status != "success" or job.source_id is None or not isinstance(result, dict):
+        return
+    refused = _refused_counts(result.get("credential_refused"))
+    if refused is None:
+        return
+    refused["job_id"] = job.id
+    summary = credential_refused_summary(refused)[:512]
+    session.exec(
+        update(CbomCollectionSource).where(CbomCollectionSource.id == job.source_id)
+        .values(last_test_status="failed", last_test_summary=summary, last_test_at=now, last_test_job_id=job.id,
+                last_test_result={"credential_refused": refused, "summary": summary})
+        .execution_options(synchronize_session="fetch")
+    )
+    audit(session, team_id=job.team_id, actor_type="system", actor_id=None, action="source.credential_refused",
+          object_type="source", object_id=job.source_id, changed_fields=[f"job:{job.id}"])
+    log("source credential refused", team=job.team_id, source=job.source_id, job=job.id,
+        failures=refused["failures"], skipped=refused["skipped"])
+
+
 def _stop_reason(session: Session, job: CbomCollectionJob, source: CbomCollectionSource | None,
                  node: CbomScanNode | None) -> str | None:
     """_invalid_reason plus the team's network stop, for writes coming back from a running job."""
@@ -824,6 +871,7 @@ def finish_job(
     if job.kind == "collect" and (status in ("failure", "cancelled") or (outcome == "failed" and int(read) == 0)):
         refunded = refund_job(session, job, _run_of(session, job))
     _test_result_from_job(session, job, now)
+    _credential_refused_from_job(session, job, status, clean_result, now)
     recompute_run(session, job.run_id, now)
     audit(session, team_id=job.team_id, actor_type="node" if node else "system", actor_id=node.id if node else None,
           action=f"job.{status}", object_type="job", object_id=job.id)

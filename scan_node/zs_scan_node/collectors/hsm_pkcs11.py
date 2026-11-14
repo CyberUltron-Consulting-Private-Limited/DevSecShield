@@ -8,6 +8,10 @@
   called) and only attributes ABOUT objects are read: class, key type, size or curve, label, id, the
   extractable/sensitive/local flags, the usage flags and dates.  Values are never requested: ``CKA_VALUE`` is read for
   certificates only (a certificate is public), never for a key, and no private-key component is ever named.
+* Lockout guard (CB-10): HSMs such as Luna lock a partition after a few failed logins, so a PIN is only ever tried
+  on the token it was entered for.  With more than one token and no token label the source is refused (nothing is
+  logged in to); two tokens with the same label are refused too.  A token that reports its user PIN as count-low,
+  final-try or locked gets no ``C_Login``: its public objects are read and a coverage row says why.
 * A vendor's library may itself talk to a network HSM; that connection is configured by the node operator in the
   vendor's client, not by ZeroShield, and is outside the scan node's network gate.
 """
@@ -193,6 +197,25 @@ def _token_info(module: str, lib, slot, token) -> dict[str, Any]:
     return info
 
 
+# CB-10: token flags that say one more failed login could lock the user PIN (or it already is locked)
+_PIN_AT_RISK = (("USER_PIN_LOCKED", "is locked"), ("USER_PIN_FINAL_TRY", "has one try left (final try)"),
+                ("USER_PIN_COUNT_LOW", "has had failed logins (count low)"))
+
+
+def pin_at_risk(token) -> str | None:
+    """Why no login may be tried on this token now, from its own flags (None: a login is safe to try)."""
+    from pkcs11 import TokenFlag
+
+    flags = token.flags
+    if flags is None:
+        return None
+    for name, words in _PIN_AT_RISK:
+        if flags & getattr(TokenFlag, name):
+            return (f"the token reports that its user PIN {words}; no login was tried, so a wrong PIN cannot lock it "
+                    "(only public objects were read). Check the PIN with the HSM administrator")
+    return None
+
+
 def _read_token(ctx: JobContext, module: str, lib, slot, token, pin: str | None) -> tuple[int, str | None]:
     from pkcs11 import ObjectClass, TokenFlag
     from pkcs11.exceptions import PinIncorrect, PinLocked, PKCS11Error, UserPinNotInitialized
@@ -201,6 +224,9 @@ def _read_token(ctx: JobContext, module: str, lib, slot, token, pin: str | None)
     label = info.get("token_label") or f"slot-{getattr(slot, 'slot_id', '?')}"
     where = f"pkcs11:{module}/{label}"
     login_required = bool(token.flags & TokenFlag.LOGIN_REQUIRED) if token.flags is not None else True
+    at_risk = pin_at_risk(token) if (pin and login_required) else None
+    if at_risk:
+        pin = None  # CB-10: no C_Login on a token near (or at) its PIN lockout
     try:
         session = token.open(rw=False, user_pin=pin if (pin and login_required) else None)
     except (PinIncorrect, PinLocked, UserPinNotInitialized):
@@ -213,7 +239,9 @@ def _read_token(ctx: JobContext, module: str, lib, slot, token, pin: str | None)
     n = 0
     counts: dict[str, int] = {}
     try:
-        if login_required and not pin:
+        if at_risk:
+            ctx.coverage(label, f"PKCS#11 token {label}", "denied", at_risk)
+        elif login_required and not pin:
             ctx.coverage(label, f"PKCS#11 token {label}", "denied", "no PIN stored: only public objects were read")
         for i, obj in enumerate(session.get_objects()):
             if i >= MAX_OBJECTS:
@@ -276,6 +304,13 @@ def _tokens(lib, config: dict) -> list[tuple[Any, Any]]:
         out.append((slot, token))
         if len(out) >= MAX_TOKENS:
             break
+    # CB-10: a PIN belongs to one token, so it is never tried on several
+    if want and len(out) > 1:
+        raise ConfigError(f"{len(out)} tokens are labelled {want!r} on this module; the PIN would be tried on each. "
+                          "Give the tokens distinct labels")
+    if not want and len(out) > 1:
+        raise ConfigError(f"this module has {len(out)} tokens; enter the token label the PIN belongs to (a PIN is never "
+                          "tried on more than one token, so a wrong one cannot lock other partitions)")
     return out
 
 
@@ -320,6 +355,13 @@ def test(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
     for _slot, token in tokens[:5]:
         label = _text(token.label)
         login_required = bool(token.flags & TokenFlag.LOGIN_REQUIRED)
+        at_risk = pin_at_risk(token) if (pin and login_required) else None
+        if at_risk:  # CB-10: no C_Login on a token near its PIN lockout
+            with token.open(rw=False, user_pin=None):
+                pass
+            ctx.samples.append({"target": label, "status": "skipped_credential_refused", "reachable": True,
+                                "login": False, "privilege": None, "note": at_risk})
+            continue
         try:
             with token.open(rw=False, user_pin=pin if (pin and login_required) else None) as session:
                 count = sum(1 for _ in session.get_objects())

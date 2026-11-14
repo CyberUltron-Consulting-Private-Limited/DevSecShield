@@ -1807,7 +1807,7 @@ function KeyManagerForm({
               >
                 <Input id="km-module" data-testid="km-module" value={form.module} maxLength={64} placeholder="luna" onChange={(e) => set({ module: e.target.value })} />
               </Field>
-              <Field label="Token label (optional)" htmlFor="km-token" error={errors.tokenLabel} hint="Blank reads every initialised token the module shows">
+              <Field label="Token label (optional)" htmlFor="km-token" error={errors.tokenLabel} hint="Required when the module shows more than one token: a PIN is only ever tried on the token it belongs to, so a wrong PIN cannot lock other partitions. Blank works for a module with one token">
                 <Input id="km-token" data-testid="km-token" value={form.tokenLabel} maxLength={32} onChange={(e) => set({ tokenLabel: e.target.value })} />
               </Field>
             </div>

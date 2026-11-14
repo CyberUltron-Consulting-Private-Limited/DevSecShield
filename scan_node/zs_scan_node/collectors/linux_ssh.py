@@ -862,6 +862,7 @@ def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
     creds = _credentials(ctx, config, secrets)
     targets = _targets(ctx, scope)
     parallel = max(1, min(int(config.get("parallel") or 8), 64))
+    guarded = "password" in creds  # CB-10: a password counts toward the account's lockout; a refused key does not
 
     def one(target: Target):
         started = time.monotonic()
@@ -872,16 +873,25 @@ def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
         if target.ip is None:
             ctx.outcome(target.label, "unreachable", target.error, started=started)
             return
+        skip = ctx.login_gate() if guarded else None
+        if skip:
+            ctx.outcome(target.label, skip, ctx.credential_skip_note(skip), started=started)
+            return
+        status = "error"
         try:
             status, err, n = collect_target(ctx, target, config, creds)
             ctx.outcome(target.label, status, err, started=started, assets=n)
             ctx.log("target done", target=target.label, status=status, assets=n)
         except TargetFail as fail:
+            status = fail.status
             ctx.outcome(target.label, fail.status, fail.error, started=started)
             ctx.log("target failed", target=target.label, status=fail.status)
         except Exception as exc:  # never let one host kill the job
             ctx.outcome(target.label, "error", exc.__class__.__name__, started=started)
             ctx.log("target error", target=target.label, error=exc.__class__.__name__)
+        finally:
+            if guarded:
+                ctx.login_done(status)
 
     with cf.ThreadPoolExecutor(max_workers=parallel) as pool:
         list(pool.map(one, targets))
@@ -904,14 +914,23 @@ def test(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
             sample.update(status="unreachable", note=target.error or "could not resolve")
             ctx.samples.append(sample)
             continue
+        skip = ctx.login_gate() if "password" in creds else None  # CB-10
+        if skip:
+            sample.update(status=skip, reachable=None, note=ctx.credential_skip_note(skip) or skip)
+            ctx.samples.append(sample)
+            continue
         try:
             sess = open_session(ctx, target, config, creds)
         except TargetFail as fail:
+            if "password" in creds:
+                ctx.login_done(fail.status)
             sample["reachable"] = None if fail.status.startswith("skipped_") else \
                 fail.status not in ("unreachable", "refused", "timeout", "no_route")
             sample.update(status=fail.status, note=fail.error)
             ctx.samples.append(sample)
             continue
+        if "password" in creds:
+            ctx.login_done("ok")
         sample.update(reachable=True, login=True)
         missing = ""
         try:

@@ -509,13 +509,22 @@ def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str | 
         if target.ip is None:
             ctx.outcome(target.label, "unreachable", target.error, started=started)
             return
+        skip = ctx.login_gate()  # CB-10: WinRM logs in with the account's password
+        if skip:
+            ctx.outcome(target.label, skip, ctx.credential_skip_note(skip), started=started)
+            return
+        status = "error"
         try:
             n = collect_target(ctx, target, config, password, ca_path)
+            status = "ok"
             ctx.outcome(target.label, "ok", started=started, assets=n)
         except _Fail as fail:
+            status = fail.status
             ctx.outcome(target.label, fail.status, fail.error, started=started)
         except Exception as exc:
             ctx.outcome(target.label, "error", exc.__class__.__name__, started=started)
+        finally:
+            ctx.login_done(status)
 
     with _ca_file(config) as ca_path, \
             cf.ThreadPoolExecutor(max_workers=max(1, min(int(config.get("parallel") or 8), 32))) as pool:
@@ -542,9 +551,13 @@ def test(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
 def _test_one(ctx: JobContext, target: Target, config: dict, password: str, ca_path: str | None) -> None:
     sample = {"target": target.label, "status": "ready", "reachable": False, "login": False, "privilege": None,
               "note": ""}
+    skip = ctx.login_gate() if target.ip is not None else None  # CB-10
     if target.ip is None:
         sample.update(status="unreachable", note=target.error or "")
+    elif skip:
+        sample.update(status=skip, reachable=None, note=ctx.credential_skip_note(skip) or skip)
     else:
+        status = "error"
         try:
             code, out, err = _run(_session(ctx, target, config, password, ca_path), "os")
             # Any answer from the shell means the login worked; a failing read is a privilege note, not a login failure.
@@ -552,7 +565,11 @@ def _test_one(ctx: JobContext, target: Target, config: dict, password: str, ca_p
             note = (f"{info.get('Caption') or 'Windows'} {info.get('Version') or ''}".strip() if code == 0
                     else f"logged in; reading the Windows version failed: {_stderr(err) or 'exit ' + str(code)}")
             sample.update(reachable=True, login=True, note=printable(note, 160))
+            status = "ok"
         except _Fail as fail:
+            status = fail.status
             sample.update(status=fail.status, reachable=fail.status not in ("unreachable", "timeout"),
                           login=fail.status == "winrm_denied", note=fail.error)
+        finally:
+            ctx.login_done(status)
     ctx.samples.append(sample)
