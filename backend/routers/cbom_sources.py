@@ -72,6 +72,7 @@ from backend.utilities.cbom_sources import export_slots as EXPORT_SLOTS
 from backend.utilities.cbom_sources import inventory as INV
 from backend.utilities.cbom_sources import posture as POSTURE
 from backend.utilities.cbom_sources import qgrade as QGRADE
+from backend.utilities.cbom_sources import run_parity as RUN_PARITY
 from backend.utilities.cbom_sources import run_results as RUN_RESULTS
 from backend.utilities.cbom_sources import run_tickets as RUN_TICKETS
 from backend.utilities.cbom_sources import runs as RUNS
@@ -1548,6 +1549,48 @@ def _run_results(engine, team_id: int, run_id: int) -> dict:
 async def run_results(team_id: TeamId, run_id: ObjectId, Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
     return _ok(await _run("run results", team_id, _run_results, engine, team_id, run_id))
+
+
+def _run_parity(engine, team_id: int, run_id: int) -> dict:
+    now = utcnow()
+    with Session(engine) as session:
+        run = _get_owned(session, CbomCollectionRun, run_id, team_id, "Run")
+        J.safe_reap(session, now, team_id=team_id)
+        session.refresh(run)
+        settings = get_or_create_settings(session, team_id)
+        return RUN_PARITY.run_parity(session, run, team_id=team_id, risk_model=settings.risk_model, now=now)
+
+
+@router.get(BASE + "/runs/{run_id}/parity", dependencies=READ,
+            summary="A run's code-page scan_metadata sections: tri-state crypto compliance, RBI CSF and CERT-In "
+                    "roll-ups, crypto dependency graph, what the run covered")
+async def run_parity(team_id: TeamId, run_id: ObjectId, Authorization: AuthHeader = None):
+    engine, _user = await authorize(team_id, Authorization)
+    return _ok(await _run("run parity", team_id, _run_parity, engine, team_id, run_id))
+
+
+def _run_asset_remediation(engine, team_id: int, run_id: int, asset_id: int) -> dict:
+    from backend.utilities.cbom_sources.classify import shown
+    from backend.utilities.cbom_sources.kb_remediation import remediation
+
+    with Session(engine) as session:
+        run = _get_owned(session, CbomCollectionRun, run_id, team_id, "Run")
+        row = _get_owned(session, CbomCollectedAsset, asset_id, team_id, "Asset")
+        if row.run_id != run.id or row.asset_type == "coverage":
+            raise HTTPException(status_code=404, detail="Asset not found")
+        view = shown(row, utcnow())
+        finding = {"finding_codes": [c for c in view.get("finding_codes") or [] if not str(c).startswith("COVERAGE_")],
+                   "description": view.get("finding") or "", "title": row.algorithm or row.name or row.location,
+                   "algorithm_name": row.algorithm or row.name, "location": row.location,
+                   "asset_type": row.asset_type, "target": row.target}
+    return remediation(finding, "node")
+
+
+@router.get(BASE + "/runs/{run_id}/assets/{asset_id}/remediation", dependencies=READ,
+            summary="The code page's finding remediation (KB fix, steps, exploit demo, standards) for one run asset")
+async def run_asset_remediation(team_id: TeamId, run_id: ObjectId, asset_id: ObjectId, Authorization: AuthHeader = None):
+    engine, _user = await authorize(team_id, Authorization)
+    return _ok(await _run("run asset remediation", team_id, _run_asset_remediation, engine, team_id, run_id, asset_id))
 
 
 def _asset_detail(engine, team_id: int, asset_id: int) -> dict:
