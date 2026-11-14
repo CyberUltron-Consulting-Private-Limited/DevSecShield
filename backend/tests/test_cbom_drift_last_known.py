@@ -243,6 +243,7 @@ def test_d1_a_clean_run_after_a_throttled_one_opens_nothing_and_compare_agrees(e
     assert diff["readiness"]["delta"] == 0.0
     # the throttled run itself: an unread asymmetric key does not move readiness
     assert ch.diff(r2, r1)["readiness"]["delta"] == 0.0
+    assert ch.diff(r2, r1)["readiness"]["carried_unread"] == 2  # k1 and rsa-1 at their last known verdict
     for run_id in (r2, r3):
         assert_events_agree_with_compare(ch, run_id)
 
@@ -320,16 +321,55 @@ def test_d5_a_history_of_by_choice_gaps_loads_two_jobs(engine, emitted, monkeypa
     assert len(loads) <= 2
 
 
-def test_d5b_the_walk_follows_real_gaps_only_as_far_as_its_bound(engine, emitted, monkeypatch):
+def test_d5b_older_levels_load_only_what_the_baseline_gaps_cover(engine, emitted, monkeypatch):
+    """Review #132 blocker: the walk loaded every row of up to 20 older jobs.  Now only the baseline job is read in
+    full (as on dev); an older job gives only its coverage rows and the rows the baseline's gaps could cover."""
+    ch = Chain(engine)
+    many = [key(f"m{i}", rotation=True) for i in range(200)]
+    ch.run([key("k1"), key("k2"), *many])
+    for _ in range(D.CARRY_LEVELS + 5):
+        last = ch.run([key("k2"), describe_throttled("k1"), *many])
+    full: list[int] = []
+    older: list[int] = []
+    real_full, real_older = D._job_assets, D._level_rows
+    monkeypatch.setattr(D, "_job_assets", lambda s, job: full.append(job.id) or real_full(s, job))
+    monkeypatch.setattr(D, "_level_rows", lambda s, jobs, cond: (lambda rows: older.append(
+        (len(jobs), sum(len(r) for r in rows.values()))) or rows)(real_older(s, jobs, cond)))
+    ch.record(last)
+    assert len(full) == 2  # the run's own job and its baseline job, as on dev
+    # one query over the older jobs; each gives its gap row (and k1's row where it was read): never 200 keys
+    (jobs, loaded), = older
+    assert jobs == D.CARRY_LEVELS - 1 and loaded <= 2 * jobs
+
+
+def test_d5c_the_walk_stops_when_older_gaps_cannot_overlap_the_baselines(engine, emitted, monkeypatch):
     ch = Chain(engine)
     ch.run([key("k1"), key("k2")])
-    for _ in range(D.CARRY_LEVELS + 5):
-        last = ch.run([key("k2"), describe_throttled("k1")])
-    loads: list[int] = []
-    real = D._job_assets
-    monkeypatch.setattr(D, "_job_assets", lambda s, job: loads.append(job.id) or real(s, job))
-    ch.record(last)
-    assert len(loads) <= D.CARRY_LEVELS + 1
+    for _ in range(5):
+        ch.run([key("k1"), key("k2"), describe_throttled("k9")])  # an older gap elsewhere
+    ch.run([key("k2"), describe_throttled("k1")])  # the baseline job: its gap covers k1 only
+    last = ch.run([key("k1"), key("k2")])
+    levels: list[int] = []
+    real = D._level
+    monkeypatch.setattr(D, "_level", lambda s, job, rows=None: levels.append(job.id) or real(s, job, rows))
+    assert ch.record(last) == []  # k1 carried from the level before the baseline, which read it
+    assert len(levels) == 2  # the baseline job and one older level: the k9 gaps cannot cover what k1's does
+
+
+def test_a_carried_event_names_the_run_that_last_read_the_asset(engine, emitted):
+    """Review #132 major: VEX builds a BOM-Link from baseline_run_id + asset_id, so they must name the same run."""
+    ch = Chain(engine)
+    r1 = ch.run([key("k1"), key("k2")])
+    ch.record(r1)
+    ch.record(ch.run([key("k2"), describe_throttled("k1")]))
+    r3 = ch.run([key("k2")])
+    ch.record(r3)
+    with Session(engine) as s:
+        resolved = s.exec(select(CbomDriftEvent).where(CbomDriftEvent.run_id == r3,
+                                                       CbomDriftEvent.kind == "resolved")).one()
+        row = s.get(CbomCollectedAsset, resolved.detail["asset_id"])
+        assert resolved.baseline_run_id == r1 == row.run_id
+        assert resolved.detail["last_read_run_id"] == r1
 
 
 # ----------------------------------------------------------------------------- D6: deploy straddle (ST-1)
@@ -386,6 +426,18 @@ def test_d7b_the_guard_only_withholds_what_the_new_fact_explains(engine, emitted
     r2 = ch.run([cert("x1", exported=True, in_use=True)])
     assert ch.record(r2) == [("resolved", ACM + "x1", "CERT_UNUSED")]
     assert ch.diff(r2)["collector_changes"] == []
+
+
+def test_d7c_codes_carried_through_an_incomplete_gap_keep_the_guard(engine, emitted, monkeypatch):
+    """Review #132 minor: the codes came from a level without the fact, so the fact is still introduced."""
+    _exported_rule(monkeypatch)
+    ch = Chain(engine)
+    ch.record(ch.run([cert("x1")]))
+    partly = gap(f"{ACM}x1#settings", "acm certificate x1 settings", scope=[ACM + "x1"], incomplete=True)
+    assert ch.record(ch.run([cert("x1", exported=True), partly])) == []
+    r3 = ch.run([cert("x1", exported=True)])
+    assert ch.record(r3) == []
+    assert [d["code"] for d in ch.diff(r3)["collector_changes"]] == ["CERT_UNUSED"]
 
 
 def test_introduced_facts_are_the_facts_cb33_adds_and_rules_may_suppress_on():
