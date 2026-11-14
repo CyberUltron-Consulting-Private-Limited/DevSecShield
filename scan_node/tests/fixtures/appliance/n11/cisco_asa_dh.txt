@@ -1,0 +1,29 @@
+### show running-config ssl
+ssl server-version tlsv1.2
+ssl cipher tlsv1.2 high
+ssl dh-group group2
+### show running-config ssh
+ssh version 2
+ssh key-exchange group dh-group14-sha256
+### show running-config crypto ikev1
+crypto ikev1 enable outside
+crypto ikev1 am-disable
+crypto ikev1 policy 10
+ authentication rsa-sig
+ encryption aes-256
+ hash sha
+ group 2
+ lifetime 86400
+crypto ikev1 policy 20
+ authentication rsa-sig
+ encryption aes-256
+ hash sha
+ group 5
+ lifetime 86400
+### show running-config crypto ikev2
+crypto ikev2 policy 10
+ encryption aes-256
+ integrity sha256
+ group 2
+ prf sha256
+### show crypto key mypubkey rsa

@@ -10,11 +10,12 @@ Items and where they come from
   ``evidence:vendor:<id>``; reason ``evidence_e0`` with ``detail.sub_reason``. Synced in the same transaction as every
   evidence write (PATCH area, vendor create / edit / link / answer / delete), by the daily tick (an E2/E3 area turns
   E0 on day 366 with no write, cx3 ST-G) and before the register is read.
-* ``scope`` / ``asset`` / ``inputs``: the Q0 items of each source's latest run, graded with the team's inputs now (a
-  team view shows the current grade, PLAN §2.3). ``on_estate_write`` is registered with CB-20's estate store
-  (``estate.register_hook(fn, atomic=True)``): it runs once per run, in the transaction that won the run's
-  ``drift_at``, inside the store's savepoint, so the register and the store are written (or rolled back) together.
-  It grades the run's own rows (the store does not grade); a source whose newer run was already written is left to
+* ``scope``: the unread-scope Q0 items of each source's latest run (coverage rows, job targets, sources not read).
+* ``asset``: ``asset:<estate key>``, from the risk register (``risk_register``, CB-23 PR-B): an asset graded Q0 for a
+  reason of its own. ``inputs``: ``inputs:mosca``, open while a register asset grades ``mosca_missing``.
+* ``on_estate_write`` is registered with CB-20's estate store (``estate.register_hook(fn, atomic=True)``): once per
+  run, in the transaction that won the run's ``drift_at``, inside the store's savepoint, so the store, the register
+  and these items are written (or rolled back) together. A source whose newer run was already written is left to
   that run.
 
 Closing causes: ``evidence`` (an evidence write raised the item above E0), ``removed`` (the vendor or the source was
@@ -33,7 +34,7 @@ import time
 from collections import Counter
 from typing import Any, Iterable
 
-from sqlalchemy import text, update
+from sqlalchemy import func as sa_func, text, update
 from sqlmodel import Session, select
 
 from backend.new_models import (
@@ -192,34 +193,21 @@ def sync_evidence_safely(session: Session, team_id: int, now: _dt.datetime) -> N
         log("q0 register evidence sync FAILED", team=team_id, error=type(exc).__name__)
 
 
-# ----------------------------------------------------------------------------- run items (scope / asset / inputs)
-def _run_items(session: Session, run: CbomCollectionRun, risk_model: dict[str, Any]
-               ) -> tuple[list[dict[str, Any]], Any, dict[str, str | None]]:
-    """Every Q0 item of the run graded with the team's inputs now (the posture loop, without the cap)."""
-    from backend.utilities.cbom_sources import identity as ID
-    from backend.utilities.cbom_sources import posture as P
+# ----------------------------------------------------------------------------- run items (scope)
+def _scope_items(session: Session, run: CbomCollectionRun, risk_model: dict[str, Any]
+                 ) -> tuple[list[dict[str, Any]], Any]:
+    """The run's unread-scope Q0 items (coverage rows, job targets, sources not read): no asset is graded here (assets
+    are graded once, by the risk register)."""
     from backend.utilities.cbom_sources import qgrade as QG
-    from backend.utilities.cbom_sources.classify import shown
 
-    grades = QG.RunGrades(session, team_id=run.team_id, run_id=run.id, risk_model=risk_model)  # type: ignore[arg-type]
-    grades.ctx = grades.ctx.with_inputs(risk_model)  # a team view: the current grade, not the run's record
-    grades.now = None
-    rows = list(session.exec(select(CbomCollectedAsset).where(CbomCollectedAsset.team_id == run.team_id,
-                                                              CbomCollectedAsset.run_id == run.id)).all())
-    elsewhere = P.JudgedElsewhere(rows)
-    when = _dt.datetime.utcnow()
-    graded: dict[str, str | None] = {}
-    for row in rows:
-        codes = [c for c in shown(row, when)["finding_codes"] if not c.startswith("COVERAGE_")]
-        if row.asset_type == "coverage":
-            grades.add(row, codes)
-            continue
-        out = grades.add(row, codes, cls=P.classify_pqc(row, codes, elsewhere=elsewhere)[0])
-        uid = grades.ctx._job(row.job_id).source_uid
-        graded[_fit("asset:" + ID.stable_key("node", uid, ID.node_identity(row)), KEY_MAX)] = out.q_grade
-    scope, _not_items = QG.scope_items(grades.ctx, grades.coverage)
-    items = scope + list(grades.assets.by_key.values()) + ([grades._mosca] if grades._mosca else [])
-    return items, grades.ctx, graded
+    ctx = QG.load_context(session, team_id=run.team_id, run_id=run.id, risk_model=risk_model, inputs="current")
+    coverage = []
+    for row in session.exec(select(CbomCollectedAsset).where(CbomCollectedAsset.team_id == run.team_id,
+                                                             CbomCollectedAsset.run_id == run.id,
+                                                             CbomCollectedAsset.asset_type == "coverage")).all():
+        coverage.append((row, ctx.grade_row(row, [], explain=False)))
+    scope, _not_items = QG.scope_items(ctx, coverage)
+    return scope, ctx
 
 
 def _owned_sources(session: Session, run: CbomCollectionRun) -> tuple[set[int], set[int]]:
@@ -243,62 +231,38 @@ def _owned_sources(session: Session, run: CbomCollectionRun) -> tuple[set[int], 
     return mine, comparable  # type: ignore[return-value]
 
 
-def _detail(item: dict[str, Any], ctx: Any, run: CbomCollectionRun) -> dict[str, Any]:
-    from backend.utilities.cbom_sources import qgrade as QG
-
-    detail = {k: item.get(k) for k in ("source_id", "source_name", "target", "check", "status", "detail", "count",
-                                       "asset_id", "type", "location", "missing") if item.get(k) is not None}
+def _detail(item: dict[str, Any], ctx: Any) -> dict[str, Any]:
+    detail = {k: item.get(k) for k in ("source_id", "source_name", "target", "check", "status", "detail", "count")
+              if item.get(k) is not None}
     if isinstance(item.get("addresses"), list):
         detail["addresses"] = item["addresses"][:DETAIL_ADDRESSES]
     job = next((j for j in ctx.jobs.values() if j.source_id is not None and j.source_id == item.get("source_id")), None)
     if job is not None:
         detail["source_ref"] = job.source_uid
-    detail["model_version"] = QG.GRADE_MODEL_VERSION
-    detail["classifier_version"] = run.classifier_version
     return detail
 
 
 def sync_run(session: Session, run: CbomCollectionRun, now: _dt.datetime) -> dict[str, int]:
-    """Record the scope / asset / inputs Q0 items of a finished run for every source whose latest run it is, and
-    close what a comparable collection of those sources no longer has. The caller commits."""
-    from backend.utilities.cbom_sources import qgrade as QG
-
+    """Record the unread-scope Q0 items of a finished run for every source whose latest run it is, and close what a
+    comparable collection of those sources no longer has (``observation``). The caller commits."""
     settings = session.exec(select(CbomCollectionSettings).where(
         CbomCollectionSettings.team_id == run.team_id)).first()
     risk_model = (settings.risk_model if settings is not None else None) or {}
     mine, comparable = _owned_sources(session, run)
-    items, ctx, graded = _run_items(session, run, risk_model)
+    items, ctx = _scope_items(session, run, risk_model)
     current: dict[tuple[str, str], dict[str, Any]] = {}
     for item in items:
-        kind = item["kind"] if item["kind"] in KINDS else "scope"
-        if kind != "inputs" and item.get("source_id") not in mine:
+        if item.get("source_id") not in mine:
             continue  # another run is that source's latest (or the source was deleted)
-        current[(kind, _fit(item["key"], KEY_MAX))] = {"reason": item["reason"], "detail": _detail(item, ctx, run)}
-    existing = _open_rows(session, run.team_id, ("scope", "asset", "inputs"))
+        current[("scope", _fit(item["key"], KEY_MAX))] = {"reason": item["reason"], "detail": _detail(item, ctx)}
+    existing = _open_rows(session, run.team_id, ("scope",))
     sources = {s for s in session.exec(select(CbomCollectionSource.id).where(
         CbomCollectionSource.team_id == run.team_id)).all()}
-    mosca_set = all(v is not None for v in QG.mosca_of(risk_model).values())
-    closable: set[tuple[str, str]] = set()
-    for ident, row in existing.items():
-        sid = (row.detail or {}).get("source_id") if isinstance(row.detail, dict) else None
-        if ident[0] == "inputs":
-            if mosca_set:
-                closable.add(ident)
-        elif sid not in sources or sid in comparable:
-            closable.add(ident)
+    closable = {ident for ident, row in existing.items()
+                if (row.detail or {}).get("source_id") not in sources or (row.detail or {}).get("source_id") in comparable}
+
     def cause_of(row: CbomQ0Gap) -> tuple[str, str | None]:
-        detail = row.detail if isinstance(row.detail, dict) else {}
-        if row.item_kind == "inputs":
-            return "inputs", None
-        if detail.get("source_id") not in sources:
-            return "removed", None
-        if row.item_kind == "asset":
-            grade = graded.get(row.item_key)
-            if detail.get("model_version") not in (None, QG.GRADE_MODEL_VERSION) or (
-                    detail.get("classifier_version") and detail.get("classifier_version") != run.classifier_version):
-                return "model_change", grade
-            return "observation", grade
-        return "observation", None
+        return ("removed" if (row.detail or {}).get("source_id") not in sources else "observation"), None
 
     out = _apply(session, run.team_id, now, current, existing, closable=closable, cause_of=cause_of, run_id=run.id)
     if out["opened"] or out["closed"]:
@@ -306,12 +270,85 @@ def sync_run(session: Session, run: CbomCollectionRun, now: _dt.datetime) -> dic
     return out
 
 
+# ----------------------------------------------------------------------------- asset items (from the risk register)
+def _asset_key(key: str) -> str:
+    return _fit(f"asset:{key}", KEY_MAX)
+
+
+def sync_assets(session: Session, team_id: int, transitions: Iterable[Any], now: _dt.datetime, *, cause: str,
+                moved: set[str] | frozenset[str] = frozenset(), run_id: int | None = None) -> dict[str, int]:
+    """Asset Q0 items from register grade transitions: an asset that became Q0 for a reason of its own opens
+    ``asset:<estate key>``; one that left it (or left the register) closes with ``cause`` (``moved``: keys whose
+    observations moved to a stronger key: re-identified, closed as ``model_change``, not forwarded)."""
+    from backend.utilities.cbom_sources.risk_register import ASSET_Q0_REASONS
+
+    transitions = list(transitions)
+    if not transitions:
+        return {"opened": 0, "closed": 0, "events": 0}
+    keys = {_asset_key(t.key) for t in transitions}
+    existing = {i: r for i, r in _open_rows(session, team_id, ("asset",)).items() if i[1] in keys}
+    current: dict[tuple[str, str], dict[str, Any]] = {}
+    closable: set[tuple[str, str]] = set()
+    after: dict[str, tuple[str | None, str | None] | None] = {}
+    for t in transitions:
+        ident = ("asset", _asset_key(t.key))
+        after[ident[1]] = t.after
+        if t.after is not None and t.after[0] == "Q0" and t.after[1] in ASSET_Q0_REASONS:
+            current[ident] = {"reason": t.after[1], "detail": {
+                "estate": True, "asset_key": t.key, "title": t.label, "location": t.label, "type": t.asset_type,
+                "source_ref": t.source_ref, "source_name": t.source_name}}
+        else:
+            closable.add(ident)
+
+    def cause_of(row: CbomQ0Gap) -> tuple[str, str | None]:
+        grade = after.get(row.item_key)
+        key = row.item_key.split(":", 1)[1]
+        return ("model_change" if key in moved else cause), (grade[0] if grade else None)
+
+    return _apply(session, team_id, now, current, existing, closable=closable, cause_of=cause_of, run_id=run_id)
+
+
+def close_legacy_assets(session: Session, team_id: int, now: _dt.datetime) -> dict[str, int]:
+    """PR-A keyed asset items per source observation; the register keys them by estate key. The old rows close as a
+    re-identification (``model_change``: recorded, not forwarded) and reopen under the estate key when still Q0."""
+    existing = {i: r for i, r in _open_rows(session, team_id, ("asset",)).items()
+                if not (isinstance(r.detail, dict) and r.detail.get("estate"))}
+    return _apply(session, team_id, now, {}, existing, closable=set(existing),
+                  cause_of=lambda _r: ("model_change", None))
+
+
+def sync_mosca(session: Session, team_id: int, now: _dt.datetime, run_id: int | None = None) -> dict[str, int]:
+    """The one team item ``inputs:mosca``: open while a register asset grades Q0 ``mosca_missing``, closed (cause
+    ``inputs``) when none does."""
+    from backend.new_models import CbomRiskRegister
+    from backend.utilities.cbom_sources.risk_register import team_inputs
+
+    # only rows graded with the team's inputs now: rows waiting for the background re-grade after a Mosca edit must
+    # not reopen the item that edit closed
+    n = session.exec(select(sa_func.count()).select_from(CbomRiskRegister).where(  # type: ignore[call-overload]
+        CbomRiskRegister.team_id == team_id, CbomRiskRegister.q_reason == "mosca_missing",
+        CbomRiskRegister.inputs_digest == team_inputs(session, team_id).digest)).one()
+    existing = _open_rows(session, team_id, ("inputs",))
+    current = {("inputs", "inputs:mosca"): {"reason": "mosca_missing", "detail": {"count": int(n)}}} if n else {}
+    return _apply(session, team_id, now, current, existing, closable=set(existing),
+                  cause_of=lambda _r: ("inputs", None), run_id=run_id)
+
+
 def on_estate_write(session: Session, write: Any) -> None:
-    """CB-20 estate hook (atomic): the run's Q0 items in the register, in the store's transaction. Raises on error
-    (the store rolls back its write and ours, and marks itself stale for the backfill, which replays hooks)."""
+    """CB-20 estate hook (atomic), in the store's transaction: the risk register's rows for the keys the run touched
+    (re-graded only where their digest changed), their asset Q0 items, the run's unread scope and the Mosca item.
+    Raises on error (the store rolls back its write and ours, and marks itself stale for the backfill)."""
+    from backend.utilities.cbom_sources import risk_register as REGISTER
+
+    res = REGISTER.apply_write(session, write)
+    close_legacy_assets(session, write.team_id, write.at)
+    moved = {old for old, _new, _ref in write.rekeyed} | set(write.removed_keys)
+    sync_assets(session, write.team_id, res.transitions, write.at, cause="observation", moved=moved,
+                run_id=write.run_id)
     run = session.get(CbomCollectionRun, write.run_id)
     if run is not None and run.team_id == write.team_id:
         sync_run(session, run, write.at)
+    sync_mosca(session, write.team_id, write.at, run_id=write.run_id)
 
 
 def _register() -> None:
@@ -456,6 +493,6 @@ def list_gaps(session: Session, team_id: int, now: _dt.datetime, *, status: str,
             "source": "latest_runs"}  # CB-20's estate store is not on dev yet: run items come from each latest run
 
 
-__all__ = ["sync_evidence", "sync_evidence_safely", "sync_run", "on_estate_write", "close_removed_sources",
+__all__ = ["sync_evidence", "sync_evidence_safely", "sync_run", "sync_assets", "sync_mosca", "close_legacy_assets", "on_estate_write", "close_removed_sources",
            "close_removed_sources_safely", "close_mosca", "tick", "tick_due", "list_gaps", "public_gap", "encode_after", "decode_after",
            "KINDS", "CAUSES", "STATUSES", "LIMIT_MAX"]
