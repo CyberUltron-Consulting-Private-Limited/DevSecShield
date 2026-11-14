@@ -2603,6 +2603,7 @@ const reinitializeCBOMScanWithPayload = async (
  */
 export const CBOM_DELIVERABLES = [
   { slug: "scope-baseline-register", number: 1, title: "Scope Baseline & Asset Population Register" },
+  { slug: "quantum-risk-register", number: 2, title: "Quantum Risk Register" },
   { slug: "methodology-evidence-plan", number: 3, title: "Cryptographic Discovery Methodology & Evidence Plan" },
   { slug: "infrastructure-cloud-encryption-posture", number: 5, title: "Infrastructure & Cloud Encryption Posture" },
   { slug: "network-tls-protocol-assessment", number: 6, title: "Network, TLS & Crypto Protocol Assessment" },

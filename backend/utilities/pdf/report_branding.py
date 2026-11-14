@@ -215,6 +215,20 @@ REPORT_META: Dict[str, Dict[str, str]] = {
             "evidence in the cells marked (assessor)."
         ),
     },
+    "cbom_risk_register": {
+        "title": "Quantum Risk Register",
+        "subtitle": "Cryptographic Bill of Materials · Quantum risk grade per asset (Q1-Q4, Q0 kept visible)",
+        "footer_label": "CBOM Quantum Risk Register",
+        "kicker": "Regulatory Deliverable",
+        "intro": (
+            "Every asset of the team's estate once, with its current quantum risk grade, "
+            "every Q0 Unknown gap and its reason, and the gaps closed week by week."
+        ),
+        "how_to_read": (
+            "Q1 Critical to Q4 Low rank quantum risk under the team's Mosca inputs; Q0 Unknown "
+            "means the product could not grade the item, never that it is safe."
+        ),
+    },
     "cbom_pqc_roadmap": {
         "title": "PQC Migration Roadmap",
         "subtitle": "Cryptographic Bill of Materials · Post-quantum migration planning",
