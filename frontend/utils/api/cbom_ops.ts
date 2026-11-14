@@ -49,6 +49,8 @@ export interface CbomDiff {
   /** assets of a compared source that the later run did not read (a coverage gap): neither removed nor resolved */
   not_read?: CbomDiffAsset[]
   rule_changes?: { key: string; label: string; code: string; direction: string; label_change: string }[]
+  /** findings that vanished only because a collector started sending a new fact (CB-33): not drift, no event */
+  collector_changes?: { key: string; label: string; code: string; direction: string; label_change: string }[]
   readiness?: { before: number | null; after: number | null; delta: number | null }
   counts?: Record<string, number>
   truncated?: boolean

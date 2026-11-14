@@ -17,6 +17,7 @@ from typing import Any
 
 from backend.utilities.cbom_sources.common import log, new_ref
 from backend.utilities.cbom_sources.kinds import aws_account_id
+from backend.utilities.cbom_sources.lab_mode import LAB_MODE, own_account_decision
 from backend.utilities.cbom_sources.templates import (
     AWS_NOT_CONFIGURED, LAMBDA_DECRYPT_CONDITION, REQUIRED_DENY, zeroshield_account_id)
 
@@ -183,8 +184,11 @@ def validate_aws_role(team_id: int, role_arn: str, external_id: str, regions: li
         return {"status": "failed", "checks": [_row(names[0], "fail", AWS_NOT_CONFIGURED)]
                 + [_row(n, "skipped", "Not run") for n in names[1:]]}
     customer_account = aws_account_id(role_arn)
-    if own_account and customer_account == own_account:
-        rows.append(_row(names[0], "fail", "This role is in ZeroShield's own AWS account; use a role in your account"))
+    # The role may not be in ZeroShield's own account, except in lab mode on a test deployment (lab_mode.py), where
+    # every other check below still runs and must pass.
+    refusal, lab = own_account_decision(customer_account, own_account, scope, team_id=team_id, where="validate")
+    if refusal:
+        rows.append(_row(names[0], "fail", refusal))
         return {"status": "failed", "checks": rows + [_row(n, "skipped", "Not run") for n in names[1:]]}
 
     try:
@@ -201,7 +205,8 @@ def validate_aws_role(team_id: int, role_arn: str, external_id: str, regions: li
         assumed = sts.assume_role(RoleArn=role_arn, RoleSessionName=session_name, ExternalId=external_id,
                                   DurationSeconds=900)
         creds = assumed["Credentials"]
-        rows.append(_row(names[0], "pass", "AssumeRole succeeded with your external ID"))
+        rows.append(_row(names[0], "pass", "AssumeRole succeeded with your external ID"
+                         + (" (lab mode: role in this deployment's own account)" if lab else "")))
     except Exception as exc:
         code = _code(exc)
         if code in ("AccessDenied", "AccessDeniedException"):
@@ -216,7 +221,7 @@ def validate_aws_role(team_id: int, role_arn: str, external_id: str, regions: li
             rows.append(_row(names[0], "fail", f"AssumeRole failed: {code}"))
         rows.extend(_row(n, "skipped", "Skipped because the role could not be assumed") for n in names[1:])
         status = "error" if rows[0]["status"] == "error" else "failed"
-        return {"status": status, "checks": rows}
+        return {"status": status, "checks": rows, **({"lab_mode": LAB_MODE} if lab else {})}
 
     # Without the external ID the trust policy must refuse us.
     if remaining() > 2:
@@ -336,6 +341,8 @@ def validate_aws_role(team_id: int, role_arn: str, external_id: str, regions: li
     statuses = {r["status"] for r in rows}
     status = "passed" if statuses <= {"pass"} else ("failed" if "fail" in statuses else "error")
     out: dict[str, Any] = {"status": status, "checks": rows}
+    if lab:
+        out["lab_mode"] = LAB_MODE
     if member_accounts is not None:
         out["member_accounts"] = member_accounts
     return out

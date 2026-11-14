@@ -73,8 +73,8 @@ const style = shared.slice(shared.indexOf("const CONFIDENCE_STYLE"), shared.inde
 assert.ok(style.length > 0);
 assert.doesNotMatch(style, /\b(red|orange|amber|yellow|green|emerald|zinc|gray|grey|slate)-\d/, "confidence palette uses no risk colours");
 
-// 3. no Q0..Q4 printed as a confidence level anywhere in the CBOM UI: "Q0" only as "Q0 gap(s)" (or the component name),
-//    Q1..Q4 only next to their risk word
+// 3. no Q0..Q4 printed as a confidence level anywhere in the CBOM UI: "Q0" only as "Q0 gap(s)", "Q0 Unknown" (the Q0
+//    risk grade's own name, grade/model.ts GRADE_TEXT) or the component name, Q1..Q4 only next to their risk word
 const files = [...walk(join(FRONTEND, "components", "cbom")), ...walk(join(FRONTEND, "app", "q")),
   join(FRONTEND, "utils", "backend_api.ts")];
 const RISK_WORD: Record<string, string> = { Q1: "Critical", Q2: "High", Q3: "Medium", Q4: "Low" };

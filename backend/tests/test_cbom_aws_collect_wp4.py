@@ -488,7 +488,7 @@ def test_an_alb_listener_on_a_post_quantum_policy_is_collected_and_judged_hybrid
     ELBSecurityPolicy-TLS13-1-2-Res-PQ-2025-09 were reported QUANTUM_VULNERABLE (dev 7d036da), the classifier never
     read the policy name.  Collected the same way (botocore stubs, the real describe_ssl_policies shape), the PQ
     listener is judged hybrid and its non-PQ twin on ...-Res-2021-06 stays quantum vulnerable.  CB-04 DA H-2/F6."""
-    from backend.utilities.cbom_sources.posture import pqc_class
+    from backend.utilities.cbom_sources.posture import classify_pqc
 
     lb_arn = f"arn:aws:elasticloadbalancing:{REGION}:{ACCOUNT}:loadbalancer/app/edge/1"
     tls13 = [{"Name": n, "Priority": i} for i, n in enumerate(
@@ -515,6 +515,7 @@ def test_an_alb_listener_on_a_post_quantum_policy_is_collected_and_judged_hybrid
     assert pq["facts"]["ssl_policy"] == "ELBSecurityPolicy-TLS13-1-2-Res-PQ-2025-09"
     v = classify("load_balancer_tls", pq.get("algorithm"), pq.get("key_size"), pq.get("protocol"), pq["facts"])
     assert v["quantum_vulnerable"] is False and "QUANTUM_VULNERABLE" not in v["finding_codes"]
-    assert pqc_class("load_balancer_tls", v["quantum_vulnerable"], v["finding_codes"], pq["facts"]) == "hybrid"
+    row = {"asset_type": "load_balancer_tls", "quantum_vulnerable": v["quantum_vulnerable"], "facts": pq["facts"]}
+    assert classify_pqc(row, v["finding_codes"])[0] == "hybrid"
     w = classify("load_balancer_tls", old.get("algorithm"), old.get("key_size"), old.get("protocol"), old["facts"])
     assert w["quantum_vulnerable"] is True and "QUANTUM_VULNERABLE" in w["finding_codes"]
