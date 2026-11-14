@@ -78,7 +78,23 @@ CATEGORIES = {
                              "Oakley group 2 with SHA-1 = diffie-hellman-group1-sha1 -> SSH_DH_GROUP1; gss-group14-sha1-* "
                              "and gss-gex-sha1-* = group14 / group exchange with SHA-1 -> SSH_DH_SHA1), PR #111 AC-3 "
                              "'GSS' and its test_legacy_algorithms_are_flagged cases",
+    # CB-18 PR-1 (cbom-plans/cb-18 SPEC §3.3 with reviews FP-3/FP-4/FP-6/EC-1/EC-2; #109's note for CB-18): the
+    # verdict (quantum_vulnerable, codes, impact) is unchanged, only the view-time class moves
+    "cb18-hybrid-identified-component": "Hybrid on purpose: a hybrid or composite identifier (composite ML-DSA "
+                                        "certificates and keys, SSH ML-KEM/sntrup hybrid kex) whose post-quantum "
+                                        "component algid names by a table row, or an IKE policy with an identified "
+                                        "ML-KEM group next to a classical group (RFC 9370): quantum-safe -> hybrid. "
+                                        "#109 release note 'show Quantum-safe until CB-18'; CB-18 EC-1, OA-CB04-1",
+    "cb18-pq-component-unidentified": "A post-quantum identifier algid matched only by a marker or an arc prefix "
+                                      "(no components, no table row: CRYSTALS-Kyber, Entrust arcs, "
+                                      "rsa3072_dilithium2) is never counted as hybrid or safe: -> unknown. CB-18 "
+                                      "EC-1 ('an unknown OID is never counted as safe')",
+    "cb18-unread-is-unknown": "No verdict (qv None) on a certificate or key whose algorithm identifier algid does not "
+                              "know, or on a TLS endpoint whose key exchange was not read (no group, or a group that "
+                              "is no key exchange): unknown, never not-applicable. CB-18 N8/KF-10, SPEC §3.3, FP-6",
 }
+# CB-18: asset types whose verdict-less rows hold public-key crypto that was not identified or not read
+CB18_UNREAD_TYPES = frozenset({"certificate", "tls_endpoint", "ssh_endpoint"})
 # CB-13 (PR #111): the legacy SSH names its rules add, and the one code each gets (SPEC RC-6, §3.3; GSS: RFC 4462 §2)
 SSH_LEGACY_CODES = (
     (re.compile(r"^des(-cbc)?(@ssh\.com)?$", re.I), "SSH_WEAK_CIPHER"),
@@ -152,7 +168,53 @@ def _ike_pq_group(group: str) -> bool:
     return found is not None and found.quantum in ("safe", "hybrid") and found.primitive in KEX
 
 
+def _named_pq(found: algid.Identity | None) -> bool:
+    return found is not None and found.quantum == "safe" and bool(found.name) and \
+        found.matched_by not in ("marker", "oid-prefix", "fallback")
+
+
+def _cb18_class(row: dict, verdict: list, cls: str) -> str | None:
+    """The CB-18 category of a class change on an unchanged (or CB-04-changed) verdict, or None."""
+    facts = row["facts"]
+    if row["key"].startswith("ike|"):
+        ids = [algid.resolve(g, "ike_ke") or algid.resolve(g) for g in facts["groups"]]
+        pq = [f for f in ids if _named_pq(f) and f.primitive in KEX] or (
+            [algid.ike_ke(36)] if "group 36" in facts["groups"] else [])
+        classical = any(f is not None and f.quantum == "vulnerable" for f in ids)
+        return "cb18-hybrid-identified-component" if cls == "hybrid" and pq and classical else None
+    subject = _subject(row)
+    found = _identity(row, subject)
+    if cls == "hybrid" and verdict[0] is False and found is not None \
+            and found.construction in ("hybrid", "composite") and found.matched_by != "oid-prefix" \
+            and any(_named_pq(algid.resolve(c)) for c in found.components):
+        return "cb18-hybrid-identified-component"
+    if cls == "unknown" and verdict[0] is False and found is not None and found.quantum in ("safe", "hybrid") \
+            and (found.matched_by in ("marker", "oid-prefix") or not found.name) \
+            and not any(_named_pq(algid.resolve(c)) for c in found.components):
+        return "cb18-pq-component-unidentified"
+    if cls == "unknown" and verdict[0] is None and row["type"] in CB18_UNREAD_TYPES:
+        if row["type"] == "certificate" and (found is None or found.quantum is None):
+            return "cb18-unread-is-unknown"  # an identifier algid does not know (or a placeholder)
+        if row["type"] == "tls_endpoint" and (found is None or found.primitive not in KEX):
+            return "cb18-unread-is-unknown"  # no key-exchange group was read
+    return None
+
+
 def _category(row: dict, before: list, after: list) -> str | None:
+    found = _category_cb04(row, before, after)
+    if found is None and before[:3] == after[:3]:  # only the view-time class moved: CB-18
+        return _cb18_class(row, after, after[3])
+    if found is None and after[3] in ("hybrid", "unknown"):
+        # a CB-04 verdict change whose class CB-18 then moved: judged as CB-04 did (class as before CB-18), and the
+        # CB-18 class change must fit a CB-18 category too
+        for old_cls in ("quantum-safe", "not-applicable", "hybrid"):
+            cb04 = _category_cb04(row, before, after[:3] + [old_cls])
+            if cb04 is not None and _cb18_class(row, after, after[3]) is not None:
+                return cb04
+    return found
+
+
+def _category_cb04(row: dict, before: list, after: list) -> str | None:
     kind = row["key"].split("|", 1)[0]
     subject = _subject(row)
     found = _identity(row, subject)

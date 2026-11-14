@@ -38,7 +38,7 @@ MOSCA = {"data_shelf_life_years": 10, "migration_years": 5, "threat_years": 12}
 CA = {"is_ca": True, "key_alg": "RSA", "key_size": 2048, "not_after": "2034-01-01T00:00:00Z", "subject": "CN=Corp CA",
       "issuer": "CN=Corp CA", "sig_alg": "sha256WithRSAEncryption", "self_signed": True, "fingerprint_sha256": "cd" * 32}
 QV_TLS = {"protocols": ["TLSv1.2", "TLSv1.3"], "group": "x25519"}
-HYBRID_ONLY = {"protocols": ["TLSv1.3"], "pq_hybrid": True}
+HYBRID_ONLY = {"protocols": ["TLSv1.3"], "pq_hybrid": True, "pq_group": "X25519MLKEM768"}  # CB-18: a named group
 
 
 def _asset(type_, location, target="10.20.0.1", facts=None, algorithm=None, key_size=None, name=None):
@@ -177,7 +177,7 @@ def test_da3_hybrid_endpoint_with_no_classical_exchange(api, world):
 
 def test_hybrid_is_graded_on_the_weakest_configuration_it_accepts(api, world):
     # HF-1 H1: a hybrid group plus TLS 1.2 RSA key transport; owner default: grade on the classical fallback
-    facts = {"versions": {"TLSv1.2": True, "TLSv1.3": True}, "pq_hybrid": True,
+    facts = {"versions": {"TLSv1.2": True, "TLSv1.3": True}, "pq_hybrid": True, "pq_group": "X25519MLKEM768",
              "weak_ciphers_accepted": {"static_rsa": True, "cbc": True}}
     d = one(api, world[0], _asset("tls_endpoint", "52.95.110.1:443", target="52.95.110.1", facts=facts))
     # its own reason (review B / cx2 HF-1): "PQ deployed, classical fallback still accepted" is fixed differently
@@ -190,7 +190,8 @@ def test_hybrid_is_graded_on_the_weakest_configuration_it_accepts(api, world):
 def test_ssh_with_a_pq_and_a_classical_kex_is_graded_on_the_classical_one(api, world):
     d = one(api, world[0], _asset("ssh_endpoint", "10.20.0.1:22", facts={"kex": ["mlkem768x25519-sha256",
                                                                                 "curve25519-sha256"]}))
-    assert g(d) == ("Q2", "qv_fallback_exceeds") and d["q_explain"]["class"] == "quantum-safe"
+    # CB-18: an SSH hybrid key exchange with an identified ML-KEM component is "hybrid" (it was "quantum-safe")
+    assert g(d) == ("Q2", "qv_fallback_exceeds") and d["q_explain"]["class"] == "hybrid"
 
 
 def test_da4_mosca_unset(api, world):
@@ -275,7 +276,6 @@ def test_not_applicable_has_no_grade(api, world):
     assert g(d) == (None, "not_applicable") and d["q_label"] is None and d["q_item_key"] is None
 
 
-@pytest.mark.xfail(strict=True, reason="CB-18 PR-1: the 'unknown' PQC class does not exist on dev yet")
 def test_unknown_oid_certificate_is_q0_unknown_verdict(api, world):
     facts = {"key_alg": "1.2.3.4.5.6.7", "not_after": "2030-01-01T00:00:00Z", "subject": "CN=x", "issuer": "CN=y"}
     d = one(api, world[0], _asset("certificate", "/etc/ssl/odd.pem", facts=facts))
@@ -438,10 +438,7 @@ def test_a_source_created_after_the_run_is_not_an_item_of_it(api, world):
 
 def test_asset_q0_items_are_keyed_by_the_stable_asset_key(api, world, monkeypatch):
     from backend.utilities.cbom_sources import identity as ID
-    from backend.utilities.cbom_sources import posture as P
 
-    real = P.pqc_class
-    monkeypatch.setattr(P, "pqc_class", lambda t, qv, codes, facts: "unknown" if t == "certificate" else real(t, qv, codes, facts))
     facts = {"key_alg": "1.2.3.4.5.6.7", "not_after": "2030-01-01T00:00:00Z", "subject": "CN=x", "issuer": "CN=y"}
     keys = []
     for _ in range(2):  # two runs of the same source and asset: new row ids, one identity

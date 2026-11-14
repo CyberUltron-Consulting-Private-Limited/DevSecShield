@@ -78,6 +78,16 @@ def clean_lines(value: str | list[str] | None) -> list[str]:
     return out
 
 
+def ip_text(address: ipaddress.IPv4Address | ipaddress.IPv6Address) -> str:
+    """The one text form of an address in the backend, the scan node's (zs_scan_node.netutil.ip_text; a test keeps
+    them equal): RFC 5952, with an IPv4-mapped address's IPv4 part dotted (section 5: ::ffff:127.0.0.9), which is how
+    getaddrinfo answers.  str() alone is not stable for those: CPython 3.12.3 and older print ::ffff:7f00:9, 3.12.16
+    and 3.13 ::ffff:127.0.0.9 (gh-87799)."""
+    if address.version == 6 and address.ipv4_mapped is not None:
+        return f"::ffff:{address.ipv4_mapped}" + (f"%{address.scope_id}" if address.scope_id else "")
+    return str(address)
+
+
 def _as_v4_if_mapped(address: ipaddress.IPv4Address | ipaddress.IPv6Address):
     if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
         return address.ipv4_mapped
@@ -287,7 +297,7 @@ def sample_targets(targets: ParsedTargets, exclusions: ParsedTargets | None, n: 
     out: list[str] = []
     for version, start, end in intervals:
         for value in range(start, min(end, start + n - len(out) - 1) + 1):
-            out.append(str(ipaddress.ip_address(value)) if version == 4 else str(ipaddress.IPv6Address(value)))
+            out.append(ip_text(ipaddress.IPv4Address(value) if version == 4 else ipaddress.IPv6Address(value)))
             if len(out) >= n:
                 return out
     for host in hosts:

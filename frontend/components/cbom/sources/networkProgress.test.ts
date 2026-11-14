@@ -19,6 +19,9 @@ assert.equal(addressProgress({ status: "claimed", progress: null }), null)
 assert.equal(addressProgress({ status: "success", progress: { done: 254, total: 254 } }), null)
 assert.equal(addressProgress({ status: "pending", progress: { done: 0, total: 254 } }), null)
 assert.equal(addressProgress({ status: "claimed", progress: { done: 0, total: 0 } }), null)
+// F1 cloud pool: an AWS source collected one account x region at a time
+assert.equal(addressProgress({ status: "claimed", progress: { done: 377, total: 1200, unit: "account-regions" } }), `377 of ${(1200).toLocaleString()} account-regions`)
+assert.equal(addressProgress({ status: "claimed", progress: { done: 0, total: 1, unit: "account-regions" } }), "0 of 1 account-region")
 
 for (const [file, use] of [["NetworkTab.tsx", "const progress = addressProgress(live);"],
                            ["ReviewRunTab.tsx", "{addressProgress(job)}"]] as const) {

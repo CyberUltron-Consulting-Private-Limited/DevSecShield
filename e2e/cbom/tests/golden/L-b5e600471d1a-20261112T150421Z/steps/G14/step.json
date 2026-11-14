@@ -1,0 +1,198 @@
+{
+  "checks": [
+    {
+      "evidence": [],
+      "expected": 404,
+      "gate": "G14",
+      "id": "G14/b_own_team_404_run",
+      "kind": "flow",
+      "observed": 404,
+      "reason": "",
+      "subject": {
+        "check": "b_own_team_404_run",
+        "probe": "run"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [],
+      "expected": 404,
+      "gate": "G14",
+      "id": "G14/b_own_team_404_run_assets",
+      "kind": "flow",
+      "observed": 404,
+      "reason": "",
+      "subject": {
+        "check": "b_own_team_404_run_assets",
+        "probe": "run_assets"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [],
+      "expected": 404,
+      "gate": "G14",
+      "id": "G14/b_own_team_404_run_cbom",
+      "kind": "flow",
+      "observed": 404,
+      "reason": "",
+      "subject": {
+        "check": "b_own_team_404_run_cbom",
+        "probe": "run_cbom"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [],
+      "expected": 404,
+      "gate": "G14",
+      "id": "G14/b_own_team_404_node",
+      "kind": "flow",
+      "observed": 404,
+      "reason": "",
+      "subject": {
+        "check": "b_own_team_404_node",
+        "probe": "node"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [],
+      "expected": 404,
+      "gate": "G14",
+      "id": "G14/b_own_team_404_asset",
+      "kind": "flow",
+      "observed": 404,
+      "reason": "",
+      "subject": {
+        "check": "b_own_team_404_asset",
+        "probe": "asset"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [],
+      "expected": "403 or 404, the same for a missing id, no data of A",
+      "gate": "G14",
+      "id": "G14/b_foreign_team_refused_run",
+      "kind": "flow",
+      "observed": {
+        "body": "{\"detail\":\"User is not in team\"}",
+        "existing": 403,
+        "missing": 403
+      },
+      "reason": "",
+      "subject": {
+        "check": "b_foreign_team_refused_run",
+        "probe": "run"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [],
+      "expected": "403 or 404, the same for a missing id, no data of A",
+      "gate": "G14",
+      "id": "G14/b_foreign_team_refused_node",
+      "kind": "flow",
+      "observed": {
+        "body": "{\"detail\":\"User is not in team\"}",
+        "existing": 403,
+        "missing": 403
+      },
+      "reason": "",
+      "subject": {
+        "check": "b_foreign_team_refused_node",
+        "probe": "node"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [],
+      "expected": "403 or 404, the same for a missing id, no data of A",
+      "gate": "G14",
+      "id": "G14/b_foreign_team_refused_asset",
+      "kind": "flow",
+      "observed": {
+        "body": "{\"detail\":\"User is not in team\"}",
+        "existing": 403,
+        "missing": 403
+      },
+      "reason": "",
+      "subject": {
+        "check": "b_foreign_team_refused_asset",
+        "probe": "asset"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [],
+      "expected": "403 or 404, the same for a missing id, no data of A",
+      "gate": "G14",
+      "id": "G14/b_foreign_team_refused_run_cbom",
+      "kind": "flow",
+      "observed": {
+        "body": "{\"detail\":\"User is not in team\"}",
+        "existing": 403,
+        "missing": 403
+      },
+      "reason": "",
+      "subject": {
+        "check": "b_foreign_team_refused_run_cbom",
+        "probe": "run_cbom"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [
+        "steps/G14/b-ui-on-a-url.png"
+      ],
+      "expected": "none of A's email, asset locations or run ids in B's page",
+      "gate": "G14",
+      "id": "G14/b_ui_shows_no_a_data",
+      "kind": "flow",
+      "observed": [],
+      "reason": "",
+      "subject": {
+        "check": "b_ui_shows_no_a_data"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [],
+      "expected": null,
+      "gate": "G14",
+      "id": "G14/b_node_claims_no_a_job",
+      "kind": "flow",
+      "observed": null,
+      "reason": "DA G14 'B's node token claims none of A's jobs' needs a node enrolled in team B (CB-05)",
+      "subject": {
+        "check": "b_node_claims_no_a_job"
+      },
+      "verdict": "NOT-RUN"
+    },
+    {
+      "evidence": [
+        "steps/G14/b-on-a-url.png"
+      ],
+      "expected": "B still signed in",
+      "gate": "G14",
+      "id": "G14/b_not_logged_out",
+      "kind": "flow",
+      "observed": {
+        "status": 200,
+        "url": "/52/cbom/sources"
+      },
+      "reason": "",
+      "subject": {
+        "check": "b_not_logged_out"
+      },
+      "verdict": "PASS"
+    }
+  ],
+  "ended": "2026-11-12T15:24:16Z",
+  "gate": "G14",
+  "note": "",
+  "seconds": 8.9,
+  "started": "2026-11-12T15:24:07Z",
+  "status": "ran"
+}

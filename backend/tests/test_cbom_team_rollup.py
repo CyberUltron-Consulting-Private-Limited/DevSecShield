@@ -2226,9 +2226,9 @@ def test_module_level_imports_are_standard_library_only():
 # The one finding rule and the one quantum-readiness definition every CBOM view shares: pure modules whose own
 # imports are stdlib only (the isolated import test below proves the closure stays clean).
 # collections_view: the cross-scope identity and "latest observation wins" rule (stdlib-only at import; its DB loader
-# imports sqlmodel lazily and is called from load_team_cbom_view only)
+# imports sqlmodel lazily and is called from load_team_cbom_view only); asset_keys: the cross-source asset key (CB-21)
 SHARED_PURE_RULES = {"backend.utilities.cbom_sources.cbom_rows", "backend.utilities.cbom_sources.cbom_metrics",
-                     "backend.utilities.cbom_sources.collections_view"}
+                     "backend.utilities.cbom_sources.collections_view", "backend.utilities.cbom_sources.asset_keys"}
 
 
 def test_only_the_db_loader_imports_non_stdlib_modules_and_only_lazily():
@@ -2312,7 +2312,7 @@ FROZEN_FIELDS = {
         "description primitive key_size curve mode protocol_version material_kind parameter_set "
         "not_valid_after security_strength_bits risk_score quantum_vulnerable quantum_safe hybrid "
         "nist_quantum_security_level pqc_migration_target pqc_migration_roadmap tier current "
-        "first_seen last_seen scan_count scan_ids latest_scan_id broken_today"
+        "first_seen last_seen scan_count scan_ids latest_scan_id broken_today collector_codes"
     ),
     "CertAgg": (
         "key identity_strong name file_names subject_cn issuer_cn not_before not_after "

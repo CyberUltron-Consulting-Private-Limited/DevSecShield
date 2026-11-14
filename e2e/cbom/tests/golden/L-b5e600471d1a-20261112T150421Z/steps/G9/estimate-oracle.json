@@ -1,0 +1,30 @@
+{
+  "lines": [
+    {
+      "addresses": 3,
+      "kind": "network_range",
+      "name": "range-10.231.0.32-30",
+      "queued": true
+    },
+    {
+      "addresses": 16,
+      "kind": "network_range",
+      "name": "range-10.231.0.16-28",
+      "queued": true
+    }
+  ],
+  "network": {
+    "addresses": 19,
+    "credits_c": 100
+  },
+  "rates_c": {
+    "database": 100,
+    "idp": 0,
+    "linux_servers": 20,
+    "network_range": 100,
+    "windows_servers": 20
+  },
+  "source": "DEVILS-ADVOCATE.md \u00a74.3 G9 (rates); E2E-PLAN UF-9",
+  "total_c": 100,
+  "unknown": []
+}

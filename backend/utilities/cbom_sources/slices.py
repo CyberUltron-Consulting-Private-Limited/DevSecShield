@@ -43,10 +43,30 @@ FANOUT_PREFIX = "fo"
 FANOUT_MAX_RUNTIME = _dt.timedelta(hours=int(os.environ.get("CBOM_CLOUD_FANOUT_MAX_HOURS", "") or 24))
 TARGETS_KEPT = 1000  # target rows kept on the parent's result (failures first); counts always cover every slice
 INSERT_CHUNK = 1000
+CAP_REASON = "Asset cap reached for this source"
 
 
 def enabled() -> bool:
     return os.environ.get("CBOM_AWS_SLICES", "1").strip() != "0"
+
+
+def source_asset_cap() -> int:
+    """Assets one fanned-out source may store per run, summed over its slices (CBOM_AWS_MAX_ASSETS_PER_SOURCE): by
+    default the per-source cap a single collection job always had, so run, results and export pages stay bounded."""
+    try:
+        value = int(os.environ.get("CBOM_AWS_MAX_ASSETS_PER_SOURCE", "") or J.MAX_ASSETS_PER_ATTEMPT)
+    except ValueError:
+        value = J.MAX_ASSETS_PER_ATTEMPT
+    return max(1, value)
+
+
+def cap_reason(session: Session, job: CbomCollectionJob) -> str | None:
+    """A queued slice whose parent already holds the source's asset cap is not run: it ends as a ``skipped_cap``
+    coverage row of the parent (the parent is then partial and truncated, as a capped single job was)."""
+    parent = session.get(CbomCollectionJob, job.parent_job_id) if job.parent_job_id else None
+    if parent is not None and (parent.asset_count or 0) >= source_asset_cap():
+        return f"{CAP_REASON} ({source_asset_cap():,} assets)"
+    return None
 
 
 def is_parent(job: CbomCollectionJob) -> bool:
@@ -70,6 +90,8 @@ def fan_out(session: Session, parent_id: int, lease_id: str, plan: dict[str, Any
     fanout = {"slices": len(slices), "accounts": plan.get("accounts"), "at": _iso(now)}
     if plan.get("org"):
         fanout["org"] = plan["org"]
+    if plan.get("lab_mode"):
+        fanout["lab_mode"] = plan["lab_mode"]
     result = {"fanout": fanout, "targets": list(plan.get("targets") or []),
               "slices": {"done": 0, "total": len(slices)}}
     changed = session.exec(
@@ -144,7 +166,8 @@ def add_assets(session: Session, job: CbomCollectionJob, lease_id: str, assets: 
     known = list(decrypt_secrets(source.secret_encrypted).values()) if source is not None else []
     known += [s for s in (known_secrets or []) if isinstance(s, str)]
     rows, rejected, in_batch_dups = J.asset_rows(parent, assets, known, now)
-    inserted, existing, dropped, cap_reached = J.store_rows(session, parent, job, lease_id, rows)
+    inserted, existing, dropped, cap_reached = J.store_rows(session, parent, job, lease_id, rows,
+                                                            owner_cap=source_asset_cap())
     if cap_reached:
         session.refresh(job)
         job.result = {**(job.result or {}), "truncated": True}
@@ -193,15 +216,18 @@ def _open_slices(session: Session, parent_id: int) -> dict[str, int]:
 
 
 def _slice_row(job: CbomCollectionJob) -> dict[str, Any]:
-    """The slice's target row: what its collector reported, or one row saying why it never reported."""
+    """The slice's target row: what its collector reported when it ended ``success``, otherwise one row saying why it
+    did not (a slice stopped by a cancel never counts as read, whatever its collector returned)."""
     targets = (job.result or {}).get("targets") if isinstance(job.result, dict) else None
-    if isinstance(targets, list) and targets and isinstance(targets[0], dict):
+    if job.status == "success" and isinstance(targets, list) and targets and isinstance(targets[0], dict):
         return targets[0]
     params = job.params or {}
     where = f"aws:{params.get('account_id')}/{params.get('region')}"
-    status = "skipped_cancelled" if job.status == "cancelled" else "error"
-    return {"target": where, "status": status, "assets": 0,
-            "error": (job.error or f"slice {job.status}")[:256]}
+    if job.status == "cancelled":
+        status = "skipped_cap" if (job.error or "").startswith(CAP_REASON) else "skipped_cancelled"
+    else:
+        status = "error"
+    return {"target": where, "status": status, "assets": 0, "error": (job.error or f"slice {job.status}")[:256]}
 
 
 def finalize(session: Session, parent: CbomCollectionJob, now: _dt.datetime, *, status: str | None = None,
@@ -233,9 +259,11 @@ def finalize(session: Session, parent: CbomCollectionJob, now: _dt.datetime, *, 
                    "slice_ms_sum": sum(durations) if durations else None},
         "slices": {"done": len(slices), "total": len(slices)},
         "truncated": any(isinstance(j.result, dict) and j.result.get("truncated") for j in slices) or None,
-        "asset_count": None, "node_version": "cloud-worker-1.0",
+        "asset_count": None, "node_version": "cloud-worker-1.0", "lab_mode": fanout.get("lab_mode"),
         "summary": f"{ok + part} of {len(targets)} account-regions read ({len(slices)} slices)",
     }
+    if any(t.get("status") == "skipped_cap" for t in targets):
+        result["truncated"] = True
     result = {k: v for k, v in result.items() if v is not None or k == "asset_count"}
     if status is None:
         status = "cancelled" if parent.cancel_requested_at is not None else "success"
@@ -268,6 +296,17 @@ def reap_parent(session: Session, parent: CbomCollectionJob, now: _dt.datetime) 
     total = int((parent.result or {}).get("fanout", {}).get("slices") or 0)
     pending_q = (CbomCollectionJob.parent_job_id == parent.id, CbomCollectionJob.status == "pending")
     ended = None
+    source = session.get(CbomCollectionSource, parent.source_id) if parent.source_id else None
+    stale = J._invalid_reason(parent, source, None) if parent.cancel_requested_at is None else None
+    full = cap_reason(session, parent_slice_probe(parent)) if open_.get("pending") else None
+    if (stale or full) and open_.get("pending"):
+        # the source was disabled / changed, or the source's asset cap is full: every queued slice ends in one UPDATE
+        # (not 25 per claim pass); running ones stop at their next heartbeat or batch
+        session.exec(update(CbomCollectionJob).where(*pending_q).values(
+            status="cancelled", finished_at=now, error=(stale or full or "")[:1024], outcome="failed"))
+        open_ = _open_slices(session, parent.id)
+    if stale and not open_.get("claimed"):
+        return 1 if finalize(session, parent, now) is not None else 0
     if parent.cancel_requested_at is not None:
         # pending slices end now; running ones stop at their next heartbeat, or are ended after the cancel grace
         session.exec(update(CbomCollectionJob).where(*pending_q).values(
@@ -292,6 +331,11 @@ def reap_parent(session: Session, parent: CbomCollectionJob, now: _dt.datetime) 
                              result={**(parent.result or {}), "slices": {"done": done, "total": total}}))
         return 0
     return 1 if ended is not None else 0
+
+
+def parent_slice_probe(parent: CbomCollectionJob) -> CbomCollectionJob:
+    """A stand-in slice of ``parent`` for the per-slice checks."""
+    return CbomCollectionJob(team_id=parent.team_id, kind=SLICE, parent_job_id=parent.id)
 
 
 def _end_open(session: Session, parent_id: int, status: str, reason: str, now: _dt.datetime) -> None:

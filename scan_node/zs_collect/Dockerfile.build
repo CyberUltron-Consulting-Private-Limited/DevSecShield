@@ -1,0 +1,33 @@
+# zs-collect builder: a PyInstaller one-file binary of zs_scan_node.zscollect.
+#   scan_node/zs_collect/build.sh 1.0.0            (amd64; ARCH=arm64 builds the arm64 binary with docker buildx)
+# Debian bullseye (glibc 2.31): the binary runs on hosts with glibc 2.31 or newer (Debian 11+, Ubuntu 20.04+,
+# RHEL/Alma/Rocky 9, Amazon Linux 2023). Behind a TLS-intercepting proxy pass a base image that trusts the proxy CA:
+#   --build-arg BASE_IMAGE=<that image> --build-arg HTTPS_PROXY=...
+ARG BASE_IMAGE=python:3.12-slim-bullseye@sha256:411fa4dcfdce7e7a3057c45662beba9dcd4fa36b2e50a2bfcd6c9333e59bf0db
+FROM ${BASE_IMAGE}
+
+ENV PYTHONDONTWRITEBYTECODE=1 PIP_DISABLE_PIP_VERSION_CHECK=1 SOURCE_DATE_EPOCH=1767225600
+# APT_HTTPS=1 behind a proxy that only tunnels HTTPS (the base image must already trust the proxy CA).
+ARG APT_HTTPS=0
+# PyInstaller needs objdump and strip (binutils) on Linux. Pinned to bullseye's only binutils build (2.35.2-2; bullseye
+# is past its LTS, so the version no longer moves).
+RUN if [ "$APT_HTTPS" = 1 ]; then sed -i 's#http://#https://#g' /etc/apt/sources.list; fi \
+ && apt-get update && apt-get install -y --no-install-recommends binutils=2.35.2-2 && rm -rf /var/lib/apt/lists/*
+WORKDIR /build
+# Every package (runtime and PyInstaller) is pinned with sha256 hashes; pip refuses anything else.
+COPY requirements.lock ./requirements.lock
+COPY zs_collect/build-requirements.lock ./build-requirements.lock
+RUN pip install --no-cache-dir --require-hashes --no-deps -r requirements.lock -r build-requirements.lock && pip check \
+ && useradd --system --uid 10001 --home-dir /build --shell /usr/sbin/nologin builder && chown builder /build
+# The packages above are root's; the build itself runs unprivileged.
+USER 10001
+COPY --chown=10001 zs_scan_node ./zs_scan_node
+COPY --chown=10001 zs_collect/entry.py ./entry.py
+# Only what zs-collect imports goes in; the node's other drivers (and its HTTP client) are left out.
+RUN pyinstaller --onefile --clean --noconfirm --name zs-collect --strip \
+      --exclude-module httpx --exclude-module psycopg --exclude-module pymysql --exclude-module redis \
+      --exclude-module pymongo --exclude-module winrm --exclude-module boto3 --exclude-module botocore \
+      --exclude-module oracledb --exclude-module pkcs11 --exclude-module OpenSSL --exclude-module pytds \
+      --exclude-module yaml --exclude-module tkinter --exclude-module unittest --exclude-module pydoc \
+      entry.py \
+ && ./dist/zs-collect --version

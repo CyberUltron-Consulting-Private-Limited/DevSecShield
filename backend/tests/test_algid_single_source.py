@@ -106,7 +106,6 @@ ALLOWED = {
     "backend/utilities/cbom_sources/data/cyclonedx/bom-1.6.xsd": 2,
     "backend/utilities/cbom_sources/exploit_demo.py": 6,
     "backend/utilities/cbom_sources/fixgen.py": 2,
-    "backend/utilities/cbom_sources/gcp_collect.py": 3,
     "backend/utilities/dashboard/cbom_team_rollup.py": 2,
     "backend/utilities/pdf/cbom_deliverable_text.py": 9,
     "frontend/components/cbom/CbomCryptoCharts.tsx": 3,

@@ -6,10 +6,12 @@
 * ``GRADE_MODEL`` changes only with the text; ``GRADE_MODEL_VERSION`` also hashes this module and ``posture.py`` (the
   class and exposure functions live there) and ``classify.CLASSIFIER_VERSION`` (the fallback test reads the
   classifier's algorithm families), so any edit that can change a grade changes the version.
-* Inputs come from the product's single class function (``posture.pqc_class``), its exposure function
+* Inputs come from the product's single class function (``posture.classify_pqc``), its exposure function
   (``posture.asset_exposure``, with one grade-only precedence change: a collector's internet-facing fact beats an
   "internal" or "unknown" set on the source), the job's metadata snapshot (per-source X, exposure override, node segment) and the
-  team's Mosca X/Y/Z as they are now (PR-2 snapshots them per run; until then every grade says ``source: current``).
+  team's Mosca X/Y/Z: the snapshot the run took at Start (PR-2, ``snapshot_inputs``; the record grade, ``source:
+  snapshot``) or, for a run created before PR-2, as they are now (``source: current``). ``GradeContext.with_inputs``
+  grades the same rows with the team's inputs now, shown beside the record ("with current inputs").
 * Items that are not assets: unread scope (coverage rows, job targets, sources the run did not read), reported as Q0
   items with a stable key; network ranges aggregate per (source, status). A missing Mosca setting is one item
   (``inputs:mosca``) with the count of affected assets, never one item per asset.
@@ -24,7 +26,8 @@ import hashlib
 import json
 import re
 from collections import Counter
-from dataclasses import dataclass, field
+import datetime as _dt
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -36,12 +39,13 @@ from backend.new_models import (
     CbomCollectionRun,
     CbomCollectionSettings,
     CbomCollectionSource,
+    CbomEvidenceArea,
+    CbomEvidenceVendor,
     CbomScanNode,
 )
-from backend.utilities.cbom_sources import algid
 from backend.utilities.cbom_sources import identity as ID
 from backend.utilities.cbom_sources import posture as P
-from backend.utilities.cbom_sources.classify import CLASSIFIER_VERSION, quantum_vulnerable
+from backend.utilities.cbom_sources.classify import CLASSIFIER_VERSION, aws_pq_policy, quantum_vulnerable, ssh_names
 
 FORMULA_TEXT = """\
 ZeroShield quantum risk grade, model qg-1.
@@ -297,13 +301,6 @@ def _proto(value: Any) -> str:
     return re.sub(r"[\s_]", "", str(value or "").upper()).replace("TLSV", "TLS").replace("SSLV", "SSL")
 
 
-def _classical_ssh_kex(name: str) -> bool:
-    """algid owns SSH key-exchange identity (curve25519 / curve448 spellings and the GSS families included);
-    the classifier's family table is the fallback for names algid does not know."""
-    ident = algid.ssh_kex(name)
-    return (ident is not None and ident.quantum == "vulnerable") or quantum_vulnerable(name) is True
-
-
 def classical_fallback(asset_type: str, facts: dict[str, Any] | None, codes: list[str] | None) -> tuple[bool, str | None]:
     """(True, why) when an endpoint also completes a classical-only key exchange (the owner default: grade a hybrid on
     the weakest configuration it accepts). Only endpoints carry a key exchange."""
@@ -331,9 +328,14 @@ def classical_fallback(asset_type: str, facts: dict[str, Any] | None, codes: lis
         why.append("accepts classical group " + ", ".join(classical[:3]))
     elif facts.get("classical_tls13_accepted") is True:  # CB-12's prober: a classical TLS 1.3 key share answered
         why.append("accepts a classical TLS 1.3 key share")
-    kex = facts.get("kex") or facts.get("kexalgorithms") or []
-    kex = kex.split(",") if isinstance(kex, str) else kex if isinstance(kex, list) else []
-    classical_kex = sorted({str(k).strip() for k in kex if _classical_ssh_kex(str(k).strip())})
+    elif aws_pq_policy(facts):
+        # AWS documents every post-quantum ELB and API Gateway policy as also accepting classical key exchange, for
+        # compatibility: the hybrid is graded on the classical exchange a client without post-quantum support completes
+        policy = facts.get("ssl_policy") or facts.get("security_policy")
+        why.append(f"AWS post-quantum policy {str(policy)[:64]} also accepts classical key exchange")
+    kex = ssh_names(facts.get("kex")) or ssh_names(facts.get("kexalgorithms"))  # read as the classifier reads it
+    # the classifier's verdict, which reads algid's SSH key-exchange registry (GSS families included): one source
+    classical_kex = sorted({k for k in kex if quantum_vulnerable(k) is True})
     if classical_kex:
         why.append("offers classical SSH key exchange " + ", ".join(classical_kex[:3]))
     return (bool(why), "; ".join(why) or None)
@@ -445,6 +447,11 @@ class GradeContext:
     job_rows: list[CbomCollectionJob]
     sources: dict[int, CbomCollectionSource]
     memo: dict = field(default_factory=dict)
+    # CB-18 EC-3: an unknown row another job of the run read with a verdict is not an unknown verdict
+    elsewhere: P.JudgedElsewhere | None = None
+    # CB-19 PR-2: "snapshot" (the run's inputs at Start: the record) or "current" (the team's inputs now)
+    inputs_source: str = "current"
+    snapshot: dict[str, Any] | None = None
 
     @property
     def mosca(self) -> dict[str, int | None]:
@@ -459,13 +466,26 @@ class GradeContext:
         return hashlib.sha256(json.dumps(doc, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:16]
 
     def inputs(self) -> dict[str, Any]:
-        return {"source": "current", "mosca": self.mosca, "digest": self.digest}
+        snap = self.snapshot if self.inputs_source == "snapshot" else None
+        return {"source": self.inputs_source, "mosca": self.mosca, "digest": self.digest,
+                "snapshot_digest": snap.get("digest") if snap else None,
+                "captured_at": snap.get("captured_at") if snap else None}
+
+    def with_inputs(self, risk_model: dict[str, Any] | None) -> GradeContext:
+        """The same run graded with the team's inputs now (``source: current``): what the run page shows beside the
+        record when the inputs changed after Start. Shares the jobs, sources and the exposure memo."""
+        m = mosca_of(risk_model)
+        return replace(self, team_x=m["x"], y=m["y"], z=m["z"], inputs_source="current")
+
+    def inputs_changed(self, risk_model: dict[str, Any] | None) -> bool:
+        """True when this run graded from its snapshot and the team's Mosca differs from it now."""
+        return self.inputs_source == "snapshot" and mosca_of(risk_model) != self.mosca
 
     def _job(self, job_id: int | None) -> _JobInfo:
         return self.jobs.get(job_id or 0) or _JobInfo(None, None, None, "unknown", None, None, False)
 
     def grade_row(self, row: CbomCollectedAsset, codes: list[str] | None, *, explain: bool = True,
-                  score_exposure: tuple[str, str] | None = None) -> RowGrade:
+                  score_exposure: tuple[str, str] | None = None, cls: str | None = None) -> RowGrade:
         """The grade of one stored row; ``codes``: the finding codes as every view shows them (``classify.shown``).
         ``explain=False`` (list pages, posture) skips the inputs no rule reads for this row's class (exposure and
         anchor only matter to a quantum-vulnerable grade); the grade is the same either way. ``score_exposure``: the
@@ -478,7 +498,8 @@ class GradeContext:
             return self._coverage(row, job)
         facts = row.facts if isinstance(row.facts, dict) else {}
         codes = codes or []  # the class and fallback tests read DISK_XTS_128 / STATIC_RSA_KEX; COVERAGE_* never match
-        cls = P.pqc_class(asset_type, row.quantum_vulnerable, codes, facts)
+        if cls is None:  # the posture loop passes the class it already computed with the same function
+            cls = P.classify_pqc(row, codes, elsewhere=self.elsewhere)[0]
         if not explain:  # the posture loop and list pages: only the inputs this class's rules read
             fast = _NO_INPUTS.get(cls)
             if fast is not None:
@@ -530,7 +551,8 @@ class GradeContext:
         return RowGrade(out.q_grade, out.q_reason, item_key, self._stamp(detail))
 
     def _stamp(self, explain: dict[str, Any]) -> dict[str, Any]:
-        return {**explain, "model": GRADE_MODEL, "model_version": GRADE_MODEL_VERSION, "inputs_source": "current",
+        return {**explain, "model": GRADE_MODEL, "model_version": GRADE_MODEL_VERSION,
+                "inputs_source": self.inputs_source,
                 "inputs_digest": self.digest,
                 "classifier_version": CLASSIFIER_VERSION,  # the classifier this view graded with (in the model version)
                 "run_classifier_version": self.run.classifier_version if self.run is not None else None}
@@ -563,9 +585,10 @@ def _source_ref(source: CbomCollectionSource | None, source_id: int | None) -> s
 
 
 def load_context(session: Session, *, team_id: int, run_id: int | None = None, job_id: int | None = None,
-                 risk_model: dict[str, Any] | None = None) -> GradeContext:
-    """Jobs of the run (or the one job when it has no run), their sources and nodes, the team's Mosca (read without
-    creating a settings row when ``risk_model`` is not given)."""
+                 risk_model: dict[str, Any] | None = None, inputs: str = "record") -> GradeContext:
+    """Jobs of the run (or the one job when it has no run), their sources and nodes, and the Mosca X/Y/Z to grade with:
+    the run's snapshot taken at Start (``inputs="record"``, the default, when the run has one), else the team's Mosca
+    now (``risk_model``, or read without creating a settings row when it is not given)."""
     from backend.utilities.cbom_sources.kinds import KINDS
 
     if run_id is None and job_id is not None:
@@ -586,6 +609,9 @@ def load_context(session: Session, *, team_id: int, run_id: int | None = None, j
         settings = session.exec(select(CbomCollectionSettings).where(CbomCollectionSettings.team_id == team_id)).first()
         risk_model = (settings.risk_model if settings is not None else None) or {}
     risk_model = risk_model or {}
+    snapshot = run.grade_inputs if run is not None and inputs == "record" else None
+    if not (isinstance(snapshot, dict) and isinstance(snapshot.get("mosca"), dict)):
+        snapshot = None
     jobs: dict[int, _JobInfo] = {}
     for job in job_rows:
         params = job.params if isinstance(job.params, dict) else {}
@@ -600,9 +626,97 @@ def load_context(session: Session, *, team_id: int, run_id: int | None = None, j
             source_uid=ID.job_source_ref(job, source), source_id=job.source_id,
             source_name=(source.name if source else None) or params.get("source_name"),
             network=bool(spec is not None and spec.group == "network"))
-    return GradeContext(team_x=_mosca_int(risk_model.get("data_shelf_life_years")),
-                        y=_mosca_int(risk_model.get("migration_years")), z=_mosca_int(risk_model.get("threat_years")),
-                        jobs=jobs, run=run, job_rows=job_rows, sources=sources)
+    m = {k: _mosca_int(snapshot["mosca"].get(k)) for k in "xyz"} if snapshot is not None else mosca_of(risk_model)
+    return GradeContext(team_x=m["x"], y=m["y"], z=m["z"],
+                        jobs=jobs, run=run, job_rows=job_rows, sources=sources,
+                        elsewhere=P.JudgedElsewhere(session=session, team_id=team_id, run_id=run_id)
+                        if run_id is not None else None,
+                        inputs_source="snapshot" if snapshot is not None else "current", snapshot=snapshot)
+
+
+# ----------------------------------------------------------------------------- the run's inputs at Start (PR-2)
+_MOSCA_KEYS = {"x": "data_shelf_life_years", "y": "migration_years", "z": "threat_years"}
+
+
+def mosca_of(risk_model: dict[str, Any] | None) -> dict[str, int | None]:
+    """The team's Mosca X/Y/Z as the grade reads them (integers 0..100, anything else unset)."""
+    model = risk_model if isinstance(risk_model, dict) else {}
+    return {k: _mosca_int(model.get(name)) for k, name in _MOSCA_KEYS.items()}
+
+
+def risk_model_of(mosca: dict[str, Any]) -> dict[str, Any]:
+    """A snapshot's ``mosca`` in the settings' ``risk_model`` spelling (for ``posture.mosca``)."""
+    return {name: mosca.get(k) for k, name in _MOSCA_KEYS.items()}
+
+
+def evidence_snapshot(session: Session, team_id: int, now: _dt.datetime) -> dict[str, Any]:
+    """The evidence levels and Q0 gaps a run is graded against, from the same functions the Evidence tab uses
+    (``serialize.public_area`` / ``public_vendor`` / ``evidence.q0_gaps``), read without writing (an area nobody opened
+    has no row yet: it is graded as an empty one, which is what the tab shows once it creates it).
+
+    One item per area and per vendor: identity ``id`` = ``area:<area_key>`` / ``vendor:<id>`` (``kind`` + ``key``; the
+    reason is an attribute), the effective level, and the gap reason (null above E0). The third-party-vendors area's
+    roll-up gap is not an item (its vendors carry the gaps, FP-8). No answers, e-mails or evidence URLs."""
+    from backend.utilities.cbom_sources import evidence as EV
+    from backend.utilities.cbom_sources.serialize import public_area, public_vendor
+
+    today = now.date()
+    stored = {a.area_key: a for a in session.exec(select(CbomEvidenceArea).where(
+        CbomEvidenceArea.team_id == team_id)).all()}
+    areas = [stored.get(key) or CbomEvidenceArea(team_id=team_id, area_key=key) for key in EV.AREAS]
+    areas += [row for key, row in sorted(stored.items()) if key not in EV.AREAS]
+    vendors = session.exec(select(CbomEvidenceVendor).where(CbomEvidenceVendor.team_id == team_id)
+                           .order_by(CbomEvidenceVendor.id)).all()
+    vendor_rows = [public_vendor(v, now) for v in vendors]
+    rows = [public_area(a, today, [v["effective_confidence"] for v in vendor_rows]) for a in areas]
+    _gaps, count = EV.q0_gaps(rows, vendor_rows, today)
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        if row["q0_gap_rollup"]:
+            continue
+        gap = row["q0_gap"] or {}
+        items.append({"id": f"area:{row['area_key']}", "kind": "area", "key": row["area_key"], "title": row["title"],
+                      "level": row["effective_confidence"], "reason": gap.get("reason"), "detail": gap.get("detail"),
+                      "evidence_date": row["evidence_date"]})
+    for row in vendor_rows:
+        gap = row["q0_gap"] or {}
+        items.append({"id": f"vendor:{row['id']}", "kind": "vendor", "key": str(row["id"]), "title": row["name"],
+                      "level": row["effective_confidence"], "reason": gap.get("reason"), "detail": gap.get("detail"),
+                      "status": row["status"]})
+    return {"as_of": today.isoformat(), "gap_count": count, "items": items}
+
+
+def snapshot_inputs(session: Session, team_id: int, settings: CbomCollectionSettings,
+                    now: _dt.datetime) -> dict[str, Any]:
+    """What ``runs.queue_run`` records on a run at Start (PLAN §2.4): the model, the team's Mosca from the settings
+    row the Start read (``settings_row_version`` names it), the evidence levels and Q0 gaps, and a digest of all of
+    it but ``captured_at`` (the same inputs give the same digest). Per-source X, exposure and segment are already in
+    each job's metadata snapshot."""
+    from backend.utilities.cbom_sources.common import iso_z
+
+    doc: dict[str, Any] = {"model": GRADE_MODEL, "model_version": GRADE_MODEL_VERSION,
+                           "settings_row_version": settings.row_version, "mosca": mosca_of(settings.risk_model),
+                           "evidence": evidence_snapshot(session, team_id, now)}
+    doc["digest"] = hashlib.sha256(json.dumps(doc, sort_keys=True, separators=(",", ":"), default=str)
+                                   .encode("utf-8")).hexdigest()[:16]
+    doc["captured_at"] = iso_z(now)
+    return doc
+
+
+def run_grades(run: CbomCollectionRun, risk_model: dict[str, Any] | None) -> dict[str, Any]:
+    """``GET …/runs/{id}`` ``grades``: the run's model and snapshot, and whether the team's Mosca (``risk_model``,
+    now) or the grade model differs from them. Every key always present; ``inputs_changed`` is null when the caller
+    has no current inputs to compare with."""
+    snap = run.grade_inputs if isinstance(run.grade_inputs, dict) and isinstance(
+        run.grade_inputs.get("mosca"), dict) else None
+    changed: bool | None = None
+    if risk_model is not None or snap is None:
+        changed = snap is not None and mosca_of(risk_model) != {k: _mosca_int(snap["mosca"].get(k)) for k in "xyz"}
+    return {"model_version": run.grade_model_version, "inputs": snap,
+            "inputs_digest": snap.get("digest") if snap else None,
+            "inputs_source": "snapshot" if snap else "current", "inputs_changed": changed,
+            "model_changed": run.grade_model_version != GRADE_MODEL_VERSION,
+            "mosca_now": mosca_of(risk_model) if changed else None}
 
 
 # ----------------------------------------------------------------------------- unread scope of a run
@@ -771,19 +885,34 @@ class RunGrades:
 
     def __init__(self, session: Session, *, team_id: int, run_id: int, risk_model: dict[str, Any] | None) -> None:
         self.ctx = load_context(session, team_id=team_id, run_id=run_id, risk_model=risk_model or {})
+        # PR-2: the record grades with the run's snapshot; when the team's Mosca differs now, every row is also graded
+        # with it (``q_grades_now``), beside the record and never in its place
+        self.risk_model = risk_model or {}
+        self.now = self.ctx.with_inputs(risk_model) if self.ctx.inputs_changed(risk_model) else None
+        self.q_grades_now: Counter[str] = Counter()
+        self.changed_now = 0
         self.q_grades: Counter[str] = Counter()
         self.coverage: list[tuple[CbomCollectedAsset, RowGrade]] = []
         self.assets = _Items()
         self.asset_q0 = 0
         self._mosca: dict[str, Any] | None = None
 
+    @property
+    def record_risk_model(self) -> dict[str, Any]:
+        """The Mosca the record grades with, in the settings' spelling."""
+        return risk_model_of(self.ctx.mosca) if self.ctx.inputs_source == "snapshot" else self.risk_model
+
     def add(self, row: CbomCollectedAsset, codes: list[str] | None,
-            exposure: tuple[str, str] | None = None) -> RowGrade:
-        out = self.ctx.grade_row(row, codes, explain=False, score_exposure=exposure)
+            exposure: tuple[str, str] | None = None, cls: str | None = None) -> RowGrade:
+        out = self.ctx.grade_row(row, codes, explain=False, score_exposure=exposure, cls=cls)
         if row.asset_type == "coverage":
             self.coverage.append((row, out))
             return out
         self.q_grades[out.q_grade or "none"] += 1
+        if self.now is not None:
+            now = self.now.grade_row(row, codes, explain=False, score_exposure=exposure, cls=cls)
+            self.q_grades_now[now.q_grade or "none"] += 1
+            self.changed_now += (now.q_grade, now.q_reason) != (out.q_grade, out.q_reason)
         if out.q_grade == "Q0":
             self.asset_q0 += 1
             if out.q_reason == "mosca_missing":  # one missing team setting is one item (FP-5)
@@ -815,9 +944,16 @@ class RunGrades:
             "grade_model": GRADE_MODEL,
             "grade_model_version": GRADE_MODEL_VERSION,
             "grade_inputs": self.ctx.inputs(),
+            # PR-2: the same rows with the team's inputs now (null when they equal the run's snapshot)
+            "inputs_changed": self.now is not None,
+            "model_changed": self.ctx.run is not None and self.ctx.run.grade_model_version != GRADE_MODEL_VERSION,
+            "q_grades_now": {g: self.q_grades_now.get(g, 0) for g in (*GRADES, "none")} if self.now else None,
+            "q_changed_now": self.changed_now if self.now else None,
+            "grade_inputs_now": self.now.inputs() if self.now else None,
         }
 
 
 __all__ = ["FORMULA_TEXT", "FORMULA_SHA256", "GRADE_MODEL", "GRADE_MODEL_VERSION", "GradeInput", "Grade", "grade",
-           "GradeContext", "RowGrade", "RunGrades", "load_context", "scope_items", "model_payload", "coverage_kind",
+           "GradeContext", "RowGrade", "RunGrades", "load_context", "scope_items", "snapshot_inputs",
+           "evidence_snapshot", "run_grades", "mosca_of", "risk_model_of", "model_payload", "coverage_kind",
            "classical_fallback", "trust_anchor", "grade_exposure", "REASONS", "LABELS"]

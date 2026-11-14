@@ -121,6 +121,8 @@ def test_evidence_map_from_attestations() -> None:
 
 
 def test_scan_metadata_surfaces_phase4_keys_cbom() -> None:
+    from backend.utilities.cbom_sources.vex_semantics import VEX_RULES
+
     scan = types.SimpleNamespace(
         scan_metadata={"repo_url": "https://ex/r", "branch": "main"},
         scan_data={
@@ -128,13 +130,17 @@ def test_scan_metadata_surfaces_phase4_keys_cbom() -> None:
             "cbom_compliance": {"cert_in_cbom": {"pass": 0}},
             "attestations": {"cert_in_cbom": {"8.4.1.1": {"filename": "a.pdf"}}},
             "bom_signature": {"alg": "HMAC-SHA256", "digest": "abc"},
-            "vex_json": {"bomFormat": "CycloneDX", "vulnerabilities": []},
+            "vex_json": {"bomFormat": "CycloneDX", "vulnerabilities": [],
+                         "metadata": {"properties": [{"name": "zs:vex_rules", "value": VEX_RULES}]}},
         },
     )
     out = get_scan_metadata("cbom", scan)
     assert out["attestations"]["cert_in_cbom"]["8.4.1.1"]["filename"] == "a.pdf"
     assert out["bom_signature"]["alg"] == "HMAC-SHA256"
     assert out["vex_json"]["bomFormat"] == "CycloneDX"
+    # a CBOM VEX stored by older rules is not served from metadata (CB-22): the page fetches /vex, which rebuilds it
+    scan.scan_data["vex_json"] = {"bomFormat": "CycloneDX", "vulnerabilities": []}
+    assert get_scan_metadata("cbom", scan)["vex_json"] is None
 
 
 def test_scan_metadata_surfaces_phase4_keys_ai_bom_and_sbom() -> None:

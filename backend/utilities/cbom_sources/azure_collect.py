@@ -1,4 +1,4 @@
-"""Azure Key Vault inventory over the public REST APIs (cloud worker; no Azure SDK).
+"""Azure Key Vault inventory and control-plane TLS / encryption settings over the public REST APIs (cloud worker; no SDK).
 
 * Token: Entra ID client credentials (client secret, or a certificate-signed client assertion), one token for ARM
   (https://management.azure.com/.default) and one for the Key Vault data plane (https://vault.azure.net/.default).
@@ -8,6 +8,8 @@
   Certificate: the public certificate and its policy) and secrets (Get Secrets: id, attributes, contentType).  Values
   are never requested: no GET of a secret, no key operation.  Keys and secrets that only back a certificate
   (``managed: true``) are left to the certificate row.
+* Control plane (``azure_arm``): storage accounts, App Service apps and certificates, Application Gateway listeners,
+  Front Door custom domains and Azure SQL servers -- TLS policy, encryption key source and public certificates.
 * Every failure becomes a coverage row (denied, blocked by the vault firewall, error) -- never a silent "nothing found".
 """
 from __future__ import annotations
@@ -20,6 +22,7 @@ import uuid
 from typing import Any, Callable
 from urllib.parse import urlsplit
 
+from backend.utilities.cbom_sources import azure_arm
 from backend.utilities.cbom_sources.cloud_http import CloudHttp, CloudHttpError
 from backend.utilities.cbom_sources.common import log
 
@@ -342,6 +345,8 @@ def collect_azure(team_id: int, cfg: dict[str, Any], secrets: dict[str, str], em
                 continue
             t0 = time.monotonic()
             parts: dict[str, str] = {}
+            vaults: list[dict[str, Any]] = []
+            truncated, vault_status = False, "ok"
             try:
                 vaults, truncated = http.azure_pages(
                     f"{ARM}/subscriptions/{sub}/providers/Microsoft.KeyVault/vaults?api-version={ARM_VAULTS_API}",
@@ -350,12 +355,9 @@ def collect_azure(team_id: int, cfg: dict[str, Any], secrets: dict[str, str], em
                 targets.append({"target": label, "status": "auth_failed", "error": str(exc)[:256], "assets": 0})
                 continue
             except CloudHttpError as exc:
-                status = _status(exc)
+                vault_status = _status(exc)
                 emit({"type": "coverage", "target": label, "location": f"/subscriptions/{sub}/providers/Microsoft.KeyVault",
-                      "facts": {"check": f"key vaults in subscription {sub}", "status": status, "detail": str(exc)[:200]}})
-                targets.append({"target": label, "status": "auth_failed" if status == "denied" else "error",
-                                "error": str(exc)[:256], "assets": 0, "duration_ms": int((time.monotonic() - t0) * 1000)})
-                continue
+                      "facts": {"check": f"key vaults in subscription {sub}", "status": vault_status, "detail": str(exc)[:200]}})
             if truncated:  # no scope: the vaults past the cap (and their keys) are unknown, so it covers the target
                 emit({"type": "coverage", "target": label, "location": f"/subscriptions/{sub}/providers/Microsoft.KeyVault#cap",
                       "facts": {"check": f"key vaults in subscription {sub}", "status": "truncated",
@@ -380,15 +382,33 @@ def collect_azure(team_id: int, cfg: dict[str, Any], secrets: dict[str, str], em
                 parts[str(vault.get("name"))] = (
                     "error" if any(s not in ("ok", "truncated", "partial") for s in result.values())
                     else ("partial" if any(s != "ok" for s in result.values()) else "ok"))
+            # the control plane: storage, App Service, Application Gateway, Front Door, SQL (TLS policy, encryption)
+            try:
+                services = azure_arm.collect_subscription(http, lambda: tokens.get(ARM_SCOPE), sub, label, emit)
+            except AzureCollectError as exc:
+                targets.append({"target": label, "status": "auth_failed", "error": str(exc)[:256], "assets": 0})
+                continue
             bad = sorted(n for n, s in parts.items() if s == "error")
             # a cut list (vaults, or a vault's keys / certificates / secrets) or an unparsable certificate: read, not
             # complete -- the target is partial, never "ok"; each gap row carries the scope drift must not call gone
             gappy = sorted(n for n, s in parts.items() if s == "partial") + (["(vault list)"] if truncated else [])
-            status = "error" if bad else ("partial" if gappy else "ok")
-            error = ((f"{len(bad)} vault(s) not fully read: " + ", ".join(bad)) if bad else
-                     (f"read with gaps: {', '.join(gappy)}" if gappy else None))
+            # a control-plane service the reader role from before this release cannot read is a gap (its coverage row
+            # names the action to add), never a failed subscription: Key Vault was read as before
+            failed = [f"{svc}: {st}" for svc, st in services.items()
+                      if st not in ("ok", "truncated", "partial", "not_enabled", "denied")]
+            gappy += [f"{svc}: {st}" for svc, st in services.items() if st in ("truncated", "partial", "denied")]
+            if vault_status != "ok":
+                failed.insert(0, f"keyvault: {vault_status}")
+            keyvault = (vault_status if vault_status != "ok" else "error" if bad else
+                        "partial" if truncated or "partial" in parts.values() else "ok")
+            denied_everywhere = vault_status == "denied" and all(st == "denied" for st in services.values())
+            status = ("auth_failed" if denied_everywhere else "error") if (bad or failed or denied_everywhere) else (
+                "partial" if gappy else "ok")
+            error = "; ".join(failed + ([f"{len(bad)} vault(s) not fully read: " + ", ".join(bad)] if bad else [])
+                              + ([f"read with gaps: {', '.join(gappy)}"] if gappy else [])) or None
             targets.append({"target": label, "status": status, "error": error[:256] if error else None,
-                            "duration_ms": int((time.monotonic() - t0) * 1000), "vaults": len(vaults)})
+                            "duration_ms": int((time.monotonic() - t0) * 1000), "vaults": len(vaults),
+                            "services": {"keyvault": keyvault, **services}})
     ok = sum(1 for t in targets if t["status"] == "ok")
     partial = sum(1 for t in targets if t["status"] == "partial")
     skipped = sum(1 for t in targets if t["status"].startswith("skipped"))
@@ -426,6 +446,36 @@ def test_azure(cfg: dict[str, Any], secrets: dict[str, str], *, transport: Any =
                                "detail": f"{len(vaults)} vault(s) in subscription {first}"})
         except CloudHttpError as exc:
             checks.append({"check": "List key vaults", "status": "fail", "detail": str(exc)[:240]})
-    failed = [c for c in checks if c["status"] != "pass"]
-    return {"status": "failed" if failed else "passed", "checks": checks,
-            "message": failed[0]["detail"] if failed else checks[-1]["detail"]}
+            first = None
+        if first:
+            checks += _probe_control_plane(http, arm_token, first)
+    return _verdict(checks)
+
+
+def _probe_control_plane(http: CloudHttp, arm_token: str, sub: str) -> list[dict[str, str]]:
+    """One list call per control-plane service.  A missing grant is a warning, never a failed validation: the run reads
+    everything else and reports the service as a coverage gap that names the action to add."""
+    out: list[dict[str, str]] = []
+    for path, version, action, words in azure_arm.SERVICES.values():
+        check = f"Read {words}"
+        try:
+            http.get(f"{ARM}/subscriptions/{sub}/providers/{path}?api-version={version}", arm_token)
+            out.append({"check": check, "status": "pass", "detail": f"Readable in subscription {sub}"})
+        except CloudHttpError as exc:
+            status = azure_arm.status_of(exc)
+            if status == "not_enabled":
+                out.append({"check": check, "status": "pass", "detail": "Resource provider not registered: nothing to read"})
+            else:
+                out.append({"check": check, "status": "warning",
+                            "detail": (f"Not granted: {action}. Re-run the reader script to add it; until then runs "
+                                       f"report {words} as a coverage gap" if status == "denied" else str(exc))[:240]})
+    return out
+
+
+def _verdict(checks: list[dict[str, str]]) -> dict[str, Any]:
+    failed = [c for c in checks if c["status"] not in ("pass", "warning")]
+    warned = [c for c in checks if c["status"] == "warning"]
+    main = next((c for c in checks if c["check"].startswith("List ")), checks[-1])  # the vault / KMS list call
+    message = (failed[0]["detail"] if failed else
+               f"Passed with {len(warned)} warning(s): {warned[0]['detail']}" if warned else main["detail"])
+    return {"status": "failed" if failed else "passed", "checks": checks, "message": message[:512]}

@@ -1,0 +1,14 @@
+2026-11-12T15:21:53.341994109Z 2026/11/12 15:21:53 socat[1] N listening on AF=2 0.0.0.0:443
+2026-11-12T15:22:29.076109918Z 2026/11/12 15:22:29 socat[1] N accepting connection from AF=2 10.231.0.11:35050 on AF=2 10.231.0.45:443
+2026-11-12T15:22:29.076894442Z 2026/11/12 15:22:29 socat[1] N forked off child process 62
+2026-11-12T15:22:29.076902755Z 2026/11/12 15:22:29 socat[1] N listening on AF=2 0.0.0.0:443
+2026-11-12T15:22:29.076904587Z 2026/11/12 15:22:29 socat[62] N forking off child, using socket for reading and writing
+2026-11-12T15:22:29.076906301Z 2026/11/12 15:22:29 socat[62] N forked off child process 63
+2026-11-12T15:22:29.076907892Z 2026/11/12 15:22:29 socat[62] N forked off child process 63
+2026-11-12T15:22:29.077057196Z 2026/11/12 15:22:29 socat[63] N execvp'ing "/bin/sh"
+2026-11-12T15:22:29.077060347Z 2026/11/12 15:22:29 socat[62] N starting data transfer loop with FDs [6,6] and [5,5]
+2026-11-12T15:22:29.077223748Z 2026/11/12 15:22:29 socat[62] N socket 1 (fd 6) is at EOF
+2026-11-12T15:22:29.078396116Z 2026/11/12 15:22:29 socat[62] N socket 2 (fd 5) is at EOF
+2026-11-12T15:22:29.078497358Z 2026/11/12 15:22:29 socat[62] N exiting with status 0
+2026-11-12T15:22:29.078595093Z 2026/11/12 15:22:29 socat[62] N childdied(): handling signal 17
+2026-11-12T15:22:29.078882084Z 2026/11/12 15:22:29 socat[1] N childdied(): handling signal 17

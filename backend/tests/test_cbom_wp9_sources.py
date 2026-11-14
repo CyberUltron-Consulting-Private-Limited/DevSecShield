@@ -196,6 +196,7 @@ def test_a_library_that_reached_end_of_life_after_the_run_is_a_finding_in_every_
     from backend.new_models import CbomCollectedAsset
     from backend.utilities.cbom_sources import crypto_kb
     from backend.utilities.cbom_sources.inventory import export_serial
+    from backend.utilities.cbom_sources.posture import PQC_CLASS_MODEL
 
     engine, _ = world
     _src, run, claim, hdr = _collect_job(api, engine)
@@ -246,7 +247,8 @@ def test_a_library_that_reached_end_of_life_after_the_run_is_a_finding_in_every_
     assert ("zs:finding_code", "LIB_EOL") in props and ("zs:impact", "Medium") in props
     assert ("zs:run_impact", run_impact or "Info") in props and ("zs:judged_on", item["as_of_run"]["judged_on"]) in props
     assert "ZS-CBOM-LIB_EOL" in {v["id"] for v in bom["vulnerabilities"]}
-    assert bom["serialNumber"] != export_serial(run["id"], crypto_kb.version())  # not the run's own record
+    assert bom["serialNumber"] != export_serial(run["id"], crypto_kb.version(),  # not the run's own record
+                                                class_model=PQC_CLASS_MODEL)
     xml = api("GET", f"{base}/cbom?format=xml")
     assert xml.status_code == 200 and "LIB_EOL" in xml.text
 
@@ -285,6 +287,7 @@ def test_run_records_versions_and_the_export_serial_is_deterministic(api, world)
     from backend.utilities.cbom_sources import crypto_kb
     from backend.utilities.cbom_sources.classify import CLASSIFIER_VERSION
     from backend.utilities.cbom_sources.inventory import export_serial
+    from backend.utilities.cbom_sources.posture import PQC_CLASS_MODEL
 
     engine, _ = world
     _src, run, claim, hdr = _collect_job(api, engine)
@@ -295,8 +298,11 @@ def test_run_records_versions_and_the_export_serial_is_deterministic(api, world)
     assert detail["versions"]["engine"]
     first = api("GET", f"/1/cbom/sources/runs/{run['id']}/cbom").json()
     second = api("GET", f"/1/cbom/sources/runs/{run['id']}/cbom").json()
-    assert first["serialNumber"] == second["serialNumber"] == export_serial(run["id"], crypto_kb.version())
-    assert export_serial(run["id"], "2099.1.1.1") != first["serialNumber"]  # a new KB re-judges: new serial
+    # CB-18 ST-A: the class model is part of the serial (a release that changes the classes gives a new BOM)
+    assert first["serialNumber"] == second["serialNumber"] == export_serial(run["id"], crypto_kb.version(),
+                                                                            class_model=PQC_CLASS_MODEL)
+    assert export_serial(run["id"], "2099.1.1.1", class_model=PQC_CLASS_MODEL) != first["serialNumber"]  # new KB
+    assert export_serial(run["id"], crypto_kb.version(), class_model="pc-1") != first["serialNumber"]
     props = {p["name"]: p["value"] for p in first["metadata"]["properties"]}
     assert props["zs:run_kb_version"] == crypto_kb.version() and props["zs:classifier_version"] == CLASSIFIER_VERSION
 

@@ -1,0 +1,1137 @@
+{
+ "deferred": [
+  {
+   "address": "10.231.0.42",
+   "deferred": true,
+   "gate": [
+    "G7"
+   ],
+   "issue": "#93",
+   "issue_draft": "round6/cbom/cb-02/issue-deferred.md",
+   "part": "idp",
+   "reason": "OIDC discovery + JWKS target not in the CB-02 brief's target list"
+  },
+  {
+   "address": "10.231.0.43",
+   "deferred": true,
+   "gate": [
+    "G13",
+    "W-INT"
+   ],
+   "issue": "#93",
+   "issue_draft": "round6/cbom/cb-02/issue-deferred.md",
+   "part": "receiver",
+   "reason": "webhook receiver (scripts/integrations_lab) not in the CB-02 brief's target list"
+  },
+  {
+   "address": "10.231.0.40",
+   "deferred": true,
+   "gate": [
+    "G4",
+    "G15"
+   ],
+   "issue": "#93",
+   "issue_draft": "round6/cbom/cb-02/issue-deferred.md",
+   "part": "ubuntu-tier2",
+   "reason": ".40 is Alpine + OpenSSH 10 without the product's Tier-2 sudoers; sshd, host keys and planted files belong to the login user, so a Tier-1 login reads more than on a real host and can write the file copy of the command log (the container log is the authoritative record)"
+  },
+  {
+   "address": null,
+   "deferred": true,
+   "gate": [
+    "W-HOST"
+   ],
+   "issue": "#93",
+   "issue_draft": "round6/cbom/cb-02/issue-deferred.md",
+   "part": "k8s",
+   "reason": "kind node image needs ~2.5 GB of disk; the shared machine had 3.8-7 GB free (rule: keep >= 3 GB)"
+  }
+ ],
+ "generated_at": "2026-11-12T15:21:45Z",
+ "generator": {
+  "commit": "052e94dd550755ddaf87a890e360b934f64eceba",
+  "name": "gen.py",
+  "wave": "core"
+ },
+ "quantum_vulnerable_source": "NIST IR 8547 ipd (2024-11) sections 3-4, https://doi.org/10.6028/NIST.IR.8547.ipd; endpoints: key exchange per IANA TLS Supported Groups (ML-KEM code points 0x0200-0x0202, 0x11EB-0x11ED) and OpenSSH 9.0/9.9 release notes (sntrup761x25519-sha512, mlkem768x25519-sha256)",
+ "ranges": [
+  {
+   "cidr": "10.231.0.16/28",
+   "empty_addresses": [
+    "10.231.0.25",
+    "10.231.0.27",
+    "10.231.0.28",
+    "10.231.0.29",
+    "10.231.0.30"
+   ],
+   "never_scan": [],
+   "source": "S-zoo"
+  },
+  {
+   "cidr": "10.231.0.32/30",
+   "empty_addresses": [],
+   "never_scan": [
+    "10.231.0.33"
+   ],
+   "source": "R-canary"
+  }
+ ],
+ "run_step": "run1",
+ "schema": "zs-cbom-oracle/1",
+ "targets": [
+  {
+   "address": "10.231.0.17",
+   "assets": [
+    {
+     "asset_type": "tls_endpoint",
+     "codes_exclude": [
+      "PROTO_TLS10",
+      "PROTO_TLS11"
+     ],
+     "expect": {
+      "cipher_suites": [
+       "TLS_AES_128_GCM_SHA256",
+       "TLS_AES_256_GCM_SHA384",
+       "TLS_CHACHA20_POLY1305_SHA256"
+      ],
+      "groups": [
+       "X25519",
+       "secp256r1"
+      ],
+      "protocol_versions": [
+       "TLSv1.3"
+      ],
+      "quantum_vulnerable": true
+     },
+     "location": "10.231.0.17:443",
+     "oracle_id": "z01/tls",
+     "provenance": {
+      "captured_at": "2026-11-12T15:21:45Z",
+      "detail": "nginx -c /lab/nginx.conf",
+      "source": "gen.py",
+      "tool": "openssl",
+      "tool_version": "OpenSSL 3.5.9 29 Sep 2026 (Library: OpenSSL 3.5.9 29 Sep 2026)"
+     }
+    },
+    {
+     "asset_type": "certificate",
+     "expect": {
+      "algorithm": "EC",
+      "curve": "P-256",
+      "fingerprint_sha256": "7418f4121ab0544d76c378c4d228116e79c6ce19042938925e4111617340b20e",
+      "issuer": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+      "key_size": 256,
+      "not_after": "2027-12-14T15:21:45Z",
+      "not_before": "2026-11-11T15:21:45Z",
+      "quantum_vulnerable": true,
+      "serial": "7368b7b81ccc095e",
+      "signature_algorithm": "sha256WithRSAEncryption",
+      "subject": "CN=z01.lab"
+     },
+     "join": "fingerprint_sha256",
+     "location": "10.231.0.17:443",
+     "oracle_id": "z01/cert[0]",
+     "provenance": {
+      "captured_at": "2026-11-12T15:21:45Z",
+      "detail": "openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256; openssl x509 -req -CA targets-ca -sha256 -not_before 20261111152145Z -not_after 20271214152145Z",
+      "source": "gen.py",
+      "tool": "openssl x509",
+      "tool_version": "OpenSSL 3.5.9 29 Sep 2026 (Library: OpenSSL 3.5.9 29 Sep 2026)"
+     },
+     "sni": null
+    },
+    {
+     "asset_type": "certificate",
+     "expect": {
+      "algorithm": "RSA",
+      "fingerprint_sha256": "1723b921c4a5b089958d2053cd0d8d6936f4f39cd7ec99c0b57f1c2cf2d3218a",
+      "issuer": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+      "key_size": 2048,
+      "not_after": "2036-11-09T15:21:45Z",
+      "not_before": "2026-11-10T15:21:45Z",
+      "quantum_vulnerable": true,
+      "serial": "37971095f5d9abc56a18c5d85f42492efd778ab4",
+      "signature_algorithm": "sha256WithRSAEncryption",
+      "subject": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab"
+     },
+     "join": "fingerprint_sha256",
+     "location": "10.231.0.17:443",
+     "oracle_id": "z01/cert[1]",
+     "provenance": {
+      "captured_at": "2026-11-12T15:21:45Z",
+      "detail": "openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256; openssl x509 -req -CA targets-ca -sha256 -not_before 20261111152145Z -not_after 20271214152145Z",
+      "source": "gen.py",
+      "tool": "openssl x509",
+      "tool_version": "OpenSSL 3.5.9 29 Sep 2026 (Library: OpenSSL 3.5.9 29 Sep 2026)"
+     },
+     "sni": null
+    }
+   ],
+   "facts": "oracle/facts/z01.json",
+   "must_not_appear": [],
+   "selfcheck_ref": "z01",
+   "source": "S-zoo",
+   "target_id": "z01",
+   "world": "closed"
+  },
+  {
+   "address": "10.231.0.18",
+   "assets": [
+    {
+     "asset_type": "tls_endpoint",
+     "expect": {
+      "cipher_suites": [
+       "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA",
+       "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA",
+       "TLS_RSA_WITH_AES_128_CBC_SHA",
+       "TLS_RSA_WITH_AES_256_CBC_SHA"
+      ],
+      "groups": [
+       "secp256r1"
+      ],
+      "protocol_versions": [
+       "TLSv1",
+       "TLSv1.1",
+       "TLSv1.2"
+      ],
+      "quantum_vulnerable": true
+     },
+     "location": "10.231.0.18:443",
+     "must_report": {
+      "cipher_suites": [
+       "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA",
+       "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA",
+       "TLS_RSA_WITH_AES_128_CBC_SHA",
+       "TLS_RSA_WITH_AES_256_CBC_SHA"
+      ]
+     },
+     "oracle_id": "z02/tls",
+     "provenance": {
+      "captured_at": "2026-11-12T15:21:45Z",
+      "detail": "nginx -c /lab/nginx.conf",
+      "source": "gen.py",
+      "tool": "openssl",
+      "tool_version": "OpenSSL 3.5.9 29 Sep 2026 (Library: OpenSSL 3.5.9 29 Sep 2026)"
+     }
+    },
+    {
+     "asset_type": "certificate",
+     "expect": {
+      "algorithm": "RSA",
+      "fingerprint_sha256": "42ee79413b5a13a7b8d2824ee7d599a7e8d6a7eac15fcd64265483503fe178b2",
+      "issuer": "CN=z02.lab",
+      "key_size": 1024,
+      "not_after": "2027-12-14T15:21:45Z",
+      "not_before": "2026-11-11T15:21:45Z",
+      "quantum_vulnerable": true,
+      "serial": "41d59cd844e46439a67d0cb5559c0cca167708dd",
+      "signature_algorithm": "sha1WithRSAEncryption",
+      "subject": "CN=z02.lab"
+     },
+     "join": "fingerprint_sha256",
+     "location": "10.231.0.18:443",
+     "oracle_id": "z02/cert[0]",
+     "provenance": {
+      "captured_at": "2026-11-12T15:21:45Z",
+      "detail": "openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:1024; openssl req -new -sha1 -subj /CN=z02.lab -not_before 20261111152145Z -not_after 20271214152145Z",
+      "source": "gen.py",
+      "tool": "openssl x509",
+      "tool_version": "OpenSSL 3.5.9 29 Sep 2026 (Library: OpenSSL 3.5.9 29 Sep 2026)"
+     },
+     "sni": null
+    }
+   ],
+   "facts": "oracle/facts/z02.json",
+   "must_not_appear": [],
+   "selfcheck_ref": "z02",
+   "source": "S-zoo",
+   "target_id": "z02",
+   "world": "closed"
+  },
+  {
+   "address": "10.231.0.19",
+   "assets": [
+    {
+     "asset_type": "tls_endpoint",
+     "codes_exclude": [
+      "PROTO_TLS10",
+      "PROTO_TLS11"
+     ],
+     "expect": {
+      "cipher_suites": [
+       "TLS_AES_128_GCM_SHA256",
+       "TLS_AES_256_GCM_SHA384",
+       "TLS_CHACHA20_POLY1305_SHA256",
+       "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+       "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"
+      ],
+      "groups": [
+       "X25519",
+       "secp256r1"
+      ],
+      "protocol_versions": [
+       "TLSv1.2",
+       "TLSv1.3"
+      ],
+      "quantum_vulnerable": true
+     },
+     "location": "10.231.0.19:443",
+     "oracle_id": "z04/tls",
+     "provenance": {
+      "captured_at": "2026-11-12T15:21:45Z",
+      "detail": "nginx -c /lab/nginx.conf",
+      "source": "gen.py",
+      "tool": "openssl",
+      "tool_version": "OpenSSL 3.5.9 29 Sep 2026 (Library: OpenSSL 3.5.9 29 Sep 2026)"
+     }
+    },
+    {
+     "asset_type": "certificate",
+     "expect": {
+      "algorithm": "RSA",
+      "fingerprint_sha256": "0e88643a7dfe1b9a7630d545cde42d6848594f3dbc2b70b1482e89d074fe7528",
+      "issuer": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+      "key_size": 2048,
+      "not_after": "2025-10-08T15:21:45Z",
+      "not_before": "2024-10-08T15:21:45Z",
+      "quantum_vulnerable": true,
+      "serial": "72377c7cc8dc61b9",
+      "signature_algorithm": "sha256WithRSAEncryption",
+      "subject": "CN=z04.lab"
+     },
+     "join": "fingerprint_sha256",
+     "location": "10.231.0.19:443",
+     "oracle_id": "z04/cert[0]",
+     "provenance": {
+      "captured_at": "2026-11-12T15:21:45Z",
+      "detail": "openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048; openssl x509 -req -CA targets-ca -sha256 -not_before 20241008152145Z -not_after 20251008152145Z",
+      "source": "gen.py",
+      "tool": "openssl x509",
+      "tool_version": "OpenSSL 3.5.9 29 Sep 2026 (Library: OpenSSL 3.5.9 29 Sep 2026)"
+     },
+     "sni": null
+    },
+    {
+     "asset_type": "certificate",
+     "expect": {
+      "algorithm": "RSA",
+      "fingerprint_sha256": "1723b921c4a5b089958d2053cd0d8d6936f4f39cd7ec99c0b57f1c2cf2d3218a",
+      "issuer": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+      "key_size": 2048,
+      "not_after": "2036-11-09T15:21:45Z",
+      "not_before": "2026-11-10T15:21:45Z",
+      "quantum_vulnerable": true,
+      "serial": "37971095f5d9abc56a18c5d85f42492efd778ab4",
+      "signature_algorithm": "sha256WithRSAEncryption",
+      "subject": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab"
+     },
+     "join": "fingerprint_sha256",
+     "location": "10.231.0.19:443",
+     "oracle_id": "z04/cert[1]",
+     "provenance": {
+      "captured_at": "2026-11-12T15:21:45Z",
+      "detail": "openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048; openssl x509 -req -CA targets-ca -sha256 -not_before 20241008152145Z -not_after 20251008152145Z",
+      "source": "gen.py",
+      "tool": "openssl x509",
+      "tool_version": "OpenSSL 3.5.9 29 Sep 2026 (Library: OpenSSL 3.5.9 29 Sep 2026)"
+     },
+     "sni": null
+    }
+   ],
+   "facts": "oracle/facts/z04.json",
+   "must_not_appear": [],
+   "selfcheck_ref": "z04",
+   "source": "S-zoo",
+   "target_id": "z04",
+   "world": "closed"
+  },
+  {
+   "address": "10.231.0.20",
+   "assets": [
+    {
+     "asset_type": "tls_endpoint",
+     "codes_exclude": [
+      "PROTO_TLS10",
+      "PROTO_TLS11"
+     ],
+     "expect": {
+      "cipher_suites": [
+       "TLS_AES_128_GCM_SHA256",
+       "TLS_AES_256_GCM_SHA384",
+       "TLS_CHACHA20_POLY1305_SHA256"
+      ],
+      "groups": [
+       "X25519MLKEM768"
+      ],
+      "protocol_versions": [
+       "TLSv1.3"
+      ],
+      "quantum_vulnerable": false
+     },
+     "location": "10.231.0.20:443",
+     "oracle_id": "z05/tls",
+     "provenance": {
+      "captured_at": "2026-11-12T15:21:45Z",
+      "detail": "openssl s_server -accept 443 -cert /lab/cert.pem -key /lab/key.pem -www -tls1_3 -ciphersuites TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256 -cert_chain /lab/_ca.pem -groups X25519MLKEM768",
+      "source": "gen.py",
+      "tool": "openssl",
+      "tool_version": "OpenSSL 3.5.9 29 Sep 2026 (Library: OpenSSL 3.5.9 29 Sep 2026)"
+     }
+    },
+    {
+     "asset_type": "certificate",
+     "expect": {
+      "algorithm": "RSA",
+      "fingerprint_sha256": "21c1a307f8d822fbb92db4fc0c9ccbade83de1654ac72acc89b63d58d37bc296",
+      "issuer": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+      "key_size": 2048,
+      "not_after": "2027-12-14T15:21:45Z",
+      "not_before": "2026-11-11T15:21:45Z",
+      "quantum_vulnerable": true,
+      "serial": "ccb4945e9b488f88",
+      "signature_algorithm": "sha256WithRSAEncryption",
+      "subject": "CN=z05.lab"
+     },
+     "join": "fingerprint_sha256",
+     "location": "10.231.0.20:443",
+     "oracle_id": "z05/cert[0]",
+     "provenance": {
+      "captured_at": "2026-11-12T15:21:45Z",
+      "detail": "openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048; openssl x509 -req -CA targets-ca -sha256 -not_before 20261111152145Z -not_after 20271214152145Z",
+      "source": "gen.py",
+      "tool": "openssl x509",
+      "tool_version": "OpenSSL 3.5.9 29 Sep 2026 (Library: OpenSSL 3.5.9 29 Sep 2026)"
+     },
+     "sni": null
+    },
+    {
+     "asset_type": "certificate",
+     "expect": {
+      "algorithm": "RSA",
+      "fingerprint_sha256": "1723b921c4a5b089958d2053cd0d8d6936f4f39cd7ec99c0b57f1c2cf2d3218a",
+      "issuer": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+      "key_size": 2048,
+      "not_after": "2036-11-09T15:21:45Z",
+      "not_before": "2026-11-10T15:21:45Z",
+      "quantum_vulnerable": true,
+      "serial": "37971095f5d9abc56a18c5d85f42492efd778ab4",
+      "signature_algorithm": "sha256WithRSAEncryption",
+      "subject": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab"
+     },
+     "join": "fingerprint_sha256",
+     "location": "10.231.0.20:443",
+     "oracle_id": "z05/cert[1]",
+     "provenance": {
+      "captured_at": "2026-11-12T15:21:45Z",
+      "detail": "openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048; openssl x509 -req -CA targets-ca -sha256 -not_before 20261111152145Z -not_after 20271214152145Z",
+      "source": "gen.py",
+      "tool": "openssl x509",
+      "tool_version": "OpenSSL 3.5.9 29 Sep 2026 (Library: OpenSSL 3.5.9 29 Sep 2026)"
+     },
+     "sni": null
+    }
+   ],
+   "facts": "oracle/facts/z05.json",
+   "must_not_appear": [],
+   "selfcheck_ref": "z05",
+   "source": "S-zoo",
+   "target_id": "z05",
+   "world": "closed"
+  },
+  {
+   "address": "10.231.0.21",
+   "assets": [
+    {
+     "asset_type": "tls_endpoint",
+     "codes_exclude": [
+      "PROTO_TLS10",
+      "PROTO_TLS11"
+     ],
+     "expect": {
+      "cipher_suites": [
+       "TLS_AES_128_GCM_SHA256",
+       "TLS_AES_256_GCM_SHA384",
+       "TLS_CHACHA20_POLY1305_SHA256"
+      ],
+      "groups": [
+       "X25519",
+       "X25519MLKEM768"
+      ],
+      "protocol_versions": [
+       "TLSv1.3"
+      ],
+      "quantum_vulnerable": false
+     },
+     "known_fail": "KF-3",
+     "location": "10.231.0.21:443",
+     "oracle_id": "z05b/tls",
+     "provenance": {
+      "captured_at": "2026-11-12T15:21:45Z",
+      "detail": "openssl s_server -accept 443 -cert /lab/cert.pem -key /lab/key.pem -www -tls1_3 -ciphersuites TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256 -groups X25519MLKEM768:X25519",
+      "source": "gen.py",
+      "tool": "openssl",
+      "tool_version": "OpenSSL 3.5.9 29 Sep 2026 (Library: OpenSSL 3.5.9 29 Sep 2026)"
+     }
+    },
+    {
+     "asset_type": "certificate",
+     "expect": {
+      "algorithm": "ML-DSA-65",
+      "fingerprint_sha256": "3ef7beba268042a9143f7bc3f9691d6c30f8a6f11f2a57c42ef7beee5ebbe90d",
+      "issuer": "CN=z05b.lab",
+      "key_size": null,
+      "not_after": "2027-12-14T15:21:45Z",
+      "not_before": "2026-11-11T15:21:45Z",
+      "quantum_vulnerable": false,
+      "serial": "6d4105b785a88b2517899390df4e197ee9ac41bc",
+      "signature_algorithm": "ML-DSA-65",
+      "subject": "CN=z05b.lab"
+     },
+     "join": "fingerprint_sha256",
+     "known_fail": "KF-3",
+     "location": "10.231.0.21:443",
+     "oracle_id": "z05b/cert[0]",
+     "provenance": {
+      "captured_at": "2026-11-12T15:21:45Z",
+      "detail": "openssl genpkey -algorithm ML-DSA-65; openssl req -new -subj /CN=z05b.lab -not_before 20261111152145Z -not_after 20271214152145Z",
+      "source": "gen.py",
+      "tool": "openssl x509",
+      "tool_version": "OpenSSL 3.5.9 29 Sep 2026 (Library: OpenSSL 3.5.9 29 Sep 2026)"
+     },
+     "sni": null
+    }
+   ],
+   "facts": "oracle/facts/z05b.json",
+   "must_not_appear": [],
+   "selfcheck_ref": "z05b",
+   "source": "S-zoo",
+   "target_id": "z05b",
+   "world": "closed"
+  },
+  {
+   "address": "10.231.0.22",
+   "assets": [
+    {
+     "asset_type": "tls_endpoint",
+     "codes_exclude": [
+      "PROTO_TLS10",
+      "PROTO_TLS11"
+     ],
+     "expect": {
+      "cipher_suites": [
+       "TLS_AES_128_GCM_SHA256",
+       "TLS_AES_256_GCM_SHA384",
+       "TLS_CHACHA20_POLY1305_SHA256",
+       "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"
+      ],
+      "groups": [
+       "X25519",
+       "secp256r1"
+      ],
+      "protocol_versions": [
+       "TLSv1.2",
+       "TLSv1.3"
+      ],
+      "quantum_vulnerable": true
+     },
+     "known_fail": "KF-4",
+     "location": "10.231.0.22:443",
+     "oracle_id": "z09/tls",
+     "provenance": {
+      "captured_at": "2026-11-12T15:21:45Z",
+      "detail": "nginx -c /lab/nginx.conf",
+      "source": "gen.py",
+      "tool": "openssl",
+      "tool_version": "OpenSSL 3.5.9 29 Sep 2026 (Library: OpenSSL 3.5.9 29 Sep 2026)"
+     }
+    },
+    {
+     "asset_type": "certificate",
+     "expect": {
+      "algorithm": "RSA",
+      "fingerprint_sha256": "d3cd5bc2ce8dca63460cd734b583d856b041cb95fe6c98cd96348f4e155a0f6d",
+      "issuer": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+      "key_size": 2048,
+      "not_after": "2027-12-14T15:21:45Z",
+      "not_before": "2026-11-11T15:21:45Z",
+      "quantum_vulnerable": true,
+      "serial": "198dab2540466074",
+      "signature_algorithm": "sha256WithRSAEncryption",
+      "subject": "CN=sni.lab"
+     },
+     "join": "fingerprint_sha256",
+     "known_fail": "KF-4",
+     "location": "10.231.0.22:443",
+     "oracle_id": "z09/cert[0]",
+     "provenance": {
+      "captured_at": "2026-11-12T15:21:45Z",
+      "detail": "openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048; openssl x509 -req -CA targets-ca -sha256 -not_before 20261111152145Z -not_after 20271214152145Z",
+      "source": "gen.py",
+      "tool": "openssl x509",
+      "tool_version": "OpenSSL 3.5.9 29 Sep 2026 (Library: OpenSSL 3.5.9 29 Sep 2026)"
+     },
+     "sni": "sni.lab"
+    },
+    {
+     "asset_type": "certificate",
+     "expect": {
+      "algorithm": "RSA",
+      "fingerprint_sha256": "1723b921c4a5b089958d2053cd0d8d6936f4f39cd7ec99c0b57f1c2cf2d3218a",
+      "issuer": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+      "key_size": 2048,
+      "not_after": "2036-11-09T15:21:45Z",
+      "not_before": "2026-11-10T15:21:45Z",
+      "quantum_vulnerable": true,
+      "serial": "37971095f5d9abc56a18c5d85f42492efd778ab4",
+      "signature_algorithm": "sha256WithRSAEncryption",
+      "subject": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab"
+     },
+     "join": "fingerprint_sha256",
+     "known_fail": "KF-4",
+     "location": "10.231.0.22:443",
+     "oracle_id": "z09/cert[1]",
+     "provenance": {
+      "captured_at": "2026-11-12T15:21:45Z",
+      "detail": "openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048; openssl x509 -req -CA targets-ca -sha256 -not_before 20261111152145Z -not_after 20271214152145Z",
+      "source": "gen.py",
+      "tool": "openssl x509",
+      "tool_version": "OpenSSL 3.5.9 29 Sep 2026 (Library: OpenSSL 3.5.9 29 Sep 2026)"
+     },
+     "sni": "sni.lab"
+    }
+   ],
+   "facts": "oracle/facts/z09.json",
+   "must_not_appear": [],
+   "selfcheck_ref": "z09",
+   "source": "S-zoo",
+   "target_id": "z09",
+   "world": "closed"
+  },
+  {
+   "address": "10.231.0.26",
+   "assets": [
+    {
+     "asset_type": "tls_endpoint",
+     "expect": {
+      "cipher_suites": [
+       "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA",
+       "TLS_RSA_WITH_AES_128_CBC_SHA"
+      ],
+      "groups": [
+       "secp256r1"
+      ],
+      "protocol_versions": [
+       "TLSv1"
+      ],
+      "quantum_vulnerable": true
+     },
+     "location": "10.231.0.26:443",
+     "must_report": {
+      "cipher_suites": [
+       "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA",
+       "TLS_RSA_WITH_AES_128_CBC_SHA"
+      ]
+     },
+     "oracle_id": "z16/tls",
+     "provenance": {
+      "captured_at": "2026-11-12T15:21:45Z",
+      "detail": "nginx -c /lab/nginx.conf",
+      "source": "gen.py",
+      "tool": "openssl",
+      "tool_version": "OpenSSL 3.5.9 29 Sep 2026 (Library: OpenSSL 3.5.9 29 Sep 2026)"
+     }
+    },
+    {
+     "asset_type": "certificate",
+     "expect": {
+      "algorithm": "RSA",
+      "fingerprint_sha256": "473e278da7672c6b031847fd5686fe9dff67839f3c76633bfdb5fb052abdabbf",
+      "issuer": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+      "key_size": 2048,
+      "not_after": "2027-12-14T15:21:45Z",
+      "not_before": "2026-11-11T15:21:45Z",
+      "quantum_vulnerable": true,
+      "serial": "1bdf307c5b1fbc85",
+      "signature_algorithm": "sha256WithRSAEncryption",
+      "subject": "CN=z16.lab"
+     },
+     "join": "fingerprint_sha256",
+     "location": "10.231.0.26:443",
+     "oracle_id": "z16/cert[0]",
+     "provenance": {
+      "captured_at": "2026-11-12T15:21:45Z",
+      "detail": "openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048; openssl x509 -req -CA targets-ca -sha256 -not_before 20261111152145Z -not_after 20271214152145Z",
+      "source": "gen.py",
+      "tool": "openssl x509",
+      "tool_version": "OpenSSL 3.5.9 29 Sep 2026 (Library: OpenSSL 3.5.9 29 Sep 2026)"
+     },
+     "sni": null
+    },
+    {
+     "asset_type": "certificate",
+     "expect": {
+      "algorithm": "RSA",
+      "fingerprint_sha256": "1723b921c4a5b089958d2053cd0d8d6936f4f39cd7ec99c0b57f1c2cf2d3218a",
+      "issuer": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+      "key_size": 2048,
+      "not_after": "2036-11-09T15:21:45Z",
+      "not_before": "2026-11-10T15:21:45Z",
+      "quantum_vulnerable": true,
+      "serial": "37971095f5d9abc56a18c5d85f42492efd778ab4",
+      "signature_algorithm": "sha256WithRSAEncryption",
+      "subject": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab"
+     },
+     "join": "fingerprint_sha256",
+     "location": "10.231.0.26:443",
+     "oracle_id": "z16/cert[1]",
+     "provenance": {
+      "captured_at": "2026-11-12T15:21:45Z",
+      "detail": "openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048; openssl x509 -req -CA targets-ca -sha256 -not_before 20261111152145Z -not_after 20271214152145Z",
+      "source": "gen.py",
+      "tool": "openssl x509",
+      "tool_version": "OpenSSL 3.5.9 29 Sep 2026 (Library: OpenSSL 3.5.9 29 Sep 2026)"
+     },
+     "sni": null
+    }
+   ],
+   "facts": "oracle/facts/z16.json",
+   "must_not_appear": [],
+   "selfcheck_ref": "z16",
+   "source": "S-zoo",
+   "target_id": "z16",
+   "world": "closed"
+  },
+  {
+   "address": "10.231.0.23",
+   "assets": [
+    {
+     "asset_type": "ssh_endpoint",
+     "codes_include": [
+      "SSH_NO_PQ_KEX"
+     ],
+     "expect": {
+      "ciphers": [
+       "aes128-ctr",
+       "aes256-ctr"
+      ],
+      "host_key_algorithms": [
+       "ssh-ed25519",
+       "rsa-sha2-512",
+       "rsa-sha2-256"
+      ],
+      "host_keys": [
+       {
+        "bits": 1024,
+        "fingerprint_sha256": "SHA256:qILywpW1FV9sHEhY4i6BIp5B5AxxnR2ziezczpERcvw",
+        "type": "ssh-rsa"
+       },
+       {
+        "bits": 256,
+        "fingerprint_sha256": "SHA256:5hRN95qWFbVqi/SFZY1mgVZB2zu8CmBhStJcAsnAaTM",
+        "type": "ssh-ed25519"
+       }
+      ],
+      "kex_algorithms": [
+       "curve25519-sha256",
+       "ecdh-sha2-nistp256",
+       "diffie-hellman-group14-sha256",
+       "diffie-hellman-group14-sha1"
+      ],
+      "macs": [
+       "hmac-sha1",
+       "hmac-sha2-256"
+      ],
+      "protocol_versions": [
+       "SSHv2"
+      ],
+      "quantum_vulnerable": true
+     },
+     "location": "10.231.0.23:22",
+     "oracle_id": "sshd-legacy/ssh",
+     "provenance": {
+      "captured_at": "2026-11-12T15:21:45Z",
+      "detail": "ssh-keygen -q -t rsa -N  -C  -f /out/lab/targets/sshd-legacy/hostkeys/ssh_host_rsa_key -b 1024; ssh-keygen -q -t ed25519 -N  -C ",
+      "source": "gen.py",
+      "tool": "ssh-keygen",
+      "tool_version": "OpenSSH_10.0p2, OpenSSL 3.5.9 29 Sep 2026"
+     }
+    }
+   ],
+   "facts": "oracle/facts/sshd-legacy.json",
+   "must_not_appear": [],
+   "selfcheck_ref": "sshd-legacy",
+   "source": "S-zoo",
+   "target_id": "sshd-legacy",
+   "world": "closed"
+  },
+  {
+   "address": "10.231.0.24",
+   "assets": [
+    {
+     "asset_type": "ssh_endpoint",
+     "expect": {
+      "ciphers": [
+       "aes256-gcm@openssh.com",
+       "chacha20-poly1305@openssh.com"
+      ],
+      "host_key_algorithms": [
+       "ssh-ed25519"
+      ],
+      "host_keys": [
+       {
+        "bits": 256,
+        "fingerprint_sha256": "SHA256:rBj3mPsWmRAsROTwesSCSmFY0+JCUwYjiSzia8JbXxU",
+        "type": "ssh-ed25519"
+       }
+      ],
+      "kex_algorithms": [
+       "mlkem768x25519-sha256"
+      ],
+      "macs": [
+       "hmac-sha2-256-etm@openssh.com"
+      ],
+      "protocol_versions": [
+       "SSHv2"
+      ],
+      "quantum_vulnerable": false
+     },
+     "known_fail": "KF-6",
+     "location": "10.231.0.24:22",
+     "oracle_id": "sshd-pq/ssh",
+     "provenance": {
+      "captured_at": "2026-11-12T15:21:45Z",
+      "detail": "ssh-keygen -q -t ed25519 -N  -C ",
+      "source": "gen.py",
+      "tool": "ssh-keygen",
+      "tool_version": "OpenSSH_10.0p2, OpenSSL 3.5.9 29 Sep 2026"
+     }
+    }
+   ],
+   "facts": "oracle/facts/sshd-pq.json",
+   "must_not_appear": [],
+   "selfcheck_ref": "sshd-pq",
+   "source": "S-zoo",
+   "target_id": "sshd-pq",
+   "world": "closed"
+  },
+  {
+   "address": "10.231.0.40",
+   "assets": [
+    {
+     "asset_type": "ssh_endpoint",
+     "expect": {
+      "ciphers": [
+       "chacha20-poly1305@openssh.com",
+       "aes256-gcm@openssh.com",
+       "aes128-ctr"
+      ],
+      "host_key_algorithms": [
+       "ssh-ed25519",
+       "ecdsa-sha2-nistp256",
+       "rsa-sha2-512",
+       "rsa-sha2-256"
+      ],
+      "host_keys": [
+       {
+        "bits": 3072,
+        "fingerprint_sha256": "SHA256:Cocw7esf9vxh/+nvm5gO6M5hBYmJq7akBx0sB7Es2Fw",
+        "type": "ssh-rsa"
+       },
+       {
+        "bits": 256,
+        "fingerprint_sha256": "SHA256:jivL14akUWWESCVmovnmPLPU5itlsQy7Adn9gEVxHis",
+        "type": "ecdsa-sha2-nistp256"
+       },
+       {
+        "bits": 256,
+        "fingerprint_sha256": "SHA256:Vp6VGDrBx0vruC897Q78aZ+TkkPEOq1EmaKwK//OQo8",
+        "type": "ssh-ed25519"
+       }
+      ],
+      "kex_algorithms": [
+       "mlkem768x25519-sha256",
+       "sntrup761x25519-sha512",
+       "curve25519-sha256",
+       "ecdh-sha2-nistp256",
+       "diffie-hellman-group14-sha256"
+      ],
+      "macs": [
+       "hmac-sha2-256-etm@openssh.com",
+       "hmac-sha2-512-etm@openssh.com"
+      ],
+      "protocol_versions": [
+       "SSHv2"
+      ],
+      "quantum_vulnerable": false
+     },
+     "location": "10.231.0.40:22",
+     "oracle_id": "host/ssh",
+     "provenance": {
+      "captured_at": "2026-11-12T15:21:45Z",
+      "detail": "ssh-keygen -q -t rsa -N  -C  -f /out/lab/targets/host/hostkeys/ssh_host_rsa_key -b 3072; ssh-keygen -q -t ecdsa -N  -C  -f /out/lab/targets/host/hostkeys/ssh_host_ecdsa_key -b 256; ssh-keygen -q -t ed25519 -N  -C ",
+      "source": "gen.py",
+      "tool": "ssh-keygen",
+      "tool_version": "OpenSSH_10.0p2, OpenSSL 3.5.9 29 Sep 2026"
+     }
+    },
+    {
+     "asset_type": "private_key",
+     "expect": {
+      "algorithm": "RSA",
+      "key_size": 1024,
+      "path": "/srv/cbom-lab/keys/legacy-rsa1024.key",
+      "quantum_vulnerable": true
+     },
+     "location": "10.231.0.40",
+     "oracle_id": "host:/srv/cbom-lab/keys/legacy-rsa1024.key",
+     "provenance": {
+      "detail": "/srv/cbom-lab/keys/legacy-rsa1024.key",
+      "source": "gen.py"
+     }
+    },
+    {
+     "asset_type": "certificate",
+     "expect": {
+      "algorithm": "RSA",
+      "fingerprint_sha256": "07536c90429ea70aace0c911b632b81aa6be5956362a39f51f9f03c2626cd664",
+      "issuer": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+      "key_size": 2048,
+      "not_after": "2025-10-08T15:21:45Z",
+      "not_before": "2024-10-08T15:21:45Z",
+      "path": "/srv/cbom-lab/certs/expired-rsa2048.crt",
+      "quantum_vulnerable": true,
+      "serial": "13e7f8a1bd7f4804",
+      "signature_algorithm": "sha256WithRSAEncryption",
+      "subject": "CN=expired-rsa2048.lab"
+     },
+     "location": "10.231.0.40",
+     "oracle_id": "host:/srv/cbom-lab/certs/expired-rsa2048.crt",
+     "provenance": {
+      "detail": "/srv/cbom-lab/certs/expired-rsa2048.crt",
+      "source": "gen.py"
+     }
+    },
+    {
+     "asset_type": "certificate",
+     "expect": {
+      "algorithm": "RSA",
+      "fingerprint_sha256": "ac9ec2c2eeb7e223cda2b8229172cd0b11dcfe70baee212fe1423bd1ed6781f9",
+      "issuer": "CN=selfsigned-sha1.lab",
+      "key_size": 2048,
+      "not_after": "2027-12-14T15:21:45Z",
+      "not_before": "2026-11-11T15:21:45Z",
+      "path": "/srv/cbom-lab/certs/selfsigned-sha1.crt",
+      "quantum_vulnerable": true,
+      "serial": "796f98b49849615398e74735567f52fe22d9dbaf",
+      "signature_algorithm": "sha1WithRSAEncryption",
+      "subject": "CN=selfsigned-sha1.lab"
+     },
+     "location": "10.231.0.40",
+     "oracle_id": "host:/srv/cbom-lab/certs/selfsigned-sha1.crt",
+     "provenance": {
+      "detail": "/srv/cbom-lab/certs/selfsigned-sha1.crt",
+      "source": "gen.py"
+     }
+    },
+    {
+     "asset_type": "keystore",
+     "expect": {
+      "entries": [
+       {
+        "alias": "app",
+        "cert_sha256": "e1f5d20d4f37fb1ca98887401e5c046f216c3989ac4d01f5c659d16d8a330346",
+        "key_algorithm": "RSA",
+        "key_bits": 2048,
+        "signature_algorithm": "SHA256withRSA",
+        "type": "PrivateKeyEntry"
+       }
+      ],
+      "format": "PKCS12",
+      "path": "/srv/cbom-lab/keystores/app.p12"
+     },
+     "location": "10.231.0.40",
+     "oracle_id": "host:/srv/cbom-lab/keystores/app.p12",
+     "provenance": {
+      "detail": "/srv/cbom-lab/keystores/app.p12",
+      "source": "gen.py"
+     }
+    },
+    {
+     "asset_type": "keystore",
+     "expect": {
+      "entries": [
+       {
+        "alias": "app",
+        "cert_sha256": "5caf663cf07e551e8019358eb5d12f235b162fcadbd53173a309bf95a88cf240",
+        "key_algorithm": "RSA",
+        "key_bits": 2048,
+        "signature_algorithm": "SHA256withRSA",
+        "type": "PrivateKeyEntry"
+       },
+       {
+        "alias": "legacy-ca",
+        "cert_sha256": "3de010a3e6f79cf7e9d930c0feaa7bc3f79648a6a5534bcee29885c7d7c6d25a",
+        "key_algorithm": "RSA",
+        "key_bits": 1024,
+        "signature_algorithm": "SHA1withRSA",
+        "type": "trustedCertEntry"
+       }
+      ],
+      "format": "JKS",
+      "path": "/srv/cbom-lab/keystores/legacy.jks"
+     },
+     "location": "10.231.0.40",
+     "oracle_id": "host:/srv/cbom-lab/keystores/legacy.jks",
+     "provenance": {
+      "detail": "/srv/cbom-lab/keystores/legacy.jks",
+      "source": "gen.py"
+     }
+    }
+   ],
+   "extras_ceiling": 80,
+   "facts": "oracle/facts/host.json",
+   "must_not_appear": [],
+   "selfcheck_ref": "host",
+   "source": "S-host",
+   "target_id": "host",
+   "world": "open"
+  },
+  {
+   "address": "10.231.0.33",
+   "assets": [],
+   "facts": "oracle/facts/canary.json",
+   "must_not_appear": [
+    {
+     "asset_type": "tls_endpoint",
+     "location": "10.231.0.33:443"
+    },
+    {
+     "asset_type": "open_port",
+     "location": "10.231.0.33:443"
+    },
+    {
+     "asset_type": "certificate",
+     "location": "10.231.0.33:443"
+    }
+   ],
+   "selfcheck_ref": "canary",
+   "source": "S-canary",
+   "target_id": "canary",
+   "world": "closed"
+  },
+  {
+   "address": "10.231.0.34",
+   "assets": [],
+   "facts": "oracle/facts/control.json",
+   "must_not_appear": [],
+   "selfcheck_ref": "control",
+   "source": "S-canary",
+   "target_id": "control",
+   "world": "closed"
+  },
+  {
+   "address": "10.231.0.44",
+   "assets": [],
+   "facts": "oracle/facts/idn-fass.json",
+   "must_not_appear": [
+    {
+     "asset_type": "tls_endpoint",
+     "location": "10.231.0.44:443"
+    },
+    {
+     "asset_type": "open_port",
+     "location": "10.231.0.44:443"
+    },
+    {
+     "asset_type": "certificate",
+     "location": "10.231.0.44:443"
+    }
+   ],
+   "selfcheck_ref": "idn-fass",
+   "source": "S-idn",
+   "target_id": "idn-fass",
+   "world": "closed"
+  },
+  {
+   "address": "10.231.0.45",
+   "assets": [],
+   "facts": "oracle/facts/idn-punycode.json",
+   "must_not_appear": [],
+   "selfcheck_ref": "idn-punycode",
+   "source": "S-idn",
+   "target_id": "idn-punycode",
+   "world": "closed"
+  },
+  {
+   "address": "10.231.0.41",
+   "assets": [
+    {
+     "asset_type": "database_tls",
+     "expect": {
+      "protocol_versions": [
+       "TLSv1.2",
+       "TLSv1.3"
+      ],
+      "tls_enabled": true
+     },
+     "location": "10.231.0.41:5432",
+     "oracle_id": "pg-tls/tls",
+     "provenance": {
+      "captured_at": "2026-11-12T15:21:45Z",
+      "detail": "pg_hba.conf and start.sh written by gen.py",
+      "source": "gen.py",
+      "tool": "openssl",
+      "tool_version": "OpenSSL 3.5.9 29 Sep 2026 (Library: OpenSSL 3.5.9 29 Sep 2026)"
+     }
+    },
+    {
+     "asset_type": "certificate",
+     "expect": {
+      "algorithm": "RSA",
+      "fingerprint_sha256": "6c16a77a08df990440436eb9c033b5b10e28be26a8f3712da3199591a720e606",
+      "issuer": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+      "key_size": 2048,
+      "not_after": "2027-12-14T15:21:45Z",
+      "not_before": "2026-11-11T15:21:45Z",
+      "quantum_vulnerable": true,
+      "serial": "56b648ea04e284e7",
+      "signature_algorithm": "sha256WithRSAEncryption",
+      "subject": "CN=pg-tls.lab"
+     },
+     "join": "fingerprint_sha256",
+     "location": "10.231.0.41:5432",
+     "oracle_id": "pg-tls/cert[0]",
+     "provenance": {
+      "captured_at": "2026-11-12T15:21:45Z",
+      "detail": "openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048; openssl x509 -req -CA targets-ca -sha256 -not_before 20261111152145Z -not_after 20271214152145Z",
+      "source": "gen.py",
+      "tool": "openssl x509",
+      "tool_version": "OpenSSL 3.5.9 29 Sep 2026 (Library: OpenSSL 3.5.9 29 Sep 2026)"
+     }
+    },
+    {
+     "asset_type": "database_user_auth",
+     "codes_include": [
+      "DB_MD5_ACCEPTED"
+     ],
+     "expect": {},
+     "location": "10.231.0.41:5432",
+     "oracle_id": "pg-tls/auth",
+     "provenance": {
+      "captured_at": "2026-11-12T15:21:45Z",
+      "detail": "pg_hba.conf and start.sh written by gen.py",
+      "source": "gen.py",
+      "tool": "openssl",
+      "tool_version": "OpenSSL 3.5.9 29 Sep 2026 (Library: OpenSSL 3.5.9 29 Sep 2026)"
+     }
+    }
+   ],
+   "facts": "oracle/facts/pg-tls.json",
+   "must_not_appear": [],
+   "selfcheck_ref": "pg-tls",
+   "source": "DB-pg-tls",
+   "target_id": "pg-tls",
+   "world": "closed"
+  }
+ ]
+}

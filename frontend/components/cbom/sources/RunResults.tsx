@@ -22,11 +22,13 @@ import {
   type CbomJobTargets,
 } from "@/utils/backend_api";
 
+import { FixClassChip, QGradeChip, type FixClassFields, type QGradeFields } from "@/components/cbom/grade";
 import { downloadCbomRunBom } from "@/utils/api/cbom_outputs";
 import { downloadOscal } from "@/utils/api/integrations";
 
 import { cbomSourcesKeys } from "./keys";
-import { pluralize } from "./logic";
+import { LabModeBanner } from "./LabModeBanner";
+import { pluralize, targetGuidance } from "./logic";
 import { RunInsights } from "./ChangesPanel";
 import { AssetDetailPanel, RunPostureCard } from "./RunPosture";
 import { BulkAssignBar, useRunRemediation, WaveBadge } from "./WavesControls";
@@ -100,6 +102,23 @@ function factsRows(asset: CbomAsset): [string, string][] {
   return out.slice(0, 30);
 }
 
+/** One target that was not fully read: its status, the node's reason and, where there is one, what to do. */
+export function TargetProblemRow({ t }: { t: { target: string; status: string; error?: string | null } }) {
+  const guidance = targetGuidance(t.status, t.error, t.target);
+  return (
+    <li className="flex flex-wrap items-start gap-2 text-xs">
+      <span className="font-mono text-zinc-700 dark:text-zinc-300 break-all">{t.target}</span>
+      <StatusBadge tone={TARGET_TONE[t.status] ?? "red"}>{TARGET_LABEL[t.status] ?? t.status}</StatusBadge>
+      {t.error && <span className="text-zinc-500 break-words min-w-0">{t.error}</span>}
+      {guidance && (
+        <span className="basis-full text-zinc-600 dark:text-zinc-400 break-words" data-testid="run-results-guidance">
+          {guidance}
+        </span>
+      )}
+    </li>
+  );
+}
+
 function TargetsBlock({ jobs }: { jobs: CbomJobTargets[] }) {
   const [open, setOpen] = useState<number | null>(null);
   if (jobs.length === 0) return null;
@@ -121,6 +140,11 @@ function TargetsBlock({ jobs }: { jobs: CbomJobTargets[] }) {
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-medium text-zinc-900 dark:text-white break-all">{job.source_name ?? `Source ${job.source_id ?? "—"}`}</span>
                 <StatusBadge tone={tone as Tone}>{label}</StatusBadge>
+                {job.lab_mode && (
+                  <StatusBadge tone="amber" title="Lab mode: same-account collection — not for production">
+                    Lab mode
+                  </StatusBadge>
+                )}
                 {job.truncated && <StatusBadge tone="amber">Truncated</StatusBadge>}
                 {job.asset_mismatch && (
                   <StatusBadge tone="amber" title={`Node reported ${job.asset_mismatch.reported}, stored ${job.asset_mismatch.stored}`}>
@@ -151,11 +175,7 @@ function TargetsBlock({ jobs }: { jobs: CbomJobTargets[] }) {
                   {open === job.job_id && (
                     <ul className="mt-2 space-y-1">
                       {problems.slice(0, 200).map((t, i) => (
-                        <li key={`${t.target}-${i}`} className="flex flex-wrap items-start gap-2 text-xs">
-                          <span className="font-mono text-zinc-700 dark:text-zinc-300 break-all">{t.target}</span>
-                          <StatusBadge tone={TARGET_TONE[t.status] ?? "red"}>{TARGET_LABEL[t.status] ?? t.status}</StatusBadge>
-                          {t.error && <span className="text-zinc-500 break-words min-w-0">{t.error}</span>}
-                        </li>
+                        <TargetProblemRow key={`${t.target}-${i}`} t={t} />
                       ))}
                     </ul>
                   )}
@@ -195,6 +215,9 @@ export default function RunResults({ teamId, runId, active }: { teamId: number; 
 
   return (
     <div className="space-y-4 min-w-0" data-testid="run-results">
+      {data.targets.some((job) => job.lab_mode) && (
+        <LabModeBanner testId="run-results-lab-mode" detail="An AWS source in this run was read from the deployment's own AWS account." />
+      )}
       <TargetsBlock jobs={data.targets} />
       <RunPostureCard teamId={teamId} runId={runId} active={active} />
       <RunInsights teamId={teamId} runId={runId} active={active} />
@@ -338,7 +361,9 @@ export default function RunResults({ teamId, runId, active }: { teamId: number; 
                   <TableHead>Where</TableHead>
                   <TableHead>Algorithm</TableHead>
                   <TableHead>Finding</TableHead>
-                  <TableHead>Quantum</TableHead>
+                  <TableHead>Quantum-vulnerable</TableHead>
+                  <TableHead>Quantum risk</TableHead>
+                  <TableHead>Fix class</TableHead>
                   <TableHead>Wave</TableHead>
                 </TableRow>
               </TableHeader>
@@ -380,11 +405,13 @@ export default function RunResults({ teamId, runId, active }: { teamId: number; 
                       <TableCell className="text-zinc-600 dark:text-zinc-400">
                         {asset.quantum_vulnerable === true ? "Vulnerable" : asset.quantum_vulnerable === false ? "Safe" : "—"}
                       </TableCell>
+                      <TableCell><QGradeChip item={asset as QGradeFields} assetId={asset.id} /></TableCell>
+                      <TableCell><FixClassChip item={asset as FixClassFields} assetId={asset.id} /></TableCell>
                       <TableCell><WaveBadge item={waves.byAsset.get(asset.id)} /></TableCell>
                     </TableRow>
                     {expanded === asset.id && (
                       <TableRow>
-                        <TableCell colSpan={9} className="bg-zinc-50 dark:bg-zinc-800/50">
+                        <TableCell colSpan={11} className="bg-zinc-50 dark:bg-zinc-800/50">
                           <div className="max-w-[900px] space-y-2 whitespace-normal">
                             {asset.finding && <p className="text-sm text-zinc-900 dark:text-white">{asset.finding}</p>}
                             {asset.as_of_run && (

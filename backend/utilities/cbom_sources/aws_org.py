@@ -33,7 +33,11 @@ THROTTLED = frozenset({
     "RequestThrottledException", "ThrottledException", "SlowDown", "PriorRequestNotComplete",
 })
 PAGE_SIZE = 20  # ListAccounts' maximum
-_sleep = time.sleep  # tests replace it
+STOP = threading.Event()  # set on SIGTERM (cloud worker): a backoff wait ends at once and the throttle is raised
+
+
+def _sleep(delay: float) -> None:  # tests replace it
+    STOP.wait(delay)
 
 
 def _env_int(name: str, default: int, lo: int, hi: int) -> int:
@@ -59,11 +63,13 @@ def with_backoff(fn: Callable[[], Any], *, what: str, attempts: int | None = Non
             return fn()
         except Exception as exc:
             code = _code(exc)
-            if code not in THROTTLED or attempt == tries:
+            if code not in THROTTLED or attempt == tries or STOP.is_set():
                 raise
             delay = min(cap_s, base_s * (2 ** (attempt - 1))) * (0.5 + random.random() / 2)
             log("aws throttled; backing off", what=what, code=code, attempt=attempt, delay_ms=int(delay * 1000))
             (sleep or _sleep)(delay)
+            if STOP.is_set():
+                raise
     raise AssertionError("unreachable")  # pragma: no cover
 
 
@@ -137,7 +143,7 @@ def member_accounts(mgmt, base, boto_cfg, role_arn: str, external_id: str, team_
         if halt.is_set():
             return acct, "skipped"
         try:
-            with_backoff(lambda: acct.check(first), what="sts:AssumeRole")
+            acct.check(first)  # AssumeRole inside is retried on throttling (aws_collect._assume_role)
             return acct, None
         except AC.AwsCollectError as exc:
             return acct, str(exc)[:256]
@@ -251,10 +257,10 @@ def clear_cache() -> None:
 
 
 def collect_slice(team_id: int, cfg: dict[str, Any], external_id: str, role_arn: str, region: str, emit: AC.Emit,
-                  should_stop: Callable[[], str | None]) -> dict[str, Any]:
+                  should_stop: Callable[[], str | None], *, raise_throttled: bool = False) -> dict[str, Any]:
     """Read one account x region.  The role ARN must be the source's role or a member role of the same name (the
     parent planned it); the identity check of ``_Account.assume`` still runs on every (re-)assume."""
     started = time.monotonic()
     acct = _account(team_id, role_arn, external_id)
-    target = AC.read_target(acct, region, cfg, emit, should_stop)
+    target = AC.read_target(acct, region, cfg, emit, should_stop, raise_throttled=raise_throttled)
     return AC.summary([target], team_id, started, quiet=True, account=acct.account, region=region)

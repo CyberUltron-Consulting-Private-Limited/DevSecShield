@@ -1,0 +1,66 @@
+{
+ "commit": "052e94dd550755ddaf87a890e360b934f64eceba",
+ "generator": "e2e/cbom/lab/gen.py cb02-gen/1",
+ "images": {
+  "mysql": {
+   "id": "sha256:a81d043930e51745522bd5c430961cf8286f0a23f0a9a2a6e0108f7ea71b0902",
+   "inputs": null,
+   "ref": "mirror.gcr.io/library/mysql:8.4@sha256:a81d043930e51745522bd5c430961cf8286f0a23f0a9a2a6e0108f7ea71b0902"
+  },
+  "postgres": {
+   "id": "sha256:aa6cb33cf4c19c765cefcf48d96176258800870a9a1e930ad126200f9d825139",
+   "inputs": null,
+   "ref": "mirror.gcr.io/library/postgres:16-alpine@sha256:aa6cb33cf4c19c765cefcf48d96176258800870a9a1e930ad126200f9d825139"
+  },
+  "target": {
+   "id": "sha256:803e132e9852c8030e6c60dfb71ed9523096a50fe3f30218bc4fe2c74aaf51c5",
+   "inputs": "b0827fb5847868fc49e8624473549203cc3a4136adbe4a0a95ab0feb80356bde",
+   "ref": "cb02-lab/target:dev"
+  },
+  "tools": {
+   "id": "sha256:3c36751a77a492f8579f092ecffec2b17f3ef143b77631924ab3138beab9d718",
+   "inputs": "b0827fb5847868fc49e8624473549203cc3a4136adbe4a0a95ab0feb80356bde",
+   "ref": "cb02-lab/tools:dev"
+  }
+ },
+ "now": "2026-11-12T15:21:45Z",
+ "oracle_sha256": "2813c724f337e59c292f0572eb3ed1a42c7a0baf789d7f1bf8f1aad0fea9c07b",
+ "oracle_sha256_history": [
+  {
+   "at": "2026-11-12T15:21:52Z",
+   "oracle_sha256": "2813c724f337e59c292f0572eb3ed1a42c7a0baf789d7f1bf8f1aad0fea9c07b",
+   "step": "run1"
+  }
+ ],
+ "profiles": [
+  "core"
+ ],
+ "run_id": "lab-20261112T152145Z",
+ "targets": [
+  "z01",
+  "z02",
+  "z04",
+  "z05",
+  "z05b",
+  "z09",
+  "z16",
+  "sshd-legacy",
+  "sshd-pq",
+  "host",
+  "canary",
+  "control",
+  "idn-fass",
+  "idn-punycode",
+  "pg-tls"
+ ],
+ "tools": {
+  "keytool": "openjdk version \"21.0.11\" 2026-04-21",
+  "openssl": "OpenSSL 3.5.9 29 Sep 2026 (Library: OpenSSL 3.5.9 29 Sep 2026)",
+  "pkcs11-tool": "pkcs11-tool: unrecognized option: help",
+  "python": "3.12.16",
+  "softhsm2-util": "2.6.1",
+  "ssh-keygen": "OpenSSH_10.0p2, OpenSSL 3.5.9 29 Sep 2026"
+ },
+ "variant": null,
+ "variant_note": null
+}

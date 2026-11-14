@@ -158,7 +158,8 @@ def test_organization_member_listing_failure_is_a_failed_target_not_a_note(aws, 
 
     monkeypatch.setattr(boto3.session.Session, "client", deny_org)
     monkeypatch.setattr(aws_collect, "_boto", lambda **kw: (_Session(False), None))
-    monkeypatch.setattr(aws_collect, "_region_services", lambda acct, region, label, emit, cfg: [("kms", "ok", None)])
+    monkeypatch.setattr(aws_collect, "_region_services",
+                        lambda acct, region, label, emit, cfg, **_k: [("kms", "ok", None)])
     monkeypatch.setattr(aws_collect, "_global_services", lambda acct, label, emit: [("iam", "ok", None)])
     found: list[dict] = []
     result = aws_collect.collect_aws(1, {"role_arn": ROLE, "regions": ["us-east-1"], "scope": "organization"},
@@ -174,8 +175,8 @@ def test_a_kms_list_cut_at_its_cap_is_a_scoped_gap_and_a_partial_target(aws, mon
     kms = boto3.client("kms", region_name="us-east-1")
     for i in range(3):
         kms.create_key(Description=f"k{i}")
-    original = aws_collect._paginate
-    monkeypatch.setattr(aws_collect, "_paginate",
+    original = aws_collect._paginate_kept  # the KMS key list keeps what it listed when a later page fails (CB-33)
+    monkeypatch.setattr(aws_collect, "_paginate_kept",
                         lambda client, method, key, cap=1000, **kw: original(client, method, key, cap=min(cap, 2), **kw))
     result, found = _collect_aws(monkeypatch)
     gaps = [a for a in found if a["type"] == "coverage" and a["facts"]["check"] == "kms in us-east-1"]

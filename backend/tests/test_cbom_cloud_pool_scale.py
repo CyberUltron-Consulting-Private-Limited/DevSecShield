@@ -41,7 +41,7 @@ REGIONS = os.environ.get("CBOM_SCALE_REGIONS", "us-east-1,eu-west-1,ap-south-1")
 WORKERS = int(os.environ.get("CBOM_SCALE_WORKERS", "20"))
 
 
-def _light_region(acct, region, label, emit, cfg):
+def _light_region(acct, region, label, emit, cfg, **_kw):
     for key in acct.client("kms", region).list_keys()["Keys"]:
         arn = key["KeyArn"]
         emit({"type": "kms_key", "target": label, "location": arn, "name": key["KeyId"], "algorithm": "SYMMETRIC_DEFAULT",

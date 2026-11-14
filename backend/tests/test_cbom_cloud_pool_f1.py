@@ -145,7 +145,7 @@ def _asset(acct: str, region: str) -> dict:
 
 def _collector(delay: float = 0.0, seen: list | None = None, lock: threading.Lock | None = None):
     """aws_org.collect_slice without AWS: one KMS key per account x region."""
-    def collect(team_id, cfg, external_id, role_arn, region, emit, should_stop):
+    def collect(team_id, cfg, external_id, role_arn, region, emit, should_stop, **_kw):
         acct = role_arn.split(":")[4]
         if seen is not None:
             with lock:  # type: ignore[union-attr]
@@ -286,12 +286,12 @@ def test_fair_share_a_thousand_slices_do_not_starve_another_teams_single_job(eng
     seen: list = []
     base = _collector(0.01, seen, lock)
 
-    def collect(team_id, *a):
+    def collect(team_id, *a, **kw):
         with Session(engine) as s:  # how many jobs this team runs right now, every worker counted
             now_running = J._cloud_running(s).get(team_id, 0)
         with lock:
             running_peak[team_id] = max(running_peak[team_id], now_running)
-        return base(team_id, *a)
+        return base(team_id, *a, **kw)
 
     monkeypatch.setattr(aws_org, "plan_slices", lambda team_id, cfg, *a: _plan(250 if team_id == 1 else 1)(team_id, cfg, *a))
     monkeypatch.setattr(aws_org, "collect_slice", collect)
@@ -323,7 +323,6 @@ def test_fair_share_a_thousand_slices_do_not_starve_another_teams_single_job(eng
     waited = b_done_at - queued_at
     assert waited < lease_s, f"tenant B waited {waited:.1f}s, more than one lease interval"
     assert a_left > 500, "B only ran after A drained: no fair share"
-    assert running_peak[1] <= 3  # the per-team cap held across 4 workers
     print(f"[{engine.kind}] tenant B's run finished {waited:.2f}s after it was queued; {a_left} of A's 1,000 still pending")
 
 
@@ -341,7 +340,7 @@ _CHILD = textwrap.dedent("""
     kw = {{"connect_args": {{"check_same_thread": False, "timeout": 60}}}} if url.startswith("sqlite") else {{}}
     engine = create_engine(url, **kw)
 
-    def collect(team_id, cfg, external_id, role_arn, region, emit, should_stop):
+    def collect(team_id, cfg, external_id, role_arn, region, emit, should_stop, **_kw):
         acct = role_arn.split(":")[4]
         arn = f"arn:aws:kms:{{region}}:{{acct}}:key/k1"
         emit({{"type": "kms_key", "target": f"aws:{{acct}}", "location": arn, "name": "k1",
@@ -560,6 +559,208 @@ def test_reaper_finalises_a_parent_whose_last_slice_died(engine, monkeypatch):
         assert p.status == "success" and p.outcome == "partial" and p.result["counts"]["failed"] == 1
 
 
+def _run_slices(engine, n: int) -> None:
+    for _ in range(n):
+        assert W.run_once(engine, "w")
+
+
+def test_reaper_keeps_a_fanned_out_parent_s_lease_and_progress_and_commits_them(engine, monkeypatch):
+    """#140 review M2: reap_parent's writes were rolled back (safe_reap committed only when a job moved)."""
+    from backend.utilities.cbom_sources.serialize import public_job
+
+    monkeypatch.setattr(aws_org, "collect_slice", _collector())
+    _run, parent = _fanned_out(engine, monkeypatch, accounts=2, regions=("us-east-1", "eu-west-1"))
+    _run_slices(engine, 3)
+    before = _jobs(engine, kind="collect")[0]
+    assert before.result["slices"] == {"done": 0, "total": 6} and before.asset_count == 3  # assets move per batch
+    later = utcnow() + J.cloud_lease() - _dt_seconds(5)
+    monkeypatch.setattr(W, "utcnow", lambda: later)  # the worker's reap pass, 5 s before the parent's lease ends
+    W.reap_all(engine)
+    after = _jobs(engine, kind="collect")[0]  # a new session: only what was committed
+    assert after.result["slices"] == {"done": 3, "total": 6}
+    assert after.lease_expires_at > before.lease_expires_at and after.status == "claimed"
+    with Session(engine) as s:
+        settings = get_or_create_settings(s, 1)
+        out = public_job(after, None, settings, utcnow())
+    assert out["progress"] == {"done": 3, "total": 6, "unit": "account-regions"} and out["runner"] == "cloud"
+
+
+def _dt_seconds(n: int):
+    import datetime as dt
+
+    return dt.timedelta(seconds=n)
+
+
+def test_the_source_asset_cap_is_summed_over_slices_and_the_rest_become_cap_gaps(engine, monkeypatch):
+    """#140 review M3: the per-source cap a single job had (CBOM_AWS_MAX_ASSETS_PER_SOURCE, default 50,000) holds
+    across every slice; slices after it is reached are not run and end as ``skipped_cap`` coverage rows."""
+    monkeypatch.setenv("CBOM_AWS_MAX_ASSETS_PER_SOURCE", "5")
+
+    def two(team_id, cfg, external_id, role_arn, region, emit, should_stop, **_kw):
+        acct = role_arn.split(":")[4]
+        for i in range(2):
+            emit({**_asset(acct, region), "location": f"arn:aws:kms:{region}:{acct}:key/k{i}",
+                  "facts": {"identity": f"{acct}-{region}-{i}"}})
+        return AC.summary([{"target": f"aws:{acct}/{region}", "status": "ok"}], team_id, time.monotonic(), quiet=True)
+
+    monkeypatch.setattr(aws_org, "collect_slice", two)
+    run_id, parent = _fanned_out(engine, monkeypatch, accounts=4)  # 8 slices x 2 assets = 16 > 5
+    _drain(engine)
+    p = _jobs(engine, kind="collect")[0]
+    with Session(engine) as s:
+        stored = s.exec(select(func.count()).select_from(CbomCollectedAsset)).one()
+        run = s.get(CbomCollectionRun, run_id)
+    assert stored == 5 == p.asset_count and p.result.get("truncated") is True
+    statuses = [t["status"] for t in p.result["targets"]]
+    assert statuses.count("skipped_cap") == 5 and p.result["counts"]["skipped"] == 5
+    assert p.status == "success" and p.outcome == "partial" and not p.refunded and run.status == "partial"
+    skipped = [j for j in _jobs(engine, kind="slice") if j.status == "cancelled"]
+    assert len(skipped) == 5 and all(j.attempts == 0 for j in skipped)  # never run
+
+
+def _pool_peaks(engine, monkeypatch, teams: dict[int, int], workers: int, cap: int) -> dict:
+    """Run ``workers`` loops over the given {team: accounts} (1 region each) and return each team's peak running
+    count, overall and while another team still had queued work."""
+    monkeypatch.setenv("CBOM_CLOUD_TEAM_MAX_CONCURRENCY", str(cap))
+    lock = threading.Lock()
+    peaks = {t: {"any": 0, "contended": 0} for t in teams}
+    base = _collector(0.03)
+
+    def collect(team_id, *a, **kw):
+        with Session(engine) as s:
+            running = J._cloud_running(s)
+            queued = dict(s.exec(select(CbomCollectionJob.team_id, func.count()).where(
+                CbomCollectionJob.status == "pending").group_by(CbomCollectionJob.team_id)).all())
+        with lock:
+            peaks[team_id]["any"] = max(peaks[team_id]["any"], running.get(team_id, 0))
+            if any(queued.get(t) for t in teams if t != team_id):
+                peaks[team_id]["contended"] = max(peaks[team_id]["contended"], running.get(team_id, 0))
+        return base(team_id, *a, **kw)
+
+    monkeypatch.setattr(aws_org, "plan_slices", lambda team_id, cfg, *a: _plan(teams[team_id])(team_id, cfg, *a))
+    monkeypatch.setattr(aws_org, "collect_slice", collect)
+    for team, accounts in teams.items():
+        user = _team(engine, team)
+        _source(engine, team, accounts=accounts)
+        _queue(engine, team, user, f"peak-run-{team:04d}")
+    threads = [threading.Thread(target=W.worker_loop, args=(engine, f"p{i}")) for i in range(workers)]
+    for t in threads:
+        t.start()
+    deadline = time.monotonic() + 180
+    while time.monotonic() < deadline and not all(j.status in J.TERMINAL for j in _jobs(engine, kind="collect")):
+        time.sleep(0.1)
+    W._stop.set()
+    for t in threads:
+        t.join(30)
+    assert all(j.status == "success" for j in _jobs(engine, kind="collect"))
+    return peaks
+
+
+def test_a_lone_tenant_may_use_the_whole_pool(engine, monkeypatch):
+    """#140 review M4: the per-team cap is work-conserving; alone in the queue, a team is not held at the cap."""
+    peaks = _pool_peaks(engine, monkeypatch, {1: 30}, workers=4, cap=2)
+    assert peaks[1]["any"] >= 3, peaks  # before: never more than the cap (2)
+
+
+def test_the_team_cap_holds_while_another_team_is_waiting(engine, monkeypatch):
+    peaks = _pool_peaks(engine, monkeypatch, {1: 30, 2: 30}, workers=4, cap=2)
+    assert peaks[1]["contended"] <= 2 and peaks[2]["contended"] <= 2, peaks
+    assert max(peaks[1]["contended"], peaks[2]["contended"]) >= 2, peaks  # and the pool was used
+
+
+def test_a_throttled_slice_is_requeued_with_backoff_not_reported_as_auth_failed(engine, monkeypatch):
+    """#140 R-qa major: throttling past every retry re-queues the slice (bounded by MAX_ATTEMPTS); on its last try
+    it is an ``error`` row, never ``auth_failed``."""
+    tries: list[bool] = []
+
+    def throttled(team_id, cfg, external_id, role_arn, region, emit, should_stop, *, raise_throttled=False):
+        tries.append(raise_throttled)
+        if raise_throttled:
+            raise AC.AwsThrottled("Throttling")
+        return AC.summary([{"target": f"aws:{MGMT}/{region}", "status": "error", "error": "throttled: Throttling"}],
+                          team_id, time.monotonic(), quiet=True)
+
+    waits: list[float] = []
+    monkeypatch.setattr(W._stop, "wait", lambda t=None: waits.append(t) or False)
+    monkeypatch.setattr(aws_org, "collect_slice", throttled)
+    _run, parent = _fanned_out(engine, monkeypatch)  # 2 slices
+    _drain(engine)
+    slices = _jobs(engine, kind="slice")
+    assert [j.attempts for j in slices] == [3, 3] and tries == [True, True, False, True, True, False]
+    assert len(waits) == 4 and waits[0] <= waits[1] and waits[2] <= waits[3]  # exponential in the attempt
+    p = _jobs(engine, kind="collect")[0]
+    assert {t["status"] for t in p.result["targets"]} == {"error"} and p.outcome == "failed" and p.refunded
+
+
+def test_read_target_reports_a_throttle_as_error_or_raises_for_a_slice():
+    from botocore.exceptions import ClientError
+
+    class Acct:  # AssumeRole throttled past every retry
+        account = MGMT
+
+        def ensure(self, region):
+            raise ClientError({"Error": {"Code": "Throttling", "Message": "Rate exceeded"}}, "AssumeRole")
+
+    row = AC.read_target(Acct(), "us-east-1", {}, lambda a: None, lambda: None)
+    assert row["status"] == "error" and "Throttling" in row["error"]  # before: auth_failed
+    with pytest.raises(AC.AwsThrottled):
+        AC.read_target(Acct(), "us-east-1", {}, lambda a: None, lambda: None, raise_throttled=True)
+
+
+def test_disabling_the_source_ends_every_queued_slice_in_one_reaper_pass(engine, monkeypatch):
+    """#140 R-qa minor: queued slices of a disabled / changed source end in one UPDATE, not 25 per claim pass."""
+    run_id, parent = _fanned_out(engine, monkeypatch, accounts=50, regions=("us-east-1",))  # 100 slices
+    with Session(engine) as s:
+        payload = J.claim_cloud_job(s, utcnow(), "w")  # one slice running
+        s.commit()
+        src = s.exec(select(CbomCollectionSource)).one()
+        src.enabled = False
+        s.add(src)
+        s.commit()
+    W.reap_all(engine)
+    statuses = [j.status for j in _jobs(engine, kind="slice")]
+    assert statuses.count("cancelled") == 99 and statuses.count("claimed") == 1
+    # the running slice stops at its next heartbeat; its "ok" read does not count once it is stopped
+    with Session(engine) as s:
+        assert J.renew_cloud_lease(s, payload["job"]["id"], payload["job"]["lease_id"], utcnow()) == "Source was disabled"
+        J.finish_job(s, None, payload["job"]["id"], payload["job"]["lease_id"], "success",
+                     AC.summary([{"target": f"aws:{MGMT}/global", "status": "ok"}], 1, time.monotonic(), quiet=True),
+                     None, utcnow(), team_id=1)
+        s.commit()
+    W.reap_all(engine)
+    p = _jobs(engine, kind="collect")[0]
+    with Session(engine) as s:
+        run = s.get(CbomCollectionRun, run_id)
+    assert p.status == "cancelled" and p.refunded and run.status == "cancelled"
+    assert p.result["counts"]["ok"] == 0 and p.result["counts"]["skipped"] == 100
+
+
+def test_a_slice_whose_asset_batch_cannot_be_stored_fails_instead_of_reading_as_auth_failed(engine, monkeypatch):
+    """#78's store_failed rule in the slice path: a database error on a batch fails the slice (not auth_failed)."""
+    from sqlalchemy.exc import OperationalError
+
+    def boom(*a, **k):
+        raise OperationalError("INSERT", {}, Exception("server closed the connection"))
+
+    def collect(team_id, cfg, external_id, role_arn, region, emit, should_stop, **_kw):
+        try:  # like read_target: every exception becomes a row
+            emit(_asset(MGMT, region))
+            should_stop.__self__.flush()
+        except Exception:
+            return AC.summary([{"target": f"aws:{MGMT}/{region}", "status": "auth_failed", "error": "OperationalError"}],
+                              team_id, time.monotonic(), quiet=True)
+        return AC.summary([{"target": f"aws:{MGMT}/{region}", "status": "ok"}], team_id, time.monotonic(), quiet=True)
+
+    _run, parent = _fanned_out(engine, monkeypatch)
+    monkeypatch.setattr(aws_org, "collect_slice", collect)
+    monkeypatch.setattr(J, "add_assets", boom)
+    _drain(engine)
+    slices = _jobs(engine, kind="slice")
+    assert {j.status for j in slices} == {"failure"}
+    p = _jobs(engine, kind="collect")[0]
+    assert {t["status"] for t in p.result["targets"]} == {"error"}  # not the collector's auth_failed row
+
+
 # ----------------------------------------------------------------------------- organisation walk (moto)
 class _Guard:
     """moto does not evaluate trust policies; refuse AssumeRole without the external ID like AWS would."""
@@ -680,21 +881,23 @@ def test_throttling_is_retried_with_backoff(org, monkeypatch):
     assert throttles["pages"] == 2 and len(slept) == 2 and 0.25 <= slept[0] <= 0.5 and 0.5 <= slept[1] <= 1.0
 
     # STS throttled during the parallel member check: retried, the account is still read
-    real = AC._Account.check
+    # STS throttled (past botocore's own retries) on the management AssumeRole and in the parallel member check:
+    # retried with backoff, every account still read
+    real = _Guard.assume_role
     lock = threading.Lock()
 
-    def check(self, region):
+    def assume_role(self, **kw):
         with lock:
-            if throttles["assume"] < 3:
+            if "ExternalId" in kw and throttles["assume"] < 4:
                 throttles["assume"] += 1
                 raise ClientError({"Error": {"Code": "Throttling", "Message": "Rate exceeded"}}, "AssumeRole")
-        return real(self, region)
+        return real(self, **kw)
 
-    monkeypatch.setattr(AC._Account, "check", check)
+    monkeypatch.setattr(_Guard, "assume_role", assume_role)
     monkeypatch.setattr(client, "get_paginator", real_paginator)
     cfg = {"scope": "organization", "role_arn": f"arn:aws:iam::{mgmt}:role/ZeroShieldCBOMReader", "regions": ["us-east-1"]}
     plan = aws_org.plan_slices(1, cfg, "zs-ext-0001", lambda a: None, lambda: None)
-    assert throttles["assume"] == 3 and plan["org"]["unreachable"] == 0 and len(plan["slices"]) == 260 * 2
+    assert throttles["assume"] == 4 and plan["org"]["unreachable"] == 0 and len(plan["slices"]) == 260 * 2
 
     # a throttle that never ends gives up after CBOM_AWS_THROTTLE_RETRIES; other errors are never retried
     calls = []
@@ -716,7 +919,7 @@ def test_throttling_is_retried_with_backoff(org, monkeypatch):
 def test_serial_collect_aws_walks_past_200_accounts_too(org, monkeypatch):
     client, mgmt = org
     _members(client, 249)
-    monkeypatch.setattr(AC, "_region_services", lambda acct, region, label, emit, cfg: [("kms", "ok", None)])
+    monkeypatch.setattr(AC, "_region_services", lambda acct, region, label, emit, cfg, **kw: [("kms", "ok", None)])
     monkeypatch.setattr(AC, "_global_services", lambda acct, label, emit: [("iam", "ok", None)])
     cfg = {"scope": "organization", "role_arn": f"arn:aws:iam::{mgmt}:role/ZeroShieldCBOMReader", "regions": ["us-east-1"]}
     result = AC.collect_aws(1, cfg, "zs-ext-0001", lambda a: None, lambda: None)
@@ -753,11 +956,10 @@ def test_migration_chains_on_the_single_head():
     cfg.set_main_option("script_location", str(_REPO_ROOT / "prod_database_migrations" / "migrations"))
     script = ScriptDirectory.from_config(cfg)
     assert script.get_heads() == ["w9cloudpool001"]
-    assert script.get_revision("w9cloudpool001").down_revision == "r6f14sshca002"
+    assert script.get_revision("w9cloudpool001").down_revision == "r6f12pol001"
 
 
-def test_validation_counts_every_member_account_so_the_run_is_charged_for_all_of_them(monkeypatch):
-    """The org run is charged per member account counted at validation; the count used to stop at 10 pages (200)."""
+def _validate_org(monkeypatch, accounts: int, *, bill_all: bool, throttle_first: int = 0, page_seconds: float = 0.0):
     import boto3
 
     sys.path.insert(0, str(Path(__file__).parent))
@@ -768,6 +970,10 @@ def test_validation_counts_every_member_account_so_the_run_is_charged_for_all_of
 
     _p, policies = R._resolve_template(cloudformation_template(R.EXT, "organization"))
     base = R._FakeAws(policies)
+    calls = {"pages": 0, "throttled": 0}
+    clock = [0.0]
+    if page_seconds:  # each ListAccounts page takes this long on the validation's clock
+        monkeypatch.setattr(aws_validate.time, "monotonic", lambda: clock[0])
 
     class Org(R._FakeAws):
         def client(self, service, **kw):
@@ -777,16 +983,53 @@ def test_validation_counts_every_member_account_so_the_run_is_charged_for_all_of
 
             class Accounts:
                 def list_accounts(self, NextToken=None):  # noqa: N803 - boto3 names
+                    from botocore.exceptions import ClientError
+
+                    if calls["throttled"] < throttle_first:
+                        calls["throttled"] += 1
+                        raise ClientError({"Error": {"Code": "TooManyRequestsException", "Message": "slow"}}, "ListAccounts")
+                    calls["pages"] += 1
+                    clock[0] += page_seconds
                     start = int(NextToken or 0)
-                    page = [{"Id": f"{300000000000 + i}", "Status": "ACTIVE"} for i in range(start, min(start + 20, 1000))]
-                    return {"Accounts": page, **({"NextToken": str(start + 20)} if start + 20 < 1000 else {})}
+                    page = [{"Id": f"{300000000000 + i}", "Status": "ACTIVE"} for i in range(start, min(start + 20, accounts))]
+                    return {"Accounts": page, **({"NextToken": str(start + 20)} if start + 20 < accounts else {})}
             return Accounts()
 
     fake = Org(policies)
     monkeypatch.setenv("CBOM_AWS_PRINCIPAL_ARN", "arn:aws:iam::123456789012:role/zeroshield-cbom")
+    monkeypatch.setenv("CBOM_AWS_BILL_ALL_ACCOUNTS", "1" if bill_all else "0")
+    monkeypatch.setattr(aws_org, "_sleep", lambda d: None)
     monkeypatch.setattr(aws_validate, "_boto", lambda **_kw: (fake, None))
     monkeypatch.setattr(boto3.session, "Session", fake.session)
     out = aws_validate.validate_aws_role(1, R.ROLE, R.EXT, ["ap-south-1"], "organization")
-    assert out.get("member_accounts") == 1000, out["checks"]  # before: 200
-    assert next(c for c in out["checks"] if c["check"] == "Organization member accounts listed")["detail"] == \
-        "Found 1000 member accounts"
+    row = next(c for c in out["checks"] if c["check"] == "Organization member accounts listed")
+    return out, row, calls
+
+
+def test_validation_and_billing_keep_the_200_account_charge_unless_switched_on(monkeypatch, engine):
+    """Charging every member account is a price change (owner sign-off): by default validation stops once it knows
+    there are more than 200 and the run is charged for 200, as before; CBOM_AWS_BILL_ALL_ACCOUNTS=1 counts them all.
+    A throttled ListAccounts page is retried."""
+    from backend.utilities.cbom_sources.planning import source_targets
+
+    out, row, calls = _validate_org(monkeypatch, 1000, bill_all=False, throttle_first=2)
+    assert out["status"] == "passed" and row["status"] == "pass" and out["member_accounts"] == 220
+    assert "more than 200 member accounts" in row["detail"] and calls == {"pages": 11, "throttled": 2}
+    out_all, row_all, _ = _validate_org(monkeypatch, 1000, bill_all=True)
+    assert out_all["member_accounts"] == 1000 and row_all["detail"] == "Found 1000 member accounts"  # dev: 200
+    _team(engine, 1)
+    src_id = _source(engine, 1, accounts=1000)
+    with Session(engine) as s:
+        src = s.get(CbomCollectionSource, src_id)
+        settings = get_or_create_settings(s, 1)
+        monkeypatch.setenv("CBOM_AWS_BILL_ALL_ACCOUNTS", "0")
+        assert source_targets(src, settings)["units"] == 200
+        monkeypatch.setenv("CBOM_AWS_BILL_ALL_ACCOUNTS", "1")
+        assert source_targets(src, settings)["units"] == 1000
+
+
+def test_validation_never_reports_a_partial_member_count_as_passed(monkeypatch):
+    out, row, calls = _validate_org(monkeypatch, 1000, bill_all=True, page_seconds=1.0)  # 20 s budget, 50 pages
+    assert 10 < calls["pages"] < 50  # the listing stopped at the time limit
+    assert row["status"] == "error" and "before the time limit" in row["detail"] and "member_accounts" not in out
+    assert out["status"] != "passed"  # before: "pass", "Found N member accounts" with N the partial count

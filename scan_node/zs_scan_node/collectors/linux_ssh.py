@@ -41,6 +41,7 @@ CMD_TIMEOUT = 60
 FILE_CMD_TIMEOUT = 20
 MAX_FILES = 2000
 RSA_ALGS = ("rsa-sha2-512", "rsa-sha2-256", "ssh-rsa")
+EOF_GRACE_S = 2.0  # how long Session.run waits for EOF after exit-status (output may still be on its way)
 _pin_lock = threading.Lock()
 
 
@@ -243,6 +244,7 @@ class Session:
             out, err = bytearray(), bytearray()
             deadline = time.monotonic() + timeout
             timed_out = False
+            drain_until = None  # exit-status can arrive before the last output: wait for EOF, briefly
             while True:
                 if time.monotonic() > deadline:
                     timed_out = True
@@ -259,7 +261,14 @@ class Session:
                         err += data[: 65536 - len(err)]
                     progressed = True
                 if chan.exit_status_ready() and not chan.recv_ready() and not chan.recv_stderr_ready():
-                    break
+                    # OpenSSH sends exit-status when it reaps the command, possibly before it has read the command's
+                    # last stdout/stderr bytes; those follow, then EOF.  Stop at EOF (or close), or after a short
+                    # grace for a server that never sends EOF.
+                    if getattr(chan, "eof_received", 0) or getattr(chan, "closed", False):
+                        break
+                    drain_until = drain_until or time.monotonic() + EOF_GRACE_S
+                    if time.monotonic() >= drain_until:
+                        break
                 if not progressed:
                     time.sleep(0.02)
             status = chan.recv_exit_status() if not timed_out else None
@@ -467,10 +476,21 @@ def _file_cmd(template: str, path: str) -> str:
 
 
 def collect_target(ctx: JobContext, target: Target, config: dict, creds: dict) -> tuple[str, str | None, int]:
-    tier = int(config.get("tier") or 1)
     t_deadline = time.monotonic() + min(float(config.get("timeout_s") or 300), max(ctx.time_left(), 1))
     sess = open_session(ctx, target, config, creds)
-    loc = target.label
+    return collect_on_session(ctx, sess, target.label, config, t_deadline)
+
+
+def collect_on_session(ctx: JobContext, sess: Any, label: str, config: dict,
+                       t_deadline: float | None = None) -> tuple[str, str | None, int]:
+    """Collect one host through an open session and close it.  ``sess`` is an SSH ``Session`` or zs-collect's
+    ``LocalSession`` (the same ``run()`` contract and ``host_key``), so both paths run exactly the same commands and
+    build exactly the same assets; ``label`` becomes every asset's target."""
+    tier = int(config.get("tier") or 1)
+    if t_deadline is None:
+        t_deadline = time.monotonic() + min(float(config.get("timeout_s") or 300), max(ctx.time_left(), 1))
+    loc = label
+    own_pids = frozenset(getattr(sess, "exclude_pids", ()) or ())  # zs-collect's own processes: never reported
     emitted = 0
 
     def emit(*args, **kwargs):
@@ -546,6 +566,8 @@ def collect_target(ctx: JobContext, target: Target, config: dict, creds: dict) -
                 ports_by_pid.setdefault(proc["pid"], []).append(sock_["port"])
         grouped: dict[tuple[str, str], dict[str, Any]] = {}
         for pid, libs in maps.items():
+            if pid in own_pids:
+                continue
             exe = exes.get(pid) or ""
             for lib, deleted in libs.items():
                 g = grouped.setdefault((exe, lib), {"exe": exe, "lib": lib, "pids": [], "deleted": False, "ports": [],

@@ -292,7 +292,7 @@ entry("CERT_SELF_SIGNED", title="Self-signed certificate", category="certificate
       cwe=["CWE-295"], owasp=["crypto", "auth"], cves=[], standards=[], compliance=["certificates"],
       remediation={"summary": "Issue it from your internal or public CA and distribute that CA to clients.", "steps": CERT_REISSUE}, verify=V_CERT_REMOTE + V_CERT_FILE, references=[])
 entry("CERT_UNUSED", title="Certificate not attached to any resource", category="certificate", default_impact="Low",
-      description="The certificate exists in a store or CA inventory but is not deployed anywhere (orphaned).",
+      description="The certificate exists in a store or CA inventory but is not deployed anywhere (orphaned). Not raised for a certificate that was never issued, an AWS Private CA (PRIVATE) certificate, a certificate whose key was exported, or an ACME-issued one: those are used or managed outside what the store can see.",
       attack="Orphaned certificates with live private keys are unmanaged credentials: if the key leaks, the certificate can still be used to impersonate the name.",
       cwe=["CWE-320"], owasp=["crypto"], cves=[], standards=["NIST SP 800-57 Part 1"], compliance=["key_mgmt"],
       remediation={"summary": "Delete or revoke certificates nobody owns.", "steps": [{"platform": "AWS ACM", "how": "aws acm delete-certificate --certificate-arn {resource}"}]},
@@ -470,13 +470,27 @@ entry("MESH_MTLS_PERMISSIVE", title="Service mesh mTLS permissive", category="ku
       remediation={"summary": "Move to STRICT once every client has a sidecar.", "steps": []}, verify=[{"label": "Mesh policies", "command": "kubectl get peerauthentication -A"}], references=[])
 
 # --- cloud
-entry("KMS_NO_ROTATION", title="KMS key rotation off", category="cloud", default_impact="Medium", description="A customer-managed symmetric KMS key has automatic rotation disabled.",
+entry("KMS_NO_ROTATION", title="KMS key rotation off", category="cloud", default_impact="Medium", description="A customer-managed symmetric KMS key whose material AWS KMS generated has automatic rotation disabled. Keys with imported material or in a custom key store cannot rotate automatically and are not reported; a multi-Region replica takes its rotation from its primary key.",
       attack="A key that never rotates protects more data for longer, so any compromise exposes more.", cwe=["CWE-324", "CWE-320"], owasp=["crypto"], cves=[], standards=["NIST SP 800-57 Part 1 (cryptoperiods)"],
       compliance=["key_mgmt"], remediation={"summary": "aws kms enable-key-rotation --key-id {resource}", "steps": []},
       verify=[{"label": "Rotation status", "command": "aws kms get-key-rotation-status --key-id {resource}"}], references=[])
 entry("KMS_PENDING_DELETION", title="KMS key pending deletion", category="cloud", default_impact="Low", description="The KMS key is scheduled for deletion.",
       attack="Data still encrypted under it becomes unrecoverable when the key is deleted.", cwe=["CWE-320"], owasp=["crypto"], cves=[], standards=[], compliance=["key_mgmt"],
       remediation={"summary": "Cancel deletion if anything still uses it: aws kms cancel-key-deletion --key-id {resource}", "steps": []},
+      verify=[{"label": "Key state", "command": "aws kms describe-key --key-id {resource} --query KeyMetadata.KeyState"}], references=[])
+entry("KMS_KEY_MATERIAL_EXPIRES", title="Imported KMS key material expires soon", category="cloud", default_impact="Medium",
+      description="A KMS key with imported key material (origin EXTERNAL) has material that expires within 30 days, or has expired. When the current material expires, AWS KMS deletes it and the key stops working until material is imported again.",
+      attack="Not an attack path: an outage. Every encrypt and decrypt call under the key fails once its material expires, and data encrypted under it cannot be read until the same material is re-imported.",
+      cwe=["CWE-320"], owasp=["crypto"], cves=[], standards=["NIST SP 800-57 Part 1 (cryptoperiods)"], compliance=["key_mgmt"],
+      remediation={"summary": "Re-import the same key material with a later expiry (or no expiry) before it expires.", "steps": [
+          {"platform": "AWS KMS", "how": "aws kms get-parameters-for-import --key-id {resource} --wrapping-algorithm RSAES_OAEP_SHA_256 --wrapping-key-spec RSA_4096, wrap the same material, then aws kms import-key-material --key-id {resource} --encrypted-key-material fileb://material.bin --import-token fileb://token.bin --expiration-model KEY_MATERIAL_DOES_NOT_EXPIRE"}]},
+      verify=[{"label": "Expiry of each material", "command": "aws kms list-key-rotations --key-id {resource} --include-key-material ALL_KEY_MATERIAL"}], references=[])
+entry("KMS_KEY_NO_MATERIAL", title="KMS key has no usable imported material", category="cloud", default_impact="Medium",
+      description="A KMS key with imported key material (origin EXTERNAL) is in the PendingImport state: its material was never imported, expired or was deleted, so the key cannot encrypt or decrypt.",
+      attack="Not an attack path: an outage. Anything that encrypts or decrypts under the key fails, and data encrypted under it cannot be read until the same material is imported again.",
+      cwe=["CWE-320"], owasp=["crypto"], cves=[], standards=[], compliance=["key_mgmt"],
+      remediation={"summary": "Import the key material again (the same material, to read existing data), or schedule the key's deletion if nothing uses it.", "steps": [
+          {"platform": "AWS KMS", "how": "aws kms get-parameters-for-import --key-id {resource} --wrapping-algorithm RSAES_OAEP_SHA_256 --wrapping-key-spec RSA_4096, wrap the material, then aws kms import-key-material --key-id {resource} --key-material-id <id from the finding> --encrypted-key-material fileb://material.bin --import-token fileb://token.bin"}]},
       verify=[{"label": "Key state", "command": "aws kms describe-key --key-id {resource} --query KeyMetadata.KeyState"}], references=[])
 entry("SECRET_NO_ROTATION", title="Secret rotation off", category="cloud", default_impact="Low", description="A Secrets Manager secret has no rotation configured.",
       attack="A leaked secret stays valid indefinitely.", cwe=["CWE-324"], owasp=["crypto"], cves=[], standards=[], compliance=["key_mgmt"],

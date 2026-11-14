@@ -7,6 +7,7 @@ into a float for display.
 from __future__ import annotations
 
 import datetime as _dt
+import os
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -21,11 +22,26 @@ from backend.utilities.cbom_sources.settings import team_exclusions
 ONLINE_SECONDS = 120
 
 # Rates chosen by product (per target): server 0.2, cluster 2, database 1, cloud account 4, network 1 per /24.
+# Azure and Google Cloud are collected only once Save and validate has signed in to the customer's tenant / project
+# (as AWS needs a validated role): until then the account is listed, and its collection is "not available".
+CLOUD_NOT_CONNECTED = {
+    "azure_subscription": "Not available until the Azure tenant is connected: Save and validate must pass first",
+    "gcp_project": "Not available until the Google Cloud project is connected: Save and validate must pass first",
+}
 RATES_C = {"server": 20, "kubernetes": 200, "database": 100, "cloud_account": 400, "network_block": 100}
 # WP8b: a host agent is charged like one server; a registry image like one code scan (1 credit, decision D3).
 RATES_C["image"] = 100
 # CT discovery: each domain searched is charged like one server target (0.2 credits; owner question CT-2).
 RATES_C["ct_domain"] = 20
+
+
+# An organisation run has always been charged for at most 200 member accounts (the walk stopped there).  F1 reads every
+# account; charging for all of them is a price change that needs the owner's sign-off, so it is behind a switch.
+LEGACY_BILLED_ACCOUNTS = 200
+
+
+def bill_all_accounts() -> bool:
+    return os.environ.get("CBOM_AWS_BILL_ALL_ACCOUNTS", "0").strip() == "1"
 
 
 def credits(centi: int) -> float:
@@ -82,7 +98,10 @@ def source_targets(source: CbomCollectionSource, settings: CbomCollectionSetting
                 "intervals": intervals}
     if group == "cloud" and source.kind == "aws_account" and cfg.get("scope") == "organization":
         members = (source.last_test_result or {}).get("member_accounts")
-        return {"units": int(members) if isinstance(members, int) and members > 0 else 1, "unit": "accounts"}
+        units = int(members) if isinstance(members, int) and members > 0 else 1
+        if not bill_all_accounts():  # as before F1: collection reads every account, the charge stops at 200
+            units = min(units, LEGACY_BILLED_ACCOUNTS)
+        return {"units": units, "unit": "accounts"}
     return {"units": 1, "unit": {"kubernetes": "clusters", "databases": "databases", "cloud": "accounts"}.get(group, "sources")}
 
 
@@ -97,7 +116,7 @@ class PlanItem:
     units: int
     unit: str
     credits_c: int
-    status: str  # queued | skipped
+    status: str  # queued | skipped | covered (read by another source in this plan: an AWS Private CA connector)
     reason: str | None = None
     waiting: bool = False
     # a scan-node job waits for its scan window (the team's, or a server source's own; jobs.job_waiting_reason):
@@ -132,7 +151,7 @@ class Plan:
                 g["credits_c"] += item.credits_c
                 g["queued"] += 1
                 g["units"] += item.units
-            else:
+            elif item.status == "skipped":  # "covered": read by another source of the plan, nothing to fix
                 g["skipped"] += 1
         return {k: {**v, "credits": credits(v.pop("credits_c"))} for k, v in out.items()}
 
@@ -199,6 +218,7 @@ def plan_run(
             item.reason = "Configuration is no longer valid; edit and save it again"
         elif not collectable:
             item.reason = ("Cloud collection is not available yet" if group == "cloud"
+                           else _AWS_PCA if getattr(cfg_model, "provider", None) == "aws_private_ca"
                            else "Certificate Transparency discovery is not enabled on this server"
                            if source.kind == "ct_logs" else "Collection for this connector is not available yet")
         elif needs_node and node is None:
@@ -211,6 +231,8 @@ def plan_run(
             item.reason = "Validate the AWS role first; only a role that passed validation is scanned"
         elif source.last_test_status == "failed":
             item.reason = "Last connection test failed; fix it and test again"
+        elif source.kind in CLOUD_NOT_CONNECTED and source.last_test_status != "passed":
+            item.reason = CLOUD_NOT_CONNECTED[source.kind]
         elif units <= 0:
             item.reason = "0 targets left after the never-scan list"
         elif group == "network" and source.kind != "appliance" and settings.stop_all_network:  # a config read, not a sweep
@@ -253,4 +275,29 @@ def plan_run(
             else:
                 item.credits_c = 0
         plan.items.append(item)
+    _aws_private_ca(plan, sources)
     return plan
+
+
+_AWS_PCA = "Read by its AWS account source; nothing separate to collect"
+
+
+def _aws_private_ca(plan: Plan, sources: list[CbomCollectionSource]) -> None:
+    """An AWS Private CA connector is read by the AWS account source it names (aws_collect reads acm-pca with that
+    account's role), so its item says what this plan does with that source (CB-08, review 5876424957)."""
+    by_id = {s.id: s for s in sources}
+    items = {i.source_id: i for i in plan.items}
+    for item in plan.items:
+        if item.reason != _AWS_PCA:
+            continue
+        aws_id = (by_id[item.source_id].config or {}).get("aws_source_id")
+        aws = by_id.get(aws_id) if isinstance(aws_id, int) else None
+        aws_item = items.get(aws.id) if aws is not None and aws.kind == "aws_account" else None
+        if aws is None or aws.kind != "aws_account":
+            item.reason = "Not read: its AWS account was removed"
+        elif aws_item is None:
+            item.reason = f"Not read in this run: AWS account {aws.name} is not in this run"
+        elif aws_item.status != "queued":
+            item.reason = f"Not read in this run: AWS account {aws.name} is skipped ({aws_item.reason})"
+        else:
+            item.status = "covered"

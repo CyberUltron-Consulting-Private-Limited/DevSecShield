@@ -1,7 +1,7 @@
 """cbom cloud pool (F1): AWS collection split into one slice job per account x region
 
 Revision ID: w9cloudpool001
-Revises: r6f14sshca002
+Revises: r6f12pol001
 Create Date: 2026-11-14 12:00:00.000000
 
 * ``cbomcollectionjob.parent_job_id``: a ``slice`` job (one AWS account x region, run by the cloud-worker pool) points
@@ -21,7 +21,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'w9cloudpool001'
-down_revision: Union[str, Sequence[str], None] = 'r6f14sshca002'
+down_revision: Union[str, Sequence[str], None] = 'r6f12pol001'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

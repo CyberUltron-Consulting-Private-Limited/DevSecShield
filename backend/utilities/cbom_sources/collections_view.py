@@ -14,13 +14,16 @@ Which collections count
     life move with the calendar).
 
 One asset counted once ("latest observation wins")
-  * Identity across code scans and Sources: a certificate is the same certificate when its subject CN, issuer CN,
-    notBefore and notAfter agree (``cert_identity``); the repository copy of a certificate and the one an endpoint
-    presents are one asset. Sources rows that share a link key (``cert_link_keys``: the DER fingerprint, or the serial
-    and notAfter day) are one certificate too, whatever their DN spelling: ACM's Issuer "Amazon", a SAN-only
-    certificate, a CT log's precertificate (``link_certificates``, the CB-21 slice CT discovery needs). Any other asset is identified within its own source (a code row by its line-independent
-    identity in its repository, a Sources asset by ``identity.node_identity`` in its source): a repository path and a
-    host never describe the same asset, so they cannot overlap.
+  * Identity across code scans and Sources: a certificate is identified by its cross-source asset key
+    (``asset_keys``, CB-21): the serial (ACM's Issuer "Amazon" and the node's DN agree, SAN-only certificates and CT
+    precertificates included), else the DER fingerprint, else the DNs and notAfter (a Windows store row), else the
+    subject and issuer CN and dates (a code-scan row, which names CNs only). ``link_certificates`` correlates the
+    Sources rows: rows sharing a link key are one certificate unless two of them disagree on a serial, fingerprint,
+    thumbprint, issuer DN or notBefore (then that key joins nothing). ``resolve`` maps a code row's token onto the one
+    Sources certificate that shares it (notBefore included when the Sources side has one). Any other asset is
+    identified within its own source (a code row by its line-independent identity in its repository, a Sources
+    asset by ``identity.node_identity`` in its source): a repository path and a host never describe the same asset,
+    so they cannot overlap.
   * When one identity is observed more than once (in a code scan and a Sources collection, or by two Sources), only
     the LATEST observation is counted: observation time is the code scan's ``created_at`` and the collection job's
     ``finished_at``; on a tie the code scan is kept. The other observations are left out of every count, chart and
@@ -85,6 +88,7 @@ class SourcesRow:
     target: str | None = None
     facts: dict[str, Any] = field(default_factory=dict)
     asset_key: str = ""  # identity.stable_key("node", ...): the key remediation assignments use
+    aliases: frozenset[str] = frozenset()  # the group's uncontested certificate link keys (asset_keys.correlate_detail)
 
 
 # remediation status of a Sources finding (waves) -> the dashboard's finding status buckets
@@ -110,7 +114,9 @@ def _stamp(value: Any) -> str:
 
 
 def cert_identity(subject: Any, issuer: Any, not_before: Any, not_after: Any) -> str | None:
-    """Cross-scope certificate identity, or None when the subject or notAfter is unknown (no safe match)."""
+    """LEGACY (pre CB-21) DN identity: subject CN, issuer CN, notBefore, notAfter; None without a subject or notAfter.
+    The team view no longer uses it (``asset_keys``); kept unchanged for ``run_results`` (CB-38), whose per-run
+    managed/chain certificate matching can move to ``asset_keys.asset_key`` (ACM "Amazon" vs node DN) later."""
     subject_cn, after = _cn(subject), _stamp(not_after)
     if not subject_cn or not after:
         return None
@@ -181,17 +187,6 @@ def node_row(asset: Any, collection: Collection, view: Mapping[str, Any]) -> dic
     }
 
 
-def node_identity_of(asset: Any, collection: Collection) -> str:
-    facts = asset.facts if isinstance(asset.facts, dict) else {}
-    if asset.cdx_type == "certificate" or asset.asset_type in ("certificate", "k8s_certificate"):
-        cross = cert_identity(facts.get("subject"), facts.get("issuer"), facts.get("not_before"), facts.get("not_after"))
-        if cross:
-            return cross
-    from backend.utilities.cbom_sources import identity as ID
-
-    return f"node|{collection.source_ref}|{ID.node_identity(asset)}"
-
-
 # ----------------------------------------------------------------------------- loading (the one DB read)
 def latest_jobs(session: Any, team_id: int, *, limit: int = 2_000) -> list[Any]:
     """The newest successful collect job of each source (newest first)."""
@@ -249,10 +244,12 @@ def load_sources_result(session: Any, team_id: int, now: _dt.datetime | None = N
             endpoints_probed=sum(1 for a in assets if a.asset_type in NETWORK_TYPES))
         out.collections.append(collection)
         for asset in assets:
+            # its identity in its own source; link_certificates gives certificates their cross-source asset key
+            own = ID.node_identity(asset)
             out.rows.append(SourcesRow(row=node_row(asset, collection, shown(asset, today)), collection=collection,
-                                       identity=node_identity_of(asset, collection), node_type=asset.asset_type,
+                                       identity=f"node|{collection.source_ref}|{own}", node_type=asset.asset_type,
                                        target=asset.target, facts=dict(asset.facts or {}),
-                                       asset_key=ID.stable_key("node", collection.source_ref, ID.node_identity(asset))))
+                                       asset_key=ID.stable_key("node", collection.source_ref, own)))
     # the remediation status a finding has on the Sources pages (waves): open / in_progress / done / accepted_risk
     keys = list(dict.fromkeys(item.asset_key for item in out.rows))
     status: dict[str, str] = {}
@@ -268,79 +265,36 @@ def load_sources_result(session: Any, team_id: int, now: _dt.datetime | None = N
     return out
 
 
-# ----------------------------------------------------------------------------- certificate link keys (CB-21 slice)
-_HEX64 = re.compile(r"^[0-9a-f]{64}$")
-_MIN_SERIAL_HEX = 16  # 64 bits: public CAs use at least that much randomness; small private serials never link
-
-
-def cert_link_keys(facts: Mapping[str, Any]) -> set[str]:
-    """Keys that prove two observations are one certificate whatever their DN spelling: ``fp:<sha256 of the DER>`` and
-    ``sn:<serial>|<notAfter day>``.  ACM reports Issuer "Amazon" and no DER; a SAN-only certificate has no CN; a
-    precertificate in a CT log has no final fingerprint.  Each of them still shares one of these keys."""
-    keys: set[str] = set()
-    fp = str(facts.get("fingerprint_sha256") or "").strip().lower().replace(":", "")
-    if _HEX64.match(fp):
-        keys.add("fp:" + fp)
-    serial = re.sub(r"[^0-9a-f]", "", str(facts.get("serial") or "").lower()).lstrip("0")
-    day = _stamp(facts.get("not_after"))[:10]
-    if len(serial) >= _MIN_SERIAL_HEX and len(day) == 10:
-        keys.add(f"sn:{serial}|{day}")
-    return keys
-
-
-def _canonical(items: list[SourcesRow]) -> str:
-    """One identity for observations of the same certificate: a DN identity read from a parsed DN (an issuer with
-    ``CN=``; not ACM's bare "Amazon"), so code-scan rows, which carry DN identities, still match; else any DN identity;
-    else the fingerprint."""
-    dn = sorted({i.identity for i in items if i.identity.startswith("cert|") and "cn=" in str(i.facts.get("issuer") or "").lower()})
-    if dn:
-        return dn[0]
-    dn = sorted({i.identity for i in items if i.identity.startswith("cert|")})
-    if dn:
-        return dn[0]
-    fps = sorted(k for i in items for k in cert_link_keys(i.facts) if k.startswith("fp:"))
-    return "cert" + fps[0] if fps else sorted(i.identity for i in items)[0]
-
-
+# ----------------------------------------------------------------------------- certificate correlation (CB-21)
 def link_certificates(rows: list[SourcesRow]) -> int:
-    """Give every group of certificate rows that share a link key one identity (so "latest observation wins" counts
-    the certificate once across a scan node, ACM, an IdP and CT logs).  Returns the rows whose identity changed."""
-    parent: dict[int, int] = {}
+    """Correlate the certificate rows (``asset_keys.correlate_detail``): rows that share a link key, and disagree on
+    nothing both carry, are one certificate whatever their DN spelling (a scan node, ACM, a Windows store, an IdP,
+    CT logs) and carry the group's asset key as their identity, so "latest observation wins" counts it once.
+    Returns the rows whose identity changed."""
+    from backend.utilities.cbom_sources import asset_keys as AK
 
-    def find(i: int) -> int:
-        while parent.setdefault(i, i) != i:
-            parent[i] = parent[parent[i]]
-            i = parent[i]
-        return i
-
-    owner: dict[str, int] = {}
-    certs = [i for i, item in enumerate(rows) if item.node_type in ("certificate", "k8s_certificate")
+    certs = [i for i, item in enumerate(rows) if item.node_type in AK.CERT_TYPES
              or item.row.get("algorithm_type") == "certificate"]
-    for index in certs:
-        for key in cert_link_keys(rows[index].facts):
-            if key in owner:
-                parent[find(index)] = find(owner[key])
-            else:
-                owner[key] = index
-    groups: dict[int, list[int]] = {}
-    for index in certs:
-        groups.setdefault(find(index), []).append(index)
+    detail = AK.correlate_detail([rows[i] for i in certs])
     changed = 0
-    for members in groups.values():
-        items = [rows[i] for i in members]
-        if len({item.identity for item in items}) < 2:
-            continue
-        canonical = _canonical(items)
-        for item in items:
-            if item.identity != canonical:
-                item.identity = canonical
-                changed += 1
+    for pos, index in enumerate(certs):
+        key = detail.keys[pos]
+        if not isinstance(key, str):
+            continue  # no cross-source key: identified within its own source
+        item = rows[index]
+        item.aliases = detail.aliases[pos]
+        if item.identity != key:
+            item.identity = key
+            changed += 1
     return changed
 
 
 # ----------------------------------------------------------------------------- latest observation wins
 def code_cert_identities(scan_data: Any) -> dict[str, str]:
-    """``bom_ref -> cert_identity`` for the certificate components of one code scan's ``cbom_json``."""
+    """``bom_ref -> asset key`` (``asset_keys.code_certificate_key``) of the certificate components of one code
+    scan's ``cbom_json`` (CN-only names: the key is the subject and issuer CN and notAfter)."""
+    from backend.utilities.cbom_sources import asset_keys as AK
+
     data = scan_data if isinstance(scan_data, dict) else {}
     cbom = data.get("cbom_json") if isinstance(data.get("cbom_json"), dict) else {}
     out: dict[str, str] = {}
@@ -352,10 +306,10 @@ def code_cert_identities(scan_data: Any) -> dict[str, str]:
             continue
         props = {p.get("name"): p.get("value") for p in comp.get("properties") or [] if isinstance(p, dict)}
         cert = crypto.get("certificateProperties") if isinstance(crypto.get("certificateProperties"), dict) else {}
-        ident = cert_identity(props.get("crypto:subjectName") or cert.get("subjectName"),
-                              props.get("crypto:issuerName") or cert.get("issuerName"),
-                              props.get("crypto:notValidBefore") or cert.get("notValidBefore"),
-                              props.get("crypto:notValidAfter") or cert.get("notValidAfter"))
+        ident = AK.code_certificate_key(props.get("crypto:subjectName") or cert.get("subjectName"),
+                                        props.get("crypto:issuerName") or cert.get("issuerName"),
+                                        props.get("crypto:notValidBefore") or cert.get("notValidBefore"),
+                                        props.get("crypto:notValidAfter") or cert.get("notValidAfter"))
         ref = comp.get("bom-ref")
         if ident and isinstance(ref, str):
             out[ref] = ident
@@ -377,14 +331,21 @@ class Resolution:
 
     sources_rows: list[SourcesRow]
     dropped_code: set[tuple[int, str]]  # (scan id, identity) superseded by a newer Sources observation
+    aliases: dict[str, str] = field(default_factory=dict)  # a code row's key -> the Sources certificate identity
 
     def code_kept(self, scan_id: int, identity: str | None) -> bool:
         return identity is None or (scan_id, identity) not in self.dropped_code
 
+    def canonical(self, identity: str | None) -> str | None:
+        """The identity a code row's key is counted under (the Sources certificate it shares a link key with)."""
+        return self.aliases.get(identity, identity) if identity is not None else None
+
     @property
     def replaced_identities(self) -> set[str]:
-        """Identities a code scan also holds, now counted from Sources (their code finding is the same asset)."""
-        return {ident for _scan_id, ident in self.dropped_code}
+        """Identities a code scan also holds, now counted from Sources (their code finding is the same asset): the
+        code rows' keys and the Sources identities they map to."""
+        return {ident for _scan_id, ident in self.dropped_code} | {
+            self.canonical(ident) or ident for _scan_id, ident in self.dropped_code}
 
     def new_findings(self) -> list[SourcesRow]:
         """Sources findings that are not already a code-scan finding of the same asset (finding totals count each
@@ -399,12 +360,28 @@ def resolve(code_observations: Iterable[tuple[int, _dt.datetime, str]], rows: It
     """Apply "latest observation wins". ``code_observations``: (scan id, created_at, identity) of code rows that
     have a cross-scope identity. Code-only identities are untouched (the code-scan views keep their own rules)."""
     newest_code: dict[str, _dt.datetime] = {}
-    code_list = list(code_observations)
     rows = list(rows)
-    for _scan_id, created, ident in code_list:
+    # a code row's key -> the Sources certificate that shares that link key (dropped when it names two certificates)
+    aliases: dict[str, str] = {}
+    ambiguous: set[str] = set()
+    for item in rows:
+        for alias in item.aliases:
+            if aliases.setdefault(alias, item.identity) != item.identity:
+                ambiguous.add(alias)
+    for alias in ambiguous:
+        del aliases[alias]
+    def canonical(ident: str) -> str:
+        # a code token is "<cnb key>+<cn key>" (asset_keys.code_certificate_key): the first that names a certificate
+        for part in ident.split("+"):
+            if part in aliases:
+                return aliases[part]
+        return ident
+
+    code_list = [(scan_id, created, ident, canonical(ident)) for scan_id, created, ident in code_observations]
+    for _scan_id, created, _ident, canon in code_list:
         at = _aware(created)
-        if ident not in newest_code or at > newest_code[ident]:
-            newest_code[ident] = at
+        if canon not in newest_code or at > newest_code[canon]:
+            newest_code[canon] = at
     best: dict[str, SourcesRow] = {}
     for item in rows:
         held = best.get(item.identity)
@@ -419,12 +396,13 @@ def resolve(code_observations: Iterable[tuple[int, _dt.datetime, str]], rows: It
             continue  # a code scan saw it at the same time or later: the code row is the one counted
         kept.append(item)
         winners_at[ident] = item.collection.observed_at
-    dropped = {(scan_id, ident) for scan_id, _created, ident in code_list if ident in winners_at}
+    dropped = {(scan_id, ident) for scan_id, _created, ident, canon in code_list if canon in winners_at}
     order = {id(item): index for index, item in enumerate(rows)}
     kept.sort(key=lambda item: order.get(id(item), 0))
-    return Resolution(sources_rows=kept, dropped_code=dropped)
+    return Resolution(sources_rows=kept, dropped_code=dropped,
+                      aliases={ident: canon for _s, _c, ident, canon in code_list if canon != ident})
 
 
-__all__ = ["Collection", "cert_link_keys", "link_certificates", "NETWORK_TYPES", "REMEDIATION_BUCKET", "ORIGIN_CODE", "ORIGIN_SOURCES", "Resolution", "SourcesResult",
+__all__ = ["Collection", "link_certificates", "NETWORK_TYPES", "REMEDIATION_BUCKET", "ORIGIN_CODE", "ORIGIN_SOURCES", "Resolution", "SourcesResult",
            "SourcesRow", "cert_identity", "code_cert_identities", "code_row_identity", "latest_jobs",
            "load_sources_result", "node_row", "origin_label", "resolve"]

@@ -14,6 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import {
   createCbomScanNode,
   deleteCbomScanNode,
+  getCbomNodeArtifacts,
   getCbomSourcesOverview,
   getCbomSourcesSettings,
   listCbomScanNodes,
@@ -26,14 +27,16 @@ import { apiBaseURL } from "@/utils/interceptors";
 
 import { cbomSourcesKeys } from "./keys";
 import { AgentPoolsCard } from "./AgentPoolsCard";
+import { ApiEgressRow, NodeInstallCommand, apiHost } from "./NodeInstall";
+import { NodeDownloads } from "./NodeDownloads";
 import {
   DEPLOY_SUPPORT,
   ago,
   insecureApiWarning,
-  installCommand,
+  nodeApiPort,
+  nodeImages,
   nodeInstallNames,
   offersRegistrationToken,
-  offlineImageSteps,
   readTextFile,
   registrationOutcome,
   singleFlight,
@@ -43,7 +46,6 @@ import { revealById } from "./reveal";
 import {
   Checkbox2,
   ChoiceCards,
-  CodeSnippet,
   ConfirmDialog,
   CopyButton,
   EmptyState,
@@ -58,7 +60,9 @@ import {
   useMenuReveal,
 } from "./shared";
 
-const NODE_IMAGE = process.env.NEXT_PUBLIC_CBOM_NODE_IMAGE || "registry.zeroshield.ai/cbom/scan-node:1.0";
+// A build may name a registry customers can pull the node image from; otherwise (and unless the server names one,
+// CBOM_NODE_IMAGE_REF) the wizard offers the image file this server serves, and no pull.
+const BUILD_PULL_IMAGE = process.env.NEXT_PUBLIC_CBOM_NODE_IMAGE || null;
 const SEGMENTS = ["Data centre", "DMZ", "Branch office", "OT / plant", "Cloud VPC"];
 const TIMEZONES = ["Asia/Kolkata", "UTC", "Asia/Dubai", "Asia/Singapore", "Europe/London", "America/New_York"];
 const DEPLOY_OPTIONS: { value: DeployMethod; title: string; description: ReactNode }[] = (
@@ -75,7 +79,7 @@ const DEPLOY_OPTIONS: { value: DeployMethod; title: string; description: ReactNo
       {o.description}
       <span className={`block mt-1 font-medium ${DEPLOY_SUPPORT[o.value].proven ? "text-green-700 dark:text-green-400" : "text-amber-700 dark:text-amber-400"}`}
         data-testid={`deploy-support-${o.value}`}>
-        {DEPLOY_SUPPORT[o.value].proven ? (o.value === "helm" ? "Proven on k3s (Deployment and agent DaemonSet)" : "Proven") : "Build it yourself (template provided)"}
+        {DEPLOY_SUPPORT[o.value].proven ? (o.value === "helm" ? "Proven on k3s (Deployment and agent DaemonSet)" : "Proven") : "Packer build kit (download below)"}
       </span>
     </>
   ),
@@ -112,23 +116,6 @@ function scrollToWizard() {
   window.setTimeout(() => revealById(WIZARD_ID), 0);
 }
 
-function apiHost(): string {
-  try {
-    return new URL(apiBaseURL).hostname;
-  } catch {
-    return apiBaseURL;
-  }
-}
-
-function apiPort(): string {
-  try {
-    const url = new URL(apiBaseURL);
-    return url.port || (url.protocol === "http:" ? "80" : "443");
-  } catch {
-    return "443";
-  }
-}
-
 function expiresIn(iso: string | null, serverNow: string | null | undefined): string {
   if (!iso) return "";
   const ms = Date.parse(iso) - (serverNow ? Date.parse(serverNow) : Date.now());
@@ -138,7 +125,16 @@ function expiresIn(iso: string | null, serverNow: string | null | undefined): st
   return `${h} h ${m} min`;
 }
 
-export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; onNavigate: (tab: string) => void }) {
+export default function ScanNodesTab({
+  teamId,
+  onNavigate,
+  apiUrl = apiBaseURL,
+}: {
+  teamId: number;
+  onNavigate: (tab: string) => void;
+  /** the ZeroShield API address scan nodes connect to (this build's; a prop so a test can render both variants) */
+  apiUrl?: string;
+}) {
   const queryClient = useQueryClient();
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizard, setWizard] = useState<WizardState>(EMPTY_WIZARD);
@@ -165,6 +161,15 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
     },
   });
   const nodes = useMemo(() => nodesQuery.data?.nodes ?? [], [nodesQuery.data]);
+  // The scan node downloads this server offers, and the image names the commands use (logic.nodeImages).
+  const artifactsQuery = useQuery({
+    queryKey: cbomSourcesKeys.nodeArtifacts(teamId),
+    queryFn: () => getCbomNodeArtifacts(teamId),
+    enabled: Number.isFinite(teamId),
+    retry: 1,
+    staleTime: 5 * 60_000,
+  });
+  const images = nodeImages(artifactsQuery.data, BUILD_PULL_IMAGE);
   const serverNow = nodesQuery.data?.server_time;
   const createdNode = created ? nodes.find((n) => n.id === created.nodeId) ?? null : null;
 
@@ -246,18 +251,13 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
   if (nodesQuery.isLoading) return <LoadingBlock />;
   if (nodesQuery.isError && !nodesQuery.data) return <ErrorBlock error={nodesQuery.error} onRetry={() => nodesQuery.refetch()} />;
 
-  const command = created
-    ? installCommand(createdNode?.deployment ?? wizard.deployment, {
-        token: created.token,
-        apiUrl: apiBaseURL,
-        proxyUrl: createdNode?.proxy_url ?? (wizard.proxyUrl.trim() || null),
-        image: NODE_IMAGE,
-        name: createdNode?.name ?? wizard.name,
-      })
-    : "";
-  const offlineSteps = created ? offlineImageSteps(createdNode?.deployment ?? wizard.deployment, NODE_IMAGE) : null;
+  // A node takes a plain-HTTP API only with the lab switch: no port advice then, and a test-lab command (CB-08).
+  const apiPort = nodeApiPort(apiUrl);
+  const method = createdNode?.deployment ?? wizard.deployment;
+  // Helm with a registry image: one command (no push); Docker always loads the file, and shows a pull variant too.
+  const mainImage = method === "helm" && images.pulled ? images.pulled : images.loaded;
   // The install command uses this deployment's API URL: say before the customer runs it when a node cannot connect.
-  const apiWarning = insecureApiWarning(apiBaseURL);
+  const apiWarning = insecureApiWarning(apiUrl);
 
   return (
     <div className="space-y-6">
@@ -270,7 +270,7 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
 
       <SectionCard
         title="Registered scan nodes"
-        description={`One node per network segment. Each connects out to ZeroShield on port ${apiPort()} only.`}
+        description={apiPort ? `One node per network segment. Each connects out to ZeroShield on port ${apiPort} only.` : "One node per network segment."}
         actions={
           <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" onClick={startWizard}>
             <Plus className="h-4 w-4 mr-2" />
@@ -397,7 +397,7 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
         )}
       </SectionCard>
 
-      <AgentPoolsCard teamId={teamId} image={NODE_IMAGE} apiUrl={apiBaseURL} />
+      <AgentPoolsCard teamId={teamId} image={images.pulled ?? images.loaded} apiUrl={apiUrl} />
 
       <RequestSigningCard teamId={teamId} nodes={nodes} />
 
@@ -448,28 +448,41 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
               <ChoiceCards name="node-deploy" label="Deployment" columns={4} value={wizard.deployment}
                 onChange={(v) => setWizard({ ...wizard, deployment: v })}
                 options={DEPLOY_OPTIONS.map((o) => ({ ...o, disabled: !!created && o.value !== wizard.deployment }))} />
+              <NodeDownloads teamId={teamId} method={method} artifacts={artifactsQuery.data}
+                loading={artifactsQuery.isLoading} error={artifactsQuery.error} />
               {created && (
                 <div className="mt-4 space-y-2">
-                  <CodeSnippet code={command} language={wizard.deployment === "ami" ? "yaml" : "bash"} />
-                  {offlineSteps && (
-                    <details className="text-xs text-zinc-600 dark:text-zinc-400" data-testid="node-image-offline">
-                      <summary className="cursor-pointer">
-                        Cannot pull <span className="font-mono">{NODE_IMAGE}</span>? Load the image from a file instead
-                      </summary>
-                      <p className="mt-2">
-                        Use this on a host without access to the image registry (air-gapped sites, or before the image is
-                        published there). The steps say where the file and its SHA-256 checksum come from (ZeroShield,
-                        or <span className="font-mono">make node-image</span> for a release version); check the checksum
-                        before you load it.
+                  <NodeInstallCommand
+                    apiUrl={apiUrl}
+                    method={method}
+                    token={created.token}
+                    name={createdNode?.name ?? wizard.name}
+                    proxyUrl={createdNode?.proxy_url ?? (wizard.proxyUrl.trim() || null)}
+                    image={mainImage.image}
+                    source={mainImage}
+                  />
+                  {method === "docker" && images.pulled && (
+                    <div className="space-y-1" data-testid="node-command-pull">
+                      <p className="text-xs text-zinc-600 dark:text-zinc-400">
+                        Or, on a host that can reach <span className="font-mono">{images.pulled.image.split("/")[0]}</span>,
+                        pull the image instead of loading the file:
                       </p>
-                      <div className="mt-2"><CodeSnippet code={offlineSteps} language="bash" /></div>
-                    </details>
+                      <NodeInstallCommand
+                        apiUrl={apiUrl}
+                        method="docker"
+                        token={created.token}
+                        name={createdNode?.name ?? wizard.name}
+                        proxyUrl={createdNode?.proxy_url ?? (wizard.proxyUrl.trim() || null)}
+                        image={images.pulled.image}
+                        source={images.pulled}
+                      />
+                    </div>
                   )}
-                  {!DEPLOY_SUPPORT[createdNode?.deployment ?? wizard.deployment].proven && (
-                    <p className="text-xs text-amber-700 dark:text-amber-400" data-testid="deploy-build-yourself">
-                      Build it yourself: ZeroShield does not publish this image yet. The Packer template and the steps are in
-                      {" "}<span className="font-mono">deploy/node-images/</span> (README); the node reads the values above from
-                      {" "}<span className="font-mono">/etc/zs-node/env</span>. Docker and Helm are the proven ways to run a node.
+                  {(method === "ova" || method === "ami") && (
+                    <p className="text-xs text-zinc-600 dark:text-zinc-400" data-testid="deploy-build-kit">
+                      Build the {method === "ova" ? "OVA" : "AMI"} with the build kit above (once; it holds no settings),
+                      then give each node these values: the node reads them from{" "}
+                      <span className="font-mono">/etc/zs-node/env</span>. Docker and Helm are the proven ways to run a node.
                     </p>
                   )}
                   {created.again && (createdNode?.deployment ?? wizard.deployment) === "docker" && (
@@ -503,7 +516,7 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
                     <TableRow><TableHead>Destination</TableHead><TableHead>Port</TableHead><TableHead>Used for</TableHead></TableRow>
                   </TableHeader>
                   <TableBody>
-                    <TableRow><TableCell className="font-mono text-xs">{apiHost()}</TableCell><TableCell>{apiPort()}</TableCell><TableCell className="text-zinc-600 dark:text-zinc-400">Jobs in, results out (HTTPS)</TableCell></TableRow>
+                    <ApiEgressRow apiUrl={apiUrl} />
                     <TableRow><TableCell>Your targets</TableCell><TableCell>22, 5986, 6443, database and TLS ports</TableCell><TableCell className="text-zinc-600 dark:text-zinc-400">Read-only collection</TableCell></TableRow>
                   </TableBody>
                 </Table>
@@ -571,7 +584,7 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
 
       <SectionCard title="What the node does, and never does">
         <ul className="list-disc pl-5 space-y-1.5 text-sm text-zinc-700 dark:text-zinc-300">
-          <li>Opens no inbound ports. It only connects out to {apiHost()} on port {apiPort()}.</li>
+          <li>Opens no inbound ports. It only connects out to {apiHost(apiUrl)}{apiPort ? ` on port ${apiPort}` : ""}.</li>
           <li>Secrets you enter are encrypted at rest by ZeroShield and sent only to the scan node that runs the job.</li>
           <li>Uses each credential only on the targets it was entered with; your never-scan list always wins.</li>
           <li>Reads with read-only accounts and the published command list shown on the Servers tab.</li>

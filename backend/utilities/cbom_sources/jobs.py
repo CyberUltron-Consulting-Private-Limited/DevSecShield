@@ -54,7 +54,7 @@ TARGET_STATUSES = frozenset({
     "identity_unverified", "kex_unsupported",
     "sudoers_missing", "sudo_denied", "rbac_denied", "winrm_denied", "tls_unavailable", "not_supported", "error",
     "skipped_never_scan",
-    "skipped_window", "skipped_stop", "skipped_deadline", "skipped_cancelled",
+    "skipped_window", "skipped_stop", "skipped_deadline", "skipped_cancelled", "skipped_cap",
 })
 
 
@@ -253,8 +253,9 @@ def reap(session: Session, now: _dt.datetime, *, team_id: int | None = None, nod
 def safe_reap(session: Session, now: _dt.datetime, **kwargs: Any) -> None:
     """Reaping on a read path must never fail the read."""
     try:
-        if reap(session, now, **kwargs):
-            session.commit()
+        reap(session, now, **kwargs)
+        # always: a fanned-out parent's lease and "N of M slices" are written without moving any job (#140 review)
+        session.commit()
     except Exception as exc:  # pragma: no cover - defensive
         session.rollback()
         log("reap FAILED", error=type(exc).__name__, **{k: v for k, v in kwargs.items() if v is not None})
@@ -460,7 +461,7 @@ def _scope_for(job: CbomCollectionJob, source: CbomCollectionSource | None, sett
             "parallel_per_server": settings.rate_parallel_per_server,
             "handshakes_per_endpoint": settings.rate_handshakes_per_endpoint,
         }
-        scope["read_zeek_span"] = bool(settings.zeek_span)
+        # settings.zeek_span is not sent: no scan node reads a SPAN port (CB-08; the UI no longer offers it)
     return scope
 
 
@@ -962,10 +963,12 @@ def asset_rows(owner: CbomCollectionJob, assets: list[dict[str, Any]], known: li
 
 
 def store_rows(session: Session, owner: CbomCollectionJob, counter: CbomCollectionJob, lease_id: str,
-               rows: list[dict[str, Any]]) -> tuple[int, int, int, bool]:
+               rows: list[dict[str, Any]], *, owner_cap: int | None = None) -> tuple[int, int, int, bool]:
     """Insert rows into ``owner``'s attempt; ``counter`` (the job itself, or a slice of it) carries the lease and the
     per-attempt asset cap.  Rows already stored are skipped, so a batch sent twice (or by a re-run slice) stores
-    nothing new.  Returns (inserted, already stored, dropped at the cap, cap reached)."""
+    nothing new.  ``owner_cap`` (a slice writing into its parent): the parent's ``asset_count`` is kept too, with a
+    guarded cap summed over every slice, so the source as a whole stays as bounded as a single job was.  Returns
+    (inserted, already stored, dropped at the cap, cap reached)."""
     existing = set()
     if rows:
         existing = set(session.exec(select(CbomCollectedAsset.asset_key).where(
@@ -973,6 +976,21 @@ def store_rows(session: Session, owner: CbomCollectionJob, counter: CbomCollecti
             CbomCollectedAsset.asset_key.in_([r["asset_key"] for r in rows]))).all())  # type: ignore[attr-defined]
     fresh = [r for r in rows if r["asset_key"] not in existing]
     room = max(MAX_ASSETS_PER_ATTEMPT - (counter.asset_count or 0), 0)
+    shared = counter.id != owner.id and owner_cap is not None
+    if shared:
+        for _try in range(5):  # the parent's counter is shared by every slice: take room with a guarded UPDATE
+            # (it fails only when another slice took the last room meanwhile: read the count again)
+            have = int(session.exec(select(CbomCollectionJob.asset_count).where(CbomCollectionJob.id == owner.id)).one())
+            take = min(len(fresh), room, max(owner_cap - have, 0))  # type: ignore[operator]
+            if take == 0 or session.exec(
+                    update(CbomCollectionJob)
+                    .where(CbomCollectionJob.id == owner.id, CbomCollectionJob.status == "claimed",
+                           CbomCollectionJob.asset_count + take <= owner_cap)
+                    .values(asset_count=CbomCollectionJob.asset_count + take)).rowcount:
+                break
+        else:
+            take = 0
+        room = take
     cap_reached = len(fresh) > room
     dropped = max(len(fresh) - room, 0)
     fresh = fresh[:room]
@@ -989,8 +1007,9 @@ def store_rows(session: Session, owner: CbomCollectionJob, counter: CbomCollecti
             raise HTTPException(status_code=409, detail="This job is no longer leased to this node")
     inserted = _insert_ignore(session, fresh)
     if inserted < len(fresh):  # another request stored some of these keys first
-        session.exec(update(CbomCollectionJob).where(CbomCollectionJob.id == counter.id)
-                     .values(asset_count=CbomCollectionJob.asset_count - (len(fresh) - inserted)))
+        for job_id in ((counter.id, owner.id) if shared else (counter.id,)):
+            session.exec(update(CbomCollectionJob).where(CbomCollectionJob.id == job_id)
+                         .values(asset_count=CbomCollectionJob.asset_count - (len(fresh) - inserted)))
     return inserted, len(existing) + (len(fresh) - inserted), dropped, cap_reached
 
 
@@ -1026,9 +1045,11 @@ def _cloud_queue():
 def _running_cond():
     """Claimed cloud jobs that occupy a worker: a fanned-out parent (``fo…`` lease) is held by its slices, not by a
     worker, so it is not counted."""
+    from backend.utilities.cbom_sources.slices import FANOUT_PREFIX
+
     return (*_cloud_queue(), CbomCollectionJob.status == "claimed",
             or_(CbomCollectionJob.lease_id.is_(None),  # type: ignore[union-attr]
-                ~CbomCollectionJob.lease_id.like("fo%")))  # type: ignore[union-attr]
+                ~CbomCollectionJob.lease_id.like(FANOUT_PREFIX + "%")))  # type: ignore[union-attr]
 
 
 def _cloud_running(session: Session, team_id: int | None = None) -> dict[int, int]:
@@ -1042,25 +1063,29 @@ def _cloud_running(session: Session, team_id: int | None = None) -> dict[int, in
 def claim_cloud_job(session: Session, now: _dt.datetime, worker: str, *, team_cap: int | None = None) -> dict | None:
     """Claim the next node-less job (a cloud collection, or one F1 slice of an AWS collection) for a cloud worker.
 
-    Fair share: teams with pending work are tried in order of how few jobs they have running (then whose oldest
-    pending job is oldest), and a team already running ``team_cap`` jobs is passed over, so a team with one job is
-    served by the next free worker however many slices another team has queued.  On PostgreSQL the team's rows are
-    taken ``FOR UPDATE SKIP LOCKED`` and the cap is re-checked under a per-team transaction advisory lock (two
-    replicas can never both take a team's last free place); the guarded ``status = 'pending'`` UPDATE keeps SQLite
-    (tests) exclusive too.  The caller commits."""
-    cap = team_cap or team_max_concurrency()
+    Fair share, work-conserving: teams with pending work are tried in order of how few jobs they have running (then
+    whose oldest pending job is oldest).  While more than one team has pending work, a team already running
+    ``team_cap`` jobs is passed over, so a team with one job is served by the next free worker however many slices
+    another team has queued; a team that is alone in the queue may use the whole pool.  On PostgreSQL the team's rows
+    are taken ``FOR UPDATE SKIP LOCKED`` and, while the cap applies, under a per-team transaction advisory lock taken
+    with ``pg_try_advisory_xact_lock`` (a team another claimer is busy with is skipped, never waited for: no lock
+    cycle between claimers).  The guarded ``status = 'pending'`` UPDATE re-checks the cap, which keeps SQLite (tests)
+    exact too.  The caller commits."""
     pg = session.get_bind().dialect.name == "postgresql"
     running = _cloud_running(session)
     waiting = session.exec(
         select(CbomCollectionJob.team_id, func.min(CbomCollectionJob.id))
         .where(*_cloud_queue(), CbomCollectionJob.status == "pending").group_by(CbomCollectionJob.team_id)).all()
+    cap = (team_cap or team_max_concurrency()) if len(waiting) > 1 else None
     for team_id, _oldest in sorted(waiting, key=lambda row: (running.get(int(row[0]), 0), row[1])):
-        if running.get(int(team_id), 0) >= cap:
-            continue
-        if pg:
-            session.exec(select(func.pg_advisory_xact_lock(_CLAIM_LOCK_NS, int(team_id))))
-            if _cloud_running(session, int(team_id)).get(int(team_id), 0) >= cap:
+        if cap is not None:
+            if running.get(int(team_id), 0) >= cap:
                 continue
+            if pg:
+                if not session.exec(select(func.pg_try_advisory_xact_lock(_CLAIM_LOCK_NS, int(team_id)))).one():
+                    continue  # another claimer is taking this team's place now
+                if _cloud_running(session, int(team_id)).get(int(team_id), 0) >= cap:
+                    continue
         payload = _claim_for_team(session, now, worker, int(team_id), pg, cap)
         if payload is not None:
             return payload
@@ -1068,7 +1093,7 @@ def claim_cloud_job(session: Session, now: _dt.datetime, worker: str, *, team_ca
 
 
 def _claim_for_team(session: Session, now: _dt.datetime, worker: str, team_id: int, pg: bool,
-                    cap: int) -> dict | None:
+                    cap: int | None) -> dict | None:
     query = (
         select(CbomCollectionJob)
         .where(*_cloud_queue(), CbomCollectionJob.team_id == team_id, CbomCollectionJob.status == "pending")
@@ -1083,7 +1108,7 @@ def _claim_for_team(session: Session, now: _dt.datetime, worker: str, team_id: i
         if job.kind == "slice":
             from backend.utilities.cbom_sources import slices as S
 
-            reason = S.slice_invalid_reason(session, job, source)
+            reason = S.slice_invalid_reason(session, job, source) or S.cap_reason(session, job)
         else:
             reason = _invalid_reason(job, source, None)
         if reason is None and (spec is None or not spec.node_less):
@@ -1108,11 +1133,13 @@ def _claim_for_team(session: Session, now: _dt.datetime, worker: str, team_id: i
         lease_id = secrets.token_hex(12)
         # the team's cap, checked again inside the claiming UPDATE (on SQLite the UPDATE holds the write lock, so this
         # is exact; on PostgreSQL the advisory lock above serialises the team's claims)
-        team_running = (select(func.count()).select_from(CbomCollectionJob)
-                        .where(CbomCollectionJob.team_id == team_id, *_running_cond()).scalar_subquery())
+        guard = [CbomCollectionJob.id == job.id, CbomCollectionJob.status == "pending"]
+        if cap is not None:
+            guard.append(select(func.count()).select_from(CbomCollectionJob)
+                         .where(CbomCollectionJob.team_id == team_id, *_running_cond()).scalar_subquery() < cap)
         changed = session.exec(
             update(CbomCollectionJob)
-            .where(CbomCollectionJob.id == job.id, CbomCollectionJob.status == "pending", team_running < cap)
+            .where(*guard)
             .values(status="claimed", lease_id=lease_id, lease_expires_at=now + cloud_lease(), claimed_at=now,
                     attempts=CbomCollectionJob.attempts + 1, asset_count=0, outcome=None)
         ).rowcount
@@ -1242,7 +1269,7 @@ def job_waiting_reason(
         return "Running on the scan node" if job.node_id else "Running in ZeroShield cloud"
     if job.status != "pending":
         return None
-    if job.node_id is None and job.kind == "collect":
+    if job.node_id is None and job.kind in CLOUD_KINDS:
         return "Queued for the ZeroShield cloud worker"
     status = node_status(node, now)
     if status == "missing":

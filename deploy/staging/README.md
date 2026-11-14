@@ -42,13 +42,17 @@ workflow runs it from CI.
 scripts/deploy/staging.sh release deploy@staging-host /opt/devsecshield-staging
 ```
 = `build` (all images, tag = short commit; the frontend gets `NEXT_PUBLIC_BACKEND_URL=https://<API_HOST>`),
-`save` (`deploy/staging/images/dss-staging-<tag>.tar.gz` + `.sha256`), `push` (scp of the bundle and the archive,
-then `staging.sh deploy <tag>` on the host over ssh). On the host, `deploy` verifies the checksum, `docker load`s
-the archive, writes `DSS_TAG` into `.env`, runs `docker compose up -d --wait`, then the checks below; a failed
-`compose up` fails the deploy (recorded as `FAILED` in `deploy-history`). The previous tag's images are kept and
-recorded in `deploy-history`; each tag's deploy files (compose file, nginx config, rollup overlay, `staging.sh`) and
-the head of its migrations are kept in `releases/<tag>/` for a rollback. `deploy` refuses a tag whose migrations do
-not contain the database's revision (an older tag than the one that migrated it): that is what `rollback` is for.
+`save` (`deploy/staging/images/dss-staging-<tag>.tar.gz` + `.sha256` + `.need`, what loading it needs), `push` (scp
+of the bundle, `staging.sh disk-check <tag>` on the host, scp of the archive and of the scan node downloads when
+`staging.sh node-artifacts` made them (see "Scan node downloads"), then `staging.sh deploy <tag>` on the host over
+ssh). On the host,
+`deploy` verifies the checksum, checks the disk (below), `docker load`s the archive, writes `DSS_TAG` into `.env`,
+runs `docker compose up -d --wait`, then the checks below; a failed `compose up` fails the deploy (recorded as
+`FAILED` in `deploy-history`). After a successful deploy the images of the new tag, the previous tag (recorded in
+`deploy-history`) and the last release that passed its checks are kept, and the new tag's archive only; this
+deployment's other images and archives are removed (see "Disk space"); each tag's deploy files (compose file, nginx config, rollup overlay, `staging.sh`) and the head of its
+migrations are kept in `releases/<tag>/` for a rollback. `deploy` refuses a tag whose migrations do not contain the
+database's revision (an older tag than the one that migrated it): that is what `rollback` is for.
 
 Without registry access on the host, add `STAGING_INCLUDE_INFRA=1` to ship the postgres, mongo, rabbitmq and nginx (and, with the minio profile, MinIO)
 images in the same archive. Behind a TLS-intercepting proxy, build with `UV_BASE_IMAGE` (backend, scan worker, DAST
@@ -56,6 +60,90 @@ worker), `NODE_BASE_IMAGE` (frontend) and `GO_BASE_IMAGE` (the scan worker's cbo
 that trust the proxy CA: the system bundle (`/etc/ssl/certs/ca-certificates.crt`, which apt, apk, curl, git and
 Python read) must contain it, and `SSL_CERT_FILE` / `UV_NATIVE_TLS=1` / `NODE_EXTRA_CA_CERTS` set so uv and npm do. Plain-HTTP staging (no certificates): build with
 `NEXT_PUBLIC_BACKEND_URL=http://<API_HOST>` and set `CORS_ORIGINS=http://<FRONTEND_HOST>`.
+
+## Scan node downloads
+
+Customers have no repository access and no ZeroShield registry, so **CBOM > Sources > Scan nodes > Add scan node**
+offers the scan node as downloads served by the API to members of the team (`GET /{team}/cbom/node-artifacts`, and a
+short-lived link per file; `backend/routers/cbom_node_artifacts.py`):
+
+| File | Made by |
+|---|---|
+| `scan-node-<version>.tar.gz` + `.sha256` | `scripts/release/scan_node_image.sh build <version>`: `docker save` of `localhost/zeroshield/cbom-scan-node:<version>`, the name the wizard's `docker run --pull never` uses |
+| `cbom-scan-node-<version>.tgz` + `.sha256` | `scripts/release/node_artifacts.py`: `deploy/helm/cbom-scan-node`, version and appVersion = `<version>` |
+| `cbom-scan-node-ova-kit-<version>.zip`, `cbom-scan-node-ami-kit-<version>.zip` + `.sha256` | `node_artifacts.py`: the Packer kit from `deploy/node-images` with a customer README (`deploy/node-images/kit/`), building from the image file |
+| `manifest.json` | `node_artifacts.py`: version, `image_ref`, the file names; the API lists only what it names |
+
+`<version>` is `scan_node/zs_scan_node/__init__.py` `VERSION` (or `CBOM_NODE_VERSION`). `staging.sh node-artifacts`
+(the workflow's "Scan node downloads" step) builds them into `deploy/staging/images/node-artifacts/` (the chart and
+the kits are about 25 KB together; the size is the image file's, which the deploy log prints); `push` counts their size in the host's disk check (`--node-artifacts-bytes`) and
+copies them to `deploy/staging/node-artifacts/<tag>.part/`; `deploy` checks every file against its `.sha256` and
+moves them to `deploy/staging/node-artifacts/<tag>/`, which `docker-compose.yml` mounts read-only into the backend at
+`/node-artifacts` (`CBOM_NODE_ARTIFACT_DIR`). They are kept and removed with their tag's images (retention, the disk
+preflight), so a rollback serves the downloads of the tag it went back to. A tag deployed without them gets an empty
+directory: the wizard then says each download is "not available on this server yet. Contact your administrator."
+
+**What the host must provide:** nothing new beyond disk space (the downloads count in the disk check) and `sha256sum`
+(coreutils). Optional, in `.env`: `CBOM_NODE_IMAGE_REF`, a tagged node image in a registry customers can pull from;
+only then does the wizard also show a `docker pull`-style command (unset by default: the image file only).
+
+## Disk space
+
+The staging host is shared with other sites. A release archive is about 5.5 GB and `docker load` needs about three
+times that again where Docker stores images (Deploy staging run 43572299641 ran the host out of disk part way through
+the load). So, before the archive is copied (`push` runs `staging.sh disk-check <tag> --archive-bytes <size>
+--need-bytes <need>` on the host) and again before it is loaded (`deploy`), `staging.sh` checks the filesystems that
+receive it, identified by device (`stat -c %d`), so a bind mount of the same disk counts once and the needs add up:
+* the one holding `deploy/staging/images/`: room for the part of the archive not copied yet;
+* the one holding the image store: what loading the archive needs. The image store is containerd's root with the
+  containerd image store (Docker 29's default; `docker info` says `driver-type io.containerd.snapshotter.v1`;
+  `/var/lib/containerd` unless the containerd config says otherwise, or `STAGING_CONTAINERD_ROOT`), else Docker's
+  root (`docker info` `DockerRootDir`).
+  * **Measured** (`<archive>.need`, written by `save` with `scripts/deploy/archive_need.py`, copied with the archive and
+    uploaded with the workflow's artifact): every layer as stored in the archive (the containerd store keeps it in its
+    content store; the classic store extracts it to a temporary directory) plus every layer unpacked, + 10% for
+    filesystem overhead. This holds whatever store the builder had.
+  * Otherwise `STAGING_DISK_FACTOR` (default **3.3**) x the archive's size. Measured on run 43572299641's archive
+    (5,484,863,244 bytes, from a containerd-store builder, as the CI runner is): its layers are stored
+    gzip-compressed (1.00x the archive) and unpack to 2.04x (scan-worker alone 4.72 GB stored, 9.02 GB unpacked), so
+    3.04x, and 3.3 adds about 10%. **An archive saved by a classic-store builder** holds uncompressed layer tars and
+    needs about 4x: without its `.need`, set `STAGING_DISK_FACTOR=4`. Layers a release shares with one already
+    loaded need no new space, so both err on the safe side;
+plus `STAGING_DISK_RESERVE_MB` (default 1024) left free on each, for the other sites. An invalid
+`STAGING_DISK_FACTOR` or `STAGING_DISK_RESERVE_MB` (`3,3`, `1G`) refuses the deploy before anything is changed.
+
+When a filesystem is short, `staging.sh` removes **this deployment's** images of every tag except the running tag,
+its rollback target (the tag `rollback` would go back to), the last release that passed its checks
+(`releases/passed`) and the tag being deployed, and its archives except the new tag's (`rollback` uses images, never
+archives), then checks again; still short, it stops before anything is copied, loaded or switched and prints what it
+needs and what is free. After a deploy whose checks passed it keeps the images of the new tag, its rollback target and
+the last other release that passed its checks (the rollback target, unless the deploy before failed), and the new
+tag's archive only. Only `<DSS_IMAGE_PREFIX>/{devsecshield-backend,devsecshield-frontend,scan-worker,dast-worker}:<tag>`
+images and `deploy/staging/images/<prefix>-<tag>.tar.gz` (with `.sha256`, `.part` and `.need`) are ever removed, and an
+archive only when `<tag>` is a release this host knows (its images, `deploy-history`, `releases/`): another
+deployment's `dss-staging-eu-<tag>.tar.gz` never matches. Removal is one by one: never another site's images or
+files, never `docker image prune` or `docker system prune`, never by force (docker refuses an image a container was
+created from; `staging.sh` says so and keeps it). The settings can also be set in `.env` (`STAGING_DISK_FACTOR`,
+`STAGING_DISK_RESERVE_MB`, `STAGING_CONTAINERD_ROOT`) or passed to `push` from the build machine (the first two).
+`staging.sh` runs with `LC_ALL=C`, so numbers read the same under any locale an ssh session forwards.
+
+A `docker load` that still runs out of space (the containerd store tags the images, prints "Error unpacking image
+...: no space left on device" and exits 0; the classic store exits non-zero) fails the deploy before anything is
+switched, and the images of the new tag it loaded are removed (never the running tag's, its rollback target's or the
+last passed release's).
+
+Runbook, on the host (`cd /opt/devsecshield-staging`):
+```sh
+scripts/deploy/staging.sh disk-plan <tag>                          # archive (and its .need) already copied
+scripts/deploy/staging.sh disk-plan <tag> --archive-bytes <size> [--need-bytes <need>]   # before the copy
+df -h deploy/staging/images /var/lib/containerd /var/lib/docker     # where the space went
+docker system df                                                    # every site's images, containers, volumes
+```
+`<size>` is `wc -c` of the archive and `<need>` the number in its `.need` (both on the build machine or in the
+workflow's artifact). `disk-plan` prints each filesystem's need and free space, what the preflight would remove and
+what retention would remove after the deploy; it removes nothing. When even then the host is short, the space is
+someone else's: ask the owners of the other sites, or grow the disk; then push again (or re-run the newest Deploy
+staging run).
 
 ## Checks
 
@@ -126,12 +214,153 @@ and Application Gateway do); the backend side (`FORWARDED_ALLOW_IPS` = nginx) is
 `IS_DOCKER_CONTAINER`, `PG_HOST`, `PG_PORT`, `PG_USER`, `PG_USER_PASS`, `PG_DB`, `MONGO_HOST`, `MONGO_PORT`,
 `MONGO_INITDB_ROOT_USERNAME`, `MONGO_INITDB_ROOT_PASSWORD`, `RABBITMQ_HOST`, `RABBITMQ_PORT`,
 `RABBIT_ADMIN_USERNAME`, `RABBIT_ADMIN_PASSWORD`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
-`AWS_DEFAULT_REGION`, `AWS_ENDPOINT_URL_S3`, `GIT_ALLOWED_HOSTS`, optional `MINIO_IMAGE`.
+`AWS_DEFAULT_REGION`, `AWS_ENDPOINT_URL_S3`, `GIT_ALLOWED_HOSTS`, optional `MINIO_IMAGE`; read only by
+`staging.sh` (optional, see "Disk space"): `STAGING_DISK_FACTOR`, `STAGING_DISK_RESERVE_MB`, `STAGING_CONTAINERD_ROOT`;
+optional for the backend: `CBOM_NODE_IMAGE_REF` (see "Scan node downloads").
 
 `backend.env` (backend-image containers only): `JWT_SECRET_KEY`, `JWT_REFRESH_SECRET_KEY`, `ENCRYPTION_KEY`,
 `CERTIN_HMAC_SECRET`, `CORS_ORIGINS`, `CBOM_PUBLIC_APP_URL`, mail (`SMTP_*`, `MAIL_FROM` or `TENANT_ID`,
 `CLIENT_ID`, `CLIENT_SECRET`, `EMAIL_SENDER`), `CBOM_AWS_*`, `CBOM_IDP_ALLOWED_PRIVATE`, `CBOM_EXTRA_CA_FILE`;
 the full list is `backend/.env.example`.
+
+## AWS collection on staging (lab mode)
+
+Without `CBOM_AWS_PRINCIPAL_ARN` the AWS form says "This ZeroShield deployment is not set up for AWS collection; contact
+your administrator". Staging's only AWS account is the sandbox **935951870001**, which is also the account of the
+collector identity, and a customer role in the deployment's own account is refused ("This role is in ZeroShield's own
+AWS account") unless **lab mode** is on. Lab mode (`CBOM_AWS_LAB_SAME_ACCOUNT=1`, `backend/utilities/cbom_sources/lab_mode.py`)
+accepts such a role for a single-account source, on a deployment whose `DSS_ENV` names a test deployment
+(`docker-compose.yml` sets `DSS_ENV: staging` for `backend` and `cbom-cloud-worker`); `DSS_ENV=production`, any other
+value or none refuses it. Every other check still runs and must pass: AssumeRole with the external ID, refusal
+without it, SecurityAudit, the data-plane deny, the denied secret read. The AWS form and every run of such a source
+show "Lab mode: same-account collection — not for production"; each use is logged (`lab_mode same_account USED`) and
+audited (`source.validate.lab_same_account`, `job.lab_same_account`).
+
+### 1. Set four values (once)
+
+GitHub > repository Settings > Environments > `staging`:
+
+| Where | Name | Value |
+|---|---|---|
+| Environment secret | `CBOM_AWS_PRINCIPAL_ARN` | `arn:aws:iam::935951870001:user/devsecshield/devsecshield-developer` |
+| Environment secret | `CBOM_AWS_ACCESS_KEY_ID` | that user's access key id (`<ACCESS_KEY_ID>`; never in the repo, an issue or a PR) |
+| Environment secret | `CBOM_AWS_SECRET_ACCESS_KEY` | that key's secret (`<SECRET_ACCESS_KEY>`) |
+| Environment variable (or secret) | `CBOM_AWS_LAB_SAME_ACCOUNT` | `1` |
+
+The next Deploy staging run (a push to `staging`, or re-run the latest one) writes exactly these keys into the host's
+`backend.env` (`staging.sh push` sends them over ssh's stdin to `staging.sh backend-env`; they are never on a command
+line or in the log, and GitHub masks the secrets) and recreates the backend containers with them. An unset or empty
+secret leaves the host's value as it is; to turn lab mode off set the variable to `0`. Without GitHub, the same on the
+host: `cd /opt/devsecshield-staging && printf 'CBOM_AWS_LAB_SAME_ACCOUNT=1\n' | scripts/deploy/staging.sh backend-env`
+(one `KEY=VALUE` line per key; type secrets into the pipe from a file you delete, not into shell history), then
+`docker compose --project-directory deploy/staging -f deploy/staging/docker-compose.yml up -d backend cbom-cloud-worker`.
+
+Check: Sources > Cloud & Identity > AWS shows the lab-mode banner and the form (no "not set up" message), and the
+backend log has `cbom sources` lines naming `lab_mode` once you validate.
+
+### 2. The customer role in the sandbox
+
+The existing `arn:aws:iam::935951870001:role/DevSecShieldScannerReadOnlyRole` will NOT pass validation as it is
+(CB-A1 run R1, `V2-validate`): its trust policy has no `sts:ExternalId` condition ("The role can be assumed without the
+external ID") and it has no data-plane deny ("The deny statement is missing: kms:Decrypt, ..."). Use one of these
+(an account administrator does it; the developer user cannot create IAM roles):
+
+**A. Recommended: the product's own reader template.** In Sources > Cloud & Identity > AWS, choose "Single account",
+download the CloudFormation template (it trusts account 935951870001 and carries this team's external ID) and deploy
+it as a stack in the sandbox (CloudFormation console, any region, e.g. ap-south-1; acknowledge IAM resources). It
+creates `arn:aws:iam::935951870001:role/ZeroShieldCBOMReader` with the `sts:ExternalId` condition, SecurityAudit and
+the deny. Its trust policy names the account (`arn:aws:iam::935951870001:root`), so in the SAME account the collector
+user also needs an identity policy allowing the role (AWS evaluates both in that case); unless the user already has
+one, attach this inline policy to `devsecshield-developer`:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "sts:AssumeRole",
+      "Resource": "arn:aws:iam::935951870001:role/ZeroShieldCBOMReader"
+    }
+  ]
+}
+```
+
+Then add the source with role ARN `arn:aws:iam::935951870001:role/ZeroShieldCBOMReader` and **Validate connection**.
+
+**B. Or fix the existing role** `DevSecShieldScannerReadOnlyRole` (IAM console > Roles > the role):
+1. Trust relationships > Edit: replace the WHOLE trust policy with the one below, putting this team's external ID
+   (shown on the AWS form, `zs-ext-XXXX-XXXX-XXXX-XXXX`) in place of `<EXTERNAL_ID>`. Any other statement that lets
+   the user or the account assume the role without the condition makes "Role refused without external ID" fail.
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": { "AWS": "arn:aws:iam::935951870001:user/devsecshield/devsecshield-developer" },
+      "Action": "sts:AssumeRole",
+      "Condition": { "StringEquals": { "sts:ExternalId": "<EXTERNAL_ID>" } }
+    }
+  ]
+}
+```
+
+2. Permissions > Add permissions > Create inline policy (JSON), name `ZeroShieldCBOMReaderDeny`; keep the AWS managed
+   `SecurityAudit` attached:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyKeyUseAndDataPlaneReads",
+      "Effect": "Deny",
+      "Action": [
+        "kms:Decrypt",
+        "kms:Encrypt",
+        "kms:GenerateDataKey",
+        "kms:GenerateDataKeyPair",
+        "kms:GenerateDataKeyPairWithoutPlaintext",
+        "kms:GenerateDataKeyWithoutPlaintext",
+        "kms:GenerateMac",
+        "kms:VerifyMac",
+        "kms:ReEncryptFrom",
+        "kms:ReEncryptTo",
+        "kms:Sign",
+        "kms:Verify",
+        "kms:DeriveSharedSecret",
+        "kms:GenerateRandom",
+        "secretsmanager:GetSecretValue",
+        "secretsmanager:BatchGetSecretValue",
+        "ssm:GetParameter",
+        "ssm:GetParameters",
+        "ssm:GetParametersByPath",
+        "ssm:GetParameterHistory",
+        "s3:GetObject",
+        "s3:GetObjectVersion",
+        "acm:ExportCertificate",
+        "dynamodb:GetItem",
+        "dynamodb:BatchGetItem",
+        "dynamodb:Query",
+        "dynamodb:Scan",
+        "rds-data:*",
+        "lambda:GetFunction",
+        "lambda:InvokeFunction",
+        "ec2:GetPasswordData",
+        "ecr:BatchGetImage",
+        "ecr:GetDownloadUrlForLayer",
+        "codecommit:GitPull"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+Then add the source with role ARN `arn:aws:iam::935951870001:role/DevSecShieldScannerReadOnlyRole` and validate.
+Every check must pass before a run collects; the run shows the lab-mode banner.
 
 ## Build identity
 
@@ -208,12 +437,22 @@ the repository.
 
 **What a red Deploy staging run leaves behind** (there is no automatic rollback; `staging.sh push`/`deploy` above):
 * The build (or the superseded check) failed: nothing on the host changed.
+* "not enough disk space to load <tag>" (`disk-check` before the copy, or `deploy` before the load; "Disk space"
+  above), or "STAGING_DISK_FACTOR=... is not a number": the containers still run the previous tag; the host's deploy
+  files are the new bundle's and `releases/files-tag` is cleared; this deployment's images of tags other than the
+  running one, its rollback target, the last that passed and the new one, and its archives but the new one's, may
+  have been removed (the log names each). Before the copy the archive was not
+  copied at all. Run `staging.sh disk-plan <tag>` on the host, free space, then push again (or re-run the newest run).
+* "docker load of ... failed": the load ran out of space part way. The images of the new tag it loaded were removed;
+  the rest is as in the next case. Free space (`disk-plan`) and push again.
 * `deploy` refused before switching tags (archive checksum, an image not loaded, or a database at a revision the
   new tag's migrations do not contain): the containers still run the previous tag, but the host's deploy files
   (compose file, nginx, `staging.sh`) are already the new bundle's and `releases/files-tag` is cleared. Fix the
-  cause and push again (or re-run the newest run). Do not use `rollback` here: `DSS_TAG` is still the running
-  release, so `rollback` would go to the release before it.
+  cause and push again (or re-run the newest run). Do not use `rollback` here (nor in the two cases above): `DSS_TAG`
+  is still the running release, so `rollback` would go to the release before it.
 * `compose up` failed: the host is on the new tag, partly started, and `deploy-history` says `FAILED`.
 * The post-deploy `staging.sh check` failed: the new tag is live and the run is red.
+In these two cases nothing is removed after the deploy: retention runs only after a deploy whose checks passed, so
+the previous release's images are there for the rollback.
 For the last two, go back with `make rollback-staging HOST=user@host` (or `scripts/deploy/staging.sh rollback` on
 the host; it asks before a database downgrade), or push a fix to `staging`.

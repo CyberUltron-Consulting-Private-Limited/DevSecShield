@@ -1,0 +1,2 @@
+# The golden fixture is a real run directory: its logs are evidence the judge reads (G16), not build output.
+!*.log

@@ -1,0 +1,9 @@
+{
+  "checks": [],
+  "ended": "2026-11-12T15:23:17Z",
+  "gate": "G5b",
+  "note": "IDNA source is CB-05's spec (KF-7)",
+  "seconds": 0,
+  "started": "2026-11-12T15:23:17Z",
+  "status": "not-run"
+}

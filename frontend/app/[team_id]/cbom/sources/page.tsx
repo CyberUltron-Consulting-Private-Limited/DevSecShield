@@ -18,7 +18,8 @@ import EvidenceTab from "@/components/cbom/sources/EvidenceTab";
 import ReviewRunTab from "@/components/cbom/sources/ReviewRunTab";
 import CmdbImportDialog from "@/components/cbom/sources/CmdbImportDialog";
 import FleetTab, { useFleetStatus } from "@/components/cbom/sources/fleet/FleetTab";
-import { fleetTabVisible, pickTab } from "@/components/cbom/sources/fleet/fleetLogic";
+import { fleetTabMode, fleetTabShown, pickTab } from "@/components/cbom/sources/fleet/fleetLogic";
+import { FLEET_SECTIONS } from "@/components/cbom/sources/fleet/sections";
 
 const TABS = [
   { value: "scan-nodes", label: "Scan nodes" },
@@ -40,8 +41,10 @@ function SourcesPage() {
   const queryClient = useQueryClient();
   const teamId = Number(params?.team_id);
   const requested = search.get("tab");
-  // Fleet shows only when the deployment has a fleet feature turned on (GET /fleet/status).
-  const showFleet = fleetTabVisible(useFleetStatus(teamId).data);
+  // Fleet shows when a section of this build has its flag on (GET /fleet/status). While the status is not known yet,
+  // a deep link to ?tab=fleet stays on Fleet (its loading or error block) instead of opening another tab first.
+  const fleetMode = fleetTabMode(useFleetStatus(teamId), FLEET_SECTIONS);
+  const showFleet = fleetTabShown(fleetMode, requested);
   const shown = (value: TabValue) => value !== "fleet" || showFleet;
   const tab: TabValue = pickTab(requested, TABS.map((t) => t.value), shown);
 
@@ -73,8 +76,7 @@ function SourcesPage() {
               </Link>
               <h1 className="text-3xl font-bold text-zinc-900 dark:text-white mb-2">CBOM Sources</h1>
               <p className="text-zinc-600 dark:text-zinc-400 max-w-3xl">
-                Connect the servers, clusters, cloud accounts and networks a CBOM scan should cover. Collection is read-only and
-                nothing is installed on your servers.
+                Connect the servers, clusters, cloud accounts and networks a CBOM scan should cover. Collection is read-only, and nothing is installed on the servers it reads unless you deploy host agents.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">

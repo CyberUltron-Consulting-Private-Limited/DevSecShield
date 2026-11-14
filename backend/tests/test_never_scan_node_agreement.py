@@ -138,3 +138,68 @@ def test_the_ui_and_the_api_say_the_same_words_for_a_host_name_in_the_team_list(
     read the same, so a drift on either side fails here, in the backend suite (which runs on frontend changes too)."""
     assert json.loads(_ts_constant("HOST_NAME_NOT_ALLOWED")) == T.HOST_NAME_NOT_ALLOWED
     assert T.HOST_NAME_NOT_ALLOWED.count("{entry}") == 1 and T.HOST_NAME_NOT_ALLOWED.startswith("{entry} ")
+
+
+# ----------------------------------------------------------------------------- one text form for an address (#126)
+def _str_of(python: str, monkeypatch) -> None:
+    """Put a CPython's IPv6Address.__str__ in place, whatever runs the tests: 3.12.3 and older print an IPv4-mapped
+    address in hex (::ffff:7f00:9); 3.12.16 and 3.13 (gh-87799) print it dotted (::ffff:127.0.0.9)."""
+    if python == "this interpreter":
+        return
+    current = ipaddress.IPv6Address.__str__
+
+    def emulated(self):
+        mapped = self.ipv4_mapped
+        if mapped is None or self.scope_id:
+            return current(self)
+        if python == "CPython 3.12.3 str()":
+            return f"::ffff:{int(mapped) >> 16:x}:{int(mapped) & 0xFFFF:x}"
+        return f"::ffff:{mapped}"
+
+    monkeypatch.setattr(ipaddress.IPv6Address, "__str__", emulated)
+    want = "::ffff:7f00:9" if python == "CPython 3.12.3 str()" else "::ffff:127.0.0.9"
+    assert str(ipaddress.ip_address("::ffff:127.0.0.9")) == want
+
+
+PYTHONS = ["this interpreter", "CPython 3.12.3 str()", "CPython 3.13 str()"]
+TEXT_FORMS = [
+    ("::ffff:7f00:9", "::ffff:127.0.0.9"),  # IPv4-mapped: RFC 5952 section 5, the IPv4 part dotted
+    ("::FFFF:10.0.0.4", "::ffff:10.0.0.4"),
+    ("::ffff:0.0.0.0", "::ffff:0.0.0.0"),
+    ("::7f00:1", "::7f00:1"),  # IPv4-compatible (deprecated): not mapped, stays hex
+    ("64:ff9b::7f00:1", "64:ff9b::7f00:1"),  # NAT64: hex, as every CPython prints it
+    ("fe80::1%eth0", "fe80::1%eth0"),
+    ("2001:DB8::1", "2001:db8::1"),
+    ("10.0.0.1", "10.0.0.1"),
+]
+
+
+@pytest.mark.parametrize("python", PYTHONS)
+def test_the_backend_and_the_node_write_one_text_form_for_an_address(monkeypatch, python):
+    from zs_scan_node import netutil
+
+    _str_of(python, monkeypatch)
+    for written, text in TEXT_FORMS:
+        address = ipaddress.ip_address(written)
+        assert T.ip_text(address) == netutil.ip_text(address) == text, written
+
+
+@pytest.mark.parametrize("python", PYTHONS)
+def test_connection_test_samples_are_labelled_the_same_on_every_python(monkeypatch, python):
+    """sample_targets wrote str(ipaddress...): an IPv4-mapped sample was ::ffff:a00:4 on CPython 3.12.3 and
+    ::ffff:10.0.0.4 on 3.12.16, the form the node labels (netutil.ip_text) and getaddrinfo answers."""
+    _str_of(python, monkeypatch)
+    mapped = T.ParsedTargets()
+    first = int(ipaddress.ip_address("::ffff:10.0.0.4"))
+    mapped.intervals = [(6, first, first + 2), (4, int(ipaddress.ip_address("10.0.9.1")), int(ipaddress.ip_address("10.0.9.1")))]
+    assert T.sample_targets(mapped, None, 5) == ["10.0.9.1", "::ffff:10.0.0.4", "::ffff:10.0.0.5", "::ffff:10.0.0.6"]
+    assert T.sample_targets(T.parse_targets(["fd00::/126"]), None, 2) == ["fd00::", "fd00::1"]
+
+
+@pytest.mark.parametrize("python", PYTHONS)
+def test_a_node_reports_its_source_addresses_in_the_same_form(monkeypatch, python):
+    from backend.routers import cbom_node
+
+    _str_of(python, monkeypatch)
+    assert cbom_node._ips(["::ffff:7f00:9", " ::FFFF:10.0.0.1 ", "10.0.0.1", "not an address", "2001:DB8::1"]) == [
+        "::ffff:127.0.0.9", "::ffff:10.0.0.1", "10.0.0.1", "2001:db8::1"]

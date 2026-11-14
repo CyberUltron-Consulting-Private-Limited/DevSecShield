@@ -158,7 +158,7 @@ def _names(found: list[str]) -> str:
 
 def db_login_policy(out, facts: dict[str, Any], algorithm: Any, key_size: Any, now) -> bool | None:
     if facts.get("engine") == "oracle":
-        users = [u for u in facts.get("users") or [] if isinstance(u, dict)]
+        users = [u for u in C.fact_list(facts.get("users")) if isinstance(u, dict)]
         tenG = sorted(str(u.get("name")) for u in users if "10G" in str(u.get("password_versions") or "").upper())
         elevenG = sorted(str(u.get("name")) for u in users if "11G" in str(u.get("password_versions") or "").upper()
                          and str(u.get("name")) not in tenG)
@@ -169,7 +169,7 @@ def db_login_policy(out, facts: dict[str, Any], algorithm: Any, key_size: Any, n
             out.add("DB_LEGACY_PW_HASH", "Medium", f"{len(elevenG)} user(s) keep the 11G password verifier (salted "
                                                    f"SHA-1): {_names(elevenG)}")
         return None
-    logins = [x for x in facts.get("logins") or [] if isinstance(x, dict)]
+    logins = [x for x in C.fact_list(facts.get("logins")) if isinstance(x, dict)]
     sha1 = sorted(str(x.get("name")) for x in logins if x.get("hash_version") == 1)
     if sha1:
         out.add("DB_LEGACY_PW_HASH", "Medium", f"{len(sha1)} SQL login(s) still have a SHA-1 password hash from before "
@@ -193,7 +193,7 @@ def db_crypto_policy(out, facts: dict[str, Any], algorithm: Any, key_size: Any, 
     if facts.get("version_unsupported"):
         out.add("DB_EOL_VERSION", "High", "Oracle Database older than 12.1: past Oracle's extended support, no "
                                           "security fixes")
-    weak = sorted({w for w in (weak_symmetric(a) for a in facts.get("sessions_nne_algorithms") or []) if w})
+    weak = sorted({w for w in (weak_symmetric(a) for a in C.fact_list(facts.get("sessions_nne_algorithms"))) if w})
     if weak:
         out.add("WEAK_CIPHER", "High", f"Sessions use Oracle native network encryption with {', '.join(weak)}")
     return None

@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { inventoryRows, isBrokenToday, matchesQuantumFilter, quantumCounts, round1 } from "./quantumFilter";
+import { inventoryRows, isBrokenToday, isUnidentified, matchesQuantumFilter, quantumCounts, round1 } from "./quantumFilter";
 
 // rows as the lab scan returned them (u2-zip-full-opts)
 const md5 = { quantum_safe: true, crypto_strength: "weak" };
@@ -26,6 +26,13 @@ assert.equal(matchesQuantumFilter(rsa1024, "vulnerable"), true);
 assert.equal(matchesQuantumFilter(library, "safe"), false);
 assert.equal(matchesQuantumFilter(library, "vulnerable"), false);
 for (const f of [md5, aesGcm, rsa1024, library]) assert.equal(matchesQuantumFilter(f, "all"), true);
+
+// CB-18 HF-1: an algorithm the rule base could not identify, as an engine before CB-18 stored it, is never "Safe"
+const unidentified = { quantum_safe: true, crypto_strength: "unknown" };
+assert.equal(isUnidentified(unidentified), true);
+assert.equal(isUnidentified(aesGcm), false);
+assert.equal(matchesQuantumFilter(unidentified, "safe"), false);
+assert.deepEqual(quantumCounts([unidentified, rsa1024]), { safe: 0, broken: 0, vulnerable: 1, judged: 1, readinessPct: 0 });
 console.log("quantumFilter tests passed");
 
 // PQC readiness gauge (a lab scan showed 77 % with MD5 and DES counted as quantum-safe): broken today is not ready

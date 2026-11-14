@@ -9,7 +9,8 @@ Counts are the run's verdict AS COLLECTED (``counts_basis``): severity = the sto
 not a ``coverage`` row ("could not read X"), informational = the other assets, quantum-vulnerable = assets stored with
 ``quantum_vulnerable`` true. That is exactly what ``cbom_metrics.summarize_code_rows`` counts over
 ``collections_view.node_row`` rows judged at collection (``node_row`` makes an asset a finding iff it has an impact),
-so a run row and a code-scan row use one rule (test B3).
+so a run row and a code-scan row use one rule (test B3). ``asset_count`` is every stored row of the run, coverage rows
+included: the number Review & Run (``GET /runs``) and the run's assets API (``all_total``) show (issue #159).
 
 Database work per list request (independent of the number of runs listed): one query for the page of runs, one count,
 one grouped count over ``cbomcollectedasset (run_id, impact, quantum_vulnerable)`` for the runs not in the cache, one
@@ -106,22 +107,26 @@ def _empty_counts() -> dict[str, Any]:
 
 def grouped_counts(session: Session, team_id: int, run_ids: Iterable[int]) -> dict[int, dict[str, Any]]:
     """Severity, informational, quantum-vulnerable, asset and probed-endpoint counts per run, as collected, in ONE
-    grouped query (``coverage`` rows excluded)."""
+    grouped query. ``coverage`` rows count only in ``asset_count`` (as in GET /runs and the assets API, issue #159),
+    never as a severity, informational, quantum-vulnerable or probed endpoint."""
     ids = sorted({int(i) for i in run_ids})
     out: dict[int, dict[str, Any]] = {i: _empty_counts() for i in ids}
     if not ids:
         return out
     net = case((CbomCollectedAsset.asset_type.in_(sorted(NETWORK_TYPES)), 1), else_=0)  # type: ignore[union-attr]
+    cov = case((CbomCollectedAsset.asset_type == COVERAGE, 1), else_=0)
     query = (select(CbomCollectedAsset.run_id, CbomCollectedAsset.impact, CbomCollectedAsset.quantum_vulnerable, net,
-                    func.count())
-             .where(CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id.in_(ids),  # type: ignore[union-attr]
-                    CbomCollectedAsset.asset_type != COVERAGE)
-             .group_by(CbomCollectedAsset.run_id, CbomCollectedAsset.impact, CbomCollectedAsset.quantum_vulnerable, net))
-    for run_id, impact, qv, is_net, count in session.exec(query).all():
+                    cov, func.count())
+             .where(CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id.in_(ids))  # type: ignore[union-attr]
+             .group_by(CbomCollectedAsset.run_id, CbomCollectedAsset.impact, CbomCollectedAsset.quantum_vulnerable, net,
+                       cov))
+    for run_id, impact, qv, is_net, is_cov, count in session.exec(query).all():
         counts = out[int(run_id)]
         risk = counts["risk_data"]
         count = int(count or 0)
         counts["asset_count"] += count
+        if is_cov:
+            continue  # "could not read X": a row of the run, never a finding or an endpoint (B3)
         if is_net:
             counts["endpoints_probed"] += count
         field = _IMPACTS.get(str(impact or ""))
