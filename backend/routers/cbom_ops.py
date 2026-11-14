@@ -400,7 +400,8 @@ def _waves_summary(items: list[dict]) -> dict:
     by_wave: dict[str, int] = {}
     for item in items:
         by_wave[str(item["wave"] or "none")] = by_wave.get(str(item["wave"] or "none"), 0) + 1
-    return {"by_wave": by_wave, "labels": {str(k): v for k, v in WAVES.WAVE_LABEL.items()}}
+    return {"by_wave": by_wave, "labels": {str(k): v for k, v in WAVES.WAVE_LABEL.items()},
+            "rules": {str(k): v for k, v in WAVES.WAVE_RULE.items()}}
 
 
 def _run_remediation(engine, team_id: int, run_id: int) -> dict:

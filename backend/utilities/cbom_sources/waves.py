@@ -38,6 +38,16 @@ WAVES = (1, 2, 3, 4)
 STATUSES = ("open", "in_progress", "done", "accepted_risk")
 WAVE_LABEL = {1: "Wave 1: urgent (exposed or HNDL)", 2: "Wave 2: high", 3: "Wave 3: medium and low",
               4: "Wave 4: post-quantum migration"}
+# What puts an asset in each wave: ``suggested_wave`` below, in words (the results page's legend, issue #271). A wave no
+# asset meets is simply not listed: a run with no Medium or Low finding has no Wave 3.
+WAVE_RULE = {
+    1: "Urgent: a Critical or High weakness on an internet-facing asset, or a quantum-vulnerable key exchange in "
+       "transit (harvest now, decrypt later: traffic recorded today can be decrypted later)",
+    2: "Every other Critical or High weakness",
+    3: "Medium and Low weaknesses",
+    4: "Quantum-vulnerable assets with no other weakness: plan their post-quantum migration",
+    "none": "Clean inventory: nothing to remediate",
+}
 MAX_ITEMS = 2_000  # per bulk request
 ROADMAP_NODE_CAP = 2_000
 _DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -302,5 +312,5 @@ def roadmap_extras(session: Session, team_id: int, view: Any = None) -> dict[str
             "node_rows_omitted": max(len(node_rows) - ROADMAP_NODE_CAP, 0)}
 
 
-__all__ = ["AssignmentBulk", "STATUSES", "WAVES", "WAVE_LABEL", "code_asset_key", "code_items", "node_items",
+__all__ = ["AssignmentBulk", "STATUSES", "WAVES", "WAVE_LABEL", "WAVE_RULE", "code_asset_key", "code_items", "node_items",
            "roadmap_extras", "suggested_wave", "upsert"]

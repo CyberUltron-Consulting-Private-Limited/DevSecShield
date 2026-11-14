@@ -166,6 +166,8 @@ export interface CbomRemediation {
   items: CbomRemediationItem[]
   by_wave: Record<string, number>
   labels: Record<string, string>
+  /** what puts an asset in each wave ("1".."4" and "none"), from the backend's suggested_wave rules (issue #271) */
+  rules?: Record<string, string>
 }
 
 export interface CbomAssignmentPatch {

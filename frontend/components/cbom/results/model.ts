@@ -536,6 +536,8 @@ export function resolveMigrationRows(dist: CbomDistributions): CbomDistributions
     ...r,
     migration_roadmap: r.migration_roadmap ?? text(r.migration_code) ?? text(r.fix_code),
     suggested_fix: r.suggested_fix ?? text(r.fix_code) ?? text(r.migration_code),
+    // the quantum finding's title names the group card of near-identical rows (issue #271)
+    finding_title: r.finding_title ?? (r.migration_code ? kb[r.migration_code]?.title ?? null : null),
   }));
   return { ...dist, pqc: { ...pqc, migration } };
 }

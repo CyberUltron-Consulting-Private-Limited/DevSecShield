@@ -328,6 +328,49 @@ def readiness(classes: Mapping[str, int]) -> tuple[float | None, dict[str, Any]]
     return pct, basis
 
 
+# readiness_actions: how many groups the readiness card names (the full list is ``readiness_actions_all``)
+READINESS_ACTIONS_TOP = 3
+
+
+def _quantum_code(codes: Iterable[str]) -> str | None:
+    """The finding code that makes an asset quantum-vulnerable (KB ``pqc: quantum-broken``), as the run results'
+    migration rows pick it (``migration_code``); None when the asset carries no such code."""
+    return next((c for c in codes if (crypto_kb.entry("node", c) or {}).get("pqc") == "quantum-broken"), None)
+
+
+def readiness_actions(groups: Mapping[tuple[str, str | None], int],
+                      classes: Mapping[str, int]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """What would raise PQC readiness (issue #271): the quantum-vulnerable assets per (asset type, quantum finding
+    code), largest group first, each with the KB title and fix and ``readiness_after``, the readiness this run would
+    have if that group alone were moved to hybrid or post-quantum cryptography (``readiness`` itself, so the page never
+    computes a readiness). Returns (the top ``READINESS_ACTIONS_TOP``, every group)."""
+    vulnerable = int(classes.get("quantum-vulnerable", 0) or 0)
+    out = []
+    for (a_type, code), n in sorted(groups.items(), key=lambda kv: (-kv[1], kv[0][0], kv[0][1] or "")):
+        entry = (crypto_kb.entry("node", code) or {}) if code else {}
+        fixed = {**classes, "quantum-vulnerable": max(0, vulnerable - n),
+                 "quantum-safe": int(classes.get("quantum-safe", 0) or 0) + min(n, vulnerable)}
+        out.append({"asset_type": a_type, "type_label": type_label(a_type), "code": code, "assets": n,
+                    "title": entry.get("title") or CLASS_BASIS["shor_breaks"][1],
+                    "fix": crypto_kb.summary_fix("node", [code]) if code else None,
+                    "readiness_after": readiness(fixed)[0]})
+    return out[:READINESS_ACTIONS_TOP], out
+
+
+def type_label(asset_type: str | None) -> str:
+    """The run table's type name (``run_assets.type_label``), imported late to keep this module import-cycle free."""
+    from backend.utilities.cbom_sources.run_assets import type_label as label
+
+    return label(asset_type)
+
+
+def readiness_excluded(bases: Mapping[str, int]) -> list[dict[str, Any]]:
+    """The assets outside the readiness denominator (classes unknown and not-applicable), per reason, most first."""
+    rows = [{"class": CLASS_BASIS[b][0], "basis": b, "assets": n, "text": CLASS_BASIS[b][1]}
+            for b, n in bases.items() if b in CLASS_BASIS and CLASS_BASIS[b][0] not in JUDGED_CLASSES and n]
+    return sorted(rows, key=lambda r: (-r["assets"], r["basis"]))
+
+
 def readiness_pct(vulnerable: int, judged: int, unknown: int) -> float | None:
     """``readiness`` for callers that count views, not classes (drift)."""
     return readiness({"quantum-vulnerable": vulnerable, "quantum-safe": max(0, judged - vulnerable),
@@ -457,6 +500,7 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
     classes: Counter[str] = Counter()
     impacts: Counter[str] = Counter()
     codes: Counter[str] = Counter()
+    vulnerable_groups: Counter[tuple[str, str | None]] = Counter()  # readiness_actions (issue #271)
     hndl_count = 0
     risky: list[dict[str, Any]] = []
     clause_assets: dict[tuple[str, str], set[int]] = defaultdict(set)
@@ -475,6 +519,8 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
         cls, basis = classify_pqc(row, a_codes, elsewhere=elsewhere)
         classes[cls] += 1
         bases[basis] += 1
+        if cls == "quantum-vulnerable":
+            vulnerable_groups[(a_type, _quantum_code(a_codes))] += 1
         agility.add(row, a_codes)
         if impact:
             impacts[impact] += 1
@@ -504,6 +550,7 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
                     meta = clause_meta.setdefault(clause, {**ref, "codes": set()})
                     meta["codes"].add(code)
     readiness_value, readiness_basis = readiness(classes)
+    actions_top, actions_all = readiness_actions(vulnerable_groups, classes)
     frameworks: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for clause, assets in sorted(clause_assets.items(), key=lambda kv: (kv[0][0], -len(kv[1]))):
         meta = clause_meta[clause]
@@ -519,6 +566,10 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
         "pqc_class_model": PQC_CLASS_MODEL,
         "pqc_readiness_pct": readiness_value,
         "readiness_basis": readiness_basis,
+        # issue #271: what raises the readiness, and which assets it leaves out and why
+        "readiness_actions": actions_top,
+        "readiness_actions_all": actions_all,
+        "readiness_excluded": readiness_excluded(bases),
         "hndl_assets": hndl_count,
         "impacts": {k: impacts.get(k, 0) for k in IMPACT_WEIGHT},
         "top_codes": [{"code": c, "count": n, "title": (crypto_kb.entry("node", c) or {}).get("title", c)}

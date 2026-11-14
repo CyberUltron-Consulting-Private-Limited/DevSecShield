@@ -5434,9 +5434,16 @@ export const INFO_TIPS = {
   // src: frontend/components/cbom/CbomCryptoCharts.tsx:585-597 — NIST level 0 public-key assets
   "cbom.chart.qv": {
     label: "Quantum-vulnerable algorithms",
-    what: "Public-key algorithms a cryptographically relevant quantum computer breaks (NIST level 0), each with where it is used.",
+    what: "Public-key algorithms a cryptographically relevant quantum computer breaks (NIST level 0: no quantum resistance), each with where it is used. Near-identical assets (same algorithm, finding and fix) share one card with a count; open it for the asset list.",
     why: "Data protected by them can be harvested now and decrypted later.",
     example: "RSA-2048 key exchange on api.bank.in:443: a future quantum computer could recover the key; harvest-now-decrypt-later applies.",
+  },
+  // src: frontend/components/cbom/pqcMigrationGroup.ts:202-220 — each distinct fix text once, with the assets it covers (#271)
+  "cbom.chart.qv_fixes": {
+    label: "How to fix",
+    what: "Each distinct fix once, numbered by how many assets it covers; every card above shows the number of its fix. The text comes from the offline knowledge base.",
+    why: "One configuration change often fixes dozens of endpoints: reading it once makes the plan clear.",
+    example: "Fix 1 · 28 assets · X25519 on TLS endpoint: offer a hybrid key-exchange group first.",
   },
   // src: frontend/components/cbom/CbomCryptoCharts.tsx:600-608 — no NIST level 0 assets
   "cbom.chart.qv_none": {
@@ -5759,10 +5766,24 @@ export const INFO_TIPS = {
     why: "Drift shows new weak crypto, and fixes that landed, as soon as they happen.",
     example: "+3 certificates, -1 SSH host key, 2 changed.",
   },
-  // src: frontend/components/cbom/results/RunSections.tsx:271-290, backend/utilities/cbom_sources/waves.py:44-60 — wave counts of the run's assets
+  // src: backend/utilities/cbom_sources/posture.py:313-328, backend/utilities/cbom_sources/cbom_metrics.py:29-46, backend/utilities/cbom_sources/posture.py:367-372 — ready judged / judged; unknown and not-applicable left out (#271)
+  "cbom.run.readiness": {
+    label: "PQC readiness explained",
+    what: "Quantum-safe judged assets divided by judged assets. Judged: the scan identified the cryptography and gave it a quantum verdict. Hybrid, post-quantum and symmetric (AES-256; AES-128 as Grover-weakened) count as ready. Unidentified assets and assets with no public-key algorithm are left out of both numbers; the percentage is withheld when more assets are unidentified than judged.",
+    why: "0% means every judged asset is breakable by a future quantum computer, not that the scan failed; the list below says which assets and what moves the score.",
+    example: "46 judged, 0 ready: 0%. Moving 38 TLS endpoints to a hybrid key exchange makes it 82.6%.",
+  },
+  // src: backend/utilities/cbom_sources/posture.py:341-357 — quantum-vulnerable assets per asset type and quantum finding, top 3, readiness after the fix (#271)
+  "cbom.run.readiness_actions": {
+    label: "What would raise PQC readiness",
+    what: "The largest groups of quantum-vulnerable assets (same asset type and same quantum finding), with the knowledge-base fix and the readiness this run would have if that group alone were fixed. Show these filters the findings table to the group.",
+    why: "Tells you which change moves the score most, so the first migration step is the biggest one.",
+    example: "Fix 38 TLS endpoints: No post-quantum key exchange · Readiness 0% → 82.6%.",
+  },
+  // src: backend/utilities/cbom_sources/waves.py:43-52, backend/utilities/cbom_sources/waves.py:56-69 — wave counts of the run's assets; the rule per wave (#271)
   "cbom.run.waves": {
     label: "Remediation waves",
-    what: "This run's assets per remediation wave (1 most urgent to 4 post-quantum migration). Select findings in the table below to assign a wave, owner, target date or status; plans follow the asset to later runs.",
+    what: "This run's assets per remediation wave. Wave 1: Critical or High weaknesses on internet-facing assets, and quantum-vulnerable key exchanges in transit (HNDL). Wave 2: other Critical or High. Wave 3: Medium and Low. Wave 4: quantum-vulnerable assets with no other weakness. A wave no asset matches is not listed. Select findings below to assign a wave, owner, date or status; plans follow the asset.",
     why: "Turns the findings into an ordered plan with owners and dates.",
     example: "Wave 1: 4 · Wave 2: 11 · Wave 3: 30 · Wave 4: 52.",
   },
