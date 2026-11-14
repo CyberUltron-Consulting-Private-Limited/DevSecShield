@@ -4939,6 +4939,118 @@ const getCbomAssetDetail = async (team_id: number, asset_id: number): Promise<Cb
     return (response.data as { asset: CbomAssetDetail }).asset
 }
 
+// ---------------------------------------------------------------------------- CB-38: Sources run results page
+// Additive contract (BRIEF §B, §C). Every field the run page reads from these is optional: an older backend sends
+// none of them and the page says so in one line instead of failing.
+
+/** The code lane's finding status, the unified status of a run asset (assignment open/in_progress/done/accepted_risk). */
+export type CbomFindingStatus = "not_started" | "in_progress" | "fixed" | "ignored"
+
+/** One item of GET /runs/{id}/assets with the CB-38 additions (W1) and the CB-19 / CB-24 / CB-38 PR-4 passthroughs. */
+export interface CbomRunAssetItem extends CbomAsset {
+    asset_key?: string | null
+    status?: CbomFindingStatus | null
+    assignment_status?: CbomWaveStatusName | null
+    wave?: CbomRemediationItemRef | null
+    risk_score?: number | null
+    algorithm_name?: string | null
+    algorithm_type?: string | null
+    crypto_strength?: string | null
+    quantum_safe?: boolean | null
+    description?: string | null
+    type_label?: string | null
+    q_grade?: string | null
+    q_label?: string | null
+    fix_class?: string | null
+    fix_class_floor?: string | null
+    ticket_key?: string | null
+    ticket_url?: string | null
+}
+
+export interface CbomRunAssetPage extends Omit<CbomAssetPage, "items"> {
+    items: CbomRunAssetItem[]
+    findings_total?: number
+}
+
+export type CbomRunAssetView = "findings" | "all"
+
+export interface CbomRunAssetFilters extends CbomAssetFilters {
+    view?: CbomRunAssetView
+    status?: CbomFindingStatus
+    source_id?: number
+}
+
+/** Wave status names of PUT /cbom/remediation (same values as utils/api/cbom_ops CbomWaveStatus). */
+export type CbomWaveStatusName = "open" | "in_progress" | "done" | "accepted_risk"
+
+/** The wave entry of a run asset (the `node_items` entry; same shape as utils/api/cbom_ops CbomRemediationItem). */
+export type CbomRemediationItemRef = import("@/utils/api/cbom_ops").CbomRemediationItem
+
+export interface CbomCertRef {
+    asset_id: number
+    subject: string | null
+    issuer: string | null
+    not_after: string | null
+    location: string | null
+    source: string | null
+}
+
+export interface CbomRunProvenance {
+    source_id: number | null
+    source: string | null
+    kind: string | null
+    node: string | null
+    runner: string | null
+    outcome: string | null
+    assets: number
+    endpoints_probed: number
+    duration_s: number | null
+    credits: number | null
+}
+
+export interface CbomRunComplianceFramework {
+    framework: string
+    clauses: { clause: string; title: string; assets: number; codes: string[] }[]
+}
+
+/** The run's dashboard: the code page's CbomScanDashboardData; `metrics_available: false` until assignments carry done_at. */
+export type CbomRunDashboard = CbomScanDashboardData & {
+    metrics_available?: boolean
+    remediation_metrics: CbomScanDashboardData["remediation_metrics"] & { metrics_available?: boolean }
+}
+
+export interface CbomRunResults {
+    run: CbomRun & { endpoints_probed?: number }
+    dashboard?: CbomRunDashboard | null
+    distributions?: import("@/components/cbom/CbomCryptoCharts").CbomDistributions | null
+    compliance?: { frameworks: CbomRunComplianceFramework[] } | null
+    certificates_orphaned?: CbomCertRef[] | null
+    certificates_unmanaged?: CbomCertRef[] | null
+    provenance?: CbomRunProvenance[] | null
+    top_risks?: CbomRunPosture["top_risks"] | null
+    judged_on?: string
+    computed_at?: string
+    inputs_digest?: string
+    state?: "ready" | "live" | "computing"
+    stale?: boolean
+}
+
+/** GET /{team}/cbom/sources/runs/{run}/results (W2). 404 from an older backend is the caller's to handle. */
+export async function getCbomRunResults(team_id: number, run_id: number): Promise<CbomRunResults> {
+    const response = await api.get(`${cbomSourcesBase(team_id)}/runs/${run_id}/results`)
+    return response.data as CbomRunResults
+}
+
+/** GET /runs/{id}/assets with the CB-38 filters (view, status, source_id); same endpoint as getCbomRunAssets. */
+export async function getCbomRunAssetPage(team_id: number, run_id: number, filters: CbomRunAssetFilters = {}): Promise<CbomRunAssetPage> {
+    const params: Record<string, string | number | boolean> = {}
+    for (const [key, value] of Object.entries(filters)) {
+        if (value !== undefined && value !== null && value !== "") params[key] = value as string | number | boolean
+    }
+    const response = await api.get(`${cbomSourcesBase(team_id)}/runs/${run_id}/assets`, { params })
+    return response.data as CbomRunAssetPage
+}
+
 const getCbomJobAssets = async (team_id: number, job_id: number, page = 1): Promise<CbomAssetPage> => {
     const response = await api.get(`${cbomSourcesBase(team_id)}/jobs/${job_id}/assets`, { params: { page, page_size: 200 } })
     return response.data as CbomAssetPage

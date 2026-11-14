@@ -1242,6 +1242,7 @@ export function CbomCryptoCharts({
   findings,
   inventory,
   onOpenFinding,
+  showCodeHeatmap = true,
 }: {
   distributions?: CbomDistributions | null;
   graph?: CbomGraph | null;
@@ -1254,6 +1255,8 @@ export function CbomCryptoCharts({
   /** Every row of the scan (findings + clean inventory) for the readiness gauge; the findings when absent. */
   inventory?: QuantumFields[] | null;
   onOpenFinding?: (finding: CbomFinding) => void;
+  /** false on a Sources run page: its heat-map and certificate calendar come from the run API (RunInsights). */
+  showCodeHeatmap?: boolean;
 }) {
   if (!distributions) return null;
   const hasGraph =
@@ -1327,10 +1330,12 @@ export function CbomCryptoCharts({
         />
         <ProtocolTls data={distributions.protocols} />
       </div>
-      <CodeHeatmapAndCalendar
-        findings={findings ?? []}
-        certificates={resolveCertificates(distributions, graph, findings)}
-      />
+      {showCodeHeatmap && (
+        <CodeHeatmapAndCalendar
+          findings={findings ?? []}
+          certificates={resolveCertificates(distributions, graph, findings)}
+        />
+      )}
       {hasGraph && (
         <div className="grid grid-cols-1 gap-6">
           <CryptoDependencyGraph
