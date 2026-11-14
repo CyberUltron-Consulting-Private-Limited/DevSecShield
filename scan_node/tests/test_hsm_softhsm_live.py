@@ -86,6 +86,9 @@ def test_softhsm_token_is_inventoried_without_values(token):
     assert ec and all(a["facts"]["curve"] == "P-256" and a["key_size"] == 256 for a in ec)
     store = [a for a in ctx.collected if a["type"] == "key_store"]
     assert store and store[0]["facts"]["token_label"] == "zs-wp6" and store[0]["facts"]["logged_in"] is True
+    # CB-24 PR-4b: the real SoftHSM token is a software token, on the store and on every key
+    assert store[0]["facts"]["token_class"] == "software" and store[0]["facts"]["slot_flags"] == ["TOKEN_PRESENT"]
+    assert all(k["facts"]["token_class"] == "software" for k in keys.values())
     blob = json.dumps(ctx.collected)
     # no key value and no PIN anywhere in what the node would send
     assert KNOWN_AES.hex() not in blob and KNOWN_AES.hex().upper() not in blob

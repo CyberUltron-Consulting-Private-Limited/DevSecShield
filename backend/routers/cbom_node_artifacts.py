@@ -54,6 +54,7 @@ from backend.get_db import get_db
 from backend.new_models import CbomScanNode
 from backend.utilities.cbom_sources.common import audit, iso_z, log, utcnow
 from backend.utilities.cbom_sources.http import PRIVATE, CbomRoute, TeamId, authorize, read_limiter, write_limiter
+from backend.utilities.cbom_sources.node_release import manifest_build, server_label
 from backend.utilities.team import check_if_user_is_in_team
 
 router = APIRouter(tags=["cbom-sources"], route_class=CbomRoute)
@@ -186,8 +187,13 @@ def listing() -> dict:
         items.append({"kind": kind, "label": label, "available": True, "filename": os.path.basename(path),
                       "size": os.path.getsize(path), "sha256": file_sha256(path), "message": None})
     chart = pull_chart()
+    build = manifest_build(manifest)
     return {
         "version": _version(manifest),
+        # the commit the image was built from (scripts/release/node_artifacts.py --build), and the "<version>+<commit>"
+        # a node running it reports: the Scan nodes tab compares every node with it (staging QA B6-1)
+        "build": build,
+        "node_build": server_label(_version(manifest), build),
         "image_ref": _image_ref(manifest),
         "pull_image_ref": pull_image_ref(),
         "pull_chart_ref": chart[0] if chart else None,

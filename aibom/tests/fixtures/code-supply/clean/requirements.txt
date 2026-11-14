@@ -1,1 +1,1 @@
-PyJWT==2.8.0
+pycryptodome==3.23.0

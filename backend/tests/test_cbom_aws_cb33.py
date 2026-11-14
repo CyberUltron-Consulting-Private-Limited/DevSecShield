@@ -739,8 +739,8 @@ def test_t_log_aws_collected_names_the_gaps_by_service_and_code(monkeypatch, cap
     line = next((ln for ln in out.getvalue().splitlines() if "aws collected" in ln), str(result))
     # every service this test did not record answers AccessDenied: their rows are counted too
     assert " gaps=" in line and "kms:AccessDenied:1," in line and "kms:ThrottlingException:1," in line, line
-    acme = [a for a in found if a["location"].endswith("#acme")]
-    assert acme and acme[0]["facts"]["status"] == "not_supported" and acme[0]["facts"]["by_choice"] is True
+    # ACME-issued certificates are listed since PR-D (botocore 1.44): no "not listed by this SDK version" row
+    assert not [a for a in found if a["location"].endswith("#acme")]
 
 
 # ============================================================================ T16 the real retry handler

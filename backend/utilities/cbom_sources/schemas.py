@@ -145,7 +145,8 @@ class ExclusionItem(_Body):
 class PortItem(_Body):
     port: int = Field(ge=1, le=65535)
     protocol: Literal["tls", "starttls-ldap", "starttls-smtp", "starttls-imap", "starttls-postgres",
-                      "starttls-mysql", "tds", "ssh", "rdp", "ike",
+                      "starttls-mysql", "starttls-pop3", "starttls-ftp", "starttls-xmpp", "starttls-xmpp-server",
+                      "tds", "ssh", "rdp", "ike",
                       "opcua", "modbus", "modbus-tls"] = "tls"
     label: str = Field(default="", max_length=40)
 

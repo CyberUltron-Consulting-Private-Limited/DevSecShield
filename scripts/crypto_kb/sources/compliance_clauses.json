@@ -61,6 +61,11 @@
    "basis": "as CBC_ACCEPTED, with no AEAD alternative offered",
    "rules": []
   },
+  "CERT_CHAIN_EXTRA_EXPIRED": {
+   "clauses": [],
+   "basis": "current clients still build a valid path (the expired cross-sign is ignored), so no clause is broken; old clients that fail are covered by the CHAIN codes",
+   "rules": []
+  },
   "CERT_EXPIRED": {
    "clauses": [
     "sebi-pr-ds-s4-item-5",
@@ -74,6 +79,13 @@
     "sebi-pr-ds-s4-item-5"
    ],
    "basis": "renewal is due (SEBI PR.DS.S4 item 5); the certificate is still valid, so CERT-In 6.1.7 is not broken yet",
+   "rules": []
+  },
+  "CERT_NOT_YET_VALID": {
+   "clauses": [
+    "certin-gov-6.1.7"
+   ],
+   "basis": "a certificate served before its notBefore date is not a valid TLS certificate (CERT-In 6.1.7)",
    "rules": []
   },
   "CERT_REVOKED": {
@@ -108,6 +120,13 @@
   "CERT_WILDCARD_SPRAWL": {
    "clauses": [],
    "basis": "key or certificate lifecycle hygiene (rotation, deletion protection, inventory): no clause in the knowledge base requires it, so it is not cited under any framework",
+   "rules": []
+  },
+  "CHAIN_INCOMPLETE": {
+   "clauses": [
+    "certin-bom-8.4.2.2"
+   ],
+   "basis": "CERT-In 8.4.2.2 asks for strict TLS configurations that specify the certificate chains: a server that does not send its intermediates breaks it",
    "rules": []
   },
   "DB_10G_VERIFIER": {

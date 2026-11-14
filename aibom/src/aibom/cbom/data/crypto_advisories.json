@@ -1,7 +1,7 @@
 {
   "data_version": 1,
   "valid_as_of": "2026-11-02",
-  "note": "Curated offline subset of published crypto-library advisories. A scan reads only this file. Rows for pycrypto, cryptography (PyPI) and golang.org/x/crypto (Go) were taken from the OSV database (https://api.osv.dev/v1/query for the affected version, 2026-11-02): one row per CVE, the package's own ECOSYSTEM/SEMVER range; each row's source is its OSV record. A Go fixed version may be a pseudo-version (v0.0.0-<UTC timestamp>-<commit>), compared by its timestamp.",
+  "note": "Curated offline subset of published crypto-library advisories. A scan reads only this file. Rows for pycrypto, cryptography (PyPI) and golang.org/x/crypto (Go) were taken from the OSV database (https://api.osv.dev/v1/query for the affected version, 2026-11-02): one row per CVE, the package's own ECOSYSTEM/SEMVER range; each row's source is its OSV record. A Go fixed version may be a pseudo-version (v0.0.0-<UTC timestamp>-<commit>), compared by its timestamp. CB-29: the BouncyCastle.Cryptography (NuGet) row that cited CVE-2023-33201 (a Java-only LDAP flaw) was removed; its .NET advisories come from the OSV snapshot (osv_snapshot.json).",
   "advisories": [
     {
       "id": "RUSTSEC-2022-0093",
@@ -274,14 +274,6 @@
       "fixed": "1.3.0",
       "summary": "RSA PKCS#1 signature verification accepts crafted signatures",
       "source": "https://nvd.nist.gov/vuln/detail/CVE-2022-24771"
-    },
-    {
-      "id": "CVE-2023-33201",
-      "ecosystem": "nuget",
-      "name": "bouncycastle.cryptography",
-      "fixed": "2.2.1",
-      "summary": "Bouncy Castle .NET certificate processing flaw",
-      "source": "https://github.com/bcgit/bc-csharp/releases/tag/2.2.1"
     },
     {
       "id": "CVE-2020-25659",
