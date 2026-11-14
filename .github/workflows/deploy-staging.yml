@@ -110,6 +110,7 @@ jobs:
           path: |
             deploy/staging/images/*.tar.gz
             deploy/staging/images/*.sha256
+            deploy/staging/images/*.need
           retention-days: 7
           compression-level: 0
           if-no-files-found: error

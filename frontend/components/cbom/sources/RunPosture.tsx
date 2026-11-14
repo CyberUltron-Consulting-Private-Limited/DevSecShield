@@ -8,6 +8,12 @@ import { ExternalLink, Info } from "lucide-react";
 import { Fragment, useState } from "react";
 
 import KbFindingDetails from "@/components/cbom/KbFindingDetails";
+import {
+  AgilityDrawerSection,
+  AgilityPostureCard,
+  QDistributionCard,
+  QGradeDrawerSection,
+} from "@/components/cbom/grade";
 import { cbomOpsKeys, getCbomAssetSbom } from "@/utils/api/cbom_ops";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -136,7 +142,10 @@ function MoscaEditor({ teamId, onDone }: { teamId: number; onDone: () => void })
   );
 }
 
-export function RunPostureCard({ teamId, runId, active }: { teamId: number; runId: number; active: boolean }) {
+/** `onOpenAsset`: what a Q0 Unknown asset item in the quantum-risk card opens (optional; without it the item is text). */
+export function RunPostureCard({ teamId, runId, active, onOpenAsset }: {
+  teamId: number; runId: number; active: boolean; onOpenAsset?: (assetId: number) => void;
+}) {
   const [showCompliance, setShowCompliance] = useState(false);
   const [editMosca, setEditMosca] = useState(false);
   const isAdmin = useIsTeamAdmin(teamId);
@@ -150,7 +159,10 @@ export function RunPostureCard({ teamId, runId, active }: { teamId: number; runI
   if (query.isLoading) return <LoadingBlock />;
   if (query.isError || !query.data) return <ErrorBlock error={query.error} onRetry={() => query.refetch()} />;
   const p = query.data;
-  if (p.assets === 0) return null;
+  // a run that read no asset can still have Q0 Unknown items (sources or targets not read): show only those
+  if (p.assets === 0) {
+    return (p.q0_items_total ?? 0) > 0 ? <QDistributionCard teamId={teamId} posture={p} onOpenAsset={onOpenAsset} /> : null;
+  }
   const m = p.mosca;
   return (
     <div className="space-y-3 rounded-lg border border-zinc-200 dark:border-zinc-800 p-4" data-testid="run-posture">
@@ -198,6 +210,10 @@ export function RunPostureCard({ teamId, runId, active }: { teamId: number; runI
         )}
       </div>
       {m.configured && m.verdict && <p className="text-xs text-zinc-600 dark:text-zinc-400">{m.verdict}</p>}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 items-start">
+        <QDistributionCard teamId={teamId} posture={p} onOpenAsset={onOpenAsset} />
+        <AgilityPostureCard teamId={teamId} posture={p} />
+      </div>
       {p.top_risks.length > 0 && (
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 mb-1">
@@ -283,6 +299,8 @@ export function AssetDetailPanel({ teamId, assetId }: { teamId: number; assetId:
         )}
         {a.exposure_basis && <span className="text-xs text-zinc-500">{a.exposure_basis}</span>}
       </div>
+      <QGradeDrawerSection teamId={teamId} asset={a} />
+      <AgilityDrawerSection teamId={teamId} agility={a.agility} />
       {a.library && (
         <div className="rounded-md border border-zinc-200 dark:border-zinc-700 p-3 space-y-1" data-testid="asset-library">
           <p className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">

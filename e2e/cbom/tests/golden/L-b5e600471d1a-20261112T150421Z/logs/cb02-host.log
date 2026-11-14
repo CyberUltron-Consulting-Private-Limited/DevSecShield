@@ -1,0 +1,163 @@
+2026-11-12T15:21:53.118281511Z cb02-entry: target=host role=sshd port=22
+2026-11-12T15:21:53.134517788Z Server listening on 0.0.0.0 port 22.
+2026-11-12T15:22:26.054596152Z Connection from 10.231.0.11 port 48068 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.060346998Z Unable to negotiate with 10.231.0.11 port 48068: no matching key exchange method found. Their offer: diffie-hellman-group1-sha1 [preauth]
+2026-11-12T15:22:26.181071829Z Connection from 10.231.0.11 port 48074 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.186509230Z Connection from 10.231.0.11 port 48080 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.188917480Z Connection from 10.231.0.11 port 48094 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.198507518Z Connection closed by 10.231.0.11 port 48074 [preauth]
+2026-11-12T15:22:26.209126603Z Connection closed by 10.231.0.11 port 48080 [preauth]
+2026-11-12T15:22:26.223625832Z Connection closed by 10.231.0.11 port 48094 [preauth]
+2026-11-12T15:22:26.385947845Z Connection from 10.231.0.11 port 48100 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.389588944Z Connection closed by 10.231.0.11 port 48100 [preauth]
+2026-11-12T15:22:26.395237150Z Connection from 10.231.0.11 port 48102 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.406716009Z Connection closed by 10.231.0.11 port 48102 [preauth]
+2026-11-12T15:22:26.410469345Z Connection from 10.231.0.11 port 48112 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.419598706Z Connection closed by 10.231.0.11 port 48112 [preauth]
+2026-11-12T15:22:26.423715959Z Connection from 10.231.0.11 port 48122 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.433397190Z Connection closed by 10.231.0.11 port 48122 [preauth]
+2026-11-12T15:22:26.444202734Z Connection from 10.231.0.11 port 48146 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.445885941Z Connection from 10.231.0.11 port 48138 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.445923596Z kex_exchange_identification: Connection closed by remote host
+2026-11-12T15:22:26.445926469Z Connection closed by 10.231.0.11 port 48146
+2026-11-12T15:22:26.446997125Z Connection from 10.231.0.11 port 48154 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.447189281Z kex_exchange_identification: Connection closed by remote host
+2026-11-12T15:22:26.447307041Z Connection closed by 10.231.0.11 port 48138
+2026-11-12T15:22:26.448228690Z kex_exchange_identification: Connection closed by remote host
+2026-11-12T15:22:26.448315195Z Connection closed by 10.231.0.11 port 48154
+2026-11-12T15:22:26.450639979Z Connection from 10.231.0.11 port 48164 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.459185601Z kex_exchange_identification: Connection closed by remote host
+2026-11-12T15:22:26.459194686Z Connection closed by 10.231.0.11 port 48164
+2026-11-12T15:22:26.460640901Z Connection from 10.231.0.11 port 48186 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.463410440Z kex_exchange_identification: Connection closed by remote host
+2026-11-12T15:22:26.463498986Z Connection closed by 10.231.0.11 port 48186
+2026-11-12T15:22:26.463758484Z Connection from 10.231.0.11 port 48200 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.463909773Z kex_exchange_identification: Connection closed by remote host
+2026-11-12T15:22:26.463976829Z Connection closed by 10.231.0.11 port 48200
+2026-11-12T15:22:26.468462985Z Connection from 10.231.0.11 port 48176 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.468582180Z kex_exchange_identification: Connection closed by remote host
+2026-11-12T15:22:26.468586230Z Connection closed by 10.231.0.11 port 48176
+2026-11-12T15:22:26.472738002Z Connection from 10.231.0.11 port 48214 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.473453120Z kex_exchange_identification: Connection closed by remote host
+2026-11-12T15:22:26.473526858Z Connection closed by 10.231.0.11 port 48214
+2026-11-12T15:22:26.475574577Z Connection from 10.231.0.11 port 48226 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.480151030Z kex_exchange_identification: Connection closed by remote host
+2026-11-12T15:22:26.480249884Z Connection closed by 10.231.0.11 port 48226
+2026-11-12T15:22:26.481094633Z Connection from 10.231.0.11 port 48250 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.481375311Z Connection from 10.231.0.11 port 48236 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.489084428Z Connection from 10.231.0.11 port 48270 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.489274589Z kex_exchange_identification: Connection closed by remote host
+2026-11-12T15:22:26.489279639Z Connection closed by 10.231.0.11 port 48270
+2026-11-12T15:22:26.489649171Z Connection from 10.231.0.11 port 48258 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.489770368Z kex_exchange_identification: Connection closed by remote host
+2026-11-12T15:22:26.489849623Z Connection closed by 10.231.0.11 port 48250
+2026-11-12T15:22:26.490079897Z kex_exchange_identification: Connection closed by remote host
+2026-11-12T15:22:26.490109077Z Connection closed by 10.231.0.11 port 48236
+2026-11-12T15:22:26.490449025Z kex_exchange_identification: Connection closed by remote host
+2026-11-12T15:22:26.490481361Z Connection closed by 10.231.0.11 port 48258
+2026-11-12T15:22:26.496956272Z Connection from 10.231.0.11 port 48260 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.497298427Z kex_exchange_identification: Connection closed by remote host
+2026-11-12T15:22:26.497516519Z Connection closed by 10.231.0.11 port 48260
+2026-11-12T15:22:26.501557665Z Connection from 10.231.0.11 port 48286 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.501848172Z Connection from 10.231.0.11 port 48294 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.504281535Z kex_exchange_identification: Connection closed by remote host
+2026-11-12T15:22:26.504370439Z kex_exchange_identification: Connection closed by remote host
+2026-11-12T15:22:26.504394603Z Connection closed by 10.231.0.11 port 48294
+2026-11-12T15:22:26.504448335Z Connection closed by 10.231.0.11 port 48286
+2026-11-12T15:22:26.506081462Z Connection from 10.231.0.11 port 48300 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.512975568Z kex_exchange_identification: Connection closed by remote host
+2026-11-12T15:22:26.512983531Z Connection closed by 10.231.0.11 port 48300
+2026-11-12T15:22:26.512985438Z Connection from 10.231.0.11 port 48310 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.514949415Z Connection from 10.231.0.11 port 48302 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.515344012Z kex_exchange_identification: Connection closed by remote host
+2026-11-12T15:22:26.515352448Z Connection closed by 10.231.0.11 port 48302
+2026-11-12T15:22:26.515745319Z kex_exchange_identification: Connection closed by remote host
+2026-11-12T15:22:26.515751441Z Connection closed by 10.231.0.11 port 48310
+2026-11-12T15:22:26.519177766Z Connection from 10.231.0.11 port 48312 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.521124641Z kex_exchange_identification: Connection closed by remote host
+2026-11-12T15:22:26.521133285Z Connection closed by 10.231.0.11 port 48312
+2026-11-12T15:22:26.523514766Z Connection from 10.231.0.11 port 48318 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.525536105Z kex_exchange_identification: Connection closed by remote host
+2026-11-12T15:22:26.525544759Z Connection closed by 10.231.0.11 port 48318
+2026-11-12T15:22:26.533930411Z Connection from 10.231.0.11 port 48350 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.534524743Z Connection from 10.231.0.11 port 48322 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.538192762Z kex_exchange_identification: Connection closed by remote host
+2026-11-12T15:22:26.538202350Z Connection closed by 10.231.0.11 port 48350
+2026-11-12T15:22:26.538787600Z Connection from 10.231.0.11 port 48338 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.541220678Z kex_exchange_identification: Connection closed by remote host
+2026-11-12T15:22:26.541229748Z Connection closed by 10.231.0.11 port 48338
+2026-11-12T15:22:26.541300693Z kex_exchange_identification: Connection closed by remote host
+2026-11-12T15:22:26.541346299Z Connection closed by 10.231.0.11 port 48322
+2026-11-12T15:22:26.545055436Z Connection from 10.231.0.11 port 48354 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.548180750Z kex_exchange_identification: Connection closed by remote host
+2026-11-12T15:22:26.548243408Z Connection closed by 10.231.0.11 port 48354
+2026-11-12T15:22:26.552231382Z Connection from 10.231.0.11 port 48362 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.557266051Z kex_exchange_identification: Connection closed by remote host
+2026-11-12T15:22:26.557464367Z Connection closed by 10.231.0.11 port 48362
+2026-11-12T15:22:26.558051244Z Connection from 10.231.0.11 port 48372 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.561258892Z kex_exchange_identification: Connection closed by remote host
+2026-11-12T15:22:26.561267451Z Connection closed by 10.231.0.11 port 48372
+2026-11-12T15:22:26.562568759Z Connection from 10.231.0.11 port 48376 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.564222704Z kex_exchange_identification: Connection closed by remote host
+2026-11-12T15:22:26.564258400Z Connection closed by 10.231.0.11 port 48376
+2026-11-12T15:22:26.571590598Z Connection from 10.231.0.11 port 48386 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.571837974Z kex_exchange_identification: Connection closed by remote host
+2026-11-12T15:22:26.571879415Z Connection closed by 10.231.0.11 port 48386
+2026-11-12T15:22:26.575857464Z Connection from 10.231.0.11 port 48388 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.575992028Z kex_exchange_identification: Connection closed by remote host
+2026-11-12T15:22:26.576105541Z Connection closed by 10.231.0.11 port 48388
+2026-11-12T15:22:26.577373576Z Connection from 10.231.0.11 port 48400 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.578789992Z kex_exchange_identification: Connection closed by remote host
+2026-11-12T15:22:26.579006024Z Connection closed by 10.231.0.11 port 48400
+2026-11-12T15:22:26.582530808Z Connection from 10.231.0.11 port 48416 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.588325300Z kex_exchange_identification: Connection closed by remote host
+2026-11-12T15:22:26.588438252Z Connection closed by 10.231.0.11 port 48416
+2026-11-12T15:22:26.589595867Z Connection from 10.231.0.11 port 48428 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.589850264Z kex_exchange_identification: Connection closed by remote host
+2026-11-12T15:22:26.590098707Z Connection closed by 10.231.0.11 port 48428
+2026-11-12T15:22:26.592573405Z Connection from 10.231.0.11 port 48444 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.595206961Z Connection from 10.231.0.11 port 48454 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.597167823Z kex_exchange_identification: Connection closed by remote host
+2026-11-12T15:22:26.597420888Z Connection closed by 10.231.0.11 port 48444
+2026-11-12T15:22:26.599566536Z kex_exchange_identification: Connection closed by remote host
+2026-11-12T15:22:26.599877519Z Connection closed by 10.231.0.11 port 48454
+2026-11-12T15:22:26.601037485Z Connection from 10.231.0.11 port 48464 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.602739090Z kex_exchange_identification: Connection closed by remote host
+2026-11-12T15:22:26.602775981Z Connection closed by 10.231.0.11 port 48464
+2026-11-12T15:22:26.606473818Z Connection from 10.231.0.11 port 48476 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.606649392Z kex_exchange_identification: Connection closed by remote host
+2026-11-12T15:22:26.606709046Z Connection closed by 10.231.0.11 port 48476
+2026-11-12T15:22:26.608504828Z Connection from 10.231.0.11 port 48474 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:26.610088646Z kex_exchange_identification: Connection closed by remote host
+2026-11-12T15:22:26.610165481Z Connection closed by 10.231.0.11 port 48474
+2026-11-12T15:22:26.983093040Z Connection from 10.231.0.11 port 48480 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:27.055858226Z Accepted key ED25519 SHA256:rTM47BTZRPZQ03l2yX98JBZFrXKdbYYAHqT1QaGjmLs found at /home/zs-cbom/.ssh/authorized_keys:1
+2026-11-12T15:22:27.062320717Z Postponed publickey for zs-cbom from 10.231.0.11 port 48480 ssh2 [preauth]
+2026-11-12T15:22:27.062533051Z Accepted key ED25519 SHA256:rTM47BTZRPZQ03l2yX98JBZFrXKdbYYAHqT1QaGjmLs found at /home/zs-cbom/.ssh/authorized_keys:1
+2026-11-12T15:22:27.066312247Z Accepted publickey for zs-cbom from 10.231.0.11 port 48480 ssh2: ED25519 SHA256:rTM47BTZRPZQ03l2yX98JBZFrXKdbYYAHqT1QaGjmLs
+2026-11-12T15:22:27.070918350Z User child is on pid 130
+2026-11-12T15:22:27.116566007Z Starting session: forced-command (config) '/usr/local/bin/cb02-forcecommand' for zs-cbom from 10.231.0.11 port 48480 id 0
+2026-11-12T15:22:27.118751155Z cb02-cmd {"ts":"2026-11-12T15:22:27Z","user":"zs-cbom","peer":"10.231.0.11","command":"sha256sum /srv/cbom-lab/keys/legacy-rsa1024.key /srv/cbom-lab/certs/expired-rsa2048.crt /srv/cbom-lab/certs/selfsigned-sha1.crt /srv/cbom-lab/keystores/app.p12 /srv/cbom-lab/keystores/legacy.jks; stat -c '%a %n' /srv/cbom-lab/keys/legacy-rsa1024.key /srv/cbom-lab/certs/expired-rsa2048.crt /srv/cbom-lab/certs/selfsigned-sha1.crt /srv/cbom-lab/keystores/app.p12 /srv/cbom-lab/keystores/legacy.jks"}
+2026-11-12T15:22:27.122579689Z Received disconnect from 10.231.0.11 port 48480:11: disconnected by user
+2026-11-12T15:22:27.122790428Z Disconnected from user zs-cbom 10.231.0.11 port 48480
+2026-11-12T15:22:28.337498832Z Connection from 10.231.0.11 port 48490 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:28.398565006Z Accepted key ED25519 SHA256:rTM47BTZRPZQ03l2yX98JBZFrXKdbYYAHqT1QaGjmLs found at /home/zs-cbom/.ssh/authorized_keys:1
+2026-11-12T15:22:28.405103368Z Postponed publickey for zs-cbom from 10.231.0.11 port 48490 ssh2 [preauth]
+2026-11-12T15:22:28.405225013Z Accepted key ED25519 SHA256:rTM47BTZRPZQ03l2yX98JBZFrXKdbYYAHqT1QaGjmLs found at /home/zs-cbom/.ssh/authorized_keys:1
+2026-11-12T15:22:28.408886085Z Accepted publickey for zs-cbom from 10.231.0.11 port 48490 ssh2: ED25519 SHA256:rTM47BTZRPZQ03l2yX98JBZFrXKdbYYAHqT1QaGjmLs
+2026-11-12T15:22:28.413377268Z User child is on pid 142
+2026-11-12T15:22:28.457518559Z Starting session: forced-command (config) '/usr/local/bin/cb02-forcecommand' for zs-cbom from 10.231.0.11 port 48490 id 0
+2026-11-12T15:22:28.466883675Z cb02-cmd {"ts":"2026-11-12T15:22:28Z","user":"zs-cbom","peer":"10.231.0.11","command":"base64 /srv/cbom-lab/keystores/app.p12"}
+2026-11-12T15:22:28.467541506Z Close session: user zs-cbom from 10.231.0.11 port 48490 id 0
+2026-11-12T15:22:28.467627742Z Received disconnect from 10.231.0.11 port 48490:11: disconnected by user
+2026-11-12T15:22:28.467880839Z Disconnected from user zs-cbom 10.231.0.11 port 48490
+2026-11-12T15:22:28.700719420Z Connection from 10.231.0.11 port 48500 on 10.231.0.40 port 22 rdomain ""
+2026-11-12T15:22:28.763363381Z Accepted key ED25519 SHA256:rTM47BTZRPZQ03l2yX98JBZFrXKdbYYAHqT1QaGjmLs found at /home/zs-cbom/.ssh/authorized_keys:1
+2026-11-12T15:22:28.768836607Z Postponed publickey for zs-cbom from 10.231.0.11 port 48500 ssh2 [preauth]
+2026-11-12T15:22:28.769069785Z Accepted key ED25519 SHA256:rTM47BTZRPZQ03l2yX98JBZFrXKdbYYAHqT1QaGjmLs found at /home/zs-cbom/.ssh/authorized_keys:1
+2026-11-12T15:22:28.774753000Z Accepted publickey for zs-cbom from 10.231.0.11 port 48500 ssh2: ED25519 SHA256:rTM47BTZRPZQ03l2yX98JBZFrXKdbYYAHqT1QaGjmLs
+2026-11-12T15:22:28.778158216Z User child is on pid 161
+2026-11-12T15:22:28.821233925Z Starting session: forced-command (config) '/usr/local/bin/cb02-forcecommand' for zs-cbom from 10.231.0.11 port 48500 id 0
+2026-11-12T15:22:28.828142573Z cb02-cmd {"ts":"2026-11-12T15:22:28Z","user":"zs-cbom","peer":"10.231.0.11","command":"base64 /srv/cbom-lab/keystores/legacy.jks"}
+2026-11-12T15:22:28.831162741Z Received disconnect from 10.231.0.11 port 48500:11: disconnected by user
+2026-11-12T15:22:28.831170185Z Disconnected from user zs-cbom 10.231.0.11 port 48500

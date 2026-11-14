@@ -1,0 +1,127 @@
+2026-11-12T15:21:53.496262119Z The files belonging to this database system will be owned by user "postgres".
+2026-11-12T15:21:53.496279798Z This user must also own the server process.
+2026-11-12T15:21:53.496282025Z 
+2026-11-12T15:21:53.496466982Z The database cluster will be initialized with locale "en_US.utf8".
+2026-11-12T15:21:53.496530299Z The default database encoding has accordingly been set to "UTF8".
+2026-11-12T15:21:53.496560714Z The default text search configuration will be set to "english".
+2026-11-12T15:21:53.496613895Z 
+2026-11-12T15:21:53.496633361Z Data page checksums are disabled.
+2026-11-12T15:21:53.496724575Z 
+2026-11-12T15:21:53.496830175Z fixing permissions on existing directory /var/lib/postgresql/data ... ok
+2026-11-12T15:21:53.497038436Z creating subdirectories ... ok
+2026-11-12T15:21:53.497179631Z selecting dynamic shared memory implementation ... posix
+2026-11-12T15:21:53.510165781Z selecting default max_connections ... 100
+2026-11-12T15:21:53.527917735Z selecting default shared_buffers ... 128MB
+2026-11-12T15:21:53.574264725Z selecting default time zone ... UTC
+2026-11-12T15:21:53.586393451Z creating configuration files ... ok
+2026-11-12T15:21:53.761970844Z running bootstrap script ... ok
+2026-11-12T15:21:53.998427941Z sh: locale: not found
+2026-11-12T15:21:53.998596967Z 2026-11-12 15:21:53.998 UTC [39] WARNING:  no usable system locales were found
+2026-11-12T15:21:54.586097064Z performing post-bootstrap initialization ... ok
+2026-11-12T15:21:54.594671667Z syncing data to disk ... ok
+2026-11-12T15:21:54.594679336Z 
+2026-11-12T15:21:54.594681146Z 
+2026-11-12T15:21:54.594682483Z Success. You can now start the database server using:
+2026-11-12T15:21:54.594683797Z 
+2026-11-12T15:21:54.594684895Z     pg_ctl -D /var/lib/postgresql/data -l logfile start
+2026-11-12T15:21:54.594686217Z 
+2026-11-12T15:21:54.594719834Z initdb: warning: enabling "trust" authentication for local connections
+2026-11-12T15:21:54.594722473Z initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
+2026-11-12T15:21:54.634267818Z waiting for server to start....2026-11-12 15:21:54.634 UTC [45] LOG:  starting PostgreSQL 16.15 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit
+2026-11-12T15:21:54.635241920Z 2026-11-12 15:21:54.635 UTC [45] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+2026-11-12T15:21:54.636737838Z 2026-11-12 15:21:54.636 UTC [48] LOG:  database system was shut down at 2026-11-12 15:21:54 UTC
+2026-11-12T15:21:54.640466448Z 2026-11-12 15:21:54.640 UTC [45] LOG:  database system is ready to accept connections
+2026-11-12T15:21:54.719088871Z  done
+2026-11-12T15:21:54.719100220Z server started
+2026-11-12T15:21:54.724334482Z 2026-11-12 15:21:54.724 UTC [54] LOG:  connection received: host=[local]
+2026-11-12T15:21:54.724930205Z 2026-11-12 15:21:54.724 UTC [54] LOG:  connection authorized: user=postgres database=postgres application_name=psql
+2026-11-12T15:21:54.741116497Z 
+2026-11-12T15:21:54.741125921Z /usr/local/bin/docker-entrypoint.sh: running /docker-entrypoint-initdb.d/10-roles.sql
+2026-11-12T15:21:54.741128063Z 2026-11-12 15:21:54.740 UTC [56] LOG:  connection received: host=[local]
+2026-11-12T15:21:54.741485999Z 2026-11-12 15:21:54.741 UTC [56] LOG:  connection authorized: user=postgres database=postgres application_name=psql
+2026-11-12T15:21:54.743464124Z SET
+2026-11-12T15:21:54.744796785Z CREATE ROLE
+2026-11-12T15:21:54.744912897Z SET
+2026-11-12T15:21:54.751545800Z CREATE ROLE
+2026-11-12T15:21:54.752976191Z GRANT ROLE
+2026-11-12T15:21:54.767809790Z CREATE EXTENSION
+2026-11-12T15:21:54.773384330Z 
+2026-11-12T15:21:54.773489706Z 
+2026-11-12T15:21:54.774519425Z 2026-11-12 15:21:54.774 UTC [45] LOG:  received fast shutdown request
+2026-11-12T15:21:54.774635938Z 2026-11-12 15:21:54.774 UTC [45] LOG:  aborting any active transactions
+2026-11-12T15:21:54.784803555Z waiting for server to shut down....2026-11-12 15:21:54.784 UTC [45] LOG:  background worker "logical replication launcher" (PID 51) exited with exit code 1
+2026-11-12T15:21:54.786735995Z 2026-11-12 15:21:54.786 UTC [46] LOG:  shutting down
+2026-11-12T15:21:54.786835346Z 2026-11-12 15:21:54.786 UTC [46] LOG:  checkpoint starting: shutdown immediate
+2026-11-12T15:21:54.787713472Z 2026-11-12 15:21:54.787 UTC [46] LOG:  checkpoint complete: wrote 63 buffers (0.4%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.001 s, total=0.001 s; sync files=29, longest=0.001 s, average=0.000 s; distance=280 kB, estimate=280 kB; lsn=0/153D328, redo lsn=0/153D328
+2026-11-12T15:21:54.794758672Z 2026-11-12 15:21:54.794 UTC [45] LOG:  database system is shut down
+2026-11-12T15:21:54.875326368Z  done
+2026-11-12T15:21:54.875334907Z server stopped
+2026-11-12T15:21:54.876903810Z 
+2026-11-12T15:21:54.876910735Z PostgreSQL init process complete; ready for start up.
+2026-11-12T15:21:54.876912494Z 
+2026-11-12T15:21:54.918974709Z 2026-11-12 15:21:54.918 UTC [1] LOG:  starting PostgreSQL 16.15 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit
+2026-11-12T15:21:54.919194662Z 2026-11-12 15:21:54.919 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+2026-11-12T15:21:54.919249461Z 2026-11-12 15:21:54.919 UTC [1] LOG:  could not create IPv6 socket for address "::": Address family not supported by protocol
+2026-11-12T15:21:54.920073906Z 2026-11-12 15:21:54.919 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+2026-11-12T15:21:54.922586803Z 2026-11-12 15:21:54.922 UTC [61] LOG:  database system was shut down at 2026-11-12 15:21:54 UTC
+2026-11-12T15:21:54.929971542Z 2026-11-12 15:21:54.929 UTC [1] LOG:  database system is ready to accept connections
+2026-11-12T15:21:56.521456539Z 2026-11-12 15:21:56.521 UTC [71] LOG:  connection received: host=127.0.0.1 port=60156
+2026-11-12T15:21:59.602075514Z 2026-11-12 15:21:59.601 UTC [78] LOG:  connection received: host=127.0.0.1 port=60172
+2026-11-12T15:22:02.685137423Z 2026-11-12 15:22:02.684 UTC [85] LOG:  connection received: host=127.0.0.1 port=37324
+2026-11-12T15:22:05.756513797Z 2026-11-12 15:22:05.756 UTC [92] LOG:  connection received: host=127.0.0.1 port=37336
+2026-11-12T15:22:08.857524862Z 2026-11-12 15:22:08.857 UTC [99] LOG:  connection received: host=127.0.0.1 port=37344
+2026-11-12T15:22:11.936610389Z 2026-11-12 15:22:11.936 UTC [106] LOG:  connection received: host=127.0.0.1 port=50308
+2026-11-12T15:22:15.021535776Z 2026-11-12 15:22:15.021 UTC [114] LOG:  connection received: host=127.0.0.1 port=50332
+2026-11-12T15:22:18.113401507Z 2026-11-12 15:22:18.113 UTC [121] LOG:  connection received: host=127.0.0.1 port=50338
+2026-11-12T15:22:21.193309946Z 2026-11-12 15:22:21.193 UTC [128] LOG:  connection received: host=127.0.0.1 port=50312
+2026-11-12T15:22:24.326515370Z 2026-11-12 15:22:24.315 UTC [135] LOG:  connection received: host=127.0.0.1 port=50314
+2026-11-12T15:22:27.407995018Z 2026-11-12 15:22:27.407 UTC [143] LOG:  connection received: host=127.0.0.1 port=50330
+2026-11-12T15:22:30.276369651Z 2026-11-12 15:22:30.275 UTC [144] LOG:  connection received: host=10.231.0.11 port=57226
+2026-11-12T15:22:30.400413481Z 2026-11-12 15:22:30.399 UTC [145] LOG:  connection received: host=10.231.0.11 port=57238
+2026-11-12T15:22:30.400454152Z 2026-11-12 15:22:30.400 UTC [145] LOG:  could not accept SSL connection: unsupported protocol
+2026-11-12T15:22:30.400457224Z 2026-11-12 15:22:30.400 UTC [145] HINT:  This may indicate that the client does not support any SSL protocol version between TLSv1.2 and TLSv1.3.
+2026-11-12T15:22:30.502327464Z 2026-11-12 15:22:30.502 UTC [152] LOG:  connection received: host=127.0.0.1 port=56654
+2026-11-12T15:22:30.544550063Z 2026-11-12 15:22:30.544 UTC [153] LOG:  connection received: host=10.231.0.11 port=57250
+2026-11-12T15:22:30.545351608Z 2026-11-12 15:22:30.545 UTC [153] LOG:  could not accept SSL connection: unsupported protocol
+2026-11-12T15:22:30.545360006Z 2026-11-12 15:22:30.545 UTC [153] HINT:  This may indicate that the client does not support any SSL protocol version between TLSv1.2 and TLSv1.3.
+2026-11-12T15:22:30.657876183Z 2026-11-12 15:22:30.647 UTC [154] LOG:  connection received: host=10.231.0.11 port=57254
+2026-11-12T15:22:30.753788501Z 2026-11-12 15:22:30.753 UTC [155] LOG:  connection received: host=10.231.0.11 port=57268
+2026-11-12T15:22:30.849271354Z 2026-11-12 15:22:30.849 UTC [156] LOG:  connection received: host=10.231.0.11 port=57274
+2026-11-12T15:22:30.861682382Z 2026-11-12 15:22:30.861 UTC [156] LOG:  connection authenticated: identity="postgres" method=scram-sha-256 (/tmp/cb02/pg_hba.conf:3)
+2026-11-12T15:22:30.861776668Z 2026-11-12 15:22:30.861 UTC [156] LOG:  connection authorized: user=postgres database=postgres application_name=psql SSL enabled (protocol=TLSv1.3, cipher=TLS_AES_256_GCM_SHA384, bits=256)
+2026-11-12T15:22:33.641211002Z 2026-11-12 15:22:33.641 UTC [163] LOG:  connection received: host=127.0.0.1 port=56666
+2026-11-12T15:22:36.728805350Z 2026-11-12 15:22:36.725 UTC [170] LOG:  connection received: host=127.0.0.1 port=56682
+2026-11-12T15:22:39.863080710Z 2026-11-12 15:22:39.862 UTC [178] LOG:  connection received: host=127.0.0.1 port=56692
+2026-11-12T15:22:42.958093724Z 2026-11-12 15:22:42.957 UTC [185] LOG:  connection received: host=127.0.0.1 port=37912
+2026-11-12T15:22:46.053640810Z 2026-11-12 15:22:46.053 UTC [192] LOG:  connection received: host=127.0.0.1 port=37936
+2026-11-12T15:22:49.244982104Z 2026-11-12 15:22:49.244 UTC [199] LOG:  connection received: host=127.0.0.1 port=37940
+2026-11-12T15:22:52.325691613Z 2026-11-12 15:22:52.325 UTC [206] LOG:  connection received: host=127.0.0.1 port=35986
+2026-11-12T15:22:55.515783128Z 2026-11-12 15:22:55.515 UTC [214] LOG:  connection received: host=127.0.0.1 port=35996
+2026-11-12T15:22:58.935250165Z 2026-11-12 15:22:58.934 UTC [221] LOG:  connection received: host=127.0.0.1 port=36004
+2026-11-12T15:23:02.065074416Z 2026-11-12 15:23:02.064 UTC [228] LOG:  connection received: host=127.0.0.1 port=53064
+2026-11-12T15:23:05.197933337Z 2026-11-12 15:23:05.197 UTC [235] LOG:  connection received: host=127.0.0.1 port=53066
+2026-11-12T15:23:08.288601487Z 2026-11-12 15:23:08.288 UTC [241] LOG:  connection received: host=127.0.0.1 port=53072
+2026-11-12T15:23:11.415675503Z 2026-11-12 15:23:11.414 UTC [248] LOG:  connection received: host=127.0.0.1 port=51658
+2026-11-12T15:23:14.506898489Z 2026-11-12 15:23:14.506 UTC [255] LOG:  connection received: host=127.0.0.1 port=51674
+2026-11-12T15:23:17.626794408Z 2026-11-12 15:23:17.626 UTC [262] LOG:  connection received: host=127.0.0.1 port=51704
+2026-11-12T15:23:20.776645834Z 2026-11-12 15:23:20.776 UTC [269] LOG:  connection received: host=127.0.0.1 port=53216
+2026-11-12T15:23:23.874284304Z 2026-11-12 15:23:23.872 UTC [276] LOG:  connection received: host=127.0.0.1 port=53230
+2026-11-12T15:23:26.941224810Z 2026-11-12 15:23:26.941 UTC [285] LOG:  connection received: host=127.0.0.1 port=53254
+2026-11-12T15:23:30.012508389Z 2026-11-12 15:23:30.001 UTC [292] LOG:  connection received: host=127.0.0.1 port=46752
+2026-11-12T15:23:33.085138809Z 2026-11-12 15:23:33.082 UTC [299] LOG:  connection received: host=127.0.0.1 port=46772
+2026-11-12T15:23:36.154593475Z 2026-11-12 15:23:36.151 UTC [306] LOG:  connection received: host=127.0.0.1 port=46778
+2026-11-12T15:23:39.249482089Z 2026-11-12 15:23:39.249 UTC [313] LOG:  connection received: host=127.0.0.1 port=46786
+2026-11-12T15:23:42.341532195Z 2026-11-12 15:23:42.341 UTC [320] LOG:  connection received: host=127.0.0.1 port=59190
+2026-11-12T15:23:45.470990501Z 2026-11-12 15:23:45.470 UTC [326] LOG:  connection received: host=127.0.0.1 port=59194
+2026-11-12T15:23:48.549837169Z 2026-11-12 15:23:48.549 UTC [333] LOG:  connection received: host=127.0.0.1 port=59212
+2026-11-12T15:23:51.625893525Z 2026-11-12 15:23:51.625 UTC [340] LOG:  connection received: host=127.0.0.1 port=58820
+2026-11-12T15:23:54.688705461Z 2026-11-12 15:23:54.688 UTC [347] LOG:  connection received: host=127.0.0.1 port=58844
+2026-11-12T15:23:58.112937644Z 2026-11-12 15:23:58.068 UTC [355] LOG:  connection received: host=127.0.0.1 port=58858
+2026-11-12T15:24:01.310440970Z 2026-11-12 15:24:01.310 UTC [363] LOG:  connection received: host=127.0.0.1 port=37246
+2026-11-12T15:24:04.602256228Z 2026-11-12 15:24:04.602 UTC [369] LOG:  connection received: host=127.0.0.1 port=37260
+2026-11-12T15:24:07.913328167Z 2026-11-12 15:24:07.913 UTC [377] LOG:  connection received: host=127.0.0.1 port=37276
+2026-11-12T15:24:11.034158143Z 2026-11-12 15:24:11.033 UTC [385] LOG:  connection received: host=127.0.0.1 port=47628
+2026-11-12T15:24:14.178214368Z 2026-11-12 15:24:14.178 UTC [392] LOG:  connection received: host=127.0.0.1 port=47644
+2026-11-12T15:24:17.342111346Z 2026-11-12 15:24:17.342 UTC [399] LOG:  connection received: host=127.0.0.1 port=47654
+2026-11-12T15:24:20.532943944Z 2026-11-12 15:24:20.532 UTC [406] LOG:  connection received: host=127.0.0.1 port=39502
+2026-11-12T15:24:23.779338898Z 2026-11-12 15:24:23.768 UTC [413] LOG:  connection received: host=127.0.0.1 port=39518

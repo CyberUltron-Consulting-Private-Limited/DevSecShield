@@ -21,6 +21,7 @@ import {
   type CbomWaveStatus,
 } from "@/utils/api/cbom_ops";
 
+import { invalidateRunViews } from "./keys";
 import { ErrorBlock, LoadingBlock, SectionCard, StatusBadge, Truncate, type Tone } from "./shared";
 import { InfoTip } from "@/components/ui/info-tip";
 
@@ -80,7 +81,8 @@ export function BulkAssignBar({ teamId, target, keys, onDone }: {
     },
     onSuccess: (out) => {
       toast.success(`Updated ${out.updated} asset${out.updated === 1 ? "" : "s"}`);
-      queryClient.invalidateQueries({ queryKey: ["cbom-sources", teamId] });
+      // status and wave changes also refresh the CBOM Scans table's run rows
+      invalidateRunViews(queryClient, teamId);
       onDone();
     },
     onError: (err) => toast.error(errorText(err)),

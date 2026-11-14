@@ -1,0 +1,65 @@
+{
+  "started": "2026-11-12T15:22:46Z",
+  "teams": {
+    "A": 52,
+    "B": 53
+  },
+  "node": {
+    "container": "zs-scan-node-e2e-node-1",
+    "volume": "zs-node-e2e-node-1",
+    "image": "dss-staging/scan-node:k-918389c68ef0",
+    "id": 35,
+    "addresses": [
+      "10.231.0.2"
+    ]
+  },
+  "scope": {
+    "sources": [
+      "S-zoo",
+      "R-canary"
+    ],
+    "ranges": [
+      "10.231.0.16/28",
+      "10.231.0.32/30"
+    ]
+  },
+  "never_scan_g5": [
+    "10.231.0.33"
+  ],
+  "accepts_canary_g5": 0,
+  "accepts_control_g5": 0,
+  "accepts_idn-fass_g5": 0,
+  "accepts_idn-punycode_g5": 0,
+  "estimate": 1,
+  "expected_charge_c": 100,
+  "g9_start": "2026-11-12T15:23:26Z",
+  "runs": [
+    21
+  ],
+  "jobs": [
+    {
+      "id": 84,
+      "status": "success",
+      "outcome": "ok"
+    },
+    {
+      "id": 85,
+      "status": "success",
+      "outcome": "partial"
+    }
+  ],
+  "finished": "2026-11-12T15:24:16Z",
+  "seconds": 90,
+  "console_errors": {
+    "A": 0,
+    "B": 14
+  },
+  "http_5xx": {
+    "A": [],
+    "B": []
+  },
+  "logged_out": {
+    "A": true,
+    "B": true
+  }
+}

@@ -1,0 +1,155 @@
+{
+  "checks": [
+    {
+      "evidence": [],
+      "expected": "2976e60110beed92f2daa649c11b83ebee7ab4b4c3d225ff7f92dac74a292e70",
+      "gate": "G12",
+      "id": "G12/download_run1.cdx.json_eq_har_body",
+      "kind": "flow",
+      "observed": {
+        "/52/cbom/sources/runs/21/cbom": "2976e60110beed92f2daa649c11b83ebee7ab4b4c3d225ff7f92dac74a292e70"
+      },
+      "reason": "",
+      "subject": {
+        "check": "download_run1.cdx.json_eq_har_body",
+        "file": "run1.cdx.json"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [],
+      "expected": "valid JSON",
+      "gate": "G12",
+      "id": "G12/run1.cdx.json_parses",
+      "kind": "flow",
+      "observed": "ok",
+      "reason": "",
+      "subject": {
+        "check": "run1.cdx.json_parses",
+        "file": "run1.cdx.json"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [],
+      "expected": "CycloneDX 1.6",
+      "gate": "G12",
+      "id": "G12/cdx_spec",
+      "kind": "flow",
+      "observed": "CycloneDX 1.6",
+      "reason": "",
+      "subject": {
+        "check": "cdx_spec"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [],
+      "expected": "b5e600471d1a",
+      "gate": "G12",
+      "id": "G12/engine_version_eq_build",
+      "kind": "flow",
+      "observed": "unknown",
+      "reason": "engine-version",
+      "subject": {
+        "check": "engine_version_eq_build"
+      },
+      "verdict": "FAIL"
+    },
+    {
+      "evidence": [],
+      "expected": "b4c9b002087bb73aa87e7b3ddda9eb0fb30fad5c4b4a71c99b85c72fd6c398d9",
+      "gate": "G12",
+      "id": "G12/download_run1.cdx.xml_eq_har_body",
+      "kind": "flow",
+      "observed": {
+        "/52/cbom/sources/runs/21/cbom": "2976e60110beed92f2daa649c11b83ebee7ab4b4c3d225ff7f92dac74a292e70",
+        "/52/cbom/sources/runs/21/cbom?format=xml": "b4c9b002087bb73aa87e7b3ddda9eb0fb30fad5c4b4a71c99b85c72fd6c398d9"
+      },
+      "reason": "",
+      "subject": {
+        "check": "download_run1.cdx.xml_eq_har_body",
+        "file": "run1.cdx.xml"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [],
+      "expected": "an XML bom document",
+      "gate": "G12",
+      "id": "G12/run1.cdx.xml_well_formed",
+      "kind": "flow",
+      "observed": "<?xml version='1.0' encoding='UTF-8'?>\n<bom xmlns=\"http://cyclonedx.org/schema/b",
+      "reason": "",
+      "subject": {
+        "check": "run1.cdx.xml_well_formed",
+        "file": "run1.cdx.xml"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [],
+      "expected": "9b1213cb31321fc892f6482a3cda9b8e05b7c771de0e76feaae7138145bc8cdc",
+      "gate": "G12",
+      "id": "G12/download_run1.oscal.json_eq_har_body",
+      "kind": "flow",
+      "observed": {
+        "/52/cbom/sources/runs/21/cbom": "2976e60110beed92f2daa649c11b83ebee7ab4b4c3d225ff7f92dac74a292e70",
+        "/52/cbom/sources/runs/21/cbom?format=xml": "b4c9b002087bb73aa87e7b3ddda9eb0fb30fad5c4b4a71c99b85c72fd6c398d9",
+        "/52/cbom/sources/runs/21/oscal": "9b1213cb31321fc892f6482a3cda9b8e05b7c771de0e76feaae7138145bc8cdc"
+      },
+      "reason": "",
+      "subject": {
+        "check": "download_run1.oscal.json_eq_har_body",
+        "file": "run1.oscal.json"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [],
+      "expected": "valid JSON",
+      "gate": "G12",
+      "id": "G12/run1.oscal.json_parses",
+      "kind": "flow",
+      "observed": "ok",
+      "reason": "",
+      "subject": {
+        "check": "run1.oscal.json_parses",
+        "file": "run1.oscal.json"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [],
+      "expected": null,
+      "gate": "G12",
+      "id": "G12/schema_validation",
+      "kind": "flow",
+      "observed": null,
+      "reason": "JSON schema + cyclonedx-python-lib strict, XML against the vendored XSD and the OSCAL validator are CB-05's G12 spec",
+      "subject": {
+        "check": "schema_validation"
+      },
+      "verdict": "NOT-RUN"
+    },
+    {
+      "evidence": [],
+      "expected": null,
+      "gate": "G12",
+      "id": "G12/vex_states",
+      "kind": "flow",
+      "observed": null,
+      "reason": "VEX states per OA-10c are judged once CB-22 defines them (KF-11)",
+      "subject": {
+        "check": "vex_states"
+      },
+      "verdict": "NOT-RUN"
+    }
+  ],
+  "ended": "2026-11-12T15:24:07Z",
+  "gate": "G12",
+  "note": "",
+  "seconds": 3.5,
+  "started": "2026-11-12T15:24:03Z",
+  "status": "ran"
+}

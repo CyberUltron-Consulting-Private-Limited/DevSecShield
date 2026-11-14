@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { FixClassChip, type FixClassFields } from "@/components/cbom/grade";
 import {
   Select,
   SelectContent,
@@ -37,6 +38,7 @@ import {
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import RemediationPanel from "@/components/RemediationPanel";
+import AiRemediationPanel from "@/components/cbom/results/AiRemediationPanel";
 import {
   Dialog,
   DialogContent,
@@ -1608,6 +1610,7 @@ export default function CbomResults({
                       <TableHead className="min-w-[90px]">Impact <InfoTip id="results.table.impact" /></TableHead>
                       <TableHead className="min-w-[110px]">Strength <InfoTip id="cbom.res.col.strength" /></TableHead>
                       <TableHead className="min-w-[100px]">Quantum <InfoTip id="cbom.res.col.quantum" /></TableHead>
+                      <TableHead className="min-w-[110px]">Fix class <InfoTip id="cbom.res.col.fix_class" /></TableHead>
                       <TableHead className="min-w-[90px] text-center">Risk score <InfoTip id="cbom.res.col.risk" /></TableHead>
                       <TableHead className="min-w-[140px]">Location <InfoTip id="cbom.res.col.location" /></TableHead>
                       <TableHead className="min-w-[100px]">Status <InfoTip id="results.table.status" /></TableHead>
@@ -1619,7 +1622,7 @@ export default function CbomResults({
                   <TableBody>
                     {filteredFindings.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={10} className="text-center py-8 text-zinc-500 dark:text-zinc-400">
+                        <TableCell colSpan={11} className="text-center py-8 text-zinc-500 dark:text-zinc-400">
                           {relatedFindingRefs.length > 0
                             ? "No findings match these related assets. Related refs may point at inventory-only components without a finding row — clear the related-asset filter to see all findings."
                             : "No findings match your filters."}
@@ -1670,6 +1673,9 @@ export default function CbomResults({
                             </TableCell>
                             <TableCell>
                               <QuantumBadge quantumSafe={finding.quantum_safe} strength={finding.crypto_strength} />
+                            </TableCell>
+                            <TableCell>
+                              <FixClassChip item={finding as FixClassFields} testId={`cbom-finding-fixclass-${finding.id}`} />
                             </TableCell>
                             <TableCell className="text-center">
                               <span
@@ -1896,6 +1902,12 @@ export default function CbomResults({
                     existingRemediation={selectedFinding.remediation}
                     snippetStart={selectedFinding.snippet_start}
                     line={selectedFinding.line}
+                  />
+                  {/* CB-38 PR-6: optional AI assistant under the KB remediation; renders nothing unless configured */}
+                  <AiRemediationPanel
+                    key={selectedFinding.id}
+                    teamId={Number(team_id)}
+                    subject={{ kind: "scan_finding", scanId: Number(scan_id), findingId: selectedFinding.id }}
                   />
                 </div>
               </ScrollArea>

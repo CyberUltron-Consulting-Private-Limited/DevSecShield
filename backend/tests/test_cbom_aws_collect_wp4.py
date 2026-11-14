@@ -481,3 +481,40 @@ def test_every_wp4_finding_code_builds_into_the_knowledge_base(tmp_path):
     node = json.loads(out.read_text())["findings"]["node"]
     assert codes and not sorted(c for c in codes if c not in node)
     assert node["GLUE_PLAINTEXT_PASSWORD"]["default_impact"] == "High" and node["DB_MD5_ACCEPTED"]["category"] == "database"
+
+
+def test_an_alb_listener_on_a_post_quantum_policy_is_collected_and_judged_hybrid():
+    """Live evidence (CB-A1 run, ap-south-1, anonymised here): two production ALB listeners on
+    ELBSecurityPolicy-TLS13-1-2-Res-PQ-2025-09 were reported QUANTUM_VULNERABLE (dev 7d036da), the classifier never
+    read the policy name.  Collected the same way (botocore stubs, the real describe_ssl_policies shape), the PQ
+    listener is judged hybrid and its non-PQ twin on ...-Res-2021-06 stays quantum vulnerable.  CB-04 DA H-2/F6."""
+    from backend.utilities.cbom_sources.posture import pqc_class
+
+    lb_arn = f"arn:aws:elasticloadbalancing:{REGION}:{ACCOUNT}:loadbalancer/app/edge/1"
+    tls13 = [{"Name": n, "Priority": i} for i, n in enumerate(
+        ["TLS_AES_128_GCM_SHA256", "TLS_AES_256_GCM_SHA384", "TLS_CHACHA20_POLY1305_SHA256",
+         "ECDHE-ECDSA-AES128-GCM-SHA256", "ECDHE-RSA-AES128-GCM-SHA256"], start=1)]
+    plan = {"elbv2": [
+        ("describe_load_balancers", {"LoadBalancers": [{"LoadBalancerArn": lb_arn, "LoadBalancerName": "edge",
+                                                        "Scheme": "internet-facing", "Type": "application"}]}, {}),
+        ("describe_listeners", {"Listeners": [
+            {"ListenerArn": lb_arn + "/pq", "Port": 443, "Protocol": "HTTPS",
+             "SslPolicy": "ELBSecurityPolicy-TLS13-1-2-Res-PQ-2025-09"},
+            {"ListenerArn": lb_arn + "/classic", "Port": 8443, "Protocol": "HTTPS",
+             "SslPolicy": "ELBSecurityPolicy-TLS13-1-2-Res-2021-06"}]}, {"LoadBalancerArn": lb_arn}),
+        ("describe_ssl_policies", {"SslPolicies": [{"Name": "ELBSecurityPolicy-TLS13-1-2-Res-PQ-2025-09",
+                                                    "SslProtocols": ["TLSv1.2", "TLSv1.3"], "Ciphers": tls13}]},
+         {"Names": ["ELBSecurityPolicy-TLS13-1-2-Res-PQ-2025-09"]}),
+        ("describe_ssl_policies", {"SslPolicies": [{"Name": "ELBSecurityPolicy-TLS13-1-2-Res-2021-06",
+                                                    "SslProtocols": ["TLSv1.2", "TLSv1.3"], "Ciphers": tls13}]},
+         {"Names": ["ELBSecurityPolicy-TLS13-1-2-Res-2021-06"]}),
+    ]}
+    _s, found = _run(plan)
+    rows = {a["name"]: a for a in found if a["type"] == "load_balancer_tls"}
+    pq, old = rows["edge:443"], rows["edge:8443"]
+    assert pq["facts"]["ssl_policy"] == "ELBSecurityPolicy-TLS13-1-2-Res-PQ-2025-09"
+    v = classify("load_balancer_tls", pq.get("algorithm"), pq.get("key_size"), pq.get("protocol"), pq["facts"])
+    assert v["quantum_vulnerable"] is False and "QUANTUM_VULNERABLE" not in v["finding_codes"]
+    assert pqc_class("load_balancer_tls", v["quantum_vulnerable"], v["finding_codes"], pq["facts"]) == "hybrid"
+    w = classify("load_balancer_tls", old.get("algorithm"), old.get("key_size"), old.get("protocol"), old["facts"])
+    assert w["quantum_vulnerable"] is True and "QUANTUM_VULNERABLE" in w["finding_codes"]

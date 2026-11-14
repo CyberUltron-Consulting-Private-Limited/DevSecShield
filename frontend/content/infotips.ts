@@ -1511,22 +1511,16 @@ export const INFO_TIPS = {
     what: "Team-wide regulatory PDFs (for example a certificate register or a post-quantum roadmap) built from every completed CBOM scan of the team. They are generated in-house, with no AI model, and download straight away.",
     example: "Download the PQC roadmap for the board pack.",
   },
-  // src: backend/routers/scans.py:100-118, backend/utilities/dashboard/scan_list.py:1786-1790 — the latest completed collection of each Sources source
-  "cbom.sources_runs": {
-    label: "CBOM Sources results",
-    what: "Completed CBOM Sources runs whose assets are counted on this page: when each finished, how many assets it found and how many network endpoints it probed.",
-    example: "Sources run #12 · 3 sources · 140 assets · 25 endpoints probed.",
-  },
-  // src: backend/utilities/db/scan_list_item.py:445-453, backend/utilities/cbom_sources/cbom_metrics.py:1-15 — findings by severity plus inventory
+  // src: backend/utilities/db/scan_list_item.py:445-453, backend/utilities/cbom_sources/run_list.py:1-12 — code scan: findings by severity plus inventory; Sources run: counts as collected, QV = quantum-vulnerable assets
   "cbom.table.risks": {
     label: "Risks",
-    what: "This scan's crypto findings by severity: Critical (red), High (orange), Medium (amber), Low (blue), plus clean inventory rows (Informational).",
-    example: "0 red, 2 orange, 5 amber, 1 blue, 80 informational.",
+    what: "This row's crypto findings by severity: Critical (red), High (orange), Medium (amber), Low (blue). A Sources run's counts are as collected: the impact each asset was judged with when it was read, before your remediation statuses. QV is the number of quantum-vulnerable assets.",
+    example: "0 red, 2 orange, 5 amber, 1 blue, QV:3.",
   },
-  // src: backend/utilities/db/scan_list_item.py:452-453, backend/utilities/cbom_sources/cbom_metrics.py:20-21 — 0-10: critical 9, high 7, medium 5, low 2
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:26, backend/utilities/cbom_sources/run_list.py:223 — 0-10: critical 9, high 7, medium 5, low 2; a Sources run uses the same average over its counts as collected
   "cbom.table.risk": {
     label: "Risk score",
-    what: "This scan's average finding risk, 0 to 10: Critical 9, High 7, Medium 5, Low 2. Inventory rows are left out.",
+    what: "This row's average finding risk, 0 to 10: Critical 9, High 7, Medium 5, Low 2; inventory rows are left out. A Sources run's score is the same average over its counts as collected.",
     example: "Two Medium findings: 5.0.",
   },
 
@@ -3151,13 +3145,6 @@ export const INFO_TIPS = {
     what: "The ports probed on each address, up to 64, each with its protocol: TLS, StartTLS for LDAP, SMTP, IMAP, PostgreSQL or MySQL, SQL Server, SSH, RDP, IKE, and OT protocols (OPC UA, Modbus). Add a port, its protocol and an optional label.",
     why: "A service on a port that is not listed is never seen.",
     example: "7443 · TLS · admin console.",
-  },
-  // src: frontend/components/cbom/sources/NetworkTab.tsx:770-772 — passive read of what clients negotiate
-  "cbsrc.net.zeek": {
-    label: "Zeek ssl.log from a SPAN port",
-    what: "Also read Zeek's ssl.log from a SPAN port to see the protocol versions and cipher suites clients actually negotiate.",
-    why: "A server may allow TLS 1.0 but only passive data shows whether anything still uses it.",
-    example: "Shows 3% of connections to core-api still use TLS 1.0 with CBC ciphers.",
   },
   // src: frontend/components/cbom/sources/NetworkTab.tsx:781 — window, rates, SOC contacts
   "cbsrc.net.safety": {
@@ -5185,6 +5172,119 @@ export const INFO_TIPS = {
     what: "A month calendar of certificate expiry dates (UTC), coloured for 30, 60 and 90 days ahead. Choose a day to list its certificates; arrow keys move by day and week, Page Up and Page Down change the month.",
     why: "Renewals planned ahead avoid outages.",
     example: "Three certificates expire on 2 Dec: api.bank.in, mail.bank.in, vpn.bank.in.",
+  },
+  // ────────────────────────────────────────────────────────────── crypto-agility and quantum-risk grade (components/cbom/grade, moved from grade/tips.ts, #126)
+  // src: backend/utilities/cbom_sources/agility.py:76-82 (CLASS_TEXT["configurable"])
+  "cbom.agility.configurable": {
+    label: "Configurable",
+    what: "The owner fixes it by changing a setting, policy, key or certificate with the software, hardware and services already deployed. No code change, no new release.",
+    example: "nginx accepts TLS 1.0: set `ssl_protocols TLSv1.2 TLSv1.3;` and reload. Windows SCHANNEL: set the `TLS 1.0\\Server\\Enabled` registry value to 0.",
+  },
+  // src: backend/utilities/cbom_sources/agility.py:83-88 (CLASS_TEXT["code-fixed"])
+  "cbom.agility.code_fixed": {
+    label: "Code-fixed",
+    what: "The team's own source code or build must change, then be rebuilt, tested and released (includes a dependency or base-image bump in the team's own build).",
+    example: "Java code calls `KeyPairGenerator.initialize(1024)`: change it to 3072 (or a post-quantum signature algorithm when the platform has it) and ship a release.",
+  },
+  // src: backend/utilities/cbom_sources/agility.py:89-95 (CLASS_TEXT["vendor-fixed"])
+  "cbom.agility.vendor_fixed": {
+    label: "Vendor-fixed",
+    what: "The cryptography lives in a third party's product or service (OS distribution, commercial software, SaaS, cloud service, CA ecosystem). Only the vendor can change it; the owner installs the update when it exists, or asks for it.",
+    example: "A SaaS provider's API still accepts TLS 1.0; or an OpenSSL 3.0 server cannot offer a post-quantum key exchange until the distribution ships OpenSSL 3.5.",
+  },
+  // src: backend/utilities/cbom_sources/agility.py:96-101 (CLASS_TEXT["hardware-fixed"])
+  "cbom.agility.hardware_fixed": {
+    label: "Hardware-fixed",
+    what: "The cryptography is bound to a device: HSM, TPM, smart card, network appliance or OT device. It needs a firmware update or a hardware replacement.",
+    example: "An HSM whose firmware has no post-quantum signature algorithm keeps RSA root keys until the firmware is upgraded or the HSM replaced.",
+  },
+  // src: backend/utilities/cbom_sources/agility.py:102-106 (CLASS_TEXT["unknown"]), :392-407 (asset_class: floor)
+  "cbom.agility.unknown": {
+    label: "Unknown",
+    what: "A fact that decides the class was not read (key provider of a Windows certificate, type of a PKCS#11 token, a code with no row). Never treated as the easiest class; shows the class it is at least.",
+    example: "A Windows certificate with a private key, read by a node that does not report the key provider yet.",
+  },
+  // src: backend/utilities/cbom_sources/agility.py:112-113 (INFERRED_TEXT), :406-407 (confidence observed | inferred)
+  "cbom.agility.inferred": {
+    label: "Likely (inferred)",
+    what: "Likely: no fact the product read decides this class; it is the table's default for a capability code (the platform must implement the algorithm), never easier than the evidence allows.",
+    example: "NO_PQ_KEX on a TLS endpoint: the TLS library version is not visible from the network, so the class is vendor-fixed (inferred) until host evidence says otherwise.",
+  },
+  // src: backend/utilities/cbom_sources/agility.py:47 (SELF_FIXABLE), :562-566 (self_fixable_pct), :621-640 (RunAgility.result)
+  "cbom.agility.self_fixable": {
+    label: "Self-fixable share",
+    what: "Assets whose hardest finding is configurable or code-fixed, out of the assets with one of the four fix classes. Unknown and none are left out of both numbers. Computed from this run's stored findings when the page is read.",
+    example: "30 configurable, 10 code-fixed, 50 vendor-fixed, 10 hardware-fixed: 40 of 100, 40% self-fixable.",
+  },
+  // src: backend/utilities/cbom_sources/agility.py:50 (PQ_CODES), :483-485 (excluding_pq), posture fix_classes_excl_pq
+  "cbom.agility.excl_pq": {
+    label: "Excluding post-quantum",
+    what: "The same assets, classed without the four post-quantum migration codes (QUANTUM_VULNERABLE, NO_PQ_KEX, SSH_NO_PQ_KEX, IKE_NO_PQ): what is hard to fix among today's weaknesses only.",
+    example: "An RSA-2048 certificate whose only code is QUANTUM_VULNERABLE counts as none here.",
+  },
+  // src: backend/utilities/cbom_sources/kinds.py:59-60,73 (operated_by us | vendor | null), backend/utilities/cbom_sources/agility.py:230-235 (R-VENDOR)
+  "cbom.source.operated_by": {
+    label: "Operated by",
+    what: "Who runs what this source reaches: your team (the default when not set) or a vendor (a SaaS or managed service). Every finding of a vendor-operated source is at least vendor-fixed. A run keeps the value the source had when the run started.",
+    example: "A managed database whose TLS settings only the provider can change: set Vendor.",
+  },
+  // src: backend/utilities/cbom_sources/qgrade.py:46-99 (FORMULA_TEXT), :768-814 (RunGrades: counts and items)
+  "cbom.qgrade.distribution": {
+    label: "Quantum risk grade",
+    what: "Each asset of the run graded by the signed model shown under \"How grades are computed\": the PQC class, internet exposure, trust-anchor status and the Mosca inequality X + Y > Z. No grade means nothing to grade (no public-key cryptography). The grade uses the team's Mosca settings as they are now.",
+    example: "A quantum-vulnerable internet-facing TLS endpoint with X 10 + Y 5 > Z 12 grades Critical.",
+  },
+  // ────────────────────────────────────────────────────────────── CBOM code results: crypto-agility column
+  // src: backend/utilities/cbom_sources/agility.py:76-113 — configurable, code-fixed, vendor-fixed, hardware-fixed, unknown (CLASS_TEXT)
+  "cbom.res.col.fix_class": {
+    label: "Fix class",
+    what: "Who can fix this finding and how: Configurable (a setting, policy, key or certificate), Code-fixed (your code or build changes), Vendor-fixed (only the vendor can change it), Hardware-fixed (firmware or a new device), or Unknown (a deciding fact was not read). Likely means the class is inferred.",
+    why: "It tells you whether a fix is a config change this week or a vendor roadmap item.",
+    example: "Code-fixed: KeyPairGenerator.initialize(1024) in src/crypto/keys.py.",
+  },
+  // ────────────────────────────────────────────────────────────── CBOM: list empty state and test-lab node warning
+  // src: frontend/app/[team_id]/cbom/page.tsx:984-992 — the merged table of code scans and Sources runs is empty
+  "cbom.list.empty": {
+    label: "No scans or runs yet",
+    what: "This table lists both CBOM code scans and CBOM Sources runs; this team has neither yet. A code scan reads a repository, zip or CBOM file; a Sources run reads servers, clusters, databases, cloud accounts and networks.",
+    why: "Each feeds the same inventory, so start with whichever holds your most sensitive crypto.",
+    example: "Create a CBOM scan of payments-api, then start a Sources run of the Mumbai servers.",
+  },
+  // src: frontend/components/cbom/sources/NodeInstall.tsx:16-17, frontend/components/cbom/sources/NodeInstall.tsx:27-33 — ZS_ALLOW_INSECURE_HTTP
+  "cbsrc.nodes.lab_only": {
+    label: "Test lab only",
+    what: "This install command sets ZS_ALLOW_INSECURE_HTTP=1 because the API is plain HTTP: the node's credentials and the decrypted secrets of every job travel unencrypted.",
+    why: "Anyone on the network path could read them; serve the API over HTTPS for anything but a closed test lab.",
+    example: "A lab on 192.168.56.0/24 with no other users; never a production network.",
+  },
+  // ────────────────────────────────────────────────────────────── CBOM list: code scans and Sources runs in one table (CB-38 #117)
+  // src: frontend/app/[team_id]/cbom/page.tsx:1043-1055, backend/utilities/cbom_sources/run_list.py:1-6 — code scans and Sources runs in one table
+  "cbom.table.title": {
+    label: "Title",
+    what: "The scan's title, or for a CBOM Sources run \"Sources run #<id>\" with the names of its sources and a Sources run badge. Click it to open the results.",
+    why: "Code scans and infrastructure runs land in one list, so the badge tells them apart.",
+    example: "Sources run #42 · dc-mumbai-linux, aws-prod.",
+  },
+  // src: frontend/app/[team_id]/cbom/page.tsx:139-149, contracts/cbom/status_buckets.json:1 — code-scan statuses; a run's queued, running, done, partial, failed, cancelled
+  "cbom.table.status": {
+    label: "Status",
+    what: "A code scan: Not started, Pending, Started (with progress), Retry, Success, Failure or Cancelled. A Sources run: Pending (queued), Started (running, with jobs done of total), Success (done), Partial (some jobs failed or expired; the results that were collected open like a success), Failure or Cancelled.",
+    why: "A Partial run's results miss the sources whose jobs did not finish.",
+    example: "Partial · 3/4 jobs: one database job expired.",
+  },
+  // src: frontend/app/[team_id]/cbom/page.tsx:1093-1113, frontend/components/cbom/results/resultRows.ts:360-365 — repository, zip, or the run's sources and counts
+  "cbom.table.source": {
+    label: "Repo / Source",
+    what: "For a code scan, the repository (or Zip file). For a Sources run, the sources it collected from, with how many assets it found and endpoints it probed.",
+    why: "Tells you what each row covers before you open it.",
+    example: "dc-mumbai-linux, aws-prod · 1,284 assets · 12 endpoints.",
+  },
+  // src: backend/utilities/cbom_sources/run_list.py:227-228, frontend/components/cbom/results/resultRows.ts:367-370 — charged; refunded shown below
+  "cbom.table.credits": {
+    label: "Credits",
+    what: "Credits charged for the scan or run. For a run, credits refunded for jobs that failed, expired or were cancelled are shown below in brackets.",
+    why: "You pay only for the jobs that completed.",
+    example: "12.4 (1 refunded).",
   },
 } as const satisfies Record<string, InfoTipEntry>;
 

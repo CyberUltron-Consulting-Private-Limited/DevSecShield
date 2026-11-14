@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ban, Calculator, Eye, GitCompare, Loader2, Play } from "lucide-react";
+import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { toast } from "@/utils/toast";
 
@@ -26,7 +27,8 @@ import {
 } from "@/utils/backend_api";
 
 import { CompareDialog, RunChanges } from "./ChangesPanel";
-import { cbomSourcesKeys, TERMINAL_RUN } from "./keys";
+import { runResultsHref } from "@/components/cbom/results/resultsHref";
+import { cbomSourcesKeys, invalidateRunViews, TERMINAL_RUN } from "./keys";
 import RunResults from "./RunResults";
 import { CriticalityCard } from "./RunPosture";
 import SchedulesCard from "./SchedulesCard";
@@ -178,7 +180,6 @@ function sameInclude(a: IncludeState, b: IncludeState): boolean {
 // ---------------------------------------------------------------------------- tab
 export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; onNavigate: (tab: string) => void }) {
   const queryClient = useQueryClient();
-  const [detailsRunId, setDetailsRunId] = useState<number | null>(null);
   const [compareRunId, setCompareRunId] = useState<number | null>(null);
   const [cancelling, setCancelling] = useState<CbomRun | null>(null);
 
@@ -200,7 +201,8 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
     refetchInterval: (query) => (query.state.data?.runs.some((r) => !TERMINAL_RUN.has(r.status)) ? 6000 : 30000),
   });
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) });
+  // a cancel changes the run's row in the CBOM Scans table too (status, refunded credits)
+  const invalidate = () => invalidateRunViews(queryClient, teamId);
 
   const cancelMutation = useMutation({
     mutationFn: (run: CbomRun) => cancelCbomRun(teamId, run.id),
@@ -278,7 +280,7 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
     "identity",
     "Certificates and identity",
     (s, _u, k) =>
-      `${pluralize(s, "connector")}${k ? ` (${k})` : ""}${overview.settings.cert_domains ? ` · ${pluralize(overview.settings.cert_domains, "certificate domain")}` : ""}`,
+      `${pluralize(s, "connector")}${k ? ` (${k})` : ""}${overview.settings.cert_domains ? ` · ${pluralize(overview.settings.cert_domains, "certificate domain")} (not read yet)` : ""}`,
     true,
   );
   groupRow("network", "Network TLS", (s, u) => (
@@ -402,7 +404,7 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
             </li>
             <li>Evidence gaps listed as Q0, never assumed safe</li>
           </ul>
-          <p className="text-xs text-zinc-500 mt-4">Results feed the CBOM report once the collector for each source type ships.</p>
+          <p className="text-xs text-zinc-500 mt-4">Each run&apos;s assets appear in its results and exports, and on the CBOM dashboard.</p>
         </SectionCard>
       </div>
 
@@ -476,15 +478,12 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center justify-end gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="cursor-pointer"
-                            data-testid={`review-run-details-${run.id}`}
-                            onClick={() => setDetailsRunId(run.id)}
-                          >
-                            <Eye className="h-4 w-4 mr-1.5" />
-                            Results
+                          {/* CB-38: the run's results open on the same results page as a code scan */}
+                          <Button asChild size="sm" variant="outline" className="cursor-pointer">
+                            <Link href={runResultsHref(teamId, run.id)} data-testid={`review-run-details-${run.id}`}>
+                              <Eye className="h-4 w-4 mr-1.5" />
+                              Results
+                            </Link>
                           </Button>
                           {TERMINAL_RUN.has(run.status) && runs.length > 1 && (
                             <Button
@@ -523,9 +522,6 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
         )}
       </SectionCard>
 
-      {detailsRunId !== null && (
-        <RunDetailsDialog key={detailsRunId} teamId={teamId} runId={detailsRunId} onClose={() => setDetailsRunId(null)} />
-      )}
       {compareRunId !== null && (
         <CompareDialog key={compareRunId} teamId={teamId} runId={compareRunId} runs={runs} onClose={() => setCompareRunId(null)} />
       )}
@@ -603,7 +599,8 @@ function StartCard({ teamId, overview }: { teamId: number; overview: CbomSources
       if (refusal.clearEstimate) setSnapshot(null);
       setNotice({ tone: refusal.tone, text: refusal.text });
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) }),
+    // a new run is a new row in the CBOM Scans table
+    onSettled: () => invalidateRunViews(queryClient, teamId),
   });
 
   const toggle = (key: CbomIncludeKey, value: boolean) => {
@@ -764,7 +761,9 @@ function StartCard({ teamId, overview }: { teamId: number; overview: CbomSources
 }
 
 // ---------------------------------------------------------------------------- run details
-function RunDetailsDialog({ teamId, runId, onClose }: { teamId: number; runId: number; onClose: () => void }) {
+// CB-38: no longer opened from the Runs table (its Results button opens /cbom/runs/<id>/results); kept until the
+// unified results page carries its jobs table and skipped list, then removed.
+export function RunDetailsDialog({ teamId, runId, onClose }: { teamId: number; runId: number; onClose: () => void }) {
   const runQuery = useQuery({
     queryKey: cbomSourcesKeys.run(teamId, runId),
     queryFn: () => getCbomRun(teamId, runId),
