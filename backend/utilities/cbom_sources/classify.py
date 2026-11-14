@@ -479,6 +479,17 @@ def _cert_rules(out: _Out, facts: dict[str, Any], algorithm: Any, size: Any, now
     _key_rules(out, algorithm or facts.get("key_alg"), size or facts.get("key_size"), "Certificate key")
 
 
+# CB-34: IANA (TLS_RSA_EXPORT_WITH_..., TLS_RSA_WITH_NULL_SHA, TLS_DH_anon_...) and OpenSSL (EXP-RC4-MD5, NULL-SHA,
+# ADH-AES128-SHA, AECDH-...) spellings of the EXPORT, NULL-encryption and anonymous suites
+_LEGACY_CLASSES = (
+    ("TLS_EXPORT_CIPHER", "Critical", "EXPORT-grade suites",
+     re.compile(r"_EXPORT(?:1024)?_|^EXP1024-|^EXP-", re.I)),
+    ("TLS_NULL_CIPHER", "Critical", "NULL-encryption suites",
+     re.compile(r"_WITH_NULL_|^(?:[A-Z0-9]+-)*NULL-(?:MD5|SHA\d*)$|^eNULL$", re.I)),
+    ("TLS_ANON_CIPHER", "High", "anonymous suites (no server authentication)",
+     re.compile(r"_anon_|^ADH-|^AECDH-|^aNULL$", re.I)),
+)
+
 _TLS_OLD = {"SSLV2": ("Critical", "SSLv2"), "SSLV3": ("Critical", "SSLv3"), "TLSV1.0": ("High", "TLS 1.0"),
             "TLSV1": ("High", "TLS 1.0"), "TLSV1.1": ("High", "TLS 1.1")}
 
@@ -499,6 +510,11 @@ def _tls_rules(out: _Out, facts: dict[str, Any], what: str) -> None:
     weak += [c for c in fact_list(facts.get("ciphers")) if isinstance(c, str) and _WEAK_CIPHER_RE.search(c)]
     if weak:
         out.add("WEAK_CIPHER", "High", f"{what} accepts weak ciphers ({', '.join(sorted(set(weak))[:4])})", weak)
+        # CB-34: the classes whose impact is worse than "weak" get their own finding next to WEAK_CIPHER
+        for code, impact, label, pattern in _LEGACY_CLASSES:
+            hit = sorted({c for c in weak if pattern.search(c)})
+            if hit:
+                out.add(code, impact, f"{what} accepts {label} ({', '.join(hit[:4])})", hit)
     if facts.get("static_rsa_kex"):
         out.add("STATIC_RSA_KEX", "Medium", f"{what} accepts RSA key exchange without forward secrecy")
     if facts.get("cbc_only"):

@@ -238,6 +238,15 @@ def protocol_asset(fact: EncryptionFact) -> CryptoAssetComponent | None:
     endpoint = _basis_value(fact, "endpoint")
     if endpoint:
         props["crypto:endpoint"] = endpoint
+    # CB-28: a fact that knows the line of the setting it read puts the asset there (a
+    # Terraform fact sits on its deciding attribute, an ingress-nginx ConfigMap fact
+    # names its key's line); without it the late occurrence pass picks the first
+    # ``TLS`` token in the file, and two listeners in one file share one line.
+    asset_line = _basis_value(fact, "asset_line")
+    if asset_line is None and fact.format == "terraform":
+        asset_line = str(fact.line)
+    if asset_line and asset_line.isdigit():
+        props["crypto:line"] = asset_line
     if floor:
         props["crypto:protocolVersion"] = floor
         if floor in _WEAK_TLS or (ssh and floor == "SSH-1"):

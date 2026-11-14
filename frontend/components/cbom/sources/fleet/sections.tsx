@@ -13,6 +13,7 @@ import CredentialsSection from "./CredentialsSection";
 import InventorySection from "./InventorySection";
 import PoliciesSection from "./PoliciesSection";
 // F1.3 import
+import TransportsSection from "./TransportsSection";
 // F1.4 import
 import { SshCaFleetSection } from "./SshCaSection";
 
@@ -33,6 +34,7 @@ export const FLEET_SECTIONS: FleetSection[] = [
   { id: "policies", flag: "policies", Component: PoliciesSection },
   { id: "credentials", flag: "policies", Component: CredentialsSection },
   // F1.3
+  { id: "transports", flag: "transports", Component: TransportsSection },
   // F1.4
   { id: "ssh-ca", flag: "ssh_ca", Component: SshCaFleetSection },
 ];

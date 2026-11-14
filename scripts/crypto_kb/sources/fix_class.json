@@ -1041,6 +1041,30 @@
     "kb:findings.node.STORAGE_UNENCRYPTED.remediation"
    ]
   },
+  "TLS_ANON_CIPHER": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "cipher setting of the TLS server (its cipher string or suite list)",
+   "sources": [
+    "kb:findings.node.TLS_ANON_CIPHER.remediation"
+   ]
+  },
+  "TLS_EXPORT_CIPHER": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "cipher setting of the TLS server (its cipher string or suite list)",
+   "sources": [
+    "kb:findings.node.TLS_EXPORT_CIPHER.remediation"
+   ]
+  },
+  "TLS_NULL_CIPHER": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "cipher setting of the TLS server (its cipher string or suite list)",
+   "sources": [
+    "kb:findings.node.TLS_NULL_CIPHER.remediation"
+   ]
+  },
   "TLS_POLICY_OVERRIDE": {
    "class": "configurable",
    "capability": false,
@@ -1221,6 +1245,14 @@
     "kb:findings.code.STATIC_IV.remediation"
    ]
   },
+  "STATIC_SALT": {
+   "class": "code-fixed",
+   "capability": false,
+   "basis": "the salt or iteration count is fixed in the team's own source code: the code changes, then a rebuild and release",
+   "sources": [
+    "kb:findings.code.STATIC_SALT.remediation"
+   ]
+  },
   "TLS_VERIFICATION_DISABLED": {
    "class": "code-fixed",
    "capability": false,
@@ -1295,6 +1327,14 @@
     "aibom/src/aibom/cbom/weakness.py cipher_suite_findings (suites of protocol components built from source)"
    ]
   },
+  "WEAK_KDF_ITERATIONS": {
+   "class": "code-fixed",
+   "capability": false,
+   "basis": "the salt or iteration count is fixed in the team's own source code: the code changes, then a rebuild and release",
+   "sources": [
+    "kb:findings.code.WEAK_KDF_ITERATIONS.remediation"
+   ]
+  },
   "WEAK_KEY_SIZE": {
    "class": "code-fixed",
    "capability": false,
@@ -1326,6 +1366,14 @@
    "basis": "the team's own source code changes, then a rebuild and release",
    "sources": [
     "kb:findings.code.WEAK_RNG.remediation"
+   ]
+  },
+  "WEAK_RSA_EXPONENT": {
+   "class": "code-fixed",
+   "capability": false,
+   "basis": "the exponent is chosen in the team's own key-generation code: the code changes and the keys are re-issued",
+   "sources": [
+    "kb:findings.code.WEAK_RSA_EXPONENT.remediation"
    ]
   }
  }

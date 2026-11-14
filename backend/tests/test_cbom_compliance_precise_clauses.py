@@ -183,6 +183,10 @@ ALLOW: dict[str, dict[str, set[tuple[str, str]]]] = {
         "STORAGE_UNENCRYPTED": {CERTIN_71, RBI_106, SEBI_PRDS1, SEBI_PRDS_1A},
         "TLS_POLICY_OVERRIDE": {CERTIN_8422, RBI_140, RBI_16, SEBI_I},
         "WEAK_CIPHER": {CERTIN_8422, NIST_TDEA, RBI_140, RBI_16, SEBI_H5},
+        # CB-34: EXPORT and NULL suites are never strong encryption (SEBI H5); anonymous ones may use AES
+        "TLS_EXPORT_CIPHER": {CERTIN_8422, RBI_140, RBI_16, SEBI_H5},
+        "TLS_NULL_CIPHER": {CERTIN_8422, RBI_140, RBI_16, SEBI_H5},
+        "TLS_ANON_CIPHER": {CERTIN_8422, RBI_140, RBI_16},
     },
     "code": {
         "AT_REST_ENCRYPTION_WEAK": {SEBI_PRDS1, SEBI_PRDS_1A},
@@ -205,6 +209,8 @@ ALLOW: dict[str, dict[str, set[tuple[str, str]]]] = {
         "REUSED_NONCE": {RBI_140, RBI_16},
         "SELF_SIGNED_LEAF": {CERTIN_617},
         "STATIC_IV": {RBI_140, RBI_16},
+        # CB-27: a constant PBE salt, a PBE iteration count below 1,000 (configurations, like STATIC_IV)
+        "STATIC_SALT": {RBI_140, RBI_16},
         "TLS_VERIFICATION_DISABLED": {CERTIN_627, CERTIN_8422},
         "UNENCRYPTED_AT_REST": {CERTIN_71, RBI_106, SEBI_PRDS1, SEBI_PRDS_1A},
         "UNENCRYPTED_IN_TRANSIT": {CERTIN_627, RBI_106, SEBI_I, SEBI_PRDS1},
@@ -214,9 +220,12 @@ ALLOW: dict[str, dict[str, set[tuple[str, str]]]] = {
         "WEAK_CERTIFICATE_SIGNATURE": {CERTIN_617, NIST_SHA1_SIG, RBI_140, RBI_16},
         "WEAK_CIPHER_MODE": {RBI_140, RBI_16},
         "WEAK_CIPHER_SUITE": {CERTIN_8422, NIST_TDEA, RBI_140, RBI_16, SEBI_H5},
+        "WEAK_KDF_ITERATIONS": {RBI_140, RBI_16},
         "WEAK_KEY_SIZE": {NIST_112, RBI_140, RBI_16},
         "WEAK_PADDING": {NIST_PKCS1, RBI_140, RBI_16},
         "WEAK_PROTOCOL": {CERTIN_8422, RBI_140, RBI_16, SEBI_I},
+        # CB-28: RSA public exponent 3 (FIPS 186-5)
+        "WEAK_RSA_EXPONENT": {RBI_140, RBI_16},
         "WEAK_RNG": {RBI_140, RBI_16},
     },
 }

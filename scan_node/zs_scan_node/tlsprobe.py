@@ -148,6 +148,10 @@ class HelloResult:
     dh_bits: int | None = None
     ecdhe_group: int | None = None
     error: str | None = None
+    # CB-34: the server's certificate chain (DER) from its TLS <= 1.2 Certificate message, read in the clear from the
+    # flight (``want_cert``): the only way to read it when no client the node has can finish the handshake (SSLv3,
+    # RC4, EXPORT, NULL, 3DES-only servers)
+    certs_der: list[bytes] = field(default_factory=list)
 
     @property
     def version_name(self) -> str | None:
@@ -291,8 +295,36 @@ def parse_server_key_exchange(body: bytes, cipher_name: str) -> tuple[int | None
     return None, None
 
 
-def read_flight(sock: socket.socket, deadline: float, want_kex: bool = False) -> HelloResult:
-    """Read records until ServerHello (and, with ``want_kex``, the ServerKeyExchange/ServerHelloDone)."""
+MAX_CHAIN = 50  # certificates kept from one Certificate message
+
+
+def parse_certificate_list(body: bytes) -> list[bytes]:
+    """The DER certificates of a TLS <= 1.2 Certificate message (RFC 5246 7.4.2; SSLv3 is the same): a 3-byte list
+    length, then each certificate with a 3-byte length."""
+    if len(body) < 3:
+        raise ValueError("short Certificate message")
+    total = int.from_bytes(body[:3], "big")
+    data = body[3:3 + total]
+    if total != len(body) - 3:
+        raise ValueError("Certificate list length does not match the message")
+    out, i = [], 0
+    while i < len(data):
+        if i + 3 > len(data):
+            raise ValueError("truncated certificate length")
+        n = int.from_bytes(data[i:i + 3], "big")
+        if n == 0 or i + 3 + n > len(data):
+            raise ValueError("truncated certificate")
+        out.append(bytes(data[i + 3:i + 3 + n]))
+        i += 3 + n
+        if len(out) > MAX_CHAIN:
+            break
+    return out
+
+
+
+def read_flight(sock: socket.socket, deadline: float, want_kex: bool = False, want_cert: bool = False) -> HelloResult:
+    """Read records until ServerHello (and, with ``want_kex``, the ServerKeyExchange/ServerHelloDone; with
+    ``want_cert``, the TLS <= 1.2 Certificate message)."""
     hs = b""
     total = 0
     result: HelloResult | None = None
@@ -344,7 +376,14 @@ def read_flight(sock: socket.socket, deadline: float, want_kex: bool = False) ->
                     result = parse_server_hello(msg)
                 except ValueError as exc:
                     raise ProbeError("error", str(exc)) from None
-                if result.hrr or (result.version or 0) >= TLS13 or not want_kex:
+                if result.hrr or (result.version or 0) >= TLS13 or not (want_kex or want_cert):
+                    return result
+            elif mtype == 11 and result is not None:
+                try:
+                    result.certs_der = parse_certificate_list(msg)
+                except ValueError as exc:
+                    result.error = f"certificate message: {exc}"
+                if not want_kex:
                     return result
             elif mtype == 12 and result is not None:
                 result.dh_bits, result.ecdhe_group = parse_server_key_exchange(msg, result.cipher_name or "")
@@ -722,12 +761,13 @@ def open_tls_socket(ip: str, port: int, protocol: str, timeout: float = 10.0) ->
         raise
 
 
-def probe(ip: str, port: int, protocol: str, hello: bytes, timeout: float = 8.0, want_kex: bool = False) -> HelloResult:
+def probe(ip: str, port: int, protocol: str, hello: bytes, timeout: float = 8.0, want_kex: bool = False,
+          want_cert: bool = False) -> HelloResult:
     deadline = time.monotonic() + timeout
     sock, _facts = open_tls_socket(ip, port, protocol, timeout)
     try:
         sock.sendall(hello)
-        return read_flight(sock, deadline, want_kex=want_kex)
+        return read_flight(sock, deadline, want_kex=want_kex, want_cert=want_cert)
     except OSError as exc:
         raise ProbeError("error", exc.__class__.__name__) from None
     finally:
