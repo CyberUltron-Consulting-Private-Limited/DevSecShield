@@ -124,9 +124,9 @@ interface IdpRow {
   defaultName: string;
 }
 const IDP_ROWS: IdpRow[] = [
-  { provider: "entra_id", label: "Microsoft Entra ID", detail: "Application.Read.All, read-only", defaultName: "Entra ID" },
-  { provider: "okta", label: "Okta", defaultName: "Okta" },
-  { provider: "keycloak", label: "Keycloak", defaultName: "Keycloak" },
+  { provider: "entra_id", label: "Microsoft Entra ID", detail: "public metadata; no permission needed", defaultName: "Entra ID" },
+  { provider: "okta", label: "Okta", detail: "public metadata; no permission needed", defaultName: "Okta" },
+  { provider: "keycloak", label: "Keycloak", detail: "public metadata; no permission needed", defaultName: "Keycloak" },
 ];
 const METADATA_LABEL: Record<MetadataProvider, string> = { saml_metadata: "SAML metadata", oidc_discovery: "OIDC discovery" };
 
@@ -185,7 +185,8 @@ const GCP_READ_PERMISSIONS = [
   "compute.globalForwardingRules.list",
   "storage.buckets.list",
 ];
-const IDP_HOW = "ZeroShield reads the signing keys from your identity provider's public metadata; no secret is needed for that.";
+// idp_collect reads public OIDC / SAML metadata and sends no credential (backend/tests/test_cbom_cb08_promises.py)
+const IDP_HOW = "ZeroShield reads the signing keys from your identity provider's public metadata only; a secret is not used yet.";
 // Cloud, CLM and IdP secrets never go to a scan node, so the node wording of the default hint would be wrong here.
 const STORED_HINT = "Encrypted at rest by ZeroShield. Never shown again.";
 
@@ -385,6 +386,16 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
     retry: 1,
     refetchInterval: 30000,
   });
+  // The planner's own sentence for an AWS Private CA connector: its AWS account source reads it (aws_collect
+  // "acm-pca"), is skipped in this run, or was removed (planning._aws_private_ca). One source of truth with Review & Run.
+  const overviewQuery = useQuery({
+    queryKey: cbomSourcesKeys.overview(teamId),
+    queryFn: () => getCbomSourcesOverview(teamId),
+    enabled,
+    retry: 1,
+    refetchInterval: 30000,
+  });
+  const planReason = (sourceId: number) => overviewQuery.data?.plan.items?.find((i) => i.source_id === sourceId)?.reason ?? null;
 
   const resetForm = (provider?: Provider) =>
     setForm((f) => ({ provider: provider ?? f.provider, source: null, nonce: f.nonce + 1 }));
@@ -694,8 +705,8 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
                         <NodeTestLine teamId={teamId} source={s} />
                       ) : row.key === "aws_private_ca" ? (
                         <span className="text-xs text-zinc-500">
-                          through {awsSources.find((a) => a.id === cfgNumber(s, "aws_source_id"))?.name ?? "an AWS account that was removed"} ·{" "}
-                          {NOT_AVAILABLE}
+                          through {awsSources.find((a) => a.id === cfgNumber(s, "aws_source_id"))?.name ?? "an AWS account that was removed"}
+                          {planReason(s.id) ? ` · ${planReason(s.id)}` : ""}
                         </span>
                       ) : (
                         <span className="text-xs text-zinc-500">
@@ -734,10 +745,14 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-zinc-200 dark:border-zinc-800 px-4 py-3">
                 <div className="min-w-0">
                   <span className="text-sm font-medium text-zinc-900 dark:text-white">ADFS</span>
-                  <span className="ml-1.5 text-xs text-zinc-500">read from the Windows servers you add on the Servers tab</span>
+                  <span className="ml-1.5 text-xs text-zinc-500 break-words">
+                    add its SAML metadata URL below (
+                    <span className="font-mono break-all">https://your-adfs/FederationMetadata/2007-06/FederationMetadata.xml</span>); the
+                    Windows servers you add are read for their certificate stores and TLS settings, nothing ADFS-specific
+                  </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <StatusBadge tone="zinc">Via servers</StatusBadge>
+                  <StatusBadge tone="zinc">Metadata URL</StatusBadge>
                   <Button variant="outline" size="sm" className="cursor-pointer" onClick={() => onNavigate("servers")}>
                     Servers
                   </Button>
@@ -1769,7 +1784,7 @@ function CertDomains({ teamId, settings }: { teamId: number; settings: CbomSourc
       label="Domains to search in Certificate Transparency logs"
       htmlFor="cert-domain-input"
       error={error}
-      hint="Saved for the certificate collector. ZeroShield does not query Certificate Transparency logs yet."
+      hint="Saved, but not read: Certificate Transparency discovery is not turned on for this server. When it is, these domains move into the Certificate Transparency source."
     >
       <div className="space-y-2">
         {settings.cert_domains.length > 0 ? (
@@ -2261,7 +2276,7 @@ function CaDialog({
                   ? "A scan node reads the CAs and certificate profiles through the EJBCA REST API, signing in with a client certificate."
                   : isAwsCa
                     ? "Read through the read-only role of a connected AWS account. No new credential is needed."
-                    : "ZeroShield keeps the API address and key for the certificate collector."}
+                    : "Not collected yet: ZeroShield only stores the API address and key. Nothing is read from it and it is never charged."}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
@@ -2539,10 +2554,10 @@ function IdpDialog({
           <DialogTitle>{source ? `Edit ${source.name}` : `Connect ${row.label}`}</DialogTitle>
           <DialogDescription>
             {provider === "entra_id"
-              ? "An app registration with the Application.Read.All application permission (read-only)."
+              ? "ZeroShield reads this tenant's public OpenID and federation metadata: its signing keys and certificates. No permission is needed; the application ID is kept for API reads that are not built yet."
               : provider === "okta"
-                ? "A read-only API token from your Okta admin console."
-                : "A confidential client in the realm with read-only access to clients and keys."}
+                ? "ZeroShield reads your Okta org's public OpenID metadata: its signing keys. No API token is needed or used yet."
+                : "ZeroShield reads the realm's public OpenID and SAML metadata: its signing keys and certificates. The client ID is kept for API reads that are not built yet."}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
@@ -2682,8 +2697,8 @@ function MetadataUrls({
   return (
     <div className="space-y-4">
       <p className="text-xs text-zinc-500">
-        No admin access? Public metadata is enough to read signing keys and their rotation. ZeroShield&apos;s cloud reads these URLs when
-        you press Test and during each run; only public https addresses can be read.
+        Public metadata is all ZeroShield reads: signing keys and their rotation. ZeroShield&apos;s cloud reads these URLs when you
+        press Test and during each run; only public https addresses can be read.
       </p>
       {input("saml_metadata", "SAML metadata URL", "https://login.example.com/saml/metadata", "cloud-saml")}
       {input("oidc_discovery", "OIDC discovery URL", "https://login.example.com/.well-known/openid-configuration", "cloud-oidc")}

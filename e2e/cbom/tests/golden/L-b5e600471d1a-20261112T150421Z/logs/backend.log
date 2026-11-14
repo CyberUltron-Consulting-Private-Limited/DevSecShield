@@ -1,0 +1,31 @@
+2026-11-12T15:22:47.517430462Z 2026-11-12 15:22:47,517 INFO backend.auth email sent through the configured SMTP relay
+2026-11-12T15:22:49.360900233Z 2026-11-12 15:22:49,360 INFO backend.auth user signed up user_id=52
+2026-11-12T15:22:50.450547083Z 0 findings found
+2026-11-12T15:22:50.781196648Z 2026-11-12 15:22:50,781 INFO backend.auth email sent through the configured SMTP relay
+2026-11-12T15:22:51.123308246Z 2026-11-12 15:22:51,123 INFO backend.auth user logged in user_id=1
+2026-11-12T15:22:51.666505038Z 0 findings found
+2026-11-12T15:22:53.416883413Z 0 cbom scans found for team: 52
+2026-11-12T15:23:08.437083712Z cbom sources node created team=52 node=35 by=52
+2026-11-12T15:23:12.045693706Z cbom sources node enrolled team=52 node=35 signing=required client_cert=False mode=agentless
+2026-11-12T15:23:18.583042162Z cbom sources source created team=52 source=69 kind=network_range by=52
+2026-11-12T15:23:19.428462376Z cbom sources source created team=52 source=70 kind=network_range by=52
+2026-11-12T15:23:20.416535114Z cbom sources settings updated team=52 by=52 fields=1
+2026-11-12T15:23:22.914815984Z cbom sources settings updated team=52 by=52 fields=5
+2026-11-12T15:23:26.138785334Z cbom sources run created team=52 run=21 credits=1.0 by=52
+2026-11-12T15:23:27.237680786Z cbom sources run status team=52 run=21 status=running
+2026-11-12T15:23:27.238342504Z cbom sources job claimed team=52 job=84 node=35 kind=collect attempt=1
+2026-11-12T15:23:27.307016132Z cbom sources job claimed team=52 job=85 node=35 kind=collect attempt=1
+2026-11-12T15:23:38.922732363Z cbom sources assets stored team=52 run=21 job=85 attempt=1 accepted=1 duplicate=0 rejected=0 dropped=0 total=1 cap_reached=False
+2026-11-12T15:23:38.955618166Z cbom sources job finished team=52 run=21 job=85 node=35 kind=collect attempt=1 status=success outcome=partial ok=1 failed=0 skipped=1 assets=1 duration_s=11 refunded_c=0
+2026-11-12T15:23:42.593885003Z cbom sources assets stored team=52 run=21 job=84 attempt=1 accepted=19 duplicate=0 rejected=0 dropped=0 total=19 cap_reached=False
+2026-11-12T15:23:51.244527716Z cbom sources assets stored team=52 run=21 job=84 attempt=1 accepted=5 duplicate=0 rejected=0 dropped=0 total=24 cap_reached=False
+2026-11-12T15:23:51.268340302Z cbom sources run status team=52 run=21 status=partial
+2026-11-12T15:23:51.268595777Z cbom sources job finished team=52 run=21 job=84 node=35 kind=collect attempt=1 status=success outcome=ok ok=14 failed=0 skipped=0 assets=24 duration_s=24 refunded_c=0
+2026-11-12T15:24:00.887689406Z cbom sources drift recorded team=52 run=21 events=0
+2026-11-12T15:24:09.604362556Z 2026-11-12 15:24:09,604 INFO backend.auth email sent through the configured SMTP relay
+2026-11-12T15:24:11.355154904Z 2026-11-12 15:24:11,354 INFO backend.auth user signed up user_id=53
+2026-11-12T15:24:12.689113244Z 0 findings found
+2026-11-12T15:24:18.662566977Z 2026-11-12 15:24:18,661 INFO backend.auth user logged out user_id=52
+2026-11-12T15:24:18.763830168Z 2026-11-12 15:24:18,763 INFO backend.auth access token refused: issued before the account's tokens were revoked (user_id=52)
+2026-11-12T15:24:21.682276246Z 2026-11-12 15:24:21,682 INFO backend.auth user logged out user_id=53
+2026-11-12T15:24:21.848603181Z 2026-11-12 15:24:21,848 INFO backend.auth access token refused: issued before the account's tokens were revoked (user_id=53)

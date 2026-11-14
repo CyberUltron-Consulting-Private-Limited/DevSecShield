@@ -50,6 +50,7 @@ class _Job:
         self.last_renew = time.monotonic()
         self.deadline = time.monotonic() + int(self.job.get("max_runtime_s") or 8 * 3600) - 120
         self.emitted = 0
+        self.store_failed: str | None = None  # an asset batch was lost to an error that is not the API's refusal
 
     # -- leases and batches
     def should_stop(self) -> str | None:
@@ -88,6 +89,15 @@ class _Job:
                 session.rollback()
                 self.stop_reason = str(exc.detail)
                 log("cloud job stopped", team=self.job["team_id"], job=self.job["id"], reason=self.stop_reason[:120])
+            except Exception as exc:
+                # Anything else (the database connection lost, a failover): this batch is gone.  The job fails even
+                # when the collector that called emit() or should_stop() swallows the exception, and it stops (no
+                # more reads of the customer's cloud, no next SSM command) since nothing more would be kept.
+                self.store_failed = type(exc).__name__
+                self.stop_reason = self.stop_reason or "Collection stopped: assets could not be stored"
+                log("cloud job asset batch NOT stored", team=self.job["team_id"], job=self.job["id"], assets=len(batch),
+                    error=self.store_failed)
+                raise
 
     # -- run
     def run(self) -> None:
@@ -136,6 +146,8 @@ class _Job:
                 for asset in out.pop("assets"):
                     self.emit(asset)
                 result = out
+            elif kind == "ssm_hosts":  # F1.3: zs-collect through the customer's AWS Systems Manager
+                result = self._ssm()
             else:
                 status, error = "failure", f"The cloud worker cannot collect {kind}"
         except _Refused as exc:
@@ -145,6 +157,10 @@ class _Job:
             log("cloud job FAILED", ref=ref, team=team_id, job=self.job["id"], error=type(exc).__name__)
             status, error = "failure", f"Collection failed (ref {ref})"
         self.flush()
+        if self.store_failed and status != "failure":  # a collector swallowed the failed store: the job still fails
+            ref = new_ref()
+            log("cloud job FAILED", ref=ref, team=team_id, job=self.job["id"], error=self.store_failed)
+            status, error = "failure", f"Collection failed (ref {ref})"
         if self.stop_reason and status == "success":
             status, error = "cancelled", self.stop_reason
         targets = result.get("targets") or []
@@ -189,6 +205,37 @@ class _Job:
             return collect_aws(self.job["team_id"], self.source["config"], external_id, self.emit, self.should_stop)
         except AwsCollectError as exc:
             raise _Refused(str(exc)) from exc
+
+
+    def _ssm(self) -> dict[str, Any]:
+        from backend.new_models import CbomCollectionSource
+        from backend.utilities.cbom_sources.transports.claim import payload_for_cloud
+        from backend.utilities.cbom_sources.transports.cloud import SsmRefused, collect_ssm
+        from backend.utilities.cbom_sources.transports.ssm import SsmTransport, role_client_factory
+
+        team_id = self.job["team_id"]
+        with Session(self.engine) as session:
+            settings = get_or_create_settings(session, team_id)
+            external_id = settings.aws_external_id
+            exclusions = [str(i.get("cidr")) for i in (settings.network_exclusions or []) if isinstance(i, dict)]
+            row = session.get(CbomCollectionSource, self.source["id"])
+            if row is None or row.team_id != team_id:
+                raise _Refused("The source was deleted")
+            config = dict(self.source.get("config") or {})
+            if "transport" not in config:  # the claim did not apply the F1.3 plugin (secret_refs not present)
+                config, _secrets = payload_for_cloud(session, row)
+        exclusions += list(config.get("exclusions") or []) + list((self.job.get("params") or {}).get("exclusions") or [])
+        transport_cfg = config.get("transport") or {}
+        try:
+            factory = role_client_factory(team_id, str(transport_cfg.get("role_arn") or ""), external_id)
+            return collect_ssm(self.job, config, exclusions, SsmTransport(factory, log=lambda *a, **k: None), self.emit,
+                               self.should_stop, self.deadline)
+        except SsmRefused as exc:
+            raise _Refused(str(exc)) from exc
+        except Exception as exc:
+            if exc.__class__.__name__ == "NoZeroShieldCredentials":
+                raise _Refused("ZeroShield's AWS principal is not configured in this deployment") from exc
+            raise
 
 
 class _Refused(Exception):
