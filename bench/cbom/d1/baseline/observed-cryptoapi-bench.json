@@ -4,67 +4,1361 @@
  "product": {
   "entry": "aibom.integrations.cbom_devsecshield.scan_crypto_to_devsecshield",
   "level": 4,
-  "git_sha": "3df26fd8ec020f44d9cdbec1e793b29327e03d39",
+  "git_sha": "b34398aae3c765e86f78fdf9608f386f256de728",
   "aibom_dirty": false,
-  "kb_version": "2026.11.10.1",
+  "kb_version": "2026.11.15.1",
   "scan_tree_sha256": "a0958469cc4732707f9a819b23c4d57d6d08c4a2718efca83b171dcb15be3867",
   "scan_tree_files": 197,
-  "result_rows": 111
+  "seconds": 3.09,
+  "result_rows": 168
  },
  "rows": [
-  {"location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoABICase12.java", "line": 23, "occurrences": [23], "codes": ["WEAK_ALGORITHM"], "algorithm": "Blowfish", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoABICase13.java", "line": 24, "occurrences": [24], "codes": ["WEAK_ALGORITHM"], "algorithm": "RC4", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoABICase14.java", "line": 24, "occurrences": [24], "codes": ["WEAK_ALGORITHM"], "algorithm": "RC2", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoABICase2.java", "line": 20, "occurrences": [20], "codes": ["WEAK_ALGORITHM"], "algorithm": "Blowfish", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoABICase3.java", "line": 20, "occurrences": [20], "codes": ["WEAK_ALGORITHM"], "algorithm": "RC4", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoABICase4.java", "line": 20, "occurrences": [20], "codes": ["WEAK_ALGORITHM"], "algorithm": "RC2", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoABICase6.java", "line": 11, "occurrences": [11], "codes": ["WEAK_ALGORITHM"], "algorithm": "Blowfish", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoABICase7.java", "line": 11, "occurrences": [11], "codes": ["WEAK_ALGORITHM"], "algorithm": "RC4", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoABICase8.java", "line": 11, "occurrences": [11], "codes": ["WEAK_ALGORITHM"], "algorithm": "RC2", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoABMCCase2.java", "line": 10, "occurrences": [10], "codes": ["WEAK_ALGORITHM"], "algorithm": "Blowfish", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoABMCCase3.java", "line": 11, "occurrences": [11], "codes": ["WEAK_ALGORITHM"], "algorithm": "RC4", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoABMCCase4.java", "line": 10, "occurrences": [10], "codes": ["WEAK_ALGORITHM"], "algorithm": "RC2", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoABPSCase1.java", "line": 14, "occurrences": [14], "codes": ["WEAK_ALGORITHM"], "algorithm": "DES-ECB", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoABPSCase2.java", "line": 13, "occurrences": [13], "codes": ["WEAK_ALGORITHM"], "algorithm": "Blowfish", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoABPSCase3.java", "line": 14, "occurrences": [14], "codes": ["WEAK_ALGORITHM"], "algorithm": "RC4", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoABPSCase4.java", "line": 14, "occurrences": [14], "codes": ["WEAK_ALGORITHM"], "algorithm": "RC2", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoABSCase2.java", "line": 11, "occurrences": [11], "codes": ["WEAK_ALGORITHM"], "algorithm": "Blowfish", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoABSCase3.java", "line": 11, "occurrences": [11], "codes": ["WEAK_ALGORITHM"], "algorithm": "RC4", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoABSCase4.java", "line": 11, "occurrences": [11], "codes": ["WEAK_ALGORITHM"], "algorithm": "RC2", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoBBCase1.java", "line": 13, "occurrences": [13, 15], "codes": ["WEAK_ALGORITHM"], "algorithm": "DES", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoBBCase1.java", "line": 15, "occurrences": [15], "codes": ["WEAK_ALGORITHM"], "algorithm": "DES-ECB", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoBBCase2.java", "line": 12, "occurrences": [12, 14], "codes": ["WEAK_ALGORITHM"], "algorithm": "Blowfish", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoBBCase3.java", "line": 12, "occurrences": [12, 14], "codes": ["WEAK_ALGORITHM"], "algorithm": "RC4", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoBBCase4.java", "line": 12, "occurrences": [12, 14], "codes": ["WEAK_ALGORITHM"], "algorithm": "RC2", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/brokenhash/BrokenHashABICase1.java", "line": 9, "occurrences": [9], "codes": ["WEAK_ALGORITHM"], "algorithm": "SHA-1", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/brokenhash/BrokenHashABICase10.java", "line": 9, "occurrences": [9], "codes": ["WEAK_ALGORITHM"], "algorithm": "MD5", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/brokenhash/BrokenHashABICase2.java", "line": 9, "occurrences": [9], "codes": ["WEAK_ALGORITHM"], "algorithm": "MD5", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/brokenhash/BrokenHashABICase5.java", "line": 7, "occurrences": [7], "codes": ["WEAK_ALGORITHM"], "algorithm": "SHA-1", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/brokenhash/BrokenHashABICase6.java", "line": 7, "occurrences": [7], "codes": ["WEAK_ALGORITHM"], "algorithm": "MD5", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/brokenhash/BrokenHashABICase9.java", "line": 9, "occurrences": [9], "codes": ["WEAK_ALGORITHM"], "algorithm": "SHA-1", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/brokenhash/BrokenHashABMCCase1.java", "line": 9, "occurrences": [9], "codes": ["WEAK_ALGORITHM"], "algorithm": "SHA-1", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/brokenhash/BrokenHashABMCCase2.java", "line": 9, "occurrences": [9], "codes": ["WEAK_ALGORITHM"], "algorithm": "MD5", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/brokenhash/BrokenHashABPSCase1.java", "line": 9, "occurrences": [9], "codes": ["WEAK_ALGORITHM"], "algorithm": "SHA-1", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/brokenhash/BrokenHashABPSCase2.java", "line": 9, "occurrences": [9], "codes": ["WEAK_ALGORITHM"], "algorithm": "MD5", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/brokenhash/BrokenHashABPSCase3.java", "line": 9, "occurrences": [9], "codes": ["WEAK_ALGORITHM"], "algorithm": "MD4", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/brokenhash/BrokenHashABSCase1.java", "line": 12, "occurrences": [12], "codes": ["WEAK_ALGORITHM"], "algorithm": "SHA-1", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/brokenhash/BrokenHashABSCase2.java", "line": 14, "occurrences": [14], "codes": ["WEAK_ALGORITHM"], "algorithm": "MD5", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/brokenhash/BrokenHashBBCase1.java", "line": 9, "occurrences": [9], "codes": ["WEAK_ALGORITHM"], "algorithm": "SHA-1", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/brokenhash/BrokenHashBBCase2.java", "line": 9, "occurrences": [9], "codes": ["WEAK_ALGORITHM"], "algorithm": "MD5", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/brokenhash/BrokenHashBBCase3.java", "line": 9, "occurrences": [9], "codes": ["WEAK_ALGORITHM"], "algorithm": "MD4", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/dummyhostnameverifier/DummyHostNameVerifierCase1.java", "line": 7, "occurrences": [7], "codes": ["TLS_VERIFICATION_DISABLED"], "algorithm": "tls_endpoint:java.hostname_verify_all", "asset_type": null},
-  {"location": "src/main/java/org/cryptoapi/bench/ecbcrypto/EcbInSymmCryptoABICase1.java", "line": 20, "occurrences": [20], "codes": ["WEAK_CIPHER_MODE"], "algorithm": "AES-ECB", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/ecbcrypto/EcbInSymmCryptoABICase2.java", "line": 11, "occurrences": [11], "codes": ["WEAK_CIPHER_MODE"], "algorithm": "AES-ECB", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/ecbcrypto/EcbInSymmCryptoABICase3.java", "line": 23, "occurrences": [23], "codes": ["WEAK_CIPHER_MODE"], "algorithm": "AES-ECB", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/ecbcrypto/EcbInSymmCryptoABMCCase1.java", "line": 10, "occurrences": [10], "codes": ["WEAK_CIPHER_MODE"], "algorithm": "AES-ECB", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/ecbcrypto/EcbInSymmCryptoABPSCase1.java", "line": 13, "occurrences": [13], "codes": ["WEAK_CIPHER_MODE"], "algorithm": "AES-ECB", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/ecbcrypto/EcbInSymmCryptoABSCase1.java", "line": 13, "occurrences": [13], "codes": ["WEAK_CIPHER_MODE"], "algorithm": "AES-ECB", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/ecbcrypto/EcbInSymmCryptoBBCase1.java", "line": 14, "occurrences": [14], "codes": ["WEAK_CIPHER_MODE"], "algorithm": "AES-ECB", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/insecureasymmetriccrypto/InsecureAsymmetricCipherABICase1.java", "line": 12, "occurrences": [12, 16, 24], "codes": ["QUANTUM_VULNERABLE"], "algorithm": "RSA", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/insecureasymmetriccrypto/InsecureAsymmetricCipherABICase2.java", "line": 16, "occurrences": [16, 24, 41], "codes": ["QUANTUM_VULNERABLE"], "algorithm": "RSA", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/insecureasymmetriccrypto/InsecureAsymmetricCipherABICase3.java", "line": 18, "occurrences": [18, 23, 31], "codes": ["QUANTUM_VULNERABLE"], "algorithm": "RSA", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/insecureasymmetriccrypto/InsecureAsymmetricCipherABMC1.java", "line": 13, "occurrences": [13, 16, 17], "codes": ["QUANTUM_VULNERABLE"], "algorithm": "RSA", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/insecureasymmetriccrypto/InsecureAsymmetricCipherABPSCase1.java", "line": 8, "occurrences": [8, 20], "codes": ["QUANTUM_VULNERABLE"], "algorithm": "RSA", "asset_type": "algorithm"},
-  {"location": "src/main/java/org/cryptoapi/bench/insecureasymmetriccrypto/InsecureAsymmetricCipherBBCase1.java", "line": 9, "occurrences": [9, 15, 23], "codes": ["QUANTUM_VULNERABLE"], "algorithm": "RSA", "asset_type": "algorithm"}
+  {
+   "location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoABICase12.java",
+   "line": 23,
+   "occurrences": [
+    23
+   ],
+   "codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "algorithm": "Blowfish",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoABICase13.java",
+   "line": 24,
+   "occurrences": [
+    24
+   ],
+   "codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "algorithm": "RC4",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoABICase14.java",
+   "line": 24,
+   "occurrences": [
+    24
+   ],
+   "codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "algorithm": "RC2",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoABICase2.java",
+   "line": 20,
+   "occurrences": [
+    20
+   ],
+   "codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "algorithm": "Blowfish",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoABICase3.java",
+   "line": 20,
+   "occurrences": [
+    20
+   ],
+   "codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "algorithm": "RC4",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoABICase4.java",
+   "line": 20,
+   "occurrences": [
+    20
+   ],
+   "codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "algorithm": "RC2",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoABICase6.java",
+   "line": 11,
+   "occurrences": [
+    11
+   ],
+   "codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "algorithm": "Blowfish",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoABICase7.java",
+   "line": 11,
+   "occurrences": [
+    11
+   ],
+   "codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "algorithm": "RC4",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoABICase8.java",
+   "line": 11,
+   "occurrences": [
+    11
+   ],
+   "codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "algorithm": "RC2",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoABMCCase2.java",
+   "line": 10,
+   "occurrences": [
+    10
+   ],
+   "codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "algorithm": "Blowfish",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoABMCCase3.java",
+   "line": 11,
+   "occurrences": [
+    11
+   ],
+   "codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "algorithm": "RC4",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoABMCCase4.java",
+   "line": 10,
+   "occurrences": [
+    10
+   ],
+   "codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "algorithm": "RC2",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoABPSCase1.java",
+   "line": 14,
+   "occurrences": [
+    14
+   ],
+   "codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "algorithm": "DES-ECB",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoABPSCase2.java",
+   "line": 13,
+   "occurrences": [
+    13
+   ],
+   "codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "algorithm": "Blowfish",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoABPSCase3.java",
+   "line": 14,
+   "occurrences": [
+    14
+   ],
+   "codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "algorithm": "RC4",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoABPSCase4.java",
+   "line": 14,
+   "occurrences": [
+    14
+   ],
+   "codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "algorithm": "RC2",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoABSCase2.java",
+   "line": 11,
+   "occurrences": [
+    11
+   ],
+   "codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "algorithm": "Blowfish",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoABSCase3.java",
+   "line": 11,
+   "occurrences": [
+    11
+   ],
+   "codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "algorithm": "RC4",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoABSCase4.java",
+   "line": 11,
+   "occurrences": [
+    11
+   ],
+   "codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "algorithm": "RC2",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoBBCase1.java",
+   "line": 13,
+   "occurrences": [
+    13,
+    15
+   ],
+   "codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "algorithm": "DES",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoBBCase1.java",
+   "line": 15,
+   "occurrences": [
+    15
+   ],
+   "codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "algorithm": "DES-ECB",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoBBCase2.java",
+   "line": 12,
+   "occurrences": [
+    12,
+    14
+   ],
+   "codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "algorithm": "Blowfish",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoBBCase3.java",
+   "line": 12,
+   "occurrences": [
+    12,
+    14
+   ],
+   "codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "algorithm": "RC4",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/brokencrypto/BrokenCryptoBBCase4.java",
+   "line": 12,
+   "occurrences": [
+    12,
+    14
+   ],
+   "codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "algorithm": "RC2",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/brokenhash/BrokenHashABICase1.java",
+   "line": 9,
+   "occurrences": [
+    9
+   ],
+   "codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "algorithm": "SHA-1",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/brokenhash/BrokenHashABICase10.java",
+   "line": 9,
+   "occurrences": [
+    9
+   ],
+   "codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "algorithm": "MD5",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/brokenhash/BrokenHashABICase2.java",
+   "line": 9,
+   "occurrences": [
+    9
+   ],
+   "codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "algorithm": "MD5",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/brokenhash/BrokenHashABICase5.java",
+   "line": 7,
+   "occurrences": [
+    7
+   ],
+   "codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "algorithm": "SHA-1",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/brokenhash/BrokenHashABICase6.java",
+   "line": 7,
+   "occurrences": [
+    7
+   ],
+   "codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "algorithm": "MD5",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/brokenhash/BrokenHashABICase9.java",
+   "line": 9,
+   "occurrences": [
+    9
+   ],
+   "codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "algorithm": "SHA-1",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/brokenhash/BrokenHashABMCCase1.java",
+   "line": 9,
+   "occurrences": [
+    9
+   ],
+   "codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "algorithm": "SHA-1",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/brokenhash/BrokenHashABMCCase2.java",
+   "line": 9,
+   "occurrences": [
+    9
+   ],
+   "codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "algorithm": "MD5",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/brokenhash/BrokenHashABPSCase1.java",
+   "line": 9,
+   "occurrences": [
+    9
+   ],
+   "codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "algorithm": "SHA-1",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/brokenhash/BrokenHashABPSCase2.java",
+   "line": 9,
+   "occurrences": [
+    9
+   ],
+   "codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "algorithm": "MD5",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/brokenhash/BrokenHashABPSCase3.java",
+   "line": 9,
+   "occurrences": [
+    9
+   ],
+   "codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "algorithm": "MD4",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/brokenhash/BrokenHashABSCase1.java",
+   "line": 12,
+   "occurrences": [
+    12
+   ],
+   "codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "algorithm": "SHA-1",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/brokenhash/BrokenHashABSCase2.java",
+   "line": 14,
+   "occurrences": [
+    14
+   ],
+   "codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "algorithm": "MD5",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/brokenhash/BrokenHashBBCase1.java",
+   "line": 9,
+   "occurrences": [
+    9
+   ],
+   "codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "algorithm": "SHA-1",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/brokenhash/BrokenHashBBCase2.java",
+   "line": 9,
+   "occurrences": [
+    9
+   ],
+   "codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "algorithm": "MD5",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/brokenhash/BrokenHashBBCase3.java",
+   "line": 9,
+   "occurrences": [
+    9
+   ],
+   "codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "algorithm": "MD4",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/dummycertvalidation/DummyCertValidationCase1.java",
+   "line": 16,
+   "occurrences": [
+    16
+   ],
+   "codes": [
+    "TLS_VERIFICATION_DISABLED"
+   ],
+   "algorithm": "tls_endpoint:java.trust_manager_noop",
+   "asset_type": null
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/dummycertvalidation/DummyCertValidationCase2.java",
+   "line": 15,
+   "occurrences": [
+    15
+   ],
+   "codes": [
+    "TLS_VERIFICATION_DISABLED"
+   ],
+   "algorithm": "tls_endpoint:java.trust_manager_noop",
+   "asset_type": null
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/dummycertvalidation/DummyCertValidationCase3.java",
+   "line": 14,
+   "occurrences": [
+    14
+   ],
+   "codes": [
+    "TLS_VERIFICATION_DISABLED"
+   ],
+   "algorithm": "tls_endpoint:java.trust_manager_noop",
+   "asset_type": null
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/dummyhostnameverifier/DummyHostNameVerifierCase1.java",
+   "line": 7,
+   "occurrences": [
+    7
+   ],
+   "codes": [
+    "TLS_VERIFICATION_DISABLED"
+   ],
+   "algorithm": "tls_endpoint:java.hostname_verify_all",
+   "asset_type": null
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/ecbcrypto/EcbInSymmCryptoABICase1.java",
+   "line": 20,
+   "occurrences": [
+    20
+   ],
+   "codes": [
+    "WEAK_CIPHER_MODE"
+   ],
+   "algorithm": "AES-ECB",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/ecbcrypto/EcbInSymmCryptoABICase2.java",
+   "line": 11,
+   "occurrences": [
+    11
+   ],
+   "codes": [
+    "WEAK_CIPHER_MODE"
+   ],
+   "algorithm": "AES-ECB",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/ecbcrypto/EcbInSymmCryptoABICase3.java",
+   "line": 23,
+   "occurrences": [
+    23
+   ],
+   "codes": [
+    "WEAK_CIPHER_MODE"
+   ],
+   "algorithm": "AES-ECB",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/ecbcrypto/EcbInSymmCryptoABMCCase1.java",
+   "line": 10,
+   "occurrences": [
+    10
+   ],
+   "codes": [
+    "WEAK_CIPHER_MODE"
+   ],
+   "algorithm": "AES-ECB",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/ecbcrypto/EcbInSymmCryptoABPSCase1.java",
+   "line": 13,
+   "occurrences": [
+    13
+   ],
+   "codes": [
+    "WEAK_CIPHER_MODE"
+   ],
+   "algorithm": "AES-ECB",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/ecbcrypto/EcbInSymmCryptoABSCase1.java",
+   "line": 13,
+   "occurrences": [
+    13
+   ],
+   "codes": [
+    "WEAK_CIPHER_MODE"
+   ],
+   "algorithm": "AES-ECB",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/ecbcrypto/EcbInSymmCryptoBBCase1.java",
+   "line": 14,
+   "occurrences": [
+    14
+   ],
+   "codes": [
+    "WEAK_CIPHER_MODE"
+   ],
+   "algorithm": "AES-ECB",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/insecureasymmetriccrypto/InsecureAsymmetricCipherABICase1.java",
+   "line": 12,
+   "occurrences": [
+    12,
+    16,
+    24
+   ],
+   "codes": [
+    "QUANTUM_VULNERABLE"
+   ],
+   "algorithm": "RSA",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/insecureasymmetriccrypto/InsecureAsymmetricCipherABICase2.java",
+   "line": 16,
+   "occurrences": [
+    16,
+    24,
+    41
+   ],
+   "codes": [
+    "QUANTUM_VULNERABLE"
+   ],
+   "algorithm": "RSA",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/insecureasymmetriccrypto/InsecureAsymmetricCipherABICase3.java",
+   "line": 18,
+   "occurrences": [
+    18,
+    23,
+    31
+   ],
+   "codes": [
+    "QUANTUM_VULNERABLE"
+   ],
+   "algorithm": "RSA",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/insecureasymmetriccrypto/InsecureAsymmetricCipherABMC1.java",
+   "line": 13,
+   "occurrences": [
+    13,
+    16,
+    17
+   ],
+   "codes": [
+    "QUANTUM_VULNERABLE"
+   ],
+   "algorithm": "RSA",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/insecureasymmetriccrypto/InsecureAsymmetricCipherABPSCase1.java",
+   "line": 8,
+   "occurrences": [
+    8,
+    20
+   ],
+   "codes": [
+    "QUANTUM_VULNERABLE"
+   ],
+   "algorithm": "RSA",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/insecureasymmetriccrypto/InsecureAsymmetricCipherBBCase1.java",
+   "line": 9,
+   "occurrences": [
+    9,
+    15,
+    23
+   ],
+   "codes": [
+    "QUANTUM_VULNERABLE"
+   ],
+   "algorithm": "RSA",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/pbeiteration/LessThan1000IterationPBEABICase1.java",
+   "line": 19,
+   "occurrences": [
+    19
+   ],
+   "codes": [
+    "WEAK_KDF_ITERATIONS"
+   ],
+   "algorithm": "other (count, LessThan1000IterationPBEABICase1.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/pbeiteration/LessThan1000IterationPBEABICase3.java",
+   "line": 23,
+   "occurrences": [
+    23
+   ],
+   "codes": [
+    "WEAK_KDF_ITERATIONS"
+   ],
+   "algorithm": "other (count, LessThan1000IterationPBEABICase3.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/pbeiteration/LessThan1000IterationPBEABMC1.java",
+   "line": 13,
+   "occurrences": [
+    13
+   ],
+   "codes": [
+    "WEAK_KDF_ITERATIONS"
+   ],
+   "algorithm": "other (count, LessThan1000IterationPBEABMC1.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/pbeiteration/LessThan1000IterationPBEABSCase1.java",
+   "line": 37,
+   "occurrences": [
+    37
+   ],
+   "codes": [
+    "WEAK_KDF_ITERATIONS"
+   ],
+   "algorithm": "other (passedCount, LessThan1000IterationPBEABSCase1.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/pbeiteration/LessThan1000IterationPBEBBCase1.java",
+   "line": 17,
+   "occurrences": [
+    17
+   ],
+   "codes": [
+    "WEAK_KDF_ITERATIONS"
+   ],
+   "algorithm": "other (count, LessThan1000IterationPBEBBCase1.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/predictablecryptographickey/PredictableCryptographicKeyABHCase2.java",
+   "line": 22,
+   "occurrences": [
+    22
+   ],
+   "codes": [
+    "HARDCODED_KEY"
+   ],
+   "algorithm": "secret-key (keyBytes, PredictableCryptographicKeyABHCase2.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/predictablecryptographickey/PredictableCryptographicKeyABICase1.java",
+   "line": 16,
+   "occurrences": [
+    16
+   ],
+   "codes": [
+    "HARDCODED_KEY"
+   ],
+   "algorithm": "secret-key (keyBytes, PredictableCryptographicKeyABICase1.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/predictablecryptographickey/PredictableCryptographicKeyABICase2.java",
+   "line": 27,
+   "occurrences": [
+    27
+   ],
+   "codes": [
+    "HARDCODED_KEY"
+   ],
+   "algorithm": "secret-key (keyBytes, PredictableCryptographicKeyABICase2.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/predictablecryptographickey/PredictableCryptographicKeyABICase3.java",
+   "line": 18,
+   "occurrences": [
+    18
+   ],
+   "codes": [
+    "HARDCODED_KEY"
+   ],
+   "algorithm": "secret-key (keyBytes, PredictableCryptographicKeyABICase3.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/predictablecryptographickey/PredictableCryptographicKeyABMC1.java",
+   "line": 10,
+   "occurrences": [
+    10
+   ],
+   "codes": [
+    "HARDCODED_KEY"
+   ],
+   "algorithm": "secret-key (keyBytes, PredictableCryptographicKeyABMC1.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/predictablecryptographickey/PredictableCryptographicKeyBBCase1.java",
+   "line": 12,
+   "occurrences": [
+    12
+   ],
+   "codes": [
+    "HARDCODED_KEY"
+   ],
+   "algorithm": "secret-key (keyBytes, PredictableCryptographicKeyBBCase1.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/predictablekeystorepassword/PredictableKeyStorePasswordABHCase2.java",
+   "line": 31,
+   "occurrences": [
+    31
+   ],
+   "codes": [
+    "HARDCODED_KEY"
+   ],
+   "algorithm": "password (key, PredictableKeyStorePasswordABHCase2.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/predictablekeystorepassword/PredictableKeyStorePasswordABICase1.java",
+   "line": 22,
+   "occurrences": [
+    22
+   ],
+   "codes": [
+    "HARDCODED_KEY"
+   ],
+   "algorithm": "password (key, PredictableKeyStorePasswordABICase1.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/predictablekeystorepassword/PredictableKeyStorePasswordABICase2.java",
+   "line": 33,
+   "occurrences": [
+    33
+   ],
+   "codes": [
+    "HARDCODED_KEY"
+   ],
+   "algorithm": "password (encryptKey, PredictableKeyStorePasswordABICase2.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/predictablekeystorepassword/PredictableKeyStorePasswordABICase3.java",
+   "line": 27,
+   "occurrences": [
+    27
+   ],
+   "codes": [
+    "HARDCODED_KEY"
+   ],
+   "algorithm": "password (key, PredictableKeyStorePasswordABICase3.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/predictablekeystorepassword/PredictableKeyStorePasswordABMC1.java",
+   "line": 17,
+   "occurrences": [
+    17
+   ],
+   "codes": [
+    "HARDCODED_KEY"
+   ],
+   "algorithm": "password (key, PredictableKeyStorePasswordABMC1.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/predictablekeystorepassword/PredictableKeyStorePasswordABSCase1.java",
+   "line": 34,
+   "occurrences": [
+    34
+   ],
+   "codes": [
+    "HARDCODED_KEY"
+   ],
+   "algorithm": "password (passedKey, PredictableKeyStorePasswordABSCase1.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/predictablekeystorepassword/PredictableKeyStorePasswordBBCase1.java",
+   "line": 23,
+   "occurrences": [
+    23
+   ],
+   "codes": [
+    "HARDCODED_KEY"
+   ],
+   "algorithm": "password (defaultKey, PredictableKeyStorePasswordBBCase1.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/predictablepbepassword/PredictablePBEPasswordABHCase2.java",
+   "line": 30,
+   "occurrences": [
+    30
+   ],
+   "codes": [
+    "HARDCODED_KEY"
+   ],
+   "algorithm": "password (key, PredictablePBEPasswordABHCase2.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/predictablepbepassword/PredictablePBEPasswordABICase1.java",
+   "line": 22,
+   "occurrences": [
+    22
+   ],
+   "codes": [
+    "HARDCODED_KEY"
+   ],
+   "algorithm": "password (password, PredictablePBEPasswordABICase1.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/predictablepbepassword/PredictablePBEPasswordABICase2.java",
+   "line": 33,
+   "occurrences": [
+    33
+   ],
+   "codes": [
+    "HARDCODED_KEY"
+   ],
+   "algorithm": "password (encryptKey, PredictablePBEPasswordABICase2.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/predictablepbepassword/PredictablePBEPasswordABICase3.java",
+   "line": 28,
+   "occurrences": [
+    28
+   ],
+   "codes": [
+    "HARDCODED_KEY"
+   ],
+   "algorithm": "password (password, PredictablePBEPasswordABICase3.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/predictablepbepassword/PredictablePBEPasswordABMC1.java",
+   "line": 16,
+   "occurrences": [
+    16
+   ],
+   "codes": [
+    "HARDCODED_KEY"
+   ],
+   "algorithm": "password (password, PredictablePBEPasswordABMC1.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/predictablepbepassword/PredictablePBEPasswordABSCase1.java",
+   "line": 37,
+   "occurrences": [
+    37
+   ],
+   "codes": [
+    "HARDCODED_KEY"
+   ],
+   "algorithm": "password (passedPassword, PredictablePBEPasswordABSCase1.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/predictablepbepassword/PredictablePBEPasswordBBCase1.java",
+   "line": 22,
+   "occurrences": [
+    22
+   ],
+   "codes": [
+    "HARDCODED_KEY"
+   ],
+   "algorithm": "password (defaultKey, PredictablePBEPasswordBBCase1.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/predictablepbepassword/PredictablePBEPasswordBBCase2.java",
+   "line": 22,
+   "occurrences": [
+    22
+   ],
+   "codes": [
+    "HARDCODED_KEY"
+   ],
+   "algorithm": "password (defaultKey, PredictablePBEPasswordBBCase2.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/predictableseeds/PredictableSeedsABHCase2.java",
+   "line": 19,
+   "occurrences": [
+    19
+   ],
+   "codes": [
+    "WEAK_RNG"
+   ],
+   "algorithm": "seed (seed, PredictableSeedsABHCase2.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/predictableseeds/PredictableSeedsABHCase4.java",
+   "line": 22,
+   "occurrences": [
+    22
+   ],
+   "codes": [
+    "WEAK_RNG"
+   ],
+   "algorithm": "seed (inline, PredictableSeedsABHCase4.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/predictableseeds/PredictableSeedsABICase1.java",
+   "line": 13,
+   "occurrences": [
+    13
+   ],
+   "codes": [
+    "WEAK_RNG"
+   ],
+   "algorithm": "seed (seed, PredictableSeedsABICase1.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/predictableseeds/PredictableSeedsABICase2.java",
+   "line": 12,
+   "occurrences": [
+    12
+   ],
+   "codes": [
+    "WEAK_RNG"
+   ],
+   "algorithm": "seed (inline, PredictableSeedsABICase2.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/predictableseeds/PredictableSeedsABICase4.java",
+   "line": 24,
+   "occurrences": [
+    24
+   ],
+   "codes": [
+    "WEAK_RNG"
+   ],
+   "algorithm": "seed (inline, PredictableSeedsABICase4.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/predictableseeds/PredictableSeedsABICase5.java",
+   "line": 17,
+   "occurrences": [
+    17
+   ],
+   "codes": [
+    "WEAK_RNG"
+   ],
+   "algorithm": "seed (seed, PredictableSeedsABICase5.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/predictableseeds/PredictableSeedsABICase6.java",
+   "line": 16,
+   "occurrences": [
+    16
+   ],
+   "codes": [
+    "WEAK_RNG"
+   ],
+   "algorithm": "seed (inline, PredictableSeedsABICase6.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/predictableseeds/PredictableSeedsABMC1.java",
+   "line": 8,
+   "occurrences": [
+    8
+   ],
+   "codes": [
+    "WEAK_RNG"
+   ],
+   "algorithm": "seed (seed, PredictableSeedsABMC1.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/predictableseeds/PredictableSeedsABMC2.java",
+   "line": 7,
+   "occurrences": [
+    7
+   ],
+   "codes": [
+    "WEAK_RNG"
+   ],
+   "algorithm": "seed (inline, PredictableSeedsABMC2.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/predictableseeds/PredictableSeedsABSCase1.java",
+   "line": 34,
+   "occurrences": [
+    34
+   ],
+   "codes": [
+    "WEAK_RNG"
+   ],
+   "algorithm": "seed (passedSeed, PredictableSeedsABSCase1.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/predictableseeds/PredictableSeedsABSCase2.java",
+   "line": 30,
+   "occurrences": [
+    30
+   ],
+   "codes": [
+    "WEAK_RNG"
+   ],
+   "algorithm": "seed (inline, PredictableSeedsABSCase2.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/predictableseeds/PredictableSeedsBBCase1.java",
+   "line": 10,
+   "occurrences": [
+    10
+   ],
+   "codes": [
+    "WEAK_RNG"
+   ],
+   "algorithm": "seed (bytes, PredictableSeedsBBCase1.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/predictableseeds/PredictableSeedsBBCase2.java",
+   "line": 8,
+   "occurrences": [
+    8
+   ],
+   "codes": [
+    "WEAK_RNG"
+   ],
+   "algorithm": "seed (inline, PredictableSeedsBBCase2.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/staticinitializationvector/StaticInitializationVectorABHCase1.java",
+   "line": 21,
+   "occurrences": [
+    21
+   ],
+   "codes": [
+    "STATIC_IV"
+   ],
+   "algorithm": "initialization-vector (bytes, StaticInitializationVectorABHCase1.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/staticinitializationvector/StaticInitializationVectorABHCase2.java",
+   "line": 31,
+   "occurrences": [
+    31
+   ],
+   "codes": [
+    "STATIC_IV"
+   ],
+   "algorithm": "initialization-vector (bytes, StaticInitializationVectorABHCase2.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/staticinitializationvector/StaticInitializationVectorABICase1.java",
+   "line": 12,
+   "occurrences": [
+    12
+   ],
+   "codes": [
+    "STATIC_IV"
+   ],
+   "algorithm": "initialization-vector (bytes, StaticInitializationVectorABICase1.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/staticinitializationvector/StaticInitializationVectorABICase2.java",
+   "line": 17,
+   "occurrences": [
+    17
+   ],
+   "codes": [
+    "STATIC_IV"
+   ],
+   "algorithm": "initialization-vector (inline, StaticInitializationVectorABICase2.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/staticinitializationvector/StaticInitializationVectorABICase3.java",
+   "line": 12,
+   "occurrences": [
+    12
+   ],
+   "codes": [
+    "STATIC_IV"
+   ],
+   "algorithm": "initialization-vector (bytes, StaticInitializationVectorABICase3.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/staticinitializationvector/StaticInitializationVectorABMC1.java",
+   "line": 14,
+   "occurrences": [
+    14
+   ],
+   "codes": [
+    "STATIC_IV"
+   ],
+   "algorithm": "initialization-vector (bytes, StaticInitializationVectorABMC1.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/staticinitializationvector/StaticInitializationVectorABSCase1.java",
+   "line": 32,
+   "occurrences": [
+    32
+   ],
+   "codes": [
+    "STATIC_IV"
+   ],
+   "algorithm": "initialization-vector (passedIV, StaticInitializationVectorABSCase1.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/staticinitializationvector/StaticInitializationVectorBBCase1.java",
+   "line": 18,
+   "occurrences": [
+    18
+   ],
+   "codes": [
+    "STATIC_IV"
+   ],
+   "algorithm": "initialization-vector (bytes, StaticInitializationVectorBBCase1.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/staticsalts/StaticSaltsABHCase1.java",
+   "line": 25,
+   "occurrences": [
+    25
+   ],
+   "codes": [
+    "STATIC_SALT"
+   ],
+   "algorithm": "salt (salt, StaticSaltsABHCase1.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/staticsalts/StaticSaltsABICase1.java",
+   "line": 16,
+   "occurrences": [
+    16
+   ],
+   "codes": [
+    "STATIC_SALT"
+   ],
+   "algorithm": "salt (salt, StaticSaltsABICase1.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/staticsalts/StaticSaltsABICase2.java",
+   "line": 27,
+   "occurrences": [
+    27
+   ],
+   "codes": [
+    "STATIC_SALT"
+   ],
+   "algorithm": "salt (inline, StaticSaltsABICase2.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/staticsalts/StaticSaltsABICase3.java",
+   "line": 18,
+   "occurrences": [
+    18
+   ],
+   "codes": [
+    "STATIC_SALT"
+   ],
+   "algorithm": "salt (salt, StaticSaltsABICase3.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/staticsalts/StaticSaltsABMC1.java",
+   "line": 8,
+   "occurrences": [
+    8
+   ],
+   "codes": [
+    "STATIC_SALT"
+   ],
+   "algorithm": "salt (salt, StaticSaltsABMC1.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/staticsalts/StaticSaltsABSCase1.java",
+   "line": 27,
+   "occurrences": [
+    27
+   ],
+   "codes": [
+    "STATIC_SALT"
+   ],
+   "algorithm": "salt (passedSalt, StaticSaltsABSCase1.java)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "src/main/java/org/cryptoapi/bench/staticsalts/StaticSaltsBBCase1.java",
+   "line": 15,
+   "occurrences": [
+    15
+   ],
+   "codes": [
+    "STATIC_SALT"
+   ],
+   "algorithm": "salt (salt, StaticSaltsBBCase1.java)",
+   "asset_type": "related-crypto-material"
+  }
  ]
 }

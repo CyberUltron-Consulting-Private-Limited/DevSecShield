@@ -387,8 +387,9 @@ def test_a_lost_detection_or_a_new_false_positive_fails_a_floor():
 
 @pytest.mark.skipif(not os.environ.get("D1_WORK"), reason="needs the fetched benchmarks: D1_WORK=<d1.py prepare --work>")
 def test_benchmark_targets_fail_on_todays_product():
-    """Failing-first on the public benchmarks: with dev's code-lane output (baseline/, dev 3df26fd) every CB-27 target
-    fails, e.g. the BB cases of static IV 0/1, static salts 0/1, seeds 0/2, and every non-regression floor holds."""
+    """On the baseline product (baseline/, the CB-27 build) every target still open fails and every non-regression
+    floor holds. CB-27 met the BB targets for static IV, static salts and seeds: 1/1, 1/1, 2/2 here (0/1, 0/1, 0/2 on
+    dev 3df26fd, when they were targets)."""
     work = Path(os.environ["D1_WORK"])
     res = {}
     for bench in ("cryptoapi-bench", "owasp-benchmark"):
@@ -402,7 +403,7 @@ def test_benchmark_targets_fail_on_todays_product():
     assert all(e["status"] == "pass" for e in ev.values() if e["kind"] == "non-regression")
     bb = {c: judge.metrics(judge.select(res["cryptoapi-bench"], {"complexity": "basis-benchmark", "category": c}),
                            "matched") for c in ("staticinitializationvector", "staticsalts", "predictableseeds")}
-    assert [(m["tp"], m["vulnerable"]) for m in bb.values()] == [(0, 1), (0, 1), (0, 2)]
+    assert [(m["tp"], m["vulnerable"]) for m in bb.values()] == [(1, 1), (1, 1), (2, 2)]
 
 
 # ------------------------------------------------------------------------------------------------ review 5878689101
@@ -514,8 +515,9 @@ def test_a_detector_on_the_empty_check_server_trusted_counts_for_j9():
     its trust-manager cases by that method); the comment and the anonymous class are on line 57. A correct CB-27
     detector reporting line 59 is a hit, not a new extra."""
     rows = observed.load(D1 / "baseline" / "observed-corpus.json", "corpus")["rows"]
-    rows = rows + [row("java/src/main/java/com/bank/Crypto.java", 59, ["TLS_VERIFICATION_DISABLED"],
-                       "tls_endpoint:java.empty_check_server_trusted")]
+    # CB-27's detector is that detector: the baseline product reports line 59 itself
+    assert [r["algorithm"] for r in rows if r["location"].endswith("com/bank/Crypto.java") and r["line"] == 59] == [
+        "tls_endpoint:java.trust_manager_noop"]
     res, extras = corpus_results(rows, OSV_TODAY)
     j9 = next(r for r in res["corpus"] if r["case_id"] == "J9")
     assert j9["lines"] == [57, 59] and j9["status"] == "hit"
