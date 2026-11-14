@@ -7,6 +7,7 @@ export const cbomSourcesKeys = {
   all: (teamId: number) => ["cbom-sources", teamId] as const,
   overview: (teamId: number) => ["cbom-sources", teamId, "overview"] as const,
   nodes: (teamId: number) => ["cbom-sources", teamId, "nodes"] as const,
+  nodeArtifacts: (teamId: number) => ["cbom-sources", teamId, "node-artifacts"] as const,
   sources: (teamId: number, group?: string) => ["cbom-sources", teamId, "items", group ?? "all"] as const,
   job: (teamId: number, jobId: number) => ["cbom-sources", teamId, "job", jobId] as const,
   settings: (teamId: number) => ["cbom-sources", teamId, "settings"] as const,

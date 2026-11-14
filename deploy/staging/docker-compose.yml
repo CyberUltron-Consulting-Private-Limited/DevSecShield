@@ -153,6 +153,11 @@ services:
       # 1 = GET /health and X-ZS-Build name the deployed commit publicly (staging, labs: the gate compares it);
       # default off (production). Signed-in users read it from GET /version either way. README "Build identity".
       DSS_EXPOSE_BUILD: ${DSS_EXPOSE_BUILD:-0}
+      # Scan node downloads (Add scan node: image file, Helm chart, OVA/AMI build kits): the files of the running tag,
+      # written by `staging.sh push` (README "Scan node downloads"). Missing: the wizard says they are not available.
+      CBOM_NODE_ARTIFACT_DIR: /node-artifacts
+      # Optional: the node image in a registry customers can pull from; unset = the wizard offers the file only.
+      CBOM_NODE_IMAGE_REF: ${CBOM_NODE_IMAGE_REF:-}
       # A test deployment: CBOM_AWS_LAB_SAME_ACCOUNT (backend.env) may work here; production refuses it (lab_mode.py).
       DSS_ENV: staging
     depends_on:
@@ -171,6 +176,7 @@ services:
     volumes:
       - backend-data:/backend/data
       - ../../compose/aibom-config-overlay:/aibom/config:ro
+      - ./node-artifacts/${DSS_TAG:?set DSS_TAG}:/node-artifacts:ro
     networks: [internal, edge]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=5)"]

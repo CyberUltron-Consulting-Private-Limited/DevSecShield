@@ -228,7 +228,16 @@ class OnlyStaging(unittest.TestCase):
         code = "\n".join(line for line in WF.splitlines()
                          if not line.lstrip().startswith(("#", "description:")))
         self.assertNotRegex(code, r"(?i)\bprod(uction)?\b|rollback")
-        self.assertEqual(re.findall(r"scripts/deploy/staging\.sh (\w+)", code), ["build", "save", "push"])
+        self.assertEqual(re.findall(r"scripts/deploy/staging\.sh ([\w-]+)", code),
+                         ["build", "save", "node-artifacts", "push"])
+
+    def test_the_scan_node_downloads_are_built_and_shipped_with_the_release(self):
+        build = JOBS["build"]
+        self.assertIn("run: scripts/deploy/staging.sh node-artifacts", build)
+        # uploaded with the images (same artifact, so the deploy job downloads them next to the archive)
+        upload = [p for p in steps("build") if "actions/upload-artifact" in p]
+        self.assertEqual(len(upload), 1)
+        self.assertIn("deploy/staging/images/node-artifacts/*", upload[0])
 
     def test_the_job_set_is_build_and_deploy(self):
         self.assertEqual(sorted(JOBS), ["build", "deploy"])

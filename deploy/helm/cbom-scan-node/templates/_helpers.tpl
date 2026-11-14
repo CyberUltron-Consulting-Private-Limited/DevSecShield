@@ -19,6 +19,9 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" }}
 {{- end -}}
 
 {{- define "cbom-scan-node.image" -}}
+{{- if and (hasPrefix "localhost/" (toString .Values.image.repository)) (ne (toString .Values.image.pullPolicy) "Never") -}}
+{{- fail (printf "image.repository is %s, the name the downloaded scan node image file loads as, which no cluster can pull. Push the image to a registry your cluster pulls from and set image.repository (and image.tag) to it, or load it on every node and set image.pullPolicy=Never." .Values.image.repository) -}}
+{{- end -}}
 {{- printf "%s:%s" .Values.image.repository (default .Chart.AppVersion (toString .Values.image.tag)) -}}
 {{- end -}}
 

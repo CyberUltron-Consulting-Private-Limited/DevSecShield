@@ -936,6 +936,7 @@ def record_run_drift(session: Session, run: CbomCollectionRun, now: _dt.datetime
         return None
     sources = _sources(session, run.team_id)
     rows: list[dict[str, Any]] = []
+    loaded: dict[int, list[CbomCollectedAsset]] = {}  # job id -> rows, read once for the estate store too (CB-20)
     not_read = 0
     for job in _run_jobs(session, run):
         if not job_comparable(job)[0]:
@@ -945,7 +946,7 @@ def record_run_drift(session: Session, run: CbomCollectionRun, now: _dt.datetime
         base = _baseline_job(session, job, ref, sources)
         base_run = session.get(CbomCollectionRun, base.run_id) if base is not None and base.run_id else None
         reclassify = base is not None and rules_differ(base_run, run)
-        a_rows = _job_assets(session, job)
+        a_rows = loaded[job.id or 0] = _job_assets(session, job)
         after = node_views(a_rows, ref, reclassify=reclassify)
         rows += _expiring(run.team_id, now, after, scope="node", source_ref=ref, source_name=name, run_id=run.id)
         if base is None:
@@ -966,7 +967,17 @@ def record_run_drift(session: Session, run: CbomCollectionRun, now: _dt.datetime
         # read with coverage gaps, and what those gaps left unread: "0 resolved" is not "everything was read" (F2)
         "partial_sources": sum(1 for j in complete if j.outcome == "partial"), "not_read": not_read,
         "assets": sum(int(j.asset_count or 0) for j in jobs), "events": _kind_counts(rows[:EVENT_CAP])})
+    record_estate(session, run, now, loaded)
     return stored
+
+
+def record_estate(session: Session, run: CbomCollectionRun, now: _dt.datetime,
+                  loaded: Mapping[int, list[CbomCollectedAsset]] | None = None) -> None:
+    """The run's estate-store write (CB-20) and its hooks (CB-23), in the transaction that won ``drift_at`` but in a
+    savepoint: a store error never undoes the drift recording (the store is marked stale for the backfill)."""
+    from backend.utilities.cbom_sources import estate
+
+    estate.record_run_safely(session, run, now, loaded=loaded)
 
 
 def run_not_read(session: Session, run: CbomCollectionRun) -> list[dict[str, Any]]:
