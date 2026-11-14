@@ -3,6 +3,7 @@
  *  1. Registry integrity: every entry has a label, a "what it is", a "why it matters" and an example of
  *     sensible length, and a
  *     `// src: <file>:<line>` note above it naming the backend (or frontend) code the text was checked against;
+ *     in a frontend file that renders the tip, one cited line (3 lines either side) must show the tip's id or label;
  *     each named file exists and has that line.
  *  2. Every id used in the app exists, and every entry is used (no orphan text).
  *  3. Coverage: in every covered page, each field, filter, setting, metric and column header has a tip of its own
@@ -81,11 +82,6 @@ export const COVERED: string[] = [
 ];
 /** Files under a covered directory that are not covered yet, each with the reason. */
 export const NOT_YET_COVERED = new Map<string, string>([
-  // The Fleet tab's Inventory, Policies and Credentials sections (F1.2 UI, PR #81) reached dev while this PR was open;
-  // their tips follow in their own PR so this one does not grow further.
-  ["components/cbom/sources/fleet/CredentialsSection.tsx", "Fleet credentials (F1.2 UI, PR #81): tips in a follow-up PR"],
-  ["components/cbom/sources/fleet/InventorySection.tsx", "Fleet inventory (F1.2 UI, PR #81): tips in a follow-up PR"],
-  ["components/cbom/sources/fleet/PoliciesSection.tsx", "Fleet policies (F1.2 UI, PR #81): tips in a follow-up PR"],
 ]);
 /** Dashboards: their h2/h3 chart titles need a tip as well. */
 export const DASHBOARDS = new Set<string>(["app/[team_id]/page.tsx"]);
@@ -127,17 +123,38 @@ for (const id of ids) {
     problems.push(`${id}: no "// src: <file>:<line>" comment directly above the entry`);
     continue;
   }
-  const refs = [...note.matchAll(/([A-Za-z0-9_.\[\]/-]+\.[a-z]{1,5}):(\d+)(?:-(\d+))?/g)];
+  // <file>:<line>, <file>:<a>-<b>, or a list of them for one file: <file>:<a>-<b>,<c>
+  const refs = [...note.matchAll(/([A-Za-z0-9_.\[\]/-]+\.[a-z]{1,5}):(\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*)/g)];
   if (refs.length === 0) problems.push(`${id}: src note names no <file>:<line>`);
+  const cited = new Map<string, (readonly [number, number])[]>(); // file -> every span the note cites in it
   for (const r of refs) {
     const file = path.join(repo, r[1]);
     if (!fs.existsSync(file)) {
       problems.push(`${id}: src file not found: ${r[1]}`);
       continue;
     }
-    const lines = read(file).split("\n").length;
-    const last = Number(r[3] ?? r[2]);
-    if (Number(r[2]) < 1 || last > lines) problems.push(`${id}: ${r[1]} has ${lines} lines, the note cites ${r[2]}${r[3] ? "-" + r[3] : ""}`);
+    const text = read(file).split("\n");
+    const spans = r[2].split(",").map((p) => p.split("-").map(Number)).map(([a, b]) => [a, b ?? a] as const);
+    for (const [a, b] of spans) {
+      if (a < 1 || b < a || b > text.length) problems.push(`${id}: ${r[1]} has ${text.length} lines, the note cites ${a}${b !== a ? "-" + b : ""}`);
+    }
+    cited.set(r[1], [...(cited.get(r[1]) ?? []), ...spans]);
+  }
+  // a frontend file that renders the tip: one line the note cites in it (3 lines either side) shows the tip's id or
+  // its label, so a note cannot drift away from where the tip is used (line numbers moved by later edits fail here)
+  for (const [rel, spans] of cited) {
+    if (!/^frontend\/.*\.tsx$/.test(rel)) continue;
+    const text = read(path.join(repo, rel)).split("\n");
+    if (!text.some((l) => l.includes(`"${id}"`))) continue;
+    const label = (tip.label ?? "").slice(0, 24).toLowerCase();
+    const near = spans.some(([a, b]) => {
+      const seg = text.slice(Math.max(0, a - 4), b + 3).join("\n");
+      return seg.includes(`"${id}"`) || (label !== "" && seg.toLowerCase().includes(label));
+    });
+    if (!near) {
+      const at = text.findIndex((l) => l.includes(`"${id}"`)) + 1;
+      problems.push(`${id}: ${rel} renders the tip at line ${at}, but no line the note cites there shows its id or label (re-point the note)`);
+    }
   }
 }
 assert.deepEqual(problems, [], "registry problems:\n" + problems.join("\n"));
