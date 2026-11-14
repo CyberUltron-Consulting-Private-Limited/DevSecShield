@@ -113,7 +113,14 @@ def audit(
     object_id: int | None,
     changed_fields: Iterable[str] = (),
 ) -> None:
-    """Add an audit row to the caller's transaction (field names only, never values)."""
+    """Add an audit row to the caller's transaction (field names only, never values).  A change made with a CBOM API
+    key is marked as a machine call: ``actor_type="api_key"``, ``actor_id`` = the key's id (its row names its
+    creator)."""
+    if actor_type == "user":
+        from backend.utilities.cbom_sources.api_keys import active_key_id  # api_keys imports this module
+        key_id = active_key_id()
+        if key_id is not None:
+            actor_type, actor_id = "api_key", key_id
     session.add(
         CbomCollectionAuditEvent(
             team_id=team_id,
