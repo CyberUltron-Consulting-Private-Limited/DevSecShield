@@ -4283,7 +4283,7 @@ export interface CbomTestSample {
 
 export interface CbomAwsCheck {
     check: string
-    status: "pass" | "fail" | "skipped" | "error"
+    status: "pass" | "fail" | "skipped" | "error" | "warning"
     detail: string
 }
 
