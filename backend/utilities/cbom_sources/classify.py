@@ -7,10 +7,13 @@ cannot mark its own findings.  Impact uses the CBOM report vocabulary (Critical 
 from __future__ import annotations
 
 import datetime as _dt
+import json
 import re
+import threading
 from typing import Any
 
-from backend.utilities.cbom_sources import crypto_kb
+from backend.utilities.cbom_sources import algid, crypto_kb
+from backend.utilities.cbom_sources.common import log
 
 IMPACTS = ("Critical", "High", "Medium", "Low")
 _RANK = {name: i for i, name in enumerate(IMPACTS)}
@@ -45,9 +48,6 @@ def register(asset_type: str, rule: Any, cdx_type: str = "other") -> None:
     CDX_TYPE[asset_type] = cdx_type
 
 
-# Public-key families broken by a large quantum computer (Shor).
-_QV_FAMILIES = ("RSA", "DSA", "DH", "ECDSA", "ECDH", "EC", "ED25519", "ED448", "EDDSA", "X25519", "X448", "ECC", "SM2")
-_PQ_MARKERS = ("MLKEM", "ML-KEM", "KYBER", "MLDSA", "ML-DSA", "SLHDSA", "SLH-DSA", "SPHINCS", "FALCON", "SNTRUP", "FRODO", "HQC")
 _WEAK_CIPHER_RE = re.compile(r"(^|[-_])(RC4|DES|3DES|DES-CBC3|NULL|EXPORT|EXP|ANON|ADH|AECDH|IDEA|SEED|RC2|MD5)([-_]|$)", re.I)
 
 
@@ -56,30 +56,113 @@ def _upper(text: Any) -> str:
 
 
 def family(algorithm: Any) -> str | None:
-    """Normalised public-key family of an algorithm name (RSA, EC, ED25519 ...), or None."""
-    text = _upper(algorithm)
-    if not text:
-        return None
-    if any(marker in text.replace("-", "") or marker in text for marker in _PQ_MARKERS):
-        return "PQ"
-    # EdDSA without a named curve (a JWK of kty OKP with no crv) is an Edwards-curve signature, not DSA
-    for name in ("ED25519", "ED448", "X25519", "X448", "EDDSA", "ECDSA", "ECDH", "DSA", "RSA", "SM2"):
-        if name in text:
-            return name
-    if text.startswith(("EC", "ID-EC", "PRIME256", "SECP", "P-256", "P-384", "P-521", "NIST")):
-        return "EC"
-    if text in ("DH", "DHE", "FFDHE") or text.startswith(("DH-", "FFDHE", "DIFFIE")):
-        return "DH"
-    return None
+    """Normalised public-key family of an algorithm identifier (RSA, EC, ED25519, PQ ...), or None.
+
+    The identity comes from ``algid`` (the one table of algorithm identities shared with the scan node and the code
+    lane): a dotted OID, a registry or cloud name, an alias, a post-quantum marker, then today's classical name rules
+    with a token-bounded DSA (a post-quantum signature whose name ends in DSA is never DSA)."""
+    return algid.family_label(algorithm)
 
 
 def quantum_vulnerable(algorithm: Any) -> bool | None:
-    fam = family(algorithm)
-    if fam is None:
+    """True when a large quantum computer breaks the public-key algorithm (Shor), False for post-quantum (pure, hybrid
+    or composite), None when the identifier carries no public-key verdict (symmetric, hash, unknown)."""
+    return algid.quantum_vulnerable(algorithm)
+
+
+# Asset types that carry a key or certificate algorithm: an identifier on them that algid does not know is logged.
+KEY_BEARING_TYPES = frozenset({"certificate", "k8s_tls_secret", "iam_certificate", "cloud_ca", "private_key",
+                               "public_key", "ssh_host_key", "signing_key", "kms_key", "k8s_certificate",
+                               "managed_key"})
+_UNKNOWN_LIMIT = 1024  # distinct values logged per process; the set never grows past it
+_unknown_seen: set[str] = set()
+_unknown_lock = threading.Lock()
+
+
+def note_unknown(asset_type: str, value: Any) -> None:
+    """Log ``classify unknown identifier`` once per process for an identifier on a key-bearing asset that names no
+    known algorithm (a private-arc OID, an enum value a newer SDK added).  Placeholders ("<NULL>", "Unknown OID") and
+    known identifiers log nothing.  The value is quoted and cut to 64 characters, so it stays one greppable line."""
+    if asset_type not in KEY_BEARING_TYPES or not isinstance(value, str) or algid.is_sentinel(value):
+        return
+    text = value.strip()
+    if algid.resolve(text) is not None:
+        return
+    with _unknown_lock:
+        if text in _unknown_seen or len(_unknown_seen) >= _UNKNOWN_LIMIT:
+            return
+        _unknown_seen.add(text)
+    log("classify unknown identifier", type=asset_type, value=json.dumps(text[:64]))
+
+
+# algid primitives (CycloneDX 1.6) of a key exchange: a post-quantum identifier in a key-exchange slot (a TLS group, an
+# SSH kex method, an IKE group) is post-quantum key-exchange evidence only with one of these.  A post-quantum signature
+# there (a lattice or hash-based signature, a signature OID) is no key exchange; every real PQ group and method is
+# a KEM.
+KEX_PRIMITIVES = frozenset({"kem", "key-agree"})
+
+
+def kex_identity(value: Any, namespace: str | None = None) -> algid.Identity | None:
+    """algid's identity of an identifier in a key-exchange slot: exact in ``namespace`` (tls_group, ssh_kex, ike_ke)
+    first, then the generic lookup for a spelling the registry does not list (an oqs-provider name)."""
+    if not isinstance(value, str):
         return None
-    if fam == "PQ":
+    return (algid.resolve(value, namespace) if namespace else None) or algid.resolve(value)
+
+
+def pq_key_exchange(value: Any, namespace: str | None = None) -> bool:
+    """Whether an identifier in a key-exchange slot names a post-quantum key exchange: algid knows it as quantum safe
+    or hybrid AND as a KEM or key agreement."""
+    found = kex_identity(value, namespace)
+    return found is not None and found.quantum in ("safe", "hybrid") and found.primitive in KEX_PRIMITIVES
+
+
+def _group_vulnerable(group: Any) -> bool | None:
+    """The quantum verdict of a TLS endpoint's negotiated group: False for a post-quantum key exchange, True for a
+    classical group (P-256 names both an ECDSA and an ECDH curve, so a classical identifier is not checked for its
+    primitive), None for an unknown identifier and for a post-quantum identifier that is no key exchange (a signature
+    in the group slot proves nothing about the key exchange)."""
+    found = kex_identity(group, "tls_group")
+    if found is None or found.quantum is None:
+        return None
+    if found.quantum == "vulnerable":
+        return True
+    return False if found.primitive in KEX_PRIMITIVES else None
+
+
+def pq_kex_evidence(facts: dict[str, Any]) -> bool | None:
+    """Whether a TLS endpoint's facts show a post-quantum key exchange: True, False, or None when they say nothing.
+
+    ``pq_group_supported`` (a cloud policy, or set before) is the answer when present.  Otherwise a ``pq_hybrid`` probe
+    hit, or a negotiated or probed group that algid knows as a post-quantum (pure or hybrid) KEM or key agreement, is
+    True: a node before CB-04 reported ``pq_hybrid: false`` next to a negotiated hybrid group when the server's
+    certificate was post-quantum.  ``pq_hybrid: false`` with no such group is False; a post-quantum signature in a group
+    slot is no such group.  Placeholder groups ("<NULL>") count as absent."""
+    supported = facts.get("pq_group_supported")
+    if isinstance(supported, bool):
+        return supported
+    if facts.get("pq_hybrid") is True:
+        return True
+    for key in ("negotiated_group", "pq_group", "group"):
+        if pq_key_exchange(facts.get(key), "tls_group"):
+            return True
+    if facts.get("pq_hybrid") is False:
         return False
-    return fam in _QV_FAMILIES
+    return None
+
+
+def cert_identity_input(algorithm: Any, facts: dict[str, Any]) -> Any:
+    """The identifier a certificate's quantum verdict is judged by: the key's OID when the collector sent one, else
+    its raw key algorithm when algid knows that as post-quantum (an AWS Private CA row stored before CB-04 says
+    ``algorithm: ECDSA`` next to its post-quantum ``key_alg`` enum), else the stored algorithm as before.  A classical verdict
+    never moves: only a post-quantum raw identifier is preferred over the stored name."""
+    oid = facts.get("key_alg_oid")
+    if isinstance(oid, str) and oid.strip():
+        return oid
+    key_alg = facts.get("key_alg")
+    if key_alg and algid.quantum_vulnerable(key_alg) is False:
+        return key_alg
+    return algorithm or key_alg
 
 
 def _parse_time(value: Any) -> _dt.datetime | None:
@@ -164,6 +247,19 @@ def _cert_rules(out: _Out, facts: dict[str, Any], algorithm: Any, size: Any, now
         out.add("CERT_SELF_SHA1", None, f"Self-signed {what}: {sha1_note}")
     if facts.get("in_use") is False:
         out.add("CERT_UNUSED", "Low", "Certificate is not attached to any resource (orphaned)")
+    # Certificate Transparency facts (ct_collect): the team's expected issuers, revocation, wildcard sprawl
+    if facts.get("issuer_expected") is False:
+        issuer = facts.get("issuer_name") or facts.get("issuer") or "an unknown issuer"
+        out.add("CERT_UNEXPECTED_CA", "Medium",
+                f"Issued by {str(issuer)[:80]}, which is not in the team's list of certificate authorities")
+    if facts.get("revoked") is True:
+        when = str(facts.get("revocation_time") or "")[:10]
+        out.add("CERT_REVOKED", "Low", "Certificate is revoked" + (f" (since {when})" if when else "")
+                + "; a server that still presents it fails for clients that check revocation")
+    sprawl = facts.get("wildcard_sprawl")
+    if isinstance(sprawl, dict) and isinstance(sprawl.get("certificates"), int):
+        out.add("CERT_WILDCARD_SPRAWL", "Low",
+                f"One of {sprawl['certificates']} live wildcard certificates for {str(sprawl.get('name'))[:80]}")
     _key_rules(out, algorithm or facts.get("key_alg"), size or facts.get("key_size"), "Certificate key")
 
 
@@ -207,7 +303,7 @@ def _tls_rules(out: _Out, facts: dict[str, Any], what: str) -> None:
         impact, label = _TLS_OLD[min_version]
         out.add(f"MIN_{label.replace(' ', '').replace('.', '')}", impact, f"{what} allows {label} as the minimum version")
     group = facts.get("group") or facts.get("negotiated_group")
-    if facts.get("pq_group_supported") is False or (facts.get("pq_group_supported") is None and group and quantum_vulnerable(group)):
+    if facts.get("pq_group_supported") is False or (facts.get("pq_group_supported") is None and group and _group_vulnerable(group)):
         out.add("NO_PQ_KEX", "Low", f"{what} has no post-quantum key exchange")
 
 
@@ -240,7 +336,7 @@ def _ssh_rules(out: _Out, facts: dict[str, Any], what: str) -> bool | None:
     kex = kex.split(",") if isinstance(kex, str) else kex
     if not kex:
         return None
-    pq = any(quantum_vulnerable(k) is False for k in kex)
+    pq = any(pq_key_exchange(k, "ssh_kex") for k in kex)  # a post-quantum signature is no key exchange
     if not pq:
         out.add("SSH_NO_PQ_KEX", "Low", f"{what} has no post-quantum key exchange")
     return not pq
@@ -263,8 +359,12 @@ def _normalise(asset_type: str, facts: dict[str, Any]) -> dict[str, Any]:
             out.setdefault("weak_ciphers", list(weak.get("obsolete") or []))
             out.setdefault("static_rsa_kex", bool(weak.get("static_rsa")))
             out.setdefault("cbc_accepted", bool(weak.get("cbc")))
-        if facts.get("pq_hybrid") is not None and "pq_group_supported" not in out:
-            out["pq_group_supported"] = bool(facts.get("pq_hybrid"))
+        for key in ("group", "negotiated_group", "pq_group"):
+            if algid.is_sentinel(out.get(key)):
+                out[key] = None  # s_client prints "<NULL>" when no group was negotiated: no group, not an unknown one
+        evidence = pq_kex_evidence(facts)
+        if evidence is not None and "pq_group_supported" not in out:
+            out["pq_group_supported"] = evidence
         if facts.get("tls") is False or facts.get("plaintext_only"):
             out["plaintext_only"] = True
     if asset_type == "ssh_endpoint":
@@ -417,7 +517,10 @@ def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, fact
         qv = None  # a CA bundle summary (one row per bundle) is inventory, not a finding
     elif asset_type in ("certificate", "k8s_tls_secret", "iam_certificate", "cloud_ca"):
         _cert_rules(out, facts, algorithm, key_size, now)
-        qv = quantum_vulnerable(algorithm or facts.get("key_alg"))
+        identity = cert_identity_input(algorithm, facts)
+        qv = quantum_vulnerable(identity)
+        if qv is None:
+            note_unknown(asset_type, identity)
     elif asset_type in ("private_key", "public_key", "ssh_host_key", "signing_key", "kms_key", "k8s_certificate"):
         _key_rules(out, algorithm, key_size, {"private_key": "Private key", "public_key": "Public key",
                                               "ssh_host_key": "SSH host key", "signing_key": "Signing key",
@@ -432,6 +535,8 @@ def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, fact
             out.add("KEY_WORLD_READABLE", "High", "Unencrypted private key is readable by every user")
         if asset_type == "private_key" and facts.get("plaintext_in_cloud_config"):
             out.add("SECRET_IN_CONFIG", "High", f"Private key stored in plain text in {facts.get('store') or 'cloud configuration'}")
+        if asset_type != "kms_key" and qv is None:
+            note_unknown(asset_type, algorithm)
         if asset_type == "kms_key":
             if facts.get("rotation_enabled") is False and facts.get("key_spec") == "SYMMETRIC_DEFAULT" \
                     and facts.get("key_manager") == "CUSTOMER":
@@ -439,7 +544,10 @@ def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, fact
             if facts.get("key_state") == "PendingDeletion":
                 out.add("KMS_PENDING_DELETION", "Low", "KMS key is pending deletion")
             if facts.get("key_spec") and facts.get("key_spec") != "SYMMETRIC_DEFAULT":
-                qv = quantum_vulnerable(facts.get("key_spec"))
+                spec = algid.aws("kms", "KeySpec", facts.get("key_spec"))
+                qv = quantum_vulnerable(spec.name) if spec is not None else quantum_vulnerable(facts.get("key_spec"))
+                if spec is None and qv is None:
+                    note_unknown(asset_type, facts.get("key_spec"))
             elif facts.get("key_spec") == "SYMMETRIC_DEFAULT":
                 qv = False
         if asset_type == "signing_key" and _upper(facts.get("signature_alg")).replace("-", "").endswith("SHA1"):
@@ -452,7 +560,7 @@ def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, fact
         if facts.get("pq_group_supported") is True:
             qv = False  # the server accepts a post-quantum hybrid when the client offers one
         elif group:
-            qv = quantum_vulnerable(group)
+            qv = _group_vulnerable(group)
         elif facts.get("protocols") or facts.get("cipher"):
             qv = True
         if facts.get("http_listener"):
@@ -671,17 +779,31 @@ for _m in sorted(m.name for m in _pkgutil.iter_modules(_classify_ext.__path__)):
     _importlib.import_module(f"{_classify_ext.__name__}.{_m}")
 
 
-def _rules_version() -> str:
-    """A digest of the classification rules in force (this module and every classify_ext module), so a run records
-    exactly which rules judged it without anyone having to remember to bump a number."""
-    import hashlib
+def _rules_files() -> list[str]:
+    """Every file whose content decides a verdict: this module, each classify_ext module, and every ``algid*.py``
+    beside algid (the resolver and the generated tables it reads, algid_tables.py). Matching by name rather than
+    listing the tables file means a later split of the tables cannot fall out of the digest; a test fails if algid
+    ever imports a sibling module outside the pattern."""
     import os
 
-    digest = hashlib.sha256()
     folder = os.path.dirname(_classify_ext.__file__)
     paths = [__file__] + [os.path.join(folder, f"{m}.py")
                           for m in sorted(m.name for m in _pkgutil.iter_modules(_classify_ext.__path__))]
-    for path in paths:
+    here = os.path.dirname(algid.__file__)
+    paths += [os.path.join(here, name) for name in sorted(os.listdir(here))
+              if name.startswith("algid") and name.endswith(".py")]
+    return paths
+
+
+def _rules_version() -> str:
+    """A digest of the classification rules in force (``_rules_files``: the rules and the algorithm identities they
+    read), so a run records exactly which rules judged it without anyone having to remember to bump a number. A
+    table-only change (a regenerated algid_tables.py) changes it, so drift reads that run pair as a rule change and
+    not as a change in the estate."""
+    import hashlib
+
+    digest = hashlib.sha256()
+    for path in _rules_files():
         try:
             with open(path, "rb") as fh:
                 digest.update(fh.read())
@@ -722,10 +844,15 @@ def _date_may_matter(asset_type: str, facts: dict[str, Any], then: _dt.datetime,
     return False
 
 
-def verdict_today(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, facts: dict[str, Any] | None,
-                  collected_at: _dt.datetime | None, now: _dt.datetime | None = None) -> dict[str, Any] | None:
-    """The verdict of a stored asset judged ``now`` when a date-based rule judges it differently than on its
-    collection date; None when the stored verdict stands (no date-based rule applies, or nothing changed)."""
+# The codes a date-based rule adds or removes; everything else in a stored verdict is the run's.
+DATE_CODES = frozenset({"CERT_EXPIRED", "CERT_EXPIRES_30D", "LIB_EOL"})
+
+
+def _then_and_now(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, facts: dict[str, Any] | None,
+                  collected_at: _dt.datetime | None, now: _dt.datetime | None
+                  ) -> tuple[dict[str, Any], dict[str, Any]] | None:
+    """(verdict on the collection date, verdict ``now``), both by the current rules, when a date-based rule judges
+    the asset differently on the two dates; None when the stored verdict stands."""
     if asset_type not in DATED_TYPES or collected_at is None:
         return None
     facts = facts or {}
@@ -738,22 +865,65 @@ def verdict_today(asset_type: str, algorithm: Any, key_size: Any, protocol: Any,
     if (then_v["finding_codes"], then_v["impact"], then_v["finding"]) == \
             (now_v["finding_codes"], now_v["impact"], now_v["finding"]):
         return None
-    return now_v
+    return then_v, now_v
+
+
+def verdict_today(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, facts: dict[str, Any] | None,
+                  collected_at: _dt.datetime | None, now: _dt.datetime | None = None) -> dict[str, Any] | None:
+    """The verdict of a stored asset judged ``now`` when a date-based rule judges it differently than on its
+    collection date; None when the stored verdict stands (no date-based rule applies, or nothing changed)."""
+    pair = _then_and_now(asset_type, algorithm, key_size, protocol, facts, collected_at, now)
+    return pair[1] if pair else None
+
+
+def _worse(a: str | None, b: str | None) -> str | None:
+    if a is None or (b is not None and _RANK.get(b, len(IMPACTS)) < _RANK.get(a, len(IMPACTS))):
+        return b
+    return a
+
+
+def _date_delta(stored_codes: list[str], stored_impact: str | None, stored_finding: str | None,
+                then_v: dict[str, Any], now_v: dict[str, Any]) -> dict[str, Any]:
+    """The stored verdict with only the date-based codes moved from ``then_v`` to ``now_v``: the rules changed since
+    the run, so every other code (an identity code such as QUANTUM_VULNERABLE) stays as the run judged it, next to the
+    run's stored quantum verdict.  Impact: the worse of the stored one and the added date codes'."""
+    then_dates = [c for c in then_v["finding_codes"] if c in DATE_CODES]
+    now_dates = [c for c in now_v["finding_codes"] if c in DATE_CODES]
+    removed = [c for c in then_dates if c not in now_dates]
+    added = [c for c in now_dates if c not in then_dates and c not in stored_codes]
+    codes = [c for c in stored_codes if c not in removed] + added
+    gone = {then_v["texts"].get(c) for c in removed}
+    kept = [part for part in (stored_finding or "").split("; ") if part and part not in gone]
+    finding = "; ".join(dict.fromkeys([now_v["texts"][c] for c in added] + kept))[:512] or None
+    impact = stored_impact  # the worst of the stored impact and the added date codes' impacts
+    for code in added:
+        impact = _worse(impact, now_v["impacts"].get(code))
+    impacts = {c: then_v["impacts"][c] for c in codes if c in then_v["impacts"]}
+    impacts.update({c: now_v["impacts"][c] for c in added})
+    return {"impact": impact, "finding_codes": codes, "finding": finding, "impacts": impacts}
 
 
 def shown(row: Any, now: _dt.datetime | None = None) -> dict[str, Any]:
     """What every view shows for a stored asset row: its stored verdict, or today's when a date-based rule changed
-    it, with the run's verdict kept in ``as_of_run`` (None when nothing changed)."""
+    it, with the run's verdict kept in ``as_of_run`` (None when nothing changed).
+
+    When the rules changed since the run (re-judging the run date no longer gives the stored codes), only the
+    date-based codes move; an old run never shows new identity codes next to its old quantum verdict."""
     now = now or _dt.datetime.utcnow()
     try:
-        today = verdict_today(row.asset_type, row.algorithm, row.key_size, row.protocol, row.facts or {},
-                              row.created_at, now)
+        pair = _then_and_now(row.asset_type, row.algorithm, row.key_size, row.protocol, row.facts or {},
+                             row.created_at, now)
     except Exception:  # an asset the current rules cannot read keeps its stored verdict
-        today = None
+        pair = None
     codes = [c for c in row.finding_codes or [] if isinstance(c, str)]
-    if today is None:
+    if pair is None:
         return {"impact": row.impact, "finding_codes": codes, "finding": row.finding, "impacts": None,
                 "as_of_run": None}
+    then_v, now_v = pair
+    if set(then_v["finding_codes"]) == set(codes):
+        today = now_v
+    else:
+        today = _date_delta(codes, row.impact, row.finding, then_v, now_v)
     return {"impact": today["impact"], "finding_codes": list(today["finding_codes"]), "finding": today["finding"],
             "impacts": today["impacts"],
             "as_of_run": {"date": row.created_at.date().isoformat(), "judged_on": now.date().isoformat(),

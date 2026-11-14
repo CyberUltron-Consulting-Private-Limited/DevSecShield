@@ -12,16 +12,17 @@ from typing import Any
 from sqlmodel import Session, select
 
 from backend.new_models import CbomCollectedAsset, CbomCollectionJob, CbomCollectionSource
+from backend.utilities.cbom_sources import algid
 from backend.utilities.cbom_sources import identity as ID
 
 IMPACTS = ("Critical", "High", "Medium", "Low", "none")
 _RANK = {name: i for i, name in enumerate(IMPACTS)}
 CERT_CAP = 2_000
-# (family, tokens or prefixes): first match wins, so post-quantum hybrids ("x25519mlkem768") are not read as ECC and
-# a certificate's key algorithm wins over its signature hash.
+# (family, tokens or prefixes): first match wins, so a certificate's key algorithm wins over its signature hash.
+# Post-quantum names are algid's (algorithm_family asks algid first, so a hybrid group is never read as ECC): the one
+# post-quantum token left is NTRU, which is no algid marker (algid only knows its NTRU Prime variant).
 FAMILY_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("Post-quantum", ("mlkem", "ml-kem", "kyber", "mldsa", "ml-dsa", "dilithium", "slhdsa", "slh-dsa", "sphincs",
-                      "falcon", "frodo", "ntru", "hqc")),
+    ("Post-quantum", ("ntru",)),
     ("EdDSA", ("ed25519", "ed448", "eddsa")),
     ("RSA", ("rsa",)),
     ("Elliptic curve", ("ecdsa", "ecdh", "ecdhe", "ec", "secp", "prime256", "p256", "p384", "p521", "nistp", "x25519",
@@ -67,12 +68,31 @@ def _match(text: str) -> str | None:
     return None
 
 
+# algid's public-key family labels as heat-map families
+_ALGID_FAMILY = {"PQ": "Post-quantum", "RSA": "RSA", "EC": "Elliptic curve", "ECDSA": "Elliptic curve",
+                 "ECDH": "Elliptic curve", "X25519": "Elliptic curve", "X448": "Elliptic curve",
+                 "SM2": "Elliptic curve", "ED25519": "EdDSA", "ED448": "EdDSA", "EDDSA": "EdDSA",
+                 "DH": "Diffie-Hellman", "DSA": "DSA"}
+
+
+def _algid_family(text: str) -> str | None:
+    """The family of an identifier algid knows by OID, registry or cloud name, alias or post-quantum marker
+    (a KMS post-quantum signing enum is post-quantum, not DSA; a post-quantum OID is not "Other"). Its classical name
+    fallback is left to the token rules below, which read cipher-suite names the way they always have."""
+    found = algid.resolve(algid.compare_key(text))
+    if found is None or found.matched_by == "fallback":
+        return None
+    return _ALGID_FAMILY.get(found.family_label or "")
+
+
 def algorithm_family(algorithm: str | None, asset_type: str | None, facts: dict[str, Any] | None = None) -> str:
     facts = facts or {}
     for text in (algorithm, facts.get("key_alg"), facts.get("group"), facts.get("kex"), facts.get("cipher"),
                  facts.get("sig_alg"), facts.get("method")):
         if text:
-            found = _match(str(text))
+            # then the token rules on the text as written, then on the algorithm a cloud enum names
+            # (SYMMETRIC_DEFAULT is AES-256-GCM)
+            found = _algid_family(str(text)) or _match(str(text)) or _match(str(algid.compare_key(str(text))))
             if found:
                 return found
     if asset_type in ("crypto_library", "process_library", "library"):
