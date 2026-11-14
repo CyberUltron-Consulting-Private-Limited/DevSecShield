@@ -264,6 +264,12 @@ class Agent:
 
     def heartbeat_loop(self) -> None:
         while not self.shutdown.is_set():
+            if not self.state.node_token:
+                # revoked (on_unauthorized cleared it): nothing to heartbeat with until the claim loop enrolls the
+                # node again; a token-less heartbeat only earns node_token_missing and a misleading "proxy" error
+                self.mark_alive()
+                self.shutdown.wait(5)
+                continue
             try:
                 self.heartbeat_once()
             except Unauthorized:
