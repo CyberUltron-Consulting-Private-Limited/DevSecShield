@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import concurrent.futures as cf
 import contextlib
-import ipaddress
 import json
 import os
 import shutil
@@ -17,9 +16,12 @@ import tempfile
 import time
 from typing import Any
 
-from zs_scan_node.collectors import ConfigError
+from urllib.parse import urlsplit
+
+from zs_scan_node import netutil
+from zs_scan_node.collectors import ConfigError, skipped_never_scan
 from zs_scan_node.jobctx import JobContext
-from zs_scan_node.netutil import Blocked, Target, checked_ip, expand_targets, resolve_checked
+from zs_scan_node.netutil import Blocked, Target, checked_ip, expand_targets, is_ip, resolve_checked
 from zs_scan_node.scrub import printable
 
 SCRIPTS = {
@@ -243,45 +245,59 @@ def endpoint(target: Target, config: dict) -> str:
     if port == 5985:
         raise _Fail("identity_unverified", "WinRM over HTTP (5985) cannot prove the server; use HTTPS (5986). "
                     "The password was not sent")
-    host = target.ip if _is_ip(target.label) else target.label
+    host = target.ip if is_ip(target.label) else target.label
     if ":" in str(host):
         host = f"[{host}]"
     return f"https://{host}:{port}/wsman"
 
 
-def _is_ip(text: str) -> bool:
+def check_name(ctx: JobContext, target: Target) -> str:
+    """The address the session connects to.  WinRM speaks to the name (so the certificate can prove the server), so
+    the name is resolved again here and every address it has now must be allowed (resolve_checked refuses the name
+    if any is listed); the session is then pinned to the first of them (_session), never to a later DNS answer."""
     try:
-        ipaddress.ip_address(str(text))
-        return True
-    except ValueError:
-        return False
-
-
-def check_name(ctx: JobContext, target: Target) -> None:
-    """WinRM connects by the name (so the certificate can prove the server), and the HTTP client resolves it again.
-    Every address the name has must therefore be allowed, not just the one checked when targets were expanded."""
-    try:
-        if _is_ip(target.label):
+        if is_ip(target.label):
             # checked again per target: a never-scan entry added after the job started applies to the rest of it
-            checked_ip(target.ip or target.label, ctx.never_scan)
-            return
-        resolve_checked(target.label, ctx.never_scan, every=True)
-    except Blocked:
-        raise _Fail("skipped_never_scan", f"{target.label} is on the never-scan list or resolves to an address on "
-                                          "it") from None
+            return checked_ip(target.ip or target.label, ctx.never_scan)
+        return resolve_checked(target.label, ctx.never_scan)[0]
+    except Blocked as exc:
+        raise _Fail("skipped_never_scan", str(exc)) from None
     except OSError:
         raise _Fail("unreachable", f"could not resolve {target.label}") from None
 
 
 def _session(ctx: JobContext, target: Target, config: dict, password: str, ca_path: str | None = None):
-    """The WinRM session for one target, opened only after the name passed the network gate (check_name)."""
+    """The WinRM session for one target, opened only after the name passed the network gate (check_name), and
+    pinned to the checked address: pywinrm's requests session connects only there (netutil.requests_adapter), with
+    no proxy, while the certificate is still checked against the name."""
     import winrm
 
-    check_name(ctx, target)
+    ip = check_name(ctx, target)
+    url = endpoint(target, config)
+    # message_encryption="never": over HTTPS it is TLS that protects the messages ("auto" is the same there), and it
+    # guarantees pywinrm sends nothing while it builds a session, before the pinned adapter is mounted.
+    sess = winrm.Session(url, auth=(str(config.get("login_user") or "svc-zscbom"), password), transport="ntlm",
+                         server_cert_validation="validate", ca_trust_path=ca_path or "legacy_requests",
+                         read_timeout_sec=60, operation_timeout_sec=50, proxy=None, message_encryption="never")
+    transport = sess.protocol.transport
+    build = transport.build_session
+    host = urlsplit(url).hostname or ""
+    pin = (host.strip("[]").lower().rstrip("."), ip)
 
-    return winrm.Session(endpoint(target, config), auth=(str(config.get("login_user") or "svc-zscbom"), password),
-                         transport="ntlm", server_cert_validation="validate",
-                         ca_trust_path=ca_path or "legacy_requests", read_timeout_sec=60, operation_timeout_sec=50)
+    def build_pinned():
+        # pywinrm builds its requests session lazily and again after close_session(); every session it hands out is
+        # checked here, however it was built, so none can connect without the pin (fail closed)
+        session = build()
+        if getattr(session.get_adapter(url), "zs_pinned_to", None) != pin or session.trust_env:
+            session.trust_env = False
+            session.proxies = {}
+            adapter = netutil.requests_adapter(host, ip, ctx.never_scan)
+            session.mount("https://", adapter)
+            session.mount("http://", adapter)
+        return session
+
+    transport.build_session = build_pinned
+    return sess
 
 
 # WS-Management fault codes (Win32 error numbers) the server returns after a successful login
@@ -310,6 +326,8 @@ def _fault(exc: Exception) -> "_Fail | None":
 def _run(sess, name: str) -> tuple[int, str, str]:
     try:
         r = sess.run_ps(SCRIPTS[name])
+    except Blocked as exc:  # the pinned address was listed while the job ran (netutil.requests_adapter)
+        raise _Fail("skipped_never_scan", str(exc)) from None
     except Exception as exc:  # requests/winrm raise many types
         fault = _fault(exc)
         if fault is not None:
@@ -399,9 +417,9 @@ def _password(ctx: JobContext, config: dict, secrets: dict) -> str:
 
 def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str | None:
     password = _password(ctx, config, secrets)
-    targets, skipped = expand_targets(scope.get("targets") or [], ctx.never_scan)
-    for label in skipped:
-        ctx.outcome(label, "skipped_never_scan")
+    reasons: dict[str, str] = {}  # a skipped target says which address and entry matched
+    targets, skipped = expand_targets(scope.get("targets") or [], ctx.never_scan, reasons=reasons)
+    skipped_never_scan(ctx, skipped, reasons)
 
     def one(target: Target):
         started = time.monotonic()
@@ -432,7 +450,9 @@ def test(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
         ctx.samples.append({"target": "-", "status": "error", "reachable": None, "login": False, "privilege": None,
                             "note": str(exc)})
         return str(exc)
-    targets, _ = expand_targets(scope.get("targets") or [], ctx.never_scan)
+    reasons: dict[str, str] = {}
+    targets, skipped = expand_targets(scope.get("targets") or [], ctx.never_scan, reasons=reasons)
+    skipped_never_scan(ctx, skipped, reasons, samples=True)
     with _ca_file(config) as ca_path:
         for target in targets[:5]:
             _test_one(ctx, target, config, password, ca_path)

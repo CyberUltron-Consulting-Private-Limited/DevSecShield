@@ -247,7 +247,9 @@ def fake_net(monkeypatch):
                  "203.0.113.9", "gitlab.com": "203.0.113.10", "registry.example.com": "203.0.113.11",
                  "auth.example.com": "203.0.113.12", "evil.example.com": "203.0.113.13",
                  "meta.example.com": "169.254.169.254", "local.example.com": "127.0.0.1",
-                 "v6meta.example.com": "fd00:ec2::254", "mapped.example.com": "::ffff:127.0.0.1"}
+                 "v6meta.example.com": "fd00:ec2::254", "mapped.example.com": "::ffff:127.0.0.1",
+                 "sink.example.com": "0.0.0.0", "v6sink.example.com": "::",  # what DNS sinkholes answer
+                 "zero8.example.com": "0.1.2.3", "nat64sink.example.com": "64:ff9b::"}  # the rest of 0.0.0.0/8, NAT64
     monkeypatch.setattr(netutil, "resolve", lambda name, timeout=5.0: [addresses[name]])
     monkeypatch.setattr(netutil, "http_client", lambda url, ip, never, **kw: _FakeClient(url, ip))
     return _FakeClient
@@ -275,16 +277,33 @@ def test_vault_credentials_reach_docker_hub_and_gitlab_token_services_only(fake_
 
 
 @pytest.mark.parametrize("realm_host", ["127.0.0.1", "169.254.169.254", "meta.example.com", "local.example.com",
-                                        "v6meta.example.com", "mapped.example.com", "0.0.0.0"])
+                                        "v6meta.example.com", "mapped.example.com", "0.0.0.0", "sink.example.com",
+                                        "v6sink.example.com", "0.1.2.3", "[64:ff9b::]", "[::ffff:0.1.2.3]",
+                                        "zero8.example.com", "nat64sink.example.com"])
 def test_a_registry_cannot_send_the_node_to_loopback_or_link_local(fake_net, realm_host):
     reg = CI.Registry(_ctx(), CI.parse_ref("registry.example.com/app:1"), dict(CREDS), None)
     reg._client(reg.base + "/v2/")
-    with pytest.raises(CI.ImageError, match="refused"):
+    # reported as the registry steering the node (status "error", "refused"), also for the unspecified addresses
+    # that the never-scan gate refuses on its own: a hostile registry must not look like a never-scan skip
+    with pytest.raises(CI.ImageError, match="refused") as err:
         reg._authenticate(f'Bearer realm="https://{realm_host}/token"')
+    assert err.value.status == "error"
     _FakeClient.redirect_to = f"https://{realm_host}/latest/meta-data/"
-    with pytest.raises(CI.ImageError, match="refused"):
+    with pytest.raises(CI.ImageError, match="refused") as err:
         reg.get("/v2/app/blobs/sha256:" + "a" * 64, stream=True)
+    assert err.value.status == "error"
     assert not [s for s in fake_net.seen if s[0].startswith(f"https://{realm_host}")]
+
+
+@pytest.mark.parametrize("realm_host", ["0.0.0.0", "sink.example.com", "v6sink.example.com", "0.1.2.3",
+                                        "[64:ff9b::]", "zero8.example.com"])
+def test_a_registry_steering_the_node_to_itself_is_worded_as_such(fake_net, realm_host):
+    """0.0.0.0/8 and :: are neither link-local nor metadata: the refusal says the address reaches the node itself."""
+    reg = CI.Registry(_ctx(), CI.parse_ref("registry.example.com/app:1"), dict(CREDS), None)
+    reg._client(reg.base + "/v2/")
+    with pytest.raises(CI.ImageError) as err:
+        reg._authenticate(f'Bearer realm="https://{realm_host}/token"')
+    assert "an address that reaches the node itself" in err.value.detail and "link-local" not in err.value.detail
 
 
 def test_a_registry_on_loopback_may_use_loopback_for_its_token_service_and_blobs(lab_factory):
