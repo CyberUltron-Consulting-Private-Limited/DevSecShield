@@ -673,7 +673,11 @@ def test_assets_are_stored_classified_deduplicated_and_scrubbed(api, world):
     cdx = api("GET", f"/1/cbom/sources/runs/{run['id']}/cbom")
     assert cdx.status_code == 200 and "attachment" in cdx.headers["content-disposition"]
     bom = cdx.json()
-    assert bom["specVersion"] == "1.6" and len(bom["components"]) == listed["all_total"]
+    # one zs-asset-<id> component per asset; certificate parts (CB-06: shared by bom-ref, zs:part_of) are not assets
+    assets = [c for c in bom["components"] if c["bom-ref"].startswith("zs-asset-")]
+    parts = [c for c in bom["components"] if not c["bom-ref"].startswith("zs-asset-")]
+    assert bom["specVersion"] == "1.6" and len(assets) == listed["all_total"]
+    assert all({"name": "zs:part_of", "value": "certificate"} in c["properties"] for c in parts)
     kinds = {c.get("cryptoProperties", {}).get("assetType") for c in bom["components"]}
     assert {"certificate", "protocol"} <= kinds
     assert any(p["name"] == "zs:gap" and "auth_failed" in p["value"] for p in bom["metadata"]["properties"])
