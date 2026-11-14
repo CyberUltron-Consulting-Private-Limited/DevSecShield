@@ -4,12 +4,12 @@
  "product": {
   "entry": "aibom.integrations.cbom_devsecshield.scan_crypto_to_devsecshield",
   "level": 4,
-  "git_sha": "b34398aae3c765e86f78fdf9608f386f256de728",
+  "git_sha": "233b8a4e627d31e3183c872b326de4e40ffa608d",
   "aibom_dirty": false,
-  "kb_version": "2026.11.15.1",
+  "kb_version": "2026.11.15.2",
   "scan_tree_sha256": "943e9f8acc812e9d6914e9592964e70c01e9bd01890e3ba368da159759db1a50",
   "scan_tree_files": 976,
-  "seconds": 25.38,
+  "seconds": 13.7,
   "result_rows": 598
  },
  "rows": [

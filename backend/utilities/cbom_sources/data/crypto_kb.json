@@ -3576,7 +3576,7 @@
      "CWE-916"
     ],
     "default_impact": "Medium",
-    "description": "A constant iteration count below 1,000 reaches a password-based key derivation (PBEKeySpec, PBEParameterSpec). NIST SP 800-132 sets 1,000 as the minimum; current guidance is far higher.",
+    "description": "A constant iteration count below the minimum for the API reaches a password-based key derivation: below 1,000 for Java's PBEKeySpec / PBEParameterSpec (NIST SP 800-132), below 100,000 for .NET's Rfc2898DeriveBytes, whose constructors without a count use 1,000 (Microsoft rule CA5387).",
     "fix_class": {
      "basis": "the salt or iteration count is fixed in the team's own source code: the code changes, then a rebuild and release",
      "capability": false,
@@ -3602,19 +3602,25 @@
     "pqc": null,
     "references": [
      "https://csrc.nist.gov/pubs/sp/800/132/final",
-     "https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html"
+     "https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html",
+     "https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca5387"
     ],
     "remediation": {
      "steps": [
       {
        "how": "SecretKeyFactory.getInstance(\"PBKDF2WithHmacSHA256\") with new PBEKeySpec(password, salt, 600000, 256)",
        "platform": "Java"
+      },
+      {
+       "how": "Rfc2898DeriveBytes.Pbkdf2(password, salt, 600000, HashAlgorithmName.SHA256, 32)",
+       "platform": ".NET"
       }
      ],
      "summary": "Use PBKDF2 with at least 600,000 iterations for HMAC-SHA256 (OWASP), or a memory-hard KDF such as Argon2id or scrypt, and keep the count in configuration so it can rise."
     },
     "standards": [
      "NIST SP 800-132 (section 5.2: at least 1,000 iterations)",
+     "Microsoft code analysis rule CA5387 (Rfc2898DeriveBytes: at least 100,000 iterations)",
      "OWASP Password Storage Cheat Sheet (PBKDF2-HMAC-SHA256: 600,000 iterations)"
     ],
     "summary_rules": [],
@@ -3958,6 +3964,75 @@
      {
       "command": "grep -n -i 'random' '{path}'",
       "label": "Show the call site"
+     }
+    ],
+    "vex_default": {
+     "basis": "static",
+     "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan"
+    }
+   },
+   "WEAK_RSA_EXPONENT": {
+    "attack": "With e = 3, a verifier that checks PKCS#1 v1.5 signature padding loosely accepts signatures an attacker forges without the private key (Bleichenbacher, 2006), and a small message encrypted without proper padding is recovered by taking its integer cube root.",
+    "category": "code",
+    "clause_rules": [],
+    "clauses": [
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140"
+    ],
+    "compliance": [
+     "algorithms"
+    ],
+    "cve_rules": [],
+    "cves": [],
+    "cwe": [
+     "CWE-326"
+    ],
+    "default_impact": "High",
+    "description": "The code generates RSA keys with public exponent e = 3 (for example BN_set_word(e, 3) or RSA_3 before RSA_generate_key_ex). FIPS 186-5 requires an exponent greater than 2^16; 65537 is the standard choice.",
+    "fix_class": {
+     "basis": "the exponent is chosen in the team's own key-generation code: the code changes and the keys are re-issued",
+     "capability": false,
+     "class": "code-fixed"
+    },
+    "owasp": [
+     "crypto"
+    ],
+    "owasp_2021": [
+     {
+      "basis": "CWE-326 is in OWASP's mapped CWE list",
+      "id": "A02:2021",
+      "label": "A02:2021 - Cryptographic Failures"
+     }
+    ],
+    "owasp_2025": [
+     {
+      "basis": "CWE-326 is in OWASP's mapped CWE list",
+      "id": "A04:2025",
+      "label": "A04:2025 - Cryptographic Failures"
+     }
+    ],
+    "pqc": null,
+    "references": [
+     "https://csrc.nist.gov/pubs/fips/186-5/final"
+    ],
+    "remediation": {
+     "steps": [
+      {
+       "how": "BN_set_word(e, RSA_F4) before RSA_generate_key_ex, or EVP_PKEY_CTX_set1_rsa_keygen_pubexp with 65537",
+       "platform": "OpenSSL (C)"
+      }
+     ],
+     "summary": "Generate RSA keys with e = 65537 (RSA_F4) and re-issue the keys that were generated with e = 3."
+    },
+    "standards": [
+     "FIPS 186-5 (appendix A.1.1: 2^16 < e < 2^256)"
+    ],
+    "summary_rules": [],
+    "title": "RSA key generated with public exponent 3",
+    "verify": [
+     {
+      "command": "sed -n '{line}p' '{path}'",
+      "label": "Show the call"
      }
     ],
     "vex_default": {

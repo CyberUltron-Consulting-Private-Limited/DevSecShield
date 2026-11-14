@@ -44,6 +44,8 @@ ADDED_AFTER_BASE = {
     # 1,000, Medium
     "STATIC_SALT": 4,
     "WEAK_KDF_ITERATIONS": 4,
+    # CB-28: RSA public exponent 3, High
+    "WEAK_RSA_EXPONENT": 8,
 }
 
 

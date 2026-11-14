@@ -1367,6 +1367,14 @@
    "sources": [
     "kb:findings.code.WEAK_RNG.remediation"
    ]
+  },
+  "WEAK_RSA_EXPONENT": {
+   "class": "code-fixed",
+   "capability": false,
+   "basis": "the exponent is chosen in the team's own key-generation code: the code changes and the keys are re-issued",
+   "sources": [
+    "kb:findings.code.WEAK_RSA_EXPONENT.remediation"
+   ]
   }
  }
 }
