@@ -28,7 +28,6 @@ import {
   certListView,
   complianceRows,
   formatDuration,
-  postureDistribution,
   resolveMigrationRows,
   waveChips,
   type RunDashboardModel,
@@ -148,30 +147,6 @@ export function RunMetaCards({ sources, nodes, endpoints, duration }: {
           </CardContent>
         </Card>
       ))}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------- S4 posture passthrough distributions
-/** CB-19 `q_grades` and CB-24 `fix_classes` from the posture payload, shown as they are (Rule P). Nothing when absent. */
-export function PostureDistributions({ posture }: { posture: Record<string, unknown> | null | undefined }) {
-  const q = postureDistribution(posture?.q_grades);
-  const fix = postureDistribution(posture?.fix_classes);
-  if (q.length === 0 && fix.length === 0) return null;
-  const row = (title: string, entries: [string, number][], testId: string) => (
-    <div className="space-y-1" data-testid={testId}>
-      <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">{title}</p>
-      <div className="flex flex-wrap gap-1.5">
-        {entries.map(([k, n]) => (
-          <span key={k} data-testid={`${testId}-${k}`}><StatusBadge tone="zinc">{k.replace(/_/g, " ")}: {n}</StatusBadge></span>
-        ))}
-      </div>
-    </div>
-  );
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 rounded-lg border border-zinc-200 dark:border-zinc-800 p-4" data-testid="run-posture-distributions">
-      {q.length > 0 && row("Quantum risk grade (per asset)", q, "posture-q-grades")}
-      {fix.length > 0 && row("Fix class (crypto agility)", fix, "posture-fix-classes")}
     </div>
   );
 }

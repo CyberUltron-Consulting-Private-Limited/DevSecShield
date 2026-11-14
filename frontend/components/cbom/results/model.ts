@@ -437,9 +437,10 @@ export function assetRowAttrs(item: CbomRunAssetItem, wave?: Parameters<typeof f
   return attrs;
 }
 
-/** Optional columns appear when any row of the page carries the field (CB-19 q_grade, CB-24 fix_class). */
+/** Optional columns appear when the server sends the field at all (CB-19 q_grade, CB-24 fix_class; a null value is
+ * "graded, no grade" and shows as such in the chip). */
 export function optionalColumns(items: Pick<CbomRunAssetItem, "q_grade" | "fix_class">[]): { qGrade: boolean; fixClass: boolean } {
-  return { qGrade: items.some((i) => i.q_grade != null), fixClass: items.some((i) => i.fix_class != null) };
+  return { qGrade: items.some((i) => i.q_grade !== undefined), fixClass: items.some((i) => i.fix_class !== undefined) };
 }
 
 /** Rows for the "Risk scores per finding" chart: the page's rows as CbomFinding-shaped records with the API's score. */

@@ -20,6 +20,7 @@ import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import FindingSelectionMenu from "@/components/finding-selection-menu";
+import { FixClassChip, QGradeChip, type FixClassFields, type QGradeFields } from "@/components/cbom/grade";
 import type { CbomFindingStatus, CbomImpact, CbomRunAssetItem, CbomRunAssetPage } from "@/utils/backend_api";
 import type { CbomRemediationItem } from "@/utils/api/cbom_ops";
 
@@ -380,10 +381,10 @@ export function RunFindingsTable({
                           )}
                         </TableCell>
                         {cols.qGrade && (
-                          <TableCell className="text-sm" title={item.q_label ?? undefined}>{item.q_grade ?? "—"}</TableCell>
+                          <TableCell><QGradeChip item={item as QGradeFields} assetId={item.id} /></TableCell>
                         )}
                         {cols.fixClass && (
-                          <TableCell className="text-sm text-zinc-600 dark:text-zinc-400">{item.fix_class?.replace(/_/g, " ") ?? "—"}</TableCell>
+                          <TableCell><FixClassChip item={item as FixClassFields} assetId={item.id} /></TableCell>
                         )}
                         <TableCell className="text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                           <div className="inline-flex items-center gap-1.5">

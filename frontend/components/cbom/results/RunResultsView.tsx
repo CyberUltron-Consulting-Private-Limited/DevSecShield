@@ -59,7 +59,6 @@ import { RunFindingDialog, type DialogSubject } from "./RunFindingDialog";
 import { RunFindingsTable } from "./RunFindingsTable";
 import { RunHeader } from "./RunHeader";
 import {
-  PostureDistributions,
   RunCertificatesSection,
   RunChangesSection,
   RunComplianceSection,
@@ -264,10 +263,10 @@ export default function RunResultsView({ teamId, runId, initialView = "findings"
       {/* S3 */}
       <RunMetaCards sources={sources.length} nodes={nodes} endpoints={endpointsProbed(results)} duration={runDurationSeconds(run, now)} />
 
-      {/* S4: posture card unchanged (ids run-posture, posture-*, mosca-*) + CB-19 / CB-24 distributions when present */}
+      {/* S4: posture card unchanged (ids run-posture, posture-*, mosca-*); it carries the CB-19 Q distribution and the
+          CB-24 agility card (#138) */}
       <div className="space-y-3" data-testid="run-section-posture">
         <RunPostureCard teamId={teamId} runId={runId} active={active} />
-        <PostureDistributions posture={posture as unknown as Record<string, unknown> | null} />
       </div>
 
       {/* S5 (ids run-insights, run-heatmap, run-cert-calendar) */}
