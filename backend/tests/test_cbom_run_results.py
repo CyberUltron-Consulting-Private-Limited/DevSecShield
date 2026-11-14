@@ -330,6 +330,13 @@ def test_b8_single_flight_and_recompute_on_last_updated_and_day(api, world, monk
     nxt = _results(api, rid)
     assert RR.COMPUTE_COUNT[rid] == 3 and nxt["judged_on"] == tomorrow.date().isoformat()
 
+    # the team risk model feeds posture's quantum risk grades: an edit recomputes
+    patched = api("PATCH", "/1/cbom/sources/settings", json={"risk_model": {
+        "data_shelf_life_years": 10, "migration_years": 5, "threat_years": 12}})
+    assert patched.status_code == 200, patched.text
+    graded = _results(api, rid)
+    assert RR.COMPUTE_COUNT[rid] == 4 and graded["inputs_digest"] != nxt["inputs_digest"]
+
 
 def test_remediation_status_is_live_not_cached(api, world):
     engine, _ = world
