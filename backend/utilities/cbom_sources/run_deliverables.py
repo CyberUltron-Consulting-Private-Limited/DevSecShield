@@ -6,7 +6,7 @@ post-processed here) at request time.
 Same bytes every time
 ---------------------
 Every time a deliverable prints comes from the run, never from the request (``stamp``): a finished run uses its
-``last_updated`` (else ``finished_at``), an active run the newest asset it has stored (else the request time) and says
+``last_updated`` (else ``finished_at``), an active run the newest asset it has stored (else its ``last_updated``) and says
 "as of". ``write_run_cbom`` writes the run's export (``inventory._document``, the builder behind
 ``inventory.write_cyclonedx``, one component at a time, as #103 streams it) with that ``metadata.timestamp``; the
 signature's ``signed_at``, the PDF, the VEX (its own time: the later of the stamp and the newest remediation-plan
@@ -134,12 +134,13 @@ def _naive(moment: _dt.datetime) -> _dt.datetime:
 
 def stamp(session: Session, run: CbomCollectionRun, now: _dt.datetime) -> _dt.datetime:
     """The one time every deliverable of the run prints (module docstring): finished run: ``last_updated`` (else
-    ``finished_at``, ``created_at``); active run: the newest asset it has stored, else ``now``."""
+    ``finished_at``, ``created_at``); active run: the newest asset it has stored, else (nothing stored yet) the run's
+    ``last_updated``, so two requests a second apart still get the same bytes."""
     if not is_active(run):
         return _naive(run.last_updated or run.finished_at or run.created_at or now).replace(microsecond=0)
     newest = session.exec(select(func.max(CbomCollectedAsset.created_at)).where(
         CbomCollectedAsset.team_id == run.team_id, CbomCollectedAsset.run_id == run.id)).one()
-    return _naive(newest or now).replace(microsecond=0)
+    return _naive(newest or run.last_updated or run.created_at or now).replace(microsecond=0)
 
 
 def as_of_note(run: CbomCollectionRun, at: _dt.datetime) -> str | None:

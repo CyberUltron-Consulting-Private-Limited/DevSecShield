@@ -344,13 +344,17 @@ def test_deliverables_are_team_scoped(api, world, path):
     assert api("GET", f"/1/cbom/sources/runs/{rid}/{path}", "bob").status_code == 200  # any member
 
 
-def test_empty_run(api, world, tmp_path):
+def test_empty_run(api, world, tmp_path, monkeypatch):
     engine, _ = world
     _src, run, _claim, _hdr = _collect_job(api, engine)
     rid = run["id"]
     vex = api("GET", f"/1/cbom/sources/runs/{rid}/vex").json()
     assert vex["vulnerabilities"] == [] and _schema_errors(vex) == []
+    # an active run with nothing stored yet is stamped with the run's own time, not the request's (CI run on
+    # 715e00f: the signature and the download a second apart differed)
+    _freeze(monkeypatch, FROZEN)
     sig = api("GET", f"/1/cbom/sources/runs/{rid}/signature").json()
+    _freeze(monkeypatch, FROZEN + dt.timedelta(seconds=7))
     assert sig["digest"] == hashlib.sha256(api("GET", f"/1/cbom/sources/runs/{rid}/cbom").content).hexdigest()
     pdf = api("GET", f"/1/cbom/sources/runs/{rid}/report.pdf")
     assert pdf.status_code == 200
