@@ -76,6 +76,26 @@ import { CertInLanePosture } from "@/components/certin/CertInLanePosture";
 import { CbomDashboardCharts } from "@/components/cbom/results/CbomDashboardCharts";
 import { getFindingStatusBadgeClass, getImpactBadgeClass, getRiskScoreBoxClass, getStrengthBadgeClass } from "@/components/cbom/results/badgeClasses";
 import { type CertInRollupData } from "@/components/certin/certinShared";
+import { CompareDialog, RunInsights } from "@/components/cbom/sources/ChangesPanel";
+import { RunPostureCard } from "@/components/cbom/sources/RunPosture";
+import { applyPostureToDistributions, endpointsProbed, NOTE, resolveMigrationRows, RUN_TICKETING_TAB_AVAILABLE, runDurationSeconds, runTitle } from "@/components/cbom/results/model";
+import { RunFindingDialog } from "@/components/cbom/results/RunFindingDialog";
+import { RunFindingsTable } from "@/components/cbom/results/RunFindingsTable";
+import {
+  RunCertificatesSection,
+  RunChangesSection,
+  RunComplianceSection,
+  RunCoverageSection,
+  RunDashboardSection,
+  RunHeaderActions,
+  RunHeaderMeta,
+  RunMetaCards,
+  RunTopRisks,
+  RunWavesSection,
+  SectionNote,
+} from "@/components/cbom/results/RunSections";
+import RunTicketingTab from "@/components/cbom/results/RunTicketingTab";
+import type { ResultsSource } from "@/components/cbom/results/source";
 
 interface CbomResultsProps {
   data: unknown;
@@ -88,6 +108,9 @@ interface CbomResultsProps {
   onIntegrationSettingsUpdated?: () => void;
   onFindingsUpdated?: () => void;
   backHref?: string;
+  /** The data source of this one template (CB-38): a CBOM Sources run (useSourcesRunSource). Absent: the code scan
+   * given by the props above (codeScanSource), exactly as before. */
+  source?: ResultsSource;
 }
 
 /** Safe entries for OWASP/compliance fields (handles dict or legacy array) */
@@ -155,7 +178,10 @@ export default function CbomResults({
   onIntegrationSettingsUpdated,
   onFindingsUpdated,
   backHref,
+  source,
 }: CbomResultsProps) {
+  // A Sources run fills the same sections from the run APIs; a code scan (no source, or kind "scan") renders as before.
+  const run = source?.kind === "run" && source.run ? source : null;
   const router = useRouter();
   const params = useParams();
   const searchParams = useSearchParams();
@@ -471,11 +497,15 @@ export default function CbomResults({
   // on scans produced by the reconciled aibom lane; legacy worker CBOM scans
   // carry no `cbom_distributions`, so the charts simply don't render.
   const cryptoDistributions = useMemo<CbomDistributions | null>(() => {
+    if (run) {
+      const dist = run.results?.distributions;
+      return dist ? applyPostureToDistributions(resolveMigrationRows(dist), run.posture) : null;
+    }
     const fromData = (data as Record<string, unknown> | null)?.cbom_distributions;
     const fromMeta = (scanMetadata as Record<string, unknown> | null)?.cbom_distributions;
     const dist = (fromData ?? fromMeta) as CbomDistributions | undefined;
     return dist ?? null;
-  }, [data, scanMetadata]);
+  }, [data, scanMetadata, run]);
 
   // Crypto dependency graph (I1 cbom_graph). Same source precedence as the
   // distributions — present only on reconciled aibom-lane scans; F1's asset-type
@@ -483,23 +513,23 @@ export default function CbomResults({
   const cryptoGraph = useMemo<CbomGraph | null>(() => {
     const fromData = (data as Record<string, unknown> | null)?.cbom_graph;
     const fromMeta = (scanMetadata as Record<string, unknown> | null)?.cbom_graph;
-    const g = (fromData ?? fromMeta) as CbomGraph | undefined;
+    const g = (run ? run.results?.cbom_graph : fromData ?? fromMeta) as CbomGraph | undefined;
     return g && Array.isArray(g.nodes) ? g : null;
-  }, [data, scanMetadata]);
+  }, [data, scanMetadata, run]);
 
   const cryptoGraphCompact = useMemo<CbomGraph | null>(() => {
     const fromData = (data as Record<string, unknown> | null)?.cbom_graph_compact;
     const fromMeta = (scanMetadata as Record<string, unknown> | null)?.cbom_graph_compact;
-    const g = (fromData ?? fromMeta) as CbomGraph | undefined;
+    const g = (run ? run.results?.cbom_graph_compact : fromData ?? fromMeta) as CbomGraph | undefined;
     return g && Array.isArray(g.nodes) ? g : null;
-  }, [data, scanMetadata]);
+  }, [data, scanMetadata, run]);
 
   const cryptoGraphExpanded = useMemo<CbomGraph | null>(() => {
     const fromData = (data as Record<string, unknown> | null)?.cbom_graph_expanded;
     const fromMeta = (scanMetadata as Record<string, unknown> | null)?.cbom_graph_expanded;
-    const g = (fromData ?? fromMeta) as CbomGraph | undefined;
+    const g = (run ? run.results?.cbom_graph_expanded : fromData ?? fromMeta) as CbomGraph | undefined;
     return g && Array.isArray(g.nodes) ? g : null;
-  }, [data, scanMetadata]);
+  }, [data, scanMetadata, run]);
 
   // Tri-state compliance matrix (F3). Same source precedence as the
   // distributions/graph — present only on reconciled aibom-lane scans; the
@@ -507,12 +537,12 @@ export default function CbomResults({
   const cryptoCompliance = useMemo<CbomCompliance | null>(() => {
     const fromData = (data as Record<string, unknown> | null)?.cbom_compliance;
     const fromMeta = (scanMetadata as Record<string, unknown> | null)?.cbom_compliance;
-    const c = (fromData ?? fromMeta) as CbomCompliance | undefined;
+    const c = (run ? run.results?.cbom_compliance : fromData ?? fromMeta) as CbomCompliance | undefined;
     return c && typeof c === "object" ? c : null;
-  }, [data, scanMetadata]);
+  }, [data, scanMetadata, run]);
 
   const showTabs = team_id && scan_id != null;
-  const hasTicketingTab = showTabs && onIntegrationSettingsUpdated != null;
+  const hasTicketingTab = run ? RUN_TICKETING_TAB_AVAILABLE : showTabs && onIntegrationSettingsUpdated != null;
 
   const hasActiveFindingsFilters =
     searchQuery.trim() !== "" ||
@@ -551,9 +581,10 @@ export default function CbomResults({
           <div>
             <h1 className="text-3xl font-bold text-zinc-900 dark:text-white flex items-center gap-2">
               <ShieldCheck className="h-7 w-7 text-blue-600 dark:text-blue-400" />
-              CBOM Scan Results
+              {run ? <span data-testid="run-results-title">{runTitle(run.runId)}</span> : "CBOM Scan Results"}
             </h1>
             <div className="flex flex-wrap items-center gap-3 mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+              {run && run.run && <RunHeaderMeta teamId={run.teamId} run={run.run} sources={run.sources} />}
               {meta?.repo_url && (
                 <span className="flex items-center gap-1"><GitBranch className="h-3.5 w-3.5" /> {meta.repo_url}</span>
               )}
@@ -574,6 +605,10 @@ export default function CbomResults({
             </div>
           </div>
         </div>
+        {run && run.run && (
+          <RunHeaderActions teamId={run.teamId} run={run.run} assetTotal={run.page?.all_total ?? null}
+                            canCompare={run.canCompare} onCompare={() => run.setCompareOpen(true)} />
+        )}
         {team_id && scan_id != null && (
           <div className="flex items-center gap-2 flex-wrap lg:justify-end">
             <Button
@@ -699,6 +734,8 @@ export default function CbomResults({
         </Card>
       )}
 
+      {run && run.run && <RunCoverageSection run={run.run} targets={run.page?.targets ?? null} provenance={run.results?.provenance} />}
+
       {hasTicketingTab && (
         <div className="flex gap-2 mb-6 border-b border-zinc-200 dark:border-zinc-800">
           <button
@@ -732,7 +769,9 @@ export default function CbomResults({
         </div>
       )}
 
-      {activeTab === "ticketing" && hasTicketingTab ? (
+      {activeTab === "ticketing" && hasTicketingTab && run ? (
+        <RunTicketingTab teamId={run.teamId} runId={run.runId} />
+      ) : activeTab === "ticketing" && hasTicketingTab ? (
         <TicketingIntegrationsSettings
           jiraProjectId={jiraProjectId}
           onJiraProjectIdChange={setJiraProjectId}
@@ -750,6 +789,14 @@ export default function CbomResults({
         />
       ) : (
         <>
+          {run && run.run && (
+            <>
+              <RunMetaCards sources={run.sources.length} nodes={run.nodes} endpoints={endpointsProbed(run.results)} duration={runDurationSeconds(run.run, run.now)} />
+              {/* Post-quantum and risk posture (ids run-posture, posture-*, mosca-*), with the Q-grade distribution and
+                  the crypto-agility card; a code scan has no posture payload, so it is not shown there */}
+              <RunPostureCard teamId={run.teamId} runId={run.runId} active={run.active} />
+            </>
+          )}
           {/* Scan metadata cards */}
           {meta && typeof meta === "object" && (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -803,11 +850,26 @@ export default function CbomResults({
               graphCompact={cryptoGraphCompact}
               graphExpanded={cryptoGraphExpanded}
               compliance={cryptoCompliance}
-              onAttest={handleCertInAttest}
-              findings={findingsList ?? []}
-              inventory={allRows}
+              onAttest={run ? undefined : handleCertInAttest}
+              findings={run ? [] : findingsList ?? []}
+              inventory={run ? [] : allRows}
               onOpenFinding={(f) => setSelectedFinding(f)}
+              showCodeHeatmap={!run}
             />
+          )}
+          {run && (
+            <>
+              {/* one line where the run has no data for a chart (the code-only note goes once the run sends a graph) */}
+              {run.plan.cryptoCharts.note && !(cryptoGraph && run.plan.cryptoCharts.note === NOTE.chartsCodeOnly) && (
+                <SectionNote testId="run-crypto-charts-note">{run.plan.cryptoCharts.note}</SectionNote>
+              )}
+              {/* Algorithm family x source (or asset type) and the certificate calendar, from the run API */}
+              <RunInsights teamId={run.teamId} runId={run.runId} active={run.active} />
+              <RunCertificatesSection view={run.plan.certificates} results={run.results} onOpenAsset={(id) => run.openAsset(id)} />
+              {run.run && <RunChangesSection teamId={run.teamId} run={run.run} canCompare={run.canCompare} onCompare={() => run.setCompareOpen(true)} />}
+              <RunWavesSection byWave={run.waves.data?.by_wave} labels={run.waves.data?.labels} loading={run.waves.loading}
+                               deferred={!run.waves.wanted && run.active} selected={run.selection.size} />
+            </>
           )}
           {cryptoDistributions && Number.isFinite(tid) && tid > 0 && Number.isFinite(sid) && sid > 0 && (
             <>
@@ -816,27 +878,53 @@ export default function CbomResults({
             </>
           )}
           <RbiCsfRollup
-            rollup={meta?.rbi_csf_rollup as RbiCsfRollupData | undefined}
-            onAttest={handleCertInAttest}
+            rollup={(run ? run.results?.rbi_csf_rollup ?? undefined : meta?.rbi_csf_rollup) as RbiCsfRollupData | undefined}
+            onAttest={run ? undefined : handleCertInAttest}
             onViewFindings={handleViewRelatedFindings}
             findings={findingsList ?? []}
             refAliases={relatedRefAliases}
           />
           <CertInLanePosture
             lane="cbom"
-            rollup={meta?.certin_posture as CertInRollupData | undefined}
-            onAttest={handleCertInAttest}
+            rollup={(run ? run.results?.certin_posture ?? undefined : meta?.certin_posture) as CertInRollupData | undefined}
+            onAttest={run ? undefined : handleCertInAttest}
             onViewFindings={handleViewRelatedFindings}
             findings={findingsList ?? []}
             refAliases={relatedRefAliases}
           />
 
+          {run && <RunComplianceSection view={run.plan.compliance} results={run.results} posture={run.posture} />}
+
           {/* Dashboard */}
+          {run && (
+            <RunDashboardSection view={run.plan.dashboard} model={run.dashboardModel} riskRows={run.riskRows}
+                                 pageRows={run.page?.items.length ?? 0} results={run.results} />
+          )}
           {dashboard && cardData && (
             <CbomDashboardCharts dashboard={dashboard} findingsList={findingsList ?? []} />
           )}
 
           {/* Findings */}
+          {run ? (
+            <RunFindingsTable
+              teamId={run.teamId}
+              runId={run.runId}
+              active={run.active}
+              page={run.page}
+              isLoading={run.pageLoading}
+              error={run.pageError}
+              onRetry={run.refetchPage}
+              filters={run.filters}
+              onFilters={run.onFilters}
+              sources={run.sources}
+              waveOf={run.waveOf}
+              selection={run.selection}
+              onSelection={run.setSelection}
+              onOpenDetails={(item) => run.setDialog({ item })}
+              onSetStatus={run.setStatus}
+              statusPending={run.statusPending}
+            />
+          ) : (
           <Card id="bom-findings">
             <CardHeader>
               <CardTitle>Cryptographic findings</CardTitle>
@@ -1074,8 +1162,10 @@ export default function CbomResults({
               </ScrollArea>
             </CardContent>
           </Card>
+          )}
 
           {/* Top Cryptographic Risks */}
+          {run && run.plan.topRisks.show && run.posture && <RunTopRisks posture={run.posture} onOpenAsset={(id) => run.openAsset(id)} />}
           {dashboard?.top_risks && dashboard.top_risks.length > 0 && (
             <Card className="border-zinc-200 dark:border-zinc-800">
               <CardHeader>
@@ -1117,6 +1207,13 @@ export default function CbomResults({
             </Card>
           )}
         </>
+      )}
+
+      {run && (
+        <RunFindingDialog teamId={run.teamId} subject={run.dialog} jobs={run.run?.jobs ?? []} waveOf={run.waveOf} onClose={() => run.setDialog(null)} />
+      )}
+      {run && run.compareOpen && (
+        <CompareDialog teamId={run.teamId} runId={run.runId} runs={run.compareRuns} onClose={() => run.setCompareOpen(false)} />
       )}
 
       {/* Finding Detail Dialog */}

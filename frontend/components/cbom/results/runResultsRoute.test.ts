@@ -1,6 +1,6 @@
 /**
  * Issue #158: every run "Results" link (Scans table and Review & Run) resolves to a route file of the Next.js app, and
- * that page renders the unified run results view (RunResultsView, #120; #166's bridge page rendered RunResults). Resolves the link the way the App Router does: a static folder
+ * that page renders the one results template (CbomResults with the run adapter; #166's bridge page rendered RunResults). Resolves the link the way the App Router does: a static folder
  * first, else the one dynamic `[param]` folder; a link with no matching page.tsx is the staging 404.
  * Run: npx --yes tsx components/cbom/results/runResultsRoute.test.ts
  */
@@ -43,15 +43,15 @@ test("a code scan's results link still resolves to the scan results page (run #5
                join(appDir, "[team_id]", "cbom", "[scan_id]", "page.tsx"));
 });
 
-test("the run results page renders the unified run results view for the route's team and run (#120 replaced the bridge)", () => {
+test("the run results page renders the one results template (CbomResults) with the run adapter (#120 replaced the bridge)", () => {
   const src = readFileSync(join(appDir, "[team_id]", "cbom", "runs", "[run_id]", "results", "page.tsx"), "utf8");
   assert.ok(src.startsWith('"use client";'), "a client page (react-query hooks)");
-  assert.ok(src.includes('import RunResultsView, { RunNotFound } from "@/components/cbom/results/RunResultsView";'));
-  assert.ok(/<RunResultsView key=\{`\$\{teamId\}-\$\{runId\}`\} teamId=\{teamId\} runId=\{runId\}/.test(src));
+  assert.ok(src.includes('import CbomResults from "@/components/CbomResults";'));
+  assert.ok(src.includes("useSourcesRunSource(teamId, runId,") && src.includes("<CbomResults data={undefined} teamId={String(teamId)} source={source} />"));
   assert.ok(src.includes("params?.team_id") && src.includes("params?.run_id"), "ids come from the route's params");
   assert.ok(src.includes("export default function"), "a default export, so Next.js serves it");
   assert.ok(!src.includes("delete when #120 merges"), "the bridge is gone");
-  const view = readFileSync(join(frontend, "components", "cbom", "results", "RunResultsView.tsx"), "utf8");
+  const view = readFileSync(join(frontend, "components", "CbomResults.tsx"), "utf8");
   assert.ok(view.includes("<RunPostureCard") && view.includes("<RunFindingDialog"), "posture and the asset detail dialog come along");
   const table = readFileSync(join(frontend, "components", "cbom", "results", "RunFindingsTable.tsx"), "utf8");
   assert.ok(table.includes("<QGradeChip") && table.includes("<FixClassChip"), "#138's Q-grade and fix-class chips come along");

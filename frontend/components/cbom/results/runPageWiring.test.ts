@@ -26,15 +26,23 @@ assert.equal(RUN_CAPABILITIES.ai, true);
 assert.ok(!review.includes("RunDetailsDialog"), "no RunDetailsDialog left");
 assert.match(review, /href=\{runResultsHref\(teamId, run\.id\)\}/);
 
-// S2: Results / Ticketing tabs; the Ticketing tab is RunTicketingTab for this run (PR-4)
-const view = read("RunResultsView.tsx");
-assert.match(view, /import RunTicketingTab from "\.\/RunTicketingTab";/);
-assert.match(view, /<RunTicketingTab teamId=\{teamId\} runId=\{runId\} \/>/);
-assert.match(view, /\["results", "Results", BarChart3\], \["ticketing", "Ticketing", Ticket\]/);
-assert.match(view, /data-testid=\{`run-results-tab-\$\{key\}`\}/);
-// the results sections render only on the Results tab: the metadata cards and the findings table sit in its branch
-const ticketingBranch = view.indexOf('tab === "ticketing" && RUN_TICKETING_TAB_AVAILABLE ?');
-assert.ok(ticketingBranch > 0 && view.indexOf("<RunMetaCards", ticketingBranch) > ticketingBranch && view.indexOf("<RunFindingsTable", ticketingBranch) > ticketingBranch);
+// ONE template (owner decision): the run route renders components/CbomResults.tsx with the run adapter
+const route = read("..", "..", "..", "app", "[team_id]", "cbom", "runs", "[run_id]", "results", "page.tsx");
+assert.match(route, /import CbomResults from "@\/components\/CbomResults";/);
+assert.match(route, /const source = useSourcesRunSource\(teamId, runId, \{ initialView: view, onViewChange \}\);/);
+assert.match(route, /<CbomResults data=\{undefined\} teamId=\{String\(teamId\)\} source=\{source\} \/>/);
+assert.ok(!existsSync(join(__dirname, "RunResultsView.tsx")) && !existsSync(join(__dirname, "RunHeader.tsx")), "no second results page");
+
+// S2: the code page's Results / Ticketing integrations tabs; on a run the Ticketing tab is RunTicketingTab (PR-4)
+const template = read("..", "..", "CbomResults.tsx");
+assert.match(template, /const hasTicketingTab = run \? RUN_TICKETING_TAB_AVAILABLE : showTabs && onIntegrationSettingsUpdated != null;/);
+assert.match(template, /activeTab === "ticketing" && hasTicketingTab && run \? \(\n\s*<RunTicketingTab teamId=\{run\.teamId\} runId=\{run\.runId\} \/>/);
+// the run sections sit in the template's Results tab, in the code page's order
+const order = ["<RunMetaCards", "<RunPostureCard", "<CbomCryptoCharts", "<RunInsights", "<RunCertificatesSection", "<RunChangesSection",
+  "<RunWavesSection", "<RbiCsfRollup", "<CertInLanePosture", "<RunComplianceSection", "<RunDashboardSection", "<RunFindingsTable", "<RunTopRisks"];
+const at = order.map((tag) => template.indexOf(tag));
+assert.ok(at.every((i, n) => i > 0 && (n === 0 || i > at[n - 1])), `sections in order: ${JSON.stringify(order.map((t, n) => [t, at[n]]))}`);
+assert.ok(template.indexOf('activeTab === "ticketing" && hasTicketingTab && run') < at[0], "after the tabs");
 
 // the Ticketing tab is on exactly when lane W6's component is in the tree
 assert.equal(RUN_TICKETING_TAB_AVAILABLE, existsSync(join(__dirname, "RunTicketingTab.tsx")), "Ticketing tab <=> RunTicketingTab.tsx");

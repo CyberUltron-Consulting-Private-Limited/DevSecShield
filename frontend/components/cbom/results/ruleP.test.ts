@@ -87,9 +87,9 @@ assert.deepEqual(gauge.migration, [], "migration rows pass through");
 const dir = __dirname;
 // the run page's own files (other lanes' modules in this folder, e.g. the scans list, are not the run page)
 const sources = fs.readdirSync(dir)
-  .filter((f) => /^(Run\w*\.tsx|model\.ts|CbomDashboardCharts\.tsx|badgeClasses\.ts)$/.test(f))
+  .filter((f) => /^(Run\w*\.tsx|model\.ts|source\.ts|CbomDashboardCharts\.tsx|badgeClasses\.ts)$/.test(f))
   .map((f) => [f, fs.readFileSync(path.join(dir, f), "utf8")] as const);
-assert.ok(sources.some(([f]) => f === "RunResultsView.tsx") && sources.length >= 8, `run page sources found (${sources.length})`);
+assert.ok(sources.some(([f]) => f === "source.ts") && sources.length >= 8, `run page sources found (${sources.length})`);
 const FORBIDDEN = [/quantumFilter/, /\binventoryRows\b/, /\bmatchesQuantumFilter\b/, /\bquantumCounts\b/, /\bcodeHeatmap\b/, /\bisBrokenToday\b/];
 for (const [file, text] of sources) {
   for (const re of FORBIDDEN) assert.ok(!re.test(text), `${file} must not use ${re} (Rule P: no recount of rows)`);
@@ -98,11 +98,15 @@ for (const [file, text] of sources) {
 for (const [file, text] of sources) {
   for (const m of text.matchAll(/readinessText\(([^)]*)\)/g)) assert.equal(m[1].trim(), "cardData", `${file}: readinessText(${m[1]})`);
 }
-// the crypto charts get no rows on a run, so the gauge cannot recount them
-const sections = fs.readFileSync(path.join(dir, "RunSections.tsx"), "utf8");
-assert.match(sections, /<CbomCryptoCharts distributions=\{applyPostureToDistributions\(resolveMigrationRows\(dist\), posture\)\} findings=\{\[\]\} inventory=\{\[\]\}/);
-// the dashboard on the run page is built by runDashboardModel (posture overlay), nowhere else
-const view = fs.readFileSync(path.join(dir, "RunResultsView.tsx"), "utf8");
-assert.match(view, /runDashboardModel\(results\?\.dashboard, posture\)/);
+// the one template (components/CbomResults.tsx): on a run the crypto charts get the run's distributions with the
+// posture overlay and no rows, so the gauge cannot recount them (the code-scan rows stay the code page's)
+const template = fs.readFileSync(path.join(dir, "..", "..", "CbomResults.tsx"), "utf8");
+assert.match(template, /return dist \? applyPostureToDistributions\(resolveMigrationRows\(dist\), run\.posture\) : null;/);
+assert.match(template, /findings=\{run \? \[\] : findingsList \?\? \[\]\}/);
+assert.match(template, /inventory=\{run \? \[\] : allRows\}/);
+// the run dashboard is built by runDashboardModel (posture overlay) in the run adapter, nowhere else
+const adapter = fs.readFileSync(path.join(dir, "source.ts"), "utf8");
+assert.match(adapter, /runDashboardModel\(results\?\.dashboard, posture\)/);
+assert.match(template, /model=\{run\.dashboardModel\}/);
 
 console.log("rule P (run page reads posture, never recounts rows) tests passed");
