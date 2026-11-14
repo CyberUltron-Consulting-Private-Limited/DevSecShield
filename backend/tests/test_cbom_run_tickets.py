@@ -596,7 +596,7 @@ def _revisions() -> dict[str, object]:
 
 def test_migration_is_the_single_head():
     mod = _migration()
-    assert mod.revision == "cb38ticket001" and mod.down_revision == "r6f12pol001"  # dev's head when merged
+    assert mod.revision == "cb38ticket001" and mod.down_revision == "cb20estate001"  # dev's head when merged
     revs = _revisions()
     parents = {p for d in revs.values() for p in ((d,) if isinstance(d, str) or d is None else d)}
     assert sorted(set(revs) - parents) == ["cb38ticket001"]
