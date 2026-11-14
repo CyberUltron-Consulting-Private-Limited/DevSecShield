@@ -3931,13 +3931,6 @@ export const INFO_TIPS = {
     why: "They are not in this run's results and were not charged.",
     example: "dc-mumbai-windows: the scan node was offline.",
   },
-  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:816 — what changed since the previous run
-  "cbsrc.rr.changes": {
-    label: "Changes",
-    what: "What changed in this run compared with the previous run of the same sources: assets added, removed or changed.",
-    why: "Drift shows new weak crypto as soon as it appears.",
-    example: "+3 certificates, -1 SSH host key, 2 changed.",
-  },
   // ────────────────────────────────────────────────────────────── CBOM Sources: Review & Run, run details
   // src: frontend/components/cbom/results/RunJobsTable.tsx:27 — one job per source
   "cbsrc.rr.job.source": {
@@ -5649,8 +5642,8 @@ export const INFO_TIPS = {
   // ────────────────────────────────────────────────────────────── CBOM Sources run results page (components/cbom/results/*, CB-38 #120)
   // src: frontend/components/cbom/results/RunSections.tsx:76-78 — jobs, skipped sources, provenance
   "cbom.run.covered": {
-    label: "What was covered",
-    what: "Every job of the run with where it ran and how it ended, the sources skipped when it started, and per source what was collected.",
+    label: "Collection jobs and targets",
+    what: "Every job of the run with where it ran and how it ended, the sources skipped when it started, per source what was collected, and each target's outcome.",
     why: "A finding list is only as complete as what was read; this shows what the run could and could not read.",
     example: "9 jobs: 8 done, 1 expired on node-dr1; dc-mumbai-windows skipped (node offline).",
   },
@@ -5927,7 +5920,7 @@ export const INFO_TIPS = {
     why: "Shows whether this page's risk is concentrated in a few rows.",
     example: "F1: RSA-1024 signing key, 9.8.",
   },
-  // src: frontend/components/cbom/results/RunHeader.tsx:65-87 — CycloneDX JSON and XML, OSCAL
+  // src: frontend/components/cbom/results/RunSections.tsx:126-133 — CycloneDX JSON and XML, OSCAL
   "cbom.run.downloads": {
     label: "Downloads",
     what: "The run's CBOM as CycloneDX 1.6 JSON or XML (schema-valid), and OSCAL 1.2.3 assessment results for a GRC tool once the run has finished.",
@@ -6264,6 +6257,50 @@ export const INFO_TIPS = {
     what: "For a host that cannot reach the public registry: one paste that downloads this node's files from ZeroShield, checks their SHA-256 and installs them (curl, or wget), or the same install from files you downloaded in the browser. The download links work only for this node and only until it registers or its token is replaced or expires.",
     why: "Installs the same pinned release on a host with no internet access.",
     example: "Copy the files to the host, then run the install command shown below them.",
+  },
+  // ────────────────────────────────────────────────────────────── CBOM run results on the one results template (#239, #124)
+  // src: frontend/components/cbom/results/RunDeliverablesMenu.tsx:19-44 — VEX, HMAC signature, evidence zip, PDF report
+  "cbom.run.deliverables": {
+    label: "VEX, Signature, Evidence pack, PDF Report",
+    what: "The run's CycloneDX 1.6 VEX (exploitable, in triage, resolved or will-not-fix from the remediation plan), an HMAC-SHA256 signature over the exact bytes of the CycloneDX JSON download, an evidence pack (zip of CycloneDX JSON and XML, OSCAL, VEX, signature and PDF with a sha256 manifest) and a PDF report. While the run is collecting, each file says it holds what was collected so far.",
+    why: "The documents an auditor or a regulator asks for, built from the same data as this page.",
+    example: "Evidence pack for the RBI inspection: one zip with its sha256 manifest.",
+  },
+  // src: frontend/components/cbom/results/RunSections.tsx:161-190 — verifyCbomRunSignature; the key stays on the server
+  "cbom.run.verify": {
+    label: "Verify file",
+    what: "Checks a CycloneDX JSON file you downloaded from this run against the run's signature. The signing key stays on the server; the result says whether the file is unchanged.",
+    why: "Proves a file someone sends you is the run's real CBOM, not an edited copy.",
+    example: "Verified: this file is the run's signed CycloneDX JSON, unchanged.",
+  },
+  // src: frontend/components/cbom/results/RunFindingDialog.tsx:124-134 — owasp_top_10 of the finding, when the run API sends it
+  "cbom.run.f.owasp": {
+    label: "OWASP Top 10",
+    what: "The OWASP Top 10 categories this finding maps to. Most cryptographic findings fall under A02 Cryptographic Failures.",
+    why: "Lets application security teams file the finding under the category they track.",
+    example: "A02:2021 Cryptographic Failures.",
+  },
+  // src: frontend/components/cbom/results/RunFindingDialog.tsx:135-143 — compliance_controls of the finding
+  "cbom.run.f.compliance": {
+    label: "Compliance controls",
+    what: "The compliance controls this finding maps to, such as PCI DSS requirements, ISO 27001 clauses or RBI and CERT-In items.",
+    why: "Shows which audit requirement the fix closes.",
+    example: "PCI DSS 4.2.1 (strong cryptography in transit).",
+  },
+  // src: frontend/components/cbom/results/RunFindingDialog.tsx:144-146 — suggested_fix of the finding, when it has one
+  "cbom.run.f.suggested_fix": {
+    label: "Suggested fix",
+    what: "The fix suggested for this finding, when the scan gave one.",
+    why: "A starting point for the owner's change.",
+    example: "Disable TLS 1.0 and 1.1; allow TLS 1.2 and 1.3 only.",
+  },
+  // ────────────────────────────────────────────────────────────── CBOM Sources: scan node network requirements (#243)
+  // src: frontend/components/cbom/sources/logic.ts:502-508 — outbound HTTPS to the API; registry, build kits and cloud APIs
+  "cbsrc.nodes.network_req": {
+    label: "Network requirements",
+    what: "What needs network access: the scan node only needs outbound HTTPS to the ZeroShield API and direct reach to your targets. Pulling the image from a public registry needs that registry; building the OVA or AMI kits needs internet; cloud and identity sources are read from ZeroShield's servers.",
+    why: "Tells your network team which firewall rules to open, and that nothing calls in.",
+    example: "Allow node-dc1 out to the ZeroShield API on 443; no inbound rule.",
   },
 } as const satisfies Record<string, InfoTipEntry>;
 

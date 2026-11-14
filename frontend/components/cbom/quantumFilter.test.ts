@@ -76,7 +76,9 @@ console.log("quantumCounts tests passed");
     [6.2, 93.8, 12.5, 66.7, 0.1, 10]);
   const results = fs.readFileSync(path.join(__dirname, "..", "CbomResults.tsx"), "utf8");
   assert.ok(results.includes("const allRows = useMemo(() => inventoryRows(data, findingsList ?? []), [data, findingsList]);"));
-  assert.ok(results.includes("inventory={allRows}"), "the results page hands every row to the gauge");
+  // CB-38: one template for code scans and Sources runs; a code scan still hands every row to the gauge (a run passes
+  // none: its gauge reads the run posture, Rule P)
+  assert.ok(results.includes("inventory={run ? [] : allRows}"), "the results page hands every row to the gauge");
 }
 // review M1 (#135): the Quantum readiness charts draw every verdict the backend sends, Broken today included
 {

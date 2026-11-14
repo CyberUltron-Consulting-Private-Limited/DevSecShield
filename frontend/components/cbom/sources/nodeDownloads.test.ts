@@ -162,12 +162,20 @@ async function main() {
   const ovaSteps = tab.host.querySelector('[data-testid="node-kit-steps-ova"]')!
   assert.equal(ovaSteps.querySelectorAll("li").length, 3, "three lines of instructions")
   assert.ok(ovaSteps.textContent!.includes("packer build"))
+  // #230: the kit needs internet to build, said next to it, with the offline ways; no dead "on-prem edition" line
+  const ovaNet = tab.host.querySelector('[data-testid="node-kit-internet-ova"]')!
+  assert.ok(/needs internet access/.test(ovaNet.textContent!) && /cloud-images\.ubuntu\.com/.test(ovaNet.textContent!), ovaNet.textContent!)
+  assert.ok(/Docker image file/.test(ovaNet.textContent!) && /Helm chart/.test(ovaNet.textContent!), ovaNet.textContent!)
+  assert.ok(!/on-prem edition/i.test(tab.host.textContent!), "no on-prem sentence without a link")
+  const net = tab.host.querySelector('[data-testid="node-network-requirements"]')!
+  assert.ok(/outbound HTTPS to the ZeroShield API/.test(net.textContent!) && /needs internet access/.test(net.textContent!), net.textContent!)
   for (const banned of BANNED) assert.ok(!banned.test(text), `OVA: ${banned}`)
 
   await choose(tab.host, "AWS AMI")
   text = wizardText(tab.host)
   assert.equal(button(tab.host, /^Download AMI build kit/).disabled, false)
   assert.equal(tab.host.querySelector('[data-testid="node-kit-steps-ami"]')!.querySelectorAll("li").length, 3)
+  assert.ok(/needs internet access/.test(tab.host.querySelector('[data-testid="node-kit-internet-ami"]')!.textContent!))
   for (const banned of BANNED) assert.ok(!banned.test(text), `AMI: ${banned}`)
 
   await choose(tab.host, "Helm chart")
@@ -203,8 +211,9 @@ async function main() {
     })
     await click(button(t.host, /Create node and show install command/))
     const shown = wizardText(t.host).replace(/\s+/g, " ")
-    const check = shown.indexOf("sha256sum -c scan-node-1.0.0.tar.gz.sha256")
-    const loadAt = shown.indexOf("docker load -i scan-node-1.0.0.tar.gz")
+    // #228: the digest the server lists is in the command, and the check gates the load (&&)
+    const check = shown.indexOf(`echo '${SHA} scan-node-1.0.0.tar.gz' | sha256sum -c - && \\`)
+    const loadAt = shown.indexOf("docker load -i scan-node-1.0.0.tar.gz && \\")
     const run = shown.indexOf("docker run -d --pull never --name zs-scan-node-dc-1")
     assert.ok(check >= 0 && loadAt > check && run > loadAt, shown)
     assert.ok(shown.includes("localhost/zeroshield/cbom-scan-node:1.0.0") && shown.includes("zsr_TESTONLY"), shown)
@@ -326,7 +335,7 @@ async function main() {
     })
     await click(button(t.host, /Create node and show install command/))
     assert.equal(t.host.querySelector('[data-testid="node-one-paste"]'), null)
-    assert.ok(wizardText(t.host).includes("sha256sum -c scan-node-1.0.0.tar.gz.sha256"))
+    assert.ok(wizardText(t.host).includes(`echo '${SHA}  scan-node-1.0.0.tar.gz' | sha256sum -c - && \\`))
     t.root.unmount()
   }
 
