@@ -51,9 +51,11 @@ def _cov(target, check, status, detail="", **extra):
                   {"check": check, "status": status, "detail": detail, **extra}, name=check)
 
 
-def seed(engine, *, mosca=MOSCA, sources=(), skipped=()) -> dict:
+def seed(engine, *, mosca=MOSCA, sources=(), skipped=(), idle=(), include=None) -> dict:
     """One run. ``sources``: dicts with name, kind, config, metadata (the job's snapshot), status, outcome, result,
-    assets. Returns {"run": id, name: {"source": id, "uid": uid, "job": id, "assets": {location: id}}}."""
+    assets; ``idle``: sources the run has no job or skipped entry for (left out by ``include`` or not chosen);
+    ``include``: the run's group choice. Returns {"run": id, name: {"source": id, "uid": uid, "job": id,
+    "assets": {location: id}}}."""
     out: dict = {}
     with Session(engine) as s:
         settings = get_or_create_settings(s, 1)
@@ -61,13 +63,14 @@ def seed(engine, *, mosca=MOSCA, sources=(), skipped=()) -> dict:
         s.add(settings)
         s.commit()
         run = CbomCollectionRun(team_id=1, owner_user_id=1, client_request_id=f"cb19-{next(_RUN_IDS)}",
-                                status="finished", created_at=NOW, breakdown={"groups": {}, "skipped": []})
+                                status="finished", created_at=NOW, breakdown={"groups": {}, "skipped": []},
+                                include=include or {})
         s.add(run)
         s.commit()
         s.refresh(run)
         out["run"] = run.id
         skipped_rows = []
-        for spec in list(sources) + list(skipped):
+        for spec in list(sources) + list(skipped) + list(idle):
             src = CbomCollectionSource(team_id=1, owner_user_id=1, kind=spec.get("kind", "linux_servers"),
                                        name=spec["name"], name_lower=spec["name"].lower(), config=spec.get("config") or {},
                                        enabled=spec.get("enabled", True))
@@ -75,16 +78,19 @@ def seed(engine, *, mosca=MOSCA, sources=(), skipped=()) -> dict:
             s.commit()
             s.refresh(src)
             entry = out[spec["name"]] = {"source": src.id, "uid": src.source_uid, "assets": {}}
+            if spec in idle:
+                continue
             if spec in skipped:
                 skipped_rows.append({"source_id": src.id, "name": src.name, "kind": src.kind, "status": "skipped",
                                      "reason": spec["reason"]})
                 continue
             meta = {"business_criticality": None, "exposure": None, "data_lifetime_years": None, "node_segment": None,
                     **(spec.get("metadata") or {})}
+            uid = spec.get("uid", src.source_uid)
             job = CbomCollectionJob(team_id=1, run_id=run.id, source_id=src.id, kind="collect",
                                     status=spec.get("status", "success"), outcome=spec.get("outcome", "ok"),
                                     attempts=1, result=spec.get("result") or {}, error=spec.get("error"),
-                                    params={"source_name": src.name, "source_uid": src.source_uid, "metadata": meta})
+                                    params={"source_name": src.name, "source_uid": uid, "metadata": meta})
             s.add(job)
             s.commit()
             s.refresh(job)
@@ -171,7 +177,8 @@ def test_hybrid_is_graded_on_the_weakest_configuration_it_accepts(api, world):
     facts = {"versions": {"TLSv1.2": True, "TLSv1.3": True}, "pq_hybrid": True,
              "weak_ciphers_accepted": {"static_rsa": True, "cbc": True}}
     d = one(api, world[0], _asset("tls_endpoint", "52.95.110.1:443", target="52.95.110.1", facts=facts))
-    assert g(d) == ("Q1", "qv_exceeds_internet")
+    # its own reason (review B / cx2 HF-1): "PQ deployed, classical fallback still accepted" is fixed differently
+    assert g(d) == ("Q1", "qv_fallback_exceeds_internet")
     e = d["q_explain"]
     assert (e["class"], e["graded_class"], e["fallback"]) == ("hybrid", "quantum-vulnerable", True)
     assert "TLS 1.2" in e["fallback_basis"] or "static RSA" in e["fallback_basis"]
@@ -180,7 +187,7 @@ def test_hybrid_is_graded_on_the_weakest_configuration_it_accepts(api, world):
 def test_ssh_with_a_pq_and_a_classical_kex_is_graded_on_the_classical_one(api, world):
     d = one(api, world[0], _asset("ssh_endpoint", "10.20.0.1:22", facts={"kex": ["mlkem768x25519-sha256",
                                                                                 "curve25519-sha256"]}))
-    assert g(d) == ("Q2", "qv_exceeds") and d["q_explain"]["class"] == "quantum-safe"
+    assert g(d) == ("Q2", "qv_fallback_exceeds") and d["q_explain"]["class"] == "quantum-safe"
 
 
 def test_da4_mosca_unset(api, world):
@@ -289,6 +296,16 @@ def _scope_run(engine, *, timeouts=3):
         {"name": "S-trunc", "result": {"truncated": True, "counts": {"total": 1, "ok": 1}},
          "assets": [_asset("tls_endpoint", "10.20.0.7:443", target="10.20.0.7", facts=QV_TLS)]},
         {"name": "S-lost", "outcome": "partial", "result": {"asset_mismatch": {"reported": 9, "stored": 4}}},
+        {"name": "K-img", "kind": "container_images", "result": {"targets": [
+            {"target": "reg.example/app:1", "status": "not_supported",
+             "error": "a layer is zstd-compressed (not read: no decompressor in the scan node)"},
+            {"target": "reg.example/ok:2", "status": "ok"}]},
+         "assets": [_cov("reg.example/ok:2", "Lambda env", "partial", "option off", by_choice=True),
+                    _cov("reg.example/ok:2", "Batch env", "partial", "option off", by_choice=True)]},
+        {"name": "C-aws", "kind": "aws_account", "result": {"targets": [
+            {"target": "111122223333/eu-south-2", "status": "not_supported", "error": "kms: not_enabled",
+             "services": {"kms": "not_enabled", "acm": "not_enabled"}},
+            {"target": "111122223333/eu-west-1", "status": "ok"}]}},
     ], skipped=[{"name": "S-canary", "reason": "Last connection test failed; fix it and test again"},
                 {"name": "S-off", "reason": "Disabled", "enabled": False}])
 
@@ -319,11 +336,19 @@ def test_scope_items_of_a_run(api, world):
     canary = by_key[f"source:{w['S-canary']['uid']}"]
     assert canary["reason"] == "source_not_read" and "connection test failed" in canary["detail"]
     assert by_key[f"source:{w['S-off']['uid']}"]["reason"] == "excluded_by_choice"
+    # review B: a container image the node never read is Q0; a region with nothing enabled is not an item
+    img = by_key[f"coverage:{w['K-img']['uid']}:reg.example/app:1:target"]
+    assert img["reason"] == "coverage_gap" and img["status"] == "not_supported" and "zstd" in img["detail"]
+    assert not [k for k in by_key if k.startswith(f"coverage:{w['C-aws']['uid']}:")]
+    # by-choice coverage rows are keyed by their check like gaps (the reason is an attribute): two checks, two items
+    kimg = w["K-img"]["uid"]
+    assert by_key[f"coverage:{kimg}:reg.example/ok:2:Lambda env"]["reason"] == "excluded_by_choice"
+    assert by_key[f"coverage:{kimg}:reg.example/ok:2:Batch env"]["count"] == 1
     # counts: q_grades over asset rows only (FP-4), Q0 items by reason, the decomposition
     assert sum(p["q_grades"].values()) == p["assets"] == 3
-    assert p["q0_items_total"] == len(p["q0_items"]) == 11
-    assert p["q0_reasons"] == {"coverage_gap": 5, "excluded_by_choice": 2, "source_not_read": 2, "source_truncated": 2}
-    assert p["q0_counts"] == {"assets": 0, "scope_items": 11, "scope_rows": 13}
+    assert p["q0_items_total"] == len(p["q0_items"]) == 14
+    assert p["q0_reasons"] == {"coverage_gap": 6, "excluded_by_choice": 4, "source_not_read": 2, "source_truncated": 2}
+    assert p["q0_counts"] == {"assets": 0, "scope_items": 14, "scope_rows": 16}
     # capped lists are ordered (reason, key), so every surface's first N agree
     assert [(i["reason"], i["key"]) for i in p["q0_items"]] == sorted((i["reason"], i["key"]) for i in p["q0_items"])
 
@@ -342,6 +367,59 @@ def test_coverage_rows_carry_their_scope_item_on_the_list(api, world):
     denied = listed[host["10.20.0.2#BitLocker"]]
     assert (denied["q_grade"], denied["q_reason"]) == ("Q0", "coverage_gap")
     assert detail(api, silent["id"])["q_reason"] == "not_an_item"
+
+
+def _big_range(engine, tail: dict, head_timeouts: int = 0):
+    """A network job as the node reports more than 1,000 targets: the first 1,000 rows, then one "summary" row
+    whose error is the JSON {status: count} of the rest (jobctx.MAX_TARGET_ROWS)."""
+    import json
+
+    rows = [{"target": f"10.40.{i // 256}.{i % 256}", "status": "timeout" if i < head_timeouts else "ok"}
+            for i in range(1000)]
+    rows.append({"target": f"+{sum(tail.values())} more", "status": "summary", "error": json.dumps(tail)})
+    return seed(engine, sources=[{"name": "R-big", "kind": "network_range", "result": {"targets": rows}}])
+
+
+def test_a_fully_read_big_range_has_no_q0(api, world):
+    w = _big_range(world[0], {"ok": 1048})
+    assert posture(api, w["run"])["q0_items"] == []
+
+
+def test_a_big_range_tail_is_counted_under_its_own_statuses(api, world):
+    w = _big_range(world[0], {"ok": 700, "timeout": 300, "refused": 48}, head_timeouts=3)
+    by_key = {i["key"]: i for i in posture(api, w["run"])["q0_items"]}
+    uid = w["R-big"]["uid"]
+    assert set(by_key) == {f"coverage:{uid}:*:timeout", f"coverage:{uid}:*:refused"}
+    assert by_key[f"coverage:{uid}:*:timeout"]["count"] == 303 and len(by_key[f"coverage:{uid}:*:timeout"]["addresses"]) == 3
+    assert by_key[f"coverage:{uid}:*:refused"]["count"] == 48 and by_key[f"coverage:{uid}:*:refused"]["addresses"] == []
+
+
+def test_groups_left_out_of_a_run_are_excluded_by_choice(api, world):
+    w = seed(world[0], include={"servers": True, "databases": False},
+             sources=[{"name": "S", "assets": [_asset("tls_endpoint", "10.20.0.1:443", facts=QV_TLS)]}],
+             idle=[{"name": "D-pg", "kind": "database"}])
+    item = next(i for i in posture(api, w["run"])["q0_items"] if i["key"] == f"source:{w['D-pg']['uid']}")
+    assert item["reason"] == "excluded_by_choice" and "left out of this run" in item["detail"]
+
+
+def test_asset_q0_items_are_keyed_by_the_stable_asset_key(api, world, monkeypatch):
+    from backend.utilities.cbom_sources import identity as ID
+    from backend.utilities.cbom_sources import posture as P
+
+    real = P.pqc_class
+    monkeypatch.setattr(P, "pqc_class", lambda t, qv, codes, facts: "unknown" if t == "certificate" else real(t, qv, codes, facts))
+    facts = {"key_alg": "1.2.3.4.5.6.7", "not_after": "2030-01-01T00:00:00Z", "subject": "CN=x", "issuer": "CN=y"}
+    keys = []
+    for _ in range(2):  # two runs of the same source and asset: new row ids, one identity
+        w = seed(world[0], sources=[{"name": f"S{len(keys)}", "uid": "uid-fixed",
+                                     "assets": [_asset("certificate", "/etc/ssl/odd.pem", facts=facts)]}])
+        d = detail(api, w[f"S{len(keys)}"]["assets"]["/etc/ssl/odd.pem"])
+        assert (d["q_grade"], d["q_reason"]) == ("Q0", "unknown_verdict")
+        keys.append(d["q_item_key"])
+    with Session(world[0]) as s:
+        row = s.get(CbomCollectedAsset, w["S1"]["assets"]["/etc/ssl/odd.pem"])
+        want = "asset:" + ID.stable_key("node", "uid-fixed", ID.node_identity(row))
+    assert keys[0] == keys[1] == want
 
 
 def test_network_aggregate_keeps_the_first_1000_addresses(api, world):

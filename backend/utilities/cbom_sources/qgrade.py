@@ -4,10 +4,11 @@
   sha256, and a test grades 2,000 generated inputs both with ``grade`` and with a reference that reads the rule list
   from this text, so the code and the signed text cannot drift apart.
 * ``GRADE_MODEL`` changes only with the text; ``GRADE_MODEL_VERSION`` also hashes this module and ``posture.py`` (the
-  class and exposure functions live there), so any edit that can change a grade changes the version.
+  class and exposure functions live there) and ``classify.CLASSIFIER_VERSION`` (the fallback test reads the
+  classifier's algorithm families), so any edit that can change a grade changes the version.
 * Inputs come from the product's single class function (``posture.pqc_class``), its exposure function
   (``posture.asset_exposure``, with one grade-only precedence change: a collector's internet-facing fact beats an
-  "internal" set on the source), the job's metadata snapshot (per-source X, exposure override, node segment) and the
+  "internal" or "unknown" set on the source), the job's metadata snapshot (per-source X, exposure override, node segment) and the
   team's Mosca X/Y/Z as they are now (PR-2 snapshots them per run; until then every grade says ``source: current``).
 * Items that are not assets: unread scope (coverage rows, job targets, sources the run did not read), reported as Q0
   items with a stable key; network ranges aggregate per (source, status). A missing Mosca setting is one item
@@ -37,28 +38,28 @@ from backend.new_models import (
     CbomCollectionSource,
     CbomScanNode,
 )
+from backend.utilities.cbom_sources import identity as ID
 from backend.utilities.cbom_sources import posture as P
-from backend.utilities.cbom_sources.classify import quantum_vulnerable
+from backend.utilities.cbom_sources.classify import CLASSIFIER_VERSION, quantum_vulnerable
 
 FORMULA_TEXT = """\
 ZeroShield quantum risk grade, model qg-1.
 Grades: Q0 Unknown, Q1 Critical, Q2 High, Q3 Medium, Q4 Low. "No grade" is not a grade.
 Items: (a) a collected asset; (b) an unread scope: a coverage row for something the product did not read, a target
-the job did not read, a source the run did not read (skipped by the planner, collect job not successful or not
-finished, or cut at the asset limit / assets lost); (c) an evidence area or vendor; (d) a code-scan row (team
-register only).
-Not items: a coverage row saying the target has no such thing ("not_installed", or "not_supported" with a detail the
-product lists as absent), an address that answered on no probed port, a target the job reports "not_supported" (a
-cloud region that is not enabled).
+the job did not read (whatever its status, "not_supported" included), a source the run did not read (skipped by the
+planner, in a group left out of the run, collect job not successful or not finished, or cut at the asset limit /
+assets lost); (c) an evidence area or vendor; (d) a code-scan row (team register only).
+Not items: a coverage row or a target saying the target has no such thing ("not_installed", or "not_supported" with a
+detail the product lists as absent: a cloud region or project with nothing enabled, no AD CS CA, no package
+database), an address that answered on no probed port.
 Inputs per item:
   class      = the PQC class of the asset (quantum-vulnerable | hybrid | quantum-safe | grover-weakened |
                unknown | not-applicable), from the product's single class function.
   fallback   = the asset is an endpoint of class hybrid or quantum-safe that also completes a classical-only key
-               exchange (TLS 1.2 or older, static RSA key transport, a classical TLS 1.3 group, a classical SSH key
-               exchange). The grade uses the weakest configuration the endpoint accepts: such an endpoint is graded
-               as class quantum-vulnerable.
+               exchange (TLS 1.2 or older, static RSA key transport, a classical TLS 1.3 group it reports, a classical
+               SSH key exchange). The grade uses the weakest configuration the endpoint accepts: rules 8 and 14-18.
   exposure   = internet | internal | unknown, from the product's single exposure function, except that a
-               collector's internet-facing fact beats an "internal" set on the source.
+               collector's internet-facing fact beats an "internal" or "unknown" set on the source.
   anchor     = the asset is a CA certificate (basicConstraints CA true) or a CA (cloud CA, AD CS / Vault CA).
   X          = the asset's source "data must stay secret for (years)" if set, else the team's X.
   Y, Z       = the team's migration years and years until a cryptographically relevant quantum computer.
@@ -74,30 +75,40 @@ Rules, first match wins:
   5. class not-applicable                                      -> no grade "not_applicable"
   6. correlation required and absent                           -> Q0 "not_correlated"  (not produced by qg-1 runs)
   7. class quantum-vulnerable and X, Y or Z not set            -> Q0 "mosca_missing"
-  8. class quantum-vulnerable and X + Y > Z and exposure internet -> Q1 "qv_exceeds_internet"
-  9. class quantum-vulnerable and X + Y > Z and anchor         -> Q1 "qv_exceeds_anchor"
- 10. class quantum-vulnerable and X + Y > Z and exposure unknown -> Q2 "qv_exceeds_exposure_unknown"
- 11. class quantum-vulnerable and X + Y > Z                    -> Q2 "qv_exceeds"
- 12. class quantum-vulnerable and X + Y <= Z                   -> Q3 "qv_within"
- 13. class grover-weakened                                     -> Q3 "grover_weakened"
- 14. class hybrid or quantum-safe, attested at E1              -> Q3 "pq_attested_e1"
- 15. class hybrid or quantum-safe, observed                    -> Q4 "pq_observed"
- 16. class hybrid or quantum-safe, code                        -> Q4 "pq_code"
- 17. class hybrid or quantum-safe, attested at E2 or E3        -> Q4 "pq_attested"
+  8. fallback and X, Y or Z not set                            -> Q0 "mosca_missing"
+  9. class quantum-vulnerable and X + Y > Z and exposure internet -> Q1 "qv_exceeds_internet"
+ 10. class quantum-vulnerable and X + Y > Z and anchor         -> Q1 "qv_exceeds_anchor"
+ 11. class quantum-vulnerable and X + Y > Z and exposure unknown -> Q2 "qv_exceeds_exposure_unknown"
+ 12. class quantum-vulnerable and X + Y > Z                    -> Q2 "qv_exceeds"
+ 13. class quantum-vulnerable and X + Y <= Z                   -> Q3 "qv_within"
+ 14. fallback and X + Y > Z and exposure internet              -> Q1 "qv_fallback_exceeds_internet"
+ 15. fallback and X + Y > Z and anchor                         -> Q1 "qv_fallback_exceeds_anchor"
+ 16. fallback and X + Y > Z and exposure unknown               -> Q2 "qv_fallback_exceeds_exposure_unknown"
+ 17. fallback and X + Y > Z                                    -> Q2 "qv_fallback_exceeds"
+ 18. fallback and X + Y <= Z                                   -> Q3 "qv_fallback_within"
+ 19. class grover-weakened                                     -> Q3 "grover_weakened"
+ 20. class hybrid or quantum-safe, attested at E1              -> Q3 "pq_attested_e1"
+ 21. class hybrid or quantum-safe, observed                    -> Q4 "pq_observed"
+ 22. class hybrid or quantum-safe, code                        -> Q4 "pq_code"
+ 23. class hybrid or quantum-safe, attested at E2 or E3        -> Q4 "pq_attested"
 Integers only; X, Y, Z in 0..100. A source X of 0 is a value (not "unset").
-Network sources: unread scope of one source with the same status is one item, with a count and its addresses.
+Network sources: unread scope of one source with the same status is one item, with a count and its addresses
+(targets the node folds into one summary row count under their own statuses).
 A missing X, Y or Z is one item ("inputs:mosca") with the count of the assets it leaves ungraded.
 """
-FORMULA_SHA256 = "9afdb44697907cc5a7e0369d38647564366234620d23b65569df41121b185e94"
+FORMULA_SHA256 = "e7778cae6c2b3d7468ff7874f532cde57db7d5d98804849623c70c35f17bc901"
 GRADE_MODEL = "qg-1"
 
 
-def model_version(qgrade_source: bytes, posture_source: bytes) -> str:
-    """``qg-1+`` and the first 12 hex of sha256(qgrade.py ‖ posture.py): every module that can change a grade."""
-    return f"{GRADE_MODEL}+" + hashlib.sha256(qgrade_source + posture_source).hexdigest()[:12]
+def model_version(qgrade_source: bytes, posture_source: bytes, classifier_version: str) -> str:
+    """``qg-1+`` and the first 12 hex of sha256(qgrade.py ‖ posture.py ‖ CLASSIFIER_VERSION): every module that can
+    change a grade (the class and exposure functions live in posture; the fallback test reads the classifier's
+    algorithm families at view time)."""
+    return f"{GRADE_MODEL}+" + hashlib.sha256(qgrade_source + posture_source
+                                              + classifier_version.encode("utf-8")).hexdigest()[:12]
 
 
-GRADE_MODEL_VERSION = model_version(Path(__file__).read_bytes(), Path(P.__file__).read_bytes())
+GRADE_MODEL_VERSION = model_version(Path(__file__).read_bytes(), Path(P.__file__).read_bytes(), CLASSIFIER_VERSION)
 
 GRADES = ("Q0", "Q1", "Q2", "Q3", "Q4")
 LABELS = {"Q0": "Unknown", "Q1": "Critical", "Q2": "High", "Q3": "Medium", "Q4": "Low"}
@@ -118,7 +129,8 @@ REASONS: dict[str, dict[str, Any]] = {
                          "text": "The collect job was cut at the asset limit, or stored fewer assets than it read"},
     "excluded_by_choice": {"grade": "Q0", "kind": "scope",
                            "text": "Left out by the team's choice (never-scan list, a disabled source, an option off)"},
-    "evidence_e0": {"grade": "Q0", "kind": "evidence", "text": "Evidence at E0 (no answer, rated unknown, expired)"},
+    "evidence_e0": {"grade": "Q0", "kind": "evidence",
+                    "text": "Evidence at E0 (no answer, rated unknown, expired, vendor no response)"},
     "attested_no_class": {"grade": None, "kind": "no_grade", "text": "Evidence answered without a PQC class"},
     "unknown_verdict": {"grade": "Q0", "kind": "asset", "text": "The product could not tell the asset's PQC class"},
     "not_applicable": {"grade": None, "kind": "no_grade", "text": "No public-key cryptography to grade"},
@@ -132,6 +144,18 @@ REASONS: dict[str, dict[str, Any]] = {
                                     "text": "Quantum-vulnerable, X + Y > Z, internet exposure unknown"},
     "qv_exceeds": {"grade": "Q2", "kind": "asset", "text": "Quantum-vulnerable, X + Y > Z, internal"},
     "qv_within": {"grade": "Q3", "kind": "asset", "text": "Quantum-vulnerable, X + Y <= Z"},
+    "qv_fallback_exceeds_internet": {
+        "grade": "Q1", "kind": "asset",
+        "text": "Post-quantum endpoint that still accepts a classical fallback, X + Y > Z, reachable from the internet"},
+    "qv_fallback_exceeds_anchor": {"grade": "Q1", "kind": "asset",
+                                   "text": "Post-quantum trust anchor that still accepts a classical fallback, X + Y > Z"},
+    "qv_fallback_exceeds_exposure_unknown": {
+        "grade": "Q2", "kind": "asset",
+        "text": "Post-quantum endpoint that still accepts a classical fallback, X + Y > Z, internet exposure unknown"},
+    "qv_fallback_exceeds": {"grade": "Q2", "kind": "asset",
+                            "text": "Post-quantum endpoint that still accepts a classical fallback, X + Y > Z, internal"},
+    "qv_fallback_within": {"grade": "Q3", "kind": "asset",
+                           "text": "Post-quantum endpoint that still accepts a classical fallback, X + Y <= Z"},
     "grover_weakened": {"grade": "Q3", "kind": "asset", "text": "128-bit symmetric key (Grover halves its strength)"},
     "pq_attested_e1": {"grade": "Q3", "kind": "asset", "text": "Hybrid or quantum-safe, resting only on E1 evidence"},
     "pq_observed": {"grade": "Q4", "kind": "asset", "text": "Hybrid or quantum-safe, observed by a collector"},
@@ -175,12 +199,13 @@ def _mosca_int(value: Any) -> int | None:
 
 
 def graded_class(cls: str | None, fallback: bool) -> str | None:
-    """The class the rules read: an endpoint that also completes a classical-only exchange is quantum-vulnerable."""
+    """The class the grade is computed on (``q_explain.graded_class``): an endpoint that also completes a
+    classical-only exchange is graded on that exchange (rules 8 and 14-18, reasons ``qv_fallback_*``)."""
     return "quantum-vulnerable" if cls in _PQ and fallback else cls
 
 
 def grade(inp: GradeInput) -> Grade:
-    """qg-1, rules 1-17 of ``FORMULA_TEXT`` in order (first match wins)."""
+    """qg-1, rules 1-23 of ``FORMULA_TEXT`` in order (first match wins)."""
     if inp.item == "scope":
         if inp.scope_reason not in SCOPE_REASONS:
             raise ValueError(f"scope item without a known reason: {inp.scope_reason!r}")
@@ -190,7 +215,7 @@ def grade(inp: GradeInput) -> Grade:
         return Grade("Q0", "evidence_e0")
     if attested and inp.level in _E123 and inp.cls is None:
         return Grade(None, "attested_no_class")
-    cls = graded_class(inp.cls, inp.fallback)
+    cls = inp.cls
     if cls not in CLASSES:
         raise ValueError(f"asset without a PQC class: {inp.cls!r}")
     if cls == "unknown":
@@ -199,19 +224,21 @@ def grade(inp: GradeInput) -> Grade:
         return Grade(None, "not_applicable")
     if inp.correlation_missing:
         return Grade("Q0", "not_correlated")
-    if cls == "quantum-vulnerable":
+    fallback = cls in _PQ and inp.fallback
+    if cls == "quantum-vulnerable" or fallback:
         x, y, z = (_mosca_int(v) for v in (inp.x, inp.y, inp.z))
         if x is None or y is None or z is None:
             return Grade("Q0", "mosca_missing")
+        qv = "qv_fallback_" if fallback else "qv_"
         if x + y > z:
             if inp.exposure == "internet":
-                return Grade("Q1", "qv_exceeds_internet")
+                return Grade("Q1", qv + "exceeds_internet")
             if inp.anchor:
-                return Grade("Q1", "qv_exceeds_anchor")
+                return Grade("Q1", qv + "exceeds_anchor")
             if inp.exposure == "unknown":
-                return Grade("Q2", "qv_exceeds_exposure_unknown")
-            return Grade("Q2", "qv_exceeds")
-        return Grade("Q3", "qv_within")
+                return Grade("Q2", qv + "exceeds_exposure_unknown")
+            return Grade("Q2", qv + "exceeds")
+        return Grade("Q3", qv + "within")
     if cls == "grover-weakened":
         return Grade("Q3", "grover_weakened")
     # hybrid or quantum-safe
@@ -240,7 +267,7 @@ def model_payload() -> dict[str, Any]:
 # only when its check and detail match an entry here; every other "not_supported" row is an unread scope.
 ABSENT: tuple[tuple[re.Pattern[str], re.Pattern[str]], ...] = (
     (re.compile(r"^BitLocker$", re.I), re.compile(r"\bnot installed\b", re.I)),
-    (re.compile(r"^package list$", re.I), re.compile(r"\bno dpkg, apk or rpm package database\b", re.I)),
+    (re.compile(r"^package list$", re.I), re.compile(r"\bno dpkg, apk or rpm\b.*\bpackage database\b", re.I)),
     (re.compile(r"AD CS|certificate services", re.I),
      re.compile(r"\bno Active Directory Certificate Services CA is configured\b", re.I)),
 )
@@ -324,7 +351,7 @@ def grade_exposure(facts: dict[str, Any] | None, target: str | None, location: s
                    segment: str | None, memo: dict | None = None) -> tuple[str, str]:
     """``posture.asset_exposure`` (one exposure function), memoised per (override, segment, target, location, the
     collector's fact), with one grade-only change: a collector's ``internet_facing: true`` beats an ``internal``
-    override (HF-8). The risk score keeps ``asset_exposure`` unchanged."""
+    or ``unknown`` override (HF-8; review B). The risk score keeps ``asset_exposure`` unchanged."""
     facts = facts if isinstance(facts, dict) else {}
     flag = facts.get("internet_facing")
     flag = flag if isinstance(flag, bool) else None
@@ -334,9 +361,9 @@ def grade_exposure(facts: dict[str, Any] | None, target: str | None, location: s
     def one(loc: str | None) -> tuple[str, str]:
         key = (override, segment, flag, reason, target, loc)
         if key not in memo:
-            if override == "internal" and flag is True:
+            if override in ("internal", "unknown") and flag is True:
                 memo[key] = ("internet", "reported internet-facing by the collector"
-                             + (f" ({reason})" if reason else "") + "; the source says internal")
+                             + (f" ({reason})" if reason else "") + f"; the source says {override}")
             else:
                 slim = {"internet_facing": flag, "internet_facing_reason": reason} if flag is not None else {}
                 memo[key] = P.asset_exposure(slim, target, loc, override=override, node_segment=segment)
@@ -426,7 +453,7 @@ class GradeContext:
                                y=self.y, z=self.z, provenance="observed"))
         missing = [k for k, v in (("x", x), ("y", self.y), ("z", self.z)) if v is None]
         item_key = "inputs:mosca" if out.q_reason == "mosca_missing" else (
-            f"asset:{row.id}" if out.q_grade == "Q0" else None)
+            f"asset:{ID.stable_key('node', job.source_uid, ID.node_identity(row))}" if out.q_grade == "Q0" else None)
         if not explain:  # list pages and the posture loop read only the grade and what is missing
             return RowGrade(out.q_grade, out.q_reason, item_key,
                             {"missing": missing if out.q_reason == "mosca_missing" else []})
@@ -459,9 +486,7 @@ class GradeContext:
             return RowGrade(None, "not_an_item", None, self._stamp(explain))
         reason = "excluded_by_choice" if kind == "by_choice" else "coverage_gap"
         target = str(row.target or "")
-        if kind == "by_choice":
-            key = f"coverage:{job.source_uid}:{target}:by_choice"
-        elif job.network:
+        if job.network and kind != "by_choice":
             key = f"coverage:{job.source_uid}:*:{status}"
         else:
             key = f"coverage:{job.source_uid}:{target}:{facts.get('check') or ''}"
@@ -469,8 +494,11 @@ class GradeContext:
         return RowGrade(out.q_grade, out.q_reason, key, self._stamp(explain))
 
 
-def _source_uid(source: CbomCollectionSource | None, params: dict[str, Any], source_id: int | None) -> str:
-    return str(params.get("source_uid") or (source.source_uid if source else None) or f"id{source_id or 0}")
+def _source_ref(source: CbomCollectionSource | None, source_id: int | None) -> str:
+    """A source without a job (planner-skipped, left out of the run): named as ``identity.job_source_ref`` would."""
+    if source is not None and source.source_uid:
+        return source.source_uid
+    return f"source-{source_id}" if source_id is not None else "deleted:unknown"
 
 
 def load_context(session: Session, *, team_id: int, run_id: int | None = None, job_id: int | None = None,
@@ -505,7 +533,7 @@ def load_context(session: Session, *, team_id: int, run_id: int | None = None, j
         spec = KINDS.get(source.kind) if source is not None else None
         jobs[job.id] = _JobInfo(  # type: ignore[index]
             x=_mosca_int(meta.get("data_lifetime_years")), exposure=meta.get("exposure"), segment=meta.get("segment"),
-            source_uid=_source_uid(source, params, job.source_id), source_id=job.source_id,
+            source_uid=ID.job_source_ref(job, source), source_id=job.source_id,
             source_name=(source.name if source else None) or params.get("source_name"),
             network=bool(spec is not None and spec.group == "network"))
     return GradeContext(team_x=_mosca_int(risk_model.get("data_shelf_life_years")),
@@ -516,22 +544,54 @@ def load_context(session: Session, *, team_id: int, run_id: int | None = None, j
 # ----------------------------------------------------------------------------- unread scope of a run
 _UNREAD_JOB = {"failure": "collection failure", "expired": "collection expired", "cancelled": "collection cancelled",
                "pending": "collection not finished", "claimed": "collection not finished"}
-_TARGET_NOT_ITEMS = ("ok", "partial", "not_supported")
 _BY_CHOICE_SKIPS = ("Disabled", "0 targets left after the never-scan list")
+# "not_supported" on a target means "not read" (a zstd image layer, Oracle NNE, TDS 8.0 strict, a protocol this node
+# version cannot speak ...) unless it says the target has nothing there (cx2 HF-4: not-read by default)
+_TARGET_ABSENT = (re.compile(r"\bno Active Directory Certificate Services CA is configured\b", re.I),)
+
+
+def target_kind(target: dict[str, Any]) -> str:
+    """One row of a job's ``result.targets``: ``read`` (ok / partial), ``by_choice`` (never-scan list), ``summary``
+    (the node's "+N more" row, whose error is JSON {status: count}), ``not_present`` (a cloud region or project with
+    every service not enabled, a server with no AD CS CA) or ``gap`` (every other status, "not_supported" included)."""
+    status = str(target.get("status") or "")
+    if status in ("", "ok", "partial"):
+        return "read"
+    if status == "skipped_never_scan":
+        return "by_choice"
+    if status == "summary":
+        return "summary"
+    if status == "not_supported":
+        services = target.get("services")
+        if isinstance(services, dict) and services and all(v == "not_enabled" for v in services.values()):
+            return "not_present"
+        if any(p.search(str(target.get("error") or "")) for p in _TARGET_ABSENT):
+            return "not_present"
+    return "gap"
+
+
+def _summary_counts(target: dict[str, Any]) -> dict[str, int]:
+    try:
+        counts = json.loads(str(target.get("error") or "{}"))
+    except ValueError:
+        return {}
+    return {str(k): v for k, v in counts.items() if isinstance(v, int) and not isinstance(v, bool) and v > 0} \
+        if isinstance(counts, dict) else {}
 
 
 class _Items:
     def __init__(self) -> None:
         self.by_key: dict[str, dict[str, Any]] = {}
 
-    def add(self, key: str, reason: str, *, source: _JobInfo | None = None, **extra: Any) -> dict[str, Any]:
+    def add(self, key: str, reason: str, *, source: _JobInfo | None = None, count: int = 1,
+            **extra: Any) -> dict[str, Any]:
         item = self.by_key.get(key)
         if item is None:
             item = self.by_key[key] = {
                 "key": key, "kind": REASONS[reason]["kind"], "reason": reason, "q_grade": REASONS[reason]["grade"],
                 "source_id": source.source_id if source else None, "source_name": source.source_name if source else None,
                 "count": 0, **extra}
-        item["count"] += 1
+        item["count"] += count
         return item
 
 
@@ -540,12 +600,14 @@ def scope_items(ctx: GradeContext, coverage: list[tuple[CbomCollectedAsset, RowG
 
     * coverage rows graded Q0 by ``GradeContext.grade_row`` (one item per key; a network source's rows of one status
       are one item with a count, the first 1,000 addresses and the row ids);
-    * job targets the job did not read (``skipped_never_scan``: excluded by choice; network sources aggregated the same
-      way; ``ok`` / ``partial`` / ``not_supported`` are not items);
+    * job targets the job did not read (``target_kind``: ``skipped_never_scan`` is excluded by choice; network sources
+      aggregated the same way; the node's "summary" row adds its per-status counts to the same per-status items);
     * collect jobs that did not succeed or have not finished (``source_not_read``), or were cut at the asset limit or
       lost assets (``source_truncated``, the reasons ``drift.job_comparable`` gives);
     * sources the planner skipped (``run.breakdown.skipped``): "Disabled" and "0 targets left after the never-scan
-      list" are excluded by choice, every other reason is ``source_not_read`` with the planner's text."""
+      list" are excluded by choice, every other reason is ``source_not_read`` with the planner's text;
+    * the team's other sources that existed when the run started and that the run neither collected nor skipped: in a
+      group the run's ``include`` left out, or not chosen for the run (``excluded_by_choice``, cx2 HF-5)."""
     items = _Items()
     not_items: Counter[str] = Counter()
     for row, out in coverage:
@@ -582,9 +644,18 @@ def scope_items(ctx: GradeContext, coverage: list[tuple[CbomCollectedAsset, RowG
             if not isinstance(t, dict):
                 continue
             status, target = str(t.get("status") or ""), str(t.get("target") or "")
-            if not status or status in _TARGET_NOT_ITEMS:
+            kind = target_kind(t)
+            if kind in ("read", "not_present"):
                 continue
-            if status == "skipped_never_scan":
+            if kind == "summary":  # targets past the node's 1,000 rows: counted under their own statuses
+                for sub, n in sorted(_summary_counts(t).items()):
+                    if target_kind({"status": sub}) != "gap":
+                        continue
+                    item = items.add(f"coverage:{info.source_uid}:*:{sub}", "coverage_gap", source=info, target="*",
+                                     check=None, status=sub, detail=f"targets not read: {sub}", count=n, refs=[])
+                    item.setdefault("addresses", [])
+                continue
+            if kind == "by_choice":
                 items.add(f"coverage:{info.source_uid}:{target}:by_choice", "excluded_by_choice", source=info,
                           target=target, check=None, status=status, detail="on the never-scan list")
             elif info.network:
@@ -598,16 +669,32 @@ def scope_items(ctx: GradeContext, coverage: list[tuple[CbomCollectedAsset, RowG
                           check="target", status=status, detail=str(t.get("error") or "")[:300] or None)
     run = ctx.run
     breakdown = run.breakdown if run is not None and isinstance(run.breakdown, dict) else {}
+    seen = {j.source_id for j in ctx.job_rows if j.kind == "collect"}
     for entry in breakdown.get("skipped") or []:
         if not isinstance(entry, dict):
             continue
         sid = entry.get("source_id") if isinstance(entry.get("source_id"), int) else None
+        seen.add(sid)
         source = ctx.sources.get(sid or 0)
-        info = _JobInfo(None, None, None, _source_uid(source, {}, sid), sid,
+        info = _JobInfo(None, None, None, _source_ref(source, sid), sid,
                         entry.get("name") or (source.name if source else None), False)
         reason = str(entry.get("reason") or "skipped")
         items.add(f"source:{info.source_uid}", "excluded_by_choice" if reason in _BY_CHOICE_SKIPS else "source_not_read",
                   source=info, detail=f"skipped by the planner: {reason}"[:300])
+    if run is not None and run.created_at is not None:
+        from backend.utilities.cbom_sources.kinds import KINDS
+
+        include = run.include if isinstance(run.include, dict) else {}
+        for sid, source in sorted(ctx.sources.items()):
+            spec = KINDS.get(source.kind)
+            if sid in seen or spec is None or (source.created_at is not None and source.created_at > run.created_at):
+                continue
+            key = "cloud" if spec.group in ("cloud", "identity") else spec.group
+            left_out = bool(include) and not include.get(key, False)
+            info = _JobInfo(None, None, None, _source_ref(source, sid), sid, source.name, False)
+            items.add(f"source:{info.source_uid}", "excluded_by_choice", source=info,
+                      detail=(f"the {key} group was left out of this run" if left_out
+                              else "not chosen for this run"))
     return list(items.by_key.values()), not_items
 
 

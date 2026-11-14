@@ -25,7 +25,7 @@ if str(REPO) not in sys.path:
 
 from backend.utilities.cbom_sources import qgrade as QG  # noqa: E402
 
-PINNED_TEXT_SHA256 = "9afdb44697907cc5a7e0369d38647564366234620d23b65569df41121b185e94"
+PINNED_TEXT_SHA256 = "e7778cae6c2b3d7468ff7874f532cde57db7d5d98804849623c70c35f17bc901"
 CB = REPO / "backend" / "utilities" / "cbom_sources"
 
 
@@ -37,13 +37,18 @@ def test_formula_text_sha_is_pinned():
     assert QG.FORMULA_TEXT.startswith("ZeroShield quantum risk grade, model qg-1.\n")
 
 
-def test_model_version_hashes_qgrade_and_posture():
+def test_model_version_hashes_qgrade_posture_and_the_classifier():
+    from backend.utilities.cbom_sources.classify import CLASSIFIER_VERSION
+
     q, p = (CB / "qgrade.py").read_bytes(), (CB / "posture.py").read_bytes()
-    assert QG.model_version(q, p) == QG.GRADE_MODEL_VERSION
+    cv = CLASSIFIER_VERSION
+    assert QG.model_version(q, p, cv) == QG.GRADE_MODEL_VERSION
     assert re.fullmatch(r"qg-1\+[0-9a-f]{12}", QG.GRADE_MODEL_VERSION) and len(QG.GRADE_MODEL_VERSION) <= 32
-    assert QG.model_version(q, p + b"\n# a posture edit\n") != QG.GRADE_MODEL_VERSION  # class/exposure live there
-    assert QG.model_version(q + b"\n# a grade edit\n", p) != QG.GRADE_MODEL_VERSION
-    assert QG.model_version(q, p) == "qg-1+" + hashlib.sha256(q + p).hexdigest()[:12]
+    assert QG.model_version(q, p + b"\n# a posture edit\n", cv) != QG.GRADE_MODEL_VERSION  # class/exposure live there
+    assert QG.model_version(q + b"\n# a grade edit\n", p, cv) != QG.GRADE_MODEL_VERSION
+    # the fallback test reads classify.quantum_vulnerable: a classifier change is a grade-model change (review B)
+    assert QG.model_version(q, p, cv + "x") != QG.GRADE_MODEL_VERSION
+    assert QG.model_version(q, p, cv) == "qg-1+" + hashlib.sha256(q + p + cv.encode()).hexdigest()[:12]
 
 
 def test_grade_model_payload_lists_every_grade_and_reason():
@@ -60,6 +65,11 @@ def test_grade_model_payload_lists_every_grade_and_reason():
     assert codes["not_an_item"]["grade"] is None and codes["not_an_item"]["kind"] == "not_an_item"
     # the two Q2 reasons are split (internal vs exposure unknown, cx4 OB19-6)
     assert codes["qv_exceeds"]["grade"] == codes["qv_exceeds_exposure_unknown"]["grade"] == "Q2"
+    # a classical fallback of a PQ endpoint has its own reasons (cx2 HF-1), same grades as the classical ones
+    for code in ("exceeds_internet", "exceeds_anchor", "exceeds_exposure_unknown", "exceeds", "within"):
+        assert codes[f"qv_fallback_{code}"]["grade"] == codes[f"qv_{code}"]["grade"]
+        assert "fallback" in codes[f"qv_fallback_{code}"]["text"]
+    assert "vendor no response" in codes["evidence_e0"]["text"]
 
 
 # ----------------------------------------------------------------------------- reference read from the text
@@ -68,9 +78,7 @@ _PQ = ("hybrid", "quantum-safe")
 
 
 def _cls(i: QG.GradeInput) -> str | None:
-    # Inputs, "fallback": an endpoint of class hybrid or quantum-safe that also completes a classical-only key exchange
-    # is graded as class quantum-vulnerable (the weakest configuration it accepts)
-    return "quantum-vulnerable" if i.cls in _PQ and i.fallback else i.cls
+    return i.cls
 
 
 def _set(i: QG.GradeInput) -> bool:
@@ -86,6 +94,8 @@ ATOMS = {
     "class not-applicable": lambda i: _cls(i) == "not-applicable",
     "correlation required and absent": lambda i: i.correlation_missing,
     "class quantum-vulnerable": lambda i: _cls(i) == "quantum-vulnerable",
+    # Inputs, "fallback": an endpoint of class hybrid or quantum-safe that also completes a classical-only exchange
+    "fallback": lambda i: _cls(i) in _PQ and i.fallback,
     "X, Y or Z not set": lambda i: not _set(i),
     "X + Y > Z": lambda i: _set(i) and i.x + i.y > i.z,
     "X + Y <= Z": lambda i: _set(i) and i.x + i.y <= i.z,
@@ -207,7 +217,11 @@ def _a(**kw) -> QG.GradeInput:
     (_a(x=None), "Q0", "mosca_missing"),
     (_a(x=0, y=5, z=4), "Q2", "qv_exceeds"),  # X = 0 is a value, not "unset"
     (_a(cls="hybrid"), "Q4", "pq_observed"),
-    (_a(cls="hybrid", fallback=True, exposure="internet"), "Q1", "qv_exceeds_internet"),  # weakest configuration
+    (_a(cls="hybrid", fallback=True, exposure="internet"), "Q1", "qv_fallback_exceeds_internet"),  # weakest config
+    (_a(cls="hybrid", fallback=True), "Q2", "qv_fallback_exceeds"),
+    (_a(cls="quantum-safe", fallback=True, exposure="unknown"), "Q2", "qv_fallback_exceeds_exposure_unknown"),
+    (_a(cls="hybrid", fallback=True, z=20), "Q3", "qv_fallback_within"),
+    (_a(cls="quantum-vulnerable", fallback=True), "Q2", "qv_exceeds"),  # fallback is only for PQ endpoints
     (_a(cls="quantum-safe", fallback=True, x=None), "Q0", "mosca_missing"),
     (_a(cls="quantum-safe", provenance="code"), "Q4", "pq_code"),
     (_a(cls="grover-weakened"), "Q3", "grover_weakened"),
@@ -234,6 +248,11 @@ def test_invalid_inputs_are_refused():
      "not_present"),
     ({"check": "package list", "status": "not_supported", "detail": "no dpkg, apk or rpm package database was found"},
      "not_present"),
+    # review B: the container collector's distroless / scratch wording
+    ({"check": "package list", "status": "not_supported",
+      "detail": "no dpkg, apk or rpm (sqlite) package database in the image (distroless or scratch?)"}, "not_present"),
+    # a by-choice row is by choice whatever its status
+    ({"check": "lambda environment", "status": "not_supported", "by_choice": True, "detail": "option off"}, "by_choice"),
     ({"check": "linkerd policy", "status": "not_installed", "detail": ""}, "not_present"),
     # HF-4: "not_supported" that means "the product did not look" is an unread scope
     ({"check": "key and certificate files", "status": "not_supported",
@@ -279,6 +298,28 @@ def test_trust_anchor(asset_type, facts, anchor, basis):
     assert QG.trust_anchor(asset_type, facts) == (anchor, basis)
 
 
+@pytest.mark.parametrize("target,kind", [
+    # review B: "not_supported" targets the node never read are unread scope (cx2 HF-4: not-read by default)
+    ({"target": "reg.example/app:1", "status": "not_supported",
+      "error": "a layer is zstd-compressed (not read: no decompressor in the scan node)"}, "gap"),
+    ({"target": "db1:1521", "status": "not_supported",
+      "error": "the server requires Oracle native network encryption (NNE) instead of TLS"}, "gap"),
+    ({"target": "sql1:1433", "status": "not_supported", "error": "the server requires TDS 8.0 strict encryption"}, "gap"),
+    ({"target": "10.0.0.9:5000", "status": "not_supported", "error": "foo is not supported by this node version"}, "gap"),
+    ({"target": "aws/eu-south-2", "status": "not_supported", "error": "kms: not_enabled; acm: not_enabled",
+      "services": {"kms": "not_enabled", "acm": "not_enabled"}}, "not_present"),
+    ({"target": "ca01", "status": "not_supported",
+      "error": "no Active Directory Certificate Services CA is configured on this server"}, "not_present"),
+    ({"target": "10.0.0.9", "status": "timeout"}, "gap"),
+    ({"target": "10.0.0.9", "status": "ok"}, "read"),
+    ({"target": "10.0.0.9", "status": "partial"}, "read"),
+    ({"target": "10.0.0.9", "status": "skipped_never_scan"}, "by_choice"),
+    ({"target": "+1048 more", "status": "summary", "error": "{\"ok\": 1048}"}, "summary"),
+])
+def test_job_targets_are_read_by_what_was_not_read(target, kind):
+    assert QG.target_kind(target) == kind
+
+
 def test_collector_internet_facing_beats_a_team_internal_override():
     memo: dict = {}
     facing = {"internet_facing": True, "internet_facing_reason": "load balancer scheme internet-facing"}
@@ -287,6 +328,8 @@ def test_collector_internet_facing_beats_a_team_internal_override():
     # an "internet" override still raises; an "internal" override still lowers when the collector says nothing
     assert QG.grade_exposure({}, "10.0.0.5", None, override="internet", segment=None, memo=memo)[0] == "internet"
     assert QG.grade_exposure({}, "52.95.110.1", None, override="internal", segment=None, memo=memo)[0] == "internal"
+    # review B: a source set to "unknown" does not lower the collector's internet fact either
+    assert QG.grade_exposure(facing, "10.0.0.5", None, override="unknown", segment=None, memo={})[0] == "internet"
     assert QG.grade_exposure({}, "pay.bank.example", None, override=None, segment=None, memo=memo)[0] == "unknown"
     assert QG.grade_exposure({}, "52.95.110.1", None, override=None, segment=None, memo=memo)[0] == "internet"
     assert len(memo) == 5  # memoised per (override, segment, collector fact, target); location only when needed
