@@ -6110,7 +6110,7 @@ export const INFO_TIPS = {
     example: "dc-mumbai-linux · job #4410 · node-dc1 · 13 Nov 23:10.",
   },
   // ────────────────────────────────────────────────────────────── CBOM Sources: in-tab run results and posture (components/cbom/sources/RunResults.tsx, RunPosture.tsx)
-  // src: frontend/components/cbom/sources/RunResults.tsx:102-107 — each target's outcome
+  // src: frontend/components/cbom/sources/RunResults.tsx:103-108 — each target's outcome
   "cbom.run.targets": {
     label: "Targets",
     what: "Each target the run's jobs tried, with its outcome: read, unreachable, login failed and so on.",
