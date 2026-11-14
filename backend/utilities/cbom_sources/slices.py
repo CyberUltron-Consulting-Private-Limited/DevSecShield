@@ -166,6 +166,7 @@ def add_assets(session: Session, job: CbomCollectionJob, lease_id: str, assets: 
     known = list(decrypt_secrets(source.secret_encrypted).values()) if source is not None else []
     known += [s for s in (known_secrets or []) if isinstance(s, str)]
     rows, rejected, in_batch_dups = J.asset_rows(parent, assets, known, now)
+    J.OPS.bump(session, J.OPS.INGEST_REJECTED, rejected, now)  # cbom_ingest_rejected_assets_total (CB-31)
     inserted, existing, dropped, cap_reached = J.store_rows(session, parent, job, lease_id, rows,
                                                             owner_cap=source_asset_cap())
     if cap_reached:

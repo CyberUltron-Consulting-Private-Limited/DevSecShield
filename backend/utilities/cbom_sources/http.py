@@ -24,7 +24,7 @@ from backend.get_db import get_db
 from backend.new_models import CbomScanNode, TeamMembership
 from backend.utilities.auth.auth_utils import get_user_from_header_or_raise_exception
 from backend.utilities.cbom_sources import api_keys as API_KEYS
-from backend.utilities.cbom_sources.common import log, new_ref, sha256_hex
+from backend.utilities.cbom_sources.common import frames, log, new_ref, sha256_hex
 from backend.utilities.ratelimit import Key, RateLimiter, ip_key, user_key
 from backend.utilities.team import check_if_user_is_in_team
 
@@ -210,5 +210,6 @@ async def read_capped_json(request: Request, limit: int) -> Any:
 
 def server_error(what: str, exc: BaseException, **fields: Any) -> HTTPException:
     ref = new_ref()
-    log(f"{what} FAILED", ref=ref, error=type(exc).__name__, **fields)
+    # the traceback frames next to the ref (X3): where it failed, never the message or the locals
+    log(f"{what} FAILED", ref=ref, error=type(exc).__name__, frames=frames(exc), **fields)
     return HTTPException(status_code=500, detail=f"Something went wrong; please try again (ref {ref})")

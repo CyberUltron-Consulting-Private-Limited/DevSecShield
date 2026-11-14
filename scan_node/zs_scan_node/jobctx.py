@@ -353,6 +353,9 @@ class JobContext:
             "targets": rows,
             "truncated": bool(self.truncated),
             "assets_lost": self.lost,
+            # CB-31 (R4 OBS-5): what this node sent, and what the server answered for it; the server derives the
+            # asset-count mismatch from these (asset_count alone is its own accepted count and cannot show a loss)
+            "sent": self.sent, "rejected": self.rejected, "duplicate": self.duplicate,
             "duration_s": int(time.monotonic() - self.started),
         }
         if held:

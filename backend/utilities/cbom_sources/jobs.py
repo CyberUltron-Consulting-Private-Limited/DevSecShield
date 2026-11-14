@@ -32,6 +32,7 @@ from backend.utilities.cbom_sources.node_facts import normalise_tls
 from backend.utilities.cbom_sources.common import audit, clean_text, log
 from backend.utilities.cbom_sources.crypto import decrypt_secrets, scrub
 from backend.utilities.cbom_sources.kinds import KINDS, METADATA_FIELDS
+from backend.utilities.cbom_sources import ops_metrics as OPS
 from backend.utilities.cbom_sources.planning import credits, node_status, team_range_cidrs
 from backend.utilities.cbom_sources.settings import get_or_create_settings, team_exclusions, window_allows, window_end
 
@@ -218,6 +219,7 @@ def reap(session: Session, now: _dt.datetime, *, team_id: int | None = None, nod
                 _test_result_from_job(session, job, now)
                 audit(session, team_id=job.team_id, actor_type="system", actor_id=None, action=f"job.lease_expired.{target}",
                       object_type="job", object_id=job.id)
+                OPS.bump(session, OPS.LEASE_EXPIRED[target], now=now)  # cbom_job_lease_expiries_total (CB-31)
                 log("job lease expired", team=job.team_id, job=job.id, node=job.node_id, status=target,
                     attempt=job.attempts, refunded_c=refunded)
                 moved += 1
@@ -791,6 +793,12 @@ def _owned_job(session: Session, node: CbomScanNode | None, job_id: int, team_id
     return job
 
 
+def _count_field(result: dict[str, Any], name: str) -> int | None:
+    """A non-negative integer the node reported, else None (absent, a bool, a string: not trusted as a count)."""
+    value = result.get(name)
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+
 def _outcome(job: CbomCollectionJob, status: str, result: dict[str, Any], stored: int,
              read: int | None = None) -> tuple[str, dict[str, Any]]:
     """ok / partial / failed from the node's own target counts and what the server actually stored.  A ``partial``
@@ -808,7 +816,18 @@ def _outcome(job: CbomCollectionJob, status: str, result: dict[str, Any], stored
     ok, partial, failed, skipped = count("ok"), count("partial"), count("failed"), count("skipped")
     extra: dict[str, Any] = {}
     reported = result.get("asset_count")
-    if job.kind == "collect" and isinstance(reported, int) and reported != stored:
+    sent = _count_field(result, "sent")
+    if job.kind == "collect" and sent is not None:
+        # CB-31 (R4 OBS-5): a node that reports what it sent.  Every asset it sent is stored, a duplicate of one
+        # already stored (a retried batch), or lost on the way (``assets_lost``, also the Truncated badge); anything
+        # else, assets the server refused among them, is a mismatch the badge must show.
+        duplicate = _count_field(result, "duplicate") or 0
+        lost = _count_field(result, "assets_lost") or 0
+        expected = sent - duplicate - lost
+        if expected != stored:
+            extra["asset_mismatch"] = {"reported": expected, "stored": stored, "sent": sent, "duplicate": duplicate,
+                                       "rejected": _count_field(result, "rejected") or 0, "lost": lost}
+    elif job.kind == "collect" and isinstance(reported, int) and reported != stored:  # an older node
         extra["asset_mismatch"] = {"reported": reported, "stored": stored}
     if not counts:
         return ("partial" if extra or result.get("truncated") else "ok"), extra
@@ -955,6 +974,7 @@ def add_assets(
     known += [s for s in (known_secrets or []) if isinstance(s, str)]
     rows, rejected, in_batch_dups = asset_rows(job, assets, known, now)
     inserted, existing, dropped, cap_reached = store_rows(session, job, job, lease_id, rows)
+    OPS.bump(session, OPS.INGEST_REJECTED, rejected, now)  # cbom_ingest_rejected_assets_total (CB-31)
     total = int(session.exec(select(func.count()).select_from(CbomCollectedAsset).where(
         CbomCollectedAsset.job_id == job.id, CbomCollectedAsset.attempt == job.attempts)).one())
     duplicate = in_batch_dups + existing
