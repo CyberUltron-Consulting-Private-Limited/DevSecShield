@@ -50,7 +50,7 @@ CANCEL_GRACE = _dt.timedelta(minutes=10)
 MAX_ASSETS_PER_ATTEMPT = 50_000
 TARGET_STATUSES = frozenset({
     "ok", "unreachable", "refused", "timeout", "no_route", "auth_failed", "mfa_required", "host_key_changed",
-    "identity_unverified",
+    "identity_unverified", "kex_unsupported",
     "sudoers_missing", "sudo_denied", "rbac_denied", "winrm_denied", "tls_unavailable", "not_supported", "error",
     "skipped_never_scan",
     "skipped_window", "skipped_stop", "skipped_deadline", "skipped_cancelled",
@@ -440,7 +440,7 @@ def _scope_for(job: CbomCollectionJob, source: CbomCollectionSource | None, sett
             "parallel_per_server": settings.rate_parallel_per_server,
             "handshakes_per_endpoint": settings.rate_handshakes_per_endpoint,
         }
-        scope["read_zeek_span"] = bool(settings.zeek_span)
+        # settings.zeek_span is not sent: no scan node reads a SPAN port (CB-08; the UI no longer offers it)
     return scope
 
 

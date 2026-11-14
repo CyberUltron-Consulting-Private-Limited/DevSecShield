@@ -100,6 +100,8 @@ PQ_PROBE_GROUPS: tuple[int, ...] = _t.PQ_PROBE_GROUPS
 TLS13_SIGSCHEMES: tuple[int, ...] = _t.TLS13_SIGSCHEMES
 S_CLIENT_GROUPS_35: str = _t.S_CLIENT_GROUPS_35
 TLS_CLASSICAL_SIGSCHEME_NAMES: tuple[str, ...] = _t.TLS_CLASSICAL_SIGSCHEME_NAMES
+# The CB-13 SSH host-key reader offers these after every classical key exchange.
+SSH_PQ_PROBE_KEX: tuple[str, ...] = _t.SSH_PQ_PROBE_KEX
 
 _REVERSE_OID: Mapping[str, str] = MappingProxyType(
     {name: oid for oid, name in reversed(list(_OIDS.items()))}
@@ -387,6 +389,45 @@ def ssh_kex(method: str) -> Identity | None:
         if method.startswith(pattern[:-1]):
             best = pattern
     return _identity(_SSH_KEX[best], "name") if best else None
+
+
+# What a client sends for each part of an SSH key exchange: FIPS 203 s8 Table 2 gives
+# ML-KEM's module rank k per parameter set (NIST category 1/3/5 -> k 2/3/4; the
+# encapsulation key is 384 k + 32 bytes); an sntrup761 public key is 1158 bytes
+# (NTRU Prime round 3, OpenSSH sntrup761.c), taken by the server as it is.
+_FIPS203_RANK: Mapping[int, int] = MappingProxyType({1: 2, 3: 3, 5: 4})
+_OPAQUE_PUBLIC_KEY: Mapping[str, int] = MappingProxyType({"sntrup761": 1158})
+
+
+def ssh_kex_client_share(method: str) -> tuple[tuple[str, int], ...] | None:
+    """How a client builds its first message (C_INIT) of a post-quantum or hybrid
+    SSH key exchange: the parts in wire order, the post-quantum one first, as RFC
+    10042 s2 and OpenSSH's kexsntrup761x25519.c send them. A part is ("fips203", k),
+    an ML-KEM encapsulation key of module rank k; ("opaque", n), an n-byte public
+    key; ("x25519", 32), an X25519 public key; or ("nistp", bits), an uncompressed
+    point on that NIST curve. None for a classical or unknown method, or a part
+    with no rule here."""
+    ident = ssh_kex(method)
+    if ident is None or ident.quantum not in ("safe", "hybrid"):
+        return None
+    parts: list[tuple[str, int]] = []
+    for name in ident.components or (ident.parameter_set,):
+        part = resolve(name, "name") if name else None
+        if part is None:
+            return None
+        category, part_name, bits = part.nist_category, part.name, part.key_size
+        rank = _FIPS203_RANK.get(category) if category is not None else None
+        if part.standard == "FIPS 203" and rank is not None:
+            parts.append(("fips203", rank))
+        elif part_name is not None and part_name in _OPAQUE_PUBLIC_KEY:
+            parts.append(("opaque", _OPAQUE_PUBLIC_KEY[part_name]))
+        elif part.family_label == "X25519":
+            parts.append(("x25519", 32))
+        elif part.family_label == "EC" and bits is not None and bits in (256, 384, 521):
+            parts.append(("nistp", bits))
+        else:
+            return None
+    return tuple(parts)
 
 
 def _enum_key(value: str) -> str:
