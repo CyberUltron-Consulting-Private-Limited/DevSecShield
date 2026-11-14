@@ -7,6 +7,11 @@
 #   pull request from THIS repository  pr-<n>-<head sha12> and pr-<n>, only while it carries the label publish-preview
 #     (labeled, synchronize, reopened) (fork pull requests never publish)
 #   workflow_dispatch (ref, api_url)   manual-<sha12> (another api_url: manual-<sha12>-<8 hex of sha256(api_url)>)
+#   push to staging (a release)        also, for the scan node only: devsecshield-scan-node:<version> (written once,
+#                                      never overwritten), :<major.minor> and :latest (= that version), and the Helm
+#                                      chart as an OCI artifact ghcr.io/<owner>/charts/cbom-scan-node:<version> (written
+#                                      once) (job release; <version> is scan_node/zs_scan_node/__init__.py VERSION: bump
+#                                      it to release a new node). deploy/staging/README.md, "Public registry".
 #
 # Jobs: meta decides (.github/ci/ghcr_meta.py) -> exists checks which immutable tags are already there (all six: no
 # build at all) -> contexts proves no secret file can enter a build context -> build pushes each image for each
@@ -80,6 +85,8 @@ jobs:
       moving: ${{ steps.decide.outputs.moving }}
       sha: ${{ steps.tags.outputs.sha }}
       tag: ${{ steps.tags.outputs.tag }}
+      node_version: ${{ steps.tags.outputs.node_version }}
+      node_release_tags: ${{ steps.tags.outputs.node_release_tags }}
     steps:
       - name: Checkout (the workflow's commit, for the script)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -113,13 +120,18 @@ jobs:
           persist-credentials: false
           ref: ${{ steps.decide.outputs.ref }}
           path: target
-          sparse-checkout: .github/ci
+          # the scan node's VERSION (its release tags) comes from the commit that is built
+          sparse-checkout: |
+            .github/ci
+            scan_node/zs_scan_node
       - name: Tags
         id: tags
         if: steps.decide.outputs.publish == 'true'
         env:
           PREFIX: ${{ steps.decide.outputs.prefix }}
           API_URL: ${{ steps.decide.outputs.api_url }}
+          RELEASE: ${{ steps.decide.outputs.release }}
+          NODE_VERSION_FILE: target/scan_node/zs_scan_node/__init__.py
         run: |
           set -euo pipefail
           SHA=$(git -C target rev-parse HEAD)
@@ -251,6 +263,7 @@ jobs:
           SOURCE: ${{ needs.meta.outputs.source }}
           API_URL: ${{ needs.meta.outputs.api_url }}
           REGISTRY: ${{ needs.meta.outputs.registry }}
+          NODE_VERSION: ${{ needs.meta.outputs.node_version }}
         run: |
           set -euo pipefail
           {
@@ -258,6 +271,11 @@ jobs:
             if [ "$NAME" = frontend ]; then
               echo "NEXT_PUBLIC_BACKEND_URL=$API_URL"
               echo "NEXT_PUBLIC_CBOM_NODE_IMAGE=$REGISTRY/devsecshield-scan-node:$TAG"
+            fi
+            if [ "$NAME" = scan-node ]; then
+              # build identity (CB-03): the node reports <version>+<12-character commit>, as scan_node_image.sh builds
+              echo "ZS_NODE_BUILD=$SHA"
+              if [ -n "$NODE_VERSION" ]; then echo "ZS_NODE_VERSION=$NODE_VERSION"; fi
             fi
             echo 'ZS_EOF'
             echo 'labels<<ZS_EOF'
@@ -429,6 +447,8 @@ jobs:
       (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    outputs:
+      fresh: ${{ steps.fresh.outputs.fresh }}
     permissions:
       contents: read
       pull-requests: read
@@ -599,3 +619,132 @@ jobs:
               echo "| \`$img:$MOVING\` = \`$img:$TAG\` | \`sha256:${want[$c]}\` | $platforms |"
             done
           } >> "$GITHUB_STEP_SUMMARY"
+
+  release:
+    name: release tags + Helm chart (scan node)
+    needs: [meta, promote]
+    # A push to a release branch (staging) only, after the moving tags moved, and only while this commit is still the
+    # newest (promote's check): the release tags follow the moving tag, never back. No PR ever gets here (release is
+    # false for pull requests and manual runs; the fork check is repeated because this job writes packages).
+    if: >-
+      !cancelled() && needs.meta.outputs.publish == 'true' && needs.meta.outputs.node_release_tags != '' &&
+      needs.promote.result == 'success' && needs.promote.outputs.fresh == 'true' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout (the chart of the commit that was built)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ needs.meta.outputs.sha }}
+          sparse-checkout: deploy/helm/cbom-scan-node
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Point the scan node release tags at this commit's image
+        # The first word of RELEASE_TAGS is the version (1.0.0): IMMUTABLE, written once from this commit's
+        # devsecshield-scan-node:<immutable tag> and never overwritten (the Add scan node wizard pins it); a new
+        # release is a new scan_node VERSION. The others (1.0, latest) then point at that version's index (same
+        # digest, same attestation), so they change only when the version does. Each write is read back and retried
+        # 3 times; a failure fails the job (the moving tags stay where promote put them).
+        env:
+          IMAGE: ${{ needs.meta.outputs.registry }}/devsecshield-scan-node
+          TAG: ${{ needs.meta.outputs.tag }}
+          RELEASE_TAGS: ${{ needs.meta.outputs.node_release_tags }}
+        run: |
+          set -uo pipefail
+          digest_of() { # <ref>: sha256 of the manifest bytes; fails when it cannot be read
+            docker buildx imagetools inspect --raw "$1" > "$RUNNER_TEMP/m.json" 2> "$RUNNER_TEMP/m.err" || return 1
+            sha256sum "$RUNNER_TEMP/m.json" | cut -d' ' -f1
+          }
+          point() { # <tag ref> <source ref> <expected hex>: up to 3 attempts, each checked
+            local i
+            for i in 1 2 3; do
+              if docker buildx imagetools create -t "$1" "$2" && [ "$(digest_of "$1")" = "$3" ]; then return 0; fi
+              echo "::warning::attempt $i to point $1 at sha256:$3 failed"
+              if [ "$i" -lt 3 ]; then sleep $((i * 5)); fi
+            done
+            return 1
+          }
+          read -r -a tags <<< "$RELEASE_TAGS"
+          [ "${#tags[@]}" -gt 0 ] || { echo "::error::no release tags"; exit 1; }
+          for t in "${tags[@]}"; do
+            [[ "$t" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]] || { echo "::error::not a tag: $t"; exit 1; }
+          done
+          version=${tags[0]}
+          if want=$(digest_of "$IMAGE:$version"); then
+            echo "::notice::$IMAGE:$version exists already: kept as it is (a release tag is written once; bump the scan node VERSION to release this commit)"
+          elif grep -q ': not found' "$RUNNER_TEMP/m.err"; then
+            if ! want=$(digest_of "$IMAGE:$TAG"); then
+              cat "$RUNNER_TEMP/m.err"
+              echo "::error::$IMAGE:$TAG cannot be read; no release tag was changed"
+              exit 1
+            fi
+            point "$IMAGE:$version" "$IMAGE@sha256:$want" "$want" || { echo "::error::$IMAGE:$version is not confirmed after 3 attempts"; exit 1; }
+            echo "$IMAGE:$version = $IMAGE:$TAG (sha256:$want), new release" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            cat "$RUNNER_TEMP/m.err"
+            echo "::error::cannot tell whether $IMAGE:$version exists (registry error above); no release tag was changed"
+            exit 1
+          fi
+          failed=0
+          for t in "${tags[@]:1}"; do
+            if [ "$(digest_of "$IMAGE:$t" || true)" = "$want" ]; then
+              echo "$IMAGE:$t already = $IMAGE:$version"
+            elif point "$IMAGE:$t" "$IMAGE@sha256:$want" "$want"; then
+              echo "$IMAGE:$t = $IMAGE:$version (sha256:$want)" | tee -a "$GITHUB_STEP_SUMMARY"
+            else
+              echo "::error::$IMAGE:$t is not confirmed on $version after 3 attempts"
+              failed=1
+            fi
+          done
+          exit "$failed"
+
+      - name: Push the Helm chart (OCI)
+        # helm package of the chart at this commit, version and appVersion = the scan node's version, its default image
+        # the GHCR image (tag: appVersion, the release tag above), then helm push to oci://<registry>/charts, once per
+        # version (an existing one is kept). Helm is preinstalled on the runner. The token goes to helm on stdin,
+        # never on a command line.
+        env:
+          REGISTRY: ${{ needs.meta.outputs.registry }}
+          NODE_VERSION: ${{ needs.meta.outputs.node_version }}
+          ACTOR: ${{ github.actor }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$NODE_VERSION" =~ ^[0-9][0-9A-Za-z.-]{0,18}$ ]] || { echo "::error::not a release version: $NODE_VERSION"; exit 1; }
+          chart=deploy/helm/cbom-scan-node
+          grep -q '^  repository: ' "$chart/values.yaml" || { echo "::error::values.yaml has no image.repository line"; exit 1; }
+          sed -i -E "0,/^  repository: /s|^(  repository: ).*|\1$REGISTRY/devsecshield-scan-node|" "$chart/values.yaml"
+          mkdir -p "$RUNNER_TEMP/chart"
+          helm package "$chart" --version "$NODE_VERSION" --app-version "$NODE_VERSION" --destination "$RUNNER_TEMP/chart"
+          pkg="$RUNNER_TEMP/chart/cbom-scan-node-$NODE_VERSION.tgz"
+          [ -s "$pkg" ] || { echo "::error::helm package wrote no $pkg"; exit 1; }
+          printf '%s' "$GH_TOKEN" | helm registry login ghcr.io --username "$ACTOR" --password-stdin
+          # written once, like the image's version tag: an existing chart version is kept as it is
+          if helm show chart "oci://$REGISTRY/charts/cbom-scan-node" --version "$NODE_VERSION" > /dev/null 2> "$RUNNER_TEMP/show.err"; then
+            echo "::notice::oci://$REGISTRY/charts/cbom-scan-node $NODE_VERSION exists already: kept as it is"
+            helm registry logout ghcr.io || true
+            exit 0
+          fi
+          if ! grep -qi 'not found' "$RUNNER_TEMP/show.err"; then
+            cat "$RUNNER_TEMP/show.err"
+            echo "::error::cannot tell whether chart $NODE_VERSION exists (registry error above); nothing was pushed"
+            exit 1
+          fi
+          helm push "$pkg" "oci://$REGISTRY/charts" | tee "$RUNNER_TEMP/push.log"
+          grep -q '^Digest: sha256:[0-9a-f]\{64\}$' "$RUNNER_TEMP/push.log" || { echo "::error::helm push reported no digest"; exit 1; }
+          helm registry logout ghcr.io || true
+          echo "oci://$REGISTRY/charts/cbom-scan-node --version $NODE_VERSION ($(grep '^Digest:' "$RUNNER_TEMP/push.log"))" | tee -a "$GITHUB_STEP_SUMMARY"

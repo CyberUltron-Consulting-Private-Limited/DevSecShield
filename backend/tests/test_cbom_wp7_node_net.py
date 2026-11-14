@@ -239,7 +239,7 @@ def test_classifier_codes_are_all_in_the_new_kb_list():
     import re
 
     raised = set(re.findall(r'out\.add\(\s*"([A-Z0-9_]+)"', src)) | {"IKE_WEAK_ENCR", "IKE_WEAK_INTEG", "IKE_WEAK_DH"}
-    reused = {"WEAK_CIPHER"}  # existing code (FortiOS strong-crypto off)
+    reused = {"WEAK_CIPHER", "DH_LT_2048"}  # existing codes (FortiOS strong-crypto off; appliance DH sizes, N11)
     assert raised - reused <= set(NEW_CODES)
 
 

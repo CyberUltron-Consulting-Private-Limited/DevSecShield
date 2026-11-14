@@ -181,13 +181,14 @@ export type RunSectionId =
   | "header" | "coverage" | "tabs" | "meta" | "posture" | "insights" | "certificates" | "cryptoCharts" | "changes"
   | "waves" | "compliance" | "dashboard" | "findings" | "topRisks" | "findingDialog";
 
-/** Lane W6 adds components/cbom/results/RunTicketingTab.tsx; until then the run page has the Results tab only. */
-export const RUN_TICKETING_TAB_AVAILABLE = false;
+/** The run page's Ticketing tab (RunTicketingTab, CB-38 PR-4: Jira for Sources runs). */
+export const RUN_TICKETING_TAB_AVAILABLE = true;
 
 /** What a run can download or attest today (PLAN §4.4: VEX, signature, evidence pack and PDF are code-scan only until PR-8). */
 export const RUN_CAPABILITIES = {
-  cdxJson: true, cdxXml: true, oscal: true, vex: false, signature: false, evidencePack: false, pdf: false,
+  cdxJson: true, cdxXml: true, oscal: true, vex: true, signature: true, evidencePack: true, pdf: true,
   certInAttest: false, jira: RUN_TICKETING_TAB_AVAILABLE, compare: true, waves: true, statusActions: true,
+  ai: true, // AiRemediationPanel in the finding dialog (CB-38 PR-6); it renders nothing when the assistant is off
 } as const;
 
 export type ResultsState =
@@ -536,4 +537,14 @@ export function resolveMigrationRows(dist: CbomDistributions): CbomDistributions
     suggested_fix: r.suggested_fix ?? text(r.fix_code) ?? text(r.migration_code),
   }));
   return { ...dist, pqc: { ...pqc, migration } };
+}
+
+// ---------------------------------------------------------------------------- signature check (header)
+
+/** What the header says after POST /runs/{id}/signature/verify (CB-38 PR-8). */
+export function verifyResultText(v: { valid: boolean; signature_match?: boolean | null; digest_match?: boolean | null }): string {
+  if (v.valid) return "Verified: this file is the run's signed CycloneDX JSON, unchanged.";
+  if (v.digest_match === false) return "Not verified: this file differs from the run's CycloneDX JSON (changed, or another run's file).";
+  if (v.signature_match === false) return "Not verified: the signature does not match this file.";
+  return "Not verified.";
 }
