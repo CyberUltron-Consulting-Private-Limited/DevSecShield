@@ -303,7 +303,10 @@ def sync_assets(session: Session, team_id: int, transitions: Iterable[Any], now:
     def cause_of(row: CbomQ0Gap) -> tuple[str, str | None]:
         grade = after.get(row.item_key)
         key = row.item_key.split(":", 1)[1]
-        return ("model_change" if key in moved else cause), (grade[0] if grade else None)
+        # a key that moved is a re-identification (model_change, not forwarded), except a not_correlated asset that
+        # CB-21 has now correlated: that is the gap being resolved (PLAN §2.1: "CB-21 correlates it")
+        moved_cause = "observation" if row.reason == "not_correlated" else "model_change"
+        return (moved_cause if key in moved else cause), (grade[0] if grade else None)
 
     return _apply(session, team_id, now, current, existing, closable=closable, cause_of=cause_of, run_id=run_id)
 
