@@ -4806,6 +4806,7 @@ export interface CbomTargetCount {
     count: number | null
     lines?: number
     samples?: string[]
+    notes?: string[] // CB-09: names IDNA 2003 software reads as another host (faß.lab -> fass.lab), shown before saving
 }
 
 export interface CbomAuditEvent {

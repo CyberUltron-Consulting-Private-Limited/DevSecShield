@@ -33,6 +33,8 @@ from dataclasses import dataclass
 from typing import Iterable, Iterator
 from urllib.parse import urlsplit
 
+from zs_scan_node import idn
+
 MAX_EXPANDED = 262_144
 _UNSPECIFIED_NETS = (ipaddress.ip_network("0.0.0.0/8"), ipaddress.ip_network("::/128"))
 UNSPECIFIED = "unspecified address"  # what match_ip answers for 0.0.0.0/8 and ::
@@ -61,6 +63,29 @@ _LOOPBACK_NETS = (ipaddress.ip_network("127.0.0.0/8"), ipaddress.ip_network("::1
 # compares them, and the UI's copy).
 LOOPBACK_NAMES = frozenset({"localhost", "ip6-localhost", "ip6-loopback", "localhost.localdomain", "localhost4",
                             "localhost4.localdomain4", "localhost6", "localhost6.localdomain6"})
+
+
+class BadName(socket.gaierror):
+    """A host name IDNA 2008 refuses (``strerror`` names it and says why); never looked up (CB-09)."""
+
+
+def a_label(host: str) -> str:
+    """The IDNA 2008 A-label of a host name (what is looked up, compared and sent as SNI; Python's own codec, which
+    getaddrinfo and ssl use for a Unicode name, is IDNA 2003: ``faß.lab`` would become ``fass.lab``).  Raises
+    BadName."""
+    text = str(host or "").strip().rstrip(".")
+    try:
+        return idn.to_a_label(text)
+    except idn.IdnError as exc:
+        raise BadName(socket.EAI_NONAME, f"{text} {exc}") from None
+
+
+def host_key(name: str) -> str:
+    """A host name as the never-scan list compares it: its A-label (lower-cased as it is when it has none)."""
+    try:
+        return a_label(name)
+    except BadName:
+        return str(name or "").strip().rstrip(".").lower()
 
 
 def is_loopback_name(name: str) -> bool:
@@ -371,6 +396,7 @@ class NeverScan:
         self._nets: list[tuple[ipaddress._BaseNetwork, str]] = []
         self._hosts: set[str] = set()  # listed host names the resolver looks up
         self._loopback_names: set[str] = set()  # listed names that are loopback by definition (never looked up)
+        self._idna2003: set[str] = set()  # what IDNA 2003 software reads a listed ß/ς name as (matched, not looked up)
         self._resolver = resolver or name_resolver()
         self._listed: set[str] = set()  # names this list holds on the resolver (released when the list goes away)
         self._release = weakref.finalize(self, self._resolver.release, self._listed)
@@ -401,7 +427,7 @@ class NeverScan:
                 continue
             parsed = _parse_entry(text)
             if parsed is None:
-                name = text.lower().rstrip(".")
+                name = host_key(text)
                 (loopback_names if is_loopback_name(name) else hosts).add(name)
             else:
                 nets.extend((net, parsed[1]) for net in parsed[0])
@@ -411,6 +437,7 @@ class NeverScan:
         with self._lock:
             added, removed = hosts - self._hosts, self._hosts - hosts
             self._nets, self._hosts, self._loopback_names = nets, hosts, loopback_names
+            self._idna2003 = {other for other in map(idn.idna2003_form, hosts) if other}
             self._name_addrs = {n: a for n, a in self._name_addrs.items() if n in hosts}
             now = time.monotonic()
             for name in removed:
@@ -527,9 +554,14 @@ class NeverScan:
         return self.match_ip(ip) is not None
 
     def blocks_host(self, name: str) -> bool:
-        name = name.lower().rstrip(".")
+        """Whether the name itself is listed, compared as A-labels (CB-09).  A name with ``ß`` or ``ς`` and the
+        different name IDNA 2003 software reads it as (``xn--fa-hia.lab`` / ``fass.lab``) keep each other out: fail
+        closed.  Only the listed form is looked up for its addresses (the other one usually does not exist, and an
+        unresolved listed name holds every target)."""
+        name = host_key(name)
         with self._lock:
-            return name in self._hosts or name in self._loopback_names
+            listed = self._hosts | self._loopback_names
+            return name in listed or name in self._idna2003 or idn.idna2003_form(name) in listed
 
 
 @dataclass
@@ -544,7 +576,7 @@ def resolve(name: str, timeout: float = 5.0) -> list[str]:
     """Resolve a hostname to unique addresses (IPv4 first).  Raises OSError on failure.  ``timeout`` is kept for
     callers: getaddrinfo uses the system resolver's own timeout (socket.setdefaulttimeout does not apply to it, and
     setting that process-wide default here changed the timeout of sockets other threads created meanwhile)."""
-    infos = socket.getaddrinfo(name, None, proto=socket.IPPROTO_TCP)
+    infos = socket.getaddrinfo(a_label(name), None, proto=socket.IPPROTO_TCP)
     out: list[str] = []
     for family, *_rest, sockaddr in infos:
         try:
@@ -636,7 +668,7 @@ def resolve_checked(host: str, never: NeverScan, timeout: float = 5.0) -> list[s
     text = str(host or "").strip().strip("[]")
     if is_ip(text):
         return [checked_ip(text, never)]
-    name = text.lower().rstrip(".")
+    name = a_label(text)  # raises BadName (an OSError) for a name IDNA 2008 refuses
     _check_name(name, (), never)  # a listed name is not looked up
     addresses = resolve(name, timeout)
     if not addresses:
@@ -780,7 +812,11 @@ def expand_targets(lines: list[str], never: NeverScan, limit: int = MAX_EXPANDED
     for line in lines:
         ips = iter_line_ips(line)
         if ips is None:
-            name = line.strip().lower().rstrip(".")
+            try:
+                name = a_label(line)
+            except BadName as exc:
+                targets.append(Target(line.strip(), None, exc.strerror))
+                continue
             try:
                 addrs = resolve_checked(name, never)
             except Blocked as exc:
