@@ -222,7 +222,7 @@ def _view(asset_type: str, target: str | None, location: str | None) -> D.View:
 # per source by construction, and its observation key is recomputed each run. Kept per observation: CB-21's index
 # entry, a 64-bit token hash, a 128-bit row id and a 20-byte observation key.
 INDEX_BUDGET_MB = int(os.environ.get("CBOM_ESTATE_INDEX_MB", "512") or 512)  # per process, over all teams
-BYTES_PER_INDEXED = 3_500  # RSS per correlating observation kept (index_memory.py; tracemalloc says ~2,850)
+BYTES_PER_INDEXED = 2_000  # RSS per correlating observation kept (index_memory.py: 1,893; tracemalloc ~1,450)
 
 
 def index_capacity() -> int:
@@ -411,7 +411,7 @@ def _keys_for_run(team_id: int, seen_rows: Sequence[tuple[Any, str]]) -> _Keyed:
                 key = index.key(oid)
                 keys[i] = key
                 okeys[i] = cached[oid].hex()
-                aliases = index.aliases(oid)
+                aliases = index.names(oid)  # as stored: iterated, never kept
                 if aliases and id(aliases) not in groups:
                     groups.add(id(aliases))
                     for alias in aliases:
