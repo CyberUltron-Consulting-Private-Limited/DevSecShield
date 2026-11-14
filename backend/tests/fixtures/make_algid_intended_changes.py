@@ -69,6 +69,15 @@ CATEGORIES = {
                        "additional key exchange) by name or 'group N': no IKE_NO_PQ, qv False. DA §4 node_net H-8",
     "pca-raw-identifier": "An AWS Private CA row stored before CB-04 (algorithm ECDSA, key_alg ML_DSA_*) is judged by "
                           "its raw post-quantum identifier: QUANTUM_VULNERABLE dropped. DA §4 classify.py:418, §6 ST-2",
+    "ssh-legacy-name-rules": "CB-13 (PR #111) completes the legacy SSH name rules, which read every offered list: an "
+                             "SSH row whose only change is the one code its name now gets, everything else as before "
+                             "(qv True, SSH_NO_PQ_KEX, posture). cb-13 SPEC RC-6 and §3.3: 'des-cbc'/'des' -> "
+                             "SSH_WEAK_CIPHER, 'idea-cbc' -> SSH_WEAK_CIPHER, 'rsa1024-sha1' -> SSH_DH_SHA1, "
+                             "x509v3-sign-dss -> SSH_DSS, ssh-rsa-cert-v01 / x509v3-sign-rsa -> SSH_RSA_SHA1. The "
+                             "GSS-API methods get the code of their non-GSS twin (RFC 4462 §2: gss-group1-sha1-* is "
+                             "Oakley group 2 with SHA-1 = diffie-hellman-group1-sha1 -> SSH_DH_GROUP1; gss-group14-sha1-* "
+                             "and gss-gex-sha1-* = group14 / group exchange with SHA-1 -> SSH_DH_SHA1), PR #111 AC-3 "
+                             "'GSS' and its test_legacy_algorithms_are_flagged cases",
     # CB-18 PR-1 (cbom-plans/cb-18 SPEC §3.3 with reviews FP-3/FP-4/FP-6/EC-1/EC-2; #109's note for CB-18): the
     # verdict (quantum_vulnerable, codes, impact) is unchanged, only the view-time class moves
     "cb18-hybrid-identified-component": "Hybrid on purpose: a hybrid or composite identifier (composite ML-DSA "
@@ -86,6 +95,18 @@ CATEGORIES = {
 }
 # CB-18: asset types whose verdict-less rows hold public-key crypto that was not identified or not read
 CB18_UNREAD_TYPES = frozenset({"certificate", "tls_endpoint", "ssh_endpoint"})
+# CB-13 (PR #111): the legacy SSH names its rules add, and the one code each gets (SPEC RC-6, §3.3; GSS: RFC 4462 §2)
+SSH_LEGACY_CODES = (
+    (re.compile(r"^des(-cbc)?(@ssh\.com)?$", re.I), "SSH_WEAK_CIPHER"),
+    (re.compile(r"^idea-", re.I), "SSH_WEAK_CIPHER"),
+    (re.compile(r"^rsa1024-sha1$", re.I), "SSH_DH_SHA1"),
+    (re.compile(r"^gss-group1-sha1-", re.I), "SSH_DH_GROUP1"),
+    (re.compile(r"^gss-(group14|gex)-sha1-", re.I), "SSH_DH_SHA1"),
+    (re.compile(r"^x509v3-(ssh|sign)-dss$", re.I), "SSH_DSS"),
+    (re.compile(r"^(ssh-rsa-cert-v01@openssh\.com|x509v3-ssh-rsa|x509v3-sign-rsa)$", re.I), "SSH_RSA_SHA1"),
+)
+_IMPACT = {"SSH_WEAK_CIPHER": "High", "SSH_DH_GROUP1": "High", "SSH_DSS": "High", "SSH_DH_SHA1": "Medium",
+           "SSH_RSA_SHA1": "Medium"}
 
 
 def _source(value: str) -> str:
@@ -214,6 +235,12 @@ def _category_cb04(row: dict, before: list, after: list) -> str | None:
             return "tls-pq-group-evidence" if after == [False, [], None, "hybrid"] else None
         return "tls-pq-signature-not-kex" if primitive == "signature" and after == [None, [], None,
                                                                                    "not-applicable"] else None
+    if row["type"] == "ssh_endpoint" and isinstance(subject, str):
+        code = next((c for pattern, c in SSH_LEGACY_CODES if pattern.search(subject)), None)
+        if code is not None:
+            ok = (before == [True, ["SSH_NO_PQ_KEX"], "Low", "quantum-vulnerable"]
+                  and after == [True, [code, "SSH_NO_PQ_KEX"], _IMPACT[code], "quantum-vulnerable"])
+            return "ssh-legacy-name-rules" if ok else None
     if row["type"] == "ssh_endpoint" and quantum in ("safe", "hybrid") and primitive == "signature":
         ok = before[0] is False and after == [True, ["SSH_NO_PQ_KEX"], "Low", "quantum-vulnerable"]
         return "ssh-pq-signature-not-kex" if ok else None

@@ -73,7 +73,10 @@ def seed(engine, *, mosca=MOSCA, sources=(), skipped=(), idle=(), include=None) 
         for spec in list(sources) + list(skipped) + list(idle):
             src = CbomCollectionSource(team_id=1, owner_user_id=1, kind=spec.get("kind", "linux_servers"),
                                        name=spec["name"], name_lower=spec["name"].lower(), config=spec.get("config") or {},
-                                       enabled=spec.get("enabled", True))
+                                       enabled=spec.get("enabled", True),
+                                       # on the fixture's clock (NOW), never the wall clock: a source exists before the
+                                       # run unless the spec says otherwise (qgrade counts only sources that existed then)
+                                       created_at=spec.get("created_at", NOW - dt.timedelta(days=1)))
             s.add(src)
             s.commit()
             s.refresh(src)
@@ -424,6 +427,13 @@ def test_groups_left_out_of_a_run_are_excluded_by_choice(api, world):
              idle=[{"name": "D-pg", "kind": "database"}])
     item = next(i for i in posture(api, w["run"])["q0_items"] if i["key"] == f"source:{w['D-pg']['uid']}")
     assert item["reason"] == "excluded_by_choice" and "left out of this run" in item["detail"]
+
+
+def test_a_source_created_after_the_run_is_not_an_item_of_it(api, world):
+    w = seed(world[0], sources=[{"name": "S", "assets": [_asset("tls_endpoint", "10.20.0.1:443", facts=QV_TLS)]}],
+             idle=[{"name": "Later", "created_at": NOW + dt.timedelta(hours=1)}])
+    keys = {i["key"] for i in posture(api, w["run"])["q0_items"]}
+    assert f"source:{w['Later']['uid']}" not in keys
 
 
 def test_asset_q0_items_are_keyed_by_the_stable_asset_key(api, world, monkeypatch):

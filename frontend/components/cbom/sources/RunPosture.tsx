@@ -40,7 +40,7 @@ import { ErrorBlock, LoadingBlock, SectionCard, StatusBadge, Truncate, type Tone
 
 const CLASS_LABEL: Record<CbomPqcClass, [string, Tone, string]> = {
   "quantum-vulnerable": ["Quantum-vulnerable", "red", "RSA, elliptic-curve or Diffie-Hellman: a large quantum computer breaks it"],
-  hybrid: ["Hybrid PQC", "green", "An identified post-quantum component (ML-KEM, ML-DSA) next to classical public-key cryptography, inside one construction or offered beside it"],
+  hybrid: ["Hybrid PQC", "green", "An identified post-quantum component (such as ML-KEM) next to classical public-key cryptography, inside one construction or offered beside it"],
   "quantum-safe": ["Quantum-safe", "green", "Symmetric, hash or post-quantum cryptography"],
   "grover-weakened": ["Grover-weakened", "amber", "128-bit symmetric keys: still secure, smaller margin against quantum search"],
   unknown: ["Unknown", "zinc", "Public-key cryptography the scan could not identify, or a key exchange it could not read: not judged, never counted as ready"],

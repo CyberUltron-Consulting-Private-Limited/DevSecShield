@@ -28,9 +28,9 @@
   {
    "file": "curated.json",
    "url": "hand-curated; every section cites its document",
-   "retrieved_utc": "2026-11-12T17:37:14Z",
-   "sha256": "ecd01494dc27e51c4d8314c1c990187762afd3c11f580272a2b165749f36201e",
-   "tool": "hand, second-agent review (O-9) recorded in PR #94 (review 5874701640: all 20 categories agree)",
+   "retrieved_utc": "2026-11-14T04:15:00Z",
+   "sha256": "7444c7c5d633d227c567a63bc40ad1ae71fb81db103996d23000ce15d5f70b14",
+   "tool": "hand, second-agent review (O-9) recorded in PR #94 (review 5874701640: all 20 categories agree); prober.SSH_PQ_PROBE_KEX added by PR #111 (CB-13)",
    "licence": "this repository"
   },
   {

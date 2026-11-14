@@ -25,9 +25,13 @@ test = ["pytest==8.3.5"]
 
 [project.scripts]
 zs-scan-node = "zs_scan_node.agent:main"
+zs-collect = "zs_scan_node.zscollect:main"
 
 [tool.setuptools]
 packages = ["zs_scan_node", "zs_scan_node.collectors"]
+
+[tool.setuptools.package-data]
+zs_scan_node = ["schemas/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
