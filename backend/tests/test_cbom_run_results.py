@@ -663,3 +663,25 @@ def test_bench_5000_assets_under_budget(api, world, capsys, monkeypatch):
         print(f"\nBENCH run results 5001 assets: cold {cold_ms:.0f} ms, cached {warm_ms:.0f} ms, "
               f"body {len(json.dumps(out)) / 1024:.0f} KiB")
     assert cold_ms < 10_000 and warm_ms < cold_ms
+
+
+def test_results_agree_with_the_enriched_run_assets(api, world):
+    """/results and /runs/{id}/assets (CB-38 PR-1a enrichment) on one run: same finding count, same stable keys,
+    and one status change shows in both."""
+    engine, _ = world
+    _src, run, _c, _h = _run_with(api, engine, PROBE)
+    rid = run["id"]
+    findings = api("GET", f"/1/cbom/sources/runs/{rid}/assets?view=findings&page_size=200").json()
+    out = _results(api, rid)
+    actions = out["dashboard"]["remediation_actions_required"]
+    assert findings["findings_total"] == actions["total_findings"] == out["dashboard"]["card_data"][
+        "total_crypto_vulnerabilities"]
+    cached = RR._CACHE[rid].computed.finding_keys
+    assert {i["asset_key"] for i in findings["items"]} == {k.hex() for k in cached}
+    target = findings["items"][0]
+    r = api("PUT", "/1/cbom/remediation", json={"run_id": rid, "items": [{"asset_key": target["asset_key"],
+                                                                           "status": "done"}]})
+    assert r.status_code == 200, r.text
+    again = _results(api, rid)["dashboard"]["remediation_actions_required"]
+    fixed = api("GET", f"/1/cbom/sources/runs/{rid}/assets?view=findings&status=fixed").json()
+    assert again["total_fixed"] == 1 == fixed["total"] and fixed["items"][0]["asset_key"] == target["asset_key"]
