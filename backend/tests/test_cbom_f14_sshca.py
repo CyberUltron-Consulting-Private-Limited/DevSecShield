@@ -507,7 +507,8 @@ def test_existing_server_configs_dump_and_hash_as_before():
     version changes at deploy (which would cancel its open jobs)."""
     dev_keys = ['application', 'business_criticality', 'credential_type', 'custom_window', 'data_classification',
                 'data_lifetime_years', 'environment', 'exclusions', 'exposure', 'host_key_policy', 'known_hosts',
-                'login_user', 'owner', 'parallel', 'port', 'targets', 'tier', 'timeout_s', 'vault', 'window']
+                'login_user', 'operated_by', 'owner', 'parallel', 'port', 'targets', 'tier', 'timeout_s', 'vault',
+                'window']  # operated_by (CB-24) is metadata: not in the connection hash below
     for kind in ("linux_servers", "windows_servers", "active_directory"):
         dump = KINDS[kind].model.model_validate({"targets": ["10.0.0.1"]}).model_dump(mode="json")
         assert sorted(dump) == sorted(dev_keys + ([] if kind == "linux_servers" else ["ca_pem"])), kind
