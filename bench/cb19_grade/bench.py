@@ -3,8 +3,10 @@
 Seeds one run into a throwaway SQLite file (a mix of endpoints on private / public IPs and host names, CA and leaf
 certificates, hybrid endpoints, KMS keys, database settings, crypto libraries, coverage rows), then times, per size:
 * ``posture``: ``posture.run_posture`` as the route calls it (the grade accumulator included);
-* ``posture_no_grade``: the same with the accumulator replaced by a no-op (dev's work);
-* ``grade_only``: ``qgrade.RunGrades`` over the run's rows (context load, one ``add`` per row, ``result``);
+* ``posture_no_grade``: the same with the accumulator replaced by a no-op: exactly dev's work (this PR changes nothing
+  else in the posture loop; the grade reuses the score's exposure);
+* ``grade_only``: ``qgrade.RunGrades`` over the run's rows (context load, one ``add`` per row with the score's
+  exposure, ``result``); it includes the ``asset_exposure`` call posture makes anyway, so it over-states the grade;
 * ``list_page``: one 200-row page of ``inventory.list_assets`` (grades included), and the grading part of it alone.
 The knowledge-base caches are warmed once before timing. Times are CPU seconds of this process (``process_time``), so
 other load on a shared machine does not land in one variant only; the two posture variants are interleaved.
@@ -137,8 +139,14 @@ def bench(n: int, reps: int, per_host: int = 1) -> dict:
                 rows = s.exec(select(CbomCollectedAsset).where(CbomCollectedAsset.run_id == run_id)).all()
                 t0 = time.process_time()
                 g = QG.RunGrades(s, team_id=1, run_id=run_id, risk_model=MOSCA)
-                for row in rows:
-                    g.add(row, row.finding_codes)
+                for row in rows:  # as the posture loop does: the score's exposure handed in
+                    if row.asset_type == "coverage":
+                        g.add(row, row.finding_codes)
+                    else:
+                        meta = g.ctx.jobs[row.job_id]
+                        g.add(row, row.finding_codes, P.asset_exposure(row.facts, row.target, row.location,
+                                                                       override=meta.exposure,
+                                                                       node_segment=meta.segment))
                 g.result()
                 return time.process_time() - t0
 

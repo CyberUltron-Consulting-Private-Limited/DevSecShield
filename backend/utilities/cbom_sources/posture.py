@@ -17,7 +17,6 @@
 from __future__ import annotations
 
 import datetime as _dt
-import functools
 import ipaddress
 import re
 from collections import Counter, defaultdict
@@ -74,7 +73,6 @@ def mosca(risk_model: dict[str, Any] | None) -> dict[str, Any]:
                         "to spare.")}
 
 
-@functools.lru_cache(maxsize=65_536)  # pure; the score and the quantum risk grade (qgrade) both read every target
 def _ip_of(value: str | None) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
     host, _port = _host_port(value or "")
     if not host:
@@ -167,8 +165,8 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
         view = shown(row, now)  # date-based findings (certificate expiry, library end of life) judged today
         impact, a_codes, finding = view["impact"], view["finding_codes"], view["finding"]
         a_codes = [c for c in a_codes if not c.startswith("COVERAGE_")]
-        grades.add(row, a_codes)
         if a_type == "coverage":
+            grades.add(row, a_codes)
             continue
         classes[pqc_class(a_type, qv, a_codes, facts or {})] += 1
         if impact:
@@ -181,6 +179,7 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
         crit = str(ctx.get("criticality") or "medium").lower()
         exposure, basis = asset_exposure(facts, target, location, override=ctx.get("exposure"),
                                          node_segment=ctx.get("segment"))
+        grades.add(row, a_codes, (exposure, basis))  # the quantum risk grade reuses the score's exposure (CB-19)
         exposure_counts[exposure] += 1
         if impact:
             risky.append({"id": aid, "type": a_type, "name": name or location, "location": location, "impact": impact,

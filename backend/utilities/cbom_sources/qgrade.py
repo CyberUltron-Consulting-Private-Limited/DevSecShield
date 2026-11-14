@@ -38,6 +38,7 @@ from backend.new_models import (
     CbomCollectionSource,
     CbomScanNode,
 )
+from backend.utilities.cbom_sources import algid
 from backend.utilities.cbom_sources import identity as ID
 from backend.utilities.cbom_sources import posture as P
 from backend.utilities.cbom_sources.classify import CLASSIFIER_VERSION, quantum_vulnerable
@@ -292,12 +293,15 @@ def coverage_kind(facts: dict[str, Any] | None) -> str:
     return "gap"
 
 
-# SSH key-exchange names the classifier's family table does not read (it returns None for them): classical ECDH
-_SSH_ECDH = re.compile(r"^curve(25519|448)-sha(256|512)(@libssh\.org)?$", re.I)
-
-
 def _proto(value: Any) -> str:
     return re.sub(r"[\s_]", "", str(value or "").upper()).replace("TLSV", "TLS").replace("SSLV", "SSL")
+
+
+def _classical_ssh_kex(name: str) -> bool:
+    """algid owns SSH key-exchange identity (curve25519 / curve448 spellings and the GSS families included);
+    the classifier's family table is the fallback for names algid does not know."""
+    ident = algid.ssh_kex(name)
+    return (ident is not None and ident.quantum == "vulnerable") or quantum_vulnerable(name) is True
 
 
 def classical_fallback(asset_type: str, facts: dict[str, Any] | None, codes: list[str] | None) -> tuple[bool, str | None]:
@@ -325,10 +329,11 @@ def classical_fallback(asset_type: str, facts: dict[str, Any] | None, codes: lis
     classical = sorted({str(gr) for gr in groups if gr and quantum_vulnerable(gr) is True})
     if classical:
         why.append("accepts classical group " + ", ".join(classical[:3]))
+    elif facts.get("classical_tls13_accepted") is True:  # CB-12's prober: a classical TLS 1.3 key share answered
+        why.append("accepts a classical TLS 1.3 key share")
     kex = facts.get("kex") or facts.get("kexalgorithms") or []
     kex = kex.split(",") if isinstance(kex, str) else kex if isinstance(kex, list) else []
-    classical_kex = sorted({str(k).strip() for k in kex
-                            if quantum_vulnerable(str(k).strip()) is True or _SSH_ECDH.match(str(k).strip())})
+    classical_kex = sorted({str(k).strip() for k in kex if _classical_ssh_kex(str(k).strip())})
     if classical_kex:
         why.append("offers classical SSH key exchange " + ", ".join(classical_kex[:3]))
     return (bool(why), "; ".join(why) or None)
@@ -375,6 +380,14 @@ def grade_exposure(facts: dict[str, Any] | None, target: str | None, location: s
     return out if out[0] != "unknown" or not location else one(location)
 
 
+@functools.lru_cache(maxsize=4096)
+def _grade_observed(cls: str, fallback: bool, exposure: str, anchor: bool, x: int | None, y: int | None,
+                    z: int | None) -> Grade:
+    """``grade`` for an observed asset, memoised on its (few, small) inputs: the posture loop grades every row."""
+    return grade(GradeInput(item="asset", cls=cls, fallback=fallback, exposure=exposure, anchor=anchor, x=x, y=y, z=z,
+                            provenance="observed"))
+
+
 # ----------------------------------------------------------------------------- one context loader for every surface
 @dataclass
 class _JobInfo:
@@ -403,6 +416,24 @@ class RowGrade:
                 "q_item_key": self.q_item_key}
 
 
+@functools.lru_cache(maxsize=4096)
+def _row_observed(cls: str, fallback: bool, exposure: str, anchor: bool, x: int | None, y: int | None,
+                  z: int | None) -> RowGrade | None:
+    """The shared explain=False result of an observed asset; None for a Q0 that is keyed by the asset itself."""
+    out = _grade_observed(cls, fallback, exposure, anchor, x, y, z)
+    if out.q_reason == "mosca_missing":
+        missing = [k for k, v in (("x", x), ("y", y), ("z", z)) if v is None]
+        return RowGrade(out.q_grade, out.q_reason, "inputs:mosca", {"missing": missing})
+    if out.q_grade == "Q0":
+        return None
+    return RowGrade(out.q_grade, out.q_reason, None, {"missing": []})
+
+
+# classes whose grade reads nothing but the class (rules 5 and 19): shared results for explain=False (never mutated)
+_NO_INPUTS = {"not-applicable": RowGrade(None, "not_applicable", None, {"missing": []}),
+              "grover-weakened": RowGrade("Q3", "grover_weakened", None, {"missing": []})}
+
+
 @dataclass
 class GradeContext:
     """The inputs every surface grades one run (or job) with: team Mosca now, each job's metadata snapshot."""
@@ -421,8 +452,10 @@ class GradeContext:
 
     @functools.cached_property
     def digest(self) -> str:
-        """sha256 of the canonical inputs (team Mosca, each job's X / exposure override / segment), first 16 hex."""
-        doc = {"mosca": self.mosca, "jobs": {str(jid): [j.x, j.exposure, j.segment] for jid, j in sorted(self.jobs.items())}}
+        """sha256 of the canonical inputs (team Mosca; each source's snapshotted X / exposure override / segment, by
+        source ref, never by job id, so two runs with the same inputs share a digest), first 16 hex."""
+        jobs = sorted([j.source_uid, j.x, j.exposure, j.segment] for j in self.jobs.values())
+        doc = {"mosca": self.mosca, "sources": jobs}
         return hashlib.sha256(json.dumps(doc, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:16]
 
     def inputs(self) -> dict[str, Any]:
@@ -431,26 +464,53 @@ class GradeContext:
     def _job(self, job_id: int | None) -> _JobInfo:
         return self.jobs.get(job_id or 0) or _JobInfo(None, None, None, "unknown", None, None, False)
 
-    def grade_row(self, row: CbomCollectedAsset, codes: list[str] | None, *, explain: bool = True) -> RowGrade:
+    def grade_row(self, row: CbomCollectedAsset, codes: list[str] | None, *, explain: bool = True,
+                  score_exposure: tuple[str, str] | None = None) -> RowGrade:
         """The grade of one stored row; ``codes``: the finding codes as every view shows them (``classify.shown``).
         ``explain=False`` (list pages, posture) skips the inputs no rule reads for this row's class (exposure and
-        anchor only matter to a quantum-vulnerable grade); the grade is the same either way."""
+        anchor only matter to a quantum-vulnerable grade); the grade is the same either way. ``score_exposure``: the
+        (exposure, basis) ``posture.asset_exposure`` already gave this row with the same job metadata; reused except
+        where the grade's precedence differs (a collector's internet-facing fact against an "internal" or "unknown"
+        source setting)."""
         job = self._job(row.job_id)
-        if row.asset_type == "coverage":
+        asset_type = row.asset_type
+        if asset_type == "coverage":
             return self._coverage(row, job)
         facts = row.facts if isinstance(row.facts, dict) else {}
-        codes = [c for c in codes or [] if not str(c).startswith("COVERAGE_")]
-        cls = P.pqc_class(row.asset_type, row.quantum_vulnerable, codes, facts)
+        codes = codes or []  # the class and fallback tests read DISK_XTS_128 / STATIC_RSA_KEX; COVERAGE_* never match
+        cls = P.pqc_class(asset_type, row.quantum_vulnerable, codes, facts)
+        if not explain:  # the posture loop and list pages: only the inputs this class's rules read
+            fast = _NO_INPUTS.get(cls)
+            if fast is not None:
+                return fast
+            fallback = classical_fallback(asset_type, facts, codes)[0] if cls in _PQ else False
+            if cls == "quantum-vulnerable" or fallback:
+                if score_exposure is not None and not (job.exposure in ("internal", "unknown")
+                                                       and facts.get("internet_facing") is True):
+                    exposure = score_exposure[0]
+                else:
+                    exposure = grade_exposure(facts, row.target, row.location, override=job.exposure,
+                                              segment=job.segment, memo=self.memo)[0]
+                anchor = asset_type in ANCHOR_TYPES or facts.get("is_ca") is True
+            else:
+                exposure, anchor = "unknown", False
+            shared = _row_observed(cls, fallback, exposure, anchor, job.x if job.x is not None else self.team_x,
+                                   self.y, self.z)
+            if shared is not None:
+                return shared
         fallback, fallback_basis = classical_fallback(row.asset_type, facts, codes) if cls in _PQ else (False, None)
         if explain or graded_class(cls, fallback) == "quantum-vulnerable":
-            exposure, exposure_basis = grade_exposure(facts, row.target, row.location, override=job.exposure,
-                                                      segment=job.segment, memo=self.memo)
+            if score_exposure is not None and not (job.exposure in ("internal", "unknown")
+                                                   and facts.get("internet_facing") is True):
+                exposure, exposure_basis = score_exposure
+            else:
+                exposure, exposure_basis = grade_exposure(facts, row.target, row.location, override=job.exposure,
+                                                          segment=job.segment, memo=self.memo)
             anchor, anchor_basis = trust_anchor(row.asset_type, facts)
         else:
             exposure, exposure_basis, anchor, anchor_basis = "unknown", None, False, None
         x, x_basis = (job.x, "source") if job.x is not None else (self.team_x, "team" if self.team_x is not None else None)
-        out = grade(GradeInput(item="asset", cls=cls, fallback=fallback, exposure=exposure, anchor=anchor, x=x,
-                               y=self.y, z=self.z, provenance="observed"))
+        out = _grade_observed(cls, fallback, exposure, anchor, x, self.y, self.z)
         missing = [k for k, v in (("x", x), ("y", self.y), ("z", self.z)) if v is None]
         item_key = "inputs:mosca" if out.q_reason == "mosca_missing" else (
             f"asset:{ID.stable_key('node', job.source_uid, ID.node_identity(row))}" if out.q_grade == "Q0" else None)
@@ -472,7 +532,8 @@ class GradeContext:
     def _stamp(self, explain: dict[str, Any]) -> dict[str, Any]:
         return {**explain, "model": GRADE_MODEL, "model_version": GRADE_MODEL_VERSION, "inputs_source": "current",
                 "inputs_digest": self.digest,
-                "classifier_version": self.run.classifier_version if self.run is not None else None}
+                "classifier_version": CLASSIFIER_VERSION,  # the classifier this view graded with (in the model version)
+                "run_classifier_version": self.run.classifier_version if self.run is not None else None}
 
     def _coverage(self, row: CbomCollectedAsset, job: _JobInfo) -> RowGrade:
         facts = row.facts if isinstance(row.facts, dict) else {}
@@ -532,7 +593,10 @@ def load_context(session: Session, *, team_id: int, run_id: int | None = None, j
         meta = P.job_metadata(params, source, nodes.get(job.node_id or 0))
         spec = KINDS.get(source.kind) if source is not None else None
         jobs[job.id] = _JobInfo(  # type: ignore[index]
-            x=_mosca_int(meta.get("data_lifetime_years")), exposure=meta.get("exposure"), segment=meta.get("segment"),
+            # normalised: a legacy or corrupt snapshot value (a list, a dict) must not break every grade surface
+            x=_mosca_int(meta.get("data_lifetime_years")),
+            exposure=meta.get("exposure") if meta.get("exposure") in P.EXPOSURES else None,
+            segment=meta.get("segment") if isinstance(meta.get("segment"), str) else None,
             source_uid=ID.job_source_ref(job, source), source_id=job.source_id,
             source_name=(source.name if source else None) or params.get("source_name"),
             network=bool(spec is not None and spec.group == "network"))
@@ -699,6 +763,8 @@ def scope_items(ctx: GradeContext, coverage: list[tuple[CbomCollectedAsset, RowG
 
 
 # ----------------------------------------------------------------------------- run posture: the accumulator
+_ITEM_RANK = {"inputs": 0, "source": 1, "asset": 2, "coverage": 3}
+
 class RunGrades:
     """Grades of one run's rows, fed one row at a time from ``posture.run_posture``'s loop; ``result`` adds the
     run's unread scope (``scope_items``) and the Q0 item list."""
@@ -711,8 +777,9 @@ class RunGrades:
         self.asset_q0 = 0
         self._mosca: dict[str, Any] | None = None
 
-    def add(self, row: CbomCollectedAsset, codes: list[str] | None) -> RowGrade:
-        out = self.ctx.grade_row(row, codes, explain=False)
+    def add(self, row: CbomCollectedAsset, codes: list[str] | None,
+            exposure: tuple[str, str] | None = None) -> RowGrade:
+        out = self.ctx.grade_row(row, codes, explain=False, score_exposure=exposure)
         if row.asset_type == "coverage":
             self.coverage.append((row, out))
             return out
@@ -733,7 +800,9 @@ class RunGrades:
     def result(self) -> dict[str, Any]:
         scope, not_items = scope_items(self.ctx, self.coverage)
         items = scope + list(self.assets.by_key.values()) + ([self._mosca] if self._mosca else [])
-        items.sort(key=lambda i: (i["reason"], i["key"]))
+        # inputs, then sources, then assets, then coverage: the cap never drops the one setting or the source that
+        # leaves the most unread (review A); deterministic within each rank
+        items.sort(key=lambda i: (_ITEM_RANK.get(i["key"].split(":", 1)[0], 9), i["reason"], i["key"]))
         return {
             "q_grades": {g: self.q_grades.get(g, 0) for g in (*GRADES, "none")},
             "q0_reasons": dict(sorted(Counter(i["reason"] for i in items).items())),

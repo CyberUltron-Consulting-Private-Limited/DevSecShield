@@ -261,6 +261,10 @@ def test_invalid_inputs_are_refused():
     ({"check": "Vault PKI and transit", "status": "not_supported",
       "detail": "no pki or transit mount is visible to this token"}, "gap"),
     ({"check": "BitLocker", "status": "denied", "detail": "Get-BitLockerVolume needs administrator rights"}, "gap"),
+    ({"check": "AD CS template settings", "status": "not_supported",
+      "detail": "no Active Directory Certificate Services CA is configured on this server"}, "not_present"),
+    ({"check": "AD CS template settings", "status": "not_supported", "detail": "Web is published but not readable"},
+     "gap"),
     ({"check": "package list", "status": "error", "detail": "neither dpkg-query nor rpm answered"}, "gap"),
     # FP-1: an address that answered on no probed port holds nothing the product could read
     ({"check": "no answer", "status": "unreachable", "detail": "10.0.0.9 did not answer on any listed port (443)"},
@@ -281,6 +285,12 @@ def test_coverage_rows_are_read_by_what_was_not_read(facts, kind):
     ("tls_endpoint", {"protocols": ["TLSv1.3"], "pq_group_supported": True, "group": "x25519"}, [], True),
     ("ssh_endpoint", {"kex": ["mlkem768x25519-sha256", "curve25519-sha256"]}, [], True),
     ("ssh_endpoint", {"kex": ["mlkem768x25519-sha256"]}, [], False),
+    # review A: classical SSH kex names come from algid (GSS family included), not a local table
+    ("ssh_endpoint", {"kex": ["mlkem768x25519-sha256", "gss-curve25519-sha256-toWM5Slw5Ew8Mqkay+al2g=="]}, [], True),
+    ("ssh_endpoint", {"kex": ["mlkem768x25519-sha256", "curve448-sha512"]}, [], True),
+    # CB-12's prober reports whether a classical TLS 1.3 key share was accepted
+    ("tls_endpoint", {"protocols": ["TLSv1.3"], "pq_hybrid": True, "classical_tls13_accepted": True}, [], True),
+    ("tls_endpoint", {"protocols": ["TLSv1.3"], "pq_hybrid": True, "classical_tls13_accepted": False}, [], False),
     ("kms_key", {"key_spec": "SYMMETRIC_DEFAULT", "protocols": ["TLSv1.2"]}, [], False),  # not an endpoint
 ])
 def test_classical_fallback(asset_type, facts, codes, fallback):
@@ -333,3 +343,45 @@ def test_collector_internet_facing_beats_a_team_internal_override():
     assert QG.grade_exposure({}, "pay.bank.example", None, override=None, segment=None, memo=memo)[0] == "unknown"
     assert QG.grade_exposure({}, "52.95.110.1", None, override=None, segment=None, memo=memo)[0] == "internet"
     assert len(memo) == 5  # memoised per (override, segment, collector fact, target); location only when needed
+
+
+def test_the_fast_path_equals_the_explained_grade_on_random_rows():
+    """The posture loop and list pages (explain=False, the score's exposure handed in) must give exactly the grade
+    the asset detail (explain=True, the grade's own exposure) gives, row by row (review A: no second exposure
+    computation in the loop, except where the grade's precedence differs)."""
+    from types import SimpleNamespace as NS
+
+    from backend.utilities.cbom_sources import posture as P
+
+    rng = random.Random(1141)
+    targets = ("52.95.110.1", "10.0.0.5", "web.example.org", "100.64.1.1", "52.95.110.1:443", None)
+    locations = (None, "52.95.110.2:443", "192.168.1.1", "/etc/ssl/a.pem")
+    seen = set()
+    for _ in range(3000):
+        job = QG._JobInfo(x=rng.choice((None, 0, 3, 30)), exposure=rng.choice((None, "internet", "internal", "unknown")),
+                          segment=rng.choice((None, "DMZ", "core")), source_uid="s1", source_id=1, source_name=None,
+                          network=False)
+        ctx = QG.GradeContext(team_x=rng.choice((None, 2, 10)), y=rng.choice((None, 0, 5)), z=rng.choice((None, 4, 12)),
+                              jobs={1: job}, run=None, job_rows=[], sources={})
+        facts = {}
+        if rng.random() < .5:
+            facts["internet_facing"] = rng.choice((True, False))
+        if rng.random() < .3:
+            facts["is_ca"] = True
+        qv = rng.choice((True, False, None))
+        if qv is False and rng.random() < .6:
+            facts["pq_hybrid"] = True
+            facts["versions"] = {"TLSv1.3": True, "TLSv1.2": rng.choice((True, False))}
+        row = NS(id=1, job_id=1, asset_type=rng.choice(("tls_endpoint", "ssh_endpoint", "certificate", "cloud_ca",
+                                                        "kms_key", "disk_encryption", "database_config")),
+                 quantum_vulnerable=qv, facts=facts, target=rng.choice(targets), location=rng.choice(locations),
+                 asset_key="k", cdx_type="other")
+        codes = ["DISK_XTS_128"] if row.asset_type == "disk_encryption" and rng.random() < .5 else []
+        score = P.asset_exposure(facts, row.target, row.location, override=job.exposure, node_segment=job.segment)
+        fast = ctx.grade_row(row, codes, explain=False, score_exposure=score)
+        full = ctx.grade_row(row, codes, explain=True)
+        assert (fast.q_grade, fast.q_reason, fast.q_item_key) == (full.q_grade, full.q_reason, full.q_item_key), row
+        assert fast.explain["missing"] == full.explain["missing"]
+        seen.add(full.q_reason)
+    assert {"qv_exceeds_internet", "qv_fallback_exceeds", "mosca_missing", "pq_observed", "grover_weakened",
+            "not_applicable", "qv_exceeds_anchor"} <= seen

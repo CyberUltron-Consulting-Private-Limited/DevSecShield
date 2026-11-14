@@ -252,6 +252,13 @@ def test_collector_internet_facing_beats_a_team_internal_override(api, world):
                                   target="aws", facts=facts), metadata={"exposure": "internal"}, kind="aws_account")
     assert g(d) == ("Q1", "qv_exceeds_internet")
     assert "collector" in d["q_explain"]["exposure_basis"] and "internal" in d["q_explain"]["exposure_basis"]
+    # the posture loop hands the score's exposure to the grade, except in exactly this case (review A)
+    for override in ("internal", "unknown"):
+        w = seed(world[0], sources=[{"name": f"S-{override}", "kind": "aws_account", "metadata": {"exposure": override},
+                                     "assets": [_asset("load_balancer_tls", "arn:lb", target="aws", facts=facts)]}])
+        p = posture(api, w["run"])
+        assert p["q_grades"]["Q1"] == 1, override
+        assert p["exposure"]["internet"] == 0  # the score keeps the source's setting
 
 
 def test_grover_weakened_volume(api, world):
@@ -290,9 +297,14 @@ def _scope_run(engine, *, timeouts=3):
         {"name": "R-net", "kind": "network_range", "assets": [
             _cov(f"10.231.0.{i}", "no answer", "unreachable", f"10.231.0.{i} did not answer on any listed port (443)")
             for i in (25, 27, 28, 29, 30)
-        ] + [_asset("tls_endpoint", "10.231.0.16:443", target="10.231.0.16", facts=QV_TLS)],
+        ] + [_cov(f"10.231.0.{i}", "ports not answering", "timeout", "ports 443, 8443 timed out") for i in (17, 18)]
+          + [_asset("tls_endpoint", "10.231.0.16:443", target="10.231.0.16", facts=QV_TLS)],
          "result": {"targets": net_targets}},
         {"name": "S-fail", "status": "failure", "outcome": "failed", "error": "node lost the job"},
+        {"name": "S-wait", "status": "pending", "outcome": None},
+        {"name": "S-ca", "kind": "ca_connector", "result": {"targets": [
+            {"target": "ca01", "status": "not_supported",
+             "error": "no Active Directory Certificate Services CA is configured on this server"}]}},
         {"name": "S-trunc", "result": {"truncated": True, "counts": {"total": 1, "ok": 1}},
          "assets": [_asset("tls_endpoint", "10.20.0.7:443", target="10.20.0.7", facts=QV_TLS)]},
         {"name": "S-lost", "outcome": "partial", "result": {"asset_mismatch": {"reported": 9, "stored": 4}}},
@@ -307,7 +319,8 @@ def _scope_run(engine, *, timeouts=3):
              "services": {"kms": "not_enabled", "acm": "not_enabled"}},
             {"target": "111122223333/eu-west-1", "status": "ok"}]}},
     ], skipped=[{"name": "S-canary", "reason": "Last connection test failed; fix it and test again"},
-                {"name": "S-off", "reason": "Disabled", "enabled": False}])
+                {"name": "S-off", "reason": "Disabled", "enabled": False},
+                {"name": "S-zero", "reason": "0 targets left after the never-scan list"}])
 
 
 def test_scope_items_of_a_run(api, world):
@@ -326,7 +339,14 @@ def test_scope_items_of_a_run(api, world):
     assert p["q_not_items"]["not_present"] == 2  # BitLocker not installed, linkerd not installed
     # range non-answers of one network source: one item per (source, status) with a count and the addresses
     agg = by_key[f"coverage:{net}:*:timeout"]
-    assert agg["count"] == 3 and agg["addresses"] == ["10.231.1.0", "10.231.1.1", "10.231.1.2"]
+    # review A: the network source's own timeout coverage rows and its timeout targets are one item
+    assert agg["count"] == 5 and agg["addresses"] == ["10.231.0.17", "10.231.0.18", "10.231.1.0", "10.231.1.1",
+                                                      "10.231.1.2"]
+    assert sorted(agg["refs"]) == sorted(w["R-net"]["assets"][f"10.231.0.{i}#ports not answering"] for i in (17, 18))
+    wait = by_key[f"source:{w['S-wait']['uid']}"]
+    assert wait["reason"] == "source_not_read" and wait["detail"] == "collection not finished"
+    assert by_key[f"source:{w['S-zero']['uid']}"]["reason"] == "excluded_by_choice"
+    assert not [k for k in by_key if k.startswith(f"coverage:{w['S-ca']['uid']}:")]  # no AD CS CA: nothing there
     assert by_key[f"coverage:{net}:10.231.0.33:by_choice"]["reason"] == "excluded_by_choice"
     # sources: failed job, truncated job, lost assets, skipped by the planner (HF-5, HF-6)
     assert by_key[f"source:{w['S-fail']['uid']}"]["reason"] == "source_not_read"
@@ -346,11 +366,13 @@ def test_scope_items_of_a_run(api, world):
     assert by_key[f"coverage:{kimg}:reg.example/ok:2:Batch env"]["count"] == 1
     # counts: q_grades over asset rows only (FP-4), Q0 items by reason, the decomposition
     assert sum(p["q_grades"].values()) == p["assets"] == 3
-    assert p["q0_items_total"] == len(p["q0_items"]) == 14
-    assert p["q0_reasons"] == {"coverage_gap": 6, "excluded_by_choice": 4, "source_not_read": 2, "source_truncated": 2}
-    assert p["q0_counts"] == {"assets": 0, "scope_items": 14, "scope_rows": 16}
-    # capped lists are ordered (reason, key), so every surface's first N agree
-    assert [(i["reason"], i["key"]) for i in p["q0_items"]] == sorted((i["reason"], i["key"]) for i in p["q0_items"])
+    assert p["q0_items_total"] == len(p["q0_items"]) == 16
+    assert p["q0_reasons"] == {"coverage_gap": 6, "excluded_by_choice": 5, "source_not_read": 3, "source_truncated": 2}
+    assert p["q0_counts"] == {"assets": 0, "scope_items": 16, "scope_rows": 20}
+    # capped lists are ordered (kind rank, reason, key): inputs, sources, assets, then coverage (review A)
+    rank = [(0 if i["key"].startswith("inputs:") else 1 if i["key"].startswith("source:")
+             else 2 if i["key"].startswith("asset:") else 3, i["reason"], i["key"]) for i in p["q0_items"]]
+    assert rank == sorted(rank)
 
 
 def test_coverage_rows_carry_their_scope_item_on_the_list(api, world):
@@ -361,6 +383,8 @@ def test_coverage_rows_carry_their_scope_item_on_the_list(api, world):
     assert (tier1["q_grade"], tier1["q_reason"]) == ("Q0", "coverage_gap")
     assert tier1["q_item_key"].endswith(":10.20.0.1:key and certificate files")
     absent = listed[host["10.20.0.1#BitLocker"]]
+    timeout = listed[w["R-net"]["assets"]["10.231.0.17#ports not answering"]]
+    assert (timeout["q_grade"], timeout["q_item_key"]) == ("Q0", f"coverage:{w['R-net']['uid']}:*:timeout")
     silent = listed[w["R-net"]["assets"]["10.231.0.25#no answer"]]
     assert (silent["q_grade"], silent["q_reason"], silent["q_item_key"]) == (None, "not_an_item", None)
     assert (absent["q_grade"], absent["q_reason"], absent["q_item_key"]) == (None, "not_an_item", None)
@@ -425,7 +449,52 @@ def test_asset_q0_items_are_keyed_by_the_stable_asset_key(api, world, monkeypatc
 def test_network_aggregate_keeps_the_first_1000_addresses(api, world):
     w = _scope_run(world[0], timeouts=1200)
     agg = next(i for i in posture(api, w["run"])["q0_items"] if i["key"].endswith(":*:timeout"))
-    assert agg["count"] == 1200 and len(agg["addresses"]) == 1000 and agg["addresses"][0] == "10.231.1.0"
+    assert agg["count"] == 1202 and len(agg["addresses"]) == 1000  # 2 coverage rows + 1,200 targets
+    assert agg["addresses"][:3] == ["10.231.0.17", "10.231.0.18", "10.231.1.0"]
+
+
+def test_coverage_row_addresses_and_refs_are_capped_at_1000(api, world):
+    rows = [_cov(f"10.50.{i // 256}.{i % 256}", "ports not answering", "timeout", "timed out") for i in range(1001)]
+    w = seed(world[0], sources=[{"name": "R-cov", "kind": "network_range", "assets": rows}])
+    item = next(i for i in posture(api, w["run"])["q0_items"] if i["key"].endswith(":*:timeout"))
+    assert item["count"] == 1001 and len(item["addresses"]) == 1000 and len(item["refs"]) == 1000
+
+
+def test_the_cap_never_drops_inputs_or_source_items(api, world):
+    # review A repro: Mosca unset, 230 target timeouts and one failed source
+    targets = [{"target": f"host-{i:03d}.corp", "status": "timeout"} for i in range(230)]
+    w = seed(world[0], mosca={}, sources=[
+        {"name": "S-many", "result": {"targets": targets},
+         "assets": [_asset("tls_endpoint", "10.20.0.1:443", facts=QV_TLS)]},
+        {"name": "S-fail", "status": "failure", "outcome": "failed"}])
+    p = posture(api, w["run"])
+    keys = [i["key"] for i in p["q0_items"]]
+    assert p["q0_items_total"] == 232 and len(keys) == 200
+    assert keys[:2] == ["inputs:mosca", f"source:{w['S-fail']['uid']}"]
+
+
+@pytest.mark.parametrize("bad", [{"exposure": ["internet"]}, {"node_segment": {"name": "DMZ"}},
+                                 {"exposure": {"x": 1}, "node_segment": ["DMZ"]}])
+def test_malformed_job_metadata_does_not_break_the_grade(api, world, bad):
+    # review A: legacy or corrupt snapshot values must not 500 every grade surface (unhashable memo keys)
+    w = seed(world[0], sources=[{"name": "S", "metadata": bad,
+                                 "assets": [_asset("tls_endpoint", "10.20.0.1:443", facts=QV_TLS)]}])
+    aid = w["S"]["assets"]["10.20.0.1:443"]
+    assert items(api, w["run"])[aid]["q_grade"] == "Q2"
+    assert g(detail(api, aid)) == ("Q2", "qv_exceeds")
+    assert posture(api, w["run"])["q_grades"]["Q2"] == 1
+
+
+def test_the_inputs_digest_names_inputs_not_jobs(api, world):
+    # review A: two runs with identical inputs share a digest (PR-3 compares digests across runs) ...
+    spec = [{"name": "S", "uid": "uid-d", "metadata": {"data_lifetime_years": 3},
+             "assets": [_asset("tls_endpoint", "10.20.0.1:443", facts=QV_TLS)]}]
+    a = posture(api, seed(world[0], sources=spec)["run"])["grade_inputs"]["digest"]
+    b = posture(api, seed(world[0], sources=[{**spec[0], "name": "S2"}])["run"])["grade_inputs"]["digest"]
+    assert a == b
+    # ... and a change of one job snapshot's X alone changes it
+    c = posture(api, seed(world[0], sources=[{**spec[0], "name": "S3", "metadata": {"data_lifetime_years": 4}}])["run"])
+    assert c["grade_inputs"]["digest"] != a
 
 
 def test_q0_item_list_is_capped_at_200_with_the_total(api, world):
@@ -467,6 +536,10 @@ def test_cross_surface_per_asset_equality(api, world):
                                                                        for d in details.values()}
     assert len(digests) == 1 and len(versions) == 1
     assert p["grade_inputs"]["source"] == "current" and p["grade_inputs"]["mosca"] == {"x": 10, "y": 5, "z": 12}
+    from backend.utilities.cbom_sources.classify import CLASSIFIER_VERSION
+
+    e = next(iter(details.values()))["q_explain"]
+    assert e["classifier_version"] == CLASSIFIER_VERSION and "run_classifier_version" in e
 
 
 def test_inputs_digest_follows_team_inputs_and_the_job_snapshot(api, world):
