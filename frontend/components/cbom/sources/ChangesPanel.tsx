@@ -36,6 +36,8 @@ export const DRIFT_LABEL: Record<CbomDriftKind, [string, Tone]> = {
   cert_expiring: ["Certificate expiring", "amber"],
   schedule_skipped: ["Scheduled run skipped", "amber"],
   q0_closed: ["Q0 gap closed", "green"],
+  agility_asset_moved: ["Fix class changed", "amber"],
+  agility_system_changed: ["System fix-class mix changed", "amber"],
 };
 
 export function RunChanges({ teamId, runId, finished }: { teamId: number; runId: number; finished: boolean }) {
@@ -73,6 +75,14 @@ export function RunChanges({ teamId, runId, finished }: { teamId: number; runId:
               <span className="text-zinc-800 dark:text-zinc-200 break-all">{e.asset_label}</span>
               <span className="text-zinc-500">{e.source_name}</span>
               {typeof e.detail?.cause === "string" && <span className="text-amber-700 dark:text-amber-400">({e.detail.cause})</span>}
+              {typeof e.detail?.old_class === "string" && typeof e.detail?.new_class === "string" && (
+                <span className="text-amber-700 dark:text-amber-400">({e.detail.old_class} → {e.detail.new_class})</span>
+              )}
+              {typeof e.detail?.old_hardest !== "undefined" && e.kind === "agility_system_changed" && (
+                <span className="text-amber-700 dark:text-amber-400">
+                  (hardest {String(e.detail.old_hardest ?? "—")} → {String(e.detail.new_hardest ?? "—")})
+                </span>
+              )}
             </li>
           ))}
         </ul>
