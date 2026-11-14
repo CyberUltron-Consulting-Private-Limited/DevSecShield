@@ -1354,6 +1354,14 @@
    "basis": "IV reuse with an approved cipher (GCM, CTR, CBC) is a configuration demonstrated to be insecure (it leaks the XOR of the plaintexts and, in GCM, the authentication key), the same basis as ECB (WEAK_CIPHER_MODE): RBI; the cipher itself may be strong, so no SEBI clause",
    "rules": []
   },
+  "STATIC_SALT": {
+   "clauses": [
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140"
+   ],
+   "basis": "a constant salt in a password-based key derivation is a configuration demonstrated to be insecure (one precomputed table or guessing run serves every password; NIST SP 800-132 section 5.1 requires a random salt), the same basis as a reused IV (STATIC_IV): RBI; the KDF itself may be an approved one, so no SEBI clause",
+   "rules": []
+  },
   "TLS_VERIFICATION_DISABLED": {
    "clauses": [
     "certin-bom-8.4.2.2",
@@ -1492,6 +1500,14 @@
      "basis": "the evidence names Triple DES (TDEA): SP 800-131A Table 1 disallows three-key TDEA for encryption after 2023, and SEBI asks for strong encryption algorithms"
     }
    ]
+  },
+  "WEAK_KDF_ITERATIONS": {
+   "clauses": [
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140"
+   ],
+   "basis": "an iteration count below the published minimum for the KDF (NIST SP 800-132 section 5.2: 1,000) is a configuration that does not follow internationally accepted standards and is demonstrated to be insecure against offline guessing: RBI; the KDF itself may be an approved one, so no SEBI clause",
+   "rules": []
   },
   "WEAK_KEY_SIZE": {
    "clauses": [

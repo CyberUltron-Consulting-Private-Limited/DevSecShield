@@ -48,6 +48,9 @@ _CBOM_FLAG_DELTA: dict[str, float] = {
     "CUSTOM_CRYPTO": 0.8,
     # images, binaries and firmware (WP8): weight 4 like CUSTOM_CRYPTO; LIBRARY_CVE_RANGE (weight 1) keeps the default
     "EOL_CRYPTO_LIBRARY": 0.8,
+    # CB-27 (Java literal flow): weight 4 like CUSTOM_CRYPTO
+    "STATIC_SALT": 0.8,
+    "WEAK_KDF_ITERATIONS": 0.8,
 }
 
 _AIBOM_CATEGORY_DELTA: dict[str, float] = {
