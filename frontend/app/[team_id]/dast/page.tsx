@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
 import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Clock, Search, X, Shield, AlertTriangle, Check, ScanSearch, Target, Percent, AlertCircle, Activity, Filter, ChevronDown, ArrowUpDown, DollarSign, TrendingUp, TrendingDown } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { singleFlight } from "@/utils/single_flight";
@@ -210,7 +211,7 @@ function DASTDashboard({ dashboardData }: { dashboardData: DASTListDashboardData
                 <ScanSearch className="h-4 w-4 text-blue-500" />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Total scans</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Total scans <InfoTip id="dast.kpi.total_scans" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_scans}</p>
               </div>
             </div>
@@ -223,7 +224,7 @@ function DASTDashboard({ dashboardData }: { dashboardData: DASTListDashboardData
                 <Target className="h-4 w-4 text-red-500" />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Total critical</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Total critical <InfoTip id="dast.kpi.severity" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_critical_issues}</p>
               </div>
             </div>
@@ -236,7 +237,7 @@ function DASTDashboard({ dashboardData }: { dashboardData: DASTListDashboardData
                 <AlertCircle className="h-4 w-4 text-orange-500" />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Total high</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Total high <InfoTip id="dast.kpi.severity" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_high_issues}</p>
               </div>
             </div>
@@ -249,7 +250,7 @@ function DASTDashboard({ dashboardData }: { dashboardData: DASTListDashboardData
                 <AlertTriangle className="h-4 w-4 text-amber-500" />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Total medium</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Total medium <InfoTip id="dast.kpi.severity" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_medium_issues}</p>
               </div>
             </div>
@@ -262,7 +263,7 @@ function DASTDashboard({ dashboardData }: { dashboardData: DASTListDashboardData
                 <Shield className="h-4 w-4 text-blue-500" />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Total low</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Total low <InfoTip id="dast.kpi.severity" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_low_issues}</p>
               </div>
             </div>
@@ -287,7 +288,7 @@ function DASTDashboard({ dashboardData }: { dashboardData: DASTListDashboardData
                 />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Avg risk score</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Avg risk score <InfoTip id="dast.kpi.avg_risk" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.average_risk_score.toFixed(1)}</p>
               </div>
             </div>
@@ -298,7 +299,7 @@ function DASTDashboard({ dashboardData }: { dashboardData: DASTListDashboardData
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="items-center pb-2">
-            <CardTitle className="text-base">Severity Distribution</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Severity Distribution <InfoTip id="dast.chart.severity" /></CardTitle>
             <CardDescription>Critical / High / Medium / Low</CardDescription>
           </CardHeader>
           <CardContent>
@@ -334,7 +335,7 @@ function DASTDashboard({ dashboardData }: { dashboardData: DASTListDashboardData
         </Card>
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Issues Over Time</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Issues Over Time <InfoTip id="dast.chart.over_time" /></CardTitle>
             <CardDescription>Stacked by severity</CardDescription>
           </CardHeader>
           <CardContent>
@@ -365,7 +366,7 @@ function DASTDashboard({ dashboardData }: { dashboardData: DASTListDashboardData
         </Card>
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="items-center pb-2">
-            <CardTitle className="text-base">Security Posture Overview</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Security Posture Overview <InfoTip id="dast.chart.posture" /></CardTitle>
             <CardDescription>By category</CardDescription>
           </CardHeader>
           <CardContent>
@@ -407,7 +408,7 @@ function DASTDashboard({ dashboardData }: { dashboardData: DASTListDashboardData
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">OWASP Top 10</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">OWASP Top 10 <InfoTip id="dast.chart.owasp" /></CardTitle>
             <CardDescription>Issue count by category</CardDescription>
           </CardHeader>
           <CardContent>
@@ -424,7 +425,7 @@ function DASTDashboard({ dashboardData }: { dashboardData: DASTListDashboardData
         </Card>
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Average Risk Score per Category</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Average Risk Score per Category <InfoTip id="dast.chart.risk_by_category" /></CardTitle>
             <CardDescription>Five vulnerability categories</CardDescription>
           </CardHeader>
           <CardContent>
@@ -444,7 +445,7 @@ function DASTDashboard({ dashboardData }: { dashboardData: DASTListDashboardData
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="items-center pb-2">
-            <CardTitle className="text-base">Average Risk Score per Confidence</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Average Risk Score per Confidence <InfoTip id="dast.chart.risk_by_confidence" /></CardTitle>
             <CardDescription>High / Medium / Low</CardDescription>
           </CardHeader>
           <CardContent>
@@ -479,7 +480,7 @@ function DASTDashboard({ dashboardData }: { dashboardData: DASTListDashboardData
         </Card>
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Compliance Violations</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Compliance Violations <InfoTip id="dast.chart.compliance" /></CardTitle>
             <CardDescription>PCI DSS, ISO 27001–27004</CardDescription>
           </CardHeader>
           <CardContent>
@@ -724,6 +725,7 @@ export default function DASTPage() {
                         className="pl-9 h-9 cursor-text"
                       />
                     </div>
+                    <InfoTip id="scan.filter.search" className="-ml-2" />
                     <Select value={statusFilter} onValueChange={setStatusFilter}>
                       <SelectTrigger className="h-9 min-w-[150px] cursor-pointer">
                         <SelectValue placeholder="Scan status" />
@@ -738,6 +740,7 @@ export default function DASTPage() {
                         <SelectItem value="failure">Failure</SelectItem>
                       </SelectContent>
                     </Select>
+                    <InfoTip id="scan.status" className="-ml-2" />
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button
@@ -760,6 +763,7 @@ export default function DASTPage() {
                           <ChevronDown className="h-3 w-3 opacity-70 shrink-0" />
                         </Button>
                       </DropdownMenuTrigger>
+                      <InfoTip id="scan.filter.risk" className="-ml-2" />
                       <DropdownMenuContent align="start" className="min-w-[180px]">
                         <DropdownMenuLabel className="text-xs font-normal text-zinc-500">Filter by risk score</DropdownMenuLabel>
                         <DropdownMenuSeparator />
@@ -799,6 +803,7 @@ export default function DASTPage() {
                           <ChevronDown className="h-3 w-3 opacity-70 shrink-0" />
                         </Button>
                       </DropdownMenuTrigger>
+                      <InfoTip id="scan.filter.sort" className="-ml-2" />
                       <DropdownMenuContent align="start" className="min-w-[200px]">
                         <DropdownMenuLabel className="text-xs font-normal text-zinc-500">Sort by</DropdownMenuLabel>
                         <DropdownMenuSeparator />
@@ -858,16 +863,16 @@ export default function DASTPage() {
                         <TableHeader>
                           <TableRow>
                             <TableHead className="w-[160px] min-w-[120px]">Title</TableHead>
-                            <TableHead>Created at</TableHead>
-                            <TableHead>Last updated</TableHead>
-                            <TableHead>Scan status</TableHead>
-                            <TableHead className="w-[180px]">Vulnerabilities</TableHead>
-                            <TableHead className="w-[90px]">Risk score</TableHead>
-                            <TableHead className="w-[140px]">Target URL</TableHead>
-                            <TableHead className="w-[90px]">URLs scanned</TableHead>
-                            <TableHead className="w-[90px]">Coverage %</TableHead>
-                            <TableHead className="w-[80px]">Credits</TableHead>
-                            <TableHead>Owner</TableHead>
+                            <TableHead><span className="inline-flex items-center gap-1">Created at <InfoTip id="scan.table.created" /></span></TableHead>
+                            <TableHead><span className="inline-flex items-center gap-1">Last updated <InfoTip id="scan.table.updated" /></span></TableHead>
+                            <TableHead><span className="inline-flex items-center gap-1">Scan status <InfoTip id="scan.status" /></span></TableHead>
+                            <TableHead className="w-[180px]"><span className="inline-flex items-center gap-1">Vulnerabilities <InfoTip id="dast.table.vulns" /></span></TableHead>
+                            <TableHead className="w-[90px]"><span className="inline-flex items-center gap-1">Risk score <InfoTip id="scan.table.risk" /></span></TableHead>
+                            <TableHead className="w-[140px]"><span className="inline-flex items-center gap-1">Target URL <InfoTip id="dast.table.target" /></span></TableHead>
+                            <TableHead className="w-[90px]"><span className="inline-flex items-center gap-1">URLs scanned <InfoTip id="dast.table.urls" /></span></TableHead>
+                            <TableHead className="w-[90px]"><span className="inline-flex items-center gap-1">Coverage % <InfoTip id="dast.table.coverage" /></span></TableHead>
+                            <TableHead className="w-[80px]"><span className="inline-flex items-center gap-1">Credits <InfoTip id="scan.table.credits" /></span></TableHead>
+                            <TableHead><span className="inline-flex items-center gap-1">Owner <InfoTip id="scan.table.owner" /></span></TableHead>
                             <TableHead className="text-right w-[80px]">Actions</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -1025,8 +1030,10 @@ export default function DASTPage() {
                 <DialogTitle>Rename Scan</DialogTitle>
                 <DialogDescription>Enter a new name for this scan.</DialogDescription>
               </DialogHeader>
-              <div className="py-4">
+              <div className="py-4 space-y-2">
+                <FieldLabel htmlFor="rename-scan-title" infoId="scan.rename.title">Scan name</FieldLabel>
                 <Input
+                  id="rename-scan-title"
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
                   placeholder="Scan name"
@@ -1067,8 +1074,10 @@ export default function DASTPage() {
                 <DialogTitle>Create New Scan</DialogTitle>
                 <DialogDescription>Enter a title for your new DAST scan.</DialogDescription>
               </DialogHeader>
-              <div className="py-4">
+              <div className="py-4 space-y-2">
+                <FieldLabel htmlFor="new-scan-title" infoId="scan.new.title">Scan title</FieldLabel>
                 <Input
+                  id="new-scan-title"
                   value={newScanTitle}
                   onChange={(e) => setNewScanTitle(e.target.value)}
                   placeholder="Scan title"

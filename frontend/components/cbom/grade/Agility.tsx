@@ -23,7 +23,7 @@ import {
   type AgilityPosture,
   type FixClassFields,
 } from "./model";
-import { Tip } from "./Tip";
+import { InfoTip } from "@/components/ui/info-tip";
 import { fixClassTipId } from "./tips";
 
 function useModel(teamId: number | undefined, model: AgilityModel | null | undefined): AgilityModel | null {
@@ -100,7 +100,7 @@ export function AgilityDistribution({ posture }: { posture: AgilityPosture }) {
             ? "self-fixable: no asset has one of the four fix classes"
             : `self-fixable: ${d.selfFixable} of ${d.classified} assets with a fix class are configurable or code-fixed`}
         </p>
-        <Tip id="cbom.agility.self_fixable" />
+        <InfoTip id="cbom.agility.self_fixable" />
       </div>
       <div className="flex flex-wrap items-center gap-2 text-xs" role="group" aria-label="Codes counted">
         <button type="button" aria-pressed={!exclPq} onClick={() => setExclPq(false)} data-testid="posture-fix-view-all"
@@ -112,7 +112,7 @@ export function AgilityDistribution({ posture }: { posture: AgilityPosture }) {
                 className={`rounded border px-2 py-0.5 cursor-pointer disabled:opacity-50 ${exclPq ? "border-blue-500 text-blue-700 dark:text-blue-300" : "border-zinc-300 text-zinc-600 dark:text-zinc-400"}`}>
           Excluding post-quantum
         </button>
-        <Tip id="cbom.agility.excl_pq" />
+        <InfoTip id="cbom.agility.excl_pq" />
       </div>
       <div className="flex h-3 w-full overflow-hidden rounded bg-zinc-100 dark:bg-zinc-800" aria-hidden="true">
         {d.segments.filter((s) => s.count > 0).map((s) => (
@@ -155,17 +155,17 @@ export function AgilityPostureCard({ teamId, posture, model }: {
     <div className="space-y-3 rounded-lg border border-zinc-200 dark:border-zinc-800 p-3 min-w-0" data-testid="posture-fix"
          data-agility-version={posture.agility_version}>
       <div className="flex flex-wrap items-center gap-2">
-        <p className="text-sm font-medium text-zinc-900 dark:text-white">How hard is this to fix?</p>
+        <p className="text-sm font-medium text-zinc-900 dark:text-white">How hard is this to fix? <InfoTip id="cbom.agility.section" /></p>
         <span className="text-xs text-zinc-500 dark:text-zinc-400">Crypto-agility: the hardest fix class of each asset</span>
       </div>
       <AgilityDistribution posture={posture} />
       <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400">
         {FIX_CLASSES.map((c) => {
           const id = fixClassTipId(c);
-          return id ? <span key={c} className="inline-flex flex-wrap items-center gap-1">{FIX_LABEL[c]} <Tip id={id} /></span> : null;
+          return id ? <span key={c} className="inline-flex flex-wrap items-center gap-1">{FIX_LABEL[c]} <InfoTip id={id} /></span> : null;
         })}
-        <span className="inline-flex flex-wrap items-center gap-1">Unknown <Tip id="cbom.agility.unknown" /></span>
-        <span className="inline-flex flex-wrap items-center gap-1">Likely <Tip id="cbom.agility.inferred" /></span>
+        <span className="inline-flex flex-wrap items-center gap-1">Unknown <InfoTip id="cbom.agility.unknown" /></span>
+        <span className="inline-flex flex-wrap items-center gap-1">Likely <InfoTip id="cbom.agility.inferred" /></span>
       </div>
       {unknown.length > 0 && (
         <div data-testid="posture-fix-unknown-reasons">
@@ -241,7 +241,7 @@ export function AgilityDrawerSection({ teamId, agility, model }: {
       <div className="flex flex-wrap items-center gap-2">
         <p className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">How hard is this to fix?</p>
         <FixClassChip item={asset} testId="asset-fix-chip" />
-        {isFixValue(agility.fix_class) && fixClassTipId(agility.fix_class) && <Tip id={fixClassTipId(agility.fix_class)!} />}
+        {isFixValue(agility.fix_class) && fixClassTipId(agility.fix_class) && <InfoTip id={fixClassTipId(agility.fix_class)!} />}
         {agility.confidence && (
           <span className="text-xs text-zinc-500 dark:text-zinc-400">{agility.confidence === "inferred" ? "Likely (inferred)" : "Observed"}</span>
         )}
@@ -278,7 +278,7 @@ export function AgilityDrawerSection({ teamId, agility, model }: {
       )}
       {inferred && (
         <p className="text-xs text-zinc-500 dark:text-zinc-400 flex flex-wrap items-center gap-1">
-          &quot;Likely&quot;: no fact the product read decides that class; it is the table&apos;s default. <Tip id="cbom.agility.inferred" />
+          &quot;Likely&quot;: no fact the product read decides that class; it is the table&apos;s default. <InfoTip id="cbom.agility.inferred" />
         </p>
       )}
       <p className="text-xs text-zinc-500 dark:text-zinc-400 break-all">Model {agility.model} · {agility.model_version}</p>

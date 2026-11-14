@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import type { CbomScanDashboardData, CbomFinding } from "@/utils/backend_api";
-import { readinessText } from "@/utils/cbomReadiness";
+import { quantumReadinessBars, readinessText } from "@/utils/cbomReadiness";
 import { OWASP_KEY_TO_LABEL, COMPLIANCE_KEY_TO_LABEL, OWASP_COLORS } from "@/lib/owasp-compliance-labels";
 import { FRAMEWORK_LABELS } from "@/components/compliance/frameworkLabels";
 import {
@@ -49,6 +49,9 @@ import {
   YAxis,
 } from "recharts";
 import { PieChart, BarChart3, TrendingUp } from "lucide-react";
+import { criticalFixedPct } from "@/components/cbom/remediationKpis";
+import { InfoTip } from "@/components/ui/info-tip";
+import type { InfoTipId } from "@/content/infotips";
 
 /** Resolve a compliance-controls chart key to a short display label. */
 function complianceChartLabel(key: string): string {
@@ -88,12 +91,18 @@ export function CbomDashboardCharts({
   findingsList,
   riskScoresTitle = "Risk scores per finding",
   riskScoresDescription = "Risk score by finding (top 24, descending)",
+  riskScoresTip = "cbom.res.risk_scores",
+  quantumTip = "cbom.res.quantum",
 }: {
   dashboard: CbomScanDashboardData;
   findingsList: CbomFinding[];
   /** The run page plots the rows of one table page, and says so; the code page keeps these defaults. */
   riskScoresTitle?: string;
   riskScoresDescription?: string;
+  /** The (i) tip of the risk scores card: what this caller's chart plots. */
+  riskScoresTip?: InfoTipId;
+  /** The (i) tip of the Quantum readiness card: a run's bars come from its posture classes, with no Broken today bar. */
+  quantumTip?: InfoTipId;
 }) {
   const cardData = dashboard.card_data;
   const remediation = dashboard.remediation_actions_required;
@@ -131,13 +140,8 @@ export function CbomDashboardCharts({
       .filter((d) => d.count > 0);
   }, [dashboard]);
 
-  const quantumData = useMemo(() => {
-    if (!dashboard.quantum_readiness) return [];
-    return [
-      { name: "Safe", count: dashboard.quantum_readiness.quantum_safe, fill: "hsl(142 71% 45%)" },
-      { name: "Vulnerable", count: dashboard.quantum_readiness.quantum_vulnerable, fill: "hsl(0 72% 51%)" },
-    ].filter((d) => d.count > 0);
-  }, [dashboard]);
+  // every verdict the backend counts, Broken today included, so the chart agrees with the "Quantum ready" card
+  const quantumData = useMemo(() => quantumReadinessBars(dashboard.quantum_readiness), [dashboard]);
 
   // OWASP Top 10 data
   const owaspMetrics = dashboard.owasp_top_10_issues ?? {};
@@ -204,21 +208,24 @@ export function CbomDashboardCharts({
       {/* Summary cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4">
         {[
-          { label: "Crypto assets", value: cardData.total_crypto_assets, icon: Lock, box: "bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400" },
-          { label: "Weak", value: cardData.total_weak_algorithms, icon: ShieldAlert, box: "bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400" },
-          { label: "Quantum vulnerable", value: cardData.total_quantum_vulnerable, icon: AlertTriangle, box: "bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400" },
-          { label: "Certificates", value: cardData.total_certificates, icon: ShieldCheck, box: "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400" },
-          { label: "Keys", value: cardData.total_keys, icon: Key, box: "bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400" },
-          { label: "Quantum ready", value: readinessText(cardData), icon: Shield, box: "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400" },
-          { label: "Avg risk score", value: cardData.average_risk_score?.toFixed(1) ?? "N/A", icon: Activity, box: "bg-teal-100 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400" },
-        ].map(({ label, value, icon: Icon, box }) => (
+          { label: "Crypto assets", value: cardData.total_crypto_assets, icon: Lock, box: "bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400", tip: "cbom.res.kpi.assets" as InfoTipId },
+          { label: "Weak", value: cardData.total_weak_algorithms, icon: ShieldAlert, box: "bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400", tip: "cbom.res.kpi.weak" as InfoTipId },
+          { label: "Quantum vulnerable", value: cardData.total_quantum_vulnerable, icon: AlertTriangle, box: "bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400", tip: "cbom.res.kpi.qv" as InfoTipId },
+          { label: "Certificates", value: cardData.total_certificates, icon: ShieldCheck, box: "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400", tip: "cbom.res.kpi.certs" as InfoTipId },
+          { label: "Keys", value: cardData.total_keys, icon: Key, box: "bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400", tip: "cbom.res.kpi.keys" as InfoTipId },
+          { label: "Quantum ready", value: readinessText(cardData), icon: Shield, box: "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400", tip: "cbom.res.kpi.ready" as InfoTipId },
+          { label: "Avg risk score", value: cardData.average_risk_score?.toFixed(1) ?? "N/A", icon: Activity, box: "bg-teal-100 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400", tip: "cbom.res.kpi.avg_risk" as InfoTipId },
+        ].map(({ label, tip, value, icon: Icon, box }) => (
           <Card key={label} className="border-zinc-200 dark:border-zinc-800">
             <CardContent className="pt-4 pb-4 flex items-center gap-3">
               <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${box}`}>
                 <Icon className="h-5 w-5" />
               </div>
               <div className="min-w-0">
-                <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">{label}</p>
+                <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 flex items-center gap-0.5">
+                  {label}
+                  <InfoTip id={tip} />
+                </p>
                 <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 tabular-nums">{value}</p>
               </div>
             </CardContent>
@@ -230,7 +237,7 @@ export function CbomDashboardCharts({
       {remediation && (
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader>
-            <CardTitle className="text-base">Remediation progress</CardTitle>
+            <CardTitle className="text-base">Remediation progress <InfoTip id="cbom.res.remediation" /></CardTitle>
             <CardDescription>Finding status breakdown</CardDescription>
           </CardHeader>
           <CardContent>
@@ -267,6 +274,7 @@ export function CbomDashboardCharts({
             <CardTitle className="text-base flex items-center gap-2">
               <PieChart className="w-4 h-4" />
               OWASP Top 10 issues
+              <InfoTip id="cbom.res.owasp" />
             </CardTitle>
             <CardDescription>Distribution by OWASP category</CardDescription>
           </CardHeader>
@@ -312,6 +320,7 @@ export function CbomDashboardCharts({
             <CardTitle className="text-base flex items-center gap-2">
               <AlertTriangle className="w-4 h-4" />
               Risk metrics
+              <InfoTip id="cbom.res.severity" />
             </CardTitle>
             <CardDescription>Findings by impact severity</CardDescription>
           </CardHeader>
@@ -340,6 +349,7 @@ export function CbomDashboardCharts({
             <CardTitle className="text-base flex items-center gap-2">
               <BarChart3 className="w-4 h-4" />
               Compliance controls
+              <InfoTip id="cbom.res.compliance" />
             </CardTitle>
             <CardDescription>Findings mapped to compliance frameworks</CardDescription>
           </CardHeader>
@@ -398,6 +408,7 @@ export function CbomDashboardCharts({
             <CardTitle className="text-base flex items-center gap-2">
               <BarChart3 className="w-4 h-4" />
               Algorithm types
+              <InfoTip id="cbom.res.algo_types" />
             </CardTitle>
             <CardDescription>Distribution by algorithm category</CardDescription>
           </CardHeader>
@@ -424,6 +435,7 @@ export function CbomDashboardCharts({
             <CardTitle className="text-base flex items-center gap-2">
               <ShieldCheck className="w-4 h-4" />
               Crypto strength
+              <InfoTip id="cbom.res.strength" />
             </CardTitle>
             <CardDescription>Distribution by cryptographic strength</CardDescription>
           </CardHeader>
@@ -454,6 +466,7 @@ export function CbomDashboardCharts({
             <CardTitle className="text-base flex items-center gap-2">
               <Shield className="w-4 h-4" />
               Quantum readiness
+              <InfoTip id={quantumTip} />
             </CardTitle>
             <CardDescription>Safe vs vulnerable cryptographic assets</CardDescription>
           </CardHeader>
@@ -484,6 +497,7 @@ export function CbomDashboardCharts({
             <CardTitle className="text-base flex items-center gap-2">
               <TrendingUp className="w-4 h-4" />
               {riskScoresTitle}
+              <InfoTip id={riskScoresTip} />
             </CardTitle>
             <CardDescription>{riskScoresDescription}</CardDescription>
           </CardHeader>
@@ -528,7 +542,7 @@ export function CbomDashboardCharts({
       {remediationKpis && (
         <Card className="border-zinc-200 dark:border-zinc-800 shadow-sm">
           <CardHeader>
-            <CardTitle className="text-base">Remediation metrics</CardTitle>
+            <CardTitle className="text-base">Remediation metrics <InfoTip id="cbom.res.remed.section" /></CardTitle>
             <CardDescription>Performance and efficiency tracking</CardDescription>
           </CardHeader>
           <CardContent>
@@ -544,7 +558,7 @@ export function CbomDashboardCharts({
                     <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-500/15 dark:bg-teal-500/10">
                       <Clock className="h-5 w-5 text-teal-600 dark:text-teal-400" />
                     </div>
-                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Mean time to remediate</p>
+                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Mean time to remediate <InfoTip id="sast.res.remed.mttr" /></p>
                     <p className="text-2xl font-bold text-zinc-900 dark:text-white">
                       {totalDays < 0.1 && totalDays >= 0 ? "<0.1 days" : `${totalDays.toFixed(1)} days`}
                     </p>
@@ -558,8 +572,8 @@ export function CbomDashboardCharts({
               })()}
               {(() => {
                 const fixed = remediationKpis.critical_issues_fixed;
-                const total = fixed + criticalCount;
-                const pct = total > 0 ? Math.round((fixed / total) * 100) : 0;
+                // the severity distribution counts every Critical finding, fixed ones included: fixed / all Critical
+                const pct = criticalFixedPct(fixed, criticalCount);
                 const targetPct = 95;
                 const progress = Math.min(100, (pct / targetPct) * 100);
                 const delta = pct >= targetPct ? "+0%" : `+${targetPct - pct}%`;
@@ -568,7 +582,7 @@ export function CbomDashboardCharts({
                     <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-500/15 dark:bg-teal-500/10">
                       <CheckCircle className="h-5 w-5 text-teal-600 dark:text-teal-400" />
                     </div>
-                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Critical issues fixed</p>
+                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Critical issues fixed <InfoTip id="sast.res.remed.critical_fixed" /></p>
                     <p className="text-2xl font-bold text-zinc-900 dark:text-white">{pct}%</p>
                     <p className="text-xs text-zinc-500 dark:text-zinc-400">Target: {targetPct}%</p>
                     <div className="flex items-center gap-2">
@@ -588,7 +602,7 @@ export function CbomDashboardCharts({
                     <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-500/15 dark:bg-teal-500/10">
                       <Crosshair className="h-5 w-5 text-teal-600 dark:text-teal-400" />
                     </div>
-                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">High priority backlog</p>
+                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">High priority backlog <InfoTip id="sast.res.remed.backlog" /></p>
                     <p className="text-2xl font-bold text-zinc-900 dark:text-white">{backlog}</p>
                     <p className="text-xs text-zinc-500 dark:text-zinc-400">Target: {target}</p>
                     <div className="flex items-center gap-2">
@@ -608,7 +622,7 @@ export function CbomDashboardCharts({
                     <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-500/15 dark:bg-teal-500/10">
                       <Activity className="h-5 w-5 text-teal-600 dark:text-teal-400" />
                     </div>
-                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Remediation velocity</p>
+                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Remediation velocity <InfoTip id="sast.res.remed.velocity" /></p>
                     <p className="text-2xl font-bold text-zinc-900 dark:text-white">{velocity}/week</p>
                     <p className="text-xs text-zinc-500 dark:text-zinc-400">Target: {target}/week</p>
                     <div className="flex items-center gap-2">
