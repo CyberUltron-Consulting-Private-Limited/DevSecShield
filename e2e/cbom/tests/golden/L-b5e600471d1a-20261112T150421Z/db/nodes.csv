@@ -1,0 +1,2 @@
+id,team_id,name,segment,deployment,node_version,hostname,source_ips,enrolled_at,last_heartbeat_at,last_seen_ip,mode,created_at
+35,52,e2e-node-1,lab,docker,1.0.0,f3c23e56e333,"[""10.231.0.2""]",2026-11-12 15:23:12.020462,2026-11-12 15:24:22.211627,10.231.0.2,agentless,2026-11-12 15:23:08.430344
