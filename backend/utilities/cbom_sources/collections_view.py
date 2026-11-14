@@ -17,11 +17,13 @@ One asset counted once ("latest observation wins")
   * Identity across code scans and Sources: a certificate is identified by its cross-source asset key
     (``asset_keys``, CB-21): the serial (ACM's Issuer "Amazon" and the node's DN agree, SAN-only certificates and CT
     precertificates included), else the DER fingerprint, else the DNs and notAfter (a Windows store row), else the
-    subject and issuer CN and notAfter (a code-scan row, which names CNs only). ``link_certificates`` correlates the
-    Sources rows (any shared link key = one certificate, never two different serials); ``resolve`` maps a code row's
-    key onto the Sources certificate that shares it. Any other asset is identified within its own source (a code row
-    by its line-independent identity in its repository, a Sources asset by ``identity.node_identity`` in its
-    source): a repository path and a host never describe the same asset, so they cannot overlap.
+    subject and issuer CN and dates (a code-scan row, which names CNs only). ``link_certificates`` correlates the
+    Sources rows: rows sharing a link key are one certificate unless two of them disagree on a serial, fingerprint,
+    thumbprint, issuer DN or notBefore (then that key joins nothing). ``resolve`` maps a code row's token onto the one
+    Sources certificate that shares it (notBefore included when the Sources side has one). Any other asset is
+    identified within its own source (a code row by its line-independent identity in its repository, a Sources
+    asset by ``identity.node_identity`` in its source): a repository path and a host never describe the same asset,
+    so they cannot overlap.
   * When one identity is observed more than once (in a code scan and a Sources collection, or by two Sources), only
     the LATEST observation is counted: observation time is the code scan's ``created_at`` and the collection job's
     ``finished_at``; on a tie the code scan is kept. The other observations are left out of every count, chart and
@@ -86,7 +88,7 @@ class SourcesRow:
     target: str | None = None
     facts: dict[str, Any] = field(default_factory=dict)
     asset_key: str = ""  # identity.stable_key("node", ...): the key remediation assignments use
-    aliases: frozenset[str] = frozenset()  # every certificate link key of its group (asset_keys.correlate_detail)
+    aliases: frozenset[str] = frozenset()  # the group's uncontested certificate link keys (asset_keys.correlate_detail)
 
 
 # remediation status of a Sources finding (waves) -> the dashboard's finding status buckets
@@ -185,18 +187,6 @@ def node_row(asset: Any, collection: Collection, view: Mapping[str, Any]) -> dic
     }
 
 
-def node_identity_of(asset: Any, collection: Collection) -> str:
-    """A certificate's cross-source asset key (before correlation), else the asset's identity in its own source."""
-    from backend.utilities.cbom_sources import asset_keys as AK
-    from backend.utilities.cbom_sources import identity as ID
-
-    if asset.cdx_type == "certificate" or asset.asset_type in AK.CERT_TYPES:
-        cross = AK.asset_key(asset)
-        if isinstance(cross, str):
-            return cross
-    return f"node|{collection.source_ref}|{ID.node_identity(asset)}"
-
-
 # ----------------------------------------------------------------------------- loading (the one DB read)
 def latest_jobs(session: Any, team_id: int, *, limit: int = 2_000) -> list[Any]:
     """The newest successful collect job of each source (newest first)."""
@@ -277,10 +267,10 @@ def load_sources_result(session: Any, team_id: int, now: _dt.datetime | None = N
 
 # ----------------------------------------------------------------------------- certificate correlation (CB-21)
 def link_certificates(rows: list[SourcesRow]) -> int:
-    """Correlate the certificate rows (``asset_keys.correlate_detail``): rows that share a link key are one
-    certificate whatever their DN spelling (a scan node, ACM, a Windows store, an IdP, CT logs) and carry the
-    group's asset key as their identity, so "latest observation wins" counts it once. Returns the rows whose
-    identity changed."""
+    """Correlate the certificate rows (``asset_keys.correlate_detail``): rows that share a link key, and disagree on
+    nothing both carry, are one certificate whatever their DN spelling (a scan node, ACM, a Windows store, an IdP,
+    CT logs) and carry the group's asset key as their identity, so "latest observation wins" counts it once.
+    Returns the rows whose identity changed."""
     from backend.utilities.cbom_sources import asset_keys as AK
 
     certs = [i for i, item in enumerate(rows) if item.node_type in AK.CERT_TYPES
@@ -380,7 +370,14 @@ def resolve(code_observations: Iterable[tuple[int, _dt.datetime, str]], rows: It
                 ambiguous.add(alias)
     for alias in ambiguous:
         del aliases[alias]
-    code_list = [(scan_id, created, ident, aliases.get(ident, ident)) for scan_id, created, ident in code_observations]
+    def canonical(ident: str) -> str:
+        # a code token is "<cnb key>+<cn key>" (asset_keys.code_certificate_key): the first that names a certificate
+        for part in ident.split("+"):
+            if part in aliases:
+                return aliases[part]
+        return ident
+
+    code_list = [(scan_id, created, ident, canonical(ident)) for scan_id, created, ident in code_observations]
     for _scan_id, created, _ident, canon in code_list:
         at = _aware(created)
         if canon not in newest_code or at > newest_code[canon]:
@@ -403,7 +400,7 @@ def resolve(code_observations: Iterable[tuple[int, _dt.datetime, str]], rows: It
     order = {id(item): index for index, item in enumerate(rows)}
     kept.sort(key=lambda item: order.get(id(item), 0))
     return Resolution(sources_rows=kept, dropped_code=dropped,
-                      aliases={a: i for a, i in aliases.items() if a != i})
+                      aliases={ident: canon for _s, _c, ident, canon in code_list if canon != ident})
 
 
 __all__ = ["Collection", "link_certificates", "NETWORK_TYPES", "REMEDIATION_BUCKET", "ORIGIN_CODE", "ORIGIN_SOURCES", "Resolution", "SourcesResult",

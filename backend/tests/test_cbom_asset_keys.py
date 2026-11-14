@@ -46,8 +46,9 @@ LAB_CA = {"source": "tls", "subject": "CN=ZeroShield Lab CA,O=ZeroShield Lab", "
           "self_signed": True, "fingerprint_sha256": "5a" * 32, "key_alg": "RSA", "key_size": 4096}
 
 
-def node(facts, *, asset_type="certificate", location="10.0.0.5:443#chain[0]", target="10.0.0.5"):
-    return AK.Observation(kind=asset_type, facts=facts, location=location, target=target)
+def node(facts, *, asset_type="certificate", location="10.0.0.5:443#chain[0]", target="10.0.0.5", scope="src-1"):
+    """One observation by source ``src-1`` (the scope that makes a private / documentation address unique)."""
+    return AK.Observation(kind=asset_type, facts=facts, location=location, target=target, scope=scope)
 
 
 # ----------------------------------------------------------------------------- the must-pass cases
@@ -114,10 +115,11 @@ def test_two_different_certificates_with_the_same_cn_stay_two_assets():
     other = {**NODE, "serial": "0123456789abcdef0123456789abcdef", "fingerprint_sha256": "ef" * 32}
     a, b = node(NODE), node(other, location="10.0.0.6:443#chain[0]")
     assert AK.asset_key(a) != AK.asset_key(b)
-    # same CN, issuer and even the same notAfter: a Windows row matching both by DN does not bridge them
+    # same CN, issuer and even the same notAfter: a Windows row matching both by DN does not bridge them, and as it
+    # cannot tell which one it is, it joins neither (review of #137, minor at L437)
     keys = AK.correlate([a, node(WINDOWS, location="LocalMachine\\My\\x"), b])
     assert keys[0] != keys[2]
-    assert keys[1] in (keys[0], keys[2])
+    assert keys[1] not in (keys[0], keys[2]) and isinstance(keys[1], str)
 
 
 def test_a_code_row_matching_two_certificates_by_cn_is_not_merged_with_either(engine):
@@ -277,11 +279,7 @@ def test_keys_are_pure_and_correlation_does_not_depend_on_order():
         got = [None] * len(views)
         for pos, i in enumerate(perm):
             got[i] = keys[pos]
-        if got[1] != expected[1]:
-            # the Windows row matches two certificates by DN: it joins one of them, never both, never a third key
-            assert got[1] in (got[0], got[5])
-            got[1] = expected[1]
-        assert got == expected
+        assert got == expected  # including the Windows row that matches two certificates by DN (it joins neither)
     assert [AK.asset_key(v) for v in views] == [AK.asset_key(v) for v in views]
 
 
@@ -317,6 +315,188 @@ def test_code_scan_certificate_identities_are_asset_keys():
     assert ids == {"crypto-cert-1": AK.code_certificate_key("www.example.com", "Amazon RSA 2048 M02",
                                                             "2026-06-01T00:00:00Z", "2027-07-01T23:59:59Z")}
     assert ids["crypto-cert-1"].startswith("cert:")
+
+
+# ----------------------------------------------------------------------------- review of #137: 18 adversarial cases
+REAL = {**NODE, "issuer": "CN=DigiCert Global G2 TLS RSA SHA256 2020 CA1,O=DigiCert Inc,C=US",
+        "not_before": "2026-07-01T00:00:00Z"}
+
+
+def test_r1_a_re_signed_copy_with_the_same_long_serial_is_a_different_certificate():
+    """TLS inspection re-signs with the original serial and dates: other issuer, key and DER -> 2 assets."""
+    forged = {**REAL, "issuer": "CN=Corp TLS Inspection CA,O=Corp", "fingerprint_sha256": "cd" * 32, "key_size": 1024}
+    keys = AK.correlate([node(REAL), node(forged, location="10.9.0.1:443#chain[0]")])
+    assert keys[0] != keys[1]
+    # ACM (Issuer "Amazon", no DN) matches both by serial: it cannot say which one it is, so it joins neither
+    acm = node({**ACM, "not_before": REAL["not_before"]}, location=ACM_ARN)
+    keys = AK.correlate([node(REAL), node(forged, location="10.9.0.1:443#chain[0]"), acm])
+    assert len(set(keys)) == 3
+    # the serial key both certificates share names neither of them
+    assert AK.asset_key(node(REAL)) not in keys[:2]
+
+
+def test_r2_two_same_named_test_cas_counting_from_one_issue_different_certificates():
+    one = {"subject": "CN=api.dev", "issuer": "CN=Test CA", "serial": "01", "not_after": "2027-01-01T10:00:00Z",
+           "fingerprint_sha256": "11" * 32}
+    two = {"subject": "CN=db.prod", "issuer": "CN=Test CA", "serial": "1", "not_after": "2027-01-01T18:30:00Z",
+           "fingerprint_sha256": "22" * 32}
+    assert AK.asset_key(node(one)) != AK.asset_key(node(two))
+    keys = AK.correlate([node(one), node(two, location="x")])
+    assert keys[0] != keys[1]
+    # the same short-serial certificate with no fingerprint (a file read without DER) still joins its own copy
+    assert AK.asset_key(node({**one, "fingerprint_sha256": None})) == AK.asset_key(node({**one, "fingerprint_sha256": None}))
+
+
+WIN_OLD = {**WINDOWS, "thumbprint": "AA" * 20, "key_size": 1024}
+WIN_NEW = {**WINDOWS, "thumbprint": "BB" * 20, "key_size": 3072}
+
+
+def test_r3_two_windows_rows_with_different_thumbprints_are_two_certificates():
+    """A reissue that keeps the expiry (same DN and notAfter second) leaves the old certificate in the store."""
+    keys = AK.correlate([node(WIN_OLD, location="a"), node(WIN_NEW, location="b")])
+    assert keys[0] != keys[1]
+
+
+def test_r3b_two_windows_rows_with_different_thumbprints_count_twice_in_the_team_view(engine):
+    with Session(engine) as s:
+        run = _run(s)
+        _asset(s, run, "win-a", WIN_OLD, location="My\\aa", days_ago=2)
+        _asset(s, run, "win-b", WIN_NEW, location="My\\bb", days_ago=1)
+        s.commit()
+        result = CV.load_sources_result(s, 1)
+    assert len(CV.resolve([], result.rows).sources_rows) == 2
+
+
+def test_r4_a_code_row_for_the_old_certificate_is_not_dropped_behind_its_reissue(engine):
+    """dev's identity used notBefore; a reissue with the same CN, issuer CN and notAfter but a new notBefore is
+    another certificate, and the code finding on the old one stays."""
+    with Session(engine) as s:
+        run = _run(s)
+        _asset(s, run, "net", REAL, location="10.0.0.5:443#chain[0]", days_ago=1)
+        s.commit()
+        result = CV.load_sources_result(s, 1)
+    old = AK.code_certificate_key("www.example.com", "DigiCert Global G2 TLS RSA SHA256 2020 CA1",
+                                  "2025-07-01T00:00:00Z", REAL["not_after"])
+    same = AK.code_certificate_key("www.example.com", "DigiCert Global G2 TLS RSA SHA256 2020 CA1",
+                                   REAL["not_before"], REAL["not_after"])
+    resolution = CV.resolve([(7, dt.datetime(2026, 1, 1), old), (8, dt.datetime(2026, 1, 1), same)], result.rows)
+    assert resolution.code_kept(7, old)
+    assert not resolution.code_kept(8, same)  # the same certificate (same notBefore) is still matched
+
+
+def test_r5_a_64_bit_serial_with_a_leading_zero_nibble_is_still_long():
+    serial = "0f3a1c2b4d5e6f70"
+    probe = node({**NODE, "serial": serial.lstrip("0")})
+    acm = node({**ACM, "serial": ":".join(serial[i:i + 2] for i in range(0, 16, 2))}, location=ACM_ARN)
+    assert AK.asset_key(probe) == AK.asset_key(acm)
+
+
+def test_r6_not_after_with_an_offset_is_the_same_instant():
+    assert _link({**WINDOWS, "not_after": "2027-07-01T18:59:59-05:00"}, "dn") == _link(WINDOWS, "dn")
+
+
+def test_r7_a_ct_precertificate_and_the_final_certificate_are_one_asset():
+    final = {**REAL}
+    precert = {**REAL, "fingerprint_sha256": None, "precert_sha256": "99" * 32}
+    keys = AK.correlate([node(final), node(precert, location="ct")])
+    assert keys[0] == keys[1]
+
+
+def test_r8_weak_rows_never_bridge_two_strong_certificates_in_any_order():
+    other = {**NODE, "serial": "0123456789abcdef0123456789abcdef", "fingerprint_sha256": "ef" * 32}
+    views = [node(NODE), node(other, location="b"), node(WINDOWS, location="w1"),
+             node({**WINDOWS, "thumbprint": "1E" * 20}, location="w2"), node(LINUX_FILE, location="f")]
+    for perm in itertools.permutations(range(len(views))):
+        keys = AK.correlate([views[i] for i in perm])
+        got = dict(zip(perm, keys))
+        assert got[0] != got[1] and got[0] == got[4]
+        assert got[2] not in (got[0], got[1]) and got[3] not in (got[0], got[1])
+
+
+def test_r9_eighty_mixed_observations_partition_identically_in_300_shuffles():
+    import random
+
+    base = [NODE, LINUX_FILE, WINDOWS, ACM, SAN_NODE, SAN_ACM, LAB_CA, REAL, WIN_OLD, WIN_NEW]
+    views = [node(base[i % len(base)], location=f"l{i}") for i in range(80)]
+    expected = AK.correlate(views)
+    rng = random.Random(137)
+    for _ in range(300):
+        order = list(range(80))
+        rng.shuffle(order)
+        keys = AK.correlate([views[i] for i in order])
+        assert [k for _i, k in sorted(zip(order, keys))] == expected
+
+
+def test_r10_endpoint_forms():
+    assert AK.endpoint_host_port("[::ffff:203.0.113.5]:443") == "203.0.113.5:443"
+    assert AK.endpoint_host_port("[2001:DB8::0:1]:443") == "[2001:db8::1]:443"
+    assert AK.endpoint_host_port("https://WWW.Example.com.:8443/x") == "www.example.com:8443"
+
+
+@pytest.mark.parametrize("url,want", [("https://www.example.com/", "www.example.com:443"),
+                                      ("http://www.example.com", "www.example.com:80"),
+                                      ("ldaps://dc1.corp.example", "dc1.corp.example:636"),
+                                      ("ssh://[2001:db8::1]", "[2001:db8::1]:22")])
+def test_r10b_a_url_without_a_port_gets_the_scheme_default(url, want):
+    assert AK.endpoint_host_port(url) == want
+
+
+@pytest.mark.parametrize("where", ["10.0.0.5:443", "127.0.0.1:8443", "[fe80::1]:443", "[fd00::5]:443",
+                                   "192.168.1.10:22", "172.16.0.1:443"])
+def test_r10c_private_and_loopback_endpoints_are_scoped_to_their_source(where):
+    a = AK.Observation(kind="tls_endpoint", location=where, scope="source-a")
+    b = AK.Observation(kind="tls_endpoint", location=where, scope="source-b")
+    assert AK.asset_key(a) != AK.asset_key(b)
+    assert AK.asset_key(a) == AK.asset_key(AK.Observation(kind="tls_endpoint", location=where, scope="source-a"))
+    assert AK.asset_key(AK.Observation(kind="tls_endpoint", location=where)) is None  # no scope known: no key
+    public = "93.184.215.14:443"  # TEST-NET ranges count as private in ipaddress
+    assert AK.asset_key(AK.Observation(kind="tls_endpoint", location=public, scope="source-a")) == \
+        AK.asset_key(AK.Observation(kind="tls_endpoint", location=public, scope="source-b"))
+
+
+def test_r11_azure_ids_fold_case_and_arn_partitions_stay_apart():
+    az = "/subscriptions/S1/resourceGroups/RG/providers/Microsoft.KeyVault/vaults/V1"
+    assert AK.cloud_resource_id(az) == AK.cloud_resource_id(az.upper())
+    assert AK.cloud_resource_id("arn:aws:kms:us-east-1:1:key/k") != AK.cloud_resource_id("arn:aws-cn:kms:us-east-1:1:key/k")
+
+
+@pytest.mark.parametrize("a,b", [
+    ("//certificatemanager.googleapis.com/projects/p/locations/global/certificates/c",
+     "projects/p/locations/global/certificates/c"),
+    ("//sqladmin.googleapis.com/projects/p/instances/i", "projects/p/instances/i"),
+    ("https://v1.vault.azure.net/certificates/web/0123456789abcdef0123456789abcdef", "https://V1.vault.azure.net/certificates/web"),
+    ("https://v1.vault.azure.cn/keys/k1/abc", "https://v1.vault.azure.cn/keys/k1/"),
+    ("https://v1.vault.usgovcloudapi.net/secrets/s1/v2", "https://v1.vault.usgovcloudapi.net/secrets/s1"),
+])
+def test_r11b_cloud_resource_id_forms(a, b):
+    assert AK.cloud_resource_id(a) and AK.cloud_resource_id(a) == AK.cloud_resource_id(b)
+
+
+def test_r12_a_sha256_in_the_thumbprint_field_is_never_read_as_sha1():
+    assert not [k for k in AK.link_keys(node({**WINDOWS, "thumbprint": "AB" * 32})) if k.basis == "sha1"]
+
+
+def test_r13_integer_and_text_serials_agree_and_negative_text_serials_have_none():
+    assert AK.norm_serial(int(SERIAL, 16)) == AK.norm_serial(SERIAL.upper()) == SERIAL
+    assert AK.norm_serial("-1f") == "" and AK.norm_serial(-31) == ""
+    assert AK.norm_serial("1f") == "1f"
+
+
+def test_r14_correlation_is_linear_on_a_device_fleet_sharing_cn_issuer_and_not_after():
+    """IEEE 802.1AR device certificates: same CN, issuer and notAfter 9999-12-31, distinct serials (the review
+    measured 8k -> 37 s with the quadratic bucket loop)."""
+    import time
+
+    fleet = [node({"subject": f"CN=device,SERIALNUMBER=SN{i:06d}", "issuer": "CN=Device CA,O=Maker",
+                   "serial": format(10**20 + i, "x"), "not_after": "9999-12-31T23:59:59Z",
+                   "fingerprint_sha256": format(i, "064x")}, location=f"d{i}") for i in range(8000)]
+    fleet += [node({"subject": "CN=device", "issuer": "CN=Device CA, O=Maker", "thumbprint": format(i, "040x"),
+                    "not_after": "9999-12-31T23:59:59Z"}, location=f"w{i}") for i in range(200)]
+    started = time.perf_counter()
+    keys = AK.correlate(fleet)
+    elapsed = time.perf_counter() - started
+    assert len(set(keys)) == 8200  # nothing merged: every certificate differs
+    assert elapsed < 10, elapsed
 
 
 # ----------------------------------------------------------------------------- helpers

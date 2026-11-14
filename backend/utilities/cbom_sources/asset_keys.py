@@ -16,20 +16,26 @@ Two keys, two jobs (both PURE: a later store recomputes them in backfills from s
     ``not_correlated``. Never use it as a key.
 
 Certificate link keys (``link_keys``), strongest first; the asset key is the strongest one an observation has:
-  1. ``serial``: serial + notAfter day. A serial of 64 bits or more (16+ hex digits; CA/B Forum certificates carry
-     at least 64 random bits) needs no issuer, so ACM's Issuer "Amazon" and the node's RFC 4514 DN agree (DA-P3); a
-     shorter serial (a private CA counting 1, 2, 3...) also needs the same normalised issuer DN.
+  1. ``serial``: serial + notAfter day. A serial of 12+ hex digits (48+ bits; CA/B Forum serials carry 64 random bits,
+     so one with a leading zero byte still counts) needs no issuer, so ACM's Issuer "Amazon" and the node's RFC 4514 DN
+     agree (DA-P3); a shorter serial (a private CA counting 1, 2, 3...) also needs the same issuer DN and subject DN.
   2. ``sha256``: the DER fingerprint. 3. ``sha1``: a Windows thumbprint (only Windows reports it).
   4. ``dn`` (weak): normalised subject DN + issuer DN + notAfter to the second (Windows has no serial or NotBefore).
-  5. ``cn`` (weak): subject CN + issuer CN + notAfter to the second (code scans carry CN-only names).
+  5. ``cnb`` (weak): subject CN + issuer CN + notBefore + notAfter (code scans carry CN-only names and both dates).
+  6. ``cn`` (weak): subject CN + issuer CN + notAfter (a Windows row has no notBefore).
 Per observation, every source that reads the serial (prober, files, ACM, CT, IdP metadata) gets the same key without
-help. A Windows row or a code row joins through ``correlate``: observations sharing any link key are one asset, keyed
-by the strongest key in the group, except that two groups with different serials (or, through a weak key, different
-fingerprints) are never joined: a DN match never merges two different certificates.
+help. That pure key is PROVISIONAL for a serial-bearing row: ``correlate`` is authoritative. It joins observations
+that share a link key, one bucket at a time (strong keys first), all or nothing: a bucket joins only when no two of
+its groups disagree on an attribute both carry (serial, SHA-256, thumbprint, issuer DN, notBefore). A disagreeing
+bucket joins nothing and its key is "contested": it names no group (a TLS-inspection copy that keeps the serial, two
+same-named test CAs counting from 1, a weak row matching two certificates). A group is named by its strongest
+uncontested key. Linear in the number of observations.
 
 Endpoints: ``host:port`` (IPv6 bracketed and compressed, IPv4-mapped IPv6 as IPv4, host names lower case without the
-trailing dot). Cloud resources: the ARN (exact), the Azure resource id or Key Vault object id (case-insensitive),
-the GCP resource name. Code IaC rows that declare a cloud resource (``facts.cloud_resource``) are NOT_CORRELATED:
+trailing dot, a URL without a port takes its scheme's). A private, loopback or link-local address is not unique across
+sites: its key includes the observation's ``scope`` (the source ref), and without a scope it has none. Cloud resources:
+the ARN (exact), the Azure resource id or Key Vault object id without its version (case-insensitive, any Azure cloud),
+the GCP resource name (``//service/`` prefix dropped). Code IaC rows that declare a cloud resource (``facts.cloud_resource``) are NOT_CORRELATED:
 CloudFormation logical-id correlation needs the stack mapping and tags no collector reads yet (follow-up).
 """
 from __future__ import annotations
@@ -39,7 +45,7 @@ import hashlib
 import ipaddress
 import re
 from dataclasses import dataclass, field
-from functools import cached_property, lru_cache
+from functools import lru_cache
 from typing import Any, Iterable, Mapping, Sequence
 
 KEY_VERSION = "ak1"  # part of every hashed key: a rule change bumps it, so stored keys can be told apart
@@ -48,9 +54,14 @@ UTC = _dt.timezone.utc
 CERT_TYPES = frozenset({"certificate", "k8s_certificate"})
 ENDPOINT_TYPES = frozenset({"tls_endpoint", "ssh_endpoint", "database_tls", "k8s_ingress_tls", "load_balancer_tls",
                             "cdn_tls", "api_tls"})
-LONG_SERIAL_HEX = 16  # 64 bits
+LONG_SERIAL_HEX = 12  # 48 bits: a 64-bit random serial is shorter only with two leading zero bytes (1 in 65,536)
 STRONG = ("serial", "sha256", "sha1")
-_RANK = {"serial": 0, "sha256": 1, "sha1": 2, "dn": 3, "cn": 4, "endpoint": 0, "cloud": 0}
+WEAK = frozenset({"dn", "cnb", "cn"})
+_RANK = {"serial": 0, "sha256": 1, "sha1": 2, "dn": 3, "cnb": 4, "cn": 5, "endpoint": 0, "cloud": 0, "group": 9}
+_SCHEME_PORT = {"https": 443, "http": 80, "wss": 443, "ws": 80, "ldaps": 636, "ldap": 389, "ssh": 22, "sftp": 22,
+                "smtps": 465, "smtp": 25, "imaps": 993, "pop3s": 995, "ftps": 990, "rdp": 3389, "postgres": 5432,
+                "postgresql": 5432, "mysql": 3306, "mssql": 1433, "sqlserver": 1433, "mongodb": 27017, "redis": 6379,
+                "rediss": 6379, "amqps": 5671, "mqtts": 8883, "kafka": 9092}
 _PREFIX = {"endpoint": "ep", "cloud": "cloud"}
 
 
@@ -85,22 +96,23 @@ class Observation:
     target: str = ""
     origin: str = "sources"  # "sources" | "code"
     cdx_type: str = ""
+    scope: str = ""  # where a private address is unique: the source ref (``identity.job_source_ref``)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class LinkKey:
-    basis: str  # serial | sha256 | sha1 | dn | cn | endpoint | cloud
+    basis: str  # serial | sha256 | sha1 | dn | cnb | cn | endpoint | cloud | group
     value: str
+    key: str = field(init=False, compare=False, repr=False)  # "<kind>:<40 hex>", computed once
+
+    def __post_init__(self) -> None:
+        prefix = _PREFIX.get(self.basis, "cert")
+        digest = hashlib.sha256(f"{KEY_VERSION}|{self.basis}|{self.value}".encode("utf-8", "replace")).hexdigest()
+        object.__setattr__(self, "key", f"{prefix}:{digest[:40]}")
 
     @property
     def strong(self) -> bool:
-        return self.basis not in ("dn", "cn")
-
-    @cached_property
-    def key(self) -> str:
-        prefix = _PREFIX.get(self.basis, "cert")
-        digest = hashlib.sha256(f"{KEY_VERSION}|{self.basis}|{self.value}".encode("utf-8", "replace")).hexdigest()
-        return f"{prefix}:{digest[:40]}"
+        return self.basis not in WEAK
 
 
 # ----------------------------------------------------------------------------- reading any observation shape
@@ -115,16 +127,17 @@ def observation(obj: Any) -> Observation:
                            facts=facts if isinstance(facts, Mapping) else {},
                            location=str(obj.get("location") or ""), target=str(obj.get("target") or ""),
                            origin=str(obj.get("origin") if isinstance(obj.get("origin"), str) else "sources"),
-                           cdx_type=str(obj.get("cdx_type") or ""))
+                           cdx_type=str(obj.get("cdx_type") or ""), scope=str(obj.get("scope") or ""))
     facts = getattr(obj, "facts", None)
     if hasattr(obj, "node_type"):  # collections_view.SourcesRow
         row = getattr(obj, "row", None) or {}
         return Observation(kind=str(obj.node_type or ""), facts=facts if isinstance(facts, Mapping) else {},
                            location=str(row.get("location") or ""), target=str(getattr(obj, "target", "") or ""),
-                           cdx_type="certificate" if row.get("algorithm_type") == "certificate" else "")
+                           cdx_type="certificate" if row.get("algorithm_type") == "certificate" else "",
+                           scope=str(getattr(getattr(obj, "collection", None), "source_ref", "") or ""))
     return Observation(kind=str(getattr(obj, "asset_type", "") or ""), facts=facts if isinstance(facts, Mapping) else {},
                        location=str(getattr(obj, "location", "") or ""), target=str(getattr(obj, "target", "") or ""),
-                       cdx_type=str(getattr(obj, "cdx_type", "") or ""))
+                       cdx_type=str(getattr(obj, "cdx_type", "") or ""), scope=str(getattr(obj, "scope", "") or ""))
 
 
 def is_certificate(obs: Observation) -> bool:
@@ -140,7 +153,10 @@ def norm_serial(value: Any) -> str:
     """Hex serial, lower case, no separators or leading zeros ("0A:1B" -> "a1b"); "" if it is not hex."""
     if isinstance(value, int) and not isinstance(value, bool):
         return format(value, "x") if value >= 0 else ""
-    text = re.sub(r"[\s:\-]", "", str(value or "").lower())
+    text = str(value or "").strip().lower()
+    if text.startswith("-"):
+        return ""  # a negative serial (malformed certificate) never equals its absolute value
+    text = re.sub(r"[\s:\-]", "", text)
     text = text[2:] if text.startswith("0x") else text
     if not text or not _HEX.match(text):
         return ""
@@ -148,23 +164,34 @@ def norm_serial(value: Any) -> str:
 
 
 def norm_fingerprint(value: Any, size: int) -> str:
-    text = re.sub(r"[\s:]", "", str(value or "").lower())
+    text = str(value or "").lower()
+    if len(text) == size and _HEX.match(text):
+        return text
+    text = re.sub(r"[\s:]", "", text)
     return text if len(text) == size and _HEX.match(text) else ""
 
 
 def utc_second(value: Any) -> str:
     """"YYYY-MM-DDTHH:MM:SS" in UTC from a datetime or ISO text (``Z``, offsets, 7-digit .NET fractions); ""."""
-    moment: _dt.datetime | None = value if isinstance(value, _dt.datetime) else None
-    if moment is None:
-        text = str(value or "").strip().replace(" ", "T", 1)
-        if not text:
-            return ""
-        text = _FRACTION.sub(r"\1", text)
-        text = text[:-1] + "+00:00" if text[-1:] in ("Z", "z") else text
-        try:
-            moment = _dt.datetime.fromisoformat(text)
-        except ValueError:
-            return ""
+    if isinstance(value, _dt.datetime):
+        return _second(value)
+    return _utc_text(value if isinstance(value, str) else str(value or ""))
+
+
+@lru_cache(maxsize=65_536)  # an estate has few distinct validity instants
+def _utc_text(raw: str) -> str:
+    text = raw.strip().replace(" ", "T", 1)
+    if not text:
+        return ""
+    text = _FRACTION.sub(r"\1", text)
+    text = text[:-1] + "+00:00" if text[-1:] in ("Z", "z") else text
+    try:
+        return _second(_dt.datetime.fromisoformat(text))
+    except ValueError:
+        return ""
+
+
+def _second(moment: _dt.datetime) -> str:
     if moment.tzinfo is not None:
         moment = moment.astimezone(UTC).replace(tzinfo=None)
     return moment.strftime("%Y-%m-%dT%H:%M:%S")
@@ -274,7 +301,11 @@ def endpoint_host_port(value: Any) -> str | None:
     """"host:port" ("[v6]:port") of an endpoint location, or None when it has no parseable host and port."""
     text = str(value or "").strip().split("#", 1)[0]
     if "://" in text:
-        text = text.split("://", 1)[1].split("/", 1)[0]
+        scheme, text = text.split("://", 1)
+        text = text.split("/", 1)[0].split("?", 1)[0].rsplit("@", 1)[-1]
+        default = _SCHEME_PORT.get(scheme.strip().lower())
+        if default and not re.search(r"(^[^:\[]*|\])(:\d+)$", text):
+            text = f"{text}:{default}"
     match = re.fullmatch(r"\[([^\]]+)\]:(\d{1,5})", text)
     if match:
         host, port = match.group(1), match.group(2)
@@ -307,24 +338,71 @@ def endpoint_host_port(value: Any) -> str | None:
     return f"{name}:{int(port)}"
 
 
-_AZURE_KV = re.compile(r"^https://[^/]+\.vault(?:core)?\.azure\.net/", re.IGNORECASE)
-_GCP = re.compile(r"^projects/[^/]+/(locations|global|zones|regions)/")
+_AZURE_KV = re.compile(r"^https://[^/]+\.(?:vault|vaultcore|managedhsm)\.(?:azure\.net|azure\.cn|usgovcloudapi\.net|"
+                       r"microsoftazure\.de)(?::443)?/(keys|secrets|certificates)/([^/?#]+)", re.IGNORECASE)
+_GCP = re.compile(r"^(?://[a-z0-9.-]+\.googleapis\.com/)?(projects/[^/]+/.+)$", re.IGNORECASE)
 
 
 def cloud_resource_id(value: Any) -> str:
-    """The ARN (exact), Azure resource / Key Vault object id (casefolded) or GCP resource name; "" otherwise."""
+    """The ARN (exact), Azure resource id or Key Vault object id without its version (casefolded, any Azure cloud), or
+    the GCP resource name with any ``//service.googleapis.com/`` prefix dropped; "" otherwise."""
     text = str(value or "").strip()
     if text.startswith("arn:") and text.count(":") >= 5:
         return text
-    if text.casefold().startswith("/subscriptions/") or _AZURE_KV.match(text):
-        return text.casefold()
-    if _GCP.match(text):
-        return text
+    if text.casefold().startswith("/subscriptions/"):
+        return text.casefold().rstrip("/")
+    vault = _AZURE_KV.match(text)
+    if vault:
+        host = text.split("/", 3)[2].split(":", 1)[0]
+        return f"https://{host}/{vault.group(1)}/{vault.group(2)}".casefold()
+    gcp = _GCP.match(text)
+    if gcp:
+        return gcp.group(1).rstrip("/")
     return ""
 
 
+def _endpoint_value(obs: Observation) -> str | None:
+    """The endpoint link value: host:port, scoped to the observation's source for a non-unique (private, loopback,
+    link-local) address; None when such an address has no scope."""
+    facts = obs.facts
+    where = endpoint_host_port(obs.location)
+    if where is None and facts.get("port") and obs.target:
+        where = endpoint_host_port(f"[{obs.target}]:{facts.get('port')}" if ":" in str(obs.target)
+                                   else f"{obs.target}:{facts.get('port')}")
+    if where is None:
+        return None
+    host = where.rsplit(":", 1)[0].strip("[]").split("%", 1)[0]
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return where
+    if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_unspecified:
+        return f"{where}@{obs.scope}" if obs.scope else None
+    return where
+
+
 # ----------------------------------------------------------------------------- keys
+_CERT_FIELDS = ("serial", "serial_number", "fingerprint_sha256", "thumbprint", "fingerprint_sha1", "subject", "issuer",
+                "not_before", "not_after")
+
+
 def _cert_links(facts: Mapping[str, Any]) -> list[LinkKey]:
+    return list(_cert_analysis(facts)[0])
+
+
+def _cert_analysis(facts: Mapping[str, Any]) -> tuple[tuple[LinkKey, ...], dict[str, frozenset[str]]]:
+    """(link keys, conflict attributes) of one certificate observation (memoised: one certificate is usually seen
+    by several sources and a CA in every chain). The result is shared: never mutate it."""
+    fields = tuple(facts.get(name) for name in _CERT_FIELDS)
+    try:
+        return _cert_analysis_of(fields)
+    except TypeError:  # an unhashable fact value: no memo
+        return _cert_analysis_of.__wrapped__(fields)
+
+
+@lru_cache(maxsize=65_536)
+def _cert_analysis_of(fields: tuple[Any, ...]) -> tuple[tuple[LinkKey, ...], dict[str, frozenset[str]]]:
+    facts = dict(zip(_CERT_FIELDS, fields))
     out: list[LinkKey] = []
     after = utc_second(facts.get("not_after"))
     subject_raw, issuer_raw = facts.get("subject"), facts.get("issuer")
@@ -334,8 +412,8 @@ def _cert_links(facts: Mapping[str, Any]) -> list[LinkKey]:
     if serial and after:
         if len(serial) >= LONG_SERIAL_HEX:
             out.append(LinkKey("serial", f"{serial}|{after[:10]}"))
-        elif issuer_is_dn:
-            out.append(LinkKey("serial", f"{serial}|{after[:10]}|{issuer_dn}"))
+        elif issuer_is_dn:  # a counting CA: same-named test CAs all start at 1, so the subject is part of it
+            out.append(LinkKey("serial", f"{serial}|{after[:10]}|{issuer_dn}|{subject_dn if subject_is_dn else ''}"))
     sha256 = norm_fingerprint(facts.get("fingerprint_sha256"), 64)
     if sha256:
         out.append(LinkKey("sha256", sha256))
@@ -344,9 +422,15 @@ def _cert_links(facts: Mapping[str, Any]) -> list[LinkKey]:
         out.append(LinkKey("sha1", sha1))
     if after and subject_is_dn and issuer_is_dn:
         out.append(LinkKey("dn", f"{subject_dn}|{issuer_dn}|{after}"))
+    before = utc_second(facts.get("not_before"))
+    if after and subject_cn and before:
+        out.append(LinkKey("cnb", f"{subject_cn}|{issuer_cn}|{before}|{after}"))
     if after and subject_cn:
         out.append(LinkKey("cn", f"{subject_cn}|{issuer_cn}|{after}"))
-    return out
+    # what two observations of one certificate can never disagree on (absent when the observation does not say)
+    values = (("serial", serial), ("sha256", sha256), ("sha1", sha1), ("issuer", issuer_dn if issuer_is_dn else ""),
+              ("not_before", before))
+    return tuple(out), {name: frozenset((value,)) for name, value in values if value}
 
 
 def link_keys(obj: Any) -> tuple[LinkKey, ...]:
@@ -359,10 +443,7 @@ def link_keys(obj: Any) -> tuple[LinkKey, ...]:
         return ()  # a code location is a file path: only certificates correlate from code today
     out: list[LinkKey] = []
     if obs.kind in ENDPOINT_TYPES:
-        where = endpoint_host_port(obs.location)
-        if where is None and facts.get("port") and obs.target:
-            where = endpoint_host_port(f"[{obs.target}]:{facts.get('port')}" if ":" in str(obs.target)
-                                       else f"{obs.target}:{facts.get('port')}")
+        where = _endpoint_value(obs)
         if where:
             out.append(LinkKey("endpoint", where))
     cloud = cloud_resource_id(facts.get("identity")) or cloud_resource_id(obs.location)
@@ -404,8 +485,14 @@ def code_certificate(subject: Any, issuer: Any, not_before: Any = None, not_afte
 
 
 def code_certificate_key(subject: Any, issuer: Any, not_before: Any = None, not_after: Any = None, **kw: Any) -> str | None:
-    key = asset_key(code_certificate(subject, issuer, not_before, not_after, **kw))
-    return key if isinstance(key, str) else None
+    """A code-scan certificate's MATCH TOKEN for ``collections_view.resolve`` (not a stored key): its ``cnb`` key
+    (CN, issuer CN, notBefore, notAfter) then, after "+", its ``cn`` key, which only matches a Sources certificate
+    that has no notBefore (a Windows store row). Without a notBefore it is the ``cn`` key alone. None when the row
+    has no subject CN or notAfter. ``asset_key(code_certificate(...))`` is the stored key."""
+    links = {k.basis: k.key for k in link_keys(code_certificate(subject, issuer, not_before, not_after, **kw))}
+    if "cnb" in links:
+        return f"{links['cnb']}+{links['cn']}"
+    return links.get("cn")
 
 
 def observation_key(row: Any, source_ref: str) -> str:
@@ -424,25 +511,29 @@ def code_observation_key(row: Mapping[str, Any], source_ref: str) -> str:
 # ----------------------------------------------------------------------------- correlation over a set
 @dataclass
 class Correlation:
-    """``keys[i]``: the asset key of observation i (str, None or NOT_CORRELATED); ``aliases[i]``: every link-key
-    string of its group (another view, e.g. a code row, that computes one of them is the same asset)."""
+    """``keys[i]``: the asset key of observation i (str, None or NOT_CORRELATED); ``aliases[i]``: the uncontested
+    link keys of its group (a code row computing one of them is the same asset; a ``cn`` key only when no member has
+    a notBefore, so a code row for another reissue of the same name and expiry is never matched)."""
 
     keys: list[Any]
     aliases: list[frozenset[str]]
+    contested: frozenset[str] = frozenset()  # link keys shared by groups that disagree: they name no group
+
+
+def _analysis(obs: Observation) -> tuple[tuple[LinkKey, ...], dict[str, frozenset[str]]]:
+    if is_certificate(obs):
+        return _cert_analysis(obs.facts)
+    return link_keys(obs), {}
 
 
 def correlate_detail(observations: Sequence[Any]) -> Correlation:
-    """Group observations that share a link key (strong keys first); each group is keyed by its strongest key. PURE
-    and independent of input order, except where one weak-only observation matches two different certificates (it
-    joins one of them, never both)."""
-    links = [link_keys(o) for o in observations]
-    n = len(observations)
+    """Correlate a set of observations (PURE, independent of input order, linear): see the module docstring."""
+    obs = [observation(o) for o in observations]
+    analysed = [_analysis(o) for o in obs]
+    links = [a[0] for a in analysed]
+    n = len(obs)
     parent = list(range(n))
-    serials: dict[int, set[str]] = {}
-    sha256s: dict[int, set[str]] = {}
-    for i, keys in enumerate(links):
-        serials[i] = {k.value for k in keys if k.basis == "serial"}
-        sha256s[i] = {k.value for k in keys if k.basis == "sha256"}
+    attrs: dict[int, dict[str, frozenset[str]]] = {i: a[1] for i, a in enumerate(analysed)}
 
     def find(i: int) -> int:
         while parent[i] != i:
@@ -450,51 +541,60 @@ def correlate_detail(observations: Sequence[Any]) -> Correlation:
             i = parent[i]
         return i
 
-    def join(a: int, b: int, strong: bool) -> bool:
-        ra, rb = find(a), find(b)
-        if ra == rb:
-            return True
-        if serials[ra] and serials[rb] and not serials[ra] & serials[rb]:
-            return False
-        if not strong and sha256s[ra] and sha256s[rb] and not sha256s[ra] & sha256s[rb]:
-            return False
-        ra, rb = min(ra, rb), max(ra, rb)
-        parent[rb] = ra
-        serials[ra] |= serials.pop(rb)
-        sha256s[ra] |= sha256s.pop(rb)
-        return True
-
-    # every link key -> its observations, in a canonical order so the result does not depend on input order
-    order = sorted(range(n), key=lambda i: tuple(sorted(k.key for k in links[i])))
-    by_link: dict[tuple[int, str, str], list[int]] = {}
-    for i in order:
-        for k in links[i]:
-            by_link.setdefault((_RANK[k.basis], k.basis, k.key), []).append(i)
-    for (_rank, basis, _key), members in sorted(by_link.items()):
-        strong = basis not in ("dn", "cn")
-        roots: list[int] = []  # one per group this key could not join (almost always one)
-        for i in members:
-            for r in roots:
-                if join(r, i, strong):
+    by_link: dict[LinkKey, list[int]] = {}
+    for i, keys in enumerate(links):
+        for k in keys:
+            by_link.setdefault(k, []).append(i)
+    shared = sorted(((_RANK[k.basis], k.basis, k.value, members) for k, members in by_link.items() if len(members) > 1),
+                    key=lambda b: b[:3])
+    for _rank, _basis, _value, members in shared:
+        roots = sorted({find(i) for i in members})
+        if len(roots) < 2:
+            continue
+        # all or nothing: the bucket joins only when no two of its groups disagree on an attribute both carry
+        merged: dict[str, frozenset[str]] = {}
+        compatible = True
+        for r in roots:
+            for name, values in attrs[r].items():
+                held = merged.get(name)
+                if held is None:
+                    merged[name] = values
+                elif not held & values:
+                    compatible = False
                     break
-            else:
-                roots.append(i)
+                else:
+                    merged[name] = held | values
+            if not compatible:
+                break
+        if not compatible:
+            continue
+        head = roots[0]
+        for r in roots[1:]:
+            parent[r] = head
+        attrs[head] = merged
     groups: dict[int, list[int]] = {}
     for i in range(n):
         groups.setdefault(find(i), []).append(i)
+    contested = frozenset(LinkKey(basis, value).key for _r, basis, value, members in shared
+                          if len({find(i) for i in members}) > 1)
     keys: list[Any] = [None] * n
     aliases: list[frozenset[str]] = [frozenset()] * n
-    for members in groups.values():
-        group_links = [k for i in members for k in links[i]]
+    for root, members in groups.items():
+        group_links = {k.key: k for i in members for k in links[i]}
         if not group_links:
             for i in members:
-                keys[i] = asset_key(observations[i])
+                keys[i] = asset_key(obs[i])
             continue
-        best = min(group_links, key=lambda k: (_RANK[k.basis], k.key)).key
-        names = frozenset(k.key for k in group_links)
+        clear = [k for k in group_links.values() if k.key not in contested]
+        if clear:
+            best = min(clear, key=lambda k: (_RANK[k.basis], k.key)).key
+        else:  # every key it has is shared with a certificate it disagrees with: a key of its own
+            best = LinkKey("group", "|".join(sorted(group_links))).key
+        has_before = "not_before" in attrs[root]
+        names = frozenset(k.key for k in clear if not (k.basis == "cn" and has_before))
         for i in members:
             keys[i], aliases[i] = best, names
-    return Correlation(keys=keys, aliases=aliases)
+    return Correlation(keys=keys, aliases=aliases, contested=contested)
 
 
 def correlate(observations: Sequence[Any]) -> list[Any]:

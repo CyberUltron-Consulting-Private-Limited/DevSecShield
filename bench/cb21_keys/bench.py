@@ -10,12 +10,17 @@ certificate seen by up to four sources, a lab CA in every fourth chain, SAN-only
 * ``resolve``              "latest observation wins" over those rows with 2,000 code-scan certificate keys;
 * ``counted``              certificates counted after resolve (branch < dev: Windows rows now join).
 
-Usage (repo root): PYTHONPATH=<tree> python bench/cb21_keys/bench.py [N] [REPS]
+SHAPE=fleet seeds the worst case the review of #137 found instead: every certificate shares CN, issuer and notAfter
+(IEEE 802.1AR devices: distinct serials, ``SERIALNUMBER=`` in the DN, notAfter 9999-12-31), one big weak-key bucket.
+On the branch it also times ``asset_keys.correlate_detail`` alone over 8,000 and 50,000 such certificates.
+
+Usage (repo root): [SHAPE=fleet] PYTHONPATH=<tree> python bench/cb21_keys/bench.py [N] [REPS]
 """
 from __future__ import annotations
 
 import datetime as dt
 import json
+import os
 import statistics
 import sys
 import tempfile
@@ -30,6 +35,16 @@ from backend.utilities.cbom_sources import collections_view as CV
 N = int(sys.argv[1]) if len(sys.argv) > 1 else 50_000
 REPS = int(sys.argv[2]) if len(sys.argv) > 2 else 5
 KINDS = ["network", "linux_servers", "windows_servers", "aws_account"]
+FLEET = os.environ.get("SHAPE") == "fleet"
+
+
+def fleet_facts(c: int, kind: str) -> dict:
+    if kind == "windows_servers":
+        return {"subject": "CN=device", "issuer": "CN=Device CA, O=Maker", "thumbprint": format(c, "040x"),
+                "not_after": "9999-12-31T23:59:59.0000000Z", "source": "windows-store"}
+    return {"subject": f"CN=device,SERIALNUMBER=SN{c:08d}", "issuer": "CN=Device CA,O=Maker",
+            "serial": format(10**20 + c, "x"), "not_before": "2026-01-01T00:00:00Z", "not_after": "9999-12-31T23:59:59Z",
+            "fingerprint_sha256": format(c, "064x")}
 
 
 def cert_facts(c: int, kind: str) -> dict:
@@ -78,7 +93,8 @@ def seed(engine) -> None:
                 c = i // 40 * 4 + (i % 4)  # the same certificate is seen by up to four sources
                 rows.append(CbomCollectedAsset(**common, asset_key=f"c{i}", asset_type="certificate", cdx_type="certificate",
                                                target=f"10.1.{i % 250}.{i % 200}", location=f"loc-{i}#chain[{i % 2}]",
-                                               name="cert", algorithm="RSA", key_size=2048, facts=cert_facts(c, kind)))
+                                               name="cert", algorithm="RSA", key_size=2048,
+                                               facts=(fleet_facts if FLEET else cert_facts)(c, kind)))
             elif bucket < 6:
                 host = f"[2001:db8::{i:x}]" if i % 3 == 0 else f"10.2.{i // 250 % 250}.{i % 250}"
                 rows.append(CbomCollectedAsset(**common, asset_key=f"e{i}", asset_type="tls_endpoint" if i % 2 else "ssh_endpoint",
@@ -119,7 +135,19 @@ def main() -> None:
             resolution = CV.resolve(code_keys, result.rows)
             res.append(time.perf_counter() - t0)
             counted = sum(1 for item in resolution.sources_rows if item.row.get("algorithm_type") == "certificate")
-        print(json.dumps({"n": N, "reps": REPS, "rows": len(result.rows),
+        extra = {}
+        try:
+            from backend.utilities.cbom_sources import asset_keys as AK
+        except ImportError:
+            AK = None
+        if AK is not None and FLEET:
+            for size in (8_000, 50_000):
+                views = [AK.Observation(kind="certificate", facts=fleet_facts(c, KINDS[c % 4]), location=f"l{c}")
+                         for c in range(size)]
+                t0 = time.perf_counter()
+                AK.correlate_detail(views)
+                extra[f"correlate_fleet_{size}_s"] = round(time.perf_counter() - t0, 3)
+        print(json.dumps({"shape": "fleet" if FLEET else "mixed", "n": N, "reps": REPS, "rows": len(result.rows), **extra,
                           "load_sources_result_p50_s": round(statistics.median(load), 3), "load_max_s": round(max(load), 3),
                           "resolve_p50_s": round(statistics.median(res), 4), "resolve_max_s": round(max(res), 4),
                           "certificates_counted": counted, "code_rows_dropped": len(resolution.dropped_code)}))
