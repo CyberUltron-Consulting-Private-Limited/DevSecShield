@@ -94,6 +94,7 @@ import {
   type Tone,
 } from "./shared";
 import { SOURCE_NEVER_SCAN_HINT } from "./teamNeverScan";
+import { InfoTip } from "@/components/ui/info-tip";
 
 // ---------------------------------------------------------------------------- constants (mirror backend kinds.py / templates.py)
 type ServerKind = "linux_servers" | "windows_servers" | "active_directory";
@@ -472,7 +473,7 @@ export default function ServersTab({ teamId, onNavigate }: { teamId: number; onN
   return (
     <div className="space-y-6">
       {nodes.length === 0 ? (
-        <SectionCard title="Add servers" description="Servers are read over SSH or WinRM by your scan node, with a read-only account.">
+        <SectionCard infoId="cbsrc.servers.form" title="Add servers" description="Servers are read over SSH or WinRM by your scan node, with a read-only account.">
           <EmptyState
             title="Add a scan node first"
             body="Servers are reached through a scan node that runs inside your network. Add one on the Scan nodes tab, then come back to add servers."
@@ -511,6 +512,8 @@ export default function ServersTab({ teamId, onNavigate }: { teamId: number; onN
       )}
 
       <SectionCard
+
+        infoId="cbsrc.servers.list"
         title="Configured server sources"
         description={sources.length ? `${pluralize(sources.length, "source")}, ${pluralize(sources.reduce((sum, s) => sum + s.target_count, 0), "target")} after exclusions` : "Server sources you add appear here."}
       >
@@ -539,11 +542,11 @@ export default function ServersTab({ teamId, onNavigate }: { teamId: number; onN
                 <TableHeader>
                   <TableRow>
                     <TableHead>Name</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead className="text-right">Targets</TableHead>
-                    <TableHead>Node</TableHead>
-                    <TableHead>Tier</TableHead>
-                    <TableHead>Last test</TableHead>
+                    <TableHead>Type <InfoTip id="cbsrc.col.type" /></TableHead>
+                    <TableHead className="text-right">Targets <InfoTip id="cbsrc.col.targets" /></TableHead>
+                    <TableHead>Node <InfoTip id="cbsrc.col.node" /></TableHead>
+                    <TableHead>Tier <InfoTip id="cbsrc.col.tier" /></TableHead>
+                    <TableHead>Last test <InfoTip id="cbsrc.col.last_test" /></TableHead>
                     <TableHead className="w-12">
                       <span className="sr-only">Actions</span>
                     </TableHead>
@@ -917,6 +920,7 @@ function ServerForm({
   return (
     <div id="servers-form" className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start scroll-mt-4">
       <SectionCard
+        infoId="cbsrc.servers.form"
         className="xl:col-span-2"
         title={source ? `Edit ${source.name}` : "Add servers"}
         description={source ? `${source.kind_label} · blank secret fields keep the saved ones` : "Pick the server type, then where they are and how to log in."}
@@ -950,7 +954,7 @@ function ServerForm({
         <div className="space-y-6">
           <FormSection title="Targets">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Field label="Source name" htmlFor="servers-name" required error={errors.name} hint="Shown in lists and reports, e.g. dc-mumbai-linux">
+              <Field infoId="cbsrc.common.name" label="Source name" htmlFor="servers-name" required error={errors.name} hint="Shown in lists and reports, e.g. dc-mumbai-linux">
                 <Input
                   id="servers-name"
                   data-testid="servers-name"
@@ -961,6 +965,7 @@ function ServerForm({
                 />
               </Field>
               <Field
+                infoId="cbsrc.common.node"
                 label="Reached through scan node"
                 htmlFor="servers-node"
                 required
@@ -974,6 +979,8 @@ function ServerForm({
             </div>
 
             <Field
+
+              infoId="cbsrc.servers.targets"
               label="IP addresses, CIDR ranges or hostnames, one per line"
               htmlFor="servers-targets"
               required
@@ -992,6 +999,7 @@ function ServerForm({
               />
             </Field>
             <div className="flex flex-wrap items-center gap-2">
+              {/* infotip-shared: file picker behind Import CSV; the Targets tip above covers the import */}
               <input
                 ref={csvRef}
                 type="file"
@@ -1039,6 +1047,8 @@ function ServerForm({
             )}
 
             <Field
+
+              infoId="cbsrc.common.never_scan"
               label="Never scan"
               htmlFor="servers-exclusions"
               error={errors.exclusions ?? (countErrorOnExclusions ? countError : null)}
@@ -1059,7 +1069,7 @@ function ServerForm({
 
           <FormSection title="Connection">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Field label={info.portLabel} htmlFor="servers-port" required error={errors.port}>
+              <Field infoId="cbsrc.servers.port" label={info.portLabel} htmlFor="servers-port" required error={errors.port}>
                 <Input
                   id="servers-port"
                   data-testid="servers-port"
@@ -1070,6 +1080,7 @@ function ServerForm({
                 />
               </Field>
               <Field
+                infoId="cbsrc.servers.login"
                 label="Login user"
                 htmlFor="servers-login"
                 required
@@ -1088,8 +1099,9 @@ function ServerForm({
             </div>
             {isLinux && (
               <div className="space-y-3">
-                <p className="text-sm font-medium">Host key policy</p>
+                <p className="text-sm font-medium">Host key policy <InfoTip id="cbsrc.servers.host_key_policy" /></p>
                 <div data-testid="servers-host-key-policy">
+                  {/* infotip-shared: the Host key policy heading above carries the tip */}
                   <ChoiceCards<HostKeyPolicy>
                     name="servers-host-key"
                     label="Host key policy"
@@ -1112,6 +1124,7 @@ function ServerForm({
                 {errors.hostKeyPolicy && <p className="text-xs text-red-600 dark:text-red-400">{errors.hostKeyPolicy}</p>}
                 {form.hostKeyPolicy === "pinned" && (
                   <Field
+                    infoId="cbsrc.servers.known_hosts"
                     label="known_hosts lines"
                     htmlFor="servers-known-hosts"
                     required
@@ -1128,6 +1141,7 @@ function ServerForm({
                       className="font-mono text-xs min-h-[96px] max-h-72 overflow-y-auto resize-y"
                       onChange={(e) => set({ knownHosts: e.target.value })}
                     />
+                    {/* infotip-shared: file picker behind Upload known_hosts; the field's tip covers it */}
                     <input
                       ref={knownHostsRef}
                       type="file"
@@ -1151,6 +1165,7 @@ function ServerForm({
             )}
             {!isLinux && (
               <Field
+                infoId="cbsrc.servers.ca_pem"
                 label="CA certificate (optional)"
                 htmlFor="servers-ca"
                 error={errors.caPem ?? errors.caFile}
@@ -1168,6 +1183,7 @@ function ServerForm({
                   className="font-mono text-xs min-h-[72px] max-h-60 overflow-y-auto resize-y"
                   onChange={(e) => set({ caPem: e.target.value })}
                 />
+                {/* infotip-shared: file picker behind Upload PEM file; the field's tip covers it */}
                 <input
                   ref={caRef}
                   type="file"
@@ -1197,7 +1213,7 @@ function ServerForm({
 
           <FormSection title="Credential">
             <div data-testid="servers-credential">
-              <ChoiceCards<CredType>
+              <ChoiceCards<CredType> infoId="cbsrc.servers.credential"
                 name="servers-credential"
                 label="Credential"
                 value={form.credentialType}
@@ -1232,6 +1248,7 @@ function ServerForm({
                   <>
                     <p className="text-sm font-medium">
                       Install this public key for user <code className="font-mono">{login}</code> on each server
+                    <InfoTip id="cbsrc.servers.node_key_install" className="ml-1" />
                     </p>
                     <code
                       className="block break-all rounded-md border bg-zinc-50 dark:bg-zinc-950 p-2 font-mono text-xs text-zinc-800 dark:text-zinc-200"
@@ -1264,6 +1281,7 @@ function ServerForm({
             {form.credentialType === "ssh_cert" && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4" data-testid="servers-ssh-cert-panel">
                 <SecretField
+                  infoId="cbsrc.servers.ssh_certificate"
                   id="servers-ssh-certificate"
                   label="SSH certificate"
                   multiline
@@ -1276,6 +1294,7 @@ function ServerForm({
                   hint={secretHint("ssh_certificate")}
                 />
                 <SecretField
+                  infoId="cbsrc.servers.private_key"
                   id="servers-private-key"
                   label="Private key"
                   multiline
@@ -1293,7 +1312,7 @@ function ServerForm({
             {form.credentialType === "ssh_ca" && (
               <div className="space-y-4" data-testid="servers-ssh-ca-panel">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <Field label="SSH CA" htmlFor="servers-ssh-ca" required error={errors.sshCaId}
+                  <Field infoId="cbsrc.servers.ssh_ca" label="SSH CA" htmlFor="servers-ssh-ca" required error={errors.sshCaId}
                     hint={sshCaOn && signingCas.length === 0 ? "Create an SSH CA first (Fleet > SSH CA)" : "Its active key signs; rotation needs no change here"}>
                     <Select value={form.sshCaId ? String(form.sshCaId) : ""} onValueChange={(v) => set({ sshCaId: Number(v) })}>
                       <SelectTrigger id="servers-ssh-ca" className="w-full cursor-pointer" data-testid="servers-ssh-ca">
@@ -1306,12 +1325,12 @@ function ServerForm({
                       </SelectContent>
                     </Select>
                   </Field>
-                  <Field label="Principals" htmlFor="servers-ssh-principals" required error={errors.sshPrincipals}
+                  <Field infoId="cbsrc.servers.principals" label="Principals" htmlFor="servers-ssh-principals" required error={errors.sshPrincipals}
                     hint={`One per line, e.g. zs-${teamId}-prod; the servers list them in /etc/ssh/zs-cbom/principals/${login}`}>
                     <Textarea id="servers-ssh-principals" rows={2} className="font-mono text-xs" value={form.sshPrincipals}
                       placeholder={`zs-${teamId}-prod`} onChange={(e) => set({ sshPrincipals: e.target.value })} />
                   </Field>
-                  <Field label="Addresses the servers see the node as" htmlFor="servers-ssh-source-addresses" error={errors.sshSourceAddresses}
+                  <Field infoId="cbsrc.servers.source_addresses" label="Addresses the servers see the node as" htmlFor="servers-ssh-source-addresses" error={errors.sshSourceAddresses}
                     hint={`Each certificate only works from these (source-address): addresses or networks of /16 or narrower (IPv6 /48). Blank: the node's own addresses${selectedNode?.source_ips?.length ? ` (${selectedNode.source_ips.join(", ")})` : ""}; a node in Docker without host networking needs the Docker host's address here.`}>
                     <Textarea id="servers-ssh-source-addresses" rows={2} className="font-mono text-xs" value={form.sshSourceAddresses}
                       placeholder="10.20.1.15 or 10.20.1.0/28" onChange={(e) => set({ sshSourceAddresses: e.target.value })} />
@@ -1327,7 +1346,7 @@ function ServerForm({
 
             {form.credentialType === "vault" && (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4" data-testid="servers-vault-panel">
-                <Field label="Vault" htmlFor="servers-vault-provider">
+                <Field infoId="cbsrc.common.vault_provider" label="Vault" htmlFor="servers-vault-provider">
                   <Select value={form.vaultProvider} onValueChange={(v) => set({ vaultProvider: v })}>
                     <SelectTrigger id="servers-vault-provider" className="w-full cursor-pointer" data-testid="servers-vault-provider">
                       <SelectValue />
@@ -1342,6 +1361,7 @@ function ServerForm({
                   </Select>
                 </Field>
                 <Field
+                  infoId="cbsrc.common.vault_path"
                   label="Secret path"
                   htmlFor="servers-vault-path"
                   required
@@ -1365,6 +1385,7 @@ function ServerForm({
             {form.credentialType === "password" && (
               <div className="max-w-md" data-testid="servers-password-panel">
                 <SecretField
+                  infoId="cbsrc.common.password"
                   id="servers-password"
                   label={`Password for ${login}`}
                   required
@@ -1381,7 +1402,7 @@ function ServerForm({
           {isLinux && (
             <FormSection title="Privilege">
               <div data-testid="servers-tier">
-                <ChoiceCards<1 | 2>
+                <ChoiceCards<1 | 2> infoId="cbsrc.servers.tier"
                   name="servers-tier"
                   label="Privilege tier"
                   value={form.tier}
@@ -1481,7 +1502,7 @@ function ServerForm({
 
           <FormSection title="Limits" last>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Field label="Servers in parallel" htmlFor="servers-parallel" required error={errors.parallel} hint="1 to 64">
+              <Field infoId="cbsrc.servers.parallel" label="Servers in parallel" htmlFor="servers-parallel" required error={errors.parallel} hint="1 to 64">
                 <Input
                   id="servers-parallel"
                   data-testid="servers-parallel"
@@ -1494,6 +1515,7 @@ function ServerForm({
                 />
               </Field>
               <Field
+                infoId="cbsrc.servers.timeout"
                 label="Timeout per server (seconds)"
                 htmlFor="servers-timeout"
                 required
@@ -1512,6 +1534,7 @@ function ServerForm({
                 />
               </Field>
               <Field
+                infoId="cbsrc.common.window"
                 label="Scan window"
                 htmlFor="servers-window"
                 error={errors.window}
@@ -1592,6 +1615,8 @@ function ServerForm({
       </SectionCard>
 
       <SectionCard
+
+        infoId="cbsrc.servers.what_runs"
         title="Exactly what runs on each server"
         description={isLinux ? "Nothing is installed. Output is parsed on the node." : "Nothing is installed. Results are parsed on the node."}
       >
@@ -1698,6 +1723,7 @@ function TestResultsCard({
 
   return (
     <SectionCard
+      infoId="cbsrc.servers.test"
       id="servers-test"
       className="scroll-mt-4"
       title={`Connection test · ${source.name}`}
@@ -1749,11 +1775,11 @@ function TestResultsCard({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Server</TableHead>
-                    <TableHead>Reachable</TableHead>
-                    <TableHead>Login</TableHead>
-                    <TableHead>{isLinux ? "Sudo allowlist" : "Privilege"}</TableHead>
-                    <TableHead>Result</TableHead>
+                    <TableHead>Server <InfoTip id="cbsrc.test.server" /></TableHead>
+                    <TableHead>Reachable <InfoTip id="cbsrc.test.reachable" /></TableHead>
+                    <TableHead>Login <InfoTip id="cbsrc.test.login" /></TableHead>
+                    <TableHead>{isLinux ? "Sudo allowlist" : "Privilege"} <InfoTip id="cbsrc.test.privilege" /></TableHead>
+                    <TableHead>Result <InfoTip id="cbsrc.test.result" /></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>

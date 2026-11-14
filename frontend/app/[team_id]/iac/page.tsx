@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
 import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Clock, Play, CheckCircle, XCircle, CalendarPlus, CalendarCheck, Search, X, GitBranch, FileArchive, Shield, AlertTriangle, Check, ScanSearch, Target, Percent, AlertCircle, Server, Activity, Filter, ChevronDown, ArrowUpDown, DollarSign, TrendingUp, TrendingDown, Zap, Wrench, MinusCircle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { singleFlight } from "@/utils/single_flight";
@@ -239,7 +240,7 @@ function IACDashboard({ dashboardData }: { dashboardData: IACListDashboardData }
                 <ScanSearch className="h-4 w-4 text-blue-500" />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Total scans</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Total scans <InfoTip id="iac.kpi.total_scans" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_scans}</p>
               </div>
             </div>
@@ -252,7 +253,7 @@ function IACDashboard({ dashboardData }: { dashboardData: IACListDashboardData }
                 <AlertCircle className="h-4 w-4 text-amber-500" />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Total issues</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Total issues <InfoTip id="iac.kpi.total_issues" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_issues}</p>
               </div>
             </div>
@@ -265,7 +266,7 @@ function IACDashboard({ dashboardData }: { dashboardData: IACListDashboardData }
                 <Target className="h-4 w-4 text-red-500" />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Total critical</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Total critical <InfoTip id="iac.kpi.critical" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_critical_issues}</p>
               </div>
             </div>
@@ -278,7 +279,7 @@ function IACDashboard({ dashboardData }: { dashboardData: IACListDashboardData }
                 <Clock className="h-4 w-4 text-zinc-500" />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Avg MTTR (days)</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Avg MTTR (days) <InfoTip id="iac.kpi.mttr" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.avg_mttr_days.toFixed(1)}</p>
               </div>
             </div>
@@ -291,7 +292,7 @@ function IACDashboard({ dashboardData }: { dashboardData: IACListDashboardData }
                 <Percent className="h-4 w-4 text-green-500" />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Coverage %</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Coverage % <InfoTip id="iac.kpi.coverage" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.coverage_percentage.toFixed(1)}%</p>
               </div>
             </div>
@@ -304,7 +305,7 @@ function IACDashboard({ dashboardData }: { dashboardData: IACListDashboardData }
                 <Shield className="h-4 w-4 text-red-500" />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Policy violations</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Policy violations <InfoTip id="iac.kpi.policy" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_policy_violations}</p>
               </div>
             </div>
@@ -317,7 +318,7 @@ function IACDashboard({ dashboardData }: { dashboardData: IACListDashboardData }
                 <Activity className={`h-4 w-4 ${card.average_risk_score >= 7 ? "text-red-500" : card.average_risk_score >= 5 ? "text-amber-500" : "text-green-500"}`} />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Avg risk score</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Avg risk score <InfoTip id="iac.kpi.avg_risk" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.average_risk_score.toFixed(1)}</p>
               </div>
             </div>
@@ -329,7 +330,7 @@ function IACDashboard({ dashboardData }: { dashboardData: IACListDashboardData }
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="items-center pb-2">
-            <CardTitle className="text-base">Severity Distribution</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Severity Distribution <InfoTip id="iac.chart.severity" /></CardTitle>
             <CardDescription>Critical / High / Medium / Low</CardDescription>
           </CardHeader>
           <CardContent>
@@ -361,7 +362,7 @@ function IACDashboard({ dashboardData }: { dashboardData: IACListDashboardData }
         </Card>
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Issues Over Time</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Issues Over Time <InfoTip id="iac.chart.over_time" /></CardTitle>
             <CardDescription>Stacked by severity</CardDescription>
           </CardHeader>
           <CardContent>
@@ -386,7 +387,7 @@ function IACDashboard({ dashboardData }: { dashboardData: IACListDashboardData }
         </Card>
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="items-center pb-2">
-            <CardTitle className="text-base">Security Posture Overview</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Security Posture Overview <InfoTip id="iac.chart.posture" /></CardTitle>
             <CardDescription>By category</CardDescription>
           </CardHeader>
           <CardContent>
@@ -428,7 +429,7 @@ function IACDashboard({ dashboardData }: { dashboardData: IACListDashboardData }
       {/* Remediation pipeline (full width) - styled like reference */}
       <Card className="border-zinc-200 dark:border-zinc-800">
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">Remediation Pipeline</CardTitle>
+          <CardTitle className="text-base flex items-center gap-1">Remediation Pipeline <InfoTip id="iac.chart.pipeline" /></CardTitle>
           <CardDescription>Total issues and resolution status</CardDescription>
         </CardHeader>
         <CardContent>
@@ -465,7 +466,7 @@ function IACDashboard({ dashboardData }: { dashboardData: IACListDashboardData }
         <CardHeader className="pb-2">
           <div className="flex items-center gap-2">
             <Shield className="h-5 w-5 text-zinc-600 dark:text-zinc-400" />
-            <CardTitle className="text-base">Compliance Framework Violations</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Compliance Framework Violations <InfoTip id="iac.chart.compliance" /></CardTitle>
           </div>
           <CardDescription>Violations by framework</CardDescription>
         </CardHeader>
@@ -505,7 +506,7 @@ function IACDashboard({ dashboardData }: { dashboardData: IACListDashboardData }
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Environment × Cloud Resource Heatmap</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Environment × Cloud Resource Heatmap <InfoTip id="iac.chart.heatmap" /></CardTitle>
             <CardDescription>Count by IAC context mode (rows) and environment (columns)</CardDescription>
           </CardHeader>
           <CardContent>
@@ -516,7 +517,7 @@ function IACDashboard({ dashboardData }: { dashboardData: IACListDashboardData }
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-[100px]">IAC context</TableHead>
+                      <TableHead className="w-[100px]">IAC context{/* infotip-shared: the heatmap title explains rows and columns */}</TableHead>
                       {heatmapEnvs.map((env) => (
                         <TableHead key={env} className="text-center min-w-[70px] text-xs capitalize">{env}</TableHead>
                       ))}
@@ -546,7 +547,7 @@ function IACDashboard({ dashboardData }: { dashboardData: IACListDashboardData }
         </Card>
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">MTTR Per Day</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">MTTR Per Day <InfoTip id="iac.chart.mttr_per_day" /></CardTitle>
             <CardDescription>Mean time to remediate (days)</CardDescription>
           </CardHeader>
           <CardContent>
@@ -567,7 +568,7 @@ function IACDashboard({ dashboardData }: { dashboardData: IACListDashboardData }
         </Card>
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Resources by Provider</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Resources by Provider <InfoTip id="iac.chart.providers" /></CardTitle>
             <CardDescription>Terraform, K8s, etc.</CardDescription>
           </CardHeader>
           <CardContent>
@@ -796,6 +797,7 @@ export default function IACPage() {
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
                       <Input placeholder="Search by title..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9 h-9 cursor-text" />
                     </div>
+                    <InfoTip id="scan.filter.search" className="-ml-2" />
                     <Select value={statusFilter} onValueChange={setStatusFilter}>
                       <SelectTrigger className="h-9 min-w-[150px] cursor-pointer"><SelectValue placeholder="Scan status" /></SelectTrigger>
                       <SelectContent>
@@ -809,6 +811,7 @@ export default function IACPage() {
                         <SelectItem value="cancelled">Cancelled</SelectItem>
                       </SelectContent>
                     </Select>
+                    <InfoTip id="scan.status" className="-ml-2" />
 
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -832,6 +835,7 @@ export default function IACPage() {
                           <ChevronDown className="h-3 w-3 opacity-70 shrink-0" />
                         </Button>
                       </DropdownMenuTrigger>
+                      <InfoTip id="scan.filter.risk" className="-ml-2" />
                       <DropdownMenuContent align="start" className="min-w-[180px]">
                         <DropdownMenuLabel className="text-xs font-normal text-zinc-500">Filter by risk score</DropdownMenuLabel>
                         <DropdownMenuSeparator />
@@ -867,6 +871,7 @@ export default function IACPage() {
                         <SelectItem value="development">Development</SelectItem>
                       </SelectContent>
                     </Select>
+                    <InfoTip id="iac.filter.environment" className="-ml-2" />
 
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -884,6 +889,7 @@ export default function IACPage() {
                           <ChevronDown className="h-3 w-3 opacity-70 shrink-0" />
                         </Button>
                       </DropdownMenuTrigger>
+                      <InfoTip id="scan.filter.sort" className="-ml-2" />
                       <DropdownMenuContent align="start" className="min-w-[200px]">
                         <DropdownMenuLabel className="text-xs font-normal text-zinc-500">Sort by</DropdownMenuLabel>
                         <DropdownMenuSeparator />
@@ -946,17 +952,17 @@ export default function IACPage() {
                         <TableHeader>
                           <TableRow>
                             <TableHead className="w-[160px] min-w-[120px]">Title</TableHead>
-                            <TableHead>Created at</TableHead>
-                            <TableHead>Last updated</TableHead>
-                            <TableHead>Scan status</TableHead>
-                            <TableHead className="w-[180px]">Vulnerabilities</TableHead>
-                            <TableHead className="w-[90px]">Risk score</TableHead>
-                            <TableHead className="w-[100px]">Cloud provider</TableHead>
-                            <TableHead className="w-[160px]">Repo / Source</TableHead>
-                            <TableHead className="w-[100px]">Branch</TableHead>
-                            <TableHead className="w-[90px]">Environment</TableHead>
-                            <TableHead className="w-[80px]">Credits</TableHead>
-                            <TableHead>Owner</TableHead>
+                            <TableHead><span className="inline-flex items-center gap-1">Created at <InfoTip id="scan.table.created" /></span></TableHead>
+                            <TableHead><span className="inline-flex items-center gap-1">Last updated <InfoTip id="scan.table.updated" /></span></TableHead>
+                            <TableHead><span className="inline-flex items-center gap-1">Scan status <InfoTip id="scan.status" /></span></TableHead>
+                            <TableHead className="w-[180px]"><span className="inline-flex items-center gap-1">Vulnerabilities <InfoTip id="iac.table.vulns" /></span></TableHead>
+                            <TableHead className="w-[90px]"><span className="inline-flex items-center gap-1">Risk score <InfoTip id="scan.table.risk" /></span></TableHead>
+                            <TableHead className="w-[100px]"><span className="inline-flex items-center gap-1">Cloud provider <InfoTip id="iac.table.provider" /></span></TableHead>
+                            <TableHead className="w-[160px]"><span className="inline-flex items-center gap-1">Repo / Source <InfoTip id="scan.table.source" /></span></TableHead>
+                            <TableHead className="w-[100px]"><span className="inline-flex items-center gap-1">Branch <InfoTip id="scan.table.branch" /></span></TableHead>
+                            <TableHead className="w-[90px]"><span className="inline-flex items-center gap-1">Environment <InfoTip id="iac.table.environment" /></span></TableHead>
+                            <TableHead className="w-[80px]"><span className="inline-flex items-center gap-1">Credits <InfoTip id="scan.table.credits" /></span></TableHead>
+                            <TableHead><span className="inline-flex items-center gap-1">Owner <InfoTip id="scan.table.owner" /></span></TableHead>
                             <TableHead className="text-right w-[80px]">Actions</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -1127,8 +1133,9 @@ export default function IACPage() {
             <DialogTitle>Rename scan</DialogTitle>
             <DialogDescription>Enter a new name for this scan.</DialogDescription>
           </DialogHeader>
-          <div className="py-4">
-            <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Scan name" onKeyDown={(e) => { if (e.key === "Enter") confirmRename(); }} />
+          <div className="py-4 space-y-2">
+            <FieldLabel htmlFor="rename-scan-title" infoId="scan.rename.title">Scan name</FieldLabel>
+            <Input id="rename-scan-title" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Scan name" onKeyDown={(e) => { if (e.key === "Enter") confirmRename(); }} />
           </div>
           <DialogFooter>
             <Button variant="outline" className="cursor-pointer" onClick={() => { setRenameDialogOpen(false); setNewName(""); }}>Cancel</Button>
@@ -1182,8 +1189,9 @@ export default function IACPage() {
             <DialogTitle>Create New Scan</DialogTitle>
             <DialogDescription>Enter a title for your new IAC scan.</DialogDescription>
           </DialogHeader>
-          <div className="py-4">
-            <Input value={newScanTitle} onChange={(e) => setNewScanTitle(e.target.value)} placeholder="Scan title" onKeyDown={(e) => { if (e.key === "Enter") confirmCreate(); }} />
+          <div className="py-4 space-y-2">
+            <FieldLabel htmlFor="new-scan-title" infoId="scan.new.title">Scan title</FieldLabel>
+            <Input id="new-scan-title" value={newScanTitle} onChange={(e) => setNewScanTitle(e.target.value)} placeholder="Scan title" onKeyDown={(e) => { if (e.key === "Enter") confirmCreate(); }} />
           </div>
           <DialogFooter>
             <Button variant="outline" className="cursor-pointer" onClick={() => { setCreateDialogOpen(false); setNewScanTitle(""); }}>Cancel</Button>

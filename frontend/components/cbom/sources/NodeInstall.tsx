@@ -12,6 +12,7 @@ import { TableCell, TableRow } from "@/components/ui/table";
 
 import { OVA_NO_INSECURE_SWITCH, helmAgentCommand, installCommand, labSwitchHelps, nodeApiPort, type DeployMethod } from "./logic";
 import { CodeSnippet } from "./shared";
+import { InfoTip } from "@/components/ui/info-tip";
 
 export const LAB_ONLY_WARNING =
   "ZS_ALLOW_INSECURE_HTTP=1 lets this node use a plain-HTTP API, so its credentials travel unencrypted, with the decrypted secrets of every job. Never use it on a network you do not control; serve the API over HTTPS instead.";
@@ -27,7 +28,7 @@ export function apiHost(apiUrl: string): string {
 function LabOnly({ children }: { children: ReactNode }) {
   return (
     <div className="space-y-2 rounded-lg border border-amber-500/50 p-3" data-testid="node-command-lab-only">
-      <p className="text-sm font-medium text-amber-700 dark:text-amber-400">Test lab only</p>
+      <p className="text-sm font-medium text-amber-700 dark:text-amber-400">Test lab only <InfoTip id="cbsrc.nodes.lab_only" /></p>
       <p className="text-xs text-zinc-700 dark:text-zinc-300">{LAB_ONLY_WARNING}</p>
       {children}
     </div>

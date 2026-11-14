@@ -60,7 +60,7 @@ import { showErrorToast } from "@/utils/error-handler";
 import { downloadCbomScanBom, INFORMATIONAL_LABEL, type CbomCoverageReport, type CbomImportReport } from "@/utils/api/cbom_outputs";
 import { downloadOscal } from "@/utils/api/integrations";
 import { readinessText } from "@/utils/cbomReadiness";
-import { inventoryRows, isBrokenToday, matchesQuantumFilter } from "@/components/cbom/quantumFilter";
+import { inventoryRows, isBrokenToday, matchesQuantumFilter, quantumReadinessBars } from "@/components/cbom/quantumFilter";
 import { importNoteLines, importReportHasNews } from "@/components/cbom/importNotes";
 import {
   buildRefAliasMap,
@@ -110,8 +110,11 @@ import {
 import { RbiCsfRollup, type RbiCsfRollupData } from "@/components/rbi/RbiCsfRollup";
 import { CodeChanges } from "@/components/cbom/sources/ChangesPanel";
 import { CodeWavesPanel } from "@/components/cbom/sources/WavesControls";
+import { criticalFixedPct } from "@/components/cbom/remediationKpis";
 import { CertInLanePosture } from "@/components/certin/CertInLanePosture";
 import { type CertInRollupData } from "@/components/certin/certinShared";
+import { InfoTip } from "@/components/ui/info-tip";
+import type { InfoTipId } from "@/content/infotips";
 
 interface CbomResultsProps {
   data: unknown;
@@ -259,13 +262,8 @@ function CbomDashboardCharts({
       .filter((d) => d.count > 0);
   }, [dashboard]);
 
-  const quantumData = useMemo(() => {
-    if (!dashboard.quantum_readiness) return [];
-    return [
-      { name: "Safe", count: dashboard.quantum_readiness.quantum_safe, fill: "hsl(142 71% 45%)" },
-      { name: "Vulnerable", count: dashboard.quantum_readiness.quantum_vulnerable, fill: "hsl(0 72% 51%)" },
-    ].filter((d) => d.count > 0);
-  }, [dashboard]);
+  // every verdict the backend counts, Broken today included, so the chart agrees with the "Quantum ready" card
+  const quantumData = useMemo(() => quantumReadinessBars(dashboard.quantum_readiness), [dashboard]);
 
   // OWASP Top 10 data
   const owaspMetrics = dashboard.owasp_top_10_issues ?? {};
@@ -332,21 +330,24 @@ function CbomDashboardCharts({
       {/* Summary cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4">
         {[
-          { label: "Crypto assets", value: cardData.total_crypto_assets, icon: Lock, box: "bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400" },
-          { label: "Weak", value: cardData.total_weak_algorithms, icon: ShieldAlert, box: "bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400" },
-          { label: "Quantum vulnerable", value: cardData.total_quantum_vulnerable, icon: AlertTriangle, box: "bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400" },
-          { label: "Certificates", value: cardData.total_certificates, icon: ShieldCheck, box: "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400" },
-          { label: "Keys", value: cardData.total_keys, icon: Key, box: "bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400" },
-          { label: "Quantum ready", value: readinessText(cardData), icon: Shield, box: "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400" },
-          { label: "Avg risk score", value: cardData.average_risk_score?.toFixed(1) ?? "N/A", icon: Activity, box: "bg-teal-100 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400" },
-        ].map(({ label, value, icon: Icon, box }) => (
+          { label: "Crypto assets", value: cardData.total_crypto_assets, icon: Lock, box: "bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400", tip: "cbom.res.kpi.assets" as InfoTipId },
+          { label: "Weak", value: cardData.total_weak_algorithms, icon: ShieldAlert, box: "bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400", tip: "cbom.res.kpi.weak" as InfoTipId },
+          { label: "Quantum vulnerable", value: cardData.total_quantum_vulnerable, icon: AlertTriangle, box: "bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400", tip: "cbom.res.kpi.qv" as InfoTipId },
+          { label: "Certificates", value: cardData.total_certificates, icon: ShieldCheck, box: "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400", tip: "cbom.res.kpi.certs" as InfoTipId },
+          { label: "Keys", value: cardData.total_keys, icon: Key, box: "bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400", tip: "cbom.res.kpi.keys" as InfoTipId },
+          { label: "Quantum ready", value: readinessText(cardData), icon: Shield, box: "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400", tip: "cbom.res.kpi.ready" as InfoTipId },
+          { label: "Avg risk score", value: cardData.average_risk_score?.toFixed(1) ?? "N/A", icon: Activity, box: "bg-teal-100 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400", tip: "cbom.res.kpi.avg_risk" as InfoTipId },
+        ].map(({ label, tip, value, icon: Icon, box }) => (
           <Card key={label} className="border-zinc-200 dark:border-zinc-800">
             <CardContent className="pt-4 pb-4 flex items-center gap-3">
               <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${box}`}>
                 <Icon className="h-5 w-5" />
               </div>
               <div className="min-w-0">
-                <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">{label}</p>
+                <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 flex items-center gap-0.5">
+                  {label}
+                  <InfoTip id={tip} />
+                </p>
                 <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 tabular-nums">{value}</p>
               </div>
             </CardContent>
@@ -358,7 +359,7 @@ function CbomDashboardCharts({
       {remediation && (
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader>
-            <CardTitle className="text-base">Remediation progress</CardTitle>
+            <CardTitle className="text-base">Remediation progress <InfoTip id="cbom.res.remediation" /></CardTitle>
             <CardDescription>Finding status breakdown</CardDescription>
           </CardHeader>
           <CardContent>
@@ -395,6 +396,7 @@ function CbomDashboardCharts({
             <CardTitle className="text-base flex items-center gap-2">
               <PieChart className="w-4 h-4" />
               OWASP Top 10 issues
+            <InfoTip id="cbom.res.owasp" />
             </CardTitle>
             <CardDescription>Distribution by OWASP category</CardDescription>
           </CardHeader>
@@ -440,6 +442,7 @@ function CbomDashboardCharts({
             <CardTitle className="text-base flex items-center gap-2">
               <AlertTriangle className="w-4 h-4" />
               Risk metrics
+            <InfoTip id="cbom.res.severity" />
             </CardTitle>
             <CardDescription>Findings by impact severity</CardDescription>
           </CardHeader>
@@ -468,6 +471,7 @@ function CbomDashboardCharts({
             <CardTitle className="text-base flex items-center gap-2">
               <BarChart3 className="w-4 h-4" />
               Compliance controls
+            <InfoTip id="cbom.res.compliance" />
             </CardTitle>
             <CardDescription>Findings mapped to compliance frameworks</CardDescription>
           </CardHeader>
@@ -526,6 +530,7 @@ function CbomDashboardCharts({
             <CardTitle className="text-base flex items-center gap-2">
               <BarChart3 className="w-4 h-4" />
               Algorithm types
+            <InfoTip id="cbom.res.algo_types" />
             </CardTitle>
             <CardDescription>Distribution by algorithm category</CardDescription>
           </CardHeader>
@@ -552,6 +557,7 @@ function CbomDashboardCharts({
             <CardTitle className="text-base flex items-center gap-2">
               <ShieldCheck className="w-4 h-4" />
               Crypto strength
+            <InfoTip id="cbom.res.strength" />
             </CardTitle>
             <CardDescription>Distribution by cryptographic strength</CardDescription>
           </CardHeader>
@@ -582,6 +588,7 @@ function CbomDashboardCharts({
             <CardTitle className="text-base flex items-center gap-2">
               <Shield className="w-4 h-4" />
               Quantum readiness
+            <InfoTip id="cbom.res.quantum" />
             </CardTitle>
             <CardDescription>Safe vs vulnerable cryptographic assets</CardDescription>
           </CardHeader>
@@ -612,6 +619,7 @@ function CbomDashboardCharts({
             <CardTitle className="text-base flex items-center gap-2">
               <TrendingUp className="w-4 h-4" />
               Risk scores per finding
+            <InfoTip id="cbom.res.risk_scores" />
             </CardTitle>
             <CardDescription>Risk score by finding (top 24, descending)</CardDescription>
           </CardHeader>
@@ -656,7 +664,7 @@ function CbomDashboardCharts({
       {remediationKpis && (
         <Card className="border-zinc-200 dark:border-zinc-800 shadow-sm">
           <CardHeader>
-            <CardTitle className="text-base">Remediation metrics</CardTitle>
+            <CardTitle className="text-base">Remediation metrics <InfoTip id="cbom.res.remed.section" /></CardTitle>
             <CardDescription>Performance and efficiency tracking</CardDescription>
           </CardHeader>
           <CardContent>
@@ -672,7 +680,7 @@ function CbomDashboardCharts({
                     <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-500/15 dark:bg-teal-500/10">
                       <Clock className="h-5 w-5 text-teal-600 dark:text-teal-400" />
                     </div>
-                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Mean time to remediate</p>
+                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Mean time to remediate <InfoTip id="sast.res.remed.mttr" /></p>
                     <p className="text-2xl font-bold text-zinc-900 dark:text-white">
                       {totalDays < 0.1 && totalDays >= 0 ? "<0.1 days" : `${totalDays.toFixed(1)} days`}
                     </p>
@@ -686,8 +694,8 @@ function CbomDashboardCharts({
               })()}
               {(() => {
                 const fixed = remediationKpis.critical_issues_fixed;
-                const total = fixed + criticalCount;
-                const pct = total > 0 ? Math.round((fixed / total) * 100) : 0;
+                // the severity distribution counts every Critical finding, fixed ones included: fixed / all Critical
+                const pct = criticalFixedPct(fixed, criticalCount);
                 const targetPct = 95;
                 const progress = Math.min(100, (pct / targetPct) * 100);
                 const delta = pct >= targetPct ? "+0%" : `+${targetPct - pct}%`;
@@ -696,7 +704,7 @@ function CbomDashboardCharts({
                     <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-500/15 dark:bg-teal-500/10">
                       <CheckCircle className="h-5 w-5 text-teal-600 dark:text-teal-400" />
                     </div>
-                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Critical issues fixed</p>
+                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Critical issues fixed <InfoTip id="sast.res.remed.critical_fixed" /></p>
                     <p className="text-2xl font-bold text-zinc-900 dark:text-white">{pct}%</p>
                     <p className="text-xs text-zinc-500 dark:text-zinc-400">Target: {targetPct}%</p>
                     <div className="flex items-center gap-2">
@@ -716,7 +724,7 @@ function CbomDashboardCharts({
                     <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-500/15 dark:bg-teal-500/10">
                       <Crosshair className="h-5 w-5 text-teal-600 dark:text-teal-400" />
                     </div>
-                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">High priority backlog</p>
+                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">High priority backlog <InfoTip id="sast.res.remed.backlog" /></p>
                     <p className="text-2xl font-bold text-zinc-900 dark:text-white">{backlog}</p>
                     <p className="text-xs text-zinc-500 dark:text-zinc-400">Target: {target}</p>
                     <div className="flex items-center gap-2">
@@ -736,7 +744,7 @@ function CbomDashboardCharts({
                     <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-500/15 dark:bg-teal-500/10">
                       <Activity className="h-5 w-5 text-teal-600 dark:text-teal-400" />
                     </div>
-                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Remediation velocity</p>
+                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Remediation velocity <InfoTip id="sast.res.remed.velocity" /></p>
                     <p className="text-2xl font-bold text-zinc-900 dark:text-white">{velocity}/week</p>
                     <p className="text-xs text-zinc-500 dark:text-zinc-400">Target: {target}/week</p>
                     <div className="flex items-center gap-2">
@@ -1286,6 +1294,7 @@ export default function CbomResults({
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2 text-amber-800 dark:text-amber-300">
               <AlertTriangle className="h-4 w-4 shrink-0" /> About the uploaded CBOM file
+            <InfoTip id="cbom.res.import_notes" />
             </CardTitle>
             <CardDescription className="text-amber-900/80 dark:text-amber-200/80">
               {importReport.imported ?? 0} of {importReport.crypto_assets ?? 0} cryptographic assets imported
@@ -1310,6 +1319,7 @@ export default function CbomResults({
           <CardHeader className="pb-2">
             <CardTitle className={`text-sm flex items-center gap-2 ${coverageReport.skipped > 0 ? "text-amber-800 dark:text-amber-300" : "text-zinc-800 dark:text-zinc-200"}`}>
               <AlertTriangle className="h-4 w-4 shrink-0" /> What this scan covered
+            <InfoTip id="cbom.res.coverage" />
             </CardTitle>
             <CardDescription className={coverageReport.skipped > 0 ? "text-amber-900/80 dark:text-amber-200/80" : undefined}>
               {coverageReport.skipped > 0
@@ -1390,7 +1400,7 @@ export default function CbomResults({
                       <GitBranch className="h-5 w-5" />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Branch</p>
+                      <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Branch <InfoTip id="results.meta.branch" /></p>
                       <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{String(meta.branch)}</p>
                     </div>
                   </CardContent>
@@ -1403,7 +1413,7 @@ export default function CbomResults({
                       <Archive className="h-5 w-5" />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Source</p>
+                      <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Source <InfoTip id="results.meta.source" /></p>
                       <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{meta.zip_file_used ? "ZIP upload" : "Repository"}</p>
                     </div>
                   </CardContent>
@@ -1416,7 +1426,7 @@ export default function CbomResults({
                       <Lock className="h-5 w-5" />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Input</p>
+                      <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Input <InfoTip id="cbom.res.input" /></p>
                       <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">CBOM file</p>
                     </div>
                   </CardContent>
@@ -1469,7 +1479,7 @@ export default function CbomResults({
           {/* Findings */}
           <Card id="bom-findings">
             <CardHeader>
-              <CardTitle>Cryptographic findings</CardTitle>
+              <CardTitle>Cryptographic findings <InfoTip id="cbom.res.findings" /></CardTitle>
               <CardDescription>
                 {filteredFindings.length} of {(findingsList ?? []).length} findings. Select rows to create Jira tickets; use Action to change finding state.
                 {informationalRows > 0 && (
@@ -1497,6 +1507,7 @@ export default function CbomResults({
                       aria-label="Search findings table"
                     />
                   </div>
+                  <InfoTip id="cbom.res.search" className="-ml-2" />
                   <Select value={filterImpact} onValueChange={setFilterImpact}>
                     <SelectTrigger className="h-9 min-w-[140px] cursor-pointer">
                       <SelectValue placeholder="Impact" />
@@ -1509,6 +1520,7 @@ export default function CbomResults({
                       <SelectItem value="low">Low</SelectItem>
                     </SelectContent>
                   </Select>
+                  <InfoTip id="results.filter.impact" className="-ml-2" />
                   <Select value={filterRiskScore} onValueChange={(v) => setFilterRiskScore(v as RiskScoreFilter)}>
                     <SelectTrigger className="h-9 min-w-[140px] cursor-pointer">
                       <SelectValue placeholder="Risk score" />
@@ -1521,6 +1533,7 @@ export default function CbomResults({
                       <SelectItem value="low">Low (&lt;5)</SelectItem>
                     </SelectContent>
                   </Select>
+                  <InfoTip id="cbom.res.filter.risk" className="-ml-2" />
                   <Select value={strengthFilter} onValueChange={setStrengthFilter}>
                     <SelectTrigger className="h-9 min-w-[140px] cursor-pointer">
                       <SelectValue placeholder="Strength" />
@@ -1533,6 +1546,7 @@ export default function CbomResults({
                       <SelectItem value="quantum_safe">Quantum-Safe</SelectItem>
                     </SelectContent>
                   </Select>
+                  <InfoTip id="cbom.res.filter.strength" className="-ml-2" />
                   <Select value={typeFilter} onValueChange={setTypeFilter}>
                     <SelectTrigger className="h-9 min-w-[150px] cursor-pointer">
                       <SelectValue placeholder="Type" />
@@ -1544,6 +1558,7 @@ export default function CbomResults({
                       ))}
                     </SelectContent>
                   </Select>
+                  <InfoTip id="cbom.res.filter.type" className="-ml-2" />
                   <Select value={quantumFilter} onValueChange={setQuantumFilter}>
                     <SelectTrigger className="h-9 min-w-[140px] cursor-pointer">
                       <SelectValue placeholder="Quantum" />
@@ -1555,6 +1570,7 @@ export default function CbomResults({
                       <SelectItem value="vulnerable">Vulnerable</SelectItem>
                     </SelectContent>
                   </Select>
+                  <InfoTip id="cbom.res.filter.quantum" className="-ml-2" />
                 </div>
               )}
               {hasActiveFindingsFilters && (
@@ -1575,27 +1591,32 @@ export default function CbomResults({
                 <Table className="min-w-max">
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-[48px]">
-                        <Checkbox
-                          checked={filteredFindings.length > 0 && selectedFindings.size === filteredFindings.length}
-                          onCheckedChange={() => {
-                            if (selectedFindings.size === filteredFindings.length) setSelectedFindings(new Set());
-                            else setSelectedFindings(new Set(filteredFindings.map((f) => f.id)));
-                          }}
-                          aria-label="Select all rows"
-                          className="cursor-pointer"
-                        />
+                      <TableHead className="w-[72px]">
+                        <div className="flex items-center gap-0.5">
+                          <Checkbox
+                            checked={filteredFindings.length > 0 && selectedFindings.size === filteredFindings.length}
+                            onCheckedChange={() => {
+                              if (selectedFindings.size === filteredFindings.length) setSelectedFindings(new Set());
+                              else setSelectedFindings(new Set(filteredFindings.map((f) => f.id)));
+                            }}
+                            aria-label="Select all rows"
+                            className="cursor-pointer"
+                          />
+                          <InfoTip id="cbom.res.select_all" />
+                        </div>
                       </TableHead>
-                      <TableHead className="min-w-[160px]">Algorithm</TableHead>
-                      <TableHead className="min-w-[120px]">Type</TableHead>
-                      <TableHead className="min-w-[90px]">Impact</TableHead>
-                      <TableHead className="min-w-[110px]">Strength</TableHead>
-                      <TableHead className="min-w-[100px]">Quantum</TableHead>
-                      <TableHead className="min-w-[110px]">Fix class</TableHead>
-                      <TableHead className="min-w-[90px] text-center">Risk score</TableHead>
-                      <TableHead className="min-w-[140px]">Location</TableHead>
-                      <TableHead className="min-w-[100px]">Status</TableHead>
-                      <TableHead className="min-w-[100px] text-right">Actions</TableHead>
+                      <TableHead className="min-w-[160px]">Algorithm <InfoTip id="cbom.res.col.algorithm" /></TableHead>
+                      <TableHead className="min-w-[120px]">Type <InfoTip id="cbom.res.col.type" /></TableHead>
+                      <TableHead className="min-w-[90px]">Impact <InfoTip id="results.table.impact" /></TableHead>
+                      <TableHead className="min-w-[110px]">Strength <InfoTip id="cbom.res.col.strength" /></TableHead>
+                      <TableHead className="min-w-[100px]">Quantum <InfoTip id="cbom.res.col.quantum" /></TableHead>
+                      <TableHead className="min-w-[110px]">Fix class <InfoTip id="cbom.res.col.fix_class" /></TableHead>
+                      <TableHead className="min-w-[90px] text-center">Risk score <InfoTip id="cbom.res.col.risk" /></TableHead>
+                      <TableHead className="min-w-[140px]">Location <InfoTip id="cbom.res.col.location" /></TableHead>
+                      <TableHead className="min-w-[100px]">Status <InfoTip id="results.table.status" /></TableHead>
+                      <TableHead className="min-w-[100px] text-right">
+                        <span className="inline-flex items-center gap-1">Actions <InfoTip id="results.finding.action" /></span>
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1615,7 +1636,8 @@ export default function CbomResults({
                             key={finding.id}
                             className={`hover:bg-zinc-50 dark:hover:bg-zinc-800/50 ${selectedFindings.has(finding.id) ? "bg-zinc-100 dark:bg-zinc-800/70" : ""}`}
                           >
-                            <TableCell onClick={(e) => e.stopPropagation()} className="w-[48px]">
+                            <TableCell onClick={(e) => e.stopPropagation()} className="w-[72px]">
+                              {/* infotip-shared: one row of the selection; the Select all tip in the header explains it */}
                               <Checkbox
                                 checked={selectedFindings.has(finding.id)}
                                 onCheckedChange={() => {
@@ -1673,6 +1695,7 @@ export default function CbomResults({
                             </TableCell>
                             <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                               <DropdownMenu>
+                                {/* infotip-shared: explained by the (i) on the Actions column header */}
                                 <DropdownMenuTrigger asChild>
                                   <Button variant="outline" size="sm" className="cursor-pointer gap-1.5 h-8 shrink-0" aria-label="Finding actions">
                                     <Pencil className="h-3.5 w-3.5 opacity-70" />
@@ -1709,7 +1732,7 @@ export default function CbomResults({
           {dashboard?.top_risks && dashboard.top_risks.length > 0 && (
             <Card className="border-zinc-200 dark:border-zinc-800">
               <CardHeader>
-                <CardTitle className="text-base">Top cryptographic risks</CardTitle>
+                <CardTitle className="text-base">Top cryptographic risks <InfoTip id="cbom.res.top" /></CardTitle>
                 <CardDescription>Highest-risk cryptographic assets</CardDescription>
               </CardHeader>
               <CardContent>
@@ -1717,11 +1740,11 @@ export default function CbomResults({
                   <Table className="min-w-max">
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="min-w-[160px]">Algorithm</TableHead>
-                        <TableHead className="min-w-[120px]">Type</TableHead>
-                        <TableHead className="min-w-[110px]">Strength</TableHead>
-                        <TableHead className="min-w-[110px]">Quantum safe</TableHead>
-                        <TableHead className="min-w-[120px]">Impact</TableHead>
+                        <TableHead className="min-w-[160px]">Algorithm <InfoTip id="cbom.res.col.algorithm" /></TableHead>
+                        <TableHead className="min-w-[120px]">Type <InfoTip id="cbom.res.col.type" /></TableHead>
+                        <TableHead className="min-w-[110px]">Strength <InfoTip id="cbom.res.col.strength" /></TableHead>
+                        <TableHead className="min-w-[110px]">Quantum safe <InfoTip id="cbom.res.col.quantum_safe" /></TableHead>
+                        <TableHead className="min-w-[120px]">Impact <InfoTip id="results.table.impact" /></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>

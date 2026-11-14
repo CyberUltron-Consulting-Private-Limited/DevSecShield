@@ -21,7 +21,6 @@
 // AssetDetailPanel, so any page that already mounts those two gets them with no change.
 export { QDistributionBar, QDistributionCard, QGradeChip, QGradeDrawerSection, QGradeModelBody, QGradeModelDialog, Q0ItemList } from "./QGrade";
 export { AgilityDistribution, AgilityDrawerSection, AgilityPostureCard, EvidenceFixClass, FixClassChip } from "./Agility";
-export { Tip } from "./Tip";
 export { GRADE_TIPS, fixClassTipId, type GradeTipId, type TipEntry } from "./tips";
 export { gradeKeys, getCbomAgilityModel, getCbomGradeModel, useAgilityModel, useGradeModel } from "./api";
 export * from "./model";

@@ -18,7 +18,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
+import type { InfoTipId } from "@/content/infotips";
 import { changePassword, getUserProfile, logout } from "@/utils/backend_api";
 import { handleApiError } from "@/utils/error-handler";
 import { changePasswordProblems } from "@/utils/accountForm";
@@ -67,10 +68,10 @@ export default function AccountPage() {
     if (Object.keys(problems).length === 0) change.mutate();
   };
 
-  const field = (id: string, label: string, value: string, set: (v: string) => void, autoComplete: string,
+  const field = (id: string, label: string, infoId: InfoTipId, value: string, set: (v: string) => void, autoComplete: string,
     error?: string, hint?: string) => (
     <div className="space-y-1.5">
-      <Label htmlFor={id} className="text-zinc-300">{label}</Label>
+      <FieldLabel htmlFor={id} infoId={infoId} labelClassName="text-zinc-300">{label}</FieldLabel>
       <Input id={id} type="password" value={value} autoComplete={autoComplete}
         onChange={(e) => { set(e.target.value); setServerError(null); }}
         aria-invalid={error ? true : undefined} aria-describedby={error ? `${id}-error` : hint ? `${id}-hint` : undefined}
@@ -117,9 +118,9 @@ export default function AccountPage() {
         </h2>
         <p className="text-sm text-zinc-400">After the change, every other browser and device is signed out; this one stays signed in.</p>
         <form onSubmit={onSubmit} noValidate className="space-y-4" data-testid="change-password-form">
-          {field("current-password", "Current password", current, setCurrent, "current-password", shown.current)}
-          {field("new-password", "New password", next, setNext, "new-password", shown.next, NEW_PASSWORD_HINT)}
-          {field("confirm-password", "New password again", confirm, setConfirm, "new-password", shown.confirm)}
+          {field("current-password", "Current password", "account.current_password", current, setCurrent, "current-password", shown.current)}
+          {field("new-password", "New password", "account.new_password", next, setNext, "new-password", shown.next, NEW_PASSWORD_HINT)}
+          {field("confirm-password", "New password again", "account.confirm_password", confirm, setConfirm, "new-password", shown.confirm)}
           {serverError && <p role="alert" className="text-sm text-red-400" data-testid="change-password-error">{serverError}</p>}
           <Button type="submit" disabled={change.isPending} className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer">
             {change.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />}
@@ -130,7 +131,7 @@ export default function AccountPage() {
 
       <section className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-5 space-y-3" aria-labelledby="sessions">
         <h2 id="sessions" className="text-base font-medium text-white flex items-center gap-2">
-          <LogOut className="h-4 w-4 text-zinc-400" aria-hidden="true" /> Sessions
+          <LogOut className="h-4 w-4 text-zinc-400" aria-hidden="true" /> Sessions <InfoTip id="account.sessions" />
         </h2>
         <p className="text-sm text-zinc-400">Sign out of every browser and device, this one included.</p>
         <Button variant="outline" onClick={() => setConfirmSignOut(true)} className="cursor-pointer border-red-500/50 text-red-400 hover:text-red-300">

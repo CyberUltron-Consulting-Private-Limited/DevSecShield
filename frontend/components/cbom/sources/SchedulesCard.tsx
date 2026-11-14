@@ -65,10 +65,10 @@ function ScheduleForm({ teamId, timezone, editing, onDone }: {
           aria-label={editing ? `Edit ${editing.name}` : "Add a schedule"}
           onSubmit={(e) => { e.preventDefault(); setError(null); save.mutate(); }}>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        <Field label="Name" htmlFor={`${prefix}-name`} required>
+        <Field infoId="cbsrc.sched.name" label="Name" htmlFor={`${prefix}-name`} required>
           <Input id={`${prefix}-name`} value={draft.name} maxLength={64} onChange={(e) => set("name", e.target.value)} />
         </Field>
-        <Field label="Repeat" htmlFor={`${prefix}-frequency`}>
+        <Field infoId="cbsrc.sched.repeat" label="Repeat" htmlFor={`${prefix}-frequency`}>
           <Select value={draft.frequency} onValueChange={(v) => set("frequency", v as CbomFrequency)}>
             <SelectTrigger id={`${prefix}-frequency`} className="cursor-pointer"><SelectValue /></SelectTrigger>
             <SelectContent>
@@ -79,7 +79,7 @@ function ScheduleForm({ teamId, timezone, editing, onDone }: {
           </Select>
         </Field>
         {draft.frequency === "weekly" && (
-          <Field label="Day" htmlFor={`${prefix}-weekday`}>
+          <Field infoId="cbsrc.sched.day" label="Day" htmlFor={`${prefix}-weekday`}>
             <Select value={String(draft.weekday)} onValueChange={(v) => set("weekday", Number(v))}>
               <SelectTrigger id={`${prefix}-weekday`} className="cursor-pointer"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -89,27 +89,27 @@ function ScheduleForm({ teamId, timezone, editing, onDone }: {
           </Field>
         )}
         {draft.frequency === "monthly" && (
-          <Field label="Day of month (1-28)" htmlFor={`${prefix}-monthday`}>
+          <Field infoId="cbsrc.sched.monthday" label="Day of month (1-28)" htmlFor={`${prefix}-monthday`}>
             <Input id={`${prefix}-monthday`} inputMode="numeric" value={String(draft.monthday)}
                    onChange={(e) => set("monthday", Math.max(1, Math.min(28, Number(e.target.value) || 1)))} />
           </Field>
         )}
         {/* the team's time zone: every schedule and scan window uses it (set with the scan window on Network TLS) */}
-        <Field label={`Time (${timezone})`} htmlFor={`${prefix}-time`}
+        <Field infoId="cbsrc.sched.time" label={`Time (${timezone})`} htmlFor={`${prefix}-time`}
                hint="The team's time zone, set with the scan window on Network TLS. The scan window still applies">
           <Input id={`${prefix}-time`} type="time" value={draft.time} onChange={(e) => set("time", e.target.value)} />
         </Field>
       </div>
       <div className="flex flex-wrap gap-4">
         {SCHEDULE_GROUPS.map(([key, label]) => (
-          <Checkbox2 key={key} id={`${prefix}-${key}`} checked={!!draft.groups[key]}
+          <Checkbox2 infoId="cbsrc.sched.groups" key={key} id={`${prefix}-${key}`} checked={!!draft.groups[key]}
                      onChange={(v) => setDraft((d) => ({ ...d, groups: { ...d.groups, [key]: v } }))}>
             {label}
           </Checkbox2>
         ))}
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Field label="Only sources with criticality" htmlFor={`${prefix}-crit`}>
+        <Field infoId="cbsrc.sched.min_crit" label="Only sources with criticality" htmlFor={`${prefix}-crit`}>
           <Select value={draft.minCrit} onValueChange={(v) => set("minCrit", v)}>
             <SelectTrigger id={`${prefix}-crit`} className="cursor-pointer"><SelectValue /></SelectTrigger>
             <SelectContent>
@@ -122,7 +122,7 @@ function ScheduleForm({ teamId, timezone, editing, onDone }: {
           </Select>
         </Field>
         {draft.groups.network && (
-          <Checkbox2 id={`${prefix}-soc`} checked={draft.soc} onChange={(v) => set("soc", v)}>
+          <Checkbox2 infoId="cbsrc.sched.soc" id={`${prefix}-soc`} checked={draft.soc} onChange={(v) => set("soc", v)}>
             My SOC has agreed these network ranges and scan windows for every scheduled run
           </Checkbox2>
         )}
@@ -163,7 +163,7 @@ export default function SchedulesCard({ teamId }: { teamId: number }) {
   });
   const confirm = deleting ? deleteScheduleText(deleting) : null;
   return (
-    <SectionCard title="Scheduled runs" description="Re-scan on a schedule to see what changed and prove fixes landed">
+    <SectionCard infoId="cbsrc.sched.card" title="Scheduled runs" description="Re-scan on a schedule to see what changed and prove fixes landed">
       <div className="space-y-3" data-testid="schedules-card">
         {q.isLoading ? <LoadingBlock /> : q.isError || !q.data ? <ErrorBlock error={q.error} onRetry={() => q.refetch()} /> : (
           <>

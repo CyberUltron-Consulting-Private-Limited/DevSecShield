@@ -71,7 +71,7 @@ for (const v of contract.fix_values) {
 }
 assert.equal(GRADE_TIPS["cbom.agility.inferred"].what, contract.fix_inferred_text);
 // every tip has text and a `// src:` line above it
-const tipsSource = readFileSync(path.join(__dirname, "tips.ts"), "utf8");
+const tipsSource = readFileSync(path.join(__dirname, "..", "..", "..", "content", "infotips.ts"), "utf8");
 for (const [id, tip] of Object.entries(GRADE_TIPS)) {
   assert.ok(tip.label && tip.what && tip.example, id);
   assert.match(tipsSource, new RegExp(`// src: [^\\n]+\\n\\s+"${id.replace(/\./g, "\\.")}"`), `${id}: no // src: line`);

@@ -32,7 +32,7 @@ import {
   type QGradeFields,
   type QPosture,
 } from "./model";
-import { Tip } from "./Tip";
+import { InfoTip } from "@/components/ui/info-tip";
 
 /** `model` given (also null): use it and fetch nothing; undefined: fetch the grade model with `teamId`. */
 function useModel(teamId: number | undefined, model: GradeModel | null | undefined): GradeModel | null {
@@ -244,8 +244,7 @@ export function QDistributionCard({ teamId, posture, onOpenAsset, model }: {
     <div className="space-y-3 rounded-lg border border-zinc-200 dark:border-zinc-800 p-3 min-w-0" data-testid="posture-q"
          data-model-version={posture.grade_model_version} data-inputs-digest={inputs?.digest}>
       <div className="flex flex-wrap items-center gap-2">
-        <p className="text-sm font-medium text-zinc-900 dark:text-white">Quantum risk</p>
-        <Tip id="cbom.qgrade.distribution" />
+        <p className="text-sm font-medium text-zinc-900 dark:text-white">Quantum risk <InfoTip id="cbom.qgrade.distribution" /></p>
         <button type="button" className="text-xs text-blue-600 dark:text-blue-400 cursor-pointer" onClick={() => setDialog(true)}
                 data-testid="grade-model-open">
           How grades are computed

@@ -59,6 +59,8 @@ import {
   usePolledJob,
   type Tone,
 } from "./shared";
+import { InfoTip } from "@/components/ui/info-tip";
+import type { InfoTipId } from "@/content/infotips";
 
 // ---------------------------------------------------------------------------- constants
 type Provider = "aws" | "azure" | "gcp";
@@ -502,6 +504,7 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
     <div className="space-y-6">
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
         <SectionCard
+          infoId="cbsrc.cloud.connect"
           id="cbom-cloud-connect"
           className="xl:col-span-2"
           title="Connect a cloud account"
@@ -555,6 +558,7 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
         </SectionCard>
 
         <SectionCard
+          infoId="cbsrc.cloud.validation"
           title="Validation"
           description={
             shownValidation
@@ -571,6 +575,7 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
       </div>
 
       <SectionCard
+        infoId="cbsrc.cloud.list"
         title="Connected cloud accounts"
         description={`${pluralize(cloudSources.length, "account")} · Accounts that pass validation are scanned read-only from ZeroShield's cloud (4 credits per account per run).`}
       >
@@ -597,12 +602,12 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
               <Table data-testid="cloud-accounts-table">
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Account</TableHead>
+                    <TableHead>Account <InfoTip id="cbsrc.cloud.col.account" /></TableHead>
                     <TableHead>Name</TableHead>
-                    <TableHead>Scope</TableHead>
-                    <TableHead className="text-right">Regions</TableHead>
-                    <TableHead>Last validated</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead>Scope <InfoTip id="cbsrc.cloud.col.scope" /></TableHead>
+                    <TableHead className="text-right">Regions <InfoTip id="cbsrc.cloud.col.regions" /></TableHead>
+                    <TableHead>Last validated <InfoTip id="cbsrc.cloud.col.validated" /></TableHead>
+                    <TableHead>Status <InfoTip id="cbsrc.cloud.col.status" /></TableHead>
                     <TableHead className="w-12">
                       <span className="sr-only">Actions</span>
                     </TableHead>
@@ -673,7 +678,7 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
       </SectionCard>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
-        <SectionCard title="Certificates" description="Certificate authorities, CLM tools and the domains you own.">
+        <SectionCard infoId="cbsrc.cloud.certificates" title="Certificates" description="Certificate authorities, CLM tools and the domains you own.">
           <div className="space-y-6">
             {settings.ct_discovery_enabled ? (
               <CtDiscovery teamId={teamId} settings={settings} source={identitySources.find((s) => s.kind === "ct_logs") ?? null}
@@ -682,7 +687,7 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
               <CertDomains teamId={teamId} settings={settings} />
             )}
             <div className="space-y-2">
-              <p className="text-sm font-medium text-zinc-900 dark:text-white">Certificate authorities and CLM</p>
+              <p className="text-sm font-medium text-zinc-900 dark:text-white">Certificate authorities and CLM <InfoTip id="cbsrc.cloud.cas" /></p>
               {CA_ROWS.map((row) => {
                 const rowSources = caSources.filter((s) => row.providers.includes(s.config?.provider as CaProvider));
                 const onNode = NODE_CA_PROVIDERS.has(row.providers[0]);
@@ -722,7 +727,7 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
           </div>
         </SectionCard>
 
-        <SectionCard title="Identity providers" description="Signing keys and certificates, read from each provider's public OIDC and SAML metadata by ZeroShield's cloud. Free.">
+        <SectionCard infoId="cbsrc.cloud.idps" title="Identity providers" description="Signing keys and certificates, read from each provider's public OIDC and SAML metadata by ZeroShield's cloud. Free.">
           <div className="space-y-6">
             <div className="space-y-2">
               {IDP_ROWS.map((row) => (
@@ -1078,6 +1083,7 @@ function AwsForm({
           <StepTitle n={1} title="Scope" />
           <div data-testid="cloud-aws-scope">
             <ChoiceCards
+              infoId="cbsrc.aws.scope"
               name="aws-scope"
               label="Scope"
               value={scope}
@@ -1113,9 +1119,10 @@ function AwsForm({
             Then paste the RoleArn output in step 4.
           </p>
           <div className="mb-4 space-y-3 rounded-lg border border-zinc-200 dark:border-zinc-800 p-4" data-testid="cloud-aws-optins">
-            <p className="text-sm font-medium text-zinc-900 dark:text-white">Optional reads (off by default)</p>
+            <p className="text-sm font-medium text-zinc-900 dark:text-white">Optional reads (off by default) <InfoTip id="cbsrc.aws.optional_reads" /></p>
             <OptInSwitch
               id="aws-lambda-cmk"
+              infoId="cbsrc.aws.lambda_cmk"
               checked={lambdaCmk}
               onChange={setLambdaCmk}
               title="Decrypt Lambda environment variables"
@@ -1132,6 +1139,7 @@ function AwsForm({
             />
             <OptInSwitch
               id="aws-glue"
+              infoId="cbsrc.aws.glue"
               checked={glue}
               onChange={setGlue}
               title="Read Glue connections"
@@ -1199,6 +1207,7 @@ function AwsForm({
           <StepTitle n={4} title="Connect the role" />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Field
+              infoId="cbsrc.aws.role_arn"
               className="md:col-span-2"
               label={scope === "organization" ? "Role ARN in the management account" : "Role ARN"}
               htmlFor="aws-role-arn"
@@ -1217,7 +1226,7 @@ function AwsForm({
                 onChange={(e) => setRoleArn(e.target.value)}
               />
             </Field>
-            <Field className="md:col-span-2" label="Regions" htmlFor="aws-region-input" required error={errors.region} hint="The first region is used for the test read.">
+            <Field infoId="cbsrc.aws.regions" className="md:col-span-2" label="Regions" htmlFor="aws-region-input" required error={errors.region} hint="The first region is used for the test read.">
               <div className="space-y-2">
                 {regions.length > 0 && (
                   <div className="flex flex-wrap items-center gap-1.5" data-testid="cloud-aws-regions">
@@ -1252,6 +1261,7 @@ function AwsForm({
               </div>
             </Field>
             <Field
+              infoId="cbsrc.aws.name"
               label="Name"
               htmlFor="aws-name"
               error={errors.name}
@@ -1274,14 +1284,17 @@ function AwsForm({
   );
 }
 
-function OptInSwitch({ id, checked, onChange, title, body }: { id: string; checked: boolean; onChange: (v: boolean) => void; title: string; body: ReactNode }) {
+function OptInSwitch({ id, checked, onChange, title, body, infoId }: { id: string; checked: boolean; onChange: (v: boolean) => void; title: string; body: ReactNode; infoId: InfoTipId }) {
   return (
     <div className="flex items-start gap-3">
       <Switch id={id} data-testid={id} checked={checked} onCheckedChange={onChange} className="mt-0.5" aria-describedby={`${id}-help`} />
       <div className="min-w-0">
-        <label htmlFor={id} className="block text-sm text-zinc-900 dark:text-white cursor-pointer">
-          {title}
-        </label>
+        <div className="flex items-center gap-1">
+          <label htmlFor={id} className="text-sm text-zinc-900 dark:text-white cursor-pointer">
+            {title}
+          </label>
+          <InfoTip id={infoId} />
+        </div>
         <p id={`${id}-help`} className="text-xs text-zinc-500 break-words">
           {body}
         </p>
@@ -1422,10 +1435,10 @@ function AzureForm({
       />
       <PermissionsHelp provider="azure" />
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Field label="Name" htmlFor="azure-name" required error={errors.name}>
+        <Field infoId="cbsrc.azure.name" label="Name" htmlFor="azure-name" required error={errors.name}>
           <Input id="azure-name" data-testid="cloud-azure-name" value={name} maxLength={64} placeholder="azure-prod" onChange={(e) => setName(e.target.value)} />
         </Field>
-        <Field label="Directory (tenant) ID" htmlFor="azure-tenant" required error={errors.tenant}>
+        <Field infoId="cbsrc.azure.tenant" label="Directory (tenant) ID" htmlFor="azure-tenant" required error={errors.tenant}>
           <Input
             id="azure-tenant"
             data-testid="cloud-azure-tenant"
@@ -1437,7 +1450,7 @@ function AzureForm({
             onChange={(e) => setTenantId(e.target.value)}
           />
         </Field>
-        <Field label="Application (client) ID" htmlFor="azure-client" required error={errors.client}>
+        <Field infoId="cbsrc.azure.client" label="Application (client) ID" htmlFor="azure-client" required error={errors.client}>
           <Input
             id="azure-client"
             data-testid="cloud-azure-client"
@@ -1451,6 +1464,7 @@ function AzureForm({
         </Field>
         <div className="md:col-span-2" data-testid="cloud-azure-credential">
           <ChoiceCards
+            infoId="cbsrc.azure.credential"
             name="azure-credential"
             label="Credential"
             value={credential}
@@ -1465,6 +1479,7 @@ function AzureForm({
           />
         </div>
         <SecretField
+          infoId="cbsrc.azure.secret"
           id="azure-secret"
           label={credential === "certificate" ? "Certificate and private key (PEM)" : "Client secret"}
           value={secret}
@@ -1476,6 +1491,7 @@ function AzureForm({
           hint={secretSet ? "Saved. Leave blank to keep it; changing the tenant, client ID or credential clears it." : STORED_HINT}
         />
         <Field
+          infoId="cbsrc.azure.subs"
           className="md:col-span-2"
           label="Subscription IDs"
           htmlFor="azure-subs"
@@ -1588,10 +1604,10 @@ function GcpForm({
       />
       <PermissionsHelp provider="gcp" />
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Field label="Name" htmlFor="gcp-name" required error={errors.name}>
+        <Field infoId="cbsrc.gcp.name" label="Name" htmlFor="gcp-name" required error={errors.name}>
           <Input id="gcp-name" data-testid="cloud-gcp-name" value={name} maxLength={64} placeholder="gcp-prod" onChange={(e) => setName(e.target.value)} />
         </Field>
-        <Field label="Organization ID" htmlFor="gcp-org" error={errors.org} hint="Numeric. Leave blank to list projects instead.">
+        <Field infoId="cbsrc.gcp.org" label="Organization ID" htmlFor="gcp-org" error={errors.org} hint="Numeric. Leave blank to list projects instead.">
           <Input
             id="gcp-org"
             data-testid="cloud-gcp-org"
@@ -1603,7 +1619,7 @@ function GcpForm({
             onChange={(e) => setOrgId(e.target.value)}
           />
         </Field>
-        <Field className="md:col-span-2" label="Project IDs" htmlFor="gcp-projects" error={errors.projects} hint="One per line. Needed when there is no organization ID.">
+        <Field infoId="cbsrc.gcp.projects" className="md:col-span-2" label="Project IDs" htmlFor="gcp-projects" error={errors.projects} hint="One per line. Needed when there is no organization ID.">
           <Textarea
             id="gcp-projects"
             data-testid="cloud-gcp-projects"
@@ -1614,7 +1630,7 @@ function GcpForm({
             onChange={(e) => setProjects(e.target.value)}
           />
         </Field>
-        <Field className="md:col-span-2" label="Service account" htmlFor="gcp-email" required error={errors.email}>
+        <Field infoId="cbsrc.gcp.email" className="md:col-span-2" label="Service account" htmlFor="gcp-email" required error={errors.email}>
           <Input
             id="gcp-email"
             data-testid="cloud-gcp-email"
@@ -1627,6 +1643,7 @@ function GcpForm({
           />
         </Field>
         <SecretField
+          infoId="cbsrc.gcp.key"
           id="gcp-key"
           label="Service account key (JSON)"
           value={key}
@@ -1640,7 +1657,7 @@ function GcpForm({
           placeholder="Paste the key, or upload the file"
           hint={keyFile ? `Loaded ${keyFile}` : keySet ? "Saved. Leave blank to keep it; changing the service account clears it." : STORED_HINT}
         />
-        <Field label="Upload the key file" htmlFor="gcp-key-file" error={errors.keyFile} hint="The .json file from IAM > Service accounts > Keys">
+        <Field infoId="cbsrc.gcp.key_file" label="Upload the key file" htmlFor="gcp-key-file" error={errors.keyFile} hint="The .json file from IAM > Service accounts > Keys">
           <Input
             id="gcp-key-file"
             data-testid="cloud-gcp-key-file"
@@ -1781,6 +1798,7 @@ function CertDomains({ teamId, settings }: { teamId: number; settings: CbomSourc
 
   return (
     <Field
+      infoId="cbsrc.cert.domains"
       label="Domains to search in Certificate Transparency logs"
       htmlFor="cert-domain-input"
       error={error}
@@ -1896,7 +1914,7 @@ function CtDiscovery({ teamId, settings, source, onDelete }: {
   return (
     <div className="space-y-3" data-testid="cloud-ct">
       <div>
-        <p className="text-sm font-medium text-zinc-900 dark:text-white">Certificate Transparency</p>
+        <p className="text-sm font-medium text-zinc-900 dark:text-white">Certificate Transparency <InfoTip id="cbsrc.ct.discovery" /></p>
         <p className="text-xs text-zinc-500 mt-1" data-testid="cloud-ct-how">
           Every run, ZeroShield&apos;s cloud searches public Certificate Transparency logs through {ctProviderSentence(settings.ct_providers)} for
           the certificates issued for these domains{subdomains ? " and their subdomains" : ""}, including hosts no scan node
@@ -1905,7 +1923,7 @@ function CtDiscovery({ teamId, settings, source, onDelete }: {
           {rate !== undefined ? ` ${rate} credits per domain searched, per run.` : ""}
         </p>
       </div>
-      <Field label="Domains" htmlFor="ct-domain-input" error={error}>
+      <Field infoId="cbsrc.ct.domains" label="Domains" htmlFor="ct-domain-input" error={error}>
         <div className="space-y-2">
           {domains.length > 0 ? (
             <div className="flex flex-wrap gap-1.5" data-testid="cloud-ct-domains">
@@ -1958,11 +1976,11 @@ function CtDiscovery({ teamId, settings, source, onDelete }: {
       {source && (
         <>
           <div className="flex items-center justify-between gap-3">
-            <label htmlFor="ct-subdomains" className="text-sm text-zinc-700 dark:text-zinc-300">Include subdomains</label>
+            <label htmlFor="ct-subdomains" className="text-sm text-zinc-700 dark:text-zinc-300">Include subdomains</label> <InfoTip id="cbsrc.ct.subdomains" />
             <Switch id="ct-subdomains" data-testid="cloud-ct-subdomains" checked={subdomains} disabled={save.isPending}
               onCheckedChange={(v) => save.mutate({ include_subdomains: v })} />
           </div>
-          <Field label="Certificate authorities you use (optional)" htmlFor="ct-issuer-input"
+          <Field infoId="cbsrc.ct.issuers" label="Certificate authorities you use (optional)" htmlFor="ct-issuer-input"
             hint="A certificate from any other CA is flagged as unexpected. Matched against the CA's name, organisation or CN: the whole value or its first words (at least 3 characters), e.g. Let's Encrypt, DigiCert, Amazon.">
             <div className="space-y-2">
               {issuers.length > 0 && (
@@ -2281,7 +2299,7 @@ function CaDialog({
         </DialogHeader>
         <div className="space-y-4 py-2">
           {row.providers.length > 1 && (
-            <Field label="Product" htmlFor="ca-provider">
+            <Field infoId="cbsrc.ca.product" label="Product" htmlFor="ca-provider">
               <Select
                 value={provider}
                 onValueChange={(v) => {
@@ -2303,13 +2321,13 @@ function CaDialog({
               </Select>
             </Field>
           )}
-          <Field label="Name" htmlFor="ca-name" required error={errors.name}>
+          <Field infoId="cbsrc.ca.name" label="Name" htmlFor="ca-name" required error={errors.name}>
             <Input id="ca-name" data-testid="cloud-ca-name" value={name} maxLength={64} onChange={(e) => setName(e.target.value)} />
           </Field>
 
           {onNode && (
             <>
-              <Field label="Scan node" htmlFor="ca-node" required error={errors.node} hint="A node in a segment that reaches the certificate authority">
+              <Field infoId="cbsrc.ca.node" label="Scan node" htmlFor="ca-node" required error={errors.node} hint="A node in a segment that reaches the certificate authority">
                 <NodeSelect id="ca-node" nodes={nodes} value={nodeId} onChange={setNodeId} />
               </Field>
               {nodes.length === 0 && (
@@ -2330,13 +2348,14 @@ function CaDialog({
 
           {isAdcs && (
             <>
-              <Field label="CA server" htmlFor="ca-host" required error={errors.host} hint="Reached over WinRM HTTPS (5986); run the Windows setup script from the Servers tab on it">
+              <Field infoId="cbsrc.ca.host" label="CA server" htmlFor="ca-host" required error={errors.host} hint="Reached over WinRM HTTPS (5986); run the Windows setup script from the Servers tab on it">
                 <Input id="ca-host" data-testid="cloud-ca-host" value={host} maxLength={253} placeholder="ca01.corp.example.com" onChange={(e) => setHost(e.target.value)} />
               </Field>
-              <Field label="Read-only Windows account" htmlFor="ca-login" required error={errors.login}>
+              <Field infoId="cbsrc.ca.login" label="Read-only Windows account" htmlFor="ca-login" required error={errors.login}>
                 <Input id="ca-login" data-testid="cloud-ca-login" value={login} maxLength={64} placeholder="svc-zscbom" autoComplete="off" onChange={(e) => setLogin(e.target.value)} />
               </Field>
               <SecretField
+                infoId="cbsrc.ca.password"
                 id="ca-password"
                 label="Password"
                 value={password}
@@ -2350,7 +2369,7 @@ function CaDialog({
           )}
 
           {isAwsCa && (
-            <Field label="AWS account" htmlFor="ca-aws" required error={errors.aws}>
+            <Field infoId="cbsrc.ca.aws" label="AWS account" htmlFor="ca-aws" required error={errors.aws}>
               {awsSources.length === 0 ? (
                 <p className="text-sm text-zinc-600 dark:text-zinc-400">Connect an AWS account at the top of this tab first.</p>
               ) : (
@@ -2371,7 +2390,7 @@ function CaDialog({
           )}
 
           {!isAdcs && !isAwsCa && (
-            <Field label="API address" htmlFor="ca-api-url" required error={errors.apiUrl}>
+            <Field infoId="cbsrc.ca.api_url" label="API address" htmlFor="ca-api-url" required error={errors.apiUrl}>
               <Input
                 id="ca-api-url"
                 data-testid="cloud-ca-api-url"
@@ -2387,6 +2406,7 @@ function CaDialog({
           {isVault && (
             <>
               <SecretField
+                infoId="cbsrc.ca.vault_token"
                 id="ca-token"
                 label="Vault token (read-only policy)"
                 value={token}
@@ -2397,7 +2417,7 @@ function CaDialog({
                 hint={tokenSet ? "Saved. Leave blank to keep it; changing the address, CA or node clears it." : STORED_HINT}
               />
               <div className="space-y-2">
-                <p className="text-sm font-medium">Policy for the token</p>
+                <p className="text-sm font-medium">Policy for the token <InfoTip id="cbsrc.ca.vault_policy" /></p>
                 {policy.data ? (
                   <div data-testid="cloud-ca-vault-policy">
                     <CodeSnippet code={policy.data} language="hcl" />
@@ -2411,8 +2431,9 @@ function CaDialog({
 
           {isEjbca && (
             <>
-              <SecretField id="ca-client-cert" label="Client certificate (PEM)" multiline value={clientCert} onChange={setClientCert} isSet={certSet} required error={errors.clientCert} />
+              <SecretField infoId="cbsrc.ca.client_cert" id="ca-client-cert" label="Client certificate (PEM)" multiline value={clientCert} onChange={setClientCert} isSet={certSet} required error={errors.clientCert} />
               <SecretField
+                infoId="cbsrc.ca.client_key"
                 id="ca-client-key"
                 label="Client private key (PEM, unencrypted)"
                 multiline
@@ -2428,6 +2449,7 @@ function CaDialog({
 
           {onNode && (
             <Field
+              infoId="cbsrc.ca.ca_pem"
               label={isAdcs ? "CA of the WinRM certificate (optional)" : "CA of the server certificate (optional)"}
               htmlFor="ca-ca-pem"
               error={errors.caPem}
@@ -2439,6 +2461,7 @@ function CaDialog({
 
           {!onNode && !isAwsCa && (
             <SecretField
+              infoId="cbsrc.ca.api_key"
               id="ca-api-key"
               label="API key"
               value={apiKey}
@@ -2561,11 +2584,11 @@ function IdpDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
-          <Field label="Name" htmlFor="idp-name" required error={errors.name}>
+          <Field infoId="cbsrc.idp.name" label="Name" htmlFor="idp-name" required error={errors.name}>
             <Input id="idp-name" data-testid="cloud-idp-name" value={name} maxLength={64} onChange={(e) => setName(e.target.value)} />
           </Field>
           {provider === "entra_id" && (
-            <Field label="Directory (tenant) ID" htmlFor="idp-tenant" required error={errors.tenant}>
+            <Field infoId="cbsrc.idp.tenant" label="Directory (tenant) ID" htmlFor="idp-tenant" required error={errors.tenant}>
               <Input
                 id="idp-tenant"
                 className="font-mono text-sm"
@@ -2578,7 +2601,7 @@ function IdpDialog({
             </Field>
           )}
           {(provider === "okta" || provider === "keycloak") && (
-            <Field label={provider === "okta" ? "Okta domain" : "Base URL"} htmlFor="idp-base" required error={errors.baseUrl}>
+            <Field infoId="cbsrc.idp.base_url" label={provider === "okta" ? "Okta domain" : "Base URL"} htmlFor="idp-base" required error={errors.baseUrl}>
               <Input
                 id="idp-base"
                 value={baseUrl}
@@ -2590,16 +2613,17 @@ function IdpDialog({
             </Field>
           )}
           {provider === "keycloak" && (
-            <Field label="Realm" htmlFor="idp-realm" required error={errors.realm}>
+            <Field infoId="cbsrc.idp.realm" label="Realm" htmlFor="idp-realm" required error={errors.realm}>
               <Input id="idp-realm" value={realm} maxLength={128} placeholder="corp" onChange={(e) => setRealm(e.target.value)} />
             </Field>
           )}
           {(provider === "entra_id" || provider === "keycloak") && (
-            <Field label={provider === "entra_id" ? "Application (client) ID" : "Client ID"} htmlFor="idp-client" required error={errors.client}>
+            <Field infoId="cbsrc.idp.client" label={provider === "entra_id" ? "Application (client) ID" : "Client ID"} htmlFor="idp-client" required error={errors.client}>
               <Input id="idp-client" className="font-mono text-sm" value={clientId} maxLength={128} spellCheck={false} onChange={(e) => setClientId(e.target.value)} />
             </Field>
           )}
           <SecretField
+            infoId="cbsrc.idp.secret"
             id="idp-secret"
             label={secretLabel}
             value={secret}
@@ -2668,7 +2692,7 @@ function MetadataUrls({
   };
 
   const input = (provider: MetadataProvider, label: string, placeholder: string, testId: string) => (
-    <Field label={label} htmlFor={`idp-${provider}`} error={errors[provider]}>
+    <Field infoId={provider === "saml_metadata" ? "cbsrc.idp.saml_url" : "cbsrc.idp.oidc_url"} label={label} htmlFor={`idp-${provider}`} error={errors[provider]}>
       <div className="flex flex-wrap gap-2">
         <Input
           id={`idp-${provider}`}

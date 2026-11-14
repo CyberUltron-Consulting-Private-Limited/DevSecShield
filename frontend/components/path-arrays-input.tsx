@@ -2,7 +2,8 @@
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { FieldLabel } from "@/components/ui/info-tip";
+import type { InfoTipId } from "@/content/infotips";
 import { Plus, Trash2 } from "lucide-react";
 
 export interface PathArraysInputProps {
@@ -12,6 +13,8 @@ export interface PathArraysInputProps {
   onChange: (value: string[][]) => void;
   /** Label shown above the control (e.g. "Exclude paths"). */
   label?: string;
+  /** The (i) tip beside the label: what the patterns do in this scan (content/infotips.ts). */
+  infoId: InfoTipId;
   /** Placeholder for segment inputs. */
   segmentPlaceholder?: string;
   /** Optional class name for the container. */
@@ -31,6 +34,7 @@ export function PathArraysInput({
   value,
   onChange,
   label = "Path arrays",
+  infoId,
   segmentPlaceholder = "segment",
   className = "",
 }: PathArraysInputProps) {
@@ -80,9 +84,9 @@ export function PathArraysInput({
 
   return (
     <div className={className}>
-      {label && (
-        <Label className="text-zinc-300 mb-3 block">{label}</Label>
-      )}
+      <FieldLabel infoId={infoId} className="mb-3" labelClassName="text-zinc-300">
+        {label}
+      </FieldLabel>
       <div className="space-y-3">
         {paths.map((path, pathIndex) => (
           <div
@@ -107,7 +111,9 @@ export function PathArraysInput({
               {(path.length === 0 ? [""] : path).map((segment, segmentIndex) => (
                 <div key={segmentIndex} className="flex items-center gap-1">
                   { segmentIndex > 0 && <span className="text-neutral-500 mx-1">/</span> }
+                  {/* infotip-shared: every segment box belongs to the pattern field whose label and tip are above */}
                   <Input
+                    aria-label={`${label}: pattern ${pathIndex + 1}, segment ${segmentIndex + 1}`}
                     value={segment}
                     onChange={(e) => updateSegment(pathIndex, segmentIndex, e.target.value)}
                     placeholder={segmentPlaceholder}

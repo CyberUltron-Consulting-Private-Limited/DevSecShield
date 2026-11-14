@@ -1,7 +1,7 @@
 "use client";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
+import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
 import {
   Select,
   SelectContent,
@@ -52,6 +52,7 @@ export function SastScanSettingsForm({
           <CardTitle className="text-sm font-medium text-zinc-300 flex items-center gap-2">
             <Filter className="h-4 w-4 text-zinc-400 shrink-0" />
             Scan scope
+            <InfoTip id="sast.cfg.scope" />
           </CardTitle>
           <CardDescription className="text-zinc-500 text-xs">
             Paths or patterns to exclude from the scan (e.g. vendor, node_modules).
@@ -60,6 +61,7 @@ export function SastScanSettingsForm({
         <CardContent className="px-4 pt-0">
           <PathArraysInput
             label="Exclude path patterns"
+            infoId="sast.cfg.exclude"
             value={excludePathArrays}
             onChange={onExcludePathArraysChange}
             segmentPlaceholder="ex: directory or file_name.extension"
@@ -73,15 +75,16 @@ export function SastScanSettingsForm({
           <CardTitle className="text-sm font-medium text-zinc-300 flex items-center gap-2">
             <Code className="h-4 w-4 text-zinc-400 shrink-0" />
             App language
+            {/* infotip-shared: the language field below carries the tip */}
           </CardTitle>
           <CardDescription className="text-zinc-500 text-xs">
             Primary language of the application being scanned (used for analysis).
           </CardDescription>
         </CardHeader>
         <CardContent className="px-4 pt-0">
-          <Label htmlFor="sast-scan-settings-app-lang" className="text-zinc-300 text-sm">
-            Primary app language <span className="text-red-500">*</span>
-          </Label>
+          <FieldLabel htmlFor="sast-scan-settings-app-lang" infoId="sast.cfg.language" labelClassName="text-zinc-300 text-sm" required>
+            Primary app language
+          </FieldLabel>
           <Select value={appLang} onValueChange={(value) => onAppLangChange(value as SastAppLang)}>
             <SelectTrigger
               id="sast-scan-settings-app-lang"

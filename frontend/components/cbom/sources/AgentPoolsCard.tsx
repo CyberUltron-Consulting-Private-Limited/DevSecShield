@@ -23,6 +23,7 @@ import { cbomSourcesKeys } from "./keys";
 import { formatDateTime, insecureApiWarning } from "./logic";
 import { PoolHelmCommand } from "./NodeInstall";
 import { ConfirmDialog, Field, SectionCard, StatusBadge, type Tone } from "./shared";
+import { InfoTip } from "@/components/ui/info-tip";
 
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$/;
 const EXPIRY = [
@@ -91,6 +92,7 @@ export function AgentPoolsCard({ teamId, image, apiUrl }: { teamId: number; imag
   const rows = pools.data?.pools ?? [];
   return (
     <SectionCard
+      infoId="cbsrc.pool.card"
       title="Host agents on Kubernetes (agent pool tokens)"
       description="One token for a Helm DaemonSet: every pod enrolls as its own scan node named after its Kubernetes node, reads only that node's files through a read-only mount, and is never given a credential."
       actions={
@@ -110,14 +112,14 @@ export function AgentPoolsCard({ teamId, image, apiUrl }: { teamId: number; imag
             </p>
           )}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <Field label="Name" htmlFor="pool-name" required error={error}>
+            <Field infoId="cbsrc.pool.name" label="Name" htmlFor="pool-name" required error={error}>
               <Input id="pool-name" value={name} maxLength={64} disabled={!!created} placeholder="prod-cluster"
                 onChange={(e) => setName(e.target.value)} />
             </Field>
-            <Field label="Network segment" htmlFor="pool-segment">
+            <Field infoId="cbsrc.pool.segment" label="Network segment" htmlFor="pool-segment">
               <Input id="pool-segment" value={segment} maxLength={64} disabled={!!created} onChange={(e) => setSegment(e.target.value)} />
             </Field>
-            <Field label="Token expires in" htmlFor="pool-expiry" hint="Nodes that enrolled keep working after it expires">
+            <Field infoId="cbsrc.pool.expiry" label="Token expires in" htmlFor="pool-expiry" hint="Nodes that enrolled keep working after it expires">
               <Select value={String(hours)} disabled={!!created} onValueChange={(v) => setHours(Number(v))}>
                 <SelectTrigger id="pool-expiry" className="w-full cursor-pointer"><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -125,7 +127,7 @@ export function AgentPoolsCard({ teamId, image, apiUrl }: { teamId: number; imag
                 </SelectContent>
               </Select>
             </Field>
-            <Field label="Nodes that may enroll" htmlFor="pool-max" hint="At least the number of Kubernetes nodes">
+            <Field infoId="cbsrc.pool.max" label="Nodes that may enroll" htmlFor="pool-max" hint="At least the number of Kubernetes nodes">
               <Input id="pool-max" type="number" min={1} max={1000} value={max} disabled={!!created} onChange={(e) => setMax(e.target.value)} />
             </Field>
           </div>
@@ -160,11 +162,11 @@ export function AgentPoolsCard({ teamId, image, apiUrl }: { teamId: number; imag
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Token</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Enrolled</TableHead>
-                <TableHead>Expires</TableHead>
-                <TableHead>Nodes</TableHead>
+                <TableHead>Token <InfoTip id="cbsrc.pool.col.token" /></TableHead>
+                <TableHead>Status <InfoTip id="cbsrc.pool.col.status" /></TableHead>
+                <TableHead>Enrolled <InfoTip id="cbsrc.pool.col.enrolled" /></TableHead>
+                <TableHead>Expires <InfoTip id="cbsrc.pool.col.expires" /></TableHead>
+                <TableHead>Nodes <InfoTip id="cbsrc.pool.col.nodes" /></TableHead>
                 <TableHead className="w-12"><span className="sr-only">Actions</span></TableHead>
               </TableRow>
             </TableHeader>
