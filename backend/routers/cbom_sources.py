@@ -41,6 +41,7 @@ from backend.new_models import (
     Scan,
     Team,
 )
+from backend.routers import cbom_node_artifacts as NODE_ARTIFACTS  # install links (one-paste node install)
 from backend.utilities.cbom_sources import agility as AGILITY
 from backend.utilities.cbom_sources import agility_rollup as AGILITY_ROLLUP
 from backend.utilities.cbom_sources import agents as AG
@@ -298,7 +299,8 @@ def _create_node(engine, team_id: int, user_id: int, body: NodeCreate) -> dict:
             raise
         session.refresh(node)
         log("node created", team=team_id, node=node.id, by=user_id)
-        return {"node": public_node(node, now), "registration_token": token}
+        return {"node": public_node(node, now), "registration_token": token,
+                "install_links": NODE_ARTIFACTS.install_links(team_id, node)}
 
 
 @router.post(BASE + "/nodes", dependencies=WRITE, summary="Add a scan node; returns a one-time registration token")
@@ -401,8 +403,9 @@ def _new_registration(engine, team_id: int, user_id: int, node_id: int, reset: b
         session.refresh(node)
         log("node reset" if reset else "node token regenerated", team=team_id, node=node.id, by=user_id,
             pool=node.pool_id)
-        # None for a pool node: nothing to copy, its pod enrolls again by itself
-        return {"node": public_node(node, now), "registration_token": token}
+        # None for a pool node: nothing to copy, its pod enrolls again by itself (and no install links)
+        return {"node": public_node(node, now), "registration_token": token,
+                "install_links": NODE_ARTIFACTS.install_links(team_id, node) if token else None}
 
 
 @router.post(BASE + "/nodes/{node_id}/registration-token", dependencies=WRITE,

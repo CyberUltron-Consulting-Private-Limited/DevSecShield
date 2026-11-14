@@ -232,6 +232,13 @@ class Decide(unittest.TestCase):
             self.assertEqual((out["publish"], out["prefix"], out["moving"], out["ref"]), ("true", branch, branch, SHA))
             self.assertEqual(out["api_url"], "http://localhost:8000")
 
+    def test_only_a_push_to_staging_is_a_release(self):
+        self.assertEqual(meta("decide", EVENT="push", REF_NAME="staging", SHA=SHA)[1]["release"], "true")
+        self.assertEqual(meta("decide", EVENT="push", REF_NAME="dev", SHA=SHA)[1]["release"], "false")
+        self.assertEqual(meta("decide", EVENT="push", REF_NAME="main", SHA=SHA)[1]["release"], "false")  # not published
+        self.assertEqual(meta("decide", **pr("labeled", ["publish-preview"], "publish-preview"))[1]["release"], "false")
+        self.assertEqual(meta("decide", EVENT="workflow_dispatch", INPUT_REF="staging")[1]["release"], "false")
+
     def test_push_to_another_branch_does_not_publish(self):
         for branch in ("main", "feature/x", "devel"):
             rc, out, _ = meta("decide", EVENT="push", REF_NAME=branch, SHA=SHA)
@@ -325,6 +332,53 @@ class Tags(unittest.TestCase):
     def test_the_workflow_passes_the_api_url_to_tags(self):
         self.assertIn("API_URL: ${{ steps.decide.outputs.api_url }}", JOBS["meta"])
 
+    def _version_file(self, text: str) -> str:
+        d = tempfile.mkdtemp()
+        self.addCleanup(lambda: __import__("shutil").rmtree(d, ignore_errors=True))
+        path = Path(d) / "__init__.py"
+        path.write_text(text)
+        return str(path)
+
+    def test_a_release_gets_the_scan_node_version_tags(self):
+        f = self._version_file('"""x"""\nimport os\n\nVERSION = "1.0.0"\n')
+        rc, out, _ = meta("tags", PREFIX="staging", SHA=SHA, RELEASE="true", NODE_VERSION_FILE=f)
+        self.assertEqual((rc, out["node_version"], out["node_release_tags"]), (0, "1.0.0", "1.0.0 1.0 latest"))
+        f2 = self._version_file('VERSION = "12.40.3"\n')
+        self.assertEqual(meta("tags", PREFIX="staging", SHA=SHA, RELEASE="true", NODE_VERSION_FILE=f2)[1]["node_release_tags"],
+                         "12.40.3 12.40 latest")
+        # a pre-release names only itself: never latest, never the minor line
+        f3 = self._version_file('VERSION = "2.0.0-rc.1"\n')
+        self.assertEqual(meta("tags", PREFIX="staging", SHA=SHA, RELEASE="true", NODE_VERSION_FILE=f3)[1]["node_release_tags"],
+                         "2.0.0-rc.1")
+
+    def test_the_real_scan_node_version_is_read(self):
+        rc, out, _ = meta("tags", PREFIX="staging", SHA=SHA, RELEASE="true",
+                          NODE_VERSION_FILE=str(ROOT / "scan_node" / "zs_scan_node" / "__init__.py"))
+        self.assertEqual(rc, 0)
+        self.assertRegex(out["node_release_tags"], r"^\d+\.\d+\.\d+ \d+\.\d+ latest$")
+
+    def test_no_release_tags_without_a_release(self):
+        f = self._version_file('VERSION = "1.0.0"\n')
+        for prefix in ("dev", "pr-93", "manual"):
+            rc, out, _ = meta("tags", PREFIX=prefix, SHA=SHA, NODE_VERSION_FILE=f)
+            self.assertEqual((rc, out["node_version"], out["node_release_tags"]), (0, "1.0.0", ""), prefix)
+        self.assertEqual(meta("tags", PREFIX="dev", SHA=SHA, RELEASE="true", NODE_VERSION_FILE=f)[0], 1)
+        rc, out, _ = meta("tags", PREFIX="dev", SHA=SHA)  # no file (older checkout): no version, no failure
+        self.assertEqual((rc, out["node_version"]), (0, ""))
+
+    def test_a_release_without_a_valid_version_fails(self):
+        for text in ("", 'VERSION = "bad version!"\n', 'VERSION = "1.0.0\nlatest"\n'):
+            f = self._version_file(text)
+            self.assertEqual(meta("tags", PREFIX="staging", SHA=SHA, RELEASE="true", NODE_VERSION_FILE=f)[0], 1, text)
+        self.assertEqual(meta("tags", PREFIX="staging", SHA=SHA, RELEASE="true", NODE_VERSION_FILE="/nonexistent")[0], 1)
+
+    def test_the_workflow_reads_the_version_of_the_built_commit(self):
+        meta_job = JOBS["meta"]
+        self.assertIn("RELEASE: ${{ steps.decide.outputs.release }}", meta_job)
+        self.assertIn("NODE_VERSION_FILE: target/scan_node/zs_scan_node/__init__.py", meta_job)
+        self.assertIn("            scan_node/zs_scan_node\n", meta_job)
+        self.assertIn("node_release_tags: ${{ steps.tags.outputs.node_release_tags }}", meta_job)
+
     def test_bad_prefix_or_commit_fails(self):
         for prefix, sha in (("main", SHA), ("pr-0", SHA), ("dev", "HEAD"), ("dev", SHA[:12]), ("", SHA)):
             self.assertEqual(meta("tags", PREFIX=prefix, SHA=sha)[0], 1, (prefix, sha))
@@ -360,13 +414,13 @@ class Permissions(unittest.TestCase):
         self.assertIn("\npermissions: {}\n", WF)
 
     def test_every_job_declares_its_permissions(self):
-        self.assertEqual(sorted(JOBS), sorted(["meta", "exists", "contexts", "build", "merge", "promote"]))
+        self.assertEqual(sorted(JOBS), sorted(["meta", "exists", "contexts", "build", "merge", "promote", "release"]))
         for name, text in JOBS.items():
             self.assertRegex(text, r"\n    permissions:\n", name)
 
-    def test_only_build_merge_and_promote_can_write_packages(self):
+    def test_only_build_merge_promote_and_release_can_write_packages(self):
         writers = sorted(n for n, t in JOBS.items() if "packages: write" in t)
-        self.assertEqual(writers, ["build", "merge", "promote"])
+        self.assertEqual(writers, ["build", "merge", "promote", "release"])
         for name in ("meta", "contexts"):
             perms = JOBS[name].split("\n    permissions:\n", 1)[1].split("\n    ", 1)[0]
             self.assertEqual(perms.strip(), "contents: read", name)
@@ -385,17 +439,20 @@ class Permissions(unittest.TestCase):
             self.assertEqual([n for n, t in JOBS.items() if perm in t], ["merge"], perm)
 
     def test_every_writing_job_checks_for_forks_itself(self):
-        for name in ("exists", "build", "merge", "promote"):
+        for name in ("exists", "build", "merge", "promote", "release"):
             cond = JOBS[name].split("\n    if: >-\n", 1)[1].split("\n    runs-on:", 1)[0]
             self.assertIn("github.event_name != 'pull_request' || " + FORK_GUARD, cond, name)
         self.assertIn(FORK_GUARD, JOBS["meta"].split("\n    runs-on:", 1)[0])
 
     def test_no_secret_but_the_github_token(self):
         self.assertNotRegex(WF, r"secrets\.")
-        self.assertEqual(re.findall(r"password: (.*)", WF), ["${{ github.token }}"] * 4)
+        self.assertEqual(re.findall(r"password: (.*)", WF), ["${{ github.token }}"] * 5)
+        # helm logs in with the same token, on stdin (never on a command line)
+        self.assertEqual(re.findall(r"GH_TOKEN: (.*)", JOBS["release"]), ["${{ github.token }}"])
+        self.assertIn('printf \'%s\' "$GH_TOKEN" | helm registry login ghcr.io --username "$ACTOR" --password-stdin', JOBS["release"])
 
     def test_writing_jobs_run_no_repository_script(self):
-        for name in ("exists", "build", "merge", "promote"):
+        for name in ("exists", "build", "merge", "promote", "release"):
             for run in re.findall(r"\n        run: \|\n((?:          .*\n|\s*\n)+)", JOBS[name]):
                 self.assertNotRegex(run, r"(?m)(scripts/|\.github/|\bpython3?\b|^\s*(bash|sh|source|\.)\s|\s\./)",
                                     f"{name}: {run[:80]}")
@@ -535,6 +592,20 @@ class JobConditions(unittest.TestCase):
             "run cancelled": run_state() | {"cancelled()": True},
         }.items():
             self.assertFalse(job_runs("promote", state), name)
+
+    def test_release_runs_only_after_a_fresh_promote_of_a_release(self):
+        ok = run_state(needs__meta__outputs__node_release_tags="1.0.0 1.0 latest", needs__promote__result="success",
+                       needs__promote__outputs__fresh="true", needs__meta__outputs__moving="staging")
+        self.assertTrue(job_runs("release", ok))
+        for name, state in {
+            "not a release (dev, PR, manual)": ok | {"needs.meta.outputs.node_release_tags": ""},
+            "promote failed": ok | {"needs.promote.result": "failure"},
+            "promote skipped": ok | {"needs.promote.result": "skipped"},
+            "a newer commit moves the tags": ok | {"needs.promote.outputs.fresh": "false"},
+            "nothing published": ok | {"needs.meta.outputs.publish": "false"},
+            "run cancelled": ok | {"cancelled()": True},
+        }.items():
+            self.assertFalse(job_runs("release", state), name)
 
     def test_the_evaluator_follows_github_semantics(self):
         self.assertTrue(evaluate("!cancelled() && a == 'X'", {"cancelled()": False, "a": "x"}))
@@ -853,6 +924,128 @@ class PromoteStep(unittest.TestCase):
         for c in COMPONENTS:
             if c != "dast-worker":
                 self.assertEqual(self.moving(c), self.old[c], c)
+
+
+class ReleaseStep(unittest.TestCase):
+    """The version tag (1.0.0) is written once (the wizard pins it); 1.0 and latest follow the version, not the branch."""
+    TAG = "staging-0123456789ab"
+    IMG = f"{REG}/devsecshield-scan-node"
+
+    def setUp(self):
+        self.reg = Registry()
+        self.script = step_script("release", "Point the scan node release tags at this commit's image")
+        self.new = self.reg.put(f"{self.IMG}:{self.TAG}", _index({"amd64": "2" * 64, "arm64": "3" * 64}))
+
+    def tearDown(self):
+        self.reg.close()
+
+    def run_it(self, tags="1.0.0 1.0 latest"):
+        return self.reg.run(self.script, IMAGE=self.IMG, TAG=self.TAG, RELEASE_TAGS=tags)
+
+    def tags(self):
+        return {t: self.reg.tag(f"{self.IMG}:{t}") for t in ("1.0.0", "1.0", "latest")}
+
+    def test_a_new_version_is_released_from_this_commit(self):
+        p = self.run_it()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(self.tags(), {"1.0.0": self.new, "1.0": self.new, "latest": self.new})
+        self.assertIn(f"{self.IMG}:1.0.0 = {self.IMG}:{self.TAG}", self.reg.summary.read_text())
+
+    def test_an_existing_version_is_never_overwritten_and_the_others_follow_it(self):
+        old = self.reg.put(f"{self.IMG}:1.0.0", _index({"amd64": "1" * 64, "arm64": "0" * 64}))
+        self.reg.put(f"{self.IMG}:latest", _index({"amd64": "9" * 64, "arm64": "8" * 64}))  # somewhere else
+        p = self.run_it()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(self.tags(), {"1.0.0": old, "1.0": old, "latest": old})
+        self.assertIn("exists already: kept as it is", p.stdout)
+        self.assertFalse([c for c in self.reg.calls() if f"-t {self.IMG}:1.0.0 " in c + " "])
+
+    def test_a_transient_failure_is_retried_and_a_lasting_one_fails(self):
+        self.reg.knob("create-fail.json", {f"{self.IMG}:1.0": 2})
+        p = self.run_it()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(self.reg.tag(f"{self.IMG}:1.0"), self.new)
+        self.reg.knob("create-wrong.json", {f"{self.IMG}:latest": 99})
+        tags = json.loads((self.reg.dir / "tags.json").read_text())
+        del tags[f"{self.IMG}:latest"]
+        (self.reg.dir / "tags.json").write_text(json.dumps(tags))
+        p = self.run_it()
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn(f"::error::{self.IMG}:latest is not confirmed", p.stdout)
+
+    def test_a_registry_error_on_the_version_tag_changes_nothing(self):
+        self.reg.knob("inspect-error.json", [f"{self.IMG}:1.0.0"])
+        p = self.run_it()
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("cannot tell whether", p.stdout)
+        self.assertFalse([c for c in self.reg.calls() if "imagetools create" in c])
+
+    def test_an_unreadable_image_moves_nothing(self):
+        self.reg.knob("inspect-error.json", [f"{self.IMG}:{self.TAG}"])
+        p = self.run_it()
+        self.assertNotEqual(p.returncode, 0)
+        self.assertFalse([c for c in self.reg.calls() if "imagetools create" in c])
+
+    def test_a_malformed_tag_is_refused_before_anything_is_written(self):
+        p = self.run_it("1.0.0 bad;tag")
+        self.assertNotEqual(p.returncode, 0)
+        self.assertFalse([c for c in self.reg.calls() if "imagetools create" in c])
+
+
+class ChartStep(unittest.TestCase):
+    def setUp(self):
+        self.reg = Registry()
+        self.script = step_script("release", "Push the Helm chart (OCI)")
+        self.work = self.reg.dir / "work"
+        chart = self.work / "deploy" / "helm" / "cbom-scan-node"
+        chart.mkdir(parents=True)
+        src = ROOT / "deploy" / "helm" / "cbom-scan-node"
+        for name in ("Chart.yaml", "values.yaml"):
+            (chart / name).write_text((src / name).read_text())
+
+    def tearDown(self):
+        self.reg.close()
+
+    def run_it(self, version="1.0.0"):
+        script = f"cd {self.work}\n" + self.script
+        return self.reg.run(script, REGISTRY=REG, NODE_VERSION=version, ACTOR="ci-bot", GH_TOKEN="ghs_TESTONLY")
+
+    def test_the_chart_is_packaged_for_the_ghcr_image_and_pushed_as_oci(self):
+        p = self.run_it()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        pushed = (self.reg.dir / "oci" / REG.split("/", 1)[0] / REG.split("/", 1)[1] / "charts" / "cbom-scan-node-1.0.0.tgz")
+        text = pushed.read_text()
+        self.assertIn("version=1.0.0\nappVersion=1.0.0\n", text)
+        self.assertIn(f"\n  repository: {REG}/devsecshield-scan-node\n", text)
+        self.assertEqual(text.count("repository: "), (ROOT / "deploy/helm/cbom-scan-node/values.yaml").read_text().count("repository: "))
+        calls = self.reg.calls()
+        self.assertIn(f"helm push {self.reg.dir}/chart/cbom-scan-node-1.0.0.tgz oci://{REG}/charts", calls)
+        self.assertIn("helm registry login ghcr.io --username ci-bot --password-stdin <password on stdin>", calls)
+        self.assertFalse([c for c in calls if "ghs_TESTONLY" in c], "the token is never on a command line")
+        self.assertIn(f"oci://{REG}/charts/cbom-scan-node --version 1.0.0", self.reg.summary.read_text())
+
+    def test_an_existing_chart_version_is_kept(self):
+        self.assertEqual(self.run_it().returncode, 0)
+        p = self.run_it()  # the same version again (a later push to staging): not pushed again
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn("exists already: kept as it is", p.stdout)
+        self.assertEqual(len([c for c in self.reg.calls() if c.startswith("helm push")]), 1)
+
+    def test_a_registry_error_pushes_nothing(self):
+        (self.reg.dir / "helm-show-error").write_text("")
+        p = self.run_it()
+        self.assertNotEqual(p.returncode, 0)
+        self.assertFalse([c for c in self.reg.calls() if c.startswith("helm push")])
+
+    def test_a_failed_push_fails_the_job(self):
+        (self.reg.dir / "helm-push-fail").write_text("")
+        p = self.run_it()
+        self.assertNotEqual(p.returncode, 0)
+
+    def test_a_bad_version_is_refused_before_anything_is_packaged(self):
+        p = self.run_it("1.0.0; rm -rf /")
+        self.assertNotEqual(p.returncode, 0)
+        self.assertFalse([c for c in self.reg.calls() if c.startswith("helm")])
 
 
 class LocalCompose(unittest.TestCase):
