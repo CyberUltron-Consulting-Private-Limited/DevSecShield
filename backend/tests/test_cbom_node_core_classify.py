@@ -145,14 +145,17 @@ def test_cluster_roles_grant_exactly_what_the_collector_reads():
 # neither (no pods, no cert-manager Issuers) and the collector reads neither. Each phrase of the text names the
 # resources it needs; together (plus namespaces, used by the connection test) they are exactly the tier's grants.
 TIER_TEXT = {
-    1: ("Cluster and node versions, API server TLS, ingress TLS, cert-manager Certificates, certificates and private "
-        "keys in ConfigMaps, Istio and Linkerd mTLS policy"),
-    2: "Adds the certificates of TLS Secrets (kubernetes.io/tls); their private keys are never read",
+    1: ("Cluster and node versions, API server TLS, ingress TLS hosts and Secret names, cert-manager Certificates, "
+        "certificates and private keys in ConfigMaps, Istio and Linkerd mTLS policy"),
+    # the Tier 2 role lists TLS Secrets with their tls.key (Kubernetes cannot grant one without the other); the
+    # collector drops it unparsed (kubernetes.py, data.pop("tls.key")), as the amber Tier 2 warning says
+    2: ("Adds the certificates of TLS Secrets (kubernetes.io/tls); the API also returns their private keys, which are "
+        "dropped unparsed and never stored or sent"),
 }
 TIER1_CLAIMS = {
     "Cluster and node versions": {("", "nodes")},  # plus /version, open to every authenticated client
     "API server TLS": set(),  # a TLS handshake with the API server, no RBAC resource
-    "ingress TLS": {("networking.k8s.io", "ingresses")},
+    "ingress TLS hosts and Secret names": {("networking.k8s.io", "ingresses")},  # spec.tls only; the certificate is Tier 2
     "cert-manager Certificates": {("cert-manager.io", "certificates")},
     "certificates and private keys in ConfigMaps": {("", "configmaps")},
     "Istio and Linkerd mTLS policy": {("security.istio.io", "peerauthentications"),

@@ -1073,9 +1073,13 @@ function ClusterForm({
                 {
                   value: 1,
                   title: "Tier 1 · no Secrets",
-                  description: "Cluster and node versions, API server TLS, ingress TLS, cert-manager Certificates, certificates and private keys in ConfigMaps, Istio and Linkerd mTLS policy",
+                  description: "Cluster and node versions, API server TLS, ingress TLS hosts and Secret names, cert-manager Certificates, certificates and private keys in ConfigMaps, Istio and Linkerd mTLS policy",
                 },
-                { value: 2, title: "Tier 2 · reads Secrets", description: "Adds the certificates of TLS Secrets (kubernetes.io/tls); their private keys are never read" },
+                {
+                  value: 2,
+                  title: "Tier 2 · reads Secrets",
+                  description: "Adds the certificates of TLS Secrets (kubernetes.io/tls); the API also returns their private keys, which are dropped unparsed and never stored or sent",
+                },
               ]}
             />
           </div>

@@ -44,9 +44,11 @@ async function main() {
   const { AxiosError } = load("axios") as typeof import("axios")
   const api = (load("@/utils/interceptors") as { default: import("axios").AxiosInstance }).default
   const { default: ServersTab } = load("./ServersTab") as typeof import("./ServersTab")
+  const { cbomFleetKeys } = load("./fleet/keys") as typeof import("./fleet/keys")
+  const { ALL_OFF } = load("./fleet/fleetLogic") as typeof import("./fleet/fleetLogic")
 
   /** Visit the Servers tab once on a deployment whose SSH CA flag is ``sshCa``; returns every request made. */
-  const visit = async (sshCa: boolean | "no-fleet-routes") => {
+  const visit = async (sshCa: boolean | "no-fleet-routes", cached?: import("@/utils/api/cbom_fleet").CbomFleetStatus) => {
     const requests: string[] = []
     const failed: string[] = []
     api.defaults.adapter = async (config) => {
@@ -70,6 +72,8 @@ async function main() {
       return ok({})
     }
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, refetchInterval: false } } })
+    // on the page, the tab bar has already run the status query: ServersTab must reuse it (same key, 60 s staleTime)
+    if (cached) client.setQueryData(cbomFleetKeys.status(TEAM), cached)
     const host = document.createElement("div")
     document.body.appendChild(host)
     const root = createRoot(host)
@@ -97,6 +101,13 @@ async function main() {
   const on = await visit(true)
   assert.equal(on.requests.filter((r) => r.endsWith("/fleet/ssh-ca")).length, 1, `SSH CA list asked once: ${on.requests.join(", ")}`)
   assert.deepEqual(on.failed, [])
+
+  // 4. the page already holds the status (the tab bar ran the same query): no status request and, off, no SSH CA one
+  const reuseOff = await visit(false, { ...ALL_OFF })
+  assert.deepEqual(reuseOff.requests.filter((r) => r.includes("/fleet/")), [], `cached status reused: ${reuseOff.requests.join(", ")}`)
+  assert.deepEqual(reuseOff.failed, [])
+  const reuseOn = await visit(true, { ...ALL_OFF, ssh_ca: true })
+  assert.deepEqual(reuseOn.requests.filter((r) => r.includes("/fleet/")), [`GET /${TEAM}/cbom/sources/fleet/ssh-ca`])
 
   console.log = realLog
   console.log("servers SSH CA gate tests passed")

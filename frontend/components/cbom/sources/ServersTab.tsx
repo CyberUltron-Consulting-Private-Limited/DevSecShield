@@ -52,7 +52,7 @@ import {
 import { listSshCas } from "@/utils/api/cbom_ssh_ca";
 
 import { cbomSourcesKeys, TERMINAL_JOB } from "./keys";
-import { useFleetStatus } from "./fleet/FleetTab";
+import { useFleetStatus } from "./fleet/useFleetStatus";
 import { sshCaListEnabled } from "./fleet/fleetLogic";
 import { principalOk } from "./fleet/sshCaLogic";
 import { MetadataFields, metadataConfig, metadataFrom, type SourceMetadata } from "./SourceMetadata";
