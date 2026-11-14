@@ -73,6 +73,14 @@
     "kb:findings.node.CERT_EXPIRES_30D.remediation"
    ]
   },
+  "CERT_REVOKED": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "stop presenting the revoked certificate: re-issue with the CA already in use and deploy it; rotate the key if it was compromised",
+   "sources": [
+    "kb:findings.node.CERT_REVOKED.remediation (checked 2026-11-14 against #112 head c0019017)"
+   ]
+  },
   "CERT_SELF_SHA1": {
    "class": "configurable",
    "capability": false,
@@ -89,12 +97,29 @@
     "kb:findings.node.CERT_SELF_SIGNED.remediation"
    ]
   },
+  "CERT_UNEXPECTED_CA": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "CAA DNS records and the expected-issuer list are the team's own settings; a mis-issued certificate is revoked on request to the CA",
+   "sources": [
+    "kb:findings.node.CERT_UNEXPECTED_CA.remediation (checked 2026-11-14 against #112 head c0019017)",
+    "RFC 8659 (DNS CAA resource record)"
+   ]
+  },
   "CERT_UNUSED": {
    "class": "configurable",
    "capability": false,
    "basis": "delete or revoke the unused certificate",
    "sources": [
     "kb:findings.node.CERT_UNUSED.remediation"
+   ]
+  },
+  "CERT_WILDCARD_SPRAWL": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "issue per-host certificates with the CA and ACME tooling already in use, and revoke the unused wildcards",
+   "sources": [
+    "kb:findings.node.CERT_WILDCARD_SPRAWL.remediation (checked 2026-11-14 against #112 head c0019017)"
    ]
   },
   "DB_10G_VERIFIER": {
