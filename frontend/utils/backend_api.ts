@@ -4301,6 +4301,10 @@ export interface CbomScanNode {
     enrolled_at: string | null
     hostname: string | null
     node_version: string | null
+    /** the commit the node's image was built from (12 characters), null when it reports none (staging QA B6-1) */
+    node_build?: string | null
+    /** does it run this server's node build? (backend node_release.node_update) */
+    update?: CbomNodeUpdate
     source_ips: string[]
     ssh_public_key: string | null
     capabilities: Record<string, unknown>
@@ -4322,6 +4326,16 @@ export interface CbomScanNode {
     row_version: number
     created_at: string | null
     last_updated: string | null
+}
+
+export interface CbomNodeUpdate {
+    /** update_available: an older version, another commit, or no build id; newer: ahead of the server; unknown: nothing to compare */
+    state: "current" | "update_available" | "newer" | "unknown"
+    reason: "same_build" | "same_version" | "older_version" | "different_version" | "no_build_id" | "different_build"
+        | "newer_version" | "no_server_build" | "not_reported" | "compare_failed" | null
+    message: string | null
+    /** "<version>+<12-character commit>" of the node build this server ships, or null */
+    server_build: string | null
 }
 
 export interface CbomNodeWrite {

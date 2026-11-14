@@ -23,7 +23,7 @@ export const MAPPING: ComplianceRow[] = [
     { clause: "BOM Guidelines v2.0, 8.4.2.2", title: "Enforce strict TLS configurations ...", assets: 2, codes: ["WEAK_CIPHER"],
       findings: [{ code: "WEAK_CIPHER", title: "Weak cipher suites accepted", fix: "Offer only ECDHE key exchange with AEAD ciphers (AES-GCM, ChaCha20-Poly1305)." }] },
     { clause: "BOM Guidelines v2.0, 8.6", title: "Plan the migration to post-quantum cryptography ...", assets: 3, codes: ["NO_PQ_KEX", "QUANTUM_VULNERABLE"],
-      findings: [{ code: "NO_PQ_KEX", title: "No post-quantum key exchange", fix: "Offer a hybrid ML-KEM group first where the TLS stack supports it." },
+      findings: [{ code: "NO_PQ_KEX", title: "No post-quantum key exchange", fix: "Offer a hybrid post-quantum key-exchange group first where the TLS stack supports it." },
                  { code: "QUANTUM_VULNERABLE", title: "Quantum-vulnerable algorithm", fix: "Add it to the PQC migration plan; prioritise by the Mosca score." }] },
   ] },
 ];
@@ -35,7 +35,7 @@ export const ENGINE = {
   fips_140_3: { pass: 1, pass_with_evidence: 0, fail: 0, out_of_scope: 0, not_bom_evidenceable: 0, na: 1, coverage: 1, requirements: [req("F-1", "pass"), req("F-2", "na")] },
   cert_in_cbom: { pass: 3, pass_with_evidence: 0, fail: 0, out_of_scope: 0, not_bom_evidenceable: 0, na: 0, coverage: 1, requirements: [] },
   cnsa_2_0: { pass: 0, pass_with_evidence: 0, fail: 2, out_of_scope: 0, not_bom_evidenceable: 0, na: 0, coverage: 0,
-              requirements: [req("CNSA-1", "fail", ["zs-asset-11", "crypto-algo-rsa"], "RSA is not CNSA 2.0"), req("CNSA-2", "fail", ["zs-asset-13"], "no ML-KEM")] },
+              requirements: [req("CNSA-1", "fail", ["zs-asset-11", "crypto-algo-rsa"], "RSA is not CNSA 2.0"), req("CNSA-2", "fail", ["zs-asset-13"], "no post-quantum key exchange")] },
   sebi_cscrf_cbom: { pass: 0, pass_with_evidence: 0, fail: 0, out_of_scope: 4, not_bom_evidenceable: 0, na: 0, coverage: null, requirements: [] },
   eu_cra: { pass: 1, pass_with_evidence: 0, fail: 5, out_of_scope: 0, not_bom_evidenceable: 0, na: 0, coverage: 0.16, requirements: [] },
   disclaimer: "Advisory.",
