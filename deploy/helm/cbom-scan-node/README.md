@@ -4,38 +4,42 @@ Runs the ZeroShield CBOM scan node in Kubernetes. The command on **CBOM Sources 
 Helm chart** installs the Deployment; **Create agent pool token** gives the DaemonSet command.
 
 The chart and the node image are downloads on the same page (**Download Helm chart**, **Download scan node image**:
-`cbom-scan-node-<version>.tgz`, `scan-node-<version>.tar.gz`), served by the ZeroShield server
-(`scripts/release/node_artifacts.py` packages this directory with version and appVersion set to the node version).
-Push the image to a registry your cluster pulls from, then install the downloaded chart:
+`cbom-scan-node-<version>.tgz`, `scan-node-<version>.tar.gz` and its `.sha256`), served by your ZeroShield server.
+Push the image to a registry your cluster pulls from, then install the downloaded chart. Set `ZS_API_URL` to **the
+API URL shown in the Add scan node wizard** (the wizard's own command already has it, with your registration token).
+Run it as one block: nothing is loaded, pushed or installed if the image file fails its SHA-256 check.
 
 ```sh
-REGISTRY=registry.example.internal/zeroshield   # a registry your cluster can pull from
-sha256sum -c scan-node-1.0.0.tar.gz.sha256
-docker load -i scan-node-1.0.0.tar.gz                   # loads localhost/zeroshield/cbom-scan-node:1.0.0
-docker tag localhost/zeroshield/cbom-scan-node:1.0.0 "$REGISTRY/cbom-scan-node:1.0.0"
-docker push "$REGISTRY/cbom-scan-node:1.0.0"
-
-# agentless node (reaches your servers, clusters, databases and networks with the credentials you store)
+REGISTRY=registry.example.internal/zeroshield    # a registry your cluster can pull from
+ZS_API_URL='<the API URL shown in the Add scan node wizard>'
+sha256sum -c scan-node-1.0.0.tar.gz.sha256 && \
+docker load -i scan-node-1.0.0.tar.gz && \
+docker tag localhost/zeroshield/cbom-scan-node:1.0.0 "$REGISTRY/cbom-scan-node:1.0.0" && \
+docker push "$REGISTRY/cbom-scan-node:1.0.0" && \
 helm upgrade --install zs-scan-node ./cbom-scan-node-1.0.0.tgz \
   --namespace zs-cbom --create-namespace \
   --set image.repository="$REGISTRY/cbom-scan-node" --set image.tag='1.0.0' \
-  --set apiUrl='https://api.zeroshield.ai' --set registrationToken='zsr_...'
+  --set apiUrl="$ZS_API_URL" --set registrationToken='zsr_...'
+```
 
-# host agents: one pod per Kubernetes node, each reads only its own node, never gets a credential
+That installs an agentless node (it reaches your servers, clusters, databases and networks with the credentials you
+store). Host agents (one pod per Kubernetes node, each reads only its own node and never gets a credential) use the
+command that **Create agent pool token** shows, or, with the image pushed as above:
+
+```sh
 helm upgrade --install zs-host-agents ./cbom-scan-node-1.0.0.tgz \
   --namespace zs-cbom --create-namespace \
   --set image.repository="$REGISTRY/cbom-scan-node" --set image.tag='1.0.0' \
-  --set apiUrl='https://api.zeroshield.ai' \
+  --set apiUrl="$ZS_API_URL" \
   --set deployment.enabled=false --set agent.enabled=true --set agent.poolToken='zsp_...'
 ```
 
-(From a checkout, use `deploy/helm/cbom-scan-node` instead of the `.tgz`.) The image file loads as
-`localhost/zeroshield/cbom-scan-node:<version>`: `localhost/` is a registry host that never resolves to a public
-registry, so nothing can be pulled under that name from the internet. It is also the chart's default
-`image.repository`, as a placeholder: the chart refuses to render with it (a `helm install` that forgot
+The image file loads as `localhost/zeroshield/cbom-scan-node:<version>`: `localhost/` is a registry host that never
+resolves to a public registry, so nothing can be pulled under that name from the internet. It is also the chart's
+default `image.repository`, as a placeholder: the chart refuses to render with it (a `helm install` that forgot
 `--set image.repository=...` fails with that message) unless `image.pullPolicy=Never` (the image loaded on every node
-by hand, e.g. `ctr -n k8s.io images import`). When the server names a registry that
-customers can pull the node image from (`CBOM_NODE_IMAGE_REF`), the wizard's command uses that image instead.
+by hand, e.g. `ctr -n k8s.io images import`). When your ZeroShield server names a public registry for the node
+image, the wizard's command uses that image instead.
 
 ## What it creates
 

@@ -283,7 +283,7 @@ def test_hf1_a_region_that_is_not_enabled_keeps_the_job_comparable_and_drift_res
     targets1, found1 = job(False)
     targets2, found2 = job(True)
     assert [t["status"] for t in targets2] == ["ok", "not_supported"]
-    summary = aws_collect._summary(targets2, 1, 0.0)
+    summary = aws_collect.summary(targets2, 1, 0.0)
     assert summary["counts"]["failed"] == 0 and summary["counts"]["partial"] == 1 and summary["counts"]["not_enabled"] == 1
     result = {**summary, "asset_count": len(found2)}
     outcome, extra = J._outcome(SimpleNamespace(kind="collect"), "success", result, len(found2))
@@ -302,8 +302,40 @@ def test_hf1_a_region_with_a_real_failure_still_fails_its_target():
     rows, _found = regional(_Acct({}, default="InternalError"))
     target = aws_collect._region_target(LABEL, REGION, rows, 0, 1)
     assert target["status"] == "error"
-    summary = aws_collect._summary([target], 1, 0.0)
-    assert summary["counts"]["failed"] == 1 and summary["counts"]["not_enabled"] == 0
+    summary = aws_collect.summary([target], 1, 0.0)
+    assert summary["counts"]["failed"] == 1 and "not_enabled" not in summary["counts"]
+
+
+def test_hf1_on_the_worker_pool_a_not_enabled_region_slice_keeps_the_parent_comparable(monkeypatch, tmp_path):
+    """The production path: the source fans out into account x region slices (``slices.finalize`` counts them)."""
+    import test_cbom_cloud_pool_f1 as P
+    from sqlmodel import Session
+
+    engine = P._make_engine("sqlite", tmp_path)
+    monkeypatch.setenv("CBOM_CLOUD_TEAM_MAX_CONCURRENCY", "8")
+    monkeypatch.setattr(P.W, "IDLE_SLEEP_S", 0.05)
+
+    def collect(team_id, cfg, external_id, role_arn, region, emit, should_stop, **_kw):
+        acct = role_arn.split(":")[4]
+        if region == "me-south-1":  # every service: OptInRequired
+            rows = [(svc, "not_enabled", "OptInRequired") for svc in EMITTED_BY]
+            target = aws_collect._region_target(f"aws:{acct}", region, rows, len(rows), 1)
+        else:
+            emit(P._asset(acct, region))
+            target = {"target": f"aws:{acct}/{region}", "status": "ok", "assets": 1}
+        return aws_collect.summary([target], team_id, 0.0, quiet=True)
+
+    monkeypatch.setattr(P.aws_org, "plan_slices", P._plan(1))
+    monkeypatch.setattr(P.aws_org, "collect_slice", collect)
+    user = P._team(engine, 1)
+    P._source(engine, 1, regions=("ap-south-1", "me-south-1"))
+    P._queue(engine, 1, user, "not-enabled-0001")
+    P._drain(engine)
+    (parent,) = P._jobs(engine, kind="collect")
+    assert parent.result["counts"] == {"total": 3, "ok": 2, "partial": 1, "failed": 0, "skipped": 0, "not_enabled": 1}
+    assert parent.outcome == "partial"
+    with Session(engine) as s:
+        assert D.job_comparable(s.get(type(parent), parent.id)) == (True, None)
 
 
 # ============================================================================ HF-2 CloudFront's us-east-1 certificates

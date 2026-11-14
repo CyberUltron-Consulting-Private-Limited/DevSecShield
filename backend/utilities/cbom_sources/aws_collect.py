@@ -19,6 +19,7 @@ from __future__ import annotations
 import datetime as _dt
 import json
 import re
+import threading
 import time
 from typing import Any, Callable
 
@@ -61,34 +62,86 @@ def _bits(spec: str | None) -> int | None:
     return None
 
 
+_CLIENT_LOCK = threading.Lock()  # creating a client is not thread-safe on a shared boto3 Session (the pool's threads)
+
+
+def _assume_role(sts, **kwargs) -> dict[str, Any]:
+    """sts:AssumeRole with the throttling backoff (management role, member checks and every slice assume)."""
+    from backend.utilities.cbom_sources.aws_org import with_backoff
+
+    return with_backoff(lambda: sts.assume_role(**kwargs), what="sts:AssumeRole")
+
+
+def _base_client(base, service: str, **kwargs):
+    with _CLIENT_LOCK:
+        return base.client(service, **kwargs)
+
+
+class _AssumedSession:
+    """Clients for an assumed role, made from ZeroShield's base session with the role's credentials.  One boto3
+    Session per account would load every service model again (tens of MB per account): the pool keeps one per process."""
+
+    def __init__(self, base, creds: dict[str, Any]):
+        self.base, self._creds = base, creds
+
+    def client(self, service: str, **kwargs):
+        return _base_client(self.base, service, aws_access_key_id=self._creds["AccessKeyId"],
+                            aws_secret_access_key=self._creds["SecretAccessKey"],
+                            aws_session_token=self._creds["SessionToken"], **kwargs)
+
+
 class _Account:
-    """Assumed-role session for one account, re-assumed before the 1-hour credentials expire."""
+    """Assumed-role session for one account, re-assumed before the 1-hour credentials expire.  Safe to share between
+    the cloud pool's threads: (re-)assuming and creating a client happen under the account's lock."""
 
     def __init__(self, base, cfg, role_arn: str, external_id: str, team_id: int):
         self.base, self.cfg, self.role_arn, self.external_id, self.team_id = base, cfg, role_arn, external_id, team_id
         self.account = aws_account_id(role_arn)
         self.session = None
         self.expires = 0.0
+        self._lock = threading.RLock()
+        self.lab = False  # lab mode (open_account: a test deployment reading its own account)
 
     def assume(self, region: str) -> None:
-        import boto3
+        with self._lock:
+            sts = _base_client(self.base, "sts", region_name=region, config=self.cfg)
+            out = _assume_role(sts, RoleArn=self.role_arn, RoleSessionName=f"zs-cbom-collect-{self.team_id}"[:64],
+                               ExternalId=self.external_id, DurationSeconds=3600)
+            session = _AssumedSession(self.base, out["Credentials"])
+            who = session.client("sts", region_name=region, config=self.cfg).get_caller_identity()
+            if str(who.get("Account")) != str(self.account):
+                # kept unset: the next region must not read with a session for another account
+                raise AwsCollectError("The assumed role is not in the account named by its ARN")
+            self.session = session
+            self.expires = time.monotonic() + 3300  # re-assume 5 minutes early
 
-        sts = self.base.client("sts", region_name=region, config=self.cfg)
-        out = sts.assume_role(RoleArn=self.role_arn, RoleSessionName=f"zs-cbom-collect-{self.team_id}"[:64],
-                              ExternalId=self.external_id, DurationSeconds=3600)
-        creds = out["Credentials"]
-        self.session = boto3.session.Session(aws_access_key_id=creds["AccessKeyId"],
-                                             aws_secret_access_key=creds["SecretAccessKey"],
-                                             aws_session_token=creds["SessionToken"])
-        self.expires = time.monotonic() + 3300  # re-assume 5 minutes early
-        who = self.session.client("sts", region_name=region, config=self.cfg).get_caller_identity()
+    def check(self, region: str) -> None:
+        """Assume the role and confirm its account, keeping nothing (the organisation walk checks thousands of members
+        in parallel)."""
+        sts = _base_client(self.base, "sts", region_name=region, config=self.cfg)
+        creds = _assume_role(sts, RoleArn=self.role_arn, RoleSessionName=f"zs-cbom-collect-{self.team_id}"[:64],
+                             ExternalId=self.external_id, DurationSeconds=900)["Credentials"]
+        who = _AssumedSession(self.base, creds).client("sts", region_name=region, config=self.cfg).get_caller_identity()
         if str(who.get("Account")) != str(self.account):
             raise AwsCollectError("The assumed role is not in the account named by its ARN")
 
+    def ensure(self, region: str) -> None:
+        """Assume the role now if it is not (or no longer) assumed, so a failure is the role's, not a service's."""
+        with self._lock:
+            if self.session is None or time.monotonic() > self.expires:
+                self.assume(region if region != "global" else GLOBAL_REGION)
+
+    def release(self) -> None:
+        """Drop the assumed session (the next client() assumes again)."""
+        with self._lock:
+            self.session, self.expires = None, 0.0
+
     def client(self, service: str, region: str):
-        if self.session is None or time.monotonic() > self.expires:
-            self.assume(region if region != "global" else GLOBAL_REGION)
-        return self.session.client(service, region_name=GLOBAL_REGION if region == "global" else region, config=self.cfg)
+        with self._lock:
+            if self.session is None or time.monotonic() > self.expires:
+                self.assume(region if region != "global" else GLOBAL_REGION)
+            return self.session.client(service, region_name=GLOBAL_REGION if region == "global" else region,
+                                       config=self.cfg)
 
 
 def _gap(label: str, location: str, check: str, status: str, detail: str | None, scope: list[str] | None = None, *,
@@ -1526,10 +1579,10 @@ def _global_services(acct: _Account, label: str, emit: Emit, regions: list[str] 
     return rows
 
 
-def collect_aws(team_id: int, cfg: dict[str, Any], external_id: str, emit: Emit,
-                should_stop: Callable[[], str | None]) -> dict[str, Any]:
-    """Collect one AWS source.  Raises AwsCollectError when nothing may be read (safety checks failed)."""
-    started = time.monotonic()
+def open_account(team_id: int, cfg: dict[str, Any], external_id: str) -> tuple[Any, Any, _Account]:
+    """The safety checks every AWS collection starts with: ZeroShield's own principal, a trust policy that refuses
+    AssumeRole without the external ID, and the role assumed in the account its ARN names.  Returns (base session,
+    botocore config, the assumed account).  Raises AwsCollectError (safe to show) when nothing may be read."""
     role_arn = cfg["role_arn"]
     regions = list(cfg.get("regions") or ["us-east-1"])
     # The own-account guard again at collection (a source validated before the collector moved accounts must not read
@@ -1545,80 +1598,106 @@ def collect_aws(team_id: int, cfg: dict[str, Any], external_id: str, emit: Emit,
     first = regions[0]
     sts = base.client("sts", region_name=first, config=boto_cfg)
     try:  # the trust policy must refuse us without the external ID
-        sts.assume_role(RoleArn=role_arn, RoleSessionName=f"zs-cbom-noext-{team_id}"[:64], DurationSeconds=900)
+        _assume_role(sts, RoleArn=role_arn, RoleSessionName=f"zs-cbom-noext-{team_id}"[:64], DurationSeconds=900)
         raise AwsCollectError("The role can be assumed without the external ID; add the sts:ExternalId condition and validate again")
     except AwsCollectError:
         raise
     except Exception as exc:
         if _code(exc) not in _DENIED:
             raise AwsCollectError(f"Could not check the role's trust policy: {_code(exc)}") from exc
-    accounts = [_Account(base, boto_cfg, role_arn, external_id, team_id)]
+    account = _Account(base, boto_cfg, role_arn, external_id, team_id)
+    account.lab = bool(lab)
     try:
-        accounts[0].assume(first)
+        account.assume(first)
     except AwsCollectError:
         raise
     except Exception as exc:
         raise AwsCollectError(f"AssumeRole failed: {_code(exc)}") from exc
+    return base, boto_cfg, account
+
+
+def collect_aws(team_id: int, cfg: dict[str, Any], external_id: str, emit: Emit,
+                should_stop: Callable[[], str | None]) -> dict[str, Any]:
+    """Collect one AWS source serially, in this thread.  Raises AwsCollectError when nothing may be read (safety
+    checks failed).  The cloud worker pool splits the same work into one slice per account x region instead
+    (``aws_org.plan_slices`` + ``read_target``); this path stays for tests and for ``CBOM_AWS_SLICES=0``."""
+    started = time.monotonic()
+    role_arn = cfg["role_arn"]
+    regions = list(cfg.get("regions") or ["us-east-1"])
+    base, boto_cfg, first_account = open_account(team_id, cfg, external_id)
+    accounts = [first_account]
     targets: list[dict[str, Any]] = []
+    walk = None
     gap_codes: dict[tuple[str, str], int] = {}
     if cfg.get("scope") == "organization":
-        # The member list decides which accounts are read at all: when it fails (or is cut) the accounts that were not
-        # listed are unknown, so this is a failed target of its own (the job is partial and never compared), not a note.
-        org_label = f"aws:{accounts[0].account}"
-        org_where = f"arn:aws:organizations::{accounts[0].account}:accounts"
-        try:
-            org = accounts[0].client("organizations", "global")
-            members, members_cut = _paginate(org, "list_accounts", "Accounts", cap=200)
-            role_name = role_arn.split(":role/", 1)[1]
-            partition = role_arn.split(":")[1]
-            for member in members:
-                if member.get("Status") != "ACTIVE" or member["Id"] == accounts[0].account:
-                    continue
-                accounts.append(_Account(base, boto_cfg, f"arn:{partition}:iam::{member['Id']}:role/{role_name}", external_id, team_id))
-            if members_cut:
-                emit(_gap(org_label, org_where, "organization member accounts", "truncated",
-                          "More than 200 member accounts; the first 200 were read"))
-                targets.append({"target": f"{org_label}/organization", "status": "error", "assets": 0,
-                                "error": "More than 200 member accounts; the first 200 were read"})
-        except Exception as exc:
-            emit(_gap(org_label, org_where, "organization member accounts", "error", _code(exc)))
-            targets.append({"target": f"{org_label}/organization", "status": "error", "assets": 0,
-                            "error": f"organization member accounts not listed: {_code(exc)}"[:256]})
+        from backend.utilities.cbom_sources import aws_org
+
+        # every member account (no cap), each reachable one checked in parallel; see aws_org.member_accounts
+        walk = aws_org.member_accounts(first_account, base, boto_cfg, role_arn, external_id, team_id, regions, emit,
+                                       should_stop)
+        accounts += walk.reachable
+        targets += walk.targets
     for acct in accounts:
-        label = f"aws:{acct.account}"
         for region in ["global", *regions]:
-            reason = should_stop()
-            if reason:
-                targets.append({"target": f"{label}/{region}", "status": "skipped_cancelled", "error": reason[:256], "assets": 0})
-                continue
-            t0 = time.monotonic()
-            tally = _GapTally(emit)
-            try:
-                rows = (_global_services(acct, label, tally, regions=regions, tick=should_stop) if region == "global"
-                        else _region_services(acct, region, label, tally, cfg, tick=should_stop))
-            except AwsCollectError as exc:
-                targets.append({"target": f"{label}/{region}", "status": "error", "error": str(exc)[:256], "assets": 0})
-                continue
-            except Exception as exc:  # AssumeRole in a member account failed
-                targets.append({"target": f"{label}/{region}", "status": "auth_failed", "error": _code(exc)[:256], "assets": 0})
-                continue
-            targets.append(_region_target(label, region, rows, tally.gaps, int((time.monotonic() - t0) * 1000)))
-            for code_key, n in tally.codes.items():
-                gap_codes[code_key] = gap_codes.get(code_key, 0) + n
+            targets.append(read_target(acct, region, cfg, emit, should_stop, codes=gap_codes))
+        if acct is not first_account:
+            acct.release()  # one account's session at a time, not one per member for the whole walk
+    log_gaps = {"gaps": sum(gap_codes.values()),
+                "gap_codes": ",".join(f"{svc}:{code}:{n}" for (svc, code), n in sorted(gap_codes.items()))[:500] or None}
+    return summary(targets, team_id, started, log_extra=log_gaps,
+                   accounts=len(accounts) + (walk.unreachable if walk else 0),
+                   **({"lab_mode": LAB_MODE} if first_account.lab else {}))
+
+
+class AwsThrottled(Exception):
+    """AWS kept throttling after every retry: the slice is re-queued rather than reported as a coverage gap."""
+
+
+def read_target(acct: _Account, region: str, cfg: dict[str, Any], emit: Emit,
+                should_stop: Callable[[], str | None], *, codes: dict[tuple[str, str], int] | None = None,
+                raise_throttled: bool = False) -> dict[str, Any]:
+    """Read one account x region ("global": IAM, S3, CloudFront) and return its target row.  The unit of work of a
+    cloud-pool slice (``cbom_sources.slices``) and of the serial walk above: both produce the same rows and assets.
+    A throttle that outlasted every retry is an ``error`` row (never ``auth_failed``: the role is fine), or, for a
+    slice (``raise_throttled``), AwsThrottled so the slice is tried again later."""
+    from backend.utilities.cbom_sources.aws_org import THROTTLED
+
+    label = f"aws:{acct.account}"
+    reason = should_stop()
+    if reason:
+        return {"target": f"{label}/{region}", "status": "skipped_cancelled", "error": reason[:256], "assets": 0}
+    t0 = time.monotonic()
+    tally = _GapTally(emit)
+    try:
+        if hasattr(acct, "ensure"):
+            acct.ensure(region)  # AssumeRole first (retried on throttling): its failure is the account's, not a service's
+        rows = (_global_services(acct, label, tally, regions=list(cfg.get("regions") or ["us-east-1"]),
+                                 tick=should_stop) if region == "global"
+                else _region_services(acct, region, label, tally, cfg, tick=should_stop))
+    except AwsCollectError as exc:
+        return {"target": f"{label}/{region}", "status": "error", "error": str(exc)[:256], "assets": 0}
+    except Exception as exc:  # AssumeRole in a member account failed
+        code = _code(exc)
+        if code in THROTTLED:
+            if raise_throttled:
+                raise AwsThrottled(code) from exc
+            return {"target": f"{label}/{region}", "status": "error", "error": f"throttled: {code}"[:256], "assets": 0}
+        return {"target": f"{label}/{region}", "status": "auth_failed", "error": code[:256], "assets": 0}
+    if region == "global":
         # ACM certificates issued through ACME are not returned by ListCertificates in this SDK version (CB-33 EC-3):
         # said once per account, so "no ACME certificate" is never read as "none exists"
         emit(_gap(label, f"arn:aws:acm::{acct.account}:certificate#acme", "ACME-issued ACM certificates",
                   "not_supported", "ACME-issued ACM certificates are not listed by this SDK version", by_choice=True))
-    log_gaps = {"gaps": sum(gap_codes.values()),
-                "gap_codes": ",".join(f"{svc}:{code}:{n}" for (svc, code), n in sorted(gap_codes.items()))[:500] or None}
-    return _summary(targets, team_id, started, log_extra=log_gaps, accounts=len(accounts),
-                    **({"lab_mode": LAB_MODE} if lab else {}))
+    if codes is not None:
+        for code_key, n in tally.codes.items():
+            codes[code_key] = codes.get(code_key, 0) + n
+    return _region_target(label, region, rows, tally.gaps, int((time.monotonic() - t0) * 1000))
 
 
 def _region_target(label: str, region: str, rows: list[tuple[str, str, str | None]], gaps: int,
                    duration_ms: int) -> dict[str, Any]:
     """One region's target row from its service rows.  A region whose services all answered ``not_enabled`` (an opt-in
-    region the account has not enabled, CB-33 HF-1) is ``not_supported`` and marked ``not_enabled``: ``_summary``
+    region the account has not enabled, CB-33 HF-1) is ``not_supported`` and marked ``not_enabled``: ``summary``
     counts it partial, not failed, so it never stops drift for the account; its rows are gaps scoped to that region."""
     bad = [f"{svc}: {status} {detail or ''}".strip() for svc, status, detail in rows if status not in ("ok", "partial")]
     gappy = [f"{svc}: {detail or 'partial'}" for svc, status, detail in rows if status == "partial"]
@@ -1632,16 +1711,18 @@ def _region_target(label: str, region: str, rows: list[tuple[str, str, str | Non
     return out
 
 
-def _summary(targets: list[dict[str, Any]], team_id: int, started: float, *,
-             log_extra: dict[str, Any] | None = None, **extra: Any) -> dict[str, Any]:
+def summary(targets: list[dict[str, Any]], team_id: int, started: float, *, quiet: bool = False,
+            log_extra: dict[str, Any] | None = None, **extra: Any) -> dict[str, Any]:
+    """Counts of a list of target rows (one shape for a whole source, a slice, and a fanned-out parent)."""
     ok = sum(1 for t in targets if t["status"] == "ok")
     not_enabled = sum(1 for t in targets if t.get("not_enabled"))
     partial = sum(1 for t in targets if t["status"] == "partial") + not_enabled
     skipped = sum(1 for t in targets if t["status"].startswith("skipped"))
-    log("aws collected", team=team_id, targets=len(targets), ok=ok, partial=partial, not_enabled=not_enabled or None,
-        **extra, **(log_extra or {}), duration_s=int(time.monotonic() - started))
+    if not quiet:
+        log("aws collected", team=team_id, targets=len(targets), ok=ok, partial=partial,
+            not_enabled=not_enabled or None, **extra, **(log_extra or {}), duration_s=int(time.monotonic() - started))
     return {"targets": targets, **extra,
             "counts": {"total": len(targets), "ok": ok, "partial": partial, "failed": len(targets) - ok - partial - skipped,
-                       "skipped": skipped, "not_enabled": not_enabled},
+                       "skipped": skipped, **({"not_enabled": not_enabled} if not_enabled else {})},
             "duration_s": int(time.monotonic() - started)}
 
