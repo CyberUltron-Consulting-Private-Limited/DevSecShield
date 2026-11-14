@@ -34,9 +34,15 @@ assert.deepEqual(installedClaim, [], "host agents run on the servers they read")
 assert.ok(page.includes("Collection is read-only, and nothing is installed on the servers it reads unless you deploy host agents."))
 assert.ok(read("SidebarSources.tsx").includes("nothing is installed on the servers it reads unless you deploy host agents"))
 
-// 3. Certificate domains: nothing reads them (no Certificate Transparency client)
+// 3. Certificate domains saved in the settings: nothing reads them. The form shows only while this server has
+// Certificate Transparency discovery off (CtDiscovery replaces it when on); creating the CT source moves them into it.
 assert.ok(!cloud.includes("Saved for the certificate collector"), "there is no certificate collector")
-assert.ok(cloud.includes('hint="Saved, but not read yet: ZeroShield does not query Certificate Transparency logs yet."'))
+assert.ok(!cloud.includes("ZeroShield does not query Certificate Transparency logs yet"), "CT discovery exists (CBOM_CT_DISCOVERY)")
+assert.ok(cloud.includes('hint="Saved, but not read: Certificate Transparency discovery is not turned on for this server. When it is, these domains move into the Certificate Transparency source."'))
+assert.ok(/settings\.ct_discovery_enabled \? \(\s*<CtDiscovery[\s\S]{0,300}?\) : \(\s*<CertDomains /.test(cloud), "the saved-domains form shows only while CT discovery is off")
+assert.ok(cloud.includes('kind: "ct_logs", name: "Certificate Transparency", config, import_saved_domains: true'), "creating the CT source imports them")
+const sourcesRouter = fs.readFileSync(path.join(repo, "backend/routers/cbom_sources.py"), "utf8")
+assert.ok(sourcesRouter.includes("settings.cert_domains = []") && sourcesRouter.includes('changed_fields=["cert_domains:moved_to_source"]'), "and moves them")
 assert.ok(review.includes('pluralize(overview.settings.cert_domains, "certificate domain")} (not read yet)'),
   "Review & Run lists the domains, but not as coverage")
 
@@ -55,7 +61,11 @@ assert.ok(!cloud.includes("A read-only API token from your Okta admin console.")
 assert.ok(!cloud.includes("read-only access to clients and keys"))
 assert.ok(cloud.includes('detail: "public metadata; no permission needed"'))
 assert.ok(cloud.includes('const IDP_HOW = "ZeroShield reads the signing keys from your identity provider\'s public metadata only; a secret is not used yet.";'))
-// ADFS: the Windows collector reads machine certificate stores, nothing ADFS-specific
+// ADFS: the Windows collector reads certificate stores and TLS settings (SCHANNEL), nothing ADFS-specific
+const winrm = fs.readFileSync(path.join(repo, "scan_node/zs_scan_node/collectors/windows_winrm.py"), "utf8")
+assert.ok(winrm.includes("Cert:\\\\LocalMachine\\\\My") && winrm.includes("SCHANNEL") && !/adfs/i.test(winrm), "what the Windows servers are read for")
+assert.ok(cloud.includes("Windows servers you add are read for their certificate stores and TLS settings, nothing ADFS-specific"))
+assert.ok(!cloud.includes("read for their machine certificates only"), "they are read for TLS settings too")
 assert.ok(!cloud.includes("read from the Windows servers you add on the Servers tab"))
 assert.ok(cloud.includes("/FederationMetadata/2007-06/FederationMetadata.xml"), "ADFS is read through its metadata URL")
 

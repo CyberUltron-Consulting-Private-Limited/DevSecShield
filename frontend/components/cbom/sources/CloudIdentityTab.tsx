@@ -697,7 +697,7 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
                   <span className="ml-1.5 text-xs text-zinc-500 break-words">
                     add its SAML metadata URL below (
                     <span className="font-mono break-all">https://your-adfs/FederationMetadata/2007-06/FederationMetadata.xml</span>); the
-                    Windows servers you add are read for their machine certificates only
+                    Windows servers you add are read for their certificate stores and TLS settings, nothing ADFS-specific
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -1688,7 +1688,7 @@ function CertDomains({ teamId, settings }: { teamId: number; settings: CbomSourc
       label="Domains to search in Certificate Transparency logs"
       htmlFor="cert-domain-input"
       error={error}
-      hint="Saved, but not read yet: ZeroShield does not query Certificate Transparency logs yet."
+      hint="Saved, but not read: Certificate Transparency discovery is not turned on for this server. When it is, these domains move into the Certificate Transparency source."
     >
       <div className="space-y-2">
         {settings.cert_domains.length > 0 ? (

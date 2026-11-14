@@ -268,7 +268,9 @@ def test_k8s_reads_text_matches_collector():
 
 # ----------------------------------------------------------------------------- certificate domains
 def test_cert_domains_stated_unsupported():
-    """Nothing reads the certificate domains (no Certificate Transparency client), so the form and Review & Run say so."""
+    """Nothing reads the certificate domains saved in the settings (the Certificate Transparency collector reads its
+    ct_logs source's own domains; creating that source moves the saved ones into it), so the form and Review & Run
+    say they are not read."""
     allowed = {"new_models.py", "utilities/cbom_sources/schemas.py", "utilities/cbom_sources/serialize.py",
                "routers/cbom_sources.py"}  # stored, validated, returned, counted: never collected
     readers = []
@@ -285,6 +287,7 @@ def test_cert_domains_stated_unsupported():
                      r'error=\{error\}\s+hint="([^"]*)"', cloud)
     assert hint, "the certificate domains field has a hint"
     assert "not read" in hint.group(1) and "certificate collector" not in hint.group(1), hint.group(1)
+    assert "does not query Certificate Transparency" not in hint.group(1), "CT discovery exists; say it is off here"
     review = (_UI / "ReviewRunTab.tsx").read_text(encoding="utf-8")
     assert '"certificate domain")} (not read yet)' in review, "Review & Run must not count domains as coverage"
 
