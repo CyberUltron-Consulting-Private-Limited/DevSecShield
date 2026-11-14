@@ -36,7 +36,7 @@ import {
 import AppliancesSection from "./AppliancesSection";
 import { cbomSourcesKeys } from "./keys";
 import { MetadataFields, metadataConfig, metadataFrom, type SourceMetadata } from "./SourceMetadata";
-import { exclusionSaveError, hostnameError, rangeError, storedExclusionIssue, teamExclusionError } from "./teamNeverScan";
+import { exclusionSaveError, hostnameError, RANGE_HINT, rangeError, storedExclusionIssue, teamExclusionError } from "./teamNeverScan";
 import { sampleDetail, sweepTotals, totalsLine } from "./networkEstimate";
 import {
   addressProgress,
@@ -634,8 +634,8 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
                               <TableRow className="hover:bg-transparent" data-testid="network-exclusion-hostname">
                                 <TableCell colSpan={3} className="pt-0 whitespace-normal">
                                   <div id={noteId} className="space-y-1">
-                                    <StatusBadge tone="red" title={issue}>Host name: not allowed here</StatusBadge>
-                                    <p className="text-xs text-red-600 dark:text-red-400">{issue}</p>
+                                    <StatusBadge tone="amber" title={issue}>Host name: resolved on the scan node</StatusBadge>
+                                    <p className="text-xs text-zinc-600 dark:text-zinc-400">{issue}</p>
                                   </div>
                                 </TableCell>
                               </TableRow>
@@ -654,7 +654,7 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
                   className="font-mono text-sm"
                   value={exclusion.cidr}
                   maxLength={64}
-                  placeholder="10.20.99.0/24"
+                  placeholder="10.20.99.0/24 or shop.example.internal"
                   onChange={(e) => setExclusion({ ...exclusion, cidr: e.target.value })}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
@@ -686,10 +686,10 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
               <p className="text-xs text-zinc-500">
                 This list always wins. The node refuses these addresses even if a job asks for them, in every job of
                 this team: a server, database, registry or Kubernetes API whose name resolves to a listed address is
-                skipped as a whole, and ranges are checked one address at a time. This list takes addresses and
-                ranges. A hostname listed in a server source&apos;s own Never scan field also covers every address
-                it resolves to from the scan node (until it resolves there, that source scans nothing; localhost and
-                the other loopback names cover only 127.0.0.0/8 and ::1).
+                skipped as a whole, and ranges are checked one address at a time. This list takes addresses, ranges
+                and hostnames. A listed hostname covers every address it resolves to from the scan node, in range
+                sweeps too; until it resolves there, the node scans nothing for this team (localhost and the other
+                loopback names cover only 127.0.0.0/8 and ::1 and are never looked up).
               </p>
             </Section>
 
@@ -857,7 +857,10 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
                   </Field>
                 ))}
               </div>
-              <p className="text-xs text-zinc-500">Lower them for fragile or busy networks.</p>
+              <p className="text-xs text-zinc-500" data-testid="network-rate-note">
+                Lower them for fragile or busy networks. Connections/s is a hard cap: the node spaces new connections
+                evenly and never starts more than this many in any one second, across all its jobs (no bursts).
+              </p>
             </Section>
 
             <Section title="Tell your SOC" badge={unsaved("soc")}>
@@ -1160,7 +1163,7 @@ function AddRangeForm({
   return (
     <div className="space-y-4 rounded-lg border border-zinc-200 dark:border-zinc-800 p-4" data-testid="network-range-form">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Field label="Range" htmlFor="range-cidr" required error={errors.cidr} hint="A /16 or smaller, one IP, or a-b">
+        <Field label="Range" htmlFor="range-cidr" required error={errors.cidr} hint={RANGE_HINT}>
           <Input
             id="range-cidr"
             data-testid="network-range-cidr"

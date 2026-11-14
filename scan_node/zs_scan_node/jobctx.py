@@ -184,6 +184,17 @@ class JobContext:
     def time_left(self) -> float:
         return self.deadline - time.monotonic()
 
+    def window_closes(self, at_epoch: float) -> bool:
+        """The scan window ends at ``at_epoch`` (wall clock, seconds; in the past = closed now), as ZeroShield said in a
+        heartbeat (N4: the customer closed the window while the job ran).  Moves the job's deadline earlier, never
+        later; the remaining targets are then ``skipped_window`` at the next connection.  True when it moved."""
+        at = time.monotonic() + (float(at_epoch) - time.time())
+        if at >= self.deadline:
+            return False
+        self.deadline_reason = "skipped_window"  # set first: a reader that sees the new deadline sees this reason
+        self.deadline = at
+        return True
+
     def should_stop(self, network: bool = False) -> str | None:
         """None to continue, else the skip status for the remaining targets."""
         if self.cancel.is_set():
@@ -324,6 +335,11 @@ class JobContext:
         if summary is None:
             summary = (f"{counts['ok']} of {counts['total']} targets collected, {counts['failed']} failed, "
                        f"{counts['skipped']} skipped; {self.accepted} assets")
+        window = sum(1 for o in counted if o.status == "skipped_window")
+        if window:  # N4: say why the rest was not read, where the UI shows the job
+            note = (f"the scan window closed: {window} target{'s were' if window > 1 else ' was'} not scanned; what "
+                    "was read before is kept")
+            summary = f"{summary[:500 - len(note) - 2]}; {note}"
         held = self.never_scan.held_names() if hasattr(self.never_scan, "held_names") else []
         if held:  # listed host names the node could not resolve held targets back: say so where the UI looks
             names = ", ".join(held[:5]) + (f" and {len(held) - 5} more" if len(held) > 5 else "")
@@ -341,6 +357,8 @@ class JobContext:
         }
         if held:
             out["never_scan_unresolved"] = held[:100]
+        if window:
+            out["stopped"] = "window_closed"
         if self.kind == "test_connection":
             out["samples"] = self.scrubber.obj(self.samples)
         return out
