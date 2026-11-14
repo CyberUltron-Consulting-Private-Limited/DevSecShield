@@ -133,7 +133,7 @@ export default function RunTicketingTab({ teamId, runId }: { teamId: number; run
     placeholderData: keepPreviousData,
   });
 
-  // findings only (an API without view=findings lists every asset: clean inventory is filtered here, never ticketed)
+  // the API's findings view (view=findings); isTicketable is the same rule, kept as a guard for the selection
   const items = useMemo(() => (assetsQuery.data?.items ?? []).filter(isTicketable), [assetsQuery.data]);
   const selectable = useMemo(() => selectableIds(items), [items]);
   const state = ticketingState(ticketingQuery.data);
@@ -175,10 +175,8 @@ export default function RunTicketingTab({ teamId, runId }: { teamId: number; run
   if (assetsQuery.isError) return <ErrorBlock error={assetsQuery.error} onRetry={() => void assetsQuery.refetch()} />;
   const ticketing = ticketingQuery.data!;
   const data = assetsQuery.data!;
-  // findings_total comes with the findings view; an older API counts every asset, and the label says so
-  const countsFindings = typeof data.findings_total === "number";
-  const total = countsFindings ? data.findings_total! : data.total;
-  const noun = countsFindings ? (total === 1 ? "finding" : "findings") : (total === 1 ? "asset" : "assets");
+  const total = data.findings_total; // the API's count of the run's findings (Rule P: never recounted here)
+  const noun = total === 1 ? "finding" : "findings";
   const pages = Math.max(1, Math.ceil(data.total / PAGE_SIZE));
 
   return (

@@ -41,6 +41,7 @@ from backend.new_models import (
     Scan,
     Team,
 )
+from backend.utilities.cbom_sources import agility as AGILITY
 from backend.utilities.cbom_sources import agents as AG
 from backend.utilities.cbom_sources import jobs as J
 from backend.utilities.cbom_sources import targets as T
@@ -72,6 +73,7 @@ from backend.utilities.cbom_sources import posture as POSTURE
 from backend.utilities.cbom_sources import qgrade as QGRADE
 from backend.utilities.cbom_sources import run_tickets as RUN_TICKETS
 from backend.utilities.cbom_sources import runs as RUNS
+from backend.utilities.cbom_sources import run_assets as RUN_ASSETS
 from backend.utilities.cbom_sources import schedules as SCHED
 from backend.utilities.cbom_sources.classify import ASSET_TYPES
 from backend.utilities.cbom_sources.kinds import (KINDS, METADATA_FIELDS, credential_target_problem, ct_discovery_enabled,
@@ -776,6 +778,7 @@ def _remove_source(session: Session, source: CbomCollectionSource, team_id: int,
                       "source_uid": (job.params or {}).get("source_uid") or source.source_uid}
         job.source_id = None
         session.add(job)
+        job.params = {**job.params, **AGILITY.deleted_source_params(source)}  # CB-24: old runs keep their class
     # collected assets stay with their run; only the link to the deleted source goes
     session.exec(update(CbomCollectedAsset).where(CbomCollectedAsset.source_id == source.id).values(source_id=None))
     session.flush()
@@ -1414,9 +1417,11 @@ async def get_run(team_id: TeamId, run_id: ObjectId, Authorization: AuthHeader =
 
 
 def _run_assets(engine, team_id: int, run_id: int, params: dict) -> dict:
+    view, status = params.pop("view", "all"), params.pop("status", None)
     with Session(engine) as session:
         run = _get_owned(session, CbomCollectionRun, run_id, team_id, "Run")
-        out = INV.list_assets(session, team_id=team_id, run_id=run.id, **params)
+        # CB-38: the inventory page plus the unified results table's fields (view, status, key, wave, risk score)
+        out = RUN_ASSETS.list_run_assets(session, team_id=team_id, run=run, params=params, view=view, status=status)
         RUN_TICKETS.add_ticket_fields(session, team_id, run, out["items"])  # CB-38 PR-4: ticket_key, ticket_url
         out["run"] = public_run(run)
         return out
@@ -1438,9 +1443,11 @@ async def run_assets(team_id: TeamId, run_id: ObjectId,
                      q: str | None = Query(default=None, max_length=100),
                      source_id: int | None = Query(default=None, ge=1, le=2_147_483_647),
                      page: int = Query(default=1, ge=1, le=10_000), page_size: int = Query(default=50, ge=1, le=200),
+                     view: str = Query(default="all", pattern="^(all|findings)$"),
+                     status: str | None = Query(default=None, pattern="^(not_started|in_progress|fixed|ignored)$"),
                      Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
-    params = _asset_params(type, impact, quantum, q, source_id, page, page_size)
+    params = {**_asset_params(type, impact, quantum, q, source_id, page, page_size), "view": view, "status": status}
     return _ok(await _run("run assets", team_id, _run_assets, engine, team_id, run_id, params))
 
 
@@ -1541,6 +1548,13 @@ async def grade_model(team_id: TeamId, Authorization: AuthHeader = None):
 async def asset_detail(team_id: TeamId, asset_id: ObjectId, Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
     return _ok(await _run("asset detail", team_id, _asset_detail, engine, team_id, asset_id))
+
+
+@router.get(BASE + "/agility-model", dependencies=READ,
+            summary="Crypto-agility fix classes, their order and text, and the rules that decide them (CB-24)")
+async def agility_model(team_id: TeamId, Authorization: AuthHeader = None):
+    await authorize(team_id, Authorization)
+    return _ok(AGILITY.model())
 
 
 def _job_assets(engine, team_id: int, job_id: int, params: dict) -> dict:

@@ -398,17 +398,24 @@ def create_tickets(engine, team_id: int, user_id: int, run_id: int, body: Ticket
 
 # ----------------------------------------------------------------------------- list fields
 def add_ticket_fields(session: Session, team_id: int, run: CbomCollectionRun, items: list[dict[str, Any]]) -> None:
-    """``ticket_key`` / ``ticket_url`` on each run asset list item (None when the asset has no ticket). Uses the item's
-    ``asset_key`` when the list already carries it, else the stable key of the page's assets."""
-    missing = [i["id"] for i in items if not i.get("asset_key") and i.get("type") != "coverage"]
-    keys = {i["asset_id"]: i["asset_key"] for i in WAVES.node_items(session, team_id, run, asset_ids=missing)} \
-        if missing else {}
+    """``ticket_key`` / ``ticket_url`` on each run asset list item (None when the asset has no ticket). Reads the
+    assignment the enriched list already carries (``item["wave"]["assignment"]``); items without one are looked up by
+    their ``asset_key``, and items without a key (an older list) by the stable key of the page's assets."""
+    by_id: dict[int, str] = {}
     for item in items:
-        if item.get("asset_key"):
-            keys[item["id"]] = item["asset_key"]
-    found = WAVES._assignments(session, team_id, set(keys.values()))
+        assignment = (item.get("wave") or {}).get("assignment") if isinstance(item.get("wave"), dict) else None
+        if isinstance(assignment, dict) and "ticket_key" in assignment:
+            item["ticket_key"], item["ticket_url"] = assignment.get("ticket_key"), assignment.get("ticket_url")
+        elif item.get("asset_key"):
+            by_id[item["id"]] = item["asset_key"]
+    missing = [i["id"] for i in items if "ticket_key" not in i and not i.get("asset_key") and i.get("type") != "coverage"]
+    if missing:
+        by_id.update({i["asset_id"]: i["asset_key"] for i in WAVES.node_items(session, team_id, run, asset_ids=missing)})
+    found = WAVES._assignments(session, team_id, set(by_id.values())) if by_id else {}
     for item in items:
-        a = found.get(keys.get(item["id"]) or "")
+        if "ticket_key" in item:
+            continue
+        a = found.get(by_id.get(item["id"]) or "")
         item["ticket_key"] = a.ticket_key if a is not None else None
         item["ticket_url"] = a.ticket_url if a is not None else None
 

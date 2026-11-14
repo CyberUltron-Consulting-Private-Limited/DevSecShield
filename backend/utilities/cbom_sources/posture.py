@@ -25,6 +25,7 @@ from typing import Any
 from sqlmodel import Session, select
 
 from backend.new_models import CbomCollectedAsset, CbomCollectionJob, CbomCollectionSource, CbomScanNode
+from backend.utilities.cbom_sources import agility as AGILITY
 from backend.utilities.cbom_sources import crypto_kb
 from backend.utilities.cbom_sources.cbom_metrics import quantum_readiness_pct
 from backend.utilities.cbom_sources.classify import pq_kex_evidence
@@ -149,6 +150,7 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
     sources = {s.id: s for s in session.exec(select(CbomCollectionSource).where(
         CbomCollectionSource.team_id == team_id)).all()}
     job_ctx = _job_context(session, team_id, run_id, sources)
+    agility = AGILITY.RunAgility(session, team_id, run_id, sources)  # CB-24: fix class per asset, at view time
     grades = RunGrades(session, team_id=team_id, run_id=run_id, risk_model=risk_model)  # quantum risk grade (CB-19)
     exposure_counts: Counter[str] = Counter()
     classes: Counter[str] = Counter()
@@ -170,6 +172,7 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
             grades.add(row, a_codes)
             continue
         classes[pqc_class(a_type, qv, a_codes, facts or {})] += 1
+        agility.add(row, a_codes)
         if impact:
             impacts[impact] += 1
         codes.update(a_codes)
@@ -218,6 +221,7 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
         "exposure_factors": dict(EXPOSURE_FACTOR),
         "compliance": [{"framework": fw, "clauses": items} for fw, items in sorted(frameworks.items())],
         "kb_version": crypto_kb.version(),
+        **agility.result(),
         "pqc_context": {k: v for k, v in crypto_kb.pqc_context().items() if k in ("mosca", "expert_survey",
                                                                                  "nist_ir_8547", "z_note")},
         **grades.result(),
@@ -296,6 +300,7 @@ def asset_detail(row: CbomCollectedAsset, source: CbomCollectionSource | None, *
         "exposure": exposure,
         "exposure_basis": exposure_basis,
         "exposure_factor": EXPOSURE_FACTOR[exposure],
+        "agility": AGILITY.detail(row.asset_type, codes, facts, AGILITY.node_context(job, source), row.location),
         "facts": facts,
         "details": [{**d, "impact": verdict["impacts"].get(d["code"]) or d["impact"]}
                     for d in crypto_kb.render("node", ordered, context=ctx, evidence=view["finding"] or "", texts=texts,

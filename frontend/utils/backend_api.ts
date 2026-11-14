@@ -4981,7 +4981,8 @@ export type CbomRunTicketAsset = CbomAsset & {
 
 export interface CbomRunTicketAssetPage extends Omit<CbomAssetPage, "items"> {
     items: CbomRunTicketAsset[]
-    findings_total?: number
+    /** The run's findings (judged today); with ``view=findings`` ``total`` is the same count. */
+    findings_total: number
 }
 
 /** The team's Jira for CBOM Sources: never a credential, only whether one is connected. */
@@ -5011,7 +5012,7 @@ export interface CbomRunTicketsResult {
     deferred?: { asset_id: number; asset_key?: string | null; reason: string }[]
 }
 
-/** Findings of a run with their tickets (``view=findings`` is ignored by an older API, which lists every asset). */
+/** Findings of a run with their tickets (``view=findings``: not coverage rows, with an impact). */
 export const getCbomRunTicketAssets = async (team_id: number, run_id: number, page = 1, page_size = 100): Promise<CbomRunTicketAssetPage> => {
     const response = await api.get(`${cbomSourcesBase(team_id)}/runs/${run_id}/assets`, { params: { view: "findings", page, page_size } })
     return response.data as CbomRunTicketAssetPage
