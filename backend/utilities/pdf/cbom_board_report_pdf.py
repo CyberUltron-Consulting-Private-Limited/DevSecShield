@@ -62,6 +62,7 @@ from backend.utilities.dashboard.cbom_team_rollup import (
     posture_active,
 )
 from backend.utilities.pdf import cbom_deliverable_text as authored
+from backend.utilities.pdf.cbom_collected_compliance import collected_clauses
 from backend.utilities.pdf.cbom_deliverable_common import (
     Styles,
     build_document,
@@ -140,6 +141,16 @@ EXPOSURE_LEGACY_NOTE = (
     "({legacy} legacy excluded). Re-scan the legacy-format sources to include them."
 )
 EXPOSURE_POOLED = "{pooled} of {sources} sources pooled ({legacy} legacy excluded)."
+EXPOSURE_COLLECTED_LEAD = (
+    "Collected infrastructure (CBOM Sources): the regulatory clauses that the findings of each "
+    "source's latest collection touch, with the number of assets concerned (knowledge-base "
+    "mapping, the same as the run's compliance view; a clause listed here is not a verdict)."
+)
+PQC_COLLECTED_ONLY = (
+    "{count} quantum-vulnerable public-key occurrences were found on certificates, endpoints and "
+    "keys (the collected infrastructure included), none in the algorithm inventory, so there is "
+    "no target family to group them by. The PQC Migration Roadmap lists each with its plan."
+)
 REMEDIATION_NOTE = (
     "Ordered by the highest impact among the affected assets, then by the number of assets."
 )
@@ -169,7 +180,10 @@ _ASSET_TYPE_LABEL = {
     ASSET_MATERIAL: "Key or secret material",
     ASSET_OTHER: "Other",
 }
-_WEAK_CERT_CODES = frozenset({"WEAK_CERTIFICATE_SIGNATURE", "WEAK_CERTIFICATE_KEY"})
+# code scans (aibom) and CBOM Sources collections (cbom_sources.classify) name the same certificate findings differently
+_WEAK_CERT_CODES = frozenset({"WEAK_CERTIFICATE_SIGNATURE", "WEAK_CERTIFICATE_KEY", "SIG_MD5", "SIG_SHA1",
+                              "RSA_LT_1024", "RSA_LT_2048", "EC_LT_224"})
+_SELF_SIGNED_LEAF_CODES = frozenset({"SELF_SIGNED_LEAF", "CERT_SELF_SIGNED"})  # the collected code is leaf-only too
 _RANK = {level: index for index, level in enumerate(IMPACT_LEVELS)}
 _UNRANKED = len(IMPACT_LEVELS)
 # "1 sources" -> "1 source": the authored governance templates are written in the plural
@@ -375,7 +389,7 @@ def certificate_posture(view: TeamCbomView) -> CertPosture:
         valid=bands[VALID],
         unknown=bands[UNKNOWN],
         weak=sum(1 for c in certs if _WEAK_CERT_CODES.intersection(c.finding_codes)),
-        self_signed_leaf=sum(1 for c in certs if "SELF_SIGNED_LEAF" in c.finding_codes),
+        self_signed_leaf=sum(1 for c in certs if _SELF_SIGNED_LEAF_CODES.intersection(c.finding_codes)),
         material=len(material),
         material_flagged=sum(1 for a in material if a.finding_codes),
     )
@@ -811,7 +825,10 @@ def _exposure_section(view: TeamCbomView, styles: Styles):
         "sources": len(view.sources),
         "legacy": view.compliance_legacy_excluded,
     }
+    collected = _collected_exposure(view, styles)
     if not view.frameworks:
+        if collected:
+            return [*story, *collected]
         return [*story, _para(EXPOSURE_LEGACY_NOTE.format(**basis), styles, "muted")]
     headers = [
         "Framework",
@@ -832,6 +849,19 @@ def _exposure_section(view: TeamCbomView, styles: Styles):
         _para(authored.RBI_MAPPING_NOTE, styles, "muted"),
         _gap(3),
         _para(authored.METHOD_COVERAGE, styles, "muted"),
+        *([_gap(6), *collected] if collected else []),
+    ]
+
+
+def _collected_exposure(view: TeamCbomView, styles: Styles) -> list[Flowable]:
+    rows = collected_clauses(view)
+    if not rows:
+        return []
+    body = [[f"{r.framework} {r.clause}", str(r.assets), ", ".join(r.codes)] for r in rows]
+    return [
+        _para(EXPOSURE_COLLECTED_LEAD, styles),
+        _gap(3),
+        dense_table(["Framework and clause", "Assets", "Finding codes"], body, [300, 50, 190]),
     ]
 
 
@@ -877,6 +907,8 @@ def _pqc_section(view: TeamCbomView, styles: Styles):
                     [380, 80, 80],
                 ),
             ]
+        elif view.pqc_vulnerable:
+            story.append(_para(PQC_COLLECTED_ONLY.format(count=view.pqc_vulnerable), styles))
         else:
             story.append(_para(authored.PQC_NO_VULNERABLE_TEXT, styles))
     timeline = [
