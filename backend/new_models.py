@@ -4,7 +4,7 @@ from typing import Dict, Literal
 from sqlmodel import JSON, Column, DateTime, Field, SQLModel, String, Relationship
 from sqlalchemy import Text, UniqueConstraint
 from sqlalchemy.types import TypeDecorator as _SaTypeDecorator
-from sqlalchemy import Index as _SaIndex, func as _sa_func, text as _sa_text
+from sqlalchemy import BigInteger as _SaBigInteger, Index as _SaIndex, func as _sa_func, text as _sa_text
 scan_types = Literal["sast", "llm", "mcp" , "iac" , "leakage" , "sbom_sca" , "agent_discovery", "dast", "cbom", "ai_bom"]
 
 
@@ -953,3 +953,14 @@ class IntegrationDelivery(SQLModel, table=True):
     last_result: str | None = Field(default=None, max_length=255)  # status code and a short reason, never a body
     external_ref: str | None = Field(default=None, max_length=64)  # e.g. the ServiceNow record number
     created_at: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime, index=True)
+
+
+class CbomOpsCounter(SQLModel, table=True):
+    """CB-31 (GAP-MATRIX X1): platform-wide operational counters, served as Prometheus counters by the admin-only
+    ``GET /cbom/ops/metrics`` (``ops_metrics``). Each is incremented in the transaction of the event it counts (a
+    lease the reaper expired, assets the ingest refused), so every API and worker process adds to the same number
+    and a rolled-back event counts nothing. Monotonic: never reset, never pruned."""
+    __tablename__ = "cbomopscounter"
+    name: str = Field(primary_key=True, max_length=64)
+    value: int = Field(default=0, sa_column=Column(_SaBigInteger, nullable=False, server_default="0"))
+    updated_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)

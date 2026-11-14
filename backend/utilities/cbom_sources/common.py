@@ -5,6 +5,7 @@ import datetime as _dt
 import hashlib
 import re
 import secrets
+import sys
 from typing import Any, Iterable
 
 from rich.console import Console
@@ -77,10 +78,44 @@ def clean_text(value: Any, limit: int) -> str | None:
     return text[:limit] if text else None
 
 
+FRAMES_CAP = 20  # frames per line: the innermost ones (where it went wrong), "…" first when cut
+
+
+def _frame_path(filename: str) -> str:
+    """A frame's file, short and stable: repo-relative under backend/ (or scan_node/), the package path under
+    site-packages, else the file name."""
+    path = filename.replace("\\", "/")
+    for marker in ("/site-packages/", "/dist-packages/"):
+        if marker in path:
+            return path.rsplit(marker, 1)[1]
+    for root in ("/backend/", "/scan_node/"):
+        if root in path:
+            return root.strip("/") + "/" + path.rsplit(root, 1)[1]
+    return path.rsplit("/", 1)[-1]
+
+
+def frames(exc: BaseException | None) -> str | None:
+    """CB-31 (X3, R4 OBS-7): an exception's traceback as ``file:line:function`` frames, outermost first, joined by
+    commas.  Never the exception's message and never a frame's locals: either can hold a secret.  The root cause of a
+    500 can be found from its ref's log line without them."""
+    import traceback
+
+    tb = exc.__traceback__ if exc is not None else None
+    if tb is None:
+        return None
+    listed = [f"{_frame_path(f.filename)}:{f.lineno}:{f.name}" for f in traceback.extract_tb(tb)]
+    listed = [text.replace(" ", "_").replace(",", "_") for text in listed]
+    if len(listed) > FRAMES_CAP:
+        listed = ["…"] + listed[-FRAMES_CAP:]
+    return ",".join(listed) or None
+
+
 def log(action: str, **fields: Any) -> None:
     """One greppable line per state change.  Only ids, enums and numbers belong in ``fields``.  The line starts with
     an ISO UTC timestamp and, inside a request, ends with that request's ``request_id`` (the X-ZS-Request-Id the
     response carries) and, when the caller sent a well-formed one, its ``client_request_id``."""
+    if "ref" in fields and "frames" not in fields:  # a ref'd failure logged while its exception is handled (X3)
+        fields["frames"] = frames(sys.exc_info()[1])
     parts = [utc_timestamp(), f"cbom sources {action}"]
     for key, value in fields.items():
         if value is None:
@@ -99,7 +134,7 @@ def log(action: str, **fields: Any) -> None:
 
 
 def log_failure(what: str, ref: str, exc: BaseException, **fields: Any) -> None:
-    log(f"{what} FAILED", ref=ref, error=type(exc).__name__, **fields)
+    log(f"{what} FAILED", ref=ref, error=type(exc).__name__, frames=frames(exc), **fields)
 
 
 def audit(
