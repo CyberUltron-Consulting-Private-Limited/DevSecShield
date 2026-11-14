@@ -117,10 +117,12 @@ def _posture(engine, run_id):
 
 
 # ----------------------------------------------------------------------------- B6 Rule P
-def test_b6_rule_p_figures_equal_run_posture_and_not_the_code_lane_adapter(api, world):
+def test_b6_rule_p_figures_equal_run_posture_and_not_the_code_lane_adapter(api, world, capsys):
     engine, _ = world
     _src, run, _claim, _hdr = _run_with(api, engine, PROBE)
     out = _results(api, run["id"])
+    logged = capsys.readouterr().out
+    assert re.search(rf"cbom run summary run={run['id']} team=1 rows=5 ms=\d+ digest=[0-9a-f]{{16}} cause=first", logged)
     p = _posture(engine, run["id"])
     card, dash = out["dashboard"]["card_data"], out["dashboard"]
     classes = p["pqc_classes"]
@@ -160,6 +162,18 @@ def test_b6_rule_p_figures_equal_run_posture_and_not_the_code_lane_adapter(api, 
         adapter = summarize_code_rows([CV.node_row(r, coll, shown(r)) for r in rows if r.asset_type != "coverage"])
     assert adapter.readiness_pct is not None and adapter.readiness_pct < p["pqc_readiness_pct"]
     assert card["quantum_readiness_score"] != adapter.readiness_pct
+
+    # strength: from posture's class and the KB, never node_row (review item 1)
+    strength = dash["strength_distribution"]
+    assert strength["quantum_safe"] == dash["quantum_readiness"]["quantum_safe"]
+    assert card["total_weak_algorithms"] == strength["weak"]
+    xts = next(r for r in dash["top_risks"] if r["algorithm_name"] == "XtsAes128")
+    assert (xts["crypto_strength"], xts["quantum_safe"], xts["pqc_class"]) == ("moderate", True, "grover-weakened")
+    assert strength["moderate"] == classes["grover-weakened"] == 1
+    hybrid_only = RR.strength("hybrid", [])
+    assert hybrid_only == "strong" and RR.strength("quantum-vulnerable", ["RSA_LT_2048"]) == "weak"
+    assert RR.strength("not-applicable", ["LIB_EOL"]) == "not-applicable"  # an EOL library is not a weak algorithm
+    assert RR.strength("quantum-safe", ["DISK_CBC"]) == "weak" and RR.strength("not-applicable", ["DB_MD5_DEFAULT"]) == "weak"
 
     # inventory: the EOL library is a weakness code, the coverage row is not an asset but is in provenance
     assert "LIB_EOL" in out["distributions"]["weakness"]
@@ -358,14 +372,64 @@ def test_empty_run_and_coverage_only_run(api, world):
     assert all(f["clauses"] == [] for f in out["compliance"]["frameworks"])
 
 
-def test_active_run_is_live_and_never_cached(api, world):
+def test_active_run_single_flight_and_ttl(api, world, monkeypatch):
     engine, _ = world
-    _src, run, _c, _h = _run_with(api, engine, PROBE[:3], finish=False)
-    one = _results(api, run["id"])
-    two = _results(api, run["id"])
-    assert one["state"] == two["state"] == "live" and one["run"]["status"] == "running"
-    assert RR.COMPUTE_COUNT[run["id"]] == 2
-    assert one["dashboard"]["card_data"]["total_crypto_assets"] == 3
+    _src, run, claim, hdr = _run_with(api, engine, PROBE[:3], finish=False)
+    rid = run["id"]
+    clock = [1000.0]
+    monkeypatch.setattr(RR, "_monotonic", lambda: clock[0])
+    real, gate = RR._compute, threading.Event()
+
+    def slow(*args, **kwargs):
+        gate.wait(5)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(RR, "_compute", slow)
+    got: list[dict] = []
+    threads = [threading.Thread(target=lambda: got.append(_results(api, rid))) for _ in range(3)]
+    for t in threads:
+        t.start()
+    time.sleep(0.3)
+    gate.set()
+    for t in threads:
+        t.join(10)
+    assert len(got) == 3 and RR.COMPUTE_COUNT[rid] == 1  # concurrent live requests share one compute
+    assert {g["state"] for g in got} == {"live"} and got[0]["run"]["status"] == "running"
+    assert got[0]["dashboard"]["card_data"]["total_crypto_assets"] == 3 and got[0]["stale"] is False
+    clock[0] += RR.LIVE_TTL_S - 1
+    _results(api, rid)
+    assert RR.COMPUTE_COUNT[rid] == 1  # reused inside the TTL while nothing changed
+    _post_assets(api, claim, hdr, PROBE[3:5], batch="b2")  # new assets: the digest changes
+    more = _results(api, rid)
+    assert RR.COMPUTE_COUNT[rid] == 2 and more["dashboard"]["card_data"]["total_crypto_assets"] == 5
+    clock[0] += RR.LIVE_TTL_S + 1
+    _results(api, rid)
+    assert RR.COMPUTE_COUNT[rid] == 3  # the TTL ran out
+
+
+def test_large_active_run_serves_last_summary_and_computes_in_background(api, world, monkeypatch):
+    engine, _ = world
+    _src, run, claim, hdr = _run_with(api, engine, PROBE[:3], finish=False)
+    rid = run["id"]
+    clock = [1000.0]
+    monkeypatch.setattr(RR, "_monotonic", lambda: clock[0])
+    monkeypatch.setattr(RR, "LIVE_MAX_ASSETS", 2)
+    first = _results(api, rid)
+    assert first["state"] == "computing" and first["computed_at"] is None and first["stale"] is False
+    assert first["dashboard"]["card_data"]["total_crypto_assets"] == 0  # the all-zero skeleton, every key present
+    RR.wait_background()
+    assert RR.COMPUTE_COUNT[rid] == 1
+    ready = _results(api, rid)  # the background result, inside the TTL
+    assert (ready["state"], ready["stale"]) == ("live", False) and ready["computed_at"]
+    assert ready["dashboard"]["card_data"]["total_crypto_assets"] == 3
+    _post_assets(api, claim, hdr, PROBE[3:5], batch="b2")
+    served = _results(api, rid)  # changed inputs: the last summary now, the next one in the background
+    assert (served["state"], served["stale"]) == ("live", True)
+    assert served["computed_at"] == ready["computed_at"] and served["dashboard"]["card_data"]["total_crypto_assets"] == 3
+    RR.wait_background()
+    assert RR.COMPUTE_COUNT[rid] == 2
+    fresh = _results(api, rid)
+    assert fresh["stale"] is False and fresh["dashboard"]["card_data"]["total_crypto_assets"] == 5
 
 
 def test_partial_and_cancelled_runs(api, world):
@@ -393,15 +457,29 @@ def test_partial_and_cancelled_runs(api, world):
 def test_orphaned_and_unmanaged_certificates_within_the_run(api, world):
     engine, _ = world
     web, old, pay = _cert("CN=web.bank.local"), _cert("CN=old.bank.local", not_after=PAST), _cert("CN=pay.svc")
+    inter = {**_cert("CN=Bank Issuing CA", issuer="CN=Bank Root"), "is_ca": True}
+    root = {**_cert("CN=Bank Root", issuer="CN=Bank Root"), "is_ca": True, "self_signed": True}
+    acm = {**_cert("CN=shop.bank.example"), "in_use": True,
+           "in_use_by": ["arn:aws:elasticloadbalancing:ap-south-1:111122223333:loadbalancer/app/shop/1"]}
     assets = [
-        # presented by an endpoint (chain) and stored on disk: not orphaned, not managed
+        {"type": "tls_endpoint", "target": "10.20.0.1", "location": "10.20.0.1:443",
+         "facts": {"protocols": ["TLSv1.3"], "group": "x25519"}},
+        # presented by the endpoint (chain leaf) and stored on disk: not orphaned, both unmanaged
         {"type": "certificate", "target": "10.20.0.1", "location": "10.20.0.1:443#chain[0]", "name": "web",
-         "algorithm": "RSA", "key_size": 2048, "facts": web},
+         "algorithm": "RSA", "key_size": 2048, "facts": {**web, "chain_index": 0}},
         {"type": "certificate", "target": "10.20.0.1", "location": "/etc/ssl/web.pem", "name": "web",
          "algorithm": "RSA", "key_size": 2048, "facts": web},
+        # chain intermediate and a trust-store root: never listed
+        {"type": "certificate", "target": "10.20.0.1", "location": "10.20.0.1:443#chain[1]", "name": "issuing",
+         "algorithm": "RSA", "key_size": 2048, "facts": {**inter, "chain_index": 1}},
+        {"type": "certificate", "target": "10.20.0.1", "location": "/etc/pki/ca-trust/source/anchors/root.pem",
+         "name": "root", "algorithm": "RSA", "key_size": 4096, "facts": root},
         # stored, presented by nothing in this run: orphaned (and unmanaged)
         {"type": "certificate", "target": "10.20.0.1", "location": "/etc/ssl/old.pem", "name": "old",
          "algorithm": "RSA", "key_size": 2048, "facts": old},
+        # ACM says it is in use (bound to a load balancer this run did not probe): not orphaned, managed
+        {"type": "certificate", "target": "aws", "location": "arn:aws:acm:ap-south-1:111122223333:certificate/abc",
+         "name": "shop", "algorithm": "RSA", "key_size": 2048, "facts": acm},
         # a cert-manager Certificate owns the pay/pay-tls secret: managed, but no endpoint presents it (orphaned)
         {"type": "k8s_certificate", "target": "10.20.0.2", "location": "pay/certificate/pay", "name": "pay/pay",
          "algorithm": "RSA", "key_size": 2048,
@@ -420,13 +498,108 @@ def test_orphaned_and_unmanaged_certificates_within_the_run(api, world):
     assert orphaned == {ids["/etc/ssl/old.pem"], ids["pay/secret/pay-tls"]}
     assert unmanaged == {ids["10.20.0.1:443#chain[0]"], ids["/etc/ssl/web.pem"], ids["/etc/ssl/old.pem"]}
     assert out["certificates_orphaned_total"] == 2 and out["certificates_unmanaged_total"] == 3
-    assert out["certificates_scope"] == "run"
+    assert out["certificates_basis"] == "endpoints_probed" and out["certificates_scope"] == "run"
+    assert out["certificates_labels"] == {"orphaned": "Not presented by any endpoint probed in this run",
+                                          "unmanaged": "No certificate manager seen for it in this run"}
     old_ref = next(r for r in out["certificates_orphaned"] if r["asset_id"] == ids["/etc/ssl/old.pem"])
     assert old_ref["subject"] == "CN=old.bank.local" and old_ref["source"] == "linux-dc"
     certs = out["distributions"]["certificates"]
     assert {c["asset_id"] for c in certs if c["expired"]} == {ids["/etc/ssl/old.pem"]}
+    assert certs[0]["asset_id"] == ids["/etc/ssl/old.pem"]  # soonest (already expired) first
     buckets = out["distributions"]["certificate_expiry"]
-    assert buckets["expired"] == 1 and sum(buckets.values()) == len(certs)
+    assert buckets["expired"] == 1 and sum(buckets.values()) == len(certs) == out["distributions"]["certificates_total"]
+
+
+def test_no_endpoints_probed_means_no_orphaned_list(api, world):
+    engine, _ = world
+    _src, run, _c, _h = _run_with(api, engine, [
+        {"type": "certificate", "target": "10.20.0.1", "location": "/etc/ssl/old.pem", "name": "old",
+         "algorithm": "RSA", "key_size": 2048, "facts": _cert("CN=old.bank.local")}])
+    out = _results(api, run["id"])
+    assert out["certificates_orphaned"] == [] and out["certificates_orphaned_total"] == 0
+    assert out["certificates_basis"] == "no_endpoints_probed"
+    assert out["certificates_unmanaged_total"] == 1  # unmanaged does not need an endpoint
+
+
+def _direct_run(engine, rid_hint: str, job_id: int, assets: list[dict]) -> int:
+    """A finished run written straight to the database (bulk seeding for size tests)."""
+    with Session(engine) as s:
+        job = s.get(CbomCollectionJob, job_id)
+        run = CbomCollectionRun(team_id=1, owner_user_id=1, client_request_id=rid_hint, status="done",
+                                finished_at=dt.datetime.utcnow())
+        s.add(run)
+        s.commit()
+        s.refresh(run)
+        for i, a in enumerate(assets):
+            s.add(CbomCollectedAsset(team_id=1, run_id=run.id, job_id=job_id, source_id=job.source_id, attempt=1,
+                                     asset_key=f"{rid_hint}-{i}", **a))
+        s.commit()
+        return int(run.id)
+
+
+def test_certificate_calendar_keeps_the_soonest_by_parsed_date(api, world):
+    engine, _ = world
+    _src, _run, claim, _h = _run_with(api, engine, PROBE[:1])
+    now = dt.datetime.utcnow()
+    assets = []
+    for i in range(2_399):
+        when = now + dt.timedelta(days=60 + i)
+        # two collector formats mixed: ISO and OpenSSL's "%b %d %H:%M:%S %Y GMT"
+        text = when.strftime("%Y-%m-%dT%H:%M:%SZ") if i % 2 else when.strftime("%b %d %H:%M:%S %Y GMT")
+        assets.append({"asset_type": "certificate", "cdx_type": "certificate", "target": "10.40.0.1",
+                       "location": f"/etc/ssl/c{i}.pem", "name": f"c{i}", "algorithm": "RSA", "key_size": 2048,
+                       "quantum_vulnerable": True, "finding_codes": ["QUANTUM_VULNERABLE"],
+                       "facts": {"subject": f"CN=c{i}", "issuer": "CN=CA", "not_after": text}})
+    soon = (now + dt.timedelta(days=3)).strftime("%b %d %H:%M:%S %Y GMT")
+    assets.append({"asset_type": "certificate", "cdx_type": "certificate", "target": "10.40.0.1",
+                   "location": "/etc/ssl/soon.pem", "name": "soon", "algorithm": "RSA", "key_size": 2048,
+                   "quantum_vulnerable": True, "finding_codes": ["QUANTUM_VULNERABLE"],
+                   "facts": {"subject": "CN=soon", "issuer": "CN=CA", "not_after": soon}})
+    rid = _direct_run(engine, "calendar-0001", claim["job"]["id"], assets)
+    out = _results(api, rid)["distributions"]
+    cal = out["certificates"]
+    assert len(cal) == RR.CALENDAR_CAP and out["certificates_total"] == 2_400 and out["certificates_truncated"] is True
+    assert cal[0]["name"] == "soon" and cal[0]["days_left"] in (2, 3) and cal[0]["near_expiry"] is True
+    assert [c["days_left"] for c in cal] == sorted(c["days_left"] for c in cal)
+    assert out["certificate_expiry"]["within_30_days"] == 1
+    assert all(c["not_valid_after"].endswith("Z") and "T" in c["not_valid_after"] for c in cal)  # normalised
+
+
+def test_embedded_lists_are_capped_with_totals_and_kb_text_once(api, world, monkeypatch):
+    engine, _ = world
+    monkeypatch.setattr(RR, "EMBED_CAP", 1)
+    _src, run, _c, _h = _run_with(api, engine, PROBE + [
+        {"type": "private_key", "target": "10.20.0.1", "location": "/etc/ssl/a.key", "algorithm": "RSA",
+         "key_size": 2048, "facts": {"format": "PEM"}},
+        {"type": "private_key", "target": "10.20.0.1", "location": "/etc/ssl/b.key", "algorithm": "RSA",
+         "key_size": 2048, "facts": {"format": "PEM"}}])
+    out = _results(api, run["id"])
+    pqc = out["distributions"]["pqc"]
+    vulnerable = _posture(engine, run["id"])["pqc_classes"]["quantum-vulnerable"]
+    assert len(pqc["migration"]) == 1 and pqc["migration_total"] == vulnerable > 1 and pqc["migration_truncated"]
+    assert pqc["nist_level_distribution"]["0"] == vulnerable  # Rule P
+    row = pqc["migration"][0]
+    assert row["impact"] == "High"  # the worst first
+    assert row["migration_code"] in pqc["kb"] and row["fix_code"] in pqc["kb"] and row["suggested_fix"] is None
+    assert pqc["kb"][row["migration_code"]]["standards"]
+    km = out["distributions"]
+    assert len(km["key_material"]) == 1 and km["key_material_total"] == 3 and km["key_material_truncated"] is True
+
+
+def test_cache_is_bounded_by_rows_and_evicts_lock_and_counter(api, world, monkeypatch):
+    engine, _ = world
+    monkeypatch.setattr(RR, "CACHE_ROWS", 6)
+    _src, run, claim, _h = _run_with(api, engine, PROBE)  # 5 assets
+    _results(api, run["id"])
+    assert run["id"] in RR._CACHE and run["id"] in RR._RUN_LOCKS and RR.COMPUTE_COUNT[run["id"]] == 1
+    other = _direct_run(engine, "budget-0001", claim["job"]["id"], [
+        {"asset_type": "kms_key", "cdx_type": "related-crypto-material", "target": "aws", "location": f"k{i}",
+         "algorithm": "AES", "quantum_vulnerable": False, "finding_codes": [], "facts": {}} for i in range(3)])
+    _results(api, other)
+    assert list(RR._CACHE) == [other]  # 5 + 3 rows > 6: the least recently used run left
+    assert run["id"] not in RR._RUN_LOCKS and run["id"] not in RR.COMPUTE_COUNT
+    _results(api, run["id"])
+    assert RR.COMPUTE_COUNT[run["id"]] == 1 and list(RR._CACHE) == [run["id"]]
 
 
 # ----------------------------------------------------------------------------- bench (5,000 assets)
@@ -477,8 +650,9 @@ def test_bench_5000_assets_under_budget(api, world, capsys, monkeypatch):
     warm_ms = (time.perf_counter() - started) * 1000
     assert out["dashboard"]["card_data"]["total_crypto_assets"] == 5_001
     assert out["dashboard"]["card_data"]["total_crypto_assets"] == _posture(engine, rid)["assets"]
-    assert len(out["distributions"]["certificates"]) == 1_000 and len(out["distributions"]["pqc"]["migration"]) == 2_000
+    assert len(out["distributions"]["certificates"]) == 1_000 and len(out["distributions"]["pqc"]["migration"]) == RR.EMBED_CAP
     assert out["distributions"]["pqc"]["migration_truncated"] is True
     with capsys.disabled():
-        print(f"\nBENCH run results 5001 assets: cold {cold_ms:.0f} ms, cached {warm_ms:.0f} ms")
+        print(f"\nBENCH run results 5001 assets: cold {cold_ms:.0f} ms, cached {warm_ms:.0f} ms, "
+              f"body {len(json.dumps(out)) / 1024:.0f} KiB")
     assert cold_ms < 10_000 and warm_ms < cold_ms
