@@ -8,7 +8,7 @@ import { useState } from "react";
 
 import { getCbomEvidence, getCbomSourcesSettings, listCbomSources } from "@/utils/backend_api";
 
-import { moscaText } from "./gradeInputs";
+import { moscaText } from "@/components/cbom/grade/inputs";
 import { cbomSourcesKeys } from "./keys";
 import { pluralize } from "./logic";
 import { MoscaEditor } from "./RunPosture";

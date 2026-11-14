@@ -113,13 +113,15 @@ export function nodeInstallNames(nodeName: string): { container: string; volume:
  * It mirrors the node's own rule (scan_node/zs_scan_node/agent.py: the stripped ZS_API_URL must start with
  * "https://", exactly, lower case; claim answers carry decrypted credentials), so the wizard warns exactly when the
  * node would exit. Port 80 is the plain-HTTP port: the node accepts the URL but its TLS client cannot connect there.
+ * A lower-case http:// URL is the one case the node's lab switch ZS_ALLOW_INSECURE_HTTP=1 accepts (CB-08): the
+ * warning says so, and the wizard shows its commands with the switch inside a "Test lab only" block.
  * The commands the wizard shows use this deployment's own API URL, so the customer is told before running one. */
 export function insecureApiWarning(apiUrl: string): string | null {
   const value = (apiUrl || "").trim()
   if (!value) return null
   if (!value.startsWith("https://")) {
-    if (/^http:\/\//i.test(value)) {
-      return `This ZeroShield deployment serves its API over plain HTTP (${value}). The scan node refuses http:// (it would receive your server credentials unencrypted) and will exit with "ZS_API_URL must be the ZeroShield API URL over https://". Ask your ZeroShield administrator to serve the API over https:// before you install a node.`
+    if (value.startsWith("http://")) {
+      return `This ZeroShield deployment serves its API over plain HTTP (${value}). The scan node refuses http:// unless it is started with ZS_ALLOW_INSECURE_HTTP=1, a test-lab switch that sends your server credentials unencrypted (the commands below carry it inside a "Test lab only" block). Ask your ZeroShield administrator to serve the API over https:// for real use.`
     }
     return `This ZeroShield deployment's API address (${value}) does not start with https:// (lower case), so the scan node refuses it and exits. Ask your ZeroShield administrator for the https:// address of the API.`
   }
@@ -135,9 +137,30 @@ export function insecureApiWarning(apiUrl: string): string | null {
   return null
 }
 
+/** True when the node's lab switch makes it accept this API URL: agent.py accepts http:// (exact, lower case, after
+ * strip) only with ZS_ALLOW_INSECURE_HTTP=1. Then the wizard shows a test-lab command carrying the switch (CB-08). */
+export function labSwitchHelps(apiUrl: string): boolean {
+  return (apiUrl || "").trim().startsWith("http://")
+}
+
+/** zs-ovf-env maps only zs.api_url, zs.registration_token, zs.https_proxy and zs.mode (deploy/node-images). */
+export const OVA_NO_INSECURE_SWITCH =
+  "The OVA has no plain-HTTP switch, so it cannot reach this deployment: use Docker or Helm for a plain-HTTP test lab, or serve the API over HTTPS."
+
+/** The outbound port a scan node uses to reach this API, or null when a node cannot use the address as it is (never
+ * port 80: that is the plain-HTTP port). */
+export function nodeApiPort(apiUrl: string): string | null {
+  if (insecureApiWarning(apiUrl)) return null
+  try {
+    return new URL(apiUrl.trim()).port || "443"
+  } catch {
+    return null
+  }
+}
+
 export function installCommand(
   method: DeployMethod,
-  opts: { token: string; apiUrl: string; proxyUrl?: string | null; image: string; name: string },
+  opts: { token: string; apiUrl: string; proxyUrl?: string | null; image: string; name: string; insecureHttp?: boolean },
 ): string {
   const proxy = opts.proxyUrl ? opts.proxyUrl : ""
   const names = nodeInstallNames(opts.name)
@@ -146,6 +169,7 @@ export function installCommand(
       `docker run -d --name ${names.container} --restart unless-stopped \\`,
       `  -e ZS_API_URL=${shQuote(opts.apiUrl)} \\`,
       `  -e ZS_REGISTRATION_TOKEN=${shQuote(opts.token)} \\`,
+      ...(opts.insecureHttp ? ["  -e ZS_ALLOW_INSECURE_HTTP=1 \\"] : []),
       ...(proxy ? [`  -e HTTPS_PROXY=${shQuote(proxy)} \\`] : []),
       `  -v ${names.volume}:/var/lib/zs-node \\`,
       `  ${opts.image}`,
@@ -158,6 +182,7 @@ export function installCommand(
       "  --namespace zs-cbom --create-namespace \\",
       `  --set image.repository=${shQuote(repo)} --set image.tag=${shQuote(tag)} \\`,
       `  --set apiUrl=${shQuote(opts.apiUrl)} \\`,
+      ...(opts.insecureHttp ? ["  --set allowInsecureHttp=true \\"] : []),
       `  --set registrationToken=${shQuote(opts.token)}${proxy ? " \\" : ""}`,
       ...(proxy ? [`  --set httpsProxy=${shQuote(proxy)}`] : []),
     ].join("\n")
@@ -171,6 +196,7 @@ export function installCommand(
       "    content: |",
       `      ZS_API_URL=${opts.apiUrl}`,
       `      ZS_REGISTRATION_TOKEN=${opts.token}`,
+      ...(opts.insecureHttp ? ["      ZS_ALLOW_INSECURE_HTTP=1"] : []),
       ...(proxy ? [`      HTTPS_PROXY=${proxy}`] : []),
     ].join("\n")
   }
@@ -239,7 +265,7 @@ export const DEPLOY_SUPPORT: Record<DeployMethod, { proven: boolean; note: strin
 
 /** The Helm command for agent mode: a DaemonSet whose pods each enroll with the agent pool token as their own node
  * (named after the Kubernetes node) and read only that node, from a read-only mount of its file system. */
-export function helmAgentCommand(opts: { poolToken: string; apiUrl: string; proxyUrl?: string | null; image: string }): string {
+export function helmAgentCommand(opts: { poolToken: string; apiUrl: string; proxyUrl?: string | null; image: string; insecureHttp?: boolean }): string {
   const proxy = opts.proxyUrl ? opts.proxyUrl : ""
   const [repo, tag] = opts.image.includes(":") ? [opts.image.slice(0, opts.image.lastIndexOf(":")), opts.image.slice(opts.image.lastIndexOf(":") + 1)] : [opts.image, "latest"]
   return [
@@ -247,6 +273,7 @@ export function helmAgentCommand(opts: { poolToken: string; apiUrl: string; prox
     "  --namespace zs-cbom --create-namespace \\",
     `  --set image.repository=${shQuote(repo)} --set image.tag=${shQuote(tag)} \\`,
     `  --set apiUrl=${shQuote(opts.apiUrl)} \\`,
+    ...(opts.insecureHttp ? ["  --set allowInsecureHttp=true \\"] : []),
     "  --set deployment.enabled=false --set agent.enabled=true \\",
     `  --set agent.poolToken=${shQuote(opts.poolToken)}${proxy ? " \\" : ""}`,
     ...(proxy ? [`  --set httpsProxy=${shQuote(proxy)}`] : []),
@@ -268,6 +295,19 @@ export function refusalReason(error: unknown): string | null {
 /** "Not read in this run" (lab UI r1 F2): assets of a compared source that the later run did not read because of a
  * coverage gap (a stopped target, a denied check). They are neither removed nor resolved, so they are listed apart,
  * grouped by why they were not read (the coverage row's detail, from the server) and by source. */
+/** What to do about a target the node could not reach. An IPv6 target with no route: the wizard's `docker run` puts the
+ * node on Docker's default bridge, which has no IPv6 (scan_node tlsprobe.connect_error: "IPv6 is not available on this
+ * scan node"). */
+export const IPV6_NO_ROUTE_GUIDANCE =
+  "Give the scan node an IPv6 route: run its container on a Docker network created with --ipv6 (or with --network host on a host that has IPv6), or run it in a dual-stack Kubernetes cluster, then run the scan again."
+
+export function targetGuidance(status: string, error: string | null | undefined, target: string): string | null {
+  if (status !== "no_route") return null
+  const host = target.replace(/^\[([^\]]+)\](:\d+)?$/, "$1")
+  const ipv6 = /IPv6/.test(error ?? "") || (host.includes(":") && /^[0-9a-fA-F:.]+(:\d+)?$/.test(host) && (host.match(/:/g) ?? []).length >= 2)
+  return ipv6 ? IPV6_NO_ROUTE_GUIDANCE : null
+}
+
 export const NOT_READ_NO_REASON = "The scan node reported a coverage gap here"
 export function groupNotRead<T extends { reason?: string | null; source_name?: string | null }>(
   items: T[],

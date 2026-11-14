@@ -109,6 +109,10 @@ class _Job:
         try:
             if kind == "aws_account":
                 result = self._aws()
+            elif kind in ("azure_subscription", "gcp_project") and self.source.get("last_test_status") != "passed":
+                from backend.utilities.cbom_sources.planning import CLOUD_NOT_CONNECTED
+
+                raise _Refused(CLOUD_NOT_CONNECTED[kind])
             elif kind == "azure_subscription":
                 from backend.utilities.cbom_sources.azure_collect import AzureCollectError, collect_azure
 

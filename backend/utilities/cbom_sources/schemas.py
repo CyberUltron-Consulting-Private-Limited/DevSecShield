@@ -162,7 +162,9 @@ class SettingsUpdate(_Body):
     network_exclusions: list[ExclusionItem] | None = Field(default=None, max_length=500)
     sni_hostnames: list[str] | None = Field(default=None, max_length=10_000)
     ports: list[PortItem] | None = Field(default=None, max_length=64)
-    zeek_span: bool | None = None
+    zeek_span: bool | None = Field(default=None, description=(
+        "Ignored: ZeroShield has no Zeek ssl.log reader, so this setting is stored for older clients and never sent "
+        "to scan nodes."))
     scan_window: list[list[bool]] | None = None
     window_timezone: str | None = Field(default=None, max_length=64)
     rate_conn_per_s: int | None = Field(default=None, ge=1, le=500)

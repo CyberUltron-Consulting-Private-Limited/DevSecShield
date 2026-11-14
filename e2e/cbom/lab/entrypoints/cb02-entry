@@ -1,0 +1,48 @@
+#!/bin/sh
+# CB-02 lab target entrypoint. gen.py writes /lab/role.env (ROLE, PORT) and the role's files; this script only
+# starts the one server the role names, in the foreground, so `docker logs` holds its whole output.
+set -eu
+[ -r /lab/role.env ] || { echo "cb02-entry: /lab/role.env missing (run gen.py up)" >&2; exit 64; }
+# /lab/role.env holds KEY=VALUE lines (TARGET, ROLE, PORT) written by gen.py; read, never sourced.
+while IFS='=' read -r key value; do
+  case "$key" in TARGET) TARGET=$value ;; ROLE) ROLE=$value ;; PORT) PORT=$value ;; esac
+done < /lab/role.env
+: "${ROLE:?}" "${PORT:?}"
+echo "cb02-entry: target=${TARGET:-?} role=$ROLE port=$PORT"
+
+case "$ROLE" in
+  nginx)
+    exec nginx -e /dev/stderr -c /lab/nginx.conf -g 'daemon off;'
+    ;;
+  s_server)
+    # one argument per line, so file names and group lists are never word-split
+    set --
+    while IFS= read -r arg || [ -n "$arg" ]; do set -- "$@" "$arg"; done < /lab/s_server.args
+    exec openssl s_server "$@"
+    ;;
+  sshd)
+    # sshd ignores host keys other users can read, and `find -xdev` (the node's file search) does not cross a bind
+    # mount, so keys and planted files are copied into the container's own file system first.
+    for k in /lab/hostkeys/*; do
+      case "$k" in *.pub) cp "$k" /etc/ssh/cb02/ ;; *) install -m 0600 "$k" /etc/ssh/cb02/ ;; esac
+    done
+    if [ -r /lab/authorized_keys ]; then install -m 0600 /lab/authorized_keys /home/zs-cbom/.ssh/authorized_keys; fi
+    if [ -d /lab/plant ]; then
+      cp -R /lab/plant/. /srv/cbom-lab/
+      if [ -r /lab/plant.modes ]; then
+        while read -r mode path; do [ -n "$path" ] && chmod "$mode" "/srv/cbom-lab/$path"; done < /lab/plant.modes
+      fi
+    fi
+    exec /usr/sbin/sshd -D -e -f /lab/sshd_config
+    ;;
+  listener)
+    # Listeners run only from the per-run /lab/listen.sh gen.py writes (compose sets it as the entrypoint): it routes
+    # the lab's own peers (self-check, burst, loopback) away from the product log. Running the image any other way
+    # would put lab connections into the product log, so refuse (review 5878784465).
+    echo "cb02-entry: role listener is started by /lab/listen.sh (gen.py up / compose), not by this entrypoint" >&2
+    exit 64
+    ;;
+  *)
+    echo "cb02-entry: unknown role $ROLE" >&2; exit 64
+    ;;
+esac

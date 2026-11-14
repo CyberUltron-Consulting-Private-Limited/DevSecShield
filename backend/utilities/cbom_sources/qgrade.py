@@ -43,10 +43,9 @@ from backend.new_models import (
     CbomEvidenceVendor,
     CbomScanNode,
 )
-from backend.utilities.cbom_sources import algid
 from backend.utilities.cbom_sources import identity as ID
 from backend.utilities.cbom_sources import posture as P
-from backend.utilities.cbom_sources.classify import CLASSIFIER_VERSION, quantum_vulnerable
+from backend.utilities.cbom_sources.classify import CLASSIFIER_VERSION, aws_pq_policy, quantum_vulnerable, ssh_names
 
 FORMULA_TEXT = """\
 ZeroShield quantum risk grade, model qg-1.
@@ -302,13 +301,6 @@ def _proto(value: Any) -> str:
     return re.sub(r"[\s_]", "", str(value or "").upper()).replace("TLSV", "TLS").replace("SSLV", "SSL")
 
 
-def _classical_ssh_kex(name: str) -> bool:
-    """algid owns SSH key-exchange identity (curve25519 / curve448 spellings and the GSS families included);
-    the classifier's family table is the fallback for names algid does not know."""
-    ident = algid.ssh_kex(name)
-    return (ident is not None and ident.quantum == "vulnerable") or quantum_vulnerable(name) is True
-
-
 def classical_fallback(asset_type: str, facts: dict[str, Any] | None, codes: list[str] | None) -> tuple[bool, str | None]:
     """(True, why) when an endpoint also completes a classical-only key exchange (the owner default: grade a hybrid on
     the weakest configuration it accepts). Only endpoints carry a key exchange."""
@@ -336,9 +328,14 @@ def classical_fallback(asset_type: str, facts: dict[str, Any] | None, codes: lis
         why.append("accepts classical group " + ", ".join(classical[:3]))
     elif facts.get("classical_tls13_accepted") is True:  # CB-12's prober: a classical TLS 1.3 key share answered
         why.append("accepts a classical TLS 1.3 key share")
-    kex = facts.get("kex") or facts.get("kexalgorithms") or []
-    kex = kex.split(",") if isinstance(kex, str) else kex if isinstance(kex, list) else []
-    classical_kex = sorted({str(k).strip() for k in kex if _classical_ssh_kex(str(k).strip())})
+    elif aws_pq_policy(facts):
+        # AWS documents every post-quantum ELB and API Gateway policy as also accepting classical key exchange, for
+        # compatibility: the hybrid is graded on the classical exchange a client without post-quantum support completes
+        policy = facts.get("ssl_policy") or facts.get("security_policy")
+        why.append(f"AWS post-quantum policy {str(policy)[:64]} also accepts classical key exchange")
+    kex = ssh_names(facts.get("kex")) or ssh_names(facts.get("kexalgorithms"))  # read as the classifier reads it
+    # the classifier's verdict, which reads algid's SSH key-exchange registry (GSS families included): one source
+    classical_kex = sorted({k for k in kex if quantum_vulnerable(k) is True})
     if classical_kex:
         why.append("offers classical SSH key exchange " + ", ".join(classical_kex[:3]))
     return (bool(why), "; ".join(why) or None)

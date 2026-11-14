@@ -64,10 +64,42 @@ def family(algorithm: Any) -> str | None:
     return algid.family_label(algorithm)
 
 
+_VERDICT = {"vulnerable": True, "safe": False, "hybrid": False}
+
+
 def quantum_vulnerable(algorithm: Any) -> bool | None:
     """True when a large quantum computer breaks the public-key algorithm (Shor), False for post-quantum (pure, hybrid
-    or composite), None when the identifier carries no public-key verdict (symmetric, hash, unknown)."""
-    return algid.quantum_vulnerable(algorithm)
+    or composite), None when the identifier carries no public-key verdict (symmetric, hash, unknown).
+
+    algid's generic lookup first, then its SSH key-exchange registry (``algid.ssh_kex``), which alone knows the
+    method families the registry lists by wildcard (gss-curve25519-sha256-*, gss-group14-sha256-*, ...): a GSS key
+    exchange is still a classical Diffie-Hellman or ECDH one.  One answer for every caller (qgrade included)."""
+    verdict = algid.quantum_vulnerable(algorithm)
+    if verdict is None and isinstance(algorithm, str):
+        found = algid.ssh_kex(algorithm.strip())
+        if found is not None:
+            verdict = _VERDICT.get(found.quantum or "")
+    return verdict
+
+
+def fact_list(value: Any) -> list[Any]:
+    """A fact that should be a list, read as one: the list, or [] when the stored value is anything else (a number, a
+    mapping, a bare string).  A malformed fact is unread, never misread (a string read letter by letter) and never a
+    crash."""
+    return list(value) if isinstance(value, (list, tuple)) else []
+
+
+def fact_obj(value: Any) -> dict[str, Any]:
+    """A fact that should be a mapping: the mapping, or {} (unread) when it is anything else."""
+    return value if isinstance(value, dict) else {}
+
+
+def ssh_names(value: Any) -> list[str]:
+    """SSH algorithm names from a fact: the comma-separated text ``sshd -T`` prints, or a list of names (entries
+    that are no text are unread); anything else is unread."""
+    if isinstance(value, str):
+        return [v.strip() for v in value.split(",") if v.strip()]
+    return [v.strip() for v in fact_list(value) if isinstance(v, str) and v.strip()]
 
 
 # Asset types that carry a key or certificate algorithm: an identifier on them that algid does not know is logged.
@@ -130,10 +162,28 @@ def _group_vulnerable(group: Any) -> bool | None:
     return False if found.primitive in KEX_PRIMITIVES else None
 
 
+# The fact naming a cloud TLS policy, and the algid table (algid.aws_tls_policy) that lists its post-quantum policies:
+# an ALB / NLB listener's ELBSecurityPolicy-*-PQ-* (aws_collect.elbv2) and an API Gateway domain's
+# SecurityPolicy_*_PQ_* (aws_collect.apigw).  A Classic Load Balancer has no post-quantum policy.
+_AWS_POLICY_FACTS = (("ssl_policy", "elbv2"), ("security_policy", "apigateway"))
+
+
+def aws_pq_policy(facts: dict[str, Any]) -> bool:
+    """Whether the facts name an AWS TLS policy that AWS documents as a hybrid post-quantum key exchange (exact name,
+    as algid lists it from the AWS security-policy pages and the botocore enum).  Evidence that a post-quantum group
+    is offered, not that classical groups are refused: AWS documents that, for compatibility, the PQ policies
+    support both classical and post-quantum key exchange, so qgrade.classical_fallback grades them on the classical
+    exchange (the owner default)."""
+    if facts.get("classic"):
+        return False
+    return any(algid.aws_tls_policy(service, facts.get(key)) is not None for key, service in _AWS_POLICY_FACTS)
+
+
 def pq_kex_evidence(facts: dict[str, Any]) -> bool | None:
     """Whether a TLS endpoint's facts show a post-quantum key exchange: True, False, or None when they say nothing.
 
-    ``pq_group_supported`` (a cloud policy, or set before) is the answer when present.  Otherwise a ``pq_hybrid`` probe
+    ``pq_group_supported`` (a cloud policy, or set before) is the answer when present; an AWS listener or API domain
+    on a post-quantum security policy (``aws_pq_policy``) is True.  Otherwise a ``pq_hybrid`` probe
     hit, or a negotiated or probed group that algid knows as a post-quantum (pure or hybrid) KEM or key agreement, is
     True: a node before CB-04 reported ``pq_hybrid: false`` next to a negotiated hybrid group when the server's
     certificate was post-quantum.  ``pq_hybrid: false`` with no such group is False; a post-quantum signature in a group
@@ -141,6 +191,8 @@ def pq_kex_evidence(facts: dict[str, Any]) -> bool | None:
     supported = facts.get("pq_group_supported")
     if isinstance(supported, bool):
         return supported
+    if aws_pq_policy(facts):
+        return True
     if facts.get("pq_hybrid") is True:
         return True
     for key in ("negotiated_group", "pq_group", "group"):
@@ -272,15 +324,15 @@ def _norm_proto(value: Any) -> str:
 
 
 def _tls_rules(out: _Out, facts: dict[str, Any], what: str) -> None:
-    protocols = [_norm_proto(p) for p in facts.get("protocols") or []]
+    protocols = [_norm_proto(p) for p in fact_list(facts.get("protocols"))]
     for proto in protocols:
         if proto in _TLS_OLD:
             impact, label = _TLS_OLD[proto]
             out.add(f"PROTO_{label.replace(' ', '').replace('.', '')}", impact, f"{what} accepts {label}")
     if protocols and not any(p in ("TLSV1.2", "TLSV1.3") for p in protocols):
         out.add("NO_TLS12", "High", f"{what} supports neither TLS 1.2 nor TLS 1.3")
-    weak = [c for c in facts.get("weak_ciphers") or [] if isinstance(c, str)]
-    weak += [c for c in facts.get("ciphers") or [] if isinstance(c, str) and _WEAK_CIPHER_RE.search(c)]
+    weak = [c for c in fact_list(facts.get("weak_ciphers")) if isinstance(c, str)]
+    weak += [c for c in fact_list(facts.get("ciphers")) if isinstance(c, str) and _WEAK_CIPHER_RE.search(c)]
     if weak:
         out.add("WEAK_CIPHER", "High", f"{what} accepts weak ciphers ({', '.join(sorted(set(weak))[:4])})")
     if facts.get("static_rsa_kex"):
@@ -332,12 +384,7 @@ _SSH_LISTS = {"ciphers": ("ciphers",), "macs": ("macs",), "kex": ("kex", "kexalg
 
 
 def _ssh_list(facts: dict[str, Any], key: str) -> list[str]:
-    value = facts.get(key)
-    if isinstance(value, str):
-        return [v.strip() for v in value.split(",") if v.strip()]
-    if isinstance(value, list):
-        return [str(v) for v in value]
-    return []
+    return ssh_names(facts.get(key))  # a malformed list is unread
 
 
 def _ssh_rules(out: _Out, facts: dict[str, Any], what: str) -> bool | None:
@@ -349,8 +396,7 @@ def _ssh_rules(out: _Out, facts: dict[str, Any], what: str) -> bool | None:
         hits = sorted({n for n in names if pattern.search(n)})
         if hits:
             out.add(code, impact, f"{what} offers {label} ({', '.join(hits[:3])})")
-    kex = facts.get("kex") or facts.get("kexalgorithms") or []
-    kex = kex.split(",") if isinstance(kex, str) else kex
+    kex = ssh_names(facts.get("kex")) or ssh_names(facts.get("kexalgorithms"))  # a malformed list is unread
     if not kex:
         return None
     pq = any(pq_key_exchange(k, "ssh_kex") for k in kex)  # a post-quantum signature is no key exchange
@@ -377,7 +423,7 @@ def _ssh_host_key_rules(out: _Out, facts: dict[str, Any], now: _dt.datetime) -> 
     host_key = facts.get("host_key") if isinstance(facts.get("host_key"), dict) else {}
     if host_key:
         _key_rules(out, host_key.get("key_type"), host_key.get("bits"), "SSH host key")
-    for key in facts.get("host_keys") or []:
+    for key in fact_list(facts.get("host_keys")):
         if not isinstance(key, dict):
             continue
         name = str(key.get("type") or "")
@@ -425,9 +471,11 @@ def _normalise(asset_type: str, facts: dict[str, Any]) -> dict[str, Any]:
             out["pq_group_supported"] = evidence
         if facts.get("tls") is False or facts.get("plaintext_only"):
             out["plaintext_only"] = True
+    if asset_type in ("load_balancer_tls", "api_tls") and "pq_group_supported" not in out and aws_pq_policy(facts):
+        out["pq_group_supported"] = True  # the listener's AWS policy offers hybrid post-quantum groups (algid's table)
     if asset_type == "ssh_endpoint":
-        out.setdefault("ciphers", sorted(set((facts.get("ciphers_c2s") or []) + (facts.get("ciphers_s2c") or []))))
-        out.setdefault("macs", sorted(set((facts.get("macs_c2s") or []) + (facts.get("macs_s2c") or []))))
+        out.setdefault("ciphers", sorted(set(ssh_names(facts.get("ciphers_c2s")) + ssh_names(facts.get("ciphers_s2c")))))
+        out.setdefault("macs", sorted(set(ssh_names(facts.get("macs_c2s")) + ssh_names(facts.get("macs_s2c")))))
         out.setdefault("hostkey_algorithms", facts.get("host_key_algs") or [])
     if asset_type == "os_crypto_policy" and "policy" not in out:
         out["policy"] = facts.get("crypto_policy")
@@ -471,8 +519,8 @@ def _windows_rules(out: _Out, facts: dict[str, Any]) -> None:
             out.add("WEAK_CIPHER", "High", f"SCHANNEL explicitly enables {', '.join(weak_ciphers[:4])} (registry)")
         if any(v.get("kind") == "Hashes" and str(v.get("name")).upper() == "MD5" for v in on):
             out.add("WEAK_CIPHER", "High", "SCHANNEL explicitly enables the MD5 hash for TLS (registry)")
-        for v in algos.values():
-            bits = v.get("server_min_key_bits") if isinstance(v, dict) else None
+        for v in (v for v in algos.values() if isinstance(v, dict)):
+            bits = v.get("server_min_key_bits")
             if v.get("kind") == "KeyExchangeAlgorithms" and isinstance(bits, int) and 0 < bits < 2048 \
                     and "diffie" in str(v.get("name")).lower():
                 out.add("DH_LT_2048", "Medium", f"SCHANNEL accepts Diffie-Hellman groups from {bits} bits (registry)")
@@ -520,24 +568,24 @@ def _web_tls_fix(kind: str, facts: dict[str, Any], legacy: list[str]) -> str:
 def _config_rules(out: _Out, facts: dict[str, Any]) -> None:
     """Service crypto overrides, web server TLS directives and openssl enc command lines read from a host."""
     kind = facts.get("kind")
-    used = ", ".join(facts.get("used_by") or [])[:120]
+    used = ", ".join(str(u) for u in fact_list(facts.get("used_by")) if isinstance(u, str))[:120]
     if kind == "openssl_conf":
-        d = facts.get("directives") or {}
-        minp = _upper((d.get("minprotocol") or {}).get("value"))
+        d = fact_obj(facts.get("directives"))
+        minp = _upper(fact_obj(d.get("minprotocol")).get("value"))
         if minp in _LEGACY_TLS:
             out.add(_LEGACY_TLS[minp][0], "High", f"OPENSSL_CONF of {used or 'a service'} sets MinProtocol = {minp}")
-        cs = str((d.get("cipherstring") or {}).get("value") or "")
+        cs = str(fact_obj(d.get("cipherstring")).get("value") or "")
         if "@SECLEVEL=0" in cs.upper() or minp in _LEGACY_TLS:
             out.add("TLS_POLICY_OVERRIDE", "High", f"{used or 'A service'} overrides the OpenSSL policy"
                                                    f"{' (CipherString ' + cs + ')' if cs else ''}")
     elif kind == "java_security":
-        d = facts.get("directives") or {}
+        d = fact_obj(facts.get("directives"))
         tls = d.get("jdk.tls.disabledalgorithms")
-        if tls is not None and not str(tls.get("value") or "").strip():
+        if isinstance(tls, dict) and not str(tls.get("value") or "").strip():
             out.add("TLS_POLICY_OVERRIDE", "High", f"{used or 'A Java service'} empties jdk.tls.disabledAlgorithms: "
                                                    "SSLv3, TLS 1.0/1.1, RC4, 3DES and anonymous suites are accepted again")
     elif kind in ("nginx", "apache"):
-        legacy = [(_LEGACY_TLS[_upper(p).lstrip("+")][1], str(p)) for p in facts.get("protocols") or []
+        legacy = [(_LEGACY_TLS[_upper(p).lstrip("+")][1], str(p)) for p in fact_list(facts.get("protocols"))
                   if _upper(p).lstrip("+") in _LEGACY_TLS]
         text = _web_tls_fix(kind, facts, [proto for _code, proto in legacy]) if legacy else ""
         for code, _proto in legacy:
@@ -550,7 +598,7 @@ def _config_rules(out: _Out, facts: dict[str, Any]) -> None:
         if cipher and _BAD_ENC.search(cipher):
             out.add("WEAK_CIPHER", "High", f"openssl {cipher} in {facts.get('file')}:{facts.get('line')}")
         if not facts.get("pbkdf2") and facts.get("decrypt") is not True:
-            md = facts.get("md")
+            md = facts.get("md") if isinstance(facts.get("md"), str) else None
             out.add("OPENSSL_ENC_WEAK_KDF", "Medium", "openssl enc derives the key with EVP_BytesToKey"
                                                       f"{' -md ' + md if md else ''} (no -pbkdf2)")
         if facts.get("hardcoded_passphrase"):
@@ -562,7 +610,7 @@ _EOL_OPENSSL = re.compile(r"^(openssl|libssl|libcrypto|compat-openssl|openssl-li
 
 def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, facts: dict[str, Any] | None,
              now: _dt.datetime | None = None) -> dict[str, Any]:
-    facts = _normalise(asset_type, facts or {})
+    facts = _normalise(asset_type, fact_obj(facts))  # stored facts that are no object are unread
     now = now or _dt.datetime.utcnow()
     out = _Out()
     qv: bool | None = quantum_vulnerable(algorithm)
@@ -716,7 +764,7 @@ def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, fact
         # PostgreSQL login roles by stored password hash type (pg_authid, zs_role_password_types() or rds_tools);
         # roles without a password are skipped, rds_iam roles (IAM token sign-in on RDS) are named.
         roles = facts.get("role_hash_types") if isinstance(facts.get("role_hash_types"), dict) else {}
-        iam = {str(r) for r in facts.get("iam_auth_roles") or []}
+        iam = {str(r) for r in fact_list(facts.get("iam_auth_roles"))}
 
         def _names(found: list[str]) -> str:
             shown = ", ".join(f"{r} (rds_iam)" if r in iam else r for r in found[:10])

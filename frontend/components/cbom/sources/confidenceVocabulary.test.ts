@@ -86,6 +86,7 @@ for (const file of files) {
       const rest = line.slice(m.index ?? 0);
       if (q === "Q0" && /^Q0 gaps?\b/.test(rest)) continue;
       if (q === "Q0" && /^Q0GapBadge|^Q0Gap\b/.test(rest)) continue;
+      if (q === "Q0" && /^Q0 Unknown\b/.test(rest)) continue;  // CB-19's grade, printed with its word (PR-1u)
       if (q !== "Q0" && line.includes(RISK_WORD[q])) continue;
       bad.push(`${file.slice(FRONTEND.length + 1)}:${i + 1}: ${line.trim().slice(0, 120)}`);
     }

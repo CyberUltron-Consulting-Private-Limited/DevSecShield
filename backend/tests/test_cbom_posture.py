@@ -171,7 +171,9 @@ def test_export_is_schema_valid_with_vex(api, world):
     assert not errors, [f"{list(e.path)}: {e.message}" for e in errors[:5]]
     vulns = {v["id"]: v for v in bom["vulnerabilities"]}
     assert vulns["ZS-CBOM-WEAK_CIPHER"]["analysis"]["state"] == "exploitable"
-    assert vulns["CVE-2016-2183"]["analysis"]["state"] == "in_triage" and vulns["CVE-2016-2183"]["ratings"][0]["score"] == 7.5
+    # SWEET32 is a flaw of the 3DES suite the collector saw accepted: exploitable on that endpoint (CB-22); the library
+    # range CVE below stays in triage (distributions back-port fixes)
+    assert vulns["CVE-2016-2183"]["analysis"]["state"] == "exploitable" and vulns["CVE-2016-2183"]["ratings"][0]["score"] == 7.5
     assert vulns["CVE-2022-3602"]["analysis"]["state"] == "in_triage"
     refs = {c["bom-ref"] for c in bom["components"]}
     assert all(a["ref"] in refs for v in bom["vulnerabilities"] for a in v["affects"])

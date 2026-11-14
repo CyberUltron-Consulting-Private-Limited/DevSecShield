@@ -27,6 +27,8 @@ import {
   type CbomVendor,
 } from "@/utils/backend_api";
 
+import { EvidenceFixClass } from "@/components/cbom/grade";
+
 import { cbomSourcesKeys } from "./keys";
 import { formatDay, pluralize } from "./logic";
 import {
@@ -331,6 +333,7 @@ export default function EvidenceTab({ teamId, onNavigate }: { teamId: number; on
                       <TableRow key={area.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800" data-testid={`evidence-area-${area.area_key}`}>
                         <TableCell className="font-medium text-zinc-900 dark:text-white max-w-[240px]">
                           <Truncate text={area.title} />
+                          <EvidenceFixClass item={area as { fix_class?: string | null; not_assessed?: boolean }} testId={`evidence-fixclass-${area.area_key}`} />
                         </TableCell>
                         <TableCell className="text-zinc-600 dark:text-zinc-400 max-w-[180px]">
                           {area.owner ? (
@@ -449,6 +452,7 @@ export default function EvidenceTab({ teamId, onNavigate }: { teamId: number; on
                             <TableCell className="max-w-[220px]">
                               <Truncate text={vendor.name} className="font-medium text-zinc-900 dark:text-white" />
                               {vendor.contact_email && <Truncate text={vendor.contact_email} className="text-xs text-zinc-500" />}
+                              <EvidenceFixClass item={vendor as { fix_class?: string | null; not_assessed?: boolean }} testId={`vendor-fixclass-${vendor.id}`} />
                             </TableCell>
                             <TableCell>
                               <StatusBadge tone={tone}>{label}</StatusBadge>

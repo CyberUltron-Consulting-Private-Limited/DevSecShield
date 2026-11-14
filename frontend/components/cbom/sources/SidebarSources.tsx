@@ -100,7 +100,7 @@ export function SourcesAccordionItems({
           </div>
         </AccordionTrigger>
         <AccordionContent className="pb-5 pt-0">
-          <p className="text-xs text-zinc-500 mb-2">Reached through a scan node inside your network. Nothing is installed on your servers.</p>
+          <p className="text-xs text-zinc-500 mb-2">Reached through a scan node inside your network; nothing is installed on the servers it reads unless you deploy host agents.</p>
           <Line label="Scan nodes" value={nodes ? `${nodes.online} online of ${nodes.total}` : "—"} />
           <Line label="Linux servers" value={kinds.linux_servers ? pluralize(kinds.linux_servers, "group") : "Not added"} />
           <Line label="Windows / AD" value={(kinds.windows_servers ?? 0) + (kinds.active_directory ?? 0) || "Not added"} />
