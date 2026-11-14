@@ -7,7 +7,12 @@ finalisation of run 2, interleaved REPS times, each inside a transaction that is
 
 * ``drift_only``  ``record_run_drift`` with the estate write replaced by a no-op (dev's work);
 * ``with_store``  ``record_run_drift`` as shipped (drift + ``estate.record_run``);
-* ``store_only``  the estate write's own time inside ``with_store``.
+* ``store_only``  the estate write's own time inside ``with_store``;
+* ``store_cold``  the same once with an empty key index (a restarted process), when the tree has one (CB-21 #205
+  ``CorrelationIndex`` in ``estate._keys_for_run``). Before each warm repetition the index is put back to run 1's
+  observations (what the previous run left), so every repetition re-keys exactly run 2's changes.
+
+Run this file against two trees (PYTHONPATH) to compare them: it works with or without the index.
 
 Wall-clock seconds (``perf_counter``: PostgreSQL work happens in the server process). Runs on SQLite (a temp file)
 and, with ``--pg URL``, on a throwaway PostgreSQL.
@@ -132,7 +137,19 @@ def bench(engine, n: int, reps: int) -> dict:
         real_write(*a, **k)
         store_times.append(time.perf_counter() - t0)
 
-    def finalise(with_store: bool) -> float:
+    with Session(engine) as s:
+        srcs = D._sources(s, 1)
+        run1_rows = [(r, D.ID.job_source_ref(j, srcs.get(j.source_id or 0)))
+                     for j in D._run_jobs(s, s.get(CbomCollectionRun, r1)) for r in E._rows(s, j)
+                     if r.asset_type != "coverage"]
+    indexed = hasattr(E, "_keys_for_run")
+
+    def finalise(with_store: bool, cold: bool = False) -> float:
+        if with_store and indexed:
+            if cold:
+                E._INDEXES.clear()
+            else:
+                E._keys_for_run(1, run1_rows)  # the index as the previous run left it
         D.record_estate = timed_write if with_store else (lambda *a, **k: None)  # type: ignore[assignment]
         try:
             with Session(engine) as s:
@@ -154,6 +171,10 @@ def bench(engine, n: int, reps: int) -> dict:
     out = {"assets_per_run": n, "drift_only": {"p50": round(statistics.median(without), 3), "max": round(max(without), 3)},
            "with_store": {"p50": round(statistics.median(with_), 3), "max": round(max(with_), 3)},
            "store_only": {"p50": round(statistics.median(store_times), 3), "max": round(max(store_times), 3)}}
+    if indexed:
+        store_times.clear()
+        finalise(True, cold=True)
+        out["store_cold"] = round(store_times[0], 3)
     out["delta_pct"] = round(100 * (out["with_store"]["p50"] / out["drift_only"]["p50"] - 1), 1)
     out["store_share_pct"] = round(100 * out["store_only"]["p50"] / out["drift_only"]["p50"], 1)
     with Session(engine) as s:

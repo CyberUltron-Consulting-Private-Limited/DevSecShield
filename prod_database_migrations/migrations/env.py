@@ -12,6 +12,7 @@ from backend.new_models import *
 import backend.utilities.cbom_sources.sshca.models  # noqa: F401
 import backend.utilities.cbom_sources.transports.models  # noqa: F401
 import backend.utilities.cbom_sources.fleet.models  # noqa: F401
+import backend.utilities.cbom_sources.api_keys  # noqa: F401  (cbomapikey, #226)
 from dotenv import load_dotenv
 
 load_dotenv()

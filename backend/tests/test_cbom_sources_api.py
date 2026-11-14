@@ -134,13 +134,12 @@ def enroll_node(api, team=1, who="alice", name="dc-mumbai-01"):
 def test_target_counting_rules():
     p = T.parse_targets(["ip", "10.0.0.0/24", "10.0.0.128/25", "10.0.1.1-10.0.1.10", "Host.Example.COM.", "host.example.com",
                          "::ffff:10.0.2.1", "# comment", ""])
-    # what the scan node scans: the /24's 254 host addresses (not its network and broadcast addresses), the /25 whole
-    # (a /25 or smaller keeps every address, N3: it adds the /24's .255), the 10 of the range, and the mapped address
-    # as its IPv4 address
-    assert T.size(p.intervals) == 255 + 10 + 1
+    # what the scan node scans: the /24's 254 host addresses (not the network and broadcast addresses at the edges of
+    # the block the lines form; the /25 is inside it), the 10 of the range, and the mapped address as its IPv4 address
+    assert T.size(p.intervals) == 254 + 10 + 1
     assert p.hostnames == ["host.example.com"]
     excl = T.parse_exclusions(["10.0.0.0/26", "host.example.com"])
-    assert T.count_in_scope(p, excl) == 255 + 10 + 1 - 63
+    assert T.count_in_scope(p, excl) == 254 + 10 + 1 - 63
     assert T.count_blocks([(4, 0x0A000080, 0x0A0000FF), (4, 0x0A000100, 0x0A00017F)]) == 2
     assert T.parse_targets(["10.0.0.0/31"]).intervals[0][2] - T.parse_targets(["10.0.0.0/31"]).intervals[0][1] == 1
     with pytest.raises(T.TargetError, match="did you mean 10.0.0.0/24"):
@@ -503,22 +502,20 @@ def test_a_loopback_name_in_a_source_never_scan_list_is_kept_and_counted_as_loop
     assert r.status_code == 201, r.text
     src = r.json()["source"]
     assert src["config"]["exclusions"] == ["localhost", "10.20.0.2", "db.localhost"]
-    # 10.20.0.0, .1 and .3 (a /30 is scanned whole, N3) and app-01.bank.local: loopback (and the name localhost) left out
-    assert src["target_count"] == 4
+    assert src["target_count"] == 2  # 10.20.0.1 and app-01.bank.local: loopback (and the name localhost) left out
     count = api("POST", "/1/cbom/sources/targets/count", json={
         "targets": ["127.0.0.0/29", "10.20.0.0/30", "64:ff9b::7f00:1", "::ffff:127.0.0.9"], "exclusions": ["localhost"]}).json()
-    assert (count["valid"], count["count"], count["samples"]) == (True, 4, ["10.20.0.0", "10.20.0.1", "10.20.0.2",
-                                                                          "10.20.0.3"])
+    assert (count["valid"], count["count"], count["samples"]) == (True, 2, ["10.20.0.1", "10.20.0.2"])
     other = api("POST", "/1/cbom/sources/targets/count", json={
         "targets": ["127.0.0.0/29"], "exclusions": ["localhost.corp.internal"]}).json()
-    assert other["count"] == 8  # any other name: matched by the node only, by what it resolves to there
+    assert other["count"] == 6  # any other name: matched by the node only, by what it resolves to there
 
 
 @pytest.mark.parametrize("cidr, team, units", [
-    ("10.0.0.0/29", [], 8),  # a /29 is swept whole (N3: only a /24 or larger leaves out network and broadcast)
-    ("10.0.0.0/29", ["10.0.0.1"], 7),
-    ("10.0.0.0/24", [], 254),  # a /24 leaves out its network and broadcast addresses
-    ("10.0.0.0/25", [], 128),
+    ("10.0.0.0/29", [], 6),  # a /29 on its own: the 6 host addresses, not its network and broadcast addresses
+    ("10.0.0.0/29", ["10.0.0.1"], 5),
+    ("10.0.0.0/24", [], 254),
+    ("10.0.0.0/25", [], 126),  # on its own a /25 is a subnet; split from a /24 its inner edges are hosts (N3)
     ("10.0.0.0/31", [], 2),
     ("0.0.0.0/29", [], 0),  # 0.0.0.0/8 reaches the node itself: never swept
     ("fd00::/125", ["fd00::1-fd00::5"], 3),

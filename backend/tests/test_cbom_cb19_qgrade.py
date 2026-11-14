@@ -323,7 +323,7 @@ def test_trust_anchor(asset_type, facts, anchor, basis):
     ({"target": "10.0.0.9", "status": "timeout"}, "gap"),
     ({"target": "10.0.0.9", "status": "ok"}, "read"),
     ({"target": "10.0.0.9", "status": "partial"}, "read"),
-    ({"target": "10.0.0.9", "status": "skipped_never_scan"}, "by_choice"),
+    ({"target": "10.0.0.9", "status": "skipped_never_scan"}, "by_policy"),  # CB-11: excluded by policy, not a gap
     ({"target": "+1048 more", "status": "summary", "error": "{\"ok\": 1048}"}, "summary"),
 ])
 def test_job_targets_are_read_by_what_was_not_read(target, kind):

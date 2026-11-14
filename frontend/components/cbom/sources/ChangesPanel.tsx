@@ -37,6 +37,8 @@ export const DRIFT_LABEL: Record<CbomDriftKind, [string, Tone]> = {
   cert_expiring: ["Certificate expiring", "amber"],
   schedule_skipped: ["Scheduled run skipped", "amber"],
   q0_closed: ["Q0 gap closed", "green"],
+  agility_asset_moved: ["Fix class changed", "amber"],
+  agility_system_changed: ["System fix-class mix changed", "amber"],
 };
 
 export function RunChanges({ teamId, runId, finished }: { teamId: number; runId: number; finished: boolean }) {
@@ -74,6 +76,14 @@ export function RunChanges({ teamId, runId, finished }: { teamId: number; runId:
               <span className="text-zinc-800 dark:text-zinc-200 break-all">{e.asset_label}</span>
               <span className="text-zinc-500">{e.source_name}</span>
               {typeof e.detail?.cause === "string" && <span className="text-amber-700 dark:text-amber-400">({e.detail.cause})</span>}
+              {typeof e.detail?.old_class === "string" && typeof e.detail?.new_class === "string" && (
+                <span className="text-amber-700 dark:text-amber-400">({e.detail.old_class} → {e.detail.new_class})</span>
+              )}
+              {typeof e.detail?.old_hardest !== "undefined" && e.kind === "agility_system_changed" && (
+                <span className="text-amber-700 dark:text-amber-400">
+                  (hardest {String(e.detail.old_hardest ?? "—")} → {String(e.detail.new_hardest ?? "—")})
+                </span>
+              )}
             </li>
           ))}
         </ul>
@@ -288,7 +298,8 @@ export function CodeChanges({ teamId, scanId }: { teamId: number; scanId: number
   );
 }
 
-/** Heat-map (family x source, or x asset type) and the certificate calendar of one run. */
+/** Heat-map (family x source, or x asset type) and the certificate calendar of one run, stacked: each gets the full
+ * width (side by side the heat-map got half a row and scrolled sideways at 1366 px, #268). */
 export function RunInsights({ teamId, runId, active }: { teamId: number; runId: number; active: boolean }) {
   const [by, setBy] = useState<"source" | "type">("source");
   const q = useQuery({
@@ -301,7 +312,7 @@ export function RunInsights({ teamId, runId, active }: { teamId: number; runId: 
   if (q.isError || !q.data) return <ErrorBlock error={q.error} onRetry={() => q.refetch()} />;
   if (q.data.rows.length === 0) return null;
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 rounded-lg border border-zinc-200 dark:border-zinc-800 p-4" data-testid="run-insights">
+    <div className="space-y-6 rounded-lg border border-zinc-200 dark:border-zinc-800 p-4" data-testid="run-insights">
       <div className="space-y-2 min-w-0">
         <div className="flex gap-2 text-xs" role="group" aria-label="Heat-map columns">
           {(["source", "type"] as const).map((v) => (
