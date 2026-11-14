@@ -63,7 +63,7 @@ FINISHED = ("done", "partial", "failed", "cancelled")
 _IMPACT_RANK = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
 _FIELDS = ("algorithm", "key_size", "protocol", "impact", "quantum_vulnerable", "fingerprint", "not_after")
 EVENT_KINDS = ("opened", "resolved", "new_asset", "removed_asset", "cert_renewed", "cert_expiring",
-               "schedule_skipped")
+               "schedule_skipped", "q0_closed")
 
 
 @dataclass
@@ -842,7 +842,9 @@ def _event(team_id: int, now: _dt.datetime, kind: str, item: Mapping[str, Any] |
     item = item or {}
     detail = {k: v for k, v in item.items() if k in ("finding_codes", "type", "location", "target", "changes",
                                                        "asset_removed", "new_asset", "not_after", "asset_id",
-                                                       "bom_ref", "rule_change", "reason", "cause", "last_read_run_id")}
+                                                       "bom_ref", "rule_change", "reason", "cause", "last_read_run_id",
+                                                       "item_kind", "item_key", "sub_reason", "new_grade",
+                                                       "opened_at", "run_id")}
     return {"team_id": team_id, "at": now, "scope": scope, "kind": kind,
             "run_id": links.get("run_id"), "baseline_run_id": links.get("baseline_run_id"),
             "scan_id": links.get("scan_id"), "baseline_scan_id": links.get("baseline_scan_id"),
@@ -956,6 +958,9 @@ def record_run_drift(session: Session, run: CbomCollectionRun, now: _dt.datetime
                             anchor=f"run:{run.id}", cause="re-judged with the current rules" if reclassify else None,
                             run_id=run.id, baseline_run_id=base.run_id)
     stored = insert_events(session, rows[:EVENT_CAP])
+    from backend.utilities.cbom_sources.q0register import sync_run_safely
+
+    sync_run_safely(session, run, now)  # CB-23: the run's Q0 items in the register, in this transaction
     log("drift recorded", team=run.team_id, run=run.id, events=stored, not_read=not_read or None,
         truncated=len(rows) > EVENT_CAP or None)
     jobs = _run_jobs(session, run)
