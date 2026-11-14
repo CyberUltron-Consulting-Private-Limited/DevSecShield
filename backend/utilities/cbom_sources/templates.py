@@ -319,26 +319,41 @@ Write-Output "OK: $Account is in $rmu and $rmu has Read+Execute on WinRM; the ac
 # "Cannot read sensitive values such as secret contents or key material"; it has no decrypt, unwrap, sign or getSecret
 # action (https://learn.microsoft.com/azure/role-based-access-control/built-in-roles/security#key-vault-reader).
 AZURE_READER = r"""#!/usr/bin/env bash
-# zs-cbom-azure-reader.sh -- ZeroShield CBOM: read-only access to Azure Key Vault METADATA
-# (vault settings, key type/size/rotation policy, certificate policy, secret expiry). Never secret values or key material.
+# zs-cbom-azure-reader.sh -- ZeroShield CBOM: read-only access to Azure crypto METADATA
+# Key Vault (vault settings, key type/size/HSM/rotation policy, certificate policy, secret expiry) and the control plane's
+# TLS policies and encryption settings (storage accounts, App Service, Application Gateway, Front Door, Azure SQL).
+# Never secret values, key material, app settings or connection strings: no listKeys, no config/list, no getSecret.
 # Run in Azure Cloud Shell (bash) as an Owner or User Access Administrator of each subscription.
 set -euo pipefail
 APP_ID="<application (client) id you enter in ZeroShield>"
 SUBSCRIPTIONS=("<subscription id>")   # every subscription ZeroShield should read
 
 for SUB in "${SUBSCRIPTIONS[@]}"; do
-  # 1. List vaults and read their settings (soft delete, purge protection, network access). Control plane only.
-  cat > zs-cbom-vault-lister.json <<JSON
+  # 1. Control plane, read actions only: list vaults and their settings, and the TLS / encryption settings ZeroShield
+  #    reports. Microsoft.Web/sites/config/read returns the TLS settings; app settings need config/list (not granted).
+  cat > zs-cbom-reader.json <<JSON
 {
-  "Name": "ZeroShield CBOM Key Vault lister ($SUB)",
-  "Description": "List key vaults and read their properties. No data-plane access.",
-  "Actions": ["Microsoft.KeyVault/vaults/read", "Microsoft.Resources/subscriptions/read"],
+  "Name": "ZeroShield CBOM reader ($SUB)",
+  "Description": "Read key vault settings and control-plane TLS and encryption settings. No data-plane access.",
+  "Actions": [
+    "Microsoft.Resources/subscriptions/read",
+    "Microsoft.KeyVault/vaults/read",
+    "Microsoft.Storage/storageAccounts/read",
+    "Microsoft.Web/sites/read",
+    "Microsoft.Web/sites/config/read",
+    "Microsoft.Web/certificates/read",
+    "Microsoft.Network/applicationGateways/read",
+    "Microsoft.Cdn/profiles/read",
+    "Microsoft.Cdn/profiles/customdomains/read",
+    "Microsoft.Sql/servers/read"
+  ],
   "NotActions": [], "DataActions": [], "NotDataActions": [],
   "AssignableScopes": ["/subscriptions/$SUB"]
 }
 JSON
-  az role definition create --role-definition @zs-cbom-vault-lister.json >/dev/null || true
-  az role assignment create --assignee "$APP_ID" --role "ZeroShield CBOM Key Vault lister ($SUB)" --scope "/subscriptions/$SUB"
+  az role definition create --role-definition @zs-cbom-reader.json >/dev/null 2>&1 \
+    || az role definition update --role-definition @zs-cbom-reader.json >/dev/null
+  az role assignment create --assignee "$APP_ID" --role "ZeroShield CBOM reader ($SUB)" --scope "/subscriptions/$SUB"
 
   # 2. Vaults that use Azure RBAC: built-in Key Vault Reader = keys/certificates read + secrets readMetadata.
   #    No decrypt, unwrap, sign or getSecret data action.
@@ -352,15 +367,21 @@ JSON
   done
 done
 # A vault whose firewall denies public access cannot be read from ZeroShield's cloud: its settings are still listed
-# and the run shows a coverage row for its keys, certificates and secrets.
+# and the run shows a coverage row for its keys, certificates and secrets. A permission left out shows up the same way:
+# a coverage row naming the action to grant, never a silent "nothing found".
 """
 
 # Google Cloud: viewer roles only.  roles/cloudkms.viewer has get/list on key rings, keys and versions and no
 # useToDecrypt/useToSign; roles/secretmanager.viewer has secrets.get/list and versions.get/list but NOT
-# secretmanager.versions.access; roles/privateca.auditor is read-only for CA Service
-# (https://cloud.google.com/iam/docs/roles-permissions/cloudkms, .../secretmanager, .../privateca).
+# secretmanager.versions.access; roles/privateca.auditor is read-only for CA Service; roles/certificatemanager.viewer is
+# "Read-only access to Certificate Manager all resources" (https://cloud.google.com/iam/docs/roles-permissions/cloudkms,
+# .../secretmanager, .../privateca, .../certificatemanager).  Load-balancer TLS and bucket encryption use a custom role
+# with list permissions only (https://cloud.google.com/iam/docs/roles-permissions/compute; storage.buckets.list:
+# https://cloud.google.com/storage/docs/json_api/v1/buckets/list) -- not roles/compute.viewer, which can also read
+# instance metadata (startup scripts).
 GCP_READER = r"""#!/usr/bin/env bash
-# zs-cbom-gcp-reader.sh -- ZeroShield CBOM: read-only roles for Cloud KMS, CA Service and Secret Manager METADATA.
+# zs-cbom-gcp-reader.sh -- ZeroShield CBOM: read-only roles for Cloud KMS, CA Service, Secret Manager and Certificate
+# Manager METADATA, plus a list-only custom role for load-balancer TLS policies / certificates and bucket encryption.
 # Never secret payloads (no secretmanager.versions.access) and no key use (no cloudkms.cryptoKeyVersions.useTo*).
 set -euo pipefail
 SA="<service account you enter in ZeroShield, e.g. zs-cbom@my-project.iam.gserviceaccount.com>"
@@ -368,14 +389,24 @@ SA_PROJECT="<project that holds the service account>"
 ORG_ID=""                        # numeric organization id, or leave empty and list projects below
 PROJECTS=("<project id>")
 
-ROLES=(roles/cloudkms.viewer roles/privateca.auditor roles/secretmanager.viewer)
+ROLES=(roles/cloudkms.viewer roles/privateca.auditor roles/secretmanager.viewer roles/certificatemanager.viewer)
+# list-only permissions for load-balancer TLS (SSL policies, certificates, proxies, forwarding rules) and bucket encryption
+PERMISSIONS="compute.sslPolicies.list,compute.regionSslPolicies.list,compute.sslCertificates.list,compute.regionSslCertificates.list,\
+compute.targetHttpsProxies.list,compute.regionTargetHttpsProxies.list,compute.targetSslProxies.list,\
+compute.forwardingRules.list,compute.globalForwardingRules.list,storage.buckets.list"
 if [ -n "$ORG_ID" ]; then
-  for ROLE in "${ROLES[@]}"; do
+  gcloud iam roles create zsCbomTlsReader --organization "$ORG_ID" --title "ZeroShield CBOM TLS reader" \
+    --permissions "$PERMISSIONS" --stage GA >/dev/null 2>&1 \
+    || gcloud iam roles update zsCbomTlsReader --organization "$ORG_ID" --permissions "$PERMISSIONS" >/dev/null
+  for ROLE in "${ROLES[@]}" "organizations/$ORG_ID/roles/zsCbomTlsReader"; do
     gcloud organizations add-iam-policy-binding "$ORG_ID" --member "serviceAccount:$SA" --role "$ROLE" --condition=None >/dev/null
   done
 else
   for P in "${PROJECTS[@]}"; do
-    for ROLE in "${ROLES[@]}"; do
+    gcloud iam roles create zsCbomTlsReader --project "$P" --title "ZeroShield CBOM TLS reader" \
+      --permissions "$PERMISSIONS" --stage GA >/dev/null 2>&1 \
+      || gcloud iam roles update zsCbomTlsReader --project "$P" --permissions "$PERMISSIONS" >/dev/null
+    for ROLE in "${ROLES[@]}" "projects/$P/roles/zsCbomTlsReader"; do
       gcloud projects add-iam-policy-binding "$P" --member "serviceAccount:$SA" --role "$ROLE" --condition=None >/dev/null
     done
   done
@@ -383,6 +414,8 @@ fi
 # The APIs ZeroShield calls (with an organization id it also searches projects you granted it):
 gcloud services enable cloudkms.googleapis.com privateca.googleapis.com secretmanager.googleapis.com \
   cloudresourcemanager.googleapis.com --project "$SA_PROJECT"
+# Compute Engine and Certificate Manager are read where your projects use them; a project that has not enabled them is
+# listed with a "not enabled" coverage row (nothing of them exists to read), never as a failure.
 # A JSON key for the service account (paste or upload it in ZeroShield; it is stored encrypted and never shown again):
 #   gcloud iam service-accounts keys create zs-cbom-key.json --iam-account "$SA"
 """

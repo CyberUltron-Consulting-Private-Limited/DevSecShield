@@ -168,7 +168,15 @@ def _azure_routes(*, vaults=(SAMPLE_VAULT,), secret_ok=True):
              "attributes": {"enabled": True}}]} if secret_ok else
             {"error": {"code": "Forbidden", "message": "Caller is not authorized", "innererror": {"code": "ForbiddenByRbac"}}})),
         (_path("https://locked-vault.vault.azure.net/"), (403, FIREWALL_403)),
+        *_ARM_EMPTY,
     ]
+
+
+# Control-plane services the collector also lists (test_cbom_azure_gcp_controlplane.py has their documented bodies);
+# by default each answers an empty documented list ({"value": []}), so the Key Vault tests above stay about Key Vault.
+_ARM_EMPTY = [(_path(f"https://management.azure.com/subscriptions/{SUB}/providers/{rp}?"), (200, {"value": []}))
+              for rp in ("Microsoft.Storage/storageAccounts", "Microsoft.Web/sites", "Microsoft.Web/certificates",
+                         "Microsoft.Network/applicationGateways", "Microsoft.Cdn/profiles", "Microsoft.Sql/servers")]
 
 
 AZ_CFG = {"tenant_id": TENANT, "client_id": CLIENT, "subscription_ids": [], "credential_type": "client_secret"}
@@ -329,7 +337,17 @@ def _gcp_routes(*, cas_disabled=False):
         (_at("https://cloudresourcemanager.googleapis.com/v3/projects:search"),
          (200, {"projects": [{"name": "projects/123", "projectId": PROJECT, "state": "ACTIVE", "parent": "organizations/42"},
                              {"name": "projects/999", "projectId": "old-sandbox", "state": "DELETE_REQUESTED"}]})),
+        *_GCP_EMPTY,
     ]
+
+
+# The other services the collector reads answer empty documented lists by default (Google omits empty repeated fields):
+# key versions, Certificate Manager, Compute Engine load-balancer TLS and Cloud Storage.
+_GCP_EMPTY = [
+    (lambda r, _f: r.url.host == "cloudkms.googleapis.com" and r.url.path.endswith("/cryptoKeyVersions"), (200, {})),
+    (lambda r, _f: r.url.host in ("certificatemanager.googleapis.com", "compute.googleapis.com", "storage.googleapis.com"),
+     (200, {})),
+]
 
 
 def _gcp(routes, cfg=None, key=SA_JSON):
@@ -343,7 +361,7 @@ def _gcp(routes, cfg=None, key=SA_JSON):
 def test_gcp_kms_cas_and_secret_manager_from_documented_shapes():
     out, found, rec = _gcp(_gcp_routes())
     assert out["targets"][0]["status"] == "ok" and out["targets"][0]["services"] == {
-        "cloudkms": "ok", "privateca": "ok", "secretmanager": "ok"}
+        "cloudkms": "ok", "privateca": "ok", "secretmanager": "ok", "certificatemanager": "ok", "compute": "ok", "storage": "ok"}
     keys = {a["name"]: a for a in found if a["type"] == "kms_key"}
     no_rot = keys["no-rotation"]
     assert no_rot["algorithm"] == "AES" and no_rot["key_size"] == 256 and no_rot["facts"]["rotation_enabled"] is False

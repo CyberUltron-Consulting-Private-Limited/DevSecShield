@@ -21,6 +21,12 @@ from backend.utilities.cbom_sources.settings import team_exclusions
 ONLINE_SECONDS = 120
 
 # Rates chosen by product (per target): server 0.2, cluster 2, database 1, cloud account 4, network 1 per /24.
+# Azure and Google Cloud are collected only once Save and validate has signed in to the customer's tenant / project
+# (as AWS needs a validated role): until then the account is listed, and its collection is "not available".
+CLOUD_NOT_CONNECTED = {
+    "azure_subscription": "Not available until the Azure tenant is connected: Save and validate must pass first",
+    "gcp_project": "Not available until the Google Cloud project is connected: Save and validate must pass first",
+}
 RATES_C = {"server": 20, "kubernetes": 200, "database": 100, "cloud_account": 400, "network_block": 100}
 # WP8b: a host agent is charged like one server; a registry image like one code scan (1 credit, decision D3).
 RATES_C["image"] = 100
@@ -211,6 +217,8 @@ def plan_run(
             item.reason = "Validate the AWS role first; only a role that passed validation is scanned"
         elif source.last_test_status == "failed":
             item.reason = "Last connection test failed; fix it and test again"
+        elif source.kind in CLOUD_NOT_CONNECTED and source.last_test_status != "passed":
+            item.reason = CLOUD_NOT_CONNECTED[source.kind]
         elif units <= 0:
             item.reason = "0 targets left after the never-scan list"
         elif group == "network" and source.kind != "appliance" and settings.stop_all_network:  # a config read, not a sweep

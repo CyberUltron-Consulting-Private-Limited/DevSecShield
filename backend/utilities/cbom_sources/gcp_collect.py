@@ -9,7 +9,12 @@
 * Cloud KMS v1: locations -> keyRings -> cryptoKeys (purpose, versionTemplate algorithm and protection level, primary
   version state, rotation period).  CA Service v1: locations -> caPools -> certificateAuthorities (the CA certificate).
   Secret Manager v1: secrets (metadata only; versions are never accessed).
-* Every failure becomes a coverage row: denied, API not enabled (SERVICE_DISABLED), or error.
+* Cloud KMS key versions (cryptoKeyVersions.list: state, protection level, algorithm; never attestations or key
+  material) on each key row.  Load-balancer TLS policies and SSL certificates (Compute Engine), Certificate Manager
+  certificates and Cloud Storage bucket encryption: see ``gcp_tls``.
+* Every failure becomes a coverage row: denied, API not enabled (SERVICE_DISABLED), or error.  An optional API the
+  project has not enabled (Compute Engine, Certificate Manager, Cloud Storage) is a by-choice coverage row that does not
+  fail the project: nothing of that service exists in it.
 """
 from __future__ import annotations
 
@@ -18,6 +23,7 @@ import json
 import time
 from typing import Any, Callable
 
+from backend.utilities.cbom_sources import algid, gcp_tls
 from backend.utilities.cbom_sources.cloud_http import CloudHttp, CloudHttpError
 from backend.utilities.cbom_sources.common import log
 
@@ -31,6 +37,8 @@ PROJECT_CAP = 200
 TOKEN_REUSE_S = 45 * 60  # Google access tokens live one hour: sign in again well before
 ITEM_CAP = 1000  # keys / CAs / secrets per project
 LOCATION_CAP = 100
+VERSION_CAP = 200  # key versions listed per key
+VERSION_ROWS = 20  # of which kept on the key row (oldest first, as Cloud KMS lists them)
 
 Emit = Callable[[dict[str, Any]], None]
 
@@ -90,28 +98,40 @@ def _status(exc: CloudHttpError) -> str:
     return "error"
 
 
-# Cloud KMS CryptoKeyVersionAlgorithm -> (algorithm family, bits).  Symmetric Google keys are AES-256-GCM, the same
-# primitive as AWS KMS SYMMETRIC_DEFAULT, so they share that normalised key_spec (and the rotation rule).
+# Cloud KMS CryptoKeyVersionAlgorithm -> (algorithm family, bits), named by algid.gcp.  Symmetric Google keys are
+# AES-256-GCM, the same primitive as AWS KMS SYMMETRIC_DEFAULT, so they share that normalised key_spec (and the rotation
+# rule).  EXTERNAL_SYMMETRIC_ENCRYPTION (Cloud EKM) is the same AES-256 key held outside Google.
 def _kms_algorithm(name: str) -> tuple[str | None, int | None]:
-    text = name.upper()
-    if text in ("GOOGLE_SYMMETRIC_ENCRYPTION", "EXTERNAL_SYMMETRIC_ENCRYPTION") or text.startswith("AES_"):
-        return "AES", int(text.split("_")[1]) if text.startswith("AES_") and text.split("_")[1].isdigit() else 256
-    if text.startswith("HMAC_"):
-        return "HMAC", None
-    if "RSA" in text:
-        for part in text.split("_"):
-            if part.isdigit() and int(part) >= 1024:
-                return "RSA", int(part)
-        return "RSA", None
-    if "ED25519" in text:
-        return "ED25519", 256
-    if "SECP256K1" in text:
-        return "ECDSA", 256
+    text = str(name or "").strip().upper()
+    if text == "EXTERNAL_SYMMETRIC_ENCRYPTION":
+        return "AES", 256
+    ident = algid.gcp(text)
+    if ident is None:
+        return name or None, None
+    family = ident.family_label
+    if family is None:  # symmetric: AES-*, HMAC-*
+        if str(ident.name).startswith("AES"):
+            return "AES", ident.key_size
+        if str(ident.name).startswith("HMAC"):
+            return "HMAC", None
+        return ident.name, ident.key_size
+    if family == "EC":
+        return ("ECDH" if text.startswith("KEM_") else "ECDSA"), ident.key_size
+    if family == "PQ":
+        return ident.name, None
+    return family, ident.key_size
+
+
+def _ca_key_algorithm(name: str) -> tuple[str | None, int | None]:
+    """CA Service KeySpec.algorithm (SignHashAlgorithm: RSA_PSS_2048_SHA256, EC_P384_SHA384, ...) when the CA has no
+    certificate yet: the key family and size its name states."""
+    text = str(name or "").upper()
+    if text.startswith("RSA_"):
+        size = next((int(p) for p in text.split("_") if p.isdigit() and int(p) >= 1024), None)
+        return "RSA", size
     for curve, bits in (("P256", 256), ("P384", 384), ("P521", 521)):
         if curve in text:
             return "ECDSA", bits
-    if text.startswith("PQ_") or "ML_DSA" in text or "SLH_DSA" in text or "ML_KEM" in text:
-        return text.replace("PQ_SIGN_", "").replace("PQ_", "").replace("_", "-"), None
     return name or None, None
 
 
@@ -119,7 +139,18 @@ _STATE = {"ENABLED": "Enabled", "DISABLED": "Disabled", "DESTROY_SCHEDULED": "Pe
           "PENDING_GENERATION": "Creating", "PENDING_IMPORT": "Creating"}
 
 
-def _key_asset(key: dict[str, Any], label: str) -> dict[str, Any]:
+def _version_row(version: dict[str, Any]) -> dict[str, Any]:
+    """The metadata of one CryptoKeyVersion (never its attestation or any key material)."""
+    row = {"version": str(version.get("name") or "").rsplit("/", 1)[-1], "state": version.get("state"),
+           "protection_level": version.get("protectionLevel"), "algorithm": version.get("algorithm"),
+           "created": version.get("createTime")}
+    if version.get("destroyTime"):
+        row["destroy_time"] = version.get("destroyTime")
+    return row
+
+
+def _key_asset(key: dict[str, Any], label: str, versions: list[dict[str, Any]] | None = None,
+               versions_error: str | None = None) -> dict[str, Any]:
     template = key.get("versionTemplate") or {}
     primary = key.get("primary") or {}
     provider_alg = str(primary.get("algorithm") or template.get("algorithm") or "")
@@ -127,18 +158,30 @@ def _key_asset(key: dict[str, Any], label: str) -> dict[str, Any]:
     purpose = str(key.get("purpose") or "")
     symmetric = provider_alg.upper() in ("GOOGLE_SYMMETRIC_ENCRYPTION", "EXTERNAL_SYMMETRIC_ENCRYPTION")
     name = str(key.get("name") or "")
+    listed = versions or []
+    state = primary.get("state")
+    if not state and listed:  # asymmetric keys have no primary: the key is usable while any version is enabled
+        states = [str(v.get("state") or "") for v in listed]
+        state = ("ENABLED" if "ENABLED" in states else
+                 "DESTROY_SCHEDULED" if all(x in ("DESTROY_SCHEDULED", "DESTROYED") for x in states) and "DESTROY_SCHEDULED" in states
+                 else states[-1] or None)
+    protection = primary.get("protectionLevel") or template.get("protectionLevel")
     return {"type": "kms_key", "target": label, "location": name, "name": name.rsplit("/", 1)[-1],
             "algorithm": family, "key_size": bits,
             "facts": {"provider": "gcp", "key_spec": "SYMMETRIC_DEFAULT" if symmetric else provider_alg,
                       "provider_algorithm": provider_alg, "purpose": purpose, "key_usage": purpose,
-                      "protection_level": primary.get("protectionLevel") or template.get("protectionLevel"),
-                      "hsm_backed": (primary.get("protectionLevel") or template.get("protectionLevel")) == "HSM",
-                      "key_manager": "CUSTOMER", "key_state": _STATE.get(str(primary.get("state") or ""), primary.get("state")),
+                      "protection_level": protection, "hsm_backed": protection == "HSM",
+                      "key_manager": "CUSTOMER", "key_state": _STATE.get(str(state or ""), state),
                       # automatic rotation exists for symmetric ENCRYPT_DECRYPT keys only; for the others it is not applicable
                       "rotation_enabled": bool(key.get("rotationPeriod") or key.get("nextRotationTime")) if purpose == "ENCRYPT_DECRYPT" else None,
                       "rotation_period": key.get("rotationPeriod"), "next_rotation": key.get("nextRotationTime"),
                       "import_only": key.get("importOnly"), "destroy_scheduled_duration": key.get("destroyScheduledDuration"),
-                      "created": key.get("createTime"), "identity": name}}
+                      "created": key.get("createTime"), "identity": name,
+                      "version_count": None if versions_error else len(listed),
+                      "enabled_versions": None if versions_error else sum(1 for v in listed if v.get("state") == "ENABLED"),
+                      "version_algorithms": sorted({str(v.get("algorithm")) for v in listed if v.get("algorithm")}),
+                      "versions": [_version_row(v) for v in listed[:VERSION_ROWS]],
+                      "versions_error": versions_error}}
 
 
 def _ca_asset(ca: dict[str, Any], label: str) -> dict[str, Any]:
@@ -160,7 +203,7 @@ def _ca_asset(ca: dict[str, Any], label: str) -> dict[str, Any]:
                   "lifetime": ca.get("lifetime"), "is_ca": True, "identity": name,
                   "not_after": facts.get("not_after") or ca.get("expireTime")})
     if not alg and spec.get("algorithm"):
-        alg, bits = _kms_algorithm(str(spec["algorithm"]))
+        alg, bits = _ca_key_algorithm(str(spec["algorithm"]))
     return {"type": "cloud_ca", "target": label, "location": name, "name": facts.get("subject") or name.rsplit("/", 1)[-1],
             "algorithm": alg, "key_size": bits, "facts": facts}
 
@@ -211,6 +254,16 @@ def _project(http: CloudHttp, access: str, project: str, label: str, emit: Emit)
     def kms() -> str:
         locations, _t = http.google_pages(f"{KMS}/projects/{project}/locations", access, "locations", cap=LOCATION_CAP)
         count = 0
+        unread: list[str] = []  # keys whose versions could not be listed (the key itself is still reported)
+        first_error: CloudHttpError | None = None
+
+        def versions_gap() -> None:
+            if unread and first_error is not None:
+                emit({"type": "coverage", "target": label, "location": f"projects/{project}#cloudkms-versions",
+                      "facts": {"check": f"cloudkms key versions in project {project}", "status": _status(first_error),
+                                "detail": f"versions of {len(unread)} key(s) not listed: {first_error}"[:200],
+                                "scope": unread[:ITEM_CAP]}})
+
         for loc in locations:
             if not loc.get("name"):
                 continue
@@ -218,11 +271,21 @@ def _project(http: CloudHttp, access: str, project: str, label: str, emit: Emit)
             for ring in (r for r in rings if r.get("name")):
                 keys, _k = http.google_pages(f"{KMS}/{ring['name']}/cryptoKeys", access, "cryptoKeys", cap=ITEM_CAP)
                 for key in keys:
-                    emit(_key_asset(key, label))
+                    versions, versions_error = None, None
+                    if key.get("name"):
+                        try:
+                            versions, _v = http.google_pages(f"{KMS}/{key['name']}/cryptoKeyVersions", access,
+                                                             "cryptoKeyVersions", cap=VERSION_CAP)
+                        except CloudHttpError as exc:  # one key's versions: a gap of that key, not of the service
+                            versions_error, first_error = str(exc)[:120], first_error or exc
+                            unread.append(str(key["name"]))
+                    emit(_key_asset(key, label, versions, versions_error))
                     count += 1
                     if count >= ITEM_CAP:  # key rings and CA pools share this prefix: both are covered (safe side)
+                        versions_gap()
                         return truncated("cloudkms", "keys", f"projects/{project}/locations/")
-        return "ok"
+        versions_gap()
+        return "partial" if unread else "ok"
 
     def cas() -> str:
         locations, _t = http.google_pages(f"{CAS}/projects/{project}/locations", access, "locations", cap=LOCATION_CAP)
@@ -256,6 +319,8 @@ def _project(http: CloudHttp, access: str, project: str, label: str, emit: Emit)
 
     for service, fn in (("cloudkms", kms), ("privateca", cas), ("secretmanager", secret_manager)):
         run(service, fn)
+    for service in gcp_tls.SERVICES:  # load-balancer TLS, Certificate Manager, Cloud Storage
+        services[service] = gcp_tls.read(service, http, access, project, label, emit, _status)
     return services
 
 
@@ -287,7 +352,9 @@ def collect_gcp(team_id: int, cfg: dict[str, Any], secrets: dict[str, str], emit
                     targets.append({"target": label, "status": "auth_failed", "error": str(exc)[:256], "assets": 0})
                     continue
             services = _project(http, access, project, label, emit)
-            bad = [f"{svc}: {status}" for svc, status in services.items() if status not in ("ok", "truncated", "partial")]
+            # an API the project never enabled (Compute Engine, Certificate Manager) holds nothing: a by-choice gap
+            bad = [f"{svc}: {status}" for svc, status in services.items() if status not in ("ok", "truncated", "partial")
+                   and not (status == "not_enabled" and svc in gcp_tls.SERVICES)]
             gappy = [f"{svc}: {status}" for svc, status in services.items() if status in ("truncated", "partial")]
             enabled = [s for s in services.values() if s != "not_enabled"]
             # a cut list is read, not complete: the target is partial (never "ok"), and its gap rows carry their scope
