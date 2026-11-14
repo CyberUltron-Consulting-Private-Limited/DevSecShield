@@ -311,7 +311,7 @@ def test_run_export_as_xml_is_valid_and_matches_the_json(api, world):
     as_json = api("GET", f"/1/cbom/sources/runs/{run['id']}/cbom").json()
     r = api("GET", f"/1/cbom/sources/runs/{run['id']}/cbom?format=xml")
     assert r.status_code == 200 and r.headers["content-type"].startswith("application/vnd.cyclonedx+xml")
-    assert r.headers["x-zs-signature-scope"] == "json"
+    assert "x-zs-signature-scope" not in r.headers  # a run's CBOM is not signed (CB-06); code-scan BOMs keep it
     assert r.headers["content-disposition"].endswith('.cdx.xml"')
     assert validate_xml(r.content) == []
     doc = etree.fromstring(r.content)
