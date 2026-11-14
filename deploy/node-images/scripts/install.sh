@@ -1,6 +1,6 @@
 #!/bin/sh
 # Provision an Ubuntu 24.04 image as a ZeroShield CBOM scan node appliance (used by ami.pkr.hcl and ova.pkr.hcl).
-#   NODE_IMAGE           image to run (zeroshield/cbom-scan-node:<version>, the name the archive loads as)
+#   NODE_IMAGE           image to run (localhost/zeroshield/cbom-scan-node:<version>, the name the archive loads as)
 #   NODE_IMAGE_ARCHIVE   the `docker save` archive on the build VM (the Packer templates copy it there), loaded; without
 #                        it the image is pulled from a registry the build VM can reach
 #   OVA=1                also install open-vm-tools and the vApp-properties reader (zs-ovf-env)

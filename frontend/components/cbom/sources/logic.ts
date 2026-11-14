@@ -175,7 +175,7 @@ export interface NodeImage {
 
 /** The name scripts/release/scan_node_image.sh saves the image under (SCAN_NODE_IMAGE's default) for the scan node's
  * VERSION: what the wizard runs until the server says what its image file holds. */
-export const DEFAULT_NODE_IMAGE = "zeroshield/cbom-scan-node:1.0.0"
+export const DEFAULT_NODE_IMAGE = "localhost/zeroshield/cbom-scan-node:1.0.0"
 
 /** What the server offers (GET /{team}/cbom/node-artifacts). */
 export interface NodeArtifact {

@@ -35,7 +35,7 @@ def artifacts(tmp_path, monkeypatch, world):  # noqa: F811
     (d / f"cbom-scan-node-ova-kit-{VERSION}.zip").write_bytes(b"PK-ova")
     (d / f"cbom-scan-node-ami-kit-{VERSION}.zip").write_bytes(b"PK-ami")
     (d / "manifest.json").write_text(json.dumps({
-        "version": VERSION, "image_ref": f"zeroshield/cbom-scan-node:{VERSION}",
+        "version": VERSION, "image_ref": f"localhost/zeroshield/cbom-scan-node:{VERSION}",
         "files": {"image": image.name, "helm-chart": f"cbom-scan-node-{VERSION}.tgz",
                   "ova-kit": f"cbom-scan-node-ova-kit-{VERSION}.zip", "ami-kit": f"cbom-scan-node-ami-kit-{VERSION}.zip"}}))
     monkeypatch.setenv("CBOM_NODE_ARTIFACT_DIR", str(d))
@@ -51,7 +51,7 @@ def test_listing_names_every_file_with_size_and_sha256(api, artifacts):  # noqa:
     r = api("GET", "/1/cbom/node-artifacts", "bob")  # a member, not an admin
     assert r.status_code == 200 and r.headers["cache-control"] == "no-store"
     body = r.json()
-    assert body["version"] == VERSION and body["image_ref"] == f"zeroshield/cbom-scan-node:{VERSION}"
+    assert body["version"] == VERSION and body["image_ref"] == f"localhost/zeroshield/cbom-scan-node:{VERSION}"
     assert body["pull_image_ref"] is None  # no registry configured: the wizard offers no docker pull
     kinds = _by_kind(body)
     assert set(kinds) == {"image", "helm-chart", "ova-kit", "ami-kit"}

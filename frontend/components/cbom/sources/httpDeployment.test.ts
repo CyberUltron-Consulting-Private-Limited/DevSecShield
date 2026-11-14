@@ -27,7 +27,7 @@ const text = (el: ReactElement) =>
 const HTTP = "http://devsec-staging-api.zeroshield.ai"
 const HTTPS = "https://devsecshieldapi.zeroshield.ai"
 const TOKEN = "zsr_TESTONLY_cb08"
-const IMAGE = "zeroshield/cbom-scan-node:1.0.0"
+const IMAGE = "localhost/zeroshield/cbom-scan-node:1.0.0"
 
 async function main() {
   // the behaviour the copy follows: https://, or http:// only with the lab switch

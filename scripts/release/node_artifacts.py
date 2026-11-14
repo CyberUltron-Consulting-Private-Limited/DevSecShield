@@ -13,7 +13,7 @@ The kits build from the downloaded image file (node_image_archive), never from a
 version's file and image. Every file is reproducible: fixed times, owners and order, so the same tree gives the same
 SHA-256.
 
-  python3 -I scripts/release/node_artifacts.py --version 1.0.0 --image-ref zeroshield/cbom-scan-node:1.0.0 --out DIR
+  python3 -I scripts/release/node_artifacts.py --version 1.0.0 --image-ref localhost/zeroshield/cbom-scan-node:1.0.0 --out DIR
 """
 from __future__ import annotations
 

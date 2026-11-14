@@ -9,7 +9,7 @@ ways that were run end to end.
 
 The image always comes from the file (`docker save` archive, `scripts/release/scan_node_image.sh build <version>`):
 Packer copies `node_image_archive` to the build VM, `install.sh` loads it and checks that it holds `node_image`
-(`zeroshield/cbom-scan-node:<version>`). Nothing is pulled from a registry.
+(`localhost/zeroshield/cbom-scan-node:<version>`). Nothing is pulled from a registry.
 
 Both images are Ubuntu 24.04 LTS + Docker + the scan-node container image + a systemd unit. Nothing in them is
 specific to one customer: the settings arrive at first boot in `/etc/zs-node/env`, and `zs-scan-node.service`

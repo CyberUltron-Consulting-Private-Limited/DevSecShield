@@ -69,7 +69,7 @@ short-lived link per file; `backend/routers/cbom_node_artifacts.py`):
 
 | File | Made by |
 |---|---|
-| `scan-node-<version>.tar.gz` + `.sha256` | `scripts/release/scan_node_image.sh build <version>`: `docker save` of `zeroshield/cbom-scan-node:<version>`, the name the wizard's `docker run --pull never` uses |
+| `scan-node-<version>.tar.gz` + `.sha256` | `scripts/release/scan_node_image.sh build <version>`: `docker save` of `localhost/zeroshield/cbom-scan-node:<version>`, the name the wizard's `docker run --pull never` uses |
 | `cbom-scan-node-<version>.tgz` + `.sha256` | `scripts/release/node_artifacts.py`: `deploy/helm/cbom-scan-node`, version and appVersion = `<version>` |
 | `cbom-scan-node-ova-kit-<version>.zip`, `cbom-scan-node-ami-kit-<version>.zip` + `.sha256` | `node_artifacts.py`: the Packer kit from `deploy/node-images` with a customer README (`deploy/node-images/kit/`), building from the image file |
 | `manifest.json` | `node_artifacts.py`: version, `image_ref`, the file names; the API lists only what it names |

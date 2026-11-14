@@ -11,8 +11,8 @@ Push the image to a registry your cluster pulls from, then install the downloade
 ```sh
 REGISTRY=registry.example.internal/zeroshield   # a registry your cluster can pull from
 sha256sum -c scan-node-1.0.0.tar.gz.sha256
-docker load -i scan-node-1.0.0.tar.gz                   # loads zeroshield/cbom-scan-node:1.0.0
-docker tag zeroshield/cbom-scan-node:1.0.0 "$REGISTRY/cbom-scan-node:1.0.0"
+docker load -i scan-node-1.0.0.tar.gz                   # loads localhost/zeroshield/cbom-scan-node:1.0.0
+docker tag localhost/zeroshield/cbom-scan-node:1.0.0 "$REGISTRY/cbom-scan-node:1.0.0"
 docker push "$REGISTRY/cbom-scan-node:1.0.0"
 
 # agentless node (reaches your servers, clusters, databases and networks with the credentials you store)
@@ -29,7 +29,12 @@ helm upgrade --install zs-host-agents ./cbom-scan-node-1.0.0.tgz \
   --set deployment.enabled=false --set agent.enabled=true --set agent.poolToken='zsp_...'
 ```
 
-(From a checkout, use `deploy/helm/cbom-scan-node` instead of the `.tgz`.) When the server names a registry that
+(From a checkout, use `deploy/helm/cbom-scan-node` instead of the `.tgz`.) The image file loads as
+`localhost/zeroshield/cbom-scan-node:<version>`: `localhost/` is a registry host that never resolves to a public
+registry, so nothing can be pulled under that name from the internet. It is also the chart's default
+`image.repository`, as a placeholder: the chart refuses to render with it (a `helm install` that forgot
+`--set image.repository=...` fails with that message) unless `image.pullPolicy=Never` (the image loaded on every node
+by hand, e.g. `ctr -n k8s.io images import`). When the server names a registry that
 customers can pull the node image from (`CBOM_NODE_IMAGE_REF`), the wizard's command uses that image instead.
 
 ## What it creates
@@ -69,7 +74,7 @@ Both are ready while the node's heartbeat loop turns (the image health check: `$
 
 | Value | Default | |
 |---|---|---|
-| `image.repository`, `image.tag` | `zeroshield/cbom-scan-node` (the name the image file loads as), appVersion | |
+| `image.repository`, `image.tag` | `localhost/zeroshield/cbom-scan-node` (the name the image file loads as), appVersion | |
 | `apiUrl` | (required) | ZeroShield API URL (`https://`) |
 | `registrationToken` / `existingSecret` | | Deployment enrollment |
 | `httpsProxy`, `noProxy` | | outbound proxy to ZeroShield |

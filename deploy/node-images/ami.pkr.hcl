@@ -36,7 +36,7 @@ variable "node_image_archive" {
 
 variable "node_image" {
   type        = string
-  default     = "zeroshield/cbom-scan-node:1.0.0"
+  default     = "localhost/zeroshield/cbom-scan-node:1.0.0"
   description = "The image name the archive loads as (docker load); the AMI runs it."
 }
 

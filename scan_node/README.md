@@ -12,12 +12,12 @@ Create a node in ZeroShield (**CBOM Sources → Scan nodes → Add scan node**),
 
 ```sh
 sha256sum -c scan-node-1.0.0.tar.gz.sha256
-docker load -i scan-node-1.0.0.tar.gz          # loads zeroshield/cbom-scan-node:1.0.0
+docker load -i scan-node-1.0.0.tar.gz          # loads localhost/zeroshield/cbom-scan-node:1.0.0
 docker run -d --pull never --name zs-scan-node-dc-mumbai-01 --restart unless-stopped \
   -e ZS_API_URL='https://api.zeroshield.ai' \
   -e ZS_REGISTRATION_TOKEN='zsr_…' \
   -v zs-node-dc-mumbai-01:/var/lib/zs-node \
-  zeroshield/cbom-scan-node:1.0.0
+  localhost/zeroshield/cbom-scan-node:1.0.0
 ```
 
 `--pull never`: Docker runs the image it loaded from the file and never looks for that name in a registry. When the
@@ -133,7 +133,7 @@ it; then run the install command (`--pull never`: Docker uses the loaded image a
 
 ```sh
 sha256sum -c scan-node-<version>.tar.gz.sha256
-docker load -i scan-node-<version>.tar.gz     # zeroshield/cbom-scan-node:<version>
+docker load -i scan-node-<version>.tar.gz     # localhost/zeroshield/cbom-scan-node:<version>
 ```
 
 The image installs `requirements.lock`: every Python package pinned with sha256 hashes. After editing

@@ -1,5 +1,5 @@
 # ZeroShield CBOM scan node.
-#   docker build -t zeroshield/cbom-scan-node:1.0.0 scan_node/
+#   docker build -t localhost/zeroshield/cbom-scan-node:1.0.0 scan_node/
 #   scripts/release/scan_node_image.sh build 1.0.0    (also writes the docker-save archive customers load offline)
 # Behind a TLS-intercepting proxy, build from a base image that already trusts the proxy CA:
 #   docker build --network host --build-arg BASE_IMAGE=<base with CA> --build-arg HTTPS_PROXY=... scan_node/

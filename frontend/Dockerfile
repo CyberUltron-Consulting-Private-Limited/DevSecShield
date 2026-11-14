@@ -5,7 +5,7 @@
 # NEXT_PUBLIC_* values are inlined into the browser bundle at build time, so the API URL is required: an image built
 # without it would send every browser to a default host. Optional: NEXT_PUBLIC_CBOM_NODE_IMAGE (the scan-node image
 # shown in the deployment instructions; a registry customers can pull from; without it the UI
-# offers the image file the server serves, zeroshield/cbom-scan-node:<version>) and
+# offers the image file the server serves, localhost/zeroshield/cbom-scan-node:<version>) and
 # NEXT_PUBLIC_BUILD_SHA (the git commit, shown as <meta name="zs-build">; build_images.sh passes it).
 # Behind a TLS-intercepting proxy or with a private registry mirror: --build-arg NODE_BASE_IMAGE=<node:20-alpine
 # image that trusts the proxy CA>.

@@ -54,7 +54,7 @@ def test_ovf_environment_becomes_the_node_env_file(tmp_path):
 
 def _node_run(tmp_path, env_text: str):
     (tmp_path / "env").write_text(env_text)
-    (tmp_path / "image").write_text("zeroshield/cbom-scan-node:1.0.0\n")
+    (tmp_path / "image").write_text("localhost/zeroshield/cbom-scan-node:1.0.0\n")
     _exe(tmp_path / "docker", f"#!/bin/sh\nprintf '%s\\n' \"$@\" > {tmp_path / 'argv'}\n")
     run = subprocess.run(["sh", str(IMAGES / "files" / "zs-node-run")], capture_output=True, text=True,
                          env={**os.environ, "ZS_NODE_ENV": str(tmp_path / "env"),
@@ -69,7 +69,7 @@ def test_node_run_starts_the_container_with_the_env_file(tmp_path):
     assert run.returncode == 0, run.stderr
     assert argv[:4] == ["run", "--rm", "--name", "zs-scan-node"]
     assert argv[argv.index("--env-file") + 1] == str(tmp_path / "env")
-    assert "zs-node:/var/lib/zs-node" in argv and argv[-1] == "zeroshield/cbom-scan-node:1.0.0"
+    assert "zs-node:/var/lib/zs-node" in argv and argv[-1] == "localhost/zeroshield/cbom-scan-node:1.0.0"
     assert "/:/host:ro" not in argv
 
 

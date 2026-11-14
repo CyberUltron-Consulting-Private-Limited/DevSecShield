@@ -29,7 +29,7 @@ const BANNED = [/registry\.zeroshield\.ai/, /make node-image/, /Build it yoursel
 
 const AVAILABLE = {
   version: "1.0.0",
-  image_ref: "zeroshield/cbom-scan-node:1.0.0",
+  image_ref: "localhost/zeroshield/cbom-scan-node:1.0.0",
   pull_image_ref: null,
   artifacts: [
     { kind: "image", label: "Scan node image", available: true, filename: "scan-node-1.0.0.tar.gz", size: 66_270_412, sha256: SHA, message: null },
@@ -202,7 +202,7 @@ async function main() {
     const loadAt = shown.indexOf("docker load -i scan-node-1.0.0.tar.gz")
     const run = shown.indexOf("docker run -d --pull never --name zs-scan-node-dc-1")
     assert.ok(check >= 0 && loadAt > check && run > loadAt, shown)
-    assert.ok(shown.includes("zeroshield/cbom-scan-node:1.0.0") && shown.includes("zsr_TESTONLY"), shown)
+    assert.ok(shown.includes("localhost/zeroshield/cbom-scan-node:1.0.0") && shown.includes("zsr_TESTONLY"), shown)
     const pull = t.host.querySelector('[data-testid="node-command-pull"]')
     if (pullRef) {
       assert.ok(pull && pull.textContent!.includes(`docker run -d --name zs-scan-node-dc-1`) && pull.textContent!.includes(pullRef), pull?.textContent ?? "")

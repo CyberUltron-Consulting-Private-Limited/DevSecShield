@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -24,7 +25,7 @@ from test_staging_deploy_disk import ARCH, IMG, NEED, ShortHost, build_machine, 
 pytestmark = pytest.mark.skipif(BASH is None or shutil.which("sha256sum") is None, reason="needs bash and sha256sum")
 
 VERSION = "1.0.0"
-IMAGE_REF = f"zeroshield/cbom-scan-node:{VERSION}"
+IMAGE_REF = f"localhost/zeroshield/cbom-scan-node:{VERSION}"
 KINDS = ("image", "helm-chart", "ova-kit", "ami-kit")
 
 
@@ -69,7 +70,29 @@ def test_the_chart_installs_from_the_file_with_the_image_s_tag(tmp_path):
     assert all(n.startswith("cbom-scan-node/") for n in names)
     assert {"cbom-scan-node/templates/deployment.yaml", "cbom-scan-node/templates/daemonset.yaml"} <= set(names)
     assert f"\nversion: {VERSION}\n" in chart and f'\nappVersion: "{VERSION}"\n' in chart  # default tag = the image's
-    assert "  repository: zeroshield/cbom-scan-node\n" in values  # the name the image file loads as
+    assert "  repository: localhost/zeroshield/cbom-scan-node\n" in values  # the name the image file loads as
+
+
+def test_the_image_name_can_never_resolve_to_a_public_registry():
+    """`localhost/` is a registry host (Docker and containerd): a pull of the name fails locally, never fetches an
+    image someone registered under `zeroshield` on Docker Hub. The chart refuses the placeholder unless the image is
+    loaded on the nodes (pullPolicy Never); CI's rendered scan sets a real-looking repository."""
+    assert IMAGE_REF.startswith("localhost/")
+    values = (ROOT / "deploy/helm/cbom-scan-node/values.yaml").read_text()
+    assert "\n  repository: localhost/zeroshield/cbom-scan-node\n" in values
+    helpers = (ROOT / "deploy/helm/cbom-scan-node/templates/_helpers.tpl").read_text()
+    image = helpers.split('{{- define "cbom-scan-node.image" -}}', 1)[1].split("{{- end -}}\n{{- printf", 1)[0]
+    assert 'hasPrefix "localhost/"' in image and '(ne (toString .Values.image.pullPolicy) "Never")' in image
+    assert "{{- fail " in image and "set image.repository" in image
+    for t in ("deployment.yaml", "daemonset.yaml"):
+        assert 'include "cbom-scan-node.image" .' in (ROOT / "deploy/helm/cbom-scan-node/templates" / t).read_text()
+    assert "--set image.repository=registry.ci.invalid/" in (ROOT / ".github/workflows/ci.yml").read_text()
+    # the shipped commands never run the bare Docker Hub name
+    for rel in ("frontend/components/cbom/sources/logic.ts", "scan_node/README.md", "deploy/helm/cbom-scan-node/README.md",
+                "deploy/node-images/ami.pkr.hcl", "deploy/node-images/ova.pkr.hcl", "scripts/release/scan_node_image.sh",
+                "scripts/deploy/staging.sh"):
+        text = (ROOT / rel).read_text()
+        assert not re.search(r"(?<![\w./-])zeroshield/cbom-scan-node", text), rel
 
 
 @pytest.mark.parametrize("kind,template", [("ova", "ova.pkr.hcl"), ("ami", "ami.pkr.hcl")])
@@ -109,7 +132,7 @@ def test_node_artifacts_refuses_a_missing_image_or_a_mismatched_ref(tmp_path):
     missing = subprocess.run([*run, "--version", VERSION, "--image-ref", IMAGE_REF], capture_output=True, text=True)
     assert missing.returncode != 0 and "missing" in missing.stderr
     (tmp_path / f"scan-node-{VERSION}.tar.gz").write_bytes(b"x")
-    for version, ref in ((VERSION, "zeroshield/cbom-scan-node:2.0.0"), ("latest", "zeroshield/cbom-scan-node:latest")):
+    for version, ref in ((VERSION, "localhost/zeroshield/cbom-scan-node:2.0.0"), ("latest", "localhost/zeroshield/cbom-scan-node:latest")):
         bad = subprocess.run([*run, "--version", version, "--image-ref", ref], capture_output=True, text=True)
         assert bad.returncode != 0, (version, ref)
 
@@ -218,4 +241,4 @@ def test_the_node_version_is_the_scan_node_s():
     assert f'VERSION = "{VERSION}"' in init  # these tests and the UI's fallback name assume it
     ui = (ROOT / "frontend/components/cbom/sources/logic.ts").read_text()
     assert f'"{IMAGE_REF}"' in ui
-    assert 'IMAGE="${SCAN_NODE_IMAGE:-zeroshield/cbom-scan-node}"' in (ROOT / "scripts/release/scan_node_image.sh").read_text()
+    assert 'IMAGE="${SCAN_NODE_IMAGE:-localhost/zeroshield/cbom-scan-node}"' in (ROOT / "scripts/release/scan_node_image.sh").read_text()

@@ -51,7 +51,7 @@
 #      STAGING_DISK_RESERVE_MB (left free on every filesystem after that; default 1024), STAGING_CONTAINERD_ROOT
 #      (containerd's root when Docker uses the containerd image store; default: found from the containerd config),
 #      CBOM_NODE_VERSION (node-artifacts: the scan-node version; default scan_node/zs_scan_node/__init__.py VERSION),
-#      SCAN_NODE_IMAGE (node-artifacts: the name the node image file loads as; default zeroshield/cbom-scan-node),
+#      SCAN_NODE_IMAGE (node-artifacts: the name the node image file loads as; default localhost/zeroshield/cbom-scan-node),
 #      STAGING_SET_<KEY> for each of BACKEND_ENV_KEYS (push: set <KEY> in the host's backend.env; unset or empty:
 #      the host's value is left as it is).
 set -euo pipefail
@@ -188,7 +188,7 @@ cmd_node_artifacts() {
   local version image
   version="${CBOM_NODE_VERSION:-$(sed -n -E 's/^VERSION = "([^"]+)"$/\1/p' "${REPO_ROOT}/scan_node/zs_scan_node/__init__.py")}"
   [[ -n "${version}" ]] || die "cannot read the scan-node VERSION from scan_node/zs_scan_node/__init__.py"
-  image="${SCAN_NODE_IMAGE:-zeroshield/cbom-scan-node}"
+  image="${SCAN_NODE_IMAGE:-localhost/zeroshield/cbom-scan-node}"
   rm -rf "${NODE_BUILD_DIR}"
   mkdir -p "${NODE_BUILD_DIR}"
   log "scan-node downloads ${version} (${image}:${version}) in ${NODE_BUILD_DIR}"
