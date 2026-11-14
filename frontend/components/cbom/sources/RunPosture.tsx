@@ -95,7 +95,7 @@ const MOSCA_FIELDS: { key: keyof CbomRiskModel; label: string; hint: string }[] 
   { key: "threat_years", label: "Z: years until a quantum computer", hint: "your organisation's assumption" },
 ];
 
-function MoscaEditor({ teamId, onDone }: { teamId: number; onDone: () => void }) {
+export function MoscaEditor({ teamId, onDone }: { teamId: number; onDone: () => void }) {
   const queryClient = useQueryClient();
   const settings = useQuery({ queryKey: cbomSourcesKeys.settings(teamId), queryFn: () => getCbomSourcesSettings(teamId) });
   const [draft, setDraft] = useState<Record<string, string>>({});
@@ -177,7 +177,7 @@ export function RunPostureCard({ teamId, runId, active, onOpenAsset }: {
   if (p.assets === 0) {
     return (p.q0_items_total ?? 0) > 0 ? <QDistributionCard teamId={teamId} posture={p} onOpenAsset={onOpenAsset} /> : null;
   }
-  const m = p.mosca;
+  const m = p.mosca; // the Mosca this run recorded at Start (the team's now: mosca_now, and the editor)
   return (
     <div className="space-y-3 rounded-lg border border-zinc-200 dark:border-zinc-800 p-4" data-testid="run-posture">
       <div className="flex flex-wrap items-center gap-2">
@@ -201,10 +201,16 @@ export function RunPostureCard({ teamId, runId, active, onOpenAsset }: {
           ) : (
             <p className="text-xs text-zinc-500 mt-1">Not set</p>
           )}
+          {p.mosca_now && (
+            <p className="text-xs text-zinc-500 mt-0.5" data-testid="posture-mosca-now">
+              Team now: {p.mosca_now.configured ? `X ${p.mosca_now.x} + Y ${p.mosca_now.y} vs Z ${p.mosca_now.z}` : "not set"} (applies to new runs)
+            </p>
+          )}
           {isAdmin ? (
             <button type="button" className="text-xs text-blue-600 dark:text-blue-400 cursor-pointer mt-1" data-testid="mosca-edit"
+                    title="Team setting: new runs record it at Start; this run keeps the values it started with"
                     onClick={() => setEditMosca(!editMosca)}>
-              {m.configured ? "Change X, Y, Z" : "Set X, Y, Z"}
+              {m.configured || p.mosca_now ? "Change X, Y, Z" : "Set X, Y, Z"}
             </button>
           ) : (
             <p className="text-xs text-zinc-500 mt-1" data-testid="mosca-admin-only">A team admin sets X, Y and Z</p>

@@ -1372,7 +1372,8 @@ def _run_detail(session: Session, run: CbomCollectionRun, settings, now) -> dict
                         .order_by(CbomCollectionJob.id)).all()
     nodes = {n.id: n for n in session.exec(select(CbomScanNode).where(CbomScanNode.team_id == run.team_id)).all()}
     sources = {s.id: s for s in session.exec(select(CbomCollectionSource).where(CbomCollectionSource.team_id == run.team_id)).all()}
-    return public_run(run, [public_job(j, nodes.get(j.node_id), settings, now, sources.get(j.source_id)) for j in jobs])
+    return public_run(run, [public_job(j, nodes.get(j.node_id), settings, now, sources.get(j.source_id)) for j in jobs],
+                      settings.risk_model or {})
 
 
 def _create_run(engine, team_id: int, user_id: int, body: RunCreate) -> tuple[dict, int]:
@@ -1528,7 +1529,7 @@ def _run_posture(engine, team_id: int, run_id: int) -> dict:
     with Session(engine) as session:
         run = _get_owned(session, CbomCollectionRun, run_id, team_id, "Run")
         settings = get_or_create_settings(session, team_id)
-        return {"run": public_run(run),
+        return {"run": public_run(run, risk_model=settings.risk_model or {}),
                 "posture": POSTURE.run_posture(session, team_id=team_id, run_id=run.id, risk_model=settings.risk_model)}
 
 
@@ -1574,7 +1575,16 @@ def _asset_detail(engine, team_id: int, asset_id: int) -> dict:
         # the quantum risk grade, from the same context loader as the run's list and posture (CB-19)
         grading = QGRADE.load_context(session, team_id=team_id, run_id=row.run_id, job_id=row.job_id)
         graded = grading.grade_row(row, asset["finding_codes"], cls=asset["pqc_class"])
-        return {"asset": {**asset, **graded.fields(), "q_explain": graded.explain}}
+        # PR-2: the grade with the team's inputs now, when they differ from the run's snapshot (the drawer's "with
+        # current inputs"); the record above never changes
+        current = (get_or_create_settings(session, team_id).risk_model or {}) if grading.inputs_source == "snapshot" \
+            else None
+        q_now = None
+        if current is not None and grading.inputs_changed(current):
+            now_grade = grading.with_inputs(current).grade_row(row, asset["finding_codes"], explain=False,
+                                                               cls=asset["pqc_class"])
+            q_now = {"q_grade": now_grade.q_grade, "q_label": now_grade.q_label, "q_reason": now_grade.q_reason}
+        return {"asset": {**asset, **graded.fields(), "q_explain": graded.explain, "q_now": q_now}}
 
 
 @router.get(BASE + "/grade-model", dependencies=READ,

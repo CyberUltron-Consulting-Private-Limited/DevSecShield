@@ -418,6 +418,10 @@ class CbomCollectionRun(SQLModel, table=True):
     kb_version: str | None = Field(default=None, max_length=32)
     classifier_version: str | None = Field(default=None, max_length=32)
     engine_version: str | None = Field(default=None, max_length=32)
+    # CB-19 PR-2: the grade model and the grade inputs (team Mosca X/Y/Z, evidence levels and Q0 gaps) at Start; run
+    # views grade with these (the record), never with the team's later edits (null on runs from before cb19grade001)
+    grade_model_version: str | None = Field(default=None, max_length=32)
+    grade_inputs: Dict | None = Field(default=None, sa_column=Column(JSON, nullable=True))
     soc_ack_by: int | None = Field(default=None)
     soc_ack_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
     cancelled_by: int | None = Field(default=None)

@@ -4535,6 +4535,8 @@ export interface CbomRunPosture {
     impacts: Record<CbomImpact, number>
     top_codes: { code: string; count: number; title: string }[]
     mosca: { configured: boolean; x: number | null; y: number | null; z: number | null; at_risk?: boolean; years_over?: number; verdict?: string; note?: string }
+    // CB-19 PR-2: the team's Mosca now, when it differs from what the run recorded at Start (null otherwise)
+    mosca_now?: { configured: boolean; x: number | null; y: number | null; z: number | null; at_risk?: boolean; years_over?: number } | null
     top_risks: { id: number; type: string; name: string; location: string; impact: CbomImpact; criticality: string; source_name: string | null; score: number; hndl: boolean; finding: string | null }[]
     compliance: { framework: string; clauses: { id: string; text: string; source: string; note?: string | null; assets: number; codes: string[] }[] }[]
     kb_version: string
@@ -4656,6 +4658,16 @@ export interface CbomRun {
     jobs?: CbomJob[]
     job_counts?: Partial<Record<CbomJobStatus, number>>
     asset_count?: number
+    // CB-19 PR-2: the grade model and inputs recorded at Start; inputs_changed when the team's Mosca differs now
+    grades?: {
+        model_version: string | null
+        inputs: Record<string, unknown> | null
+        inputs_digest: string | null
+        inputs_source: "snapshot" | "current"
+        inputs_changed: boolean | null
+        model_changed: boolean
+        mosca_now: { x: number | null; y: number | null; z: number | null } | null
+    }
 }
 
 export interface CbomEvidenceQuestion { id: string; prompt: string; type: "text" | "choice" }
