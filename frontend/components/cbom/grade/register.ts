@@ -26,6 +26,9 @@ export interface RegisterRow {
   last_observed_at: string | null;
   model_version: string;
   updated_at: string | null;
+  /** engine step 3: the asset's sources' owners and the highest data classification of its systems */
+  owners?: string[];
+  data_classification?: string | null;
 }
 
 export interface RegisterPage {

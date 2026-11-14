@@ -1668,6 +1668,13 @@ def _asset_detail(engine, team_id: int, asset_id: int) -> dict:
         # the code page's dialog fields, from the same function as the run's /assets items (CB-38 W2b): a dialog
         # opened from top risks or a certificate shows the same OWASP / controls / fix as one opened from the table
         RUN_ASSETS.add_code_page_fields(out)
+        # engine step 3: the estate asset this row is, its owners / applications / data classification and the code
+        # and SBOM components that use it (None until the estate store has written the row's run)
+        from backend.utilities.cbom_sources import estate_links as LINKS
+
+        key = LINKS.estate_key_of_row(session, team_id, row)
+        out["correlation"] = ({"estate_key": key, **LINKS.correlation(session, team_id, [key])[key]}
+                              if key else None)
         return {"asset": out}
 
 
