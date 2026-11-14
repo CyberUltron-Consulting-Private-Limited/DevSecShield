@@ -396,6 +396,42 @@ def test_f1b_eviction_never_drops_a_held_lock(api, world, monkeypatch):
         assert RP._lock(run1["id"]) is held  # the same lock: no second computation of run 1 in parallel
 
 
+
+def test_f1c_cache_eviction_is_least_recently_used(api, world, monkeypatch):
+    """A cache hit refreshes the run: the run read most recently survives, the one unread longest leaves."""
+    engine, _ = world
+    _s, run1, _c, hdr = _run_with(api, engine, PROBE)  # 5 assets
+    run2 = _again(api, hdr, [PROBE[1], PROBE[4]], "parity-lru-00001")  # 2 assets
+    run3 = _again(api, hdr, [PROBE[2]], "parity-lru-00002")  # 1 asset
+    monkeypatch.setattr(RP, "CACHE_ROWS", 7)
+    _parity(api, run1["id"])
+    _parity(api, run2["id"])  # 5 + 2 = 7 fits
+    _parity(api, run1["id"])  # hit: run 1 is now the most recently used
+    assert RP.COMPUTE_COUNT[run1["id"]] == 1
+    _parity(api, run3["id"])  # 8 > 7: run 2 (least recently used) leaves, not run 1
+    assert set(RP._CACHE) == {run1["id"], run3["id"]}
+
+
+def test_f2b_engine_error_result_is_retried_after_the_live_ttl(api, world, monkeypatch):
+    engine, _ = world
+    _s, run, _c, _h = _run_with(api, engine, PROBE)
+    real = RP.engine()
+
+    class Boom:
+        @staticmethod
+        def run_cbom_compliance(_result):
+            raise RuntimeError("secret-host.example.com broke")
+
+    monkeypatch.setattr(RP, "engine", lambda: {**real, "compliance": Boom})
+    assert _parity(api, run["id"])["engine"]["compliance"] == "unavailable"
+    _parity(api, run["id"])
+    assert RP.COMPUTE_COUNT[run["id"]] == 1  # within the TTL it is reused
+    monkeypatch.setattr(RP, "engine", lambda: real)
+    monkeypatch.setattr(RP.RR, "LIVE_TTL_S", -1)
+    assert _parity(api, run["id"])["engine"]["compliance"] == "available"  # retried once the TTL passed
+    assert RP.COMPUTE_COUNT[run["id"]] == 2
+    RP._ERRORS_LOGGED.clear()  # errors are logged once per process; let later tests see their own line
+
 def test_f2_engine_error_at_runtime_degrades_instead_of_500(api, world, monkeypatch, capsys):
     engine, _ = world
     _s, run, _c, _h = _run_with(api, engine, PROBE)
@@ -420,6 +456,7 @@ def test_f2_engine_error_at_runtime_degrades_instead_of_500(api, world, monkeypa
     assert meta["cbom_graph_compact"] is None and meta["cbom_graph_expanded"] is None
     logged = capsys.readouterr().out
     assert "cbom run parity engine error" in logged and "RuntimeError" in logged
+    assert "engine bug" not in logged  # exception text (may hold asset names) is not logged
 
 
 def test_f6_library_weak_flag_follows_its_findings(api, world):

@@ -121,12 +121,11 @@ def _engine_error(part: str, exc: BaseException) -> None:
         if key in _ERRORS_LOGGED:
             return
         _ERRORS_LOGGED.add(key)
-    detail = " ".join(str(exc).split())[:200]
     line = f"{RR.utc_timestamp()} cbom run parity engine error part={part} error={type(exc).__name__}"
     request_id = RR.current_request_id()
     try:
-        RR.console.print(line + (f" detail={detail!r}" if detail else "") +
-                         (f" request_id={request_id}" if request_id else ""),
+        # the exception text is not logged: it can carry customer asset names
+        RR.console.print(line + (f" request_id={request_id}" if request_id else ""),
                          markup=False, highlight=False, soft_wrap=True)
     except Exception:  # noqa: BLE001, S110 - logging must never fail a request
         pass
@@ -490,6 +489,11 @@ def _lock(run_id: int) -> threading.Lock:
         return _LOCKS.setdefault(run_id, threading.Lock())
 
 
+def _degraded(computed: dict[str, Any]) -> bool:
+    """True when an engine error (not a missing engine) shaped this result: it is retried after LIVE_TTL_S."""
+    return "engine error" in str(computed.get("engine", {}).get("reason") or "")
+
+
 def run_parity(session: Session, run: CbomCollectionRun, *, team_id: int, risk_model: dict[str, Any] | None,
                now: _dt.datetime | None = None) -> dict[str, Any]:
     now = now or utcnow()
@@ -501,10 +505,15 @@ def run_parity(session: Session, run: CbomCollectionRun, *, team_id: int, risk_m
     with _lock(rid):
         with _CACHE_LOCK:
             hit = _CACHE.get(rid)
+        # a live run, or a result degraded by an engine error, is only reused for LIVE_TTL_S
+        short = hit is not None and (active or _degraded(hit[4]))
         fresh = hit is not None and hit[0] == key and hit[1] == digest and hit[2] == active and (
-            not active or time.monotonic() - hit[3] < RR.LIVE_TTL_S)
+            not short or time.monotonic() - hit[3] < RR.LIVE_TTL_S)
         if fresh:
             computed = hit[4]  # type: ignore[index]
+            with _CACHE_LOCK:
+                if rid in _CACHE:
+                    _CACHE.move_to_end(rid)  # least recently *used*: a read keeps the run in the cache
         else:
             started = time.perf_counter()
             computed = _compute(session, run, team_id, now)
