@@ -300,6 +300,10 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
             attestations = scan.scan_data.get("attestations")
             bom_signature = scan.scan_data.get("bom_signature")
             vex_json = scan.scan_data.get("vex_json")
+            from backend.utilities.cbom_sources.vex_semantics import is_current
+
+            if not is_current("cbom", vex_json):  # older VEX rules (CB-22): the page fetches /vex, which rebuilds it
+                vex_json = None
             cbom_input = _cbom_input(scan.scan_data.get("cbom_input"))
         from backend.utilities.dashboard.cbom_coverage import coverage_report
 

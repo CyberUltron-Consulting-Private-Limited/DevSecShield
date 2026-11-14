@@ -15,7 +15,7 @@ from backend.new_models import (
 )
 from backend.utilities.cbom_sources.agility import evidence_area_fields, evidence_vendor_fields
 from backend.utilities.cbom_sources.common import iso_z
-from backend.utilities.cbom_sources.evidence import AREAS, CONFIDENCE_LABEL, effective_confidence, vendor_status
+from backend.utilities.cbom_sources.evidence import AREAS, CONFIDENCE_LABEL, area_level, level, vendor_level, vendor_status
 from backend.utilities.cbom_sources.jobs import job_waiting_reason, run_credit_summary
 from backend.utilities.cbom_sources.kinds import KINDS
 from backend.utilities.cbom_sources.planning import node_status, source_targets
@@ -136,7 +136,12 @@ def public_job(job: CbomCollectionJob, node: CbomScanNode | None, settings: Cbom
     }
 
 
-def public_run(run: CbomCollectionRun, jobs: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+def public_run(run: CbomCollectionRun, jobs: list[dict[str, Any]] | None = None,
+               risk_model: dict[str, Any] | None = None) -> dict[str, Any]:
+    """``risk_model``: the team's Mosca now, so ``grades.inputs_changed`` can compare it with the run's snapshot
+    (CB-19 PR-2); without it ``inputs_changed`` is null on a run that has a snapshot."""
+    from backend.utilities.cbom_sources.qgrade import run_grades
+
     out = {
         "id": run.id,
         "team_id": run.team_id,
@@ -155,6 +160,8 @@ def public_run(run: CbomCollectionRun, jobs: list[dict[str, Any]] | None = None)
         "last_updated": iso_z(run.last_updated),
         # what judged the run when it was created (null on runs from before they were recorded)
         "versions": {"kb": run.kb_version, "classifier": run.classifier_version, "engine": run.engine_version},
+        # the grade model and inputs the run recorded at Start, and whether the team's inputs differ now (CB-19)
+        "grades": run_grades(run, risk_model),
     }
     if jobs is not None:
         out["jobs"] = jobs
@@ -169,6 +176,12 @@ def _aws_configured() -> bool:
     from backend.utilities.cbom_sources.templates import aws_collection_configured
 
     return aws_collection_configured()
+
+
+def _aws_lab() -> bool:
+    from backend.utilities.cbom_sources.lab_mode import lab_same_account
+
+    return lab_same_account()
 
 
 def _ct_enabled() -> bool:
@@ -192,6 +205,8 @@ def public_settings(row: CbomCollectionSettings, now: _dt.datetime) -> dict[str,
     return {
         "aws_external_id": row.aws_external_id,
         "aws_collection_configured": _aws_configured(),
+        # lab mode (lab_mode.py): AWS roles in this test deployment's own account are accepted; the form shows a banner
+        "aws_lab_same_account": _aws_configured() and _aws_lab(),
         "cert_domains": row.cert_domains or [],
         # Certificate Transparency discovery: on only when the server sets CBOM_CT_DISCOVERY; the UI follows it
         "ct_discovery_enabled": _ct_enabled(),
@@ -220,13 +235,12 @@ def public_settings(row: CbomCollectionSettings, now: _dt.datetime) -> dict[str,
 
 
 def public_area(row: CbomEvidenceArea, today: _dt.date, vendor_levels: list[str] | None = None) -> dict[str, Any]:
+    """An evidence area. ``confidence`` is the level a user set, ``effective_confidence`` the level it counts at today
+    (both E0..E3, whatever spelling is stored); ``q0_gap`` says why an E0 item is a Q0 gap (null otherwise);
+    ``q0_gap_rollup``: the third-party-vendors area's gap only repeats its vendors' gaps (not counted)."""
     spec = AREAS.get(row.area_key, {})
-    effective = effective_confidence(row.confidence, row.evidence_date, today)
-    if row.area_key == "third_party_vendors" and vendor_levels is not None:
-        from backend.utilities.cbom_sources.evidence import lowest
-
-        effective = lowest(vendor_levels) if vendor_levels else effective
-    overdue = bool(row.due_date and row.due_date < today.isoformat() and effective == "Q0")
+    effective, gap, rollup = area_level(row, today, vendor_levels)
+    overdue = bool(row.due_date and row.due_date < today.isoformat() and effective == "E0")
     return {
         "id": row.id,
         "area_key": row.area_key,
@@ -234,10 +248,12 @@ def public_area(row: CbomEvidenceArea, today: _dt.date, vendor_levels: list[str]
         "owner_hint": spec.get("owner_hint"),
         "questions": spec.get("questions", []),
         "owner": row.owner,
-        "confidence": row.confidence,
+        "confidence": level(row.confidence),
         "effective_confidence": effective,
         "confidence_label": CONFIDENCE_LABEL.get(effective, "Unknown"),
         "confidence_set_by": row.confidence_set_by,
+        "q0_gap": gap,
+        "q0_gap_rollup": rollup,
         "answers": row.answers or {},
         "evidence_title": row.evidence_title,
         "evidence_url": row.evidence_url,
@@ -251,6 +267,7 @@ def public_area(row: CbomEvidenceArea, today: _dt.date, vendor_levels: list[str]
 
 
 def public_vendor(row: CbomEvidenceVendor, now: _dt.datetime) -> dict[str, Any]:
+    effective, gap = vendor_level(row, now)
     return {
         "id": row.id,
         "name": row.name,
@@ -261,7 +278,10 @@ def public_vendor(row: CbomEvidenceVendor, now: _dt.datetime) -> dict[str, Any]:
         "link_expires_at": iso_z(row.link_expires_at),
         "answered_at": iso_z(row.answered_at),
         "answers": row.answers or {},
-        "confidence": row.confidence,
+        "confidence": level(row.confidence),  # the level a user set or the answer gave; it counts once answered
+        "effective_confidence": effective,
+        "confidence_label": CONFIDENCE_LABEL.get(effective, "Unknown"),
+        "q0_gap": gap,
         "evidence_url": row.evidence_url,
         "row_version": row.row_version,
         "created_at": iso_z(row.created_at),

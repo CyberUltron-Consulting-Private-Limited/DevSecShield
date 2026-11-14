@@ -482,8 +482,14 @@ def _roadmap(
 
 def _no_rows(view: TeamCbomView, styles: Styles, title_prefix: str) -> list[Flowable]:
     """The explicit replacement for the roadmap table (never an empty table)."""
+    collected = len((view.remediation or {}).get("node_rows") or []) + int(
+        (view.remediation or {}).get("node_rows_omitted") or 0)
     if view.is_empty:
         title, message = _NO_SCANS_TITLE, _NO_SCANS_TEXT
+    elif collected:
+        # the collected infrastructure has quantum-vulnerable assets (next section): "none found" would contradict it
+        title = authored.PQC_NO_VULNERABLE_CODE_TITLE
+        message = authored.PQC_NO_VULNERABLE_CODE_TEXT.format(count=_plural(collected, "quantum-vulnerable asset"))
     else:
         title, message = authored.PQC_NO_VULNERABLE_TITLE, authored.PQC_NO_VULNERABLE_TEXT
     block = KeepTogether(
