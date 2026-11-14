@@ -24,6 +24,10 @@ needs neither OpenSSL 3.5 nor Java. `up` refuses to start when less than 1.5 GB 
 Behind a TLS-intercepting proxy, set `CB_LAB_BUILD_CA` to the proxy's CA file: `gen.py build` passes it as a BuildKit
 secret, never into an image. Images carry a label with the hash of their build inputs (`images/`, `entrypoints/`,
 `tlscheck/`); `up` rebuilds when it differs, and `lab/gen.json.images` records the image ids for the gate's MANIFEST.
+Package pins: both images pin every Alpine package exactly and every base by digest. Alpine keeps only the newest
+build of a package per branch, so a pin breaks when the branch moves (postgresql16-client 16.15-r0 -> 16.16-r0 on
+2026-11-14). `images/apk-pins.sh` lists every pin as OK or MISSING (with the version the repository has now) from
+inside the pinned base; update the Dockerfile to that version and rebuild.
 Locks: image builds take `$CB_LAB_LOCKS/docker-build.lock`; the lab is a singleton, so the caller holds
 `cbom-lab.lock` from `up` to `down` (INTERFACES v3).
 
@@ -74,10 +78,10 @@ that does not excludes it), `NO_PQ_KEX` excluded wherever a PQ group is accepted
 | core | z16 | .26:443 | nginx, TLS 1.0 only, RSA-2048 lab-CA cert | openssl x509 | tlscheck, nmap |
 | core | sshd-legacy | .23:22 | OpenSSH 10, classic KEX only, hmac-sha1, RSA-1024 + Ed25519 host keys | ssh-keygen | nmap ssh2-enum-algos, ssh-keyscan blobs decoded by labread (type, size, SHA256), ssh-audit |
 | core | sshd-pq | .24:22 | OpenSSH 10, `mlkem768x25519-sha256` only, Ed25519 | ssh-keygen | same |
-| psp | sshd-psp | .28:22 | OpenSSH 10 with the default PerSourcePenalties; only the self-check (.11) is exempt (all other lab sshd exempt the lab network) | ssh-keygen; sshd -T | same, plus `sshd -T`, a burst from the throwaway `cb02-burst` (.12) that must be penalised (banners, EOFs and connect errors counted apart: only EOFs with a penalty for .12 in the sshd log count; a refused or timed-out connection never does), and a banner from .11 right after |
+| psp | sshd-psp | .28:22 | OpenSSH 10 with the default PerSourcePenalties; only the self-check (.11) is exempt (all other lab sshd exempt the lab network) | ssh-keygen; sshd -T | same, plus `sshd -T`, a burst from the throwaway `cb02-burst` (.12) that must be penalised (banners, sshd's own "Not allowed at this time" refusals, EOFs, connect errors and other payloads counted apart: only refusals and EOFs with a penalty for .12 in the sshd log count; a refused or timed-out connect never does), and a banner from .11 right after |
 | core | host | .40:22 | sshd as `zs-cbom` with a ForceCommand logger; /srv/cbom-lab: RSA-1024 key, expired cert, SHA-1 cert, PKCS#12, JKS (expired RSA-1024 trusted entry) | openssl, keytool -list -v | SSH login (known_hosts = oracle keys) + sha256sum/stat; files and served certificates by labread DER; keystores by the labread JKS reader and `openssl pkcs12 -nokeys` (OpenSSL, not Java) + labread DER; the logger must record the login |
 | core | pg-tls | .41:5432 | PostgreSQL 16, TLS >= 1.2 with lab-CA cert, `md5` HBA line, pgcrypto, log_connections | openssl x509; pg_hba written by gen | tlscheck pg (SSLRequest) per version, psql (`SHOW ssl`, pg_hba_file_rules, pg_authid), server log |
-| core | canary / control | .33 / .34:443 | socat listeners (generated `listen.sh`/`accept.sh`): product peers in `lab/listeners/<id>.jsonl`, the lab's own (.11, .12, loopback) in `<id>.lab.jsonl`, both created empty at `up`; canary named `cbom-e2e-canary` (never-scan) | - | health from /proc/net/tcp (never connects to the canary); control logs the self-check's accept in its lab log; no lab peer in a product log |
+| core | canary / control | .33 / .34:443 | socat listeners (generated `listen.sh`/`accept.sh`): product peers in `lab/listeners/<id>.jsonl`, the lab's own (.11, .12, loopback) in `<id>.lab.jsonl`, both created empty at `up`; canary named `cbom-e2e-canary` (never-scan); control (and idn-punycode) expect one `coverage` row, status `not_tls`, scope the port, and no TLS asset (CB-12 #110) | - | health from /proc/net/tcp (never connects to the canary); control logs the self-check's accept in its lab log, and Go crypto/tls (tlscheck matrix) gets TCP but no handshake on any version; no lab peer in a product log |
 | core | idn-fass / idn-punycode | .44 / .45:443 | listeners named `fass.lab` / `xn--fa-hia.lab` (IDNA 2003 vs 2008 form of `faß.lab`) | - | name resolution, accept log |
 | db | pg-notls | .46:5432 | PostgreSQL 16, ssl=off | gen config | tlscheck pg must get `N`; psql |
 | db | mysql-tls / mysql-notls | .47 / .48:3306 | MySQL 8.4, TLS 1.2/1.3 lab-CA cert and one `mysql_native_password` user / TLS off | openssl x509; gen config | tlscheck mysql (CLIENT_SSL + SSLRequest) per version; the server's own `mysql` client |

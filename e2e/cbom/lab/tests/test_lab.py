@@ -237,6 +237,19 @@ def test_canary_listener_is_a_must_not_appear_row_and_lab_json_lists_never_scan(
     assert any(s["name"] == "S-canary" for s in lab["sources"])
 
 
+def test_control_listener_expects_one_not_tls_coverage_row_and_no_tls_asset() -> None:
+    """CB-12 (#110, INTERFACES CB-12 v1 §5a): the control listener closes without TLS, so the product writes one
+    coverage row (status not_tls, scope the port) and never a tls_endpoint (KF-5)."""
+    control = {"target": "control", "kind": "listener", "profile": "core", "world": "closed", "address": "10.231.0.34",
+               "port": 443, "aliases": ["cbom-e2e-control"], "container": "cb02-control",
+               "expect": {"role": "control"}, "provenance": {}}
+    assets, mna = oraclefmt.assets_for(control)
+    assert [(a["oracle_id"], a["asset_type"], a["location"], a["expect"]) for a in assets] == [
+        ("control/not_tls", "coverage", "10.231.0.34", {"status": "not_tls", "scope": ["10.231.0.34:443"]})]
+    assert mna == [{"asset_type": "tls_endpoint", "location": "10.231.0.34:443"},
+                   {"asset_type": "certificate", "location": "10.231.0.34:443"}]
+
+
 # ---------------------------------------------------------------- self-check verdict rules
 def test_target_disagrees_on_a_failed_check_or_an_unsatisfied_control() -> None:
     t = selfcheck.Target("z01")
@@ -761,17 +774,55 @@ def test_psp_burst_counts_eof_apart_from_errors_and_needs_a_penalty_for_the_sour
     counts = _burst(srv.getsockname()[1])
     th.join(20)
     srv.close()
-    assert counts == {"banner": 0, "eof": 40, "error": 0, "other": 0}
+    assert counts == {"banner": 0, "eof": 40, "refused": 0, "error": 0, "other": 0}
     assert selfcheck.burst_verdict(counts, "", "", True)[0] is False                  # no penalty ever logged for .12
     ok, how = selfcheck.burst_verdict(counts, "", PENALTY, True)                      # full log: penalised earlier
     assert ok is True and "still penalised" in how
     assert selfcheck.burst_verdict(counts, "", PENALTY, False)[0] is False            # .11 not served either
     assert selfcheck.burst_verdict(counts, "", PENALTY.replace("[10.231.0.12]", "[10.231.0.120]"), True)[0] is False
     assert selfcheck.burst_verdict({**counts, "eof": 39, "error": 1}, "", PENALTY, True)[0] is False
-    during = {"banner": 17, "eof": 23, "error": 0, "other": 0}                         # penalty logged in this burst
+    during = {"banner": 17, "eof": 23, "refused": 0, "error": 0, "other": 0}           # penalty logged in this burst
     assert selfcheck.burst_verdict(during, PENALTY, PENALTY, True)[0] is True
     assert selfcheck.burst_verdict({**during, "eof": 0, "error": 23}, PENALTY, PENALTY, True)[0] is False
     assert selfcheck.burst_verdict({**during, "banner": 40, "eof": 0}, "", PENALTY, True)[0] is False
+
+
+def _serve(payload: bytes) -> dict:
+    """Burst against a local server that answers every connection with ``payload`` and closes."""
+    import socket
+    import threading
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(64)
+
+    def answer() -> None:
+        for _ in range(40):
+            c, _a = srv.accept()
+            c.sendall(payload)
+            c.close()
+    th = threading.Thread(target=answer, daemon=True)
+    th.start()
+    counts = _burst(srv.getsockname()[1])
+    th.join(20)
+    srv.close()
+    return counts
+
+
+def test_psp_burst_counts_sshds_own_refusal_as_dropped() -> None:
+    """Live at 12a7f8c (2026-11-14, OpenSSH 10.0): a penalised source is not closed silently, sshd writes
+    "Not allowed at this time" first. Counted as ``other``, the burst read 17 banners + 23 other and the positive
+    control failed on a psp that was working (selfcheck exit 2). The refusal is sshd's own; any other payload is not."""
+    counts = _serve(b"Not allowed at this time\r\n")
+    assert counts == {"banner": 0, "eof": 0, "refused": 40, "error": 0, "other": 0}
+    live = {"banner": 17, "eof": 0, "refused": 23, "error": 0, "other": 0}            # ev79/run-psp, burst from .12
+    assert selfcheck.burst_verdict(live, PENALTY, PENALTY, True)[0] is True
+    assert selfcheck.burst_verdict(live, "", "", True)[0] is False                    # no penalty logged: not proven
+    ok, how = selfcheck.burst_verdict(counts, "", PENALTY, True)
+    assert ok is True and "still penalised" in how and "40 refused by sshd" in how
+    junk = _serve(b"HTTP/1.1 400 Bad Request\r\n")
+    assert (junk["other"], junk["refused"], junk["other_samples"][0]) == (40, 0, repr(b"HTTP/1.1 400 Bad Request\r\n"))
+    assert selfcheck.burst_verdict(junk, PENALTY, PENALTY, True)[0] is False
+    assert selfcheck.burst_verdict({**live, "other": 1}, PENALTY, PENALTY, True)[0] is False
 
 
 def test_hsm_token_objects_equal_the_run_files_managed_keys_both_ways(tmp_path: Path) -> None:
@@ -1123,3 +1174,21 @@ def test_standards_tables_are_closed_and_complete() -> None:
     assert selfcheck.classical_groups(["X25519MLKEM768", "x25519"]) == ["x25519"]
     assert selfcheck.ssh_pq_kex(["mlkem768nistp256-sha256", "curve25519-sha256", "x-new"]) == ["mlkem768nistp256-sha256"]
     assert "startswith((\"mlkem\", \"sntrup\"))" not in (LAB / "labgen.py").read_text() + (LAB / "labcheck.py").read_text()
+
+
+# ---------------------------------------------------------------- 2026-11-14: tools image no longer built (CB-36 run)
+def test_lab_images_pin_every_package_exactly_and_every_base_by_digest() -> None:
+    """Alpine keeps only the newest build per branch, so the tools image stopped building when postgresql16-client
+    moved 16.15-r0 -> 16.16-r0. Pins stay exact (the image is reproducible or fails loudly); images/apk-pins.sh checks
+    them against the repository. Every installed package carries a pin and every FROM a digest."""
+    import re
+    for name in ("tools", "target"):
+        text = (LAB / "images" / f"{name}.Dockerfile").read_text()
+        froms = re.findall(r"^FROM (\S+)", text, re.M)
+        assert froms and all("@sha256:" in f for f in froms), froms
+        block = text.split("apk add --no-cache", 1)[1].split("&&", 1)[0]
+        pkgs = [w for w in block.replace("\\", " ").split() if w]
+        assert pkgs and all(re.fullmatch(r"[a-z0-9][a-z0-9.+_-]*=[0-9][\w.+-]*", p) for p in pkgs), pkgs
+    assert "postgresql16-client=16.16-r0" in (LAB / "images" / "tools.Dockerfile").read_text()
+    script = (LAB / "images" / "apk-pins.sh").read_text()
+    assert "tools.Dockerfile" in script and "target.Dockerfile" in script and "exit $rc" in script

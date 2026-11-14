@@ -294,6 +294,15 @@ def assets_for(o: dict, now: str | None = None) -> tuple[list[dict], list[dict]]
         if e["role"] == "canary":
             for at in ("tls_endpoint", "open_port", "certificate"):
                 mna.append({"asset_type": at, "location": loc})
+        else:
+            # A control listener accepts TCP on 443 and closes without a byte: since CB-12 (#110, INTERFACES CB-12 v1
+            # §4/§5a) the product writes exactly one coverage row for it, status not_tls, scope the port, and no TLS
+            # asset. Location "<ip>#not TLS <ip:port>" (the judge matches on the part before '#').
+            assets.append({"oracle_id": f"{t}/not_tls", "asset_type": "coverage", "location": o["address"],
+                           "expect": {"status": "not_tls", "scope": [loc]},
+                           "provenance": {"source": "gen.py", "detail": "socat listener: accept, log, close"}})
+            for at in ("tls_endpoint", "certificate"):
+                mna.append({"asset_type": at, "location": loc})
     elif kind in ("postgres", "mysql"):
         tls_on = bool(e.get("tls", {}).get("certificates")) if kind == "mysql" else e.get("ssl") == "on"
         dt = {"oracle_id": f"{t}/tls", "asset_type": "database_tls", "location": loc,

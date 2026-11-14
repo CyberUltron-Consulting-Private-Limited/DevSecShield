@@ -680,7 +680,8 @@ def check_ssh(ctx: Ctx, o: dict) -> Target:
 
 
 BURST = """import json, socket
-counts = {{"banner": 0, "eof": 0, "error": 0, "other": 0}}
+counts = {{"banner": 0, "eof": 0, "refused": 0, "error": 0, "other": 0}}
+samples = []
 for i in range(40):
     try:
         s = socket.create_connection(("{addr}", {port}), 3)
@@ -698,9 +699,15 @@ for i in range(40):
     elif data.startswith(b"SSH-"):
         counts["banner"] += 1
     elif data == b"":
-        counts["eof"] += 1            # connected, then closed with no banner: what a penalised source sees
+        counts["eof"] += 1            # connected, then closed with no banner
+    elif data.startswith(b"Not allowed at this time"):
+        counts["refused"] += 1        # sshd's own refusal of a penalised source (OpenSSH >= 9.8, sshd.c drop_connection)
     else:
         counts["other"] += 1
+        if len(samples) < 3:
+            samples.append(repr(data[:40]))
+if samples:
+    counts["other_samples"] = samples
 print(json.dumps(counts))
 """
 
@@ -713,20 +720,23 @@ def penalty_logged(sshd_log: str, source: str) -> bool:
 
 def burst_verdict(counts: dict, log_burst: str, log_all: str, exempt_served: bool,
                   source: str = S.BURST_IP) -> tuple[bool, str]:
-    """Did sshd penalise the burst source? A penalised connection is accepted and closed at once (EOF, no banner);
-    a refused or timed-out connection never reached sshd and proves nothing (review 5878784465). Either sshd logged a
-    penalty for that source during this burst and dropped connections with EOF, or the source is still penalised
-    from an earlier burst (OpenSSH rate-limits the logging, but always logs the first activation): every connection
-    ended in EOF, none failed, a penalty for that source is in the container's full log, and the exempt self-check
-    source is served in the same capture. sshd has no other per-source refusal configured."""
-    banner, eof = counts.get("banner", 0), counts.get("eof", 0)
+    """Did sshd penalise the burst source? A penalised connection reaches sshd and gets no banner: OpenSSH >= 9.8
+    writes "Not allowed at this time" and closes (``refused``; live at OpenSSH 10.0, 2026-11-14), and a close with no
+    bytes (``eof``) counts the same. A refused or timed-out connection never reached sshd and proves nothing (review
+    5878784465), nor does any other payload. Either sshd logged a penalty for that source during this burst and
+    dropped connections, or the source is still penalised from an earlier burst (OpenSSH rate-limits the logging,
+    but always logs the first activation): every connection was dropped, none failed, a penalty for that source is in
+    the container's full log, and the exempt self-check source is served in the same capture. sshd has no other
+    per-source refusal configured."""
+    banner, eof, refused = counts.get("banner", 0), counts.get("eof", 0), counts.get("refused", 0)
     error, other = counts.get("error", 0), counts.get("other", 0)
-    total = banner + eof + error + other
-    seen = f"{banner} banners, {eof} EOF, {error} errors, {other} other"
+    dropped = eof + refused
+    total = banner + dropped + error + other
+    seen = f"{banner} banners, {refused} refused by sshd, {eof} EOF, {error} errors, {other} other"
     now, ever = penalty_logged(log_burst, source), penalty_logged(log_all, source)
-    if eof and now and not error and not other:
+    if dropped and now and not error and not other:
         return True, f"sshd logged a penalty for {source} during the burst; {seen}"
-    if total and eof == total and ever and exempt_served:
+    if total and dropped == total and ever and exempt_served:
         return True, f"{source} still penalised: {seen}; a penalty for it is in the full sshd log; the exempt source is served"
     return False, f"{seen}; penalty logged during the burst: {now}, ever: {ever}; exempt source served: {exempt_served}"
 
@@ -760,7 +770,8 @@ def check_penalties(ctx: Ctx, o: dict, t: Target) -> None:
     try:
         counts = json.loads(burst.stdout.strip().splitlines()[-1])
     except (IndexError, json.JSONDecodeError):
-        counts = {"banner": 0, "eof": 0, "error": 0, "other": 0, "burst_failed": (burst.stderr or burst.stdout)[-300:]}
+        counts = {"banner": 0, "eof": 0, "refused": 0, "error": 0, "other": 0,
+                  "burst_failed": (burst.stderr or burst.stdout)[-300:]}
     ctx.save(f"{o['target']}.burst.json", json.dumps(counts))
     time.sleep(1)
     during = subprocess.run(["docker", "logs", "--since", since, o["container"]], capture_output=True, text=True,
@@ -894,6 +905,20 @@ def check_listener(ctx: Ctx, o: dict, health: dict[str, str]) -> Target:
         t.check(oid, "accept logged with the peer address (lab log)", "socat + /lab/accept.sh", True,
                 bool(rows) and res.returncode == 0)
         ctx.observed[o["target"]] = {"accept_logged": bool(rows)}
+        # not TLS (CB-12 v1 §5a): Go crypto/tls completes TCP on every version and no handshake
+        addr = f"{o['address']}:{o['port']}"
+        m = ctx.tlscheck("matrix", "-addr", addr)
+        ctx.save(f"{o['target']}.tlscheck.json", json.dumps(m, indent=1))
+        tool = m.get("tool", "tlscheck")
+        versions = m.get("versions") or {}
+        errors = m.get("version_errors") or {}
+        accepted_tcp = bool(versions) and not any(str(x).startswith("dial:") for x in errors.values())
+        not_tls = accepted_tcp and not any(versions.values())
+        t.check(f"{o['target']}/not_tls", "TCP accepted, no TLS handshake on any version", tool,
+                {v: False for v in S.VERSIONS}, {v: versions.get(v) for v in S.VERSIONS},
+                agree=not_tls, note="; ".join(f"{k}: {v}" for k, v in sorted(errors.items()))[:300])
+        t.expect(f"{o['target']}/not_tls", "status", tool, "not_tls" if not_tls else None)
+        t.expect(f"{o['target']}/not_tls", "scope", tool, [addr] if accepted_tcp else None)
     t.check(oid, "the product log holds no lab connection", "lab/listeners/<name>.jsonl", 0,
             sum(1 for r in jsonl(log) if str(r.get("peer", "")).startswith(lab_peers)))
     if e["role"] == "canary" and ctx.step == "run1":
