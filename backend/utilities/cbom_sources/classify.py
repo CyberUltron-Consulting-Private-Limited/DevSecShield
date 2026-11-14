@@ -95,20 +95,56 @@ def note_unknown(asset_type: str, value: Any) -> None:
     log("classify unknown identifier", type=asset_type, value=json.dumps(text[:64]))
 
 
+# algid primitives (CycloneDX 1.6) of a key exchange: a post-quantum identifier in a key-exchange slot (a TLS group, an
+# SSH kex method, an IKE group) is post-quantum key-exchange evidence only with one of these.  A post-quantum signature
+# there (a lattice or hash-based signature, a signature OID) is no key exchange; every real PQ group and method is
+# a KEM.
+KEX_PRIMITIVES = frozenset({"kem", "key-agree"})
+
+
+def kex_identity(value: Any, namespace: str | None = None) -> algid.Identity | None:
+    """algid's identity of an identifier in a key-exchange slot: exact in ``namespace`` (tls_group, ssh_kex, ike_ke)
+    first, then the generic lookup for a spelling the registry does not list (an oqs-provider name)."""
+    if not isinstance(value, str):
+        return None
+    return (algid.resolve(value, namespace) if namespace else None) or algid.resolve(value)
+
+
+def pq_key_exchange(value: Any, namespace: str | None = None) -> bool:
+    """Whether an identifier in a key-exchange slot names a post-quantum key exchange: algid knows it as quantum safe
+    or hybrid AND as a KEM or key agreement."""
+    found = kex_identity(value, namespace)
+    return found is not None and found.quantum in ("safe", "hybrid") and found.primitive in KEX_PRIMITIVES
+
+
+def _group_vulnerable(group: Any) -> bool | None:
+    """The quantum verdict of a TLS endpoint's negotiated group: False for a post-quantum key exchange, True for a
+    classical group (P-256 names both an ECDSA and an ECDH curve, so a classical identifier is not checked for its
+    primitive), None for an unknown identifier and for a post-quantum identifier that is no key exchange (a signature
+    in the group slot proves nothing about the key exchange)."""
+    found = kex_identity(group, "tls_group")
+    if found is None or found.quantum is None:
+        return None
+    if found.quantum == "vulnerable":
+        return True
+    return False if found.primitive in KEX_PRIMITIVES else None
+
+
 def pq_kex_evidence(facts: dict[str, Any]) -> bool | None:
     """Whether a TLS endpoint's facts show a post-quantum key exchange: True, False, or None when they say nothing.
 
     ``pq_group_supported`` (a cloud policy, or set before) is the answer when present.  Otherwise a ``pq_hybrid`` probe
-    hit, or a negotiated or probed group that algid knows as post-quantum (pure or hybrid), is True: a node before
-    CB-04 reported ``pq_hybrid: false`` next to a negotiated hybrid group when the server's certificate was
-    post-quantum.  ``pq_hybrid: false`` with no such group is False.  Placeholder groups ("<NULL>") count as absent."""
+    hit, or a negotiated or probed group that algid knows as a post-quantum (pure or hybrid) KEM or key agreement, is
+    True: a node before CB-04 reported ``pq_hybrid: false`` next to a negotiated hybrid group when the server's
+    certificate was post-quantum.  ``pq_hybrid: false`` with no such group is False; a post-quantum signature in a group
+    slot is no such group.  Placeholder groups ("<NULL>") count as absent."""
     supported = facts.get("pq_group_supported")
     if isinstance(supported, bool):
         return supported
     if facts.get("pq_hybrid") is True:
         return True
     for key in ("negotiated_group", "pq_group", "group"):
-        if algid.quantum_vulnerable(facts.get(key)) is False:
+        if pq_key_exchange(facts.get(key), "tls_group"):
             return True
     if facts.get("pq_hybrid") is False:
         return False
@@ -254,7 +290,7 @@ def _tls_rules(out: _Out, facts: dict[str, Any], what: str) -> None:
         impact, label = _TLS_OLD[min_version]
         out.add(f"MIN_{label.replace(' ', '').replace('.', '')}", impact, f"{what} allows {label} as the minimum version")
     group = facts.get("group") or facts.get("negotiated_group")
-    if facts.get("pq_group_supported") is False or (facts.get("pq_group_supported") is None and group and quantum_vulnerable(group)):
+    if facts.get("pq_group_supported") is False or (facts.get("pq_group_supported") is None and group and _group_vulnerable(group)):
         out.add("NO_PQ_KEX", "Low", f"{what} has no post-quantum key exchange")
 
 
@@ -287,7 +323,7 @@ def _ssh_rules(out: _Out, facts: dict[str, Any], what: str) -> bool | None:
     kex = kex.split(",") if isinstance(kex, str) else kex
     if not kex:
         return None
-    pq = any(quantum_vulnerable(k) is False for k in kex)
+    pq = any(pq_key_exchange(k, "ssh_kex") for k in kex)  # a post-quantum signature is no key exchange
     if not pq:
         out.add("SSH_NO_PQ_KEX", "Low", f"{what} has no post-quantum key exchange")
     return not pq
@@ -511,7 +547,7 @@ def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, fact
         if facts.get("pq_group_supported") is True:
             qv = False  # the server accepts a post-quantum hybrid when the client offers one
         elif group:
-            qv = quantum_vulnerable(group)
+            qv = _group_vulnerable(group)
         elif facts.get("protocols") or facts.get("cipher"):
             qv = True
         if facts.get("http_listener"):

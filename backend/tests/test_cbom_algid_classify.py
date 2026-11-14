@@ -365,8 +365,13 @@ def test_gost_managed_key(algorithm, qv, codes):
     (["MODP-2048"], False, True, ["IKE_NO_PQ"]),
     (["ECP-256"], None, True, ["QUANTUM_VULNERABLE"]),
     (["group 14"], False, True, ["IKE_NO_PQ"]),
+    # a post-quantum signature is not a key exchange (review m2): no ML-KEM exchange is configured
+    (["ML-DSA-65"], None, True, ["QUANTUM_VULNERABLE"]),
+    (["ML-DSA-65"], False, True, ["IKE_NO_PQ"]),
 ])
-def test_appliance_ike_mlkem_hybrid(groups, pq, qv, codes):
+def test_appliance_ike_mlkem_group_no_ike_no_pq(groups, pq, qv, codes):
+    """T-B13: an ML-KEM group gives qv False and no IKE_NO_PQ. The posture class of such a policy (and of a classical
+    group next to it) is "quantum-safe" until CB-18 defines "hybrid" (OA-CB04-1): this test pins no class."""
     facts = {"kind": "ike_policy", "vendor": "lab", "groups": groups, "version": 2}
     if pq is not None:
         facts["pq"] = pq
@@ -392,9 +397,24 @@ def test_appliance_ike_mlkem_hybrid(groups, pq, qv, codes):
     ("HMAC_256", "kms_key", {}, "HMAC"),
     ("SYMMETRIC_DEFAULT", "kms_key", {}, "AES"),  # the KMS enum names AES-256-GCM: was Other
     (None, "crypto_library", {}, "Library"),
+    # post-quantum names come from algid's markers, not from a token list of the heat map's own (review n2)
+    ("dilithium3", "certificate", {}, "Post-quantum"),
+    ("p256_frodo640aes", "tls_endpoint", {}, "Post-quantum"),
+    ("hqc128", "managed_key", {}, "Post-quantum"),
+    ("SPHINCS+-SHA2-128s", "certificate", {}, "Post-quantum"),
+    ("ntruhps2048509", "managed_key", {}, "Post-quantum"),  # NTRU is no algid marker: the heat map's one PQ token
 ])
 def test_heatmap_algid_first(algorithm, asset_type, facts, family):
     assert algorithm_family(algorithm, asset_type, facts) == family
+
+
+def test_heatmap_reads_no_pq_name_algid_knows():
+    """DA §10: each PR removes its single-source entries. A heat-map token algid already reads as post-quantum is a
+    second copy of algid's markers (and is reached only for text algid does not know)."""
+    from backend.utilities.cbom_sources.heatmap import FAMILY_RULES
+
+    shadowed = [w for _family, words in FAMILY_RULES for w in words if algid.family_label(w) == "PQ"]
+    assert shadowed == []
 
 
 # ----------------------------------------------------------------------------- T-B8
@@ -436,9 +456,80 @@ def test_unknown_identifier_logged_once(monkeypatch):
     ({"negotiated_group": "X25519"}, None),
     ({"negotiated_group": "<NULL>"}, None),
     ({}, None),
+    # a post-quantum signature in the group slot is no key exchange (review m1)
+    ({"pq_hybrid": False, "negotiated_group": "ML-DSA-65"}, False),
+    ({"negotiated_group": "ML-DSA-65"}, None),
+    ({"pq_hybrid": False, "negotiated_group": "PQ_SIGN_ML_DSA_87"}, False),
+    ({"pq_hybrid": False, "negotiated_group": "1.3.6.1.5.5.7.6.34"}, False),  # XMSS
+    ({"pq_hybrid": False, "pq_group": "XMSS^MT"}, False),
+    ({"pq_hybrid": False, "negotiated_group": "p256_kyber768"}, True),  # an oqs-provider hybrid KEM
+    ({"pq_hybrid": False, "negotiated_group": "SecP256r1MLKEM768"}, True),
 ])
 def test_pq_kex_evidence(facts, expected):
     assert C.pq_kex_evidence(facts) is expected
+
+
+@pytest.mark.parametrize("group,pq_hybrid,qv,codes,cls", [
+    ("ML-DSA-65", None, None, [], "not-applicable"),  # as an unknown group: no verdict, never PQ credit
+    ("PQ_SIGN_ML_DSA_87", None, None, [], "not-applicable"),
+    ("ML-DSA-65", False, None, ["NO_PQ_KEX"], "not-applicable"),
+    ("X25519MLKEM768", None, False, [], "hybrid"),
+    ("X25519MLKEM768", False, False, [], "hybrid"),
+    ("MLKEM1024", None, False, [], "hybrid"),
+    ("x25519", None, True, ["NO_PQ_KEX"], "quantum-vulnerable"),
+    ("secp256r1", None, True, ["NO_PQ_KEX"], "quantum-vulnerable"),  # P-256 names an ECDH group too
+])
+def test_tls_group_slot_needs_a_key_exchange(group, pq_hybrid, qv, codes, cls):
+    facts = {"versions": {"TLSv1.3": True}, "negotiated_group": group}
+    if pq_hybrid is not None:
+        facts["pq_hybrid"] = pq_hybrid
+    v = C.classify("tls_endpoint", "TLS_AES_256_GCM_SHA384", None, "TLSv1.3", facts, NOW)
+    assert (v["quantum_vulnerable"], v["finding_codes"]) == (qv, codes)
+    assert P.pqc_class("tls_endpoint", v["quantum_vulnerable"], v["finding_codes"], facts) == cls
+
+
+@pytest.mark.parametrize("kex,qv,codes", [
+    (["Dilithium5", "ext-info-s"], True, ["SSH_NO_PQ_KEX"]),  # review m2: a signature is no key exchange
+    (["2.16.840.1.101.3.4.3.19", "curve25519-sha256"], True, ["SSH_NO_PQ_KEX"]),
+    (["XMSS^MT"], True, ["SSH_NO_PQ_KEX"]),
+    (["mlkem768x25519-sha256", "curve25519-sha256"], False, []),
+    (["sntrup761x25519-sha512@openssh.com", "curve25519-sha256"], False, []),
+    (["curve25519-sha256"], True, ["SSH_NO_PQ_KEX"]),
+])
+def test_ssh_kex_needs_a_key_exchange(kex, qv, codes):
+    v = C.classify("ssh_endpoint", None, None, None, {"kex": kex}, NOW)
+    assert (v["quantum_vulnerable"], v["finding_codes"]) == (qv, codes)
+
+
+def test_intended_changes_check_the_primitive():
+    """Review m1/m2: the allowlist generator may never file a post-quantum signature in a key-exchange slot (a TLS
+    group, an SSH kex method) as post-quantum key-exchange evidence, whatever the classifier does."""
+    import make_algid_intended_changes as gen
+
+    rows = {row["key"]: row for row in corpus.inputs()}
+    vuln_ssh = [True, ["SSH_NO_PQ_KEX"], "Low", "quantum-vulnerable"]
+    assert gen._category(rows["ssh|Dilithium5"], vuln_ssh, [False, [], None, "quantum-safe"]) is None
+    assert gen._category(rows["ssh|2.16.840.1.101.3.4.3.19"], vuln_ssh, [False, [], None, "quantum-safe"]) is None
+    assert gen._category(rows["tls|ML-DSA-65"], [False, [], None, "quantum-safe"],
+                         [False, [], None, "hybrid"]) is None
+    assert gen._category(rows["tls|X25519MLKEM768"], [False, [], None, "quantum-safe"],
+                         [False, [], None, "hybrid"]) == "tls-pq-group-evidence"
+    # a symmetric identifier never becomes quantum-vulnerable through a category either
+    assert gen._category(rows["managed|AES"], [None, [], None, "not-applicable"],
+                         [True, ["QUANTUM_VULNERABLE"], None, "quantum-vulnerable"]) is None
+
+
+def test_classify_resolves_each_identifier_once():
+    """Review M1: classify asks algid about the same identifier ~4 times per asset; the memo answers all but the
+    first, so re-judging a run costs no more than dev did (AC #11)."""
+    lab = _lab("lab :4432 tls_endpoint (dev node)")
+    args = ("tls_endpoint", lab["algorithm"], lab.get("key_size"), lab.get("protocol"), lab["facts"], NOW)
+    algid._resolve_memo.cache_clear()
+    C.classify(*args)
+    misses = algid._resolve_memo.cache_info().misses
+    for _ in range(5):
+        C.classify(*args)
+    assert algid._resolve_memo.cache_info().misses == misses
 
 
 def test_placeholder_group_is_absent():

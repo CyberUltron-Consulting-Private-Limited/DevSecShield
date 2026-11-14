@@ -18,11 +18,11 @@ from backend.utilities.cbom_sources import identity as ID
 IMPACTS = ("Critical", "High", "Medium", "Low", "none")
 _RANK = {name: i for i, name in enumerate(IMPACTS)}
 CERT_CAP = 2_000
-# (family, tokens or prefixes): first match wins, so post-quantum hybrids ("x25519mlkem768") are not read as ECC and
-# a certificate's key algorithm wins over its signature hash.
+# (family, tokens or prefixes): first match wins, so a certificate's key algorithm wins over its signature hash.
+# Post-quantum names are algid's (algorithm_family asks algid first, so a hybrid group is never read as ECC): the one
+# post-quantum token left is NTRU, which is no algid marker (algid only knows its NTRU Prime variant).
 FAMILY_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("Post-quantum", ("mlkem", "ml-kem", "kyber", "mldsa", "ml-dsa", "dilithium", "slhdsa", "slh-dsa", "sphincs",
-                      "falcon", "frodo", "ntru", "hqc")),
+    ("Post-quantum", ("ntru",)),
     ("EdDSA", ("ed25519", "ed448", "eddsa")),
     ("RSA", ("rsa",)),
     ("Elliptic curve", ("ecdsa", "ecdh", "ecdhe", "ec", "secp", "prime256", "p256", "p384", "p521", "nistp", "x25519",

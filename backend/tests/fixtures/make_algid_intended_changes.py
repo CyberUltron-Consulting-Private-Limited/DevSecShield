@@ -27,6 +27,14 @@ import make_algid_verdict_corpus as corpus  # noqa: E402
 from backend.utilities.cbom_sources import algid  # noqa: E402
 from backend.utilities.cbom_sources.classify import cert_identity_input  # noqa: E402
 
+# algid primitives (CycloneDX 1.6): a public-key algorithm, and a key exchange. Every category checks the primitive of
+# the identifier it credits (review 5901836120 m1/m2): a post-quantum signature in a key-exchange slot is never
+# key-exchange evidence, and a symmetric identifier never becomes a public-key verdict.
+ASYMMETRIC = frozenset({"signature", "kem", "key-agree", "pke"})
+KEX = frozenset({"kem", "key-agree"})
+# the slot a corpus row puts its identifier in, and the algid namespace that slot is read in first
+SLOT_NAMESPACE = {"tls_endpoint": "tls_group", "ssh_endpoint": "ssh_kex"}
+
 OUT = FIXTURES / "algid_intended_changes.json"
 OID = re.compile(r"^[0-2](\.(0|[1-9][0-9]*))+$")
 CATEGORIES = {
@@ -36,11 +44,21 @@ CATEGORIES = {
                            "'brainpool/sect/MODP/curve25519 (None->True, + NO_PQ_KEX on brainpool groups)'; §3.3 oid",
     "pq-now-named": "A post-quantum identifier (CSOR/PKIX OID, HSS/LMS/XMSS, composite, Dilithium/Kyber, McEliece, "
                     "FN-DSA, 'ML DSA 65', rsa3072_dilithium2) now resolves as quantum safe or hybrid: qv -> False, DSA "
-                    "and QUANTUM_VULNERABLE dropped. DA §7 must-flip 'PQ and XMSS/HSS OIDs (None->False)', "
+                    "and QUANTUM_VULNERABLE dropped. A key or certificate: any public-key primitive; an SSH or TLS "
+                    "key-exchange slot: a KEM or key agreement only (review 5901836120 m2). DA §7 must-flip 'PQ and XMSS/HSS OIDs (None->False)', "
                     "'FN-DSA/\"ML DSA 65\"/rsa3072_dilithium2 (drop DSA/QV)'; §3.5 token-bounded DSA; OA-CB04-4",
-    "tls-pq-group-evidence": "A TLS endpoint whose negotiated group algid knows as post-quantum: "
-                             "classify.pq_kex_evidence is True, so no NO_PQ_KEX, qv False and posture class hybrid "
-                             "(the :4432 old-node shape, KF-3a). DA §4 classify.py:208/249 and posture.py:42",
+    "tls-pq-group-evidence": "A TLS endpoint whose negotiated group algid knows as a post-quantum KEM or key "
+                             "agreement (primitive kem/key-agree): classify.pq_kex_evidence is True, so no NO_PQ_KEX, "
+                             "qv False and posture class hybrid (the :4432 old-node shape, KF-3a). DA §4 "
+                             "classify.py:208/249 and posture.py:42",
+    "tls-pq-signature-not-kex": "A post-quantum signature (primitive signature: ML-DSA, SLH-DSA, XMSS, a composite "
+                                "signature) in a TLS group slot is no key exchange: it is no PQ key-exchange evidence "
+                                "and gives no verdict, as an unknown group (qv None, not-applicable; no NO_PQ_KEX "
+                                "without pq_hybrid false). Review 5901836120 m1; DA §4 classify.py:208/249",
+    "ssh-pq-signature-not-kex": "A post-quantum signature (primitive signature) in an SSH kex list is no key "
+                                "exchange: it is judged as an unknown kex method, so a list with no post-quantum KEM "
+                                "keeps SSH_NO_PQ_KEX and qv True. Dev's rule credited any name with a PQ marker (the "
+                                "same defect as review 5901836120 m2, older than algid); DA §4 classify.py SSH kex",
     "gost-r-34.10-signature": "GOST R 34.10-2012 keys are elliptic-curve keys (signature, RFC 9215; the same curves "
                               "key VKO agreement, the TLS gostr34102012_* and IKE GOST3410-2012-* groups), not a "
                               "symmetric cipher: the managed key leaves the symmetric path, qv False -> True. DA §4 "
@@ -93,29 +111,59 @@ def _subject(row: dict) -> str | None:
     return None
 
 
+def _identity(row: dict, subject: object) -> algid.Identity | None:
+    """algid's identity of the judged identifier, read in its slot's namespace first, as the classifier reads it."""
+    if not isinstance(subject, str):
+        return None
+    namespace = SLOT_NAMESPACE.get(row["type"])
+    return (algid.resolve(subject, namespace) if namespace else None) or algid.resolve(subject)
+
+
+def _public_key(found: algid.Identity | None) -> bool:
+    """A public-key identity: an asymmetric primitive, or a classical name rule (algid's fallback, primitive None,
+    matches only public-key families: RSA, DSA, EC, DH, EdDSA, SM2)."""
+    return found is not None and (found.primitive in ASYMMETRIC
+                                  or (found.primitive is None and found.matched_by == "fallback"))
+
+
+def _ike_pq_group(group: str) -> bool:
+    found = algid.resolve(group, "ike_ke") or algid.resolve(group)
+    return found is not None and found.quantum in ("safe", "hybrid") and found.primitive in KEX
+
+
 def _category(row: dict, before: list, after: list) -> str | None:
     kind = row["key"].split("|", 1)[0]
     subject = _subject(row)
-    found = algid.resolve(subject) if isinstance(subject, str) else None
+    found = _identity(row, subject)
     quantum = found.quantum if found else None
+    primitive = found.primitive if found else None
+    kex_slot = row["type"] in SLOT_NAMESPACE
     if kind == "ike":
         groups = row["facts"]["groups"]
-        pq = any(g == "group 36" or algid.quantum_vulnerable(g) is False for g in groups)
+        pq = any(g == "group 36" or _ike_pq_group(g) for g in groups)
         return "ike-mlkem-group" if pq and before[0] is True and after == [False, [], None, "quantum-safe"] else None
     if kind == "pca-old":
-        ok = quantum in ("safe", "hybrid") and before[0] is True and after[0] is False
+        ok = quantum in ("safe", "hybrid") and primitive in ASYMMETRIC and before[0] is True and after[0] is False
         return "pca-raw-identifier" if ok else None
     if row["type"] == "tls_endpoint" and algid.is_sentinel(subject):
         return "placeholder-group" if before[0] is None and after[0] is True else None
     if row["type"] == "tls_endpoint" and quantum in ("safe", "hybrid"):
-        return "tls-pq-group-evidence" if after == [False, [], None, "hybrid"] else None
+        if primitive in KEX:
+            return "tls-pq-group-evidence" if after == [False, [], None, "hybrid"] else None
+        return "tls-pq-signature-not-kex" if primitive == "signature" and after == [None, [], None,
+                                                                                   "not-applicable"] else None
+    if row["type"] == "ssh_endpoint" and quantum in ("safe", "hybrid") and primitive == "signature":
+        ok = before[0] is False and after == [True, ["SSH_NO_PQ_KEX"], "Low", "quantum-vulnerable"]
+        return "ssh-pq-signature-not-kex" if ok else None
     if row["type"] == "managed_key" and found is not None and (found.name or "").upper().startswith("GOST") \
             and before[0] is False and after[0] is True:
-        return "gost-r-34.10-signature" if found.family_label == "EC" else None
-    if quantum == "vulnerable" and before[0] is None and after[0] is True \
+        ok = found.family_label == "EC" and primitive in ("signature", "key-agree")
+        return "gost-r-34.10-signature" if ok else None
+    if quantum == "vulnerable" and _public_key(found) and before[0] is None and after[0] is True \
             and set(before[1]) <= set(after[1]):
         return "classical-now-named"
-    if quantum in ("safe", "hybrid") and before[0] in (None, True) and after[0] is False \
+    if quantum in ("safe", "hybrid") and (primitive in KEX if kex_slot else primitive in ASYMMETRIC) \
+            and before[0] in (None, True) and after[0] is False \
             and "QUANTUM_VULNERABLE" not in after[1] and "DSA" not in after[1]:
         return "pq-now-named"
     return None

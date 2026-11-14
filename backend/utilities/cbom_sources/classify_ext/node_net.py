@@ -177,11 +177,12 @@ _IKE_GROUP_NUMBER = re.compile(r"(?:group|dh-group|dh)\s*(\d{1,3})", re.I)
 
 def _pq_ike_group(group: Any) -> bool:
     """A configured IKE group that is a post-quantum key exchange, in any spelling a parser keeps: the IKEv2
-    Transform Type 4 name or number ("group N"), whichever syntax the vendor used."""
+    Transform Type 4 name or number ("group N"), whichever syntax the vendor used. A post-quantum signature is no
+    key exchange (classify.KEX_PRIMITIVES)."""
     text = str(group or "").strip()
     m = _IKE_GROUP_NUMBER.fullmatch(text)
-    found = algid.ike_ke(int(m.group(1))) if m else algid.resolve(text, "ike_ke") or algid.resolve(text)
-    return found is not None and found.quantum in ("safe", "hybrid")
+    found = algid.ike_ke(int(m.group(1))) if m else C.kex_identity(text, "ike_ke")
+    return found is not None and found.quantum in ("safe", "hybrid") and found.primitive in C.KEX_PRIMITIVES
 
 
 def appliance_rule(out: Any, facts: dict[str, Any], algorithm: Any, key_size: Any, now: Any) -> bool | None:
