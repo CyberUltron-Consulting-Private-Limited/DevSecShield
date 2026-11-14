@@ -223,8 +223,9 @@ jobs:
       fail-fast: false
       matrix:
         # Same contexts as scripts/deploy/build_images.sh and ci.yml; minio is the local install's S3 stand-in.
+        # build-contexts: one name=path per line ("\n" in the quoted string); a comma does not separate two contexts.
         image:
-          - {name: backend, context: backend, dockerfile: backend/Dockerfile, build-contexts: "migrations=prod_database_migrations,aibom=aibom"}
+          - {name: backend, context: backend, dockerfile: backend/Dockerfile, build-contexts: "migrations=prod_database_migrations\naibom=aibom"}
           - {name: frontend, context: frontend, dockerfile: frontend/Dockerfile}
           - {name: scan-worker, context: ".", dockerfile: RabbitMQ/worker/Dockerfile, free-disk-space: true}
           - {name: dast-worker, context: RabbitMQ/dast_worker, dockerfile: RabbitMQ/dast_worker/Dockerfile}

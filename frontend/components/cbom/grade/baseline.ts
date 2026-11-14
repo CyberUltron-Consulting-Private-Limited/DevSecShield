@@ -54,6 +54,31 @@ export interface AgilitySubjectsPage {
   items: AgilitySubject[];
 }
 
+/** GET /{team}/cbom/agility/history: the baseline written at each run (CB-25 PR-B), newest first. */
+export interface AgilityHistoryItem {
+  run_id: number;
+  at: string | null;
+  agility_version: string;
+  assets: number;
+  counts: Partial<Record<string, number>>;
+  counts_excl_pq?: Partial<Record<string, number>>;
+  self_fixable_pct: number | null;
+  unknown_reasons?: Record<string, number>;
+  systems: number;
+  systems_truncated?: boolean;
+}
+
+/** Change of the self-fixable share against the next older baseline (null when either has none, or the model
+ * version differs: the two are not comparable). */
+export function historyDeltas(items: AgilityHistoryItem[]): (number | null)[] {
+  return items.map((it, i) => {
+    const older = items[i + 1];
+    if (!older || it.self_fixable_pct == null || older.self_fixable_pct == null) return null;
+    if (older.agility_version !== it.agility_version) return null;
+    return Math.round((it.self_fixable_pct - older.self_fixable_pct) * 10) / 10;
+  });
+}
+
 export const SYSTEM_KIND_LABEL: Record<string, string> = {
   application: "application",
   source: "source",
@@ -94,6 +119,7 @@ export function systemsAddUp(b: AgilityBaseline): boolean | null {
 
 export const baselineKeys = {
   baseline: (teamId: number) => ["cbom-sources", teamId, "agility-baseline"] as const,
+  history: (teamId: number) => ["cbom-sources", teamId, "agility-history"] as const,
   subjects: (teamId: number, params: { fixClass: string | null; system: string | null; view: string }) =>
     ["cbom-sources", teamId, "agility-subjects", params.fixClass ?? "", params.system ?? "", params.view] as const,
 };

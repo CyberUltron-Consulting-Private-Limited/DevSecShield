@@ -149,6 +149,15 @@ class Grader:
                                                                                   facts)[:32])
 
 
+def not_correlated(g: _Graded, key_kind: str | None) -> _Graded:
+    """qg-1 rule 6: an asset whose cross-source correlation is required but absent (CB-21 ``NOT_CORRELATED``, estate
+    ``key_kind`` ``not_correlated``) is Q0 ``not_correlated``, after rules 4-5 (an unknown class stays
+    ``unknown_verdict``; no public-key cryptography stays "no grade") and before Mosca and the class rules."""
+    if key_kind != "not_correlated" or g.q_grade is None or g.q_reason == "unknown_verdict":
+        return g
+    return _Graded("Q0", "not_correlated", g.exposure, g.family)
+
+
 def _worst(graded: list[tuple[str, _Graded]]) -> tuple[str, _Graded]:
     """The observation the key's grade comes from: the worst known grade (Q1 first), else Q0, else no grade."""
     return min(graded, key=lambda sg: (RANK.get(sg[1].q_grade, 6), sg[0]))
@@ -254,6 +263,7 @@ def refresh(session: Session, team_id: int, keys: Iterable[str], now: _dt.dateti
                 continue
             graded = [(o["source_ref"], grader.grade(rows[o["asset_id"]])) for o in obs]
             ref, g = _worst(graded)
+            g = not_correlated(g, asset.key_kind)
             row = next(rows[o["asset_id"]] for o in obs if o["source_ref"] == ref)
             src = inputs.by_source.get(row.source_id or 0) or {}
             pointer = next(o for o in obs if o["source_ref"] == ref)
@@ -463,6 +473,80 @@ def summary(session: Session, team_id: int, now: _dt.datetime, *, weeks: int = 1
     }
 
 
+HEATMAP_ROWS = 15
+HEATMAP_COLUMNS = 10
+
+
+def heatmap(session: Session, team_id: int, *, rows: int = HEATMAP_ROWS, columns: int = HEATMAP_COLUMNS
+            ) -> dict[str, Any]:
+    """Algorithm family x source: per cell the count per grade and its worst KNOWN grade (Q1 before Q4; Q0 is counted
+    apart and never hides a known grade). Families and sources are ranked by worst grade then size; the rest fold into
+    one "other" row / column (``other: true``, no drill-down). A cell drills down to the register list filtered by
+    ``family`` and ``source`` (the cell's ``filter``). One GROUP BY on ``(team_id, family, source_ref, q_grade)``."""
+    raw = session.execute(sa.select(_RT.c.family, _RT.c.source_ref, sa.func.max(_RT.c.source_name), _RT.c.q_grade,
+                                    sa.func.count()).where(_RT.c.team_id == team_id)
+                          .group_by(_RT.c.family, _RT.c.source_ref, _RT.c.q_grade)).all()
+    names: dict[str, str | None] = {}
+    fam_n: dict[str, int] = {}
+    src_n: dict[str, int] = {}
+    fam_worst: dict[str, int] = {}
+    src_worst: dict[str, int] = {}
+    for fam, ref, name, grade, n in raw:
+        fam, ref = fam or "Other", ref or ""
+        names[ref] = names.get(ref) or name
+        fam_n[fam] = fam_n.get(fam, 0) + int(n)
+        src_n[ref] = src_n.get(ref, 0) + int(n)
+        if grade in ("Q1", "Q2", "Q3", "Q4"):
+            fam_worst[fam] = min(fam_worst.get(fam, 9), RANK[grade])
+            src_worst[ref] = min(src_worst.get(ref, 9), RANK[grade])
+    fams = sorted(fam_n, key=lambda f: (fam_worst.get(f, 9), -fam_n[f], f))
+    srcs = sorted(src_n, key=lambda r: (src_worst.get(r, 9), -src_n[r], r))
+    keep_f, keep_s = set(fams[:rows]), set(srcs[:columns])
+    cells: dict[tuple[str, str], dict[str, int]] = {}
+    for fam, ref, _name, grade, n in raw:
+        fam, ref = fam or "Other", ref or ""
+        row_key = fam if fam in keep_f else "__other__"
+        col_key = ref if ref in keep_s else "__other__"
+        counts = cells.setdefault((row_key, col_key), {})
+        counts[grade or "none"] = counts.get(grade or "none", 0) + int(n)
+    out_cells = []
+    for (fam, ref), counts in sorted(cells.items()):
+        known = [g for g in ("Q1", "Q2", "Q3", "Q4") if counts.get(g)]
+        other = fam == "__other__" or ref == "__other__"
+        out_cells.append({"family": None if fam == "__other__" else fam, "source_ref": None if ref == "__other__" else ref,
+                          "counts": dict(sorted(counts.items())), "total": sum(counts.values()),
+                          "worst": known[0] if known else None, "q0": counts.get("Q0", 0), "other": other,
+                          "filter": None if other else {"family": fam, "source": ref}})
+    columns_out = [{"source_ref": r, "source_name": names.get(r), "total": src_n[r], "other": False}
+                   for r in srcs[:columns]]
+    if len(srcs) > columns:
+        columns_out.append({"source_ref": None, "source_name": f"{len(srcs) - columns} more sources",
+                            "total": sum(src_n[r] for r in srcs[columns:]), "other": True})
+    rows_out = [{"family": f, "total": fam_n[f], "other": False} for f in fams[:rows]]
+    if len(fams) > rows:
+        rows_out.append({"family": None, "label": f"{len(fams) - rows} more families",
+                         "total": sum(fam_n[f] for f in fams[rows:]), "other": True})
+    return {"rows": rows_out, "columns": columns_out, "cells": out_cells, "total": sum(fam_n.values())}
+
+
+REPORT_TOP = 100
+REPORT_Q0 = 200
+
+
+def report(session: Session, team_id: int, now: _dt.datetime) -> dict[str, Any]:
+    """What the register PDF prints (deliverable #2): the summary, the heat-map, the top Q1 Critical items and the
+    open Q0 gaps by reason, read in one place so the PDF and the API cannot disagree."""
+    from backend.new_models import CbomQ0Gap
+    from backend.utilities.cbom_sources.q0register import public_gap
+
+    top = list_register(session, team_id, {"grade": "Q1"}, after=None, limit=REPORT_TOP)
+    gaps = session.exec(select(CbomQ0Gap).where(CbomQ0Gap.team_id == team_id, CbomQ0Gap.closed_at.is_(None))  # type: ignore[union-attr]
+                        .order_by(CbomQ0Gap.reason, CbomQ0Gap.opened_at, CbomQ0Gap.id).limit(REPORT_Q0)).all()
+    return {"summary": summary(session, team_id, now), "heatmap": heatmap(session, team_id),
+            "top_q1": top["items"], "top_q1_total": top["total"],
+            "q0_gaps": [public_gap(g, now) for g in gaps]}
+
+
 def get_item(session: Session, team_id: int, key: str) -> dict[str, Any] | None:
     from backend.new_models import CbomQ0Gap
     from backend.utilities.cbom_sources import estate as E
@@ -507,5 +591,5 @@ def csv_rows(engine, team_id: int, filters: dict[str, Any], *, batch: int = 1000
 
 
 __all__ = ["TeamInputs", "team_inputs", "refresh", "apply_write", "regrade_team", "regrade_due", "pending",
-           "list_register", "summary", "get_item", "csv_rows", "encode_after", "decode_after", "RANK",
+           "list_register", "summary", "heatmap", "report", "not_correlated", "get_item", "csv_rows", "encode_after", "decode_after", "RANK",
            "ASSET_Q0_REASONS", "CSV_COLUMNS", "FILTERS", "LIMIT_MAX"]
