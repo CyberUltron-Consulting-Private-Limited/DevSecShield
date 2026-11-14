@@ -20,6 +20,7 @@ const html = (frameworks: ReturnType<typeof buildComplianceSummary>, extra: Reco
   renderToStaticMarkup(h(ComplianceMappingSection, { frameworks, onDrill: () => undefined, scope: "run", ...extra }));
 const visibleText = (markup: string) => markup
   .replace(/<details[^>]*data-testid="compliance-clause-[^"]*-text"[^>]*>[\s\S]*?<\/details>/g, " ")  // collapsed text
+  .replace(/<span[^>]*\shidden=""[^>]*>[^<]*<\/span>/g, " ")  // an (i) tip's hidden description (read by screen readers only)
   .replace(/<[^>]+>/g, " ").replace(/&[a-z#0-9]+;/g, " ");
 const words = (s: string) => s.split(/\s+/).filter(Boolean).length;
 
