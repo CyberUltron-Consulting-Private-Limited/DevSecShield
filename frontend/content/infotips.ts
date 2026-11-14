@@ -2616,6 +2616,48 @@ export const INFO_TIPS = {
     why: "It proves the node, network path and credential work before a full run spends credits.",
     example: "4 of 5 samples ready: 10.20.0.9 refused the login.",
   },
+  // src: backend/routers/cbom_sources.py:624-648 — #225: server-side search
+  "cbsrc.sources.search": {
+    label: "Search sources",
+    what: "Finds sources by name or by anything in their settings: a target host or IP address, owner, application, API URL. Searched on the server, so it covers every source, not only the rows loaded.",
+    why: "With thousands of sources, scrolling is not a way to find one.",
+    example: "10.20.0.11 finds the server source that lists it.",
+  },
+  // src: backend/routers/cbom_sources.py:624-648 — #225: kind filter
+  "cbsrc.sources.filter_kind": {
+    label: "Filter by type",
+    what: "Shows only sources of one kind, such as Windows servers or databases.",
+    why: "Narrows a long list to the sources you are working on.",
+    example: "Windows servers.",
+  },
+  // src: backend/routers/cbom_sources.py:624-648, backend/utilities/cbom_sources/serialize.py:111 — #225: segment of the source's scan node
+  "cbsrc.sources.filter_segment": {
+    label: "Filter by segment",
+    what: "Shows only sources whose scan node is in this segment (the segment set on the scan node).",
+    why: "Per data centre or network zone, you can check what each node covers.",
+    example: "dc-chennai.",
+  },
+  // src: backend/routers/cbom_sources.py:615-648 — #225: enabled, disabled or the last test result
+  "cbsrc.sources.filter_status": {
+    label: "Filter by status",
+    what: "Shows enabled or disabled sources, or sources by their last connection test: passed, partly passed, failed, error, running or never tested.",
+    why: "Failed and untested sources are the ones to fix before a run.",
+    example: "Test failed.",
+  },
+  // src: frontend/components/cbom/sources/SourceTableControls.tsx:163-217 — #225: every source, searchable and paged
+  "cbsrc.sources.all": {
+    label: "All sources",
+    what: "Every source of the team across all tabs, searched and filtered on the server and loaded 100 at a time.",
+    why: "One place to check what a run covers, however many sources the team has.",
+    example: "Showing 100 of 4,512 sources.",
+  },
+  // src: backend/utilities/cbom_sources/serialize.py:111 — #225: the scan node's segment
+  "cbsrc.col.segment": {
+    label: "Segment",
+    what: "The segment of the scan node that runs this source, as set on the scan node.",
+    why: "Shows which network zone or data centre the source is reached from.",
+    example: "dc-mumbai.",
+  },
   // src: frontend/components/cbom/sources/ServersTab.tsx:117-124 — the source kind
   "cbsrc.col.type": {
     label: "Type",
@@ -2964,8 +3006,8 @@ export const INFO_TIPS = {
   // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1810-1811 — up to 32 characters; blank reads every initialised token
   "cbsrc.km.token": {
     label: "Token label",
-    what: "The label of the token or partition to read, up to 32 characters. Blank reads every initialised token the module shows.",
-    why: "Limits the read to the partition you mean when an HSM is shared.",
+    what: "The label of the token or partition to read, up to 32 characters. Required when the module shows more than one token; blank works for a module with one token.",
+    why: "The PIN is only ever tried on this token, so a wrong PIN cannot count toward locking other partitions of a shared HSM.",
     example: "payments-partition.",
   },
   // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1816-1822 — PIN, PIN from vault; optional
@@ -4101,6 +4143,27 @@ export const INFO_TIPS = {
     why: "Without it the node refuses the proxy's re-signed certificate and cannot connect.",
     example: "bank-proxy-ca.pem.",
   },
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:624, deploy/helm/cbom-scan-node/values.yaml — CB-15 section
+  "cbsrc.nodes.trust": {
+    label: "How the node trusts the ZeroShield API",
+    what: "Only for an on-prem ZeroShield or a gateway with its own CA or mTLS: point the node at a private CA bundle and, if the gateway asks for one, a client certificate and key. The command then mounts these files read-only into the node.",
+    why: "The node must trust the API's certificate to enroll, and an mTLS gateway refuses a node without its client certificate. The files never leave your host.",
+    example: "An on-prem ZeroShield behind an internal CA and an mTLS ingress.",
+  },
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:629, scan_node/zs_scan_node/api.py:91-97 — CB-15: ZS_CA_FILE
+  "cbsrc.nodes.private_ca": {
+    label: "ZeroShield API uses a private CA",
+    what: "Tick if the ZeroShield API's certificate is signed by your own CA (an on-prem deployment, an internal gateway). Give the PEM file's path on the host; the node trusts it for the ZeroShield API only.",
+    why: "Without it the node refuses the API's certificate and cannot enroll. The file stays on the host and your targets are not affected.",
+    example: "/etc/pki/zeroshield-ca.pem, the CA that signed the ZeroShield API certificate.",
+  },
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:639, scan_node/zs_scan_node/api.py:93-99 — CB-15: ZS_CLIENT_CERT / KEY
+  "cbsrc.nodes.mtls": {
+    label: "ZeroShield API requires a client certificate (mTLS)",
+    what: "Tick if the gateway in front of the ZeroShield API asks every node for a client certificate. Give the certificate and key paths on the host; the node presents them when it connects.",
+    why: "An mTLS gateway refuses a node without one. The key never leaves the host: the command mounts it read-only.",
+    example: "/etc/pki/zs-node.crt and /etc/pki/zs-node.key, the key readable by uid 10001.",
+  },
   // src: frontend/components/cbom/sources/ScanNodesTab.tsx:532-534 — trust the proxy CA only for ZeroShield hostnames
   "cbsrc.nodes.tls_inspect": {
     label: "Proxy inspects TLS",
@@ -4512,7 +4575,7 @@ export const INFO_TIPS = {
   // src: frontend/components/cbom/sources/CmdbImportDialog.tsx:1-4, frontend/components/cbom/sources/CmdbImportDialog.tsx:57-68 — new Linux server sources or network ranges
   "cbsrc.cmdb.creates": {
     label: "New sources",
-    what: "Sources the import would create: hosts not yet in any server source become Linux server sources on the chosen node; CIDRs become network ranges.",
+    what: "Sources the import would create, each on its scan node: new Linux hosts become Linux server sources, Windows hosts WinRM sources (login from your vault), database, cluster and HSM rows sources of those kinds; CIDRs become network ranges. Nothing past the team's source limit is created.",
     why: "New sources still need a credential and a passing test before they are collected.",
     example: "cmdb-import-1 (14 Linux hosts) · owner: Cards ops.",
   },
@@ -4523,7 +4586,7 @@ export const INFO_TIPS = {
     why: "Resolve them in the CMDB or by hand so the right owner gets the findings.",
     example: "10.20.5.17: owner Payments in one source, Cards in another.",
   },
-  // src: frontend/components/cbom/sources/CmdbImportDialog.tsx:83, backend/utilities/integrations/cmdb.py:337-351 — new sources past the team's source cap
+  // src: frontend/components/cbom/sources/CmdbImportDialog.tsx:83, backend/utilities/integrations/cmdb.py:654-670 — new sources past the team's source cap
   "cbsrc.cmdb.over_limit": {
     label: "Over the source limit",
     what: "New sources this import would create beyond the team's source limit. They are listed here and are not created when you apply; the rest of the import still goes ahead.",
@@ -4540,7 +4603,7 @@ export const INFO_TIPS = {
   // src: frontend/components/cbom/sources/CmdbImportDialog.tsx:142-151 — CSV or ServiceNow CMDB
   "cbsrc.cmdb.source": {
     label: "Import from",
-    what: "CSV file: columns host / fqdn / ip / cidr, owner, application, criticality, exposure, data_classification, environment, os. ServiceNow CMDB: reads the CMDB table set in Settings > Integrations (default cmdb_ci_server).",
+    what: "CSV file: host / fqdn / ip / cidr, owner, application, criticality, exposure, data_classification, environment, os, segment or scan_node; for databases, clusters and HSMs also kind, engine, port, login, api_url, module, vault_path. ServiceNow CMDB: the table set in Settings > Integrations.",
     why: "Importing keeps owners and criticality in one place instead of typing them per source.",
     example: "ServiceNow CMDB, table cmdb_ci_server.",
   },
@@ -4561,9 +4624,30 @@ export const INFO_TIPS = {
   // src: frontend/components/cbom/sources/CmdbImportDialog.tsx:175-176 — the node that can reach the new hosts
   "cbsrc.cmdb.node": {
     label: "Scan node for new sources",
-    what: "The scan node new sources use: it must reach the new hosts.",
+    what: "The scan node for rows with no segment or scan_node column. A row's segment picks the scan node of that segment instead.",
     why: "A node that cannot reach them makes every new source fail its test.",
     example: "node-dc1.",
+  },
+  // src: backend/utilities/integrations/cmdb.py:378-400, backend/routers/integrations.py:114 — #225: one choice per shared segment
+  "cbsrc.cmdb.segment_node": {
+    label: "Scan node for a segment",
+    what: "Several scan nodes serve this segment, so the import needs to know which one takes its rows. Without a choice those rows are skipped with the reason. A row's scan_node column still wins.",
+    why: "A node that cannot reach a segment's hosts makes every source there fail its test.",
+    example: "dc-mumbai: mum-01.",
+  },
+  // src: backend/utilities/integrations/cmdb.py:403-476, backend/routers/integrations.py:116 — #225: credentials only from a vault
+  "cbsrc.cmdb.vault": {
+    label: "Vault for credentials",
+    what: "The vault that holds the logins named in a vault_path column (databases, cluster kubeconfigs, HSM PINs) and the Windows login below. Passwords, kubeconfigs and certificates are never read from the file; rows that need one are skipped.",
+    why: "Credentials stay in your vault, read by the scan node at run time.",
+    example: "HashiCorp Vault.",
+  },
+  // src: backend/utilities/integrations/cmdb.py:576-588, backend/routers/integrations.py:117 — #225: Windows rows become WinRM sources
+  "cbsrc.cmdb.windows_vault": {
+    label: "Windows WinRM login",
+    what: "The vault secret path of the WinRM login for Windows rows. They become Windows sources over WinRM HTTPS (port 5986) that read it; a row's vault_path overrides it. Without either, Windows rows are skipped.",
+    why: "Windows hosts can then be onboarded in bulk instead of one by one in the Servers tab.",
+    example: "secret/data/cbom/winrm.",
   },
   // src: frontend/components/cbom/sources/CmdbImportDialog.tsx:1-4, frontend/components/cbom/sources/CmdbImportDialog.tsx:134 — admins only; preview, then confirm
   "cbsrc.cmdb.dialog": {
@@ -5783,9 +5867,9 @@ export const INFO_TIPS = {
   // src: frontend/components/cbom/results/RunSections.tsx:301-330 — CERT-In, RBI, SEBI CSCRF, NIST, CNSA 2.0
   "cbom.run.compliance": {
     label: "Compliance mapping",
-    what: "Regulatory clauses this run's findings touch, per framework (CERT-In, RBI, SEBI CSCRF, NIST, CNSA 2.0), with the number of assets and finding codes per clause. From the knowledge base, no AI.",
-    why: "Shows auditors exactly which requirements each weakness affects.",
-    example: "RBI · 3 clauses: 4.2 Encryption of data in transit, 12 assets, WEAK_TLS_VERSION.",
+    what: "Per framework (CERT-In, RBI, SEBI CSCRF, NIST, CNSA 2.0): a verdict (Pass, Fail, Partial or Not assessed) from the compliance checks' requirement results, the clauses the findings touch and the assets affected; then each failing clause with its findings, how to fix them and the regulation's text behind Show text. Click an asset count to filter the findings table. Knowledge base and checks, no AI.",
+    why: "Shows auditors what fails, where, and what to change, without reading every clause.",
+    example: "NIST · Partial · 3/6 requirements pass · 1 clause · 3 assets: SHA-1 based SSH key exchange. How to fix: use curve25519-sha256.",
   },
   // src: frontend/components/cbom/results/RunSections.tsx:370-386, backend/utilities/cbom_sources/posture.py:35-39 — impact x criticality x exposure
   "cbom.run.top_risks": {
@@ -6126,6 +6210,14 @@ export const INFO_TIPS = {
     what: "Everything the quantum risk register cannot grade yet (Q0 Unknown), grouped by reason: evidence areas and vendors at E0, scope a collection could not read, assets the product could not grade, and missing Mosca inputs. Each opening is tracked until it closes.",
     why: "A Q0 item is a blind spot, never assumed safe; closing them is how the register becomes complete.",
     example: "Evidence at E0 (6): payment HSM vendor has not answered.",
+  },
+  // src: backend/utilities/cbom_sources/estate_export.py:1-30, backend/routers/cbom_estate_export.py:1-9 — one
+  // component per estate key; unsigned with X-Cbom-Sha256; filters application / source / type
+  "cbom.estate.export": {
+    label: "Estate CBOM",
+    what: "Your whole estate as one CycloneDX 1.6 file (JSON or XML): every asset once, however many sources see it, with its current quantum risk grade and VEX. It covers what the latest collections read, plus assets they could not read again (marked not read); removed assets are left out. The download API also filters by application, source or asset type.",
+    why: "One file to hand to an auditor or import into another tool. It is unsigned: the response carries the file's SHA-256 (X-Cbom-Sha256, shown after the download) so anyone can check it outside ZeroShield.",
+    example: "cbom-estate-team3-2026-11-15.cdx.json · 2,140 assets · unsigned · SHA-256 4f1c….",
   },
   // src: backend/utilities/cbom_sources/q0register.py:3-5, frontend/components/cbom/grade/Q0Gaps.tsx:110-118 — open while closed_at is empty
   "cbom.q0.status": {

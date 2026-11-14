@@ -1,0 +1,378 @@
+[
+ {
+  "facts": {
+   "endpoint_types": [
+    "REGIONAL"
+   ],
+   "exposure_basis": "API Gateway REGIONAL endpoint",
+   "internet_facing": true,
+   "min_version": "TLSv1.0",
+   "protocols": [
+    "TLSv1.0",
+    "TLSv1.1",
+    "TLSv1.2",
+    "TLSv1.3"
+   ],
+   "security_policy": "TLS_1_0"
+  },
+  "location": "arn:aws:apigateway:ap-south-1::/domainnames/d0.bank.example",
+  "protocol": "TLS",
+  "type": "api_tls"
+ },
+ {
+  "facts": {
+   "endpoint_types": [
+    "REGIONAL"
+   ],
+   "exposure_basis": "API Gateway REGIONAL endpoint",
+   "internet_facing": true,
+   "min_version": "TLSv1.2",
+   "protocols": [
+    "TLSv1.2",
+    "TLSv1.3"
+   ],
+   "security_policy": "TLS_1_2"
+  },
+  "location": "arn:aws:apigateway:ap-south-1::/domainnames/d1.bank.example",
+  "protocol": "TLS",
+  "type": "api_tls"
+ },
+ {
+  "facts": {
+   "endpoint_types": [
+    "REGIONAL"
+   ],
+   "exposure_basis": "API Gateway REGIONAL endpoint",
+   "internet_facing": true,
+   "min_version": "TLSv1.3",
+   "protocols": [
+    "TLSv1.3"
+   ],
+   "security_policy": "SecurityPolicy_TLS13_1_3_2025_09"
+  },
+  "location": "arn:aws:apigateway:ap-south-1::/domainnames/d2.bank.example",
+  "protocol": "TLS",
+  "type": "api_tls"
+ },
+ {
+  "facts": {
+   "endpoint_types": [
+    "REGIONAL"
+   ],
+   "exposure_basis": "API Gateway REGIONAL endpoint",
+   "internet_facing": true,
+   "min_version": "TLSv1.3",
+   "protocols": [
+    "TLSv1.3"
+   ],
+   "security_policy": "SecurityPolicy_TLS13_1_3_FIPS_2025_09"
+  },
+  "location": "arn:aws:apigateway:ap-south-1::/domainnames/d3.bank.example",
+  "protocol": "TLS",
+  "type": "api_tls"
+ },
+ {
+  "facts": {
+   "endpoint_types": [
+    "REGIONAL"
+   ],
+   "exposure_basis": "API Gateway REGIONAL endpoint",
+   "internet_facing": true,
+   "min_version": "TLSv1.2",
+   "protocols": [
+    "TLSv1.2",
+    "TLSv1.3"
+   ],
+   "security_policy": "SecurityPolicy_TLS13_1_2_PFS_PQ_2025_09"
+  },
+  "location": "arn:aws:apigateway:ap-south-1::/domainnames/d4.bank.example",
+  "protocol": "TLS",
+  "type": "api_tls"
+ },
+ {
+  "facts": {
+   "endpoint_types": [
+    "REGIONAL"
+   ],
+   "exposure_basis": "API Gateway REGIONAL endpoint",
+   "internet_facing": true,
+   "min_version": "TLSv1.2",
+   "security_policy": "SecurityPolicy_TLS13_1_2_FIPS_PQ_2025_09"
+  },
+  "location": "arn:aws:apigateway:ap-south-1::/domainnames/d5.bank.example",
+  "protocol": "TLS",
+  "type": "api_tls"
+ },
+ {
+  "facts": {
+   "endpoint_types": [
+    "REGIONAL"
+   ],
+   "exposure_basis": "API Gateway REGIONAL endpoint",
+   "internet_facing": true,
+   "min_version": "TLSv1.2",
+   "protocols": [
+    "TLSv1.2",
+    "TLSv1.3"
+   ],
+   "security_policy": "SecurityPolicy_TLS13_1_2_PQ_2025_09"
+  },
+  "location": "arn:aws:apigateway:ap-south-1::/domainnames/d6.bank.example",
+  "protocol": "TLS",
+  "type": "api_tls"
+ },
+ {
+  "facts": {
+   "endpoint_types": [
+    "REGIONAL"
+   ],
+   "exposure_basis": "API Gateway REGIONAL endpoint",
+   "internet_facing": true,
+   "min_version": "TLSv1.2",
+   "protocols": [
+    "TLSv1.2",
+    "TLSv1.3"
+   ],
+   "security_policy": "SecurityPolicy_TLS13_1_2_2021_06"
+  },
+  "location": "arn:aws:apigateway:ap-south-1::/domainnames/d7.bank.example",
+  "protocol": "TLS",
+  "type": "api_tls"
+ },
+ {
+  "facts": {
+   "endpoint_types": [
+    "REGIONAL"
+   ],
+   "exposure_basis": "API Gateway REGIONAL endpoint",
+   "internet_facing": true,
+   "min_version": "TLSv1.3",
+   "protocols": [
+    "TLSv1.3"
+   ],
+   "security_policy": "SecurityPolicy_TLS13_2025_EDGE"
+  },
+  "location": "arn:aws:apigateway:ap-south-1::/domainnames/d8.bank.example",
+  "protocol": "TLS",
+  "type": "api_tls"
+ },
+ {
+  "facts": {
+   "endpoint_types": [
+    "REGIONAL"
+   ],
+   "exposure_basis": "API Gateway REGIONAL endpoint",
+   "internet_facing": true,
+   "min_version": "TLSv1.2",
+   "protocols": [
+    "TLSv1.2",
+    "TLSv1.3"
+   ],
+   "security_policy": "SecurityPolicy_TLS12_PFS_2025_EDGE"
+  },
+  "location": "arn:aws:apigateway:ap-south-1::/domainnames/d9.bank.example",
+  "protocol": "TLS",
+  "type": "api_tls"
+ },
+ {
+  "facts": {
+   "endpoint_types": [
+    "REGIONAL"
+   ],
+   "exposure_basis": "API Gateway REGIONAL endpoint",
+   "internet_facing": true,
+   "min_version": "TLSv1.2",
+   "protocols": [
+    "TLSv1.2",
+    "TLSv1.3"
+   ],
+   "security_policy": "SecurityPolicy_TLS12_2018_EDGE"
+  },
+  "location": "arn:aws:apigateway:ap-south-1::/domainnames/d10.bank.example",
+  "protocol": "TLS",
+  "type": "api_tls"
+ },
+ {
+  "facts": {
+   "endpoint_types": [
+    "REGIONAL"
+   ],
+   "exposure_basis": "API Gateway REGIONAL endpoint",
+   "internet_facing": true,
+   "min_version": "TLSv1.2",
+   "protocols": [
+    "TLSv1.2",
+    "TLSv1.3"
+   ],
+   "security_policy": "SecurityPolicy_TLS13_1_2_FIPS_PFS_PQ_2025_09"
+  },
+  "location": "arn:aws:apigateway:ap-south-1::/domainnames/d11.bank.example",
+  "protocol": "TLS",
+  "type": "api_tls"
+ },
+ {
+  "facts": {
+   "endpoint_types": [
+    "REGIONAL"
+   ],
+   "exposure_basis": "API Gateway REGIONAL endpoint",
+   "internet_facing": true,
+   "min_version": "TLSv1.2",
+   "security_policy": "SecurityPolicy_TLS13_1_2_Ext2_PQ_2025_09"
+  },
+  "location": "arn:aws:apigateway:ap-south-1::/domainnames/d12.bank.example",
+  "protocol": "TLS",
+  "type": "api_tls"
+ },
+ {
+  "facts": {
+   "endpoint_types": [
+    "REGIONAL"
+   ],
+   "exposure_basis": "API Gateway REGIONAL endpoint",
+   "internet_facing": true,
+   "min_version": "TLSv1.2",
+   "security_policy": "SecurityPolicy_TLS13_1_2_Ext2_FIPS_PQ_2025_09"
+  },
+  "location": "arn:aws:apigateway:ap-south-1::/domainnames/d13.bank.example",
+  "protocol": "TLS",
+  "type": "api_tls"
+ },
+ {
+  "facts": {
+   "endpoint_types": [
+    "REGIONAL"
+   ],
+   "exposure_basis": "API Gateway REGIONAL endpoint",
+   "internet_facing": true,
+   "min_version": "TLSv1.0",
+   "protocols": [
+    "TLSv1.0",
+    "TLSv1.1",
+    "TLSv1.2",
+    "TLSv1.3"
+   ],
+   "security_policy": "TLS_1_0"
+  },
+  "location": "arn:aws:apigateway:ap-south-1::/domainnames/d14.bank.example",
+  "protocol": "TLS",
+  "type": "api_tls"
+ },
+ {
+  "facts": {
+   "acm_certificate_arn": null,
+   "default_certificate": true,
+   "exposure_basis": "CloudFront distribution (served from the public edge)",
+   "internet_facing": true,
+   "min_version": "SSLv3",
+   "minimum_protocol_version": "SSLv3"
+  },
+  "location": "arn:aws:cloudfront::123456789012:distribution/E00000",
+  "protocol": "TLS",
+  "type": "cdn_tls"
+ },
+ {
+  "facts": {
+   "acm_certificate_arn": null,
+   "default_certificate": true,
+   "exposure_basis": "CloudFront distribution (served from the public edge)",
+   "internet_facing": true,
+   "min_version": "TLSv1.0",
+   "minimum_protocol_version": "TLSv1"
+  },
+  "location": "arn:aws:cloudfront::123456789012:distribution/E00001",
+  "protocol": "TLS",
+  "type": "cdn_tls"
+ },
+ {
+  "facts": {
+   "acm_certificate_arn": null,
+   "default_certificate": true,
+   "exposure_basis": "CloudFront distribution (served from the public edge)",
+   "internet_facing": true,
+   "min_version": "TLSv1.0",
+   "minimum_protocol_version": "TLSv1_2016"
+  },
+  "location": "arn:aws:cloudfront::123456789012:distribution/E00002",
+  "protocol": "TLS",
+  "type": "cdn_tls"
+ },
+ {
+  "facts": {
+   "acm_certificate_arn": null,
+   "default_certificate": true,
+   "exposure_basis": "CloudFront distribution (served from the public edge)",
+   "internet_facing": true,
+   "min_version": "TLSv1.1",
+   "minimum_protocol_version": "TLSv1.1_2016"
+  },
+  "location": "arn:aws:cloudfront::123456789012:distribution/E00003",
+  "protocol": "TLS",
+  "type": "cdn_tls"
+ },
+ {
+  "facts": {
+   "acm_certificate_arn": null,
+   "default_certificate": true,
+   "exposure_basis": "CloudFront distribution (served from the public edge)",
+   "internet_facing": true,
+   "min_version": "TLSv1.2",
+   "minimum_protocol_version": "TLSv1.2_2018"
+  },
+  "location": "arn:aws:cloudfront::123456789012:distribution/E00004",
+  "protocol": "TLS",
+  "type": "cdn_tls"
+ },
+ {
+  "facts": {
+   "acm_certificate_arn": null,
+   "default_certificate": true,
+   "exposure_basis": "CloudFront distribution (served from the public edge)",
+   "internet_facing": true,
+   "min_version": "TLSv1.2",
+   "minimum_protocol_version": "TLSv1.2_2019"
+  },
+  "location": "arn:aws:cloudfront::123456789012:distribution/E00005",
+  "protocol": "TLS",
+  "type": "cdn_tls"
+ },
+ {
+  "facts": {
+   "acm_certificate_arn": null,
+   "default_certificate": true,
+   "exposure_basis": "CloudFront distribution (served from the public edge)",
+   "internet_facing": true,
+   "min_version": "TLSv1.2",
+   "minimum_protocol_version": "TLSv1.2_2021"
+  },
+  "location": "arn:aws:cloudfront::123456789012:distribution/E00006",
+  "protocol": "TLS",
+  "type": "cdn_tls"
+ },
+ {
+  "facts": {
+   "acm_certificate_arn": null,
+   "default_certificate": true,
+   "exposure_basis": "CloudFront distribution (served from the public edge)",
+   "internet_facing": true,
+   "min_version": "TLSv1.3",
+   "minimum_protocol_version": "TLSv1.3_2025"
+  },
+  "location": "arn:aws:cloudfront::123456789012:distribution/E00007",
+  "protocol": "TLS",
+  "type": "cdn_tls"
+ },
+ {
+  "facts": {
+   "acm_certificate_arn": null,
+   "default_certificate": true,
+   "exposure_basis": "CloudFront distribution (served from the public edge)",
+   "internet_facing": true,
+   "min_version": "TLSv1.2",
+   "minimum_protocol_version": "TLSv1.2_2025"
+  },
+  "location": "arn:aws:cloudfront::123456789012:distribution/E00008",
+  "protocol": "TLS",
+  "type": "cdn_tls"
+ }
+]

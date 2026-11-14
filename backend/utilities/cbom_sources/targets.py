@@ -6,9 +6,12 @@ into a huge scan or a huge credit charge.
 """
 from __future__ import annotations
 
+import bisect
 import ipaddress
 import re
 from dataclasses import dataclass, field
+
+from backend.utilities.cbom_sources import idn
 
 MAX_LINES = 1000
 MAX_ADDRESSES_PER_SOURCE = 262_144  # four /16s
@@ -55,6 +58,7 @@ class ParsedTargets:
     hostnames: list[str] = field(default_factory=list)  # normalised, deduplicated
     normalized: list[str] = field(default_factory=list)  # canonical lines in input order
     raw_size: int = 0  # addresses before merging (for the per-source cap)
+    notes: list[str] = field(default_factory=list)  # names IDNA 2003 software reads as another host (CB-09)
 
 
 def clean_lines(value: str | list[str] | None) -> list[str]:
@@ -95,13 +99,13 @@ def _as_v4_if_mapped(address: ipaddress.IPv4Address | ipaddress.IPv6Address):
 
 
 def _normalize_hostname(text: str) -> str:
-    name = text.strip().lower().rstrip(".")
+    name = text.strip().rstrip(".")
     if not name:
         raise TargetError("empty hostname")
     try:
-        name = name.encode("idna").decode("ascii")
-    except UnicodeError as exc:
-        raise TargetError(f"{text!r} is not a valid hostname") from exc
+        name = idn.to_a_label(name)  # IDNA 2008, never Python's IDNA 2003 codec (CB-09)
+    except idn.IdnError as exc:
+        raise TargetError(f"{text!r} {exc}") from None
     if len(name) > 253:
         raise TargetError(f"{text[:40]!r}... is longer than 253 characters")
     labels = name.split(".")
@@ -240,34 +244,118 @@ def parse_targets(
         if kind == "host":
             if not allow_hostnames:
                 raise TargetError(f"Line {number}: {line!r} must be an IP address or CIDR range")
+            other = idn.idna2003_form(value_)
+            if other:
+                parsed.notes.append(f"Line {number}: {line} is scanned as {value_} (IDNA 2008). Older IDNA 2003 "
+                                    f"software reads it as {other}, a different name, which is not scanned")
             if value_ not in seen_hosts:
                 seen_hosts.add(value_)
                 parsed.hostnames.append(value_)
         else:
             parsed.raw_size += value_[2] - value_[1] + 1
-            scanned = scanned_interval(value_, canonical)
-            if scanned is not None:
-                raw.append(scanned)
+            raw.append(value_)
     if parsed.raw_size > max_addresses:
         raise TargetError(f"{parsed.raw_size:,} addresses; the limit is {max_addresses:,} per source")
-    parsed.intervals = merge(raw)
+    # what the scan node scans: every address, minus the network/broadcast edges of the block the lines form
+    parsed.intervals = subtract(merge(raw), [(4, a, a) for a in boundary_skips(parsed.normalized)])
     return parsed
 
 
-# An IPv4 CIDR of this prefix or larger (/24 ... /16) leaves out its own network and broadcast address; a smaller one
-# (/25 to /32) is scanned whole: it is most often a slice of a larger network (a /24 split into two /25s), whose first
-# and last addresses are real hosts (N3, 14 Nov 2026).  Same constant as the node (netutil.HOST_ONLY_MAX_PREFIX).
-HOST_ONLY_MAX_PREFIX = 24
+# Network and broadcast addresses (N3, 14 Nov 2026; review of #250): an IPv4 CIDR line of /30 or larger leaves out its
+# network or broadcast address only where that address is an OUTER EDGE of the contiguous block the configured lines
+# form together, i.e. of the network the customer actually entered.  A /23 split into two /24s keeps x.x.0.255 and
+# x.x.1.0; a /24 split into two /25s keeps .127 and .128; a real /29 on its own still skips its own network and
+# broadcast.  An address written out (alone or in an a-b range) is always scanned.  For a network range the lines are
+# all of the team's range records (enabled or not): the backend sends each range its ``skip_addresses`` (jobs.claim),
+# so the node and the counts here agree by construction; a server source's lines are its own target list, which the
+# node sees whole and applies the same rule to (scan_node netutil.boundary_skips; agreement test in
+# test_never_scan_node_agreement.py).
 
 
-def scanned_interval(interval: Interval, canonical: str) -> Interval | None:
-    """The addresses the scan node scans for one target line (netutil.iter_line_ips): every address of a range, an
-    IPv6 network or an IPv4 /25 or smaller, but only the host addresses of an IPv4 /24 or larger (not its network and
-    broadcast addresses).  ``canonical`` is the stored form the node receives (a mapped network is stored as IPv4)."""
-    version, start, end = interval
-    if version == 4 and "/" in canonical and end - start + 1 >= 2 ** (32 - HOST_ONLY_MAX_PREFIX):
-        return (version, start + 1, end - 1)
-    return interval
+def boundary_skips(lines: list[str]) -> set[int]:
+    """IPv4 addresses (as ints) the scan node leaves out of ``lines`` as network/broadcast addresses (rule above).
+    O(n log n) in the number of lines."""
+    every: list[Interval] = []
+    nets: list[tuple[int, int]] = []
+    written: list[Interval] = []
+    for line in lines:
+        try:
+            kind, value, canonical = parse_line(line)
+        except TargetError:
+            continue
+        if kind != "net" or value[0] != 4:
+            continue
+        every.append(value)
+        if "/" in canonical:
+            if value[2] - value[1] + 1 >= 4:  # a /31 and a /32 have no network or broadcast address
+                nets.append((value[1], value[2]))
+        else:
+            written.append(value)
+    blocks = merge(every)
+    starts, ends = {b[1] for b in blocks}, {b[2] for b in blocks}
+    skip = {first for first, _last in nets if first in starts} | {last for _first, last in nets if last in ends}
+    if not written:
+        return skip
+    spans = merge(written)  # sorted, disjoint: one bisect per candidate
+    firsts = [w[1] for w in spans]
+
+    def is_written(address: int) -> bool:
+        i = bisect.bisect_right(firsts, address) - 1
+        return i >= 0 and spans[i][2] >= address
+
+    return {a for a in skip if not is_written(a)}
+
+
+class SkipMap:
+    """The network/broadcast addresses left out of every range a team configured (``boundary_skips`` of them all),
+    built once per request, claim or plan (one pass over the ranges) and looked up per range with a bisect.  Callers
+    that list many ranges pass one of these down instead of recomputing the rule per range (review of #273)."""
+
+    def __init__(self, lines: list[str]) -> None:
+        self.points: list[int] = sorted(boundary_skips(lines))
+
+    def within(self, first: int, last: int) -> list[int]:
+        lo = bisect.bisect_left(self.points, first)
+        hi = bisect.bisect_right(self.points, last)
+        return self.points[lo:hi]
+
+
+def _skip_map(cidr: str, configured: list[str] | None, skips: SkipMap | None) -> SkipMap:
+    return skips if skips is not None else SkipMap(list(dict.fromkeys([cidr, *(configured or [])])))
+
+
+def range_skip_addresses(cidr: str, configured: list[str] | None = None, skips: SkipMap | None = None) -> list[str]:
+    """The addresses of network range ``cidr`` the node leaves out, given every range the team configured (``cidr``
+    included), or the team's ``SkipMap``: sent to the node in the range's scope as ``skip_addresses``."""
+    try:
+        kind, value, _canonical = parse_line(cidr)
+    except TargetError:
+        return []
+    if kind != "net" or value[0] != 4:
+        return []
+    return [str(ipaddress.IPv4Address(a)) for a in _skip_map(cidr, configured, skips).within(value[1], value[2])]
+
+
+def swept_interval_parts(cidr: str, configured: list[str] | None = None, skips: SkipMap | None = None) -> list[Interval]:
+    """What the node sweeps for network range ``cidr`` (before the never-scan list): its addresses minus its
+    ``range_skip_addresses``."""
+    kind, value, _canonical = parse_line(cidr)
+    if kind != "net":
+        return []
+    if value[0] != 4:
+        return [value]
+    points = _skip_map(cidr, configured, skips).within(value[1], value[2])
+    if not points:
+        return [value]
+    out: list[Interval] = []  # at most two points (the range's own first and last address): split around them
+    start = value[1]
+    for point in points:
+        if point > start:
+            out.append((4, start, point - 1))
+        start = point + 1
+    if start <= value[2]:
+        out.append((4, start, value[2]))
+    return out
 
 
 def _removed(exclusions: ParsedTargets | None) -> list[Interval]:
@@ -287,8 +375,33 @@ def in_scope(targets: ParsedTargets, exclusions: ParsedTargets | None) -> tuple[
     """Addresses and hostnames the scan node will scan after the never-scan list (hostnames match exactly; the node
     may skip more of them, by the addresses they resolve to, which only it can see)."""
     intervals = subtract(targets.intervals, _removed(exclusions))
-    excluded_hosts = set(exclusions.hostnames) if exclusions is not None else set()
-    return intervals, [h for h in targets.hostnames if h not in excluded_hosts]
+    excluded_hosts = never_scan_names(exclusions.hostnames) if exclusions is not None else set()
+    return intervals, [h for h in targets.hostnames if h not in excluded_hosts and idn.idna2003_form(h) not in
+                       excluded_hosts]
+
+
+def never_scan_names(hostnames: list[str]) -> set[str]:
+    """The names a never-scan list keeps out: each listed name, and for a name with ``ß`` or ``ς`` also the name
+    IDNA 2003 software reads it as (fail closed across the two forms; scan_node netutil.NeverScan does the same).
+    A target is also kept out when its own IDNA 2003 form is listed (``in_scope``)."""
+    names = set(hostnames)
+    names.update(other for other in (idn.idna2003_form(name) for name in hostnames) if other)
+    return names
+
+
+def host_key(name: str) -> str:
+    """A host name as the never-scan list stores it (the IDNA 2008 A-label); lower-cased as is when it is not one."""
+    text = str(name or "").strip().rstrip(".")
+    try:
+        return idn.to_a_label(text)
+    except idn.IdnError:
+        return text.lower()
+
+
+def host_listed(name: str, never_names: set[str]) -> bool:
+    """Whether a host name (in any form) is kept out by ``never_names`` (from ``never_scan_names``)."""
+    key = host_key(name)
+    return key in never_names or idn.idna2003_form(key) in never_names
 
 
 def count_in_scope(targets: ParsedTargets, exclusions: ParsedTargets | None) -> int:
@@ -330,6 +443,10 @@ def parse_exclusions(value: str | list[str] | None) -> ParsedTargets:
         parsed.normalized.append(canonical)
         if kind == "host":
             parsed.hostnames.append(value_)
+            other = idn.idna2003_form(value_)
+            if other:
+                parsed.notes.append(f"Never-scan line {number}: {line} is kept out as {value_} (IDNA 2008) and as "
+                                    f"{other}, the name older IDNA 2003 software reads it as")
         else:
             raw.append(value_)
     parsed.intervals = merge(raw)

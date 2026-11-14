@@ -2,12 +2,13 @@
 
 // Month calendar of certificate expiry dates (UTC), coloured 30 / 60 / 90 days ahead. Hand-built: each day is a
 // button; arrow keys move by day and week, Page Up / Page Down change the month, Enter shows that day's
-// certificates. On a phone the grid stays seven narrow columns and the list sits below it.
+// certificates. On a phone the grid stays seven narrow columns and the list sits below it; from md up the list sits
+// beside the month so the card can take a full-width row without stretching the days.
 
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useMemo, useRef, useState, type KeyboardEvent } from "react";
 
-import { dayKey, daysLeft, expiryBand, groupByDay, monthGrid, parseExpiry, type ExpiryBand } from "./heatmapLogic";
+import { certWhere, dayKey, daysLeft, dedupeCerts, expiryBand, groupByDay, monthGrid, parseExpiry, type ExpiryBand } from "./heatmapLogic";
 import { InfoTip } from "@/components/ui/info-tip";
 
 export interface CalendarCert {
@@ -91,8 +92,11 @@ export default function CertCalendar({ certs, now, testId = "cert-calendar" }: {
     }
   };
 
-  const listed = selected ? (byDay.get(selected) ?? []).map((c) => ({ c, d: parseExpiry(c.not_after)! }))
-    : upcoming.filter((x) => x.d.getTime() >= today.getTime()).slice(0, 5);
+  // one entry per certificate and place (host:port): the same certificate on two ports is two entries, a certificate
+  // reported twice at the same place is one
+  const listed = selected ? dedupeCerts(byDay.get(selected) ?? []).map((c) => ({ c, d: parseExpiry(c.not_after)! }))
+    : dedupeCerts(upcoming.filter((x) => x.d.getTime() >= today.getTime()).map((x) => x.c)).slice(0, 5)
+        .map((c) => ({ c, d: parseExpiry(c.not_after)! }));
 
   return (
     <div className="space-y-2 min-w-0" data-testid={testId}>
@@ -113,61 +117,63 @@ export default function CertCalendar({ certs, now, testId = "cert-calendar" }: {
           <span key={b} className={`rounded px-1.5 py-0.5 ${BAND_TONE[b]}`}>{counts[b]} {BAND_LABEL[b]}</span>
         ))}
       </div>
-      <div role="grid" aria-label={`Certificates expiring in ${monthTitle(cursor.y, cursor.m)}`} className="grid grid-cols-7 gap-1">
-        <div role="row" className="contents">
-          {WEEKDAYS.map((w) => (
-            <div key={w} role="columnheader" className="text-center text-[11px] text-zinc-500">{w}</div>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(16rem,26rem)_minmax(0,1fr)]" data-testid={`${testId}-body`}>
+        <div role="grid" aria-label={`Certificates expiring in ${monthTitle(cursor.y, cursor.m)}`} className="grid grid-cols-7 gap-1 self-start">
+          <div role="row" className="contents">
+            {WEEKDAYS.map((w) => (
+              <div key={w} role="columnheader" className="text-center text-[11px] text-zinc-500">{w}</div>
+            ))}
+          </div>
+          {weeks.map((week, wi) => (
+            <div key={wi} role="row" className="contents">
+              {week.map((date, di) => {
+                if (!date) return <div key={di} role="gridcell" aria-hidden="true" className="h-9 sm:h-10" />;
+                const key = dayKey(date);
+                const due = byDay.get(key) ?? [];
+                const soonest = due.map((c) => parseExpiry(c.not_after)!).sort((a, b) => a.getTime() - b.getTime())[0];
+                const band = soonest ? expiryBand(daysLeft(soonest, today)) : null;
+                const day = date.getUTCDate();
+                const isToday = key === dayKey(today);
+                return (
+                  <div key={di} role="gridcell">
+                    <button
+                      type="button"
+                      ref={(el) => { refs.current.set(day, el); }}
+                      tabIndex={day === focusDay ? 0 : -1}
+                      aria-label={`${day} ${monthTitle(cursor.y, cursor.m)}${due.length ? `: ${due.length} certificate${due.length === 1 ? "" : "s"} expire (${BAND_LABEL[band!]})` : ""}`}
+                      aria-pressed={selected === key}
+                      data-testid={due.length ? `${testId}-day-${key}` : undefined}
+                      onFocus={() => setFocusDay(day)}
+                      onKeyDown={(e) => onKey(e, day)}
+                      onClick={() => setSelected(selected === key ? null : key)}
+                      className={`relative h-9 sm:h-10 w-full rounded text-xs cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                        band ? BAND_TONE[band] : "text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800"} ${
+                        isToday ? "outline outline-1 outline-zinc-400" : ""} ${selected === key ? "ring-2 ring-zinc-900 dark:ring-white" : ""}`}
+                    >
+                      {day}
+                      {due.length > 1 && <span className="absolute right-0.5 top-0 text-[9px] font-semibold">{due.length}</span>}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
           ))}
         </div>
-        {weeks.map((week, wi) => (
-          <div key={wi} role="row" className="contents">
-            {week.map((date, di) => {
-              if (!date) return <div key={di} role="gridcell" aria-hidden="true" className="h-9 sm:h-10" />;
-              const key = dayKey(date);
-              const due = byDay.get(key) ?? [];
-              const soonest = due.map((c) => parseExpiry(c.not_after)!).sort((a, b) => a.getTime() - b.getTime())[0];
-              const band = soonest ? expiryBand(daysLeft(soonest, today)) : null;
-              const day = date.getUTCDate();
-              const isToday = key === dayKey(today);
-              return (
-                <div key={di} role="gridcell">
-                  <button
-                    type="button"
-                    ref={(el) => { refs.current.set(day, el); }}
-                    tabIndex={day === focusDay ? 0 : -1}
-                    aria-label={`${day} ${monthTitle(cursor.y, cursor.m)}${due.length ? `: ${due.length} certificate${due.length === 1 ? "" : "s"} expire (${BAND_LABEL[band!]})` : ""}`}
-                    aria-pressed={selected === key}
-                    data-testid={due.length ? `${testId}-day-${key}` : undefined}
-                    onFocus={() => setFocusDay(day)}
-                    onKeyDown={(e) => onKey(e, day)}
-                    onClick={() => setSelected(selected === key ? null : key)}
-                    className={`relative h-9 sm:h-10 w-full rounded text-xs cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
-                      band ? BAND_TONE[band] : "text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800"} ${
-                      isToday ? "outline outline-1 outline-zinc-400" : ""} ${selected === key ? "ring-2 ring-zinc-900 dark:ring-white" : ""}`}
-                  >
-                    {day}
-                    {due.length > 1 && <span className="absolute right-0.5 top-0 text-[9px] font-semibold">{due.length}</span>}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        ))}
-      </div>
-      <div aria-live="polite" data-testid={`${testId}-list`}>
-        <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">
-          {selected ? `Expiring on ${selected}` : listed.length ? "Next to expire" : "No certificate expires after today"}
-        </p>
-        <ul className="space-y-1">
-          {listed.map(({ c, d }, i) => (
-            <li key={i} className="text-xs text-zinc-700 dark:text-zinc-300 break-words [overflow-wrap:anywhere]">
-              <span className={`mr-1.5 rounded px-1 ${BAND_TONE[expiryBand(daysLeft(d, today))]}`}>{dayKey(d)}</span>
-              {c.subject || c.name || "certificate"}
-              {(c.target || c.location) && <span className="text-zinc-500"> · {c.target || c.location}</span>}
-              {c.issuer && <span className="text-zinc-500"> · issued by {c.issuer}</span>}
-            </li>
-          ))}
-        </ul>
+        <div aria-live="polite" data-testid={`${testId}-list`}>
+          <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">
+            {selected ? `Expiring on ${selected}` : listed.length ? "Next to expire" : "No certificate expires after today"}
+          </p>
+          <ul className="space-y-1">
+            {listed.map(({ c, d }, i) => (
+              <li key={i} className="text-xs text-zinc-700 dark:text-zinc-300 break-words [overflow-wrap:anywhere]">
+                <span className={`mr-1.5 rounded px-1 ${BAND_TONE[expiryBand(daysLeft(d, today))]}`}>{dayKey(d)}</span>
+                {c.subject || c.name || "certificate"}
+                {certWhere(c) && <span className="text-zinc-500"> · {certWhere(c)}</span>}
+                {c.issuer && <span className="text-zinc-500"> · issued by {c.issuer}</span>}
+              </li>
+            ))}
+          </ul>
+        </div>
       </div>
     </div>
   );
