@@ -5,13 +5,14 @@ post-processed here) at request time.
 
 Same bytes every time
 ---------------------
-``run_cbom`` is ``inventory.cyclonedx`` with ``metadata.timestamp`` set to the run's ``last_updated`` (when its data
-last changed) instead of the request time, and ``cbom_bytes`` writes it as canonical JSON (sorted keys, compact,
-UTF-8: ``cert_in.sign.canonical_bom_bytes``). Two downloads of an unchanged run on the same day are byte-identical, so
-the signature from ``GET .../runs/{id}/signature`` verifies the file a customer downloaded from ``GET .../runs/{id}/cbom``
-both ways: HMAC-SHA256 over the raw file bytes, or the code lane's ``verify_signature(json.load(file), sig)``. The
-file changes (and the signature with it) only when the content does: new assets on an active run, a certificate or
-library judged differently on a later day (``zs:judged_on``), or a new build (``zs:build``).
+``write_run_cbom`` writes the run's export (``inventory._document``, the builder behind ``inventory.write_cyclonedx``,
+one component at a time, as #103 streams it) with ``metadata.timestamp`` set to the run's ``last_updated`` (when its data
+last changed) instead of the request time. Two downloads of an unchanged run on the same day are byte-identical, so the
+signature from ``GET .../runs/{id}/signature`` (HMAC-SHA256 with the code lane's key and ``bom_signature`` fields, over
+the exact bytes of ``GET .../runs/{id}/cbom``) verifies the file a customer downloaded: ``HMAC(key, file bytes)``.
+The file changes (and the signature with it) only when the content does: new assets on an active run, a certificate
+or library judged differently on a later day (``zs:judged_on``), or a new build (``zs:build``). The code lane signs
+canonical JSON of a stored BOM; a run's export is streamed (never held whole), so here the raw bytes are signed.
 
 VEX analysis (``run_vex``; ``zs:vex_rules`` = ``VEX_RULES``)
 -------------------------------------------------------------
@@ -49,13 +50,16 @@ treats active runs the same way: it serves what has been collected so far and na
 """
 from __future__ import annotations
 
+import base64
 import datetime as _dt
 import hashlib
-import io
+import hmac
 import json
+import shutil
+import tempfile
 import uuid
 import zipfile
-from typing import Any
+from typing import Any, BinaryIO, Callable, Iterator
 
 from sqlmodel import Session, select
 
@@ -63,12 +67,13 @@ from backend.new_models import CbomCollectionJob, CbomCollectionRun, CbomCollect
 from backend.utilities.cbom_sources import crypto_kb
 from backend.utilities.cbom_sources import inventory as INV
 from backend.utilities.cbom_sources.common import iso_z
-from backend.utilities.compliance.cert_in import sign as SIGN
 
 VEX_RULES = "run-1"
 FINISHED = ("done", "partial", "failed", "cancelled")
 INFERRED = frozenset({"LIB_KNOWN_CVE", "LIB_EOL", "DB_EOL_VERSION"})
 PDF_FINDINGS_CAP = 500
+SPOOL_BYTES = 8 * 1024 * 1024  # a file up to this size stays in memory; a larger one goes to a temp file
+KEY_ID = "certin-hmac-1"  # the code lane's signing key id (routers/certin.py, cert_in/sign.py)
 _VEX_NS = uuid.uuid5(uuid.NAMESPACE_URL, "https://zeroshield.ai/cbom/sources/run/vex")
 
 DETAIL_OBSERVED = ("Observed directly by the collector on each listed asset: the weak algorithm or setting is in use "
@@ -117,23 +122,44 @@ def run_sources(session: Session, run: CbomCollectionRun) -> list[dict[str, Any]
 
 
 # ----------------------------------------------------------------------------- CBOM JSON (signed bytes)
-def run_cbom(session: Session, run: CbomCollectionRun, now: _dt.datetime) -> dict[str, Any]:
-    """The run's CycloneDX export (``inventory.cyclonedx``, unchanged) with a timestamp that only moves when the run's
-    data does, so the same run downloads as the same bytes."""
-    doc = INV.cyclonedx(session, run, now)
+Document = tuple[dict[str, Any], Iterator[dict[str, Any]], Callable[[], list[dict[str, Any]]]]
+
+
+def document(session: Session, run: CbomCollectionRun, now: _dt.datetime) -> Document:
+    """``inventory._document`` (head, components one at a time, vulnerabilities) with a timestamp that only moves when
+    the run's data does, so the same run downloads as the same bytes."""
+    head, components, vulns = INV._document(session, run, now)
     stamp = iso_z(run.last_updated or run.finished_at or run.created_at)
     if stamp:
-        doc["metadata"]["timestamp"] = stamp
-    return doc
+        head["metadata"]["timestamp"] = stamp
+    return head, components, vulns
 
 
-def cbom_bytes(doc: dict[str, Any]) -> bytes:
-    """Exactly the bytes ``GET .../runs/{id}/cbom`` serves and the signature covers (canonical JSON)."""
-    return SIGN.canonical_bom_bytes(doc)
+def _dumps(value: Any) -> bytes:  # what inventory.write_cyclonedx writes (starlette's JSONResponse encoding)
+    return json.dumps(value, ensure_ascii=False, allow_nan=False, indent=None, separators=(",", ":")).encode()
 
 
-def props(doc: dict[str, Any]) -> dict[str, str]:
-    return {p.get("name"): p.get("value") for p in (doc.get("metadata") or {}).get("properties") or []
+def write_document(doc: Document, fmt: str, out: Any) -> None:
+    """``inventory.write_cyclonedx``'s writer over ``doc``: JSON piece by piece, or XML through ``cdx_xml.write_xml``."""
+    head, components, vulns = doc
+    if fmt == "xml":
+        from backend.utilities.cbom_sources import cdx_xml
+
+        cdx_xml.write_xml(out, head, components, vulns)
+        return
+    out.write(_dumps(head)[:-1] + b',"components":[')
+    for index, component in enumerate(components):
+        out.write((b"," if index else b"") + _dumps(component))
+    out.write(b'],"vulnerabilities":' + _dumps(vulns()) + b"}")
+
+
+def write_run_cbom(session: Session, run: CbomCollectionRun, now: _dt.datetime, fmt: str, out: BinaryIO) -> None:
+    """Exactly the bytes ``GET .../runs/{id}/cbom`` serves (and, for JSON, the signature covers)."""
+    write_document(document(session, run, now), fmt, out)
+
+
+def props(head: dict[str, Any]) -> dict[str, str]:
+    return {p.get("name"): p.get("value") for p in (head.get("metadata") or {}).get("properties") or []
             if isinstance(p, dict)}
 
 
@@ -141,25 +167,61 @@ def sha256(body: bytes) -> str:
     return hashlib.sha256(body).hexdigest()
 
 
-def run_signature(run: CbomCollectionRun, doc: dict[str, Any], body: bytes, *, secret: bytes,
-                  now: _dt.datetime) -> dict[str, Any]:
-    """Detached HMAC-SHA256 signature of the run CBOM JSON: the code lane's ``bom_signature`` scheme
-    (``cert_in.sign.sign_bom`` over canonical JSON) over exactly ``body``, plus what it covers."""
-    signature = SIGN.sign_bom(doc, secret=secret)
-    if signature["digest"] != sha256(body):  # body must be the canonical form sign_bom covers
-        raise RuntimeError("run CBOM bytes are not canonical JSON")
-    signature["signed_at"] = iso_z(now)
-    signature.update({
+class Digests:
+    """A write-through file: sha256 (and HMAC-SHA256 when given a key) of every byte written to ``out``."""
+
+    def __init__(self, out: BinaryIO, secret: bytes | None = None):
+        self.out, self.size = out, 0
+        self.sha = hashlib.sha256()
+        self.mac = hmac.new(secret, digestmod=hashlib.sha256) if secret else None
+
+    def write(self, data: bytes) -> int:
+        self.out.write(data)
+        self.sha.update(data)
+        if self.mac is not None:
+            self.mac.update(data)
+        self.size += len(data)
+        return len(data)
+
+
+def spool() -> BinaryIO:
+    return tempfile.SpooledTemporaryFile(max_size=SPOOL_BYTES)  # type: ignore[return-value]
+
+
+def written(session: Session, run: CbomCollectionRun, now: _dt.datetime, fmt: str, secret: bytes | None = None
+            ) -> tuple[BinaryIO, dict[str, Any], Digests]:
+    """The run CBOM in ``fmt`` written to a temp file (positioned at its start), its head, and its digests."""
+    out = spool()
+    try:
+        doc = document(session, run, now)
+        tee = Digests(out, secret)
+        write_document(doc, fmt, tee)
+        out.seek(0)
+    except BaseException:
+        out.close()
+        raise
+    return out, doc[0], tee
+
+
+def run_signature(run: CbomCollectionRun, head: dict[str, Any], tee: Digests, now: _dt.datetime) -> dict[str, Any]:
+    """The code lane's ``bom_signature`` fields (alg, key_id, digest, signature_b64, signed_at) over the run CBOM JSON
+    bytes ``tee`` saw, plus what they cover."""
+    if tee.mac is None:
+        raise RuntimeError("signing needs a key")
+    signature: dict[str, Any] = {
+        "alg": "HMAC-SHA256", "key_id": KEY_ID, "digest": tee.sha.hexdigest(),
+        "signature_b64": base64.b64encode(tee.mac.digest()).decode("ascii"), "signed_at": iso_z(now),
         "covers": f"cbom-sources-run-{run.id}.cdx.json",
-        "scope": ("HMAC-SHA256 over the exact bytes of GET /{team}/cbom/sources/runs/{run}/cbom (format=json), "
-                  "which are canonical JSON: verify the raw file, or re-serialise it with sorted keys and compact "
-                  "separators. The XML form is not covered."),
-        "serialNumber": doc.get("serialNumber"),
-        "document_timestamp": (doc.get("metadata") or {}).get("timestamp"),
-        "bytes": len(body),
+        "scope": ("HMAC-SHA256 over the exact bytes of GET /{team}/cbom/sources/runs/{run}/cbom (format=json) as "
+                  "downloaded: HMAC(key, file bytes) = signature_b64 and sha256(file bytes) = digest. The XML form "
+                  "is not covered."),
+        "canonicalization": "none (the raw file bytes)",
+        "serialNumber": head.get("serialNumber"),
+        "document_timestamp": (head.get("metadata") or {}).get("timestamp"),
+        "bytes": tee.size,
         "run_id": run.id,
         "run_status": run.status,
-    })
+    }
     note = as_of_note(run, now)
     if note:
         signature["as_of"] = note
@@ -168,6 +230,29 @@ def run_signature(run: CbomCollectionRun, doc: dict[str, Any], body: bytes, *, s
 
 def signature_bytes(signature: dict[str, Any]) -> bytes:
     return json.dumps(signature, indent=2, ensure_ascii=False).encode("utf-8")
+
+
+def summary(session: Session, run: CbomCollectionRun, now: _dt.datetime
+            ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    """One pass over the export for the VEX and the PDF: its head, its findings (the asset components whose
+    ``zs:impact`` is a severity, worst first; small dicts, never the whole document) and its vulnerabilities."""
+    head, components, vulns = document(session, run, now)
+    found = []
+    for comp in components:
+        p: dict[str, list[str]] = {}
+        for prop in comp.get("properties") or []:
+            p.setdefault(str(prop.get("name")), []).append(str(prop.get("value") or ""))
+        impact = (p.get("zs:impact") or ["Info"])[0]
+        if impact not in _IMPACT_RANK:
+            continue
+        found.append({"ref": comp.get("bom-ref"), "impact": impact, "name": comp.get("name"),
+                      "type": (p.get("zs:asset_type") or [""])[0], "location": (p.get("zs:location") or [""])[0],
+                      "source": (p.get("zs:source") or [""])[0], "finding": (p.get("zs:finding") or [""])[0]})
+    found.sort(key=lambda r: (_IMPACT_RANK[r["impact"]], str(r["ref"])))
+    return head, found, vulns()
+
+
+_IMPACT_RANK = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
 
 
 # ----------------------------------------------------------------------------- VEX
@@ -220,12 +305,13 @@ def asset_context(session: Session, run: CbomCollectionRun) -> dict[str, dict[st
     return out
 
 
-def run_vex(run: CbomCollectionRun, doc: dict[str, Any], context: dict[str, dict[str, Any]],
-            now: _dt.datetime) -> dict[str, Any]:
-    serial = str(doc.get("serialNumber") or "")
+def run_vex(run: CbomCollectionRun, head: dict[str, Any], vulnerabilities: list[dict[str, Any]],
+            context: dict[str, dict[str, Any]], now: _dt.datetime) -> dict[str, Any]:
+    """The VEX of the run CBOM whose ``head`` and ``vulnerabilities`` are given (module docstring table)."""
+    serial = str(head.get("serialNumber") or "")
     out: list[dict[str, Any]] = []
     states: dict[str, int] = {}
-    for vuln in doc.get("vulnerabilities") or []:
+    for vuln in vulnerabilities:
         vid = str(vuln.get("id") or "")
         basis = code_basis(vid[len("ZS-CBOM-"):]) if vid.startswith("ZS-CBOM-") else "cve"
         cve_detail = (vuln.get("analysis") or {}).get("detail") if basis == "cve" else None
@@ -245,7 +331,7 @@ def run_vex(run: CbomCollectionRun, doc: dict[str, Any], context: dict[str, dict
             entry["properties"] = [*(vuln.get("properties") or []), {"name": "zs:vex_basis", "value": basis}]
             states[analysis["state"]] = states.get(analysis["state"], 0) + len(refs)
             out.append(entry)
-    meta = props(doc)
+    meta = props(head)
     note = as_of_note(run, now)
     vex_props = [
         {"name": "zs:vex_rules", "value": VEX_RULES},
@@ -266,7 +352,7 @@ def run_vex(run: CbomCollectionRun, doc: dict[str, Any], context: dict[str, dict
         "serialNumber": f"urn:uuid:{uuid.uuid5(_VEX_NS, f'{serial}:{VEX_RULES}:{digest}')}",
         "version": 1,
         "metadata": {
-            "timestamp": (doc.get("metadata") or {}).get("timestamp"),
+            "timestamp": (head.get("metadata") or {}).get("timestamp"),
             "tools": {"components": [{"type": "application", "name": "ZeroShield CBOM Sources VEX",
                                       "version": VEX_RULES}]},
             "properties": vex_props,
@@ -301,25 +387,33 @@ def provenance(session: Session, run: CbomCollectionRun) -> list[dict[str, Any]]
 
 
 # ----------------------------------------------------------------------------- evidence pack
+PackFile = tuple[str, "bytes | tuple[BinaryIO, Digests]", str, str]  # name, body or (temp file, its digests), type, route
+
+
 def evidence_pack(*, run: CbomCollectionRun, sources: list[dict[str, Any]], now: _dt.datetime,
-                  files: list[tuple[str, bytes, str, str]], omitted: list[dict[str, str]],
-                  doc: dict[str, Any], signature: dict[str, Any] | None) -> bytes:
-    """Zip of ``files`` ((name, body, media type, endpoint)) plus ``manifest.json`` with the sha256 of each."""
-    meta = props(doc)
-    manifest = {
+                  files: list[PackFile], omitted: list[dict[str, str]], head: dict[str, Any],
+                  signature: dict[str, Any] | None) -> BinaryIO:
+    """Zip of ``files`` plus ``manifest.json`` with the sha256 of each, written to a temp file (at its start). Large
+    files (the CycloneDX JSON and XML) are copied in from their temp files, never held whole in memory."""
+    meta = props(head)
+    entries = []
+    for name, body, media, endpoint in files:
+        digest, size = (sha256(body), len(body)) if isinstance(body, bytes) else (body[1].sha.hexdigest(), body[1].size)
+        entries.append({"name": name, "sha256": digest, "bytes": size, "media_type": media, "endpoint": endpoint})
+    manifest: dict[str, Any] = {
         "format": "zeroshield-cbom-run-evidence-pack/1",
         "generated_at": iso_z(now),
         "run": {"id": run.id, "status": run.status, "active": is_active(run), "created_at": iso_z(run.created_at),
                 "finished_at": iso_z(run.finished_at), "last_updated": iso_z(run.last_updated),
                 "sources": sources,
                 "versions": {"kb": run.kb_version, "classifier": run.classifier_version, "engine": run.engine_version}},
-        "inputs": {"bom_serial": doc.get("serialNumber"), "bom_timestamp": (doc.get("metadata") or {}).get("timestamp"),
+        "inputs": {"bom_serial": head.get("serialNumber"),
+                   "bom_timestamp": (head.get("metadata") or {}).get("timestamp"),
                    "kb_version": meta.get("zs:kb_version"), "build": meta.get("zs:build"),
                    "judged_on": meta.get("zs:judged_on"), "asset_count": int(meta.get("zs:asset_count") or 0),
                    "export_cap": INV.EXPORT_CAP, "truncated": meta.get("zs:truncated") == "true",
                    "vex_rules": VEX_RULES},
-        "files": [{"name": name, "sha256": sha256(body), "bytes": len(body), "media_type": media, "endpoint": endpoint}
-                  for name, body, media, endpoint in files],
+        "files": entries,
         "omitted": omitted,
         "signature": ({"covers": "bom.cdx.json", "alg": signature.get("alg"), "key_id": signature.get("key_id"),
                        "digest": signature.get("digest")} if signature else None),
@@ -330,12 +424,23 @@ def evidence_pack(*, run: CbomCollectionRun, sources: list[dict[str, Any]], now:
     if manifest["inputs"]["truncated"]:
         manifest["export_cap_note"] = (f"The CBOM holds the first {INV.EXPORT_CAP:,} assets of this run; the files "
                                        "in this pack cover those assets only.")
-    buf = io.BytesIO()
+    out = spool()
     stamp = (now.year, now.month, now.day, now.hour, now.minute, now.second)
-    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        for name, body, _media, _endpoint in files:
-            zf.writestr(zipfile.ZipInfo(name, date_time=stamp), body, compress_type=zipfile.ZIP_DEFLATED)
-        zf.writestr(zipfile.ZipInfo("manifest.json", date_time=stamp),
-                    json.dumps(manifest, indent=2, ensure_ascii=False).encode("utf-8"),
-                    compress_type=zipfile.ZIP_DEFLATED)
-    return buf.getvalue()
+    try:
+        with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for name, body, _media, _endpoint in files:
+                info = zipfile.ZipInfo(name, date_time=stamp)
+                info.compress_type = zipfile.ZIP_DEFLATED
+                if isinstance(body, bytes):
+                    zf.writestr(info, body)
+                    continue
+                with zf.open(info, "w", force_zip64=True) as dest:
+                    shutil.copyfileobj(body[0], dest, 1024 * 1024)
+            info = zipfile.ZipInfo("manifest.json", date_time=stamp)
+            info.compress_type = zipfile.ZIP_DEFLATED
+            zf.writestr(info, json.dumps(manifest, indent=2, ensure_ascii=False).encode("utf-8"))
+        out.seek(0)
+    except BaseException:
+        out.close()
+        raise
+    return out

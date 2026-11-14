@@ -30,7 +30,6 @@ from test_cbom_sources_api import _collect_job  # noqa: E402
 from backend.new_models import CbomCollectionRun  # noqa: E402
 from backend.utilities.cbom_sources import inventory as INV  # noqa: E402
 from backend.utilities.cbom_sources import run_deliverables as RD  # noqa: E402
-from backend.utilities.compliance.cert_in import sign as SIGN  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 FROZEN = dt.datetime(2026, 11, 14, 9, 30, 0)
@@ -38,21 +37,11 @@ FROZEN = dt.datetime(2026, 11, 14, 9, 30, 0)
 globals().update(api=SOURCES_API.api, world=SOURCES_API.world)
 
 
-def _validator():
-    jsonschema = pytest.importorskip("jsonschema")
-    from referencing import Registry, Resource
-
-    schemas = ROOT / "aibom/src/aibom/schemas"
-    main = json.loads((schemas / "bom-1.6.schema.json").read_text())
-    resources = []
-    for name in ("spdx.schema.json", "jsf-0.82.schema.json"):
-        contents = json.loads((schemas / name).read_text())
-        resources += [(contents["$id"], Resource.from_contents(contents)), (name, Resource.from_contents(contents))]
-    return jsonschema.Draft7Validator(main, registry=Registry().with_resources(resources))
-
-
 def _schema_errors(doc: dict) -> list[str]:
-    return [f"{list(e.path)}: {e.message}" for e in _validator().iter_errors(doc)][:5]
+    """Errors against the published CycloneDX 1.6.2 JSON schema (the CB-06 export tests' validator)."""
+    from backend.tests.support.cyclonedx_schema import json_errors
+
+    return json_errors(doc, limit=5)
 
 
 def _assets(api, run_id: int) -> dict[str, dict]:
@@ -203,11 +192,11 @@ def test_signature_verifies_the_downloaded_bytes_and_a_one_byte_change_fails(api
     assert r.headers["content-disposition"].endswith(f'cbom-sources-run-{rid}-signature.json"')
     sig = r.json()
     secret = (os.environ.get("CERTIN_HMAC_SECRET") or os.environ["JWT_SECRET_KEY"]).encode()
-    assert sig["alg"] == "HMAC-SHA256" and sig["key_id"] == "certin-hmac-1"  # the code lane's bom_signature scheme
+    assert sig["alg"] == "HMAC-SHA256" and sig["key_id"] == "certin-hmac-1"  # the code lane's bom_signature key and fields
     assert sig["digest"] == hashlib.sha256(raw).hexdigest() and sig["bytes"] == len(raw)
     mac = base64.b64decode(sig["signature_b64"])
     assert hmac.compare_digest(hmac.new(secret, raw, hashlib.sha256).digest(), mac)  # raw file bytes
-    assert SIGN.verify_signature(json.loads(raw), sig, secret=secret)  # the code lane's verifier
+    assert sig['canonicalization'] == 'none (the raw file bytes)' and json.loads(raw)['bomFormat'] == 'CycloneDX'
     tampered = bytearray(raw)
     at = raw.index(b'"zs:run_id"')  # flip one byte inside a value
     tampered[at + 1] = ord("Z")
@@ -216,8 +205,26 @@ def test_signature_verifies_the_downloaded_bytes_and_a_one_byte_change_fails(api
     last[-1] ^= 1
     assert not hmac.compare_digest(hmac.new(secret, bytes(last), hashlib.sha256).digest(), mac)
     assert sig["serialNumber"] == json.loads(raw)["serialNumber"] and "as_of" in sig
-    # the XML is the same document, not covered
-    assert api("GET", f"/1/cbom/sources/runs/{rid}/cbom?format=xml").headers["x-zs-signature-scope"] == "json"
+    assert "XML form is not covered" in sig["scope"]
+
+
+def test_run_cbom_bytes_are_inventorys_writer_with_a_stable_timestamp(api, world):
+    """The run CBOM is #103's streamed document (inventory.write_cyclonedx) byte for byte except metadata.timestamp,
+    which is the run's last data change instead of the request time: two exports at different times are equal."""
+    engine, _ = world
+    _src, run = _store(api, engine, ASSETS)
+    with Session(engine) as s:
+        row = s.get(CbomCollectionRun, run["id"])
+        later = FROZEN + dt.timedelta(hours=3)
+        ours, theirs, again = io.BytesIO(), io.BytesIO(), io.BytesIO()
+        RD.write_run_cbom(s, row, FROZEN, "json", ours)
+        RD.write_run_cbom(s, row, later, "json", again)
+        INV.write_cyclonedx(s, row, FROZEN, "json", theirs)
+        stamp = RD.iso_z(row.last_updated)
+    assert ours.getvalue() == again.getvalue()
+    assert ours.getvalue() == theirs.getvalue().replace(b'"timestamp":"2026-11-14T09:30:00Z"',
+                                                        f'"timestamp":"{stamp}"'.encode(), 1)
+    assert json.loads(ours.getvalue())["metadata"]["timestamp"] == stamp
 
 
 # ----------------------------------------------------------------------------- PDF
@@ -276,7 +283,8 @@ def test_evidence_pack_manifest_hashes_equal_the_endpoint_bodies(api, world, mon
     assert manifest["inputs"]["export_cap"] == INV.EXPORT_CAP and manifest["inputs"]["truncated"] is False
     sig = json.loads(zf.read("bom_signature.json"))
     secret = (os.environ.get("CERTIN_HMAC_SECRET") or os.environ["JWT_SECRET_KEY"]).encode()
-    assert SIGN.verify_signature(json.loads(zf.read("bom.cdx.json")), sig, secret=secret)
+    mac = hmac.new(secret, zf.read("bom.cdx.json"), hashlib.sha256).digest()
+    assert hmac.compare_digest(base64.b64decode(sig["signature_b64"]), mac)  # the pack's signature verifies its JSON
     assert manifest["signature"]["digest"] == hashlib.sha256(zf.read("bom.cdx.json")).hexdigest()
 
 

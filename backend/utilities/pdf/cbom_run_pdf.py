@@ -3,7 +3,7 @@ masthead, KPI grid, severity bar, catalog panels, header and footer).
 
 Rule P: every readiness, PQC-class, severity-total and posture number is printed from ``posture.run_posture`` as the
 caller passes it, never recounted here. The other sections are listings: the heat-map and certificate calendar from
-``heatmap.run_heatmap``, the findings from the run CBOM's components (capped at ``PDF_FINDINGS_CAP`` rows, with the
+``heatmap.run_heatmap``, the findings from the run CBOM's components (``run_deliverables.summary``, capped at ``PDF_FINDINGS_CAP`` rows, with the
 cap stated), provenance from the run's jobs.
 """
 from __future__ import annotations
@@ -33,7 +33,6 @@ PQC_LABEL = {"quantum-vulnerable": "Quantum-vulnerable", "hybrid": "Hybrid (post
              "not-applicable": "Not applicable (no public-key algorithm)"}
 CERT_ROWS = 40
 HEAT_COLUMNS = 5
-_IMPACT_RANK = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
 
 
 def readiness_text(value: Any) -> str:
@@ -45,31 +44,9 @@ def _p(text: Any, styles: dict, style: str = "table_cell") -> Paragraph:
     return Paragraph(escape_html(str(text if text is not None else "—")), styles[style])
 
 
-def _props(component: dict[str, Any]) -> dict[str, list[str]]:
-    out: dict[str, list[str]] = {}
-    for prop in component.get("properties") or []:
-        out.setdefault(str(prop.get("name")), []).append(str(prop.get("value") or ""))
-    return out
-
-
-def findings_from_cbom(doc: dict[str, Any]) -> list[dict[str, Any]]:
-    """The run's findings as the CBOM lists them (components whose ``zs:impact`` is a severity), worst first."""
-    rows = []
-    for comp in doc.get("components") or []:
-        p = _props(comp)
-        impact = (p.get("zs:impact") or ["Info"])[0]
-        if impact not in _IMPACT_RANK or (p.get("zs:asset_type") or [""])[0] == "coverage":
-            continue
-        rows.append({"ref": comp.get("bom-ref"), "impact": impact, "name": comp.get("name"),
-                     "type": (p.get("zs:asset_type") or [""])[0], "location": (p.get("zs:location") or [""])[0],
-                     "source": (p.get("zs:source") or [""])[0], "finding": (p.get("zs:finding") or [""])[0],
-                     "codes": p.get("zs:finding_code") or []})
-    rows.sort(key=lambda r: (_IMPACT_RANK[r["impact"]], str(r["ref"])))
-    return rows
-
-
 def build_run_pdf(*, run: dict[str, Any], sources: list[dict[str, Any]], posture: dict[str, Any],
-                  heatmap: dict[str, Any], doc: dict[str, Any], vex_states: dict[str, int],
+                  heatmap: dict[str, Any], head: dict[str, Any], findings: list[dict[str, Any]],
+                  vex_states: dict[str, int],
                   provenance: list[dict[str, Any]], now: _dt.datetime, as_of_note: str | None,
                   findings_cap: int, export_cap: int, cbom_sha256: str) -> bytes:
     styles = get_report_styles()
@@ -77,7 +54,7 @@ def build_run_pdf(*, run: dict[str, Any], sources: list[dict[str, Any]], posture
     pdf = SimpleDocTemplate(buf, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=56, bottomMargin=52,
                             title=f"CBOM Sources run #{run['id']}", author="ZeroShield", invariant=1)
     story: list[Any] = []
-    meta = {p.get("name"): p.get("value") for p in (doc.get("metadata") or {}).get("properties") or []}
+    meta = {p.get("name"): p.get("value") for p in (head.get("metadata") or {}).get("properties") or []}
     impacts = {k: int(v or 0) for k, v in (posture.get("impacts") or {}).items()}
     findings_total = sum(impacts.values())
     readiness = readiness_text(posture.get("pqc_readiness_pct"))
@@ -119,7 +96,7 @@ def build_run_pdf(*, run: dict[str, Any], sources: list[dict[str, Any]], posture
         ("Run", f"#{run['id']}"), ("Status", run["status"]), ("Sources", source_names),
         ("Started", run.get("created_at") or "—"), ("Finished", run.get("finished_at") or "not yet"),
         ("Data last changed", run.get("last_updated") or "—"),
-        ("CBOM serial", str(doc.get("serialNumber") or "")), ("CBOM JSON sha256", cbom_sha256),
+        ("CBOM serial", str(head.get("serialNumber") or "")), ("CBOM JSON sha256", cbom_sha256),
         ("Knowledge base", str(meta.get("zs:kb_version") or "")), ("Build", str(meta.get("zs:build") or "")),
         ("Judged on", str(meta.get("zs:judged_on") or "the run's own day")),
     ], styles=styles, mono_labels=["CBOM serial", "CBOM JSON sha256", "Build"]))
@@ -201,7 +178,6 @@ def build_run_pdf(*, run: dict[str, Any], sources: list[dict[str, Any]], posture
     story.append(PageBreak())
 
     # findings
-    findings = findings_from_cbom(doc)
     catalog = [[str(i), count_label(f["impact"]), _p(f"{f['finding'] or f['name']} ({f['type']})", styles),
                 _p(f["location"], styles, "mono_cell")] for i, f in enumerate(findings[:findings_cap], 1)]
     if len(findings) > findings_cap:
