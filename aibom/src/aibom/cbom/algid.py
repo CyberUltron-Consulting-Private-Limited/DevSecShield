@@ -384,14 +384,15 @@ def ssh_kex_client_share(method: str) -> tuple[tuple[str, int], ...] | None:
         part = resolve(name, "name") if name else None
         if part is None:
             return None
-        if part.standard == "FIPS 203" and part.nist_category in _FIPS203_RANK:
-            parts.append(("fips203", _FIPS203_RANK[part.nist_category]))
-        elif part.name in _OPAQUE_PUBLIC_KEY:
-            parts.append(("opaque", _OPAQUE_PUBLIC_KEY[part.name]))
+        category, part_name, bits = part.nist_category, part.name, part.key_size
+        if part.standard == "FIPS 203" and category is not None and category in _FIPS203_RANK:
+            parts.append(("fips203", _FIPS203_RANK[category]))
+        elif part_name is not None and part_name in _OPAQUE_PUBLIC_KEY:
+            parts.append(("opaque", _OPAQUE_PUBLIC_KEY[part_name]))
         elif part.family_label == "X25519":
             parts.append(("x25519", 32))
-        elif part.family_label == "EC" and part.key_size in (256, 384, 521):
-            parts.append(("nistp", part.key_size))
+        elif part.family_label == "EC" and bits is not None and bits in (256, 384, 521):
+            parts.append(("nistp", bits))
         else:
             return None
     return tuple(parts)
