@@ -5067,3 +5067,72 @@ export {
     startCbomRun,
     cancelCbomRun,
 }
+
+// -------------------------------------------------------------- CBOM AI remediation assistant (CB-38 PR-6) --------------------------------------------------------------
+// Optional, configured per deployment (AWS Bedrock, or a model on a private address); GET status says whether it
+// exists and which hosts it contacts. Text only: every field is
+// rendered as plain text (React-escaped), never as HTML or markdown.
+
+export type CbomAiSubject =
+    | { kind: "run_asset"; assetId: number }
+    | { kind: "scan_finding"; scanId: number; findingId: string }
+
+export type CbomAiMode = "explain" | "plan" | "question"
+
+export interface CbomAiStatus {
+    available: boolean
+    /** "bedrock" (AWS Bedrock, the product's only outbound call) or "openai_compat" (a model on a private address) */
+    provider?: "bedrock" | "openai_compat"
+    model?: string
+    region?: string | null
+    kb_version?: string
+    /** every host the assistant will contact (Bedrock runtime plus the configured credential endpoint, if any) */
+    egress?: { host: string; port: number; purpose: string }[]
+    /** openai_compat: the endpoint may be outside the private ranges (CBOM_AI_ALLOW_NONPRIVATE=1) */
+    allow_nonprivate?: boolean
+}
+
+export interface CbomAiAnswer {
+    /** busy: no free slot within ~2 s, nothing was sent to the model */
+    status: "ok" | "withheld" | "timeout" | "error" | "busy"
+    summary: string
+    steps: { text: string; cites: string[] }[]
+    commands: { command: string; cite: string }[]
+    caveats: string[]
+    withheld_reason?: string
+    /** true when the steps and commands are the knowledge-base baseline (the model's answer was withheld) */
+    baseline?: boolean
+    dropped_commands: number
+    provider?: "bedrock" | "openai_compat"
+    region?: string | null
+    model: string
+    kb_version: string
+    prompt_version: string
+    items: { id: string; label: string }[]
+    cached?: boolean
+}
+
+/** The UI gives the model 90 s (the backend's own limit is 60 s, CBOM_AI_TIMEOUT_S). */
+export const CBOM_AI_UI_TIMEOUT_MS = 90_000
+
+export const getCbomAiStatus = async (team_id: number): Promise<CbomAiStatus> => {
+    const response = await api.get<CbomAiStatus>(`/${team_id}/cbom/ai/status`)
+    return response.data
+}
+
+export const askCbomAi = async ({ team_id, subject, mode, question }: {
+    team_id: number
+    subject: CbomAiSubject
+    mode: CbomAiMode
+    question?: string
+}): Promise<CbomAiAnswer> => {
+    const wire = subject.kind === "run_asset"
+        ? { kind: "run_asset", asset_id: subject.assetId }
+        : { kind: "scan_finding", scan_id: subject.scanId, finding_id: subject.findingId }
+    const response = await api.post<CbomAiAnswer>(
+        `/${team_id}/cbom/ai/assist`,
+        { subject: wire, mode, ...(mode === "question" ? { question } : {}) },
+        { timeout: CBOM_AI_UI_TIMEOUT_MS },
+    )
+    return response.data
+}

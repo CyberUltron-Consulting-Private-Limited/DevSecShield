@@ -183,6 +183,58 @@ every service: it ignores `AWS_ENDPOINT_URL_S3` (here the local MinIO, for the p
 before that fix (`pr-92-de22b950885a`, `pr-92-f4f9b8a92971`) sent the account's S3 calls to MinIO, so their CBOM shows
 no S3 buckets.
 
+### AI remediation assistant (optional)
+
+Each CBOM finding always shows the knowledge-base remediation (offline, no AI). The **AI assistant** panel under it
+(Explain / Plan / Ask a question) appears only when one of the two providers below is configured; `GET
+/{team}/cbom/ai/status` says which, and lists in `egress` every host the assistant will contact. It is free (no
+credits). Every answer is checked before anyone sees it: a CVE or CWE id that is not in the finding's knowledge-base
+entry withholds the whole answer (the KB steps are shown instead), steps without a citation are dropped, and only
+commands and links that appear in the knowledge base are kept.
+
+**AWS Bedrock (primary).** The product's only outbound call for AI: HTTPS to `bedrock-runtime.<region>.amazonaws.com`.
+
+| Variable | Effect |
+|---|---|
+| `CBOM_AI_PROVIDER=bedrock` | Turns the assistant on with Bedrock (Converse API). |
+| `CBOM_AI_BEDROCK_REGION` | Region (default `AWS_REGION`, then `AWS_DEFAULT_REGION`, then `ap-south-1`, as the SAST lane). |
+| `CBOM_AI_MODEL` | Bedrock model id (default `openai.gpt-oss-120b-1:0`, the SAST lane's model). |
+| `CBOM_AI_AWS_CREDENTIALS` | Where the keys come from, exactly one source, no fall-through: `env` (default: `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`), `profile` (default when `CBOM_AI_AWS_PROFILE` is set; static keys from the shared credentials / config file; assume-role profiles are not supported), `instance` (EC2 instance role through IMDSv2), `container` (ECS task role or EKS Pod Identity: `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI` / `_FULL_URI`), `web_identity` (EKS IRSA: `AWS_ROLE_ARN` + `AWS_WEB_IDENTITY_TOKEN_FILE`). Credentials are resolved on the first assist, then cached; the status check never contacts the credential endpoint. |
+| `CBOM_AI_AWS_PROFILE` | A named profile from a mounted `~/.aws` (**needed here**, where `AWS_*` are MinIO's). |
+| `CBOM_AI_BEDROCK_ENDPOINT_URL` | Optional PrivateLink endpoint: `https://vpce-….bedrock-runtime.<region>.vpce.amazonaws.com`, or a private (RFC 1918 / ULA) address literal of the endpoint. A custom name is refused (it cannot be pinned), and so is loopback unless `CBOM_AI_BEDROCK_ALLOW_LOOPBACK=1` (a local forwarder you run). With private DNS on the endpoint, leave this unset: the regional name resolves to it. |
+| `CBOM_AI_REDACT_HOSTS` | Default `1` for Bedrock: the prompt carries no host names or addresses (IPv4 / IPv6), account ids, ARN resources (service and resource type are kept), key aliases, e-mail addresses, certificate DN values, asset or source names, and the OS only as its family; they become `HOST_n`, `ACCOUNT_n`, `RESOURCE_n`, `ALIAS_n`, `EMAIL_n`, `NAME_n` and are restored in the answer. `0` sends them. |
+
+Allow on the egress firewall / proxy exactly what `GET /{team}/cbom/ai/status` lists in `egress` (the panel shows the
+same list): **TCP 443 to `bedrock-runtime.<region>.amazonaws.com`** (or the VPC endpoint), plus, by credential
+source: `instance` 169.254.169.254:80 (link-local), `container` 169.254.170.2:80 (ECS), 169.254.170.23:80 (EKS Pod
+Identity) or the `_FULL_URI` host, `web_identity` `sts.<region>.amazonaws.com:443`; `env` and `profile` call nothing
+else. IAM: `bedrock:InvokeModel` on the model ARN (Converse is authorised by `bedrock:InvokeModel`), e.g.
+`arn:aws:bedrock:<region>::foundation-model/openai.gpt-oss-120b-1:0`, and model access enabled for it in the Bedrock
+console. To keep the traffic off the internet, create an interface VPC endpoint for `com.amazonaws.<region>.bedrock-runtime`
+(PrivateLink); with private DNS on, the regional name resolves to it and nothing needs to change, otherwise set
+`CBOM_AI_BEDROCK_ENDPOINT_URL`. `HTTP(S)_PROXY` and `AWS_CA_BUNDLE` are ignored, for the Bedrock call and for the
+credential fetches (IMDS, container endpoint, STS), unless `CBOM_AI_HONOR_PROXY=1`; redirects are never followed;
+there are no retries.
+
+**A model on your own network (`openai_compat`).** Nothing leaves the network.
+
+| Variable | Effect |
+|---|---|
+| `CBOM_AI_BASE_URL` | OpenAI-compatible `/v1` root: Ollama `http://ollama:11434/v1`, vLLM `http://vllm.internal:8000/v1`, llama.cpp server `http://llama:8080/v1`. Setting it (without `CBOM_AI_PROVIDER`) selects this provider. |
+| `CBOM_AI_MODEL` | Model name as the server knows it (e.g. `qwen3:8b` in Ollama). Required. |
+| `CBOM_AI_API_KEY`, `CBOM_AI_CA_FILE` | Bearer key if the server wants one; PEM bundle for a private CA (https). |
+| `CBOM_AI_ALLOW_NONPRIVATE` | The host must resolve only to loopback / RFC 1918 / ULA addresses unless this is `1`; link-local (cloud metadata) is refused always. The resolved address is pinned for the request. |
+
+Both: `CBOM_AI_TIMEOUT_S` (60), `CBOM_AI_MAX_TOKENS` (700), `CBOM_AI_CONCURRENCY` (2 requests at a time). 20 requests
+per minute per user. The rate limit, the concurrency limit and the answer cache are per backend process: with N
+workers or replicas the deployment allows N times as many. Example, Ollama on the compose network: `docker run -d --name ollama --network <compose network>
+-v ollama:/root/.ollama ollama/ollama`, `docker exec ollama ollama pull qwen3:8b`, then
+`CBOM_AI_BASE_URL=http://ollama:11434/v1` and `CBOM_AI_MODEL=qwen3:8b`. Give the model at least 4 k tokens of
+context (the assistant sends about 3 k; Ollama: `OLLAMA_CONTEXT_LENGTH=8192`, llama.cpp: `--ctx-size 8192`); a 0.5 B
+model answers safely (the checks hold) but thinly, so prefer 4-8 B. Unset everything to remove the panel (after a
+page reload). `CBOM_ALLOW_LLM` is a different, older switch (the whole-scan chat through the SAST lane's Bedrock
+client) and stays off.
+
 Other scans: SAST, IaC and the SCA + SBOM chat need Amazon Bedrock and a Qdrant store (`QDRANT_*`, `LLM_MODEL`); without
 them they end as "failed". CBOM and AI-BOM code scans need neither.
 
