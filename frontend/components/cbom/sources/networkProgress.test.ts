@@ -23,10 +23,11 @@ assert.equal(addressProgress({ status: "claimed", progress: { done: 0, total: 0 
 assert.equal(addressProgress({ status: "claimed", progress: { done: 377, total: 1200, unit: "account-regions" } }), `377 of ${(1200).toLocaleString()} account-regions`)
 assert.equal(addressProgress({ status: "claimed", progress: { done: 0, total: 1, unit: "account-regions" } }), "0 of 1 account-region")
 
-// the run jobs table moved out of ReviewRunTab's dialog into results/RunJobsTable.tsx (CB-38); the dialog renders it
+// the run jobs table moved out of ReviewRunTab's (removed) run dialog into results/RunJobsTable.tsx (CB-38); the run
+// results page renders it in "What was covered"
 for (const [file, use] of [["NetworkTab.tsx", "const progress = addressProgress(live);"],
                            ["../results/RunJobsTable.tsx", "{addressProgress(job)}"],
-                           ["ReviewRunTab.tsx", "<RunJobsTable jobs={jobs} />"]] as const) {
+                           ["../results/RunSections.tsx", '<RunJobsTable jobs={jobs} testIdPrefix="run-job" />']] as const) {
   const src = fs.readFileSync(path.join(__dirname, file), "utf8")
   assert.ok(src.includes(use), `${file} shows the running range's address progress`)
 }
