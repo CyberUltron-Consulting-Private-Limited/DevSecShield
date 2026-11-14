@@ -225,7 +225,9 @@ redirects are never followed; there are no retries.
 Both: `CBOM_AI_TIMEOUT_S` (60), `CBOM_AI_MAX_TOKENS` (700), `CBOM_AI_CONCURRENCY` (2 requests at a time). 20 requests
 per minute per user. Example, Ollama on the compose network: `docker run -d --name ollama --network <compose network>
 -v ollama:/root/.ollama ollama/ollama`, `docker exec ollama ollama pull qwen3:8b`, then
-`CBOM_AI_BASE_URL=http://ollama:11434/v1` and `CBOM_AI_MODEL=qwen3:8b`. Unset everything to remove the panel (after a
+`CBOM_AI_BASE_URL=http://ollama:11434/v1` and `CBOM_AI_MODEL=qwen3:8b`. Give the model at least 4 k tokens of
+context (the assistant sends about 3 k; Ollama: `OLLAMA_CONTEXT_LENGTH=8192`, llama.cpp: `--ctx-size 8192`); a 0.5 B
+model answers safely (the checks hold) but thinly, so prefer 4-8 B. Unset everything to remove the panel (after a
 page reload). `CBOM_ALLOW_LLM` is a different, older switch (the whole-scan chat through the SAST lane's Bedrock
 client) and stays off.
 

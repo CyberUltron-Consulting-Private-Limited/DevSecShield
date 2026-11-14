@@ -14,7 +14,8 @@ import json
 import re
 from typing import Any
 
-from backend.utilities.cbom_ai.grounding import CVE_RE, CWE_RE, URL_RE, Grounding, norm_command
+from backend.utilities.cbom_ai.grounding import CVE_RE, CWE_RE, URL_RE, Grounding, command_forms, norm_command
+from backend.utilities.cbom_ai.prompt import TEMPLATE_PHRASES
 
 WITHHELD_UNKNOWN_ID = "AI answer withheld: it named an identifier not in the knowledge base"
 WITHHELD_FORMAT = "AI answer withheld: it was not in the required format"
@@ -66,6 +67,7 @@ class _Counts:
         self.commands = 0
         self.links = 0
         self.steps = 0
+        self.template = 0
 
 
 def _clean_text(text: Any, grounding: Grounding, counts: _Counts) -> tuple[str, list[str]]:
@@ -100,6 +102,10 @@ def _clean_text(text: Any, grounding: Grounding, counts: _Counts) -> tuple[str, 
     s = _CODE_SPAN.sub(span, s)
     s = re.sub(r"\s+([.,;:])", r"\1", " ".join(s.split()))
     valid = [c for c in dict.fromkeys(cites) if c in grounding.ids]
+    if any(p in s.lower() for p in TEMPLATE_PHRASES):
+        # the model copied the answer template instead of answering: not a statement, nothing to cite
+        counts.template += 1
+        return "", []
     return s.strip(), valid
 
 
@@ -161,7 +167,6 @@ def validate(raw: str, grounding: Grounding) -> dict[str, Any]:
         counts.steps += len(steps) - MAX_STEPS
         steps = steps[:MAX_STEPS]
 
-    by_command = {norm_command(i.command): i.id for i in grounding.items if i.command}
     commands: list[dict[str, str]] = []
     raw_commands = data.get("commands") if isinstance(data.get("commands"), list) else []
     for entry in raw_commands:
@@ -173,11 +178,11 @@ def validate(raw: str, grounding: Grounding) -> dict[str, Any]:
         if key not in grounding.commands or len(command) > MAX_COMMAND * 3:
             counts.commands += 1
             continue
-        cite = (_valid_cites(entry.get("cite"), grounding) if isinstance(entry, dict) else []) or \
-            ([by_command[key]] if key in by_command else [])
-        if not cite:
-            # a part of a KB step command: cite the step it came from
-            cite = [i.id for i in grounding.items if i.command and key in norm_command(i.command)][:1]
+        # the citation of a command is a KB item that holds it: the model's, when its item does, else the first one
+        holders = [i.id for i in grounding.items if i.command and key in command_forms(i.command)]
+        claimed = _valid_cites(entry.get("cite"), grounding) if isinstance(entry, dict) else []
+        cite = [c for c in claimed if c in holders][:1] or holders[:1] or \
+            [i.id for i in grounding.items if i.command and key in norm_command(i.command)][:1]
         if any(c["command"] == command for c in commands):
             continue
         commands.append({"command": command, "cite": cite[0] if cite else ""})

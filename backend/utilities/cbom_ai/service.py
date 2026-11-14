@@ -147,7 +147,8 @@ async def assist(cfg: AiConfig, grounding: Grounding, *, mode: str, question: st
     if cached is not None:
         result, outcome = cached, "cache_hit"
     else:
-        sent, back = redact(grounding) if cfg.redact_hosts else (grounding, {})
+        fitted = grounding.trimmed(P.MAX_PROMPT_CHARS)
+        sent, back = redact(fitted) if cfg.redact_hosts else (fitted, {})
         messages = P.build(sent, mode, question)
         try:
             async def call() -> str:

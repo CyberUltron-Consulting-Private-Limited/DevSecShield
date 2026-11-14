@@ -6,6 +6,7 @@ proxy rules are exercised for real). Uses the SQLite + real-router harness of te
 from __future__ import annotations
 
 import json
+import re
 import os
 import socket
 import subprocess
@@ -716,3 +717,58 @@ def test_bedrock_named_profile_ignores_environment_keys(bedrock, monkeypatch, tm
     assert T.credential_method(cfg) == "shared-credentials-file"
     assert T._session(cfg).get_credentials().access_key == "AKIAPROFILEEXAMPLE01"
     assert bedrock["connects"] == []
+
+
+def test_template_echo_is_not_an_answer(api, world):
+    """Found with a real 0.5B model in the offline proof: it copied the answer template ("one action with [ids]")
+    with a valid citation. Template text is never shown."""
+    engine, _ = world
+    items = _assets(api, engine)
+    g = _grounding(api, items["10.20.0.1:443"]["id"])
+    raw = json.dumps({"summary": "<two or three sentences about THIS asset, each ending with its item ids in brackets>",
+                      "steps": [{"text": "one action with [ids]", "cites": ["K1.v2"]},
+                                {"text": "<one action for this asset>", "cites": ["K1.s1"]}]})
+    out = V.validate(raw, g)
+    assert out["status"] == "withheld" and out["withheld_reason"] == V.WITHHELD_UNCITED
+    assert "one action" not in json.dumps(out["steps"])
+
+
+def test_prompt_is_trimmed_to_fit_small_models(api, world, stub, monkeypatch):
+    """Found in the offline proof: the Windows asset (six codes) overflowed a 4 k-token context (HTTP 400). The prompt
+    keeps facts, summaries, fixes and the first steps; dropped items cannot be cited and their commands are refused."""
+    engine, _ = world
+    items = _assets(api, engine)
+    g = _grounding(api, items["os"]["id"])
+    full = sum(len(i.text) for i in g.items)
+    small = g.trimmed(4000)
+    size = sum(len(i.text) + len(i.id) + 4 for i in small.items)
+    only_essentials = all(re.fullmatch(r"F\d+|K\d+(\.fix)?", i.id) for i in small.items)
+    assert full > 4000 and (size <= 4000 or only_essentials)
+    kept = {i.id for i in small.items}
+    assert {i.id for i in g.items if i.id.startswith("F")} <= kept
+    assert {i.id for i in g.items if re.fullmatch(r"K\d+(\.fix)?", i.id)} <= kept
+    assert not any(i.endswith(".ref") for i in kept)
+    gone = [i for i in g.items if i.id not in kept and i.command]
+    kept_forms = set().union(*[G.command_forms(k.command) for k in small.items if k.command])
+    assert gone and all(G.norm_command(i.command) not in small.commands
+                        for i in gone if G.norm_command(i.command) not in kept_forms)
+    assert g.trimmed(10**9) is g
+    s = stub(lambda body: (200, {}, {"summary": "TLS 1.0 enabled [K1]", "steps": [], "commands": []}))
+    configure(monkeypatch, f"http://127.0.0.1:{s.port}/v1")
+    out = _assist(api, items["os"]["id"]).json()
+    assert out["status"] == "ok"
+    sent = s.requests[0]["body"]["messages"][1]["content"]
+    assert len(sent) < len("".join(i.text for i in g.items)) and len(sent) < 10_000 + 2_000
+    assert {i["id"] for i in out["items"]} == {i.id for i in g.items}  # chip labels for every item
+
+
+def test_command_cite_points_at_the_kb_item_that_holds_it(api, world):
+    """Seen in the offline proof: a KB command cited to a fact (F3). The chip must name the KB check it came from."""
+    engine, _ = world
+    items = _assets(api, engine)
+    g = _grounding(api, items["10.20.0.1:443"]["id"])
+    item = next(i for i in g.items if i.id.endswith(".v1"))
+    out = V.validate(json.dumps({"summary": "Accepts TLS 1.0 [K1]",
+                                 "commands": [{"command": item.command, "cite": "F3"}]}), g)
+    holders = [i.id for i in g.items if i.command and G.norm_command(item.command) in G.command_forms(i.command)]
+    assert out["commands"][0]["cite"] == holders[0] and holders[0].startswith("K")

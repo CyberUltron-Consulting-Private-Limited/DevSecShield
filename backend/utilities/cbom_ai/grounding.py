@@ -70,6 +70,47 @@ class Grounding:
             out |= {f"CWE-{int(a)}" for a in CWE_RE.findall(item.text)}
         return out
 
+    def trimmed(self, max_chars: int) -> "Grounding":
+        """The same grounding with the least important items left out until the item text fits ``max_chars`` (a
+        small on-prem model has a few thousand tokens of context). Facts, each code's summary and fix, and its first
+        steps and checks stay; references, standards, CWE / CVE lists, later steps and later checks of later codes go
+        first. Items left out cannot be cited, and their commands and links are no longer allowed."""
+        def rank(item: Item) -> tuple[int, int]:
+            m = re.match(r"K(\d+)(?:\.([a-z]+)(\d*))?$", item.id)
+            if not m:
+                return (0, 0)
+            entry, part, num = int(m.group(1)), m.group(2) or "", int(m.group(3) or 0)
+            if part in ("", "fix"):
+                level = 0
+            elif part in ("s", "v") and num <= 2:
+                level = 1
+            elif part in ("cve", "cwe"):
+                level = 2
+            elif part in ("s", "v"):
+                level = 3
+            else:
+                level = 4
+            return (level, entry)
+
+        total = sum(len(i.text) + len(i.id) + 4 for i in self.items)
+        if total <= max_chars:
+            return self
+        drop: set[str] = set()
+        for item in sorted(self.items, key=rank, reverse=True):
+            if total <= max_chars or rank(item)[0] == 0:
+                break
+            drop.add(item.id)
+            total -= len(item.text) + len(item.id) + 4
+        items = [i for i in self.items if i.id not in drop]
+        commands: set[str] = set()
+        for i in items:
+            if i.command:
+                commands |= command_forms(i.command)
+        text = " ".join(i.text for i in items)
+        urls = {u for u in self.urls if u in text}
+        return Grounding(subject_key=self.subject_key, items=items, baseline=self.baseline, commands=commands,
+                         urls=urls, hosts=self.hosts)
+
     def digest(self) -> str:
         blob = json.dumps([[i.id, i.text, i.command] for i in self.items], sort_keys=True)
         return hashlib.sha256(blob.encode()).hexdigest()
@@ -77,6 +118,18 @@ class Grounding:
 
 def norm_command(text: str) -> str:
     return " ".join(str(text or "").split())
+
+
+def command_forms(command: str | None) -> set[str]:
+    """A KB step or check command and the parts of it a person may run on their own (split on ; and &&, and any
+    `quoted` command inside a step's text), whitespace-normalised."""
+    text = str(command or "")
+    out = {norm_command(text)}
+    for part in re.split(r"\s*;\s*|\s+&&\s+", text) + re.findall(r"`([^`]+)`", text):
+        if part.strip():
+            out.add(norm_command(part))
+    out.discard("")
+    return out
 
 
 def _cap(text: Any, n: int = MAX_VALUE) -> str:
@@ -142,10 +195,7 @@ def _kb_items(entries: list[dict[str, Any]], start: int = 1) -> tuple[list[Item]
             sid = f"{k}.s{j}"
             items.append(Item(sid, f"{k} {code} · step {j}" + (f" ({platform})" if platform else ""),
                               _cap(f"{platform}: {how}" if platform else how, MAX_ITEM), command=how))
-            commands.add(norm_command(how))
-            for part in re.split(r"\s*;\s*|\s+&&\s+", how) + re.findall(r"`([^`]+)`", how):
-                if part.strip():
-                    commands.add(norm_command(part))
+            commands |= command_forms(how)
             steps.append({"text": f"{platform}: {how}" if platform else how, "cites": [sid]})
         for j, v in enumerate(e.get("verify") or [], start=1):
             vid = f"{k}.v{j}"
