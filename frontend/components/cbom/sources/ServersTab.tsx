@@ -52,6 +52,8 @@ import {
 import { listSshCas } from "@/utils/api/cbom_ssh_ca";
 
 import { cbomSourcesKeys, TERMINAL_JOB } from "./keys";
+import { useFleetStatus } from "./fleet/FleetTab";
+import { sshCaListEnabled } from "./fleet/fleetLogic";
 import { principalOk } from "./fleet/sshCaLogic";
 import { MetadataFields, metadataConfig, metadataFrom, type SourceMetadata } from "./SourceMetadata";
 import {
@@ -704,15 +706,18 @@ function ServerForm({
   // Vault references fetch a secret on the node: only team admins may add or change them (server enforces too).
   const isAdmin = !!overviewQuery.data?.viewer?.is_admin;
   const caRef = useRef<HTMLInputElement>(null);
-  // F1.4: the SSH CA option exists only while the deployment turns the CA on (its routes answer 404 otherwise)
+  // F1.4: the SSH CA option exists only while the deployment turns the CA on. GET /fleet/status says so (the same
+  // cached query as the page's Fleet tab); the SSH CA routes are not probed, as they answer 404 while it is off
+  // (CB36-BUG-03: a console error on every visit).
+  const fleetStatus = useFleetStatus(teamId);
   const sshCas = useQuery({
     queryKey: [...cbomSourcesKeys.all(teamId), "ssh-ca"],
     queryFn: () => listSshCas(teamId),
-    enabled: Number.isFinite(teamId) && isLinux,
+    enabled: sshCaListEnabled(teamId, isLinux, fleetStatus.data),
     retry: false,
     staleTime: 60_000,
   });
-  const sshCaOn = sshCas.isSuccess;
+  const sshCaOn = fleetStatus.data?.ssh_ca === true && sshCas.isSuccess;
   const signingCas = (sshCas.data?.cas ?? []).filter((c) => c.state === "active");
   const selectedNode = nodes.find((n) => n.id === form.nodeId) ?? null;
   const login = form.loginUser.trim() || info.login;

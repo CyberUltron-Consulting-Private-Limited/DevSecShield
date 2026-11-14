@@ -1068,8 +1068,14 @@ function ClusterForm({
               value={form.tier}
               onChange={(v) => set({ tier: v })}
               options={[
-                { value: 1, title: "Tier 1 · no Secrets", description: "Certificates and issuers, ingress TLS, mesh mTLS mode, images in use" },
-                { value: 2, title: "Tier 2 · reads Secrets", description: "Adds TLS secrets and private keys left in Secrets or ConfigMaps" },
+                // Exactly what the tier's ClusterRole grants and the collector reads (CB36-BUG-04; pinned by
+                // backend/tests/test_cbom_node_core_classify.py). Container images are the Container images source.
+                {
+                  value: 1,
+                  title: "Tier 1 · no Secrets",
+                  description: "Cluster and node versions, API server TLS, ingress TLS, cert-manager Certificates, certificates and private keys in ConfigMaps, Istio and Linkerd mTLS policy",
+                },
+                { value: 2, title: "Tier 2 · reads Secrets", description: "Adds the certificates of TLS Secrets (kubernetes.io/tls); their private keys are never read" },
               ]}
             />
           </div>
