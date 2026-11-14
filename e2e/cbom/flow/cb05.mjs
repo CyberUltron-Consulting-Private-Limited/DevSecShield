@@ -555,13 +555,209 @@ export function g12Validate(ctx, s, k = "1", { vex = true, gap = true } = {}) {
   }
 }
 
+// ------------------------------------------------------------------------------------------------ CB-38 results page
+/** The run's row in CBOM Scans -> Table (#117, ``cbom-result-run-<id>``) on /{team}/cbom, or null when it is not listed. */
+export async function gotoListRow(ctx, runId) {
+  const { page } = ctx.A;
+  await page.goto(`${ctx.UI}/${ctx.A.team}/cbom`, { waitUntil: "networkidle" });
+  await page.getByRole("tab", { name: "Table", exact: true }).click();
+  const row = page.getByTestId(`cbom-result-run-${runId}`);
+  await row.waitFor({ timeout: 30000 }).catch(() => {});
+  return (await row.count()) ? row : null;
+}
+
+/** What the list row shows: the Risks cell (5th column: Critical, High, Medium, Low dots, then "QV:n" when n > 0) and
+ * the title link's href. null when the run is not listed. */
+export async function readListRow(ctx, runId) {
+  const row = await gotoListRow(ctx, runId);
+  if (!row) return null;
+  return { risks: await row.locator("td").nth(4).innerText(), href: await row.getByRole("link").first().getAttribute("href") };
+}
+
+/** The Risks cell's text as numbers (RiskDots: four counts in order, the QV badge only when > 0), null when it is not
+ * exactly four counts (e.g. "—"). */
+export function parseRiskCell(text) {
+  const t = String(text ?? "");
+  const qv = t.match(/QV:\s*(\d+)/);
+  const n = t.replace(/QV:\s*\d+/, "").match(/\d+/g) || [];
+  if (n.length !== 4) return null;
+  return { total_critical: Number(n[0]), total_high: Number(n[1]), total_medium: Number(n[2]), total_low: Number(n[3]),
+    total_quantum_vulnerable: qv ? Number(qv[1]) : 0 };
+}
+
+const LIST_IMPACT = { Critical: "total_critical", High: "total_high", Medium: "total_medium", Low: "total_low" };
+
+/** The run's list counts from the DB rows ``[impact, quantum_vulnerable::text, count]`` of its non-coverage assets
+ * (BRIEF §A: severities as collected; another impact is informational; coverage rows are never a finding). */
+export function listDbCounts(dbRows) {
+  const out = { total_critical: 0, total_high: 0, total_medium: 0, total_low: 0, total_informational: 0, total_quantum_vulnerable: 0 };
+  for (const [impact, qv, count] of dbRows || []) {
+    const n = Number(count) || 0;
+    out[LIST_IMPACT[impact] || "total_informational"] += n;
+    if (qv === "true" || qv === "t") out.total_quantum_vulnerable += n;
+  }
+  return out;
+}
+
+/** G11u, the list (PLAN §11): the run's row in CBOM Scans -> Table links to the results page, and its Risks cell ==
+ * the API's runs_list_data row == the DB. ``list``: readListRow's result; ``apiRow``: the runs_list_data entry (or
+ * null); ``db``: {rows: [impact, qv, count] of non-coverage assets, total: every asset of the run}. Pure. */
+export function g11uListRow(s, k, want, list, apiRow, db) {
+  const subject = (check) => ({ check, run: k });
+  s.check(`g11u_list_row_run${k}`, !!list && list.href === want, { expected: want, observed: list ? list.href : "no list row", subject: subject("g11u_list_row") });
+  const ui = list ? parseRiskCell(list.risks) : null;
+  const api = apiRow?.risk_data || null;
+  const shown = ["total_critical", "total_high", "total_medium", "total_low", "total_quantum_vulnerable"];
+  s.check(`g11u_list_counts_ui_api_run${k}`, !!ui && !!api && shown.every((f) => ui[f] === (api[f] ?? 0)),
+    { expected: api && Object.fromEntries(shown.map((f) => [f, api[f] ?? 0])), observed: ui ?? (list ? list.risks : "no list row"), subject: subject("g11u_list_counts_ui_api") });
+  const want2 = listDbCounts(db?.rows);
+  const off = api ? Object.keys(want2).filter((f) => api[f] !== want2[f]) : Object.keys(want2);
+  const total = Number(db?.total);
+  s.check(`g11u_list_counts_api_db_run${k}`, !!api && off.length === 0 && apiRow.asset_count === total,
+    { expected: { ...want2, asset_count: total }, observed: apiRow ? { ...api, asset_count: apiRow.asset_count } : "run not in runs_list_data", subject: subject("g11u_list_counts_api_db") });
+}
+
+/** A run's results are a page since CB-38 (PLAN §11): /{team}/cbom/runs/{run}/results. ``via: "review"`` clicks the
+ * Review & Run "Results" button (a link to that page), ``via: "list"`` clicks the run's title in CBOM Scans -> Table,
+ * ``via: "direct"`` opens the URL. Each way the URL is judged, and the table is switched to "All assets" (the judge
+ * compares every API item, coverage rows included). Returns the page's path (null when the list has no row). */
+export async function openRunResults(ctx, s, runId, { via = "review", tag = "" } = {}) {
+  const { page } = ctx.A;
+  const want = `/${ctx.A.team}/cbom/runs/${runId}/results`;
+  if (via === "direct") {
+    await page.goto(`${ctx.UI}${want}`, { waitUntil: "networkidle" });
+  } else if (via === "list") {
+    // the run's row in CBOM Scans -> Table (#117): its title links to the results page
+    const row = await gotoListRow(ctx, runId);
+    if (!row) {
+      for (const id of [`results_url_${via}${tag}`, `results_view_all_${via}${tag}`]) {
+        s.check(id, false, { expected: `cbom-result-run-${runId} in the CBOM Scans table`, observed: "no list row", subject: { check: id.replace(`_${via}${tag}`, ""), via, run: runId } });
+      }
+      return null;
+    }
+    await row.getByRole("link").first().click();
+    await page.waitForURL((u) => u.pathname === want, { timeout: 30000 }).catch(() => {});
+  } else {
+    await page.goto(`${ctx.UI}/${ctx.A.team}/cbom/sources?tab=review`, { waitUntil: "networkidle" });
+    await page.getByTestId(`review-run-details-${runId}`).click();
+    await page.waitForURL((u) => u.pathname === want, { timeout: 30000 }).catch(() => {});
+  }
+  await page.getByTestId("run-results").waitFor({ timeout: 30000 });
+  const path = new URL(page.url()).pathname;
+  s.check(`results_url_${via}${tag}`, path === want, { expected: want, observed: path, subject: { check: "results_url", via, run: runId } });
+  // one id per opening (G11 opens the page twice: the judge rejects a repeated check id)
+  const id = `results_view_all_${via}${tag}`;
+  const all = page.getByTestId("run-results-view-all");
+  if (!(await all.count())) {
+    s.check(id, false, { expected: "All assets view", observed: "no Findings / All assets toggle", subject: { check: "results_view_all", via, run: runId } });
+    return path;
+  }
+  if ((await all.getAttribute("aria-pressed")) !== "true" && !(await all.isDisabled())) {
+    await all.click();
+    await page.waitForLoadState("networkidle"); await page.waitForTimeout(500);
+  }
+  const pressed = (await all.getAttribute("aria-pressed")) === "true";
+  s.check(id, pressed, { expected: "All assets view", observed: pressed ? "all" : "findings", subject: { check: "results_view_all", via, run: runId } });
+  return path;
+}
+
+/** PQC class labels as the posture card prints them (RunPosture.tsx CLASS_LABEL). PRODUCT COPY, read-only: G11u
+ * reads the card's text with them; it never feeds an oracle value. */
+export const POSTURE_CLASS_LABEL = { "quantum-vulnerable": "Quantum-vulnerable", hybrid: "Hybrid PQC", "quantum-safe": "Quantum-safe",
+  "grover-weakened": "Grover-weakened", "not-applicable": "Not applicable" };
+
+/** G11u (PLAN §11, Rule P): the results page prints the run posture's figures, never its own recount. Readiness on
+ * the posture card and on the dashboard's "Quantum ready" card == /posture pqc_readiness_pct; class chips ==
+ * pqc_classes; "Critical / High" == impacts; per row data-q-grade / data-fix-class == the /assets item of that id.
+ * ``texts``: the innerText (line breaks kept) of {posture: run-posture, readiness: posture-readiness, dashboard:
+ * run-section-dashboard, or null when that section is not on the page}, and ``qCounts``: {bucket: data-count} of the
+ * posture-q-<bucket> items (null when the distribution is not on the page). Pure (no browser), so it is unit-tested. */
+export function g11uRuleP(s, k, postureBody, texts, rows, items) {
+  const p = postureBody?.posture ?? postureBody ?? {};
+  const pct = p.pqc_readiness_pct;
+  const subject = (check) => ({ check, run: k });
+  const readiness = String(texts.readiness || "").replace(/\s+/g, " ");
+  const wantCard = pct == null ? "—" : `${pct}%`;
+  s.check(`g11u_posture_readiness_run${k}`, readiness.includes(wantCard),
+    { expected: wantCard, observed: readiness.slice(0, 120), subject: subject("g11u_posture_readiness") });
+  if (texts.dashboard == null) {
+    s.notRun(`g11u_dashboard_readiness_run${k}`, "the dashboard section (run results summary) is not on the page", subject("g11u_dashboard_readiness"));
+  } else {
+    const m = String(texts.dashboard).replace(/\s+/g, " ").match(/Quantum ready\s*([0-9.]+%|n\/a)/);
+    const want = pct == null ? "n/a" : `${pct}%`;
+    s.check(`g11u_dashboard_readiness_run${k}`, !!m && m[1] === want, { expected: want, observed: m ? m[1] : "no Quantum ready card", subject: subject("g11u_dashboard_readiness") });
+  }
+  const card = String(texts.posture || "").replace(/\s+/g, " ");
+  const classes = p.pqc_classes || {};
+  const wrong = Object.entries(POSTURE_CLASS_LABEL).filter(([c, label]) => (classes[c] || 0) > 0 && !card.includes(`${label} ${classes[c]}`))
+    .map(([c]) => ({ class: c, api: classes[c] }));
+  s.check(`g11u_classes_run${k}`, Object.keys(classes).length > 0 && wrong.length === 0, { expected: classes, observed: { not_on_card: wrong }, subject: subject("g11u_classes") });
+  const im = p.impacts || {};
+  const sev = card.match(/Critical \/ High\s*(\d+) \/ (\d+)/);
+  s.check(`g11u_critical_high_run${k}`, !!sev && Number(sev[1]) === (im.Critical || 0) && Number(sev[2]) === (im.High || 0),
+    { expected: { Critical: im.Critical || 0, High: im.High || 0 }, observed: sev ? { Critical: Number(sev[1]), High: Number(sev[2]) } : "not on the card", subject: subject("g11u_critical_high") });
+  // Q distribution (CB-19 gate request): every posture-q-<bucket> data-count == /posture q_grades (0 when absent)
+  if (!p.q_grades) {
+    s.notRun(`g11u_q_distribution_run${k}`, "the run's /posture has no q_grades (CB-19 grades not on this deployment, KF-10)", subject("g11u_q_distribution"));
+  } else {
+    const shownQ = texts.qCounts || null;
+    const buckets = [...new Set([...Object.keys(p.q_grades), ...Object.keys(shownQ || {})])];
+    const offQ = shownQ ? buckets.filter((b) => !(b in shownQ) || Number(shownQ[b]) !== (Number(p.q_grades[b]) || 0)) : buckets;
+    s.check(`g11u_q_distribution_run${k}`, !!shownQ && offQ.length === 0,
+      { expected: p.q_grades, observed: shownQ ?? "no posture-q-distribution on the page", subject: subject("g11u_q_distribution") });
+  }
+  const byId = new Map((items || []).map((i) => [i.id, i]));
+  const off = [];
+  for (const r of rows || []) {
+    if (r.reader !== "data-attributes") continue;
+    const api = byId.get(r.id);
+    if (!api) continue;
+    for (const [field, key] of [["q_grade", "q_grade"], ["fix_class", "fix_class"]]) {
+      const ui = r[key] ?? null, want = api[field] ?? null;
+      if (ui !== want) off.push({ id: r.id, field, ui, api: want });
+    }
+  }
+  const attrRows = (rows || []).filter((r) => r.reader === "data-attributes").length;
+  s.check(`g11u_row_grades_run${k}`, attrRows > 0 && off.length === 0, { expected: "data-q-grade / data-fix-class == the /assets item", observed: { rows: attrRows, mismatches: off.slice(0, 20) }, subject: subject("g11u_row_grades") });
+}
+
+/** true on the unified results page (any path under /cbom/runs/, a trailing slash or a sub-path included): its rows
+ * must carry data attributes and are never read by cell position. */
+export function isResultsPage(path) {
+  return String(path || "").includes("/cbom/runs/");
+}
+
+/** Rows of the results table as the customer's DOM holds them. The unified page carries each row's values as
+ * data-* attributes (read raw; the judge renders them, fieldmap.ui_from_attrs); the old run dialog's rows are read by
+ * cell position. An attribute the page does not set is left out (the judge reports it missing). On the unified page
+ * (``opts.attrsOnly``) a row is never read by position: a row without attributes is all missing. Self-contained: it
+ * runs in the browser (page.$$eval(selector, readRunRows, opts)). */
+export function readRunRows(trs, opts) {
+  const attrsOnly = !!(opts && opts.attrsOnly);
+  return trs.filter((tr) => /^run-asset-\d+$/.test(tr.dataset.testid)).map((tr) => {
+    const id = Number(tr.dataset.testid.slice(10));
+    if (attrsOnly || tr.hasAttribute("data-impact")) {
+      const d = tr.dataset;
+      const row = { id, reader: "data-attributes" };
+      for (const [key, attr] of [["impact", "impact"], ["type", "type"], ["location", "location"], ["target", "target"],
+        ["algorithm", "algorithm"], ["key_size", "keySize"], ["finding", "finding"], ["quantum", "quantum"],
+        ["status", "status"], ["q_grade", "qGrade"], ["fix_class", "fixClass"]]) {
+        if (attr in d) row[key] = d[attr];
+      }
+      return row;
+    }
+    const td = [...tr.querySelectorAll("td")];
+    const where = td[4] ? [...td[4].querySelectorAll("span")].map((x) => x.textContent.trim()) : [];
+    return { id, impact: td[2]?.textContent.trim(), type: td[3]?.textContent.trim(),
+      location: where[0] ?? null, target: where[1] ?? null, algorithm: td[5]?.textContent.trim(), finding: td[6]?.textContent.trim(), quantum: td[7]?.textContent.trim() };
+  });
+}
+
 // ------------------------------------------------------------------------------------------------ G13 / G13b drift
 /** The run's results as the customer sees them (DOM rows of every page) and the API pages with the same token. */
 export async function captureRun(ctx, s, k, runId) {
   const { page } = ctx.A;
-  await page.goto(`${ctx.UI}/${ctx.A.team}/cbom/sources?tab=review`, { waitUntil: "networkidle" });
-  await page.getByTestId(`review-run-details-${runId}`).click();
-  await page.getByTestId("run-results").waitFor({ timeout: 30000 });
+  const path = await openRunResults(ctx, s, runId, { via: "direct", tag: `_run${k}` });
   const items = []; let first = null;
   for (let p = 1; p < 500; p++) {
     const r = await ctx.apiGet(ctx.A, `/${ctx.A.team}/cbom/sources/runs/${runId}/assets?page=${p}&page_size=200`);
@@ -576,12 +772,7 @@ export async function captureRun(ctx, s, k, runId) {
   const rows = [];
   let prevIds = null, stuck = false;
   for (let p = 1; p < 200; p++) {
-    const got = await page.$$eval('[data-testid^="run-asset-"]', (trs) => trs.filter((tr) => /^run-asset-\d+$/.test(tr.dataset.testid)).map((tr) => {
-      const td = [...tr.querySelectorAll("td")];
-      const where = td[4] ? [...td[4].querySelectorAll("span")].map((x) => x.textContent.trim()) : [];
-      return { id: Number(tr.dataset.testid.slice(10)), impact: td[2]?.textContent.trim(), type: td[3]?.textContent.trim(),
-        location: where[0] ?? null, target: where[1] ?? null, algorithm: td[5]?.textContent.trim(), finding: td[6]?.textContent.trim(), quantum: td[7]?.textContent.trim() };
-    }));
+    const got = await page.$$eval('[data-testid^="run-asset-"]', readRunRows, { attrsOnly: isResultsPage(path) });
     const ids = got.map((r) => r.id).join(",");
     if (prevIds !== null && ids === prevIds) { stuck = true; break; }
     prevIds = ids;

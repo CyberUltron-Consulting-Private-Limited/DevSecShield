@@ -61,10 +61,12 @@ ASSETS: list[dict[str, Any]] = [
 
 
 class FakeRun:
-    def __init__(self, root: Path, *, legacy_export: bool = False, run_id: int = 55, team: int = 9) -> None:
+    def __init__(self, root: Path, *, legacy_export: bool = False, run_id: int = 55, team: int = 9,
+                 ui_attrs: bool = False) -> None:
         self.dir = Path(root) / "L-abc123456789-20261112T090000Z"
         self.assets = copy.deepcopy(ASSETS)
         self.legacy_export = legacy_export
+        self.ui_attrs = ui_attrs  # CB-38: DOM rows as the gate reads them from the data attributes
         self.run_id = run_id
         self.team = team
         self.canary_value = "zs-canary-7f3a9c1e5b2d4a6f8e0c"
@@ -123,12 +125,24 @@ class FakeRun:
                 "properties": props}
 
     def ui_row(self, a: dict[str, Any]) -> dict[str, Any]:
+        if self.ui_attrs:
+            return self.ui_attr_row(a)
         labels = {"certificate": "Certificate", "tls_endpoint": "TLS endpoint", "coverage": "Not collected"}
         head = a["algorithm"] or a["protocol"] or "—"
         return {"id": a["id"], "impact": a["impact"] or "Info", "type": labels.get(a["type"], a["type"]), "location": a["location"],
                 "target": a["target"], "algorithm": f"{head} {a['key_size']}" if a["key_size"] else head,
                 "finding": a["finding"] or "—",
                 "quantum": "Vulnerable" if a["qv"] is True else "Safe" if a["qv"] is False else "—"}
+
+    @staticmethod
+    def ui_attr_row(a: dict[str, Any]) -> dict[str, Any]:
+        """A results-page row as gate.mjs reads it from data-* attributes (raw API values, "" for none)."""
+        return {"id": a["id"], "reader": "data-attributes", "impact": a["impact"] or "", "type": a["type"],
+                "location": a["location"] or "", "target": a["target"] or "",
+                "algorithm": a["algorithm"] or a["protocol"] or "",
+                "key_size": "" if a["key_size"] is None else str(a["key_size"]), "finding": a["finding"] or "",
+                "quantum": "vulnerable" if a["qv"] is True else "safe" if a["qv"] is False else "",
+                "status": "not_started"}
 
     def oracle(self) -> dict[str, Any]:
         targets: dict[str, dict[str, Any]] = {}

@@ -1,6 +1,7 @@
 """The gate judges a correct CBOM PASS and every deliberately wrong one FAIL (the positive controls of the gate)."""
 from __future__ import annotations
 
+import itertools
 import json
 from pathlib import Path
 
@@ -181,6 +182,114 @@ def test_db_compares_with_run_verdict_when_a_date_rule_changed_it(tmp_path, empt
     passed, blocking, _ = judge(fr.dir, empty_ledger)
     assert "G11/join/run1/asset/101/impact/db" not in blocking
     assert "G11/join/run1/asset/101/impact/export" not in blocking
+
+
+# ---------------------------------------------------------------- CB-38: rows read from data attributes
+def test_attribute_rows_judge_like_rendered_rows(tmp_path, empty_ledger):
+    """The unified results page: the same correct run read through data-* attributes passes the same way."""
+    run = FakeRun(tmp_path, ui_attrs=True).write()
+    _, blocking, report = judge(run, empty_ledger)
+    assert set(blocking) == {"G11/derived/run1/posture"}, blocking
+    assert report["counts"]["FAIL"] == 0
+
+
+@pytest.mark.parametrize("field, value, expect_id", [
+    ("algorithm", "RSA", "G11/join/run1/asset/101/algorithm_cell/ui"),
+    ("key_size", "384", "G11/join/run1/asset/101/algorithm_cell/ui"),
+    ("quantum", "safe", "G11/join/run1/asset/101/quantum_vulnerable/ui"),
+    ("quantum", "", "G11/join/run1/asset/101/quantum_vulnerable/ui"),
+    ("impact", "", "G11/join/run1/asset/101/impact/ui"),
+    ("type", "tls_endpoint", "G11/join/run1/asset/101/asset_type/ui"),
+    ("location", "", "G11/join/run1/asset/101/location/ui"),
+    ("finding", "", "G11/join/run1/asset/101/finding/ui"),
+])
+def test_attribute_rows_wrong_value_fails(tmp_path, empty_ledger, field, value, expect_id):
+    fr = FakeRun(tmp_path, ui_attrs=True)
+    fr.write()
+    fr.edit_json("ui/assets-run1.json", lambda d: d["rows"][0].__setitem__(field, value))
+    passed, blocking, _ = judge(fr.dir, empty_ledger)
+    assert not passed
+    assert blocking[expect_id]["reason"] == "mismatch", blocking.get(expect_id)
+
+
+def test_attribute_row_wrong_target_fails(tmp_path, empty_ledger):
+    fr = FakeRun(tmp_path, ui_attrs=True)
+    fr.write()
+    fr.edit_json("ui/assets-run1.json", lambda d: d["rows"][0].__setitem__("target", "10.9.9.9"))
+    _, blocking, _ = judge(fr.dir, empty_ledger)
+    assert blocking["G11/join/run1/asset/101/target/ui"]["reason"] == "mismatch"
+
+
+def _nn(value, alt):
+    """JS ``value ?? alt``: only null/undefined fall through ("" and 0 are kept)."""
+    return alt if value is None else value
+
+
+def _attrs(api: dict) -> dict:
+    """The row #120's assetRowAttrs (model.ts, head 3c6619d5) writes for an API item, as readRunRows reads it.
+    Transcribed operator for operator: ``??`` for every field but data-algorithm, which is ``algorithm || protocol || ""``."""
+    qv = api.get("quantum_vulnerable")
+    return {"id": api["id"], "reader": "data-attributes", "impact": _nn(api.get("impact"), ""), "type": _nn(api.get("type"), ""),
+            "location": _nn(api.get("location"), ""), "target": _nn(api.get("target"), ""),
+            "algorithm": api.get("algorithm") or api.get("protocol") or "",
+            "key_size": "" if api.get("key_size") is None else str(api["key_size"]), "finding": _nn(api.get("finding"), ""),
+            "quantum": "vulnerable" if qv is True else "safe" if qv is False else ""}
+
+
+# every API value class per field: null, "", 0, a known value, an unknown value, padding (attributes are never trimmed)
+_GRID = {
+    "asset_type": {"type": [None, "", "certificate", "coverage", "made_up_type"]},
+    "impact": {"impact": [None, "", "High", "none"]},
+    "location": {"location": [None, "", "10.0.0.1:443", " pad "]},
+    "target": {"target": [None, "", "10.9.9.9:443", " pad "]},
+    "algorithm_cell": {"algorithm": [None, "", "RSA"], "protocol": [None, "", "TLSv1.3"], "key_size": [None, 0, 2048]},
+    "finding": {"finding": [None, "", "Weak key"]},
+    "quantum_vulnerable": {"quantum_vulnerable": [None, True, False]},
+}
+
+
+def _grid_items():
+    for field, inputs in _GRID.items():
+        for combo in itertools.product(*inputs.values()):
+            yield field, {"id": 1, **dict(zip(inputs, combo))}
+
+
+@pytest.mark.parametrize("field, api", list(_grid_items()))
+def test_attribute_rendering_equals_ui_expected(field, api):
+    """Each UI field of an attribute row renders exactly as ui_expected renders the item, for every value class the
+    page can write (no false FAIL, e.g. key size 0 -> "RSA", a null or empty type -> None, "" algorithm -> protocol)."""
+    from harness import fieldmap as F
+    row = _attrs(api)
+    assert field in F.ui_fields(row)
+    assert F.ui_observed(field, row) == F.ui_expected(field, api), (field, api, row)
+
+
+def test_attribute_values_are_not_trimmed():
+    """A page that pads (or trims) a value differs from the API string: the attribute is compared verbatim."""
+    from harness import fieldmap as F
+    assert F.ui_observed("location", {"reader": "data-attributes", "location": " a:443"}) != F.ui_expected("location", {"location": "a:443"})
+
+
+@pytest.mark.parametrize("token", ["true", "Vulnerable", "unknown"])
+def test_unknown_quantum_token_never_passes_as_no_verdict(token):
+    from harness import fieldmap as F
+    api = {"id": 5, "quantum_vulnerable": None}
+    assert F.ui_observed("quantum_vulnerable", {"reader": "data-attributes", "quantum": token}) != \
+        F.ui_expected("quantum_vulnerable", api)
+
+
+def test_target_is_compared_only_for_attribute_rows():
+    from harness import fieldmap as F
+    assert "target" in F.ui_fields({"reader": "data-attributes"})
+    assert "target" not in F.ui_fields({"impact": "High"})
+
+
+def test_attribute_row_missing_attribute_fails(tmp_path, empty_ledger):
+    fr = FakeRun(tmp_path, ui_attrs=True)
+    fr.write()
+    fr.edit_json("ui/assets-run1.json", lambda d: d["rows"][0].pop("algorithm"))
+    _, blocking, _ = judge(fr.dir, empty_ledger)
+    assert "G11/join/run1/asset/101/algorithm_cell/ui" in blocking
 
 
 def test_cli_exit_codes(tmp_path, empty_ledger, capsys):

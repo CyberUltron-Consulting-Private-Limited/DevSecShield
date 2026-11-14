@@ -554,9 +554,12 @@ try {
     const runId = state.runs?.[0];
     if (!runId) { s.check("run_exists", false, { expected: "a run", observed: null }); return; }
     const { page } = A;
-    await page.goto(`${UI}/${A.team}/cbom/sources?tab=review`, { waitUntil: "networkidle" });
-    await page.getByTestId(`review-run-details-${runId}`).click();
-    await page.getByTestId("run-results").waitFor({ timeout: 30000 });
+    // CB-38: the run's row in CBOM Scans -> Table, as the customer sees it (G11u list counts below)
+    const listRow = await cb05.readListRow(ctx, runId);
+    // the Results button opens /{team}/cbom/runs/{run}/results; so do the list's title link and the URL itself
+    await cb05.openRunResults(ctx, s, runId, { via: "direct" });
+    await cb05.openRunResults(ctx, s, runId, { via: "list" });
+    const resultsPath = await cb05.openRunResults(ctx, s, runId, { via: "review" });
     // every page of the API with the customer's own token
     // raw pages: an id the product serves twice stays twice (the judge fails duplicates, m1)
     const items = []; let first = null;
@@ -578,12 +581,8 @@ try {
     const rows = [];
     let prevIds = null, stuck = false;
     for (let p = 1; p < 200; p++) {
-      const got = await page.$$eval('[data-testid^="run-asset-"]', (trs) => trs.filter((tr) => /^run-asset-\d+$/.test(tr.dataset.testid)).map((tr) => {
-        const td = [...tr.querySelectorAll("td")];
-        const where = td[4] ? [...td[4].querySelectorAll("span")].map((x) => x.textContent.trim()) : [];
-        return { id: Number(tr.dataset.testid.slice(10)), impact: td[2]?.textContent.trim(), type: td[3]?.textContent.trim(),
-          location: where[0] ?? null, target: where[1] ?? null, algorithm: td[5]?.textContent.trim(), finding: td[6]?.textContent.trim(), quantum: td[7]?.textContent.trim() };
-      }));
+      // rows by their data-* attributes on the unified page (cell positions only for the old run dialog)
+      const got = await page.$$eval('[data-testid^="run-asset-"]', cb05.readRunRows, { attrsOnly: cb05.isResultsPage(resultsPath) });
       const ids = got.map((r) => r.id).join(",");
       if (prevIds !== null && ids === prevIds) { stuck = true; break; }
       prevIds = ids;
@@ -598,6 +597,21 @@ try {
     }
     const totalText = (await page.getByTestId("run-results-total").textContent().catch(() => "")) || "";
     writeJson(join(RUN, "ui", "assets-run1.json"), { run_id: runId, total_text: totalText.trim(), rows });
+    // G11u (Rule P): the page prints /posture's readiness, classes and Critical/High, and each row the item's grade
+    // innerText keeps the line breaks between the card's values ("2 / 3" then "1 medium, 1 low"); textContent glues them
+    const textOf = async (tid) => ((await page.getByTestId(tid).count()) ? ((await page.getByTestId(tid).first().innerText()) || "") : null);
+    const qCounts = (await page.getByTestId("posture-q-distribution").count())
+      ? await page.$$eval('[data-testid="posture-q-distribution"] [data-count]', (els) => Object.fromEntries(els.map((e) => [e.dataset.testid.replace(/^posture-q-/, ""), Number(e.dataset.count)])))
+      : null;
+    cb05.g11uRuleP(s, "1", posture.body, { posture: await textOf("run-posture"), readiness: await textOf("posture-readiness"),
+      dashboard: await textOf("run-section-dashboard"), qCounts }, rows, items);
+    // G11u, the list: Risks cell == runs_list_data row == the DB (non-coverage assets by impact; every asset counted)
+    const scans = await apiGet(A, `/${A.team}/cbom/scans`);
+    const listApi = (scans.body?.runs_list_data || []).find((r) => r.id === runId) || null;
+    writeJson(join(RUN, "api", "scans-list-run1.json"), { status: scans.status, runs_total: scans.body?.runs_total ?? null, row: listApi });
+    const listDb = { rows: db(`SELECT coalesce(impact, ''), coalesce(quantum_vulnerable::text, ''), count(*) FROM cbomcollectedasset WHERE team_id = ${Number(A.team)} AND run_id = ${Number(runId)} AND asset_type <> 'coverage' GROUP BY 1, 2`),
+      total: Number((db(`SELECT count(*) FROM cbomcollectedasset WHERE team_id = ${Number(A.team)} AND run_id = ${Number(runId)}`)[0] || [])[0]) };
+    cb05.g11uListRow(s, "1", `/${A.team}/cbom/runs/${runId}/results`, listRow, listApi, listDb);
     // per job: the results page's label = the DB (status, outcome) (G10's mapping, read where the customer sees it)
     const label = { ok: "All targets read", partial: "Partly read", failed: "Nothing read" };
     for (const j of state.jobs || []) {
@@ -672,6 +686,7 @@ try {
     // B asks for A's objects under B's own team: 404, nothing about A (no existence oracle by id)
     const own = [["run", ids.run && `/${B.team}/cbom/sources/runs/${ids.run}`],
       ["run_assets", ids.run && `/${B.team}/cbom/sources/runs/${ids.run}/assets`],
+      ["run_results", ids.run && `/${B.team}/cbom/sources/runs/${ids.run}/results`],
       ["run_cbom", ids.run && `/${B.team}/cbom/sources/runs/${ids.run}/cbom`],
       ["node", ids.node && `/${B.team}/cbom/sources/nodes/${ids.node}`],
       ["asset", assets[0] && `/${B.team}/cbom/sources/assets/${assets[0].id}`]];
@@ -684,7 +699,8 @@ try {
     const foreign = [["run", ids.run && `/${A.team}/cbom/sources/runs/${ids.run}`, `/${A.team}/cbom/sources/runs/2147483000`],
       ["node", ids.node && `/${A.team}/cbom/sources/nodes/${ids.node}`, `/${A.team}/cbom/sources/nodes/2147483000`],
       ["asset", assets[0] && `/${A.team}/cbom/sources/assets/${assets[0].id}`, `/${A.team}/cbom/sources/assets/2147483000`],
-      ["run_cbom", ids.run && `/${A.team}/cbom/sources/runs/${ids.run}/cbom`, `/${A.team}/cbom/sources/runs/2147483000/cbom`]];
+      ["run_cbom", ids.run && `/${A.team}/cbom/sources/runs/${ids.run}/cbom`, `/${A.team}/cbom/sources/runs/2147483000/cbom`],
+      ["run_results", ids.run && `/${A.team}/cbom/sources/runs/${ids.run}/results`, `/${A.team}/cbom/sources/runs/2147483000/results`]];
     const leakTerms = [A.email, ...assets.slice(0, 5).map((a) => a.location)].filter(Boolean);
     for (const [name, path, missing] of foreign) {
       if (!path) continue;
@@ -700,6 +716,24 @@ try {
     const dom = await B.page.content();
     const aMarks = [A.email, ...assets.slice(0, 10).map((a) => a.location), state.runs?.[0] && `review-run-${state.runs[0]}`].filter(Boolean);
     s.check("b_ui_shows_no_a_data", !aMarks.some((m) => dom.includes(m)), { expected: "none of A's email, asset locations or run ids in B's page", observed: aMarks.filter((m) => dom.includes(m)), evidence: [await s.shot(B.page, "b-ui-on-a-url")] });
+    // CB-38: the run results page URL, under A's team and under B's own: "Run not found", none of A's data
+    if (ids.run) {
+      for (const [name, team] of [["a_team_url", A.team], ["b_team_url", B.team]]) {
+        await B.page.goto(`${UI}/${team}/cbom/runs/${ids.run}/results`, { waitUntil: "networkidle" });
+        await B.page.getByTestId("run-results-not-found").waitFor({ timeout: 15000 }).catch(() => {});
+        const notFound = (await B.page.getByTestId("run-results-not-found").count()) > 0;
+        const html = await B.page.content();
+        const leaked = aMarks.filter((m) => html.includes(m));
+        s.check(`b_results_page_not_found_${name}`, notFound && (await B.page.getByTestId("run-results").count()) === 0 && leaked.length === 0,
+          { expected: "Run not found, no results table, none of A's data", observed: { not_found: notFound, leaked }, subject: { probe: `results_page_${name}` },
+            evidence: [await s.shot(B.page, `b-results-${name}`)] });
+      }
+      // the merged scans list (runs_list_data) of B lists none of A's runs
+      const list = await apiGet(B, `/${B.team}/cbom/scans`);
+      const runIds = (list.body?.runs_list_data || []).map((r) => r.id);
+      s.check("b_runs_list_has_no_a_run", list.status === 200 && !runIds.includes(ids.run),
+        { expected: `no run #${ids.run} in team ${B.team}'s list`, observed: { status: list.status, runs: runIds.slice(0, 20) }, subject: { probe: "runs_list_data" } });
+    }
     s.notRun("b_node_claims_no_a_job", "DA G14 'B's node token claims none of A's jobs' needs a node enrolled in team B (CB-05)");
     const still = await apiGet(B, `/${B.team}/cbom/sources/runs`);
     s.check("b_not_logged_out", still.status === 200 && !/\/login/.test(B.page.url()), { expected: "B still signed in", observed: { status: still.status, url: new URL(B.page.url()).pathname }, evidence: [await s.shot(B.page, "b-on-a-url")] });

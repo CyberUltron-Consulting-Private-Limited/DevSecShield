@@ -516,11 +516,20 @@ TYPE_LABELS = {
     "coverage": "Not collected",
 }
 UI_FIELDS = ("asset_type", "impact", "location", "algorithm_cell", "finding", "quantum_vulnerable")
+# Compared only for rows read from data attributes (the old dialog showed the target only when it differed from the
+# location, so its cells cannot be compared to the item's target).
+UI_ATTR_FIELDS = ("target",)
+
+
+def ui_fields(row: dict[str, Any]) -> tuple[str, ...]:
+    return UI_FIELDS + UI_ATTR_FIELDS if row.get("reader") == ATTR_READER else UI_FIELDS
 
 
 def ui_expected(field: str, api: dict[str, Any]) -> Any:
     if field == "asset_type":
-        return TYPE_LABELS.get(api.get("type"), api.get("type"))
+        t = api.get("type")
+        # no type (null or ""): None; the page writes data-type="" for both, so both must render alike
+        return TYPE_LABELS.get(t, t) if t else None
     if field == "impact":
         return api.get("impact") or "Info"
     if field == "location":
@@ -533,10 +542,53 @@ def ui_expected(field: str, api: dict[str, Any]) -> Any:
     if field == "quantum_vulnerable":
         qv = api.get("quantum_vulnerable")
         return "Vulnerable" if qv is True else "Safe" if qv is False else "—"
+    if field == "target":
+        return api.get("target") or ""
     raise KeyError(field)
 
 
 def ui_observed(field: str, row: dict[str, Any]) -> Any:
+    if row.get("reader") == ATTR_READER:
+        return ui_from_attrs(field, row)
     key = {"asset_type": "type", "algorithm_cell": "algorithm", "quantum_vulnerable": "quantum"}.get(field, field)
     value = row.get(key, MISSING)
     return value.strip() if isinstance(value, str) else value
+
+
+# CB-38: the unified results page (/{team}/cbom/runs/{run}/results) carries each row's values as data attributes
+# (data-impact, -type, -location, -target, -algorithm, -key-size, -finding, -quantum, -status) instead of fixed
+# column positions. The gate reads those raw values (``reader: "data-attributes"``); they are rendered here exactly as
+# ui_expected renders the API item, so the same cell comparison holds for both readers.
+ATTR_READER = "data-attributes"
+# an unknown token stays as it is (and fails), it never becomes the "—" of an item without a quantum verdict
+_ATTR_QUANTUM = {"vulnerable": "Vulnerable", "safe": "Safe", "": "—"}
+
+
+def ui_from_attrs(field: str, row: dict[str, Any]) -> Any:
+    def raw(key: str) -> Any:
+        # attribute values are the API's strings verbatim (assetRowAttrs): never trimmed, so " x" != "x"
+        return row.get(key, MISSING)
+    if field == "asset_type":
+        t = raw("type")
+        return t if t is MISSING else (TYPE_LABELS.get(t, t) if t else None)
+    if field == "impact":
+        v = raw("impact")
+        return v if v is MISSING else (v or "Info")
+    if field == "location":
+        v = raw("location")
+        return v if v is MISSING else (v or "—")
+    if field == "algorithm_cell":
+        head, size = raw("algorithm"), raw("key_size")
+        if head is MISSING:
+            return MISSING
+        head = head or "—"
+        return f"{head} {size}" if size not in (MISSING, None, "", "0") else head
+    if field == "finding":
+        v = raw("finding")
+        return v if v is MISSING else (v or "—")
+    if field == "quantum_vulnerable":
+        v = raw("quantum")
+        return v if v is MISSING else _ATTR_QUANTUM.get(v, v)
+    if field == "target":
+        return raw("target")
+    raise KeyError(field)
