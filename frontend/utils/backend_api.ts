@@ -4605,7 +4605,7 @@ export interface CbomRunPosture {
     // CB-19 PR-2: the team's Mosca now, when it differs from what the run recorded at Start (null otherwise)
     mosca_now?: { configured: boolean; x: number | null; y: number | null; z: number | null; at_risk?: boolean; years_over?: number } | null
     top_risks: { id: number; type: string; name: string; location: string; impact: CbomImpact; criticality: string; source_name: string | null; score: number; hndl: boolean; finding: string | null }[]
-    compliance: { framework: string; clauses: { id: string; text: string; source: string; note?: string | null; assets: number; codes: string[] }[] }[]
+    compliance: { framework: string; clauses: { id: string; text: string; source: string; note?: string | null; assets: number; codes: string[] }[]; assets?: number }[]
     kb_version: string
     pqc_context: {
         mosca?: { inequality: string; definitions: Record<string, string>; source: string; paper: string }
@@ -5192,6 +5192,10 @@ export interface CbomRunAssetFilters extends CbomAssetFilters {
     view?: CbomRunAssetView
     status?: CbomFindingStatus
     source_id?: number
+    /** #270: comma-separated finding codes (a compliance clause's assets) */
+    code?: string
+    /** #270: comma-separated asset ids, at most 500 (a compliance requirement's refs) */
+    asset_id?: string
 }
 
 /** Wave status names of PUT /cbom/remediation (same values as utils/api/cbom_ops CbomWaveStatus). */
@@ -5222,9 +5226,14 @@ export interface CbomRunProvenance {
     credits: number | null
 }
 
+/** A finding code behind a clause: its knowledge-base title and remediation summary (#270). */
+export interface CbomClauseFinding { code: string; title: string; fix: string | null }
+
 export interface CbomRunComplianceFramework {
     framework: string
-    clauses: { clause: string; title: string; assets: number; codes: string[] }[]
+    clauses: { clause: string; title: string; assets: number; codes: string[]; source?: string | null; note?: string | null; findings?: CbomClauseFinding[] }[]
+    /** distinct assets behind any clause (#270; the clause counts overlap); null when it cannot be known */
+    assets?: number | null
 }
 
 /** The run's dashboard: the code page's CbomScanDashboardData; `metrics_available: false` until assignments carry done_at. */

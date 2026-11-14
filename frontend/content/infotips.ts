@@ -5846,9 +5846,9 @@ export const INFO_TIPS = {
   // src: frontend/components/cbom/results/RunSections.tsx:301-330 — CERT-In, RBI, SEBI CSCRF, NIST, CNSA 2.0
   "cbom.run.compliance": {
     label: "Compliance mapping",
-    what: "Regulatory clauses this run's findings touch, per framework (CERT-In, RBI, SEBI CSCRF, NIST, CNSA 2.0), with the number of assets and finding codes per clause. From the knowledge base, no AI.",
-    why: "Shows auditors exactly which requirements each weakness affects.",
-    example: "RBI · 3 clauses: 4.2 Encryption of data in transit, 12 assets, WEAK_TLS_VERSION.",
+    what: "Per framework (CERT-In, RBI, SEBI CSCRF, NIST, CNSA 2.0): a verdict (Pass, Fail, Partial or Not assessed) from the compliance checks' requirement results, the clauses the findings touch and the assets affected; then each failing clause with its findings, how to fix them and the regulation's text behind Show text. Click an asset count to filter the findings table. Knowledge base and checks, no AI.",
+    why: "Shows auditors what fails, where, and what to change, without reading every clause.",
+    example: "NIST · Partial · 3/6 requirements pass · 1 clause · 3 assets: SHA-1 based SSH key exchange. How to fix: use curve25519-sha256.",
   },
   // src: frontend/components/cbom/results/RunSections.tsx:370-386, backend/utilities/cbom_sources/posture.py:35-39 — impact x criticality x exposure
   "cbom.run.top_risks": {
