@@ -1002,6 +1002,7 @@
   "CWE-284": "Improper Access Control",
   "CWE-287": "Improper Authentication",
   "CWE-295": "Improper Certificate Validation",
+  "CWE-296": "Improper Following of a Certificate's Chain of Trust",
   "CWE-298": "Improper Validation of Certificate Expiration",
   "CWE-306": "Missing Authentication for Critical Functionality",
   "CWE-311": "Missing Encryption of Sensitive Data",
@@ -4326,6 +4327,103 @@
      "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
     }
    },
+   "CERT_CHAIN_EXTRA_EXPIRED": {
+    "attack": "Modern clients ignore it. Old clients that relied on the cross-sign, and some TLS libraries that do not look for an alternative path (OpenSSL 1.0.x), fail the connection.",
+    "category": "certificate",
+    "compliance": [
+     "certificates"
+    ],
+    "cve_rules": [],
+    "cves": [],
+    "cwe": [
+     "CWE-298",
+     "CWE-296"
+    ],
+    "default_impact": "Low",
+    "description": "The server sends an expired cross-signed CA certificate above its intermediate. Clients that trust the cross-signed CA as a root (its subject and key are a root of the scan node's trust store, or the chain also holds that root) build a valid path without it, so this is not the expired certificate outage that CERT_EXPIRED reports (the 2021 DST Root CA X3 / ISRG Root X1 case).",
+    "fix_class": {
+     "basis": "remove the expired cross-sign from the chain file the server is configured with",
+     "capability": false,
+     "class": "configurable"
+    },
+    "owasp": [
+     "misconfig"
+    ],
+    "owasp_2021": [
+     {
+      "basis": "CWE-296 is in OWASP's mapped CWE list",
+      "id": "A02:2021",
+      "label": "A02:2021 - Cryptographic Failures"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A05:2021",
+      "label": "A05:2021 - Security Misconfiguration"
+     }
+    ],
+    "owasp_2025": [
+     {
+      "basis": "CWE-296 is in OWASP's mapped CWE list",
+      "id": "A04:2025",
+      "label": "A04:2025 - Cryptographic Failures"
+     },
+     {
+      "basis": "CWE-298 is in OWASP's mapped CWE list",
+      "id": "A07:2025",
+      "label": "A07:2025 - Authentication Failures"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A02:2025",
+      "label": "A02:2025 - Security Misconfiguration"
+     }
+    ],
+    "pqc": null,
+    "references": [
+     "https://letsencrypt.org/docs/dst-root-ca-x3-expiration-september-2021/"
+    ],
+    "remediation": {
+     "steps": [
+      {
+       "how": "ssl_certificate must point to the full chain file (leaf first, then each intermediate; no root): cat leaf.pem intermediate.pem > fullchain.pem",
+       "platform": "nginx"
+      },
+      {
+       "how": "SSLCertificateFile with the leaf followed by its intermediates",
+       "platform": "Apache httpd 2.4.8+"
+      },
+      {
+       "how": "tls.crt holds the leaf followed by its intermediates; cert-manager writes this when the Issuer returns the chain",
+       "platform": "Kubernetes (cert-manager, ingress)"
+      },
+      {
+       "how": "Import the CA reply with its chain: keytool -importcert -trustcacerts -alias server -file fullchain.pem -keystore server.p12",
+       "platform": "Java (Tomcat, keytool)"
+      }
+     ],
+     "summary": "Remove the expired cross-sign from the chain the server sends (serve the leaf and its intermediates only); keep it only for clients you know need it."
+    },
+    "standards": [
+     "RFC 5280",
+     "RFC 4158 (path building)"
+    ],
+    "summary_rules": [],
+    "title": "Expired extra certificate in the served chain",
+    "verify": [
+     {
+      "command": "openssl s_client -connect {host}:{port} -servername {host} -showcerts </dev/null 2>/dev/null | grep -E '^ *[0-9]+ s:|^ +i:|NotAfter'",
+      "label": "Every certificate the server sends, with subject (s:) and issuer (i:)"
+     },
+     {
+      "command": "openssl s_client -connect {host}:{port} -servername {host} -verify_return_error </dev/null 2>&1 | grep -E 'Verify return code|verify error'",
+      "label": "Does the chain verify against the system roots?"
+     }
+    ],
+    "vex_default": {
+     "basis": "posture",
+     "reason": "clients that trust the cross-signed CA as a root build a valid path without the expired cross-sign; only legacy path builders are affected"
+    }
+   },
    "CERT_EXPIRED": {
     "attack": "Clients either fail closed (an outage) or are configured to ignore validation errors, which removes protection against impersonation.",
     "category": "certificate",
@@ -4427,7 +4525,7 @@
      "CWE-298"
     ],
     "default_impact": "Medium",
-    "description": "The certificate expires soon.",
+    "description": "The certificate expires soon: within 30 days, or, for a certificate whose lifetime is under 90 days (6-day ACME, 47-day CA/B Forum SC-081), within the last third of its lifetime, so a fresh short-lived certificate is not flagged.",
     "fix_class": {
      "basis": "re-issue or renew the certificate with the CA and deployment already in use",
      "capability": false,
@@ -4490,6 +4588,87 @@
     "vex_default": {
      "basis": "posture",
      "reason": "not expired yet: an operational deadline, no attack on the certificate today"
+    }
+   },
+   "CERT_NOT_YET_VALID": {
+    "attack": "A server that presents it fails every client that checks dates, and teams under pressure respond by turning validation off. A certificate staged on disk ahead of a planned switch is expected: check that nothing serves it before its start date.",
+    "category": "certificate",
+    "compliance": [
+     "certificates"
+    ],
+    "cve_rules": [],
+    "cves": [],
+    "cwe": [
+     "CWE-298"
+    ],
+    "default_impact": "Medium",
+    "description": "The certificate's validity period starts in the future (notBefore is more than a day after the time it was judged, so clock skew and time zones never flag a fresh certificate).",
+    "fix_class": {
+     "basis": "stop serving it before its start date, or re-issue it with the CA already in use",
+     "capability": false,
+     "class": "configurable"
+    },
+    "owasp": [
+     "misconfig"
+    ],
+    "owasp_2021": [
+     {
+      "basis": "category of the finding",
+      "id": "A05:2021",
+      "label": "A05:2021 - Security Misconfiguration"
+     }
+    ],
+    "owasp_2025": [
+     {
+      "basis": "CWE-298 is in OWASP's mapped CWE list",
+      "id": "A07:2025",
+      "label": "A07:2025 - Authentication Failures"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A02:2025",
+      "label": "A02:2025 - Security Misconfiguration"
+     }
+    ],
+    "pqc": null,
+    "references": [
+     "https://www.rfc-editor.org/rfc/rfc5280#section-4.1.2.5"
+    ],
+    "remediation": {
+     "steps": [
+      {
+       "how": "Re-issue the certificate with an RSA-3072 or ECDSA P-256/P-384 key and a SHA-256/384 signature, deploy it, then revoke the old one",
+       "platform": "Any CA"
+      },
+      {
+       "how": "openssl req -new -newkey ec -pkeyopt ec_paramgen_curve:P-256 -sha256 -nodes -keyout new.key -out new.csr -subj \"/CN={host}\"",
+       "platform": "OpenSSL CSR"
+      },
+      {
+       "how": "Request an ACM certificate with RSA_2048+ or EC_prime256v1 key algorithm and re-associate the listener",
+       "platform": "AWS ACM"
+      }
+     ],
+     "summary": "Do not serve it before its start date; if it was issued with a wrong date (a CA or host clock error), re-issue it."
+    },
+    "standards": [
+     "RFC 5280 (4.1.2.5 validity)"
+    ],
+    "summary_rules": [],
+    "title": "Certificate not valid yet",
+    "verify": [
+     {
+      "command": "openssl s_client -connect {host}:{port} -servername {host} </dev/null 2>/dev/null | openssl x509 -noout -subject -issuer -dates -text | grep -E 'Subject:|Issuer:|Not After|Signature Algorithm|Public-Key'",
+      "label": "Certificate the endpoint presents"
+     },
+     {
+      "command": "openssl x509 -in '{path}' -noout -subject -dates -text | grep -E 'Subject:|Not After|Signature Algorithm|Public-Key'",
+      "label": "Inspect the certificate file"
+     }
+    ],
+    "vex_default": {
+     "basis": "posture",
+     "reason": "a certificate staged ahead of its start date is expected; exposure only if a server presents it early, which the endpoint's own checks show"
     }
    },
    "CERT_REVOKED": {
@@ -4999,6 +5178,109 @@
     "vex_default": {
      "basis": "posture",
      "reason": "key-distribution hygiene: misuse needs one holder's key to leak first"
+    }
+   },
+   "CHAIN_INCOMPLETE": {
+    "attack": "Browsers that cache or download intermediates connect; other clients (curl, Java, Go, mobile apps, IoT, API consumers) fail, and the usual reaction is to switch certificate validation off, which allows impersonation.",
+    "category": "certificate",
+    "compliance": [
+     "certificates"
+    ],
+    "cve_rules": [],
+    "cves": [],
+    "cwe": [
+     "CWE-296",
+     "CWE-295"
+    ],
+    "default_impact": "Medium",
+    "description": "The server does not send a certificate its chain needs: either a certificate above the leaf is not the issuer of the one below it (a gap), or the leaf is sent alone while its CA publishes the issuing certificate for download (AIA caIssuers), i.e. an intermediate. The issuer is not a root of the scan node's trust store. A top CA certificate whose root is not sent is never reported: servers should not send roots.",
+    "fix_class": {
+     "basis": "configure the server with the full chain file (leaf and intermediates) the CA already issued",
+     "capability": false,
+     "class": "configurable"
+    },
+    "owasp": [
+     "crypto",
+     "misconfig"
+    ],
+    "owasp_2021": [
+     {
+      "basis": "CWE-296 is in OWASP's mapped CWE list",
+      "id": "A02:2021",
+      "label": "A02:2021 - Cryptographic Failures"
+     },
+     {
+      "basis": "CWE-295 is in OWASP's mapped CWE list",
+      "id": "A07:2021",
+      "label": "A07:2021 - Identification and Authentication Failures"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A05:2021",
+      "label": "A05:2021 - Security Misconfiguration"
+     }
+    ],
+    "owasp_2025": [
+     {
+      "basis": "CWE-296 is in OWASP's mapped CWE list",
+      "id": "A04:2025",
+      "label": "A04:2025 - Cryptographic Failures"
+     },
+     {
+      "basis": "CWE-295 is in OWASP's mapped CWE list",
+      "id": "A07:2025",
+      "label": "A07:2025 - Authentication Failures"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A02:2025",
+      "label": "A02:2025 - Security Misconfiguration"
+     }
+    ],
+    "pqc": null,
+    "references": [
+     "https://www.rfc-editor.org/rfc/rfc8446#section-4.4.2"
+    ],
+    "remediation": {
+     "steps": [
+      {
+       "how": "ssl_certificate must point to the full chain file (leaf first, then each intermediate; no root): cat leaf.pem intermediate.pem > fullchain.pem",
+       "platform": "nginx"
+      },
+      {
+       "how": "SSLCertificateFile with the leaf followed by its intermediates",
+       "platform": "Apache httpd 2.4.8+"
+      },
+      {
+       "how": "tls.crt holds the leaf followed by its intermediates; cert-manager writes this when the Issuer returns the chain",
+       "platform": "Kubernetes (cert-manager, ingress)"
+      },
+      {
+       "how": "Import the CA reply with its chain: keytool -importcert -trustcacerts -alias server -file fullchain.pem -keystore server.p12",
+       "platform": "Java (Tomcat, keytool)"
+      }
+     ],
+     "summary": "Serve the full chain: the leaf followed by every intermediate up to (not including) the root."
+    },
+    "standards": [
+     "RFC 8446 (4.4.2)",
+     "RFC 5246 (7.4.2)"
+    ],
+    "summary_rules": [],
+    "title": "Incomplete certificate chain",
+    "verify": [
+     {
+      "command": "openssl s_client -connect {host}:{port} -servername {host} -showcerts </dev/null 2>/dev/null | grep -E '^ *[0-9]+ s:|^ +i:|NotAfter'",
+      "label": "Every certificate the server sends, with subject (s:) and issuer (i:)"
+     },
+     {
+      "command": "openssl s_client -connect {host}:{port} -servername {host} -verify_return_error </dev/null 2>&1 | grep -E 'Verify return code|verify error'",
+      "label": "Does the chain verify against the system roots?"
+     }
+    ],
+    "vex_default": {
+     "basis": "inferred",
+     "reason": "the missing issuer is inferred from the served chain and the node's trust store; a private root that clients already hold makes it not affected"
     }
    },
    "DB_10G_VERIFIER": {

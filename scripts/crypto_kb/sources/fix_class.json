@@ -57,6 +57,14 @@
     "kb:findings.node.CBC_ONLY.remediation"
    ]
   },
+  "CERT_CHAIN_EXTRA_EXPIRED": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "remove the expired cross-sign from the chain file the server is configured with",
+   "sources": [
+    "kb:findings.node.CERT_CHAIN_EXTRA_EXPIRED.remediation (CB-17)"
+   ]
+  },
   "CERT_EXPIRED": {
    "class": "configurable",
    "capability": false,
@@ -71,6 +79,14 @@
    "basis": "re-issue or renew the certificate with the CA and deployment already in use",
    "sources": [
     "kb:findings.node.CERT_EXPIRES_30D.remediation"
+   ]
+  },
+  "CERT_NOT_YET_VALID": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "stop serving it before its start date, or re-issue it with the CA already in use",
+   "sources": [
+    "kb:findings.node.CERT_NOT_YET_VALID.remediation (CB-17)"
    ]
   },
   "CERT_REVOKED": {
@@ -120,6 +136,14 @@
    "basis": "issue per-host certificates with the CA and ACME tooling already in use, and revoke the unused wildcards",
    "sources": [
     "kb:findings.node.CERT_WILDCARD_SPRAWL.remediation (checked 2026-11-14 against #112 head c0019017)"
+   ]
+  },
+  "CHAIN_INCOMPLETE": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "configure the server with the full chain file (leaf and intermediates) the CA already issued",
+   "sources": [
+    "kb:findings.node.CHAIN_INCOMPLETE.remediation (CB-17)"
    ]
   },
   "DB_10G_VERIFIER": {

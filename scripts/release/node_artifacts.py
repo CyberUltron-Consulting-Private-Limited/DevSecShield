@@ -7,7 +7,8 @@ next to the image file that scripts/release/scan_node_image.sh wrote:
                                                         appVersion = <version>, so its default tag is the image's
   <out>/cbom-scan-node-ova-kit-<version>.zip (+ .sha256) Packer kit for the OVA, with a README for customers
   <out>/cbom-scan-node-ami-kit-<version>.zip (+ .sha256) Packer kit for the AMI, with a README for customers
-  <out>/manifest.json                                   version, image_ref, file names (what the server reads)
+  <out>/manifest.json                                   version, build (--build: the image's commit), image_ref, file
+                                                        names (what the server reads)
 
 The kits build from the downloaded image file (node_image_archive), never from a registry; their defaults name this
 version's file and image. Every file is reproducible: fixed times, owners and order, so the same tree gives the same
@@ -32,6 +33,7 @@ REPO = Path(__file__).resolve().parents[2]
 CHART = REPO / "deploy" / "helm" / "cbom-scan-node"
 IMAGES = REPO / "deploy" / "node-images"
 VERSION_RE = re.compile(r"[0-9][0-9A-Za-z.-]{0,18}")  # scan_node_image.sh NODE_VERSION_RE
+BUILD_RE = re.compile(r"[0-9a-f]{40}")  # the commit scan_node_image.sh bakes in (ZS_NODE_BUILD)
 # [registry[:port]/]path:tag, as backend/routers/cbom_node_artifacts.py accepts it
 IMAGE_RE = re.compile(r"(?:[A-Za-z0-9.-]+(?::[0-9]{1,5})?/)?[a-z0-9]+(?:[._-][a-z0-9]+)*(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)*"
                       r":[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}")
@@ -119,7 +121,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--version", required=True)
     ap.add_argument("--image-ref", required=True, help="the name the image file loads as (docker load)")
     ap.add_argument("--out", required=True, type=Path)
+    ap.add_argument("--build", default="", help="the 40-character commit the image was built from (its "
+                    "org.opencontainers.image.revision label; empty: none). The server compares every node's reported "
+                    "<version>+<12-character commit> with it")
     args = ap.parse_args(argv)
+    build = args.build.strip().lower()
+    if build and not BUILD_RE.fullmatch(build):
+        raise SystemExit(f"node_artifacts: --build must be a 40-character commit, not {args.build[:60]!r}")
     if not VERSION_RE.fullmatch(args.version):
         raise SystemExit(f"node_artifacts: invalid version {args.version!r} (see scan_node_image.sh)")
     if not IMAGE_RE.fullmatch(args.image_ref) or not args.image_ref.endswith(f":{args.version}"):
@@ -136,7 +144,8 @@ def main(argv: list[str] | None = None) -> int:
         write_sidecar(path)
         files[key] = path.name
     (out / "manifest.json").write_text(json.dumps(
-        {"version": args.version, "image_ref": args.image_ref, "files": files}, indent=2, sort_keys=True) + "\n")
+        {"version": args.version, "build": build or None, "image_ref": args.image_ref, "files": files}, indent=2,
+        sort_keys=True) + "\n")
     for name in files.values():
         print(f"{name}\t{(out / name).stat().st_size}\t{sha256_file(out / name)}")
     return 0
