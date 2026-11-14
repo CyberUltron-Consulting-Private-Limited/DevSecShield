@@ -84,7 +84,8 @@ from backend.utilities.cbom_sources import schedules as SCHED
 from backend.utilities.cbom_sources.classify import ASSET_TYPES
 from backend.utilities.cbom_sources.kinds import (KINDS, METADATA_FIELDS, credential_target_problem, ct_discovery_enabled,
                                                 validate_secret_value)
-from backend.utilities.cbom_sources.planning import RATES_C, credits, node_status, plan_run, source_targets
+from backend.utilities.cbom_sources.planning import RATES_C, credits, network_sweep_totals, node_status, plan_run, \
+    source_targets
 from backend.utilities.cbom_sources.schemas import (
     AreaUpdate,
     EstimateBody,
@@ -620,8 +621,13 @@ def _list_sources(engine, team_id: int, kind: str | None, group: str | None) -> 
             rows = [r for r in rows if KINDS.get(r.kind) and KINDS[r.kind].group == group]
         nodes = {n.id: n for n in session.exec(select(CbomScanNode).where(CbomScanNode.team_id == team_id)).all()}
         collects = last_collects(session, team_id, [r.id for r in rows])
-        return {"server_time": iso_z(now),
-                "sources": [public_source(r, settings, nodes.get(r.node_id), now, collects.get(r.id)) for r in rows]}
+        out = {"server_time": iso_z(now),
+               "sources": [public_source(r, settings, nodes.get(r.node_id), now, collects.get(r.id)) for r in rows]}
+        if group in (None, "network") and kind in (None, "network_range"):
+            ranges = session.exec(select(CbomCollectionSource).where(
+                CbomCollectionSource.team_id == team_id, CbomCollectionSource.kind == "network_range")).all()
+            out["network_totals"] = network_sweep_totals(list(ranges), settings)  # N7: unique, enabled ranges only
+        return out
 
 
 @router.get(BASE + "/items", dependencies=READ, summary="List sources")
@@ -1622,8 +1628,13 @@ FIX_VALUE = "^(configurable|code-fixed|vendor-fixed|hardware-fixed|unknown|none)
 
 def _agility_baseline(engine, team_id: int, what: str, params: dict) -> dict:
     with Session(engine) as session:
+        if what == "history":
+            from backend.utilities.cbom_sources import agility_store as AGILITY_STORE
+
+            return {"items": AGILITY_STORE.history(session, team_id, **params)}
         rollup = AGILITY_ROLLUP.cached(session, team_id)
-        return rollup.summary(**params) if what == "summary" else rollup.subjects_page(**params)
+        session.commit()  # the estate store's stale classes healed on the way (agility_store.heal)
+        return rollup.summary(**params) if what == "summary" else rollup.subjects_page(**params, session=session)
 
 
 def _cursor_or_400(after: str | None) -> None:
@@ -1662,6 +1673,15 @@ async def agility_subjects(team_id: TeamId,
     return _ok(await _run("agility subjects", team_id, _agility_baseline, engine, team_id, "subjects",
                           {"fix_class": fix_class, "system": system, "excl_pq": view == "excl_pq", "after": after,
                            "limit": limit}))
+
+
+@router.get("/{team_id}/cbom/agility/history", dependencies=READ,
+            summary="The team's crypto-agility baseline written at each run (newest first, CB-25)")
+async def agility_history(team_id: TeamId, limit: int = Query(default=50, ge=1, le=500),
+                          Authorization: AuthHeader = None):
+    engine, _user = await authorize(team_id, Authorization)
+    return _ok(await _run("agility history", team_id, _agility_baseline, engine, team_id, "history",
+                          {"limit": limit}))
 
 
 def _job_assets(engine, team_id: int, job_id: int, params: dict) -> dict:
