@@ -18,8 +18,13 @@ Checks on a code fix (any failure withholds the fix and returns the knowledge-ba
   the language's list of crypto-configuration APIs (ciphers, hashes, MACs, KDFs, randomness, key generation,
   encodings, TLS context options); nothing that connects, opens, requests or executes is on any list (Python: every
   call target and attribute chain from the tree, module members resolved through the window's imports, one hop
-  only; other languages: call and member names from the code with strings and comments blanked; JS / TS computed
-  member access whose key is not a plain literal is withheld);
+  only, built-ins passed as values or used as decorators count as calls, ``os.environ`` may only be read; other
+  languages: every call / member chain judged by its receiver - ``Type.member`` / ``pkg.Func`` pairs, members of a
+  local only when the local was made by a listed call -, with interpolations ``${...}`` / ``$"{...}"`` checked as
+  code; JS / TS computed member access only with a plain identifier-character literal key). A call that is not on
+  the list passes only as an exact copy of one of the window's own calls (counted; Python ignores TLS keywords);
+* no security downgrade: verification off (``InsecureSkipVerify``, ``CERT_NONE``, ``verify=False``,
+  ``rejectUnauthorized: false``, trust-all managers ...), TLS 1.0 / 1.1 / SSL, NULL / RC4 / DES / MD5;
 * every language: added lines are NFKC-normalised, then no new network or process call (``_NETWORK``, plus computed
   global access, ``new Function`` and non-literal ``require`` / ``import()`` outside Python), no non-ASCII character
   the window did not already have, no URL or domain the window did not already have;
@@ -34,6 +39,7 @@ Checks on a code fix (any failure withholds the fix and returns the knowledge-ba
 from __future__ import annotations
 
 import ast
+import builtins
 import difflib
 import json
 import re
@@ -75,7 +81,8 @@ _PY_CRYPTOGRAPHY = {"cryptography.hazmat.primitives.ciphers.aead", "cryptography
                     "cryptography.hazmat.primitives.asymmetric.rsa", "cryptography.hazmat.primitives.asymmetric.ec",
                     "cryptography.hazmat.primitives.asymmetric.ed25519",
                     "cryptography.hazmat.primitives.asymmetric.padding", "cryptography.hazmat.primitives.serialization",
-                    "cryptography.hazmat.primitives", "cryptography.hazmat.primitives.padding"}
+                    "cryptography.hazmat.primitives", "cryptography.hazmat.primitives.padding",
+                    "cryptography.fernet"}
 ALLOWED_IMPORTS: dict[str, dict[str, set[str]]] = {
     # code -> language -> extra modules
     "WEAK_CIPHER_MODE": {"python": _PY_CRYPTOGRAPHY | {"Crypto.Cipher", "Cryptodome.Cipher", "Crypto.Random",
@@ -353,8 +360,15 @@ def _py_refs(tree: ast.AST) -> Counter[str]:
     parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
     os_names = {"os"} | {a.asname for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names
                          if a.name == "os" and a.asname}
+    environ_names = {a.asname or a.name for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module == "os"
+                     for a in n.names if a.name in ("environ", "environb")}
     refs: Counter[str] = Counter()
     for node in ast.walk(tree):
+        environ = (isinstance(node, ast.Attribute) and node.attr in ("environ", "environb")
+                   and isinstance(node.value, ast.Name) and node.value.id in os_names) or (
+            isinstance(node, ast.Name) and node.id in environ_names)
+        if environ and not _py_environ_read(node, parents):
+            refs["os.environ (written or aliased)"] += 1
         if isinstance(node, ast.Import):
             refs.update(f"import {a.name}" for a in node.names if a.name.split(".")[0] in _PY_DANGER_NAMES)
         elif isinstance(node, ast.ImportFrom):
@@ -380,6 +394,18 @@ def _py_refs(tree: ast.AST) -> Counter[str]:
                     node.attr.startswith("__") and node.attr.endswith("__") and node.attr not in _PY_DUNDER_OK):
                 refs[f".{node.attr}"] += 1
     return refs
+
+
+def _py_environ_read(node: ast.AST, parents: dict[ast.AST, ast.AST]) -> bool:
+    """``os.environ`` only read: ``os.environ['X']`` (load), ``os.environ.get(...)``, ``'X' in os.environ``. A store,
+    ``del``, ``update`` / ``setdefault`` / ``pop`` or binding it to a name (``e := os.environ``) is not a read."""
+    parent = parents.get(node)
+    if isinstance(parent, ast.Subscript) and parent.value is node:
+        return isinstance(parent.ctx, ast.Load)
+    if isinstance(parent, ast.Attribute) and parent.value is node:
+        return parent.attr == "get" and isinstance(parents.get(parent), ast.Call)
+    return isinstance(parent, ast.Compare) and node in parent.comparators and all(
+        isinstance(op, (ast.In, ast.NotIn)) for op in parent.ops)
 
 
 def _py_literal(node: ast.AST) -> str | bytes | None:
@@ -495,10 +521,13 @@ _PY_KNOWN_MODULES = {
     "mmap", "fcntl", "resource", "pwd", "grp", "socketserver", "functools", "itertools", "copyreg", "code",
     "codeop", "pydoc", "dis", "tracemalloc", "faulthandler", "atexit", "warnings", "base64", "binascii", "hashlib",
     "hmac", "secrets", "certifi", "argon2", "bcrypt", "cryptography", "Crypto", "Cryptodome", "nacl", "string"}
+_PY_BUILTIN_NAMES = set(dir(builtins))
 _PY_BUILTINS_OK = {"len", "bytes", "bytearray", "int", "str", "bool", "float", "isinstance", "range", "min", "max",
                    "hex", "ord", "chr", "list", "dict", "tuple", "set", "frozenset", "super", "enumerate", "zip",
                    "sorted", "reversed", "any", "all", "abs", "divmod", "memoryview", "ValueError", "TypeError",
-                   "RuntimeError", "KeyError", "Exception", "NotImplementedError", "PermissionError"}
+                   "RuntimeError", "KeyError", "Exception", "NotImplementedError", "PermissionError",
+                   "OSError", "AttributeError", "IndexError", "LookupError", "OverflowError", "UnicodeDecodeError",
+                   "UnicodeEncodeError", "AssertionError", "ImportError"}
 # crypto constructors / helpers a fix may call by their usual imported name even when the import sits above a stored
 # fragment (the import itself, when added, still goes through the import allow-list)
 _PY_CRYPTO_NAMES = {"AESGCM", "AESCCM", "AESSIV", "AESOCB3", "AESGCMSIV", "ChaCha20Poly1305", "Fernet", "MultiFernet",
@@ -513,7 +542,7 @@ _PY_METHOD_ALLOW = {
     "set_ciphers", "set_ecdh_curve", "load_verify_locations", "load_cert_chain", "load_default_certs",
     "set_default_verify_paths", "set_alpn_protocols", "copy", "to_bytes", "from_bytes", "startswith", "endswith",
     "strip", "rstrip", "lstrip", "split", "join", "lower", "upper", "replace", "append", "extend", "items", "keys",
-    "values", "pad", "unpad", "new", "zfill", "ljust", "rjust"}
+    "values", "pad", "unpad", "new", "zfill", "ljust", "rjust", "hash", "check_needs_rehash"}
 
 
 def _py_chain(node: ast.AST) -> list[str] | None:
@@ -527,28 +556,62 @@ def _py_chain(node: ast.AST) -> list[str] | None:
     return None
 
 
-def _py_api_refs(tree: ast.AST) -> Counter[str]:
-    """Every call target and every attribute chain in a tree: ``f()``, ``a.b.c`` / ``a.b.c()``, and ``*.m`` /
-    ``*.m()`` for a member of something that is not a name (a call result, a subscript, a literal)."""
+def _py_call_ref(call: ast.Call) -> str:
+    """The allow-list key of a call: ``f()``, ``a.b.c()``, ``*.m()`` (member of a non-name), ``<expr>()``."""
+    func = call.func
+    if isinstance(func, ast.Name):
+        return f"{func.id}()"
+    if isinstance(func, ast.Attribute):
+        chain = _py_chain(func)
+        return (".".join(chain) if chain is not None else f"*.{func.attr}") + "()"
+    return "<expr>()"
+
+
+# keyword arguments a TLS / crypto fix changes on a call the window already makes (requests.get(url, verify=False))
+_PY_TLS_KW = {"verify", "timeout", "ssl_context", "context", "check_hostname", "cafile", "capath", "cadata",
+              "cert_reqs", "ssl_version", "minimum_version", "ciphers", "ssl", "tls"}
+
+
+def _py_call_key(call: ast.Call) -> str:
+    """A call's text without the TLS keywords above: an added copy of a call the window makes must match one of the
+    window's copies exactly (no new arguments to an existing ``sock.sendall``)."""
+    trimmed = ast.Call(func=call.func, args=call.args, keywords=[k for k in call.keywords if k.arg not in _PY_TLS_KW])
+    return ast.unparse(trimmed)
+
+
+def _py_api_refs(tree: ast.AST) -> tuple[list[tuple[str, str]], Counter[str]]:
+    """(every call as (allow-list key, call text), every other reference): attribute chains ``a.b.c``, members of a
+    non-name ``*.m``, decorators (called), and built-in names used as values (``max(x, key=print)``)."""
     parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
+    stored = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Store)}
+    calls: list[tuple[str, str]] = []
     refs: Counter[str] = Counter()
     for node in ast.walk(tree):
-        called = isinstance(parents.get(node), ast.Call) and parents[node].func is node  # type: ignore[attr-defined]
-        if isinstance(node, ast.Name) and called:
-            refs[f"{node.id}()"] += 1
-        elif isinstance(node, ast.Attribute):
-            parent = parents.get(node)
+        parent = parents.get(node)
+        called = isinstance(parent, ast.Call) and parent.func is node
+        if isinstance(node, ast.Call):
+            calls.append((_py_call_ref(node), _py_call_key(node)))
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            for dec in node.decorator_list:  # a decorator is a call
+                if not isinstance(dec, ast.Call):
+                    chain = _py_chain(dec)
+                    key = (".".join(chain) if chain is not None else "<expr>") + "()"
+                    calls.append((key, ast.unparse(dec) + "()"))
+        if isinstance(node, ast.Name) and not called and isinstance(node.ctx, ast.Load) and \
+                node.id in _PY_BUILTIN_NAMES and node.id not in stored:
+            refs[f"{node.id}()"] += 1  # a built-in passed around is as good as called
+        elif isinstance(node, ast.Attribute) and not called:
             if isinstance(parent, ast.Attribute) and parent.value is node:
                 continue  # not the whole chain
             chain = _py_chain(node)
             if chain is not None:
-                refs[".".join(chain) + ("()" if called else "")] += 1
+                refs[".".join(chain)] += 1
             else:
                 inner: ast.AST = node
-                while isinstance(inner, ast.Attribute):  # every member of a non-name base
-                    refs[f"*.{inner.attr}" + ("()" if inner is node and called else "")] += 1
+                while isinstance(inner, ast.Attribute):
+                    refs[f"*.{inner.attr}"] += 1
                     inner = inner.value
-    return refs
+    return calls, refs
 
 
 def _py_bindings(trees: list[ast.AST]) -> tuple[dict[str, str], dict[str, str], set[str]]:
@@ -615,18 +678,37 @@ def _blank_py(text: str) -> str:
 
 
 def _py_unlisted(after: list[ast.Module], before: list[ast.Module], original_code: str) -> list[str]:
-    """API references the rewrite adds that are neither in the stored window nor on the allow-list."""
-    refs_after: Counter[str] = sum((_py_api_refs(t) for t in after), Counter())
-    refs_before: Counter[str] = sum((_py_api_refs(t) for t in before), Counter())
+    """API references the rewrite adds that are not on the allow-list. A call that is not listed passes only as an
+    exact copy of one of the window's own calls (TLS keywords aside), counted: a second ``sock.sendall(...)`` with
+    other arguments is withheld. Other references pass when the window already has them."""
     modules, froms, defs = _py_bindings(after)
     out = []
+    before_calls: Counter[str] = Counter()
+    refs_before: Counter[str] = Counter()
+    for t in before:
+        calls, refs = _py_api_refs(t)
+        before_calls.update(key for _ref, key in calls)
+        refs_before.update(refs)
+    after_calls: Counter[str] = Counter()
+    refs_after: Counter[str] = Counter()
+    for t in after:
+        calls, refs = _py_api_refs(t)
+        refs_after.update(refs)
+        for ref, key in calls:
+            if not _py_ref_ok(ref, modules, froms, defs):
+                after_calls[key] += 1
+                if after_calls[key] > before_calls[key]:
+                    out.append(ref)
+        for node in ast.walk(t):  # trust stores from a literal path (only the environment or certifi)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and \
+                    node.func.attr in ("load_verify_locations", "load_cert_chain") and any(
+                        isinstance(a, ast.Constant) and isinstance(a.value, str)
+                        for a in node.args + [k.value for k in node.keywords]):
+                out.append(f"{node.func.attr}(<literal path>)")
     for ref in sorted(set(refs_after - refs_before)):
-        if ref in refs_before or (ref[:-2] if ref.endswith("()") else ref) in refs_before:
-            continue
         text = ref[1:] if ref.startswith("*.") else ref
-        if re.search(r"(?<![\w.])" + re.escape(text.removesuffix("()")) + (r"\s*\(" if ref.endswith("()") else r"\b"),
-                     original_code):
-            continue  # the stored window already does this (a fragment's context lines)
+        if not ref.endswith("()") and re.search(r"(?<![\w.])" + re.escape(text) + r"\b", original_code):
+            continue  # the stored window already reads this (a fragment's context lines)
         if not _py_ref_ok(ref, modules, froms, defs):
             out.append(ref)
     for name, src in froms.items():  # from ssl import create_connection
@@ -637,114 +719,461 @@ def _py_unlisted(after: list[ast.Module], before: list[ast.Module], original_cod
     return sorted(set(out))
 
 
-# other languages: call names and member names, from code with strings and comments blanked
+_IMPORT_STMT = re.compile(r"\b(?:import\s+(?:static\s+)?[\w.*]+|using\s+(?:static\s+)?[\w.]+(?:\s*=\s*[\w.]+)?|"
+                          r"package\s+[\w.]+)\s*;?")
+
+
+# ------------------------------------------------------------------- other languages: receiver-qualified allow-list
+# Code is scanned (strings and comments blanked in place, interpolations ${...} / {...} / $"..." pulled out and
+# checked like any other code), split into call / member chains, and every chain judged by its receiver:
+#   Type.member / pkg.Func      -> the pair is on the language's list (Aes.Create, aes.NewCipher, Cipher.getInstance)
+#   local.member                -> the local was initialised from an allow-listed call in the window or the rewrite
+#                                  and the member is on the method list (or harmless on anything: length, toString)
+#   new T(...) / T(...)         -> T is on the constructor list; f(...) -> listed, or declared in the rewrite
+# Anything else passes only as an exact copy of a call / access the window already makes (counted).
 _KEYWORDS = {"if", "for", "while", "switch", "catch", "return", "typeof", "sizeof", "function", "func", "fun", "await",
              "async", "super", "this", "new", "throw", "throws", "else", "do", "try", "finally", "using", "lock",
              "fixed", "foreach", "synchronized", "assert", "yield", "delete", "void", "in", "of", "instanceof",
              "defer", "go", "select", "with", "when", "is", "as", "default", "case", "var", "let", "const", "val",
              "nameof", "checked", "unchecked", "base", "init", "get", "set", "and", "or", "not", "import", "package",
              "struct", "interface", "map", "chan", "type", "class", "enum", "record", "object", "static", "public",
-             "private", "protected", "internal", "override", "readonly", "final", "abstract", "out", "ref", "params"}
-_JS_CALLS = {"require", "String", "Number", "Boolean", "Array", "Uint8Array", "Uint32Array", "ArrayBuffer", "DataView",
-             "BigInt", "Error", "TypeError", "RangeError", "parseInt", "isNaN", "Promise", "TextEncoder",
-             "TextDecoder", "Map", "Set", "Date"}
-_JS_MEMBERS = {
-    "randomBytes", "randomFillSync", "randomFill", "randomInt", "randomUUID", "getRandomValues", "createCipheriv",
-    "createDecipheriv", "createHash", "createHmac", "createSign", "createVerify", "createSecretKey",
-    "createPrivateKey", "createPublicKey", "generateKeyPair", "generateKeyPairSync", "generateKey",
-    "generateKeySync", "pbkdf2", "pbkdf2Sync", "scrypt", "scryptSync", "hkdf", "hkdfSync", "timingSafeEqual",
-    "getCiphers", "getHashes", "getCurves", "publicEncrypt", "privateDecrypt", "sign", "verify", "update", "final",
-    "digest", "getAuthTag", "setAuthTag", "setAAD", "setAutoPadding", "export", "subtle", "webcrypto", "encrypt",
-    "decrypt", "importKey", "exportKey", "deriveKey", "deriveBits", "wrapKey", "unwrapKey", "constants", "crypto",
-    "from", "alloc", "concat", "toString", "slice", "subarray", "length", "byteLength", "equals", "compare",
-    "isBuffer", "env", "encode", "decode", "then", "map", "join", "push", "includes", "indexOf", "startsWith",
-    "endsWith", "padStart", "padEnd", "split", "trim", "freeze", "parse", "stringify", "floor", "min", "max",
-    "createSecureContext", "checkServerIdentity", "minVersion", "maxVersion", "ciphers", "secureProtocol",
-    "rejectUnauthorized", "ecdhCurve", "honorCipherOrder", "secureOptions"}
-_JAVA_CALLS = {"SecureRandom", "SecretKeySpec", "IvParameterSpec", "GCMParameterSpec", "PBEKeySpec",
-               "ChaCha20ParameterSpec", "OAEPParameterSpec", "MGF1ParameterSpec", "PSSParameterSpec",
-               "ECGenParameterSpec", "RSAKeyGenParameterSpec", "String", "SSLParameters", "IllegalStateException",
-               "IllegalArgumentException", "RuntimeException", "GeneralSecurityException", "byte", "char", "int"}
-_JAVA_MEMBERS = {
-    "getInstance", "getInstanceStrong", "init", "doFinal", "update", "updateAAD", "getIV", "getParameters",
-    "getBlockSize", "getOutputSize", "generateKey", "generateSecret", "getEncoded", "getAlgorithm", "getFormat",
-    "nextBytes", "digest", "reset", "initialize", "generateKeyPair", "getPublic", "getPrivate", "initSign",
-    "initVerify", "sign", "verify", "getDecoder", "getEncoder", "getUrlDecoder", "getUrlEncoder", "decode",
-    "encode", "encodeToString", "getBytes", "getenv", "arraycopy", "copyOf", "copyOfRange", "fill", "equals",
-    "isEqual", "allocate", "put", "array", "wrap", "length", "getDefaultAlgorithm", "getTrustManagers",
-    "getKeyManagers", "getDefaultSSLParameters", "getSupportedSSLParameters", "setProtocols", "setCipherSuites",
-    "setEndpointIdentificationAlgorithm", "valueOf", "toString", "isEmpty", "orElseThrow"}
-_CS_CALLS = {"AesGcm", "AesCcm", "ChaCha20Poly1305", "HMACSHA256", "HMACSHA384", "HMACSHA512", "Rfc2898DeriveBytes",
-             "ArgumentException", "InvalidOperationException", "CryptographicException", "HashAlgorithmName"}
-_CS_MEMBERS = {
-    "Create", "GetBytes", "Fill", "Encrypt", "Decrypt", "Pbkdf2", "HashData", "ComputeHash", "FixedTimeEquals",
-    "GenerateKey", "GenerateIV", "CreateEncryptor", "CreateDecryptor", "TransformFinalBlock", "TransformBlock",
-    "EncryptCbc", "DecryptCbc", "FromBase64String", "ToBase64String", "FromHexString", "ToHexString",
-    "GetEnvironmentVariable", "GetString", "UTF8", "ASCII", "Key", "IV", "Mode", "Padding", "KeySize", "BlockSize",
-    "NonceByteSizes", "TagByteSizes", "MaxSize", "Length", "CopyTo", "Clear", "AsSpan", "ToArray", "SequenceEqual",
-    "ImportSubjectPublicKeyInfo", "ExportSubjectPublicKeyInfo", "ImportPkcs8PrivateKey", "ExportPkcs8PrivateKey",
-    "SignData", "VerifyData", "OaepSHA256", "OaepSHA384", "Pss", "Pkcs1", "SHA256", "SHA384", "SHA512",
-    "SslProtocols", "Tls12", "Tls13", "EnabledSslProtocols", "CheckCertificateRevocation", "Shared"}
-_GO_CALLS = {"make", "len", "cap", "append", "copy", "panic", "byte", "string", "int", "uint32", "uint64", "int64"}
-_GO_MEMBERS = {
-    "NewCipher", "NewGCM", "NewGCMWithNonceSize", "NonceSize", "Overhead", "Seal", "Open", "Read", "ReadFull",
-    "Reader", "Getenv", "LookupEnv", "DecodeString", "EncodeToString", "StdEncoding", "URLEncoding",
-    "RawStdEncoding", "RawURLEncoding", "Sum256", "Sum512", "New", "Sum", "Write", "Reset", "Size", "BlockSize",
-    "Equal", "IDKey", "Key", "GenerateKey", "P256", "P384", "P521", "SignASN1", "VerifyASN1", "Sign", "Verify",
-    "SignPKCS1v15", "SignPSS", "EncryptOAEP", "DecryptOAEP", "Config", "MinVersion", "MaxVersion", "VersionTLS12",
-    "VersionTLS13", "CipherSuites", "CurvePreferences", "X25519", "SystemCertPool", "NewCertPool",
-    "AppendCertsFromPEM", "RootCAs", "ParseCertificate", "ParsePKCS8PrivateKey", "MarshalPKCS8PrivateKey",
-    "ConstantTimeCompare", "Errorf"}
-_LANG_API: dict[str, tuple[set[str], set[str]]] = {
-    "javascript": (_JS_CALLS, _JS_MEMBERS), "typescript": (_JS_CALLS, _JS_MEMBERS),
-    "java": (_JAVA_CALLS, _JAVA_MEMBERS), "kotlin": (_JAVA_CALLS, _JAVA_MEMBERS),
-    "csharp": (_CS_CALLS, _CS_MEMBERS), "go": (_GO_CALLS, _GO_MEMBERS)}
-_STRINGISH = re.compile(r"""("(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\])*`)""")
-_COMMENTS = re.compile(r"//[^\n]*|/\*.*?\*/", re.S)
-_MEMBER = re.compile(r"(?:\?\.|\.|::|->)\s*([A-Za-z_$][\w$]*)")
-_CALL = re.compile(r"(?<![\w$.])([A-Za-z_$][\w$]*)\s*(?:<[\w\s,.<>?\[\]]*>)?\s*\(")
-_LITERAL_KEY = re.compile(r"""[\w$)\]]\s*(?:\?\.)?\[\s*(['"`])([^'"`\\]*)\1\s*\]""")
-_COMPUTED = re.compile(r"[\w$)\]]\s*(?:\?\.)?\[([^\[\]]*)\]")
-_PLAIN_KEY = re.compile(r"""\s*(?:'[^'\\]*'|"[^"\\]*"|`[^`\\$]*`|\d+)?\s*""")
-_DECLARED = (re.compile(r"\b(?:function|class|const|let|var|val|fun|func|struct|interface)\s+([A-Za-z_$][\w$]*)"),
-             re.compile(r"\bfunc\s+\([^)]*\)\s*([A-Za-z_]\w*)"), re.compile(r"\b([A-Za-z_]\w*)\s*:="),
-             re.compile(r"\b([A-Za-z_]\w*)\s*\([^()]*\)\s*(?:throws\s+[\w.,\s]+)?\{"))
+             "private", "protected", "internal", "override", "readonly", "final", "abstract", "out", "ref", "params",
+             "null", "nil", "true", "false", "undefined", "range", "export", "extends", "implements", "break",
+             "continue", "goto", "fallthrough", "byte", "int", "long", "short", "char", "boolean", "bool", "float",
+             "double", "string", "uint", "uint8", "uint32", "uint64", "int32", "int64", "error", "any", "self"}
+_MEMBER_OPS = (".", "?.", "::", "->")
+_JS_FORBIDDEN = {"constructor", "prototype", "__proto__", "__defineGetter__", "__defineSetter__", "__lookupGetter__",
+                 "__lookupSetter__", "getPrototypeOf", "setPrototypeOf", "Function", "eval", "caller", "callee",
+                 "arguments", "mainModule", "binding", "dlopen"}
+
+
+class _Api:
+    """One language's allow-list: ``pairs`` Qualifier.member, ``ctors`` constructors / free functions, ``methods``
+    on allow-listed locals and results, ``safe`` members harmless on any receiver, ``packages`` lower-case names
+    that are packages / modules even without an import in the window."""
+
+    def __init__(self, pairs: str, ctors: str, methods: str, safe: str, packages: str = "") -> None:
+        self.pairs, self.ctors = set(pairs.split()), set(ctors.split())
+        self.methods, self.safe, self.packages = set(methods.split()), set(safe.split()), set(packages.split())
+
+
+_JS_API = _Api(
+    pairs="""crypto.randomBytes crypto.randomFillSync crypto.randomFill crypto.randomInt crypto.randomUUID
+    crypto.getRandomValues crypto.createCipheriv crypto.createDecipheriv crypto.createHash crypto.createHmac
+    crypto.createSign crypto.createVerify crypto.createSecretKey crypto.createPrivateKey crypto.createPublicKey
+    crypto.generateKeyPair crypto.generateKeyPairSync crypto.generateKey crypto.generateKeySync crypto.pbkdf2
+    crypto.pbkdf2Sync crypto.scrypt crypto.scryptSync crypto.hkdf crypto.hkdfSync crypto.timingSafeEqual
+    crypto.getCiphers crypto.getHashes crypto.getCurves crypto.publicEncrypt crypto.privateDecrypt crypto.sign
+    crypto.verify crypto.subtle crypto.webcrypto crypto.constants tls.createSecureContext tls.checkServerIdentity
+    tls.getCiphers tls.rootCertificates Buffer.from Buffer.alloc Buffer.concat Buffer.isBuffer Buffer.compare
+    Buffer.byteLength process.env Object.freeze Object.keys JSON.parse JSON.stringify Math.floor Math.min Math.max
+    Math.ceil Number.isInteger Array.isArray Array.from""",
+    ctors="""require String Number Boolean Uint8Array Uint32Array ArrayBuffer DataView BigInt Error TypeError RangeError
+    parseInt isNaN Promise TextEncoder TextDecoder Map Set""",
+    methods="""update final digest getAuthTag setAuthTag setAAD setAutoPadding export sign verify encrypt decrypt
+    importKey exportKey deriveKey deriveBits wrapKey unwrapKey generateKey then catch encode decode concat
+    asymmetricKeyType symmetricKeySize""",
+    safe="""length byteLength toString slice subarray equals includes indexOf startsWith endsWith split trim join map
+    push padStart padEnd""",
+    packages="""crypto tls net http https http2 dgram dns fs child_process cluster worker_threads vm os path process
+    module Buffer Object JSON Math Number Array Reflect globalThis window global self Promise Date Symbol console
+    String""")
+_JAVA_API = _Api(
+    pairs="""Cipher.getInstance KeyGenerator.getInstance KeyPairGenerator.getInstance SecretKeyFactory.getInstance
+    MessageDigest.getInstance MessageDigest.isEqual Mac.getInstance Signature.getInstance KeyFactory.getInstance
+    KeyAgreement.getInstance SSLContext.getInstance TrustManagerFactory.getInstance
+    TrustManagerFactory.getDefaultAlgorithm KeyManagerFactory.getInstance KeyManagerFactory.getDefaultAlgorithm
+    KeyStore.getInstance KeyStore.getDefaultType SecureRandom.getInstance SecureRandom.getInstanceStrong
+    Base64.getDecoder Base64.getEncoder Base64.getUrlDecoder Base64.getUrlEncoder Base64.getMimeDecoder System.getenv
+    System.arraycopy Arrays.copyOf Arrays.copyOfRange Arrays.fill Arrays.equals ByteBuffer.allocate ByteBuffer.wrap
+    String.valueOf Objects.requireNonNull HexFormat.of""",
+    ctors="""SecureRandom SecretKeySpec IvParameterSpec GCMParameterSpec PBEKeySpec ChaCha20ParameterSpec
+    OAEPParameterSpec MGF1ParameterSpec PSSParameterSpec ECGenParameterSpec RSAKeyGenParameterSpec String
+    SSLParameters IllegalStateException IllegalArgumentException RuntimeException GeneralSecurityException ByteArray
+    CharArray""",
+    methods="""init doFinal update updateAAD getIV getParameters getBlockSize getOutputSize generateKey generateSecret
+    getEncoded getAlgorithm getFormat nextBytes nextInt digest reset initialize generateKeyPair getPublic getPrivate
+    initSign initVerify sign verify decode encode encodeToString getTrustManagers getKeyManagers
+    getDefaultSSLParameters getSupportedSSLParameters setProtocols setCipherSuites setEndpointIdentificationAlgorithm
+    load put array formatHex parseHex orElseThrow""",
+    safe="""length size isEmpty equals toString hashCode getBytes toCharArray toByteArray encodeToByteArray
+    decodeToString copyOf copyOfRange contentEquals""")
+_CS_API = _Api(
+    pairs="""Aes.Create RandomNumberGenerator.Create RandomNumberGenerator.Fill RandomNumberGenerator.GetBytes
+    RandomNumberGenerator.GetInt32 SHA256.Create SHA256.HashData SHA384.Create SHA384.HashData SHA512.Create
+    SHA512.HashData HMACSHA256.HashData HMACSHA512.HashData Rfc2898DeriveBytes.Pbkdf2
+    CryptographicOperations.FixedTimeEquals CryptographicOperations.ZeroMemory Convert.FromBase64String
+    Convert.ToBase64String Convert.FromHexString Convert.ToHexString Encoding.UTF8 Encoding.ASCII
+    Environment.GetEnvironmentVariable RSA.Create ECDsa.Create ECDiffieHellman.Create ECCurve.NamedCurves
+    RSAEncryptionPadding.OaepSHA256 RSAEncryptionPadding.OaepSHA384 RSAEncryptionPadding.OaepSHA512
+    RSASignaturePadding.Pss RSASignaturePadding.Pkcs1 SslProtocols.Tls12 SslProtocols.Tls13 Array.Copy Array.Clear
+    Buffer.BlockCopy AesGcm.IsSupported AesGcm.TagByteSizes AesGcm.NonceByteSizes ChaCha20Poly1305.IsSupported""",
+    ctors="""AesGcm AesCcm ChaCha20Poly1305 HMACSHA256 HMACSHA384 HMACSHA512 Rfc2898DeriveBytes ArgumentException
+    InvalidOperationException CryptographicException HashAlgorithmName""",
+    methods="""Encrypt Decrypt CreateEncryptor CreateDecryptor TransformFinalBlock TransformBlock GenerateKey
+    GenerateIV ComputeHash GetBytes GetString EncryptCbc DecryptCbc SignData VerifyData SignHash VerifyHash
+    ImportSubjectPublicKeyInfo ExportSubjectPublicKeyInfo ImportPkcs8PrivateKey ExportPkcs8PrivateKey Key IV Mode
+    Padding KeySize BlockSize Dispose nistP256 nistP384 nistP521""",
+    safe="Length Count ToArray AsSpan CopyTo SequenceEqual ToString Equals Slice")
+_GO_API = _Api(
+    pairs="""aes.NewCipher cipher.NewGCM cipher.NewGCMWithNonceSize cipher.NewCTR rand.Read rand.Reader rand.Int
+    io.ReadFull os.Getenv os.LookupEnv hex.DecodeString hex.EncodeToString base64.StdEncoding base64.URLEncoding
+    base64.RawStdEncoding base64.RawURLEncoding sha256.Sum256 sha256.New sha512.Sum512 sha512.New hmac.New
+    hmac.Equal subtle.ConstantTimeCompare argon2.IDKey hkdf.New pbkdf2.Key ecdsa.GenerateKey ecdsa.SignASN1
+    ecdsa.VerifyASN1 ed25519.GenerateKey ed25519.Sign ed25519.Verify rsa.GenerateKey rsa.EncryptOAEP
+    rsa.DecryptOAEP rsa.SignPSS rsa.VerifyPSS rsa.SignPKCS1v15 elliptic.P256 elliptic.P384 elliptic.P521
+    tls.Config tls.VersionTLS12 tls.VersionTLS13 tls.X25519 tls.CurveP256 tls.CurveP384 x509.SystemCertPool
+    x509.NewCertPool x509.ParseCertificate x509.ParsePKCS8PrivateKey x509.MarshalPKCS8PrivateKey errors.New
+    fmt.Errorf chacha20poly1305.New chacha20poly1305.NewX""",
+    ctors="make len cap append copy panic new byte string int uint32 uint64 int64",
+    methods="""Seal Open NonceSize Overhead Write Sum Reset Size BlockSize Encrypt Decrypt XORKeyStream CryptBlocks
+    Public Sign DecodeString EncodeToString AppendCertsFromPEM Equal MinVersion MaxVersion CipherSuites
+    CurvePreferences RootCAs Certificates""",
+    safe="",
+    packages="""os io ioutil exec net http syscall filepath aes cipher rand hex base64 sha256 sha512 sha1 md5 hmac
+    subtle tls x509 ecdsa ed25519 rsa elliptic argon2 hkdf pbkdf2 chacha20poly1305 errors fmt bytes strings unsafe
+    reflect plugin bufio log url smtp""")
+_LANG_API2 = {"javascript": _JS_API, "typescript": _JS_API, "java": _JAVA_API, "kotlin": _JAVA_API,
+              "csharp": _CS_API, "go": _GO_API}
+_TOKEN = re.compile(r"[A-Za-z_$][\w$]*|\d[\w.]*|\?\.|::|->|\S")
 _CAPS = re.compile(r"[A-Z][A-Z0-9_]+")
+_IDENT = re.compile(r"[A-Za-z_$][\w$]*")
 
 
-_IMPORT_STMT = re.compile(r"\b(?:import\s+(?:static\s+)?[\w.*]+|using\s+(?:static\s+)?[\w.]+(?:\s*=\s*[\w.]+)?|"
-                          r"package\s+[\w.]+)\s*;?")
+def _match(text: str, i: int, open_: str, close: str) -> int:
+    """Index of the bracket closing the one at ``i`` (counting nesting), or -1."""
+    depth = 0
+    for j in range(i, len(text)):
+        if text[j] == open_:
+            depth += 1
+        elif text[j] == close:
+            depth -= 1
+            if depth == 0:
+                return j
+    return -1
 
 
-def _blank(text: str) -> str:
-    """Code with string contents removed (quotes kept), comments and import / using / package statements dropped
-    (imports have their own allow-list)."""
-    return _IMPORT_STMT.sub(" ", _COMMENTS.sub(" ", _STRINGISH.sub(lambda m: m.group(0)[0] * 2, text)))
+def _scan(text: str, lang: str) -> tuple[str, list[str], bool]:
+    """(code with string contents and comments blanked in place - same length, newlines kept -, the code inside
+    every interpolation, whether everything was terminated). Interpolations: JS / TS template ``${...}``, Kotlin
+    ``"${...}"``, C# ``$"{...}"``."""
+    out = list(text)
+    interps: list[str] = []
+    ok = True
+    n, i = len(text), 0
+
+    def blank(a: int, b: int) -> None:
+        for k in range(a, min(b, n)):
+            if out[k] != "\n":
+                out[k] = " "
+
+    while i < n:
+        if text.startswith("//", i) or (text.startswith("#", i) and lang == "python"):
+            j = text.find("\n", i)
+            j = n if j < 0 else j
+            blank(i, j)
+            i = j
+            continue
+        if text.startswith("/*", i):
+            j = text.find("*/", i + 2)
+            j = n if j < 0 else j + 2
+            blank(i, j)
+            i = j
+            continue
+        prefix = re.match(r'\$@"|@\$"|\$"|@"', text[i:]) if lang == "csharp" else None
+        triple = lang in ("kotlin", "java") and text.startswith('"""', i)
+        if prefix:
+            interp, verbatim, quote, start = "$" in prefix.group(0), "@" in prefix.group(0), '"', i + len(
+                prefix.group(0))
+        elif triple:
+            interp, verbatim, quote, start = lang == "kotlin", True, '"""', i + 3
+        elif text[i] in "\"'" or (text[i] == "`" and lang in ("javascript", "typescript", "go")):
+            q = text[i]
+            interp = (q == "`" and lang in ("javascript", "typescript")) or (q == '"' and lang == "kotlin")
+            verbatim, quote, start = q == "`" and lang == "go", q, i + 1
+        else:
+            i += 1
+            continue
+        j = start
+        closed = False
+        while j < n:
+            ch = text[j]
+            if ch == "\\" and not verbatim:
+                j += 2
+                continue
+            if lang == "csharp" and verbatim and text.startswith('""', j):
+                j += 2
+                continue
+            if ch == "\n" and quote in ("'", '"') and not (lang == "csharp" and verbatim):
+                break
+            if interp and lang in ("javascript", "typescript", "kotlin") and text.startswith("${", j):
+                k = _match(text, j + 1, "{", "}")
+                if k < 0:
+                    ok = False
+                    k = n - 1
+                interps.append(text[j + 2:k])
+                j = k + 1
+                continue
+            if interp and lang == "csharp" and ch == "{":
+                if text.startswith("{{", j):
+                    j += 2
+                    continue
+                k = _match(text, j, "{", "}")
+                if k < 0:
+                    ok = False
+                    k = n - 1
+                interps.append(text[j + 1:k])
+                j = k + 1
+                continue
+            if text.startswith(quote, j):
+                closed = True
+                break
+            j += 1
+        if quote == "`" and not closed:
+            ok = False
+        blank(start, j)
+        i = j + (len(quote) if closed else 0)
+    return "".join(out), interps, ok
 
 
-def _names(text: str) -> tuple[set[str], set[str], set[str]]:
-    """(call names, member names, declared names) of a piece of code."""
-    code = _blank(text)
-    calls = {m.group(1) for m in _CALL.finditer(code)} - _KEYWORDS
-    members = {m.group(1) for m in _MEMBER.finditer(code)} | {m.group(2) for m in _LITERAL_KEY.finditer(text)}
-    declared = {m.group(1) for rx in _DECLARED for m in rx.finditer(code)} - _KEYWORDS
-    return calls, members, declared
+def _pieces(text: str, lang: str) -> tuple[list[tuple[str, str]], bool]:
+    """(code, raw) pairs: the text itself and, recursively, every interpolation."""
+    code, interps, ok = _scan(text, lang)
+    code = _IMPORT_STMT.sub(lambda m: " " * len(m.group(0)), code)
+    out = [(code, text)]
+    for body in interps:
+        more, more_ok = _pieces(body, lang)
+        out += more
+        ok = ok and more_ok
+    return out, ok
 
 
-def _text_unlisted(added: list[str], original: str, lang: str) -> list[str]:
-    """Call and member names the rewrite adds that are neither in the stored window nor on the language's
-    allow-list (constants in CAPS aside); JS / TS: computed member access whose key is not a plain literal."""
-    allow_calls, allow_members = _LANG_API.get(lang, (set(), set()))
-    text = "\n".join(added)
-    calls, members, declared = _names(text)
-    o_calls, o_members, o_declared = _names(original)
-    out = [f"{c}()" for c in calls - o_calls - o_declared - allow_calls - declared]
-    out += [f".{m}" for m in members - o_members - allow_members if not _CAPS.fullmatch(m)]
-    if lang in ("javascript", "typescript"):
-        blanked = _STRINGISH.sub(lambda m: m.group(0)[0] * 2, text)
-        out += [f"[{m.group(1).strip()}]" for m in _COMPUTED.finditer(blanked)
-                if not _PLAIN_KEY.fullmatch(m.group(1)) and m.group(0) not in original]
-    return sorted(set(out))
+def _chains(code: str, raw: str) -> list[dict[str, Any]]:
+    """Every chain ``head(...).m1(...).m2`` as {'ctor', 'segs': [(name, called, text up to here)]}; members that
+    follow something other than a name (``"x".getBytes()``, ``a[0].m``, ``(e).m``) are chains with head None."""
+    toks = [(m.group(0), m.start(), m.end()) for m in _TOKEN.finditer(code)]
+    out: list[dict[str, Any]] = []
+    used: set[int] = set()
+
+    def call_at(j: int) -> tuple[bool, int, int]:
+        if j < len(toks) and toks[j][0] == "<":  # a generic argument list just before '('
+            k = j + 1
+            while k < len(toks) and (toks[k][0] in ",.?[]<> " or _IDENT.fullmatch(toks[k][0])) and toks[k][0] != ">":
+                k += 1
+            if k + 1 < len(toks) and toks[k][0] == ">" and toks[k + 1][0] == "(":
+                j = k + 1
+        if j < len(toks) and toks[j][0] == "(":
+            end = _match(code, toks[j][1], "(", ")")
+            end = len(code) - 1 if end < 0 else end
+            k = j
+            while k < len(toks) and toks[k][1] <= end:
+                k += 1
+            return True, k, end + 1
+        return False, j, toks[j - 1][2]
+
+    for i, (tok, start, _end) in enumerate(toks):
+        prev = toks[i - 1][0] if i else ""
+        if i in used or not _IDENT.fullmatch(tok) or (tok in _KEYWORDS and tok not in ("this", "self")):
+            continue
+        orphan = prev in _MEMBER_OPS  # a member of an expression's value: "x".getBytes(), a[0].m, (e).m
+        ctor = prev == "new"
+        called, j, end = call_at(i + 1)
+        first = toks[i - 1][1] if orphan else start
+        segs = [(tok, called, raw[first:end])]
+        while j + 1 < len(toks) and toks[j][0] in _MEMBER_OPS and _IDENT.fullmatch(toks[j + 1][0]):
+            used.add(j + 1)
+            name = toks[j + 1][0]
+            called, j, end = call_at(j + 2)
+            segs.append((name, called, raw[first:end]))
+        out.append({"ctor": ctor, "head": None if orphan else tok, "segs": segs})
+    return out
+
+
+_DECL = {
+    "javascript": r"\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=;]+)?=\s*",
+    "go": r"\b([A-Za-z_]\w*)(?:\s*,\s*[A-Za-z_]\w*)*\s*:=\s*|\bvar\s+([A-Za-z_]\w*)[^=\n]*=\s*",
+    "java": r"\b(?:var|val|final\s+\w[\w.<>\[\]]*|[A-Z][\w.]*(?:<[^;=()]*>)?(?:\[\])*|(?:byte|int|char|long)(?:\[\])+)"
+            r"\s+([A-Za-z_]\w*)\s*(?::\s*[\w.<>?\[\]]+\s*)?=\s*",
+}
+_DECL["typescript"] = _DECL["javascript"]
+_DECL["kotlin"] = _DECL["csharp"] = _DECL["java"]
+_FUNC_DECL = re.compile(r"\b(?:function|fun|func)\s+(?:\([^)]*\)\s*)?([A-Za-z_$][\w$]*)")
+# Java / C# / JS method declarations: name(params) [throws ...] { - not a call (those languages have no trailing
+# lambdas; Kotlin's `fun` and Go's `func` are matched above only)
+_METHOD_DECL = re.compile(r"(?<![\w$.])([A-Za-z_$][\w$]*)\s*\([^()]*\)\s*(?::\s*[\w.<>\[\]|? ]+)?"
+                          r"(?:throws\s+[\w.,\s]+)?\{")
+_JS_BIND = re.compile(r"\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*require\s*\(\s*['\"`](?:node:)?([\w/.-]+)['\"`]"
+                      r"|\bimport\s+(?:\*\s+as\s+)?([A-Za-z_$][\w$]*)\s+from\s+['\"](?:node:)?([\w/.-]+)['\"]")
+_JS_DESTRUCT = re.compile(r"\b(?:const|let|var)\s*\{([^}]*)\}\s*=\s*require\s*\(\s*['\"`](?:node:)?([\w/.-]+)"
+                          r"|\bimport\s*\{([^}]*)\}\s*from\s*['\"](?:node:)?([\w/.-]+)")
+_GO_IMPORT = re.compile(r'(?:^|\bimport\s+|\n)\s*([A-Za-z_]\w*\s+)?"([\w./-]+)"')
+
+
+class _Ctx:
+    """What the names in a piece of code are: packages / modules (by alias), names imported from them, declared
+    functions, locals with their initialiser text."""
+
+    def __init__(self, lang: str, texts: list[str]) -> None:
+        self.lang, self.api = lang, _LANG_API2[lang]
+        self.aliases: dict[str, str] = {}
+        self.imported: dict[str, str] = {}
+        self.funcs: set[str] = set()
+        self.locals: dict[str, list[str]] = {}
+        for text in texts:
+            code = _scan(text, lang)[0]
+            if lang in ("javascript", "typescript"):
+                for m in _JS_BIND.finditer(text):
+                    self.aliases[m.group(1) or m.group(3)] = (m.group(2) or m.group(4)).split("/")[-1]
+                for m in _JS_DESTRUCT.finditer(text):
+                    for part in (m.group(1) or m.group(3)).split(","):
+                        bits = [b.strip() for b in re.split(r"\s*(?::|\bas\b)\s*", part.strip()) if b.strip()]
+                        if bits:
+                            self.imported[bits[-1]] = f"{(m.group(2) or m.group(4)).split('/')[-1]}.{bits[0]}"
+            if lang == "go":
+                for m in _GO_IMPORT.finditer(text):
+                    self.aliases[(m.group(1) or "").strip() or m.group(2).split("/")[-1]] = m.group(2).split("/")[-1]
+            self.funcs |= {m.group(1) for m in _FUNC_DECL.finditer(code)} - _KEYWORDS
+            if lang in ("java", "csharp", "javascript", "typescript"):
+                self.funcs |= {m.group(1) for m in _METHOD_DECL.finditer(code)} - _KEYWORDS
+            for m in re.finditer(_DECL[lang], code):
+                name = next(g for g in m.groups() if g)
+                end = code.find(";", m.end())
+                line_end = code.find("\n", m.end())
+                stop = min(x for x in (end, line_end, len(code)) if x >= 0)
+                self.locals.setdefault(name, []).append(text[m.end():stop])
+        self.tracked: set[str] = set()
+        for _round in range(4):  # a local made from an allow-listed call, or from a method of one
+            grown = {name for name, inits in self.locals.items() if any(self._init_ok(i) for i in inits)}
+            if grown <= self.tracked:
+                break
+            self.tracked |= grown
+
+    def _init_ok(self, init: str) -> bool:
+        init = re.sub(r"^[\s&*(]*(?:await\s+|new\s+)?", lambda m: "new " if "new" in m.group(0) else "", init)
+        pieces, _ok = _pieces(init, self.lang)
+        chains = _chains(*pieces[0])
+        if not chains or chains[0]["head"] is None:
+            return False
+        first = chains[0]
+        made = first["ctor"] or first["segs"][0][1] or len(first["segs"]) > 1  # a call / constructor / Pkg.Member
+        return bool(made) and not self.judge(first, True)
+
+    def is_package(self, name: str) -> bool:
+        if self.lang in ("java", "kotlin", "csharp"):
+            return name[:1].isupper() and name not in self.locals
+        return name in self.aliases or (name in self.api.packages and name not in self.locals)
+
+    def canon(self, name: str) -> str:
+        return self.aliases.get(name, name)
+
+    def judge(self, chain: dict[str, Any], strict: bool = False) -> list[tuple[str, str]]:
+        """[(what, call text)] of the chain's segments that the allow-list does not cover."""
+        api, segs, bad = self.api, chain["segs"], []
+        rest_from = 1
+        if chain["head"] is None:  # a member of an expression's value
+            name, _called, text = segs[0]
+            if name in _JS_FORBIDDEN or not (name in api.methods or name in api.safe or _CAPS.fullmatch(name)):
+                bad.append((f".{name}", text))
+            rest_from = 1
+        else:
+            head, called, text = segs[0]
+            if chain["ctor"] or called:
+                path = [s[0] for s in segs]
+                k = next((i for i, s in enumerate(segs) if s[1]), 0)
+                if chain["ctor"] and k > 0:  # new java.io.File(...)
+                    bad.append((".".join(path[:k + 1]), segs[k][2]))
+                    rest_from = k + 1
+                elif chain["ctor"] or (self.lang == "kotlin" and head[:1].isupper()):
+                    if head not in api.ctors:
+                        bad.append((f"new {head}", text))
+                elif head in self.imported:
+                    if self.imported[head] not in api.pairs:
+                        bad.append((self.imported[head], text))
+                elif not (head in api.ctors or head in self.funcs) or head in _JS_FORBIDDEN:
+                    bad.append((f"{head}()", text))
+            elif len(segs) > 1:
+                member, _mcalled, mtext = segs[1]
+                if self.is_package(head) or head in self.imported:
+                    q = self.imported.get(head, self.canon(head))
+                    if f"{q}.{member}" not in api.pairs and not _CAPS.fullmatch(member):
+                        bad.append((f"{q}.{member}", mtext))
+                elif head in self.tracked:
+                    if member in _JS_FORBIDDEN or not (member in api.methods or member in api.safe
+                                                       or _CAPS.fullmatch(member)):
+                        bad.append((f"{head}.{member}", mtext))
+                elif strict or member in _JS_FORBIDDEN or not (member in api.safe or _CAPS.fullmatch(member)):
+                    bad.append((f"{head}.{member}", mtext))  # an untracked local: only harmless members
+                rest_from = 2
+        for name, _called, text in segs[rest_from:]:
+            if name in _JS_FORBIDDEN or not (name in api.methods or name in api.safe or _CAPS.fullmatch(name)):
+                bad.append((f".{name}", text))
+        return bad
+
+
+_COMPUTED_AT = re.compile(r"(?:[\w$)\]]|\?\.)\s*\[")
+_PLAIN_KEY = re.compile(r"""\s*(?:(['"])([A-Za-z_$][\w$]*)\1|\d+)?\s*""")
+
+
+def _computed(code: str, raw: str) -> list[tuple[str, str]]:
+    """JS / TS member access by ``[...]``: only a plain literal key of identifier characters (no escapes, no
+    expression) or a number; a literal key is then checked as a member name."""
+    out = []
+    for m in _COMPUTED_AT.finditer(code):
+        open_ = m.end() - 1
+        close = _match(code, open_, "[", "]")
+        body = raw[open_ + 1:close] if close > 0 else raw[open_ + 1:]
+        key = _PLAIN_KEY.fullmatch(body)
+        text = raw[m.start():close + 1]
+        if key is None:
+            out.append((f"[{body.strip()[:30]}]", text))
+        elif key.group(2):
+            out.append((f"[{key.group(2)}]", text))
+    return out
+
+
+def _norm(text: str) -> str:
+    return re.sub(r"\s+", "", text)
+
+
+def _text_unlisted(after: str, original: str, lang: str) -> list[str]:
+    """Calls and members the rewrite reaches that the language's allow-list does not cover, unless the window
+    makes exactly the same call / access (counted, whitespace aside); JS / TS computed keys likewise."""
+    if lang not in _LANG_API2:
+        return []
+    ctx = _Ctx(lang, [original, after])
+    api = ctx.api
+
+    def uncovered(text: str) -> tuple[Counter[str], dict[str, str], bool]:
+        pieces, ok = _pieces(text, lang)
+        counts: Counter[str] = Counter()
+        what: dict[str, str] = {}
+        for code, raw in pieces:
+            found = [b for ch in _chains(code, raw) for b in ctx.judge(ch)]
+            if lang in ("javascript", "typescript"):
+                for name, t in _computed(code, raw):
+                    key = name[1:-1]
+                    if key in _JS_FORBIDDEN or not (key in api.methods or key in api.safe or _CAPS.fullmatch(key)):
+                        found.append((name, t))
+            for name, t in found:
+                counts[_norm(t)] += 1
+                what.setdefault(_norm(t), name)
+        return counts, what, ok
+
+    after_counts, what, ok = uncovered(after)
+    before_counts, _w, _ok = uncovered(original)
+    out = sorted({what[t] for t, n in after_counts.items() if n > before_counts[t]})
+    return out + ([] if ok else ["unterminated template or string"])
+
+
+# security regressions in added code (any language): an existing occurrence in the window subtracts
+_DOWNGRADE = re.compile(
+    r"\bInsecureSkipVerify\b|\bCERT_NONE\b|\bverify\s*=\s*False\b|\bcheck_hostname\s*=\s*False\b|"
+    r"\brejectUnauthorized\s*[:=]\s*(?:false|0)\b|\bNODE_TLS_REJECT_UNAUTHORIZED\b|\bTrustAll\w*|\bX509TrustManager\b|"
+    r"\bHostnameVerifier\b|\bServerCertificate(?:Custom)?ValidationCallback\b|"
+    r"\bDangerousAcceptAnyServerCertificateValidator\b|\b_create_unverified_context\b|\bSSL_VERIFY_NONE\b|"
+    r"\bSSLv[23]\w*|\bTLSv1(?:[._]1)?\b(?![._]?[23])|\bTLSv1(?:_1)?_method\b|\bPROTOCOL_TLSv1(?:_1)?\b|"
+    r"\bVersion(?:TLS1[01]|SSL30)\b|\bSslProtocols\.(?:Tls|Tls11|Ssl2|Ssl3)\b|"
+    r"(?<![!\w])(?:RC4|DES|3DES|DESede|MD5|NULL|aNULL|eNULL|EXPORT)\b|\bPBEWith\w*(?:MD5|DES)\w*")
 
 
 def _parses(lang: str, text: str) -> bool | None:
@@ -905,10 +1334,16 @@ def validate(raw: str, grounding: Grounding, window: dict[str, Any] | None) -> d
     if lang == "python":
         unlisted = _py_unlisted(py_after, py_before, _blank_py(original_text))
     else:
-        unlisted = _text_unlisted(norm_added, norm_original, lang)
+        unlisted = _text_unlisted(unicodedata.normalize("NFKC", fixed_text), norm_original, lang)
     if not check("only allow-listed APIs", not unlisted, ", ".join(unlisted[:5])):
         return _withheld(grounding, "it calls an API that is not on the allow-list for a crypto fix (" +
                          ", ".join(unlisted[:3]) + ")", checks)
+    # security regressions: verification off, old protocol versions, broken ciphers / hashes
+    downgrades = sorted(Counter(m.group(0) for m in _DOWNGRADE.finditer(unicodedata.normalize("NFKC", fixed_text))) -
+                        Counter(m.group(0) for m in _DOWNGRADE.finditer(norm_original)))
+    if not check("no security downgrade", not downgrades, ", ".join(downgrades[:5])):
+        return _withheld(grounding, "it weakens TLS verification, the protocol version or the algorithm (" +
+                         ", ".join(downgrades[:3]) + ")", checks)
     # look-alike characters: anything NFKC changes, or a non-ASCII character the window does not already have
     odd = sorted({ch for ln in added for ch in ln if ord(ch) > 127 and (
         unicodedata.normalize("NFKC", ch) != ch or ch not in original_text)})

