@@ -10,7 +10,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const dir = __dirname;
-const files = fs.readdirSync(dir).filter((f) => f.endsWith(".tsx"));
+const files = fs.readdirSync(dir).filter((f) => /^Run\w*\.tsx$/.test(f));  // the run page's components
 let checked = 0;
 for (const file of files) {
   const src = fs.readFileSync(path.join(dir, file), "utf8");

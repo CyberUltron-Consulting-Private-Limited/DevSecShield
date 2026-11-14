@@ -85,10 +85,11 @@ assert.deepEqual(gauge.migration, [], "migration rows pass through");
 
 // --- grep: the run sections import no row-counting helper for totals (F7)
 const dir = __dirname;
+// the run page's own files (other lanes' modules in this folder, e.g. the scans list, are not the run page)
 const sources = fs.readdirSync(dir)
-  .filter((f) => /\.(ts|tsx)$/.test(f) && !f.endsWith(".test.ts"))
+  .filter((f) => /^(Run\w*\.tsx|model\.ts|CbomDashboardCharts\.tsx|badgeClasses\.ts)$/.test(f))
   .map((f) => [f, fs.readFileSync(path.join(dir, f), "utf8")] as const);
-assert.ok(sources.some(([f]) => f === "RunResultsView.tsx"), "run page sources found");
+assert.ok(sources.some(([f]) => f === "RunResultsView.tsx") && sources.length >= 8, `run page sources found (${sources.length})`);
 const FORBIDDEN = [/quantumFilter/, /\binventoryRows\b/, /\bmatchesQuantumFilter\b/, /\bquantumCounts\b/, /\bcodeHeatmap\b/, /\bisBrokenToday\b/];
 for (const [file, text] of sources) {
   for (const re of FORBIDDEN) assert.ok(!re.test(text), `${file} must not use ${re} (Rule P: no recount of rows)`);
