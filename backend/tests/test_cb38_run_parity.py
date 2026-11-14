@@ -367,3 +367,70 @@ def test_p9_without_the_engine_compliance_is_null_and_the_rest_works(api, world,
     assert out["engine"]["compliance"] == "unavailable" and "not installed" in out["engine"]["reason"]
     assert meta["cbom_compliance"] is None and meta["rbi_csf_rollup"] is None and meta["certin_posture"] is None
     assert meta["cbom_graph"]["nodes"] and meta["cbom_coverage"]
+
+
+# ----------------------------------------------------------------------------- follow-ups (review 5905604614)
+def test_f1_cache_is_bounded_by_rows_like_results(api, world, monkeypatch):
+    """The cache holds at most CACHE_ROWS summed assets (as /results), least recently used out first."""
+    engine, _ = world
+    _s, run1, _c, hdr = _run_with(api, engine, PROBE)  # 5 non-coverage assets
+    run2 = _again(api, hdr, [PROBE[1], PROBE[4]], "parity-cache-0001")
+    monkeypatch.setattr(RP, "CACHE_ROWS", 6)
+    assert _parity(api, run1["id"])["assets_total"] == 5
+    assert _parity(api, run2["id"])["assets_total"] == 2  # 5 + 2 > 6: run 1 leaves
+    assert set(RP._CACHE) == {run2["id"]}
+    _parity(api, run1["id"])
+    assert RP.COMPUTE_COUNT[run1["id"]] == 1  # its counter left with it; recomputed once more
+    assert set(RP._CACHE) == {run1["id"]}  # the newest entry always stays
+
+
+def test_f1b_eviction_never_drops_a_held_lock(api, world, monkeypatch):
+    engine, _ = world
+    _s, run1, _c, hdr = _run_with(api, engine, PROBE)
+    run2 = _again(api, hdr, [PROBE[1]], "parity-lock-00001")
+    monkeypatch.setattr(RP, "CACHE_ROWS", 1)
+    _parity(api, run1["id"])
+    held = RP._lock(run1["id"])
+    with held:  # a request is computing run 1 while run 2 evicts it
+        _parity(api, run2["id"])
+        assert RP._lock(run1["id"]) is held  # the same lock: no second computation of run 1 in parallel
+
+
+def test_f2_engine_error_at_runtime_degrades_instead_of_500(api, world, monkeypatch, capsys):
+    engine, _ = world
+    _s, run, _c, _h = _run_with(api, engine, PROBE)
+    real = RP.engine()
+
+    class Boom:
+        @staticmethod
+        def run_cbom_compliance(_result):
+            raise RuntimeError("engine bug")
+
+    class BadGraph:
+        @staticmethod
+        def build_detailed(_g, **_kw):
+            raise KeyError("x")
+
+    monkeypatch.setattr(RP, "engine", lambda: {**real, "compliance": Boom, "graph": BadGraph})
+    out = _parity(api, run["id"])
+    meta = out["scan_metadata"]
+    assert out["engine"]["compliance"] == "unavailable" and "RuntimeError" in out["engine"]["reason"]
+    assert meta["cbom_compliance"] is None and meta["rbi_csf_rollup"] is None and meta["certin_posture"] is None
+    assert meta["cbom_graph"]["nodes"]  # the full graph and the banner still come back
+    assert meta["cbom_graph_compact"] is None and meta["cbom_graph_expanded"] is None
+    logged = capsys.readouterr().out
+    assert "cbom run parity engine error" in logged and "RuntimeError" in logged
+
+
+def test_f6_library_weak_flag_follows_its_findings(api, world):
+    engine, _ = world
+    clean = {"type": "crypto_library", "target": "10.20.0.1", "location": "package:libsodium", "name": "libsodium",
+             "facts": {"name": "libsodium", "version": "1.0.20", "source": "package"}}
+    _s, run, _c, _h = _run_with(api, engine, [PROBE[3], clean])
+    items = {i["name"]: i for i in api("GET", f"/1/cbom/sources/runs/{run['id']}/assets", "alice").json()["items"]}
+    nodes = {n["label"]: n for n in _parity(api, run["id"])["scan_metadata"]["cbom_graph"]["nodes"]}
+    for name in ("openssl", "libsodium"):
+        codes = [c for c in items[name]["finding_codes"] or [] if not c.startswith("COVERAGE_")]
+        assert nodes[name]["weak"] is bool(codes), (name, codes)
+    assert nodes["libsodium"]["weak"] is False
+

@@ -26,7 +26,9 @@ Rule P: nothing here is a posture number (readiness, PQC counts, severity totals
 and ``engine.compliance`` says ``unavailable`` (the page then hides those sections, as for a legacy scan).
 
 Cached in-process like ``/results``: keyed by (run id, ``run.last_updated``, UTC day, KB version) plus the same inputs
-digest; an active run's entry is reused for ``run_results.LIVE_TTL_S`` seconds.
+digest; an active run's entry is reused for ``run_results.LIVE_TTL_S`` seconds; bounded by summed assets
+(``CACHE_ROWS``, ``CBOM_RUN_PARITY_CACHE_ROWS``, default ``/results``' bound), least recently used out first. An
+engine error at run time degrades like a missing engine (null compliance keys, logged once), never a 500.
 """
 from __future__ import annotations
 
@@ -51,7 +53,8 @@ from backend.utilities.cbom_sources.common import iso_z, utcnow
 
 GRAPH_CAP = 50_000  # assets judged / drawn (the run CycloneDX export cap)
 COVERAGE_NOTES_CAP = 50
-_CACHE_RUNS = 64
+# the cache holds at most this many summed assets (each entry weighs its assets_total), like /results
+CACHE_ROWS = int(os.environ.get("CBOM_RUN_PARITY_CACHE_ROWS") or RR.CACHE_ROWS)
 COMPACT_MAX_NODES = 40  # dashboard.bom_graph_view.COMPACT_MAX_NODES / aibom normalize
 EXPANDED_MAX_NODES = 120
 _KEY_KINDS = {"private_key": "private-key", "public_key": "public-key", "keystore": "keystore",
@@ -108,9 +111,31 @@ def engine() -> dict[str, Any]:
         return _ENGINE
 
 
+_ERRORS_LOGGED: set[tuple[str, str]] = set()
+
+
+def _engine_error(part: str, exc: BaseException) -> None:
+    """``cbom run parity engine error part= error=``: logged once per process per part and exception type."""
+    key = (part, type(exc).__name__)
+    with _ENGINE_LOCK:
+        if key in _ERRORS_LOGGED:
+            return
+        _ERRORS_LOGGED.add(key)
+    detail = " ".join(str(exc).split())[:200]
+    line = f"{RR.utc_timestamp()} cbom run parity engine error part={part} error={type(exc).__name__}"
+    request_id = RR.current_request_id()
+    try:
+        RR.console.print(line + (f" detail={detail!r}" if detail else "") +
+                         (f" request_id={request_id}" if request_id else ""),
+                         markup=False, highlight=False, soft_wrap=True)
+    except Exception:  # noqa: BLE001, S110 - logging must never fail a request
+        pass
+
+
 def _reset_engine() -> None:  # tests
     with _ENGINE_LOCK:
         _ENGINE.clear()
+        _ERRORS_LOGGED.clear()
 
 
 # ----------------------------------------------------------------------------- one asset -> graph facts
@@ -316,7 +341,9 @@ def _graph(g: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | N
         ref = _bom_ref(row.id)
         nodes.append({"id": ref, "label": _display_name(row), "kind": "framework", "asset_type": None,
                       "primitive": None, "impact": f["impact"], "quantum_vulnerable": False,
-                      "weak": f["impact"] is not None, "location": row.location, "source": name,
+                      # a library is "weak" when it carries a finding (end of life, a CVE, a weak default), as
+                      # the code lane flags a vulnerable crypto library; the strength rule judges algorithms only
+                      "weak": bool(f["codes"]), "location": row.location, "source": name,
                       "target": row.target, "asset_id": row.id})
         folder_key[ref] = _folder_location(name, row.target, ref)
     edges: list[dict[str, Any]] = []
@@ -348,7 +375,11 @@ def _graph(g: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | N
         out.setdefault("meta", {})["truncated"] = bool(g["truncated"])
         return out
 
-    return full, view(COMPACT_MAX_NODES), view(EXPANDED_MAX_NODES)
+    try:
+        return full, view(COMPACT_MAX_NODES), view(EXPANDED_MAX_NODES)
+    except Exception as exc:  # noqa: BLE001 - an engine bug must not cost the page its graph and banner
+        _engine_error("graph", exc)
+        return full, None, None
 
 
 _ESC = {"/": "∕", ":": "∶"}  # build_detailed splits a location on "/" and ":"
@@ -412,20 +443,28 @@ def _compute(session: Session, run: CbomCollectionRun, team_id: int, now: _dt.da
     from backend.utilities.dashboard.rbi_posture import build_rbi_csf_rollup
 
     g = _gather(session, run, team_id, now)
-    compliance = _compliance(g, run)
+    reason = None
+    try:
+        compliance = _compliance(g, run)
+        rbi = build_rbi_csf_rollup(cbom_compliance=compliance) if compliance else None
+        certin = build_certin_posture(cbom_compliance=compliance) if compliance else None
+    except Exception as exc:  # noqa: BLE001 - degrade like a missing engine instead of a 500 for the whole page
+        _engine_error("compliance", exc)
+        compliance = rbi = certin = None
+        reason = f"crypto compliance engine error ({type(exc).__name__})"
     full, compact, expanded = _graph(g)
     return {
         "scan_metadata": {
             "cbom_compliance": compliance,
-            "rbi_csf_rollup": build_rbi_csf_rollup(cbom_compliance=compliance) if compliance else None,
-            "certin_posture": build_certin_posture(cbom_compliance=compliance) if compliance else None,
+            "rbi_csf_rollup": rbi,
+            "certin_posture": certin,
             "cbom_graph": full, "cbom_graph_compact": compact, "cbom_graph_expanded": expanded,
             "cbom_coverage": _coverage(g),
             "cbom_input": None, "repo_url": None, "branch": None, "zip_file_used": None, "cbom_file_used": False,
             "scan_binaries": False,
         },
         "engine": ({"compliance": "available"} if compliance is not None
-                   else {"compliance": "unavailable", "reason": engine()["reason"]}),
+                   else {"compliance": "unavailable", "reason": reason or engine()["reason"]}),
         "assets_judged": len(g["assets"]) + len(g["libraries"]),
         "assets_total": g["total"],
         "computed_at": iso_z(now),
@@ -473,9 +512,13 @@ def run_parity(session: Session, run: CbomCollectionRun, *, team_id: int, risk_m
                 COMPUTE_COUNT[rid] += 1
                 _CACHE[rid] = (key, digest, active, time.monotonic(), computed)
                 _CACHE.move_to_end(rid)
-                while len(_CACHE) > _CACHE_RUNS:
-                    old, _ = _CACHE.popitem(last=False)
-                    _LOCKS.pop(old, None) if old != rid else None
+                total = sum(max(int(e[4]["assets_total"]), 1) for e in _CACHE.values())
+                while total > CACHE_ROWS and len(_CACHE) > 1:  # least recently used out; the newest stays
+                    old, entry = _CACHE.popitem(last=False)
+                    total -= max(int(entry[4]["assets_total"]), 1)
+                    lock = _LOCKS.get(old)
+                    if lock is not None and not lock.locked():  # a request computing that run keeps its lock
+                        _LOCKS.pop(old, None)
                     COMPUTE_COUNT.pop(old, None)
             RR._log_summary(run=rid, team=team_id, rows=computed["assets_total"], what="parity",
                             ms=int((time.perf_counter() - started) * 1000), digest=digest,
