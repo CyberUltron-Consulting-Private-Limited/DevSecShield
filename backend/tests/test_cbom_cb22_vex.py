@@ -58,6 +58,10 @@ def _code(entry):
 
 
 # ----------------------------------------------------------------------------- the rule, per code family
+ROOT = Path(__file__).resolve().parents[2]
+TABLE = json.loads((ROOT / "scripts/crypto_kb/sources/vex_default.json").read_text())
+
+
 @pytest.mark.parametrize("code,basis,state", [
     ("PROTO_TLS10", "observed", "exploitable"),     # TLS 1.0 accepted (DA example)
     ("CERT_EXPIRED", "observed", "exploitable"),    # expired (DA example)
@@ -71,34 +75,71 @@ def _code(entry):
     ("LIB_EOL", "inferred", "in_triage"),
     ("LIB_KNOWN_CVE", "inferred", "in_triage"),
     ("DB_EOL_VERSION", "inferred", "in_triage"),
+    # hygiene / operational codes: no attack on the asset as observed (review of #134, finding 2)
+    ("CERT_UNUSED", "posture", "in_triage"), ("CERT_EXPIRES_30D", "posture", "in_triage"),
+    ("KMS_PENDING_DELETION", "posture", "in_triage"), ("KEY_NO_ROTATION", "posture", "in_triage"),
+    ("CERT_SELF_SHA1", "posture", "in_triage"), ("KMS_NO_ROTATION", "posture", "in_triage"),
+    ("SECRET_NO_ROTATION", "posture", "in_triage"), ("KV_SOFT_DELETE_OFF", "posture", "in_triage"),
+    ("LIB_STATIC", "posture", "in_triage"), ("KEYSTORE_JKS", "posture", "in_triage"),
+    ("SSH_HMAC_SHA1", "posture", "in_triage"),
 ])
 def test_node_code_families_get_their_state(code, basis, state):
     assert VEX.code_basis(code, "node") == basis
     analysis = VEX.analysis_for(basis, code=code)
     assert analysis["state"] == state and analysis["state"] in STATES and analysis["detail"]
+    if basis == "posture":
+        assert TABLE["node"][code]["reason"] in analysis["detail"]  # the reviewed reason, not a generic claim
 
 
 @pytest.mark.parametrize("code,basis", [
     ("WEAK_ALGORITHM", "static"), ("HARDCODED_KEY", "static"), ("QUANTUM_VULNERABLE", "quantum_only"),
-    ("VULNERABLE_CRYPTO_LIBRARY", "inferred"), ("EOL_CRYPTO_LIBRARY", "inferred"),
+    ("VULNERABLE_CRYPTO_LIBRARY", "inferred"), ("EOL_CRYPTO_LIBRARY", "inferred"), ("CERT_NEAR_EXPIRY", "posture"),
 ])
 def test_code_scan_families_are_in_triage_with_their_reason(code, basis):
     assert VEX.code_basis(code, "code") == basis
-    assert VEX.analysis_for(basis, code=code)["state"] == "in_triage"
+    assert VEX.analysis_for(basis, code=code, namespace="code")["state"] == "in_triage"
 
 
-def test_every_kb_code_has_a_basis_and_no_quantum_only_code_is_exploitable():
+def test_every_kb_code_has_a_reviewed_vex_default_and_no_quantum_only_code_is_exploitable():
+    """Guard: a new KB code without a reviewed row fails here (and build_kb.py refuses to build it)."""
     findings = crypto_kb.load()["findings"]
     for namespace in ("node", "code"):
+        assert set(TABLE[namespace]) == set(findings[namespace]), namespace
         for code, entry in findings[namespace].items():
+            row = TABLE[namespace][code]
+            assert entry["vex_default"] == {"basis": row["basis"], "reason": row["reason"]}, (namespace, code)
+            assert row["reason"].strip() and row["sources"], (namespace, code)
             basis = VEX.code_basis(code, namespace)
-            state = VEX.analysis_for(basis, code=code)["state"]
+            assert basis == row["basis"] and basis in VEX.KB_BASES
+            state = VEX.analysis_for(basis, code=code, namespace=namespace)["state"]
             assert state in STATES
             if entry.get("category") == "pqc" or entry.get("pqc") == "grover-weakened":
                 assert (basis, state) == ("quantum_only", "in_triage"), (namespace, code)
             if namespace == "code":
                 assert state != "exploitable", code  # a code scan does not observe the running system
     assert FUTURE_RISK <= {c for c in findings["node"] if VEX.code_basis(c) == "quantum_only"}
+
+
+def test_a_code_without_a_reviewed_default_is_never_exploitable(monkeypatch):
+    entry = {k: v for k, v in crypto_kb.entry("node", "PROTO_TLS10").items() if k != "vex_default"}
+    monkeypatch.setattr(crypto_kb, "entry", lambda ns, code: entry if code == "PROTO_TLS10" else None)
+    assert VEX.code_basis("PROTO_TLS10") == "unreviewed"
+    assert VEX.analysis_for("unreviewed")["state"] == "in_triage"
+    assert VEX.code_basis("NOT_A_CODE") == "unreviewed"
+
+
+def test_every_cve_a_code_maps_to_has_a_reviewed_inherent_flag():
+    kb = crypto_kb.load()
+    mapped = {cid for ns in ("node", "code") for e in kb["findings"][ns].values()
+              for cid in list(e.get("cves") or []) + [c for r in e.get("cve_rules") or [] for c in r["cves"]]}
+    assert set(TABLE["cves"]) == mapped
+    for cid in mapped:
+        assert kb["cves"][cid]["vex_inherent"] is TABLE["cves"][cid]["inherent"]
+    assert VEX.cve_inherent("CVE-2016-2183") and not VEX.cve_inherent("CVE-2013-0169")  # SWEET32 vs Lucky13
+    assert VEX.cve_basis("CVE-2016-2183", ["WEAK_CIPHER"]) == ("observed", "WEAK_CIPHER")
+    assert VEX.cve_basis("CVE-2013-0169", ["CBC_ONLY"]) == ("cve", None)  # implementation-specific: triage
+    assert VEX.cve_basis("CVE-2023-48795", ["SSH_CBC_CIPHER"]) == ("cve", None)  # Terrapin
+    assert VEX.cve_basis("CVE-2022-3602", ["LIB_KNOWN_CVE"]) == ("cve", None)  # library range
 
 
 def test_quantum_detail_names_hndl_for_key_exchange_and_the_q_grades():
@@ -108,16 +149,29 @@ def test_quantum_detail_names_hndl_for_key_exchange_and_the_q_grades():
     assert "forge" in VEX.analysis_for("quantum_only", code="DISK_XTS_128")["detail"]
 
 
-@pytest.mark.parametrize("status,state,response", [
-    ("done", "resolved", None), ("accepted_risk", "exploitable", ["will_not_fix"]),
-    ("in_progress", "exploitable", ["update"]), (None, "exploitable", None),
+COLLECTED = dt.datetime(2026, 11, 10, 9, 0)
+
+
+@pytest.mark.parametrize("status,changed,basis,state,response", [
+    ("done", COLLECTED + dt.timedelta(days=1), "observed", "resolved", None),     # fixed after the run collected it
+    ("done", COLLECTED - dt.timedelta(days=1), "observed", "exploitable", ["update"]),  # done, but still observed
+    ("done", None, "observed", "exploitable", ["update"]),                         # no timing: not confirmed
+    ("done", COLLECTED + dt.timedelta(days=1), "quantum_only", "resolved", None),
+    ("accepted_risk", None, "observed", "exploitable", ["will_not_fix"]),
+    ("accepted_risk", None, "quantum_only", "in_triage", ["will_not_fix"]),  # decided, still no classical attack
+    ("in_progress", None, "observed", "exploitable", ["update"]),
+    (None, None, "observed", "exploitable", None),
 ])
-def test_remediation_status_maps_to_state_and_response(status, state, response):
-    analysis = VEX.analysis_for("observed", status=status)
+def test_remediation_status_maps_to_state_and_response(status, changed, basis, state, response):
+    analysis = VEX.analysis_for(basis, status=status, code="NO_PQ_KEX" if basis == "quantum_only" else None,
+                                plan_changed_at=changed, collected_at=COLLECTED)
     assert analysis["state"] == state and analysis.get("response") == response
-    assert set(analysis.get("response") or []) <= RESPONSES
-    quantum = VEX.analysis_for("quantum_only", status=status, code="NO_PQ_KEX")
-    assert quantum["state"] == ("resolved" if status == "done" else "in_triage")
+    assert set(analysis.get("response") or []) <= RESPONSES and analysis["state"] in STATES
+    if status == "done" and state != "resolved":
+        assert "not confirmed" in analysis["detail"]
+    # the overlay never re-judges: an export entry's evidence analysis is kept, only the plan is added
+    resolved = VEX.analysis_for("drift_resolved")
+    assert VEX.apply_plan_status(resolved, status, plan_changed_at=changed, collected_at=COLLECTED) == resolved
 
 
 def test_affects_cut_says_so_with_the_true_count():
@@ -150,14 +204,48 @@ def test_kf11_export_states_follow_the_finding_not_exploitable_everywhere(run_ex
             assert basis == VEX.code_basis(_code(v)), v["id"]
             states[_code(v)] = v["analysis"]["state"]
         else:
-            assert basis == "cve" and v["analysis"]["state"] == "in_triage"
+            assert basis in ("cve", "observed")
     assert states["PROTO_TLS10"] == states["WEAK_CIPHER"] == states["SIG_MD5"] == "exploitable"
-    assert states["LIB_EOL"] == "in_triage"
+    assert states["LIB_EOL"] == states["CERT_SELF_SIGNED"] == states["KMS_NO_ROTATION"] == "in_triage"
     future = {c for c in states if c in FUTURE_RISK}
     assert future == FUTURE_RISK, states  # the run has all three future-risk codes to judge
     assert all(states[c] == "in_triage" for c in future)
     assert set(states.values()) >= {"exploitable", "in_triage"}  # KF-11: not one state for everything
     assert {"name": "zs:vex_rules", "value": VEX.VEX_RULES} in doc["metadata"]["properties"]
+
+
+def test_a_cve_from_an_observed_code_is_never_weaker_than_that_code_unless_implementation_specific(run_export):
+    """Review of #134, finding 1: SWEET32 / RC4 / MD5 collisions matched from a cipher or signature the collector
+    observed are exploitable on that asset; a library-range CVE and an implementation flaw stay in triage."""
+    doc = run_export["doc"]
+    code_state: dict[tuple[str, str], str] = {}
+    for v in doc["vulnerabilities"]:
+        if v["id"].startswith("ZS-CBOM-"):
+            for a in v["affects"]:
+                code_state[(a["ref"], _code(v))] = v["analysis"]["state"]
+    by_asset: dict[tuple[str, str], str] = {}
+    for v in doc["vulnerabilities"]:
+        if v["id"].startswith("CVE-"):
+            for a in v["affects"]:
+                by_asset[(v["id"], a["ref"])] = v["analysis"]["state"]
+    assert by_asset[("CVE-2016-2183", next(r for (r, c) in code_state if c == "WEAK_CIPHER"))] == "exploitable"
+    assert {s for (cid, _r), s in by_asset.items() if cid in ("CVE-2013-2566", "CVE-2015-2808", "CVE-2004-2761")} \
+        == {"exploitable"}
+    assert by_asset[("CVE-2022-3602", next(r for (r, c) in code_state if c == "LIB_KNOWN_CVE"))] == "in_triage"
+    for v in doc["vulnerabilities"]:
+        if not v["id"].startswith("CVE-"):
+            continue
+        for a in v["affects"]:
+            for (ref, code), state in code_state.items():
+                if ref != a["ref"] or state != "exploitable":
+                    continue
+                matched = {c["id"] for c in crypto_kb.cves_for("node", code, "")} | {
+                    c for r in (crypto_kb.entry("node", code) or {}).get("cve_rules") or [] for c in r["cves"]}
+                if v["id"] in matched and VEX.cve_inherent(v["id"]) and v["id"] in v["analysis"]["detail"]:
+                    assert v["analysis"]["state"] == "exploitable", (v["id"], code)
+        if v["analysis"]["state"] == "exploitable":
+            assert VEX.cve_inherent(v["id"]) and "is a flaw of that algorithm or protocol" in v["analysis"]["detail"]
+    assert json_errors(doc) == []
 
 
 def test_no_quantum_future_only_finding_is_exploitable(run_export):
@@ -257,34 +345,66 @@ def drift_runs(api, world):  # noqa: F811
     run2 = _run(api, "cb22-run-0002")
     _collect(api, hdr, _claim(api, hdr), [FIXED_TLS])
     _collect(api, hdr, _claim(api, hdr), [], ok=0, failed=1)
-    assert api("GET", f"/1/cbom/sources/runs/{run2['id']}/changes").json()["recorded"] is True
     return {"run1": run1, "run2": run2, "engine": engine}
+
+
+def _record_drift(api, run):  # noqa: F811
+    assert api("GET", f"/1/cbom/sources/runs/{run['id']}/changes").json()["recorded"] is True
 
 
 def test_drift_resolved_findings_are_resolved_and_point_at_assets_still_listed(api, drift_runs):  # noqa: F811
     run1, run2 = drift_runs["run1"], drift_runs["run2"]
+    before = api("GET", f"/1/cbom/sources/runs/{run2['id']}/cbom").json()
+    meta = {p["name"]: p["value"] for p in before["metadata"]["properties"]}
+    assert before["version"] == 1 and meta["zs:drift_recorded"] == "false"  # drift not recorded yet
+    assert not [v for v in before["vulnerabilities"] if v["analysis"]["state"] == "resolved"]
+    _record_drift(api, run1)
+    _record_drift(api, run2)
     doc = api("GET", f"/1/cbom/sources/runs/{run2['id']}/cbom").json()
+    meta = {p["name"]: p["value"] for p in doc["metadata"]["properties"]}
+    # content added after the run finished: same serial (same run, KB, day), next version, and it says when
+    assert doc["serialNumber"] == before["serialNumber"] and doc["version"] == 2 and meta["zs:drift_recorded"] != "false"
     resolved = {_code(v): v for v in doc["vulnerabilities"] if v["analysis"]["state"] == "resolved"}
     assert {"PROTO_TLS10", "WEAK_CIPHER"} <= set(resolved), sorted(resolved)
     comps = {c["bom-ref"]: c for c in doc["components"]}
     tls = resolved["PROTO_TLS10"]
-    # the fixed endpoint is still collected: referenced; the :8443 endpoint is gone: counted and named by its stable
-    # key, never a reference that would not resolve; source B (partial, not compared) adds nothing
-    assert [_props_of(comps[a["ref"]])["zs:location"] for a in tls["affects"]] == ["10.20.0.1:443"]
+    local = [a["ref"] for a in tls["affects"] if not a["ref"].startswith("urn:cdx:")]
+    links = [a["ref"] for a in tls["affects"] if a["ref"].startswith("urn:cdx:")]
+    # the fixed endpoint is still collected: a local reference; the :8443 endpoint is gone: a BOM-Link to its
+    # component in the baseline run's export, plus its stable key; source B (partial, not compared) adds nothing
+    assert [_props_of(comps[r])["zs:location"] for r in local] == ["10.20.0.1:443"]
+    base = api("GET", f"/1/cbom/sources/runs/{run1['id']}/cbom").json()
+    base_comps = {c["bom-ref"]: c for c in base["components"]}
+    assert len(links) == 1
+    serial, rest = links[0].removeprefix("urn:cdx:").split("/", 1)
+    version, ref = rest.split("#", 1)
+    assert f"urn:uuid:{serial}" == base["serialNumber"] and int(version) == base["version"]
+    assert _props_of(base_comps[ref])["zs:location"] == "10.20.0.1:8443"
     p = _props(tls)
     assert p["zs:vex_basis"] == "drift_resolved" and p["zs:baseline_run_id"] == str(run1["id"])
     assert p["zs:resolved_assets_not_listed"] == "1" and len(p["zs:resolved_asset_key"]) == 40
-    assert "not read" in tls["analysis"]["detail"]
+    assert "not read" in tls["analysis"]["detail"] and "zs:resolved_truncated" not in p
     with Session(drift_runs["engine"]) as s:
         keys = {e.asset_key for e in s.exec(select(CbomDriftEvent).where(CbomDriftEvent.run_id == run2["id"],
                                                                           CbomDriftEvent.kind == "resolved")).all()}
     assert p["zs:resolved_asset_key"] in keys
     refs = all_bom_refs(doc)
-    assert len(refs) == len(set(refs)) and not [r for _w, r in all_references(doc) if r not in set(refs)]
+    assert len(refs) == len(set(refs))
+    assert not [r for _w, r in all_references(doc) if r not in set(refs) and not r.startswith("urn:cdx:")]
     assert json_errors(doc) == []
     assert xml_errors(api("GET", f"/1/cbom/sources/runs/{run2['id']}/cbom?format=xml").content) == []
-    first = api("GET", f"/1/cbom/sources/runs/{run1['id']}/cbom").json()  # the baseline resolved nothing
-    assert not [v for v in first["vulnerabilities"] if v["analysis"]["state"] == "resolved"]
+    assert not [v for v in base["vulnerabilities"] if v["analysis"]["state"] == "resolved"]  # baseline: nothing
+
+
+def test_resolved_entries_say_when_drift_reached_its_event_cap(api, drift_runs, monkeypatch):  # noqa: F811
+    _record_drift(api, drift_runs["run2"])
+    monkeypatch.setattr(DRIFT, "EVENT_CAP", 2)  # the run stored more events than this
+    doc = api("GET", f"/1/cbom/sources/runs/{drift_runs['run2']['id']}/cbom").json()
+    meta = {p["name"]: p["value"] for p in doc["metadata"]["properties"]}
+    assert meta["zs:drift_events_truncated"] == "true"
+    resolved = [v for v in doc["vulnerabilities"] if v["analysis"]["state"] == "resolved"]
+    assert resolved and all(_props(v)["zs:resolved_truncated"] == "true" and "may be incomplete" in
+                            v["analysis"]["detail"] for v in resolved)
 
 
 def _props_of(component):
@@ -328,20 +448,30 @@ def certin_db(world, monkeypatch):  # noqa: F811
     return engine, ids
 
 
-def test_code_scan_vex_states_drift_resolved_and_schema(api, certin_db):  # noqa: F811
+BASE_SERIAL = "urn:uuid:7b2f2a8e-4c1d-4b8e-9f00-2a1c3d4e5f60"
+
+
+def test_code_scan_vex_states_drift_resolved_and_schema(api, certin_db, monkeypatch):  # noqa: F811
     engine, ids = certin_db
     meta = {"repo_url": "https://github.com/acme/vex", "branch": "main"}
     des = _row("3DES-CBC", "app.py", ["WEAK_ALGORITHM"], cves=["CVE-2016-2183"])
     md5 = _row("MD5", "hash.py", ["WEAK_ALGORITHM"])
     rsa = _row("RSA-2048", "keys.py", ["QUANTUM_VULNERABLE"], impact="Low", quantum_safe=False)
     aes = _row("AES-256-GCM", "app.py", [], quantum_safe=True)
+    lib = _row("openssl 1.0.2", "Dockerfile", ["VULNERABLE_CRYPTO_LIBRARY"], cves=["CVE-2016-0800"],
+               asset_type="library")
     with Session(engine) as s:
         s.add(Scan(id=60, team_id=1, owner_user_id=ids["alice"], scan_type="cbom", title="vex", scan_status="success",
-                   scan_metadata=meta, created_at=dt.datetime(2026, 10, 1), scan_data={"results": [des, md5, rsa]}))
+                   scan_metadata=meta, created_at=dt.datetime(2026, 10, 1),
+                   scan_data={"results": [des, md5, rsa, lib],
+                              "cbom_json": {"bomFormat": "CycloneDX", "specVersion": "1.6", "version": 1,
+                                            "serialNumber": BASE_SERIAL,
+                                            "components": [{"type": "cryptographic-asset", "name": r["title"],
+                                                            "bom-ref": r["bom_ref"]} for r in (des, md5, rsa, lib)]}}))
         s.add(Scan(id=61, team_id=1, owner_user_id=ids["alice"], scan_type="cbom", title="vex", scan_status="success",
                    scan_metadata=meta, created_at=dt.datetime(2026, 10, 2),
                    # 3DES still listed without its finding; MD5 gone; a stale VEX of rules 2 stored
-                   scan_data={"results": [{**des, "finding_codes": [], "impact": None, "cves": []}, rsa, aes],
+                   scan_data={"results": [{**des, "finding_codes": [], "impact": None, "cves": []}, rsa, aes, lib],
                               "vex_json": {"metadata": {"properties": [{"name": "zs:vex_rules", "value": "2"}]},
                                            "vulnerabilities": []}}))
         s.commit()
@@ -365,16 +495,53 @@ def test_code_scan_vex_states_drift_resolved_and_schema(api, certin_db):  # noqa
     quantum = by[("ZS-CBOM-QUANTUM_VULNERABLE", "in_triage")]
     assert "Quantum-only exposure" in quantum["analysis"]["detail"] and "Q-grade" in quantum["analysis"]["detail"]
     fixed = by[("ZS-CBOM-WEAK_ALGORITHM", "resolved")]
-    assert fixed["affects"] == [{"ref": des["bom_ref"]}]  # still listed, finding gone
+    # 3DES still listed, finding gone: local ref; MD5 gone: a BOM-Link to its component in the baseline scan's CBOM
+    assert fixed["affects"] == [{"ref": des["bom_ref"]},
+                                {"ref": VEX.bom_link(BASE_SERIAL, 1, md5["bom_ref"])}]
     assert _props(fixed)["zs:resolved_assets_not_listed"] == "1" and _props(fixed)["zs:baseline_scan_id"] == "60"
     assert not any(v["analysis"]["state"] == "exploitable" for v in vex["vulnerabilities"])
+    assert by[("CVE-2016-0800", "in_triage")]["analysis"]["detail"] == VEX.CODE_CVE_LIBRARY  # from the advisory
+    meta = {p["name"]: p["value"] for p in vex["metadata"]["properties"]}
+    assert vex["serialNumber"].startswith("urn:uuid:") and vex["metadata"]["timestamp"].endswith("Z")
+    assert meta["zs:supersedes"] == "rules 2" and meta["zs:scan_id"] == "61"
     assert json_errors(vex) == []
     assert metadata_vex(61) == vex  # rebuilt and stored: served from metadata from now on
+    from backend.routers import certin
+
+    writes = []
+    real_save = certin._save_scan_data
+    monkeypatch.setattr(certin, "_save_scan_data", lambda *a, **kw: (writes.append(a), real_save(*a, **kw)))
+    assert api("GET", "/1/cbom/scan/61/vex").json() == vex and writes == []  # current: served, not rebuilt
 
     old = api("GET", "/1/cbom/scan/60/vex").json()  # the baseline: weak algorithm in triage, CVE in triage
     states = {(v["id"], v["analysis"]["state"]) for v in old["vulnerabilities"]}
     assert ("ZS-CBOM-WEAK_ALGORITHM", "in_triage") in states and ("CVE-2016-2183", "in_triage") in states
+    sweet32 = next(v for v in old["vulnerabilities"] if v["id"] == "CVE-2016-2183")
+    assert sweet32["analysis"]["detail"] == VEX.CODE_CVE_ALGORITHM
     assert json_errors(old) == []
+
+
+def test_a_cbom_scan_without_result_rows_gets_a_current_vex_once(api, certin_db, monkeypatch):  # noqa: F811
+    """Review of #134, finding 4: empty or non-list results no longer fall back to the rules-2 builder."""
+    from backend.routers import certin
+
+    engine, ids = certin_db
+    bom = {"bomFormat": "CycloneDX", "specVersion": "1.6", "components": [
+        {"type": "cryptographic-asset", "name": "AES", "bom-ref": "crypto-aes"}]}
+    with Session(engine) as s:
+        for sid, results in ((70, []), (71, None)):
+            s.add(Scan(id=sid, team_id=1, owner_user_id=ids["alice"], scan_type="cbom", title=f"e{sid}",
+                       scan_status="success", scan_data={"results": results, "cbom_json": bom}))
+        s.commit()
+    writes = []
+    real_save = certin._save_scan_data
+    monkeypatch.setattr(certin, "_save_scan_data", lambda *a, **kw: (writes.append(a[0]), real_save(*a, **kw)))
+    for sid in (70, 71):
+        first = api("GET", f"/1/cbom/scan/{sid}/vex").json()
+        assert VEX.is_current("cbom", first) and json_errors(first) == []
+        assert [v["affects"] for v in first["vulnerabilities"]] == [[{"ref": "crypto-aes"}]]  # F5 stub per component
+        assert api("GET", f"/1/cbom/scan/{sid}/vex").json() == first
+    assert len(writes) == 2  # one write per scan: the second call serves the stored document
 
 
 def test_code_scan_vex_is_one_rule_set_with_the_export():
@@ -385,3 +552,39 @@ def test_code_scan_vex_is_one_rule_set_with_the_export():
     stub = next(v for v in vex["vulnerabilities"] if v["analysis"]["state"] == "not_affected")
     assert stub["affects"] == [{"ref": findings[1]["bom_ref"]}]  # CERT-In F5 "no weakness found" kept
     assert json_errors(vex) == []
+
+
+# ----------------------------------------------------------------------------- contract with the run VEX deliverable
+def _keyed(entries):
+    """(finding id, referenced asset) -> (state, [every zs:vex_basis]) of a VEX; BOM-Links compared by their asset."""
+    out = {}
+    for v in entries:
+        for a in v.get("affects") or []:
+            out[(v["id"], str(a["ref"]).rsplit("#", 1)[-1])] = (v["analysis"]["state"], VEX.props_of(v).get("zs:vex_basis"))
+    return out
+
+
+def test_the_run_vex_deliverable_agrees_with_the_export_when_it_exists(api, drift_runs):  # noqa: F811
+    """Review of #134, finding 3: CB-38's run VEX (``run_deliverables``, PR #124) is built on this export. Without a
+    remediation plan it must give every (finding, asset) the export's state and basis, keep drift-resolved entries
+    resolved, carry exactly one ``zs:vex_basis`` per entry and keep the quantum entries' ``zs:q_grades``. Skipped
+    until that module is on the branch; whichever PR lands second turns this on."""
+    RD = pytest.importorskip("backend.utilities.cbom_sources.run_deliverables")
+    _record_drift(api, drift_runs["run1"])
+    _record_drift(api, drift_runs["run2"])
+    with Session(drift_runs["engine"]) as s:
+        run = s.get(CbomCollectionRun, drift_runs["run2"]["id"])
+        now = dt.datetime.utcnow()
+        data = RD.summary(s, run, now)
+        run_vex = RD.run_vex(run, data, {}, RD.stamp(s, run, now))
+    export = _keyed(data.vulnerabilities)
+    assert any(state == "resolved" for state, _b in export.values())
+    for v in run_vex["vulnerabilities"]:
+        assert len(VEX.props_of(v).get("zs:vex_basis") or []) == 1, v["bom-ref"]
+    assert _keyed(run_vex["vulnerabilities"]) == export
+    grades = {v["id"]: VEX.props_of(v).get("zs:q_grades") for v in data.vulnerabilities
+              if VEX.entry_basis(v) == "quantum_only"}
+    assert grades and all(grades.values())
+    for v in run_vex["vulnerabilities"]:
+        if VEX.entry_basis(v) == "quantum_only":
+            assert VEX.props_of(v).get("zs:q_grades") == grades[v["id"]]

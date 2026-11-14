@@ -91,21 +91,42 @@ def _vex_is_current(scan_type: str, vex: dict) -> bool:
 
 def _build_vex(engine, scan: Scan, scan_type: str, bom: dict | None, findings: list | None, vex_mod=None) -> dict:
     """A CBOM code scan's VEX comes from the one CBOM rule set (``cbom_sources.vex_semantics``, CB-22), with the
-    findings this scan's drift resolved; SBOM and AI BOM keep ``cert_in/vex.py``."""
-    if scan_type == "cbom" and findings:
+    findings this scan's drift resolved, also when the scan stored no result rows (every component gets the F5
+    stub); SBOM and AI BOM keep ``cert_in/vex.py``."""
+    if scan_type == "cbom":
         from backend.utilities.cbom_sources import drift as DRIFT
         from backend.utilities.cbom_sources import identity as ID
         from backend.utilities.cbom_sources import vex_semantics as VEX
 
+        rows = findings if isinstance(findings, list) else []
+        components = [str(c.get("bom-ref")) for c in (bom or {}).get("components") or []
+                      if isinstance(c, dict) and c.get("bom-ref")]
+        baselines: dict[int, tuple[str, int] | None] = {}
         with Session(engine) as session:
             resolved = VEX.drift_resolved(session, team_id=scan.team_id, scan_id=scan.id)
+            truncated = bool(resolved) and VEX.drift_truncated(session, team_id=scan.team_id, scan_id=scan.id)
+            for base_id in {e["baseline"] for e in resolved if e.get("baseline") is not None}:
+                base = session.get(Scan, base_id)
+                cbom_json = ((base.scan_data or {}).get("cbom_json") if base is not None and
+                             base.team_id == scan.team_id and isinstance(base.scan_data, dict) else None)
+                serial = cbom_json.get("serialNumber") if isinstance(cbom_json, dict) else None
+                baselines[base_id] = (serial, int(cbom_json.get("version") or 1)) if serial else None
         ref_of: dict[str, str] = {}
         if resolved:
             key, _label = DRIFT.code_source(scan)
-            for raw in findings:
+            for raw in rows:
                 if isinstance(raw, dict) and raw.get("bom_ref"):
                     ref_of.setdefault(ID.stable_key("code", key, ID.code_identity(raw)), str(raw["bom_ref"]))
-        return VEX.code_scan_vex(findings, resolved=resolved, ref_of=ref_of)
+
+        def link_of(event: dict) -> str | None:  # the gone asset in the baseline scan's CBOM, when it has a serial
+            identity = baselines.get(event.get("baseline"))
+            ref = event.get("baseline_bom_ref")
+            return VEX.bom_link(identity[0], identity[1], str(ref)) if identity and ref else None
+
+        stored = scan.scan_data.get("vex_json") if isinstance(scan.scan_data, dict) else None
+        return VEX.code_scan_vex(rows, scan_id=scan.id, components=components, resolved=resolved, ref_of=ref_of,
+                                 link_of=link_of, truncated=truncated,
+                                 supersedes=stored if isinstance(stored, dict) else None)
     if vex_mod is None:
         vex_mod = _load_certin_module("vex")
     return vex_mod.build_vex(bom=bom, findings=findings, scan_type=scan_type)
