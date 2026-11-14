@@ -65,7 +65,7 @@ import {
 type Provider = "aws" | "azure" | "gcp";
 type AwsScope = "account" | "organization";
 type CaProvider = "adcs" | "aws_private_ca" | "vault" | "venafi" | "keyfactor" | "digicert" | "ejbca" | "sectigo" | "other";
-type IdpProvider = "entra_id" | "okta" | "keycloak";
+type IdpProvider = "entra_id" | "okta" | "keycloak" | "adfs";
 type MetadataProvider = "saml_metadata" | "oidc_discovery";
 
 const PROVIDERS: { value: Provider; label: string; description: string }[] = [
@@ -128,8 +128,13 @@ const IDP_ROWS: IdpRow[] = [
   { provider: "entra_id", label: "Microsoft Entra ID", detail: "public metadata; no permission needed", defaultName: "Entra ID" },
   { provider: "okta", label: "Okta", detail: "public metadata; no permission needed", defaultName: "Okta" },
   { provider: "keycloak", label: "Keycloak", detail: "public metadata; no permission needed", defaultName: "Keycloak" },
+  { provider: "adfs", label: "ADFS", detail: "public metadata; no permission needed", defaultName: "ADFS" },
 ];
+const IDP_ROW_PROVIDERS: ReadonlySet<string> = new Set(IDP_ROWS.map((r) => r.provider));
 const METADATA_LABEL: Record<MetadataProvider, string> = { saml_metadata: "SAML metadata", oidc_discovery: "OIDC discovery" };
+/** ADFS publishes both documents under its server address (backend idp_collect.discovery_urls). */
+const ADFS_OIDC_PATH = "/adfs/.well-known/openid-configuration";
+const ADFS_METADATA_PATH = "/FederationMetadata/2007-06/FederationMetadata.xml";
 
 const CHECK_BADGE: Record<CbomAwsCheck["status"], [Tone, string]> = {
   pass: ["green", "Pass"],
@@ -465,7 +470,8 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
   const awsSources = cloudSources.filter((s) => s.kind === "aws_account");
   const caSources = identitySources.filter((s) => s.kind === "ca_connector");
   const idpSources = identitySources.filter((s) => s.kind === "idp");
-  const metadataSources = idpSources.filter((s) => s.config?.provider === "saml_metadata" || s.config?.provider === "oidc_discovery");
+  // every IdP source is listed somewhere: on its provider's row, or with the metadata URLs (any provider without a row)
+  const metadataSources = idpSources.filter((s) => !IDP_ROW_PROVIDERS.has(String(s.config?.provider ?? "")));
   const identityNames = idpSources.map((s) => s.name);
 
   // The result this browser just received stays shown while the server still holds it (or while the account, just
@@ -749,22 +755,6 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
                   renderDetail={(s) => <IdpTestLine source={s} />}
                 />
               ))}
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-zinc-200 dark:border-zinc-800 px-4 py-3">
-                <div className="min-w-0">
-                  <span className="text-sm font-medium text-zinc-900 dark:text-white">ADFS</span>
-                  <span className="ml-1.5 text-xs text-zinc-500 break-words">
-                    add its SAML metadata URL below (
-                    <span className="font-mono break-all">https://your-adfs/FederationMetadata/2007-06/FederationMetadata.xml</span>); the
-                    Windows servers you add are read for their certificate stores and TLS settings, nothing ADFS-specific
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <StatusBadge tone="zinc">Metadata URL</StatusBadge>
-                  <Button variant="outline" size="sm" className="cursor-pointer" onClick={() => onNavigate("servers")}>
-                    Servers
-                  </Button>
-                </div>
-              </div>
             </div>
             <MetadataUrls
               teamId={teamId}
@@ -2514,6 +2504,7 @@ function IdpDialog({
   const [secret, setSecret] = useState("");
   const [errors, setErrors] = useState<Record<string, string | null>>({});
   const secretName = provider === "okta" ? "api_token" : "client_secret";
+  const asksSecret = provider !== "adfs"; // backend kinds._idp_secrets: ADFS stores none
   const secretLabel = provider === "okta" ? "API token" : "Client secret";
   const secretSet = !!source?.secrets_set.includes(secretName);
 
@@ -2521,9 +2512,9 @@ function IdpDialog({
     mutationFn: () => {
       const config: Record<string, unknown> = { provider };
       if (provider === "entra_id") Object.assign(config, { tenant_id: tenantId.trim().toLowerCase(), client_id: clientId.trim() });
-      if (provider === "okta") Object.assign(config, { base_url: baseUrl.trim() });
+      if (provider === "okta" || provider === "adfs") Object.assign(config, { base_url: baseUrl.trim() });
       if (provider === "keycloak") Object.assign(config, { base_url: baseUrl.trim(), realm: realm.trim(), client_id: clientId.trim() });
-      const body = { name: name.trim(), config, secrets: secret ? { [secretName]: secret } : {} };
+      const body = { name: name.trim(), config, secrets: asksSecret && secret ? { [secretName]: secret } : {} };
       return source
         ? updateCbomSource(teamId, source.id, { ...body, expected_version: source.row_version })
         : createCbomSource(teamId, { kind: "idp", ...body });
@@ -2542,6 +2533,8 @@ function IdpDialog({
       next.client = clientId.trim() ? null : "Enter the application (client) ID";
     } else if (provider === "okta") {
       next.baseUrl = httpsUrlError(baseUrl, "Okta domain");
+    } else if (provider === "adfs") {
+      next.baseUrl = httpsUrlError(baseUrl, "ADFS server address");
     } else {
       next.baseUrl = httpsUrlError(baseUrl, "Keycloak base URL");
       next.realm = realm.trim() ? null : "Enter the realm";
@@ -2564,7 +2557,9 @@ function IdpDialog({
               ? "ZeroShield reads this tenant's public OpenID and federation metadata: its signing keys and certificates. No permission is needed; the application ID is kept for API reads that are not built yet."
               : provider === "okta"
                 ? "ZeroShield reads your Okta org's public OpenID metadata: its signing keys. No API token is needed or used yet."
-                : "ZeroShield reads the realm's public OpenID and SAML metadata: its signing keys and certificates. The client ID is kept for API reads that are not built yet."}
+                : provider === "adfs"
+                  ? `ZeroShield reads your ADFS server's public OpenID metadata (${ADFS_OIDC_PATH}) and federation metadata (${ADFS_METADATA_PATH}): its token-signing keys and certificates. No permission is needed. The Windows servers you add are read for their certificate stores and TLS settings, nothing ADFS-specific.`
+                  : "ZeroShield reads the realm's public OpenID and SAML metadata: its signing keys and certificates. The client ID is kept for API reads that are not built yet."}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
@@ -2584,14 +2579,19 @@ function IdpDialog({
               />
             </Field>
           )}
-          {(provider === "okta" || provider === "keycloak") && (
-            <Field label={provider === "okta" ? "Okta domain" : "Base URL"} htmlFor="idp-base" required error={errors.baseUrl}>
+          {(provider === "okta" || provider === "keycloak" || provider === "adfs") && (
+            <Field
+              label={provider === "okta" ? "Okta domain" : provider === "adfs" ? "ADFS server address" : "Base URL"}
+              htmlFor="idp-base"
+              required
+              error={errors.baseUrl}
+            >
               <Input
                 id="idp-base"
                 value={baseUrl}
                 maxLength={512}
                 spellCheck={false}
-                placeholder={provider === "okta" ? "https://example.okta.com" : "https://sso.example.com"}
+                placeholder={provider === "okta" ? "https://example.okta.com" : provider === "adfs" ? "https://adfs.example.com" : "https://sso.example.com"}
                 onChange={(e) => setBaseUrl(e.target.value)}
               />
             </Field>
@@ -2606,7 +2606,7 @@ function IdpDialog({
               <Input id="idp-client" className="font-mono text-sm" value={clientId} maxLength={128} spellCheck={false} onChange={(e) => setClientId(e.target.value)} />
             </Field>
           )}
-          <SecretField
+          {asksSecret && <SecretField
             id="idp-secret"
             label={secretLabel}
             value={secret}
@@ -2614,7 +2614,7 @@ function IdpDialog({
             isSet={secretSet}
             error={errors.secret}
             hint={secretSet ? "Saved. Leave blank to keep it; changing the address or IDs clears it." : `Optional. ${IDP_HOW}`}
-          />
+          />}
         </div>
         <DialogFooter>
           <Button variant="outline" className="cursor-pointer" onClick={onClose}>
@@ -2714,8 +2714,11 @@ function MetadataUrls({
           {sources.map((s) => (
             <li key={s.id} className="rounded-md border border-zinc-200 dark:border-zinc-800 px-3 py-2 space-y-1">
               <div className="flex items-center gap-2">
-                <StatusBadge tone="zinc">{METADATA_LABEL[s.config?.provider as MetadataProvider] ?? "Metadata"}</StatusBadge>
-                <Truncate className="flex-1 min-w-0 font-mono text-xs text-zinc-700 dark:text-zinc-300" text={cfgString(s, "metadata_url")} />
+                <StatusBadge tone="zinc">{METADATA_LABEL[s.config?.provider as MetadataProvider] ?? (cfgString(s, "provider") || "Identity provider")}</StatusBadge>
+                <Truncate
+                  className="flex-1 min-w-0 font-mono text-xs text-zinc-700 dark:text-zinc-300"
+                  text={cfgString(s, "metadata_url") || cfgString(s, "base_url") || s.name}
+                />
                 <Button
                   variant="outline"
                   size="sm"
