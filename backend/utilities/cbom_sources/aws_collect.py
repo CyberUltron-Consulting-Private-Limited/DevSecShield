@@ -418,6 +418,9 @@ def _kms_facts(meta: dict[str, Any]) -> dict[str, Any]:
             "current_key_material_id": meta.get("CurrentKeyMaterialId")}
 
 
+ACM_KEY_PAIR_ORIGINS = ["AWS_MANAGED", "CUSTOMER_PROVIDED", "ACME"]
+
+
 def _cert_asset(arn: str, label: str, detail: dict[str, Any], kind: str = "certificate", *,
                 summary: dict[str, Any] | None = None) -> dict[str, Any]:
     """``summary``: the ACM ListCertificates entry, for the export facts (an exported certificate's key is used
@@ -437,7 +440,10 @@ def _cert_asset(arn: str, label: str, detail: dict[str, Any], kind: str = "certi
                       "in_use_by": (in_use or [])[:10], "renewal_eligibility": detail.get("RenewalEligibility"),
                       "source": "aws", "identity": arn,
                       **({"exported": summary.get("Exported"),
-                          "export_option": summary.get("ExportOption") or (detail.get("Options") or {}).get("Export")}
+                          "export_option": summary.get("ExportOption") or (detail.get("Options") or {}).get("Export"),
+                          # ACME: the key pair belongs to the customer's ACME client (PR-B keeps it out of CERT_UNUSED)
+                          "key_pair_origin": summary.get("CertificateKeyPairOrigin")
+                          or detail.get("CertificateKeyPairOrigin")}
                          if summary is not None else {})}}
 
 
@@ -937,8 +943,10 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit,
         client = acct.client("acm", region)
         prefix = f"arn:aws:acm:{region}:{acct.account}:"
         everything = {"keyTypes": ACM_KEY_TYPES}
+        # every key pair origin: by default ListCertificates leaves out ACME-issued certificates (CB-33 EC-3, PR-D;
+        # the parameter needs botocore >= 1.44)
         summaries, truncated, page_error = _paginate_kept(client, "list_certificates", "CertificateSummaryList",
-                                                          Includes=everything,
+                                                          Includes=everything, CertificateKeyPairOrigins=ACM_KEY_PAIR_ORIGINS,
                                                           PaginationConfig={"PageSize": PER_SERVICE_CAP})
         items = _Items("acm", region, acct.account, label, tick)
         for summary in summaries:
@@ -1722,11 +1730,6 @@ def read_target(acct: _Account, region: str, cfg: dict[str, Any], emit: Emit,
                 raise AwsThrottled(code) from exc
             return {"target": f"{label}/{region}", "status": "error", "error": f"throttled: {code}"[:256], "assets": 0}
         return {"target": f"{label}/{region}", "status": "auth_failed", "error": code[:256], "assets": 0}
-    if region == "global":
-        # ACM certificates issued through ACME are not returned by ListCertificates in this SDK version (CB-33 EC-3):
-        # said once per account, so "no ACME certificate" is never read as "none exists"
-        emit(_gap(label, f"arn:aws:acm::{acct.account}:certificate#acme", "ACME-issued ACM certificates",
-                  "not_supported", "ACME-issued ACM certificates are not listed by this SDK version", by_choice=True))
     if codes is not None:
         for code_key, n in tally.codes.items():
             codes[code_key] = codes.get(code_key, 0) + n
