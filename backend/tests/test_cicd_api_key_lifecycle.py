@@ -26,11 +26,9 @@ if str(ROOT) not in sys.path:
 
 os.environ.setdefault("JWT_SECRET_KEY", "issue99-cicd-key-test-secret-not-for-prod")
 
-from backend.main import app
-from backend.new_models import CicdIntegration, Team, TeamMembership, User
-from backend.utilities.cicd.auth import (
-    get_user_integration_team_from_api_key,
-)
+from backend.new_models import CicdIntegration, Team, TeamMembership, User  # noqa: E402
+from backend.utilities.cicd.auth import get_user_integration_team_from_api_key  # noqa: E402
+from backend.main import app  # noqa: E402
 
 
 class _Cursor(list):
