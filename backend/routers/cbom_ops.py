@@ -314,7 +314,8 @@ def _create_schedule(engine, team_id: int, user_id: int, body: ScheduleCreate) -
     now = utcnow()
     with Session(engine) as session:
         total = session.exec(select(func.count()).select_from(CbomCollectionSchedule)
-                             .where(CbomCollectionSchedule.team_id == team_id)).one()
+                             .where(CbomCollectionSchedule.team_id == team_id,
+                                    CbomCollectionSchedule.policy_id.is_(None))).one()  # F1.2: managed ones do not count
         if total >= SCHED.MAX_SCHEDULES:
             raise HTTPException(status_code=400, detail=f"A team can have at most {SCHED.MAX_SCHEDULES} schedules")
         s = CbomCollectionSchedule(team_id=team_id, owner_user_id=user_id, updated_by_user_id=user_id, name=body.name,
