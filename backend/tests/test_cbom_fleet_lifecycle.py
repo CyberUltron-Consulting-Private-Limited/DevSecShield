@@ -655,3 +655,300 @@ def test_an_aws_sync_respects_the_team_cap(world, monkeypatch):
     assert (out["created"], out["capped"], out["status"]) == (3, 2, "partial") and "50,000" not in out["capped_reason"]
     with Session(engine) as s:
         assert len(s.exec(select(CbomInventoryTarget)).all()) == 3
+
+
+# ----------------------------------------------------------------------------- round 3 (review 5879767483): races and caps
+def _state(engine) -> CbomFleetTeamState:
+    with Session(engine) as s:
+        return s.exec(select(CbomFleetTeamState).where(CbomFleetTeamState.team_id == 1)).one()
+
+
+def test_a_delete_made_while_the_worker_evaluates_is_not_lost(api, world, monkeypatch):
+    """Major (evaluate.py:113): the run cleared ``eval_requested_at`` through its ORM copy, writing NULL over a request
+    committed during the run.  The delete's request must survive the run, and the next tick must apply it."""
+    from backend.utilities.cbom_sources.fleet import evaluate as EVAL
+
+    engine, _ = world
+    monkeypatch.setenv("CBOM_FLEET_MATERIALIZE", "0")
+    monkeypatch.setenv("CBOM_FLEET_INLINE_EVAL_MAX", "0")  # every team is "large": the worker evaluates
+    _targets(api, 3)
+    _collect_all(api)
+    cbom_inventory_sync.fleet_tick(engine)
+    assert _target(api, "h0")["decision"]["action"] == "collect"
+    _targets(api, 3)  # a re-import asks for an evaluation (request A)
+    real, fired = store.refresh_decisions, []
+
+    def delete_during_the_run(*a, **k):
+        out = real(*a, **k)  # the run has read every target
+        if not fired:
+            fired.append(api("DELETE", f"{INV}/targets/{_target(api, 'h0')['id']}").json())  # request B
+        return out
+
+    monkeypatch.setattr(store, "refresh_decisions", delete_during_the_run)
+    assert cbom_inventory_sync.fleet_tick(engine)[0]["status"] == "evaluated"
+    assert fired[0]["evaluation"] == "queued"
+    assert _state(engine).eval_requested_at is not None  # B survived the run that saw only A
+    page = api("GET", f"{INV}/targets", params={"decision": "collect"}).json()
+    assert page["evaluation"]["stale"] is True
+    monkeypatch.setattr(store, "refresh_decisions", real)
+    assert cbom_inventory_sync.fleet_tick(engine)[0]["status"] == "evaluated"
+    assert _target(api, "h0")["decision"]["action"] == "unmanaged"
+    assert _state(engine).eval_requested_at is None and cbom_inventory_sync.fleet_tick(engine) == []
+    assert EVAL.LEASE  # the module the run lives in
+
+
+def test_a_delete_made_while_the_worker_reconciles_reaches_the_managed_source(api, world, monkeypatch):
+    """Major (evaluate.py:113, half 2): ``request()`` kept an older ``reconcile_requested_at`` (``or now``), so a write
+    during a reconcile added nothing and the run then cleared it.  The delete must still leave its managed source."""
+    from backend.utilities.cbom_sources.fleet import evaluate as EVAL
+
+    engine, _ = world
+    _targets(api, 3)
+    _collect_all(api)
+    cbom_inventory_sync.fleet_tick(engine)
+    assert "10.2.0.1" in _addresses_in_managed(engine)
+    _targets(api, 3)  # asks for a reconcile (request A)
+    assert _state(engine).reconcile_requested_at is not None
+    real, fired = EVAL.evaluate_team, []
+
+    def delete_during_the_reconcile(*a, **k):
+        out = real(*a, **k)  # the reconcile has its decisions
+        if not fired and k.get("keep_collect"):
+            fired.append(api("DELETE", f"{INV}/targets/{_target(api, 'h0')['id']}").json())  # request B
+        return out
+
+    monkeypatch.setattr(EVAL, "evaluate_team", delete_during_the_reconcile)
+    assert cbom_inventory_sync.fleet_tick(engine)[0]["status"] == "reconciled" and fired
+    assert _state(engine).reconcile_requested_at is not None  # B survived
+    monkeypatch.setattr(EVAL, "evaluate_team", real)
+    assert cbom_inventory_sync.fleet_tick(engine)[0]["status"] == "reconciled"
+    assert "10.2.0.1" not in _addresses_in_managed(engine) and _target(api, "h0")["managed_source_id"] is None
+    assert _state(engine).reconcile_requested_at is None and cbom_inventory_sync.fleet_tick(engine) == []
+
+
+def test_a_write_does_not_wait_behind_a_scheduled_retry(api, world):
+    """A deferral schedules a retry 60 s ahead; a later write asks for a reconcile now, not at the retry time."""
+    engine, _ = world
+    _targets(api, 2)
+    _collect_all(api)
+    later = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None) + dt.timedelta(seconds=60)
+    with Session(engine) as s:
+        s.exec(select(CbomFleetTeamState)).one().reconcile_requested_at = later
+        s.commit()
+    _targets(api, 3)
+    assert _state(engine).reconcile_requested_at < later
+
+
+def test_an_inventory_source_deleted_while_its_sync_runs_stays_deleted(api, world):
+    """Major (sync.py:128): the sync saved its discovery onto a source deleted while it listed, reviving its targets
+    (``deleted_at`` back to None) and writing ``last_sync_status`` onto the deleted source."""
+    engine, _ = world
+    with Session(engine) as s:
+        src = CbomInventorySource(team_id=1, kind="aws", name="lab", config={})
+        s.add(src)
+        s.commit()
+        s.refresh(src)
+        sid = src.id
+
+    def found() -> aws_inventory.Discovery:
+        d = aws_inventory.Discovery(account_id="1", coverage={"us-east-1": {"ec2": "ok"}})
+        d.targets = [normalize({"external_id": f"arn:aws:ec2:us-east-1:1:instance/i-{n}", "address": f"10.0.0.{n + 1}",
+                                "attributes": {"service": "ec2"}}) for n in range(3)]
+        return d
+
+    t0 = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
+    SYNC.save_discovery(engine, sid, found(), t0, sync_id="s1")  # an earlier sync: 3 targets
+    with Session(engine) as s:  # the next sync claims the source and starts listing
+        assert SYNC.claim(s, sid, t0 + dt.timedelta(minutes=1))
+    gone = api("DELETE", f"{INV}/sources/{sid}").json()  # a person deletes it meanwhile
+    assert gone["targets_removed"] == 3
+    out = SYNC.save_discovery(engine, sid, found(), t0 + dt.timedelta(minutes=2), sync_id="s2",
+                              lease=t0 + dt.timedelta(minutes=1) + SYNC.LEASE)
+    assert out["status"] == "cancelled", out
+    with Session(engine) as s:
+        assert [t.deleted_at is not None for t in s.exec(select(CbomInventoryTarget)).all()] == [True] * 3
+        src = s.get(CbomInventorySource, sid)
+        assert src.deleted_at is not None and src.lease_until is None and src.last_sync_status != "ok"
+    assert api("GET", f"{INV}/targets").json()["total"] == 0
+
+
+def test_a_sync_that_lost_its_lease_saves_nothing(world):
+    """Another worker claimed the source after this sync's lease ran out: the late save is dropped."""
+    engine, _ = world
+    with Session(engine) as s:
+        src = CbomInventorySource(team_id=1, kind="aws", name="lab", config={})
+        s.add(src)
+        s.commit()
+        s.refresh(src)
+        sid = src.id
+    t0 = dt.datetime(2026, 11, 12)
+    with Session(engine) as s:
+        assert SYNC.claim(s, sid, t0)
+    with Session(engine) as s:
+        assert SYNC.claim(s, sid, t0 + SYNC.LEASE + dt.timedelta(seconds=1))  # the first lease ran out
+    d = aws_inventory.Discovery(account_id="1", coverage={"us-east-1": {"ec2": "ok"}})
+    d.targets = [normalize({"external_id": "arn:aws:ec2:us-east-1:1:instance/i-1", "address": "10.0.0.1",
+                            "attributes": {"service": "ec2"}})]
+    assert SYNC.save_discovery(engine, sid, d, t0 + SYNC.LEASE, sync_id="s1", lease=t0 + SYNC.LEASE)["status"] \
+        == "cancelled"
+    with Session(engine) as s:
+        assert s.exec(select(CbomInventoryTarget)).all() == []
+        assert s.get(CbomInventorySource, sid).last_sync_status == "running"  # the new owner's sync is untouched
+
+
+def _salt_transport(engine) -> int:
+    from backend.utilities.cbom_sources.transports.models import CbomTransport
+
+    with Session(engine) as s:
+        row = CbomTransport(team_id=1, kind="salt", name="salt-1", name_lower="salt-1", enabled=True,
+                            config={}, owner_user_id=1, last_validation_status="passed")
+        s.add(row)
+        s.commit()
+        s.refresh(row)
+        return int(row.id)
+
+
+def test_fleet_kind_managed_sources_hold_at_most_f13s_limit(api, world, monkeypatch):
+    """Major (materialize.py:169): fleet-kind sources are batched at min(batch_size, MAX_FLEET_TARGETS_PER_SOURCE)
+    (coordinator decision, CONTRACT section 3); F1.3's FleetHostsConfig refuses more than 200 hosts."""
+    from backend.utilities.cbom_sources.transports.limits import MAX_FLEET_TARGETS_PER_SOURCE
+
+    engine, _ = world
+    monkeypatch.setenv("CBOM_FLEET_TRANSPORTS", "1")
+    _targets(api, 450)
+    node_id, _tok, _reg = enroll_node(api)
+    _policy(api, "salt-all", 10, {}, {"transport": "salt", "transport_id": _salt_transport(engine), "node_id": node_id,
+                                      "batch_size": 1000})
+    out = api("POST", f"{FLEET}/reconcile").json()
+    assert (out["problems"], out["sources_created"]) == ([], 3), out["problems"]
+    sizes = sorted((len(s.config["targets"]) for s in _managed(engine)), reverse=True)
+    assert MAX_FLEET_TARGETS_PER_SOURCE == 200 and sizes == [200, 200, 50]
+    assert {s.kind for s in _managed(engine)} == {"salt_hosts"}
+
+
+def test_two_first_reads_of_a_team_do_not_fail(world):
+    """Minor (evaluate.py:82): the state row was created by select-then-insert, so two first reads at once (the Fleet
+    tab loads policies and targets together) raced on UNIQUE(team_id) and the loser answered 500."""
+    from backend.utilities.cbom_sources.fleet import evaluate as EVAL
+
+    engine, _ = world
+    now = dt.datetime(2026, 11, 14)
+
+    class Racing(Session):
+        raced = False
+
+        def exec(self, statement, *a, **k):
+            out = super().exec(statement, *a, **k)
+            if not Racing.raced:  # the other first read commits the row right after our select
+                Racing.raced = True
+                with Session(engine) as other:
+                    other.add(CbomFleetTeamState(team_id=1, counts={}, last_reconcile={}, created_at=now,
+                                                 last_updated=now))
+                    other.commit()
+            return out
+
+    with Racing(engine) as s:
+        row = EVAL.state(s, 1, now)
+        s.commit()
+        assert Racing.raced and row.team_id == 1
+    with Session(engine) as s:
+        assert len(s.exec(select(CbomFleetTeamState)).all()) == 1
+
+
+def test_a_reconcile_request_with_policies_off_is_answered_once(api, world, monkeypatch):
+    """Minor (evaluate.py:207): with policies off a reconcile request was never cleared, so the team ran every tick."""
+    engine, _ = world
+    _targets(api, 2)
+    _collect_all(api)
+    monkeypatch.setenv("CBOM_FLEET_POLICIES", "0")
+    with Session(engine) as s:
+        st = s.exec(select(CbomFleetTeamState)).one()
+        st.reconcile_requested_at = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
+        s.commit()
+    assert cbom_inventory_sync.fleet_tick(engine)[0]["status"] == "evaluated"
+    assert cbom_inventory_sync.fleet_tick(engine) == [] and _state(engine).reconcile_requested_at is None
+
+
+def test_preview_of_an_edit_keeps_the_saved_fields_the_body_leaves_out(api, world):
+    """Nit (cbom_fleet_policies.py:259): an edit preview of {name, action} took PolicyCreate's defaults (priority
+    100, selector {} = everything) instead of the saved values, as a PATCH keeps them."""
+    node_id, _tok, _reg = enroll_node(api)
+    cred = _credential(api)
+    rows = [{"external_id": f"h{i}", "address": f"10.2.0.{i + 1}", "tags": {"env": "prod" if i < 3 else "dev"}}
+            for i in range(5)]
+    assert api("POST", f"{INV}/import", json={"format": "json", "content": json.dumps(rows)}).status_code == 200
+    ssh = {"transport": "ssh", "credential_id": cred["id"], "node_id": node_id}
+    p = _policy(api, "prod", 10, {"tag": "env", "op": "eq", "value": "prod"}, ssh)
+    prev = api("POST", f"{FLEET}/policies/preview", json={"policy": {"name": "prod", "action": ssh},
+                                                          "policy_id": p["id"]}).json()
+    assert prev["matched"] == prev["would_collect"] == 3, prev
+
+
+def test_an_empty_tag_value_filters_exactly(api, world):
+    """Nit (cbom_fleet_inventory.py:166): tag_value="" meant "the key exists"; AWS tags often have empty values."""
+    r = api("POST", f"{INV}/import", json={"format": "json", "content": json.dumps([
+        {"external_id": "a", "address": "10.9.0.1", "tags": {"owner": ""}},
+        {"external_id": "b", "address": "10.9.0.2", "tags": {"owner": "ops"}}])})
+    assert r.status_code == 200, r.text
+    ids = lambda **p: sorted(t["external_id"] for t in api("GET", f"{INV}/targets", params=p).json()["targets"])  # noqa: E731
+    assert ids(tag_key="owner", tag_value="") == ["a"]
+    assert ids(tag_key="owner") == ["a", "b"] and ids(tag_key="owner", tag_value="ops") == ["b"]
+
+
+def test_writes_ask_the_worker_without_anyone_calling_reconcile(api, world, monkeypatch):
+    """Minor (lifecycle.py:65, survivors B21/B26/B02): a target delete and an AWS sync ask the worker themselves, and
+    a node change made outside the fleet routes marks the stored decisions stale through the digest."""
+    from backend.new_models import CbomScanNode
+
+    engine, _ = world
+    _targets(api, 3)
+    node_id, _cred, _p = _collect_all(api)
+    cbom_inventory_sync.fleet_tick(engine)
+    assert "10.2.0.1" in _addresses_in_managed(engine) and _state(engine).reconcile_requested_at is None
+    api("DELETE", f"{INV}/targets/{_target(api, 'h0')['id']}")  # B21: no POST /reconcile here
+    assert _state(engine).reconcile_requested_at is not None
+    assert cbom_inventory_sync.fleet_tick(engine)[0]["status"] == "reconciled"
+    assert "10.2.0.1" not in _addresses_in_managed(engine)
+    with Session(engine) as s:  # B26: a sync's save asks for an evaluation and a reconcile
+        src = CbomInventorySource(team_id=1, kind="aws", name="lab", config={})
+        s.add(src)
+        s.commit()
+        s.refresh(src)
+        sid = src.id
+    found = aws_inventory.Discovery(account_id="1", coverage={"us-east-1": {"ec2": "ok"}})
+    found.targets = [normalize({"external_id": "arn:aws:ec2:us-east-1:1:instance/i-9", "address": "10.0.9.9",
+                                "attributes": {"service": "ec2"}})]
+    SYNC.save_discovery(engine, sid, found, dt.datetime.now(dt.timezone.utc).replace(tzinfo=None), sync_id="s1")
+    st = _state(engine)
+    assert st.eval_requested_at is not None and st.reconcile_requested_at is not None
+    cbom_inventory_sync.fleet_tick(engine)
+    assert "10.0.9.9" in _addresses_in_managed(engine)
+    monkeypatch.setenv("CBOM_FLEET_INLINE_EVAL_MAX", "0")  # B02: reads must say "stale", not evaluate in place
+    assert api("GET", f"{FLEET}/policies").json()["evaluation"]["stale"] is False
+    with Session(engine) as s:
+        s.get(CbomScanNode, node_id).mode = "agent"
+        s.commit()
+    assert api("GET", f"{FLEET}/policies").json()["evaluation"]["stale"] is True
+
+
+def test_the_inline_threshold_is_inclusive_and_two_claims_do_not_both_win(api, world, monkeypatch):
+    """Minor (survivors B08, B06): a team of exactly CBOM_FLEET_INLINE_EVAL_MAX targets is evaluated in the request;
+    of two runs of one team, the second finds it leased."""
+    from backend.utilities.cbom_sources.fleet import evaluate as EVAL
+
+    engine, _ = world
+    monkeypatch.setenv("CBOM_FLEET_MATERIALIZE", "0")
+    monkeypatch.setenv("CBOM_FLEET_INLINE_EVAL_MAX", "3")
+    _targets(api, 3)
+    node_id, _tok, _reg = enroll_node(api)
+    cred = _credential(api)
+    r = api("POST", f"{FLEET}/policies", json={"name": "all", "priority": 10, "selector": {},
+                                               "action": {"transport": "ssh", "credential_id": cred["id"],
+                                                          "node_id": node_id}})
+    assert r.json()["evaluation"] == "done"
+    now = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
+    with Session(engine) as s:
+        assert EVAL._claim(s, 1, now)
+    with Session(engine) as s:
+        assert not EVAL._claim(s, 1, now)
+    assert EVAL.run_team(engine, 1, now)["status"] == "busy"

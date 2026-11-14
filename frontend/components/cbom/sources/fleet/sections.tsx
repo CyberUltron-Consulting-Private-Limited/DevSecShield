@@ -14,6 +14,7 @@ import InventorySection from "./InventorySection";
 import PoliciesSection from "./PoliciesSection";
 // F1.3 import
 // F1.4 import
+import { SshCaFleetSection } from "./SshCaSection";
 
 export interface FleetSectionProps {
   teamId: number;
@@ -33,4 +34,5 @@ export const FLEET_SECTIONS: FleetSection[] = [
   { id: "credentials", flag: "policies", Component: CredentialsSection },
   // F1.3
   // F1.4
+  { id: "ssh-ca", flag: "ssh_ca", Component: SshCaFleetSection },
 ];

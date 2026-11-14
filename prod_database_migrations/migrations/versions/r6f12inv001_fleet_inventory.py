@@ -1,7 +1,7 @@
 """cbom fleet (F1.2): inventory sources and inventory targets
 
 Revision ID: r6f12inv001
-Revises: rv6p1nodename001
+Revises: r6f13trn001
 Create Date: 2026-11-11 12:00:00.000000
 
 * ``cbominventorysource``: where targets come from (an AWS account through its validated read-only role, a CSV/JSON
@@ -24,7 +24,7 @@ import sqlmodel
 
 # revision identifiers, used by Alembic.
 revision: str = 'r6f12inv001'
-down_revision: Union[str, Sequence[str], None] = 'rv6p1nodename001'
+down_revision: Union[str, Sequence[str], None] = 'r6f13trn001'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

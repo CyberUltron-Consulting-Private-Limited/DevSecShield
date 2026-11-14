@@ -18,6 +18,7 @@ import {
   pickTab,
   selectorFromDraft,
   selectorText,
+  sshCaListEnabled,
   visibleSections,
 } from "./fleetLogic";
 
@@ -101,7 +102,23 @@ assert.equal((page.match(/<TabsContent value="fleet">/g) ?? []).length, 1);
 const tab = readFileSync(join(__dirname, "FleetTab.tsx"), "utf8");
 assert.ok(tab.includes("const state = fleetTabState(status);"), "FleetTab does not use fleetTabState");
 assert.ok(!tab.includes("status.isError ||"), "FleetTab replaces its sections on any error");
-assert.ok(tab.includes("retry: (failureCount, error) => !isNotFound(error) && queryRetry(failureCount, error)"));
+const hook = readFileSync(join(__dirname, "useFleetStatus.ts"), "utf8");
+assert.ok(hook.includes("retry: (failureCount, error) => !isNotFound(error) && queryRetry(failureCount, error)"));
+assert.ok(tab.includes('import { useFleetStatus } from "./useFleetStatus";') && tab.includes("export { useFleetStatus };"));
+
+// CB36-BUG-03: the Servers tab asks for the SSH CA list only when the fleet status says the SSH CA is on (its routes
+// are 404 while CBOM_SSH_CA is off); not while the status loads or failed, and only for Linux servers.
+assert.equal(sshCaListEnabled(7, true, { ...ALL_OFF, ssh_ca: true }), true);
+assert.equal(sshCaListEnabled(7, true, ALL_OFF), false);
+assert.equal(sshCaListEnabled(7, true, { ...ALL_OFF, inventory: true, policies: true, transports: true }), false);
+assert.equal(sshCaListEnabled(7, true, undefined), false);
+assert.equal(sshCaListEnabled(7, false, { ...ALL_OFF, ssh_ca: true }), false);
+assert.equal(sshCaListEnabled(Number.NaN, true, { ...ALL_OFF, ssh_ca: true }), false);
+const servers = readFileSync(join(__dirname, "../ServersTab.tsx"), "utf8");
+assert.ok(servers.includes("const fleetStatus = useFleetStatus(teamId);"), "ServersTab does not read the fleet status");
+assert.ok(servers.includes('import { useFleetStatus } from "./fleet/useFleetStatus";'), "ServersTab imports the Fleet UI for the hook");
+assert.ok(servers.includes("enabled: sshCaListEnabled(teamId, isLinux, fleetStatus.data),"), "the SSH CA list is not gated on the status");
+assert.ok(servers.includes("const sshCaOn = fleetStatus.data?.ssh_ca === true && sshCas.isSuccess;"), "sshCaOn does not follow the flag");
 // No operator wording in what any member sees (UX review 4547018330).
 for (const operatorWords of ["this deployment", "in this version", "none of its sections"]) {
   assert.ok(!tab.includes(operatorWords), `FleetTab shows operator wording: ${operatorWords}`);

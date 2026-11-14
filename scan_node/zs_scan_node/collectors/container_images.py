@@ -88,6 +88,7 @@ TOKEN_SERVICES = {
     "registry.gitlab.com": "gitlab.com",  # GitLab.com
 }
 _AWS_V6_METADATA = ipaddress.ip_network("fd00:ec2::/32")
+_THIS_NETWORK = ipaddress.ip_network("0.0.0.0/8")  # reaches the node itself, like 0.0.0.0
 
 
 class ImageError(Exception):
@@ -172,24 +173,35 @@ class Registry:
         if origin[0] != "https":
             raise ImageError("tls_unavailable", f"{origin[1]} is not HTTPS; the node does not use plain HTTP")
         if origin not in self.clients:
-            try:
+            try:  # the registry, its token service and every redirect: one listed address skips the whole name
                 ip = netutil.resolve_checked(origin[1], self.ctx.never_scan)[0]
-            except netutil.Blocked:
-                raise ImageError("skipped_never_scan", f"{origin[1]} is on the never-scan list") from None
+            except netutil.Blocked as exc:
+                if origin != self.origin and exc.entry == netutil.UNSPECIFIED:
+                    # the gate refuses 0.0.0.0/8 and :: (also mapped and NAT64) whatever the list says; when the
+                    # REGISTRY named that host it is the registry steering the node to itself: always report it as
+                    # such, not as a never-scan skip
+                    where = exc.address or exc.what
+                    self._refuse_internal(origin[1], _internal_address(where, self.registry_ip)
+                                          or f"an address that reaches the node itself ({where})")
+                raise ImageError("skipped_never_scan", str(exc)) from None
             except OSError:
                 raise ImageError("unreachable", f"{origin[1]} does not resolve") from None
             if origin == self.origin:
                 self.registry_ip = ip
             else:
-                problem = _internal_address(ip, self.registry_ip)
-                if problem:
-                    self.ctx.log("registry pointed at an internal address; refused", registry=self.ref.registry,
-                                 host=origin[1], level="warn")
-                    raise ImageError("error", f"the registry sent the node to {origin[1]}, {problem}; refused")
+                self._refuse_internal(origin[1], _internal_address(ip, self.registry_ip))
             verify = self.registry_tls if origin == self.origin else self.public_tls
             self.clients[origin] = netutil.http_client(f"https://{origin[1]}:{origin[2]}", ip, self.ctx.never_scan,
                                                        verify=verify, timeout=TIMEOUT)
         return self.clients[origin]
+
+    def _refuse_internal(self, host: str, problem: str | None) -> None:
+        """Refuse a host the registry named (token service, redirect) that is one of the node's own or cloud-internal
+        addresses (``problem`` from _internal_address; None: nothing to refuse)."""
+        if problem:
+            self.ctx.log("registry pointed at an internal address; refused", registry=self.ref.registry, host=host,
+                         level="warn")
+            raise ImageError("error", f"the registry sent the node to {host}, {problem}; refused")
 
     def _send(self, method: str, url: str, headers: dict[str, str], stream: bool = False):
         """Send through the gate, following redirects by hand; Authorization goes to the registry origin only."""
@@ -206,6 +218,8 @@ class Registry:
             try:
                 request = client.build_request(method, path, headers=hdrs)
                 response = client.send(request, stream=stream)
+            except netutil.Blocked as exc:  # the address was listed while the pull ran
+                raise ImageError("skipped_never_scan", str(exc)) from None
             except httpx.HTTPError as exc:
                 raise ImageError(_http_status(exc), f"{parts.hostname}: {exc.__class__.__name__}") from None
             except ssl.SSLError as exc:
@@ -265,6 +279,8 @@ class Registry:
         parts = urlsplit(url)
         try:
             r = client.get(parts.path + "?" + parts.query, headers=headers)
+        except netutil.Blocked as exc:
+            raise ImageError("skipped_never_scan", str(exc)) from None
         except Exception as exc:  # httpx.HTTPError, ssl errors
             raise ImageError("unreachable", f"token service: {exc.__class__.__name__}") from None
         if r.status_code != 200:
@@ -297,12 +313,15 @@ def _tls(ca_pem: str | None, public: bool = True) -> ssl.SSLContext:
 
 def _internal_address(ip: str, registry_ip: str | None) -> str | None:
     """Why the node must not connect to ``ip`` for a host a registry named (its token service or a redirect), or None:
-    link-local (cloud metadata at 169.254.169.254, fe80::/10), unspecified, multicast and AWS's IPv6 metadata range
-    always; loopback unless the registry itself is on loopback (the node's own host, by the operator's choice)."""
+    0.0.0.0/8 and :: (they reach the node itself), link-local (cloud metadata at 169.254.169.254, fe80::/10), multicast
+    and AWS's IPv6 metadata range always; loopback unless the registry itself is on loopback (the node's own host, by
+    the operator's choice)."""
     addr = ipaddress.ip_address(ip)
     if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped is not None:
         addr = addr.ipv4_mapped
-    if addr.is_link_local or addr.is_unspecified or addr.is_multicast or addr in _AWS_V6_METADATA:
+    if addr.is_unspecified or (addr.version == 4 and addr in _THIS_NETWORK):
+        return f"an address that reaches the node itself ({ip})"
+    if addr.is_link_local or addr.is_multicast or addr in _AWS_V6_METADATA:
         return f"a link-local or metadata address ({ip})"
     if addr.is_loopback:
         own = ipaddress.ip_address(registry_ip) if registry_ip else None

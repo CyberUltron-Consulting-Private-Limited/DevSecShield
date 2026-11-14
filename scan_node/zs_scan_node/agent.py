@@ -35,7 +35,7 @@ import threading
 import time
 import traceback
 
-from zs_scan_node import VERSION
+from zs_scan_node import node_build, reported_version
 from zs_scan_node.api import Api, ApiError, Unauthorized, WrongServer
 from zs_scan_node.collectors import AGENT_CAPABILITIES, CAPABILITIES, run_job
 from zs_scan_node.jobctx import JobContext, LeaseLost
@@ -115,6 +115,10 @@ class Agent:
         for secret in (reg, self.state.node_token, os.environ.get("VAULT_TOKEN")):
             g.add(secret)
 
+    def log_start(self) -> None:
+        log("scan node starting", version=reported_version(), build=node_build() or "unknown", api=self.api_url,
+            state=self.state.directory, openssl=have_openssl())
+
     # ------------------------------------------------------------------ enrollment
     def ensure_enrolled(self) -> None:
         while not self.state.node_token and not self.shutdown.is_set():
@@ -142,7 +146,7 @@ class Agent:
             # the key ZeroShield stored is still the one this node signs with.
             key = self.state.new_signing_key()
             self.api.signing_key = key
-            body = {"registration_token": reg, "hostname": socket.gethostname()[:255], "version": VERSION,
+            body = {"registration_token": reg, "hostname": socket.gethostname()[:255], "version": reported_version(),
                     "source_ips": local_ips(), "ssh_public_key": self.state.ssh_public_key(),
                     "capabilities": self.capabilities(), "clock": _now_iso(),
                     "signing_public_key": base64.b64encode(key.public_key().public_bytes_raw()).decode()}
@@ -205,7 +209,7 @@ class Agent:
     def heartbeat_once(self) -> None:
         with self.lock:
             running = [{"job_id": r.job_id, "lease_id": r.lease_id} for r in self.running.values()]
-        body = {"hostname": socket.gethostname()[:255], "version": VERSION, "source_ips": local_ips(),
+        body = {"hostname": socket.gethostname()[:255], "version": reported_version(), "source_ips": local_ips(),
                 "capabilities": self.capabilities(), "clock": _now_iso(), "running": running}
         if self.last_error:
             body["last_error"] = global_scrubber().text(self.last_error)[:1900]
@@ -340,6 +344,8 @@ class Agent:
         for s in (self.state.node_token, os.environ.get("VAULT_TOKEN")):
             scrubber.add(s)
         scope_never = [str(x) for x in scope.get("never_scan") or []]
+        # No DNS here (this is the claim thread): the node-wide resolver looks the list's host names up, and the job's
+        # own threads wait for them (bounded) when they first check an address.
         never = NeverScan(scope_never + (self.team_never or []))
         deadline, reason = _deadline(scope, int(job.get("lease_seconds") or 900))
         lease_id = str(job.get("lease_id") or "")
@@ -356,6 +362,7 @@ class Agent:
                          deadline=deadline, deadline_reason=reason, poster=poster, state_dir=self.state.directory,
                          node_private_key_path=self.state.key_path, vault_prefix=self.vault_prefix,
                          agent_mode=self.agent_mode)
+        ctx.cert_refresher = lambda: self.api.ssh_cert(job_id, attempt, lease_id)  # F1.4: SSH CA certificates
         if self.stop_network.is_set() and is_network:
             ctx.stop_network.set()
         running = Running(job_id, lease_id, ctx, is_network, scope_never)
@@ -404,7 +411,10 @@ class Agent:
     def _post_result(self, running: Running, status: str, error: str | None, summary: str | None) -> None:
         ctx = running.ctx
         result = ctx.result(summary)
-        result["node_version"] = VERSION
+        result["node_version"] = reported_version()
+        if result.get("never_scan_unresolved"):
+            ctx.log("never-scan host names did not resolve; targets were held", names=result["never_scan_unresolved"][:20],
+                    level="warn")
         body = {"lease_id": running.lease_id, "status": status, "result": result,
                 "error": ctx.scrubber.text(error)[:3900] if error else None}
         try:
@@ -432,8 +442,12 @@ class Agent:
                 ctx.stop_network.set()
             team = self.team_never
             if team is not None and team != running.applied_team:
+                # at once: update() does no DNS (the node-wide resolver looks names up on its own threads)
                 ctx.never_scan.update(running.scope_never + team)  # union: never narrower than at claim
                 running.applied_team = team
+            sync = getattr(ctx.never_scan, "sync", None)
+            if sync is not None:
+                sync()  # no DNS: keep every answer the resolver got for the job's names (never narrower in a job)
             now = time.monotonic()
             if ctx.cancel.is_set() and running.cancel_seen is None:
                 running.cancel_seen = now
@@ -457,6 +471,9 @@ class Agent:
     def _done(self, running: Running) -> None:
         with self.lock:
             self.running.pop(running.job_id, None)
+        close = getattr(running.ctx.never_scan, "close", None)
+        if close is not None:
+            close()  # the resolver stops looking up names no running job lists
 
     # ------------------------------------------------------------------ main
     def run(self) -> None:
@@ -470,8 +487,7 @@ class Agent:
 
         signal.signal(signal.SIGTERM, stop)
         signal.signal(signal.SIGINT, stop)
-        log("scan node starting", version=VERSION, api=self.api_url, state=self.state.directory,
-            openssl=have_openssl())
+        self.log_start()
         self.ensure_enrolled()
         threading.Thread(target=self.heartbeat_loop, name="heartbeat", daemon=True).start()
         self.claim_loop()

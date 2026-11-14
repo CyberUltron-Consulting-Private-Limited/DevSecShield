@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CirclePlay, CircleX, Loader2, OctagonX, Pencil, Plus, Radar, ShieldCheck, Trash2, X } from "lucide-react";
-import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { Fragment, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { toast } from "@/utils/toast";
 
 import { Button } from "@/components/ui/button";
@@ -36,6 +36,7 @@ import {
 import AppliancesSection from "./AppliancesSection";
 import { cbomSourcesKeys } from "./keys";
 import { MetadataFields, metadataConfig, metadataFrom, type SourceMetadata } from "./SourceMetadata";
+import { exclusionSaveError, hostnameError, rangeError, storedExclusionIssue, teamExclusionError } from "./teamNeverScan";
 import {
   addressProgress,
   ago,
@@ -54,7 +55,6 @@ import {
   type WindowGrid,
 } from "./logic";
 import {
-  Checkbox2,
   ConfirmDialog,
   EmptyState,
   ErrorBlock,
@@ -116,13 +116,11 @@ const MAX_ZONE_FILE = 8 * 1024 * 1024;
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$/;
 const EMAIL_RE = /^[^@\s'"<>]{1,64}@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{2,}$/;
 const PHONE_RE = /^[0-9+()\- ]{3,64}$/;
-const HOST_LABEL_RE = /^[a-z0-9_]([a-z0-9_-]{0,61}[a-z0-9_])?$/;
 
 type Mode = "full" | "fragile";
 const SECTION_LABEL: Record<string, string> = {
   network_exclusions: "Never scan",
   ports: "Ports and protocols",
-  zeek_span: "Zeek",
   scan_window: "Scan window",
   rates: "Rate limits",
   soc: "SOC contacts",
@@ -132,7 +130,6 @@ const SECTION_LABEL: Record<string, string> = {
 interface Draft {
   network_exclusions?: CbomExclusionItem[];
   ports?: CbomPortItem[];
-  zeek_span?: boolean;
   scan_window?: WindowGrid;
   window_timezone?: string;
   rate_conn_per_s?: string;
@@ -158,54 +155,6 @@ function same(a: unknown, b: unknown): boolean {
 
 function pad(hour: number): string {
   return String(hour).padStart(2, "0");
-}
-
-function ipv4ToInt(text: string): number | null {
-  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(text);
-  if (!m) return null;
-  const parts = m.slice(1).map(Number);
-  if (parts.some((p) => p > 255)) return null;
-  return parts[0] * 16777216 + parts[1] * 65536 + parts[2] * 256 + parts[3];
-}
-
-function intToIpv4(n: number): string {
-  return [Math.floor(n / 16777216) % 256, Math.floor(n / 65536) % 256, Math.floor(n / 256) % 256, n % 256].join(".");
-}
-
-/** Light check of an IP, CIDR or a-b range (the server is the authority). Allowed ranges are capped at a /16. */
-function rangeError(raw: string, capped: boolean): string | null {
-  const text = raw.trim();
-  if (!text) return "Enter an IP address, CIDR range or a-b range, e.g. 10.20.0.0/16";
-  if (text.length > 64) return "Use at most 64 characters";
-  if (text.includes(":")) {
-    return /^[0-9a-fA-F:.]+(\/\d{1,3})?$|^[0-9a-fA-F:.]+\s*-\s*[0-9a-fA-F:.]+$/.test(text) ? null : `${text} is not an IP address or range`;
-  }
-  const dash = /^([\d.]+)\s*-\s*([\d.]+)$/.exec(text);
-  if (dash) {
-    const first = ipv4ToInt(dash[1]);
-    const last = ipv4ToInt(dash[2]);
-    if (first === null || last === null) return `${text} is not a valid address range`;
-    if (last < first) return `${text}: the range ends before it starts`;
-    if (capped && last - first + 1 > 65536) return `${text} has more than 65,536 addresses; split it into smaller ranges`;
-    return null;
-  }
-  const cidr = /^([\d.]+)(?:\/(\d{1,2}))?$/.exec(text);
-  const ip = cidr ? ipv4ToInt(cidr[1]) : null;
-  const prefix = cidr?.[2] === undefined ? 32 : Number(cidr[2]);
-  if (!cidr || ip === null || prefix > 32) return `${text} is not a valid IP address or CIDR range`;
-  const size = 2 ** (32 - prefix);
-  const network = ip - (ip % size);
-  if (network !== ip) return `${text} has host bits set; did you mean ${intToIpv4(network)}/${prefix}?`;
-  if (capped && prefix < 16) return `${text} is larger than a /16; split it into /16 ranges`;
-  return null;
-}
-
-/** Hostname check mirroring the server (lower-case labels, no wildcards, not an IP). */
-function hostnameError(name: string): string | null {
-  if (/[^\x00-\x7f]/.test(name)) return null; // internationalised names: the server converts and checks them
-  const labels = name.split(".");
-  if (name.length > 253 || !labels.every((l) => HOST_LABEL_RE.test(l)) || /^\d+$/.test(labels[labels.length - 1])) return `${name} is not a hostname`;
-  return null;
 }
 
 function cleanHostnames(lines: string[]): string[] {
@@ -250,10 +199,6 @@ function planSave(draft: Draft, s: CbomSourcesSettings) {
   if (draft.ports && !same(draft.ports, s.ports)) {
     body.ports = draft.ports;
     changed.add("ports");
-  }
-  if (draft.zeek_span !== undefined && draft.zeek_span !== s.zeek_span) {
-    body.zeek_span = draft.zeek_span;
-    changed.add("zeek_span");
   }
   const savedGrid = normalizeGrid(s.scan_window);
   const grid = draft.scan_window ?? savedGrid;
@@ -346,6 +291,9 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
       setShowErrors(false);
     },
     onError: (err) => {
+      // a refused never-scan entry (a host name in the team list): say why under the field, not only in the toast
+      const neverScan = exclusionSaveError(err);
+      if (neverScan) setExclusionError(neverScan);
       if (httpStatus(err) === 409) {
         setDraft({});
         setShowErrors(false);
@@ -400,7 +348,6 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
   // Effective values: the unsaved draft over the saved row.
   const exclusions = draft.network_exclusions ?? settings.network_exclusions;
   const ports = draft.ports ?? settings.ports;
-  const zeek = draft.zeek_span ?? settings.zeek_span;
   const savedGrid = normalizeGrid(settings.scan_window);
   const grid = draft.scan_window ?? savedGrid;
   const timezone = draft.window_timezone ?? settings.window_timezone;
@@ -420,7 +367,7 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
     const cidr = exclusion.cidr.trim();
     const reason = exclusion.reason.trim();
     const error =
-      rangeError(cidr, false) ??
+      teamExclusionError(cidr) ??
       (exclusions.some((e) => e.cidr === cidr) ? `${cidr} is already in the list` : null) ??
       (exclusions.length >= MAX_EXCLUSIONS ? `At most ${MAX_EXCLUSIONS} entries` : null) ??
       (reason.length > 120 ? "Keep the reason under 120 characters" : null);
@@ -626,43 +573,64 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
               {exclusions.length === 0 ? (
                 <EmptyState title="Nothing is excluded" body="Add OT networks, core routers and anything else that must never be touched." />
               ) : (
-                <ScrollArea className="w-full border rounded-lg">
-                  <div className="min-w-max">
-                    <Table data-testid="network-exclusions-table">
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Range</TableHead>
-                          <TableHead>Reason</TableHead>
-                          <TableHead className="w-12">
-                            <span className="sr-only">Remove</span>
-                          </TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {exclusions.map((e) => (
-                          <TableRow key={e.cidr} className="hover:bg-zinc-50 dark:hover:bg-zinc-800">
-                            <TableCell className="font-mono text-xs text-zinc-900 dark:text-white">{e.cidr}</TableCell>
-                            <TableCell className="max-w-[240px] text-zinc-600 dark:text-zinc-400">
-                              <Truncate text={e.reason || "—"} />
-                            </TableCell>
-                            <TableCell>
-                              <Button
-                                variant="ghost"
-                                size="icon-sm"
-                                className="cursor-pointer"
-                                aria-label={`Remove ${e.cidr} from never scan`}
-                                onClick={() => setDraft((d) => ({ ...d, network_exclusions: exclusions.filter((x) => x.cidr !== e.cidr) }))}
-                              >
-                                <X className="h-4 w-4" />
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                  <ScrollBar orientation="horizontal" />
-                </ScrollArea>
+                // A fixed layout as wide as the card, not a horizontal scroller: at 390 px an entry wraps and its
+                // Remove button stays in view, and a note on a stored host name gets its own full-width row below it.
+                <div className="w-full border rounded-lg">
+                  <Table data-testid="network-exclusions-table" className="table-fixed">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[45%]">Range</TableHead>
+                        <TableHead>Reason</TableHead>
+                        <TableHead className="w-12">
+                          <span className="sr-only">Remove</span>
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {exclusions.map((e, index) => {
+                        const issue = storedExclusionIssue(e.cidr);
+                        const noteId = `network-exclusion-note-${index}`;
+                        return (
+                          <Fragment key={e.cidr}>
+                            <TableRow className={cn("hover:bg-zinc-50 dark:hover:bg-zinc-800", issue && "border-b-0")}>
+                              <TableCell className="font-mono text-xs text-zinc-900 dark:text-white [overflow-wrap:anywhere]">{e.cidr}</TableCell>
+                              <TableCell className="text-zinc-600 dark:text-zinc-400">
+                                <Truncate text={e.reason || "—"} />
+                              </TableCell>
+                              <TableCell>
+                                <Button
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  className="cursor-pointer"
+                                  aria-label={`Remove ${e.cidr} from never scan`}
+                                  aria-describedby={issue ? noteId : undefined}
+                                  onClick={() => {
+                                    setExclusionError(null);
+                                    setDraft((d) => ({ ...d, network_exclusions: exclusions.filter((x) => x.cidr !== e.cidr) }));
+                                  }}
+                                >
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                            {issue && (
+                              // a note on what is stored, not a live error: no role="alert" (the InlineError under the
+                              // field is the live one); the Remove button above points to it with aria-describedby
+                              <TableRow className="hover:bg-transparent" data-testid="network-exclusion-hostname">
+                                <TableCell colSpan={3} className="pt-0 whitespace-normal">
+                                  <div id={noteId} className="space-y-1">
+                                    <StatusBadge tone="red" title={issue}>Host name: not allowed here</StatusBadge>
+                                    <p className="text-xs text-red-600 dark:text-red-400">{issue}</p>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </Fragment>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
               )}
               <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_auto] gap-2 items-start">
                 <Input
@@ -700,7 +668,14 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
                 </Button>
               </div>
               {exclusionError && <InlineError>{exclusionError}</InlineError>}
-              <p className="text-xs text-zinc-500">This list always wins. The node refuses these addresses even if a job asks for them.</p>
+              <p className="text-xs text-zinc-500">
+                This list always wins. The node refuses these addresses even if a job asks for them, in every job of
+                this team: a server, database, registry or Kubernetes API whose name resolves to a listed address is
+                skipped as a whole, and ranges are checked one address at a time. This list takes addresses and
+                ranges. A hostname listed in a server source&apos;s own Never scan field also covers every address
+                it resolves to from the scan node (until it resolves there, that source scans nothing; localhost and
+                the other loopback names cover only 127.0.0.0/8 and ::1).
+              </p>
             </Section>
 
             <Section title="Hostnames for SNI">
@@ -714,7 +689,7 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
               </div>
             </Section>
 
-            <Section title="Ports and protocols" badge={unsaved("ports") || unsaved("zeek_span")} last>
+            <Section title="Ports and protocols" badge={unsaved("ports")} last>
               {ports.length === 0 ? (
                 <p className="text-sm text-zinc-600 dark:text-zinc-400">No ports. Add at least one port for the network scan to check.</p>
               ) : (
@@ -783,11 +758,6 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
                 </Button>
               </div>
               {portError && <InlineError>{portError}</InlineError>}
-              <div data-testid="network-zeek">
-                <Checkbox2 id="network-zeek" checked={zeek} onChange={(v) => setDraft((d) => ({ ...d, zeek_span: v }))}>
-                  Also read Zeek ssl.log from a SPAN port, to see what clients actually negotiate
-                </Checkbox2>
-              </div>
             </Section>
           </div>
         </SectionCard>

@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Literal
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer, model_validator
 
 from backend.utilities.cbom_sources import targets as T
 
@@ -56,6 +56,8 @@ class _Source(_Strict):
     * owner, application, data_classification and data_lifetime_years say who answers for the source, which
       application it serves and how sensitive / long-lived its data is (remediation owners, roadmap, Mosca X);
     * environment (production, staging, ... as the CMDB names it) comes from a CMDB import or the form.
+    * operated_by says who runs what the source reaches: ``us`` (the team, the default when unset) or ``vendor`` (a
+      SaaS or managed service); a vendor-operated source's findings are at least vendor-fixed (crypto-agility, CB-24).
 
     Every field declared here is metadata (``METADATA_FIELDS``): editing it never cancels a job or resets the
     connection test, a source form that does not send it keeps the stored value (send null to clear), and a run
@@ -68,6 +70,7 @@ class _Source(_Strict):
     data_classification: DataClassification | None = None
     data_lifetime_years: int | None = Field(default=None, ge=0, le=100)
     environment: str | None = Field(default=None, max_length=32)
+    operated_by: Literal["us", "vendor"] | None = None
 
     @field_validator("owner", "application", "environment")
     @classmethod
@@ -162,13 +165,19 @@ class ServersConfig(_Source):
     login_user: str = Field(default="zs-cbom", max_length=64)
     host_key_policy: Literal["tofu", "pinned"] = "tofu"
     known_hosts: str | None = Field(default=None, max_length=MAX_SECRET_BYTES)
-    credential_type: Literal["node_key", "ssh_cert", "vault", "password"] = "node_key"
+    credential_type: Literal["node_key", "ssh_cert", "vault", "password", "ssh_ca"] = "node_key"
     vault: VaultRef | None = None
     tier: Literal[1, 2] = 1
     parallel: int = Field(default=8, ge=1, le=64)
     timeout_s: int = Field(default=300, ge=10, le=3600)
     window: Literal["network", "any", "custom"] = "network"
     custom_window: list[list[bool]] | None = None
+    # credential_type "ssh_ca" (F1.4): the node's own key, certified per job by this team's SSH CA lineage for these
+    # principals (zs-<team>-<group>), bound to these source addresses (else the node's reported addresses).  Omitted
+    # from the dump for every other credential type, so existing sources keep their connection version.
+    ssh_ca_id: int | None = Field(default=None, ge=1, le=2_147_483_647)
+    ssh_principals: list[str] = Field(default_factory=list, max_length=16)
+    ssh_source_addresses: list[str] = Field(default_factory=list, max_length=32)
 
     @field_validator("login_user")
     @classmethod
@@ -176,11 +185,38 @@ class ServersConfig(_Source):
         # An empty login falls back to the kind's own default (zs-cbom on Linux, svc-zscbom on Windows/AD).
         return check_login(v) or cls.model_fields["login_user"].default
 
+    @model_serializer(mode="wrap")
+    def _dump(self, handler):
+        data = handler(self)
+        if isinstance(data, dict) and self.credential_type != "ssh_ca":
+            for name in ("ssh_ca_id", "ssh_principals", "ssh_source_addresses"):
+                data.pop(name, None)
+        return data
+
     @model_validator(mode="after")
     def _check(self) -> "ServersConfig":
         parsed = T.parse_targets(self.targets)
         self.targets = parsed.normalized
         self.exclusions = T.parse_exclusions(self.exclusions).normalized
+        if self.credential_type == "ssh_ca":
+            from backend.utilities.cbom_sources.sshca import certs as _ca_certs
+            from backend.utilities.cbom_sources.sshca import flags as _ca_flags
+
+            if not _ca_flags.enabled():
+                raise ValueError(f"credential_type: {_ca_flags.OFF_MESSAGE}")
+            if self.ssh_ca_id is None:
+                raise ValueError("ssh_ca_id: choose the SSH CA that signs the scan node's certificates")
+            principals = [p.strip() for p in self.ssh_principals if p.strip()]
+            if not principals or any(not _ca_certs.principal_shape_ok(p) for p in principals):
+                raise ValueError("ssh_principals: one or more principals like zs-<team id>-<group> (lowercase "
+                                 "letters, digits and . _ -), as listed in the servers' principals file")
+            self.ssh_principals = list(dict.fromkeys(principals))
+            try:
+                self.ssh_source_addresses = list(_ca_certs.source_address_list(self.ssh_source_addresses))
+            except ValueError as exc:
+                raise ValueError(f"ssh_source_addresses: {exc}") from None
+        else:
+            self.ssh_ca_id, self.ssh_principals, self.ssh_source_addresses = None, [], []
         if self.credential_type == "vault" and self.vault is None:
             raise ValueError("vault: choose a vault and enter the secret path")
         if self.credential_type != "vault":
@@ -242,6 +278,7 @@ def _server_secrets(cfg: ServersConfig) -> set[str]:
         return {"password"}
     if cfg.credential_type == "ssh_cert":
         return {"ssh_certificate", "private_key"}
+    # node_key, vault, and ssh_ca (nothing stored: the certificate is minted per claim for the node's own key)
     return set()
 
 
@@ -733,6 +770,62 @@ class ContainerImagesConfig(_Source):
         return self
 
 
+# ----------------------------------------------------------------------------- certificate transparency
+CT_FLAG = "CBOM_CT_DISCOVERY"
+MAX_CT_ISSUERS = 50
+
+
+def ct_discovery_enabled() -> bool:
+    """Certificate Transparency discovery runs only when the server sets CBOM_CT_DISCOVERY (default off: a production
+    Cert Spotter key is needed first, see ct_providers)."""
+    import os
+
+    return os.environ.get(CT_FLAG, "").strip().lower() in ("1", "true", "yes", "on")
+
+
+class CtLogsConfig(_Source):
+    """The team's domains, searched in public Certificate Transparency logs by ZeroShield's cloud (one source per team).
+    ``domains`` are stored as A-labels; ``expected_issuers`` are the certificate authorities the team uses (each is the
+    issuer's name, organisation or CN, or the words they start with; ct_collect.issuer_matches); any other issuer is
+    flagged."""
+    domains: list[str] = Field(min_length=1)
+    include_subdomains: bool = True
+    expected_issuers: list[str] = Field(default_factory=list, max_length=MAX_CT_ISSUERS)
+
+    @field_validator("domains")
+    @classmethod
+    def _domains(cls, v: list[str]) -> list[str]:
+        from backend.utilities.cbom_sources.ct_domains import DomainError, normalise_list
+
+        try:
+            out = normalise_list(v)
+        except DomainError as exc:
+            raise ValueError(f"domains: {exc}") from None
+        if not out:
+            raise ValueError("domains: add at least one domain")
+        return out
+
+    @field_validator("expected_issuers")
+    @classmethod
+    def _issuers(cls, v: list[str]) -> list[str]:
+        out: list[str] = []
+        for raw in v:
+            text = _metadata_text(str(raw)) or ""
+            if not text:
+                continue
+            if len(text) > 128:
+                raise ValueError("expected_issuers: each name is at most 128 characters")
+            if len(text) < 3:  # "US", "R1": would match the start of unrelated issuer names
+                raise ValueError("expected_issuers: each name is at least 3 characters (a CA's name, e.g. Let's Encrypt)")
+            if text.casefold() not in {o.casefold() for o in out}:
+                out.append(text)
+        return out
+
+
+def _ct_collectable(_cfg: Any) -> bool:
+    return ct_discovery_enabled()
+
+
 # ----------------------------------------------------------------------------- registry
 @dataclass(frozen=True)
 class KindSpec:
@@ -813,6 +906,12 @@ KINDS["container_images"] = KindSpec("container_images", "kubernetes", "Containe
                                      lambda c: set(), frozenset(), _always, _always,
                                      ("images", "credential_type", "vault", "ca_pem"))
 
+# Certificate Transparency: collected by the cloud worker from public CT search providers; no credential.
+KINDS["ct_logs"] = KindSpec("ct_logs", "identity", "Certificate Transparency", CtLogsConfig, lambda c: set(),
+                            frozenset(), _never, _ct_collectable, ("domains", "include_subdomains"), node_less=True)
+
+from backend.utilities.cbom_sources.kinds_fleet import FLEET_KINDS  # noqa: E402  (F1.3: awx/salt/ssm hosts)
+KINDS.update(FLEET_KINDS)
 KIND_NAMES = tuple(KINDS)
 # Config fields that describe the source rather than how it is reached (declared on ``_Source``).
 METADATA_FIELDS: tuple[str, ...] = tuple(_Source.model_fields)

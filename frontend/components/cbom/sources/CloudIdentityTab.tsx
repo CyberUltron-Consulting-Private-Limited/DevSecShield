@@ -20,6 +20,7 @@ import {
   createCbomSource,
   deleteCbomSource,
   getCbomTemplate,
+  getCbomSourcesOverview,
   getCbomSourcesSettings,
   listCbomScanNodes,
   listCbomSources,
@@ -37,7 +38,7 @@ import {
 import { cbomSourcesKeys } from "./keys";
 import { keepLiveValidation } from "./liveValidation";
 import { SourceMetadataDialog } from "./SourceMetadata";
-import { formatDateTime, pluralize, readTextFile, splitLines } from "./logic";
+import { ctProviderSentence, ctRunCredits, formatDateTime, pluralize, readTextFile, splitLines } from "./logic";
 import {
   ChoiceCards,
   CodeSnippet,
@@ -113,9 +114,9 @@ interface IdpRow {
   defaultName: string;
 }
 const IDP_ROWS: IdpRow[] = [
-  { provider: "entra_id", label: "Microsoft Entra ID", detail: "Application.Read.All, read-only", defaultName: "Entra ID" },
-  { provider: "okta", label: "Okta", defaultName: "Okta" },
-  { provider: "keycloak", label: "Keycloak", defaultName: "Keycloak" },
+  { provider: "entra_id", label: "Microsoft Entra ID", detail: "public metadata; no permission needed", defaultName: "Entra ID" },
+  { provider: "okta", label: "Okta", detail: "public metadata; no permission needed", defaultName: "Okta" },
+  { provider: "keycloak", label: "Keycloak", detail: "public metadata; no permission needed", defaultName: "Keycloak" },
 ];
 const METADATA_LABEL: Record<MetadataProvider, string> = { saml_metadata: "SAML metadata", oidc_discovery: "OIDC discovery" };
 
@@ -138,7 +139,8 @@ const DOMAIN_LABEL_RE = /^[a-z0-9_]([a-z0-9_-]{0,61}[a-z0-9_])?$/;
 const MAX_DOMAINS = 200;
 const CLOUDFORMATION_CONSOLE = "https://console.aws.amazon.com/cloudformation/home";
 const NOT_AVAILABLE = "Validation is not available yet; collection is not available yet.";
-const IDP_HOW = "ZeroShield reads the signing keys from your identity provider's public metadata; no secret is needed for that.";
+// idp_collect reads public OIDC / SAML metadata and sends no credential (backend/tests/test_cbom_cb08_promises.py)
+const IDP_HOW = "ZeroShield reads the signing keys from your identity provider's public metadata only; a secret is not used yet.";
 // Cloud, CLM and IdP secrets never go to a scan node, so the node wording of the default hint would be wrong here.
 const STORED_HINT = "Encrypted at rest by ZeroShield. Never shown again.";
 
@@ -338,6 +340,16 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
     retry: 1,
     refetchInterval: 30000,
   });
+  // The planner's own sentence for an AWS Private CA connector: its AWS account source reads it (aws_collect
+  // "acm-pca"), is skipped in this run, or was removed (planning._aws_private_ca). One source of truth with Review & Run.
+  const overviewQuery = useQuery({
+    queryKey: cbomSourcesKeys.overview(teamId),
+    queryFn: () => getCbomSourcesOverview(teamId),
+    enabled,
+    retry: 1,
+    refetchInterval: 30000,
+  });
+  const planReason = (sourceId: number) => overviewQuery.data?.plan.items?.find((i) => i.source_id === sourceId)?.reason ?? null;
 
   const resetForm = (provider?: Provider) =>
     setForm((f) => ({ provider: provider ?? f.provider, source: null, nonce: f.nonce + 1 }));
@@ -612,7 +624,12 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
         <SectionCard title="Certificates" description="Certificate authorities, CLM tools and the domains you own.">
           <div className="space-y-6">
-            <CertDomains teamId={teamId} settings={settings} />
+            {settings.ct_discovery_enabled ? (
+              <CtDiscovery teamId={teamId} settings={settings} source={identitySources.find((s) => s.kind === "ct_logs") ?? null}
+                onDelete={(s) => setDeleting(s)} />
+            ) : (
+              <CertDomains teamId={teamId} settings={settings} />
+            )}
             <div className="space-y-2">
               <p className="text-sm font-medium text-zinc-900 dark:text-white">Certificate authorities and CLM</p>
               {CA_ROWS.map((row) => {
@@ -637,8 +654,8 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
                         <NodeTestLine teamId={teamId} source={s} />
                       ) : row.key === "aws_private_ca" ? (
                         <span className="text-xs text-zinc-500">
-                          through {awsSources.find((a) => a.id === cfgNumber(s, "aws_source_id"))?.name ?? "an AWS account that was removed"} ·{" "}
-                          {NOT_AVAILABLE}
+                          through {awsSources.find((a) => a.id === cfgNumber(s, "aws_source_id"))?.name ?? "an AWS account that was removed"}
+                          {planReason(s.id) ? ` · ${planReason(s.id)}` : ""}
                         </span>
                       ) : (
                         <span className="text-xs text-zinc-500">
@@ -677,10 +694,14 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-zinc-200 dark:border-zinc-800 px-4 py-3">
                 <div className="min-w-0">
                   <span className="text-sm font-medium text-zinc-900 dark:text-white">ADFS</span>
-                  <span className="ml-1.5 text-xs text-zinc-500">read from the Windows servers you add on the Servers tab</span>
+                  <span className="ml-1.5 text-xs text-zinc-500 break-words">
+                    add its SAML metadata URL below (
+                    <span className="font-mono break-all">https://your-adfs/FederationMetadata/2007-06/FederationMetadata.xml</span>); the
+                    Windows servers you add are read for their certificate stores and TLS settings, nothing ADFS-specific
+                  </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <StatusBadge tone="zinc">Via servers</StatusBadge>
+                  <StatusBadge tone="zinc">Metadata URL</StatusBadge>
                   <Button variant="outline" size="sm" className="cursor-pointer" onClick={() => onNavigate("servers")}>
                     Servers
                   </Button>
@@ -1667,7 +1688,7 @@ function CertDomains({ teamId, settings }: { teamId: number; settings: CbomSourc
       label="Domains to search in Certificate Transparency logs"
       htmlFor="cert-domain-input"
       error={error}
-      hint="Saved for the certificate collector. ZeroShield does not query Certificate Transparency logs yet."
+      hint="Saved, but not read: Certificate Transparency discovery is not turned on for this server. When it is, these domains move into the Certificate Transparency source."
     >
       <div className="space-y-2">
         {settings.cert_domains.length > 0 ? (
@@ -1708,6 +1729,183 @@ function CertDomains({ teamId, settings }: { teamId: number; settings: CbomSourc
         </div>
       </div>
     </Field>
+  );
+}
+
+// ---------------------------------------------------------------------------- certificate transparency
+const MAX_CT_DOMAINS = 1000;
+const MAX_CT_ISSUERS = 50;
+/** What the server says about a refused save (400 detail), for the field instead of only a toast. */
+function apiDetail(error: unknown): string | null {
+  const detail = (error as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+  return typeof detail === "string" ? detail : null;
+}
+
+/** Certificate Transparency discovery (the server has CBOM_CT_DISCOVERY on): one ct_logs source per team. */
+function CtDiscovery({ teamId, settings, source, onDelete }: {
+  teamId: number;
+  settings: CbomSourcesSettings;
+  source: CbomSource | null;
+  onDelete: (source: CbomSource) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [domain, setDomain] = useState("");
+  const [issuer, setIssuer] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const overview = useQuery({
+    queryKey: cbomSourcesKeys.overview(teamId),
+    queryFn: () => getCbomSourcesOverview(teamId),
+    enabled: Number.isFinite(teamId),
+    retry: 1,
+  });
+  const rate = overview.data?.rates?.ct_domain;
+  const domains: string[] = cfgList(source, "domains");
+  const issuers: string[] = cfgList(source, "expected_issuers");
+  const subdomains = source ? cfgFlag(source, "include_subdomains") || source.config?.include_subdomains === undefined : true;
+  const saved = settings.cert_domains ?? [];
+
+  const save = useMutation({
+    mutationFn: (config: Record<string, unknown>) =>
+      source
+        ? updateCbomSource(teamId, source.id, { config: { ...source.config, ...config }, expected_version: source.row_version })
+        : createCbomSource(teamId, { kind: "ct_logs", name: "Certificate Transparency", config, import_saved_domains: true }),
+    onSuccess: () => {
+      setError(null);
+      setDomain("");
+      setIssuer("");
+    },
+    onError: (err) => {
+      if (httpStatus(err) === 409) toast.info("The Certificate Transparency source was changed elsewhere and has been reloaded.");
+      setError(apiDetail(err));
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) }),
+  });
+
+  const addDomain = () => {
+    const { value, error: err } = normalizeDomain(domain.replace(/^\*\./, ""));
+    if (err) return setError(err);
+    if (domains.includes(value)) return setError(`${value} is already in the list`);
+    if (domains.length >= MAX_CT_DOMAINS) return setError(`At most ${MAX_CT_DOMAINS} domains`);
+    save.mutate({ domains: [...domains, value], include_subdomains: subdomains, expected_issuers: issuers });
+  };
+  const addIssuer = () => {
+    const value = issuer.trim();
+    if (!value) return;
+    if (issuers.some((i) => i.toLowerCase() === value.toLowerCase())) return setError(`${value} is already in the list`);
+    if (issuers.length >= MAX_CT_ISSUERS) return setError(`At most ${MAX_CT_ISSUERS} certificate authorities`);
+    save.mutate({ expected_issuers: [...issuers, value] });
+  };
+  const perRun = source ? ctRunCredits(rate, source.target_count) : null;
+
+  return (
+    <div className="space-y-3" data-testid="cloud-ct">
+      <div>
+        <p className="text-sm font-medium text-zinc-900 dark:text-white">Certificate Transparency</p>
+        <p className="text-xs text-zinc-500 mt-1" data-testid="cloud-ct-how">
+          Every run, ZeroShield&apos;s cloud searches public Certificate Transparency logs through {ctProviderSentence(settings.ct_providers)} for
+          the certificates issued for these domains{subdomains ? " and their subdomains" : ""}, including hosts no scan node
+          reaches. Each certificate is listed with its issuer, validity, key and signature; expiring, expired, revoked and
+          weak certificates, and certificates from CAs you have not listed, are flagged.
+          {rate !== undefined ? ` ${rate} credits per domain searched, per run.` : ""}
+        </p>
+      </div>
+      <Field label="Domains" htmlFor="ct-domain-input" error={error}>
+        <div className="space-y-2">
+          {domains.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5" data-testid="cloud-ct-domains">
+              {domains.map((d) => (
+                <Chip
+                  key={d}
+                  removeLabel={`Remove ${d}`}
+                  onRemove={save.isPending || domains.length === 1 ? undefined : () => save.mutate({ domains: domains.filter((x) => x !== d) })}
+                >
+                  {d}
+                </Chip>
+              ))}
+            </div>
+          ) : saved.length > 0 ? (
+            <p className="text-xs text-zinc-500" data-testid="cloud-ct-saved">
+              Saved earlier and not searched yet: {saved.join(", ")}. Add a domain (or press Turn on) to search them too.
+            </p>
+          ) : (
+            <p className="text-xs text-zinc-500">No domains yet.</p>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <Input
+              id="ct-domain-input"
+              data-testid="cloud-ct-domain-input"
+              className="flex-1 min-w-[180px]"
+              value={domain}
+              maxLength={253}
+              placeholder="Add a domain, e.g. example.com"
+              onChange={(e) => setDomain(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  addDomain();
+                }
+              }}
+            />
+            <Button variant="outline" className="cursor-pointer" disabled={save.isPending} onClick={addDomain} data-testid="cloud-ct-domain-add">
+              {save.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Plus className="h-4 w-4 mr-2" />}
+              {source ? "Add" : "Add and turn on"}
+            </Button>
+            {!source && saved.length > 0 && (
+              <Button className="cursor-pointer" disabled={save.isPending} data-testid="cloud-ct-turn-on"
+                onClick={() => save.mutate({ domains: [], include_subdomains: true, expected_issuers: [] })}>
+                Turn on with {pluralize(saved.length, "saved domain")}
+              </Button>
+            )}
+          </div>
+        </div>
+      </Field>
+      {source && (
+        <>
+          <div className="flex items-center justify-between gap-3">
+            <label htmlFor="ct-subdomains" className="text-sm text-zinc-700 dark:text-zinc-300">Include subdomains</label>
+            <Switch id="ct-subdomains" data-testid="cloud-ct-subdomains" checked={subdomains} disabled={save.isPending}
+              onCheckedChange={(v) => save.mutate({ include_subdomains: v })} />
+          </div>
+          <Field label="Certificate authorities you use (optional)" htmlFor="ct-issuer-input"
+            hint="A certificate from any other CA is flagged as unexpected. Matched against the CA's name, organisation or CN: the whole value or its first words (at least 3 characters), e.g. Let's Encrypt, DigiCert, Amazon.">
+            <div className="space-y-2">
+              {issuers.length > 0 && (
+                <div className="flex flex-wrap gap-1.5" data-testid="cloud-ct-issuers">
+                  {issuers.map((i) => (
+                    <Chip key={i} removeLabel={`Remove ${i}`} onRemove={save.isPending ? undefined : () => save.mutate({ expected_issuers: issuers.filter((x) => x !== i) })}>
+                      {i}
+                    </Chip>
+                  ))}
+                </div>
+              )}
+              <div className="flex flex-wrap gap-2">
+                <Input id="ct-issuer-input" data-testid="cloud-ct-issuer-input" className="flex-1 min-w-[180px]" value={issuer} maxLength={128}
+                  placeholder="Add a CA, e.g. Let's Encrypt" onChange={(e) => setIssuer(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addIssuer();
+                    }
+                  }} />
+                <Button variant="outline" className="cursor-pointer" disabled={save.isPending} onClick={addIssuer} data-testid="cloud-ct-issuer-add">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add
+                </Button>
+              </div>
+            </div>
+          </Field>
+          <p className="text-xs text-zinc-500" data-testid="cloud-ct-estimate">
+            {pluralize(source.target_count, "domain")} searched per run
+            {perRun !== null ? ` · ${perRun} credits` : ""}
+            {source.target_count < domains.length ? " (subdomains of a listed domain are in its search)" : ""}. Start it from Review &amp; Run.
+          </p>
+          <Button variant="ghost" size="sm" className="cursor-pointer text-red-600 px-0" data-testid="cloud-ct-turn-off"
+            onClick={() => onDelete(source)}>
+            Turn off Certificate Transparency discovery
+          </Button>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -1982,7 +2180,7 @@ function CaDialog({
                   ? "A scan node reads the CAs and certificate profiles through the EJBCA REST API, signing in with a client certificate."
                   : isAwsCa
                     ? "Read through the read-only role of a connected AWS account. No new credential is needed."
-                    : "ZeroShield keeps the API address and key for the certificate collector."}
+                    : "Not collected yet: ZeroShield only stores the API address and key. Nothing is read from it and it is never charged."}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
@@ -2260,10 +2458,10 @@ function IdpDialog({
           <DialogTitle>{source ? `Edit ${source.name}` : `Connect ${row.label}`}</DialogTitle>
           <DialogDescription>
             {provider === "entra_id"
-              ? "An app registration with the Application.Read.All application permission (read-only)."
+              ? "ZeroShield reads this tenant's public OpenID and federation metadata: its signing keys and certificates. No permission is needed; the application ID is kept for API reads that are not built yet."
               : provider === "okta"
-                ? "A read-only API token from your Okta admin console."
-                : "A confidential client in the realm with read-only access to clients and keys."}
+                ? "ZeroShield reads your Okta org's public OpenID metadata: its signing keys. No API token is needed or used yet."
+                : "ZeroShield reads the realm's public OpenID and SAML metadata: its signing keys and certificates. The client ID is kept for API reads that are not built yet."}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
@@ -2403,8 +2601,8 @@ function MetadataUrls({
   return (
     <div className="space-y-4">
       <p className="text-xs text-zinc-500">
-        No admin access? Public metadata is enough to read signing keys and their rotation. ZeroShield&apos;s cloud reads these URLs when
-        you press Test and during each run; only public https addresses can be read.
+        Public metadata is all ZeroShield reads: signing keys and their rotation. ZeroShield&apos;s cloud reads these URLs when you
+        press Test and during each run; only public https addresses can be read.
       </p>
       {input("saml_metadata", "SAML metadata URL", "https://login.example.com/saml/metadata", "cloud-saml")}
       {input("oidc_discovery", "OIDC discovery URL", "https://login.example.com/.well-known/openid-configuration", "cloud-oidc")}

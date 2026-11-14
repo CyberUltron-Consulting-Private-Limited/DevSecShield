@@ -163,7 +163,7 @@ def _list_targets(engine, team_id: int, kind: str | None, tag_key: str | None, t
                          | func.lower(func.coalesce(t.hostname, "")).like(like, escape="\\"))
         if tag_key:  # the JSON column, in SQL (PostgreSQL ->>, SQLite json_extract): no row is loaded to filter
             value = t.tags[tag_key.strip().lower()].as_string()  # type: ignore[index]
-            conds.append(value == tag_value if tag_value else value.is_not(None))
+            conds.append(value == tag_value if tag_value is not None else value.is_not(None))  # "" is a value
         if decision:
             conds.append(t.decision_action == decision)
         for cond in conds:
@@ -297,7 +297,7 @@ def _delete_target(engine, team_id: int, user_id: int, target_id: int) -> dict:
         row = session.get(CbomInventoryTarget, target_id)
         if row is None or row.team_id != team_id:
             raise HTTPException(status_code=404, detail="Target not found")
-        # removed by a person: never collected again (unlike a sync miss, no 7-day grace); the next reconcile takes it
+        # removed by a person: not collected (unlike a sync miss, no 7-day grace); the next reconcile takes it
         # out of its managed source at once, even if a job is open there.  Its source listing it again brings it back.
         store.mark_deleted(session, team_id, now, target_id=target_id)
         evaluation = EVAL.after_change(session, team_id, now)
@@ -308,7 +308,8 @@ def _delete_target(engine, team_id: int, user_id: int, target_id: int) -> dict:
 
 
 @router.delete(INV + "/targets/{target_id}", dependencies=WRITE, openapi_extra=permission("cbom.inventory.write"),
-               summary="Remove a target from the inventory: never collected, out of its managed source at the next reconcile")
+               summary="Remove a target from the inventory until its source lists it again (a never-scan policy "
+                       "excludes a host for good); it leaves its managed source at the next reconcile")
 async def delete_target(team_id: TeamId, target_id: ObjectId, ctx: Member):
     engine, user = ctx
     return _ok(await _run("delete target", team_id, _delete_target, engine, team_id, user.id, target_id))
@@ -418,9 +419,10 @@ def _delete_source(engine, team_id: int, user_id: int, source_id: int) -> dict:
         require_admin(session, user_id, team_id, "inventory sources")
         row = _owned_source(session, team_id, source_id)
         row.deleted_at, row.enabled, row.last_updated = now, False, now
+        row.lease_until = None  # a sync still listing finds it deleted and saves nothing (sync.save_discovery)
         bump_version(session, row)
         session.add(row)
-        # its targets are removed from the inventory with it (kept for history): never collected again
+        # its targets are removed from the inventory with it (kept for history) and no longer collected
         removed = store.mark_deleted(session, team_id, now, source_id=source_id)
         evaluation = EVAL.after_change(session, team_id, now)
         audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="fleet.inventory_source.delete",
@@ -430,7 +432,7 @@ def _delete_source(engine, team_id: int, user_id: int, source_id: int) -> dict:
 
 
 @router.delete(INV + "/sources/{source_id}", dependencies=WRITE, openapi_extra=permission("cbom.inventory.write"),
-               summary="Delete an inventory source (its targets are removed from the inventory and never collected)")
+               summary="Delete an inventory source (its targets are removed from the inventory and no longer collected)")
 async def delete_source(team_id: TeamId, source_id: ObjectId, ctx: Member):
     engine, user = ctx
     return _ok(await _run("delete inventory source", team_id, _delete_source, engine, team_id, user.id, source_id))

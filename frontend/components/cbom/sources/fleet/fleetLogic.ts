@@ -48,6 +48,13 @@ export function fleetTabState(q: { data?: unknown; isError: boolean; isLoading?:
   return q.isError ? "error" : "loading";
 }
 
+/** CB36-BUG-03: whether the Servers tab may ask for the team's SSH CAs. Only when GET /fleet/status reports the SSH CA
+ * on: its routes answer 404 while CBOM_SSH_CA is off (by design), and a 404 is a failed request in the browser console.
+ * While the status loads, or when it failed (an older server without the fleet routes), the option stays off. */
+export function sshCaListEnabled(teamId: number, isLinux: boolean, status: CbomFleetStatus | undefined): boolean {
+  return Number.isFinite(teamId) && isLinux && status?.ssh_ca === true;
+}
+
 /** A 409: the row changed since it was loaded (another tab or person); the form offers the latest version. */
 export function isConflict(error: unknown): boolean {
   return (error as { response?: { status?: number } } | null)?.response?.status === 409;

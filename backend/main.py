@@ -12,11 +12,13 @@ from backend.routers.scans import router as scans_router
 from backend.routers.certin import router as certin_router
 from backend.routers.cbom_deliverables import router as cbom_deliverables_router
 from backend.routers.cbom_sources import router as cbom_sources_router
+from backend.routers.cbom_ai import router as cbom_ai_router
 from backend.routers.cbom_ops import router as cbom_ops_router
 from backend.routers.cbom_node import router as cbom_node_router
 from backend.routers.cbom_node_pools import router as cbom_node_pools_router
 from backend.routers.cbom_fleet import router as cbom_fleet_router
 from backend.utilities.cbom_sources.node_auth import NodeDeploymentHeader
+from backend.utilities.build_info import BuildIdentityMiddleware, UtcIsoFormatter, build_sha, build_version, expose_build
 from backend.routers.cbom_vendor_public import router as cbom_vendor_public_router
 from backend.routers.integrations import router as integrations_router
 from backend.routers.guardrails import router as guardrails_router
@@ -46,7 +48,7 @@ for _security_logger_name in ("backend.auth", "backend.ratelimit"):
     _security_logger = logging.getLogger(_security_logger_name)
     if not _security_logger.handlers:
         _handler = logging.StreamHandler()
-        _handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+        _handler.setFormatter(UtcIsoFormatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
         _handler.addFilter(CredentialRedactionFilter())
         _security_logger.addHandler(_handler)
         _security_logger.setLevel(logging.INFO)
@@ -104,13 +106,24 @@ async def lifespan(app: FastAPI):
     console.print("[bold yellow]Shutting down...[/bold yellow]")
 
 
-app = FastAPI(lifespan=lifespan, middleware=[
+class DssApp(FastAPI):
+    """FastAPI whose outermost layer stamps X-ZS-Build and X-ZS-Request-Id (backend/utilities/build_info.py).
+    A ``middleware=[...]`` entry would sit inside Starlette's ServerErrorMiddleware and miss the 500 it sends for an
+    unhandled exception."""
+
+    def build_middleware_stack(self):
+        return BuildIdentityMiddleware(super().build_middleware_stack())
+
+
+app = DssApp(lifespan=lifespan, middleware=[
     Middleware(
         CORSMiddleware,
         allow_origins=CORS_ALLOWED_ORIGINS,
         allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
+        # the UI can show the request id next to an error's ref (build_info.py); X-ZS-Build only where exposed
+        expose_headers=["X-ZS-Request-Id", "X-ZS-Build", "Retry-After"],  # the UI reads Retry-After on a 429
     ),
     # X-ZS-Deployment on every /cbom/node/* response (401s included), so a scan node can tell its own server apart
     Middleware(NodeDeploymentHeader),
@@ -130,6 +143,7 @@ app.include_router(certin_router)
 app.include_router(cbom_deliverables_router)
 # CBOM Sources: team UI routes, the scan-node API and public vendor questionnaire links.
 app.include_router(cbom_sources_router)
+app.include_router(cbom_ai_router)  # CB-38 PR-6: AI remediation (Bedrock or on-prem); off unless configured
 app.include_router(cbom_ops_router)
 app.include_router(cbom_node_router)
 app.include_router(cbom_node_pools_router)  # agent pool tokens for the Helm DaemonSet (WP8b)
@@ -149,9 +163,14 @@ app.include_router(invitations_router)  # /invite/<token>: the invitee accepts o
 async def health_check():
     """
     Health check endpoint for Docker health checks and load balancer probes.
-    Returns 200 OK if the service is healthy.
+    Returns 200 OK if the service is healthy. Where the deployment exposes its build (DSS_EXPOSE_BUILD=1: the local
+    stack, lab, staging), also the commit the image was built from (``build``, as in X-ZS-Build) and its version
+    string, "unknown" for an image built without them; elsewhere signed-in users read them from GET /version.
     """
-    return {"status": "healthy", "service": "devsecshield-backend"}
+    body = {"status": "healthy", "service": "devsecshield-backend"}
+    if expose_build():
+        body.update(build=build_sha(), version=build_version())
+    return body
 
 # Use this only for debugging purposes ⚠️⚠️⚠️⚠️
 # @app.exception_handler(RequestValidationError)

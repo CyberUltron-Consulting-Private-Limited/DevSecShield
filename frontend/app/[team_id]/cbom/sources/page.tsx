@@ -76,8 +76,7 @@ function SourcesPage() {
               </Link>
               <h1 className="text-3xl font-bold text-zinc-900 dark:text-white mb-2">CBOM Sources</h1>
               <p className="text-zinc-600 dark:text-zinc-400 max-w-3xl">
-                Connect the servers, clusters, cloud accounts and networks a CBOM scan should cover. Collection is read-only and
-                nothing is installed on your servers.
+                Connect the servers, clusters, cloud accounts and networks a CBOM scan should cover. Collection is read-only, and nothing is installed on the servers it reads unless you deploy host agents.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">

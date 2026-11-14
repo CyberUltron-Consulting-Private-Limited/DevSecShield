@@ -49,7 +49,12 @@ import {
   type CbomTestSample,
 } from "@/utils/backend_api";
 
+import { listSshCas } from "@/utils/api/cbom_ssh_ca";
+
 import { cbomSourcesKeys, TERMINAL_JOB } from "./keys";
+import { useFleetStatus } from "./fleet/useFleetStatus";
+import { sshCaListEnabled } from "./fleet/fleetLogic";
+import { principalOk } from "./fleet/sshCaLogic";
 import { MetadataFields, metadataConfig, metadataFrom, type SourceMetadata } from "./SourceMetadata";
 import {
   ago,
@@ -88,10 +93,11 @@ import {
   usePolledJob,
   type Tone,
 } from "./shared";
+import { SOURCE_NEVER_SCAN_HINT } from "./teamNeverScan";
 
 // ---------------------------------------------------------------------------- constants (mirror backend kinds.py / templates.py)
 type ServerKind = "linux_servers" | "windows_servers" | "active_directory";
-type CredType = "node_key" | "ssh_cert" | "vault" | "password";
+type CredType = "node_key" | "ssh_cert" | "vault" | "password" | "ssh_ca";
 type HostKeyPolicy = "tofu" | "pinned";
 type WindowMode = "network" | "any" | "custom";
 
@@ -107,7 +113,7 @@ interface KindInfo {
 }
 
 const KINDS: KindInfo[] = [
-  { value: "linux_servers", short: "linux", label: "Linux", port: 22, login: "zs-cbom", portLabel: "SSH port", defaultCred: "node_key", creds: ["node_key", "ssh_cert", "vault", "password"] },
+  { value: "linux_servers", short: "linux", label: "Linux", port: 22, login: "zs-cbom", portLabel: "SSH port", defaultCred: "node_key", creds: ["node_key", "ssh_ca", "ssh_cert", "vault", "password"] },
   { value: "windows_servers", short: "windows", label: "Windows", port: 5986, login: "svc-zscbom", portLabel: "WinRM port (HTTPS)", defaultCred: "password", creds: ["vault", "password"] },
   { value: "active_directory", short: "ad", label: "Active Directory", port: 636, login: "svc-zscbom", portLabel: "LDAPS port", defaultCred: "password", creds: ["vault", "password"] },
 ];
@@ -116,6 +122,7 @@ const KIND_INFO = Object.fromEntries(KINDS.map((k) => [k.value, k])) as Record<S
 const CRED_TEXT: Record<CredType, { title: string; description: string }> = {
   node_key: { title: "Node-generated SSH key", description: "Recommended. The private key never leaves the node." },
   ssh_cert: { title: "SSH certificate", description: "Short-lived, signed by your SSH CA" },
+  ssh_ca: { title: "SSH CA certificate", description: "ZeroShield's SSH CA signs the node's own key for each job (minutes)" },
   vault: { title: "Vault reference", description: "CyberArk, HashiCorp Vault, AWS Secrets Manager, Azure Key Vault" },
   password: { title: "Password", description: "Encrypted at rest by ZeroShield; sent only to the scan node that runs the job" },
 };
@@ -163,11 +170,12 @@ const TIER2_COMMANDS = [
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$/;
 const NAME_ERROR = "Use 1-64 letters, digits, spaces, dots, dashes or underscores, starting with a letter or digit.";
 const LOGIN_RE = /^[A-Za-z0-9._@$\\-]{1,64}$/;
+const SSH_PRINCIPAL_RE = /^zs-(0|[1-9]\d{0,9})-[a-z0-9][a-z0-9._-]{0,47}$/; // F1.4: mirrors sshca/certs.py (one spelling)
 const MAX_TARGET_LINES = 1000;
 const MAX_EXCLUSIONS = 2000;
 const READY = new Set(["ready", "ok", "passed"]);
 const WAITING = new Set(["pending", "running", "queued", "claimed"]);
-const BAD = new Set(["failed", "failure", "error", "no_route", "unreachable", "host_key_changed", "identity_unverified", "login_failed", "auth_failed", "timeout", "refused"]);
+const BAD = new Set(["failed", "failure", "error", "no_route", "unreachable", "host_key_changed", "identity_unverified", "kex_unsupported", "login_failed", "auth_failed", "timeout", "refused"]);
 
 // ---------------------------------------------------------------------------- helpers
 /** Never-scan accepts one per line or comma separated (the design shows "10.20.0.1, 10.20.0.254"). */
@@ -251,6 +259,10 @@ interface FormState {
   password: string;
   sshCertificate: string;
   privateKey: string;
+  // F1.4 ssh_ca: the CA lineage, principals (zs-<team>-<group>) and the addresses the servers see the node as
+  sshCaId: number | null;
+  sshPrincipals: string;
+  sshSourceAddresses: string;
   tier: 1 | 2;
   parallel: string;
   timeoutS: string;
@@ -280,6 +292,9 @@ function initialForm(source: CbomSource | null, nodes: CbomScanNode[]): FormStat
       password: "",
       sshCertificate: "",
       privateKey: "",
+      sshCaId: null,
+      sshPrincipals: "",
+      sshSourceAddresses: "",
       tier: 1,
       parallel: "8",
       timeoutS: "300",
@@ -308,6 +323,9 @@ function initialForm(source: CbomSource | null, nodes: CbomScanNode[]): FormStat
     password: "",
     sshCertificate: "",
     privateKey: "",
+    sshCaId: typeof cfg.ssh_ca_id === "number" ? cfg.ssh_ca_id : null,
+    sshPrincipals: Array.isArray(cfg.ssh_principals) ? cfg.ssh_principals.join("\n") : "",
+    sshSourceAddresses: Array.isArray(cfg.ssh_source_addresses) ? cfg.ssh_source_addresses.join("\n") : "",
     tier: cfg.tier === 2 ? 2 : 1,
     parallel: String(cfg.parallel ?? 8),
     timeoutS: String(cfg.timeout_s ?? 300),
@@ -699,6 +717,19 @@ function ServerForm({
   // Vault references fetch a secret on the node: only team admins may add or change them (server enforces too).
   const isAdmin = !!overviewQuery.data?.viewer?.is_admin;
   const caRef = useRef<HTMLInputElement>(null);
+  // F1.4: the SSH CA option exists only while the deployment turns the CA on. GET /fleet/status says so (the same
+  // cached query as the page's Fleet tab); the SSH CA routes are not probed, as they answer 404 while it is off
+  // (CB36-BUG-03: a console error on every visit).
+  const fleetStatus = useFleetStatus(teamId);
+  const sshCas = useQuery({
+    queryKey: [...cbomSourcesKeys.all(teamId), "ssh-ca"],
+    queryFn: () => listSshCas(teamId),
+    enabled: sshCaListEnabled(teamId, isLinux, fleetStatus.data),
+    retry: false,
+    staleTime: 60_000,
+  });
+  const sshCaOn = fleetStatus.data?.ssh_ca === true && sshCas.isSuccess;
+  const signingCas = (sshCas.data?.cas ?? []).filter((c) => c.state === "active");
   const selectedNode = nodes.find((n) => n.id === form.nodeId) ?? null;
   const login = form.loginUser.trim() || info.login;
   const editingWhereChanged = whereChanged(form, source);
@@ -796,6 +827,16 @@ function ServerForm({
     if (!isLinux && Number(form.port) === 5985) e.port = "WinRM over HTTP (5985) cannot prove the server; use HTTPS (5986)";
     if (form.credentialType === "vault" && !isAdmin) e.credentialType = "Only a team admin can add or change a vault reference";
     if (form.credentialType === "vault" && !form.vaultPath.trim()) e.vaultPath = "Enter the secret path in your vault";
+    if (form.credentialType === "ssh_ca") {
+      // certificates are issued only for sources a team admin saved (the server enforces it at issue time too)
+      if (!isAdmin) e.credentialType = "Only a team admin can save a source that uses the SSH CA";
+      if (!form.sshCaId) e.sshCaId = "Choose the SSH CA that signs the scan node's certificates";
+      const principals = splitList(form.sshPrincipals);
+      if (principals.length === 0 || principals.length > 16
+        || principals.some((p) => !SSH_PRINCIPAL_RE.test(p) || !principalOk(p, teamId)))
+        e.sshPrincipals = `One to 16 principals of this team like zs-${teamId}-prod, as listed in the servers' principals file`;
+      if (splitList(form.sshSourceAddresses).length > 32) e.sshSourceAddresses = "At most 32 addresses";
+    }
     // A stored secret survives only while the targets and their identity check stay the same: ask for it here
     // instead of letting the server refuse the save with a short toast.
     // (Set a key only for a real error: submit() counts the keys of the error object.)
@@ -841,6 +882,9 @@ function ServerForm({
         ...(isLinux ? {} : { ca_pem: form.caPem.trim() ? form.caPem : null }),
         credential_type: form.credentialType,
         vault: form.credentialType === "vault" ? { provider: form.vaultProvider, path: form.vaultPath.trim() } : null,
+        ...(form.credentialType === "ssh_ca"
+          ? { ssh_ca_id: form.sshCaId, ssh_principals: splitList(form.sshPrincipals), ssh_source_addresses: splitList(form.sshSourceAddresses) }
+          : {}),
         tier: isLinux ? form.tier : source?.config?.tier === 2 ? 2 : 1,
         parallel: Number(form.parallel.trim()),
         timeout_s: Number(form.timeoutS.trim()),
@@ -1008,7 +1052,7 @@ function ServerForm({
               label="Never scan"
               htmlFor="servers-exclusions"
               error={errors.exclusions ?? (countErrorOnExclusions ? countError : null)}
-              hint="IP addresses, ranges or hostnames, one per line or separated by commas. Never-scan always wins."
+              hint={SOURCE_NEVER_SCAN_HINT}
             >
               <Textarea
                 id="servers-exclusions"
@@ -1171,7 +1215,9 @@ function ServerForm({
                   // a password goes only to pinned host keys, so choosing one pins them
                   set({ credentialType: v, ...(isLinux && v === "password" ? { hostKeyPolicy: "pinned" as HostKeyPolicy } : {}) })
                 }
-                options={info.creds.map((c) => ({ value: c, ...CRED_TEXT[c], disabled: c === "vault" && !isAdmin }))}
+                options={info.creds
+                  .filter((c) => c !== "ssh_ca" || sshCaOn || form.credentialType === "ssh_ca")
+                  .map((c) => ({ value: c, ...CRED_TEXT[c], disabled: (c === "vault" || c === "ssh_ca") && !isAdmin }))}
               />
             </div>
             {!isAdmin && info.creds.includes("vault") && (
@@ -1251,6 +1297,41 @@ function ServerForm({
                   placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
                   hint={secretHint("private_key")}
                 />
+              </div>
+            )}
+
+            {form.credentialType === "ssh_ca" && (
+              <div className="space-y-4" data-testid="servers-ssh-ca-panel">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <Field label="SSH CA" htmlFor="servers-ssh-ca" required error={errors.sshCaId}
+                    hint={sshCaOn && signingCas.length === 0 ? "Create an SSH CA first (Fleet > SSH CA)" : "Its active key signs; rotation needs no change here"}>
+                    <Select value={form.sshCaId ? String(form.sshCaId) : ""} onValueChange={(v) => set({ sshCaId: Number(v) })}>
+                      <SelectTrigger id="servers-ssh-ca" className="w-full cursor-pointer" data-testid="servers-ssh-ca">
+                        <SelectValue placeholder="Choose a CA" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {signingCas.map((c) => (
+                          <SelectItem key={c.id} value={String(c.lineage_id)} className="cursor-pointer">{c.name} ({c.fingerprint.slice(0, 19)}…)</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  <Field label="Principals" htmlFor="servers-ssh-principals" required error={errors.sshPrincipals}
+                    hint={`One per line, e.g. zs-${teamId}-prod; the servers list them in /etc/ssh/zs-cbom/principals/${login}`}>
+                    <Textarea id="servers-ssh-principals" rows={2} className="font-mono text-xs" value={form.sshPrincipals}
+                      placeholder={`zs-${teamId}-prod`} onChange={(e) => set({ sshPrincipals: e.target.value })} />
+                  </Field>
+                  <Field label="Addresses the servers see the node as" htmlFor="servers-ssh-source-addresses" error={errors.sshSourceAddresses}
+                    hint={`Each certificate only works from these (source-address): addresses or networks of /16 or narrower (IPv6 /48). Blank: the node's own addresses${selectedNode?.source_ips?.length ? ` (${selectedNode.source_ips.join(", ")})` : ""}; a node in Docker without host networking needs the Docker host's address here.`}>
+                    <Textarea id="servers-ssh-source-addresses" rows={2} className="font-mono text-xs" value={form.sshSourceAddresses}
+                      placeholder="10.20.1.15 or 10.20.1.0/28" onChange={(e) => set({ sshSourceAddresses: e.target.value })} />
+                  </Field>
+                </div>
+                <p className="text-xs text-zinc-500">
+                  Nothing is stored: for every job ZeroShield signs the scan node&apos;s own key for a few minutes (no terminal, forwarding or
+                  agent), and lists each certificate under Fleet &gt; SSH CA. Install the CA&apos;s sshd snippet and its fetch script on the servers.
+                  Only a team admin can save a source that uses the SSH CA (it decides which servers and groups the team&apos;s CA signs for).
+                </p>
               </div>
             )}
 
