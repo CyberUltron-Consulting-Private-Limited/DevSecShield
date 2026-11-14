@@ -41,10 +41,10 @@ def test_a_sweep_posts_addresses_done_of_total_while_it_runs(monkeypatch):
     ctx.flush()
     counts = [p for _n, p in posts if p is not None]
     assert counts, posts
-    assert all(p["total"] == 8 for p in counts)  # a /29 is scanned whole (only a /24 or larger drops network/broadcast)
-    assert counts[-1] == {"done": 8, "total": 8}
+    assert all(p["total"] == 6 for p in counts)  # a /29: six usable addresses
+    assert counts[-1] == {"done": 6, "total": 6}
     done = [p["done"] for p in counts]
-    assert done == sorted(done) and done[0] < 8  # reported while it ran, never backwards
+    assert done == sorted(done) and done[0] < 6  # reported while it ran, never backwards
     # a silent discovery sweep has no assets: empty batches carried the count
     assert all(n == 0 for n, _p in posts)
 

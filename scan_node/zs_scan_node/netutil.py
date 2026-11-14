@@ -746,24 +746,70 @@ def requests_adapter(host: str, ip: str, never: NeverScan):
     return _Pinned()
 
 
-# An IPv4 CIDR of this prefix or larger (a /24, /23, ... /16) leaves out its own network and broadcast address; a
-# smaller one (/25 to /32) is scanned whole.  A /25 or smaller is most often a slice of a larger network (a /24 split
-# into two /25s for two scan nodes or windows), where its first and last addresses are real hosts (N3, 14 Nov 2026:
-# 10.232.0.127 and .128 were never scanned).  IPv6 networks and a-b ranges are always scanned whole; an address
-# written out is always scanned.  The backend counts the same (targets.scanned_interval, HOST_ONLY_MAX_PREFIX).
-HOST_ONLY_MAX_PREFIX = 24
+# Network and broadcast addresses (N3, 14 Nov 2026; review of #250): an IPv4 CIDR line of /30 or larger leaves out its
+# network or broadcast address only where that address is an OUTER EDGE of the contiguous block the configured lines
+# form together (the network the customer entered).  A /23 split into two /24s keeps x.x.0.255 and x.x.1.0, a /24
+# split into two /25s keeps .127 and .128, and a real /29 on its own still skips its network and broadcast.  An address
+# written out (alone or in an a-b range) is always scanned; IPv6 is always scanned whole.  A network range's job says
+# which of its addresses to skip (``skip_addresses``, computed by ZeroShield over every range of the team, which this
+# node cannot see); a server source's target list is applied here as one block (``boundary_skips``).  Same rule as
+# the backend's counts (targets.boundary_skips).
 
 
-def iter_line_ips(line: str) -> Iterator[str] | None:
-    """Addresses of an IP / CIDR / range line, or None if the line is a hostname."""
+def _v4_interval(line: str) -> tuple[int, int, bool] | None:
+    """(first, last, is_cidr) of an IPv4 address, CIDR or a-b line, or None."""
+    text = line.strip()
+    try:
+        if "/" in text:
+            net = ipaddress.ip_network(text, strict=False)
+            return (int(net.network_address), int(net.broadcast_address), True) if net.version == 4 else None
+        if "-" in text:
+            left, right = (x.strip() for x in text.split("-", 1))
+            a, b = ipaddress.ip_address(left), ipaddress.ip_address(right)
+            return (int(a), int(b), False) if a.version == b.version == 4 and int(b) >= int(a) else None
+        addr = ipaddress.ip_address(text)
+        return (int(addr), int(addr), False) if addr.version == 4 else None
+    except ValueError:
+        return None
+
+
+def boundary_skips(lines: list[str]) -> set[str]:
+    """IPv4 addresses (text) left out of ``lines`` as network/broadcast addresses (rule above)."""
+    every, nets, written = [], [], []
+    for line in lines:
+        iv = _v4_interval(str(line))
+        if iv is None:
+            continue
+        every.append(iv[:2])
+        if iv[2]:
+            if iv[1] - iv[0] + 1 >= 4:  # a /31 and a /32 have no network or broadcast address
+                nets.append(iv[:2])
+        else:
+            written.append(iv[:2])
+    blocks: list[list[int]] = []
+    for first, last in sorted(every):
+        if blocks and first <= blocks[-1][1] + 1:
+            blocks[-1][1] = max(blocks[-1][1], last)
+        else:
+            blocks.append([first, last])
+    starts, ends = {b[0] for b in blocks}, {b[1] for b in blocks}
+    skip = {f for f, _l in nets if f in starts} | {l for _f, l in nets if l in ends}
+    return {str(ipaddress.IPv4Address(a)) for a in skip if not any(w[0] <= a <= w[1] for w in written)}
+
+
+def iter_line_ips(line: str, skip: set[str] | frozenset[str] | None = None) -> Iterator[str] | None:
+    """Addresses of an IP / CIDR / range line, or None if the line is a hostname.  ``skip``: the addresses a CIDR line
+    leaves out as network/broadcast (``boundary_skips`` of the lines it was configured with); None: the line alone."""
     text = line.strip()
     try:
         if "/" in text:
             net = ipaddress.ip_network(text, strict=False)
             if net.num_addresses == 1:
                 return iter([ip_text(net.network_address)])
-            hosts = net.hosts() if net.version == 4 and net.prefixlen <= HOST_ONLY_MAX_PREFIX else iter(net)
-            return (ip_text(a) for a in hosts)
+            if net.version != 4:
+                return (ip_text(a) for a in net)
+            left_out = boundary_skips([text]) if skip is None else skip
+            return (t for t in (ip_text(a) for a in net) if t not in left_out)
         if "-" in text:
             left, right = text.split("-", 1)
             try:
@@ -786,8 +832,9 @@ def expand_targets(lines: list[str], never: NeverScan, limit: int = MAX_EXPANDED
     seen: set[str] = set()
     targets: list[Target] = []
     skipped: list[str] = []
+    edges = boundary_skips(lines)  # the list is one configuration: network/broadcast only at its outer edges (N3)
     for line in lines:
-        ips = iter_line_ips(line)
+        ips = iter_line_ips(line, edges)
         if ips is None:
             name = line.strip().lower().rstrip(".")
             try:

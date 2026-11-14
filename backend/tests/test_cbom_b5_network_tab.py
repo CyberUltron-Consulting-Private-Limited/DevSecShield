@@ -34,11 +34,10 @@ def _disable(api, source: dict) -> None:
     assert r.status_code == 200, r.text
 
 
-def _swept(cidr: str) -> set[int]:
-    """Addresses one range's sweep visits, enumerated one by one (not through merge/size)."""
-    kind, interval, canonical = T.parse_line(cidr)
-    scanned = T.scanned_interval(interval, canonical)
-    return set(range(scanned[1], scanned[2] + 1)) if scanned else set()
+def _swept(cidr: str, configured: list[str] | None = None) -> set[int]:
+    """Addresses one range's sweep visits, enumerated one by one (not through merge/size): the range minus the outer
+    network/broadcast edges of the networks the team's ranges (``configured``) form together (N3)."""
+    return {a for _v, first, last in T.swept_interval_parts(cidr, configured or [cidr]) for a in range(first, last + 1)}
 
 
 # ----------------------------------------------------------------------------- N7
@@ -48,12 +47,12 @@ def test_reported_case_counts_unique_addresses_of_enabled_ranges(api, world):
     _disable(api, made[0])  # the /24
     body = api("GET", "/1/cbom/sources/items?group=network").json()
     old_sum = sum(s["target_count"] for s in body["sources"] if s["kind"] == "network_range")
-    expected = len(set().union(*(_swept(c) for c in REPORTED[1:])))
-    # the per-range counts, disabled /24 and overlaps included (510 when the tab showed it; 518 since N3 counts a /25
-    # and a /30 whole: 254 + 128 + 128 + 4 + 4)
-    assert old_sum == 518
+    expected = len(set().union(*(_swept(c, REPORTED) for c in REPORTED[1:])))
+    # the per-range counts, disabled /24 and overlaps included (510 when the tab showed it; 515 since N3 skips only the
+    # outer edges of the /24 the ranges form: 254 + 127 + 127 + 3 + 4)
+    assert old_sum == 515
     assert body["network_totals"] == {"addresses": expected, "ranges_enabled": 4, "ranges_disabled": 1}
-    assert expected == 256 < old_sum  # the two /25s whole (N3: .127 and .128 included), never the per-range sum
+    assert expected == 254 < old_sum  # the two /25s with .127 and .128, without the /24's .0 and .255
     # the same number plan_run charges for: Review & Run's network units for these ranges, overlaps once
     est = api("POST", "/1/cbom/sources/estimate", json={"include": {"network": True}}).json()
     queued = [i for i in est["items"] if i["kind"] == "network_range" and i["status"] == "queued"]
@@ -68,7 +67,8 @@ def test_network_totals_apply_the_never_scan_list_and_ignore_other_kinds(api, wo
         {"cidr": "10.40.0.0/26", "reason": "OT"}]}).status_code == 200
     totals = api("GET", "/1/cbom/sources/items?group=network").json()["network_totals"]
     never = {int(a) for a in ipaddress.ip_network("10.40.0.0/26")}
-    assert totals == {"addresses": len(_swept("10.40.0.0/24") - never), "ranges_enabled": 2, "ranges_disabled": 0}
+    assert totals == {"addresses": len(_swept("10.40.0.0/24", ["10.40.0.0/24", "10.40.0.0/25"]) - never),
+                      "ranges_enabled": 2, "ranges_disabled": 0}
     assert totals["addresses"] == 254 - 63
     # an unfiltered list carries the totals too; another group's list does not
     assert api("GET", "/1/cbom/sources/items").json()["network_totals"]["addresses"] == 191
