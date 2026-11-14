@@ -6,8 +6,10 @@ latency, outcome; never the question, the prompt or the answer).
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import hashlib
 import ipaddress
+import json
 import logging
 import re
 import threading
@@ -17,6 +19,7 @@ from typing import Any
 
 import httpx
 
+from backend.utilities.cbom_ai import fix as FIX
 from backend.utilities.cbom_ai import prompt as P
 from backend.utilities.cbom_ai import transport as T
 from backend.utilities.cbom_ai import validator as V
@@ -74,11 +77,38 @@ def _boundary(value: str) -> str:
     return r"(?<![\w.\-])" + re.escape(value) + r"(?![\w\-]|\.\w)"
 
 
+# host names and IPv4 addresses inside a code window (URLs' hosts, address literals)
+_URL_HOST = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://(?:[^/\s'\"`@]*@)?(\[[0-9A-Fa-f:.]+\]|[^/\s'\"`:?#]+)")
+_IPV4 = re.compile(r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.])")
+
+
+def _window_hosts(lines: list[str]) -> list[str]:
+    found: set[str] = set()
+    for ln in lines:
+        found |= {m.group(1).strip("[]") for m in _URL_HOST.finditer(ln)}
+        for m in _IPV4.finditer(ln):
+            try:
+                ipaddress.ip_address(m.group(0))
+                found.add(m.group(0))
+            except ValueError:
+                continue
+    return sorted((h for h in found if len(h) >= 3 and not h.isdigit()), key=len, reverse=True)
+
+
 def redact(grounding: Grounding) -> tuple[Grounding, dict[str, str]]:
     """Identifying values replaced by tokens in every item, command and allowed command: host names and addresses
     (IPv4 and IPv6) -> HOST_n, asset / source / DN names and non-network locations -> NAME_n, ARNs ->
     arn:aws:<service>:<region>:ACCOUNT_n:<resource type>/RESOURCE_n, key aliases -> alias/ALIAS_n, account ids ->
     ACCOUNT_n, e-mail addresses -> EMAIL_n. The returned map restores them after validation."""
+    red, back, _window = redact_fix(grounding, None)
+    return red, back
+
+
+def redact_fix(grounding: Grounding, window: dict[str, Any] | None) -> tuple[Grounding, dict[str, str],
+                                                                               dict[str, Any] | None]:
+    """``redact`` over the grounding AND the code window sent with a fix request (the same tokens in both): the
+    window's URL hosts and IPv4 / IPv6 addresses, e-mail addresses, account ids, ARNs and the grounding's own hosts
+    and names become tokens; the fix is validated against the redacted window and ``restore`` puts them back."""
     mapping: dict[str, str] = {}
     counters: Counter[str] = Counter()
 
@@ -90,7 +120,8 @@ def redact(grounding: Grounding) -> tuple[Grounding, dict[str, str]]:
 
     texts = [i.text for i in grounding.items] + [i.command for i in grounding.items if i.command] + \
         list(grounding.commands)
-    blob = "\n".join(texts)
+    window_lines = list(window["lines"]) if window else []
+    blob = "\n".join(texts + window_lines)
     arns: dict[str, str] = {}
     for m in _ARN.finditer(blob):
         if m.group(0) in arns:
@@ -100,7 +131,7 @@ def redact(grounding: Grounding) -> tuple[Grounding, dict[str, str]]:
         acct = token(account, "ACCOUNT") if account else ""
         counters["RESOURCE"] += 1
         arns[m.group(0)] = f"arn:aws:{service}:{region}:{acct}:{rtype}/RESOURCE_{counters['RESOURCE']}"
-    for host in grounding.hosts:
+    for host in list(grounding.hosts) + _window_hosts(window_lines):
         token(host, "HOST")
     for name in grounding.names:
         if name not in mapping and not _ARN.fullmatch(name):
@@ -134,7 +165,8 @@ def redact(grounding: Grounding) -> tuple[Grounding, dict[str, str]]:
     red = Grounding(subject_key=grounding.subject_key, items=items, baseline=grounding.baseline,
                     commands={sub(c) or "" for c in grounding.commands}, urls=set(grounding.urls), hosts=[],
                     allowed_ids=set(grounding.allowed_ids), names=[])
-    return red, {t: o for o, t in ordered}
+    red_window = {**window, "lines": [sub(ln) or "" for ln in window_lines]} if window else window
+    return red, {t: o for o, t in ordered}, red_window
 
 
 def restore(value: Any, back: dict[str, str]) -> Any:
@@ -184,10 +216,21 @@ def _items(grounding: Grounding) -> list[dict[str, str]]:
     return [{"id": i.id, "label": i.label} for i in grounding.items]
 
 
+def public(cfg: AiConfig, grounding: Grounding, result: dict[str, Any], kb_version: str, *, cached: bool,
+           mode: str = "") -> dict[str, Any]:
+    """The response: the result without internal fields, plus where it came from and the citation labels."""
+    out = {k: v for k, v in result.items() if k not in ("unknown_ids",)}
+    return {**out, "provider": cfg.provider, "model": cfg.model, "region": cfg.region, "kb_version": kb_version,
+            "prompt_version": FIX.FIX_PROMPT_VERSION if mode == "fix" else P.PROMPT_VERSION,
+            "items": _items(grounding), "cached": cached}
+
+
 async def assist(cfg: AiConfig, grounding: Grounding, *, mode: str, question: str | None, kb_version: str,
-                 team_id: int, user_id: int) -> dict[str, Any]:
+                 team_id: int, user_id: int, window: dict[str, Any] | None = None) -> dict[str, Any]:
     started = time.monotonic()
-    key = cache_key(cfg, grounding, mode, question, kb_version, team_id)
+    key = cache_key(cfg, grounding, mode, question, kb_version, team_id) + (
+        (FIX.FIX_PROMPT_VERSION, hashlib.sha256(json.dumps(window, sort_keys=True).encode()).hexdigest())
+        if mode == "fix" else ())
     outcome = "ok"
     cached = _cache_get(key)
     result: dict[str, Any]
@@ -195,14 +238,22 @@ async def assist(cfg: AiConfig, grounding: Grounding, *, mode: str, question: st
         result, outcome = cached, "cache_hit"
     else:
         fitted = grounding.trimmed(P.MAX_PROMPT_CHARS)
-        sent, back = redact(fitted) if cfg.redact_hosts else (fitted, {})
-        messages = P.build(sent, mode, question)
+        # with redaction on, the code window is redacted too (same tokens): the fix is checked against what the
+        # model saw and restored afterwards
+        sent, back, sent_window = redact_fix(fitted, window) if cfg.redact_hosts else (fitted, {}, window)
+        if mode == "fix":
+            # the rewritten window needs more room than an explanation
+            messages = FIX.build(sent, sent_window)
+            call_cfg = dataclasses.replace(cfg, max_tokens=max(cfg.max_tokens, FIX.FIX_MAX_TOKENS))
+        else:
+            messages = P.build(sent, mode, question)
+            call_cfg = cfg
         try:
             if cfg.provider == "bedrock":
                 # the boto call cannot be cancelled: its slot is taken and released inside the worker thread
                 # (transport.bedrock_chat; a slot wait of at most SLOT_WAIT_S, then "busy"), botocore's connect +
                 # read timeouts add up to CBOM_AI_TIMEOUT_S, and the wait covers both
-                raw = await asyncio.wait_for(asyncio.to_thread(T.bedrock_chat, cfg, messages, resolve),
+                raw = await asyncio.wait_for(asyncio.to_thread(T.bedrock_chat, call_cfg, messages, resolve),
                                              timeout=T.bedrock_deadline_s(cfg))
             else:
                 # one process-wide slot pool for both providers (not per event loop); the queue wait is not part of
@@ -211,7 +262,7 @@ async def assist(cfg: AiConfig, grounding: Grounding, *, mode: str, question: st
                 if not await asyncio.to_thread(slot.acquire, True, T.SLOT_WAIT_S):
                     raise T.Busy()
                 try:
-                    raw = await asyncio.wait_for(T.chat(cfg, messages, resolve=resolve, transport=transport),
+                    raw = await asyncio.wait_for(T.chat(call_cfg, messages, resolve=resolve, transport=transport),
                                                  timeout=cfg.timeout_s + 1)
                 finally:
                     slot.release()
@@ -235,12 +286,12 @@ async def assist(cfg: AiConfig, grounding: Grounding, *, mode: str, question: st
             result = {"status": "error", "summary": "", "steps": [], "commands": [], "caveats": [ERROR_TEXT],
                       "baseline": False, "dropped_commands": 0}
         if raw is not None:
-            checked = V.validate(raw, sent)
+            checked = FIX.validate(raw, sent, sent_window) if mode == "fix" else V.validate(raw, sent)
             if checked["status"] == "withheld":
                 checked = {**checked, **V.baseline(grounding)}  # baseline from the real (unredacted) items
                 outcome = {V.WITHHELD_UNKNOWN_ID: "withheld_unknown_id", V.WITHHELD_FORMAT: "withheld_format",
                            V.WITHHELD_UNCITED: "withheld_uncited"}.get(checked.get("withheld_reason") or "",
-                                                                       "withheld")
+                                                                       "withheld_fix" if mode == "fix" else "withheld")
             else:
                 checked = restore(checked, back)
             result = checked
@@ -254,7 +305,4 @@ async def assist(cfg: AiConfig, grounding: Grounding, *, mode: str, question: st
              grounding.subject_key, mode, cfg.provider, cfg.model, P.PROMPT_VERSION, kb_version, latency_ms,
              result.get("dropped_commands", 0),
              len(result.get("unknown_ids") or []), dict(COUNTERS))
-    public = {k: v for k, v in result.items() if k not in ("unknown_ids",)}
-    return {**public, "provider": cfg.provider, "model": cfg.model, "region": cfg.region, "kb_version": kb_version,
-            "prompt_version": P.PROMPT_VERSION,
-            "items": _items(grounding), "cached": outcome == "cache_hit"}
+    return public(cfg, grounding, result, kb_version, cached=outcome == "cache_hit", mode=mode)
