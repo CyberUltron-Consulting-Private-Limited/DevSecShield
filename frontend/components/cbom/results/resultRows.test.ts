@@ -138,9 +138,10 @@ test("the three sorts work across kinds", () => {
   assert.deepEqual(keys(filterAndSortRows(rows, f({ sort: "created_desc" }))), ["run-7", "scan-2", "run-1", "scan-1"]);
   assert.deepEqual(keys(filterAndSortRows(rows, f({ sort: "created_asc" }))), ["scan-1", "run-1", "scan-2", "run-7"]);
   assert.deepEqual(keys(filterAndSortRows(rows, f({ sort: "risk_desc" }))), ["run-1", "run-7", "scan-1", "scan-2"]);
-  assert.deepEqual(keys(filterAndSortRows(rows, f({ sort: "risk_asc" }))), ["scan-2", "scan-1", "run-7", "run-1"]);
+  // a row without a value sorts last in both directions
+  assert.deepEqual(keys(filterAndSortRows(rows, f({ sort: "risk_asc" }))), ["scan-1", "run-7", "run-1", "scan-2"]);
   assert.deepEqual(keys(filterAndSortRows(rows, f({ sort: "credits_desc" }))), ["run-7", "scan-1", "run-1", "scan-2"]);
-  assert.deepEqual(keys(filterAndSortRows(rows, f({ sort: "credits_asc" }))), ["scan-2", "run-1", "scan-1", "run-7"]);
+  assert.deepEqual(keys(filterAndSortRows(rows, f({ sort: "credits_asc" }))), ["run-1", "scan-1", "run-7", "scan-2"]);
 });
 
 test("deploy skew: no runs_list_data builds one row per run from sources_runs", () => {

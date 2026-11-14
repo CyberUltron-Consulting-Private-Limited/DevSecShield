@@ -55,6 +55,14 @@ test("the list is keyed per team and not re-fetched on a timer; active runs use 
   assert.ok(/refetchInterval: (\d+)/.test(page) && Number(/refetchInterval: (\d+)/.exec(page)![1]) >= 15000);
 });
 
+test("an outage keeps the loaded rows, the tab and the filters, and toasts once", () => {
+  assert.ok(page.includes("getCBOMScans(teamIdNumber, { toast: false })"), "the API call does not toast every failure");
+  assert.ok(page.includes("outage.failed()"), "the page toasts once per outage");
+  assert.ok(page.includes('view === "error"') && !page.includes(") : query.isError ? ("), "error screen only without data");
+  assert.ok(page.includes('data-testid="cbom-results-stale"'));
+  assert.ok(page.includes("<Tabs value={activeTab} onValueChange={setActiveTab}"), "the tab is held in state");
+});
+
 test("Review & Run Results opens the run results page; run changes refresh the list", () => {
   assert.match(review, /<Link href=\{runResultsHref\(teamId, run\.id\)\} data-testid=\{`review-run-details-\$\{run\.id\}`\}>/);
   assert.ok(!review.includes("setDetailsRunId"), "the dialog is no longer opened from the Runs table");

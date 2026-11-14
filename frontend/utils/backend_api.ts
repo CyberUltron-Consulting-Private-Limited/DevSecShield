@@ -2437,13 +2437,13 @@ export interface CBOMConversationResponse {
   info?: ScanInfoField | null
 }
 
-/** Team-scoped: GET /{team_id}/cbom/scans */
-const getCBOMScans = async (team_id: number): Promise<CBOMListResponse> => {
+/** Team-scoped: GET /{team_id}/cbom/scans. `toast: false` leaves the error toast to the caller (once per outage). */
+const getCBOMScans = async (team_id: number, opts: { toast?: boolean } = {}): Promise<CBOMListResponse> => {
   try {
     const response = await api.get(`/${team_id}/cbom/scans`);
     return response.data as CBOMListResponse;
   } catch (error) {
-    showErrorToast(error, "Error fetching CBOM scans");
+    if (opts.toast !== false) showErrorToast(error, "Error fetching CBOM scans");
     throw error;
   }
 };

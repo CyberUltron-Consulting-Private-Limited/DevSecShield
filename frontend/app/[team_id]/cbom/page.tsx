@@ -73,6 +73,7 @@ import {
 } from "@/components/cbom/results/resultRows";
 import { resultsHref } from "@/components/cbom/results/resultsHref";
 import { isActiveStatus } from "@/components/cbom/results/statusBuckets";
+import { createOutageGate, listView } from "@/components/cbom/results/listErrors";
 import { cbomResultsListKey, cbomSourcesKeys } from "@/components/cbom/sources/keys";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -590,15 +591,20 @@ export default function CBOMPage() {
   const listKey = cbomResultsListKey(teamIdNumber);
   const query = useQuery({
     queryKey: listKey,
-    queryFn: () => getCBOMScans(teamIdNumber),
+    queryFn: () => getCBOMScans(teamIdNumber, { toast: false }),
     enabled: Number.isFinite(teamIdNumber),
   });
 
+  // One error toast per outage (not one per failed refetch); a success ends the outage.
+  const [outage] = useState(createOutageGate);
   useEffect(() => {
-    if (query.error) {
-      showErrorToast(query.error, "Error fetching CBOM scans");
-    }
-  }, [query.error]);
+    if (query.errorUpdatedAt && query.error && outage.failed()) showErrorToast(query.error, "Error fetching CBOM scans");
+  }, [query.errorUpdatedAt, query.error, outage]);
+  useEffect(() => {
+    if (query.dataUpdatedAt) outage.succeeded();
+  }, [query.dataUpdatedAt, outage]);
+  // a failed refetch keeps the loaded rows, the tab and the filters; only a first load that fails shows the error screen
+  const view = listView({ isLoading: query.isLoading, isError: query.isError, hasData: query.data !== undefined });
 
   // runs_list_error (the backend could not list the runs): rows fall back to sources_runs and a notice says so
   const listed = useMemo(() => rowsFromListResponse(query.data), [query.data]);
@@ -803,16 +809,22 @@ export default function CBOMPage() {
           </div>
 
           {/* Loading / error states */}
-          {query.isLoading ? (
+          {view === "loading" ? (
             <div className="flex h-64 items-center justify-center">
               <Loader2 className="size-10 animate-spin text-blue-600" />
             </div>
-          ) : query.isError ? (
+          ) : view === "error" ? (
             <div className="text-center py-12">
               <p className="text-zinc-600 dark:text-zinc-400 mb-4">Error in fetching scans, please try again later</p>
             </div>
           ) : (
             /* Tabs: Dashboard & Table */
+            <>
+            {query.isError && query.dataUpdatedAt > 0 && (
+              <p className="mb-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200" role="status" data-testid="cbom-results-stale">
+                {`Couldn't refresh the list; showing what was loaded at ${formatDate(new Date(query.dataUpdatedAt).toISOString())}.`}
+              </p>
+            )}
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
               <TabsList className="mb-4 bg-transparent">
                 <TabsTrigger value="dashboard" className="cursor-pointer data-[state=active]:bg-blue-600 data-[state=active]:text-white ">Dashboard</TabsTrigger>
@@ -840,7 +852,7 @@ export default function CBOMPage() {
                   <div className="flex flex-wrap items-center gap-3 mb-4">
                     <div className="relative flex-1 min-w-[180px] max-w-sm">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
-                      <Input placeholder="Search title, repo, branch or source..." aria-label="Search scans and runs" data-testid="cbom-results-search" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9 h-9 cursor-text" />
+                      <Input placeholder="Search scans and runs" title="Search by title, repository, branch, source name or run number" aria-label="Search scans and runs" data-testid="cbom-results-search" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9 h-9 cursor-text" />
                     </div>
                     <Select value={statusFilter} onValueChange={setStatusFilter}>
                       <SelectTrigger className="h-9 min-w-[150px] cursor-pointer"><SelectValue placeholder="Scan status" /></SelectTrigger>
@@ -1161,6 +1173,7 @@ export default function CBOMPage() {
                 )}
               </TabsContent>
             </Tabs>
+            </>
           )}
         </div>
       </div>

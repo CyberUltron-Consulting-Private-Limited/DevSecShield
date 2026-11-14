@@ -264,15 +264,22 @@ export function filterAndSortRows(rows: readonly ResultRow[], f: ResultFilters):
     return matchesRiskTier(displayRiskScore(r), f.risk);
   });
   if (f.sort === "none") return out;
-  const score = (r: ResultRow) => displayRiskScore(r) ?? -1;
-  const credits = (r: ResultRow) => r.estimated_credits ?? -1;
+  // rows without a value ("—") sort last in both directions
+  const by = (value: (r: ResultRow) => number | null, dir: 1 | -1) => (a: ResultRow, b: ResultRow) => {
+    const va = value(a);
+    const vb = value(b);
+    if (va == null || vb == null) return va == null ? (vb == null ? 0 : 1) : -1;
+    return dir * (va - vb);
+  };
+  const score = (r: ResultRow) => displayRiskScore(r);
+  const credits = (r: ResultRow) => r.estimated_credits;
   const cmp: Record<Exclude<TableSortBy, "none">, (a: ResultRow, b: ResultRow) => number> = {
     created_asc: (a, b) => -newestFirst(a, b),
     created_desc: newestFirst,
-    risk_desc: (a, b) => score(b) - score(a),
-    risk_asc: (a, b) => score(a) - score(b),
-    credits_desc: (a, b) => credits(b) - credits(a),
-    credits_asc: (a, b) => credits(a) - credits(b),
+    risk_desc: by(score, -1),
+    risk_asc: by(score, 1),
+    credits_desc: by(credits, -1),
+    credits_asc: by(credits, 1),
   };
   return [...out].sort(cmp[f.sort]);
 }
