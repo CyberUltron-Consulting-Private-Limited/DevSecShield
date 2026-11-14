@@ -100,6 +100,21 @@ class ProbeError(Exception):
         self.detail = detail
 
 
+class ConnectRefused(ProbeError):
+    """The TCP connect itself was refused (RST to the SYN): nothing listens, or a filter rejects the scanner.  Code
+    "refused" like a reset, but it never says anything about what the port speaks."""
+
+    def __init__(self) -> None:
+        super().__init__("refused", "connection refused")
+
+
+class ConnectionReset(ProbeError):
+    """An accepted connection was reset while the node waited for an answer (some TLS stacks refuse a hello so)."""
+
+    def __init__(self) -> None:
+        super().__init__("refused", "connection reset")
+
+
 class NotTls(ProbeError):
     """The server answered with bytes that are not a TLS record (an HTTP or SSH banner on a port listed as TLS)."""
 
@@ -202,7 +217,7 @@ def _recv_exact(sock: socket.socket, n: int, deadline: float) -> bytes:
         except socket.timeout:
             continue
         except ConnectionResetError:
-            raise ProbeError("refused", "connection reset") from None
+            raise ConnectionReset() from None
         except OSError as exc:
             raise ProbeError("error", exc.__class__.__name__) from None
         if not chunk:
@@ -333,7 +348,7 @@ def connect_error(exc: OSError, ip: str) -> ProbeError:
     if isinstance(exc, socket.timeout):
         return ProbeError("timeout", "connect timed out")
     if isinstance(exc, ConnectionRefusedError):
-        return ProbeError("refused", "connection refused")
+        return ConnectRefused()
     code = getattr(exc, "errno", None)
     if ":" in ip and code in _NO_IPV6_ERRNOS:
         return ProbeError("no_route", "IPv6 is not available on this scan node")

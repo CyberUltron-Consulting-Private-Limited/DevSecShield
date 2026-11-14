@@ -1,21 +1,20 @@
 """CB-12 on the backend: what a scan node reports about TLS is stored without sentinels and with one name per suite
 (IANA name + code, for nodes of every version); a non-TLS listener's coverage row is not a TLS asset, not "not
 applicable" and not in the posture classes; an alert-only TLS endpoint is a TLS row with no verdict; new teams get the
-handshake budget that full suite enumeration needs; the backend's suite table is the scan node's.
+handshake budget that full suite enumeration needs; the scan node's suite table is the product's one table.
 
 Uses the SQLite + real-router harness of test_cbom_sources_api.py (assets go through the node API's add_assets).
 """
 from __future__ import annotations
 
 import importlib.util
-import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_cbom_sources_api import _collect_job, api, world  # noqa: E402,F401  (shared fixtures)
 
-from backend.utilities.cbom_sources import node_facts  # noqa: E402
+from backend.utilities.cbom_sources import node_facts, tls_suites  # noqa: E402
 from backend.utilities.cbom_sources.classify import classify  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -89,18 +88,53 @@ def test_classify_reads_a_full_suite_list():
     assert {"PROTO_TLS10", "WEAK_CIPHER"} <= set(out["finding_codes"]) and out["quantum_vulnerable"] is False
 
 
-def test_the_backend_suite_table_is_the_scan_node_table():
+def test_the_scan_node_suite_table_is_the_product_table():
+    """The node image carries no backend code, so it has its own generated table; every code, IANA name and OpenSSL
+    name in it is the product's one table (``tls_suites``, CB-06), and the node lists every suite that table has."""
     spec = importlib.util.spec_from_file_location("tls_registry", ROOT / "scan_node/zs_scan_node/tls_registry.py")
     reg = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(reg)
-    data = json.loads((ROOT / "backend/utilities/cbom_sources/data/tls_cipher_suites.json").read_text())
-    assert {int(k, 16): v["iana"] for k, v in data["suites"].items()} == reg.SUITES
-    assert {int(k, 16): v["openssl"] for k, v in data["suites"].items() if "openssl" in v} == reg.OPENSSL_NAMES
-    assert "groups" not in data  # group names and codepoints come from algid only (CB-04 single source)
-    assert data["sources"] == reg.SOURCES
+    product = {s.code: s for s in tls_suites.suites() if not s.signalling}
+    assert {c: s.iana for c, s in product.items()} == reg.SUITES
+    assert all(name in product[code].openssl for code, name in reg.OPENSSL_NAMES.items())
     assert node_facts.iana_suite("ECDHE-RSA-AES128-SHA") == (0xC013, "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA")
     assert node_facts.iana_suite("TLS_AES_256_GCM_SHA384") == (0x1302, "TLS_AES_256_GCM_SHA384")
-    assert node_facts.iana_suite("<NULL>") is None
+    assert node_facts.iana_suite("DES-CBC3-SHA") == (0x000A, "TLS_RSA_WITH_3DES_EDE_CBC_SHA")  # OpenSSL 1.x names too
+    assert node_facts.iana_suite("<NULL>") is None and node_facts.iana_suite("TLS_FALLBACK_SCSV") is None
+
+
+def test_only_the_shared_loader_reads_the_suite_table():
+    """One table, one reader (the guard #103 carries, here too so this PR cannot bring a second reader back)."""
+    table = "tls_cipher_suites" + ".json"
+    allowed = {"backend/utilities/cbom_sources/tls_suites.py", "scripts/tls_suites/build_table.py",
+               "backend/tests/test_cbom_cb06_export.py"}
+    readers = []
+    for top in ("backend", "scan_node", "aibom", "RabbitMQ", "scripts", "e2e"):
+        for path in (ROOT / top).rglob("*.py"):
+            rel = path.relative_to(ROOT).as_posix()
+            if "/.venv/" in f"/{rel}" or "/node_modules/" in rel or rel in allowed:
+                continue
+            if table in path.read_text(errors="replace"):
+                readers.append(rel)
+    assert readers == []
+
+
+def test_a_job_wide_sni_gap_covers_sni_certificates_on_every_endpoint_only():
+    """The node writes names it never tried (over the cap, unresolved) once per job, scoped ``#sni=``: a certificate
+    read with an SNI name on any endpoint is "not read", a chain certificate is not covered."""
+    from backend.utilities.cbom_sources.drift import Gap, View
+
+    gap = Gap(target="", prefixes=("#sni=",), incomplete=False)
+
+    def cert(location: str) -> View:
+        return View(identity=location, key=location, label=location, asset_type="certificate", codes=frozenset(),
+                    impact=None, quantum_vulnerable=None, finding=False, judged=False,
+                    extra={"target": "10.0.0.5", "location": location})
+
+    assert gap.covers(cert("10.0.0.5:443#sni=app.example.test"), listed=False)
+    assert not gap.covers(cert("10.0.0.5:443#chain[0]"), listed=False)
+    assert Gap(target="", prefixes=("10.0.0.5:443#sni=",), incomplete=False).covers(
+        cert("10.0.0.5:443#sni=app.example.test"), listed=False)
 
 
 def test_rows_that_are_not_tls_pass_unchanged():

@@ -5,7 +5,9 @@ Per open endpoint a prioritised list of handshakes runs, capped by ``handshakes_
      peer signature, certificate chain.  When it fails, one ClientHello decides whether the port speaks TLS at all:
      a TLS alert means TLS (an SNI-only server is then read with the team's "Hostnames for SNI" that resolve to the
      address, and that name is sent in every probe of the endpoint); a close or non-TLS bytes, to a modern and to a
-     legacy hello, mean "not TLS": a ``not_tls`` coverage row, never a TLS asset (CB-12, KF-4/KF-5);
+     legacy hello, mean "not TLS": a ``not_tls`` coverage row, never a TLS asset (CB-12, KF-4/KF-5).  A listener
+     that closes a hello without a name but answers one with the first SNI name (Envoy/Istio filter chains) is read
+     with that name.  A refused connect or a reset after the hello is never "not TLS": the endpoint is not read;
   2. raw ClientHello per protocol version (SSLv3 .. TLS 1.3) -> what the server accepts;
   3. TLS 1.3 post-quantum group probe (HelloRetryRequest) -> hybrid ML-KEM support;
   4. TLS_FALLBACK_SCSV probe -> downgrade protection;
@@ -39,7 +41,7 @@ from zs_scan_node import tls_registry as R
 from zs_scan_node import tlsenum as E
 from zs_scan_node import tlsprobe as T
 from zs_scan_node.certparse import cert_facts, load_certs
-from zs_scan_node.jobctx import JobContext, LeaseLost, register_asset_types
+from zs_scan_node.jobctx import MAX_FACTS_BYTES, JobContext, LeaseLost, register_asset_types
 from zs_scan_node import netutil
 from zs_scan_node.netutil import Blocked, checked_ip, iter_line_ips, node_limiter
 
@@ -158,11 +160,12 @@ class NetworkScan:
         self.limiter = node_limiter(rl.get("connections_per_second") or 20, rl.get("parallel_per_server") or 2)
         self.per_endpoint = int(rl.get("handshakes_per_endpoint") or 12)
         self.timeouts: dict[str, int] = {}
+        self._timeouts_lock = threading.Lock()
         self.open_count = 0
         self._sni_lock = threading.Lock()
         self._sni_order: list[str] | None = None  # the names, in the team's order, resolved once per job
         self._sni_addresses: dict[str, set[str]] = {}
-        self.sni_left_out = ""  # names never tried anywhere in this job (over the cap, unresolved), said per endpoint
+        self.sni_left_out = ""  # names never tried anywhere in this job (over the cap, unresolved): one job-wide row
         self.own_rows: set[str] = set()  # endpoints whose read wrote its own coverage row (no generic second row)
 
     def sni_names_for(self, ip: str) -> list[str]:
@@ -179,6 +182,10 @@ class NetworkScan:
                     parts.append(f"{len(unresolved)} SNI host names did not resolve within {int(SNI_DNS_BUDGET_S)} s "
                                  f"and were not tried ({', '.join(unresolved[:5])}{', ...' if len(unresolved) > 5 else ''})")
                 self.sni_left_out = "; ".join(parts)
+                if self.sni_left_out:
+                    # job-wide: certificates read with these names before are "not read" on every endpoint, once
+                    self.ctx.coverage("", "SNI names left out", "truncated", self.sni_left_out[:900], once=True,
+                                      scope=["#sni="], incomplete=False)
         never = self.ctx.never_scan
         out = []
         for name in self._sni_order:
@@ -215,6 +222,11 @@ class NetworkScan:
         except T.ProbeError as exc:
             return "closed" if exc.code == "refused" else "silent"
 
+    def timed_out(self, ip: str) -> None:
+        """One more handshake to ``ip`` timed out: past TARPIT_TIMEOUTS its remaining ports are not probed."""
+        with self._timeouts_lock:
+            self.timeouts[ip] = self.timeouts.get(ip, 0) + 1
+
     def handshake(self, ep: Endpoint, budget: Budget, fn, *args):
         if not budget.take():
             return "budget"
@@ -249,8 +261,8 @@ class NetworkScan:
             return "skipped_never_scan", None, 0
         except T.ProbeError as exc:
             if exc.code == "timeout":
-                self.timeouts[ep.ip] = self.timeouts.get(ep.ip, 0) + 1
-            return exc.code if exc.code != "refused" else "refused", exc.detail[:200], 0
+                self.timed_out(ep.ip)
+            return exc.code, exc.detail[:200], 0
         except LeaseLost:
             raise
         except Exception as exc:  # a hostile endpoint must cost one endpoint, never the whole job
@@ -270,12 +282,28 @@ class NetworkScan:
         facts: dict[str, Any] = {"protocol_label": ep.label, "service": ep.protocol, "mode": mode}
         endpoint_deadline = time.monotonic() + ENDPOINT_MAX_S
 
+        dropped: list[T.ProbeError] = []  # the server stopped answering this node (timeout, refused connect)
+
         def raw(hello: bytes, want_kex: bool = False, timeout: float = 8.0):
-            return self.handshake(ep, budget, T.probe, ep.ip, ep.port, ep.protocol, hello, timeout, want_kex)
+            """One raw probe.  Once the server times out or refuses the connect, later probes are not sent (each
+            would wait the full timeout again): they fail at once with the same error, and the host's tarpit count
+            gets the timeout, so its other ports are not probed into the same silence."""
+            if dropped:
+                raise T.ProbeError(dropped[0].code, f"not sent: {dropped[0].detail}")
+            try:
+                return self.handshake(ep, budget, T.probe, ep.ip, ep.port, ep.protocol, hello, timeout, want_kex)
+            except T.ProbeError as exc:
+                if exc.code == "timeout" or isinstance(exc, T.ConnectRefused):
+                    dropped.append(exc)
+                    if exc.code == "timeout":
+                        self.timed_out(ep.ip)
+                raise
 
         def send(hello: bytes, want_kex: bool) -> T.HelloResult:  # enumeration passes: budget and time end a pass
             if time.monotonic() > endpoint_deadline:
                 raise E.Stop("endpoint time cap")
+            if dropped:
+                raise E.Stop(f"server stopped answering ({dropped[0].code})")
             r = raw(hello, want_kex)
             if r == "budget":
                 raise E.Stop(f"handshake budget ({limit})")
@@ -301,31 +329,40 @@ class NetworkScan:
             # one cheap raw probe decides whether this endpoint speaks TLS at all; a second silence ends it
             try:
                 quick = raw(T.build_client_hello(T.TLS12, T.LEGACY_SUITES), timeout=6.0)
+            except T.NotTls as exc:  # e.g. an HTTP server that waited for a line longer than s_client, then said 400
+                return self._not_tls(ep, f"answered '{exc.first}'")
             except T.ProbeError as exc:
                 return exc.code, f"no TLS answer ({exc.detail})", 0
             except T.StarttlsUnavailable:
                 quick = None
             if quick is not None and quick != "budget" and not quick.ok and not quick.alert:
+                self.timed_out(ep.ip)
                 return "timeout", "no TLS answer", 0
         sni: str | None = None
         alerts: list[str] = []
+        needs_name = False  # it answers a hello with a server name and closes/resets one without (Envoy, Istio)
         if not fh.ok:
             # 1b. TLS at all?  Any TLS alert = it speaks TLS (it may want a server name); only a close or non-TLS
-            # bytes, to a modern and to a legacy hello, mean "not TLS" (CB-04 EC-4: alert != closed)
+            # bytes, to a modern and to a legacy hello, mean "not TLS" (CB-04 EC-4: alert != closed).  A refused
+            # connect raises (the port is not there); a reset after the hello decides nothing.
             try:
-                kind, seen, not_tls = self._speaks_tls(ep, budget, None)
-                if kind == "not_tls" and names:
-                    kind, seen, not_tls = self._speaks_tls(ep, budget, names[0], legacy=False)
+                kind, seen, said = self._speaks_tls(ep, budget, None)
+                if kind in ("not_tls", "undecided") and names:
+                    # an SNI-only listener with no default filter chain closes (or resets) a hello without a name:
+                    # the same hello with the first name decides
+                    named, seen_named, _said = self._speaks_tls(ep, budget, names[0], legacy=False)
+                    if named in ("hello", "alert"):
+                        kind, seen, needs_name = named, seen + seen_named, True
+                        if named == "hello":
+                            sni = names[0]  # it answered this name: every later probe carries it
             except T.StarttlsUnavailable as exc:
                 return plaintext(exc)
             alerts += seen
+            if kind == "undecided":
+                return "refused", f"no TLS answer: {said}"[:200], 0
             if kind == "not_tls":
-                ctx.coverage(ep.ip, f"not TLS {ep.where}", "not_tls",
-                             f"{ep.label or ep.protocol} {ep.where} answered TCP on a port listed as TLS but did not "
-                             f"speak TLS: {not_tls}", scope=[ep.where], incomplete=False)
-                self.own_rows.add(ep.where)
-                return "ok", None, 0
-            if kind == "alert" and names and T.have_openssl() and ep.protocol != "rdp":
+                return self._not_tls(ep, said)
+            if (kind == "alert" or needs_name) and names and T.have_openssl() and ep.protocol != "rdp":
                 # 1c. it rejects a client without a server name: read it with the names the team configured
                 for name in names[:3]:
                     sfh = self.handshake(ep, budget, T.s_client, ep.ip, ep.port, ep.protocol, name, 15.0)
@@ -380,7 +417,7 @@ class NetworkScan:
             except T.ProbeError as exc:
                 versions[name] = None
                 facts.setdefault("probe_errors", []).append(f"{name}: {exc.code}")
-                if exc.code != "refused":  # a reset is this server's way to refuse a version, every time
+                if not isinstance(exc, T.ConnectionReset):  # a reset is this server's way to refuse a version
                     unread.append(f"{name}: {exc.code}")
                 continue
             if r == "budget":
@@ -408,14 +445,14 @@ class NetworkScan:
                     alerts.append(r.alert)
             except (T.ProbeError, T.StarttlsUnavailable) as exc:
                 versions["TLSv1.3"] = None
-                if getattr(exc, "code", None) != "refused":
+                if not isinstance(exc, T.ConnectionReset):
                     unread.append(f"TLSv1.3: {getattr(exc, 'code', 'starttls')}")
         facts["versions"] = versions
         supported = [k for k, v in versions.items() if v]
         if not fh.ok and not supported:
             if alerts or sni_refused:
                 facts.update({"handshakes_used": budget.used, "handshake_budget": limit})
-                return self._no_common_parameters(ep, facts, alerts, names, sni_refused)
+                return self._no_common_parameters(ep, facts, alerts, names, sni_refused, needs_name)
             status = "timeout" if fh.error == "timeout" else "error"
             return status, fh.error or "no TLS handshake", 0
         # 3. post-quantum groups (TLS 1.3): the node's one PQ probe (the rest of the PQ groups come with step 6)
@@ -452,7 +489,7 @@ class NetworkScan:
                 try:
                     r = raw(T.build_client_hello(legacy, suites, sni=sni), label == "dhe")
                 except (T.ProbeError, T.StarttlsUnavailable) as exc:
-                    if getattr(exc, "code", None) != "refused":
+                    if not isinstance(exc, T.ConnectionReset):
                         unread.append(f"{label} ciphers: {getattr(exc, 'code', 'starttls')}")
                     continue
                 if r == "budget":
@@ -535,6 +572,7 @@ class NetworkScan:
             # listed, with some facts missing: a finding that vanishes from this endpoint is not proven fixed
             ctx.coverage(ep.ip, f"TLS checks {ep.where}", "incomplete", "; ".join(unread)[:900],
                          scope=[ep.where], incomplete=True)
+        E.fit_facts(facts, MAX_FACTS_BYTES)  # every list whole, or trimmed by name with its counts (never silently)
         top = next((v for v in ("TLSv1.3", "TLSv1.2", "TLSv1.1", "TLSv1.0", "SSLv3") if versions.get(v)), fh.version)
         assets = 0
         ctx.emit("tls_endpoint", ep.ip, ep.where, name=f"{ep.label or ep.protocol} {ep.where}",
@@ -547,28 +585,39 @@ class NetworkScan:
             assets += 1
         return "ok", None, assets + self._sni_variants(ep, names, sni, chain, Budget(reserve) if reserve else budget)
 
+    def _not_tls(self, ep: Endpoint, said: str) -> tuple[str, str | None, int]:
+        """It accepted TCP and answered TLS hellos with a close or non-TLS bytes: one ``not_tls`` row, no TLS asset."""
+        self.ctx.coverage(ep.ip, f"not TLS {ep.where}", "not_tls",
+                          f"{ep.label or ep.protocol} {ep.where} answered TCP on a port listed as TLS but did not "
+                          f"speak TLS: {said}", scope=[ep.where], incomplete=False)
+        self.own_rows.add(ep.where)
+        return "ok", None, 0
+
     def _speaks_tls(self, ep: Endpoint, budget: Budget, sni: str | None,
                     legacy: bool = True) -> tuple[str, list[str], str]:
-        """('hello' | 'alert' | 'not_tls', alerts seen, what a non-TLS answer was) from a modern ClientHello (TLS
-        1.0-1.3 offered) and, when that gets no TLS answer, a legacy TLS 1.0 one (some old stacks drop TLS 1.3-style
-        hellos).  A timeout raises."""
+        """('hello' | 'alert' | 'not_tls' | 'undecided', alerts seen, what the non-TLS answers were) from a modern
+        ClientHello (TLS 1.0-1.3 offered) and, when that gets no TLS answer, a legacy TLS 1.0 one (some old stacks drop
+        TLS 1.3-style hellos).  "not TLS" needs positive evidence on every hello: non-TLS bytes, or an accepted
+        connection closed with no byte.  A reset after the hello is how some TLS stacks refuse one: 'undecided'.  A
+        refused connect (nothing listens, or a filter rejects the node) and a timeout raise."""
         hellos = [T.build_client_hello(T.TLS12, T.TLS13_SUITES + T.LEGACY_SUITES, sni=sni, tls13=True,
                                        groups=T.CLASSICAL_GROUPS + T.PQ_GROUPS, key_share_groups=[29],
                                        versions13=[T.TLS13, T.TLS12, T.TLS11, T.TLS10])]
         if legacy:
             hellos.append(T.build_client_hello(T.TLS10, T.LEGACY_SUITES, sni=sni))
         details: list[str] = []
+        reset = False
         for hello in hellos:
             try:
                 r = self.handshake(ep, budget, T.probe, ep.ip, ep.port, ep.protocol, hello, 8.0)
             except T.NotTls as exc:
                 details.append(f"answered '{exc.first}'")
                 continue
-            except T.ProbeError as exc:
-                if exc.code != "refused":  # a timeout or a garbled flight decides nothing
-                    raise
-                details.append("reset the connection without a TLS answer")
+            except T.ConnectionReset:  # not evidence either way: never "not TLS"
+                reset = True
+                details.append("reset the connection after the ClientHello")
                 continue
+            # a refused connect, a timeout or a garbled flight decides nothing: they raise
             if r == "budget":
                 return "alert", [], ""  # not decided: never call it "not TLS" without the evidence
             if r.ok:
@@ -578,15 +627,18 @@ class NetworkScan:
             details.append("closed the connection without a TLS answer")
         said = (f"{details[0]} ({len(details)} handshake{'s' if len(details) > 1 else ''})"
                 if len(set(details)) == 1 else "; ".join(details))
-        return "not_tls", [], said
+        return ("undecided" if reset else "not_tls"), [], said
 
     def _no_common_parameters(self, ep: Endpoint, facts: dict[str, Any], alerts: list[str], names: list[str],
-                              sni_refused: bool) -> tuple[str, str | None, int]:
+                              sni_refused: bool, closes_without_name: bool = False) -> tuple[str, str | None, int]:
         """It speaks TLS (it sent alerts) but no handshake succeeded: a TLS endpoint with nothing read, and a gap that
         keeps its earlier findings from reading as fixed.  Never "ok"."""
-        needs_name = "unrecognized_name" in alerts
+        needs_name = "unrecognized_name" in alerts or closes_without_name
         seen = sorted(set(alerts))
-        if needs_name and not names:
+        if closes_without_name:
+            why = ("the server closes every handshake without a server name (SNI) and answered none with the configured "
+                   f"SNI host names that resolve to this address ({', '.join(names[:3])})")
+        elif needs_name and not names:
             why = ("the server answers only clients that send a server name (SNI; alert unrecognized_name): add the "
                    "host names it serves under Hostnames for SNI")
         elif needs_name:
@@ -636,8 +688,6 @@ class NetworkScan:
         if untried:
             reasons.append(f"{len(untried)} of {len(others)} SNI host names were not tried (handshake budget): "
                            f"{', '.join(untried[:5])}{', ...' if len(untried) > 5 else ''}")
-        if self.sni_left_out:
-            reasons.append(self.sni_left_out)
         if reasons:
             # their certificates seen before are "not read", never removed
             ctx.coverage(ep.ip, f"SNI names {ep.where}", "truncated", "; ".join(reasons)[:900],

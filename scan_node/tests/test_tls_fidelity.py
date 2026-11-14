@@ -298,6 +298,174 @@ def test_a_tls_server_that_only_alerts_is_tls_with_no_common_parameters(lab):
     assert len(cov) == 1 and cov[0]["facts"]["incomplete"] is True
 
 
+class ResetTls(FakeTls):
+    """A TLS stack that resets the TCP connection on a hello it does not like (SChannel does this)."""
+
+    def _one(self, conn):
+        try:
+            conn.recv(65536)
+            conn.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+        except OSError:
+            pass
+        finally:
+            conn.close()
+
+
+class CloseWithoutSni(FakeTls):
+    """An SNI-only listener with no default filter chain (Envoy, Istio): a hello without its name is closed, no alert."""
+
+    def answer(self, h):
+        if h["sni"] != self.sni:
+            return b""  # nothing sent: _one closes the connection
+        return super().answer(h)
+
+
+class ModernHelloDropper(FakeTls):
+    """An old TLS 1.0 stack that closes on any hello carrying supported_versions (TLS 1.3 style)."""
+
+    def answer(self, h):
+        return b"" if h["versions"] else super().answer(h)
+
+
+def _no_full_handshake(monkeypatch, error="handshake failed"):
+    monkeypatch.setattr(T, "s_client", lambda *a, **k: T.FullHandshake(error=error))
+    monkeypatch.setattr(T, "have_openssl", lambda: True)
+
+
+def test_a_refused_connect_is_not_read_never_not_tls(lab):
+    srv = lab(mode="close")
+    srv.close()
+    probe = socket.socket()  # a port nothing listens on (the port went down after the sweep, or a filter rejects
+    probe.bind(("127.0.0.1", 0))  # the node): bound, never listening, so every connect is refused
+    srv.port = probe.getsockname()[1]
+    try:
+        (status, err, n), rows, scan = _scan(srv)
+    finally:
+        probe.close()
+    assert (status, n) == ("refused", 0) and "refused" in err
+    assert not [r for r in _rows(rows, "coverage") if r["facts"]["status"] == "not_tls"]
+    assert not _rows(rows, "tls_endpoint") and not scan.own_rows  # the generic not-read row is written by the sweep
+
+
+def test_a_reset_after_the_hello_is_undecided_never_not_tls(monkeypatch):
+    srv = ResetTls()
+    _no_full_handshake(monkeypatch)
+    try:
+        (status, err, n), rows, scan = _scan(srv)
+    finally:
+        srv.close()
+    assert (status, n) == ("refused", 0) and "reset" in err
+    assert not _rows(rows, "coverage") and not _rows(rows, "tls_endpoint") and not scan.own_rows
+
+
+def test_an_sni_only_server_that_closes_without_a_name_is_read_with_it(monkeypatch):
+    srv = CloseWithoutSni(suites={T.TLS12: TLS12_SUITES[:2]}, suites13=TLS13, groups13=[29, 23], sni="app.example.test")
+    monkeypatch.setattr(T, "s_client", _fake_s_client(srv))
+    monkeypatch.setattr(T, "have_openssl", lambda: True)
+    monkeypatch.setattr(netutil, "resolve", lambda name, *a, **k: ["127.0.0.1"])
+    try:
+        (status, err, n), rows, scan = _scan(srv, sni_names=["app.example.test"])
+    finally:
+        srv.close()
+    tls = _rows(rows, "tls_endpoint")
+    assert status == "ok" and len(tls) == 1, (status, err, rows)
+    f = tls[0]["facts"]
+    assert f["sni"] == "app.example.test" and f["sni_required"] is True
+    assert f["versions"]["TLSv1.2"] is True and f["versions"]["TLSv1.3"] is True
+    assert f["cipher_suites"]["TLSv1.2"] == [E.suite_entry(c) for c in sorted(TLS12_SUITES[:2])]
+    assert f["groups"] == ["secp256r1", "x25519"] and f["enumeration"]["complete"] is True
+    first_named = next(i for i, h in enumerate(srv.hellos) if h["sni"])
+    # every later hello carries the name (an SSLv3 hello has no extensions, so no SNI)
+    assert all(h["sni"] == "app.example.test" for h in srv.hellos[first_named:] if h["legacy_version"] > T.SSL3)
+
+
+def test_an_sni_only_server_that_closes_and_takes_no_configured_name_is_sni_required(monkeypatch):
+    class AlertOnWrongName(FakeTls):  # no name: closed; a name it does not serve: alert unrecognized_name
+        def answer(self, h):
+            return b"" if h["sni"] is None else super().answer(h)
+
+    srv = AlertOnWrongName(suites={T.TLS12: TLS12_SUITES[:2]}, sni="app.example.test")
+    monkeypatch.setattr(T, "s_client", _fake_s_client(srv))
+    monkeypatch.setattr(T, "have_openssl", lambda: True)
+    monkeypatch.setattr(netutil, "resolve", lambda name, *a, **k: ["127.0.0.1"])
+    try:
+        (status, err, n), rows, scan = _scan(srv, sni_names=["wrong.example.test"])
+    finally:
+        srv.close()
+    assert status == "tls_unavailable"
+    assert _rows(rows, "tls_endpoint")[0]["facts"]["negotiation"] == "sni_required"
+    assert [r["facts"]["status"] for r in _rows(rows, "coverage")] == ["sni_required"]
+
+
+def test_a_stack_that_drops_modern_hellos_but_answers_a_legacy_one_is_tls(monkeypatch):
+    srv = ModernHelloDropper(suites={T.TLS10: [C("TLS_RSA_WITH_AES_128_CBC_SHA")]})
+    _no_full_handshake(monkeypatch)
+    try:
+        (status, err, n), rows, scan = _scan(srv)
+    finally:
+        srv.close()
+    assert not [r for r in _rows(rows, "coverage") if r["facts"]["status"] == "not_tls"]
+    tls = _rows(rows, "tls_endpoint")
+    assert status == "ok" and len(tls) == 1 and tls[0]["facts"]["versions"]["TLSv1.0"] is True
+
+
+def test_a_non_tls_answer_after_a_full_handshake_timeout_is_not_tls(lab, monkeypatch):
+    srv = lab(mode="http")
+    monkeypatch.setattr(T, "s_client", lambda *a, **k: T.FullHandshake(error="timeout"))
+    (status, err, n), rows, scan = _scan(srv)
+    assert (status, n) == ("ok", 0)
+    assert [r["facts"]["status"] for r in _rows(rows, "coverage")] == ["not_tls"]
+
+
+class DropsAfter(FakeTls):
+    """Answers the first 12 hellos, then holds every connection silently (a per-source limiter dropping the node)."""
+
+    def _one(self, conn):
+        if len(self.hellos) >= 12:
+            time.sleep(12)
+            conn.close()
+            return
+        super()._one(conn)
+
+
+def test_a_server_that_starts_dropping_costs_one_timeout_and_feeds_the_tarpit_count(monkeypatch):
+    srv = DropsAfter(suites={T.TLS10: TLS12_SUITES[3:4], T.TLS12: TLS12_SUITES}, suites13=TLS13, groups13=[29, 23])
+    monkeypatch.setattr(T, "s_client", _fake_s_client(srv))
+    monkeypatch.setattr(T, "have_openssl", lambda: True)
+    t0 = time.monotonic()
+    try:
+        (status, err, n), rows, scan = _scan(srv)
+    finally:
+        srv.close()
+    wall = time.monotonic() - t0
+    f = _rows(rows, "tls_endpoint")[0]["facts"]
+    assert wall < 12, wall  # one 8 s probe timeout, not one per pass
+    assert scan.timeouts == {"127.0.0.1": 1}
+    assert f["enumeration"]["complete"] is False
+    assert sum("server stopped answering (timeout)" in r for r in f["enumeration"]["not_complete"]) >= 2
+
+
+def test_lists_past_the_facts_cap_are_trimmed_by_name_never_silently(lab):
+    accepted = list(R.LEGACY_SUITES)[:170]
+    srv = lab(suites={T.TLS12: accepted}, suites13=[0x1301, 0x1302], groups13=[29, 23])
+    (status, err, n), rows, scan = _scan(srv, budget=200)
+    row = _rows(rows, "tls_endpoint")[0]
+    f = row["facts"]
+    import json
+
+    from zs_scan_node.jobctx import MAX_FACTS_BYTES
+
+    assert len(json.dumps(f)) <= MAX_FACTS_BYTES and "_truncated" not in f
+    found12 = len(f["cipher_suites"]["TLSv1.2"])
+    trimmed = f.get("facts_trimmed", {})
+    if found12 < 170:  # trimmed: said so, with the counts, and never "complete"
+        assert trimmed["cipher_suites.TLSv1.2"] == [found12, 170]
+        assert f["cipher_suites_complete"]["TLSv1.2"] is False and f["enumeration"]["complete"] is False
+        assert any("trimmed to fit" in r for r in f["enumeration"]["not_complete"])
+    assert len(f["ciphers"]) == 172 or trimmed["ciphers"] == [len(f["ciphers"]), 172]
+    assert all(f["cipher_suites_complete"][v] is False for v in ("TLSv1.2",) if "cipher_suites.TLSv1.2" in trimmed)
+
+
 # ----------------------------------------------------------------------------- #100: enumeration and its budget
 def _full_server(lab):
     return lab(suites={T.TLS10: TLS12_SUITES[3:4], T.TLS12: TLS12_SUITES}, suites13=TLS13 + [0x1304],
@@ -437,6 +605,63 @@ def test_sni_names_resolve_once_per_job_within_a_bounded_time(monkeypatch):
     started = len(calls)
     assert scan.sni_names_for("10.0.0.8") == [] and len(calls) == started <= N.SNI_MAX_NAMES  # once per job
     assert "51 SNI host names beyond the first 200" in scan.sni_left_out and "did not resolve within" in scan.sni_left_out
+
+
+def test_sni_names_resolve_concurrently(monkeypatch):
+    """The fast name comes last: a serial resolver would spend the whole budget on the slow ones first."""
+    monkeypatch.setattr(N, "SNI_DNS_BUDGET_S", 1.0)
+    active, peak, lock = [0], [0], threading.Lock()
+
+    def slow(name, *a, **k):
+        with lock:
+            active[0] += 1
+            peak[0] = max(peak[0], active[0])
+        try:
+            if name.startswith("slow"):
+                time.sleep(2)
+            return ["10.0.0.7"] if name == "fast.test" else []
+        finally:
+            with lock:
+                active[0] -= 1
+    monkeypatch.setattr(netutil, "resolve", slow)
+    scan = N.NetworkScan(_ctx(), {"sni_hostnames": [f"slow{i}.test" for i in range(10)] + ["fast.test"]})
+    assert scan.sni_names_for("10.0.0.7") == ["fast.test"]
+    assert peak[0] > 1
+
+
+def test_names_left_out_are_one_job_wide_row_not_one_per_endpoint(lab, monkeypatch):
+    a = lab(suites={T.TLS12: TLS12_SUITES[:1]})
+    b = lab(suites={T.TLS12: TLS12_SUITES[:1]})
+    monkeypatch.setattr(netutil, "resolve", lambda name, *a, **k: ["10.9.9.9"])  # no name maps to these endpoints
+    ctx = _ctx()
+    scan = N.NetworkScan(ctx, {"sni_hostnames": [f"n{i}.test" for i in range(205)],
+                               "rate_limits": {"connections_per_second": 500, "handshakes_per_endpoint": 16}})
+    for srv in (a, b):
+        assert scan.scan_endpoint(N.Endpoint("127.0.0.1", srv.port, "tls", ""), "full")[0] == "ok"
+    ctx.flush()
+    cov = _rows(ctx.collected, "coverage")
+    assert len(cov) == 1, [r["facts"] for r in cov]
+    assert cov[0]["target"] == "" and cov[0]["facts"]["scope"] == ["#sni="] and "5 SNI host names" in cov[0]["facts"]["detail"]
+
+
+def test_other_sni_names_keep_their_reserve_when_enumeration_would_use_the_budget(lab, monkeypatch):
+    srv = _full_server(lab)
+    fake = _fake_s_client(srv)
+    named: list[str] = []
+
+    def s_client(ip, port, protocol, sni, timeout=15.0):
+        if sni:
+            named.append(sni)
+        return fake(ip, port, protocol, sni, timeout)
+    monkeypatch.setattr(T, "s_client", s_client)
+    monkeypatch.setattr(netutil, "resolve", lambda name, *a, **k: ["127.0.0.1"])
+    (status, err, n), rows, scan = _scan(srv, budget=12, sni_names=["a.test", "b.test", "c.test"])
+    f = _rows(rows, "tls_endpoint")[0]["facts"]
+    assert status == "ok" and f["handshakes_used"] <= 12 - 2  # 2 handshakes kept for the 2 names beyond the first
+    # read without a name, so all three are "other" names: the reserve (names - 1 = 2) reads two, the third is listed
+    assert named == ["a.test", "b.test"]
+    assert [r["facts"]["detail"] for r in _rows(rows, "coverage") if r["name"].startswith("SNI")] == [
+        "1 of 3 SNI host names were not tried (handshake budget): c.test"]
 
 
 def test_never_scan_names_are_never_sent(monkeypatch):

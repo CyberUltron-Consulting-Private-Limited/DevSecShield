@@ -17,6 +17,7 @@ Budget (per endpoint, documented in scan_node/README.md):
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -161,6 +162,58 @@ def legacy_curves(send: Send, version: int, ecdhe_suites: list[int], known: set[
         return r.ecdhe_group if r.ok and r.ecdhe_group in rem else None
 
     return _run(send, [g for g in CURVES12_OFFER if g not in known], hello, accept, want_kex=True)
+
+
+# ----------------------------------------------------------------------------- facts within the node's cap
+FACTS_MARGIN = 1024  # room under jobctx.MAX_FACTS_BYTES for the scrubber, the cleaner and the caller's own keys
+
+
+def fit_facts(facts: dict[str, Any], cap: int) -> dict[str, Any]:
+    """Keep a TLS endpoint's facts under ``cap`` bytes without a silent cut (jobctx would halve the longest list and
+    leave ``*_complete`` saying true).  When the lists do not fit, the longest suite list is shortened first; every
+    shortened list is named in ``facts_trimmed`` with (stored, found), its version's ``cipher_suites_complete`` is
+    false and ``enumeration`` says so, so a reader never takes a trimmed list for the server's full set."""
+    def size() -> int:
+        return len(json.dumps(facts, default=str))
+
+    over = size() - (cap - FACTS_MARGIN)
+    if over <= 0:
+        return facts
+    found: dict[str, int] = {}
+
+    def lists() -> list[tuple[str, list, dict, str]]:
+        out = [(f"cipher_suites.{v}", entries, facts["cipher_suites"], v)
+               for v, entries in (facts.get("cipher_suites") or {}).items()]
+        if isinstance(facts.get("ciphers"), list):
+            out.append(("ciphers", facts["ciphers"], facts, "ciphers"))
+        for label, names in (facts.get("weak_ciphers_accepted") or {}).items():
+            out.append((f"weak_ciphers_accepted.{label}", names, facts["weak_ciphers_accepted"], label))
+        return [x for x in out if x[1]]
+
+    while over > 0:
+        candidates = lists()
+        if not candidates:
+            break
+        key, values, parent, slot = max(candidates, key=lambda x: len(json.dumps(x[1], default=str)))
+        found.setdefault(key, len(values))
+        per_item = max(len(json.dumps(values, default=str)) // len(values), 1)
+        drop = min(len(values), max(1, -(-over // per_item)))
+        parent[slot] = values[:len(values) - drop]
+        facts["facts_trimmed"] = {k: [len(_get(facts, k)), n] for k, n in sorted(found.items())}
+        over = size() - (cap - FACTS_MARGIN)
+    for key, (stored, total) in facts.get("facts_trimmed", {}).items():
+        if key.startswith("cipher_suites."):
+            facts.setdefault("cipher_suites_complete", {})[key.split(".", 1)[1]] = False
+        enum = facts.setdefault("enumeration", {"complete": True, "not_complete": []})
+        enum["complete"] = False
+        enum.setdefault("not_complete", []).append(f"{key}: trimmed to fit the facts cap ({stored} of {total} stored)")
+    return facts
+
+
+def _get(facts: dict[str, Any], key: str) -> list:
+    head, _, tail = key.partition(".")
+    value = facts.get(head)
+    return (value or {}).get(tail) or [] if tail else value or []
 
 
 # ----------------------------------------------------------------------------- classes and facts
