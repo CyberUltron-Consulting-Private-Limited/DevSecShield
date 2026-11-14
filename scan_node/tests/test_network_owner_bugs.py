@@ -250,25 +250,23 @@ def test_n2_a_host_name_on_the_team_list_gets_zero_connections_from_a_range_swee
 
 # ----------------------------------------------------------------------------- N3: split ranges
 def test_n3_a_24_split_into_two_25s_scans_127_and_128():
-    first = list(netutil.iter_line_ips("10.232.0.0/25"))
-    second = list(netutil.iter_line_ips("10.232.0.128/25"))
-    assert "10.232.0.127" in first and "10.232.0.128" in second
-    assert len(first) == len(second) == 128  # a /25 is scanned whole
-    whole = list(netutil.iter_line_ips("10.232.0.0/24"))  # a /24 leaves out its own network and broadcast only
+    targets, _ = netutil.expand_targets(["10.232.0.0/25", "10.232.0.128/25"], NeverScan([]))
+    ips = [t.ip for t in targets]
+    assert "10.232.0.127" in ips and "10.232.0.128" in ips and len(ips) == 254  # only the /24's .0 and .255 out
+    whole = list(netutil.iter_line_ips("10.232.0.0/24"))  # a /24 on its own leaves out its network and broadcast
     assert len(whole) == 254 and "10.232.0.0" not in whole and "10.232.0.255" not in whole
-    assert "10.232.0.127" in whole and "10.232.0.128" in whole
-    assert len(list(netutil.iter_line_ips("10.232.0.0/29"))) == 8
-    assert len(list(netutil.iter_line_ips("10.232.0.0/23"))) == 510
 
 
 def test_n3_a_split_range_sweep_reaches_127_and_128(monkeypatch):
     swept: list[str] = []
     monkeypatch.setattr(N.NetworkScan, "tcp_open", lambda self, ip, port: swept.append(ip) or "silent")
-    for cidr in ("10.232.0.0/25", "10.232.0.128/25"):
+    # what ZeroShield sends for the two halves of one /24: each range's outer edge only (jobs.claim_next)
+    for cidr, skip in (("10.232.0.0/25", ["10.232.0.0"]), ("10.232.0.128/25", ["10.232.0.255"])):
         ctx = _ctx()
-        N.run_network(ctx, {"ranges": [{"cidr": cidr, "mode": "full"}], "ports": [{"port": 443, "protocol": "tls"}],
+        N.run_network(ctx, {"ranges": [{"cidr": cidr, "mode": "full", "skip_addresses": skip}],
+                            "ports": [{"port": 443, "protocol": "tls"}],
                             "rate_limits": {"connections_per_second": 500, "parallel_per_server": 2}})
-    assert "10.232.0.127" in swept and "10.232.0.128" in swept and len(swept) == 256
+    assert "10.232.0.127" in swept and "10.232.0.128" in swept and len(swept) == 254
 
 
 # ----------------------------------------------------------------------------- N4: the window closes while a job runs

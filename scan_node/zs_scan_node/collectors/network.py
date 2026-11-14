@@ -92,13 +92,17 @@ class Budget:
         return True
 
 
-def _scope_ranges(scope: dict) -> list[tuple[str, str]]:
+def _scope_ranges(scope: dict) -> list[tuple[str, str, frozenset[str] | None]]:
+    """(cidr, mode, addresses to leave out as network/broadcast) per range.  ZeroShield sends ``skip_addresses`` per
+    range (computed over every range of the team, N3); a job from an older ZeroShield has none: the range alone."""
     out = []
     for item in scope.get("ranges") or []:
         if isinstance(item, dict) and item.get("cidr"):
-            out.append((str(item["cidr"]), str(item.get("mode") or "full")))
+            skip = item.get("skip_addresses")
+            out.append((str(item["cidr"]), str(item.get("mode") or "full"),
+                        frozenset(str(a) for a in skip) if isinstance(skip, list) else None))
         elif isinstance(item, str):
-            out.append((item, "full"))
+            out.append((item, "full", None))
     return out
 
 
@@ -157,6 +161,13 @@ def _sni_for(scope: dict, ip: str, cache: dict, never) -> list[str]:
         if ip in cache[name] and not never.blocks_host(name) and not any(never.blocks_ip(a) for a in cache[name]):
             out.append(name)
     return out
+
+
+def _refused_name(attempt: dict[str, str] | None) -> bool:
+    """A name the endpoint already refused: no TLS answer with it, or its hello got alert unrecognized_name."""
+    if not attempt:
+        return False
+    return attempt.get("result") == "not_tls" or "unrecognized_name" in str(attempt.get("detail") or "")
 
 
 def _attempt_list(names: list[str], attempts: dict[str, dict[str, str]]) -> list[dict[str, str]]:
@@ -413,7 +424,10 @@ class NetworkScan:
                 # 1c. it rejects a client without a server name: read it with each name the team configured that
                 # resolves here (openssl s_client; Python ssl when the binary is missing), the first one it serves
                 full = T.s_client if T.have_openssl() else T.python_handshake
-                for name in names:  # a name whose bare hello got an alert is tried again: a full handshake decides
+                # the name that answered the bare hello first; a name already refused (no TLS answer with it, or
+                # alert unrecognized_name) is not handshaked again (review of #250: it spent the endpoint's budget)
+                order = ([sni] if sni else []) + [n for n in names if n != sni and not _refused_name(attempts.get(n))]
+                for name in order:
                     sfh = self.handshake(ep, budget, full, ep.ip, ep.port, ep.protocol, name,
                                          15.0 if full is T.s_client else 10.0)
                     if sfh == "budget":
@@ -729,7 +743,8 @@ class NetworkScan:
         attempts = attempts if attempts is not None else {}
         assets, untried = 0, []
         # a name already refused while the endpoint was being read is not sent again
-        others = [n for n in names if n != used and attempts.get(n, {}).get("result") != "rejected"]
+        others = [n for n in names if n != used and attempts.get(n, {}).get("result") != "rejected"
+                  and not _refused_name(attempts.get(n))]
         if ep.protocol == "rdp":
             return 0
         full = T.s_client if T.have_openssl() else T.python_handshake
@@ -980,10 +995,10 @@ class _Skip(Exception):
         self.status = status
 
 
-def _addresses(ctx: JobContext, ranges: list[tuple[str, str]]):
+def _addresses(ctx: JobContext, ranges: list[tuple[str, str, frozenset[str] | None]]):
     seen: set[str] = set()
-    for cidr, mode in ranges:
-        ips = iter_line_ips(cidr)
+    for cidr, mode, skip in ranges:
+        ips = iter_line_ips(cidr, skip)
         if ips is None:
             continue
         for ip in ips:

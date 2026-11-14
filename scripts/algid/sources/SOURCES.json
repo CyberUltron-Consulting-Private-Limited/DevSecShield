@@ -29,8 +29,8 @@
    "file": "curated.json",
    "url": "hand-curated; every section cites its document",
    "retrieved_utc": "2026-11-14T04:15:00Z",
-   "sha256": "7444c7c5d633d227c567a63bc40ad1ae71fb81db103996d23000ce15d5f70b14",
-   "tool": "hand, second-agent review (O-9) recorded in PR #94 (review 5874701640: all 20 categories agree); prober.SSH_PQ_PROBE_KEX added by PR #111 (CB-13)",
+   "sha256": "631db243fad9d84cd17580aeccfe79e91e0d9079290b1d843c49e4bbcb409009",
+   "tool": "hand, second-agent review (O-9) recorded in PR #94 (review 5874701640: all 20 categories agree); prober.SSH_PQ_PROBE_KEX added by PR #111 (CB-13); SSH DSA key names (RFC 4253 ssh-dss, RFC 6187 x509v3-ssh-dss / x509v3-sign-dss) added for #126",
    "licence": "this repository"
   },
   {
