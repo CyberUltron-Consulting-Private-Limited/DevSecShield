@@ -73,7 +73,8 @@ from backend.utilities.cbom_sources import qgrade as QGRADE
 from backend.utilities.cbom_sources import runs as RUNS
 from backend.utilities.cbom_sources import schedules as SCHED
 from backend.utilities.cbom_sources.classify import ASSET_TYPES
-from backend.utilities.cbom_sources.kinds import KINDS, METADATA_FIELDS, credential_target_problem, validate_secret_value
+from backend.utilities.cbom_sources.kinds import (KINDS, METADATA_FIELDS, credential_target_problem, ct_discovery_enabled,
+                                                validate_secret_value)
 from backend.utilities.cbom_sources.planning import RATES_C, credits, node_status, plan_run, source_targets
 from backend.utilities.cbom_sources.schemas import (
     AreaUpdate,
@@ -226,7 +227,7 @@ def _overview(engine, team_id: int, user_id: int) -> dict:
             "code": {"cbom_scans": int(code_scans or 0)},
             "settings": {k: v for k, v in public_settings(settings, now).items()
                          if k in ("stop_all_network", "next_window_start", "in_window_now", "window_timezone",
-                                  "aws_external_id", "aws_collection_configured")} | {
+                                  "aws_external_id", "aws_collection_configured", "ct_discovery_enabled")} | {
                 "network_exclusions": len(settings.network_exclusions or []),
                 "ports": len(settings.ports or []), "sni_hostnames": len(settings.sni_hostnames or []),
                 "cert_domains": len(settings.cert_domains or []),
@@ -509,9 +510,29 @@ def _queue_test(session: Session, source: CbomCollectionSource, settings, user_i
     return {"job_id": job.id}
 
 
+CT_SOURCE_NAME = "Certificate Transparency"
+
+
+def _ct_prepare(engine, team_id: int, body: SourceCreate) -> SourceCreate:
+    """A ``ct_logs`` source: only when the server has CT discovery on; one per team (its fixed name, so the unique
+    (team, kind, name) index enforces it); ``import_saved_domains`` adds the saved certificate domains."""
+    if not ct_discovery_enabled():
+        raise HTTPException(status_code=400, detail="Certificate Transparency discovery is not enabled on this server")
+    config = dict(body.config or {})
+    if body.import_saved_domains:
+        with Session(engine) as session:
+            saved = list(get_or_create_settings(session, team_id).cert_domains or [])
+        config["domains"] = list(config.get("domains") or []) + [d for d in saved if isinstance(d, str)]
+    return body.model_copy(update={"name": CT_SOURCE_NAME, "config": config})
+
+
 def _create_source(engine, team_id: int, user_id: int, body: SourceCreate) -> dict:
     now = utcnow()
     spec = KINDS[body.kind]
+    if body.kind == "ct_logs":
+        body = _ct_prepare(engine, team_id, body)
+    elif body.import_saved_domains:
+        raise HTTPException(status_code=400, detail="import_saved_domains: only for a Certificate Transparency source")
     cfg = _validate_config(body.kind, body.config)
     with Session(engine) as session:
         settings = get_or_create_settings(session, team_id)
@@ -544,10 +565,21 @@ def _create_source(engine, team_id: int, user_id: int, body: SourceCreate) -> di
             session.flush()
         except IntegrityError:
             session.rollback()
+            if body.kind == "ct_logs":
+                raise HTTPException(status_code=409, detail="This team already has a Certificate Transparency source; "
+                                                            "edit its domains instead") from None
             raise HTTPException(status_code=409, detail=f"A {spec.label.lower()} named {body.name} already exists") from None
         test = None
         if body.test_after_save and body.kind not in _LIVE_TESTS:
             test = _queue_test(session, source, settings, user_id, now)
+        if body.kind == "ct_logs" and body.import_saved_domains and settings.cert_domains:
+            # one list: the saved domains now live in the source (same transaction as the source itself)
+            settings.cert_domains = []
+            settings.row_version = (settings.row_version or 1) + 1
+            settings.updated_by_user_id, settings.last_updated = user_id, now
+            session.add(settings)
+            audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="settings.update",
+                  object_type="settings", object_id=settings.id, changed_fields=["cert_domains:moved_to_source"])
         audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="source.create",
               object_type="source", object_id=source.id,
               changed_fields=["kind", "name", "config", "node_id"] + [f"secrets.{k}" for k in secrets_])
@@ -614,6 +646,8 @@ def _update_source(engine, team_id: int, user_id: int, source_id: int, body: Sou
         check_version(source, body.expected_version)
         if body.kind is not None and body.kind != source.kind:
             raise HTTPException(status_code=400, detail="kind: a source's kind cannot be changed; add a new source")
+        if source.kind == "ct_logs" and body.name is not None and body.name != source.name:
+            raise HTTPException(status_code=400, detail="name: the Certificate Transparency source keeps its name")
         settings = get_or_create_settings(session, team_id)
         spec = KINDS[source.kind]
         old_cfg = _validate_config(source.kind, source.config or {}) if source.config else None

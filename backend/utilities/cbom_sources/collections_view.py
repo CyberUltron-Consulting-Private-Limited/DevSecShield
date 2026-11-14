@@ -16,7 +16,9 @@ Which collections count
 One asset counted once ("latest observation wins")
   * Identity across code scans and Sources: a certificate is the same certificate when its subject CN, issuer CN,
     notBefore and notAfter agree (``cert_identity``); the repository copy of a certificate and the one an endpoint
-    presents are one asset. Any other asset is identified within its own source (a code row by its line-independent
+    presents are one asset. Sources rows that share a link key (``cert_link_keys``: the DER fingerprint, or the serial
+    and notAfter day) are one certificate too, whatever their DN spelling: ACM's Issuer "Amazon", a SAN-only
+    certificate, a CT log's precertificate (``link_certificates``, the CB-21 slice CT discovery needs). Any other asset is identified within its own source (a code row by its line-independent
     identity in its repository, a Sources asset by ``identity.node_identity`` in its source): a repository path and a
     host never describe the same asset, so they cannot overlap.
   * When one identity is observed more than once (in a code scan and a Sources collection, or by two Sources), only
@@ -261,8 +263,79 @@ def load_sources_result(session: Any, team_id: int, now: _dt.datetime | None = N
             status[a.asset_key] = a.status or "open"
     for item in out.rows:
         item.row["remediation_status"] = status.get(item.asset_key, "open")
+    link_certificates(out.rows)
     out.collections.sort(key=lambda c: (c.source_name.casefold(), c.source_ref))
     return out
+
+
+# ----------------------------------------------------------------------------- certificate link keys (CB-21 slice)
+_HEX64 = re.compile(r"^[0-9a-f]{64}$")
+_MIN_SERIAL_HEX = 16  # 64 bits: public CAs use at least that much randomness; small private serials never link
+
+
+def cert_link_keys(facts: Mapping[str, Any]) -> set[str]:
+    """Keys that prove two observations are one certificate whatever their DN spelling: ``fp:<sha256 of the DER>`` and
+    ``sn:<serial>|<notAfter day>``.  ACM reports Issuer "Amazon" and no DER; a SAN-only certificate has no CN; a
+    precertificate in a CT log has no final fingerprint.  Each of them still shares one of these keys."""
+    keys: set[str] = set()
+    fp = str(facts.get("fingerprint_sha256") or "").strip().lower().replace(":", "")
+    if _HEX64.match(fp):
+        keys.add("fp:" + fp)
+    serial = re.sub(r"[^0-9a-f]", "", str(facts.get("serial") or "").lower()).lstrip("0")
+    day = _stamp(facts.get("not_after"))[:10]
+    if len(serial) >= _MIN_SERIAL_HEX and len(day) == 10:
+        keys.add(f"sn:{serial}|{day}")
+    return keys
+
+
+def _canonical(items: list[SourcesRow]) -> str:
+    """One identity for observations of the same certificate: a DN identity read from a parsed DN (an issuer with
+    ``CN=``; not ACM's bare "Amazon"), so code-scan rows, which carry DN identities, still match; else any DN identity;
+    else the fingerprint."""
+    dn = sorted({i.identity for i in items if i.identity.startswith("cert|") and "cn=" in str(i.facts.get("issuer") or "").lower()})
+    if dn:
+        return dn[0]
+    dn = sorted({i.identity for i in items if i.identity.startswith("cert|")})
+    if dn:
+        return dn[0]
+    fps = sorted(k for i in items for k in cert_link_keys(i.facts) if k.startswith("fp:"))
+    return "cert" + fps[0] if fps else sorted(i.identity for i in items)[0]
+
+
+def link_certificates(rows: list[SourcesRow]) -> int:
+    """Give every group of certificate rows that share a link key one identity (so "latest observation wins" counts
+    the certificate once across a scan node, ACM, an IdP and CT logs).  Returns the rows whose identity changed."""
+    parent: dict[int, int] = {}
+
+    def find(i: int) -> int:
+        while parent.setdefault(i, i) != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    owner: dict[str, int] = {}
+    certs = [i for i, item in enumerate(rows) if item.node_type in ("certificate", "k8s_certificate")
+             or item.row.get("algorithm_type") == "certificate"]
+    for index in certs:
+        for key in cert_link_keys(rows[index].facts):
+            if key in owner:
+                parent[find(index)] = find(owner[key])
+            else:
+                owner[key] = index
+    groups: dict[int, list[int]] = {}
+    for index in certs:
+        groups.setdefault(find(index), []).append(index)
+    changed = 0
+    for members in groups.values():
+        items = [rows[i] for i in members]
+        if len({item.identity for item in items}) < 2:
+            continue
+        canonical = _canonical(items)
+        for item in items:
+            if item.identity != canonical:
+                item.identity = canonical
+                changed += 1
+    return changed
 
 
 # ----------------------------------------------------------------------------- latest observation wins
@@ -352,6 +425,6 @@ def resolve(code_observations: Iterable[tuple[int, _dt.datetime, str]], rows: It
     return Resolution(sources_rows=kept, dropped_code=dropped)
 
 
-__all__ = ["Collection", "NETWORK_TYPES", "REMEDIATION_BUCKET", "ORIGIN_CODE", "ORIGIN_SOURCES", "Resolution", "SourcesResult",
+__all__ = ["Collection", "cert_link_keys", "link_certificates", "NETWORK_TYPES", "REMEDIATION_BUCKET", "ORIGIN_CODE", "ORIGIN_SOURCES", "Resolution", "SourcesResult",
            "SourcesRow", "cert_identity", "code_cert_identities", "code_row_identity", "latest_jobs",
            "load_sources_result", "node_row", "origin_label", "resolve"]

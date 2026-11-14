@@ -1,0 +1,1 @@
+{"code":"bad_query","message":"The value of the \"include_subdomains\" query parameter is invalid","sub_errors":[{"code":"invalid_value","message":"Must be 'true' or 'false'","field":"include_subdomains"}]}
