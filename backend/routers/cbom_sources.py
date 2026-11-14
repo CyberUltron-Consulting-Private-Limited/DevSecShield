@@ -14,12 +14,14 @@ never returned.  Responses carry ``secrets_set`` (names) instead.
 """
 from __future__ import annotations
 
+import contextlib
 import datetime as _dt
-from typing import Annotated, Any
+import tempfile
+from typing import IO, Annotated, Any, Iterator
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import ValidationError
 from sqlalchemy import func, update
 from sqlalchemy.exc import IntegrityError
@@ -64,6 +66,7 @@ from backend.utilities.cbom_sources.http import (
     write_limiter,
 )
 from backend.utilities.cbom_sources import cdx_xml as CDX_XML
+from backend.utilities.cbom_sources import export_slots as EXPORT_SLOTS
 from backend.utilities.cbom_sources import inventory as INV
 from backend.utilities.cbom_sources import posture as POSTURE
 from backend.utilities.cbom_sources import runs as RUNS
@@ -734,7 +737,7 @@ def _remove_source(session: Session, source: CbomCollectionSource, team_id: int,
     J.stop_discoveries_using(session, source, now, "A range in this discovery was deleted")
     for job in session.exec(select(CbomCollectionJob).where(CbomCollectionJob.source_id == source.id)).all():
         # the stable uid stays on the job, so the deleted source's runs still compare with each other
-        job.params = {**(job.params or {}), "source_name": source.name,
+        job.params = {**(job.params or {}), "source_name": source.name, "source_kind": source.kind,
                       "source_uid": (job.params or {}).get("source_uid") or source.source_uid}
         job.source_id = None
         session.add(job)
@@ -1409,10 +1412,42 @@ async def run_assets(team_id: TeamId, run_id: ObjectId,
     return _ok(await _run("run assets", team_id, _run_assets, engine, team_id, run_id, params))
 
 
-def _run_cbom(engine, team_id: int, run_id: int) -> dict:
+EXPORT_SPOOL_BYTES = 8 * 1024 * 1024  # an export up to this size stays in memory; a larger one goes to a temp file
+
+
+def _run_cbom(engine, team_id: int, run_id: int, fmt: str = "json") -> IO[bytes]:
+    """The run's CycloneDX document written to a temporary file (positioned at its start), checked first: 404 for
+    another team's run; 429 with Retry-After when the run is large and every export slot is taken (export_slots).
+    The document is written one component at a time (inventory.write_cyclonedx), so a 50,000-component export never
+    holds the whole document, an XML tree or the encoded bytes in memory (review 5879114669 major 2)."""
     with Session(engine) as session:
         run = _get_owned(session, CbomCollectionRun, run_id, team_id, "Run")
-        return INV.cyclonedx(session, run, utcnow())
+        rows = int(session.exec(select(func.count()).select_from(CbomCollectedAsset).where(
+            CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run_id)).one())
+        try:  # a large export holds one of a few host-wide slots while it is written
+            with EXPORT_SLOTS.slot() if EXPORT_SLOTS.is_large(rows) else contextlib.nullcontext():
+                out = tempfile.SpooledTemporaryFile(max_size=EXPORT_SPOOL_BYTES)
+                try:
+                    INV.write_cyclonedx(session, run, utcnow(), fmt, out)
+                    out.seek(0)
+                except BaseException:
+                    out.close()
+                    raise
+                return out
+        except EXPORT_SLOTS.Busy:  # 429 + Retry-After: the UI's error handler already says "try again in N seconds"
+            log("run cbom export busy", team=team_id, run=run_id, rows=rows, slots=EXPORT_SLOTS.SLOTS)
+            raise HTTPException(
+                status_code=429, headers={**PRIVATE, "Retry-After": str(EXPORT_SLOTS.RETRY_AFTER_S)},
+                detail=f"The server is busy building other large CBOM exports; retry in {EXPORT_SLOTS.RETRY_AFTER_S} s.",
+            ) from None
+
+
+def _chunks(out: IO[bytes], size: int = 1024 * 1024) -> Iterator[bytes]:
+    try:
+        while chunk := out.read(size):
+            yield chunk
+    finally:
+        out.close()
 
 
 @router.get(BASE + "/runs/{run_id}/cbom", dependencies=READ,
@@ -1420,13 +1455,14 @@ def _run_cbom(engine, team_id: int, run_id: int) -> dict:
 async def run_cbom(team_id: TeamId, run_id: ObjectId, format: str = Query(default="json", pattern="^(json|xml)$"),
                    Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
-    payload = await _run("run cbom", team_id, _run_cbom, engine, team_id, run_id)
-    if format == "xml":  # the same document, written as XML (cdx_xml); the signature covers the JSON form only
-        body = await _run("run cbom xml", team_id, CDX_XML.to_xml, payload)
-        return Response(body, media_type=CDX_XML.XML_MEDIA_TYPE, headers={
-            **PRIVATE, "Content-Disposition": f'attachment; filename="cbom-sources-run-{run_id}.cdx.xml"',
-            "X-ZS-Signature-Scope": CDX_XML.SIGNATURE_SCOPE})
-    return JSONResponse(payload, headers={**PRIVATE, "Content-Disposition": f'attachment; filename="cbom-sources-run-{run_id}.cdx.json"'})
+    out = await _run("run cbom", team_id, _run_cbom, engine, team_id, run_id, format)
+    length = out.seek(0, 2)
+    out.seek(0)
+    # A run's CBOM is not signed (only code-scan BOMs are, certin.py), so the XML response states no signature scope
+    media, ext = (CDX_XML.XML_MEDIA_TYPE, "xml") if format == "xml" else ("application/json", "json")
+    return StreamingResponse(_chunks(out), media_type=media, headers={
+        **PRIVATE, "Content-Length": str(length),
+        "Content-Disposition": f'attachment; filename="cbom-sources-run-{run_id}.cdx.{ext}"'})
 
 
 def _run_posture(engine, team_id: int, run_id: int) -> dict:

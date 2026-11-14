@@ -303,6 +303,10 @@ def upstream_version(package_version: str) -> str:
     return v
 
 
+# Cached: a pure function returning an immutable tuple. Every library row compares its
+# version with every CVE range bound of its library, so one 50k-asset export parsed the
+# same few hundred strings millions of times (CB-06 bench: most of its CPU before this).
+@lru_cache(maxsize=8192)
 def _key(version: str) -> tuple:
     """Comparable key: numbers, then an OpenSSL letter suffix ('1.1.1w'), then an OpenSSH portable patch level
     ('9.3p2' > '9.3p1' > '9.3'; the patch release is often the fix, e.g. 9.3p2 for CVE-2023-38408)."""
