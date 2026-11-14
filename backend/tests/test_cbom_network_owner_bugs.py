@@ -2,8 +2,8 @@
 
 * N2: the team never-scan list stores a host name, and every node job (range sweeps, discovery, servers, tests) and
   the heartbeat carry it with the addresses, so the node resolves it and keeps its addresses out.
-* N3: what the backend counts (estimates, credits) for a /25 is every address: a /24 split into two /25s keeps
-  .127 and .128, as the node scans them (scan_node/tests/test_network_owner_bugs.py).
+* N3: what the backend counts (estimates, credits) is what the node sweeps: a /24 split into two /25s keeps .127 and
+  .128 (test_cbom_n3_range_boundaries.py has the rule in full).
 * N4: the heartbeat tells the node when each running job's scan window ends, and that it has ended when the
   customer closes the window while the job runs.
 * N10: a connection test whose every target is on the never-scan list reads "skipped: on the never-scan list", never
@@ -68,17 +68,17 @@ def test_n2_the_team_list_stores_a_host_name_and_every_node_job_carries_it(api, 
 
 
 # ----------------------------------------------------------------------------- N3
-@pytest.mark.parametrize("cidr, count", [
-    ("10.232.0.0/25", 128), ("10.232.0.128/25", 128),  # the split halves: .127 and .128 are hosts
-    ("10.232.0.0/24", 254),  # a /24 (or larger) leaves out its own network and broadcast address only
-    ("10.232.0.0/23", 510),
-    ("10.232.0.0/29", 8), ("10.232.0.0/30", 4), ("10.232.0.0/31", 2),
+@pytest.mark.parametrize("lines, count", [
+    (["10.232.0.0/25", "10.232.0.128/25"], 254),  # the split halves of one /24: .127 and .128 are hosts
+    (["10.232.0.0/24"], 254),  # a network on its own leaves out its network and broadcast address
+    (["10.232.0.0/23"], 510),
+    (["10.232.0.0/29"], 6), (["10.232.0.0/30"], 2), (["10.232.0.0/31"], 2),
 ])
-def test_n3_the_backend_counts_every_address_of_a_slice_smaller_than_a_24(cidr, count):
-    assert T.count_in_scope(T.parse_targets([cidr]), None) == count
+def test_n3_the_backend_counts_what_the_node_sweeps(lines, count):
+    assert T.count_in_scope(T.parse_targets(lines), None) == count
 
 
-def test_n3_two_25s_of_one_24_count_256_addresses_with_127_and_128(api, world):
+def test_n3_two_25s_of_one_24_count_127_and_128(api, world):
     node_id, _t, _ = enroll_node(api)
     units = {}
     for name, cidr in (("low", "10.232.0.0/25"), ("high", "10.232.0.128/25")):
@@ -88,9 +88,7 @@ def test_n3_two_25s_of_one_24_count_256_addresses_with_127_and_128(api, world):
         units[name] = r.json()["source"]["id"]
     plan = api("POST", "/1/cbom/sources/estimate", json={"include": {"network": True}}).json()
     got = {i["source_id"]: i["units"] for i in plan["items"] if i["kind"] == "network_range"}
-    assert got == {units["low"]: 128, units["high"]: 128}
-    samples = T.sample_targets(T.parse_targets(["10.232.0.128/25"]), None, 1)
-    assert samples == ["10.232.0.128"]
+    assert got == {units["low"]: 127, units["high"]: 127}  # each keeps its inner edge (.127 / .128)
 
 
 # ----------------------------------------------------------------------------- N4
