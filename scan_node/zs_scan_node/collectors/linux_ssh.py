@@ -31,7 +31,7 @@ import paramiko
 from zs_scan_node import commands as C
 from zs_scan_node import linux_parsers as P
 from zs_scan_node.certparse import public_key_facts_from_pem
-from zs_scan_node.collectors import ConfigError
+from zs_scan_node.collectors import ConfigError, skipped_never_scan
 from zs_scan_node.jobctx import JobContext
 from zs_scan_node import netutil
 from zs_scan_node.netutil import Target, expand_targets
@@ -110,6 +110,57 @@ def _pinned_known_hosts(text: str) -> paramiko.HostKeys:
         for name in entry.hostnames:
             hk.add(name, entry.key.get_name(), entry.key)
     return hk
+
+
+# ----------------------------------------------------------------------------- key exchange
+def _accept_rfc8731_curve25519(transport: Any) -> None:
+    """(``transport``: the paramiko Transport open_session made on its gated socket; nothing here connects.)
+    paramiko implements curve25519-sha256 under its libssh name only (``curve25519-sha256@libssh.org``); RFC 8731
+    gave the same algorithm the name ``curve25519-sha256``, and a server that lists only that name (with post-quantum
+    hybrids, for example) refused every login (CB-13).  The class does not use the name, so it serves both."""
+    try:
+        from paramiko.kex_curve25519 import KexCurve25519
+
+        if "curve25519-sha256" in transport._kex_info or not KexCurve25519.is_available():
+            return
+        transport._kex_info = {**transport._kex_info, "curve25519-sha256": KexCurve25519}  # this transport only
+        opts = transport.get_security_options()
+        opts.kex = ("curve25519-sha256",) + tuple(k for k in opts.kex if k != "curve25519-sha256")
+    except (ImportError, AttributeError, TypeError, ValueError):  # a paramiko without these internals: its own list
+        return
+
+
+def _server_algorithms(ctx: JobContext, target: Target, port: int) -> dict[str, list[str]] | None:
+    """The server's KEXINIT lists, read through the network gate with one more unauthenticated connection, to say
+    which of them the login could not use."""
+    from zs_scan_node import sshprobe
+
+    try:
+        sock = netutil.connect(target.ip, port, ctx.never_scan, 10)
+    except (netutil.Blocked, OSError):
+        return None
+    try:
+        return sshprobe.read_kexinit(sock, time.monotonic() + 10)["lists"]
+    except (sshprobe.ServerRefused, sshprobe.T.ProbeError, OSError):
+        return None
+    finally:
+        sock.close()
+
+
+def _incompatible(ctx: JobContext, target: Target, port: int, message: str) -> TargetFail:
+    """paramiko found nothing in common with the server: name what the server offers and what the login needs."""
+    lists = _server_algorithms(ctx, target, port) or {}
+    if "kex algorithm" in message:
+        offered = ", ".join(k for k in lists.get("kex") or []  # RFC 8308 / strict-KEX markers are not key exchanges
+                            if k not in ("ext-info-s", "kex-strict-s-v00@openssh.com")) or "not readable"
+        needs = ", ".join(("curve25519-sha256",) + tuple(paramiko.Transport._preferred_kex))
+        return TargetFail("kex_unsupported", f"the server offers only key exchanges the scan node's SSH login cannot "
+                                             f"use ({offered}); the login needs one of: {needs}"[:900])
+    what, key = next(((w, k) for w, k in (("host key", "host_key_algs"), ("ciphers", "ciphers_s2c"),
+                                          ("macs", "macs_s2c"), ("compression", "compression_s2c"))
+                      if w in message), ("algorithms", ""))
+    offered = ", ".join(lists.get(key) or []) or "not readable"
+    return TargetFail("not_supported", f"the scan node's SSH login cannot use the server's {what} ({offered})"[:900])
 
 
 # ----------------------------------------------------------------------------- credentials
@@ -257,8 +308,10 @@ def open_session(ctx: JobContext, target: Target, config: dict, creds: dict) -> 
     user = str(config.get("login_user") or "zs-cbom")
     policy = config.get("host_key_policy") or "tofu"
     host_port = f"{target.ip}:{port}"
-    if ctx.never_scan.blocks_ip(str(target.ip)):  # a never-scan target is skipped before anything else is judged
-        raise TargetFail("skipped_never_scan", f"{target.ip} is on the never-scan list")
+    try:  # a never-scan target is skipped before anything else is judged: a name by every address it resolved to
+        netutil.checked_target(target, ctx.never_scan)
+    except netutil.Blocked as exc:
+        raise TargetFail("skipped_never_scan", str(exc)) from None
     if "password" in creds and "key" not in creds and policy != "pinned":
         # a first-seen host key proves nothing, so a password could go to an impostor (whole ranges make that
         # easy): passwords go only to hosts pinned in known_hosts.  Key logins never reveal the key.
@@ -278,6 +331,7 @@ def open_session(ctx: JobContext, target: Target, config: dict, creds: dict) -> 
     transport = paramiko.Transport(sock)
     transport.banner_timeout = 15
     transport.auth_timeout = 20
+    _accept_rfc8731_curve25519(transport)
     pinned_types: list[str] = []
     if policy == "pinned":
         hk = _pinned_known_hosts(config.get("known_hosts") or "")
@@ -306,6 +360,8 @@ def open_session(ctx: JobContext, target: Target, config: dict, creds: dict) -> 
         transport.close()
         if pinned_types and "key" in str(exc).lower():
             raise TargetFail("host_key_changed", "the server no longer offers the pinned host key type") from None
+        if isinstance(exc, paramiko.IncompatiblePeer):
+            raise _incompatible(ctx, target, port, str(exc)) from None
         raise TargetFail("error", f"SSH handshake failed ({exc.__class__.__name__})") from None
     except (EOFError, OSError) as exc:
         transport.close()
@@ -793,10 +849,12 @@ def _service_and_config_crypto(sess: Session, loc: str, emit) -> None:
 
 
 # ----------------------------------------------------------------------------- entry points
-def _targets(ctx: JobContext, scope: dict) -> list[Target]:
-    targets, skipped = expand_targets(scope.get("targets") or [], ctx.never_scan)
-    for label in skipped:
-        ctx.outcome(label, "skipped_never_scan")
+def _targets(ctx: JobContext, scope: dict, samples: bool = False) -> list[Target]:
+    """The targets to collect; each skipped one gets an outcome naming the address and entry that matched (and in a
+    connection test, ``samples=True``, a sample)."""
+    reasons: dict[str, str] = {}
+    targets, skipped = expand_targets(scope.get("targets") or [], ctx.never_scan, reasons=reasons)
+    skipped_never_scan(ctx, skipped, reasons, samples=samples)
     return targets
 
 
@@ -839,7 +897,7 @@ def test(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
                                 "privilege": None, "note": str(exc)})
         return str(exc)
     tier = int(config.get("tier") or 1)
-    for target in _targets(ctx, scope)[:5]:
+    for target in _targets(ctx, scope, samples=True)[:5]:
         sample = {"target": target.label, "status": "ready", "reachable": False, "login": False,
                   "privilege": None if tier < 2 else False, "note": ""}
         if target.ip is None:

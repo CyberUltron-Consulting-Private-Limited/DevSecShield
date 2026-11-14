@@ -14,7 +14,8 @@ backend test fails when the copies differ. algid_tables.py is written by
 scripts/algid/build_algid.py from the captured registries in scripts/algid/sources:
 change a source and regenerate, never edit a table by hand. This file is hand-written:
 edit the backend copy only, then run ``build_algid.py --sync``. Stdlib only. The tables
-are read-only and nothing is memoised, so a lookup never changes module state.
+are read-only. ``resolve`` keeps one bounded LRU memo of str lookups (CB-04 ST-9),
+cleared when a table it reads is rebound, so it never answers from an older table.
 
 ``status`` follows one rule for every registry row (curated.json "status_rule"): a
 published RFC is ``standard``; an RFC-to-be (``RFC-ietf-*``) or an Internet-Draft is
@@ -25,6 +26,7 @@ given for ``standard`` (CB-16).
 
 from __future__ import annotations
 
+import functools
 import re
 import unicodedata
 from collections.abc import Mapping
@@ -98,6 +100,8 @@ PQ_PROBE_GROUPS: tuple[int, ...] = _t.PQ_PROBE_GROUPS
 TLS13_SIGSCHEMES: tuple[int, ...] = _t.TLS13_SIGSCHEMES
 S_CLIENT_GROUPS_35: str = _t.S_CLIENT_GROUPS_35
 TLS_CLASSICAL_SIGSCHEME_NAMES: tuple[str, ...] = _t.TLS_CLASSICAL_SIGSCHEME_NAMES
+# The CB-13 SSH host-key reader offers these after every classical key exchange.
+SSH_PQ_PROBE_KEX: tuple[str, ...] = _t.SSH_PQ_PROBE_KEX
 
 _REVERSE_OID: Mapping[str, str] = MappingProxyType(
     {name: oid for oid, name in reversed(list(_OIDS.items()))}
@@ -262,6 +266,17 @@ def resolve(value: object, namespace: str | None = None) -> Identity | None:
         return None
     if not isinstance(value, str):
         return None
+    if len(value) > _MEMO_MAX_TEXT:
+        return _resolve_text(value, namespace)
+    global _memo_tables
+    tables = _lookup_tables()
+    if tables != _memo_tables:  # a table was rebound in this process
+        _resolve_memo.cache_clear()
+        _memo_tables = tables
+    return _resolve_memo(value, namespace)
+
+
+def _resolve_text(value: str, namespace: str | None) -> Identity | None:
     text = value.strip()
     if text.casefold() in _SENTINELS:
         return None
@@ -270,6 +285,24 @@ def resolve(value: object, namespace: str | None = None) -> Identity | None:
     if namespace is not None:
         return _strict(text, namespace)
     return _named(text) or _marker(text) or _fallback(text)
+
+
+# The memo (CB-04 ST-9): an LRU of at most 4,096 str lookups, never an unbounded dict
+# (identifiers come from scan nodes), and none for text longer than 256 characters.
+# An Identity is immutable, so one cached answer can be shared. Every table a str
+# lookup reads is compared by identity on each call; when one was rebound (a test, a
+# reload) the memo is cleared first, so it never serves an older table's answer.
+_MEMO_MAX_TEXT = 256
+_resolve_memo = functools.lru_cache(maxsize=4096)(_resolve_text)
+
+
+def _lookup_tables() -> tuple[object, ...]:
+    return (
+        _ALGS, _OIDS, _ALIASES, _REVERSE_OID, _OID_PREFIXES, _PQ_MARKERS,
+        _PRE_STANDARD_MARKERS, _CLASSICAL_MARKERS, _KEM_MARKERS, _TOKEN_MARKERS,
+        _STATEFUL, _QV_FAMILIES, _SENTINELS, _NOT_DSA, _OPENSSL_TEXT, _SSH_KEX,
+        _IKE_KE, _IKE_KE_NAMES, _TLS_GROUPS, _TLS_SIGSCHEMES,
+    )
 
 
 def _named(text: str) -> Identity | None:
@@ -356,6 +389,45 @@ def ssh_kex(method: str) -> Identity | None:
         if method.startswith(pattern[:-1]):
             best = pattern
     return _identity(_SSH_KEX[best], "name") if best else None
+
+
+# What a client sends for each part of an SSH key exchange: FIPS 203 s8 Table 2 gives
+# ML-KEM's module rank k per parameter set (NIST category 1/3/5 -> k 2/3/4; the
+# encapsulation key is 384 k + 32 bytes); an sntrup761 public key is 1158 bytes
+# (NTRU Prime round 3, OpenSSH sntrup761.c), taken by the server as it is.
+_FIPS203_RANK: Mapping[int, int] = MappingProxyType({1: 2, 3: 3, 5: 4})
+_OPAQUE_PUBLIC_KEY: Mapping[str, int] = MappingProxyType({"sntrup761": 1158})
+
+
+def ssh_kex_client_share(method: str) -> tuple[tuple[str, int], ...] | None:
+    """How a client builds its first message (C_INIT) of a post-quantum or hybrid
+    SSH key exchange: the parts in wire order, the post-quantum one first, as RFC
+    10042 s2 and OpenSSH's kexsntrup761x25519.c send them. A part is ("fips203", k),
+    an ML-KEM encapsulation key of module rank k; ("opaque", n), an n-byte public
+    key; ("x25519", 32), an X25519 public key; or ("nistp", bits), an uncompressed
+    point on that NIST curve. None for a classical or unknown method, or a part
+    with no rule here."""
+    ident = ssh_kex(method)
+    if ident is None or ident.quantum not in ("safe", "hybrid"):
+        return None
+    parts: list[tuple[str, int]] = []
+    for name in ident.components or (ident.parameter_set,):
+        part = resolve(name, "name") if name else None
+        if part is None:
+            return None
+        category, part_name, bits = part.nist_category, part.name, part.key_size
+        rank = _FIPS203_RANK.get(category) if category is not None else None
+        if part.standard == "FIPS 203" and rank is not None:
+            parts.append(("fips203", rank))
+        elif part_name is not None and part_name in _OPAQUE_PUBLIC_KEY:
+            parts.append(("opaque", _OPAQUE_PUBLIC_KEY[part_name]))
+        elif part.family_label == "X25519":
+            parts.append(("x25519", 32))
+        elif part.family_label == "EC" and bits is not None and bits in (256, 384, 521):
+            parts.append(("nistp", bits))
+        else:
+            return None
+    return tuple(parts)
 
 
 def _enum_key(value: str) -> str:
@@ -453,6 +525,12 @@ def hint(value: object) -> str | None:
         if text.startswith(prefix):
             return hint_text
     return None
+
+
+def is_sentinel(value: object) -> bool:
+    """True for the placeholder texts tools print where there is no algorithm
+    ("<NULL>", "(NONE)", "Unknown OID", "none", ""): absent, not unknown."""
+    return isinstance(value, str) and value.strip().casefold() in _SENTINELS
 
 
 def family_label(value: object) -> str | None:
@@ -616,3 +694,6 @@ def tbs_spki_alg(tbs_der: bytes) -> tuple[str, str | None] | None:
         return None
     _tag, begin, _body, end = kids[5]
     return spki_alg(data[begin:end])
+
+
+_memo_tables: tuple[object, ...] = _lookup_tables()

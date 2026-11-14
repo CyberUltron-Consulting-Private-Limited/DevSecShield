@@ -27,6 +27,7 @@ from backend.new_models import (
 )
 from backend.utilities.cbom_sources import targets as T
 from backend.utilities.cbom_sources.classify import ASSET_TYPES, classify
+from backend.utilities.cbom_sources.node_facts import normalise_tls
 from backend.utilities.cbom_sources.common import audit, clean_text, log
 from backend.utilities.cbom_sources.crypto import decrypt_secrets, scrub
 from backend.utilities.cbom_sources.kinds import KINDS, METADATA_FIELDS
@@ -49,7 +50,7 @@ CANCEL_GRACE = _dt.timedelta(minutes=10)
 MAX_ASSETS_PER_ATTEMPT = 50_000
 TARGET_STATUSES = frozenset({
     "ok", "unreachable", "refused", "timeout", "no_route", "auth_failed", "mfa_required", "host_key_changed",
-    "identity_unverified",
+    "identity_unverified", "kex_unsupported",
     "sudoers_missing", "sudo_denied", "rbac_denied", "winrm_denied", "tls_unavailable", "not_supported", "error",
     "skipped_never_scan",
     "skipped_window", "skipped_stop", "skipped_deadline", "skipped_cancelled",
@@ -887,6 +888,7 @@ def add_assets(
         key_size = raw.get("key_size") if isinstance(raw.get("key_size"), int) and 0 < raw.get("key_size") < 1_000_000 else None
         protocol = clean_text(raw.get("protocol"), 32) if raw.get("protocol") else None
         target = clean_text(scrub(raw.get("target"), known), 255) if raw.get("target") else None
+        facts, algorithm = normalise_tls(asset_type, facts, algorithm)  # no sentinels; one name per suite (CB-12)
         key = _asset_key(asset_type, target, location, facts, name)
         if key in keys:
             in_batch_dups += 1
