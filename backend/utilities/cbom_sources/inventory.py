@@ -193,6 +193,7 @@ def _job_targets(job: CbomCollectionJob, names: dict[int, str]) -> dict[str, Any
         "asset_mismatch": result.get("asset_mismatch"), "error": job.error,
         "targets": [t for t in targets[:1000] if isinstance(t, dict)],
         "duration_s": result.get("duration_s"),
+        "lab_mode": result.get("lab_mode") if isinstance(result.get("lab_mode"), str) else None,
     }
 
 

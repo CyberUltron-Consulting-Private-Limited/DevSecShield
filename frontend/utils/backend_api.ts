@@ -4428,6 +4428,8 @@ export interface CbomJobTargets {
     error: string | null
     targets: CbomTargetResult[]
     duration_s: number | null
+    /** "same_account": an AWS source read from the deployment's own account in lab mode (test deployments only) */
+    lab_mode?: string | null
 }
 
 export interface CbomAssetPage {
@@ -4458,6 +4460,7 @@ export interface CbomTestResponse {
     checks?: CbomAwsCheck[]
     member_accounts?: number | null
     validated_at?: string
+    lab_mode?: string
 }
 
 export interface CbomSourceSaveResponse {
@@ -4472,6 +4475,8 @@ export interface CbomSourcesSettings {
     aws_external_id: string
     /** false: the deployment has no CBOM_AWS_PRINCIPAL_ARN, so AWS accounts cannot be connected */
     aws_collection_configured?: boolean
+    /** true: lab mode (CBOM_AWS_LAB_SAME_ACCOUNT on a test deployment) accepts roles in the deployment's own account */
+    aws_lab_same_account?: boolean
     /** Domains saved before Certificate Transparency discovery existed; nothing reads them (a ct_logs source does). */
     cert_domains: string[]
     /** true: the server runs Certificate Transparency discovery (CBOM_CT_DISCOVERY); a ct_logs source can be added */
