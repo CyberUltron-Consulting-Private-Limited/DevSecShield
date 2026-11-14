@@ -175,8 +175,9 @@ services:
       start_period: 60s
 
   # CBOM sources without a node (AWS accounts, identity-provider metadata), the CBOM scheduler, expired-job reaper.
-  # A pool (F1): CBOM_CLOUD_REPLICAS containers x CBOM_CLOUD_WORKERS claim loops each; AWS work is split into one job per
-  # account x region. Defaults (1 x 1) behave as before. Set the variables in this folder's .env (README: "Cloud worker pool").
+  # A pool (F1): CBOM_CLOUD_REPLICAS containers x CBOM_CLOUD_WORKERS claim loops each (default 1 x 1). AWS sources are
+  # collected as one job per account x region even at 1 x 1 (CBOM_AWS_SLICES=0: the serial walk). Set the variables in
+  # this folder's .env (deploy/local/README.md, "Cloud worker pool").
   cbom-cloud-worker:
     <<: *backend-service
     restart: unless-stopped
@@ -194,6 +195,7 @@ services:
       CBOM_AWS_SLICES: ${CBOM_AWS_SLICES:-1}
       CBOM_AWS_ORG_WORKERS: ${CBOM_AWS_ORG_WORKERS:-16}
       CBOM_AWS_THROTTLE_RETRIES: ${CBOM_AWS_THROTTLE_RETRIES:-6}
+      CBOM_AWS_MAX_ASSETS_PER_SOURCE: ${CBOM_AWS_MAX_ASSETS_PER_SOURCE:-50000}
     depends_on:
       migrate:
         condition: service_completed_successfully

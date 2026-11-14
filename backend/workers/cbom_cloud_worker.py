@@ -222,7 +222,7 @@ class _Job:
             try:
                 job = J.finish_job(session, None, self.job["id"], self.job["lease_id"], status, result, error, utcnow(),
                                    team_id=team_id, known_secrets=self.secrets)
-                stored, outcome = job.asset_count, job.outcome
+                stored, outcome = job.asset_count, getattr(job, "outcome", None)
                 if self.lab_mode:
                     from backend.utilities.cbom_sources.common import audit
 

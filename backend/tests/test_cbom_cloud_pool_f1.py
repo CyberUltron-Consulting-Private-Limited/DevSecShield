@@ -956,10 +956,10 @@ def test_migration_chains_on_the_single_head():
     cfg.set_main_option("script_location", str(_REPO_ROOT / "prod_database_migrations" / "migrations"))
     script = ScriptDirectory.from_config(cfg)
     assert script.get_heads() == ["w9cloudpool001"]
-    assert script.get_revision("w9cloudpool001").down_revision == "r6f12pol001"
+    assert script.get_revision("w9cloudpool001").down_revision == "cb38ticket001"
 
 
-def _validate_org(monkeypatch, accounts: int, *, bill_all: bool, throttle_first: int = 0, page_seconds: float = 0.0):
+def _validate_org(monkeypatch, accounts: int, *, throttle_first: int = 0, page_seconds: float = 0.0):
     import boto3
 
     sys.path.insert(0, str(Path(__file__).parent))
@@ -997,7 +997,6 @@ def _validate_org(monkeypatch, accounts: int, *, bill_all: bool, throttle_first:
 
     fake = Org(policies)
     monkeypatch.setenv("CBOM_AWS_PRINCIPAL_ARN", "arn:aws:iam::123456789012:role/zeroshield-cbom")
-    monkeypatch.setenv("CBOM_AWS_BILL_ALL_ACCOUNTS", "1" if bill_all else "0")
     monkeypatch.setattr(aws_org, "_sleep", lambda d: None)
     monkeypatch.setattr(aws_validate, "_boto", lambda **_kw: (fake, None))
     monkeypatch.setattr(boto3.session, "Session", fake.session)
@@ -1006,30 +1005,64 @@ def _validate_org(monkeypatch, accounts: int, *, bill_all: bool, throttle_first:
     return out, row, calls
 
 
-def test_validation_and_billing_keep_the_200_account_charge_unless_switched_on(monkeypatch, engine):
-    """Charging every member account is a price change (owner sign-off): by default validation stops once it knows
-    there are more than 200 and the run is charged for 200, as before; CBOM_AWS_BILL_ALL_ACCOUNTS=1 counts them all.
-    A throttled ListAccounts page is retried."""
+def test_validation_counts_every_member_account_and_the_run_is_charged_for_all_of_them(monkeypatch, engine):
+    """Owner decision (#140 M5): every account read is billed. Validation counts every page (a throttled page is
+    retried); the estimate and a scheduled run charge that count."""
     from backend.utilities.cbom_sources.planning import source_targets
 
-    out, row, calls = _validate_org(monkeypatch, 1000, bill_all=False, throttle_first=2)
-    assert out["status"] == "passed" and row["status"] == "pass" and out["member_accounts"] == 220
-    assert "more than 200 member accounts" in row["detail"] and calls == {"pages": 11, "throttled": 2}
-    out_all, row_all, _ = _validate_org(monkeypatch, 1000, bill_all=True)
-    assert out_all["member_accounts"] == 1000 and row_all["detail"] == "Found 1000 member accounts"  # dev: 200
+    out, row, calls = _validate_org(monkeypatch, 1000, throttle_first=2)
+    assert out["status"] == "passed" and out["member_accounts"] == 1000  # dev: 200
+    assert row["detail"] == "Found 1000 member accounts" and calls == {"pages": 50, "throttled": 2}
     _team(engine, 1)
     src_id = _source(engine, 1, accounts=1000)
     with Session(engine) as s:
+        assert source_targets(s.get(CbomCollectionSource, src_id), get_or_create_settings(s, 1))["units"] == 1000
+
+
+def test_a_new_member_count_is_recorded_on_the_source_with_its_change_before_the_next_charge(monkeypatch, engine):
+    """The validation stores what each run will be charged and, when the count changed (200 before F1), from what
+    and when, on the source the Cloud & Identity tab and a schedule's next run read."""
+    from backend.routers import cbom_sources as R
+    from backend.utilities.cbom_sources.planning import plan_run
+
+    user = _team(engine, 1)
+    src_id = _source(engine, 1, accounts=200)  # validated before F1: the count stopped at 200
+    counts = iter([1000, 1000, 1200])
+
+    def validate(*a, **k):
+        n = next(counts)
+        return {"status": "passed", "checks": [{"check": "Organization member accounts listed", "status": "pass",
+                                                "detail": f"Found {n} member accounts"}], "member_accounts": n}
+
+    monkeypatch.setattr(R, "validate_aws_role", validate)
+    monkeypatch.setattr(R, "_save_live_test", lambda engine_, team, user_, source_id, version, action, now, status,
+                        summary, result: _store(engine_, source_id, status, result))
+    first = R._test_aws(engine, 1, user, src_id)
+    est = first["estimate"]
+    assert est["accounts"] == 1000 and est["credits_per_account"] == 4.0 and est["credits_per_run"] == 4000.0
+    assert est["changed_from"] == {"accounts": 200, "credits_per_run": 800.0} and est["changed_at"].endswith("Z")
+    again = R._test_aws(engine, 1, user, src_id)["estimate"]  # unchanged: the last change is kept, not re-dated
+    assert again["changed_from"] == est["changed_from"] and again["changed_at"] == est["changed_at"]
+    with Session(engine) as s:
         src = s.get(CbomCollectionSource, src_id)
-        settings = get_or_create_settings(s, 1)
-        monkeypatch.setenv("CBOM_AWS_BILL_ALL_ACCOUNTS", "0")
-        assert source_targets(src, settings)["units"] == 200
-        monkeypatch.setenv("CBOM_AWS_BILL_ALL_ACCOUNTS", "1")
-        assert source_targets(src, settings)["units"] == 1000
+        assert src.last_test_result["estimate"] == again
+        plan = plan_run(s, 1, get_or_create_settings(s, 1), utcnow(), include={"cloud": True}, source_ids=None)
+        assert plan.total_c == 400_000  # what a schedule's next run would charge: 1,000 x 4 credits
+    third = R._test_aws(engine, 1, user, src_id)["estimate"]
+    assert third["accounts"] == 1200 and third["changed_from"] == {"accounts": 1000, "credits_per_run": 4000.0}
+
+
+def _store(engine, source_id, status, result) -> bool:
+    with Session(engine) as s:
+        src = s.get(CbomCollectionSource, source_id)
+        src.last_test_status, src.last_test_result = status, result
+        s.add(src)
+        s.commit()
+    return True
 
 
 def test_validation_never_reports_a_partial_member_count_as_passed(monkeypatch):
-    out, row, calls = _validate_org(monkeypatch, 1000, bill_all=True, page_seconds=1.0)  # 20 s budget, 50 pages
+    out, row, calls = _validate_org(monkeypatch, 1000, page_seconds=1.0)  # 20 s budget, 50 pages
     assert 10 < calls["pages"] < 50  # the listing stopped at the time limit
     assert row["status"] == "error" and "before the time limit" in row["detail"] and "member_accounts" not in out
     assert out["status"] != "passed"  # before: "pass", "Found N member accounts" with N the partial count

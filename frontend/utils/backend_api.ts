@@ -4368,7 +4368,7 @@ export interface CbomSource {
     last_test_at: string | null
     last_test_summary: string | null
     last_test_job_id: number | null
-    last_test_result: { samples?: CbomTestSample[]; checks?: CbomAwsCheck[]; member_accounts?: number; summary?: string; status?: string }
+    last_test_result: { samples?: CbomTestSample[]; checks?: CbomAwsCheck[]; member_accounts?: number; summary?: string; status?: string; estimate?: CbomOrgEstimate }
     row_version: number
     created_at: string | null
     last_updated: string | null
@@ -4501,6 +4501,15 @@ export interface CbomAssetFilters {
     page_size?: number
 }
 
+/** What one run of an AWS organisation source is charged (recorded at each validation), with its last change. */
+export interface CbomOrgEstimate {
+    accounts: number
+    credits_per_account: number
+    credits_per_run: number
+    changed_from?: { accounts: number; credits_per_run: number }
+    changed_at?: string | null
+}
+
 export interface CbomTestResponse {
     status: "queued" | "not_available" | "passed" | "partial" | "failed" | "error"
     job?: CbomJob
@@ -4510,6 +4519,7 @@ export interface CbomTestResponse {
     member_accounts?: number | null
     validated_at?: string
     lab_mode?: string
+    estimate?: CbomOrgEstimate
 }
 
 export interface CbomSourceSaveResponse {

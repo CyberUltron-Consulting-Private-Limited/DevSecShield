@@ -484,6 +484,25 @@ export function addressProgress(job: { status: string; progress?: { done: number
   return `${done.toLocaleString()} of ${pluralize(p.total, "address", "addresses")}`
 }
 
+/** An AWS organisation's charge per run, as recorded at its last validation: "Estimated per run: 1,000 accounts × 4
+ * credits = 4,000 credits", and, when the count changed, "changed from 200 accounts (800 credits) on 14 Nov 2026", so
+ * a new charge is visible before the next scheduled run takes it. */
+export function orgEstimateLines(est: { accounts: number; credits_per_account: number; credits_per_run: number;
+  changed_from?: { accounts: number; credits_per_run: number }; changed_at?: string | null } | null | undefined,
+  timeZone?: string): { estimate: string; change: string | null } | null {
+  if (!est || !Number.isFinite(est.accounts) || !Number.isFinite(est.credits_per_run)) return null
+  const estimate = `Estimated per run: ${pluralize(est.accounts, "account")} × ${credits(est.credits_per_account)} credits = ${credits(est.credits_per_run)} credits`
+  let change: string | null = null
+  if (est.changed_from && Number.isFinite(est.changed_from.accounts)) {
+    const when = est.changed_at ? new Date(est.changed_at) : null
+    const day = when && !Number.isNaN(when.getTime())
+      ? when.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric", timeZone: timeZone ?? "UTC" })
+      : null
+    change = `Changed from ${pluralize(est.changed_from.accounts, "account")} (${credits(est.changed_from.credits_per_run)} credits)${day ? ` on ${day}` : ""}`
+  }
+  return { estimate, change }
+}
+
 /** A YYYY-MM-DD date shown without time-zone shifting. */
 export function formatDay(day: string | null | undefined): string {
   if (!day || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return "—"

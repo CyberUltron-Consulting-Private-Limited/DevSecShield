@@ -322,29 +322,23 @@ def validate_aws_role(team_id: int, role_arn: str, external_id: str, regions: li
         if remaining() > 2:
             try:
                 from backend.utilities.cbom_sources.aws_org import with_backoff
-                from backend.utilities.cbom_sources.planning import LEGACY_BILLED_ACCOUNTS, bill_all_accounts
 
                 org = assumed_session.client("organizations", config=cfg)
                 count = 0
                 token = None
-                # Runs are charged per member account counted here, at most 200 unless CBOM_AWS_BILL_ALL_ACCOUNTS=1:
-                # past that the count changes nothing billed, so the listing stops (collection reads every account).
-                limit = None if bill_all_accounts() else LEGACY_BILLED_ACCOUNTS
+                # every page while the check has time: runs read and are charged for every member account counted
+                # here (it used to stop at 10 pages, 200 accounts); 500 pages is 10,000 accounts
                 for _ in range(500):
                     page = with_backoff(lambda t=token: org.list_accounts(**({"NextToken": t} if t else {})),
                                         what="organizations:ListAccounts")
                     count += len(page.get("Accounts", []))
                     token = page.get("NextToken")
-                    if not token or (limit is not None and count > limit) or remaining() < 2:
+                    if not token or remaining() < 2:
                         break
                 if not token:
                     member_accounts = count
                     rows.append(_row(names[6], "pass", f"Found {count} member accounts"))
-                elif limit is not None and count > limit:
-                    member_accounts = count
-                    rows.append(_row(names[6], "pass", f"Found more than {limit} member accounts: collection reads "
-                                                       f"every one, runs are charged for {limit}"))
-                else:  # a partial count is never reported as the organisation's size
+                else:  # a partial count is never reported as the organisation's size, nor charged
                     rows.append(_row(names[6], "error", f"Listed {count} member accounts before the time limit; "
                                                         "validate again"))
             except Exception as exc:

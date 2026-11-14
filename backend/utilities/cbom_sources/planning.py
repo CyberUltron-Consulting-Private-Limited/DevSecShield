@@ -7,7 +7,6 @@ into a float for display.
 from __future__ import annotations
 
 import datetime as _dt
-import os
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -35,13 +34,20 @@ RATES_C["image"] = 100
 RATES_C["ct_domain"] = 20
 
 
-# An organisation run has always been charged for at most 200 member accounts (the walk stopped there).  F1 reads every
-# account; charging for all of them is a price change that needs the owner's sign-off, so it is behind a switch.
-LEGACY_BILLED_ACCOUNTS = 200
-
-
-def bill_all_accounts() -> bool:
-    return os.environ.get("CBOM_AWS_BILL_ALL_ACCOUNTS", "0").strip() == "1"
+def org_estimate(accounts: int, previous: dict[str, Any] | None, now: _dt.datetime) -> dict[str, Any]:
+    """What one run of an AWS organisation source is charged, recorded on the source at each validation, with the last
+    change ("changed from 200 accounts on <date>"), so a new count is visible before the next scheduled run charges it.
+    Before F1 the count stopped at 200 accounts; the first validation after it may raise the charge."""
+    rate = RATES_C["cloud_account"]
+    out: dict[str, Any] = {"accounts": accounts, "credits_per_account": credits(rate),
+                           "credits_per_run": credits(rate * max(accounts, 1))}
+    before = previous.get("accounts") if isinstance(previous, dict) else None
+    if isinstance(before, int) and before != accounts:
+        out["changed_from"] = {"accounts": before, "credits_per_run": credits(rate * max(before, 1))}
+        out["changed_at"] = now.replace(microsecond=0).isoformat() + "Z"
+    elif isinstance(previous, dict) and previous.get("changed_from"):
+        out["changed_from"], out["changed_at"] = previous["changed_from"], previous.get("changed_at")
+    return out
 
 
 def credits(centi: int) -> float:
@@ -98,10 +104,8 @@ def source_targets(source: CbomCollectionSource, settings: CbomCollectionSetting
                 "intervals": intervals}
     if group == "cloud" and source.kind == "aws_account" and cfg.get("scope") == "organization":
         members = (source.last_test_result or {}).get("member_accounts")
-        units = int(members) if isinstance(members, int) and members > 0 else 1
-        if not bill_all_accounts():  # as before F1: collection reads every account, the charge stops at 200
-            units = min(units, LEGACY_BILLED_ACCOUNTS)
-        return {"units": units, "unit": "accounts"}
+        # every member account counted at the last validation is read and charged (owner decision, F1)
+        return {"units": int(members) if isinstance(members, int) and members > 0 else 1, "unit": "accounts"}
     return {"units": 1, "unit": {"kubernetes": "clusters", "databases": "databases", "cloud": "accounts"}.get(group, "sources")}
 
 

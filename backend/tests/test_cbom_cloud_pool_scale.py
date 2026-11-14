@@ -67,7 +67,7 @@ def test_scale_thousand_accounts_three_regions_twenty_workers(org, tmp_path, mon
     client, mgmt = org
     kind = "pg" if F.PG else "sqlite"
     engine = F._make_engine(kind, tmp_path)
-    monkeypatch.setenv("CBOM_CLOUD_TEAM_MAX_CONCURRENCY", str(WORKERS))
+    monkeypatch.delenv("CBOM_CLOUD_TEAM_MAX_CONCURRENCY", raising=False)  # default cap 8: a lone team still uses all workers
     monkeypatch.setattr(W, "IDLE_SLEEP_S", 0.2)
     W._stop.clear()
     W._release.clear()
