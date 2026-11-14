@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
 import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Clock, Play, CheckCircle, XCircle, Search, X, Shield, Activity, AlertTriangle, ChevronDown, ArrowUpDown, Check, CalendarPlus, CalendarCheck } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { singleFlight } from "@/utils/single_flight";
@@ -224,7 +225,7 @@ function MCPScanListDashboard({ dashboardData }: { dashboardData: MCPListDashboa
                 <Activity className="h-4 w-4 text-blue-500" />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Total Scans</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Total Scans <InfoTip id="mcp.kpi.total_scans" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_scans}</p>
               </div>
             </div>
@@ -237,7 +238,7 @@ function MCPScanListDashboard({ dashboardData }: { dashboardData: MCPListDashboa
                 <AlertTriangle className="h-4 w-4 text-red-500" />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Critical Issues</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Critical Issues <InfoTip id="mcp.kpi.critical" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_critical_issues}</p>
               </div>
             </div>
@@ -250,7 +251,7 @@ function MCPScanListDashboard({ dashboardData }: { dashboardData: MCPListDashboa
                 <Shield className={`h-4 w-4 ${card.average_risk_score >= 7 ? "text-red-500" : card.average_risk_score >= 5 ? "text-amber-500" : "text-green-500"}`} />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Avg Risk Score</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Avg Risk Score <InfoTip id="mcp.kpi.avg_risk" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.average_risk_score} / 10</p>
               </div>
             </div>
@@ -263,7 +264,7 @@ function MCPScanListDashboard({ dashboardData }: { dashboardData: MCPListDashboa
                 <Play className="h-4 w-4 text-blue-500" />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Active Scans</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Active Scans <InfoTip id="mcp.kpi.active" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_active_scans}</p>
               </div>
             </div>
@@ -276,7 +277,7 @@ function MCPScanListDashboard({ dashboardData }: { dashboardData: MCPListDashboa
                 <CheckCircle className="h-4 w-4 text-green-500" />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Resolved (7d)</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Resolved (7d) <InfoTip id="mcp.kpi.resolved" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_resolved_issues}</p>
               </div>
             </div>
@@ -288,7 +289,7 @@ function MCPScanListDashboard({ dashboardData }: { dashboardData: MCPListDashboa
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Scan Status Distribution</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Scan Status Distribution <InfoTip id="mcp.chart.status" /></CardTitle>
             <CardDescription>Distribution of scan outcomes</CardDescription>
           </CardHeader>
           <CardContent>
@@ -314,7 +315,7 @@ function MCPScanListDashboard({ dashboardData }: { dashboardData: MCPListDashboa
         </Card>
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Risk Score Trend</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Risk Score Trend <InfoTip id="mcp.chart.risk_trend" /></CardTitle>
             <CardDescription>Average risk score per MCP server scan</CardDescription>
           </CardHeader>
           <CardContent>
@@ -335,7 +336,7 @@ function MCPScanListDashboard({ dashboardData }: { dashboardData: MCPListDashboa
         </Card>
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Risks Over Time</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Risks Over Time <InfoTip id="mcp.chart.risks_over_time" /></CardTitle>
             <CardDescription>Vulnerability counts per date</CardDescription>
           </CardHeader>
           <CardContent>
@@ -364,7 +365,7 @@ function MCPScanListDashboard({ dashboardData }: { dashboardData: MCPListDashboa
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-6">
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Severity Distribution</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Severity Distribution <InfoTip id="mcp.chart.severity" /></CardTitle>
             <CardDescription>Issues by severity</CardDescription>
           </CardHeader>
           <CardContent>
@@ -385,7 +386,7 @@ function MCPScanListDashboard({ dashboardData }: { dashboardData: MCPListDashboa
         </Card>
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Environment Risk Analysis</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Environment Risk Analysis <InfoTip id="mcp.chart.environment" /></CardTitle>
             <CardDescription>Issues by environment</CardDescription>
           </CardHeader>
           <CardContent>
@@ -417,7 +418,7 @@ function MCPScanListDashboard({ dashboardData }: { dashboardData: MCPListDashboa
         </Card>
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Compliance Framework Distribution</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Compliance Framework Distribution <InfoTip id="mcp.chart.compliance" /></CardTitle>
             <CardDescription>Issues per framework</CardDescription>
           </CardHeader>
           <CardContent>
@@ -437,7 +438,7 @@ function MCPScanListDashboard({ dashboardData }: { dashboardData: MCPListDashboa
         </Card>
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Remediation Status</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Remediation Status <InfoTip id="mcp.chart.remediation" /></CardTitle>
             <CardDescription>Issue resolution status</CardDescription>
           </CardHeader>
           <CardContent>
@@ -473,7 +474,7 @@ function MCPScanListDashboard({ dashboardData }: { dashboardData: MCPListDashboa
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Asset Category Vulnerabilities</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Asset Category Vulnerabilities <InfoTip id="mcp.chart.asset_category" /></CardTitle>
             <CardDescription>Issues by asset category</CardDescription>
           </CardHeader>
           <CardContent>
@@ -494,7 +495,7 @@ function MCPScanListDashboard({ dashboardData }: { dashboardData: MCPListDashboa
         </Card>
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Scan Duration Trends</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Scan Duration Trends <InfoTip id="mcp.chart.duration" /></CardTitle>
             <CardDescription>Duration per MCP server scan (seconds)</CardDescription>
           </CardHeader>
           <CardContent>
@@ -515,7 +516,7 @@ function MCPScanListDashboard({ dashboardData }: { dashboardData: MCPListDashboa
         </Card>
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Security Posture Overview</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Security Posture Overview <InfoTip id="mcp.chart.posture" /></CardTitle>
             <CardDescription>Risk score per category</CardDescription>
           </CardHeader>
           <CardContent>
@@ -564,7 +565,7 @@ function MCPScanListDashboard({ dashboardData }: { dashboardData: MCPListDashboa
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Mean Time to Remediate per Day</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Mean Time to Remediate per Day <InfoTip id="mcp.chart.mttr" /></CardTitle>
             <CardDescription>Total remediation time (minutes) per date</CardDescription>
           </CardHeader>
           <CardContent>
@@ -585,7 +586,7 @@ function MCPScanListDashboard({ dashboardData }: { dashboardData: MCPListDashboa
         </Card>
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Scan Effectiveness Trend</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Scan Effectiveness Trend <InfoTip id="mcp.chart.effectiveness" /></CardTitle>
             <CardDescription>False positives vs total findings per date</CardDescription>
           </CardHeader>
           <CardContent>
@@ -617,7 +618,7 @@ function MCPScanListDashboard({ dashboardData }: { dashboardData: MCPListDashboa
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Compliance Framework Score Trend</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Compliance Framework Score Trend <InfoTip id="mcp.chart.compliance_trend" /></CardTitle>
             <CardDescription>Compliance score per framework over time</CardDescription>
           </CardHeader>
           <CardContent>
@@ -644,7 +645,7 @@ function MCPScanListDashboard({ dashboardData }: { dashboardData: MCPListDashboa
         </Card>
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Vulnerability Age Distribution</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Vulnerability Age Distribution <InfoTip id="mcp.chart.age" /></CardTitle>
             <CardDescription>Fixed/ignored issues by resolution time</CardDescription>
           </CardHeader>
           <CardContent>
@@ -866,6 +867,7 @@ export default function MCPPage() {
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
                       <Input placeholder="Search by title..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9 h-9 cursor-text" />
                     </div>
+                    <InfoTip id="scan.filter.search" className="-ml-2" />
                     <Select value={statusFilter} onValueChange={setStatusFilter}>
                       <SelectTrigger className="h-9 min-w-[150px] cursor-pointer"><SelectValue placeholder="Scan status" /></SelectTrigger>
                       <SelectContent>
@@ -878,6 +880,7 @@ export default function MCPPage() {
                         <SelectItem value="failure">Failure</SelectItem>
                       </SelectContent>
                     </Select>
+                    <InfoTip id="scan.status" className="-ml-2" />
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button
@@ -896,6 +899,7 @@ export default function MCPPage() {
                           <ChevronDown className="h-3 w-3 opacity-70 shrink-0" />
                         </Button>
                       </DropdownMenuTrigger>
+                      <InfoTip id="scan.filter.sort_created" className="-ml-2" />
                       <DropdownMenuContent align="start" className="min-w-[180px]">
                         <DropdownMenuLabel className="text-xs font-normal text-zinc-500">Sort by</DropdownMenuLabel>
                         <DropdownMenuSeparator />
@@ -940,15 +944,15 @@ export default function MCPPage() {
                         <TableHeader>
                           <TableRow>
                             <TableHead className="w-[220px]">Title</TableHead>
-                            <TableHead>Owner</TableHead>
-                            <TableHead>Server</TableHead>
-                            <TableHead>Risk Score</TableHead>
-                            <TableHead>Discovery</TableHead>
-                            <TableHead>Risky assets</TableHead>
-                            <TableHead className="w-[180px]">Vulnerabilities</TableHead>
-                            <TableHead>Created at</TableHead>
-                            <TableHead>Last updated</TableHead>
-                            <TableHead>Scan status</TableHead>
+                            <TableHead><span className="inline-flex items-center gap-1">Owner <InfoTip id="scan.table.owner" /></span></TableHead>
+                            <TableHead><span className="inline-flex items-center gap-1">Server <InfoTip id="mcp.table.server" /></span></TableHead>
+                            <TableHead><span className="inline-flex items-center gap-1">Risk Score <InfoTip id="mcp.table.risk" /></span></TableHead>
+                            <TableHead><span className="inline-flex items-center gap-1">Discovery <InfoTip id="mcp.table.discovery" /></span></TableHead>
+                            <TableHead><span className="inline-flex items-center gap-1">Risky assets <InfoTip id="mcp.table.risky" /></span></TableHead>
+                            <TableHead className="w-[180px]"><span className="inline-flex items-center gap-1">Vulnerabilities <InfoTip id="mcp.table.vulns" /></span></TableHead>
+                            <TableHead><span className="inline-flex items-center gap-1">Created at <InfoTip id="scan.table.created" /></span></TableHead>
+                            <TableHead><span className="inline-flex items-center gap-1">Last updated <InfoTip id="scan.table.updated" /></span></TableHead>
+                            <TableHead><span className="inline-flex items-center gap-1">Scan status <InfoTip id="scan.status" /></span></TableHead>
                             <TableHead className="w-[180px]">View scan metadata</TableHead>
                             <TableHead className="text-right w-[80px]">Actions</TableHead>
                           </TableRow>
@@ -1091,8 +1095,10 @@ export default function MCPPage() {
               Enter a new name for this scan.
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4">
+          <div className="py-4 space-y-2">
+            <FieldLabel htmlFor="rename-scan-title" infoId="scan.rename.title">Scan name</FieldLabel>
             <Input
+              id="rename-scan-title"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               placeholder="Scan name"
@@ -1174,8 +1180,10 @@ export default function MCPPage() {
               Enter a title for your new MCP scan.
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4">
+          <div className="py-4 space-y-2">
+            <FieldLabel htmlFor="new-scan-title" infoId="scan.new.title">Scan title</FieldLabel>
             <Input
+              id="new-scan-title"
               value={newScanTitle}
               onChange={(e) => setNewScanTitle(e.target.value)}
               placeholder="Scan title"

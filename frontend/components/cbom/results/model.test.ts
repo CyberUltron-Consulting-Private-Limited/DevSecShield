@@ -334,16 +334,26 @@ if (fs.existsSync(runResultsPy)) {
   assert.equal(empty.graph, "Crypto dependency graph: this run has no assets to draw.");
   assert.equal(empty.compliance, "Crypto compliance readiness: not computed for this run.");
 
-  // chips: the item's own fields first, else the asset's KB entries
+  // chips: the item's own fields first, then the same fields on GET /assets/{id} (dialogs opened from top risks or
+  // certificates), else the KB entries: OWASP Top 10:2021 only and no control families (the KB's regulatory clauses are
+  // not the code page's ISO 27001 / NIST 800-53 controls), so one asset shows the same chips from every entry point
   assert.deepEqual(findingChips({ owasp_top_10: { A02: "Cryptographic Failures" }, suggested_fix: "Use TLS 1.3" }, null),
     { owasp: [["A02", "Cryptographic Failures"]], controls: [], suggestedFix: "Use TLS 1.3", basis: "item" });
   const kb = [{ owasp_2021: [{ id: "A02:2021", label: "A02:2021 Cryptographic Failures" }], owasp_2025: [{ id: "A04:2025", label: "A04:2025 Cryptographic Failures" }],
     compliance: [{ framework: "RBI", id: "CSF-1", text: "", source: "" }, { framework: "RBI", id: "CSF-1", text: "", source: "" }],
     remediation: { summary: "Disable TLS 1.0 and 1.1", steps: [] } }, { owasp_2021: [{ id: "A02:2021", label: "dup" }], owasp_2025: [], compliance: [],
     remediation: { summary: "second", steps: [] } }] as never;
+  const asset = { owasp_top_10: { CRYPTOGRAPHIC_FAILURES: "A02:2021 - Cryptographic Failures" },
+    compliance_controls: { ISO_27001_A10: "ISO 27001 - A.10 Cryptography", NIST_800_53_SC: "NIST 800-53 - System and Communications Protection" },
+    suggested_fix: "Disable TLS 1.0 and 1.1" };
+  const fromTable = findingChips(asset, kb, null);
+  const fromTopRisk = findingChips(null, kb, asset);
+  assert.deepEqual(fromTopRisk, { ...fromTable, basis: "asset" });
+  assert.deepEqual(fromTopRisk.controls, [["ISO_27001_A10", "ISO 27001 - A.10 Cryptography"],
+    ["NIST_800_53_SC", "NIST 800-53 - System and Communications Protection"]]);
   assert.deepEqual(findingChips({}, kb), {
-    owasp: [["A02:2021", "A02:2021 Cryptographic Failures"], ["A04:2025", "A04:2025 Cryptographic Failures"]],
-    controls: [["RBI:CSF-1", "RBI CSF-1"]], suggestedFix: "Disable TLS 1.0 and 1.1", basis: "kb" });
+    owasp: [["A02:2021", "A02:2021 Cryptographic Failures"]], controls: [], suggestedFix: "Disable TLS 1.0 and 1.1", basis: "kb" });
+  assert.ok(!findingChips({}, kb).owasp.some(([k]) => k.endsWith(":2025")));
   assert.deepEqual(findingChips(null, []), { owasp: [], controls: [], suggestedFix: null, basis: "none" });
 }
 

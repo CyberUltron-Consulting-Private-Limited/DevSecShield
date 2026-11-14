@@ -25,7 +25,6 @@ export { GradeInputsBanner, QDistributionBar, QDistributionCard, QGradeChip, QGr
 export { AgilityDistribution, AgilityDrawerSection, AgilityPostureCard, EvidenceFixClass, FixClassChip } from "./Agility";
 export { AgilityBaselineSection, AgilityBaselineView, AgilitySubjectsTable, AgilitySystemsTable, type DrillDown } from "./AgilityBaseline";
 export * from "./baseline";
-export { Tip } from "./Tip";
 //   team page            -> <Q0GapRegister teamId={t} />  (Quantum risk -> Q0 gaps, CB-23; fetches GET /{team}/cbom/register/q0)
 //                           hooks q0-gap-<id> (data-reason, data-status), q0-gap-group-<reason> (data-count)
 export { Q0GapList, Q0GapRegister } from "./Q0Gaps";
