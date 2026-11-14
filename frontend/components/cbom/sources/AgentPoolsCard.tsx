@@ -20,8 +20,9 @@ import {
 } from "@/utils/api/cbom_agents";
 
 import { cbomSourcesKeys } from "./keys";
-import { formatDateTime, helmAgentCommand } from "./logic";
-import { CodeSnippet, ConfirmDialog, Field, SectionCard, StatusBadge, type Tone } from "./shared";
+import { formatDateTime, insecureApiWarning } from "./logic";
+import { PoolHelmCommand } from "./NodeInstall";
+import { ConfirmDialog, Field, SectionCard, StatusBadge, type Tone } from "./shared";
 
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$/;
 const EXPIRY = [
@@ -44,6 +45,8 @@ export function AgentPoolsCard({ teamId, image, apiUrl }: { teamId: number; imag
   const [segment, setSegment] = useState("Kubernetes");
   const [hours, setHours] = useState(24 * 7);
   const [max, setMax] = useState("50");
+  // The Helm command uses this deployment's API URL: say before the customer runs it when a node cannot connect.
+  const apiWarning = insecureApiWarning(apiUrl);
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<{ pool: CbomNodePool; token: string } | null>(null);
   const [revoking, setRevoking] = useState<CbomNodePool | null>(null);
@@ -100,6 +103,12 @@ export function AgentPoolsCard({ teamId, image, apiUrl }: { teamId: number; imag
     >
       {open && (
         <div className="mb-6 space-y-4 rounded-lg border border-zinc-200 dark:border-zinc-800 p-4" data-testid="agent-pool-form">
+          {apiWarning && (
+            <p role="alert" className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200"
+              data-testid="pool-api-insecure">
+              {apiWarning}
+            </p>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <Field label="Name" htmlFor="pool-name" required error={error}>
               <Input id="pool-name" value={name} maxLength={64} disabled={!!created} placeholder="prod-cluster"
@@ -121,7 +130,7 @@ export function AgentPoolsCard({ teamId, image, apiUrl }: { teamId: number; imag
             </Field>
           </div>
           {!created ? (
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" disabled={create.isPending} onClick={submit}>
                 {create.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <KeyRound className="h-4 w-4 mr-2" />}
                 Create token and show the Helm command
@@ -130,7 +139,7 @@ export function AgentPoolsCard({ teamId, image, apiUrl }: { teamId: number; imag
             </div>
           ) : (
             <div className="space-y-2" data-testid="agent-pool-command">
-              <CodeSnippet code={helmAgentCommand({ poolToken: created.token, apiUrl, image })} language="bash" />
+              <PoolHelmCommand apiUrl={apiUrl} poolToken={created.token} image={image} />
               <p className="text-xs text-zinc-500">
                 The token is shown only here. It enrolls at most {created.pool.max_enrollments} nodes until{" "}
                 {formatDateTime(created.pool.expires_at)}. Each pod keeps its node credential on its Kubernetes node

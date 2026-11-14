@@ -1,0 +1,20 @@
+{
+ "kind": "crtsh",
+ "rows": [
+  {
+   "common_name": "xn--bcher-kva.de",
+   "dns_names": [
+    "*.xn--bcher-kva.de",
+    "xn--bcher-kva.de"
+   ],
+   "id": 29368952871,
+   "issuer": "C=GB, O=Sectigo Limited, CN=Sectigo Public Server Authentication CA DV E36",
+   "issuer_ca_id": 204407,
+   "not_after": "2026-11-20T22:41:40",
+   "not_before": "2026-08-27T00:00:00",
+   "serial": "c86500eb513a10741738d225dea10810"
+  }
+ ],
+ "source": "crtsh_idn_buecher",
+ "tool": "openssl x509"
+}

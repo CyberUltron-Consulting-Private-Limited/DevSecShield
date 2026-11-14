@@ -26,7 +26,7 @@ import { downloadCbomRunBom } from "@/utils/api/cbom_outputs";
 import { downloadOscal } from "@/utils/api/integrations";
 
 import { cbomSourcesKeys } from "./keys";
-import { pluralize } from "./logic";
+import { pluralize, targetGuidance } from "./logic";
 import { RunInsights } from "./ChangesPanel";
 import { AssetDetailPanel, RunPostureCard } from "./RunPosture";
 import { BulkAssignBar, useRunRemediation, WaveBadge } from "./WavesControls";
@@ -79,7 +79,7 @@ const TARGET_TONE: Record<string, Tone> = { ok: "green", partial: "amber", skipp
   skipped_deadline: "amber", skipped_cancelled: "zinc", not_supported: "zinc" };
 const TARGET_LABEL: Record<string, string> = {
   ok: "Read", partial: "Partly read", unreachable: "Unreachable", refused: "Connection refused", timeout: "Timed out", no_route: "No route",
-  auth_failed: "Login failed", mfa_required: "MFA required", host_key_changed: "Host key changed", identity_unverified: "Server not verified", sudoers_missing: "Sudoers missing", rbac_denied: "Kubernetes RBAC denied",
+  auth_failed: "Login failed", mfa_required: "MFA required", host_key_changed: "Host key changed", identity_unverified: "Server not verified", kex_unsupported: "Key exchange not supported", sudoers_missing: "Sudoers missing", rbac_denied: "Kubernetes RBAC denied",
   sudo_denied: "Sudo refused", winrm_denied: "WinRM shell refused", tls_unavailable: "No TLS", not_supported: "Not supported", error: "Error",
   skipped_never_scan: "Skipped: never-scan list", skipped_window: "Skipped: scan window closed", skipped_stop: "Skipped: scanning stopped",
   skipped_deadline: "Skipped: time limit", skipped_cancelled: "Skipped: cancelled",
@@ -98,6 +98,23 @@ function factsRows(asset: CbomAsset): [string, string][] {
     out.push([key.replace(/_/g, " "), text.length > 400 ? `${text.slice(0, 400)}…` : text]);
   }
   return out.slice(0, 30);
+}
+
+/** One target that was not fully read: its status, the node's reason and, where there is one, what to do. */
+export function TargetProblemRow({ t }: { t: { target: string; status: string; error?: string | null } }) {
+  const guidance = targetGuidance(t.status, t.error, t.target);
+  return (
+    <li className="flex flex-wrap items-start gap-2 text-xs">
+      <span className="font-mono text-zinc-700 dark:text-zinc-300 break-all">{t.target}</span>
+      <StatusBadge tone={TARGET_TONE[t.status] ?? "red"}>{TARGET_LABEL[t.status] ?? t.status}</StatusBadge>
+      {t.error && <span className="text-zinc-500 break-words min-w-0">{t.error}</span>}
+      {guidance && (
+        <span className="basis-full text-zinc-600 dark:text-zinc-400 break-words" data-testid="run-results-guidance">
+          {guidance}
+        </span>
+      )}
+    </li>
+  );
 }
 
 function TargetsBlock({ jobs }: { jobs: CbomJobTargets[] }) {
@@ -151,11 +168,7 @@ function TargetsBlock({ jobs }: { jobs: CbomJobTargets[] }) {
                   {open === job.job_id && (
                     <ul className="mt-2 space-y-1">
                       {problems.slice(0, 200).map((t, i) => (
-                        <li key={`${t.target}-${i}`} className="flex flex-wrap items-start gap-2 text-xs">
-                          <span className="font-mono text-zinc-700 dark:text-zinc-300 break-all">{t.target}</span>
-                          <StatusBadge tone={TARGET_TONE[t.status] ?? "red"}>{TARGET_LABEL[t.status] ?? t.status}</StatusBadge>
-                          {t.error && <span className="text-zinc-500 break-words min-w-0">{t.error}</span>}
-                        </li>
+                        <TargetProblemRow key={`${t.target}-${i}`} t={t} />
                       ))}
                     </ul>
                   )}

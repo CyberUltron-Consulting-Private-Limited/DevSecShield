@@ -122,6 +122,7 @@ and Application Gateway do); the backend side (`FORWARDED_ALLOW_IPS` = nginx) is
 
 `.env` (shared, also read by compose): `DSS_IMAGE_PREFIX`, `DSS_TAG`, `FRONTEND_HOST`, `API_HOST`, `HTTP_PORT`,
 `HTTPS_PORT`, `HTTP_BIND`, `TLS_CERT_DIR`, `DSS_EDGE_SUBNET`, `DSS_PROXY_IP`, `DSS_REAL_IP_FROM`, `BACKEND_WORKERS`, `DAST_MEM_LIMIT`,
+`DSS_EXPOSE_BUILD` (see "Build identity"),
 `IS_DOCKER_CONTAINER`, `PG_HOST`, `PG_PORT`, `PG_USER`, `PG_USER_PASS`, `PG_DB`, `MONGO_HOST`, `MONGO_PORT`,
 `MONGO_INITDB_ROOT_USERNAME`, `MONGO_INITDB_ROOT_PASSWORD`, `RABBITMQ_HOST`, `RABBITMQ_PORT`,
 `RABBIT_ADMIN_USERNAME`, `RABBIT_ADMIN_PASSWORD`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
@@ -131,6 +132,21 @@ and Application Gateway do); the backend side (`FORWARDED_ALLOW_IPS` = nginx) is
 `CERTIN_HMAC_SECRET`, `CORS_ORIGINS`, `CBOM_PUBLIC_APP_URL`, mail (`SMTP_*`, `MAIL_FROM` or `TENANT_ID`,
 `CLIENT_ID`, `CLIENT_SECRET`, `EMAIL_SENDER`), `CBOM_AWS_*`, `CBOM_IDP_ALLOWED_PRIVATE`, `CBOM_EXTRA_CA_FILE`;
 the full list is `backend/.env.example`.
+
+## Build identity
+
+Every image carries the commit it was built from (`build_images.sh`; the OCI `revision` label and, in the backend,
+`DSS_BUILD_SHA` / `DSS_BUILD_VERSION`). A tree with uncommitted or untracked changes claims no commit ("unknown")
+and its version ends in `-dirty`, whoever chose the tag.
+Signed-in users and operators always read it from `GET /version`; collection runs and CBOM exports record it.
+`DSS_EXPOSE_BUILD=1` in `.env` also names it publicly: `GET /health` adds `build` / `version`, every response
+carries `X-ZS-Build`, and `staging.sh build` puts it into the frontend's `<meta name="zs-build">` (which makes every
+commit rebuild the frontend). For the meta, `staging.sh build` takes `DSS_EXPOSE_BUILD` from its environment first
+and `.env` second: the **Deploy staging** workflow builds on a runner without `.env` and sets it from its
+`expose_build` input (on by default). The API side is always the host's `.env`, so a staging host deployed by the
+workflow needs `DSS_EXPOSE_BUILD=1` there too. Set it on staging and test stacks, where the gate compares the
+deployed commit without an account; leave it unset (0) in production, where it would fingerprint the exact build
+(ASVS V14.3.3).
 
 Scan-node mTLS (optional): put the CA that issues scan-node client certificates at
 `$TLS_CERT_DIR/node-client-ca.pem`; nginx then asks the API host's clients for a certificate
@@ -178,7 +194,26 @@ dead-lettered, and admins retry them from the delivery log.
 
 ## GitHub workflow
 
-**Deploy staging** (manual): builds, checks the image contexts, saves the archive as an artifact; with `deploy`
-ticked it also pushes to the host. Configure in the repository's `staging` environment: secrets
+**Deploy staging** (`.github/workflows/deploy-staging.yml`) runs on **every push to `staging`** (a promotion from
+`dev` merged): it builds that commit (frontend for `https://devsec-staging-api.zeroshield.ai`, build exposed), checks
+the image contexts, saves the archive as an artifact and deploys it to the host. Runs go one at a time in the order
+they arrive; a running deploy is never cancelled, and of several waiting pushes the newest deploys. A push run
+deploys only while its commit is still the tip of `staging` (step "Still the tip of staging"): GitHub re-runs keep
+the original commit, so re-running an older run fails with "superseded" instead of putting that commit back over a
+newer one; re-running the newest run is fine. A manual run
+(GitHub offers it from the default branch only) builds and saves; with `deploy` ticked it also pushes to the host.
+Nothing in it touches production. Configure in the repository's `staging` environment: secrets
 `STAGING_SSH_KEY`, `STAGING_SSH_KNOWN_HOSTS`, `STAGING_SSH_TARGET`; variable `STAGING_DIR`. Nothing of that is in
 the repository.
+
+**What a red Deploy staging run leaves behind** (there is no automatic rollback; `staging.sh push`/`deploy` above):
+* The build (or the superseded check) failed: nothing on the host changed.
+* `deploy` refused before switching tags (archive checksum, an image not loaded, or a database at a revision the
+  new tag's migrations do not contain): the containers still run the previous tag, but the host's deploy files
+  (compose file, nginx, `staging.sh`) are already the new bundle's and `releases/files-tag` is cleared. Fix the
+  cause and push again (or re-run the newest run). Do not use `rollback` here: `DSS_TAG` is still the running
+  release, so `rollback` would go to the release before it.
+* `compose up` failed: the host is on the new tag, partly started, and `deploy-history` says `FAILED`.
+* The post-deploy `staging.sh check` failed: the new tag is live and the run is red.
+For the last two, go back with `make rollback-staging HOST=user@host` (or `scripts/deploy/staging.sh rollback` on
+the host; it asks before a database downgrade), or push a fix to `staging`.

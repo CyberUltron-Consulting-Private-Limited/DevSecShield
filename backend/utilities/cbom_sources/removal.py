@@ -13,6 +13,7 @@ from sqlalchemy import update
 from sqlmodel import Session, select
 
 from backend.new_models import CbomCollectedAsset, CbomCollectionJob, CbomCollectionSource
+from backend.utilities.cbom_sources import agility as AGILITY
 from backend.utilities.cbom_sources import jobs as J
 from backend.utilities.cbom_sources.common import audit
 
@@ -23,10 +24,11 @@ def remove_source(session: Session, source: CbomCollectionSource, team_id: int, 
     J.cancel_open_jobs(session, source, now, reason=reason)
     J.stop_discoveries_using(session, source, now, "A range in this discovery was deleted")
     for job in session.exec(select(CbomCollectionJob).where(CbomCollectionJob.source_id == source.id)).all():
-        job.params = {**(job.params or {}), "source_name": source.name,
+        job.params = {**(job.params or {}), "source_name": source.name, "source_kind": source.kind,
                       "source_uid": (job.params or {}).get("source_uid") or source.source_uid}
         job.source_id = None
         session.add(job)
+        job.params = {**job.params, **AGILITY.deleted_source_params(source)}  # CB-24: old runs keep their class
     session.exec(update(CbomCollectedAsset).where(CbomCollectedAsset.source_id == source.id).values(source_id=None))  # type: ignore[call-overload]
     session.flush()
     audit(session, team_id=team_id, actor_type=actor_type, actor_id=actor_id, action=action,

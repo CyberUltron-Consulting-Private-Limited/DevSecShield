@@ -277,7 +277,7 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
     "identity",
     "Certificates and identity",
     (s, _u, k) =>
-      `${pluralize(s, "connector")}${k ? ` (${k})` : ""}${overview.settings.cert_domains ? ` · ${pluralize(overview.settings.cert_domains, "certificate domain")}` : ""}`,
+      `${pluralize(s, "connector")}${k ? ` (${k})` : ""}${overview.settings.cert_domains ? ` · ${pluralize(overview.settings.cert_domains, "certificate domain")} (not read yet)` : ""}`,
     true,
   );
   groupRow("network", "Network TLS", (s, u) => (
@@ -401,7 +401,7 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
             </li>
             <li>Evidence gaps listed as Q0, never assumed safe</li>
           </ul>
-          <p className="text-xs text-zinc-500 mt-4">Results feed the CBOM report once the collector for each source type ships.</p>
+          <p className="text-xs text-zinc-500 mt-4">Each run&apos;s assets appear in its results and exports, and on the CBOM dashboard.</p>
         </SectionCard>
       </div>
 

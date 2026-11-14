@@ -4034,6 +4034,17 @@ const createCicdIntegration = async (team_id: number, data: CreateCicdIntegratio
     }
 }
 
+/** CBOM policy gate of the hosted CI path (backend utilities/cicd/cbom_gate.py) */
+export interface CicdCbomGate {
+    policy: string
+    verdict: "pass" | "fail" | "no_result"
+    fail_codes: string[]
+    failing_count: number
+    failing: { codes: string[]; title: string; location: string; line: number | null; impact: string | null }[]
+    truncated: boolean
+    reason: string
+}
+
 export interface CicdLog {
     id: string
     created_at: string
@@ -4050,6 +4061,8 @@ export interface CicdLog {
     profile_id?: number | null
     trigger?: string | null
     scan_kind?: string | null
+    /** CBOM policy gate verdict the pipeline received (POST /cicd/cbom/scan); null for logs made before the gate */
+    gate?: CicdCbomGate | null
     cbom_page?: {
         data?: unknown
         dashboard?: CbomScanDashboardData | null
@@ -4154,7 +4167,7 @@ export {
 export type CbomSourceKind =
     | "linux_servers" | "windows_servers" | "active_directory" | "kubernetes" | "database"
     | "aws_account" | "azure_subscription" | "gcp_project" | "ca_connector" | "idp" | "network_range"
-    | "appliance" | "key_manager" | "host_agent" | "container_images"
+    | "appliance" | "key_manager" | "host_agent" | "container_images" | "ct_logs"
 export type CbomSourceGroup = "servers" | "kubernetes" | "databases" | "cloud" | "identity" | "network"
 export type CbomNodeStatus = "pending_registration" | "registration_expired" | "online" | "offline"
 export type CbomTestStatus = "never" | "pending" | "passed" | "partial" | "failed" | "not_available" | "error"
@@ -4267,6 +4280,8 @@ export interface CbomSourceWrite {
     clear_secrets?: string[]
     expected_version?: number
     test_after_save?: boolean
+    /** ct_logs only, on create: add the saved certificate domains (settings.cert_domains) and empty that list */
+    import_saved_domains?: boolean
 }
 
 export interface CbomJob {
@@ -4399,7 +4414,12 @@ export interface CbomSourcesSettings {
     aws_external_id: string
     /** false: the deployment has no CBOM_AWS_PRINCIPAL_ARN, so AWS accounts cannot be connected */
     aws_collection_configured?: boolean
+    /** Domains saved before Certificate Transparency discovery existed; nothing reads them (a ct_logs source does). */
     cert_domains: string[]
+    /** true: the server runs Certificate Transparency discovery (CBOM_CT_DISCOVERY); a ct_logs source can be added */
+    ct_discovery_enabled?: boolean
+    /** CT providers in the order they are asked, e.g. ["certspotter", "crtsh"] */
+    ct_providers?: string[]
     network_exclusions: CbomExclusionItem[]
     sni_hostnames: string[]
     ports: CbomPortItem[]
@@ -4493,7 +4513,8 @@ export interface CbomPlanItem {
     units?: number
     unit?: string
     credits?: number
-    status: "queued" | "skipped" | "waiting" | "gap"
+    /** covered: read by another source of the plan (an AWS Private CA connector, by its AWS account) */
+    status: "queued" | "skipped" | "covered" | "waiting" | "gap"
     reason: string | null
     waiting_for_node?: boolean
     /** a scan-node job waits for its scan window (team or server's own) */
@@ -4530,6 +4551,7 @@ export interface CbomSourcesOverview {
         in_window_now: boolean
         window_timezone: string
         aws_external_id: string
+        ct_discovery_enabled?: boolean
         network_exclusions: number
         ports: number
         sni_hostnames: number
@@ -4999,4 +5021,73 @@ export {
     createCbomVendorLink,
     startCbomRun,
     cancelCbomRun,
+}
+
+// -------------------------------------------------------------- CBOM AI remediation assistant (CB-38 PR-6) --------------------------------------------------------------
+// Optional, configured per deployment (AWS Bedrock, or a model on a private address); GET status says whether it
+// exists and which hosts it contacts. Text only: every field is
+// rendered as plain text (React-escaped), never as HTML or markdown.
+
+export type CbomAiSubject =
+    | { kind: "run_asset"; assetId: number }
+    | { kind: "scan_finding"; scanId: number; findingId: string }
+
+export type CbomAiMode = "explain" | "plan" | "question"
+
+export interface CbomAiStatus {
+    available: boolean
+    /** "bedrock" (AWS Bedrock, the product's only outbound call) or "openai_compat" (a model on a private address) */
+    provider?: "bedrock" | "openai_compat"
+    model?: string
+    region?: string | null
+    kb_version?: string
+    /** every host the assistant will contact (Bedrock runtime plus the configured credential endpoint, if any) */
+    egress?: { host: string; port: number; purpose: string }[]
+    /** openai_compat: the endpoint may be outside the private ranges (CBOM_AI_ALLOW_NONPRIVATE=1) */
+    allow_nonprivate?: boolean
+}
+
+export interface CbomAiAnswer {
+    /** busy: no free slot within ~2 s, nothing was sent to the model */
+    status: "ok" | "withheld" | "timeout" | "error" | "busy"
+    summary: string
+    steps: { text: string; cites: string[] }[]
+    commands: { command: string; cite: string }[]
+    caveats: string[]
+    withheld_reason?: string
+    /** true when the steps and commands are the knowledge-base baseline (the model's answer was withheld) */
+    baseline?: boolean
+    dropped_commands: number
+    provider?: "bedrock" | "openai_compat"
+    region?: string | null
+    model: string
+    kb_version: string
+    prompt_version: string
+    items: { id: string; label: string }[]
+    cached?: boolean
+}
+
+/** The UI gives the model 90 s (the backend's own limit is 60 s, CBOM_AI_TIMEOUT_S). */
+export const CBOM_AI_UI_TIMEOUT_MS = 90_000
+
+export const getCbomAiStatus = async (team_id: number): Promise<CbomAiStatus> => {
+    const response = await api.get<CbomAiStatus>(`/${team_id}/cbom/ai/status`)
+    return response.data
+}
+
+export const askCbomAi = async ({ team_id, subject, mode, question }: {
+    team_id: number
+    subject: CbomAiSubject
+    mode: CbomAiMode
+    question?: string
+}): Promise<CbomAiAnswer> => {
+    const wire = subject.kind === "run_asset"
+        ? { kind: "run_asset", asset_id: subject.assetId }
+        : { kind: "scan_finding", scan_id: subject.scanId, finding_id: subject.findingId }
+    const response = await api.post<CbomAiAnswer>(
+        `/${team_id}/cbom/ai/assist`,
+        { subject: wire, mode, ...(mode === "question" ? { question } : {}) },
+        { timeout: CBOM_AI_UI_TIMEOUT_MS },
+    )
+    return response.data
 }

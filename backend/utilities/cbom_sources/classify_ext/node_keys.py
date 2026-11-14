@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from backend.utilities.cbom_sources import algid
 from backend.utilities.cbom_sources import classify as C
 
 # broken or deprecated symmetric ciphers: single DES (56-bit), 2/3-key Triple DES (64-bit block, NIST SP 800-131A
@@ -18,6 +19,9 @@ from backend.utilities.cbom_sources import classify as C
 _WEAK_SYMMETRIC = re.compile(r"(^|[^A-Z0-9])(DES|DES2|DES3|3DES|3DES112|3DES168|TDEA|TRIPLE[-_ ]?DES(?:[-_ ]?\dKEY)?|"
                              r"DESX|DES40|RC4(?:[-_]\d+)?|RC2|SKIPJACK|BLOWFISH|IDEA|CAST5|CAST128)($|[^A-Z0-9])", re.I)
 _SYMMETRIC = re.compile(r"^(AES|CHACHA|CAMELLIA|ARIA|SEED|SM4|GENERIC[-_]SECRET|HMAC|TWOFISH|GOST)", re.I)
+# algid primitives (CycloneDX 1.6) of a public-key algorithm: such a key is never judged as a symmetric one, whatever
+# its name starts with (GOST R 34.10-2012 is an elliptic-curve signature; GOST 28147-89 is a block cipher)
+_ASYMMETRIC_PRIMITIVES = frozenset({"signature", "kem", "key-agree", "pke"})
 _CLASS_WORD = {"private": "Private key", "secret": "Secret key", "public": "Public key", "secret_data": "Secret",
                "certificate": "Certificate key", "split": "Key share"}
 # Internal CAs (AD CS templates, Vault PKI roles, EJBCA profiles) are not bound by the CA/Browser Forum's 398 days,
@@ -72,7 +76,11 @@ def weak_symmetric(text: str) -> str | None:
     return m.group(2).upper() if m else None
 
 
-def _is_symmetric(text: str) -> bool:
+def _is_symmetric(text: str, identifier: Any = None) -> bool:
+    """Whether a key is symmetric: algid's primitive for ``identifier`` first, then the name patterns of ``text``."""
+    found = algid.resolve(identifier) if identifier else None
+    if found is not None and found.primitive in _ASYMMETRIC_PRIMITIVES:
+        return False
     return bool(_SYMMETRIC.match(str(text or "").strip())) or weak_symmetric(text) is not None
 
 
@@ -83,13 +91,15 @@ def _where(facts: dict[str, Any]) -> str:
 
 def managed_key(out, facts: dict[str, Any], algorithm: Any, key_size: Any, now) -> bool | None:
     text = _alg_text(algorithm, facts)
+    identifier = algorithm or facts.get("key_type")
+    symmetric = _is_symmetric(text, identifier)
     what = _CLASS_WORD.get(str(facts.get("key_class") or ""), "Key")
     where = _where(facts)
     weak = weak_symmetric(text)
     if weak:
         out.add("KEY_WEAK_SYMMETRIC", "High", f"{what} {where} uses {weak}, a broken or deprecated cipher".replace("  ", " "))
-    if facts.get("role") == "Always Encrypted column master key" or not _is_symmetric(text):
-        C._key_rules(out, algorithm or facts.get("key_type"), key_size, f"{what} {where}".strip())
+    if facts.get("role") == "Always Encrypted column master key" or not symmetric:
+        C._key_rules(out, identifier, key_size, f"{what} {where}".strip())
     klass = str(facts.get("key_class") or "")
     # PKCS#11 only: in an HSM a key is meant to stay inside, so CKA_SENSITIVE/CKA_EXTRACTABLE say whether it can
     # leave.  A KMIP server exists to hand keys to its clients (Sensitive defaults to false and Extractable to true
@@ -113,9 +123,12 @@ def managed_key(out, facts: dict[str, Any], algorithm: Any, key_size: Any, now) 
     state = str(facts.get("state") or facts.get("key_state") or "")
     if state == "Compromised":
         out.add("KEY_COMPROMISED", "High", f"{what} {where} is marked compromised but is still stored".replace("  ", " "))
-    if _is_symmetric(text):
+    if symmetric:
         return None if weak else False
-    return C.quantum_vulnerable(algorithm or facts.get("key_type"))
+    qv = C.quantum_vulnerable(identifier)
+    if qv is None:
+        C.note_unknown("managed_key", identifier)
+    return qv
 
 
 def key_store(out, facts: dict[str, Any], algorithm: Any, key_size: Any, now) -> bool | None:

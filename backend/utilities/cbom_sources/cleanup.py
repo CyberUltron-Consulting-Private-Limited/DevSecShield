@@ -5,6 +5,13 @@ from sqlalchemy import delete
 from backend.utilities.cbom_sources.fleet.models import FLEET_MODELS  # F1.2 fleet (inventory, policies, credentials)
 from sqlalchemy.engine import Engine
 from sqlmodel import Session
+from backend.utilities.cbom_sources.sshca.models import (  # F1.4
+    CbomSshCa,
+    CbomSshCaTrust,
+    CbomSshCaTrustFetch,
+    CbomSshCaTrustToken,
+    CbomSshCertIssued,
+)
 
 from backend.new_models import (
     CbomCollectedAsset,
@@ -23,6 +30,7 @@ from backend.new_models import (
     IntegrationDelivery,
     TeamIntegration,
 )
+from backend.utilities.cbom_sources.transports.models import CbomTransport  # F1.3
 
 _ORDER = (
     IntegrationDelivery,  # integrations (WP11): deliveries before their integration
@@ -38,8 +46,14 @@ _ORDER = (
     CbomScanNode,
     CbomNodePool,  # agent pool tokens (WP8b): after the nodes that point at them
     CbomCollectionSettings,
+    CbomTransport,  # F1.3 transports (the deployment-wide zs-collect releases are not a team's)
     CbomEvidenceVendor,
     CbomEvidenceArea,
+    CbomSshCertIssued,  # F1.4: the certificate audit, the trust bundle's rows, then the CA keys
+    CbomSshCaTrustFetch,
+    CbomSshCaTrustToken,
+    CbomSshCaTrust,
+    CbomSshCa,
     CbomCollectionAuditEvent,
 )
 

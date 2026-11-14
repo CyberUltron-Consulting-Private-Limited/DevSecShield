@@ -84,7 +84,7 @@ const DB_READS: Record<Engine, string[]> = {
     "Password hashing setting and the method of each HBA rule",
     "Password hash type of each login role (md5 or SCRAM; never the hash itself)",
     "TLS used by live client connections",
-    "pgcrypto use",
+    "Installed extensions and their versions (for example pgcrypto); not where they are used",
   ],
   mysql: [
     "require_secure_transport and TLS versions",
@@ -1068,8 +1068,18 @@ function ClusterForm({
               value={form.tier}
               onChange={(v) => set({ tier: v })}
               options={[
-                { value: 1, title: "Tier 1 · no Secrets", description: "Certificates and issuers, ingress TLS, mesh mTLS mode, images in use" },
-                { value: 2, title: "Tier 2 · reads Secrets", description: "Adds TLS secrets and private keys left in Secrets or ConfigMaps" },
+                // Exactly what the tier's ClusterRole grants and the collector reads (CB36-BUG-04; pinned by
+                // backend/tests/test_cbom_node_core_classify.py). Container images are the Container images source.
+                {
+                  value: 1,
+                  title: "Tier 1 · no Secrets",
+                  description: "Cluster and node versions, API server TLS, ingress TLS hosts and Secret names, cert-manager Certificates, certificates and private keys in ConfigMaps, Istio and Linkerd mTLS policy",
+                },
+                {
+                  value: 2,
+                  title: "Tier 2 · reads Secrets",
+                  description: "Adds the certificates of TLS Secrets (kubernetes.io/tls); the API also returns their private keys, which are dropped unparsed and never stored or sent",
+                },
               ]}
             />
           </div>
