@@ -702,6 +702,14 @@ def _migrate(engine, *steps: str, module=None) -> None:
                 getattr(module or _migration(), step)()
 
 
+def _cb32index():
+    path = MIGRATION.parent / "cb32index001_estate_stale_marks.py"
+    spec = importlib.util.spec_from_file_location("cb32index001", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    return mod
+
+
 def _cb25():
     """CB-25's migration adds the fix-class columns to these tables: the models carry them."""
     path = MIGRATION.parent / "cb25agility001_agility_store.py"
@@ -728,6 +736,7 @@ def test_migration_up_down_up_matches_the_models_sqlite(tmp_path):
     migrated = create_engine(f"sqlite:///{tmp_path / 'm.db'}")
     _up_down_up(migrated)
     _migrate(migrated, "upgrade", "downgrade", "upgrade", module=_cb25())
+    _migrate(migrated, "upgrade", "downgrade", "upgrade", module=_cb32index())  # cbomestateteam.stale_marks
     modelled = create_engine(f"sqlite:///{tmp_path / 'n.db'}")
     with modelled.begin() as conn:
         for t in (Team.__table__, CbomEstateSource.__table__, CbomEstateAsset.__table__,

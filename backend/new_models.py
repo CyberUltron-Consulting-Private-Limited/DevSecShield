@@ -792,6 +792,7 @@ class CbomEstateTeam(SQLModel, table=True):
     stale_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
     repaired_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
     updated_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    stale_marks: int = Field(default=0, sa_column_kwargs={"server_default": "0"})  # missed writes so far (CB-32): a repair clears only what it saw
 
 
 class CbomEstateAsset(SQLModel, table=True):
