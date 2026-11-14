@@ -50,7 +50,7 @@ CANCEL_GRACE = _dt.timedelta(minutes=10)
 MAX_ASSETS_PER_ATTEMPT = 50_000
 TARGET_STATUSES = frozenset({
     "ok", "unreachable", "refused", "timeout", "no_route", "auth_failed", "mfa_required", "host_key_changed",
-    "identity_unverified",
+    "identity_unverified", "kex_unsupported",
     "sudoers_missing", "sudo_denied", "rbac_denied", "winrm_denied", "tls_unavailable", "not_supported", "error",
     "skipped_never_scan",
     "skipped_window", "skipped_stop", "skipped_deadline", "skipped_cancelled",
