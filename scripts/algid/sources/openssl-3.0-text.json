@@ -1,0 +1,257 @@
+{
+ "openssl": "OpenSSL 3.0.13 30 Jan 2024 (Library: OpenSSL 3.0.13 30 Jan 2024)",
+ "rows": [
+  {
+   "cert": "composite-mldsa65-rsa3072-pss",
+   "spki_oid": "1.3.6.1.5.5.7.6.41",
+   "sig_oid": "1.3.6.1.5.5.7.6.41",
+   "public_key_text": "1.3.6.1.5.5.7.6.41",
+   "signature_text": "1.3.6.1.5.5.7.6.41"
+  },
+  {
+   "cert": "composite-mlkem768-x25519",
+   "spki_oid": "1.3.6.1.5.5.7.6.58",
+   "sig_oid": "1.2.840.113549.1.1.11",
+   "public_key_text": "1.3.6.1.5.5.7.6.58",
+   "signature_text": "sha256WithRSAEncryption"
+  },
+  {
+   "cert": "dsa",
+   "spki_oid": "1.2.840.10040.4.1",
+   "sig_oid": "2.16.840.1.101.3.4.3.2",
+   "public_key_text": "dsaEncryption",
+   "signature_text": "dsa_with_SHA256"
+  },
+  {
+   "cert": "ec-P-256",
+   "spki_oid": "1.2.840.10045.2.1",
+   "sig_oid": "1.2.840.10045.4.3.2",
+   "public_key_text": "id-ecPublicKey",
+   "signature_text": "ecdsa-with-SHA256"
+  },
+  {
+   "cert": "ec-P-384",
+   "spki_oid": "1.2.840.10045.2.1",
+   "sig_oid": "1.2.840.10045.4.3.2",
+   "public_key_text": "id-ecPublicKey",
+   "signature_text": "ecdsa-with-SHA256"
+  },
+  {
+   "cert": "ec-P-521",
+   "spki_oid": "1.2.840.10045.2.1",
+   "sig_oid": "1.2.840.10045.4.3.2",
+   "public_key_text": "id-ecPublicKey",
+   "signature_text": "ecdsa-with-SHA256"
+  },
+  {
+   "cert": "ec-brainpoolP256r1",
+   "spki_oid": "1.2.840.10045.2.1",
+   "sig_oid": "1.2.840.10045.4.3.2",
+   "public_key_text": "id-ecPublicKey",
+   "signature_text": "ecdsa-with-SHA256"
+  },
+  {
+   "cert": "ec-secp256k1",
+   "spki_oid": "1.2.840.10045.2.1",
+   "sig_oid": "1.2.840.10045.4.3.2",
+   "public_key_text": "id-ecPublicKey",
+   "signature_text": "ecdsa-with-SHA256"
+  },
+  {
+   "cert": "ed25519",
+   "spki_oid": "1.3.101.112",
+   "sig_oid": "1.3.101.112",
+   "public_key_text": "ED25519",
+   "signature_text": "ED25519"
+  },
+  {
+   "cert": "ed448",
+   "spki_oid": "1.3.101.113",
+   "sig_oid": "1.3.101.113",
+   "public_key_text": "ED448",
+   "signature_text": "ED448"
+  },
+  {
+   "cert": "gost2012-256",
+   "spki_oid": "1.2.643.7.1.1.1.1",
+   "sig_oid": "1.2.643.7.1.1.3.2",
+   "public_key_text": "GOST R 34.10-2012 with 256 bit modulus",
+   "signature_text": "GOST R 34.10-2012 with GOST R 34.11-2012 (256 bit)"
+  },
+  {
+   "cert": "gost2012-512",
+   "spki_oid": "1.2.643.7.1.1.1.2",
+   "sig_oid": "1.2.643.7.1.1.3.3",
+   "public_key_text": "GOST R 34.10-2012 with 512 bit modulus",
+   "signature_text": "GOST R 34.10-2012 with GOST R 34.11-2012 (512 bit)"
+  },
+  {
+   "cert": "hashmldsa65",
+   "spki_oid": "2.16.840.1.101.3.4.3.18",
+   "sig_oid": "2.16.840.1.101.3.4.3.33",
+   "public_key_text": "2.16.840.1.101.3.4.3.18",
+   "signature_text": "2.16.840.1.101.3.4.3.33"
+  },
+  {
+   "cert": "mldsa44",
+   "spki_oid": "2.16.840.1.101.3.4.3.17",
+   "sig_oid": "2.16.840.1.101.3.4.3.17",
+   "public_key_text": "2.16.840.1.101.3.4.3.17",
+   "signature_text": "2.16.840.1.101.3.4.3.17"
+  },
+  {
+   "cert": "mldsa65",
+   "spki_oid": "2.16.840.1.101.3.4.3.18",
+   "sig_oid": "2.16.840.1.101.3.4.3.18",
+   "public_key_text": "2.16.840.1.101.3.4.3.18",
+   "signature_text": "2.16.840.1.101.3.4.3.18"
+  },
+  {
+   "cert": "mldsa87",
+   "spki_oid": "2.16.840.1.101.3.4.3.19",
+   "sig_oid": "2.16.840.1.101.3.4.3.19",
+   "public_key_text": "2.16.840.1.101.3.4.3.19",
+   "signature_text": "2.16.840.1.101.3.4.3.19"
+  },
+  {
+   "cert": "mlkem1024",
+   "spki_oid": "2.16.840.1.101.3.4.4.3",
+   "sig_oid": "1.2.840.113549.1.1.11",
+   "public_key_text": "2.16.840.1.101.3.4.4.3",
+   "signature_text": "sha256WithRSAEncryption"
+  },
+  {
+   "cert": "mlkem512",
+   "spki_oid": "2.16.840.1.101.3.4.4.1",
+   "sig_oid": "1.2.840.113549.1.1.11",
+   "public_key_text": "2.16.840.1.101.3.4.4.1",
+   "signature_text": "sha256WithRSAEncryption"
+  },
+  {
+   "cert": "mlkem768",
+   "spki_oid": "2.16.840.1.101.3.4.4.2",
+   "sig_oid": "1.2.840.113549.1.1.11",
+   "public_key_text": "2.16.840.1.101.3.4.4.2",
+   "signature_text": "sha256WithRSAEncryption"
+  },
+  {
+   "cert": "rsa-pss",
+   "spki_oid": "1.2.840.113549.1.1.10",
+   "sig_oid": "1.2.840.113549.1.1.10",
+   "public_key_text": "rsassaPss",
+   "signature_text": "rsassaPss"
+  },
+  {
+   "cert": "rsa",
+   "spki_oid": "1.2.840.113549.1.1.1",
+   "sig_oid": "1.2.840.113549.1.1.11",
+   "public_key_text": "rsaEncryption",
+   "signature_text": "sha256WithRSAEncryption"
+  },
+  {
+   "cert": "slh-SHA2-128f",
+   "spki_oid": "2.16.840.1.101.3.4.3.21",
+   "sig_oid": "2.16.840.1.101.3.4.3.21",
+   "public_key_text": "2.16.840.1.101.3.4.3.21",
+   "signature_text": "2.16.840.1.101.3.4.3.21"
+  },
+  {
+   "cert": "slh-SHA2-128s",
+   "spki_oid": "2.16.840.1.101.3.4.3.20",
+   "sig_oid": "2.16.840.1.101.3.4.3.20",
+   "public_key_text": "2.16.840.1.101.3.4.3.20",
+   "signature_text": "2.16.840.1.101.3.4.3.20"
+  },
+  {
+   "cert": "slh-SHA2-192f",
+   "spki_oid": "2.16.840.1.101.3.4.3.23",
+   "sig_oid": "2.16.840.1.101.3.4.3.23",
+   "public_key_text": "2.16.840.1.101.3.4.3.23",
+   "signature_text": "2.16.840.1.101.3.4.3.23"
+  },
+  {
+   "cert": "slh-SHA2-192s",
+   "spki_oid": "2.16.840.1.101.3.4.3.22",
+   "sig_oid": "2.16.840.1.101.3.4.3.22",
+   "public_key_text": "2.16.840.1.101.3.4.3.22",
+   "signature_text": "2.16.840.1.101.3.4.3.22"
+  },
+  {
+   "cert": "slh-SHA2-256f",
+   "spki_oid": "2.16.840.1.101.3.4.3.25",
+   "sig_oid": "2.16.840.1.101.3.4.3.25",
+   "public_key_text": "2.16.840.1.101.3.4.3.25",
+   "signature_text": "2.16.840.1.101.3.4.3.25"
+  },
+  {
+   "cert": "slh-SHA2-256s",
+   "spki_oid": "2.16.840.1.101.3.4.3.24",
+   "sig_oid": "2.16.840.1.101.3.4.3.24",
+   "public_key_text": "2.16.840.1.101.3.4.3.24",
+   "signature_text": "2.16.840.1.101.3.4.3.24"
+  },
+  {
+   "cert": "slh-SHAKE-128f",
+   "spki_oid": "2.16.840.1.101.3.4.3.27",
+   "sig_oid": "2.16.840.1.101.3.4.3.27",
+   "public_key_text": "2.16.840.1.101.3.4.3.27",
+   "signature_text": "2.16.840.1.101.3.4.3.27"
+  },
+  {
+   "cert": "slh-SHAKE-128s",
+   "spki_oid": "2.16.840.1.101.3.4.3.26",
+   "sig_oid": "2.16.840.1.101.3.4.3.26",
+   "public_key_text": "2.16.840.1.101.3.4.3.26",
+   "signature_text": "2.16.840.1.101.3.4.3.26"
+  },
+  {
+   "cert": "slh-SHAKE-192f",
+   "spki_oid": "2.16.840.1.101.3.4.3.29",
+   "sig_oid": "2.16.840.1.101.3.4.3.29",
+   "public_key_text": "2.16.840.1.101.3.4.3.29",
+   "signature_text": "2.16.840.1.101.3.4.3.29"
+  },
+  {
+   "cert": "slh-SHAKE-192s",
+   "spki_oid": "2.16.840.1.101.3.4.3.28",
+   "sig_oid": "2.16.840.1.101.3.4.3.28",
+   "public_key_text": "2.16.840.1.101.3.4.3.28",
+   "signature_text": "2.16.840.1.101.3.4.3.28"
+  },
+  {
+   "cert": "slh-SHAKE-256f",
+   "spki_oid": "2.16.840.1.101.3.4.3.31",
+   "sig_oid": "2.16.840.1.101.3.4.3.31",
+   "public_key_text": "2.16.840.1.101.3.4.3.31",
+   "signature_text": "2.16.840.1.101.3.4.3.31"
+  },
+  {
+   "cert": "slh-SHAKE-256s",
+   "spki_oid": "2.16.840.1.101.3.4.3.30",
+   "sig_oid": "2.16.840.1.101.3.4.3.30",
+   "public_key_text": "2.16.840.1.101.3.4.3.30",
+   "signature_text": "2.16.840.1.101.3.4.3.30"
+  },
+  {
+   "cert": "sm2",
+   "spki_oid": "1.2.840.10045.2.1",
+   "sig_oid": "1.2.156.10197.1.501",
+   "public_key_text": "id-ecPublicKey",
+   "signature_text": "SM2-with-SM3"
+  },
+  {
+   "cert": "x25519",
+   "spki_oid": "1.3.101.110",
+   "sig_oid": "1.2.840.113549.1.1.11",
+   "public_key_text": "X25519",
+   "signature_text": "sha256WithRSAEncryption"
+  },
+  {
+   "cert": "x448",
+   "spki_oid": "1.3.101.111",
+   "sig_oid": "1.2.840.113549.1.1.11",
+   "public_key_text": "X448",
+   "signature_text": "sha256WithRSAEncryption"
+  }
+ ]
+}

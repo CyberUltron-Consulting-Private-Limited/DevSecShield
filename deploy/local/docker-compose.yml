@@ -1,0 +1,287 @@
+# DevSecShield on one machine, from the images CI publishes to GHCR (deploy/local/README.md).
+#
+#   cp deploy/local/.env.example deploy/local/.env      # then replace every change-me (README "Configure")
+#   docker login ghcr.io                                # a PAT with read:packages
+#   docker compose -f deploy/local/docker-compose.yml pull
+#   docker compose -f deploy/local/docker-compose.yml up -d --wait
+#
+# UI http://localhost:3000, API http://localhost:8000, mail catcher http://localhost:8025. A local test stack, not a
+# deployment: plain HTTP, no reverse proxy, every application container reads the same .env. For a real server use
+# deploy/staging/ (nginx, TLS, separate backend.env).
+#
+# Same services as deploy/staging/docker-compose.yml, minus nginx, plus Mailpit (every mail the stack sends lands
+# there) and MinIO (S3) always on. The frontend image has http://localhost:8000 inlined as its API URL (build time),
+# so the API is published on port 8000 of this machine.
+
+name: ${COMPOSE_PROJECT_NAME:-devsecshield-local}
+
+x-backend-image: &backend-image ${DSS_REGISTRY:-ghcr.io/cyberultron-consulting-private-limited}/devsecshield-backend:${DSS_TAG:?set DSS_TAG in deploy/local/.env (dev, staging, pr-<n> or an immutable tag)}
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "3"
+x-backend-service: &backend-service
+  image: *backend-image
+  env_file: [.env]
+  logging: *logging
+  networks: [internal]
+  volumes:
+    # rbi_posture / cert-in rollups resolve at /aibom/config; the backend image does not contain them.
+    - ../../compose/aibom-config-overlay:/aibom/config:ro
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      POSTGRES_USER: ${PG_USER:?set PG_USER}
+      POSTGRES_PASSWORD: ${PG_USER_PASS:?set PG_USER_PASS}
+      POSTGRES_DB: ${PG_DB:?set PG_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  mongo:
+    image: mongo:8.0.6
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:?set MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:?set MONGO_INITDB_ROOT_PASSWORD}
+    volumes:
+      - mongodata:/data/db
+      - mongoconfig:/data/configdb
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--norc", "--eval", "quit(db.adminCommand({ping: 1}).ok === 1 ? 0 : 1)"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+
+  rabbitmq:
+    image: rabbitmq:4.1-management-alpine
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBIT_ADMIN_USERNAME:?set RABBIT_ADMIN_USERNAME}
+      RABBITMQ_DEFAULT_PASS: ${RABBIT_ADMIN_PASSWORD:?set RABBIT_ADMIN_PASSWORD}
+    volumes:
+      - rabbitmq:/var/lib/rabbitmq
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 18
+      start_period: 20s
+
+  # S3 stand-in (deploy/local/minio/Dockerfile, published with the other images). Its root credentials are the
+  # AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY of .env, read inside the container (an AWS key exported in your shell
+  # does not leak into it); the application uses the bucket devsecshield-storage that minio-init creates.
+  minio:
+    image: ${DSS_REGISTRY:-ghcr.io/cyberultron-consulting-private-limited}/devsecshield-minio:${DSS_TAG}
+    restart: unless-stopped
+    logging: *logging
+    env_file: [.env]
+    entrypoint: ["/bin/sh", "-c", "MINIO_ROOT_USER=\"$$AWS_ACCESS_KEY_ID\" MINIO_ROOT_PASSWORD=\"$$AWS_SECRET_ACCESS_KEY\" exec minio server /data"]
+    volumes:
+      - miniodata:/data
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /minio/health/live HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && head -n 1 <&3 | grep -q ' 200 '"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  minio-init:
+    <<: *backend-service
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: ["/backend/.venv/bin/python", "-c"]
+    command:
+      - |
+        import os, boto3
+        s3 = boto3.client("s3", endpoint_url=os.environ["AWS_ENDPOINT_URL_S3"], region_name=os.environ["AWS_DEFAULT_REGION"])
+        if "devsecshield-storage" not in [b["Name"] for b in s3.list_buckets().get("Buckets", [])]:
+            s3.create_bucket(Bucket="devsecshield-storage")
+        print("bucket devsecshield-storage ready")
+
+  # Mail catcher: sign-in codes, invitations and set-password links. Web UI and API on MAIL_BIND:8025.
+  mailpit:
+    image: axllent/mailpit:v1.33.1@sha256:aef2aacc11f075ec0fb6874275ee4a421e688e11a96ebb296134d1735c7761ce
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      MP_MAX_MESSAGES: "5000"
+      MP_SMTP_DISABLE_RDNS: "true"
+    ports:
+      - "${MAIL_BIND:-127.0.0.1}:8025:8025"
+    networks: [internal]
+
+  # One-shot: alembic upgrade head (the entrypoint), then exits 0; everything that uses the database waits for it.
+  migrate:
+    <<: *backend-service
+    restart: "no"
+    environment:
+      SKIP_ALEMBIC: "0"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    command: ["true"]
+
+  backend:
+    <<: *backend-service
+    restart: unless-stopped
+    environment:
+      SKIP_ALEMBIC: "1"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    command: ["uv", "run", "gunicorn", "main:app", "-k", "uvicorn.workers.UvicornWorker",
+              "--workers", "${BACKEND_WORKERS:-2}", "--bind", "0.0.0.0:8080", "--timeout", "300",
+              "--graceful-timeout", "30", "--keep-alive", "5"]
+    ports:
+      # 127.0.0.1 by default. A scan node on ANOTHER machine needs API_BIND=0.0.0.0 (README "Scan node").
+      - "${API_BIND:-127.0.0.1}:8000:8080"
+    volumes:
+      - backend-data:/backend/data
+      - ../../compose/aibom-config-overlay:/aibom/config:ro
+    networks:
+      internal:
+      # A scan node started on THIS machine joins this network and calls http://devsecshield-api:8080.
+      nodes:
+        aliases: [devsecshield-api]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=5)"]
+      interval: 10s
+      timeout: 6s
+      retries: 30
+      start_period: 60s
+
+  # CBOM sources without a node (AWS accounts, identity-provider metadata), the CBOM scheduler, expired-job reaper.
+  cbom-cloud-worker:
+    <<: *backend-service
+    restart: unless-stopped
+    environment:
+      SKIP_ALEMBIC: "1"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    command: ["uv", "run", "python", "-m", "backend.workers.cbom_cloud_worker"]
+
+  dast-scheduler:
+    <<: *backend-service
+    restart: unless-stopped
+    environment:
+      SKIP_ALEMBIC: "1"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+    command: ["uv", "run", "python", "-m", "backend.utilities.dast.beat"]
+
+  scan-worker:
+    image: ${DSS_REGISTRY:-ghcr.io/cyberultron-consulting-private-limited}/devsecshield-scan-worker:${DSS_TAG}
+    restart: unless-stopped
+    logging: *logging
+    env_file: [.env]
+    environment:
+      IS_DOCKER_CONTAINER: "True"
+      GRYPE_DB_CACHE_DIR: /var/cache/grype
+    volumes:
+      - grype-db:/var/cache/grype
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    command: ["uv", "run", "celery", "-A", "scan_worker", "worker", "-P", "threads", "--loglevel=info", "-Q", "scan_worker_queue"]
+    networks: [internal]
+
+  cicd-worker:
+    image: ${DSS_REGISTRY:-ghcr.io/cyberultron-consulting-private-limited}/devsecshield-scan-worker:${DSS_TAG}
+    restart: unless-stopped
+    logging: *logging
+    env_file: [.env]
+    environment:
+      IS_DOCKER_CONTAINER: "True"
+      GRYPE_DB_CACHE_DIR: /var/cache/grype
+    volumes:
+      - grype-db:/var/cache/grype
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    command: ["uv", "run", "celery", "-A", "scan_worker", "worker", "-P", "threads", "--loglevel=info", "-Q", "cicd_worker_queue"]
+    networks: [internal]
+
+  dast-worker:
+    image: ${DSS_REGISTRY:-ghcr.io/cyberultron-consulting-private-limited}/devsecshield-dast-worker:${DSS_TAG}
+    restart: unless-stopped
+    logging: *logging
+    init: true
+    mem_limit: ${DAST_MEM_LIMIT:-2g}
+    memswap_limit: ${DAST_MEM_LIMIT:-2g}
+    pids_limit: 2048
+    env_file: [.env]
+    environment:
+      IS_DOCKER_CONTAINER: "True"
+      DAST_REAP_BROWSERS: "1"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    command: ["uv", "run", "celery", "-A", "dast_worker", "worker", "-P", "threads", "--concurrency=1", "--loglevel=info",
+              "-Q", "dast_worker_queue", "--time-limit=43200", "--soft-time-limit=41400"]
+    networks: [internal]
+
+  # The browser calls the API at the URL inlined when the image was built (http://localhost:8000); the container itself
+  # talks to nothing, so it sits on a network of its own.
+  frontend:
+    image: ${DSS_REGISTRY:-ghcr.io/cyberultron-consulting-private-limited}/devsecshield-frontend:${DSS_TAG}
+    restart: unless-stopped
+    logging: *logging
+    ports:
+      - "${UI_BIND:-127.0.0.1}:3000:3000"
+    networks: [web]
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3000/login', (r) => process.exit(r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 10s
+      timeout: 6s
+      retries: 18
+      start_period: 20s
+
+volumes:
+  pgdata:
+  mongodata:
+  mongoconfig:
+  rabbitmq:
+  miniodata:
+  backend-data:
+  grype-db:
+
+networks:
+  internal:
+  web:
+  # Fixed name, so `docker run --network devsecshield-local-nodes ...` works whatever the compose project is called.
+  nodes:
+    name: devsecshield-local-nodes

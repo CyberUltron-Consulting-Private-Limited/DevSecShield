@@ -1,0 +1,2 @@
+<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net6.0</TargetFramework></PropertyGroup>
+<ItemGroup><PackageReference Include="BouncyCastle" Version="1.8.1" /><PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="5.1.4" /></ItemGroup></Project>

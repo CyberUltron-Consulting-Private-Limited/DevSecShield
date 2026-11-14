@@ -34,7 +34,7 @@ from typing import Any, Callable
 
 import httpx
 
-from zs_scan_node import VERSION
+from zs_scan_node import reported_version
 from zs_scan_node.jobctx import LeaseLost
 from zs_scan_node.log import log
 
@@ -116,7 +116,7 @@ class Api:
         tls = tls_context()
         # trust_env=True: HTTPS_PROXY / NO_PROXY and SSL_CERT_FILE from the customer's environment apply
         kwargs: dict[str, Any] = {"verify": tls} if tls is not None else {}
-        self.client = httpx.Client(base_url=self.base, timeout=timeout, headers={"User-Agent": f"zs-scan-node/{VERSION}"},
+        self.client = httpx.Client(base_url=self.base, timeout=timeout, headers={"User-Agent": f"zs-scan-node/{reported_version()}"},
                                    follow_redirects=False, **kwargs)
 
     def _headers(self, job: str | None = None) -> dict[str, str]:
