@@ -8221,6 +8221,120 @@
      }
     ]
    },
+   "KMS_KEY_MATERIAL_EXPIRES": {
+    "attack": "Not an attack path: an outage. Every encrypt and decrypt call under the key fails once its material expires, and data encrypted under it cannot be read until the same material is re-imported.",
+    "category": "cloud",
+    "compliance": [
+     "key_mgmt"
+    ],
+    "cve_rules": [],
+    "cves": [],
+    "cwe": [
+     "CWE-320"
+    ],
+    "default_impact": "Medium",
+    "description": "A KMS key with imported key material (origin EXTERNAL) has material that expires within 30 days, or has expired. When the current material expires, AWS KMS deletes it and the key stops working until material is imported again.",
+    "fix_class": {
+     "basis": "key material import is a cloud control-plane operation the account owner performs; no code or protocol change",
+     "capability": false,
+     "class": "configurable"
+    },
+    "owasp": [
+     "crypto"
+    ],
+    "owasp_2021": [
+     {
+      "basis": "category of the finding",
+      "id": "A02:2021",
+      "label": "A02:2021 - Cryptographic Failures"
+     }
+    ],
+    "owasp_2025": [
+     {
+      "basis": "CWE-320 is in OWASP's mapped CWE list",
+      "id": "A04:2025",
+      "label": "A04:2025 - Cryptographic Failures"
+     }
+    ],
+    "pqc": null,
+    "references": [],
+    "remediation": {
+     "steps": [
+      {
+       "how": "aws kms get-parameters-for-import --key-id {resource} --wrapping-algorithm RSAES_OAEP_SHA_256 --wrapping-key-spec RSA_4096, wrap the same material, then aws kms import-key-material --key-id {resource} --encrypted-key-material fileb://material.bin --import-token fileb://token.bin --expiration-model KEY_MATERIAL_DOES_NOT_EXPIRE",
+       "platform": "AWS KMS"
+      }
+     ],
+     "summary": "Re-import the same key material with a later expiry (or no expiry) before it expires."
+    },
+    "standards": [
+     "NIST SP 800-57 Part 1 (cryptoperiods)"
+    ],
+    "summary_rules": [],
+    "title": "Imported KMS key material expires soon",
+    "verify": [
+     {
+      "command": "aws kms list-key-rotations --key-id {resource} --include-key-material ALL_KEY_MATERIAL",
+      "label": "Expiry of each material"
+     }
+    ]
+   },
+   "KMS_KEY_NO_MATERIAL": {
+    "attack": "Not an attack path: an outage. Anything that encrypts or decrypts under the key fails, and data encrypted under it cannot be read until the same material is imported again.",
+    "category": "cloud",
+    "compliance": [
+     "key_mgmt"
+    ],
+    "cve_rules": [],
+    "cves": [],
+    "cwe": [
+     "CWE-320"
+    ],
+    "default_impact": "Medium",
+    "description": "A KMS key with imported key material (origin EXTERNAL) is in the PendingImport state: its material was never imported, expired or was deleted, so the key cannot encrypt or decrypt.",
+    "fix_class": {
+     "basis": "key material import is a cloud control-plane operation the account owner performs; no code or protocol change",
+     "capability": false,
+     "class": "configurable"
+    },
+    "owasp": [
+     "crypto"
+    ],
+    "owasp_2021": [
+     {
+      "basis": "category of the finding",
+      "id": "A02:2021",
+      "label": "A02:2021 - Cryptographic Failures"
+     }
+    ],
+    "owasp_2025": [
+     {
+      "basis": "CWE-320 is in OWASP's mapped CWE list",
+      "id": "A04:2025",
+      "label": "A04:2025 - Cryptographic Failures"
+     }
+    ],
+    "pqc": null,
+    "references": [],
+    "remediation": {
+     "steps": [
+      {
+       "how": "aws kms get-parameters-for-import --key-id {resource} --wrapping-algorithm RSAES_OAEP_SHA_256 --wrapping-key-spec RSA_4096, wrap the material, then aws kms import-key-material --key-id {resource} --key-material-id <id from the finding> --encrypted-key-material fileb://material.bin --import-token fileb://token.bin",
+       "platform": "AWS KMS"
+      }
+     ],
+     "summary": "Import the key material again (the same material, to read existing data), or schedule the key's deletion if nothing uses it."
+    },
+    "standards": [],
+    "summary_rules": [],
+    "title": "KMS key has no usable imported material",
+    "verify": [
+     {
+      "command": "aws kms describe-key --key-id {resource} --query KeyMetadata.KeyState",
+      "label": "Key state"
+     }
+    ]
+   },
    "KMS_NO_ROTATION": {
     "attack": "A key that never rotates protects more data for longer, so any compromise exposes more.",
     "category": "cloud",
@@ -12930,7 +13044,7 @@
    }
   }
  },
- "kb_version": "2026.11.14.3",
+ "kb_version": "2026.11.14.4",
  "legacy_controls": {
   "access": {
    "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control",
