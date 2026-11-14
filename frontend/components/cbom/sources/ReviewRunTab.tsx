@@ -7,13 +7,11 @@ import { useState, type ReactNode } from "react";
 import { toast } from "@/utils/toast";
 
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   cancelCbomRun,
   estimateCbomSources,
-  getCbomRun,
   getCbomSourcesOverview,
   listCbomRuns,
   startCbomRun,
@@ -26,12 +24,11 @@ import {
   type CbomSourcesOverview,
 } from "@/utils/backend_api";
 
-import { CompareDialog, RunChanges } from "./ChangesPanel";
+import { CompareDialog } from "./ChangesPanel";
 import GradeInputsCard from "./GradeInputsCard";
 import { runResultsHref } from "@/components/cbom/results/resultsHref";
 import { cbomSourcesKeys, invalidateRunViews, TERMINAL_RUN } from "./keys";
-import RunResults from "./RunResults";
-import { RunJobsTable, SkippedAtStart, skipText } from "@/components/cbom/results/RunJobsTable";
+import { skipText } from "@/components/cbom/results/RunJobsTable";
 import { CriticalityCard } from "./RunPosture";
 import SchedulesCard from "./SchedulesCard";
 import { startRefusal } from "./startRefusal";
@@ -49,6 +46,7 @@ import {
   Truncate,
   type Tone,
 } from "./shared";
+import { InfoTip } from "@/components/ui/info-tip";
 
 type IncludeState = Record<CbomIncludeKey, boolean>;
 
@@ -316,18 +314,18 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
         Everything this scan will cover, what it will skip and why. Nothing is skipped silently.
       </p>
 
-      <SectionCard title="Coverage" description={`${pluralize(totalSources, "source")} configured`}>
+      <SectionCard infoId="cbsrc.rr.coverage" title="Coverage" description={`${pluralize(totalSources, "source")} configured`}>
         <ScrollArea className="w-full border rounded-lg">
           <div className="min-w-max">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Source</TableHead>
-                  <TableHead>In scope</TableHead>
-                  <TableHead>Reached through</TableHead>
-                  <TableHead>Last test</TableHead>
-                  <TableHead>Credits</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>Source <InfoTip id="cbsrc.rr.col.source" /></TableHead>
+                  <TableHead>In scope <InfoTip id="cbsrc.rr.col.in_scope" /></TableHead>
+                  <TableHead>Reached through <InfoTip id="cbsrc.rr.col.through" /></TableHead>
+                  <TableHead>Last test <InfoTip id="cbsrc.col.last_test" /></TableHead>
+                  <TableHead>Credits <InfoTip id="cbsrc.rr.col.credits" /></TableHead>
+                  <TableHead>Status <InfoTip id="cbsrc.rr.col.status" /></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -356,7 +354,7 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
         <div className="xl:col-span-2 min-w-0">
-          <SectionCard title="Will be skipped unless you fix it" description={pluralize(skipped.length, "item")}>
+          <SectionCard infoId="cbsrc.rr.skipped" title="Will be skipped unless you fix it" description={pluralize(skipped.length, "item")}>
             {skipped.length === 0 ? (
               <EmptyState title="Nothing will be skipped" body="Every configured source can be collected and every evidence area has an answer." />
             ) : (
@@ -392,7 +390,7 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
           </SectionCard>
         </div>
 
-        <SectionCard title="What you get after the scan">
+        <SectionCard infoId="cbsrc.rr.after" title="What you get after the scan">
           <ul className="list-disc pl-5 space-y-2 text-sm text-zinc-700 dark:text-zinc-300">
             <li>Collection jobs queued per source for your scan nodes</li>
             <li>A run record with the credits charged and refunded</li>
@@ -407,7 +405,7 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
       </div>
 
       {totalSources === 0 ? (
-        <SectionCard title="Start a scan" id="cbom-review-start">
+        <SectionCard infoId="cbsrc.rr.start" title="Start a scan" id="cbom-review-start">
           <EmptyState
             title="Nothing to scan yet"
             body="Add a scan node inside the network you want covered, then the servers, clusters, databases or ranges it can reach."
@@ -422,7 +420,7 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
         <StartCard key={`start-${teamId}`} teamId={teamId} overview={overview} />
       )}
 
-      <SectionCard title="Runs" description="The 50 most recent collection runs for this team">
+      <SectionCard infoId="cbsrc.rr.runs" title="Runs" description="The 50 most recent collection runs for this team">
         {runsQuery.isLoading ? (
           <LoadingBlock />
         ) : runsQuery.isError && !runsQuery.data ? (
@@ -448,12 +446,12 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Run</TableHead>
-                    <TableHead>Started</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Jobs</TableHead>
-                    <TableHead className="text-right">Assets</TableHead>
-                    <TableHead>Credits</TableHead>
+                    <TableHead>Run <InfoTip id="cbsrc.rr.col.run" /></TableHead>
+                    <TableHead>Started <InfoTip id="cbsrc.rr.col.started" /></TableHead>
+                    <TableHead>Status <InfoTip id="cbsrc.rr.col.run_status" /></TableHead>
+                    <TableHead>Jobs <InfoTip id="cbsrc.rr.col.jobs" /></TableHead>
+                    <TableHead className="text-right">Assets <InfoTip id="cbsrc.rr.col.assets" /></TableHead>
+                    <TableHead>Credits <InfoTip id="cbsrc.rr.col.run_credits" /></TableHead>
                     <TableHead>
                       <span className="sr-only">Actions</span>
                     </TableHead>
@@ -629,13 +627,13 @@ function StartCard({ teamId, overview }: { teamId: number; overview: CbomSources
   };
 
   return (
-    <SectionCard title="Start a scan" description="Choose what to collect, estimate the credits, then start." id="cbom-review-start">
+    <SectionCard infoId="cbsrc.rr.start" title="Start a scan" description="Choose what to collect, estimate the credits, then start." id="cbom-review-start">
       <div className="space-y-5">
         <div className="flex flex-wrap gap-x-6 gap-y-3" role="group" aria-label="Groups to include" data-testid="review-include">
           {INCLUDE_OPTIONS.map((opt) => {
             const queuedCount = opt.groups.reduce((sum, g) => sum + (planGroups[g]?.queued ?? 0), 0);
             return (
-              <Checkbox2 key={opt.key} id={`review-include-${opt.key}`} checked={include[opt.key]} onChange={(v) => toggle(opt.key, v)}>
+              <Checkbox2 infoId="cbsrc.rr.include" key={opt.key} id={`review-include-${opt.key}`} checked={include[opt.key]} onChange={(v) => toggle(opt.key, v)}>
                 {opt.label} <span className="text-zinc-500">· {queuedCount} ready</span>
               </Checkbox2>
             );
@@ -700,6 +698,7 @@ function StartCard({ teamId, overview }: { teamId: number; overview: CbomSources
 
         <div className="space-y-1.5">
           <Checkbox2
+            infoId="cbsrc.rr.soc_ack"
             id="review-soc-ack"
             checked={socAck}
             onChange={(v) => {
@@ -754,83 +753,5 @@ function StartCard({ teamId, overview }: { teamId: number; overview: CbomSources
         {!anyIncluded && <p className="text-xs text-zinc-500">Choose at least one group to estimate.</p>}
       </div>
     </SectionCard>
-  );
-}
-
-// ---------------------------------------------------------------------------- run details
-// CB-38: no longer opened from the Runs table (its Results button opens /cbom/runs/<id>/results); kept until the
-// unified results page carries its jobs table and skipped list, then removed.
-export function RunDetailsDialog({ teamId, runId, onClose }: { teamId: number; runId: number; onClose: () => void }) {
-  const runQuery = useQuery({
-    queryKey: cbomSourcesKeys.run(teamId, runId),
-    queryFn: () => getCbomRun(teamId, runId),
-    enabled: Number.isFinite(teamId),
-    retry: 1,
-    refetchInterval: (query) => {
-      if (httpStatus(query.state.error) === 404) return false;
-      const status = query.state.data?.status;
-      return !status || isActiveRun(status) ? 6000 : false;
-    },
-  });
-  const run = runQuery.data;
-  const jobs = run?.jobs ?? [];
-  const skippedAtStart = run?.breakdown?.skipped ?? [];
-
-  return (
-    <Dialog open onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-6xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Run #{runId}</DialogTitle>
-          <DialogDescription>
-            {run ? (
-              <>
-                <RunStatusBadge status={run.status} /> · started {formatDateTime(run.created_at)} · {credits(run.credits.charged)} charged,{" "}
-                {credits(run.credits.refunded)} refunded
-              </>
-            ) : (
-              "Loading the run"
-            )}
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-4 min-w-0">
-          {runQuery.isLoading ? (
-            <LoadingBlock />
-          ) : runQuery.isError && !run ? (
-            <ErrorBlock
-              message={httpStatus(runQuery.error) === 404 ? "This run no longer exists." : undefined}
-              error={runQuery.error}
-              onRetry={httpStatus(runQuery.error) === 404 ? undefined : () => runQuery.refetch()}
-            />
-          ) : jobs.length === 0 ? (
-            <EmptyState title="No jobs in this run" />
-          ) : (
-            <RunJobsTable jobs={jobs} />
-          )}
-
-          <SkippedAtStart items={skippedAtStart} />
-          {run && jobs.length > 0 && (
-            <div className="border-t border-zinc-200 dark:border-zinc-800 pt-4 space-y-2">
-              <p className="text-sm font-medium text-zinc-900 dark:text-white">Changes</p>
-              <RunChanges teamId={teamId} runId={runId} finished={TERMINAL_RUN.has(run.status)} />
-            </div>
-          )}
-          {run && jobs.length > 0 && (
-            <div className="border-t border-zinc-200 dark:border-zinc-800 pt-4">
-              <RunResults teamId={teamId} runId={runId} active={isActiveRun(run.status)} />
-            </div>
-          )}
-          {run && isActiveRun(run.status) && (
-            <p className="text-xs text-zinc-500">Updates every few seconds while the run is active.</p>
-          )}
-        </div>
-
-        <DialogFooter>
-          <Button variant="outline" className="cursor-pointer" onClick={onClose}>
-            Close
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }

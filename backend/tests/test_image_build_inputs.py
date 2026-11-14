@@ -44,3 +44,14 @@ def test_nuclei_is_a_pinned_release_checked_against_its_checksums():
     step = step[:step.index("rm \"/tmp/${zip}\"")]
     assert step.count("curl -fsSL") == 2  # -f: an HTTP error fails the step instead of saving the error page
     assert "nuclei_${NUCLEI_VERSION}_checksums.txt" in step and "sha256sum -c -" in step
+
+
+def test_backend_image_secret_check_covers_every_copied_tree():
+    """Every tree the backend Dockerfile copies in (source, Alembic bundle, the aibom engine of CB-38 run parity) is
+    scanned for secret-bearing files after the build."""
+    backend = (REPO / "backend" / "Dockerfile").read_text()
+    copied = set(re.findall(r"^COPY --from=(?:migrations|aibom) \S+ (/[a-z_]+)(?:/|\s|$)", backend, re.MULTILINE))
+    assert copied == {"/prod_database_migrations", "/opt"}, copied
+    line = re.search(r"^  assert_no_secrets backend (.+)$", BUILD, re.MULTILINE)
+    assert line, "build_images.sh does not check the backend image"
+    assert set(line.group(1).split()) == {"/backend", "/prod_database_migrations", "/opt/aibom"}

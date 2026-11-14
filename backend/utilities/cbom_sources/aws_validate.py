@@ -321,17 +321,26 @@ def validate_aws_role(team_id: int, role_arn: str, external_id: str, regions: li
     if scope == "organization":
         if remaining() > 2:
             try:
+                from backend.utilities.cbom_sources.aws_org import with_backoff
+
                 org = assumed_session.client("organizations", config=cfg)
                 count = 0
                 token = None
-                for _ in range(10):
-                    page = org.list_accounts(**({"NextToken": token} if token else {}))
+                # every page while the check has time: runs read and are charged for every member account counted
+                # here (it used to stop at 10 pages, 200 accounts); 500 pages is 10,000 accounts
+                for _ in range(500):
+                    page = with_backoff(lambda t=token: org.list_accounts(**({"NextToken": t} if t else {})),
+                                        what="organizations:ListAccounts")
                     count += len(page.get("Accounts", []))
                     token = page.get("NextToken")
                     if not token or remaining() < 2:
                         break
-                member_accounts = count
-                rows.append(_row(names[6], "pass", f"Found {count} member accounts"))
+                if not token:
+                    member_accounts = count
+                    rows.append(_row(names[6], "pass", f"Found {count} member accounts"))
+                else:  # a partial count is never reported as the organisation's size, nor charged
+                    rows.append(_row(names[6], "error", f"Listed {count} member accounts before the time limit; "
+                                                        "validate again"))
             except Exception as exc:
                 rows.append(_row(names[6], "fail", f"organizations:ListAccounts failed: {_code(exc)}; use the management account role"))
         else:

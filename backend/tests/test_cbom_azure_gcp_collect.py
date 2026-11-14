@@ -214,7 +214,8 @@ def test_azure_key_vault_inventory_from_documented_samples():
 
     gaps = [a for a in found if a["type"] == "coverage"]
     assert {g["facts"]["status"] for g in gaps} == {"blocked_by_firewall"} and len(gaps) == 3  # keys, certificates, secrets
-    assert out["targets"][0]["status"] == "error" and "locked-vault" in out["targets"][0]["error"]
+    # the vault behind its firewall is a gap of that vault: the subscription was read, with gaps (C4), never "failed"
+    assert out["targets"][0]["status"] == "partial" and "locked-vault" in out["targets"][0]["error"]
 
     # the ARM token only ever went to ARM, the vault token only to vault hosts; no secret value or other vault was read
     for req in rec.seen:
@@ -334,6 +335,10 @@ def _gcp_routes(*, cas_disabled=False):
                 {"location": "asia-south1", "customerManagedEncryption": {"kmsKeyName": f"{LOC}/keyRings/payments/cryptoKeys/rotated"}}]}},
              "rotation": {"rotationPeriod": "2592000s", "nextRotationTime": "2026-12-01T00:00:00Z"}, "topics": [{"name": "projects/123/topics/rot"}]}],
             "totalSize": 2})),
+        # Save and validate: the collector's permissions on the project (C1); held in full here
+        (_at(f"https://cloudresourcemanager.googleapis.com/v3/projects/{PROJECT}:testIamPermissions"), (200, {"permissions": [
+            "cloudkms.keyRings.list", "cloudkms.cryptoKeys.list", "cloudkms.cryptoKeyVersions.list", "privateca.caPools.list",
+            "privateca.certificateAuthorities.list", "secretmanager.secrets.list"]})),
         (_at("https://cloudresourcemanager.googleapis.com/v3/projects:search"),
          (200, {"projects": [{"name": "projects/123", "projectId": PROJECT, "state": "ACTIVE", "parent": "organizations/42"},
                              {"name": "projects/999", "projectId": "old-sandbox", "state": "DELETE_REQUESTED"}]})),
@@ -416,7 +421,8 @@ def test_validation_calls_sign_in_and_list_once():
     assert bad["status"] == "failed" and "AADSTS7000215" in bad["message"]
     rec = Recorder(_gcp_routes())
     out = gcp_collect.test_gcp(GCP_CFG, {"service_account_key": SA_JSON}, transport=httpx.MockTransport(rec))
-    assert out["status"] == "passed" and "2 location(s)" in out["message"] and len(rec.seen) == 5  # + 3 service probes
+    # sign-in, the project's permissions, one real Cloud KMS read (C1), + 3 service probes
+    assert out["status"] == "passed" and out["message"] == f"Read access proven on 1 project(s): {PROJECT}" and len(rec.seen) == 6
 
 
 def test_kinds_are_collectable_by_the_cloud_worker():

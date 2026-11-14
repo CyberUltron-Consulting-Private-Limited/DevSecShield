@@ -25,7 +25,7 @@ from sqlmodel import Session, select
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from live_receivers import ReceiverLab, local_address  # noqa: E402
 from test_cbom_sources_api import api, enroll_node, linux_body, world  # noqa: E402,F401
-from test_cbom_wp10_outputs import two_runs  # noqa: E402,F401
+from test_cbom_wp10_outputs import UNKNOWN_KEY, make_two_runs  # noqa: E402
 
 from backend.new_models import (CbomCollectedAsset, CbomCollectionJob, CbomCollectionSettings,  # noqa: E402
                                 CbomDriftEvent, CbomQ0Gap)
@@ -37,13 +37,20 @@ from backend.utilities.integrations import dispatch as D  # noqa: E402
 from backend.utilities.integrations import events as EV  # noqa: E402
 from backend.utilities.integrations import outbound  # noqa: E402
 
-_FIXTURES = (api, world, two_runs)
+_FIXTURES = (api, world)
 ROOT = Path(__file__).resolve().parents[2]
 VERSIONS = ROOT / "prod_database_migrations" / "migrations" / "versions"
 MIGRATION = VERSIONS / "cb23q0gap001_q0_gap_lifecycle.py"
 ADDRESS = local_address()
 DOC = {"evidence_title": "Key policy", "evidence_url": "https://intranet.example/policy.pdf"}
 T0 = dt.datetime(2030, 1, 1, 12, 0, 0)  # dispatcher clock
+
+
+@pytest.fixture()
+def two_runs(api, world):
+    """wp10's two runs, with a host key of a type algid does not know (class unknown, a Q0 gap) removed between
+    them: the DSA key wp10 uses is judged since #126 (DSA, quantum vulnerable), so it is no Q0 gap any more."""
+    return make_two_runs(api, world, gone=UNKNOWN_KEY)
 
 
 def q0(api, team=1, who="alice", **params):
@@ -230,7 +237,7 @@ def test_register_lists_every_gate_q0_with_its_reason(api, two_runs):
     assert len(small["items"]) == 2 and small["next_after"]
     assert {i["item_key"] for i in items(api, reason="evidence_e0")} == set(want)
     assert all(i["item_kind"] == "evidence" for i in items(api, kind="evidence"))
-    # run 2 no longer has run 1's DSA host key (class unknown): a comparable collection closed it (observation)
+    # run 2 no longer has run 1's unknown-type host key (class unknown): a comparable collection closed it (observation)
     closed = items(api, status="closed")
     assert closed and {(i["item_kind"], i["close_cause"]) for i in closed} == {("asset", "observation")}
     assert {e.asset_key for e in closed_events(engine)} == {i["item_key"] for i in closed}
@@ -276,7 +283,7 @@ def test_model_only_change_closes_nothing_that_is_forwarded(api, two_runs):
     assert gap.closed_at is not None and gap.close_cause == "model_change" and gap.closed_grade is None
     events = closed_events(engine)
     assert key not in {e.asset_key for e in events}  # not forwarded
-    # the other closures of the same sync are real ones, and forwarded: Mosca set (inputs), the DSA key gone
+    # the other closures of the same sync are real ones, and forwarded: Mosca set (inputs), the unknown key gone
     assert {e.detail["cause"] for e in events[before:]} == {"inputs", "observation"}
     closed = {i["item_key"]: i for i in items(api, status="closed")}
     assert closed[key]["close_cause"] == "model_change" and closed[key]["forwarded"] is False
@@ -321,7 +328,7 @@ def test_migration_is_the_one_head():
         if down:
             parents.add(down.group(1))
     assert mod.revision == "cb23q0gap001" and mod.down_revision in revisions
-    # one head; later revisions (CB-23 PR-B cb23register001) chain after this one
+    # one head; later revisions (CB-23 PR-B cb23register001, then CB-25 cb25agility001) chain after this one
     assert len(revisions - parents) == 1 and ("cb23q0gap001" in parents or revisions - parents == {"cb23q0gap001"})
 
 

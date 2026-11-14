@@ -470,10 +470,33 @@ entry("MESH_MTLS_PERMISSIVE", title="Service mesh mTLS permissive", category="ku
       remediation={"summary": "Move to STRICT once every client has a sidecar.", "steps": []}, verify=[{"label": "Mesh policies", "command": "kubectl get peerauthentication -A"}], references=[])
 
 # --- cloud
-entry("KMS_NO_ROTATION", title="KMS key rotation off", category="cloud", default_impact="Medium", description="A customer-managed symmetric KMS key whose material AWS KMS generated has automatic rotation disabled. Keys with imported material or in a custom key store cannot rotate automatically and are not reported; a multi-Region replica takes its rotation from its primary key.",
+entry("KMS_NO_ROTATION", title="Key without automatic rotation", category="cloud", default_impact="Medium",
+      description="Key material in a cloud KMS, a key vault or Vault transit has no automatic rotation, so the same key "
+                  "version keeps protecting new data until someone rotates it by hand: an AWS KMS key with rotation "
+                  "off, a Google Cloud KMS key without a rotation period, an Azure Key Vault key whose rotation policy "
+                  "has no Rotate action, or a Vault transit key with auto_rotate_period 0. On AWS KMS, keys with "
+                  "imported material or in a custom key store cannot rotate automatically and are not reported, and a "
+                  "multi-Region replica takes its rotation from its primary key.",
       attack="A key that never rotates protects more data for longer, so any compromise exposes more.", cwe=["CWE-324", "CWE-320"], owasp=["crypto"], cves=[], standards=["NIST SP 800-57 Part 1 (cryptoperiods)"],
-      compliance=["key_mgmt"], remediation={"summary": "aws kms enable-key-rotation --key-id {resource}", "steps": []},
-      verify=[{"label": "Rotation status", "command": "aws kms get-key-rotation-status --key-id {resource}"}], references=[])
+      compliance=["key_mgmt"],
+      remediation={"summary": "Turn on automatic rotation where the key lives (the step for each provider is below); "
+                              "earlier key versions stay available to decrypt.", "steps": [
+          {"platform": "AWS KMS", "how": "aws kms enable-key-rotation --key-id <key-id> (optionally --rotation-period-in-days 90)"},
+          {"platform": "Google Cloud KMS", "how": "gcloud kms keys update <key> --keyring <ring> --location <location> "
+                                                  "--rotation-period 90d --next-rotation-time <RFC 3339 time>"},
+          {"platform": "Azure Key Vault", "how": "az keyvault key rotation-policy update --vault-name <vault> --name <key> "
+                                                 "--value policy.json (a lifetimeActions entry with action Rotate, e.g. "
+                                                 "timeAfterCreate P90D)"},
+          {"platform": "HashiCorp Vault transit", "how": "vault write transit/keys/<key>/config auto_rotate_period=90d "
+                                                         "(set min_decryption_version after rewrapping old data)"}]},
+      verify=[{"label": "AWS KMS: rotation status", "command": "aws kms get-key-rotation-status --key-id {resource}"},
+              {"label": "Google Cloud KMS: rotation period", "command": "gcloud kms keys describe {resource} --format='value(rotationPeriod,nextRotationTime)'"},
+              {"label": "Azure Key Vault: rotation policy", "command": "az keyvault key rotation-policy show --id {resource}"},
+              {"label": "Vault transit: auto_rotate_period (read-only token)", "command": "vault read transit/keys/{name}"}],
+      references=["https://docs.aws.amazon.com/kms/latest/developerguide/rotate-keys.html",
+                  "https://cloud.google.com/kms/docs/rotate-key",
+                  "https://learn.microsoft.com/azure/key-vault/keys/how-to-configure-key-rotation",
+                  "https://developer.hashicorp.com/vault/api-docs/secret/transit#update-key-configuration"])
 entry("KMS_PENDING_DELETION", title="KMS key pending deletion", category="cloud", default_impact="Low", description="The KMS key is scheduled for deletion.",
       attack="Data still encrypted under it becomes unrecoverable when the key is deleted.", cwe=["CWE-320"], owasp=["crypto"], cves=[], standards=[], compliance=["key_mgmt"],
       remediation={"summary": "Cancel deletion if anything still uses it: aws kms cancel-key-deletion --key-id {resource}", "steps": []},

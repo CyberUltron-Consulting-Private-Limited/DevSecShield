@@ -1,0 +1,13 @@
+### show running-config ssl
+ssl server-version tlsv1.2
+ssl cipher tlsv1.2 high
+ssl dh-group group14
+### show running-config ssh
+### show running-config crypto ikev1
+### show running-config crypto ikev2
+crypto ikev2 policy 10
+ encryption aes-gcm-256
+ integrity null
+ group 21
+ prf sha384
+### show crypto key mypubkey rsa

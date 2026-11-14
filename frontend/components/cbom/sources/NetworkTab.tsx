@@ -36,7 +36,8 @@ import {
 import AppliancesSection from "./AppliancesSection";
 import { cbomSourcesKeys } from "./keys";
 import { MetadataFields, metadataConfig, metadataFrom, type SourceMetadata } from "./SourceMetadata";
-import { exclusionSaveError, hostnameError, rangeError, storedExclusionIssue, teamExclusionError } from "./teamNeverScan";
+import { exclusionSaveError, hostnameError, RANGE_HINT, rangeError, storedExclusionIssue, teamExclusionError } from "./teamNeverScan";
+import { sampleDetail, sweepTotals, totalsLine } from "./networkEstimate";
 import {
   addressProgress,
   ago,
@@ -69,6 +70,8 @@ import {
   Truncate,
   usePolledJob,
 } from "./shared";
+import { InfoTip } from "@/components/ui/info-tip";
+import type { InfoTipId } from "@/content/infotips";
 
 // ---------------------------------------------------------------------------- constants
 // Values from backend/utilities/cbom_sources/schemas.py PortItem.protocol.
@@ -104,10 +107,10 @@ const TIMEZONES = [
   "America/Los_Angeles",
 ];
 type RateKey = "rate_conn_per_s" | "rate_parallel_per_server" | "rate_handshakes_per_endpoint";
-const RATES: { key: RateKey; label: string; min: number; max: number; testId: string }[] = [
-  { key: "rate_conn_per_s", label: "Connections/s per node", min: 1, max: 500, testId: "network-rate-conn" },
-  { key: "rate_parallel_per_server", label: "Parallel per server", min: 1, max: 32, testId: "network-rate-parallel" },
-  { key: "rate_handshakes_per_endpoint", label: "Handshakes per endpoint", min: 1, max: 200, testId: "network-rate-handshakes" },
+const RATES: { key: RateKey; label: string; min: number; max: number; testId: string; infoId: InfoTipId }[] = [
+  { key: "rate_conn_per_s", label: "Connections/s per node", min: 1, max: 500, testId: "network-rate-conn", infoId: "cbsrc.net.rate_conn" },
+  { key: "rate_parallel_per_server", label: "Parallel per server", min: 1, max: 32, testId: "network-rate-parallel", infoId: "cbsrc.net.rate_parallel" },
+  { key: "rate_handshakes_per_endpoint", label: "Handshakes per endpoint", min: 1, max: 200, testId: "network-rate-handshakes", infoId: "cbsrc.net.rate_handshakes" },
 ];
 const MAX_PORTS = 64;
 const MAX_SNI = 10_000;
@@ -358,7 +361,8 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
   const errorFor = (key: string) => (showErrors ? plan.errors[key] ?? null : null);
   const unsaved = (section: string) => plan.changed.has(section) && <StatusBadge tone="amber">Not saved</StatusBadge>;
 
-  const addresses = ranges.reduce((sum, r) => sum + (r.target_count || 0), 0);
+  // N7: unique addresses over enabled ranges (the API's count), not the sum of every range's own count
+  const totals = sweepTotals(ranges, rangesQuery.data?.network_totals);
 
   const updateGrid = (update: (g: WindowGrid) => WindowGrid) =>
     setDraft((d) => ({ ...d, scan_window: update(d.scan_window ?? savedGrid) }));
@@ -441,7 +445,7 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
         >
           <OctagonX className="h-5 w-5 shrink-0" />
           <div>
-            <p className="font-medium">All network scanning is stopped</p>
+            <p className="font-medium">All network scanning is stopped <InfoTip id="cbsrc.net.stopped" /></p>
             <p className="mt-0.5">
               Scan nodes skip network ranges and discovery sweeps until a team admin resumes scanning.
               {settings.stop_all_changed_at ? ` Stopped ${ago(settings.stop_all_changed_at, serverNow)}.` : ""}
@@ -458,9 +462,10 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
         {/* ------------------------------------------------------------------ Scope */}
-        <SectionCard title="Scope" description="What may be scanned, and through which node.">
+        <SectionCard infoId="cbsrc.net.scope" title="Scope" description="What may be scanned, and through which node.">
           <div className="space-y-6">
             <Section
+              infoId="cbsrc.net.ranges"
               title="Allowed ranges"
               actions={
                 !addingRange && (
@@ -495,10 +500,10 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
                       <Table data-testid="network-ranges-table">
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Range</TableHead>
-                            <TableHead>Scan node</TableHead>
-                            <TableHead>Mode</TableHead>
-                            <TableHead>Last test</TableHead>
+                            <TableHead>Range <InfoTip id="cbsrc.net.col.range" /></TableHead>
+                            <TableHead>Scan node <InfoTip id="cbsrc.col.node" /></TableHead>
+                            <TableHead>Mode <InfoTip id="cbsrc.net.col.mode" /></TableHead>
+                            <TableHead>Last test <InfoTip id="cbsrc.col.last_test" /></TableHead>
                             <TableHead className="w-24">
                               <span className="sr-only">Actions</span>
                             </TableHead>
@@ -509,10 +514,23 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
                             const cidr = typeof r.config?.cidr === "string" ? r.config.cidr : r.name;
                             const testing = testMutation.isPending && testMutation.variables?.id === r.id;
                             return (
-                              <TableRow key={r.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800">
+                              <TableRow
+                                key={r.id}
+                                className={cn("hover:bg-zinc-50 dark:hover:bg-zinc-800", !r.enabled && "opacity-60")}
+                                data-testid="network-range-row"
+                                data-disabled={r.enabled ? undefined : "true"}
+                              >
                                 <TableCell>
-                                  <span className="font-mono text-xs text-zinc-900 dark:text-white">{cidr}</span>
-                                  <span className="block text-xs text-zinc-500">{pluralize(r.target_count, "address", "addresses")}</span>
+                                  <span className={cn("font-mono text-xs", r.enabled ? "text-zinc-900 dark:text-white" : "text-zinc-500 line-through")}>{cidr}</span>
+                                  {!r.enabled && (
+                                    <span className="ml-2 align-middle">
+                                      <StatusBadge tone="zinc" title="Disabled ranges are not swept and not counted in Before the first run">Disabled</StatusBadge>
+                                    </span>
+                                  )}
+                                  <span className="block text-xs text-zinc-500">
+                                    {pluralize(r.target_count, "address", "addresses")}
+                                    {!r.enabled && " · not swept"}
+                                  </span>
                                 </TableCell>
                                 <TableCell className="max-w-[180px]">
                                   <Truncate className="text-zinc-700 dark:text-zinc-300" text={r.node_name ?? "No node"} />
@@ -569,7 +587,7 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
               )}
             </Section>
 
-            <Section title="Never scan" badge={unsaved("network_exclusions")}>
+            <Section infoId="cbsrc.net.never_scan" title="Never scan" badge={unsaved("network_exclusions")}>
               {exclusions.length === 0 ? (
                 <EmptyState title="Nothing is excluded" body="Add OT networks, core routers and anything else that must never be touched." />
               ) : (
@@ -579,8 +597,8 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
                   <Table data-testid="network-exclusions-table" className="table-fixed">
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="w-[45%]">Range</TableHead>
-                        <TableHead>Reason</TableHead>
+                        <TableHead className="w-[45%]">Range <InfoTip id="cbsrc.net.col.range" /></TableHead>
+                        <TableHead>Reason <InfoTip id="cbsrc.net.col.reason" /></TableHead>
                         <TableHead className="w-12">
                           <span className="sr-only">Remove</span>
                         </TableHead>
@@ -619,8 +637,8 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
                               <TableRow className="hover:bg-transparent" data-testid="network-exclusion-hostname">
                                 <TableCell colSpan={3} className="pt-0 whitespace-normal">
                                   <div id={noteId} className="space-y-1">
-                                    <StatusBadge tone="red" title={issue}>Host name: not allowed here</StatusBadge>
-                                    <p className="text-xs text-red-600 dark:text-red-400">{issue}</p>
+                                    <StatusBadge tone="amber" title={issue}>Host name: resolved on the scan node</StatusBadge>
+                                    <p className="text-xs text-zinc-600 dark:text-zinc-400">{issue}</p>
                                   </div>
                                 </TableCell>
                               </TableRow>
@@ -633,13 +651,14 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
                 </div>
               )}
               <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_auto] gap-2 items-start">
+                {/* infotip-shared: the range to exclude; the Never scan heading's tip explains it */}
                 <Input
                   aria-label="Range to never scan"
                   data-testid="network-exclusion-cidr"
                   className="font-mono text-sm"
                   value={exclusion.cidr}
                   maxLength={64}
-                  placeholder="10.20.99.0/24"
+                  placeholder="10.20.99.0/24 or shop.example.internal"
                   onChange={(e) => setExclusion({ ...exclusion, cidr: e.target.value })}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
@@ -648,6 +667,7 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
                     }
                   }}
                 />
+                {/* infotip-shared: the reason for the exclusion; the Reason column's tip explains it */}
                 <Input
                   aria-label="Reason"
                   data-testid="network-exclusion-reason"
@@ -671,14 +691,14 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
               <p className="text-xs text-zinc-500">
                 This list always wins. The node refuses these addresses even if a job asks for them, in every job of
                 this team: a server, database, registry or Kubernetes API whose name resolves to a listed address is
-                skipped as a whole, and ranges are checked one address at a time. This list takes addresses and
-                ranges. A hostname listed in a server source&apos;s own Never scan field also covers every address
-                it resolves to from the scan node (until it resolves there, that source scans nothing; localhost and
-                the other loopback names cover only 127.0.0.0/8 and ::1).
+                skipped as a whole, and ranges are checked one address at a time. This list takes addresses, ranges
+                and hostnames. A listed hostname covers every address it resolves to from the scan node, in range
+                sweeps too; until it resolves there, the node scans nothing for this team (localhost and the other
+                loopback names cover only 127.0.0.0/8 and ::1 and are never looked up).
               </p>
             </Section>
 
-            <Section title="Hostnames for SNI">
+            <Section infoId="cbsrc.net.sni" title="Hostnames for SNI">
               <p className="text-xs text-zinc-500">One IP often serves many sites, each with its own certificate. Add the names so each one is checked.</p>
               <div className="flex flex-wrap items-center gap-2">
                 <StatusBadge tone="blue">{pluralize(settings.sni_hostnames.length, "hostname")}</StatusBadge>
@@ -689,7 +709,7 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
               </div>
             </Section>
 
-            <Section title="Ports and protocols" badge={unsaved("ports")} last>
+            <Section infoId="cbsrc.net.ports" title="Ports and protocols" badge={unsaved("ports")} last>
               {ports.length === 0 ? (
                 <p className="text-sm text-zinc-600 dark:text-zinc-400">No ports. Add at least one port for the network scan to check.</p>
               ) : (
@@ -717,6 +737,7 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
                 </div>
               )}
               <div className="grid grid-cols-2 sm:grid-cols-[110px_minmax(0,1fr)_minmax(0,1fr)_auto] gap-2 items-start">
+                {/* infotip-shared: the port; the Ports and protocols heading's tip explains it */}
                 <Input
                   aria-label="Port"
                   data-testid="network-port-input"
@@ -733,6 +754,7 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
                   }}
                 />
                 <Select value={port.protocol} onValueChange={(v) => setPort({ ...port, protocol: v })}>
+                  {/* infotip-shared: the port's protocol; the Ports and protocols heading's tip lists them */}
                   <SelectTrigger aria-label="Protocol" className="w-full cursor-pointer" data-testid="network-port-protocol">
                     <SelectValue />
                   </SelectTrigger>
@@ -744,6 +766,7 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
                     ))}
                   </SelectContent>
                 </Select>
+                {/* infotip-shared: the port's optional label; the Ports and protocols heading's tip explains it */}
                 <Input
                   aria-label="Label (optional)"
                   data-testid="network-port-label"
@@ -765,13 +788,15 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
         <AppliancesSection teamId={teamId} nodes={nodes} onNavigate={onNavigate} />
 
         {/* ------------------------------------------------------------------ Safety */}
-        <SectionCard title="Safety" description="When, how fast, and who to tell.">
+        <SectionCard infoId="cbsrc.net.safety" title="Safety" description="When, how fast, and who to tell.">
           <div className="space-y-6">
             <Section
+              infoId="cbsrc.net.window"
               title="Scan window"
               badge={unsaved("scan_window")}
               actions={
                 <Select value={timezone} onValueChange={(v) => setDraft((d) => ({ ...d, window_timezone: v }))}>
+                  {/* infotip-shared: the scan window's time zone; the Scan window heading's tip explains it */}
                   <SelectTrigger aria-label="Time zone" className="w-[200px] cursor-pointer" data-testid="network-timezone">
                     <SelectValue />
                   </SelectTrigger>
@@ -827,7 +852,7 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
             <Section title="Rate limits" badge={unsaved("rates")}>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {RATES.map((rate) => (
-                  <Field key={rate.key} label={rate.label} htmlFor={rate.testId} error={errorFor(rate.key)} hint={`${rate.min}-${rate.max}`}>
+                  <Field infoId={rate.infoId} key={rate.key} label={rate.label} htmlFor={rate.testId} error={errorFor(rate.key)} hint={`${rate.min}-${rate.max}`}>
                     <Input
                       id={rate.testId}
                       data-testid={rate.testId}
@@ -842,10 +867,13 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
                   </Field>
                 ))}
               </div>
-              <p className="text-xs text-zinc-500">Lower them for fragile or busy networks.</p>
+              <p className="text-xs text-zinc-500" data-testid="network-rate-note">
+                Lower them for fragile or busy networks. Connections/s is a hard cap: the node spaces new connections
+                evenly and never starts more than this many in any one second, across all its jobs (no bursts).
+              </p>
             </Section>
 
-            <Section title="Tell your SOC" badge={unsaved("soc")}>
+            <Section infoId="cbsrc.net.soc" title="Tell your SOC" badge={unsaved("soc")}>
               {nodes.length === 0 ? (
                 <EmptyState
                   title="No scan nodes yet"
@@ -863,8 +891,8 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
                     <Table data-testid="network-soc-table">
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Scan node</TableHead>
-                          <TableHead>Source IPs</TableHead>
+                          <TableHead>Scan node <InfoTip id="cbsrc.net.col.node" /></TableHead>
+                          <TableHead>Source IPs <InfoTip id="cbsrc.net.col.source_ips" /></TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -878,7 +906,7 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
                 </ScrollArea>
               )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <Field label="SOC email" htmlFor="network-soc-email" error={errorFor("soc_email")}>
+                <Field infoId="cbsrc.net.soc_email" label="SOC email" htmlFor="network-soc-email" error={errorFor("soc_email")}>
                   <Input
                     id="network-soc-email"
                     data-testid="network-soc-email"
@@ -889,7 +917,7 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
                     onChange={(e) => setDraft((d) => ({ ...d, soc_email: e.target.value }))}
                   />
                 </Field>
-                <Field label="Emergency stop contact" htmlFor="network-emergency" error={errorFor("emergency_contact")}>
+                <Field infoId="cbsrc.net.emergency" label="Emergency stop contact" htmlFor="network-emergency" error={errorFor("emergency_contact")}>
                   <Input
                     id="network-emergency"
                     data-testid="network-emergency"
@@ -904,9 +932,9 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
               <p className="text-xs text-zinc-500">Share the source IPs, allowed ranges and scan window with your SOC before the first run.</p>
             </Section>
 
-            <Section title="Before the first run" last>
+            <Section infoId="cbsrc.net.before_first" title="Before the first run" last>
               <p className="text-sm text-zinc-900 dark:text-white" data-testid="network-totals">
-                {pluralize(addresses, "address", "addresses")} after the never-scan list, {pluralize(settings.ports.length, "port")}.
+                {totalsLine(totals, settings.ports.length)}
               </p>
               <p className="text-xs text-zinc-500">
                 A discovery sweep asks each scan node that has ranges to find open ports first.
@@ -983,7 +1011,10 @@ function Section({
   actions,
   last,
   children,
+  infoId,
 }: {
+  /** The (i) tip beside the heading. */
+  infoId?: InfoTipId;
   title: string;
   badge?: ReactNode;
   actions?: ReactNode;
@@ -995,6 +1026,7 @@ function Section({
       <div className="flex flex-wrap items-center gap-3">
         <h3 className="flex-1 text-sm font-semibold text-zinc-900 dark:text-white">
           {title}
+          {infoId && <InfoTip id={infoId} className="ml-1" />}
           {badge && <span className="ml-2 align-middle">{badge}</span>}
         </h3>
         {actions}
@@ -1036,7 +1068,15 @@ function RangeTestCell({ teamId, source, serverNow }: { teamId: number; source: 
       : null;
   return (
     <div className="space-y-1">
-      {pendingJobId && job.data ? <JobStatusBadge status={job.data.status} /> : <TestStatusBadge status={source.last_test_status} title={source.last_test_summary} />}
+      {pendingJobId && job.data ? (
+        <JobStatusBadge status={job.data.status} />
+      ) : (
+        <TestStatusBadge
+          status={source.last_test_status}
+          title={source.last_test_summary}
+          detail={sampleDetail(source.last_test_status, source.last_test_result)}
+        />
+      )}
       {detail && <span className="block text-xs text-zinc-500">{detail}</span>}
     </div>
   );
@@ -1137,7 +1177,7 @@ function AddRangeForm({
   return (
     <div className="space-y-4 rounded-lg border border-zinc-200 dark:border-zinc-800 p-4" data-testid="network-range-form">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Field label="Range" htmlFor="range-cidr" required error={errors.cidr} hint="A /16 or smaller, one IP, or a-b">
+        <Field infoId="cbsrc.net.col.range" label="Range" htmlFor="range-cidr" required error={errors.cidr} hint={RANGE_HINT}>
           <Input
             id="range-cidr"
             data-testid="network-range-cidr"
@@ -1155,12 +1195,12 @@ function AddRangeForm({
             }}
           />
         </Field>
-        <Field label="Scan node" htmlFor="range-node" required error={errors.node}>
+        <Field infoId="cbsrc.net.range_form_node" label="Scan node" htmlFor="range-node" required error={errors.node}>
           <div data-testid="network-range-node">
             <NodeSelect id="range-node" nodes={nodes} value={nodeId} onChange={setNodeId} />
           </div>
         </Field>
-        <Field label="Mode" htmlFor="range-mode" hint={mode === "fragile" ? "For OT or devices that may not cope with many handshakes" : undefined}>
+        <Field infoId="cbsrc.net.col.mode" label="Mode" htmlFor="range-mode" hint={mode === "fragile" ? "For OT or devices that may not cope with many handshakes" : undefined}>
           <Select value={mode} onValueChange={(v) => setMode(v === "fragile" ? "fragile" : "full")}>
             <SelectTrigger id="range-mode" className="w-full cursor-pointer" data-testid="network-range-mode">
               <SelectValue />
@@ -1376,14 +1416,14 @@ function SniDialog({ teamId, settings, onClose }: { teamId: number; settings: Cb
         </DialogHeader>
         <div className="space-y-4 py-2 min-w-0">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Import a DNS zone file" htmlFor="sni-zone" hint="BIND export; A, AAAA and CNAME names">
+            <Field infoId="cbsrc.net.sni_zone" label="Import a DNS zone file" htmlFor="sni-zone" hint="BIND export; A, AAAA and CNAME names">
               <Input id="sni-zone" data-testid="network-sni-zone" type="file" accept=".zone,.db,.txt,text/plain" className="cursor-pointer" onChange={(e) => importFile(e.target.files?.[0], "zone")} />
             </Field>
-            <Field label="Import a plain list" htmlFor="sni-list" hint="Text or CSV; the first column is used">
+            <Field infoId="cbsrc.net.sni_list" label="Import a plain list" htmlFor="sni-list" hint="Text or CSV; the first column is used">
               <Input id="sni-list" data-testid="network-sni-list" type="file" accept=".txt,.csv,text/plain,text/csv" className="cursor-pointer" onChange={(e) => importFile(e.target.files?.[0], "list")} />
             </Field>
           </div>
-          <Field label="Hostnames" htmlFor="sni-text" error={error} hint={note ?? `${pluralize(names.length, "hostname")}`}>
+          <Field infoId="cbsrc.net.sni_text" label="Hostnames" htmlFor="sni-text" error={error} hint={note ?? `${pluralize(names.length, "hostname")}`}>
             <Textarea
               id="sni-text"
               data-testid="network-sni-text"

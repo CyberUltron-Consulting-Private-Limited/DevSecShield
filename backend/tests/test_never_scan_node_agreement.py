@@ -8,7 +8,7 @@ only (the backend cannot resolve names on the customer's network).
 
 The same holds for the targets: what the backend counts (estimates, credits) and offers as connection-test samples
 is exactly what the node's ``expand_targets`` scans for every address target form, including the addresses the
-node never scans whatever the list says (network and broadcast addresses of an IPv4 /30 or larger, 0.0.0.0/8, ::,
+node never scans whatever the list says (network and broadcast addresses of an IPv4 /24 or larger, 0.0.0.0/8, ::,
 and the NAT64 form of an excluded IPv4 address).  Host-name targets are counted once each: the node may scan fewer
 (two names of one host, or a name with a listed address), never more.
 """
@@ -82,9 +82,9 @@ def test_the_backend_count_matches_what_the_node_scans(source, entries, expected
 
 
 @pytest.mark.parametrize("source, entries", [
-    (["10.0.0.0/24"], []),  # the node skips the network and broadcast addresses of an IPv4 /30 or larger
+    (["10.0.0.0/24"], []),  # the node skips the network and broadcast addresses of an IPv4 /24 or larger
     (["10.0.0.0/29"], ["10.0.0.1"]),
-    (["10.0.1.0/30", "10.0.1.4/31", "10.0.1.9", "10.0.1.16/32"], []),  # a /31 and a /32 keep every address
+    (["10.0.1.0/30", "10.0.1.4/31", "10.0.1.9", "10.0.1.16/32"], []),  # a /25 ... /32 keeps every address (N3)
     (["10.0.2.0/25", "10.0.2.128/25"], []),
     (["10.0.3.0/24", "10.0.3.255", "10.0.3.0/25"], []),  # an address written out is scanned, even a broadcast one
     (["::ffff:10.0.4.0/126"], []),  # stored (and sent to the node) as 10.0.4.0/30
@@ -133,11 +133,24 @@ def test_the_node_the_backend_and_the_ui_know_the_same_loopback_names():
     assert T.is_loopback_name("db.localhost") and not T.is_loopback_name("localhost.corp")
 
 
-def test_the_ui_and_the_api_say_the_same_words_for_a_host_name_in_the_team_list():
-    """Re-review 5879769432 (teamNeverScan.ts:64): a typed entry (the UI's check) and a refused save (the API's 422)
-    read the same, so a drift on either side fails here, in the backend suite (which runs on frontend changes too)."""
-    assert json.loads(_ts_constant("HOST_NAME_NOT_ALLOWED")) == T.HOST_NAME_NOT_ALLOWED
-    assert T.HOST_NAME_NOT_ALLOWED.count("{entry}") == 1 and T.HOST_NAME_NOT_ALLOWED.startswith("{entry} ")
+def test_the_node_and_the_backend_drop_network_and_broadcast_for_the_same_prefixes():
+    """N3 (14 Nov 2026): only a /24 or larger leaves out its own network and broadcast address, on both sides; a /24
+    split into two /25s keeps .127 and .128 (they are hosts)."""
+    from zs_scan_node import netutil
+
+    assert T.HOST_ONLY_MAX_PREFIX == netutil.HOST_ONLY_MAX_PREFIX == 24
+    for source in (["10.232.0.0/25", "10.232.0.128/25"], ["10.232.0.0/24"], ["10.232.0.0/23"], ["10.232.0.64/26"]):
+        parsed = T.parse_targets(source)
+        targets, _ = expand_targets(parsed.normalized, NeverScan([]))
+        assert T.count_in_scope(parsed, None) == len(targets), source
+    split, _ = expand_targets(["10.232.0.0/25", "10.232.0.128/25"], NeverScan([]))
+    assert {"10.232.0.127", "10.232.0.128"} <= {t.ip for t in split} and len(split) == 256
+
+
+def test_the_ui_no_longer_refuses_a_host_name_in_the_team_list():
+    """N2: the API stores host names in the team list; the UI's refusal words are gone with the 422."""
+    assert "HOST_NAME_NOT_ALLOWED" not in FRONTEND.read_text(encoding="utf-8")
+    assert not hasattr(T, "HOST_NAME_NOT_ALLOWED")
 
 
 # ----------------------------------------------------------------------------- one text form for an address (#126)
