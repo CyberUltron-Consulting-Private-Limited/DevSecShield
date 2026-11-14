@@ -5207,6 +5207,14 @@ export interface CbomRunResults {
     certificates_labels?: { orphaned?: string; unmanaged?: string }
     certificates_scope?: string
     kb_version?: string
+    /** Parity with the code page (lane W2 run-parity): the same shapes as a code scan's scan_metadata keys. Each is
+     * rendered by the code page's own component when present, and left out when absent. */
+    cbom_graph?: CbomGraph | null
+    cbom_graph_compact?: CbomGraph | null
+    cbom_graph_expanded?: CbomGraph | null
+    cbom_compliance?: Record<string, unknown> | null
+    rbi_csf_rollup?: Record<string, unknown> | null
+    certin_posture?: Record<string, unknown> | null
     provenance?: CbomRunProvenance[] | null
     top_risks?: CbomRunPosture["top_risks"] | null
     judged_on?: string
