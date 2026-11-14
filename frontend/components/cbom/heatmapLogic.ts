@@ -159,6 +159,39 @@ export function monthGrid(year: number, month: number): (Date | null)[][] {
   return weeks;
 }
 
+export interface CertPlace {
+  target?: string | null;
+  location?: string | null;
+}
+
+// "host:port" or "[v6]:port", optionally followed by "#chain[i]" (scan node network/database/kmip collectors emit
+// target = the IP, location = "<ip>:<port>#chain[<i>]").
+const ENDPOINT = /^((?:\[[^\]\s]+\]|[^\s/:#[\]]+):\d{1,5})(?:#.*)?$/;
+
+/** Where a certificate was seen, as the expiry list shows it: host:port for a certificate read from an endpoint (so
+ * one certificate on 443 and 8443 reads as two places), otherwise the source label (target) or its location. */
+export function certWhere(c: CertPlace): string | null {
+  const endpoint = ENDPOINT.exec(String(c.location ?? "").trim());
+  if (endpoint) return endpoint[1];
+  return c.target || c.location || null;
+}
+
+/** Identity of one expiry-list entry: the same certificate (subject, issuer, expiry) at the same place. */
+export function certDedupeKey(c: CertPlace & { subject?: string | null; name?: string | null; issuer?: string | null; not_after: string | null }): string {
+  return [c.subject || c.name || "", c.issuer || "", parseExpiry(c.not_after)?.toISOString() ?? "", certWhere(c) ?? ""].join("\u0000");
+}
+
+/** Drops only true duplicates (same key), keeping the first and the original order. */
+export function dedupeCerts<T extends CertPlace & { subject?: string | null; name?: string | null; issuer?: string | null; not_after: string | null }>(certs: T[]): T[] {
+  const seen = new Set<string>();
+  return certs.filter((c) => {
+    const key = certDedupeKey(c);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export function groupByDay<T extends { not_after: string | null }>(certs: T[]): Map<string, T[]> {
   const out = new Map<string, T[]>();
   for (const cert of certs) {
