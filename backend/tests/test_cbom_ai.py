@@ -530,7 +530,8 @@ def test_no_env_reads_outside_config():
         assert key in text, key
     for path in (ROOT / "backend" / "utilities" / "cbom_ai").glob("*.py"):
         if path.name != "config.py":
-            assert "os.environ" not in path.read_text() and "getenv" not in path.read_text(), path.name
+            # reads, not names: fix.py lists "getenv" among the os attributes a generated fix may use
+            assert not re.search(r"\bos\.environ\b|\bgetenv\s*\(", path.read_text()), path.name
     assert os.environ.get("CBOM_AI_BASE_URL") is None
 
 

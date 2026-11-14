@@ -12,9 +12,10 @@
 # GitHub masks as secrets). Unset or empty: the host's value is left as it is.
 #   secrets  CBOM_AWS_ACCESS_KEY_ID, CBOM_AWS_SECRET_ACCESS_KEY, CBOM_AWS_PRINCIPAL_ARN
 #   var (or secret) CBOM_AWS_LAB_SAME_ACCOUNT   1 = lab mode (test deployments only), 0 = off
-# AI remediation (CB-38; deploy/staging/README.md "AI remediation"): every deploy sets CBOM_AI_PROVIDER (default bedrock),
-# CBOM_AI_BEDROCK_REGION (default ap-south-1) and CBOM_AI_AWS_CREDENTIALS (default env: the AWS_* of the host's .env)
-# from the environment's variables of those names; CBOM_AI_PROVIDER=off turns the assistant off.
+# AI remediation (CB-38; deploy/staging/README.md "AI remediation"): CBOM_AI_PROVIDER is written only when the
+# environment's variable of that name is set (bedrock / off); unset, the host's backend.env value stands (a hand edit
+# of CBOM_AI_PROVIDER=off on the host is never reset). CBOM_AI_BEDROCK_REGION (default ap-south-1) and
+# CBOM_AI_AWS_CREDENTIALS (default env: the AWS_* of the host's .env) are set from the variables of those names.
 # The scan node from the public registry (deploy/staging/README.md, "Public registry"): the GHCR packages are public,
 # so a push deploy points the Add scan node wizard at ghcr.io/<owner>/devsecshield-scan-node:<version> and the chart
 # (docker pull / helm oci://, no login) by default; a manual run clears them (it may deploy any commit).
@@ -198,9 +199,10 @@ jobs:
           STAGING_SET_CBOM_AWS_SECRET_ACCESS_KEY: ${{ secrets.CBOM_AWS_SECRET_ACCESS_KEY }}
           STAGING_SET_CBOM_AWS_PRINCIPAL_ARN: ${{ secrets.CBOM_AWS_PRINCIPAL_ARN }}
           STAGING_SET_CBOM_AWS_LAB_SAME_ACCOUNT: ${{ vars.CBOM_AWS_LAB_SAME_ACCOUNT || secrets.CBOM_AWS_LAB_SAME_ACCOUNT }}
-          # AI remediation on AWS Bedrock (CB-38), on by default for staging; the keys are the AWS_* of the host's .env
-          # (the SAST chat's). Turn it off with the environment variable CBOM_AI_PROVIDER=off.
-          STAGING_SET_CBOM_AI_PROVIDER: ${{ vars.CBOM_AI_PROVIDER || 'bedrock' }}
+          # AI remediation on AWS Bedrock (CB-38); the keys are the AWS_* of the host's .env (the SAST chat's). The
+          # provider is written only when the environment variable CBOM_AI_PROVIDER is set (bedrock or off): empty
+          # leaves the host's backend.env value as it is, so a host-side CBOM_AI_PROVIDER=off is not overwritten.
+          STAGING_SET_CBOM_AI_PROVIDER: ${{ vars.CBOM_AI_PROVIDER }}
           STAGING_SET_CBOM_AI_BEDROCK_REGION: ${{ vars.CBOM_AI_BEDROCK_REGION || 'ap-south-1' }}
           STAGING_SET_CBOM_AI_AWS_CREDENTIALS: ${{ vars.CBOM_AI_AWS_CREDENTIALS || 'env' }}
           NODE_REGISTRY_PUBLIC: ${{ vars.CBOM_NODE_REGISTRY_PUBLIC }}

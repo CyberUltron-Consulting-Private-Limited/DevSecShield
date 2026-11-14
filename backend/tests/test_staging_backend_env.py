@@ -152,12 +152,14 @@ def test_backend_env_keys_are_the_documented_ones():
         assert re.search(rf"(?m)^{key}=$", example), key
 
 
-def test_the_workflow_turns_on_bedrock_ai_remediation_for_staging_with_no_secret():
-    """CB-38: every staging deploy sets the AI provider to Bedrock in ap-south-1 with the environment's AWS keys,
-    unless the `staging` environment's variables say otherwise; none of these is a secret."""
+def test_the_workflow_sets_bedrock_ai_remediation_for_staging_with_no_secret():
+    """CB-38: a staging deploy writes the AI provider only when the `staging` environment's variable is set (so a
+    host-side CBOM_AI_PROVIDER=off in backend.env is never reset; PR 249 review), and Bedrock's region and credential
+    source with defaults; none of these is a secret."""
     wf = (ROOT / ".github/workflows/deploy-staging.yml").read_text()
     step = wf.split("- name: Copy and deploy", 1)[1].split("\n      - name:", 1)[0]
-    assert "STAGING_SET_CBOM_AI_PROVIDER: ${{ vars.CBOM_AI_PROVIDER || 'bedrock' }}" in step
+    assert "STAGING_SET_CBOM_AI_PROVIDER: ${{ vars.CBOM_AI_PROVIDER }}" in step
+    assert not re.search(r"CBOM_AI_PROVIDER \|\|", wf)  # no forced default over the host's value
     assert "STAGING_SET_CBOM_AI_BEDROCK_REGION: ${{ vars.CBOM_AI_BEDROCK_REGION || 'ap-south-1' }}" in step
     assert "STAGING_SET_CBOM_AI_AWS_CREDENTIALS: ${{ vars.CBOM_AI_AWS_CREDENTIALS || 'env' }}" in step
     assert not re.search(r"secrets\.CBOM_AI_", wf)
@@ -168,3 +170,7 @@ def test_backend_env_accepts_the_ai_keys(host):
     ok(set_env(host, "CBOM_AI_PROVIDER=bedrock\nCBOM_AI_BEDROCK_REGION=ap-south-1\nCBOM_AI_AWS_CREDENTIALS=env\n"))
     lines = env_of(path)
     assert {"CBOM_AI_PROVIDER=bedrock", "CBOM_AI_BEDROCK_REGION=ap-south-1", "CBOM_AI_AWS_CREDENTIALS=env"} <= set(lines)
+    # a hand-set off on the host survives a deploy whose CBOM_AI_PROVIDER variable is unset (sent empty)
+    ok(set_env(host, "CBOM_AI_PROVIDER=off\n"))
+    ok(set_env(host, "CBOM_AI_PROVIDER=\nCBOM_AI_BEDROCK_REGION=ap-south-1\nCBOM_AI_AWS_CREDENTIALS=env\n"))
+    assert "CBOM_AI_PROVIDER=off" in env_of(path)

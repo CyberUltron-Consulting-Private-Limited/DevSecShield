@@ -77,11 +77,38 @@ def _boundary(value: str) -> str:
     return r"(?<![\w.\-])" + re.escape(value) + r"(?![\w\-]|\.\w)"
 
 
+# host names and IPv4 addresses inside a code window (URLs' hosts, address literals)
+_URL_HOST = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://(?:[^/\s'\"`@]*@)?(\[[0-9A-Fa-f:.]+\]|[^/\s'\"`:?#]+)")
+_IPV4 = re.compile(r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.])")
+
+
+def _window_hosts(lines: list[str]) -> list[str]:
+    found: set[str] = set()
+    for ln in lines:
+        found |= {m.group(1).strip("[]") for m in _URL_HOST.finditer(ln)}
+        for m in _IPV4.finditer(ln):
+            try:
+                ipaddress.ip_address(m.group(0))
+                found.add(m.group(0))
+            except ValueError:
+                continue
+    return sorted((h for h in found if len(h) >= 3 and not h.isdigit()), key=len, reverse=True)
+
+
 def redact(grounding: Grounding) -> tuple[Grounding, dict[str, str]]:
     """Identifying values replaced by tokens in every item, command and allowed command: host names and addresses
     (IPv4 and IPv6) -> HOST_n, asset / source / DN names and non-network locations -> NAME_n, ARNs ->
     arn:aws:<service>:<region>:ACCOUNT_n:<resource type>/RESOURCE_n, key aliases -> alias/ALIAS_n, account ids ->
     ACCOUNT_n, e-mail addresses -> EMAIL_n. The returned map restores them after validation."""
+    red, back, _window = redact_fix(grounding, None)
+    return red, back
+
+
+def redact_fix(grounding: Grounding, window: dict[str, Any] | None) -> tuple[Grounding, dict[str, str],
+                                                                               dict[str, Any] | None]:
+    """``redact`` over the grounding AND the code window sent with a fix request (the same tokens in both): the
+    window's URL hosts and IPv4 / IPv6 addresses, e-mail addresses, account ids, ARNs and the grounding's own hosts
+    and names become tokens; the fix is validated against the redacted window and ``restore`` puts them back."""
     mapping: dict[str, str] = {}
     counters: Counter[str] = Counter()
 
@@ -93,7 +120,8 @@ def redact(grounding: Grounding) -> tuple[Grounding, dict[str, str]]:
 
     texts = [i.text for i in grounding.items] + [i.command for i in grounding.items if i.command] + \
         list(grounding.commands)
-    blob = "\n".join(texts)
+    window_lines = list(window["lines"]) if window else []
+    blob = "\n".join(texts + window_lines)
     arns: dict[str, str] = {}
     for m in _ARN.finditer(blob):
         if m.group(0) in arns:
@@ -103,7 +131,7 @@ def redact(grounding: Grounding) -> tuple[Grounding, dict[str, str]]:
         acct = token(account, "ACCOUNT") if account else ""
         counters["RESOURCE"] += 1
         arns[m.group(0)] = f"arn:aws:{service}:{region}:{acct}:{rtype}/RESOURCE_{counters['RESOURCE']}"
-    for host in grounding.hosts:
+    for host in list(grounding.hosts) + _window_hosts(window_lines):
         token(host, "HOST")
     for name in grounding.names:
         if name not in mapping and not _ARN.fullmatch(name):
@@ -137,7 +165,8 @@ def redact(grounding: Grounding) -> tuple[Grounding, dict[str, str]]:
     red = Grounding(subject_key=grounding.subject_key, items=items, baseline=grounding.baseline,
                     commands={sub(c) or "" for c in grounding.commands}, urls=set(grounding.urls), hosts=[],
                     allowed_ids=set(grounding.allowed_ids), names=[])
-    return red, {t: o for o, t in ordered}
+    red_window = {**window, "lines": [sub(ln) or "" for ln in window_lines]} if window else window
+    return red, {t: o for o, t in ordered}, red_window
 
 
 def restore(value: Any, back: dict[str, str]) -> Any:
@@ -209,10 +238,12 @@ async def assist(cfg: AiConfig, grounding: Grounding, *, mode: str, question: st
         result, outcome = cached, "cache_hit"
     else:
         fitted = grounding.trimmed(P.MAX_PROMPT_CHARS)
-        sent, back = redact(fitted) if cfg.redact_hosts else (fitted, {})
+        # with redaction on, the code window is redacted too (same tokens): the fix is checked against what the
+        # model saw and restored afterwards
+        sent, back, sent_window = redact_fix(fitted, window) if cfg.redact_hosts else (fitted, {}, window)
         if mode == "fix":
             # the rewritten window needs more room than an explanation
-            messages = FIX.build(sent, window)
+            messages = FIX.build(sent, sent_window)
             call_cfg = dataclasses.replace(cfg, max_tokens=max(cfg.max_tokens, FIX.FIX_MAX_TOKENS))
         else:
             messages = P.build(sent, mode, question)
@@ -255,7 +286,7 @@ async def assist(cfg: AiConfig, grounding: Grounding, *, mode: str, question: st
             result = {"status": "error", "summary": "", "steps": [], "commands": [], "caveats": [ERROR_TEXT],
                       "baseline": False, "dropped_commands": 0}
         if raw is not None:
-            checked = FIX.validate(raw, sent, window) if mode == "fix" else V.validate(raw, sent)
+            checked = FIX.validate(raw, sent, sent_window) if mode == "fix" else V.validate(raw, sent)
             if checked["status"] == "withheld":
                 checked = {**checked, **V.baseline(grounding)}  # baseline from the real (unredacted) items
                 outcome = {V.WITHHELD_UNKNOWN_ID: "withheld_unknown_id", V.WITHHELD_FORMAT: "withheld_format",
