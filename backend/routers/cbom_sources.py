@@ -85,7 +85,8 @@ from backend.utilities.cbom_sources import schedules as SCHED
 from backend.utilities.cbom_sources.classify import ASSET_TYPES
 from backend.utilities.cbom_sources.kinds import (KINDS, METADATA_FIELDS, credential_target_problem, ct_discovery_enabled,
                                                 validate_secret_value)
-from backend.utilities.cbom_sources.planning import RATES_C, credits, node_status, plan_run, source_targets
+from backend.utilities.cbom_sources.planning import RATES_C, credits, network_sweep_totals, node_status, plan_run, \
+    source_targets
 from backend.utilities.cbom_sources.schemas import (
     AreaUpdate,
     EstimateBody,
@@ -100,6 +101,7 @@ from backend.utilities.cbom_sources.schemas import (
     VendorUpdate,
 )
 from backend.utilities.cbom_sources.serialize import (
+    last_collects,
     public_area,
     public_job,
     public_node,
@@ -619,9 +621,15 @@ def _list_sources(engine, team_id: int, kind: str | None, group: str | None) -> 
         if group:
             rows = [r for r in rows if KINDS.get(r.kind) and KINDS[r.kind].group == group]
         nodes = {n.id: n for n in session.exec(select(CbomScanNode).where(CbomScanNode.team_id == team_id)).all()}
-        return {"server_time": iso_z(now),
-                "sources": [public_source(r, settings, nodes.get(r.node_id), now) for r in rows],
-                "limits": {"sources": SOURCE_CAP.usage(session, team_id)}}
+        collects = last_collects(session, team_id, [r.id for r in rows])
+        out = {"server_time": iso_z(now),
+               "sources": [public_source(r, settings, nodes.get(r.node_id), now, collects.get(r.id)) for r in rows],
+               "limits": {"sources": SOURCE_CAP.usage(session, team_id)}}
+        if group in (None, "network") and kind in (None, "network_range"):
+            ranges = session.exec(select(CbomCollectionSource).where(
+                CbomCollectionSource.team_id == team_id, CbomCollectionSource.kind == "network_range")).all()
+            out["network_totals"] = network_sweep_totals(list(ranges), settings)  # N7: unique, enabled ranges only
+        return out
 
 
 @router.get(BASE + "/items", dependencies=READ, summary="List sources")
@@ -639,7 +647,8 @@ def _get_source(engine, team_id: int, source_id: int) -> dict:
         source = _get_owned(session, CbomCollectionSource, source_id, team_id, "Source")
         settings = get_or_create_settings(session, team_id)
         node = session.get(CbomScanNode, source.node_id) if source.node_id else None
-        return {"source": public_source(source, settings, node, now), "server_time": iso_z(now)}
+        collect = last_collects(session, team_id, [source.id]).get(source.id)
+        return {"source": public_source(source, settings, node, now, collect), "server_time": iso_z(now)}
 
 
 @router.get(BASE + "/items/{source_id}", dependencies=READ, summary="Get a source")
@@ -850,13 +859,25 @@ def _test_aws(engine, team_id: int, user_id: int, source_id: int) -> dict:
         settings = get_or_create_settings(session, team_id)
         cfg = dict(source.config or {})
         version, external_id = J.connection_version(source), settings.aws_external_id
+        previous = dict(source.last_test_result or {})
     result = validate_aws_role(team_id, cfg.get("role_arn", ""), external_id, cfg.get("regions") or [], cfg.get("scope", "account"),
                                lambda_cmk=bool(cfg.get("decrypt_lambda_cmk")), read_glue=bool(cfg.get("read_glue")))
     now = utcnow()
     passed = sum(1 for c in result["checks"] if c["status"] == "pass")
+    stored = {k: v for k, v in result.items() if k in ("checks", "member_accounts", "status")}
+    if isinstance(result.get("member_accounts"), int):  # F1: what each run of this organisation is charged, and its change
+        from backend.utilities.cbom_sources.planning import org_estimate
+
+        before = previous.get("estimate") or ({"accounts": previous["member_accounts"]}
+                                              if isinstance(previous.get("member_accounts"), int) else None)
+        stored["estimate"] = org_estimate(result["member_accounts"], before, now)
+        if (stored["estimate"].get("changed_at") or "") == now.replace(microsecond=0).isoformat() + "Z":
+            log("aws org estimate changed", team=team_id, source=source_id, accounts=result["member_accounts"],
+                previous=stored["estimate"]["changed_from"]["accounts"], by=user_id)
+    elif isinstance(previous.get("estimate"), dict):  # a failed validation keeps the last estimate and its change
+        stored["estimate"] = previous["estimate"]
     _save_live_test(engine, team_id, user_id, source_id, version, "source.validate", now, result["status"],
-                    f"{passed} of {len(result['checks'])} checks passed",
-                    {k: v for k, v in result.items() if k in ("checks", "member_accounts", "status")})
+                    f"{passed} of {len(result['checks'])} checks passed", stored)
     lab = result.get("lab_mode")
     if lab:  # lab mode (lab_mode.py): every use is audited and logged
         with Session(engine) as session:
@@ -865,12 +886,13 @@ def _test_aws(engine, team_id: int, user_id: int, source_id: int) -> dict:
             session.commit()
     log("aws validated", team=team_id, source=source_id, status=result["status"], by=user_id, lab_mode=lab)
     return {"status": result["status"], "checks": result["checks"], "member_accounts": result.get("member_accounts"),
-            "validated_at": iso_z(now), **({"lab_mode": lab} if lab else {})}
+            "validated_at": iso_z(now), **({"lab_mode": lab} if lab else {}),
+            **({"estimate": stored["estimate"]} if "estimate" in stored else {})}
 
 
 def _test_idp(engine, team_id: int, user_id: int, source_id: int) -> dict:
     """Read the IdP's public metadata now (no job): it is what collection will read."""
-    from backend.utilities.cbom_sources.idp_collect import collect_idp
+    from backend.utilities.cbom_sources.idp_collect import collect_idp, idp_test_verdict
 
     with Session(engine) as session:
         source = _get_owned(session, CbomCollectionSource, source_id, team_id, "Source")
@@ -878,10 +900,8 @@ def _test_idp(engine, team_id: int, user_id: int, source_id: int) -> dict:
         cfg, version, name = dict(source.config or {}), J.connection_version(source), source.name
     out = collect_idp(cfg, name)
     keys = sum(1 for a in out["assets"] if a["type"] == "signing_key")
-    ok = out["counts"]["ok"]
-    status = "passed" if ok == out["counts"]["total"] and ok else ("partial" if ok else "failed")
-    summary = (f"Read {ok} of {out['counts']['total']} metadata documents; {keys} signing key(s) found"
-               if ok else "Could not read the metadata: " + "; ".join(t["error"] or "" for t in out["targets"])[:400])
+    # an unreadable certificate is never "passed, 0 keys": the verdict names the parser's error (C10b)
+    status, summary = idp_test_verdict(out)
     now = utcnow()
     _save_live_test(engine, team_id, user_id, source_id, version, "source.test", now, status, summary,
                     {"targets": out["targets"], "signing_keys": keys})
@@ -1623,8 +1643,13 @@ FIX_VALUE = "^(configurable|code-fixed|vendor-fixed|hardware-fixed|unknown|none)
 
 def _agility_baseline(engine, team_id: int, what: str, params: dict) -> dict:
     with Session(engine) as session:
+        if what == "history":
+            from backend.utilities.cbom_sources import agility_store as AGILITY_STORE
+
+            return {"items": AGILITY_STORE.history(session, team_id, **params)}
         rollup = AGILITY_ROLLUP.cached(session, team_id)
-        return rollup.summary(**params) if what == "summary" else rollup.subjects_page(**params)
+        session.commit()  # the estate store's stale classes healed on the way (agility_store.heal)
+        return rollup.summary(**params) if what == "summary" else rollup.subjects_page(**params, session=session)
 
 
 def _cursor_or_400(after: str | None) -> None:
@@ -1663,6 +1688,15 @@ async def agility_subjects(team_id: TeamId,
     return _ok(await _run("agility subjects", team_id, _agility_baseline, engine, team_id, "subjects",
                           {"fix_class": fix_class, "system": system, "excl_pq": view == "excl_pq", "after": after,
                            "limit": limit}))
+
+
+@router.get("/{team_id}/cbom/agility/history", dependencies=READ,
+            summary="The team's crypto-agility baseline written at each run (newest first, CB-25)")
+async def agility_history(team_id: TeamId, limit: int = Query(default=50, ge=1, le=500),
+                          Authorization: AuthHeader = None):
+    engine, _user = await authorize(team_id, Authorization)
+    return _ok(await _run("agility history", team_id, _agility_baseline, engine, team_id, "history",
+                          {"limit": limit}))
 
 
 def _job_assets(engine, team_id: int, job_id: int, params: dict) -> dict:
