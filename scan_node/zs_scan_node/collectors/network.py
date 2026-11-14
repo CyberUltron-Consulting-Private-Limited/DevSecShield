@@ -43,7 +43,7 @@ from zs_scan_node import tlsprobe as T
 from zs_scan_node.certparse import cert_facts, load_certs
 from zs_scan_node.jobctx import MAX_FACTS_BYTES, JobContext, LeaseLost, register_asset_types
 from zs_scan_node import netutil
-from zs_scan_node.netutil import Blocked, checked_ip, iter_line_ips, node_limiter
+from zs_scan_node.netutil import Blocked, Unresolved, checked_ip, iter_line_ips, node_limiter
 
 TCP_PROTOCOLS = {"tls", "starttls-ldap", "starttls-smtp", "starttls-imap", "starttls-postgres", "starttls-mysql",
                  "tds", "ssh", "rdp", "opcua", "modbus", "modbus-tls"}
@@ -135,6 +135,22 @@ def _resolve_all(names: list[str], budget_s: float) -> tuple[dict[str, set[str]]
     return out, [n for n in names if n not in out]
 
 
+def _sni_for(scope: dict, ip: str, cache: dict, never) -> list[str]:
+    """SNI names from the team settings that resolve to ``ip``.  A name that is on the never-scan list, or that has
+    any address on it, is never sent (the rule for names, as everywhere else)."""
+    names = scope.get("sni_hostnames") or []
+    out = []
+    for name in names[:200]:
+        if name not in cache:  # only matched against the address being scanned, never connected to
+            try:
+                cache[name] = set(netutil.resolve(name))
+            except OSError:
+                cache[name] = set()
+        if ip in cache[name] and not never.blocks_host(name) and not any(never.blocks_ip(a) for a in cache[name]):
+            out.append(name)
+    return out
+
+
 def _tcp(ip: str, port: int, never, timeout: float) -> socket.socket:
     """A TCP connection through the network gate, with tlsprobe's error codes."""
     try:
@@ -174,6 +190,8 @@ class NetworkScan:
             if self._sni_order is None:
                 names, over = _sni_names(self.scope)
                 self._sni_addresses, unresolved = _resolve_all(names, SNI_DNS_BUDGET_S)
+                for name in unresolved:  # matches no address (and is never looked up again in this job)
+                    self._sni_addresses[name] = set()
                 self._sni_order = names
                 parts = []
                 if over:
@@ -186,13 +204,8 @@ class NetworkScan:
                     # job-wide: certificates read with these names before are "not read" on every endpoint, once
                     self.ctx.coverage("", "SNI names left out", "truncated", self.sni_left_out[:900], once=True,
                                       scope=["#sni="], incomplete=False)
-        never = self.ctx.never_scan
-        out = []
-        for name in self._sni_order:
-            addresses = self._sni_addresses.get(name) or set()
-            if ip in addresses and not never.blocks_host(name) and not any(never.blocks_ip(a) for a in addresses):
-                out.append(name)
-        return out
+        # the one rule for names (#32): a name on the never-scan list, or with any address on it, is never sent
+        return _sni_for({"sni_hostnames": self._sni_order}, ip, self._sni_addresses, self.ctx.never_scan)
 
     # --------------------------------------------------------------- guarded connection helpers
     def _gate(self, ip: str) -> str | None:
@@ -915,8 +928,10 @@ def run_network(ctx: JobContext, scope: dict, discovery_only: bool = False) -> s
         if stop:
             ctx.outcome(ip, stop, started=started)
             return 0
-        if ctx.never_scan.blocks_ip(ip):
-            ctx.outcome(ip, "skipped_never_scan", started=started)
+        entry = ctx.never_scan.match_ip(ip)
+        if entry is not None:  # a held address says why (a listed host name the node could not resolve)
+            ctx.outcome(ip, "skipped_never_scan", str(Blocked(ip, entry=entry)) if isinstance(entry, Unresolved) else None,
+                        started=started)
             return 0
         skip, states = sweep(ip)
         if skip:
@@ -1038,8 +1053,12 @@ def test_range(ctx: JobContext, scope: dict) -> str:
     scan = NetworkScan(ctx, scope)
     ports = [p for p in _ports(scope) if p["protocol"] in TCP_PROTOCOLS][:4] or [{"port": 443, "protocol": "tls", "label": ""}]
     picked = []
+    held = None  # why an address was skipped, when it was a listed host name the node could not resolve
     for ip, _mode in _addresses(ctx, _scope_ranges(scope)):
-        if ctx.never_scan.blocks_ip(ip):
+        entry = ctx.never_scan.match_ip(ip)
+        if entry is not None:
+            if isinstance(entry, Unresolved):
+                held = entry
             continue
         picked.append(ip)
         if len(picked) >= 5:
@@ -1069,7 +1088,8 @@ def test_range(ctx: JobContext, scope: dict) -> str:
         ctx.outcome(ip, "ok" if answered else "unreachable")
     if not picked:
         ctx.samples.append({"target": "-", "status": "skipped_never_scan", "reachable": None, "login": None,
-                            "privilege": None, "note": "every address is on the never-scan list"})
+                            "privilege": None, "note": str(Blocked("every address", entry=held)) if held else
+                            "every address is on the never-scan list"})
     return f"{sum(1 for s in ctx.samples if s['status'] == 'ready')} of {len(picked)} sample addresses answered"
 
 

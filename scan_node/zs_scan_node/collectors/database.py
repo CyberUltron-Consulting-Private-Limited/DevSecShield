@@ -25,7 +25,7 @@ from zs_scan_node.certparse import cert_facts, load_certs
 from zs_scan_node.collectors import ConfigError
 from zs_scan_node import netutil
 from zs_scan_node.jobctx import MAX_FACTS_BYTES, JobContext
-from zs_scan_node.netutil import Blocked, Target, checked_ip, resolve_checked
+from zs_scan_node.netutil import Blocked, Target, checked_ip, checked_target, is_ip, resolve_checked
 
 SUPPORTED = ("postgres", "mysql", "redis", "mongodb", "mssql", "oracle")
 DEFAULT_PORTS = {"postgres": 5432, "mysql": 3306, "redis": 6379, "mongodb": 27017, "mssql": 1433, "oracle": 1521}
@@ -114,7 +114,7 @@ def _server_tls(ctx: JobContext, target: Target, port: int, engine: str, scope: 
     every protocol version, every suite per version, the TLS 1.3 groups (CB-12), each through the engine's own TLS
     upgrade (PostgreSQL SSLRequest) and the node's rate limiter.  MySQL is enumerated after its login instead
     (``mysql_accepted_tls``): it counts every unfinished connection against ``max_connect_errors``."""
-    checked_ip(target.ip, ctx.never_scan)
+    checked_target(target, ctx.never_scan)
     proto = {"postgres": "starttls-postgres", "mysql": "starttls-mysql"}.get(engine, "tls")
     limiter = _limiter(scope)
     if not limiter.acquire(ctx.cancel, ctx.deadline):
@@ -204,7 +204,7 @@ def _accepted_tls(ctx: JobContext, target: Target, port: int, proto: str, versio
                 dropped.append("the MySQL login that resets max_connect_errors failed")
                 raise E.Stop(dropped[0])
             since_reset[0] = 0
-        checked_ip(target.ip, ctx.never_scan)  # the list can change while the job runs
+        checked_target(target, ctx.never_scan)  # the list can change while the job runs (every address of a name)
         if not limiter.acquire(ctx.cancel, min(deadline, ctx.deadline)):
             raise E.Stop("time cap")
         used[0] += 1
@@ -323,7 +323,7 @@ def _enumerate(send, version: str | None, code: int | None, budget: int, used: l
 def _postgres(ctx, target, config, password, ca: _CaFile) -> int:
     import psycopg
 
-    ip = checked_ip(target.ip, ctx.never_scan)  # the network gate, again just before the driver connects
+    ip = checked_target(target, ctx.never_scan)  # the network gate, again just before the driver connects
     port = int(config.get("port") or 5432)
     require_tls = bool(config.get("require_tls", True))
     verified = bool(ca.path) and require_tls  # only verify-ca proves the server; "prefer" never checks the CA
@@ -545,7 +545,7 @@ def _strict_mysql():
 
 
 def _mysql_connect(ctx, target, config, password, ca: _CaFile, tls: bool):
-    ip = checked_ip(target.ip, ctx.never_scan)
+    ip = checked_target(target, ctx.never_scan)
     port = int(config.get("port") or 3306)
     ssl_arg = None
     if tls:
@@ -638,7 +638,7 @@ def _mysql(ctx, target, config, password, ca: _CaFile, tls: bool, seen: dict | N
 def _redis(ctx, target, config, password, ca: _CaFile, tls: bool) -> int:
     import redis
 
-    ip = checked_ip(target.ip, ctx.never_scan)
+    ip = checked_target(target, ctx.never_scan)
     port = int(config.get("port") or 6379)
     kwargs: dict[str, Any] = dict(host=ip, port=port, socket_timeout=10, socket_connect_timeout=5,
                                   username=config.get("login") or None, password=password or None)
@@ -689,7 +689,7 @@ def _redis(ctx, target, config, password, ca: _CaFile, tls: bool) -> int:
 def _mongodb(ctx, target, config, password, ca: _CaFile, tls: bool) -> int:
     import pymongo
 
-    ip = checked_ip(target.ip, ctx.never_scan)
+    ip = checked_target(target, ctx.never_scan)
     port = int(config.get("port") or 27017)
     kwargs: dict[str, Any] = dict(host=ip, port=port, directConnection=True, serverSelectionTimeoutMS=8000,
                                   connectTimeoutMS=5000, socketTimeoutMS=15000, tls=tls)
@@ -744,9 +744,11 @@ def _one(ctx: JobContext, config: dict, secrets: dict, scope: dict | None = None
     host = str(config.get("host") or "").strip()
     label = host.strip("[]").lower().rstrip(".")  # an IPv6 literal may come in brackets
     try:  # the network gate: resolve once, apply never-scan, connect only to the checked address
-        target = Target(label, resolve_checked(host, ctx.never_scan)[0])
-    except Blocked:
-        return Target(label, None), "skipped_never_scan", None, 0
+        addresses = resolve_checked(host, ctx.never_scan)
+        # a name keeps every address it resolved to: each connection re-checks all of them (checked_target)
+        target = Target(label, addresses[0], addresses=() if is_ip(label) else tuple(addresses))
+    except Blocked as exc:
+        return Target(label, None), "skipped_never_scan", str(exc), 0
     except OSError as exc:
         return Target(label, None), "unreachable", f"could not resolve {label}: {exc.__class__.__name__}", 0
     port = int(config.get("port") or DEFAULT_PORTS[engine])
@@ -757,9 +759,9 @@ def _one(ctx: JobContext, config: dict, secrets: dict, scope: dict | None = None
                                               _where(target)))
     require_tls = bool(config.get("require_tls", True))
     try:
-        tls, pre = _tls_offered(target.ip, port, engine, ctx.never_scan)
-    except Blocked:
-        return target, "skipped_never_scan", None, 0
+        tls, pre = _tls_offered(checked_target(target, ctx.never_scan), port, engine, ctx.never_scan)
+    except Blocked as exc:
+        return target, "skipped_never_scan", str(exc), 0
     except T.ProbeError as exc:
         return target, exc.code, exc.detail, 0
     n = 0
@@ -769,8 +771,8 @@ def _one(ctx: JobContext, config: dict, secrets: dict, scope: dict | None = None
     if tls:
         try:
             hs, n = _server_tls(ctx, target, port, engine, scope, enumerate_now=not mysql_later)
-        except Blocked:
-            return target, "skipped_never_scan", None, 0
+        except Blocked as exc:
+            return target, "skipped_never_scan", str(exc), 0
         except DbFail as fail:
             return target, fail.status, fail.error, 0
         tls_facts.update(hs)
@@ -831,8 +833,8 @@ def _login_and_read(ctx: JobContext, target: Target, config: dict, secrets: dict
             n += _mongodb(ctx, target, config, password, ca, tls)
     except DbFail as fail:
         return fail.status, fail.error, n
-    except Blocked:  # added to never-scan while this target was being read
-        return "skipped_never_scan", None, n
+    except Blocked as exc:  # added to never-scan while this target was being read
+        return "skipped_never_scan", str(exc), n
     finally:
         ca.close()
     return "ok", None, n

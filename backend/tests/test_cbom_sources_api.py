@@ -133,10 +133,12 @@ def enroll_node(api, team=1, who="alice", name="dc-mumbai-01"):
 def test_target_counting_rules():
     p = T.parse_targets(["ip", "10.0.0.0/24", "10.0.0.128/25", "10.0.1.1-10.0.1.10", "Host.Example.COM.", "host.example.com",
                          "::ffff:10.0.2.1", "# comment", ""])
-    assert T.size(p.intervals) == 256 + 10 + 1
+    # what the scan node scans: the /24's 254 host addresses (not its network and broadcast addresses; the /25 is
+    # inside it), the 10 of the range, and the mapped address as its IPv4 address
+    assert T.size(p.intervals) == 254 + 10 + 1
     assert p.hostnames == ["host.example.com"]
     excl = T.parse_exclusions(["10.0.0.0/26", "host.example.com"])
-    assert T.count_in_scope(p, excl) == 256 + 10 + 1 - 64
+    assert T.count_in_scope(p, excl) == 254 + 10 + 1 - 63
     assert T.count_blocks([(4, 0x0A000080, 0x0A0000FF), (4, 0x0A000100, 0x0A00017F)]) == 2
     assert T.parse_targets(["10.0.0.0/31"]).intervals[0][2] - T.parse_targets(["10.0.0.0/31"]).intervals[0][1] == 1
     with pytest.raises(T.TargetError, match="did you mean 10.0.0.0/24"):
@@ -204,7 +206,7 @@ def test_secrets_are_write_only_and_encrypted(api, world):
     r = api("POST", "/1/cbom/sources/items", json=linux_body(node_id=node_id))
     assert r.status_code == 201, r.text
     src = r.json()["source"]
-    assert src["secrets_set"] == ["password"] and src["target_count"] == 9
+    assert src["secrets_set"] == ["password"] and src["target_count"] == 7  # the /29's 6 hosts + 1 name
     api("GET", "/1/cbom/sources/items")
     api("GET", f"/1/cbom/sources/items/{src['id']}")
     api("GET", "/1/cbom/sources/overview")
@@ -363,23 +365,23 @@ def test_run_charges_once_refunds_on_cancel(api, world):
     node_id, _t, _ = enroll_node(api)
     src = api("POST", "/1/cbom/sources/items", json=linux_body(node_id=node_id)).json()["source"]
     est = api("POST", "/1/cbom/sources/estimate", json={"include": {"servers": True}}).json()
-    assert est["total_credits"] == 1.8  # 9 targets x 0.2
+    assert est["total_credits"] == 1.4  # 7 targets x 0.2 (the /29's 6 host addresses + 1 name: what the node scans)
     body = {"include": {"servers": True}, "client_request_id": "run-req-000001", "expected_credits": 1.0, "scan_id": 77}
     assert api("POST", "/1/cbom/sources/runs", json=body).status_code == 409
-    body["expected_credits"] = 1.8
+    body["expected_credits"] = 1.4
     first = api("POST", "/1/cbom/sources/runs", json=body)
     assert first.status_code == 201, first.text
     replay = api("POST", "/1/cbom/sources/runs", json=body)
     assert replay.status_code == 200 and replay.json()["replayed"] is True
     with Session(engine) as s:
-        assert round(s.get(Team, 1).credit_balance, 2) == 98.2
+        assert round(s.get(Team, 1).credit_balance, 2) == 98.6
     again = api("POST", "/1/cbom/sources/runs", json={**body, "client_request_id": "run-req-000002"})
     assert again.status_code == 409
     run_id = first.json()["run"]["id"]
     assert api("POST", f"/1/cbom/sources/runs/{run_id}/cancel", "bob").status_code == 400
     c1 = api("POST", f"/1/cbom/sources/runs/{run_id}/cancel").json()
     c2 = api("POST", f"/1/cbom/sources/runs/{run_id}/cancel").json()
-    assert c1["refunded"] == 1.8 and c2["refunded"] == 0 and c1["run"]["status"] == "cancelled"
+    assert c1["refunded"] == 1.4 and c2["refunded"] == 0 and c1["run"]["status"] == "cancelled"
     with Session(engine) as s:
         assert round(s.get(Team, 1).credit_balance, 2) == 100.0
     assert src["id"]
@@ -391,7 +393,7 @@ def test_insufficient_credits_creates_nothing(api, world):
     node_id, _t, _ = enroll_node(api, team=2, who="carol")
     api("POST", "/2/cbom/sources/items", "carol", json=linux_body(node_id=node_id))
     r = api("POST", "/2/cbom/sources/runs", "carol", json={"include": {"servers": True}, "client_request_id": "poor-team-001"})
-    assert r.status_code == 400 and "needs 1.8" in r.json()["detail"]
+    assert r.status_code == 400 and "needs 1.4" in r.json()["detail"]
     with Session(engine) as s:
         assert s.exec(select(CbomCollectionRun)).all() == []
         assert s.get(Team, 2).credit_balance == 0.5
@@ -462,6 +464,68 @@ def test_settings_permissions_and_stop_all(api, world):
     assert api("POST", "/1/cbom/sources/settings/stop-all", "bob", json={"on": True}).status_code == 200
     assert api("POST", "/1/cbom/sources/settings/stop-all", "bob", json={"on": False}).status_code == 400
     assert api("POST", "/1/cbom/sources/settings/stop-all", json={"on": False}).json()["settings"]["stop_all_network"] is False
+
+
+def test_the_team_never_scan_list_takes_addresses_and_ranges_only(api, world):
+    """The UI's team list refuses host names (NetworkTab rangeError); the API must too. On the node a listed name that
+    does not resolve holds every target of every job of the team, so names belong in a server source's own list."""
+    for name in ("printer.corp.invalid", "Web-01.Corp.", "printer", "localhost", "bücher.corp", "10.0.0.0-24"):
+        r = api("PATCH", "/1/cbom/sources/settings", json={"network_exclusions": [
+            {"cidr": "10.20.99.0/24", "reason": "OT plant"}, {"cidr": f" {name} ", "reason": "printer"}]})
+        assert r.status_code == 422, (name, r.text)
+        # the whole detail, word for word, with the entry as typed (trimmed, not normalized, not quoted): the UI shows
+        # the same words for a typed entry (teamNeverScan.ts; test_never_scan_node_agreement compares the templates)
+        assert r.json()["detail"] == (
+            f"network_exclusions: {name} is not an address or range (it reads as a host name); the team never-scan "
+            "list takes addresses and ranges only. List host names in a server source's own Never scan field")
+        assert r.json()["detail"] == "network_exclusions: " + T.HOST_NAME_NOT_ALLOWED.format(entry=name)
+    got = api("GET", "/1/cbom/sources/settings").json()["settings"]
+    assert got["network_exclusions"] == []  # nothing of the refused request was stored
+    ok = api("PATCH", "/1/cbom/sources/settings", json={"network_exclusions": [
+        {"cidr": "10.20.99.0/24", "reason": "OT plant"}, {"cidr": "fd00::1-fd00::5", "reason": "v6"},
+        {"cidr": "fe80::1%br-ab12", "reason": "bridge"}]})
+    assert ok.status_code == 200, ok.text
+    assert len(ok.json()["settings"]["network_exclusions"]) == 3
+
+
+def test_a_loopback_name_in_a_source_never_scan_list_is_kept_and_counted_as_loopback_only(api, world):
+    """Re-review 5879769432 (netutil.py:53): a server source may list localhost (or another name that is loopback by
+    definition).  The API keeps it, and the count, the credits and the connection-test samples leave out exactly
+    what the node leaves out for it: the loopback addresses, and nothing else (the node never holds on it)."""
+    node_id, _t, _ = enroll_node(api)
+    body = linux_body(node_id=node_id, targets=["127.0.0.0/29", "10.20.0.0/30", "::1", "localhost", "app-01.bank.local"],
+                      exclusions=["LOCALHOST.", "10.20.0.2", "db.localhost"])
+    r = api("POST", "/1/cbom/sources/items", json=body)
+    assert r.status_code == 201, r.text
+    src = r.json()["source"]
+    assert src["config"]["exclusions"] == ["localhost", "10.20.0.2", "db.localhost"]
+    assert src["target_count"] == 2  # 10.20.0.1 and app-01.bank.local: loopback (and the name localhost) left out
+    count = api("POST", "/1/cbom/sources/targets/count", json={
+        "targets": ["127.0.0.0/29", "10.20.0.0/30", "64:ff9b::7f00:1", "::ffff:127.0.0.9"], "exclusions": ["localhost"]}).json()
+    assert (count["valid"], count["count"], count["samples"]) == (True, 2, ["10.20.0.1", "10.20.0.2"])
+    other = api("POST", "/1/cbom/sources/targets/count", json={
+        "targets": ["127.0.0.0/29"], "exclusions": ["localhost.corp.internal"]}).json()
+    assert other["count"] == 6  # any other name: matched by the node only, by what it resolves to there
+
+
+@pytest.mark.parametrize("cidr, team, units", [
+    ("10.0.0.0/29", [], 6),  # the sweep visits the 6 host addresses, not the network and broadcast addresses
+    ("10.0.0.0/29", ["10.0.0.1"], 5),
+    ("10.0.0.0/31", [], 2),
+    ("0.0.0.0/29", [], 0),  # 0.0.0.0/8 reaches the node itself: never swept
+    ("fd00::/125", ["fd00::1-fd00::5"], 3),
+])
+def test_network_range_units_are_the_addresses_the_node_sweeps(api, world, cidr, team, units):
+    node_id, _t, _ = enroll_node(api)
+    r = api("POST", "/1/cbom/sources/items", json={"kind": "network_range", "name": "range", "node_id": node_id,
+                                                  "config": {"cidr": cidr, "mode": "full"}})
+    assert r.status_code == 201, r.text
+    if team:
+        assert api("PATCH", "/1/cbom/sources/settings", json={"network_exclusions": [
+            {"cidr": c, "reason": "x"} for c in team]}).status_code == 200
+    plan = api("POST", "/1/cbom/sources/estimate", json={"include": {"network": True}}).json()
+    item = next(i for i in plan["items"] if i["kind"] == "network_range")
+    assert (item["units"], item["unit"]) == (units, "addresses")
 
 
 def test_network_run_needs_soc_ack_and_respects_stop(api, world):

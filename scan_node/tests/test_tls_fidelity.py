@@ -665,11 +665,15 @@ def test_other_sni_names_keep_their_reserve_when_enumeration_would_use_the_budge
 
 
 def test_never_scan_names_are_never_sent(monkeypatch):
-    monkeypatch.setattr(netutil, "resolve", lambda name, *a, **k: ["10.0.0.7"])
+    dns = {"secret.test": ["10.0.0.9"], "ok.test": ["10.0.0.7"]}
+    monkeypatch.setattr(netutil, "resolve", lambda name, *a, **k: list(dns.get(name, [])))
+    never = NeverScan(["secret.test"])
+    assert never.match_ip("10.0.0.9")  # the listed name's own answer is blocked (#32)
+    dns["secret.test"] = ["10.0.0.7"]  # it moved to the scanned address: the SNI lookup sees the new answer
     ctx = JobContext(job_id=1, attempt=1, run_id=None, kind="collect", source_kind="network_range", scrubber=Scrubber(),
-                     never_scan=NeverScan(["secret.test"]), deadline=time.monotonic() + 60)
+                     never_scan=never, deadline=time.monotonic() + 60)
     scan = N.NetworkScan(ctx, {"sni_hostnames": ["secret.test", "ok.test"]})
-    assert scan.sni_names_for("10.0.0.7") == ["ok.test"]
+    assert scan.sni_names_for("10.0.0.7") == ["ok.test"]  # the listed name is never sent, even resolved here
 
 
 # ----------------------------------------------------------------------------- PostgreSQL TLS versions

@@ -185,9 +185,61 @@ the CA server's own template cache).
 
 **Network gate.** Every connection a collector makes to a target goes through `netutil`: `resolve_checked()`
 resolves once and applies the never-scan list, `checked_ip()` re-checks right before a driver connects,
-`connect()` opens the socket to the checked address and `http_client()` pins an HTTP client to it (Host, SNI and
-the certificate name stay the host name). `tests/test_network_gate.py` fails when a collector module opens
+`checked_target()` re-checks a target against its name and every address it resolved to, `connect()` opens the
+socket to the checked address, and `http_client()` (httpx) and `requests_adapter()` (requests, for WinRM and AD CS)
+pin an HTTP client to it: Host, SNI and the certificate name stay the host name, the name is not resolved again, and
+no proxy is used, not even one from the environment. `tests/test_network_gate.py` fails when a collector module opens
 sockets or HTTP clients any other way, so new collectors must use it.
+
+**Never-scan rule.**
+- *Entries* may be addresses, CIDRs, `a-b` ranges (IPv4 or IPv6) or host names. An IPv4-mapped entry
+  (`::ffff:10.0.0.5`) counts as its IPv4 address. A zone on an IPv6 entry (`fe80::1%br-ab12`) names an interface,
+  not a host: the entry covers that address on every interface.
+- *A host name entry* covers the name and every address it resolves to from the scan node. One resolver per node
+  process looks the listed names up on its own threads (at most 8 lookups at once, never on a job's claim or watcher
+  thread): when a job starts listing a name (jobs starting within 5 s of each other share one lookup), and the job's
+  first target waits for that lookup, so it is checked against an answer looked up for the job (when DNS is so slow
+  that the lookup has not finished after 15 s, against the latest answer the node has); again whenever the list
+  changes; then every 5 minutes (every
+  minute while a name does not resolve). A host listed by name is therefore not reached by its short name, a CNAME,
+  a target written as its address, or a range sweep either. Host name entries belong in a source's own never-scan
+  list: the team-level list takes addresses and ranges only (the API refuses a host name there with a 422).
+- *Fail closed:* while a listed host name has no known address (its lookup is pending, hangs, fails, answers that
+  the name does not exist, or answers only addresses no remote host has: `0.0.0.0/8`, `::`, multicast, broadcast
+  or loopback `127.0.0.0/8` and `::1`, in any IPv4-mapped or NAT64 form, which is what DNS sinkholes, RPZ policies
+  and hosts-file blocklists return), the node cannot tell which
+  address is that host, so it scans no target at all:
+  each one is skipped as `skipped_never_scan` with a reason that names the host name, and the job's summary (and
+  `never_scan_unresolved` in its result) lists the names. A newly listed name is waited for, on the job's own
+  threads, for at most 15 s first, so a normal lookup costs nothing. The fix is to correct the name (or the node's
+  DNS), or to list that host by address instead. A mixed answer keeps its real addresses (and blocks its loopback
+  addresses with them) and drops the others; an answer with no usable address keeps the addresses learned before.
+  Loopback alone is no usable answer for an ordinary name because the node runs in its own network namespace (docker
+  run, the Helm pod, the AMI/OVA wrapper), so no remote host is on its loopback.
+- *Loopback names* are the exception: `localhost`, every name under `.localhost` (RFC 6761 section 6.3) and the
+  default hosts files' loopback aliases (`ip6-localhost`, `ip6-loopback`, `localhost.localdomain`, `localhost4`,
+  `localhost4.localdomain4`, `localhost6`, `localhost6.localdomain6`) are loopback by definition. Listed, such a name
+  is not looked up: it blocks `127.0.0.0/8` and `::1` (in their IPv4-mapped and NAT64 forms too) and never holds a
+  target. Counts, credits and connection-test samples leave out the same addresses.
+- *A target name* (a server, database, registry, token service, blob redirect, database redirect, CA, KMIP or
+  Kubernetes API host) is skipped as `skipped_never_scan` when the name is listed or when ANY address it resolves to
+  is listed, so a dual-stack host listed by its IPv4 address is not scanned over IPv6 and the other way round. The
+  outcome, and in a connection test the sample, names the address and the entry that matched.
+- *An IP address target* is checked as itself.
+- *CIDR and `a-b` target ranges* are checked address by address: the listed addresses inside a range are skipped
+  (one outcome each) and the rest are scanned. A range carries no names, so when one address of a dual-stack host is
+  listed by address and its other address lies inside a scanned range, that other address is scanned unless it is
+  listed too (listing the host by name covers both).
+- *Never scanned, whatever the list says:* `0.0.0.0/8` and `::`, which reach the node itself (DNS sinkholes answer
+  `0.0.0.0`), also in their IPv4-mapped and NAT64 forms. A registry that sends the node to one of them (token
+  service, redirect) is refused as an error, not reported as a never-scan skip.
+- *IPv4 in IPv6:* an IPv4-mapped (`::ffff:a.b.c.d`) or NAT64 (`64:ff9b::/96`, RFC 6052 well-known prefix) answer is
+  checked as the IPv4 address it reaches as well. A network-specific NAT64 prefix is not recognised.
+- *Changes during a job:* the list can change while a job runs. Every new connection, and every request of an HTTP
+  client that is already open (registry pulls, the Kubernetes API, CA and appliance REST APIs, WinRM), re-checks the
+  address it goes to. Server and database targets are also re-checked against the name and every address it
+  resolved to. WinRM and AD CS resolve the name again for each session and stay pinned to the answer they checked.
+  A name that resolves to no address is `unreachable`.
 
 **Network.** Per open endpoint a capped list of handshakes (`handshakes_per_endpoint`, 128 for new teams): one full
 handshake (`openssl s_client`), raw ClientHello per protocol version, a TLS 1.3 post-quantum group probe (ML-KEM
