@@ -14,6 +14,8 @@
 //   run posture          -> <QDistributionCard teamId={t} posture={posture} onOpenAsset={(id) => …} />
 //                              hooks posture-q-<grade key or none> (data-count), q0-item-<key> (data-reason)
 //                           <AgilityPostureCard teamId={t} posture={posture} />  hooks posture-fix-<value> (data-count)
+//   CBOM team page      -> <AgilityBaselineSection teamId={t} />  (CB-25: GET /{team}/cbom/agility + /subjects drill-down)
+//                              hooks agility-baseline (data-assets), agility-baseline-system-<key>-<value> (data-count)
 //   anywhere             -> <Q0ItemList items={posture.q0_items} total={posture.q0_items_total} />,
 //                           <QGradeModelDialog teamId={t} open onOpenChange />, <AgilityDistribution posture={posture} />
 //
@@ -21,12 +23,14 @@
 // AssetDetailPanel, so any page that already mounts those two gets them with no change.
 export { GradeInputsBanner, QDistributionBar, QDistributionCard, QGradeChip, QGradeDrawerSection, QGradeModelBody, QGradeModelDialog, Q0ItemList } from "./QGrade";
 export { AgilityDistribution, AgilityDrawerSection, AgilityPostureCard, EvidenceFixClass, FixClassChip } from "./Agility";
+export { AgilityBaselineSection, AgilityBaselineView, AgilitySubjectsTable, AgilitySystemsTable, type DrillDown } from "./AgilityBaseline";
+export * from "./baseline";
 export { Tip } from "./Tip";
 //   team page            -> <Q0GapRegister teamId={t} />  (Quantum risk -> Q0 gaps, CB-23; fetches GET /{team}/cbom/register/q0)
 //                           hooks q0-gap-<id> (data-reason, data-status), q0-gap-group-<reason> (data-count)
 export { Q0GapList, Q0GapRegister } from "./Q0Gaps";
 export * from "./q0gaps";
 export { GRADE_TIPS, fixClassTipId, type GradeTipId, type TipEntry } from "./tips";
-export { gradeKeys, getCbomAgilityModel, getCbomGradeModel, useAgilityModel, useGradeModel } from "./api";
+export { gradeKeys, getCbomAgilityBaseline, getCbomAgilityModel, getCbomAgilitySubjects, getCbomGradeModel, useAgilityModel, useGradeModel } from "./api";
 export * from "./model";
 export * from "./inputs";

@@ -42,6 +42,7 @@ from backend.new_models import (
     Team,
 )
 from backend.utilities.cbom_sources import agility as AGILITY
+from backend.utilities.cbom_sources import agility_rollup as AGILITY_ROLLUP
 from backend.utilities.cbom_sources import agents as AG
 from backend.utilities.cbom_sources import jobs as J
 from backend.utilities.cbom_sources import targets as T
@@ -74,6 +75,7 @@ from backend.utilities.cbom_sources import posture as POSTURE
 from backend.utilities.cbom_sources import q0register as Q0REG
 from backend.utilities.cbom_sources import qgrade as QGRADE
 from backend.utilities.cbom_sources import run_results as RUN_RESULTS
+from backend.utilities.cbom_sources import run_tickets as RUN_TICKETS
 from backend.utilities.cbom_sources import runs as RUNS
 from backend.utilities.cbom_sources import run_assets as RUN_ASSETS
 from backend.utilities.cbom_sources import schedules as SCHED
@@ -1443,6 +1445,7 @@ def _run_assets(engine, team_id: int, run_id: int, params: dict) -> dict:
         run = _get_owned(session, CbomCollectionRun, run_id, team_id, "Run")
         # CB-38: the inventory page plus the unified results table's fields (view, status, key, wave, risk score)
         out = RUN_ASSETS.list_run_assets(session, team_id=team_id, run=run, params=params, view=view, status=status)
+        RUN_TICKETS.add_ticket_fields(session, team_id, run, out["items"])  # CB-38 PR-4: ticket_key, ticket_url
         out["run"] = public_run(run)
         return out
 
@@ -1605,6 +1608,54 @@ async def asset_detail(team_id: TeamId, asset_id: ObjectId, Authorization: AuthH
 async def agility_model(team_id: TeamId, Authorization: AuthHeader = None):
     await authorize(team_id, Authorization)
     return _ok(AGILITY.model())
+
+
+# ---------------------------------------------------------------------------------- agility baseline (CB-25 PR-A)
+FIX_VALUE = "^(configurable|code-fixed|vendor-fixed|hardware-fixed|unknown|none)$"
+
+
+def _agility_baseline(engine, team_id: int, what: str, params: dict) -> dict:
+    with Session(engine) as session:
+        rollup = AGILITY_ROLLUP.cached(session, team_id)
+        return rollup.summary(**params) if what == "summary" else rollup.subjects_page(**params)
+
+
+def _cursor_or_400(after: str | None) -> None:
+    try:
+        AGILITY_ROLLUP.decode_cursor(after)
+    except ValueError as exc:
+        raise bad_request(exc) from None
+
+
+@router.get("/{team_id}/cbom/agility", dependencies=READ,
+            summary="Crypto-agility baseline of the team's current estate: enterprise counts per fix class and the "
+                    "per-system table (CB-25)")
+async def agility_baseline(team_id: TeamId,
+                           after: str | None = Query(default=None, max_length=512),
+                           limit: int = Query(default=100, ge=1, le=AGILITY_ROLLUP.MAX_LIMIT),
+                           fix_class: str | None = Query(default=None, pattern=FIX_VALUE),
+                           kind: str | None = Query(default=None, pattern="^(application|source|repository|evidence)$"),
+                           Authorization: AuthHeader = None):
+    engine, _user = await authorize(team_id, Authorization)
+    _cursor_or_400(after)
+    return _ok(await _run("agility baseline", team_id, _agility_baseline, engine, team_id, "summary",
+                          {"after": after, "limit": limit, "fix_class": fix_class, "kind": kind}))
+
+
+@router.get("/{team_id}/cbom/agility/subjects", dependencies=READ,
+            summary="Drill-down of the agility baseline: the assets of one fix class and/or one system, keyset-paged")
+async def agility_subjects(team_id: TeamId,
+                           fix_class: str | None = Query(default=None, pattern=FIX_VALUE),
+                           system: str | None = Query(default=None, max_length=512),
+                           view: str = Query(default="all", pattern="^(all|excl_pq)$"),
+                           after: str | None = Query(default=None, max_length=512),
+                           limit: int = Query(default=100, ge=1, le=AGILITY_ROLLUP.MAX_LIMIT),
+                           Authorization: AuthHeader = None):
+    engine, _user = await authorize(team_id, Authorization)
+    _cursor_or_400(after)
+    return _ok(await _run("agility subjects", team_id, _agility_baseline, engine, team_id, "subjects",
+                          {"fix_class": fix_class, "system": system, "excl_pq": view == "excl_pq", "after": after,
+                           "limit": limit}))
 
 
 def _job_assets(engine, team_id: int, job_id: int, params: dict) -> dict:

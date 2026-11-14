@@ -1,7 +1,7 @@
 """cbom quantum risk register (CB-23 PR-A): the Q0 gap lifecycle table
 
 Revision ID: cb23q0gap001
-Revises: cb20estate001
+Revises: cb38ticket001
 Create Date: 2026-11-14 18:30:00.000000
 
 * ``cbomq0gap``: one row per opening of a Q0 item of a team's register (evidence area or vendor at E0, unread scope,
@@ -23,7 +23,7 @@ import sqlmodel
 
 # revision identifiers, used by Alembic.
 revision: str = 'cb23q0gap001'
-down_revision: Union[str, Sequence[str], None] = 'cb20estate001'
+down_revision: Union[str, Sequence[str], None] = 'cb38ticket001'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

@@ -76,6 +76,7 @@ import { Q0GapRegister } from "@/components/cbom/grade/Q0Gaps";
 import { isActiveStatus } from "@/components/cbom/results/statusBuckets";
 import { createOutageGate, listView } from "@/components/cbom/results/listErrors";
 import { cbomResultsListKey, cbomSourcesKeys } from "@/components/cbom/sources/keys";
+import { AgilityBaselineSection } from "@/components/cbom/grade/AgilityBaseline";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -854,6 +855,10 @@ export default function CBOMPage() {
                 ) : (
                   <p className="text-center text-sm text-zinc-500 py-12">No dashboard data available.</p>
                 )}
+                {/* CB-25: crypto-agility baseline of the current estate (enterprise, systems, drill-down) */}
+                <div className="mt-6">
+                  <AgilityBaselineSection teamId={teamIdNumber} />
+                </div>
               </TabsContent>
 
               {/* ── Table Tab ── */}
