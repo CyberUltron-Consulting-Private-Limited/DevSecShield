@@ -52,6 +52,7 @@ from backend.new_models import (
 )
 from backend.utilities.cbom_sources import algid
 from backend.utilities.cbom_sources import identity as ID
+from backend.utilities.cbom_sources import policy_scope as PS
 from backend.utilities.cbom_sources.cbom_metrics import code_row_quantum_vulnerable
 from backend.utilities.cbom_sources.cbom_rows import display_row, is_finding
 from backend.utilities.cbom_sources.common import iso_z, log
@@ -206,11 +207,18 @@ class Gap:
     types: tuple[str, ...] = ()  # () = every asset type; else only these types (node checks, NODE_CHECK_TYPES)
     reason: str | None = None  # the coverage row's detail, shown with what it left "not read"
     by_choice: bool = False  # an option the customer left off: hides its assets, but nothing is carried past it
+    # CB-11: the targets the never-scan list left out (``policy_gap``): their assets are "excluded", never removed,
+    # their findings stay open, and they are carried at their last known state like a real gap's (never "new" again)
+    policy: bool = False
+    targets: frozenset[str] = frozenset()
+    intervals: tuple[tuple[int, int, int], ...] = ()
 
     def covers(self, view: View, *, listed: bool) -> bool:
+        target, location = str(view.extra.get("target") or ""), str(view.extra.get("location") or "")
+        if self.policy:  # an excluded target was not scanned: nothing of it is listed
+            return not listed and (target in self.targets or PS.address_listed(target, self.intervals))
         if listed and not self.incomplete:
             return False
-        target, location = str(view.extra.get("target") or ""), str(view.extra.get("location") or "")
         if self.target and self.target != target:
             return False
         if self.types and view.asset_type not in self.types:
@@ -272,6 +280,23 @@ def job_gaps(rows: Iterable[CbomCollectedAsset]) -> list[Gap]:
     return out
 
 
+def policy_gap(job: CbomCollectionJob | None) -> Gap | None:
+    """CB-11: the job's targets on the never-scan list as one gap: the node's ``skipped_never_scan`` rows, and any
+    address of the job's never-scan snapshot (past the node's 1,000 target rows, and the same list the node got)."""
+    if job is None:
+        return None
+    result = job.result if isinstance(job.result, dict) else {}
+    if not PS.excluded_count(result):
+        return None
+    return Gap(target="", prefixes=(), incomplete=False, reason=PS.REASON, policy=True,
+               targets=frozenset(PS.excluded_targets(result)), intervals=PS.snapshot_intervals(job.params))
+
+
+def _with_policy(gaps: list[Gap], job: CbomCollectionJob | None) -> list[Gap]:
+    gap = policy_gap(job)
+    return gaps + [gap] if gap is not None else gaps
+
+
 def _gap_reason(facts: Mapping[str, Any]) -> str | None:
     """Why the gap's assets were not read: the coverage row's detail ("172.31.67.4 did not answer on any listed port
     ..."), else its check and status."""
@@ -297,19 +322,28 @@ def readiness(views: Mapping[str, View]) -> float | None:
 
 
 # ----------------------------------------------------------------------------- compare
-def compare(before: Mapping[str, View], after: Mapping[str, View], gaps: Iterable[Gap] = ()
-            ) -> dict[str, list[dict[str, Any]]]:
+def compare(before: Mapping[str, View], after: Mapping[str, View], gaps: Iterable[Gap] = (),
+            before_gaps: Iterable[Gap] = ()) -> dict[str, list[dict[str, Any]]]:
     """added / removed / changed assets and opened / resolved findings (identity + code). ``gaps``: the later side's
     coverage gaps; what they cover is ``not_read`` (with the findings that could not be confirmed), never removed or
-    resolved."""
+    resolved. What its never-scan gap (``policy_gap``) covers is ``excluded`` (by policy), the same way. An asset of
+    a target the earlier side's never-scan gap (``before_gaps``) left out is ``entered_scope`` (back in scope),
+    never ``added``; its findings are opened with that reason."""
     gaps = list(gaps)
-    added = [after[i] for i in sorted(after) if i not in before]
+    before_policy = [g for g in before_gaps if g.policy]
+    fresh = [after[i] for i in sorted(after) if i not in before]
+    entered = [v for v in fresh if _gap_for(v, before_policy, listed=False) is not None]
+    added = [v for v in fresh if _gap_for(v, before_policy, listed=False) is None]
     gone = [before[i] for i in sorted(before) if i not in after]
-    removed = [v for v in gone if _gap_for(v, gaps, listed=False) is None]
+    covered = [(v, _gap_for(v, gaps, listed=False)) for v in gone]
+    removed = [v for v, gap in covered if gap is None]
+    excluded: list[dict[str, Any]] = [
+        {**v.public(), "asset_removed": True, "codes": sorted(v.codes), "reason": gap.reason}
+        for v, gap in covered if gap is not None and gap.policy]
     # "reason": the covering coverage row's detail, so a list of what was not read says why (lab UI r1 F2)
     not_read: list[dict[str, Any]] = [
         {**v.public(), "asset_removed": True, "codes": sorted(v.codes), "reason": gap.reason}
-        for v in gone if (gap := _gap_for(v, gaps, listed=False)) is not None]
+        for v, gap in covered if gap is not None and not gap.policy]
     changed: list[dict[str, Any]] = []
     opened: list[dict[str, Any]] = []
     resolved: list[dict[str, Any]] = []
@@ -341,11 +375,16 @@ def compare(before: Mapping[str, View], after: Mapping[str, View], gaps: Iterabl
     for view in added:
         for code in sorted(view.codes):
             opened.append({**view.public(), "code": code, "new_asset": True})
+    for view in entered:
+        for code in sorted(view.codes):
+            opened.append({**view.public(), "code": code, "new_asset": False, "reason": PS.BACK_IN_SCOPE})
     for view in removed:
         for code in sorted(view.codes):
             resolved.append({**view.public(), "code": code, "asset_removed": True})
     return {"added": [v.public() for v in added], "removed": [v.public() for v in removed], "changed": changed,
-            "opened": opened, "resolved": resolved, "not_read": not_read, "collector_changes": collector_changes}
+            "opened": opened, "resolved": resolved, "not_read": not_read, "collector_changes": collector_changes,
+            "excluded": excluded,
+            "entered_scope": [{**v.public(), "codes": sorted(v.codes), "reason": PS.BACK_IN_SCOPE} for v in entered]}
 
 
 # Facts a collector started sending after rows without them were stored (CB-33: the ACM ``exported`` flag and the
@@ -418,8 +457,11 @@ def job_comparable(job: CbomCollectionJob) -> tuple[bool, str | None]:
         value = counts.get(name)
         return value if isinstance(value, int) and not isinstance(value, bool) else 0
 
-    if (job.outcome == "partial" and count("partial") > 0 and count("failed") == 0 and count("skipped") == 0
-            and not result.get("asset_mismatch")):
+    # CB-11: a target on the never-scan list was left out by policy, never "not read" (jobs stored before CB-11 kept
+    # such a job partial; it is comparable as well)
+    excluded = min(PS.excluded_count(result), count("skipped"))
+    if (job.outcome == "partial" and (count("partial") > 0 or excluded > 0) and count("failed") == 0
+            and count("skipped") == excluded and not result.get("asset_mismatch")):
         return True, None  # every target was read; what was not is in its coverage gaps, which never read as removals
     return False, f"collection {job.outcome or 'incomplete'} (some targets were not read)"
 
@@ -520,7 +562,7 @@ class _Carry:
 def _level(session: Session, job: CbomCollectionJob, rows: list[CbomCollectedAsset] | None = None) -> _Level:
     rows = _job_assets(session, job) if rows is None else rows
     return _Level(job=job, run=session.get(CbomCollectionRun, job.run_id) if job.run_id else None, rows=rows,
-                  gaps=[g for g in job_gaps(rows) if not g.by_choice])
+                  gaps=_with_policy([g for g in job_gaps(rows) if not g.by_choice], job))
 
 
 def _like(text: str) -> str:
@@ -532,8 +574,15 @@ def _candidates(gaps: list[Gap]):
     a ``#`` prefix anywhere in the location), or None when a gap covers the whole job."""
     from sqlalchemy import and_, or_
 
+    from sqlalchemy import false
+
     clauses = []
     for gap in gaps:
+        if gap.policy:  # its listed targets (and the addresses of small listed ranges): never a whole job
+            names = sorted(gap.targets | PS.listed_addresses(gap.intervals))
+            if names:
+                clauses.append(CbomCollectedAsset.target.in_(names))  # type: ignore[union-attr]
+            continue
         parts = []
         if gap.target:
             parts.append(CbomCollectedAsset.target == gap.target)
@@ -545,7 +594,7 @@ def _candidates(gaps: list[Gap]):
         if not parts:
             return None
         clauses.append(and_(*parts))
-    return or_(*clauses)
+    return or_(*clauses) if clauses else false()
 
 
 def _older_jobs(session: Session, base: CbomCollectionJob, ref: str,
@@ -587,6 +636,10 @@ def _level_rows(session: Session, jobs: list[CbomCollectionJob], cond) -> dict[i
 
 def _overlap(a: Gap, b: Gap) -> bool:
     """Whether some asset could be covered by both gaps (conservative: True when unsure)."""
+    if a.policy or b.policy:  # by target only (a never-scan gap has no types or prefixes)
+        ta, tb = (None if g.policy and g.intervals else (g.targets if g.policy else ({g.target} if g.target else None))
+                  for g in (a, b))
+        return ta is None or tb is None or bool(ta & tb)
     if a.target and b.target and a.target != b.target:
         return False
     if a.types and b.types and not set(a.types) & set(b.types):
@@ -750,7 +803,7 @@ def run_diff(session: Session, run: CbomCollectionRun, base: CbomCollectionRun) 
             sides[side][ref] = job
     per_source: list[dict[str, Any]] = []
     totals: dict[str, list[Any]] = {k: [] for k in ("added", "removed", "changed", "opened", "resolved", "not_read",
-                                                   "collector_changes")}
+                                                   "collector_changes", "excluded", "entered_scope")}
     rule_changes: list[dict[str, Any]] = []
     before_all: dict[str, View] = {}
     after_all: dict[str, View] = {}
@@ -775,11 +828,12 @@ def run_diff(session: Session, run: CbomCollectionRun, base: CbomCollectionRun) 
         if carry.rejudged and carry.stored is None:  # only a carried older level was re-judged (rare): walk again
             carry = _carried(session, b_job, ref, sources, _judge(run), stored=True, later=after)
         before = carry.views
-        gaps = job_gaps(a_rows)
-        diff = compare(before, after, gaps)
+        gaps = _with_policy(job_gaps(a_rows), a_job)
+        before_gaps = _with_policy([], b_job)
+        diff = compare(before, after, gaps, before_gaps)
         if reclassify or carry.rejudged:  # also when only a carried older level was re-judged (review #132 nit)
             rejudged_any = rejudged_any or carry.rejudged
-            stored = compare(carry.stored or {}, node_views(a_rows, ref, reclassify=False), gaps)
+            stored = compare(carry.stored or {}, node_views(a_rows, ref, reclassify=False), gaps, before_gaps)
             rule_changes += [{**r, "source_name": names.get(ref)} for r in rule_only_changes(stored, diff)]
         for k in totals:
             totals[k] += [{**d, "source_name": names.get(ref)} for d in diff[k]]
@@ -939,7 +993,7 @@ def record_run_drift(session: Session, run: CbomCollectionRun, now: _dt.datetime
     sources = _sources(session, run.team_id)
     rows: list[dict[str, Any]] = []
     loaded: dict[int, list[CbomCollectedAsset]] = {}  # job id -> rows, read once for the estate store too (CB-20)
-    not_read = 0
+    not_read = excluded = 0
     for job in _run_jobs(session, run):
         if not job_comparable(job)[0]:
             continue
@@ -953,13 +1007,16 @@ def record_run_drift(session: Session, run: CbomCollectionRun, now: _dt.datetime
         rows += _expiring(run.team_id, now, after, scope="node", source_ref=ref, source_name=name, run_id=run.id)
         if base is None:
             continue
-        diff = compare(_carried(session, base, ref, sources, _judge(run), later=after).views, after, job_gaps(a_rows))
+        diff = compare(_carried(session, base, ref, sources, _judge(run), later=after).views, after,
+                       _with_policy(job_gaps(a_rows), job), _with_policy([], base))
         not_read += len(diff["not_read"])
+        excluded += len(diff["excluded"])
         rows += diff_events(run.team_id, now, diff, scope="node", source_ref=ref, source_name=name,
                             anchor=f"run:{run.id}", cause="re-judged with the current rules" if reclassify else None,
                             run_id=run.id, baseline_run_id=base.run_id)
     stored = insert_events(session, rows[:EVENT_CAP])
     log("drift recorded", team=run.team_id, run=run.id, events=stored, not_read=not_read or None,
+        excluded_by_policy=excluded or None,
         truncated=len(rows) > EVENT_CAP or None)
     jobs = _run_jobs(session, run)
     complete = [j for j in jobs if job_comparable(j)[0]]
@@ -988,13 +1045,19 @@ def run_not_read(session: Session, run: CbomCollectionRun) -> list[dict[str, Any
     last known state had: the same comparison as ``record_run_drift``, whose events leave these out (they are neither
     removed nor resolved), so the run's "Changes" can list them apart with the reason (lab UI r1 F2: a stopped TLS
     target silently dropped out)."""
+    return run_unread(session, run)["not_read"]
+
+
+def run_unread(session: Session, run: CbomCollectionRun) -> dict[str, list[dict[str, Any]]]:
+    """``run_not_read``'s comparison, with its second list: ``excluded``, what the never-scan list left out (CB-11:
+    excluded by policy, neither removed nor resolved, never a gap)."""
     sources = _sources(session, run.team_id)
-    out: list[dict[str, Any]] = []
+    out: dict[str, list[dict[str, Any]]] = {"not_read": [], "excluded": []}
     for job in _run_jobs(session, run):
         if not job_comparable(job)[0]:
             continue
         a_rows = _job_assets(session, job)
-        gaps = job_gaps(a_rows)
+        gaps = _with_policy(job_gaps(a_rows), job)
         if not gaps:  # nothing is "not read" without a gap
             continue
         src = sources.get(job.source_id or 0)
@@ -1005,8 +1068,9 @@ def run_not_read(session: Session, run: CbomCollectionRun) -> list[dict[str, Any
         base_run = session.get(CbomCollectionRun, base.run_id) if base.run_id else None
         reclassify = rules_differ(base_run, run)
         diff = compare(_carried(session, base, ref, sources, _judge(run)).views,
-                       node_views(a_rows, ref, reclassify=reclassify), gaps)
-        out += [{**d, "source_name": name} for d in diff["not_read"]]
+                       node_views(a_rows, ref, reclassify=reclassify), gaps, _with_policy([], base))
+        for key in out:
+            out[key] += [{**d, "source_name": name} for d in diff[key]]
     return out
 
 
