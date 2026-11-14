@@ -126,7 +126,8 @@ export interface CbomDistributions {
   pqc: {
     quantum_vulnerable: number;
     quantum_safe: number;
-    readiness_pct: number;
+    /** null when no asset has a quantum verdict (a Sources run's posture), shown as 0 by the gauge */
+    readiness_pct: number | null;
     /** hybrid-KEX (classical + PQC) algorithm count (F2) */
     hybrid?: number;
     /** NIST quantum-security-level histogram (0 = vulnerable, 1-5 = safe cat) */

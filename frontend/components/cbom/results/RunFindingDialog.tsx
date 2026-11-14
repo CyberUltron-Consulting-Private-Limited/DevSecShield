@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { CbomJob, CbomRunAssetItem } from "@/utils/backend_api";
+import type { CbomRemediationItem } from "@/utils/api/cbom_ops";
 
 import { AssetDetailPanel } from "@/components/cbom/sources/RunPosture";
 import { ASSET_TYPE_LABEL } from "@/components/cbom/sources/RunResults";
@@ -31,17 +32,19 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 /** What the dialog shows for an asset: a table row, or (from top risks / certificates) only its id. */
 export type DialogSubject = { item: CbomRunAssetItem } | { assetId: number; label?: string };
 
-export function RunFindingDialog({ teamId, subject, jobs, onClose }: {
+export function RunFindingDialog({ teamId, subject, jobs, waveOf, onClose }: {
   teamId: number;
   subject: DialogSubject | null;
   jobs: CbomJob[];
+  /** the row's wave entry from the run plan (an older backend's rows carry no status of their own) */
+  waveOf?: (item: CbomRunAssetItem) => CbomRemediationItem | undefined;
   onClose: () => void;
 }) {
   const item = subject && "item" in subject ? subject.item : null;
   const assetId = item ? item.id : subject && "assetId" in subject ? subject.assetId : null;
   const job = item ? jobs.find((j) => j.id === item.job_id) : undefined;
   const title = item ? assetName(item) : subject && "assetId" in subject ? subject.label ?? `Asset ${subject.assetId}` : "Finding details";
-  const status = item ? findingStatusOf(item) : null;
+  const status = item && item.type !== "coverage" ? findingStatusOf(item, item.wave ?? waveOf?.(item)) : null;
   return (
     <Dialog open={!!subject} onOpenChange={(open) => !open && onClose()}>
       <DialogContent
@@ -76,7 +79,9 @@ export function RunFindingDialog({ teamId, subject, jobs, onClose }: {
                       </span>
                     </Field>
                     <Field label="Status">
-                      {status && <span className={`inline-flex px-2.5 py-1 rounded-md text-xs font-medium capitalize ${getFindingStatusBadgeClass(status)}`}>{status.replace(/_/g, " ")}</span>}
+                      {status
+                        ? <span className={`inline-flex px-2.5 py-1 rounded-md text-xs font-medium capitalize ${getFindingStatusBadgeClass(status)}`}>{status.replace(/_/g, " ")}</span>
+                        : <p className="text-sm">—</p>}
                     </Field>
                     {item.q_grade != null && <Field label="Quantum risk"><p className="text-sm" title={item.q_label ?? undefined}>{item.q_grade}{item.q_label ? ` · ${item.q_label}` : ""}</p></Field>}
                     {item.fix_class != null && <Field label="Fix class"><p className="text-sm">{item.fix_class.replace(/_/g, " ")}</p></Field>}

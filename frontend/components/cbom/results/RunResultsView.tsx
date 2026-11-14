@@ -12,7 +12,7 @@
 // /results dashboard W2 builds from it); nothing on this page counts table rows for a total.
 
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BarChart3 } from "lucide-react";
 import { toast } from "@/utils/toast";
 
@@ -41,7 +41,11 @@ import {
   endpointsProbed,
   filtersToParams,
   isActiveRunStatus,
+  isNotFoundStatus,
+  needsRunRemediationList,
+  resultsPollInterval,
   riskScoreRows,
+  runPollInterval,
   runDashboardModel,
   runDurationSeconds,
   runNodes,
@@ -104,15 +108,24 @@ export default function RunResultsView({ teamId, runId, initialView = "findings"
   const runQ = useQuery({
     queryKey: cbomSourcesKeys.run(teamId, runId),
     queryFn: () => getCbomRun(teamId, runId),
-    retry: (count, err) => httpStatus(err) !== 404 && count < 1,
-    refetchInterval: (query) => {
-      if (httpStatus(query.state.error) === 404) return false;
-      const status = query.state.data?.status;
-      return !status || isActiveRunStatus(status) ? 6000 : false;
-    },
+    // a 4xx is an answer (not found, not allowed, bad id): no retry; any error stops the polling (m1)
+    retry: (count, err) => (httpStatus(err) ?? 500) >= 500 && count < 1,
+    refetchInterval: (query) => runPollInterval(query.state.data?.status, !!query.state.error && !query.state.data),
+    refetchIntervalInBackground: false,
   });
   const run = runQ.data;
   const active = isActiveRunStatus(run?.status);
+
+  // When the run finishes, every live section is read once more (polling stops with `active`): posture, /results,
+  // the table, the heat-map and the wave plan all sit under the run's query key.
+  const wasActive = useRef(active);
+  useEffect(() => {
+    if (wasActive.current && !active && run) {
+      queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.run(teamId, runId) });
+      queryClient.invalidateQueries({ queryKey: ["cbom-results-list", teamId] });
+    }
+    wasActive.current = active;
+  }, [active, run, queryClient, teamId, runId]);
 
   useEffect(() => {
     if (!active) return;
@@ -120,13 +133,33 @@ export default function RunResultsView({ teamId, runId, initialView = "findings"
     return () => clearInterval(t);
   }, [active]);
 
+  // -- the findings table page (server-side filters and paging); live every 8 s while the run is active
+  const params = filtersToParams(filters);
+  const assetsQ = useQuery({
+    queryKey: cbomSourcesKeys.runAssets(teamId, runId, JSON.stringify(params)),
+    queryFn: () => getCbomRunAssetPage(teamId, runId, params),
+    enabled: !!run,
+    retry: 1,
+    placeholderData: keepPreviousData,
+    refetchInterval: active ? 8000 : false,
+    refetchIntervalInBackground: false,
+  });
+  const page = assetsQ.data;
+
   // -- /results (W2): dashboard, distributions, compliance, certificates, provenance. 404 = older backend.
+  // Recomputed per request while the run is active: every 30 s for runs of ≤ 5,000 assets, else once (and again when
+  // the run finishes); every 5 s while a large run's summary says "computing".
   const resultsQ = useQuery({
     queryKey: runResultsKey(teamId, runId),
     queryFn: () => getCbomRunResults(teamId, runId),
     enabled: !!run,
-    retry: (count, err) => httpStatus(err) !== 404 && count < 1,
-    refetchInterval: (query) => (httpStatus(query.state.error) === 404 ? false : active ? 15000 : false),
+    retry: (count, err) => (httpStatus(err) ?? 500) >= 500 && count < 1,
+    refetchInterval: (query) => {
+      if (query.state.error) return false;
+      if (query.state.data?.state === "computing") return 5000;
+      return resultsPollInterval(active, page?.all_total);
+    },
+    refetchIntervalInBackground: false,
   });
   const resultsState: ResultsState = resultsQ.data
     ? { kind: "ok", data: resultsQ.data }
@@ -142,23 +175,14 @@ export default function RunResultsView({ teamId, runId, initialView = "findings"
     enabled: !!run,
     retry: 1,
     refetchInterval: active ? 15000 : false,
+    refetchIntervalInBackground: false,
   });
   const posture = postureQ.data ?? null;
 
-  // -- the findings table page (server-side filters and paging); live every 8 s while the run is active
-  const params = filtersToParams(filters);
-  const assetsQ = useQuery({
-    queryKey: cbomSourcesKeys.runAssets(teamId, runId, JSON.stringify(params)),
-    queryFn: () => getCbomRunAssetPage(teamId, runId, params),
-    enabled: !!run,
-    retry: 1,
-    placeholderData: keepPreviousData,
-    refetchInterval: active ? 8000 : false,
-  });
-  const page = assetsQ.data;
-
-  // -- waves: the run's remediation plan (wave chips; the wave and key of rows from an older backend)
-  const waves = useRunRemediation(teamId, runId, active);
+  // -- waves: the whole-run plan is loaded only for an older backend (its rows carry no wave or key) and, once, for
+  // the S9 chips of a finished run; a newer backend's rows carry their own page-scoped wave.
+  const wantRemediation = !!run && needsRunRemediationList(page, active);
+  const waves = useRunRemediation(teamId, runId, active && wantRemediation, wantRemediation);
   const waveOf = useCallback((item: CbomRunAssetItem) => waves.byAsset.get(item.id), [waves.byAsset]);
 
   // -- runs for Compare… (loaded when the dialog opens)
@@ -167,14 +191,21 @@ export default function RunResultsView({ teamId, runId, initialView = "findings"
   const statusMutation = useMutation({
     mutationFn: async ({ keys, status }: { keys: string[]; status: CbomFindingStatus }) => {
       let updated = 0;
-      for (const body of statusRequestBodies(runId, keys, status)) updated += (await putCbomRemediation(teamId, body)).updated;
+      try {
+        for (const body of statusRequestBodies(runId, keys, status)) updated += (await putCbomRemediation(teamId, body)).updated;
+      } catch (err) {
+        throw Object.assign(err instanceof Error ? err : new Error(String(err)), { updatedBeforeError: updated });
+      }
       return { updated, status };
     },
     onSuccess: ({ updated }) => {
       toast.success(`Updated ${pluralize(updated, "finding")}`);
       setSelection(new Map());
     },
-    onError: (err) => showErrorToast(err, "Error updating finding status"),
+    onError: (err) => {
+      const done = (err as { updatedBeforeError?: number }).updatedBeforeError ?? 0;
+      showErrorToast(err, done > 0 ? `${pluralize(done, "finding")} updated, then an error stopped the rest` : "Error updating finding status");
+    },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) });
       queryClient.invalidateQueries({ queryKey: ["cbom-results-list", teamId] });
@@ -188,14 +219,14 @@ export default function RunResultsView({ teamId, runId, initialView = "findings"
 
   const plan = runSectionPlan({ results: resultsState, posture });
   const dashboardModel = useMemo(() => runDashboardModel(results?.dashboard, posture), [results?.dashboard, posture]);
-  // The "Risk scores per finding" chart plots the API's per-row 0-10 score of the rows on screen (not a total).
+  // The per-finding risk chart plots the API's 0-10 score of the rows on this table page (and is titled so, m9).
   const riskRows = useMemo(() => riskScoreRows(page?.items ?? []) as unknown as CbomFinding[], [page?.items]);
 
   if (runQ.isLoading) {
     return <div className="container mx-auto p-6"><p className="text-sm text-zinc-500" data-testid="run-results-loading">Loading the run…</p></div>;
   }
   if (runQ.isError && !run) {
-    if (httpStatus(runQ.error) === 404) return <RunNotFound teamId={teamId} />;
+    if (isNotFoundStatus(httpStatus(runQ.error))) return <RunNotFound teamId={teamId} />;
     return (
       <div className="container mx-auto p-6" role="alert">
         <p className="text-zinc-600 dark:text-zinc-400">Error fetching the run results. Please try again later.</p>
@@ -252,13 +283,14 @@ export default function RunResultsView({ teamId, runId, initialView = "findings"
       <RunChangesSection teamId={teamId} run={run} canCompare={canCompare} onCompare={() => setCompareOpen(true)} />
 
       {/* S9 */}
-      <RunWavesSection byWave={waves.query.data?.by_wave} labels={waves.query.data?.labels} loading={waves.query.isLoading} selected={selection.size} />
+      <RunWavesSection byWave={waves.query.data?.by_wave} labels={waves.query.data?.labels} loading={wantRemediation && waves.query.isLoading}
+                       deferred={!wantRemediation && active} selected={selection.size} />
 
       {/* S10 */}
       <RunComplianceSection view={plan.compliance} results={results} posture={posture} />
 
       {/* S11 */}
-      <RunDashboardSection view={plan.dashboard} model={dashboardModel} riskRows={riskRows} results={results} />
+      <RunDashboardSection view={plan.dashboard} model={dashboardModel} riskRows={riskRows} pageRows={page?.items.length ?? 0} results={results} />
 
       {/* S12 */}
       <RunFindingsTable
@@ -284,7 +316,7 @@ export default function RunResultsView({ teamId, runId, initialView = "findings"
       {plan.topRisks.show && posture && <RunTopRisks posture={posture} onOpenAsset={(id) => openAsset(id)} />}
 
       {/* S14 */}
-      <RunFindingDialog teamId={teamId} subject={dialog} jobs={run.jobs ?? []} onClose={() => setDialog(null)} />
+      <RunFindingDialog teamId={teamId} subject={dialog} jobs={run.jobs ?? []} waveOf={waveOf} onClose={() => setDialog(null)} />
 
       {compareOpen && (
         <CompareDialog teamId={teamId} runId={runId}

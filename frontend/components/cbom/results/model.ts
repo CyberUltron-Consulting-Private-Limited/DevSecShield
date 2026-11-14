@@ -18,7 +18,7 @@ import type {
   CbomScanDashboardData,
   CbomWaveStatusName,
 } from "@/utils/backend_api";
-import type { CbomDistributions } from "@/components/cbom/CbomCryptoCharts";
+import type { CbomDistributions, PqcMigrationRow } from "@/components/cbom/CbomCryptoCharts";
 
 // ---------------------------------------------------------------------------- statuses
 
@@ -61,10 +61,14 @@ export function isActiveRunStatus(status: string | null | undefined): boolean {
   return status === "queued" || status === "running";
 }
 
-/** The unified finding status of a row: the API's `status`, else its raw assignment mapped, else not started. */
-export function findingStatusOf(item: Pick<CbomRunAssetItem, "status" | "assignment_status">): CbomFindingStatus {
+/** The unified finding status of a row: the API's `status`, else its raw assignment mapped, else (older backend
+ * without either field) the assignment of the row's wave entry from /runs/{id}/remediation, else not started. */
+export function findingStatusOf(item: Pick<CbomRunAssetItem, "status" | "assignment_status">,
+                                wave?: { assignment?: { status?: CbomWaveStatusName | null } | null } | null): CbomFindingStatus {
   if (item.status && item.status in FINDING_TO_ASSIGNMENT) return item.status;
   if (item.assignment_status && item.assignment_status in ASSIGNMENT_TO_FINDING) return ASSIGNMENT_TO_FINDING[item.assignment_status];
+  const fromWave = wave?.assignment?.status;
+  if (fromWave && fromWave in ASSIGNMENT_TO_FINDING) return ASSIGNMENT_TO_FINDING[fromWave];
   return "not_started";
 }
 
@@ -204,6 +208,8 @@ export const NOTE = {
   complianceNone: "No finding of this run maps to a CERT-In, RBI, SEBI CSCRF, NIST or CNSA 2.0 clause.",
   dashboardField: "Dashboard charts are not in this server's run results yet.",
   metricsLater: "Remediation metrics (time to remediate, velocity) appear once fixes are recorded with their completion date.",
+  computing: "Computing results for this large run…; this section fills in when the summary is ready.",
+  noEndpoints: "This run probed no endpoint, so no stored certificate can be called orphaned (nothing to compare it with).",
 } as const;
 
 function resultsNote(results: ResultsState): string | undefined {
@@ -221,11 +227,14 @@ export function runSectionPlan(input: {
   const data = results.kind === "ok" ? results.data : null;
   const pending = results.kind === "loading";
   const missing = resultsNote(results);
+  const computing = data?.state === "computing";
 
   const certificates: SectionView = (() => {
     if (pending) return { show: false };
     if (!data) return { show: true, note: missing };
+    if (computing) return { show: true, note: NOTE.computing };
     if (data.certificates_orphaned == null && data.certificates_unmanaged == null) return { show: true, note: NOTE.certsField };
+    if (data.certificates_basis === "no_endpoints_probed" && !(data.certificates_unmanaged ?? []).length) return { show: true, note: NOTE.noEndpoints };
     if (!(data.certificates_orphaned ?? []).length && !(data.certificates_unmanaged ?? []).length) return { show: true, note: NOTE.certsNone };
     return { show: true };
   })();
@@ -233,13 +242,14 @@ export function runSectionPlan(input: {
   const cryptoCharts: SectionView = (() => {
     if (pending) return { show: false };
     if (!data) return { show: true, note: missing };
+    if (computing) return { show: true, note: NOTE.computing };
     if (!data.distributions) return { show: true, note: NOTE.chartsField };
     return { show: true, note: NOTE.chartsCodeOnly };
   })();
 
   const compliance: SectionView = (() => {
-    const fromResults = (data?.compliance?.frameworks ?? []).length > 0;
-    const fromPosture = (posture?.compliance ?? []).length > 0;
+    const fromResults = (data?.compliance?.frameworks ?? []).some((f) => (f.clauses ?? []).length > 0);
+    const fromPosture = (posture?.compliance ?? []).some((f) => (f.clauses ?? []).length > 0);
     if (fromResults || fromPosture) return { show: true };
     if (pending || !posture) return { show: false };
     return { show: true, note: NOTE.complianceNone };
@@ -248,6 +258,7 @@ export function runSectionPlan(input: {
   const dashboard: SectionView = (() => {
     if (pending) return { show: false };
     if (!data) return { show: true, note: missing };
+    if (computing) return { show: true, note: NOTE.computing };
     if (!data.dashboard?.card_data) return { show: true, note: NOTE.dashboardField };
     return { show: true, note: remediationMetricsAvailable(data.dashboard) ? undefined : NOTE.metricsLater };
   })();
@@ -280,9 +291,10 @@ export function complianceRows(results: CbomRunResults | null | undefined,
                                posture: Pick<CbomRunPosture, "compliance"> | null | undefined): { rows: ComplianceRow[]; basis: "results" | "posture" | "none" } {
   const order = (fw: string) => { const i = FRAMEWORK_ORDER.indexOf(fw); return i < 0 ? FRAMEWORK_ORDER.length : i; };
   const sort = (rows: ComplianceRow[]) => [...rows].sort((a, b) => order(a.framework) - order(b.framework) || a.framework.localeCompare(b.framework));
-  const fromResults = results?.compliance?.frameworks ?? [];
+  // /results always lists the five frameworks, empty ones included: only frameworks with a clause are shown
+  const fromResults = (results?.compliance?.frameworks ?? []).filter((f) => (f.clauses ?? []).length > 0);
   if (fromResults.length) return { rows: sort(fromResults.map((f) => ({ framework: f.framework, clauses: f.clauses }))), basis: "results" };
-  const fromPosture = posture?.compliance ?? [];
+  const fromPosture = (posture?.compliance ?? []).filter((f) => (f.clauses ?? []).length > 0);
   if (fromPosture.length) {
     return {
       rows: sort(fromPosture.map((f) => ({
@@ -350,12 +362,9 @@ export function runNodes(run: Pick<CbomRun, "jobs">, provenance?: CbomRunResults
   return [...out];
 }
 
-/** Endpoints probed: the run's own figure when the API sends one, else the per-source provenance figures added up. */
+/** Endpoints probed: the per-source provenance figures of /results added up (null without provenance). */
 export function endpointsProbed(results: CbomRunResults | null | undefined): number | null {
-  if (!results) return null;
-  const own = results.run?.endpoints_probed;
-  if (typeof own === "number") return own;
-  if (!results.provenance?.length) return null;
+  if (!results?.provenance?.length) return null;
   return results.provenance.reduce((n, p) => n + (p.endpoints_probed ?? 0), 0);
 }
 
@@ -410,7 +419,7 @@ export function pageCount(page: Pick<CbomRunAssetPage, "total" | "page_size"> | 
 }
 
 /** data-* attributes the gate reads per row (PLAN §4.2, §11): values straight from the API item. */
-export function assetRowAttrs(item: CbomRunAssetItem): Record<string, string> {
+export function assetRowAttrs(item: CbomRunAssetItem, wave?: Parameters<typeof findingStatusOf>[1]): Record<string, string> {
   const attrs: Record<string, string> = {
     "data-impact": item.impact ?? "",
     "data-type": item.type ?? "",
@@ -419,7 +428,7 @@ export function assetRowAttrs(item: CbomRunAssetItem): Record<string, string> {
     "data-algorithm": item.algorithm ?? item.protocol ?? "",
     "data-finding": item.finding ?? "",
     "data-quantum": item.quantum_vulnerable === true ? "vulnerable" : item.quantum_vulnerable === false ? "safe" : "",
-    "data-status": findingStatusOf(item),
+    "data-status": findingStatusOf(item, wave),
   };
   if (item.q_grade != null) attrs["data-q-grade"] = item.q_grade;
   if (item.fix_class != null) attrs["data-fix-class"] = item.fix_class;
@@ -448,4 +457,80 @@ export function waveChips(byWave: Record<string, number> | null | undefined): { 
   return Object.entries(byWave ?? {})
     .map(([key, count]) => ({ key, count, wave: key === "none" ? null : Number(key), label: key === "none" ? "No action" : `Wave ${key}` }))
     .sort((a, b) => (a.wave ?? 99) - (b.wave ?? 99));
+}
+
+// ---------------------------------------------------------------------------- certificates (S6)
+
+export interface CertListView { listed: number; total: number; truncated: boolean; label: string | null }
+
+/** The count to print for a certificate list: the API's total (lists are capped at 2,000), never the list length. */
+export function certListView(results: CbomRunResults | null | undefined, which: "orphaned" | "unmanaged"): CertListView {
+  const list = (which === "orphaned" ? results?.certificates_orphaned : results?.certificates_unmanaged) ?? [];
+  const totalField = which === "orphaned" ? results?.certificates_orphaned_total : results?.certificates_unmanaged_total;
+  const total = typeof totalField === "number" ? totalField : list.length;
+  return { listed: list.length, total, truncated: total > list.length, label: results?.certificates_labels?.[which] ?? null };
+}
+
+export function certCountText(v: Pick<CertListView, "listed" | "total" | "truncated">): string {
+  return v.truncated ? `${v.total.toLocaleString()} (showing ${v.listed.toLocaleString()} of ${v.total.toLocaleString()})` : v.total.toLocaleString();
+}
+
+// ---------------------------------------------------------------------------- live polling (PLAN §5.3)
+
+/** /results is recomputed per request while a run is active: poll it every 30 s, and only for runs of ≤ 5,000 assets;
+ * a larger active run is read once and again when it finishes. */
+export const RESULTS_LIVE_MAX_ASSETS = 5000;
+export const RESULTS_POLL_MS = 30_000;
+
+export function resultsPollInterval(active: boolean, assetTotal: number | null | undefined): number | false {
+  if (!active) return false;
+  if (typeof assetTotal !== "number" || assetTotal > RESULTS_LIVE_MAX_ASSETS) return false;
+  return RESULTS_POLL_MS;
+}
+
+/** The run query stops polling on any error (403 / 404 / 422 / 5xx): it is shown, not retried every few seconds. */
+export function runPollInterval(status: string | undefined, hasError: boolean): number | false {
+  if (hasError) return false;
+  return !status || isActiveRunStatus(status) ? 6000 : false;
+}
+
+/** A run URL the viewer cannot open: another team's (403), unknown (404) or not a valid id (422). */
+export function isNotFoundStatus(status: number | undefined): boolean {
+  return status === 403 || status === 404 || status === 422;
+}
+
+/** The whole-run /remediation list is needed only for an older backend (rows without `wave`) or for the S9 chips of a
+ * finished run; a newer backend's rows carry their own wave and key. */
+export function needsRunRemediationList(page: Pick<CbomRunAssetPage, "findings_total"> | null | undefined, active: boolean): boolean {
+  if (!page) return false;
+  return !serverSupportsFindingsView(page) || !active;
+}
+
+/** The total next to the toggle: with a filter on, the filtered `total`; without, the view's own total. */
+export function tableTotal(page: Pick<CbomRunAssetPage, "total" | "all_total" | "findings_total">, view: "findings" | "all",
+                           filtered: boolean): number {
+  if (filtered) return page.total;
+  if (view === "all") return page.all_total;
+  return typeof page.findings_total === "number" ? page.findings_total : page.total;
+}
+
+// ---------------------------------------------------------------------------- PQC migration rows (S7)
+
+type KbText = { title?: string | null; fix?: string | null; standards?: string[] | null; pqc?: string | null };
+type MigrationRowIn = PqcMigrationRow & { migration_code?: string | null; fix_code?: string | null };
+
+/** A run's migration rows carry KB codes instead of text (/results sends each KB entry once, in `pqc.kb`): fill the
+ * roadmap and fix from the entry, so the quantum-vulnerable list and the roadmap read as on a code scan. Text the row
+ * already has wins; a code missing from `kb` leaves the field empty. */
+export function resolveMigrationRows(dist: CbomDistributions): CbomDistributions {
+  const pqc = dist.pqc as CbomDistributions["pqc"] & { kb?: Record<string, KbText> };
+  const kb = pqc?.kb;
+  if (!pqc?.migration?.length || !kb) return dist;
+  const text = (code: string | null | undefined) => (code ? kb[code]?.fix ?? null : null);
+  const migration = (pqc.migration as MigrationRowIn[]).map((r) => ({
+    ...r,
+    migration_roadmap: r.migration_roadmap ?? text(r.migration_code) ?? text(r.fix_code),
+    suggested_fix: r.suggested_fix ?? text(r.fix_code) ?? text(r.migration_code),
+  }));
+  return { ...dist, pqc: { ...pqc, migration } };
 }

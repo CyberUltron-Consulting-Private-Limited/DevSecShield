@@ -86,9 +86,14 @@ const riskScoreAreaChartConfig = {
 export function CbomDashboardCharts({
   dashboard,
   findingsList,
+  riskScoresTitle = "Risk scores per finding",
+  riskScoresDescription = "Risk score by finding (top 24, descending)",
 }: {
   dashboard: CbomScanDashboardData;
   findingsList: CbomFinding[];
+  /** The run page plots the rows of one table page, and says so; the code page keeps these defaults. */
+  riskScoresTitle?: string;
+  riskScoresDescription?: string;
 }) {
   const cardData = dashboard.card_data;
   const remediation = dashboard.remediation_actions_required;
@@ -478,9 +483,9 @@ export function CbomDashboardCharts({
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
               <TrendingUp className="w-4 h-4" />
-              Risk scores per finding
+              {riskScoresTitle}
             </CardTitle>
-            <CardDescription>Risk score by finding (top 24, descending)</CardDescription>
+            <CardDescription>{riskScoresDescription}</CardDescription>
           </CardHeader>
           <CardContent>
             {!hasRiskScoresData ? (

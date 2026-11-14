@@ -8,7 +8,7 @@
 // in All assets), run-results-page, button "Next", run-results-empty.
 
 import { ChevronDown, ChevronRight, CheckCircle, Circle, Eye, EyeOff, Loader2, Pencil, Search, ShieldAlert } from "lucide-react";
-import { Fragment, useState } from "react";
+import { Fragment, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -39,6 +39,7 @@ import {
   optionalColumns,
   pageCount,
   serverSupportsFindingsView,
+  tableTotal,
   viewCounts,
   type RunTableFilters,
 } from "./model";
@@ -46,6 +47,13 @@ import {
 const IMPACTS: CbomImpact[] = ["Critical", "High", "Medium", "Low"];
 const IMPACT_TONE = { Critical: "red", High: "red", Medium: "amber", Low: "blue" } as const;
 const STATUS_ICON: Record<CbomFindingStatus, typeof CheckCircle> = { fixed: CheckCircle, ignored: EyeOff, in_progress: Loader2, not_started: Circle };
+
+/** Bounds the Radix viewport (on the root the limit does not stop the table painting over the next section). */
+export const VIEWPORT_MAX_H_TABLE = "[&>[data-slot=scroll-area-viewport]]:max-h-[640px]";
+/** Below 768 px the select and name columns stay on screen while the table scrolls sideways (PLAN §4.5). */
+const STICKY_SELECT = "max-md:sticky max-md:left-0 max-md:z-10 max-md:bg-white max-md:dark:bg-zinc-900";
+const STICKY_NAME = "max-md:sticky max-md:left-12 max-md:z-10 max-md:bg-white max-md:dark:bg-zinc-900";
+const SEARCH_DEBOUNCE_MS = 400;
 
 export interface RunTableSelection {
   /** asset id -> stable asset key (what PUT /cbom/remediation takes) */
@@ -115,6 +123,15 @@ export function RunFindingsTable({
 }) {
   const [search, setSearch] = useState(filters.q ?? "");
   const [expanded, setExpanded] = useState<number | null>(null);
+  const typing = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // the search applies as you type (debounced), like the code page's table; Enter applies at once
+  const applySearch = (value: string, delay: number) => {
+    if (typing.current) clearTimeout(typing.current);
+    typing.current = setTimeout(() => {
+      const q = value.trim() || undefined;
+      if (q !== filters.q) onFilters({ q, page: 1 });
+    }, delay);
+  };
 
   const supportsView = serverSupportsFindingsView(page);
   const counts = viewCounts(page);
@@ -162,7 +179,9 @@ export function RunFindingsTable({
           </div>
           {page && (
             <p className="text-sm font-medium text-zinc-900 dark:text-white" data-testid="run-results-total">
-              {effectiveView === "all" ? `${pluralize(page.all_total, "asset")} found` : `${pluralize(counts.findings ?? page.total, "finding")}`}
+              {effectiveView === "all"
+                ? `${pluralize(tableTotal(page, "all", hasActiveFilters(filters)), "asset")} found`
+                : pluralize(tableTotal(page, "findings", hasActiveFilters(filters)), "finding")}
             </p>
           )}
           {page && IMPACTS.map((impact) =>
@@ -192,9 +211,8 @@ export function RunFindingsTable({
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
             <Input type="search" placeholder="Search location, algorithm or finding" value={search} className="pl-9 h-9"
                    aria-label="Search findings table" data-testid="run-results-search"
-                   onChange={(e) => setSearch(e.target.value)}
-                   onKeyDown={(e) => e.key === "Enter" && onFilters({ q: search.trim() || undefined, page: 1 })}
-                   onBlur={() => (search.trim() || undefined) !== filters.q && onFilters({ q: search.trim() || undefined, page: 1 })} />
+                   onChange={(e) => { setSearch(e.target.value); applySearch(e.target.value, SEARCH_DEBOUNCE_MS); }}
+                   onKeyDown={(e) => e.key === "Enter" && applySearch(search, 0)} />
           </div>
           <Select value={filters.impact ?? "all"} onValueChange={(v) => onFilters({ impact: v === "all" ? undefined : (v as CbomImpact), page: 1 })}>
             <SelectTrigger className="h-9 min-w-[140px] cursor-pointer" aria-label="Impact" data-testid="run-results-impact"><SelectValue /></SelectTrigger>
@@ -240,6 +258,7 @@ export function RunFindingsTable({
           )}
           {hasActiveFilters(filters) && (
             <Button variant="ghost" size="sm" className="cursor-pointer" onClick={() => {
+              if (typing.current) clearTimeout(typing.current);
               setSearch("");
               onFilters({ type: undefined, impact: undefined, quantum: undefined, q: undefined, source_id: undefined, status: undefined, page: 1 });
             }}>
@@ -268,11 +287,11 @@ export function RunFindingsTable({
               : hasActiveFilters(filters) ? "No assets match these filters." : effectiveView === "findings" ? "No findings in this run." : "No assets match these filters."}
           </p>
         ) : (
-          <ScrollArea className="w-full max-h-[640px] rounded-md border border-zinc-200 dark:border-zinc-800">
+          <ScrollArea className={`w-full rounded-md border border-zinc-200 dark:border-zinc-800 ${VIEWPORT_MAX_H_TABLE}`} data-testid="run-results-scroll">
             <Table className="min-w-max">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[48px]">
+                  <TableHead className={`w-[48px] ${STICKY_SELECT}`}>
                     <Checkbox checked={allSelected} aria-label="Select all rows" className="cursor-pointer" disabled={selectable.length === 0}
                               onCheckedChange={() => {
                                 const next = new Map(selection);
@@ -282,7 +301,7 @@ export function RunFindingsTable({
                               }} />
                   </TableHead>
                   <TableHead className="min-w-[90px]">Impact</TableHead>
-                  <TableHead className="min-w-[160px]">Algorithm</TableHead>
+                  <TableHead className={`min-w-[160px] ${STICKY_NAME}`}>Algorithm</TableHead>
                   <TableHead className="min-w-[120px]">Type</TableHead>
                   <TableHead className="min-w-[200px]">Where</TableHead>
                   <TableHead className="min-w-[220px]">Finding</TableHead>
@@ -300,16 +319,17 @@ export function RunFindingsTable({
               </TableHeader>
               <TableBody>
                 {items.map((item) => {
-                  const status = findingStatusOf(item);
-                  const key = keyOf(item);
                   const wave = item.wave ?? waveOf(item);
+                  const status = findingStatusOf(item, wave);
+                  const key = keyOf(item);
+                  const coverage = item.type === "coverage";
                   const open = expanded === item.id;
                   return (
                     <Fragment key={item.id}>
-                      <TableRow data-testid={`run-asset-${item.id}`} {...assetRowAttrs(item)}
+                      <TableRow data-testid={`run-asset-${item.id}`} {...assetRowAttrs(item, wave)}
                                 className={`cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50 ${selection.has(item.id) ? "bg-zinc-100 dark:bg-zinc-800/70" : ""}`}
                                 onClick={() => setExpanded(open ? null : item.id)}>
-                        <TableCell onClick={(e) => e.stopPropagation()} className="w-[48px]">
+                        <TableCell onClick={(e) => e.stopPropagation()} className={`w-[48px] ${STICKY_SELECT}`}>
                           <Checkbox checked={selection.has(item.id)} disabled={!key} className="cursor-pointer"
                                     aria-label={`Select ${item.location}`} data-testid={`run-asset-select-${item.id}`}
                                     title={key ? undefined : "This row has no stable key to plan or track"}
@@ -320,7 +340,7 @@ export function RunFindingsTable({
                             ? <Badge variant="outline" className={getImpactBadgeClass(item.impact)}>{item.impact}</Badge>
                             : <span className="text-xs text-zinc-500">Info</span>}
                         </TableCell>
-                        <TableCell className="font-medium whitespace-nowrap">
+                        <TableCell className={`font-medium whitespace-nowrap ${STICKY_NAME}`}>
                           <button type="button" className="text-left text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline cursor-pointer font-medium max-w-[180px] truncate inline-block align-bottom"
                                   title={assetName(item)} onClick={(e) => { e.stopPropagation(); onOpenDetails(item); }}>
                             {assetName(item)}
@@ -348,9 +368,13 @@ export function RunFindingsTable({
                         <TableCell className="max-w-[160px]"><Truncate text={item.source_name} className="text-sm text-zinc-600 dark:text-zinc-400" /></TableCell>
                         <TableCell><WaveBadge item={wave ?? undefined} /></TableCell>
                         <TableCell>
-                          <span className={`inline-flex items-center justify-center px-2.5 py-1 rounded-md text-xs font-medium capitalize ${getFindingStatusBadgeClass(status)}`}>
-                            {status.replace(/_/g, " ")}
-                          </span>
+                          {coverage ? (
+                            <span className="text-xs text-zinc-500" title="A part the run could not read: nothing to plan or track">—</span>
+                          ) : (
+                            <span className={`inline-flex items-center justify-center px-2.5 py-1 rounded-md text-xs font-medium capitalize ${getFindingStatusBadgeClass(status)}`}>
+                              {status.replace(/_/g, " ")}
+                            </span>
+                          )}
                         </TableCell>
                         {cols.qGrade && (
                           <TableCell className="text-sm" title={item.q_label ?? undefined}>{item.q_grade ?? "—"}</TableCell>

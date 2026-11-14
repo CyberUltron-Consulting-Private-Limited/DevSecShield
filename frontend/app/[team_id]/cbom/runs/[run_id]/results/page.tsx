@@ -32,7 +32,7 @@ function RunResultsPage() {
 
   if (!teamId || !runId) return <RunNotFound teamId={teamId ?? 0} />;
   return (
-    <div className="min-h-screen bg-white dark:bg-zinc-900 overflow-x-hidden">
+    <div className="min-h-screen bg-white dark:bg-zinc-900 min-w-0">
       <RunResultsView key={`${teamId}-${runId}`} teamId={teamId} runId={runId} initialView={view} onViewChange={onViewChange} />
     </div>
   );

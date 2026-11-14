@@ -99,7 +99,7 @@ for (const [file, text] of sources) {
 }
 // the crypto charts get no rows on a run, so the gauge cannot recount them
 const sections = fs.readFileSync(path.join(dir, "RunSections.tsx"), "utf8");
-assert.match(sections, /<CbomCryptoCharts distributions=\{applyPostureToDistributions\(dist, posture\)\} findings=\{\[\]\} inventory=\{\[\]\}/);
+assert.match(sections, /<CbomCryptoCharts distributions=\{applyPostureToDistributions\(resolveMigrationRows\(dist\), posture\)\} findings=\{\[\]\} inventory=\{\[\]\}/);
 // the dashboard on the run page is built by runDashboardModel (posture overlay), nowhere else
 const view = fs.readFileSync(path.join(dir, "RunResultsView.tsx"), "utf8");
 assert.match(view, /runDashboardModel\(results\?\.dashboard, posture\)/);

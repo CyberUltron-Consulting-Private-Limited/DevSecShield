@@ -5020,12 +5020,22 @@ export type CbomRunDashboard = CbomScanDashboardData & {
 }
 
 export interface CbomRunResults {
-    run: CbomRun & { endpoints_probed?: number }
+    run: CbomRun
     dashboard?: CbomRunDashboard | null
     distributions?: import("@/components/cbom/CbomCryptoCharts").CbomDistributions | null
     compliance?: { frameworks: CbomRunComplianceFramework[] } | null
     certificates_orphaned?: CbomCertRef[] | null
     certificates_unmanaged?: CbomCertRef[] | null
+    /** list lengths are capped (2,000); these are the full counts */
+    certificates_orphaned_total?: number
+    certificates_unmanaged_total?: number
+    certificates_orphaned_truncated?: boolean
+    certificates_unmanaged_truncated?: boolean
+    /** "no_endpoints_probed": the run probed no endpoint, so nothing can be called orphaned */
+    certificates_basis?: "endpoints_probed" | "no_endpoints_probed" | string
+    certificates_labels?: { orphaned?: string; unmanaged?: string }
+    certificates_scope?: string
+    kb_version?: string
     provenance?: CbomRunProvenance[] | null
     top_risks?: CbomRunPosture["top_risks"] | null
     judged_on?: string

@@ -24,15 +24,21 @@ import { CbomDashboardCharts } from "./CbomDashboardCharts";
 import { getImpactBadgeClass } from "./badgeClasses";
 import {
   applyPostureToDistributions,
+  certCountText,
+  certListView,
   complianceRows,
   formatDuration,
   postureDistribution,
+  resolveMigrationRows,
   waveChips,
   type RunDashboardModel,
   type SectionView,
 } from "./model";
 import { RunJobsTable, SkippedAtStart } from "./RunJobsTable";
 import { Badge } from "@/components/ui/badge";
+
+/** Bounds the Radix viewport (not the root, which grows with its content). Read by results/scrollBounds.test.ts. */
+export const VIEWPORT_MAX_H_72 = "[&>[data-slot=scroll-area-viewport]]:max-h-72";
 
 export function SectionNote({ children, testId }: { children: ReactNode; testId?: string }) {
   return (
@@ -84,7 +90,7 @@ export function RunCoverageSection({ run, targets, provenance }: {
                     <TableHead>Kind</TableHead>
                     <TableHead>Runs on</TableHead>
                     <TableHead>Outcome</TableHead>
-                    <TableHead className="text-right">Assets</TableHead>
+                    <TableHead className="text-right" title="Collected assets; the jobs table above also counts the Not collected rows">Assets (excl. not collected)</TableHead>
                     <TableHead className="text-right">Endpoints probed</TableHead>
                     <TableHead className="text-right">Duration</TableHead>
                     <TableHead className="text-right">Credits</TableHead>
@@ -171,14 +177,20 @@ export function PostureDistributions({ posture }: { posture: Record<string, unkn
 }
 
 // ---------------------------------------------------------------------------- S6 orphaned / unmanaged certificates
-function CertTable({ title, certs, testId, onOpenAsset }: { title: string; certs: CbomCertRef[]; testId: string; onOpenAsset: (id: number) => void }) {
+function CertTable({ title, label, count, certs, testId, onOpenAsset }: {
+  title: string; label: string | null; count: string; certs: CbomCertRef[]; testId: string; onOpenAsset: (id: number) => void;
+}) {
   return (
     <div className="space-y-1.5 min-w-0" data-testid={testId}>
-      <p className="text-sm font-medium text-zinc-900 dark:text-white">{title} <span className="text-zinc-500 font-normal">({certs.length})</span></p>
+      <p className="text-sm font-medium text-zinc-900 dark:text-white">
+        {title} <span className="text-zinc-500 font-normal" data-testid={`${testId}-count`}>({count})</span>
+      </p>
+      {label && <p className="text-xs text-zinc-500">{label}</p>}
       {certs.length === 0 ? (
         <p className="text-xs text-zinc-500">None in this run.</p>
       ) : (
-        <ScrollArea className="w-full max-h-72 border rounded-lg">
+        // The height limit goes on the Radix viewport: on the root it does not bound the scrolling box (R-qa).
+        <ScrollArea className={`w-full border rounded-lg ${VIEWPORT_MAX_H_72}`} data-testid={`${testId}-scroll`}>
           <div className="min-w-max">
             <Table>
               <TableHeader>
@@ -221,14 +233,16 @@ export function RunCertificatesSection({ view, results, onOpenAsset }: {
   if (!view.show) return null;
   const orphaned = results?.certificates_orphaned ?? null;
   const unmanaged = results?.certificates_unmanaged ?? null;
+  const o = certListView(results, "orphaned");
+  const u = certListView(results, "unmanaged");
   return (
     <SectionShell title="Orphaned and unmanaged certificates" testId="run-section-certificates"
                   description="Within this run's scope: orphaned = stored but presented by no endpoint the run read; unmanaged = held by no managing system the run saw (ACM, cert-manager, AD CS, Key Vault, Certificate Manager)">
       {view.note && <SectionNote testId="run-certificates-note">{view.note}</SectionNote>}
       {(orphaned?.length || unmanaged?.length) ? (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-          <CertTable title="Orphaned certificates" certs={orphaned ?? []} testId="run-certs-orphaned" onOpenAsset={onOpenAsset} />
-          <CertTable title="Unmanaged certificates" certs={unmanaged ?? []} testId="run-certs-unmanaged" onOpenAsset={onOpenAsset} />
+          <CertTable title="Orphaned certificates" label={o.label} count={certCountText(o)} certs={orphaned ?? []} testId="run-certs-orphaned" onOpenAsset={onOpenAsset} />
+          <CertTable title="Unmanaged certificates" label={u.label} count={certCountText(u)} certs={unmanaged ?? []} testId="run-certs-unmanaged" onOpenAsset={onOpenAsset} />
         </div>
       ) : null}
     </SectionShell>
@@ -246,7 +260,7 @@ export function RunCryptoChartsSection({ view, results, posture }: {
       {dist ? (
         // Rows are not passed (findings / inventory empty): the PQC gauge reads the run's posture figures, never a
         // recount of the table (Rule P). The heat-map and calendar come from RunInsights (S5).
-        <CbomCryptoCharts distributions={applyPostureToDistributions(dist, posture)} findings={[]} inventory={[]} showCodeHeatmap={false} />
+        <CbomCryptoCharts distributions={applyPostureToDistributions(resolveMigrationRows(dist), posture)} findings={[]} inventory={[]} showCodeHeatmap={false} />
       ) : null}
       {view.note && <SectionNote testId="run-crypto-charts-note">{view.note}</SectionNote>}
     </div>
@@ -271,14 +285,18 @@ export function RunChangesSection({ teamId, run, canCompare, onCompare }: { team
 // ---------------------------------------------------------------------------- S9 remediation waves
 const WAVE_TONE: Record<number, Tone> = { 1: "red", 2: "amber", 3: "blue", 4: "zinc" };
 
-export function RunWavesSection({ byWave, labels, loading, selected }: {
-  byWave: Record<string, number> | null | undefined; labels?: Record<string, string>; loading: boolean; selected: number;
+export function RunWavesSection({ byWave, labels, loading, deferred, selected }: {
+  byWave: Record<string, number> | null | undefined; labels?: Record<string, string>; loading: boolean;
+  /** an active run on a newer backend: the whole-run plan is not polled; each row shows its own wave */
+  deferred: boolean;
+  selected: number;
 }) {
   const chips = waveChips(byWave);
   return (
     <SectionShell title="Remediation waves" testId="run-section-waves"
                   description="Who fixes what, by when. Plans follow each asset's stable identity, so they carry over to later runs">
-      {loading ? <p className="text-xs text-zinc-500">Loading the wave plan…</p> : chips.length === 0 ? (
+      {deferred ? <SectionNote testId="run-waves-deferred">Wave counts for the whole run appear when it has finished; each row below shows its own wave meanwhile.</SectionNote>
+        : loading ? <p className="text-xs text-zinc-500">Loading the wave plan…</p> : chips.length === 0 ? (
         <SectionNote>No asset of this run needs a remediation wave.</SectionNote>
       ) : (
         <div className="flex flex-wrap gap-2" data-testid="run-wave-chips">
@@ -340,16 +358,22 @@ export function RunComplianceSection({ view, results, posture }: {
 }
 
 // ---------------------------------------------------------------------------- S11 dashboard charts
-export function RunDashboardSection({ view, model, riskRows, results }: {
+export function RunDashboardSection({ view, model, riskRows, pageRows, results }: {
   view: SectionView;
   model: RunDashboardModel;
   riskRows: Parameters<typeof CbomDashboardCharts>[0]["findingsList"];
+  /** rows on the findings table's current page (the per-finding chart plots those, and says so) */
+  pageRows: number;
   results: CbomRunResults | null;
 }) {
   if (!view.show) return null;
   return (
     <div className="space-y-3" data-testid="run-section-dashboard">
-      {model.dashboard && <CbomDashboardCharts dashboard={model.dashboard} findingsList={riskRows} />}
+      {model.dashboard && (
+        <CbomDashboardCharts dashboard={model.dashboard} findingsList={riskRows}
+                             riskScoresTitle={`Risk scores on this table page (${pageRows} rows)`}
+                             riskScoresDescription="Risk score (0-10) of the rows on the findings table's current page and filter, top 24, descending" />
+      )}
       {view.note && <SectionNote testId="run-dashboard-note">{view.note}</SectionNote>}
       {model.dashboard && results?.computed_at && (
         <p className="text-xs text-zinc-500" data-testid="run-dashboard-asof">
