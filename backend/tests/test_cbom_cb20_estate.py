@@ -266,6 +266,59 @@ def test_assets_without_a_cross_source_identity_get_a_per_source_key(world):
     assert all(re.fullmatch(r"(obs|ep):[0-9a-f]{40}", k) for k in world.assets())
 
 
+# ----------------------------------------------------------------------------- incremental keys (CB-21 #205)
+def _cert_world(world, rounds):
+    """Sources seeing overlapping certificates; each round changes a few (renewal, a Windows row joining)."""
+    p, w, lin = world.source("network", "prober"), world.source("windows_servers", "win"), world.source("linux_servers", "l")
+    base = {"not_after": NOT_AFTER, "subject": SUBJECT, "issuer": ISSUER}
+    for r in range(rounds):
+        serials = [f"4fa19c00127b3e5590abcdef01{i:02x}{r if i == 3 else 0:02x}" for i in range(6)]
+        jobs = {p: {"rows": [cert("10.0.0.5", f"10.0.0.5:44{i}#chain[0]", serial=s, fingerprint_sha1=f"{i:02x}" * 20,
+                                  **base) for i, s in enumerate(serials)] + [endpoint("10.0.0.5")]},
+                lin: {"rows": [cert("app", f"/etc/ssl/{i}.pem", serial=s, **base) for i, s in enumerate(serials[:4])]}}
+        if r % 2:
+            jobs[w] = {"rows": [cert("win", "LocalMachine\\My", thumbprint=("01" * 20).upper(), **base)]}
+        world.finalise(world.run(jobs))
+
+
+def test_incremental_keys_equal_a_full_correlation_every_run(tmp_path):
+    warm, cold = World(_sqlite(tmp_path / "w.db")), World(_sqlite(tmp_path / "c.db"))
+    E._INDEXES.clear()
+    _cert_world(warm, 5)
+    real = D.record_estate
+
+    def cold_write(*a, **k):
+        E._INDEXES.clear()  # every run of this world starts from an empty index: correlate_detail over the run
+        real(*a, **k)
+
+    D.record_estate = cold_write
+    try:
+        _cert_world(cold, 5)
+    finally:
+        D.record_estate = real
+    assert warm.dump() == cold.dump()
+    assert len({o.asset_key for o in warm.observations()}) >= 6
+
+
+def test_an_unchanged_rerun_reuses_keys_and_observation_keys(world, monkeypatch):
+    E._INDEXES.clear()
+    net = world.source("network", "lab")
+    rows = [endpoint(f"10.0.0.{i}") for i in range(1, 30)] + [cert("10.0.0.1", "10.0.0.1:443#chain[0]",
+                                                                   serial=SERIAL, not_after=NOT_AFTER)]
+    world.finalise(world.run({net: {"rows": rows}}))
+    counted: list[int] = []
+    real = E.AK.observation_keys
+    monkeypatch.setattr(E.AK, "observation_keys", lambda rs, ref: counted.append(len(rs)) or real(rs, ref))
+    writes = []
+    E.register_hook(hook := (lambda _s, w: writes.append(w.counts)))
+    try:
+        world.finalise(world.run({net: {"rows": rows + [endpoint("10.0.0.99")]}}))
+    finally:
+        E.unregister_hook(hook)
+    assert counted == [1]  # only the new row's observation key is computed
+    assert writes[0]["rekeyed_rows"] == 1 and writes[0]["inserted"] == 1 and writes[0]["updated"] == 0
+
+
 # ----------------------------------------------------------------------------- presence transitions
 def test_presence_present_then_not_read_under_a_gap_then_removed_then_present_again(world):
     net = world.source("network", "lab")

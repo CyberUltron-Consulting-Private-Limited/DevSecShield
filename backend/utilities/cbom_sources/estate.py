@@ -52,7 +52,9 @@ from __future__ import annotations
 import argparse
 import datetime as _dt
 import logging
+import threading
 import time
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
@@ -213,6 +215,101 @@ def _view(asset_type: str, target: str | None, location: str | None) -> D.View:
                   extra={"target": target or "", "location": location or ""})
 
 
+# ----------------------------------------------------------------------------- keys, incrementally (CB-21 #205)
+INDEX_MAX_OBSERVATIONS = 2_000_000  # observations kept in this process's indexes, over all teams (LRU by team)
+
+
+@dataclass
+class _TeamIndex:
+    """One team's correlation as of the last run this process wrote: CB-21's incremental ``CorrelationIndex`` over
+    that run's observations (id = (source_ref, row key)), what decided each one's keys, and its observation key."""
+    index: Any = field(default_factory=lambda: AK.CorrelationIndex())
+    analysed: dict[tuple[str, str], Any] = field(default_factory=dict)
+    okeys: dict[tuple[str, str], str] = field(default_factory=dict)
+    lock: threading.Lock = field(default_factory=threading.Lock)
+
+
+@dataclass
+class _Keyed:
+    keys: list[Any]  # asset key per row (str, None or NOT_CORRELATED)
+    okeys: list[str]  # observation key per row
+    alias_to_key: dict[str, str]  # every link key of a group -> the group's key (a stored key that moved)
+    changed: int  # rows whose key or aliases changed since the previous run (all of them on a cold index)
+
+
+_INDEXES: OrderedDict[int, _TeamIndex] = OrderedDict()
+_INDEXES_LOCK = threading.Lock()
+
+
+def _team_index(team_id: int) -> _TeamIndex:
+    with _INDEXES_LOCK:
+        entry = _INDEXES.pop(team_id, None) or _TeamIndex()
+        _INDEXES[team_id] = entry
+        total = sum(len(e.analysed) for e in _INDEXES.values())
+        while len(_INDEXES) > 1 and total > INDEX_MAX_OBSERVATIONS:
+            _team, old = _INDEXES.popitem(last=False)
+            total -= len(old.analysed)
+        return entry
+
+
+def _drop_index(team_id: int) -> None:
+    with _INDEXES_LOCK:
+        _INDEXES.pop(team_id, None)
+
+
+def _keys_for_run(team_id: int, seen_rows: Sequence[tuple[Any, str]]) -> _Keyed:
+    """The asset key and observation key of each row of the run, equal to ``correlate_detail`` over the run's
+    observations (``CorrelationIndex`` guarantees it), but re-correlating only what changed since the team's previous
+    run in this process: a row whose key-deciding facts are unchanged costs one memoised read and one compare, and its
+    observation key is reused (``observation_keys`` runs once, for new or changed rows only). A cold process (or an
+    evicted team) starts from an empty index: the full correlation, once."""
+    entry = _team_index(team_id)
+    with entry.lock:
+        try:
+            ids: list[tuple[str, str]] = []
+            changes: dict[tuple[str, str], Any] = {}
+            fresh: dict[str, list[tuple[tuple[str, str], Any]]] = {}
+            analysed, okeys = entry.analysed, entry.okeys
+            for row, ref in seen_rows:
+                oid = (ref, row.asset_key)
+                ids.append(oid)
+                obs = _observation(row, ref)
+                an = AK._analyse(obs)  # memoised on the facts that decide the keys (what the index itself reads)
+                old = analysed.get(oid)
+                if old is None or (old is not an and old != an):
+                    changes[oid] = obs
+                    analysed[oid] = an
+                    fresh.setdefault(ref, []).append((oid, row))
+                elif oid not in okeys:
+                    fresh.setdefault(ref, []).append((oid, row))
+            current = set(ids)
+            for oid in [o for o in analysed if o not in current]:
+                changes[oid] = None
+                del analysed[oid]
+                okeys.pop(oid, None)
+            changed = entry.index.update(changes) if changes else set()
+            for ref, items in fresh.items():
+                for (oid, _row), okey in zip(items, AK.observation_keys([r for _o, r in items], ref)):
+                    okeys[oid] = okey
+            index = entry.index
+            alias_to_key: dict[str, str] = {}
+            groups: set[int] = set()
+            keys = []
+            for oid in ids:
+                key = index.key(oid)
+                keys.append(key)
+                aliases = index.aliases(oid)
+                if aliases and id(aliases) not in groups:
+                    groups.add(id(aliases))
+                    for alias in aliases:
+                        alias_to_key[alias] = key
+            return _Keyed(keys=keys, okeys=[okeys[oid] for oid in ids], alias_to_key=alias_to_key,
+                          changed=len(changed & current))
+        except Exception:
+            _drop_index(team_id)  # never reuse a half-updated index
+            raise
+
+
 @dataclass
 class _Seen:
     row: Any  # the representative row (lowest per-job row key: stable from run to run)
@@ -264,7 +361,6 @@ def record_run(session: Session, run: CbomCollectionRun, now: _dt.datetime, *,
 
     # 1. what the run read: rows of its successful collections, keyed across sources
     job_rows: dict[str, list[Any]] = {}
-    observed: list[Any] = []
     seen_rows: list[tuple[Any, str]] = []
     for ref, (job, _prev) in jobs.items():
         if job.status != "success":
@@ -274,22 +370,15 @@ def record_run(session: Session, run: CbomCollectionRun, now: _dt.datetime, *,
         job_rows[ref] = rows
         for row in rows:
             if row.asset_type != "coverage":
-                observed.append(_observation(row, ref))
                 seen_rows.append((row, ref))
     marks["read"] = time.perf_counter()
-    corr = AK.correlate_detail(observed)
-    alias_to_key: dict[str, str] = {}
-    groups_done: set[int] = set()
+    keyed = _keys_for_run(team_id, seen_rows)
+    alias_to_key = keyed.alias_to_key
     seen: dict[tuple[str, str], _Seen] = {}
     for i, (row, ref) in enumerate(seen_rows):
-        aliases = corr.aliases[i]
-        if aliases and id(aliases) not in groups_done:
-            groups_done.add(id(aliases))
-            for alias in aliases:
-                alias_to_key[alias] = corr.keys[i]
-        key, kind, basis = _key_of(corr.keys[i])
+        key, kind, basis = _key_of(keyed.keys[i])
         if key is None:
-            key = "obs:" + ID.stable_key("node", ref, ID.node_identity(row))
+            key = "obs:" + keyed.okeys[i]
         s = seen.get((key, ref))
         if s is None:
             seen[(key, ref)] = _Seen(row, kind, basis)
@@ -309,6 +398,7 @@ def record_run(session: Session, run: CbomCollectionRun, now: _dt.datetime, *,
     by_source: dict[str, dict[str, _Seen]] = {}
     for (key, ref), s in seen.items():
         by_source.setdefault(ref, {})[key] = s
+    okey_of = {id(row): keyed.okeys[i] for i, (row, _ref) in enumerate(seen_rows)}
     for ref, (job, prev) in jobs.items():
         stored = {r[1]: r for r in sql.query(
             "SELECT id, asset_key, row_key, occurrences, presence, presence_reason, asset_type, target, location "
@@ -318,12 +408,12 @@ def record_run(session: Session, run: CbomCollectionRun, now: _dt.datetime, *,
         for key, s in mine.items():
             row, old = s.row, stored.get(key)
             if old is None:
-                inserts.append((team_id, key, ref, ID.stable_key("node", ref, ID.node_identity(row)), row.asset_key,
+                inserts.append((team_id, key, ref, okey_of[id(row)], row.asset_key,
                                 row.asset_type, row.target or None, (row.location or "")[:512], s.occurrences,
                                 "present", None, job.id, row.attempt, run_id, when, run_id, run_id, stamp))
                 touched[key] = "present"
             elif (old[2], old[3], old[4]) != (row.asset_key, s.occurrences, "present"):
-                updates.append((ID.stable_key("node", ref, ID.node_identity(row)), row.asset_key, row.asset_type,
+                updates.append((okey_of[id(row)], row.asset_key, row.asset_type,
                                 row.target or None, (row.location or "")[:512], s.occurrences, job.id, row.attempt,
                                 run_id, when, run_id, stamp, old[0]))
                 if old[4] != "present":
@@ -426,7 +516,8 @@ def record_run(session: Session, run: CbomCollectionRun, now: _dt.datetime, *,
     _settle(session, sql, write, sorted(k for k, v in touched.items() if v is None and k not in seen_keys), now)
     marks["assets"] = time.perf_counter()
 
-    write.counts = {"sources": len(jobs), "deleted_sources": len(deleted_refs), "seen": len(seen), "inserted": len(inserts), "updated": len(updates),
+    write.counts = {"sources": len(jobs), "deleted_sources": len(deleted_refs), "seen": len(seen),
+                    "rekeyed_rows": keyed.changed, "inserted": len(inserts), "updated": len(updates),
                     "moved": len(moved_ids), "assets_changed": len(write.changed),
                     "not_read": sum(1 for p in write.changed.values() if p == "not_read"),
                     "removed": sum(1 for p in write.changed.values() if p == "removed"),
