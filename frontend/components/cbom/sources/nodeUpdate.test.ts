@@ -25,6 +25,8 @@ assert.equal(nodeUpdateBadge({ state: "newer", reason: "newer_version", server_b
 // nothing to say: current, unknown, an older API without the field
 assert.equal(nodeUpdateBadge({ state: "current", reason: "same_build", server_build: server, message: null }), null)
 assert.equal(nodeUpdateBadge({ state: "unknown", reason: "no_server_build", server_build: null, message: null }), null)
+// a node the server could not compare (PR #286 review): no badge, the list still renders
+assert.equal(nodeUpdateBadge({ state: "unknown", reason: "compare_failed", server_build: "1.2.3", message: null }), null)
 assert.equal(nodeUpdateBadge(undefined), null)
 assert.equal(nodesNeedingUpdate([{ update: lab }, { update: { ...lab, state: "current", reason: "same_build", message: null } }, {}]), 1)
 // the update keeps the node's registration: same state volume, no registration token

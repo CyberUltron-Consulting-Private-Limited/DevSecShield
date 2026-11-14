@@ -4332,7 +4332,7 @@ export interface CbomNodeUpdate {
     /** update_available: an older version, another commit, or no build id; newer: ahead of the server; unknown: nothing to compare */
     state: "current" | "update_available" | "newer" | "unknown"
     reason: "same_build" | "same_version" | "older_version" | "different_version" | "no_build_id" | "different_build"
-        | "newer_version" | "no_server_build" | "not_reported" | null
+        | "newer_version" | "no_server_build" | "not_reported" | "compare_failed" | null
     message: string | null
     /** "<version>+<12-character commit>" of the node build this server ships, or null */
     server_build: string | null
