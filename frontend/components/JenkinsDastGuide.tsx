@@ -17,7 +17,7 @@ import { toast } from "@/utils/toast";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { listDASTProfiles } from "@/utils/backend_api";
 
-export function JenkinsDastGuide({ teamId }: { apiKey: string; teamId: number }) {
+export function JenkinsDastGuide({ teamId }: { teamId: number }) {
   const [copied, setCopied] = useState(false);
   const [profileId, setProfileId] = useState<string>("");
   const profiles = useQuery({
