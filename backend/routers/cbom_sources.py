@@ -977,6 +977,12 @@ def _update_settings(engine, team_id: int, user_id: int, body: SettingsUpdate) -
                     parsed = T.parse_exclusions([item.cidr])
                 except T.TargetError as exc:
                     raise HTTPException(status_code=400, detail=f"network_exclusions: {exc}") from None
+                if parsed.hostnames:
+                    # Same rule and words as the UI (teamNeverScan.ts teamExclusionError). On the node a listed name
+                    # that does not resolve holds every target of the jobs that carry it; at team level that would be
+                    # every job of the team.
+                    raise HTTPException(status_code=422, detail="network_exclusions: "
+                                        + T.HOST_NAME_NOT_ALLOWED.format(entry=item.cidr.strip()))
                 if not parsed.normalized:
                     continue
                 canonical = parsed.normalized[0]

@@ -34,6 +34,17 @@ class ConfigError(Exception):
     """The job cannot run as configured (safe to show)."""
 
 
+def skipped_never_scan(ctx: JobContext, skipped: list[str], reasons: dict[str, str], samples: bool = False) -> None:
+    """Record each target the never-scan list skipped (netutil.expand_targets): an outcome with the reason, and in a
+    connection test also a sample, so a skipped target does not silently vanish from the test."""
+    for label in skipped:
+        why = reasons.get(label) or f"{label} is on the never-scan list"
+        ctx.outcome(label, "skipped_never_scan", why)
+        if samples:
+            ctx.samples.append({"target": label, "status": "skipped_never_scan", "reachable": None, "login": None,
+                                "privilege": None, "note": why})
+
+
 def run_job(ctx: JobContext, job: dict, scope: dict, source: dict | None) -> tuple[str, str | None, str | None]:
     """(status, error, summary)"""
     kind = job.get("kind")

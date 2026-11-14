@@ -31,7 +31,7 @@ import paramiko
 from zs_scan_node import commands as C
 from zs_scan_node import linux_parsers as P
 from zs_scan_node.certparse import public_key_facts_from_pem
-from zs_scan_node.collectors import ConfigError
+from zs_scan_node.collectors import ConfigError, skipped_never_scan
 from zs_scan_node.jobctx import JobContext
 from zs_scan_node import netutil
 from zs_scan_node.netutil import Target, expand_targets
@@ -299,8 +299,10 @@ def open_session(ctx: JobContext, target: Target, config: dict, creds: dict) -> 
     user = str(config.get("login_user") or "zs-cbom")
     policy = config.get("host_key_policy") or "tofu"
     host_port = f"{target.ip}:{port}"
-    if ctx.never_scan.blocks_ip(str(target.ip)):  # a never-scan target is skipped before anything else is judged
-        raise TargetFail("skipped_never_scan", f"{target.ip} is on the never-scan list")
+    try:  # a never-scan target is skipped before anything else is judged: a name by every address it resolved to
+        netutil.checked_target(target, ctx.never_scan)
+    except netutil.Blocked as exc:
+        raise TargetFail("skipped_never_scan", str(exc)) from None
     if "password" in creds and "key" not in creds and policy != "pinned":
         # a first-seen host key proves nothing, so a password could go to an impostor (whole ranges make that
         # easy): passwords go only to hosts pinned in known_hosts.  Key logins never reveal the key.
@@ -825,10 +827,12 @@ def _service_and_config_crypto(sess: Session, loc: str, emit) -> None:
 
 
 # ----------------------------------------------------------------------------- entry points
-def _targets(ctx: JobContext, scope: dict) -> list[Target]:
-    targets, skipped = expand_targets(scope.get("targets") or [], ctx.never_scan)
-    for label in skipped:
-        ctx.outcome(label, "skipped_never_scan")
+def _targets(ctx: JobContext, scope: dict, samples: bool = False) -> list[Target]:
+    """The targets to collect; each skipped one gets an outcome naming the address and entry that matched (and in a
+    connection test, ``samples=True``, a sample)."""
+    reasons: dict[str, str] = {}
+    targets, skipped = expand_targets(scope.get("targets") or [], ctx.never_scan, reasons=reasons)
+    skipped_never_scan(ctx, skipped, reasons, samples=samples)
     return targets
 
 
@@ -871,7 +875,7 @@ def test(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
                                 "privilege": None, "note": str(exc)})
         return str(exc)
     tier = int(config.get("tier") or 1)
-    for target in _targets(ctx, scope)[:5]:
+    for target in _targets(ctx, scope, samples=True)[:5]:
         sample = {"target": target.label, "status": "ready", "reachable": False, "login": False,
                   "privilege": None if tier < 2 else False, "note": ""}
         if target.ip is None:
