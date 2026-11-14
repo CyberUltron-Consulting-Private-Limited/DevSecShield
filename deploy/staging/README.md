@@ -42,13 +42,14 @@ workflow runs it from CI.
 scripts/deploy/staging.sh release deploy@staging-host /opt/devsecshield-staging
 ```
 = `build` (all images, tag = short commit; the frontend gets `NEXT_PUBLIC_BACKEND_URL=https://<API_HOST>`),
-`save` (`deploy/staging/images/dss-staging-<tag>.tar.gz` + `.sha256`), `push` (scp of the bundle, `staging.sh
-disk-check <tag>` on the host, scp of the archive, then `staging.sh deploy <tag>` on the host over ssh). On the host,
+`save` (`deploy/staging/images/dss-staging-<tag>.tar.gz` + `.sha256` + `.need`, what loading it needs), `push` (scp
+of the bundle, `staging.sh disk-check <tag>` on the host, scp of the archive, then `staging.sh deploy <tag>` on the
+host over ssh). On the host,
 `deploy` verifies the checksum, checks the disk (below), `docker load`s the archive, writes `DSS_TAG` into `.env`,
 runs `docker compose up -d --wait`, then the checks below; a failed `compose up` fails the deploy (recorded as
-`FAILED` in `deploy-history`). After a successful deploy the new tag's and the previous tag's images and archives are
-kept (the previous tag is recorded in `deploy-history`) and this deployment's older ones are removed (see "Disk
-space"); each tag's deploy files (compose file, nginx config, rollup overlay, `staging.sh`) and the head of its
+`FAILED` in `deploy-history`). After a successful deploy the images of the new tag, the previous tag (recorded in
+`deploy-history`) and the last release that passed its checks are kept, and the new tag's archive only; this
+deployment's other images and archives are removed (see "Disk space"); each tag's deploy files (compose file, nginx config, rollup overlay, `staging.sh`) and the head of its
 migrations are kept in `releases/<tag>/` for a rollback. `deploy` refuses a tag whose migrations do not contain the
 database's revision (an older tag than the one that migrated it): that is what `rollback` is for.
 
@@ -63,44 +64,59 @@ Python read) must contain it, and `SSL_CERT_FILE` / `UV_NATIVE_TLS=1` / `NODE_EX
 
 The staging host is shared with other sites. A release archive is about 5.5 GB and `docker load` needs about three
 times that again where Docker stores images (Deploy staging run 43572299641 ran the host out of disk part way through
-the load). So, before the archive is copied (`push` runs `staging.sh disk-check <tag> --archive-bytes <size>` on the
-host) and again before it is loaded (`deploy`), `staging.sh` checks two filesystems, and their sum when they are one:
+the load). So, before the archive is copied (`push` runs `staging.sh disk-check <tag> --archive-bytes <size>
+--need-bytes <need>` on the host) and again before it is loaded (`deploy`), `staging.sh` checks the filesystems that
+receive it, identified by device (`stat -c %d`), so a bind mount of the same disk counts once and the needs add up:
 * the one holding `deploy/staging/images/`: room for the part of the archive not copied yet;
-* the one holding the image store: `STAGING_DISK_FACTOR` (default **3.3**) x the archive's size. The image store is
-  containerd's root with the containerd image store (Docker 29's default; `docker info` says `driver-type
-  io.containerd.snapshotter.v1`; `/var/lib/containerd` unless the containerd config says otherwise, or
-  `STAGING_CONTAINERD_ROOT`), else Docker's root (`docker info` `DockerRootDir`). The factor was measured on run
-  43572299641's archive (5,484,863,244 bytes): its layers are stored gzip-compressed (1.00x the archive) and unpack to
-  2.04x (scan-worker alone 4.72 GB stored, 9.02 GB unpacked); the containerd store keeps both, 3.04x, and the classic
-  store's temporary extraction plus its layers come to the same; 3.3 adds about 10% for filesystem overhead. Layers a
-  release shares with one already loaded need no new space, so the check errs on the safe side;
-plus `STAGING_DISK_RESERVE_MB` (default 1024) left free on each, for the other sites.
+* the one holding the image store: what loading the archive needs. The image store is containerd's root with the
+  containerd image store (Docker 29's default; `docker info` says `driver-type io.containerd.snapshotter.v1`;
+  `/var/lib/containerd` unless the containerd config says otherwise, or `STAGING_CONTAINERD_ROOT`), else Docker's
+  root (`docker info` `DockerRootDir`).
+  * **Measured** (`<archive>.need`, written by `save` with `scripts/deploy/archive_need.py`, copied with the archive and
+    uploaded with the workflow's artifact): every layer as stored in the archive (the containerd store keeps it in its
+    content store; the classic store extracts it to a temporary directory) plus every layer unpacked, + 10% for
+    filesystem overhead. This holds whatever store the builder had.
+  * Otherwise `STAGING_DISK_FACTOR` (default **3.3**) x the archive's size. Measured on run 43572299641's archive
+    (5,484,863,244 bytes, from a containerd-store builder, as the CI runner is): its layers are stored
+    gzip-compressed (1.00x the archive) and unpack to 2.04x (scan-worker alone 4.72 GB stored, 9.02 GB unpacked), so
+    3.04x, and 3.3 adds about 10%. **An archive saved by a classic-store builder** holds uncompressed layer tars and
+    needs about 4x: without its `.need`, set `STAGING_DISK_FACTOR=4`. Layers a release shares with one already
+    loaded need no new space, so both err on the safe side;
+plus `STAGING_DISK_RESERVE_MB` (default 1024) left free on each, for the other sites. An invalid
+`STAGING_DISK_FACTOR` or `STAGING_DISK_RESERVE_MB` (`3,3`, `1G`) refuses the deploy before anything is changed.
 
-When a filesystem is short, `staging.sh` removes **this deployment's** images and archives of every tag except the
-running tag, its rollback target (the tag `rollback` would go back to) and the tag being deployed, then checks again;
-still short, it stops before anything is copied, loaded or switched and prints what it needs and what is free. After a
-successful deploy it keeps only the new tag and the previous one (the rollback target) and removes this deployment's
-other images and archives. Only `<DSS_IMAGE_PREFIX>/{devsecshield-backend,devsecshield-frontend,scan-worker,
-dast-worker}:<tag>` images and `deploy/staging/images/<prefix>-<tag>.tar.gz` (with `.sha256` and `.part`) are ever
-removed, one by one: never another site's images or files, never `docker image prune` or `docker system prune`, never
-by force (docker refuses an image a container was created from; `staging.sh` says so and keeps it). The settings can
-also be set in `.env` (`STAGING_DISK_FACTOR`, `STAGING_DISK_RESERVE_MB`, `STAGING_CONTAINERD_ROOT`) or passed to
-`push` from the build machine (the first two).
+When a filesystem is short, `staging.sh` removes **this deployment's** images of every tag except the running tag,
+its rollback target (the tag `rollback` would go back to), the last release that passed its checks
+(`releases/passed`) and the tag being deployed, and its archives except the new tag's (`rollback` uses images, never
+archives), then checks again; still short, it stops before anything is copied, loaded or switched and prints what it
+needs and what is free. After a deploy whose checks passed it keeps the images of the new tag, its rollback target and
+the last other release that passed its checks (the rollback target, unless the deploy before failed), and the new
+tag's archive only. Only `<DSS_IMAGE_PREFIX>/{devsecshield-backend,devsecshield-frontend,scan-worker,dast-worker}:<tag>`
+images and `deploy/staging/images/<prefix>-<tag>.tar.gz` (with `.sha256`, `.part` and `.need`) are ever removed, and an
+archive only when `<tag>` is a release this host knows (its images, `deploy-history`, `releases/`): another
+deployment's `dss-staging-eu-<tag>.tar.gz` never matches. Removal is one by one: never another site's images or
+files, never `docker image prune` or `docker system prune`, never by force (docker refuses an image a container was
+created from; `staging.sh` says so and keeps it). The settings can also be set in `.env` (`STAGING_DISK_FACTOR`,
+`STAGING_DISK_RESERVE_MB`, `STAGING_CONTAINERD_ROOT`) or passed to `push` from the build machine (the first two).
+`staging.sh` runs with `LC_ALL=C`, so numbers read the same under any locale an ssh session forwards.
 
 A `docker load` that still runs out of space (the containerd store tags the images, prints "Error unpacking image
 ...: no space left on device" and exits 0; the classic store exits non-zero) fails the deploy before anything is
-switched, and the images of the new tag it loaded are removed (never the running tag's or its rollback target's).
+switched, and the images of the new tag it loaded are removed (never the running tag's, its rollback target's or the
+last passed release's).
 
 Runbook, on the host (`cd /opt/devsecshield-staging`):
 ```sh
-scripts/deploy/staging.sh disk-plan <tag>                          # archive already copied
-scripts/deploy/staging.sh disk-plan <tag> --archive-bytes <size>   # before the copy (size: wc -c of the archive)
+scripts/deploy/staging.sh disk-plan <tag>                          # archive (and its .need) already copied
+scripts/deploy/staging.sh disk-plan <tag> --archive-bytes <size> [--need-bytes <need>]   # before the copy
 df -h deploy/staging/images /var/lib/containerd /var/lib/docker     # where the space went
 docker system df                                                    # every site's images, containers, volumes
 ```
-`disk-plan` prints each filesystem's need and free space, what the preflight would remove and what retention would
-remove after the deploy; it removes nothing. When even then the host is short, the space is someone else's: ask the
-owners of the other sites, or grow the disk; then push again (or re-run the newest Deploy staging run).
+`<size>` is `wc -c` of the archive and `<need>` the number in its `.need` (both on the build machine or in the
+workflow's artifact). `disk-plan` prints each filesystem's need and free space, what the preflight would remove and
+what retention would remove after the deploy; it removes nothing. When even then the host is short, the space is
+someone else's: ask the owners of the other sites, or grow the disk; then push again (or re-run the newest Deploy
+staging run).
 
 ## Checks
 
@@ -255,9 +271,10 @@ the repository.
 **What a red Deploy staging run leaves behind** (there is no automatic rollback; `staging.sh push`/`deploy` above):
 * The build (or the superseded check) failed: nothing on the host changed.
 * "not enough disk space to load <tag>" (`disk-check` before the copy, or `deploy` before the load; "Disk space"
-  above): the containers still run the previous tag; the host's deploy files are the new bundle's and
-  `releases/files-tag` is cleared; this deployment's images and archives of tags other than the running one, its
-  rollback target and the new one may have been removed (the log names each). Before the copy the archive was not
+  above), or "STAGING_DISK_FACTOR=... is not a number": the containers still run the previous tag; the host's deploy
+  files are the new bundle's and `releases/files-tag` is cleared; this deployment's images of tags other than the
+  running one, its rollback target, the last that passed and the new one, and its archives but the new one's, may
+  have been removed (the log names each). Before the copy the archive was not
   copied at all. Run `staging.sh disk-plan <tag>` on the host, free space, then push again (or re-run the newest run).
 * "docker load of ... failed": the load ran out of space part way. The images of the new tag it loaded were removed;
   the rest is as in the next case. Free space (`disk-plan`) and push again.

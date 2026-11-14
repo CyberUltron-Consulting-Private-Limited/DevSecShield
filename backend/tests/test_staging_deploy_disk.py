@@ -15,6 +15,7 @@ archives use the mount of deploy/staging/images and every unpacked image uses IM
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import shutil
@@ -80,6 +81,13 @@ class ShortHost(Host):
         self.state_file.write_text(json.dumps(st))
         self.mark = len(st["log"])
 
+    def free_on(self, mount: Path) -> int:
+        """Available KiB on <mount>, as the df stub says."""
+        spec = importlib.util.spec_from_file_location("fakedisk", self.root / "bin/fakedisk.py")
+        fakedisk = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(fakedisk)
+        return fakedisk.avail(self.state, str(mount))
+
     def dss_present(self) -> list[str]:
         st = self.state
         return [r for t in st["tags"] for r in refs(t) if r not in st["missing"] and r not in st["gone"]]
@@ -135,7 +143,7 @@ def test_still_short_fails_before_loading_or_switching_and_lists_sizes(tmp_path)
     assert host.removed() == refs("old")
     assert_untouched(host, "t1", "t2")
     assert host.env_tag() == "t2" and running_tags(host) == {"t2"}
-    assert ours(host) == archive_files("t1", "t2", "t3")  # the new archive stays for the next attempt
+    assert ours(host) == archive_files("t3")  # the new archive stays for the next attempt; rollback needs no archive
 
 
 def test_preflight_never_removes_running_rollback_new_or_foreign_images(tmp_path):
@@ -144,7 +152,7 @@ def test_preflight_never_removes_running_rollback_new_or_foreign_images(tmp_path
     assert host.removed() == refs("t0") | refs("old")
     assert_untouched(host, "t1", "t2", "t3")
     assert present_tags(host) == {"t1", "t2"}
-    assert ours(host) == archive_files("t1", "t2", "t3")
+    assert ours(host) == archive_files("t3")  # rollback uses images only: no archive but the new one is kept
 
 
 def test_an_image_a_container_still_uses_is_kept(tmp_path):
@@ -176,10 +184,10 @@ def test_after_a_successful_deploy_only_the_running_and_previous_releases_are_ke
     host = ShortHost(tmp_path, free=NEED + IMG)
     proc = ok(host.staging("deploy", "t3"))
     assert present_tags(host) == {"t3", "t2"}
-    assert ours(host) == archive_files("t3", "t2")
+    assert ours(host) == archive_files("t3")
     assert host.removed() == refs("t0") | refs("old") | refs("t1")
     assert_untouched(host, "t2", "t3")
-    assert "retention: kept t3 and t2" in proc.stdout
+    assert "retention: kept t3, t2 (rollback target);" in proc.stdout
     ok(host.staging("rollback"))  # the rollback target is intact
     assert host.env_tag() == "t2" and running_tags(host) == {"t2"}
 
@@ -220,7 +228,7 @@ def test_a_partial_load_removes_the_new_tags_only(tmp_path, driver, status):
 def test_a_partial_load_of_the_running_tag_removes_nothing(tmp_path):
     host = ShortHost(tmp_path, free=0, stale=())
     proc = failed(host.staging("deploy", "t2", env={"STAGING_DISK_FACTOR": "0", "STAGING_DISK_RESERVE_MB": "0"}))
-    assert "docker load of" in proc.stderr and "t2 is running or the rollback target" in proc.stderr
+    assert "docker load of" in proc.stderr and "t2 is running, the rollback target or the last release" in proc.stderr
     assert not host.removed()
     assert host.env_tag() == "t2" and present_tags(host) >= {"t1", "t2"}
 
@@ -255,6 +263,176 @@ def test_disk_plan_before_the_copy_counts_the_archive(tmp_path):
     assert "disk: enough space to load t3" in proc.stdout
 
 
+# ------------------------------------------------------------------------------------------------ review of #129
+@pytest.mark.parametrize("env", [{"STAGING_DISK_FACTOR": "3,3"}, {"STAGING_DISK_FACTOR": "-1"},
+                                 {"STAGING_DISK_RESERVE_MB": "1G"}, {"STAGING_DISK_RESERVE_MB": "-5"}])
+def test_an_invalid_disk_setting_refuses_the_deploy(tmp_path, env):
+    """[major] The settings were read inside `if disk_room`, where set -e is off: "3,3" printed an ERROR, became
+    factor 0, reported enough space and loaded anyway (the run 43572299641 failure again)."""
+    host = ShortHost(tmp_path, free=NEED // 4, stale=())  # far too little room for t3
+    proc = failed(host.staging("deploy", "t3", env=env))
+    assert "is not a" in proc.stderr and "enough space" not in proc.stdout
+    assert not [e for e in host.log_since(host.mark) if e["cmd"] in ("load", "rmi", "up")]
+    assert host.env_tag() == "t2"
+    failed(host.staging("disk-check", "t3", env=env))
+    failed(host.staging("disk-plan", "t3", env=env))
+
+
+def test_an_invalid_setting_in_env_file_refuses_too(tmp_path):
+    host = ShortHost(tmp_path, free=NEED // 4, stale=())
+    with (host.root / "deploy/staging/.env").open("a") as f:
+        f.write("STAGING_DISK_FACTOR=three\n")
+    proc = failed(host.staging("deploy", "t3"))
+    assert "STAGING_DISK_FACTOR=three is not a number" in proc.stderr
+    assert not [e for e in host.log_since(host.mark) if e["cmd"] == "load"]
+
+
+def test_lookalike_foreign_images_are_never_removed(tmp_path):
+    """Reviewer's adversarial names: only exact <prefix>/<repo>:<tag> images of this deployment are candidates."""
+    host = ShortHost(tmp_path, free=0)
+    look = ["dss-staging/devsecshield-backend-old:t0", "dss-staging/scan-worker2:t0",
+            "registry.example:5000/dss-staging/scan-worker:t0", "dss-staging-eu/scan-worker:t0",
+            "xdss-staging/dast-worker:t0", "dss-staging/scan-worker:<none>", "dss-staging/Scan-Worker:t0"]
+    st = host.state
+    st["foreign"] += look
+    st["disk"]["mounts"][str(host.store)] += IMG * len(look)  # they take their own space; still nothing free
+    host.update(**st)
+    ok(host.staging("disk-check", "t3"))
+    assert not host.removed() & set(look)
+    assert host.removed() == refs("t0") | refs("old")
+
+
+def test_kept_tags_match_exactly(tmp_path):
+    host = ShortHost(tmp_path, free=0, stale=("t2-dirty", "t2.x", "t."))
+    ok(host.staging("disk-check", "t3"))
+    assert host.removed() == refs("t2-dirty") | refs("t2.x") | refs("t.")
+
+
+def test_one_filesystem_under_two_mount_points_is_counted_once(tmp_path):
+    """[minor] A bind-mounted image store (/var/lib/containerd on the root filesystem) was checked as a second
+    filesystem against the same free space: copy and load each fitted, together they did not."""
+    host = ShortHost(tmp_path, free=10**9, stale=())
+    for name in archive_files("t3"):
+        (host.images_dir / name).unlink()
+    st = host.state
+    del st["disk"]["mounts"][str(host.store)]
+    st["disk"]["alias"] = {str(host.store): str(tmp_path)}  # the store is a bind mount of the root filesystem
+    host.update(**st)
+    free = host.free_on(tmp_path)
+    load = int(ARCH * FACTOR) + 1
+    st["disk"]["mounts"][str(tmp_path)] += load + RESERVE + ARCH // 2 - free  # room for the load or the copy, not both
+    host.update(**st)
+    assert host.free_on(tmp_path) == load + RESERVE + ARCH // 2
+    proc = ok(host.staging("disk-plan", "t3", "--archive-bytes", str(ARCH * 1024)))
+    lines = [ln for ln in proc.stdout.splitlines() if ln.startswith("  ")]
+    assert len(lines) == 1, lines  # one filesystem, named by both mount points
+    assert lines[0].startswith(f"  {tmp_path}, {host.store}: archive ") and "+ images" in lines[0]
+    assert "short by 488.3 MiB" in lines[0]  # copy and load together: half an archive more than is free
+
+
+def test_another_deployments_archive_with_a_longer_prefix_is_never_removed(tmp_path):
+    """[minor] dss-staging-eu-<tag>.tar.gz (prefix dss-staging-eu) matched dss-staging-*.tar.gz as tag eu-<tag>."""
+    host = ShortHost(tmp_path, free=0, stale=())
+    for name in ("dss-staging-eu-abc123.tar.gz", "dss-staging-eu-abc123.tar.gz.sha256", "dss-staging-t9.tar.gz"):
+        (host.images_dir / name).write_text("not a release of this deployment that this host knows")
+    proc = ok(host.staging("disk-plan", "t3"))
+    assert "dss-staging-eu-abc123" not in proc.stdout and "dss-staging-t9" not in proc.stdout
+    failed(host.staging("disk-check", "t3"))
+    assert {"dss-staging-eu-abc123.tar.gz", "dss-staging-eu-abc123.tar.gz.sha256", "dss-staging-t9.tar.gz"} <= \
+        archives(host)
+
+
+def test_retention_after_a_failed_deploy_keeps_the_last_release_that_passed(tmp_path):
+    """[minor] t3 FAILED at compose up (DSS_TAG=t3), t4 then deploys fine: retention kept t4 and the failed t3 and
+    removed t2, the last release whose checks passed."""
+    host = ShortHost(tmp_path, free=10**9, stale=())
+    host.update(fail_up=True)
+    failed(host.staging("deploy", "t3"))
+    host.update(fail_up=False)
+    st = host.state
+    st["tags"]["t4"] = {"revs": ["r1"]}
+    st["gone"] = sorted(set(st["gone"]) | refs("t4"))
+    host.update(**st)
+    host.archive("t4")
+    proc = ok(host.staging("deploy", "t4"))
+    assert present_tags(host) == {"t4", "t3", "t2"}  # new, rollback target (deploy-history), last passed
+    assert host.removed() == refs("t1")
+    assert "retention: kept t4, t3 (rollback target), t2 (last release that passed its checks)" in proc.stdout
+    assert ours(host) == archive_files("t4")
+    assert (host.root / "deploy/staging/releases/passed").read_text().split() == ["t1", "t2", "t4"]
+
+
+def test_preflight_keeps_the_last_release_that_passed(tmp_path):
+    host = ShortHost(tmp_path, free=10**9, stale=())
+    host.update(fail_up=True)
+    failed(host.staging("deploy", "t3"))  # runs t3 (failed); rollback target t2
+    host.update(fail_up=False)
+    st = host.state
+    st["tags"]["t4"] = {"revs": ["r1"]}
+    st["gone"] = sorted(set(st["gone"]) | refs("t4"))
+    st["disk"]["mounts"][str(host.store)] = IMG * (len(host.dss_present()) + len(FOREIGN))  # nothing free
+    st["disk"]["file_kib"]["dss-staging-t4.tar.gz"] = ARCH
+    host.update(**st)
+    host.archive("t4")
+    host.mark = len(host.state["log"])
+    failed(host.staging("deploy", "t4"))
+    assert host.removed_before_load() == refs("t1")  # t3 runs, t2 is its rollback target and the last that passed
+
+
+def test_a_measured_need_beside_the_archive_replaces_the_factor(tmp_path):
+    """[minor] 3.3 holds for archives whose layers are gzip blobs (a containerd-store builder); `save` now writes
+    what loading needs beside the archive (<archive>.need, bytes) and the check uses it."""
+    host = ShortHost(tmp_path, free=NEED + IMG, stale=())  # enough for 3.3 x the archive ...
+    (host.images_dir / "dss-staging-t3.tar.gz.need").write_text(f"{5 * ARCH * 1024}\n")  # ... not for 5x measured
+    proc = failed(host.staging("deploy", "t3"))
+    assert "measured" in proc.stderr and "not enough disk space to load t3" in proc.stderr
+    assert not [e for e in host.log_since(host.mark) if e["cmd"] == "load"]
+    (host.images_dir / "dss-staging-t3.tar.gz.need").write_text(f"{ARCH * 1024}\n")  # 1x (+10%) fits
+    proc = ok(host.staging("deploy", "t3"))
+    assert "measured" in proc.stdout and "x3.3" not in proc.stdout
+
+
+def test_disk_check_takes_the_measured_need_from_push(tmp_path):
+    host = ShortHost(tmp_path, free=NEED + IMG, stale=())
+    for name in archive_files("t3"):
+        (host.images_dir / name).unlink()
+    failed(host.staging("disk-check", "t3", "--archive-bytes", str(ARCH * 1024), "--need-bytes", str(5 * ARCH * 1024)))
+    ok(host.staging("disk-check", "t3", "--archive-bytes", str(ARCH * 1024), "--need-bytes", str(ARCH * 1024)))
+    failed(host.staging("disk-check", "t3", "--archive-bytes", str(ARCH * 1024), "--need-bytes", "lots"))
+
+
+def _gzip_layer(payload: bytes) -> bytes:
+    import gzip
+    import io
+    import tarfile
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as tf:
+        info = tarfile.TarInfo("usr/bin/tool")
+        info.size = len(payload)
+        tf.addfile(info, io.BytesIO(payload))
+    raw = buf.getvalue()
+    return raw, gzip.compress(raw, compresslevel=1)
+
+
+def test_save_measures_what_loading_needs(tmp_path):
+    """`save` streams the archive once more and writes <archive>.need: every layer as stored (the containerd content
+    store keeps it; the classic store extracts it to a temporary directory) plus every layer unpacked. A gzip layer
+    counts its compressed and its unpacked size, an uncompressed layer (a classic-store builder) twice."""
+    host = Host(tmp_path, {"t5": ["r1"]})
+    raw, gz = _gzip_layer(os.urandom(64 * 1024))
+    plain, _ = _gzip_layer(b"x" * 20000)
+    host.update(save_layers=[gz.hex(), plain.hex()])
+    proc = ok(host.staging("save", env={"DSS_TAG": "t5"}))
+    need = int((host.images_dir / "dss-staging-t5.tar.gz.need").read_text())
+    assert need == len(gz) + len(raw) + 2 * len(plain)
+    assert "loading it needs" in proc.stdout
+
+
+def test_the_workflow_ships_the_measured_need():
+    text = (ROOT / ".github/workflows/deploy-staging.yml").read_text()
+    assert "deploy/staging/images/*.need" in text
+
+
 # ------------------------------------------------------------------------------------------------ push
 FAKE_SSH = r'''#!/usr/bin/env bash
 while (($#)); do case "$1" in -i|-o) shift 2;; -*) shift;; *) break;; esac; done
@@ -282,6 +460,7 @@ def build_machine(tmp_path: Path, host: ShortHost) -> Path:
     (build / "deploy/staging/images").mkdir()
     for name in ("dss-staging-t3.tar.gz", "dss-staging-t3.tar.gz.sha256"):  # what `save` left on the build machine
         shutil.move(host.images_dir / name, build / "deploy/staging/images" / name)
+    (build / "deploy/staging/images/dss-staging-t3.tar.gz.need").write_text(f"{ARCH * 1024}\n")
     for name, text in (("ssh", FAKE_SSH), ("scp", FAKE_SCP)):
         (host.root / "bin" / name).write_text(text)
         (host.root / "bin" / name).chmod(0o755)
@@ -316,4 +495,6 @@ def test_push_with_room_copies_after_the_check_and_deploys(tmp_path):
     copy = next(i for i, c in enumerate(calls) if c.startswith("scp dss-staging-t3.tar.gz"))
     deploy = next(i for i, c in enumerate(calls) if "staging.sh deploy" in c)
     assert check < copy < deploy, calls
+    assert f"--need-bytes {ARCH * 1024}" in calls[check]
+    assert "dss-staging-t3.tar.gz.need" in calls[copy]
     assert "deployed t3" in proc.stdout and host.env_tag() == "t3"

@@ -130,6 +130,19 @@ if argv[:1] == ["load"]:
         STATE.write_text(json.dumps(st))
     sys.exit(0)
 
+if argv[:1] == ["save"]:
+    import io, tarfile
+    out = io.BytesIO()
+    with tarfile.open(fileobj=out, mode="w") as tf:
+        for name, data in [(f"blobs/sha256/{i:064x}", bytes.fromhex(h)) for i, h in enumerate(st.get("save_layers", []))] \
+                + [("manifest.json", json.dumps([{"RepoTags": argv[1:]}]).encode())]:
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            tf.addfile(info, io.BytesIO(data))
+    save({"cmd": "save"})
+    sys.stdout.buffer.write(out.getvalue())
+    sys.exit(0)
+
 if argv[:1] == ["buildx"]:
     save({"cmd": argv[0]})
     sys.exit(0)
@@ -298,10 +311,24 @@ def present(st):  # our images on the host (unpacked or not)
             if f"{st['prefix']}/{r}:{t}" not in st["missing"] and f"{st['prefix']}/{r}:{t}" not in st["gone"]]
 
 
-def mount_of(st, path):
+def _under(p, m):
+    return p == m or p.startswith(m.rstrip("/") + "/")
+
+
+def mount_point(st, path):  # the mount point df names for <path>: a bind mount (alias) names itself
     p = os.path.abspath(path)
-    found = [m for m in st["disk"]["mounts"] if p == m or p.startswith(m.rstrip("/") + "/")]
+    found = [m for m in list(st["disk"]["mounts"]) + list(st["disk"]["alias"]) if _under(p, m)]
     return max(found, key=len) if found else None
+
+
+def mount_of(st, path):  # the filesystem (a key of mounts) that holds <path>
+    m = mount_point(st, path)
+    return st["disk"]["alias"].get(m, m)
+
+
+def device_of(st, path):  # what `stat -c %d` says: one number per filesystem, whatever the mount point
+    m = mount_of(st, path)
+    return None if m is None else 100 + sorted(st["disk"]["mounts"]).index(m)
 
 
 def file_kib(st, f):
@@ -332,7 +359,22 @@ if mount is None:
 total = st["disk"]["mounts"][mount]
 free = max(0, fakedisk.avail(st, mount))
 print("Filesystem     1024-blocks      Used Available Capacity Mounted on")
-print(f"/dev/fake {total} {total - free} {free} 50% {mount}")
+print(f"/dev/fake{fakedisk.device_of(st, path)} {total} {total - free} {free} 50% {fakedisk.mount_point(st, path)}")
+'''
+
+# `stat -c %d <path>` answers from the disk model (a bind mount has its filesystem's device); anything else is the
+# real stat.
+FAKE_STAT = r'''#!/usr/bin/env python3
+import os, sys
+import fakedisk
+
+if sys.argv[1:3] == ["-c", "%d"] and len(sys.argv) == 4:
+    _, st = fakedisk.load()
+    dev = fakedisk.device_of(st, sys.argv[3])
+    if dev is not None and os.path.exists(sys.argv[3]):
+        print(dev)
+        sys.exit(0)
+os.execv("/usr/bin/stat", ["stat", *sys.argv[1:]])
 '''
 
 FAKE_DU = r'''#!/usr/bin/env python3
@@ -363,7 +405,8 @@ class Host:
 
     def __init__(self, root: Path, tags: dict[str, list[str]]):
         self.root = root
-        for rel in ("scripts/deploy/staging.sh", "scripts/deploy/build_images.sh", "deploy/staging/docker-compose.yml"):
+        for rel in ("scripts/deploy/staging.sh", "scripts/deploy/build_images.sh", "scripts/deploy/archive_need.py",
+                    "deploy/staging/docker-compose.yml"):
             (root / rel).parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(ROOT / rel, root / rel)
         shutil.copytree(ROOT / "deploy/staging/nginx", root / "deploy/staging/nginx")
@@ -375,7 +418,8 @@ class Host:
         (root / "prod_database_migrations").mkdir()
         (root / "prod_database_migrations/alembic.ini").write_text("[alembic]\n")
         (root / "bin").mkdir()
-        for name, text in (("docker", FAKE_DOCKER), ("curl", FAKE_CURL), ("df", FAKE_DF), ("du", FAKE_DU)):
+        for name, text in (("docker", FAKE_DOCKER), ("curl", FAKE_CURL), ("df", FAKE_DF), ("du", FAKE_DU),
+                           ("stat", FAKE_STAT)):
             (root / "bin" / name).write_text(text)
             (root / "bin" / name).chmod(0o755)
         (root / "bin/fakedisk.py").write_text(FAKE_DISK)
@@ -390,8 +434,8 @@ class Host:
             "docker_info": {"root": str(root / "var/lib/docker"), "driver": "overlayfs",
                             "status": [["driver-type", "io.containerd.snapshotter.v1"]]},
             # one roomy filesystem by default; image_kib per unpacked image
-            "disk": {"mounts": {str(root): 10**10}, "images_dir": str(self.images_dir), "store": str(self.store),
-                     "image_kib": 1000, "file_kib": {}}}))
+            "disk": {"mounts": {str(root): 10**10}, "alias": {}, "images_dir": str(self.images_dir),
+                     "store": str(self.store), "image_kib": 1000, "file_kib": {}}}))
 
     # ---- state
     @property

@@ -219,7 +219,7 @@ merging one, because an action update runs new third-party code with the workflo
 | `pr-labels.yml` | PR; also `workflow_call` | Area labels (actions/labeler) and a size label, in one job |
 | `aibom-nightly.yml` | **weekly** (Mon 07:00 UTC), manual | Live AI-BOM benchmark against the Trusera and Cisco oracles (Bedrock spend). Was nightly, 86 min a night on July code |
 | `cbom-nightly.yml` | **weekly** (Mon 07:30 UTC), manual | Live CBOM benchmark against IBM cbomkit-theia |
-| `deploy-staging.yml` | push to `staging`; manual | Build the production images; deploy them to staging on every push to `staging` (manual: optional), one run at a time, never cancelled; a push deploys only while its commit is still the tip of `staging` (an older re-run fails "superseded"); the host's disk is checked before the archive is copied and loaded, and only the running and previous releases' images are kept (`deploy/staging/README.md`, "Disk space") |
+| `deploy-staging.yml` | push to `staging`; manual | Build the production images; deploy them to staging on every push to `staging` (manual: optional), one run at a time, never cancelled; a push deploys only while its commit is still the tip of `staging` (an older re-run fails "superseded"); the host's disk is checked before the archive is copied and loaded, and only the new, previous and last-passed releases' images and the new archive are kept (`deploy/staging/README.md`, "Disk space") |
 | `scan-node-image.yml` | manual | Release the CBOM scan-node image as a file |
 | `publish-ghcr.yml` | push to dev / staging; PR with label `publish-preview`; manual | Publish all images to GHCR (amd64 + arm64, provenance attested); see [Publish images](#publish-images-ghcr) |
 
