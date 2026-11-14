@@ -684,3 +684,9 @@ class IntegrationDelivery(SQLModel, table=True):
     last_result: str | None = Field(default=None, max_length=255)  # status code and a short reason, never a body
     external_ref: str | None = Field(default=None, max_length=64)  # e.g. the ServiceNow record number
     created_at: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime, index=True)
+
+
+# ========================================= F3: code repositories at scale =========================================
+# The F3 tables live in their own module; importing it here registers them on SQLModel.metadata for alembic and
+# for everything that imports new_models (it imports nothing from this file, so the import cannot cycle).
+from backend.utilities.scm.models import *  # noqa: E402,F401,F403
