@@ -24,7 +24,7 @@ sys.path.insert(0, str(REPO))
 
 from backend.utilities.cbom_sources import algid  # noqa: E402
 from backend.utilities.cbom_sources.classify import classify  # noqa: E402
-from backend.utilities.cbom_sources.posture import pqc_class  # noqa: E402
+from backend.utilities.cbom_sources.posture import classify_pqc  # noqa: E402
 
 NOW = dt.datetime(2026, 11, 12)
 BASE = "dev 3011dc7 classify.py, classify_ext/, posture.py (unchanged since 3df26fd)"
@@ -95,7 +95,8 @@ def judge(row: dict) -> list:
     """[quantum_vulnerable, finding codes, impact, posture class] of one input."""
     v = classify(row["type"], row["algorithm"], row["key_size"], row["protocol"], row["facts"], NOW)
     return [v["quantum_vulnerable"], v["finding_codes"], v["impact"],
-            pqc_class(row["type"], v["quantum_vulnerable"], v["finding_codes"], row["facts"])]
+            classify_pqc({"asset_type": row["type"], "quantum_vulnerable": v["quantum_vulnerable"],
+                          "facts": row["facts"], "algorithm": row["algorithm"]}, v["finding_codes"])[0]]
 
 
 def main() -> None:

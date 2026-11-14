@@ -60,12 +60,19 @@ def test_library_versions_use_the_knowledge_base():
     assert "LIB_EOL" in old["finding_codes"]
 
 
+def cls(asset_type, qv, codes, facts, algorithm=None):
+    """The class through the product's one class function (CB-18: ``posture.classify_pqc``)."""
+    return P.classify_pqc({"asset_type": asset_type, "quantum_vulnerable": qv, "facts": facts,
+                           "algorithm": algorithm}, codes)[0]
+
+
 def test_pqc_class_hndl_and_mosca():
-    assert P.pqc_class("tls_endpoint", True, [], {}) == "quantum-vulnerable"
-    assert P.pqc_class("tls_endpoint", False, [], {"pq_hybrid": True}) == "hybrid"
-    assert P.pqc_class("kms_key", False, [], {}) == "quantum-safe"
-    assert P.pqc_class("disk_encryption", False, ["DISK_XTS_128"], {}) == "grover-weakened"
-    assert P.pqc_class("database_config", None, [], {}) == "not-applicable"
+    assert cls("tls_endpoint", True, [], {}) == "quantum-vulnerable"
+    assert cls("tls_endpoint", False, [], {"pq_hybrid": True, "pq_group": "X25519MLKEM768"}) == "hybrid"
+    assert cls("tls_endpoint", False, [], {"pq_hybrid": True}) == "unknown"  # CB-18: an unnamed PQ group
+    assert cls("kms_key", False, [], {}) == "quantum-safe"
+    assert cls("disk_encryption", False, ["DISK_XTS_128"], {}) == "grover-weakened"
+    assert cls("database_config", None, [], {}) == "not-applicable"
     assert P.hndl("tls_endpoint", True) and not P.hndl("certificate", True) and not P.hndl("tls_endpoint", False)
     assert P.mosca({})["configured"] is False
     risk = P.mosca({"data_shelf_life_years": 10, "migration_years": 5, "threat_years": 12})
@@ -220,11 +227,11 @@ def test_host_and_port_for_proof_commands(value, expected):
 def test_disk_quantum_classes():
     off = classify("disk_encryption", None, None, None, {"source": "bitlocker", "status": "FullyDecrypted", "method": "None"})
     assert "DISK_UNENCRYPTED" in off["finding_codes"] and off["quantum_vulnerable"] is None
-    assert P.pqc_class("disk_encryption", off["quantum_vulnerable"], off["finding_codes"], {}) == "not-applicable"
+    assert cls("disk_encryption", off["quantum_vulnerable"], off["finding_codes"], {}) == "not-applicable"
     aes128 = classify("disk_encryption", None, None, None, {"source": "bitlocker", "status": "FullyEncrypted",
                                                             "method": "Aes128", "protection": "On"})
-    assert P.pqc_class("disk_encryption", aes128["quantum_vulnerable"], aes128["finding_codes"],
-                       {"method": "Aes128"}) == "grover-weakened"
+    assert cls("disk_encryption", aes128["quantum_vulnerable"], aes128["finding_codes"],
+               {"method": "Aes128"}) == "grover-weakened"
     luks_off = classify("disk_encryption", None, None, None, {"encrypted": False})
     assert luks_off["quantum_vulnerable"] is None
 
