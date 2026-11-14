@@ -298,11 +298,20 @@ def test_ct_merges_with_the_node_by_fingerprint_and_with_acm_by_serial(api):
     assert len(resolved.sources_rows) == len(zs)  # 25 certificates, not 27
 
 
-def test_small_private_serials_never_link():
-    assert CV.cert_link_keys({"serial": "1f", "not_after": "2027-01-01T00:00:00Z"}) == set()
-    keys = CV.cert_link_keys({"serial": "0a:1b:2c:3d:4e:5f:60:71:82", "not_after": "2027-01-01T00:00:00Z",
-                              "fingerprint_sha256": "AB" * 32})
-    assert keys == {"sn:a1b2c3d4e5f607182|2027-01-01", "fp:" + "ab" * 32}
+def test_small_private_serials_link_only_under_the_same_issuer():
+    """CB-21 replaced the CT slice's ``cert_link_keys``: a short serial links with the same issuer DN (two private CAs
+    both count 1, 2, 3...), a 64-bit or longer serial links on its own (ACM's Issuer "Amazon")."""
+    from backend.utilities.cbom_sources import asset_keys as AK
+
+    def serial_key(facts):
+        return [k.value for k in AK.link_keys({"asset_type": "certificate", "facts": facts}) if k.basis == "serial"]
+
+    assert serial_key({"serial": "1f", "not_after": "2027-01-01T00:00:00Z"}) == []  # no issuer: no serial key
+    assert serial_key({"serial": "1f", "issuer": "CN=Lab CA", "not_after": "2027-01-01T00:00:00Z"}) == [
+        "1f|2027-01-01|cn=lab ca"]
+    keys = AK.link_keys({"asset_type": "certificate", "facts": {
+        "serial": "0a:1b:2c:3d:4e:5f:60:71:82", "not_after": "2027-01-01T00:00:00Z", "fingerprint_sha256": "AB" * 32}})
+    assert [(k.basis, k.value) for k in keys] == [("serial", "a1b2c3d4e5f607182|2027-01-01"), ("sha256", "ab" * 32)]
 
 
 # ----------------------------------------------------------------------------- export
