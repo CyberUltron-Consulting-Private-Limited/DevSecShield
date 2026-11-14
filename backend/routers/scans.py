@@ -24,7 +24,6 @@ from backend.utilities.db.functions import get_messages_from_scan, return_scan_l
 from backend.utilities.db.metadata import get_scan_metadata_for_type
 from backend.utilities.db.findings import get_findings_for_scan_type, is_ticketable_finding
 from backend.utilities.pdf import UnsupportedPdfExport, prepare_pdf_export_payload, write_scan_pdf
-from backend.utilities.ai.chatbot import create_response
 from backend.utilities.team import (
     check_if_user_is_in_team,
 )
@@ -272,6 +271,10 @@ async def send_message_to_scan(
         
         
         # STEP [ 5 ] : =========== Get the response from the model ======================
+        # imported here, not at module level: the chatbot needs AWS credentials at import, and an air-gapped
+        # install (no AWS) must still start the backend (CB-38 PLAN §0)
+        from backend.utilities.ai.chatbot import create_response
+
         AI_RESPONSE = await create_response(
             mongo_db=mongo_db,
             scan_id=SCAN.id,
