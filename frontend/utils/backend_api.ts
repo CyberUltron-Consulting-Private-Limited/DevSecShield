@@ -5252,6 +5252,14 @@ export async function getCbomRunParity(team_id: number, run_id: number): Promise
     return response.data as CbomRunParity
 }
 
+/** GET /{team}/cbom/sources/runs/{run}/assets/{asset}/remediation (W2b, PARITY.md S15): the code page's "Remediation,
+ * fix code and exploit demo" data for a run asset, from the same knowledge-base builder (404 on an older backend). */
+export async function getCbomRunAssetRemediation(team_id: number, run_id: number, asset_id: number): Promise<RemediationData> {
+    const response = await api.get(`${cbomSourcesBase(team_id)}/runs/${run_id}/assets/${asset_id}/remediation`)
+    const body = response.data as RemediationData | { remediation: RemediationData }
+    return "remediation" in body && body.remediation && typeof body.remediation === "object" ? body.remediation : body as RemediationData
+}
+
 /** GET /{team}/cbom/sources/runs/{run}/results (W2). 404 from an older backend is the caller's to handle. */
 export async function getCbomRunResults(team_id: number, run_id: number): Promise<CbomRunResults> {
     const response = await api.get(`${cbomSourcesBase(team_id)}/runs/${run_id}/results`)

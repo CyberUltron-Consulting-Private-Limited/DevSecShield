@@ -9,6 +9,8 @@
 
 import type {
   CbomFindingStatus,
+  CbomRunParity,
+  KbFindingDetail,
   CbomRun,
   CbomRunAssetItem,
   CbomRunAssetPage,
@@ -205,7 +207,6 @@ export const NOTE = {
   certsNone: "No orphaned or unmanaged certificates in this run.",
   certsField: "Orphaned and unmanaged certificates are not in this server's run results yet.",
   chartsField: "Crypto charts are not in this server's run results yet.",
-  chartsCodeOnly: "The crypto dependency graph and the tri-state compliance matrix are built from source code; a Sources run has neither, so they are shown on code scans only.",
   complianceNone: "No finding of this run maps to a CERT-In, RBI, SEBI CSCRF, NIST or CNSA 2.0 clause.",
   dashboardField: "Dashboard charts are not in this server's run results yet.",
   metricsLater: "Remediation metrics (time to remediate, velocity) appear once fixes are recorded with their completion date.",
@@ -245,7 +246,7 @@ export function runSectionPlan(input: {
     if (!data) return { show: true, note: missing };
     if (computing) return { show: true, note: NOTE.computing };
     if (!data.distributions) return { show: true, note: NOTE.chartsField };
-    return { show: true, note: NOTE.chartsCodeOnly };
+    return { show: true };
   })();
 
   const compliance: SectionView = (() => {
@@ -547,4 +548,67 @@ export function verifyResultText(v: { valid: boolean; signature_match?: boolean 
   if (v.digest_match === false) return "Not verified: this file differs from the run's CycloneDX JSON (changed, or another run's file).";
   if (v.signature_match === false) return "Not verified: the signature does not match this file.";
   return "Not verified.";
+}
+
+// ---------------------------------------------------------------------------- /parity notes (PARITY.md)
+
+export type ParityState = "loading" | "missing" | "error" | "ok";
+
+/** One line per code-page section a run cannot show, saying why (never an empty card). Sections: the crypto dependency
+ * graph and compliance readiness (CbomCryptoCharts), the RBI CSF roll-up and the CERT-In posture. */
+export function parityNotes(state: ParityState, parity: Pick<CbomRunParity, "scan_metadata" | "engine"> | null | undefined):
+  { graph: string | null; compliance: string | null; rbi: string | null; certin: string | null } {
+  if (state === "loading") return { graph: null, compliance: null, rbi: null, certin: null };
+  if (state !== "ok" || !parity) {
+    const why = state === "missing"
+      ? "this server does not send a run's code-page parity data yet (GET /runs/{id}/parity)"
+      : "the run's parity data could not be loaded; reload the page to try again";
+    return {
+      graph: `Crypto dependency graph: ${why}.`,
+      compliance: `Crypto compliance readiness: ${why}.`,
+      rbi: `RBI CSF posture roll-up: ${why}.`,
+      certin: `CERT-In CBOM posture: ${why}.`,
+    };
+  }
+  const m = parity.scan_metadata ?? ({} as CbomRunParity["scan_metadata"]);
+  const engineOff = parity.engine?.compliance === "unavailable";
+  const engineWhy = engineOff
+    ? `the compliance engine is not available on this server${parity.engine?.reason ? ` (${parity.engine.reason})` : ""}`
+    : null;
+  const hasGraph = !!m.cbom_graph && Array.isArray((m.cbom_graph as { nodes?: unknown[] }).nodes) && (m.cbom_graph as { nodes: unknown[] }).nodes.length > 0;
+  return {
+    graph: hasGraph ? null : "Crypto dependency graph: this run has no assets to draw.",
+    compliance: m.cbom_compliance ? null : `Crypto compliance readiness: ${engineWhy ?? "not computed for this run"}.`,
+    rbi: m.rbi_csf_rollup ? null : `RBI CSF posture roll-up: ${engineWhy ?? "not computed for this run"}.`,
+    certin: m.certin_posture ? null : `CERT-In CBOM posture: ${engineWhy ?? "not computed for this run"}.`,
+  };
+}
+
+// ---------------------------------------------------------------------------- finding dialog chips
+
+/** The code dialog's OWASP Top 10 / Compliance controls / Suggested fix for a run asset: the /assets item's own fields
+ * when the server sends them (W2b), else the same facts from the asset's knowledge-base entries (GET /assets/{id}). */
+export function findingChips(
+  item: { owasp_top_10?: Record<string, string> | null; compliance_controls?: Record<string, string> | null; suggested_fix?: string | null } | null,
+  details: Pick<KbFindingDetail, "owasp_2021" | "owasp_2025" | "compliance" | "remediation">[] | null | undefined,
+): { owasp: [string, string][]; controls: [string, string][]; suggestedFix: string | null; basis: "item" | "kb" | "none" } {
+  const fromItem = {
+    owasp: Object.entries(item?.owasp_top_10 ?? {}).filter(([, v]) => !!v) as [string, string][],
+    controls: Object.entries(item?.compliance_controls ?? {}).filter(([, v]) => !!v) as [string, string][],
+    suggestedFix: item?.suggested_fix?.trim() || null,
+  };
+  if (fromItem.owasp.length || fromItem.controls.length || fromItem.suggestedFix) return { ...fromItem, basis: "item" };
+  const owasp = new Map<string, string>();
+  const controls = new Map<string, string>();
+  let fix: string | null = null;
+  for (const d of details ?? []) {
+    for (const o of [...(d.owasp_2021 ?? []), ...(d.owasp_2025 ?? [])]) if (o.id && !owasp.has(o.id)) owasp.set(o.id, o.label ?? o.id);
+    for (const c of d.compliance ?? []) {
+      const key = `${c.framework}:${c.id}`;
+      if (!controls.has(key)) controls.set(key, `${c.framework} ${c.id}`);
+    }
+    if (!fix && d.remediation?.summary) fix = d.remediation.summary;
+  }
+  const out = { owasp: [...owasp], controls: [...controls], suggestedFix: fix };
+  return { ...out, basis: out.owasp.length || out.controls.length || out.suggestedFix ? "kb" : "none" };
 }
