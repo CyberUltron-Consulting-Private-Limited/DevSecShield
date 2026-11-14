@@ -505,6 +505,23 @@ node reset). Browsers are asked for a certificate only if they hold one from tha
 answer carries `X-ZS-Deployment` (one id per deployment, created by migration `wp5a0node001`; a migration
 downgrade and upgrade makes a new one, which nodes adopt from their next successful request).
 
+AI remediation (CBOM findings; CB-38): the finding dialog's "AI assistant" panel and the "Generate fix with AI (AWS
+Bedrock)" button call AWS Bedrock Converse with `openai.gpt-oss-120b-1:0`. Turn it on with the `staging` environment
+variable `CBOM_AI_PROVIDER=bedrock` (or `CBOM_AI_PROVIDER=bedrock` in the host's `backend.env`): a deploy writes
+`CBOM_AI_PROVIDER` only when that variable is set, so an unset variable leaves the host's value (including a hand-set
+`off`) as it is. Every Deploy staging run also sets `CBOM_AI_BEDROCK_REGION=ap-south-1` and
+`CBOM_AI_AWS_CREDENTIALS=env` (none is a secret; the environment's variables of the same names override them). With `env` the
+assistant signs with the `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` of `.env` (the SAST chat's keys); they need
+`bedrock:InvokeModel` on `arn:aws:bedrock:ap-south-1::foundation-model/openai.gpt-oss-120b-1:0` and model access
+enabled in the Bedrock console. If `.env`'s `AWS_*` are MinIO's (profile `minio`), Bedrock refuses them: then set the
+environment variable `CBOM_AI_AWS_CREDENTIALS=instance` (an instance role) or put a profile on the host
+(`CBOM_AI_AWS_PROFILE`, see deploy/local/README.md). Egress: HTTPS to `bedrock-runtime.ap-south-1.amazonaws.com:443`
+only (`GET /{team}/cbom/ai/status` lists it under `egress`; the panel shows the same). Turn it off with the environment
+variable `CBOM_AI_PROVIDER=off`, or, when that variable is unset, `CBOM_AI_PROVIDER=off` in the host's `backend.env`
+(kept across deploys). With `CBOM_AI_REDACT_HOSTS` on (the Bedrock default) host names, addresses, e-mail addresses
+and account ids in the code window are replaced by tokens before the request and put back in the shown fix. Check: the finding dialog shows the panel, and the backend log has `cbom_ai audit
+outcome=ok ... provider=bedrock` lines (no content is logged).
+
 AI analysis: SAST, IaC and the SCA + SBOM chat call Amazon Bedrock with the `AWS_*` of `.env` and need a Qdrant
 vector store (`QDRANT_HOST`, `QDRANT_PORT`, `QDRANT_API_KEY`; not part of this compose file). Without them those
 scans end as "failed"; CBOM and AI-BOM code scans need neither. SCA + SBOM downloads Grype's vulnerability database

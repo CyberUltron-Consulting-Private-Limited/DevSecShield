@@ -19,8 +19,10 @@ lines and bytes; minified or generated files get no window.
 
 from __future__ import annotations
 
+import io
 import math
 import re
+import tokenize
 from pathlib import Path
 
 WINDOW = 3                 # lines before and after the occurrence
@@ -175,6 +177,28 @@ def code_window(text: str, line_no: int, *, strict: bool = False, needle: str | 
     return {"snippet": snippet, "snippet_start": lo, "redactions": total}
 
 
+def source_encoding(text: str) -> str:
+    """The PEP 263 source encoding of a Python file, from its lines 1 - 2.
+
+    ``utf-8`` when it declares none (as CPython does); ``invalid`` for a declaration
+    CPython rejects. Stored with the finding, so the AI fix validator knows the file's
+    real cookie even when the code window starts below line 2.
+    """
+    # lines as CPython's tokenizer splits them: \r\n, a bare \r and \n all end a line
+    head = "\n".join(re.split(r"\r\n|\r|\n", text, maxsplit=2)[:2]) + "\n"
+    try:
+        readline = io.BytesIO(head.encode("utf-8", "replace")).readline
+        enc, _ = tokenize.detect_encoding(readline)
+    except SyntaxError:
+        return "invalid"
+    return enc.lower()
+
+
+def _is_python(row: dict, rel: str) -> bool:
+    lang = str(row.get("language") or "").lower()
+    return lang in ("python", "py") or rel.lower().endswith((".py", ".pyw"))
+
+
 def is_generated(rel: str, text: str) -> bool:
     if _GENERATED.search(rel):
         return True
@@ -232,9 +256,12 @@ def attach_snippets(rows: list[dict], root: Path) -> dict[str, int]:
         row["snippet"] = win["snippet"]
         row["snippet_start"] = win["snippet_start"]
         row["snippet_redactions"] = win["redactions"]
+        if _is_python(row, rel):
+            row["source_encoding"] = source_encoding(text)
         stats["snippets"] += 1
         stats["redactions"] += win["redactions"]
     return stats
 
 
-__all__ = ["attach_snippets", "code_window", "redact_line", "is_generated", "SCAN_BUDGET"]
+__all__ = ["attach_snippets", "code_window", "redact_line", "is_generated", "source_encoding",
+           "SCAN_BUDGET"]

@@ -279,6 +279,20 @@ class NetworkScan:
         with self.limiter.server(ep.ip):
             return fn(*args)
 
+    @staticmethod
+    def _chain(certs_der: list[bytes], facts: dict[str, Any]) -> list[dict[str, Any]]:
+        """Certificate facts of a chain (leaf first), its links (CB-17) and the endpoint's leaf summary."""
+        chain = []
+        for der in certs_der[:50]:
+            for cert in load_certs(der):
+                chain.append(cert_facts(cert, "tls"))
+        chain_links(chain)  # CB-17: how each issuer is reached, the top, extra cross-signs
+        facts["chain_length"] = len(chain)
+        if chain:
+            facts["leaf"] = {k: chain[0].get(k) for k in ("subject", "issuer", "not_after", "key_alg", "key_size",
+                                                         "curve", "sig_alg", "fingerprint_sha256", "self_signed", "san")}
+        return chain
+
     # --------------------------------------------------------------- per endpoint
     def scan_endpoint(self, ep: Endpoint, mode: str) -> tuple[str, str | None, int]:
         started = time.monotonic()
@@ -332,14 +346,17 @@ class NetworkScan:
 
         dropped: list[T.ProbeError] = []  # the server stopped answering this node (timeout, refused connect)
 
-        def raw(hello: bytes, want_kex: bool = False, timeout: float = 8.0):
+        def raw(hello: bytes, want_kex: bool = False, timeout: float = 8.0, want_cert: bool = False):
             """One raw probe.  Once the server times out or refuses the connect, later probes are not sent (each
             would wait the full timeout again): they fail at once with the same error, and the host's tarpit count
             gets the timeout, so its other ports are not probed into the same silence."""
             if dropped:
                 raise T.ProbeError(dropped[0].code, f"not sent: {dropped[0].detail}")
             try:
-                return self.handshake(ep, budget, T.probe, ep.ip, ep.port, ep.protocol, hello, timeout, want_kex)
+                # want_cert only on the legacy fallback: every other probe keeps the call it always had
+                more = (want_cert,) if want_cert else ()
+                return self.handshake(ep, budget, T.probe, ep.ip, ep.port, ep.protocol, hello, timeout, want_kex,
+                                      *more)
             except T.ProbeError as exc:
                 if exc.code == "timeout" or isinstance(exc, T.ConnectRefused):
                     dropped.append(exc)
@@ -447,15 +464,7 @@ class NetworkScan:
                       "client_auth_requested": fh.client_auth_requested, "handshake_tool": fh.tool})
         if sni:
             facts.update({"sni": sni, "sni_required": True})
-        chain = []
-        for der in fh.certs_der[:50]:
-            for cert in load_certs(der):
-                chain.append(cert_facts(cert, "tls"))
-        chain_links(chain)  # CB-17: how each issuer is reached, the top, extra cross-signs
-        facts["chain_length"] = len(chain)
-        if chain:
-            facts["leaf"] = {k: chain[0].get(k) for k in ("subject", "issuer", "not_after", "key_alg", "key_size",
-                                                         "curve", "sig_alg", "fingerprint_sha256", "self_signed", "san")}
+        chain = self._chain(fh.certs_der, facts)
         # 2. protocol versions (with the server name the endpoint was read with)
         versions: dict[str, bool | None] = {}
         known: dict[str, set[int]] = {}  # version -> suites seen accepted (the enumeration starts from them)
@@ -524,6 +533,27 @@ class NetworkScan:
                 return self._no_common_parameters(ep, facts, alerts, names, sni_refused, needs_name)
             status = "timeout" if fh.error == "timeout" else "error"
             return status, fh.error or "no TLS handshake", 0
+        if not fh.ok and not chain:
+            # CB-34: a server only a legacy client can talk to (SSLv3, RC4, EXPORT, NULL, 3DES): neither OpenSSL 3 nor
+            # Python can finish the handshake, so the certificate is read from the server's own flight, which TLS <= 1.2
+            # sends in the clear: one raw hello on the best legacy version it answered, every legacy suite offered
+            best = next((v for v in (T.TLS12, T.TLS11, T.TLS10, T.SSL3) if versions.get(T.VERSION_NAMES[v])), None)
+            if best is not None:
+                try:
+                    r = raw(T.build_client_hello(best, T.LEGACY_SUITES, sni=sni), want_cert=True)
+                except (T.ProbeError, T.StarttlsUnavailable) as exc:
+                    unread.append(f"certificate (raw flight): {getattr(exc, 'code', 'starttls')}")
+                    r = None
+                if r == "budget":
+                    unread.append("certificate (raw flight): handshake budget")
+                elif r is not None and r.ok:
+                    facts.update({"negotiated_version": r.version_name, "negotiated_cipher": R.suite_name(r.cipher) if r.cipher is not None else None,
+                                  "negotiated_cipher_code": R.code_hex(r.cipher) if r.cipher is not None else None,
+                                  "handshake_tool": "raw-flight", "certificate_source": "raw_flight",
+                                  "full_handshake_error": str(fh.error or "handshake failed")[:120]})
+                    if r.error:
+                        facts["certificate_error"] = r.error[:120]
+                    chain = self._chain(r.certs_der, facts)
         # 3. post-quantum groups (TLS 1.3): the node's one PQ probe (the rest of the PQ groups come with step 6)
         groups: dict[str, list[int]] = {}
         groups_done: dict[str, bool] = {}

@@ -24,9 +24,11 @@ from sqlmodel import Session, select
 
 from backend.new_models import Scan
 from backend.utilities.cbom_ai import config as C
+from backend.utilities.cbom_ai import fix as FIX
 from backend.utilities.cbom_ai import grounding as G
 from backend.utilities.cbom_ai import service as S
 from backend.utilities.cbom_ai import transport as T
+from backend.utilities.cbom_ai import validator as V
 from backend.utilities.cbom_sources import crypto_kb
 from backend.utilities.cbom_sources.http import PRIVATE, CbomRoute, TeamId, authorize, read_limiter, server_error
 from backend.utilities.ratelimit import RateLimiter, user_key
@@ -59,7 +61,7 @@ class ScanFindingSubject(BaseModel):
 class AssistBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     subject: Annotated[Union[RunAssetSubject, ScanFindingSubject], Field(discriminator="kind")]
-    mode: Literal["explain", "plan", "question"]
+    mode: Literal["explain", "plan", "question", "fix"]
     question: str | None = Field(default=None, max_length=500)
 
     @model_validator(mode="after")
@@ -130,7 +132,8 @@ def _run_asset_grounding(engine, team_id: int, asset_id: int, minimise: bool) ->
     return G.for_run_asset(_asset_detail(engine, team_id, asset_id)["asset"], minimise=minimise)
 
 
-def _scan_finding_grounding(engine, team_id: int, scan_id: int, finding_id: str, minimise: bool) -> G.Grounding:
+def _scan_finding_grounding(engine, team_id: int, scan_id: int, finding_id: str, minimise: bool
+                            ) -> tuple[G.Grounding, dict | None]:
     from backend.get_db import get_mongo_client_db
     from backend.utilities.cbom_sources.kb_remediation import explain
 
@@ -147,11 +150,13 @@ def _scan_finding_grounding(engine, team_id: int, scan_id: int, finding_id: str,
     if not finding or finding.get("scan_id") != scan_id:
         raise HTTPException(status_code=404, detail="Finding not found")
     data = finding.get("finding_data") or {}
-    return G.for_code_finding(scan_id, finding_id, data, explain(data, "code"), minimise=minimise)
+    # the window the in-house fixer reads (mode "fix"); the scanner stores it with secret values redacted
+    return G.for_code_finding(scan_id, finding_id, data, explain(data, "code"), minimise=minimise), FIX.window_of(data)
 
 
 @router.post(BASE + "/assist", dependencies=[Depends(assist_limiter)],
-             summary="Explain / plan / answer a question about one finding, grounded on the KB and checked against it")
+             summary="Explain / plan / answer a question about / write a fix for one finding, grounded on the KB and "
+                     "checked against it")
 async def ai_assist(team_id: TeamId, body: AssistBody, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
     found = await _available()
@@ -160,14 +165,21 @@ async def ai_assist(team_id: TeamId, body: AssistBody, Authorization: AuthHeader
     cfg, _egress_list = found
     subject = body.subject
     try:
+        window = None
         if isinstance(subject, RunAssetSubject):
             grounding = await run_in_threadpool(_run_asset_grounding, engine, team_id, subject.asset_id,
                                                 cfg.redact_hosts)
         else:
-            grounding = await run_in_threadpool(_scan_finding_grounding, engine, team_id, subject.scan_id,
-                                                subject.finding_id, cfg.redact_hosts)
+            grounding, window = await run_in_threadpool(_scan_finding_grounding, engine, team_id, subject.scan_id,
+                                                        subject.finding_id, cfg.redact_hosts)
+            if body.mode == "fix" and window is None:
+                # nothing to rewrite: no model call, the KB steps instead
+                result = {**S.public(cfg, grounding, V.withheld(grounding, FIX.WITHHELD_FIX.format(
+                    "no source window was stored for this finding; rescan the repository to get one")),
+                    crypto_kb.version(), cached=False), "fix": None, "checks": []}
+                return JSONResponse(result, headers=PRIVATE)
         result = await S.assist(cfg, grounding, mode=body.mode, question=body.question, kb_version=crypto_kb.version(),
-                                team_id=team_id, user_id=user.id)
+                                team_id=team_id, user_id=user.id, window=window)
     except HTTPException:
         raise
     except Exception as exc:

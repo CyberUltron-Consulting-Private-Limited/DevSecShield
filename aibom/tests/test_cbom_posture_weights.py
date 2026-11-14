@@ -40,6 +40,12 @@ ADDED_AFTER_BASE = {
     "HARDCODED_KEY@warning": 4,
     # a self-signed certificate with a SHA-1 self-signature: Low, like the scan-node path
     "CERT_SELF_SIGNED": 1,
+    # CB-27 (Java literal flow): a constant PBE salt and an iteration count below
+    # 1,000, Medium
+    "STATIC_SALT": 4,
+    "WEAK_KDF_ITERATIONS": 4,
+    # CB-28: RSA public exponent 3, High
+    "WEAK_RSA_EXPONENT": 8,
 }
 
 
