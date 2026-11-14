@@ -286,6 +286,23 @@ def vulnerabilities(rows: list[CbomCollectedAsset], views: dict[int, dict[str, A
     return out
 
 
+def ct_properties(facts: dict[str, Any]) -> list[dict[str, str]]:
+    """What a certificate found in Certificate Transparency logs (ct_collect) adds to its component.  ``zs:collector``
+    (``ct``), ``zs:method`` and the rest of the provenance come from provenance.py like every other row's (one emitter,
+    CB-06); ``zs:source`` keeps meaning the source's name."""
+    out: list[dict[str, str]] = []
+    for prop, key in (("zs:ct_provider", "ct_provider"), ("zs:ct_entry_id", "ct_provider_id"), ("zs:ct_detail", "ct_detail"),
+                      ("zs:tbs_sha256", "tbs_sha256"), ("zs:fingerprint_sha256", "fingerprint_sha256"),
+                      ("zs:precert_sha256", "precert_sha256"), ("zs:serial", "serial")):
+        if facts.get(key):
+            out.append({"name": prop, "value": str(facts[key])[:255]})
+    for domain in (facts.get("matched_domains") or [])[:20]:
+        out.append({"name": "zs:ct_matched_domain", "value": str(domain)[:253]})
+    if facts.get("revoked") is not None:
+        out.append({"name": "zs:revoked", "value": str(bool(facts["revoked"])).lower()})
+    return out
+
+
 # ----------------------------------------------------------------------------- what each component carries (CB-06)
 COVERAGE = "coverage"  # a coverage row says what was NOT read: a gap of the document, never a cryptographic asset
 COVERAGE_GAP_CAP = 5_000
@@ -629,6 +646,8 @@ def _component(row: CbomCollectedAsset, source_name: str | None, view: dict[str,
     if row.protocol:  # the asset table's protocol column as stored (protocolProperties.type is CycloneDX's enum)
         props.append({"name": "zs:protocol", "value": row.protocol})
     props += _detail_properties(row, facts, crypto, size, curve, signature, view) + provenance
+    if facts.get("source") == "ct":
+        props += ct_properties(facts)
     return {"type": "cryptographic-asset", "bom-ref": ref, "name": str(name)[:255], "cryptoProperties": crypto,
             "evidence": {"occurrences": [{"location": row.location}]}, "properties": props}
 
