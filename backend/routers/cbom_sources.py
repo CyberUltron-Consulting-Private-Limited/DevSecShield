@@ -41,6 +41,7 @@ from backend.new_models import (
     Scan,
     Team,
 )
+from backend.routers import cbom_node_artifacts as NODE_ARTIFACTS  # install links (one-paste node install)
 from backend.utilities.cbom_sources import agility as AGILITY
 from backend.utilities.cbom_sources import agility_rollup as AGILITY_ROLLUP
 from backend.utilities.cbom_sources import agents as AG
@@ -74,6 +75,7 @@ from backend.utilities.cbom_sources import inventory as INV
 from backend.utilities.cbom_sources import posture as POSTURE
 from backend.utilities.cbom_sources import q0register as Q0REG
 from backend.utilities.cbom_sources import qgrade as QGRADE
+from backend.utilities.cbom_sources import run_deliverables as RUN_DELIVERABLES
 from backend.utilities.cbom_sources import run_results as RUN_RESULTS
 from backend.utilities.cbom_sources import run_tickets as RUN_TICKETS
 from backend.utilities.cbom_sources import runs as RUNS
@@ -299,7 +301,8 @@ def _create_node(engine, team_id: int, user_id: int, body: NodeCreate) -> dict:
             raise
         session.refresh(node)
         log("node created", team=team_id, node=node.id, by=user_id)
-        return {"node": public_node(node, now), "registration_token": token}
+        return {"node": public_node(node, now), "registration_token": token,
+                "install_links": NODE_ARTIFACTS.install_links(team_id, node)}
 
 
 @router.post(BASE + "/nodes", dependencies=WRITE, summary="Add a scan node; returns a one-time registration token")
@@ -402,8 +405,9 @@ def _new_registration(engine, team_id: int, user_id: int, node_id: int, reset: b
         session.refresh(node)
         log("node reset" if reset else "node token regenerated", team=team_id, node=node.id, by=user_id,
             pool=node.pool_id)
-        # None for a pool node: nothing to copy, its pod enrolls again by itself
-        return {"node": public_node(node, now), "registration_token": token}
+        # None for a pool node: nothing to copy, its pod enrolls again by itself (and no install links)
+        return {"node": public_node(node, now), "registration_token": token,
+                "install_links": NODE_ARTIFACTS.install_links(team_id, node) if token else None}
 
 
 @router.post(BASE + "/nodes/{node_id}/registration-token", dependencies=WRITE,
@@ -1493,7 +1497,8 @@ def _run_cbom(engine, team_id: int, run_id: int, fmt: str = "json") -> IO[bytes]
             with EXPORT_SLOTS.slot() if EXPORT_SLOTS.is_large(rows) else contextlib.nullcontext():
                 out = tempfile.SpooledTemporaryFile(max_size=EXPORT_SPOOL_BYTES)
                 try:
-                    INV.write_cyclonedx(session, run, utcnow(), fmt, out)
+                    # inventory's document with a stable timestamp: the bytes GET .../signature signs (CB-38 PR-8)
+                    RUN_DELIVERABLES.write_run_cbom(session, run, utcnow(), fmt, out)
                     out.seek(0)
                 except BaseException:
                     out.close()
@@ -1523,7 +1528,7 @@ async def run_cbom(team_id: TeamId, run_id: ObjectId, format: str = Query(defaul
     out = await _run("run cbom", team_id, _run_cbom, engine, team_id, run_id, format)
     length = out.seek(0, 2)
     out.seek(0)
-    # A run's CBOM is not signed (only code-scan BOMs are, certin.py), so the XML response states no signature scope
+    # The JSON is signed on request (GET .../runs/{id}/signature, CB-38 PR-8); the XML is not covered
     media, ext = (CDX_XML.XML_MEDIA_TYPE, "xml") if format == "xml" else ("application/json", "json")
     return StreamingResponse(_chunks(out), media_type=media, headers={
         **PRIVATE, "Content-Length": str(length),
