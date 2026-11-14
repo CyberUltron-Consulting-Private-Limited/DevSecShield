@@ -28,40 +28,27 @@ SCRIPTS = {
     # Certificates in the machine stores.  Key size from the key object: PublicKey.Key works only for RSA and DSA on
     # .NET Framework 4.x (it throws for ECC), so RSA and ECC go through GetRSAPublicKey / GetECDsaPublicKey (.NET
     # Framework 4.6 / 4.6.1).  The curve is the named-curve OID in the public key's EncodedParameters (DER, as hex).
-    # For a certificate with a private key: the key provider and whether the key may be exported, read from the key
-    # handle (CNG: CngKey.Provider / ExportPolicy; CAPI: CspKeyContainerInfo.ProviderName / Exportable).  The handle
-    # is only opened and disposed: nothing is exported, signed or decrypted.  An account without access to the key
-    # (the least-privilege setup) gets KeyError instead, and the row keeps everything else.  Windows PowerShell 5.1
-    # syntax only.  RSA and ECC are told apart by OID, as FriendlyName is localised.
+    # Public keys only: no private key is ever opened (CB-24 plan section 5; opening one needs key ACLs the
+    # least-privilege account does not have, and logs an "Open Key" audit event).  A public key that cannot be read
+    # leaves KeySize null and its base exception in KeyError; the row is still emitted.  RSA and ECC are told apart
+    # by OID, as FriendlyName is localised.  Windows PowerShell 5.1 syntax only.
     "certificates": (
         "& { $rsa='1.2.840.113549.1.1.1'; $ec='1.2.840.10045.2.1'; "
         "Get-ChildItem -Path Cert:\\LocalMachine\\My,Cert:\\LocalMachine\\WebHosting,Cert:\\LocalMachine\\Remote` Desktop "
         "-ErrorAction SilentlyContinue | ForEach-Object { $c=$_; $oid=$c.PublicKey.Oid.Value; $size=$null; $k=$null; "
-        "$prov=$null; $ptype=$null; $pol=$null; $exp=$null; $hw=$null; $kerr=$null; $par=$null; "
+        "$kerr=$null; $par=$null; "
         "try { if ($c.PublicKey.EncodedParameters) { $par=[BitConverter]::ToString($c.PublicKey.EncodedParameters."
         "RawData) } } catch { $par=$null }; "
         "try { if ($oid -eq $rsa) { $k=[System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::"
         "GetRSAPublicKey($c) } elseif ($oid -eq $ec) { $k=[System.Security.Cryptography.X509Certificates."
         "ECDsaCertificateExtensions]::GetECDsaPublicKey($c) } else { $k=$c.PublicKey.Key }; "
-        "if ($k) { $size=$k.KeySize } } catch { $size=$null }; "
-        "if ($c.HasPrivateKey) { $pk=$null; try { "
-        "if ($oid -eq $rsa) { $pk=[System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::"
-        "GetRSAPrivateKey($c) } elseif ($oid -eq $ec) { $pk=[System.Security.Cryptography.X509Certificates."
-        "ECDsaCertificateExtensions]::GetECDsaPrivateKey($c) }; "
-        "if ($pk -is [System.Security.Cryptography.ICspAsymmetricAlgorithm]) { $i=$pk.CspKeyContainerInfo; "
-        "$prov=$i.ProviderName; $ptype='capi'; $exp=$i.Exportable; $hw=$i.HardwareDevice } "
-        "elseif ($pk -and ($pk.Key -is [System.Security.Cryptography.CngKey])) { $prov=$pk.Key.Provider.Provider; "
-        "$ptype='cng'; $pol=[int]$pk.Key.ExportPolicy } "
-        "elseif ($pk) { $kerr='key handle of type ' + $pk.GetType().Name } "
-        "else { $kerr='no private key handle for this key type' } } "
-        "catch { $kerr=$_.Exception.GetType().Name + ': ' + $_.Exception.Message } "
-        "finally { if ($pk) { $pk.Dispose() } } }; "
+        "if ($k) { $size=$k.KeySize } } "
+        "catch { $e=$_.Exception.GetBaseException(); $kerr=$e.GetType().Name + ': ' + $e.Message }; "
         "[pscustomobject]@{ Store=$c.PSParentPath.Split('\\')[-1]; Subject=$c.Subject; Issuer=$c.Issuer; "
         "Thumbprint=$c.Thumbprint; NotAfter=$c.NotAfter.ToUniversalTime().ToString('o'); "
         "SignatureAlgorithm=$c.SignatureAlgorithm.FriendlyName; KeyAlgorithm=$c.PublicKey.Oid.FriendlyName; "
-        "KeyAlgorithmOid=$oid; KeyParameters=$par; KeySize=$size; HasPrivateKey=$c.HasPrivateKey; "
-        "KeyProvider=$prov; KeyProviderType=$ptype; KeyExportPolicy=$pol; KeyExportable=$exp; KeyHardware=$hw; "
-        "KeyError=$kerr } } } | ConvertTo-Json -Depth 3 -Compress"
+        "KeyAlgorithmOid=$oid; KeyParameters=$par; KeySize=$size; KeyError=$kerr; HasPrivateKey=$c.HasPrivateKey } "
+        "} } | ConvertTo-Json -Depth 3 -Compress"
     ),
     "schannel": (
         "$b='HKLM:\\SYSTEM\\CurrentControlSet\\Control\\SecurityProviders\\SCHANNEL\\Protocols'; "
@@ -128,38 +115,12 @@ def _json_list(text: str) -> list[dict]:
     return [d for d in data if isinstance(d, (dict, str))] if isinstance(data, list) else []
 
 
-# Key provider names (ncrypt.h MS_*_KEY_STORAGE_PROVIDER / MS_PLATFORM_CRYPTO_PROVIDER, wincrypt.h MS_*_PROV;
-# https://learn.microsoft.com/windows/win32/seccrypto/microsoft-cryptographic-service-providers and
-# https://learn.microsoft.com/windows/win32/seccng/key-storage-and-retrieval).  Anything else is "other": a vendor
-# KSP is never guessed to be an HSM.
-KEY_PROVIDER_CLASSES = {
-    "Microsoft Software Key Storage Provider": "software",
-    "Microsoft Base Cryptographic Provider v1.0": "software",
-    "Microsoft Enhanced Cryptographic Provider v1.0": "software",
-    "Microsoft Strong Cryptographic Provider": "software",
-    "Microsoft Enhanced RSA and AES Cryptographic Provider": "software",
-    "Microsoft RSA Signature Cryptographic Provider": "software",
-    "Microsoft RSA SChannel Cryptographic Provider": "software",
-    "Microsoft Base DSS Cryptographic Provider": "software",
-    "Microsoft Base DSS and Diffie-Hellman Cryptographic Provider": "software",
-    "Microsoft Enhanced DSS and Diffie-Hellman Cryptographic Provider": "software",
-    "Microsoft DH SChannel Cryptographic Provider": "software",
-    "Microsoft Platform Crypto Provider": "tpm",
-    "Microsoft Smart Card Key Storage Provider": "smartcard",
-    "Microsoft Base Smart Card Crypto Provider": "smartcard",
-}
 _KEY_ALGS = {"1.2.840.113549.1.1.1": "RSA", "1.2.840.10045.2.1": "EC", "1.2.840.10040.4.1": "DSA"}
 _FRIENDLY = {"RSA": "RSA", "ECC": "EC", "DSA": "DSA"}
-# CNG NCRYPT_ALLOW_EXPORT_FLAG (1) and NCRYPT_ALLOW_PLAINTEXT_EXPORT_FLAG (2); the archiving flags (4, 8) allow one
-# export when the key is created, not later
-_CNG_EXPORT, _CNG_PLAINTEXT_EXPORT = 0x1, 0x2
-
-
-def key_provider_class(name: Any) -> str | None:
-    """software | tpm | smartcard | other for a key provider name; None when no provider was read."""
-    if not isinstance(name, str) or not name.strip():
-        return None
-    return KEY_PROVIDER_CLASSES.get(name.strip(), "other")
+# Private-key facts are not read by this node (no key is opened): the fact names are kept, unread, so rules that
+# need them (CB-24 R-HW-UNREAD) see them as not read.  Reading the provider from the certificate's KEY_PROV_INFO
+# property, which needs no key access, is CB-24 PR-4b.
+KEY_NOT_READ = "needs_key_open"
 
 
 def _der_oid(hex_text: Any) -> str | None:
@@ -206,32 +167,10 @@ def _key_alg(c: dict) -> tuple[str, str | None, int | None]:
     return alg, curve, bits
 
 
-def _key_facts(c: dict) -> dict[str, Any]:
-    """Key provider and exportability of a certificate's private key, as read from the key handle; not read (with
-    the reason) when the key could not be opened or the script is an older one."""
-    provider = printable(str(c.get("KeyProvider") or ""), 120) or None
-    ptype = c.get("KeyProviderType") if c.get("KeyProviderType") in ("cng", "capi") else None
-    policy = c.get("KeyExportPolicy") if isinstance(c.get("KeyExportPolicy"), int) else None
-    exportable: bool | None = None
-    basis: str | None = None
-    if ptype == "cng" and policy is not None:
-        exportable, basis = bool(policy & (_CNG_EXPORT | _CNG_PLAINTEXT_EXPORT)), "CNG export policy"
-    elif ptype == "capi" and isinstance(c.get("KeyExportable"), bool):
-        exportable, basis = c["KeyExportable"], "CAPI CRYPT_EXPORTABLE"
-    error = printable(" ".join(str(c.get("KeyError") or "").split()), 160)
-    if basis is None:
-        basis = (f"not read: {error}" if error else
-                 "not read: the node's script did not report it" if "KeyProvider" not in c else "not read")
-    out: dict[str, Any] = {"key_provider": provider, "key_provider_type": ptype, "key_exportable": exportable,
-                           "exportable_basis": basis}
-    if provider:
-        out["key_provider_class"] = key_provider_class(provider)
-    if ptype == "cng":
-        out["key_export_policy"] = policy
-        out["key_plaintext_exportable"] = None if policy is None else bool(policy & _CNG_PLAINTEXT_EXPORT)
-    if isinstance(c.get("KeyHardware"), bool):
-        out["key_hardware"] = c["KeyHardware"]
-    return out
+def _key_facts() -> dict[str, Any]:
+    """Provider and exportability of a certificate's private key: not read (reading them needs opening the key)."""
+    return {"key_provider": None, "key_provider_type": None, "key_provider_class": None, "key_exportable": None,
+            "exportable_basis": f"not read: {KEY_NOT_READ}", "key_not_read_reason": KEY_NOT_READ}
 
 
 def parse_certificates(text: str) -> list[dict[str, Any]]:
@@ -247,8 +186,11 @@ def parse_certificates(text: str) -> list[dict[str, Any]]:
                "sig_alg": printable(str(c.get("SignatureAlgorithm") or ""), 60) or None,
                "key_alg": alg, "key_size": _int(c.get("KeySize")) or curve_bits, "curve": curve,
                "has_private_key": bool(c.get("HasPrivateKey")), "source": "windows-store"}
+        error = printable(" ".join(str(c.get("KeyError") or "").split()), 160)
+        if error:
+            row["key_read_error"] = error
         if row["has_private_key"]:
-            row.update(_key_facts(c))
+            row.update(_key_facts())
         out.append(row)
     return out
 
