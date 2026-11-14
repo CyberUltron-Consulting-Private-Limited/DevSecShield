@@ -2,9 +2,9 @@
  "schema": "zs-cbom-d1-floors/1",
  "version": 1,
  "baseline": {
-  "product_git_sha": "b34398aae3c765e86f78fdf9608f386f256de728",
-  "kb_version": "2026.11.15.1",
-  "codemap_version": 3,
+  "product_git_sha": "233b8a4e627d31e3183c872b326de4e40ffa608d",
+  "kb_version": "2026.11.15.2",
+  "codemap_version": 4,
   "observed": "bench/cbom/d1/baseline/observed-*.json (the product rows these numbers came from)",
   "rule": "non-regression = the numbers on this build; a PR that changes them edits this file in the same PR"
  },
@@ -403,8 +403,8 @@
    "metric": "recall",
    "mode": "matched",
    "op": ">=",
-   "value": 0.7018,
-   "why": "CB-27 (Java literal flow) on b34398aae"
+   "value": 0.9474,
+   "why": "CB-28 (.NET, C and IaC detectors) on 233b8a4e6"
   },
   {
    "id": "NR-CORPUS-precision",
@@ -414,8 +414,8 @@
    "metric": "precision",
    "mode": "matched",
    "op": ">=",
-   "value": 0.9756,
-   "why": "CB-27 (Java literal flow) on b34398aae"
+   "value": 1.0,
+   "why": "CB-28 (.NET, C and IaC detectors) on 233b8a4e6"
   },
   {
    "id": "NR-CORPUS-detected",
@@ -431,7 +431,11 @@
     "C1",
     "C10",
     "C2",
+    "C3",
+    "C4",
     "C5",
+    "C6",
+    "C7",
     "C8",
     "C9",
     "F1",
@@ -457,19 +461,29 @@
     "J6",
     "J8",
     "J9",
+    "K1",
+    "K2",
     "N1",
+    "N10",
+    "N11",
+    "N12",
     "N2",
     "N3",
     "N4",
     "N5",
+    "N6",
     "N7",
+    "N8",
     "N9",
     "T1",
     "T2",
     "T3",
-    "T4"
+    "T4",
+    "T5",
+    "T6",
+    "T7"
    ],
-   "why": "CB-27 (Java literal flow) on b34398aae"
+   "why": "CB-28 (.NET, C and IaC detectors) on 233b8a4e6"
   },
   {
    "id": "NR-CAB-no-new-fp",
@@ -725,15 +739,16 @@
    "mode": "matched",
    "op": "subset",
    "value": [
-    "c/tls_client.c|11|WEAK_ALGORITHM|MD5",
-    "c/tls_client.c|11|WEAK_ALGORITHM|RC4",
     "go/main.go|23|HARDCODED_KEY|secret-key (inline, main.go)",
-    "iac/terraform/main.tf|5|WEAK_CIPHER_SUITE|TLS",
-    "iac/terraform/main.tf|5|WEAK_PROTOCOL|TLS",
+    "iac/terraform/main.tf|31|WEAK_CIPHER_SUITE|TLS",
     "java/src/main/java/com/bank/Crypto.java|22|WEAK_ALGORITHM|3DES",
     "java/src/main/java/com/bank/Crypto.java|46|WEAK_ALGORITHM|RSA"
    ],
-   "why": "no corpus finding off the labelled items beyond those on dev 3df26fd (CB-28: no new false positives)"
+   "why": "CB-28 (.NET, C and IaC detectors) on 233b8a4e6",
+   "lowered": {
+    "reason": "not a new finding: the CloudFront TLSv1 policy's weak-suite finding moved from main.tf line 5 (the file's first 'TLS' token, shared with the ELB listener) to line 31, the minimum_protocol_version attribute that carries it (T6 is now a hit there). Three extras went: c/tls_client.c 11 MD5 and RC4 (the cipher list is a suite policy, now C3's WEAK_CIPHER_SUITE) and main.tf 5 WEAK_PROTOCOL (T6 on its own line).",
+    "pr": "CB-28 (feat/cb-28-dotnet-c-iac)"
+   }
   },
   {
    "id": "NR-LIB-detected",
@@ -1021,8 +1036,7 @@
   },
   {
    "id": "T28-dotnet-items",
-   "kind": "target",
-   "owner": "CB-28",
+   "kind": "non-regression",
    "bench": "corpus",
    "where": {
     "case_id": [
@@ -1037,12 +1051,11 @@
    "mode": "matched",
    "op": ">=",
    "value": 1.0,
-   "why": "CB-28 exit: per-item corpus recall 100 % on its failing-first items (R2 corpus)"
+   "why": "CB-28 (.NET, C and IaC detectors) on 233b8a4e6: met CB-28's target (CB-28 exit: per-item corpus recall 100 % on its failing-first items (R2 corpus))"
   },
   {
    "id": "T28-c-items",
-   "kind": "target",
-   "owner": "CB-28",
+   "kind": "non-regression",
    "bench": "corpus",
    "where": {
     "case_id": [
@@ -1055,12 +1068,11 @@
    "mode": "matched",
    "op": ">=",
    "value": 1.0,
-   "why": "CB-28 exit: per-item corpus recall 100 % on its failing-first items (R2 corpus)"
+   "why": "CB-28 (.NET, C and IaC detectors) on 233b8a4e6: met CB-28's target (CB-28 exit: per-item corpus recall 100 % on its failing-first items (R2 corpus))"
   },
   {
    "id": "T28-iac-items",
-   "kind": "target",
-   "owner": "CB-28",
+   "kind": "non-regression",
    "bench": "corpus",
    "where": {
     "case_id": [
@@ -1074,12 +1086,11 @@
    "mode": "matched",
    "op": ">=",
    "value": 1.0,
-   "why": "CB-28 exit: per-item corpus recall 100 % on its failing-first items (R2 corpus)"
+   "why": "CB-28 (.NET, C and IaC detectors) on 233b8a4e6: met CB-28's target (CB-28 exit: per-item corpus recall 100 % on its failing-first items (R2 corpus))"
   },
   {
    "id": "T28-dotnet-trustall-fp",
-   "kind": "target",
-   "owner": "CB-28",
+   "kind": "non-regression",
    "bench": "corpus",
    "where": {
     "case_id": [
@@ -1090,7 +1101,7 @@
    "mode": "matched",
    "op": ">=",
    "value": 1.0,
-   "why": "CB-28: remove the C# TrustAll() false positive labelled java.trustall"
+   "why": "CB-28 (.NET, C and IaC detectors) on 233b8a4e6: met CB-28's target (CB-28: remove the C# TrustAll() false positive labelled java.trustall)"
   },
   {
    "id": "T29-libraries",
