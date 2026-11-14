@@ -602,7 +602,7 @@ def test_the_migration_is_the_one_head():
         revs.add(rev.group(1))
         if down:
             downs.add(down.group(1))
-    assert revs - downs == {"cb20estate001"}
+    assert len(revs - downs) == 1 and "cb20estate001" in downs  # one head; CB-25 (cb25agility001) builds on it
     assert _migration().down_revision in revs
 
 
@@ -617,14 +617,23 @@ def _schema(engine) -> dict:
     return out
 
 
-def _migrate(engine, *steps: str) -> None:
+def _migrate(engine, *steps: str, module=None) -> None:
     from alembic.migration import MigrationContext
     from alembic.operations import Operations
 
     for step in steps:
         with engine.begin() as conn:
             with Operations.context(MigrationContext.configure(conn)):
-                getattr(_migration(), step)()
+                getattr(module or _migration(), step)()
+
+
+def _cb25():
+    """CB-25's migration adds the fix-class columns to these tables: the models carry them."""
+    path = MIGRATION.parent / "cb25agility001_agility_store.py"
+    spec = importlib.util.spec_from_file_location("cb25agility001", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    return mod
 
 
 TABLES = ("cbomestatesource", "cbomestateasset", "cbomestateobservation", "cbomestateteam")
@@ -643,6 +652,7 @@ def _up_down_up(engine) -> None:
 def test_migration_up_down_up_matches_the_models_sqlite(tmp_path):
     migrated = create_engine(f"sqlite:///{tmp_path / 'm.db'}")
     _up_down_up(migrated)
+    _migrate(migrated, "upgrade", "downgrade", "upgrade", module=_cb25())
     modelled = create_engine(f"sqlite:///{tmp_path / 'n.db'}")
     with modelled.begin() as conn:
         for t in (Team.__table__, CbomEstateSource.__table__, CbomEstateAsset.__table__,
@@ -657,10 +667,11 @@ def test_migration_up_down_up_on_postgresql():
     SQLModel.metadata.drop_all(engine)
     try:
         _up_down_up(engine)
+        _migrate(engine, "upgrade", "downgrade", "upgrade", module=_cb25())
         cols = {c["name"] for c in sa.inspect(engine).get_columns("cbomestateobservation")}
         assert set(CbomEstateObservation.__table__.columns.keys()) == cols
     finally:
         with engine.begin() as conn:
-            conn.execute(sa.text("DROP TABLE IF EXISTS cbomestateobservation, cbomestateasset, cbomestatesource, "
-                                 "cbomestateteam, team CASCADE"))
+            conn.execute(sa.text("DROP TABLE IF EXISTS cbomagilitybaseline, cbomestateobservation, cbomestateasset, "
+                                 "cbomestatesource, cbomestateteam, team CASCADE"))
         engine.dispose()

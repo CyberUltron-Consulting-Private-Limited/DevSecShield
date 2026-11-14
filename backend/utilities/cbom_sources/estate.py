@@ -755,5 +755,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 0
 
 
+# CB-25: the crypto-agility classes on the store and the baseline per run are written by an estate hook (registered
+# here, on this module's own HOOKS, so every record_run with hooks writes them; agility_store.heal fills the rest)
+from backend.utilities.cbom_sources import agility_store as _AGILITY_STORE  # noqa: E402
+
+register_hook(_AGILITY_STORE.on_estate_write)
+
+
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(main())
+
