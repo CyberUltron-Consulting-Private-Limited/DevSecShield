@@ -157,9 +157,11 @@ export function DiffView({ diff }: { diff: CbomDiff }) {
         <span>PQC readiness: <strong>{r?.before ?? "—"}%</strong> → <strong>{r?.after ?? "—"}%</strong>
           {r?.delta != null && <span className={r.delta >= 0 ? "text-green-700 dark:text-green-400" : "text-red-600"}> ({r.delta >= 0 ? "+" : ""}{r.delta})</span>}
         </span>
-        {diff.versions?.rules_changed && (
+        {diff.versions && (diff.versions.rules_changed || diff.versions.reclassified) && (
           <StatusBadge tone="amber">
-            {diff.versions.reclassified ? "Rules changed: both runs re-judged with the current rules" : "Engine version changed"}
+            {!diff.versions.reclassified ? "Engine version changed"
+              : diff.versions.rules_changed ? "Rules changed: both runs re-judged with the current rules"
+              : "Judged by older rules: both runs re-judged with the current rules"}
           </StatusBadge>
         )}
       </div>

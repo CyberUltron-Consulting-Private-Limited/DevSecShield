@@ -74,6 +74,7 @@ _KINDS: dict[str, KindProvenance] = {
     "azure_subscription": KindProvenance("azure", "api", "direct"),
     "gcp_project": KindProvenance("gcp", "api", "direct"),
     "idp": KindProvenance("idp", "api", "direct"),
+    "ct_logs": KindProvenance("ct", "api", "direct"),  # public CT search providers, read by the cloud worker
     "host_agent": KindProvenance("host_agent", "agent", "local"),
     # F1.3 (CONTRACT §2): hosts read by zs-collect through the customer's AWX / Salt / AWS Systems Manager
     "awx_hosts": KindProvenance("zs_collect", "agentless", "awx"),

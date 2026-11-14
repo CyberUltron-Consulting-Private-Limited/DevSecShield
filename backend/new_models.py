@@ -488,7 +488,7 @@ class CbomCollectionSettings(SQLModel, table=True):
     window_timezone: str = Field(default="Asia/Kolkata", max_length=64)
     rate_conn_per_s: int = Field(default=20)
     rate_parallel_per_server: int = Field(default=2)
-    rate_handshakes_per_endpoint: int = Field(default=12)
+    rate_handshakes_per_endpoint: int = Field(default=128)  # CB-12: full suite enumeration
     soc_email: str | None = Field(default=None, max_length=254)
     emergency_contact: str | None = Field(default=None, max_length=64)
     stop_all_network: bool = Field(default=False)

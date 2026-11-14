@@ -1,0 +1,63 @@
+{
+ "kind": "certspotter",
+ "rows": [
+  {
+   "cert_sha256": "e63b5e47ec645650cf515d172120975e87cf6340a0a27d072b945c924587a7fe",
+   "curve": null,
+   "dns_names": [
+    "www.xn--mnchen-3ya.de",
+    "xn--mnchen-3ya.de"
+   ],
+   "id": "16779477928",
+   "issuer": "CN=YR2,O=Let's Encrypt,C=US",
+   "issuer_cn": "YR2",
+   "issuer_friendly_name": "Let's Encrypt",
+   "key_bits": 2048,
+   "not_after": "2026-11-23T23:03:15Z",
+   "not_before": "2026-08-25T23:03:16Z",
+   "precert_poison": false,
+   "provider_dns_names": [
+    "www.xn--mnchen-3ya.de",
+    "xn--mnchen-3ya.de"
+   ],
+   "pubkey_alg": "rsaEncryption",
+   "revoked": false,
+   "serial": "584a7143980375c7fd69b959377b375eb5b",
+   "sha256": "e63b5e47ec645650cf515d172120975e87cf6340a0a27d072b945c924587a7fe",
+   "sig_alg": "sha256WithRSAEncryption",
+   "subject": "CN=www.xn--mnchen-3ya.de",
+   "subject_cn": "www.xn--mnchen-3ya.de",
+   "tbs_sha256": "45435fd1d08677e347206c7030448b71518e389e2b1b06b2dde30061fe926290"
+  },
+  {
+   "cert_sha256": "5b1bcb353ec18982f54e9e36554ed326f93c57bc80b112b1462836453d8ed906",
+   "curve": null,
+   "dns_names": [
+    "www.xn--mnchen-3ya.de",
+    "xn--mnchen-3ya.de"
+   ],
+   "id": "17976488467",
+   "issuer": "CN=YR1,O=Let's Encrypt,C=US",
+   "issuer_cn": "YR1",
+   "issuer_friendly_name": "Let's Encrypt",
+   "key_bits": 2048,
+   "not_after": "2027-01-23T10:45:34Z",
+   "not_before": "2026-10-25T10:45:35Z",
+   "precert_poison": false,
+   "provider_dns_names": [
+    "www.xn--mnchen-3ya.de",
+    "xn--mnchen-3ya.de"
+   ],
+   "pubkey_alg": "rsaEncryption",
+   "revoked": false,
+   "serial": "5d1b6e524a75c50478ce57b2c65fa4089e4",
+   "sha256": "5b1bcb353ec18982f54e9e36554ed326f93c57bc80b112b1462836453d8ed906",
+   "sig_alg": "sha256WithRSAEncryption",
+   "subject": "CN=www.xn--mnchen-3ya.de",
+   "subject_cn": "www.xn--mnchen-3ya.de",
+   "tbs_sha256": "3f952b3e3ebb89db7f3b8e5ed38432e2be4e8af21cebf832674284d9ccbb0161"
+  }
+ ],
+ "source": "certspotter_idn_muenchen",
+ "tool": "openssl x509"
+}
