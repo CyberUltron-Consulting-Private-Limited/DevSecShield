@@ -1619,8 +1619,13 @@ FIX_VALUE = "^(configurable|code-fixed|vendor-fixed|hardware-fixed|unknown|none)
 
 def _agility_baseline(engine, team_id: int, what: str, params: dict) -> dict:
     with Session(engine) as session:
+        if what == "history":
+            from backend.utilities.cbom_sources import agility_store as AGILITY_STORE
+
+            return {"items": AGILITY_STORE.history(session, team_id, **params)}
         rollup = AGILITY_ROLLUP.cached(session, team_id)
-        return rollup.summary(**params) if what == "summary" else rollup.subjects_page(**params)
+        session.commit()  # the estate store's stale classes healed on the way (agility_store.heal)
+        return rollup.summary(**params) if what == "summary" else rollup.subjects_page(**params, session=session)
 
 
 def _cursor_or_400(after: str | None) -> None:
@@ -1659,6 +1664,15 @@ async def agility_subjects(team_id: TeamId,
     return _ok(await _run("agility subjects", team_id, _agility_baseline, engine, team_id, "subjects",
                           {"fix_class": fix_class, "system": system, "excl_pq": view == "excl_pq", "after": after,
                            "limit": limit}))
+
+
+@router.get("/{team_id}/cbom/agility/history", dependencies=READ,
+            summary="The team's crypto-agility baseline written at each run (newest first, CB-25)")
+async def agility_history(team_id: TeamId, limit: int = Query(default=50, ge=1, le=500),
+                          Authorization: AuthHeader = None):
+    engine, _user = await authorize(team_id, Authorization)
+    return _ok(await _run("agility history", team_id, _agility_baseline, engine, team_id, "history",
+                          {"limit": limit}))
 
 
 def _job_assets(engine, team_id: int, job_id: int, params: dict) -> dict:

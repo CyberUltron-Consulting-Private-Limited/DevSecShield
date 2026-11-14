@@ -319,7 +319,8 @@ def test_migration_is_the_one_head():
         if down:
             parents.add(down.group(1))
     assert mod.revision == "cb23q0gap001" and mod.down_revision in revisions
-    assert revisions - parents == {"cb23q0gap001"}
+    # one head; later revisions (CB-25 cb25agility001) chain after this one
+    assert len(revisions - parents) == 1 and ("cb23q0gap001" in parents or revisions - parents == {"cb23q0gap001"})
 
 
 def test_migration_up_down_up_keeps_open_and_closed_gaps(tmp_path):

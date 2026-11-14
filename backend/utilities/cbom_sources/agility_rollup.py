@@ -67,6 +67,7 @@ class Subject:
     reasons: tuple[str, ...] = ()
     per: tuple = ()
     observations: int = 0
+    codes: tuple[str, ...] | None = None  # the deciding codes when they come stored (estate store), not from ``per``
 
     def observe(self, ev: tuple, at: tuple, system: tuple[str, str, str], name: str, a_type: str, location: str,
                 origin: str, source_label: str) -> None:
@@ -92,39 +93,66 @@ class Subject:
     @property
     def deciding(self) -> tuple[str, ...]:
         """The codes that put the asset in its class (the drill-down's "why")."""
+        if self.codes is not None:
+            return self.codes
         target = self.fix_class if self.fix_class in AG.RANK else None
         return tuple(dict.fromkeys(p["code"] for p in self.per if target and p["class"] == target))
 
 
 @dataclass
 class Rollup:
+    """The roll-up. From ``collections_view``: every subject in ``subjects``. From the estate store: the store's
+    assets as ``groups`` (one GROUP BY row: system, class, class without PQ codes, unknown reasons, count) and only
+    the code-scan, evidence and merged subjects in ``subjects``; ``merged`` holds the store assets a code scan
+    joined (counted in ``subjects``, so taken out of the groups and of the store's drill-down pages)."""
+
     as_of: str
     subjects: list[Subject]
     observations: int
     not_correlated: int
     not_assessed: int
-    inputs: dict[str, int]
+    inputs: dict[str, Any]
+    groups: list[tuple] = field(default_factory=list)
+    team_id: int | None = None  # set when the store backs the roll-up (its drill-down pages are read from it)
+    merged: frozenset[str] = frozenset()
 
     # ------------------------------------------------------------------ enterprise
+    def _tally(self) -> tuple[Counter, Counter, Counter, dict[str, dict[str, Any]]]:
+        counts: Counter = Counter()
+        excl: Counter = Counter()
+        reasons: Counter = Counter()
+        systems: dict[str, dict[str, Any]] = {}
+
+        def add(system: tuple, cls: str, x: str, why: Iterable[str], n: int) -> None:
+            counts[cls] += n
+            excl[x] += n
+            for r in why:
+                reasons[r] += n
+            item = systems.setdefault(system[0], {"key": system[0], "label": system[1], "kind": system[2],
+                                                  "c": Counter(), "x": Counter()})
+            item["c"][cls] += n
+            item["x"][x] += n
+
+        for key, label, kind, cls, x, why, n in self.groups:
+            add((key, label, kind), cls, x, why, n)
+        for sub in self.subjects:
+            add(sub.system, sub.fix_class, sub.excl_pq, sub.reasons, 1)
+        return counts, excl, reasons, systems
+
+    @property
+    def assets(self) -> int:
+        return sum(n for *_rest, n in self.groups) + len(self.subjects)
+
     def counts(self, excl_pq: bool = False) -> dict[str, int]:
-        c = Counter(s.excl_pq if excl_pq else s.fix_class for s in self.subjects)
+        c = self._tally()[1 if excl_pq else 0]
         return {v: c.get(v, 0) for v in AG.VALUES}
 
     def unknown_reasons(self) -> dict[str, int]:
-        c: Counter = Counter()
-        for s in self.subjects:
-            c.update(s.reasons)
-        return dict(sorted(c.items()))
+        return dict(sorted(self._tally()[2].items()))
 
     def systems(self) -> list[dict[str, Any]]:
-        acc: dict[str, dict[str, Any]] = {}
-        for s in self.subjects:
-            key, label, kind = s.system
-            item = acc.setdefault(key, {"key": key, "label": label, "kind": kind, "c": Counter(), "x": Counter()})
-            item["c"][s.fix_class] += 1
-            item["x"][s.excl_pq] += 1
         out = []
-        for item in acc.values():
+        for item in self._tally()[3].values():
             counts = {v: item["c"].get(v, 0) for v in AG.VALUES}
             excl = {v: item["x"].get(v, 0) for v in AG.VALUES}
             out.append({"key": item["key"], "label": item["label"], "kind": item["kind"],
@@ -140,13 +168,14 @@ class Rollup:
         systems = self.systems()
         listed = [s for s in systems if (not kind or s["kind"] == kind) and (not fix_class or s["counts"][fix_class])]
         page, next_cursor = _keyset(listed, after, limit, _system_sort)
+        assets = self.assets
         return {
             "as_of": self.as_of, "scope": "current estate", "model": AG.MODEL, "agility_version": AG.version(),
-            "assets": len(self.subjects), "counts": counts, "counts_excl_pq": excl,
+            "assets": assets, "counts": counts, "counts_excl_pq": excl,
             "self_fixable_pct": AG.self_fixable_pct(counts), "self_fixable_pct_excl_pq": AG.self_fixable_pct(excl),
             "hardest": _hardest(counts), "unknown_reasons": self.unknown_reasons(), "not_assessed": self.not_assessed,
             "dedupe": {"method": METHOD, "key_version": _key_version(), "observations": self.observations,
-                       "merged": self.observations - (len(self.subjects) - self.inputs.get("evidence_items", 0)),
+                       "merged": self.observations - (assets - self.inputs.get("evidence_items", 0)),
                        "not_correlated": self.not_correlated},
             "inputs": dict(self.inputs),
             "systems_total": len(systems),
@@ -155,15 +184,84 @@ class Rollup:
 
     # ------------------------------------------------------------------ drill-down
     def subjects_page(self, *, fix_class: str | None = None, system: str | None = None, excl_pq: bool = False,
-                      after: str | None = None, limit: int = 100) -> dict[str, Any]:
-        chosen = [s for s in self.subjects
-                  if (not fix_class or (s.excl_pq if excl_pq else s.fix_class) == fix_class)
-                  and (not system or s.system[0] == system)]
-        chosen.sort(key=_subject_sort)
-        page, next_cursor = _keyset(chosen, after, limit, _subject_sort)
-        return {"as_of": self.as_of, "view": "excl_pq" if excl_pq else "all", "fix_class": fix_class,
-                "system": system, "total": len(chosen), "next": next_cursor,
-                "items": [_public(s) for s in page]}
+                      after: str | None = None, limit: int = 100, session: Any = None) -> dict[str, Any]:
+        def wanted(s: Subject) -> bool:
+            return (not fix_class or (s.excl_pq if excl_pq else s.fix_class) == fix_class) and \
+                (not system or s.system[0] == system)
+
+        chosen = sorted((s for s in self.subjects if wanted(s)), key=_subject_sort)
+        head = {"as_of": self.as_of, "view": "excl_pq" if excl_pq else "all", "fix_class": fix_class,
+                "system": system}
+        if self.team_id is None or session is None:
+            page, next_cursor = _keyset(chosen, after, limit, _subject_sort)
+            return {**head, "total": len(chosen), "next": next_cursor, "items": [_public(s) for s in page]}
+        # the store's assets first (keyset on the asset key, in SQL), then the code-scan, evidence and merged subjects
+        start = decode_cursor(after)
+        stored, total = _store_page(session, self.team_id, fix_class=fix_class, system=system, excl_pq=excl_pq,
+                                    after=str(start[1]) if start and start[0] == "s" else None,
+                                    skip_store=bool(start and start[0] == "p"), limit=limit, merged=self.merged)
+        items = [*stored]
+        next_cursor = None
+        if len(items) > limit:
+            items = items[:limit]
+            next_cursor = _cursor(("s", items[-1]["key"]))
+        else:
+            rest = chosen
+            if start and start[0] == "p":
+                rest = [s for s in chosen if _comparable(_subject_sort(s)) > _comparable(tuple(start[1:]))]
+            room = limit - len(items)
+            items += [_public(s) for s in rest[:room]]
+            if len(rest) > room:
+                last = rest[room - 1] if room else None
+                next_cursor = _cursor(("p", *_subject_sort(last))) if last else _cursor(("s", items[-1]["key"]))
+        return {**head, "total": total + len(chosen), "next": next_cursor, "items": items}
+
+
+def _store_page(session: Any, team_id: int, *, fix_class: str | None, system: str | None, excl_pq: bool,
+                after: str | None, skip_store: bool, limit: int, merged: frozenset[str]) -> tuple[list[dict], int]:
+    """One keyset page of the store's assets (``limit + 1`` rows, so the caller knows if more follow) and how many
+    match; the assets a code scan joined are left out (they are subjects of their own)."""
+    import sqlalchemy as sa
+
+    from backend.new_models import CbomEstateAsset, CbomEstateObservation, CbomEstateSource
+
+    ea, eo, es = CbomEstateAsset.__table__, CbomEstateObservation.__table__, CbomEstateSource.__table__
+    cls_col = ea.c.fix_class_excl_pq if excl_pq else ea.c.fix_class
+    conds = [ea.c.team_id == team_id, ea.c.presence != "removed", ea.c.fix_class.is_not(None)]
+    if fix_class:
+        conds.append(cls_col == fix_class)
+    if system:
+        conds.append(ea.c.system_key == system)
+    total = int(session.execute(sa.select(sa.func.count()).select_from(ea).where(*conds)).scalar() or 0)
+    if merged:  # few: the store assets a code-scan certificate joined
+        total -= int(session.execute(sa.select(sa.func.count()).select_from(ea).where(
+            *conds, ea.c.asset_key.in_(sorted(merged)))).scalar() or 0)
+    if skip_store:
+        return [], total
+    page_conds = [*conds] + ([ea.c.asset_key > after] if after else [])
+    rows = session.execute(sa.select(
+        ea.c.asset_key, ea.c.label, ea.c.asset_type, ea.c.fix_class, ea.c.fix_floor, ea.c.fix_class_excl_pq,
+        ea.c.fix_codes, ea.c.fix_reasons, ea.c.system_key, ea.c.system_label, ea.c.system_kind, ea.c.fix_observations)
+        .where(*page_conds).order_by(ea.c.asset_key).limit(limit + 1 + len(merged))).all()
+    rows = [r for r in rows if r.asset_key not in merged][:limit + 1]
+    where: dict[str, tuple[str, set[str]]] = {}
+    if rows:
+        for o in session.execute(sa.select(eo.c.asset_key, eo.c.location, eo.c.fix_at, es.c.source_name,
+                                           eo.c.source_ref).select_from(eo.outerjoin(es, sa.and_(
+                es.c.team_id == eo.c.team_id, es.c.source_ref == eo.c.source_ref))).where(
+                eo.c.team_id == team_id, eo.c.presence != "removed",
+                eo.c.asset_key.in_([r.asset_key for r in rows])).order_by(eo.c.fix_at)).all():
+            loc, names = where.get(o.asset_key, ("", set()))
+            names.add(o.source_name or o.source_ref)
+            where[o.asset_key] = (o.location or loc, names)  # the latest observation's place
+    split = lambda text: [v for v in (text or "").split(",") if v]  # noqa: E731
+    return [{"key": r.asset_key, "name": r.label or r.asset_type, "type": r.asset_type,
+             "location": where.get(r.asset_key, ("", set()))[0], "origin": "sources_run", "fix_class": r.fix_class,
+             "fix_class_floor": r.fix_floor, "fix_class_excl_pq": r.fix_class_excl_pq,
+             "deciding_codes": split(r.fix_codes), "unknown_reasons": split(r.fix_reasons),
+             "observations": r.fix_observations or 0,
+             "sources": sorted(where.get(r.asset_key, ("", set()))[1])[:10],
+             "system": {"key": r.system_key, "label": r.system_label, "kind": r.system_kind}} for r in rows], total
 
 
 # ---------------------------------------------------------------------------------------------- helpers
@@ -273,50 +371,17 @@ class _SourcesSide:
     collections: int
 
 
-class _Contexts:
-    """Per job: the class rules' context key and the system (application, else the source uid snapshot)."""
-
-    def __init__(self, session: Any, team_id: int, job_ids: Iterable[int]):
-        from sqlmodel import select
-
-        from backend.new_models import CbomCollectionJob, CbomCollectionSource
-
-        ids = sorted(set(job_ids))
-        self.jobs = {j.id: j for start in range(0, len(ids), 500) for j in session.exec(select(CbomCollectionJob).where(
-            CbomCollectionJob.team_id == team_id, CbomCollectionJob.id.in_(ids[start:start + 500]))).all()}  # type: ignore[union-attr]
-        self.sources = {s.id: s for s in session.exec(select(CbomCollectionSource).where(
-            CbomCollectionSource.team_id == team_id)).all()}
-        self._memo: dict[int, tuple[tuple, tuple[str, str, str]]] = {}
-
-    def of(self, job_id: int, source_ref: str, source_name: str) -> tuple[tuple, tuple[str, str, str]]:
-        hit = self._memo.get(job_id)
-        if hit is None:
-            job = self.jobs.get(job_id)
-            source = self.sources.get(getattr(job, "source_id", None) or 0)
-            ctx = AG.node_context(job, source)
-            (kind, skey), label = AG.system_of(job, source, ctx)
-            if kind == "source":  # the source uid every team view uses (job snapshot first)
-                skey, label = source_ref, source_name
-            hit = self._memo[job_id] = (AG._ctx_key(ctx), (f"{kind}:{skey}", label, kind))
-        return hit
-
-
 def _alias(aliases: dict[str, str], ambiguous: set[str], link: str, key: str) -> None:
     if aliases.setdefault(link, key) != key:
         ambiguous.add(link)
 
 
-def _evaluate_node(kb: str, ctx_key: tuple, a_type: str, codes: Iterable[Any], facts: Any, location: Any) -> tuple:
-    # agility.RunAgility's path: the job context's memo key is computed once per job
-    facts = facts if isinstance(facts, dict) else {}
-    return AG._evaluate(kb, "node", a_type, AG._codes(codes), AG._deciding(a_type, facts, location), ctx_key)
-
-
 def _from_view(session: Any, team_id: int, found: Any) -> _SourcesSide:
     """Sources from ``collections_view.load_sources_result`` (each source's latest successful collection)."""
+    from backend.utilities.cbom_sources import agility_store as STORE
     from backend.utilities.cbom_sources import asset_keys as AK
 
-    contexts = _Contexts(session, team_id, (item.collection.job_id for item in found.rows))
+    contexts = STORE.Contexts(session, team_id, (item.collection.job_id for item in found.rows))
     kb = AG.crypto_kb.version()
     out: list[_Obs] = []
     aliases: dict[str, str] = {}
@@ -338,7 +403,7 @@ def _from_view(session: Any, team_id: int, found: Any) -> _SourcesSide:
                 location=str(row.get("location") or ""), target=str(item.target or ""), scope=col.source_ref))
             key = found_key if isinstance(found_key, str) else item.identity
         a_type = str(item.node_type or "")
-        ev = _evaluate_node(kb, ctx_key, a_type, row.get("collector_codes") or [], item.facts, row.get("location"))
+        ev = STORE.evaluate_node(kb, ctx_key, a_type, row.get("collector_codes") or [], item.facts, row.get("location"))
         out.append(_Obs(key, ev, (col.observed_at, 0, col.job_id), system, str(row.get("title") or a_type), a_type,
                         str(row.get("location") or ""), col.source_name))
     for link in ambiguous:
@@ -369,94 +434,79 @@ def store_ready(session: Any, team_id: int, latest: list[Any] | None = None) -> 
     return all((written.get(ID.job_source_ref(j, srcs.get(j.source_id or 0))) or 0) >= j.id for j in jobs)
 
 
-def _from_store(session: Any, team_id: int, today: _dt.datetime) -> _SourcesSide:
-    """Sources from the estate store (CB-20): every asset key with an observation that is present or not read in
-    its source's latest collection (removed ones are gone), each observation's latest stored row. The keys are the
-    store's (CB-21 ``asset_keys``), so nothing is correlated here."""
-    import sqlalchemy as sa
-
-    from backend.new_models import CbomCollectedAsset, CbomEstateAsset, CbomEstateObservation, CbomEstateSource
-    from backend.utilities.cbom_sources import asset_keys as AK
-    from backend.utilities.cbom_sources.classify import shown
-
-    eo, es, ea = CbomEstateObservation.__table__, CbomEstateSource.__table__, CbomEstateAsset.__table__
-    obs = session.execute(sa.select(
-        eo.c.asset_key, eo.c.source_ref, eo.c.row_key, eo.c.presence, eo.c.seen_job_id, eo.c.seen_attempt,
-        eo.c.seen_at, es.c.latest_job_id, es.c.latest_attempt, es.c.latest_at, es.c.source_name)
-        .select_from(eo.join(es, sa.and_(es.c.team_id == eo.c.team_id, es.c.source_ref == eo.c.source_ref)))
-        .where(eo.c.team_id == team_id, eo.c.presence != "removed")).all()
-    pointers: dict[tuple[int, int], list[tuple[Any, Any]]] = {}
-    for o in obs:
-        job, attempt, at = ((o.latest_job_id, o.latest_attempt, o.latest_at) if o.presence == "present"
-                            else (o.seen_job_id, o.seen_attempt, o.seen_at))
-        pointers.setdefault((job, attempt), []).append((o, at))
-    columns = (CbomCollectedAsset.asset_key, CbomCollectedAsset.asset_type, CbomCollectedAsset.cdx_type,
-               CbomCollectedAsset.target, CbomCollectedAsset.location, CbomCollectedAsset.name,
-               CbomCollectedAsset.algorithm, CbomCollectedAsset.key_size, CbomCollectedAsset.protocol,
-               CbomCollectedAsset.facts, CbomCollectedAsset.finding_codes, CbomCollectedAsset.impact,
-               CbomCollectedAsset.finding, CbomCollectedAsset.created_at)
-    contexts = _Contexts(session, team_id, (job for job, _attempt in pointers))
-    kb = AG.crypto_kb.version()
-    naive_today = today.astimezone(UTC).replace(tzinfo=None)  # classify works in naive UTC
-    out: list[_Obs] = []
-    aliases: dict[str, str] = {}
-    ambiguous: set[str] = set()
-    for (job_id, attempt), items in pointers.items():
-        wanted = sorted({o.row_key for o, _at in items})
-        rows: dict[str, Any] = {}
-        for start in range(0, len(wanted), 500):
-            for r in session.execute(sa.select(*columns).where(
-                    CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.job_id == job_id,
-                    CbomCollectedAsset.attempt == attempt,
-                    CbomCollectedAsset.asset_key.in_(wanted[start:start + 500]))).all():  # type: ignore[attr-defined]
-                rows[r.asset_key] = r
-        for o, at in items:
-            row = rows.get(o.row_key)
-            if row is None or row.asset_type == "coverage":
-                continue  # the row was pruned (retention keeps the ones the store points at) or is not an asset
-            name = o.source_name or o.source_ref
-            ctx_key, system = contexts.of(job_id, o.source_ref, name)
-            codes = [c for c in shown(row, naive_today)["finding_codes"] if not c.startswith("COVERAGE_")]
-            a_type = str(row.asset_type or "")
-            ev = _evaluate_node(kb, ctx_key, a_type, codes, row.facts, row.location)
-            if a_type in AK.CERT_TYPES or row.cdx_type == "certificate":
-                observation = AK.Observation(kind=a_type, facts=row.facts if isinstance(row.facts, dict) else {},
-                                             location=str(row.location or ""), cdx_type=str(row.cdx_type or ""),
-                                             scope=o.source_ref)
-                links = AK.link_keys(observation)
-                before = bool((row.facts or {}).get("not_before")) if isinstance(row.facts, dict) else False
-                for link in links:  # a code row's cn key only names a certificate read without its notBefore
-                    if not (link.basis == "cn" and before):
-                        _alias(aliases, ambiguous, link.key, o.asset_key)
-            out.append(_Obs(o.asset_key, ev, (_aware(at), 0, job_id), system, str(row.name or a_type), a_type,
-                            str(row.location or ""), name))
-    for link in ambiguous:
-        aliases.pop(link, None)
-    not_correlated = session.execute(sa.select(sa.func.count()).select_from(ea).where(
-        ea.c.team_id == team_id, ea.c.key_kind == "not_correlated", ea.c.presence != "removed")).scalar() or 0
-    collections = session.execute(sa.select(sa.func.count()).select_from(es).where(
-        es.c.team_id == team_id)).scalar() or 0
-    return _SourcesSide("estate_store", out, aliases, int(not_correlated), int(collections))
-
-
 USE_STORE = True  # CB-20 merged (#167): read the estate store when it is ready, else collections_view
+
+
+def _code_side(session: Any, team_id: int, subject: Any, lookup: Any) -> tuple[int, int]:
+    """Each code source's latest successful scan into ``subject(key)``; a certificate row's match token goes through
+    ``lookup(parts) -> key | None`` (the Sources certificate it names). Returns (scans, rows)."""
+    from sqlmodel import select
+
+    from backend.new_models import Scan
+    from backend.utilities.cbom_sources import collections_view as CV
+    from backend.utilities.cbom_sources import identity as ID
+
+    code_scans = latest_code_scans(session, team_id)
+    loaded = []
+    for scan_id, skey, label, created in code_scans:
+        data = session.exec(select(Scan.scan_data).where(Scan.id == scan_id, Scan.team_id == team_id)).first()
+        data = data if isinstance(data, dict) else {}
+        rows = [r for r in (data.get("results") or []) if isinstance(r, dict)]
+        cert_ids = CV.code_cert_identities(data)
+        loaded.append((scan_id, skey, label, created, [(r, CV.code_row_identity(r, cert_ids)) for r in rows]))
+    resolved = lookup({p for *_x, rows in loaded for _r, t in rows if t for p in t.split("+")})
+    count = 0
+    for scan_id, skey, label, created, rows in loaded:
+        system = (f"repository:{skey}", label, "repository")
+        for row, token in rows:
+            if token:
+                parts = token.split("+")
+                key = next((resolved[p] for p in parts if p in resolved), parts[0])
+            else:
+                key = f"code|{skey}|{ID.code_identity(row)}"
+            count += 1
+            subject(key).observe(AG.classify_code_row(row), (created, 1, scan_id), system,
+                                 str(row.get("title") or row.get("algorithm_name") or row.get("asset_type") or ""),
+                                 str(row.get("asset_type") or row.get("algorithm_type") or ""),
+                                 str(row.get("location") or ""), CV.ORIGIN_CODE, label)
+    return len(code_scans), count
+
+
+def _evidence_side(session: Any, team_id: int, subject: Any) -> tuple[int, int]:
+    """The evidence items with a class into ``subject(key)``. Returns (items, areas not assessed)."""
+    from sqlmodel import select
+
+    from backend.new_models import CbomEvidenceArea, CbomEvidenceVendor
+
+    not_assessed = items = 0
+    for area in session.exec(select(CbomEvidenceArea).where(CbomEvidenceArea.team_id == team_id)).all():
+        fields = AG.evidence_area_fields(area.area_key, area.answers)
+        if fields["not_assessed"]:
+            not_assessed += 1
+        if not fields["fix_class"]:
+            continue
+        which = "hsm" if fields["fix_class"] == "hardware-fixed" else "vendor"
+        items += 1
+        _evidence(subject(f"evidence|area|{area.area_key}"), fields["fix_class"], EVIDENCE_SYSTEMS[which],
+                  f"Evidence area: {area.area_key.replace('_', ' ')}", area.last_updated)
+    for vendor in session.exec(select(CbomEvidenceVendor).where(CbomEvidenceVendor.team_id == team_id)).all():
+        items += 1
+        _evidence(subject(f"evidence|vendor|{vendor.id}"), AG.evidence_vendor_fields()["fix_class"],
+                  EVIDENCE_SYSTEMS["vendor"], vendor.name, vendor.created_at)
+    return items, not_assessed
 
 
 def build(session: Any, team_id: int, *, now: _dt.datetime | None = None, sources: Any = None) -> Rollup:
     """The team's agility roll-up. ``sources``: a ``collections_view.SourcesResult`` already loaded for this request
-    (then it is used as is); otherwise the estate store when ``store_ready``, else ``collections_view``."""
-    from sqlmodel import select
-
-    from backend.new_models import CbomEvidenceArea, CbomEvidenceVendor, Scan
+    (then it is used as is); otherwise the estate store when ``store_ready`` (``build_store``: a GROUP BY), else
+    ``collections_view``."""
     from backend.utilities.cbom_sources import collections_view as CV
-    from backend.utilities.cbom_sources import identity as ID
 
     moment = _aware(now or _dt.datetime.now(UTC))
     if sources is None and USE_STORE and store_ready(session, team_id):
-        side = _from_store(session, team_id, moment)
-    else:
-        side = _from_view(session, team_id, sources if sources is not None
-                          else CV.load_sources_result(session, team_id, moment))
+        return build_store(session, team_id, now=moment)
+    side = _from_view(session, team_id, sources if sources is not None
+                      else CV.load_sources_result(session, team_id, moment))
     subjects: dict[str, Subject] = {}
 
     def subject(key: str) -> Subject:
@@ -465,56 +515,114 @@ def build(session: Any, team_id: int, *, now: _dt.datetime | None = None, source
             item = subjects[key] = Subject(key=key)
         return item
 
-    # 1. Sources: one key per cross-source identity (certificates, endpoints, cloud resources), class per observation
     for o in side.observations:
         subject(o.key).observe(o.ev, o.at, o.system, o.name, o.type, o.location, CV.ORIGIN_SOURCES, o.source)
     aliases = side.aliases
-
-    # 2. code scans: each code source's latest successful scan; a certificate joins the Sources one it shares a key with
-    code_scans = latest_code_scans(session, team_id)
-    observations = len(side.observations)
-    for scan_id, skey, label, created in code_scans:
-        data = session.exec(select(Scan.scan_data).where(Scan.id == scan_id, Scan.team_id == team_id)).first()
-        data = data if isinstance(data, dict) else {}
-        rows = [r for r in (data.get("results") or []) if isinstance(r, dict)]
-        cert_ids = CV.code_cert_identities(data)
-        system = (f"repository:{skey}", label, "repository")
-        for row in rows:
-            token = CV.code_row_identity(row, cert_ids)
-            if token:
-                key = next((aliases[p] for p in token.split("+") if p in aliases), token.split("+")[0])
-            else:
-                key = f"code|{skey}|{ID.code_identity(row)}"
-            observations += 1
-            subject(key).observe(AG.classify_code_row(row), (created, 1, scan_id), system,
-                                 str(row.get("title") or row.get("algorithm_name") or row.get("asset_type") or ""),
-                                 str(row.get("asset_type") or row.get("algorithm_type") or ""),
-                                 str(row.get("location") or ""), CV.ORIGIN_CODE, label)
-
-    # 3. evidence items with a class
-    not_assessed = evidence_items = 0
-    for area in session.exec(select(CbomEvidenceArea).where(CbomEvidenceArea.team_id == team_id)).all():
-        fields = AG.evidence_area_fields(area.area_key, area.answers)
-        if fields["not_assessed"]:
-            not_assessed += 1
-        if not fields["fix_class"]:
-            continue
-        which = "hsm" if fields["fix_class"] == "hardware-fixed" else "vendor"
-        evidence_items += 1
-        _evidence(subject(f"evidence|area|{area.area_key}"), fields["fix_class"], EVIDENCE_SYSTEMS[which],
-                  f"Evidence area: {area.area_key.replace('_', ' ')}", area.last_updated)
-    for vendor in session.exec(select(CbomEvidenceVendor).where(CbomEvidenceVendor.team_id == team_id)).all():
-        evidence_items += 1
-        _evidence(subject(f"evidence|vendor|{vendor.id}"), AG.evidence_vendor_fields()["fix_class"],
-                  EVIDENCE_SYSTEMS["vendor"], vendor.name, vendor.created_at)
-
+    scans, code_rows = _code_side(session, team_id, subject, lambda parts: {p: aliases[p] for p in parts
+                                                                             if p in aliases})
+    evidence_items, not_assessed = _evidence_side(session, team_id, subject)
     for item in subjects.values():
         item.observations = len(item.evals)
         item.finish()
     return Rollup(as_of=moment.strftime("%Y-%m-%dT%H:%M:%SZ"), subjects=list(subjects.values()),
-                  observations=observations, not_correlated=side.not_correlated, not_assessed=not_assessed,
-                  inputs={"collections": side.collections, "code_scans": len(code_scans),
-                          "evidence_items": evidence_items, "read_from": side.read_from})
+                  observations=len(side.observations) + code_rows, not_correlated=side.not_correlated,
+                  not_assessed=not_assessed,
+                  inputs={"collections": side.collections, "code_scans": scans, "evidence_items": evidence_items,
+                          "read_from": side.read_from})
+
+
+def build_store(session: Any, team_id: int, *, now: _dt.datetime | None = None, healed: bool = False) -> Rollup:
+    """The roll-up over the estate store: heal any stale stored class (``agility_store.heal``; the caller commits),
+    then ONE ``GROUP BY system_key, fix_class, fix_class_excl_pq, fix_reasons`` over the team's assets, plus the
+    code scans and evidence items. A code-scan certificate that names a stored certificate (its CN + dates link
+    keys, stored on the observation) merges with it: that asset leaves its group and is a subject of its own."""
+    import sqlalchemy as sa
+
+    from backend.new_models import CbomEstateAsset, CbomEstateObservation, CbomEstateSource
+    from backend.utilities.cbom_sources import agility_store as STORE
+
+    moment = _aware(now or _dt.datetime.now(UTC))
+    if not healed:
+        STORE.heal(session, team_id, moment)
+    ea, eo, es = CbomEstateAsset.__table__, CbomEstateObservation.__table__, CbomEstateSource.__table__
+    live = (ea.c.team_id == team_id, ea.c.presence != "removed", ea.c.fix_class.is_not(None))
+    raw = session.execute(sa.select(
+        ea.c.system_key, sa.func.max(ea.c.system_label), sa.func.max(ea.c.system_kind), ea.c.fix_class,
+        ea.c.fix_class_excl_pq, ea.c.fix_reasons, sa.func.count()).where(*live).group_by(
+        ea.c.system_key, ea.c.fix_class, ea.c.fix_class_excl_pq, ea.c.fix_reasons)).all()
+    groups: dict[tuple, int] = {}
+    labels: dict[str, tuple[str, str]] = {}
+    for key, label, kind, cls, excl, reasons, n in raw:
+        labels[key or ""] = (label or "", kind or "")
+        groups[(key or "", cls, excl or "none", tuple(v for v in (reasons or "").split(",") if v))] = int(n)
+    observations = int(session.execute(sa.select(sa.func.count()).select_from(eo).where(
+        eo.c.team_id == team_id, eo.c.presence != "removed")).scalar() or 0)
+    not_correlated = int(session.execute(sa.select(sa.func.count()).select_from(ea).where(
+        ea.c.team_id == team_id, ea.c.key_kind == "not_correlated", ea.c.presence != "removed")).scalar() or 0)
+    collections = int(session.execute(sa.select(sa.func.count()).select_from(es).where(
+        es.c.team_id == team_id)).scalar() or 0)
+
+    subjects: dict[str, Subject] = {}
+
+    def subject(key: str) -> Subject:
+        item = subjects.get(key)
+        if item is None:
+            item = subjects[key] = Subject(key=key)
+        return item
+
+    def lookup(parts: set[str]) -> dict[str, str]:
+        found: dict[str, set[str]] = {}
+        ordered = sorted(parts)
+        for start in range(0, len(ordered), 500):
+            chunk = ordered[start:start + 500]
+            for key, cnb, cn in session.execute(sa.select(eo.c.asset_key, eo.c.cert_cnb_key, eo.c.cert_cn_key).where(
+                    eo.c.team_id == team_id, eo.c.presence != "removed",
+                    sa.or_(eo.c.cert_cnb_key.in_(chunk), eo.c.cert_cn_key.in_(chunk)))).all():
+                for link in (cnb, cn):
+                    if link in parts:
+                        found.setdefault(link, set()).add(key)
+        return {link: next(iter(keys)) for link, keys in found.items() if len(keys) == 1}  # ambiguous: no join
+
+    scans, code_rows = _code_side(session, team_id, subject, lookup)
+    evidence_items, not_assessed = _evidence_side(session, team_id, subject)
+    stored_keys = sorted(k for k in subjects if not k.startswith(("code|", "evidence|")))
+    merged: set[str] = set()
+    for start in range(0, len(stored_keys), 500):
+        for r in session.execute(sa.select(
+                ea.c.asset_key, ea.c.label, ea.c.asset_type, ea.c.fix_class, ea.c.fix_class_excl_pq, ea.c.fix_floor,
+                ea.c.fix_reasons, ea.c.fix_codes, ea.c.fix_at, ea.c.system_key, ea.c.system_label, ea.c.system_kind,
+                ea.c.fix_observations).where(*live, ea.c.asset_key.in_(stored_keys[start:start + 500]))).all():
+            sub = subjects[r.asset_key]
+            sub.observations = len(sub.evals)
+            sub.finish()
+            code = STORE.Part(sub.fix_class, sub.excl_pq, sub.floor, tuple(sub.reasons), sub.deciding, sub.seen_at,
+                              sub.system)
+            split = tuple(v for v in (r.fix_reasons or "").split(",") if v)
+            store = STORE.Part(r.fix_class, r.fix_class_excl_pq or "none", r.fix_floor, split,
+                               tuple(v for v in (r.fix_codes or "").split(",") if v),
+                               (_aware(r.fix_at), 0), (r.system_key or "", r.system_label or "", r.system_kind or ""))
+            both = STORE.combine([store, code])
+            group = (r.system_key or "", r.fix_class, r.fix_class_excl_pq or "none", split)
+            groups[group] -= 1
+            merged.add(r.asset_key)
+            sub.fix_class, sub.excl_pq, sub.floor, sub.reasons, sub.codes = (
+                both.fix_class, both.excl_pq, both.floor, both.reasons, both.codes)
+            sub.system = both.system
+            if store.at >= code.at:
+                sub.name, sub.type, sub.origin = r.label or r.asset_type, r.asset_type, "sources_run"
+            sub.observations += int(r.fix_observations or 0)
+            sub.evals = []
+    for item in subjects.values():
+        if item.evals:
+            item.observations = len(item.evals)
+            item.finish()
+    return Rollup(as_of=moment.strftime("%Y-%m-%dT%H:%M:%SZ"), subjects=list(subjects.values()),
+                  observations=observations + code_rows, not_correlated=not_correlated, not_assessed=not_assessed,
+                  inputs={"collections": collections, "code_scans": scans, "evidence_items": evidence_items,
+                          "read_from": "estate_store"},
+                  groups=[(key, *labels.get(key, ("", "")), cls, excl, reasons, n)
+                          for (key, cls, excl, reasons), n in groups.items() if n > 0],
+                  team_id=team_id, merged=frozenset(merged))
 
 
 def _evidence(item: Subject, cls: str, system: tuple[str, str], name: str, at: Any) -> None:

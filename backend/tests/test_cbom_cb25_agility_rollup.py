@@ -303,3 +303,148 @@ def test_the_store_is_read_only_once_it_has_every_latest_collection_and_both_rea
     assert after["inputs"]["read_from"] == reader
     for k in ("assets", "counts", "counts_excl_pq", "self_fixable_pct", "unknown_reasons"):
         assert after[k] == before[k], k
+
+
+# ---------------------------------------------------------------------------------------------- PR-B: on the store
+def _store_only(reader):
+    if reader != "estate_store":
+        pytest.skip("estate store behaviour")
+
+
+def test_the_store_carries_the_class_and_the_roll_up_is_its_group_by(api, estate, reader):
+    _store_only(reader)
+    from sqlmodel import select
+
+    from backend.new_models import CbomEstateAsset, CbomEstateObservation
+    from backend.utilities.cbom_sources import agility as AG
+
+    with Session(estate["engine"]) as s:
+        assets = s.exec(select(CbomEstateAsset).where(CbomEstateAsset.team_id == 1,
+                                                      CbomEstateAsset.presence != "removed")).all()
+        observations = s.exec(select(CbomEstateObservation).where(CbomEstateObservation.team_id == 1)).all()
+    assert assets and all(a.fix_class in VALUES and a.fix_version == AG.version() and a.system_key for a in assets)
+    assert all(o.fix_class in VALUES and o.fix_job_id == o.seen_job_id for o in observations)
+    cert = next(a for a in assets if a.asset_type == "certificate")
+    assert (cert.fix_class, cert.fix_observations) == ("hardware-fixed", 3)  # MAX over its three observations
+    body = _baseline(api)
+    stored = {v: sum(1 for a in assets if a.fix_class == v) for v in VALUES}
+    assert body["counts"] == stored  # no code scan, no evidence here: the API is the store's GROUP BY
+    rollup = ROLLUP.cached(Session(estate["engine"]), 1)
+    assert rollup.groups and not rollup.subjects  # every asset counted by the GROUP BY, none loaded one by one
+
+
+def test_a_baseline_is_written_per_run_and_listed_in_the_history(api, estate, reader):
+    _store_only(reader)
+    from sqlmodel import select
+
+    from backend.new_models import CbomAgilityBaseline
+
+    with Session(estate["engine"]) as s:
+        rows = s.exec(select(CbomAgilityBaseline).where(CbomAgilityBaseline.team_id == 1)).all()
+    assert [r.run_id for r in rows] == [estate["run"]["id"]]
+    body = _baseline(api, limit=500)
+    assert rows[0].counts == body["counts"] and rows[0].counts_excl_pq == body["counts_excl_pq"]
+    assert rows[0].assets == body["assets"] and len(rows[0].systems) == body["systems_total"]
+    r = api("GET", "/1/cbom/agility/history")
+    assert r.status_code == 200 and r.json()["items"][0]["run_id"] == estate["run"]["id"]
+    assert r.json()["items"][0]["counts"] == body["counts"]
+    assert api("GET", "/1/cbom/agility/history", "carol").status_code in (403, 404)
+    from backend.utilities.cbom_sources import agility_store as STORE  # a replay of the run keeps the first row
+    with Session(estate["engine"]) as s:
+        STORE.write_baseline(s, 1, estate["run"]["id"], dt.datetime.now(dt.timezone.utc))
+        s.commit()
+        assert len(s.exec(select(CbomAgilityBaseline)).all()) == 1
+
+
+def test_a_stale_or_missing_stored_class_is_healed_when_read(api, estate, reader):
+    _store_only(reader)
+    import sqlalchemy as sa
+    from sqlmodel import select
+
+    from backend.new_models import CbomEstateAsset, CbomEstateObservation
+
+    good = _baseline(api)
+    ROLLUP.clear_cache()
+    with Session(estate["engine"]) as s:  # a failed hook, an older model version, a backfill without hooks
+        s.execute(sa.update(CbomEstateObservation.__table__).values(fix_class="configurable", fix_version="fx-0+old"))
+        s.execute(sa.update(CbomEstateAsset.__table__).values(fix_class=None, fix_version=None))
+        s.commit()
+    assert _baseline(api)["counts"] == good["counts"]
+    with Session(estate["engine"]) as s:
+        assert all(a.fix_version and a.fix_class for a in s.exec(select(CbomEstateAsset)).all())
+
+
+def test_a_failing_hook_never_blocks_the_store_and_the_read_heals(api, world, reader, monkeypatch):
+    _store_only(reader)
+    from sqlmodel import select
+
+    from backend.new_models import CbomEstateAsset
+    from backend.utilities.cbom_sources import agility_store as STORE
+
+    engine, _ = world
+    node_id, token, _ = enroll_node(api)
+    hdr = {"X-ZS-Node-Token": token}
+    api("POST", "/1/cbom/sources/items", json=linux_body("src-a", node_id=node_id, targets=["10.20.0.1"], window="any"))
+    _run(api, "cb25-run-0003")
+    _collect(api, hdr, _claim(api, hdr), [TLS10, AES])
+
+    def boom(*_a, **_k):
+        raise RuntimeError("agility hook down")
+
+    original = STORE.judge_observations
+    monkeypatch.setattr(STORE, "judge_observations", boom)
+    _record_drift(engine)  # drift and the store commit; the plain hook's savepoint is rolled back
+    with Session(engine) as s:
+        assets = s.exec(select(CbomEstateAsset)).all()
+    assert len(assets) == 2 and all(a.fix_class is None for a in assets)
+    monkeypatch.setattr(STORE, "judge_observations", original)  # (undo() would also drop the harness's patches)
+    body = _baseline(api)
+    assert body["assets"] == 2 and body["counts"]["configurable"] == 1 and body["counts"]["none"] == 1
+
+
+def test_a_certificate_is_rechecked_when_its_expiry_window_opens(api, world, reader):
+    _store_only(reader)
+    from sqlmodel import select
+
+    from backend.new_models import CbomEstateObservation
+    from backend.utilities.cbom_sources import agility_store as STORE
+
+    engine, _ = world
+    node_id, token, _ = enroll_node(api)
+    hdr = {"X-ZS-Node-Token": token}
+    api("POST", "/1/cbom/sources/items", json=linux_body("src-a", node_id=node_id, targets=["10.20.0.1"], window="any"))
+    _run(api, "cb25-run-0004")
+    expires = NOW + dt.timedelta(days=60)
+    _collect(api, hdr, _claim(api, hdr), [_cert("10.20.0.1:443#chain[0]", source="tls",
+                                                not_after=expires.strftime("%Y-%m-%dT%H:%M:%SZ"))])
+    _record_drift(engine)
+    with Session(engine) as s:
+        obs = s.exec(select(CbomEstateObservation)).one()
+        assert obs.fix_recheck_on == (expires - dt.timedelta(days=31)).date()
+        first = obs.fix_codes
+    later = dt.datetime.combine(obs.fix_recheck_on, dt.time(), tzinfo=dt.timezone.utc) + dt.timedelta(days=2)
+    with Session(engine) as s:
+        assert STORE.heal(s, 1, later) == 1  # the window opened: judged again
+        s.commit()
+        obs = s.exec(select(CbomEstateObservation)).one()
+    assert obs.fix_recheck_on > later.date() and obs.fix_version
+    with Session(engine) as s:
+        assert STORE.heal(s, 1, later) == 0  # nothing more to do that day
+    assert first is not None or obs.fix_codes is not None
+
+
+def test_drill_down_pages_cross_the_store_and_the_code_and_evidence_subjects(api, estate, reader):
+    engine = estate["engine"]
+    _code_scan(engine, 904, NOW - dt.timedelta(hours=1))
+    with Session(engine) as s:
+        s.add(CbomEvidenceVendor(team_id=1, name="Card processor"))
+        s.commit()
+    body = _baseline(api)
+    for view, counts in (("all", body["counts"]), ("excl_pq", body["counts_excl_pq"])):
+        for v in VALUES:
+            items = _all_subjects(api, page=1, fix_class=v, view=view)
+            assert len(items) == counts[v] and len({i["key"] for i in items}) == len(items), (view, v)
+    everything = _all_subjects(api, page=2)
+    assert len(everything) == body["assets"] == len({i["key"] for i in everything})
+    cert = [i for i in everything if i["type"] == "certificate"]
+    assert len(cert) == 1 and cert[0]["fix_class"] == "hardware-fixed" and cert[0]["observations"] == 4
