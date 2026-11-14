@@ -26,6 +26,16 @@ assert.equal(RUN_CAPABILITIES.ai, true);
 assert.ok(!review.includes("RunDetailsDialog"), "no RunDetailsDialog left");
 assert.match(review, /href=\{runResultsHref\(teamId, run\.id\)\}/);
 
+// S2: Results / Ticketing tabs; the Ticketing tab is RunTicketingTab for this run (PR-4)
+const view = read("RunResultsView.tsx");
+assert.match(view, /import RunTicketingTab from "\.\/RunTicketingTab";/);
+assert.match(view, /<RunTicketingTab teamId=\{teamId\} runId=\{runId\} \/>/);
+assert.match(view, /\["results", "Results", BarChart3\], \["ticketing", "Ticketing", Ticket\]/);
+assert.match(view, /data-testid=\{`run-results-tab-\$\{key\}`\}/);
+// the results sections render only on the Results tab: the metadata cards and the findings table sit in its branch
+const ticketingBranch = view.indexOf('tab === "ticketing" && RUN_TICKETING_TAB_AVAILABLE ?');
+assert.ok(ticketingBranch > 0 && view.indexOf("<RunMetaCards", ticketingBranch) > ticketingBranch && view.indexOf("<RunFindingsTable", ticketingBranch) > ticketingBranch);
+
 // the Ticketing tab is on exactly when lane W6's component is in the tree
 assert.equal(RUN_TICKETING_TAB_AVAILABLE, existsSync(join(__dirname, "RunTicketingTab.tsx")), "Ticketing tab <=> RunTicketingTab.tsx");
 

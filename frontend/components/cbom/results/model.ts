@@ -181,8 +181,8 @@ export type RunSectionId =
   | "header" | "coverage" | "tabs" | "meta" | "posture" | "insights" | "certificates" | "cryptoCharts" | "changes"
   | "waves" | "compliance" | "dashboard" | "findings" | "topRisks" | "findingDialog";
 
-/** Lane W6 adds components/cbom/results/RunTicketingTab.tsx; until then the run page has the Results tab only. */
-export const RUN_TICKETING_TAB_AVAILABLE = false;
+/** The run page's Ticketing tab (RunTicketingTab, CB-38 PR-4: Jira for Sources runs). */
+export const RUN_TICKETING_TAB_AVAILABLE = true;
 
 /** What a run can download or attest today (PLAN §4.4: VEX, signature, evidence pack and PDF are code-scan only until PR-8). */
 export const RUN_CAPABILITIES = {
