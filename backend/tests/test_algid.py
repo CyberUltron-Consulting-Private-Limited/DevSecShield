@@ -65,8 +65,12 @@ def test_three_copies_are_identical():
         first = (FOLDERS[0] / name).read_bytes()
         assert all((folder / name).read_bytes() == first for folder in FOLDERS[1:]), name
     # exactly these copies: no fourth algid anywhere in the product trees
-    found = subprocess.run(["git", "ls-files", "--cached", "--others", "--exclude-standard", "--", "backend",
-                            "scan_node", "aibom/src", "RabbitMQ"], cwd=REPO, capture_output=True, text=True).stdout.split()
+    try:  # the backend image has no git: the byte check above still runs, the stray-copy scan needs a checkout
+        found = subprocess.run(["git", "ls-files", "--cached", "--others", "--exclude-standard", "--", "backend",
+                                "scan_node", "aibom/src", "RabbitMQ"], cwd=REPO, capture_output=True,
+                               text=True).stdout.split()
+    except OSError:
+        found = []
     stray = [p for p in found if Path(p).name in ("algid.py", "algid_tables.py")]
     if found:
         assert sorted(stray) == sorted(str(p.relative_to(REPO)) for p in COPIES), stray
@@ -718,7 +722,7 @@ def test_openssl_text_30_and_35_agree():
 
 
 # ----------------------------------------------------------------------------- T-B2f / T-B2g
-def test_tables_immutable_no_memo():
+def test_tables_immutable_bounded_memo():
     from backend.utilities.cbom_sources import algid_tables as T
 
     for table in (A._ALGS, A._OIDS, A._TLS_GROUPS, A._ALIASES, A._AWS, A._AWS_TLS_POLICY["elbv2"], A._AWS["kms.KeySpec"],
@@ -738,7 +742,38 @@ def test_tables_immutable_no_memo():
         A.tls_group(rng.randrange(0x10000))
     assert {k: id(v) for k, v in vars(A).items()} == before
     assert {k: len(v) for k, v in vars(A).items() if k in sizes} == sizes
-    assert not any(hasattr(f, "cache_info") for f in vars(A).values())
+    # The one memo is resolve's bounded LRU (ST-9, CB-04 PR-3a M1): never an unbounded module dict.
+    memos = [f for f in vars(A).values() if hasattr(f, "cache_info")]
+    assert memos == [A._resolve_memo] and A._resolve_memo.cache_info().maxsize == 4096
+
+
+def test_resolve_memo_is_bounded_and_follows_the_tables(monkeypatch):
+    """CB-04 PR-3a M1: resolve memoises str lookups (classify asks about the same identifier ~4 times per asset).
+    The memo is bounded (ST-9), skips long strings, and is cleared when a table it reads is rebound in the process (a
+    regenerated table, a reload, a test), so an answer from an older table is never served."""
+    from types import MappingProxyType
+
+    memo = A._resolve_memo
+    memo.cache_clear()
+    first = A.resolve("X25519MLKEM768")
+    hits = memo.cache_info().hits
+    assert A.resolve("X25519MLKEM768") is first and A.quantum_vulnerable("X25519MLKEM768") is False
+    assert memo.cache_info().hits == hits + 2 and memo.cache_info().misses == 1
+    size = memo.cache_info().currsize
+    assert A.family_label("x" * A._MEMO_MAX_TEXT + "MLKEM768") == "PQ"  # resolved, never stored
+    assert memo.cache_info().currsize == size
+    assert A.resolve("X25519MLKEM768", "tls_group").quantum == "hybrid"
+    assert A.resolve("mlkem768").name == "ML-KEM-768"
+    # one table row changes in this process: the next lookup reads the new table, not the memo
+    monkeypatch.setattr(A, "_TLS_GROUPS", MappingProxyType(
+        {cp: name for cp, name in A._TLS_GROUPS.items() if name != "X25519MLKEM768"}))
+    assert A.resolve("X25519MLKEM768", "tls_group") is None
+    monkeypatch.setattr(A, "_ALIASES", MappingProxyType(
+        {key: name for key, name in A._ALIASES.items() if name != "ML-KEM-768"}))
+    assert A.resolve("mlkem768").matched_by == "marker"
+    monkeypatch.undo()
+    assert A.resolve("X25519MLKEM768", "tls_group").quantum == "hybrid"
+    assert A.resolve("mlkem768").name == "ML-KEM-768"
 
 
 def test_prober_lists_pinned():

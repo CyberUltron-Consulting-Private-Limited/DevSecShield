@@ -27,6 +27,7 @@ from sqlmodel import Session, select
 from backend.new_models import CbomCollectedAsset, CbomCollectionJob, CbomCollectionSource, CbomScanNode
 from backend.utilities.cbom_sources import crypto_kb
 from backend.utilities.cbom_sources.cbom_metrics import quantum_readiness_pct
+from backend.utilities.cbom_sources.classify import pq_kex_evidence
 
 IN_TRANSIT = {"tls_endpoint", "ssh_endpoint", "ssh_server_config", "database_tls", "load_balancer_tls", "cdn_tls",
               "api_tls", "k8s_ingress_tls"}
@@ -48,7 +49,7 @@ def pqc_class(asset_type: str, quantum_vulnerable: bool | None, codes: list[str]
     if quantum_vulnerable is True:
         return "quantum-vulnerable"
     if quantum_vulnerable is False:
-        if facts.get("pq_hybrid") or facts.get("pq_group_supported"):
+        if pq_kex_evidence(facts):  # the raw facts, as stored: classify reads the same evidence (CB-04)
             return "hybrid"
         return "quantum-safe"
     return "not-applicable"
