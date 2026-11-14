@@ -83,11 +83,32 @@ def _certin_module_candidates(name: str) -> list[Path]:
 
 
 def _vex_is_current(scan_type: str, vex: dict) -> bool:
-    """A CBOM VEX stored before findings carried CVEs said 'not affected' for everything; rebuild those."""
-    if scan_type != "cbom":
-        return True
-    props = ((vex.get("metadata") or {}).get("properties") or []) if isinstance(vex, dict) else []
-    return any(isinstance(p, dict) and p.get("name") == "zs:vex_rules" and p.get("value") == "2" for p in props)
+    """A CBOM VEX stored by older rules (rules 2: everything in triage; before: everything not affected) is rebuilt."""
+    from backend.utilities.cbom_sources.vex_semantics import is_current
+
+    return is_current(scan_type, vex)
+
+
+def _build_vex(engine, scan: Scan, scan_type: str, bom: dict | None, findings: list | None, vex_mod=None) -> dict:
+    """A CBOM code scan's VEX comes from the one CBOM rule set (``cbom_sources.vex_semantics``, CB-22), with the
+    findings this scan's drift resolved; SBOM and AI BOM keep ``cert_in/vex.py``."""
+    if scan_type == "cbom" and findings:
+        from backend.utilities.cbom_sources import drift as DRIFT
+        from backend.utilities.cbom_sources import identity as ID
+        from backend.utilities.cbom_sources import vex_semantics as VEX
+
+        with Session(engine) as session:
+            resolved = VEX.drift_resolved(session, team_id=scan.team_id, scan_id=scan.id)
+        ref_of: dict[str, str] = {}
+        if resolved:
+            key, _label = DRIFT.code_source(scan)
+            for raw in findings:
+                if isinstance(raw, dict) and raw.get("bom_ref"):
+                    ref_of.setdefault(ID.stable_key("code", key, ID.code_identity(raw)), str(raw["bom_ref"]))
+        return VEX.code_scan_vex(findings, resolved=resolved, ref_of=ref_of)
+    if vex_mod is None:
+        vex_mod = _load_certin_module("vex")
+    return vex_mod.build_vex(bom=bom, findings=findings, scan_type=scan_type)
 
 
 def _load_certin_module(name: str):
@@ -316,15 +337,14 @@ async def get_scan_vex(
     data = scan.scan_data if isinstance(scan.scan_data, dict) else {}
     if not refresh and isinstance(data.get("vex_json"), dict) and _vex_is_current(type, data["vex_json"]):
         return JSONResponse(data["vex_json"])
-    try:
-        vex_mod = _load_certin_module("vex")
-    except ImportError as e:
-        raise HTTPException(status_code=503, detail=f"aibom vex unavailable: {e}") from e
     bom = bom_dict_from_scan_data(type, data)
     findings = data.get("results") if type in ("sbom_sca", "cbom") else None
     if not isinstance(findings, list):
         findings = None
-    vex = vex_mod.build_vex(bom=bom, findings=findings, scan_type=type)
+    try:
+        vex = _build_vex(engine, scan, type, bom, findings)
+    except ImportError as e:
+        raise HTTPException(status_code=503, detail=f"aibom vex unavailable: {e}") from e
     data = dict(data)
     data["vex_json"] = vex
     _save_scan_data(engine, scan_id, team_id, type, data)
@@ -386,11 +406,8 @@ async def download_evidence_pack(
 
         if not isinstance(data.get("vex_json"), dict) or not _vex_is_current(type, data["vex_json"]):
             findings = data.get("results") if type in ("sbom_sca", "cbom") else None
-            data["vex_json"] = vex_mod.build_vex(
-                bom=bom,
-                findings=findings if isinstance(findings, list) else None,
-                scan_type=type,
-            )
+            data["vex_json"] = _build_vex(engine, scan, type, bom,
+                                          findings if isinstance(findings, list) else None, vex_mod)
         if bom and not isinstance(data.get("bom_signature"), dict):
             try:
                 data["bom_signature"] = sign_mod.sign_bom(bom, secret=_hmac_secret())
