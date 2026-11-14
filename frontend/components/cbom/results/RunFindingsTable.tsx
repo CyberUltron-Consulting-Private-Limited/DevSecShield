@@ -50,6 +50,9 @@ const STATUS_ICON: Record<CbomFindingStatus, typeof CheckCircle> = { fixed: Chec
 
 /** Bounds the Radix viewport (on the root the limit does not stop the table painting over the next section). */
 export const VIEWPORT_MAX_H_TABLE = "[&>[data-slot=scroll-area-viewport]]:max-h-[640px]";
+/** The shadcn Table wraps <table> in its own `overflow-auto` div, which never scrolls inside the ScrollArea but becomes
+ * the sticky cells' scroll container, so they never stuck: make that wrapper visible (R-qa, PR #120). */
+export const TABLE_WRAPPER_VISIBLE = "[&_div:has(>table[data-slot=table])]:overflow-visible";
 /** Below 768 px the select and name columns stay on screen while the table scrolls sideways (PLAN §4.5). */
 const STICKY_SELECT = "max-md:sticky max-md:left-0 max-md:z-10 max-md:bg-white max-md:dark:bg-zinc-900";
 const STICKY_NAME = "max-md:sticky max-md:left-12 max-md:z-10 max-md:bg-white max-md:dark:bg-zinc-900";
@@ -287,7 +290,7 @@ export function RunFindingsTable({
               : hasActiveFilters(filters) ? "No assets match these filters." : effectiveView === "findings" ? "No findings in this run." : "No assets match these filters."}
           </p>
         ) : (
-          <ScrollArea className={`w-full rounded-md border border-zinc-200 dark:border-zinc-800 ${VIEWPORT_MAX_H_TABLE}`} data-testid="run-results-scroll">
+          <ScrollArea className={`w-full rounded-md border border-zinc-200 dark:border-zinc-800 ${VIEWPORT_MAX_H_TABLE} ${TABLE_WRAPPER_VISIBLE}`} data-testid="run-results-scroll">
             <Table className="min-w-max">
               <TableHeader>
                 <TableRow>

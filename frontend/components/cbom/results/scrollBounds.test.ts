@@ -29,7 +29,7 @@ assert.ok(checked >= 5, `found the run page's ScrollAreas (${checked})`);
 // the two tables R-qa measured use the viewport-bounded classes
 const table = fs.readFileSync(path.join(dir, "RunFindingsTable.tsx"), "utf8");
 assert.match(table, /VIEWPORT_MAX_H_TABLE = "\[&>\[data-slot=scroll-area-viewport\]\]:max-h-\[640px\]"/);
-assert.match(table, /<ScrollArea className=\{`[^`]*\$\{VIEWPORT_MAX_H_TABLE\}`\} data-testid="run-results-scroll">/);
+assert.match(table, /<ScrollArea className=\{`[^`]*\$\{VIEWPORT_MAX_H_TABLE\}[^`]*`\} data-testid="run-results-scroll">/);
 const sections = fs.readFileSync(path.join(dir, "RunSections.tsx"), "utf8");
 assert.match(sections, /VIEWPORT_MAX_H_72 = "\[&>\[data-slot=scroll-area-viewport\]\]:max-h-72"/);
 assert.match(sections, /<ScrollArea className=\{`[^`]*\$\{VIEWPORT_MAX_H_72\}`\}/);
@@ -42,5 +42,10 @@ const page = fs.readFileSync(path.join(dir, "..", "..", "..", "app", "[team_id]"
 assert.ok(!page.includes("overflow-x-hidden"), "no overflow clipping on the page wrapper");
 assert.match(table, /const STICKY_SELECT = "max-md:sticky max-md:left-0/);
 assert.match(table, /const STICKY_NAME = "max-md:sticky max-md:left-12/);
+// the Table's own overflow-auto wrapper must not be the sticky cells' scroll container (R-qa re-QA, PR #120)
+assert.match(table, /TABLE_WRAPPER_VISIBLE = "\[&_div:has\(>table\[data-slot=table\]\)\]:overflow-visible"/);
+assert.match(table, /<ScrollArea className=\{`[^`]*\$\{VIEWPORT_MAX_H_TABLE\} \$\{TABLE_WRAPPER_VISIBLE\}`\} data-testid="run-results-scroll">/);
+const tableUi = fs.readFileSync(path.join(dir, "..", "..", "ui", "table.tsx"), "utf8");
+assert.ok(tableUi.includes('data-slot="table"'), "the shadcn <table> still carries data-slot=table");
 
 console.log(`scroll bounds tests passed (${checked} ScrollAreas)`);
