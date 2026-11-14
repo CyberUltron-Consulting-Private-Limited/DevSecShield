@@ -85,6 +85,8 @@ ALLOWED = {
     "aibom/src/aibom/cbom/compliance.py": 55,
     "aibom/src/aibom/cbom/data/crypto_kb.json": 71,
     "aibom/src/aibom/cbom/data/named_groups.json": 10,
+    # third-party OSV advisory text (CB-29 offline snapshot), quoted verbatim: not an algorithm table
+    "aibom/src/aibom/cbom/data/osv_snapshot.json": 8,
     "aibom/src/aibom/cbom/detect.py": 60,
     "aibom/src/aibom/cbom/ingest.py": 29,
     "aibom/src/aibom/cbom/normalize.py": 4,

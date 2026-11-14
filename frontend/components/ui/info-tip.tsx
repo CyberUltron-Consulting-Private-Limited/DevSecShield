@@ -1,29 +1,43 @@
 "use client";
 
 import { Info } from "lucide-react";
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import { Label } from "@/components/ui/label";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { INFO_TIPS, type InfoTipEntry, type InfoTipId } from "@/content/infotips";
 import { cn } from "@/lib/utils";
 
-import { acceptRadixClose, openAfterClick, pressPointer, type PressPointer } from "./info-tip-logic";
+import { acceptRadixClose, focusOpensTip, openAfterClick, pressPointer, type PressPointer } from "./info-tip-logic";
 
 /** One tip open at a time: each shadcn Tooltip has its own provider, so focusing one tip and hovering another would
  * otherwise show both. Opening a tip closes the one that was open. */
 let closeOpenTip: (() => void) | null = null;
 
+/** Whether the last key pressed was Tab (a pointer press resets it): tells a Tab focus from a programmatic one. The
+ * listeners are added once, by the first tip that renders (never on the server). */
+let lastKeyWasTab = false;
+let listening = false;
+function listenForTab() {
+  if (listening || typeof document === "undefined") return;
+  listening = true;
+  document.addEventListener("keydown", (e) => { lastKeyWasTab = e.key === "Tab"; }, true);
+  document.addEventListener("pointerdown", () => { lastKeyWasTab = false; }, true);
+}
+
 /**
  * A small (i) button that explains the field, metric or setting next to it: what it is and an example.
  * Text comes from the registry (content/infotips.ts) by a stable id: what it is, optionally why it matters, an example; the id is typed, so an unknown id fails tsc.
  *
- * Hover (mouse), keyboard focus and tap (touch) open it; Esc, blur, a tap outside and a second tap close it. The
- * button is named "About <label>" and, while open, described by the tip's text (Radix aria-describedby). See
- * info-tip-logic.ts for why the open state is controlled here.
+ * Hover (mouse), focus reached with Tab, and tap (touch) open it (a programmatic focus, such as a dialog focusing its
+ * first button, does not); Esc, blur, a tap outside and a second tap close it. The button is named "About <label>"
+ * and is always described by the tip's text (aria-describedby on a hidden copy), so a screen reader reads the text
+ * when it reaches the button, whether or not the tip is open. See info-tip-logic.ts for why the open state is
+ * controlled here.
  */
 export function InfoTip({ id, side = "top", className }: { id: InfoTipId; side?: "top" | "right" | "bottom" | "left"; className?: string }) {
   const tip = INFO_TIPS[id];
+  const descriptionId = useId();
   const [open, setOpenState] = useState(false);
   const press = useRef<{ wasOpen: boolean; pointer: PressPointer } | null>(null);
   const closeThis = useRef(() => setOpenState(false));
@@ -37,17 +51,29 @@ export function InfoTip({ id, side = "top", className }: { id: InfoTipId; side?:
   const keyboardFocus = useRef(false);
   const pointerPressing = useRef(false);
   const byEscape = useRef(false);
+  // set by onFocus just before Radix's own focus handler asks to open; cleared by that request
+  const focusing = useRef(false);
+  useEffect(listenForTab, []);
+  const endFocus = () => {
+    focusing.current = false;
+  };
   const onRadixOpenChange = (next: boolean) => {
+    const fromFocus = focusing.current;
+    focusing.current = false;
+    if (next && fromFocus && !keyboardFocus.current) return;
     if (!next && !acceptRadixClose(keyboardFocus.current, byEscape.current)) return;
     byEscape.current = false;
     setOpen(next);
   };
   return (
+    <>
     <Tooltip open={open} onOpenChange={onRadixOpenChange} delayDuration={150}>
       <TooltipTrigger asChild>
         <button
           type="button"
           aria-label={`About ${tip.label}`}
+          // always described by the hidden copy below (the child's prop wins over Radix's open-only one)
+          aria-describedby={descriptionId}
           data-infotip={id}
           className={cn(
             "inline-flex size-6 -my-1 shrink-0 cursor-help items-center justify-center rounded-full align-middle",
@@ -60,11 +86,18 @@ export function InfoTip({ id, side = "top", className }: { id: InfoTipId; side?:
             press.current = { wasOpen: open, pointer: pressPointer(e.pointerType) };
           }}
           onFocus={() => {
-            keyboardFocus.current = !pointerPressing.current;
+            // a pointer press focuses the button too: that is not keyboard focus, and the click decides
+            keyboardFocus.current = !pointerPressing.current && focusOpensTip(lastKeyWasTab);
+            focusing.current = !pointerPressing.current;
             pointerPressing.current = false;
+            // Radix's own focus handler runs right after this one, in the same event: a flag it did not consume (the
+            // tip was already open, so Radix asked nothing) must not block a later hover
+            queueMicrotask(endFocus);
           }}
+          onPointerLeave={endFocus}
           onBlur={() => {
             keyboardFocus.current = false;
+            focusing.current = false;
             pointerPressing.current = false;
           }}
           onClick={(e) => {
@@ -92,6 +125,12 @@ export function InfoTip({ id, side = "top", className }: { id: InfoTipId; side?:
         <InfoTipBody id={id} />
       </TooltipContent>
     </Tooltip>
+    {/* the description screen readers read on the button; `hidden` keeps it off screen and out of the reading order */}
+    <span id={descriptionId} hidden>
+      {tip.what}
+      {tip.why ? ` Why it matters: ${tip.why}` : ""} Example: {tip.example}
+    </span>
+    </>
   );
 }
 

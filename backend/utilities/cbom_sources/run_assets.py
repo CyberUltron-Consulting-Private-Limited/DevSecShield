@@ -20,11 +20,12 @@ Fields other features add to the items (``q_grade``, ``q_label``, ``fix_class`` 
 from __future__ import annotations
 
 import datetime as _dt
+import re
 import time
 from types import SimpleNamespace
 from typing import Any
 
-from sqlalchemy import and_, false, func, or_
+from sqlalchemy import String, and_, cast, false, func, or_
 from sqlmodel import Session, select
 
 from backend.new_models import CbomCollectedAsset, CbomCollectionJob, CbomCollectionRun, CbomCollectionSource
@@ -39,6 +40,10 @@ FINDING_STATUSES = ("not_started", "in_progress", "fixed", "ignored")
 IMPACTS = ("Critical", "High", "Medium", "Low")
 COVERAGE = "coverage"
 _UTC = _dt.timezone.utc
+# #270: the compliance mapping's drill-down filters the table by finding codes (a clause's codes)
+CODE_RE = re.compile(r"^[A-Z0-9_]{1,64}$")
+MAX_CODES = 50
+MAX_IDS = 500  # a compliance requirement's assets (its refs, zs-asset-<id>) passed as ``asset_id=1,2,3``
 
 # The run table's type names (frontend RunResults.tsx ASSET_TYPE_LABEL), so both lanes' tables print one column.
 TYPE_LABEL = {
@@ -71,6 +76,45 @@ def _findings_clause(changed: dict[int, dict[str, Any]]):
     if changed:
         stored = and_(stored, CbomCollectedAsset.id.notin_(list(changed)))  # type: ignore[union-attr]
         today = [aid for aid, view in changed.items() if view.get("impact") in IMPACTS]
+        if today:
+            stored = or_(stored, CbomCollectedAsset.id.in_(today))  # type: ignore[union-attr]
+    return and_(CbomCollectedAsset.asset_type != COVERAGE, stored)
+
+
+def parse_codes(value: str | None) -> list[str] | None:
+    """``code=A,B`` -> ["A", "B"]; None when absent. ValueError on an empty list, a malformed code or more than
+    MAX_CODES (the route answers 400 without echoing the value)."""
+    if value is None:
+        return None
+    codes = list(dict.fromkeys(part.strip() for part in value.split(",")))
+    if not codes or len(codes) > MAX_CODES or not all(CODE_RE.match(c) for c in codes):
+        raise ValueError("code: a comma-separated list of up to 50 finding codes")
+    return codes
+
+
+def parse_ids(value: str | None) -> list[int] | None:
+    """``asset_id=1,2`` -> [1, 2]; None when absent. ValueError on an empty list, a non-integer or more than MAX_IDS."""
+    if value is None:
+        return None
+    parts = [part.strip() for part in value.split(",")]
+    if not parts or len(parts) > MAX_IDS or not all(p.isdigit() and 0 < len(p) <= 10 for p in parts):
+        raise ValueError("asset_id: a comma-separated list of up to 500 asset ids")
+    ids = list(dict.fromkeys(int(p) for p in parts))
+    if any(i < 1 or i > 2_147_483_647 for i in ids):
+        raise ValueError("asset_id: a comma-separated list of up to 500 asset ids")
+    return ids
+
+
+def _codes_clause(codes: list[str], changed: dict[int, dict[str, Any]]):
+    """Collected assets whose finding codes (today's, for a row a date-based rule changed) include any of ``codes``:
+    the assets a compliance clause counts (posture.run_posture: non-coverage rows, today's codes)."""
+    text = cast(CbomCollectedAsset.finding_codes, String)
+    # the stored JSON array holds each code as "CODE"; "_" is escaped so it is not a LIKE wildcard
+    stored = or_(*[text.like('%"' + code.replace("_", "\\_") + '"%', escape="\\") for code in codes])
+    if changed:
+        stored = and_(stored, CbomCollectedAsset.id.notin_(list(changed)))  # type: ignore[union-attr]
+        wanted = set(codes)
+        today = [aid for aid, view in changed.items() if wanted & set(view.get("finding_codes") or [])]
         if today:
             stored = or_(stored, CbomCollectedAsset.id.in_(today))  # type: ignore[union-attr]
     return and_(CbomCollectedAsset.asset_type != COVERAGE, stored)
@@ -217,7 +261,8 @@ def add_code_page_fields(item: dict[str, Any]) -> None:
 
 # ----------------------------------------------------------------------------- the page
 def list_run_assets(session: Session, *, team_id: int, run: CbomCollectionRun, params: dict[str, Any],
-                    view: str = "all", status: str | None = None) -> dict[str, Any]:
+                    view: str = "all", status: str | None = None, codes: list[str] | None = None,
+                    asset_ids: list[int] | None = None) -> dict[str, Any]:
     if view not in VIEWS:
         raise ValueError(f"view: {view}")
     if status is not None and status not in FINDING_STATUSES:
@@ -230,15 +275,21 @@ def list_run_assets(session: Session, *, team_id: int, run: CbomCollectionRun, p
             query = query.where(_findings_clause(changed))
         if status is not None:
             query = query.where(_status_clause(session, team_id, run, status))
+        if codes:
+            query = query.where(_codes_clause(codes, changed))
+        if asset_ids:  # the run's own rows only: the base query is already this team's run
+            query = query.where(CbomCollectedAsset.id.in_(asset_ids))  # type: ignore[union-attr]
         return query
 
     out = INV.list_assets(session, team_id=team_id, run_id=run.id, refine=refine, **params)
     out["findings_total"] = findings_total(session, team_id, int(run.id), seen.get("changed") or {})
     out["view"] = view
     out["status_filter"] = status
+    out["code_filter"] = codes
+    out["asset_id_filter"] = len(asset_ids) if asset_ids else None
     enrich_items(session, team_id, run, out["items"])
     return out
 
 
 __all__ = ["FINDING_STATUSES", "TYPE_LABEL", "VIEWS", "enrich_items", "findings_total", "list_run_assets",
-           "run_asset_keys", "type_label"]
+           "parse_codes", "parse_ids", "run_asset_keys", "type_label"]

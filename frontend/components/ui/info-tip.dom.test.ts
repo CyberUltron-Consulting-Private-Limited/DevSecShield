@@ -1,7 +1,8 @@
 /**
  * <InfoTip> and <FieldLabel> rendered in a DOM (jsdom, already in the lockfile through isomorphic-dompurify), with the
- * real Radix tooltip: keyboard focus opens and Escape closes; the trigger is named "About <label>" and, while open,
- * described (aria-describedby) by the tip's text; a tap opens, a second tap and a tap outside close; a mouse click
+ * real Radix tooltip: focus reached with Tab opens and Escape closes, a programmatic focus does not (a dialog that
+ * focuses an (i) first opens with the tip closed and closes on the first Esc); the trigger is named "About <label>" and
+ * always described (aria-describedby) by the tip's text, open or not; a tap opens, a second tap and a tap outside close; a mouse click
  * keeps an open tip open; the label stays outside the <label>, so it is not part of the input's name.
  * Layout (no tip clipped at the viewport edges) needs a real browser: e2e/infotip.e2e.mjs.
  * Run: npx --yes tsx components/ui/info-tip.dom.test.ts
@@ -43,6 +44,7 @@ async function main() {
   const { act } = React;
   const { createRoot } = await import("react-dom/client");
   const { InfoTip, FieldLabel } = await import("./info-tip");
+  const { Dialog, DialogContent, DialogDescription, DialogTitle } = await import("./dialog");
   const { INFO_TIPS } = await import("../../content/infotips");
 
   const doc = dom.window.document;
@@ -79,6 +81,13 @@ async function main() {
     });
     await settle();
   };
+  // a Tab press, then the focus it moves: what a keyboard user does (a programmatic focus has no Tab before it)
+  const tabTo = async (el: HTMLElement) => {
+    await act(async () => {
+      doc.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }));
+      el.focus();
+    });
+  };
   const key = async (k: string) => {
     await act(async () => {
       doc.activeElement?.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }));
@@ -93,10 +102,28 @@ async function main() {
   assert.equal(t.getAttribute("type"), "button", "never submits a form");
   assert.equal(t.getAttribute("aria-label"), `About ${tip.label}`);
   assert.equal(isOpen(), false, "closed at first");
-  assert.equal(t.getAttribute("aria-describedby"), null, "no description while closed");
+  // screen readers: the button is described by the tip's text while it is closed too, so it is read without a popup
+  const closedDesc = doc.getElementById(t.getAttribute("aria-describedby") ?? "");
+  assert.ok(closedDesc, "aria-describedby points at an element in the page while the tip is closed");
+  assert.equal(closedDesc!.hidden, true, "the description is hidden from view and from the reading order");
+  for (const part of [tip.what, `Why it matters: ${tip.why}`, `Example: ${tip.example}`]) {
+    assert.ok(closedDesc!.textContent!.includes(part), `the closed description has: ${part.slice(0, 40)}`);
+  }
 
-  // keyboard: focus opens, Escape closes, focus stays on the button
-  await act(async () => t.focus());
+  // a programmatic focus (a dialog focusing its first button when it opens) does not open the tip, so the dialog's
+  // first Esc closes the dialog, not a tip nobody asked for
+  await act(async () => {
+    doc.dispatchEvent(new dom.window.PointerEvent("pointerdown", { bubbles: true, pointerType: "mouse" }));
+    t.focus();
+  });
+  await settle();
+  assert.equal(doc.activeElement, t);
+  assert.equal(isOpen(), false, "a programmatic focus does not open the tip");
+  await act(async () => t.blur());
+  await settle();
+
+  // keyboard: focus reached with Tab opens, Escape closes, focus stays on the button
+  await tabTo(t);
   await settle();
   assert.equal(doc.activeElement, t, "the (i) button takes keyboard focus");
   assert.equal(isOpen(), true, "keyboard focus opens the tip");
@@ -108,12 +135,11 @@ async function main() {
   await settle();
   assert.equal(isOpen(), true, "a scroll after keyboard focus does not close the tip");
   const describedBy = t.getAttribute("aria-describedby");
-  assert.ok(describedBy, "while open the button is described by the tip");
+  assert.equal(describedBy, closedDesc!.id, "while open the button keeps the same description");
   const described = doc.getElementById(describedBy!);
-  assert.ok(described, "aria-describedby points at an element in the page");
-  assert.equal(described!.getAttribute("role"), "tooltip");
   assert.ok(described!.textContent!.includes(tip.what), "the description is the tip's text");
   assert.ok(described!.textContent!.includes(tip.example), "…and its example");
+  assert.ok(tooltip()?.textContent?.includes(tip.what), "the open tip (role=tooltip) shows the same text");
   await key("Escape");
   assert.equal(isOpen(), false, "Escape closes the tip");
   assert.equal(tooltip(), null, "nothing left in the page");
@@ -143,7 +169,7 @@ async function main() {
   assert.ok(described!.textContent!.includes(`Why it matters: ${tip.why}`), "every tip has its why line");
   const withWhy = doc.querySelector('[data-infotip="cbsrc.meta.lifetime"]') as HTMLButtonElement;
   const whyTip = INFO_TIPS["cbsrc.meta.lifetime"];
-  await act(async () => withWhy.focus());
+  await tabTo(withWhy);
   await settle();
   const whyText = doc.getElementById(withWhy.getAttribute("aria-describedby") ?? "")?.textContent ?? "";
   assert.ok(whyText.includes(whyTip.what) && whyText.includes(`Why it matters: ${whyTip.why}`) && whyText.includes(whyTip.example), "what, why and example are shown");
@@ -161,6 +187,53 @@ async function main() {
   assert.equal(doc.querySelectorAll('[role="tooltip"]').length, 1, "only one tip on screen");
   await key("Escape");
 
+  // a focus that did not open the tip (it was already open from hover) leaves no flag behind that blocks the next
+  // hover (review of #276)
+  const hover = async (el: Element, on: boolean) => {
+    await act(async () => {
+      if (on) el.dispatchEvent(new dom.window.PointerEvent("pointermove", { bubbles: true, pointerType: "mouse" }));
+      else {
+        // React's onPointerLeave comes from pointerout; Radix's grace area listens for the native pointerleave
+        el.dispatchEvent(new dom.window.PointerEvent("pointerout", { bubbles: true, pointerType: "mouse", relatedTarget: doc.body }));
+        el.dispatchEvent(new dom.window.PointerEvent("pointerleave", { bubbles: false, pointerType: "mouse" }));
+      }
+    });
+    // leaving: the pointer then moves well away from the trigger and the tip (Radix's grace area, set up on leave)
+    if (!on) {
+      await act(async () => {
+        doc.dispatchEvent(new dom.window.PointerEvent("pointermove", { bubbles: true, pointerType: "mouse", clientX: 5000, clientY: 5000 }));
+      });
+    }
+    await act(async () => new Promise((r) => setTimeout(r, 250)));
+  };
+  const wOpen = () => withWhy.getAttribute("data-state")?.endsWith("open") ?? false;
+  // a mouse user: the keyboard focus left by the checks above ends (a mouse press elsewhere)
+  await act(async () => {
+    withWhy.blur();
+    doc.body.dispatchEvent(new dom.window.PointerEvent("pointerdown", { bubbles: true, pointerType: "mouse" }));
+  });
+  await settle();
+  await hover(withWhy, true);
+  assert.equal(wOpen(), true, "hover opens the tip");
+  await act(async () => withWhy.focus());
+  await settle();
+  assert.equal(wOpen(), true, "a focus on an open tip keeps it open");
+  // Enter toggles it closed: the tip closes without Radix being asked, so nothing else would clear the flag
+  await act(async () => {
+    withWhy.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    withWhy.click();
+  });
+  await settle();
+  assert.equal(wOpen(), false, "Enter closes the open tip");
+  await act(async () => {
+    withWhy.dispatchEvent(new dom.window.PointerEvent("pointerout", { bubbles: true, pointerType: "mouse", relatedTarget: doc.body }));
+  });
+  await hover(withWhy, true);
+  assert.equal(wOpen(), true, "the next hover opens it again");
+  await hover(withWhy, false);
+  await act(async () => withWhy.blur());
+  await settle();
+
   // FieldLabel: the label names the input; the (i) is beside the <label>, not inside it
   const label = doc.querySelector('label[for="title"]');
   assert.ok(label, "FieldLabel renders a <label for>");
@@ -169,6 +242,49 @@ async function main() {
   assert.ok(doc.querySelector('[data-infotip="scan.new.title"]'), "the label's tip is rendered beside it");
 
   await act(async () => root.unmount());
+
+  // a Radix Dialog whose first focusable element is an (i) (staging QA: the run finding dialog): it focuses that button
+  // when it opens; the tip stays closed and the first Esc closes the dialog, opened by mouse or by keyboard
+  const h = React.createElement;
+  function DialogCase() {
+    const [open, setOpen] = React.useState(false);
+    return h(React.Fragment, null,
+      h("button", { type: "button", "data-testid": "open-dialog", onClick: () => setOpen(true) }, "Open"),
+      h(Dialog, { open, onOpenChange: setOpen },
+        h(DialogContent, null,
+          h(DialogTitle, null, "Edit"),
+          h(DialogDescription, null, "A form whose first focusable element is a tip"),
+          h(FieldLabel, { htmlFor: "dlg-name", infoId: "cbsrc.meta.lifetime" } as Parameters<typeof FieldLabel>[0], "Name"),
+          h("input", { id: "dlg-name" }))));
+  }
+  const dialogBox = doc.createElement("div");
+  doc.body.appendChild(dialogBox);
+  const dialogRoot = createRoot(dialogBox);
+  await act(async () => dialogRoot.render(h(DialogCase)));
+  const opener = () => doc.querySelector('[data-testid="open-dialog"]') as HTMLButtonElement;
+  const dialogEl = () => doc.querySelector('[role="dialog"]');
+  for (const how of ["mouse", "keyboard"] as const) {
+    if (how === "mouse") {
+      await press(opener(), "mouse");
+    } else {
+      await tabTo(opener());
+      await act(async () => {
+        opener().dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+        opener().click();
+      });
+    }
+    await settle();
+    await settle();
+    assert.ok(dialogEl(), `${how}: the dialog opened`);
+    const first = doc.activeElement as HTMLElement | null;
+    assert.equal(first?.getAttribute("data-infotip"), "cbsrc.meta.lifetime", `${how}: the dialog focused its first focusable element, the (i)`);
+    assert.equal(first?.getAttribute("data-state")?.endsWith("open") ?? false, false, `${how}: the tip is closed when the dialog opens`);
+    assert.equal(doc.querySelector('[role="tooltip"]'), null, `${how}: no tip on screen`);
+    await key("Escape");
+    await settle();
+    assert.equal(dialogEl(), null, `${how}: the first Esc closes the dialog`);
+  }
+  await act(async () => dialogRoot.unmount());
   console.log("info-tip DOM: tests passed");
 }
 

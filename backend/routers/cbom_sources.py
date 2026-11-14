@@ -101,6 +101,7 @@ from backend.utilities.cbom_sources.schemas import (
     VendorCreate,
     VendorUpdate,
 )
+from backend.utilities.cbom_sources.node_release import server_release
 from backend.utilities.cbom_sources.serialize import (
     last_collects,
     public_area,
@@ -262,9 +263,10 @@ def _list_nodes(engine, team_id: int) -> dict:
         settings = get_or_create_settings(session, team_id)
         counts = _node_counts(session, team_id, settings)
         rows = session.exec(select(CbomScanNode).where(CbomScanNode.team_id == team_id).order_by(CbomScanNode.id)).all()
+        server = server_release()  # the shipped node build, read once per list (not per node)
         return {"server_time": iso_z(now), "nodes": [
             public_node(n, now, assigned_targets=counts.get(n.id, {}).get("targets", 0),
-                        sources=counts.get(n.id, {}).get("sources", 0)) for n in rows]}
+                        sources=counts.get(n.id, {}).get("sources", 0), server=server) for n in rows]}
 
 
 @router.get(BASE + "/nodes", dependencies=READ, summary="List scan nodes")
@@ -1034,7 +1036,7 @@ def _count_targets(body: dict) -> dict:
     except T.TargetError as exc:
         return {"valid": False, "error": str(exc), "count": None}
     return {"valid": True, "error": None, "count": T.count_in_scope(parsed, excl), "lines": len(parsed.normalized),
-            "samples": T.sample_targets(parsed, excl, 5)}
+            "samples": T.sample_targets(parsed, excl, 5), "notes": parsed.notes + excl.notes}
 
 
 @router.post(BASE + "/targets/count", dependencies=READ, summary="Count targets after exclusions (no side effects)")
@@ -1535,11 +1537,13 @@ async def get_run(team_id: TeamId, run_id: ObjectId, Authorization: AuthHeader =
 
 
 def _run_assets(engine, team_id: int, run_id: int, params: dict) -> dict:
-    view, status = params.pop("view", "all"), params.pop("status", None)
+    view, status, codes = params.pop("view", "all"), params.pop("status", None), params.pop("codes", None)
+    asset_ids = params.pop("asset_ids", None)
     with Session(engine) as session:
         run = _get_owned(session, CbomCollectionRun, run_id, team_id, "Run")
         # CB-38: the inventory page plus the unified results table's fields (view, status, key, wave, risk score)
-        out = RUN_ASSETS.list_run_assets(session, team_id=team_id, run=run, params=params, view=view, status=status)
+        out = RUN_ASSETS.list_run_assets(session, team_id=team_id, run=run, params=params, view=view, status=status,
+                                         codes=codes, asset_ids=asset_ids)
         RUN_TICKETS.add_ticket_fields(session, team_id, run, out["items"])  # CB-38 PR-4: ticket_key, ticket_url
         out["run"] = public_run(run)
         return out
@@ -1563,9 +1567,16 @@ async def run_assets(team_id: TeamId, run_id: ObjectId,
                      page: int = Query(default=1, ge=1, le=10_000), page_size: int = Query(default=50, ge=1, le=200),
                      view: str = Query(default="all", pattern="^(all|findings)$"),
                      status: str | None = Query(default=None, pattern="^(not_started|in_progress|fixed|ignored)$"),
+                     code: str | None = Query(default=None, max_length=3_300),
+                     asset_id: str | None = Query(default=None, max_length=5_500),
                      Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
-    params = {**_asset_params(type, impact, quantum, q, source_id, page, page_size), "view": view, "status": status}
+    try:  # #270: the compliance mapping's "N assets" (a clause's finding codes, a requirement's assets)
+        codes, asset_ids = RUN_ASSETS.parse_codes(code), RUN_ASSETS.parse_ids(asset_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    params = {**_asset_params(type, impact, quantum, q, source_id, page, page_size), "view": view, "status": status,
+              "codes": codes, "asset_ids": asset_ids}
     return _ok(await _run("run assets", team_id, _run_assets, engine, team_id, run_id, params))
 
 
