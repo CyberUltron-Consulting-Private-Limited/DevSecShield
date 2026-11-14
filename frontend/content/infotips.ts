@@ -6127,6 +6127,14 @@ export const INFO_TIPS = {
     why: "A Q0 item is a blind spot, never assumed safe; closing them is how the register becomes complete.",
     example: "Evidence at E0 (6): payment HSM vendor has not answered.",
   },
+  // src: backend/utilities/cbom_sources/estate_export.py:1-30, backend/routers/cbom_estate_export.py:1-9 — one
+  // component per estate key; unsigned with X-Cbom-Sha256; filters application / source / type
+  "cbom.estate.export": {
+    label: "Estate CBOM",
+    what: "Your whole estate as one CycloneDX 1.6 file (JSON or XML): every asset once, however many sources see it, with its current quantum risk grade and VEX. It covers what the latest collections read, plus assets they could not read again (marked not read); removed assets are left out. The download API also filters by application, source or asset type.",
+    why: "One file to hand to an auditor or import into another tool. It is unsigned: the response carries the file's SHA-256 (X-Cbom-Sha256, shown after the download) so anyone can check it outside ZeroShield.",
+    example: "cbom-estate-team3-2026-11-15.cdx.json · 2,140 assets · unsigned · SHA-256 4f1c….",
+  },
   // src: backend/utilities/cbom_sources/q0register.py:3-5, frontend/components/cbom/grade/Q0Gaps.tsx:110-118 — open while closed_at is empty
   "cbom.q0.status": {
     label: "Open / Closed",
