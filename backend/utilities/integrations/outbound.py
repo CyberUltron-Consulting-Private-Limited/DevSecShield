@@ -47,6 +47,10 @@ READ_TIMEOUT = 10.0
 TOTAL_TIMEOUT = 20.0
 MAX_RESPONSE = 64 * 1024
 _EXTRA_BLOCKED = (ipaddress.ip_network("0.0.0.0/8"), ipaddress.ip_network("192.0.0.0/24"))
+# Pause between two UDP datagrams of one batch (#126): a dispatcher batch is up to 200 syslog messages, and sent back
+# to back they overran a receiver with the default socket buffer and a thread per datagram (206 of 243 arrived).
+# 2 ms paces a batch at 500 datagrams/s (0.4 s for 200); UDP stays unconfirmed (RFC 5426).
+UDP_GAP_S = 0.002
 
 
 class Refused(Exception):
@@ -309,8 +313,9 @@ def send_stream(host: str, port: int, frames: list[bytes], *, tls: bool, ca_pem:
 
 
 def send_datagrams(host: str, port: int, datagrams: list[bytes]) -> int:
-    """One UDP datagram per message to a checked, pinned address (RFC 5426: no delivery confirmation exists). The
-    checked addresses are tried in turn until one takes the first datagram (an unroutable family fails at once)."""
+    """One UDP datagram per message to a checked, pinned address (RFC 5426: no delivery confirmation exists), paced
+    UDP_GAP_S apart. The checked addresses are tried in turn until one takes the first datagram (an unroutable
+    family fails at once)."""
     last: OSError | None = None
     for address in resolve(host, port, kind=socket.SOCK_DGRAM):
         family = socket.AF_INET6 if ipaddress.ip_address(address).version == 6 else socket.AF_INET
@@ -319,6 +324,8 @@ def send_datagrams(host: str, port: int, datagrams: list[bytes]) -> int:
             with socket.socket(family, socket.SOCK_DGRAM) as sock:
                 sock.settimeout(READ_TIMEOUT)
                 for datagram in datagrams:
+                    if sent:
+                        time.sleep(UDP_GAP_S)  # paced: a receiver gets time to drain its buffer
                     sock.sendto(datagram, (address, port))
                     sent += 1
             return len(datagrams)
