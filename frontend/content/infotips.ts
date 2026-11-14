@@ -4143,6 +4143,27 @@ export const INFO_TIPS = {
     why: "Without it the node refuses the proxy's re-signed certificate and cannot connect.",
     example: "bank-proxy-ca.pem.",
   },
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:624, deploy/helm/cbom-scan-node/values.yaml — CB-15 section
+  "cbsrc.nodes.trust": {
+    label: "How the node trusts the ZeroShield API",
+    what: "Only for an on-prem ZeroShield or a gateway with its own CA or mTLS: point the node at a private CA bundle and, if the gateway asks for one, a client certificate and key. The command then mounts these files read-only into the node.",
+    why: "The node must trust the API's certificate to enroll, and an mTLS gateway refuses a node without its client certificate. The files never leave your host.",
+    example: "An on-prem ZeroShield behind an internal CA and an mTLS ingress.",
+  },
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:629, scan_node/zs_scan_node/api.py:91-97 — CB-15: ZS_CA_FILE
+  "cbsrc.nodes.private_ca": {
+    label: "ZeroShield API uses a private CA",
+    what: "Tick if the ZeroShield API's certificate is signed by your own CA (an on-prem deployment, an internal gateway). Give the PEM file's path on the host; the node trusts it for the ZeroShield API only.",
+    why: "Without it the node refuses the API's certificate and cannot enroll. The file stays on the host and your targets are not affected.",
+    example: "/etc/pki/zeroshield-ca.pem, the CA that signed the ZeroShield API certificate.",
+  },
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:639, scan_node/zs_scan_node/api.py:93-99 — CB-15: ZS_CLIENT_CERT / KEY
+  "cbsrc.nodes.mtls": {
+    label: "ZeroShield API requires a client certificate (mTLS)",
+    what: "Tick if the gateway in front of the ZeroShield API asks every node for a client certificate. Give the certificate and key paths on the host; the node presents them when it connects.",
+    why: "An mTLS gateway refuses a node without one. The key never leaves the host: the command mounts it read-only.",
+    example: "/etc/pki/zs-node.crt and /etc/pki/zs-node.key, the key readable by uid 10001.",
+  },
   // src: frontend/components/cbom/sources/ScanNodesTab.tsx:532-534 — trust the proxy CA only for ZeroShield hostnames
   "cbsrc.nodes.tls_inspect": {
     label: "Proxy inspects TLS",
