@@ -117,15 +117,16 @@ def asset_exposure(facts: dict[str, Any] | None, target: str | None, location: s
 
 def job_metadata(params: dict[str, Any] | None, source: CbomCollectionSource | None,
                  node: CbomScanNode | None) -> dict[str, Any]:
-    """Business criticality, exposure override and node segment for one job: the values snapshotted in the job when
-    the run was created, else (jobs created before the snapshot) the source's and node's current values."""
+    """Business criticality, exposure override, node segment and data lifetime (Mosca X of the source) for one job:
+    the values snapshotted in the job when the run was created, else (jobs created before the snapshot) the source's
+    and node's current values."""
     snap = (params or {}).get("metadata")
     if isinstance(snap, dict):
         return {"criticality": snap.get("business_criticality"), "exposure": snap.get("exposure"),
-                "segment": snap.get("node_segment")}
+                "segment": snap.get("node_segment"), "data_lifetime_years": snap.get("data_lifetime_years")}
     cfg = (source.config or {}) if source else {}
     return {"criticality": cfg.get("business_criticality"), "exposure": cfg.get("exposure"),
-            "segment": node.segment if node else None}
+            "segment": node.segment if node else None, "data_lifetime_years": cfg.get("data_lifetime_years")}
 
 
 def _job_context(session: Session, team_id: int, run_id: int, sources: dict[int, CbomCollectionSource]
@@ -140,6 +141,7 @@ def _job_context(session: Session, team_id: int, run_id: int, sources: dict[int,
 def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict[str, Any] | None,
                 top: int = 10) -> dict[str, Any]:
     from backend.utilities.cbom_sources.classify import shown
+    from backend.utilities.cbom_sources.qgrade import RunGrades
 
     rows = session.exec(select(CbomCollectedAsset)
                         .where(CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run_id)).all()
@@ -147,6 +149,7 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
     sources = {s.id: s for s in session.exec(select(CbomCollectionSource).where(
         CbomCollectionSource.team_id == team_id)).all()}
     job_ctx = _job_context(session, team_id, run_id, sources)
+    grades = RunGrades(session, team_id=team_id, run_id=run_id, risk_model=risk_model)  # quantum risk grade (CB-19)
     exposure_counts: Counter[str] = Counter()
     classes: Counter[str] = Counter()
     impacts: Counter[str] = Counter()
@@ -164,6 +167,7 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
         impact, a_codes, finding = view["impact"], view["finding_codes"], view["finding"]
         a_codes = [c for c in a_codes if not c.startswith("COVERAGE_")]
         if a_type == "coverage":
+            grades.add(row, a_codes)
             continue
         classes[pqc_class(a_type, qv, a_codes, facts or {})] += 1
         if impact:
@@ -176,6 +180,7 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
         crit = str(ctx.get("criticality") or "medium").lower()
         exposure, basis = asset_exposure(facts, target, location, override=ctx.get("exposure"),
                                          node_segment=ctx.get("segment"))
+        grades.add(row, a_codes, (exposure, basis))  # the quantum risk grade reuses the score's exposure (CB-19)
         exposure_counts[exposure] += 1
         if impact:
             risky.append({"id": aid, "type": a_type, "name": name or location, "location": location, "impact": impact,
@@ -215,6 +220,7 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
         "kb_version": crypto_kb.version(),
         "pqc_context": {k: v for k, v in crypto_kb.pqc_context().items() if k in ("mosca", "expert_survey",
                                                                                  "nist_ir_8547", "z_note")},
+        **grades.result(),
     }
 
 
