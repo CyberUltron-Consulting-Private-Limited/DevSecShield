@@ -620,29 +620,43 @@ class JobConditions(unittest.TestCase):
                                                     needs__contexts__result="success")))
 
 
-def _contexts_from_ci() -> dict[str, tuple]:
+def buildx_contexts(value: str) -> list[str]:
+    """How docker/build-push-action reads its ``build-contexts`` input: one ``name=path`` per line (getInputList with
+    ignoreComma, because a context can hold a comma), blank lines dropped. A comma does NOT separate two contexts:
+    ``migrations=prod_database_migrations,aibom=aibom`` is ONE context whose path is
+    ``prod_database_migrations,aibom=aibom`` (dev 6ba1a37: "stat prod_database_migrations,aibom=aibom: no such file")."""
+    return [line.strip() for line in value.splitlines() if line.strip()]
+
+
+def _ci_images() -> list[dict]:
     text = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-    out = {}
-    for raw in re.findall(r"add '(\{.*?\})'", text):
-        d = json.loads(raw)
-        out[d["name"]] = (d["context"], d["dockerfile"], d.get("build-contexts", ""))
-    return out
+    return [json.loads(raw) for raw in re.findall(r"add '(\{.*?\})'", text)]
+
+
+def _publish_build_contexts() -> dict[str, str]:
+    """publish-ghcr.yml's matrix values as the runner sees them (a YAML double-quoted string: escapes decoded)."""
+    return {m.group(1): m.group(2).encode().decode("unicode_escape") for m in re.finditer(
+        r'- \{name: ([a-z-]+), [^\n]*?build-contexts: "((?:[^"\\]|\\.)*)"', JOBS["build"])}
+
+
+def _contexts_from_ci() -> dict[str, tuple]:
+    return {d["name"]: (d["context"], d["dockerfile"], tuple(buildx_contexts(d.get("build-contexts", ""))))
+            for d in _ci_images()}
 
 
 def _contexts_from_build_images() -> dict[str, tuple]:
     text = (ROOT / "scripts" / "deploy" / "build_images.sh").read_text(encoding="utf-8")
     out = {}
     for m in re.finditer(r"\n  build ([a-z-]+) (\S+) (\S+)(.*?)\n(?!    --build-context)", text + "\n", re.S):
-        extra = re.findall(r"--build-context (\S+)", m.group(4))
-        out[m.group(1)] = (m.group(3), m.group(2), ",".join(extra))  # build-push-action lists are comma-separated
+        out[m.group(1)] = (m.group(3), m.group(2), tuple(re.findall(r"--build-context (\S+)", m.group(4))))
     return out
 
 
 def _contexts_from_publish() -> dict[str, tuple]:
+    named = _publish_build_contexts()
     out = {}
-    for m in re.finditer(r"- \{name: ([a-z-]+), context: ([^,]+), dockerfile: ([^,}]+)(?:, build-contexts: \"([^\"]*)\")?",
-                         JOBS["build"]):
-        out[m.group(1)] = (m.group(2).strip('"'), m.group(3).strip(), m.group(4) or "")
+    for m in re.finditer(r"- \{name: ([a-z-]+), context: ([^,]+), dockerfile: ([^,}]+)", JOBS["build"]):
+        out[m.group(1)] = (m.group(2).strip('"'), m.group(3).strip(), tuple(buildx_contexts(named.get(m.group(1), ""))))
     return out
 
 
@@ -669,6 +683,37 @@ class OneDefinitionOfEachImage(unittest.TestCase):
                 self.assertEqual(script[name], want, f"build_images.sh vs publish-ghcr.yml: {name}")
             if name in check:
                 self.assertEqual(check[name], want[:2], f"check_image_contexts.sh vs publish-ghcr.yml: {name}")
+
+
+class NamedContextsReachBuildx(unittest.TestCase):
+    """Every build-contexts value given to docker/build-push-action (ci.yml through reusable-image-build.yml, and
+    publish-ghcr.yml) is one ``name=path`` per line, each path an existing folder of the repository. The backend's two
+    contexts were joined with a comma in 7efcf341a (#251), so buildx read one context with the path
+    ``prod_database_migrations,aibom=aibom`` and the backend image failed on dev and on every PR."""
+
+    def _check(self, where: str, value: str):
+        entries = buildx_contexts(value)
+        self.assertTrue(entries, f"{where}: empty build-contexts")
+        for entry in entries:
+            name, sep, path = entry.partition("=")
+            self.assertTrue(sep and re.fullmatch(r"[a-z0-9][a-z0-9_-]*", name), f"{where}: {entry!r} is not name=path")
+            self.assertNotRegex(path, r"[,=\s]", f"{where}: {entry!r}: one context per line, never comma-joined")
+            self.assertTrue((ROOT / path).is_dir(), f"{where}: {entry!r}: {path} is not a folder of the repository")
+
+    def test_ci_and_publish_pass_one_context_per_line(self):
+        ci = {d["name"]: d["build-contexts"] for d in _ci_images() if d.get("build-contexts")}
+        publish = _publish_build_contexts()
+        self.assertIn("backend", ci)
+        self.assertIn("backend", publish)
+        for name, value in ci.items():
+            self._check(f"ci.yml {name}", value)
+        for name, value in publish.items():
+            self._check(f"publish-ghcr.yml {name}", value)
+        self.assertEqual(buildx_contexts(ci["backend"]), ["migrations=prod_database_migrations", "aibom=aibom"])
+
+    def test_the_reader_matches_build_push_action(self):
+        self.assertEqual(buildx_contexts("a=x,b=y"), ["a=x,b=y"])  # a comma does not split
+        self.assertEqual(buildx_contexts("a=x\n\n b=y \n"), ["a=x", "b=y"])
 
 
 def _index(arch_digests: dict[str, str]) -> dict:
