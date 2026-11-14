@@ -96,6 +96,7 @@ from backend.utilities.cbom_sources.schemas import (
     VendorUpdate,
 )
 from backend.utilities.cbom_sources.serialize import (
+    last_collects,
     public_area,
     public_job,
     public_node,
@@ -613,8 +614,9 @@ def _list_sources(engine, team_id: int, kind: str | None, group: str | None) -> 
         if group:
             rows = [r for r in rows if KINDS.get(r.kind) and KINDS[r.kind].group == group]
         nodes = {n.id: n for n in session.exec(select(CbomScanNode).where(CbomScanNode.team_id == team_id)).all()}
+        collects = last_collects(session, team_id, [r.id for r in rows])
         return {"server_time": iso_z(now),
-                "sources": [public_source(r, settings, nodes.get(r.node_id), now) for r in rows]}
+                "sources": [public_source(r, settings, nodes.get(r.node_id), now, collects.get(r.id)) for r in rows]}
 
 
 @router.get(BASE + "/items", dependencies=READ, summary="List sources")
@@ -632,7 +634,8 @@ def _get_source(engine, team_id: int, source_id: int) -> dict:
         source = _get_owned(session, CbomCollectionSource, source_id, team_id, "Source")
         settings = get_or_create_settings(session, team_id)
         node = session.get(CbomScanNode, source.node_id) if source.node_id else None
-        return {"source": public_source(source, settings, node, now), "server_time": iso_z(now)}
+        collect = last_collects(session, team_id, [source.id]).get(source.id)
+        return {"source": public_source(source, settings, node, now, collect), "server_time": iso_z(now)}
 
 
 @router.get(BASE + "/items/{source_id}", dependencies=READ, summary="Get a source")

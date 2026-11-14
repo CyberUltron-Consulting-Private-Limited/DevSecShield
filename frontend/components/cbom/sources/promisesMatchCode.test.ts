@@ -48,7 +48,8 @@ assert.ok(review.includes('pluralize(overview.settings.cert_domains, "certificat
 
 // 4. CLM connectors without a collector, and AWS Private CA (read by the AWS account source, aws_collect "acm-pca")
 assert.ok(!cloud.includes("for the certificate collector."), "Venafi, Keyfactor, DigiCert and Sectigo have no collector")
-assert.ok(cloud.includes('"Not collected yet: ZeroShield only stores the API address and key. Nothing is read from it and it is never charged."'))
+// (owner bug C6, 14 Nov 2026: no key is asked for or stored for them any more; caCardStatus.test.ts pins the sentence)
+assert.ok(cloud.includes("Nothing is read from it, no key is needed and it is never charged; only its name and API address are saved."))
 // the row shows the planner's own sentence (read by the account / account skipped / account removed; backend tests)
 assert.ok(cloud.includes('{planReason(s.id) ? ` · ${planReason(s.id)}` : ""}'), "the AWS Private CA row shows the plan's reason")
 assert.ok(!/through \{awsSources[^\n]*\n[^\n]*\{NOT_AVAILABLE\}/.test(cloud), "never 'collection is not available yet' for AWS Private CA")
