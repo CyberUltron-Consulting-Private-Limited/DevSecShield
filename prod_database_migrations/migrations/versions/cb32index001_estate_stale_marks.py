@@ -1,7 +1,7 @@
 """cbom estate store (CB-32 PR-B): ``cbomestateteam.stale_marks``
 
 Revision ID: cb32index001
-Revises: cb226apikey001
+Revises: cb32scale001
 Create Date: 2026-11-15 12:00:00.000000
 
 Counts the writes a team's store has missed (a run deferred to the scheduler by a request whose process had no warm
@@ -14,7 +14,7 @@ import sqlalchemy as sa
 
 
 revision: str = 'cb32index001'
-down_revision: Union[str, Sequence[str], None] = 'cb226apikey001'
+down_revision: Union[str, Sequence[str], None] = 'cb32scale001'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

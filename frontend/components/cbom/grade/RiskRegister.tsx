@@ -3,6 +3,7 @@
 // Quantum risk -> Register (CB-23 PR-B, the CISO view): the team's distribution (one row per asset across sources),
 // what is still to re-grade, closures per week, and the register table worst first, filtered, keyset-paged, with a
 // CSV of the filtered rows. Fed only by the register API. Hooks: register-row-<key> (data-q), register-total.
+import { CLASSIFICATION_LABEL } from "@/components/cbom/estate/correlation";
 import { useMemo, useState, type ChangeEvent } from "react";
 
 import { formatDateTime } from "@/components/cbom/sources/logic";
@@ -92,6 +93,13 @@ export function RegisterTable({ rows }: { rows: RegisterRow[] }) {
               <td className="py-1.5 pr-3 text-xs">
                 {r.source_name ?? "—"}{r.sources > 1 ? ` (+${r.sources - 1} more)` : ""}
                 {r.application ? <div className="text-zinc-500">{r.application}</div> : null}
+                {r.owners?.length || r.data_classification ? (
+                  <div className="text-zinc-500" data-testid={`register-owner-${r.item_key}`}>
+                    {[r.owners?.length ? `Owner ${r.owners.join(", ")}` : null,
+                      r.data_classification ? `${CLASSIFICATION_LABEL[r.data_classification] ?? r.data_classification} data` : null]
+                      .filter(Boolean).join(" · ")}
+                  </div>
+                ) : null}
               </td>
               <td className="py-1.5 whitespace-nowrap text-xs">{formatDateTime(r.last_observed_at)}</td>
             </tr>

@@ -943,10 +943,13 @@ def list_estate(session: Session, team_id: int, *, after: str | None = None, lim
         query = query.where(CbomEstateAsset.asset_type == asset_type)
     if presence:
         query = query.where(CbomEstateAsset.presence == presence)
-    if source:
-        query = query.where(CbomEstateAsset.asset_key.in_(  # type: ignore[attr-defined]
-            select(CbomEstateObservation.asset_key).where(CbomEstateObservation.team_id == team_id,
-                                                          CbomEstateObservation.source_ref == source)))
+    if source:  # a join walked in key order on (team_id, source_ref, asset_key), not a semi-join of the source (CB-32)
+        query = query.join(CbomEstateObservation, sa.and_(
+            CbomEstateObservation.team_id == CbomEstateAsset.team_id,
+            CbomEstateObservation.asset_key == CbomEstateAsset.asset_key,
+            CbomEstateObservation.source_ref == source))
+        if after:
+            query = query.where(CbomEstateObservation.asset_key > after)
     rows = list(session.exec(query.order_by(CbomEstateAsset.asset_key).limit(limit + 1)).all())
     more = len(rows) > limit
     rows = rows[:limit]
