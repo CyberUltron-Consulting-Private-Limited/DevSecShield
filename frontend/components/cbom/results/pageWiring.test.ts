@@ -50,7 +50,7 @@ test("the list is keyed per team and not re-fetched on a timer; active runs use 
   assert.ok(!page.includes('"cbom-conversations"'));
   const list = page.slice(page.indexOf("const query = useQuery({"), page.indexOf("});", page.indexOf("const query = useQuery({")));
   assert.ok(!list.includes("refetchInterval"), "the list query does not poll (its build loads every Sources asset)");
-  assert.ok(page.includes("queryFn: () => getCbomRun(teamIdNumber, runId)"));
+  assert.ok(page.includes("queryFn: async () => (await getCbomRun(teamIdNumber, runId)) ?? null,"));
   assert.ok(page.includes('enabled: activeTab === "table"'));
   assert.ok(/refetchInterval: (\d+)/.test(page) && Number(/refetchInterval: (\d+)/.exec(page)![1]) >= 15000);
 });

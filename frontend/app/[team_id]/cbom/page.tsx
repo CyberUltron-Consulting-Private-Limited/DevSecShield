@@ -617,7 +617,8 @@ export default function CBOMPage() {
   const liveQueries = useQueries({
     queries: liveIds.map((runId) => ({
       queryKey: cbomSourcesKeys.run(teamIdNumber, runId),
-      queryFn: () => getCbomRun(teamIdNumber, runId),
+      // a malformed answer is "no live data" (react-query rejects undefined)
+      queryFn: async () => (await getCbomRun(teamIdNumber, runId)) ?? null,
       enabled: activeTab === "table" && Number.isFinite(teamIdNumber),
       refetchInterval: 15000,
       retry: 1,
