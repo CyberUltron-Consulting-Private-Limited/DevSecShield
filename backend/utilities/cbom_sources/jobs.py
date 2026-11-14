@@ -32,6 +32,7 @@ from backend.utilities.cbom_sources.node_facts import normalise_tls
 from backend.utilities.cbom_sources.common import audit, clean_text, log
 from backend.utilities.cbom_sources.crypto import decrypt_secrets, scrub
 from backend.utilities.cbom_sources.kinds import KINDS, METADATA_FIELDS
+from backend.utilities.cbom_sources import policy_scope as PS
 from backend.utilities.cbom_sources.planning import credits, node_status, team_range_cidrs
 from backend.utilities.cbom_sources.settings import get_or_create_settings, team_exclusions, window_allows, window_end
 
@@ -106,6 +107,52 @@ def refund_job(session: Session, job: CbomCollectionJob, run: CbomCollectionRun 
     session.add(job)
     if amount > 0:
         session.exec(update(Team).where(Team.id == job.team_id).values(credit_balance=Team.credit_balance + amount / 100))
+    return amount
+
+
+def policy_refund_units(job: CbomCollectionJob, result: dict[str, Any]) -> int:
+    """CB-11: per-target units charged for targets the never-scan list left out, which the estimate could not
+    subtract.  The planner subtracts every listed address and every listed name that is a target itself; a listed
+    host NAME that the node resolves to a charged address (R2: ``canary.lab`` -> 10.20.0.8) is known only to the
+    node.  Charged units minus the targets the node counted as in scope (counted - excluded) is that number.  Only
+    sources charged per target (``unit`` "targets": servers, appliances): a network range is charged per /24 block,
+    which one blocked address does not change."""
+    params = job.params or {}
+    units = params.get("units")
+    counts = result.get("counts") if isinstance(result.get("counts"), dict) else {}
+    total = counts.get("total")
+    if params.get("unit") != "targets" or not isinstance(units, int) or units <= 0 or not isinstance(total, int):
+        return 0
+    excluded = int(result.get("excluded_by_policy") or 0)
+    return max(0, min(units, units - (total - excluded)))
+
+
+def refund_policy_excluded(session: Session, job: CbomCollectionJob, run: CbomCollectionRun | None,
+                           result: dict[str, Any]) -> int:
+    """Refund the per-target charge of the targets ``policy_refund_units`` counts, once (the job's result records
+    it as ``policy_refund_c``).  Returns centi-credits refunded."""
+    units = policy_refund_units(job, result)
+    if units <= 0 or job.refunded or job.weight_c <= 0 or (job.result or {}).get("policy_refund_c"):
+        return 0
+    amount = min(job.weight_c, job.weight_c * units // max(int((job.params or {}).get("units") or 1), 1))
+    if amount <= 0:
+        return 0
+    if run is not None:
+        refunded = CbomCollectionRun.credits_refunded_c
+        if not session.exec(
+            update(CbomCollectionRun)
+            .where(CbomCollectionRun.id == run.id, CbomCollectionRun.credits_charged_c - refunded >= amount)
+            .values(credits_refunded_c=refunded + amount)
+            .execution_options(synchronize_session=False)
+        ).rowcount:
+            log("never-scan refund SKIPPED: the run has no credits left to refund", team=job.team_id, run=run.id,
+                job=job.id, amount_c=amount)
+            return 0
+        session.expire(run, ["credits_refunded_c"])
+    job.result = {**(job.result or {}), "policy_refund_c": amount, "policy_refund_units": units}
+    session.add(job)
+    session.exec(update(Team).where(Team.id == job.team_id).values(credit_balance=Team.credit_balance + amount / 100))
+    log("never-scan targets refunded", team=job.team_id, run=job.run_id, job=job.id, units=units, amount_c=amount)
     return amount
 
 
@@ -807,14 +854,21 @@ def _outcome(job: CbomCollectionJob, status: str, result: dict[str, Any], stored
 
     ok, partial, failed, skipped = count("ok"), count("partial"), count("failed"), count("skipped")
     extra: dict[str, Any] = {}
+    # CB-11: a target on the never-scan list is excluded by policy, the customer's choice: it never makes the job
+    # partial (nor comparable-or-not, drift.job_comparable).  Only the node's other skips (window, stop, deadline)
+    # count as skipped.
+    excluded = min(PS.excluded_count(result), skipped)
+    if excluded:
+        extra["excluded_by_policy"] = excluded
+        skipped -= excluded
     reported = result.get("asset_count")
     if job.kind == "collect" and isinstance(reported, int) and reported != stored:
         extra["asset_mismatch"] = {"reported": reported, "stored": stored}
     if not counts:
         return ("partial" if extra or result.get("truncated") else "ok"), extra
-    if ok == 0 and partial == 0 and (failed or skipped):
+    if ok == 0 and partial == 0 and (failed or skipped or excluded):
         return ("partial" if read else "failed"), extra
-    if partial or failed or skipped or extra or result.get("truncated"):
+    if partial or failed or skipped or extra.keys() - {"excluded_by_policy"} or result.get("truncated"):
         return "partial", extra
     return "ok", extra
 
@@ -866,6 +920,8 @@ def finish_job(
     # read, and why) are not a collection: a job that stored only those is refunded too.
     if job.kind == "collect" and (status in ("failure", "cancelled") or (outcome == "failed" and int(read) == 0)):
         refunded = refund_job(session, job, _run_of(session, job))
+    elif job.kind == "collect" and status == "success" and isinstance(clean_result, dict):
+        refunded = refund_policy_excluded(session, job, _run_of(session, job), clean_result)
     _test_result_from_job(session, job, now)
     recompute_run(session, job.run_id, now)
     audit(session, team_id=job.team_id, actor_type="node" if node else "system", actor_id=node.id if node else None,
