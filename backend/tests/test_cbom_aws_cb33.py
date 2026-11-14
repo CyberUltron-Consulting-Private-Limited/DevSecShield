@@ -186,8 +186,9 @@ def keys_of(found):
     return {a["location"]: a for a in found if a["type"] == "kms_key"}
 
 
-def gaps_of(found):
-    return [a for a in found if a["type"] == "coverage"]
+def gaps_of(found, stores: bool = False):
+    """Coverage rows; the per-region custom-key-store row (#136 review) only when ``stores``."""
+    return [a for a in found if a["type"] == "coverage" and (stores or "custom-key-store#" not in a["location"])]
 
 
 # ----------------------------------------------------------------------------- drift through the real functions
@@ -241,6 +242,8 @@ def test_t_pc_a_clean_mixed_region_is_ok_with_no_rows():
             .describe(5, meta(5, spec="HMAC_256")))
     services, found, _rows = run(plan)
     assert services["kms"] == "ok" and gaps_of(found) == []
+    (row,) = gaps_of(found, stores=True)  # no key uses a store: stores are not read, by choice, never "removed"
+    assert row["facts"]["by_choice"] is True and row["facts"]["scope"] == [f"{PREFIX}custom-key-store/"]
     keys = keys_of(found)
     assert keys[arn(1)]["facts"]["rotation_status"] == "on" and keys[arn(1)]["facts"]["rotation_period_days"] == 365
     assert keys[arn(1)]["facts"]["next_rotation"] == "2027-01-01T00:00:00Z"
@@ -408,6 +411,7 @@ def test_t_role_a_role_that_may_read_no_key_is_one_row_after_25_denials():
     assert keys_of(found) == {} and len(rows) == 1 and services["kms"] == "partial"
     assert rows[0]["facts"]["status"] == "denied" and rows[0]["facts"]["scope"] == [PREFIX]
     assert "incomplete" not in rows[0]["facts"]
+    assert rows[0]["facts"]["not_read_count"] == 1000  # the whole region was unread, not one item (#136 minor)
 
 
 # ============================================================================ many failures: exact ARNs, chunked
@@ -496,12 +500,44 @@ def test_t3b_a_failed_store_read_covers_the_stores_and_the_joined_keys():
             .describe(2, meta(2, spec="RSA_2048"))
             .raw("describe_custom_key_stores", "AccessDeniedException"))
     services, found, _rows = run(plan)
-    row = gaps_of(found)[0]["facts"]
+    row = gaps_of(found, stores=True)[0]["facts"]
     assert row["scope"] == [f"{PREFIX}custom-key-store/", arn(1)] and row["incomplete"] is True
     assert services["kms"] == "partial" and len(keys_of(found)) == 2
 
 
 MAT1, MAT2 = "a" * 64, "b" * 64  # KMS key material ids are 64 hex characters
+
+
+def test_a_store_whose_only_key_was_not_read_is_not_removed(engine, emitted):  # noqa: F811
+    """#136 review major 1: the store's only key fails DescribeKey, so the stores are not read: they are covered by
+    an incomplete row, never a ``removed_asset``.  A region whose keys use no store keeps a by-choice row instead."""
+    store = {"CustomKeyStores": [{"CustomKeyStoreId": "cks-a", "CustomKeyStoreName": "hsm",
+                                  "CustomKeyStoreType": "AWS_CLOUDHSM", "ConnectionState": "CONNECTED"}]}
+    ch = Chain(engine)
+    first = run(Plan().keys(1, 2).describe(1, meta(1, origin="AWS_CLOUDHSM", CustomKeyStoreId="cks-a"))
+                .describe(2, meta(2, spec="RSA_2048")).raw("describe_custom_key_stores", store))[1]
+    assert any(a["type"] == "key_store" for a in first)
+    ch.record(ch.run(first))
+    services, second, rows = run(Plan().keys(1, 2).describe(1, "ThrottlingException")
+                                 .describe(2, meta(2, spec="RSA_2048")))
+    assert ch.record(ch.run(second)) == []
+    store_row = next(g for g in gaps_of(second, stores=True) if "custom-key-store#" in g["location"])
+    assert store_row["facts"]["incomplete"] is True and store_row["facts"]["not_read_count"] == 0
+    assert dict((s_, d) for s_, _st, d in rows)["kms"] == "1 not read"  # the store row adds no count
+
+
+def test_t9b_held_for_longer_than_the_drift_walk(engine, emitted):  # noqa: F811
+    """#136 review major 2: a deletion window longer than CARRY_LEVELS runs, then cancelled: no duplicate opened."""
+    from backend.utilities.cbom_sources import drift as D
+
+    ch = Chain(engine)
+    ch.record(ch.run(run(Plan().keys(1).describe(1, meta(1)).rotation(1, rotation(False)))[1]))
+    pending = run(Plan().keys(1).describe(1, meta(1, state="PendingDeletion")))[1]
+    ch.record(ch.run(pending))
+    for _ in range(D.CARRY_LEVELS + 2):
+        assert ch.record(ch.run(pending)) == []
+    cancelled = run(Plan().keys(1).describe(1, meta(1, state="Disabled")).rotation(1, rotation(False)))[1]
+    assert ch.record(ch.run(cancelled)) == [("resolved", arn(1), "KMS_PENDING_DELETION")]
 
 
 def test_imported_material_and_multi_region_facts():

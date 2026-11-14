@@ -116,14 +116,16 @@ class _GapTally:
         facts = asset.get("facts") or {}
         if asset.get("type") == "coverage" and not facts.get("by_choice") and facts.get("status") != "not_reported":
             count = facts.get("not_read_count")
-            count = count if isinstance(count, int) and not isinstance(count, bool) and count > 0 else 1
+            # 0: a row that only follows from others already counted (custom key stores behind unread keys)
+            count = count if isinstance(count, int) and not isinstance(count, bool) and count >= 0 else 1
             self.gaps += count
             location = str(asset.get("location") or "")
             service = location.split(":")[2] if location.startswith("arn:aws:") and location.count(":") >= 2 else "?"
             codes = facts.get("codes") if isinstance(facts.get("codes"), dict) else {
                 str(facts.get("code") or facts.get("detail") or facts.get("status") or "?")[:64]: count}
             for code, n in codes.items():
-                self.codes[(service, code)] = self.codes.get((service, code), 0) + int(n)
+                if int(n):
+                    self.codes[(service, code)] = self.codes.get((service, code), 0) + int(n)
         self.emit(asset)
 
 
@@ -261,9 +263,9 @@ class _Items:
                 continue
             if state.role_wide is not None:  # the role may not do this at all here: one row, never a row per item
                 emit(_gap(self.label, f"{prefix}{self.service}#{op}-denied", f"{self.service} {what} in {self.region}",
-                          "denied", f"{state.role_wide}: no {what} could be read ({len(state.failed)} tried, "
+                          "denied", f"{state.role_wide}: no {what} could be read ({len(state.failed)} not read, "
                           f"{ROLE_WIDE_DENIALS} denied in a row and none allowed)", [prefix], incomplete=incomplete,
-                          code=state.role_wide))
+                          code=state.role_wide, not_read_count=len(state.failed)))
                 continue
             single, rest = state.failed[:ITEM_ROWS], state.failed[ITEM_ROWS:]
             for arn, status, code, detail in single:
@@ -729,6 +731,16 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit,
         stores = [a for a in found if a["facts"].get("custom_key_store_id")]
         if stores:
             key_stores(client, prefix, stores)
+        else:
+            unread = len((items.ops.get("metadata") or _Op()).failed)
+            if unread:  # a key not read may live in a custom key store: the stores are unknown, not gone (#136)
+                emit(_gap(label, f"{prefix}custom-key-store#unread-keys", f"kms custom key stores in {region}",
+                          "not_read", f"not read: {unread} key(s) whose metadata could not be read may use one",
+                          [f"{prefix}custom-key-store/"], incomplete=True, code="UnreadKeys", not_read_count=0))
+            else:  # read only when a key uses one: a store with no key is not inventoried, never "removed"
+                emit(_gap(label, f"{prefix}custom-key-store#no-key", f"kms custom key stores in {region}",
+                          "not_read", "read only when a key in this region uses a custom key store",
+                          [f"{prefix}custom-key-store/"], by_choice=True))
         for asset in found:
             emit(asset)
         items.flush(emit, {"metadata": ("key metadata", False), "rotation": ("key rotation status", True),
