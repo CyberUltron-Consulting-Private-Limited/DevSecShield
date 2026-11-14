@@ -11,7 +11,7 @@ from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Any
 
-SOURCES_SHA256 = "54c4f5b2a9b04291bfefb45a16d982ed830dcc9b3d3632304b93247393c6382c"
+SOURCES_SHA256 = "c7571b4634dc304d72ea37f519d3076afb6f40bd672bfefa0787d975877201d8"
 
 # canonical name -> (family_label, primitive, standard, status, parameter_set,
 #                    nist_category, construction, quantum, key_size, components)
@@ -2376,6 +2376,7 @@ ALIASES: Mapping[str, str] = MappingProxyType({
     "sphincs": "SPHINCS+",
     "sphincs256": "SPHINCS-256",
     "sphincsplus": "SPHINCS+",
+    "sshdss": "DSA",
     "sshed25519": "Ed25519",
     "sshed448": "Ed448",
     "streebog": "GOST R 34.11-2012",
@@ -2384,6 +2385,8 @@ ALIASES: Mapping[str, str] = MappingProxyType({
     "x25519kyber768draft00": "X25519Kyber768Draft00",
     "x25519mlkem768": "X25519MLKEM768",
     "x448": "X448",
+    "x509v3signdss": "DSA",
+    "x509v3sshdss": "DSA",
     "xdh": "XDH",
     "xmss": "XMSS",
     "xmssmt": "XMSS^MT",

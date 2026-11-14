@@ -4565,6 +4565,13 @@ export const INFO_TIPS = {
     why: "Resolve them in the CMDB or by hand so the right owner gets the findings.",
     example: "10.20.5.17: owner Payments in one source, Cards in another.",
   },
+  // src: frontend/components/cbom/sources/CmdbImportDialog.tsx:83, backend/utilities/integrations/cmdb.py:337-351 — new sources past the team's source cap
+  "cbsrc.cmdb.over_limit": {
+    label: "Over the source limit",
+    what: "New sources this import would create beyond the team's source limit. They are listed here and are not created when you apply; the rest of the import still goes ahead.",
+    why: "The team's source cap is checked in the preview and again when you apply, so nothing past it is created by surprise.",
+    example: "Limit 500, 495 used: 5 of 12 new Linux server sources are created and 7 are listed here. Raise the limit or delete unused sources, then import again.",
+  },
   // src: frontend/components/cbom/sources/CmdbImportDialog.tsx:82-92 — rows that could not be used
   "cbsrc.cmdb.skipped": {
     label: "Skipped or partly read rows",
@@ -5127,6 +5134,13 @@ export const INFO_TIPS = {
     what: "The source set on each event.",
     why: "Tells events from different ZeroShield teams or deployments apart.",
     example: "zeroshield-prod.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:119 — HEC data channel (#126)
+  "int.hec.channel": {
+    label: "Data channel GUID",
+    what: "Optional: a GUID sent as X-Splunk-Request-Channel with every request.",
+    why: "A HEC token with indexer acknowledgement on refuses requests without a channel (\"Data channel is missing\").",
+    example: "0aeeac95-ac74-4aa9-b30d-6c4c0ac581ba.",
   },
   // src: frontend/components/integrations/IntegrationsPage.tsx:100 — https
   "int.webhook.url": {
