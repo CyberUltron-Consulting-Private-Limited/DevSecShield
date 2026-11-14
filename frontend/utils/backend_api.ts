@@ -4368,7 +4368,7 @@ export interface CbomSource {
     last_test_at: string | null
     last_test_summary: string | null
     last_test_job_id: number | null
-    last_test_result: { samples?: CbomTestSample[]; checks?: CbomAwsCheck[]; member_accounts?: number; summary?: string; status?: string }
+    last_test_result: { samples?: CbomTestSample[]; checks?: CbomAwsCheck[]; member_accounts?: number; summary?: string; status?: string; estimate?: CbomOrgEstimate }
     // the newest finished collection of this source (list and get only; null on save responses and before the first)
     last_collect?: { status: "ok" | "partial" | "failed"; at: string | null; summary: string | null; job_id: number; run_id: number | null } | null
     row_version: number
@@ -4481,6 +4481,9 @@ export interface CbomJobTargets {
     duration_s: number | null
     /** "same_account": an AWS source read from the deployment's own account in lab mode (test deployments only) */
     lab_mode?: string | null
+    /** assets this job read (coverage rows excluded) and places not fully read (C4: the status label) */
+    assets_read?: number | null
+    gaps?: number | null
 }
 
 export interface CbomAssetPage {
@@ -4503,6 +4506,15 @@ export interface CbomAssetFilters {
     page_size?: number
 }
 
+/** What one run of an AWS organisation source is charged (recorded at each validation), with its last change. */
+export interface CbomOrgEstimate {
+    accounts: number
+    credits_per_account: number
+    credits_per_run: number
+    changed_from?: { accounts: number; credits_per_run: number }
+    changed_at?: string | null
+}
+
 export interface CbomTestResponse {
     status: "queued" | "not_available" | "passed" | "partial" | "failed" | "error"
     job?: CbomJob
@@ -4512,6 +4524,7 @@ export interface CbomTestResponse {
     member_accounts?: number | null
     validated_at?: string
     lab_mode?: string
+    estimate?: CbomOrgEstimate
 }
 
 export interface CbomSourceSaveResponse {
@@ -4833,7 +4846,12 @@ const getCbomNodeArtifactLink = async (team_id: number, kind: string): Promise<{
     return response.data
 }
 
-const listCbomSources = async (team_id: number, group?: CbomSourceGroup): Promise<{ sources: CbomSource[]; server_time: string }> => {
+// network_totals (N7): unique addresses the team's ENABLED network ranges sweep after the never-scan list; present on
+// unfiltered and network lists
+const listCbomSources = async (team_id: number, group?: CbomSourceGroup): Promise<{
+    sources: CbomSource[]; server_time: string;
+    network_totals?: { addresses: number; ranges_enabled: number; ranges_disabled: number }
+}> => {
     const response = await api.get(`${cbomSourcesBase(team_id)}/items`, { params: group ? { group } : {} })
     return response.data
 }
@@ -5138,6 +5156,12 @@ export interface CbomRunAssetItem extends CbomAsset {
     fix_class_floor?: string | null
     ticket_key?: string | null
     ticket_url?: string | null
+    /** W2b (PARITY.md S13): the code page's finding fields for a run asset */
+    bom_ref?: string | null
+    title?: string | null
+    owasp_top_10?: Record<string, string> | null
+    compliance_controls?: Record<string, string> | null
+    suggested_fix?: string | null
 }
 
 export interface CbomRunAssetPage extends Omit<CbomAssetPage, "items"> {
@@ -5216,6 +5240,29 @@ export interface CbomRunResults {
     inputs_digest?: string
     state?: "ready" | "live" | "computing"
     stale?: boolean
+}
+
+/** GET /{team}/cbom/sources/runs/{run}/parity (W2b, PARITY.md): a run's code-page data in the code scan's own
+ * ``scan_metadata`` keys (compliance readiness, RBI CSF and CERT-In roll-ups, dependency graph, coverage notes), so the
+ * one results template reads it exactly as it reads a code scan's metadata. 404 from an older backend. */
+export interface CbomRunParity {
+    run_id: number
+    scan_metadata: CbomScanMetadata & {
+        cbom_coverage?: Record<string, unknown> | null
+        cbom_input?: null
+    }
+    engine?: { compliance: "available" | "unavailable"; reason?: string }
+    kb_version?: string
+    judged_on?: string
+    computed_at?: string | null
+    inputs_digest?: string
+    state?: "ready" | "live"
+    stale?: boolean
+}
+
+export async function getCbomRunParity(team_id: number, run_id: number): Promise<CbomRunParity> {
+    const response = await api.get(`${cbomSourcesBase(team_id)}/runs/${run_id}/parity`)
+    return response.data as CbomRunParity
 }
 
 /** GET /{team}/cbom/sources/runs/{run}/results (W2). 404 from an older backend is the caller's to handle. */

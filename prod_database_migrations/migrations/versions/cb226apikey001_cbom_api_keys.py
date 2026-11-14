@@ -1,7 +1,7 @@
 """cbom API keys (issue #226): team-scoped, hash-only keys for scripted onboarding
 
 Revision ID: cb226apikey001
-Revises: cb23register001
+Revises: w9cloudpool001
 Create Date: 2026-11-14 20:00:00.000000
 
 * ``cbomapikey``: one row per key: team, name, scopes (JSON list), the SHA-256 of the secret (``key_hash``, unique:
@@ -20,7 +20,7 @@ import sqlmodel
 
 # revision identifiers, used by Alembic.
 revision: str = 'cb226apikey001'
-down_revision: Union[str, Sequence[str], None] = 'cb23register001'
+down_revision: Union[str, Sequence[str], None] = 'w9cloudpool001'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
