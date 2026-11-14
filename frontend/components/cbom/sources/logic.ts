@@ -335,8 +335,10 @@ const DOWNLOAD_LABEL: Record<NodeArtifact["kind"], string> = {
   "ami-kit": "Download AMI build kit",
 }
 
-export function formatMB(bytes: number): string {
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+/** "79.6 MB"; a file under 1 MB in KB ("10 KB"), so a small build kit is never labelled "0.0 MB". */
+export function formatSize(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  return `${bytes > 0 ? Math.max(1, Math.round(bytes / 1024)) : 0} KB`
 }
 
 /** "Download scan node image (63.2 MB, sha256 3f9a1c2b7d4e…)"; without its size and hash while the server does
@@ -344,7 +346,7 @@ export function formatMB(bytes: number): string {
 export function downloadLabel(kind: NodeArtifact["kind"], artifact?: NodeArtifact | null): string {
   const base = DOWNLOAD_LABEL[kind]
   if (!artifact?.available || artifact.size == null) return base
-  return artifact.sha256 ? `${base} (${formatMB(artifact.size)}, sha256 ${artifact.sha256.slice(0, 12)}…)` : `${base} (${formatMB(artifact.size)})`
+  return artifact.sha256 ? `${base} (${formatSize(artifact.size)}, sha256 ${artifact.sha256.slice(0, 12)}…)` : `${base} (${formatSize(artifact.size)})`
 }
 
 /** What the wizard says for a file the server does not hold (the server's own sentence when it sent one). */

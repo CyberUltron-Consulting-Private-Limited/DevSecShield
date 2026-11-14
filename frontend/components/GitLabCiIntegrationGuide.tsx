@@ -12,13 +12,12 @@ import { apiBaseURL } from "@/utils/interceptors";
 import { CBOM_GATE_NOTE, gitlabCi, isCbom } from "@/components/cicd/ciTemplates";
 
 interface GitLabCiIntegrationGuideProps {
-  apiKey: string;
   scanType?: string;
 }
 
 const code = "bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded text-xs font-mono";
 
-export function GitLabCiGuide({ apiKey, scanType = "sast" }: GitLabCiIntegrationGuideProps) {
+export function GitLabCiGuide({ scanType = "sast" }: GitLabCiIntegrationGuideProps) {
   const kind = (scanType || "sast").toLowerCase();
   const label = kind.toUpperCase();
   const endpoint = `${apiBaseURL}/cicd/${kind}/scan`;
@@ -90,7 +89,7 @@ export function GitLabCiGuide({ apiKey, scanType = "sast" }: GitLabCiIntegration
                   Value: your API key
                   <div className="mt-2 p-2 bg-zinc-50 dark:bg-zinc-800 rounded border border-zinc-200 dark:border-zinc-700">
                     <p className="text-xs font-mono text-zinc-900 dark:text-zinc-100 break-all">
-                      Value: <span className="text-zinc-500">{apiKey.substring(0, 20)}...</span>
+                      Value: <span className="text-zinc-500">the API key DevSecShield showed once when this integration was created or its key was last rotated (rotate it on this page if you no longer have it)</span>
                     </p>
                   </div>
                 </li>

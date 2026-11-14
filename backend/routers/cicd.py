@@ -23,6 +23,15 @@ from backend.utilities.cicd.auth import (
     require_zip_cicd_key,
 )
 from backend.utilities.cicd import cbom_gate
+from backend.utilities.cicd.api_keys import (
+    can_manage_key,
+    is_team_admin,
+    key_record,
+    key_view,
+    public_settings,
+    revoked_marker,
+    with_key_record,
+)
 from backend.utilities.cicd.cbom_page import project_cbom_ci_page
 from backend.utilities.cicd.migrate_dast_logs import migrate_dast_cicd_logs_for_team
 from backend.utilities.cicd.poll import poll_for_results
@@ -56,6 +65,7 @@ router = APIRouter(tags=["CICD"])
 ci_limiter = RateLimiter("cicd.ci", times=60, seconds=60, key_func=ci_key)
 read_limiter = RateLimiter("cicd.read", times=120, seconds=60)
 write_limiter = RateLimiter("cicd.write", times=20, seconds=60)
+KEY_WARNING = "Save this API key now. It will not be shown again."
 app_langs = ["python", "javascript", "java", "php", "c", "ruby", "rust", "swift", "csharp", "kotlin"] 
 
 # ==================================== PUBLIC API ROUTES =============================================================
@@ -82,7 +92,7 @@ async def run_cicd_dast_scan(
         if profile.team_id != team_id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="DAST profile is not on this CI/CD integration team")
         integration = session.get(CicdIntegration, integration_id)
-        integ_settings = dict(integration.integration_settings or {}) if integration else {}
+        integ_settings = public_settings(integration.integration_settings) if integration else {}  # no key record on scans
 
     result = run_dast_from_profile(
         body.profile_id,
@@ -396,6 +406,7 @@ async def list_cicd_integrations(
 
         # STEP [ 2 ] : ======================================== Check if user is in team ====================================
         check_if_user_is_in_team(user.id, team_id, engine)
+        team_admin = is_team_admin(user.id, team_id, engine)
 
 
         
@@ -415,7 +426,9 @@ async def list_cicd_integrations(
                     "owner_user_full_name": f"{integration.owner_user.first_name} {integration.owner_user.last_name}",
                     "last_updated": integration.last_updated,
                     "scan_type": integration.scan_type.upper() if integration.scan_type not in ["leakage" , "sbom_sca" , "agent_discovery"] else integration.scan_type,
-                    "api_key": integration.api_key[:8] + "..." + integration.api_key[-4:] if len(integration.api_key) > 12 else "****",
+                    # issue #99: never a part of the stored hash (the UI used to show and copy it)
+                    **key_view(integration),
+                    "can_manage_api_key": can_manage_key(integration, user.id, team_admin),
                 })
 
             dashboard_data = get_cicd_list_dashboard_data(integration_ids=integration_ids)
@@ -470,7 +483,8 @@ async def create_cicd_integration(
                 owner_user_id=user.id, 
                 title=data.title, 
                 scan_type=data.scan_type, 
-                api_key=hashed_api_key)  # Store only the hash
+                api_key=hashed_api_key,  # Store only the hash
+                integration_settings=with_key_record({}, key_record(plaintext_api_key, user.email)))
             session.add(integration)
             session.commit()
             session.refresh(integration)
@@ -483,7 +497,9 @@ async def create_cicd_integration(
             return {
                 "integration_id": created_id,
                 "api_key": plaintext_api_key,  # Return plaintext ONCE, user must save it
-                "warning": "Save this API key now. It will not be shown again."
+                "warning": KEY_WARNING,
+                "api_key_state": "active",
+                "api_key_hint": plaintext_api_key[-4:],
             }
     except Exception as e:
         console.print(f"Error creating cicd integration: {str(e)}", style="bold red")
@@ -565,7 +581,9 @@ async def update_cicd_integration(
 
         # STEP [ 3 ] : ======================================== Update the integration ====================================
         with Session(engine) as session:
-            integration = session.exec(select(CicdIntegration).where(CicdIntegration.id == integration_id).where(CicdIntegration.team_id == team_id)).first()
+            # FOR UPDATE: the settings are read, merged and written back; a key rotate/revoke (which writes the key
+            # record into the same JSON column) waits for this commit instead of being overwritten by it
+            integration = session.exec(select(CicdIntegration).where(CicdIntegration.id == integration_id).where(CicdIntegration.team_id == team_id).with_for_update()).first()
             if not integration:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cicd integration not found")
             if integration.owner_user_id != user.id: # only the owner of the integration can update it ⭐⭐
@@ -587,7 +605,7 @@ async def update_cicd_integration(
                     else:
                         settings_dict = {}
                     settings_dict["jira"] = specific_settings_dict["jira"]
-                    console.print(settings_dict, style="bold yellow")
+                    console.print(public_settings(settings_dict), style="bold yellow")
                     integration.integration_settings= settings_dict
 
             if data.scan_settings is not None:
@@ -634,6 +652,89 @@ async def update_cicd_integration(
 
 
 
+def _manageable_integration(session: Session, team_id: int, integration_id: int, user_id: int, engine) -> CicdIntegration:
+    """The integration whose key the caller may rotate or revoke: 404 when it is not this team's, 403 unless the
+    caller owns it or is a team admin (membership is checked by the caller first)."""
+    # FOR UPDATE: rotate / revoke rewrite integration_settings; a concurrent settings PUT (also FOR UPDATE) or
+    # another rotate waits, so the stored key record always describes the key that is active
+    integration = session.exec(
+        select(CicdIntegration).where(CicdIntegration.id == integration_id).where(CicdIntegration.team_id == team_id)
+        .with_for_update()
+    ).first()
+    if not integration:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cicd integration not found")
+    if not can_manage_key(integration, user_id, is_team_admin(user_id, team_id, engine)):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Only the integration's owner or a team admin can rotate or revoke its API key")
+    return integration
+
+
+@router.post("/{team_id}/cicd/integration/{integration_id}/api-key/rotate", summary="Issue a new CI/CD API key",
+             dependencies=[Depends(write_limiter)])
+async def rotate_cicd_api_key(
+    team_id: int,
+    integration_id: int,
+    Authorization: Annotated[str | None, Header()] = None):
+    """Issue a new key for the integration (also after a revoke). The old key stops working at once. The new key is
+    in this answer only; only its hash is stored."""
+    try:
+        engine = get_db()
+        user = await get_user_from_header_or_raise_exception(engine, Authorization)
+        check_if_user_is_in_team(user.id, team_id, engine)
+        plaintext_api_key, hashed_api_key = create_api_key(team_id)
+        with Session(engine) as session:
+            integration = _manageable_integration(session, team_id, integration_id, user.id, engine)
+            integration.api_key = hashed_api_key
+            integration.integration_settings = with_key_record(integration.integration_settings,
+                                                               key_record(plaintext_api_key, user.email))
+            integration.last_updated = datetime.now(timezone.utc)
+            session.add(integration)
+            session.commit()
+            console.print(f"CI/CD API key rotated for integration {integration_id} by user {user.id}", style="bold yellow")
+        return {
+            "integration_id": integration_id,
+            "api_key": plaintext_api_key,  # shown ONCE
+            "warning": KEY_WARNING,
+            "api_key_state": "active",
+            "api_key_hint": plaintext_api_key[-4:],
+        }
+    except Exception as e:
+        console.print(f"Error rotating cicd api key: {e!s}", style="bold red")
+        if isinstance(e, HTTPException):
+            raise
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
+
+
+@router.delete("/{team_id}/cicd/integration/{integration_id}/api-key", summary="Revoke the CI/CD API key",
+               dependencies=[Depends(write_limiter)])
+async def revoke_cicd_api_key(
+    team_id: int,
+    integration_id: int,
+    Authorization: Annotated[str | None, Header()] = None):
+    """Revoke the integration's key: pipelines using it get 401 until a new key is issued (rotate). The integration,
+    its settings and its scan history stay."""
+    try:
+        engine = get_db()
+        user = await get_user_from_header_or_raise_exception(engine, Authorization)
+        check_if_user_is_in_team(user.id, team_id, engine)
+        with Session(engine) as session:
+            integration = _manageable_integration(session, team_id, integration_id, user.id, engine)
+            integration.api_key = revoked_marker()
+            integration.integration_settings = with_key_record(integration.integration_settings, None)
+            integration.last_updated = datetime.now(timezone.utc)
+            session.add(integration)
+            session.commit()
+            console.print(f"CI/CD API key revoked for integration {integration_id} by user {user.id}", style="bold yellow")
+        return {"integration_id": integration_id, "api_key_state": "revoked",
+                "message": "API key revoked. Pipelines using it are refused until you issue a new key."}
+    except Exception as e:
+        console.print(f"Error revoking cicd api key: {e!s}", style="bold red")
+        if isinstance(e, HTTPException):
+            raise
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
+
+
+
 # revamped ✅
 @router.get("/{team_id}/cicd/integration/{integration_id}",summary="Get a cicd integration", dependencies=[Depends(read_limiter)])
 async def get_cicd_integration(
@@ -662,6 +763,8 @@ async def get_cicd_integration(
             if not integration:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cicd integration not found")
             scan_type = integration.scan_type
+            key_fields = key_view(integration)
+            key_fields["can_manage_api_key"] = can_manage_key(integration, user.id, is_team_admin(user.id, team_id, engine))
             scan_settings_snapshot = integration.scan_settings
             has_dast_profile = session.exec(
                 select(DastScanProfile.id).where(DastScanProfile.team_id == team_id)
@@ -783,13 +886,13 @@ async def get_cicd_integration(
         
         return {
             "cicd_integration_id": integration.id,
-            "api_key": integration.api_key[:8] + "..." + integration.api_key[-4:] if len(integration.api_key) > 12 else "****",
+            **key_fields,  # issue #99: the key's state and last 4 characters, never the key or its hash
             "integration_active": integration_active,
             "title": integration.title,
             "created_at": integration.created_at,
             "last_updated": integration.last_updated,
             "scan_type":  integration.scan_type.upper() if integration.scan_type not in ["leakage" , "sbom_sca" , "agent_discovery"] else integration.scan_type,
-            "integration_settings": integration.integration_settings or {},
+            "integration_settings": public_settings(integration.integration_settings),
             "scan_settings": integration.scan_settings or {},
             "logs": logs_data,
             "dashboard_data": dashboard_data,
