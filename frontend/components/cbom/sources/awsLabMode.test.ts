@@ -15,7 +15,9 @@ const backend = read("../../../../backend/utilities/cbom_sources/lab_mode.py")
 const sentence = "Lab mode: same-account collection — not for production"
 assert.ok(banner.includes(`export const AWS_LAB_BANNER = "${sentence}";`), "the banner carries the sentence")
 assert.ok(backend.includes(`LAB_BANNER = "${sentence}"`), "the backend says the same sentence")
-assert.ok(banner.includes('role="alert"') && !/onClose|onDismiss|setOpen|useState|<button/.test(banner), "it cannot be dismissed")
+// a permanent informational note (#272): role="note", never an alert announced on every render
+assert.ok(banner.includes('role="note"') && !banner.includes('role="alert"'), "it is a note, not an alert")
+assert.ok(!/onClose|onDismiss|setOpen|useState|<button/.test(banner), "it cannot be dismissed")
 // the form: shown whenever the AWS form is (settings say lab mode), above it
 assert.ok(tab.includes('{form.provider === "aws" && !awsOff && settings.aws_lab_same_account === true && (\n            <LabModeBanner'),
   "the AWS form shows the banner when the deployment is in lab mode")
