@@ -3,6 +3,8 @@
 // Post-quantum and risk posture of a collection run, and the per-asset explanation (CWE / OWASP / CVE, fix and
 // read-only proof commands). Everything comes from the API's offline knowledge base: no AI, no internet.
 
+import { CorrelationSection } from "@/components/cbom/estate/Correlation";
+import type { Correlation } from "@/components/cbom/estate/correlation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ExternalLink, Info } from "lucide-react";
 import { Fragment, useState } from "react";
@@ -333,6 +335,7 @@ export function AssetDetailPanel({ teamId, assetId, mergedStandards = false }: {
       <QGradeDrawerSection teamId={teamId} asset={a} />
       <AgilityDrawerSection teamId={teamId} agility={a.agility} />
       <StandardsDrawerSection standards={a.standards} />
+      <CorrelationSection teamId={teamId} correlation={(a as { correlation?: Correlation | null }).correlation} />
       {a.library && (
         <div className="rounded-md border border-zinc-200 dark:border-zinc-700 p-3 space-y-1" data-testid="asset-library">
           <p className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">

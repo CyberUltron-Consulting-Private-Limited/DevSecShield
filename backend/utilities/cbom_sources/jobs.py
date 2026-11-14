@@ -15,6 +15,7 @@ from typing import Any
 
 from fastapi import HTTPException
 from sqlalchemy import and_, case, delete, func, or_, update
+from sqlalchemy.orm import aliased
 from sqlmodel import Session, select
 
 from backend.new_models import (
@@ -1240,25 +1241,29 @@ def claim_cloud_job(session: Session, now: _dt.datetime, worker: str, *, team_ca
     whose oldest pending job is oldest).  While more than one team has pending work, a team already running
     ``team_cap`` jobs is passed over, so a team with one job is served by the next free worker however many slices
     another team has queued; a team that is alone in the queue may use the whole pool.  On PostgreSQL the team's rows
-    are taken ``FOR UPDATE SKIP LOCKED`` and, while the cap applies, under a per-team transaction advisory lock taken
-    with ``pg_try_advisory_xact_lock`` (a team another claimer is busy with is skipped, never waited for: no lock
-    cycle between claimers).  The guarded ``status = 'pending'`` UPDATE re-checks the cap, which keeps SQLite (tests)
-    exact too.  The caller commits."""
+    are taken ``FOR UPDATE SKIP LOCKED`` under a per-team transaction advisory lock taken with
+    ``pg_try_advisory_xact_lock`` (a team another claimer is busy with is skipped, never waited for: no lock cycle
+    between claimers).
+
+    Whether the cap applies is decided again inside the claiming UPDATE, never only from the queue read above: the
+    guarded ``status = 'pending'`` UPDATE claims only while the team is under the cap OR no other team has pending
+    work at that moment.  The queue read is an unlocked snapshot: another team's work can appear between it and the
+    UPDATE (its collection fanned out into slices just then), and a claim decided "alone" from that snapshot took the
+    team past its cap while the other team waited (the flaky test_the_team_cap_holds_while_another_team_is_waiting).
+    On SQLite the UPDATE holds the write lock, so the guard is exact; on PostgreSQL the advisory lock serialises the
+    team's claims and the guard reads the queue at the UPDATE's own snapshot.  The caller commits."""
     pg = session.get_bind().dialect.name == "postgresql"
     running = _cloud_running(session)
     waiting = session.exec(
         select(CbomCollectionJob.team_id, func.min(CbomCollectionJob.id))
         .where(*_cloud_queue(), CbomCollectionJob.status == "pending").group_by(CbomCollectionJob.team_id)).all()
-    cap = (team_cap or team_max_concurrency()) if len(waiting) > 1 else None
+    cap = team_cap or team_max_concurrency()
+    contended = len(waiting) > 1
     for team_id, _oldest in sorted(waiting, key=lambda row: (running.get(int(row[0]), 0), row[1])):
-        if cap is not None:
-            if running.get(int(team_id), 0) >= cap:
-                continue
-            if pg:
-                if not session.exec(select(func.pg_try_advisory_xact_lock(_CLAIM_LOCK_NS, int(team_id)))).one():
-                    continue  # another claimer is taking this team's place now
-                if _cloud_running(session, int(team_id)).get(int(team_id), 0) >= cap:
-                    continue
+        if contended and running.get(int(team_id), 0) >= cap:
+            continue  # the snapshot already says no; the UPDATE's guard decides every other case
+        if pg and not session.exec(select(func.pg_try_advisory_xact_lock(_CLAIM_LOCK_NS, int(team_id)))).one():
+            continue  # another claimer is taking this team's place now
         payload = _claim_for_team(session, now, worker, int(team_id), pg, cap)
         if payload is not None:
             return payload
@@ -1266,7 +1271,7 @@ def claim_cloud_job(session: Session, now: _dt.datetime, worker: str, *, team_ca
 
 
 def _claim_for_team(session: Session, now: _dt.datetime, worker: str, team_id: int, pg: bool,
-                    cap: int | None) -> dict | None:
+                    cap: int) -> dict | None:
     query = (
         select(CbomCollectionJob)
         .where(*_cloud_queue(), CbomCollectionJob.team_id == team_id, CbomCollectionJob.status == "pending")
@@ -1304,12 +1309,15 @@ def _claim_for_team(session: Session, now: _dt.datetime, worker: str, team_id: i
                           object_type="job", object_id=job.id, changed_fields=["stale_source"])
             continue
         lease_id = secrets.token_hex(12)
-        # the team's cap, checked again inside the claiming UPDATE (on SQLite the UPDATE holds the write lock, so this
-        # is exact; on PostgreSQL the advisory lock above serialises the team's claims)
-        guard = [CbomCollectionJob.id == job.id, CbomCollectionJob.status == "pending"]
-        if cap is not None:
-            guard.append(select(func.count()).select_from(CbomCollectionJob)
-                         .where(CbomCollectionJob.team_id == team_id, *_running_cond()).scalar_subquery() < cap)
+        # the team's cap, decided inside the claiming UPDATE: under the cap, or no other team waiting right now (on
+        # SQLite the UPDATE holds the write lock, so this is exact; on PostgreSQL the advisory lock above serialises
+        # the team's claims). Never from the queue snapshot alone (see claim_cloud_job).
+        other = aliased(CbomCollectionJob)
+        others_waiting = (select(other.id).where(other.node_id.is_(None), other.kind.in_(CLOUD_KINDS),  # type: ignore[union-attr,attr-defined]
+                                                  other.status == "pending", other.team_id != team_id).exists())
+        under_cap = select(func.count()).select_from(CbomCollectionJob).where(
+            CbomCollectionJob.team_id == team_id, *_running_cond()).scalar_subquery() < cap
+        guard = [CbomCollectionJob.id == job.id, CbomCollectionJob.status == "pending", or_(under_cap, ~others_waiting)]
         changed = session.exec(
             update(CbomCollectionJob)
             .where(*guard)
