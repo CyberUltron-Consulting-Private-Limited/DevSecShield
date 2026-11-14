@@ -271,7 +271,9 @@ def test_model_only_change_closes_nothing_that_is_forwarded(api, two_runs):
     before = len(closed_events(engine))
     assert DRIFT.record_pending_drift(engine, T0) == 1  # run 2
     [gap] = gaps(engine, key)
-    assert gap.closed_at is not None and gap.close_cause == "model_change" and gap.closed_grade in ("Q1", "Q2", "Q3", "Q4")
+    # PR-B: the register keys asset items by estate key; an item recorded under another model / keying closes as a
+    # re-identification (model_change) and is never forwarded
+    assert gap.closed_at is not None and gap.close_cause == "model_change" and gap.closed_grade is None
     events = closed_events(engine)
     assert key not in {e.asset_key for e in events}  # not forwarded
     # the other closures of the same sync are real ones, and forwarded: Mosca set (inputs), the DSA key gone
@@ -319,7 +321,8 @@ def test_migration_is_the_one_head():
         if down:
             parents.add(down.group(1))
     assert mod.revision == "cb23q0gap001" and mod.down_revision in revisions
-    assert revisions - parents == {"cb23q0gap001"}
+    # one head; later revisions (CB-23 PR-B cb23register001) chain after this one
+    assert len(revisions - parents) == 1 and ("cb23q0gap001" in parents or revisions - parents == {"cb23q0gap001"})
 
 
 def test_migration_up_down_up_keeps_open_and_closed_gaps(tmp_path):

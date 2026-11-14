@@ -698,6 +698,41 @@ class CbomQ0Gap(SQLModel, table=True):
     run_id: int | None = Field(default=None)  # the run that last saw it (scope / asset / inputs items)
 
 
+class CbomRiskRegister(SQLModel, table=True):
+    """The team's quantum risk register (CB-23 PR-B): one row per estate asset key (CB-20/CB-21) with its CURRENT
+    grade (the team's inputs now, the current grade model) and what a CISO filters on. Written by the estate hook
+    only for keys whose graded content, inputs or model changed (``grade_digest``), and by the background re-grade
+    after an inputs or model change. ``q_rank``: Q1 1 .. Q4 4, Q0 5, no grade 6 (the list's keyset order)."""
+    __tablename__ = "cbomriskregister"
+    __table_args__ = (UniqueConstraint("team_id", "item_key", name="uq_cbomriskregister_team_key"),
+                      _SaIndex("ix_cbomriskregister_team_rank_key", "team_id", "q_rank", "item_key"),
+                      _SaIndex("ix_cbomriskregister_team_reason", "team_id", "q_reason"),
+                      _SaIndex("ix_cbomriskregister_team_family_source_grade", "team_id", "family", "source_ref",
+                               "q_grade"))
+    id: int | None = Field(default=None, primary_key=True)
+    team_id: int = Field(foreign_key="team.id")
+    item_key: str = Field(max_length=64)  # the estate asset key
+    item_kind: str = Field(default="asset", max_length=16)
+    q_grade: str | None = Field(default=None, max_length=2)  # Q0..Q4, NULL = no grade
+    q_rank: int = Field(default=6)
+    q_reason: str = Field(max_length=32)
+    label: str | None = Field(default=None, max_length=255)
+    asset_type: str | None = Field(default=None, max_length=32)
+    family: str | None = Field(default=None, max_length=32)
+    source_ref: str | None = Field(default=None, max_length=255)  # the observation the grade comes from
+    source_name: str | None = Field(default=None, max_length=255)
+    application: str | None = Field(default=None, max_length=128)
+    exposure: str | None = Field(default=None, max_length=16)
+    presence: str = Field(default="present", max_length=16)
+    sources: int = Field(default=1)  # observations (sources) of the key
+    last_run_id: int | None = Field(default=None)
+    last_observed_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    model_version: str = Field(max_length=32)
+    inputs_digest: str = Field(max_length=16)
+    grade_digest: str = Field(max_length=16)
+    updated_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+
+
 # ========================================= estate store (CB-20) =========================================
 class CbomEstateSource(SQLModel, table=True):
     """Per team and source (``source_ref`` = the source uid): the newest collect job the estate store has written.
