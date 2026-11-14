@@ -435,8 +435,17 @@ def _job_context(session: Session, team_id: int, run_id: int, sources: dict[int,
     jobs = session.exec(select(CbomCollectionJob).where(CbomCollectionJob.team_id == team_id,
                                                         CbomCollectionJob.run_id == run_id)).all()
     nodes = {n.id: n for n in session.exec(select(CbomScanNode).where(CbomScanNode.team_id == team_id)).all()}
-    return {job.id: job_metadata(job.params, sources.get(job.source_id or 0), nodes.get(job.node_id or 0))
+    # source_name: the source's name, else (a deleted source) the job's snapshot name, as the run's /assets list
+    return {job.id: {**job_metadata(job.params, sources.get(job.source_id or 0), nodes.get(job.node_id or 0)),
+                     "source_name": _job_source_name(job, sources.get(job.source_id or 0))}
             for job in jobs if job.id is not None}
+
+
+def _job_source_name(job: CbomCollectionJob | None, source: CbomCollectionSource | None) -> str | None:
+    """The name a run shows for a job's source: the live name, else the name snapshotted on the job (a deleted
+    source keeps it there, ``removal.remove_source``), else None; the rule of ``inventory.public_asset``."""
+    return (source.name if source is not None else None) or \
+        ((job.params or {}).get("source_name") if job is not None else None) or None
 
 
 def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict[str, Any] | None,
@@ -493,7 +502,7 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
         if impact:
             risky.append({"id": aid, "type": a_type, "name": name or location, "location": location, "impact": impact,
                           "criticality": crit, "exposure": exposure, "exposure_basis": basis_exposure,
-                          "source_name": source.name if source else None,
+                          "source_name": (source.name if source else None) or ctx.get("source_name"),
                           "score": round(IMPACT_WEIGHT.get(impact, 0) * CRITICALITY.get(crit, 1.0)
                                          * EXPOSURE_FACTOR[exposure], 1),
                           "hndl": hndl(a_type, qv), "finding": finding})
@@ -619,7 +628,7 @@ def asset_detail(row: CbomCollectedAsset, source: CbomCollectionSource | None, *
         "pqc_class_basis_text": CLASS_BASIS[pqc_basis][1],
         "pqc_class_read_elsewhere": sibling,
         "hndl": hndl(row.asset_type, row.quantum_vulnerable),
-        "source_name": source.name if source else None,
+        "source_name": _job_source_name(job, source),
         "criticality": crit,
         "exposure": exposure,
         "exposure_basis": exposure_basis,

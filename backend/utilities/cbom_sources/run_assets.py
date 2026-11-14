@@ -243,6 +243,23 @@ def enrich_items(session: Session, team_id: int, run: CbomCollectionRun, items: 
         add_code_page_fields(item)
 
 
+def run_item(session: Session, team_id: int, run: CbomCollectionRun, row: CbomCollectedAsset, *,
+             grade: dict[str, Any] | None = None, pqc: tuple[str, str] | None = None) -> dict[str, Any]:
+    """One asset exactly as the run's ``/assets`` list shows it (the same functions over one row): the asset detail
+    carries it, so a dialog opened from top risks or a certificate (an asset not on the findings page) shows the
+    findings table's row. ``grade`` / ``pqc``: the caller's (the detail grades the row once)."""
+    from backend.utilities.cbom_sources import agility as AGILITY
+
+    job = session.get(CbomCollectionJob, row.job_id) if row.job_id is not None else None
+    jobs = [job] if job is not None and job.team_id == team_id else []
+    names = INV._source_names(session, team_id, jobs)  # a deleted source: the job's snapshot name (as the list)
+    job_names = {j.id: names.get(j.source_id or 0) or (j.params or {}).get("source_name") for j in jobs}
+    item = INV.public_asset(row, names, job_names, None, grade, pqc)
+    AGILITY.annotate_assets(session, team_id, jobs, [item])
+    enrich_items(session, team_id, run, [item])
+    return item
+
+
 def add_code_page_fields(item: dict[str, Any]) -> None:
     """The code page's ``CbomFinding`` fields a run item lacks (CB-38 W2b parity): ``bom_ref`` (``zs-asset-<id>``: the
     ref the run's distributions, dependency graph and compliance requirement refs use), ``title``, and from the
@@ -292,4 +309,4 @@ def list_run_assets(session: Session, *, team_id: int, run: CbomCollectionRun, p
 
 
 __all__ = ["FINDING_STATUSES", "TYPE_LABEL", "VIEWS", "enrich_items", "findings_total", "list_run_assets",
-           "parse_codes", "parse_ids", "run_asset_keys", "type_label"]
+           "parse_codes", "parse_ids", "run_asset_keys", "run_item", "type_label"]
