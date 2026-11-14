@@ -20,14 +20,14 @@ import zipfile
 from pathlib import Path
 
 import pytest
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_cbom_posture import ASSETS, _store  # noqa: E402
 import test_cbom_sources_api as SOURCES_API  # noqa: E402
 from test_cbom_sources_api import _collect_job  # noqa: E402
 
-from backend.new_models import CbomCollectionRun  # noqa: E402
+from backend.new_models import CbomCollectedAsset, CbomCollectionRun  # noqa: E402
 from backend.utilities.cbom_sources import inventory as INV  # noqa: E402
 from backend.utilities.cbom_sources import run_deliverables as RD  # noqa: E402
 
@@ -71,12 +71,12 @@ def _finish(engine, run_id: int) -> None:
         s.commit()
 
 
-def _freeze(monkeypatch) -> None:
+def _freeze(monkeypatch, when: dt.datetime = FROZEN) -> None:
     from backend.routers import cbom_run_deliverables, cbom_sources
     from backend.utilities.integrations import oscal
 
     for module in (cbom_run_deliverables, cbom_sources, oscal):
-        monkeypatch.setattr(module, "utcnow", lambda: FROZEN)
+        monkeypatch.setattr(module, "utcnow", lambda: when)
 
 
 def _pdf_text(raw: bytes, tmp_path: Path) -> str:
@@ -205,7 +205,24 @@ def test_signature_verifies_the_downloaded_bytes_and_a_one_byte_change_fails(api
     last[-1] ^= 1
     assert not hmac.compare_digest(hmac.new(secret, bytes(last), hashlib.sha256).digest(), mac)
     assert sig["serialNumber"] == json.loads(raw)["serialNumber"] and "as_of" in sig
-    assert "XML form is not covered" in sig["scope"]
+    assert "XML form is not covered" in sig["scope"] and f"/runs/{rid}/signature/verify" in sig["scope"]
+    # the customer's check: the key stays on the server, so the verify route answers for the downloaded file
+    verify = f"/1/cbom/sources/runs/{rid}/signature/verify"
+    ok = api("POST", verify, content=raw, headers={"X-ZS-Signature-B64": sig["signature_b64"]})
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["valid"] is True
+    assert (ok.json()["signature_match"], ok.json()["digest_match"]) == (True, True)
+    assert ok.json()["digest"] == sig["digest"] and ok.json()["bytes"] == len(raw)
+    current = api("POST", verify, content=raw).json()  # no signature sent: against the run's current CBOM
+    assert (current["valid"], current["digest_match"], current["compared_with"]) == (True, True, "the run's current CBOM JSON")
+    for bad in (bytes(tampered), bytes(last)):
+        out = api("POST", verify, content=bad, headers={"X-ZS-Signature-B64": sig["signature_b64"]}).json()
+        assert (out["valid"], out["signature_match"], out["digest_match"]) == (False, False, False)
+        assert api("POST", verify, content=bad).json()["valid"] is False
+    wrong = api("POST", verify, content=raw, headers={"X-ZS-Signature-B64": "bm90IGl0"}).json()
+    assert (wrong["valid"], wrong["digest_match"]) == (False, True)  # the file is the run's, the signature is not
+    assert api("POST", verify, content=b"").status_code == 400
+    assert api("POST", f"/2/cbom/sources/runs/{rid}/signature/verify", "carol", content=raw).status_code == 404
 
 
 def test_run_cbom_bytes_are_inventorys_writer_with_a_stable_timestamp(api, world):
@@ -220,7 +237,7 @@ def test_run_cbom_bytes_are_inventorys_writer_with_a_stable_timestamp(api, world
         RD.write_run_cbom(s, row, FROZEN, "json", ours)
         RD.write_run_cbom(s, row, later, "json", again)
         INV.write_cyclonedx(s, row, FROZEN, "json", theirs)
-        stamp = RD.iso_z(row.last_updated)
+        stamp = RD.iso_z(RD.stamp(s, row, FROZEN))  # active run: its newest asset's time
     assert ours.getvalue() == again.getvalue()
     assert ours.getvalue() == theirs.getvalue().replace(b'"timestamp":"2026-11-14T09:30:00Z"',
                                                         f'"timestamp":"{stamp}"'.encode(), 1)
@@ -260,8 +277,7 @@ def test_evidence_pack_manifest_hashes_equal_the_endpoint_bodies(api, world, mon
     engine, _ = world
     _src, run = _store(api, engine, ASSETS)
     rid = run["id"]
-    _finish(engine, rid)
-    _freeze(monkeypatch)
+    _finish(engine, rid)  # a finished run: every file is the same bytes on every download, whenever it is asked
     r = api("GET", f"/1/cbom/sources/runs/{rid}/evidence-pack")
     assert r.status_code == 200, r.text
     assert r.headers["content-type"] == "application/zip"
@@ -276,6 +292,14 @@ def test_evidence_pack_manifest_hashes_equal_the_endpoint_bodies(api, world, mon
         assert hashlib.sha256(body).hexdigest() == entry["sha256"] and len(body) == entry["bytes"]
         served = api("GET", entry["endpoint"])
         assert served.status_code == 200, (entry["endpoint"], served.text[:200])
+        if entry["name"] == "oscal-assessment-results.json":  # the route stamps last-modified with the request time
+            assert entry["endpoint_same_bytes"] is False
+            mine, theirs = json.loads(body), json.loads(served.content)
+            assert mine["assessment-results"]["metadata"].pop("last-modified") == manifest["generated_at"]
+            theirs["assessment-results"]["metadata"].pop("last-modified")
+            assert mine == theirs
+            continue
+        assert entry["endpoint_same_bytes"] is True
         assert hashlib.sha256(served.content).hexdigest() == entry["sha256"], entry["name"]
     assert manifest["run"]["id"] == rid and manifest["run"]["status"] == "done" and not manifest["run"]["active"]
     assert manifest["run"]["sources"][0]["name"] == "linux-dc"
@@ -286,6 +310,15 @@ def test_evidence_pack_manifest_hashes_equal_the_endpoint_bodies(api, world, mon
     mac = hmac.new(secret, zf.read("bom.cdx.json"), hashlib.sha256).digest()
     assert hmac.compare_digest(base64.b64decode(sig["signature_b64"]), mac)  # the pack's signature verifies its JSON
     assert manifest["signature"]["digest"] == hashlib.sha256(zf.read("bom.cdx.json")).hexdigest()
+    # every time in it is the run's: the zip entries, the manifest, the signature, the PDF
+    with Session(engine) as s:
+        finished = RD.iso_z(RD.stamp(s, s.get(CbomCollectionRun, rid), FROZEN))
+    assert manifest["generated_at"] == sig["signed_at"] == finished
+    y, mo, d, h, mi, sec = (int(x) for x in finished[:19].replace("T", "-").replace(":", "-").split("-"))
+    assert {i.date_time for i in zf.infolist()} == {(y, mo, d, h, mi, sec - sec % 2)}  # zip keeps even seconds
+    # a later download (three hours on) is the same bytes
+    _freeze(monkeypatch, FROZEN + dt.timedelta(hours=3))
+    assert api("GET", f"/1/cbom/sources/runs/{rid}/evidence-pack").content == r.content
 
 
 def test_evidence_pack_of_an_active_run_omits_oscal_and_says_as_of(api, world):
@@ -340,3 +373,116 @@ def test_run_over_the_export_cap_states_the_cap(api, world, tmp_path, monkeypatc
     manifest = json.loads(zipfile.ZipFile(io.BytesIO(
         api("GET", f"/1/cbom/sources/runs/{rid}/evidence-pack").content)).read("manifest.json"))
     assert manifest["inputs"]["truncated"] is True and "first 2 assets" in manifest["export_cap_note"]
+
+
+# ----------------------------------------------------------------------------- realistic sizes (review 5902588239)
+def _realistic_assets(n: int) -> list[dict]:
+    """``n`` assets cycling through the long-finding kinds: a weak expired certificate (~230-character finding), an
+    end-of-life OpenSSL package (~320) and a Windows host (~380)."""
+    out = []
+    for i in range(n):
+        kind = i % 3
+        if kind == 0:
+            out.append({**ASSETS[0], "location": f"/etc/ssl/pay-{i}.pem", "name": f"pay-{i}"})
+        elif kind == 1:
+            out.append({**ASSETS[3], "target": f"10.20.{i // 250}.{i % 250 + 1}", "location": f"package:openssl#{i}"})
+        else:
+            out.append({**ASSETS[4], "target": f"10.30.{i // 250}.{i % 250 + 1}", "location": f"os#{i}"})
+    return out
+
+
+def _finding_rows(n: int) -> list[dict]:
+    from backend.utilities.cbom_sources.classify import classify
+
+    texts = []
+    for a in _realistic_assets(3):
+        v = classify(a["type"], a.get("algorithm"), a.get("key_size"), a.get("protocol"), a["facts"], FROZEN)
+        texts.append((v["impact"], v["finding"], a["type"]))
+    assert all(len(t[1]) >= 200 for t in texts), [len(t[1]) for t in texts]  # the long sentences that broke it
+    return [{"ref": f"zs-asset-{i}", "impact": texts[i % 3][0], "name": f"asset-{i}", "type": texts[i % 3][2],
+             "location": f"arn:aws:kms:ap-south-1:111122223333:key/{i:032x}/" + "deep/path/" * 12,
+             "source": "linux-dc", "finding": texts[i % 3][1]} for i in range(n)]
+
+
+@pytest.mark.parametrize("n", [40, 200, 500])
+def test_pdf_builds_with_many_long_findings(n):
+    """[blocker] 18 rows of 5-6-line findings made one unsplittable catalog panel taller than the page
+    (LayoutError, HTTP 500 for report.pdf and the evidence pack once a run had about 12 findings)."""
+    from backend.utilities.pdf.cbom_run_pdf import build_run_pdf
+    from backend.tests.support.pdf_text import pdf_text
+
+    head = {"serialNumber": "urn:uuid:3e671687-395b-41f5-a30f-a58921a69b79", "metadata": {"properties": []}}
+    posture = {"assets": n, "impacts": {"Critical": n // 3, "High": n - n // 3, "Medium": 0, "Low": 0},
+               "pqc_readiness_pct": 12.5, "pqc_classes": {}, "exposure": {}, "mosca": {}, "top_risks": [],
+               "compliance": []}
+    raw = build_run_pdf(run={"id": 9, "status": "done", "created_at": "2026-11-14T09:00:00Z",
+                             "finished_at": "2026-11-14T09:30:00Z", "last_updated": "2026-11-14T09:30:00Z"},
+                        sources=[{"name": "linux-dc"}], posture=posture,
+                        heatmap={"rows": [], "columns": [], "cells": [], "certificates": []}, head=head,
+                        findings=_finding_rows(n), vex_states={}, provenance=[], at=FROZEN, as_of_note=None,
+                        findings_cap=RD.PDF_FINDINGS_CAP, export_cap=INV.EXPORT_CAP, cbom_sha256="ab" * 32)
+    text = pdf_text(raw)
+    assert raw.startswith(b"%PDF") and "12.5%" in text and "\u2026" in text  # cut, with an ellipsis
+
+
+def test_report_and_pack_of_a_run_with_40_realistic_findings(api, world, tmp_path):
+    engine, _ = world
+    _src, run = _store(api, engine, _realistic_assets(40))
+    rid = run["id"]
+    with Session(engine) as s:  # a failed job's reason is shown in the provenance table
+        from backend.new_models import CbomCollectionJob
+
+        job = s.exec(select(CbomCollectionJob).where(CbomCollectionJob.run_id == rid)).first()
+        job.error = "every target refused the connection (10.20.0.0/29: 6 of 6)"
+        s.add(job)
+        s.commit()
+    pdf = api("GET", f"/1/cbom/sources/runs/{rid}/report.pdf")
+    assert pdf.status_code == 200, pdf.text
+    text = " ".join(_pdf_text(pdf.content, tmp_path).split())
+    assert "40 issues" in text and "refused" in text and "6 of 6)" in text  # the job error, in the provenance table
+    pack = api("GET", f"/1/cbom/sources/runs/{rid}/evidence-pack")
+    assert pack.status_code == 200, pack.text
+    assert zipfile.ZipFile(io.BytesIO(pack.content)).read("report.pdf").startswith(b"%PDF")
+
+
+def test_a_20k_asset_run_builds_its_pdf_and_states_cut_vex_entries(api, world, monkeypatch):
+    """The 20k-run path (R-qa run #6): the PDF builds at the 500-row cap, and a finding on more assets than the
+    export lists per entry (5,000) says so in the VEX with its true total."""
+    from backend.routers import cbom_run_deliverables as ROUTE
+    from backend.utilities.cbom_sources.classify import classify
+
+    engine, _ = world
+    _src, run, claim, _hdr = _collect_job(api, engine)
+    job = claim["job"]
+    tls = {"type": "tls_endpoint", "facts": {"protocols": ["TLSv1.2", "TLSv1.3"], "group": "x25519"}}
+    kinds = [(tls, 6_000), (ASSETS[0], 6_000), (ASSETS[3], 4_000), (ASSETS[4], 4_000)]
+    rows, i = [], 0
+    for proto, count in kinds:
+        v = classify(proto["type"], proto.get("algorithm"), proto.get("key_size"), proto.get("protocol"),
+                     proto["facts"], FROZEN)
+        for _ in range(count):
+            rows.append({"team_id": 1, "run_id": run["id"], "job_id": job["id"], "source_id": job.get("source_id"),
+                         "attempt": 1, "asset_key": f"{i:064x}", "asset_type": proto["type"],
+                         "cdx_type": v["cdx_type"], "target": f"10.{i // 65536}.{(i // 256) % 256}.{i % 256}",
+                         "location": f"10.{i // 65536}.{(i // 256) % 256}.{i % 256}:443#{i}",
+                         "name": proto.get("name"), "algorithm": proto.get("algorithm"),
+                         "key_size": proto.get("key_size"), "protocol": proto.get("protocol"),
+                         "quantum_vulnerable": v["quantum_vulnerable"], "impact": v["impact"],
+                         "finding_codes": v["finding_codes"], "finding": v["finding"], "facts": proto["facts"],
+                         "created_at": FROZEN})
+            i += 1
+    assert "NO_PQ_KEX" in rows[0]["finding_codes"]
+    with Session(engine) as s:
+        for start in range(0, len(rows), 2_000):
+            s.execute(CbomCollectedAsset.__table__.insert(), rows[start:start + 2_000])
+        s.commit()
+    monkeypatch.setattr(ROUTE.EXPORT_SLOTS, "LOCK_DIR", str(Path(os.environ.get("TMPDIR", "/tmp")) / "w7-slots"))
+    pdf = ROUTE._report(engine, 1, run["id"])
+    assert pdf.startswith(b"%PDF")
+    vex = json.loads(ROUTE._vex_doc(engine, 1, run["id"]))
+    entry = next(v for v in vex["vulnerabilities"] if v["id"] == "ZS-CBOM-NO_PQ_KEX")
+    props = {p["name"]: p["value"] for p in entry["properties"]}
+    assert len(entry["affects"]) == RD.AFFECTS_CAP and props["zs:affected_truncated"] == "true"
+    assert props["zs:affected_total"] == "6000"
+    meta = {p["name"]: p["value"] for p in vex["metadata"]["properties"]}
+    assert "list only the first 5,000 affected assets" in meta["zs:affected_truncated_findings"]

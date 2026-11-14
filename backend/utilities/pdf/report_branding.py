@@ -1808,6 +1808,7 @@ def append_findings_catalog(
     styles: Optional[Dict[str, ParagraphStyle]] = None,
     col_widths: Optional[List[float]] = None,
     panel_title: str = "Findings Catalog",
+    chunk_size: int = 18,
 ) -> None:
     styles = styles or get_report_styles()
     if not catalog_rows:
@@ -1832,7 +1833,7 @@ def append_findings_catalog(
 
     # Chunk so a single catalog panel never exceeds one page height
     # (ReportLab LayoutError when a wrapped table is taller than the frame).
-    chunk_size = 18
+    # (rows per panel: callers with tall rows pass fewer, e.g. the Sources run PDF)
     widths = col_widths or [0.35 * inch, 0.85 * inch, 3.55 * inch, 2.25 * inch]
     for offset in range(0, len(normalized), chunk_size):
         chunk = normalized[offset : offset + chunk_size]

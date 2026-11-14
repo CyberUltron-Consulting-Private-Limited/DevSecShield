@@ -715,7 +715,8 @@ def cyclonedx(session: Session, run: CbomCollectionRun, now: _dt.datetime) -> di
 def write_cyclonedx(session: Session, run: CbomCollectionRun, now: _dt.datetime, fmt: str, out: BinaryIO) -> None:
     """Write the run's CycloneDX document to ``out`` as JSON or XML (``cdx_xml``), one component at a time: the same
     document as ``cyclonedx``, but neither the whole dict, nor an XML tree, nor the encoded bytes is ever held in
-    memory at once (review 5879114669 major 2: a 50,000-component XML export peaked near 2.2 GB)."""
+    memory at once (review 5879114669 major 2: a 50,000-component XML export peaked near 2.2 GB).
+    run_deliverables.write_document repeats this writer (with a stable timestamp); change both together."""
     head, components, vulns = _document(session, run, now)
     if fmt == "xml":
         from backend.utilities.cbom_sources import cdx_xml

@@ -4988,7 +4988,8 @@ export interface CbomRunVex {
     vulnerabilities: CbomRunVexEntry[]
 }
 
-/** HMAC-SHA256 over the exact bytes of GET /runs/{id}/cbom (format=json): the code lane's bom_signature scheme. */
+/** HMAC-SHA256 over the exact bytes of GET /runs/{id}/cbom (format=json), with the code lane's bom_signature key and
+ * fields. The key stays on the server: verify with verifyCbomRunSignature, or compare sha256(file) with ``digest``. */
 export interface CbomRunSignature {
     alg: "HMAC-SHA256"
     key_id: string
@@ -4997,6 +4998,7 @@ export interface CbomRunSignature {
     signed_at: string
     covers: string
     scope: string
+    canonicalization: string
     serialNumber: string
     document_timestamp: string | null
     bytes: number
@@ -5043,9 +5045,49 @@ const downloadCbomRunDeliverable = async (team_id: number, run_id: number, kind:
         link.remove()
         setTimeout(() => URL.revokeObjectURL(url), 1000)
     } catch (error) {
+        await readBlobErrorDetail(error)
         showErrorToast(error, `Error downloading the run ${kind === "report.pdf" ? "PDF report" : kind.replace("-", " ")}`)
         throw error
     }
+}
+
+/** A blob request's error body arrives as a Blob, so the server's ``detail`` ("retry in 30 s") would be lost: read it
+ * back into ``error.response.data`` before the toast. */
+const readBlobErrorDetail = async (error: unknown): Promise<void> => {
+    const response = (error as { response?: { data?: unknown } } | null)?.response
+    const data = response?.data
+    if (!response || typeof Blob === "undefined" || !(data instanceof Blob)) return
+    try {
+        response.data = JSON.parse(await data.text())
+    } catch {
+        // not JSON: keep the generic message
+    }
+}
+
+/** The answer of POST /runs/{id}/signature/verify for a downloaded run CycloneDX JSON. */
+export interface CbomRunSignatureVerification {
+    valid: boolean
+    signature_match: boolean
+    /** the file equals the run's current CBOM JSON (null only when nothing was compared) */
+    digest_match: boolean | null
+    digest: string
+    current_digest: string
+    bytes: number
+    key_id: string
+    alg: "HMAC-SHA256"
+    compared_with: string
+    run_id: number
+    run_status: string
+}
+
+/** Sends a downloaded run CycloneDX JSON, as downloaded, for verification against the signature it came with
+ * (``signatureB64``), else against the run's current CBOM. The HMAC key stays on the server. */
+const verifyCbomRunSignature = async (team_id: number, run_id: number, file: Blob,
+                                      signatureB64?: string): Promise<CbomRunSignatureVerification> => {
+    const response = await api.post(`${cbomRunDeliverablePath(team_id, run_id, "signature")}/verify`, file, {
+        headers: { "Content-Type": "application/octet-stream", ...(signatureB64 ? { "X-ZS-Signature-B64": signatureB64 } : {}) },
+    })
+    return response.data as CbomRunSignatureVerification
 }
 
 const cancelCbomRun = async (team_id: number, run_id: number): Promise<{ run: CbomRun; refunded: number }> => {
@@ -5079,6 +5121,7 @@ export {
     cbomRunDeliverableFilename,
     getCbomRunVex,
     getCbomRunSignature,
+    verifyCbomRunSignature,
     downloadCbomRunDeliverable,
     estimateCbomSources,
     countCbomTargets,

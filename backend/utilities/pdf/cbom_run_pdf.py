@@ -33,11 +33,24 @@ PQC_LABEL = {"quantum-vulnerable": "Quantum-vulnerable", "hybrid": "Hybrid (post
              "not-applicable": "Not applicable (no public-key algorithm)"}
 CERT_ROWS = 40
 HEAT_COLUMNS = 5
+# The findings catalog's panels cannot split across pages (report_branding.panel_wrap): a run's finding sentences
+# (230-380 characters for a certificate, an OpenSSL package or a Windows host) wrap to 5-6 lines, so a cell is cut to
+# a bounded length and a panel holds fewer rows than the code lane's 18. The full text is in the CBOM and the VEX.
+CATALOG_CHUNK = 8
+FINDING_CHARS = 110
+LOCATION_CHARS = 80
+ERROR_CHARS = 160
 
 
 def readiness_text(value: Any) -> str:
     """How the report prints ``pqc_readiness_pct`` (as the code-scan CBOM PDF prints its readiness)."""
     return "n/a" if value is None else f"{float(value):.1f}%"
+
+
+def short(text: Any, limit: int) -> str:
+    """``text`` cut to ``limit`` characters, ending with an ellipsis when cut."""
+    value = " ".join(str(text if text is not None else "").split())
+    return value if len(value) <= limit else value[:limit - 1].rstrip() + "\u2026"
 
 
 def _p(text: Any, styles: dict, style: str = "table_cell") -> Paragraph:
@@ -47,7 +60,7 @@ def _p(text: Any, styles: dict, style: str = "table_cell") -> Paragraph:
 def build_run_pdf(*, run: dict[str, Any], sources: list[dict[str, Any]], posture: dict[str, Any],
                   heatmap: dict[str, Any], head: dict[str, Any], findings: list[dict[str, Any]],
                   vex_states: dict[str, int],
-                  provenance: list[dict[str, Any]], now: _dt.datetime, as_of_note: str | None,
+                  provenance: list[dict[str, Any]], at: _dt.datetime, as_of_note: str | None,
                   findings_cap: int, export_cap: int, cbom_sha256: str) -> bytes:
     styles = get_report_styles()
     buf = io.BytesIO()
@@ -59,7 +72,7 @@ def build_run_pdf(*, run: dict[str, Any], sources: list[dict[str, Any]], posture
     findings_total = sum(impacts.values())
     readiness = readiness_text(posture.get("pqc_readiness_pct"))
     source_names = ", ".join(s["name"] for s in sources) or "—"
-    generated = now.strftime("%b %d, %Y · %H:%M UTC")
+    generated = at.strftime("%b %d, %Y · %H:%M UTC")  # the run's time (run_deliverables.stamp), not the request's
     truncated = meta.get("zs:truncated") == "true"
     mosca = posture.get("mosca") or {}
 
@@ -70,7 +83,7 @@ def build_run_pdf(*, run: dict[str, Any], sources: list[dict[str, Any]], posture
         ("Assets judged", str(posture.get("assets", 0))),
         ("Findings", str(findings_total)),
         ("PQC readiness", readiness),
-        ("Report generated", generated),
+        ("Report as of", generated),
     ]
     extra_tables = [(
         "Post-quantum and risk posture",
@@ -87,7 +100,7 @@ def build_run_pdf(*, run: dict[str, Any], sources: list[dict[str, Any]], posture
         styles=styles, extra_tables=extra_tables, project_name=f"Sources run #{run['id']}",
         scan_time=_duration(run), scan_time_hint="Still collecting" if as_of_note else f"Run {run['status']}",
         meta_chips=[("Run", f"#{run['id']} {run['status']}"), ("PQC readiness", readiness),
-                    ("Findings", str(findings_total)), ("Report generated", generated)],
+                    ("Findings", str(findings_total)), ("Report as of", generated)],
     )
     if as_of_note:
         story.append(_p(as_of_note, styles, "body"))
@@ -178,12 +191,18 @@ def build_run_pdf(*, run: dict[str, Any], sources: list[dict[str, Any]], posture
     story.append(PageBreak())
 
     # findings
-    catalog = [[str(i), count_label(f["impact"]), _p(f"{f['finding'] or f['name']} ({f['type']})", styles),
-                _p(f["location"], styles, "mono_cell")] for i, f in enumerate(findings[:findings_cap], 1)]
+    catalog = [[str(i), count_label(f["impact"]),
+                _p(f"{short(f['finding'] or f['name'], FINDING_CHARS)} ({f['type']})", styles),
+                _p(short(f["location"], LOCATION_CHARS), styles, "mono_cell")]
+               for i, f in enumerate(findings[:findings_cap], 1)]
     if len(findings) > findings_cap:
         story.append(_p(f"Findings cap: this report lists the first {findings_cap:,} of {len(findings):,} findings "
                         "(worst first); the CycloneDX JSON and the VEX list them all.", styles, "body"))
-    append_findings_catalog(story, catalog_rows=catalog, styles=styles, panel_title="Findings")
+    if catalog:
+        story.append(_p(f"Finding text is cut to {FINDING_CHARS} characters and locations to {LOCATION_CHARS}; the "
+                        "CycloneDX JSON holds the full sentences.", styles, "muted"))
+    append_findings_catalog(story, catalog_rows=catalog, styles=styles, panel_title="Findings",
+                            chunk_size=CATALOG_CHUNK)
 
     # provenance
     story.append(PageBreak())
@@ -192,9 +211,10 @@ def build_run_pdf(*, run: dict[str, Any], sources: list[dict[str, Any]], posture
         story.append(styled_data_table(
             ["Source", "Scan node", "Job", "Outcome", "Assets", "Duration"],
             [[_p(p["source"], styles), _p(p.get("node"), styles), f"{p['kind']} · {p['status']}",
-              str(p.get("outcome") or "—"), str(p.get("assets") or 0),
+              _p(str(p.get("outcome") or "—") + (f": {short(p['error'], ERROR_CHARS)}" if p.get("error") else ""),
+                 styles), str(p.get("assets") or 0),
               f"{p['duration_s']} s" if p.get("duration_s") is not None else "—"] for p in provenance],
-            styles=styles, col_widths=[1.7 * inch, 1.4 * inch, 1.3 * inch, 0.9 * inch, 0.8 * inch, 1.0 * inch]))
+            styles=styles, col_widths=[1.4 * inch, 1.2 * inch, 1.2 * inch, 1.8 * inch, 0.7 * inch, 0.8 * inch]))
     else:
         story.append(_p("No job ran.", styles, "muted"))
     story.append(_p("Every number on the posture panel comes from the run posture API (the same values the results "

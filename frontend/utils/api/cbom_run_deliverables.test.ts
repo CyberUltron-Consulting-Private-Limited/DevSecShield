@@ -18,8 +18,20 @@ const BODIES: Record<string, string> = {
 
 async function main() {
   const seen: string[] = [];
+  const posted: { url: string; sig: string | undefined; body: string }[] = [];
   const server = http.createServer((req, res) => {
     seen.push(req.url ?? "");
+    if (req.method === "POST") {
+      const parts: Buffer[] = [];
+      req.on("data", (c: Buffer) => parts.push(c));
+      req.on("end", () => {
+        posted.push({ url: req.url ?? "", sig: req.headers["x-zs-signature-b64"] as string | undefined,
+                      body: Buffer.concat(parts).toString("utf8") });
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end('{"valid":true,"signature_match":true,"digest_match":true}');
+      });
+      return;
+    }
     const kind = (req.url ?? "").split("/").pop() ?? "";
     if (!(kind in BODIES)) {
       res.writeHead(404, { "content-type": "application/json" });
@@ -72,8 +84,8 @@ async function main() {
     createTextNode: (text: string) => ({ text }),
   };
 
-  const { downloadCbomRunDeliverable, cbomRunDeliverablePath, cbomRunDeliverableFilename, getCbomRunSignature } =
-    await import("../backend_api");
+  const { downloadCbomRunDeliverable, cbomRunDeliverablePath, cbomRunDeliverableFilename, getCbomRunSignature,
+          verifyCbomRunSignature } = await import("../backend_api");
   try {
     assert.equal(cbomRunDeliverablePath(7, 12, "vex"), "/7/cbom/sources/runs/12/vex");
     const expected = {
@@ -93,6 +105,14 @@ async function main() {
     }
     const sig = await getCbomRunSignature(7, 12);
     assert.equal(sig.alg, "HMAC-SHA256");
+
+    // verification sends the downloaded file as is, with the signature it came with
+    const file = '{"bomFormat":"CycloneDX","components":[]}';
+    const verdict = await verifyCbomRunSignature(7, 12, new Blob([file]), "c2lnbmF0dXJl");
+    assert.equal(verdict.valid, true);
+    assert.equal(posted[0].url, "/7/cbom/sources/runs/12/signature/verify");
+    assert.equal(posted[0].sig, "c2lnbmF0dXJl");
+    assert.equal(posted[0].body, file, "the file is sent byte for byte");
 
     // the menu offers the code page's four buttons, in its order, through this client
     const menu = readFileSync(path.join(process.cwd(), "components", "cbom", "results", "RunDeliverablesMenu.tsx"), "utf8");
