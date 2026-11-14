@@ -8,6 +8,7 @@ Inputs:
   sources/cwe_names.json     MITRE CWE names (cwe-api.mitre.org)
   sources/fix_class.json     crypto-agility fix class per code (CB-24): hand table, a basis and sources per row
   sources/vex_default.json   VEX default per code and inherent flag per mapped CVE (CB-22): reviewed hand table
+  sources/compliance_clauses.json  regulatory clauses each code breaks (#269): reviewed hand table, a basis per row
   sources/compliance.json    OWASP 2021/2025 categories with mapped CWEs, NIST, CNSA 2.0, CERT-In, SEBI, RBI quotes
 
 The output is deterministic (sorted keys, no timestamps besides the version you pass) so the file can be diffed and
@@ -252,6 +253,8 @@ def build(version: str) -> dict:
         fail("research/compliance.json is required (OWASP mapped CWEs and regulatory references)")
     owasp_tables = kb_compliance.owasp_tables(research)
     compliance = kb_compliance.refs(research)
+    clause_catalog = compliance.pop("_clauses")
+    attach_clauses({"node": node, "code": code_ns}, load_compliance_clauses(), clause_catalog)
     for section in (node, code_ns):
         for code, e in section.items():
             e["owasp_2021"] = _owasp(e, owasp_tables["2021"], kb_compliance.TAG_2021)
@@ -279,8 +282,46 @@ def build(version: str) -> dict:
         "findings": {"node": node, "code": code_ns},
         "libraries": library_rules(),
         "compliance": compliance,
+        "clauses": clause_catalog,
         "pqc_context": kb_compliance.pqc_context(research),
     }
+
+
+def load_compliance_clauses() -> dict:
+    """The reviewed per-code clause table (#269): sources/compliance_clauses.json, one row per code."""
+    return json.load(open(os.path.join(SRC, "compliance_clauses.json"), encoding="utf-8"))
+
+
+def attach_clauses(findings: dict, table: dict, catalog: dict) -> None:
+    """Copy each code's reviewed clauses into its entry as ``clauses`` (always cited) and ``clause_rules`` (cited when
+    the asset's evidence matches). Fails on a code without a row, a row for a code the KB lacks, an unknown clause
+    key, a row without a basis, or a rule whose pattern is invalid or does not match its own example."""
+    for ns, section in findings.items():
+        rows = table.get(ns) or {}
+        missing, extra = sorted(set(section) - set(rows)), sorted(set(rows) - set(section))
+        if missing:
+            fail(f"compliance_clauses.json has no row for {ns}:{', '.join(missing)}")
+        if extra:
+            fail(f"compliance_clauses.json has a row for {ns}:{', '.join(extra)}, which the KB does not have")
+        for code, entry in section.items():
+            row = rows[code]
+            if not str(row.get("basis") or "").strip():
+                fail(f"compliance_clauses {ns}:{code}: needs a basis")
+            rules = []
+            for rule in row.get("rules") or []:
+                try:
+                    pattern = re.compile(rule["match"], re.IGNORECASE)
+                except (re.error, KeyError, TypeError) as exc:
+                    fail(f"compliance_clauses {ns}:{code}: bad rule pattern ({exc})")
+                if not rule.get("clauses") or not pattern.search(str(rule.get("example") or "")):
+                    fail(f"compliance_clauses {ns}:{code}: rule {rule['match']!r} needs clauses and an example "
+                         "it matches")
+                rules.append({"match": rule["match"], "clauses": list(rule["clauses"])})
+            for key in list(row.get("clauses") or []) + [k for r in rules for k in r["clauses"]]:
+                if key not in catalog:
+                    fail(f"compliance_clauses {ns}:{code}: unknown clause key {key}")
+            entry["clauses"] = list(row.get("clauses") or [])
+            entry["clause_rules"] = rules
 
 
 FIX_CLASSES = ("configurable", "code-fixed", "vendor-fixed", "hardware-fixed")

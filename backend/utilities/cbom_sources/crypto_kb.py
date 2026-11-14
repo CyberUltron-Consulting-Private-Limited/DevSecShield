@@ -139,6 +139,24 @@ def entry(namespace: str, code: str) -> dict[str, Any] | None:
     return (load().get("findings") or {}).get(namespace, {}).get(code)
 
 
+def clauses_for(namespace: str, code: str, evidence: str = "") -> list[dict[str, Any]]:
+    """The regulatory clauses one finding breaks (or whose obligation it triggers), as {framework, id, text, source,
+    note?}: the entry's own ``clauses``, plus those of every ``clause_rules`` pattern the asset's evidence (algorithm,
+    name, finding text) matches, e.g. NIST TDEA only when the evidence names Triple DES.
+
+    Never a whole compliance area: an area groups clauses for the NIST SP 800-53 control families, and a finding does
+    not inherit the other clauses of its area (#269: an SSH CBC cipher is not "PKCS#1 v1.5 padding disallowed")."""
+    e = entry(namespace, code)
+    if not e:
+        return []
+    catalog = load().get("clauses") or {}
+    keys = list(e.get("clauses") or [])
+    for rule in e.get("clause_rules") or []:
+        if evidence and re.search(rule["match"], evidence, re.IGNORECASE):
+            keys += rule["clauses"]
+    return [catalog[k] for k in dict.fromkeys(keys) if k in catalog]
+
+
 # ------------------------------------------------------------------------------------------------ CVEs and mapping
 def cve(cve_id: str) -> dict[str, Any] | None:
     return (load().get("cves") or {}).get(cve_id)
@@ -251,7 +269,6 @@ def render(namespace: str, codes: list[str], *, context: dict[str, Any] | None =
     """
     context = context or {}
     kb = load()
-    compliance = kb.get("compliance") or {}
     cwe_names = kb.get("cwe") or {}
     out = []
     for code in codes:
@@ -273,7 +290,8 @@ def render(namespace: str, codes: list[str], *, context: dict[str, Any] | None =
             "owasp_2025": e.get("owasp_2025") or [],
             "cves": cves_for(namespace, code, evidence),
             "standards": e.get("standards") or [],
-            "compliance": [ref for key in e.get("compliance") or [] for ref in compliance.get(key) or []],
+            "compliance": clauses_for(namespace, code, " ".join(p for p in (title, evidence, (texts or {}).get(code))
+                                                                 if p)),
             "remediation": _remediation_for(e, title),
             "verify": [{"label": v["label"], "command": _fill(v["command"], context)} for v in e.get("verify") or []],
             "references": e.get("references") or [],

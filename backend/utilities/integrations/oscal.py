@@ -125,19 +125,24 @@ def controls_for(namespace: str, code: str) -> list[str]:
     return [c for c in dict.fromkeys(out or ["sc-13"]) if c in known]
 
 
-def _references(namespace: str, code: str) -> list[dict[str, str]]:
-    from backend.utilities.cbom_sources.crypto_kb import entry, load
+def _references(namespace: str, code: str, evidence: Iterable[str] = ("",)) -> list[dict[str, str]]:
+    """Links to the clauses the code breaks on the assets that carry it (one evidence text per asset; #269)."""
+    from backend.utilities.cbom_sources.crypto_kb import clauses_for
 
-    e = entry(namespace, code) or {}
-    table = load().get("compliance") or {}
     links, seen = [], set()
-    for area in e.get("compliance") or []:
-        for ref in table.get(area) or []:
+    for text_of_asset in evidence:
+        for ref in clauses_for(namespace, code, text_of_asset):
             href, text = str(ref.get("source") or ""), f"{ref.get('framework')}: {ref.get('id')}"
             if href.startswith(("http://", "https://")) and (href, text) not in seen:
                 seen.add((href, text))
                 links.append({"href": href, "rel": "reference", "text": text[:300]})
     return links
+
+
+def _evidence(view: Any) -> str:
+    """What the asset says about its algorithm: name, label and the stored finding text of its rows."""
+    parts = [view.algorithm, view.label, *(getattr(r, "finding", None) for r in view.rows or ())]
+    return " ".join(str(p) for p in parts if p)
 
 
 def _text(value: Any, fallback: str) -> str:
@@ -161,6 +166,7 @@ def assessment_results(*, team_id: int, anchor: str, title: str, namespace: str,
     collected = _ts(end or start)
     items, observations = [], []
     by_code: dict[str, list[tuple[str, str | None]]] = {}
+    evidence_by_code: dict[str, list[str]] = {}
     for source_name, view in findings_views:
         item_uuid, obs_uuid = _uuid(team_id, "item", view.key), _uuid(team_id, anchor, "obs", view.key)
         extra = view.extra or {}
@@ -180,6 +186,7 @@ def assessment_results(*, team_id: int, anchor: str, title: str, namespace: str,
         })
         for code in codes:
             by_code.setdefault(code, []).append((obs_uuid, view.impact))
+            evidence_by_code.setdefault(code, []).append(_evidence(view))
     findings, reviewed = [], set()
     known = catalog()
     for code in sorted(by_code):
@@ -197,7 +204,7 @@ def assessment_results(*, team_id: int, anchor: str, title: str, namespace: str,
                            "status": {"state": "not-satisfied"}},
                 "related-observations": [{"observation-uuid": o} for o, _i in by_code[code]],
             }
-            links = _references(namespace, code)
+            links = _references(namespace, code, evidence_by_code[code])
             if links:
                 finding["links"] = links
             findings.append(finding)

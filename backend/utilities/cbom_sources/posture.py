@@ -461,8 +461,6 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
     risky: list[dict[str, Any]] = []
     clause_assets: dict[tuple[str, str], set[int]] = defaultdict(set)
     clause_meta: dict[tuple[str, str], dict[str, Any]] = {}
-    kb = crypto_kb.load()
-    compliance = kb.get("compliance") or {}
     for row in rows:
         aid, a_type, qv, facts, source_id = row.id, row.asset_type, row.quantum_vulnerable, row.facts, row.source_id
         location, name, job_id, target = row.location, row.name, row.job_id, row.target
@@ -496,13 +494,14 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
                           "score": round(IMPACT_WEIGHT.get(impact, 0) * CRITICALITY.get(crit, 1.0)
                                          * EXPOSURE_FACTOR[exposure], 1),
                           "hndl": hndl(a_type, qv), "finding": finding})
+        # each code's own clauses, algorithm-specific ones only when this asset's evidence names the algorithm (#269)
+        evidence = " ".join(str(p) for p in (row.algorithm, name, finding) if p)
         for code in a_codes:
-            for key in (crypto_kb.entry("node", code) or {}).get("compliance") or []:
-                for ref in compliance.get(key) or []:
-                    clause = (ref["framework"], ref["id"])
-                    clause_assets[clause].add(aid)
-                    meta = clause_meta.setdefault(clause, {**ref, "codes": set()})
-                    meta["codes"].add(code)
+            for ref in crypto_kb.clauses_for("node", code, evidence):
+                clause = (ref["framework"], ref["id"])
+                clause_assets[clause].add(aid)
+                meta = clause_meta.setdefault(clause, {**ref, "codes": set()})
+                meta["codes"].add(code)
     readiness_value, readiness_basis = readiness(classes)
     frameworks: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for clause, assets in sorted(clause_assets.items(), key=lambda kv: (kv[0][0], -len(kv[1]))):
