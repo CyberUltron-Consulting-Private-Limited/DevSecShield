@@ -5,14 +5,14 @@ import { useRef, useState, type ReactNode } from "react";
 
 import { Label } from "@/components/ui/label";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { INFO_TIPS, type InfoTipId } from "@/content/infotips";
+import { INFO_TIPS, type InfoTipEntry, type InfoTipId } from "@/content/infotips";
 import { cn } from "@/lib/utils";
 
 import { openAfterClick, pressPointer, type PressPointer } from "./info-tip-logic";
 
 /**
  * A small (i) button that explains the field, metric or setting next to it: what it is and an example.
- * Text comes from the registry (content/infotips.ts) by a stable id; the id is typed, so an unknown id fails tsc.
+ * Text comes from the registry (content/infotips.ts) by a stable id: what it is, optionally why it matters, an example; the id is typed, so an unknown id fails tsc.
  *
  * Hover (mouse), keyboard focus and tap (touch) open it; Esc, blur, a tap outside and a second tap close it. The
  * button is named "About <label>" and, while open, described by the tip's text (Radix aria-describedby). See
@@ -64,10 +64,16 @@ export function InfoTip({ id, side = "top", className }: { id: InfoTipId; side?:
 
 /** Text only: tooltip content cannot take focus (WAI-ARIA tooltip pattern), so it never holds a link or a button. */
 function InfoTipBody({ id }: { id: InfoTipId }) {
-  const tip = INFO_TIPS[id];
+  const tip: InfoTipEntry = INFO_TIPS[id];
   return (
     <span className="block space-y-1.5">
       <span className="block">{tip.what}</span>
+      {tip.why && (
+        <span className="block">
+          <span className="font-semibold">Why it matters: </span>
+          {tip.why}
+        </span>
+      )}
       <span className="block opacity-80">
         <span className="font-semibold">Example: </span>
         {tip.example}

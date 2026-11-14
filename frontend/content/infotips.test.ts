@@ -1,6 +1,7 @@
 /**
  * F2 (i) info tips: the registry and its coverage.
- *  1. Registry integrity: every entry has a label, a "what it is" and an example of sensible length, and a
+ *  1. Registry integrity: every entry has a label, a "what it is", an optional "why it matters" and an example of
+ *     sensible length, and a
  *     `// src: <file>:<line>` note above it naming the backend (or frontend) code the text was checked against;
  *     each named file exists and has that line.
  *  2. Every id used in the app exists, and every entry is used (no orphan text).
@@ -86,13 +87,14 @@ assert.ok(ids.length > 0, "the registry is empty");
 const problems: string[] = [];
 for (const id of ids) {
   const tip = INFO_TIPS[id as keyof typeof INFO_TIPS] as Record<string, string | undefined>;
-  const extra = Object.keys(tip).filter((k) => !["label", "what", "example"].includes(k));
+  const extra = Object.keys(tip).filter((k) => !["label", "what", "why", "example"].includes(k));
   if (extra.length) problems.push(`${id}: unknown field(s) ${extra.join(", ")} (tooltip content is text only)`);
   if (!/^[a-z0-9]+(\.[a-z0-9_]+)+$/.test(id)) problems.push(`${id}: id must be dotted lower-case (surface.area.item)`);
   if (!tip.label || tip.label.length > 60) problems.push(`${id}: label must be 1-60 characters`);
   if (!tip.what || tip.what.length < 20 || tip.what.length > 420) problems.push(`${id}: "what" must be 20-420 characters (${tip.what?.length})`);
   if (!tip.example || tip.example.length < 5 || tip.example.length > 300) problems.push(`${id}: example must be 5-300 characters (${tip.example?.length})`);
-  for (const [k, v] of Object.entries({ what: tip.what, example: tip.example })) {
+  if (tip.why !== undefined && (tip.why.length < 20 || tip.why.length > 300)) problems.push(`${id}: "why" must be 20-300 characters (${tip.why.length})`);
+  for (const [k, v] of Object.entries({ what: tip.what, example: tip.example, ...(tip.why !== undefined ? { why: tip.why } : {}) })) {
     if (!/[.!?)]$/.test(v ?? "")) problems.push(`${id}: ${k} must end with a full stop`);
     if (/\b(TODO|TBD|FIXME|lorem)\b/i.test(v ?? "")) problems.push(`${id}: ${k} has a placeholder`);
   }

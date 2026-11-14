@@ -8,8 +8,9 @@
  *    (`<repo-relative path>:<line>` or `:<from>-<to>`), so a reviewer can verify it. Behaviour that could not be
  *    verified in the code is left out of the text, never guessed.
  *  - An id shared by several products is used only where they run the same code.
- *  - Where a product bug is being fixed in parallel, the text describes the fixed behaviour and the `// src:` note
- *    names the issue ("fixed by #47"); such an entry is true once that fix is merged, which PR #38 waits for.
+ *  - The text describes what the product does today. Where an open issue will change that behaviour, the `// src:`
+ *    note names the issue (e.g. "#47"), so the fix updates the tip in the same PR.
+ *  - Optional "why": why it matters (risk, consequence); shown between the text and the example.
  *
  * Components: <InfoTip id="…" /> and <FieldLabel infoId="…"> in components/ui/info-tip.tsx.
  */
@@ -18,6 +19,8 @@ export interface InfoTipEntry {
   label: string;
   /** What it is, in plain words, with the real limits, units and behaviour. */
   what: string;
+  /** Optional: why it matters (the risk or consequence), one or two sentences. */
+  why?: string;
   /** One concrete example. */
   example: string;
 }
@@ -48,17 +51,17 @@ export const INFO_TIPS = {
     what: "Not started: created, never run. Pending: queued for a scan worker. Started: running (the bar shows progress). Retry: the worker is retrying it. Success: finished, findings stored. Failure: stopped with an error; its credits were refunded. Cancelled: stopped by a user; its credits were refunded.",
     example: "A scan stuck in Pending is waiting for a free worker; it moves to Started when one picks it up.",
   },
-  // src: backend/new_models.py:131, frontend/utils/datetime.ts:6-7 — stored in UTC, shown in IST; the browser reads the API's offset-less UTC time as local time until #48 is fixed (T3b)
+  // src: backend/new_models.py:131, frontend/utils/datetime.ts:6-7 — stored in UTC; the text names no time zone because an IST browser reads the API's offset-less UTC time as local time until #48 is fixed
   "scan.table.created": {
     label: "Created at",
-    what: "When the scan was created. Times are shown in India Standard Time (IST).",
-    example: "9 Aug 2026, 07:30 pm IST.",
+    what: "When the scan was created: the date and time it was added to this list, before it was started.",
+    example: "9 Aug 2026, 07:30 pm.",
   },
-  // src: backend/utilities/celery/celery_connection.py:182, backend/utilities/celery/celery_connection.py:200-215, frontend/utils/datetime.ts:6-7 — set on a status or progress change; status polls without a change and chat messages stop moving it with #47 (T3a); IST with #48 (T3b)
+  // src: backend/utilities/celery/celery_connection.py:182, backend/utilities/celery/celery_connection.py:200-215, frontend/utils/datetime.ts:6-7 — today's behaviour: set on every status poll of a pending or started scan (also without a change) and on every chat message; #47 narrows it to real changes
   "scan.table.updated": {
     label: "Last updated",
-    what: "The last time this scan's status or progress changed: it was queued, started, progressed, finished, failed or was cancelled. Opening the scan list or chatting with the results does not change it. Shown in India Standard Time (IST).",
-    example: "A scan that finished yesterday still shows yesterday after you chat with its results today.",
+    what: "The last time the platform touched this scan: a status or progress change, a status check while it is queued or running (the list checks those each time it loads), or a chat message about its results.",
+    example: "A scan queued since yesterday shows today's time once anyone opens the list today.",
   },
   // src: backend/routers/scans.py:461-472, backend/new_models.py:122, backend/utilities/db/scan_list_item.py:67, backend/utilities/celery/celery_connection.py:186-192, backend/utilities/scan/cancel_scan.py:1-8 — credit_consumed is the estimate (set by /estimate before any charge; credit_charged is separate), charged at start, refunded on failure or cancel
   "scan.table.credits": {
@@ -118,22 +121,22 @@ export const INFO_TIPS = {
   },
 
   // ────────────────────────────────────────────────────────────── SAST: scan configuration (components/sast-options-sidebar.tsx)
-  // src: RabbitMQ/worker/helpers/tools/sast_agent/main.py:51-92, RabbitMQ/worker/helpers/context/codebase_context.py:114-141 — the language's files minus built-in and custom exclusions; matched on whole names inside the repository (not the /tmp clone path) once #45 and #37 are fixed (T3a)
+  // src: RabbitMQ/worker/helpers/tools/sast_agent/main.py:51-92, RabbitMQ/worker/helpers/context/codebase_context.py:114-141 — today's behaviour: built-in exclusions and your patterns go through the same matcher on the file's full path (#37, #45)
   "sast.cfg.scope": {
     label: "Scan scope",
-    what: "Which files are analysed: the files of the chosen language, minus the language's built-in exclusions (folders such as node_modules, dist and build for JavaScript; vendor and tmp for Ruby) and minus the patterns you add here. Exclusions are matched on folder and file names inside your repository.",
-    example: "Add \"tests\" to leave every tests folder out.",
+    what: "Which files are analysed: the files of the chosen language, minus the language's built-in exclusions (such as node_modules, dist and build for JavaScript) and minus the patterns you add below. Exclusions are matched against each file's full path.",
+    example: "Add \"tests\" to leave the tests folders out of a Python scan.",
   },
-  // src: RabbitMQ/worker/helpers/context/codebase_context.py:114-141, RabbitMQ/worker/helpers/tools/sast_agent/main.py:91-92 — whole names, every segment used, path inside the repository: the behaviour #37 and #45 fix (T3a)
+  // src: RabbitMQ/worker/helpers/context/codebase_context.py:114-141, RabbitMQ/worker/helpers/tools/sast_agent/main.py:91-92 — today's behaviour of file_path_matches_pattern: one name matches a path segment starting with it; two names one after the other; a third and later name is dropped; names are regular expressions (#37)
   "sast.cfg.exclude": {
     label: "Exclude path patterns",
-    what: "Each pattern is one or more folder or file names, one per box, matched as whole names on the path inside your repository. One name skips every folder or file with that name, at any depth; several names skip the path where they appear one after another. Skipped files are not analysed and not charged.",
-    example: "\"vendor\" skips every vendor folder but not vendors; \"src\" / \"legacy\" skips src/legacy.",
+    what: "Each pattern is one or two folder or file names, one per box. One name skips every file whose path has a folder or file name starting with it; two names skip paths where they appear one after the other (a third name is ignored). Names are read as regular expressions, so a dot matches any character. Skipped files are not analysed and not charged.",
+    example: "\"vendor\" skips vendor/ and vendors/; \"src\" / \"legacy\" skips src/legacy.",
   },
-  // src: RabbitMQ/worker/helpers/tools/sast_agent/main.py:51-83 — one file extension per language; Ruby files are analysed once #45 (the built-in "tmp" exclusion matched the /tmp clone path) is fixed (T3a)
+  // src: RabbitMQ/worker/helpers/tools/sast_agent/main.py:51-83 — one file extension per language; Ruby's built-in "tmp" exclusion matches the /tmp clone path, so Ruby scans analyse no file until #45 is fixed
   "sast.cfg.language": {
     label: "Primary app language",
-    what: "Only files with this language's extension are analysed: Python .py, JavaScript .js, Java .java, PHP .php, C .c, Ruby .rb, Rust .rs, Swift .swift, C# .cs, Kotlin .kt. Other files in the repository are ignored.",
+    what: "Only files with this language's extension are analysed: Python .py, JavaScript .js, Java .java, PHP .php, C .c, Ruby .rb, Rust .rs, Swift .swift, C# .cs, Kotlin .kt. Other files are ignored. Ruby scans currently analyse no files: Ruby's built-in tmp exclusion matches the folder the repository is cloned into.",
     example: "For a Node service choose JavaScript; note that .ts and .jsx files are not analysed.",
   },
   // src: RabbitMQ/worker/helpers/tools/sast_agent/main.py:493-494, backend/utilities/scan/estimate_scan.py:210 — 1 credit per 0.5 MB of analysed files + 0.04/0.836, rounded to 0.01
@@ -180,11 +183,11 @@ export const INFO_TIPS = {
     what: "SAST scans created since 00:00 UTC today, in any status.",
     example: "A scan created at 04:00 IST on 11 Nov is 22:30 UTC on 10 Nov, so it counted for 10 Nov.",
   },
-  // src: backend/utilities/dashboard/scan_list.py:676-677, backend/utilities/celery/celery_connection.py:200-215 — last_updated date equals today's UTC date; polls without a change and chat stop moving last_updated with #47 (T3a)
+  // src: backend/utilities/dashboard/scan_list.py:676-677, backend/utilities/celery/celery_connection.py:200-215 — last_updated date equals today's UTC date; today it also moves on status polls without a change and on chat messages (#47)
   "sast.kpi.updated_today": {
     label: "Updated today",
-    what: "SAST scans whose status or progress changed since 00:00 UTC today (started, progressed, finished, failed or cancelled).",
-    example: "A scan created yesterday that finished at 01:00 UTC today counts here.",
+    what: "SAST scans whose Last updated time is today (since 00:00 UTC). A status change counts, and so do a status check of a queued or running scan and a chat message about its results.",
+    example: "A scan queued since yesterday counts here once anyone opens the scan list today.",
   },
   // src: backend/utilities/dashboard/scan_list.py:781-809 — weights 4/3/2/1 over every finding of successful scans, average /4 *10
   "sast.avg_risk": {
@@ -318,10 +321,10 @@ export const INFO_TIPS = {
     what: "Where the code came from: GitHub, GitLab, Bitbucket or a zip upload.",
     example: "GitLab.",
   },
-  // src: backend/utilities/db/scan_list_item.py:71, frontend/app/[team_id]/sast/page.tsx:1609-1613 — repo_url from the scan's settings; a zip upload shows "Zip file" once #49 returns zip_file_used for SAST rows (T3a)
+  // src: backend/utilities/db/scan_list_item.py:71, frontend/app/[team_id]/sast/page.tsx:1609-1613 — repo_url from the scan's settings; the SAST list item does not return zip_file_used, so a zip upload shows a dash until #49 is fixed
   "sast.table.source": {
     label: "Repository",
-    what: "The repository that was scanned (its last path segment; hover for the full URL), or Zip file for an upload.",
+    what: "The repository that was scanned (its last path segment; hover for the full URL). A scan of an uploaded zip file shows a dash.",
     example: "payments-api for https://github.com/acme/payments-api.",
   },
   // src: backend/utilities/db/scan_list_item.py:39, RabbitMQ/worker/helpers/context/scan_context.py:89 — the branch from the scan's settings (main by default)
@@ -356,10 +359,10 @@ export const INFO_TIPS = {
   },
 
   // ────────────────────────────────────────────────────────────── IaC: scan configuration (components/iac-options-sidebar.tsx)
-  // src: RabbitMQ/worker/helpers/tools/iac_agent/main.py:56-88, RabbitMQ/worker/helpers/context/codebase_context.py:56-82, RabbitMQ/worker/helpers/context/codebase_context.py:114-141, RabbitMQ/worker/helpers/context/codebase_context.py:228-233 — no pattern: every file of the formats; patterns and extensions of all formats are merged (Terraform adds .tf patterns): bug reported to the coordinator, issue not yet filed; whole-name matching inside the repository: #37 (T3a)
+  // src: RabbitMQ/worker/helpers/tools/iac_agent/main.py:56-88, RabbitMQ/worker/helpers/context/codebase_context.py:56-82, RabbitMQ/worker/helpers/context/codebase_context.py:114-141, RabbitMQ/worker/helpers/context/codebase_context.py:228-233 — no pattern: every file of the formats; patterns and extensions of all formats are merged; one name matches a path segment starting with it, a third and later name is dropped (#37)
   "iac.cfg.include": {
     label: "Include path patterns",
-    what: "Only files of this format whose path inside your repository matches one of these patterns are analysed. Each pattern is one or more whole folder or file names, one per box, that appear one after another. No pattern means every file of the format, but the patterns of all formats in the scan are combined: next to Terraform, give each other format a pattern.",
+    what: "Only files of this format whose full path matches a pattern are analysed. A pattern is one or two folder or file names, one per box; one name matches any folder or file name starting with it. No pattern means every file of the format, but the patterns of all formats in the scan are combined: next to Terraform, give each other format a pattern.",
     example: "\"charts\" includes every charts folder; \"deploy\" / \"k8s\" includes deploy/k8s.",
   },
 
@@ -384,11 +387,11 @@ export const INFO_TIPS = {
   },
 
   // ────────────────────────────────────────────────────────────── SCA + SBOM: list page (app/[team_id]/sbom_sca/page.tsx)
-  // src: backend/utilities/dashboard/scan_list.py:958-960, backend/utilities/dashboard/scan_list.py:1079, RabbitMQ/worker/helpers/tools/sca_sbom_agent/merge_inventory.py:109-122 — vulnerabilities of successful scans; inventory-only rows (packages with no known vulnerability) leave the counts with #46 (T3a)
+  // src: backend/utilities/dashboard/scan_list.py:958-960, backend/utilities/dashboard/scan_list.py:1079, RabbitMQ/worker/helpers/tools/sca_sbom_agent/merge_inventory.py:109-122 — len of all result rows of successful scans; each package with no known vulnerability is stored as a Low row (inventory_only) until #46 is fixed
   "sbom.kpi.total": {
     label: "Total Vulnerabilities",
-    what: "Known vulnerabilities in your dependencies found by all successful SCA + SBOM scans of this team, added up. Packages with no known vulnerability are listed in each scan's SBOM but not counted here.",
-    example: "Two scans with 10 and 4 vulnerabilities: 14, however many packages they listed.",
+    what: "All result rows of this team's successful SCA + SBOM scans, added up: each known vulnerability, plus each package found with no known vulnerability (stored as a Low row).",
+    example: "1 vulnerable package and 3 packages with no known vulnerability: 4.",
   },
   // src: backend/utilities/dashboard/scan_list.py:989-998, backend/utilities/dashboard/scan_list.py:1080 — impact critical
   "sbom.kpi.critical": {
@@ -402,11 +405,11 @@ export const INFO_TIPS = {
     what: "How many compliance-control references (PCI DSS, ISO 27001 and others) the findings map to, added up over all findings.",
     example: "One finding mapped to 2 controls and one to 3: 5.",
   },
-  // src: backend/utilities/dashboard/scan_list.py:975-976, backend/utilities/dashboard/scan_list.py:1074-1082 — medium + high risk license categories, over findings only once #46 drops inventory-only rows (T3a)
+  // src: backend/utilities/dashboard/scan_list.py:975-976, backend/utilities/dashboard/scan_list.py:1074-1082 — medium + high risk license categories over all result rows, packages with no known vulnerability included (#46)
   "sbom.kpi.license_risks": {
     label: "License Risks",
-    what: "Findings whose package has a medium-risk license (weak copyleft such as LGPL or MPL, Creative Commons, commercial) or a high-risk one (strong copyleft such as GPL, network copyleft such as AGPL, source-available such as SSPL or BUSL).",
-    example: "A vulnerable package under LGPL-3.0 counts here.",
+    what: "Result rows of successful scans, vulnerable packages or not, whose license is medium-risk (weak copyleft such as LGPL or MPL, Creative Commons, commercial) or high-risk (strong copyleft such as GPL, network copyleft such as AGPL, source-available such as SSPL or BUSL).",
+    example: "A package under LGPL-3.0 counts here even with no known vulnerability.",
   },
   // src: backend/utilities/dashboard/scan_list.py:975, backend/utilities/dashboard/scan_list.py:1074, backend/utilities/dashboard/sbom_license.py:233-258 — strong copyleft, network copyleft, source-available
   "sbom.kpi.high_risk_licenses": {
@@ -414,11 +417,11 @@ export const INFO_TIPS = {
     what: "Findings whose package is under a strong copyleft (GPL), network copyleft (AGPL) or source-available (SSPL, BUSL) license.",
     example: "A package licensed AGPL-3.0.",
   },
-  // src: backend/utilities/dashboard/scan_list.py:1019-1021, backend/utilities/dashboard/scan_list.py:1077 — each finding scores weight/4*10, averaged, Python round(x, 1); over vulnerabilities only once #46 drops inventory-only rows (T3a)
+  // src: backend/utilities/dashboard/scan_list.py:1019-1021, backend/utilities/dashboard/scan_list.py:1077 — each row scores weight/4*10, averaged, Python round(x, 1); packages with no known vulnerability are Low rows (#46)
   "sbom.kpi.avg_risk": {
     label: "Avg Risk Score",
-    what: "Average over all vulnerabilities found by successful scans, 0 to 10: Critical counts 10, High 7.5, Medium 5, Low 2.5. Rounded to one decimal.",
-    example: "1 High and 1 Low: (7.5 + 2.5) / 2 = 5.0.",
+    what: "Average over all result rows of successful scans, 0 to 10: Critical counts 10, High 7.5, Medium 5, Low 2.5. Packages with no known vulnerability are Low rows, so many of them pull the average towards 2.5. Rounded to one decimal.",
+    example: "1 Critical and 3 packages with no known vulnerability: (10 + 3 × 2.5) / 4 = 4.4.",
   },
   // src: backend/utilities/dashboard/scan_list.py:999-1002, backend/utilities/dashboard/sbom_license.py:382-392, RabbitMQ/worker/helpers/context/schema.py:34, RabbitMQ/worker/helpers/tools/sca_sbom_agent/main.py:137-158, RabbitMQ/worker/helpers/tools/sca_sbom_agent/parser.py:128-155 — reachability is a label the AI model sets from the Grype match text (id, severity, description, package, fix, locations); no source file is in its context
   "sbom.kpi.reachable": {
@@ -432,22 +435,22 @@ export const INFO_TIPS = {
     what: "All stored findings of SCA + SBOM scans by the status your team set: Fixed, In progress, Not started, Ignored.",
     example: "40 findings: 10 Fixed, 5 In progress, 22 Not started, 3 Ignored.",
   },
-  // src: backend/utilities/dashboard/scan_list.py:988-998, backend/utilities/dashboard/scan_list.py:1038-1043 — totals per impact; Low stops counting inventory-only packages with #46 (T3a)
+  // src: backend/utilities/dashboard/scan_list.py:988-998, backend/utilities/dashboard/scan_list.py:1038-1043 — totals per impact over all result rows; Low includes packages with no known vulnerability (#46)
   "sbom.chart.severity": {
     label: "Severity Distribution",
-    what: "Findings of successful scans by severity: Critical, High, Medium and Low.",
-    example: "Critical 2, High 9, Medium 15, Low 4.",
+    what: "Result rows of successful scans by severity: Critical, High, Medium and Low. Low also counts every package found with no known vulnerability.",
+    example: "Critical 2, High 9, Medium 15, Low 310 in a repository with about 300 packages.",
   },
-  // src: backend/utilities/dashboard/scan_list.py:1044-1056, backend/utilities/dashboard/sbom_license.py:382-392, RabbitMQ/worker/helpers/context/schema.py:34 — the AI model's label (no code in its context); missing counts as Not assessed; inventory-only packages (stored Not reachable) leave the chart with #46 (T3a)
+  // src: backend/utilities/dashboard/scan_list.py:1044-1056, backend/utilities/dashboard/sbom_license.py:382-392, RabbitMQ/worker/helpers/context/schema.py:34 — the AI model's label (no code in its context); missing counts as Not assessed; packages with no known vulnerability are stored Not reachable (#46)
   "sbom.chart.reachability": {
     label: "Reachability Distribution",
-    what: "Vulnerabilities by the reachability label the AI model gave each one from the vulnerability and package data (it does not read your code): Reachable, Potentially reachable, Not reachable, or Not assessed (no label).",
+    what: "Result rows by the reachability label the AI model gave each one from the vulnerability and package data (it does not read your code): Reachable, Potentially reachable, Not reachable, or Not assessed. Not reachable also counts packages with no known vulnerability.",
     example: "A CVE in a package found only in a test lock file is often labelled Not reachable.",
   },
-  // src: backend/utilities/dashboard/scan_list.py:986, backend/utilities/dashboard/scan_list.py:1024-1028 — per creation date (UTC) of each successful scan; Low stops counting inventory-only packages with #46 (T3a)
+  // src: backend/utilities/dashboard/scan_list.py:986, backend/utilities/dashboard/scan_list.py:1024-1028 — per creation date (UTC) of each successful scan; Low includes packages with no known vulnerability (#46)
   "sbom.chart.trends": {
     label: "Vulnerability Trends Over Time",
-    what: "Findings of successful scans by severity, on the day (UTC) each scan was created.",
+    what: "Result rows of successful scans by severity, on the day (UTC) each scan was created. Low also counts packages with no known vulnerability.",
     example: "Scans created on 5 Nov found 3 High in total: High shows 3 on 5 Nov.",
   },
   // src: backend/utilities/dashboard/scan_list.py:1003-1004, backend/utilities/dashboard/scan_list.py:1058, backend/utilities/dashboard/sbom_license.py:20-30 — license family of each finding's package
@@ -474,29 +477,29 @@ export const INFO_TIPS = {
     what: "How many compliance-control references the findings have per standard (PCI DSS, ISO 27001, 27002, 27003, 27004), and each standard's share of them.",
     example: "PCI DSS 12 of 20 references: 60%.",
   },
-  // src: backend/utilities/db/scan_list_item.py:152-161 — counts per impact of a successful scan; inventory-only packages (stored as Low) leave the counts with #46 (T3a)
+  // src: backend/utilities/db/scan_list_item.py:152-161 — counts per impact of a successful scan's result rows; packages with no known vulnerability are Low rows (#46)
   "sbom.table.vulns": {
     label: "Vulnerabilities",
-    what: "This scan's vulnerable dependencies by severity: Critical (red), High (orange), Medium (amber), Low (blue). Counted once the scan succeeded.",
-    example: "0 red, 3 orange, 6 amber, 1 blue.",
+    what: "This scan's result rows by severity once it succeeded: Critical (red), High (orange), Medium (amber), Low (blue). Blue also counts every package found with no known vulnerability.",
+    example: "0 red, 3 orange, 6 amber, 280 blue for a repository with about 280 packages.",
   },
-  // src: backend/utilities/db/scan_list_item.py:171-173, frontend/app/[team_id]/sbom_sca/page.tsx:113-116 — weighted average scaled to 0-10 (/4*10, as SAST) with #35 (T3b); no score (None) when there is no vulnerability with #46 (T3a)
+  // src: backend/utilities/db/scan_list_item.py:171-173, frontend/app/[team_id]/sbom_sca/page.tsx:113-116 — today's scale: weights 4/3/2/1 averaged over result rows, 0 without rows (#35, #46)
   "sbom.table.risk": {
     label: "Risk score",
-    what: "This scan's severity-weighted average, 0 to 10: Critical 10, High 7.5, Medium 5, Low 2.5, averaged over its vulnerabilities. Empty when it found none.",
-    example: "1 High and 1 Low: (7.5 + 2.5) / 2 = 5.0.",
+    what: "This scan's severity-weighted average on a 1 to 4 scale: Critical 4, High 3, Medium 2, Low 1, averaged over its result rows (packages with no known vulnerability count as Low). 0 when the scan has no rows or did not succeed.",
+    example: "1 High and 1 Low: (3 + 1) / 2 = 2.",
   },
-  // src: backend/utilities/db/scan_list_item.py:90-112, backend/utilities/db/scan_list_item.py:379-412, frontend/app/[team_id]/iac/page.tsx:123-126, frontend/app/[team_id]/dast/page.tsx:115-118 — weighted average scaled to 0-10 (/4*10, as SAST) with #35 (T3b); starts at 0, so a scan without findings shows 0
+  // src: backend/utilities/db/scan_list_item.py:90-112, backend/utilities/db/scan_list_item.py:379-412, frontend/app/[team_id]/iac/page.tsx:123-126, frontend/app/[team_id]/dast/page.tsx:115-118 — today's scale for IaC and DAST: weights 4/3/2/1 averaged over findings, 0 without findings (#35)
   "scan.table.risk": {
     label: "Risk score",
-    what: "This scan's severity-weighted average, 0 to 10: Critical 10, High 7.5, Medium 5, Low 2.5, averaged over its findings. 0 when it found nothing.",
-    example: "1 High and 1 Low finding: (7.5 + 2.5) / 2 = 5.0.",
+    what: "This scan's severity-weighted average on a 1 to 4 scale: Critical 4, High 3, Medium 2, Low 1, averaged over its findings. 0 when it found nothing or did not succeed.",
+    example: "1 High and 1 Low finding: (3 + 1) / 2 = 2.",
   },
-  // src: frontend/app/[team_id]/sbom_sca/page.tsx:118-125, frontend/app/[team_id]/iac/page.tsx:128-135, frontend/app/[team_id]/dast/page.tsx:120-127, frontend/app/[team_id]/ai_bom/page.tsx:114-121, frontend/app/[team_id]/llm/page.tsx:123-130, frontend/app/[team_id]/cbom/page.tsx:120-127 — tiers on the Risk score column, 0-10 on every page once #35 scales SCA + SBOM, IaC and DAST (T3b); a null score matches no tier
+  // src: frontend/app/[team_id]/sbom_sca/page.tsx:118-125, frontend/app/[team_id]/iac/page.tsx:128-135, frontend/app/[team_id]/dast/page.tsx:120-127, frontend/app/[team_id]/ai_bom/page.tsx:114-121, frontend/app/[team_id]/llm/page.tsx:123-130, frontend/app/[team_id]/cbom/page.tsx:120-127 — tiers on the Risk score column; the column is 1-4 for SCA + SBOM, IaC and DAST today (#35), 0-10 for AI BOM, LLM and CBOM; a null score matches no tier
   "scan.filter.risk": {
     label: "Risk score filter",
-    what: "Shows only scans whose risk score (0 to 10) is in a tier: Critical 9 or more, High 7 to 9, Medium 5 to 7, Low under 5. A scan without a score (shown as —) is hidden by any tier.",
-    example: "High keeps a scan scored 7.5 and hides one scored 9.2.",
+    what: "Shows only scans whose Risk score is in a tier: Critical 9 or more, High 7 to 9, Medium 5 to 7, Low under 5. Where this table's score runs from 1 to 4 (SCA + SBOM, IaC, DAST), every scored scan is in Low. A scan without a score (shown as a dash) is hidden by any tier.",
+    example: "On the LLM list, High keeps a scan scored 7.5 and hides one scored 9.2.",
   },
   // src: frontend/app/[team_id]/sbom_sca/page.tsx:699-712, frontend/app/[team_id]/iac/page.tsx:719-732, frontend/app/[team_id]/dast/page.tsx:637-650, frontend/app/[team_id]/ai_bom/page.tsx:601-614, frontend/app/[team_id]/llm/page.tsx:568-581, frontend/app/[team_id]/cbom/page.tsx:668-681 — sorts the loaded rows; missing values count as -1
   "scan.filter.sort": {
@@ -1182,11 +1185,11 @@ export const INFO_TIPS = {
     what: "A short name for the MCP server, taken from its URL's host.",
     example: "example for https://mcp.example.com.",
   },
-  // src: backend/utilities/db/scan_list_item.py:200-261, frontend/app/[team_id]/mcp/page.tsx:1007-1011 — weighted average scaled to 0-10 (/4*10, as SAST) with #35 (T3b); starts at 0, so a scan without findings shows 0
+  // src: backend/utilities/db/scan_list_item.py:200-261, frontend/app/[team_id]/mcp/page.tsx:1007-1011 — today's scale: weights 4/3/2/1 averaged over findings, 0 without findings (#35)
   "mcp.table.risk": {
     label: "Risk Score",
-    what: "This scan's severity-weighted average, 0 to 10: Critical 10, High 7.5, Medium 5, Low 2.5, averaged over its findings. 0 when it found nothing.",
-    example: "1 High and 1 Low finding: (7.5 + 2.5) / 2 = 5.0.",
+    what: "This scan's severity-weighted average on a 1 to 4 scale: Critical 4, High 3, Medium 2, Low 1, averaged over its findings. 0 when it found nothing or did not succeed.",
+    example: "1 High and 1 Low finding: (3 + 1) / 2 = 2.",
   },
   // src: backend/utilities/db/scan_list_item.py:199-210, backend/utilities/db/scan_list_item.py:279-284 — tools, prompts and resources the server exposed
   "mcp.table.discovery": {
@@ -1270,10 +1273,10 @@ export const INFO_TIPS = {
   },
 
   // ────────────────────────────────────────────────────────────── LLM red teaming: list page (app/[team_id]/llm/page.tsx)
-  // src: backend/utilities/dashboard/scan_list.py:1500-1518 — the same status counters as SAST (UTC day for today); "changed" means a real status or progress change once #47 stops polls and chat moving last_updated (T3a)
+  // src: backend/utilities/dashboard/scan_list.py:1500-1518 — the same status counters as SAST (UTC day for today); last_updated also moves on status polls and chat messages (#47)
   "llm.kpi.status": {
     label: "Scan counts by status",
-    what: "LLM scans of this team per status (Not started, Pending, Started, Success, Failure), and how many were created or changed since 00:00 UTC today.",
+    what: "LLM scans of this team per status (Not started, Pending, Started, Success, Failure), and how many were created or updated since 00:00 UTC today. A status check of a running scan or a chat message also counts as an update.",
     example: "Updated today 2: two scans started or finished today (UTC).",
   },
   // src: backend/utilities/dashboard/scan_list.py:1553-1555, backend/utilities/dashboard/scan_list.py:1638 — successful scans
@@ -1956,11 +1959,11 @@ export const INFO_TIPS = {
   },
 
   // ────────────────────────────────────────────────────────────── SCA + SBOM: results view (components/SbomResults.tsx)
-  // src: backend/utilities/dashboard/scan.py:857-858, RabbitMQ/worker/helpers/tools/sca_sbom_agent/merge_inventory.py:109-122 — len(results) of this scan; inventory-only rows (packages with no known vulnerability) leave the counts with #46 (T3a, per-scan dashboard included)
+  // src: backend/utilities/dashboard/scan.py:857-858, RabbitMQ/worker/helpers/tools/sca_sbom_agent/merge_inventory.py:109-122 — len(results) of this scan; packages with no known vulnerability are Low rows (#46)
   "sbom.res.kpi.total": {
     label: "Total vulnerabilities",
-    what: "Known vulnerabilities this scan found in your dependencies. Packages with no known vulnerability are listed in the bill of materials below but not counted here.",
-    example: "12 vulnerabilities in a repository with 340 packages.",
+    what: "This scan's result rows: each known vulnerability in your dependencies, plus each package found with no known vulnerability (stored as a Low row).",
+    example: "1 vulnerable package and 3 packages with no known vulnerability: 4.",
   },
   // src: backend/utilities/dashboard/scan.py:840-842, backend/utilities/dashboard/scan.py:858 — impact critical
   "sbom.res.kpi.critical": {
@@ -1974,11 +1977,11 @@ export const INFO_TIPS = {
     what: "How many compliance-control references (PCI DSS, ISO 27001 and others) this scan's vulnerabilities map to, added up.",
     example: "One vulnerability mapped to 2 controls and one to 3: 5.",
   },
-  // src: backend/utilities/dashboard/scan.py:860-864, backend/utilities/dashboard/scan.py:95-97 — medium + high risk license categories; vulnerabilities only with #46 (T3a)
+  // src: backend/utilities/dashboard/scan.py:860-864, backend/utilities/dashboard/scan.py:95-97 — medium + high risk license categories over all result rows (#46)
   "sbom.res.kpi.license_risks": {
     label: "License risks",
-    what: "Vulnerabilities whose package has a medium-risk license (weak copyleft such as LGPL or MPL, Creative Commons, commercial) or a high-risk one (strong copyleft such as GPL, network copyleft such as AGPL, source-available such as SSPL or BUSL).",
-    example: "A vulnerable package under LGPL-3.0 counts here.",
+    what: "This scan's result rows, vulnerable packages or not, whose license is medium-risk (weak copyleft such as LGPL or MPL, Creative Commons, commercial) or high-risk (strong copyleft such as GPL, network copyleft such as AGPL, source-available such as SSPL or BUSL).",
+    example: "A package under LGPL-3.0 counts here even with no known vulnerability.",
   },
   // src: backend/utilities/dashboard/scan.py:865-869, backend/utilities/dashboard/scan.py:96 — strong copyleft, network copyleft, source-available
   "sbom.res.kpi.high_risk_licenses": {
@@ -1986,11 +1989,11 @@ export const INFO_TIPS = {
     what: "Vulnerabilities whose package is under a strong copyleft (GPL), network copyleft (AGPL) or source-available (SSPL, BUSL) license.",
     example: "A vulnerable package licensed AGPL-3.0.",
   },
-  // src: backend/utilities/dashboard/scan.py:28-33, backend/utilities/dashboard/scan.py:853-859 — mean of 10/7.5/5/2.5 per result, Python round(x, 1); vulnerabilities only with #46 (T3a)
+  // src: backend/utilities/dashboard/scan.py:28-33, backend/utilities/dashboard/scan.py:853-859 — mean of 10/7.5/5/2.5 per result row, Python round(x, 1); packages with no known vulnerability are Low rows (#46)
   "sbom.res.kpi.avg_risk": {
     label: "Avg risk score",
-    what: "Average over this scan's vulnerabilities, 0 to 10: Critical counts 10, High 7.5, Medium 5, Low 2.5. Rounded to one decimal.",
-    example: "1 High and 1 Low: (7.5 + 2.5) / 2 = 5.0.",
+    what: "Average over this scan's result rows, 0 to 10: Critical counts 10, High 7.5, Medium 5, Low 2.5. Packages with no known vulnerability are Low rows. Rounded to one decimal.",
+    example: "1 Critical and 3 packages with no known vulnerability: (10 + 3 × 2.5) / 4 = 4.4.",
   },
   // src: backend/utilities/dashboard/scan.py:843-846, RabbitMQ/worker/helpers/context/schema.py:34, RabbitMQ/worker/helpers/tools/sca_sbom_agent/main.py:137-158 — the AI model's label; no source file in its context
   "sbom.res.kpi.reachable": {
@@ -1998,22 +2001,22 @@ export const INFO_TIPS = {
     what: "Vulnerabilities the AI model labelled Reachable. It judges from the vulnerability and package data (description, severity, where the package was found); it does not read your code, so treat the label as a hint.",
     example: "A CVE in a web framework's request parser may be labelled Reachable although your code never uses that parser.",
   },
-  // src: backend/utilities/dashboard/scan.py:871-879, backend/utilities/dashboard/finding_metrics.py:18-40, frontend/components/SbomResults.tsx:246-250 — stored findings of the scan by status, share of all; vulnerabilities only with #46 (T3a)
+  // src: backend/utilities/dashboard/scan.py:871-879, backend/utilities/dashboard/finding_metrics.py:18-40, frontend/components/SbomResults.tsx:246-250 — stored result rows of the scan by status, share of all; packages with no known vulnerability included (#46)
   "sbom.res.remediation": {
     label: "Remediation actions",
-    what: "This scan's findings by the status your team set (Fixed, In progress, Not started, Ignored), each as a count and a share of all its findings.",
-    example: "10 findings: 2 Fixed (20%), 1 In progress, 7 Not started.",
+    what: "This scan's result rows by the status your team set (Fixed, In progress, Not started, Ignored), each as a count and a share of all its rows.",
+    example: "10 rows: 2 Fixed (20%), 1 In progress, 7 Not started.",
   },
-  // src: backend/utilities/dashboard/scan.py:837-839, backend/utilities/dashboard/scan.py:953 — count per impact; Low stops counting inventory-only packages with #46 (T3a)
+  // src: backend/utilities/dashboard/scan.py:837-839, backend/utilities/dashboard/scan.py:953 — count per impact; Low includes packages with no known vulnerability (#46)
   "sbom.res.severity": {
     label: "Severity distribution",
-    what: "How many of this scan's vulnerabilities have each impact: Critical, High, Medium and Low.",
+    what: "How many of this scan's result rows have each impact: Critical, High, Medium and Low. Low also counts packages with no known vulnerability.",
     example: "Critical 1, High 3, Medium 6, Low 2.",
   },
-  // src: backend/utilities/dashboard/scan.py:843-844, backend/utilities/dashboard/scan.py:881-896, RabbitMQ/worker/helpers/context/schema.py:34 — the AI model's label; missing counts as Not assessed; inventory-only rows leave it with #46 (T3a)
+  // src: backend/utilities/dashboard/scan.py:843-844, backend/utilities/dashboard/scan.py:881-896, RabbitMQ/worker/helpers/context/schema.py:34 — the AI model's label; missing counts as Not assessed; packages with no known vulnerability are stored Not reachable (#46)
   "sbom.res.reachability": {
     label: "Reachability distribution",
-    what: "This scan's vulnerabilities by the reachability label the AI model gave each one from the vulnerability and package data (it does not read your code): Reachable, Potentially reachable, Not reachable, or Not assessed (no label).",
+    what: "This scan's result rows by the reachability label the AI model gave each one from the vulnerability and package data (it does not read your code): Reachable, Potentially reachable, Not reachable, or Not assessed. Not reachable also counts packages with no known vulnerability.",
     example: "A CVE in a package found only in a test lock file is often labelled Not reachable.",
   },
   // src: backend/utilities/dashboard/scan.py:898-912, backend/utilities/celery/create_findings.py:68-84 — findings by impact on their created_at date (UTC); a scan's findings are all recorded when it finishes
