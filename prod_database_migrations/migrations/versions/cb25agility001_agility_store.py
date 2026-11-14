@@ -2,7 +2,7 @@
 the ``(team_id, system_key, fix_class)`` index, and ``cbomagilitybaseline`` (one baseline per run)
 
 Revision ID: cb25agility001
-Revises: cb20estate001
+Revises: cb38ticket001
 Create Date: 2026-11-14 16:00:00.000000
 
 Nullable columns only (no default, no rewrite, no long lock on PostgreSQL) and one new table. NULL means "not
@@ -17,7 +17,7 @@ import sqlmodel
 
 
 revision: str = 'cb25agility001'
-down_revision: Union[str, Sequence[str], None] = 'cb20estate001'
+down_revision: Union[str, Sequence[str], None] = 'cb38ticket001'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
