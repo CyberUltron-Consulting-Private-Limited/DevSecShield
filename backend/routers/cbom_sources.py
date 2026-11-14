@@ -66,6 +66,7 @@ from backend.utilities.cbom_sources.http import (
 from backend.utilities.cbom_sources import cdx_xml as CDX_XML
 from backend.utilities.cbom_sources import inventory as INV
 from backend.utilities.cbom_sources import posture as POSTURE
+from backend.utilities.cbom_sources import run_results as RUN_RESULTS
 from backend.utilities.cbom_sources import runs as RUNS
 from backend.utilities.cbom_sources import schedules as SCHED
 from backend.utilities.cbom_sources.classify import ASSET_TYPES
@@ -1437,6 +1438,26 @@ def _run_posture(engine, team_id: int, run_id: int) -> dict:
 async def run_posture(team_id: TeamId, run_id: ObjectId, Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
     return _ok(await _run("run posture", team_id, _run_posture, engine, team_id, run_id))
+
+
+def _run_results(engine, team_id: int, run_id: int) -> dict:
+    now = utcnow()
+    with Session(engine) as session:
+        run = _get_owned(session, CbomCollectionRun, run_id, team_id, "Run")
+        J.safe_reap(session, now, team_id=team_id)
+        session.refresh(run)
+        settings = get_or_create_settings(session, team_id)
+        detail = _run_detail(session, run, settings, now)
+        return RUN_RESULTS.run_results(session, run, team_id=team_id, risk_model=settings.risk_model,
+                                       run_detail=detail, now=now)
+
+
+@router.get(BASE + "/runs/{run_id}/results", dependencies=READ,
+            summary="A run in the code-scan results page's shapes: dashboard, crypto charts, compliance, top risks, "
+                    "orphaned and unmanaged certificates, provenance")
+async def run_results(team_id: TeamId, run_id: ObjectId, Authorization: AuthHeader = None):
+    engine, _user = await authorize(team_id, Authorization)
+    return _ok(await _run("run results", team_id, _run_results, engine, team_id, run_id))
 
 
 def _asset_detail(engine, team_id: int, asset_id: int) -> dict:
