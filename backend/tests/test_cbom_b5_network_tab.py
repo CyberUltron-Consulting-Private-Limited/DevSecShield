@@ -49,9 +49,11 @@ def test_reported_case_counts_unique_addresses_of_enabled_ranges(api, world):
     body = api("GET", "/1/cbom/sources/items?group=network").json()
     old_sum = sum(s["target_count"] for s in body["sources"] if s["kind"] == "network_range")
     expected = len(set().union(*(_swept(c) for c in REPORTED[1:])))
-    assert old_sum == 510  # what the tab showed (the per-range counts, disabled /24 and overlaps included)
+    # the per-range counts, disabled /24 and overlaps included (510 when the tab showed it; 518 since N3 counts a /25
+    # and a /30 whole: 254 + 128 + 128 + 4 + 4)
+    assert old_sum == 518
     assert body["network_totals"] == {"addresses": expected, "ranges_enabled": 4, "ranges_disabled": 1}
-    assert 252 <= expected <= 256 < old_sum  # at most the two /25s, never the 510
+    assert expected == 256 < old_sum  # the two /25s whole (N3: .127 and .128 included), never the per-range sum
     # the same number plan_run charges for: Review & Run's network units for these ranges, overlaps once
     est = api("POST", "/1/cbom/sources/estimate", json={"include": {"network": True}}).json()
     queued = [i for i in est["items"] if i["kind"] == "network_range" and i["status"] == "queued"]

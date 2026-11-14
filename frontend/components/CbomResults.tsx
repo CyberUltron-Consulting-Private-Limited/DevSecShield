@@ -79,7 +79,7 @@ import { type CertInRollupData } from "@/components/certin/certinShared";
 import { InfoTip } from "@/components/ui/info-tip";
 import { CompareDialog, RunInsights } from "@/components/cbom/sources/ChangesPanel";
 import { RunPostureCard } from "@/components/cbom/sources/RunPosture";
-import { applyPostureToDistributions, endpointsProbed, NOTE, resolveMigrationRows, RUN_TICKETING_TAB_AVAILABLE, runDurationSeconds, runTitle } from "@/components/cbom/results/model";
+import { applyPostureToDistributions, endpointsProbed, parityNotes, resolveMigrationRows, RUN_TICKETING_TAB_AVAILABLE, runDurationSeconds, runTitle } from "@/components/cbom/results/model";
 import { RunFindingDialog } from "@/components/cbom/results/RunFindingDialog";
 import { RunFindingsTable } from "@/components/cbom/results/RunFindingsTable";
 import {
@@ -186,6 +186,7 @@ export default function CbomResults({
   // A run's scan_metadata is /runs/{id}/parity's (the code scan's own keys: compliance readiness, RBI / CERT-In roll-ups,
   // dependency graph, coverage notes); null on an older backend, which hides those sections as on a legacy scan.
   const scanMetadata = run ? run.parity?.scan_metadata ?? null : scanMetadataProp;
+  const runParityNotes = run ? parityNotes(run.parityState, run.parity) : null;
   const router = useRouter();
   const params = useParams();
   const searchParams = useSearchParams();
@@ -865,10 +866,11 @@ export default function CbomResults({
           )}
           {run && (
             <>
-              {/* one line where the run has no data for a chart (the code-only note goes once the run sends a graph) */}
-              {run.plan.cryptoCharts.note && !(cryptoGraph && run.plan.cryptoCharts.note === NOTE.chartsCodeOnly) && (
-                <SectionNote testId="run-crypto-charts-note">{run.plan.cryptoCharts.note}</SectionNote>
-              )}
+              {/* one line where the run has no data for a chart: distributions from /results, the dependency graph and
+                  compliance readiness from /parity (each note says why) */}
+              {run.plan.cryptoCharts.note && <SectionNote testId="run-crypto-charts-note">{run.plan.cryptoCharts.note}</SectionNote>}
+              {runParityNotes?.graph && <SectionNote testId="run-graph-note">{runParityNotes.graph}</SectionNote>}
+              {runParityNotes?.compliance && <SectionNote testId="run-compliance-readiness-note">{runParityNotes.compliance}</SectionNote>}
               {/* Algorithm family x source (or asset type) and the certificate calendar, from the run API */}
               <RunInsights teamId={run.teamId} runId={run.runId} active={run.active} />
               <RunCertificatesSection view={run.plan.certificates} results={run.results} onOpenAsset={(id) => run.openAsset(id)} />
@@ -890,6 +892,8 @@ export default function CbomResults({
             findings={findingsList ?? []}
             refAliases={relatedRefAliases}
           />
+          {runParityNotes?.rbi && <SectionNote testId="run-rbi-note">{runParityNotes.rbi}</SectionNote>}
+          {runParityNotes?.certin && <SectionNote testId="run-certin-note">{runParityNotes.certin}</SectionNote>}
           <CertInLanePosture
             lane="cbom"
             rollup={meta?.certin_posture as CertInRollupData | undefined}
@@ -1229,7 +1233,7 @@ export default function CbomResults({
       )}
 
       {run && (
-        <RunFindingDialog teamId={run.teamId} subject={run.dialog} jobs={run.run?.jobs ?? []} waveOf={run.waveOf} onClose={() => run.setDialog(null)} />
+        <RunFindingDialog teamId={run.teamId} runId={run.runId} subject={run.dialog} jobs={run.run?.jobs ?? []} waveOf={run.waveOf} onClose={() => run.setDialog(null)} />
       )}
       {run && run.compareOpen && (
         <CompareDialog teamId={run.teamId} runId={run.runId} runs={run.compareRuns} onClose={() => run.setCompareOpen(false)} />

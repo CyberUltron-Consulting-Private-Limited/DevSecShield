@@ -3435,7 +3435,7 @@ export const INFO_TIPS = {
   // src: frontend/components/cbom/sources/NetworkTab.tsx:1153 — a /16 or smaller, one IP, or a-b
   "cbsrc.net.col.range": {
     label: "Range",
-    what: "The addresses: a CIDR range of /16 or smaller, one IP address, or a first-last range.",
+    what: "The addresses: a CIDR range of /16 or smaller, one IP address, or a first-last range. A /24 or larger skips its network and broadcast addresses; a /25 or smaller is scanned whole.",
     why: "Each address in it may be probed on every listed port.",
     example: "10.20.5.0/24.",
   },
@@ -6273,24 +6273,24 @@ export const INFO_TIPS = {
     why: "Proves a file someone sends you is the run's real CBOM, not an edited copy.",
     example: "Verified: this file is the run's signed CycloneDX JSON, unchanged.",
   },
-  // src: frontend/components/cbom/results/RunFindingDialog.tsx:124-134 — owasp_top_10 of the finding, when the run API sends it
+  // src: frontend/components/cbom/results/RunFindingDialog.tsx:138-150, frontend/components/cbom/results/model.ts:587-615 — the item's owasp_top_10, else the knowledge-base entries (findingChips)
   "cbom.run.f.owasp": {
     label: "OWASP Top 10",
-    what: "The OWASP Top 10 categories this finding maps to. Most cryptographic findings fall under A02 Cryptographic Failures.",
+    what: "The OWASP Top 10 categories this finding maps to: the scan's own mapping when it sent one, else the categories of the asset's knowledge-base entries. Most cryptographic findings fall under A02 Cryptographic Failures.",
     why: "Lets application security teams file the finding under the category they track.",
     example: "A02:2021 Cryptographic Failures.",
   },
-  // src: frontend/components/cbom/results/RunFindingDialog.tsx:135-143 — compliance_controls of the finding
+  // src: frontend/components/cbom/results/RunFindingDialog.tsx:151-160, frontend/components/cbom/results/model.ts:587-615 — the item's compliance_controls, else the knowledge-base entries (findingChips)
   "cbom.run.f.compliance": {
     label: "Compliance controls",
-    what: "The compliance controls this finding maps to, such as PCI DSS requirements, ISO 27001 clauses or RBI and CERT-In items.",
+    what: "The compliance controls this finding maps to, such as PCI DSS requirements, ISO 27001 clauses or RBI and CERT-In items: the scan's own mapping, else those of the asset's knowledge-base entries.",
     why: "Shows which audit requirement the fix closes.",
     example: "PCI DSS 4.2.1 (strong cryptography in transit).",
   },
-  // src: frontend/components/cbom/results/RunFindingDialog.tsx:144-146 — suggested_fix of the finding, when it has one
+  // src: frontend/components/cbom/results/RunFindingDialog.tsx:161-166, frontend/components/cbom/results/model.ts:587-615 — the item's suggested_fix, else the knowledge-base remediation summary (findingChips)
   "cbom.run.f.suggested_fix": {
     label: "Suggested fix",
-    what: "The fix suggested for this finding, when the scan gave one.",
+    what: "The fix suggested for this finding: the scan's own suggestion when it gave one, else the remediation summary of the asset's knowledge-base entry (no AI).",
     why: "A starting point for the owner's change.",
     example: "Disable TLS 1.0 and 1.1; allow TLS 1.2 and 1.3 only.",
   },

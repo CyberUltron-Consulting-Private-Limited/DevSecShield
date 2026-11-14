@@ -56,6 +56,7 @@ import {
   runSectionPlan,
   runSources,
   statusRequestBodies,
+  type ParityState,
   type ResultsState,
   type RunDashboardModel,
   type RunSectionId,
@@ -110,6 +111,8 @@ export interface SourcesRunSource {
   results: CbomRunResults | null;
   /** /parity (W2b): the code page's scan_metadata for this run; null on an older backend (404) or while loading */
   parity: CbomRunParity | null;
+  /** loading, missing (404: an older backend), error or ok */
+  parityState: ParityState;
   resultsState: ResultsState;
   posture: CbomPostureWithExposure | null;
   plan: Record<RunSectionId, SectionView>;
@@ -293,6 +296,7 @@ export function useSourcesRunSource(teamId: number, runId: number, { initialView
     nodes: run ? runNodes(run, results?.provenance) : [],
     results,
     parity: parityQ.data ?? null,
+    parityState: parityQ.data ? "ok" : parityQ.isError ? (httpStatus(parityQ.error) === 404 ? "missing" : "error") : "loading",
     resultsState,
     posture,
     plan,
