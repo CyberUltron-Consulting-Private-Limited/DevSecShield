@@ -636,6 +636,67 @@ class CbomRemediationAssignment(SQLModel, table=True):
     last_updated: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
 
 
+# ========================================= estate store (CB-20) =========================================
+class CbomEstateAsset(SQLModel, table=True):
+    """One asset of a team's estate, keyed by its cross-source asset key (CB-21; ``obs:<observation key>`` when the
+    asset has no cross-source identity or correlation is missing). Written once per run inside the drift
+    compare-and-set (``estate.record_run``); never graded here (CB-19/CB-23 read ``latest_asset_id``)."""
+    __tablename__ = "cbomestateasset"
+    __table_args__ = (UniqueConstraint("team_id", "asset_key", name="uq_cbomestateasset_team_key"),
+                      _SaIndex("ix_cbomestateasset_team_type_key", "team_id", "asset_type", "asset_key"),
+                      _SaIndex("ix_cbomestateasset_team_presence_key", "team_id", "presence", "asset_key"),
+                      _SaIndex("ix_cbomestateasset_team_updated", "team_id", "updated_run_id"))
+    id: int | None = Field(default=None, primary_key=True)
+    team_id: int = Field(foreign_key="team.id")
+    asset_key: str = Field(max_length=64)
+    key_kind: str = Field(max_length=16)  # cross | source | not_correlated
+    key_basis: str | None = Field(default=None, max_length=16)  # serial | sha256 | sha1 | dn | cn | endpoint | cloud
+    asset_type: str = Field(max_length=32)
+    label: str | None = Field(default=None, max_length=255)
+    presence: str = Field(default="present", max_length=16)  # present | not_read | removed
+    presence_reason: str | None = Field(default=None, max_length=300)
+    latest_asset_id: int | None = Field(default=None)  # cbomcollectedasset.id: re-read type, qv, codes, facts
+    latest_job_id: int | None = Field(default=None)  # its job: the metadata snapshot (exposure override, segment)
+    latest_run_id: int | None = Field(default=None)
+    latest_source_ref: str | None = Field(default=None, max_length=255)
+    observed_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    first_seen_run_id: int | None = Field(default=None)
+    last_seen_run_id: int | None = Field(default=None)
+    first_seen_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    last_seen_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    updated_run_id: int = Field(default=0)  # the run whose write last changed the row (monotonic guard)
+    updated_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+
+
+class CbomEstateObservation(SQLModel, table=True):
+    """The latest observation of one estate asset by one source (``source_ref`` = the source uid)."""
+    __tablename__ = "cbomestateobservation"
+    __table_args__ = (UniqueConstraint("team_id", "asset_key", "source_ref", name="uq_cbomestateobs_team_key_source"),
+                      _SaIndex("ix_cbomestateobs_team_source_state", "team_id", "source_ref", "state_run_id"))
+    id: int | None = Field(default=None, primary_key=True)
+    team_id: int = Field(foreign_key="team.id")
+    asset_key: str = Field(max_length=64)
+    source_ref: str = Field(max_length=255)
+    source_id: int | None = Field(default=None)
+    source_name: str | None = Field(default=None, max_length=255)
+    observation_key: str = Field(max_length=40)  # identity.stable_key: what drift compares within the source
+    asset_id: int = Field()  # cbomcollectedasset.id of the latest observation
+    job_id: int = Field()
+    run_id: int | None = Field(default=None)
+    attempt: int = Field(default=1)
+    observed_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    asset_type: str = Field(max_length=32)
+    target: str | None = Field(default=None, max_length=255)
+    location: str | None = Field(default=None, max_length=512)
+    provenance: Dict | None = Field(default_factory=dict, sa_column=Column(JSON))
+    presence: str = Field(default="present", max_length=16)  # present | not_read | removed
+    presence_reason: str | None = Field(default=None, max_length=300)
+    first_seen_run_id: int | None = Field(default=None)
+    last_seen_run_id: int | None = Field(default=None)
+    state_run_id: int = Field(default=0)  # the run whose write last changed the row (monotonic guard)
+    updated_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+
+
 # ========================================= integrations (WP11) =========================================
 class TeamIntegration(SQLModel, table=True):
     """One outbound integration of a team: ServiceNow, syslog (SIEM), Splunk HEC, signed webhook or OSCAL push.

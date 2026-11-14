@@ -21,6 +21,8 @@ from backend.new_models import (
     CbomCollectionSettings,
     CbomCollectionSource,
     CbomDriftEvent,
+    CbomEstateAsset,
+    CbomEstateObservation,
     CbomEvidenceArea,
     CbomEvidenceVendor,
     CbomRemediationAssignment,
@@ -35,6 +37,8 @@ _ORDER = (
     IntegrationDelivery,  # integrations (WP11): deliveries before their integration
     TeamIntegration,
     CbomDriftEvent,
+    CbomEstateObservation,  # CB-20 estate store
+    CbomEstateAsset,
     CbomRemediationAssignment,
     CbomCollectionSchedule,
     CbomCollectedAsset,
