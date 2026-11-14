@@ -8,6 +8,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useMemo, useRef, useState, type KeyboardEvent } from "react";
 
 import { dayKey, daysLeft, expiryBand, groupByDay, monthGrid, parseExpiry, type ExpiryBand } from "./heatmapLogic";
+import { InfoTip } from "@/components/ui/info-tip";
 
 export interface CalendarCert {
   name?: string | null;
@@ -96,7 +97,7 @@ export default function CertCalendar({ certs, now, testId = "cert-calendar" }: {
   return (
     <div className="space-y-2 min-w-0" data-testid={testId}>
       <div className="flex items-center justify-between gap-2">
-        <p className="text-sm font-medium text-zinc-900 dark:text-white">Certificate expiry</p>
+        <p className="text-sm font-medium text-zinc-900 dark:text-white">Certificate expiry <InfoTip id="cbom.cal.expiry" /></p>
         <div className="flex items-center gap-1">
           <button type="button" aria-label="Previous month" className="rounded p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer"
                   onClick={() => shift(-1)} data-testid={`${testId}-prev`}><ChevronLeft className="h-4 w-4" /></button>

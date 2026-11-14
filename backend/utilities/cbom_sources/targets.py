@@ -33,10 +33,10 @@ NEVER_SCANNED: list[Interval] = [(4, 0, 0x00FF_FFFF), (6, 0, 0), (6, _NAT64, _NA
 LOOPBACK_NAMES = frozenset({"localhost", "ip6-localhost", "ip6-loopback", "localhost.localdomain", "localhost4",
                             "localhost4.localdomain4", "localhost6", "localhost6.localdomain6"})
 LOOPBACK: list[Interval] = [(4, 0x7F00_0000, 0x7FFF_FFFF), (6, 1, 1)]
-# The settings API's words for a host name in the team never-scan list (422).  The UI shows the same words for a typed
-# entry (teamNeverScan.ts HOST_NAME_NOT_ALLOWED; compared by test_never_scan_node_agreement).
-HOST_NAME_NOT_ALLOWED = ("{entry} is not an address or range (it reads as a host name); the team never-scan list takes "
-                         "addresses and ranges only. List host names in a server source's own Never scan field")
+# A "host name" of only digits, dots, dashes and slashes (or a 0x number) in the team never-scan list is a mistyped
+# address or range: listed as a name it would never resolve and would hold every job of the team (fail closed), so the
+# settings API refuses it.  The UI has the same rule (teamNeverScan.ts ADDRESS_TYPO).
+ADDRESS_TYPO = re.compile(r"(?:[0-9./-]+|0x[0-9a-f]+)", re.I)
 
 
 def is_loopback_name(name: str) -> bool:
@@ -254,12 +254,18 @@ def parse_targets(
     return parsed
 
 
+# An IPv4 CIDR of this prefix or larger (/24 ... /16) leaves out its own network and broadcast address; a smaller one
+# (/25 to /32) is scanned whole: it is most often a slice of a larger network (a /24 split into two /25s), whose first
+# and last addresses are real hosts (N3, 14 Nov 2026).  Same constant as the node (netutil.HOST_ONLY_MAX_PREFIX).
+HOST_ONLY_MAX_PREFIX = 24
+
+
 def scanned_interval(interval: Interval, canonical: str) -> Interval | None:
     """The addresses the scan node scans for one target line (netutil.iter_line_ips): every address of a range, an
-    IPv6 network or an IPv4 /31 or /32, but only the host addresses of an IPv4 /30 or larger (not its network and
+    IPv6 network or an IPv4 /25 or smaller, but only the host addresses of an IPv4 /24 or larger (not its network and
     broadcast addresses).  ``canonical`` is the stored form the node receives (a mapped network is stored as IPv4)."""
     version, start, end = interval
-    if version == 4 and "/" in canonical and end - start >= 3:
+    if version == 4 and "/" in canonical and end - start + 1 >= 2 ** (32 - HOST_ONLY_MAX_PREFIX):
         return (version, start + 1, end - 1)
     return interval
 

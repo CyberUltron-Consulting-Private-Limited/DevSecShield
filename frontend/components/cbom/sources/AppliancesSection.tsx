@@ -24,6 +24,7 @@ import {
 
 import { cbomSourcesKeys } from "./keys";
 import { ConfirmDialog, EmptyState, Field, NodeSelect, SecretField, SectionCard, TestStatusBadge, Truncate } from "./shared";
+import { InfoTip } from "@/components/ui/info-tip";
 
 type Vendor = "cisco_ios" | "cisco_asa" | "fortios" | "panos" | "f5_bigip";
 const VENDORS: { value: Vendor; label: string; transport: "ssh" | "api"; reads: string }[] = [
@@ -57,6 +58,7 @@ export default function AppliancesSection({ teamId, nodes, onNavigate }: { teamI
 
   return (
     <SectionCard
+      infoId="cbsrc.app.card"
       title="Network appliances"
       description="Read-only configuration of routers, firewalls and load balancers: TLS, SSH and IKE/IPsec settings and key sizes. Only show commands or API reads are sent."
       actions={
@@ -79,10 +81,10 @@ export default function AppliancesSection({ teamId, nodes, onNavigate }: { teamI
                 <TableHeader>
                   <TableRow>
                     <TableHead>Name</TableHead>
-                    <TableHead>Vendor</TableHead>
-                    <TableHead>Targets</TableHead>
-                    <TableHead>Node</TableHead>
-                    <TableHead>Test</TableHead>
+                    <TableHead>Vendor <InfoTip id="cbsrc.app.col.vendor" /></TableHead>
+                    <TableHead>Targets <InfoTip id="cbsrc.app.col.targets" /></TableHead>
+                    <TableHead>Node <InfoTip id="cbsrc.col.node" /></TableHead>
+                    <TableHead>Test <InfoTip id="cbsrc.col.test" /></TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -196,7 +198,7 @@ function ApplianceForm({
   return (
     <div className="space-y-4 rounded-lg border border-zinc-200 dark:border-zinc-800 p-4" data-testid="appliance-form">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Field label="Vendor" htmlFor="appliance-vendor" required hint={`Reads: ${VENDOR[vendor].reads}`}>
+        <Field infoId="cbsrc.app.vendor" label="Vendor" htmlFor="appliance-vendor" required hint={`Reads: ${VENDOR[vendor].reads}`}>
           <Select value={vendor} onValueChange={(v) => setVendor(v as Vendor)}>
             <SelectTrigger id="appliance-vendor" className="w-full cursor-pointer" data-testid="appliance-vendor">
               <SelectValue />
@@ -210,35 +212,35 @@ function ApplianceForm({
             </SelectContent>
           </Select>
         </Field>
-        <Field label="Name" htmlFor="appliance-name" required error={errors.name}>
+        <Field infoId="cbsrc.app.name" label="Name" htmlFor="appliance-name" required error={errors.name}>
           <Input id="appliance-name" value={name} maxLength={64} onChange={(e) => setName(e.target.value)} placeholder="Edge firewalls" data-testid="appliance-name" />
         </Field>
-        <Field label="Devices" htmlFor="appliance-targets" required error={errors.targets} hint="One address or host name per line; all use the same account">
+        <Field infoId="cbsrc.app.devices" label="Devices" htmlFor="appliance-targets" required error={errors.targets} hint="One address or host name per line; all use the same account">
           <Textarea id="appliance-targets" className="font-mono text-sm min-h-[72px]" value={targets} spellCheck={false}
             onChange={(e) => setTargets(e.target.value)} placeholder={"10.0.0.1\nfw-2.corp.example"} data-testid="appliance-targets" />
         </Field>
         <div className="grid grid-cols-2 gap-4">
-          <Field label="Port" htmlFor="appliance-port" error={errors.port} hint={ssh ? "Default 22" : "Default 443"}>
+          <Field infoId="cbsrc.app.port" label="Port" htmlFor="appliance-port" error={errors.port} hint={ssh ? "Default 22" : "Default 443"}>
             <Input id="appliance-port" inputMode="numeric" value={port} onChange={(e) => setPort(e.target.value.replace(/\D/g, "").slice(0, 5))} data-testid="appliance-port" />
           </Field>
           {vendor !== "panos" && (
-            <Field label="Login" htmlFor="appliance-login" hint="A read-only account">
+            <Field infoId="cbsrc.app.login" label="Login" htmlFor="appliance-login" hint="A read-only account">
               <Input id="appliance-login" value={login} maxLength={64} onChange={(e) => setLogin(e.target.value)} data-testid="appliance-login" />
             </Field>
           )}
         </div>
-        <SecretField id="appliance-secret" label={vendor === "panos" ? "API key" : "Password"} value={secret} onChange={setSecret} required error={errors.secret} />
-        <Field label="Scan node" htmlFor="appliance-node" required error={errors.node}>
+        <SecretField infoId="cbsrc.app.secret" id="appliance-secret" label={vendor === "panos" ? "API key" : "Password"} value={secret} onChange={setSecret} required error={errors.secret} />
+        <Field infoId="cbsrc.app.node" label="Scan node" htmlFor="appliance-node" required error={errors.node}>
           <NodeSelect id="appliance-node" nodes={nodes} value={nodeId} onChange={setNodeId} />
         </Field>
         {ssh ? (
-          <Field label="Pinned host key (known_hosts)" htmlFor="appliance-known-hosts" required error={errors.knownHosts}
+          <Field infoId="cbsrc.app.known_hosts" label="Pinned host key (known_hosts)" htmlFor="appliance-known-hosts" required error={errors.knownHosts}
             hint="ssh-keyscan -p <port> <device> from a trusted machine; a different key stops the login before the password is sent">
             <Textarea id="appliance-known-hosts" className="font-mono text-xs min-h-[72px]" value={knownHosts} spellCheck={false}
               onChange={(e) => setKnownHosts(e.target.value)} data-testid="appliance-known-hosts" />
           </Field>
         ) : (
-          <Field label="CA certificate (PEM)" htmlFor="appliance-ca" hint="If the management certificate is not publicly trusted; the certificate is always verified">
+          <Field infoId="cbsrc.app.ca" label="CA certificate (PEM)" htmlFor="appliance-ca" hint="If the management certificate is not publicly trusted; the certificate is always verified">
             <Textarea id="appliance-ca" className="font-mono text-xs min-h-[72px]" value={caPem} spellCheck={false}
               onChange={(e) => setCaPem(e.target.value)} data-testid="appliance-ca" />
           </Field>

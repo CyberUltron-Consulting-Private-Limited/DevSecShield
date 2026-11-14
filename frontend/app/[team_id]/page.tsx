@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/chart";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   XAxis,
@@ -244,6 +245,7 @@ export default function TeamPage() {
               <LineChart className="size-5" />
             </div>
             Your Team's Recent Activity
+            <InfoTip id="team.section.activity" />
           </h2>
           {/* Summary stat cards — same style as SAST page: icon top-left, value + label below */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
@@ -254,7 +256,7 @@ export default function TeamPage() {
                     <Bug className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
                   </div>
                   <div>
-                    <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Total findings</p>
+                    <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Total findings <InfoTip id="team.kpi.findings" /></p>
                     <p className="text-xl font-bold text-zinc-900 dark:text-white tabular-nums">{card.total_findings}</p>
                     <p className="text-xs text-zinc-500 dark:text-zinc-400">All scans</p>
                   </div>
@@ -268,7 +270,7 @@ export default function TeamPage() {
                     <PlayCircle className="h-4 w-4 text-blue-500" />
                   </div>
                   <div>
-                    <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Started scans</p>
+                    <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Started scans <InfoTip id="team.kpi.started" /></p>
                     <p className="text-xl font-bold text-zinc-900 dark:text-white tabular-nums">{card.total_started_scans}</p>
                     <p className="text-xs text-zinc-500 dark:text-zinc-400">In progress</p>
                   </div>
@@ -282,7 +284,7 @@ export default function TeamPage() {
                     <CheckCircle className="h-4 w-4 text-green-500" />
                   </div>
                   <div>
-                    <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Completed scans</p>
+                    <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Completed scans <InfoTip id="team.kpi.completed" /></p>
                     <p className="text-xl font-bold text-zinc-900 dark:text-white tabular-nums">{card.total_completed_scans}</p>
                     <p className="text-xs text-zinc-500 dark:text-zinc-400">Success</p>
                   </div>
@@ -296,7 +298,7 @@ export default function TeamPage() {
                     <Circle className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
                   </div>
                   <div>
-                    <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Not started</p>
+                    <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Not started <InfoTip id="team.kpi.not_started" /></p>
                     <p className="text-xl font-bold text-zinc-900 dark:text-white tabular-nums">{card.total_not_started_scans}</p>
                     <p className="text-xs text-zinc-500 dark:text-zinc-400">Idle</p>
                   </div>
@@ -310,7 +312,7 @@ export default function TeamPage() {
                     <Wrench className="h-4 w-4 text-amber-500" />
                   </div>
                   <div>
-                    <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Fixed findings</p>
+                    <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Fixed findings <InfoTip id="team.kpi.fixed" /></p>
                     <p className="text-xl font-bold text-zinc-900 dark:text-white tabular-nums">{card.total_fixed_findings}</p>
                     <p className="text-xs text-zinc-500 dark:text-zinc-400">Remediated</p>
                   </div>
@@ -324,7 +326,7 @@ export default function TeamPage() {
                     <Percent className={`h-4 w-4 ${card.remediation_percentage >= 70 ? "text-green-500" : card.remediation_percentage >= 40 ? "text-amber-500" : "text-red-500"}`} />
                   </div>
                   <div>
-                    <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Remediation</p>
+                    <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Remediation <InfoTip id="team.kpi.remediation" /></p>
                     <p className="text-xl font-bold text-zinc-900 dark:text-white tabular-nums">{card.remediation_percentage}%</p>
                     <p className="text-xs text-zinc-500 dark:text-zinc-400">Fixed / total</p>
                   </div>
@@ -348,7 +350,7 @@ export default function TeamPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mt-9">
           {/* Scan activity by type — custom bar chart (same pattern as GuardrailsDashboardData) */}
           <div className="min-h-[380px] flex flex-col pr-2">
-            <h2 className="text-base font-medium">Scan activity by type</h2>
+            <h2 className="text-base font-medium flex items-center gap-1">Scan activity by type <InfoTip id="team.chart.activity" /></h2>
             <p className="text-sm text-muted-foreground mb-4 mt-1">Security scans run in the last 30 days, grouped by scan type (SAST, IAC, LLM, etc.)</p>
             <div className="flex-1 min-h-[280px] flex flex-col justify-end">
               {scanTypeData.length === 0 ? (
@@ -394,7 +396,7 @@ export default function TeamPage() {
 
           {/* Vulnerabilities by severity — radial (GuardrailsDashboardData colors + legend) */}
           <div className="min-h-[380px] flex flex-col">
-            <h2 className="text-base font-medium">Vulnerabilities by severity (last 30 days)</h2>
+            <h2 className="text-base font-medium flex items-center gap-1">Vulnerabilities by severity (last 30 days) <InfoTip id="team.chart.severity30" /></h2>
             <p className="text-sm text-muted-foreground mb-4 mt-1">From IAC, SBOM/SCA, and SAST scans</p>
             <div className="flex-1 min-h-[280px]">
               {vulnRadialData.length === 0 ? (
@@ -458,7 +460,7 @@ export default function TeamPage() {
 
           {/* Scans over time — area line chart */}
           <div className="min-h-[380px] flex flex-col">
-            <h2 className="text-base font-medium">Daily scan volume</h2>
+            <h2 className="text-base font-medium flex items-center gap-1">Daily scan volume <InfoTip id="team.chart.daily" /></h2>
             <p className="text-sm text-muted-foreground mb-4 mt-1">Number of scans created each day; use this to see activity trends over time</p>
             <div className="flex-1 min-h-[280px]">
               {scansByDate.length === 0 ? (
@@ -526,7 +528,7 @@ export default function TeamPage() {
 
           {/* Scan status distribution — radial */}
           <div className="min-h-[380px] flex flex-col">
-            <h2 className="text-base font-medium">Scan status distribution</h2>
+            <h2 className="text-base font-medium flex items-center gap-1">Scan status distribution <InfoTip id="team.chart.status" /></h2>
             <p className="text-sm text-muted-foreground mb-4 mt-1">All scans in this team by status (not started, running, completed, failed)</p>
             <div className="flex-1 min-h-[280px]">
               {scanStatusRadialChartData.length === 0 ? (
@@ -594,13 +596,14 @@ export default function TeamPage() {
               <Shield className="size-5" />
             </div>
             Findings & Remediation
+            <InfoTip id="team.section.findings" />
           </h2>
           <p className="text-sm text-muted-foreground mb-4 mt-1">Finding counts and remediation status over time (from scan findings)</p>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-9">
             {/* Remediations status distribution — area */}
             <div className="min-h-[320px] flex flex-col">
-              <h2 className="text-base font-medium">Remediations status per day</h2>
+              <h2 className="text-base font-medium flex items-center gap-1">Remediations status per day <InfoTip id="team.chart.remediations_per_day" /></h2>
               <p className="text-sm text-muted-foreground mb-4 mt-1">Daily counts: new (not started / in progress), fixed, and ignored findings</p>
               <div className="flex-1 min-h-[260px]">
                 {remediationsAreaData.length === 0 ? (
@@ -662,7 +665,7 @@ export default function TeamPage() {
 
             {/* Findings per day */}
             <div className="min-h-[320px] flex flex-col">
-              <h2 className="text-base font-medium">Findings per day</h2>
+              <h2 className="text-base font-medium flex items-center gap-1">Findings per day <InfoTip id="team.chart.findings_per_day" /></h2>
               <p className="text-sm text-muted-foreground mb-4 mt-1">Number of findings created each day (created_at)</p>
               <div className="flex-1 min-h-[260px]">
                 {findingsPerDayData.length === 0 ? (
@@ -710,7 +713,7 @@ export default function TeamPage() {
 
             {/* Fixes per day */}
             <div className="min-h-[320px] flex flex-col">
-              <h2 className="text-base font-medium">Fixes per day</h2>
+              <h2 className="text-base font-medium flex items-center gap-1">Fixes per day <InfoTip id="team.chart.fixes_per_day" /></h2>
               <p className="text-sm text-muted-foreground mb-4 mt-1">Number of findings marked fixed each day</p>
               <div className="flex-1 min-h-[260px]">
                 {fixesPerDayData.length === 0 ? (
@@ -758,7 +761,7 @@ export default function TeamPage() {
 
             {/* False positive trends (ignored per day) */}
             <div className="min-h-[320px] flex flex-col">
-              <h2 className="text-base font-medium">False positive trends</h2>
+              <h2 className="text-base font-medium flex items-center gap-1">False positive trends <InfoTip id="team.chart.false_positives" /></h2>
               <p className="text-sm text-muted-foreground mb-4 mt-1">Number of findings marked ignored per day</p>
               <div className="flex-1 min-h-[260px]">
                 {falsePositiveData.length === 0 ? (
@@ -813,6 +816,7 @@ export default function TeamPage() {
             <Link2 className="size-5" />
             </div>
             Your Team's Integrations
+            <InfoTip id="team.section.integrations" />
           </h2>
           <p className="text-sm text-muted-foreground mb-4 mt-1">CI/CD integrations created by date</p>
           <div className="min-h-[220px] mt-9">
