@@ -73,6 +73,7 @@ from backend.utilities.cbom_sources import posture as POSTURE
 from backend.utilities.cbom_sources import qgrade as QGRADE
 from backend.utilities.cbom_sources import run_deliverables as RUN_DELIVERABLES
 from backend.utilities.cbom_sources import runs as RUNS
+from backend.utilities.cbom_sources import run_assets as RUN_ASSETS
 from backend.utilities.cbom_sources import schedules as SCHED
 from backend.utilities.cbom_sources.classify import ASSET_TYPES
 from backend.utilities.cbom_sources.kinds import (KINDS, METADATA_FIELDS, credential_target_problem, ct_discovery_enabled,
@@ -1416,9 +1417,11 @@ async def get_run(team_id: TeamId, run_id: ObjectId, Authorization: AuthHeader =
 
 
 def _run_assets(engine, team_id: int, run_id: int, params: dict) -> dict:
+    view, status = params.pop("view", "all"), params.pop("status", None)
     with Session(engine) as session:
         run = _get_owned(session, CbomCollectionRun, run_id, team_id, "Run")
-        out = INV.list_assets(session, team_id=team_id, run_id=run.id, **params)
+        # CB-38: the inventory page plus the unified results table's fields (view, status, key, wave, risk score)
+        out = RUN_ASSETS.list_run_assets(session, team_id=team_id, run=run, params=params, view=view, status=status)
         out["run"] = public_run(run)
         return out
 
@@ -1439,9 +1442,11 @@ async def run_assets(team_id: TeamId, run_id: ObjectId,
                      q: str | None = Query(default=None, max_length=100),
                      source_id: int | None = Query(default=None, ge=1, le=2_147_483_647),
                      page: int = Query(default=1, ge=1, le=10_000), page_size: int = Query(default=50, ge=1, le=200),
+                     view: str = Query(default="all", pattern="^(all|findings)$"),
+                     status: str | None = Query(default=None, pattern="^(not_started|in_progress|fixed|ignored)$"),
                      Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
-    params = _asset_params(type, impact, quantum, q, source_id, page, page_size)
+    params = {**_asset_params(type, impact, quantum, q, source_id, page, page_size), "view": view, "status": status}
     return _ok(await _run("run assets", team_id, _run_assets, engine, team_id, run_id, params))
 
 

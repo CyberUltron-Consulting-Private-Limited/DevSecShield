@@ -113,6 +113,7 @@ def _source_names(session: Session, team_id: int, jobs: list[CbomCollectionJob])
 
 
 def list_assets(session: Session, *, team_id: int, run_id: int | None = None, job_id: int | None = None,
+                refine: Any = None,  # (query, changed_today) -> query
                 asset_type: str | None = None, impact: str | None = None, quantum: bool | None = None,
                 text: str | None = None, source_id: int | None = None, page: int = 1, page_size: int = 50,
                 now: _dt.datetime | None = None, risk_model: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -125,6 +126,8 @@ def list_assets(session: Session, *, team_id: int, run_id: int | None = None, jo
     changed = changed_today(session, base, now)
     filtered = _filtered(base, asset_type=asset_type, impact=impact, quantum=quantum, text=text, source_id=source_id,
                          changed=changed)
+    if refine is not None:  # CB-38: a caller's extra filter (run_assets: findings view, status), given today's view
+        filtered = refine(filtered, changed)
     total = int(session.exec(select(func.count()).select_from(filtered.subquery())).one())
     rows = session.exec(filtered.order_by(CbomCollectedAsset.id).offset((page - 1) * page_size).limit(page_size)).all()
     views = {row.id: changed.get(row.id) or shown(row, now) for row in rows}
