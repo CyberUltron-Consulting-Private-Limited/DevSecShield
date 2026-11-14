@@ -58,7 +58,7 @@ import { showErrorToast } from "@/utils/error-handler";
 import { downloadCbomScanBom, INFORMATIONAL_LABEL, type CbomCoverageReport, type CbomImportReport } from "@/utils/api/cbom_outputs";
 import { downloadOscal } from "@/utils/api/integrations";
 import { readinessText } from "@/utils/cbomReadiness";
-import { inventoryRows, isBrokenToday, matchesQuantumFilter } from "@/components/cbom/quantumFilter";
+import { inventoryRows, isBrokenToday, matchesQuantumFilter, quantumReadinessBars } from "@/components/cbom/quantumFilter";
 import { importNoteLines, importReportHasNews } from "@/components/cbom/importNotes";
 import {
   buildRefAliasMap,
@@ -260,13 +260,8 @@ function CbomDashboardCharts({
       .filter((d) => d.count > 0);
   }, [dashboard]);
 
-  const quantumData = useMemo(() => {
-    if (!dashboard.quantum_readiness) return [];
-    return [
-      { name: "Safe", count: dashboard.quantum_readiness.quantum_safe, fill: "hsl(142 71% 45%)" },
-      { name: "Vulnerable", count: dashboard.quantum_readiness.quantum_vulnerable, fill: "hsl(0 72% 51%)" },
-    ].filter((d) => d.count > 0);
-  }, [dashboard]);
+  // every verdict the backend counts, Broken today included, so the chart agrees with the "Quantum ready" card
+  const quantumData = useMemo(() => quantumReadinessBars(dashboard.quantum_readiness), [dashboard]);
 
   // OWASP Top 10 data
   const owaspMetrics = dashboard.owasp_top_10_issues ?? {};

@@ -71,3 +71,21 @@ export function inventoryRows(data: unknown, findings: QuantumFields[]): Quantum
   }
   return findings;
 }
+
+/** The bars of a "Quantum readiness" chart (CBOM scan list and code results): the three verdicts the backend counts
+ * (cbom_metrics.CodeRowSummary.quantum), so the chart, its (i) tip and the "Quantum ready" card agree. Broken today
+ * (weak even without a quantum computer, e.g. MD5, DES) counts against readiness and gets its own bar. */
+export interface QuantumReadinessCounts {
+  quantum_safe?: number | null;
+  quantum_vulnerable?: number | null;
+  broken_today?: number | null;
+}
+
+export function quantumReadinessBars(q: QuantumReadinessCounts | null | undefined): { name: string; count: number; fill: string }[] {
+  if (!q) return [];
+  return [
+    { name: "Safe", count: Number(q.quantum_safe ?? 0), fill: "hsl(142 71% 45%)" },
+    { name: "Vulnerable", count: Number(q.quantum_vulnerable ?? 0), fill: "hsl(0 72% 51%)" },
+    { name: "Broken today", count: Number(q.broken_today ?? 0), fill: "hsl(25 95% 53%)" },
+  ].filter((d) => d.count > 0);
+}

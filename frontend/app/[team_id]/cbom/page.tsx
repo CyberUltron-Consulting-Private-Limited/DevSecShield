@@ -81,6 +81,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { quantumReadinessBars } from "@/components/cbom/quantumFilter";
 
 type ScanStatus = "pending" | "started" | "retry" | "failure" | "success" | "not_started" | "cancelled";
 
@@ -203,10 +204,8 @@ function CBOMScanListDashboard({ dashboardData }: { dashboardData: CBOMDashboard
   const strengthConfig = { count: { label: "Assets", color: "hsl(220 70% 50%)" } } satisfies ChartConfig;
 
   // Quantum readiness for vertical bar chart (algorithm-only; no Unknown)
-  const quantumData = useMemo(() => [
-    { name: "Safe", count: dashboardData.quantum_readiness.quantum_safe, fill: "hsl(142 71% 45%)" },
-    { name: "Vulnerable", count: dashboardData.quantum_readiness.quantum_vulnerable, fill: "hsl(0 72% 51%)" },
-  ].filter((d) => d.count > 0), [dashboardData.quantum_readiness]);
+  // every verdict the backend counts, Broken today included, so the chart agrees with the "Quantum ready" card
+  const quantumData = useMemo(() => quantumReadinessBars(dashboardData.quantum_readiness), [dashboardData.quantum_readiness]);
 
   const quantumConfig = { count: { label: "Assets", color: "hsl(220 70% 50%)" } } satisfies ChartConfig;
 

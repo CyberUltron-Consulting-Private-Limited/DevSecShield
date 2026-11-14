@@ -2909,7 +2909,7 @@ export const INFO_TIPS = {
   // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1786-1795 — searched every run from ZeroShield's cloud; credits per domain
   "cbsrc.ct.discovery": {
     label: "Certificate Transparency",
-    what: "Every run, ZeroShield's cloud searches public Certificate Transparency logs for certificates issued for these domains, including hosts no scan node reaches. Expiring, expired, revoked and weak certificates, and certificates from CAs you have not listed, are flagged. Charged per domain searched, per run.",
+    what: "Every run, ZeroShield's cloud searches public Certificate Transparency logs for certificates issued for these domains, including hosts no scan node reaches. Expiring, expired, revoked and weak certificates, and certificates from CAs you have not listed, are flagged. 0.2 credits per domain searched, per run.",
     why: "A certificate issued by a CA you do not use can mean a mis-issuance or a shadow IT service.",
     example: "bank.in: 412 certificates found, 3 from an unexpected CA.",
   },
@@ -3446,7 +3446,7 @@ export const INFO_TIPS = {
     label: "Coverage",
     what: "Every kind of source and what a run would collect from it: how much is in scope, what reaches it (scan nodes, ZeroShield's cloud or questionnaires), failed tests, the credits it costs per run and whether it is ready.",
     why: "Shows at a glance which parts of the estate the next run covers and which it leaves out.",
-    example: "Servers · 3 sources, 612 targets · node-dc1 · No failed tests · 6.12 · Ready.",
+    example: "Servers · 3 sources, 612 targets · node-dc1 · No failed tests · 122.40 (0.2 per target) · Ready.",
   },
   // src: frontend/components/cbom/sources/ReviewRunTab.tsx:325 — the source group
   "cbsrc.rr.col.source": {
@@ -3493,16 +3493,16 @@ export const INFO_TIPS = {
   // src: frontend/components/cbom/sources/ReviewRunTab.tsx:394-405 — jobs, run record, proof trail, evidence gaps
   "cbsrc.rr.after": {
     label: "What you get after the scan",
-    what: "What a run produces: collection jobs per source for your scan nodes, a run record with the credits charged and refunded, a proof trail (audit log, node source IPs, the AWS role's CloudTrail calls) and evidence gaps listed as Q0.",
+    what: "What a run produces: collection jobs per source for your scan nodes, a run record with the credits charged and refunded, a proof trail (audit log, node source IPs, the AWS role's CloudTrail calls) and evidence gaps listed as Q0, never assumed safe.",
     why: "The proof trail lets your SOC and auditors confirm exactly what was touched.",
-    example: "Run #42: 9 jobs, 1,284 assets, 12.40 credits charged, 1.00 refunded.",
+    example: "Run #42: 2 databases, 1 AWS account and 32 server targets: 12.40 credits charged; 1.00 refunded for a database job that failed.",
   },
   // src: frontend/components/cbom/sources/ReviewRunTab.tsx:636, frontend/components/cbom/sources/ReviewRunTab.tsx:52-58 — choose groups, estimate the credits, start
   "cbsrc.rr.start": {
     label: "Start a scan",
     what: "Choose which groups to collect, estimate the credits, confirm the SOC agreement for network scans, then start the run.",
     why: "Credits are charged when the run starts; the estimate shows the cost and what will be skipped first.",
-    example: "Servers and Cloud: 10.12 credits for 4 sources.",
+    example: "Servers (612 targets) and one AWS account: 122.40 + 4.00 = 126.40 credits.",
   },
   // src: frontend/components/cbom/sources/ReviewRunTab.tsx:52-58, frontend/components/cbom/sources/ReviewRunTab.tsx:640-646 — one box per group; how many sources are ready
   "cbsrc.rr.include": {
@@ -3539,10 +3539,10 @@ export const INFO_TIPS = {
     why: "Findings reflect the estate at this time.",
     example: "13 Nov 2026, 11:05 pm IST.",
   },
-  // src: frontend/components/cbom/sources/shared.tsx:114-121 — queued, running, done, partial, failed, cancelled
+  // src: frontend/components/cbom/sources/shared.tsx:114-121, backend/utilities/cbom_sources/jobs.py:120-132 — jobs.py run status: partial also when every job succeeded but one reported a partial or failed outcome
   "cbsrc.rr.col.run_status": {
     label: "Status",
-    what: "Queued, Running, Done (every job succeeded), Partial (some jobs failed or expired), Failed or Cancelled.",
+    what: "Queued, Running, Done (every job succeeded completely), Partial (some jobs failed or expired, or a job finished but reported a partial or failed outcome), Failed or Cancelled.",
     why: "A Partial run's results miss the sources whose jobs failed.",
     example: "Partial: 8 of 9 jobs done, 1 expired.",
   },
@@ -3593,7 +3593,7 @@ export const INFO_TIPS = {
     label: "Credits",
     what: "The credits charged for this job, marked refunded when it failed, expired or was cancelled.",
     why: "Shows which part of the run's cost came back.",
-    example: "2.56 refunded.",
+    example: "25.60 refunded: a 128-target server job that expired.",
   },
   // src: frontend/components/cbom/sources/ReviewRunTab.tsx:843 — how many times the job was tried
   "cbsrc.rr.job.attempts": {
@@ -3974,7 +3974,7 @@ export const INFO_TIPS = {
     label: "Include CBOM Sources",
     what: "Also run a collection of this group of CBOM Sources with this scan. Off by default; turning it on adds that group's collection run and its credits to the estimate. Sources are managed on the CBOM Sources page.",
     why: "One action then covers the code and the infrastructure that runs it.",
-    example: "Include servers: adds 6.12 credits for 3 server sources.",
+    example: "Include servers: 3 sources with 31 targets add 6.20 credits (0.2 per target).",
   },
   // src: frontend/components/cbom/sources/SidebarSources.tsx:160-165 — required with network TLS
   "cbsrc.sidebar.soc": {
@@ -3983,10 +3983,10 @@ export const INFO_TIPS = {
     why: "Active network probing without SOC agreement is often treated as an incident.",
     example: "Tick after the SOC acknowledged the ranges.",
   },
-  // src: frontend/components/cbom/sources/WavesControls.tsx:1-3 — suggested wave per asset and the team's assignment
+  // src: backend/utilities/cbom_sources/waves.py:44-60 — suggested_wave: 1 weakness Critical/High and exposed or HNDL, or any HNDL quantum-vulnerable asset; 2 other Critical/High weakness; 3 other weakness; 4 quantum-vulnerable only
   "cbsrc.waves.card": {
     label: "Remediation waves",
-    what: "Each asset's suggested wave: 1 exposed or harvest-now-decrypt-later critical/high, 2 other critical/high, 3 medium/low, 4 post-quantum migration. Assign a wave, owner, target date and status; plans follow the asset to later runs and scans.",
+    what: "Each asset's suggested wave: 1 for a Critical or High weakness that is internet-exposed or harvest-now-decrypt-later, and for any harvest-now-decrypt-later quantum-vulnerable asset; 2 other Critical or High weaknesses; 3 other weaknesses; 4 post-quantum migration. Assign a wave, owner, target date and status; plans follow the asset to later runs and scans.",
     why: "Waves turn a long findings list into an ordered plan with owners and dates.",
     example: "Wave 1: RSA-2048 key exchange on api.bank.in:443, owner Payments, due 31 Dec.",
   },
@@ -5094,12 +5094,12 @@ export const INFO_TIPS = {
     why: "Start here when you have time for only a few fixes.",
     example: "RSA-1024 signing key, weak, not quantum-safe, Critical.",
   },
-  // src: backend/utilities/cbom_sources/cbom_metrics.py:146-153 — quantum_safe of the finding
+  // src: frontend/components/CbomResults.tsx:765-781 — QuantumBadge yesNo: Yes, No, Broken today (weak and quantum-safe), or a dash when quantum readiness does not apply
   "cbom.res.col.quantum_safe": {
     label: "Quantum safe",
-    what: "Whether the asset is quantum-safe: Yes or No.",
+    what: "Whether the asset is quantum-safe: Yes, No (needs a post-quantum replacement), Broken today (weak even without a quantum computer, such as MD5), or a dash when quantum readiness does not apply to it.",
     why: "No means it needs a post-quantum replacement.",
-    example: "No for RSA-2048.",
+    example: "No for RSA-2048; Broken today for MD5.",
   },
   // ────────────────────────────────────────────────────────────── CBOM crypto-asset charts (components/cbom/CbomCryptoCharts.tsx, CertCalendar.tsx)
   // src: frontend/components/cbom/CbomCryptoCharts.tsx:306-310 — algorithms by primitive
@@ -5116,12 +5116,12 @@ export const INFO_TIPS = {
     why: "These can be attacked today and are the first fixes.",
     example: "Deprecated hash (SHA-1): 4 High.",
   },
-  // src: frontend/components/cbom/CbomCryptoCharts.tsx:125, frontend/components/cbom/CbomCryptoCharts.tsx:390-394 — share by NIST quantum security level; broken today counts as not ready
+  // src: frontend/components/cbom/CbomCryptoCharts.tsx:373-386 — PqcReadinessGauge counts every row of the page (quantumFilter.inventoryRows) by the Quantum column verdict (quantumCounts); distributions.pqc (NIST levels) only when the page has no rows
   "cbom.chart.pqc": {
     label: "PQC readiness",
-    what: "The quantum-safe share of every crypto asset (findings and clean inventory), from each algorithm's NIST quantum security level. Algorithms broken today are not quantum-ready.",
+    what: "The quantum-ready share of every crypto asset on the page (findings and clean inventory), by the same verdict as the table's Quantum column: quantum-safe counts as ready; quantum-vulnerable and broken today (weak even without a quantum computer) do not. Only when the page has no rows does it fall back to the NIST quantum security levels stored with the scan.",
     why: "One view of how much of your crypto survives a quantum computer.",
-    example: "62% ready: 31 of 50 assets at NIST level 1 or above.",
+    example: "12 judged: 9 safe, 2 RSA (vulnerable), 1 DES (broken today): 9 / 12 = 75%.",
   },
   // src: frontend/components/cbom/CbomCryptoCharts.tsx:585-597 — NIST level 0 public-key assets
   "cbom.chart.qv": {
@@ -5158,12 +5158,12 @@ export const INFO_TIPS = {
     why: "Gives each owner a concrete target, not just a finding.",
     example: "ECDSA P-256 code signing → ML-DSA-65 (FIPS 204).",
   },
-  // src: frontend/components/cbom/CbomCryptoCharts.tsx:936-942 — X.509 validity and related keys
+  // src: frontend/components/cbom/CbomCryptoCharts.tsx:905-912, aibom/src/aibom/cbom/weakness.py:38 — two bars, Valid and Expired; Near expiry is a badge in the list (aibom/src/aibom/cbom/weakness.py:38, 90 days)
   "cbom.chart.cert_expiry": {
     label: "Certificate expiry",
-    what: "X.509 certificates by validity (expired, expiring soon, valid) with related key and keystore material.",
+    what: "X.509 certificates as two bars, Valid and Expired, with the certificates and related key or keystore material listed below; a certificate expiring within 90 days carries a Near expiry badge in the list.",
     why: "An expired certificate breaks a service; a long-lived one delays migration to post-quantum signatures.",
-    example: "2 expired, 3 expiring within 30 days, 18 valid.",
+    example: "18 Valid and 2 Expired; 3 of the valid ones show Near expiry (within 90 days).",
   },
   // src: frontend/components/cbom/CbomCryptoCharts.tsx:1083-1087 — transport-security protocols in use
   "cbom.chart.protocols": {

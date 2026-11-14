@@ -10,6 +10,10 @@ import { cn } from "@/lib/utils";
 
 import { openAfterClick, pressPointer, type PressPointer } from "./info-tip-logic";
 
+/** One tip open at a time: each shadcn Tooltip has its own provider, so focusing one tip and hovering another would
+ * otherwise show both. Opening a tip closes the one that was open. */
+let closeOpenTip: (() => void) | null = null;
+
 /**
  * A small (i) button that explains the field, metric or setting next to it: what it is and an example.
  * Text comes from the registry (content/infotips.ts) by a stable id: what it is, optionally why it matters, an example; the id is typed, so an unknown id fails tsc.
@@ -20,8 +24,15 @@ import { openAfterClick, pressPointer, type PressPointer } from "./info-tip-logi
  */
 export function InfoTip({ id, side = "top", className }: { id: InfoTipId; side?: "top" | "right" | "bottom" | "left"; className?: string }) {
   const tip = INFO_TIPS[id];
-  const [open, setOpen] = useState(false);
+  const [open, setOpenState] = useState(false);
   const press = useRef<{ wasOpen: boolean; pointer: PressPointer } | null>(null);
+  const closeThis = useRef(() => setOpenState(false));
+  const setOpen = (next: boolean) => {
+    if (next && closeOpenTip && closeOpenTip !== closeThis.current) closeOpenTip();
+    if (next) closeOpenTip = closeThis.current;
+    else if (closeOpenTip === closeThis.current) closeOpenTip = null;
+    setOpenState(next);
+  };
   return (
     <Tooltip open={open} onOpenChange={setOpen} delayDuration={150}>
       <TooltipTrigger asChild>

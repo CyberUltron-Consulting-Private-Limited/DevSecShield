@@ -2282,7 +2282,7 @@ export interface CbomScanDashboardData {
   severity_distribution: { critical: number; high: number; medium: number; low: number; informational?: number }
   algorithm_type_distribution: Record<string, number>
   strength_distribution: Record<string, number>
-  quantum_readiness: { quantum_safe: number; quantum_vulnerable: number; unknown?: number }
+  quantum_readiness: { quantum_safe: number; quantum_vulnerable: number; broken_today?: number; unknown?: number }
   owasp_top_10_issues: Record<string, number>
   compliance_controls: Record<string, number>
   top_risks: Array<{
@@ -2341,7 +2341,7 @@ export interface CBOMDashboardData {
   severity_distribution: { critical: number; high: number; medium: number; low: number }
   algorithm_type_distribution: Record<string, number>
   strength_distribution: Record<string, number>
-  quantum_readiness: { quantum_safe: number; quantum_vulnerable: number; unknown?: number }
+  quantum_readiness: { quantum_safe: number; quantum_vulnerable: number; broken_today?: number; unknown?: number }
   remediation_actions_required: {
     total_findings: number
     total_fixed: number

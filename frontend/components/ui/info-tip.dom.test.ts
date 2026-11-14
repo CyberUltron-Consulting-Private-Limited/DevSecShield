@@ -144,6 +144,16 @@ async function main() {
   await key("Escape");
   assert.equal(doc.querySelector('[role="tooltip"]'), null, "Escape closes it");
 
+  // one tip open at a time (review of #135): opening a second tip closes the first
+  await press(t, "touch");
+  assert.equal(isOpen(), true, "the first tip is open");
+  await press(withWhy, "touch");
+  await settle();
+  assert.equal(isOpen(), false, "opening another tip closes the first");
+  assert.ok(withWhy.getAttribute("data-state")?.endsWith("open"), "the second tip is open");
+  assert.equal(doc.querySelectorAll('[role="tooltip"]').length, 1, "only one tip on screen");
+  await key("Escape");
+
   // FieldLabel: the label names the input; the (i) is beside the <label>, not inside it
   const label = doc.querySelector('label[for="title"]');
   assert.ok(label, "FieldLabel renders a <label for>");
