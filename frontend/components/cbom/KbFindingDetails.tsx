@@ -149,8 +149,8 @@ function StandardsSection({ standards, compliance }: { standards: string[]; comp
   );
 }
 
-/** The standards and clauses of every finding code of an asset, each once, in first-seen order (#266: two codes
- * citing the same RBI clause printed it twice, in two "Standards and regulations" blocks). */
+/** The standards and clauses of every finding code of an asset, each once, in first-seen order (#266: in the run
+ * finding dialog two codes citing the same RBI clause printed it twice, in two "Standards and regulations" blocks). */
 export function mergeStandards(details: Pick<KbFindingDetail, "standards" | "compliance">[]): { standards: string[]; compliance: KbComplianceRef[] } {
   const standards = [...new Set(details.flatMap((d) => d.standards ?? []))];
   const seen = new Set<string>();
@@ -163,17 +163,26 @@ export function mergeStandards(details: Pick<KbFindingDetail, "standards" | "com
   return { standards, compliance };
 }
 
-export default function KbFindingDetails({ details, showRemediation = true }: { details: KbFindingDetail[]; showRemediation?: boolean }) {
+/**
+ * The KB cards of a finding or asset. By default each card keeps its own "Standards and regulations" (per-code
+ * attribution, as the code-scan Standards tab and the Sources asset drawer always showed). With `mergedStandards`
+ * (the run finding dialog, #266) the cards drop theirs and one de-duplicated section follows them.
+ */
+export default function KbFindingDetails({ details, showRemediation = true, mergedStandards = false }: {
+  details: KbFindingDetail[];
+  showRemediation?: boolean;
+  mergedStandards?: boolean;
+}) {
   if (!details.length) {
     return <p className="text-xs text-zinc-500">No weakness is flagged on this asset.</p>;
   }
-  const merged = mergeStandards(details);
+  const merged = mergedStandards ? mergeStandards(details) : null;
   return (
     <div className="space-y-3">
       {details.map((d) => (
-        <KbFindingCard key={d.code} d={d} showRemediation={showRemediation} showStandards={false} />
+        <KbFindingCard key={d.code} d={d} showRemediation={showRemediation} showStandards={!mergedStandards} />
       ))}
-      {(merged.standards.length > 0 || merged.compliance.length > 0) && (
+      {merged && (merged.standards.length > 0 || merged.compliance.length > 0) && (
         <div className="rounded-md border border-zinc-200 dark:border-zinc-700 p-3" data-testid="kb-standards">
           <StandardsSection standards={merged.standards} compliance={merged.compliance} />
         </div>
