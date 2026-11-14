@@ -193,6 +193,26 @@ def _gap(label: str, location: str, check: str, status: str, detail: str | None,
     return {"type": "coverage", "target": label, "location": location, "facts": out}
 
 
+def _service_scope(service: str, region: str, account: str) -> list[str] | None:
+    """The location prefixes a regional service's assets use (CB-33 HF-1): a service that fails in one region hides
+    only these from drift, never the rest of the account (the rows' target is the account-wide ``aws:<acct>``).
+    ``tests/test_cbom_aws_cb33_a2.py`` checks each against the locations the service emits.  None for a service not
+    listed: the row then covers the whole target, as before."""
+    def p(svc: str) -> str:
+        return f"arn:aws:{svc}:{region}:{account}:"
+    return {
+        "kms": [p("kms")], "acm": [p("acm")], "acm-pca": [p("acm-pca")], "secretsmanager": [p("secretsmanager")],
+        "ec2": [p("ec2") + "ebs-encryption-by-default", p("ec2") + "volume/"],
+        "ec2-keypairs": [p("ec2") + "key-pair/"], "ec2-userdata": [p("ec2") + "instance/"], "ssm": [p("ssm")],
+        "lambda": [p("lambda")], "ecs": [p("ecs")], "rds": [p("rds")],
+        "elasticloadbalancing": [p("elasticloadbalancing") + "listener/"],
+        "elb-classic": [p("elasticloadbalancing") + "loadbalancer/"],
+        # public domains: /domainnames/<name> (no account); private ones: their domainNameArn (HF-10)
+        "apigateway": [f"arn:aws:apigateway:{region}::/domainnames/", p("apigateway") + "/domainnames/"],
+        "eks": [p("eks")], "glue": [p("glue")],
+    }.get(service)
+
+
 class _GapTally:
     """Passes every asset on and counts what the coverage gaps left unread, which makes a target partial: not the
     ``by_choice`` rows (an option left off) nor the ``not_reported`` ones (a state in which AWS reports nothing, e.g.
@@ -672,13 +692,22 @@ _APIGW_POLICY_PROTOCOLS: dict[str, tuple[str, ...]] = {
 }
 
 
+_APIGW_NAMED_MINIMUM = (("SecurityPolicy_TLS13_1_3_", "TLSv1.3"), ("SecurityPolicy_TLS13_1_2_", "TLSv1.2"))
+
+
 def _apigw_tls_facts(policy: str) -> dict[str, Any]:
     """The TLS facts an API Gateway domain's security policy gives: its documented protocols and lowest version, so
-    the rules judge a classical policy (QUANTUM_VULNERABLE, PROTO_TLS10 ...) instead of leaving it without a verdict."""
+    the rules judge a classical policy (QUANTUM_VULNERABLE, PROTO_TLS10 ...) instead of leaving it without a verdict.
+    ``min_version_source`` says where the minimum came from (CB-33 B10).  A name AWS's table does not list (the SDK has
+    a few more, e.g. ``..._FIPS_PQ_2025_09``) reads its minimum from the name's ``TLS13_1_3`` / ``TLS13_1_2`` part, with
+    its protocols unread; any other name is unknown (no minimum), never guessed."""
     protocols = _APIGW_POLICY_PROTOCOLS.get(policy)
-    if protocols is None:  # not on AWS's list: the version rule the collector used before, protocols unread
-        return {"min_version": "TLSv1.0" if policy == "TLS_1_0" else "TLSv1.2"}
-    return {"protocols": list(protocols), "min_version": protocols[0]}
+    if protocols is not None:
+        return {"protocols": list(protocols), "min_version": protocols[0], "min_version_source": "AWS security policy table"}
+    for prefix, minimum in _APIGW_NAMED_MINIMUM:
+        if policy.startswith(prefix):
+            return {"min_version": minimum, "min_version_source": "policy name (not in AWS's security policy table)"}
+    return {"min_version": None, "min_version_source": "unknown policy"}
 
 
 def _exposure(internet_facing: bool | None, basis: str) -> dict[str, Any]:
@@ -769,8 +798,9 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit,
             code = _code(exc)
             status = "denied" if code in _DENIED else ("not_enabled" if code in _NOT_ENABLED else "error")
             rows.append((service, status, code))
-            emit({"type": "coverage", "target": label, "location": f"{arn_prefix.format(svc=service)}:{service}",
-                  "facts": {"check": f"{service} in {region}", "status": status, "detail": code}})
+            # scoped to this service in this region (HF-1); incomplete: what it emitted before failing may lack facts
+            emit(_gap(label, f"{arn_prefix.format(svc=service)}:{service}", f"{service} in {region}", status, code,
+                      _service_scope(service, region, acct.account), incomplete=True))
 
     def reservations() -> tuple[list[Any], bool]:
         """DescribeInstances once per region (raises, so the service that needs it reports the failure itself)."""
@@ -1275,16 +1305,26 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit,
         client = acct.client("apigateway", region)
         items, truncated = _paginate(client, "get_domain_names", "items")
         if truncated:
-            capped("apigateway", "custom domain names", PER_SERVICE_CAP, [f"arn:aws:apigateway:{region}::/domainnames/"])
+            capped("apigateway", "custom domain names", PER_SERVICE_CAP,
+                   _service_scope("apigateway", region, acct.account))
         for item in items:
             policy = item.get("securityPolicy") or "TLS_1_0"
+            tls = _apigw_tls_facts(str(policy))
+            if not item.get("securityPolicy"):  # AWS's default; said so, and kept so its findings stay (EC-5)
+                tls["min_version_source"] = "securityPolicy absent (assumed TLS_1_0)"
             types = [str(t) for t in (item.get("endpointConfiguration") or {}).get("types") or []]
             exposure = _exposure(False if types == ["PRIVATE"] else (True if types else None),
                                  f"API Gateway {'/'.join(types) or 'unknown'} endpoint")
-            emit({"type": "api_tls", "target": label, "location": f"arn:aws:apigateway:{region}::/domainnames/{item['domainName']}",
+            # a private domain (it has a domainNameId) may share its name with a public one: its ARN tells them apart
+            # (HF-10); a public domain keeps /domainnames/<name>, the location it was always stored under
+            private_arn = item.get("domainNameArn") if item.get("domainNameId") else None
+            where = private_arn or f"arn:aws:apigateway:{region}::/domainnames/{item['domainName']}"
+            emit({"type": "api_tls", "target": label, "location": where,
                   "name": item["domainName"], "protocol": "TLS",
-                  "facts": {"security_policy": policy, **_apigw_tls_facts(str(policy)), "endpoint_types": types,
-                            **exposure}})
+                  "facts": {"security_policy": policy, **tls, "endpoint_types": types,
+                            "domain_name_status": item.get("domainNameStatus"),
+                            "endpoint_access_mode": item.get("endpointAccessMode"),
+                            **({"domain_name_id": item["domainNameId"]} if private_arn else {}), **exposure}})
         return "truncated" if truncated else None
 
     def eks() -> str | None:
@@ -1434,8 +1474,24 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit,
     return rows
 
 
-def _global_services(acct: _Account, label: str, emit: Emit) -> list[tuple[str, str, str | None]]:
+# CloudFront's viewer TLS: AWS enabled hybrid post-quantum key exchange on every CloudFront security policy, viewer to
+# edge, with no customer setting (AWS What's New 2025-09-05; CloudFront developer guide "Supported protocols and
+# ciphers between viewers and CloudFront" marks TLS 1.3, which carries the hybrid groups, for every policy).  The
+# groups themselves are named in algid, not here (CB-04 single-source rule), so ``pq_groups`` stays empty.
+_CLOUDFRONT_PQ_SOURCE = ("AWS: hybrid post-quantum key exchange on every CloudFront security policy, viewer to edge "
+                         "(What's New 2025-09-05)")
+
+
+def _global_services(acct: _Account, label: str, emit: Emit, regions: list[str] | None = None,
+                     tick: Callable[[], str | None] | None = None) -> list[tuple[str, str, str | None]]:
+    """IAM, S3 and CloudFront.  ``regions``: the source's regions; when us-east-1 is not one of them, the ACM
+    certificates CloudFront serves (they live in us-east-1) are read here by ARN (CB-33 HF-2).  None (a caller that
+    does not say) reads none of them."""
     rows: list[tuple[str, str, str | None]] = []
+    cf_certs_here = regions is not None and GLOBAL_REGION not in regions
+    acm_east = f"arn:aws:acm:{GLOBAL_REGION}:{acct.account}:certificate/"
+    scopes = {"iam": [f"arn:aws:iam::{acct.account}:"], "s3": ["arn:aws:s3:::"],
+              "cloudfront": [f"arn:aws:cloudfront::{acct.account}:"] + ([acm_east] if cf_certs_here else [])}
     tally = _GapTally(emit)
     emit = tally
 
@@ -1456,8 +1512,8 @@ def _global_services(acct: _Account, label: str, emit: Emit) -> list[tuple[str, 
             code = _code(exc)
             status = "denied" if code in _DENIED else "error"
             rows.append((service, status, code))
-            emit({"type": "coverage", "target": label, "location": f"arn:aws:{service}::{acct.account}:global",
-                  "facts": {"check": f"{service} (global)", "status": status, "detail": code}})
+            emit(_gap(label, f"arn:aws:{service}::{acct.account}:global", f"{service} (global)", status, code,
+                      scopes.get(service), incomplete=True))
 
     def iam() -> str | None:
         client = acct.client("iam", "global")
@@ -1529,15 +1585,32 @@ def _global_services(acct: _Account, label: str, emit: Emit) -> list[tuple[str, 
             if len(items) > PER_SERVICE_CAP:
                 capped("cloudfront", "distributions", PER_SERVICE_CAP, [f"arn:aws:cloudfront::{acct.account}:distribution/"])
                 break
+        certs: list[str] = []
         for dist in items[:PER_SERVICE_CAP]:
             viewer = dist.get("ViewerCertificate") or {}
             minimum = str(viewer.get("MinimumProtocolVersion") or "TLSv1")
             version = minimum.split("_")[0]  # TLSv1.2_2021 -> TLSv1.2, TLSv1_2016 -> TLSv1
+            cert = viewer.get("ACMCertificateArn")
+            if isinstance(cert, str) and cert.startswith(acm_east) and cert not in certs:
+                certs.append(cert)
             emit({"type": "cdn_tls", "target": label, "location": dist["ARN"], "name": dist.get("DomainName"), "protocol": "TLS",
                   "facts": {"min_version": "TLSv1.0" if version == "TLSv1" else version,
                             "minimum_protocol_version": minimum, "default_certificate": bool(viewer.get("CloudFrontDefaultCertificate")),
-                            "acm_certificate_arn": viewer.get("ACMCertificateArn"),
+                            "acm_certificate_arn": cert,
+                            "pq_group_supported": True, "pq_groups": [], "pq_policy_source": _CLOUDFRONT_PQ_SOURCE,
                             **_exposure(True, "CloudFront distribution (served from the public edge)")}})
+        if cf_certs_here and certs:
+            # the certificates the distributions serve, read by ARN in us-east-1: the same asset (target, location,
+            # identity) as the us-east-1 ACM pass gives, so adding us-east-1 to the source later changes no identity
+            acm = acct.client("acm", GLOBAL_REGION)
+            read = _Items("acm", GLOBAL_REGION, acct.account, label, tick)
+            for arn in certs:
+                read.step()
+                status, detail = read.call("metadata", arn, lambda: acm.describe_certificate(CertificateArn=arn)["Certificate"])
+                if status == "ok":
+                    emit(_cert_asset(arn, label, detail, summary={}))
+            read.flush(emit, {"metadata": ("certificate served by CloudFront", False)})
+            return f"{len(certs)} certificates read in {GLOBAL_REGION}"
         return None
 
     for service, fn in (("iam", iam), ("s3", s3), ("cloudfront", cloudfront)):
@@ -1637,7 +1710,8 @@ def read_target(acct: _Account, region: str, cfg: dict[str, Any], emit: Emit,
     try:
         if hasattr(acct, "ensure"):
             acct.ensure(region)  # AssumeRole first (retried on throttling): its failure is the account's, not a service's
-        rows = (_global_services(acct, label, tally) if region == "global"
+        rows = (_global_services(acct, label, tally, regions=list(cfg.get("regions") or ["us-east-1"]),
+                                 tick=should_stop) if region == "global"
                 else _region_services(acct, region, label, tally, cfg, tick=should_stop))
     except AwsCollectError as exc:
         return {"target": f"{label}/{region}", "status": "error", "error": str(exc)[:256], "assets": 0}
@@ -1656,27 +1730,38 @@ def read_target(acct: _Account, region: str, cfg: dict[str, Any], emit: Emit,
     if codes is not None:
         for code_key, n in tally.codes.items():
             codes[code_key] = codes.get(code_key, 0) + n
+    return _region_target(label, region, rows, tally.gaps, int((time.monotonic() - t0) * 1000))
+
+
+def _region_target(label: str, region: str, rows: list[tuple[str, str, str | None]], gaps: int,
+                   duration_ms: int) -> dict[str, Any]:
+    """One region's target row from its service rows.  A region whose services all answered ``not_enabled`` (an opt-in
+    region the account has not enabled, CB-33 HF-1) is ``not_supported`` and marked ``not_enabled``: ``summary``
+    counts it partial, not failed, so it never stops drift for the account; its rows are gaps scoped to that region."""
     bad = [f"{svc}: {status} {detail or ''}".strip() for svc, status, detail in rows if status not in ("ok", "partial")]
     gappy = [f"{svc}: {detail or 'partial'}" for svc, status, detail in rows if status == "partial"]
     enabled = [r for r in rows if r[1] != "not_enabled"]
     # partial: every service answered, some of what they hold was not read (each gap is a scoped coverage row)
     status = ("error" if enabled else "not_supported") if bad else ("partial" if gappy else "ok")
-    return {"target": f"{label}/{region}", "status": status, "error": "; ".join(bad + gappy)[:256] or None,
-            "duration_ms": int((time.monotonic() - t0) * 1000), "gaps": tally.gaps,
-            "services": {svc: status_ for svc, status_, _d in rows}}
+    out = {"target": f"{label}/{region}", "status": status, "error": "; ".join(bad + gappy)[:256] or None,
+           "duration_ms": duration_ms, "gaps": gaps, "services": {svc: status_ for svc, status_, _d in rows}}
+    if rows and not enabled:
+        out["not_enabled"] = True
+    return out
 
 
 def summary(targets: list[dict[str, Any]], team_id: int, started: float, *, quiet: bool = False,
             log_extra: dict[str, Any] | None = None, **extra: Any) -> dict[str, Any]:
     """Counts of a list of target rows (one shape for a whole source, a slice, and a fanned-out parent)."""
     ok = sum(1 for t in targets if t["status"] == "ok")
-    partial = sum(1 for t in targets if t["status"] == "partial")
+    not_enabled = sum(1 for t in targets if t.get("not_enabled"))
+    partial = sum(1 for t in targets if t["status"] == "partial") + not_enabled
     skipped = sum(1 for t in targets if t["status"].startswith("skipped"))
     if not quiet:
-        log("aws collected", team=team_id, targets=len(targets), ok=ok, partial=partial, **extra, **(log_extra or {}),
-            duration_s=int(time.monotonic() - started))
+        log("aws collected", team=team_id, targets=len(targets), ok=ok, partial=partial,
+            not_enabled=not_enabled or None, **extra, **(log_extra or {}), duration_s=int(time.monotonic() - started))
     return {"targets": targets, **extra,
             "counts": {"total": len(targets), "ok": ok, "partial": partial, "failed": len(targets) - ok - partial - skipped,
-                       "skipped": skipped},
+                       "skipped": skipped, **({"not_enabled": not_enabled} if not_enabled else {})},
             "duration_s": int(time.monotonic() - started)}
 
