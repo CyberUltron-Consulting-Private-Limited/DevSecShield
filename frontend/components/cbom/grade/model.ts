@@ -109,6 +109,13 @@ export interface QPosture {
   grade_model?: string;
   grade_model_version?: string;
   grade_inputs?: { source: string; mosca: { x: number | null; y: number | null; z: number | null }; digest: string };
+  // CB-19 PR-2: the record grades with the run's snapshot; when the team's Mosca differs now, the same rows graded
+  // with it (null otherwise)
+  inputs_changed?: boolean;
+  model_changed?: boolean;
+  q_grades_now?: Partial<Record<string, number>> | null;
+  q_changed_now?: number | null;
+  grade_inputs_now?: { source: string; mosca: { x: number | null; y: number | null; z: number | null }; digest: string } | null;
 }
 
 /** GET …/sources/grade-model. */
@@ -257,7 +264,8 @@ export function explainRows(e: QExplain): { label: string; value: string; basis:
     add("Provenance", e.provenance);
   }
   add("Grade model", e.model_version);
-  add("Inputs", e.inputs_source === "current" ? "The team's settings as they are now" : e.inputs_source, e.inputs_digest);
+  add("Inputs", e.inputs_source === "current" ? "The team's settings as they are now"
+    : e.inputs_source === "snapshot" ? "Recorded when the run started" : e.inputs_source, e.inputs_digest);
   return rows;
 }
 

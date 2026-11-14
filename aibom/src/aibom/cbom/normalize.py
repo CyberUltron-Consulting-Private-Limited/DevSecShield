@@ -284,6 +284,11 @@ def _pqc_readiness(
             continue
         if props.get("crypto:quantumVulnerable") == "true":
             vulnerable += 1
+        elif (
+            props.get("crypto:primitive") == "unknown"
+            and "crypto:quantumVulnerable" not in props
+        ):
+            pass  # not judged by the rule base: neither safe nor vulnerable (CB-18)
         else:
             safe += 1
         if props.get("crypto:hybrid") == "true":

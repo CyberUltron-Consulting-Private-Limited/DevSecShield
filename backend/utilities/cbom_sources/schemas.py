@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from backend.utilities.cbom_sources.common import NAME_RE
+from backend.utilities.cbom_sources.common import NAME_RE, log
 from backend.utilities.cbom_sources.kinds import KIND_NAMES, check_http_url, check_pem_certificates, check_timezone, check_window_grid
 
 _EMAIL_RE = re.compile(r"^[^@\s'\"<>]{1,64}@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{2,}$")
@@ -241,9 +241,21 @@ class RunCreate(_Body):
 
 
 # ----------------------------------------------------------------------------- evidence
+def _legacy_level(value: Any) -> Any:
+    """A browser tab still running the bundle from before CB-18 sends Q0..Q3: accepted as E0..E3 for one release,
+    and logged, so the owner can see when nobody sends them any more (EC-12)."""
+    if isinstance(value, str) and value.strip().upper() in ("Q0", "Q1", "Q2", "Q3"):
+        log("evidence legacy level input", value=value.strip().upper())
+        return "E" + value.strip()[1]
+    return value
+
+
+Level = Literal["E0", "E1", "E2", "E3"]
+
+
 class AreaUpdate(_Body):
     owner: str | None = Field(default=None, max_length=128)
-    confidence: Literal["Q0", "Q1", "Q2", "Q3"] | None = None
+    confidence: Level | None = None
     answers: dict[str, str] | None = None
     evidence_title: str | None = Field(default=None, max_length=200)
     evidence_url: str | None = Field(default=None, max_length=1000)
@@ -255,6 +267,11 @@ class AreaUpdate(_Body):
     @classmethod
     def _url(cls, v: str | None) -> str | None:
         return check_http_url(v)
+
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def _level(cls, v: Any) -> Any:
+        return _legacy_level(v)
 
     @field_validator("evidence_date", "due_date")
     @classmethod
@@ -283,8 +300,13 @@ class VendorCreate(_Body):
 
 class VendorUpdate(VendorCreate):
     name: str | None = Field(default=None, min_length=1, max_length=128)
-    confidence: Literal["Q0", "Q1", "Q2", "Q3"] | None = None
+    confidence: Level | None = None
     expected_version: int | None = None
+
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def _level(cls, v: Any) -> Any:
+        return _legacy_level(v)
 
 
 class VendorAnswer(_Body):
