@@ -13,6 +13,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 import httpx
 import pytest
@@ -180,14 +181,18 @@ def test_cloud_worker_collects_and_the_api_classifies(api):
         rows = s.exec(select(CbomCollectedAsset).where(CbomCollectedAsset.job_id == job.id)).all()
     certs = [r for r in rows if r.asset_type == "certificate"]
     assert job.status == "success" and job.outcome == "ok" and job.node_id is None
-    assert len(certs) == 25 + 17 == job.asset_count
+    gaps = [r for r in rows if r.asset_type == "coverage"]
+    assert len(certs) == 25 + 17 and job.asset_count == len(certs) + len(gaps)
+    # the only gap: example.com's 8 certificates whose revocation status Cert Spotter does not know (revoked: null)
+    assert [g.facts["check"] for g in gaps] == ["CT revocation status"] and gaps[0].facts["detail"].startswith("8 ")
     want = {r["serial"] for r in oracle("certspotter_zeroshield")} | {r["serial"] for r in oracle("certspotter_example")}
     assert {r.facts["serial"] for r in certs} == want
     assert all(r.cdx_type == "certificate" and r.quantum_vulnerable is True for r in certs)
     codes = {c for r in certs for c in r.finding_codes}
     assert {"CERT_UNEXPECTED_CA", "CERT_REVOKED", "CERT_WILDCARD_SPRAWL", "CERT_EXPIRES_30D"} <= codes
-    assert job.result["targets"][0]["provider"] == "certspotter" and job.result["provider_calls"] == {"certspotter": 2}
-    assert len(api.replay.calls) == 2
+    # each domain: its page, then the empty page that ends the listing (Cert Spotter's documented rule)
+    assert job.result["targets"][0]["provider"] == "certspotter" and job.result["provider_calls"] == {"certspotter": 4}
+    assert len(api.replay.calls) == 4
 
 
 def test_a_run_that_reads_no_domain_fails_and_is_refunded(api):
@@ -215,7 +220,8 @@ def test_the_next_run_searches_first_what_the_last_run_could_not(api):
     api.replay.override.clear()
     api.replay.calls.clear()
     _run(api, "ct-order-02")
-    assert "domain=zeroshield.ai" in api.replay.calls[0] and "domain=example.com" in api.replay.calls[1]
+    order = list(dict.fromkeys(parse_qs(urlsplit(u).query)["domain"][0] for u in api.replay.calls))
+    assert order == ["zeroshield.ai", "example.com"]
 
 
 # ----------------------------------------------------------------------------- drift

@@ -15,6 +15,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 import httpx
+import pytest
 
 _REPO = Path(__file__).resolve().parents[2]
 if str(_REPO) not in sys.path:
@@ -84,12 +85,12 @@ def test_a_certificate_found_by_two_names_is_one_asset():
     for serial in wild:
         assert by_serial[serial]["facts"]["matched_domains"] == ["ct-proof-host.zeroshield.ai", "zeroshield.ai"]
         assert by_serial[serial]["target"] == "ct-proof-host.zeroshield.ai"  # the first listed name, sorted
-    assert len(replay.calls) == 3
+    assert len(replay.calls) == 3 * 2  # each name: its page, then the empty page
 
 
 def test_subdomains_of_a_listed_domain_are_not_searched_twice():
     _r, _c, _g, replay = run(["zeroshield.ai", "ct-proof-host.zeroshield.ai", "*.zeroshield.ai"])
-    assert len(replay.calls) == 1
+    assert [parse_qs(urlsplit(u).query)["domain"] for u in replay.calls] == [["zeroshield.ai"]] * 2  # page + empty
 
 
 def test_an_idn_is_searched_as_punycode():
@@ -180,7 +181,7 @@ def test_quota_spent_hands_the_names_to_crtsh_and_says_what_was_not_checked():
                      ("certspotter", "example.com"): _always("certspotter_fullquota_10")})
     result, certs, gaps, replay = run(["zeroshield.ai", "example.com"], replay=replay, chain_names=("certspotter", "crtsh"),
                                       clock=clock, deadline=clock.t + 300)  # 348 s would pass it
-    certspotter_calls = [u for u in replay.calls if "certspotter" in u]
+    certspotter_calls = [u for u in replay.calls if "certspotter" in u]  # a 429: no page after it
     assert len(certspotter_calls) == 1  # throttled after the first 429: the second name goes straight to crt.sh
     assert {t["provider"] for t in result["targets"]} == {"crtsh"} and result["counts"]["ok"] == 2
     zs = [a for a in certs if a["target"] == "zeroshield.ai"]
@@ -188,7 +189,7 @@ def test_quota_spent_hands_the_names_to_crtsh_and_says_what_was_not_checked():
     assert all(a["facts"]["ct_detail"] == "summary" and a["key_size"] is None and "fingerprint_sha256" not in a["facts"]
                for a in certs)
     note = [g for g in gaps if g["facts"]["check"] == "CT certificate details"]
-    assert len(note) == 1 and "weak-key and SHA-1 checks were not run" in note[0]["facts"]["detail"]
+    assert len(note) == 1 and "weak-key, SHA-1 and revocation checks were not run" in note[0]["facts"]["detail"]
     assert result["provider_calls"] == {"certspotter": 1, "crtsh": 2} and result["rate_limited"] == 1
 
 
@@ -250,22 +251,84 @@ def test_a_stop_while_waiting_for_the_quota_leaves_the_rest_not_searched():
     result, certs, gaps, _ = run(["zeroshield.ai", "example.com"], replay=replay, clock=clock, should_stop=should_stop)
     # example.com is searched first (sorted) and answers; zeroshield.ai waits for the quota and is stopped
     assert {t["target"]: t["status"] for t in result["targets"]} == {"example.com": "ok", "zeroshield.ai": "skipped"}
+    gaps = [g for g in gaps if g["facts"]["check"] == C.CHECK]
     assert len(certs) == 17 and [g["target"] for g in gaps] == ["zeroshield.ai"] and gaps[0]["facts"]["status"] == "skipped"
     assert len(calls) > 3  # the lease was renewed while waiting
 
 
 def test_the_wait_budget_bounds_a_job_and_the_left_over_names_go_first_next_time(monkeypatch):
-    monkeypatch.setenv("CBOM_CT_WAIT_BUDGET_S", "100")
+    """Review 5901912537 #8: the budget holds inside a wait too.  With 400 s, example.com's 348 s wait fits; the next
+    name's 348 s would pass the budget, so it is not waited for and the names left are searched first next time."""
+    monkeypatch.setenv("CBOM_CT_WAIT_BUDGET_S", "400")
     status, headers, body = recorded("certspotter_fullquota_10")
     answers = [httpx.Response(status, headers=headers, content=body)]
-    replay = Replay({("certspotter", "example.com"): lambda req: answers.pop(0) if answers else
-                     httpx.Response(200, content=recorded("certspotter_example")[2])})
-    result, certs, gaps, _ = run(["example.com", "zeroshield.ai", "xn--bcher-kva.de"], replay=replay)
+    replay = Replay({("certspotter", "example.com", "true", None): lambda req: answers.pop(0) if answers else
+                     httpx.Response(200, content=recorded("certspotter_example")[2]),
+                     ("certspotter", "xn--bcher-kva.de"): lambda req: httpx.Response(status, headers=headers, content=body)})
+    clock = FakeClock()
+    result, certs, gaps, _ = run(["example.com", "zeroshield.ai", "xn--bcher-kva.de"], replay=replay, clock=clock)
     status_of = {t["target"]: t["status"] for t in result["targets"]}
-    # example.com waited 348 s (> the 100 s budget) and was answered; the two names after it were not searched
     assert status_of == {"example.com": "ok", "xn--bcher-kva.de": "skipped", "zeroshield.ai": "skipped"}
-    assert all("quota was used up" in g["facts"]["detail"] for g in gaps) and len(certs) == 17
+    assert sum(clock.slept) == 348.0 and result["waited_s"] == 348.0  # never past the budget
+    assert len(certs) == 17 and {g["target"] for g in gaps if g["facts"]["check"] == C.CHECK} == {
+        "xn--bcher-kva.de", "zeroshield.ai"}
     left = [t["target"] for t in result["targets"] if t["status"] == "skipped"]
     _r2, _c2, _g2, replay2 = run(["example.com", "zeroshield.ai", "xn--bcher-kva.de"], first=left)
-    order = [parse_qs(urlsplit(u).query)["domain"][0] for u in replay2.calls]
+    order = list(dict.fromkeys(parse_qs(urlsplit(u).query)["domain"][0] for u in replay2.calls))
     assert order == ["xn--bcher-kva.de", "zeroshield.ai", "example.com"]
+
+
+def test_a_wait_longer_than_the_whole_budget_is_not_started(monkeypatch):
+    monkeypatch.setenv("CBOM_CT_WAIT_BUDGET_S", "100")
+    status, headers, body = recorded("certspotter_fullquota_10")  # Retry-After 348
+    replay = Replay({("certspotter", "example.com"): lambda req: httpx.Response(status, headers=headers, content=body)})
+    clock = FakeClock()
+    result, _c, _g, _ = run(["example.com"], replay=replay, clock=clock)
+    assert clock.slept == [] and result["targets"][0]["status"] == "skipped"
+    assert "rate limit" in result["targets"][0]["error"]
+
+
+def test_a_run_holds_at_most_what_the_store_accepts(monkeypatch):
+    """Review 5901912537 #2: issuances past MAX_CERTS are counted, not held, and say so (partial, a coverage row)."""
+    from backend.utilities.cbom_sources import jobs
+
+    assert C.MAX_CERTS == jobs.MAX_ASSETS_PER_ATTEMPT
+    monkeypatch.setattr(C, "MAX_CERTS", 30)
+    result, certs, gaps, _ = run(["zeroshield.ai", "example.com"])  # 17 + 25 issuances
+    assert len(certs) == 30 and result["certificates"] == 30 and result["not_stored"] == 12
+    row = next(t for t in result["targets"] if t["target"] == "zeroshield.ai")
+    assert row["status"] == "partial" and "12 certificates not stored" in row["error"]
+    assert any(g["target"] == "zeroshield.ai" and g["facts"]["status"] == "partial" for g in gaps)
+    assert "12 more not stored" in result["summary"]
+
+
+def test_unknown_revocation_status_is_said_not_read_as_not_revoked():
+    """Review 5901912537 #7: Cert Spotter's revoked: null (8 of example.com's 17) and every crt.sh row."""
+    _r, certs, gaps, _ = run(["example.com"])
+    [row] = [g for g in gaps if g["facts"]["check"] == "CT revocation status"]
+    assert row["facts"]["status"] == "incomplete" and row["facts"]["detail"].startswith("8 certificates")
+    assert sum(1 for a in certs if "revoked" not in a["facts"]) == 8
+    _r, _c, gaps, _ = run(["zeroshield.ai"], chain_names=("crtsh",))
+    [note] = [g for g in gaps if g["facts"]["check"] == "CT certificate details"]
+    assert "revocation status" in note["facts"]["detail"] and "revocation checks were not run" in note["facts"]["detail"]
+    assert not [g for g in gaps if g["facts"]["check"] == "CT revocation status"]  # said once, in the crt.sh row
+
+
+@pytest.mark.parametrize("expected,issuer_name,dn,match", [
+    ("Let's Encrypt", "Let's Encrypt", "C=US, O=Let's Encrypt, CN=R11", True),
+    ("DigiCert", None, "C=US, O=DigiCert Inc, CN=DigiCert Global G2 TLS RSA SHA256 2020 CA1", True),
+    ("google trust", "Google Trust Services", "C=US, O=Google Trust Services, CN=WR1", True),
+    ("Inc", None, "C=US, O=DigiCert Inc, CN=DigiCert Global G2 TLS RSA SHA256 2020 CA1", False),
+    ("USA", None, "C=US, O=DigiCert Inc, CN=DigiCert Global G2 TLS RSA SHA256 2020 CA1", False),
+    ("R11x", "Let's Encrypt", "C=US, O=Let's Encrypt, CN=R11", False),
+    ("Encrypt", "Let's Encrypt", "C=US, O=Let's Encrypt, CN=R11", False),
+    ("Amazon", "Amazon Trust Services", "C=US, O=Amazon, CN=Amazon RSA 2048 M02", True),
+])
+def test_expected_issuers_match_whole_attribute_values_or_their_leading_words(expected, issuer_name, dn, match):
+    """Review 5901912537 #9: a short or inner word (Inc, US) no longer silences CERT_UNEXPECTED_CA."""
+    assert C.issuer_matches({"issuer": dn, "issuer_name": issuer_name}, [expected]) is match
+
+
+def test_an_expected_issuer_shorter_than_three_characters_is_refused():
+    with pytest.raises(ValueError, match="at least 3 characters"):
+        CtLogsConfig.model_validate({"domains": ["example.com"], "expected_issuers": ["R1"]})

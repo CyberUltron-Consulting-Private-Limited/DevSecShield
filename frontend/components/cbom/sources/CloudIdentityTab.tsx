@@ -1852,7 +1852,7 @@ function CtDiscovery({ teamId, settings, source, onDelete }: {
               onCheckedChange={(v) => save.mutate({ include_subdomains: v })} />
           </div>
           <Field label="Certificate authorities you use (optional)" htmlFor="ct-issuer-input"
-            hint="A certificate from any other CA is flagged as unexpected. Matched against the CA's name, organisation and CN, e.g. Let's Encrypt, DigiCert, Amazon.">
+            hint="A certificate from any other CA is flagged as unexpected. Matched against the CA's name, organisation or CN: the whole value or its first words (at least 3 characters), e.g. Let's Encrypt, DigiCert, Amazon.">
             <div className="space-y-2">
               {issuers.length > 0 && (
                 <div className="flex flex-wrap gap-1.5" data-testid="cloud-ct-issuers">

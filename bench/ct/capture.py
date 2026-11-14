@@ -189,7 +189,7 @@ def live(rec: Recorder, domains: list[str], provider: str, tag: str) -> None:
         while page < 40:
             status, body = rec.record(f"{tag}_certspotter_{domain}_p{page}", cs_url(domain, after=after))
             rows = json.loads(body) if status == "200" else []
-            if status != "200" or not rows or len(rows) < 100:
+            if status != "200" or not rows:  # Cert Spotter's documented rule: page until an empty array
                 break
             after, page = rows[-1]["id"], page + 1
 

@@ -13,8 +13,10 @@ Exit status 0 only when every row matches.
 from __future__ import annotations
 
 import argparse
+import datetime as _dt
 import json
 import pathlib
+import re
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -70,6 +72,44 @@ def _actual(row: dict, provider: str) -> dict:
             "der_sha256": f.get("fingerprint_sha256") or f.get("precert_sha256"), "precert": f.get("precertificate_only")}
 
 
+CT_CODES = ("CERT_UNEXPECTED_CA", "CERT_REVOKED", "CERT_WILDCARD_SPRAWL")
+SPRAWL_OVER = 3  # SPEC section 5: more than three live wildcard certificates for one name
+
+
+def _issuer_values(o: dict) -> list[str]:
+    dn = o.get("issuer") or ""
+    org = re.search(r"(?:^|,)\s*O=((?:\\,|[^,])+)", dn)
+    cn = re.search(r"(?:^|,)\s*CN=((?:\\,|[^,])+)", dn)
+    vals = [o.get("issuer_friendly_name") or "", org.group(1) if org else "", cn.group(1) if cn else ""]
+    return [" ".join(v.replace("\\", "").split()).casefold() for v in vals if v]
+
+
+def expected_codes(rows: dict[str, dict], expected_issuers: list[str], now: str) -> dict[str, set[str]]:
+    """serial -> the CT codes the SPEC's rules give for that row, from the oracle rows alone: an issuer outside the
+    expected list (its name, O or CN, or their leading words), the provider's revoked flag, and more than three live
+    (unexpired, not revoked) certificates naming the same wildcard across every listed domain."""
+    live: dict[str, set[str]] = {}
+    for serial, o in rows.items():
+        if o.get("revoked") is True or (o.get("not_after") or "") < now:
+            continue
+        for name in o.get("dns_names") or []:
+            if name.startswith("*."):
+                live.setdefault(name, set()).add(serial)
+    out: dict[str, set[str]] = {}
+    wants = [" ".join(e.split()).casefold() for e in expected_issuers if e.strip()]
+    for serial, o in rows.items():
+        codes = set()
+        values = _issuer_values(o)
+        if wants and not any(v == w or v.startswith(w + " ") for v in values for w in wants):
+            codes.add("CERT_UNEXPECTED_CA")
+        if o.get("revoked") is True:
+            codes.add("CERT_REVOKED")
+        if any(len(live.get(n, ())) > SPRAWL_OVER for n in o.get("dns_names") or [] if n.startswith("*.")):
+            codes.add("CERT_WILDCARD_SPRAWL")
+        out[serial] = codes
+    return out
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--collector", type=pathlib.Path, required=True)
@@ -77,6 +117,7 @@ def main() -> int:
     parser.add_argument("--after", type=pathlib.Path, required=True)
     parser.add_argument("--provider", default="certspotter", choices=["certspotter", "crtsh"])
     parser.add_argument("--report", type=pathlib.Path, required=True)
+    parser.add_argument("--expected-issuers", default="", help="the list the product run was given (comma-separated)")
     args = parser.parse_args()
     collected = json.loads(args.collector.read_text())
     before = _oracle_rows(_bodies(args.before, args.provider), args.provider)
@@ -91,20 +132,32 @@ def main() -> int:
     problems += [f"stored but not in the provider's answer: {s}" for s in extra]
     lines = ["| serial | domains | field checks | result |", "|---|---|---|---|"]
     checked = 0
+    now = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    codes_want = expected_codes(after, [e for e in args.expected_issuers.split(",") if e], now) \
+        if args.provider == "certspotter" else {}
+    code_counts = {c: 0 for c in CT_CODES}
     for serial in sorted(stable & set(stored)):
         want, got = _expected(after[serial], args.provider), _actual(stored[serial], args.provider)
         bad = [f"{k}: want {want[k]!r} got {got.get(k)!r}" for k in want if want[k] != got.get(k)]
+        if serial in codes_want:  # the three CT finding codes, judged on the stored, classified row
+            have = {c for c in stored[serial].get("finding_codes") or [] if c in CT_CODES}
+            if have != codes_want[serial]:
+                bad.append(f"CT codes: want {sorted(codes_want[serial])} got {sorted(have)}")
+            for code in have:
+                code_counts[code] += 1
         doms = sorted(after[serial]["domains"])
         if sorted(stored[serial]["facts"].get("matched_domains") or []) != doms:
             bad.append(f"matched_domains: want {doms} got {stored[serial]['facts'].get('matched_domains')}")
         checked += 1
         problems += [f"{serial}: {b}" for b in bad]
-        lines.append(f"| {serial} | {','.join(doms)} | {len(want) + 1} | {'OK' if not bad else 'MISMATCH: ' + '; '.join(bad)[:300]} |")
+        lines.append(f"| {serial} | {','.join(doms)} | {len(want) + 1 + (serial in codes_want)} | {'OK' if not bad else 'MISMATCH: ' + '; '.join(bad)[:300]} |")
     summary = {
         "provider": args.provider, "collector_job": collected["job"]["status"], "collector_outcome": collected["job"]["outcome"],
         "oracle_before": len(before), "oracle_after": len(after), "stable": len(stable),
         "logged_during_run": sorted(moving), "stored_certificates": len(stored), "rows_compared": checked,
-        "missing": missing, "extra": extra, "mismatches": len(problems), "provider_calls": collected["job"]["result"].get("provider_calls"),
+        "missing": missing, "extra": extra, "mismatches": len(problems), "ct_codes_stored": code_counts,
+        "pages": {t["target"]: t.get("pages") for t in collected["job"]["result"].get("targets") or []},
+        "provider_calls": collected["job"]["result"].get("provider_calls"),
         "wall_s": collected["job"].get("wall_s"), "charged_credits": collected["run"]["charged_c"] / 100,
     }
     report = [f"# CT live proof ({args.provider})", "", "```json", json.dumps(summary, indent=1), "```", "", *lines]

@@ -7,7 +7,8 @@ clock, so eight simulated hours take seconds.  The model comes from the recordin
 
 * latency: the recorded Cert Spotter request durations (fixtures' request.json) plus 6 ms per row returned;
 * 100 issuances per page; every page is one "full-domain" query of quota (recorded: x-ratelimit-remaining fell on
-  the ``after`` pages too);
+  the ``after`` pages too), and the product pages until an empty array (the documented rule), so every domain costs
+  one more query than its full pages;
 * quota: a token bucket per plan, refilled evenly over the hour (recorded: unauthenticated limit 10, the 11th query
   got 429 with Retry-After 348 s, i.e. one token per 360 s), answered with the recorded 429 body;
 * plans (sslmate.com/ct_search_api): unauthenticated 10/h; Medium 100/h, 500/min, 10/s; Large 1,000/h, 2,000/min, 20/s;

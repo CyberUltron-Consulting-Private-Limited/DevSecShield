@@ -782,8 +782,9 @@ def ct_discovery_enabled() -> bool:
 
 class CtLogsConfig(_Source):
     """The team's domains, searched in public Certificate Transparency logs by ZeroShield's cloud (one source per team).
-    ``domains`` are stored as A-labels; ``expected_issuers`` are the certificate authorities the team uses (text matched
-    against the issuer's name, organisation and CN); any other issuer is flagged."""
+    ``domains`` are stored as A-labels; ``expected_issuers`` are the certificate authorities the team uses (each is the
+    issuer's name, organisation or CN, or the words they start with; ct_collect.issuer_matches); any other issuer is
+    flagged."""
     domains: list[str] = Field(min_length=1)
     include_subdomains: bool = True
     expected_issuers: list[str] = Field(default_factory=list, max_length=MAX_CT_ISSUERS)
@@ -811,6 +812,8 @@ class CtLogsConfig(_Source):
                 continue
             if len(text) > 128:
                 raise ValueError("expected_issuers: each name is at most 128 characters")
+            if len(text) < 3:  # "US", "R1": would match the start of unrelated issuer names
+                raise ValueError("expected_issuers: each name is at least 3 characters (a CA's name, e.g. Let's Encrypt)")
             if text.casefold() not in {o.casefold() for o in out}:
                 out.append(text)
         return out

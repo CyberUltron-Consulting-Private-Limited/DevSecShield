@@ -4,9 +4,11 @@ A provider answers "every logged certificate for this domain" as a list of ``Iss
 precertificate are one issuance).  Two providers exist; SPEC section 2 has the evidence for the choice:
 
 * ``certspotter`` (default): SSLMate Cert Spotter API v1 ``/v1/issuances``.  DER of the certificate (the final one
-  when known), issuer DN and name, SANs in punycode, public key, revocation.  Unexpired certificates only.  Pages
-  of 100 with ``after=<id>``; a short page is the last.  A key (``CBOM_CT_CERTSPOTTER_KEY``) is required for production use by its
-  terms; without one the unauthenticated quota is 10 full-domain queries an hour per address (x-ratelimit-limit).
+  when known), issuer DN and name, SANs in punycode, public key, revocation.  Unexpired certificates only.  Paged with
+  ``after=<id>`` until the API answers an empty array, its documented rule (the page size is not specified: 100 was
+  recorded unauthenticated, so a short page is never taken as the last).  A key (``CBOM_CT_CERTSPOTTER_KEY``) is
+  required for production use by its terms; without one the unauthenticated quota is 10 full-domain queries an hour
+  per address (x-ratelimit-limit), and every page, the empty one too, is one query.
 * ``crtsh``: crt.sh JSON.  No key, no paging, 5 requests a minute per address, frequent 502s and multi-second
   answers (recorded on GitHub runners).  Rows carry no public key, signature algorithm or fingerprint, so its
   issuances are ``detail="summary"``.  Used as a fallback only.
@@ -14,10 +16,19 @@ precertificate are one issuance).  Two providers exist; SPEC section 2 has the e
 RFC 6962 logs themselves are not a provider: a log can only be read by index, never searched by name.
 
 HTTP: httpx to a fixed set of hosts (``api.certspotter.com``, ``crt.sh``), HTTPS only, no redirects, a body cap,
-a token bucket per host shared by the process, ``Retry-After`` honoured on 429 (a ``Retry-After`` on a 200 is
-Cert Spotter's polling hint and is ignored), exponential backoff with full jitter on 5xx / timeouts / bodies that are
-not JSON, and a short in-process cache of whole answers (CT data is public; two teams asking for one domain within
-the TTL cost one search).  The clock and sleep are injectable (bench/ct/scale.py runs on a simulated clock).
+at most ``REQUEST_S`` (90 s) per answer however slowly its bytes arrive, a token bucket per host shared by the
+process, ``Retry-After`` honoured on 429 (a ``Retry-After`` on a 200 is Cert Spotter's polling hint and is ignored)
+unless the wait would pass the run's deadline or its quota wait budget (``CtHttp.wait_budget``), exponential backoff
+with full jitter on 5xx / timeouts / bodies that are not JSON, and a short in-process cache of whole answers (CT data
+is public; two teams asking for one domain within the TTL cost one search), bounded by bytes
+(``CBOM_CT_CACHE_MAX_BYTES``, 64 MiB).  The clock and sleep are injectable (bench/ct/scale.py runs on a simulated
+clock).
+
+Rate limits are per source address (crt.sh: 5 a minute; Cert Spotter: per plan and per address).  The buckets live
+in the process, and the cloud worker runs one job at a time, so one worker per egress address keeps to them.  When
+``N`` CT-capable workers share one egress address, set ``CBOM_CT_WORKERS_PER_EGRESS=N``: every bucket then allows
+1/N of the rate, so together they stay under the provider's limit.  crt.sh requests are also serialised in the
+process (one in flight).
 """
 from __future__ import annotations
 
@@ -29,6 +40,7 @@ import os
 import random
 import threading
 import time
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, Callable
 from urllib.parse import urlencode, urlsplit
@@ -48,7 +60,10 @@ BACKOFF_BASE_S = 2.0
 BACKOFF_CAP_S = 60.0
 MAX_WAIT_S = 3_700.0  # a single wait longer than this is not waited for (Cert Spotter quotas are per hour)
 HEARTBEAT_S = 30.0  # a long wait is cut into slices; after each one the job's lease is renewed (``heartbeat``)
-TIMEOUT = httpx.Timeout(90.0, connect=15.0)
+TIMEOUT = httpx.Timeout(90.0, connect=15.0)  # per socket read; REQUEST_S bounds the whole answer
+REQUEST_S = 90.0  # SPEC section 2: "90 s per request", counted from the request until the last byte
+CACHE_MAX_BYTES = 64 * 2 ** 20  # SPEC section 2
+CACHE_MAX_ENTRY_BYTES = 8 * 2 ** 20  # one answer above this is never cached
 _AUTH_CODES = frozenset({"bad_credentials", "unauthorized", "payment_required", "disabled_credentials",
                          "not_allowed_by_plan"})
 _RETRY_CODES = frozenset({"internal_error", "service_outage", "timeout"})
@@ -145,16 +160,27 @@ class TokenBucket:
             waited += wait
 
 
+def workers_per_egress() -> int:
+    """``CBOM_CT_WORKERS_PER_EGRESS``: CT-capable workers that share one egress address (default 1)."""
+    try:
+        return max(int(os.environ.get("CBOM_CT_WORKERS_PER_EGRESS", "1")), 1)
+    except ValueError:
+        return 1
+
+
 def _rate(name: str, default: tuple[float, float]) -> tuple[float, float]:
-    """``CBOM_CT_RATE_<NAME>="<per second>/<per minute>"``, e.g. "10/500" for a Medium Cert Spotter plan."""
+    """``CBOM_CT_RATE_<NAME>="<per second>/<per minute>"``, e.g. "10/500" for a Medium Cert Spotter plan; divided by
+    the workers that share the egress address, as the providers count per address."""
     text = os.environ.get(f"CBOM_CT_RATE_{name.upper()}", "")
+    rate = default
     try:
         sec, minute = (float(x) for x in text.split("/", 1))
         if sec > 0 and minute > 0:
-            return sec, minute
+            rate = (sec, minute)
     except ValueError:
         pass
-    return default
+    share = workers_per_egress()
+    return rate[0] / share, rate[1] / share
 
 
 _BUCKETS: dict[str, TokenBucket] = {}
@@ -168,34 +194,66 @@ def bucket(name: str, default: tuple[float, float]) -> TokenBucket:
         return _BUCKETS[name]
 
 
-class AnswerCache:
-    """Whole per-domain answers, keyed (provider, domain, flags), for ``ttl`` seconds; bounded by entries."""
+def answer_bytes(result: SearchResult) -> int:
+    """An estimate of the memory one cached answer holds: per issuance the DER, the names and the strings, plus the
+    object overhead (about 600 bytes, measured with tracemalloc on the recorded google.com pages; the test checks
+    the estimate is not below the measurement)."""
+    total = 256
+    for i in result.issuances:
+        total += 600 + len(i.der or b"") + sum(len(n) + 56 for n in i.dns_names)
+        total += sum(len(x) for x in (i.provider_id, i.serial, i.issuer_dn, i.issuer_name, i.subject_cn, i.not_before,
+                                      i.not_after, i.tbs_sha256, i.cert_sha256, i.revocation_time) if x)
+        total += 400 if i.pubkey else 0
+    return total
 
-    def __init__(self, ttl: float, max_entries: int = 5_000):
-        self.ttl, self.max_entries = ttl, max_entries
-        self._data: dict[tuple, tuple[float, SearchResult]] = {}
+
+class AnswerCache:
+    """Whole per-domain answers, keyed (provider, domain, flags), for ``ttl`` seconds.  Bounded by bytes
+    (``answer_bytes``; least recently used first out) and by entries; an answer above ``max_entry_bytes`` is not
+    cached at all."""
+
+    def __init__(self, ttl: float, max_bytes: int | None = None, max_entries: int = 5_000,
+                 max_entry_bytes: int = CACHE_MAX_ENTRY_BYTES):
+        self.ttl, self.max_entries, self.max_entry_bytes = ttl, max_entries, max_entry_bytes
+        self.max_bytes = CACHE_MAX_BYTES if max_bytes is None else max_bytes
+        self._data: OrderedDict[tuple, tuple[float, SearchResult, int]] = OrderedDict()
+        self.bytes = 0
         self._lock = threading.Lock()
+
+    def _drop(self, key: tuple) -> None:
+        hit = self._data.pop(key, None)
+        if hit is not None:
+            self.bytes -= hit[2]
 
     def get(self, key: tuple, now: float) -> SearchResult | None:
         with self._lock:
             hit = self._data.get(key)
             if hit is None or hit[0] < now:
-                self._data.pop(key, None)
+                self._drop(key)
                 return None
+            self._data.move_to_end(key)
             return hit[1]
 
     def put(self, key: tuple, value: SearchResult, now: float) -> None:
         if self.ttl <= 0:
             return
+        size = answer_bytes(value)
         with self._lock:
-            if len(self._data) >= self.max_entries:
-                for old in sorted(self._data, key=lambda k: self._data[k][0])[: self.max_entries // 10 or 1]:
-                    self._data.pop(old, None)
-            self._data[key] = (now + self.ttl, value)
+            self._drop(key)
+            if size > self.max_entry_bytes or size > self.max_bytes:
+                return
+            while self._data and (self.bytes + size > self.max_bytes or len(self._data) >= self.max_entries):
+                self._drop(next(iter(self._data)))
+            self._data[key] = (now + self.ttl, value, size)
+            self.bytes += size
+
+    def __len__(self) -> int:
+        return len(self._data)
 
     def clear(self) -> None:
         with self._lock:
             self._data.clear()
+            self.bytes = 0
 
 
 def _cache_ttl() -> float:
@@ -205,7 +263,14 @@ def _cache_ttl() -> float:
         return 3600.0
 
 
-CACHE = AnswerCache(_cache_ttl())
+def _cache_max_bytes() -> int:
+    try:
+        return max(int(os.environ.get("CBOM_CT_CACHE_MAX_BYTES", str(CACHE_MAX_BYTES))), 0)
+    except ValueError:
+        return CACHE_MAX_BYTES
+
+
+CACHE = AnswerCache(_cache_ttl(), _cache_max_bytes())
 
 
 # ----------------------------------------------------------------------------- HTTP
@@ -260,6 +325,9 @@ class CtHttp:
         self.requests = 0
         self.waited_s = 0.0
         self.rate_limited = 0
+        # the most this client may wait in total (quota waits and backoff), e.g. the job's quota wait budget: a wait
+        # that would pass it is not started (a 429 then fails the request as rate_limited)
+        self.wait_budget: float | None = None
         # called between slices of a long wait: renews the job's lease (cloud worker ``should_stop``); a reason stops
         self.heartbeat: Callable[[], str | None] | None = None
 
@@ -278,6 +346,7 @@ class CtHttp:
         while True:
             self.waited_s += bucket_.take(self.clock)
             self.requests += 1
+            started = self.clock.monotonic()
             try:
                 with self._client.stream("GET", url, headers=headers or {}) as resp:
                     chunks, size = [], 0
@@ -285,14 +354,17 @@ class CtHttp:
                         size += len(chunk)
                         if size > MAX_BODY:
                             raise CtError("malformed", f"{what} answered with more than {MAX_BODY // 2**20} MB")
+                        if self.clock.monotonic() - started > REQUEST_S:
+                            raise _TooSlow
                         chunks.append(chunk)
                     answer = Response(resp.status_code, {k.lower(): v for k, v in resp.headers.items()}, b"".join(chunks))
-            except (httpx.TimeoutException, httpx.TransportError) as exc:
+            except (httpx.TimeoutException, httpx.TransportError, _TooSlow) as exc:
                 if transient < MAX_RETRIES:
                     self._wait(self._backoff(transient), deadline, what)
                     transient += 1
                     continue
-                raise CtError("unavailable", f"{what} did not answer ({type(exc).__name__})") from None
+                why = f"its answer took more than {int(REQUEST_S)} s" if isinstance(exc, _TooSlow) else type(exc).__name__
+                raise CtError("unavailable", f"{what} did not answer ({why})") from None
             code, message = _error_code(answer.body)
             if answer.status == 429 or code == "rate_limited":
                 self.rate_limited += 1
@@ -318,11 +390,12 @@ class CtHttp:
             return answer
 
     def _fits(self, wait: float, deadline: float | None) -> bool:
-        return deadline is None or self.clock.monotonic() + wait < deadline
+        within_budget = self.wait_budget is None or self.waited_s + wait <= self.wait_budget
+        return within_budget and (deadline is None or self.clock.monotonic() + wait < deadline)
 
     def _wait(self, seconds: float, deadline: float | None, what: str) -> None:
         if not self._fits(seconds, deadline):
-            raise CtError("unavailable", f"{what} kept failing and the run's time ran out")
+            raise CtError("unavailable", f"{what} kept failing and the run's time or wait budget ran out")
         left = seconds
         while left > 0:
             step = min(left, HEARTBEAT_S)
@@ -332,6 +405,10 @@ class CtHttp:
             reason = self.heartbeat() if self.heartbeat is not None and left > 0 else None
             if reason:
                 raise CtError("stopped", reason)
+
+
+class _TooSlow(Exception):
+    """An answer still arriving REQUEST_S after the request (a slow drip that no single read timeout catches)."""
 
 
 def json_list(answer: Response, what: str) -> list[Any]:
@@ -356,16 +433,6 @@ def _b64(text: Any) -> bytes | None:
 
 def _str(value: Any, limit: int = 255) -> str | None:
     return str(value)[:limit] if isinstance(value, (str, int)) and str(value) != "" else None
-
-
-def page_size() -> int:
-    """Cert Spotter's page size (100, recorded on google.com: two pages of 100).  A page shorter than this is the last
-    one.  ``CBOM_CT_CERTSPOTTER_PAGE_SIZE=0`` follows the documented rule only (page until an empty page)."""
-    try:
-        value = int(os.environ.get("CBOM_CT_CERTSPOTTER_PAGE_SIZE", "100"))
-    except ValueError:
-        value = 100
-    return value if value > 0 else 0
 
 
 class CertSpotter:
@@ -403,8 +470,7 @@ class CertSpotter:
                 if not isinstance(row, dict) or not isinstance(row.get("id"), str):
                     raise CtError("malformed", f"{self.label} answered with an issuance that has no id")
                 out.issuances.append(self.issuance(row))
-            if 0 < len(rows) < page_size():
-                break  # a short page is the last one: saves the empty-page query (each costs quota)
+            # the documented rule: repeat until an empty array (a short page is not the last: the size is unspecified)
             after = rows[-1]["id"]
         if len(out.issuances) > MAX_RESULTS:
             out.issuances, out.truncated = out.issuances[:MAX_RESULTS], True
@@ -426,6 +492,9 @@ class CertSpotter:
         )
 
 
+_CRTSH_ONE_AT_A_TIME = threading.Lock()  # crt.sh counts per address: one request in flight per process
+
+
 class CrtSh:
     name = "crtsh"
     label = "crt.sh"
@@ -437,21 +506,21 @@ class CrtSh:
     def search(self, domain: str, include_subdomains: bool, deadline: float | None = None) -> SearchResult:
         """One request: ``q=<domain>`` is crt.sh's identity search, which also returns subdomains (recorded: the
         same 23 names as ``q=%.<domain>``); rows are kept only when one of their names is the domain or, with
-        subdomains, under it, because the search also matches names that merely contain the text."""
-        from backend.utilities.cbom_sources.ct_domains import covered_by
-
+        subdomains, under it, because the search also matches names that merely contain the text.  A wildcard that
+        covers the domain itself (``*.example.com`` for ``www.example.com``) is kept too, as Cert Spotter's
+        ``match_wildcards`` keeps it, so a fallback run lists the same certificates."""
         out = SearchResult(domain, self.name, [])
         seen: dict[tuple[str, str], Issuance] = {}
         url = CRTSH_URL + "?" + urlencode({"q": domain, "output": "json", "exclude": "expired", "deduplicate": "Y"})
-        answer = self.http.get(url, bucket_=self.rate, deadline=deadline, what=self.label)
+        with _CRTSH_ONE_AT_A_TIME:
+            answer = self.http.get(url, bucket_=self.rate, deadline=deadline, what=self.label)
         out.requests += 1
         out.pages += 1
         for row in json_list(answer, self.label):
             if not isinstance(row, dict) or row.get("id") is None:
                 raise CtError("malformed", f"{self.label} answered with a row that has no id")
             names = [n.strip().lower()[:253] for n in str(row.get("name_value") or "").split("\n") if n.strip()]
-            bare = [n[2:] if n.startswith("*.") else n for n in names]
-            if not any(n == domain or (include_subdomains and covered_by(n, domain)) for n in bare):
+            if not any(_crtsh_matches(n, domain, include_subdomains) for n in names):
                 continue
             serial = str(row.get("serial_number") or "").lower().lstrip("0") or None
             key = (serial or f"id:{row['id']}", str(row.get("issuer_ca_id") or row.get("issuer_name") or ""))
@@ -467,6 +536,19 @@ class CrtSh:
                 break
         out.issuances = list(seen.values())
         return out
+
+
+def _crtsh_matches(name: str, domain: str, include_subdomains: bool) -> bool:
+    """A crt.sh row name that belongs to the search for ``domain``: the domain itself, a name under it (with
+    subdomains), or a wildcard that covers it (``*.parent`` with ``domain`` exactly one label under ``parent``)."""
+    from backend.utilities.cbom_sources.ct_domains import covered_by
+
+    if name.startswith("*."):
+        parent = name[2:]
+        if domain != parent and domain.endswith("." + parent) and "." not in domain[: -len(parent) - 1]:
+            return True  # the wildcard covers the searched name itself
+        name = parent  # *.domain or *.sub.domain: a certificate for names under the domain
+    return name == domain or (include_subdomains and covered_by(name, domain))
 
 
 def _z(value: Any) -> str | None:

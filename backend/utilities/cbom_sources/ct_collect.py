@@ -30,6 +30,9 @@ from backend.utilities.cbom_sources import ct_providers as P
 POISON_OID = "1.3.6.1.4.1.11129.2.4.3"  # RFC 6962 precertificate poison extension
 WILDCARD_SPRAWL_THRESHOLD = 3  # more live wildcard certificates than this for one name is sprawl
 DEADLINE_MARGIN_S = 120.0  # stop starting new searches this close to the job's deadline
+# the most certificates one run keeps: jobs.MAX_ASSETS_PER_ATTEMPT, what the store accepts per attempt (a test pins the
+# two together); issuances past it are counted, not held, so a run's memory is bounded by what can be stored
+MAX_CERTS = 50_000
 
 
 def wait_budget_s() -> float:
@@ -42,6 +45,8 @@ def wait_budget_s() -> float:
         return max(float(os.environ.get("CBOM_CT_WAIT_BUDGET_S", "3600")), 0.0)
     except ValueError:
         return 3600.0
+
+
 CHECK = "Certificate Transparency search"
 _CN = re.compile(r"(?:^|[,/])\s*CN\s*=\s*([^,/+]+)", re.IGNORECASE)
 _O = re.compile(r"(?:^|[,/])\s*O\s*=\s*([^,/+]+)", re.IGNORECASE)
@@ -84,7 +89,6 @@ class Cert:
     """One issuance being assembled from one or more provider rows (a name can return it more than once)."""
 
     key: str
-    issuance: P.Issuance
     facts: dict[str, Any]
     algorithm: str | None
     key_size: int | None
@@ -167,12 +171,24 @@ def details(iss: P.Issuance) -> tuple[dict[str, Any], str | None, int | None]:
     return facts, algorithm, key_size
 
 
+def _issuer_values(facts: dict[str, Any]) -> list[str]:
+    """The issuer's provider name (Cert Spotter friendly_name), organisation (O) and common name (CN)."""
+    dn = " ".join(str(facts.get("issuer") or "").split())
+    org = _O.search(dn)
+    values = (str(facts.get("issuer_name") or ""), org.group(1) if org else "", cn_of(dn))
+    return [" ".join(v.split()).casefold() for v in values if v and v.strip()]
+
+
 def issuer_matches(facts: dict[str, Any], expected: list[str]) -> bool:
-    """True when any expected issuer text is in the issuer's name, organisation, CN or DN (case-insensitive)."""
-    dn = str(facts.get("issuer") or "")
-    haystack = " | ".join(x for x in (str(facts.get("issuer_name") or ""), dn, cn_of(dn),
-                                      (_O.search(dn).group(1) if _O.search(dn) else "")) if x).casefold()
-    return any(e.strip().casefold() in haystack for e in expected if e and e.strip())
+    """True when an expected issuer is the issuer's name, organisation or CN, or the words that start one of them
+    (case-insensitive): "DigiCert" matches O="DigiCert Inc" and CN="DigiCert Global G2 TLS RSA SHA256 2020 CA1"; "Inc",
+    "US" or "R1" match nothing they merely occur in (the country attribute is never compared)."""
+    values = _issuer_values(facts)
+    for raw in expected:
+        want = " ".join(str(raw or "").split()).casefold()
+        if want and any(v == want or v.startswith(want + " ") for v in values):
+            return True
+    return False
 
 
 def _better(old: Cert, new_facts: dict[str, Any]) -> bool:
@@ -202,7 +218,9 @@ def collect_ct(cfg: dict[str, Any], label: str, emit: Callable[[dict[str, Any]],
         pending = set(first)
         names = [n for n in names if n in pending] + [n for n in names if n not in pending]
     budget = wait_budget_s()
+    http.wait_budget = budget  # a single quota wait never runs past the budget either (not only between names)
     certs: dict[str, Cert] = {}
+    not_stored = 0
     targets: list[dict[str, Any]] = []
     coverage: list[dict[str, Any]] = []
     summary_rows = 0
@@ -255,18 +273,22 @@ def collect_ct(cfg: dict[str, Any], label: str, emit: Callable[[dict[str, Any]],
                 targets.append({"target": name, "status": status, "error": detail, "assets": 0, "duration_ms": ms})
                 coverage.append(_gap(label, name, status, detail))
                 continue
-            found = 0
+            found = dropped = 0
             for iss in result.issuances:
                 facts, algorithm, key_size = details(iss)
                 key = f"{facts.get('serial') or 'tbs:' + str(iss.tbs_sha256 or iss.provider_id)}@{cn_of(facts.get('issuer')).casefold()}"
                 held = certs.get(key)
                 if held is None:
-                    certs[key] = Cert(key, iss, facts, algorithm, key_size, {name})
+                    if len(certs) >= MAX_CERTS:
+                        dropped += 1  # counted, not held: the store would refuse it anyway
+                        continue
+                    certs[key] = Cert(key, facts, algorithm, key_size, {name})
                     found += 1
                 else:
                     held.matched.add(name)
                     if _better(held, facts):
-                        held.issuance, held.facts, held.algorithm, held.key_size = iss, facts, algorithm, key_size
+                        held.facts, held.algorithm, held.key_size = facts, algorithm, key_size
+            not_stored += dropped
             if used.name == "crtsh":
                 summary_rows += len(result.issuances)
             row = {"target": name, "status": "ok", "error": None, "assets": len(result.issuances), "new": found,
@@ -274,6 +296,11 @@ def collect_ct(cfg: dict[str, Any], label: str, emit: Callable[[dict[str, Any]],
             if result.truncated:
                 row["status"] = "partial"
                 row["error"] = f"More than {P.MAX_RESULTS} certificates; the first {len(result.issuances)} are listed"
+                coverage.append(_gap(label, name, "partial", row["error"]))
+            elif dropped:
+                row["status"] = "partial"
+                row["error"] = (f"{dropped} certificates not stored: a run keeps at most {MAX_CERTS}; "
+                                "the rest are listed by a later run")
                 coverage.append(_gap(label, name, "partial", row["error"]))
             elif errors:
                 row["note"] = f"answered by {used.label} after: {'; '.join(errors)[:200]}"
@@ -309,8 +336,14 @@ def collect_ct(cfg: dict[str, Any], label: str, emit: Callable[[dict[str, Any]],
         coverage.append({"type": "coverage", "target": label, "location": "ct:crtsh",
                          "facts": {"check": "CT certificate details", "status": "incomplete",
                                    "detail": (f"{summary_rows} certificates came from crt.sh, which gives no public key, "
-                                              "signature algorithm or fingerprint: weak-key and SHA-1 checks were not run "
-                                              "for them")}})
+                                              "signature algorithm, fingerprint or revocation status: weak-key, SHA-1 "
+                                              "and revocation checks were not run for them")}})
+    unknown = sum(1 for c in certs.values() if c.facts.get("ct_provider") != "crtsh" and "revoked" not in c.facts)
+    if unknown:
+        coverage.append({"type": "coverage", "target": label, "location": "ct:revocation",
+                         "facts": {"check": "CT revocation status", "status": "incomplete",
+                                   "detail": (f"{unknown} certificates have no revocation status from the provider "
+                                              "(unknown, not 'not revoked'): the revocation check was not run for them")}})
     for gap in coverage:
         emit(gap)
     ok = sum(1 for t in targets if t["status"] == "ok")
@@ -320,9 +353,11 @@ def collect_ct(cfg: dict[str, Any], label: str, emit: Callable[[dict[str, Any]],
     summary = f"{len(certs)} certificates from {ok + partial} of {len(targets)} domains"
     if failed or skipped:
         summary += f" ({failed} failed, {skipped} not searched)"
+    if not_stored:
+        summary += f"; {not_stored} more not stored (at most {MAX_CERTS} a run)"
     return {"targets": targets, "counts": {"total": len(targets), "ok": ok, "failed": failed, "skipped": skipped,
                                            "partial": partial},
-            "summary": summary, "certificates": len(certs), "provider_calls": calls,
+            "summary": summary, "certificates": len(certs), "not_stored": not_stored, "provider_calls": calls,
             "providers": [p.name for p in chain], "rate_limited": http.rate_limited,
             "waited_s": round(http.waited_s, 1), "duration_s": int(clock.monotonic() - started)}
 
