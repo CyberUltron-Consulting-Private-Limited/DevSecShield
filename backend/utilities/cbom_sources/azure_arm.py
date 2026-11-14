@@ -42,6 +42,22 @@ def tls_name(value: Any) -> str | None:
     return _TLS.get(str(value or "").upper())
 
 
+# Retirements: these services no longer accept TLS 1.0 / 1.1 whatever the setting says, so the setting is kept as a fact
+# (``minimum_tls_setting``) and the row is judged on the effective minimum, TLS 1.2 (or the setting when higher).
+RETIRED_BELOW_12 = {
+    "storage": "Azure Storage no longer accepts TLS 1.0 / 1.1 (retired 3 Feb 2026)",
+    "sql": "Azure SQL no longer accepts TLS 1.0 / 1.1 (retired 31 Aug 2025)",
+    "front_door": "Azure Front Door supports only TLS 1.2 and TLS 1.3",
+    "app_gateway": "Application Gateway no longer accepts TLS 1.0 / 1.1 (since 31 Aug 2025)",
+}
+
+
+def effective_min(setting: Any) -> str:
+    """The effective minimum on a service that retired TLS 1.0 / 1.1: TLS 1.2, or the configured version when higher."""
+    name = tls_name(setting)
+    return name if name and _ORDER.index(name) > _ORDER.index("TLSv1.2") else "TLSv1.2"
+
+
 # Application Gateway predefined policies: (enabled protocols, cipher suites in priority order), as tabled in
 # https://learn.microsoft.com/azure/application-gateway/application-gateway-ssl-policy-overview
 _C2015 = (
@@ -67,8 +83,9 @@ _C2022 = (
 _C2022S = ("TLS_AES_256_GCM_SHA384 TLS_AES_128_GCM_SHA256 TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 "
            "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384 TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256").split()
 APPGW_PREDEFINED: dict[str, tuple[list[str], list[str]]] = {
-    "AppGwSslPolicy20150501": (["TLSv1.0", "TLSv1.1", "TLSv1.2"], _C2015),
-    "AppGwSslPolicy20170401": (["TLSv1.1", "TLSv1.2"], _C2017),
+    # documented as TLS 1.0+ and 1.1+; since 31 Aug 2025 the gateway accepts TLS 1.2 or higher only (RETIRED_BELOW_12)
+    "AppGwSslPolicy20150501": (["TLSv1.2"], _C2015),
+    "AppGwSslPolicy20170401": (["TLSv1.2"], _C2017),
     "AppGwSslPolicy20170401S": (["TLSv1.2"], _C2017),
     "AppGwSslPolicy20220101": (["TLSv1.2", "TLSv1.3"], _C2022),
     "AppGwSslPolicy20220101S": (["TLSv1.2", "TLSv1.3"], _C2022S),
@@ -155,11 +172,12 @@ class _Subscription:
             internet = (False if public.lower() == "disabled" else None if default_action.lower() == "deny" else True)
             https_only = props.get("supportsHttpsTrafficOnly")
             setting = props.get("minimumTlsVersion")
-            # "default interpretation is TLS 1.0" when the account sets no minimum (Storage Accounts - List)
+            # the REST reference still says an unset minimum means TLS 1.0; the service stopped accepting it in Feb 2026
             self.emit({"type": "api_tls", "target": self.label, "location": f"{rid}#tls", "name": f"{name} storage endpoints",
                        "protocol": "TLS",
-                       "facts": {"provider": "azure", "service": "storage", "min_version": tls_name(setting) or "TLSv1.0",
-                                 "minimum_tls_setting": setting, "https_only": https_only,
+                       "facts": {"provider": "azure", "service": "storage", "min_version": effective_min(setting),
+                                 "minimum_tls_setting": setting, "effective_min_basis": RETIRED_BELOW_12["storage"],
+                                 "https_only": https_only,
                                  "http_listener": https_only is False, "internet_facing": internet,
                                  "exposure_basis": f"storage account public network access {public}, firewall default action {default_action}",
                                  "identity": rid}})
@@ -271,6 +289,7 @@ class _Subscription:
         else:  # the older form: every protocol except the disabled ones
             off = {tls_name(p) for p in policy.get("disabledSslProtocols") or []}
             protocols = [p for p in _ORDER[:_ORDER.index(top) + 1] if p not in off]
+        protocols = [p for p in protocols if p not in ("TLSv1.0", "TLSv1.1")] or ["TLSv1.2"]  # retired on the gateway
         return kind or "Custom", protocols, [str(c) for c in policy.get("cipherSuites") or []]
 
     def appgateway(self) -> str:
@@ -312,6 +331,8 @@ class _Subscription:
                 cert = by_id.get(str((lp.get("sslCertificate") or {}).get("id")), {})
                 self.emit({"type": "load_balancer_tls", "target": self.label, "location": where, "name": name, "protocol": "HTTPS",
                            "facts": {"provider": "azure", "ssl_policy": pname, "policy_type": (policy or {}).get("policyType"),
+                                     "policy_min_setting": (policy or {}).get("minProtocolVersion"),
+                                     "effective_min_basis": RETIRED_BELOW_12["app_gateway"],
                                      "default_policy": is_default, "ssl_profile": profile.get("name") if profile else None,
                                      "port": port, "protocols": protocols, "ciphers": ciphers[:100],
                                      "static_rsa_kex": any(c.startswith("TLS_RSA_") for c in ciphers),
@@ -347,8 +368,9 @@ class _Subscription:
                 self.emit({"type": "cdn_tls", "target": self.label, "location": did, "name": props.get("hostName") or _name(did),
                            "protocol": "TLS",
                            "facts": {"provider": "azure", "service": "front_door", "profile": profile.get("name"),
-                                     "min_version": tls_name(tls.get("minimumTlsVersion")),
+                                     "min_version": effective_min(tls.get("minimumTlsVersion")),
                                      "minimum_tls_setting": tls.get("minimumTlsVersion"),
+                                     "effective_min_basis": RETIRED_BELOW_12["front_door"],
                                      "certificate_type": tls.get("certificateType"), "cipher_suite_set": tls.get("cipherSuiteSetType"),
                                      "ciphers": ciphers[:50], "secret": ((tls.get("secret") or {}).get("id") or None)
                                      if isinstance(tls.get("secret"), dict) else None,
@@ -371,9 +393,8 @@ class _Subscription:
             self.emit({"type": "database_tls", "target": self.label, "location": rid,
                        "name": props.get("fullyQualifiedDomainName") or server.get("name") or _name(rid), "protocol": "TLS",
                        "facts": {"provider": "azure", "service": "sql", "engine": "mssql",
-                                 # "None": no minimum is enforced, so a client may still use TLS 1.0
-                                 "min_version": tls_name(setting) or ("TLSv1.0" if str(setting) == "None" else None),
-                                 "minimum_tls_setting": setting, "public_network_access": public,
+                                 "min_version": effective_min(setting), "minimum_tls_setting": setting,
+                                 "effective_min_basis": RETIRED_BELOW_12["sql"], "public_network_access": public,
                                  "cmek_key_id": props.get("keyId"),
                                  "internet_facing": public.lower() == "enabled",
                                  "exposure_basis": f"server public network access {public} (server firewall rules apply)",
@@ -388,11 +409,16 @@ def collect_subscription(http: CloudHttp, token: Callable[[], str], sub: str, la
     for service in SERVICES:
         try:
             out[service] = getattr(reader, service)()
+        except (AttributeError, TypeError, ValueError, KeyError) as exc:  # a valid-JSON answer of an unexpected shape
+            out[service] = "error"
+            path, _v, _action, words = SERVICES[service]
+            reader.gap(service, f"/subscriptions/{sub}/providers/{path}#shape", f"{words} in subscription {sub}", "error",
+                       f"unexpected answer shape from {words} ({type(exc).__name__})")
         except CloudHttpError as exc:
             status = status_of(exc)
             out[service] = status
             path, _v, action, words = SERVICES[service]
-            detail = f"grant {action}: {exc}" if status == "denied" else str(exc)
+            detail = (f"grant {action} (re-run the ZeroShield reader script): {exc}" if status == "denied" else str(exc))
             extra: dict[str, Any] = {}
             scope = None
             if status == "not_enabled":  # the provider is not registered: the subscription has none of these

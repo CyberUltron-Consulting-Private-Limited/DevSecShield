@@ -30,7 +30,12 @@ for (const words of [
 }
 assert.ok(tab.includes('data-testid="cloud-validation-not-connected"'), "the validation panel shows it")
 assert.ok(tab.includes("data-testid={`cloud-account-not-connected-${s.id}`}"), "and each unconnected account row")
-assert.ok(tab.includes('s.kind !== "aws_account" && s.last_test_status !== "passed"'), "only Azure / Google Cloud rows not yet validated")
+assert.ok(tab.includes('s.kind !== "aws_account" && s.last_test_status !== "passed" && s.last_test_status !== "failed"'),
+  "only Azure / Google Cloud rows not yet validated (a failed test keeps the planner's own reason)")
+// a grant added by this release is a warning, never a failed validation, and tells the customer what to do
+assert.ok(tab.includes('warning: ["amber", "Warning"]'), "warning checks have a badge")
+assert.ok(tab.includes('data-testid="cloud-validation-rerun-script"') && tab.includes("re-run the reader script"), "and say re-run the script")
+assert.ok(tab.includes('view.checks.some((c) => c.status === "fail" || c.status === "error")'), "warnings keep the account connected")
 
 // 2. the permissions shown are exactly the ones the reader scripts grant
 const azure = list("AZURE_READ_ACTIONS")

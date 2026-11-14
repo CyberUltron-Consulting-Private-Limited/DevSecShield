@@ -410,13 +410,13 @@ def test_gcp_key_must_belong_to_the_configured_account():
 def test_validation_calls_sign_in_and_list_once():
     rec = Recorder(_azure_routes())
     out = azure_collect.test_azure({**AZ_CFG, "subscription_ids": [SUB]}, {"client_secret": CLIENT_SECRET}, transport=httpx.MockTransport(rec))
-    assert out["status"] == "passed" and [c["status"] for c in out["checks"]] == ["pass", "pass", "pass"]
+    assert out["status"] == "passed" and [c["status"] for c in out["checks"]] == ["pass"] * 9  # + one probe per ARM service
     assert not any(".vault.azure.net" in r["host"] for r in rec.seen)  # validation never touches vault contents
     bad = azure_collect.test_azure(AZ_CFG, {"client_secret": "nope"}, transport=httpx.MockTransport(Recorder(_azure_routes())))
     assert bad["status"] == "failed" and "AADSTS7000215" in bad["message"]
     rec = Recorder(_gcp_routes())
     out = gcp_collect.test_gcp(GCP_CFG, {"service_account_key": SA_JSON}, transport=httpx.MockTransport(rec))
-    assert out["status"] == "passed" and "2 location(s)" in out["message"] and len(rec.seen) == 2
+    assert out["status"] == "passed" and "2 location(s)" in out["message"] and len(rec.seen) == 5  # + 3 service probes
 
 
 def test_kinds_are_collectable_by_the_cloud_worker():

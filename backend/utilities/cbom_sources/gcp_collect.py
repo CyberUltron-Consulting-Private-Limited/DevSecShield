@@ -239,6 +239,11 @@ def _project(http: CloudHttp, access: str, project: str, label: str, emit: Emit)
     def run(service: str, fn: Callable[[], str]) -> None:
         try:
             services[service] = fn()
+        except (AttributeError, TypeError, ValueError, KeyError) as exc:  # a valid-JSON answer of an unexpected shape
+            services[service] = "error"
+            emit({"type": "coverage", "target": label, "location": f"projects/{project}#{service}-shape",
+                  "facts": {"check": f"{service} in project {project}", "status": "error",
+                            "detail": f"unexpected answer shape from {service} ({type(exc).__name__})"}})
         except CloudHttpError as exc:
             status = _status(exc)
             services[service] = status
@@ -352,10 +357,14 @@ def collect_gcp(team_id: int, cfg: dict[str, Any], secrets: dict[str, str], emit
                     targets.append({"target": label, "status": "auth_failed", "error": str(exc)[:256], "assets": 0})
                     continue
             services = _project(http, access, project, label, emit)
-            # an API the project never enabled (Compute Engine, Certificate Manager) holds nothing: a by-choice gap
+            # an API the project never enabled (Compute Engine, Certificate Manager) holds nothing: a by-choice gap.  A
+            # permission the reader role from before these services lacks is a gap too (the row names the grant), so a
+            # project that was read before this release never turns into a failed run.
+            added = gcp_tls.SERVICES
             bad = [f"{svc}: {status}" for svc, status in services.items() if status not in ("ok", "truncated", "partial")
-                   and not (status == "not_enabled" and svc in gcp_tls.SERVICES)]
-            gappy = [f"{svc}: {status}" for svc, status in services.items() if status in ("truncated", "partial")]
+                   and not (svc in added and status in ("not_enabled", "denied"))]
+            gappy = [f"{svc}: {status}" for svc, status in services.items()
+                     if status in ("truncated", "partial") or (svc in added and status == "denied")]
             enabled = [s for s in services.values() if s != "not_enabled"]
             # a cut list is read, not complete: the target is partial (never "ok"), and its gap rows carry their scope
             status = ("error" if enabled else "not_supported") if bad else ("partial" if gappy else "ok")
@@ -395,6 +404,34 @@ def test_gcp(cfg: dict[str, Any], secrets: dict[str, str], *, transport: Any = N
         except CloudHttpError as exc:
             checks.append({"check": "List Cloud KMS locations", "status": "fail",
                            "detail": ("Cloud KMS API is not enabled: " if _status(exc) == "not_enabled" else "") + str(exc)[:220]})
-    failed = [c for c in checks if c["status"] != "pass"]
-    return {"status": "failed" if failed else "passed", "checks": checks,
-            "message": failed[0]["detail"] if failed else checks[-1]["detail"]}
+            projects = []
+        if projects:
+            checks += _probe_optional(http, access, projects[0])
+    from backend.utilities.cbom_sources.azure_collect import _verdict
+
+    return _verdict(checks)
+
+
+def _probe_optional(http: CloudHttp, access: str, project: str) -> list[dict[str, str]]:
+    """One small list call per service added after the first reader script (Certificate Manager, load balancing,
+    Cloud Storage).  A missing grant is a warning, never a failed validation."""
+    probes = {
+        "certificatemanager": ("Read Certificate Manager", f"{gcp_tls.CERTMGR}/projects/{project}/locations", {"pageSize": 1}),
+        "compute": ("Read load-balancer TLS policies", f"{gcp_tls.COMPUTE}/projects/{project}/aggregated/sslPolicies",
+                    {"maxResults": 1, "returnPartialSuccess": "true"}),
+        "storage": ("Read Cloud Storage bucket settings", f"{gcp_tls.STORAGE}/b", {"project": project, "maxResults": 1}),
+    }
+    out: list[dict[str, str]] = []
+    for service, (check, url, params) in probes.items():
+        try:
+            http.get(url, access, params=params)
+            out.append({"check": check, "status": "pass", "detail": f"Readable in project {project}"})
+        except CloudHttpError as exc:
+            status = _status(exc)
+            if status == "not_enabled":
+                out.append({"check": check, "status": "pass", "detail": "API not enabled in this project: nothing to read"})
+            else:
+                out.append({"check": check, "status": "warning", "detail": (
+                    f"Not granted: {gcp_tls.PERMISSIONS[service]}. Re-run the reader script to add it; until then runs "
+                    "report it as a coverage gap" if status == "denied" else str(exc))[:240]})
+    return out

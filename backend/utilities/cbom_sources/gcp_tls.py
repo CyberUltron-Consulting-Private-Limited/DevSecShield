@@ -232,6 +232,15 @@ def storage(http: CloudHttp, access: str, project: str, label: str, emit: Emit) 
     return "ok"
 
 
+# what the reader script grants for each service (named in a denied coverage row and in validation warnings)
+PERMISSIONS = {
+    "certificatemanager": "roles/certificatemanager.viewer",
+    "compute": "compute.sslPolicies.list, compute.sslCertificates.list, compute.targetHttpsProxies.list, "
+               "compute.targetSslProxies.list, compute.forwardingRules.list",
+    "storage": "storage.buckets.list",
+}
+
+
 # service -> (reader, coverage scope of a failure); a disabled API holds nothing to read, so it never fails the target
 SERVICES: dict[str, tuple[Callable[[CloudHttp, str, str, str, Emit], str], Callable[[str], str]]] = {
     "certificatemanager": (certificate_manager, certmgr_scope),
@@ -245,9 +254,17 @@ def read(service: str, http: CloudHttp, access: str, project: str, label: str, e
     reader, scope = SERVICES[service]
     try:
         return reader(http, access, project, label, emit)
+    except (AttributeError, TypeError, ValueError, KeyError) as exc:  # a valid-JSON answer of an unexpected shape
+        emit({"type": "coverage", "target": label, "location": f"projects/{project}#{service}-shape",
+              "facts": {"check": f"{service} in project {project}", "status": "error",
+                        "detail": f"unexpected answer shape from {service} ({type(exc).__name__})", "scope": [scope(project)]}})
+        return "error"
     except CloudHttpError as exc:
         status = status_of(exc)
-        facts: dict[str, Any] = {"check": f"{service} in project {project}", "status": status, "detail": str(exc)[:200],
+        detail = str(exc)
+        if status == "denied":
+            detail = f"{PERMISSIONS[service]} needed (re-run the ZeroShield reader script): {exc}"
+        facts: dict[str, Any] = {"check": f"{service} in project {project}", "status": status, "detail": detail[:200],
                                  "scope": [scope(project)]}
         if status == "not_enabled":
             facts["by_choice"] = True  # the project does not use this API: nothing of it exists to read

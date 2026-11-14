@@ -219,8 +219,11 @@ def test_azure_storage_account_encryption_and_tls_policy():
     assert _codes(enc["sto1125"]) == [] and _codes(enc["sto2"]) == []
     tls = {a["location"]: a for a in _by(found, "api_tls") if "storageAccounts" in a["location"]}
     weak = tls[f"{STORAGE_OLD['id']}#tls"]
-    assert weak["facts"]["min_version"] == "TLSv1.0" and weak["facts"]["https_only"] is False and weak["facts"]["internet_facing"] is True
-    assert set(_codes(weak)) == {"MIN_TLS10", "PLAINTEXT_LISTENER"}
+    # the account still says TLS1_0, but Azure Storage stopped accepting TLS 1.0 / 1.1 on 3 Feb 2026: judged on TLS 1.2
+    assert weak["facts"]["min_version"] == "TLSv1.2" and weak["facts"]["minimum_tls_setting"] == "TLS1_0"
+    assert "retired" in weak["facts"]["effective_min_basis"]
+    assert weak["facts"]["https_only"] is False and weak["facts"]["internet_facing"] is True
+    assert set(_codes(weak)) == {"PLAINTEXT_LISTENER"}
     strong = tls[f"{STORAGE_NEW['id']}#tls"]
     assert strong["facts"]["min_version"] == "TLSv1.2" and strong["facts"]["internet_facing"] is False and _codes(strong) == []
     assert out["targets"][0]["services"]["storage"] == "ok"
@@ -261,11 +264,13 @@ def test_azure_application_gateway_listener_policies():
     public = rows["appgw:appgwhl"]
     facts = public["facts"]
     assert public["protocol"] == "HTTPS" and facts["ssl_policy"] == "AppGwSslPolicy20150501" and facts["port"] == 443
-    assert facts["protocols"] == ["TLSv1.0", "TLSv1.1", "TLSv1.2"] and "TLS_RSA_WITH_3DES_EDE_CBC_SHA" in facts["ciphers"]
+    # documented as TLS 1.0+, but the gateway accepts TLS 1.2 or higher only since 31 Aug 2025; the suites stay offered
+    assert facts["protocols"] == ["TLSv1.2"] and "TLS_RSA_WITH_3DES_EDE_CBC_SHA" in facts["ciphers"]
     assert facts["internet_facing"] is True and facts["certificates"] == ["sslcert"]
-    assert {"PROTO_TLS10", "PROTO_TLS11", "WEAK_CIPHER", "STATIC_RSA_KEX"} <= set(_codes(public))
+    assert {"WEAK_CIPHER", "STATIC_RSA_KEX"} <= set(_codes(public)) and not {"PROTO_TLS10", "PROTO_TLS11"} & set(_codes(public))
     internal = rows["appgw:internal"]["facts"]  # the listener's SSL profile overrides the gateway policy
-    assert internal["ssl_profile"] == "sslProfile1" and internal["protocols"] == ["TLSv1.1", "TLSv1.2"]
+    assert internal["ssl_profile"] == "sslProfile1" and internal["protocols"] == ["TLSv1.2"]
+    assert internal["policy_min_setting"] == "TLSv1_1"
     assert internal["ciphers"] == ["TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256"] and internal["internet_facing"] is False
     plain = rows["appgw:appgwhttplistener"]
     assert plain["protocol"] == "HTTP" and plain["facts"]["tls"] is False and "NO_TLS" in _codes(plain)
@@ -288,11 +293,13 @@ def test_azure_front_door_custom_domains_and_sql_minimal_tls():
     assert cdn["www.contoso.com"]["facts"]["min_version"] == "TLSv1.2" and _codes(cdn["www.contoso.com"]) == []
     assert cdn["www.contoso.com"]["facts"]["ciphers"] == ["ECDHE_RSA_AES128_GCM_SHA256", "TLS_AES_128_GCM_SHA256", "TLS_AES_256_GCM_SHA384"]
     legacy = cdn["legacy.contoso.com"]
-    assert legacy["facts"]["certificate_type"] == "CustomerCertificate" and _codes(legacy) == ["MIN_TLS10"]
+    assert legacy["facts"]["certificate_type"] == "CustomerCertificate" and legacy["facts"]["minimum_tls_setting"] == "TLS10"
+    assert legacy["facts"]["min_version"] == "TLSv1.2" and _codes(legacy) == []  # Front Door serves TLS 1.2 / 1.3 only
     assert not any("/profiles/cdn1/" in r["url"] for r in rec.seen)
     sql = {a["name"]: a for a in _by(found, "database_tls")}
-    assert sql["sqlcrudtest-4645.database.windows.net"]["facts"]["min_version"] == "TLSv1.0"
-    assert _codes(sql["sqlcrudtest-4645.database.windows.net"]) == ["MIN_TLS10"]
+    old_sql = sql["sqlcrudtest-4645.database.windows.net"]
+    assert old_sql["facts"]["min_version"] == "TLSv1.2" and old_sql["facts"]["minimum_tls_setting"] == "1.0"
+    assert _codes(old_sql) == []  # Azure SQL retired TLS 1.0 / 1.1 on 31 Aug 2025
     modern = sql["modern.database.windows.net"]["facts"]
     assert modern["internet_facing"] is False and modern["cmek_key_id"].endswith("/keys/tde/abc")
     assert _codes(sql["modern.database.windows.net"]) == []
@@ -304,7 +311,9 @@ def test_azure_permission_denied_per_service_is_a_coverage_row_and_the_rest_is_r
     assert len(gaps) == 1 and gaps[0]["facts"]["status"] == "denied" and "AuthorizationFailed" in gaps[0]["facts"]["detail"]
     assert "Microsoft.Storage/storageAccounts/read" in gaps[0]["facts"]["detail"]  # names the permission to grant
     target = out["targets"][0]
-    assert target["services"]["storage"] == "denied" and target["status"] == "error" and "storage" in target["error"]
+    # a grant the old reader role lacks is a gap, never a failed subscription (upgrade path); the row says what to add
+    assert target["services"]["storage"] == "denied" and target["status"] == "partial" and "storage: denied" in target["error"]
+    assert "re-run the ZeroShield reader script" in gaps[0]["facts"]["detail"]
     assert _by(found, "database_tls") and _by(found, "load_balancer_tls") and _by(found, "kms_key")  # others still read
     assert not _by(found, "storage_encryption")
 
@@ -513,7 +522,7 @@ def test_gcp_disabled_compute_api_is_not_enabled_and_denied_storage_is_a_coverag
     assert not [r for r in rec.seen if "targetHttpsProxies" in r["url"]]  # one disabled answer stops the service
     target = out["targets"][0]
     assert target["services"]["compute"] == "not_enabled" and target["services"]["storage"] == "denied"
-    assert target["status"] == "error" and "storage: denied" in target["error"] and "compute" not in target["error"]
+    assert target["status"] == "partial" and "storage: denied" in target["error"] and "compute" not in target["error"]
 
 
 def test_gcp_aggregated_paging_unreachable_scopes_and_429(monkeypatch):
@@ -640,7 +649,7 @@ def test_gcp_live_recording_replays_to_the_rows_the_oracle_confirmed():
         "certificatemanager": ("not_enabled", True), "compute": ("not_enabled", True), "storage": ("denied", False)}
     assert len(found) == 10
     target = out["targets"][0]
-    assert target["status"] == "error" and target["error"] == "storage: denied"
+    assert target["status"] == "partial" and target["error"] == "storage: denied"  # read with a gap, not a failed run
 
 
 def rsa_key_json(email: str) -> str:
@@ -652,3 +661,53 @@ def rsa_key_json(email: str) -> str:
     return json.dumps({"type": "service_account", "client_email": email, "private_key_id": "replay",
                        "private_key": key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
                                                         serialization.NoEncryption()).decode()})
+
+
+def test_old_reader_role_reads_key_vault_and_reports_each_new_service_as_a_gap():
+    """Upgrade path: a subscription on the reader role from before this release (vault list + subscriptions only)."""
+    denied = (403, AUTH_FAILED)
+    out, found, _rec = _azure(_azure_cp(**{rp: denied for rp in (
+        "Microsoft.Storage/storageAccounts", "Microsoft.Web/sites", "Microsoft.Web/certificates",
+        "Microsoft.Network/applicationGateways", "Microsoft.Cdn/profiles", "Microsoft.Sql/servers")}))
+    target = out["targets"][0]
+    assert target["status"] == "partial" and target["services"]["keyvault"] == "ok" and _by(found, "kms_key")
+    assert sum(1 for a in _by(found, "coverage") if a["facts"]["status"] == "denied") == 6
+
+
+def test_validation_warns_about_new_grants_and_still_passes():
+    from backend.utilities.cbom_sources import azure_collect, gcp_collect
+    from test_cbom_azure_gcp_collect import AZ_CFG, CLIENT_SECRET, GCP_CFG, SA_JSON
+
+    rec = Recorder(_azure_cp(**{"Microsoft.Storage/storageAccounts": (403, AUTH_FAILED)}))
+    out = azure_collect.test_azure({**AZ_CFG, "subscription_ids": [SUB]}, {"client_secret": CLIENT_SECRET}, transport=httpx.MockTransport(rec))
+    assert out["status"] == "passed" and out["message"].startswith("Passed with 1 warning(s): Not granted: Microsoft.Storage/storageAccounts/read")
+    warn = [c for c in out["checks"] if c["status"] == "warning"]
+    assert len(warn) == 1 and "Re-run the reader script" in warn[0]["detail"]
+    assert {c["check"] for c in out["checks"] if c["status"] == "pass"} >= {"Read sql servers", "Read application gateways"}
+    rec = Recorder(_gcp_cp(**{"https://storage.googleapis.com/storage/v1/b": (403, STORAGE_DENIED),
+                              f"{COMPUTE}/projects/{PROJECT}/aggregated/sslPolicies": (403, SERVICE_DISABLED_COMPUTE)}))
+    out = gcp_collect.test_gcp(GCP_CFG, {"service_account_key": SA_JSON}, transport=httpx.MockTransport(rec))
+    checks = {c["check"]: c for c in out["checks"]}
+    assert out["status"] == "passed" and checks["Read Cloud Storage bucket settings"]["status"] == "warning"
+    assert "storage.buckets.list" in checks["Read Cloud Storage bucket settings"]["detail"]
+    assert checks["Read load-balancer TLS policies"]["status"] == "pass"  # API not enabled: nothing to read
+
+
+@pytest.mark.parametrize("rp,body,service", [
+    ("Microsoft.Network/applicationGateways", {"value": [{**APPGW, "properties": {**APPGW["properties"], "httpListeners": [
+        {"id": "x/l", "name": "l", "properties": {"frontendIPConfiguration": "x", "protocol": "Https"}}]}}]}, "appgateway"),
+    ("Microsoft.Web/certificates", {"value": [{"id": "x/c", "name": "c", "properties": {"thumbprint": "AB", "hostNames": 5}}]},
+     "appservice_certificates"),
+])
+def test_azure_wrong_shaped_answer_is_a_coverage_row_not_a_failed_job(rp, body, service):
+    out, found, _rec = _azure(_azure_cp(**{rp: (200, body)}))
+    target = out["targets"][0]
+    assert target["services"][service] == "error" and target["services"]["sql"] == "ok"
+    assert any("unexpected answer shape" in a["facts"]["detail"] for a in _by(found, "coverage"))
+
+
+def test_gcp_wrong_shaped_answer_is_a_coverage_row_not_a_failed_job():
+    bad = {"items": {"global": {"sslCertificates": [{"name": "c", "selfLink": f"{SELF}/global/sslCertificates/c", "managed": "x"}]}}}
+    out, found, _rec = _gcp(_gcp_cp(**{f"{COMPUTE}/projects/{PROJECT}/aggregated/sslCertificates": (200, bad)}))
+    assert out["targets"][0]["services"]["compute"] == "error" and out["targets"][0]["services"]["storage"] == "ok"
+    assert any("unexpected answer shape from compute" in a["facts"]["detail"] for a in _by(found, "coverage"))

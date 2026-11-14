@@ -135,6 +135,7 @@ const CHECK_BADGE: Record<CbomAwsCheck["status"], [Tone, string]> = {
   fail: ["red", "Fail"],
   skipped: ["zinc", "Skipped"],
   error: ["amber", "Error"],
+  warning: ["amber", "Warning"], // a grant the reader script adds; the run reports the service as a coverage gap
 };
 
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$/;
@@ -614,7 +615,7 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
                         <TableCell className="text-zinc-600 dark:text-zinc-400">{s.last_test_at ? formatDateTime(s.last_test_at) : "Never"}</TableCell>
                         <TableCell>
                           {busy ? <TestStatusBadge status="pending" /> : <TestStatusBadge status={s.last_test_status} title={s.last_test_summary} />}
-                          {!busy && s.kind !== "aws_account" && s.last_test_status !== "passed" && (
+                          {!busy && s.kind !== "aws_account" && s.last_test_status !== "passed" && s.last_test_status !== "failed" && (
                             <span className="mt-1 block max-w-[220px] text-xs text-zinc-500" data-testid={`cloud-account-not-connected-${s.id}`}>
                               {CLOUD_NOT_CONNECTED[PROVIDER_OF_KIND[s.kind] === "gcp" ? "gcp" : "azure"]}
                             </span>
@@ -924,7 +925,7 @@ function ValidationPanel({ view, pending, provider, awsNotConfigured = false }: 
             : "Fill in the form, then choose Save and validate. ZeroShield signs in and lists what it would read; each check is listed here."}
         </p>
       )}
-      {!isAws && (!view || view.checks.some((c) => c.status !== "pass")) && (
+      {!isAws && (!view || view.checks.some((c) => c.status === "fail" || c.status === "error")) && (
         <p className="text-xs text-amber-700 dark:text-amber-300" data-testid="cloud-validation-not-connected">
           {CLOUD_NOT_CONNECTED[provider as "azure" | "gcp"]}.
         </p>
@@ -962,6 +963,12 @@ function ValidationPanel({ view, pending, provider, awsNotConfigured = false }: 
             ? "Every call lands in your Azure Activity Log and the vaults' diagnostic logs."
             : "Every call lands in your Cloud Audit Logs (Data Access logs, where enabled)."}
       </p>
+      {!isAws && view?.checks.some((c) => c.status === "warning") && (
+        <p className="text-xs text-amber-700 dark:text-amber-300" data-testid="cloud-validation-rerun-script">
+          Some services are not granted yet: re-run the reader script above to add them. Until then each run reads everything
+          else and lists those services as coverage gaps.
+        </p>
+      )}
     </div>
   );
 }
