@@ -661,13 +661,43 @@ export function formatDateTime(iso: string | null | undefined, timeZone?: string
   }
 }
 
-/** "120 of 254 addresses" for a network range while it runs; null when the scan node does not report it (an older
- * node, another kind of job) or the job is not running, so those rows show what they showed before. */
-export function addressProgress(job: { status: string; progress?: { done: number; total: number } | null }): string | null {
+/** "120 of 254 addresses" for a network range while it runs, "377 of 1,200 account-regions" for an AWS source the
+ * cloud pool collects one account x region at a time (``unit`` from the API); null when the job does not report it (an
+ * older node, another kind of job) or is not running, so those rows show what they showed before. */
+export function addressProgress(job: { status: string; progress?: { done: number; total: number; unit?: string } | null }): string | null {
   const p = job.progress
   if (job.status !== "claimed" || !p || !Number.isFinite(p.total) || p.total <= 0) return null
   const done = Math.min(Math.max(0, Math.floor(p.done)), p.total)
+  if (p.unit === "account-regions") return `${done.toLocaleString()} of ${pluralize(p.total, "account-region", "account-regions")}`
   return `${done.toLocaleString()} of ${pluralize(p.total, "address", "addresses")}`
+}
+
+/** An AWS organisation's charge per run, as recorded at its last validation: "Estimated per run: 1,000 accounts × 4
+ * credits = 4,000 credits", and, when the count changed, "changed from 200 accounts (800 credits) on 14 Nov 2026", so
+ * a new charge is visible before the next scheduled run takes it. */
+export function orgEstimateLines(est: { accounts: number; credits_per_account: number; credits_per_run: number;
+  changed_from?: { accounts: number; credits_per_run: number }; changed_at?: string | null } | null | undefined,
+  timeZone?: string): { estimate: string; change: string | null } | null {
+  if (!est || !Number.isFinite(est.accounts) || !Number.isFinite(est.credits_per_run)) return null
+  const estimate = `Estimated per run: ${pluralize(est.accounts, "account")} × ${credits(est.credits_per_account)} credits = ${credits(est.credits_per_run)} credits`
+  let change: string | null = null
+  if (est.changed_from && Number.isFinite(est.changed_from.accounts)) {
+    const when = est.changed_at ? new Date(est.changed_at) : null
+    const day = when && !Number.isNaN(when.getTime())
+      ? when.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric", timeZone: timeZone ?? "UTC" })
+      : null
+    change = `Changed from ${pluralize(est.changed_from.accounts, "account")} (${credits(est.changed_from.credits_per_run)} credits)${day ? ` on ${day}` : ""}`
+  }
+  return { estimate, change }
+}
+
+/** An AWS organisation source validated before F1: its stored count stopped at 200 accounts and it has no recorded
+ * estimate, so its charge per run is not yet what F1 reads and charges. Its row asks for a re-validation. */
+export function orgEstimateStale(source: { kind: string; config?: Record<string, unknown> | null;
+  last_test_result?: { member_accounts?: number; estimate?: unknown } | null }): boolean {
+  if (source.kind !== "aws_account" || source.config?.scope !== "organization") return false
+  const r = source.last_test_result
+  return !!r && typeof r.member_accounts === "number" && r.member_accounts <= 200 && !r.estimate
 }
 
 /** A YYYY-MM-DD date shown without time-zone shifting. */
