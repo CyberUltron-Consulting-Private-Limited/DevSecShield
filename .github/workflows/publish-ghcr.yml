@@ -224,7 +224,7 @@ jobs:
       matrix:
         # Same contexts as scripts/deploy/build_images.sh and ci.yml; minio is the local install's S3 stand-in.
         image:
-          - {name: backend, context: backend, dockerfile: backend/Dockerfile, build-contexts: "migrations=prod_database_migrations"}
+          - {name: backend, context: backend, dockerfile: backend/Dockerfile, build-contexts: "migrations=prod_database_migrations,aibom=aibom"}
           - {name: frontend, context: frontend, dockerfile: frontend/Dockerfile}
           - {name: scan-worker, context: ".", dockerfile: RabbitMQ/worker/Dockerfile, free-disk-space: true}
           - {name: dast-worker, context: RabbitMQ/dast_worker, dockerfile: RabbitMQ/dast_worker/Dockerfile}
@@ -744,7 +744,8 @@ jobs:
             echo "::error::cannot tell whether chart $NODE_VERSION exists (registry error above); nothing was pushed"
             exit 1
           fi
-          helm push "$pkg" "oci://$REGISTRY/charts" | tee "$RUNNER_TEMP/push.log"
+          # helm prints "Pushed:" and "Digest:" on stderr (its registry client's writer), so both streams are kept
+          helm push "$pkg" "oci://$REGISTRY/charts" 2>&1 | tee "$RUNNER_TEMP/push.log"
           grep -q '^Digest: sha256:[0-9a-f]\{64\}$' "$RUNNER_TEMP/push.log" || { echo "::error::helm push reported no digest"; exit 1; }
           helm registry logout ghcr.io || true
           echo "oci://$REGISTRY/charts/cbom-scan-node --version $NODE_VERSION ($(grep '^Digest:' "$RUNNER_TEMP/push.log"))" | tee -a "$GITHUB_STEP_SUMMARY"

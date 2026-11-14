@@ -114,7 +114,8 @@ KNOWN_HOSTS = "10.20.0.1 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIE0Bq1hQ0j7lC1n6x3o
 def linux_body(name="linux-dc", node_id=None, targets=None, **cfg):
     # password logins need pinned host keys (verified identity only, 2026-10-31)
     return {"kind": "linux_servers", "name": name, "node_id": node_id,
-            "config": {"targets": targets or ["10.20.0.0/29", "app-01.bank.local"], "credential_type": "password",
+            # six addresses written as a range (a /29 is now scanned whole, all 8: N3 of 14 Nov 2026)
+            "config": {"targets": targets or ["10.20.0.1-10.20.0.6", "app-01.bank.local"], "credential_type": "password",
                        "login_user": "zs-cbom", "host_key_policy": "pinned", "known_hosts": KNOWN_HOSTS, **cfg},
             "secrets": {"password": PASSWORD}}
 
@@ -133,12 +134,13 @@ def enroll_node(api, team=1, who="alice", name="dc-mumbai-01"):
 def test_target_counting_rules():
     p = T.parse_targets(["ip", "10.0.0.0/24", "10.0.0.128/25", "10.0.1.1-10.0.1.10", "Host.Example.COM.", "host.example.com",
                          "::ffff:10.0.2.1", "# comment", ""])
-    # what the scan node scans: the /24's 254 host addresses (not its network and broadcast addresses; the /25 is
-    # inside it), the 10 of the range, and the mapped address as its IPv4 address
-    assert T.size(p.intervals) == 254 + 10 + 1
+    # what the scan node scans: the /24's 254 host addresses (not its network and broadcast addresses), the /25 whole
+    # (a /25 or smaller keeps every address, N3: it adds the /24's .255), the 10 of the range, and the mapped address
+    # as its IPv4 address
+    assert T.size(p.intervals) == 255 + 10 + 1
     assert p.hostnames == ["host.example.com"]
     excl = T.parse_exclusions(["10.0.0.0/26", "host.example.com"])
-    assert T.count_in_scope(p, excl) == 254 + 10 + 1 - 63
+    assert T.count_in_scope(p, excl) == 255 + 10 + 1 - 63
     assert T.count_blocks([(4, 0x0A000080, 0x0A0000FF), (4, 0x0A000100, 0x0A00017F)]) == 2
     assert T.parse_targets(["10.0.0.0/31"]).intervals[0][2] - T.parse_targets(["10.0.0.0/31"]).intervals[0][1] == 1
     with pytest.raises(T.TargetError, match="did you mean 10.0.0.0/24"):
@@ -466,21 +468,23 @@ def test_settings_permissions_and_stop_all(api, world):
     assert api("POST", "/1/cbom/sources/settings/stop-all", json={"on": False}).json()["settings"]["stop_all_network"] is False
 
 
-def test_the_team_never_scan_list_takes_addresses_and_ranges_only(api, world):
-    """The UI's team list refuses host names (NetworkTab rangeError); the API must too. On the node a listed name that
-    does not resolve holds every target of every job of the team, so names belong in a server source's own list."""
-    for name in ("printer.corp.invalid", "Web-01.Corp.", "printer", "localhost", "bücher.corp", "10.0.0.0-24"):
-        r = api("PATCH", "/1/cbom/sources/settings", json={"network_exclusions": [
-            {"cidr": "10.20.99.0/24", "reason": "OT plant"}, {"cidr": f" {name} ", "reason": "printer"}]})
-        assert r.status_code == 422, (name, r.text)
-        # the whole detail, word for word, with the entry as typed (trimmed, not normalized, not quoted): the UI shows
-        # the same words for a typed entry (teamNeverScan.ts; test_never_scan_node_agreement compares the templates)
-        assert r.json()["detail"] == (
-            f"network_exclusions: {name} is not an address or range (it reads as a host name); the team never-scan "
-            "list takes addresses and ranges only. List host names in a server source's own Never scan field")
-        assert r.json()["detail"] == "network_exclusions: " + T.HOST_NAME_NOT_ALLOWED.format(entry=name)
+def test_the_team_never_scan_list_takes_addresses_ranges_and_host_names(api, world):
+    """N2 (14 Nov 2026): a host name on the team list must protect the host in every job, range sweeps included, so
+    the API stores it (normalized) next to the addresses and ranges; the node resolves it and keeps its addresses out
+    (scan_node tests: test_network_owner_bugs.py).  Malformed entries are still refused, and nothing of a refused
+    request is stored."""
+    r = api("PATCH", "/1/cbom/sources/settings", json={"network_exclusions": [
+        {"cidr": "10.20.99.0/24", "reason": "OT plant"}, {"cidr": " Web-01.Corp. ", "reason": "web"},
+        {"cidr": "printer", "reason": "printer"}, {"cidr": "localhost", "reason": "loopback"},
+        {"cidr": "bücher.corp", "reason": "idn"}]})
+    assert r.status_code == 200, r.text
+    assert [e["cidr"] for e in r.json()["settings"]["network_exclusions"]] == [
+        "10.20.99.0/24", "web-01.corp", "printer", "localhost", "xn--bcher-kva.corp"]
+    bad = api("PATCH", "/1/cbom/sources/settings", json={"network_exclusions": [
+        {"cidr": "10.20.98.0/24", "reason": "x"}, {"cidr": "10.0.0.5/24", "reason": "typo"}]})
+    assert bad.status_code == 400 and "did you mean 10.0.0.0/24" in bad.json()["detail"]
     got = api("GET", "/1/cbom/sources/settings").json()["settings"]
-    assert got["network_exclusions"] == []  # nothing of the refused request was stored
+    assert "10.20.98.0/24" not in [e["cidr"] for e in got["network_exclusions"]]  # nothing of the refused request
     ok = api("PATCH", "/1/cbom/sources/settings", json={"network_exclusions": [
         {"cidr": "10.20.99.0/24", "reason": "OT plant"}, {"cidr": "fd00::1-fd00::5", "reason": "v6"},
         {"cidr": "fe80::1%br-ab12", "reason": "bridge"}]})
@@ -499,18 +503,22 @@ def test_a_loopback_name_in_a_source_never_scan_list_is_kept_and_counted_as_loop
     assert r.status_code == 201, r.text
     src = r.json()["source"]
     assert src["config"]["exclusions"] == ["localhost", "10.20.0.2", "db.localhost"]
-    assert src["target_count"] == 2  # 10.20.0.1 and app-01.bank.local: loopback (and the name localhost) left out
+    # 10.20.0.0, .1 and .3 (a /30 is scanned whole, N3) and app-01.bank.local: loopback (and the name localhost) left out
+    assert src["target_count"] == 4
     count = api("POST", "/1/cbom/sources/targets/count", json={
         "targets": ["127.0.0.0/29", "10.20.0.0/30", "64:ff9b::7f00:1", "::ffff:127.0.0.9"], "exclusions": ["localhost"]}).json()
-    assert (count["valid"], count["count"], count["samples"]) == (True, 2, ["10.20.0.1", "10.20.0.2"])
+    assert (count["valid"], count["count"], count["samples"]) == (True, 4, ["10.20.0.0", "10.20.0.1", "10.20.0.2",
+                                                                          "10.20.0.3"])
     other = api("POST", "/1/cbom/sources/targets/count", json={
         "targets": ["127.0.0.0/29"], "exclusions": ["localhost.corp.internal"]}).json()
-    assert other["count"] == 6  # any other name: matched by the node only, by what it resolves to there
+    assert other["count"] == 8  # any other name: matched by the node only, by what it resolves to there
 
 
 @pytest.mark.parametrize("cidr, team, units", [
-    ("10.0.0.0/29", [], 6),  # the sweep visits the 6 host addresses, not the network and broadcast addresses
-    ("10.0.0.0/29", ["10.0.0.1"], 5),
+    ("10.0.0.0/29", [], 8),  # a /29 is swept whole (N3: only a /24 or larger leaves out network and broadcast)
+    ("10.0.0.0/29", ["10.0.0.1"], 7),
+    ("10.0.0.0/24", [], 254),  # a /24 leaves out its network and broadcast addresses
+    ("10.0.0.0/25", [], 128),
     ("10.0.0.0/31", [], 2),
     ("0.0.0.0/29", [], 0),  # 0.0.0.0/8 reaches the node itself: never swept
     ("fd00::/125", ["fd00::1-fd00::5"], 3),

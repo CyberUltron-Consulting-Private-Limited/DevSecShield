@@ -17,7 +17,9 @@ import { downloadCbomRunCbom, verifyCbomRunSignature, type CbomCertRef, type Cbo
 import { downloadCbomRunBom, EXPOSURE_LABEL, type CbomPostureWithExposure } from "@/utils/api/cbom_outputs";
 import { downloadOscal } from "@/utils/api/integrations";
 
-import { RunChanges } from "@/components/cbom/sources/ChangesPanel";
+import { DiffView, RunChanges } from "@/components/cbom/sources/ChangesPanel";
+import { cbomOpsKeys, getCbomRunDiff } from "@/utils/api/cbom_ops";
+import { useQuery } from "@tanstack/react-query";
 import { TERMINAL_RUN } from "@/components/cbom/sources/keys";
 import { credits, formatDateTime, formatDay, pluralize } from "@/components/cbom/sources/logic";
 import { TargetsBlock } from "@/components/cbom/sources/RunResults";
@@ -41,6 +43,8 @@ import { RunJobsTable, SkippedAtStart } from "./RunJobsTable";
 import { toast } from "@/utils/toast";
 import { showErrorToast } from "@/utils/error-handler";
 import { Badge } from "@/components/ui/badge";
+import { InfoTip } from "@/components/ui/info-tip";
+import type { InfoTipId } from "@/content/infotips";
 
 /** Bounds the Radix viewport (not the root, which grows with its content). Read by results/scrollBounds.test.ts. */
 export const VIEWPORT_MAX_H_72 = "[&>[data-slot=scroll-area-viewport]]:max-h-72";
@@ -53,14 +57,16 @@ export function SectionNote({ children, testId }: { children: ReactNode; testId?
   );
 }
 
-function SectionShell({ title, description, testId, children, actions }: {
+function SectionShell({ title, description, testId, children, actions, infoId }: {
   title: ReactNode; description?: ReactNode; testId: string; children: ReactNode; actions?: ReactNode;
+  /** the (i) tip beside the title (required: the coverage test pairs every section title with a tip) */
+  infoId: InfoTipId;
 }) {
   return (
     <Card className="border-zinc-200 dark:border-zinc-800 min-w-0" data-testid={testId}>
       <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3">
         <div className="space-y-1.5 min-w-0">
-          <CardTitle className="text-base">{title}</CardTitle>
+          <CardTitle className="text-base">{title} <InfoTip id={infoId} /></CardTitle>
           {description && <CardDescription>{description}</CardDescription>}
         </div>
         {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
@@ -136,6 +142,7 @@ export function RunHeaderActions({ teamId, run, assetTotal, canCompare, onCompar
           {d.label}
         </Button>
       ))}
+      <InfoTip id="cbom.run.downloads" />
       {/* VEX, Signature, Evidence pack, PDF Report (CB-38 PR-8), as on the code page's header */}
       <RunDeliverablesMenu teamId={teamId} runId={run.id} active={active} />
       <RunVerifyButton teamId={teamId} runId={run.id} />
@@ -181,6 +188,7 @@ export function RunVerifyButton({ teamId, runId }: { teamId: number; runId: numb
         {busy ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <BadgeCheck className="h-4 w-4 mr-2" />}
         Verify file…
       </Button>
+      <InfoTip id="cbom.run.verify" />
     </>
   );
 }
@@ -204,26 +212,26 @@ export function RunCoverageSection({ run, targets, provenance }: {
   const jobs = run.jobs ?? [];
   const skipped = run.breakdown?.skipped ?? [];
   return (
-    <SectionShell title="Collection jobs and targets" testId="run-section-coverage"
+    <SectionShell infoId="cbom.run.covered" title="Collection jobs and targets" testId="run-section-coverage"
                   description="Every job of the run with where it ran and how it ended, the sources skipped at the start, and each target's outcome">
       {jobs.length === 0 ? <EmptyState title="No jobs in this run" /> : <RunJobsTable jobs={jobs} testIdPrefix="run-job" />}
       <SkippedAtStart items={skipped} />
       {provenance && provenance.length > 0 && (
         <div className="space-y-1.5" data-testid="run-provenance">
-          <p className="text-sm font-medium text-zinc-900 dark:text-white">Provenance per source</p>
+          <p className="text-sm font-medium text-zinc-900 dark:text-white">Provenance per source <InfoTip id="cbom.run.provenance" /></p>
           <ScrollArea className="w-full border rounded-lg">
             <div className="min-w-max">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Source</TableHead>
-                    <TableHead>Kind</TableHead>
-                    <TableHead>Runs on</TableHead>
-                    <TableHead>Outcome</TableHead>
-                    <TableHead className="text-right" title="Collected assets; the jobs table above also counts the Not collected rows">Assets (excl. not collected)</TableHead>
-                    <TableHead className="text-right">Endpoints probed</TableHead>
-                    <TableHead className="text-right">Duration</TableHead>
-                    <TableHead className="text-right">Credits</TableHead>
+                    <TableHead>Source <InfoTip id="cbsrc.rr.job.source" /></TableHead>
+                    <TableHead>Kind <InfoTip id="cbom.run.col.kind" /></TableHead>
+                    <TableHead>Runs on <InfoTip id="cbsrc.rr.job.runs_on" /></TableHead>
+                    <TableHead>Outcome <InfoTip id="cbom.run.col.outcome" /></TableHead>
+                    <TableHead className="text-right" title="Collected assets; the jobs table above also counts the Not collected rows">Assets (excl. not collected) <InfoTip id="cbom.run.col.assets_collected" /></TableHead>
+                    <TableHead className="text-right">Endpoints probed <InfoTip id="cbom.run.col.endpoints" /></TableHead>
+                    <TableHead className="text-right">Duration <InfoTip id="cbom.run.col.duration" /></TableHead>
+                    <TableHead className="text-right">Credits <InfoTip id="cbom.run.col.credits" /></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -283,13 +291,13 @@ export function RunMetaCards({ sources, nodes, endpoints, duration }: {
 }
 
 // ---------------------------------------------------------------------------- S6 orphaned / unmanaged certificates
-function CertTable({ title, label, count, certs, testId, onOpenAsset }: {
-  title: string; label: string | null; count: string; certs: CbomCertRef[]; testId: string; onOpenAsset: (id: number) => void;
+function CertTable({ title, label, count, certs, testId, onOpenAsset, infoId }: {
+  title: string; label: string | null; count: string; certs: CbomCertRef[]; testId: string; onOpenAsset: (id: number) => void; infoId: InfoTipId;
 }) {
   return (
     <div className="space-y-1.5 min-w-0" data-testid={testId}>
       <p className="text-sm font-medium text-zinc-900 dark:text-white">
-        {title} <span className="text-zinc-500 font-normal" data-testid={`${testId}-count`}>({count})</span>
+        {title} <span className="text-zinc-500 font-normal" data-testid={`${testId}-count`}>({count})</span> <InfoTip id={infoId} />
       </p>
       {label && <p className="text-xs text-zinc-500">{label}</p>}
       {certs.length === 0 ? (
@@ -301,11 +309,11 @@ function CertTable({ title, label, count, certs, testId, onOpenAsset }: {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Subject</TableHead>
-                  <TableHead>Issuer</TableHead>
-                  <TableHead>Expires</TableHead>
-                  <TableHead>Location</TableHead>
-                  <TableHead>Source</TableHead>
+                  <TableHead>Subject <InfoTip id="cbom.run.cert.subject" /></TableHead>
+                  <TableHead>Issuer <InfoTip id="cbom.run.cert.issuer" /></TableHead>
+                  <TableHead>Expires <InfoTip id="cbom.run.cert.expires" /></TableHead>
+                  <TableHead>Location <InfoTip id="cbom.run.cert.location" /></TableHead>
+                  <TableHead>Source <InfoTip id="cbom.run.cert.source" /></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -342,13 +350,13 @@ export function RunCertificatesSection({ view, results, onOpenAsset }: {
   const o = certListView(results, "orphaned");
   const u = certListView(results, "unmanaged");
   return (
-    <SectionShell title="Orphaned and unmanaged certificates" testId="run-section-certificates"
+    <SectionShell infoId="cbom.run.certs" title="Orphaned and unmanaged certificates" testId="run-section-certificates"
                   description="Within this run's scope: orphaned = stored but presented by no endpoint the run read; unmanaged = held by no managing system the run saw (ACM, cert-manager, AD CS, Key Vault, Certificate Manager)">
       {view.note && <SectionNote testId="run-certificates-note">{view.note}</SectionNote>}
       {(orphaned?.length || unmanaged?.length) ? (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-          <CertTable title="Orphaned certificates" label={o.label} count={certCountText(o)} certs={orphaned ?? []} testId="run-certs-orphaned" onOpenAsset={onOpenAsset} />
-          <CertTable title="Unmanaged certificates" label={u.label} count={certCountText(u)} certs={unmanaged ?? []} testId="run-certs-unmanaged" onOpenAsset={onOpenAsset} />
+          <CertTable infoId="cbom.run.certs.orphaned" title="Orphaned certificates" label={o.label} count={certCountText(o)} certs={orphaned ?? []} testId="run-certs-orphaned" onOpenAsset={onOpenAsset} />
+          <CertTable infoId="cbom.run.certs.unmanaged" title="Unmanaged certificates" label={u.label} count={certCountText(u)} certs={unmanaged ?? []} testId="run-certs-unmanaged" onOpenAsset={onOpenAsset} />
         </div>
       ) : null}
     </SectionShell>
@@ -358,15 +366,43 @@ export function RunCertificatesSection({ view, results, onOpenAsset }: {
 // ---------------------------------------------------------------------------- S8 changes
 export function RunChangesSection({ teamId, run, canCompare, onCompare }: { teamId: number; run: CbomRun; canCompare: boolean; onCompare: () => void }) {
   return (
-    <SectionShell title="Changes" testId="run-section-changes"
+    <SectionShell infoId="cbom.run.changes" title="Changes" testId="run-section-changes"
                   description="Drift against each source's previous complete collection"
                   actions={canCompare ? (
                     <button type="button" className="text-sm text-blue-600 dark:text-blue-400 cursor-pointer hover:underline" onClick={onCompare}>
                       Compare with another run…
                     </button>
                   ) : undefined}>
+      <RunDiffBlock teamId={teamId} runId={run.id} />
       <RunChanges teamId={teamId} runId={run.id} finished={TERMINAL_RUN.has(run.status)} />
     </SectionShell>
+  );
+}
+
+/** The code page's CodeChanges block for a run: the same collapsible DiffView (resolved / opened / added / removed /
+ * changed, readiness delta, rule changes, not read), over GET /runs/{id}/diff against the previous complete run. The
+ * run's drift events (opened, resolved, renewed, expiring ...) are listed below it from /changes, which the run page
+ * has always used and which W2b's /diff ``events`` duplicate. */
+export function RunDiffBlock({ teamId, runId }: { teamId: number; runId: number }) {
+  const [open, setOpen] = useState(false);
+  const q = useQuery({ queryKey: cbomOpsKeys.diff(teamId, runId, undefined), queryFn: () => getCbomRunDiff(teamId, runId), enabled: open, retry: 1 });
+  return (
+    <details className="rounded-lg border border-zinc-200 dark:border-zinc-800 p-4" data-testid="run-diff"
+             onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
+      <summary className="cursor-pointer text-sm font-medium text-zinc-900 dark:text-white">
+        Changes since the previous complete run of these sources
+      </summary>
+      <div className="mt-3">
+        {!open ? null : q.isLoading ? <p className="text-xs text-zinc-500">Loading…</p> : q.isError || !q.data ? (
+          <p className="text-xs text-zinc-500">The comparison could not be loaded.</p>
+        ) : (
+          <>
+            {q.data.against_run_id && <p className="text-xs text-zinc-500 mb-2">Compared with run #{q.data.against_run_id}.</p>}
+            <DiffView diff={q.data} />
+          </>
+        )}
+      </div>
+    </details>
   );
 }
 
@@ -381,7 +417,7 @@ export function RunWavesSection({ byWave, labels, loading, deferred, selected }:
 }) {
   const chips = waveChips(byWave);
   return (
-    <SectionShell title="Remediation waves" testId="run-section-waves"
+    <SectionShell infoId="cbom.run.waves" title="Remediation waves" testId="run-section-waves"
                   description="Who fixes what, by when. Plans follow each asset's stable identity, so they carry over to later runs">
       {deferred ? <SectionNote testId="run-waves-deferred">Wave counts for the whole run appear when it has finished; each row below shows its own wave meanwhile.</SectionNote>
         : loading ? <p className="text-xs text-zinc-500">Loading the wave plan…</p> : chips.length === 0 ? (
@@ -411,7 +447,7 @@ export function RunComplianceSection({ view, results, posture }: {
   if (!view.show) return null;
   const { rows, basis } = complianceRows(results, posture);
   return (
-    <SectionShell title="Compliance mapping" testId="run-section-compliance"
+    <SectionShell infoId="cbom.run.compliance" title="Compliance mapping" testId="run-section-compliance"
                   description="Regulatory clauses the run's findings touch: CERT-In, RBI, SEBI CSCRF, NIST and CNSA 2.0 (knowledge-base mapping, no AI)">
       {view.note && <SectionNote>{view.note}</SectionNote>}
       {rows.length > 0 && (
@@ -459,7 +495,7 @@ export function RunDashboardSection({ view, model, riskRows, pageRows, results }
     <div className="space-y-3" data-testid="run-section-dashboard">
       {model.dashboard && (
         <CbomDashboardCharts dashboard={model.dashboard} findingsList={riskRows}
-                             riskScoresTitle={`Risk scores on this table page (${pageRows} rows)`}
+                             riskScoresTitle={`Risk scores on this table page (${pageRows} rows)`} riskScoresTip="cbom.run.risk_scores" quantumTip="cbom.run.quantum"
                              riskScoresDescription="Risk score (0-10) of the rows on the findings table's current page and filter, top 24, descending" />
       )}
       {view.note && <SectionNote testId="run-dashboard-note">{view.note}</SectionNote>}
@@ -480,7 +516,7 @@ export function RunTopRisks({ posture, onOpenAsset }: { posture: CbomPostureWith
   return (
     <Card className="border-zinc-200 dark:border-zinc-800" data-testid="run-top-risks">
       <CardHeader>
-        <CardTitle className="text-base">Top cryptographic risks</CardTitle>
+        <CardTitle className="text-base">Top cryptographic risks <InfoTip id="cbom.run.top_risks" /></CardTitle>
         <CardDescription>Priority = impact × business criticality × internet exposure, from the run posture</CardDescription>
       </CardHeader>
       <CardContent>
@@ -488,13 +524,13 @@ export function RunTopRisks({ posture, onOpenAsset }: { posture: CbomPostureWith
           <Table className="min-w-max">
             <TableHeader>
               <TableRow>
-                <TableHead className="min-w-[80px]">Priority</TableHead>
-                <TableHead className="min-w-[200px]">Asset</TableHead>
-                <TableHead className="min-w-[90px]">Impact</TableHead>
-                <TableHead className="min-w-[140px]">Source</TableHead>
-                <TableHead className="min-w-[100px]">Criticality</TableHead>
-                <TableHead className="min-w-[130px]">Exposure</TableHead>
-                <TableHead className="min-w-[70px]">HNDL</TableHead>
+                <TableHead className="min-w-[80px]">Priority <InfoTip id="cbom.run.col.priority" /></TableHead>
+                <TableHead className="min-w-[200px]">Asset <InfoTip id="cbom.run.col.asset" /></TableHead>
+                <TableHead className="min-w-[90px]">Impact <InfoTip id="results.table.impact" /></TableHead>
+                <TableHead className="min-w-[140px]">Source <InfoTip id="cbom.run.col.source" /></TableHead>
+                <TableHead className="min-w-[100px]">Criticality <InfoTip id="cbom.run.col.criticality" /></TableHead>
+                <TableHead className="min-w-[130px]">Exposure <InfoTip id="cbom.run.col.exposure" /></TableHead>
+                <TableHead className="min-w-[70px]">HNDL <InfoTip id="cbom.run.col.hndl" /></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>

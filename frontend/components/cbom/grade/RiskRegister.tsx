@@ -22,6 +22,7 @@ import {
   type RegisterRow,
   type RegisterSummary,
 } from "./register";
+import { InfoTip } from "@/components/ui/info-tip";
 import { GRADE_KEYS, GRADE_TEXT, gradeChipClass, gradeText, humanize } from "./model";
 
 const GRADE_OPTIONS = [...GRADE_TEXT.map((t) => ({ value: t.split(" ")[0], label: t })), { value: "none", label: "No grade" }];
@@ -66,12 +67,12 @@ export function RegisterTable({ rows }: { rows: RegisterRow[] }) {
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left text-xs text-zinc-500 dark:text-zinc-400">
-            <th className="py-1 pr-3 font-medium">Grade</th>
+            <th className="py-1 pr-3 font-medium">Grade <InfoTip id="cbom.reg.col.grade" /></th>
             <th className="py-1 pr-3 font-medium">Asset</th>
-            <th className="py-1 pr-3 font-medium">Family</th>
-            <th className="py-1 pr-3 font-medium">Exposure</th>
-            <th className="py-1 pr-3 font-medium">Source</th>
-            <th className="py-1 font-medium">Last observed</th>
+            <th className="py-1 pr-3 font-medium">Family <InfoTip id="cbom.reg.col.family" /></th>
+            <th className="py-1 pr-3 font-medium">Exposure <InfoTip id="cbom.reg.col.exposure" /></th>
+            <th className="py-1 pr-3 font-medium">Source <InfoTip id="cbom.reg.col.source" /></th>
+            <th className="py-1 font-medium">Last observed <InfoTip id="cbom.reg.col.last_observed" /></th>
           </tr>
         </thead>
         <tbody>
@@ -195,6 +196,7 @@ export function RiskRegister({ teamId }: { teamId: number }) {
             {GRADE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </label>
+        <InfoTip id="cbom.reg.col.grade" />
         <label className="text-xs text-zinc-600 dark:text-zinc-400">Family{" "}
           <select className="rounded border border-zinc-300 bg-transparent px-1.5 py-1 text-xs dark:border-zinc-700"
                   value={filters.family ?? ""} onChange={set("family")} data-testid="register-filter-family">
@@ -202,6 +204,7 @@ export function RiskRegister({ teamId }: { teamId: number }) {
             {families.map((f) => <option key={f} value={f}>{f}</option>)}
           </select>
         </label>
+        <InfoTip id="cbom.reg.col.family" />
         <label className="text-xs text-zinc-600 dark:text-zinc-400">Exposure{" "}
           <select className="rounded border border-zinc-300 bg-transparent px-1.5 py-1 text-xs dark:border-zinc-700"
                   value={filters.exposure ?? ""} onChange={set("exposure")} data-testid="register-filter-exposure">
@@ -209,6 +212,7 @@ export function RiskRegister({ teamId }: { teamId: number }) {
             {["internet", "internal", "unknown"].map((x) => <option key={x} value={x}>{humanize(x)}</option>)}
           </select>
         </label>
+        <InfoTip id="cbom.reg.col.exposure" />
         <button type="button" data-testid="register-csv" disabled={downloading}
                 className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium dark:border-zinc-700"
                 onClick={async () => {
@@ -217,6 +221,7 @@ export function RiskRegister({ teamId }: { teamId: number }) {
                 }}>
           {downloading ? "Preparing CSV…" : "Download CSV"}
         </button>
+        <InfoTip id="cbom.reg.csv" />
         {typeof total === "number" && <span className="text-xs text-zinc-500">{total} rows</span>}
       </div>
       {list.isLoading && <p className="text-sm text-zinc-500">Loading the register…</p>}

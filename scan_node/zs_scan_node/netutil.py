@@ -23,6 +23,7 @@
 """
 from __future__ import annotations
 
+import collections
 import heapq
 import ipaddress
 import socket
@@ -745,6 +746,14 @@ def requests_adapter(host: str, ip: str, never: NeverScan):
     return _Pinned()
 
 
+# An IPv4 CIDR of this prefix or larger (a /24, /23, ... /16) leaves out its own network and broadcast address; a
+# smaller one (/25 to /32) is scanned whole.  A /25 or smaller is most often a slice of a larger network (a /24 split
+# into two /25s for two scan nodes or windows), where its first and last addresses are real hosts (N3, 14 Nov 2026:
+# 10.232.0.127 and .128 were never scanned).  IPv6 networks and a-b ranges are always scanned whole; an address
+# written out is always scanned.  The backend counts the same (targets.scanned_interval, HOST_ONLY_MAX_PREFIX).
+HOST_ONLY_MAX_PREFIX = 24
+
+
 def iter_line_ips(line: str) -> Iterator[str] | None:
     """Addresses of an IP / CIDR / range line, or None if the line is a hostname."""
     text = line.strip()
@@ -753,7 +762,7 @@ def iter_line_ips(line: str) -> Iterator[str] | None:
             net = ipaddress.ip_network(text, strict=False)
             if net.num_addresses == 1:
                 return iter([ip_text(net.network_address)])
-            hosts = net.hosts() if net.version == 4 and net.prefixlen <= 30 else iter(net)
+            hosts = net.hosts() if net.version == 4 and net.prefixlen <= HOST_ONLY_MAX_PREFIX else iter(net)
             return (ip_text(a) for a in hosts)
         if "-" in text:
             left, right = text.split("-", 1)
@@ -814,39 +823,55 @@ def expand_targets(lines: list[str], never: NeverScan, limit: int = MAX_EXPANDED
 
 
 class RateLimiter:
-    """Global connections-per-second token bucket plus a per-address concurrency cap."""
+    """Global connections-per-second cap plus a per-address concurrency cap.
+
+    N8 (14 Nov 2026): the old token bucket held ``rate`` tokens, so a full bucket plus a second's refill let up to twice
+    the rate start within one second (30 measured at 20/s).  Now connections are spaced ``1/rate`` apart (no burst),
+    and the start times of the last ``floor(rate)`` connections are kept: a connection may start only once the oldest
+    of them is a full second old, so no one-second window ever holds more than the configured rate."""
 
     def __init__(self, per_second: float = 20, per_server: int = 2) -> None:
-        self.rate = max(float(per_second or 1), 0.1)
-        self.capacity = max(1.0, self.rate)
-        self.tokens = self.capacity
-        self.last = time.monotonic()
         self.lock = threading.Lock()
+        self._starts: collections.deque[float] = collections.deque()
+        self._next = 0.0  # monotonic time of the next free slot
+        self._set_rate(per_second)
         self.per_server = max(int(per_server or 1), 1)
         # weak: a semaphore lives only while a connection holds it, so a /16 sweep does not grow this forever
         self._sems: weakref.WeakValueDictionary[str, threading.BoundedSemaphore] = weakref.WeakValueDictionary()
         self._sem_lock = threading.Lock()
         self.connections = 0
 
+    def _set_rate(self, per_second: float) -> None:  # with the lock held (or from __init__)
+        self.rate = max(float(per_second or 1), 0.1)
+        self.interval = 1.0 / self.rate
+        self.window_cap = max(1, int(self.rate))  # starts allowed in any one second
+
     def configure(self, per_second: float, per_server: int) -> None:
         with self.lock:
-            self.rate = max(float(per_second or 1), 0.1)
-            self.capacity = max(1.0, self.rate)
-            self.tokens = min(self.tokens, self.capacity)
+            self._set_rate(per_second)
         with self._sem_lock:
             self.per_server = max(int(per_server or 1), 1)
+
+    def _wait(self, now: float) -> float:
+        """Seconds until a connection may start (0: now).  With the lock held."""
+        while self._starts and now - self._starts[0] >= 1.0:
+            self._starts.popleft()
+        wait = max(self._next - now, 0.0)
+        if len(self._starts) >= self.window_cap:
+            wait = max(wait, self._starts[len(self._starts) - self.window_cap] + 1.0 - now)
+        return wait
 
     def acquire(self, stop: threading.Event | None = None, deadline: float | None = None) -> bool:
         while True:
             with self.lock:
                 now = time.monotonic()
-                self.tokens = min(self.capacity, self.tokens + (now - self.last) * self.rate)
-                self.last = now
-                if self.tokens >= 1:
-                    self.tokens -= 1
+                wait = self._wait(now)
+                if wait <= 0:
+                    self._starts.append(now)
+                    # at most one slot is saved up (a late wake-up catches up once), never a burst
+                    self._next = max(self._next, now - self.interval) + self.interval
                     self.connections += 1
                     return True
-                wait = (1 - self.tokens) / self.rate
             if stop is not None and stop.is_set():
                 return False
             if deadline is not None and time.monotonic() + wait > deadline:
