@@ -626,15 +626,31 @@ def _compliance(clauses_by_framework: list[dict[str, Any]]) -> dict[str, Any]:
     """Posture's KB clause mapping grouped as the results page shows it: CERT-In, RBI, SEBI CSCRF, NIST, CNSA 2.0
     (always listed, in that order), then any other framework a newer KB adds."""
     grouped: dict[str, list[dict[str, Any]]] = {name: [] for name in FRAMEWORKS}
+    # distinct assets behind any clause of the framework (posture's count; None when two KB names share one group,
+    # because their asset sets cannot be united here)
+    assets: dict[str, int | None] = {name: 0 for name in FRAMEWORKS}
+    seen: set[str] = set()
     for block in clauses_by_framework:
         name = _framework(str(block.get("framework") or ""))
+        count = block.get("assets")
+        assets[name] = None if name in seen or count is None else int(count)
+        seen.add(name)
         for clause in block.get("clauses") or []:
+            codes = list(clause.get("codes") or [])
             grouped.setdefault(name, []).append({
                 "clause": clause.get("id"), "title": clause.get("text"), "assets": int(clause.get("assets") or 0),
-                "codes": list(clause.get("codes") or []), "source": clause.get("source"), "note": clause.get("note")})
+                "codes": codes, "source": clause.get("source"), "note": clause.get("note"),
+                "findings": [_finding_fix(code) for code in codes]})  # #270: labels and "How to fix" per code
     order = list(FRAMEWORKS) + sorted(n for n in grouped if n not in FRAMEWORKS)
-    return {"frameworks": [{"framework": name, "clauses": grouped[name]} for name in order],
+    return {"frameworks": [{"framework": name, "clauses": grouped[name], "assets": assets.get(name)} for name in order],
             "scope": "Knowledge-base clauses this run's findings touch (asset counts per clause)"}
+
+
+def _finding_fix(code: str) -> dict[str, Any]:
+    """A finding code's knowledge-base title and remediation summary (the clause row's label and "How to fix")."""
+    entry = crypto_kb.entry("node", code) or {}
+    return {"code": code, "title": entry.get("title") or code,
+            "fix": (entry.get("remediation") or {}).get("summary") or None}
 
 
 # ----------------------------------------------------------------------------- live remediation join

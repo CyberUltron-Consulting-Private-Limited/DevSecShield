@@ -7,10 +7,11 @@
   second insert waits for the first to commit, then does nothing).  Every run reconciles: its charge rows sum to
   ``credits_charged_c`` and its refund rows to ``credits_refunded_c`` (``tests/test_cbom_cb14_billing.py``).
 * **Runtime skips (OA-10b default: "charge for what was contacted").**  A collection that ends ``success`` but did
-  not read some of its targets because of the run itself (the scan window closed, Stop all, the deadline, the
-  never-scan list, a run cap, a cancel) or because the target refused the credential is refunded that share of its
-  weight, pro rata by targets (a network range reports one target per address, so it is pro rata by addresses),
-  rounded down.  Targets that were contacted (unreachable, timed out, refused the port, errors) are charged.
+  not read some of its targets because of the run itself (the scan window closed, Stop all, the deadline, a run cap,
+  a cancel) or because the target refused the credential is refunded that share of its weight, pro rata over the
+  targets in scope (a network range reports one target per address, so it is pro rata by addresses), rounded down.
+  Targets that were contacted (unreachable, timed out, refused the port, errors) are charged.  Never-scan targets
+  are CB-11's (``jobs.refund_policy_excluded`` adds their per-unit refund to the same ledger row).
 
 Alembic sees ``cbomcreditentry`` because ``prod_database_migrations/migrations/env.py`` imports this module
 (migration ``cb14credit001``).
@@ -28,7 +29,7 @@ from backend.new_models import _cbom_utcnow
 
 # a target that was never read because the run said so, or whose credential was refused: not charged
 CREDENTIAL_REFUSED = frozenset({"auth_failed", "mfa_required"})
-REASONS = ("start", "runtime_skips", "nothing_read", "failed", "cancelled", "expired", "refund", "backfill",
+REASONS = ("start", "runtime_skips", "never_scan", "nothing_read", "failed", "cancelled", "expired", "refund", "backfill",
            "migration_duplicate")
 
 
@@ -91,8 +92,13 @@ def _tally(result: dict[str, Any]) -> dict[str, int]:
     return out
 
 
+NEVER_SCAN = "skipped_never_scan"
+
+
 def refundable(status: str) -> bool:
-    return status.startswith("skipped_") or status in CREDENTIAL_REFUSED
+    """Not read at runtime, so not charged.  Never-scan targets are left to CB-11 (``jobs.policy_refund_units``): most
+    were never charged (the estimate subtracts them), and the few it could not subtract are refunded per unit."""
+    return (status.startswith("skipped_") and status != NEVER_SCAN) or status in CREDENTIAL_REFUSED
 
 
 def runtime_refund_c(weight_c: int, result: dict[str, Any] | None) -> int:
@@ -106,6 +112,7 @@ def runtime_refund_c(weight_c: int, result: dict[str, Any] | None) -> int:
     listed = sum(tally.values())
     if not isinstance(total, int) or isinstance(total, bool) or total < listed:
         total = listed
+    total -= tally.get(NEVER_SCAN, 0)  # the targets in scope: never-scan ones are excluded by policy (CB-11)
     if total <= 0:
         return 0
     skipped = min(sum(n for status, n in tally.items() if refundable(status)), total)

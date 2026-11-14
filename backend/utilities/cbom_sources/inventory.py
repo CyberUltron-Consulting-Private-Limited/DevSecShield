@@ -19,12 +19,14 @@ from backend.new_models import CbomCollectedAsset, CbomCollectionJob, CbomCollec
 from backend.utilities.build_info import build_sha, build_version
 from backend.utilities.cbom_sources import agility as AGILITY
 from backend.utilities.cbom_sources import crypto_kb
+from backend.utilities.cbom_sources import policy_scope as PS
 from backend.utilities.cbom_sources import qgrade as QG
 from backend.utilities.cbom_sources.classify import DATED_TYPES, classify, shown
 from backend.utilities.cbom_sources.common import iso_z
 # CB-06: per-component provenance, PQC class and algorithm families for the export
 from backend.utilities.cbom_sources import provenance as PROV
-from backend.utilities.cbom_sources.classify import family, quantum_vulnerable
+from backend.utilities.cbom_sources.classify import family, quantum_vulnerable, standards_of
+from backend.utilities.cbom_sources import standards as STD
 from backend.utilities.cbom_sources import posture as POSTURE
 from backend.utilities.cbom_sources import tls_suites
 from backend.utilities.cbom_sources import vex_semantics as VEX
@@ -713,12 +715,15 @@ def _detail_properties(row: CbomCollectedAsset, facts: dict[str, Any], crypto: d
     """The values the asset table and the oracle compare that CycloneDX has no field for (or not on this asset type):
     PQC class and why (``posture.classify_pqc``), then the quantum risk grade and fix class (``assessed``:
     ``Assessment.add``'s list), key size, curve, signature algorithm, key-exchange groups, SSH algorithm lists, CB-04
-    identity facts."""
+    identity facts, the standards statuses (CB-16)."""
     out: list[tuple[str, str | None]] = [
         ("zs:pqc_class", pqc[0]), ("zs:pqc_class_basis", pqc[1]),
         ("zs:key_size", str(size) if size else None), ("zs:curve", curve), ("zs:signature_algorithm", signature),
     ]
     out += [(f"zs:{name}", _text(facts.get(name))) for name in _IDENTITY_FACTS]
+    # CB-16: FIPS 203/204/205, CNSA 2.0 and SP 800-131A status of the asset, as the asset drawer shows them
+    out += [(f"zs:standard:{r['id']}", STD.export_value(r))
+            for r in STD.rows(standards_of(row.asset_type, row.algorithm, row.key_size, facts))]
     proto = crypto.get("protocolProperties") or {}
     if crypto.get("assetType") == "protocol" and proto.get("type") == "ssh":
         out += [("zs:kex_algorithms", ",".join(_names(facts.get("kex"), facts.get("kexalgorithms"))) or None),
@@ -869,6 +874,7 @@ def coverage_gaps(rows: list[CbomCollectedAsset], names: dict[int, str], job_nam
     return out
 
 
+EXCLUDED_CAP = 500  # zs:excluded properties per document (CB-11); zs:excluded_count is always the exact number
 Q0_GAP_CAP = 5_000  # zs:q0_gap properties per document; zs:q0_gap_count is always the exact number
 
 
@@ -891,6 +897,8 @@ def q0_gap_properties(snapshot: dict[str, Any] | None, scope: list[dict[str, Any
                "detail": item.get("detail"), "as_of": None, "count": item.get("count", 1)}
         if item.get("refs"):
             gap["refs"] = [f"zs-asset-{i}" for i in item["refs"][:20]]
+        if item.get("policy"):  # CB-11: a never-scan exclusion says so (excluded by policy, not a gap)
+            gap.update(policy=True, label=item.get("label"))
         gaps.append(gap)
     if not gaps:
         return []
@@ -926,11 +934,22 @@ def _document(session: Session, run: CbomCollectionRun, now: _dt.datetime
     shared: dict[tuple, list] = {}
     parts = CertificateParts()
     gaps = []
+    excluded: list[dict[str, str]] = []  # CB-11: never-scan targets are excluded by policy, never a gap
+    excluded_total = 0
     for job in jobs:
         info = _job_targets(job, names)
+        excluded_total += PS.excluded_count(job.result if isinstance(job.result, dict) else {})
         for target in info["targets"]:
-            if target.get("status") not in ("ok", None):
-                gaps.append(f"{info['source_name']}: {target.get('target')} {target.get('status')}")
+            status = target.get("status")
+            if status == PS.STATUS:
+                excluded.append({"source": str(info["source_name"] or ""), "target": str(target.get("target") or ""),
+                                 "reason": PS.REASON})
+            elif status == "summary":  # the node's "+N more" row: its never-scan count is excluded, the rest gaps
+                rest = {k: v for k, v in PS.summary_counts(target).items() if k != PS.STATUS and k not in ("ok", "partial")}
+                if rest:
+                    gaps.append(f"{info['source_name']}: {target.get('target')} {_compact(rest)}")
+            elif status not in ("ok", None):
+                gaps.append(f"{info['source_name']}: {target.get('target')} {status}")
         if job.status != "success":
             gaps.append(f"{info['source_name']}: job {job.status}")
     # CB-19 / CB-24: grade and fix class of every asset before the head (its metadata holds their distributions);
@@ -980,6 +999,8 @@ def _document(session: Session, run: CbomCollectionRun, now: _dt.datetime
                 {"name": "zs:pqc_readiness_status", "value": summary["readiness_basis"]["status"]},
                 *assessment.metadata(),
                 *[{"name": "zs:gap", "value": gap[:255]} for gap in gaps[:500]],
+                *([{"name": "zs:excluded_count", "value": str(excluded_total)}] if excluded_total else []),
+                *[{"name": "zs:excluded", "value": _compact(e)} for e in excluded[:EXCLUDED_CAP]],
                 *coverage_gaps(coverage, names, job_names, provs),
                 *q0_gap_properties(run.grade_inputs, _run_scope_items(grading, coverage)),
             ],

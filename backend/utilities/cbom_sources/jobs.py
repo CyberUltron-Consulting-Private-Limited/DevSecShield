@@ -28,11 +28,12 @@ from backend.new_models import (
 )
 from backend.utilities.cbom_sources import billing as BILLING  # CB-14 credit ledger
 from backend.utilities.cbom_sources import targets as T
-from backend.utilities.cbom_sources.classify import ASSET_TYPES, classify
+from backend.utilities.cbom_sources.classify import ASSET_TYPES, CDX_TYPE, classify
 from backend.utilities.cbom_sources.node_facts import normalise_tls
 from backend.utilities.cbom_sources.common import audit, clean_text, log
 from backend.utilities.cbom_sources.crypto import decrypt_secrets, scrub
 from backend.utilities.cbom_sources.kinds import KINDS, METADATA_FIELDS
+from backend.utilities.cbom_sources import policy_scope as PS
 from backend.utilities.cbom_sources.planning import credits, node_status, team_range_cidrs
 from backend.utilities.cbom_sources.settings import get_or_create_settings, team_exclusions, window_allows, window_end
 
@@ -56,6 +57,7 @@ TARGET_STATUSES = frozenset({
     "sudoers_missing", "sudo_denied", "rbac_denied", "winrm_denied", "tls_unavailable", "not_supported", "error",
     "skipped_never_scan",
     "skipped_window", "skipped_stop", "skipped_deadline", "skipped_cancelled", "skipped_cap",
+    "skipped_credential_refused",  # CB-10: the node stopped using a credential after K refused logins in a row
 })
 
 
@@ -122,6 +124,48 @@ def refund_job(session: Session, job: CbomCollectionJob, run: CbomCollectionRun 
     if amount > 0:
         session.exec(update(Team).where(Team.id == job.team_id).values(credit_balance=Team.credit_balance + amount / 100))
     return amount
+
+
+def policy_refund_units(job: CbomCollectionJob, result: dict[str, Any]) -> int:
+    """CB-11: per-target units charged for targets the never-scan list left out, which the estimate could not
+    subtract.  The planner subtracts every listed address and every listed name that is a target itself; a listed
+    host NAME that the node resolves to a charged address (R2: ``canary.lab`` -> 10.20.0.8) is known only to the
+    node.  Charged units minus the targets the node counted as in scope (counted - excluded) is that number.  Only
+    sources charged per target (``unit`` "targets": servers, appliances): a network range is charged per /24 block,
+    which one blocked address does not change."""
+    params = job.params or {}
+    units = params.get("units")
+    counts = result.get("counts") if isinstance(result.get("counts"), dict) else {}
+    total = counts.get("total")
+    if params.get("unit") != "targets" or not isinstance(units, int) or units <= 0 or not isinstance(total, int):
+        return 0
+    excluded = int(result.get("excluded_by_policy") or 0)
+    return max(0, min(units, units - (total - excluded)))
+
+
+def refund_policy_excluded(session: Session, job: CbomCollectionJob, run: CbomCollectionRun | None,
+                           result: dict[str, Any]) -> int:
+    """The refund of a collection that ended ``success`` but did not read all it was charged for, in one ledger row
+    (``refund_job``): the per-target charge of the never-scan targets ``policy_refund_units`` counts (CB-11; recorded
+    in the result as ``policy_refund_c``), plus the runtime-skip share of the rest (CB-14, ``billing.runtime_refund_c``).
+    Returns centi-credits refunded."""
+    if job.refunded or job.weight_c <= 0:
+        return 0
+    units = policy_refund_units(job, result)
+    policy_c = 0
+    if units > 0:
+        policy_c = min(job.weight_c, job.weight_c * units // max(int((job.params or {}).get("units") or 1), 1))
+    share = BILLING.runtime_refund_c(job.weight_c - policy_c, result)
+    amount = min(job.weight_c, policy_c + share)
+    if amount <= 0:
+        return 0
+    if policy_c:
+        job.result = {**(job.result or {}), "policy_refund_c": policy_c, "policy_refund_units": units}
+        session.add(job)
+    refunded = refund_job(session, job, run, amount=amount, reason="runtime_skips" if share else "never_scan")
+    if refunded and policy_c:
+        log("never-scan targets refunded", team=job.team_id, run=job.run_id, job=job.id, units=units, amount_c=policy_c)
+    return refunded
 
 
 # ----------------------------------------------------------------------------- run status
@@ -819,6 +863,52 @@ def _test_result_from_job(session: Session, job: CbomCollectionJob, now: _dt.dat
     )
 
 
+def _refused_counts(value: Any) -> dict[str, int] | None:
+    """The node's ``credential_refused`` report (CB-10), as small whole numbers, or None."""
+    if not isinstance(value, dict):
+        return None
+    out = {}
+    for key in ("failures", "skipped", "limit"):
+        number = value.get(key)
+        out[key] = min(int(number), 1_000_000) if isinstance(number, int) and not isinstance(number, bool) and number >= 0 else 0
+    return out if out["failures"] > 0 else None
+
+
+def credential_refused_summary(refused: dict[str, Any]) -> str:
+    """What the source card says (and why its runs are skipped) after the node stopped using the credential."""
+    failures, skipped = int(refused.get("failures") or 0), int(refused.get("skipped") or 0)
+    head = (f"{failures} logins in a row were refused" if failures > 1 else "the login was refused")
+    tail = f"; {skipped} target{'s' if skipped != 1 else ''} not tried" if skipped else ""
+    return (f"Credential refused: {head} in job #{refused.get('job_id')}{tail}. Runs and schedules skip this source "
+            "until its credential is edited or a connection test passes, so the account is not locked out")
+
+
+def _credential_refused_from_job(session: Session, job: CbomCollectionJob, status: str, result: Any,
+                                 now: _dt.datetime) -> None:
+    """CB-10: a collect job whose node stopped using the credential (its breaker tripped, or every login was refused)
+    marks the source "credential refused": its connection test becomes failed with the reason, so plan_run skips it
+    for manual runs and schedules.  Editing the credential changes the connection version, which resets the test;
+    a passing connection test overwrites it.  A job finished under settings that no longer apply ends cancelled
+    (finish_job), so a result for an old credential never pauses an edited source."""
+    if job.kind != "collect" or status != "success" or job.source_id is None or not isinstance(result, dict):
+        return
+    refused = _refused_counts(result.get("credential_refused"))
+    if refused is None:
+        return
+    refused["job_id"] = job.id
+    summary = credential_refused_summary(refused)[:512]
+    session.exec(
+        update(CbomCollectionSource).where(CbomCollectionSource.id == job.source_id)
+        .values(last_test_status="failed", last_test_summary=summary, last_test_at=now, last_test_job_id=job.id,
+                last_test_result={"credential_refused": refused, "summary": summary})
+        .execution_options(synchronize_session="fetch")
+    )
+    audit(session, team_id=job.team_id, actor_type="system", actor_id=None, action="source.credential_refused",
+          object_type="source", object_id=job.source_id, changed_fields=[f"job:{job.id}"])
+    log("source credential refused", team=job.team_id, source=job.source_id, job=job.id,
+        failures=refused["failures"], skipped=refused["skipped"])
+
+
 def _stop_reason(session: Session, job: CbomCollectionJob, source: CbomCollectionSource | None,
                  node: CbomScanNode | None) -> str | None:
     """_invalid_reason plus the team's network stop, for writes coming back from a running job."""
@@ -858,14 +948,21 @@ def _outcome(job: CbomCollectionJob, status: str, result: dict[str, Any], stored
 
     ok, partial, failed, skipped = count("ok"), count("partial"), count("failed"), count("skipped")
     extra: dict[str, Any] = {}
+    # CB-11: a target on the never-scan list is excluded by policy, the customer's choice: it never makes the job
+    # partial (nor comparable-or-not, drift.job_comparable).  Only the node's other skips (window, stop, deadline)
+    # count as skipped.
+    excluded = min(PS.excluded_count(result), skipped)
+    if excluded:
+        extra["excluded_by_policy"] = excluded
+        skipped -= excluded
     reported = result.get("asset_count")
     if job.kind == "collect" and isinstance(reported, int) and reported != stored:
         extra["asset_mismatch"] = {"reported": reported, "stored": stored}
     if not counts:
         return ("partial" if extra or result.get("truncated") else "ok"), extra
-    if ok == 0 and partial == 0 and (failed or skipped):
+    if ok == 0 and partial == 0 and (failed or skipped or excluded):
         return ("partial" if read else "failed"), extra
-    if partial or failed or skipped or extra or result.get("truncated"):
+    if partial or failed or skipped or extra.keys() - {"excluded_by_policy"} or result.get("truncated"):
         return "partial", extra
     return "ok", extra
 
@@ -918,12 +1015,12 @@ def finish_job(
     if job.kind == "collect" and (status in ("failure", "cancelled") or (outcome == "failed" and int(read) == 0)):
         refunded = refund_job(session, job, _run_of(session, job),
                               reason="nothing_read" if status == "success" else None)
-    elif job.kind == "collect" and status == "success":
-        # partly read: the targets skipped at runtime or whose credential was refused are not charged (CB-14, OA-10b)
-        share = BILLING.runtime_refund_c(job.weight_c, clean_result if isinstance(clean_result, dict) else None)
-        if share:
-            refunded = refund_job(session, job, _run_of(session, job), amount=share, reason="runtime_skips")
+    elif job.kind == "collect" and status == "success" and isinstance(clean_result, dict):
+        # partly read: never-scan targets the estimate could not subtract (CB-11), and the targets skipped at runtime
+        # or whose credential was refused (CB-14, OA-10b), are not charged
+        refunded = refund_policy_excluded(session, job, _run_of(session, job), clean_result)
     _test_result_from_job(session, job, now)
+    _credential_refused_from_job(session, job, status, clean_result, now)
     recompute_run(session, job.run_id, now)
     audit(session, team_id=job.team_id, actor_type="node" if node else "system", actor_id=node.id if node else None,
           action=f"job.{status}", object_type="job", object_id=job.id)
@@ -936,6 +1033,15 @@ def finish_job(
 
 
 # ----------------------------------------------------------------------------- assets
+def _san_name(asset_type: str, facts: dict[str, Any]) -> str | None:
+    """CB-17: a certificate with an empty subject (SAN-only, as CA/B Forum allows) is named by its first SAN."""
+    if CDX_TYPE.get(asset_type) != "certificate":
+        return None
+    san = facts.get("san")
+    first = san[0] if isinstance(san, list) and san else None
+    return clean_text(first, 255) if isinstance(first, str) and first.strip() else None
+
+
 def _asset_key(asset_type: str, target: str | None, location: str, facts: dict[str, Any], name: str | None) -> str:
     """Dedup key within one job attempt.  The target is part of it: host collectors report host-relative locations
     ("sshd -T", "package:openssl", a file path), so two hosts in one source must never collapse into one row."""
@@ -1052,6 +1158,7 @@ def asset_rows(owner: CbomCollectionJob, assets: list[dict[str, Any]], known: li
             in_batch_dups += 1
             continue
         keys.add(key)
+        name = name or _san_name(asset_type, facts)  # after the key: a fallback name never moves an asset's key
         try:
             verdict = classify(asset_type, algorithm, key_size, protocol, facts, now)
         except Exception as exc:  # one malformed asset must not cost the rest of the batch

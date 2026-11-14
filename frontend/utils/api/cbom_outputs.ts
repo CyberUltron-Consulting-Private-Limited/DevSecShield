@@ -5,6 +5,7 @@ import api from "@/utils/interceptors"
 import { showErrorToast } from "@/utils/error-handler"
 import type { CbomAssetDetail, CbomRunPosture } from "@/utils/backend_api"
 import type { AgilityDetail, AgilityPosture, QExplain, QGradeFields, QPosture } from "@/components/cbom/grade/model"
+import type { StandardRow } from "@/components/cbom/standards/model"
 
 export type CycloneDxFormat = "json" | "xml"
 export type CbomExposure = "internet" | "internal" | "unknown"
@@ -58,6 +59,7 @@ export type CbomAssetDetailWithExposure = Omit<CbomAssetDetail, "library"> & {
   library: null | (NonNullable<CbomAssetDetail["library"]> & { eol_as_of?: string; eol_today?: Eol | null })
   q_explain?: QExplain | null  // CB-19
   agility?: AgilityDetail | null  // CB-24
+  standards?: StandardRow[]  // CB-16
 } & QGradeFields
 
 function saveBlob(blob: Blob, filename: string) {

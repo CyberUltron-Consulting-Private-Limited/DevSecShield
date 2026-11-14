@@ -41,15 +41,15 @@ from zs_scan_node import sshprobe as S
 from zs_scan_node import tls_registry as R
 from zs_scan_node import tlsenum as E
 from zs_scan_node import tlsprobe as T
-from zs_scan_node.certparse import cert_facts, load_certs
+from zs_scan_node.certparse import cert_facts, chain_links, load_certs
 from zs_scan_node.jobctx import MAX_FACTS_BYTES, JobContext, LeaseLost, register_asset_types
 from zs_scan_node import netutil
 from zs_scan_node.netutil import Blocked, Unresolved, checked_ip, iter_line_ips, node_limiter
 
-TCP_PROTOCOLS = {"tls", "starttls-ldap", "starttls-smtp", "starttls-imap", "starttls-postgres", "starttls-mysql",
-                 "tds", "ssh", "rdp", "opcua", "modbus", "modbus-tls"}
-TLS_LIKE = {"tls", "starttls-ldap", "starttls-smtp", "starttls-imap", "starttls-postgres", "starttls-mysql", "rdp",
-            "modbus-tls"}
+STARTTLS = {"starttls-ldap", "starttls-smtp", "starttls-imap", "starttls-postgres", "starttls-mysql", "starttls-pop3",
+            "starttls-ftp", "starttls-xmpp", "starttls-xmpp-server"}
+TCP_PROTOCOLS = {"tls", *STARTTLS, "tds", "ssh", "rdp", "opcua", "modbus", "modbus-tls"}
+TLS_LIKE = {"tls", *STARTTLS, "rdp", "modbus-tls"}
 OT_PROTOCOLS = {"opcua", "modbus", "modbus-tls"}
 MAX_OPEN_ENDPOINTS = 5000
 CONNECT_TIMEOUT = 2.0  # the sweep's TCP connect: a silent (filtered or absent) address costs this per port
@@ -315,9 +315,14 @@ class NetworkScan:
             _ = started
 
     def _tls(self, ep: Endpoint, mode: str) -> tuple[str, str | None, int]:
+        names = [] if ep.protocol == "rdp" else self.sni_names_for(ep.ip)
+        # XMPP names its domain in the stream header before TLS: the endpoint's first SNI name, else its address
+        with T.starttls_name(names[0] if names and ep.protocol.startswith("starttls-xmpp") else None):
+            return self._tls_endpoint(ep, mode, names)
+
+    def _tls_endpoint(self, ep: Endpoint, mode: str, names: list[str]) -> tuple[str, str | None, int]:
         ctx = self.ctx
         limit = self.per_endpoint if mode != "fragile" else min(self.per_endpoint, 6)
-        names = [] if ep.protocol == "rdp" else self.sni_names_for(ep.ip)
         # SNI names other than the one the endpoint is read with get their own share of the endpoint's budget, so the
         # enumeration cannot starve them nor they the enumeration (the total stays the customer's cap)
         reserve = min(max(len(names) - 1, 0), limit // 4) if limit > 1 else 0
@@ -446,6 +451,7 @@ class NetworkScan:
         for der in fh.certs_der[:50]:
             for cert in load_certs(der):
                 chain.append(cert_facts(cert, "tls"))
+        chain_links(chain)  # CB-17: how each issuer is reached, the top, extra cross-signs
         facts["chain_length"] = len(chain)
         if chain:
             facts["leaf"] = {k: chain[0].get(k) for k in ("subject", "issuer", "not_after", "key_alg", "key_size",

@@ -7,7 +7,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState, type ReactNode } from "react";
-import { BadgeCheck, Download, ExternalLink, GitCompare, Info, Loader2, Network, Server, SlidersHorizontal, Timer, Waypoints } from "lucide-react";
+import { BadgeCheck, Download, GitCompare, Info, Loader2, Network, Server, SlidersHorizontal, Timer, Waypoints } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,7 +30,6 @@ import { getImpactBadgeClass } from "./badgeClasses";
 import {
   certCountText,
   certListView,
-  complianceRows,
   formatDuration,
   isActiveRunStatus,
   verifyResultText,
@@ -440,46 +439,7 @@ export function RunWavesSection({ byWave, labels, loading, deferred, selected }:
   );
 }
 
-// ---------------------------------------------------------------------------- S10 compliance mapping
-export function RunComplianceSection({ view, results, posture }: {
-  view: SectionView; results: CbomRunResults | null; posture: CbomPostureWithExposure | null | undefined;
-}) {
-  if (!view.show) return null;
-  const { rows, basis } = complianceRows(results, posture);
-  return (
-    <SectionShell infoId="cbom.run.compliance" title="Compliance mapping" testId="run-section-compliance"
-                  description="Regulatory clauses the run's findings touch: CERT-In, RBI, SEBI CSCRF, NIST and CNSA 2.0 (knowledge-base mapping, no AI)">
-      {view.note && <SectionNote>{view.note}</SectionNote>}
-      {rows.length > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {rows.map((fw) => (
-            <div key={fw.framework} className="rounded-lg border border-zinc-200 dark:border-zinc-800 p-3 min-w-0" data-testid={`run-compliance-${fw.framework.replace(/\s+/g, "-")}`}>
-              <p className="text-sm font-semibold text-zinc-900 dark:text-white mb-2">
-                {fw.framework} <span className="text-xs font-normal text-zinc-500">· {pluralize(fw.clauses.length, "clause")}</span>
-              </p>
-              <ul className="space-y-1.5">
-                {fw.clauses.map((c) => (
-                  <li key={c.clause} className="text-xs text-zinc-600 dark:text-zinc-400 [overflow-wrap:anywhere]">
-                    {c.source ? (
-                      <a href={c.source} target="_blank" rel="noreferrer noopener" className="font-medium text-blue-600 dark:text-blue-400 inline-flex items-center gap-1">
-                        {c.clause} <ExternalLink className="h-3 w-3" />
-                      </a>
-                    ) : (
-                      <span className="font-medium text-zinc-800 dark:text-zinc-200">{c.clause}</span>
-                    )}
-                    {c.title ? <span> · {c.title}</span> : null}
-                    <span className="block text-zinc-500">{pluralize(c.assets, "asset")}{c.codes.length ? ` · ${c.codes.join(", ")}` : ""}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
-      )}
-      {basis === "posture" && <p className="text-xs text-zinc-500">From the run posture (this server does not send the run results summary yet).</p>}
-    </SectionShell>
-  );
-}
+// S10 compliance mapping: ComplianceSummary.tsx (#270), on code scans and runs alike
 
 // ---------------------------------------------------------------------------- S11 dashboard charts
 export function RunDashboardSection({ view, model, riskRows, pageRows, results }: {
