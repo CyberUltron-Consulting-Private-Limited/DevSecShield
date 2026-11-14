@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# build_images.sh - build the DevSecShield production images from this checkout, one at a time, and check that no
-# secret file (.env*, *.pem, the cu-devsecshield SSH key) is inside any of them.
+# build_images.sh - build the DevSecShield production images from this checkout (one at a time, or side by side with
+# DSS_BUILD_JOBS), and check that no secret file (.env*, *.pem, the cu-devsecshield SSH key) is inside any of them.
 #
 #   <prefix>/devsecshield-backend:<tag>    backend/Dockerfile            context backend/ (+ named context migrations)
 #   <prefix>/devsecshield-frontend:<tag>   frontend/Dockerfile           context frontend/ (NEXT_PUBLIC_BACKEND_URL)
@@ -18,6 +18,8 @@
 #                                      (optional; UV: backend and both workers, NODE: frontend, GO: the scan
 #                                      worker's cbomkit-theia stage)
 #         DSS_BUILD_ARGS               extra arguments for every `docker buildx build` (optional, word-split)
+#         DSS_BUILD_JOBS               images built at the same time (default 1; deploy-staging.yml sets 4 on the
+#                                      self-hosted runners, whose single BuildKit daemon then shares common layers)
 #         DSS_BUILD_SHA                the commit baked into the images (default: git HEAD of a clean tree; a full
 #                                      40-character sha; a tree with uncommitted or untracked changes gets none)
 #         DSS_BUILD_VERSION            the version string baked into the backend (default: DSS_TAG; "-dirty" is added
@@ -164,34 +166,76 @@ else
   log "WARNING: no git commit (not a git checkout and DSS_BUILD_SHA unset): the images report build \"unknown\""
 fi
 [[ -f prod_database_migrations/alembic.ini ]] || die "prod_database_migrations/alembic.ini is missing"
-
-if wanted backend; then
-  build backend backend/Dockerfile backend \
-    --build-context migrations=prod_database_migrations --build-context aibom=aibom "${base_args[@]}" \
-    --build-arg "DSS_BUILD_SHA=${BUILD_SHA}" --build-arg "DSS_BUILD_VERSION=${BUILD_VERSION}"
-  assert_no_secrets backend /backend /prod_database_migrations /opt/aibom
-  docker run --rm --network none --entrypoint test "$(image_name backend)" -f /prod_database_migrations/alembic.ini ||
-    die "backend image has no Alembic bundle"
-fi
-
 if wanted frontend; then
   [[ "${NEXT_PUBLIC_BACKEND_URL:-}" =~ ^https?://. ]] ||
     die "set NEXT_PUBLIC_BACKEND_URL (e.g. https://devsec-staging-api.zeroshield.ai) to build the frontend"
-  fe_args=(--build-arg "NEXT_PUBLIC_BACKEND_URL=${NEXT_PUBLIC_BACKEND_URL}" --build-arg "NEXT_PUBLIC_BUILD_SHA=${EXPOSE_SHA}")
-  [[ -n "${NEXT_PUBLIC_CBOM_NODE_IMAGE:-}" ]] && fe_args+=(--build-arg "NEXT_PUBLIC_CBOM_NODE_IMAGE=${NEXT_PUBLIC_CBOM_NODE_IMAGE}")
-  [[ -n "${NODE_BASE_IMAGE:-}" ]] && fe_args+=(--build-arg "NODE_BASE_IMAGE=${NODE_BASE_IMAGE}")
-  build frontend frontend/Dockerfile frontend "${fe_args[@]}"
-  assert_no_secrets frontend /frontend
 fi
+BUILD_JOBS="${DSS_BUILD_JOBS:-1}"
+[[ "${BUILD_JOBS}" =~ ^[1-9][0-9]?$ ]] || die "DSS_BUILD_JOBS must be a number from 1 to 99: ${BUILD_JOBS}"
 
-if wanted scan-worker; then
-  build scan-worker RabbitMQ/worker/Dockerfile . "${base_args[@]}" "${go_args[@]}"
-  assert_no_secrets scan-worker /build
-fi
+build_component() { # <component>
+  case "$1" in
+    backend)
+      build backend backend/Dockerfile backend \
+        --build-context migrations=prod_database_migrations --build-context aibom=aibom "${base_args[@]}" \
+        --build-arg "DSS_BUILD_SHA=${BUILD_SHA}" --build-arg "DSS_BUILD_VERSION=${BUILD_VERSION}"
+      ;;
+    frontend)
+      local -a fe_args=(--build-arg "NEXT_PUBLIC_BACKEND_URL=${NEXT_PUBLIC_BACKEND_URL}"
+        --build-arg "NEXT_PUBLIC_BUILD_SHA=${EXPOSE_SHA}")
+      [[ -n "${NEXT_PUBLIC_CBOM_NODE_IMAGE:-}" ]] && fe_args+=(--build-arg "NEXT_PUBLIC_CBOM_NODE_IMAGE=${NEXT_PUBLIC_CBOM_NODE_IMAGE}")
+      [[ -n "${NODE_BASE_IMAGE:-}" ]] && fe_args+=(--build-arg "NODE_BASE_IMAGE=${NODE_BASE_IMAGE}")
+      build frontend frontend/Dockerfile frontend "${fe_args[@]}"
+      ;;
+    scan-worker) build scan-worker RabbitMQ/worker/Dockerfile . "${base_args[@]}" "${go_args[@]}" ;;
+    dast-worker) build dast-worker RabbitMQ/dast_worker/Dockerfile RabbitMQ/dast_worker "${base_args[@]}" ;;
+  esac
+}
 
-if wanted dast-worker; then
-  build dast-worker RabbitMQ/dast_worker/Dockerfile RabbitMQ/dast_worker "${base_args[@]}"
-  assert_no_secrets dast-worker /app
+check_component() { # <component>
+  case "$1" in
+    backend)
+      assert_no_secrets backend /backend /prod_database_migrations /opt/aibom
+      docker run --rm --network none --entrypoint test "$(image_name backend)" -f /prod_database_migrations/alembic.ini ||
+        die "backend image has no Alembic bundle"
+      ;;
+    frontend) assert_no_secrets frontend /frontend ;;
+    scan-worker) assert_no_secrets scan-worker /build ;;
+    dast-worker) assert_no_secrets dast-worker /app ;;
+  esac
+}
+
+SELECTED=()
+for c in "${ALL[@]}"; do wanted "${c}" && SELECTED+=("${c}"); done
+
+if ((BUILD_JOBS > 1 && ${#SELECTED[@]} > 1)); then
+  # One BuildKit daemon builds the images side by side and shares their common layers. Each output line names its
+  # image; every image is checked after all the builds, and any failed build fails the script.
+  log "building ${SELECTED[*]} side by side (DSS_BUILD_JOBS=${BUILD_JOBS})"
+  declare -A pid_of=() status_of=()
+  for c in "${SELECTED[@]}"; do
+    while (($(jobs -rp | wc -l) >= BUILD_JOBS)); do
+      finished=""
+      if wait -n -p finished; then status_of[${finished}]=0; else status_of[${finished}]=$?; fi
+    done
+    (build_component "${c}" 2>&1 | sed -u "s/^/[${c}] /") &
+    pid_of[${c}]=$!
+  done
+  failed=()
+  for c in "${SELECTED[@]}"; do
+    p=${pid_of[${c}]}
+    if [[ -z "${status_of[${p}]:-}" ]]; then
+      if wait "${p}"; then status_of[${p}]=0; else status_of[${p}]=$?; fi
+    fi
+    ((status_of[${p}] == 0)) || failed+=("${c}")
+  done
+  ((${#failed[@]} == 0)) || die "build failed: ${failed[*]} (output above, lines prefixed with the component)"
+  for c in "${SELECTED[@]}"; do check_component "${c}"; done
+else
+  for c in "${SELECTED[@]}"; do
+    build_component "${c}"
+    check_component "${c}"
+  done
 fi
 
 log "done: $(for c in "${ONLY[@]}"; do printf '%s ' "$(image_name "${c}")"; done)"

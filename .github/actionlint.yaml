@@ -1,0 +1,4 @@
+self-hosted-runner:
+  # The repository's self-hosted runners (deploy/staging/README.md, "Self-hosted runners").
+  labels:
+    - dss-vm

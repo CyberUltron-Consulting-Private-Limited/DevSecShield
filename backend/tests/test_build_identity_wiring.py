@@ -19,6 +19,9 @@ FAKE_DOCKER = r"""#!/usr/bin/env python3
 import json, os, sys
 with open(os.environ["FAKE_DOCKER_LOG"], "a") as f:
     f.write(json.dumps(sys.argv[1:]) + "\n")
+fail = os.environ.get("FAKE_DOCKER_FAIL")
+if fail and sys.argv[1:3] == ["buildx", "build"] and any(f"/{fail}:" in a for a in sys.argv):
+    sys.exit(3)
 sys.exit(0)
 """
 
@@ -116,6 +119,46 @@ def test_build_images_passes_the_commit_and_version(tmp_path):
     for build in (backend, frontend):  # the OCI label names the same commit
         assert f"org.opencontainers.image.revision={head}" in _args(build, "--label")
     assert f"build {head}" in proc.stdout
+
+
+def test_build_images_side_by_side_builds_every_image_then_checks_them(tmp_path):
+    repo, head, env = _repo(tmp_path, "scripts/deploy/build_images.sh")
+    proc = subprocess.run([str(repo / "scripts/deploy/build_images.sh")],
+                          env={**env, "DSS_TAG": "p1", "NEXT_PUBLIC_BACKEND_URL": "https://api.dss.test",
+                               "DSS_BUILD_JOBS": "4"},
+                          capture_output=True, text=True, timeout=60)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "side by side (DSS_BUILD_JOBS=4)" in proc.stdout
+    builds = {_args(b, "-t")[0].split("/")[1].split(":")[0]: b for b in _builds(env)}
+    assert set(builds) == {"devsecshield-backend", "devsecshield-frontend", "scan-worker", "dast-worker"}
+    assert f"DSS_BUILD_SHA={head}" in _args(builds["devsecshield-backend"], "--build-arg")
+    assert "NEXT_PUBLIC_BACKEND_URL=https://api.dss.test" in _args(builds["devsecshield-frontend"], "--build-arg")
+    # every build line names its image, and the secret-file checks run after all four builds
+    assert "[backend] [build_images" in proc.stdout and "[dast-worker] [build_images" in proc.stdout
+    calls = [json.loads(line) for line in Path(env["FAKE_DOCKER_LOG"]).read_text().splitlines()]
+    last_build = max(i for i, c in enumerate(calls) if c[:2] == ["buildx", "build"])
+    first_check = min(i for i, c in enumerate(calls) if c[:1] == ["run"])
+    assert last_build < first_check
+
+
+def test_build_images_side_by_side_fails_when_one_build_fails(tmp_path):
+    repo, _, env = _repo(tmp_path, "scripts/deploy/build_images.sh")
+    proc = subprocess.run([str(repo / "scripts/deploy/build_images.sh")],
+                          env={**env, "DSS_TAG": "p2", "NEXT_PUBLIC_BACKEND_URL": "https://api.dss.test",
+                               "DSS_BUILD_JOBS": "4", "FAKE_DOCKER_FAIL": "scan-worker"},
+                          capture_output=True, text=True, timeout=60)
+    assert proc.returncode != 0
+    assert "build failed: scan-worker" in proc.stderr
+    assert not any(c[:1] == ["run"] for c in map(json.loads, Path(env["FAKE_DOCKER_LOG"]).read_text().splitlines()))
+
+
+@pytest.mark.parametrize("jobs", ["0", "x", "100"])
+def test_build_images_refuses_a_bad_job_count(tmp_path, jobs):
+    repo, _, env = _repo(tmp_path, "scripts/deploy/build_images.sh")
+    proc = subprocess.run([str(repo / "scripts/deploy/build_images.sh"), "--only", "backend"],
+                          env={**env, "DSS_TAG": "p3", "DSS_BUILD_JOBS": jobs}, capture_output=True, text=True, timeout=60)
+    assert proc.returncode != 0 and "DSS_BUILD_JOBS must be a number from 1 to 99" in proc.stderr
+    assert not Path(env["FAKE_DOCKER_LOG"]).exists()
 
 
 def test_build_images_version_override_and_bad_commit(tmp_path):

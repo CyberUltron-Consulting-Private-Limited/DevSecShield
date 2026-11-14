@@ -34,7 +34,7 @@ jobs:
   capture:
     name: record provider responses
     if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.pull_request && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'dss-vm' }}
     timeout-minutes: 25
     continue-on-error: true
     steps:
@@ -71,7 +71,7 @@ jobs:
   # (each job is a fresh runner): before + product + after = 3 x 2 queries for a one-page domain.
   live-proof:
     name: collector vs provider, row by row (${{ matrix.domain }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.pull_request && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'dss-vm' }}
     timeout-minutes: 30
     continue-on-error: true
     strategy:
@@ -147,7 +147,7 @@ jobs:
   # side.
   live-paging:
     name: paging live (www.google.com)
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.pull_request && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'dss-vm' }}
     timeout-minutes: 30
     continue-on-error: true
     env:
@@ -208,7 +208,7 @@ jobs:
   # answers 502 often, so up to three runs).
   live-quota-fallback:
     name: 429 and fallback live
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.pull_request && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'dss-vm' }}
     timeout-minutes: 20
     continue-on-error: true
     env:

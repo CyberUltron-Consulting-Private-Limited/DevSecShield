@@ -492,7 +492,8 @@ class Images(unittest.TestCase):
         self.assertIn(f"COMPONENTS: {' '.join(COMPONENTS)}", JOBS["exists"])
 
     def test_both_architectures_on_native_runners(self):
-        self.assertIn("- {arch: amd64, runner: ubuntu-24.04}", JOBS["build"])
+        # amd64 on the self-hosted runners (x86_64); arm64 on GitHub's arm runners
+        self.assertIn("- {arch: amd64, runner: dss-vm}", JOBS["build"])
         self.assertIn("- {arch: arm64, runner: ubuntu-24.04-arm}", JOBS["build"])
         self.assertIn("runs-on: ${{ matrix.platform.runner }}", JOBS["build"])
         self.assertNotIn("setup-qemu", WF)
@@ -632,7 +633,7 @@ def _contexts_from_ci() -> dict[str, tuple]:
 def _contexts_from_build_images() -> dict[str, tuple]:
     text = (ROOT / "scripts" / "deploy" / "build_images.sh").read_text(encoding="utf-8")
     out = {}
-    for m in re.finditer(r"\n  build ([a-z-]+) (\S+) (\S+)(.*?)\n(?!    --build-context)", text + "\n", re.S):
+    for m in re.finditer(r"\n\s*(?:[a-z-]+\)\s+)?build ([a-z-]+) (\S+) (\S+)(.*?)(?=\n(?!\s+--build-context))", text + "\n", re.S):
         extra = re.findall(r"--build-context (\S+)", m.group(4))
         out[m.group(1)] = (m.group(3), m.group(2), ",".join(extra))  # build-push-action lists are comma-separated
     return out

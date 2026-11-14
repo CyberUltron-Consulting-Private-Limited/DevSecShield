@@ -65,9 +65,9 @@ on:
         type: number
         default: 30
       runs-on:
-        description: Runner label.
+        description: "Runner label. Empty: the self-hosted dss-vm runners, or ubuntu-latest for a fork's pull request."
         type: string
-        default: ubuntu-latest
+        default: \"\"
 
 permissions:
   contents: read
@@ -75,7 +75,7 @@ permissions:
 jobs:
   frontend:
     name: ${{ inputs.suite-name }}
-    runs-on: ${{ inputs.runs-on }}
+    runs-on: ${{ inputs.runs-on || (github.event.pull_request && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'dss-vm') }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
     permissions:
       contents: read

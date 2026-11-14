@@ -13,6 +13,7 @@ import logging
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 from pathlib import Path
@@ -297,6 +298,14 @@ def _nginx_accepts(tmp_path, conf: str) -> None:
         if made.returncode != 0:
             return
         conf = conf.replace("/etc/nginx/certs/", f"{certs}/")
+    # `nginx -t` binds every listen address. The site's 80/443 need root (or a lowered ip_unprivileged_port_start)
+    # and may already be taken on a shared CI host, so the check binds two free loopback ports instead.
+    ports = {}
+    for name in ("80", "443"):
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            ports[name] = s.getsockname()[1]
+    conf = re.sub(r"\blisten (80|443)\b", lambda m: f"listen 127.0.0.1:{ports[m[1]]}", conf)
     site = tmp_path / "site.conf"
     site.write_text(conf)
     main = tmp_path / "nginx.conf"

@@ -150,7 +150,7 @@ env:
 jobs:
   scanners:
     name: scanners (semgrep, osv, trivy, checkov, hadolint, shellcheck, actionlint)
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.pull_request && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'dss-vm' }}
     timeout-minutes: 40
     permissions:
       contents: read
@@ -667,7 +667,7 @@ jobs:
     name: upload SARIF to code scanning
     if: ${{ inputs.upload-sarif && !cancelled() }}
     needs: [scanners]
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.pull_request && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'dss-vm' }}
     timeout-minutes: 10
     strategy:
       fail-fast: false

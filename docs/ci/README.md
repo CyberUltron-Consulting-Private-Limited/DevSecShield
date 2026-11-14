@@ -74,6 +74,10 @@ pull_request into dev / staging / main, merge_group, push to dev / staging / mai
 
 ### Runner disk
 
+Jobs run on the self-hosted runners (`dss-vm`, deploy/staging/README.md "Self-hosted runners"): a 1.7 TB NVMe disk
+and a BuildKit layer cache that outlives the job, so the clean-up, the build-cache prune and the gha cache below
+run only on GitHub's runners (a fork's pull request), and the job removes its image at the end instead.
+
 The hosted runner has about 15 GB free. A full build of the scan-worker image (torch with the CUDA wheels, through
 garak) needs about 40 GB at its peak (#50). How the image job keeps that within the disk:
 
@@ -408,7 +412,7 @@ Every input of every reusable workflow is listed below. `ci-selftest` fails when
 | `pg-url-scheme` | `postgresql+psycopg2` | Scheme of those URLs (SQLAlchemy + psycopg2; use `postgresql` for psycopg 3, asyncpg, Prisma, Django) |
 | `fetch-depth` | `1` | Commits to fetch (the lint diff fetches its base commit itself) |
 | `timeout-minutes` | `30` | |
-| `runs-on` | `ubuntu-latest` | |
+| `runs-on` | empty | Empty: `dss-vm` (the self-hosted runners), or `ubuntu-latest` for a fork's pull request |
 | `artifact-paths` | empty | Paths uploaded after the run |
 
 | Secret | Meaning |
@@ -431,7 +435,7 @@ Every input of every reusable workflow is listed below. `ci-selftest` fails when
 | `build-command` | `npx next build` (empty skips) |
 | `build-env` | `NEXT_TELEMETRY_DISABLED=1`, `NEXT_PUBLIC_BACKEND_URL=http://localhost:8000` (this repo's dev backend; override it) |
 | `timeout-minutes` | `30` |
-| `runs-on` | `ubuntu-latest` |
+| `runs-on` | empty: `dss-vm`, or `ubuntu-latest` for a fork's pull request |
 
 **reusable-security.yml**
 

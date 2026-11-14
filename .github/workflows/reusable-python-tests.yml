@@ -121,9 +121,9 @@ on:
         type: number
         default: 30
       runs-on:
-        description: Runner label.
+        description: "Runner label. Empty: the self-hosted dss-vm runners, or ubuntu-latest for a fork's pull request."
         type: string
-        default: ubuntu-latest
+        default: \"\"
       artifact-paths:
         description: Optional newline-separated paths (relative to the repository root) uploaded after the run.
         type: string
@@ -139,7 +139,7 @@ permissions:
 jobs:
   test:
     name: ${{ inputs.suite-name }}
-    runs-on: ${{ inputs.runs-on }}
+    runs-on: ${{ inputs.runs-on || (github.event.pull_request && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'dss-vm') }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
     permissions:
       contents: read
@@ -151,8 +151,9 @@ jobs:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres # throwaway, CI-only database on the runner's loopback
           POSTGRES_DB: postgres
+        # A free host port, not 5432: the self-hosted runners share one host, where two suites run at once.
         ports:
-          - 5432:5432
+          - 5432
         options: >-
           --health-cmd "pg_isready -U postgres"
           --health-interval 5s
@@ -173,7 +174,8 @@ jobs:
           persist-credentials: false
 
       - name: Free disk space
-        if: inputs.free-disk-space
+        # Only on GitHub's runners: the self-hosted ones have no sudo for the job and a disk of their own.
+        if: inputs.free-disk-space && runner.environment == 'github-hosted'
         working-directory: .
         run: |
           df -h / | tail -1
@@ -213,7 +215,7 @@ jobs:
           echo "uv $(uv --version | cut -d' ' -f2), python $(uv python find "$UV_PYTHON" 2>/dev/null || echo "$UV_PYTHON")"
 
       - name: System packages
-        if: inputs.apt-packages != ''
+        if: inputs.apt-packages != '' && runner.environment == 'github-hosted'
         env:
           PKGS: ${{ inputs.apt-packages }}
         run: |
@@ -221,6 +223,19 @@ jobs:
           # shellcheck disable=SC2086 # PKGS is a word list
           sudo apt-get install -y -qq --no-install-recommends $PKGS > /dev/null
           echo "installed: $PKGS"
+
+      - name: System packages (installed on the self-hosted runners' host)
+        if: inputs.apt-packages != '' && runner.environment == 'self-hosted'
+        env:
+          PKGS: ${{ inputs.apt-packages }}
+        run: |
+          missing=""
+          for p in $PKGS; do dpkg-query -W -f='${Status}' "$p" 2> /dev/null | grep -q 'install ok installed' || missing="$missing $p"; done
+          if [ -n "$missing" ]; then
+            echo "::error::not installed on the self-hosted runners' host:$missing (the job has no sudo; install them there)"
+            exit 1
+          fi
+          echo "present: $PKGS"
 
       - name: Setup
         if: inputs.setup-command != ''
@@ -233,14 +248,16 @@ jobs:
         env:
           DBS: ${{ inputs.postgres-databases }}
           PG_CONTAINER: ${{ job.services.postgres.id }}
+          PG_PORT: ${{ job.services.postgres.ports['5432'] }}
           SCHEME: ${{ inputs.pg-url-scheme }}
         run: |
           set -euo pipefail
+          [[ "$PG_PORT" =~ ^[0-9]+$ ]] || { echo "::error::no host port for the PostgreSQL service ($PG_PORT)"; exit 1; }
           first=""
           for db in $DBS; do
             [[ "$db" =~ ^[a-z_][a-z0-9_]*$ ]] || { echo "::error::bad database name: $db"; exit 1; }
             docker exec "$PG_CONTAINER" psql -U postgres -v ON_ERROR_STOP=1 -qc "CREATE DATABASE \"$db\""
-            url="$SCHEME://postgres:postgres@127.0.0.1:5432/$db"
+            url="$SCHEME://postgres:postgres@127.0.0.1:$PG_PORT/$db"
             echo "PG_URL_${db^^}=$url" >> "$GITHUB_ENV"
             [ -z "$first" ] && first=$url
           done

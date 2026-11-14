@@ -20,7 +20,7 @@ permissions:
 jobs:
   nightly-benchmark:
     name: Full 10-repo live benchmark
-    runs-on: ubuntu-latest
+    runs-on: dss-vm
     timeout-minutes: 90
     defaults:
       run:
