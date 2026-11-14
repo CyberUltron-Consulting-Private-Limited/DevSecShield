@@ -292,7 +292,7 @@ entry("CERT_SELF_SIGNED", title="Self-signed certificate", category="certificate
       cwe=["CWE-295"], owasp=["crypto", "auth"], cves=[], standards=[], compliance=["certificates"],
       remediation={"summary": "Issue it from your internal or public CA and distribute that CA to clients.", "steps": CERT_REISSUE}, verify=V_CERT_REMOTE + V_CERT_FILE, references=[])
 entry("CERT_UNUSED", title="Certificate not attached to any resource", category="certificate", default_impact="Low",
-      description="The certificate exists in a store or CA inventory but is not deployed anywhere (orphaned).",
+      description="The certificate exists in a store or CA inventory but is not deployed anywhere (orphaned). Not raised for a certificate that was never issued, an AWS Private CA (PRIVATE) certificate, a certificate whose key was exported, or an ACME-issued one: those are used or managed outside what the store can see.",
       attack="Orphaned certificates with live private keys are unmanaged credentials: if the key leaks, the certificate can still be used to impersonate the name.",
       cwe=["CWE-320"], owasp=["crypto"], cves=[], standards=["NIST SP 800-57 Part 1"], compliance=["key_mgmt"],
       remediation={"summary": "Delete or revoke certificates nobody owns.", "steps": [{"platform": "AWS ACM", "how": "aws acm delete-certificate --certificate-arn {resource}"}]},
@@ -470,7 +470,7 @@ entry("MESH_MTLS_PERMISSIVE", title="Service mesh mTLS permissive", category="ku
       remediation={"summary": "Move to STRICT once every client has a sidecar.", "steps": []}, verify=[{"label": "Mesh policies", "command": "kubectl get peerauthentication -A"}], references=[])
 
 # --- cloud
-entry("KMS_NO_ROTATION", title="KMS key rotation off", category="cloud", default_impact="Medium", description="A customer-managed symmetric KMS key has automatic rotation disabled.",
+entry("KMS_NO_ROTATION", title="KMS key rotation off", category="cloud", default_impact="Medium", description="A customer-managed symmetric KMS key whose material AWS KMS generated has automatic rotation disabled. Keys with imported material or in a custom key store cannot rotate automatically and are not reported; a multi-Region replica takes its rotation from its primary key.",
       attack="A key that never rotates protects more data for longer, so any compromise exposes more.", cwe=["CWE-324", "CWE-320"], owasp=["crypto"], cves=[], standards=["NIST SP 800-57 Part 1 (cryptoperiods)"],
       compliance=["key_mgmt"], remediation={"summary": "aws kms enable-key-rotation --key-id {resource}", "steps": []},
       verify=[{"label": "Rotation status", "command": "aws kms get-key-rotation-status --key-id {resource}"}], references=[])

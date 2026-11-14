@@ -282,12 +282,13 @@ def test_d3_control_a_real_removal_beside_a_gap_is_reported_once(engine, emitted
 
 # ----------------------------------------------------------------------------- D4: carried views use current rules
 def _private_rule(monkeypatch) -> None:
-    """A rule change like PR-B's: a PRIVATE certificate is no longer CERT_UNUSED."""
+    """A synthetic rule change like PR-B's (an IMPORTED certificate is no longer CERT_UNUSED); synthetic so the test
+    does not depend on which rules are current."""
     real = C.classify
 
     def patched(asset_type, algorithm, key_size, protocol, facts, now=None):
         verdict = real(asset_type, algorithm, key_size, protocol, facts, now)
-        if asset_type == "certificate" and (facts or {}).get("aws_type") == "PRIVATE":
+        if asset_type == "certificate" and (facts or {}).get("aws_type") == "IMPORTED":
             codes = [c for c in verdict["finding_codes"] if c != "CERT_UNUSED"]
             verdict = {**verdict, "finding_codes": codes, "finding": verdict["finding"] if codes else None,
                        "impact": verdict["impact"] if codes else None}
@@ -299,11 +300,11 @@ def _private_rule(monkeypatch) -> None:
 def test_d4_a_carried_view_is_judged_by_the_current_rules_not_its_own(engine, emitted, monkeypatch):
     """Scenario V.  dev: run3 ``new_asset`` P1; cx3's sketch: ``resolved P1 CERT_UNUSED`` (a false resolved)."""
     ch = Chain(engine)
-    ch.record(ch.run([cert("p1", aws_type="PRIVATE"), cert("i1")], versions=OLD))  # old rules: P1 CERT_UNUSED
+    ch.record(ch.run([cert("p1", aws_type="IMPORTED"), cert("i1")], versions=OLD))  # old rules: P1 CERT_UNUSED
     _private_rule(monkeypatch)
     r2 = ch.run([cert("i1"), gap(f"{ACM}p1#metadata", "acm certificate p1", scope=[ACM + "p1"])])
     ch.record(r2)
-    r3 = ch.run([cert("p1", aws_type="PRIVATE"), cert("i1")])
+    r3 = ch.run([cert("p1", aws_type="IMPORTED"), cert("i1")])
     assert ch.record(r3) == []
     assert_events_agree_with_compare(ch, r3)
 
@@ -376,9 +377,9 @@ def test_a_carried_event_names_the_run_that_last_read_the_asset(engine, emitted)
 def test_d6_a_run_judged_after_a_deploy_but_labelled_before_it_is_a_rule_change(engine, emitted, monkeypatch):
     """DA-1: run2 was queued (labelled) under the old rules and classified under the new ones."""
     ch = Chain(engine)
-    ch.record(ch.run([cert("p1", aws_type="PRIVATE")], versions=OLD))
+    ch.record(ch.run([cert("p1", aws_type="IMPORTED")], versions=OLD))
     _private_rule(monkeypatch)
-    r2 = ch.run([cert("p1", aws_type="PRIVATE")], versions=OLD)
+    r2 = ch.run([cert("p1", aws_type="IMPORTED")], versions=OLD)
     assert ch.record(r2) == []
     diff = ch.diff(r2)
     assert diff["resolved"] == [] and [(r["code"], r["direction"]) for r in diff["rule_changes"]] == [
