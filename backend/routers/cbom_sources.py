@@ -75,6 +75,7 @@ from backend.utilities.cbom_sources import inventory as INV
 from backend.utilities.cbom_sources import posture as POSTURE
 from backend.utilities.cbom_sources import q0register as Q0REG
 from backend.utilities.cbom_sources import qgrade as QGRADE
+from backend.utilities.cbom_sources import run_deliverables as RUN_DELIVERABLES
 from backend.utilities.cbom_sources import run_results as RUN_RESULTS
 from backend.utilities.cbom_sources import run_tickets as RUN_TICKETS
 from backend.utilities.cbom_sources import runs as RUNS
@@ -1493,7 +1494,8 @@ def _run_cbom(engine, team_id: int, run_id: int, fmt: str = "json") -> IO[bytes]
             with EXPORT_SLOTS.slot() if EXPORT_SLOTS.is_large(rows) else contextlib.nullcontext():
                 out = tempfile.SpooledTemporaryFile(max_size=EXPORT_SPOOL_BYTES)
                 try:
-                    INV.write_cyclonedx(session, run, utcnow(), fmt, out)
+                    # inventory's document with a stable timestamp: the bytes GET .../signature signs (CB-38 PR-8)
+                    RUN_DELIVERABLES.write_run_cbom(session, run, utcnow(), fmt, out)
                     out.seek(0)
                 except BaseException:
                     out.close()
@@ -1523,7 +1525,7 @@ async def run_cbom(team_id: TeamId, run_id: ObjectId, format: str = Query(defaul
     out = await _run("run cbom", team_id, _run_cbom, engine, team_id, run_id, format)
     length = out.seek(0, 2)
     out.seek(0)
-    # A run's CBOM is not signed (only code-scan BOMs are, certin.py), so the XML response states no signature scope
+    # The JSON is signed on request (GET .../runs/{id}/signature, CB-38 PR-8); the XML is not covered
     media, ext = (CDX_XML.XML_MEDIA_TYPE, "xml") if format == "xml" else ("application/json", "json")
     return StreamingResponse(_chunks(out), media_type=media, headers={
         **PRIVATE, "Content-Length": str(length),
