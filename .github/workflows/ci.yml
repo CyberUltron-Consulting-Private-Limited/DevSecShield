@@ -527,10 +527,10 @@ jobs:
         aibom/tests/fixtures,scan_node/tests/fixtures,backend/tests/fixtures,e2e/fixtures,bench/repos,aibom/bench/repos,aibom/examples,**/node_modules,**/.venv
       # The customer-side scan-node chart, rendered with CI placeholder values (apiUrl is `required`) and with the
       # host-agent DaemonSet switched on, so Checkov sees every manifest the chart can produce.
-      helm-charts: >-
-        deploy/helm/cbom-scan-node --set apiUrl=https://ci.invalid --set registrationToken=ci-placeholder
-        --set image.repository=registry.ci.invalid/zeroshield/cbom-scan-node
-        --set agent.enabled=true --set agent.poolToken=ci-placeholder
+      # one chart per line; the second renders the CB-15 trust Secrets (private CA, mTLS client certificate)
+      helm-charts: |-
+        deploy/helm/cbom-scan-node --set apiUrl=https://ci.invalid --set registrationToken=ci-placeholder --set image.repository=registry.ci.invalid/zeroshield/cbom-scan-node --set agent.enabled=true --set agent.poolToken=ci-placeholder
+        deploy/helm/cbom-scan-node --set apiUrl=https://ci.invalid --set registrationToken=ci-placeholder --set image.repository=registry.ci.invalid/zeroshield/cbom-scan-node --set agent.enabled=true --set agent.poolToken=ci-placeholder --set trust.caSecret=zs-node-ca --set trust.clientSecret=zs-node-client
 
   codeql:
     name: codeql
