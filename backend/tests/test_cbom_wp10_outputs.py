@@ -160,6 +160,29 @@ def test_a_rule_change_is_re_judged_and_labelled_not_reported_as_drift(api, two_
     assert ("tls_endpoint", "PROTO_TLS10") in {(x["type"], x["code"]) for x in d["resolved"]}  # real fixes still shown
 
 
+def test_two_runs_judged_by_the_same_older_rules_are_re_judged_but_not_a_rule_change(api, two_runs):  # noqa: F811
+    """CB-04 PR-3a review m4: after a deploy, two runs judged by the same (older) rules are still re-judged with the
+    current ones (ST-1), but the runs' rules do not differ from each other: ``rules_changed`` is False and only
+    ``reclassified`` is True, so the panel does not say "Rules changed" for every old pair."""
+    engine, run1, run2 = two_runs["engine"], two_runs["run1"], two_runs["run2"]
+    with Session(engine) as s:
+        for run_id in (run1["id"], run2["id"]):
+            run = s.get(CbomCollectionRun, run_id)
+            run.classifier_version = "rules-000000000000"
+            s.add(run)
+        s.commit()
+    d = api("GET", f"/1/cbom/sources/runs/{run2['id']}/diff").json()
+    assert d["versions"]["rules_changed"] is False and d["versions"]["reclassified"] is True
+    assert ("tls_endpoint", "PROTO_TLS10") in {(x["type"], x["code"]) for x in d["resolved"]}
+    with Session(engine) as s:  # the runs now differ from each other as well
+        run = s.get(CbomCollectionRun, run1["id"])
+        run.classifier_version = "rules-111111111111"
+        s.add(run)
+        s.commit()
+    d = api("GET", f"/1/cbom/sources/runs/{run2['id']}/diff").json()
+    assert d["versions"]["rules_changed"] is True and d["versions"]["reclassified"] is True
+
+
 # ------------------------------------------------------------------------------------------- drift events
 def test_drift_events_are_recorded_once_per_run(api, two_runs):
     engine, run2 = two_runs["engine"], two_runs["run2"]
