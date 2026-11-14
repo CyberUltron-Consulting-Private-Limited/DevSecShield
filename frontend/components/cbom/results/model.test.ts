@@ -180,11 +180,12 @@ const item = {
 } as unknown as CbomRunAssetItem;
 assert.deepEqual(assetRowAttrs(item), {
   "data-impact": "High", "data-type": "tls_endpoint", "data-location": "10.0.0.5:443", "data-target": "web01",
-  "data-algorithm": "TLS 1.2", "data-finding": "Accepts RSA key exchange", "data-quantum": "vulnerable", "data-status": "fixed",
+  "data-algorithm": "TLS 1.2", "data-key-size": "", "data-finding": "Accepts RSA key exchange", "data-quantum": "vulnerable", "data-status": "fixed",
 });
 const graded = { ...item, q_grade: "Q1", fix_class: "configurable" } as CbomRunAssetItem;
 assert.equal(assetRowAttrs(graded)["data-q-grade"], "Q1");
 assert.equal(assetRowAttrs(graded)["data-fix-class"], "configurable");
+assert.equal(assetRowAttrs({ ...item, key_size: 2048 } as CbomRunAssetItem)["data-key-size"], "2048", "the gate renders algorithm + key size");
 assert.deepEqual(optionalColumns([item]), { qGrade: false, fixClass: false });
 assert.deepEqual(optionalColumns([item, graded]), { qGrade: true, fixClass: true });
 

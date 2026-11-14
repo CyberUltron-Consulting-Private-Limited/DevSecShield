@@ -426,6 +426,7 @@ export function assetRowAttrs(item: CbomRunAssetItem, wave?: Parameters<typeof f
     "data-location": item.location ?? "",
     "data-target": item.target ?? "",
     "data-algorithm": item.algorithm ?? item.protocol ?? "",
+    "data-key-size": item.key_size != null ? String(item.key_size) : "",
     "data-finding": item.finding ?? "",
     "data-quantum": item.quantum_vulnerable === true ? "vulnerable" : item.quantum_vulnerable === false ? "safe" : "",
     "data-status": findingStatusOf(item, wave),
