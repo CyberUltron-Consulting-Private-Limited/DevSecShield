@@ -738,6 +738,7 @@ def _remove_source(session: Session, source: CbomCollectionSource, team_id: int,
                       "source_uid": (job.params or {}).get("source_uid") or source.source_uid}
         job.source_id = None
         session.add(job)
+        job.params = {**job.params, **AGILITY.deleted_source_params(source)}  # CB-24: old runs keep their class
     # collected assets stay with their run; only the link to the deleted source goes
     session.exec(update(CbomCollectedAsset).where(CbomCollectedAsset.source_id == source.id).values(source_id=None))
     session.flush()

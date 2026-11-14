@@ -73,7 +73,7 @@ def test_run_asset_list_items_carry_the_fix_class(api, runs):
     assert (no_pq["fix_class"], no_pq["fix_class_confidence"]) == ("vendor-fixed", "inferred")
     assert by[("src-a", "10.20.0.1:22")]["fix_class"] == "configurable"  # OpenSSH 9.6: R-STACK
     win = by[("src-a", "Cert:\\LocalMachine\\My\\AB12")]
-    assert (win["fix_class"], win["fix_class_floor"]) == ("unknown", None)  # key provider not read yet
+    assert (win["fix_class"], win["fix_class_floor"]) == ("unknown", "vendor-fixed")  # key provider not read yet
     assert by[("src-a", "vault:transit/aes")]["fix_class"] == "none"
     job_id = ours["job_id"]
     r = api("GET", f"/1/cbom/sources/jobs/{job_id}/assets")
@@ -162,3 +162,59 @@ def test_agility_model_route(api, runs):
         "configurable", "code-fixed", "vendor-fixed", "hardware-fixed"]
     assert m["kb_version"] and m["model_version"].startswith("fx-1+") and len(m["rules"]) == 10
     assert api("GET", "/1/cbom/sources/agility-model", who=None).status_code in (401, 403)
+
+
+# ------------------------------------------------------------------------------------------- review A (PR #113)
+def test_a_malformed_fact_never_breaks_the_run_views_and_reads_as_unread(api, world):
+    """One asset whose deciding facts are lists or dicts (node facts are free-form) must not turn the run's asset
+    list, posture and detail into HTTP 500: the fact is treated as not read (unknown, reason fact_unreadable)."""
+    node_id, token, _ = enroll_node(api)
+    hdr = {"X-ZS-Node-Token": token}
+    api("POST", "/1/cbom/sources/items", json=linux_body("src-m", node_id=node_id, targets=["10.20.0.1"], window="any"))
+    run = _run(api, "cb24-run-0009")
+    bad = {"type": "managed_key", "target": "10.20.0.1", "location": "pkcs11:slot0/kx", "name": "kx",
+           "algorithm": "RSA", "key_size": 2048,
+           "facts": {"store": ["pkcs11"], "token_class": {"x": 1}, "source": ["a"], "key_provider_class": [1],
+                     "banner": {"b": 2}, "key_class": "private"}}
+    _collect(api, hdr, _claim(api, hdr), [TLS10, bad])
+    listed = api("GET", f"/1/cbom/sources/runs/{run['id']}/assets?page_size=200")
+    assert listed.status_code == 200, listed.text
+    item = next(i for i in listed.json()["items"] if i["location"] == "pkcs11:slot0/kx")
+    assert (item["fix_class"], item["fix_class_floor"]) == ("unknown", "vendor-fixed")
+    posture = api("GET", f"/1/cbom/sources/runs/{run['id']}/posture")
+    assert posture.status_code == 200, posture.text
+    assert posture.json()["posture"]["unknown_reasons"] == {"fact_unreadable": 1}
+    detail = api("GET", f"/1/cbom/sources/assets/{item['id']}")
+    assert detail.status_code == 200, detail.text
+    assert {p["rule"] for p in detail.json()["asset"]["agility"]["by_code"]} == {"R-HW-UNREAD"}
+
+
+def test_deleting_a_source_never_reclassifies_its_old_runs(api, world):
+    """R-HW (appliance) and R-VENDOR (SaaS IdP) read the source; after the source is deleted, its old runs keep the
+    class they had (the kind and provider are kept on the job when the source goes)."""
+    engine, _ = world
+    from backend.new_models import CbomCollectedAsset, CbomCollectionSource
+    from backend.utilities.cbom_sources import agility as AGILITY
+
+    node_id, token, _ = enroll_node(api)
+    hdr = {"X-ZS-Node-Token": token}
+    src = api("POST", "/1/cbom/sources/items", json=linux_body("src-d", node_id=node_id, targets=["10.20.0.1"],
+                                                               window="any")).json()["source"]
+    run = _run(api, "cb24-run-0010")
+    _collect(api, hdr, _claim(api, hdr), [TLS_NO_PQ])
+    with Session(engine) as s:  # make it an appliance source (the kind is fixed at creation in the API)
+        row = s.get(CbomCollectionSource, src["id"])
+        row.kind = "appliance"
+        s.add(row)
+        s.commit()
+    before = next(i for i in _items(api, run["id"]) if i["location"] == "10.20.0.1:8443")
+    assert (before["fix_class"], before["fix_class_confidence"]) == ("hardware-fixed", "observed")
+    with Session(engine) as s:
+        assert s.get(CbomCollectionSource, src["id"]) is not None
+    assert api("DELETE", f"/1/cbom/sources/items/{src['id']}").status_code == 200
+    after = next(i for i in _items(api, run["id"]) if i["location"] == "10.20.0.1:8443")
+    assert (after["fix_class"], after["fix_class_confidence"]) == ("hardware-fixed", "observed")
+    with Session(engine) as s:
+        asset = s.exec(select(CbomCollectedAsset).where(CbomCollectedAsset.location == "10.20.0.1:8443")).one()
+        job = s.get(CbomCollectionJob, asset.job_id)
+        assert AGILITY.node_context(job, None)["source_kind"] == "appliance"

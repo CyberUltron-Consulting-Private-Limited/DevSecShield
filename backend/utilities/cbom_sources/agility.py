@@ -25,7 +25,8 @@ Where a class comes from:
 
 Everything here is pure and computed at view time from what is stored (codes, facts, the job's metadata snapshot): no
 migration, no stored column. A later metadata edit never re-classifies an old run (the job snapshot is read, as the
-risk score does in ``posture.job_metadata``).
+risk score does in ``posture.job_metadata``), and neither does deleting the source (its kind and provider are kept on
+its jobs, ``deleted_source_params``). A deciding fact a collector wrote as a list or an object reads as not read.
 """
 from __future__ import annotations
 
@@ -57,6 +58,10 @@ HW_PROVIDER_CLASSES = frozenset({"tpm", "smartcard", "hsm"})
 SYSTEMS_CAP = 500
 _CODE_CERT_TYPES = frozenset({"certificate", "protocol", "related-crypto-material"})
 _OPENSSH = re.compile(r"OpenSSH_(\d+)\.(\d+)", re.I)
+AWS_PARTITIONS = frozenset({"aws", "aws-us-gov", "aws-cn"})
+# A deciding fact a collector wrote as a list, dict or other non-scalar: read as "not read" (never guessed, never a
+# crash: node facts are free-form JSON and the memo key must stay hashable).
+UNREADABLE = "\x00unreadable"
 
 CLASS_TEXT: dict[str, dict[str, str]] = {
     "configurable": {
@@ -105,7 +110,8 @@ RULES: tuple[dict[str, str], ...] = (
                   "whose key provider is a TPM, smart card or HSM", "result": "hardware-fixed (observed)"},
     {"id": "R-HW-UNREAD", "applies_to": "capability codes",
      "condition": "PKCS#11 key whose token type was not read; Windows certificate with a private key and no key "
-                  "provider read; a key provider not in the reviewed list", "result": "unknown"},
+                  "provider read; a key provider not in the reviewed list; a deciding fact that is a list or an "
+                  "object", "result": "unknown, at least vendor-fixed"},
     {"id": "R-STACK", "applies_to": "SSH_NO_PQ_KEX",
      "condition": "SSH banner OpenSSH >= 9.0 (the first release with a post-quantum key exchange)",
      "result": "configurable; an older OpenSSH banner: vendor-fixed (observed)"},
@@ -132,6 +138,7 @@ UNKNOWN_REASONS = {
     "key_provider_not_read": "key provider of a Windows certificate with a private key not read",
     "key_provider_unlisted": "key provider not in the reviewed list",
     "no_fix_class": "a finding code without a fix-class row",
+    "fact_unreadable": "a fact that decides the class has a value the rules cannot read (a list or an object)",
 }
 
 
@@ -175,10 +182,24 @@ def node_context(job: Any = None, source: Any = None) -> dict[str, Any]:
     cfg = (getattr(source, "config", None) or {}) if source is not None else {}
     snap = params.get("metadata") if isinstance(params.get("metadata"), dict) else None
     meta = snap if snap is not None else cfg
-    kind = getattr(source, "kind", None) or params.get("source_kind")
-    return {"lane": "node", "source_kind": kind,
-            "provider": cfg.get("provider") if kind in ("idp", "key_manager", "ca_connector") else None,
+    if source is not None:
+        kind = getattr(source, "kind", None)
+        provider = cfg.get("provider") if kind in _PROVIDER_KINDS else None
+    else:  # a deleted source: what deleted_source_params kept on its jobs, so its old runs keep their class
+        kind, provider = params.get("source_kind"), params.get("source_provider")
+    return {"lane": "node", "source_kind": kind, "provider": provider,
             "operated_by": meta.get("operated_by"), "application": meta.get("application")}
+
+
+_PROVIDER_KINDS = ("idp", "key_manager", "ca_connector")
+
+
+def deleted_source_params(source: Any) -> dict[str, Any]:
+    """What the rules read from a source (its kind; the provider of an IdP, key manager or CA connector), kept on
+    each of its jobs when the source is deleted (``routers.cbom_sources._remove_source``)."""
+    kind = getattr(source, "kind", None)
+    cfg = getattr(source, "config", None) or {}
+    return {"source_kind": kind, "source_provider": cfg.get("provider") if kind in _PROVIDER_KINDS else None}
 
 
 CODE_CONTEXT: dict[str, Any] = {"lane": "code", "source_kind": None, "provider": None, "operated_by": None,
@@ -207,6 +228,14 @@ def _windows_cert(asset_type: str, facts: dict[str, Any]) -> bool:
 def _capability(code: str, asset_type: str, facts: dict[str, Any], ctx: dict[str, Any], row: dict[str, Any]
                 ) -> dict[str, Any]:
     """First match among R-HW, R-HW-UNREAD, R-STACK, R-TYPE; else R-INFERRED."""
+    # every way an unread fact can resolve (hardware token or TPM / smart card / HSM -> hardware-fixed; software ->
+    # vendor-fixed) is at least vendor-fixed, so that is the floor of R-HW-UNREAD
+    floor = _max(row["class"], "vendor-fixed")
+    unreadable = sorted(k for k, v in facts.items() if v == UNREADABLE)
+    if unreadable:
+        return _result(code, "unknown", "R-HW-UNREAD", UNKNOWN_REASONS["fact_unreadable"], capability=True,
+                       fact="unreadable: " + ", ".join(k.lstrip("_") for k in unreadable), floor=floor,
+                       reason="fact_unreadable")
     store = facts.get("store")
     token = facts.get("token_class")
     provider = facts.get("key_provider_class")
@@ -226,13 +255,13 @@ def _capability(code: str, asset_type: str, facts: dict[str, Any], ctx: dict[str
     # R-HW-UNREAD
     if store == "pkcs11" and not token:
         return _result(code, "unknown", "R-HW-UNREAD", UNKNOWN_REASONS["token_type_not_read"], capability=True,
-                       reason="token_type_not_read")
+                       floor=floor, reason="token_type_not_read")
     if _windows_cert(asset_type, facts) and facts.get("has_private_key") and not provider:
         return _result(code, "unknown", "R-HW-UNREAD", UNKNOWN_REASONS["key_provider_not_read"], capability=True,
-                       reason="key_provider_not_read")
+                       floor=floor, reason="key_provider_not_read")
     if provider and provider not in HW_PROVIDER_CLASSES and provider != "software":
         return _result(code, "unknown", "R-HW-UNREAD", UNKNOWN_REASONS["key_provider_unlisted"], capability=True,
-                       fact=f"key provider class {str(provider)[:32]}", reason="key_provider_unlisted")
+                       fact=f"key provider class {str(provider)[:32]}", floor=floor, reason="key_provider_unlisted")
     # R-STACK
     if code == "SSH_NO_PQ_KEX":
         m = _OPENSSH.search(str(facts.get("banner") or ""))
@@ -247,16 +276,15 @@ def _capability(code: str, asset_type: str, facts: dict[str, Any], ctx: dict[str
                            "the OS or appliance vendor's newer OpenSSH is needed", capability=True, fact=fact)
     # R-TYPE
     if code == "QUANTUM_VULNERABLE":
-        where = str(facts.get("_where") or facts.get("arn") or "")
-        if asset_type == "kms_key" and (ctx.get("source_kind") == "aws_account" or where.startswith("arn:aws:kms:")):
+        service = facts.get("_aws_service") or aws_service(facts.get("arn"))
+        if asset_type == "kms_key" and (ctx.get("source_kind") == "aws_account" or service == "kms"):
             return _result(code, "code-fixed", "R-TYPE", "AWS KMS offers post-quantum signature keys: create one "
                            "and change the "
                            "callers' signing code", capability=True, fact="AWS KMS key")
         if asset_type == "signing_key" and ctx.get("provider") in SAAS_IDP:
             return _result(code, "vendor-fixed", "R-TYPE", "the SaaS identity provider owns its signing keys",
                            capability=True, fact=f"identity provider {ctx['provider']}")
-        if asset_type in ("cloud_ca", "iam_certificate") or (asset_type == "certificate" and
-                                                             where.startswith("arn:aws:acm:")):
+        if asset_type in ("cloud_ca", "iam_certificate") or (asset_type == "certificate" and service == "acm"):
             return _result(code, "vendor-fixed", "R-TYPE", "the cloud provider's certificate service decides which "
                            "algorithms it issues", capability=True, fact=f"asset type {asset_type}")
         if store == "pkcs11" and token == "software":
@@ -333,29 +361,49 @@ def _codes(codes: Iterable[Any]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(c for c in codes or () if isinstance(c, str) and c and not c.startswith("COVERAGE_")))
 
 
+def aws_service(arn: Any) -> str | None:
+    """The service of an AWS ARN in any partition (``arn:aws|aws-us-gov|aws-cn:<service>:...``), else None."""
+    parts = arn.split(":", 5) if isinstance(arn, str) else []
+    return parts[2][:32] if len(parts) >= 3 and parts[0] == "arn" and parts[1] in AWS_PARTITIONS else None
+
+
+def _h(value: Any, limit: int = 80) -> Any:
+    """A memo-key value: scalars as they are (text bounded), anything else UNREADABLE."""
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    if isinstance(value, str):
+        return value[:limit]
+    return UNREADABLE
+
+
 def _deciding(asset_type: str, facts: dict[str, Any], location: str | None) -> tuple:
-    """The facts any rule reads (memo key; the rest of the facts never changes a class)."""
-    where = str(location or "") if str(location or "").startswith("arn:") else str(facts.get("arn") or "")
-    return (facts.get("store"), facts.get("token_class"), facts.get("source"), bool(facts.get("has_private_key")),
-            facts.get("key_provider_class"), str(facts.get("banner") or "")[:80], where[:12],
-            str(facts.get("artifact_kind") or ""))
+    """The facts any rule reads (memo key; the rest of the facts never changes a class), each hashable."""
+    arn = location if isinstance(location, str) and location.startswith("arn:") else facts.get("arn")
+    service = UNREADABLE if _h(arn) == UNREADABLE else aws_service(arn)
+    private = facts.get("has_private_key")
+    return (_h(facts.get("store")), _h(facts.get("token_class")), _h(facts.get("source")),
+            UNREADABLE if _h(private) == UNREADABLE else bool(private),
+            _h(facts.get("key_provider_class")), _h(facts.get("banner")), service,
+            _h(facts.get("artifact_kind")))
 
 
 def _ctx_key(ctx: dict[str, Any]) -> tuple:
-    return (ctx.get("lane"), ctx.get("source_kind"), ctx.get("provider"), ctx.get("operated_by"))
+    return (_h(ctx.get("lane")), _h(ctx.get("source_kind")), _h(ctx.get("provider")), _h(ctx.get("operated_by")))
 
 
 @lru_cache(maxsize=16384)
 def _evaluate(kb_version: str, ns: str, asset_type: str, codes: tuple[str, ...], deciding: tuple, ctx_key: tuple
               ) -> tuple[dict[str, Any], tuple[dict[str, Any], ...], str, tuple[str, ...]]:
-    store, token, source, private, provider, banner, where, artifact = deciding
+    store, token, source, private, provider, banner, service, artifact = deciding
     facts = {"store": store, "token_class": token, "source": source, "has_private_key": private,
-             "key_provider_class": provider, "banner": banner, "_where": where, "artifact_kind": artifact}
+             "key_provider_class": provider, "banner": banner, "_aws_service": service, "artifact_kind": artifact}
     ctx = dict(zip(("lane", "source_kind", "provider", "operated_by"), ctx_key))
     per = tuple(code_class(ns, code, asset_type, facts, ctx) for code in codes)
     whole = asset_class(list(per))
     excl_pq = asset_class([p for p in per if p["code"] not in PQ_CODES])["fix_class"]
-    reasons = tuple(p["unknown_reason"] for p in per if p["unknown_reason"]) if whole["fix_class"] == "unknown" else ()
+    # each reason once per asset: unknown_reasons counts assets per reason
+    reasons = tuple(dict.fromkeys(p["unknown_reason"] for p in per if p["unknown_reason"])) \
+        if whole["fix_class"] == "unknown" else ()
     return whole, per, excl_pq, reasons
 
 
@@ -436,7 +484,8 @@ def self_fixable_pct(counts: dict[str, int]) -> float | None:
 
 class RunAgility:
     """Run posture accumulator: ``add(row, codes)`` per asset with the codes the posture already shows, then
-    ``result()``: counts per class (all codes, and without the post-quantum codes), unknown reasons, the self-fixable
+    ``result()``: counts per class (all codes, and without the post-quantum codes), unknown reasons (assets per reason:
+    an unknown asset counts once for each distinct reason of its codes), the self-fixable
     share and per-system counts (system = the job snapshot's ``application``, else the source)."""
 
     def __init__(self, session: Any, team_id: int, run_id: int, sources: dict[int, Any]) -> None:

@@ -154,7 +154,7 @@ def test_t4_hsm_firmware_area_is_hardware_fixed_and_pkcs11_keys_follow_the_token
     assert (hw["fix_class"], _by_code(hw)["QUANTUM_VULNERABLE"]["rule"]) == ("hardware-fixed", "R-HW")
     unread = AG.evaluate("node", "managed_key", ["QUANTUM_VULNERABLE"], key, {**NODE, "source_kind": "key_manager"})
     assert (unread["fix_class"], unread["floor"], _by_code(unread)["QUANTUM_VULNERABLE"]["rule"]) == \
-        ("unknown", None, "R-HW-UNREAD")
+        ("unknown", "vendor-fixed", "R-HW-UNREAD")  # either token type resolves to at least vendor-fixed
     soft = AG.evaluate("node", "managed_key", ["QUANTUM_VULNERABLE"], {**key, "token_class": "software"},
                        {**NODE, "source_kind": "key_manager"})
     assert (soft["fix_class"], soft["confidence"], _by_code(soft)["QUANTUM_VULNERABLE"]["rule"]) == \
@@ -248,3 +248,47 @@ def test_a_kb_without_fix_classes_makes_every_code_unknown_never_configurable(mo
 def test_self_fixable_share():
     assert AG.self_fixable_pct({"configurable": 3, "code-fixed": 1, "vendor-fixed": 4, "unknown": 9, "none": 5}) == 50.0
     assert AG.self_fixable_pct({"unknown": 2, "none": 1}) is None
+
+
+# ------------------------------------------------------------------------------------------- review A (PR #113)
+def test_hw_unread_floor_is_vendor_fixed_and_reasons_count_assets():
+    key = {"store": "pkcs11", "key_class": "private"}
+    unread = AG.evaluate("node", "managed_key", ["QUANTUM_VULNERABLE"], key, NODE)
+    assert (unread["fix_class"], unread["floor"]) == ("unknown", "vendor-fixed")
+    win = AG.evaluate("node", "certificate", ["QUANTUM_VULNERABLE", "CERT_EXPIRED"],
+                      {"source": "windows-store", "has_private_key": True}, NODE)
+    assert (win["fix_class"], win["floor"]) == ("unknown", "vendor-fixed")  # not "at least configurable"
+
+
+@pytest.mark.parametrize("bad", [["pkcs11"], {"a": 1}, {1, 2}, ("x",)])
+def test_non_scalar_deciding_facts_are_read_as_unreadable_never_raise(bad):
+    for fact in ("store", "token_class", "source", "key_provider_class", "banner", "artifact_kind", "arn"):
+        result = AG.evaluate("node", "managed_key", ["QUANTUM_VULNERABLE", "DSA"], {fact: bad}, NODE)
+        assert result["fix_class"] == "unknown" and result["floor"] == "vendor-fixed", fact
+        assert {p["unknown_reason"] for p in result["by_code"]} == {"fact_unreadable", None}, fact
+    ctx = {**NODE, "provider": ["okta"], "operated_by": {"v": 1}, "source_kind": ["appliance"]}
+    assert AG.evaluate("node", "tls_endpoint", ["PROTO_TLS10"], {}, ctx)["fix_class"] == "configurable"
+    assert AG.code_row_fields({"asset_type": ["algorithm"], "finding_codes": ["WEAK_RNG", ["X"]],
+                               "artifact_kind": ["firmware"]})["fix_class"] == "code-fixed"
+
+
+@pytest.mark.parametrize("partition", ["aws", "aws-us-gov", "aws-cn"])
+def test_arn_partitions_are_recognised(partition):
+    acm = AG.evaluate("node", "certificate", ["QUANTUM_VULNERABLE"], {}, NODE,
+                      f"arn:{partition}:acm:us-gov-west-1:111122223333:certificate/x")
+    assert (acm["fix_class"], acm["confidence"]) == ("vendor-fixed", "observed"), partition
+    kms = AG.evaluate("node", "kms_key", ["QUANTUM_VULNERABLE"], {}, NODE, f"arn:{partition}:kms:r:1:key/k")
+    assert (kms["fix_class"], kms["confidence"]) == ("code-fixed", "observed"), partition
+
+
+def test_unknown_reasons_count_each_asset_once():
+    class Row:
+        job_id, source_id, asset_type, location, facts = None, None, "algorithm", "x", {}
+
+    acc = AG.RunAgility.__new__(AG.RunAgility)
+    acc._jobs, acc._sources, acc._ctx, acc._kb = {}, {}, {}, crypto_kb.version()
+    from collections import Counter
+    acc.all, acc.excl_pq, acc.reasons, acc.systems = Counter(), Counter(), Counter(), {}
+    acc.add(Row(), ["FINDING", "WEAK_OR_QUANTUM_VULNERABLE"])
+    assert acc.result()["unknown_reasons"] == {"no_fix_class": 1}
+    assert acc.result()["fix_classes"]["unknown"] == 1
