@@ -53,11 +53,10 @@ def _rewrite(mapping: dict[str, str]) -> None:
     bind = op.get_bind()
     before = _lock_timeout(LOCK_TIMEOUT) if _pg() else None
     try:
-        for table in TABLES:
-            case = " ".join(f"WHEN '{old}' THEN '{new}'" for old, new in mapping.items())
-            olds = ", ".join(f"'{old}'" for old in mapping)
-            bind.execute(sa.text(f"UPDATE {table} SET confidence = CASE confidence {case} END "
-                                 f"WHERE confidence IN ({olds})"))
+        for name in TABLES:
+            table = sa.table(name, sa.column('confidence', sa.String(2)))
+            col = table.c.confidence
+            bind.execute(sa.update(table).where(col.in_(list(mapping))).values(confidence=sa.case(mapping, value=col)))
     finally:
         if before is not None:
             _lock_timeout(before)
