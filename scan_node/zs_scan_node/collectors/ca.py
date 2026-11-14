@@ -45,8 +45,8 @@ def _target(ctx: JobContext, url: str) -> Target:
     host = (urlsplit(url).hostname or "").lower().rstrip(".")
     try:
         return Target(host, resolve_checked(host, ctx.never_scan)[0])  # the network gate: resolve once, check
-    except Blocked:
-        raise CaFail("skipped_never_scan", f"{host} is on the never-scan list") from None
+    except Blocked as exc:
+        raise CaFail("skipped_never_scan", str(exc)) from None
     except OSError as exc:
         raise CaFail("unreachable", f"could not resolve {host}: {exc.__class__.__name__}") from None
 
@@ -103,6 +103,8 @@ class Vault:
             raise CaFail(self.ctx.should_stop() or "skipped_deadline", "stopped")
         try:
             r = self.client.get(f"/v1/{path.lstrip('/')}", params={"list": "true"} if listing else None)
+        except Blocked as exc:  # the address was listed while the job ran
+            raise CaFail("skipped_never_scan", str(exc)) from None
         except Exception as exc:  # httpx.HTTPError, ssl errors
             raise _http_error(exc, "Vault") from None
         try:
@@ -273,6 +275,8 @@ def collect_ejbca(ctx: JobContext, config: dict, secrets: dict) -> tuple[Target,
                 raise CaFail(ctx.should_stop() or "skipped_deadline", "stopped")
             try:
                 return client.get(sub)  # relative to the pinned base URL (.../ejbca/ejbca-rest-api/)
+            except Blocked as exc:
+                raise CaFail("skipped_never_scan", str(exc)) from None
             except Exception as exc:
                 text = str(exc).lower()
                 if "alert" in text or "handshake" in text and "certificate" in text:
@@ -537,8 +541,8 @@ def collect_adcs(ctx: JobContext, config: dict, password: str) -> tuple[Target, 
     label = host.strip("[]").lower().rstrip(".")
     try:
         target = Target(label, resolve_checked(host, ctx.never_scan)[0])
-    except Blocked:
-        raise CaFail("skipped_never_scan", f"{label} is on the never-scan list") from None
+    except Blocked as exc:
+        raise CaFail("skipped_never_scan", str(exc)) from None
     except OSError as exc:
         raise CaFail("unreachable", f"could not resolve {label}: {exc.__class__.__name__}") from None
     wcfg = {"port": int(config.get("port") or 5986), "login_user": config.get("login"), "ca_pem": config.get("ca_pem")}
