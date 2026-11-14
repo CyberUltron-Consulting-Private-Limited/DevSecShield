@@ -1221,6 +1221,14 @@
     "kb:findings.code.STATIC_IV.remediation"
    ]
   },
+  "STATIC_SALT": {
+   "class": "code-fixed",
+   "capability": false,
+   "basis": "the salt or iteration count is fixed in the team's own source code: the code changes, then a rebuild and release",
+   "sources": [
+    "kb:findings.code.STATIC_SALT.remediation"
+   ]
+  },
   "TLS_VERIFICATION_DISABLED": {
    "class": "code-fixed",
    "capability": false,
@@ -1293,6 +1301,14 @@
    "sources": [
     "kb:findings.code.WEAK_CIPHER_SUITE.remediation",
     "aibom/src/aibom/cbom/weakness.py cipher_suite_findings (suites of protocol components built from source)"
+   ]
+  },
+  "WEAK_KDF_ITERATIONS": {
+   "class": "code-fixed",
+   "capability": false,
+   "basis": "the salt or iteration count is fixed in the team's own source code: the code changes, then a rebuild and release",
+   "sources": [
+    "kb:findings.code.WEAK_KDF_ITERATIONS.remediation"
    ]
   },
   "WEAK_KEY_SIZE": {
