@@ -21,7 +21,7 @@ from zs_scan_node import tlsprobe as T
 from zs_scan_node.certparse import cert_facts, load_certs
 from zs_scan_node.collectors import ConfigError
 from zs_scan_node.jobctx import JobContext
-from zs_scan_node.netutil import Blocked, Target, checked_ip, resolve_checked
+from zs_scan_node.netutil import Blocked, Target, checked_ip, checked_target, is_ip, resolve_checked
 
 SUPPORTED = ("postgres", "mysql", "redis", "mongodb", "mssql", "oracle")
 DEFAULT_PORTS = {"postgres": 5432, "mysql": 3306, "redis": 6379, "mongodb": 27017, "mssql": 1433, "oracle": 1521}
@@ -106,7 +106,7 @@ def _tls_offered(ip: str, port: int, engine: str, never) -> tuple[bool, dict]:
 
 def _server_tls(ctx: JobContext, target: Target, port: int, engine: str) -> tuple[dict, int]:
     """Full handshake details + certificate for the database port."""
-    checked_ip(target.ip, ctx.never_scan)
+    checked_target(target, ctx.never_scan)
     proto = {"postgres": "starttls-postgres", "mysql": "starttls-mysql"}.get(engine, "tls")
     fh = T.s_client(target.ip, port, proto, None) if T.have_openssl() else T.python_handshake(target.ip, port, proto, None)
     facts = {"negotiated_version": fh.version, "negotiated_cipher": fh.cipher, "negotiated_group": fh.group,
@@ -125,7 +125,7 @@ def _server_tls(ctx: JobContext, target: Target, port: int, engine: str) -> tupl
 def _postgres(ctx, target, config, password, ca: _CaFile) -> int:
     import psycopg
 
-    ip = checked_ip(target.ip, ctx.never_scan)  # the network gate, again just before the driver connects
+    ip = checked_target(target, ctx.never_scan)  # the network gate, again just before the driver connects
     port = int(config.get("port") or 5432)
     require_tls = bool(config.get("require_tls", True))
     verified = bool(ca.path) and require_tls  # only verify-ca proves the server; "prefer" never checks the CA
@@ -349,7 +349,7 @@ def _strict_mysql():
 def _mysql(ctx, target, config, password, ca: _CaFile, tls: bool) -> int:
     import pymysql
 
-    ip = checked_ip(target.ip, ctx.never_scan)
+    ip = checked_target(target, ctx.never_scan)
     port = int(config.get("port") or 3306)
     ssl_arg = None
     if tls:
@@ -424,7 +424,7 @@ def _mysql(ctx, target, config, password, ca: _CaFile, tls: bool) -> int:
 def _redis(ctx, target, config, password, ca: _CaFile, tls: bool) -> int:
     import redis
 
-    ip = checked_ip(target.ip, ctx.never_scan)
+    ip = checked_target(target, ctx.never_scan)
     port = int(config.get("port") or 6379)
     kwargs: dict[str, Any] = dict(host=ip, port=port, socket_timeout=10, socket_connect_timeout=5,
                                   username=config.get("login") or None, password=password or None)
@@ -475,7 +475,7 @@ def _redis(ctx, target, config, password, ca: _CaFile, tls: bool) -> int:
 def _mongodb(ctx, target, config, password, ca: _CaFile, tls: bool) -> int:
     import pymongo
 
-    ip = checked_ip(target.ip, ctx.never_scan)
+    ip = checked_target(target, ctx.never_scan)
     port = int(config.get("port") or 27017)
     kwargs: dict[str, Any] = dict(host=ip, port=port, directConnection=True, serverSelectionTimeoutMS=8000,
                                   connectTimeoutMS=5000, socketTimeoutMS=15000, tls=tls)
@@ -529,9 +529,11 @@ def _one(ctx: JobContext, config: dict, secrets: dict) -> tuple[Target, str, str
     host = str(config.get("host") or "").strip()
     label = host.strip("[]").lower().rstrip(".")  # an IPv6 literal may come in brackets
     try:  # the network gate: resolve once, apply never-scan, connect only to the checked address
-        target = Target(label, resolve_checked(host, ctx.never_scan)[0])
-    except Blocked:
-        return Target(label, None), "skipped_never_scan", None, 0
+        addresses = resolve_checked(host, ctx.never_scan)
+        # a name keeps every address it resolved to: each connection re-checks all of them (checked_target)
+        target = Target(label, addresses[0], addresses=() if is_ip(label) else tuple(addresses))
+    except Blocked as exc:
+        return Target(label, None), "skipped_never_scan", str(exc), 0
     except OSError as exc:
         return Target(label, None), "unreachable", f"could not resolve {label}: {exc.__class__.__name__}", 0
     port = int(config.get("port") or DEFAULT_PORTS[engine])
@@ -542,9 +544,9 @@ def _one(ctx: JobContext, config: dict, secrets: dict) -> tuple[Target, str, str
                                               _where(target)))
     require_tls = bool(config.get("require_tls", True))
     try:
-        tls, pre = _tls_offered(target.ip, port, engine, ctx.never_scan)
-    except Blocked:
-        return target, "skipped_never_scan", None, 0
+        tls, pre = _tls_offered(checked_target(target, ctx.never_scan), port, engine, ctx.never_scan)
+    except Blocked as exc:
+        return target, "skipped_never_scan", str(exc), 0
     except T.ProbeError as exc:
         return target, exc.code, exc.detail, 0
     n = 0
@@ -552,8 +554,8 @@ def _one(ctx: JobContext, config: dict, secrets: dict) -> tuple[Target, str, str
     if tls:
         try:
             hs, n = _server_tls(ctx, target, port, engine)
-        except Blocked:
-            return target, "skipped_never_scan", None, 0
+        except Blocked as exc:
+            return target, "skipped_never_scan", str(exc), 0
         tls_facts.update(hs)
     ctx.emit("tls_endpoint", target.label, f"{_where(target)}:{port}", name=f"{engine} {target.ip}:{port}",
              algorithm=tls_facts.get("negotiated_cipher"), protocol=tls_facts.get("negotiated_version") or engine,
