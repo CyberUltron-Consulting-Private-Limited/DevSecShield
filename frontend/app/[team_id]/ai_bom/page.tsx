@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
 import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Clock, CheckCircle, CalendarPlus, CalendarCheck, Search, X, GitBranch, FileArchive, MinusCircle, Shield, AlertTriangle, Activity, ChevronDown, ArrowUpDown, Check, Filter, DollarSign, TrendingUp, TrendingDown, Bot, Database, Cloud, Scale } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { singleFlight } from "@/utils/single_flight";
@@ -194,7 +195,7 @@ function AIBOMScanListDashboard({ dashboardData }: { dashboardData: AiBomScanDas
                 <Bot className="h-4 w-4 text-blue-500" />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">AI Assets</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">AI Assets <InfoTip id="aibom.kpi.assets" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_ai_assets}</p>
               </div>
             </div>
@@ -207,7 +208,7 @@ function AIBOMScanListDashboard({ dashboardData }: { dashboardData: AiBomScanDas
                 <Bot className="h-4 w-4 text-violet-500" />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Models</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Models <InfoTip id="aibom.kpi.models" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_models}</p>
               </div>
             </div>
@@ -220,7 +221,7 @@ function AIBOMScanListDashboard({ dashboardData }: { dashboardData: AiBomScanDas
                 <Database className="h-4 w-4 text-teal-500" />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Datasets</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Datasets <InfoTip id="aibom.kpi.datasets" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_datasets}</p>
               </div>
             </div>
@@ -233,7 +234,7 @@ function AIBOMScanListDashboard({ dashboardData }: { dashboardData: AiBomScanDas
                 <Cloud className="h-4 w-4 text-amber-500" />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">External Providers</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">External Providers <InfoTip id="aibom.kpi.providers" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_external_providers}</p>
               </div>
             </div>
@@ -246,7 +247,7 @@ function AIBOMScanListDashboard({ dashboardData }: { dashboardData: AiBomScanDas
                 <AlertTriangle className="h-4 w-4 text-red-500" />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">High Risk</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">High Risk <InfoTip id="aibom.kpi.high_risk" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_high_risk_assets}</p>
               </div>
             </div>
@@ -259,7 +260,7 @@ function AIBOMScanListDashboard({ dashboardData }: { dashboardData: AiBomScanDas
                 <Scale className="h-4 w-4 text-orange-500" />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Unlicensed</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Unlicensed <InfoTip id="aibom.kpi.unlicensed" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_unlicensed_assets}</p>
               </div>
             </div>
@@ -272,7 +273,7 @@ function AIBOMScanListDashboard({ dashboardData }: { dashboardData: AiBomScanDas
                 <Shield className={`h-4 w-4 ${card.governance_readiness_score >= 70 ? "text-green-500" : card.governance_readiness_score >= 40 ? "text-amber-500" : "text-red-500"}`} />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Governance Readiness</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Governance Readiness <InfoTip id="aibom.kpi.governance" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.governance_readiness_score}%</p>
               </div>
             </div>
@@ -285,7 +286,7 @@ function AIBOMScanListDashboard({ dashboardData }: { dashboardData: AiBomScanDas
                 <Activity className={`h-4 w-4 ${card.average_risk_score >= 7 ? "text-red-500" : card.average_risk_score >= 5 ? "text-amber-500" : "text-green-500"}`} />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Avg Risk Score</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Avg Risk Score <InfoTip id="aibom.kpi.avg_risk" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.average_risk_score?.toFixed(1) ?? "N/A"}</p>
               </div>
             </div>
@@ -296,7 +297,7 @@ function AIBOMScanListDashboard({ dashboardData }: { dashboardData: AiBomScanDas
       {/* Remediation Actions Required */}
       <Card className="border-zinc-200 dark:border-zinc-800">
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">Remediation Actions Required</CardTitle>
+          <CardTitle className="text-base flex items-center gap-1">Remediation Actions Required <InfoTip id="aibom.chart.remediation" /></CardTitle>
           <CardDescription>Finding status breakdown (total: {remediation.total_findings})</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -335,7 +336,7 @@ function AIBOMScanListDashboard({ dashboardData }: { dashboardData: AiBomScanDas
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="items-center pb-2">
-            <CardTitle className="text-base">Severity Distribution</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Severity Distribution <InfoTip id="aibom.chart.severity" /></CardTitle>
             <CardDescription>Critical / High / Medium / Low</CardDescription>
           </CardHeader>
           <CardContent>
@@ -356,7 +357,7 @@ function AIBOMScanListDashboard({ dashboardData }: { dashboardData: AiBomScanDas
 
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Asset Type Distribution</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Asset Type Distribution <InfoTip id="aibom.chart.asset_type" /></CardTitle>
             <CardDescription>AI assets by type</CardDescription>
           </CardHeader>
           <CardContent>
@@ -382,7 +383,7 @@ function AIBOMScanListDashboard({ dashboardData }: { dashboardData: AiBomScanDas
 
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Provider Distribution</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Provider Distribution <InfoTip id="aibom.chart.provider" /></CardTitle>
             <CardDescription>AI assets by provider</CardDescription>
           </CardHeader>
           <CardContent>
@@ -408,7 +409,7 @@ function AIBOMScanListDashboard({ dashboardData }: { dashboardData: AiBomScanDas
 
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">License Distribution</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">License Distribution <InfoTip id="aibom.chart.license" /></CardTitle>
             <CardDescription>AI assets by license type</CardDescription>
           </CardHeader>
           <CardContent>
@@ -436,7 +437,7 @@ function AIBOMScanListDashboard({ dashboardData }: { dashboardData: AiBomScanDas
       {/* Top AI Risks */}
       <Card className="border-zinc-200 dark:border-zinc-800 flex flex-col">
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">Top AI Risks</CardTitle>
+          <CardTitle className="text-base flex items-center gap-1">Top AI Risks <InfoTip id="aibom.chart.top_risks" /></CardTitle>
           <CardDescription>Sorted by impact</CardDescription>
         </CardHeader>
         <CardContent className="flex-1 min-h-0">
@@ -448,11 +449,11 @@ function AIBOMScanListDashboard({ dashboardData }: { dashboardData: AiBomScanDas
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Asset</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Provider</TableHead>
-                      <TableHead>License</TableHead>
-                      <TableHead>Impact</TableHead>
+                      <TableHead>Asset{/* infotip-shared: Top AI Risks tip explains the columns */}</TableHead>
+                      <TableHead>Type{/* infotip-shared: Top AI Risks tip */}</TableHead>
+                      <TableHead>Provider{/* infotip-shared: Top AI Risks tip */}</TableHead>
+                      <TableHead>License{/* infotip-shared: Top AI Risks tip */}</TableHead>
+                      <TableHead>Impact{/* infotip-shared: Top AI Risks tip */}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -677,6 +678,7 @@ export default function AIBOMPage() {
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
                       <Input placeholder="Search by title..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9 h-9 cursor-text" />
                     </div>
+                    <InfoTip id="scan.filter.search" className="-ml-2" />
                     <Select value={statusFilter} onValueChange={setStatusFilter}>
                       <SelectTrigger className="h-9 min-w-[150px] cursor-pointer"><SelectValue placeholder="Scan status" /></SelectTrigger>
                       <SelectContent>
@@ -690,6 +692,7 @@ export default function AIBOMPage() {
                         <SelectItem value="cancelled">Cancelled</SelectItem>
                       </SelectContent>
                     </Select>
+                    <InfoTip id="scan.status" className="-ml-2" />
 
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -713,6 +716,7 @@ export default function AIBOMPage() {
                           <ChevronDown className="h-3 w-3 opacity-70 shrink-0" />
                         </Button>
                       </DropdownMenuTrigger>
+                      <InfoTip id="scan.filter.risk" className="-ml-2" />
                       <DropdownMenuContent align="start" className="min-w-[180px]">
                         <DropdownMenuLabel className="text-xs font-normal text-zinc-500">Filter by risk score</DropdownMenuLabel>
                         <DropdownMenuSeparator />
@@ -755,6 +759,7 @@ export default function AIBOMPage() {
                           <ChevronDown className="h-3 w-3 opacity-70 shrink-0" />
                         </Button>
                       </DropdownMenuTrigger>
+                      <InfoTip id="scan.filter.sort" className="-ml-2" />
                       <DropdownMenuContent align="start" className="min-w-[200px]">
                         <DropdownMenuLabel className="text-xs font-normal text-zinc-500">Sort by</DropdownMenuLabel>
                         <DropdownMenuSeparator />
@@ -816,15 +821,15 @@ export default function AIBOMPage() {
                         <TableHeader>
                           <TableRow>
                             <TableHead className="w-[160px] min-w-[120px]">Title</TableHead>
-                            <TableHead>Created at</TableHead>
-                            <TableHead>Last updated</TableHead>
-                            <TableHead>Scan status</TableHead>
-                            <TableHead className="w-[200px]">Risks</TableHead>
-                            <TableHead className="w-[90px]">Risk score</TableHead>
-                            <TableHead className="w-[160px]">Repo / Source</TableHead>
-                            <TableHead className="w-[100px]">Branch</TableHead>
-                            <TableHead className="w-[90px]">Credits</TableHead>
-                            <TableHead>Owner</TableHead>
+                            <TableHead><span className="inline-flex items-center gap-1">Created at <InfoTip id="scan.table.created" /></span></TableHead>
+                            <TableHead><span className="inline-flex items-center gap-1">Last updated <InfoTip id="scan.table.updated" /></span></TableHead>
+                            <TableHead><span className="inline-flex items-center gap-1">Scan status <InfoTip id="scan.status" /></span></TableHead>
+                            <TableHead className="w-[200px]"><span className="inline-flex items-center gap-1">Risks <InfoTip id="aibom.table.risks" /></span></TableHead>
+                            <TableHead className="w-[90px]"><span className="inline-flex items-center gap-1">Risk score <InfoTip id="aibom.table.risk" /></span></TableHead>
+                            <TableHead className="w-[160px]"><span className="inline-flex items-center gap-1">Repo / Source <InfoTip id="scan.table.source" /></span></TableHead>
+                            <TableHead className="w-[100px]"><span className="inline-flex items-center gap-1">Branch <InfoTip id="scan.table.branch" /></span></TableHead>
+                            <TableHead className="w-[90px]"><span className="inline-flex items-center gap-1">Credits <InfoTip id="scan.table.credits" /></span></TableHead>
+                            <TableHead><span className="inline-flex items-center gap-1">Owner <InfoTip id="scan.table.owner" /></span></TableHead>
                             <TableHead className="text-right w-[80px]">Actions</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -984,8 +989,9 @@ export default function AIBOMPage() {
             <DialogTitle>Rename Scan</DialogTitle>
             <DialogDescription>Enter a new name for this AI BOM scan.</DialogDescription>
           </DialogHeader>
-          <div className="py-4">
-            <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Scan name" onKeyDown={(e) => { if (e.key === "Enter") confirmRename(); }} />
+          <div className="py-4 space-y-2">
+            <FieldLabel htmlFor="rename-scan-title" infoId="scan.rename.title">Scan name</FieldLabel>
+            <Input id="rename-scan-title" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Scan name" onKeyDown={(e) => { if (e.key === "Enter") confirmRename(); }} />
           </div>
           <DialogFooter>
             <Button variant="outline" className="cursor-pointer" onClick={() => { setRenameDialogOpen(false); setNewName(""); }}>Cancel</Button>
@@ -1039,8 +1045,9 @@ export default function AIBOMPage() {
             <DialogTitle>Create New Scan</DialogTitle>
             <DialogDescription>Enter a title for your new AI BOM scan.</DialogDescription>
           </DialogHeader>
-          <div className="py-4">
-            <Input value={newScanTitle} onChange={(e) => setNewScanTitle(e.target.value)} placeholder="Scan title" onKeyDown={(e) => { if (e.key === "Enter") confirmCreate(); }} />
+          <div className="py-4 space-y-2">
+            <FieldLabel htmlFor="new-scan-title" infoId="scan.new.title">Scan title</FieldLabel>
+            <Input id="new-scan-title" value={newScanTitle} onChange={(e) => setNewScanTitle(e.target.value)} placeholder="Scan title" onKeyDown={(e) => { if (e.key === "Enter") confirmCreate(); }} />
           </div>
           <DialogFooter>
             <Button variant="outline" className="cursor-pointer" onClick={() => { setCreateDialogOpen(false); setNewScanTitle(""); }}>Cancel</Button>

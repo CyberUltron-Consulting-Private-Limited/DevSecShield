@@ -7,7 +7,7 @@ import { Loader2, Play, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
@@ -196,7 +196,7 @@ export function DastProfilesTab() {
     <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
       <Card>
         <CardHeader>
-          <CardTitle>{editingId ? "Edit profile" : "New DAST profile"}</CardTitle>
+          <CardTitle className="flex items-center gap-1">{editingId ? "Edit profile" : "New DAST profile"} <InfoTip id="dast.profile.form" /></CardTitle>
           <CardDescription>
             Save target, login, and schedule once. Times are IST. Password is write-only and never shown after save.
           </CardDescription>
@@ -204,23 +204,23 @@ export function DastProfilesTab() {
         <CardContent className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label htmlFor="dast-profile-title">Title</Label>
+              <FieldLabel htmlFor="dast-profile-title" infoId="dast.profile.title">Title</FieldLabel>
               <Input id="dast-profile-title" value={form.title} onChange={(e) => set("title", e.target.value)} />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="dast-profile-target">Target URL</Label>
+              <FieldLabel htmlFor="dast-profile-target" infoId="dast.cfg.target_url">Target URL</FieldLabel>
               <Input id="dast-profile-target" value={form.target_url} onChange={(e) => set("target_url", e.target.value)} />
             </div>
             <div className="space-y-1.5 sm:col-span-2">
-              <Label htmlFor="dast-profile-login">Login URL</Label>
+              <FieldLabel htmlFor="dast-profile-login" infoId="dast.cfg.login_url">Login URL</FieldLabel>
               <Input id="dast-profile-login" value={form.login_url} onChange={(e) => set("login_url", e.target.value)} />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="dast-profile-user">Username</Label>
+              <FieldLabel htmlFor="dast-profile-user" infoId="dast.cfg.username">Username</FieldLabel>
               <Input id="dast-profile-user" value={form.username} onChange={(e) => set("username", e.target.value)} autoComplete="off" />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="dast-profile-password">Password</Label>
+              <FieldLabel htmlFor="dast-profile-password" infoId="dast.cfg.password">Password</FieldLabel>
               <Input
                 id="dast-profile-password"
                 type="password"
@@ -231,21 +231,21 @@ export function DastProfilesTab() {
               />
             </div>
             <div className="space-y-1.5 sm:col-span-2">
-              <Label htmlFor="dast-profile-user-xpath">Username field XPath</Label>
+              <FieldLabel htmlFor="dast-profile-user-xpath" infoId="dast.cfg.xpath_user">Username field XPath</FieldLabel>
               <Input id="dast-profile-user-xpath" value={form.xpath_of_username_field} onChange={(e) => set("xpath_of_username_field", e.target.value)} />
             </div>
             <div className="space-y-1.5 sm:col-span-2">
-              <Label htmlFor="dast-profile-pass-xpath">Password field XPath</Label>
+              <FieldLabel htmlFor="dast-profile-pass-xpath" infoId="dast.cfg.xpath_pass">Password field XPath</FieldLabel>
               <Input id="dast-profile-pass-xpath" value={form.xpath_of_password_field} onChange={(e) => set("xpath_of_password_field", e.target.value)} />
             </div>
             <div className="space-y-1.5 sm:col-span-2">
-              <Label htmlFor="dast-profile-submit-xpath">Submit button XPath</Label>
+              <FieldLabel htmlFor="dast-profile-submit-xpath" infoId="dast.cfg.xpath_submit">Submit button XPath</FieldLabel>
               <Input id="dast-profile-submit-xpath" value={form.xpath_of_submit_button} onChange={(e) => set("xpath_of_submit_button", e.target.value)} />
             </div>
             <div className="space-y-1.5">
-              <Label>Scan speed</Label>
+              <FieldLabel htmlFor="dast-profile-speed" infoId="dast.cfg.speed">Scan speed</FieldLabel>
               <Select value={form.scan_speed} onValueChange={(v) => set("scan_speed", v)}>
-                <SelectTrigger className="cursor-pointer">
+                <SelectTrigger id="dast-profile-speed" className="cursor-pointer">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -256,15 +256,18 @@ export function DastProfilesTab() {
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="dast-profile-max-urls">Max URLs</Label>
+              <FieldLabel htmlFor="dast-profile-max-urls" infoId="dast.profile.max_urls">Max URLs</FieldLabel>
               <Input id="dast-profile-max-urls" type="number" min={1} value={form.max_urls} onChange={(e) => set("max_urls", Number(e.target.value))} />
             </div>
             <DastScheduleFields value={form.schedule} onChange={(schedule) => setForm((prev) => ({ ...prev, schedule }))} />
           </div>
-          <label className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
-            <Checkbox checked={form.consent_ok} onCheckedChange={(v) => set("consent_ok", v === true)} />
-            I confirm this target is authorized for DAST
-          </label>
+          <div className="flex items-center gap-1">
+            <label className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
+              <Checkbox checked={form.consent_ok} onCheckedChange={(v) => set("consent_ok", v === true)} />
+              I confirm this target is authorized for DAST
+            </label>
+            <InfoTip id="dast.profile.consent" />
+          </div>
           <div className="flex gap-2">
             <Button
               className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
@@ -285,7 +288,7 @@ export function DastProfilesTab() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Saved profiles</CardTitle>
+          <CardTitle className="flex items-center gap-1">Saved profiles <InfoTip id="dast.profile.list" /></CardTitle>
           <CardDescription>Run now creates a new scan. Overlapping runs are skipped. Next run is shown in IST.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">

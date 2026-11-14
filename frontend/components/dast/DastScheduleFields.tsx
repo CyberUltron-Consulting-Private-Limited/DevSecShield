@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { FieldLabel } from "@/components/ui/info-tip";
 import {
   Select,
   SelectContent,
@@ -70,9 +70,9 @@ export function DastScheduleFields({
   return (
     <div className="sm:col-span-2 grid gap-3 sm:grid-cols-2">
       <div className="space-y-1.5">
-        <Label>Schedule</Label>
+        <FieldLabel htmlFor="dast-schedule-kind" infoId="dast.profile.schedule">Schedule</FieldLabel>
         <Select value={value.kind} onValueChange={(v) => patch({ kind: v as DastScheduleKind })}>
-          <SelectTrigger className="cursor-pointer">
+          <SelectTrigger id="dast-schedule-kind" className="cursor-pointer">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -87,7 +87,7 @@ export function DastScheduleFields({
 
       {value.kind === "every_n_hours" && (
         <div className="space-y-1.5">
-          <Label htmlFor="dast-interval-hours">Every N hours (IST)</Label>
+          <FieldLabel htmlFor="dast-interval-hours" infoId="dast.profile.interval">Every N hours (IST)</FieldLabel>
           <Input
             id="dast-interval-hours"
             type="number"
@@ -101,9 +101,9 @@ export function DastScheduleFields({
 
       {value.kind === "weekly" && (
         <div className="space-y-1.5">
-          <Label>Weekday (IST)</Label>
+          <FieldLabel htmlFor="dast-weekday" infoId="dast.profile.weekday">Weekday (IST)</FieldLabel>
           <Select value={String(value.weekday)} onValueChange={(v) => patch({ weekday: Number(v) })}>
-            <SelectTrigger className="cursor-pointer">
+            <SelectTrigger id="dast-weekday" className="cursor-pointer">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -119,7 +119,7 @@ export function DastScheduleFields({
 
       {value.kind === "monthly" && (
         <div className="space-y-1.5">
-          <Label htmlFor="dast-monthday">Day of month (1–28, IST)</Label>
+          <FieldLabel htmlFor="dast-monthday" infoId="dast.profile.monthday">Day of month (1–28, IST)</FieldLabel>
           <Input
             id="dast-monthday"
             type="number"
@@ -133,7 +133,7 @@ export function DastScheduleFields({
 
       {value.kind === "once" && (
         <div className="space-y-1.5 sm:col-span-2">
-          <Label htmlFor="dast-once-at">Run at (IST)</Label>
+          <FieldLabel htmlFor="dast-once-at" infoId="dast.profile.once_at">Run at (IST)</FieldLabel>
           <Input
             id="dast-once-at"
             type="datetime-local"
@@ -145,7 +145,7 @@ export function DastScheduleFields({
 
       {showTimes && (
         <div className="space-y-1.5 sm:col-span-2">
-          <Label>Fire times (HH:MM IST)</Label>
+          <FieldLabel infoId="dast.profile.times">Fire times (HH:MM IST)</FieldLabel>
           <div className="flex flex-wrap gap-2">
             {value.times.map((time, idx) => (
               <div key={`${time}-${idx}`} className="flex items-center gap-1">
@@ -190,7 +190,7 @@ export function DastScheduleFields({
       {value.kind === "cron" && (
         <>
           <div className="space-y-1.5 sm:col-span-2">
-            <Label>Visual cron builder (IST)</Label>
+            <FieldLabel infoId="dast.profile.cron_builder">Visual cron builder (IST)</FieldLabel>
             <div className="grid gap-2 sm:grid-cols-5">
               {[
                 { label: "Minute", idx: 0, options: rangeOptions(0, 59, "Every minute") },
@@ -205,8 +205,9 @@ export function DastScheduleFields({
               ].map((field) => (
                 <div key={field.label} className="space-y-1">
                   <p className="text-xs text-zinc-500">{field.label}</p>
+                  {/* infotip-shared: one part of the cron builder labelled above */}
                   <Select value={[minute, hour, dom, month, dow][field.idx]} onValueChange={(v) => setCronPart(field.idx, v)}>
-                    <SelectTrigger className="cursor-pointer">
+                    <SelectTrigger aria-label={`Cron ${field.label}`} className="cursor-pointer">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -222,7 +223,7 @@ export function DastScheduleFields({
             </div>
           </div>
           <div className="space-y-1.5 sm:col-span-2">
-            <Label htmlFor="dast-cron">5-field cron (IST, 0=Sunday)</Label>
+            <FieldLabel htmlFor="dast-cron" infoId="dast.profile.cron">5-field cron (IST, 0=Sunday)</FieldLabel>
             <Input id="dast-cron" value={value.cron} onChange={(e) => patch({ cron: e.target.value })} placeholder="0 9 * * 1-5" />
           </div>
         </>

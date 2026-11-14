@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
 import { ArrowLeft, Loader2, Shield, UserPlus, Trash2 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -33,7 +34,6 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -93,14 +93,14 @@ function CreateAdminUserDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="bg-zinc-900 border-zinc-800 sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-zinc-100">Create admin user</DialogTitle>
+          <DialogTitle className="text-zinc-100 flex items-center gap-1">Create admin user <InfoTip id="admin.create_user" /></DialogTitle>
           <DialogDescription className="text-zinc-400">
             Create a new user with superuser privileges. They will receive an email with their credentials.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 py-2">
           <div className="space-y-2">
-            <Label htmlFor="admin-email" className="text-zinc-300">Email</Label>
+            <FieldLabel htmlFor="admin-email" infoId="admin.email" labelClassName="text-zinc-300">Email</FieldLabel>
             <Input
               id="admin-email"
               type="email"
@@ -114,7 +114,7 @@ function CreateAdminUserDialog({
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="admin-password" className="text-zinc-300">Password</Label>
+            <FieldLabel htmlFor="admin-password" infoId="admin.password" labelClassName="text-zinc-300">Password</FieldLabel>
             <Input
               id="admin-password"
               type="password"
@@ -131,7 +131,7 @@ function CreateAdminUserDialog({
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="admin-first-name" className="text-zinc-300">First name</Label>
+              <FieldLabel htmlFor="admin-first-name" infoId="admin.name" labelClassName="text-zinc-300">First name</FieldLabel>
               <Input
                 id="admin-first-name"
                 value={firstName}
@@ -143,7 +143,7 @@ function CreateAdminUserDialog({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="admin-last-name" className="text-zinc-300">Last name</Label>
+              <FieldLabel htmlFor="admin-last-name" infoId="admin.name" labelClassName="text-zinc-300">Last name</FieldLabel>
               <Input
                 id="admin-last-name"
                 value={lastName}
@@ -313,10 +313,10 @@ function UsersTable() {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead className="text-zinc-300">Email</TableHead>
+            <TableHead className="text-zinc-300">Email{/* infotip-shared: the card title's tip explains this column */}</TableHead>
           <TableHead className="text-zinc-300">Name</TableHead>
-          <TableHead className="text-zinc-300">Teams</TableHead>
-          <TableHead className="text-zinc-300">Admin Access</TableHead>
+          <TableHead className="text-zinc-300">Teams{/* infotip-shared: the card title's tip explains this column */}</TableHead>
+          <TableHead className="text-zinc-300">Admin Access{/* infotip-shared: the card title's tip explains this column */}</TableHead>
           <TableHead className="text-zinc-300 w-[80px]">Actions</TableHead>
         </TableRow>
       </TableHeader>
@@ -333,7 +333,9 @@ function UsersTable() {
                 : "—"}
             </TableCell>
             <TableCell>
+              {/* infotip-shared: the Users tip explains the admin-access switch */}
               <Switch
+                aria-label={`Admin access for ${user.user_email}`}
                 checked={user.user_is_superuser}
                 onCheckedChange={() => handleToggle(user.user_id)}
                 disabled={toggleMutation.isPending}
@@ -423,10 +425,10 @@ function TeamsTable() {
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead className="text-zinc-300">Team</TableHead>
-          <TableHead className="text-zinc-300">Members</TableHead>
-          <TableHead className="text-zinc-300">Credit Balance</TableHead>
-          <TableHead className="text-zinc-300">Scans</TableHead>
+          <TableHead className="text-zinc-300">Team{/* infotip-shared: the card title's tip explains this column */}</TableHead>
+          <TableHead className="text-zinc-300">Members{/* infotip-shared: the card title's tip explains this column */}</TableHead>
+          <TableHead className="text-zinc-300">Credit Balance{/* infotip-shared: the card title's tip explains this column */}</TableHead>
+          <TableHead className="text-zinc-300">Scans{/* infotip-shared: the card title's tip explains this column */}</TableHead>
           <TableHead className="text-zinc-300">Actions</TableHead>
         </TableRow>
       </TableHeader>
@@ -449,8 +451,10 @@ function TeamsTable() {
             <TableCell>
               {editingTeamId === team.team_id ? (
                 <div className="flex items-center gap-2">
+                  {/* infotip-shared: the Teams tip explains the balance edit */}
                   <Input
                     type="number"
+                    aria-label="Credit balance"
                     min={0}
                     value={creditInput}
                     onChange={(e) => setCreditInput(e.target.value)}
@@ -516,7 +520,7 @@ export default function AdminPage() {
       <main className="mx-auto max-w-6xl px-6 py-8 space-y-8">
         <Card className="border-zinc-800 bg-zinc-900/50">
           <CardHeader>
-            <CardTitle className="text-zinc-100">Users</CardTitle>
+            <CardTitle className="text-zinc-100 flex items-center gap-1">Users <InfoTip id="admin.users" /></CardTitle>
             <CardDescription className="text-zinc-400">
               Manage user admin access. Toggle the switch to grant or revoke superuser privileges.
             </CardDescription>
@@ -528,7 +532,7 @@ export default function AdminPage() {
 
         <Card className="border-zinc-800 bg-zinc-900/50">
           <CardHeader>
-            <CardTitle className="text-zinc-100">Teams</CardTitle>
+            <CardTitle className="text-zinc-100 flex items-center gap-1">Teams <InfoTip id="admin.teams" /></CardTitle>
             <CardDescription className="text-zinc-400">
               Update credit balance for each team. Click &quot;Update Credits&quot; to edit.
             </CardDescription>

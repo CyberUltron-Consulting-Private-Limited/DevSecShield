@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
 import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Play, CheckCircle, XCircle, CalendarPlus, CalendarCheck, Search, X, GitBranch, FileArchive, AlertTriangle, TrendingUp, TrendingDown, Bug, Shield, CircleDot, Timer, Clock, Crosshair, Activity, Percent, DollarSign, Check, ChevronDown, ChevronRight, Filter, ArrowUpDown, Info } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { singleFlight } from "@/utils/single_flight";
@@ -471,7 +472,7 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
                 <CircleDot className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Not Started</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Not Started <InfoTip id="sast.kpi.not_started" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.not_started_scans}</p>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">Idle</p>
               </div>
@@ -485,7 +486,7 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
                 <Timer className="h-4 w-4 text-blue-500" />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Pending</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Pending <InfoTip id="sast.kpi.pending" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.pending_scans}</p>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">Queued</p>
               </div>
@@ -499,7 +500,7 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
                 <Play className="h-4 w-4 text-blue-500" />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Started</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Started <InfoTip id="sast.kpi.started" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.started_scans}</p>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">In progress</p>
               </div>
@@ -513,7 +514,7 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
                 <CheckCircle className="h-4 w-4 text-green-500" />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Success</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Success <InfoTip id="sast.kpi.success" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.success_scans}</p>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">Completed</p>
               </div>
@@ -527,7 +528,7 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
                 <XCircle className="h-4 w-4 text-red-500" />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Failure</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Failure <InfoTip id="sast.kpi.failure" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.failure_scans}</p>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">Failed</p>
               </div>
@@ -541,7 +542,7 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
                 <CalendarPlus className="h-4 w-4 text-amber-500" />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Created today</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Created today <InfoTip id="sast.kpi.created_today" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.scans_created_today}</p>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">New scans</p>
               </div>
@@ -555,9 +556,9 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
                 <CalendarCheck className="h-4 w-4 text-amber-500" />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Updated today</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Updated today <InfoTip id="sast.kpi.updated_today" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.scans_updated_today}</p>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">Last 24h</p>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">Since 00:00 UTC</p>
               </div>
             </div>
           </CardContent>
@@ -569,7 +570,7 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
                 <Shield className={`h-4 w-4 ${averageRiskScore >= 7 ? "text-red-500" : averageRiskScore >= 5 ? "text-amber-500" : "text-green-500"}`} />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Average Risk Score</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Average Risk Score <InfoTip id="sast.avg_risk" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{averageRiskScore} / 10</p>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">Security posture</p>
               </div>
@@ -583,7 +584,7 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
         {/* Radar: Risk severity totals */}
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="items-center pb-2">
-            <CardTitle className="text-base">Risk Severity Distribution</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Risk Severity Distribution <InfoTip id="sast.chart.severity" /></CardTitle>
             <CardDescription>Total findings across all successful scans</CardDescription>
           </CardHeader>
           <CardContent>
@@ -605,7 +606,7 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
         {/* Policy Compliance */}
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Policy Compliance</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Policy Compliance <InfoTip id="sast.chart.policy" /></CardTitle>
             <CardDescription>Security standards adherence</CardDescription>
           </CardHeader>
           <CardContent>
@@ -643,7 +644,7 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
         {/* Top Repositories by Risk */}
         <Card className="border-zinc-200 dark:border-zinc-800 flex flex-col min-w-0 overflow-hidden">
           <CardHeader className="pb-2 shrink-0">
-            <CardTitle className="text-base">Top Repositories by Risk</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Top Repositories by Risk <InfoTip id="sast.chart.top_repos" /></CardTitle>
             <CardDescription>Highest vulnerability concentration</CardDescription>
           </CardHeader>
           <CardContent className="min-w-0 overflow-hidden">
@@ -703,7 +704,7 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
         {/* Bar: Scans per day */}
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Scans Per Day</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Scans Per Day <InfoTip id="sast.chart.scans_per_day" /></CardTitle>
             <CardDescription>Number of scans created each day</CardDescription>
           </CardHeader>
           <CardContent>
@@ -726,7 +727,7 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
         {/* Radial: Scan status breakdown */}
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="items-center pb-2">
-            <CardTitle className="text-base">Scan Status Breakdown</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Scan Status Breakdown <InfoTip id="sast.chart.status" /></CardTitle>
             <CardDescription>Distribution of scan outcomes</CardDescription>
           </CardHeader>
           <CardContent>
@@ -757,7 +758,7 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
         {/* Average Risk Score (radial gauge) */}
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Average Risk Score</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Average Risk Score <InfoTip id="sast.avg_risk" /></CardTitle>
             <CardDescription>Organization security posture</CardDescription>
           </CardHeader>
           <CardContent>
@@ -791,7 +792,7 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
         {/* Risks Over Time */}
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Risks Over Time</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Risks Over Time <InfoTip id="sast.chart.risks_over_time" /></CardTitle>
             <CardDescription>Vulnerability counts per scan date</CardDescription>
           </CardHeader>
           <CardContent>
@@ -821,7 +822,7 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
         {/* Vulnerabilities by Category (horizontal bar) */}
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Vulnerabilities by Category</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Vulnerabilities by Category <InfoTip id="sast.chart.by_category" /></CardTitle>
             <CardDescription>OWASP Top 10 classification</CardDescription>
           </CardHeader>
           <CardContent>
@@ -847,7 +848,7 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
         {/* Vulnerabilities by Language */}
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Vulnerabilities by Language</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Vulnerabilities by Language <InfoTip id="sast.chart.by_language" /></CardTitle>
             <CardDescription>Distribution across programming languages</CardDescription>
           </CardHeader>
           <CardContent>
@@ -874,7 +875,7 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
         {/* Scan Sources: repos + zip files */}
         <Card className="border-zinc-200 dark:border-zinc-800 flex flex-col">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Scan Sources</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Scan Sources <InfoTip id="sast.chart.sources" /></CardTitle>
             <CardDescription>Repositories and zip uploads scanned</CardDescription>
           </CardHeader>
           <CardContent className="flex-1 flex flex-col gap-4 overflow-hidden justify-items-start">
@@ -923,7 +924,7 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
       {dashboardData.remediation_metrics && (
         <Card className="border-zinc-200 dark:border-zinc-800 shadow-sm">
           <CardHeader>
-            <CardTitle className="text-xl">Remediation Metrics</CardTitle>
+            <CardTitle className="text-xl flex items-center gap-1">Remediation Metrics <InfoTip id="sast.remed.section" /></CardTitle>
             <CardDescription>Performance and efficiency tracking</CardDescription>
           </CardHeader>
           <CardContent>
@@ -940,7 +941,7 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
                     <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-500/15 dark:bg-teal-500/10">
                       <Clock className="h-5 w-5 text-teal-600 dark:text-teal-400" />
                     </div>
-                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Mean Time to Remediate</p>
+                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Mean Time to Remediate <InfoTip id="sast.remed.mttr" /></p>
                     <p className="text-2xl font-bold text-zinc-900 dark:text-white">
                       {totalDays < 0.1 && totalDays >= 0 ? "<0.1 days" : `${totalDays.toFixed(1)} days`}
                     </p>
@@ -957,8 +958,7 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
               {(() => {
                 const fixed = dashboardData.remediation_metrics.critical_issues_fixed;
                 const totalCritical = dashboardData.critical_count ?? 0;
-                const total = fixed + totalCritical;
-                const pct = total > 0 ? Math.round((fixed / total) * 100) : 0;
+                const pct = totalCritical > 0 ? Math.min(100, Math.round((fixed / totalCritical) * 100)) : 0;
                 const targetPct = 95;
                 const progress = Math.min(100, (pct / targetPct) * 100);
                 const delta = pct >= targetPct ? "+0%" : `+${targetPct - pct}%`;
@@ -967,7 +967,7 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
                     <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-500/15 dark:bg-teal-500/10">
                       <CheckCircle className="h-5 w-5 text-teal-600 dark:text-teal-400" />
                     </div>
-                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Critical Issues Fixed</p>
+                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Critical Issues Fixed <InfoTip id="sast.remed.critical_fixed" /></p>
                     <p className="text-2xl font-bold text-zinc-900 dark:text-white">{pct}%</p>
                     <p className="text-xs text-zinc-500 dark:text-zinc-400">Target: {targetPct}%</p>
                     <div className="flex items-center gap-2">
@@ -989,7 +989,7 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
                     <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-500/15 dark:bg-teal-500/10">
                       <Crosshair className="h-5 w-5 text-teal-600 dark:text-teal-400" />
                     </div>
-                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">High Priority Backlog</p>
+                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">High Priority Backlog <InfoTip id="sast.remed.backlog" /></p>
                     <p className="text-2xl font-bold text-zinc-900 dark:text-white">{backlog}</p>
                     <p className="text-xs text-zinc-500 dark:text-zinc-400">Target: {target}</p>
                     <div className="flex items-center gap-2">
@@ -1011,7 +1011,7 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
                     <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-500/15 dark:bg-teal-500/10">
                       <Activity className="h-5 w-5 text-teal-600 dark:text-teal-400" />
                     </div>
-                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Remediation Velocity</p>
+                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Remediation Velocity <InfoTip id="sast.remed.velocity" /></p>
                     <p className="text-2xl font-bold text-zinc-900 dark:text-white">{velocity}/week</p>
                     <p className="text-xs text-zinc-500 dark:text-zinc-400">Target: {target}/week</p>
                     <div className="flex items-center gap-2">
@@ -1256,6 +1256,7 @@ export default function SASTPage() {
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
                       <Input placeholder="Search by title..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9 h-9 cursor-text" />
                     </div>
+                    <InfoTip id="scan.filter.search" className="-ml-2" />
                     <Select value={statusFilter} onValueChange={setStatusFilter}>
                       <SelectTrigger className="h-9 min-w-[150px] cursor-pointer"><SelectValue placeholder="Scan status" /></SelectTrigger>
                       <SelectContent>
@@ -1269,6 +1270,7 @@ export default function SASTPage() {
                         <SelectItem value="cancelled">Cancelled</SelectItem>
                       </SelectContent>
                     </Select>
+                    <InfoTip id="scan.status" className="-ml-2" />
 
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -1292,6 +1294,7 @@ export default function SASTPage() {
                           <ChevronDown className="h-3 w-3 opacity-70 shrink-0" />
                         </Button>
                       </DropdownMenuTrigger>
+                      <InfoTip id="sast.filter.risk" className="-ml-2" />
                       <DropdownMenuContent align="start" className="min-w-[180px]">
                         <DropdownMenuLabel className="text-xs font-normal text-zinc-500">Filter by risk score</DropdownMenuLabel>
                         <DropdownMenuSeparator />
@@ -1340,6 +1343,7 @@ export default function SASTPage() {
                           <ChevronDown className="h-3 w-3 opacity-70 shrink-0" />
                         </Button>
                       </DropdownMenuTrigger>
+                      <InfoTip id="sast.filter.type" className="-ml-2" />
                       <DropdownMenuContent align="start" className="min-w-[160px]">
                         <DropdownMenuLabel className="text-xs font-normal text-zinc-500">Filter by source</DropdownMenuLabel>
                         <DropdownMenuSeparator />
@@ -1382,6 +1386,7 @@ export default function SASTPage() {
                           <ChevronDown className="h-3 w-3 opacity-70 shrink-0" />
                         </Button>
                       </DropdownMenuTrigger>
+                      <InfoTip id="sast.filter.sort" className="-ml-2" />
                       <DropdownMenuContent align="start" className="min-w-[200px]">
                         <DropdownMenuLabel className="text-xs font-normal text-zinc-500">Sort by</DropdownMenuLabel>
                         <DropdownMenuSeparator />
@@ -1452,18 +1457,18 @@ export default function SASTPage() {
                         <TableHeader>
                           <TableRow>
                             <TableHead className="w-[160px] min-w-[120px]">Title</TableHead>
-                            <TableHead className="w-[90px]">Language</TableHead>
-                            <TableHead>Created at</TableHead>
-                            <TableHead>Last updated</TableHead>
-                            <TableHead>Scan status</TableHead>
-                            <TableHead className="w-[180px]">Vulnerabilities</TableHead>
-                            <TableHead className="w-[90px]">Risk score</TableHead>
-                            <TableHead className="w-[100px]">Scan type</TableHead>
-                            <TableHead className="w-[160px]">Repo / Source</TableHead>
-                            <TableHead className="w-[100px]">Branch</TableHead>
-                            <TableHead className="w-[90px]">Coverage</TableHead>
-                            <TableHead className="w-[80px]">Credits</TableHead>
-                            <TableHead>Owner</TableHead>
+                            <TableHead className="w-[90px]"><span className="inline-flex items-center gap-1">Language <InfoTip id="sast.table.language" /></span></TableHead>
+                            <TableHead><span className="inline-flex items-center gap-1">Created at <InfoTip id="scan.table.created" /></span></TableHead>
+                            <TableHead><span className="inline-flex items-center gap-1">Last updated <InfoTip id="scan.table.updated" /></span></TableHead>
+                            <TableHead><span className="inline-flex items-center gap-1">Scan status <InfoTip id="scan.status" /></span></TableHead>
+                            <TableHead className="w-[180px]"><span className="inline-flex items-center gap-1">Vulnerabilities <InfoTip id="sast.table.vulns" /></span></TableHead>
+                            <TableHead className="w-[90px]"><span className="inline-flex items-center gap-1">Risk score <InfoTip id="sast.table.risk" /></span></TableHead>
+                            <TableHead className="w-[100px]"><span className="inline-flex items-center gap-1">Scan type <InfoTip id="sast.table.type" /></span></TableHead>
+                            <TableHead className="w-[160px]"><span className="inline-flex items-center gap-1">Repo / Source <InfoTip id="sast.table.source" /></span></TableHead>
+                            <TableHead className="w-[100px]"><span className="inline-flex items-center gap-1">Branch <InfoTip id="scan.table.branch" /></span></TableHead>
+                            <TableHead className="w-[90px]"><span className="inline-flex items-center gap-1">Coverage <InfoTip id="sast.table.coverage" /></span></TableHead>
+                            <TableHead className="w-[80px]"><span className="inline-flex items-center gap-1">Credits <InfoTip id="scan.table.credits" /></span></TableHead>
+                            <TableHead><span className="inline-flex items-center gap-1">Owner <InfoTip id="scan.table.owner" /></span></TableHead>
                             <TableHead className="text-right w-[80px]">Actions</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -1684,7 +1689,7 @@ export default function SASTPage() {
                                               <GitBranch className="h-4 w-4 text-blue-500" />
                                             </div>
                                             <div>
-                                              <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Branch</p>
+                                              <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Branch <InfoTip id="scan.table.branch" /></p>
                                               <p className="text-sm font-bold text-zinc-900 dark:text-white truncate max-w-full" title={conversation.branch ?? undefined}>{conversation.branch ?? "—"}</p>
                                             </div>
                                           </div>
@@ -1697,7 +1702,7 @@ export default function SASTPage() {
                                               <Timer className="h-4 w-4 text-teal-500" />
                                             </div>
                                             <div>
-                                              <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Duration</p>
+                                              <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Duration <InfoTip id="sast.detail.duration" /></p>
                                               <p className="text-sm font-bold text-zinc-900 dark:text-white">{formatDuration(conversation.duration)}</p>
                                             </div>
                                           </div>
@@ -1710,7 +1715,7 @@ export default function SASTPage() {
                                               <Percent className="h-4 w-4 text-sky-500" />
                                             </div>
                                             <div>
-                                              <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Coverage</p>
+                                              <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Coverage <InfoTip id="sast.table.coverage" /></p>
                                               <p className="text-sm font-bold text-zinc-900 dark:text-white">{conversation.code_coverage != null ? `${Number(conversation.code_coverage).toFixed(1)}%` : "—"}</p>
                                             </div>
                                           </div>
@@ -1727,7 +1732,7 @@ export default function SASTPage() {
                                                   <Shield className={`h-4 w-4 ${isHigh ? "text-red-500" : "text-amber-500"}`} />
                                                 </div>
                                                 <div>
-                                                  <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Risk Score</p>
+                                                  <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Risk Score <InfoTip id="sast.table.risk" /></p>
                                                   <p className="text-sm font-bold text-zinc-900 dark:text-white">{score != null ? score : "—"}</p>
                                                 </div>
                                               </div>
@@ -1743,7 +1748,7 @@ export default function SASTPage() {
                                                 <GitBranch className="h-4 w-4 text-blue-500" />
                                               </div>
                                               <div className="min-w-0 flex-1 w-full">
-                                                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Repository</p>
+                                                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Repository <InfoTip id="sast.table.source" /></p>
                                                 <a href={conversation.repo_url} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-blue-600 hover:underline dark:text-blue-400 truncate block">
                                                   {conversation.repo_url}
                                                 </a>
@@ -1762,7 +1767,7 @@ export default function SASTPage() {
                                                   <AlertTriangle className="h-4 w-4 text-red-500" />
                                                 </div>
                                                 <div>
-                                                  <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Policy Violations</p>
+                                                  <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Policy Violations <InfoTip id="sast.detail.policy" /></p>
                                                   <p className="text-sm font-bold text-red-600 dark:text-red-400">{totalPolicy} violations</p>
                                                 </div>
                                               </div>
@@ -1774,7 +1779,7 @@ export default function SASTPage() {
                                   </div>
                                   {/* Top Vulnerabilities — vertical scroll area */}
                                   <div className="flex-1 min-w-0 flex flex-col">
-                                    <h4 className="text-sm font-semibold text-zinc-900 dark:text-white mb-3">Top Vulnerabilities</h4>
+                                    <h4 className="text-sm font-semibold text-zinc-900 dark:text-white mb-3 flex items-center gap-1">Top Vulnerabilities <InfoTip id="sast.detail.top" /></h4>
                                     <Card className="border-zinc-200 dark:border-zinc-800 flex flex-col min-w-0 overflow-hidden flex-1">
                                       <CardContent className="p-0 min-h-0 flex-1">
                                         {conversation.top_vulnerabilities && conversation.top_vulnerabilities.length > 0 ? (
@@ -1856,8 +1861,9 @@ export default function SASTPage() {
             <DialogTitle>Rename scan</DialogTitle>
             <DialogDescription>Enter a new name for this scan.</DialogDescription>
           </DialogHeader>
-          <div className="py-4">
-            <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Scan name" onKeyDown={(e) => { if (e.key === "Enter") confirmRename(); }} />
+          <div className="py-4 space-y-2">
+            <FieldLabel htmlFor="rename-scan-title" infoId="scan.rename.title">Scan name</FieldLabel>
+            <Input id="rename-scan-title" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Scan name" onKeyDown={(e) => { if (e.key === "Enter") confirmRename(); }} />
           </div>
           <DialogFooter>
             <Button variant="outline" className="cursor-pointer" onClick={() => { setRenameDialogOpen(false); setNewName(""); }}>Cancel</Button>
@@ -1911,8 +1917,9 @@ export default function SASTPage() {
             <DialogTitle>Create New Scan</DialogTitle>
             <DialogDescription>Enter a title for your new SAST scan.</DialogDescription>
           </DialogHeader>
-          <div className="py-4">
-            <Input value={newScanTitle} onChange={(e) => setNewScanTitle(e.target.value)} placeholder="Scan title" onKeyDown={(e) => { if (e.key === "Enter") confirmCreate(); }} />
+          <div className="py-4 space-y-2">
+            <FieldLabel htmlFor="new-scan-title" infoId="scan.new.title">Scan title</FieldLabel>
+            <Input id="new-scan-title" value={newScanTitle} onChange={(e) => setNewScanTitle(e.target.value)} placeholder="Scan title" onKeyDown={(e) => { if (e.key === "Enter") confirmCreate(); }} />
           </div>
           <DialogFooter>
             <Button variant="outline" className="cursor-pointer" onClick={() => { setCreateDialogOpen(false); setNewScanTitle(""); }}>Cancel</Button>
