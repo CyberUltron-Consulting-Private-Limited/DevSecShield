@@ -1,0 +1,17 @@
+#!/bin/sh
+# Healthy when the role's port is in LISTEN state. Reads /proc/net/tcp{,6}; it never connects, so a canary
+# listener's accept log only ever holds real connections.
+set -eu
+# /lab/role.env holds KEY=VALUE lines written by gen.py; only PORT is needed here (read, never sourced).
+PORT=
+while IFS='=' read -r key value; do
+  case "$key" in PORT) PORT=$value ;; esac
+done < /lab/role.env
+hex=$(printf '%04X' "$PORT")
+for f in /proc/net/tcp /proc/net/tcp6; do
+  [ -r "$f" ] || continue
+  if awk -v p=":$hex" '$4 == "0A" && substr($2, length($2) - 4) == p { found = 1 } END { exit !found }' "$f"; then
+    exit 0
+  fi
+done
+exit 1

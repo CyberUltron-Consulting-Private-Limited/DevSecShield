@@ -88,10 +88,12 @@ def _clock_skew(value: str | None, now: _dt.datetime) -> int | None:
 def _ips(values: list[str]) -> list[str]:
     import ipaddress
 
+    from backend.utilities.cbom_sources.targets import ip_text
+
     out: list[str] = []
     for value in values[:32]:
         try:
-            out.append(str(ipaddress.ip_address(str(value).strip())))
+            out.append(ip_text(ipaddress.ip_address(str(value).strip())))  # one form on every Python (#126)
         except ValueError:
             continue
     return out

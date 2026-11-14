@@ -4,6 +4,7 @@
 import api from "@/utils/interceptors"
 import { showErrorToast } from "@/utils/error-handler"
 import type { CbomAssetDetail, CbomRunPosture } from "@/utils/backend_api"
+import type { AgilityDetail, AgilityPosture, QExplain, QGradeFields, QPosture } from "@/components/cbom/grade/model"
 
 export type CycloneDxFormat = "json" | "xml"
 export type CbomExposure = "internet" | "internal" | "unknown"
@@ -46,7 +47,7 @@ export type CbomPostureWithExposure = Omit<CbomRunPosture, "top_risks"> & {
   top_risks: CbomTopRisk[]
   exposure?: Record<CbomExposure, number>
   exposure_factors?: Record<CbomExposure, number>
-}
+} & QPosture & AgilityPosture  // quantum risk grade (CB-19) and fix classes (CB-24); absent on an older backend
 
 type Eol = { branch: string; date: string; passed: boolean; sources: string[] }
 
@@ -55,7 +56,9 @@ export type CbomAssetDetailWithExposure = Omit<CbomAssetDetail, "library"> & {
   exposure_basis?: string
   exposure_factor?: number
   library: null | (NonNullable<CbomAssetDetail["library"]> & { eol_as_of?: string; eol_today?: Eol | null })
-}
+  q_explain?: QExplain | null  // CB-19
+  agility?: AgilityDetail | null  // CB-24
+} & QGradeFields
 
 function saveBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)

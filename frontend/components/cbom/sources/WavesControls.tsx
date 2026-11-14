@@ -21,6 +21,7 @@ import {
   type CbomWaveStatus,
 } from "@/utils/api/cbom_ops";
 
+import { invalidateRunViews } from "./keys";
 import { ErrorBlock, LoadingBlock, SectionCard, StatusBadge, Truncate, type Tone } from "./shared";
 
 const WAVE_TONE: Record<number, Tone> = { 1: "red", 2: "amber", 3: "blue", 4: "zinc" };
@@ -81,7 +82,8 @@ export function BulkAssignBar({ teamId, target, keys, onDone }: {
     },
     onSuccess: (out) => {
       toast.success(`Updated ${out.updated} asset${out.updated === 1 ? "" : "s"}`);
-      queryClient.invalidateQueries({ queryKey: ["cbom-sources", teamId] });
+      // status and wave changes also refresh the CBOM Scans table's run rows
+      invalidateRunViews(queryClient, teamId);
       onDone();
     },
     onError: (err) => toast.error(errorText(err)),
