@@ -82,6 +82,7 @@ import { toast } from "@/utils/toast";
 import TicketingIntegrationsSettings from "@/components/ticketing-integrations-settings";
 import FindingSelectionMenu from "@/components/finding-selection-menu";
 import { Progress } from "@/components/ui/progress";
+import { InfoTip } from "@/components/ui/info-tip";
 
 // Agent output format (from worker_sast_agent_results_testing.json)
 type OwaspOrComplianceItem = Record<string, string>;
@@ -274,6 +275,7 @@ function SASTDashboardCharts({ dashboard }: { dashboard: SastDashboardData }) {
             <CardTitle className="text-base flex items-center gap-2">
               <PieChart className="w-4 h-4" />
               OWASP Top 10 metrics
+              <InfoTip id="sast.res.owasp" />
             </CardTitle>
             <CardDescription>Distribution by OWASP category</CardDescription>
           </CardHeader>
@@ -330,6 +332,7 @@ function SASTDashboardCharts({ dashboard }: { dashboard: SastDashboardData }) {
             <CardTitle className="text-base flex items-center gap-2">
               <AlertTriangle className="w-4 h-4" />
               Risk metrics
+              <InfoTip id="sast.res.risk" />
             </CardTitle>
             <CardDescription>Findings by impact severity</CardDescription>
           </CardHeader>
@@ -357,6 +360,7 @@ function SASTDashboardCharts({ dashboard }: { dashboard: SastDashboardData }) {
             <CardTitle className="text-base flex items-center gap-2">
               <TrendingUp className="w-4 h-4" />
               CVEs per vulnerability
+              <InfoTip id="sast.res.cves" />
             </CardTitle>
             <CardDescription>Vulnerability count by CVE (top 20)</CardDescription>
           </CardHeader>
@@ -401,6 +405,7 @@ function SASTDashboardCharts({ dashboard }: { dashboard: SastDashboardData }) {
           <CardTitle className="text-base flex items-center gap-2">
             <BarChart3 className="w-4 h-4" />
             Compliance Controls Failed count
+            <InfoTip id="sast.res.compliance" />
           </CardTitle>
           <CardDescription>Findings by compliance control (all). Scroll horizontally if needed.</CardDescription>
         </CardHeader>
@@ -438,7 +443,7 @@ function SASTDashboardCharts({ dashboard }: { dashboard: SastDashboardData }) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader>
-            <CardTitle className="text-base">Policy Violations</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Policy Violations <InfoTip id="sast.res.policy" /></CardTitle>
             <CardDescription>Security standards adherence by violation count</CardDescription>
           </CardHeader>
           <CardContent>
@@ -478,6 +483,7 @@ function SASTDashboardCharts({ dashboard }: { dashboard: SastDashboardData }) {
             <CardTitle className="text-base flex items-center gap-2">
               <TrendingUp className="w-4 h-4" />
               Risk scores per finding
+              <InfoTip id="sast.res.risk_scores" />
             </CardTitle>
             <CardDescription>Risk score by finding (top 24, descending)</CardDescription>
           </CardHeader>
@@ -530,7 +536,7 @@ function SASTDashboardCharts({ dashboard }: { dashboard: SastDashboardData }) {
       {remediationMetrics && (
         <Card className="border-zinc-200 dark:border-zinc-800 shadow-sm">
           <CardHeader>
-            <CardTitle className="text-xl">Remediation Metrics</CardTitle>
+            <CardTitle className="text-xl flex items-center gap-1">Remediation Metrics <InfoTip id="sast.res.remed.section" /></CardTitle>
             <CardDescription>Performance and efficiency tracking</CardDescription>
           </CardHeader>
           <CardContent>
@@ -546,7 +552,7 @@ function SASTDashboardCharts({ dashboard }: { dashboard: SastDashboardData }) {
                     <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-500/15 dark:bg-teal-500/10">
                       <Clock className="h-5 w-5 text-teal-600 dark:text-teal-400" />
                     </div>
-                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Mean Time to Remediate</p>
+                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Mean Time to Remediate <InfoTip id="sast.res.remed.mttr" /></p>
                     <p className="text-2xl font-bold text-zinc-900 dark:text-white">
                       {totalDays < 0.1 && totalDays >= 0 ? "<0.1 days" : `${totalDays.toFixed(1)} days`}
                     </p>
@@ -561,9 +567,10 @@ function SASTDashboardCharts({ dashboard }: { dashboard: SastDashboardData }) {
 
               {(() => {
                 const fixed = remediationMetrics.critical_issues_fixed;
+                // risk_metrics counts every Critical finding of the scan, fixed ones included: fixed / all Critical
+                // (was fixed / (fixed + all Critical), which never passed 50%)
                 const totalCritical = criticalCount;
-                const total = fixed + totalCritical;
-                const pct = total > 0 ? Math.round((fixed / total) * 100) : 0;
+                const pct = totalCritical > 0 ? Math.min(100, Math.round((fixed / totalCritical) * 100)) : 0;
                 const targetPct = 95;
                 const progress = Math.min(100, (pct / targetPct) * 100);
                 const delta = pct >= targetPct ? "+0%" : `+${targetPct - pct}%`;
@@ -572,7 +579,7 @@ function SASTDashboardCharts({ dashboard }: { dashboard: SastDashboardData }) {
                     <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-500/15 dark:bg-teal-500/10">
                       <CheckCircle className="h-5 w-5 text-teal-600 dark:text-teal-400" />
                     </div>
-                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Critical Issues Fixed</p>
+                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Critical Issues Fixed <InfoTip id="sast.res.remed.critical_fixed" /></p>
                     <p className="text-2xl font-bold text-zinc-900 dark:text-white">{pct}%</p>
                     <p className="text-xs text-zinc-500 dark:text-zinc-400">Target: {targetPct}%</p>
                     <div className="flex items-center gap-2">
@@ -593,7 +600,7 @@ function SASTDashboardCharts({ dashboard }: { dashboard: SastDashboardData }) {
                     <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-500/15 dark:bg-teal-500/10">
                       <Crosshair className="h-5 w-5 text-teal-600 dark:text-teal-400" />
                     </div>
-                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">High Priority Backlog</p>
+                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">High Priority Backlog <InfoTip id="sast.res.remed.backlog" /></p>
                     <p className="text-2xl font-bold text-zinc-900 dark:text-white">{backlog}</p>
                     <p className="text-xs text-zinc-500 dark:text-zinc-400">Target: {target}</p>
                     <div className="flex items-center gap-2">
@@ -614,7 +621,7 @@ function SASTDashboardCharts({ dashboard }: { dashboard: SastDashboardData }) {
                     <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-500/15 dark:bg-teal-500/10">
                       <Activity className="h-5 w-5 text-teal-600 dark:text-teal-400" />
                     </div>
-                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Remediation Velocity</p>
+                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Remediation Velocity <InfoTip id="sast.res.remed.velocity" /></p>
                     <p className="text-2xl font-bold text-zinc-900 dark:text-white">{velocity}/week</p>
                     <p className="text-xs text-zinc-500 dark:text-zinc-400">Target: {target}/week</p>
                     <div className="flex items-center gap-2">
@@ -972,7 +979,7 @@ function SASTResultsAgentView({
                   <Percent className="h-5 w-5" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Code coverage</p>
+                  <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 flex items-center gap-1">Code coverage <InfoTip id="sast.res.coverage" /></p>
                   <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{Number(scanMetadata.code_coverage).toFixed(1)}%</p>
                 </div>
               </CardContent>
@@ -985,7 +992,7 @@ function SASTResultsAgentView({
                   <FileStack className="h-5 w-5" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Files scanned</p>
+                  <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 flex items-center gap-1">Files scanned <InfoTip id="sast.res.files" /></p>
                   <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{Number(scanMetadata.files_scanned)} / {Number(scanMetadata.total_files)}</p>
                 </div>
               </CardContent>
@@ -998,7 +1005,7 @@ function SASTResultsAgentView({
                   <Github className="h-5 w-5" />
                 </div>
                 <div className="min-w-0 flex-1 overflow-hidden">
-                  <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Repository</p>
+                  <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 flex items-center gap-1">Repository <InfoTip id="results.meta.repository" /></p>
                   <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate" title={String(scanMetadata.repo_url)}>{String(scanMetadata.repo_url)}</p>
                 </div>
               </CardContent>
@@ -1011,7 +1018,7 @@ function SASTResultsAgentView({
                   <GitBranch className="h-5 w-5" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Branch</p>
+                  <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 flex items-center gap-1">Branch <InfoTip id="results.meta.branch" /></p>
                   <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{String(scanMetadata.branch)}</p>
                 </div>
               </CardContent>
@@ -1024,7 +1031,7 @@ function SASTResultsAgentView({
                   <Archive className="h-5 w-5" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Source</p>
+                  <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 flex items-center gap-1">Source <InfoTip id="results.meta.source" /></p>
                   <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{scanMetadata.zip_file_used ? "ZIP upload" : "Repository"}</p>
                 </div>
               </CardContent>
@@ -1038,7 +1045,7 @@ function SASTResultsAgentView({
 
       <Card>
         <CardHeader>
-          <CardTitle>Findings</CardTitle>
+          <CardTitle className="flex items-center gap-1">Findings <InfoTip id="results.findings" /></CardTitle>
           <CardDescription>
             {findings && findings.length > 0
               ? `${findings.length} findings. Select rows to create Jira tickets; use Action to change finding state.`
@@ -1060,6 +1067,7 @@ function SASTResultsAgentView({
                     aria-label="Search findings table"
                   />
                 </div>
+                <InfoTip id="sast.res.search" className="-ml-2" />
                 <Select value={filterImpact} onValueChange={setFilterImpact}>
                   <SelectTrigger className="h-9 min-w-[150px] cursor-pointer">
                     <SelectValue placeholder="Impact" />
@@ -1072,6 +1080,7 @@ function SASTResultsAgentView({
                     <SelectItem value="Low">Low</SelectItem>
                   </SelectContent>
                 </Select>
+                <InfoTip id="results.filter.impact" className="-ml-2" />
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
@@ -1094,6 +1103,7 @@ function SASTResultsAgentView({
                       <ChevronDown className="h-3 w-3 opacity-70 shrink-0" />
                     </Button>
                   </DropdownMenuTrigger>
+                  <InfoTip id="sast.res.filter.risk" className="-ml-2" />
                   <DropdownMenuContent align="start" className="min-w-[180px]">
                     <DropdownMenuLabel className="text-xs font-normal text-zinc-500">Filter by risk score</DropdownMenuLabel>
                     <DropdownMenuSeparator />
@@ -1143,23 +1153,26 @@ function SASTResultsAgentView({
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="min-w-[48px] w-12">
-                          <Checkbox
-                            checked={filteredFindingsList.length > 0 && selectedRowIds.size === filteredFindingsList.length}
-                            onCheckedChange={toggleSelectAll}
-                            aria-label="Select all rows"
-                            className="cursor-pointer"
-                          />
+                        <TableHead className="min-w-[64px] w-16">
+                          <div className="flex items-center gap-0.5">
+                            <Checkbox
+                              checked={filteredFindingsList.length > 0 && selectedRowIds.size === filteredFindingsList.length}
+                              onCheckedChange={toggleSelectAll}
+                              aria-label="Select all rows"
+                              className="cursor-pointer"
+                            />
+                            <InfoTip id="results.select_all" />
+                          </div>
                         </TableHead>
                         <TableHead className="min-w-[180px]">Title</TableHead>
-                        <TableHead className="min-w-[200px]">Description</TableHead>
-                        <TableHead className="min-w-[90px]">Impact</TableHead>
-                        <TableHead className="min-w-[90px] text-center">Risk score</TableHead>
-                        <TableHead className="min-w-[100px]">Status</TableHead>
-                        <TableHead className="min-w-[90px] text-center">OWASP count</TableHead>
-                        <TableHead className="min-w-[100px] text-center">Compliance count</TableHead>
-                        <TableHead className="min-w-[70px] text-center">CVE count</TableHead>
-                        <TableHead className="min-w-[120px] text-right">Actions</TableHead>
+                        <TableHead className="min-w-[200px]"><span className="inline-flex items-center gap-1">Description <InfoTip id="sast.res.description" /></span></TableHead>
+                        <TableHead className="min-w-[90px]"><span className="inline-flex items-center gap-1">Impact <InfoTip id="results.table.impact" /></span></TableHead>
+                        <TableHead className="min-w-[90px] text-center"><span className="inline-flex items-center gap-1">Risk score <InfoTip id="sast.res.table.risk" /></span></TableHead>
+                        <TableHead className="min-w-[100px]"><span className="inline-flex items-center gap-1">Status <InfoTip id="results.table.status" /></span></TableHead>
+                        <TableHead className="min-w-[90px] text-center"><span className="inline-flex items-center gap-1">OWASP count <InfoTip id="results.table.owasp" /></span></TableHead>
+                        <TableHead className="min-w-[100px] text-center"><span className="inline-flex items-center gap-1">Compliance count <InfoTip id="results.table.compliance" /></span></TableHead>
+                        <TableHead className="min-w-[70px] text-center"><span className="inline-flex items-center gap-1">CVE count <InfoTip id="sast.res.table.cves" /></span></TableHead>
+                        <TableHead className="min-w-[120px] text-right"><span className="inline-flex items-center gap-1">Actions <InfoTip id="results.finding.action" /></span></TableHead>
                       </TableRow>
                     </TableHeader>
                   <TableBody>
@@ -1177,7 +1190,8 @@ function SASTResultsAgentView({
                           key={f.id}
                           className={`hover:bg-zinc-50 dark:hover:bg-zinc-800/50 ${selectedRowIds.has(f.id) ? "bg-zinc-100 dark:bg-zinc-800/70" : ""}`}
                         >
-                          <TableCell onClick={(e) => e.stopPropagation()} className="min-w-[48px] w-12">
+                          <TableCell onClick={(e) => e.stopPropagation()} className="min-w-[64px] w-16">
+                            {/* infotip-shared: row selection, explained by the (i) on the select-all box in the header */}
                             <Checkbox
                               checked={selectedRowIds.has(f.id)}
                               onCheckedChange={() => toggleRowSelection(f.id)}
@@ -1249,6 +1263,7 @@ function SASTResultsAgentView({
                           </TableCell>
                           <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                             <DropdownMenu>
+                              {/* infotip-shared: explained by the (i) on the Actions column header */}
                               <DropdownMenuTrigger asChild>
                                 <Button
                                   variant="outline"

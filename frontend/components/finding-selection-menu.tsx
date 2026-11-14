@@ -10,6 +10,7 @@ import {
 import { ChevronDown, Ticket, CheckCircle, EyeOff, Loader2, Circle } from "lucide-react";
 import { JiraIcon } from "./icons/arcticons-jira";
 import { DropdownMenuSeparator, DropdownMenuLabel } from "@/components/ui/dropdown-menu";
+import { InfoTip } from "@/components/ui/info-tip";
 
 export type TicketType = "jira" | null;
 export type FindingStatus = "not_started" | "in_progress" | "fixed" | "ignored";
@@ -54,6 +55,7 @@ export default function FindingSelectionMenu({
             <ChevronDown className="h-4 w-4" />
           </Button>
         </DropdownMenuTrigger>
+        <InfoTip id="results.selection.actions" className="-ml-2" />
         <DropdownMenuContent align="start" className="bg-zinc-800 border-zinc-700 min-w-[220px]">
           {onBulkStatusChange && (
             <>

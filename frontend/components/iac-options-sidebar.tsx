@@ -449,9 +449,10 @@ export function IACOptionsSidebar({
                         </p>
                         <PathArraysInput
                           label="Include path patterns"
+                          infoId="iac.cfg.include"
                           value={ctx.include_path_arrays}
                           onChange={(v) => updateContext(ctx.id, { include_path_arrays: v })}
-                          segmentPlaceholder="ex: **/*.yaml or charts/"
+                          segmentPlaceholder="ex: charts or k8s"
                         />
                       </>
                     )}
