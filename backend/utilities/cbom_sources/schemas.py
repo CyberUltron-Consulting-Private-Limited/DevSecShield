@@ -105,6 +105,8 @@ class SourceCreate(_Body):
     config: dict[str, Any] = Field(default_factory=dict)
     secrets: dict[str, str] = Field(default_factory=dict)
     test_after_save: bool = False
+    # ct_logs only: add the team's saved certificate domains (settings.cert_domains) and empty that list, in one step
+    import_saved_domains: bool = False
 
     _n = field_validator("name")(classmethod(lambda cls, v: _name(v)))
 
