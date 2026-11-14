@@ -175,7 +175,7 @@ const MAX_TARGET_LINES = 1000;
 const MAX_EXCLUSIONS = 2000;
 const READY = new Set(["ready", "ok", "passed"]);
 const WAITING = new Set(["pending", "running", "queued", "claimed"]);
-const BAD = new Set(["failed", "failure", "error", "no_route", "unreachable", "host_key_changed", "identity_unverified", "login_failed", "auth_failed", "timeout", "refused"]);
+const BAD = new Set(["failed", "failure", "error", "no_route", "unreachable", "host_key_changed", "identity_unverified", "kex_unsupported", "login_failed", "auth_failed", "timeout", "refused"]);
 
 // ---------------------------------------------------------------------------- helpers
 /** Never-scan accepts one per line or comma separated (the design shows "10.20.0.1, 10.20.0.254"). */
