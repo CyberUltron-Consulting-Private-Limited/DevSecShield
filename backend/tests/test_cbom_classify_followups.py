@@ -72,12 +72,47 @@ def test_an_explicit_pq_group_fact_still_wins_over_the_policy_name():
     assert v["quantum_vulnerable"] is True and "NO_PQ_KEX" in v["finding_codes"]
 
 
-def test_an_api_gateway_domain_on_a_pq_policy_is_judged_by_the_same_table():
-    pq = sorted(algid._AWS_TLS_POLICY["apigateway"])[0]
+# The 3 API Gateway PQ policies on the AWS policy list page (scripts/algid/sources/aws-apigw-pq-policies.json) plus the
+# botocore SecurityPolicy enum's SecurityPolicy_TLS13_1_2_FIPS_PQ_2025_09 (botocore-enums.json): algid's table, 4 names.
+APIGW_PQ = sorted(algid._AWS_TLS_POLICY["apigateway"])
+
+
+def test_algid_api_gateway_table_is_the_documented_pq_policies_and_the_sdk_enum():
+    assert APIGW_PQ == ["SecurityPolicy_TLS13_1_2_FIPS_PFS_PQ_2025_09", "SecurityPolicy_TLS13_1_2_FIPS_PQ_2025_09",
+                        "SecurityPolicy_TLS13_1_2_PFS_PQ_2025_09", "SecurityPolicy_TLS13_1_2_PQ_2025_09"]
+
+
+@pytest.mark.parametrize("pq", APIGW_PQ)
+def test_an_api_gateway_domain_on_a_pq_policy_is_judged_by_the_same_table(pq):
     v = classify("api_tls", None, None, "TLS", {"security_policy": pq, "min_version": "TLSv1.2"}, NOW)
     assert v["quantum_vulnerable"] is False and "QUANTUM_VULNERABLE" not in v["finding_codes"]
     old = classify("api_tls", None, None, "TLS", {"security_policy": "TLS_1_2", "min_version": "TLSv1.2"}, NOW)
     assert old["quantum_vulnerable"] is None  # unchanged: no protocol list, so no verdict either way
+
+
+# The owner default (CB-19): a hybrid is graded on the weakest configuration it accepts.  AWS documents every PQ policy
+# as also accepting classical key exchange, so each is a classical fallback whatever protocols the facts list.
+AWS_PQ_ROWS = ([("load_balancer_tls", {**LISTENER, "protocols": ["TLSv1.3"], "ssl_policy": p}) for p in ELB_PQ]
+               + [("api_tls", {"security_policy": p, "min_version": "TLSv1.2"}) for p in APIGW_PQ])
+
+
+@pytest.mark.parametrize("asset_type, facts", AWS_PQ_ROWS, ids=[f["ssl_policy" if "ssl_policy" in f else "security_policy"]
+                                                                for _t, f in AWS_PQ_ROWS])
+def test_every_aws_pq_policy_is_graded_on_its_classical_fallback(asset_type, facts):
+    from backend.utilities.cbom_sources.posture import pqc_class
+
+    v = classify(asset_type, None, None, "TLS", facts, NOW)
+    cls = pqc_class(asset_type, v["quantum_vulnerable"], v["finding_codes"], facts)
+    fallback, why = qgrade.classical_fallback(asset_type, facts, v["finding_codes"])
+    assert cls == "hybrid" and fallback is True and "also accepts classical key exchange" in why
+    assert qgrade.graded_class(cls, fallback) == "quantum-vulnerable"
+
+
+def test_a_classic_or_non_pq_aws_policy_gets_no_aws_fallback_reason():
+    for facts in ({**LISTENER, "protocols": ["TLSv1.3"], "ssl_policy": ELB_PQ[0], "classic": True},
+                  {**LISTENER, "protocols": ["TLSv1.3"], "ssl_policy": "ELBSecurityPolicy-TLS13-1-3-2021-06"}):
+        _on, why = qgrade.classical_fallback("load_balancer_tls", facts, [])
+        assert "AWS post-quantum policy" not in (why or "")
 
 
 # ----------------------------------------------------------------------------- 2. SSH key exchange through algid

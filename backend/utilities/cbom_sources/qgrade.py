@@ -40,7 +40,7 @@ from backend.new_models import (
 )
 from backend.utilities.cbom_sources import identity as ID
 from backend.utilities.cbom_sources import posture as P
-from backend.utilities.cbom_sources.classify import CLASSIFIER_VERSION, quantum_vulnerable, ssh_names
+from backend.utilities.cbom_sources.classify import CLASSIFIER_VERSION, aws_pq_policy, quantum_vulnerable, ssh_names
 
 FORMULA_TEXT = """\
 ZeroShield quantum risk grade, model qg-1.
@@ -323,6 +323,11 @@ def classical_fallback(asset_type: str, facts: dict[str, Any] | None, codes: lis
         why.append("accepts classical group " + ", ".join(classical[:3]))
     elif facts.get("classical_tls13_accepted") is True:  # CB-12's prober: a classical TLS 1.3 key share answered
         why.append("accepts a classical TLS 1.3 key share")
+    elif aws_pq_policy(facts):
+        # AWS documents every post-quantum ELB and API Gateway policy as also accepting classical key exchange, for
+        # compatibility: the hybrid is graded on the classical exchange a client without post-quantum support completes
+        policy = facts.get("ssl_policy") or facts.get("security_policy")
+        why.append(f"AWS post-quantum policy {str(policy)[:64]} also accepts classical key exchange")
     kex = ssh_names(facts.get("kex")) or ssh_names(facts.get("kexalgorithms"))  # read as the classifier reads it
     # the classifier's verdict, which reads algid's SSH key-exchange registry (GSS families included): one source
     classical_kex = sorted({k for k in kex if quantum_vulnerable(k) is True})

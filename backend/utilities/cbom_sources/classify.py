@@ -170,7 +170,10 @@ _AWS_POLICY_FACTS = (("ssl_policy", "elbv2"), ("security_policy", "apigateway"))
 
 def aws_pq_policy(facts: dict[str, Any]) -> bool:
     """Whether the facts name an AWS TLS policy that AWS documents as a hybrid post-quantum key exchange (exact name,
-    as algid lists it from the AWS security-policy pages)."""
+    as algid lists it from the AWS security-policy pages and the botocore enum).  Evidence that a post-quantum group
+    is offered, not that classical groups are refused: AWS documents that, for compatibility, the PQ policies
+    support both classical and post-quantum key exchange, so qgrade.classical_fallback grades them on the classical
+    exchange (the owner default)."""
     if facts.get("classic"):
         return False
     return any(algid.aws_tls_policy(service, facts.get(key)) is not None for key, service in _AWS_POLICY_FACTS)
