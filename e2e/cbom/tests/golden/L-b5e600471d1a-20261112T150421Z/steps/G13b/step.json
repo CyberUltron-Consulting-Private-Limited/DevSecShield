@@ -1,0 +1,9 @@
+{
+  "checks": [],
+  "ended": "2026-11-12T15:24:07Z",
+  "gate": "G13b",
+  "note": "drift with a never-scan in range is CB-05's spec (KF-12)",
+  "seconds": 0,
+  "started": "2026-11-12T15:24:07Z",
+  "status": "not-run"
+}

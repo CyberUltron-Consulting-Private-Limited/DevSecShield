@@ -55,7 +55,6 @@ import {
   type WindowGrid,
 } from "./logic";
 import {
-  Checkbox2,
   ConfirmDialog,
   EmptyState,
   ErrorBlock,
@@ -122,7 +121,6 @@ type Mode = "full" | "fragile";
 const SECTION_LABEL: Record<string, string> = {
   network_exclusions: "Never scan",
   ports: "Ports and protocols",
-  zeek_span: "Zeek",
   scan_window: "Scan window",
   rates: "Rate limits",
   soc: "SOC contacts",
@@ -132,7 +130,6 @@ const SECTION_LABEL: Record<string, string> = {
 interface Draft {
   network_exclusions?: CbomExclusionItem[];
   ports?: CbomPortItem[];
-  zeek_span?: boolean;
   scan_window?: WindowGrid;
   window_timezone?: string;
   rate_conn_per_s?: string;
@@ -202,10 +199,6 @@ function planSave(draft: Draft, s: CbomSourcesSettings) {
   if (draft.ports && !same(draft.ports, s.ports)) {
     body.ports = draft.ports;
     changed.add("ports");
-  }
-  if (draft.zeek_span !== undefined && draft.zeek_span !== s.zeek_span) {
-    body.zeek_span = draft.zeek_span;
-    changed.add("zeek_span");
   }
   const savedGrid = normalizeGrid(s.scan_window);
   const grid = draft.scan_window ?? savedGrid;
@@ -355,7 +348,6 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
   // Effective values: the unsaved draft over the saved row.
   const exclusions = draft.network_exclusions ?? settings.network_exclusions;
   const ports = draft.ports ?? settings.ports;
-  const zeek = draft.zeek_span ?? settings.zeek_span;
   const savedGrid = normalizeGrid(settings.scan_window);
   const grid = draft.scan_window ?? savedGrid;
   const timezone = draft.window_timezone ?? settings.window_timezone;
@@ -697,7 +689,7 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
               </div>
             </Section>
 
-            <Section title="Ports and protocols" badge={unsaved("ports") || unsaved("zeek_span")} last>
+            <Section title="Ports and protocols" badge={unsaved("ports")} last>
               {ports.length === 0 ? (
                 <p className="text-sm text-zinc-600 dark:text-zinc-400">No ports. Add at least one port for the network scan to check.</p>
               ) : (
@@ -766,11 +758,6 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
                 </Button>
               </div>
               {portError && <InlineError>{portError}</InlineError>}
-              <div data-testid="network-zeek">
-                <Checkbox2 id="network-zeek" checked={zeek} onChange={(v) => setDraft((d) => ({ ...d, zeek_span: v }))}>
-                  Also read Zeek ssl.log from a SPAN port, to see what clients actually negotiate
-                </Checkbox2>
-              </div>
             </Section>
           </div>
         </SectionCard>

@@ -1,0 +1,9 @@
+{
+  "checks": [],
+  "ended": "2026-11-12T15:24:07Z",
+  "gate": "G13",
+  "note": "drift (lab mutate + Run again) is CB-05's spec",
+  "seconds": 0,
+  "started": "2026-11-12T15:24:07Z",
+  "status": "not-run"
+}

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scan_node_image.sh - release the CBOM scan-node image as a file customers can load without registry access.
 #
-#   scan_node_image.sh build <version>   build registry.zeroshield.ai/cbom/scan-node:<version> from scan_node/, then
+#   scan_node_image.sh build <version>   build localhost/zeroshield/cbom-scan-node:<version> from scan_node/, then
 #                                        docker save | gzip -> dist/scan-node/scan-node-<version>.tar.gz plus
 #                                        scan-node-<version>.tar.gz.sha256. <version>: a digit, then up to 18 digits,
 #                                        letters, dots or dashes (e.g. 1.1.0, 2.0.0-rc.1), what the node reports
@@ -12,12 +12,14 @@
 # Customer side (documented in scan_node/README.md):
 #   sha256sum -c scan-node-<version>.tar.gz.sha256 && docker load -i scan-node-<version>.tar.gz
 #
-# Env: SCAN_NODE_IMAGE (default registry.zeroshield.ai/cbom/scan-node), OUT_DIR (default dist/scan-node),
+# Env: SCAN_NODE_IMAGE (default localhost/zeroshield/cbom-scan-node: the name the archive loads as, which the Add
+#      scan node wizard, the Helm chart and the OVA/AMI kits use; "localhost/" never resolves to a public registry),
+#      OUT_DIR (default dist/scan-node),
 #      BASE_IMAGE (passed to the Dockerfile, e.g. a python:3.12-slim that trusts a TLS-intercepting proxy's CA).
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-IMAGE="${SCAN_NODE_IMAGE:-registry.zeroshield.ai/cbom/scan-node}"
+IMAGE="${SCAN_NODE_IMAGE:-localhost/zeroshield/cbom-scan-node}"
 OUT_DIR="${OUT_DIR:-${REPO_ROOT}/dist/scan-node}"
 
 # The versions the node reports (scan_node/zs_scan_node/__init__.py _VERSION: "<version>+<12-character commit>" fits
@@ -83,5 +85,5 @@ cmd_build() {
 case "${1:-}" in
   build) shift; cmd_build "$@" ;;
   lock) cmd_lock ;;
-  *) sed -n '2,16p' "${BASH_SOURCE[0]}"; [[ -z "${1:-}" || "$1" == -h || "$1" == --help ]] || exit 1 ;;
+  *) sed -n '2,18p' "${BASH_SOURCE[0]}"; [[ -z "${1:-}" || "$1" == -h || "$1" == --help ]] || exit 1 ;;
 esac

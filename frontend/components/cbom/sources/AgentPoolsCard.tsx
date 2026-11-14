@@ -18,10 +18,13 @@ import {
   type CbomNodePool,
   type CbomPoolStatus,
 } from "@/utils/api/cbom_agents";
+import { getCbomNodeArtifacts } from "@/utils/backend_api";
 
 import { cbomSourcesKeys } from "./keys";
-import { formatDateTime, helmAgentCommand, insecureApiWarning } from "./logic";
-import { CodeSnippet, ConfirmDialog, Field, SectionCard, StatusBadge, type Tone } from "./shared";
+import { formatDateTime, insecureApiWarning, type NodeImage } from "./logic";
+import { NodeDownloads } from "./NodeDownloads";
+import { PoolHelmCommand } from "./NodeInstall";
+import { ConfirmDialog, Field, SectionCard, StatusBadge, type Tone } from "./shared";
 
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$/;
 const EXPIRY = [
@@ -37,7 +40,7 @@ const POOL_STATUS: Record<CbomPoolStatus, [Tone, string]> = {
   revoked: ["red", "Revoked"],
 };
 
-export function AgentPoolsCard({ teamId, image, apiUrl }: { teamId: number; image: string; apiUrl: string }) {
+export function AgentPoolsCard({ teamId, image, apiUrl }: { teamId: number; image: NodeImage; apiUrl: string }) {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
@@ -51,6 +54,14 @@ export function AgentPoolsCard({ teamId, image, apiUrl }: { teamId: number; imag
   const [revoking, setRevoking] = useState<CbomNodePool | null>(null);
 
   const key = [...cbomSourcesKeys.all(teamId), "node-pools"] as const;
+  // the Helm chart and the image the command installs: downloads from this server (shared with the wizard's query)
+  const artifacts = useQuery({
+    queryKey: cbomSourcesKeys.nodeArtifacts(teamId),
+    queryFn: () => getCbomNodeArtifacts(teamId),
+    enabled: Number.isFinite(teamId),
+    retry: 1,
+    staleTime: 5 * 60_000,
+  });
   const pools = useQuery({
     queryKey: key,
     queryFn: () => listCbomNodePools(teamId),
@@ -129,7 +140,7 @@ export function AgentPoolsCard({ teamId, image, apiUrl }: { teamId: number; imag
             </Field>
           </div>
           {!created ? (
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" disabled={create.isPending} onClick={submit}>
                 {create.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <KeyRound className="h-4 w-4 mr-2" />}
                 Create token and show the Helm command
@@ -138,7 +149,8 @@ export function AgentPoolsCard({ teamId, image, apiUrl }: { teamId: number; imag
             </div>
           ) : (
             <div className="space-y-2" data-testid="agent-pool-command">
-              <CodeSnippet code={helmAgentCommand({ poolToken: created.token, apiUrl, image })} language="bash" />
+              <NodeDownloads teamId={teamId} method="helm" artifacts={artifacts.data} loading={artifacts.isLoading} error={artifacts.error} />
+              <PoolHelmCommand apiUrl={apiUrl} poolToken={created.token} image={image.image} source={image} />
               <p className="text-xs text-zinc-500">
                 The token is shown only here. It enrolls at most {created.pool.max_enrollments} nodes until{" "}
                 {formatDateTime(created.pool.expires_at)}. Each pod keeps its node credential on its Kubernetes node

@@ -1,0 +1,44 @@
+{
+  "checks": [
+    {
+      "evidence": [],
+      "expected": "a new team id",
+      "gate": "G1",
+      "id": "G1/signed_up",
+      "kind": "flow",
+      "observed": 52,
+      "reason": "",
+      "subject": {
+        "check": "signed_up"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [
+        "steps/G1/credits.png"
+      ],
+      "expected": {
+        "db": 50,
+        "ui": 50
+      },
+      "gate": "G1",
+      "id": "G1/credits_ui_eq_db",
+      "kind": "flow",
+      "observed": {
+        "db": 50,
+        "ui": 50
+      },
+      "reason": "",
+      "subject": {
+        "check": "credits_ui_eq_db"
+      },
+      "verdict": "PASS"
+    }
+  ],
+  "ended": "2026-11-12T15:22:52Z",
+  "gate": "G1",
+  "note": "",
+  "seconds": 6.7,
+  "started": "2026-11-12T15:22:46Z",
+  "status": "ran"
+}
