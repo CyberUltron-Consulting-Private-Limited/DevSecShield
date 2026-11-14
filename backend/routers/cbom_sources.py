@@ -859,7 +859,7 @@ def _test_aws(engine, team_id: int, user_id: int, source_id: int) -> dict:
 
 def _test_idp(engine, team_id: int, user_id: int, source_id: int) -> dict:
     """Read the IdP's public metadata now (no job): it is what collection will read."""
-    from backend.utilities.cbom_sources.idp_collect import collect_idp
+    from backend.utilities.cbom_sources.idp_collect import collect_idp, idp_test_verdict
 
     with Session(engine) as session:
         source = _get_owned(session, CbomCollectionSource, source_id, team_id, "Source")
@@ -867,10 +867,8 @@ def _test_idp(engine, team_id: int, user_id: int, source_id: int) -> dict:
         cfg, version, name = dict(source.config or {}), J.connection_version(source), source.name
     out = collect_idp(cfg, name)
     keys = sum(1 for a in out["assets"] if a["type"] == "signing_key")
-    ok = out["counts"]["ok"]
-    status = "passed" if ok == out["counts"]["total"] and ok else ("partial" if ok else "failed")
-    summary = (f"Read {ok} of {out['counts']['total']} metadata documents; {keys} signing key(s) found"
-               if ok else "Could not read the metadata: " + "; ".join(t["error"] or "" for t in out["targets"])[:400])
+    # an unreadable certificate is never "passed, 0 keys": the verdict names the parser's error (C10b)
+    status, summary = idp_test_verdict(out)
     now = utcnow()
     _save_live_test(engine, team_id, user_id, source_id, version, "source.test", now, status, summary,
                     {"targets": out["targets"], "signing_keys": keys})

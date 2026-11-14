@@ -640,6 +640,9 @@ class IdpConfig(_Source):
         elif p == "keycloak":
             if not self.base_url or not self.realm or not self.client_id:
                 raise ValueError("Keycloak needs the base URL, realm and client id")
+        elif p == "adfs":
+            if not self.base_url:
+                raise ValueError("base_url: enter your ADFS server address, e.g. https://adfs.example.com")
         elif p in ("saml_metadata", "oidc_discovery"):
             if not self.metadata_url:
                 raise ValueError("metadata_url: enter the public metadata URL")
