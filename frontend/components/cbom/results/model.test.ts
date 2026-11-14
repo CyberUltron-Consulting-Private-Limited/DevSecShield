@@ -9,6 +9,8 @@ import path from "node:path";
 
 import type { CbomRunAssetItem, CbomRunPosture, CbomRunResults } from "@/utils/backend_api";
 import {
+  findingChips,
+  parityNotes,
   ASSIGNMENT_TO_FINDING,
   assetRowAttrs,
   certCountText,
@@ -122,7 +124,7 @@ const fullResults = {
 } as unknown as CbomRunResults;
 plan = runSectionPlan({ results: { kind: "ok", data: fullResults }, posture });
 assert.equal(plan.certificates.note, NOTE.certsNone);
-assert.equal(plan.cryptoCharts.note, NOTE.chartsCodeOnly, "the code-only charts are stated once");
+assert.equal(plan.cryptoCharts.note, undefined, "with distributions the charts need no note (graph / compliance notes come from /parity)");
 assert.equal(plan.dashboard.show, true);
 assert.equal(plan.dashboard.note, NOTE.metricsLater, "remediation metrics hidden with a note");
 
@@ -309,6 +311,40 @@ if (fs.existsSync(runResultsPy)) {
   const m = fs.readFileSync(runResultsPy, "utf8").match(/^_READY = \(([^)]*)\)/m);
   assert.ok(m, "_READY found in run_results.py");
   assert.deepEqual(m![1].split(",").map((s) => s.trim().replace(/"/g, "")).filter(Boolean).sort(), [...READY_CLASSES].sort());
+}
+
+// ---------------------------------------------------------------- /parity notes (PARITY.md) and dialog chips
+{
+  const none = parityNotes("loading", null);
+  assert.deepEqual(none, { graph: null, compliance: null, rbi: null, certin: null }, "nothing said while loading");
+  const missing = parityNotes("missing", null);
+  for (const v of Object.values(missing)) assert.match(v!, /does not send a run's code-page parity data yet/);
+  assert.match(parityNotes("error", null).rbi!, /could not be loaded/);
+  const full = { scan_metadata: { cbom_graph: { nodes: [{ id: "zs-asset-1" }], edges: [] }, cbom_compliance: { cert_in_cbom: {} },
+    rbi_csf_rollup: { x: 1 }, certin_posture: { y: 1 } }, engine: { compliance: "available" } } as never;
+  assert.deepEqual(parityNotes("ok", full), { graph: null, compliance: null, rbi: null, certin: null }, "everything present: no note");
+  const off = { scan_metadata: { cbom_graph: { nodes: [{ id: "a" }], edges: [] }, cbom_compliance: null, rbi_csf_rollup: null, certin_posture: null },
+    engine: { compliance: "unavailable", reason: "aibom not installed" } } as never;
+  const o = parityNotes("ok", off);
+  assert.equal(o.graph, null);
+  assert.equal(o.compliance, "Crypto compliance readiness: the compliance engine is not available on this server (aibom not installed).");
+  assert.match(o.rbi!, /^RBI CSF posture roll-up: the compliance engine is not available/);
+  assert.match(o.certin!, /^CERT-In CBOM posture: the compliance engine is not available/);
+  const empty = parityNotes("ok", { scan_metadata: { cbom_graph: { nodes: [], edges: [] } }, engine: { compliance: "available" } } as never);
+  assert.equal(empty.graph, "Crypto dependency graph: this run has no assets to draw.");
+  assert.equal(empty.compliance, "Crypto compliance readiness: not computed for this run.");
+
+  // chips: the item's own fields first, else the asset's KB entries
+  assert.deepEqual(findingChips({ owasp_top_10: { A02: "Cryptographic Failures" }, suggested_fix: "Use TLS 1.3" }, null),
+    { owasp: [["A02", "Cryptographic Failures"]], controls: [], suggestedFix: "Use TLS 1.3", basis: "item" });
+  const kb = [{ owasp_2021: [{ id: "A02:2021", label: "A02:2021 Cryptographic Failures" }], owasp_2025: [{ id: "A04:2025", label: "A04:2025 Cryptographic Failures" }],
+    compliance: [{ framework: "RBI", id: "CSF-1", text: "", source: "" }, { framework: "RBI", id: "CSF-1", text: "", source: "" }],
+    remediation: { summary: "Disable TLS 1.0 and 1.1", steps: [] } }, { owasp_2021: [{ id: "A02:2021", label: "dup" }], owasp_2025: [], compliance: [],
+    remediation: { summary: "second", steps: [] } }] as never;
+  assert.deepEqual(findingChips({}, kb), {
+    owasp: [["A02:2021", "A02:2021 Cryptographic Failures"], ["A04:2025", "A04:2025 Cryptographic Failures"]],
+    controls: [["RBI:CSF-1", "RBI CSF-1"]], suggestedFix: "Disable TLS 1.0 and 1.1", basis: "kb" });
+  assert.deepEqual(findingChips(null, []), { owasp: [], controls: [], suggestedFix: null, basis: "none" });
 }
 
 console.log("run results model tests passed");
