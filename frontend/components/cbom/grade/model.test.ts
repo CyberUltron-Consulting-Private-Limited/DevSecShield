@@ -29,6 +29,7 @@ import {
   gradeTitle,
   isGrade,
   q0ItemCountText,
+  q0Breakdown,
   q0ItemLine,
   q0Reasons,
   qDistribution,
@@ -105,6 +106,35 @@ assert.deepEqual(q0Reasons(posture), [
   { code: "mosca_missing", count: 1 },
 ]);
 assert.deepEqual(q0Reasons({}), []);
+
+// staging QA B7 bug 4: "Q0 Unknown: why" counts affected assets per reason (summing to the Q0 Unknown bar); the unread scope is
+// its own list (items, not assets); the by-choice items are their own group (CB-19 OQ-5), not in "to close"
+const run12: QPosture = {
+  assets: 46, q_grades: { [G0]: 46, [G1]: 0, [G2]: 0, [G3]: 0, [G4]: 0, none: 0 },
+  q0_reasons: { coverage_gap: 18, excluded_by_choice: 47, mosca_missing: 1 },
+  q0_reason_assets: { mosca_missing: 46 },
+  q0_scope_reasons: { coverage_gap: 18, excluded_by_choice: 47 },
+  q0_items_total: 66, q0_counts: { assets: 46, scope_items: 65, scope_rows: 65 },
+};
+const b = q0Breakdown(run12);
+assert.equal(b.basis, "assets");
+assert.deepEqual(b.assets, [{ code: "mosca_missing", count: 46 }]);
+assert.equal(b.assetsTotal, 46);
+assert.equal(b.assetsTotal, run12.q_grades![G0], "the reasons add up to the Q0 Unknown bar");
+assert.deepEqual(b.scope, [{ code: "excluded_by_choice", count: 47 }, { code: "coverage_gap", count: 18 }]);
+assert.equal(b.scopeTotal, 65);
+assert.equal(b.byChoice, 47);
+assert.equal(b.toClose, 19);  // the Mosca setting and 18 unread places
+assert.equal(b.total, 66);
+assert.equal(b.toClose + b.byChoice, b.total);
+// an older backend (reasons count items only): the items, said as items
+const old = q0Breakdown({ q0_reasons: { coverage_gap: 2, mosca_missing: 1 }, q0_items_total: 3 });
+assert.equal(old.basis, "items");
+assert.deepEqual(old.assets, [{ code: "coverage_gap", count: 2 }, { code: "mosca_missing", count: 1 }]);
+assert.deepEqual(old.scope, []);
+assert.equal(old.toClose, 3);
+assert.deepEqual(q0Breakdown({}), { basis: "items", assets: [], assetsTotal: 0, scope: [], scopeTotal: 0, byChoice: 0,
+  toClose: 0, total: 0 });
 
 // ---- Q0 Unknown item lines
 assert.equal(q0ItemLine({ key: "inputs:mosca", kind: "inputs", reason: "mosca_missing", q_grade: G0, source_id: null,

@@ -133,6 +133,22 @@ assert.ok(text(card).includes("Unknown verdict"));
 assert.ok(text(card).includes("3 assets graded Q0 Unknown; 1 unread scope item (7 rows)"));
 assert.ok(text(card).includes("Show the 3 Q0 Unknown items"));
 assert.ok(text(card).includes("Mosca X 10, Y 5, Z not set (the team's settings now, not when the run started)"));
+// staging QA B7 bug 4 (run 12): each reason says how many assets it leaves Q0 Unknown (46, the Q0 Unknown bar), the unread scope is its
+// own list, and the item toggle says what its total is made of
+const run12: QPosture = {
+  ...posture, assets: 46, q_grades: { [G0]: 46, [G1]: 0, [G2]: 0, [G3]: 0, [G4]: 0, none: 0 },
+  q0_reasons: { coverage_gap: 18, excluded_by_choice: 47, mosca_missing: 1 },
+  q0_reason_assets: { mosca_missing: 46 }, q0_scope_reasons: { coverage_gap: 18, excluded_by_choice: 47 },
+  q0_items_total: 66, q0_counts: { assets: 46, scope_items: 65, scope_rows: 65 },
+};
+const card12 = render(h(QDistributionCard, { posture: run12, model: MODEL }));
+assert.equal(attr(card12, "posture-q0-reason-mosca_missing", "data-count"), "46");
+assert.equal(attr(card12, "posture-q0-scope-excluded_by_choice", "data-count"), "47");
+assert.equal(attr(card12, "posture-q0-scope-coverage_gap", "data-count"), "18");
+assert.doesNotMatch(card12, /posture-q0-reason-excluded_by_choice/);
+assert.ok(text(card12).includes("46 assets graded Q0 Unknown, by reason above"), text(card12));
+assert.ok(!text(card12).includes("Counts are items"));
+assert.ok(text(card12).includes("Show the 66 Q0 Unknown items (19 to close, 47 left out by the team's choice)"), text(card12));
 // counts that do not add up are said, not hidden
 assert.match(render(h(QDistributionCard, { posture: { ...posture, assets: 19 }, model: MODEL })), /posture-q-mismatch/);
 // an older backend: no grades, no card

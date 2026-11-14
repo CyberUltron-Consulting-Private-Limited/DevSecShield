@@ -610,6 +610,22 @@ function dialogFields(src: DialogFields | null | undefined) {
   };
 }
 
+/** The findings-table row a run finding dialog renders: the row it was opened from, else (Top risks, the Certificates
+ * table, a Q0 item: an asset not on the findings page) the asset detail's copy of that row. GET /sources/assets/{id}
+ * carries every field of the run's /assets item (staging QA B7); null while it loads, on an error, for another asset or
+ * from an older backend whose detail has no row fields (the dialog then shows only the asset explanation). */
+export function dialogItem(
+  subject: { item: CbomRunAssetItem } | { assetId: number; label?: string } | null,
+  detail: unknown,
+): CbomRunAssetItem | null {
+  if (!subject) return null;
+  if ("item" in subject) return subject.item;
+  const d = detail as Partial<CbomRunAssetItem> | null | undefined;
+  const isRow = !!d && d.id === subject.assetId && typeof d.type === "string" && typeof d.location === "string"
+    && typeof d.job_id === "number" && Array.isArray(d.finding_codes);
+  return isRow ? (d as CbomRunAssetItem) : null;
+}
+
 /** The code dialog's OWASP Top 10 / Compliance controls / Suggested fix for a run asset, the same from every entry point:
  * the /assets item's own fields (W2b), else the same fields on GET /assets/{id} (a dialog opened from top risks or a
  * certificate has no item), else the asset's knowledge-base entries with the same vocabulary: OWASP Top 10:2021 only and

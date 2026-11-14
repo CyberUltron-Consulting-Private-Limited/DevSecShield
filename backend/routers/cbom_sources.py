@@ -1735,7 +1735,16 @@ def _asset_detail(engine, team_id: int, asset_id: int) -> dict:
             now_grade = grading.with_inputs(current).grade_row(row, asset["finding_codes"], explain=False,
                                                                cls=asset["pqc_class"])
             q_now = {"q_grade": now_grade.q_grade, "q_label": now_grade.q_label, "q_reason": now_grade.q_reason}
-        out = {**asset, **graded.fields(), "q_explain": graded.explain, "q_now": q_now}
+        # the run's findings-table row of this asset (type label, strength, risk score, status, wave, fix class,
+        # ticket, job ...), from the same functions as GET /runs/{id}/assets: a dialog opened from top risks or a
+        # certificate (an asset not on the table's page) renders the table's row, not a bare id (staging QA B7)
+        row_item: dict = {}
+        run = session.get(CbomCollectionRun, row.run_id) if row.run_id is not None else None
+        if run is not None and run.team_id == team_id:
+            row_item = RUN_ASSETS.run_item(session, team_id, run, row, grade=graded.fields(),
+                                           pqc=(asset["pqc_class"], asset["pqc_class_basis"]))
+            RUN_TICKETS.add_ticket_fields(session, team_id, run, [row_item])
+        out = {**row_item, **asset, **graded.fields(), "q_explain": graded.explain, "q_now": q_now}
         # the code page's dialog fields, from the same function as the run's /assets items (CB-38 W2b): a dialog
         # opened from top risks or a certificate shows the same OWASP / controls / fix as one opened from the table
         RUN_ASSETS.add_code_page_fields(out)

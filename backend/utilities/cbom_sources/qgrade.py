@@ -910,6 +910,7 @@ class RunGrades:
         self.coverage: list[tuple[CbomCollectedAsset, RowGrade]] = []
         self.assets = _Items()
         self.asset_q0 = 0
+        self.asset_q0_reasons: Counter[str] = Counter()  # Q0 asset rows per reason (sums to asset_q0)
         self._mosca: dict[str, Any] | None = None
 
     @property
@@ -930,6 +931,7 @@ class RunGrades:
             self.changed_now += (now.q_grade, now.q_reason) != (out.q_grade, out.q_reason)
         if out.q_grade == "Q0":
             self.asset_q0 += 1
+            self.asset_q0_reasons[out.q_reason or "unknown_verdict"] += 1
             if out.q_reason == "mosca_missing":  # one missing team setting is one item (FP-5)
                 m = self._mosca = self._mosca or {"key": "inputs:mosca", "kind": "inputs", "reason": "mosca_missing",
                                                   "q_grade": "Q0", "source_id": None, "source_name": None,
@@ -949,7 +951,13 @@ class RunGrades:
         items.sort(key=lambda i: (_ITEM_RANK.get(i["key"].split(":", 1)[0], 9), i["reason"], i["key"]))
         return {
             "q_grades": {g: self.q_grades.get(g, 0) for g in (*GRADES, "none")},
+            # items per reason (CB-19 contract: one missing Mosca setting is one item, FP-5)
             "q0_reasons": dict(sorted(Counter(i["reason"] for i in items).items())),
+            # staging QA B7: the card's "Q0 Unknown: why" counts what each reason affects: this run's assets graded
+            # Q0 per reason (sums to q_grades.Q0 and q0_counts.assets), and the unread scope per reason apart
+            # (items, not assets: sums to q0_counts.scope_items)
+            "q0_reason_assets": dict(sorted(self.asset_q0_reasons.items())),
+            "q0_scope_reasons": dict(sorted(Counter(i["reason"] for i in scope).items())),
             "q0_items": items[:Q0_ITEMS_CAP],
             "q0_items_total": len(items),
             "q0_counts": {"assets": self.asset_q0, "scope_items": len(scope),
