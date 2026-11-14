@@ -275,7 +275,10 @@ def test(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
             raise
         except Exception as exc:  # N6: an SSH (or any) error on one appliance fails that sample, never the test job
             ctx.log("appliance test error", target=target.label, error=exc.__class__.__name__, level="warn")
-            sample.update(status="error", reachable=True, note=ctx.scrubber.text(device_error(exc)))
+            # reachable only when the device spoke SSH (an SSH protocol error or a close mid-session); a socket error
+            # before that says nothing about reachability (review of #250)
+            sample.update(status="error", reachable=isinstance(exc, (paramiko.SSHException, EOFError)),
+                          note=ctx.scrubber.text(device_error(exc)))
         ctx.samples.append(sample)
     ready = sum(1 for s in ctx.samples if s["status"] == "ready")
     return f"{ready} of {len(ctx.samples)} samples ready"

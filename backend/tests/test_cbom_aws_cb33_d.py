@@ -35,8 +35,7 @@ from test_cbom_aws_cb33 import (ACM_PREFIX, LABEL, Plan, _ACM_MODEL, _Acct, _cer
 
 LOCK = Path(__file__).resolve().parents[1] / "uv.lock"
 ORIGINS = ["AWS_MANAGED", "CUSTOMER_PROVIDED", "ACME"]
-EVERY_KEY_TYPE = {"keyTypes": ["RSA_1024", "RSA_2048", "RSA_3072", "RSA_4096", "EC_prime256v1", "EC_secp384r1",
-                               "EC_secp521r1"]}
+EVERY_KEY_TYPE = {"keyTypes": aws_collect.ACM_KEY_TYPES}  # every key type (CB-04 PR-3b: from algid's capture)
 
 
 def _version(text: str) -> tuple[int, ...]:

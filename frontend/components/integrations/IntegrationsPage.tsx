@@ -118,6 +118,8 @@ const FIELDS: Record<IntegrationKind, FieldDef[]> = {
     { infoId: "int.hec.index", key: "index", label: "Index (optional)" },
     { infoId: "int.hec.sourcetype", key: "sourcetype", label: "Sourcetype", placeholder: "zeroshield:cbom" },
     { infoId: "int.hec.source", key: "source", label: "Source", placeholder: "zeroshield" },
+    { infoId: "int.hec.channel", key: "channel", label: "Data channel GUID (optional)", placeholder: "0aeeac95-ac74-4aa9-b30d-6c4c0ac581ba",
+      hint: "Needed only when the HEC token has indexer acknowledgement on (Splunk answers \"Data channel is missing\" without it)" },
     CA_FIELD,
   ],
   webhook: [
