@@ -9,6 +9,9 @@ from aibom.cbom.posture.defaults import PatternSpec, load_registry
 from aibom.cbom.posture.model import BasisEntry, EncryptionFact
 
 _LINE_CAP = 20
+# .NET sources: a ``java.*`` pattern there reads a .NET name
+# (``public void TrustAll()``), not a Java trust manager.
+_DOTNET_SUFFIXES = (".cs", ".vb", ".fs", ".ps1", ".psm1", ".cshtml", ".razor")
 
 
 def _hit(spec: PatternSpec, line: str) -> bool:
@@ -45,7 +48,12 @@ def detect_verification(text: str, path: str) -> tuple[EncryptionFact, ...]:
     # The loader compiles each anchor_window tail, in row order, into ``line_patterns``.
     windowed = [s.id for s in registry.patterns if s.matcher == "anchor_window"]
     tails = dict(zip(windowed, registry.line_patterns, strict=True))
+    dotnet = path.lower().endswith(_DOTNET_SUFFIXES)
     for spec in registry.patterns:
+        if spec.id.startswith("java.") and dotnet:
+            # CB-28: a Java pattern (``TrustAll``) on a C# method name is not a Java
+            # trust manager
+            continue
         if spec.matcher == "anchor_window":
             matched = _window_hits(spec, tails[spec.id], lines) if spec.id in tails else []
         else:

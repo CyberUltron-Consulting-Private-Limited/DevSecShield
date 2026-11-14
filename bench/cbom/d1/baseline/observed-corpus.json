@@ -4,13 +4,13 @@
  "product": {
   "entry": "aibom.integrations.cbom_devsecshield.scan_crypto_to_devsecshield",
   "level": 4,
-  "git_sha": "b34398aae3c765e86f78fdf9608f386f256de728",
+  "git_sha": "233b8a4e627d31e3183c872b326de4e40ffa608d",
   "aibom_dirty": false,
-  "kb_version": "2026.11.15.1",
+  "kb_version": "2026.11.15.2",
   "scan_tree_sha256": "7d57471c0859be0094012388df017a6f6422e6a97af5dcd599e10d790dace9cf",
   "scan_tree_files": 10,
-  "seconds": 0.43,
-  "result_rows": 57
+  "seconds": 0.15,
+  "result_rows": 67
  },
  "rows": [
   {
@@ -41,26 +41,25 @@
    "location": "c/tls_client.c",
    "line": 11,
    "occurrences": [
-    11,
-    14
-   ],
-   "codes": [
-    "WEAK_ALGORITHM"
-   ],
-   "algorithm": "MD5",
-   "asset_type": "algorithm"
-  },
-  {
-   "location": "c/tls_client.c",
-   "line": 11,
-   "occurrences": [
     11
    ],
    "codes": [
-    "WEAK_ALGORITHM"
+    "WEAK_CIPHER_SUITE"
    ],
-   "algorithm": "RC4",
-   "asset_type": "algorithm"
+   "algorithm": "TLS cipher list",
+   "asset_type": "protocol"
+  },
+  {
+   "location": "c/tls_client.c",
+   "line": 12,
+   "occurrences": [
+    12
+   ],
+   "codes": [
+    "WEAK_RSA_EXPONENT"
+   ],
+   "algorithm": "RSA public exponent 3 (tls_client.c)",
+   "asset_type": "related-crypto-material"
   },
   {
    "location": "c/tls_client.c",
@@ -74,6 +73,30 @@
    ],
    "algorithm": "RSA-1024",
    "asset_type": "algorithm"
+  },
+  {
+   "location": "c/tls_client.c",
+   "line": 14,
+   "occurrences": [
+    14
+   ],
+   "codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "algorithm": "MD5",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "c/tls_client.c",
+   "line": 16,
+   "occurrences": [
+    16
+   ],
+   "codes": [
+    "HARDCODED_KEY"
+   ],
+   "algorithm": "secret-key (key, tls_client.c)",
+   "asset_type": "related-crypto-material"
   },
   {
    "location": "c/tls_client.c",
@@ -198,15 +221,16 @@
   },
   {
    "location": "dotnet/Crypto.cs",
-   "line": 16,
+   "line": 15,
    "occurrences": [
-    16
+    15
    ],
    "codes": [
-    "TLS_VERIFICATION_DISABLED"
+    "QUANTUM_VULNERABLE",
+    "WEAK_PADDING"
    ],
-   "algorithm": "tls_endpoint:java.trustall",
-   "asset_type": null
+   "algorithm": "RSA",
+   "asset_type": "algorithm"
   },
   {
    "location": "dotnet/Crypto.cs",
@@ -222,6 +246,18 @@
   },
   {
    "location": "dotnet/Crypto.cs",
+   "line": 18,
+   "occurrences": [
+    18
+   ],
+   "codes": [
+    "WEAK_PROTOCOL"
+   ],
+   "algorithm": "TLS 1.0",
+   "asset_type": "protocol"
+  },
+  {
+   "location": "dotnet/Crypto.cs",
    "line": 20,
    "occurrences": [
     20
@@ -230,6 +266,42 @@
     "WEAK_RNG"
    ],
    "algorithm": "token (Token(), Crypto.cs)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "dotnet/Crypto.cs",
+   "line": 21,
+   "occurrences": [
+    21
+   ],
+   "codes": [
+    "HARDCODED_KEY"
+   ],
+   "algorithm": "secret-key (Key, Crypto.cs)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "dotnet/Crypto.cs",
+   "line": 22,
+   "occurrences": [
+    22
+   ],
+   "codes": [
+    "STATIC_IV"
+   ],
+   "algorithm": "initialization-vector (IV, Crypto.cs)",
+   "asset_type": "related-crypto-material"
+  },
+  {
+   "location": "dotnet/Crypto.cs",
+   "line": 23,
+   "occurrences": [
+    23
+   ],
+   "codes": [
+    "WEAK_KDF_ITERATIONS"
+   ],
+   "algorithm": "other (inline, Crypto.cs)",
    "asset_type": "related-crypto-material"
   },
   {
@@ -403,17 +475,25 @@
    "asset_type": null
   },
   {
-   "location": "iac/terraform/main.tf",
-   "line": 5,
+   "location": "iac/k8s/ingress.yaml",
+   "line": 6,
    "occurrences": [
-    5,
-    23,
-    31,
-    37
+    6
    ],
    "codes": [
-    "WEAK_CIPHER_SUITE",
     "WEAK_PROTOCOL"
+   ],
+   "algorithm": "TLS",
+   "asset_type": "protocol"
+  },
+  {
+   "location": "iac/k8s/ingress.yaml",
+   "line": 7,
+   "occurrences": [
+    7
+   ],
+   "codes": [
+    "WEAK_CIPHER_SUITE"
    ],
    "algorithm": "TLS",
    "asset_type": "protocol"
@@ -422,10 +502,7 @@
    "location": "iac/terraform/main.tf",
    "line": 5,
    "occurrences": [
-    5,
-    23,
-    31,
-    37
+    5
    ],
    "codes": [
     "WEAK_PROTOCOL"
@@ -468,6 +545,44 @@
    ],
    "algorithm": "block_volume:aws_ebs_volume.v",
    "asset_type": null
+  },
+  {
+   "location": "iac/terraform/main.tf",
+   "line": 25,
+   "occurrences": [
+    25
+   ],
+   "codes": [
+    "QUANTUM_VULNERABLE",
+    "WEAK_ALGORITHM"
+   ],
+   "algorithm": "RSA-1024",
+   "asset_type": "algorithm"
+  },
+  {
+   "location": "iac/terraform/main.tf",
+   "line": 31,
+   "occurrences": [
+    31
+   ],
+   "codes": [
+    "WEAK_CIPHER_SUITE",
+    "WEAK_PROTOCOL"
+   ],
+   "algorithm": "TLS",
+   "asset_type": "protocol"
+  },
+  {
+   "location": "iac/terraform/main.tf",
+   "line": 37,
+   "occurrences": [
+    37
+   ],
+   "codes": [
+    "WEAK_PROTOCOL"
+   ],
+   "algorithm": "TLS",
+   "asset_type": "protocol"
   },
   {
    "location": "java/pom.xml",
