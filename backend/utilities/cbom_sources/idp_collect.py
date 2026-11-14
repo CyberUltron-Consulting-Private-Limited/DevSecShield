@@ -19,6 +19,7 @@ import re
 import xml.etree.ElementTree as ET
 from typing import Any
 
+from backend.utilities.cbom_sources import algid
 from backend.utilities.cbom_sources.safe_fetch import FetchError, fetch, idp_private_allowlist
 
 _NS = {"md": "urn:oasis:names:tc:SAML:2.0:metadata", "ds": "http://www.w3.org/2000/09/xmldsig#"}
@@ -86,7 +87,15 @@ def cert_facts(der: bytes, source: str) -> tuple[str | None, int | None, dict[st
     from cryptography.hazmat.primitives.asymmetric import dsa, ec, ed448, ed25519, rsa
 
     cert = x509.load_der_x509_certificate(der)
-    key = cert.public_key()
+    key_oid = None
+    try:
+        key = cert.public_key()
+    except Exception:  # a key type cryptography cannot load (post-quantum, composites): named by its OID via algid (CB-04)
+        key = None
+        try:
+            key_oid = cert.public_key_algorithm_oid.dotted_string
+        except Exception:
+            key_oid = None
     if isinstance(key, rsa.RSAPublicKey):
         alg, bits, curve = "RSA", key.key_size, None
     elif isinstance(key, ec.EllipticCurvePublicKey):
@@ -97,10 +106,18 @@ def cert_facts(der: bytes, source: str) -> tuple[str | None, int | None, dict[st
         alg, bits, curve = "Ed448", 456, None
     elif isinstance(key, dsa.DSAPublicKey):
         alg, bits, curve = "DSA", key.key_size, None
-    else:
+    elif key is not None:
         alg, bits, curve = type(key).__name__, None, None
+    else:
+        ident = algid.resolve(key_oid) if key_oid else None
+        alg, bits, curve = (ident.name if ident is not None and ident.name else key_oid or "unknown"), (
+            ident.key_size if ident is not None else None), None
+    # the signature algorithm by its OID through algid (never cryptography's private _name, which an unknown
+    # algorithm leaves unset); the dotted OID when algid does not know it
     try:
-        sig = cert.signature_algorithm_oid._name  # e.g. sha256WithRSAEncryption
+        sig_oid = cert.signature_algorithm_oid.dotted_string
+        sig_ident = algid.resolve(sig_oid)
+        sig = sig_ident.name if sig_ident is not None and sig_ident.name else sig_oid
     except Exception:
         sig = None
     try:
@@ -120,6 +137,8 @@ def cert_facts(der: bytes, source: str) -> tuple[str | None, int | None, dict[st
         "self_signed": cert.subject == cert.issuer, "fingerprint_sha256": hashlib.sha256(der).hexdigest(),
         "source": source,
     }
+    if key_oid:
+        facts["key_alg_oid"] = key_oid
     return alg, bits, facts
 
 
@@ -164,7 +183,11 @@ def _oidc(url: str, label: str) -> tuple[list[dict[str, Any]], list[dict[str, An
             continue
         kty = str(key.get("kty") or "")
         bits = _b64url_int_bits(key["n"]) if kty == "RSA" and isinstance(key.get("n"), str) else _CRV_BITS.get(str(key.get("crv")))
-        algorithm = {"RSA": "RSA", "EC": "ECDSA", "OKP": str(key.get("crv") or "EdDSA")}.get(kty, kty or None)
+        algorithm = {"RSA": "RSA", "EC": "ECDSA", "OKP": str(key.get("crv") or "EdDSA")}.get(kty)
+        if algorithm is None:  # AKP (RFC 9964: a post-quantum key named by alg) and any other registered key type
+            ident = algid.jose(kty, key.get("alg"), key.get("crv"))
+            algorithm = ident.name if ident is not None and ident.name else (kty or None)
+            bits = ident.key_size if ident is not None else bits
         kid = str(key.get("kid") or "")[:128]
         key_where = f"{meta['jwks_uri'][:400]}#{kid}"
         signing = {"type": "signing_key", "target": label, "location": key_where,

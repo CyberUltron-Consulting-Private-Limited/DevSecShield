@@ -22,6 +22,7 @@ import re
 import time
 from typing import Any, Callable
 
+from backend.utilities.cbom_sources import algid, algid_tables
 from backend.utilities.cbom_sources.aws_validate import _boto, _code
 from backend.utilities.cbom_sources.common import log, new_ref
 from backend.utilities.cbom_sources.idp_collect import saml_assets_from_xml
@@ -50,7 +51,42 @@ def _iso(value: Any) -> str | None:
     return None
 
 
+# The AWS enums whose values name a key (algid's captured tables, CB-04 PR-3b): RSA_2048, EC_prime256v1,
+# ECC_NIST_EDWARDS25519, SM2 and the post-quantum signature keys ("-" and "_" are the same, EC-8).
+_KEY_ENUMS = (("kms", "KeySpec"), ("acm-pca", "KeyAlgorithm"), ("acm", "KeyAlgorithm"))
+# ListCertificates returns only RSA-2048 certificates unless Includes.keyTypes names the others: every key type ACM
+# documents (algid's capture of the acm KeyAlgorithm enum).
+ACM_KEY_TYPES = list(algid_tables.AWS["acm.KeyAlgorithm"])
+
+
+def _key_identity(spec: Any) -> algid.Identity | None:
+    return next((i for service, field in _KEY_ENUMS if (i := algid.aws(service, field, spec)) is not None), None)
+
+
+def _key_family(spec: Any) -> str | None:
+    """The algorithm an AWS key enum names, as the collectors store it: RSA, ECDSA, SM2, Ed25519, or algid's
+    post-quantum name; None when algid does not know the value."""
+    ident = _key_identity(spec)
+    if ident is None:
+        return None
+    if ident.family_label == "RSA":
+        return "RSA"
+    if ident.family_label == "EC":
+        return "ECDSA"
+    if ident.family_label == "PQ":
+        return ident.name
+    return ident.family_label if ident.family_label in ("SM2",) else ident.name
+
+
 def _bits(spec: str | None) -> int | None:
+    """Key size of an AWS key enum: algid's (Ed25519 and SM2 are 256; a post-quantum key has no bit size), else the
+    digits or curve in the name (HMAC_256, an enum value newer than the capture)."""
+    ident = _key_identity(spec)
+    if ident is not None:
+        if ident.family_label == "PQ":
+            return None
+        if ident.key_size:
+            return ident.key_size
     match = re.search(r"(\d{3,5})", spec or "")
     if match:
         return int(match.group(1))
@@ -314,13 +350,15 @@ def _cert_asset(arn: str, label: str, detail: dict[str, Any], kind: str = "certi
     """``summary``: the ACM ListCertificates entry, for the export facts (an exported certificate's key is used
     outside AWS; ``exported`` is None when ACM does not say)."""
     key_alg = detail.get("KeyAlgorithm") or ""
-    family = "RSA" if key_alg.upper().startswith("RSA") else ("ECDSA" if key_alg.upper().startswith("EC") else key_alg)
+    family = _key_family(key_alg) or (
+        "RSA" if key_alg.upper().startswith("RSA") else ("ECDSA" if key_alg.upper().startswith("EC") else key_alg))
     in_use = detail.get("InUseBy")
     return {"type": kind, "target": label, "location": arn, "name": detail.get("DomainName") or arn.rsplit("/", 1)[-1],
             "algorithm": family or None, "key_size": _bits(key_alg),
             "facts": {"subject": detail.get("Subject"), "issuer": detail.get("Issuer"), "serial": detail.get("Serial"),
                       "not_before": _iso(detail.get("NotBefore")), "not_after": _iso(detail.get("NotAfter")),
-                      "sig_alg": detail.get("SignatureAlgorithm"), "key_alg": family, "key_size": _bits(key_alg),
+                      "sig_alg": detail.get("SignatureAlgorithm"), "key_alg": family, "key_alg_raw": key_alg or None,
+                      "key_size": _bits(key_alg),
                       "san": (detail.get("SubjectAlternativeNames") or [])[:50], "status": detail.get("Status"),
                       "aws_type": detail.get("Type"), "in_use": bool(in_use) if in_use is not None else None,
                       "in_use_by": (in_use or [])[:10], "renewal_eligibility": detail.get("RenewalEligibility"),
@@ -815,7 +853,7 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit,
     def acm() -> str | None:
         client = acct.client("acm", region)
         prefix = f"arn:aws:acm:{region}:{acct.account}:"
-        everything = {"keyTypes": ["RSA_1024", "RSA_2048", "RSA_3072", "RSA_4096", "EC_prime256v1", "EC_secp384r1", "EC_secp521r1"]}
+        everything = {"keyTypes": ACM_KEY_TYPES}
         summaries, truncated, page_error = _paginate_kept(client, "list_certificates", "CertificateSummaryList",
                                                           Includes=everything,
                                                           PaginationConfig={"PageSize": PER_SERVICE_CAP})
@@ -847,7 +885,8 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit,
             cfg = ca.get("CertificateAuthorityConfiguration") or {}
             key_alg = cfg.get("KeyAlgorithm") or ""
             emit({"type": "cloud_ca", "target": label, "location": ca["Arn"],
-                  "name": json.dumps(cfg.get("Subject") or {})[:255], "algorithm": "RSA" if key_alg.startswith("RSA") else "ECDSA",
+                  "name": json.dumps(cfg.get("Subject") or {})[:255],
+                  "algorithm": _key_family(key_alg) or ("RSA" if key_alg.startswith("RSA") else "ECDSA"),
                   "key_size": _bits(key_alg),
                   "facts": {"key_alg": key_alg, "sig_alg": cfg.get("SigningAlgorithm"), "status": ca.get("Status"),
                             "ca_type": ca.get("Type"), "not_after": _iso(ca.get("NotAfter")),
