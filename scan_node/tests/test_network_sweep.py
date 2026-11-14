@@ -196,7 +196,7 @@ def test_a_reset_is_a_refusal_not_a_gap(monkeypatch):
     monkeypatch.setattr(T, "s_client", lambda *a, **k: full)
 
     def probe(ip, port, protocol, hello, timeout=8.0, want_kex=False):
-        raise T.ProbeError("refused", "connection reset")
+        raise T.ConnectionReset()  # what tlsprobe raises for a reset after the hello (CB-12: not a refused connect)
 
     monkeypatch.setattr(T, "probe", probe)
     ctx = _ctx()

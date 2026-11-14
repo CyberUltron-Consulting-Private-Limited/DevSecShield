@@ -2,14 +2,24 @@
 
 Per open endpoint a prioritised list of handshakes runs, capped by ``handshakes_per_endpoint``:
   1. one full handshake (``openssl s_client``; Python ``ssl`` if openssl is missing) -> version, cipher, group,
-     peer signature, certificate chain;
+     peer signature, certificate chain.  When it fails, one ClientHello decides whether the port speaks TLS at all:
+     a TLS alert means TLS (an SNI-only server is then read with the team's "Hostnames for SNI" that resolve to the
+     address, and that name is sent in every probe of the endpoint); a close or non-TLS bytes, to a modern and to a
+     legacy hello, mean "not TLS": a ``not_tls`` coverage row, never a TLS asset (CB-12, KF-4/KF-5).  A listener
+     that closes a hello without a name but answers one with the first SNI name (Envoy/Istio filter chains) is read
+     with that name.  A refused connect or a reset after the hello is never "not TLS": the endpoint is not read;
   2. raw ClientHello per protocol version (SSLv3 .. TLS 1.3) -> what the server accepts;
   3. TLS 1.3 post-quantum group probe (HelloRetryRequest) -> hybrid ML-KEM support;
   4. TLS_FALLBACK_SCSV probe -> downgrade protection;
-  5. weak cipher classes (obsolete, static RSA, CBC, DHE with its group size).
-``fragile`` ranges get only steps 1-2.  SNI names from the team settings that resolve into the address add one
-full handshake each.  Every connection goes through the rate limiter, re-checks never-scan, stop-all and the
-deadline, so a stop or a closed window takes effect within one handshake.
+  5. weak cipher classes (obsolete, static RSA, CBC, DHE with its group size);
+  6-9. enumeration (``tlsenum``, #100): every TLS 1.3 group and suite, every suite of each accepted legacy version
+     (best first), TLS <= 1.2 curves when there is no TLS 1.3.  Budget: (accepted + 2) per legacy version,
+     (accepted + 1) for TLS 1.3 suites, (groups + 2); a pass the budget or time cuts is marked incomplete in the
+     facts (``enumeration``), never a coverage gap, because steps 1-5 already judged the findings.
+``fragile`` ranges get only steps 1-2.  Other SNI names that resolve into the address add one full handshake each,
+from a share of the endpoint's budget; names are resolved once per job, all at once, within ``SNI_DNS_BUDGET_S``.
+Every connection goes through the rate limiter, re-checks never-scan, stop-all and the deadline, so a stop or a closed
+window takes effect within one handshake.
 
 IKE (UDP 500, 4500 with the non-ESP marker): ``ikeprobe`` proposal probing, one packet at a time, at least
 ``IKE_SPACING`` apart, each through the same gate and limiter, within a per-endpoint packet budget.  OT: OPC UA
@@ -27,9 +37,11 @@ from typing import Any
 
 from zs_scan_node import ikeprobe
 from zs_scan_node import otprobe
+from zs_scan_node import tls_registry as R
+from zs_scan_node import tlsenum as E
 from zs_scan_node import tlsprobe as T
 from zs_scan_node.certparse import cert_facts, load_certs
-from zs_scan_node.jobctx import JobContext, LeaseLost, register_asset_types
+from zs_scan_node.jobctx import MAX_FACTS_BYTES, JobContext, LeaseLost, register_asset_types
 from zs_scan_node import netutil
 from zs_scan_node.netutil import Blocked, Unresolved, checked_ip, iter_line_ips, node_limiter
 
@@ -53,6 +65,9 @@ IKE_SPACING = 0.2  # seconds between two packets to the same IKE endpoint (at le
 IKE_TIMEOUT = 3.0  # wait for an answer per packet
 IKE_FRAGILE_BUDGET = 6
 NON_ESP_MARKER = b"\x00\x00\x00\x00"  # RFC 3948 section 2.2: IKE on port 4500
+SNI_MAX_NAMES = 200  # SNI host names used per job (the settings allow 10,000): the rest are named in a coverage row
+SNI_DNS_BUDGET_S = 20.0  # every name is resolved at once per job, within this time (a black-holed resolver)
+SNI_DNS_WORKERS = 16
 
 register_asset_types("ike_endpoint", "ot_endpoint")
 
@@ -89,6 +104,35 @@ def _ports(scope: dict) -> list[dict]:
         if 1 <= port <= 65535:
             ports.append({"port": port, "protocol": str(p.get("protocol") or "tls"), "label": str(p.get("label") or "")})
     return ports
+
+
+def _sni_names(scope: dict) -> tuple[list[str], int]:
+    """The team's SNI host names, normalised and de-duplicated: the first SNI_MAX_NAMES, and how many were left out."""
+    seen: list[str] = []
+    for raw in scope.get("sni_hostnames") or []:
+        name = str(raw or "").strip().lower().rstrip(".")
+        if name and name not in seen:
+            seen.append(name)
+    return seen[:SNI_MAX_NAMES], max(len(seen) - SNI_MAX_NAMES, 0)
+
+
+def _resolve_all(names: list[str], budget_s: float) -> tuple[dict[str, set[str]], list[str]]:
+    """Resolve every name at once (only to match them against the addresses scanned; nothing connects to a name).
+    Names without an answer within ``budget_s`` are returned as unresolved; their lookups end in the background
+    (getaddrinfo cannot be cancelled), so a black-holed resolver costs the job ``budget_s`` once, not per name."""
+    out: dict[str, set[str]] = {}
+    if not names:
+        return out, []
+    pool = cf.ThreadPoolExecutor(max_workers=min(SNI_DNS_WORKERS, len(names)), thread_name_prefix="sni-dns")
+    futures = {pool.submit(netutil.resolve, name): name for name in names}
+    done, pending = cf.wait(futures, timeout=budget_s)
+    for fut in done:
+        try:
+            out[futures[fut]] = set(fut.result())
+        except Exception:  # NXDOMAIN, no answer, a malformed name: it matches no address
+            out[futures[fut]] = set()
+    pool.shutdown(wait=False, cancel_futures=True)
+    return out, [n for n in names if n not in out]
 
 
 def _sni_for(scope: dict, ip: str, cache: dict, never) -> list[str]:
@@ -131,9 +175,37 @@ class NetworkScan:
         rl = scope.get("rate_limits") or {}
         self.limiter = node_limiter(rl.get("connections_per_second") or 20, rl.get("parallel_per_server") or 2)
         self.per_endpoint = int(rl.get("handshakes_per_endpoint") or 12)
-        self.sni_cache: dict[str, set] = {}
         self.timeouts: dict[str, int] = {}
+        self._timeouts_lock = threading.Lock()
         self.open_count = 0
+        self._sni_lock = threading.Lock()
+        self._sni_order: list[str] | None = None  # the names, in the team's order, resolved once per job
+        self._sni_addresses: dict[str, set[str]] = {}
+        self.sni_left_out = ""  # names never tried anywhere in this job (over the cap, unresolved): one job-wide row
+        self.own_rows: set[str] = set()  # endpoints whose read wrote its own coverage row (no generic second row)
+
+    def sni_names_for(self, ip: str) -> list[str]:
+        """The team's SNI names that resolve to ``ip`` and are not on the never-scan list (by name or address)."""
+        with self._sni_lock:
+            if self._sni_order is None:
+                names, over = _sni_names(self.scope)
+                self._sni_addresses, unresolved = _resolve_all(names, SNI_DNS_BUDGET_S)
+                for name in unresolved:  # matches no address (and is never looked up again in this job)
+                    self._sni_addresses[name] = set()
+                self._sni_order = names
+                parts = []
+                if over:
+                    parts.append(f"{over} SNI host names beyond the first {SNI_MAX_NAMES} are not used")
+                if unresolved:
+                    parts.append(f"{len(unresolved)} SNI host names did not resolve within {int(SNI_DNS_BUDGET_S)} s "
+                                 f"and were not tried ({', '.join(unresolved[:5])}{', ...' if len(unresolved) > 5 else ''})")
+                self.sni_left_out = "; ".join(parts)
+                if self.sni_left_out:
+                    # job-wide: certificates read with these names before are "not read" on every endpoint, once
+                    self.ctx.coverage("", "SNI names left out", "truncated", self.sni_left_out[:900], once=True,
+                                      scope=["#sni="], incomplete=False)
+        # the one rule for names (#32): a name on the never-scan list, or with any address on it, is never sent
+        return _sni_for({"sni_hostnames": self._sni_order}, ip, self._sni_addresses, self.ctx.never_scan)
 
     # --------------------------------------------------------------- guarded connection helpers
     def _gate(self, ip: str) -> str | None:
@@ -162,6 +234,11 @@ class NetworkScan:
             return "skipped_never_scan"
         except T.ProbeError as exc:
             return "closed" if exc.code == "refused" else "silent"
+
+    def timed_out(self, ip: str) -> None:
+        """One more handshake to ``ip`` timed out: past TARPIT_TIMEOUTS its remaining ports are not probed."""
+        with self._timeouts_lock:
+            self.timeouts[ip] = self.timeouts.get(ip, 0) + 1
 
     def handshake(self, ep: Endpoint, budget: Budget, fn, *args):
         if not budget.take():
@@ -197,8 +274,8 @@ class NetworkScan:
             return "skipped_never_scan", None, 0
         except T.ProbeError as exc:
             if exc.code == "timeout":
-                self.timeouts[ep.ip] = self.timeouts.get(ep.ip, 0) + 1
-            return exc.code if exc.code != "refused" else "refused", exc.detail[:200], 0
+                self.timed_out(ep.ip)
+            return exc.code, exc.detail[:200], 0
         except LeaseLost:
             raise
         except Exception as exc:  # a hostile endpoint must cost one endpoint, never the whole job
@@ -209,10 +286,48 @@ class NetworkScan:
 
     def _tls(self, ep: Endpoint, mode: str) -> tuple[str, str | None, int]:
         ctx = self.ctx
-        budget = Budget(self.per_endpoint if mode != "fragile" else min(self.per_endpoint, 6))
+        limit = self.per_endpoint if mode != "fragile" else min(self.per_endpoint, 6)
+        names = [] if ep.protocol == "rdp" else self.sni_names_for(ep.ip)
+        # SNI names other than the one the endpoint is read with get their own share of the endpoint's budget, so the
+        # enumeration cannot starve them nor they the enumeration (the total stays the customer's cap)
+        reserve = min(max(len(names) - 1, 0), limit // 4) if limit > 1 else 0
+        budget = Budget(limit - reserve)
         facts: dict[str, Any] = {"protocol_label": ep.label, "service": ep.protocol, "mode": mode}
-        assets = 0
-        # 1. full handshake
+        endpoint_deadline = time.monotonic() + ENDPOINT_MAX_S
+
+        dropped: list[T.ProbeError] = []  # the server stopped answering this node (timeout, refused connect)
+
+        def raw(hello: bytes, want_kex: bool = False, timeout: float = 8.0):
+            """One raw probe.  Once the server times out or refuses the connect, later probes are not sent (each
+            would wait the full timeout again): they fail at once with the same error, and the host's tarpit count
+            gets the timeout, so its other ports are not probed into the same silence."""
+            if dropped:
+                raise T.ProbeError(dropped[0].code, f"not sent: {dropped[0].detail}")
+            try:
+                return self.handshake(ep, budget, T.probe, ep.ip, ep.port, ep.protocol, hello, timeout, want_kex)
+            except T.ProbeError as exc:
+                if exc.code == "timeout" or isinstance(exc, T.ConnectRefused):
+                    dropped.append(exc)
+                    if exc.code == "timeout":
+                        self.timed_out(ep.ip)
+                raise
+
+        def send(hello: bytes, want_kex: bool) -> T.HelloResult:  # enumeration passes: budget and time end a pass
+            if time.monotonic() > endpoint_deadline:
+                raise E.Stop("endpoint time cap")
+            if dropped:
+                raise E.Stop(f"server stopped answering ({dropped[0].code})")
+            r = raw(hello, want_kex)
+            if r == "budget":
+                raise E.Stop(f"handshake budget ({limit})")
+            return r
+
+        def plaintext(exc: Exception):
+            ctx.emit("tls_endpoint", ep.ip, ep.where, name=f"{ep.label or ep.protocol} {ep.where}", protocol=ep.protocol,
+                     facts={**facts, "tls": False, "plaintext_only": True, "detail": str(exc)})
+            return "ok", None, 1
+
+        # 1. full handshake (without SNI, as a client that knows only the address)
         try:
             if T.have_openssl() and ep.protocol != "rdp":
                 fh = self.handshake(ep, budget, T.s_client, ep.ip, ep.port, ep.protocol, None,
@@ -220,27 +335,65 @@ class NetworkScan:
             else:
                 fh = self.handshake(ep, budget, T.python_handshake, ep.ip, ep.port, ep.protocol, None, 10.0)
         except T.StarttlsUnavailable as exc:
-            ctx.emit("tls_endpoint", ep.ip, ep.where, name=f"{ep.label or ep.protocol} {ep.where}", protocol=ep.protocol,
-                     facts={**facts, "tls": False, "plaintext_only": True, "detail": str(exc)})
-            return "ok", None, 1
+            return plaintext(exc)
         if fh == "budget":
             fh = T.FullHandshake(error="no budget")
-        endpoint_deadline = time.monotonic() + ENDPOINT_MAX_S
         if not fh.ok and fh.error == "timeout":
             # one cheap raw probe decides whether this endpoint speaks TLS at all; a second silence ends it
             try:
-                quick = self.handshake(ep, budget, T.probe, ep.ip, ep.port, ep.protocol,
-                                       T.build_client_hello(T.TLS12, T.LEGACY_SUITES), 6.0)
+                quick = raw(T.build_client_hello(T.TLS12, T.LEGACY_SUITES), timeout=6.0)
+            except T.NotTls as exc:  # e.g. an HTTP server that waited for a line longer than s_client, then said 400
+                return self._not_tls(ep, f"answered '{exc.first}'")
             except T.ProbeError as exc:
                 return exc.code, f"no TLS answer ({exc.detail})", 0
             except T.StarttlsUnavailable:
                 quick = None
             if quick is not None and quick != "budget" and not quick.ok and not quick.alert:
+                self.timed_out(ep.ip)
                 return "timeout", "no TLS answer", 0
-        facts.update({"negotiated_version": fh.version, "negotiated_cipher": fh.cipher, "negotiated_group": fh.group,
+        sni: str | None = None
+        alerts: list[str] = []
+        needs_name = False  # it answers a hello with a server name and closes/resets one without (Envoy, Istio)
+        if not fh.ok:
+            # 1b. TLS at all?  Any TLS alert = it speaks TLS (it may want a server name); only a close or non-TLS
+            # bytes, to a modern and to a legacy hello, mean "not TLS" (CB-04 EC-4: alert != closed).  A refused
+            # connect raises (the port is not there); a reset after the hello decides nothing.
+            try:
+                kind, seen, said = self._speaks_tls(ep, budget, None)
+                if kind in ("not_tls", "undecided") and names:
+                    # an SNI-only listener with no default filter chain closes (or resets) a hello without a name:
+                    # the same hello with the first name decides
+                    named, seen_named, _said = self._speaks_tls(ep, budget, names[0], legacy=False)
+                    if named in ("hello", "alert"):
+                        kind, seen, needs_name = named, seen + seen_named, True
+                        if named == "hello":
+                            sni = names[0]  # it answered this name: every later probe carries it
+            except T.StarttlsUnavailable as exc:
+                return plaintext(exc)
+            alerts += seen
+            if kind == "undecided":
+                return "refused", f"no TLS answer: {said}"[:200], 0
+            if kind == "not_tls":
+                return self._not_tls(ep, said)
+            if (kind == "alert" or needs_name) and names and T.have_openssl() and ep.protocol != "rdp":
+                # 1c. it rejects a client without a server name: read it with the names the team configured
+                for name in names[:3]:
+                    sfh = self.handshake(ep, budget, T.s_client, ep.ip, ep.port, ep.protocol, name, 15.0)
+                    if sfh == "budget":
+                        break
+                    if sfh.ok:
+                        fh, sni = sfh, name
+                        break
+        cipher_code = R.suite_code(fh.cipher)
+        facts.update({"negotiated_version": fh.version,
+                      "negotiated_cipher": R.suite_name(cipher_code) if cipher_code is not None else fh.cipher,
+                      "negotiated_cipher_code": R.code_hex(cipher_code) if cipher_code is not None else None,
+                      "negotiated_group": E.iana_group(fh.group),
                       "server_temp_key": fh.temp_key, "peer_signature_type": fh.peer_sig_type,
                       "peer_signing_digest": fh.peer_sig_digest, "secure_renegotiation": fh.secure_renegotiation,
                       "client_auth_requested": fh.client_auth_requested, "handshake_tool": fh.tool})
+        if sni:
+            facts.update({"sni": sni, "sni_required": True})
         chain = []
         for der in fh.certs_der[:50]:
             for cert in load_certs(der):
@@ -249,10 +402,14 @@ class NetworkScan:
         if chain:
             facts["leaf"] = {k: chain[0].get(k) for k in ("subject", "issuer", "not_after", "key_alg", "key_size",
                                                          "curve", "sig_alg", "fingerprint_sha256", "self_signed", "san")}
-        # 2. protocol versions
+        # 2. protocol versions (with the server name the endpoint was read with)
         versions: dict[str, bool | None] = {}
+        known: dict[str, set[int]] = {}  # version -> suites seen accepted (the enumeration starts from them)
         unread: list[str] = []  # checks that could not run: their findings must not read as fixed (drift)
         tls13 = fh.ok and fh.version == "TLSv1.3"
+        if fh.ok and cipher_code is not None and fh.version in T.VERSION_NAMES.values():
+            known.setdefault(fh.version, set()).add(cipher_code)
+        sni_refused = not fh.ok and "unrecognized_name" in alerts and not names
         for v in (T.SSL3, T.TLS10, T.TLS11, T.TLS12):
             name = T.VERSION_NAMES[v]
             if time.monotonic() > endpoint_deadline:
@@ -263,17 +420,17 @@ class NetworkScan:
             if fh.ok and fh.version == name:
                 versions[name] = True
                 continue
+            if sni_refused:  # it said it needs a server name: every probe without one gets the same alert
+                versions[name] = None
+                continue
             try:
-                r = self.handshake(ep, budget, T.probe, ep.ip, ep.port, ep.protocol,
-                                   T.build_client_hello(v, T.LEGACY_SUITES), 8.0)
+                r = raw(T.build_client_hello(v, T.LEGACY_SUITES, sni=sni))
             except T.StarttlsUnavailable as exc:
-                ctx.emit("tls_endpoint", ep.ip, ep.where, name=f"{ep.label or ep.protocol} {ep.where}",
-                         protocol=ep.protocol, facts={**facts, "tls": False, "plaintext_only": True, "detail": str(exc)})
-                return "ok", None, 1
+                return plaintext(exc)
             except T.ProbeError as exc:
                 versions[name] = None
                 facts.setdefault("probe_errors", []).append(f"{name}: {exc.code}")
-                if exc.code != "refused":  # a reset is this server's way to refuse a version, every time
+                if not isinstance(exc, T.ConnectionReset):  # a reset is this server's way to refuse a version
                     unread.append(f"{name}: {exc.code}")
                 continue
             if r == "budget":
@@ -281,40 +438,47 @@ class NetworkScan:
                 unread.append(f"{name}: handshake budget")
                 continue
             versions[name] = bool(r.ok and r.version == v)
+            if versions[name] and r.cipher is not None:
+                known.setdefault(name, set()).add(r.cipher)
+            elif r.alert:
+                alerts.append(r.alert)
         if tls13:
             versions["TLSv1.3"] = True
+        elif sni_refused:
+            versions["TLSv1.3"] = None
         else:
             try:
-                r = self.handshake(ep, budget, T.probe, ep.ip, ep.port, ep.protocol,
-                                   T.build_client_hello(T.TLS12, T.TLS13_SUITES, tls13=True, key_share_groups=[29]), 8.0)
+                r = raw(T.build_client_hello(T.TLS12, T.TLS13_SUITES, sni=sni, tls13=True, key_share_groups=[29]))
                 versions["TLSv1.3"] = None if r == "budget" else bool(r.ok and (r.version == T.TLS13 or r.hrr))
                 if r == "budget":
                     unread.append("TLSv1.3: handshake budget")
+                elif versions["TLSv1.3"] and r.cipher is not None:
+                    known.setdefault("TLSv1.3", set()).add(r.cipher)
+                elif r.alert:
+                    alerts.append(r.alert)
             except (T.ProbeError, T.StarttlsUnavailable) as exc:
                 versions["TLSv1.3"] = None
-                if getattr(exc, "code", None) != "refused":
+                if not isinstance(exc, T.ConnectionReset):
                     unread.append(f"TLSv1.3: {getattr(exc, 'code', 'starttls')}")
         facts["versions"] = versions
         supported = [k for k, v in versions.items() if v]
         if not fh.ok and not supported:
+            if alerts or sni_refused:
+                facts.update({"handshakes_used": budget.used, "handshake_budget": limit})
+                return self._no_common_parameters(ep, facts, alerts, names, sni_refused, needs_name)
             status = "timeout" if fh.error == "timeout" else "error"
-            if fh.error and fh.error != "timeout" and all(v is False for v in versions.values()):
-                status = "ok"  # it answered every probe with an alert: a server that speaks no TLS we offer
-                ctx.emit("tls_endpoint", ep.ip, ep.where, name=f"{ep.label or ep.protocol} {ep.where}",
-                         protocol=ep.protocol, facts={**facts, "tls": None, "detail": "no TLS version accepted"})
-                return status, None, 1
             return status, fh.error or "no TLS handshake", 0
-        # 3. post-quantum groups
+        # 3. post-quantum groups (TLS 1.3): the node's one PQ probe (the rest of the PQ groups come with step 6)
+        groups: dict[str, list[int]] = {}
+        groups_done: dict[str, bool] = {}
+        not_complete: list[str] = []
+        pq = E.Pass()
         if mode != "fragile" and versions.get("TLSv1.3"):
-            try:
-                r = self.handshake(ep, budget, T.probe, ep.ip, ep.port, ep.protocol,
-                                   T.build_client_hello(T.TLS12, T.TLS13_SUITES, tls13=True, groups=T.PQ_GROUPS,
-                                                        key_share_groups=[]), 8.0)
-                if r != "budget":
-                    facts["pq_hybrid"] = bool(r.ok and r.group in T.PQ_GROUPS)
-                    facts["pq_group"] = T.GROUPS.get(r.group) if r.ok and r.group in T.PQ_GROUPS else None
-            except (T.ProbeError, T.StarttlsUnavailable):
-                facts["pq_hybrid"] = None
+            pq = E.tls13_groups(send, E.PQ_OFFER, sni, max_probes=1)
+            # as the single PQ probe always read it: any answer decides; an error or no budget leaves it unknown
+            facts["pq_hybrid"] = bool(pq.found) if pq.answered else None
+            if pq.answered:
+                facts["pq_group"] = (T.GROUPS.get(pq.found[0]) or E.group_name(pq.found[0])) if pq.found else None
         elif mode != "fragile":
             facts["pq_hybrid"] = False
         # 4. downgrade protection
@@ -323,74 +487,206 @@ class NetworkScan:
         if mode != "fragile" and len(sup) >= 2:
             below = sup[1]
             try:
-                r = self.handshake(ep, budget, T.probe, ep.ip, ep.port, ep.protocol,
-                                   T.build_client_hello(below, T.LEGACY_SUITES, fallback_scsv=True), 8.0)
+                r = raw(T.build_client_hello(below, T.LEGACY_SUITES, sni=sni, fallback_scsv=True))
                 if r != "budget":
                     facts["fallback_scsv"] = (r.alert == "inappropriate_fallback")
                     facts["downgrade_exposed"] = bool(r.ok)
             except (T.ProbeError, T.StarttlsUnavailable):
                 pass
-        # 5. weak classes on the best legacy version
+        # 5. weak classes on the best legacy version (a small budget still finds the weak suites first)
         legacy = next((v for v in (T.TLS12, T.TLS11, T.TLS10, T.SSL3) if versions.get(T.VERSION_NAMES[v])), None)
+        kex: dict[str, Any] = {}
         if mode != "fragile" and legacy is not None:
-            accepted: dict[str, list[str]] = {}
             for label, suites in (("obsolete", T.OBSOLETE), ("static_rsa", T.STATIC_RSA), ("cbc", T.CBC_FS),
                                   ("dhe", T.DHE_SUITES)):
                 try:
-                    r = self.handshake(ep, budget, T.probe, ep.ip, ep.port, ep.protocol,
-                                       T.build_client_hello(legacy, suites), 8.0, label == "dhe")
+                    r = raw(T.build_client_hello(legacy, suites, sni=sni), label == "dhe")
                 except (T.ProbeError, T.StarttlsUnavailable) as exc:
-                    if getattr(exc, "code", None) != "refused":
+                    if not isinstance(exc, T.ConnectionReset):
                         unread.append(f"{label} ciphers: {getattr(exc, 'code', 'starttls')}")
                     continue
                 if r == "budget":
                     facts["budget_exhausted"] = True
                     unread.append(f"{label} ciphers: handshake budget")
                     break
-                if r.ok and r.cipher in suites:
-                    accepted.setdefault(label, []).append(r.cipher_name)
+                if r.ok and r.version == legacy and r.cipher in suites:
+                    known.setdefault(T.VERSION_NAMES[legacy], set()).add(r.cipher)
                     if label == "dhe" and r.dh_bits:
-                        facts["dh_bits"] = r.dh_bits
-            # spend what is left enumerating more obsolete suites
-            remaining = [c for c in T.OBSOLETE if T.CIPHERS[c] not in accepted.get("obsolete", [])]
-            while accepted.get("obsolete") and remaining and budget.used < budget.limit:
-                try:
-                    r = self.handshake(ep, budget, T.probe, ep.ip, ep.port, ep.protocol,
-                                       T.build_client_hello(legacy, remaining), 8.0)
-                except (T.ProbeError, T.StarttlsUnavailable):
-                    break
-                if r == "budget" or not (r.ok and r.cipher in remaining):
-                    break
-                accepted["obsolete"].append(r.cipher_name)
-                remaining.remove(r.cipher)
-            facts["weak_ciphers_accepted"] = accepted
+                        kex["dh_bits"] = r.dh_bits
             facts["weak_cipher_probe_version"] = T.VERSION_NAMES[legacy]
+        # 6-9. enumeration (#100): TLS 1.3 groups and suites, then every legacy version's suites, best first
+        complete: dict[str, bool] = {}
+        if mode == "fragile":
+            not_complete.append("fragile mode: suites and groups are not enumerated")
+        else:
+            if versions.get("TLSv1.3"):
+                if pq.reason == "continued later":  # the PQ probe found one: every other PQ group the server takes
+                    more = E.tls13_groups(send, [g for g in E.PQ_OFFER if g not in pq.found], sni)
+                    pq = E.Pass(found=pq.found + more.found, complete=more.complete, reason=more.reason, answered=True)
+                groups["pq"], groups_done["pq"] = pq.found, pq.complete
+                facts["pq_groups"] = [E.group_name(g) for g in pq.found]
+                facts["pq_groups_enumerated"] = pq.complete
+                if not pq.complete:
+                    not_complete.append(f"PQ groups: {pq.reason}")
+                p = E.tls13_groups(send, E.CLASSICAL13_OFFER, sni)
+                groups["classical"], groups_done["classical"] = p.found, p.complete
+                facts["classical_tls13_accepted"] = bool(p.found) if (p.found or p.complete) else None
+                if not p.complete:
+                    not_complete.append(f"TLS 1.3 groups: {p.reason}")
+                p = E.tls13_suites(send, known.get("TLSv1.3", set()), sni)
+                known.setdefault("TLSv1.3", set()).update(p.found)
+                complete["TLSv1.3"] = p.complete
+                if not p.complete:
+                    not_complete.append(f"TLSv1.3 suites: {p.reason}")
+            for v in E.VERSION_ORDER:
+                vname = T.VERSION_NAMES[v]
+                if not versions.get(vname):
+                    continue
+                p = E.legacy_suites(send, v, known.get(vname, set()), sni, kex)
+                known.setdefault(vname, set()).update(p.found)
+                complete[vname] = p.complete
+                if not p.complete:
+                    not_complete.append(f"{vname} suites: {p.reason}")
+            if not versions.get("TLSv1.3") and legacy is not None:
+                ecdhe = sorted(c for c in known.get(T.VERSION_NAMES[legacy], set()) if E.is_ecdhe(c))
+                if ecdhe:
+                    p = E.legacy_curves(send, legacy, ecdhe, set(), sni)
+                    groups["legacy"], groups_done["legacy"] = p.found, p.complete
+                    if not p.complete:
+                        not_complete.append(f"{T.VERSION_NAMES[legacy]} curves: {p.reason}")
+                else:  # no ECDHE suite: no named group is used, and that is complete when the suite list is
+                    groups["legacy"] = sorted(kex.get("curves") or [])
+                    groups_done["legacy"] = bool(complete.get(T.VERSION_NAMES[legacy]))
+        all_codes = sorted({c for s in known.values() for c in s})
+        facts["ciphers"] = [R.suite_name(c) for c in all_codes]
+        facts["cipher_suites"] = {v: [E.suite_entry(c) for c in sorted(known[v])] for v in sorted(known)}
+        facts["cipher_suites_complete"] = {v: complete.get(v, False) for v in sorted(known)}
+        found_groups = [g for part in ("pq", "classical", "legacy") for g in groups.get(part, [])]
+        facts["groups"] = sorted({E.group_name(g) for g in found_groups})
+        facts["groups_complete"] = bool(groups_done) and all(groups_done.values()) and mode != "fragile"
+        weak: dict[str, list[str]] = {}
+        for vname, codes in known.items():
+            if vname == "TLSv1.3":
+                continue
+            for c in codes:
+                for label in sorted(E.suite_classes(R.suite_name(c))):
+                    if R.suite_name(c) not in weak.setdefault(label, []):
+                        weak[label].append(R.suite_name(c))
+        if mode != "fragile" and legacy is not None:
+            facts["weak_ciphers_accepted"] = {k: sorted(v) for k, v in sorted(weak.items())}
+        if kex.get("dh_bits"):
+            facts["dh_bits"] = kex["dh_bits"]
+        facts["enumeration"] = {"complete": not not_complete, "not_complete": not_complete[:12]}
         facts["handshakes_used"] = budget.used
-        facts["handshake_budget"] = budget.limit
+        facts["handshake_budget"] = limit
         facts["tls"] = True
         if unread:
             facts["checks_not_run"] = unread[:20]
             # listed, with some facts missing: a finding that vanishes from this endpoint is not proven fixed
             ctx.coverage(ep.ip, f"TLS checks {ep.where}", "incomplete", "; ".join(unread)[:900],
                          scope=[ep.where], incomplete=True)
+        E.fit_facts(facts, MAX_FACTS_BYTES)  # every list whole, or trimmed by name with its counts (never silently)
         top = next((v for v in ("TLSv1.3", "TLSv1.2", "TLSv1.1", "TLSv1.0", "SSLv3") if versions.get(v)), fh.version)
+        assets = 0
         ctx.emit("tls_endpoint", ep.ip, ep.where, name=f"{ep.label or ep.protocol} {ep.where}",
-                 algorithm=fh.cipher, protocol=top, facts=facts)
+                 algorithm=facts["negotiated_cipher"], protocol=top, facts=facts)
         assets += 1
         for i, c in enumerate(chain):
+            extra = {"sni": sni} if sni else {}
             ctx.emit("certificate", ep.ip, f"{ep.where}#chain[{i}]", name=c.get("subject", ""),
-                     algorithm=c.get("key_alg"), key_size=c.get("key_size"), facts={**c, "chain_index": i})
+                     algorithm=c.get("key_alg"), key_size=c.get("key_size"), facts={**c, "chain_index": i, **extra})
             assets += 1
-        # SNI variants
-        for name in _sni_for(self.scope, ep.ip, self.sni_cache, self.ctx.never_scan):
-            if ep.protocol == "rdp" or not T.have_openssl():
-                break
+        return "ok", None, assets + self._sni_variants(ep, names, sni, chain, Budget(reserve) if reserve else budget)
+
+    def _not_tls(self, ep: Endpoint, said: str) -> tuple[str, str | None, int]:
+        """It accepted TCP and answered TLS hellos with a close or non-TLS bytes: one ``not_tls`` row, no TLS asset."""
+        self.ctx.coverage(ep.ip, f"not TLS {ep.where}", "not_tls",
+                          f"{ep.label or ep.protocol} {ep.where} answered TCP on a port listed as TLS but did not "
+                          f"speak TLS: {said}", scope=[ep.where], incomplete=False)
+        self.own_rows.add(ep.where)
+        return "ok", None, 0
+
+    def _speaks_tls(self, ep: Endpoint, budget: Budget, sni: str | None,
+                    legacy: bool = True) -> tuple[str, list[str], str]:
+        """('hello' | 'alert' | 'not_tls' | 'undecided', alerts seen, what the non-TLS answers were) from a modern
+        ClientHello (TLS 1.0-1.3 offered) and, when that gets no TLS answer, a legacy TLS 1.0 one (some old stacks drop
+        TLS 1.3-style hellos).  "not TLS" needs positive evidence on every hello: non-TLS bytes, or an accepted
+        connection closed with no byte.  A reset after the hello is how some TLS stacks refuse one: 'undecided'.  A
+        refused connect (nothing listens, or a filter rejects the node) and a timeout raise."""
+        hellos = [T.build_client_hello(T.TLS12, T.TLS13_SUITES + T.LEGACY_SUITES, sni=sni, tls13=True,
+                                       groups=T.CLASSICAL_GROUPS + T.PQ_GROUPS, key_share_groups=[29],
+                                       versions13=[T.TLS13, T.TLS12, T.TLS11, T.TLS10])]
+        if legacy:
+            hellos.append(T.build_client_hello(T.TLS10, T.LEGACY_SUITES, sni=sni))
+        details: list[str] = []
+        reset = False
+        for hello in hellos:
+            try:
+                r = self.handshake(ep, budget, T.probe, ep.ip, ep.port, ep.protocol, hello, 8.0)
+            except T.NotTls as exc:
+                details.append(f"answered '{exc.first}'")
+                continue
+            except T.ConnectionReset:  # not evidence either way: never "not TLS"
+                reset = True
+                details.append("reset the connection after the ClientHello")
+                continue
+            # a refused connect, a timeout or a garbled flight decides nothing: they raise
+            if r == "budget":
+                return "alert", [], ""  # not decided: never call it "not TLS" without the evidence
+            if r.ok:
+                return "hello", [], ""
+            if r.alert:
+                return "alert", [r.alert], ""
+            details.append("closed the connection without a TLS answer")
+        said = (f"{details[0]} ({len(details)} handshake{'s' if len(details) > 1 else ''})"
+                if len(set(details)) == 1 else "; ".join(details))
+        return ("undecided" if reset else "not_tls"), [], said
+
+    def _no_common_parameters(self, ep: Endpoint, facts: dict[str, Any], alerts: list[str], names: list[str],
+                              sni_refused: bool, closes_without_name: bool = False) -> tuple[str, str | None, int]:
+        """It speaks TLS (it sent alerts) but no handshake succeeded: a TLS endpoint with nothing read, and a gap that
+        keeps its earlier findings from reading as fixed.  Never "ok"."""
+        needs_name = "unrecognized_name" in alerts or closes_without_name
+        seen = sorted(set(alerts))
+        if closes_without_name:
+            why = ("the server closes every handshake without a server name (SNI) and answered none with the configured "
+                   f"SNI host names that resolve to this address ({', '.join(names[:3])})")
+        elif needs_name and not names:
+            why = ("the server answers only clients that send a server name (SNI; alert unrecognized_name): add the "
+                   "host names it serves under Hostnames for SNI")
+        elif needs_name:
+            why = ("the server rejected the configured SNI host names that resolve to this address "
+                   f"({', '.join(names[:3])}) and every handshake without one (alert unrecognized_name)")
+        else:
+            why = (f"the server answered every handshake with a TLS alert ({', '.join(seen)}): it offers no protocol "
+                   "version, cipher suite or group this scan node can negotiate")
+        facts.update({"tls": True, "negotiation": "sni_required" if needs_name else "no_common_parameters",
+                      "alerts": seen, "detail": why})
+        for key in ("negotiated_version", "negotiated_cipher", "negotiated_cipher_code", "negotiated_group"):
+            if facts.get(key) is None:
+                facts.pop(key, None)
+        self.ctx.emit("tls_endpoint", ep.ip, ep.where, name=f"{ep.label or ep.protocol} {ep.where}",
+                      protocol=ep.protocol, facts=facts)
+        self.ctx.coverage(ep.ip, f"TLS {ep.where}", "sni_required" if needs_name else "no_common_parameters",
+                          f"{ep.label or ep.protocol} {ep.where}: {why}", scope=[ep.where], incomplete=True)
+        self.own_rows.add(ep.where)
+        return ("tls_unavailable" if needs_name else "not_supported"), why[:200], 1
+
+    def _sni_variants(self, ep: Endpoint, names: list[str], used: str | None, chain: list[dict], budget: Budget) -> int:
+        """One full handshake per further SNI name (its certificate, when it differs); names not tried get one row."""
+        ctx = self.ctx
+        assets, untried = 0, []
+        others = [n for n in names if n != used]
+        if not T.have_openssl() or ep.protocol == "rdp":
+            return 0
+        for i, name in enumerate(others):
             try:
                 sfh = self.handshake(ep, budget, T.s_client, ep.ip, ep.port, ep.protocol, name, 15.0)
             except _Skip:
+                untried = others[i:]
                 break
             if sfh == "budget":
-                ctx.coverage(ep.ip, f"sni:{name}", "truncated", "handshake budget used up before this SNI name")
+                untried = others[i:]
                 break
             for der in sfh.certs_der[:1]:
                 for cert in load_certs(der):
@@ -401,7 +697,15 @@ class NetworkScan:
                              algorithm=cf_.get("key_alg"), key_size=cf_.get("key_size"),
                              facts={**cf_, "sni": name, "negotiated_version": sfh.version})
                     assets += 1
-        return "ok", None, assets
+        reasons = []
+        if untried:
+            reasons.append(f"{len(untried)} of {len(others)} SNI host names were not tried (handshake budget): "
+                           f"{', '.join(untried[:5])}{', ...' if len(untried) > 5 else ''}")
+        if reasons:
+            # their certificates seen before are "not read", never removed
+            ctx.coverage(ep.ip, f"SNI names {ep.where}", "truncated", "; ".join(reasons)[:900],
+                         scope=[f"{ep.where}#sni="], incomplete=False)
+        return assets
 
     def _ssh(self, ep: Endpoint) -> tuple[str, str | None, int]:
         budget = Budget(2)
@@ -669,6 +973,8 @@ def run_network(ctx: JobContext, scope: dict, discovery_only: bool = False) -> s
                     if status != "ok":
                         failures.append(f"{ep.port}:{status}")
                         ctx.outcome(ep.where, status, err, started=t0, assets=n, counted=False)
+                        if ep.where in scan.own_rows:
+                            continue
                         # the port is open but was not read: what it showed before is "not read", not fixed
                         ctx.coverage(ip, f"endpoint {ep.where}", "error" if status in ("not_supported",) else status,
                                      f"{ep.label or ep.protocol} {ep.where}: {err or status}"[:900],

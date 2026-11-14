@@ -318,7 +318,9 @@ def test_cyclonedx_export_carries_ct_provenance(api):
         for p in comp["properties"]:
             props.setdefault(p["name"], []).append(p["value"])
         o = zs[props["zs:serial"][0]]
-        assert props["zs:method"] == ["ct-log-search"] and props["zs:ct_provider"] == ["certspotter"]
+        # one provenance emitter (CB-06 provenance.py): collector ct, method api, the cloud worker, unsigned
+        assert props["zs:collector"] == ["ct"] and props["zs:method"] == ["api"] and props["zs:signed"] == ["false"]
+        assert props["zs:ct_provider"] == ["certspotter"]
         assert props["zs:ct_entry_id"] == [o["id"]] and props["zs:tbs_sha256"] == [o["tbs_sha256"]]
         assert props["zs:ct_matched_domain"] == ["zeroshield.ai"] and props["zs:source"] == ["Certificate Transparency"]
         if o["precert_poison"]:
