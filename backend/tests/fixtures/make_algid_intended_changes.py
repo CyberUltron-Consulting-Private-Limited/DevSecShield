@@ -76,8 +76,8 @@ CATEGORIES = {
                              "x509v3-sign-dss -> SSH_DSS, ssh-rsa-cert-v01 / x509v3-sign-rsa -> SSH_RSA_SHA1. The "
                              "GSS-API methods get the code of their non-GSS twin (RFC 4462 §2: gss-group1-sha1-* is "
                              "Oakley group 2 with SHA-1 = diffie-hellman-group1-sha1 -> SSH_DH_GROUP1; gss-group14-sha1-* "
-                             "and gss-gex-sha1-* = group14 / group exchange with SHA-1 -> SSH_DH_SHA1; RFC 8732 §6 "
-                             "deprecates all three), PR #111 AC-3 'GSS'",
+                             "and gss-gex-sha1-* = group14 / group exchange with SHA-1 -> SSH_DH_SHA1), PR #111 AC-3 "
+                             "'GSS' and its test_legacy_algorithms_are_flagged cases",
 }
 # CB-13 (PR #111): the legacy SSH names its rules add, and the one code each gets (SPEC RC-6, §3.3; GSS: RFC 4462 §2)
 SSH_LEGACY_CODES = (
