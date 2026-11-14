@@ -26,11 +26,12 @@ import { apiBaseURL } from "@/utils/interceptors";
 
 import { cbomSourcesKeys } from "./keys";
 import { AgentPoolsCard } from "./AgentPoolsCard";
+import { ApiEgressRow, NodeInstallCommand, apiHost } from "./NodeInstall";
 import {
   DEPLOY_SUPPORT,
   ago,
   insecureApiWarning,
-  installCommand,
+  nodeApiPort,
   nodeInstallNames,
   offersRegistrationToken,
   offlineImageSteps,
@@ -112,23 +113,6 @@ function scrollToWizard() {
   window.setTimeout(() => revealById(WIZARD_ID), 0);
 }
 
-function apiHost(): string {
-  try {
-    return new URL(apiBaseURL).hostname;
-  } catch {
-    return apiBaseURL;
-  }
-}
-
-function apiPort(): string {
-  try {
-    const url = new URL(apiBaseURL);
-    return url.port || (url.protocol === "http:" ? "80" : "443");
-  } catch {
-    return "443";
-  }
-}
-
 function expiresIn(iso: string | null, serverNow: string | null | undefined): string {
   if (!iso) return "";
   const ms = Date.parse(iso) - (serverNow ? Date.parse(serverNow) : Date.now());
@@ -138,7 +122,16 @@ function expiresIn(iso: string | null, serverNow: string | null | undefined): st
   return `${h} h ${m} min`;
 }
 
-export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; onNavigate: (tab: string) => void }) {
+export default function ScanNodesTab({
+  teamId,
+  onNavigate,
+  apiUrl = apiBaseURL,
+}: {
+  teamId: number;
+  onNavigate: (tab: string) => void;
+  /** the ZeroShield API address scan nodes connect to (this build's; a prop so a test can render both variants) */
+  apiUrl?: string;
+}) {
   const queryClient = useQueryClient();
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizard, setWizard] = useState<WizardState>(EMPTY_WIZARD);
@@ -246,18 +239,11 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
   if (nodesQuery.isLoading) return <LoadingBlock />;
   if (nodesQuery.isError && !nodesQuery.data) return <ErrorBlock error={nodesQuery.error} onRetry={() => nodesQuery.refetch()} />;
 
-  const command = created
-    ? installCommand(createdNode?.deployment ?? wizard.deployment, {
-        token: created.token,
-        apiUrl: apiBaseURL,
-        proxyUrl: createdNode?.proxy_url ?? (wizard.proxyUrl.trim() || null),
-        image: NODE_IMAGE,
-        name: createdNode?.name ?? wizard.name,
-      })
-    : "";
+  // A node takes a plain-HTTP API only with the lab switch: no port advice then, and a test-lab command (CB-08).
+  const apiPort = nodeApiPort(apiUrl);
   const offlineSteps = created ? offlineImageSteps(createdNode?.deployment ?? wizard.deployment, NODE_IMAGE) : null;
   // The install command uses this deployment's API URL: say before the customer runs it when a node cannot connect.
-  const apiWarning = insecureApiWarning(apiBaseURL);
+  const apiWarning = insecureApiWarning(apiUrl);
 
   return (
     <div className="space-y-6">
@@ -270,7 +256,7 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
 
       <SectionCard
         title="Registered scan nodes"
-        description={`One node per network segment. Each connects out to ZeroShield on port ${apiPort()} only.`}
+        description={apiPort ? `One node per network segment. Each connects out to ZeroShield on port ${apiPort} only.` : "One node per network segment."}
         actions={
           <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" onClick={startWizard}>
             <Plus className="h-4 w-4 mr-2" />
@@ -397,7 +383,7 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
         )}
       </SectionCard>
 
-      <AgentPoolsCard teamId={teamId} image={NODE_IMAGE} apiUrl={apiBaseURL} />
+      <AgentPoolsCard teamId={teamId} image={NODE_IMAGE} apiUrl={apiUrl} />
 
       <RequestSigningCard teamId={teamId} nodes={nodes} />
 
@@ -450,7 +436,14 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
                 options={DEPLOY_OPTIONS.map((o) => ({ ...o, disabled: !!created && o.value !== wizard.deployment }))} />
               {created && (
                 <div className="mt-4 space-y-2">
-                  <CodeSnippet code={command} language={wizard.deployment === "ami" ? "yaml" : "bash"} />
+                  <NodeInstallCommand
+                    apiUrl={apiUrl}
+                    method={createdNode?.deployment ?? wizard.deployment}
+                    token={created.token}
+                    name={createdNode?.name ?? wizard.name}
+                    proxyUrl={createdNode?.proxy_url ?? (wizard.proxyUrl.trim() || null)}
+                    image={NODE_IMAGE}
+                  />
                   {offlineSteps && (
                     <details className="text-xs text-zinc-600 dark:text-zinc-400" data-testid="node-image-offline">
                       <summary className="cursor-pointer">
@@ -503,7 +496,7 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
                     <TableRow><TableHead>Destination</TableHead><TableHead>Port</TableHead><TableHead>Used for</TableHead></TableRow>
                   </TableHeader>
                   <TableBody>
-                    <TableRow><TableCell className="font-mono text-xs">{apiHost()}</TableCell><TableCell>{apiPort()}</TableCell><TableCell className="text-zinc-600 dark:text-zinc-400">Jobs in, results out (HTTPS)</TableCell></TableRow>
+                    <ApiEgressRow apiUrl={apiUrl} />
                     <TableRow><TableCell>Your targets</TableCell><TableCell>22, 5986, 6443, database and TLS ports</TableCell><TableCell className="text-zinc-600 dark:text-zinc-400">Read-only collection</TableCell></TableRow>
                   </TableBody>
                 </Table>
@@ -571,7 +564,7 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
 
       <SectionCard title="What the node does, and never does">
         <ul className="list-disc pl-5 space-y-1.5 text-sm text-zinc-700 dark:text-zinc-300">
-          <li>Opens no inbound ports. It only connects out to {apiHost()} on port {apiPort()}.</li>
+          <li>Opens no inbound ports. It only connects out to {apiHost(apiUrl)}{apiPort ? ` on port ${apiPort}` : ""}.</li>
           <li>Secrets you enter are encrypted at rest by ZeroShield and sent only to the scan node that runs the job.</li>
           <li>Uses each credential only on the targets it was entered with; your never-scan list always wins.</li>
           <li>Reads with read-only accounts and the published command list shown on the Servers tab.</li>

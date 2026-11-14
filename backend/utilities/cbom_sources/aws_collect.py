@@ -26,6 +26,8 @@ from backend.utilities.cbom_sources.aws_validate import _boto, _code
 from backend.utilities.cbom_sources.common import log, new_ref
 from backend.utilities.cbom_sources.idp_collect import saml_assets_from_xml
 from backend.utilities.cbom_sources.kinds import aws_account_id
+from backend.utilities.cbom_sources.lab_mode import LAB_MODE, own_account_decision
+from backend.utilities.cbom_sources.templates import zeroshield_account_id
 
 PER_SERVICE_CAP = 1000
 GLOBAL_REGION = "us-east-1"
@@ -1429,6 +1431,12 @@ def collect_aws(team_id: int, cfg: dict[str, Any], external_id: str, emit: Emit,
     started = time.monotonic()
     role_arn = cfg["role_arn"]
     regions = list(cfg.get("regions") or ["us-east-1"])
+    # The own-account guard again at collection (a source validated before the collector moved accounts must not read
+    # ZeroShield's own inventory); lab mode on a test deployment is the one exception (lab_mode.py).
+    refusal, lab = own_account_decision(aws_account_id(role_arn), zeroshield_account_id(), str(cfg.get("scope") or "account"),
+                                        team_id=team_id, where="collect")
+    if refusal:
+        raise AwsCollectError(refusal)
     try:
         base, boto_cfg = _boto(retries=5, mode="adaptive")
     except Exception as exc:
@@ -1509,7 +1517,8 @@ def collect_aws(team_id: int, cfg: dict[str, Any], external_id: str, emit: Emit,
                   "not_supported", "ACME-issued ACM certificates are not listed by this SDK version", by_choice=True))
     log_gaps = {"gaps": sum(gap_codes.values()),
                 "gap_codes": ",".join(f"{svc}:{code}:{n}" for (svc, code), n in sorted(gap_codes.items()))[:500] or None}
-    return _summary(targets, team_id, started, log_extra=log_gaps, accounts=len(accounts))
+    return _summary(targets, team_id, started, log_extra=log_gaps, accounts=len(accounts),
+                    **({"lab_mode": LAB_MODE} if lab else {}))
 
 
 def _summary(targets: list[dict[str, Any]], team_id: int, started: float, *,

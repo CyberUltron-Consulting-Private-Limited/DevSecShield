@@ -260,7 +260,8 @@
    "id": "CVE-2004-2761",
    "published": "2009-01-05",
    "summary": "The MD5 Message-Digest Algorithm is not collision resistant, which makes it easier for context-dependent attackers to conduct spoofing attacks, as demonstrated by attacks on the use of MD5 in the signature algorithm of an X.509 certificate.",
-   "url": "https://nvd.nist.gov/vuln/detail/CVE-2004-2761"
+   "url": "https://nvd.nist.gov/vuln/detail/CVE-2004-2761",
+   "vex_inherent": true
   },
   "CVE-2005-4900": {
    "cvss": {
@@ -276,7 +277,8 @@
    "id": "CVE-2005-4900",
    "published": "2016-10-14",
    "summary": "SHA-1 is not collision resistant, which makes it easier for context-dependent attackers to conduct spoofing attacks, as demonstrated by attacks on the use of SHA-1 in TLS 1.2.  NOTE: this CVE exists to provide a common identifier for referencing this SHA-1 issue; the existence of an identifier is not, by itself, a technology recommendation.",
-   "url": "https://nvd.nist.gov/vuln/detail/CVE-2005-4900"
+   "url": "https://nvd.nist.gov/vuln/detail/CVE-2005-4900",
+   "vex_inherent": true
   },
   "CVE-2008-5161": {
    "cvss": {
@@ -292,7 +294,8 @@
    "id": "CVE-2008-5161",
    "published": "2008-11-19",
    "summary": "Error handling in the SSH protocol in (1) SSH Tectia Client and Server and Connector 4.0 through 4.4.11, 5.0 through 5.2.4, and 5.3 through 5.3.8; Client and Server and ConnectSecure 6.0 through 6.0.4; Server for Linux on IBM System z 6.0.4; Server for IBM z/OS 5.5.1 and earlier, 6.0.0, and 6.0.1; and Client 4.0-J through 4.3.3-J and 4.0-K through 4.3.10-K; and (2) OpenSSH 4.7p1 and possibly other versions, when using a block cipher algorithm in Cipher Block Chaining (CBC) mode, makes it easier for remote attackers to recover certain plaintext data from an arbitrary block of ciphertext in an SSH session via unknown vectors.",
-   "url": "https://nvd.nist.gov/vuln/detail/CVE-2008-5161"
+   "url": "https://nvd.nist.gov/vuln/detail/CVE-2008-5161",
+   "vex_inherent": false
   },
   "CVE-2009-3555": {
    "cvss": {
@@ -308,7 +311,8 @@
    "id": "CVE-2009-3555",
    "published": "2009-11-09",
    "summary": "The TLS protocol, and the SSL protocol 3.0 and possibly earlier, as used in Microsoft Internet Information Services (IIS) 7.0, mod_ssl in the Apache HTTP Server 2.2.14 and earlier, OpenSSL before 0.9.8l, GnuTLS 2.8.5 and earlier, Mozilla Network Security Services (NSS) 3.12.4 and earlier, multiple Cisco products, and other products, does not properly associate renegotiation handshakes with an existing connection, which allows man-in-the-middle attackers to insert data into HTTPS sessions, and possibly other types of sessions protected by TLS or SSL, by sending an unauthenticated request that is processed retroactively by a server in a post-renegotiation context, related to a \"plaintext injection\" attack, aka the \"Project Mogul\" issue.",
-   "url": "https://nvd.nist.gov/vuln/detail/CVE-2009-3555"
+   "url": "https://nvd.nist.gov/vuln/detail/CVE-2009-3555",
+   "vex_inherent": false
   },
   "CVE-2011-3389": {
    "cvss": {
@@ -323,7 +327,8 @@
    "id": "CVE-2011-3389",
    "published": "2011-09-06",
    "summary": "The SSL protocol, as used in certain configurations in Microsoft Windows and Microsoft Internet Explorer, Mozilla Firefox, Google Chrome, Opera, and other products, encrypts data by using CBC mode with chained initialization vectors, which allows man-in-the-middle attackers to obtain plaintext HTTP headers via a blockwise chosen-boundary attack (BCBA) on an HTTPS session, in conjunction with JavaScript code that uses (1) the HTML5 WebSocket API, (2) the Java URLConnection API, or (3) the Silverlight WebClient API, aka a \"BEAST\" attack.",
-   "url": "https://nvd.nist.gov/vuln/detail/CVE-2011-3389"
+   "url": "https://nvd.nist.gov/vuln/detail/CVE-2011-3389",
+   "vex_inherent": false
   },
   "CVE-2012-4929": {
    "cvss": {
@@ -338,7 +343,8 @@
    "id": "CVE-2012-4929",
    "published": "2012-09-15",
    "summary": "The TLS protocol 1.2 and earlier, as used in Mozilla Firefox, Google Chrome, Qt, and other products, can encrypt compressed data without properly obfuscating the length of the unencrypted data, which allows man-in-the-middle attackers to obtain plaintext HTTP headers by observing length differences during a series of guesses in which a string in an HTTP request potentially matches an unknown string in an HTTP header, aka a \"CRIME\" attack.",
-   "url": "https://nvd.nist.gov/vuln/detail/CVE-2012-4929"
+   "url": "https://nvd.nist.gov/vuln/detail/CVE-2012-4929",
+   "vex_inherent": false
   },
   "CVE-2013-0169": {
    "cvss": {
@@ -353,7 +359,8 @@
    "id": "CVE-2013-0169",
    "published": "2013-02-08",
    "summary": "The TLS protocol 1.1 and 1.2 and the DTLS protocol 1.0 and 1.2, as used in OpenSSL, OpenJDK, PolarSSL, and other products, do not properly consider timing side-channel attacks on a MAC check requirement during the processing of malformed CBC padding, which allows remote attackers to conduct distinguishing attacks and plaintext-recovery attacks via statistical analysis of timing data for crafted packets, aka the \"Lucky Thirteen\" issue.",
-   "url": "https://nvd.nist.gov/vuln/detail/CVE-2013-0169"
+   "url": "https://nvd.nist.gov/vuln/detail/CVE-2013-0169",
+   "vex_inherent": false
   },
   "CVE-2013-2566": {
    "cvss": {
@@ -369,7 +376,8 @@
    "id": "CVE-2013-2566",
    "published": "2013-03-15",
    "summary": "The RC4 algorithm, as used in the TLS protocol and SSL protocol, has many single-byte biases, which makes it easier for remote attackers to conduct plaintext-recovery attacks via statistical analysis of ciphertext in a large number of sessions that use the same plaintext.",
-   "url": "https://nvd.nist.gov/vuln/detail/CVE-2013-2566"
+   "url": "https://nvd.nist.gov/vuln/detail/CVE-2013-2566",
+   "vex_inherent": true
   },
   "CVE-2014-0160": {
    "cvss": {
@@ -384,7 +392,8 @@
    "id": "CVE-2014-0160",
    "published": "2014-04-07",
    "summary": "The (1) TLS and (2) DTLS implementations in OpenSSL 1.0.1 before 1.0.1g do not properly handle Heartbeat Extension packets, which allows remote attackers to obtain sensitive information from process memory via crafted packets that trigger a buffer over-read, as demonstrated by reading private keys, related to d1_both.c and t1_lib.c, aka the Heartbleed bug.",
-   "url": "https://nvd.nist.gov/vuln/detail/CVE-2014-0160"
+   "url": "https://nvd.nist.gov/vuln/detail/CVE-2014-0160",
+   "vex_inherent": false
   },
   "CVE-2014-0224": {
    "cvss": {
@@ -399,7 +408,8 @@
    "id": "CVE-2014-0224",
    "published": "2014-06-05",
    "summary": "OpenSSL before 0.9.8za, 1.0.0 before 1.0.0m, and 1.0.1 before 1.0.1h does not properly restrict processing of ChangeCipherSpec messages, which allows man-in-the-middle attackers to trigger use of a zero-length master key in certain OpenSSL-to-OpenSSL communications, and consequently hijack sessions or obtain sensitive information, via a crafted TLS handshake, aka the \"CCS Injection\" vulnerability.",
-   "url": "https://nvd.nist.gov/vuln/detail/CVE-2014-0224"
+   "url": "https://nvd.nist.gov/vuln/detail/CVE-2014-0224",
+   "vex_inherent": false
   },
   "CVE-2014-3511": {
    "cvss": {
@@ -428,7 +438,8 @@
    "id": "CVE-2014-3566",
    "published": "2014-10-15",
    "summary": "The SSL protocol 3.0, as used in OpenSSL through 1.0.1i and other products, uses nondeterministic CBC padding, which makes it easier for man-in-the-middle attackers to obtain cleartext data via a padding-oracle attack, aka the \"POODLE\" issue.",
-   "url": "https://nvd.nist.gov/vuln/detail/CVE-2014-3566"
+   "url": "https://nvd.nist.gov/vuln/detail/CVE-2014-3566",
+   "vex_inherent": true
   },
   "CVE-2015-0204": {
    "cvss": {
@@ -443,7 +454,8 @@
    "id": "CVE-2015-0204",
    "published": "2015-01-09",
    "summary": "The ssl3_get_key_exchange function in s3_clnt.c in OpenSSL before 0.9.8zd, 1.0.0 before 1.0.0p, and 1.0.1 before 1.0.1k allows remote SSL servers to conduct RSA-to-EXPORT_RSA downgrade attacks and facilitate brute-force decryption by offering a weak ephemeral RSA key in a noncompliant role, related to the \"FREAK\" issue.  NOTE: the scope of this CVE is only client code based on OpenSSL, not EXPORT_RSA issues associated with servers or other TLS implementations.",
-   "url": "https://nvd.nist.gov/vuln/detail/CVE-2015-0204"
+   "url": "https://nvd.nist.gov/vuln/detail/CVE-2015-0204",
+   "vex_inherent": false
   },
   "CVE-2015-0291": {
    "cvss": {
@@ -471,7 +483,8 @@
    "id": "CVE-2015-2808",
    "published": "2015-04-01",
    "summary": "The RC4 algorithm, as used in the TLS protocol and SSL protocol, does not properly combine state data with key data during the initialization phase, which makes it easier for remote attackers to conduct plaintext-recovery attacks against the initial bytes of a stream by sniffing network traffic that occasionally relies on keys affected by the Invariance Weakness, and then using a brute-force approach involving LSB values, aka the \"Bar Mitzvah\" issue.",
-   "url": "https://nvd.nist.gov/vuln/detail/CVE-2015-2808"
+   "url": "https://nvd.nist.gov/vuln/detail/CVE-2015-2808",
+   "vex_inherent": true
   },
   "CVE-2015-4000": {
    "cvss": {
@@ -487,7 +500,8 @@
    "id": "CVE-2015-4000",
    "published": "2015-05-21",
    "summary": "The TLS protocol 1.2 and earlier, when a DHE_EXPORT ciphersuite is enabled on a server but not on a client, does not properly convey a DHE_EXPORT choice, which allows man-in-the-middle attackers to conduct cipher-downgrade attacks by rewriting a ClientHello with DHE replaced by DHE_EXPORT and then rewriting a ServerHello with DHE_EXPORT replaced by DHE, aka the \"Logjam\" issue.",
-   "url": "https://nvd.nist.gov/vuln/detail/CVE-2015-4000"
+   "url": "https://nvd.nist.gov/vuln/detail/CVE-2015-4000",
+   "vex_inherent": true
   },
   "CVE-2016-0703": {
    "cvss": {
@@ -502,7 +516,8 @@
    "id": "CVE-2016-0703",
    "published": "2016-03-02",
    "summary": "The get_client_master_key function in s2_srvr.c in the SSLv2 implementation in OpenSSL before 0.9.8zf, 1.0.0 before 1.0.0r, 1.0.1 before 1.0.1m, and 1.0.2 before 1.0.2a accepts a nonzero CLIENT-MASTER-KEY CLEAR-KEY-LENGTH value for an arbitrary cipher, which allows man-in-the-middle attackers to determine the MASTER-KEY value and decrypt TLS ciphertext data by leveraging a Bleichenbacher RSA padding oracle, a related issue to CVE-2016-0800.",
-   "url": "https://nvd.nist.gov/vuln/detail/CVE-2016-0703"
+   "url": "https://nvd.nist.gov/vuln/detail/CVE-2016-0703",
+   "vex_inherent": false
   },
   "CVE-2016-0800": {
    "cvss": {
@@ -518,7 +533,8 @@
    "id": "CVE-2016-0800",
    "published": "2016-03-01",
    "summary": "The SSLv2 protocol, as used in OpenSSL before 1.0.1s and 1.0.2 before 1.0.2g and other products, requires a server to send a ServerVerify message before establishing that a client possesses certain plaintext RSA data, which makes it easier for remote attackers to decrypt TLS ciphertext data by leveraging a Bleichenbacher RSA padding oracle, aka a \"DROWN\" attack.",
-   "url": "https://nvd.nist.gov/vuln/detail/CVE-2016-0800"
+   "url": "https://nvd.nist.gov/vuln/detail/CVE-2016-0800",
+   "vex_inherent": true
   },
   "CVE-2016-2105": {
    "cvss": {
@@ -564,7 +580,8 @@
    "id": "CVE-2016-2183",
    "published": "2016-09-01",
    "summary": "The DES and Triple DES ciphers, as used in the TLS, SSH, and IPSec protocols and other protocols and products, have a birthday bound of approximately four billion blocks, which makes it easier for remote attackers to obtain cleartext data via a birthday attack against a long-duration encrypted session, as demonstrated by an HTTPS session using Triple DES in CBC mode, aka a \"Sweet32\" attack.",
-   "url": "https://nvd.nist.gov/vuln/detail/CVE-2016-2183"
+   "url": "https://nvd.nist.gov/vuln/detail/CVE-2016-2183",
+   "vex_inherent": true
   },
   "CVE-2016-6304": {
    "cvss": {
@@ -804,7 +821,8 @@
    "id": "CVE-2023-48795",
    "published": "2023-12-18",
    "summary": "The SSH transport protocol with certain OpenSSH extensions, found in OpenSSH before 9.6 and other products, allows remote attackers to bypass integrity checks such that some packets are omitted (from the extension negotiation message), and a client and server may consequently end up with a connection for which some security features have been downgraded or disabled, aka a Terrapin attack. This occurs because the SSH Binary Packet Protocol (BPP), implemented by these extensions, mishandles the handshake phase and mishandles use of sequence numbers. For example, there is an effective attack against SSH's use of ChaCha20-Poly1305 (and CBC with Encrypt-then-MAC). The bypass occurs in chacha20-poly1305@openssh.com and (if CBC is used) the -etm@openssh.com MAC algorithms. This also affects Maverick Synergy Java SSH API before 3.1.0-SNAPSHOT, Dropbear through 2022.83, Ssh before 5.1.1 in Erlang/OTP, PuTTY before 0.80, AsyncSSH before 2.14.2, golang.org/x/crypto before 0.17.0, libssh before 0.10.6, libssh2 through 1.11.0, Thorn Tech SFTP Gateway before 3.4.6, Tera Term before 5.1, Paramiko before 3.4.0, jsch before 0.2.15, SFTPGo before 2.5.6, Netgate pfSense Plus through 23.09.1, Netgate pfSense CE through 2.7.2, HPN-SSH through 18.2.0, ProFTPD before 1.3.8b (and before 1.3.9rc2), ORYX CycloneSSH before 2.3.4, NetSarang XShell 7 before Build 0144, CrushFTP before 10.6.0, ConnectBot SSH library before 2.2.22, Apache MINA sshd through 2.11.0, sshj through 0.37.0, TinySSH through 20230101, trilead-ssh2 6401, LANCOM LCOS and LANconfig, FileZilla before 3.66.4, Nova before 11.8, PKIX-SSH before 14.4, SecureCRT before 9.4.3, Transmit5 before 5.10.4, Win32-OpenSSH before 9.5.0.0p1-Beta, WinSCP before 6.2.2, Bitvise SSH Server before 9.32, Bitvise SSH Client before 9.33, KiTTY through 0.76.1.13, the net-ssh gem 7.2.0 for Ruby, the mscdex ssh2 module before 1.15.0 for Node.js, the thrussh library before 0.35.1 for Rust, and the Russh crate before 0.40.2 for Rust.",
-   "url": "https://nvd.nist.gov/vuln/detail/CVE-2023-48795"
+   "url": "https://nvd.nist.gov/vuln/detail/CVE-2023-48795",
+   "vex_inherent": false
   },
   "CVE-2023-5363": {
    "cvss": {
@@ -1063,7 +1081,11 @@
       "command": "grep -n -i 'encrypt\\|cipher' '{path}'",
       "label": "Show the setting"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "static",
+     "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan"
+    }
    },
    "CERT_NEAR_EXPIRY": {
     "attack": "An unplanned expiry causes an outage or pushes teams to disable certificate validation in a hurry.",
@@ -1132,7 +1154,11 @@
       "command": "openssl x509 -in '{path}' -noout -subject -dates -text | grep -E 'Subject:|Not After|Signature Algorithm|Public-Key'",
       "label": "Inspect the certificate file"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "posture",
+     "reason": "not expired yet: an operational deadline"
+    }
    },
    "CERT_SELF_SIGNED": {
     "attack": "Clients must either pin it or skip validation; skipped validation allows man-in-the-middle impersonation.",
@@ -1211,7 +1237,11 @@
       "command": "openssl x509 -in '{path}' -noout -subject -dates -text | grep -E 'Subject:|Not After|Signature Algorithm|Public-Key'",
       "label": "Inspect the certificate file"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "posture",
+     "reason": "exploitable only where clients skip validation"
+    }
    },
    "CUSTOM_CRYPTO": {
     "attack": "Home-made primitives are almost always breakable with basic cryptanalysis.",
@@ -1263,7 +1293,11 @@
       "command": "sed -n '{line},+20p' '{path}'",
       "label": "Show the code"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "static",
+     "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan"
+    }
    },
    "DOWNGRADE_PROTECTION_MISSING": {
     "attack": "Clients that retry at a lower version after an injected failure can be walked down to the oldest version the server allows (POODLE-style downgrade).",
@@ -1357,7 +1391,11 @@
       "command": "testssl.sh --fallback {host}:{port}",
       "label": "Re-run the downgrade check"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "static",
+     "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan"
+    }
    },
    "EOL_BASE_IMAGE": {
     "attack": "Every TLS and crypto library vulnerability published after the end-of-life date stays exploitable in the container: an attacker uses the public advisory against the unpatched library the image ships.",
@@ -1417,7 +1455,11 @@
       "command": "grep -n -i '^FROM' '{path}'",
       "label": "Show the base image"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "inferred",
+     "reason": "judged from the image release and its end-of-life date"
+    }
    },
    "EOL_CRYPTO_LIBRARY": {
     "attack": "New OpenSSL / GnuTLS advisories after the end of life stay exploitable in the shipped library unless a vendor back-ports them (paid extended support), and the build gets no further fixes.",
@@ -1485,7 +1527,11 @@
       "command": "strings -a '{path}' | grep -m3 'OpenSSL [0-9]'",
       "label": "OpenSSL version text inside the file"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "inferred",
+     "reason": "judged from the shipped version and its end-of-life date"
+    }
    },
    "EXPIRED_CERTIFICATE": {
     "attack": "Clients either fail closed (an outage) or are configured to ignore validation errors, which removes protection against impersonation.",
@@ -1565,7 +1611,11 @@
       "command": "openssl x509 -in '{path}' -noout -subject -dates -text | grep -E 'Subject:|Not After|Signature Algorithm|Public-Key'",
       "label": "Inspect the certificate file"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "static",
+     "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan"
+    }
    },
    "HARDCODED_KEY": {
     "attack": "Anyone with the code (repository, image, decompiled binary) has the key and can decrypt or forge everything it protects.",
@@ -1629,7 +1679,11 @@
       "command": "sed -n '{line}p' '{path}'",
       "label": "Show the line"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "static",
+     "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan"
+    }
    },
    "KMS_KEY_DELETION_UNPROTECTED": {
     "attack": "Without purge protection a deleted vault or key can be permanently purged during the retention period, so an insider or compromised principal can destroy keys and make the data they protect unrecoverable.",
@@ -1700,7 +1754,11 @@
       "command": "az keyvault show --name {name} --query properties.enablePurgeProtection",
       "label": "Purge protection setting"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "posture",
+     "reason": "recoverability setting: harm needs a compromised principal first"
+    }
    },
    "KMS_KEY_POLICY_PUBLIC": {
     "attack": "Any AWS principal (in any account) allowed by the policy can use or manage the key, and so decrypt data protected by it.",
@@ -1763,7 +1821,11 @@
       "command": "aws kms get-key-policy --key-id {resource} --policy-name default --output text",
       "label": "Key policy"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "static",
+     "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan"
+    }
    },
    "KMS_KEY_ROTATION_DISABLED": {
     "attack": "A key that never rotates protects more data for longer, so any compromise exposes more.",
@@ -1817,7 +1879,11 @@
       "command": "grep -n -i 'enable_key_rotation\\|EnableKeyRotation' '{path}'",
       "label": "Show the key definition"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "posture",
+     "reason": "rotation hygiene: limits blast radius after a leak"
+    }
    },
    "KNOWN_TLS_VULNERABILITY": {
     "attack": "Depends on the vulnerability: Heartbleed leaks server memory including private keys; POODLE and BEAST recover plaintext; ROBOT decrypts RSA key exchange; CRIME and BREACH recover secrets through compression; insecure renegotiation lets an attacker inject requests.",
@@ -1969,7 +2035,11 @@
       "command": "testssl.sh --vulnerable {host}:{port}",
       "label": "Re-run the named checks"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "inferred",
+     "reason": "reported by name from configuration or a scanner report, not reproduced"
+    }
    },
    "LIBRARY_CVE_RANGE": {
     "attack": "If the fix is not in the build, the published exploit for the CVE works against every service in the image or device that loads the library (memory corruption, side channels, certificate parsing flaws).",
@@ -2044,7 +2114,11 @@
       "command": "docker run --rm --entrypoint sh IMAGE -c \"zgrep -i cve /usr/share/doc/{name}/changelog.Debian.gz | head\"",
       "label": "Back-ported fixes in the Debian changelog (inside the image)"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "inferred",
+     "reason": "judged from a version range; back-ported fixes are not checked"
+    }
    },
    "PLAINTEXT_LISTENER": {
     "attack": "Users or clients that land on the plaintext port send cookies and credentials in clear text; SSL-stripping attacks rely on this.",
@@ -2115,7 +2189,11 @@
       "command": "grep -n -i 'listen\\|port' '{path}'",
       "label": "Show the listener"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "static",
+     "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan"
+    }
    },
    "PROVIDER_MANAGED_KEY": {
     "attack": "Anyone the provider's own access path allows can read the data without a key decision by you, and a compromised or over-privileged role is not stopped by a key policy. Regulators and frameworks for regulated data (RBI's cyber security framework for banks, CERT-In's guidance, NIST SP 800-57 key management) expect keys whose custody, rotation and access the organisation controls.",
@@ -2196,7 +2274,11 @@
       "command": "grep -n -i 'kms\\|encrypt\\|sse' '{path}'",
       "label": "Show the resource's encryption settings"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "posture",
+     "reason": "key-ownership choice; data stays encrypted and behind provider authorization"
+    }
    },
    "QUANTUM_VULNERABLE": {
     "attack": "Data encrypted with these keys can be recorded now and decrypted later (harvest now, decrypt later); signatures can be forged once such a computer exists.",
@@ -2265,7 +2347,11 @@
       "command": "grep -n -i '{name}' '{path}'",
       "label": "Show the call site"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "quantum_only",
+     "reason": "no classical attack today; exposure arrives with a cryptographically relevant quantum computer (harvest now, decrypt later or future forgery)"
+    }
    },
    "REUSED_NONCE": {
     "attack": "For AES-GCM or ChaCha20-Poly1305, nonce reuse reveals the XOR of the plaintexts and lets an attacker forge messages.",
@@ -2318,7 +2404,11 @@
       "command": "grep -n -i 'nonce\\|iv' '{path}'",
       "label": "Show the call site"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "static",
+     "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan"
+    }
    },
    "SELF_SIGNED_LEAF": {
     "attack": "Clients must pin the certificate or skip validation; code that skips validation accepts any certificate, which allows man-in-the-middle impersonation.",
@@ -2393,7 +2483,11 @@
       "command": "openssl x509 -in '{path}' -noout -subject -dates -text | grep -E 'Subject:|Not After|Signature Algorithm|Public-Key'",
       "label": "Inspect the certificate file"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "posture",
+     "reason": "exploitable only where clients skip validation"
+    }
    },
    "STATIC_IV": {
     "attack": "With CBC, a predictable IV enables chosen-plaintext attacks; with GCM/CTR, a repeated nonce leaks the XOR of plaintexts and the authentication key.",
@@ -2447,7 +2541,11 @@
       "command": "grep -n -i 'iv\\|nonce' '{path}'",
       "label": "Show the call site"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "static",
+     "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan"
+    }
    },
    "TLS_VERIFICATION_DISABLED": {
     "attack": "An on-path attacker presents any certificate and the client accepts it, so the attacker can read and change the encrypted traffic (man-in-the-middle).",
@@ -2527,7 +2625,11 @@
       "command": "grep -n -i 'verify\\|insecure\\|reject' '{path}'",
       "label": "Show the setting"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "static",
+     "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan"
+    }
    },
    "UNENCRYPTED_AT_REST": {
     "attack": "Copies of the data (snapshots, backups, replicas, decommissioned disks) are readable by whoever obtains them.",
@@ -2598,7 +2700,11 @@
       "command": "grep -n -i 'encrypt' '{path}'",
       "label": "Show the resource definition"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "static",
+     "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan"
+    }
    },
    "UNENCRYPTED_IN_TRANSIT": {
     "attack": "Anyone on the network path can read or change the traffic, including credentials.",
@@ -2680,7 +2786,11 @@
       "command": "grep -n -i 'ssl\\|tls\\|http:' '{path}'",
       "label": "Show the setting"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "static",
+     "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan"
+    }
    },
    "VULNERABLE_CRYPTO_LIBRARY": {
     "attack": "Attackers use the published advisory for the version in use against any code path that calls the affected function; each CVE below names the function and the fixed version.",
@@ -2731,7 +2841,11 @@
       "command": "grep -n '{name}' '{path}'",
       "label": "Show the pinned version"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "inferred",
+     "reason": "judged from a library advisory and version, not from behaviour"
+    }
    },
    "WEAK_ALGORITHM": {
     "attack": "Depending on the algorithm: hash collisions forge signatures or integrity checks; weak ciphers let recorded data be decrypted.",
@@ -2898,7 +3012,11 @@
       "command": "grep -n -i '{name}' '{path}'",
       "label": "Show the call site"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "static",
+     "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan"
+    }
    },
    "WEAK_CERTIFICATE_KEY": {
     "attack": "RSA keys under 2048 bits are within reach of well-funded attackers and are disallowed for new use; a recovered private key lets an attacker impersonate the service or decrypt traffic it protected.",
@@ -2965,7 +3083,11 @@
       "command": "openssl x509 -in '{path}' -noout -subject -dates -text | grep -E 'Subject:|Not After|Signature Algorithm|Public-Key'",
       "label": "Inspect the certificate file"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "static",
+     "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan"
+    }
    },
    "WEAK_CERTIFICATE_SIGNATURE": {
     "attack": "MD5 and SHA-1 chosen-prefix collisions are practical (a rogue CA certificate was forged with MD5; SHA-1 is a Shambles, 2020), so a signature made with them can be forged to vouch for an attacker's key.",
@@ -3044,7 +3166,11 @@
       "command": "openssl x509 -in '{path}' -noout -subject -dates -text | grep -E 'Subject:|Not After|Signature Algorithm|Public-Key'",
       "label": "Inspect the certificate file"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "static",
+     "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan"
+    }
    },
    "WEAK_CIPHER_MODE": {
     "attack": "ECB encrypts equal blocks to equal ciphertext, leaking patterns and allowing block cut-and-paste.",
@@ -3097,7 +3223,11 @@
       "command": "grep -n -i 'ECB\\|getInstance(\"AES\")' '{path}'",
       "label": "Show the call site"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "static",
+     "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan"
+    }
    },
    "WEAK_CIPHER_SUITE": {
     "attack": "Wherever this configuration is deployed: RC4 biases leak plaintext; 64-bit block ciphers (3DES) allow SWEET32 birthday attacks on long sessions; EXPORT suites can be broken in real time (FREAK, Logjam); anonymous suites give no server authentication.",
@@ -3202,7 +3332,11 @@
       "command": "grep -n -i 'cipher' '{path}'",
       "label": "Show the line"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "static",
+     "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan"
+    }
    },
    "WEAK_KEY_SIZE": {
     "attack": "Small keys can be brute-forced or factored.",
@@ -3255,7 +3389,11 @@
       "command": "grep -n -i '{name}' '{path}'",
       "label": "Show the call site"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "static",
+     "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan"
+    }
    },
    "WEAK_PADDING": {
     "attack": "PKCS#1 v1.5 encryption is open to Bleichenbacher-style padding oracles (ROBOT).",
@@ -3310,7 +3448,11 @@
       "command": "grep -n -i 'PKCS1\\|NoPadding' '{path}'",
       "label": "Show the call site"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "static",
+     "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan"
+    }
    },
    "WEAK_PROTOCOL": {
     "attack": "Wherever this configuration is deployed, an attacker in the network path can force or exploit the old protocol: SSLv3 falls to POODLE, TLS 1.0 to BEAST-style CBC attacks, SSH-1 to known insertion and hijacking attacks, and IKEv1 aggressive mode exposes a pre-shared-key hash that can be cracked offline.",
@@ -3431,7 +3573,11 @@
       "command": "grep -n -i 'tls\\|ssl' '{path}'",
       "label": "Show the line"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "static",
+     "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan"
+    }
    },
    "WEAK_RNG": {
     "attack": "These generators are predictable; an attacker who sees some outputs can reconstruct the key or token.",
@@ -3485,7 +3631,11 @@
       "command": "grep -n -i 'random' '{path}'",
       "label": "Show the call site"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "static",
+     "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan"
+    }
    }
   },
   "node": {
@@ -3581,7 +3731,11 @@
       "command": "vault read <pki-mount>/roles/{name}",
       "label": "PKI role settings (read-only token)"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "CA_ALLOWS_WEAK_KEY": {
     "attack": "Certificates for factorable keys let an attacker derive the private key from the public certificate and impersonate the holder.",
@@ -3645,7 +3799,11 @@
       "command": "vault read <pki-mount>/roles/{name}",
       "label": "PKI role settings (read-only token)"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "CA_LONG_VALIDITY": {
     "attack": "A leaked key stays usable for longer, certificates outlive the algorithms and owners they were made for, and Apple clients reject the certificates outright.",
@@ -3706,7 +3864,11 @@
       "command": "certutil -v -template <template>",
       "label": "A template's settings and permissions (its Allow Enroll and Allow Full Control / Write lines)"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "posture",
+     "reason": "lifetime policy: a leak stays usable longer; no attack on the CA or its certificates as they are"
+    }
    },
    "CA_TEMPLATE_WRITABLE": {
     "attack": "Any domain account can rewrite the template (let the enrollee supply the subject, add client authentication, grant itself Enroll), request a certificate for a domain administrator and sign in as them: the AD CS ESC4 path to domain compromise.",
@@ -3781,7 +3943,11 @@
       "command": "certutil -getreg policy\\DisableExtensionList",
       "label": "Extensions the CA leaves out (1.3.6.1.4.1.311.25.2 listed = no SID extension, ESC16)"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "CA_WEAK_SIGNING": {
     "attack": "Chosen-prefix collisions let an attacker get a harmless request signed and reuse the signature on a forged certificate (SHA-1: SHAmbles 2020; MD5: the 2008 rogue CA).",
@@ -3851,7 +4017,11 @@
       "command": "curl --cert client.pem --key client.key https://{host}:{port}/ejbca/ejbca-rest-api/v1/ca",
       "label": "Certificate authorities (client certificate authentication)"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "CBC_ACCEPTED": {
     "attack": "A client limited to CBC suites falls back to MAC-then-encrypt constructions with known timing side channels.",
@@ -3929,7 +4099,11 @@
       "command": "openssl s_client -connect {host}:{port} -tls1_2 -cipher 'RC4:3DES:DES:NULL:EXPORT:@SECLEVEL=0' </dev/null 2>&1 | grep -E 'Cipher|alert'",
       "label": "Try the weak suites explicitly"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "CBC_ONLY": {
     "attack": "MAC-then-encrypt CBC suites have a long history of padding-oracle and timing attacks (Lucky Thirteen and successors).",
@@ -4009,7 +4183,11 @@
       "command": "openssl s_client -connect {host}:{port} -tls1_2 -cipher 'RC4:3DES:DES:NULL:EXPORT:@SECLEVEL=0' </dev/null 2>&1 | grep -E 'Cipher|alert'",
       "label": "Try the weak suites explicitly"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "CERT_EXPIRED": {
     "attack": "Clients either fail closed (an outage) or are configured to ignore validation errors, which removes protection against impersonation.",
@@ -4094,7 +4272,11 @@
       "command": "openssl x509 -in '{path}' -noout -subject -dates -text | grep -E 'Subject:|Not After|Signature Algorithm|Public-Key'",
       "label": "Inspect the certificate file"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "CERT_EXPIRES_30D": {
     "attack": "An unplanned expiry causes an outage or pushes teams to disable validation.",
@@ -4167,7 +4349,11 @@
       "command": "openssl x509 -in '{path}' -noout -subject -dates -text | grep -E 'Subject:|Not After|Signature Algorithm|Public-Key'",
       "label": "Inspect the certificate file"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "posture",
+     "reason": "not expired yet: an operational deadline, no attack on the certificate today"
+    }
    },
    "CERT_REVOKED": {
     "attack": "Revocation is usually the right outcome (a replaced or compromised key). It becomes a problem if a server still presents the certificate: clients that check revocation refuse the connection, and clients that do not are exposed if the key was compromised.",
@@ -4253,7 +4439,11 @@
       "command": "curl -s 'https://crt.sh/?q={name}&output=json&exclude=expired&deduplicate=Y' | jq -r '.[] | [.not_before, .not_after, .issuer_name, .name_value] | @tsv'",
       "label": "The same name in crt.sh (best effort: often slow or 502)"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "posture",
+     "reason": "revocation is usually the intended outcome; exposure only if a server still presents it, judged by the endpoint's own codes"
+    }
    },
    "CERT_SELF_SHA1": {
     "attack": "None through the self-signature itself. Policy engines and scanners that flag every SHA-1 signature will keep reporting it, and some clients refuse SHA-1 anywhere in a chain.",
@@ -4318,7 +4508,11 @@
       "command": "openssl x509 -in '{path}' -noout -subject -dates -text | grep -E 'Subject:|Not After|Signature Algorithm|Public-Key'",
       "label": "Inspect the certificate file"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "posture",
+     "reason": "informational: the SHA-1 self-signature of a trust anchor is never verified, so it gives no attack (the KB entry says so)"
+    }
    },
    "CERT_SELF_SIGNED": {
     "attack": "Clients must either pin it or skip validation; skipped validation allows man-in-the-middle impersonation.",
@@ -4397,7 +4591,11 @@
       "command": "openssl x509 -in '{path}' -noout -subject -dates -text | grep -E 'Subject:|Not After|Signature Algorithm|Public-Key'",
       "label": "Inspect the certificate file"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "posture",
+     "reason": "exploitable only where clients skip validation, which the collector does not observe; pinned use is safe"
+    }
    },
    "CERT_UNEXPECTED_CA": {
     "attack": "A certificate from an unexpected CA is either shadow IT (a team or vendor buying certificates outside the process, often unmanaged and left to expire) or mis-issuance: someone who could pass that CA's domain validation can impersonate the name to every browser.",
@@ -4506,7 +4704,11 @@
       "command": "dig +short CAA {name}",
       "label": "CAs allowed to issue for the name (CAA)"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "posture",
+     "reason": "inventory/governance finding (shadow IT); the certificate itself has no weakness from this code"
+    }
    },
    "CERT_UNUSED": {
     "attack": "Orphaned certificates with live private keys are unmanaged credentials: if the key leaks, the certificate can still be used to impersonate the name.",
@@ -4564,7 +4766,11 @@
       "command": "aws acm describe-certificate --certificate-arn {resource} --query Certificate.InUseBy",
       "label": "Where the certificate is used"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "posture",
+     "reason": "inventory finding: orphaned certificate; misuse needs its key to leak first"
+    }
    },
    "CERT_WILDCARD_SPRAWL": {
     "attack": "A wildcard key copied to many servers, vendors or CDNs is only as safe as the weakest of them; one leak allows impersonating every subdomain, including ones that never used the certificate.",
@@ -4652,7 +4858,11 @@
       "command": "curl -s 'https://crt.sh/?q={name}&output=json&exclude=expired&deduplicate=Y' | jq -r '.[] | [.not_before, .not_after, .issuer_name, .name_value] | @tsv'",
       "label": "The same name in crt.sh (best effort: often slow or 502)"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "posture",
+     "reason": "key-distribution hygiene: misuse needs one holder's key to leak first"
+    }
    },
    "DB_10G_VERIFIER": {
     "attack": "The 10G verifier is cracked quickly from a stolen hash, and its presence lets old clients use the weak logon protocol.",
@@ -4718,7 +4928,11 @@
       "command": "sqlplus -s <login>@//{host}:{port}/<service> <<< \"SELECT username, password_versions FROM dba_users WHERE password_versions LIKE '%10G%' OR password_versions LIKE '%11G%';\"",
       "label": "Password verifier versions (SELECT_CATALOG_ROLE)"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "DB_CLEARTEXT_PW": {
     "attack": "On a non-TLS connection anyone on the path reads the password.",
@@ -4797,7 +5011,11 @@
       "command": "psql \"host={host} port={port} sslmode=require\" -c \"SELECT name, setting FROM pg_settings WHERE name IN ('ssl','ssl_min_protocol_version','password_encryption')\" -c \"SELECT line_number, type, database, user_name, auth_method FROM pg_hba_file_rules\"",
       "label": "Server TLS and password settings (as the read-only login)"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "DB_EOL_VERSION": {
     "attack": "Known vulnerabilities, including in authentication and network encryption, stay unpatched.",
@@ -4850,7 +5068,11 @@
       "command": "sqlplus -s <login>@//{host}:{port}/<service> <<< \"SELECT banner FROM v$version;\"",
       "label": "Release banner"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "inferred",
+     "reason": "judged from the release and its end-of-support date, not from a flaw seen on the server"
+    }
    },
    "DB_LEGACY_NNE": {
     "attack": "Without certificate verification a client cannot tell the real database from an impostor on the path; NNE also needed the July 2021 CPU fixes (CVE-2021-2351) and still allows SHA-1 integrity for old clients.",
@@ -4917,7 +5139,11 @@
       "command": "openssl s_client -connect {host}:{port} </dev/null",
       "label": "Does the listener offer TLS?"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "DB_LEGACY_PW_HASH": {
     "attack": "Salted SHA-1 is fast to brute-force once the hashes leak (a backup, a replica, a privileged account).",
@@ -4991,7 +5217,11 @@
       "command": "sqlplus -s <login>@//{host}:{port}/<service> <<< \"SELECT username, password_versions FROM dba_users WHERE password_versions LIKE '%10G%' OR password_versions LIKE '%11G%';\"",
       "label": "Password verifier versions (SELECT_CATALOG_ROLE)"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "DB_LOGIN_NO_POLICY": {
     "attack": "Short or common passwords and unlimited guessing against those logins.",
@@ -5044,7 +5274,11 @@
       "command": "sqlcmd -S {host},{port} -N -Q \"SELECT name FROM sys.sql_logins WHERE is_policy_checked = 0 AND is_disabled = 0\"",
       "label": "Logins without the policy"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "posture",
+     "reason": "password-policy setting: whether any login actually has a weak password is not observed"
+    }
    },
    "DB_MD5_ACCEPTED": {
     "attack": "An md5 hash (salted only with the role name) taken from a backup or pg_authid can be replayed as the password, and md5 challenge-response captures are cheap to brute-force.",
@@ -5116,7 +5350,11 @@
       "command": "aws rds describe-db-parameters --db-parameter-group-name <group> --query \"Parameters[?ParameterName=='rds.accepted_password_auth_method' || ParameterName=='password_encryption' || ParameterName=='rds.force_ssl'].[ParameterName,ParameterValue]\"",
       "label": "Effective RDS parameters"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "DB_MD5_DEFAULT": {
     "attack": "An MD5 password hash (salted only with the user name) can be replayed as the password itself and is cheap to brute-force once read from the database or a backup.",
@@ -5181,7 +5419,11 @@
       "command": "psql \"host={host} port={port} sslmode=require\" -c \"SELECT name, setting FROM pg_settings WHERE name IN ('ssl','ssl_min_protocol_version','password_encryption')\" -c \"SELECT line_number, type, database, user_name, auth_method FROM pg_hba_file_rules\"",
       "label": "Server TLS and password settings (as the read-only login)"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "DB_NATIVE_PW": {
     "attack": "The stored double-SHA-1 hash is fast to brute-force if the mysql.user table leaks.",
@@ -5244,7 +5486,11 @@
       "command": "mysql -h {host} -P {port} --ssl-mode=REQUIRED -e \"SHOW GLOBAL VARIABLES WHERE Variable_name IN ('require_secure_transport','tls_version','default_table_encryption'); SELECT user, host, plugin FROM mysql.user\"",
       "label": "TLS and plugin settings"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "DB_NO_AUTH": {
     "attack": "Anyone who can reach the port can read or change data.",
@@ -5306,7 +5552,11 @@
       "command": "nmap --script ssl-enum-ciphers -p {port} {host}",
       "label": "Does the port offer TLS?"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "DB_NO_TDE": {
     "attack": "Data files, backups and replicas expose table contents to anyone who copies them.",
@@ -5367,7 +5617,11 @@
       "command": "mysql -h {host} -P {port} --ssl-mode=REQUIRED -e \"SHOW GLOBAL VARIABLES WHERE Variable_name IN ('require_secure_transport','tls_version','default_table_encryption'); SELECT user, host, plugin FROM mysql.user\"",
       "label": "TLS and plugin settings"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "posture",
+     "reason": "at-rest encryption may be provided by the volume or storage layer, which the database collector cannot see"
+    }
    },
    "DB_NO_TLS": {
     "attack": "Queries, results and (for some auth methods) passwords cross the network in clear text.",
@@ -5435,7 +5689,11 @@
       "command": "nmap --script ssl-enum-ciphers -p {port} {host}",
       "label": "Does the port offer TLS?"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "DB_OLD_PASSWORD": {
     "attack": "The hash can be cracked instantly.",
@@ -5498,7 +5756,11 @@
       "command": "mysql -h {host} -P {port} --ssl-mode=REQUIRED -e \"SHOW GLOBAL VARIABLES WHERE Variable_name IN ('require_secure_transport','tls_version','default_table_encryption'); SELECT user, host, plugin FROM mysql.user\"",
       "label": "TLS and plugin settings"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "DB_PLAINTEXT_PW": {
     "attack": "Anyone who can read pg_authid, a backup or a replica reads the password itself and can sign in as that role here and wherever the password is reused.",
@@ -5579,7 +5841,11 @@
       "command": "psql \"host={host} port={port} sslmode=require\" -c \"SELECT name, setting FROM pg_settings WHERE name IN ('ssl','ssl_min_protocol_version','password_encryption')\" -c \"SELECT line_number, type, database, user_name, auth_method FROM pg_hba_file_rules\"",
       "label": "Server TLS and password settings (as the read-only login)"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "DB_TDE_OFF": {
     "attack": "Without TDE, data files copied off the server, backups, snapshots and replicas expose the data to anyone who copies them, unless the storage under them or the backups themselves are encrypted.",
@@ -5655,7 +5921,11 @@
       "command": "sqlplus -s <login>@//{host}:{port}/<service> <<< \"SELECT tablespace_name, encrypted FROM dba_tablespaces; SELECT * FROM v$encrypted_tablespaces;\"",
       "label": "Tablespace encryption (SELECT_CATALOG_ROLE)"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "posture",
+     "reason": "at-rest encryption may be provided by the volume or storage layer, which the database collector cannot see"
+    }
    },
    "DB_TLS_MODE": {
     "attack": "Clients can connect without TLS.",
@@ -5734,7 +6004,11 @@
       "command": "nmap --script ssl-enum-ciphers -p {port} {host}",
       "label": "Does the port offer TLS?"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "DB_TLS_OPTIONAL": {
     "attack": "Clients that do not ask for TLS (or are downgraded) send data and credentials in clear text.",
@@ -5814,7 +6088,11 @@
       "command": "nmap --script ssl-enum-ciphers -p {port} {host}",
       "label": "Does the port offer TLS?"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "DB_TRUST": {
     "attack": "Anyone who can reach the port from a matching address logs in as any role the rule allows.",
@@ -5882,7 +6160,11 @@
       "command": "psql \"host={host} port={port} sslmode=require\" -c \"SELECT name, setting FROM pg_settings WHERE name IN ('ssl','ssl_min_protocol_version','password_encryption')\" -c \"SELECT line_number, type, database, user_name, auth_method FROM pg_hba_file_rules\"",
       "label": "Server TLS and password settings (as the read-only login)"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "DB_WEAK_HASH": {
     "attack": "An MD5 hash (salted only with the user name) can be replayed as the password itself and is cheap to brute-force.",
@@ -5947,7 +6229,11 @@
       "command": "psql \"host={host} port={port} sslmode=require\" -c \"SELECT name, setting FROM pg_settings WHERE name IN ('ssl','ssl_min_protocol_version','password_encryption')\" -c \"SELECT line_number, type, database, user_name, auth_method FROM pg_hba_file_rules\"",
       "label": "Server TLS and password settings (as the read-only login)"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "DH_LT_2048": {
     "attack": "Common 1024-bit and export-grade groups can be broken by precomputation (Logjam); recorded sessions can then be decrypted.",
@@ -6030,7 +6316,11 @@
       "command": "openssl s_client -connect {host}:{port} -tls1_2 -cipher 'RC4:3DES:DES:NULL:EXPORT:@SECLEVEL=0' </dev/null 2>&1 | grep -E 'Cipher|alert'",
       "label": "Try the weak suites explicitly"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "DISK_CBC": {
     "attack": "CBC with predictable IVs allows watermarking and malleability attacks on disk blocks.",
@@ -6084,7 +6374,11 @@
       "command": "sudo dmsetup table --target crypt",
       "label": "dm-crypt cipher"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "DISK_PROTECTION_OFF": {
     "attack": "Anyone with the disk can read the data, because the key that decrypts it is stored in the clear while protection is suspended.",
@@ -6146,7 +6440,11 @@
       "command": "Get-BitLockerVolume | Select-Object MountPoint,VolumeStatus,EncryptionMethod,ProtectionStatus",
       "label": "Volume status"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "DISK_UNENCRYPTED": {
     "attack": "A stolen disk, snapshot or decommissioned drive exposes all data on it.",
@@ -6207,7 +6505,11 @@
       "command": "lsblk -o NAME,TYPE,FSTYPE,MOUNTPOINT",
       "label": "Block devices and encryption layers"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "DISK_XTS_128": {
     "attack": "AES-128 is still secure today; under Grover's algorithm its margin drops, so long-lived data prefers AES-256.",
@@ -6261,7 +6563,11 @@
       "command": "sudo dmsetup table --target crypt",
       "label": "dm-crypt cipher"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "quantum_only",
+     "reason": "no classical attack today; exposure arrives with a cryptographically relevant quantum computer (harvest now, decrypt later or future forgery)"
+    }
    },
    "DOTNET_WEAK_TLS": {
     "attack": "A man-in-the-middle can downgrade connections made by .NET applications (web service clients, LOB apps) to TLS 1.0 or SSL 3.0 and attack the weaker protocol (POODLE, BEAST, RC4 biases).",
@@ -6339,7 +6645,11 @@
       "command": "Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\.NETFramework\\v4.0.30319' | Select-Object SchUseStrongCrypto,SystemDefaultTlsVersions",
       "label": "Current values"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "DOWNGRADE": {
     "attack": "An on-path attacker interferes with the handshake so both sides settle on the weakest common version, then uses that version's weaknesses.",
@@ -6436,7 +6746,11 @@
       "command": "testssl.sh --protocols {host}:{port}",
       "label": "Same check with testssl.sh"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "DSA": {
     "attack": "DSA is fragile (a biased or repeated nonce leaks the private key) and is being removed from major stacks.",
@@ -6506,7 +6820,11 @@
       "command": "openssl pkey -in '{path}' -pubout 2>/dev/null | openssl pkey -pubin -noout -text | head -1",
       "label": "Key type and size without printing the key"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "EBS_DEFAULT_OFF": {
     "attack": "Unencrypted volumes and their snapshots expose data.",
@@ -6579,7 +6897,11 @@
       "command": "aws ec2 get-ebs-encryption-by-default",
       "label": "Default"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "posture",
+     "reason": "account default for future volumes; existing volumes are judged by their own encryption"
+    }
    },
    "EC_LT_224": {
     "attack": "Small curves fall below the 112-bit security floor.",
@@ -6653,7 +6975,11 @@
       "command": "openssl pkey -in '{path}' -pubout 2>/dev/null | openssl pkey -pubin -noout -text | head -1",
       "label": "Key type and size without printing the key"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "GLUE_CATALOG_UNENCRYPTED": {
     "attack": "Catalog metadata, including connection definitions, is readable to any principal with Glue read access and is not covered by a KMS key policy or by CloudTrail records of key use.",
@@ -6732,7 +7058,11 @@
       "command": "aws glue get-data-catalog-encryption-settings --query DataCatalogEncryptionSettings",
       "label": "Data Catalog encryption settings (no secrets)"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "posture",
+     "reason": "metadata stays behind Glue IAM authorization; missing KMS is defence in depth"
+    }
    },
    "GLUE_JDBC_NO_TLS": {
     "attack": "On the network path between Glue and the database, credentials and query results can be read or changed.",
@@ -6809,7 +7139,11 @@
       "command": "aws glue get-connection --name {name} --hide-password --query 'Connection.ConnectionProperties | keys(@)'",
       "label": "Connection properties without the password"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "GLUE_PLAINTEXT_PASSWORD": {
     "attack": "Any principal allowed glue:GetConnection(s) (read-only auditors included) can read the database password and log in to the database directly.",
@@ -6894,7 +7228,11 @@
       "command": "aws glue get-connection --name {name} --hide-password --query 'Connection.ConnectionProperties | keys(@)'",
       "label": "Connection properties without the password"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "IKEV1_ENABLED": {
     "attack": "IKEv1 keeps legacy algorithms and modes (Aggressive Mode, XAUTH) reachable; attacks on its PSK handling and re-used keys across IKEv1 and IKEv2 (Bleichenbacher-style, 2018) only need the gateway to answer it.",
@@ -6983,7 +7321,11 @@
       "command": "ike-scan -M {host}",
       "label": "Does the gateway answer IKEv1 Main Mode?"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "IKE_AGGRESSIVE": {
     "attack": "An attacker sends one Aggressive Mode request, receives HASH_R and cracks the pre-shared key offline (psk-crack, hashcat mode 5300/5400); with the PSK (and a group name) they can impersonate the gateway or connect as a client.",
@@ -7084,7 +7426,11 @@
       "command": "ike-scan -M -A --id=vpn {host}",
       "label": "Aggressive Mode answer (no credential needed; the hash is printed, keep it private)"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "IKE_NO_PQ": {
     "attack": "IPsec traffic recorded today can be decrypted once a cryptographically relevant quantum computer can solve the recorded key exchanges (harvest now, decrypt later).",
@@ -7147,7 +7493,11 @@
       "command": "swanctl --initiate --child <child> (with proposals = aes256gcm16-prfsha384-x25519-ke1_mlkem768)",
       "label": "Offer ML-KEM-768 as ADDKE1 (strongSwan 6 initiator)"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "quantum_only",
+     "reason": "no classical attack today; exposure arrives with a cryptographically relevant quantum computer (harvest now, decrypt later or future forgery)"
+    }
    },
    "IKE_WEAK_DH": {
     "attack": "768 and 1024-bit discrete logarithms are within reach of well-resourced attackers (Logjam showed the precomputation for common 1024-bit primes); recorded IKE exchanges keyed with them can be decrypted, and so can the IPsec keys derived from them.",
@@ -7241,7 +7591,11 @@
       "command": "ike-scan -M --trans=5,2,1,2 {host}",
       "label": "IKEv1 Main Mode transforms (first message only)"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "IKE_WEAK_ENCR": {
     "attack": "A peer (or an on-path attacker steering the negotiation) can get the IKE SA keyed with a cipher whose block size allows birthday attacks on long-lived SAs (SWEET32) and, for single DES, brute force of the key.",
@@ -7343,7 +7697,11 @@
       "command": "ike-scan -M --trans=5,2,1,2 {host}",
       "label": "IKEv1 Main Mode transforms (first message only)"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "IKE_WEAK_INTEG": {
     "attack": "MD5 no longer meets current security margins; keeping it lets a downgraded negotiation key and authenticate the IKE SA with a primitive RFC 8247 forbids. HMAC-SHA-1 is not broken, but it is on its way out and auditors following NIST SP 800-131A ask for SHA-2.",
@@ -7436,7 +7794,11 @@
       "command": "ike-scan -M --trans=5,2,1,2 {host}",
       "label": "IKEv1 Main Mode transforms (first message only)"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "IPSEC_WEAK_TRANSFORM": {
     "attack": "The child SA protects the actual data: a weak cipher, MD5 MAC or small PFS group there exposes the tunnelled traffic even when the IKE SA itself is strong; HMAC-SHA-1 is not broken but is being retired.",
@@ -7532,7 +7894,11 @@
       "command": "show running-config | section crypto ipsec",
       "label": "The appliance's IPsec proposals (read-only)"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "KEYSTORE_JKS": {
     "attack": "JKS protects private keys with a weak proprietary scheme; a stolen keystore is easier to brute-force than PKCS#12.",
@@ -7588,7 +7954,11 @@
       "command": "keytool -list -keystore '{path}' -storepass:env STOREPASS | head -3",
       "label": "Keystore type"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "posture",
+     "reason": "format hygiene: brute force needs the keystore file to be stolen first and a weak password"
+    }
    },
    "KEY_COMPROMISED": {
     "attack": "Data or signatures protected by the key may be read or forged; a compromised key that can still be used for processing keeps the exposure open.",
@@ -7645,7 +8015,11 @@
       "command": "python3 -c \"from kmip.pie.client import ProxyKmipClient as C; c=C(hostname='{host}', port={port}, cert='client.pem', key='client.key', ca='ca.pem'); c.open(); print(c.get_attributes('<uid>')); c.close()\"",
       "label": "Attributes of the object (PyKMIP client on a workstation that holds a KMIP client certificate)"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "KEY_EXTRACTABLE": {
     "attack": "A user of the token can wrap the key under a key they control and unwrap it elsewhere; the HSM then no longer is the only place the key exists.",
@@ -7704,7 +8078,11 @@
       "command": "python3 -c \"from kmip.pie.client import ProxyKmipClient as C; c=C(hostname='{host}', port={port}, cert='client.pem', key='client.key', ca='ca.pem'); c.open(); print(c.get_attributes('<uid>')); c.close()\"",
       "label": "Attributes of the object (PyKMIP client on a workstation that holds a KMIP client certificate)"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "KEY_IN_CONFIGMAP": {
     "attack": "Anyone who can read ConfigMaps in the namespace (often far more people and controllers than can read Secrets) gets the private key.",
@@ -7784,7 +8162,11 @@
       "command": "kubectl get configmap -n <namespace> <name> -o jsonpath='{.data}' | grep -c 'PRIVATE KEY'",
       "label": "Which keys the ConfigMap holds (names only)"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "KEY_IN_DOCUMENT": {
     "attack": "Keys pasted into documents spread through backups, tickets and repositories and are rarely rotated.",
@@ -7848,7 +8230,11 @@
       "command": "grep -n 'PRIVATE KEY-----' '{path}'",
       "label": "Find the key block without printing it"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "KEY_NO_ROTATION": {
     "attack": "A key version that never changes protects more data for longer; a leak of it exposes everything encrypted since it was created.",
@@ -7903,7 +8289,11 @@
       "command": "vault read transit/keys/{name}",
       "label": "Transit key settings (read-only token)"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "posture",
+     "reason": "rotation hygiene: limits blast radius after a leak; no attack on the key as it is"
+    }
    },
    "KEY_PLAINTEXT_EXPORT": {
     "attack": "Anyone who can use the key (an application token, an HSM user, a Vault policy with export rights) can copy its value; the key then works outside the HSM or Vault, without audit and after revocation.",
@@ -7984,7 +8374,11 @@
       "command": "vault read transit/keys/{name}",
       "label": "Transit key settings (read-only token)"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "KEY_READABLE": {
     "attack": "Any account with the same access can copy the key.",
@@ -8057,7 +8451,11 @@
       "command": "openssl pkey -in '{path}' -pubout 2>/dev/null | openssl pkey -pubin -noout -text | head -1",
       "label": "Key type and size without printing the key"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "KEY_WEAK_SYMMETRIC": {
     "attack": "Single DES keys are brute-forced in hours; Triple DES and the other 64-bit block ciphers leak plaintext on long-lived keys (Sweet32, CVE-2016-2183); RC4 output is biased.",
@@ -8135,7 +8533,11 @@
       "command": "sqlcmd -S {host},{port} -N -Q \"SELECT name, algorithm_desc, key_length FROM sys.symmetric_keys; SELECT DB_NAME(database_id), encryption_state, key_algorithm, key_length FROM sys.dm_database_encryption_keys\"",
       "label": "Key algorithms in the database (read-only login)"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "KEY_WORLD_READABLE": {
     "attack": "Any local user or compromised service account can copy the key and impersonate or decrypt for the service that owns it.",
@@ -8219,7 +8621,11 @@
       "command": "openssl pkey -in '{path}' -pubout 2>/dev/null | openssl pkey -pubin -noout -text | head -1",
       "label": "Key type and size without printing the key"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "KMS_NO_ROTATION": {
     "attack": "A key that never rotates protects more data for longer, so any compromise exposes more.",
@@ -8273,7 +8679,11 @@
       "command": "aws kms get-key-rotation-status --key-id {resource}",
       "label": "Rotation status"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "posture",
+     "reason": "rotation hygiene: limits blast radius after a leak; no attack on the key as it is"
+    }
    },
    "KMS_PENDING_DELETION": {
     "attack": "Data still encrypted under it becomes unrecoverable when the key is deleted.",
@@ -8324,7 +8734,11 @@
       "command": "aws kms describe-key --key-id {resource} --query KeyMetadata.KeyState",
       "label": "Key state"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "posture",
+     "reason": "availability/lifecycle: data loss risk on deletion, no confidentiality or integrity attack"
+    }
    },
    "KV_NO_PURGE_PROTECTION": {
     "attack": "An insider or compromised principal can delete and then purge keys, permanently destroying the data they protect.",
@@ -8386,7 +8800,11 @@
       "command": "az keyvault show --name {name} --query '{softDelete:properties.enableSoftDelete, purgeProtection:properties.enablePurgeProtection, publicNetworkAccess:properties.publicNetworkAccess, defaultAction:properties.networkAcls.defaultAction}'",
       "label": "Vault protection settings"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "posture",
+     "reason": "recoverability setting: harm needs a compromised or careless principal first"
+    }
    },
    "KV_PUBLIC_NETWORK": {
     "attack": "Anyone who obtains a token for the vault can use it from any network; the vault firewall does not limit where keys and secrets are reached from.",
@@ -8447,7 +8865,11 @@
       "command": "az keyvault show --name {name} --query '{softDelete:properties.enableSoftDelete, purgeProtection:properties.enablePurgeProtection, publicNetworkAccess:properties.publicNetworkAccess, defaultAction:properties.networkAcls.defaultAction}'",
       "label": "Vault protection settings"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "posture",
+     "reason": "network restriction is defence in depth: use still needs a valid token"
+    }
    },
    "KV_SOFT_DELETE_OFF": {
     "attack": "One delete call (by a compromised or careless principal) destroys keys and makes the data they protect unrecoverable.",
@@ -8509,7 +8931,11 @@
       "command": "az keyvault show --name {name} --query '{softDelete:properties.enableSoftDelete, purgeProtection:properties.enablePurgeProtection, publicNetworkAccess:properties.publicNetworkAccess, defaultAction:properties.networkAcls.defaultAction}'",
       "label": "Vault protection settings"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "posture",
+     "reason": "recoverability setting: harm needs a compromised or careless principal first"
+    }
    },
    "LIB_DELETED_IN_USE": {
     "attack": "The patch is installed on disk but not running: the process is still exposed to the flaws the upgrade fixed.",
@@ -8565,7 +8991,11 @@
       "command": "sudo grep -l '(deleted)' /proc/*/maps 2>/dev/null | xargs -r grep -H 'libcrypto\\|libssl' | grep deleted",
       "label": "Processes mapping deleted libraries"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "inferred",
+     "reason": "the running process predates the installed patch; which flaws remain is inferred from versions"
+    }
    },
    "LIB_EOL": {
     "attack": "Unpatched library flaws (memory corruption, side channels) stay exploitable; check whether your OS vendor still backports fixes.",
@@ -8628,7 +9058,11 @@
       "command": "openssl version -a | head -2",
       "label": "Installed version"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "inferred",
+     "reason": "judged from the version and the vendor's end-of-life date; distributions may back-port fixes"
+    }
    },
    "LIB_KNOWN_CVE": {
     "attack": "See each CVE. A version match is not proof of exposure: Linux distributions back-port fixes without changing the upstream version number, so each CVE is reported as 'in triage' until you confirm it against your vendor's advisory.",
@@ -8692,7 +9126,11 @@
       "command": "rpm -q {name}; rpm -q --changelog {name} | grep -i cve | head",
       "label": "Installed version and back-ported fixes (RHEL family)"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "inferred",
+     "reason": "judged from a version range; distributions back-port fixes without changing the upstream version"
+    }
    },
    "LIB_STATIC": {
     "attack": "OS library updates do not reach it; it must be rebuilt to get fixes.",
@@ -8738,7 +9176,11 @@
     "standards": [],
     "summary_rules": [],
     "title": "Crypto statically linked",
-    "verify": []
+    "verify": [],
+    "vex_default": {
+     "basis": "posture",
+     "reason": "patch-management hygiene: whether the linked copy is vulnerable is judged by version codes"
+    }
    },
    "LINKERD_UNAUTHENTICATED_SERVER": {
     "attack": "Any pod (meshed or not) or address in the allowed networks reaches the workload without mTLS, so traffic can be plaintext and callers are not identified.",
@@ -8821,7 +9263,11 @@
       "command": "kubectl get servers.policy.linkerd.io,serverauthorizations.policy.linkerd.io,authorizationpolicies.policy.linkerd.io -A -o wide",
       "label": "Servers and their authorizations"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "LUKS1": {
     "attack": "PBKDF2 key slots are cheaper to brute-force than LUKS2's Argon2id if the passphrase is weak.",
@@ -8872,7 +9318,11 @@
       "command": "sudo cryptsetup luksDump /dev/<device> | head -3",
       "label": "LUKS version"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "posture",
+     "reason": "KDF hygiene: brute force needs the disk and a weak passphrase"
+    }
    },
    "MESH_DR_TLS_DISABLED": {
     "attack": "Traffic to an in-mesh destination crosses the network unencrypted and unauthenticated; anyone on the path (a compromised node, a mirror port) reads and changes it. Toward an external host this happens only if the application itself connects without TLS.",
@@ -8943,7 +9393,11 @@
       "command": "kubectl get destinationrules -A -o yaml | grep -n -B12 'mode: DISABLE'",
       "label": "DestinationRules that disable TLS"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "MESH_MTLS_OFF": {
     "attack": "Pod-to-pod traffic is plaintext and unauthenticated inside the cluster.",
@@ -9016,7 +9470,11 @@
       "command": "kubectl get peerauthentication -A -o yaml | grep -A1 mtls",
       "label": "Mesh policies"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "MESH_MTLS_PERMISSIVE": {
     "attack": "Workloads outside the mesh (or a downgraded client) talk plaintext.",
@@ -9078,7 +9536,11 @@
       "command": "kubectl get peerauthentication -A",
       "label": "Mesh policies"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "MIN_SSLv2": {
     "attack": "An attacker who records traffic can use the SSLv2 support to decrypt even TLS sessions that share the server's RSA key (DROWN).",
@@ -9190,7 +9652,11 @@
       "command": "testssl.sh --protocols {host}:{port}",
       "label": "Same check with testssl.sh"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "MIN_SSLv3": {
     "attack": "An on-path attacker forces a fallback to SSLv3 and recovers secrets such as session cookies one byte at a time (POODLE).",
@@ -9301,7 +9767,11 @@
       "command": "testssl.sh --protocols {host}:{port}",
       "label": "Same check with testssl.sh"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "MIN_TLS10": {
     "attack": "A client that can be downgraded to TLS 1.0 is exposed to BEAST-style CBC attacks and to weak handshake hashes; regulators treat TLS 1.0 as a failed control.",
@@ -9417,7 +9887,11 @@
       "command": "openssl s_client -connect {host}:{port} -tls1 -cipher 'DEFAULT@SECLEVEL=0' </dev/null 2>&1 | grep -E 'Protocol|Cipher'",
       "label": "Handshake at the old version (OpenSSL 1.1.1+/3.x)"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "MIN_TLS11": {
     "attack": "TLS 1.1 still uses MD5/SHA-1 in the handshake PRF and offers no AEAD ciphers; it keeps clients on a downgrade path.",
@@ -9530,7 +10004,11 @@
       "command": "openssl s_client -connect {host}:{port} -tls1_1 -cipher 'DEFAULT@SECLEVEL=0' </dev/null 2>&1 | grep -E 'Protocol|Cipher'",
       "label": "Handshake at TLS 1.1"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "MODBUS_PLAINTEXT": {
     "attack": "Anyone who reaches the port reads registers and coils and can write them (function codes 5, 6, 15, 16), changing set points or switching outputs of the device.",
@@ -9604,7 +10082,11 @@
       "command": "nc -vz -w 3 {host} {port}",
       "label": "Does the port accept a TCP connection? (sends no Modbus request)"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "NO_FALLBACK_SCSV": {
     "attack": "Clients that retry at a lower version after an injected failure can be walked down to the oldest version the server allows (POODLE-style downgrade).",
@@ -9698,7 +10180,11 @@
       "command": "openssl s_client -connect {host}:{port} -tls1_1 -fallback_scsv -cipher 'DEFAULT@SECLEVEL=0' </dev/null 2>&1 | grep -E 'alert|Protocol'",
       "label": "Send a fallback handshake"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "NO_PQ_KEX": {
     "attack": "Traffic recorded today can be decrypted once a cryptographically relevant quantum computer exists (harvest now, decrypt later). This matters for data that must stay confidential beyond that horizon.",
@@ -9767,7 +10253,11 @@
       "command": "openssl s_client -connect {host}:{port} -groups X25519MLKEM768:X25519 </dev/null 2>&1 | grep -iE 'group|Server Temp Key'",
       "label": "Which group the server picks"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "quantum_only",
+     "reason": "no classical attack today; exposure arrives with a cryptographically relevant quantum computer (harvest now, decrypt later or future forgery)"
+    }
    },
    "NO_TLS": {
     "attack": "Anyone on the network path can read or modify the traffic, including passwords sent at login.",
@@ -9857,7 +10347,11 @@
       "command": "nmap --script ssl-enum-ciphers -p {port} {host}",
       "label": "Does the port offer TLS?"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "NO_TLS12": {
     "attack": "Every session to this endpoint can be attacked with the weaknesses of the old protocol; modern clients will fail to connect.",
@@ -9966,7 +10460,11 @@
       "command": "testssl.sh --protocols {host}:{port}",
       "label": "Same check with testssl.sh"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "OPCUA_ANON": {
     "attack": "Anyone who can open a secure channel (and, on a None endpoint, anyone at all) browses and, depending on the server's permissions, reads or writes process data without a user name.",
@@ -10039,7 +10537,11 @@
       "command": "uadiscover -u opc.tcp://{host}:{port}  (pip install asyncua)",
       "label": "User token policies per endpoint"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "OPCUA_DEPRECATED_POLICY": {
     "attack": "A client that can be steered to the deprecated policy gets SHA-1 signatures and, with Basic128Rsa15, an RSA padding-oracle surface (Bleichenbacher) on the secure channel.",
@@ -10111,7 +10613,11 @@
       "command": "uadiscover -u opc.tcp://{host}:{port}  (pip install asyncua)",
       "label": "Endpoints and security policies"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "OPCUA_NONE_POLICY": {
     "attack": "Anyone on the OT network reads process values and, if the address space is writable, changes set points or calls methods; the messages can also be modified in transit.",
@@ -10199,7 +10705,11 @@
       "command": "uadiscover -u opc.tcp://{host}:{port}  (pip install asyncua)",
       "label": "Endpoints and security policies (Discovery service, no login)"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "OPCUA_USERNAME_PLAINTEXT": {
     "attack": "A passive listener on the OT network collects user names and passwords at every login and reuses them on this and other systems.",
@@ -10282,7 +10792,11 @@
       "command": "uadiscover -u opc.tcp://{host}:{port}  (pip install asyncua)",
       "label": "User token policies per endpoint"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "OPENSSL_ENC_WEAK_KDF": {
     "attack": "Take an encrypted backup and run a GPU password cracker against the passphrase; a weak cipher (DES/3DES/RC4) makes even a strong passphrase weaker.",
@@ -10347,7 +10861,11 @@
       "command": "grep -rnE 'openssl[[:space:]]+enc' /etc/cron.d /etc/crontab /usr/local/bin",
       "label": "Find openssl enc calls"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "PLAINTEXT_LISTENER": {
     "attack": "Users or clients that land on the plaintext port send cookies and credentials in clear text; SSL-stripping attacks rely on this.",
@@ -10418,7 +10936,11 @@
       "command": "curl -sI http://{host}/ | head -5",
       "label": "Does the plaintext port answer?"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "POLICY_LEGACY": {
     "attack": "Every service that follows the system policy (OpenSSL, GnuTLS, NSS, OpenSSH, Java) accepts legacy algorithms at once.",
@@ -10488,7 +11010,11 @@
       "command": "update-crypto-policies --show",
       "label": "Current policy"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "posture",
+     "reason": "host policy only: what each service actually accepts is observed and judged by that service's own codes"
+    }
    },
    "PROTO_SSLv2": {
     "attack": "An attacker who records traffic can use the SSLv2 support to decrypt even TLS sessions that share the server's RSA key (DROWN).",
@@ -10600,7 +11126,11 @@
       "command": "testssl.sh --protocols {host}:{port}",
       "label": "Same check with testssl.sh"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "PROTO_SSLv3": {
     "attack": "An on-path attacker forces a fallback to SSLv3 and recovers secrets such as session cookies one byte at a time (POODLE).",
@@ -10711,7 +11241,11 @@
       "command": "testssl.sh --protocols {host}:{port}",
       "label": "Same check with testssl.sh"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "PROTO_TLS10": {
     "attack": "A client that can be downgraded to TLS 1.0 is exposed to BEAST-style CBC attacks and to weak handshake hashes; regulators treat TLS 1.0 as a failed control.",
@@ -10827,7 +11361,11 @@
       "command": "openssl s_client -connect {host}:{port} -tls1 -cipher 'DEFAULT@SECLEVEL=0' </dev/null 2>&1 | grep -E 'Protocol|Cipher'",
       "label": "Handshake at the old version (OpenSSL 1.1.1+/3.x)"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "PROTO_TLS11": {
     "attack": "TLS 1.1 still uses MD5/SHA-1 in the handshake PRF and offers no AEAD ciphers; it keeps clients on a downgrade path.",
@@ -10940,7 +11478,11 @@
       "command": "openssl s_client -connect {host}:{port} -tls1_1 -cipher 'DEFAULT@SECLEVEL=0' </dev/null 2>&1 | grep -E 'Protocol|Cipher'",
       "label": "Handshake at TLS 1.1"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "QUANTUM_VULNERABLE": {
     "attack": "Data encrypted with these keys can be recorded now and decrypted later (harvest now, decrypt later); signatures can be forged once such a computer exists.",
@@ -11004,7 +11546,11 @@
     ],
     "summary_rules": [],
     "title": "Quantum-vulnerable algorithm",
-    "verify": []
+    "verify": [],
+    "vex_default": {
+     "basis": "quantum_only",
+     "reason": "no classical attack today; exposure arrives with a cryptographically relevant quantum computer (harvest now, decrypt later or future forgery)"
+    }
    },
    "RDP_NO_NLA": {
     "attack": "Without NLA the server builds a full session before the user authenticates, which exposes the logon screen and pre-authentication code to anyone who can reach the port.",
@@ -11075,7 +11621,11 @@
       "command": "(Get-ItemProperty 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp').UserAuthentication",
       "label": "NLA setting"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "RDP_NO_TLS": {
     "attack": "The legacy RDP security layer is open to man-in-the-middle attacks: an attacker on the path can impersonate the server and capture the credentials typed into the session.",
@@ -11151,7 +11701,11 @@
       "command": "nmap --script rdp-enum-encryption -p 3389 {host}",
       "label": "Protocols on port 3389 from the network"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "RSA_LT_1024": {
     "attack": "Keys of this size can be factored with public tools on commodity hardware, which yields the private key.",
@@ -11225,7 +11779,11 @@
       "command": "openssl pkey -in '{path}' -pubout 2>/dev/null | openssl pkey -pubin -noout -text | head -1",
       "label": "Key type and size without printing the key"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "RSA_LT_2048": {
     "attack": "RSA-1024 is within reach of well-funded attackers and is disallowed for new use; a recovered key lets an attacker impersonate or decrypt.",
@@ -11299,7 +11857,11 @@
       "command": "openssl pkey -in '{path}' -pubout 2>/dev/null | openssl pkey -pubin -noout -text | head -1",
       "label": "Key type and size without printing the key"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "SAML_METADATA_UNSIGNED": {
     "attack": "A tampered metadata document (on an untrusted channel) could swap in an attacker's signing certificate.",
@@ -11355,7 +11917,11 @@
     "standards": [],
     "summary_rules": [],
     "title": "SAML metadata not signed",
-    "verify": []
+    "verify": [],
+    "vex_default": {
+     "basis": "posture",
+     "reason": "exploitable only if the metadata travels over an untrusted channel, which is not observed"
+    }
    },
    "SECRET_IN_CONFIG": {
     "attack": "Read the unit file, crontab or script (or `systemctl show`, which any local user may run) and use the key to decrypt the data it protects; it also travels with every backup and configuration-management copy.",
@@ -11471,7 +12037,11 @@
       "command": "aws ecs describe-task-definition --task-definition <family:rev> --query 'taskDefinition.containerDefinitions[].environment[].name'",
       "label": "ECS environment names"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "SECRET_NO_ROTATION": {
     "attack": "A leaked secret stays valid indefinitely.",
@@ -11522,7 +12092,11 @@
       "command": "aws secretsmanager describe-secret --secret-id {resource} --query RotationEnabled",
       "label": "Rotation"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "posture",
+     "reason": "rotation hygiene: limits blast radius after a leak; no attack on the secret as it is"
+    }
    },
    "SECRET_PLAINTEXT_PARAM": {
     "attack": "Anyone with ssm:GetParameter (or read access to CloudTrail data events, backups or logs that echo it) reads the secret in clear text; KMS key policies and audit of decryption do not apply.",
@@ -11600,7 +12174,11 @@
       "command": "aws ssm describe-parameters --parameter-filters Key=Name,Values={name} --query Parameters[].Type",
       "label": "Parameter type (metadata only)"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "SIG_MD5": {
     "attack": "Chosen-prefix MD5 collisions have been used to forge a rogue CA certificate; a forged certificate impersonates the service.",
@@ -11676,7 +12254,11 @@
       "command": "openssl x509 -in '{path}' -noout -subject -dates -text | grep -E 'Subject:|Not After|Signature Algorithm|Public-Key'",
       "label": "Inspect the certificate file"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "SIG_SHA1": {
     "attack": "SHA-1 chosen-prefix collisions are practical (SHA-1 is a Shambles, 2020), so a CA signing with SHA-1 can be tricked into vouching for an attacker's key.",
@@ -11752,7 +12334,11 @@
       "command": "openssl x509 -in '{path}' -noout -subject -dates -text | grep -E 'Subject:|Not After|Signature Algorithm|Public-Key'",
       "label": "Inspect the certificate file"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "SSH_CBC_CIPHER": {
     "attack": "CBC mode in SSH allows plaintext-recovery attacks (CVE-2008-5161) and, with Encrypt-then-MAC, the Terrapin prefix-truncation attack.",
@@ -11823,7 +12409,11 @@
       "command": "ssh-audit -p {port} {host}",
       "label": "Same with ssh-audit"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "SSH_DH_GROUP1": {
     "attack": "1024-bit DH over a widely shared group is within reach of well-resourced attackers who precompute for that group (the Logjam research).",
@@ -11893,7 +12483,11 @@
       "command": "ssh-audit -p {port} {host}",
       "label": "Same with ssh-audit"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "SSH_DH_SHA1": {
     "attack": "SHA-1 in the key exchange hash weakens the session's integrity guarantees; RFC 9142 recommends against these methods.",
@@ -11959,7 +12553,11 @@
       "command": "ssh-audit -p {port} {host}",
       "label": "Same with ssh-audit"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "SSH_DSS": {
     "attack": "1024-bit DSA is below the 112-bit security floor; a forged host key lets an attacker impersonate the server.",
@@ -12027,7 +12625,11 @@
       "command": "ssh-audit -p {port} {host}",
       "label": "Same with ssh-audit"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "SSH_HMAC_SHA1": {
     "attack": "No practical attack today; it is a crypto-agility and compliance gap.",
@@ -12093,7 +12695,11 @@
       "command": "ssh-audit -p {port} {host}",
       "label": "Same with ssh-audit"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "posture",
+     "reason": "the KB entry states no practical attack today: a crypto-agility and compliance gap"
+    }
    },
    "SSH_NO_PQ_KEX": {
     "attack": "Recorded SSH sessions (including file transfers and secrets typed into them) become readable once a large quantum computer exists.",
@@ -12162,7 +12768,11 @@
       "command": "ssh-audit -p {port} {host}",
       "label": "Same with ssh-audit"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "quantum_only",
+     "reason": "no classical attack today; exposure arrives with a cryptographically relevant quantum computer (harvest now, decrypt later or future forgery)"
+    }
    },
    "SSH_RSA_SHA1": {
     "attack": "SHA-1 chosen-prefix collisions are practical, which undermines signatures made with it.",
@@ -12233,7 +12843,11 @@
       "command": "ssh-audit -p {port} {host}",
       "label": "Same with ssh-audit"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "SSH_UMAC64": {
     "attack": "A short tag raises the chance of a successful forgery over very long sessions.",
@@ -12297,7 +12911,11 @@
       "command": "ssh-audit -p {port} {host}",
       "label": "Same with ssh-audit"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "posture",
+     "reason": "forgery odds rise only over very long sessions; no practical attack demonstrated"
+    }
    },
    "SSH_V1_ENABLED": {
     "attack": "SSH-1 sessions can be hijacked and decrypted (CRC-32 compensation attack, weak integrity); a client that falls back to it exposes administrator credentials.",
@@ -12369,7 +12987,11 @@
       "command": "ssh -v -o BatchMode=yes -p {port} {host} exit 2>&1 | grep -i 'remote protocol version'",
       "label": "Protocol versions the server announces"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "SSH_WEAK_CIPHER": {
     "attack": "RC4 keystream biases and 64-bit block ciphers (SWEET32) expose long-lived sessions; these ciphers exist only for compatibility with very old clients.",
@@ -12454,7 +13076,11 @@
       "command": "ssh-audit -p {port} {host}",
       "label": "Same with ssh-audit"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "SSH_WEAK_MAC": {
     "attack": "MD5 and 96-bit truncated tags weaken message integrity; they exist only for legacy clients.",
@@ -12521,7 +13147,11 @@
       "command": "ssh-audit -p {port} {host}",
       "label": "Same with ssh-audit"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "STATIC_RSA_KEX": {
     "attack": "Anyone who records traffic today and later obtains the server key (theft, legal demand or a future quantum computer) can decrypt every recorded session. Static RSA is also the precondition for Bleichenbacher/ROBOT padding oracles.",
@@ -12604,7 +13234,11 @@
       "command": "openssl s_client -connect {host}:{port} -tls1_2 -cipher 'RC4:3DES:DES:NULL:EXPORT:@SECLEVEL=0' </dev/null 2>&1 | grep -E 'Cipher|alert'",
       "label": "Try the weak suites explicitly"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "STORAGE_NO_TLS_ONLY": {
     "attack": "Clients that use plain HTTP endpoints send data and signed requests in clear text.",
@@ -12666,7 +13300,11 @@
       "command": "aws s3api get-bucket-policy --bucket {name}",
       "label": "Bucket policy"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "STORAGE_UNENCRYPTED": {
     "attack": "Snapshots, copies and misconfigured access expose the data unencrypted.",
@@ -12722,7 +13360,11 @@
     "standards": [],
     "summary_rules": [],
     "title": "Storage not encrypted at rest",
-    "verify": []
+    "verify": [],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "TLS_POLICY_OVERRIDE": {
     "attack": "The service accepts SSL 3.0 / TLS 1.0, RC4, 3DES, export or anonymous suites and small keys again, so an on-path attacker can downgrade and attack its connections (POODLE, BEAST, Sweet32, Logjam).",
@@ -12810,7 +13452,11 @@
       "command": "systemctl show -p ExecStart <unit> | grep -o 'java.security.properties=[^ ]*'",
       "label": "Java override"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    },
    "WEAK_CIPHER": {
     "attack": "Depending on the suite: RC4 biases leak plaintext; 64-bit block ciphers (3DES) allow SWEET32 birthday attacks on long sessions; EXPORT suites can be factored or broken in real time (FREAK, Logjam); anonymous suites give no server authentication at all.",
@@ -12926,11 +13572,15 @@
       "command": "openssl s_client -connect {host}:{port} -tls1_2 -cipher 'RC4:3DES:DES:NULL:EXPORT:@SECLEVEL=0' </dev/null 2>&1 | grep -E 'Cipher|alert'",
       "label": "Try the weak suites explicitly"
      }
-    ]
+    ],
+    "vex_default": {
+     "basis": "observed",
+     "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
+    }
    }
   }
  },
- "kb_version": "2026.11.14.3",
+ "kb_version": "2026.11.14.4",
  "legacy_controls": {
   "access": {
    "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control",

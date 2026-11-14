@@ -1,0 +1,193 @@
+{
+  "checks": [
+    {
+      "evidence": [],
+      "expected": "Sidebar > CBOM > a link to CBOM Sources",
+      "gate": "G2",
+      "id": "G2/sidebar_to_sources",
+      "kind": "flow",
+      "observed": "clicked",
+      "reason": "",
+      "subject": {
+        "check": "sidebar_to_sources"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [],
+      "expected": ">= 7 tabs",
+      "gate": "G2",
+      "id": "G2/tabs_present",
+      "kind": "flow",
+      "observed": [
+        "Scan nodes",
+        "Servers",
+        "Kubernetes & Databases",
+        "Cloud & Identity",
+        "Network TLS",
+        "Evidence",
+        "Review & Run"
+      ],
+      "reason": "",
+      "subject": {
+        "check": "tabs_present"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [],
+      "expected": {
+        "selected": "Servers",
+        "url": "servers"
+      },
+      "gate": "G2",
+      "id": "G2/tab_servers_survives_refresh",
+      "kind": "flow",
+      "observed": {
+        "selected": "Servers",
+        "url": "servers"
+      },
+      "reason": "",
+      "subject": {
+        "check": "tab_servers_survives_refresh"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [],
+      "expected": {
+        "selected": "Network TLS",
+        "url": "network"
+      },
+      "gate": "G2",
+      "id": "G2/tab_network_survives_refresh",
+      "kind": "flow",
+      "observed": {
+        "selected": "Network TLS",
+        "url": "network"
+      },
+      "reason": "",
+      "subject": {
+        "check": "tab_network_survives_refresh"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [],
+      "expected": {
+        "selected": "Evidence",
+        "url": "evidence"
+      },
+      "gate": "G2",
+      "id": "G2/tab_evidence_survives_refresh",
+      "kind": "flow",
+      "observed": {
+        "selected": "Evidence",
+        "url": "evidence"
+      },
+      "reason": "",
+      "subject": {
+        "check": "tab_evidence_survives_refresh"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [],
+      "expected": {
+        "selected": "Review & Run",
+        "url": "review"
+      },
+      "gate": "G2",
+      "id": "G2/tab_review_survives_refresh",
+      "kind": "flow",
+      "observed": {
+        "selected": "Review & Run",
+        "url": "review"
+      },
+      "reason": "",
+      "subject": {
+        "check": "tab_review_survives_refresh"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [],
+      "expected": {
+        "back": "evidence",
+        "forward": "review"
+      },
+      "gate": "G2",
+      "id": "G2/tab_back_forward",
+      "kind": "flow",
+      "observed": {
+        "back": "evidence",
+        "forward": "review"
+      },
+      "reason": "",
+      "subject": {
+        "check": "tab_back_forward"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [
+        "steps/G2/review-1440.png"
+      ],
+      "expected": "scrollWidth <= 1440",
+      "gate": "G2",
+      "id": "G2/no_overflow_1440",
+      "kind": "flow",
+      "observed": {
+        "innerWidth": 1440,
+        "scrollWidth": 1440
+      },
+      "reason": "",
+      "subject": {
+        "check": "no_overflow_1440"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [
+        "steps/G2/review-820.png"
+      ],
+      "expected": "scrollWidth <= 820",
+      "gate": "G2",
+      "id": "G2/no_overflow_820",
+      "kind": "flow",
+      "observed": {
+        "innerWidth": 820,
+        "scrollWidth": 820
+      },
+      "reason": "",
+      "subject": {
+        "check": "no_overflow_820"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [
+        "steps/G2/review-390.png"
+      ],
+      "expected": "scrollWidth <= 390",
+      "gate": "G2",
+      "id": "G2/no_overflow_390",
+      "kind": "flow",
+      "observed": {
+        "innerWidth": 390,
+        "scrollWidth": 390
+      },
+      "reason": "",
+      "subject": {
+        "check": "no_overflow_390"
+      },
+      "verdict": "PASS"
+    }
+  ],
+  "ended": "2026-11-12T15:23:06Z",
+  "gate": "G2",
+  "note": "",
+  "seconds": 13.4,
+  "started": "2026-11-12T15:22:53Z",
+  "status": "ran"
+}

@@ -6,7 +6,7 @@
 * ``GRADE_MODEL`` changes only with the text; ``GRADE_MODEL_VERSION`` also hashes this module and ``posture.py`` (the
   class and exposure functions live there) and ``classify.CLASSIFIER_VERSION`` (the fallback test reads the
   classifier's algorithm families), so any edit that can change a grade changes the version.
-* Inputs come from the product's single class function (``posture.pqc_class``), its exposure function
+* Inputs come from the product's single class function (``posture.classify_pqc``), its exposure function
   (``posture.asset_exposure``, with one grade-only precedence change: a collector's internet-facing fact beats an
   "internal" or "unknown" set on the source), the job's metadata snapshot (per-source X, exposure override, node segment) and the
   team's Mosca X/Y/Z as they are now (PR-2 snapshots them per run; until then every grade says ``source: current``).
@@ -38,10 +38,9 @@ from backend.new_models import (
     CbomCollectionSource,
     CbomScanNode,
 )
-from backend.utilities.cbom_sources import algid
 from backend.utilities.cbom_sources import identity as ID
 from backend.utilities.cbom_sources import posture as P
-from backend.utilities.cbom_sources.classify import CLASSIFIER_VERSION, quantum_vulnerable
+from backend.utilities.cbom_sources.classify import CLASSIFIER_VERSION, aws_pq_policy, quantum_vulnerable, ssh_names
 
 FORMULA_TEXT = """\
 ZeroShield quantum risk grade, model qg-1.
@@ -297,13 +296,6 @@ def _proto(value: Any) -> str:
     return re.sub(r"[\s_]", "", str(value or "").upper()).replace("TLSV", "TLS").replace("SSLV", "SSL")
 
 
-def _classical_ssh_kex(name: str) -> bool:
-    """algid owns SSH key-exchange identity (curve25519 / curve448 spellings and the GSS families included);
-    the classifier's family table is the fallback for names algid does not know."""
-    ident = algid.ssh_kex(name)
-    return (ident is not None and ident.quantum == "vulnerable") or quantum_vulnerable(name) is True
-
-
 def classical_fallback(asset_type: str, facts: dict[str, Any] | None, codes: list[str] | None) -> tuple[bool, str | None]:
     """(True, why) when an endpoint also completes a classical-only key exchange (the owner default: grade a hybrid on
     the weakest configuration it accepts). Only endpoints carry a key exchange."""
@@ -331,9 +323,14 @@ def classical_fallback(asset_type: str, facts: dict[str, Any] | None, codes: lis
         why.append("accepts classical group " + ", ".join(classical[:3]))
     elif facts.get("classical_tls13_accepted") is True:  # CB-12's prober: a classical TLS 1.3 key share answered
         why.append("accepts a classical TLS 1.3 key share")
-    kex = facts.get("kex") or facts.get("kexalgorithms") or []
-    kex = kex.split(",") if isinstance(kex, str) else kex if isinstance(kex, list) else []
-    classical_kex = sorted({str(k).strip() for k in kex if _classical_ssh_kex(str(k).strip())})
+    elif aws_pq_policy(facts):
+        # AWS documents every post-quantum ELB and API Gateway policy as also accepting classical key exchange, for
+        # compatibility: the hybrid is graded on the classical exchange a client without post-quantum support completes
+        policy = facts.get("ssl_policy") or facts.get("security_policy")
+        why.append(f"AWS post-quantum policy {str(policy)[:64]} also accepts classical key exchange")
+    kex = ssh_names(facts.get("kex")) or ssh_names(facts.get("kexalgorithms"))  # read as the classifier reads it
+    # the classifier's verdict, which reads algid's SSH key-exchange registry (GSS families included): one source
+    classical_kex = sorted({k for k in kex if quantum_vulnerable(k) is True})
     if classical_kex:
         why.append("offers classical SSH key exchange " + ", ".join(classical_kex[:3]))
     return (bool(why), "; ".join(why) or None)
@@ -445,6 +442,8 @@ class GradeContext:
     job_rows: list[CbomCollectionJob]
     sources: dict[int, CbomCollectionSource]
     memo: dict = field(default_factory=dict)
+    # CB-18 EC-3: an unknown row another job of the run read with a verdict is not an unknown verdict
+    elsewhere: P.JudgedElsewhere | None = None
 
     @property
     def mosca(self) -> dict[str, int | None]:
@@ -465,7 +464,7 @@ class GradeContext:
         return self.jobs.get(job_id or 0) or _JobInfo(None, None, None, "unknown", None, None, False)
 
     def grade_row(self, row: CbomCollectedAsset, codes: list[str] | None, *, explain: bool = True,
-                  score_exposure: tuple[str, str] | None = None) -> RowGrade:
+                  score_exposure: tuple[str, str] | None = None, cls: str | None = None) -> RowGrade:
         """The grade of one stored row; ``codes``: the finding codes as every view shows them (``classify.shown``).
         ``explain=False`` (list pages, posture) skips the inputs no rule reads for this row's class (exposure and
         anchor only matter to a quantum-vulnerable grade); the grade is the same either way. ``score_exposure``: the
@@ -478,7 +477,8 @@ class GradeContext:
             return self._coverage(row, job)
         facts = row.facts if isinstance(row.facts, dict) else {}
         codes = codes or []  # the class and fallback tests read DISK_XTS_128 / STATIC_RSA_KEX; COVERAGE_* never match
-        cls = P.pqc_class(asset_type, row.quantum_vulnerable, codes, facts)
+        if cls is None:  # the posture loop passes the class it already computed with the same function
+            cls = P.classify_pqc(row, codes, elsewhere=self.elsewhere)[0]
         if not explain:  # the posture loop and list pages: only the inputs this class's rules read
             fast = _NO_INPUTS.get(cls)
             if fast is not None:
@@ -602,7 +602,9 @@ def load_context(session: Session, *, team_id: int, run_id: int | None = None, j
             network=bool(spec is not None and spec.group == "network"))
     return GradeContext(team_x=_mosca_int(risk_model.get("data_shelf_life_years")),
                         y=_mosca_int(risk_model.get("migration_years")), z=_mosca_int(risk_model.get("threat_years")),
-                        jobs=jobs, run=run, job_rows=job_rows, sources=sources)
+                        jobs=jobs, run=run, job_rows=job_rows, sources=sources,
+                        elsewhere=P.JudgedElsewhere(session=session, team_id=team_id, run_id=run_id)
+                        if run_id is not None else None)
 
 
 # ----------------------------------------------------------------------------- unread scope of a run
@@ -778,8 +780,8 @@ class RunGrades:
         self._mosca: dict[str, Any] | None = None
 
     def add(self, row: CbomCollectedAsset, codes: list[str] | None,
-            exposure: tuple[str, str] | None = None) -> RowGrade:
-        out = self.ctx.grade_row(row, codes, explain=False, score_exposure=exposure)
+            exposure: tuple[str, str] | None = None, cls: str | None = None) -> RowGrade:
+        out = self.ctx.grade_row(row, codes, explain=False, score_exposure=exposure, cls=cls)
         if row.asset_type == "coverage":
             self.coverage.append((row, out))
             return out
