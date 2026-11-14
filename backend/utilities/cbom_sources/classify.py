@@ -219,6 +219,33 @@ def _key_rules(out: _Out, algorithm: Any, size: Any, what: str) -> None:
         out.add("DH_LT_2048", "High", f"{what} uses {bits}-bit Diffie-Hellman")
 
 
+def _kms_no_rotation_text(facts: dict[str, Any]) -> str:
+    """KMS_NO_ROTATION's text. Automatic rotation exists only for keys whose material AWS KMS generated (origin
+    AWS_KMS; imported material and custom key stores cannot rotate automatically, CB-33 B1). A multi-Region replica
+    takes its rotation from its primary key, so the text names the primary; a Disabled key must be enabled first."""
+    text = "Customer-managed KMS key has automatic rotation off"
+    primary = facts.get("primary_key_arn")
+    if facts.get("multi_region_type") == "REPLICA" and primary:
+        text += (f"; this is a multi-Region replica, whose rotation is set on its primary key {str(primary)[:200]}: "
+                 f"run aws kms enable-key-rotation --key-id {str(primary)[:200]} in the primary's Region")
+    if facts.get("key_state") == "Disabled":
+        text += ("; the key is disabled: enable the key first (aws kms enable-key), then turn rotation on, or "
+                 "schedule its deletion if it is unused")
+    return text
+
+
+# ACM statuses in which no certificate was ever issued: nothing to judge (no key, no expiry, no attachment).
+_ACM_NEVER_ISSUED = frozenset({"PENDING_VALIDATION", "FAILED", "VALIDATION_TIMED_OUT"})
+
+
+def _cert_unused_applies(facts: dict[str, Any]) -> bool:
+    """Whether "not attached to any resource" means orphaned (CB-33 B7). Not for a certificate that was never issued,
+    a PRIVATE (AWS Private CA) certificate, whose key is meant to be exported and used outside AWS, a certificate
+    whose key was exported (it is in use where AWS cannot see), or an ACME certificate, managed by its ACME client."""
+    return (str(facts.get("status") or "ISSUED") == "ISSUED" and facts.get("aws_type") != "PRIVATE"
+            and facts.get("exported") is not True and facts.get("key_pair_origin") != "ACME")
+
+
 def _cert_rules(out: _Out, facts: dict[str, Any], algorithm: Any, size: Any, now: _dt.datetime) -> None:
     not_after = _parse_time(facts.get("not_after"))
     if not_after is not None:
@@ -245,7 +272,7 @@ def _cert_rules(out: _Out, facts: dict[str, Any], algorithm: Any, size: Any, now
         # a self-signed CA root or IdP signing certificate: informational only (no impact)
         what = "identity-provider signing certificate" if facts.get("source") == "idp" else "CA certificate"
         out.add("CERT_SELF_SHA1", None, f"Self-signed {what}: {sha1_note}")
-    if facts.get("in_use") is False:
+    if facts.get("in_use") is False and _cert_unused_applies(facts):
         out.add("CERT_UNUSED", "Low", "Certificate is not attached to any resource (orphaned)")
     # Certificate Transparency facts (ct_collect): the team's expected issuers, revocation, wildcard sprawl
     if facts.get("issuer_expected") is False:
@@ -576,9 +603,12 @@ def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, fact
     elif asset_type in ("certificate", "k8s_tls_secret", "iam_certificate", "cloud_ca"):
         _cert_rules(out, facts, algorithm, key_size, now)
         identity = cert_identity_input(algorithm, facts)
-        qv = quantum_vulnerable(identity)
-        if qv is None:
-            note_unknown(asset_type, identity)
+        if asset_type == "certificate" and facts.get("source") == "aws" and facts.get("status") in _ACM_NEVER_ISSUED:
+            qv = None  # an ACM request that was never issued holds no certificate and no key
+        else:
+            qv = quantum_vulnerable(identity)
+            if qv is None:
+                note_unknown(asset_type, identity)
     elif asset_type in ("private_key", "public_key", "ssh_host_key", "signing_key", "kms_key", "k8s_certificate"):
         _key_rules(out, algorithm, key_size, {"private_key": "Private key", "public_key": "Public key",
                                               "ssh_host_key": "SSH host key", "signing_key": "Signing key",
@@ -597,8 +627,8 @@ def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, fact
             note_unknown(asset_type, algorithm)
         if asset_type == "kms_key":
             if facts.get("rotation_enabled") is False and facts.get("key_spec") == "SYMMETRIC_DEFAULT" \
-                    and facts.get("key_manager") == "CUSTOMER":
-                out.add("KMS_NO_ROTATION", "Medium", "Customer-managed KMS key has automatic rotation off")
+                    and facts.get("key_manager") == "CUSTOMER" and facts.get("origin") in (None, "AWS_KMS"):
+                out.add("KMS_NO_ROTATION", "Medium", _kms_no_rotation_text(facts))
             if facts.get("key_state") == "PendingDeletion":
                 out.add("KMS_PENDING_DELETION", "Low", "KMS key is pending deletion")
             if facts.get("key_spec") and facts.get("key_spec") != "SYMMETRIC_DEFAULT":
