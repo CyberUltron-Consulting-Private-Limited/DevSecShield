@@ -183,3 +183,63 @@ def test_a_large_estate_waits_for_an_export_slot(api, two_runs, monkeypatch):
     monkeypatch.setattr(export_slots, "slot", busy)
     r = _export(api)
     assert r.status_code == 429 and r.headers.get("retry-after") == str(export_slots.RETRY_AFTER_S)
+
+
+# ----------------------------------------------------------------------------- certificate hygiene (#263, #126)
+def _hygiene_module(monkeypatch, certs, state="ready", fail=False):
+    import types
+
+    module = types.ModuleType("backend.utilities.cbom_sources.cert_hygiene")
+
+    def cached(session, team_id, *, now=None, stale_runs=3):
+        if fail:
+            raise RuntimeError("boom")
+        assert now is not None and now.tzinfo is not None
+        return types.SimpleNamespace(certs=certs, state=state)
+
+    module.cached = cached
+    monkeypatch.setitem(sys.modules, "backend.utilities.cbom_sources.cert_hygiene", module)
+
+
+def _two_assets(lab):
+    s1 = lab.source("linux_servers", "linux")
+    lab.finalise(lab.run({s1: {"rows": [key("k"), cert("app-01", "/etc/ssl/x.pem", serial="0A0B0C0D0E0F1011",
+                                                      not_after=NOT_AFTER, subject="CN=x", issuer="CN=ca")]}}))
+    return next(k for k in lab.assets() if k.startswith("cert:"))
+
+
+def test_certificate_components_carry_the_hygiene_flags(lab, monkeypatch):
+    import types
+
+    cert_key = _two_assets(lab)
+    _hygiene_module(monkeypatch, [types.SimpleNamespace(key=cert_key, flags=("unmanaged", "orphaned", "stale"),
+                                                        not_seen_runs=4)])
+    d = doc(lab)
+    assert meta(d)["zs:cert_hygiene"] == "included"
+    by_key = {props(c)["zs:estate_key"][0]: props(c) for c in assets(d)}
+    assert by_key[cert_key]["zeroshield:cert:flags"] == ["unmanaged orphaned stale"]
+    assert by_key[cert_key]["zeroshield:cert:not_seen_runs"] == ["4"]
+    other = next(p for k, p in by_key.items() if k != cert_key)
+    assert "zeroshield:cert:flags" not in other and "zeroshield:cert:not_seen_runs" not in other
+    assert json_errors(d) == []
+
+
+def test_a_clean_certificate_has_no_flags_property_and_view_states_are_said(lab, monkeypatch):
+    import types
+
+    cert_key = _two_assets(lab)
+    _hygiene_module(monkeypatch, [types.SimpleNamespace(key=cert_key, flags=(), not_seen_runs=0)], state="pending")
+    d = doc(lab)
+    p = next(props(c) for c in assets(d) if props(c)["zs:estate_key"][0] == cert_key)
+    assert "zeroshield:cert:flags" not in p and p["zeroshield:cert:not_seen_runs"] == ["0"]
+    assert meta(d)["zs:cert_hygiene"] == "included:pending"
+
+
+def test_the_export_says_when_hygiene_is_missing_or_failed(lab, monkeypatch):
+    _two_assets(lab)
+    monkeypatch.setitem(sys.modules, "backend.utilities.cbom_sources.cert_hygiene", None)  # import fails
+    d = doc(lab)
+    assert meta(d)["zs:cert_hygiene"] == "not_available"
+    assert not any("zeroshield:cert:flags" in props(c) for c in assets(d))
+    _hygiene_module(monkeypatch, [], fail=True)
+    assert meta(doc(lab))["zs:cert_hygiene"] == "error"

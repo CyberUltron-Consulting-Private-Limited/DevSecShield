@@ -21,6 +21,12 @@ grades from the register. At most ``inventory.EXPORT_CAP`` components; the metad
 ``zs:truncated``. The document is written one component at a time (``inventory.write_cyclonedx``'s writer), so memory
 holds one batch of keys, not the document.
 
+Certificate hygiene (diagram output 04, #263 ``cert_hygiene``; #126 comment 6880488906): every certificate component
+whose estate key the hygiene view knows carries ``zeroshield:cert:flags`` (space-separated: unmanaged, prober_only,
+orphaned, no_owner, expired_served, stale; only when it has a flag) and ``zeroshield:cert:not_seen_runs``. The module is
+imported when present (it ships in #263): until then, and if building the view fails, the metadata says
+``zs:cert_hygiene`` ``not_available`` / ``error`` and no component carries the flags.
+
 Signature: the estate export is not signed; the route says so (``X-Cbom-Signature: unsigned``) and sends the SHA-256 of
 the exact bytes, which anyone can check outside ZeroShield.
 """
@@ -112,6 +118,36 @@ def _keys(session: Session, team_id: int, f: Filters, limit: int) -> Iterator[li
         after, left = batch[-1], left - len(batch)
 
 
+def cert_hygiene(session: Session, team_id: int, now: _dt.datetime) -> tuple[dict[str, Any], str]:
+    """(estate key -> hygiene ``Cert``, status) from #263's ``cert_hygiene.cached``: ``included`` (with the view's
+    state when not ready: ``included:pending`` / ``included:stale``), ``not_available`` (the module is not deployed)
+    or ``error`` (building the view failed: logged, the export goes on without the flags)."""
+    import importlib
+
+    from backend.utilities.cbom_sources.common import log
+
+    try:
+        module = importlib.import_module("backend.utilities.cbom_sources.cert_hygiene")
+    except ImportError:
+        return {}, "not_available"
+    try:
+        moment = now if now.tzinfo is not None else now.replace(tzinfo=_dt.timezone.utc)
+        view = module.cached(session, team_id, now=moment)
+        state = getattr(view, "state", "ready")
+        return {c.key: c for c in view.certs}, "included" if state == "ready" else f"included:{state}"
+    except Exception as exc:
+        log("estate export cert hygiene FAILED", team=team_id, error=type(exc).__name__)
+        return {}, "error"
+
+
+def _hygiene_properties(cert: Any) -> list[dict[str, str]]:
+    out = []
+    if cert.flags:
+        out.append({"name": "zeroshield:cert:flags", "value": " ".join(cert.flags)})
+    out.append({"name": "zeroshield:cert:not_seen_runs", "value": str(int(cert.not_seen_runs or 0))})
+    return out
+
+
 def _document(session: Session, team_id: int, f: Filters, now: _dt.datetime
               ) -> tuple[dict[str, Any], Iterator[dict[str, Any]], Any]:
     from backend.utilities.build_info import build_sha, build_version
@@ -126,6 +162,7 @@ def _document(session: Session, team_id: int, f: Filters, now: _dt.datetime
     total = count(session, team_id, f)
     cap = INV.EXPORT_CAP
     stale = estate.stale_status(session, team_id)
+    hygiene, hygiene_status = cert_hygiene(session, team_id, now)
     grades = {g: n for g, n in session.execute(sa.select(CbomRiskRegister.q_grade, sa.func.count()).where(
         CbomRiskRegister.team_id == team_id).group_by(CbomRiskRegister.q_grade)).all()}
     digest = hashlib.sha256(json.dumps([team_id, f.public(), total, crypto_kb.version(), QG.GRADE_MODEL_VERSION],
@@ -156,6 +193,7 @@ def _document(session: Session, team_id: int, f: Filters, now: _dt.datetime
                     grades.items(), key=lambda kv: str(kv[0]))],
                 {"name": "zs:estate_stale", "value": "true" if stale and stale.get("stale") else "false"},
                 {"name": "zs:signature", "value": "unsigned"},
+                {"name": "zs:cert_hygiene", "value": hygiene_status},
             ],
         },
     }
@@ -207,6 +245,7 @@ def _document(session: Session, team_id: int, f: Filters, now: _dt.datetime
                     *([{"name": "zs:q_label", "value": QG.LABELS[r.q_grade]}] if r is not None and r.q_grade else []),
                     *([{"name": "zs:q_reason", "value": r.q_reason}] if r is not None else []),
                     *[p for p in comp["properties"] if p["name"] not in ("zs:q_grade", "zs:q_label", "zs:q_reason")],
+                    *(_hygiene_properties(hygiene[key]) if key in hygiene else []),
                 ]
                 yield comp
         yield from parts.components()
@@ -247,4 +286,4 @@ def document(session: Session, team_id: int, f: Filters, now: _dt.datetime) -> d
     return {**head, "components": list(components), "vulnerabilities": vulns()}
 
 
-__all__ = ["Filters", "count", "write", "document", "BATCH"]
+__all__ = ["Filters", "count", "write", "document", "cert_hygiene", "BATCH"]
