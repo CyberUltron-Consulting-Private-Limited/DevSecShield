@@ -56,6 +56,8 @@ class _Source(_Strict):
     * owner, application, data_classification and data_lifetime_years say who answers for the source, which
       application it serves and how sensitive / long-lived its data is (remediation owners, roadmap, Mosca X);
     * environment (production, staging, ... as the CMDB names it) comes from a CMDB import or the form.
+    * operated_by says who runs what the source reaches: ``us`` (the team, the default when unset) or ``vendor`` (a
+      SaaS or managed service); a vendor-operated source's findings are at least vendor-fixed (crypto-agility, CB-24).
 
     Every field declared here is metadata (``METADATA_FIELDS``): editing it never cancels a job or resets the
     connection test, a source form that does not send it keeps the stored value (send null to clear), and a run
@@ -68,6 +70,7 @@ class _Source(_Strict):
     data_classification: DataClassification | None = None
     data_lifetime_years: int | None = Field(default=None, ge=0, le=100)
     environment: str | None = Field(default=None, max_length=32)
+    operated_by: Literal["us", "vendor"] | None = None
 
     @field_validator("owner", "application", "environment")
     @classmethod
