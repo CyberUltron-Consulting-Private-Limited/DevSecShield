@@ -46,6 +46,9 @@ spec:
       securityContext:
         seccompProfile:
           type: RuntimeDefault
+        {{- if .Values.trust.clientSecret }}
+        fsGroup: {{ $uid }}   # the client key's Secret volume is 0440: readable by the agent's group only
+        {{- end }}
       initContainers:
         # hostPath volumes are created root-owned and fsGroup does not apply to them: hand the per-node state
         # directory to the agent's user. Only CAP_CHOWN and CAP_FOWNER (chmod a directory root no longer owns, on
@@ -124,7 +127,9 @@ spec:
               mountPath: /var/lib/zs-node
             - name: tmp
               mountPath: /tmp
+            {{- include "cbom-scan-node.trustMounts" . | nindent 12 }}
       volumes:
+        {{- include "cbom-scan-node.trustVolumes" . | nindent 8 }}
         - name: host-root
           hostPath:
             path: {{ .Values.agent.hostRoot | quote }}

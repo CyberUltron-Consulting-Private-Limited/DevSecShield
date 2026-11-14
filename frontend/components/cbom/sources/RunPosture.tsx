@@ -10,6 +10,7 @@ import { ExternalLink, Info } from "lucide-react";
 import { Fragment, useState } from "react";
 
 import KbFindingDetails from "@/components/cbom/KbFindingDetails";
+import { StandardsDrawerSection } from "@/components/cbom/standards/Standards";
 import {
   AgilityDrawerSection,
   AgilityPostureCard,
@@ -333,6 +334,7 @@ export function AssetDetailPanel({ teamId, assetId }: { teamId: number; assetId:
       )}
       <QGradeDrawerSection teamId={teamId} asset={a} />
       <AgilityDrawerSection teamId={teamId} agility={a.agility} />
+      <StandardsDrawerSection standards={a.standards} />
       <CorrelationSection teamId={teamId} correlation={(a as { correlation?: Correlation | null }).correlation} />
       {a.library && (
         <div className="rounded-md border border-zinc-200 dark:border-zinc-700 p-3 space-y-1" data-testid="asset-library">

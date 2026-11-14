@@ -11,6 +11,8 @@ import ipaddress
 import re
 from dataclasses import dataclass, field
 
+from backend.utilities.cbom_sources import idn
+
 MAX_LINES = 1000
 MAX_ADDRESSES_PER_SOURCE = 262_144  # four /16s
 MAX_V4_PREFIX = 16  # a line may be at most a /16 (65,536 addresses)
@@ -56,6 +58,7 @@ class ParsedTargets:
     hostnames: list[str] = field(default_factory=list)  # normalised, deduplicated
     normalized: list[str] = field(default_factory=list)  # canonical lines in input order
     raw_size: int = 0  # addresses before merging (for the per-source cap)
+    notes: list[str] = field(default_factory=list)  # names IDNA 2003 software reads as another host (CB-09)
 
 
 def clean_lines(value: str | list[str] | None) -> list[str]:
@@ -96,13 +99,13 @@ def _as_v4_if_mapped(address: ipaddress.IPv4Address | ipaddress.IPv6Address):
 
 
 def _normalize_hostname(text: str) -> str:
-    name = text.strip().lower().rstrip(".")
+    name = text.strip().rstrip(".")
     if not name:
         raise TargetError("empty hostname")
     try:
-        name = name.encode("idna").decode("ascii")
-    except UnicodeError as exc:
-        raise TargetError(f"{text!r} is not a valid hostname") from exc
+        name = idn.to_a_label(name)  # IDNA 2008, never Python's IDNA 2003 codec (CB-09)
+    except idn.IdnError as exc:
+        raise TargetError(f"{text!r} {exc}") from None
     if len(name) > 253:
         raise TargetError(f"{text[:40]!r}... is longer than 253 characters")
     labels = name.split(".")
@@ -241,6 +244,10 @@ def parse_targets(
         if kind == "host":
             if not allow_hostnames:
                 raise TargetError(f"Line {number}: {line!r} must be an IP address or CIDR range")
+            other = idn.idna2003_form(value_)
+            if other:
+                parsed.notes.append(f"Line {number}: {line} is scanned as {value_} (IDNA 2008). Older IDNA 2003 "
+                                    f"software reads it as {other}, a different name, which is not scanned")
             if value_ not in seen_hosts:
                 seen_hosts.add(value_)
                 parsed.hostnames.append(value_)
@@ -368,8 +375,33 @@ def in_scope(targets: ParsedTargets, exclusions: ParsedTargets | None) -> tuple[
     """Addresses and hostnames the scan node will scan after the never-scan list (hostnames match exactly; the node
     may skip more of them, by the addresses they resolve to, which only it can see)."""
     intervals = subtract(targets.intervals, _removed(exclusions))
-    excluded_hosts = set(exclusions.hostnames) if exclusions is not None else set()
-    return intervals, [h for h in targets.hostnames if h not in excluded_hosts]
+    excluded_hosts = never_scan_names(exclusions.hostnames) if exclusions is not None else set()
+    return intervals, [h for h in targets.hostnames if h not in excluded_hosts and idn.idna2003_form(h) not in
+                       excluded_hosts]
+
+
+def never_scan_names(hostnames: list[str]) -> set[str]:
+    """The names a never-scan list keeps out: each listed name, and for a name with ``ß`` or ``ς`` also the name
+    IDNA 2003 software reads it as (fail closed across the two forms; scan_node netutil.NeverScan does the same).
+    A target is also kept out when its own IDNA 2003 form is listed (``in_scope``)."""
+    names = set(hostnames)
+    names.update(other for other in (idn.idna2003_form(name) for name in hostnames) if other)
+    return names
+
+
+def host_key(name: str) -> str:
+    """A host name as the never-scan list stores it (the IDNA 2008 A-label); lower-cased as is when it is not one."""
+    text = str(name or "").strip().rstrip(".")
+    try:
+        return idn.to_a_label(text)
+    except idn.IdnError:
+        return text.lower()
+
+
+def host_listed(name: str, never_names: set[str]) -> bool:
+    """Whether a host name (in any form) is kept out by ``never_names`` (from ``never_scan_names``)."""
+    key = host_key(name)
+    return key in never_names or idn.idna2003_form(key) in never_names
 
 
 def count_in_scope(targets: ParsedTargets, exclusions: ParsedTargets | None) -> int:
@@ -411,6 +443,10 @@ def parse_exclusions(value: str | list[str] | None) -> ParsedTargets:
         parsed.normalized.append(canonical)
         if kind == "host":
             parsed.hostnames.append(value_)
+            other = idn.idna2003_form(value_)
+            if other:
+                parsed.notes.append(f"Never-scan line {number}: {line} is kept out as {value_} (IDNA 2008) and as "
+                                    f"{other}, the name older IDNA 2003 software reads it as")
         else:
             raw.append(value_)
     parsed.intervals = merge(raw)
