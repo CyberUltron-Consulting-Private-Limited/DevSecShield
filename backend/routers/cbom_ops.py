@@ -493,3 +493,53 @@ def _code_sbom(engine, team_id: int, scan_id: int) -> dict:
 async def code_sbom(team_id: TeamId, scan_id: ObjectId, Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
     return _ok(await _run("code sbom", team_id, _code_sbom, engine, team_id, scan_id))
+
+
+# ============================================================================ operational metrics (CB-31, X1)
+METRICS_TOKEN_MIN = 32  # CBOM_METRICS_TOKEN: a scrape token shorter than this is not accepted
+
+
+def _scrape_token_ok(authorization: str | None) -> bool:
+    """A Prometheus scraper's ``Authorization: Bearer <CBOM_METRICS_TOKEN>`` (constant-time compare; only when the
+    deployment set a token of at least METRICS_TOKEN_MIN characters)."""
+    import hmac
+    import os
+
+    token = os.getenv("CBOM_METRICS_TOKEN") or ""
+    parts = (authorization or "").split(" ", 1)
+    if len(token) < METRICS_TOKEN_MIN or len(parts) != 2 or parts[0].lower() != "bearer":
+        return False
+    return hmac.compare_digest(parts[1].strip().encode(), token.encode())
+
+
+def _metrics(engine) -> str:
+    from backend.utilities.cbom_sources import ops_metrics as OPS
+
+    with Session(engine) as session:
+        return OPS.render(session, utcnow())
+
+
+@router.get("/cbom/ops/metrics", dependencies=READ,
+            summary="Operational metrics (Prometheus text format; platform administrators only)")
+async def ops_metrics(Authorization: Annotated[str | None, Header()] = None):
+    """Queue depth per job kind, oldest pending age, lease expiries, ingest rejects, node heartbeat age and the
+    integration backlog, platform-wide and aggregated (``ops_metrics``).  A platform administrator's session, or the
+    deployment's scrape token (``CBOM_METRICS_TOKEN``); a team administrator is not enough."""
+    from fastapi.responses import PlainTextResponse
+
+    from backend.utilities.auth.auth_utils import get_user_from_header_or_raise_exception
+    from backend.utilities.cbom_sources import http as cbom_http
+    from backend.utilities.cbom_sources import ops_metrics as OPS
+
+    engine = cbom_http.get_db()
+    if not _scrape_token_ok(Authorization):
+        if not Authorization:
+            raise HTTPException(status_code=401, detail="Sign in as a platform administrator")
+        user = await get_user_from_header_or_raise_exception(engine, Authorization)
+        if not user.is_superuser:
+            raise HTTPException(status_code=403, detail="Platform administrators only")
+    try:
+        text = await run_in_threadpool(_metrics, engine)
+    except Exception as exc:
+        raise server_error("cbom ops metrics", exc) from None
+    return PlainTextResponse(text, media_type=OPS.CONTENT_TYPE, headers=PRIVATE)

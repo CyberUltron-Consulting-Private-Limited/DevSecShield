@@ -6,8 +6,9 @@
 // the page never filters or counts rows itself. #267: a row click (or Enter / Space on a focused row) opens the finding
 // dialog (S14), the Actions column (Action + Details) is pinned right, and only the essential columns show by default
 // (the rest are in the Columns chooser, remembered per user).
-// Test ids kept for the gate: run-results, run-asset-<id> with data-* attributes, run-results-total ("N assets found"
-// in All assets), run-results-page, button "Next", run-results-empty.
+// Test ids kept for the gate: run-results, run-asset-<id> with data-* attributes (data-type-label too; the gate reads
+// rows from these, not by column position, since columns can be hidden), every cell's data-col="<column id>",
+// run-results-total ("N assets found" in All assets), run-results-page, button "Next", run-results-empty.
 
 import { CheckCircle, Circle, Eye, EyeOff, Loader2, Pencil, Search, ShieldAlert } from "lucide-react";
 import { Fragment, useRef, useState } from "react";
@@ -326,7 +327,7 @@ export function RunFindingsTable({
             <Table className="min-w-max">
               <TableHeader>
                 <TableRow>
-                  <TableHead className={`w-[48px] ${STICKY_SELECT}`}>
+                  <TableHead data-col="select" className={`w-[48px] ${STICKY_SELECT}`}>
                     {/* infotip-shared: the select column stays 48 px (the sticky name column sits at left-12); the
                         Cryptographic findings title's tip explains selecting rows */}
                     <Checkbox checked={allSelected} aria-label="Select all rows" className="cursor-pointer" disabled={selectable.length === 0}
@@ -337,20 +338,20 @@ export function RunFindingsTable({
                                 onSelection(next);
                               }} />
                   </TableHead>
-                  {show("impact") && <TableHead className="min-w-[90px]">Impact <InfoTip id="results.table.impact" /></TableHead>}
-                  {show("algorithm") && <TableHead className={`min-w-[160px] ${STICKY_NAME}`}>Algorithm <InfoTip id="cbom.res.col.algorithm" /></TableHead>}
-                  {show("type") && <TableHead className="min-w-[120px]">Type <InfoTip id="cbom.res.col.type" /></TableHead>}
-                  {show("where") && <TableHead className="min-w-[200px]">Where <InfoTip id="cbom.run.col.where" /></TableHead>}
-                  {show("finding") && <TableHead className="min-w-[220px]">Finding <InfoTip id="cbom.run.col.finding" /></TableHead>}
-                  {show("strength") && <TableHead className="min-w-[100px]">Strength <InfoTip id="cbom.res.col.strength" /></TableHead>}
-                  {show("quantum") && <TableHead className="min-w-[100px]">Quantum <InfoTip id="cbom.res.col.quantum" /></TableHead>}
-                  {show("risk") && <TableHead className="min-w-[90px] text-center">Risk score <InfoTip id="cbom.run.f.risk" /></TableHead>}
-                  {show("source") && <TableHead className="min-w-[120px]">Source <InfoTip id="cbom.run.col.source" /></TableHead>}
-                  {show("wave") && <TableHead className="min-w-[110px]">Wave <InfoTip id="cbom.run.col.wave" /></TableHead>}
-                  {show("status") && <TableHead className="min-w-[100px]">Status <InfoTip id="cbom.run.col.status" /></TableHead>}
-                  {show("qgrade") && <TableHead className="min-w-[100px]">Quantum risk <InfoTip id="cbom.run.col.qgrade" /></TableHead>}
-                  {show("fixclass") && <TableHead className="min-w-[110px]">Fix class <InfoTip id="cbom.res.col.fix_class" /></TableHead>}
-                  <TableHead className={`min-w-[150px] text-right ${STICKY_ACTIONS}`}><span className="inline-flex items-center gap-1">Actions <InfoTip id="results.finding.action" /></span></TableHead>
+                  {show("impact") && <TableHead data-col="impact" className="min-w-[90px]">Impact <InfoTip id="results.table.impact" /></TableHead>}
+                  {show("algorithm") && <TableHead data-col="algorithm" className={`min-w-[160px] ${STICKY_NAME}`}>Algorithm <InfoTip id="cbom.res.col.algorithm" /></TableHead>}
+                  {show("type") && <TableHead data-col="type" className="min-w-[120px]">Type <InfoTip id="cbom.res.col.type" /></TableHead>}
+                  {show("where") && <TableHead data-col="where" className="min-w-[200px]">Where <InfoTip id="cbom.run.col.where" /></TableHead>}
+                  {show("finding") && <TableHead data-col="finding" className="min-w-[220px]">Finding <InfoTip id="cbom.run.col.finding" /></TableHead>}
+                  {show("strength") && <TableHead data-col="strength" className="min-w-[100px]">Strength <InfoTip id="cbom.res.col.strength" /></TableHead>}
+                  {show("quantum") && <TableHead data-col="quantum" className="min-w-[100px]">Quantum <InfoTip id="cbom.res.col.quantum" /></TableHead>}
+                  {show("risk") && <TableHead data-col="risk" className="min-w-[90px] text-center">Risk score <InfoTip id="cbom.run.f.risk" /></TableHead>}
+                  {show("source") && <TableHead data-col="source" className="min-w-[120px]">Source <InfoTip id="cbom.run.col.source" /></TableHead>}
+                  {show("wave") && <TableHead data-col="wave" className="min-w-[110px]">Wave <InfoTip id="cbom.run.col.wave" /></TableHead>}
+                  {show("status") && <TableHead data-col="status" className="min-w-[100px]">Status <InfoTip id="cbom.run.col.status" /></TableHead>}
+                  {show("qgrade") && <TableHead data-col="qgrade" className="min-w-[100px]">Quantum risk <InfoTip id="cbom.run.col.qgrade" /></TableHead>}
+                  {show("fixclass") && <TableHead data-col="fixclass" className="min-w-[110px]">Fix class <InfoTip id="cbom.res.col.fix_class" /></TableHead>}
+                  <TableHead data-col="actions" className={`min-w-[150px] text-right ${STICKY_ACTIONS}`}><span className="inline-flex items-center gap-1">Actions <InfoTip id="results.finding.action" /></span></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -361,9 +362,10 @@ export function RunFindingsTable({
                   const coverage = item.type === "coverage";
                   return (
                       <TableRow key={item.id} data-testid={`run-asset-${item.id}`} {...assetRowAttrs(item, wave)}
+                                data-type-label={item.type_label ?? ASSET_TYPE_LABEL[item.type] ?? item.type}
                                 {...rowOpenProps(() => onOpenDetails(item), `Open details of ${assetName(item)} at ${item.location}`)}
                                 className={`cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50 focus-visible:outline-none focus-visible:bg-blue-50 dark:focus-visible:bg-blue-950/40 ${selection.has(item.id) ? "bg-zinc-100 dark:bg-zinc-800/70" : ""}`}>
-                        <TableCell onClick={(e) => e.stopPropagation()} className={`w-[48px] ${STICKY_SELECT}`}>
+                        <TableCell data-col="select" onClick={(e) => e.stopPropagation()} className={`w-[48px] ${STICKY_SELECT}`}>
                           {/* infotip-shared: one row of the selection; the Select all tip in the header explains it */}
                           <Checkbox checked={selection.has(item.id)} disabled={!key} className="cursor-pointer"
                                     aria-label={`Select ${item.location}`} data-testid={`run-asset-select-${item.id}`}
@@ -371,14 +373,14 @@ export function RunFindingsTable({
                                     onCheckedChange={() => toggle(item)} />
                         </TableCell>
                         {show("impact") && (
-                        <TableCell>
+                        <TableCell data-col="impact">
                           {item.impact
                             ? <Badge variant="outline" className={getImpactBadgeClass(item.impact)}>{item.impact}</Badge>
                             : <span className="text-xs text-zinc-500">Info</span>}
                         </TableCell>
                         )}
                         {show("algorithm") && (
-                        <TableCell className={`font-medium whitespace-nowrap ${STICKY_NAME}`}>
+                        <TableCell data-col="algorithm" className={`font-medium whitespace-nowrap ${STICKY_NAME}`}>
                           <button type="button" className="text-left text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline cursor-pointer font-medium max-w-[180px] truncate inline-block align-bottom"
                                   title={assetName(item)} onClick={(e) => { e.stopPropagation(); onOpenDetails(item); }}>
                             {assetName(item)}
@@ -386,34 +388,34 @@ export function RunFindingsTable({
                           {item.key_size ? <span className="text-zinc-500 text-xs ml-1">{item.key_size}</span> : null}
                         </TableCell>
                         )}
-                        {show("type") && <TableCell className="text-sm text-zinc-600 dark:text-zinc-400">{item.type_label ?? ASSET_TYPE_LABEL[item.type] ?? item.type}</TableCell>}
+                        {show("type") && <TableCell data-col="type" className="text-sm text-zinc-600 dark:text-zinc-400">{item.type_label ?? ASSET_TYPE_LABEL[item.type] ?? item.type}</TableCell>}
                         {show("where") && (
-                        <TableCell className="max-w-[280px]">
+                        <TableCell data-col="where" className="max-w-[280px]">
                           <Truncate text={item.location} className="font-mono text-xs text-zinc-900 dark:text-white" />
                           {item.target && item.target !== item.location && <Truncate text={item.target} className="text-xs text-zinc-500" />}
                         </TableCell>
                         )}
-                        {show("finding") && <TableCell className="max-w-[320px]"><Truncate text={item.finding} className="text-sm text-zinc-600 dark:text-zinc-400" /></TableCell>}
+                        {show("finding") && <TableCell data-col="finding" className="max-w-[320px]"><Truncate text={item.finding} className="text-sm text-zinc-600 dark:text-zinc-400" /></TableCell>}
                         {show("strength") && (
-                        <TableCell>
+                        <TableCell data-col="strength">
                           {item.crypto_strength
                             ? <Badge variant="outline" className={getStrengthBadgeClass(item.crypto_strength)}>{item.crypto_strength}</Badge>
                             : <span className="text-xs text-zinc-500">—</span>}
                         </TableCell>
                         )}
-                        {show("quantum") && <TableCell><QuantumCell item={item} /></TableCell>}
+                        {show("quantum") && <TableCell data-col="quantum"><QuantumCell item={item} /></TableCell>}
                         {show("risk") && (
-                        <TableCell className="text-center">
+                        <TableCell data-col="risk" className="text-center">
                           <span className={`inline-flex items-center justify-center min-w-9 px-2 py-1 rounded-md text-xs font-semibold tabular-nums ${typeof item.risk_score === "number" ? getRiskScoreBoxClass(item.risk_score) : "text-zinc-500"}`}
                                 title="Risk score (0-10, the same score as code findings)">
                             {typeof item.risk_score === "number" ? item.risk_score.toFixed(1) : "—"}
                           </span>
                         </TableCell>
                         )}
-                        {show("source") && <TableCell className="max-w-[160px]"><Truncate text={item.source_name} className="text-sm text-zinc-600 dark:text-zinc-400" /></TableCell>}
-                        {show("wave") && <TableCell><WaveBadge item={wave ?? undefined} /></TableCell>}
+                        {show("source") && <TableCell data-col="source" className="max-w-[160px]"><Truncate text={item.source_name} className="text-sm text-zinc-600 dark:text-zinc-400" /></TableCell>}
+                        {show("wave") && <TableCell data-col="wave"><WaveBadge item={wave ?? undefined} /></TableCell>}
                         {show("status") && (
-                        <TableCell>
+                        <TableCell data-col="status">
                           {coverage ? (
                             <span className="text-xs text-zinc-500" title="A part the run could not read: nothing to plan or track">—</span>
                           ) : (
@@ -424,12 +426,12 @@ export function RunFindingsTable({
                         </TableCell>
                         )}
                         {show("qgrade") && (
-                          <TableCell><QGradeChip item={item as QGradeFields} assetId={item.id} /></TableCell>
+                          <TableCell data-col="qgrade"><QGradeChip item={item as QGradeFields} assetId={item.id} /></TableCell>
                         )}
                         {show("fixclass") && (
-                          <TableCell><FixClassChip item={item as FixClassFields} assetId={item.id} /></TableCell>
+                          <TableCell data-col="fixclass"><FixClassChip item={item as FixClassFields} assetId={item.id} /></TableCell>
                         )}
-                        <TableCell className={`text-right whitespace-nowrap ${STICKY_ACTIONS}`} onClick={(e) => e.stopPropagation()}
+                        <TableCell data-col="actions" className={`text-right whitespace-nowrap ${STICKY_ACTIONS}`} onClick={(e) => e.stopPropagation()}
                                    data-testid={`run-asset-actions-${item.id}`}>
                           <div className="inline-flex items-center gap-1.5">
                             <DropdownMenu>

@@ -20,7 +20,7 @@ from zs_scan_node import kmip_ttlv as K
 from zs_scan_node import netutil
 from zs_scan_node.certparse import cert_facts, load_certs
 from zs_scan_node.jobctx import JobContext, register_asset_types
-from zs_scan_node.netutil import Blocked, Target, is_ip, resolve_checked
+from zs_scan_node.netutil import Blocked, Target, host_port, is_ip, resolve_checked
 from zs_scan_node.tlsclient import client_context
 
 register_asset_types("key_store", "managed_key")
@@ -197,7 +197,8 @@ def run(ctx: JobContext, config: dict, secrets: dict, test_only: bool = False) -
     except KmipFail as fail:
         return target, fail.status, fail.error, 0
     sslctx = _context(config, secrets)
-    where = f"kmip://{target.label}:{port}"
+    hp = host_port(target.label, port)  # "[v6]:port": the port stays readable
+    where = f"kmip://{hp}"
     client = Client(ctx, target, port, sslctx)
     n = 0
     try:
@@ -205,10 +206,10 @@ def run(ctx: JobContext, config: dict, secrets: dict, test_only: bool = False) -
         der = tls.pop("cert_der", None)
         for cert in (load_certs(der) if der else [])[:1]:
             f = cert_facts(cert, "tls")
-            ctx.emit("certificate", target.label, f"{target.label}:{port}#chain[0]", name=f.get("subject", ""),
+            ctx.emit("certificate", target.label, f"{hp}#chain[0]", name=f.get("subject", ""),
                      algorithm=f.get("key_alg"), key_size=f.get("key_size"), facts={**f, "chain_index": 0, "role": "kmip"})
             n += 1
-        ctx.emit("tls_endpoint", target.label, f"{target.label}:{port}", name=f"kmip {target.ip}:{port}",
+        ctx.emit("tls_endpoint", target.label, hp, name=f"kmip {host_port(target.ip, port)}",
                  algorithm=tls.get("negotiated_cipher"), protocol=tls.get("negotiated_version") or "kmip",
                  facts={**tls, "service": "kmip", "tls": True, "client_certificate": True,
                         "server_verified": bool(config.get("ca_pem"))})

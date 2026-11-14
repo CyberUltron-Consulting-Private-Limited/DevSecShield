@@ -10,7 +10,8 @@ import path from "node:path"
 const read = (p: string) => fs.readFileSync(path.join(__dirname, p), "utf8")
 const banner = read("LabModeBanner.tsx")
 const tab = read("CloudIdentityTab.tsx")
-const run = read("RunResults.tsx")
+const run = read("../results/RunSections.tsx") // the shared results template's run sections
+const targets = read("RunResults.tsx") // TargetsBlock: one row per job
 const backend = read("../../../../backend/utilities/cbom_sources/lab_mode.py")
 const sentence = "Lab mode: same-account collection — not for production"
 assert.ok(banner.includes(`export const AWS_LAB_BANNER = "${sentence}";`), "the banner carries the sentence")
@@ -23,8 +24,8 @@ assert.ok(tab.includes('{form.provider === "aws" && !awsOff && settings.aws_lab_
   "the AWS form shows the banner when the deployment is in lab mode")
 assert.ok(tab.indexOf('testId="aws-lab-mode"') < tab.indexOf("<AwsForm"), "above the form")
 // every run of such a source: a banner on the run and a badge on the source's job
-assert.ok(run.includes("{data.targets.some((job) => job.lab_mode) && (\n        <LabModeBanner testId=\"run-results-lab-mode\""),
+assert.ok(run.includes("{targets?.some((job) => job.lab_mode) && (\n        <LabModeBanner testId=\"run-lab-mode\""),
   "a run with a lab-mode job shows the banner")
-assert.ok(run.indexOf('testId="run-results-lab-mode"') < run.indexOf("<TargetsBlock"), "at the top of the run")
-assert.ok(run.includes("{job.lab_mode && ("), "and the job is marked")
+assert.ok(run.indexOf('testId="run-lab-mode"') < run.indexOf("<TargetsBlock"), "above the run's jobs and targets")
+assert.ok(targets.includes("{job.lab_mode && ("), "and the job is marked")
 console.log("aws lab mode tests passed")

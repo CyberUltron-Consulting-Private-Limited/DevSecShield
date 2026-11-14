@@ -21,7 +21,7 @@ import { ASSET_TYPE_LABEL } from "@/components/cbom/sources/RunResults";
 import { getFindingStatusBadgeClass, getImpactBadgeClass, getRiskScoreBoxClass, getStrengthBadgeClass } from "./badgeClasses";
 import RemediationPanel from "@/components/RemediationPanel";
 import AiRemediationPanel from "./AiRemediationPanel";
-import { findingChips, findingStatusOf } from "./model";
+import { dialogItem, findingChips, findingStatusOf } from "./model";
 import { useQuery } from "@tanstack/react-query";
 import { getCbomAssetDetail } from "@/utils/backend_api";
 import type { CbomAssetDetailWithExposure } from "@/utils/api/cbom_outputs";
@@ -43,7 +43,8 @@ function Field({ label, children, infoId }: { label: string; children: ReactNode
   );
 }
 
-/** What the dialog shows for an asset: a table row, or (from top risks / certificates) only its id. */
+/** What the dialog was opened with: a table row, or (from top risks / certificates) its id; the dialog then renders the
+ * asset detail's copy of the row (dialogItem). */
 export type DialogSubject = { item: CbomRunAssetItem } | { assetId: number; label?: string };
 
 export function RunFindingDialog({ teamId, runId, subject, jobs, waveOf, onClose }: {
@@ -55,11 +56,9 @@ export function RunFindingDialog({ teamId, runId, subject, jobs, waveOf, onClose
   waveOf?: (item: CbomRunAssetItem) => CbomRemediationItem | undefined;
   onClose: () => void;
 }) {
-  const item = subject && "item" in subject ? subject.item : null;
-  const assetId = item ? item.id : subject && "assetId" in subject ? subject.assetId : null;
-  const job = item ? jobs.find((j) => j.id === item.job_id) : undefined;
-  const title = item ? assetName(item) : subject && "assetId" in subject ? subject.label ?? `Asset ${subject.assetId}` : "Finding details";
-  // the asset's KB entries (the same query AssetDetailPanel runs, so one request): fallback for the dialog's chips
+  const assetId = subject ? ("item" in subject ? subject.item.id : subject.assetId) : null;
+  // the asset detail (the same query AssetDetailPanel runs, so one request): its KB entries are the chips' fallback,
+  // and for an asset opened by id (Top risks, Certificates: not on the findings page) its copy of the table row
   const detailQ = useQuery({
     queryKey: cbomSourcesKeys.asset(teamId, assetId ?? 0),
     queryFn: async () => (await getCbomAssetDetail(teamId, assetId as number)) as unknown as CbomAssetDetailWithExposure,
@@ -67,6 +66,10 @@ export function RunFindingDialog({ teamId, runId, subject, jobs, waveOf, onClose
     retry: 1,
     staleTime: 60_000,
   });
+  // the row every block below renders: the table's row, else the detail's copy of it (staging QA B7 bug 1)
+  const item = dialogItem(subject, detailQ.data);
+  const job = item ? jobs.find((j) => j.id === item.job_id) : undefined;
+  const title = item ? assetName(item) : subject && "assetId" in subject ? subject.label ?? `Asset ${subject.assetId}` : "Finding details";
   const chips = findingChips(item, detailQ.data?.details, detailQ.data);
   const status = item && item.type !== "coverage" ? findingStatusOf(item, item.wave ?? waveOf?.(item)) : null;
   return (
@@ -173,7 +176,7 @@ export function RunFindingDialog({ teamId, runId, subject, jobs, waveOf, onClose
                   </Field>
                 )}
 
-                <AssetDetailPanel teamId={teamId} assetId={assetId} />
+                <AssetDetailPanel teamId={teamId} assetId={assetId} mergedStandards />
 
                 {/* the code page's "Remediation, fix code and exploit demo" panel (Fix code / Diff / Exploit demo), from
                     GET /runs/{id}/assets/{asset}/remediation; hidden on an older backend. Its Standards tab would repeat

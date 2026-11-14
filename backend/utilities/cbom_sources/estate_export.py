@@ -27,6 +27,11 @@ orphaned, no_owner, expired_served, stale; only when it has a flag) and ``zerosh
 imported when present (it ships in #263): until then, and if building the view fails, the metadata says
 ``zs:cert_hygiene`` ``not_available`` / ``error`` and no component carries the flags.
 
+Correlation (engine step 3, ``estate_links``): every component carries ``zs:owner`` and ``zs:application`` (one per
+value its sources name), ``zs:data_classification`` (the most sensitive of its systems) and one ``zs:used_by_sbom`` /
+``zs:used_by_code`` per scan component that uses it; the metadata says ``zs:correlation`` ``included`` (or ``error``
+when the stored links could not be refreshed: the last stored ones are used).
+
 Signature: the estate export is not signed; the route says so (``X-Cbom-Signature: unsigned``) and sends the SHA-256 of
 the exact bytes, which anyone can check outside ZeroShield.
 """
@@ -148,6 +153,19 @@ def _hygiene_properties(cert: Any) -> list[dict[str, str]]:
     return out
 
 
+def _correlation_properties(c: dict[str, Any]) -> list[dict[str, str]]:
+    """Engine step 3 on a component: its sources' owners and applications (one property each), the data
+    classification of the most sensitive system it sits in, and the code / SBOM components that use it."""
+    out = [{"name": "zs:owner", "value": v[:255]} for v in c.get("owners", [])]
+    out += [{"name": "zs:application", "value": v[:255]} for v in c.get("applications", [])]
+    if c.get("data_classification"):
+        out.append({"name": "zs:data_classification", "value": c["data_classification"]})
+    for link in c.get("links", []):
+        out.append({"name": f"zs:used_by_{link['kind']}",
+                    "value": f"scan {link['scan_id']}: {link['component']} ({link['match']})"[:512]})
+    return out
+
+
 def _document(session: Session, team_id: int, f: Filters, now: _dt.datetime
               ) -> tuple[dict[str, Any], Iterator[dict[str, Any]], Any]:
     from backend.utilities.build_info import build_sha, build_version
@@ -163,6 +181,9 @@ def _document(session: Session, team_id: int, f: Filters, now: _dt.datetime
     cap = INV.EXPORT_CAP
     stale = estate.stale_status(session, team_id)
     hygiene, hygiene_status = cert_hygiene(session, team_id, now)
+    from backend.utilities.cbom_sources import estate_links as LINKS
+
+    links_status = LINKS.refresh_safely(session, team_id)  # engine step 3: stored code / SBOM links, current
     grades = {g: n for g, n in session.execute(sa.select(CbomRiskRegister.q_grade, sa.func.count()).where(
         CbomRiskRegister.team_id == team_id).group_by(CbomRiskRegister.q_grade)).all()}
     digest = hashlib.sha256(json.dumps([team_id, f.public(), total, crypto_kb.version(), QG.GRADE_MODEL_VERSION],
@@ -194,6 +215,7 @@ def _document(session: Session, team_id: int, f: Filters, now: _dt.datetime
                 {"name": "zs:estate_stale", "value": "true" if stale and stale.get("stale") else "false"},
                 {"name": "zs:signature", "value": "unsigned"},
                 {"name": "zs:cert_hygiene", "value": hygiene_status},
+                {"name": "zs:correlation", "value": "error" if links_status == "error" else "included"},
             ],
         },
     }
@@ -211,6 +233,7 @@ def _document(session: Session, team_id: int, f: Filters, now: _dt.datetime
             reg = {r.item_key: r for r in session.exec(select(CbomRiskRegister).where(
                 CbomRiskRegister.team_id == team_id, CbomRiskRegister.item_key.in_(keys))).all()}  # type: ignore[attr-defined]
             ids = {k: (latest.get(k, {}).get("latest") or {}).get("asset_id") for k in keys}
+            corr = LINKS.correlation(session, team_id, keys, refreshed=True)
             rows = {r.id: r for r in session.exec(select(CbomCollectedAsset).where(
                 CbomCollectedAsset.team_id == team_id,
                 CbomCollectedAsset.id.in_([i for i in ids.values() if i]))).all()}  # type: ignore[union-attr]
@@ -246,6 +269,7 @@ def _document(session: Session, team_id: int, f: Filters, now: _dt.datetime
                     *([{"name": "zs:q_reason", "value": r.q_reason}] if r is not None else []),
                     *[p for p in comp["properties"] if p["name"] not in ("zs:q_grade", "zs:q_label", "zs:q_reason")],
                     *(_hygiene_properties(hygiene[key]) if key in hygiene else []),
+                    *_correlation_properties(corr.get(key) or {}),
                 ]
                 yield comp
         yield from parts.components()

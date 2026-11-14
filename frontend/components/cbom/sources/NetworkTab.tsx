@@ -36,7 +36,7 @@ import {
 import AppliancesSection from "./AppliancesSection";
 import { cbomSourcesKeys } from "./keys";
 import { MetadataFields, metadataConfig, metadataFrom, type SourceMetadata } from "./SourceMetadata";
-import { exclusionSaveError, hostnameError, RANGE_HINT, rangeError, storedExclusionIssue, teamExclusionError } from "./teamNeverScan";
+import { exclusionSaveError, heldFor, heldNote, hostnameError, RANGE_HINT, rangeError, storedExclusionIssue, teamExclusionError } from "./teamNeverScan";
 import { sampleDetail, sweepTotals, totalsLine } from "./networkEstimate";
 import {
   addressProgress,
@@ -661,6 +661,14 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
                                   <div id={noteId} className="space-y-1">
                                     <StatusBadge tone="amber" title={issue}>Host name: resolved on the scan node</StatusBadge>
                                     <p className="text-xs text-zinc-600 dark:text-zinc-400">{issue}</p>
+                                    {heldFor(e.cidr, settings.never_scan_held).map((h) => (
+                                      <div key={h.node_id} className="space-y-1" data-testid="network-exclusion-held">
+                                        <StatusBadge tone="red">Held on {h.node_name}</StatusBadge>
+                                        <p className="text-xs text-red-600 dark:text-red-400">
+                                          {heldNote(h.node_name, formatDateTime(h.since))}
+                                        </p>
+                                      </div>
+                                    ))}
                                   </div>
                                 </TableCell>
                               </TableRow>

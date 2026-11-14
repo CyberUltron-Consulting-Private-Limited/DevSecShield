@@ -12,7 +12,8 @@
 #
 # Locks (TEAM-PROCESS): one $R6/locks/stack.lock hold covers the restack (skipped when STACK.md is already READY at
 # the SHA) and the gate, so no other session can switch the stack in between; the gate part is budgeted at 45 minutes
-# (G17 fails beyond it). The way back to dev is its own hold, skipped when the SHA is dev's. The lab is a singleton:
+# (G17 fails beyond it). The way back to dev is its own hold, skipped when the SHA is dev's. CBOM_STACK_LOCK_HELD=1:
+# the caller already holds stack.lock (a CB-35 wave, e2e/cbom/run-waves.sh), so neither hold is taken here. The lab is a singleton:
 # cbom-lab.lock from lab up to lab down. Needs >= 1.5 GB available memory before it starts.
 # Exit: 0 gate PASS, 1 gate FAIL, 2 could not run. The last line printed is the bundle's SHA256SUMS sha256.
 set -euo pipefail
@@ -115,11 +116,16 @@ gate() {
 export -f gate log restack_if_needed
 export HERE RUN SHA REF REPO LAB_DIR NODE_IMAGE STEPS SECRETS R6 LOCKS SKIP_RESTACK
 rc=0
-flock "$LOCKS/stack.lock" bash -c gate || rc=$?
+if [ "${CBOM_STACK_LOCK_HELD:-}" = 1 ]; then
+  # a CB-35 wave runs this inside its own stack.lock hold (harness/waves.py): taking the lock again would wait forever
+  bash -c gate || rc=$?
+else
+  flock "$LOCKS/stack.lock" bash -c gate || rc=$?
+fi
 rm -f "$SECRETS"
 
 # 3. the stack back on dev (its own hold; nothing to do when <ref> is dev), then the checksums
-if [ "$RETURN" = 1 ] && [ "$SHA" != "$(git -C "$REPO" rev-parse origin/dev)" ]; then
+if [ "$RETURN" = 1 ] && [ "${CBOM_STACK_LOCK_HELD:-}" != 1 ] && [ "$SHA" != "$(git -C "$REPO" rev-parse origin/dev)" ]; then
   log "restack dev"
   flock "$LOCKS/stack.lock" "$R6/local/restack.sh" dev || log "restack dev FAILED: tell the coordinator"
 fi
