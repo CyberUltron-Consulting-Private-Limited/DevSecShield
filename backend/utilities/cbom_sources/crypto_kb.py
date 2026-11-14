@@ -302,6 +302,10 @@ def upstream_version(package_version: str) -> str:
     return v
 
 
+# Cached: a pure function returning an immutable tuple. Every library row compares its
+# version with every CVE range bound of its library, so one 50k-asset export parsed the
+# same few hundred strings millions of times (CB-06 bench: most of its CPU before this).
+@lru_cache(maxsize=8192)
 def _key(version: str) -> tuple:
     """Comparable key: numbers, then an OpenSSL letter suffix ('1.1.1w'), then an OpenSSH portable patch level
     ('9.3p2' > '9.3p1' > '9.3'; the patch release is often the fix, e.g. 9.3p2 for CVE-2023-38408)."""
@@ -333,36 +337,87 @@ def _in_range(version: str, rng: dict[str, str]) -> bool:
     return True
 
 
-def library_for(package: str) -> str | None:
+def _library_in(kb: dict[str, Any], package: str) -> str | None:
     name = str(package or "").lower()
-    for lib, rules in (load().get("libraries") or {}).items():
+    for lib, rules in (kb.get("libraries") or {}).items():
         if name in rules.get("packages") or []:
             return lib
     return None
 
 
-def library_status(package: str, package_version: str, *, today: _dt.date | None = None) -> dict[str, Any] | None:
-    """CVE ranges and upstream end-of-life for a crypto library package; None when the package is not tracked."""
-    lib = library_for(package)
+def library_for(package: str) -> str | None:
+    return _library_in(load(), package)
+
+
+# (library, upstream version, CVE ids, end-of-life branch, its date, its sources)
+LibraryFacts = tuple[str, str, tuple[str, ...], str | None, str | None, tuple[Any, ...]]
+
+
+def _library_facts(kb: dict[str, Any], package: str,
+                   package_version: str) -> LibraryFacts | None:
+    """The date-free part of ``library_status`` for one knowledge base; None when
+    the package is not tracked."""
+    lib = _library_in(kb, package)
     if not lib or not package_version:
         return None
-    rules = load()["libraries"][lib]
+    rules = kb["libraries"][lib]
     version = upstream_version(package_version)
     if not _key(version)[0]:
         return None
-    hits = sorted({r["cve"] for r in rules.get("ranges") or [] if _in_range(version, r)})
-    eol = None
+    ranges = rules.get("ranges") or []
+    hits = tuple(sorted({r["cve"] for r in ranges if _in_range(version, r)}))
+    branch: str | None = None
+    date: str | None = None
     table = rules.get("eol") or {}
     if table:
         nums = _key(version)[0]
         branch = f"{nums[0]}.{nums[1]}" if nums[0] >= 3 else f"{nums[0]}.{nums[1]}.{nums[2]}"
         date = table.get(branch)
-        if date:
-            today = today or _dt.date.today()
-            eol = {"branch": branch, "date": date, "passed": _dt.date.fromisoformat(date) < today,
-                   "sources": rules.get("eol_sources") or []}
+    return lib, version, hits, branch, date, tuple(rules.get("eol_sources") or [])
+
+
+# F-1: every view judges a library row's end of life on two dates (classify.shown ->
+# _date_may_matter), so a 50k-asset run compared the same few package versions with
+# every CVE range of their library on every row, twice. The date-free part is
+# memoised per (package, version) for ONE knowledge-base object: the memo is a
+# (knowledge base, entries) pair, replaced as a whole when load() returns another
+# object (a signed bundle, load.cache_clear(), a test's patched KB). An entry never
+# outlives the KB it came from, even when two KBs carry the same kb_version; holding
+# the KB keeps its id from being reused, and a thread still on the old KB writes
+# into the old pair only. The memo is process-wide, shared by every team's runs, and
+# also holds untracked packages (as None). Bounded at 4,096 entries: a full memo is
+# cleared and refilled, which costs what an unmemoised lookup costs, never a wrong
+# answer.
+_LIBRARY_MEMO_MAX = 4096
+_library_memo: tuple[Any, dict[tuple[str, str], LibraryFacts | None]] = (None, {})
+_MISS: Any = object()
+
+
+def library_status(package: str, package_version: str, *, today: _dt.date | None = None) -> dict[str, Any] | None:
+    """CVE ranges and upstream end-of-life for a crypto library package; None when the package is not tracked."""
+    global _library_memo
+    kb = load()
+    memo = _library_memo
+    if memo[0] is not kb:
+        memo = _library_memo = (kb, {})
+    entries = memo[1]
+    key = (package, package_version)
+    facts = entries.get(key, _MISS)  # one lookup: another thread may clear the dict
+    if facts is _MISS:
+        facts = _library_facts(kb, package, package_version)
+        if len(entries) >= _LIBRARY_MEMO_MAX:
+            entries.clear()
+        entries[key] = facts
+    if facts is None:
+        return None
+    lib, version, hits, branch, date, sources = facts
+    eol = None
+    if date:
+        today = today or _dt.date.today()
+        eol = {"branch": branch, "date": date, "passed": _dt.date.fromisoformat(date) < today,
+               "sources": list(sources)}
     return {"library": lib, "package": package, "package_version": package_version, "upstream_version": version,
-            "cves": hits, "eol": eol}
+            "cves": list(hits), "eol": eol}
 
 
 def pqc_context() -> dict[str, Any]:
