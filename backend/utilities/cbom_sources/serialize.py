@@ -94,6 +94,9 @@ def public_source(source: CbomCollectionSource, settings: CbomCollectionSettings
         "row_version": source.row_version,
         "created_at": iso_z(source.created_at),
         "last_updated": iso_z(source.last_updated),
+        # F1.2 fleet: set when a policy manages this source (edit it through the policy), and its typed credential
+        "managed_by_policy_id": source.managed_by_policy_id,
+        "credential_id": source.credential_id,
     }
 
 
@@ -133,7 +136,12 @@ def public_job(job: CbomCollectionJob, node: CbomScanNode | None, settings: Cbom
     }
 
 
-def public_run(run: CbomCollectionRun, jobs: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+def public_run(run: CbomCollectionRun, jobs: list[dict[str, Any]] | None = None,
+               risk_model: dict[str, Any] | None = None) -> dict[str, Any]:
+    """``risk_model``: the team's Mosca now, so ``grades.inputs_changed`` can compare it with the run's snapshot
+    (CB-19 PR-2); without it ``inputs_changed`` is null on a run that has a snapshot."""
+    from backend.utilities.cbom_sources.qgrade import run_grades
+
     out = {
         "id": run.id,
         "team_id": run.team_id,
@@ -152,6 +160,8 @@ def public_run(run: CbomCollectionRun, jobs: list[dict[str, Any]] | None = None)
         "last_updated": iso_z(run.last_updated),
         # what judged the run when it was created (null on runs from before they were recorded)
         "versions": {"kb": run.kb_version, "classifier": run.classifier_version, "engine": run.engine_version},
+        # the grade model and inputs the run recorded at Start, and whether the team's inputs differ now (CB-19)
+        "grades": run_grades(run, risk_model),
     }
     if jobs is not None:
         out["jobs"] = jobs

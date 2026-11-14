@@ -478,6 +478,20 @@ entry("KMS_PENDING_DELETION", title="KMS key pending deletion", category="cloud"
       attack="Data still encrypted under it becomes unrecoverable when the key is deleted.", cwe=["CWE-320"], owasp=["crypto"], cves=[], standards=[], compliance=["key_mgmt"],
       remediation={"summary": "Cancel deletion if anything still uses it: aws kms cancel-key-deletion --key-id {resource}", "steps": []},
       verify=[{"label": "Key state", "command": "aws kms describe-key --key-id {resource} --query KeyMetadata.KeyState"}], references=[])
+entry("KMS_KEY_MATERIAL_EXPIRES", title="Imported KMS key material expires soon", category="cloud", default_impact="Medium",
+      description="A KMS key with imported key material (origin EXTERNAL) has material that expires within 30 days, or has expired. When the current material expires, AWS KMS deletes it and the key stops working until material is imported again.",
+      attack="Not an attack path: an outage. Every encrypt and decrypt call under the key fails once its material expires, and data encrypted under it cannot be read until the same material is re-imported.",
+      cwe=["CWE-320"], owasp=["crypto"], cves=[], standards=["NIST SP 800-57 Part 1 (cryptoperiods)"], compliance=["key_mgmt"],
+      remediation={"summary": "Re-import the same key material with a later expiry (or no expiry) before it expires.", "steps": [
+          {"platform": "AWS KMS", "how": "aws kms get-parameters-for-import --key-id {resource} --wrapping-algorithm RSAES_OAEP_SHA_256 --wrapping-key-spec RSA_4096, wrap the same material, then aws kms import-key-material --key-id {resource} --encrypted-key-material fileb://material.bin --import-token fileb://token.bin --expiration-model KEY_MATERIAL_DOES_NOT_EXPIRE"}]},
+      verify=[{"label": "Expiry of each material", "command": "aws kms list-key-rotations --key-id {resource} --include-key-material ALL_KEY_MATERIAL"}], references=[])
+entry("KMS_KEY_NO_MATERIAL", title="KMS key has no usable imported material", category="cloud", default_impact="Medium",
+      description="A KMS key with imported key material (origin EXTERNAL) is in the PendingImport state: its material was never imported, expired or was deleted, so the key cannot encrypt or decrypt.",
+      attack="Not an attack path: an outage. Anything that encrypts or decrypts under the key fails, and data encrypted under it cannot be read until the same material is imported again.",
+      cwe=["CWE-320"], owasp=["crypto"], cves=[], standards=[], compliance=["key_mgmt"],
+      remediation={"summary": "Import the key material again (the same material, to read existing data), or schedule the key's deletion if nothing uses it.", "steps": [
+          {"platform": "AWS KMS", "how": "aws kms get-parameters-for-import --key-id {resource} --wrapping-algorithm RSAES_OAEP_SHA_256 --wrapping-key-spec RSA_4096, wrap the material, then aws kms import-key-material --key-id {resource} --key-material-id <id from the finding> --encrypted-key-material fileb://material.bin --import-token fileb://token.bin"}]},
+      verify=[{"label": "Key state", "command": "aws kms describe-key --key-id {resource} --query KeyMetadata.KeyState"}], references=[])
 entry("SECRET_NO_ROTATION", title="Secret rotation off", category="cloud", default_impact="Low", description="A Secrets Manager secret has no rotation configured.",
       attack="A leaked secret stays valid indefinitely.", cwe=["CWE-324"], owasp=["crypto"], cves=[], standards=[], compliance=["key_mgmt"],
       remediation={"summary": "Configure rotation with a rotation Lambda.", "steps": []}, verify=[{"label": "Rotation", "command": "aws secretsmanager describe-secret --secret-id {resource} --query RotationEnabled"}], references=[])
