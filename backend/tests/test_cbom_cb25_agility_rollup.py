@@ -424,12 +424,12 @@ def test_a_certificate_is_rechecked_when_its_expiry_window_opens(api, world, rea
         first = obs.fix_codes
     later = dt.datetime.combine(obs.fix_recheck_on, dt.time(), tzinfo=dt.timezone.utc) + dt.timedelta(days=2)
     with Session(engine) as s:
-        assert STORE.heal(s, 1, later) == 1  # the window opened: judged again
+        assert len(STORE.judge_observations(s, 1, later, STORE._stale_condition(later))) == 1  # the window opened
         s.commit()
         obs = s.exec(select(CbomEstateObservation)).one()
     assert obs.fix_recheck_on > later.date() and obs.fix_version
-    with Session(engine) as s:
-        assert STORE.heal(s, 1, later) == 0  # nothing more to do that day
+    with Session(engine) as s:  # nothing more to do that day
+        assert len(STORE.judge_observations(s, 1, later, STORE._stale_condition(later))) == 0
     assert first is not None or obs.fix_codes is not None
 
 

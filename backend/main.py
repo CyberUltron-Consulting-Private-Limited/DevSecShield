@@ -17,8 +17,10 @@ from backend.routers.cbom_ai import router as cbom_ai_router
 from backend.routers.cbom_ops import router as cbom_ops_router
 from backend.routers.cbom_run_deliverables import router as cbom_run_deliverables_router
 from backend.routers.cbom_register import router as cbom_register_router
+from backend.routers.cbom_certificates import router as cbom_certificates_router
 from backend.routers.cbom_run_tickets import router as cbom_run_tickets_router
 from backend.routers.cbom_estate import router as cbom_estate_router
+from backend.routers.cbom_estate_export import router as cbom_estate_export_router
 from backend.routers.cbom_node import router as cbom_node_router
 from backend.routers.cbom_node_pools import router as cbom_node_pools_router
 from backend.routers.cbom_node_artifacts import router as cbom_node_artifacts_router
@@ -154,8 +156,10 @@ app.include_router(cbom_ai_router)  # CB-38 PR-6: AI remediation (Bedrock or on-
 app.include_router(cbom_ops_router)
 app.include_router(cbom_run_deliverables_router)  # run VEX, signature, PDF, evidence pack (CB-38 PR-8)
 app.include_router(cbom_register_router)
+app.include_router(cbom_certificates_router)  # orphaned and unmanaged certificates of the estate (output 04)
 app.include_router(cbom_run_tickets_router)
 app.include_router(cbom_estate_router)  # CB-20: the team's estate store
+app.include_router(cbom_estate_export_router)  # CB-26: the team estate CBOM
 app.include_router(cbom_node_router)
 app.include_router(cbom_node_pools_router)  # agent pool tokens for the Helm DaemonSet (WP8b)
 app.include_router(cbom_node_artifacts_router)  # scan node image, Helm chart and OVA/AMI kits served to the team

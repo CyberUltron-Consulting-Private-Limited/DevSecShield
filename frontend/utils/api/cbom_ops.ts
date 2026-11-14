@@ -58,7 +58,7 @@ export interface CbomDiff {
 
 export type CbomDriftKind =
   | "opened" | "resolved" | "new_asset" | "removed_asset" | "cert_renewed" | "cert_expiring" | "schedule_skipped"
-  | "q0_closed"
+  | "q0_closed" | "agility_asset_moved" | "agility_system_changed"
 
 export interface CbomDriftEvent {
   id: number
