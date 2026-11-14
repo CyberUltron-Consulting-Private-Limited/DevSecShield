@@ -957,7 +957,10 @@ def test_migration_chains_on_the_single_head():
     cfg = Config(str(_REPO_ROOT / "prod_database_migrations" / "alembic.ini"))
     cfg.set_main_option("script_location", str(_REPO_ROOT / "prod_database_migrations" / "migrations"))
     script = ScriptDirectory.from_config(cfg)
-    assert script.get_heads() == ["w9cloudpool001"]
+    # one head; later revisions (#226 cb226apikey001) chain after this one
+    heads = script.get_heads()
+    assert len(heads) == 1 and (heads == ["w9cloudpool001"] or
+                                any(r.down_revision == "w9cloudpool001" for r in script.walk_revisions()))
     assert script.get_revision("w9cloudpool001").down_revision == "cb25agility001"
 
 

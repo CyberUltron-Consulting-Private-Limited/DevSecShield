@@ -8,7 +8,8 @@ only (the backend cannot resolve names on the customer's network).
 
 The same holds for the targets: what the backend counts (estimates, credits) and offers as connection-test samples
 is exactly what the node's ``expand_targets`` scans for every address target form, including the addresses the
-node never scans whatever the list says (network and broadcast addresses of an IPv4 /24 or larger, 0.0.0.0/8, ::,
+node never scans whatever the list says (network and broadcast addresses at the outer edges of the block the IPv4
+lines form, 0.0.0.0/8, ::,
 and the NAT64 form of an excluded IPv4 address).  Host-name targets are counted once each: the node may scan fewer
 (two names of one host, or a name with a listed address), never more.
 """
@@ -82,9 +83,9 @@ def test_the_backend_count_matches_what_the_node_scans(source, entries, expected
 
 
 @pytest.mark.parametrize("source, entries", [
-    (["10.0.0.0/24"], []),  # the node skips the network and broadcast addresses of an IPv4 /24 or larger
+    (["10.0.0.0/24"], []),  # the node skips the network and broadcast addresses at the edges of the block
     (["10.0.0.0/29"], ["10.0.0.1"]),
-    (["10.0.1.0/30", "10.0.1.4/31", "10.0.1.9", "10.0.1.16/32"], []),  # a /25 ... /32 keeps every address (N3)
+    (["10.0.1.0/30", "10.0.1.4/31", "10.0.1.9", "10.0.1.16/32"], []),  # a /31 and a /32 keep every address
     (["10.0.2.0/25", "10.0.2.128/25"], []),
     (["10.0.3.0/24", "10.0.3.255", "10.0.3.0/25"], []),  # an address written out is scanned, even a broadcast one
     (["::ffff:10.0.4.0/126"], []),  # stored (and sent to the node) as 10.0.4.0/30
@@ -133,18 +134,36 @@ def test_the_node_the_backend_and_the_ui_know_the_same_loopback_names():
     assert T.is_loopback_name("db.localhost") and not T.is_loopback_name("localhost.corp")
 
 
-def test_the_node_and_the_backend_drop_network_and_broadcast_for_the_same_prefixes():
-    """N3 (14 Nov 2026): only a /24 or larger leaves out its own network and broadcast address, on both sides; a /24
-    split into two /25s keeps .127 and .128 (they are hosts)."""
+@pytest.mark.parametrize("lines", [
+    ["10.232.0.0/25", "10.232.0.128/25"],  # a /24 split into two /25s: .127 and .128 are hosts
+    ["10.1.0.0/24", "10.1.1.0/24"],  # a /23 split into two /24s: 10.1.0.255 and 10.1.1.0 are hosts
+    ["10.232.0.0/24"], ["10.232.0.0/23"], ["10.232.0.64/26"], ["10.0.0.0/29"], ["10.0.0.0/30"], ["10.0.0.0/31"],
+    ["10.0.0.0/25", "10.0.0.128-10.0.0.255"],  # written-out addresses at the edge are scanned
+    ["10.0.0.0/24", "10.0.0.0/25", "10.0.3.0/29", "10.0.3.8/29"],  # overlap and two adjacent /29s
+])
+def test_the_node_and_the_backend_skip_the_same_network_and_broadcast_addresses(lines):
+    """N3 (review of #250): network/broadcast addresses only at the outer edges of the block the configured lines form,
+    the same on the node (expand_targets / boundary_skips) and in the backend's counts (parse_targets)."""
     from zs_scan_node import netutil
 
-    assert T.HOST_ONLY_MAX_PREFIX == netutil.HOST_ONLY_MAX_PREFIX == 24
-    for source in (["10.232.0.0/25", "10.232.0.128/25"], ["10.232.0.0/24"], ["10.232.0.0/23"], ["10.232.0.64/26"]):
-        parsed = T.parse_targets(source)
-        targets, _ = expand_targets(parsed.normalized, NeverScan([]))
-        assert T.count_in_scope(parsed, None) == len(targets), source
-    split, _ = expand_targets(["10.232.0.0/25", "10.232.0.128/25"], NeverScan([]))
-    assert {"10.232.0.127", "10.232.0.128"} <= {t.ip for t in split} and len(split) == 256
+    parsed = T.parse_targets(lines)
+    targets, _ = expand_targets(parsed.normalized, NeverScan([]))
+    assert T.count_in_scope(parsed, None) == len(targets), lines
+    assert {str(ipaddress.IPv4Address(a)) for a in T.boundary_skips(lines)} == netutil.boundary_skips(lines)
+
+
+def test_a_split_network_keeps_its_inner_edges_and_a_lone_subnet_skips_its_own():
+    split, _ = expand_targets(["10.1.0.0/24", "10.1.1.0/24"], NeverScan([]))
+    ips = {t.ip for t in split}
+    assert {"10.1.0.255", "10.1.1.0"} <= ips and not {"10.1.0.0", "10.1.1.255"} & ips and len(ips) == 510
+    halves, _ = expand_targets(["10.232.0.0/25", "10.232.0.128/25"], NeverScan([]))
+    assert {"10.232.0.127", "10.232.0.128"} <= {t.ip for t in halves} and len(halves) == 254
+    lone, _ = expand_targets(["10.0.0.0/29"], NeverScan([]))
+    assert [t.ip for t in lone] == [f"10.0.0.{i}" for i in range(1, 7)]
+    # network ranges: each range's skips come from every range the team configured
+    assert T.range_skip_addresses("10.1.0.0/24", ["10.1.0.0/24", "10.1.1.0/24"]) == ["10.1.0.0"]
+    assert T.range_skip_addresses("10.1.1.0/24", ["10.1.0.0/24", "10.1.1.0/24"]) == ["10.1.1.255"]
+    assert T.range_skip_addresses("10.0.0.0/29", ["10.0.0.0/29"]) == ["10.0.0.0", "10.0.0.7"]
 
 
 def test_the_ui_no_longer_refuses_a_host_name_in_the_team_list():

@@ -56,6 +56,7 @@ _ROUTERS = _BACKEND / "routers"
 
 SLUGS = (
     "scope-baseline-register",
+    "quantum-risk-register",
     "methodology-evidence-plan",
     "infrastructure-cloud-encryption-posture",
     "network-tls-protocol-assessment",
@@ -200,6 +201,8 @@ def _policy(path: Path) -> tuple[set[str], tuple[str, ...]]:
         backend += ("backend.utilities.cbom_sources.cbom_rows", "backend.utilities.cbom_sources.cbom_metrics")
         # the remediation plan (waves, owners, target dates; scan-node assets) read by the loader: database only, no AI
         backend += ("backend.utilities.cbom_sources.waves",)
+        # the quantum risk register (CB-23) for deliverable #2: register rows and Q0 gaps from the database, no AI
+        backend += ("backend.utilities.cbom_sources.risk_register",)
     # CBOM Sources collections as CBOM results (M1x): stored assets and the latest-observation rule; database only
     backend += ("backend.utilities.cbom_sources.collections_view",)
     # cross-source asset keys (CB-21): pure, stdlib only, no AI

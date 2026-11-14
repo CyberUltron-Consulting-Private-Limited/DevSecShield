@@ -80,6 +80,7 @@ import { isActiveStatus } from "@/components/cbom/results/statusBuckets";
 import { createOutageGate, listView } from "@/components/cbom/results/listErrors";
 import { cbomResultsListKey, cbomSourcesKeys } from "@/components/cbom/sources/keys";
 import { AgilityBaselineSection } from "@/components/cbom/grade/AgilityBaseline";
+import { CertHygieneSection } from "@/components/cbom/certificates/CertHygiene";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -860,7 +861,7 @@ export default function CBOMPage() {
                 </Card>
                 <Card>
                   <CardHeader>
-                    <CardTitle>Estate CBOM</CardTitle>
+                    <CardTitle>Estate CBOM <InfoTip id="cbom.estate.export" /></CardTitle>
                     <CardDescription>The whole estate as one CycloneDX 1.6 file: every asset once, however many sources see it, with its current quantum risk grade and VEX. The file is unsigned; its SHA-256 is shown after the download.</CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -879,6 +880,10 @@ export default function CBOMPage() {
                 {/* CB-25: crypto-agility baseline of the current estate (enterprise, systems, drill-down) */}
                 <div className="mt-6">
                   <AgilityBaselineSection teamId={teamIdNumber} />
+                </div>
+                {/* Output 04: orphaned and unmanaged certificates of the estate */}
+                <div className="mt-6">
+                  <CertHygieneSection teamId={teamIdNumber} />
                 </div>
               </TabsContent>
 
