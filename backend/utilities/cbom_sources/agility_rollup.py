@@ -20,7 +20,10 @@ System (owner default, CB-24 §6.1): the job snapshot's ``application``, else th
 evidence items' "Third parties" and "Key management (evidence)". Headline: the self-fixable share (configurable +
 code-fixed over the assets with one of the four classes). Every count is also given without the post-quantum codes.
 
-The estate store (CB-20, PR #167) replaces the load in PR-B; until then this reads ``collections_view``.
+Where the Sources observations come from: the estate store (CB-20, ``estate``: the store's asset keys, each
+observation's latest stored row; faster at scale) once it has written every source's latest successful collection
+and the team's store is not stale; else ``collections_view`` (a run's store write waits for its drift recording, and
+a team whose runs predate the store waits for ``estate backfill``). The response says which (``inputs.read_from``).
 """
 from __future__ import annotations
 
@@ -31,7 +34,7 @@ import threading
 import time
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Iterable
 
 from backend.utilities.cbom_sources import agility as AG
 
@@ -247,18 +250,213 @@ def latest_code_scans(session: Any, team_id: int) -> list[Any]:
     return list(chosen.values())
 
 
-def build(session: Any, team_id: int, *, now: _dt.datetime | None = None, sources: Any = None) -> Rollup:
-    """The team's agility roll-up. ``sources``: a ``collections_view.SourcesResult`` already loaded for this request."""
+@dataclass
+class _Obs:
+    """One Sources observation, whatever read it: its asset key, class result, system and how it is shown."""
+
+    key: str
+    ev: tuple
+    at: tuple
+    system: tuple[str, str, str]
+    name: str
+    type: str
+    location: str
+    source: str
+
+
+@dataclass
+class _SourcesSide:
+    read_from: str  # "estate_store" | "collections_view"
+    observations: list[_Obs]
+    aliases: dict[str, str]  # a certificate link key -> the asset key it names (code certificates join through it)
+    not_correlated: int
+    collections: int
+
+
+class _Contexts:
+    """Per job: the class rules' context key and the system (application, else the source uid snapshot)."""
+
+    def __init__(self, session: Any, team_id: int, job_ids: Iterable[int]):
+        from sqlmodel import select
+
+        from backend.new_models import CbomCollectionJob, CbomCollectionSource
+
+        ids = sorted(set(job_ids))
+        self.jobs = {j.id: j for start in range(0, len(ids), 500) for j in session.exec(select(CbomCollectionJob).where(
+            CbomCollectionJob.team_id == team_id, CbomCollectionJob.id.in_(ids[start:start + 500]))).all()}  # type: ignore[union-attr]
+        self.sources = {s.id: s for s in session.exec(select(CbomCollectionSource).where(
+            CbomCollectionSource.team_id == team_id)).all()}
+        self._memo: dict[int, tuple[tuple, tuple[str, str, str]]] = {}
+
+    def of(self, job_id: int, source_ref: str, source_name: str) -> tuple[tuple, tuple[str, str, str]]:
+        hit = self._memo.get(job_id)
+        if hit is None:
+            job = self.jobs.get(job_id)
+            source = self.sources.get(getattr(job, "source_id", None) or 0)
+            ctx = AG.node_context(job, source)
+            (kind, skey), label = AG.system_of(job, source, ctx)
+            if kind == "source":  # the source uid every team view uses (job snapshot first)
+                skey, label = source_ref, source_name
+            hit = self._memo[job_id] = (AG._ctx_key(ctx), (f"{kind}:{skey}", label, kind))
+        return hit
+
+
+def _alias(aliases: dict[str, str], ambiguous: set[str], link: str, key: str) -> None:
+    if aliases.setdefault(link, key) != key:
+        ambiguous.add(link)
+
+
+def _evaluate_node(kb: str, ctx_key: tuple, a_type: str, codes: Iterable[Any], facts: Any, location: Any) -> tuple:
+    # agility.RunAgility's path: the job context's memo key is computed once per job
+    facts = facts if isinstance(facts, dict) else {}
+    return AG._evaluate(kb, "node", a_type, AG._codes(codes), AG._deciding(a_type, facts, location), ctx_key)
+
+
+def _from_view(session: Any, team_id: int, found: Any) -> _SourcesSide:
+    """Sources from ``collections_view.load_sources_result`` (each source's latest successful collection)."""
+    from backend.utilities.cbom_sources import asset_keys as AK
+
+    contexts = _Contexts(session, team_id, (item.collection.job_id for item in found.rows))
+    kb = AG.crypto_kb.version()
+    out: list[_Obs] = []
+    aliases: dict[str, str] = {}
+    ambiguous: set[str] = set()
+    not_correlated = 0
+    for item in found.rows:
+        col, row = item.collection, item.row
+        ctx_key, system = contexts.of(col.job_id, col.source_ref, col.source_name)
+        if item.node_type in AK.CERT_TYPES or row.get("algorithm_type") == "certificate":
+            # load_sources_result already correlated the certificates (link_certificates: asset_keys.correlate_detail)
+            key = item.identity
+            if key.startswith("node|"):
+                not_correlated += 1  # a certificate with nothing identifying: counted within its own source
+            for link in item.aliases:
+                _alias(aliases, ambiguous, link, key)
+        else:  # an endpoint (host:port; a private address only within its source) or a cloud resource id
+            found_key = AK.asset_key(AK.Observation(
+                kind=str(item.node_type or ""), facts=item.facts if isinstance(item.facts, dict) else {},
+                location=str(row.get("location") or ""), target=str(item.target or ""), scope=col.source_ref))
+            key = found_key if isinstance(found_key, str) else item.identity
+        a_type = str(item.node_type or "")
+        ev = _evaluate_node(kb, ctx_key, a_type, row.get("collector_codes") or [], item.facts, row.get("location"))
+        out.append(_Obs(key, ev, (col.observed_at, 0, col.job_id), system, str(row.get("title") or a_type), a_type,
+                        str(row.get("location") or ""), col.source_name))
+    for link in ambiguous:
+        aliases.pop(link, None)
+    return _SourcesSide("collections_view", out, aliases, not_correlated, len(found.collections))
+
+
+def store_ready(session: Any, team_id: int, latest: list[Any] | None = None) -> bool:
+    """True when the estate store (CB-20) can stand for ``collections_view``: the team's store is not stale and it has
+    written every source's latest successful collection (the store is written when drift is recorded for the run, a
+    scheduler tick after the run finishes; a team whose runs predate the store waits for ``estate backfill``)."""
     from sqlmodel import select
 
-    from backend.new_models import (CbomCollectionJob, CbomCollectionSource, CbomEvidenceArea, CbomEvidenceVendor,
-                                    Scan)
+    from backend.new_models import CbomCollectionSource, CbomEstateSource
+    from backend.utilities.cbom_sources import collections_view as CV
+    from backend.utilities.cbom_sources import estate as ESTATE
+    from backend.utilities.cbom_sources import identity as ID
+
+    if ESTATE.stale_status(session, team_id) is not None:
+        return False
+    jobs = latest if latest is not None else CV.latest_jobs(session, team_id)
+    if not jobs:
+        return True
+    srcs = {s.id: s for s in session.exec(select(CbomCollectionSource).where(
+        CbomCollectionSource.team_id == team_id)).all()}
+    written = {r.source_ref: r.latest_job_id for r in session.exec(select(CbomEstateSource).where(
+        CbomEstateSource.team_id == team_id)).all()}
+    return all((written.get(ID.job_source_ref(j, srcs.get(j.source_id or 0))) or 0) >= j.id for j in jobs)
+
+
+def _from_store(session: Any, team_id: int, today: _dt.datetime) -> _SourcesSide:
+    """Sources from the estate store (CB-20): every asset key with an observation that is present or not read in
+    its source's latest collection (removed ones are gone), each observation's latest stored row. The keys are the
+    store's (CB-21 ``asset_keys``), so nothing is correlated here."""
+    import sqlalchemy as sa
+
+    from backend.new_models import CbomCollectedAsset, CbomEstateAsset, CbomEstateObservation, CbomEstateSource
     from backend.utilities.cbom_sources import asset_keys as AK
+    from backend.utilities.cbom_sources.classify import shown
+
+    eo, es, ea = CbomEstateObservation.__table__, CbomEstateSource.__table__, CbomEstateAsset.__table__
+    obs = session.execute(sa.select(
+        eo.c.asset_key, eo.c.source_ref, eo.c.row_key, eo.c.presence, eo.c.seen_job_id, eo.c.seen_attempt,
+        eo.c.seen_at, es.c.latest_job_id, es.c.latest_attempt, es.c.latest_at, es.c.source_name)
+        .select_from(eo.join(es, sa.and_(es.c.team_id == eo.c.team_id, es.c.source_ref == eo.c.source_ref)))
+        .where(eo.c.team_id == team_id, eo.c.presence != "removed")).all()
+    pointers: dict[tuple[int, int], list[tuple[Any, Any]]] = {}
+    for o in obs:
+        job, attempt, at = ((o.latest_job_id, o.latest_attempt, o.latest_at) if o.presence == "present"
+                            else (o.seen_job_id, o.seen_attempt, o.seen_at))
+        pointers.setdefault((job, attempt), []).append((o, at))
+    columns = (CbomCollectedAsset.asset_key, CbomCollectedAsset.asset_type, CbomCollectedAsset.cdx_type,
+               CbomCollectedAsset.target, CbomCollectedAsset.location, CbomCollectedAsset.name,
+               CbomCollectedAsset.algorithm, CbomCollectedAsset.key_size, CbomCollectedAsset.protocol,
+               CbomCollectedAsset.facts, CbomCollectedAsset.finding_codes, CbomCollectedAsset.impact,
+               CbomCollectedAsset.finding, CbomCollectedAsset.created_at)
+    contexts = _Contexts(session, team_id, (job for job, _attempt in pointers))
+    kb = AG.crypto_kb.version()
+    naive_today = today.astimezone(UTC).replace(tzinfo=None)  # classify works in naive UTC
+    out: list[_Obs] = []
+    aliases: dict[str, str] = {}
+    ambiguous: set[str] = set()
+    for (job_id, attempt), items in pointers.items():
+        wanted = sorted({o.row_key for o, _at in items})
+        rows: dict[str, Any] = {}
+        for start in range(0, len(wanted), 500):
+            for r in session.execute(sa.select(*columns).where(
+                    CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.job_id == job_id,
+                    CbomCollectedAsset.attempt == attempt,
+                    CbomCollectedAsset.asset_key.in_(wanted[start:start + 500]))).all():  # type: ignore[attr-defined]
+                rows[r.asset_key] = r
+        for o, at in items:
+            row = rows.get(o.row_key)
+            if row is None or row.asset_type == "coverage":
+                continue  # the row was pruned (retention keeps the ones the store points at) or is not an asset
+            name = o.source_name or o.source_ref
+            ctx_key, system = contexts.of(job_id, o.source_ref, name)
+            codes = [c for c in shown(row, naive_today)["finding_codes"] if not c.startswith("COVERAGE_")]
+            a_type = str(row.asset_type or "")
+            ev = _evaluate_node(kb, ctx_key, a_type, codes, row.facts, row.location)
+            if a_type in AK.CERT_TYPES or row.cdx_type == "certificate":
+                observation = AK.Observation(kind=a_type, facts=row.facts if isinstance(row.facts, dict) else {},
+                                             location=str(row.location or ""), cdx_type=str(row.cdx_type or ""),
+                                             scope=o.source_ref)
+                links = AK.link_keys(observation)
+                before = bool((row.facts or {}).get("not_before")) if isinstance(row.facts, dict) else False
+                for link in links:  # a code row's cn key only names a certificate read without its notBefore
+                    if not (link.basis == "cn" and before):
+                        _alias(aliases, ambiguous, link.key, o.asset_key)
+            out.append(_Obs(o.asset_key, ev, (_aware(at), 0, job_id), system, str(row.name or a_type), a_type,
+                            str(row.location or ""), name))
+    for link in ambiguous:
+        aliases.pop(link, None)
+    not_correlated = session.execute(sa.select(sa.func.count()).select_from(ea).where(
+        ea.c.team_id == team_id, ea.c.key_kind == "not_correlated", ea.c.presence != "removed")).scalar() or 0
+    collections = session.execute(sa.select(sa.func.count()).select_from(es).where(
+        es.c.team_id == team_id)).scalar() or 0
+    return _SourcesSide("estate_store", out, aliases, int(not_correlated), int(collections))
+
+
+USE_STORE = True  # CB-20 merged (#167): read the estate store when it is ready, else collections_view
+
+
+def build(session: Any, team_id: int, *, now: _dt.datetime | None = None, sources: Any = None) -> Rollup:
+    """The team's agility roll-up. ``sources``: a ``collections_view.SourcesResult`` already loaded for this request
+    (then it is used as is); otherwise the estate store when ``store_ready``, else ``collections_view``."""
+    from sqlmodel import select
+
+    from backend.new_models import CbomEvidenceArea, CbomEvidenceVendor, Scan
     from backend.utilities.cbom_sources import collections_view as CV
     from backend.utilities.cbom_sources import identity as ID
 
     moment = _aware(now or _dt.datetime.now(UTC))
-    found = sources if sources is not None else CV.load_sources_result(session, team_id, moment)
+    if sources is None and USE_STORE and store_ready(session, team_id):
+        side = _from_store(session, team_id, moment)
+    else:
+        side = _from_view(session, team_id, sources if sources is not None
+                          else CV.load_sources_result(session, team_id, moment))
     subjects: dict[str, Subject] = {}
 
     def subject(key: str) -> Subject:
@@ -268,55 +466,13 @@ def build(session: Any, team_id: int, *, now: _dt.datetime | None = None, source
         return item
 
     # 1. Sources: one key per cross-source identity (certificates, endpoints, cloud resources), class per observation
-    job_ids = sorted({item.collection.job_id for item in found.rows})
-    jobs = {j.id: j for start in range(0, len(job_ids), 500) for j in session.exec(select(CbomCollectionJob).where(
-        CbomCollectionJob.team_id == team_id, CbomCollectionJob.id.in_(job_ids[start:start + 500]))).all()}  # type: ignore[union-attr]
-    srcs = {s.id: s for s in session.exec(select(CbomCollectionSource).where(
-        CbomCollectionSource.team_id == team_id)).all()}
-    contexts: dict[int, tuple[tuple, tuple[str, str, str]]] = {}
-    kb = AG.crypto_kb.version()
-    aliases: dict[str, str] = {}
-    ambiguous: set[str] = set()
-    not_correlated = 0
-    for item in found.rows:
-        col = item.collection
-        if col.job_id not in contexts:
-            job = jobs.get(col.job_id)
-            source = srcs.get(getattr(job, "source_id", None) or 0)
-            ctx = AG.node_context(job, source)
-            (kind, skey), label = AG.system_of(job, source, ctx)
-            if kind == "source":  # the source uid collections_view uses (snapshot first)
-                skey, label = col.source_ref, col.source_name
-            contexts[col.job_id] = (AG._ctx_key(ctx), (f"{kind}:{skey}", label, kind))
-        ctx_key, system = contexts[col.job_id]
-        row = item.row
-        if item.node_type in AK.CERT_TYPES or row.get("algorithm_type") == "certificate":
-            # load_sources_result already correlated the certificates (link_certificates: asset_keys.correlate_detail)
-            key = item.identity
-            if key.startswith("node|"):
-                not_correlated += 1  # a certificate with nothing identifying: counted within its own source
-            for alias in item.aliases:
-                if aliases.setdefault(alias, key) != key:
-                    ambiguous.add(alias)
-        else:  # an endpoint (host:port, a private address scoped to its source) or a cloud resource id
-            found_key = AK.asset_key(AK.Observation(
-                kind=str(item.node_type or ""), facts=item.facts if isinstance(item.facts, dict) else {},
-                location=str(row.get("location") or ""), target=str(item.target or ""), scope=col.source_ref))
-            key = found_key if isinstance(found_key, str) else item.identity
-        codes = row.get("collector_codes") or []
-        a_type = str(item.node_type or "")
-        facts = item.facts if isinstance(item.facts, dict) else {}
-        # agility.RunAgility's path: the job context's memo key computed once per job
-        ev = AG._evaluate(kb, "node", a_type, AG._codes(codes), AG._deciding(a_type, facts, row.get("location")),
-                          ctx_key)
-        subject(key).observe(ev, (col.observed_at, 0, col.job_id), system, str(row.get("title") or item.node_type),
-                             item.node_type, str(row.get("location") or ""), CV.ORIGIN_SOURCES, col.source_name)
-    for alias in ambiguous:
-        aliases.pop(alias, None)
+    for o in side.observations:
+        subject(o.key).observe(o.ev, o.at, o.system, o.name, o.type, o.location, CV.ORIGIN_SOURCES, o.source)
+    aliases = side.aliases
 
     # 2. code scans: each code source's latest successful scan; a certificate joins the Sources one it shares a key with
     code_scans = latest_code_scans(session, team_id)
-    observations = len(found.rows)
+    observations = len(side.observations)
     for scan_id, skey, label, created in code_scans:
         data = session.exec(select(Scan.scan_data).where(Scan.id == scan_id, Scan.team_id == team_id)).first()
         data = data if isinstance(data, dict) else {}
@@ -356,9 +512,9 @@ def build(session: Any, team_id: int, *, now: _dt.datetime | None = None, source
         item.observations = len(item.evals)
         item.finish()
     return Rollup(as_of=moment.strftime("%Y-%m-%dT%H:%M:%SZ"), subjects=list(subjects.values()),
-                  observations=observations, not_correlated=not_correlated, not_assessed=not_assessed,
-                  inputs={"collections": len(found.collections), "code_scans": len(code_scans),
-                          "evidence_items": evidence_items})
+                  observations=observations, not_correlated=side.not_correlated, not_assessed=not_assessed,
+                  inputs={"collections": side.collections, "code_scans": len(code_scans),
+                          "evidence_items": evidence_items, "read_from": side.read_from})
 
 
 def _evidence(item: Subject, cls: str, system: tuple[str, str], name: str, at: Any) -> None:
@@ -381,7 +537,7 @@ def fingerprint(session: Any, team_id: int, now: _dt.datetime) -> tuple:
     from sqlalchemy import func
     from sqlmodel import select
 
-    from backend.new_models import CbomCollectionSource, CbomEvidenceArea, CbomEvidenceVendor
+    from backend.new_models import CbomCollectionSource, CbomEstateSource, CbomEvidenceArea, CbomEvidenceVendor
     from backend.utilities.cbom_sources import collections_view as CV
     from backend.utilities.cbom_sources import crypto_kb
 
@@ -393,8 +549,10 @@ def fingerprint(session: Any, team_id: int, now: _dt.datetime) -> tuple:
         CbomEvidenceArea.team_id == team_id)).one()
     vendors = session.exec(select(func.count(), func.max(CbomEvidenceVendor.last_updated)).where(
         CbomEvidenceVendor.team_id == team_id)).one()
-    return (team_id, jobs, scans, tuple(srcs), tuple(areas), tuple(vendors), now.date().isoformat(),
-            crypto_kb.version(), AG.version())
+    store = session.exec(select(func.count(), func.max(CbomEstateSource.updated_at)).where(
+        CbomEstateSource.team_id == team_id)).one()  # the store catching up (drift recorded, a backfill) refreshes it
+    return (team_id, jobs, scans, tuple(srcs), tuple(areas), tuple(vendors), tuple(store), now.date().isoformat(),
+            crypto_kb.version(), AG.version(), USE_STORE)
 
 
 def cached(session: Any, team_id: int, *, now: _dt.datetime | None = None) -> Rollup:
@@ -423,4 +581,4 @@ def clear_cache() -> None:
 
 
 __all__ = ["CACHE_TTL_S", "KINDS", "MAX_LIMIT", "METHOD", "Rollup", "Subject", "build", "cached", "clear_cache",
-           "decode_cursor", "fingerprint", "latest_code_scans"]
+           "decode_cursor", "fingerprint", "latest_code_scans", "store_ready"]

@@ -45,17 +45,31 @@ def _cert(location: str, **extra) -> dict:
             "algorithm": "RSA", "key_size": 1024, "facts": {**CERT_FACTS, **extra}}
 
 
-@pytest.fixture(autouse=True)
-def _fresh_cache():
+@pytest.fixture(autouse=True, params=["estate_store", "collections_view"])
+def reader(request, monkeypatch):
+    """Every test twice: Sources read from the estate store (CB-20, once drift has written it) and from
+    collections_view (the fallback until the store has every source's latest collection)."""
+    monkeypatch.setattr(ROLLUP, "USE_STORE", request.param == "estate_store")
     ROLLUP.clear_cache()
-    yield
+    yield request.param
     ROLLUP.clear_cache()
+
+
+def _record_drift(engine) -> None:
+    """What the scheduler tick does after a run finishes: drift, and with it the estate store's write."""
+    from backend.utilities.cbom_sources import drift as DRIFT
+
+    DRIFT.record_pending_drift(engine, dt.datetime.utcnow())
 
 
 def _baseline(api, team=1, who="alice", **params) -> dict:
     r = api("GET", f"/{team}/cbom/agility", who, params=params)
     assert r.status_code == 200, r.text
-    return r.json()
+    body = r.json()
+    if body["inputs"]["collections"] and team == 1:
+        expected = "estate_store" if ROLLUP.USE_STORE else "collections_view"
+        assert body["inputs"]["read_from"] == expected, body["inputs"]
+    return body
 
 
 def _all_subjects(api, *, page=2, **params) -> list[dict]:
@@ -102,6 +116,7 @@ def estate(api, world):
         claim = _claim(api, hdr)
         name = claim["source"]["name"]
         _collect(api, hdr, claim, per_source[name])
+    _record_drift(engine)
     return {"engine": engine, "run": run, "sources": {v: k for k, v in made.items()}}
 
 
@@ -270,3 +285,21 @@ def test_a_new_collection_changes_the_cached_baseline(api, world, estate):
     first = _baseline(api)["assets"]
     _code_scan(estate["engine"], 903, NOW)
     assert _baseline(api)["assets"] == first + 1  # the certificate joins; the RSA row is a new asset
+
+
+def test_the_store_is_read_only_once_it_has_every_latest_collection_and_both_readers_agree(api, world, reader):
+    """Before drift writes the store, the baseline reads collections_view; after, the store; same answer."""
+    engine, _ = world
+    node_id, token, _ = enroll_node(api)
+    hdr = {"X-ZS-Node-Token": token}
+    api("POST", "/1/cbom/sources/items", json=linux_body("src-a", node_id=node_id, targets=["10.20.0.1"], window="any"))
+    _run(api, "cb25-run-0002")
+    _collect(api, hdr, _claim(api, hdr), [TLS10, TLS_NO_PQ, AES, _cert("10.20.0.1:443#chain[0]", source="tls")])
+    r = api("GET", "/1/cbom/agility")
+    before = r.json()
+    assert before["inputs"]["read_from"] == "collections_view"  # the store has not written this collection yet
+    _record_drift(engine)
+    after = api("GET", "/1/cbom/agility").json()
+    assert after["inputs"]["read_from"] == reader
+    for k in ("assets", "counts", "counts_excl_pq", "self_fixable_pct", "unknown_reasons"):
+        assert after[k] == before[k], k
