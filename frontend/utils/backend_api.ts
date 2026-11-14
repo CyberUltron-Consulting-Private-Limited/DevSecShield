@@ -1,6 +1,6 @@
 import api from "@/utils/interceptors"
 import type { CbomResultOrigin, CbomSourcesRun } from "@/components/cbom/resultOrigin"
-import type { NodeArtifacts } from "@/components/cbom/sources/logic"
+import type { InstallLinks, NodeArtifacts } from "@/components/cbom/sources/logic"
 import { showErrorToast } from "./error-handler"
 import { toast } from "@/utils/toast";
 
@@ -4894,7 +4894,8 @@ const getCbomAudit = async (team_id: number, limit = 100): Promise<{ events: Cbo
 }
 
 // ---------- writes (toast on success; errors toast through showErrorToast and are rethrown)
-const createCbomScanNode = async (team_id: number, body: CbomNodeWrite): Promise<{ node: CbomScanNode; registration_token: string }> => {
+// install_links: the one-paste install command's download links (null: no files on this server)
+const createCbomScanNode = async (team_id: number, body: CbomNodeWrite): Promise<{ node: CbomScanNode; registration_token: string; install_links?: InstallLinks | null }> => {
     try {
         const response = await api.post(`${cbomSourcesBase(team_id)}/nodes`, body)
         toast.success("Scan node added")
@@ -4928,7 +4929,7 @@ const deleteCbomScanNode = async (team_id: number, node_id: number): Promise<voi
 
 /** reset=false: new token for a node that never registered; reset=true: revoke and register again.  An agent pool
  * node gets no token (null): its pod enrolls again by itself with the pool token. */
-const newCbomNodeRegistration = async (team_id: number, node_id: number, reset: boolean): Promise<{ node: CbomScanNode; registration_token: string | null }> => {
+const newCbomNodeRegistration = async (team_id: number, node_id: number, reset: boolean): Promise<{ node: CbomScanNode; registration_token: string | null; install_links?: InstallLinks | null }> => {
     try {
         const path = reset ? "reset" : "registration-token"
         const response = await api.post(`${cbomSourcesBase(team_id)}/nodes/${node_id}/${path}`)
