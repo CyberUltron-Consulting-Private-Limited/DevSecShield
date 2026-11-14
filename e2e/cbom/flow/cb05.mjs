@@ -572,25 +572,86 @@ export async function openRunResults(ctx, s, runId, { via = "review", tag = "" }
   await page.getByTestId("run-results").waitFor({ timeout: 30000 });
   const path = new URL(page.url()).pathname;
   s.check(`results_url_${via}${tag}`, path === want, { expected: want, observed: path, subject: { check: "results_url", via, run: runId } });
+  // one id per opening (G11 opens the page twice: the judge rejects a repeated check id)
+  const id = `results_view_all_${via}${tag}`;
   const all = page.getByTestId("run-results-view-all");
-  if (await all.count()) {
-    if ((await all.getAttribute("aria-pressed")) !== "true" && !(await all.isDisabled())) {
-      await all.click();
-      await page.waitForLoadState("networkidle"); await page.waitForTimeout(500);
-    }
-    const pressed = (await all.getAttribute("aria-pressed")) === "true";
-    s.check(`results_view_all${tag}`, pressed, { expected: "All assets view", observed: pressed ? "all" : "findings", subject: { check: "results_view_all", run: runId } });
+  if (!(await all.count())) {
+    s.check(id, false, { expected: "All assets view", observed: "no Findings / All assets toggle", subject: { check: "results_view_all", via, run: runId } });
+    return path;
   }
+  if ((await all.getAttribute("aria-pressed")) !== "true" && !(await all.isDisabled())) {
+    await all.click();
+    await page.waitForLoadState("networkidle"); await page.waitForTimeout(500);
+  }
+  const pressed = (await all.getAttribute("aria-pressed")) === "true";
+  s.check(id, pressed, { expected: "All assets view", observed: pressed ? "all" : "findings", subject: { check: "results_view_all", via, run: runId } });
   return path;
+}
+
+/** PQC class labels as the posture card prints them (RunPosture.tsx CLASS_LABEL). PRODUCT COPY, read-only: G11u
+ * reads the card's text with them; it never feeds an oracle value. */
+export const POSTURE_CLASS_LABEL = { "quantum-vulnerable": "Quantum-vulnerable", hybrid: "Hybrid PQC", "quantum-safe": "Quantum-safe",
+  "grover-weakened": "Grover-weakened", "not-applicable": "Not applicable" };
+
+/** G11u (PLAN §11, Rule P): the results page prints the run posture's figures, never its own recount. Readiness on
+ * the posture card and on the dashboard's "Quantum ready" card == /posture pqc_readiness_pct; class chips ==
+ * pqc_classes; "Critical / High" == impacts; per row data-q-grade / data-fix-class == the /assets item of that id.
+ * ``texts``: the innerText (line breaks kept) of {posture: run-posture, readiness: posture-readiness, dashboard:
+ * run-section-dashboard, or null when that section is not on the page}. Pure (no browser), so it is unit-tested. */
+export function g11uRuleP(s, k, postureBody, texts, rows, items) {
+  const p = postureBody?.posture ?? postureBody ?? {};
+  const pct = p.pqc_readiness_pct;
+  const subject = (check) => ({ check, run: k });
+  const readiness = String(texts.readiness || "").replace(/\s+/g, " ");
+  const wantCard = pct == null ? "—" : `${pct}%`;
+  s.check(`g11u_posture_readiness_run${k}`, readiness.includes(wantCard),
+    { expected: wantCard, observed: readiness.slice(0, 120), subject: subject("g11u_posture_readiness") });
+  if (texts.dashboard == null) {
+    s.notRun(`g11u_dashboard_readiness_run${k}`, "the dashboard section (run results summary) is not on the page", subject("g11u_dashboard_readiness"));
+  } else {
+    const m = String(texts.dashboard).replace(/\s+/g, " ").match(/Quantum ready\s*([0-9.]+%|n\/a)/);
+    const want = pct == null ? "n/a" : `${pct}%`;
+    s.check(`g11u_dashboard_readiness_run${k}`, !!m && m[1] === want, { expected: want, observed: m ? m[1] : "no Quantum ready card", subject: subject("g11u_dashboard_readiness") });
+  }
+  const card = String(texts.posture || "").replace(/\s+/g, " ");
+  const classes = p.pqc_classes || {};
+  const wrong = Object.entries(POSTURE_CLASS_LABEL).filter(([c, label]) => (classes[c] || 0) > 0 && !card.includes(`${label} ${classes[c]}`))
+    .map(([c]) => ({ class: c, api: classes[c] }));
+  s.check(`g11u_classes_run${k}`, Object.keys(classes).length > 0 && wrong.length === 0, { expected: classes, observed: { not_on_card: wrong }, subject: subject("g11u_classes") });
+  const im = p.impacts || {};
+  const sev = card.match(/Critical \/ High\s*(\d+) \/ (\d+)/);
+  s.check(`g11u_critical_high_run${k}`, !!sev && Number(sev[1]) === (im.Critical || 0) && Number(sev[2]) === (im.High || 0),
+    { expected: { Critical: im.Critical || 0, High: im.High || 0 }, observed: sev ? { Critical: Number(sev[1]), High: Number(sev[2]) } : "not on the card", subject: subject("g11u_critical_high") });
+  const byId = new Map((items || []).map((i) => [i.id, i]));
+  const off = [];
+  for (const r of rows || []) {
+    if (r.reader !== "data-attributes") continue;
+    const api = byId.get(r.id);
+    if (!api) continue;
+    for (const [field, key] of [["q_grade", "q_grade"], ["fix_class", "fix_class"]]) {
+      const ui = r[key] ?? null, want = api[field] ?? null;
+      if (ui !== want) off.push({ id: r.id, field, ui, api: want });
+    }
+  }
+  const attrRows = (rows || []).filter((r) => r.reader === "data-attributes").length;
+  s.check(`g11u_row_grades_run${k}`, attrRows > 0 && off.length === 0, { expected: "data-q-grade / data-fix-class == the /assets item", observed: { rows: attrRows, mismatches: off.slice(0, 20) }, subject: subject("g11u_row_grades") });
+}
+
+/** true when the path is the unified results page (whose rows must carry data attributes). */
+export function isResultsPage(path) {
+  return /^\/\d+\/cbom\/runs\/\d+\/results$/.test(String(path || ""));
 }
 
 /** Rows of the results table as the customer's DOM holds them. The unified page carries each row's values as
  * data-* attributes (read raw; the judge renders them, fieldmap.ui_from_attrs); the old run dialog's rows are read by
- * cell position. An attribute the page does not set is left out (the judge reports it missing). */
-export function readRunRows(trs) {
+ * cell position. An attribute the page does not set is left out (the judge reports it missing). On the unified page
+ * (``opts.attrsOnly``) a row is never read by position: a row without attributes is all missing. Self-contained: it
+ * runs in the browser (page.$$eval(selector, readRunRows, opts)). */
+export function readRunRows(trs, opts) {
+  const attrsOnly = !!(opts && opts.attrsOnly);
   return trs.filter((tr) => /^run-asset-\d+$/.test(tr.dataset.testid)).map((tr) => {
     const id = Number(tr.dataset.testid.slice(10));
-    if (tr.hasAttribute("data-impact")) {
+    if (attrsOnly || tr.hasAttribute("data-impact")) {
       const d = tr.dataset;
       const row = { id, reader: "data-attributes" };
       for (const [key, attr] of [["impact", "impact"], ["type", "type"], ["location", "location"], ["target", "target"],
@@ -611,7 +672,7 @@ export function readRunRows(trs) {
 /** The run's results as the customer sees them (DOM rows of every page) and the API pages with the same token. */
 export async function captureRun(ctx, s, k, runId) {
   const { page } = ctx.A;
-  await openRunResults(ctx, s, runId, { via: "direct", tag: `_run${k}` });
+  const path = await openRunResults(ctx, s, runId, { via: "direct", tag: `_run${k}` });
   const items = []; let first = null;
   for (let p = 1; p < 500; p++) {
     const r = await ctx.apiGet(ctx.A, `/${ctx.A.team}/cbom/sources/runs/${runId}/assets?page=${p}&page_size=200`);
@@ -626,7 +687,7 @@ export async function captureRun(ctx, s, k, runId) {
   const rows = [];
   let prevIds = null, stuck = false;
   for (let p = 1; p < 200; p++) {
-    const got = await page.$$eval('[data-testid^="run-asset-"]', readRunRows);
+    const got = await page.$$eval('[data-testid^="run-asset-"]', readRunRows, { attrsOnly: isResultsPage(path) });
     const ids = got.map((r) => r.id).join(",");
     if (prevIds !== null && ids === prevIds) { stuck = true; break; }
     prevIds = ids;

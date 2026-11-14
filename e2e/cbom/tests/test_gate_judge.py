@@ -211,6 +211,56 @@ def test_attribute_rows_wrong_value_fails(tmp_path, empty_ledger, field, value, 
     assert blocking[expect_id]["reason"] == "mismatch", blocking.get(expect_id)
 
 
+def test_attribute_row_wrong_target_fails(tmp_path, empty_ledger):
+    fr = FakeRun(tmp_path, ui_attrs=True)
+    fr.write()
+    fr.edit_json("ui/assets-run1.json", lambda d: d["rows"][0].__setitem__("target", "10.9.9.9"))
+    _, blocking, _ = judge(fr.dir, empty_ledger)
+    assert blocking["G11/join/run1/asset/101/target/ui"]["reason"] == "mismatch"
+
+
+def _attrs(api: dict) -> dict:
+    """The row #120's assetRowAttrs writes for an API item, as readRunRows reads it ("" for none)."""
+    qv = api.get("quantum_vulnerable")
+    return {"id": api["id"], "reader": "data-attributes", "impact": api.get("impact") or "", "type": api.get("type") or "",
+            "location": api.get("location") or "", "target": api.get("target") or "",
+            "algorithm": api.get("algorithm") or api.get("protocol") or "",
+            "key_size": "" if api.get("key_size") is None else str(api["key_size"]), "finding": api.get("finding") or "",
+            "quantum": "vulnerable" if qv is True else "safe" if qv is False else ""}
+
+
+@pytest.mark.parametrize("api", [
+    {"id": 1, "type": "certificate", "algorithm": "RSA", "key_size": 0, "protocol": None, "quantum_vulnerable": True,
+     "impact": "High", "location": "a:443", "target": "a", "finding": "f"},
+    {"id": 2, "type": "tls_endpoint", "algorithm": "", "key_size": None, "protocol": "TLSv1.3", "quantum_vulnerable": None,
+     "impact": None, "location": "", "target": None, "finding": None},
+    {"id": 3, "type": None, "algorithm": None, "key_size": 2048, "protocol": None, "quantum_vulnerable": False,
+     "impact": "Low", "location": "x", "target": "", "finding": ""},
+    {"id": 4, "type": "made_up_type", "algorithm": "ML-KEM", "key_size": None, "protocol": "TLS 1.3", "quantum_vulnerable": False,
+     "impact": "Medium", "location": "y", "target": "y", "finding": "z"},
+])
+def test_attribute_rendering_equals_ui_expected(api):
+    """Every UI field of an attribute row renders exactly as ui_expected renders the item (no false FAIL)."""
+    from harness import fieldmap as F
+    row = _attrs(api)
+    for field in F.ui_fields(row):
+        assert F.ui_observed(field, row) == F.ui_expected(field, api), field
+
+
+@pytest.mark.parametrize("token", ["true", "Vulnerable", "unknown"])
+def test_unknown_quantum_token_never_passes_as_no_verdict(token):
+    from harness import fieldmap as F
+    api = {"id": 5, "quantum_vulnerable": None}
+    assert F.ui_observed("quantum_vulnerable", {"reader": "data-attributes", "quantum": token}) != \
+        F.ui_expected("quantum_vulnerable", api)
+
+
+def test_target_is_compared_only_for_attribute_rows():
+    from harness import fieldmap as F
+    assert "target" in F.ui_fields({"reader": "data-attributes"})
+    assert "target" not in F.ui_fields({"impact": "High"})
+
+
 def test_attribute_row_missing_attribute_fails(tmp_path, empty_ledger):
     fr = FakeRun(tmp_path, ui_attrs=True)
     fr.write()
