@@ -1544,12 +1544,12 @@ async def get_run(team_id: TeamId, run_id: ObjectId, Authorization: AuthHeader =
 
 def _run_assets(engine, team_id: int, run_id: int, params: dict) -> dict:
     view, status, codes = params.pop("view", "all"), params.pop("status", None), params.pop("codes", None)
-    asset_ids = params.pop("asset_ids", None)
+    asset_ids, clause = params.pop("asset_ids", None), params.pop("clause", None)
     with Session(engine) as session:
         run = _get_owned(session, CbomCollectionRun, run_id, team_id, "Run")
         # CB-38: the inventory page plus the unified results table's fields (view, status, key, wave, risk score)
         out = RUN_ASSETS.list_run_assets(session, team_id=team_id, run=run, params=params, view=view, status=status,
-                                         codes=codes, asset_ids=asset_ids)
+                                         codes=codes, asset_ids=asset_ids, clause=clause)
         RUN_TICKETS.add_ticket_fields(session, team_id, run, out["items"])  # CB-38 PR-4: ticket_key, ticket_url
         out["run"] = public_run(run)
         return out
@@ -1575,14 +1575,16 @@ async def run_assets(team_id: TeamId, run_id: ObjectId,
                      status: str | None = Query(default=None, pattern="^(not_started|in_progress|fixed|ignored)$"),
                      code: str | None = Query(default=None, max_length=3_300),
                      asset_id: str | None = Query(default=None, max_length=5_500),
+                     clause: str | None = Query(default=None, max_length=300),
                      Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
-    try:  # #270: the compliance mapping's "N assets" (a clause's finding codes, a requirement's assets)
+    try:  # #270: the compliance mapping's "N assets" (a clause's assets, a requirement's assets)
         codes, asset_ids = RUN_ASSETS.parse_codes(code), RUN_ASSETS.parse_ids(asset_id)
+        clause_filter = RUN_ASSETS.parse_clause(clause)  # #289: the assets a clause counts, by the posture's rule
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
     params = {**_asset_params(type, impact, quantum, q, source_id, page, page_size), "view": view, "status": status,
-              "codes": codes, "asset_ids": asset_ids}
+              "codes": codes, "asset_ids": asset_ids, "clause": clause_filter}
     return _ok(await _run("run assets", team_id, _run_assets, engine, team_id, run_id, params))
 
 
