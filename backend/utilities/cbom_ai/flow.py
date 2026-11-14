@@ -207,6 +207,24 @@ _NOT_KEY_WORDS = {"len", "length", "size", "sz", "bits", "count", "name", "names
                   "manager", "managers", "generator", "factory", "store", "selector", "header", "env", "var", "field"}
 # members that are a number about the value, not the value (key.length, iv.size, k.Length)
 _SIZE_MEMBERS = {"length", "Length", "size", "Count", "byteLength", "LongLength"}
+# calls / constructors whose result may share memory with their receiver or arguments (a view, a wrapper, the backing
+# array): Go / C# / JS slices, spans, ByteBuffer.wrap / array(), Arrays.asList, typed-array views, memoryview. A write
+# into the result is a write into the buffer it views. When in doubt a name is listed (fail closed).
+VIEWS = {"AsSpan", "AsMemory", "AsReadOnlySpan", "AsReadOnlyMemory", "AsBytes", "Slice", "slice", "subarray", "wrap",
+         "asList", "asReadOnlyBuffer", "duplicate", "array", "memoryview", "getbuffer", "cast", "toreadonly", "Span",
+         "Memory", "ReadOnlySpan", "ReadOnlyMemory", "ArraySegment", "Uint8Array", "Int8Array", "Uint8ClampedArray",
+         "Uint16Array", "Int16Array", "Uint32Array", "Int32Array", "Float32Array", "Float64Array", "BigInt64Array",
+         "BigUint64Array", "DataView", "from", "NewBuffer", "NewReader", "asByteBuffer", "asUByteArray",
+         "asIntBuffer", "asLongBuffer", "ofArray", "order", "asReadOnly", "view", "bytearray"}
+# expressions whose value is one of their operands (``a or b``, ``c ? a : b``, ``x ?: y``): may alias any of them
+_CHOICE_OPS = {"or", "and", "||", "&&", "??", "?:"}
+_CHOICE_NODES = {"ternary", "ternary_expression", "conditional_expression", "elvis_expression", "parenthesized_expression",
+                 "if_expression", "when_expression", "when_entry", "switch_expression", "switch_expression_arm",
+                 "switch_block", "switch_body", "switch_rule", "control_structure_body", "block", "statements",
+                 "slice_expression", "starred", "spread_element", "variadic_argument"}
+# binding operators that make the target the same object as the value (not ``+=``, which writes into the target)
+_ALIAS_OPS = {"=", ":=", "for"}
+_SELF_NAMES = {"this", "self", "super", "base"}
 # TLS options whose every value is checked by ``downgrades`` (a version floor / ceiling, a cipher list,
 # verification on): a fix may change them inline in a call outside the allow-list (``tls.connect({.., minVersion})``)
 TLS_RAISE = {"ciphers", "ciphersuites", "minversion", "maxversion", "minimumversion", "maximumversion",
@@ -610,7 +628,9 @@ class Flow:
     """Key material through one tree: every name the finding marks as key / IV / secret material, every value
     an allow-listed key / IV / random-generating call returns, and everything assigned or derived from them
     (assignments, concatenation, append / copy into a buffer, loop targets, object properties, arguments of local
-    functions). Labels: ``IV`` (random / IV / nonce / salt), ``KEY`` (keys, passwords, the environment, derived
+    functions), writes through an alias or a view of a buffer (may-alias classes: the whole class takes the label),
+    and what a function defined in the tree writes into its parameters (written back into every argument of its
+    calls, to a fixpoint). Labels: ``IV`` (random / IV / nonce / salt), ``KEY`` (keys, passwords, the environment, derived
     keys), ``ABSORBED`` (a cipher object that took key material in as data). Any label reaching a call outside the
     allow-list, an exception message or a member of a non-local is a leak."""
 
@@ -625,6 +645,17 @@ class Flow:
         self._cls: dict[int, str] = {}
         self._memo: dict[int, int] = {}
         self.local_ret: dict[str, int] = {}
+        # interprocedural summaries of the functions defined in the tree (rewrite and window): labels written INTO a
+        # parameter (or an alias of one) by the body, by function node; a call site's arguments take them
+        self.param_writes: dict[int, int] = {}
+        self._fn_params: dict[int, set[str]] = {id(fn): set(fn.value or []) for fns in scope.func_nodes.values()
+                                                for fn in fns}
+        self._fn_params.update({id(fn): set(fn.value or []) for fn in walk(root) if fn.kind == "func"})
+        self._recursive: set[int] = {id(fn) for fns in scope.func_nodes.values() for fn in fns
+                                     if any(c.kind == "call" and c.kids and c.kids[0].kind == "name" and
+                                            c.kids[0].name == fn.name for c in walk(fn) if c is not fn)}
+        self._parent: dict[str, str] = {}
+        self._aliases()
         self._seed()
         self._fixpoint()
 
@@ -785,6 +816,138 @@ class Flow:
                 return True
         return False
 
+    # --------------------------------------------------------------------------------- aliases and views
+    def _root(self, p: str | None) -> str | None:
+        """The local / parameter / field a path starts at (``this.buf.x`` -> ``buf``), None for packages."""
+        if not p:
+            return None
+        c = self.canon(p)
+        if not (self.scope.is_local_path(p) or c != p):
+            return None
+        r = c.split(".")[0]
+        if r == "_" and self.scope.lang in ("go", "csharp", "kotlin"):  # the blank identifier / a discard
+            return None
+        return None if r in _SELF_NAMES or not r else r
+
+    def _returns_param(self, fn: N) -> bool:
+        params = self._fn_params.get(id(fn), set())
+        for r in walk(fn):
+            if r.kind == "other" and r.name in RETURNS and _owner(r) is fn and \
+                    any(x in params or self._find(x) in {self._find(p) for p in params}
+                        for k in r.kids for x in self.view_roots(k)):
+                return True
+        return False
+
+    def view_roots(self, v: N | None, depth: int = 0) -> set[str]:
+        """Locals / parameters / fields whose memory the value of ``v`` may share: the name itself, a slice / index /
+        member of it, a view or wrapper of it (``VIEWS``), one operand of a choice (``a or b``), the elements of a
+        container literal, the arguments of a local function that returns one of its parameters."""
+        v = unwrap(v)
+        if v is None or depth > 8:
+            return set()
+        k = v.kind
+        if k in ("name", "member", "index", "cast"):
+            p = path(v)
+            if p is not None:
+                r = self._root(p)
+                return {r} if r else set()
+            return self.view_roots(v.kids[0] if v.kids else None, depth + 1)
+        if k in ("call", "new"):
+            name, recv, args = self.callee(v)
+            f = v.kids[0] if v.kids else None
+            local = k == "call" and f is not None and f.kind == "name" and name in self.scope.funcs and \
+                any(self._returns_param(fn) for fn in self.scope.func_nodes.get(name, []))
+            if name in VIEWS or local:
+                out: set[str] = set()
+                for x in ([recv] if recv is not None else []) + args:
+                    out |= self.view_roots(x, depth + 1)
+                return out
+            return set()
+        if k == "binary" and v.name in _CHOICE_OPS or k in ("other", "ctl") and v.name in _CHOICE_NODES or \
+                k in ("seq", "obj", "pair"):
+            out = set()
+            for x in v.kids:
+                out |= self.view_roots(x, depth + 1)
+            return out
+        return set()
+
+    def _find(self, x: str) -> str:
+        while self._parent.get(x, x) != x:
+            self._parent[x] = self._parent.get(self._parent[x], self._parent[x])
+            x = self._parent[x]
+        return x
+
+    def _union(self, a: str, b: str) -> None:
+        ra, rb = self._find(a), self._find(b)
+        if ra != rb:
+            self._parent[ra] = rb
+            self._parent.setdefault(rb, rb)
+
+    def _aliases(self) -> None:
+        """May-alias classes (union-find) of the locals, parameters and fields: ``d2 := data``, ``var al = ct``,
+        ``s = data[a:b]``, ``bb = ByteBuffer.wrap(ct)``, ``v = ct.AsSpan()``, ``for b in bufs``, ``lst = [ct]``,
+        ``this.buf = ct``, ``arr[0] = ct``, and the arguments of a call to a local function that returns a parameter.
+        Iterated, since a local function's 'returns a parameter' depends on the classes."""
+        for _ in range(4):
+            before = dict(self._parent)
+            for t, v, op, _n in self.binds:
+                if op not in _ALIAS_OPS or t is None or v is None:
+                    continue
+                dst = self.view_roots(t) if unwrap(t) is not None and unwrap(t).kind != "seq" else set()
+                if not dst and t.kind == "seq":
+                    dst = {r for x in t.kids for r in self.view_roots(x)}
+                src = self.view_roots(v)
+                for a in dst:
+                    for b in src:
+                        self._union(a, b)
+            if self._parent == before:
+                break
+
+    def alias_class(self, root: str) -> set[str]:
+        r = self._find(root)
+        return {x for x in self._parent if self._find(x) == r} | {root}
+
+    def _mark_into(self, x: N, label: int, at: N) -> None:
+        """A call wrote ``label`` into ``x``: a name / member / index is marked; any other destination (a slice, a
+        view, a wrapper, a choice) marks every buffer it may share memory with. The write is recorded against the
+        functions whose parameters it reaches (``param_writes``)."""
+        if not label:
+            return
+        p = path(unwrap(x)) if x.kind in ("name", "member", "index") else None
+        if p is not None:
+            self._mark(x, label)
+            roots = {r for r in (self._root(p),) if r}
+        elif x.kind in ("seq", "obj", "pair"):  # Buffer.concat([ct, k]) reads its elements, it does not write them
+            return
+        else:
+            roots = self.view_roots(x)
+            for r in roots:
+                self.tainted[r] = self.tainted.get(r, 0) | label
+        self._record_write(roots, label, at)  # type: ignore[arg-type]
+
+    def _record_write(self, roots: set[str], label: int, at: N) -> None:
+        if not roots or not label:
+            return
+        reach = set()
+        for r in roots:
+            reach |= self.alias_class(r)
+        cur = at.parent
+        while cur is not None:
+            if cur.kind == "func" and reach & self._fn_params.get(id(cur), set()):
+                self.param_writes[id(cur)] = self.param_writes.get(id(cur), 0) | label
+            cur = cur.parent
+
+    def _spread(self) -> None:
+        """Taint of any member of an alias class is taint of the whole class (a write through ``d2`` is in ``data``)."""
+        if not self._parent:
+            return
+        for t, m in list(self.tainted.items()):
+            r = t.split(".")[0]
+            if r in self._parent:
+                for x in self.alias_class(r):
+                    if (self.tainted.get(x, 0) | m) != self.tainted.get(x, 0):
+                        self.tainted[x] = self.tainted.get(x, 0) | m
+
     def path_label(self, p: str) -> int:
         if p.startswith(_ENV_PATHS) or ".process.env" in p:
             return 0 if self.incoming else KEY
@@ -874,46 +1037,63 @@ class Flow:
         return self._any(n.kids)
 
     def _fixpoint(self) -> None:
-        for _ in range(30):
-            size = (sorted(self.tainted.items()), sorted(self.local_ret.items()))
+        for _ in range(40):
+            size = (sorted(self.tainted.items()), sorted(self.local_ret.items()), sorted(self.param_writes.items()))
             self._memo.clear()
-            for t, v, _op, _n in self.binds:
+            for t, v, op, bn in self.binds:
                 m = self.label(v) if v is not None else 0
                 if m:
                     for p in target_paths(t):
                         if self.scope.is_local_path(p) or self.canon(p) != p:
                             p = self.canon(p)
                             self.tainted[p] = self.tainted.get(p, 0) | m
+                    # a store into an element / field / through a pointer, an in-place operator (``b += k``), or any
+                    # assignment to a C# parameter (``ref`` / ``out``) writes into what the caller passed
+                    tt = t
+                    if tt is not None and (tt.kind in ("member", "index", "unary", "other") or op not in _ALIAS_OPS or
+                                           self.scope.lang == "csharp"):
+                        self._record_write({r for p in target_paths(tt) for r in (self._root(p),) if r}, m, bn)
             for n in self.calls:
                 cls = self.classify(n)
                 ins = self.inputs(n)
                 if cls == "fill":
                     for x in ins:
-                        self._mark(x, IV)
+                        self._mark_into(x, IV, n)
                 elif cls == "propagate":  # copy(dst, k), System.arraycopy(k, .., out, ..), h.Write(k), buf.extend(k)
                     data, _key = self.split_inputs(n)
                     _nm, recv, _a = self.callee(n)
                     m_all = self._call_label(n)  # the receiver may now hold the key (c.init(mode, spec))
                     m_data = self._any(data) & ~HOLDER  # arguments take each other's data, not the HOLDER bit
-                    for x in data:
-                        m = m_all if x is recv else m_data
-                        if m and x.kind in ("name", "member", "index"):
-                            self._mark(x, m)
+                    for x in data:  # a destination may be a view of a buffer: copy(d[i:], k), wrap(ct).put(k)
+                        self._mark_into(x, m_all if x is recv else m_data, n)
                 elif cls in ("cipher", "digest"):
                     name, recv, _args = self.callee(n)
                     data, _key = self.split_inputs(n)
                     if name not in VERDICTS and self._any(a for a in data if a is not recv) & KEYISH:
                         for x in data:  # key material went in as data: the cipher / hash object took it in
-                            if x.kind in ("name", "member", "index"):
-                                self._mark(x, ABSORBED)
+                            self._mark_into(x, ABSORBED, n)
                 elif cls == "local":
                     m = self._any(ins)
                     for p in self.scope.funcs.get(self.callee(n)[0], []) if m else []:
                         self.tainted[p] = self.tainted.get(p, 0) | m
+                    # what the body writes into its parameters is written into this call's arguments (positions are
+                    # not trusted: every argument takes it); a recursive function writes all it is given
+                    w = 0
+                    for fn in self.scope.func_nodes.get(self.callee(n)[0], []):
+                        w |= self.param_writes.get(id(fn), 0)
+                        if id(fn) in self._recursive:
+                            w |= self._any(ins) | self.local_ret.get(fn.name, 0)
+                    for x in ins:
+                        self._mark_into(x, w, n)
                 m = self._any(x for x in ins if x.kind != "func")
                 for fn in (x for x in ins if x.kind == "func") if m else []:  # [key].map(k => ...), callbacks
                     for p in fn.value or []:
                         self.tainted[p] = self.tainted.get(p, 0) | m
+                w = 0
+                for fn in (x for x in ins if x.kind == "func"):  # ct.also { k.copyInto(it) }: the callback's writes
+                    w |= self.param_writes.get(id(fn), 0)
+                for x in (x for x in ins if x.kind != "func") if w else []:
+                    self._mark_into(x, w, n)
             for name, nodes in self.scope.func_nodes.items():
                 for fn in nodes:
                     for r in walk(fn):
@@ -921,7 +1101,8 @@ class Flow:
                             m = self._any(r.kids)
                             if m:
                                 self.local_ret[name] = self.local_ret.get(name, 0) | m
-            if (sorted(self.tainted.items()), sorted(self.local_ret.items())) == size:
+            self._spread()
+            if (sorted(self.tainted.items()), sorted(self.local_ret.items()), sorted(self.param_writes.items())) == size:
                 break
         self._memo.clear()
 

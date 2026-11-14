@@ -1215,10 +1215,12 @@ class _TsBuilder:
 
     def _params(self, node: Any) -> list[str]:
         out: list[str] = []
+        name_node = self.f(node, "name")  # Kotlin: the function's own name is an identifier child, not a parameter
         holder = (self.f(node, "parameters") or self.f(node, "parameter")
                   or next((c for c in node.named_children if c.type in ("formal_parameters", "parameters", "parameter_list",
                                                                           "inferred_parameters", "function_value_parameters",
-                                                                          "lambda_parameters", "identifier")), None))
+                                                                          "lambda_parameters")), None)
+                  or next((c for c in node.named_children if c.type == "identifier" and c != name_node), None))
         if holder is None:
             return out
         if holder.type == "identifier":

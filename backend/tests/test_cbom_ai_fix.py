@@ -800,9 +800,9 @@ def test_round4_the_probe_fixture_covers_all_seven_files():
 
     files = Counter(r["id"].split(":")[0] for r in _PROBES_ALL)
     assert files == {"probe_fix": 23, "probe_fix2": 9, "probe_fix3": 29, "probe_fix4": 2, "probe_fix5": 28,
-                     "probe_fix6": 45, "probe_fix7": 146}
+                     "probe_fix6": 45, "probe_fix7": 146, "probe_fix8": 72, "probe_r6_extra": 48}
     assert len({r["id"] for r in _PROBES_ALL}) == len(_PROBES_ALL)
-    assert sum(r["expect"] == "ok" for r in _PROBES_ALL) == 75  # the reviewers' own GOOD / control rows
+    assert sum(r["expect"] == "ok" for r in _PROBES_ALL) == 81  # the reviewers' own GOOD / control rows
 
 
 _G4_JS = "const crypto = require('crypto');\nfunction enc(d, k) {\n  const c = crypto.createCipheriv('aes-128-ecb', k, null);\n  return c.update(d);\n}\n"
@@ -1326,3 +1326,105 @@ def test_round5_a_node_type_without_a_decision_withholds(monkeypatch):
         monkeypatch.undo()
         SX.known_types.cache_clear()
     assert out["status"] == "withheld" and "unchecked node type ternary_expression" in out["withheld_reason"]
+
+
+
+# ------------------------------------------------------------------------------------------------ round 6 of PR 249
+# Review 5907423087 (probes rev249/probe_fix8.py, all 72 calls are rows of the fixture, plus 48 own rows
+# probe_r6_extra): B1 writes through an alias or a view of a buffer (may-alias classes, union-find), B2 a function
+# defined in the tree that writes into its parameter (interprocedural write-back summaries), the encoding cookie
+# outside the window (added lines that are other code under unicode_escape / utf-7).
+_P8 = [r for r in _PROBES_ALL if r["id"].startswith(("probe_fix8:", "probe_r6_extra:"))]
+
+
+def test_round6_probe8_attacks_are_withheld_and_its_six_controls_pass():
+    p8 = [r for r in _P8 if r["id"].startswith("probe_fix8:")]
+    goods = [r for r in p8 if r["expect"] == "ok"]
+    assert len(p8) == 72 and len(goods) == 6 and {r["lang"] for r in goods} == {
+        "python", "javascript", "go", "java", "csharp", "kotlin"}
+    assert all(r["id"].split(": ", 2)[2].startswith("GOOD ") for r in goods)
+    assert [r["id"] for r in p8 if _row(r)["status"] != r["expect"]] == []
+
+
+@pytest.mark.parametrize("rid", [
+    "probe_fix8: go: go alias d2 := data; copy(d2, k)", "probe_fix8: go: go copy(data[len(n):], k) (slice view)",
+    "probe_fix8: go: go d2 := data[:]; copy(d2, k)", "probe_fix8: java: java ByteBuffer.wrap(ct).put(k) (view)",
+    "probe_fix8: java: java alias a = ct; arraycopy(k -> a)", "probe_fix8: kotlin: kt alias al = ct; System.arraycopy(k -> al)",
+    "probe_fix8: kotlin: kt ByteBuffer.wrap(ct).put(k) (view)", "probe_fix8: csharp: cs k.CopyTo(ct.AsSpan()) (view)",
+    "probe_fix8: csharp: cs alias al = ct; k.CopyTo(al)", "probe_fix8: csharp: cs alias -> return ct (caller)",
+    "probe_fix8: go: go alias copy(d2, os.Getenv(secret))", "probe_fix8: csharp: cs env secret CopyTo(ct.AsSpan())",
+])
+def test_round6_b1_a_write_through_an_alias_or_a_view_taints_the_buffer(rid):
+    row = next(r for r in _P8 if r["id"] == rid)
+    out = _row(row)
+    assert out["status"] == "withheld", out.get("withheld_reason")
+    assert "key material" in out["withheld_reason"], out["withheld_reason"]
+
+
+@pytest.mark.parametrize("rid", [
+    "probe_fix8: csharp: cs local function Mix(b){k.CopyTo(b)}; Mix(ct)",
+    "probe_fix8: python: py fill(msg) helper -> raise ValueError(msg) (log)",
+    "probe_r6_extra: python: py two-level helper write-back", "probe_r6_extra: python: py helper called with key first",
+    "probe_r6_extra: python: py recursive helper writes key", "probe_r6_extra: go: go top-level func mix(b, k){copy(b,k)}",
+    "probe_r6_extra: java: java class method mix(ct, k)", "probe_r6_extra: csharp: cs Mix(ref ct) { b = k }",
+    "probe_r6_extra: kotlin: kt local fun arraycopy into param",
+])
+def test_round6_b2_a_local_function_writing_into_its_parameter_taints_the_argument(rid):
+    row = next(r for r in _P8 if r["id"] == rid)
+    out = _row(row)
+    assert out["status"] == "withheld" and "key material" in out["withheld_reason"], out.get("withheld_reason")
+
+
+def _flow(lang, code):
+    from backend.utilities.cbom_ai import flow as FL
+    from backend.utilities.cbom_ai import syntax as SX
+
+    root = SX.parse(lang, code).root
+    return FL.Flow(root, FL.Scope(lang, root, [root]))
+
+
+def test_round6_alias_classes_and_view_roots():
+    f = _flow("go", "package x\nfunc f(data, k []byte) {\n\td2 := data\n\td3 := d2[1:]\n\tv := data[:]\n\t_ = v\n"
+                    "\tcopy(d3, k)\n}")
+    assert f.alias_class("d3") == {"data", "d2", "d3", "v"}  # the blank identifier is not a variable
+    assert f.tainted["data"] & 2  # KEY written through d3 reaches data
+    f = _flow("csharp", "class C { void F(byte[] ct, byte[] k) { var m = ct.AsMemory(); var s = new Span<byte>(ct); "
+                        "var c = k.Length > 0 ? ct : k; } }")
+    assert {"m", "s", "c", "ct"} <= f.alias_class("ct")
+    f = _flow("python", "def f(ct, key):\n    buf = bytearray(ct)\n    box = [buf]\n    for b in box:\n        b.extend(key)\n")
+    assert f.tainted["buf"] & 2 and f.tainted["ct"] & 2
+
+
+def test_round6_param_write_summaries():
+    f = _flow("csharp", "class C { void F(System.IO.Stream s, byte[] ct, byte[] k) { void Mix(byte[] b) { k.CopyTo(b, 0); } "
+                        "Mix(ct); s.Write(ct); } }")
+    mix = next(n for n in f.scope.func_nodes["Mix"])
+    assert f.param_writes[id(mix)] & 2 and f.tainted["ct"] & 2
+    f = _flow("python", "def f(key):\n    msg = []\n    def fill(m):\n        m.append(key.hex())\n    fill(msg)\n")
+    assert f.tainted["msg"] & 2
+    # a parameter that is only read writes nothing back
+    f = _flow("python", "def f(key, ct):\n    def show(m):\n        return len(m)\n    show(ct)\n")
+    assert not f.tainted.get("ct") and all(not v for v in f.param_writes.values())
+
+
+def test_round6_kotlin_function_parameters_are_its_parameters_not_its_name():
+    from backend.utilities.cbom_ai import syntax as SX
+
+    root = SX.parse("kotlin", "fun enc(k: ByteArray, ct: ByteArray) {\n    fun mix(b: ByteArray) { }\n}").root
+    funcs = {n.name: sorted(n.value) for n in SX.walk(root) if n.kind == "func"}
+    assert funcs == {"enc": ["ct", "k"], "mix": ["b"]}
+
+
+@pytest.mark.parametrize("name, line, expect", [
+    ("unicode_escape quote and newline", "    tag = 'v1\\x27\\x0aos.system(\\x27id\\x27)\\x0a_ = \\x27'\n", "withheld"),
+    ("utf-7 quote and newline", "    tag = 'v1+ACcACg-os.system(+ACc-id+ACc-)+AAo-_ = +ACc-'\n", "withheld"),
+    ("plain escape", "    pad = b'\\x00' * 4\n", "withheld"),  # fail closed: any decoded escape
+    ("cipher string with a plus", "    suite = 'ECDHE+AESGCM:!aNULL'\n", "ok"),
+    ("concatenation", "    tag = b'v1' + b'x'\n", "ok"),
+])
+def test_round6_unseen_cookie_added_lines_must_decode_the_same(name, line, expect):
+    code = _GCM1.replace("def encrypt(data, key):\n", "def encrypt(data, key):\n" + line)
+    out = _check("python", _ECB1, 14, code, start=10)
+    assert out["status"] == expect, (name, out.get("withheld_reason"))
+    if expect == "withheld":
+        assert "decodes differently" in out["withheld_reason"], out["withheld_reason"]

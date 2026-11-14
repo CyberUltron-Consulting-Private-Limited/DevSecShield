@@ -15,7 +15,8 @@ Checks on a code fix (any failure withholds the fix and returns the knowledge-ba
   string templates / switch patterns, Go channel sends, extern / native methods, escaped identifiers) withhold it,
   and so does any node type without a decision in ``node_types.py`` (coverage guard over every grammar);
 * Python source encoding: no byte order mark, no added coding declaration, no declared encoding other than UTF-8,
-  added comments ASCII without escapes or UTF-7 shifts (what CPython decodes is what was checked);
+  added comments ASCII without escapes or UTF-7 shifts, and - when lines 1 - 2 are outside the window - no added
+  line that is other code under ``unicode_escape`` / ``utf-7`` (what CPython decodes is what was checked);
 * Python is also checked on its ``ast``: any new reference to process / network / dynamic-code machinery
   (``os`` beyond ``_PY_OS_OK``, ``eval`` / ``exec`` / ``__import__`` / ``getattr`` / ``open`` ..., dunders,
   ``subprocess`` / ``socket`` / ``ctypes`` ...); every language: no new network / process name in the code
@@ -31,7 +32,9 @@ Checks on a code fix (any failure withholds the fix and returns the knowledge-ba
   IV / random calls return and everything derived from it may reach only allow-listed crypto APIs - not a call
   outside the allow-list (also one the window already makes), an exception / assert message, ``throw``, or a
   member of a module. Encrypting key material (or using a cipher that took it in) does not clean it, nor does
-  hashing / MACing / encoding it as data (key-derived); a call that appends / writes into an argument carries it.
+  hashing / MACing / encoding it as data (key-derived); a call that appends / writes into an argument carries it,
+  also through an alias or a view of the buffer (``d2 := data``, ``ct.AsSpan()``, ``ByteBuffer.wrap(ct)``) and
+  through a function of the tree that writes into its parameter (``Mix(ct)``, ``fill(msg)``).
   The nonce may reach a call the window already makes only framed with AEAD ciphertext; no key is built from the
   nonce; a function does not start returning / yielding key material that came in;
 * calls of the window that are not on the allow-list stay where they are (same enclosing function / loop /
@@ -722,6 +725,29 @@ def _py_comments(text: str) -> list[tuple[int, str]]:
     return out
 
 
+_PY_CODE_CHARS = "'\"\n\r\\#;"
+
+
+def _py_decodes_differently(line: str) -> bool:
+    """``line`` decoded as ``unicode_escape`` or ``utf-7`` has other quotes, newlines, backslashes, comment marks,
+    semicolons or control characters than the stored text (a string literal would end, a statement would start). A
+    line that cannot be decoded as UTF-7 cannot run under it either; one that cannot be decoded as unicode_escape is
+    withheld (fail closed)."""
+    for codec in ("unicode_escape", "utf-7"):
+        src = line[:-1] if codec == "unicode_escape" and line.endswith("\\") else line  # a line continuation
+        try:
+            dec = (src.encode("latin-1", "backslashreplace") if codec == "unicode_escape" else
+                   src.encode("utf-8")).decode(codec)
+        except (UnicodeDecodeError, UnicodeEncodeError, ValueError):
+            if codec == "unicode_escape":
+                return True
+            continue
+        if any(dec.count(c) != src.count(c) for c in _PY_CODE_CHARS) or \
+                any(ord(c) < 32 and c != "\t" for c in dec):
+            return True
+    return False
+
+
 def _py_encoding_problems(before: list[str], after: list[str], start: int) -> list[str]:
     """Why the rewritten Python window could decode differently from the text that was checked: a byte order mark,
     an added coding declaration (anywhere), a declared encoding other than UTF-8 (a cookie the window shows, or one
@@ -742,6 +768,11 @@ def _py_encoding_problems(before: list[str], after: list[str], start: int) -> li
             continue
         if any(ord(ch) > 127 for ch in comment) or "\\" in comment or _UTF7_SHIFT.search(comment):
             out.append(f"comment on line {start + j} that decodes differently under another source encoding")
+    if start > 2:  # lines 1 - 2 (the cookie) are outside the window: an added line that is other code under
+        # unicode_escape / utf-7 (``'v1\\x27\\x0a...'`` is a quote and a newline) may be a hidden statement
+        for j in sorted(added):
+            if _py_decodes_differently(after[j]):
+                out.append(f"line {start + j} that decodes differently under another source encoding")
     if start <= 2:  # the window holds line 1 / 2: the encoding the interpreter would use (line 1 above a window
         # that starts on line 2 is taken to be a comment, the case where a cookie on line 2 counts)
         for lines in (before, after):
