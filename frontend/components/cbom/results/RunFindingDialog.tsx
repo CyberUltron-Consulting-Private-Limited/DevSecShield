@@ -173,7 +173,7 @@ export function RunFindingDialog({ teamId, runId, subject, jobs, waveOf, onClose
                   </Field>
                 )}
 
-                <AssetDetailPanel teamId={teamId} assetId={assetId} />
+                <AssetDetailPanel teamId={teamId} assetId={assetId} mergedStandards />
 
                 {/* the code page's "Remediation, fix code and exploit demo" panel (Fix code / Diff / Exploit demo), from
                     GET /runs/{id}/assets/{asset}/remediation; hidden on an older backend. Its Standards tab would repeat
