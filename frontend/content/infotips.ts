@@ -6852,6 +6852,168 @@ export const INFO_TIPS = {
     why: "Keeps sensitive systems out of every scan by rule, not by hand.",
     example: "tag pci is set: never scan.",
   },
+  // ────────────────────────────────────────────────────────────── CBOM Sources: Fleet > Transports (F1.3, #318)
+  // src: frontend/components/cbom/sources/fleet/TransportsSection.tsx:1-7, backend/routers/cbom_transports.py:1-7 — AWX/AAP, Salt and SSM transports; secrets write-only
+  "fleet.tr.section": {
+    label: "Transports",
+    what: "Your own configuration management runs the ZeroShield collector on the hosts instead of an SSH login from a scan node: Ansible (AWX or Automation Platform), Salt, or AWS Systems Manager. A fleet policy chooses one in Collect through.",
+    why: "Hosts your automation already reaches need no SSH key, firewall rule or login for ZeroShield.",
+    example: "awx-prod: job template 42 on https://awx.example.com, used by 3 managed sources.",
+  },
+  // src: backend/routers/cbom_transports.py:133-140 — kind awx, salt or ssm
+  "fleet.tr.kind": {
+    label: "Kind",
+    what: "Which automation runs the collector: an AWX or Ansible Automation Platform job template, the salt-api, or AWS Systems Manager Run Command. AWX and Salt are called from a scan node inside your network; SSM is called from ZeroShield through a read-only role.",
+    why: "Decides what is asked for below and what you install on your side.",
+    example: "Salt, for hosts that are already minions.",
+  },
+  // src: backend/routers/cbom_transports.py:138 — 1 to 64 characters, unique in the team
+  "fleet.tr.name": {
+    label: "Name",
+    what: "A name for this transport, 1 to 64 characters, unique in the team; policies list transports by name.",
+    why: "Policies pick the transport by name in Collect through.",
+    example: "awx-prod.",
+  },
+  // src: backend/routers/cbom_transports.py:46-52,55,77 — https only, no user, query or fragment
+  "fleet.tr.base_url": {
+    label: "Control plane URL",
+    what: "The https:// address of your AWX or Automation Platform, or of your salt-api, as a scan node inside your network reaches it. No user name, query or fragment.",
+    why: "The scan node calls this address to start the collection; plain HTTP would expose the token.",
+    example: "https://awx.example.com.",
+  },
+  // src: backend/routers/cbom_transports.py:56 — job_template_id, a number from 1
+  "fleet.tr.job_template": {
+    label: "Job template ID",
+    what: "The ID of the AWX or Automation Platform job template that runs the ZeroShield Ansible collection (the ansible-collection file below) on the hosts it is given.",
+    why: "ZeroShield launches this template with the hosts of each batch, nothing else.",
+    example: "42 (the ID in the template's URL).",
+  },
+  // src: backend/routers/cbom_transports.py:133 — secrets awx: token, write-only
+  "fleet.tr.token": {
+    label: "Token",
+    what: "An AWX or Automation Platform token that may launch the job template. It is encrypted, sent only to the scan node that runs the job, and never shown again.",
+    why: "Without it the job template cannot be launched; keep its scope to that template.",
+    example: "An application token with execute on job template 42.",
+  },
+  // src: backend/routers/cbom_transports.py:133 — secrets salt: username and password
+  "fleet.tr.salt_user": {
+    label: "salt-api user",
+    what: "The salt-api user ZeroShield signs in as, with the external authentication set below (pam by default). Stored encrypted and never shown again.",
+    why: "Give it only the publisher rights the ZeroShield state needs.",
+    example: "zs-collect.",
+  },
+  // src: backend/routers/cbom_transports.py:133 — secrets salt: username and password
+  "fleet.tr.salt_password": {
+    label: "salt-api password",
+    what: "The password of the salt-api user. It is encrypted, sent only to the scan node that runs the job, and never shown again.",
+    why: "salt-api refuses the batch without it.",
+    example: "The password of zs-collect.",
+  },
+  // src: backend/routers/cbom_transports.py:79 — client local, local_async or ssh
+  "fleet.tr.salt_client": {
+    label: "Client",
+    what: "How Salt reaches the hosts: minions asynchronously (default), minions while the call waits, or salt-ssh for hosts without a minion.",
+    why: "salt-ssh needs a bigger master and smaller batches.",
+    example: "Minions (async).",
+  },
+  // src: backend/routers/cbom_transports.py:80 — mode state or cmd
+  "fleet.tr.salt_mode": {
+    label: "Runs as",
+    what: "Whether Salt runs the collector as a command (default) or applies the ZeroShield state from the salt-state file below.",
+    why: "A state fits teams that keep everything in states.",
+    example: "A command.",
+  },
+  // src: backend/routers/cbom_transports.py:73,81,97-104 — 1 to 500; at most 100 with salt-ssh
+  "fleet.tr.salt_batch": {
+    label: "Hosts per batch",
+    what: "How many hosts one salt-api call covers, 1 to 500 (default 50). With salt-ssh at most 100, as one batch is one salt-api request.",
+    why: "Too large a salt-ssh batch outruns the request timeout and the master's memory.",
+    example: "50 hosts per call.",
+  },
+  // src: backend/routers/cbom_transports.py:57,83 — verify_tls, default on
+  "fleet.tr.verify_tls": {
+    label: "Verify its TLS certificate",
+    what: "Check the control plane's TLS certificate before the token or password is sent. On by default; turn it off only in a lab.",
+    why: "Off, anyone on the path could read the secret.",
+    example: "On, with the CA below for an internal certificate.",
+  },
+  // src: backend/routers/cbom_transports.py:58,84 — ca_pem, PEM certificates
+  "fleet.tr.ca_pem": {
+    label: "CA certificate (optional)",
+    what: "The PEM certificate of the CA that issued the control plane's certificate, when it is your own CA rather than a public one.",
+    why: "Lets TLS verification stay on with an internal CA.",
+    example: "-----BEGIN CERTIFICATE----- of your internal root.",
+  },
+  // src: backend/routers/cbom_transports.py:108,112-117 — an IAM role ARN; assumed with the team's external id
+  "fleet.tr.role_arn": {
+    label: "Run-command role ARN",
+    what: "The IAM role ZeroShield assumes with your external ID to send the SSM command. The ssm-role-cfn file below creates it with only the permissions it needs.",
+    why: "No access key is exchanged; you can revoke the role at any time.",
+    example: "arn:aws:iam::123456789012:role/zeroshield-cbom-run.",
+  },
+  // src: backend/routers/cbom_transports.py:109,119-125 — 1 to 16 regions
+  "fleet.tr.regions": {
+    label: "Regions",
+    what: "The AWS regions whose managed instances are collected, 1 to 16, comma or space separated.",
+    why: "Run Command is regional: a region not listed is not reached.",
+    example: "ap-south-1, eu-west-1.",
+  },
+  // src: backend/routers/cbom_transports.py:110 — devsecshield- prefix
+  "fleet.tr.document": {
+    label: "SSM document",
+    what: "The name of the SSM document that runs the collector, created from the ssm-document file below. It starts with devsecshield-.",
+    why: "Test checks the document exists in every listed region.",
+    example: "devsecshield-collect.",
+  },
+  // src: backend/routers/cbom_transports.py:111 — output_s3_bucket, optional
+  "fleet.tr.bucket": {
+    label: "Output S3 bucket (optional)",
+    what: "An S3 bucket in your account where Run Command also writes its output, for your own audit.",
+    why: "Keeps a copy of every run on your side.",
+    example: "zs-cbom-runs.",
+  },
+  // src: frontend/components/cbom/sources/fleet/TransportsSection.tsx:1-7 — the transport's kind
+  "fleet.tr.col.kind": {
+    label: "Kind",
+    what: "Ansible (AWX / AAP), Salt or AWS Systems Manager: the automation that runs the collector.",
+    why: "Tells you where to look when a run fails.",
+    example: "Salt.",
+  },
+  // src: backend/routers/cbom_transports.py:191-196 — config, never a secret
+  "fleet.tr.col.where": {
+    label: "Where",
+    what: "Where the transport points: the control plane URL and job template or Salt client, or the role and regions for SSM. Never a secret.",
+    why: "Confirms which automation a policy will call.",
+    example: "https://awx.example.com · job template 42.",
+  },
+  // src: backend/routers/cbom_transports.py:191-196 — secrets_set, names only
+  "fleet.tr.col.secrets": {
+    label: "Secrets stored",
+    what: "Which secrets are stored for this transport, by name only. Secrets are write-only: they are never shown again.",
+    why: "You can tell a transport is complete without the secret ever leaving ZeroShield.",
+    example: "token.",
+  },
+  // src: backend/routers/cbom_transports.py:349-368 — validate is SSM only
+  "fleet.tr.col.status": {
+    label: "Status",
+    what: "For SSM, the last Test: role assumed with the external ID and the document found in each region. AWX and Salt are reached from a scan node in your network, so a source that uses them is what tests them.",
+    why: "Shows whether ZeroShield can use the transport before a policy depends on it.",
+    example: "Failed · The run-command role could not be used: AccessDenied.",
+  },
+  // src: backend/routers/cbom_transports.py:324-336 — a transport in use cannot be deleted
+  "fleet.tr.col.used_by": {
+    label: "Used by",
+    what: "The managed sources that collect through this transport. A transport in use cannot be deleted.",
+    why: "Shows what stops collecting if you change it.",
+    example: "fleet-4-1, fleet-4-2.",
+  },
+  // src: frontend/components/cbom/sources/fleet/PoliciesSection.tsx:1-5, backend/utilities/cbom_sources/fleet/policy.py:247-273 — ssh or a transport; SSM needs no scan node
+  "fleet.pol.transport": {
+    label: "Collect through",
+    what: "How the matched targets are collected: SSH from a scan node with a credential, or one of your transports. AWX and Salt still need the scan node that reaches their control plane; SSM runs from ZeroShield.",
+    why: "Hosts your automation already manages need no SSH login.",
+    example: "awx-prod (Ansible), through scan node dc1.",
+  },
   // src: frontend/components/cbom/sources/fleet/PoliciesSection.tsx:294-303 — from Fleet > Credentials
   "fleet.pol.credential": {
     label: "Credential (SSH)",
