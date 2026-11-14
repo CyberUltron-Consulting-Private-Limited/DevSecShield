@@ -11,7 +11,7 @@ workflow runs it from CI.
 | frontend | `<prefix>/devsecshield-frontend:<tag>` | the API URL is baked in at build time |
 | migrate | backend image | one-shot `alembic upgrade head` under a Postgres advisory lock; everything that uses the database waits for it |
 | backend | backend image | gunicorn, `BACKEND_WORKERS` workers; port not published; trusts `X-Forwarded-For` only from nginx (`FORWARDED_ALLOW_IPS` = `DSS_PROXY_IP`) |
-| cbom-cloud-worker, dast-scheduler | backend image | |
+| cbom-cloud-worker, dast-scheduler | backend image | the cloud worker scales: `CBOM_CLOUD_REPLICAS` x `CBOM_CLOUD_WORKERS` (in `.env`; see deploy/local/README.md, "Cloud worker pool") |
 | scan-worker, cicd-worker | `<prefix>/scan-worker:<tag>` | queues `scan_worker_queue`, `cicd_worker_queue` |
 | dast-worker | `<prefix>/dast-worker:<tag>` | |
 | postgres, mongo (auth on), rabbitmq | stock images | volumes `pgdata`, `mongodata`, `rabbitmq` |

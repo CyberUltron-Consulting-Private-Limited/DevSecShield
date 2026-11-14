@@ -444,6 +444,10 @@ class CbomCollectionJob(SQLModel, table=True):
     first_claimed_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
     cancel_requested_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
     cancel_reason: str | None = Field(default=None, max_length=255)
+    # F1 cloud pool: a ``slice`` job (one AWS account x region) points at the source's ``collect`` job it belongs to.
+    # Slices have no run (run_id NULL) and no credits: their assets are stored under the parent job, which stays the
+    # one job per source that runs, drift, posture and credits know about (``cbom_sources.slices``).
+    parent_job_id: int | None = Field(default=None, foreign_key="cbomcollectionjob.id", index=True, ondelete="CASCADE")
 
 
 class CbomCollectedAsset(SQLModel, table=True):

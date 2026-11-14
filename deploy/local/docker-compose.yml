@@ -175,11 +175,25 @@ services:
       start_period: 60s
 
   # CBOM sources without a node (AWS accounts, identity-provider metadata), the CBOM scheduler, expired-job reaper.
+  # A pool (F1): CBOM_CLOUD_REPLICAS containers x CBOM_CLOUD_WORKERS claim loops each; AWS work is split into one job per
+  # account x region. Defaults (1 x 1) behave as before. Set the variables in this folder's .env (README: "Cloud worker pool").
   cbom-cloud-worker:
     <<: *backend-service
     restart: unless-stopped
+    deploy:
+      replicas: ${CBOM_CLOUD_REPLICAS:-1}
+    # SIGTERM: claims stop, running jobs get CBOM_CLOUD_SHUTDOWN_GRACE_S, then give their lease back to the queue
+    stop_grace_period: 60s
     environment:
       SKIP_ALEMBIC: "1"
+      CBOM_CLOUD_WORKERS: ${CBOM_CLOUD_WORKERS:-1}
+      CBOM_CLOUD_TEAM_MAX_CONCURRENCY: ${CBOM_CLOUD_TEAM_MAX_CONCURRENCY:-8}
+      CBOM_CLOUD_LEASE_S: ${CBOM_CLOUD_LEASE_S:-900}
+      CBOM_CLOUD_SHUTDOWN_GRACE_S: ${CBOM_CLOUD_SHUTDOWN_GRACE_S:-20}
+      CBOM_CLOUD_QUEUE_LOG_S: ${CBOM_CLOUD_QUEUE_LOG_S:-60}
+      CBOM_AWS_SLICES: ${CBOM_AWS_SLICES:-1}
+      CBOM_AWS_ORG_WORKERS: ${CBOM_AWS_ORG_WORKERS:-16}
+      CBOM_AWS_THROTTLE_RETRIES: ${CBOM_AWS_THROTTLE_RETRIES:-6}
     depends_on:
       migrate:
         condition: service_completed_successfully
