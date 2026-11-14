@@ -65,8 +65,36 @@ def public_node(node: CbomScanNode, now: _dt.datetime, *, assigned_targets: int 
     }
 
 
+def last_collects(session: Any, team_id: int, source_ids: list[int]) -> dict[int, dict[str, Any]]:
+    """The newest finished collection of each source: {"status": ok|partial|failed, "at", "summary", "job_id",
+    "run_id"}.  A collection that read the source (or failed to) says as much about it as a connection test, so the
+    source card judges the newer of the two (owner bug C8: a test that passed days ago kept the card "Passed" after
+    the server was gone).  Cancelled jobs say nothing about the source and are left out; "expired" (no node ran it in
+    time) is a failure to collect.  One query for the whole list."""
+    from sqlmodel import col, func, select
+
+    ids = [i for i in source_ids if i is not None]
+    if not ids:
+        return {}
+    newest = (select(CbomCollectionJob.source_id, func.max(CbomCollectionJob.id).label("job_id"))
+              .where(CbomCollectionJob.team_id == team_id, col(CbomCollectionJob.source_id).in_(ids),
+                     CbomCollectionJob.kind == "collect",
+                     col(CbomCollectionJob.status).in_(("success", "failure", "expired")),
+                     col(CbomCollectionJob.finished_at).is_not(None))
+              .group_by(CbomCollectionJob.source_id).subquery())
+    rows = session.exec(select(CbomCollectionJob).join(newest, CbomCollectionJob.id == newest.c.job_id)).all()
+    out: dict[int, dict[str, Any]] = {}
+    for job in rows:
+        status = job.outcome if job.status == "success" and job.outcome in ("ok", "partial", "failed") else "failed"
+        result = job.result if isinstance(job.result, dict) else {}
+        summary = job.error or (str(result.get("summary")) if result.get("summary") else None)
+        out[int(job.source_id)] = {"status": status, "at": iso_z(job.finished_at), "job_id": job.id,
+                                   "run_id": job.run_id, "summary": summary[:512] if summary else None}
+    return out
+
+
 def public_source(source: CbomCollectionSource, settings: CbomCollectionSettings, node: CbomScanNode | None,
-                  now: _dt.datetime) -> dict[str, Any]:
+                  now: _dt.datetime, last_collect: dict[str, Any] | None = None) -> dict[str, Any]:
     spec = KINDS.get(source.kind)
     info = source_targets(source, settings)
     config = dict(source.config or {})
@@ -91,6 +119,8 @@ def public_source(source: CbomCollectionSource, settings: CbomCollectionSettings
         "last_test_summary": source.last_test_summary,
         "last_test_job_id": source.last_test_job_id,
         "last_test_result": source.last_test_result or {},
+        # the newest finished collection (last_collects); null when it was not looked up or there is none yet
+        "last_collect": last_collect,
         "row_version": source.row_version,
         "created_at": iso_z(source.created_at),
         "last_updated": iso_z(source.last_updated),

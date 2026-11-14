@@ -7,13 +7,11 @@ import { useState, type ReactNode } from "react";
 import { toast } from "@/utils/toast";
 
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   cancelCbomRun,
   estimateCbomSources,
-  getCbomRun,
   getCbomSourcesOverview,
   listCbomRuns,
   startCbomRun,
@@ -26,12 +24,11 @@ import {
   type CbomSourcesOverview,
 } from "@/utils/backend_api";
 
-import { CompareDialog, RunChanges } from "./ChangesPanel";
+import { CompareDialog } from "./ChangesPanel";
 import GradeInputsCard from "./GradeInputsCard";
 import { runResultsHref } from "@/components/cbom/results/resultsHref";
 import { cbomSourcesKeys, invalidateRunViews, TERMINAL_RUN } from "./keys";
-import RunResults from "./RunResults";
-import { RunJobsTable, SkippedAtStart, skipText } from "@/components/cbom/results/RunJobsTable";
+import { skipText } from "@/components/cbom/results/RunJobsTable";
 import { CriticalityCard } from "./RunPosture";
 import SchedulesCard from "./SchedulesCard";
 import { startRefusal } from "./startRefusal";
@@ -754,83 +751,5 @@ function StartCard({ teamId, overview }: { teamId: number; overview: CbomSources
         {!anyIncluded && <p className="text-xs text-zinc-500">Choose at least one group to estimate.</p>}
       </div>
     </SectionCard>
-  );
-}
-
-// ---------------------------------------------------------------------------- run details
-// CB-38: no longer opened from the Runs table (its Results button opens /cbom/runs/<id>/results); kept until the
-// unified results page carries its jobs table and skipped list, then removed.
-export function RunDetailsDialog({ teamId, runId, onClose }: { teamId: number; runId: number; onClose: () => void }) {
-  const runQuery = useQuery({
-    queryKey: cbomSourcesKeys.run(teamId, runId),
-    queryFn: () => getCbomRun(teamId, runId),
-    enabled: Number.isFinite(teamId),
-    retry: 1,
-    refetchInterval: (query) => {
-      if (httpStatus(query.state.error) === 404) return false;
-      const status = query.state.data?.status;
-      return !status || isActiveRun(status) ? 6000 : false;
-    },
-  });
-  const run = runQuery.data;
-  const jobs = run?.jobs ?? [];
-  const skippedAtStart = run?.breakdown?.skipped ?? [];
-
-  return (
-    <Dialog open onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-6xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Run #{runId}</DialogTitle>
-          <DialogDescription>
-            {run ? (
-              <>
-                <RunStatusBadge status={run.status} /> · started {formatDateTime(run.created_at)} · {credits(run.credits.charged)} charged,{" "}
-                {credits(run.credits.refunded)} refunded
-              </>
-            ) : (
-              "Loading the run"
-            )}
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-4 min-w-0">
-          {runQuery.isLoading ? (
-            <LoadingBlock />
-          ) : runQuery.isError && !run ? (
-            <ErrorBlock
-              message={httpStatus(runQuery.error) === 404 ? "This run no longer exists." : undefined}
-              error={runQuery.error}
-              onRetry={httpStatus(runQuery.error) === 404 ? undefined : () => runQuery.refetch()}
-            />
-          ) : jobs.length === 0 ? (
-            <EmptyState title="No jobs in this run" />
-          ) : (
-            <RunJobsTable jobs={jobs} />
-          )}
-
-          <SkippedAtStart items={skippedAtStart} />
-          {run && jobs.length > 0 && (
-            <div className="border-t border-zinc-200 dark:border-zinc-800 pt-4 space-y-2">
-              <p className="text-sm font-medium text-zinc-900 dark:text-white">Changes</p>
-              <RunChanges teamId={teamId} runId={runId} finished={TERMINAL_RUN.has(run.status)} />
-            </div>
-          )}
-          {run && jobs.length > 0 && (
-            <div className="border-t border-zinc-200 dark:border-zinc-800 pt-4">
-              <RunResults teamId={teamId} runId={runId} active={isActiveRun(run.status)} />
-            </div>
-          )}
-          {run && isActiveRun(run.status) && (
-            <p className="text-xs text-zinc-500">Updates every few seconds while the run is active.</p>
-          )}
-        </div>
-
-        <DialogFooter>
-          <Button variant="outline" className="cursor-pointer" onClick={onClose}>
-            Close
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }

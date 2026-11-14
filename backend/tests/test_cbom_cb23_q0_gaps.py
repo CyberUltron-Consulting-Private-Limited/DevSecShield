@@ -321,7 +321,7 @@ def test_migration_is_the_one_head():
         if down:
             parents.add(down.group(1))
     assert mod.revision == "cb23q0gap001" and mod.down_revision in revisions
-    # one head; later revisions (CB-23 PR-B cb23register001) chain after this one
+    # one head; later revisions (CB-23 PR-B cb23register001, then CB-25 cb25agility001) chain after this one
     assert len(revisions - parents) == 1 and ("cb23q0gap001" in parents or revisions - parents == {"cb23q0gap001"})
 
 

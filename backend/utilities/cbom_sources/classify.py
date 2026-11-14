@@ -349,14 +349,18 @@ def _cert_unused_applies(facts: dict[str, Any]) -> bool:
             and facts.get("exported") is not True and facts.get("key_pair_origin") != "ACME")
 
 
-def _cert_rules(out: _Out, facts: dict[str, Any], algorithm: Any, size: Any, now: _dt.datetime) -> None:
+def _expiry_rules(out: _Out, facts: dict[str, Any], now: _dt.datetime, what: str = "Certificate") -> None:
     not_after = _parse_time(facts.get("not_after"))
     if not_after is not None:
         days = (not_after - now).total_seconds() / 86400
         if days < 0:
-            out.add("CERT_EXPIRED", "High", f"Certificate expired on {not_after.date().isoformat()}")
+            out.add("CERT_EXPIRED", "High", f"{what} expired on {not_after.date().isoformat()}")
         elif days <= 30:
-            out.add("CERT_EXPIRES_30D", "Medium", f"Certificate expires in {int(days)} days")
+            out.add("CERT_EXPIRES_30D", "Medium", f"{what} expires in {int(days)} days")
+
+
+def _cert_rules(out: _Out, facts: dict[str, Any], algorithm: Any, size: Any, now: _dt.datetime) -> None:
+    _expiry_rules(out, facts, now)
     sig = _upper(facts.get("sig_alg"))
     sha1 = "SHA1" in sig.replace("-", "")
     if "MD5" in sig or "MD2" in sig:
@@ -745,6 +749,10 @@ def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, fact
                 qv = False
         if asset_type == "signing_key" and _upper(facts.get("signature_alg")).replace("-", "").endswith("SHA1"):
             out.add("SIG_SHA1", "High", f"Signing uses {facts.get('signature_alg')}")
+        if asset_type == "signing_key":
+            # an IdP signing key published with its certificate (SAML metadata, JWKS x5c) lives as long as that
+            # certificate: expired is CERT_EXPIRED / High like every expired certificate (C10c)
+            _expiry_rules(out, facts, now, "Signing key's certificate")
         if asset_type == "k8s_certificate" and facts.get("not_after"):
             _cert_rules(out, facts, algorithm, key_size, now)
     elif asset_type in ("tls_endpoint", "database_tls", "load_balancer_tls", "cdn_tls", "api_tls", "k8s_ingress_tls"):
@@ -1013,7 +1021,8 @@ CLASSIFIER_VERSION = _rules_version()
 # counts, the posture totals, the heat map, the migration waves, the asset panel and the CycloneDX export) shows the
 # verdict judged TODAY instead, with the run's verdict beside it, so a library that reaches end of life after a run
 # is a finding everywhere at once, not only in the panel, and not only after the next run.
-CERT_DATED_TYPES = frozenset({"certificate", "k8s_tls_secret", "iam_certificate", "cloud_ca", "k8s_certificate"})
+CERT_DATED_TYPES = frozenset({"certificate", "k8s_tls_secret", "iam_certificate", "cloud_ca", "k8s_certificate",
+                              "signing_key"})  # an IdP signing key carries its certificate's notAfter
 LIBRARY_DATED_TYPES = frozenset({"crypto_library", "process_library"})
 KEY_DATED_TYPES = frozenset({"kms_key"})  # imported key material expiry (KMS_KEY_MATERIAL_EXPIRES, CB-33)
 DATED_TYPES = CERT_DATED_TYPES | LIBRARY_DATED_TYPES | KEY_DATED_TYPES
