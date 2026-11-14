@@ -92,7 +92,7 @@ assert.equal(plan.dashboard.note, NOTE.resultsMissing);
 assert.equal(plan.compliance.show, true, "compliance falls back to the posture's clauses");
 assert.equal(plan.compliance.note, undefined);
 assert.equal(plan.topRisks.show, true);
-assert.equal(plan.tabs.show, RUN_TICKETING_TAB_AVAILABLE);
+assert.equal(plan.tabs.show, RUN_TICKETING_TAB_AVAILABLE, "Results / Ticketing tabs");
 for (const s of ["header", "coverage", "meta", "posture", "insights", "changes", "waves", "findings", "findingDialog"] as const) {
   assert.equal(plan[s].show, true, `${s} always renders`);
 }
@@ -130,15 +130,15 @@ const certResults = { ...fullResults, certificates_orphaned: [{ asset_id: 3, sub
 assert.equal(runSectionPlan({ results: { kind: "ok", data: certResults }, posture }).certificates.note, undefined);
 
 // capabilities: code-only downloads stay hidden on a run (PLAN §4.4)
-assert.equal(RUN_CAPABILITIES.vex, false);
-assert.equal(RUN_CAPABILITIES.signature, false);
-assert.equal(RUN_CAPABILITIES.evidencePack, false);
-assert.equal(RUN_CAPABILITIES.pdf, false);
+assert.equal(RUN_CAPABILITIES.vex, true, "run deliverables (PR-8)");
+assert.equal(RUN_CAPABILITIES.signature, true);
+assert.equal(RUN_CAPABILITIES.evidencePack, true);
+assert.equal(RUN_CAPABILITIES.pdf, true);
 assert.equal(RUN_CAPABILITIES.oscal, true);
 
-// the Ticketing tab mounts only once lane W6's component exists
+// the Ticketing tab is on exactly when lane W6's component is in the tree
 const ticketingTab = path.resolve(__dirname, "RunTicketingTab.tsx");
-if (!fs.existsSync(ticketingTab)) assert.equal(RUN_TICKETING_TAB_AVAILABLE, false, "no RunTicketingTab.tsx: Results tab only");
+assert.equal(RUN_TICKETING_TAB_AVAILABLE, fs.existsSync(ticketingTab), "Ticketing tab <=> RunTicketingTab.tsx");
 
 // ---------------------------------------------------------------- compliance rows
 const cr = complianceRows({
