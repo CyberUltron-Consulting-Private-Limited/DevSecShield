@@ -554,6 +554,7 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
           {form.provider === "aws" && !awsOff && settings.aws_lab_same_account === true && (
             <LabModeBanner
               testId="aws-lab-mode"
+              className="mb-4"
               detail="This test deployment accepts AWS roles in its own AWS account. Every other check (external ID, data-plane deny) still applies. Production deployments refuse this."
             />
           )}

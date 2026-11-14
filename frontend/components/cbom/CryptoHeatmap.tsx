@@ -2,7 +2,8 @@
 
 // Algorithm family x source (or asset type) heat-map, coloured by the worst impact in each cell. Hand-built CSS
 // grid (no chart library): every cell with assets is a button, arrow keys move between cells (roving tabindex),
-// Enter or a click shows the counts by impact; the grid scrolls sideways on small screens.
+// Enter or a click shows the counts by impact. The box is as wide as its columns (a 3-column table does not leave an
+// empty band beside it) and scrolls sideways only when the columns do not fit, e.g. on a phone.
 
 import { useMemo, useRef, useState, type KeyboardEvent } from "react";
 
@@ -57,7 +58,7 @@ export default function CryptoHeatmap({ data, title = "Algorithm families", colu
   return (
     <div className="space-y-2 min-w-0" data-testid={testId}>
       <p className="text-sm font-medium text-zinc-900 dark:text-white">{title}</p>
-      <div className="overflow-x-auto rounded-md border border-zinc-200 dark:border-zinc-800">
+      <div className="overflow-x-auto w-fit max-w-full rounded-md border border-zinc-200 dark:border-zinc-800">
         <div
           role="grid"
           aria-label={`${title}: algorithm family by ${data.columns.length} columns, coloured by worst impact`}

@@ -1368,7 +1368,8 @@ export function CbomCryptoCharts({
 }
 
 /** Heat-map (algorithm family x asset type, worst impact) from the scan's rows, and the certificate calendar from
- * ``cbom_distributions.certificates``: the same views a collection run shows, built from data this page has. */
+ * ``cbom_distributions.certificates``: the same views a collection run shows, built from data this page has, stacked
+ * full width like the run's (RunInsights). */
 function CodeHeatmapAndCalendar({ findings, certificates }: { findings: CbomFinding[]; certificates: CertRow[] }) {
   const heat = useMemo(() => codeHeatmap(findings as unknown as CodeHeatRow[]), [findings]);
   const certs = useMemo(
@@ -1377,7 +1378,7 @@ function CodeHeatmapAndCalendar({ findings, certificates }: { findings: CbomFind
   );
   if (heat.rows.length === 0 && certs.length === 0) return null;
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+    <div className="grid grid-cols-1 gap-6">
       {heat.rows.length > 0 && (
         <Card>
           <CardContent className="pt-6">
