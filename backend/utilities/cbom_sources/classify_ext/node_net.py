@@ -185,6 +185,25 @@ def _pq_ike_group(group: Any) -> bool:
     return found is not None and found.quantum in ("safe", "hybrid") and found.primitive in C.KEX_PRIMITIVES
 
 
+def _appliance_weak_dh(out: Any, facts: dict[str, Any], what: str) -> None:
+    """DH_LT_2048 for a configured finite-field DH size below 2048 bits on an appliance's TLS or SSH service:
+    'ip ssh dh min size 1024' (IOS: the smallest group-exchange group accepted), 'ssl dh-group group2' (ASA: the
+    group used for DHE), 'set dh-params 1024' (FortiOS).  IKE groups are judged by IKE_WEAK_DH (ike_policy rows)."""
+    found: list[tuple[int, str, str]] = []
+    if isinstance(facts.get("dh_min_bits"), int):
+        found.append((facts["dh_min_bits"], "Medium", f"accepts Diffie-Hellman groups from {facts['dh_min_bits']} bits"))
+    if isinstance(facts.get("dh_bits"), int):
+        found.append((facts["dh_bits"], "High", f"uses {facts['dh_bits']}-bit Diffie-Hellman"))
+    for name in C.fact_list(facts.get("dh_groups")):
+        m = re.fullmatch(r"MODP-(\d+)(-S\d+)?", str(name))
+        if m:
+            found.append((int(m.group(1)), "High", f"uses {int(m.group(1))}-bit Diffie-Hellman ({name})"))
+    weak = [f for f in found if 0 < f[0] < 2048]
+    if weak:
+        bits, impact, text = min(weak, key=lambda f: (f[0], f[1] != "High"))
+        out.add("DH_LT_2048", impact, f"{what} {text}; the minimum is 2048 bits")
+
+
 def appliance_rule(out: Any, facts: dict[str, Any], algorithm: Any, key_size: Any, now: Any) -> bool | None:
     kind = str(facts.get("kind") or "")
     vendor = str(facts.get("vendor_label") or facts.get("vendor") or "Appliance")
@@ -220,11 +239,13 @@ def appliance_rule(out: Any, facts: dict[str, Any], algorithm: Any, key_size: An
         versions = [int(v) for v in C.fact_list(facts.get("versions")) if str(v).isdigit()]
         if 1 in versions:
             out.add("SSH_V1_ENABLED", "High", f"{what} allows SSH protocol version 1")
+        _appliance_weak_dh(out, facts, what)
         if any(facts.get(k) for k in ("ciphers", "macs", "kex")):
             return C._ssh_rules(out, facts, what)
         return None
     if kind == "tls":
         C._tls_rules(out, {k: facts.get(k) for k in ("protocols", "min_version", "weak_ciphers")}, what)
+        _appliance_weak_dh(out, facts, what)
         if facts.get("strong_crypto") is False:
             out.add("WEAK_CIPHER", "High", f"{what}: strong-crypto is disabled, so weak ciphers and hashes stay "
                                            "allowed for administrative TLS/SSH")

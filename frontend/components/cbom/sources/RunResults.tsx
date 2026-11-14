@@ -26,6 +26,7 @@ import { FixClassChip, QGradeChip, type FixClassFields, type QGradeFields } from
 import { downloadCbomRunBom } from "@/utils/api/cbom_outputs";
 import { downloadOscal } from "@/utils/api/integrations";
 
+import { jobReadLabel, jobTargetsLine } from "./jobReadLabel";
 import { cbomSourcesKeys } from "./keys";
 import { LabModeBanner } from "./LabModeBanner";
 import { pluralize, targetGuidance } from "./logic";
@@ -76,7 +77,6 @@ export const ASSET_TYPE_LABEL: Record<string, string> = {
 
 const IMPACTS: CbomImpact[] = ["Critical", "High", "Medium", "Low"];
 const IMPACT_TONE: Record<CbomImpact, Tone> = { Critical: "red", High: "red", Medium: "amber", Low: "blue" };
-const OUTCOME: Record<string, [Tone, string]> = { ok: ["green", "All targets read"], partial: ["amber", "Partly read"], failed: ["red", "Nothing read"] };
 const TARGET_TONE: Record<string, Tone> = { ok: "green", partial: "amber", skipped_never_scan: "zinc", skipped_window: "amber", skipped_stop: "amber",
   skipped_deadline: "amber", skipped_cancelled: "zinc", not_supported: "zinc" };
 const TARGET_LABEL: Record<string, string> = {
@@ -128,13 +128,9 @@ export function TargetsBlock({ jobs }: { jobs: CbomJobTargets[] }) {
       <ul className="space-y-2">
         {jobs.map((job) => {
           const problems = job.targets.filter((t) => t.status !== "ok");
-          const [tone, label] =
-            job.outcome === "ok" && problems.length > 0
-              ? ["amber", "Read, with errors"]
-              : job.outcome
-                ? OUTCOME[job.outcome] ?? ["zinc", job.outcome]
-                : ["blue", job.status === "pending" ? "Waiting" : "Running"];
-          const counts = job.counts;
+          const [tone, label] = jobReadLabel(job);
+          const targetsLine = jobTargetsLine(job);
+          const assetsRead = typeof job.assets_read === "number";
           return (
             <li key={job.job_id} className="rounded-lg border border-zinc-200 dark:border-zinc-800 p-3 text-sm" data-testid={`run-results-job-${job.job_id}`}>
               <div className="flex flex-wrap items-center gap-2">
@@ -153,11 +149,9 @@ export function TargetsBlock({ jobs }: { jobs: CbomJobTargets[] }) {
                 )}
               </div>
               <p className="mt-1 text-xs text-zinc-500">
-                {counts
-                  ? `${counts.ok ?? 0} read · ${counts.partial ? `${counts.partial} partly read · ` : ""}${counts.failed ?? 0} failed · ${counts.skipped ?? 0} skipped of ${counts.total ?? 0}`
-                  : job.summary ?? "No result yet"}
-                {" · "}
-                {pluralize(job.asset_count, "asset")}
+                {targetsLine ?? job.summary ?? "No result yet"}
+                {/* the badge already says how many assets were read; the stored-row count (gaps included) only when it does not */}
+                {assetsRead ? "" : ` · ${pluralize(job.asset_count, "asset")}`}
                 {job.duration_s != null ? ` · ${job.duration_s}s` : ""}
               </p>
               {job.error && <p className="mt-1 text-xs text-red-600 dark:text-red-400 break-words">{job.error}</p>}

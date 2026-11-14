@@ -32,14 +32,16 @@ import {
   type CbomSource,
   type CbomSourcesSettings,
   type CbomSourceSaveResponse,
+  type CbomOrgEstimate,
   type CbomTestResponse,
 } from "@/utils/backend_api";
 
+import { caCardStatus, worstCardStatus, type CaCardStatus } from "./caCardStatus";
 import { cbomSourcesKeys } from "./keys";
 import { keepLiveValidation } from "./liveValidation";
 import { SourceMetadataDialog } from "./SourceMetadata";
 import { LabModeBanner } from "./LabModeBanner";
-import { ctProviderSentence, ctRunCredits, formatDateTime, pluralize, readTextFile, splitLines } from "./logic";
+import { ctProviderSentence, ctRunCredits, formatDateTime, orgEstimateLines, orgEstimateStale, pluralize, readTextFile, splitLines } from "./logic";
 import {
   ChoiceCards,
   CodeSnippet,
@@ -65,7 +67,7 @@ import {
 type Provider = "aws" | "azure" | "gcp";
 type AwsScope = "account" | "organization";
 type CaProvider = "adcs" | "aws_private_ca" | "vault" | "venafi" | "keyfactor" | "digicert" | "ejbca" | "sectigo" | "other";
-type IdpProvider = "entra_id" | "okta" | "keycloak";
+type IdpProvider = "entra_id" | "okta" | "keycloak" | "adfs";
 type MetadataProvider = "saml_metadata" | "oidc_discovery";
 
 const PROVIDERS: { value: Provider; label: string; description: string }[] = [
@@ -128,8 +130,13 @@ const IDP_ROWS: IdpRow[] = [
   { provider: "entra_id", label: "Microsoft Entra ID", detail: "public metadata; no permission needed", defaultName: "Entra ID" },
   { provider: "okta", label: "Okta", detail: "public metadata; no permission needed", defaultName: "Okta" },
   { provider: "keycloak", label: "Keycloak", detail: "public metadata; no permission needed", defaultName: "Keycloak" },
+  { provider: "adfs", label: "ADFS", detail: "public metadata; no permission needed", defaultName: "ADFS" },
 ];
+const IDP_ROW_PROVIDERS: ReadonlySet<string> = new Set(IDP_ROWS.map((r) => r.provider));
 const METADATA_LABEL: Record<MetadataProvider, string> = { saml_metadata: "SAML metadata", oidc_discovery: "OIDC discovery" };
+/** ADFS publishes both documents under its server address (backend idp_collect.discovery_urls). */
+const ADFS_OIDC_PATH = "/adfs/.well-known/openid-configuration";
+const ADFS_METADATA_PATH = "/FederationMetadata/2007-06/FederationMetadata.xml";
 
 const CHECK_BADGE: Record<CbomAwsCheck["status"], [Tone, string]> = {
   pass: ["green", "Pass"],
@@ -150,7 +157,8 @@ const LOGIN_RE = /^[A-Za-z0-9._@$\\-]{1,64}$/;
 const DOMAIN_LABEL_RE = /^[a-z0-9_]([a-z0-9_-]{0,61}[a-z0-9_])?$/;
 const MAX_DOMAINS = 200;
 const CLOUDFORMATION_CONSOLE = "https://console.aws.amazon.com/cloudformation/home";
-const NOT_AVAILABLE = "Validation is not available yet; collection is not available yet.";
+// Venafi, Keyfactor, DigiCert, Sectigo and other CAs: no collector (kinds._ca_secrets asks for no key; owner bug C6)
+const CLM_NOT_COLLECTED = "Not collected: ZeroShield has no connector for this product yet. Nothing is read from it, no key is needed and it is never charged; only its name and API address are saved. Certificates it issued are found where other sources see them: network TLS scans, Certificate Transparency and cloud accounts.";
 // Same sentences as the backend's planning.CLOUD_NOT_CONNECTED (the run estimate's skip reason).
 const CLOUD_NOT_CONNECTED: Record<"azure" | "gcp", string> = {
   azure: "Not available until the Azure tenant is connected: Save and validate must pass first",
@@ -299,6 +307,7 @@ interface ValidationView {
   status: string;
   checks: CbomAwsCheck[];
   memberAccounts: number | null;
+  estimate: CbomOrgEstimate | null;
   at: string | null;
 }
 
@@ -313,6 +322,7 @@ function viewFromTest(source: CbomSource, test: CbomTestResponse): ValidationVie
     status: test.status,
     checks: test.checks ?? [],
     memberAccounts: typeof test.member_accounts === "number" ? test.member_accounts : null,
+    estimate: test.estimate ?? null,
     at: test.validated_at ?? null,
   };
 }
@@ -327,6 +337,7 @@ function viewFromSource(source: CbomSource | null | undefined): ValidationView |
     status: source.last_test_status,
     checks,
     memberAccounts: typeof members === "number" ? members : null,
+    estimate: source.last_test_result.estimate ?? null,
     at: source.last_test_at,
   };
 }
@@ -465,7 +476,8 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
   const awsSources = cloudSources.filter((s) => s.kind === "aws_account");
   const caSources = identitySources.filter((s) => s.kind === "ca_connector");
   const idpSources = identitySources.filter((s) => s.kind === "idp");
-  const metadataSources = idpSources.filter((s) => s.config?.provider === "saml_metadata" || s.config?.provider === "oidc_discovery");
+  // every IdP source is listed somewhere: on its provider's row, or with the metadata URLs (any provider without a row)
+  const metadataSources = idpSources.filter((s) => !IDP_ROW_PROVIDERS.has(String(s.config?.provider ?? "")));
   const identityNames = idpSources.map((s) => s.name);
 
   // The result this browser just received stays shown while the server still holds it (or while the account, just
@@ -638,6 +650,11 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
                               {CLOUD_NOT_CONNECTED[PROVIDER_OF_KIND[s.kind] === "gcp" ? "gcp" : "azure"]}
                             </span>
                           )}
+                          {!busy && orgEstimateStale(s) && (
+                            <span className="mt-1 block max-w-[220px] text-xs text-amber-700 dark:text-amber-300" data-testid={`aws-org-estimate-stale-${s.id}`}>
+                              Re-validate to update the charge estimate: every member account is now read and charged
+                            </span>
+                          )}
                         </TableCell>
                         <TableCell>
                           <DropdownMenu>
@@ -707,9 +724,16 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
                     onMetadata={setMetadataFor}
                     onTest={(s) => testMutation.mutate(s)}
                     onDelete={(s) => setDeleting(s)}
+                    headerStatus={
+                      onNode ? (
+                        <CaStatusBadge status={worstCardStatus(rowSources.map((s) => caCardStatus(s)))} />
+                      ) : row.key === "aws_private_ca" ? undefined : (
+                        <StatusBadge tone="zinc">Not collected</StatusBadge>
+                      )
+                    }
                     renderDetail={(s) =>
                       onNode ? (
-                        <NodeTestLine teamId={teamId} source={s} />
+                        <NodeTestLine teamId={teamId} source={s} showStatus={rowSources.length > 1} />
                       ) : row.key === "aws_private_ca" ? (
                         <span className="text-xs text-zinc-500">
                           through {awsSources.find((a) => a.id === cfgNumber(s, "aws_source_id"))?.name ?? "an AWS account that was removed"}
@@ -718,7 +742,7 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
                       ) : (
                         <span className="text-xs text-zinc-500">
                           {row.key === "other" ? `${CA_OTHER_LABEL[cfgString(s, "provider")] ?? "Other"} · ` : ""}
-                          {NOT_AVAILABLE}
+                          {CLM_NOT_COLLECTED}
                         </span>
                       )
                     }
@@ -749,22 +773,6 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
                   renderDetail={(s) => <IdpTestLine source={s} />}
                 />
               ))}
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-zinc-200 dark:border-zinc-800 px-4 py-3">
-                <div className="min-w-0">
-                  <span className="text-sm font-medium text-zinc-900 dark:text-white">ADFS</span>
-                  <span className="ml-1.5 text-xs text-zinc-500 break-words">
-                    add its SAML metadata URL below (
-                    <span className="font-mono break-all">https://your-adfs/FederationMetadata/2007-06/FederationMetadata.xml</span>); the
-                    Windows servers you add are read for their certificate stores and TLS settings, nothing ADFS-specific
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <StatusBadge tone="zinc">Metadata URL</StatusBadge>
-                  <Button variant="outline" size="sm" className="cursor-pointer" onClick={() => onNavigate("servers")}>
-                    Servers
-                  </Button>
-                </div>
-              </div>
             </div>
             <MetadataUrls
               teamId={teamId}
@@ -974,6 +982,21 @@ function ValidationPanel({ view, pending, provider, awsNotConfigured = false }: 
                 <StatusBadge tone="blue">Found</StatusBadge>
               </span>
               <span className="text-sm text-zinc-900 dark:text-white">{pluralize(view.memberAccounts, "member account")}</span>
+            </li>
+          )}
+          {orgEstimateLines(view.estimate) && (
+            <li className="flex items-start gap-2 py-2.5" data-testid="aws-org-estimate">
+              <span className="w-16 shrink-0">
+                <StatusBadge tone={view.estimate?.changed_from ? "amber" : "blue"}>Charge</StatusBadge>
+              </span>
+              <span className="min-w-0">
+                <span className="block text-sm text-zinc-900 dark:text-white">{orgEstimateLines(view.estimate)?.estimate}</span>
+                {orgEstimateLines(view.estimate)?.change && (
+                  <span className="block text-xs text-amber-700 dark:text-amber-300">
+                    {orgEstimateLines(view.estimate)?.change}. Every member account is read and charged; scheduled runs use this estimate.
+                  </span>
+                )}
+              </span>
             </li>
           )}
         </ul>
@@ -2026,6 +2049,7 @@ function ConnectorRow({
   onTest,
   onDelete,
   renderDetail,
+  headerStatus,
 }: {
   testId: string;
   label: string;
@@ -2039,6 +2063,8 @@ function ConnectorRow({
   onTest: (s: CbomSource) => void;
   onDelete: (s: CbomSource) => void;
   renderDetail: (s: CbomSource) => ReactNode;
+  /** replaces "Connected" (a CA a scan node reads shows its one derived status; a CA nothing reads says so) */
+  headerStatus?: ReactNode;
 }) {
   const connected = sources.length > 0;
   return (
@@ -2051,7 +2077,7 @@ function ConnectorRow({
         <div className="flex items-center gap-2">
           {connected ? (
             <>
-              <StatusBadge tone="green">Connected</StatusBadge>
+              {headerStatus ?? <StatusBadge tone="green">Connected</StatusBadge>}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="icon" className="cursor-pointer" aria-label={`Manage ${label}`} data-testid={`${testId}-manage`}>
@@ -2112,21 +2138,33 @@ function ConnectorRow({
   );
 }
 
-/** AD CS is tested by its scan node: show the queued job and why it waits, then the result. */
-function NodeTestLine({ teamId, source }: { teamId: number; source: CbomSource }) {
+function CaStatusBadge({ status }: { status: CaCardStatus }) {
+  return (
+    <StatusBadge tone={status.tone} title={status.detail ?? undefined}>
+      {status.kind === "testing" && <Loader2 className="animate-spin" />}
+      {status.label}
+    </StatusBadge>
+  );
+}
+
+/** A CA read by a scan node: one status, from the newer of its last test and its last collection (caCardStatus); the
+ *  queued test job and why it waits while a test is pending. The row header shows the same status (the worst one when
+ *  the row has several sources), so this line repeats it only then. */
+function NodeTestLine({ teamId, source, showStatus }: { teamId: number; source: CbomSource; showStatus: boolean }) {
   const pendingJobId = source.last_test_status === "pending" ? source.last_test_job_id : null;
   const job = usePolledJob(teamId, pendingJobId);
-  const samples = source.last_test_result?.samples ?? [];
+  const status = caCardStatus(source);
+  const samples = status.basis === "test" ? source.last_test_result?.samples ?? [] : [];
   return (
     <div className="space-y-1">
       <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
         <span>through {source.node_name ?? "a scan node that was removed"}</span>
-        {pendingJobId && job.data ? <JobStatusBadge status={job.data.status} /> : <TestStatusBadge status={source.last_test_status} title={source.last_test_summary} />}
+        {pendingJobId && job.data ? <JobStatusBadge status={job.data.status} /> : showStatus && <CaStatusBadge status={status} />}
       </div>
       {pendingJobId ? (
         <p className="text-xs text-zinc-500">{job.data?.waiting_reason ?? source.last_test_summary ?? "Waiting for the scan node"}</p>
       ) : (
-        source.last_test_summary && <p className="text-xs text-zinc-500">{source.last_test_summary}</p>
+        status.detail && <p className="text-xs text-zinc-500 break-words" data-testid="cloud-ca-status-detail">{status.detail}</p>
       )}
       {!pendingJobId && samples.length > 0 && (
         <ul className="text-xs text-zinc-600 dark:text-zinc-400">
@@ -2174,7 +2212,6 @@ function CaDialog({
   const [password, setPassword] = useState("");
   const [awsSourceId, setAwsSourceId] = useState<number | null>(cfgNumber(source, "aws_source_id") ?? (awsSources.length === 1 ? awsSources[0].id : null));
   const [apiUrl, setApiUrl] = useState(cfgString(source, "api_url"));
-  const [apiKey, setApiKey] = useState("");
   const [token, setToken] = useState("");
   const [clientCert, setClientCert] = useState("");
   const [clientKey, setClientKey] = useState("");
@@ -2185,7 +2222,6 @@ function CaDialog({
   const isEjbca = provider === "ejbca";
   const onNode = NODE_CA_PROVIDERS.has(provider);
   const passwordSet = !!source?.secrets_set.includes("password");
-  const apiKeySet = !!source?.secrets_set.includes("api_key");
   const tokenSet = !!source?.secrets_set.includes("token");
   const certSet = !!source?.secrets_set.includes("client_cert") && !!source?.secrets_set.includes("client_key");
   const policy = useQuery({
@@ -2214,8 +2250,7 @@ function CaDialog({
         if (isEjbca && clientCert.trim()) secrets.client_cert = clientCert.trim() + "\n";
         if (isEjbca && clientKey.trim()) secrets.client_key = clientKey.trim() + "\n";
       } else {
-        config.api_url = apiUrl.trim();
-        if (apiKey) secrets.api_key = apiKey;
+        config.api_url = apiUrl.trim(); // no collector: no key is asked for or sent (a stored one is dropped on save)
       }
       const body = { name: name.trim(), config, secrets, test_after_save: test, ...(onNode && nodeId ? { node_id: nodeId } : {}) };
       return source
@@ -2257,8 +2292,6 @@ function CaDialog({
         next.clientKey = clientKey.trim()
           ? clientKey.includes("PRIVATE KEY-----") && !clientKey.includes("ENCRYPTED PRIVATE KEY") ? null : "Paste the unencrypted PEM private key"
           : need ? "Paste the PEM private key of the client certificate" : null;
-      } else {
-        next.apiKey = apiKey || (apiKeySet && !whereChanged) ? null : apiKeySet ? "Re-enter the API key: it is cleared when the address changes" : "Enter the API key";
       }
     }
     setErrors(next);
@@ -2283,7 +2316,7 @@ function CaDialog({
                   ? "A scan node reads the CAs and certificate profiles through the EJBCA REST API, signing in with a client certificate."
                   : isAwsCa
                     ? "Read through the read-only role of a connected AWS account. No new credential is needed."
-                    : "Not collected yet: ZeroShield only stores the API address and key. Nothing is read from it and it is never charged."}
+                    : CLM_NOT_COLLECTED}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
@@ -2444,19 +2477,6 @@ function CaDialog({
             </Field>
           )}
 
-          {!onNode && !isAwsCa && (
-            <SecretField
-              id="ca-api-key"
-              label="API key"
-              value={apiKey}
-              onChange={setApiKey}
-              isSet={apiKeySet}
-              required
-              error={errors.apiKey}
-              hint={apiKeySet ? "Saved. Leave blank to keep it; changing the address clears it." : STORED_HINT}
-            />
-          )}
-          {!onNode && <p className="text-xs text-zinc-500">{NOT_AVAILABLE}</p>}
         </div>
         <DialogFooter>
           <Button variant="outline" className="cursor-pointer" onClick={onClose}>
@@ -2514,6 +2534,7 @@ function IdpDialog({
   const [secret, setSecret] = useState("");
   const [errors, setErrors] = useState<Record<string, string | null>>({});
   const secretName = provider === "okta" ? "api_token" : "client_secret";
+  const asksSecret = provider !== "adfs"; // backend kinds._idp_secrets: ADFS stores none
   const secretLabel = provider === "okta" ? "API token" : "Client secret";
   const secretSet = !!source?.secrets_set.includes(secretName);
 
@@ -2521,9 +2542,9 @@ function IdpDialog({
     mutationFn: () => {
       const config: Record<string, unknown> = { provider };
       if (provider === "entra_id") Object.assign(config, { tenant_id: tenantId.trim().toLowerCase(), client_id: clientId.trim() });
-      if (provider === "okta") Object.assign(config, { base_url: baseUrl.trim() });
+      if (provider === "okta" || provider === "adfs") Object.assign(config, { base_url: baseUrl.trim() });
       if (provider === "keycloak") Object.assign(config, { base_url: baseUrl.trim(), realm: realm.trim(), client_id: clientId.trim() });
-      const body = { name: name.trim(), config, secrets: secret ? { [secretName]: secret } : {} };
+      const body = { name: name.trim(), config, secrets: asksSecret && secret ? { [secretName]: secret } : {} };
       return source
         ? updateCbomSource(teamId, source.id, { ...body, expected_version: source.row_version })
         : createCbomSource(teamId, { kind: "idp", ...body });
@@ -2542,6 +2563,8 @@ function IdpDialog({
       next.client = clientId.trim() ? null : "Enter the application (client) ID";
     } else if (provider === "okta") {
       next.baseUrl = httpsUrlError(baseUrl, "Okta domain");
+    } else if (provider === "adfs") {
+      next.baseUrl = httpsUrlError(baseUrl, "ADFS server address");
     } else {
       next.baseUrl = httpsUrlError(baseUrl, "Keycloak base URL");
       next.realm = realm.trim() ? null : "Enter the realm";
@@ -2564,7 +2587,9 @@ function IdpDialog({
               ? "ZeroShield reads this tenant's public OpenID and federation metadata: its signing keys and certificates. No permission is needed; the application ID is kept for API reads that are not built yet."
               : provider === "okta"
                 ? "ZeroShield reads your Okta org's public OpenID metadata: its signing keys. No API token is needed or used yet."
-                : "ZeroShield reads the realm's public OpenID and SAML metadata: its signing keys and certificates. The client ID is kept for API reads that are not built yet."}
+                : provider === "adfs"
+                  ? `ZeroShield reads your ADFS server's public OpenID metadata (${ADFS_OIDC_PATH}) and federation metadata (${ADFS_METADATA_PATH}): its token-signing keys and certificates. No permission is needed. The Windows servers you add are read for their certificate stores and TLS settings, nothing ADFS-specific.`
+                  : "ZeroShield reads the realm's public OpenID and SAML metadata: its signing keys and certificates. The client ID is kept for API reads that are not built yet."}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
@@ -2584,14 +2609,19 @@ function IdpDialog({
               />
             </Field>
           )}
-          {(provider === "okta" || provider === "keycloak") && (
-            <Field label={provider === "okta" ? "Okta domain" : "Base URL"} htmlFor="idp-base" required error={errors.baseUrl}>
+          {(provider === "okta" || provider === "keycloak" || provider === "adfs") && (
+            <Field
+              label={provider === "okta" ? "Okta domain" : provider === "adfs" ? "ADFS server address" : "Base URL"}
+              htmlFor="idp-base"
+              required
+              error={errors.baseUrl}
+            >
               <Input
                 id="idp-base"
                 value={baseUrl}
                 maxLength={512}
                 spellCheck={false}
-                placeholder={provider === "okta" ? "https://example.okta.com" : "https://sso.example.com"}
+                placeholder={provider === "okta" ? "https://example.okta.com" : provider === "adfs" ? "https://adfs.example.com" : "https://sso.example.com"}
                 onChange={(e) => setBaseUrl(e.target.value)}
               />
             </Field>
@@ -2606,7 +2636,7 @@ function IdpDialog({
               <Input id="idp-client" className="font-mono text-sm" value={clientId} maxLength={128} spellCheck={false} onChange={(e) => setClientId(e.target.value)} />
             </Field>
           )}
-          <SecretField
+          {asksSecret && <SecretField
             id="idp-secret"
             label={secretLabel}
             value={secret}
@@ -2614,7 +2644,7 @@ function IdpDialog({
             isSet={secretSet}
             error={errors.secret}
             hint={secretSet ? "Saved. Leave blank to keep it; changing the address or IDs clears it." : `Optional. ${IDP_HOW}`}
-          />
+          />}
         </div>
         <DialogFooter>
           <Button variant="outline" className="cursor-pointer" onClick={onClose}>
@@ -2714,8 +2744,11 @@ function MetadataUrls({
           {sources.map((s) => (
             <li key={s.id} className="rounded-md border border-zinc-200 dark:border-zinc-800 px-3 py-2 space-y-1">
               <div className="flex items-center gap-2">
-                <StatusBadge tone="zinc">{METADATA_LABEL[s.config?.provider as MetadataProvider] ?? "Metadata"}</StatusBadge>
-                <Truncate className="flex-1 min-w-0 font-mono text-xs text-zinc-700 dark:text-zinc-300" text={cfgString(s, "metadata_url")} />
+                <StatusBadge tone="zinc">{METADATA_LABEL[s.config?.provider as MetadataProvider] ?? (cfgString(s, "provider") || "Identity provider")}</StatusBadge>
+                <Truncate
+                  className="flex-1 min-w-0 font-mono text-xs text-zinc-700 dark:text-zinc-300"
+                  text={cfgString(s, "metadata_url") || cfgString(s, "base_url") || s.name}
+                />
                 <Button
                   variant="outline"
                   size="sm"

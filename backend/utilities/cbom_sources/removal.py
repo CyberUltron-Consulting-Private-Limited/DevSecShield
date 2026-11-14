@@ -23,7 +23,12 @@ def remove_source(session: Session, source: CbomCollectionSource, team_id: int, 
                   reason: str = "Source deleted") -> None:
     J.cancel_open_jobs(session, source, now, reason=reason)
     J.stop_discoveries_using(session, source, now, "A range in this discovery was deleted")
-    for job in session.exec(select(CbomCollectionJob).where(CbomCollectionJob.source_id == source.id)).all():
+    # F1 slices (thousands per AWS organisation run) are unlinked in one statement; their parent keeps the identity
+    session.exec(update(CbomCollectionJob).where(  # type: ignore[call-overload]
+        CbomCollectionJob.source_id == source.id, CbomCollectionJob.parent_job_id.is_not(None))  # type: ignore[union-attr]
+        .values(source_id=None))
+    for job in session.exec(select(CbomCollectionJob).where(CbomCollectionJob.source_id == source.id,
+                                                            CbomCollectionJob.parent_job_id.is_(None))).all():  # type: ignore[union-attr]
         job.params = {**(job.params or {}), "source_name": source.name, "source_kind": source.kind,
                       "source_uid": (job.params or {}).get("source_uid") or source.source_uid}
         job.source_id = None
