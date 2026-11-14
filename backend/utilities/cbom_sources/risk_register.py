@@ -50,7 +50,7 @@ REGRADE_BATCH = 2000
 LIMIT_MAX = 500
 CSV_COLUMNS = ("item_key", "q_grade", "q_label", "q_reason", "label", "asset_type", "family", "exposure",
                "source_name", "application", "presence", "sources", "last_run_id", "last_observed_at",
-               "model_version")
+               "model_version", "owners", "data_classification")
 _RT = CbomRiskRegister.__table__
 
 
@@ -436,6 +436,18 @@ def _where(team_id: int, f: dict[str, Any]) -> list[Any]:
     return cond
 
 
+def _add_business(session: Session, team_id: int, items: list[dict[str, Any]]) -> None:
+    """Engine step 3: each row's owners and the data classification of the systems its asset sits in (its sources'
+    current metadata, ``estate_links.business``; no scan is read)."""
+    from backend.utilities.cbom_sources import estate_links as LINKS
+
+    biz = LINKS.business(session, team_id, [i["item_key"] for i in items])
+    for item in items:
+        b = biz.get(item["item_key"]) or {}
+        item["owners"] = b.get("owners", [])
+        item["data_classification"] = b.get("data_classification")
+
+
 def public_row(r: Any) -> dict[str, Any]:
     from backend.utilities.cbom_sources.qgrade import LABELS
 
@@ -459,7 +471,9 @@ def list_register(session: Session, team_id: int, filters: dict[str, Any], *, af
     rows = rows[:limit]
     total = None if after is not None else int(session.execute(
         sa.select(sa.func.count()).select_from(_RT).where(*_where(team_id, filters))).scalar_one())
-    return {"items": [public_row(r) for r in rows], "total": total,
+    items = [public_row(r) for r in rows]
+    _add_business(session, team_id, items)
+    return {"items": items, "total": total,
             "next_after": encode_after(rows[-1].q_rank, rows[-1].item_key) if more and rows else None}
 
 
@@ -598,7 +612,9 @@ def get_item(session: Session, team_id: int, key: str) -> dict[str, Any] | None:
     gaps = session.exec(select(CbomQ0Gap).where(CbomQ0Gap.team_id == team_id,
                                                 CbomQ0Gap.item_key == f"asset:{key}")
                         .order_by(CbomQ0Gap.opened_at.desc())).all()  # type: ignore[union-attr,attr-defined]
-    return {"item": public_row(row), "observations": sorted(observations, key=lambda o: o["source_ref"]),
+    item = public_row(row)
+    _add_business(session, team_id, [item])
+    return {"item": item, "observations": sorted(observations, key=lambda o: o["source_ref"]),
             "q0_gaps": [public_gap(g, _dt.datetime.utcnow()) for g in gaps]}
 
 
@@ -621,7 +637,8 @@ def csv_rows(engine, team_id: int, filters: dict[str, Any], *, batch: int = 1000
         buf.seek(0)
         buf.truncate()
         for item in page["items"]:
-            writer.writerow([_csv_cell(item.get(c)) for c in CSV_COLUMNS])
+            writer.writerow([_csv_cell("; ".join(v) if isinstance(v := item.get(c), list) else v)
+                             for c in CSV_COLUMNS])
         yield buf.getvalue().encode()
         if not page["next_after"]:
             return

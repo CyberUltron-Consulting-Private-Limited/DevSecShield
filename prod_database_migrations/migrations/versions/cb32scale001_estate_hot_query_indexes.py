@@ -1,7 +1,7 @@
 """cbom store at scale (CB-32): indexes for the estate store's hot queries at 1.5M assets per team
 
 Revision ID: cb32scale001
-Revises: cb226apikey001
+Revises: cb31opsctr001
 Create Date: 2026-11-15 10:00:00.000000
 
 Measured on PostgreSQL 15 with 1.5M assets (``bench/cb32_store_scale/bench.py``):
@@ -30,7 +30,7 @@ import sqlalchemy as sa
 
 
 revision: str = 'cb32scale001'
-down_revision: Union[str, Sequence[str], None] = 'cb226apikey001'
+down_revision: Union[str, Sequence[str], None] = 'cb31opsctr001'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

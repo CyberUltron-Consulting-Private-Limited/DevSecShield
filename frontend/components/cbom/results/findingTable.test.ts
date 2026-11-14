@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 
 import {
   columnPrefsKey,
+  columnsForUser,
   defaultColumns,
   FINDING_DIALOG_BODY,
   FINDING_DIALOG_CONTENT,
@@ -58,7 +59,8 @@ assert.deepEqual(toggleColumn(RUN_TABLE_COLUMNS, ["status"], "status"), ["status
 
 // per-user, per-table key
 assert.equal(columnPrefsKey("run", " Ana@Example.COM "), "dss.cbom.results.columns.v1.run.ana@example.com");
-assert.equal(columnPrefsKey("scan", null), "dss.cbom.results.columns.v1.scan._");
+assert.equal(columnPrefsKey("scan", null), null, "no key (nothing read or stored) until the user is known");
+assert.equal(columnPrefsKey("scan", "  "), null);
 assert.notEqual(columnPrefsKey("run", "a@x.io"), columnPrefsKey("run", "b@x.io"));
 assert.notEqual(columnPrefsKey("run", "a@x.io"), columnPrefsKey("scan", "a@x.io"));
 
@@ -68,11 +70,11 @@ const mem = (): PrefsStorage & { data: Map<string, string> } => {
   return { data, getItem: (k) => data.get(k) ?? null, setItem: (k, v) => void data.set(k, v) };
 };
 const s = mem();
-const key = columnPrefsKey("run", "a@x.io");
+const key = columnPrefsKey("run", "a@x.io")!;
 assert.deepEqual(loadColumns(s, key, RUN_TABLE_COLUMNS), defaultColumns(RUN_TABLE_COLUMNS), "nothing stored");
 assert.equal(saveColumns(s, key, ["impact", "wave"]), true);
 assert.deepEqual(loadColumns(s, key, RUN_TABLE_COLUMNS), ["impact", "wave"], "stored choice comes back");
-assert.deepEqual(loadColumns(s, columnPrefsKey("run", "b@x.io"), RUN_TABLE_COLUMNS), defaultColumns(RUN_TABLE_COLUMNS), "other user unaffected");
+assert.deepEqual(loadColumns(s, columnPrefsKey("run", "b@x.io")!, RUN_TABLE_COLUMNS), defaultColumns(RUN_TABLE_COLUMNS), "other user unaffected");
 s.data.set(key, "{not json");
 assert.deepEqual(loadColumns(s, key, RUN_TABLE_COLUMNS), defaultColumns(RUN_TABLE_COLUMNS), "corrupt JSON");
 const throwing: PrefsStorage = {
@@ -84,11 +86,22 @@ assert.equal(saveColumns(throwing, key, ["impact"]), false, "full storage: not s
 assert.deepEqual(loadColumns(null, key, RUN_TABLE_COLUMNS), defaultColumns(RUN_TABLE_COLUMNS), "no storage (SSR)");
 assert.equal(saveColumns(undefined, key, ["impact"]), false);
 
+// a choice made before the profile loaded (memory only) is stored under the user's key once known; else the stored one
+const s2 = mem();
+const k2 = columnPrefsKey("run", "late@x.io")!;
+s2.data.set(k2, JSON.stringify(["impact"]));
+assert.deepEqual(columnsForUser(s2, k2, RUN_TABLE_COLUMNS, null), ["impact"], "no early change: the stored choice");
+assert.deepEqual(columnsForUser(s2, k2, RUN_TABLE_COLUMNS, ["wave", "impact"]), ["impact", "wave"], "early change wins, in table order");
+assert.equal(s2.data.get(k2), JSON.stringify(["impact", "wave"]), "and is stored under the user's key");
+assert.ok(![...s2.data.keys()].some((k) => k.endsWith("._")), "never a shared device key");
+assert.deepEqual(columnsForUser(throwing, k2, RUN_TABLE_COLUMNS, ["wave"]), ["wave"], "blocked storage: kept in memory");
+
 // ------------------------------------------------------------------ #267 row opens the finding dialog
 let opened = 0;
 let prevented = 0;
 const row = { closest: () => row };
-const props = rowOpenProps(() => { opened += 1; }, "Open details of RSA");
+let selection = "";
+const props = rowOpenProps(() => { opened += 1; }, "Open details of RSA", () => selection);
 const ev = (o: Partial<{ key: string; target: unknown }>) =>
   ({ key: o.key, target: o.target ?? row, currentTarget: row, preventDefault: () => { prevented += 1; } });
 assert.equal(props.tabIndex, 0, "the row is a tab stop");
@@ -104,6 +117,10 @@ assert.equal(opened, 1, "a click on a control in the row keeps its own action");
 props.onClick(ev({ target: {} }));
 assert.equal(opened, 2, "a target without closest (text node) still opens");
 
+selection = "10.0.0.5:443";
+props.onClick(ev({ target: cell }));
+assert.equal(opened, 2, "a click that ends a text selection in the row (to copy it) does not open");
+selection = "";
 props.onKeyDown(ev({ key: "Enter" }));
 props.onKeyDown(ev({ key: " " }));
 assert.equal(opened, 4, "Enter and Space on the focused row open");
