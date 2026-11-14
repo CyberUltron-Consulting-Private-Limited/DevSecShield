@@ -1,8 +1,9 @@
 /**
  * Input checks and words for never-scan entries (the server is the authority), shared by the Network tab's team list,
- * its range sources and the Servers tab's source lists. The team list takes addresses and ranges only: the settings
- * API refuses a host name there with a 422, because on the scan node a listed name that does not resolve holds every
- * job of the team (fail closed).
+ * its range sources and the Servers tab's source lists. The team list takes addresses, ranges and host names (N2, 14 Nov
+ * 2026): the scan node resolves a listed name with the resolver it scans with and keeps every address it answers out of
+ * range sweeps, discovery and name targets. Fail closed: until the name resolves from the node, the node cannot tell
+ * which address is that host, so it scans nothing (every job of the team waits); each stored name says so on its row.
  */
 
 export const HOST_LABEL_RE = /^[a-z0-9_]([a-z0-9_-]{0,61}[a-z0-9_])?$/;
@@ -62,17 +63,6 @@ export function readsAsHostName(text: string): boolean {
 }
 
 /**
- * The settings API's own words for a host name in the team list (its 422 detail after "network_exclusions: "). One
- * template on both sides: backend utilities/cbom_sources/targets.py HOST_NAME_NOT_ALLOWED, compared with this one by
- * backend/tests/test_never_scan_node_agreement.py. Keep it one JSON-style string on one line.
- */
-export const HOST_NAME_NOT_ALLOWED = "{entry} is not an address or range (it reads as a host name); the team never-scan list takes addresses and ranges only. List host names in a server source's own Never scan field";
-
-export function hostNameNotAllowed(text: string): string {
-  return HOST_NAME_NOT_ALLOWED.replace("{entry}", () => text.trim());
-}
-
-/**
  * Names that are loopback by definition (RFC 6761 section 6.3: localhost and every name under .localhost; and the
  * loopback aliases of the default hosts files). On the scan node such a never-scan entry blocks 127.0.0.0/8 and ::1
  * and nothing else: it is never looked up and never holds a target. Same set as the node (netutil.LOOPBACK_NAMES) and
@@ -85,25 +75,32 @@ export function isLoopbackName(text: string): boolean {
   return LOOPBACK_NAMES.has(name) || name.endsWith(".localhost");
 }
 
-/** Why a typed team never-scan entry cannot be added, or null. */
+/**
+ * A "host name" made only of digits, dots, dashes and slashes (or a 0x number) is a mistyped address or range, never a
+ * host the team means: listed as a name it would never resolve and would hold every job of the team. Same rule as the
+ * settings API (backend targets.ADDRESS_TYPO).
+ */
+export const ADDRESS_TYPO = /^(?:[0-9./-]+|0x[0-9a-f]+)$/i;
+
+/** Why a typed team never-scan entry cannot be added, or null: an address, a range or a host name is accepted. */
 export function teamExclusionError(raw: string): string | null {
   const error = rangeError(raw, false);
   if (error === null) return null;
-  return readsAsHostName(raw) ? hostNameNotAllowed(raw) : error;
+  return readsAsHostName(raw) && !ADDRESS_TYPO.test(raw.trim().replace(/\.$/, "")) ? null : error;
 }
 
 /** The hint under a server source's own Never scan field (ServersTab): what a listed name does on the scan node. */
 export const SOURCE_NEVER_SCAN_HINT =
   "IP addresses, ranges or hostnames, one per line or separated by commas. A listed hostname also covers every address it resolves to from the scan node; until it resolves there (an answer of only 0.0.0.0 or a loopback address does not count), none of these targets is scanned. localhost, names under .localhost and the other standard loopback names (ip6-localhost, localhost4, localhost.localdomain ...) are not looked up: they cover only 127.0.0.0/8 and ::1. A target name is skipped if any address it resolves to is listed; ranges are checked one address at a time. Never-scan always wins.";
 
-/** Why a team never-scan entry already stored is a problem (a host name saved before the API refused them), or null. */
+/** What a host name in the team list does on the scan node (shown on its row), or null for an address or range. */
 export function storedExclusionIssue(cidr: string): string | null {
   if (!readsAsHostName(cidr)) return null;
   if (isLoopbackName(cidr)) {
-    // the node takes such a name as the loopback addresses: it holds nothing (re-review 5879769432)
-    return "On the scan node this name only keeps the loopback addresses (127.0.0.0/8 and ::1) out; nothing is held. This list takes addresses and ranges only, so saving it is refused. Remove it, or list 127.0.0.0/8 and ::1 instead.";
+    // the node takes such a name as the loopback addresses: it is never looked up and holds nothing
+    return "On the scan node this name keeps only the loopback addresses (127.0.0.0/8 and ::1) out; it is never looked up, so nothing is held.";
   }
-  return "Until this name resolves from the scan node it holds every job of this team (nothing is scanned), and saving the list is refused. Remove it; list host names in a server source's own Never scan field.";
+  return "The scan node resolves this name and never connects to any address it answers, in range sweeps too. Until it resolves from the node, the node cannot tell which address is this host, so it scans nothing: every job of this team waits, and the job results name the name.";
 }
 
 /** The never-scan part of a refused settings save (400/422 whose detail names network_exclusions), shown inline. */
@@ -114,3 +111,11 @@ export function exclusionSaveError(error: unknown): string | null {
   const prefix = "network_exclusions: ";
   return detail.startsWith(prefix) ? detail.slice(prefix.length) : null;
 }
+
+/**
+ * What the node sweeps for a range (N3, 14 Nov 2026; scan_node netutil.HOST_ONLY_MAX_PREFIX, backend
+ * targets.scanned_interval): a /24 or larger leaves out its own network and broadcast address, a /25 or smaller is
+ * scanned whole, so a /24 split into two /25s still scans .127 and .128.
+ */
+export const RANGE_HINT =
+  "A /16 or smaller, one IP, or a-b. A /24 or larger skips its network and broadcast addresses; a /25 or smaller (half of a split /24, say) is scanned whole.";

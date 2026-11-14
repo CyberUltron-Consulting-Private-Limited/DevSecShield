@@ -20,6 +20,8 @@ import {
   type BaselineSystem,
 } from "./baseline";
 import { FIX_LABEL, FIX_VALUES, type AgilityModel, type FixValue } from "./model";
+import { fixClassTipId } from "./tips";
+import { InfoTip } from "@/components/ui/info-tip";
 
 export interface DrillDown {
   fixClass: string | null;
@@ -41,12 +43,12 @@ export function AgilitySystemsTable({ systems, onOpen }: {
       <table className="w-full text-xs" data-testid="agility-baseline-systems">
         <thead>
           <tr className="text-left text-zinc-500 dark:text-zinc-400">
-            <th className="py-1 pr-3 font-normal">System</th>
+            <th className="py-1 pr-3 font-normal">System <InfoTip id="cbom.agility.system" /></th>
             <th className="py-1 pr-3 font-normal text-right">Assets</th>
-            <th className="py-1 pr-3 font-normal">Hardest</th>
-            <th className="py-1 pr-3 font-normal text-right">Self-fixable</th>
+            <th className="py-1 pr-3 font-normal">Hardest <InfoTip id="cbom.agility.hardest" /></th>
+            <th className="py-1 pr-3 font-normal text-right">Self-fixable <InfoTip id="cbom.agility.system_self_fixable" /></th>
             {FIX_VALUES.map((v) => (
-              <th key={v} className="py-1 pr-3 font-normal text-right whitespace-nowrap">{FIX_LABEL[v]}</th>
+              <th key={v} className="py-1 pr-3 font-normal text-right whitespace-nowrap">{FIX_LABEL[v]}{fixClassTipId(v) && <> <InfoTip id={fixClassTipId(v)!} /></>}</th>
             ))}
           </tr>
         </thead>
@@ -98,10 +100,10 @@ export function AgilitySubjectsTable({ items }: { items: AgilitySubject[] }) {
         <thead>
           <tr className="text-left text-zinc-500 dark:text-zinc-400">
             <th className="py-1 pr-3 font-normal">Asset</th>
-            <th className="py-1 pr-3 font-normal">Fix class</th>
-            <th className="py-1 pr-3 font-normal">Why</th>
-            <th className="py-1 pr-3 font-normal">System</th>
-            <th className="py-1 font-normal text-right">Seen by</th>
+            <th className="py-1 pr-3 font-normal">Fix class <InfoTip id="cbom.agility.section" /></th>
+            <th className="py-1 pr-3 font-normal">Why <InfoTip id="cbom.agility.why_codes" /></th>
+            <th className="py-1 pr-3 font-normal">System <InfoTip id="cbom.agility.system" /></th>
+            <th className="py-1 font-normal text-right">Seen by <InfoTip id="cbom.agility.seen_by" /></th>
           </tr>
         </thead>
         <tbody>
@@ -218,11 +220,13 @@ function DrillDownPanel({ teamId, drill, onChange, onClose }: {
           <option value="">Every class</option>
           {FIX_VALUES.map((v) => <option key={v} value={v}>{FIX_LABEL[v]}</option>)}
         </select>
+        <InfoTip id="cbom.agility.drill" />
         <label className="inline-flex items-center gap-1">
           <input type="checkbox" checked={drill.view === "excl_pq"}
                  onChange={(e) => onChange({ ...drill, view: e.target.checked ? "excl_pq" : "all" })} />
           Excluding post-quantum
         </label>
+        <InfoTip id="cbom.agility.excl_pq" />
         {drill.system && <button type="button" className={BTN} onClick={() => onChange({ ...drill, system: null })}>All systems</button>}
         <button type="button" className={BTN} onClick={onClose} data-testid="agility-baseline-drill-close">Close</button>
       </div>
@@ -259,7 +263,7 @@ export function AgilityBaselineSection({ teamId }: { teamId: number }) {
   return (
     <section className="space-y-3 rounded-lg border border-zinc-200 dark:border-zinc-800 p-4 min-w-0" aria-labelledby="agility-baseline-title">
       <div>
-        <h2 id="agility-baseline-title" className="text-base font-semibold text-zinc-900 dark:text-white">Agility baseline</h2>
+        <h2 id="agility-baseline-title" className="text-base font-semibold text-zinc-900 dark:text-white">Agility baseline <InfoTip id="cbom.agility.baseline" /></h2>
         <p className="text-xs text-zinc-500 dark:text-zinc-400">Asset, system and enterprise agility by fix class: how much of the estate the team can fix itself.</p>
       </div>
       {query.isError ? (

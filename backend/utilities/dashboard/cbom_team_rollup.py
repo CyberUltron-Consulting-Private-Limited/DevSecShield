@@ -721,6 +721,9 @@ class TeamCbomView:
     # quantum-vulnerable assets of each collection source's latest complete run); None = not loaded (hand-made views)
     # Not part of the fold: excluded from equality and repr (a DB-loaded view equals the in-memory fold of its scans).
     remediation: dict[str, Any] | None = field(default=None, compare=False, repr=False)
+    # the team's quantum risk register (``cbom_sources.risk_register.report``: summary, heat-map, top Q1 items, open
+    # Q0 gaps) for deliverable #2; None = not loaded. Not part of the fold, like ``remediation``.
+    register: dict[str, Any] | None = field(default=None, compare=False, repr=False)
 
     @property
     def is_empty(self) -> bool:
@@ -3173,6 +3176,7 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
         fingerprint=digest, sources=tuple(source_rows), assets=tuple(assets), certs=tuple(certs), posture=posture,
         collections=tuple(sorted(aggs.values(), key=lambda a: (a.label.casefold(), a.key))), **_headline(live))
     merged.remediation = view.remediation
+    merged.register = view.register
     return merged
 
 
@@ -3242,6 +3246,13 @@ def load_team_cbom_view(engine: Any, team_id: int, *, now: datetime | None = Non
         except Exception as exc:  # pragma: no cover - defensive
             view.remediation = None
             view.warnings = (*view.warnings, f"remediation plan not loaded: {type(exc).__name__}")
+        try:  # the quantum risk register (CB-23) for its PDF; a failure prints the register as not loaded
+            from backend.utilities.cbom_sources.risk_register import report as register_report
+
+            view.register = register_report(session, team_id, moment.replace(tzinfo=None))
+        except Exception as exc:  # pragma: no cover - defensive
+            view.register = None
+            view.warnings = (*view.warnings, f"quantum risk register not loaded: {type(exc).__name__}")
         return view
 
 

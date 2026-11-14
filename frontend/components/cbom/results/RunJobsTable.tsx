@@ -10,6 +10,7 @@ import type { CbomJob, CbomPlanItem } from "@/utils/backend_api";
 
 import { addressProgress, credits } from "@/components/cbom/sources/logic";
 import { JobStatusBadge, Truncate } from "@/components/cbom/sources/shared";
+import { InfoTip } from "@/components/ui/info-tip";
 
 export function skipText(item: CbomPlanItem): string {
   const reason = item.reason ?? "Skipped";
@@ -23,13 +24,13 @@ export function RunJobsTable({ jobs, testIdPrefix = "review-job" }: { jobs: Cbom
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Source</TableHead>
-              <TableHead>Runs on</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Assets</TableHead>
-              <TableHead className="text-right">Credits</TableHead>
-              <TableHead className="text-right">Attempts</TableHead>
-              <TableHead>Error</TableHead>
+              <TableHead>Source <InfoTip id="cbsrc.rr.job.source" /></TableHead>
+              <TableHead>Runs on <InfoTip id="cbsrc.rr.job.runs_on" /></TableHead>
+              <TableHead>Status <InfoTip id="cbsrc.rr.job.status" /></TableHead>
+              <TableHead className="text-right">Assets <InfoTip id="cbsrc.rr.job.assets" /></TableHead>
+              <TableHead className="text-right">Credits <InfoTip id="cbsrc.rr.job.credits" /></TableHead>
+              <TableHead className="text-right">Attempts <InfoTip id="cbsrc.rr.job.attempts" /></TableHead>
+              <TableHead>Error <InfoTip id="cbsrc.rr.job.error" /></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -75,7 +76,7 @@ export function SkippedAtStart({ items }: { items: CbomPlanItem[] }) {
   if (items.length === 0) return null;
   return (
     <div className="space-y-1.5" data-testid="run-skipped-at-start">
-      <p className="text-sm font-medium text-zinc-900 dark:text-white">Skipped when the run started</p>
+      <p className="text-sm font-medium text-zinc-900 dark:text-white">Skipped when the run started <InfoTip id="cbsrc.rr.skipped_start" /></p>
       <ul className="list-disc pl-5 space-y-1 text-sm text-zinc-600 dark:text-zinc-400">
         {items.map((item, index) => (
           <li key={`${item.source_id ?? item.name}-${index}`} className="break-words">

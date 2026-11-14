@@ -1,0 +1,147 @@
+"use client";
+
+import { Info } from "lucide-react";
+import { useRef, useState, type ReactNode } from "react";
+
+import { Label } from "@/components/ui/label";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { INFO_TIPS, type InfoTipEntry, type InfoTipId } from "@/content/infotips";
+import { cn } from "@/lib/utils";
+
+import { acceptRadixClose, openAfterClick, pressPointer, type PressPointer } from "./info-tip-logic";
+
+/** One tip open at a time: each shadcn Tooltip has its own provider, so focusing one tip and hovering another would
+ * otherwise show both. Opening a tip closes the one that was open. */
+let closeOpenTip: (() => void) | null = null;
+
+/**
+ * A small (i) button that explains the field, metric or setting next to it: what it is and an example.
+ * Text comes from the registry (content/infotips.ts) by a stable id: what it is, optionally why it matters, an example; the id is typed, so an unknown id fails tsc.
+ *
+ * Hover (mouse), keyboard focus and tap (touch) open it; Esc, blur, a tap outside and a second tap close it. The
+ * button is named "About <label>" and, while open, described by the tip's text (Radix aria-describedby). See
+ * info-tip-logic.ts for why the open state is controlled here.
+ */
+export function InfoTip({ id, side = "top", className }: { id: InfoTipId; side?: "top" | "right" | "bottom" | "left"; className?: string }) {
+  const tip = INFO_TIPS[id];
+  const [open, setOpenState] = useState(false);
+  const press = useRef<{ wasOpen: boolean; pointer: PressPointer } | null>(null);
+  const closeThis = useRef(() => setOpenState(false));
+  const setOpen = (next: boolean) => {
+    if (next && closeOpenTip && closeOpenTip !== closeThis.current) closeOpenTip();
+    if (next) closeOpenTip = closeThis.current;
+    else if (closeOpenTip === closeThis.current) closeOpenTip = null;
+    setOpenState(next);
+  };
+  // keyboard focus: set on a focus that no pointer press started, cleared on blur (see acceptRadixClose)
+  const keyboardFocus = useRef(false);
+  const pointerPressing = useRef(false);
+  const byEscape = useRef(false);
+  const onRadixOpenChange = (next: boolean) => {
+    if (!next && !acceptRadixClose(keyboardFocus.current, byEscape.current)) return;
+    byEscape.current = false;
+    setOpen(next);
+  };
+  return (
+    <Tooltip open={open} onOpenChange={onRadixOpenChange} delayDuration={150}>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label={`About ${tip.label}`}
+          data-infotip={id}
+          className={cn(
+            "inline-flex size-6 -my-1 shrink-0 cursor-help items-center justify-center rounded-full align-middle",
+            "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
+            className,
+          )}
+          onPointerDown={(e) => {
+            pointerPressing.current = true;
+            press.current = { wasOpen: open, pointer: pressPointer(e.pointerType) };
+          }}
+          onFocus={() => {
+            keyboardFocus.current = !pointerPressing.current;
+            pointerPressing.current = false;
+          }}
+          onBlur={() => {
+            keyboardFocus.current = false;
+            pointerPressing.current = false;
+          }}
+          onClick={(e) => {
+            // Radix closes the tooltip on click; preventDefault skips that, and the press decides instead.
+            e.preventDefault();
+            e.stopPropagation();
+            const p = press.current ?? { wasOpen: open, pointer: "keyboard" as const };
+            press.current = null;
+            pointerPressing.current = false;
+            setOpen(openAfterClick(p.wasOpen, p.pointer));
+          }}
+        >
+          <Info className="size-3.5" aria-hidden="true" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent
+        side={side}
+        sideOffset={4}
+        collisionPadding={12}
+        onEscapeKeyDown={() => {
+          byEscape.current = true;
+        }}
+        className="w-auto max-w-[min(20rem,calc(100vw-2rem))] text-left text-pretty px-3 py-2 leading-relaxed"
+      >
+        <InfoTipBody id={id} />
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+/** Text only: tooltip content cannot take focus (WAI-ARIA tooltip pattern), so it never holds a link or a button. */
+function InfoTipBody({ id }: { id: InfoTipId }) {
+  const tip: InfoTipEntry = INFO_TIPS[id];
+  return (
+    <span className="block space-y-1.5">
+      <span className="block">{tip.what}</span>
+      {tip.why && (
+        <span className="block">
+          <span className="font-semibold">Why it matters: </span>
+          {tip.why}
+        </span>
+      )}
+      <span className="block opacity-80">
+        <span className="font-semibold">Example: </span>
+        {tip.example}
+      </span>
+    </span>
+  );
+}
+
+/**
+ * A form label with its (i) tip. The tip sits beside the <label>, not inside it: a button inside a label would be
+ * read as part of the input's accessible name. `infoId` is required, so a field cannot be added without a tip.
+ */
+export function FieldLabel({
+  infoId,
+  htmlFor,
+  children,
+  className,
+  labelClassName,
+  required,
+}: {
+  /** Optional only for files the coverage test lists in NOT_YET_COVERED; every covered file must pass one. */
+  infoId?: InfoTipId;
+  htmlFor?: string;
+  children: ReactNode;
+  className?: string;
+  labelClassName?: string;
+  required?: boolean;
+}) {
+  return (
+    <div className={cn("flex items-center gap-1 min-w-0", className)}>
+      <Label htmlFor={htmlFor} className={labelClassName}>
+        {children}
+        {required && <span className="text-red-500">*</span>}
+      </Label>
+      {infoId && <InfoTip id={infoId} />}
+    </div>
+  );
+}
