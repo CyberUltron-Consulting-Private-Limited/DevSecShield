@@ -7,6 +7,11 @@
 #            STAGING_SSH_TARGET       user@host
 #   vars     STAGING_DIR              directory on the host (default /opt/devsecshield-staging) holding
 #                                     deploy/staging/.env, backend.env and certs/
+# Optional, for AWS collection (deploy/staging/README.md, "AWS collection on staging"): when set, each deploy writes
+# exactly these keys into the host's backend.env (staging.sh backend-env; over ssh's stdin, never logged; values
+# GitHub masks as secrets). Unset or empty: the host's value is left as it is.
+#   secrets  CBOM_AWS_ACCESS_KEY_ID, CBOM_AWS_SECRET_ACCESS_KEY, CBOM_AWS_PRINCIPAL_ARN
+#   var (or secret) CBOM_AWS_LAB_SAME_ACCOUNT   1 = lab mode (test deployments only), 0 = off
 #
 # Build identity (CB-03): with expose_build (default on) the frontend names its commit in <meta name="zs-build">, so
 # the merge gate's G0 can compare it with the API's /health build on staging; the API names it there when the host's
@@ -175,6 +180,10 @@ jobs:
           DSS_TAG: ${{ needs.build.outputs.tag }}
           STAGING_SSH_TARGET: ${{ secrets.STAGING_SSH_TARGET }}
           STAGING_DIR: ${{ vars.STAGING_DIR || '/opt/devsecshield-staging' }}
+          STAGING_SET_CBOM_AWS_ACCESS_KEY_ID: ${{ secrets.CBOM_AWS_ACCESS_KEY_ID }}
+          STAGING_SET_CBOM_AWS_SECRET_ACCESS_KEY: ${{ secrets.CBOM_AWS_SECRET_ACCESS_KEY }}
+          STAGING_SET_CBOM_AWS_PRINCIPAL_ARN: ${{ secrets.CBOM_AWS_PRINCIPAL_ARN }}
+          STAGING_SET_CBOM_AWS_LAB_SAME_ACCOUNT: ${{ vars.CBOM_AWS_LAB_SAME_ACCOUNT || secrets.CBOM_AWS_LAB_SAME_ACCOUNT }}
         run: |
           export SSH_OPTS="-i $HOME/.ssh/staging_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts"
           scripts/deploy/staging.sh push "$STAGING_SSH_TARGET" "$STAGING_DIR"

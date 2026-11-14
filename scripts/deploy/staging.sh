@@ -23,6 +23,10 @@
 #   staging.sh disk-plan <tag> [--archive-bytes N] [--need-bytes N]
 #                                        what disk-check and the deploy's retention would remove; removes nothing
 #   staging.sh check                     every service runs DSS_TAG's images and is up; health and hydration via nginx
+#   staging.sh backend-env               read KEY=VALUE lines on stdin and set exactly those keys in backend.env (only
+#                                        the BACKEND_ENV_KEYS below; empty values are skipped; never prints a value).
+#                                        `push` runs it just before `deploy` when STAGING_SET_<KEY> is set (CI: the
+#                                        staging environment's CBOM_AWS_* secrets; deploy/staging/README.md "AWS")
 #   staging.sh rollback [--allow-downgrade]
 #                                        back to the previously deployed tag and its own deploy files (compose file,
 #                                        nginx, this script). When that tag's migrations do not contain the database's
@@ -39,7 +43,9 @@
 #      STAGING_DISK_FACTOR (free space loading needs in the image store, times the archive size, when no .need was
 #      measured; default 3.3),
 #      STAGING_DISK_RESERVE_MB (left free on every filesystem after that; default 1024), STAGING_CONTAINERD_ROOT
-#      (containerd's root when Docker uses the containerd image store; default: found from the containerd config).
+#      (containerd's root when Docker uses the containerd image store; default: found from the containerd config),
+#      STAGING_SET_<KEY> for each of BACKEND_ENV_KEYS (push: set <KEY> in the host's backend.env; unset or empty:
+#      the host's value is left as it is).
 set -euo pipefail
 export LC_ALL=C # df, awk and sort read the same everywhere (an ssh session may forward the caller's LC_*)
 
@@ -76,6 +82,8 @@ DSS_REPOS=(devsecshield-backend devsecshield-frontend scan-worker dast-worker)
 # classic-store builder holds uncompressed layer tars and needs about 4x: set STAGING_DISK_FACTOR=4 for one.
 DEFAULT_DISK_FACTOR=3.3
 DEFAULT_DISK_RESERVE_MB=1024  # left free on every filesystem after the copy and the load (the host is shared)
+# The only backend.env keys a deploy may set (push -> backend-env): the AWS collector identity and the lab switch.
+BACKEND_ENV_KEYS=(CBOM_AWS_ACCESS_KEY_ID CBOM_AWS_SECRET_ACCESS_KEY CBOM_AWS_PRINCIPAL_ARN CBOM_AWS_LAB_SAME_ACCOUNT)
 
 log() { printf '[staging %s] %s\n' "$(date -u +%H:%M:%S)" "$*"; }
 die() { printf '[staging] ERROR: %s\n' "$*" >&2; exit 1; }
@@ -200,9 +208,67 @@ cmd_push() {
     && ${remote_env} scripts/deploy/staging.sh disk-check '${tag}' --archive-bytes ${bytes}${need_arg}"
   log "copying the archive ($(kib_h $(((bytes + 1023) / 1024)))) to ${target}:${dir}"
   scp "${ssh_opts[@]}" "${files[@]}" "${target}:${dir}/deploy/staging/images/"
+  # backend.env keys from STAGING_SET_<KEY> (CI: the staging environment's secrets) go over ssh's stdin, never on a
+  # command line or in the log; the host sets exactly those keys just before the deploy, which then reads them.
+  local key name set_env="" payload=""
+  for key in "${BACKEND_ENV_KEYS[@]}"; do
+    name="STAGING_SET_${key}"
+    if [[ -n "${!name:-}" ]]; then
+      payload+="${key}=${!name}"$'\n'
+    fi
+  done
+  [[ -z "${payload}" ]] || set_env="scripts/deploy/staging.sh backend-env && "
   # shellcheck disable=SC2029
-  ssh "${ssh_opts[@]}" "${target}" "cd '${dir}' \
-    && ${remote_env} STAGING_SERVICES='${STAGING_SERVICES:-}' scripts/deploy/staging.sh deploy '${tag}'"
+  printf '%s' "${payload}" | ssh "${ssh_opts[@]}" "${target}" "cd '${dir}' && ${set_env}\
+    ${remote_env} STAGING_SERVICES='${STAGING_SERVICES:-}' scripts/deploy/staging.sh deploy '${tag}' </dev/null"
+}
+
+# ------------------------------------------------------------------------------------------------ backend.env keys
+cmd_backend_env() { # stdin: KEY=VALUE lines; sets exactly those keys in backend.env, prints key names only
+  local file="${STAGING_DIR}/backend.env" line key value k known tmp changed=0
+  [[ -f "${file}" ]] || die "missing ${file} (cp backend.env.example backend.env)"
+  local -A want=()
+  local -a order=()
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    [[ -n "${line}" ]] || continue
+    key="${line%%=*}"
+    value="${line#*=}"
+    [[ "${line}" == *=* ]] || die "backend-env: a line without KEY=VALUE"
+    known=0
+    for k in "${BACKEND_ENV_KEYS[@]}"; do [[ "${k}" == "${key}" ]] && known=1; done
+    ((known)) || die "backend-env: ${key:0:64} is not one of: ${BACKEND_ENV_KEYS[*]}"
+    [[ -n "${value}" ]] || continue # not provided: leave the host's value
+    # AWS key ids, secret keys and ARNs, or 0/1: nothing that could break the env file or a shell
+    [[ "${value}" =~ ^[A-Za-z0-9/+=:@._,-]{1,512}$ ]] || die "backend-env: the value of ${key} has characters an env file cannot hold"
+    [[ -n "${want[${key}]+x}" ]] || order+=("${key}")
+    want[${key}]="${value}"
+  done
+  ((${#order[@]})) || { log "backend-env: no keys given; backend.env unchanged"; return 0; }
+  tmp="$(mktemp "${STAGING_DIR}/.backend.env.XXXXXX")" # 0600, same filesystem: replaced atomically below
+  chmod --reference="${file}" "${tmp}" 2>/dev/null || chmod 600 "${tmp}"
+  local -A done_=()
+  {
+    while IFS= read -r line || [[ -n "${line}" ]]; do
+      key="${line%%=*}"
+      if [[ "${line}" == *=* && -n "${want[${key}]+x}" ]]; then
+        [[ -n "${done_[${key}]+x}" ]] && continue # a later duplicate of a key set here: dropped
+        done_[${key}]=1
+        printf '%s=%s\n' "${key}" "${want[${key}]}"
+      else
+        printf '%s\n' "${line}"
+      fi
+    done <"${file}"
+    for key in "${order[@]}"; do
+      [[ -n "${done_[${key}]+x}" ]] || printf '%s=%s\n' "${key}" "${want[${key}]}"
+    done
+  } >"${tmp}"
+  if cmp -s "${tmp}" "${file}"; then
+    rm -f "${tmp}"
+  else
+    mv -f "${tmp}" "${file}"
+    changed=1
+  fi
+  log "backend-env: ${order[*]} $( ((changed)) && echo "set in backend.env" || echo "already set; backend.env unchanged")"
 }
 
 # ------------------------------------------------------------------------------------------------ staging host
@@ -964,7 +1030,8 @@ main() {
     rollback) cmd_rollback "$@" ;;
     disk-check) cmd_disk check "$@" ;;
     disk-plan) cmd_disk plan "$@" ;;
-    -h | --help | help | "") sed -n '2,42p' "${BASH_SOURCE[0]}" ;;
+    backend-env) cmd_backend_env ;;
+    -h | --help | help | "") sed -n '2,48p' "${BASH_SOURCE[0]}" ;;
     *) die "unknown command ${cmd} (see --help)" ;;
   esac
 }
