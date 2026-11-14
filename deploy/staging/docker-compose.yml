@@ -24,6 +24,16 @@ x-logging: &logging
 x-backend-env-files: &backend-env-files
   - path: .env
   - path: backend.env
+# Fleet onboarding (#227): on for staging so it can be QA'd end to end; production keeps the code's default (off).
+# One switch each, set to 0 in .env to turn it off here (README "Fleet onboarding on staging"). The API serves the
+# routes; the cloud worker runs the fleet threads (inventory sync, evaluations, reconciles) while inventory or policies
+# is on. Both read the same values.
+x-fleet-flags: &fleet-flags
+  CBOM_FLEET_INVENTORY: ${CBOM_FLEET_INVENTORY:-1}
+  CBOM_FLEET_POLICIES: ${CBOM_FLEET_POLICIES:-1}
+  CBOM_FLEET_MATERIALIZE: ${CBOM_FLEET_MATERIALIZE:-1}
+  CBOM_FLEET_TRANSPORTS: ${CBOM_FLEET_TRANSPORTS:-1}
+  CBOM_SSH_CA: ${CBOM_SSH_CA:-1}
 x-backend-service: &backend-service
   image: *backend-image
   pull_policy: never
@@ -160,6 +170,7 @@ services:
       CBOM_NODE_IMAGE_REF: ${CBOM_NODE_IMAGE_REF:-}
       # A test deployment: CBOM_AWS_LAB_SAME_ACCOUNT (backend.env) may work here; production refuses it (lab_mode.py).
       DSS_ENV: staging
+      <<: *fleet-flags
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -192,6 +203,7 @@ services:
     environment:
       SKIP_ALEMBIC: "1"
       DSS_ENV: staging  # as the backend's (lab mode is decided again at collection)
+      <<: *fleet-flags
     depends_on:
       migrate:
         condition: service_completed_successfully
