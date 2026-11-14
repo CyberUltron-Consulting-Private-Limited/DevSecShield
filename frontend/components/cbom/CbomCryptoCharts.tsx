@@ -215,6 +215,7 @@ const WEAKNESS_LABELS: Record<string, string> = {
   HARDCODED_KEY: "Hardcoded key",
   STATIC_SALT: "Static salt",
   WEAK_KDF_ITERATIONS: "Weak KDF iterations",
+  WEAK_RSA_EXPONENT: "RSA exponent 3",
   WEAK_CERTIFICATE_SIGNATURE: "Weak cert signature",
   WEAK_CERTIFICATE_KEY: "Weak cert key",
   SELF_SIGNED_LEAF: "Self-signed leaf",

@@ -68,6 +68,10 @@ HARDCODED_KEY = "HARDCODED_KEY"
 # Medium: they make an offline guess cheaper, they do not hand over the key.
 STATIC_SALT = "STATIC_SALT"
 WEAK_KDF_ITERATIONS = "WEAK_KDF_ITERATIONS"
+# CB-28: an RSA key generated with public exponent 3 (FIPS 186-5 requires
+# 2^16 < e < 2^256; e = 3 enables Bleichenbacher's 2006 signature forgery on lax
+# PKCS#1 v1.5 verifiers and cube-root recovery of small unpadded messages).
+WEAK_RSA_EXPONENT = "WEAK_RSA_EXPONENT"
 # C13 cipher-suite / SSH-algo / IKE-transform negotiation weakness. Distinct from
 # WEAK_PROTOCOL (which flags the *version*: TLS < 1.2 / SSH-1.x / IKEv1) — this
 # flags the negotiated *primitives* a protocol carries in its
@@ -86,7 +90,7 @@ WEAK_CRYPTO_CODES = frozenset(
     {
         WEAK_ALGORITHM, WEAK_CIPHER_MODE, WEAK_KEY_SIZE, WEAK_PROTOCOL,
         WEAK_RNG, STATIC_IV, REUSED_NONCE, HARDCODED_KEY, WEAK_CIPHER_SUITE,
-        WEAK_PADDING, STATIC_SALT, WEAK_KDF_ITERATIONS,
+        WEAK_PADDING, STATIC_SALT, WEAK_KDF_ITERATIONS, WEAK_RSA_EXPONENT,
     }
 )
 
@@ -403,6 +407,19 @@ def material_misuse_findings(component: AIComponent) -> list[tuple[str, str, str
             )
         )
     via = props.get("crypto:usedBy")
+    exponent = props.get("crypto:publicExponent")
+    if exponent and exponent.isdigit() and int(exponent) <= 65536:
+        findings.append(
+            (
+                WEAK_RSA_EXPONENT,
+                _SEV,
+                f"Weak RSA public exponent {name}: e = {exponent}. FIPS 186-5 "
+                f"requires 2^16 < e < 2^256; e = 3 lets an attacker forge PKCS#1 "
+                f"v1.5 signatures on lax verifiers (Bleichenbacher 2006) and take "
+                f"the cube root of small unpadded messages. Generate keys with "
+                f"e = 65537 (RSA_F4).",
+            )
+        )
     if props.get("crypto:staticSalt") == "true":
         findings.append(
             (
@@ -909,6 +926,7 @@ __all__ = [
     "HARDCODED_KEY",
     "STATIC_SALT",
     "WEAK_KDF_ITERATIONS",
+    "WEAK_RSA_EXPONENT",
     "WEAK_CIPHER_SUITE",
     "WEAK_PADDING",
     "WEAK_CRYPTO_CODES",

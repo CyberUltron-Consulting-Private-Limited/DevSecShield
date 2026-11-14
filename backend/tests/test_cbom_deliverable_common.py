@@ -1157,6 +1157,7 @@ ENGINE_FINDING_CODES = (
     "HARDCODED_KEY",
     "STATIC_SALT",
     "WEAK_KDF_ITERATIONS",
+    "WEAK_RSA_EXPONENT",
     "WEAK_PADDING",
     "WEAK_CERTIFICATE_SIGNATURE",
     "WEAK_CERTIFICATE_KEY",
@@ -1205,6 +1206,8 @@ ALLOWED_SOURCE_URLS = {
     "https://cwe.mitre.org/data/definitions/760.html",
     "https://cwe.mitre.org/data/definitions/916.html",
     "https://csrc.nist.gov/pubs/sp/800/132/final",
+    # CB-28: WEAK_RSA_EXPONENT
+    "https://csrc.nist.gov/pubs/fips/186-5/final",
     "https://www.rfc-editor.org/rfc/rfc7507",
     "https://cyclonedx.org/capabilities/cbom/",
     "https://cyclonedx.org/docs/1.6/json/",
