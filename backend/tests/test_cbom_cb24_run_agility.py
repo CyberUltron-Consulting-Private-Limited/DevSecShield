@@ -160,7 +160,7 @@ def test_agility_model_route(api, runs):
     m = r.json()
     assert m["model"] == "fx-1" and [c["key"] for c in m["classes"][:4]] == [
         "configurable", "code-fixed", "vendor-fixed", "hardware-fixed"]
-    assert m["kb_version"] and m["model_version"].startswith("fx-1+") and len(m["rules"]) == 10
+    assert m["kb_version"] and m["model_version"].startswith("fx-1+") and len(m["rules"]) == 12
     assert api("GET", "/1/cbom/sources/agility-model", who=None).status_code in (401, 403)
 
 
@@ -208,12 +208,12 @@ def test_deleting_a_source_never_reclassifies_its_old_runs(api, world):
         s.add(row)
         s.commit()
     before = next(i for i in _items(api, run["id"]) if i["location"] == "10.20.0.1:8443")
-    assert (before["fix_class"], before["fix_class_confidence"]) == ("hardware-fixed", "observed")
+    assert (before["fix_class"], before["fix_class_confidence"]) == ("hardware-fixed", "inferred")
     with Session(engine) as s:
         assert s.get(CbomCollectionSource, src["id"]) is not None
     assert api("DELETE", f"/1/cbom/sources/items/{src['id']}").status_code == 200
     after = next(i for i in _items(api, run["id"]) if i["location"] == "10.20.0.1:8443")
-    assert (after["fix_class"], after["fix_class_confidence"]) == ("hardware-fixed", "observed")
+    assert (after["fix_class"], after["fix_class_confidence"]) == ("hardware-fixed", "inferred")
     with Session(engine) as s:
         asset = s.exec(select(CbomCollectedAsset).where(CbomCollectedAsset.location == "10.20.0.1:8443")).one()
         job = s.get(CbomCollectionJob, asset.job_id)

@@ -212,9 +212,11 @@
   "DB_TDE_OFF": {
    "class": "configurable",
    "capability": false,
-   "basis": "database parameter, HBA rule, account or password reset",
+   "basis": "database parameter where the edition includes TDE (Oracle Enterprise Edition with Advanced Security; SQL Server Enterprise, or Standard 2019 and later); on other editions it is an edition or licence change from the vendor",
    "sources": [
-    "kb:findings.node.DB_TDE_OFF.remediation"
+    "kb:findings.node.DB_TDE_OFF.remediation",
+    "https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Appendix.Oracle.Options.AdvSecurity.html (checked 2026-11-14): Oracle TDE is part of Advanced Security in Enterprise Edition",
+    "https://www.sqlservercentral.com/blogs/tde-in-standard-edition-on-sql-2019 (checked 2026-11-14): TDE in SQL Server Standard from 2019"
    ]
   },
   "DB_TLS_MODE": {
@@ -374,7 +376,9 @@
    "capability": true,
    "basis": "a post-quantum key exchange in IKEv2 needs a gateway release that implements RFC 9370 additional key exchanges and the algorithm (strongSwan 6 per the KB step); appliances need firmware (R-HW)",
    "sources": [
-    "kb:findings.node.IKE_NO_PQ.remediation"
+    "kb:findings.node.IKE_NO_PQ.remediation",
+    "https://strongswan.org/blog/2024/12/03/strongswan-6.0.0-released.html (checked 2026-11-14): strongSwan 6.0.0 adds the algorithm and RFC 9370 additional key exchanges",
+    "https://docs.paloaltonetworks.com/content/techdocs/en_US/network-security/quantum-security/administration/quantum-security-concepts/support-for-quantum-features.html (checked 2026-11-14): PAN-OS 11.1+ supports RFC 9370 by configuration, so R-HW on an appliance is inferred until the firmware version is read"
    ]
   },
   "IKE_WEAK_DH": {
@@ -436,7 +440,7 @@
   "KEY_IN_CONFIGMAP": {
    "class": "configurable",
    "capability": false,
-   "basis": "re-create / re-wrap / re-permission the key with the store already in use",
+   "basis": "move the key to a Kubernetes Secret or an external secret store, restrict RBAC and rotate it (cluster configuration)",
    "sources": [
     "kb:findings.node.KEY_IN_CONFIGMAP.remediation"
    ]
@@ -444,7 +448,7 @@
   "KEY_IN_DOCUMENT": {
    "class": "configurable",
    "capability": false,
-   "basis": "re-create / re-wrap / re-permission the key with the store already in use",
+   "basis": "move the key out of the document into a key store or secrets manager and rotate it (code-fixed when the application must change to read it from the store)",
    "sources": [
     "kb:findings.node.KEY_IN_DOCUMENT.remediation"
    ]
@@ -540,7 +544,7 @@
   "LIB_EOL": {
    "class": "vendor-fixed",
    "capability": false,
-   "basis": "a supported release line comes only from the OS / library vendor",
+   "basis": "a supported release line comes only from the OS / library vendor (inside the team's own container image: rebuild it on a supported base, code-fixed)",
    "sources": [
     "kb:findings.node.LIB_EOL.remediation"
    ]
@@ -556,7 +560,7 @@
   "LIB_STATIC": {
    "class": "vendor-fixed",
    "capability": false,
-   "basis": "only whoever builds the binary can relink it; on a host that is the software's vendor",
+   "basis": "only whoever builds the binary can relink it; for software installed on a host that is usually its vendor (code-fixed when the team builds the binary itself, e.g. its own Go or Rust services)",
    "sources": [
     "kb:findings.node.LIB_STATIC.remediation"
    ]
@@ -635,10 +639,11 @@
   },
   "MODBUS_PLAINTEXT": {
    "class": "hardware-fixed",
-   "capability": true,
-   "basis": "Modbus/TCP has no cryptography; Modbus/TCP Security needs device support",
+   "capability": false,
+   "basis": "Modbus/TCP has no cryptography; Modbus/TCP Security (TLS on port 802, mutual X.509) needs device support: always the device (raised only on OT endpoints)",
    "sources": [
-    "kb:findings.node.MODBUS_PLAINTEXT.remediation"
+    "kb:findings.node.MODBUS_PLAINTEXT.remediation",
+    "https://www.modbus.org/docs/MB-TCP-Security-v36_2021-07-30.pdf (checked 2026-11-14) (per review B)"
    ]
   },
   "NO_FALLBACK_SCSV": {
@@ -769,7 +774,11 @@
    "sources": [
     "kb:findings.node.QUANTUM_VULNERABLE.remediation",
     "https://www.openssh.org/pq.html (checked 2026-11-14: sntrup761x25519-sha512 is the default key exchange since OpenSSH 9.0; mlkem768x25519-sha256 was added in 9.9 and is the default since 10.0)",
-    "https://aws.amazon.com/about-aws/whats-new/2025/06/aws-kms-post-quantum-ml-dsa-digital-signatures (checked 2026-11-14: AWS KMS supports ML-DSA keys, announced 2025-06-13; rule R-TYPE for AWS kms_key)"
+    "https://aws.amazon.com/about-aws/whats-new/2025/06/aws-kms-post-quantum-ml-dsa-digital-signatures (checked 2026-11-14: AWS KMS supports ML-DSA keys, announced 2025-06-13; rule R-TYPE for AWS kms_key)",
+    "https://docs.aws.amazon.com/kms/latest/developerguide/pqkeys.html (checked 2026-11-14): KMS has post-quantum signature keys and key-establishment keys (ENCAPSULATE_DECAPSULATE); encryption / key-agreement callers move to the new key type and API, code-fixed",
+    "https://aws.amazon.com/about-aws/whats-new/2025/11/network-load-balancers-post-quantum-key-exchange-tls (checked 2026-11-14): ALB and NLB PQ-TLS security policies since 2025-11-21, opt-in per listener (configurable); Classic Load Balancer not covered",
+    "https://docs.aws.amazon.com/elasticloadbalancing/latest/application/describe-ssl-policies.html (ELBSecurityPolicy-*-PQ-2025-09 policies)",
+    "https://aws.amazon.com/about-aws/whats-new/2025/11/aws-private-ca-post-quantum-digital-certificates (checked 2026-11-14): AWS Private CA can create post-quantum signature CAs since 2025-11-10 (configurable); RDS CAs and ACM certificates stay vendor-fixed"
    ]
   },
   "RDP_NO_NLA": {
@@ -815,7 +824,7 @@
   "SECRET_IN_CONFIG": {
    "class": "configurable",
    "capability": false,
-   "basis": "host setting, unit file or script option",
+   "basis": "host setting, unit file or script option (a Lambda environment variable: the function code must read the secret at run time and be redeployed, code-fixed, rule R-TYPE)",
    "sources": [
     "kb:findings.node.SECRET_IN_CONFIG.remediation"
    ]
@@ -1018,9 +1027,10 @@
   "DOWNGRADE_PROTECTION_MISSING": {
    "class": "configurable",
    "capability": false,
-   "basis": "a configuration / IaC value in the repository",
+   "basis": "remove the protocol versions below TLS 1.2 on the scanned endpoint (TLS server setting; the code comes from an imported scan of a live endpoint); SCSV support itself comes with the TLS library",
    "sources": [
-    "kb:findings.code.DOWNGRADE_PROTECTION_MISSING.remediation"
+    "kb:findings.code.DOWNGRADE_PROTECTION_MISSING.remediation",
+    "aibom/src/aibom/cbom/posture/tls_import.py (imported testssl / sslyze result)"
    ]
   },
   "EOL_BASE_IMAGE": {
@@ -1080,11 +1090,12 @@
    ]
   },
   "KNOWN_TLS_VULNERABILITY": {
-   "class": "vendor-fixed",
-   "capability": false,
-   "basis": "patch the TLS library or appliance (KB summary)",
+   "class": "configurable",
+   "capability": true,
+   "basis": "POODLE / ROBOT: disable SSLv3 / RSA key exchange on the endpoint (TLS server setting); Heartbleed: the TLS library must be patched, vendor-fixed (rule CL-4 reads the named vulnerability; not read: unknown, at least configurable)",
    "sources": [
-    "kb:findings.code.KNOWN_TLS_VULNERABILITY.remediation"
+    "kb:findings.code.KNOWN_TLS_VULNERABILITY.remediation",
+    "aibom/src/aibom/cbom/posture/tls_import.py and data/named_vulnerabilities.json (scored: HEARTBLEED, POODLE, ROBOT)"
    ]
   },
   "LIBRARY_CVE_RANGE": {
@@ -1146,9 +1157,10 @@
   "TLS_VERIFICATION_DISABLED": {
    "class": "code-fixed",
    "capability": false,
-   "basis": "the team's own source code changes, then a rebuild and release",
+   "basis": "verification is turned off in the team's code (verify=False, InsecureSkipVerify) and needs a release; a connection string or environment value in a configuration file is configurable (rule CL-3)",
    "sources": [
-    "kb:findings.code.TLS_VERIFICATION_DISABLED.remediation"
+    "kb:findings.code.TLS_VERIFICATION_DISABLED.remediation",
+    "aibom/src/aibom/cbom/posture/extract_databases.py (connection strings in config files)"
    ]
   },
   "UNENCRYPTED_AT_REST": {
@@ -1208,11 +1220,12 @@
    ]
   },
   "WEAK_CIPHER_SUITE": {
-   "class": "configurable",
+   "class": "code-fixed",
    "capability": false,
-   "basis": "a configuration / IaC value in the repository",
+   "basis": "the suite list is set in the team's source or config (set_ciphers, SSLContext, suite names in code); a source list needs a code change and a release (rule CL-3: a configuration / IaC file is configurable)",
    "sources": [
-    "kb:findings.code.WEAK_CIPHER_SUITE.remediation"
+    "kb:findings.code.WEAK_CIPHER_SUITE.remediation",
+    "aibom/src/aibom/cbom/weakness.py cipher_suite_findings (suites of protocol components built from source)"
    ]
   },
   "WEAK_KEY_SIZE": {
@@ -1232,11 +1245,12 @@
    ]
   },
   "WEAK_PROTOCOL": {
-   "class": "configurable",
+   "class": "code-fixed",
    "capability": false,
-   "basis": "a configuration / IaC value in the repository",
+   "basis": "the protocol version is pinned in the team's source or config; a source pin needs a code change and a release (rule CL-3: a configuration / IaC file is configurable)",
    "sources": [
-    "kb:findings.code.WEAK_PROTOCOL.remediation"
+    "kb:findings.code.WEAK_PROTOCOL.remediation",
+    "aibom/src/aibom/cbom/scanners/protocol_scan.py (source pins: ssl.TLSVersion, tls.VersionTLS10, TLSv1_method; swanctl.conf / ipsec.conf)"
    ]
   },
   "WEAK_RNG": {

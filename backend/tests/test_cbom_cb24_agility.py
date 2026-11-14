@@ -55,10 +55,13 @@ def test_reviewed_counts_and_capability_codes_match_the_plan():
     table = json.loads(TABLE.read_text())
     count = {ns: {c: sum(1 for r in table[ns].values() if r["class"] == c) for c in AG.CLASSES} for ns in ("node", "code")}
     assert count["node"] == {"configurable": 112, "code-fixed": 0, "vendor-fixed": 9, "hardware-fixed": 1}
-    assert count["code"] == {"configurable": 17, "code-fixed": 15, "vendor-fixed": 1, "hardware-fixed": 0}
+    # review B (PR #113): code WEAK_PROTOCOL / WEAK_CIPHER_SUITE -> code-fixed (CL-3 for config files),
+    # KNOWN_TLS_VULNERABILITY -> configurable capability (CL-4 for Heartbleed)
+    assert count["code"] == {"configurable": 16, "code-fixed": 17, "vendor-fixed": 0, "hardware-fixed": 0}
     caps = {(ns, c) for ns in table if ns in ("node", "code") for c, r in table[ns].items() if r["capability"]}
-    assert caps == {("node", c) for c in ("IKE_NO_PQ", "MODBUS_PLAINTEXT", "NO_PQ_KEX", "NO_TLS12",
-                                          "QUANTUM_VULNERABLE", "SSH_NO_PQ_KEX")} | {("code", "QUANTUM_VULNERABLE")}
+    assert caps == {("node", c) for c in ("IKE_NO_PQ", "NO_PQ_KEX", "NO_TLS12", "QUANTUM_VULNERABLE",
+                                          "SSH_NO_PQ_KEX")} | {("code", "QUANTUM_VULNERABLE"),
+                                                               ("code", "KNOWN_TLS_VULNERABILITY")}
 
 
 def _build_kb_module():
@@ -92,7 +95,7 @@ def test_agility_version_follows_the_module_and_the_table():
     assert [c["key"] for c in model["classes"]] == list(AG.VALUES)
     assert [c["rank"] for c in model["classes"][:4]] == [1, 2, 3, 4]
     assert {r["id"] for r in model["rules"]} == {"R-TABLE", "R-HW", "R-HW-UNREAD", "R-STACK", "R-TYPE", "R-VENDOR",
-                                                 "R-INFERRED", "CL-1", "CL-2", "R-NO-ROW"}
+                                                 "R-INFERRED", "CL-1", "CL-2", "CL-3", "CL-4", "R-NO-ROW"}
     assert all(c["what"] and c["example"] for c in model["classes"])
 
 
@@ -194,7 +197,7 @@ def test_ag7_ssh_banner_decides_the_post_quantum_kex_class():
 
 def test_r_hw_and_r_type_cover_ot_aws_kms_acm_and_windows_keys():
     modbus = AG.evaluate("node", "ot_endpoint", ["MODBUS_PLAINTEXT"], {}, {**NODE, "source_kind": "network_range"})
-    assert (modbus["fix_class"], _by_code(modbus)["MODBUS_PLAINTEXT"]["rule"]) == ("hardware-fixed", "R-HW")
+    assert (modbus["fix_class"], modbus["confidence"]) == ("hardware-fixed", "observed")  # always the device
     aws = {**NODE, "source_kind": "aws_account"}
     kms = AG.evaluate("node", "kms_key", ["QUANTUM_VULNERABLE"], {"key_spec": "RSA_2048"}, aws,
                       "arn:aws:kms:eu-west-1:111122223333:key/abc")
@@ -292,3 +295,52 @@ def test_unknown_reasons_count_each_asset_once():
     acc.add(Row(), ["FINDING", "WEAK_OR_QUANTUM_VULNERABLE"])
     assert acc.result()["unknown_reasons"] == {"no_fix_class": 1}
     assert acc.result()["fix_classes"]["unknown"] == 1
+
+
+# ------------------------------------------------------------------------------------------- review B (PR #113)
+@pytest.mark.parametrize("location, expected", [
+    ("src/client.py:14", "code-fixed"), ("cmd/main.go", "code-fixed"), ("nginx/conf.d/site.conf:3", "configurable"),
+    ("deploy/values.yaml", "configurable"), ("infra/main.tf", "configurable"), ("README", "code-fixed"),
+])
+def test_cl3_file_kind_decides_protocol_suite_and_verification_rows(location, expected):
+    for code in ("WEAK_PROTOCOL", "WEAK_CIPHER_SUITE", "TLS_VERIFICATION_DISABLED"):
+        row = page_row({"asset_type": "protocol", "finding_codes": [code], "location": location})
+        assert row["fix_class"] == expected, (code, location)
+        assert row["fix_class_confidence"] == "observed"
+
+
+def test_cl4_heartbleed_is_vendor_fixed_poodle_robot_configurable_unread_unknown():
+    base = {"asset_type": "protocol", "finding_codes": ["KNOWN_TLS_VULNERABILITY"], "location": "testssl/r.json"}
+    heart = page_row({**base, "vulnerabilities": [{"item": "HEARTBLEED", "status": "scored"},
+                                                  {"item": "POODLE", "status": "scored"}]})
+    assert (heart["fix_class"], heart["fix_class_confidence"]) == ("vendor-fixed", "observed")
+    poodle = page_row({**base, "description": "tls_endpoint example.com:443: POODLE, ROBOT"})
+    assert (poodle["fix_class"], poodle["fix_class_confidence"]) == ("configurable", "observed")
+    unread = page_row({**base, "description": "tls_endpoint example.com:443: KNOWN_TLS_VULNERABILITY."})
+    assert (unread["fix_class"], unread["fix_class_floor"]) == ("unknown", "configurable")
+
+
+def test_r_type_aws_services_where_the_customer_can_opt_in():
+    aws = {**NODE, "source_kind": "aws_account"}
+    alb = AG.evaluate("node", "load_balancer_tls", ["QUANTUM_VULNERABLE"], {"ssl_policy": "ELBSecurityPolicy-2016-08"},
+                      aws, "arn:aws:elasticloadbalancing:eu-west-1:1:listener/app/a/b/c")
+    assert (alb["fix_class"], alb["confidence"]) == ("configurable", "observed")
+    classic = AG.evaluate("node", "load_balancer_tls", ["QUANTUM_VULNERABLE"], {"classic": True}, aws,
+                          "arn:aws:elasticloadbalancing:eu-west-1:1:loadbalancer/x#listener/443")
+    assert (classic["fix_class"], classic["confidence"]) == ("vendor-fixed", "inferred")
+    pca = AG.evaluate("node", "cloud_ca", ["QUANTUM_VULNERABLE"], {}, aws,
+                      "arn:aws:acm-pca:eu-west-1:1:certificate-authority/x")
+    assert (pca["fix_class"], pca["confidence"]) == ("configurable", "observed")
+    rds = AG.evaluate("node", "cloud_ca", ["QUANTUM_VULNERABLE"], {}, aws, "arn:aws:rds:eu-west-1:1:db:x#ca")
+    assert (rds["fix_class"], rds["confidence"]) == ("vendor-fixed", "observed")
+    lam = AG.evaluate("node", "cloud_secret", ["SECRET_IN_CONFIG"], {"service": "lambda"}, aws,
+                      "arn:aws:lambda:eu-west-1:1:function:f#environment/KEY")
+    assert (lam["fix_class"], _by_code(lam)["SECRET_IN_CONFIG"]["rule"]) == ("code-fixed", "R-TYPE")
+    unit = AG.evaluate("node", "host_secret", ["SECRET_IN_CONFIG"], {"service": "systemd"}, NODE)
+    assert unit["fix_class"] == "configurable"
+
+
+def test_r_hw_on_an_appliance_is_inferred_until_the_firmware_is_read():
+    gw = AG.evaluate("node", "ike_endpoint", ["IKE_NO_PQ"], {}, {**NODE, "source_kind": "appliance"})
+    assert (gw["fix_class"], gw["confidence"], _by_code(gw)["IKE_NO_PQ"]["rule"]) == \
+        ("hardware-fixed", "inferred", "R-HW")

@@ -1280,7 +1280,7 @@
     "default_impact": "Medium",
     "description": "An imported TLS scan result reports that the endpoint does not protect against protocol downgrade (TLS_FALLBACK_SCSV).",
     "fix_class": {
-     "basis": "a configuration / IaC value in the repository",
+     "basis": "remove the protocol versions below TLS 1.2 on the scanned endpoint (TLS server setting; the code comes from an imported scan of a live endpoint); SCSV support itself comes with the TLS library",
      "capability": false,
      "class": "configurable"
     },
@@ -1900,9 +1900,9 @@
     "default_impact": "High",
     "description": "An imported TLS scanner result (testssl.sh, sslyze or similar) reports a named TLS vulnerability on the endpoint.",
     "fix_class": {
-     "basis": "patch the TLS library or appliance (KB summary)",
-     "capability": false,
-     "class": "vendor-fixed"
+     "basis": "POODLE / ROBOT: disable SSLv3 / RSA key exchange on the endpoint (TLS server setting); Heartbleed: the TLS library must be patched, vendor-fixed (rule CL-4 reads the named vulnerability; not read: unknown, at least configurable)",
+     "capability": true,
+     "class": "configurable"
     },
     "owasp": [
      "crypto",
@@ -2463,7 +2463,7 @@
     "default_impact": "High",
     "description": "A client turns off certificate or host-name verification (for example verify=False, InsecureSkipVerify, rejectUnauthorized: false, sslmode=require without a CA).",
     "fix_class": {
-     "basis": "the team's own source code changes, then a rebuild and release",
+     "basis": "verification is turned off in the team's code (verify=False, InsecureSkipVerify) and needs a release; a connection string or environment value in a configuration file is configurable (rule CL-3)",
      "capability": false,
      "class": "code-fixed"
     },
@@ -3132,9 +3132,9 @@
     "default_impact": "High",
     "description": "Configuration allows RC4, 3DES, NULL, anonymous or EXPORT suites, or legacy SSH/IKE algorithms.",
     "fix_class": {
-     "basis": "a configuration / IaC value in the repository",
+     "basis": "the suite list is set in the team's source or config (set_ciphers, SSLContext, suite names in code); a source list needs a code change and a release (rule CL-3: a configuration / IaC file is configurable)",
      "capability": false,
-     "class": "configurable"
+     "class": "code-fixed"
     },
     "owasp": [
      "crypto",
@@ -3345,9 +3345,9 @@
     "default_impact": "High",
     "description": "The code or configuration allows SSLv3, TLS 1.0/1.1, SSH-1 or IKEv1.",
     "fix_class": {
-     "basis": "a configuration / IaC value in the repository",
+     "basis": "the protocol version is pinned in the team's source or config; a source pin needs a code change and a release (rule CL-3: a configuration / IaC file is configurable)",
      "capability": false,
-     "class": "configurable"
+     "class": "code-fixed"
     },
     "owasp": [
      "crypto",
@@ -5311,7 +5311,7 @@
     "default_impact": "Low",
     "description": "A SQL Server database or an Oracle tablespace is not protected by Transparent Data Encryption. Only database-level encryption is visible from inside the database: the volume or managed service (BitLocker, LUKS, RDS storage encryption) may still encrypt the data files, so check that before treating the data as unencrypted at rest.",
     "fix_class": {
-     "basis": "database parameter, HBA rule, account or password reset",
+     "basis": "database parameter where the edition includes TDE (Oracle Enterprise Edition with Advanced Security; SQL Server Enterprise, or Standard 2019 and later); on other editions it is an edition or licence change from the vendor",
      "capability": false,
      "class": "configurable"
     },
@@ -7437,7 +7437,7 @@
     "default_impact": "High",
     "description": "A PEM private key is stored in plain text in a ConfigMap, which is not meant for secrets.",
     "fix_class": {
-     "basis": "re-create / re-wrap / re-permission the key with the store already in use",
+     "basis": "move the key to a Kubernetes Secret or an external secret store, restrict RBAC and rotate it (cluster configuration)",
      "capability": false,
      "class": "configurable"
     },
@@ -7517,7 +7517,7 @@
     "default_impact": "Medium",
     "description": "A PEM private key is embedded in a document, script or configuration file.",
     "fix_class": {
-     "basis": "re-create / re-wrap / re-permission the key with the store already in use",
+     "basis": "move the key out of the document into a key store or secrets manager and rotate it (code-fixed when the application must change to read it from the store)",
      "capability": false,
      "class": "configurable"
     },
@@ -8298,7 +8298,7 @@
     "default_impact": "High",
     "description": "The crypto library version is past its upstream end of support, so new vulnerabilities are not fixed upstream.",
     "fix_class": {
-     "basis": "a supported release line comes only from the OS / library vendor",
+     "basis": "a supported release line comes only from the OS / library vendor (inside the team's own container image: rebuild it on a supported base, code-fixed)",
      "capability": false,
      "class": "vendor-fixed"
     },
@@ -8424,7 +8424,7 @@
     "default_impact": "Low",
     "description": "The binary carries its own copy of a crypto library.",
     "fix_class": {
-     "basis": "only whoever builds the binary can relink it; on a host that is the software's vendor",
+     "basis": "only whoever builds the binary can relink it; for software installed on a host that is usually its vendor (code-fixed when the team builds the binary itself, e.g. its own Go or Rust services)",
      "capability": false,
      "class": "vendor-fixed"
     },
@@ -9264,8 +9264,8 @@
     "default_impact": "High",
     "description": "The Modbus/TCP port (502) accepts connections. Modbus/TCP has no encryption and no authentication; the secure variant is Modbus/TCP Security over TLS on port 802.",
     "fix_class": {
-     "basis": "Modbus/TCP has no cryptography; Modbus/TCP Security needs device support",
-     "capability": true,
+     "basis": "Modbus/TCP has no cryptography; Modbus/TCP Security (TLS on port 802, mutual X.509) needs device support: always the device (raised only on OT endpoints)",
+     "capability": false,
      "class": "hardware-fixed"
     },
     "owasp": [
@@ -11088,7 +11088,7 @@
     "default_impact": "High",
     "description": "An encryption key, private key or passphrase is written in clear text in a service definition (systemd Environment=), a cron job or a script, or in cloud configuration (a Lambda environment variable, an ECS task definition environment entry, EC2 user data), where anyone who can read the file or the configuration (often every local user, or any principal with read-only Describe/List access) or its backups can copy it.",
     "fix_class": {
-     "basis": "host setting, unit file or script option",
+     "basis": "host setting, unit file or script option (a Lambda environment variable: the function code must read the secret at run time and be redeployed, code-fixed, rule R-TYPE)",
      "capability": false,
      "class": "configurable"
     },

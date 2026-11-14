@@ -55,6 +55,16 @@ CODE_LIBRARY_CODES = frozenset({"EOL_CRYPTO_LIBRARY", "LIBRARY_CVE_RANGE", "VULN
                                 "EOL_BASE_IMAGE"})
 CL2_ARTIFACT = {"firmware": "hardware-fixed", "binary": "vendor-fixed", "image": "code-fixed", "manifest": "code-fixed"}
 HW_PROVIDER_CLASSES = frozenset({"tpm", "smartcard", "hsm"})
+# Code-scan codes whose class depends on the kind of file the hit is in (rule CL-3): a value in a configuration /
+# IaC file is configurable, a pin in source code needs a release (code-fixed, the table default).
+CL3_CODES = frozenset({"WEAK_PROTOCOL", "WEAK_CIPHER_SUITE", "TLS_VERIFICATION_DISABLED"})
+_CONFIG_SUFFIXES = (".conf", ".cnf", ".cfg", ".ini", ".yaml", ".yml", ".json", ".toml", ".properties", ".xml",
+                    ".env", ".tf", ".tfvars", ".hcl", ".config", ".plist", ".service")
+_SOURCE_SUFFIXES = (".py", ".java", ".kt", ".scala", ".go", ".c", ".h", ".cc", ".cpp", ".hpp", ".cs", ".js", ".mjs",
+                    ".cjs", ".ts", ".jsx", ".tsx", ".rb", ".php", ".rs", ".swift", ".m", ".mm", ".dart", ".ipynb")
+# Named TLS vulnerabilities the code lane scores (aibom data/named_vulnerabilities.json): only Heartbleed needs a
+# library patch; POODLE and ROBOT go with SSLv3 / RSA key exchange off (rule CL-4).
+TLS_VULNS = ("HEARTBLEED", "POODLE", "ROBOT")
 SYSTEMS_CAP = 500
 _CODE_CERT_TYPES = frozenset({"certificate", "protocol", "related-crypto-material"})
 _OPENSSH = re.compile(r"OpenSSH_(\d+)\.(\d+)", re.I)
@@ -106,8 +116,9 @@ RULES: tuple[dict[str, str], ...] = (
     {"id": "R-TABLE", "applies_to": "non-capability codes",
      "condition": "none: the class does not depend on context", "result": "table class (observed)"},
     {"id": "R-HW", "applies_to": "capability codes",
-     "condition": "source kind appliance; asset type ot_endpoint; PKCS#11 key on a hardware token; Windows certificate "
-                  "whose key provider is a TPM, smart card or HSM", "result": "hardware-fixed (observed)"},
+     "condition": "asset type ot_endpoint; PKCS#11 key on a hardware token; Windows certificate whose key provider is "
+                  "a TPM, smart card or HSM (observed); source kind appliance (inferred: the firmware version is not "
+                  "read, and current firmware may already offer it as a setting)", "result": "hardware-fixed"},
     {"id": "R-HW-UNREAD", "applies_to": "capability codes",
      "condition": "PKCS#11 key whose token type was not read; Windows certificate with a private key and no key "
                   "provider read; a key provider not in the reviewed list; a deciding fact that is a list or an "
@@ -116,9 +127,11 @@ RULES: tuple[dict[str, str], ...] = (
      "condition": "SSH banner OpenSSH >= 9.0 (the first release with a post-quantum key exchange)",
      "result": "configurable; an older OpenSSH banner: vendor-fixed (observed)"},
     {"id": "R-TYPE", "applies_to": "node QUANTUM_VULNERABLE",
-     "condition": "AWS KMS key (KMS offers post-quantum signature keys; the callers' signing code changes) -> code-fixed; SaaS IdP "
-                  "signing key, cloud CA, IAM or ACM certificate, PKCS#11 software token -> vendor-fixed",
-     "result": "as stated (observed)"},
+     "condition": "AWS KMS key (KMS offers post-quantum signature and key-establishment keys; the callers' code "
+                  "changes) -> code-fixed; AWS ALB / NLB listener (opt-in post-quantum TLS security policy) and AWS "
+                  "Private CA (post-quantum CAs) -> configurable; SaaS IdP signing key, other cloud CA (RDS), IAM or "
+                  "ACM certificate, Classic Load Balancer, PKCS#11 software token -> vendor-fixed; node "
+                  "SECRET_IN_CONFIG in a Lambda environment -> code-fixed", "result": "as stated (observed)"},
     {"id": "R-VENDOR", "applies_to": "every node code",
      "condition": "the source is operated by a vendor (source metadata operated_by = vendor), or the IdP is a SaaS "
                   "provider (Entra ID, Okta)", "result": "at least vendor-fixed (observed)"},
@@ -130,6 +143,13 @@ RULES: tuple[dict[str, str], ...] = (
     {"id": "CL-2", "applies_to": "code-scan library codes",
      "condition": "the row's artifact_kind: firmware -> hardware-fixed; third-party binary -> vendor-fixed; image or "
                   "manifest -> code-fixed (observed); not stated -> table class", "result": "-"},
+    {"id": "CL-3", "applies_to": "code-scan WEAK_PROTOCOL, WEAK_CIPHER_SUITE, TLS_VERIFICATION_DISABLED",
+     "condition": "the row's file: a configuration / IaC file -> configurable; source code -> code-fixed (observed); "
+                  "not known -> table class (code-fixed)", "result": "-"},
+    {"id": "CL-4", "applies_to": "code-scan KNOWN_TLS_VULNERABILITY",
+     "condition": "the named vulnerability: Heartbleed -> vendor-fixed (the library must be patched); POODLE or ROBOT "
+                  "only -> configurable (SSLv3 / RSA key exchange off); not read -> unknown, at least configurable",
+     "result": "-"},
     {"id": "R-NO-ROW", "applies_to": "any code",
      "condition": "the code has no fix-class row (legacy rows such as FINDING, a future code)", "result": "unknown"},
 )
@@ -139,6 +159,7 @@ UNKNOWN_REASONS = {
     "key_provider_unlisted": "key provider not in the reviewed list",
     "no_fix_class": "a finding code without a fix-class row",
     "fact_unreadable": "a fact that decides the class has a value the rules cannot read (a list or an object)",
+    "vulnerability_not_read": "which named TLS vulnerability the imported scan reported was not read",
 }
 
 
@@ -240,9 +261,9 @@ def _capability(code: str, asset_type: str, facts: dict[str, Any], ctx: dict[str
     token = facts.get("token_class")
     provider = facts.get("key_provider_class")
     # R-HW
-    hw = None
+    hw, hw_confidence = None, "observed"
     if ctx.get("source_kind") == "appliance":
-        hw = "source kind: network appliance"
+        hw, hw_confidence = "source kind: network appliance (firmware version not read)", "inferred"
     elif asset_type == "ot_endpoint":
         hw = "asset type: OT device endpoint"
     elif store == "pkcs11" and token == "hardware":
@@ -251,7 +272,7 @@ def _capability(code: str, asset_type: str, facts: dict[str, Any], ctx: dict[str
         hw = f"certificate key held by a {provider} key provider"
     if hw:
         return _result(code, "hardware-fixed", "R-HW", "the cryptography is bound to a device: firmware update or "
-                       "hardware replacement", capability=True, fact=hw)
+                       "hardware replacement", capability=True, confidence=hw_confidence, fact=hw)
     # R-HW-UNREAD
     if store == "pkcs11" and not token:
         return _result(code, "unknown", "R-HW-UNREAD", UNKNOWN_REASONS["token_type_not_read"], capability=True,
@@ -277,10 +298,18 @@ def _capability(code: str, asset_type: str, facts: dict[str, Any], ctx: dict[str
     # R-TYPE
     if code == "QUANTUM_VULNERABLE":
         service = facts.get("_aws_service") or aws_service(facts.get("arn"))
+        if asset_type == "load_balancer_tls" and service == "elasticloadbalancing" and not facts.get("classic"):
+            return _result(code, "configurable", "R-TYPE", "AWS ALB / NLB offer post-quantum TLS security policies: "
+                           "switch the listener to an ELBSecurityPolicy-*-PQ-* policy", capability=True,
+                           fact="AWS ALB / NLB listener")
+        if asset_type == "cloud_ca" and service == "acm-pca":
+            return _result(code, "configurable", "R-TYPE", "AWS Private CA can create post-quantum signature CAs: "
+                           "create one and re-issue (relying parties must implement the algorithm)", capability=True,
+                           fact="AWS Private CA")
         if asset_type == "kms_key" and (ctx.get("source_kind") == "aws_account" or service == "kms"):
-            return _result(code, "code-fixed", "R-TYPE", "AWS KMS offers post-quantum signature keys: create one "
-                           "and change the "
-                           "callers' signing code", capability=True, fact="AWS KMS key")
+            return _result(code, "code-fixed", "R-TYPE", "AWS KMS offers post-quantum signature and key-establishment "
+                           "keys: create one and change the callers' code (a different key type and API)",
+                           capability=True, fact="AWS KMS key")
         if asset_type == "signing_key" and ctx.get("provider") in SAAS_IDP:
             return _result(code, "vendor-fixed", "R-TYPE", "the SaaS identity provider owns its signing keys",
                            capability=True, fact=f"identity provider {ctx['provider']}")
@@ -312,6 +341,22 @@ def code_class(ns: str, code: str, asset_type: str, facts: dict[str, Any] | None
                                fact=f"code row type {asset_type}")
             return _result(code, row["class"], "R-INFERRED", row.get("basis") or "", capability=True,
                            confidence="inferred")
+        if code in CL3_CODES and facts.get("file_kind") in ("config", "source"):
+            if facts["file_kind"] == "config":
+                return _result(code, "configurable", "CL-3", "the value is set in a configuration / IaC file",
+                               fact="configuration file")
+            return _result(code, "code-fixed", "CL-3", "the value is set in the team's source code: a code change "
+                           "and a release", fact="source file")
+        if code == "KNOWN_TLS_VULNERABILITY":
+            vulns = str(facts.get("tls_vulns") or "")
+            if "HEARTBLEED" in vulns:
+                return _result(code, "vendor-fixed", "CL-4", "Heartbleed: the TLS library must be patched",
+                               capability=True, fact=f"named vulnerabilities {vulns}")
+            if vulns and vulns != UNREADABLE:
+                return _result(code, "configurable", "CL-4", "POODLE / ROBOT: turn off SSLv3 / RSA key exchange on the "
+                               "endpoint", capability=True, fact=f"named vulnerabilities {vulns}")
+            return _result(code, "unknown", "CL-4", UNKNOWN_REASONS["vulnerability_not_read"], capability=True,
+                           floor=row["class"], reason="vulnerability_not_read")
         kind = str(facts.get("artifact_kind") or "").lower()
         if code in CODE_LIBRARY_CODES and kind in CL2_ARTIFACT:
             return _result(code, CL2_ARTIFACT[kind], "CL-2", f"the library ships inside a {kind}",
@@ -320,8 +365,13 @@ def code_class(ns: str, code: str, asset_type: str, facts: dict[str, Any] | None
             return _result(code, row["class"], "R-INFERRED", row.get("basis") or "", capability=True,
                            confidence="inferred")
         return _result(code, row["class"], "R-TABLE", row.get("basis") or "")
-    out = _capability(code, asset_type, facts, ctx, row) if row.get("capability") else \
-        _result(code, row["class"], "R-TABLE", row.get("basis") or "")
+    if code == "SECRET_IN_CONFIG" and facts.get("service") == "lambda":
+        out = _result(code, "code-fixed", "R-TYPE", "the Lambda function's code must read the secret at run time "
+                      "(SDK or the Parameters and Secrets extension), then be redeployed", fact="Lambda environment")
+    elif row.get("capability"):
+        out = _capability(code, asset_type, facts, ctx, row)
+    else:
+        out = _result(code, row["class"], "R-TABLE", row.get("basis") or "")
     vendor = _vendor_reason(ctx)
     if vendor:
         if out["class"] == "unknown":
@@ -381,10 +431,12 @@ def _deciding(asset_type: str, facts: dict[str, Any], location: str | None) -> t
     arn = location if isinstance(location, str) and location.startswith("arn:") else facts.get("arn")
     service = UNREADABLE if _h(arn) == UNREADABLE else aws_service(arn)
     private = facts.get("has_private_key")
+    classic = facts.get("classic")
     return (_h(facts.get("store")), _h(facts.get("token_class")), _h(facts.get("source")),
             UNREADABLE if _h(private) == UNREADABLE else bool(private),
             _h(facts.get("key_provider_class")), _h(facts.get("banner")), service,
-            _h(facts.get("artifact_kind")))
+            _h(facts.get("artifact_kind")), UNREADABLE if _h(classic) == UNREADABLE else bool(classic),
+            _h(facts.get("service"), 32), _h(facts.get("file_kind"), 16), _h(facts.get("tls_vulns")))
 
 
 def _ctx_key(ctx: dict[str, Any]) -> tuple:
@@ -394,9 +446,10 @@ def _ctx_key(ctx: dict[str, Any]) -> tuple:
 @lru_cache(maxsize=16384)
 def _evaluate(kb_version: str, ns: str, asset_type: str, codes: tuple[str, ...], deciding: tuple, ctx_key: tuple
               ) -> tuple[dict[str, Any], tuple[dict[str, Any], ...], str, tuple[str, ...]]:
-    store, token, source, private, provider, banner, service, artifact = deciding
+    store, token, source, private, provider, banner, service, artifact, classic, svc, file_kind, vulns = deciding
     facts = {"store": store, "token_class": token, "source": source, "has_private_key": private,
-             "key_provider_class": provider, "banner": banner, "_aws_service": service, "artifact_kind": artifact}
+             "key_provider_class": provider, "banner": banner, "_aws_service": service, "artifact_kind": artifact,
+             "classic": classic, "service": svc, "file_kind": file_kind, "tls_vulns": vulns}
     ctx = dict(zip(("lane", "source_kind", "provider", "operated_by"), ctx_key))
     per = tuple(code_class(ns, code, asset_type, facts, ctx) for code in codes)
     whole = asset_class(list(per))
@@ -466,9 +519,39 @@ def detail(asset_type: str, codes: Iterable[Any], facts: dict[str, Any] | None, 
             "model": MODEL, "model_version": version(), "source": "view"}
 
 
+def file_kind(location: Any) -> str | None:
+    """``config`` or ``source`` from a code-scan row's file (``path``, ``path:line``), else None (rule CL-3)."""
+    if not isinstance(location, str) or not location:
+        return None
+    path = re.sub(r":\d+$", "", location.split("!", 1)[0]).lower()
+    name = path.rsplit("/", 1)[-1]
+    if name.endswith(_CONFIG_SUFFIXES) or name.startswith(".env") or name in ("dockerfile.env",):
+        return "config"
+    if name.endswith(_SOURCE_SUFFIXES):
+        return "source"
+    return None
+
+
+def named_tls_vulns(row: dict[str, Any]) -> str | None:
+    """The scored TLS vulnerabilities a code-scan row names (``vulnerabilities`` items, else its text), sorted and
+    comma-joined; None when the row names none (rule CL-4)."""
+    seen: set[str] = set()
+    items = row.get("vulnerabilities")
+    for item in items if isinstance(items, list) else []:
+        name = item.get("item") if isinstance(item, dict) else item
+        if isinstance(name, str) and name.upper() in TLS_VULNS:
+            seen.add(name.upper())
+    if not seen:
+        text = " ".join(str(row.get(k) or "") for k in ("description", "title", "evidence")).upper()
+        seen = {v for v in TLS_VULNS if re.search(rf"\b{v}\b", text)}
+    return ",".join(sorted(seen)) or None
+
+
 def code_row_fields(row: dict[str, Any]) -> dict[str, Any]:
     """fix_class, fix_class_floor and fix_class_confidence of a code-scan row (``cbom_rows.page_row``)."""
-    facts = {"artifact_kind": row.get("artifact_kind")} if row.get("artifact_kind") else {}
+    facts = {"artifact_kind": row.get("artifact_kind"), "file_kind": file_kind(row.get("location"))}
+    if "KNOWN_TLS_VULNERABILITY" in (row.get("finding_codes") or []):
+        facts["tls_vulns"] = named_tls_vulns(row)
     return list_fields(evaluate("code", row.get("asset_type"), row.get("finding_codes") or [], facts, CODE_CONTEXT))
 
 
