@@ -19,7 +19,19 @@ The files live in ``CBOM_NODE_ARTIFACT_DIR`` with a ``manifest.json`` naming the
 them answers 404 with ``NOT_AVAILABLE``, which the Add scan node wizard shows as it is.
 
 ``CBOM_NODE_IMAGE_REF`` (optional): the image in a registry customers can pull from.  Unset (the default), the wizard
-offers no ``docker pull``: the image comes from the file.
+offers no ``docker pull``: the image comes from the file.  ``CBOM_NODE_CHART_REF`` (optional, with it):
+``oci://<registry>/<path>/cbom-scan-node:<chart version>``, the Helm chart in that registry (``helm upgrade --install
+... oci://... --version <v>``).  The staging deploy sets both only when the GHCR packages are public
+(``CBOM_NODE_REGISTRY_PUBLIC=1``; deploy/staging/README.md), so the wizard never offers a pull that needs a login.
+
+Install links (terminal-only hosts): creating a node, or giving it a new registration token, returns
+``install_links`` (``install_links()``): one link per file the node's way of running needs (Docker: the image; Helm:
+the image and the chart; OVA/AMI: the build kit and the image), each with its SHA-256, for ``curl``/``wget`` in the
+one-paste install command.  A link (``?node_ticket=<node id>.<HMAC>``) is bound to the team, the node, the file kind
+and the node's current registration token (its hash): it works exactly as long as that token does, so it stops when
+the node registers, when the token is regenerated or the node reset, and when the token expires (24 h).  It holds
+nothing the registration token could be derived from.  Every use is an audit event (``node_artifact.download``, actor
+the node).
 """
 from __future__ import annotations
 
@@ -39,7 +51,8 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from sqlmodel import Session
 
 from backend.get_db import get_db
-from backend.utilities.cbom_sources.common import audit, log
+from backend.new_models import CbomScanNode
+from backend.utilities.cbom_sources.common import audit, iso_z, log, utcnow
 from backend.utilities.cbom_sources.http import PRIVATE, CbomRoute, TeamId, authorize, read_limiter, write_limiter
 from backend.utilities.team import check_if_user_is_in_team
 
@@ -103,6 +116,22 @@ def file_sha256(path: str) -> str:
     return value
 
 
+_CHART_REF = re.compile(r"oci://(" + _IMAGE_REF.pattern + r")")
+
+
+def pull_chart() -> tuple[str, str] | None:
+    """CBOM_NODE_CHART_REF (``oci://<registry>/<path>/<chart>:<version>``) as (``oci://...`` without the version, the
+    version); anything else is ignored (and logged).  Only offered with CBOM_NODE_IMAGE_REF: the chart runs that image."""
+    value = (os.environ.get("CBOM_NODE_CHART_REF") or "").strip()
+    if not value or pull_image_ref() is None:
+        return None
+    if not _CHART_REF.fullmatch(value):
+        log("cbom node artifacts: CBOM_NODE_CHART_REF is not oci://<registry>/<path>:<version>; ignored")
+        return None
+    ref, version = value.rsplit(":", 1)
+    return ref, version
+
+
 def _manifest(directory: str) -> dict | None:
     try:
         with open(os.path.join(directory, "manifest.json"), encoding="utf-8") as fh:
@@ -156,10 +185,13 @@ def listing() -> dict:
             continue
         items.append({"kind": kind, "label": label, "available": True, "filename": os.path.basename(path),
                       "size": os.path.getsize(path), "sha256": file_sha256(path), "message": None})
+    chart = pull_chart()
     return {
         "version": _version(manifest),
         "image_ref": _image_ref(manifest),
         "pull_image_ref": pull_image_ref(),
+        "pull_chart_ref": chart[0] if chart else None,
+        "pull_chart_version": chart[1] if chart else None,
         "artifacts": items,
     }
 
@@ -197,6 +229,77 @@ def ticket_user(ticket: str, team_id: int, kind: str, now: float | None = None) 
     return user_id
 
 
+# ------------------------------------------------------------------------------------------------ node install links
+# The files each way of running a node needs, main one first (the wizard's one-paste command fetches exactly these).
+NODE_KINDS: dict[str, tuple[str, ...]] = {
+    "docker": ("image",),
+    "helm": ("image", "helm-chart"),
+    "ova": ("ova-kit", "image"),
+    "ami": ("ami-kit", "image"),
+}
+NODE_TICKET_MAX = 100
+_NODE_LINK_REFUSED = HTTPException(
+    status_code=401,
+    detail="This install link no longer works: the node has registered, or its registration token was replaced or "
+           "has expired. Generate a new registration token for the node and use its new install command.")
+
+
+def _node_link_key() -> bytes | None:
+    secret = os.environ.get("JWT_SECRET_KEY") or ""
+    if not secret:
+        return None
+    return hmac.new(secret.encode("utf-8"), b"cbom-node-install-link/v1", hashlib.sha256).digest()
+
+
+def _node_sig(key: bytes, team_id: int, node_id: int, kind: str, registration_hash: str) -> str:
+    msg = f"{team_id}:{node_id}:{kind}:{registration_hash}".encode()
+    return base64.urlsafe_b64encode(hmac.new(key, msg, hashlib.sha256).digest()).decode().rstrip("=")
+
+
+def _awaiting_registration(node: CbomScanNode, now) -> bool:
+    return bool(node.registration_token_hash and node.registration_expires_at and node.enrolled_at is None
+                and node.node_token_hash is None and node.registration_expires_at > now)
+
+
+def install_links(team_id: int, node: CbomScanNode) -> dict | None:
+    """The install links of a node waiting to register (module docstring), or None: no registration token, no files
+    on this server, or no signing key (the wizard then shows the command for files downloaded in the browser)."""
+    if not _awaiting_registration(node, utcnow()):
+        return None
+    key = _node_link_key()
+    directory, manifest = _state()
+    if key is None or not directory or not manifest:
+        return None
+    files = []
+    for kind in NODE_KINDS.get(node.deployment, NODE_KINDS["docker"]):
+        path = _resolve(directory, manifest, kind)
+        if path is None:
+            continue
+        sig = _node_sig(key, team_id, int(node.id), kind, node.registration_token_hash)
+        files.append({"kind": kind, "filename": os.path.basename(path), "size": os.path.getsize(path),
+                      "sha256": file_sha256(path), "url": f"/{team_id}/cbom/node-artifacts/{kind}?node_ticket={node.id}.{sig}"})
+    if not files:
+        return None
+    return {"version": _version(manifest), "expires_at": iso_z(node.registration_expires_at), "files": files}
+
+
+def node_ticket_node(engine, ticket: str, team_id: int, kind: str) -> int:
+    """The node an install link was made for, while the link still works (module docstring); else 401."""
+    node_id, _, sig = ticket.partition(".")
+    key = _node_link_key()
+    if not node_id.isdigit() or not sig or len(node_id) > 18 or key is None:
+        raise _NODE_LINK_REFUSED
+    with Session(engine) as session:
+        node = session.get(CbomScanNode, int(node_id))
+        ok = (node is not None and node.team_id == team_id and kind in NODE_KINDS.get(node.deployment, ())
+              and _awaiting_registration(node, utcnow())
+              and hmac.compare_digest(sig, _node_sig(key, team_id, int(node.id), kind, node.registration_token_hash)))
+    if not ok:
+        log("cbom node install link refused", team=team_id, node=node_id, kind=kind)
+        raise _NODE_LINK_REFUSED
+    return int(node_id)
+
+
 # ------------------------------------------------------------------------------------------------ routes
 @router.get(BASE, dependencies=[Depends(read_limiter)], summary="Scan node files this server offers")
 async def list_artifacts(team_id: TeamId, Authorization: AuthHeader = None):
@@ -215,25 +318,34 @@ async def download_link(team_id: TeamId, kind: Kind, Authorization: AuthHeader =
                         headers=PRIVATE)
 
 
-def _record(engine, team_id: int, user_id: int, kind: str, version: str | None, size: int) -> None:
+def _record(engine, team_id: int, actor: tuple[str, int], kind: str, version: str | None, size: int) -> None:
+    """A user's download (object: the file kind), or a node's install link (actor and object: the node)."""
+    actor_type, actor_id = actor
     with Session(engine) as session:
-        audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="node_artifact.download",
-              object_type="node_artifact", object_id=None, changed_fields=[kind])
+        audit(session, team_id=team_id, actor_type=actor_type, actor_id=actor_id, action="node_artifact.download",
+              object_type="node" if actor_type == "node" else "node_artifact",
+              object_id=actor_id if actor_type == "node" else None, changed_fields=[kind])
         session.commit()
-    log("cbom node artifact download", team=team_id, user=user_id, kind=kind, version=version or "-", bytes=size)
+    log("cbom node artifact download", team=team_id, **{actor_type: actor_id}, kind=kind, version=version or "-",
+        bytes=size)
 
 
 @router.get(BASE + "/{kind}", dependencies=[Depends(read_limiter)], summary="Download a scan node file",
             response_class=Response)
 async def download(team_id: TeamId, kind: Kind, Authorization: AuthHeader = None,
-                   ticket: Annotated[str | None, Query(max_length=200)] = None):
-    if Authorization or not ticket:
+                   ticket: Annotated[str | None, Query(max_length=200)] = None,
+                   node_ticket: Annotated[str | None, Query(max_length=NODE_TICKET_MAX)] = None):
+    if Authorization or not (ticket or node_ticket):
         engine, user = await authorize(team_id, Authorization)
-        user_id = int(user.id)
-    else:
+        actor = ("user", int(user.id))
+    elif ticket:
         user_id = ticket_user(ticket, team_id, kind)
         engine = get_db()
         await run_in_threadpool(check_if_user_is_in_team, user_id, team_id, engine)
+        actor = ("user", user_id)
+    else:
+        engine = get_db()
+        actor = ("node", await run_in_threadpool(node_ticket_node, engine, node_ticket, team_id, kind))
     directory, manifest = await run_in_threadpool(_state)
     path = await run_in_threadpool(_resolve, directory, manifest, kind) if directory and manifest else None
     label, _key, media = KINDS[kind]
@@ -242,10 +354,10 @@ async def download(team_id: TeamId, kind: Kind, Authorization: AuthHeader = None
     name = os.path.basename(path)
     if kind == "image-sha256":
         body = f"{await run_in_threadpool(file_sha256, path)}  {name}\n".encode()
-        await run_in_threadpool(_record, engine, team_id, user_id, kind, _version(manifest), len(body))
+        await run_in_threadpool(_record, engine, team_id, actor, kind, _version(manifest), len(body))
         return Response(body, media_type=media, headers={
             **PRIVATE, "Content-Disposition": f'attachment; filename="{name}.sha256"'})
     size = os.path.getsize(path)
-    await run_in_threadpool(_record, engine, team_id, user_id, kind, _version(manifest), size)
+    await run_in_threadpool(_record, engine, team_id, actor, kind, _version(manifest), size)
     # FileResponse streams the file in chunks and sends its Content-Length (from stat), never reading it whole.
     return FileResponse(path, media_type=media, filename=name, headers=PRIVATE)
