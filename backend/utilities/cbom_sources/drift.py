@@ -36,7 +36,7 @@ from __future__ import annotations
 import datetime as _dt
 import hashlib
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Iterable, Mapping
 
 from sqlalchemy import update
@@ -85,6 +85,10 @@ class View:
     certificate: bool = False
     asset_id: int | None = None
     extra: dict[str, Any] = field(default_factory=dict)
+    # internals, never in ``public()``: the fact names the stored rows carried, and what re-judging them needs
+    # (asset type, algorithm, key size, protocol, facts, collection time), for the introduced-fact guard
+    fact_keys: frozenset[str] = field(default=frozenset(), repr=False, compare=False)
+    inputs: tuple[tuple[Any, ...], ...] = field(default=(), repr=False, compare=False)
 
     def public(self) -> dict[str, Any]:
         return {"key": self.key, "label": self.label, "type": self.asset_type, "impact": self.impact,
@@ -108,6 +112,8 @@ def _merge(table: dict[str, View], view: View) -> None:
         old.quantum_vulnerable = view.quantum_vulnerable if old.quantum_vulnerable is None else (
             old.quantum_vulnerable or view.quantum_vulnerable)
     old.judged = old.judged or view.judged
+    old.fact_keys = old.fact_keys | view.fact_keys
+    old.inputs = old.inputs + view.inputs
     old.extra["occurrences"] = int(old.extra.get("occurrences", 1)) + int(view.extra.get("occurrences", 1))
 
 
@@ -146,6 +152,8 @@ def node_views(rows: Iterable[CbomCollectedAsset], source_ref: str, *, reclassif
             not_after=(str(facts.get("not_after")) if cert and facts.get("not_after") else None),
             certificate=cert, asset_id=row.id,
             extra={"target": row.target, "location": row.location, "pqc_class": cls},
+            fact_keys=frozenset(facts),
+            inputs=((row.asset_type, row.algorithm, row.key_size, row.protocol, facts, row.created_at),),
         ))
     return out
 
@@ -190,6 +198,7 @@ class Gap:
     incomplete: bool  # assets under it may be listed with facts missing
     types: tuple[str, ...] = ()  # () = every asset type; else only these types (node checks, NODE_CHECK_TYPES)
     reason: str | None = None  # the coverage row's detail, shown with what it left "not read"
+    by_choice: bool = False  # an option the customer left off: hides its assets, but nothing is carried past it
 
     def covers(self, view: View, *, listed: bool) -> bool:
         if listed and not self.incomplete:
@@ -247,11 +256,12 @@ def job_gaps(rows: Iterable[CbomCollectedAsset]) -> list[Gap]:
         typed = None if prefixes or "scope" in facts else _node_check_types(str(facts.get("check") or ""))
         if typed is not None:
             out.append(Gap(target=str(row.target or ""), prefixes=(), incomplete=typed[1], types=typed[0],
-                           reason=reason))
+                           reason=reason, by_choice=bool(facts.get("by_choice"))))
             continue
         # no scope: nothing says which assets the gap left out, so it covers its whole target, listed ones included
         out.append(Gap(target=str(row.target or ""), prefixes=prefixes,
-                       incomplete=bool(facts.get("incomplete")) or not prefixes, reason=reason))
+                       incomplete=bool(facts.get("incomplete")) or not prefixes, reason=reason,
+                       by_choice=bool(facts.get("by_choice"))))
     return out
 
 
@@ -291,6 +301,7 @@ def compare(before: Mapping[str, View], after: Mapping[str, View], gaps: Iterabl
     changed: list[dict[str, Any]] = []
     opened: list[dict[str, Any]] = []
     resolved: list[dict[str, Any]] = []
+    collector_changes: list[dict[str, Any]] = []
     for ident in sorted(before.keys() & after.keys()):
         b, a = before[ident], after[ident]
         fields = {f: [getattr(b, f), getattr(a, f)] for f in _FIELDS if getattr(b, f) != getattr(a, f)}
@@ -308,8 +319,13 @@ def compare(before: Mapping[str, View], after: Mapping[str, View], gaps: Iterabl
         if gap is not None:
             not_read.append({**b.public(), "asset_removed": False, "codes": vanished, "reason": gap.reason})
             continue
+        explained, facts = _introduced_explains(b, a, vanished) if vanished else (frozenset(), ())
         for code in vanished:
-            resolved.append({**b.public(), "code": code, "asset_removed": False})
+            if code in explained:
+                collector_changes.append({**a.public(), "code": code, "direction": "resolved",
+                                          "label_change": "collector change", "facts": list(facts)})
+            else:
+                resolved.append({**b.public(), "code": code, "asset_removed": False})
     for view in added:
         for code in sorted(view.codes):
             opened.append({**view.public(), "code": code, "new_asset": True})
@@ -317,7 +333,35 @@ def compare(before: Mapping[str, View], after: Mapping[str, View], gaps: Iterabl
         for code in sorted(view.codes):
             resolved.append({**view.public(), "code": code, "asset_removed": True})
     return {"added": [v.public() for v in added], "removed": [v.public() for v in removed], "changed": changed,
-            "opened": opened, "resolved": resolved, "not_read": not_read}
+            "opened": opened, "resolved": resolved, "not_read": not_read, "collector_changes": collector_changes}
+
+
+# Facts a collector started sending after rows without them were stored (CB-33: the ACM ``exported`` flag and the
+# certificate ``key_pair_origin``).  A rule that withdraws a finding on such a fact would read the first run carrying
+# it as "resolved" against a baseline that never had it, although only the collector changed (CB-33 DA RC-5, X1).  A
+# rule that suppresses an AWS finding on a fact the collector did not send before CB-33 must list the fact here
+# (tests/test_cbom_drift_last_known.py fails otherwise).
+INTRODUCED_FACTS = frozenset({"exported", "key_pair_origin"})
+
+
+def _introduced_explains(before: View, after: View, vanished: list[str]) -> tuple[frozenset[str], tuple[str, ...]]:
+    """The vanished codes that only a newly sent fact explains, and those facts. The later rows are re-judged without
+    the introduced facts their baseline lacked; a code that comes back vanished because the collector changed, not
+    the estate (``collector_changes``, no event). Nothing when no introduced fact is new."""
+    from backend.utilities.cbom_sources.classify import classify
+
+    new = tuple(sorted((after.fact_keys - before.fact_keys) & INTRODUCED_FACTS))
+    if not new or not after.inputs:
+        return frozenset(), ()
+    back: set[str] = set()
+    for asset_type, algorithm, key_size, protocol, facts, created_at in after.inputs:
+        try:
+            verdict = classify(asset_type, algorithm, key_size, protocol,
+                               {k: v for k, v in (facts or {}).items() if k not in new}, created_at)
+        except Exception:  # a row the current rules cannot read is not guarded: it drifts as before
+            continue
+        back.update(c for c in verdict["finding_codes"] if isinstance(c, str))
+    return frozenset(back) & frozenset(vanished), new
 
 
 def _finding_pairs(diff: Mapping[str, list[dict[str, Any]]]) -> set[tuple[str, str, str]]:
@@ -434,6 +478,96 @@ def previous_comparable_run(session: Session, run: CbomCollectionRun) -> CbomCol
     return None
 
 
+# ----------------------------------------------------------------------------- last-known baseline
+CARRY_LEVELS = 20  # comparable jobs (the baseline job included) a baseline may reach back through, past real gaps
+
+
+@dataclass
+class _Level:
+    """One comparable job of a source's history, as a baseline level."""
+    job: CbomCollectionJob
+    run: CbomCollectionRun | None
+    rows: list[CbomCollectedAsset]
+    gaps: list[Gap]  # its real gaps (not ``by_choice``): only these carry anything from older jobs
+
+
+def _level(session: Session, job: CbomCollectionJob) -> _Level:
+    rows = _job_assets(session, job)
+    return _Level(job=job, run=session.get(CbomCollectionRun, job.run_id) if job.run_id else None, rows=rows,
+                  gaps=[g for g in job_gaps(rows) if not g.by_choice])
+
+
+def _history(session: Session, base: CbomCollectionJob, ref: str,
+             sources: Mapping[int, CbomCollectionSource]) -> list[_Level]:
+    """The baseline job, then each earlier comparable job of the source for as long as the last one had a real gap
+    (a ``by_choice`` gap never makes the walk go on: every AWS job has the Glue one, DA-2c), at most CARRY_LEVELS."""
+    levels = [_level(session, base)]
+    while levels[-1].gaps and len(levels) < CARRY_LEVELS:
+        older = _baseline_job(session, levels[-1].job, ref, sources)
+        if older is None:
+            break
+        levels.append(_level(session, older))
+    return levels
+
+
+def _carried(levels: list[_Level], ref: str, judge) -> dict[str, View]:
+    """The last known view of every identity: the baseline job's views, plus what it did not read, carried from the
+    newest earlier job that read it (CB-33 DA RC-4).
+
+    * An identity absent from the baseline under its gaps is carried from the newest older job that has it, if every
+      newer level's gaps cover it too (one level that read the place without it means it was really gone there).
+    * A listed identity under an incomplete gap keeps the codes the older levels saw, up to the first one that read
+      it fully (codes are only carried; what the later levels did read stays).
+    * Each level is judged by ``judge(level)`` (re-judged with the current rules when its run's rules differ from the
+      compared run's, DA-2b), so a carried view never brings an older rule's verdict along."""
+    first = levels[0]
+    out = node_views(first.rows, ref, reclassify=judge(first))
+    if len(levels) == 1:
+        return out
+    chain: list[list[Gap]] = [first.gaps]
+    known = set(out)
+    pending = {i for i, v in out.items() if _gap_for(v, first.gaps, listed=True) is not None}
+    for level in levels[1:]:
+        views = node_views(level.rows, ref, reclassify=judge(level))
+        for ident, view in views.items():
+            if ident in pending:
+                old = out[ident]
+                out[ident] = replace(old, codes=old.codes | view.codes, impact=_worse(old.impact, view.impact),
+                                     finding=bool(old.codes | view.codes))
+                if _gap_for(view, level.gaps, listed=True) is None:
+                    pending.discard(ident)  # read fully here: its codes are known from this level on
+            elif ident not in known:
+                known.add(ident)
+                if all(_gap_for(view, gaps, listed=False) is not None for gaps in chain):
+                    out[ident] = view
+                    if _gap_for(view, level.gaps, listed=True) is not None:
+                        pending.add(ident)
+        for ident in [i for i in pending if i not in views]:
+            if _gap_for(out[ident], level.gaps, listed=False) is None:
+                pending.discard(ident)  # read here and absent: nothing older is its last known state
+        chain.append(level.gaps)
+    return out
+
+
+def _judge(run: CbomCollectionRun):
+    """Each baseline level is re-judged with the current rules when its run's rules differ from ``run``'s (ST-1)."""
+    return lambda level: rules_differ(level.run, run)
+
+
+def _not_judged(_level: _Level) -> bool:
+    return False
+
+
+def _after_for_readiness(before: Mapping[str, View], after: Mapping[str, View], gaps: list[Gap]) -> dict[str, View]:
+    """The later side as readiness counts it: an asset its gaps left unread keeps its last known verdict (an unread
+    key does not move readiness)."""
+    out = dict(after)
+    for ident, view in before.items():
+        if ident not in out and _gap_for(view, gaps, listed=False) is not None:
+            out[ident] = view
+    return out
+
+
 def run_diff(session: Session, run: CbomCollectionRun, base: CbomCollectionRun) -> dict[str, Any]:
     """Compare ``base`` (before) with ``run`` (after), source by source; only sources complete in both are compared."""
     sources = _sources(session, run.team_id)
@@ -447,7 +581,8 @@ def run_diff(session: Session, run: CbomCollectionRun, base: CbomCollectionRun) 
             names.setdefault(ref, ID.job_source_name(job, src))
             sides[side][ref] = job
     per_source: list[dict[str, Any]] = []
-    totals: dict[str, list[Any]] = {k: [] for k in ("added", "removed", "changed", "opened", "resolved", "not_read")}
+    totals: dict[str, list[Any]] = {k: [] for k in ("added", "removed", "changed", "opened", "resolved", "not_read",
+                                                   "collector_changes")}
     rule_changes: list[dict[str, Any]] = []
     before_all: dict[str, View] = {}
     after_all: dict[str, View] = {}
@@ -464,18 +599,20 @@ def run_diff(session: Session, run: CbomCollectionRun, base: CbomCollectionRun) 
             entry["reason"] = (f"run #{base.id}: {why_b}" if not ok_b else f"run #{run.id}: {why_a}")
             per_source.append(entry)
             continue
-        b_rows, a_rows = _job_assets(session, b_job), _job_assets(session, a_job)
-        before = node_views(b_rows, ref, reclassify=reclassify)
+        # the before side is the last known state (the same baseline the drift events use, DA-2a)
+        levels = _history(session, b_job, ref, sources)
+        a_rows = _job_assets(session, a_job)
+        before = _carried(levels, ref, _judge(run))
         after = node_views(a_rows, ref, reclassify=reclassify)
         gaps = job_gaps(a_rows)
         diff = compare(before, after, gaps)
         if reclassify:
-            stored = compare(node_views(b_rows, ref, reclassify=False), node_views(a_rows, ref, reclassify=False), gaps)
+            stored = compare(_carried(levels, ref, _not_judged), node_views(a_rows, ref, reclassify=False), gaps)
             rule_changes += [{**r, "source_name": names.get(ref)} for r in rule_only_changes(stored, diff)]
         for k in totals:
             totals[k] += [{**d, "source_name": names.get(ref)} for d in diff[k]]
         before_all.update({f"{ref}|{i}": v for i, v in before.items()})
-        after_all.update({f"{ref}|{i}": v for i, v in after.items()})
+        after_all.update({f"{ref}|{i}": v for i, v in _after_for_readiness(before, after, gaps).items()})
         entry.update(status="compared", reason=None, counts={k: len(v) for k, v in diff.items()},
                      before_job_id=b_job.id, after_job_id=a_job.id)
         per_source.append(entry)
@@ -619,6 +756,7 @@ def record_run_drift(session: Session, run: CbomCollectionRun, now: _dt.datetime
         return None
     sources = _sources(session, run.team_id)
     rows: list[dict[str, Any]] = []
+    not_read = 0
     for job in _run_jobs(session, run):
         if not job_comparable(job)[0]:
             continue
@@ -632,25 +770,30 @@ def record_run_drift(session: Session, run: CbomCollectionRun, now: _dt.datetime
         rows += _expiring(run.team_id, now, after, scope="node", source_ref=ref, source_name=name, run_id=run.id)
         if base is None:
             continue
-        diff = compare(node_views(_job_assets(session, base), ref, reclassify=reclassify), after, job_gaps(a_rows))
+        diff = compare(_carried(_history(session, base, ref, sources), ref, _judge(run)), after, job_gaps(a_rows))
+        not_read += len(diff["not_read"])
         rows += diff_events(run.team_id, now, diff, scope="node", source_ref=ref, source_name=name,
                             anchor=f"run:{run.id}", cause="re-judged with the current rules" if reclassify else None,
                             run_id=run.id, baseline_run_id=base.run_id)
     stored = insert_events(session, rows[:EVENT_CAP])
-    log("drift recorded", team=run.team_id, run=run.id, events=stored, truncated=len(rows) > EVENT_CAP or None)
+    log("drift recorded", team=run.team_id, run=run.id, events=stored, not_read=not_read or None,
+        truncated=len(rows) > EVENT_CAP or None)
     jobs = _run_jobs(session, run)
+    complete = [j for j in jobs if job_comparable(j)[0]]
     _emit_finished(session, run.team_id, now, scope="node", run_id=run.id, at=run.finished_at, summary={
         "status": run.status, "kb_version": run.kb_version, "sources": len(jobs),
-        "complete_sources": sum(1 for j in jobs if job_comparable(j)[0]),
+        "complete_sources": len(complete),
+        # read with coverage gaps, and what those gaps left unread: "0 resolved" is not "everything was read" (F2)
+        "partial_sources": sum(1 for j in complete if j.outcome == "partial"), "not_read": not_read,
         "assets": sum(int(j.asset_count or 0) for j in jobs), "events": _kind_counts(rows[:EVENT_CAP])})
     return stored
 
 
 def run_not_read(session: Session, run: CbomCollectionRun) -> list[dict[str, Any]]:
     """What each complete collection of ``run`` did not read again (under one of its coverage gaps) that the source's
-    previous complete collection had: the same comparison as ``record_run_drift``, whose events leave these out
-    (they are neither removed nor resolved), so the run's "Changes" can list them apart with the reason (lab UI r1
-    F2: a stopped TLS target silently dropped out)."""
+    last known state had: the same comparison as ``record_run_drift``, whose events leave these out (they are neither
+    removed nor resolved), so the run's "Changes" can list them apart with the reason (lab UI r1 F2: a stopped TLS
+    target silently dropped out)."""
     sources = _sources(session, run.team_id)
     out: list[dict[str, Any]] = []
     for job in _run_jobs(session, run):
@@ -667,7 +810,7 @@ def run_not_read(session: Session, run: CbomCollectionRun) -> list[dict[str, Any
             continue
         base_run = session.get(CbomCollectionRun, base.run_id) if base.run_id else None
         reclassify = rules_differ(base_run, run)
-        diff = compare(node_views(_job_assets(session, base), ref, reclassify=reclassify),
+        diff = compare(_carried(_history(session, base, ref, sources), ref, _judge(run)),
                        node_views(a_rows, ref, reclassify=reclassify), gaps)
         out += [{**d, "source_name": name} for d in diff["not_read"]]
     return out
