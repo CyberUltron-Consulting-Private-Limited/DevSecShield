@@ -123,3 +123,70 @@ def test_postgres_tls_versions(expected):
     MEASURED["pg-tls"] = {"seconds": round(time.monotonic() - t0, 2), "handshakes": facts["handshakes_used"]}
     assert sorted(v for v, ok in facts["versions"].items() if ok) == t["versions"]
     assert facts["negotiated_cipher_code"] and facts["enumeration"]["complete"] is True
+
+
+def test_sni_only_server_that_closes_without_an_alert_is_read_with_the_name(expected, monkeypatch):
+    """Envoy/Istio style: no default filter chain, a hello without the name is closed (no alert)."""
+    t = expected["sni-close"]
+    status, err, rows, tls = _read(t, "sni-close+name", sni=[t["sni"]], monkeypatch=monkeypatch)
+    assert status == "ok" and len(tls) == 1, (status, err, rows)
+    f = tls[0]["facts"]
+    assert f["sni"] == t["sni"] and f["sni_required"] is True
+    assert sorted(v for v, ok in f["versions"].items() if ok) == t["versions"]
+    for v, suites in t["suites"].items():
+        assert _suites(f, v) == sorted(suites), v
+    assert f["enumeration"]["complete"] is True
+
+
+def test_sni_only_server_that_closes_without_a_name_configured(expected, monkeypatch):
+    """Without a name: nginx closes with the hello unread, so the kernel answers with a reset.  A reset decides
+    nothing: the endpoint is not read (status refused; the sweep writes its not-read row), never "not TLS"."""
+    status, err, rows, tls = _read(expected["sni-close"], "sni-close", monkeypatch=monkeypatch)
+    assert status == "refused" and "reset" in err and not tls and not rows
+
+
+def test_a_tarpit_costs_one_endpoint_little_time(expected, monkeypatch):
+    status, err, rows, tls = _read(expected["tarpit"], "tarpit", monkeypatch=monkeypatch)
+    assert status == "timeout" and not tls
+    assert MEASURED["tarpit"]["seconds"] < 25
+
+
+def _mysql_counters(lab: Path, container: str) -> dict[str, list[int]]:
+    import subprocess
+
+    out = subprocess.run(["sh", str(lab / "mysql_sql.sh"), container, "select IP, SUM_CONNECT_ERRORS, "
+                          "COUNT_HANDSHAKE_ERRORS from performance_schema.host_cache"],
+                         capture_output=True, text=True, check=True).stdout
+    return {line.split("\t")[0]: [int(x) for x in line.split("\t")[1:]] for line in out.splitlines() if line.strip()}
+
+
+@pytest.mark.parametrize("name", ["mysql-hardened", "mysql-default"])
+def test_mysql_tls_versions_without_tripping_max_connect_errors(expected, name):
+    """A real MySQL 8.4 with its host cache on: the scan reads the accepted versions and suites, its unfinished
+    connections (every probe is one) are counted by the server, and still the node is never blocked and the count
+    is left at 0."""
+    t = expected[name]
+    lab = Path(LAB)
+    ctx = JobContext(job_id=1, attempt=1, run_id=None, kind="collect", source_kind="database", scrubber=Scrubber(),
+                     never_scan=NeverScan([]), deadline=time.monotonic() + 300)
+    config = {"engine": "mysql", "host": t["ip"], "port": t["port"], "login": t["login"], "require_tls": True,
+              "ca_pem": (lab / t["ca"]).read_text()}
+    password = (lab / "mysql" / "scanpass").read_text()
+    before = _mysql_counters(lab, t["container"])
+    t0 = time.monotonic()
+    target, status, err, n = D._one(ctx, config, {"password": password})
+    ctx.flush()
+    after = _mysql_counters(lab, t["container"])
+    tls = [a for a in ctx.collected if a["type"] == "tls_endpoint"]
+    f = tls[0]["facts"]
+    MEASURED[name] = {"status": status, "seconds": round(time.monotonic() - t0, 2),
+                      "handshakes": f.get("handshakes_used"), "server_counters_after": after,
+                      "server_counters_before": before}
+    assert status == "ok", (status, err)
+    assert sorted(v for v, ok in f["versions"].items() if ok) == t["versions"]
+    assert f["enumeration"]["complete"] is True and f["cipher_suites"]["TLSv1.3"]
+    (sum_errors, handshake_errors), = [v for ip, v in after.items()]
+    probes = handshake_errors - sum(v[1] for v in before.values())
+    assert sum_errors == 0  # left clean: the next scan and the customer's clients start from 0
+    if t["max_connect_errors"] == 10:
+        assert probes > t["max_connect_errors"]  # more unfinished connections than the limit, never blocked

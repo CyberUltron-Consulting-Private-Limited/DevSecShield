@@ -194,14 +194,24 @@ handshake (`openssl s_client`), raw ClientHello per protocol version, a TLS 1.3 
 hybrid via HelloRetryRequest), TLS_FALLBACK_SCSV, weak cipher classes, then the enumeration of every suite each
 accepted version takes, every TLS 1.3 suite and group, and the TLS <= 1.2 curves (`tlsenum.py`; names and codes from
 the IANA registries in `tls_registry.py`). Each enumeration pass costs (accepted + 1) handshakes, (accepted + 2) for a
-legacy version (the 77-suite probe table first, then every other IANA suite); measured: a hardened TLS 1.2/1.3 server
-about 20, OpenSSL `ALL:@SECLEVEL=0` with RSA + ECDSA certificates (69 suites, 6 groups) 87. When the budget runs out
+legacy version (the 77-suite probe table first, then every other IANA suite). The cost is what the server accepts, not
+the cap (measured on real nginx/OpenSSL 3.5 servers, `tests/tls_lab.sh`): a Mozilla-intermediate TLS 1.2/1.3 server
+23, OpenSSL `ALL:@SECLEVEL=0` 68 (RSA certificate) to 87 (RSA + ECDSA). A /24 with 100 TLS endpoints (72 typical, 28
+permissive) at 20 connections/s took 111 s at a cap of 12 and 231 s at 128 (`scripts/bench_tls_scale.py`): the node's
+rate limit binds, so a larger cap lengthens the job and never raises the rate any server sees. When the budget runs out
 the lists are marked incomplete (`enumeration`, `cipher_suites_complete`), never a coverage gap: the checks that judge
-findings ran first. A port that does not speak TLS (it closes, or answers HTTP) gets a `not_tls` coverage row, never a
-TLS asset; a TLS server that only alerts is a TLS endpoint with `negotiation: no_common_parameters` (or `sni_required`)
-and an incomplete coverage row. SNI-only servers are read with the team's "Hostnames for SNI" (resolved once per job,
-within 20 s, first 200 names). STARTTLS for SMTP, IMAP, LDAP, PostgreSQL, MySQL (database sources read every accepted
-version and suite through the engine's own TLS upgrade, at most 64 handshakes); SSH algorithm lists; RDP negotiation;
+findings ran first; facts past the 16 KB cap are trimmed by name with their counts (`facts_trimmed`), never silently.
+Once a server times out or refuses the connect, the endpoint's remaining probes are not sent and the timeout counts
+toward the host's tarpit rule. A port that does not speak TLS (it closes, or answers HTTP, to a modern and a legacy
+hello) gets a `not_tls` coverage row, never a TLS asset; a refused connect or a reset after the hello is never "not
+TLS" (the endpoint is not read); a TLS server that only alerts is a TLS endpoint with `negotiation:
+no_common_parameters` (or `sni_required`) and an incomplete coverage row. SNI-only servers (an alert without a name,
+or a close without one and an answer with it) are read with the team's "Hostnames for SNI" (resolved once per job,
+within 20 s, first 200 names; names left out are one job-wide coverage row). STARTTLS for SMTP, IMAP, LDAP,
+PostgreSQL, MySQL (database sources read every accepted version and suite through the engine's own TLS upgrade, at
+most 64 handshakes, through the node's rate limiter, one at a time per database; MySQL counts every unfinished
+connection against `max_connect_errors`, so it is probed only after the read-only login succeeded, in batches of half
+that limit, each closed by a login that resets the count); SSH algorithm lists; RDP negotiation;
 SQL Server PRELOGIN encryption flag. Connections are rate-limited (connections per second, parallel per server), the
 never-scan list and the stop-all switch apply live, and work stops at the end of the scan window.
 
