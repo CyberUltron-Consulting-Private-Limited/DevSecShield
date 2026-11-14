@@ -42,6 +42,7 @@ from backend.utilities.pdf import (
     cbom_methodology_pdf,
     cbom_network_tls_pdf,
     cbom_pqc_roadmap_pdf,
+    cbom_risk_register_pdf,
     cbom_scope_register_pdf,
 )
 from backend.utilities.pdf.report_branding import REPORT_META
@@ -82,9 +83,11 @@ def _spec(
     )
 
 
-# Menu order: documents #1, #3, #5, #6, #7, #9, #10, #15, #16.
+# Menu order: documents #1, #2, #3, #5, #6, #7, #9, #10, #15, #16.
 _SPECS = (
     _spec("scope-baseline-register", 1, cbom_scope_register_pdf),
+    # the quantum risk register (CB-23): reads the register, not the scans, so it renders for every team
+    _spec("quantum-risk-register", 2, cbom_risk_register_pdf),
     _spec("methodology-evidence-plan", 3, cbom_methodology_pdf),
     _spec(
         "infrastructure-cloud-encryption-posture",
