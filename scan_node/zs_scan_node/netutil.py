@@ -69,6 +69,15 @@ def is_loopback_name(name: str) -> bool:
     return name in LOOPBACK_NAMES or name.endswith(".localhost")
 
 
+def ip_text(addr: ipaddress.IPv4Address | ipaddress.IPv6Address) -> str:
+    """The one text form of an address on the node (target labels, reasons, de-duplication): RFC 5952, with an
+    IPv4-mapped address's IPv4 part dotted (section 5: ::ffff:127.0.0.9), which is how getaddrinfo answers.  str()
+    alone is not stable for those: CPython 3.12.3 and older print ::ffff:7f00:9, 3.12.16 and 3.13 ::ffff:127.0.0.9."""
+    if addr.version == 6 and addr.ipv4_mapped is not None:
+        return f"::ffff:{addr.ipv4_mapped}" + (f"%{addr.scope_id}" if addr.scope_id else "")
+    return str(addr)
+
+
 def _reaches(addr: ipaddress.IPv4Address | ipaddress.IPv6Address) -> tuple:
     """The address, plus the IPv4 address that an IPv4-mapped or NAT64 (64:ff9b::/96) IPv6 address reaches.  A zone
     (fe80::1%eth0) is dropped: it names the interface, not another host."""
@@ -538,7 +547,10 @@ def resolve(name: str, timeout: float = 5.0) -> list[str]:
     infos = socket.getaddrinfo(name, None, proto=socket.IPPROTO_TCP)
     out: list[str] = []
     for family, *_rest, sockaddr in infos:
-        ip = sockaddr[0]
+        try:
+            ip = ip_text(ipaddress.ip_address(sockaddr[0]))
+        except ValueError:
+            ip = sockaddr[0]
         if ip not in out:
             out.append(ip)
     out.sort(key=lambda a: (":" in a, a))
@@ -740,9 +752,9 @@ def iter_line_ips(line: str) -> Iterator[str] | None:
         if "/" in text:
             net = ipaddress.ip_network(text, strict=False)
             if net.num_addresses == 1:
-                return iter([str(net.network_address)])
+                return iter([ip_text(net.network_address)])
             hosts = net.hosts() if net.version == 4 and net.prefixlen <= 30 else iter(net)
-            return (str(a) for a in hosts)
+            return (ip_text(a) for a in hosts)
         if "-" in text:
             left, right = text.split("-", 1)
             try:
@@ -750,9 +762,9 @@ def iter_line_ips(line: str) -> Iterator[str] | None:
             except ValueError:
                 a = b = None
             if a is not None and b is not None and a.version == b.version and int(b) >= int(a):
-                return (str(ipaddress.ip_address(i)) if a.version == 4 else str(ipaddress.IPv6Address(i))
+                return (ip_text(ipaddress.IPv4Address(i) if a.version == 4 else ipaddress.IPv6Address(i))
                         for i in range(int(a), int(b) + 1))
-        return iter([str(ipaddress.ip_address(text))])
+        return iter([ip_text(ipaddress.ip_address(text))])
     except ValueError:
         return None
 

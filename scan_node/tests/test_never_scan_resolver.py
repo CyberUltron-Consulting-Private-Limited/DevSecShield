@@ -413,13 +413,80 @@ def test_a_loopback_name_keeps_only_the_loopback_out_and_holds_nothing(slow_dns,
     targets, skipped = expand_targets(["10.1.2.0/29"] + LOOPBACK_TARGETS, never, reasons=reasons)
     assert time.monotonic() - started < 1.0 and slow_dns.looked_up == []
     assert [t.ip for t in targets] == ["10.1.2.1", "10.1.2.2", "10.1.2.3", "10.1.2.4", "10.1.2.6"]
-    loopback = ["127.0.0.1", "127.0.0.2", "127.255.255.254", "::1", "::ffff:7f00:9", "64:ff9b::7f00:1"]
+    loopback = ["127.0.0.1", "127.0.0.2", "127.255.255.254", "::1", "::ffff:127.0.0.9", "64:ff9b::7f00:1"]
     assert skipped == ["10.1.2.5"] + loopback
     name = entry.lower().rstrip(".")
     for address in loopback:
         assert reasons[address] == f"{address} is on the never-scan list (an address of {name})"
     assert never.unresolved == [] and never.held_names() == []
     assert never.blocks_host(entry) and never.blocks_host(name.upper())
+
+
+def _str_of_cpython_3_12_3(monkeypatch):
+    """CPython 3.12.3 and older print an IPv4-mapped address in hex (::ffff:7f00:9); 3.12.16 and 3.13 (gh-87799) and
+    getaddrinfo print it dotted (::ffff:127.0.0.9).  This puts the old str() back, whatever runs the tests."""
+    newer = ipaddress.IPv6Address.__str__
+
+    def old(self):
+        mapped = self.ipv4_mapped
+        if mapped is None or self.scope_id:
+            return newer(self)
+        return f"::ffff:{int(mapped) >> 16:x}:{int(mapped) & 0xFFFF:x}"
+
+    monkeypatch.setattr(ipaddress.IPv6Address, "__str__", old)
+    assert str(ipaddress.ip_address("::ffff:127.0.0.9")) == "::ffff:7f00:9"
+
+
+ONE_TEXT_FORM = [
+    ("::ffff:7f00:9", ["::ffff:127.0.0.9"]),  # IPv4-mapped: RFC 5952 section 5, the IPv4 part dotted
+    ("::FFFF:127.0.0.9", ["::ffff:127.0.0.9"]),
+    ("::ffff:0.0.0.0", ["::ffff:0.0.0.0"]),
+    ("::ffff:10.0.0.4/126", ["::ffff:10.0.0.4", "::ffff:10.0.0.5", "::ffff:10.0.0.6", "::ffff:10.0.0.7"]),
+    ("::ffff:10.0.0.1-::ffff:10.0.0.2", ["::ffff:10.0.0.1", "::ffff:10.0.0.2"]),
+    ("::ffff:a00:9/128", ["::ffff:10.0.0.9"]),
+    ("::7f00:1", ["::7f00:1"]),  # IPv4-compatible (deprecated): not mapped, stays hex
+    ("64:ff9b::7f00:1", ["64:ff9b::7f00:1"]),  # NAT64: hex, as every CPython prints it
+    ("fe80::1%eth0", ["fe80::1%eth0"]),
+    ("2001:DB8::1", ["2001:db8::1"]),
+    ("10.0.0.1", ["10.0.0.1"]),
+]
+
+
+@pytest.mark.parametrize("python", ["this interpreter", "CPython 3.12.3 str()"])
+@pytest.mark.parametrize("line, labels", ONE_TEXT_FORM)
+def test_an_address_line_has_one_text_form_whatever_the_python(monkeypatch, python, line, labels):
+    """CI (scan-node, fb4907c): the loopback test expected ::ffff:7f00:9, written on a CPython 3.12.3 box; CI's
+    3.12.16 (and the node image's python:3.12-slim) print ::ffff:127.0.0.9.  Labels, reasons and de-duplication
+    must not depend on the interpreter's patch level, so the node writes one form: the one getaddrinfo answers in."""
+    if python != "this interpreter":
+        _str_of_cpython_3_12_3(monkeypatch)
+    assert list(netutil.iter_line_ips(line)) == labels
+    assert [netutil.ip_text(ipaddress.ip_address(a)) for a in labels] == labels
+
+
+@pytest.mark.parametrize("python", ["this interpreter", "CPython 3.12.3 str()"])
+def test_a_mapped_target_is_one_target_and_one_label_in_every_form(monkeypatch, slow_dns, python):
+    """The same host written as ::ffff:7f00:9, as ::ffff:127.0.0.9, and answered by a name (getaddrinfo's dotted form)
+    is scanned once, under one label; listed, it is skipped once with one reason."""
+    if python != "this interpreter":
+        _str_of_cpython_3_12_3(monkeypatch)
+    slow_dns.table["mapped.internal"] = ["::ffff:10.0.0.9"]
+    targets, skipped = expand_targets(["::ffff:a00:9", "::ffff:10.0.0.9", "mapped.internal"], NeverScan([]))
+    assert [(t.label, t.ip) for t in targets] == [("::ffff:10.0.0.9", "::ffff:10.0.0.9")] and skipped == []
+    reasons: dict[str, str] = {}
+    targets, skipped = expand_targets(["::ffff:a00:9", "::FFFF:10.0.0.9"], NeverScan(["10.0.0.9"]), reasons=reasons)
+    assert targets == [] and skipped == ["::ffff:10.0.0.9"]
+    assert reasons == {"::ffff:10.0.0.9": "::ffff:10.0.0.9 is on the never-scan list (10.0.0.9)"}
+
+
+def test_resolve_writes_the_answers_in_the_same_form(monkeypatch):
+    def getaddrinfo(name, port, proto=0):
+        return [(socket.AF_INET6, socket.SOCK_STREAM, proto, "", (a, 0, 0, 0))
+                for a in ("::FFFF:7f00:9", "::ffff:127.0.0.9", "2001:DB8::1")] + [
+                (socket.AF_INET, socket.SOCK_STREAM, proto, "", ("10.0.0.1", 0))]
+
+    monkeypatch.setattr(netutil.socket, "getaddrinfo", getaddrinfo)
+    assert netutil.resolve("db.internal") == ["10.0.0.1", "2001:db8::1", "::ffff:127.0.0.9"]
 
 
 def test_localhost_with_the_systems_own_resolver_is_the_reviewers_probe():
