@@ -4,13 +4,17 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
+  DEFAULT_NODE_IMAGE,
   DEPLOY_SUPPORT,
+  KIT_STEPS,
   ago,
   ansibleSnippet,
   blankSecretError,
   countHours,
   csvFirstColumn,
   defaultWindow,
+  downloadKinds,
+  downloadLabel,
   EXPOSURE_CHOICES,
   exposureFrom,
   formatDateTime,
@@ -19,8 +23,9 @@ import {
   installCommand,
   nodeInstallNames,
   mixedGroupScope,
+  nodeImages,
   normalizeGrid,
-  offlineImageSteps,
+  notAvailable,
   readTextFile,
   setCell,
   shQuote,
@@ -61,11 +66,12 @@ assert.ok(/^[a-z0-9-]{1,53}$/.test(nodeInstallNames("x".repeat(64)).release) && 
 {
   const one = installCommand("docker", { token: "t1", apiUrl: "https://api", image: "img:1", name: "dc-mumbai-01" });
   const two = installCommand("docker", { token: "t2", apiUrl: "https://api", image: "img:1", name: "dmz.pune" });
-  assert.ok(one.startsWith("docker run -d --name zs-scan-node-dc-mumbai-01 ") && one.includes("-v zs-node-dc-mumbai-01:/var/lib/zs-node"));
-  assert.ok(two.startsWith("docker run -d --name zs-scan-node-dmz-pune ") && two.includes("-v zs-node-dmz-pune:/var/lib/zs-node"));
+  assert.ok(one.includes("\ndocker run -d --pull never --name zs-scan-node-dc-mumbai-01 ") && one.includes("-v zs-node-dc-mumbai-01:/var/lib/zs-node"));
+  assert.ok(two.includes("\ndocker run -d --pull never --name zs-scan-node-dmz-pune ") && two.includes("-v zs-node-dmz-pune:/var/lib/zs-node"));
+  assert.ok(installCommand("docker", { token: "t", apiUrl: "u", image: "reg/x:1", name: "n", pull: true }).startsWith("docker run -d --name zs-scan-node-n "));
   const h1 = installCommand("helm", { token: "t", apiUrl: "u", image: "reg/x:2.0", name: "dc-mumbai-01" });
   const h2 = installCommand("helm", { token: "t", apiUrl: "u", image: "reg/x:2.0", name: "dmz.pune" });
-  assert.ok(h1.startsWith("helm upgrade --install zs-scan-node-dc-mumbai-01 ") && h2.startsWith("helm upgrade --install zs-scan-node-dmz-pune "));
+  assert.ok(h1.includes("\nhelm upgrade --install zs-scan-node-dc-mumbai-01 ") && h2.includes("\nhelm upgrade --install zs-scan-node-dmz-pune "));
 }
 
 // Helm: every value the UI sets exists in the chart (deploy/helm/cbom-scan-node/values.yaml), for the Deployment and
@@ -153,63 +159,78 @@ assert.equal(mixedGroupScope("databases", { database: 2 }, 2), "2 databases");
 assert.equal(mixedGroupScope("databases", { database: 2, key_manager: 1 }, 3), "2 databases · 1 HSM or key manager");
 assert.equal(mixedGroupScope("databases", { key_manager: 2 }, 2), "2 HSMs or key managers");
 
-// a site that cannot pull the node image: the file from `make node-image`, its sha256 check, then docker load
+// Customers have no repository and no ZeroShield registry (owner, staging 14 Nov): the Docker and Helm commands load
+// the image file the server serves (Download scan node image), check it first, and never pull it, unless the server
+// names a registry customers can pull from.
 {
-  const docker = offlineImageSteps("docker", "registry.zeroshield.ai/cbom/scan-node:1.0")!;
-  assert.ok(docker.includes("make node-image VERSION=1.0"));
-  const check = docker.indexOf("sha256sum -c scan-node-1.0.tar.gz.sha256");
-  const load = docker.indexOf("docker load -i scan-node-1.0.tar.gz");
-  assert.ok(check >= 0 && load > check, "the checksum is checked before the image is loaded");
-  assert.ok(!docker.includes("docker tag"), "the archive already carries the published name");
-  const helm = offlineImageSteps("helm", "registry.zeroshield.ai/cbom/scan-node:1.0")!;
-  assert.ok(helm.includes("docker push <your-registry>/cbom/scan-node:1.0") && helm.includes("./deploy/helm/cbom-scan-node"));
-  // a site that set NEXT_PUBLIC_CBOM_NODE_IMAGE: the loaded image is re-tagged to the name the command runs
-  assert.ok(offlineImageSteps("docker", "mirror.bank.local/zs/scan-node:1.1")!
-    .includes("docker tag registry.zeroshield.ai/cbom/scan-node:1.1 mirror.bank.local/zs/scan-node:1.1"));
-  assert.equal(offlineImageSteps("ami", "registry.zeroshield.ai/cbom/scan-node:1.0"), null);
-  assert.equal(offlineImageSteps("ova", "registry.zeroshield.ai/cbom/scan-node:1.0"), null);
-  // the same steps the scan node README documents, and the make target exists (run from frontend/)
-  const readme = readFileSync(join("..", "scan_node", "README.md"), "utf8");
-  assert.ok(readme.includes("make node-image") && readme.includes("sha256sum -c scan-node-<version>.tar.gz.sha256")
-    && readme.includes("docker load -i scan-node-<version>.tar.gz"));
-  assert.ok(/^node-image:/m.test(readFileSync(join("..", "Makefile"), "utf8")));
+  const opts = { token: "zsr_T", apiUrl: "https://api.example", name: "dc-1" }
+  const loaded = nodeImages(undefined).loaded
+  assert.equal(loaded.image, DEFAULT_NODE_IMAGE)
+  assert.equal(DEFAULT_NODE_IMAGE, "zeroshield/cbom-scan-node:1.0.0")
+  const docker = installCommand("docker", { ...opts, ...loaded })
+  const check = docker.indexOf("sha256sum -c scan-node-1.0.0.tar.gz.sha256")
+  const load = docker.indexOf("docker load -i scan-node-1.0.0.tar.gz")
+  const run = docker.indexOf("docker run -d --pull never --name zs-scan-node-dc-1")
+  assert.ok(check >= 0 && load > check && run > load, docker)
+  assert.ok(docker.trimEnd().endsWith("  zeroshield/cbom-scan-node:1.0.0"), "runs the name the file loads as")
+  // the image the scan_node_image.sh archive is saved under is the one the command runs (SCAN_NODE_IMAGE default)
+  const script = readFileSync(join("..", "scripts", "release", "scan_node_image.sh"), "utf8")
+  assert.ok(script.includes('IMAGE="${SCAN_NODE_IMAGE:-zeroshield/cbom-scan-node}"'))
+  assert.ok(readFileSync(join("..", "scan_node", "zs_scan_node", "__init__.py"), "utf8").includes('VERSION = "1.0.0"'))
+  // the server's names win: its file names and the name its file loads as
+  const served = nodeImages({
+    version: "1.2.0", image_ref: "zeroshield/cbom-scan-node:1.2.0", pull_image_ref: null,
+    artifacts: [
+      { kind: "image", label: "", available: true, filename: "scan-node-1.2.0.tar.gz", size: 1, sha256: "a".repeat(64), message: null },
+      { kind: "helm-chart", label: "", available: true, filename: "cbom-scan-node-1.2.0.tgz", size: 1, sha256: "b".repeat(64), message: null },
+    ],
+  })
+  assert.equal(served.pulled, null, "no registry configured: no pull variant")
+  const helm = installCommand("helm", { ...opts, ...served.loaded })
+  assert.ok(helm.includes('REGISTRY=registry.example.internal/zeroshield') && helm.includes("docker load -i scan-node-1.2.0.tar.gz"), helm)
+  assert.ok(helm.includes('docker tag zeroshield/cbom-scan-node:1.2.0 "$REGISTRY/cbom-scan-node:1.2.0"'), helm)
+  assert.ok(helm.includes('docker push "$REGISTRY/cbom-scan-node:1.2.0"'), helm)
+  assert.ok(helm.includes("helm upgrade --install zs-scan-node-dc-1 ./cbom-scan-node-1.2.0.tgz \\"), helm)
+  assert.ok(helm.includes(`--set image.repository="$REGISTRY/cbom-scan-node" --set image.tag='1.2.0'`), helm)
+  assert.ok(!helm.includes("oci://"), "the chart is the downloaded file")
+  const agents = helmAgentCommand({ poolToken: "zsp_T", apiUrl: "https://api.example", ...served.loaded })
+  assert.ok(agents.includes("helm upgrade --install zs-host-agents ./cbom-scan-node-1.2.0.tgz") && agents.includes('"$REGISTRY/cbom-scan-node"'), agents)
+  // a registry the server names (CBOM_NODE_IMAGE_REF): a pull variant for Docker, a one-command Helm install
+  const both = nodeImages({ version: "1.2.0", image_ref: "zeroshield/cbom-scan-node:1.2.0", pull_image_ref: "reg.bank.example:5000/zs/scan-node:1.2.0", artifacts: [] })
+  assert.ok(both.pulled && both.pulled.pull)
+  const pulled = installCommand("docker", { ...opts, ...both.pulled! })
+  assert.ok(!pulled.includes("--pull never") && !pulled.includes("docker load") && pulled.trimEnd().endsWith("reg.bank.example:5000/zs/scan-node:1.2.0"), pulled)
+  const helmPull = installCommand("helm", { ...opts, ...both.pulled! })
+  assert.ok(helmPull.includes("--set image.repository='reg.bank.example:5000/zs/scan-node' --set image.tag='1.2.0'") && !helmPull.includes("REGISTRY="), helmPull)
+  // a build's NEXT_PUBLIC_CBOM_NODE_IMAGE counts as a registry only when the server names none
+  assert.equal(nodeImages(undefined, "ghcr.io/o/devsecshield-scan-node:dev-1").pulled?.image, "ghcr.io/o/devsecshield-scan-node:dev-1")
+  assert.equal(nodeImages(undefined, "").pulled, null)
+  // the AMI and the OVA are built with the downloaded kit: their settings still come from the wizard
+  assert.ok(installCommand("ami", { ...opts, ...loaded }).includes("AMI build kit"))
+  assert.ok(installCommand("ova", { ...opts, ...loaded }).includes("OVA build kit"))
 }
 
-// PR #72 r7: `make node-image VERSION=<v>` runs scripts/release/scan_node_image.sh, which refuses a version the node
-// would not report (NODE_VERSION_RE). Every VERSION= the steps print passes the script's own rule, read from the
-// script; an image whose tag fails it (GHCR's dev-<sha12>, the local stack's k-<sha12>, no tag = latest) gets the
-// file from ZeroShield instead.
+// The download buttons say what they are and how big; a file the server does not hold says so.
 {
-  const script = readFileSync(join("..", "scripts", "release", "scan_node_image.sh"), "utf8");
-  const rule = /^NODE_VERSION_RE="(.+)"$/m.exec(script)?.[1];
-  assert.ok(rule, "scan_node_image.sh defines NODE_VERSION_RE");
-  const nodeRule = new RegExp(rule);
-  const tags = ["1.0", "1.1.0", "2.0.0-rc.1", "1234567890123456789", "12345678901234567890", "dev-0a1b2c3d4e5f",
-    "k-dafe012cdd8a", "v1.2", "1.2_rc1", "1.2+meta", "latest"];
-  const images: [string, string][] = [
-    ...tags.map((t): [string, string] => [`ghcr.io/cyberultron/devsecshield-scan-node:${t}`, t]),
-    ["registry.example/scan-node", "latest"],  // no tag
-    ["localhost:5000/scan-node", "latest"],  // a registry port is not a tag
-  ];
-  let printed = 0;
-  for (const [image, tag] of images) {
-    for (const method of ["docker", "helm"] as const) {
-      const steps = offlineImageSteps(method, image)!;
-      const versions = [...steps.matchAll(/VERSION=(\S*)/g)].map((m) => m[1]);
-      for (const v of versions) assert.ok(nodeRule.test(v), `${image}: prints make node-image VERSION=${v}, which scan_node_image.sh refuses`);
-      if (nodeRule.test(tag)) {
-        assert.deepEqual(versions, [tag], `${image}: make node-image VERSION=${tag}`);
-        printed += 1;
-      } else {
-        assert.deepEqual(versions, [], `${image}: no make node-image for ${tag}`);
-        assert.ok(!steps.includes("make node-image VERSION"), steps);
-        assert.ok(steps.includes(`ask ZeroShield for scan-node-${tag}.tar.gz`), steps);
-      }
-      // either way the same file is checked, then loaded
-      assert.ok(steps.indexOf(`sha256sum -c scan-node-${tag}.tar.gz.sha256`) < steps.indexOf(`docker load -i scan-node-${tag}.tar.gz`));
-    }
-  }
-  assert.equal(printed, 8, "the four node-shaped tags print the make line for docker and helm");
+  const image = { kind: "image" as const, label: "Scan node image", available: true, filename: "scan-node-1.0.0.tar.gz",
+    size: 66_270_412, sha256: "3f9a1c2b7d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcd", message: null }
+  assert.equal(downloadLabel("image", image), "Download scan node image (63.2 MB, sha256 3f9a1c2b7d4e…)")
+  assert.equal(downloadLabel("ova-kit", null), "Download OVA build kit")
+  assert.equal(downloadLabel("ami-kit", { ...image, kind: "ami-kit", available: false, size: null, sha256: null }), "Download AMI build kit")
+  assert.equal(downloadLabel("helm-chart", { ...image, kind: "helm-chart", size: 20_480, sha256: null }), "Download Helm chart (0.0 MB)")
+  assert.deepEqual(downloadKinds("docker"), ["image"])
+  assert.deepEqual(downloadKinds("helm"), ["helm-chart", "image"])
+  assert.deepEqual(downloadKinds("ova"), ["ova-kit", "image"])
+  assert.deepEqual(downloadKinds("ami"), ["ami-kit", "image"])
+  assert.equal(notAvailable("ova-kit", null), "OVA build kit is not available on this server yet. Contact your administrator.")
+  assert.equal(notAvailable("image", { ...image, available: false, message: "Scan node image is not available on this server yet. Contact your administrator." }),
+    "Scan node image is not available on this server yet. Contact your administrator.")
+  // the server's sentence and the wizard's fallback are the same (backend/routers/cbom_node_artifacts.py NOT_AVAILABLE)
+  const router = readFileSync(join("..", "backend", "routers", "cbom_node_artifacts.py"), "utf8")
+  assert.ok(router.includes('NOT_AVAILABLE = "{label} is not available on this server yet. Contact your administrator."'))
+  assert.equal(KIT_STEPS.ova.length, 3)
+  assert.equal(KIT_STEPS.ami.length, 3)
+  assert.ok(DEPLOY_SUPPORT.ova.note.includes("build kit") && DEPLOY_SUPPORT.ami.note.includes("build kit"))
 }
 
 fileChecks.then(

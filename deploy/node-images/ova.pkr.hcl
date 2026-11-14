@@ -3,10 +3,13 @@
 # zs.https_proxy, zs.mode) into /etc/zs-node/env, which zs-scan-node.service reads.
 #
 #   packer init ova.pkr.hcl
-#   packer build -var node_image=registry.zeroshield.ai/cbom/scan-node:1.0 ova.pkr.hcl   # needs KVM and qemu-img
+#   packer build -var node_image_archive=scan-node-1.0.0.tar.gz -var build_password="$(openssl rand -hex 16)" ova.pkr.hcl
+#   (needs KVM and qemu-img)
 #
 # Output: output-ova/zeroshield-cbom-scan-node-<version>.ova (scripts/make-ova.sh: streamOptimized VMDK + OVF with
-# vApp properties + SHA-256 manifest). Build it yourself: ZeroShield does not publish this OVA yet (see README.md).
+# vApp properties + SHA-256 manifest). The image comes from the file (Add scan node > Download scan node image): the
+# build VM loads it with `docker load` and pulls nothing. Customers get this template as the "OVA build kit" download
+# (scripts/release/node_artifacts.py), its defaults set to the server's node version (README.md).
 
 packer {
   required_version = ">= 1.10.0"
@@ -18,9 +21,16 @@ packer {
   }
 }
 
+variable "node_image_archive" {
+  type        = string
+  default     = "scan-node-1.0.0.tar.gz"
+  description = "The scan-node image file (docker save archive), copied to the build VM and loaded there."
+}
+
 variable "node_image" {
-  type    = string
-  default = "registry.zeroshield.ai/cbom/scan-node:1.0"
+  type        = string
+  default     = "zeroshield/cbom-scan-node:1.0.0"
+  description = "The image name the archive loads as (docker load); the OVA runs it."
 }
 
 variable "ubuntu_image_url" {
@@ -91,9 +101,14 @@ build {
     destination = "/tmp/"
   }
 
+  provisioner "file" {
+    source      = var.node_image_archive
+    destination = "/tmp/zs-node-image.tar.gz"
+  }
+
   provisioner "shell" {
     execute_command  = "echo '${var.build_password}' | sudo -S -E sh '{{ .Path }}'"
-    environment_vars = ["NODE_IMAGE=${var.node_image}", "OVA=1"]
+    environment_vars = ["NODE_IMAGE=${var.node_image}", "NODE_IMAGE_ARCHIVE=/tmp/zs-node-image.tar.gz", "OVA=1"]
     script           = "scripts/install.sh"
   }
 

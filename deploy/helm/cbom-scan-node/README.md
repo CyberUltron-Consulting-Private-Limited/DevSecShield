@@ -3,22 +3,34 @@
 Runs the ZeroShield CBOM scan node in Kubernetes. The command on **CBOM Sources > Scan nodes > Add scan node >
 Helm chart** installs the Deployment; **Create agent pool token** gives the DaemonSet command.
 
+The chart and the node image are downloads on the same page (**Download Helm chart**, **Download scan node image**:
+`cbom-scan-node-<version>.tgz`, `scan-node-<version>.tar.gz`), served by the ZeroShield server
+(`scripts/release/node_artifacts.py` packages this directory with version and appVersion set to the node version).
+Push the image to a registry your cluster pulls from, then install the downloaded chart:
+
 ```sh
+REGISTRY=registry.example.internal/zeroshield   # a registry your cluster can pull from
+sha256sum -c scan-node-1.0.0.tar.gz.sha256
+docker load -i scan-node-1.0.0.tar.gz                   # loads zeroshield/cbom-scan-node:1.0.0
+docker tag zeroshield/cbom-scan-node:1.0.0 "$REGISTRY/cbom-scan-node:1.0.0"
+docker push "$REGISTRY/cbom-scan-node:1.0.0"
+
 # agentless node (reaches your servers, clusters, databases and networks with the credentials you store)
-helm upgrade --install zs-scan-node oci://registry.zeroshield.ai/charts/cbom-scan-node \
+helm upgrade --install zs-scan-node ./cbom-scan-node-1.0.0.tgz \
   --namespace zs-cbom --create-namespace \
-  --set image.repository='registry.zeroshield.ai/cbom/scan-node' --set image.tag='1.0' \
+  --set image.repository="$REGISTRY/cbom-scan-node" --set image.tag='1.0.0' \
   --set apiUrl='https://api.zeroshield.ai' --set registrationToken='zsr_...'
 
 # host agents: one pod per Kubernetes node, each reads only its own node, never gets a credential
-helm upgrade --install zs-host-agents oci://registry.zeroshield.ai/charts/cbom-scan-node \
+helm upgrade --install zs-host-agents ./cbom-scan-node-1.0.0.tgz \
   --namespace zs-cbom --create-namespace \
-  --set image.repository='registry.zeroshield.ai/cbom/scan-node' --set image.tag='1.0' \
+  --set image.repository="$REGISTRY/cbom-scan-node" --set image.tag='1.0.0' \
   --set apiUrl='https://api.zeroshield.ai' \
   --set deployment.enabled=false --set agent.enabled=true --set agent.poolToken='zsp_...'
 ```
 
-(From a checkout, use `deploy/helm/cbom-scan-node` instead of the `oci://` reference.)
+(From a checkout, use `deploy/helm/cbom-scan-node` instead of the `.tgz`.) When the server names a registry that
+customers can pull the node image from (`CBOM_NODE_IMAGE_REF`), the wizard's command uses that image instead.
 
 ## What it creates
 
@@ -57,7 +69,7 @@ Both are ready while the node's heartbeat loop turns (the image health check: `$
 
 | Value | Default | |
 |---|---|---|
-| `image.repository`, `image.tag` | `registry.zeroshield.ai/cbom/scan-node`, appVersion | |
+| `image.repository`, `image.tag` | `zeroshield/cbom-scan-node` (the name the image file loads as), appVersion | |
 | `apiUrl` | (required) | ZeroShield API URL (`https://`) |
 | `registrationToken` / `existingSecret` | | Deployment enrollment |
 | `httpsProxy`, `noProxy` | | outbound proxy to ZeroShield |

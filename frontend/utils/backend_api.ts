@@ -1,5 +1,6 @@
 import api from "@/utils/interceptors"
 import type { CbomResultOrigin, CbomSourcesRun } from "@/components/cbom/resultOrigin"
+import type { NodeArtifacts } from "@/components/cbom/sources/logic"
 import { showErrorToast } from "./error-handler"
 import { toast } from "@/utils/toast";
 
@@ -4714,6 +4715,20 @@ const listCbomScanNodes = async (team_id: number): Promise<{ nodes: CbomScanNode
     return response.data
 }
 
+/** The scan node downloads this server offers (image file, Helm chart, OVA/AMI build kits): backend
+ * routers/cbom_node_artifacts.py. Shape: components/cbom/sources/logic.ts NodeArtifacts. */
+const getCbomNodeArtifacts = async (team_id: number): Promise<NodeArtifacts> => {
+    const response = await api.get(`/${team_id}/cbom/node-artifacts`)
+    return response.data as NodeArtifacts
+}
+
+/** A short-lived download link for one scan node file (the browser then downloads it straight to disk); throws the
+ * server's 404 ("... is not available on this server yet. Contact your administrator.") for a file it does not hold. */
+const getCbomNodeArtifactLink = async (team_id: number, kind: string): Promise<{ url: string; expires_in: number }> => {
+    const response = await api.post(`/${team_id}/cbom/node-artifacts/${encodeURIComponent(kind)}/link`)
+    return response.data
+}
+
 const listCbomSources = async (team_id: number, group?: CbomSourceGroup): Promise<{ sources: CbomSource[]; server_time: string }> => {
     const response = await api.get(`${cbomSourcesBase(team_id)}/items`, { params: group ? { group } : {} })
     return response.data
@@ -5030,6 +5045,8 @@ const cancelCbomRun = async (team_id: number, run_id: number): Promise<{ run: Cb
 export {
     getCbomSourcesOverview,
     listCbomScanNodes,
+    getCbomNodeArtifacts,
+    getCbomNodeArtifactLink,
     listCbomSources,
     getCbomSource,
     getCbomJob,

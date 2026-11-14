@@ -2,7 +2,8 @@
 # (optionally) httpsProxy; "Create agent pool token" gives the DaemonSet command (agent.enabled, agent.poolToken).
 
 image:
-  repository: registry.zeroshield.ai/cbom/scan-node
+  # the name the downloaded image file loads as (docker load); push it to your registry and set that name here
+  repository: zeroshield/cbom-scan-node
   tag: ""            # defaults to the chart's appVersion
   pullPolicy: IfNotPresent
 imagePullSecrets: []

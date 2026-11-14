@@ -1,4 +1,4 @@
-# Release the CBOM scan-node image as a file: build registry.zeroshield.ai/cbom/scan-node:<version>, docker save it
+# Release the CBOM scan-node image as a file: build zeroshield/cbom-scan-node:<version>, docker save it
 # to scan-node-<version>.tar.gz with a SHA-256 file, upload both as the run's artifact
 # (scripts/release/scan_node_image.sh). Customers: sha256sum -c ... && docker load -i scan-node-<version>.tar.gz
 name: Scan node image
