@@ -10,6 +10,8 @@ state (agility memo cleared); with/without pairs are interleaved:
 * ``list_assets_200``      one 200-row asset list page (CB-24 adds annotate_assets);
 * ``list_assets_200_no_agil``;
 * ``run_agility_accumulator`` what run_posture adds, alone: RunAgility over every row (jobs query included);
+* ``annotate_assets_200``  what a list page adds, alone: annotate_assets over one 200-row page (sources query
+  included);
 * ``evaluate_unmemoised``  the rules over every asset without the memo (the pure cost, worst case);
 * ``evaluate_cold``        agility.evaluate over every asset, memo emptied first;
 * ``evaluate_warm``        the same again (memoised on the deciding facts).
@@ -194,6 +196,20 @@ def main() -> None:
                 acc.result()
 
         res["run_agility_accumulator"] = timed(accumulate, reps)
+
+        with Session(engine) as s:  # what a list page adds, alone: annotate_assets over one 200-row page
+            real = AG.annotate_assets
+            AG.annotate_assets = lambda _s, _t, _j, items: items
+            try:
+                page_out = INV.list_assets(s, team_id=1, run_id=run_id, page=1, page_size=200)
+            finally:
+                AG.annotate_assets = real
+            page_jobs = s.exec(select(CbomCollectionJob).where(CbomCollectionJob.run_id == run_id)).all()
+
+            def annotate():
+                AG.annotate_assets(s, 1, page_jobs, [dict(i) for i in page_out["items"]])
+
+            res["annotate_assets_200"] = timed(annotate, reps)
         res["evaluate_cold"] = timed(evaluate, reps)
         t0 = time.perf_counter()
         evaluate()
