@@ -8,7 +8,16 @@ import type { CbomSourcesRun } from "../resultOrigin";
 import type { CBOMConversation, RunListRow } from "../../../utils/backend_api";
 import {
   NO_FILTERS,
+  RUNS_LIST_ERROR_NOTICE,
+  activeRunIds,
+  changedRunStatuses,
   displayRiskScore,
+  liveRunFromDetail,
+  refundedHint,
+  rowsFromListResponse,
+  runCountsLine,
+  withLiveProgress,
+  type LiveRun,
   filterAndSortRows,
   matchesRiskTier,
   mergeResultRows,
@@ -157,6 +166,90 @@ test("deploy skew: no runs_list_data builds one row per run from sources_runs", 
   // a backend that sends runs_list_data (even empty) is the only source: sources_runs is then ignored
   assert.deepEqual(keys(mergeResultRows([], [], sourcesRuns)), []);
   assert.deepEqual(keys(mergeResultRows(null, null, null)), []);
+});
+
+test("a run number matches that run exactly, never a longer number", () => {
+  const rows = mergeResultRows([scan(3, { title: "build 1 of payments" })], [run(1), run(10), run(12), run(21)]);
+  assert.deepEqual(keys(filterAndSortRows(rows, f({ search: "#1" }))), ["run-1"]);
+  assert.deepEqual(keys(filterAndSortRows(rows, f({ search: "1" }))).sort(), ["run-1", "scan-3"]);
+  assert.deepEqual(keys(filterAndSortRows(rows, f({ search: "run #12" }))), ["run-12"]);
+  assert.deepEqual(keys(filterAndSortRows(rows, f({ search: "Sources run #21" }))), ["run-21"]);
+  assert.deepEqual(keys(filterAndSortRows(rows, f({ search: "#99" }))), []);
+  // text that is not a bare number still searches titles and source names
+  assert.equal(filterAndSortRows(rows, f({ search: "tier1" })).length, 4);
+});
+
+test("run credits are net of refunds, shown with a refunded hint and sorted on the net", () => {
+  const rows = mergeResultRows([scan(1, { estimated_credits: 4 })], [
+    run(2, { estimated_credits: 10, credits_refunded: 10, scan_status: "cancelled", run_status: "cancelled" }),
+    run(3, { estimated_credits: 6, credits_refunded: 1.5 }),
+    run(4, { estimated_credits: 2, credits_refunded: 0 }),
+  ]);
+  const byKey = new Map(rows.map((r) => [r.key, r]));
+  const r2 = byKey.get("run-2") as RunResultRow;
+  assert.equal(r2.estimated_credits, 0);
+  assert.equal(r2.credits_charged, 10);
+  assert.equal(refundedHint(r2), "(10 refunded)");
+  assert.equal((byKey.get("run-3") as RunResultRow).estimated_credits, 4.5);
+  assert.equal(refundedHint(byKey.get("run-4") as RunResultRow), null);
+  assert.deepEqual(keys(filterAndSortRows(rows, f({ sort: "credits_desc" }))), ["run-3", "scan-1", "run-4", "run-2"]);
+});
+
+test("asset and endpoint counts line for runs", () => {
+  const r = mergeResultRows([], [run(5, { asset_count: 36, endpoints_probed: 2 })])[0] as RunResultRow;
+  assert.equal(runCountsLine(r), "36 assets · 2 endpoints");
+  assert.equal(runCountsLine({ asset_count: 1, endpoints_probed: 1 }), "1 asset · 1 endpoint");
+  assert.equal(runCountsLine({ asset_count: 0, endpoints_probed: null }), "0 assets");
+  assert.equal(runCountsLine({ asset_count: null, endpoints_probed: null }), null);
+});
+
+test("runs_list_error: rows fall back to sources_runs and the page says so", () => {
+  const sourcesRuns: CbomSourcesRun[] = [
+    { run_id: 7, job_id: 70, source_name: "lab-adcs", source_kind: "windows", finished_at: "2026-11-12T17:30:00Z", asset_count: 20, endpoints_probed: 0 },
+  ];
+  // the payload PR #122 sends when listing the runs failed
+  const failed = rowsFromListResponse({ scans_list_data: [], runs_list_data: [], runs_total: 0, runs_list_error: true, sources_runs: sourcesRuns });
+  assert.equal(failed.runsListError, true);
+  assert.deepEqual(keys(failed.rows), ["run-7"]);
+  assert.equal((failed.rows[0] as RunResultRow).limited, true);
+  assert.equal(failed.runsTotal, null);
+  assert.equal(RUNS_LIST_ERROR_NOTICE, "Couldn't load the full run list; showing latest completed collections.");
+  // a good answer uses runs_list_data only
+  const ok = rowsFromListResponse({ scans_list_data: [], runs_list_data: [run(8)], runs_total: 300, runs_list_error: false, sources_runs: sourcesRuns });
+  assert.equal(ok.runsListError, false);
+  assert.deepEqual(keys(ok.rows), ["run-8"]);
+  assert.equal(ok.runsLoaded, 1);
+  assert.equal(ok.runsTotal, 300);
+  // an older backend (no field at all) also falls back, without the notice
+  const old = rowsFromListResponse({ scans_list_data: [], sources_runs: sourcesRuns });
+  assert.equal(old.runsListError, false);
+  assert.deepEqual(keys(old.rows), ["run-7"]);
+  assert.equal(rowsFromListResponse(undefined).rows.length, 0);
+});
+
+test("live progress comes from the cheap run poll; a status change is reported once per change", () => {
+  const rows = mergeResultRows([scan(1, { scan_status: "started" })], [
+    run(4, { scan_status: "started", run_status: "running", jobs_total: 4, jobs_done: 1 }),
+    run(5, { scan_status: "pending", run_status: "queued", jobs_total: 2, jobs_done: 0 }),
+    run(6),
+  ]);
+  // only active runs are polled (never scans, finished runs or rows built from sources_runs)
+  assert.deepEqual(activeRunIds(rows), [4, 5]);
+  assert.deepEqual(activeRunIds(mergeResultRows([], undefined, [
+    { run_id: 9, job_id: 1, source_name: "a", source_kind: "k", finished_at: "2026-11-12T00:00:00Z", asset_count: 1, endpoints_probed: 0 },
+  ])), []);
+  const fromJobs = liveRunFromDetail({ status: "running", job_counts: { success: 2, failure: 1, claimed: 1 } });
+  assert.deepEqual(fromJobs, { scan_status: "started", jobs_total: 4, jobs_done: 3 });
+  const finished = liveRunFromDetail({ status: "partial", job_counts: { success: 1, failure: 1 } });
+  assert.deepEqual(finished, { scan_status: "partial", jobs_total: 2, jobs_done: 2 });
+  const live = new Map<number, LiveRun>([[4, fromJobs], [5, { scan_status: "pending", jobs_total: 2, jobs_done: 0 }]]);
+  const overlaid = withLiveProgress(rows, live);
+  const r4 = overlaid.find((r) => r.key === "run-4") as RunResultRow;
+  assert.equal(r4.jobs_done, 3);
+  assert.equal(r4.scan_status, "started");  // the status stays the list's until the list is refreshed
+  assert.deepEqual(changedRunStatuses(rows, live), []);
+  assert.deepEqual(changedRunStatuses(rows, new Map([[4, finished]])), ["4:partial"]);
+  assert.equal(withLiveProgress(rows, new Map()), rows);
 });
 
 test("footer note only when runs were left out", () => {

@@ -10,8 +10,8 @@
  * disappear from the table.
  */
 import type { CbomSourcesRun } from "@/components/cbom/resultOrigin";
-import type { CBOMConversation, RunListRow } from "@/utils/backend_api";
-import { isUnifiedStatus, runToUnified } from "./statusBuckets";
+import type { CBOMConversation, CBOMListResponse, CbomRun, RunListRow } from "@/utils/backend_api";
+import { isActiveStatus, isUnifiedStatus, runToUnified } from "./statusBuckets";
 
 export type ResultKind = "scan" | "run";
 
@@ -54,6 +54,9 @@ export interface RunResultRow extends ResultRowBase {
   sources: { name: string; kind: string }[];
   jobs_total: number | null;
   jobs_done: number | null;
+  /** credits charged and refunded; `estimated_credits` is the net (charged - refunded), shown and sorted on */
+  credits_charged: number | null;
+  credits_refunded: number | null;
   asset_count: number | null;
   endpoints_probed: number | null;
   /** true when built from `sources_runs`: fewer fields, the rest shows "—" */
@@ -107,10 +110,17 @@ export function scanRow(scan: CBOMConversation): ScanResultRow {
   };
 }
 
+function netCredits(charged: number | null, refunded: number | null): number | null {
+  if (charged == null) return null;
+  return Math.round((charged - (refunded ?? 0)) * 100) / 100;
+}
+
 export function runRow(run: RunListRow): RunResultRow {
   // the backend sends the mapped status; map the raw run status only if it did not
   const status = isUnifiedStatus(run.scan_status) ? run.scan_status : runToUnified(run.run_status);
   const sources = (run.sources ?? []).map((s) => ({ name: s.name, kind: s.kind }));
+  const charged = num(run.estimated_credits);
+  const refunded = num(run.credits_refunded);
   return {
     kind: "run",
     key: `run-${run.id}`,
@@ -121,7 +131,7 @@ export function runRow(run: RunListRow): RunResultRow {
     scan_status: status,
     risk_data: run.risk_data ?? null,
     average_risk_score: num(run.average_risk_score),
-    estimated_credits: num(run.estimated_credits),
+    estimated_credits: netCredits(charged, refunded),
     owner_user_email: run.owner_user_email ?? null,
     owner_user_full_name: run.owner_user_full_name ?? null,
     repo_url: null,
@@ -130,6 +140,8 @@ export function runRow(run: RunListRow): RunResultRow {
     sources,
     jobs_total: num(run.jobs_total),
     jobs_done: num(run.jobs_done),
+    credits_charged: charged,
+    credits_refunded: refunded,
     asset_count: num(run.asset_count),
     endpoints_probed: num(run.endpoints_probed),
     limited: false,
@@ -180,6 +192,8 @@ export function runRowsFromSourcesRuns(entries: readonly CbomSourcesRun[] | null
       sources,
       jobs_total: null,
       jobs_done: null,
+      credits_charged: null,
+      credits_refunded: null,
       asset_count: g.assets,
       endpoints_probed: g.probed,
       limited: true,
@@ -225,18 +239,21 @@ export function matchesRiskTier(score: number | null, tier: RiskScoreFilter): bo
   return score < 5;
 }
 
-/** Search: scans by title, repository and branch; runs by title, source names and run number ("#5", "5"). */
+const RUN_NUMBER = /^(?:(?:sources\s+)?run\s*)?#?\s*(\d+)$/;
+
+/**
+ * Search: scans by title, repository and branch; runs by title and source names. A run number ("5", "#5",
+ * "run #5") matches that run exactly (never #50 or #15); scans are still searched by text for it.
+ */
 export function matchesSearch(row: ResultRow, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
-  const hay: string[] = [row.title];
-  if (row.kind === "scan") {
-    if (row.repo_url) hay.push(row.repo_url);
-    if (row.branch) hay.push(row.branch);
-  } else {
-    for (const s of row.sources) hay.push(s.name);
-    hay.push(`#${row.id}`, `run #${row.id}`, String(row.id));
+  const number = RUN_NUMBER.exec(q);
+  if (row.kind === "run") {
+    if (number) return row.id === Number(number[1]);
+    return [row.title, ...row.sources.map((s) => s.name)].some((h) => h.toLowerCase().includes(q));
   }
+  const hay = [row.title, row.repo_url, row.branch].filter((h): h is string => !!h);
   return hay.some((h) => h.toLowerCase().includes(q));
 }
 
@@ -265,6 +282,84 @@ export function runProgress(row: RunResultRow): { done: number; total: number; p
   if (row.jobs_total == null || row.jobs_total <= 0 || row.jobs_done == null) return null;
   const done = Math.min(row.jobs_done, row.jobs_total);
   return { done, total: row.jobs_total, pct: Math.round((done / row.jobs_total) * 100) };
+}
+
+export const RUNS_LIST_ERROR_NOTICE = "Couldn't load the full run list; showing latest completed collections.";
+
+/**
+ * The table's rows from one GET /{team_id}/cbom/scans response. When the backend could not list the runs
+ * (`runs_list_error: true`, sent with an empty `runs_list_data`), the rows fall back to `sources_runs` and the page
+ * shows `RUNS_LIST_ERROR_NOTICE` instead of silently dropping every run.
+ */
+export function rowsFromListResponse(data: Partial<CBOMListResponse> | null | undefined): {
+  rows: ResultRow[]; runsListError: boolean; runsLoaded: number; runsTotal: number | null;
+} {
+  const runsListError = data?.runs_list_error === true;
+  const runs = runsListError ? undefined : data?.runs_list_data;
+  return {
+    rows: mergeResultRows(data?.scans_list_data, runs, data?.sources_runs),
+    runsListError,
+    runsLoaded: runs?.length ?? 0,
+    runsTotal: runsListError ? null : (data?.runs_total ?? null),
+  };
+}
+
+/** Live state of an active run from GET /runs/{id} (the cheap poll; the list itself is not re-fetched). */
+export interface LiveRun { scan_status: string; jobs_total: number; jobs_done: number }
+
+const JOB_DONE = new Set(["success", "failure", "cancelled", "expired"]);
+
+export function liveRunFromDetail(run: Pick<CbomRun, "status" | "jobs" | "job_counts">): LiveRun {
+  let total = 0;
+  let done = 0;
+  if (run.jobs && run.jobs.length > 0) {
+    total = run.jobs.length;
+    done = run.jobs.filter((j) => JOB_DONE.has(j.status)).length;
+  } else {
+    for (const [status, n] of Object.entries(run.job_counts ?? {})) {
+      total += n ?? 0;
+      if (JOB_DONE.has(status)) done += n ?? 0;
+    }
+  }
+  return { scan_status: runToUnified(run.status), jobs_total: total, jobs_done: done };
+}
+
+/** Run ids whose row is still collecting (the ones the page polls). */
+export function activeRunIds(rows: readonly ResultRow[]): number[] {
+  return rows.filter((r) => r.kind === "run" && !(r as RunResultRow).limited && isActiveStatus(r.scan_status))
+    .map((r) => r.id).sort((a, b) => a - b);
+}
+
+/** Overlay live progress on the run rows (status stays the list's until the list is refreshed). */
+export function withLiveProgress(rows: readonly ResultRow[], live: ReadonlyMap<number, LiveRun>): ResultRow[] {
+  if (live.size === 0) return rows as ResultRow[];
+  return rows.map((r) => {
+    const l = r.kind === "run" ? live.get(r.id) : undefined;
+    return l ? { ...r, jobs_total: l.jobs_total, jobs_done: l.jobs_done } : r;
+  });
+}
+
+/** Runs whose live status differs from the list's: the list is refreshed once for each such change. */
+export function changedRunStatuses(rows: readonly ResultRow[], live: ReadonlyMap<number, LiveRun>): string[] {
+  const out: string[] = [];
+  for (const r of rows) {
+    const l = r.kind === "run" ? live.get(r.id) : undefined;
+    if (l && l.scan_status !== r.scan_status) out.push(`${r.id}:${l.scan_status}`);
+  }
+  return out;
+}
+
+/** "36 assets · 2 endpoints" under a run's sources (the counts the old Sources runs block showed). */
+export function runCountsLine(row: Pick<RunResultRow, "asset_count" | "endpoints_probed">): string | null {
+  if (row.asset_count == null && row.endpoints_probed == null) return null;
+  const part = (n: number | null, one: string, many: string) => (n == null ? null : `${n} ${n === 1 ? one : many}`);
+  return [part(row.asset_count, "asset", "assets"), part(row.endpoints_probed, "endpoint", "endpoints")]
+    .filter(Boolean).join(" · ");
+}
+
+/** "(3 refunded)" next to a run's net credits when part or all of the charge was refunded. */
+export function refundedHint(row: Pick<RunResultRow, "credits_refunded">): string | null {
+  return row.credits_refunded != null && row.credits_refunded > 0 ? `(${row.credits_refunded} refunded)` : null;
 }
 
 /** Footer note when the backend loaded fewer runs than the team has. */

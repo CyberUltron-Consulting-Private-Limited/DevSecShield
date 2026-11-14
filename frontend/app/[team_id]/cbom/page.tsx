@@ -30,7 +30,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Clock, CheckCircle, CalendarPlus, CalendarCheck, Search, X, GitBranch, FileArchive, MinusCircle, Shield, AlertTriangle, Activity, ChevronDown, ArrowUpDown, Check, Filter, DollarSign, TrendingUp, TrendingDown, Lock, ShieldAlert, ShieldCheck, Key, Download, FileText, Network } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { singleFlight } from "@/utils/single_flight";
 import {
   CBOM_DELIVERABLES,
@@ -38,13 +38,14 @@ import {
   downloadCbomDeliverable,
   getCbomDeliverables,
   getCBOMScans,
+  getCbomRun,
   renameCBOMScan,
   createCBOMScan,
 } from "@/utils/backend_api";
 import type { CBOMConversation } from "@/utils/backend_api";
 import type { CBOMDashboardData } from "@/utils/backend_api";
 import type { CbomDeliverableSlug } from "@/utils/backend_api";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { showErrorToast } from "@/utils/error-handler";
 import { formatDateIst as formatDate } from "@/utils/datetime";
@@ -53,7 +54,15 @@ import { originLabel, sourcesRunsHref } from "@/components/cbom/resultOrigin";
 import {
   filterAndSortRows,
   displayRiskScore,
-  mergeResultRows,
+  rowsFromListResponse,
+  activeRunIds,
+  changedRunStatuses,
+  liveRunFromDetail,
+  refundedHint,
+  runCountsLine,
+  withLiveProgress,
+  RUNS_LIST_ERROR_NOTICE,
+  type LiveRun,
   runProgress,
   runsLoadedNote,
   type ResultRow,
@@ -64,7 +73,7 @@ import {
 } from "@/components/cbom/results/resultRows";
 import { resultsHref } from "@/components/cbom/results/resultsHref";
 import { isActiveStatus } from "@/components/cbom/results/statusBuckets";
-import { cbomResultsListKey } from "@/components/cbom/sources/keys";
+import { cbomResultsListKey, cbomSourcesKeys } from "@/components/cbom/sources/keys";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -583,8 +592,6 @@ export default function CBOMPage() {
     queryKey: listKey,
     queryFn: () => getCBOMScans(teamIdNumber),
     enabled: Number.isFinite(teamIdNumber),
-    // a queued or running Sources run shows live progress (jobs done / total)
-    refetchInterval: (q) => (q.state.data?.runs_list_data?.some((r) => isActiveStatus(r.scan_status)) ? 10000 : false),
   });
 
   useEffect(() => {
@@ -593,10 +600,39 @@ export default function CBOMPage() {
     }
   }, [query.error]);
 
-  const allRows = useMemo(
-    () => mergeResultRows(query.data?.scans_list_data, query.data?.runs_list_data, query.data?.sources_runs),
-    [query.data],
-  );
+  // runs_list_error (the backend could not list the runs): rows fall back to sources_runs and a notice says so
+  const listed = useMemo(() => rowsFromListResponse(query.data), [query.data]);
+  const [activeTab, setActiveTab] = useState("dashboard");
+
+  // Live progress of active runs without re-fetching the list (whose build loads every Sources asset): poll each
+  // active run's GET /runs/{id} every 15 s, only while the Table tab is open (and the browser tab is visible:
+  // react-query pauses intervals in the background). When a run's status changes, the list is refreshed once.
+  const liveIds = useMemo(() => activeRunIds(listed.rows), [listed.rows]);
+  const liveQueries = useQueries({
+    queries: liveIds.map((runId) => ({
+      queryKey: cbomSourcesKeys.run(teamIdNumber, runId),
+      queryFn: () => getCbomRun(teamIdNumber, runId),
+      enabled: activeTab === "table" && Number.isFinite(teamIdNumber),
+      refetchInterval: 15000,
+      retry: 1,
+    })),
+  });
+  const liveSignature = liveQueries.map((q) => `${q.dataUpdatedAt}`).join(",");
+  const live = useMemo(() => {
+    const m = new Map<number, LiveRun>();
+    liveQueries.forEach((q, i) => { if (q.data) m.set(liveIds[i], liveRunFromDetail(q.data)); });
+    return m;
+    // liveQueries is a new array every render; its data changes only when a dataUpdatedAt does
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveIds, liveSignature]);
+  const allRows = useMemo(() => withLiveProgress(listed.rows, live), [listed.rows, live]);
+  const refreshedFor = useRef(new Set<string>());
+  useEffect(() => {
+    const changed = changedRunStatuses(listed.rows, live).filter((k) => !refreshedFor.current.has(k));
+    if (changed.length === 0) return;
+    changed.forEach((k) => refreshedFor.current.add(k));
+    queryClient.invalidateQueries({ queryKey: cbomResultsListKey(teamIdNumber) });
+  }, [listed.rows, live, queryClient, teamIdNumber]);
 
   const deleteCBOMScanMutation = useMutation({
     mutationFn: ({ team_id, scan_id }: { team_id: number; scan_id: number }) => deleteCBOMScan(team_id, scan_id),
@@ -698,7 +734,7 @@ export default function CBOMPage() {
     () => filterAndSortRows(allRows, { search: searchQuery, status: statusFilter, risk: riskScoreFilter, sort: sortBy }),
     [allRows, searchQuery, statusFilter, riskScoreFilter, sortBy],
   );
-  const runsNote = runsLoadedNote(query.data?.runs_list_data?.length ?? 0, query.data?.runs_total);
+  const runsNote = runsLoadedNote(listed.runsLoaded, listed.runsTotal);
 
   const clearFilters = () => {
     setSearchQuery("");
@@ -713,7 +749,7 @@ export default function CBOMPage() {
 
   return (
     <div className="flex h-screen bg-white dark:bg-zinc-900">
-      <div className="flex-1 min-w-0 p-4 sm:p-8 overflow-y-auto overflow-x-hidden">
+      <div className="flex-1 min-w-0 p-4 sm:p-8 overflow-auto">
         <div className="max-w-7xl mx-auto min-w-0">
           {/* Header */}
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
@@ -777,7 +813,7 @@ export default function CBOMPage() {
             </div>
           ) : (
             /* Tabs: Dashboard & Table */
-            <Tabs defaultValue="dashboard" className="w-full">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
               <TabsList className="mb-4 bg-transparent">
                 <TabsTrigger value="dashboard" className="cursor-pointer data-[state=active]:bg-blue-600 data-[state=active]:text-white ">Dashboard</TabsTrigger>
                 <TabsTrigger value="table" className="cursor-pointer data-[state=active]:bg-blue-600 data-[state=active]:text-white ">Table</TabsTrigger>
@@ -793,7 +829,12 @@ export default function CBOMPage() {
               </TabsContent>
 
               {/* ── Table Tab ── */}
-              <TabsContent value="table">
+              <TabsContent value="table" className="min-w-0">
+                {listed.runsListError && (
+                  <p className="mb-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200" role="status" data-testid="cbom-results-runs-error">
+                    {RUNS_LIST_ERROR_NOTICE}
+                  </p>
+                )}
                 {/* Filter bar */}
                 {allRows.length > 0 && (
                   <div className="flex flex-wrap items-center gap-3 mb-4">
@@ -967,7 +1008,7 @@ export default function CBOMPage() {
                             const run = isRun ? (row as RunResultRow) : null;
                             const conversation = row.kind === "scan" ? row.scan : null;
                             const scanPct = conversation ? getScanProgress(conversation.info) : null;
-                            const live = run && isActiveStatus(run.scan_status) ? runProgress(run) : null;
+                            const progressNow = run && isActiveStatus(run.scan_status) ? runProgress(run) : null;
                             return (
                             <TableRow
                               key={row.key}
@@ -1005,10 +1046,10 @@ export default function CBOMPage() {
                                       <span className="text-xs text-zinc-500 tabular-nums">{scanPct}%</span>
                                     </div>
                                   )}
-                                  {live && (
+                                  {progressNow && (
                                     <div className="flex items-center gap-2" data-testid={`cbom-result-run-progress-${row.id}`}>
-                                      <Progress value={live.pct} className="h-1.5 flex-1 min-w-[48px]" />
-                                      <span className="text-xs text-zinc-500 tabular-nums">{live.done}/{live.total} jobs</span>
+                                      <Progress value={progressNow.pct} className="h-1.5 flex-1 min-w-[48px]" />
+                                      <span className="text-xs text-zinc-500 tabular-nums">{progressNow.done}/{progressNow.total} jobs</span>
                                     </div>
                                   )}
                                 </div>
@@ -1025,12 +1066,17 @@ export default function CBOMPage() {
                               </TableCell>
                               <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm max-w-[180px]" title={run ? run.sources.map((s) => s.name).join(", ") : (conversation?.repo_url ?? undefined)}>
                                 {run ? (
-                                  run.sources.length > 0 ? (
-                                    <span className="flex items-center gap-1.5 truncate">
-                                      <Network className="h-3.5 w-3.5 shrink-0 text-violet-500" aria-hidden />
-                                      <span className="truncate">{run.sources.map((s) => s.name).join(", ")}</span>
-                                    </span>
-                                  ) : "—"
+                                  <>
+                                    {run.sources.length > 0 ? (
+                                      <span className="flex items-center gap-1.5 truncate">
+                                        <Network className="h-3.5 w-3.5 shrink-0 text-violet-500" aria-hidden />
+                                        <span className="truncate">{run.sources.map((s) => s.name).join(", ")}</span>
+                                      </span>
+                                    ) : "—"}
+                                    {runCountsLine(run) && (
+                                      <span className="block text-xs text-zinc-500 dark:text-zinc-500 mt-0.5" data-testid={`cbom-result-run-counts-${run.id}`}>{runCountsLine(run)}</span>
+                                    )}
+                                  </>
                                 ) : conversation?.zip_file_used ? (
                                   <span className="flex items-center gap-1.5 truncate">
                                     <FileArchive className="h-3.5 w-3.5 shrink-0 text-amber-500" aria-hidden />
@@ -1058,6 +1104,9 @@ export default function CBOMPage() {
                               </TableCell>
                               <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm tabular-nums">
                                 {row.estimated_credits != null ? row.estimated_credits : "—"}
+                                {run && refundedHint(run) && (
+                                  <span className="block text-xs text-zinc-500 dark:text-zinc-500" title={`${run.credits_charged ?? 0} charged, ${run.credits_refunded} refunded`}>{refundedHint(run)}</span>
+                                )}
                               </TableCell>
                               <TableCell className="text-zinc-600 dark:text-zinc-400">
                                 <OwnerCell name={row.owner_user_full_name} email={row.owner_user_email} />

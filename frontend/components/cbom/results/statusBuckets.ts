@@ -34,10 +34,10 @@ export const STATUS_BUCKETS = {
 
 const UNIFIED = new Set<string>(["not_started", "pending", "started", "retry", "success", "partial", "failure", "cancelled"]);
 
-/** A run status as the table shows it; an unknown value is returned unchanged (never guessed). */
-export function runToUnified(status: string | null | undefined): string {
-  if (!status) return "not_started";
-  return (STATUS_BUCKETS.run_to_unified as Record<string, string>)[status] ?? status;
+/** A run status as the table shows it; a status this build does not know is "not_started" (the backend's rule,
+ * run_list.unified_run_status). */
+export function runToUnified(status: string | null | undefined): UnifiedStatus {
+  return (STATUS_BUCKETS.run_to_unified as Record<string, UnifiedStatus>)[String(status ?? "")] ?? "not_started";
 }
 
 export function isUnifiedStatus(status: string | null | undefined): status is UnifiedStatus {

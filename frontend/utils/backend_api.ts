@@ -2382,6 +2382,8 @@ export interface CBOMListResponse {
   runs_list_data?: RunListRow[]
   /** CB-38: how many runs the team has in total (more than runs_list_data.length when older runs were not loaded) */
   runs_total?: number
+  /** CB-38: true when the backend could not list the runs (runs_list_data is then empty; sources_runs is still sent) */
+  runs_list_error?: boolean
 }
 
 /** CB-38: one CBOM Sources run as a row of the CBOM Scans table (GET /{team_id}/cbom/scans `runs_list_data`). */
