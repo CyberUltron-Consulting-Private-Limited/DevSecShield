@@ -381,18 +381,61 @@ def _cert_unused_applies(facts: dict[str, Any]) -> bool:
             and facts.get("exported") is not True and facts.get("key_pair_origin") != "ACME")
 
 
+# A start date less than a day ahead is not a finding: an issuer or node clock that is hours off, and keytool dates
+# printed in the server's own time zone (read as UTC, linux_parsers._java_date), must not flag a fresh certificate.
+_NOT_YET_GRACE = _dt.timedelta(days=1)
+
+
+def _chain_extra(facts: dict[str, Any]) -> bool:
+    """A cross-sign above the leaf that clients trusting its subject as a root never need (node fact, CB-17)."""
+    index = facts.get("chain_index")
+    return facts.get("chain_extra") is True and isinstance(index, int) and not isinstance(index, bool) and index > 0
+
+
 def _expiry_rules(out: _Out, facts: dict[str, Any], now: _dt.datetime, what: str = "Certificate") -> None:
     not_after = _parse_time(facts.get("not_after"))
+    not_before = _parse_time(facts.get("not_before"))
+    if not_before is not None and not_before - now > _NOT_YET_GRACE:
+        out.add("CERT_NOT_YET_VALID", "Medium", f"{what} is not valid until {not_before.date().isoformat()}; clients "
+                                                "refuse it until then")
     if not_after is not None:
         days = (not_after - now).total_seconds() / 86400
-        if days < 0:
+        # CB-17: warn in the last third of a short certificate's life (6-day ACME, 47-day SC-081), at most 30 days out
+        lifetime = (not_after - not_before).total_seconds() / 86400 if not_before is not None else None
+        window = min(30.0, lifetime / 3) if lifetime and lifetime > 0 else 30.0
+        if _chain_extra(facts):
+            if days < 0:
+                out.add("CERT_CHAIN_EXTRA_EXPIRED", "Low",
+                        f"Expired extra certificate in the served chain (expired on {not_after.date().isoformat()}): "
+                        f"a cross-sign of {str(facts.get('subject') or 'a root')[:120]}, which clients that trust it "
+                        "as a root do not need; remove it from the chain the server sends")
+        elif days < 0:
             out.add("CERT_EXPIRED", "High", f"{what} expired on {not_after.date().isoformat()}")
-        elif days <= 30:
-            out.add("CERT_EXPIRES_30D", "Medium", f"{what} expires in {int(days)} days")
+        elif days <= window:
+            out.add("CERT_EXPIRES_30D", "Medium", f"{what} expires in {int(days)} days" + (
+                f" (the last third of its {round(lifetime)}-day lifetime)" if window < 30 and lifetime else ""))
+
+
+def _chain_rules(out: _Out, facts: dict[str, Any]) -> None:
+    """CHAIN_INCOMPLETE (CB-17) from the node's chain facts: the issuer of a served certificate is neither served nor
+    a root the node trusts, and either a served certificate sits above it (a gap in the chain) or it is an end-entity
+    certificate served alone whose CA publishes its issuer for download (AIA caIssuers: an intermediate). A CA
+    certificate at the top is never flagged (roots are not sent), nor a lone leaf without AIA (a private root may
+    have issued it directly)."""
+    if facts.get("chain_issuer") != "missing":
+        return
+    gap = facts.get("chain_top") is False
+    lone_leaf = facts.get("chain_top") is True and not facts.get("is_ca") and facts.get("aia_ca_issuers") is True
+    if gap or lone_leaf:
+        issuer = str(facts.get("issuer") or "its issuer")[:120]
+        out.add("CHAIN_INCOMPLETE", "Medium",
+                f"The server does not send the certificate of {issuer}, which issued this certificate: clients that do "
+                "not already hold it cannot build a chain to a trusted root")
 
 
 def _cert_rules(out: _Out, facts: dict[str, Any], algorithm: Any, size: Any, now: _dt.datetime) -> None:
     _expiry_rules(out, facts, now)
+    _chain_rules(out, facts)
     sig = _upper(facts.get("sig_alg"))
     sha1 = "SHA1" in sig.replace("-", "")
     if "MD5" in sig or "MD2" in sig:
@@ -1052,7 +1095,8 @@ CLASSIFIER_VERSION = _rules_version()
 
 
 # ----------------------------------------------------------------------------- date-based rules, judged today
-# Two rules read the calendar: a certificate's expiry (CERT_EXPIRED, CERT_EXPIRES_30D) and a library's upstream end
+# Two rules read the calendar: a certificate's validity (CERT_EXPIRED, CERT_EXPIRES_30D, CERT_NOT_YET_VALID,
+# CERT_CHAIN_EXTRA_EXPIRED) and a library's upstream end
 # of life from the knowledge base (LIB_EOL). A run stores its verdict as of its collection date, and that record is
 # kept (drift and the OSCAL assessment compare runs by it). Every view of a run's findings (the asset list and its
 # counts, the posture totals, the heat map, the migration waves, the asset panel and the CycloneDX export) shows the
@@ -1078,6 +1122,9 @@ def _date_may_matter(asset_type: str, facts: dict[str, Any], then: _dt.datetime,
         return bool(before.get("passed")) != bool(after.get("passed"))
     if asset_type in CERT_DATED_TYPES:
         not_after = _parse_time(facts.get("not_after"))
+        not_before = _parse_time(facts.get("not_before"))
+        if not_before is not None and not_before - min(then, now) > _NOT_YET_GRACE:
+            return True  # CERT_NOT_YET_VALID on one of the two dates
         return not_after is not None and (not_after - then <= _EXPIRY_WINDOW or not_after - now <= _EXPIRY_WINDOW)
     if asset_type in KEY_DATED_TYPES and facts.get("origin") == "EXTERNAL":
         dates = [_parse_time(m.get("valid_to")) for m in _kms_materials(facts)]
@@ -1087,7 +1134,8 @@ def _date_may_matter(asset_type: str, facts: dict[str, Any], then: _dt.datetime,
 
 
 # The codes a date-based rule adds or removes; everything else in a stored verdict is the run's.
-DATE_CODES = frozenset({"CERT_EXPIRED", "CERT_EXPIRES_30D", "LIB_EOL", "KMS_KEY_MATERIAL_EXPIRES"})
+DATE_CODES = frozenset({"CERT_EXPIRED", "CERT_EXPIRES_30D", "CERT_NOT_YET_VALID", "CERT_CHAIN_EXTRA_EXPIRED", "LIB_EOL",
+                        "KMS_KEY_MATERIAL_EXPIRES"})
 
 
 def _then_and_now(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, facts: dict[str, Any] | None,

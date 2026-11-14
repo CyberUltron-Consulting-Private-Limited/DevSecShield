@@ -41,7 +41,7 @@ from zs_scan_node import sshprobe as S
 from zs_scan_node import tls_registry as R
 from zs_scan_node import tlsenum as E
 from zs_scan_node import tlsprobe as T
-from zs_scan_node.certparse import cert_facts, load_certs
+from zs_scan_node.certparse import cert_facts, chain_links, load_certs
 from zs_scan_node.jobctx import MAX_FACTS_BYTES, JobContext, LeaseLost, register_asset_types
 from zs_scan_node import netutil
 from zs_scan_node.netutil import Blocked, Unresolved, checked_ip, iter_line_ips, node_limiter
@@ -451,6 +451,7 @@ class NetworkScan:
         for der in fh.certs_der[:50]:
             for cert in load_certs(der):
                 chain.append(cert_facts(cert, "tls"))
+        chain_links(chain)  # CB-17: how each issuer is reached, the top, extra cross-signs
         facts["chain_length"] = len(chain)
         if chain:
             facts["leaf"] = {k: chain[0].get(k) for k in ("subject", "issuer", "not_after", "key_alg", "key_size",

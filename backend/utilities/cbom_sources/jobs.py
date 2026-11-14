@@ -27,7 +27,7 @@ from backend.new_models import (
     Team,
 )
 from backend.utilities.cbom_sources import targets as T
-from backend.utilities.cbom_sources.classify import ASSET_TYPES, classify
+from backend.utilities.cbom_sources.classify import ASSET_TYPES, CDX_TYPE, classify
 from backend.utilities.cbom_sources.node_facts import normalise_tls
 from backend.utilities.cbom_sources.common import audit, clean_text, log
 from backend.utilities.cbom_sources.crypto import decrypt_secrets, scrub
@@ -983,6 +983,15 @@ def finish_job(
 
 
 # ----------------------------------------------------------------------------- assets
+def _san_name(asset_type: str, facts: dict[str, Any]) -> str | None:
+    """CB-17: a certificate with an empty subject (SAN-only, as CA/B Forum allows) is named by its first SAN."""
+    if CDX_TYPE.get(asset_type) != "certificate":
+        return None
+    san = facts.get("san")
+    first = san[0] if isinstance(san, list) and san else None
+    return clean_text(first, 255) if isinstance(first, str) and first.strip() else None
+
+
 def _asset_key(asset_type: str, target: str | None, location: str, facts: dict[str, Any], name: str | None) -> str:
     """Dedup key within one job attempt.  The target is part of it: host collectors report host-relative locations
     ("sshd -T", "package:openssl", a file path), so two hosts in one source must never collapse into one row."""
@@ -1099,6 +1108,7 @@ def asset_rows(owner: CbomCollectionJob, assets: list[dict[str, Any]], known: li
             in_batch_dups += 1
             continue
         keys.add(key)
+        name = name or _san_name(asset_type, facts)  # after the key: a fallback name never moves an asset's key
         try:
             verdict = classify(asset_type, algorithm, key_size, protocol, facts, now)
         except Exception as exc:  # one malformed asset must not cost the rest of the batch
