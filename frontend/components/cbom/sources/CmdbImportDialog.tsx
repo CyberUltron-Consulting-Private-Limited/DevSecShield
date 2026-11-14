@@ -80,7 +80,7 @@ function PlanView({ plan }: { plan: CmdbPlan }) {
       )}
       {(plan.over_limit ?? []).length > 0 && (
         <div data-testid="cmdb-over-limit">
-          <p className="font-medium mb-1 text-red-600 dark:text-red-400">Over the source limit (will not be created)</p>
+          <p className="font-medium mb-1 text-red-600 dark:text-red-400">Over the source limit (will not be created) <InfoTip id="cbsrc.cmdb.over_limit" /></p>
           <p className="text-xs text-zinc-500 mb-1">{plan.over_limit![0].reason}</p>
           <ul className="space-y-1 text-xs max-h-40 overflow-y-auto">
             {plan.over_limit!.map((c) => (

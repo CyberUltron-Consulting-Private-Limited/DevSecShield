@@ -3,14 +3,15 @@
 // S14: a run asset's finding dialog, in the code page's dialog layout (metadata grid, location, description), with the
 // run's own explanation: AssetDetailPanel (PQC class, exposure, library EOL / CVEs, SBOM links, KB details with fix
 // steps and read-only verify commands), the as-of-run note, the collected facts and where it came from (source, scan
-// node, job). Full-screen below 640 px (PLAN §4.5).
+// node, job). Full-screen below 640 px (PLAN §4.5). #266: the dialog body is its one scroll container (wheel, touch,
+// keyboard), and the knowledge-base details (with "Standards and regulations") show once: AssetDetailPanel's, so the
+// remediation panel below drops its Standards tab.
 
 import type { ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { COMPLIANCE_KEY_TO_LABEL, OWASP_KEY_TO_LABEL } from "@/lib/owasp-compliance-labels";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import type { CbomJob, CbomRunAssetItem } from "@/utils/backend_api";
 import type { CbomRemediationItem } from "@/utils/api/cbom_ops";
 
@@ -27,6 +28,7 @@ import type { CbomAssetDetailWithExposure } from "@/utils/api/cbom_outputs";
 import { cbomSourcesKeys } from "@/components/cbom/sources/keys";
 import { assetName, AsOfRunNote, CollectedFacts } from "./RunFindingsTable";
 import { InfoTip } from "@/components/ui/info-tip";
+import { FINDING_DIALOG_BODY, FINDING_DIALOG_CONTENT, FINDING_DIALOG_FULLSCREEN_SM } from "./findingTable";
 import type { InfoTipId } from "@/content/infotips";
 
 function Field({ label, children, infoId }: { label: string; children: ReactNode; infoId: InfoTipId }) {
@@ -69,17 +71,14 @@ export function RunFindingDialog({ teamId, runId, subject, jobs, waveOf, onClose
   const status = item && item.type !== "coverage" ? findingStatusOf(item, item.wave ?? waveOf?.(item)) : null;
   return (
     <Dialog open={!!subject} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent
-        className="sm:max-w-3xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden bg-white dark:bg-zinc-900 max-sm:max-w-none max-sm:w-screen max-sm:h-[100dvh] max-sm:max-h-[100dvh] max-sm:rounded-none max-sm:border-0"
-        data-testid="run-finding-dialog">
+      <DialogContent className={`${FINDING_DIALOG_CONTENT} ${FINDING_DIALOG_FULLSCREEN_SM}`} data-testid="run-finding-dialog">
         <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
           <DialogTitle className="pr-8 break-all">{title}</DialogTitle>
           <DialogDescription className="sr-only">Explanation, fix and provenance of this asset</DialogDescription>
         </DialogHeader>
         {assetId != null && (
-          <div className="flex-1 min-h-0 sm:h-[70vh] px-6 pb-6">
-            <ScrollArea className="h-full w-full rounded-md [&_[data-slot=scroll-area-viewport]>div]:!block" data-testid="run-finding-scroll">
-              <div className="space-y-4 pt-2 pr-4">
+          <div className={FINDING_DIALOG_BODY} tabIndex={0} role="region" aria-label="Finding details" data-testid="run-finding-scroll">
+              <div className="space-y-4 pt-2">
                 {item && (
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                     <Field infoId="cbom.run.f.type" label="Type"><p className="text-sm text-zinc-700 dark:text-zinc-300">{item.type_label ?? ASSET_TYPE_LABEL[item.type] ?? item.type}</p></Field>
@@ -176,17 +175,17 @@ export function RunFindingDialog({ teamId, runId, subject, jobs, waveOf, onClose
 
                 <AssetDetailPanel teamId={teamId} assetId={assetId} />
 
-                {/* the code page's "Remediation, fix code and exploit demo" panel (Fix code / Diff / Exploit demo /
-                    Standards), from GET /runs/{id}/assets/{asset}/remediation; hidden on an older backend */}
+                {/* the code page's "Remediation, fix code and exploit demo" panel (Fix code / Diff / Exploit demo), from
+                    GET /runs/{id}/assets/{asset}/remediation; hidden on an older backend. Its Standards tab would repeat
+                    the KB details AssetDetailPanel shows above (#266) */}
                 <RemediationPanel key={`rem-${assetId}`} teamId={String(teamId)} scanType="cbom" scanId={0} findingId={String(assetId)}
-                                  runAsset={{ runId, assetId }} />
+                                  runAsset={{ runId, assetId }} standardsTab={false} />
 
                 {/* AI remediation assistant (CB-38 PR-6), below the knowledge-base fix; renders nothing when it is off */}
                 <AiRemediationPanel teamId={teamId} subject={{ kind: "run_asset", assetId }} />
 
                 {item && <CollectedFacts item={item} />}
               </div>
-            </ScrollArea>
           </div>
         )}
       </DialogContent>

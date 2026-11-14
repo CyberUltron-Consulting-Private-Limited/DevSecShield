@@ -4544,6 +4544,13 @@ export const INFO_TIPS = {
     why: "Resolve them in the CMDB or by hand so the right owner gets the findings.",
     example: "10.20.5.17: owner Payments in one source, Cards in another.",
   },
+  // src: frontend/components/cbom/sources/CmdbImportDialog.tsx:83, backend/utilities/integrations/cmdb.py:337-351 — new sources past the team's source cap
+  "cbsrc.cmdb.over_limit": {
+    label: "Over the source limit",
+    what: "New sources this import would create beyond the team's source limit. They are listed here and are not created when you apply; the rest of the import still goes ahead.",
+    why: "The team's source cap is checked in the preview and again when you apply, so nothing past it is created by surprise.",
+    example: "Limit 500, 495 used: 5 of 12 new Linux server sources are created and 7 are listed here. Raise the limit or delete unused sources, then import again.",
+  },
   // src: frontend/components/cbom/sources/CmdbImportDialog.tsx:82-92 — rows that could not be used
   "cbsrc.cmdb.skipped": {
     label: "Skipped or partly read rows",
@@ -5078,6 +5085,13 @@ export const INFO_TIPS = {
     what: "The source set on each event.",
     why: "Tells events from different ZeroShield teams or deployments apart.",
     example: "zeroshield-prod.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:119 — HEC data channel (#126)
+  "int.hec.channel": {
+    label: "Data channel GUID",
+    what: "Optional: a GUID sent as X-Splunk-Request-Channel with every request.",
+    why: "A HEC token with indexer acknowledgement on refuses requests without a channel (\"Data channel is missing\").",
+    example: "0aeeac95-ac74-4aa9-b30d-6c4c0ac581ba.",
   },
   // src: frontend/components/integrations/IntegrationsPage.tsx:100 — https
   "int.webhook.url": {
@@ -6133,6 +6147,14 @@ export const INFO_TIPS = {
     what: "Everything the quantum risk register cannot grade yet (Q0 Unknown), grouped by reason: evidence areas and vendors at E0, scope a collection could not read, assets the product could not grade, and missing Mosca inputs. Each opening is tracked until it closes.",
     why: "A Q0 item is a blind spot, never assumed safe; closing them is how the register becomes complete.",
     example: "Evidence at E0 (6): payment HSM vendor has not answered.",
+  },
+  // src: backend/utilities/cbom_sources/estate_export.py:1-30, backend/routers/cbom_estate_export.py:1-9 — one
+  // component per estate key; unsigned with X-Cbom-Sha256; filters application / source / type
+  "cbom.estate.export": {
+    label: "Estate CBOM",
+    what: "Your whole estate as one CycloneDX 1.6 file (JSON or XML): every asset once, however many sources see it, with its current quantum risk grade and VEX. It covers what the latest collections read, plus assets they could not read again (marked not read); removed assets are left out. The download API also filters by application, source or asset type.",
+    why: "One file to hand to an auditor or import into another tool. It is unsigned: the response carries the file's SHA-256 (X-Cbom-Sha256, shown after the download) so anyone can check it outside ZeroShield.",
+    example: "cbom-estate-team3-2026-11-15.cdx.json · 2,140 assets · unsigned · SHA-256 4f1c….",
   },
   // src: backend/utilities/cbom_sources/q0register.py:3-5, frontend/components/cbom/grade/Q0Gaps.tsx:110-118 — open while closed_at is empty
   "cbom.q0.status": {

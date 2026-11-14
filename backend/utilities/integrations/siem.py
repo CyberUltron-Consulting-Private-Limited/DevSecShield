@@ -190,6 +190,9 @@ class SplunkHecConfig(Cfg):
     sourcetype: str = Field(default="zeroshield:cbom", max_length=80)
     source: str = Field(default="zeroshield", max_length=80)
     host_field: str = Field(default="zeroshield", max_length=80)
+    # The HEC data channel (a GUID): required by tokens with indexer acknowledgement enabled, which answer HTTP 400
+    # code 10 "Data channel is missing" without it. Sent as X-Splunk-Request-Channel on every request when set.
+    channel: str | None = Field(default=None, max_length=64)
     ca_pem: str | None = Field(default=None, max_length=64 * 1024)
     events: list[str] | None = None
 
@@ -204,6 +207,15 @@ class SplunkHecConfig(Cfg):
             raise ValueError("url: the HEC base URL (https://splunk:8088) or its /services/collector/event path")
         return text
 
+    @field_validator("channel")
+    @classmethod
+    def _channel(cls, v: str | None) -> str | None:
+        if v is None or not v.strip():
+            return None
+        if not _GUID.fullmatch(v.strip()):
+            raise ValueError("channel: a GUID (for example 0aeeac95-ac74-4aa9-b30d-6c4c0ac581ba), as Splunk's HEC expects")
+        return v.strip().lower()
+
     @field_validator("index", "sourcetype", "source", "host_field")
     @classmethod
     def _token(cls, v: str | None) -> str | None:
@@ -212,6 +224,9 @@ class SplunkHecConfig(Cfg):
         if _PRINTABLE.search(v.replace(" ", "")) or len(v) > 80:
             raise ValueError("use printable ASCII")
         return v
+
+
+_GUID = re.compile(r"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}")
 
 
 def hec_endpoint(cfg: SplunkHecConfig) -> str:
@@ -233,7 +248,9 @@ def hec_body(cfg: SplunkHecConfig, events: list[dict[str, Any]]) -> bytes:
 
 _HEC_TEXT = {0: "Success", 4: "Invalid token", 6: "Invalid data format", 7: "Incorrect index", 9: "Server is busy",
              1: "Token disabled", 2: "Token is required", 3: "Invalid authorization", 21: "Invalid token",
-             22: "Token disabled", 26: "HEC queue is at capacity"}
+             22: "Token disabled", 26: "HEC queue is at capacity",
+             10: "Data channel is missing: this token has indexer acknowledgement on, set the integration's channel GUID",
+             11: "Invalid data channel: set a GUID as the integration's channel"}
 
 
 def hec_send(ctx: Context, events: list[dict[str, Any]]) -> list[Outcome]:
@@ -242,9 +259,11 @@ def hec_send(ctx: Context, events: list[dict[str, Any]]) -> list[Outcome]:
     for start in range(0, len(events), HEC_BATCH):
         batch = events[start:start + HEC_BATCH]
         try:
+            headers = {"Authorization": f"Splunk {ctx.secrets.get('token') or ''}", "Content-Type": "application/json"}
+            if cfg.channel:
+                headers["X-Splunk-Request-Channel"] = cfg.channel
             resp = outbound.request("POST", hec_endpoint(cfg), body=hec_body(cfg, batch), ca_pem=cfg.ca_pem,
-                                    headers={"Authorization": f"Splunk {ctx.secrets.get('token') or ''}",
-                                             "Content-Type": "application/json"})
+                                    headers=headers)
         except Exception as exc:
             return out + [failure(exc)]
         parsed = parse_json(resp.body)
