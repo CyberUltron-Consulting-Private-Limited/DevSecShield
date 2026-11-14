@@ -106,7 +106,8 @@ def test_f5_parser():
     outputs = json.loads((FIX / "f5.json").read_text())
     rows = _rows("f5_bigip", outputs)
     legacy = rows["client-ssl /Common/legacy-app"][5]
-    assert set(legacy["weak_ciphers"]) == {"RC4-SHA", "DES-CBC3-SHA"} and legacy["protocols"] == ["TLSv1.0"]
+    # DEFAULT holds TLS 1.2 suites (N11), the listed TLSv1 adds TLS 1.0
+    assert set(legacy["weak_ciphers"]) == {"RC4-SHA", "DES-CBC3-SHA"} and legacy["protocols"] == ["TLSv1.0", "TLSv1.2"]
     modern = rows["client-ssl /Common/modern"][5]
     assert modern["weak_ciphers"] == [] and modern["protocols"] == []
     keys = {r[2]: r for r in rows.values() if r[0] == "private_key"}

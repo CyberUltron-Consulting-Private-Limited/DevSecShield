@@ -4831,7 +4831,12 @@ const getCbomNodeArtifactLink = async (team_id: number, kind: string): Promise<{
     return response.data
 }
 
-const listCbomSources = async (team_id: number, group?: CbomSourceGroup): Promise<{ sources: CbomSource[]; server_time: string }> => {
+// network_totals (N7): unique addresses the team's ENABLED network ranges sweep after the never-scan list; present on
+// unfiltered and network lists
+const listCbomSources = async (team_id: number, group?: CbomSourceGroup): Promise<{
+    sources: CbomSource[]; server_time: string;
+    network_totals?: { addresses: number; ranges_enabled: number; ranges_disabled: number }
+}> => {
     const response = await api.get(`${cbomSourcesBase(team_id)}/items`, { params: group ? { group } : {} })
     return response.data
 }
