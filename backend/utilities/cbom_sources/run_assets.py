@@ -25,7 +25,7 @@ import time
 from types import SimpleNamespace
 from typing import Any
 
-from sqlalchemy import String, and_, cast, false, func, or_
+from sqlalchemy import String, and_, cast, false, func, or_, true
 from sqlmodel import Session, select
 
 from backend.new_models import CbomCollectedAsset, CbomCollectionJob, CbomCollectionRun, CbomCollectionSource
@@ -126,18 +126,68 @@ def _clause_clause(session: Session, team_id: int, run_id: int, clause: tuple[st
     """Collected assets behind a compliance clause (``clause=<framework>[:<clause id>]``), decided per asset by the
     function the run posture counts with (clause_evidence.matches: the asset's non-coverage codes judged today, the
     algorithms the classifier flagged for them). A clause's evidence-gated rules make "has the code" too wide (#291 x
-    #289), so the "N assets" of a clause and this filter's total are the same set of assets."""
+    #289), so the "N assets" of a clause and this filter's total are the same set of assets.
+
+    #289 review (performance): a code whose own clauses name the clause puts every asset that has it behind the clause,
+    so that part is a SQL predicate on the recorded codes. Only the assets whose citing codes are all rule-gated are
+    judged in memory (their classifier columns only, the evidence cached per process), and the outcome goes to SQL as
+    id ranges of the smaller side (behind / not behind), so no id list of the whole candidate set is built."""
     keys = CE.clause_keys(*clause)
-    candidates = CE.codes_citing(keys)
-    if not candidates:
+    always, by_rule = CE.codes_citing_split(keys)
+    if not always and not by_rule:
         return false()
-    rows = session.exec(select(CbomCollectedAsset).where(
-        CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run_id,
-        _codes_clause(candidates, changed))).all()
-    ids = [int(row.id) for row in rows
-           if CE.matches(row, (changed[row.id].get("finding_codes") if row.id in changed else row.finding_codes) or [],
-                         keys)]
-    return CbomCollectedAsset.id.in_(ids) if ids else false()  # type: ignore[union-attr]
+    parts = []
+    if always:
+        parts.append(_codes_clause(always, changed))
+    if by_rule:
+        gated = _codes_clause(by_rule, changed)
+        cols = (CbomCollectedAsset.id, CbomCollectedAsset.asset_type, CbomCollectedAsset.algorithm,
+                CbomCollectedAsset.key_size, CbomCollectedAsset.protocol, CbomCollectedAsset.facts,
+                CbomCollectedAsset.created_at, CbomCollectedAsset.finding_codes)
+        query = select(*cols).where(CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run_id, gated)
+        if always:  # an asset with an always-citing code is behind the clause already (the SQL part above)
+            query = query.where(~func.coalesce(_codes_clause(always, changed), false()))
+        behind, not_behind = [], []
+        for values in session.exec(query.order_by(CbomCollectedAsset.id)).all():
+            row = SimpleNamespace(**dict(zip(("id", "asset_type", "algorithm", "key_size", "protocol", "facts",
+                                              "created_at", "finding_codes"), values)))
+            codes = (changed[row.id].get("finding_codes") if row.id in changed else row.finding_codes) or []
+            (behind if CE.matches(row, codes, keys) else not_behind).append(int(row.id))
+        if behind:
+            parts.append(and_(gated, _id_ranges(behind, not_behind)))
+    return or_(*parts) if parts else false()
+
+
+def _id_ranges(wanted: list[int], other: list[int]):
+    """``id`` in ``wanted``, for a SQL query already narrowed to ``wanted + other`` (both ascending): the side with
+    fewer runs of consecutive members, as ``BETWEEN`` ranges (a single id in one ``IN``), negated for ``other``. Ids in
+    a range that belong to neither side are outside the narrowed query, so the range never widens it."""
+    def runs(mine: list[int], theirs: list[int]) -> list[tuple[int, int]]:
+        merged = sorted([(i, True) for i in mine] + [(i, False) for i in theirs])
+        out: list[tuple[int, int]] = []
+        start = prev = None
+        for ident, is_mine in merged:
+            if is_mine:
+                start = ident if start is None else start
+                prev = ident
+            elif start is not None:
+                out.append((start, prev))
+                start = None
+        if start is not None:
+            out.append((start, prev))
+        return out
+
+    def predicate(spans: list[tuple[int, int]]):
+        singles = [a for a, b in spans if a == b]
+        clauses = [CbomCollectedAsset.id.between(a, b) for a, b in spans if a != b]  # type: ignore[union-attr]
+        clauses += [CbomCollectedAsset.id.in_(singles[i:i + 500])  # type: ignore[union-attr]
+                    for i in range(0, len(singles), 500)]
+        return or_(*clauses)
+
+    if not other:
+        return true()
+    keep, drop = runs(wanted, other), runs(other, wanted)
+    return predicate(keep) if len(keep) <= len(drop) else ~predicate(drop)
 
 
 def _job_refs(session: Session, team_id: int, run: CbomCollectionRun) -> dict[int, str]:

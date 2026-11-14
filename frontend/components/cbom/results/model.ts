@@ -288,9 +288,16 @@ export function runSectionPlan(input: {
 /** S10 frameworks: /results.compliance when present, else the posture's clauses (the same KB mapping). */
 export interface ComplianceRow {
   framework: string;
-  clauses: { clause: string; title: string; assets: number; codes: string[]; source?: string | null; note?: string | null; findings?: CbomClauseFinding[] }[];
+  clauses: {
+    clause: string; title: string; assets: number; codes: string[]; source?: string | null; note?: string | null; findings?: CbomClauseFinding[];
+    /** assets cited for review only: the algorithm the clause depends on was not recorded (#289) */
+    unrecorded?: number;
+    verdict?: "fail" | "needs_evidence";
+  }[];
   /** distinct assets behind any clause (#270); null / absent on an older backend */
   assets?: number | null;
+  /** distinct assets behind its clauses only for review (#289); null when it cannot be known, absent on an older backend */
+  unrecorded?: number | null;
 }
 
 export const FRAMEWORK_ORDER = ["CERT-In", "RBI", "SEBI CSCRF", "NIST", "CNSA 2.0"];
@@ -301,14 +308,22 @@ export function complianceRows(results: CbomRunResults | null | undefined,
   const sort = (rows: ComplianceRow[]) => [...rows].sort((a, b) => order(a.framework) - order(b.framework) || a.framework.localeCompare(b.framework));
   // /results always lists the five frameworks, empty ones included: only frameworks with a clause are shown
   const fromResults = (results?.compliance?.frameworks ?? []).filter((f) => (f.clauses ?? []).length > 0);
-  if (fromResults.length) return { rows: sort(fromResults.map((f) => ({ framework: f.framework, clauses: f.clauses, ...(f.assets !== undefined ? { assets: f.assets } : {}) }))), basis: "results" };
+  if (fromResults.length) {
+    return {
+      rows: sort(fromResults.map((f) => ({ framework: f.framework, clauses: f.clauses, ...(f.assets !== undefined ? { assets: f.assets } : {}),
+                                           ...(f.unrecorded !== undefined ? { unrecorded: f.unrecorded } : {}) }))),
+      basis: "results",
+    };
+  }
   const fromPosture = (posture?.compliance ?? []).filter((f) => (f.clauses ?? []).length > 0);
   if (fromPosture.length) {
     return {
       rows: sort(fromPosture.map((f) => ({
         framework: f.framework,
-        clauses: f.clauses.map((c) => ({ clause: c.id, title: c.text, assets: c.assets, codes: c.codes, source: c.source, ...(c.note ? { note: c.note } : {}) })),
+        clauses: f.clauses.map((c) => ({ clause: c.id, title: c.text, assets: c.assets, codes: c.codes, source: c.source, ...(c.note ? { note: c.note } : {}),
+                                         ...(typeof c.unrecorded === "number" ? { unrecorded: c.unrecorded } : {}), ...(c.verdict ? { verdict: c.verdict } : {}) })),
         ...(typeof f.assets === "number" ? { assets: f.assets } : {}),
+        ...(typeof f.unrecorded === "number" ? { unrecorded: f.unrecorded } : {}),
       }))),
       basis: "posture",
     };

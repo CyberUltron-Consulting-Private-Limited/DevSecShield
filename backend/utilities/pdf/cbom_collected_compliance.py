@@ -32,7 +32,7 @@ def collected_clauses(view: TeamCbomView) -> list[ClauseRow]:
     gave, ``AssetAgg.collector_codes``, as the run API counts them): by framework, then most assets first."""
     assets: dict[tuple[str, str], set[str]] = defaultdict(set)
     codes: dict[tuple[str, str], set[str]] = defaultdict(set)
-    unrecorded: dict[tuple[str, str], set[str]] = defaultdict(set)
+    recorded: dict[tuple[str, str], set[str]] = defaultdict(set)  # cited on a recorded algorithm by any of its codes
     for asset in view.assets:
         if not asset.current or not asset.source_key.startswith(SOURCES_PREFIX):
             continue
@@ -45,9 +45,9 @@ def collected_clauses(view: TeamCbomView) -> list[ClauseRow]:
                 ident = f"{asset.source_key}|{asset.asset_type}|{asset.ident}"
                 assets[key].add(ident)
                 codes[key].add(code)
-                if ref.get("evidence") == "not_recorded":
-                    unrecorded[key].add(ident)
-    rows = [ClauseRow(fw, clause, len(ids), tuple(sorted(codes[(fw, clause)])), len(unrecorded[(fw, clause)] & ids))
+                if ref.get("evidence") != "not_recorded":
+                    recorded[key].add(ident)
+    rows = [ClauseRow(fw, clause, len(ids), tuple(sorted(codes[(fw, clause)])), len(ids - recorded[(fw, clause)]))
             for (fw, clause), ids in assets.items()]
     rows.sort(key=lambda r: (r.framework.casefold(), -r.assets, r.clause.casefold()))
     return rows

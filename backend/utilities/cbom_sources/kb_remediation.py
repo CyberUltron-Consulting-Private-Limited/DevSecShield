@@ -80,14 +80,18 @@ def explain(finding: dict[str, Any], namespace: str = "code") -> list[dict[str, 
 
 def code_evidence(finding: dict[str, Any]) -> list[str]:
     """What a code-scan finding says about its algorithm, for the compliance clause rules (#289): the scanner's
-    algorithm fields (its title is the algorithm, its description the scanner's sentence about that algorithm, e.g.
-    "Undersized asymmetric key on RSA: 1024-bit") and ``<algorithm>-<key size>``; never the location (a file path)."""
-    keys = ("algorithm_name", "description", "finding") if finding.get("algorithm_name") else \
-        ("title", "description", "finding")  # a certificate row's title may be its file name
+    algorithm field, its sentence about that algorithm (the description, e.g. "Undersized asymmetric key on RSA:
+    1024-bit") and ``<algorithm>-<key size>``. Only when the scanner named the algorithm: a row without one has no
+    algorithm evidence (its title may be a file name such as ``des3_keys.pem``, its sentence may name a path), so the
+    algorithm clauses are cited for review ("not recorded"), never decided by a name. Never the location."""
+    algorithm = finding.get("algorithm_name")
+    if not isinstance(algorithm, str) or not algorithm.strip():
+        return []
+    keys = ("algorithm_name", "description", "finding")
     names = [str(finding.get(k)).strip() for k in keys if isinstance(finding.get(k), str) and finding.get(k).strip()]
-    algorithm, size = finding.get("algorithm_name") or finding.get("title"), finding.get("key_size")
-    if algorithm and str(size or "").strip().isdigit():
-        names.append(f"{algorithm}-{int(str(size).strip())}")
+    size = finding.get("key_size")
+    if str(size or "").strip().isdigit():
+        names.append(f"{algorithm.strip()}-{int(str(size).strip())}")
     return list(dict.fromkeys(names))
 
 

@@ -15,22 +15,36 @@ import type { CbomClauseFinding } from "@/utils/backend_api";
 
 import { FRAMEWORK_ORDER, type ComplianceRow } from "./model";
 
-/** A framework's overall verdict, from the six requirement verdict types. */
-export type FrameworkVerdict = "pass" | "fail" | "partial" | "not_assessed";
+/** A framework's overall verdict, from the six requirement verdict types and the KB clauses its findings touch.
+ * `needs_evidence` (#289): the only clauses touched were cited for review, because the algorithm they depend on was not
+ * recorded for any asset behind them; neither a violation (Fail) nor a Pass. */
+export type FrameworkVerdict = "pass" | "fail" | "partial" | "needs_evidence" | "not_assessed";
 
 export const FRAMEWORK_VERDICT_LABEL: Record<FrameworkVerdict, string> = {
   pass: "Pass",
   fail: "Fail",
   partial: "Partial",
+  needs_evidence: "Needs evidence",
   not_assessed: "Not assessed",
 };
+
+const NEEDS_EVIDENCE_BADGE = "bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200";
 
 export const FRAMEWORK_VERDICT_BADGE: Record<FrameworkVerdict, string> = {
   pass: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200",
   fail: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200",
   partial: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200",
+  needs_evidence: NEEDS_EVIDENCE_BADGE,
   not_assessed: "bg-zinc-100 text-zinc-700 dark:bg-zinc-700/50 dark:text-zinc-200",
 };
+
+/** A clause row's verdict: the engine's requirement verdicts, or for a KB clause `fail` / `needs_evidence` (#289). */
+export type ClauseVerdict = ComplianceVerdict | "needs_evidence";
+
+export const NEEDS_EVIDENCE_LABEL = "Needs evidence";
+export const NEEDS_EVIDENCE_CLASS = NEEDS_EVIDENCE_BADGE;
+/** The visible "verify" badge's tooltip: why a clause or framework lists assets that need evidence. */
+export const VERIFY_HINT = "Cited for review: the clause applies to specific algorithms and the algorithm behind the finding was not recorded for these assets. Verify which one they use; they are not counted as a violation.";
 
 /** The tri-state engine's framework keys behind each mapping framework (frameworkLabels.ts names them). */
 export const ENGINE_KEYS: Record<string, string[]> = {
@@ -62,8 +76,10 @@ export interface ClauseView {
   quote: string | null;
   source: string | null;
   note: string | null;
-  verdict: ComplianceVerdict;
+  verdict: ClauseVerdict;
   assets: number;
+  /** assets behind the clause only for review (the algorithm was not recorded): the visible "verify" badge (#289) */
+  unrecorded: number;
   drill: DrillTarget | null;
   fixes: ClauseFix[];
   origin: "kb" | "engine";
@@ -81,6 +97,10 @@ export interface FrameworkSummary {
   engineFrameworks: string[];
   /** KB clauses the findings touch */
   clausesTouched: number;
+  /** of those, clauses whose every asset needs evidence (#289): never counted as a violation */
+  clausesNeedEvidence: number;
+  /** distinct assets behind the framework's clauses only for review (the API's count; null when it cannot say) */
+  unrecorded: number | null;
   /** distinct assets affected (null when the API cannot say) */
   assets: number | null;
   drill: DrillTarget | null;
@@ -130,16 +150,20 @@ function engineFrameworks(engine: Compliance | null | undefined, keys: string[])
 }
 
 /** The framework verdict: Pass = every assessed requirement passes and nothing is open; Fail = requirements fail and
- * none passes; Partial = some pass while others fail, need evidence, or findings touch its clauses; Not assessed =
- * nothing could be judged from the BOM (out of scope, N/A or no data). Without engine data, clauses touched by
- * findings are a Fail (the knowledge base says the findings breach them). */
-export function frameworkVerdict(counts: VerdictCounts, opts: { hasEngine: boolean; clausesTouched: number }): FrameworkVerdict {
+ * none passes; Partial = some pass while others fail, need evidence, or findings breach its clauses; Needs evidence =
+ * nothing fails, but KB clauses were cited for review only (the algorithm they depend on was not recorded, #289);
+ * Not assessed = nothing could be judged from the BOM (out of scope, N/A or no data). Without engine data, clauses
+ * breached by findings are a Fail (the knowledge base says the findings breach them). `clausesTouched` counts the
+ * breached clauses only; `clausesNeedEvidence` the clauses cited for review only. */
+export function frameworkVerdict(counts: VerdictCounts,
+                                 opts: { hasEngine: boolean; clausesTouched: number; clausesNeedEvidence?: number }): FrameworkVerdict {
   const passed = counts.pass + counts.pass_with_evidence;
   const touched = opts.clausesTouched > 0;
-  if (!opts.hasEngine || passed + counts.fail === 0) return touched ? "fail" : "not_assessed";
+  const verify = (opts.clausesNeedEvidence ?? 0) > 0;
+  if (!opts.hasEngine || passed + counts.fail === 0) return touched ? "fail" : verify ? "needs_evidence" : "not_assessed";
   if (counts.fail > 0 && passed === 0) return "fail";
   if (counts.fail > 0 || touched || counts.not_bom_evidenceable > 0) return "partial";
-  return "pass";
+  return verify ? "needs_evidence" : "pass";
 }
 
 // ---------------------------------------------------------------------------- build
@@ -151,6 +175,11 @@ function kbClause(framework: string, c: ComplianceRow["clauses"][number], titles
   const labels = findings.map((f) => codeLabel(f.code, { ...titles, [f.code]: f.title }));
   const fixes: ClauseFix[] = [];
   for (const [i, f] of findings.entries()) if (f.fix && !fixes.some((x) => x.fix === f.fix)) fixes.push({ label: labels[i], fix: f.fix });
+  const unrecorded = Math.max(0, Math.min(Number(c.unrecorded ?? 0) || 0, c.assets));
+  // the API's verdict (#289), else the same rule over its counts (an older posture without the field)
+  const verdict: ClauseVerdict = c.verdict === "needs_evidence" || c.verdict === "fail"
+    ? c.verdict
+    : (c.assets > 0 && unrecorded >= c.assets ? "needs_evidence" : "fail");
   return {
     key: `${framework}::${c.clause}`,
     id: c.clause,
@@ -158,8 +187,9 @@ function kbClause(framework: string, c: ComplianceRow["clauses"][number], titles
     quote: c.title?.trim() || null,
     source: c.source ?? null,
     note: c.note ?? null,
-    verdict: "fail",
+    verdict,
     assets: c.assets,
+    unrecorded,
     drill: c.codes.length && c.assets > 0
       ? { kind: "clause", clause: `${framework}:${c.clause}`, codes: [...c.codes], label: `${framework} · ${c.clause}` }
       : null,
@@ -189,6 +219,7 @@ function engineClause(framework: string, key: string, r: ComplianceRequirement &
     note: null,
     verdict: r.verdict,
     assets: refs.length,
+    unrecorded: 0,
     drill: refs.length ? { kind: "refs", refs, label: `${framework} · ${r.id}` } : null,
     fixes,
     origin: "engine",
@@ -239,13 +270,21 @@ export function buildComplianceSummary(input: {
       assets = refs.length;
       if (refs.length) drill = { kind: "refs", refs, label: `${name} · failing requirements` };
     }
+    const needEvidence = kbClauses.filter((c) => c.verdict === "needs_evidence").length;
+    // the API's distinct count (Rule P: never added up here); unknown (null) when an older backend or a shared group
+    // cannot say while some clause has assets to verify
+    const someToVerify = kbClauses.some((c) => c.unrecorded > 0);
+    const unrecorded = typeof row?.unrecorded === "number" ? row.unrecorded : (someToVerify ? null : 0);
     out.push({
       framework: name,
-      verdict: frameworkVerdict(counts, { hasEngine: engine.length > 0, clausesTouched: kbClauses.length }),
+      verdict: frameworkVerdict(counts, { hasEngine: engine.length > 0, clausesTouched: kbClauses.length - needEvidence,
+                                          clausesNeedEvidence: needEvidence }),
       counts,
       requirements,
       engineFrameworks: engine.map((e) => labelFramework(e.key)),
       clausesTouched: kbClauses.length,
+      clausesNeedEvidence: needEvidence,
+      unrecorded,
       assets,
       drill,
       clauses,

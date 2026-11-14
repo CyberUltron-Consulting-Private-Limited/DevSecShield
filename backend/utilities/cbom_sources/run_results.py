@@ -624,25 +624,37 @@ def _dashboard_top_risks(session: Session, team_id: int, risks: list[dict[str, A
 
 def _compliance(clauses_by_framework: list[dict[str, Any]]) -> dict[str, Any]:
     """Posture's KB clause mapping grouped as the results page shows it: CERT-In, RBI, SEBI CSCRF, NIST, CNSA 2.0
-    (always listed, in that order), then any other framework a newer KB adds."""
+    (always listed, in that order), then any other framework a newer KB adds.
+
+    #289: each clause keeps the posture's ``unrecorded`` count (assets cited for review: the algorithm the clause
+    depends on was not recorded) and its ``verdict`` (``fail``, or ``needs_evidence`` when every asset behind it is
+    unrecorded); each framework its ``unrecorded`` assets and ``verdict`` (``fail`` / ``needs_evidence`` / None)."""
     grouped: dict[str, list[dict[str, Any]]] = {name: [] for name in FRAMEWORKS}
     # distinct assets behind any clause of the framework (posture's count; None when two KB names share one group,
     # because their asset sets cannot be united here)
     assets: dict[str, int | None] = {name: 0 for name in FRAMEWORKS}
+    unrecorded_assets: dict[str, int | None] = {name: 0 for name in FRAMEWORKS}
     seen: set[str] = set()
     for block in clauses_by_framework:
         name = _framework(str(block.get("framework") or ""))
-        count = block.get("assets")
-        assets[name] = None if name in seen or count is None else int(count)
+        count, unrecorded = block.get("assets"), block.get("unrecorded")
+        shared = name in seen
+        assets[name] = None if shared or count is None else int(count)
+        unrecorded_assets[name] = None if shared or count is None else int(unrecorded or 0)
         seen.add(name)
         for clause in block.get("clauses") or []:
             codes = list(clause.get("codes") or [])
+            n, gap = int(clause.get("assets") or 0), int(clause.get("unrecorded") or 0)
+            verdict = clause.get("verdict")
             grouped.setdefault(name, []).append({
-                "clause": clause.get("id"), "title": clause.get("text"), "assets": int(clause.get("assets") or 0),
+                "clause": clause.get("id"), "title": clause.get("text"), "assets": n,
                 "codes": codes, "source": clause.get("source"), "note": clause.get("note"),
+                "unrecorded": gap, "verdict": verdict if verdict in ("fail", "needs_evidence") else POSTURE.clause_verdict(n, gap),
                 "findings": [_finding_fix(code) for code in codes]})  # #270: labels and "How to fix" per code
     order = list(FRAMEWORKS) + sorted(n for n in grouped if n not in FRAMEWORKS)
-    return {"frameworks": [{"framework": name, "clauses": grouped[name], "assets": assets.get(name)} for name in order],
+    return {"frameworks": [{"framework": name, "clauses": grouped[name], "assets": assets.get(name),
+                            "unrecorded": unrecorded_assets.get(name), "verdict": POSTURE.framework_verdict(grouped[name])}
+                           for name in order],
             "scope": "Knowledge-base clauses this run's findings touch (asset counts per clause)"}
 
 

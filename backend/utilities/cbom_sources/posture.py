@@ -449,6 +449,23 @@ def _job_source_name(job: CbomCollectionJob | None, source: CbomCollectionSource
         ((job.params or {}).get("source_name") if job is not None else None) or None
 
 
+CLAUSE_VERDICTS = ("fail", "needs_evidence")
+
+
+def clause_verdict(assets: int, unrecorded: int) -> str:
+    """A knowledge-base clause the run's findings touch: ``fail`` when at least one asset is behind it on a recorded
+    algorithm (or a code that always cites it); ``needs_evidence`` when every asset behind it was cited for review
+    only, because the algorithm the clause depends on was not recorded (#289): neither a violation nor a pass."""
+    return "needs_evidence" if assets > 0 and unrecorded >= assets else "fail"
+
+
+def framework_verdict(clauses: list[dict[str, Any]]) -> str | None:
+    """A framework's verdict from its knowledge-base clauses: ``fail`` when any clause fails, ``needs_evidence`` when
+    every touched clause needs evidence, None when no clause is touched."""
+    verdicts = {c.get("verdict") for c in clauses}
+    return "fail" if "fail" in verdicts else ("needs_evidence" if verdicts else None)
+
+
 def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict[str, Any] | None,
                 top: int = 10) -> dict[str, Any]:
     from backend.utilities.cbom_sources.classify import shown
@@ -472,7 +489,7 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
     risky: list[dict[str, Any]] = []
     clause_assets: dict[tuple[str, str], set[int]] = defaultdict(set)
     clause_meta: dict[tuple[str, str], dict[str, Any]] = {}
-    clause_unrecorded: dict[tuple[str, str], set[int]] = defaultdict(set)  # cited without a recorded algorithm
+    clause_recorded: dict[tuple[str, str], set[int]] = defaultdict(set)  # cited on a recorded algorithm (or always)
     for row in rows:
         aid, a_type, qv, facts, source_id = row.id, row.asset_type, row.quantum_vulnerable, row.facts, row.source_id
         location, name, job_id, target = row.location, row.name, row.job_id, row.target
@@ -511,23 +528,29 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
         for code, ref in CE.asset_clauses(row, a_codes):
             clause = (ref["framework"], ref["id"])
             clause_assets[clause].add(aid)
-            if ref.get("evidence") == "not_recorded":
-                clause_unrecorded[clause].add(aid)
+            if ref.get("evidence") != "not_recorded":
+                clause_recorded[clause].add(aid)
             meta = clause_meta.setdefault(clause, {**ref, "codes": set()})
             meta["codes"].add(code)
     readiness_value, readiness_basis = readiness(classes)
     frameworks: dict[str, list[dict[str, Any]]] = defaultdict(list)
     framework_assets: dict[str, set[int]] = defaultdict(set)  # distinct assets behind any clause (#270)
+    framework_recorded: dict[str, set[int]] = defaultdict(set)
     for clause, assets in sorted(clause_assets.items(), key=lambda kv: (kv[0][0], -len(kv[1]))):
         meta = clause_meta[clause]
+        recorded = clause_recorded.get(clause) or set()
         framework_assets[clause[0]].update(assets)
-        unrecorded = len(clause_unrecorded.get(clause) or ())
+        framework_recorded[clause[0]].update(recorded)
+        # #289: an algorithm clause cited for an asset whose algorithm was not recorded (by none of its codes) needs
+        # evidence: it is listed for review, and a clause that has only such assets is no confirmed violation
+        unrecorded = len(assets - recorded)
         note = meta.get("note") if meta.get("evidence") != "not_recorded" else None
-        if unrecorded:  # #289: an algorithm clause is cited, flagged for review, when the algorithm was not recorded
+        if unrecorded:
             note = " ".join(p for p in (f"{unrecorded} of {len(assets)} asset(s): {crypto_kb.NOT_RECORDED}", note) if p)
         frameworks[clause[0]].append({"id": meta["id"], "text": meta["text"], "source": meta["source"],
                                       "note": note, "assets": len(assets), "codes": sorted(meta["codes"]),
-                                      "key": meta.get("key"), **({"unrecorded": unrecorded} if unrecorded else {})})
+                                      "key": meta.get("key"), "verdict": clause_verdict(len(assets), unrecorded),
+                                      **({"unrecorded": unrecorded} if unrecorded else {})})
     risky.sort(key=lambda r: (-r["score"], r["id"]))
     return {
         "assets": sum(classes.values()),
@@ -548,7 +571,9 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
         "top_risks": risky[:top],
         "exposure": {e: exposure_counts.get(e, 0) for e in EXPOSURES},
         "exposure_factors": dict(EXPOSURE_FACTOR),
-        "compliance": [{"framework": fw, "clauses": items, "assets": len(framework_assets[fw])}
+        "compliance": [{"framework": fw, "clauses": items, "assets": len(framework_assets[fw]),
+                        "unrecorded": len(framework_assets[fw] - framework_recorded[fw]),
+                        "verdict": framework_verdict(items)}
                        for fw, items in sorted(frameworks.items())],
         "kb_version": crypto_kb.version(),
         **agility.result(),

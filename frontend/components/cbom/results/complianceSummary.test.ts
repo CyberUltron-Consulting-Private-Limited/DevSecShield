@@ -20,7 +20,7 @@ import {
   runDrillFilters,
   verdictSegments,
 } from "./complianceSummary";
-import { complianceRows, DEFAULT_FILTERS, filtersToParams, hasActiveFilters } from "./model";
+import { complianceRows, DEFAULT_FILTERS, filtersToParams, hasActiveFilters, type ComplianceRow } from "./model";
 
 import { ENGINE, MAPPING } from "./complianceFixtures";
 
@@ -44,6 +44,13 @@ assert.equal(frameworkVerdict(c({ out_of_scope: 4 }), { hasEngine: true, clauses
 assert.equal(frameworkVerdict(c({ not_bom_evidenceable: 2, na: 1 }), { hasEngine: true, clausesTouched: 0 }), "not_assessed");
 assert.equal(frameworkVerdict(emptyCounts(), { hasEngine: false, clausesTouched: 0 }), "not_assessed");
 assert.equal(frameworkVerdict(emptyCounts(), { hasEngine: false, clausesTouched: 1 }), "fail", "no engine: the KB says its findings breach the clause");
+
+// #289 review: KB clauses cited for review only (algorithm not recorded) are neither Fail nor Pass
+assert.equal(frameworkVerdict(emptyCounts(), { hasEngine: false, clausesTouched: 0, clausesNeedEvidence: 2 }), "needs_evidence", "no engine, only unrecorded citations");
+assert.equal(frameworkVerdict(emptyCounts(), { hasEngine: false, clausesTouched: 1, clausesNeedEvidence: 2 }), "fail", "one breached clause is still a Fail");
+assert.equal(frameworkVerdict(c({ pass: 3 }), { hasEngine: true, clausesTouched: 0, clausesNeedEvidence: 1 }), "needs_evidence", "checks pass, a clause needs evidence: not Pass");
+assert.equal(frameworkVerdict(c({ pass: 2, fail: 1 }), { hasEngine: true, clausesTouched: 0, clausesNeedEvidence: 1 }), "partial");
+assert.equal(frameworkVerdict(c({ fail: 2 }), { hasEngine: true, clausesTouched: 0, clausesNeedEvidence: 1 }), "fail");
 
 // ---------------------------------------------------------------- a run: engine + KB clauses
 const run = buildComplianceSummary({ engine: ENGINE, mapping: MAPPING });
@@ -132,6 +139,40 @@ const many = runDrillFilters({ kind: "refs", refs: Array.from({ length: 600 }, (
 assert.equal(many.patch.asset_ids!.length, MAX_DRILL_IDS);
 assert.equal(many.truncated, true);
 assert.equal(hasActiveFilters(DEFAULT_FILTERS), false);
+
+// ---------------------------------------------------------------- #289: needs evidence end to end (the API's counts)
+const TDEA = "SP 800-131A Rev. 2, Sec. 2 Table 1 (TDEA)";
+const unverified: ComplianceRow[] = [
+  { framework: "NIST", assets: 1, unrecorded: 1, clauses: [
+    { clause: TDEA, title: "Three-key TDEA ...", assets: 1, codes: ["WEAK_CIPHER"], unrecorded: 1, verdict: "needs_evidence", note: "1 of 1 asset(s): Cited for review ..." }] },
+  { framework: "CERT-In", assets: 3, unrecorded: 1, clauses: [
+    { clause: "BOM Guidelines v2.0, 8.4.2.2", title: "Enforce strict TLS ...", assets: 3, codes: ["WEAK_CIPHER"], verdict: "fail" },
+    { clause: "Other", title: "x", assets: 3, codes: ["SSH_CBC_CIPHER"], unrecorded: 1, verdict: "fail" }] },
+];
+const ne = Object.fromEntries(buildComplianceSummary({ engine: null, mapping: unverified }).map((f) => [f.framework, f]));
+assert.equal(ne.NIST.verdict, "needs_evidence", "only unrecorded citations: Needs evidence, not Fail");
+assert.equal(ne.NIST.clausesNeedEvidence, 1);
+assert.equal(ne.NIST.unrecorded, 1);
+assert.deepEqual(ne.NIST.clauses.map((x) => [x.verdict, x.unrecorded, x.assets]), [["needs_evidence", 1, 1]]);
+assert.ok(ne.NIST.drill, "still drillable: the assets to verify");
+assert.equal(ne["CERT-In"].verdict, "fail", "a confirmed clause keeps the framework failing");
+assert.deepEqual(ne["CERT-In"].clauses.map((x) => [x.verdict, x.unrecorded]), [["fail", 0], ["fail", 1]], "partly unrecorded: Fail with a verify count");
+// with passing checks the framework is Needs evidence, never Pass
+const passing = { nist_800_57: { pass: 2, pass_with_evidence: 0, fail: 0, out_of_scope: 0, not_bom_evidenceable: 0, na: 0, coverage: 1, requirements: [] } } as unknown as typeof ENGINE;
+assert.equal(buildComplianceSummary({ engine: passing, mapping: unverified }).find((f) => f.framework === "NIST")!.verdict, "needs_evidence");
+// an older payload without the verdict: derived from the counts; without a framework count: unknown, not added up
+const legacy = buildComplianceSummary({ engine: null, mapping: [{ framework: "NIST", assets: 2, clauses: [
+  { clause: TDEA, title: "t", assets: 2, codes: ["WEAK_CIPHER"], unrecorded: 2 }] }] })[0];
+assert.equal(legacy.clauses[0].verdict, "needs_evidence");
+assert.equal(legacy.unrecorded, null);
+assert.equal(buildComplianceSummary({ engine: null, mapping: MAPPING }).every((f) => f.clauses.every((x) => x.verdict === "fail" && x.unrecorded === 0)), true, "no unrecorded: unchanged");
+// the /results and posture payloads keep the counts
+const fromResults = complianceRows({ compliance: { frameworks: [{ framework: "NIST", assets: 1, unrecorded: 1, verdict: "needs_evidence", clauses: [
+  { clause: TDEA, title: "t", assets: 1, codes: ["WEAK_CIPHER"], unrecorded: 1, verdict: "needs_evidence" }] }] } } as never, null);
+assert.equal(fromResults.rows[0].unrecorded, 1);
+assert.equal(fromResults.rows[0].clauses[0].unrecorded, 1);
+const fromPosture = complianceRows(null, { compliance: [{ framework: "NIST", assets: 1, unrecorded: 1, clauses: [{ id: TDEA, text: "t", source: "s", assets: 1, codes: ["WEAK_CIPHER"], unrecorded: 1, verdict: "needs_evidence" }] }] });
+assert.deepEqual([fromPosture.rows[0].unrecorded, fromPosture.rows[0].clauses[0].unrecorded, fromPosture.rows[0].clauses[0].verdict], [1, 1, "needs_evidence"]);
 
 // ---------------------------------------------------------------- the posture fallback keeps the framework count
 const rows = complianceRows(null, { compliance: [{ framework: "NIST", assets: 5, clauses: [{ id: "A", text: "t", source: "s", assets: 5, codes: ["X"] }] }] });
