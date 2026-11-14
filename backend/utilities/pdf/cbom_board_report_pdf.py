@@ -54,6 +54,7 @@ from backend.utilities.dashboard.cbom_team_rollup import (
     IMPACT_LEVELS,
     LE_30,
     LE_90,
+    SOURCE_SOURCES,
     UNKNOWN,
     VALID,
     AssetAgg,
@@ -628,6 +629,34 @@ def _quantum_sentence(view: TeamCbomView) -> str:
     )
 
 
+def _scope_counts(view: TeamCbomView) -> tuple[int, int, int]:
+    """(code sources, code scans, CBOM Sources collections). ``merge_collections`` adds each collection to
+    ``view.sources`` and to ``view.included``, so the code part is what is left."""
+    collections = len(view.collections or ())
+    code_sources = sum(1 for source in view.sources if source.kind != SOURCE_SOURCES)
+    return code_sources, max(int(view.included) - collections, 0), collections
+
+
+def scope_captions(view: TeamCbomView) -> tuple[str, str]:
+    """Captions of the "Sources" and "Scans included" summary cards."""
+    code_sources, code_scans, collections = _scope_counts(view)
+    if not collections:
+        return "repositories and uploads assessed", f"of {view.eligible} eligible completed scans"
+    return (f"{code_sources} repositories and uploads, {collections} CBOM Sources",
+            f"of {view.eligible} eligible: {_count(code_scans, 'code scan')}, "
+            f"{_count(collections, 'Sources collection')}")
+
+
+def scope_sentence(view: TeamCbomView) -> str:
+    """The summary's opening clause: what the roll-up covers."""
+    code_sources, code_scans, collections = _scope_counts(view)
+    if not collections:
+        return f"Across {_count(len(view.sources), 'source')} and {_count(view.included, 'completed scan')}"
+    return (f"Across {_count(len(view.sources), 'source')} ({code_sources} repositories and uploads, "
+            f"{collections} CBOM Sources) and {_count(view.included, 'completed result')} "
+            f"({_count(code_scans, 'code scan')}, {_count(collections, 'Sources collection')})")
+
+
 def _summary_paragraphs(view: TeamCbomView, posture: PostureGrade) -> list[str]:
     if not posture.assessed:
         return [f"{posture.reason} {NOT_ASSESSED_EXPLANATION}"]
@@ -635,8 +664,7 @@ def _summary_paragraphs(view: TeamCbomView, posture: PostureGrade) -> list[str]:
     findings = breakdown.replace(" \u00b7 ", ", ")
     paragraphs = [
         (
-            f"Across {_count(len(view.sources), 'source')} and "
-            f"{_count(view.included, 'completed scan')}, the platform inventoried "
+            f"{scope_sentence(view)}, the platform inventoried "
             f"{_count(view.asset_occurrences, 'cryptographic asset occurrence')}. Findings were "
             f"raised on {total} of them: {findings}."
         ),
@@ -690,10 +718,11 @@ def _summary_section(view: TeamCbomView, posture: PostureGrade, styles: Styles, 
         if view.readiness_pct is not None
         else "no algorithm occurrence could be graded"
     )
+    sources_caption, scans_caption = scope_captions(view)
     second = kpi_strip(
         [
-            ("Sources", str(len(view.sources)), "repositories and uploads assessed"),
-            ("Scans included", str(view.included), f"of {view.eligible} eligible completed scans"),
+            ("Sources", str(len(view.sources)), sources_caption),
+            ("Scans included", str(view.included), scans_caption),
             ("Unique certificates", str(certs.unique), "de-duplicated across sources"),
             ("Quantum readiness", _pct_or_na(view), detail),
         ],
