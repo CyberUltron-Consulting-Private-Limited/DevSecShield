@@ -45,6 +45,9 @@ _UTC = _dt.timezone.utc
 CODE_RE = re.compile(r"^[A-Z0-9_]{1,64}$")
 MAX_CODES = 50
 MAX_IDS = 500  # a compliance requirement's assets (its refs, zs-asset-<id>) passed as ``asset_id=1,2,3``
+# #271 review: the readiness card's "Show these N": one readiness group (posture.readiness_actions[].code), "none" for
+# the group with no quantum finding code, "any" for every quantum-vulnerable asset (posture's class count)
+PQC_GROUP_RE = re.compile(r"^(any|none|[A-Z0-9_]{1,64})$")
 
 # The run table's type names (frontend RunResults.tsx ASSET_TYPE_LABEL), so both lanes' tables print one column.
 TYPE_LABEL = {
@@ -104,6 +107,46 @@ def parse_ids(value: str | None) -> list[int] | None:
     if any(i < 1 or i > 2_147_483_647 for i in ids):
         raise ValueError("asset_id: a comma-separated list of up to 500 asset ids")
     return ids
+
+
+def parse_pqc_group(value: str | None) -> str | None:
+    """``pqc_group=NO_PQ_KEX`` / ``none`` / ``any``; None when absent. ValueError on anything else (400, value not echoed)."""
+    if value is None:
+        return None
+    if not PQC_GROUP_RE.match(value):
+        raise ValueError("pqc_group: any, none or one finding code")
+    return value
+
+
+def _pqc_group_clause(session: Session, team_id: int, run_id: int, group: str, asset_type: str | None,
+                      changed: dict[int, dict[str, Any]]):
+    """The run's assets in one PQC readiness group, judged by posture's own functions on today's codes
+    (``classify_pqc`` for the class, ``quantum_code`` for the group), so the table lists exactly the N assets the
+    readiness card counts. An any-of ``code=`` filter cannot: an ECDHE endpoint that also accepts static RSA suites
+    carries STATIC_RSA_KEX and NO_PQ_KEX and belongs to the first group only. Only stored quantum-vulnerable rows can
+    be in a group (``classify_pqc``: class quantum-vulnerable needs ``quantum_vulnerable`` true), so only they are read;
+    the clause names the smaller side (members, or the vulnerable rows that are not members)."""
+    from backend.utilities.cbom_sources.posture import classify_pqc, quantum_code
+
+    vulnerable = and_(CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run_id,
+                      CbomCollectedAsset.quantum_vulnerable.is_(True),  # type: ignore[union-attr]
+                      CbomCollectedAsset.asset_type != COVERAGE)
+    if asset_type:
+        vulnerable = and_(vulnerable, CbomCollectedAsset.asset_type == asset_type)
+    inside: list[int] = []
+    outside: list[int] = []
+    for row in session.exec(select(CbomCollectedAsset).where(vulnerable)).all():
+        view = changed.get(int(row.id or 0))
+        codes = [c for c in (view.get("finding_codes") if view else row.finding_codes) or []
+                 if isinstance(c, str) and not c.startswith("COVERAGE_")]
+        member = classify_pqc(row, codes)[0] == "quantum-vulnerable" and (
+            group == "any" or (quantum_code(codes) or "none") == group)
+        (inside if member else outside).append(int(row.id or 0))
+    if not inside:
+        return false()
+    if len(inside) <= len(outside):
+        return CbomCollectedAsset.id.in_(inside)  # type: ignore[union-attr]
+    return and_(vulnerable, CbomCollectedAsset.id.notin_(outside)) if outside else vulnerable  # type: ignore[union-attr]
 
 
 def _codes_clause(codes: list[str], changed: dict[int, dict[str, Any]]):
@@ -349,7 +392,8 @@ def add_code_page_fields(item: dict[str, Any]) -> None:
 # ----------------------------------------------------------------------------- the page
 def list_run_assets(session: Session, *, team_id: int, run: CbomCollectionRun, params: dict[str, Any],
                     view: str = "all", status: str | None = None, codes: list[str] | None = None,
-                    asset_ids: list[int] | None = None, clause: tuple[str, str | None] | None = None) -> dict[str, Any]:
+                    asset_ids: list[int] | None = None, pqc_group: str | None = None,
+                    clause: tuple[str, str | None] | None = None) -> dict[str, Any]:
     if view not in VIEWS:
         raise ValueError(f"view: {view}")
     if status is not None and status not in FINDING_STATUSES:
@@ -368,6 +412,9 @@ def list_run_assets(session: Session, *, team_id: int, run: CbomCollectionRun, p
             query = query.where(_clause_clause(session, team_id, int(run.id), clause, changed))
         if asset_ids:  # the run's own rows only: the base query is already this team's run
             query = query.where(CbomCollectedAsset.id.in_(asset_ids))  # type: ignore[union-attr]
+        if pqc_group:
+            query = query.where(_pqc_group_clause(session, team_id, int(run.id or 0), pqc_group,
+                                                  params.get("asset_type"), changed))
         return query
 
     out = INV.list_assets(session, team_id=team_id, run_id=run.id, refine=refine, **params)
@@ -376,6 +423,7 @@ def list_run_assets(session: Session, *, team_id: int, run: CbomCollectionRun, p
     out["status_filter"] = status
     out["code_filter"] = codes
     out["asset_id_filter"] = len(asset_ids) if asset_ids else None
+    out["pqc_group_filter"] = pqc_group
     out["clause_filter"] = ":".join(p for p in clause if p) if clause else None
     enrich_items(session, team_id, run, out["items"])
     return out
@@ -384,4 +432,4 @@ def list_run_assets(session: Session, *, team_id: int, run: CbomCollectionRun, p
 parse_clause = CE.parse_clause
 
 __all__ = ["FINDING_STATUSES", "TYPE_LABEL", "VIEWS", "enrich_items", "findings_total", "list_run_assets",
-           "parse_clause", "parse_codes", "parse_ids", "run_asset_keys", "run_item", "type_label"]
+           "parse_clause", "parse_codes", "parse_ids", "parse_pqc_group", "run_asset_keys", "run_item", "type_label"]

@@ -407,6 +407,9 @@ export interface RunTableFilters {
   clause?: string;
   codes?: string[];
   asset_ids?: number[];
+  /** #271 the PQC readiness card's "Show these N": one readiness group (its quantum finding code, "none" without one)
+   * or "any" quantum-vulnerable asset, judged by the server with posture's own functions */
+  pqc_group?: string;
   /** what the drill-down shows, for the table's filter chip ("NIST · SP 800-131A …") */
   drill_label?: string;
   page: number;
@@ -427,11 +430,12 @@ export function filtersToParams(f: RunTableFilters): Record<string, string | num
   if (f.clause) out.clause = f.clause;
   if (f.codes?.length) out.code = f.codes.join(",");
   if (f.asset_ids?.length) out.asset_id = f.asset_ids.join(",");
+  if (f.pqc_group) out.pqc_group = f.pqc_group;
   return out;
 }
 
 export function hasActiveFilters(f: RunTableFilters): boolean {
-  return !!(f.type || f.impact || f.quantum || f.q || f.source_id != null || f.status || f.clause || f.codes?.length || f.asset_ids?.length);
+  return !!(f.type || f.impact || f.quantum || f.q || f.source_id != null || f.status || f.clause || f.codes?.length || f.asset_ids?.length || f.pqc_group);
 }
 
 /** The server understands `view` / `status` (W1) when it reports `findings_total`; an older server lists every asset. */
@@ -568,6 +572,8 @@ export function resolveMigrationRows(dist: CbomDistributions): CbomDistributions
     ...r,
     migration_roadmap: r.migration_roadmap ?? text(r.migration_code) ?? text(r.fix_code),
     suggested_fix: r.suggested_fix ?? text(r.fix_code) ?? text(r.migration_code),
+    // the quantum finding's title names the group card of near-identical rows (issue #271)
+    finding_title: r.finding_title ?? (r.migration_code ? kb[r.migration_code]?.title ?? null : null),
   }));
   return { ...dist, pqc: { ...pqc, migration } };
 }
