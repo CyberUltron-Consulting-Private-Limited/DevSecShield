@@ -10,7 +10,7 @@ import { formatDateTime } from "@/components/cbom/sources/logic";
 
 import { useGradeModel } from "./api";
 import { QGradeChip } from "./QGrade";
-import { humanize, reasonTexts, type GradeModel } from "./model";
+import { q0GapTitle, q0ReasonHeading, reasonTexts, type GradeModel } from "./model";
 import {
   KIND_TEXT,
   ageText,
@@ -30,7 +30,7 @@ function GapRow({ gap }: { gap: Q0Gap }) {
     <tr className="border-t border-zinc-100 align-top dark:border-zinc-800" data-testid={`q0-gap-${gap.id}`}
         data-reason={gap.reason} data-status={gap.status} data-item-key={gap.item_key}>
       <td className="py-1.5 pr-3">
-        <div className="font-medium text-zinc-900 dark:text-zinc-100">{gap.title}</div>
+        <div className="font-medium text-zinc-900 dark:text-zinc-100">{q0GapTitle(gap)}</div>
         <div className="text-xs text-zinc-500 dark:text-zinc-400">
           {KIND_TEXT[gap.item_kind] ?? gap.item_kind}
           {gap.source_name ? ` · ${gap.source_name}` : ""}
@@ -75,7 +75,7 @@ export function Q0GapList({ items, byReason, model, status }: {
         return (
           <section key={group.reason} data-testid={`q0-gap-group-${group.reason}`} data-count={group.total}>
             <h4 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-              {humanize(group.reason)} <span className="font-normal text-zinc-500">({group.total})</span>
+              {q0ReasonHeading(group.reason)} <span className="font-normal text-zinc-500">({group.total})</span>
             </h4>
             {text && <p className="mb-1 text-xs text-zinc-500 dark:text-zinc-400">{text}</p>}
             <div className="overflow-x-auto">
