@@ -384,10 +384,13 @@ def _library_facts(kb: dict[str, Any], package: str,
 # object (a signed bundle, load.cache_clear(), a test's patched KB). An entry never
 # outlives the KB it came from, even when two KBs carry the same kb_version; holding
 # the KB keeps its id from being reused, and a thread still on the old KB writes
-# into the old pair only. Bounded: when full it starts again (a run holds a few
-# hundred package versions at most).
+# into the old pair only. The memo is process-wide, shared by every team's runs, and
+# also holds untracked packages (as None). Bounded at 4,096 entries: a full memo is
+# cleared and refilled, which costs what an unmemoised lookup costs, never a wrong
+# answer.
 _LIBRARY_MEMO_MAX = 4096
 _library_memo: tuple[Any, dict[tuple[str, str], LibraryFacts | None]] = (None, {})
+_MISS: Any = object()
 
 
 def library_status(package: str, package_version: str, *, today: _dt.date | None = None) -> dict[str, Any] | None:
@@ -399,9 +402,8 @@ def library_status(package: str, package_version: str, *, today: _dt.date | None
         memo = _library_memo = (kb, {})
     entries = memo[1]
     key = (package, package_version)
-    if key in entries:
-        facts = entries[key]
-    else:
+    facts = entries.get(key, _MISS)  # one lookup: another thread may clear the dict
+    if facts is _MISS:
         facts = _library_facts(kb, package, package_version)
         if len(entries) >= _LIBRARY_MEMO_MAX:
             entries.clear()
