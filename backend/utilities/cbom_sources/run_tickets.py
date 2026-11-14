@@ -8,11 +8,11 @@
   existing issue instead of opening another one. Every issue carries the label ``zs-asset-<stable key>``.
 * No database transaction, lock or connection is held while Jira is called. Per asset: (a) a short committed
   transaction makes sure the assignment row exists (``INSERT … ON CONFLICT DO NOTHING``) and claims it
-  (``ticket_state='pending'`` + a claim id, compare-and-set); (b) Jira is called with no session open; (c) a short
+  (``ticket_state='claimed'`` + a claim id, compare-and-set); (b) Jira is called with no session open; (c) a short
   transaction stores the key only while the claim is still ours. A live claim of another request makes this request
   report the asset as ``deferred``. A claim older than ``CLAIM_TTL`` is taken over, and the new holder first searches
   Jira by the asset's label: a call that timed out (or a process that stopped) may have created the issue already.
-  A timeout, or a Jira 5xx, keeps the claim ``pending`` for that reason; a refusal (4xx, unreachable) releases it.
+  A timeout, or a Jira 5xx, keeps the claim for that reason; a refusal (4xx, unreachable) releases it.
 * Time budget: no new Jira call starts after ``TIME_BUDGET_S``; the remaining assets are reported as ``deferred``.
 * Buckets: ``created``, ``existing``, ``failed`` (Jira's own error text, or a fixed message), ``skipped`` (clean
   inventory and coverage notes: not findings), ``deferred`` (another request holds the asset, or the time budget ran
@@ -56,7 +56,7 @@ SUMMARY_MAX = 255
 DESCRIPTION_MAX = 8_000
 ERROR_MAX = 300
 TIME_BUDGET_S = 120.0  # no Jira call starts after this; one call is bounded by jira.REQUEST_TIMEOUT (5 s + 30 s)
-CLAIM_TTL = _dt.timedelta(minutes=2)  # longer than one Jira call; an older pending claim is taken over
+CLAIM_TTL = _dt.timedelta(minutes=2)  # longer than one Jira call; an older claim is taken over
 LABEL_PREFIX = "zs-asset-"
 GENERIC_ERROR = "Could not create the ticket; please try again."
 NOT_A_FINDING = "Not a finding: clean inventory and coverage notes are not ticketed"
@@ -236,7 +236,7 @@ def _claim(engine, team_id: int, item: dict[str, Any], user_id: int, now: _dt.da
            ) -> tuple[str, str | None, bool, CbomRemediationAssignment | None]:
     """Short committed transaction. Returns (outcome, claim id, search_first, row): outcome ``existing`` (a ticket is
     stored), ``busy`` (another request holds a live claim) or ``claimed`` (ours; ``search_first`` when we took over a
-    stale pending claim, whose Jira call may have created the issue)."""
+    stale claim, whose Jira call may have created the issue)."""
     with Session(engine) as session:
         _ensure_row(session, team_id, item, user_id, now)
         session.commit()
@@ -245,19 +245,19 @@ def _claim(engine, team_id: int, item: dict[str, Any], user_id: int, now: _dt.da
             if row.ticket_key:
                 return "existing", None, False, row
             stale = row.ticket_claimed_at is None or row.ticket_claimed_at < now - CLAIM_TTL
-            if row.ticket_state == "pending" and not stale:
+            if row.ticket_state == "claimed" and not stale:
                 return "busy", None, False, row
             claim = uuid.uuid4().hex
-            previous, was_pending = row.ticket_claim, row.ticket_state == "pending"  # read before the commit expires row
+            previous, was_claimed = row.ticket_claim, row.ticket_state == "claimed"  # read before the commit expires row
             won = session.exec(update(_M).where(  # type: ignore[call-overload]
                 _M.id == row.id, _M.ticket_key.is_(None),  # type: ignore[union-attr]
                 _M.ticket_claim.is_(None) if previous is None else _M.ticket_claim == previous)  # type: ignore
-                .values(ticket_state="pending", ticket_claim=claim, ticket_claimed_at=now,
+                .values(ticket_state="claimed", ticket_claim=claim, ticket_claimed_at=now,
                         row_version=_M.row_version + 1)
                 .execution_options(synchronize_session=False)).rowcount
             session.commit()
             if won == 1:
-                return "claimed", claim, was_pending, None
+                return "claimed", claim, was_claimed, None
             session.expire_all()  # someone changed the row between the read and the claim: read again
         return "busy", None, False, None
 

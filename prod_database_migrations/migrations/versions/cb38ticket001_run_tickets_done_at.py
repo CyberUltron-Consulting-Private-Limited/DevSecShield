@@ -7,7 +7,7 @@ Create Date: 2026-11-14 12:00:00.000000
 * ``cbomremediationassignment.ticket_key`` / ``ticket_url``: the Jira issue opened for this asset. The assignment is
   keyed by the asset's stable identity, so one asset has one ticket across every run that saw it.
 * ``cbomremediationassignment.ticket_state`` / ``ticket_claim`` / ``ticket_claimed_at``: the claim a ticket request
-  takes (in a short committed transaction) before it calls Jira with no database session open; ``pending`` with a
+  takes (in a short committed transaction) before it calls Jira with no database session open; ``claimed`` with a
   claim younger than the claim TTL means another request is creating the issue, an older one is taken over after a
   search by the asset's Jira label (the call may have created the issue before it timed out).
 * ``cbomremediationassignment.done_at``: when the status last became ``done`` (cleared when it leaves ``done``); the

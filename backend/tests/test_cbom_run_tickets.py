@@ -369,7 +369,7 @@ def test_status_put_during_a_slow_ticket(api, runs, jira):
 
 
 def test_timeout_then_retry_opens_one_issue(api, runs, jira, monkeypatch):
-    """Jira creates the issue but the call times out: the claim stays pending (a retry at once is deferred, not a
+    """Jira creates the issue but the call times out: the claim is kept (a retry at once is deferred, not a
     second create); once the claim is stale, the retry searches by the asset's label and stores the issue it finds."""
     _set_project(api)
     run1 = runs["run1"]["id"]
@@ -379,7 +379,7 @@ def test_timeout_then_retry_opens_one_issue(api, runs, jira, monkeypatch):
     assert [f["error"] for f in first["failed"]] == ["Jira request timed out. Please try again."]
     with Session(runs["engine"]) as s:
         row = s.exec(select(CbomRemediationAssignment)).one()
-    assert (row.ticket_key, row.ticket_state) == (None, "pending") and row.ticket_claim
+    assert (row.ticket_key, row.ticket_state) == (None, "claimed") and row.ticket_claim
     jira.timeout_after_create = False
     soon = RT.create_tickets(runs["engine"], 1, 1, run1, RT.TicketBody(asset_ids=[tls]))
     assert [d["reason"] for d in soon["deferred"]] == [RT.IN_PROGRESS] and len(jira.calls) == 1
