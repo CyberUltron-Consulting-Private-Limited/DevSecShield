@@ -28,7 +28,7 @@ zs-scan-node = "zs_scan_node.agent:main"
 zs-collect = "zs_scan_node.zscollect:main"
 
 [tool.setuptools]
-packages = ["zs_scan_node", "zs_scan_node.collectors"]
+packages = ["zs_scan_node", "zs_scan_node.collectors", "zs_scan_node.transports"]
 
 [tool.setuptools.package-data]
 zs_scan_node = ["schemas/*.json"]
