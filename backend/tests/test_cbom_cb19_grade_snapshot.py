@@ -383,7 +383,8 @@ def test_migration_is_the_one_head():
         if down:
             parents.add(down.group(1))
     assert mod.down_revision in revisions
-    assert revisions - parents == {"cb19grade001"}
+    # one head; later revisions (F1 fleet r6f12inv001) chain after this one
+    assert len(revisions - parents) == 1 and "cb19grade001" in parents
 
 
 def _columns(conn) -> set[str]:
