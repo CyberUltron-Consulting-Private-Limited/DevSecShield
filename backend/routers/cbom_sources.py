@@ -85,8 +85,8 @@ from backend.utilities.cbom_sources import schedules as SCHED
 from backend.utilities.cbom_sources.classify import ASSET_TYPES
 from backend.utilities.cbom_sources.kinds import (KINDS, METADATA_FIELDS, credential_target_problem, ct_discovery_enabled,
                                                 validate_secret_value)
-from backend.utilities.cbom_sources.planning import RATES_C, credits, network_sweep_totals, node_status, plan_run, \
-    source_targets
+from backend.utilities.cbom_sources.planning import RATES_C, RangeContext, credits, network_sweep_totals, node_status, \
+    plan_run, source_targets
 from backend.utilities.cbom_sources.schemas import (
     AreaUpdate,
     EstimateBody,
@@ -164,12 +164,14 @@ def _team_node(session: Session, team_id: int, node_id: int | None) -> CbomScanN
 
 def _node_counts(session: Session, team_id: int, settings: CbomCollectionSettings) -> dict[int, dict[str, int]]:
     counts: dict[int, dict[str, int]] = {}
-    for source in session.exec(select(CbomCollectionSource).where(CbomCollectionSource.team_id == team_id)).all():
+    sources = session.exec(select(CbomCollectionSource).where(CbomCollectionSource.team_id == team_id)).all()
+    ctx = RangeContext.of_sources(list(sources), settings)  # once for every range (review of #273)
+    for source in sources:
         if source.node_id is None:
             continue
         c = counts.setdefault(source.node_id, {"targets": 0, "sources": 0})
         c["sources"] += 1
-        info = source_targets(source, settings)
+        info = source_targets(source, settings, ctx)
         if KINDS.get(source.kind) and KINDS[source.kind].group in ("servers", "network"):
             c["targets"] += int(info["units"])
         else:
@@ -186,6 +188,7 @@ def _overview(engine, team_id: int, user_id: int) -> dict:
         nodes = session.exec(select(CbomScanNode).where(CbomScanNode.team_id == team_id)).all()
         statuses = [node_status(n, now) for n in nodes]
         sources = session.exec(select(CbomCollectionSource).where(CbomCollectionSource.team_id == team_id)).all()
+        ctx = RangeContext.of_sources(list(sources), settings)  # once for every range (review of #273)
         groups: dict[str, dict[str, Any]] = {}
         for source in sources:
             spec = KINDS.get(source.kind)
@@ -193,7 +196,7 @@ def _overview(engine, team_id: int, user_id: int) -> dict:
                 continue
             g = groups.setdefault(spec.group, {"sources": 0, "units": 0, "by_kind": {}, "failed_tests": 0})
             g["sources"] += 1
-            g["units"] += int(source_targets(source, settings)["units"])
+            g["units"] += int(source_targets(source, settings, ctx)["units"])
             g["by_kind"][source.kind] = g["by_kind"].get(source.kind, 0) + 1
             if source.last_test_status == "failed":
                 g["failed_tests"] += 1
@@ -622,12 +625,15 @@ def _list_sources(engine, team_id: int, kind: str | None, group: str | None) -> 
             rows = [r for r in rows if KINDS.get(r.kind) and KINDS[r.kind].group == group]
         nodes = {n.id: n for n in session.exec(select(CbomScanNode).where(CbomScanNode.team_id == team_id)).all()}
         collects = last_collects(session, team_id, [r.id for r in rows])
+        # the team's network ranges, once: every range of the list is counted with the same skip map and never-scan
+        # list (one query, one pass over the ranges, whatever the number of ranges; review of #273)
+        ranges = session.exec(select(CbomCollectionSource).where(
+            CbomCollectionSource.team_id == team_id, CbomCollectionSource.kind == "network_range")).all()
+        ctx = RangeContext.of_sources(list(ranges), settings)
         out = {"server_time": iso_z(now),
-               "sources": [public_source(r, settings, nodes.get(r.node_id), now, collects.get(r.id)) for r in rows]}
+               "sources": [public_source(r, settings, nodes.get(r.node_id), now, collects.get(r.id), ctx) for r in rows]}
         if group in (None, "network") and kind in (None, "network_range"):
-            ranges = session.exec(select(CbomCollectionSource).where(
-                CbomCollectionSource.team_id == team_id, CbomCollectionSource.kind == "network_range")).all()
-            out["network_totals"] = network_sweep_totals(list(ranges), settings)  # N7: unique, enabled ranges only
+            out["network_totals"] = network_sweep_totals(list(ranges), settings, ctx)  # N7: unique, enabled ranges
         return out
 
 

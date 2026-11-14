@@ -599,9 +599,9 @@ def claim_next(session: Session, node: CbomScanNode, settings: CbomCollectionSet
             # N3: each range says which of its addresses are the network/broadcast edges of the networks the team's
             # ranges form together; the node skips exactly those (a node older than this ignores the key and applies
             # its own prefix rule: up to two addresses per range then differ from the counts until it is updated)
-            cidrs = team_range_cidrs(session, node.team_id)
+            skips = T.SkipMap(team_range_cidrs(session, node.team_id))  # once per claim, whatever the number of ranges
             payload["scope"]["ranges"] = [  # copies: the job's stored params are never changed
-                {**item, "skip_addresses": T.range_skip_addresses(str(item["cidr"]), cidrs)}
+                {**item, "skip_addresses": T.range_skip_addresses(str(item["cidr"]), skips=skips)}
                 if isinstance(item, dict) and item.get("cidr") else item for item in payload["scope"]["ranges"]]
         if source is not None:
             payload["source"] = {

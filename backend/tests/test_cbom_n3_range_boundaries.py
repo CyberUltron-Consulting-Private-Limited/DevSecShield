@@ -69,3 +69,79 @@ def test_a_lone_29_subnet_is_claimed_and_counted_without_its_network_and_broadca
     claim = api("POST", "/cbom/node/jobs/claim", None, headers={"X-ZS-Node-Token": token}).json()
     assert claim["scope"]["ranges"] == [{"cidr": "10.9.0.8/29", "mode": "full",
                                          "skip_addresses": ["10.9.0.8", "10.9.0.15"]}]
+
+
+# ----------------------------------------------------------------------------- cost (review of #273, major)
+def _many_ranges(engine, user_id: int, node_id: int, n: int, start: int = 0) -> None:
+    """Ranges ``start`` .. ``start + n - 1`` (adjacent /24s, so they form one block), written straight to the database."""
+    from sqlmodel import Session
+
+    from backend.new_models import CbomCollectionSource
+
+    with Session(engine) as s:
+        for i in range(start, start + n):
+            cidr = f"10.{100 + i // 256}.{i % 256}.0/24"
+            s.add(CbomCollectionSource(team_id=1, owner_user_id=user_id, kind="network_range", name=f"r{i}",
+                                       name_lower=f"r{i}", node_id=node_id, config={"cidr": cidr, "mode": "full"}))
+        s.commit()
+
+
+def _queries_of(engine, call) -> int:
+    from sqlalchemy import event
+
+    seen = [0]
+
+    def count(*_a, **_k):
+        seen[0] += 1
+
+    event.listen(engine, "before_cursor_execute", count)
+    try:
+        call()
+    finally:
+        event.remove(engine, "before_cursor_execute", count)
+    return seen[0]
+
+
+PATHS = ("/1/cbom/sources/items?group=network", "/1/cbom/sources/items", "/1/cbom/sources/overview",
+         "/1/cbom/sources/nodes")
+
+
+def test_listing_ranges_costs_the_same_number_of_queries_for_3_or_300_ranges(api, world):
+    engine, ids = world
+    node_id, _t, _ = enroll_node(api)
+    _many_ranges(engine, ids["alice"], node_id, 3)
+    for path in PATHS:  # first calls create the team's rows (evidence areas, settings): not what is measured
+        api("GET", path)
+    few = {path: _queries_of(engine, lambda p=path: api("GET", p)) for path in PATHS}
+    _many_ranges(engine, ids["alice"], node_id, 297, start=3)
+    many = {path: _queries_of(engine, lambda p=path: api("GET", p)) for path in PATHS}
+    assert many == few, (few, many)  # no query per range, on any of the lists that count ranges
+    # and the counts are the rule: 300 adjacent /24s form one block; only its first and last address are left out
+    body = api("GET", "/1/cbom/sources/items?group=network").json()
+    assert body["network_totals"]["addresses"] == 300 * 256 - 2
+    assert sorted({s["target_count"] for s in body["sources"]}) == [255, 256]
+
+
+def test_counting_1000_ranges_stays_well_under_a_second():
+    import time
+
+    from backend.new_models import CbomCollectionSettings, CbomCollectionSource
+    from backend.utilities.cbom_sources.planning import (
+        RangeContext,
+        network_sweep_totals,
+        source_targets,
+    )
+
+    settings = CbomCollectionSettings(team_id=1, network_exclusions=[{"cidr": "10.100.7.0/24", "reason": "x"}])
+    sources = [CbomCollectionSource(id=i + 1, team_id=1, owner_user_id=1, kind="network_range", name=f"r{i}",
+                                    name_lower=f"r{i}", enabled=True,
+                                    config={"cidr": f"10.{100 + i // 256}.{i % 256}.0/24", "mode": "full"})
+               for i in range(1000)]
+    started = time.perf_counter()
+    ctx = RangeContext.of_sources(sources, settings)
+    units = [source_targets(s, settings, ctx)["units"] for s in sources]
+    totals = network_sweep_totals(sources, settings, ctx)
+    elapsed = time.perf_counter() - started
+    assert elapsed < 0.5, f"{elapsed:.2f} s for 1,000 ranges"
+    assert units[0] == 255 and units[1] == 256 and units[999] == 255 and units[7] == 0  # block edges, never-scan
+    assert totals["addresses"] == 1000 * 256 - 2 - 256

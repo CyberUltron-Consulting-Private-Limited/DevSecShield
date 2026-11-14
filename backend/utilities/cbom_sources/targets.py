@@ -6,6 +6,7 @@ into a huge scan or a huge credit charge.
 """
 from __future__ import annotations
 
+import bisect
 import ipaddress
 import re
 from dataclasses import dataclass, field
@@ -265,7 +266,8 @@ def parse_targets(
 
 
 def boundary_skips(lines: list[str]) -> set[int]:
-    """IPv4 addresses (as ints) the scan node leaves out of ``lines`` as network/broadcast addresses (rule above)."""
+    """IPv4 addresses (as ints) the scan node leaves out of ``lines`` as network/broadcast addresses (rule above).
+    O(n log n) in the number of lines."""
     every: list[Interval] = []
     nets: list[tuple[int, int]] = []
     written: list[Interval] = []
@@ -285,31 +287,69 @@ def boundary_skips(lines: list[str]) -> set[int]:
     blocks = merge(every)
     starts, ends = {b[1] for b in blocks}, {b[2] for b in blocks}
     skip = {first for first, _last in nets if first in starts} | {last for _first, last in nets if last in ends}
-    return {a for a in skip if not any(v[1] <= a <= v[2] for v in written)}
+    if not written:
+        return skip
+    spans = merge(written)  # sorted, disjoint: one bisect per candidate
+    firsts = [w[1] for w in spans]
+
+    def is_written(address: int) -> bool:
+        i = bisect.bisect_right(firsts, address) - 1
+        return i >= 0 and spans[i][2] >= address
+
+    return {a for a in skip if not is_written(a)}
 
 
-def range_skip_addresses(cidr: str, configured: list[str]) -> list[str]:
+class SkipMap:
+    """The network/broadcast addresses left out of every range a team configured (``boundary_skips`` of them all),
+    built once per request, claim or plan (one pass over the ranges) and looked up per range with a bisect.  Callers
+    that list many ranges pass one of these down instead of recomputing the rule per range (review of #273)."""
+
+    def __init__(self, lines: list[str]) -> None:
+        self.points: list[int] = sorted(boundary_skips(lines))
+
+    def within(self, first: int, last: int) -> list[int]:
+        lo = bisect.bisect_left(self.points, first)
+        hi = bisect.bisect_right(self.points, last)
+        return self.points[lo:hi]
+
+
+def _skip_map(cidr: str, configured: list[str] | None, skips: SkipMap | None) -> SkipMap:
+    return skips if skips is not None else SkipMap(list(dict.fromkeys([cidr, *(configured or [])])))
+
+
+def range_skip_addresses(cidr: str, configured: list[str] | None = None, skips: SkipMap | None = None) -> list[str]:
     """The addresses of network range ``cidr`` the node leaves out, given every range the team configured (``cidr``
-    included): sent to the node in the range's scope as ``skip_addresses``."""
+    included), or the team's ``SkipMap``: sent to the node in the range's scope as ``skip_addresses``."""
     try:
         kind, value, _canonical = parse_line(cidr)
     except TargetError:
         return []
     if kind != "net" or value[0] != 4:
         return []
-    skips = boundary_skips(list(dict.fromkeys([cidr, *configured])))
-    return [str(ipaddress.IPv4Address(a)) for a in sorted(skips) if value[1] <= a <= value[2]]
+    return [str(ipaddress.IPv4Address(a)) for a in _skip_map(cidr, configured, skips).within(value[1], value[2])]
 
 
-def swept_interval_parts(cidr: str, configured: list[str]) -> list[Interval]:
+def swept_interval_parts(cidr: str, configured: list[str] | None = None, skips: SkipMap | None = None) -> list[Interval]:
     """What the node sweeps for network range ``cidr`` (before the never-scan list): its addresses minus its
     ``range_skip_addresses``."""
     kind, value, _canonical = parse_line(cidr)
     if kind != "net":
         return []
-    skips = [(4, a, a) for a in boundary_skips(list(dict.fromkeys([cidr, *configured]))) if value[1] <= a <= value[2]] \
-        if value[0] == 4 else []
-    return subtract([value], skips)
+    if value[0] != 4:
+        return [value]
+    points = _skip_map(cidr, configured, skips).within(value[1], value[2])
+    if not points:
+        return [value]
+    out: list[Interval] = []  # at most two points (the range's own first and last address): split around them
+    start = value[1]
+    for point in points:
+        if point > start:
+            out.append((4, start, point - 1))
+        start = point + 1
+    if start <= value[2]:
+        out.append((4, start, value[2]))
+    return out
+
 
 def _removed(exclusions: ParsedTargets | None) -> list[Interval]:
     """What the node refuses: the list, the loopback when a name that is loopback by definition is listed, the NAT64

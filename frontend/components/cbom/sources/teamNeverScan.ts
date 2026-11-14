@@ -115,8 +115,8 @@ export function exclusionSaveError(error: unknown): string | null {
 /**
  * What the node sweeps for a range (N3, 14 Nov 2026, and the review of #250; scan_node netutil.boundary_skips, backend
  * targets.boundary_skips): network and broadcast addresses are skipped only at the outer edges of the network your
- * ranges form together, so a /23 entered as two /24s still scans x.x.0.255 and x.x.1.0, and a subnet entered on its
+ * ranges form together (every range of the team counts, a disabled one too, so a disabled half still marks the edge), so a /23 entered as two /24s still scans x.x.0.255 and x.x.1.0, and a subnet entered on its
  * own skips its own network and broadcast addresses.
  */
 export const RANGE_HINT =
-  "A /16 or smaller, one IP, or a-b. Network and broadcast addresses are skipped only at the edges of the network your ranges form together: a /24 split into two /25s still scans .127 and .128; a subnet on its own skips its own.";
+  "A /16 or smaller, one IP, or a-b. Network and broadcast addresses are skipped only at the edges of the network your ranges form together, disabled ranges included: a /24 split into two /25s still scans .127 and .128; a subnet on its own skips its own.";

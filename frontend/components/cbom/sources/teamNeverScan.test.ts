@@ -65,7 +65,7 @@ assert.equal(exclusionSaveError(new Error("network down")), null)
 assert.equal(exclusionSaveError(null), null)
 
 // N3: the range form says which addresses a range scans (the node and the backend count the same)
-assert.ok(RANGE_HINT.includes("skipped only at the edges of the network your ranges form together"))
+assert.ok(RANGE_HINT.includes("skipped only at the edges of the network your ranges form together, disabled ranges included"))
 assert.ok(RANGE_HINT.includes("a /24 split into two /25s still scans .127 and .128; a subnet on its own skips its own"))
 
 // names that are loopback by definition: the node blocks only 127.0.0.0/8 and ::1 for them and holds nothing
