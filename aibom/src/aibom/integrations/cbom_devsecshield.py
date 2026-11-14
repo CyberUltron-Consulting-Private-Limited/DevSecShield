@@ -275,7 +275,31 @@ def normalize_to_devsecshield(
     _fill_fact_locations(run["results"], result)
     run["results"] = [_enrich(row) for row in run["results"]]
     run["kb_version"] = crypto_kb.version()
+    _record_advisory_data(run)
     return run
+
+
+def _record_advisory_data(run: dict[str, Any]) -> None:
+    """CB-29: which crypto-library advisory data the scan matched (the OSV snapshot's
+    version and date, stale or not, offline or refreshed online), on the run (the
+    results page shows it) and in the CycloneDX metadata (the export carries it)."""
+    from aibom.cbom.advisories import last_status
+
+    data = last_status()
+    run["advisory_data"] = data
+    bom = run.get("cbom_json")
+    if not isinstance(bom, dict):
+        return
+    meta = bom.setdefault("metadata", {})
+    props = meta.setdefault("properties", [])
+    pairs = (
+        ("zs:advisory_source", data.get("source")),
+        ("zs:advisory_snapshot_version", data.get("snapshot_version")),
+        ("zs:advisory_snapshot_date", data.get("generated_at")),
+        ("zs:advisory_snapshot_stale", str(bool(data.get("stale"))).lower()),
+        ("zs:advisory_snapshot_sha256", data.get("sha256")),
+    )
+    props.extend({"name": k, "value": str(v)} for k, v in pairs if v not in (None, ""))
 
 
 def scan_crypto_to_devsecshield(

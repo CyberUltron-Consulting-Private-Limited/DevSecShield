@@ -283,7 +283,7 @@ entry("CERT_EXPIRED", title="Certificate expired", category="certificate", defau
       remediation={"summary": "Renew and deploy a new certificate; automate renewal (ACME, ACM, cert-manager).", "steps": CERT_REISSUE},
       verify=V_CERT_REMOTE + V_CERT_FILE, references=[])
 entry("CERT_EXPIRES_30D", title="Certificate expires within 30 days", category="certificate", default_impact="Medium",
-      description="The certificate expires soon.", attack="An unplanned expiry causes an outage or pushes teams to disable validation.",
+      description="The certificate expires soon: within 30 days, or, for a certificate whose lifetime is under 90 days (6-day ACME, 47-day CA/B Forum SC-081), within the last third of its lifetime, so a fresh short-lived certificate is not flagged.", attack="An unplanned expiry causes an outage or pushes teams to disable validation.",
       cwe=["CWE-298"], owasp=["misconfig"], cves=[], standards=[], compliance=["certificates"],
       remediation={"summary": "Renew now and automate renewal.", "steps": CERT_REISSUE}, verify=V_CERT_REMOTE + V_CERT_FILE, references=[])
 entry("CERT_SELF_SIGNED", title="Self-signed certificate", category="certificate", default_impact="Low",

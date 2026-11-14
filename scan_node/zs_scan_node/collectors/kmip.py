@@ -242,14 +242,24 @@ def run(ctx: JobContext, config: dict, secrets: dict, test_only: bool = False) -
 
 def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
     started = time.monotonic()
-    target, status, error, n = run(ctx, config, secrets)
+    ctx.login_gate()  # CB-10: one login per job; a refusal marks the credential refused (the server pauses the source)
+    status = "error"
+    try:
+        target, status, error, n = run(ctx, config, secrets)
+    finally:
+        ctx.login_done(status)
     label = target.label if target else str(config.get("host"))
     ctx.outcome(label, status, error, started=started, assets=n)
     return f"kmip {label}: {status}"
 
 
 def test(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
-    target, status, note, n = run(ctx, config, secrets, test_only=True)
+    ctx.login_gate()  # CB-10
+    status = "error"
+    try:
+        target, status, note, n = run(ctx, config, secrets, test_only=True)
+    finally:
+        ctx.login_done(status)
     label = target.label if target else str(config.get("host"))
     ctx.samples.append({"target": label, "status": "ready" if status == "ok" else status,
                         "reachable": status not in ("unreachable", "refused", "timeout", "no_route"),

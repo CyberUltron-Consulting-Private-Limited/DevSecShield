@@ -260,6 +260,7 @@ def _preload() -> None:
     import base64 as _b  # noqa: F401  (linux_ssh imports these inside functions)
     import concurrent.futures  # noqa: F401
     import encodings.idna  # noqa: F401
+    import idna.uts46data  # noqa: F401  (idn.to_a_label; idna imports its UTS #46 table on first use)
     import hashlib as _h  # noqa: F401
 
     from cryptography import x509  # noqa: F401

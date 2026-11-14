@@ -23,7 +23,8 @@ import httpx
 import yaml
 
 from zs_scan_node import tlsprobe as T
-from zs_scan_node.certparse import cert_facts, key_facts, load_certs
+from zs_scan_node.certparse import (cert_facts, chain_links, facts_anchors, key_facts, load_certs, merge_anchors,
+                                    node_anchors)
 from zs_scan_node.collectors import ConfigError
 from zs_scan_node.jobctx import JobContext, register_asset_types
 from zs_scan_node.netutil import Blocked, host_port, http_client, is_ip, resolve_checked
@@ -550,13 +551,13 @@ def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
                                                  "negotiated_cipher": fh.cipher, "negotiated_group": fh.group,
                                                  "peer_signature_type": fh.peer_sig_type, "versions": versions})
             n += 1
-            for i, der in enumerate(fh.certs_der[:10]):
-                for cert in load_certs(der):
-                    f = cert_facts(cert, "tls")
-                    ctx.emit("certificate", loc, f"{host_port(ip, api.port)}#chain[{i}]", name=f.get("subject", ""),
-                             algorithm=f.get("key_alg"), key_size=f.get("key_size"), facts={**f, "chain_index": i,
-                                                                                          "role": "kubernetes-api"})
-                    n += 1
+            served = [(i, cert_facts(cert, "tls")) for i, der in enumerate(fh.certs_der[:10]) for cert in load_certs(der)]
+            chain_links([f for _i, f in served])
+            for i, f in served:
+                ctx.emit("certificate", loc, f"{host_port(ip, api.port)}#chain[{i}]", name=f.get("subject", ""),
+                         algorithm=f.get("key_alg"), key_size=f.get("key_size"), facts={**f, "chain_index": i,
+                                                                                      "role": "kubernetes-api"})
+                n += 1
         ctx.emit("k8s_cluster", loc, loc, name=str(cluster.get("version") or "cluster"), facts=cluster)
         n += 1
         # ingress TLS
@@ -632,23 +633,13 @@ def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
                 ns, name = _meta(item)
                 data = item.get("data") or {}
                 data.pop("tls.key", None)  # never parsed, never kept
-                crt = data.get("tls.crt")
-                certs = []
-                if isinstance(crt, str):
-                    try:
-                        certs = load_certs(base64.b64decode(crt))
-                    except Exception:
-                        certs = []
+                certs, cas = _secret_certs(data.get("tls.crt")), _secret_certs(data.get("ca.crt"))
                 if not certs:
                     ctx.emit("k8s_tls_secret", loc, f"{ns}/secret/{name}", name=f"{ns}/{name}",
                              facts={"namespace": ns, "name": name, "parsed": False})
                     n += 1
                     continue
-                f = cert_facts(certs[0], "k8s")
-                ctx.emit("k8s_tls_secret", loc, f"{ns}/secret/{name}", name=f"{ns}/{name}", algorithm=f.get("key_alg"),
-                         key_size=f.get("key_size"), facts={**f, "namespace": ns, "secret": name,
-                                                            "chain_length": len(certs)})
-                n += 1
+                n += _tls_secret_rows(ctx, loc, ns, name, certs, cas)
         else:
             ctx.coverage(loc, "TLS secrets", "not_supported", "Tier 1 does not read Secrets; use Tier 2", once=True)
         ctx.outcome(loc, "ok", started=started, assets=n)
@@ -661,6 +652,45 @@ def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
         return f"stopped ({skip.status}) after {n} assets"
     finally:
         api.close()
+
+
+def _secret_certs(value: Any) -> list[dict[str, Any]]:
+    """Facts of every certificate in a base64 secret value (``tls.crt`` or ``ca.crt``), in the order stored."""
+    if not isinstance(value, str):
+        return []
+    try:
+        return [cert_facts(c, "k8s") for c in load_certs(base64.b64decode(value))[:20]]
+    except Exception:
+        return []
+
+
+def _tls_secret_rows(ctx: JobContext, loc: str, ns: str, name: str, certs: list[dict[str, Any]],
+                     cas: list[dict[str, Any]]) -> int:
+    """A kubernetes.io/tls secret (CB-17): the leaf (the first end-entity certificate of ``tls.crt``, so a mis-ordered
+    bundle does not make an intermediate the "leaf") is the ``k8s_tls_secret`` row; every other certificate of
+    ``tls.crt`` and of ``ca.crt`` is a certificate row of its own, so an expired intermediate or CA is judged too."""
+    lead = next((i for i, c in enumerate(certs) if not c.get("is_ca")), 0)
+    served = [certs[lead]] + [c for i, c in enumerate(certs) if i != lead]
+    # ca.crt is what clients are told to trust, not what the server sends: its roots count as trusted, never as sent
+    anchors = merge_anchors(node_anchors(), facts_anchors(cas))
+    chain_links(served, anchors)
+    chain_links(cas, anchors)
+    f = certs[lead]
+    ctx.emit("k8s_tls_secret", loc, f"{ns}/secret/{name}", name=f"{ns}/{name}", algorithm=f.get("key_alg"),
+             key_size=f.get("key_size"), facts={**f, "namespace": ns, "secret": name, "chain_length": len(certs),
+                                                "chain_index": 0})
+    n = 1
+    for key, group in (("tls.crt", certs), ("ca.crt", cas)):
+        for i, c in enumerate(group):
+            if key == "tls.crt" and i == lead:
+                continue
+            index = served.index(c) if key == "tls.crt" else None
+            ctx.emit("certificate", loc, f"{ns}/secret/{name}#{key}[{i}]", name=c.get("subject") or None,
+                     algorithm=c.get("key_alg"), key_size=c.get("key_size"),
+                     facts={**c, "namespace": ns, "secret": name, "secret_key": key,
+                            **({"chain_index": index} if index is not None else {})})
+            n += 1
+    return n
 
 
 def test(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
