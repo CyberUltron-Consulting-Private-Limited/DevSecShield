@@ -42,11 +42,13 @@ export function WaveBadge({ item }: { item: CbomRemediationItem | undefined }) {
   );
 }
 
-export function useRunRemediation(teamId: number, runId: number, active: boolean) {
+/** ``enabled`` (default true): the run results page loads this whole-run list only when it needs it (CB-38). */
+export function useRunRemediation(teamId: number, runId: number, active: boolean, enabled = true) {
   const q = useQuery({
     queryKey: cbomOpsKeys.runRemediation(teamId, runId),
     queryFn: () => getCbomRunRemediation(teamId, runId),
     retry: 1,
+    enabled,
     refetchInterval: active ? 15000 : false,
   });
   const byAsset = useMemo(() => new Map((q.data?.items ?? []).map((i) => [i.asset_id ?? -1, i])), [q.data]);

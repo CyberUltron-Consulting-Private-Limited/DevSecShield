@@ -11,9 +11,11 @@ Items and where they come from
   evidence write (PATCH area, vendor create / edit / link / answer / delete), by the daily tick (an E2/E3 area turns
   E0 on day 366 with no write, cx3 ST-G) and before the register is read.
 * ``scope`` / ``asset`` / ``inputs``: the Q0 items of each source's latest run, graded with the team's inputs now (a
-  team view shows the current grade, PLAN §2.3), recorded with the run's drift (``drift.record_run_drift``, inside its
-  ``drift_at`` compare-and-set). CB-20's estate store (PR #167) is not on dev yet: when it lands, ``sync_run`` is the
-  function to register with ``estate.register_hook(fn, atomic=True)``; until then it reads the run's own rows.
+  team view shows the current grade, PLAN §2.3). ``on_estate_write`` is registered with CB-20's estate store
+  (``estate.register_hook(fn, atomic=True)``): it runs once per run, in the transaction that won the run's
+  ``drift_at``, inside the store's savepoint, so the register and the store are written (or rolled back) together.
+  It grades the run's own rows (the store does not grade); a source whose newer run was already written is left to
+  that run.
 
 Closing causes: ``evidence`` (an evidence write raised the item above E0), ``removed`` (the vendor or the source was
 deleted), ``observation`` (a later comparable collection of the source no longer has it), ``inputs`` (Mosca set),
@@ -304,12 +306,21 @@ def sync_run(session: Session, run: CbomCollectionRun, now: _dt.datetime) -> dic
     return out
 
 
-def sync_run_safely(session: Session, run: CbomCollectionRun, now: _dt.datetime) -> None:
-    try:
-        with session.begin_nested():
-            sync_run(session, run, now)
-    except Exception as exc:
-        log("q0 register run sync FAILED", team=run.team_id, run=run.id, error=type(exc).__name__)
+def on_estate_write(session: Session, write: Any) -> None:
+    """CB-20 estate hook (atomic): the run's Q0 items in the register, in the store's transaction. Raises on error
+    (the store rolls back its write and ours, and marks itself stale for the backfill, which replays hooks)."""
+    run = session.get(CbomCollectionRun, write.run_id)
+    if run is not None and run.team_id == write.team_id:
+        sync_run(session, run, write.at)
+
+
+def _register() -> None:
+    from backend.utilities.cbom_sources import estate
+
+    estate.register_hook(on_estate_write, atomic=True)
+
+
+_register()
 
 
 def close_removed_sources(session: Session, team_id: int, now: _dt.datetime) -> dict[str, int]:
@@ -445,6 +456,6 @@ def list_gaps(session: Session, team_id: int, now: _dt.datetime, *, status: str,
             "source": "latest_runs"}  # CB-20's estate store is not on dev yet: run items come from each latest run
 
 
-__all__ = ["sync_evidence", "sync_evidence_safely", "sync_run", "sync_run_safely", "close_removed_sources",
+__all__ = ["sync_evidence", "sync_evidence_safely", "sync_run", "on_estate_write", "close_removed_sources",
            "close_removed_sources_safely", "close_mosca", "tick", "tick_due", "list_gaps", "public_gap", "encode_after", "decode_after",
            "KINDS", "CAUSES", "STATUSES", "LIMIT_MAX"]

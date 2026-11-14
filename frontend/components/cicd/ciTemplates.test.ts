@@ -180,8 +180,8 @@ async function main() {
   const cbomFiles: [string, string, (t: string) => Job][] = [
     ["github", githubActionsWorkflow({ kind: "cbom", endpoint, branch: "main" }), githubJob],
     ["gitlab", gitlabCi({ kind: "cbom", endpoint, branch: "main" }), gitlabJob],
-    // the Jenkinsfile carries the key itself and reads the URL from SCAN_API_URL
-    ["jenkins", jenkinsfile({ kind: "cbom", endpoint, apiKey: KEY }), (t) => ({ ...jenkinsJob(t), env: { SCAN_API_URL: endpoint } })],
+    // the Jenkinsfile reads the key from the CICD_API_KEY credential and the URL from SCAN_API_URL
+    ["jenkins", jenkinsfile({ kind: "cbom", endpoint }), (t) => ({ ...jenkinsJob(t), env: { SCAN_API_URL: endpoint } })],
     ["bamboo", bambooScript({ kind: "cbom", endpoint }), bambooJob],
   ];
 
@@ -237,7 +237,7 @@ async function main() {
     const files: [string, string][] = [
       ["github", githubActionsWorkflow({ kind, endpoint: ep, branch: "main" })],
       ["gitlab", gitlabCi({ kind, endpoint: ep, branch: "main" })],
-      ["jenkins", jenkinsfile({ kind, endpoint: ep, apiKey: "<your DevSecShield CI/CD API key>" })],
+      ["jenkins", jenkinsfile({ kind, endpoint: ep })],
       ["bamboo", bambooScript({ kind, endpoint: ep })],
     ];
     for (const [name, text] of files) {
@@ -257,7 +257,7 @@ async function main() {
   const refs: [string, string][] = [
     ["github_actions.cbom.yaml", githubActionsWorkflow({ kind: "cbom", endpoint: REF_ENDPOINT, branch: "main" })],
     ["gitlab-ci.cbom.yml", gitlabCi({ kind: "cbom", endpoint: REF_ENDPOINT, branch: "main" })],
-    ["Jenkinsfile.cbom", jenkinsfile({ kind: "cbom", endpoint: REF_ENDPOINT, apiKey: "<your DevSecShield CI/CD API key>" })],
+    ["Jenkinsfile.cbom", jenkinsfile({ kind: "cbom", endpoint: REF_ENDPOINT })],
     ["bamboo-script-body.cbom.txt", bambooScript({ kind: "cbom", endpoint: REF_ENDPOINT })],
   ];
   for (const [file, text] of refs) {
