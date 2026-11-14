@@ -121,7 +121,7 @@ def managed_key(out, facts: dict[str, Any], algorithm: Any, key_size: Any, now) 
         if isinstance(period, (int, float)) and period == 0:
             # the same finding as a cloud KMS key without rotation (AWS, Google Cloud, Azure Key Vault): same code and
             # severity wherever the key lives (C9); the text names the Vault setting
-            out.add("KMS_NO_ROTATION", "Medium", C.VAULT_NO_ROTATION_TEXT)
+            out.add("KMS_NO_ROTATION", "Medium", C.vault_no_rotation_text(facts))
     state = str(facts.get("state") or facts.get("key_state") or "")
     if state == "Compromised":
         out.add("KEY_COMPROMISED", "High", f"{what} {where} is marked compromised but is still stored".replace("  ", " "))

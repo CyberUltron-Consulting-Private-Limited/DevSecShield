@@ -279,23 +279,50 @@ def _key_rules(out: _Out, algorithm: Any, size: Any, what: str) -> None:
 
 
 def _kms_no_rotation_text(facts: dict[str, Any]) -> str:
-    """KMS_NO_ROTATION's text. Automatic rotation exists only for keys whose material AWS KMS generated (origin
-    AWS_KMS; imported material and custom key stores cannot rotate automatically, CB-33 B1). A multi-Region replica
-    takes its rotation from its primary key, so the text names the primary; a Disabled key must be enabled first."""
+    """KMS_NO_ROTATION's text, naming the command of the provider the key lives in (the KB entry lists all four).
+    AWS: automatic rotation exists only for keys whose material AWS KMS generated (origin AWS_KMS; imported material
+    and custom key stores cannot rotate automatically, CB-33 B1). A multi-Region replica takes its rotation from its
+    primary key, so the text names the primary; a Disabled key must be enabled first."""
+    if facts.get("provider") == "gcp":
+        return gcp_no_rotation_text(facts)
+    if facts.get("provider") == "azure":
+        return azure_no_rotation_text(facts)
     text = "Customer-managed KMS key has automatic rotation off"
     primary = facts.get("primary_key_arn")
-    if facts.get("multi_region_type") == "REPLICA" and primary:
+    replica = facts.get("multi_region_type") == "REPLICA" and primary
+    if replica:
         text += (f"; this is a multi-Region replica, whose rotation is set on its primary key {str(primary)[:200]}: "
                  f"run aws kms enable-key-rotation --key-id {str(primary)[:200]} in the primary's Region")
     if facts.get("key_state") == "Disabled":
         text += ("; the key is disabled: enable the key first (aws kms enable-key), then turn rotation on, or "
                  "schedule its deletion if it is unused")
+    elif not replica:
+        text += f"; turn it on with aws kms enable-key-rotation --key-id {_key_ref(facts, '<key-id>')}"
     return text
 
 
-AZURE_NO_ROTATION_TEXT = ("Key Vault key has no automatic rotation (its rotation policy has no Rotate action); set one "
-                          "with az keyvault key rotation-policy update")
-VAULT_NO_ROTATION_TEXT = "Vault transit key has no automatic rotation (auto_rotate_period 0)"
+def _key_ref(facts: dict[str, Any], default: str) -> str:
+    """The key's own identifier for a command in a finding text (ARN, Cloud KMS resource name, Key Vault key id)."""
+    ref = str(facts.get("identity") or "").strip()
+    return ref[:300] if ref and not any(c.isspace() for c in ref) else default
+
+
+def gcp_no_rotation_text(facts: dict[str, Any]) -> str:
+    return ("Cloud KMS key has no automatic rotation (no rotation period); set one with gcloud kms keys update "
+            f"{_key_ref(facts, '<key>')} --rotation-period 90d --next-rotation-time <RFC 3339 time>")
+
+
+def azure_no_rotation_text(facts: dict[str, Any]) -> str:
+    return ("Key Vault key has no automatic rotation (its rotation policy has no Rotate action); set one with "
+            f"az keyvault key rotation-policy update --id {_key_ref(facts, '<key-id>')} --value <policy.json with a "
+            "Rotate lifetime action>")
+
+
+def vault_no_rotation_text(facts: dict[str, Any]) -> str:
+    mount = str(facts.get("mount") or "transit").strip("/")[:64] or "transit"
+    mount = mount if not any(c.isspace() for c in mount) else "transit"
+    return (f"Vault transit key has no automatic rotation (auto_rotate_period 0); set one with vault write "
+            f"{mount}/keys/<key>/config auto_rotate_period=90d")
 
 
 KMS_MATERIAL_WINDOW = _dt.timedelta(days=30)  # owner decision (CB-33 OQ-2): Medium, 30 days ahead
@@ -743,7 +770,7 @@ def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, fact
                 # Azure Key Vault rotates any key type (RSA, EC, oct-HSM) by its rotation policy: a key whose policy has
                 # no Rotate action never rotates.  Same code and severity as AWS / Google Cloud KMS and Vault transit
                 # (C9); a policy that could not be read (rotation_enabled None) is unknown, not "off".
-                out.add("KMS_NO_ROTATION", "Medium", AZURE_NO_ROTATION_TEXT)
+                out.add("KMS_NO_ROTATION", "Medium", azure_no_rotation_text(facts))
             if facts.get("key_state") == "PendingDeletion":
                 out.add("KMS_PENDING_DELETION", "Low", "KMS key is pending deletion")
             _kms_material_rules(out, facts, now)

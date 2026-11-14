@@ -272,14 +272,15 @@ class _Refused(Exception):
 def _nothing_read(result: dict[str, Any], read: int) -> str | None:
     """The failure reason when a collector read none of its targets and stored no asset (only coverage rows: denied,
     API not enabled, unreachable), else None.  Such a job fails, so it is refunded like any failed job and the source's
-    last good collection stays the current one; its coverage rows stay on the run and say what was refused.  Targets
-    that were all skipped (a stop, the deadline) are not "unread": the job ends cancelled instead."""
+    last good collection stays the current one; its coverage rows stay on the run and say what was refused.  A stop
+    (any target skipped: cancelled, the deadline) is not "unread", even after a target failed: the job ends cancelled
+    instead, refunded the same way."""
     counts = result.get("counts") if isinstance(result.get("counts"), dict) else {}
     total = counts.get("total")
     if read or not isinstance(total, int) or total <= 0 or counts.get("ok") or counts.get("partial"):
         return None
     targets = [t for t in result.get("targets") or [] if isinstance(t, dict)]
-    if targets and all(str(t.get("status") or "").startswith("skipped") for t in targets):
+    if any(str(t.get("status") or "").startswith("skipped") for t in targets):
         return None
     first = next((t for t in targets if t.get("error") and not str(t.get("status") or "").startswith("skipped")), None)
     reason = f"{first.get('target')}: {first.get('error')}" if first else "every target failed"

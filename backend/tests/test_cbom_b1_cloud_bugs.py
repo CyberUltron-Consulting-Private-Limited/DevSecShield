@@ -363,3 +363,89 @@ def test_c10a_a_server_that_hangs_up_early_is_not_a_bad_document_either(slow_idp
     with pytest.raises(safe_fetch.FetchError, match="closed the connection after 21 of 400 bytes") as err:
         safe_fetch.fetch(slow_idp.url)
     assert not isinstance(err.value, safe_fetch.FetchTimeout)
+
+
+# ----------------------------------------------------------------------------- C9 (review): one KB entry for every store
+def test_c9_kms_no_rotation_kb_entry_is_provider_neutral_with_a_step_and_check_per_provider():
+    from backend.utilities.cbom_sources import crypto_kb
+
+    entry = crypto_kb.entry("node", "KMS_NO_ROTATION")
+    assert entry["default_impact"] == "Medium" and "aws" not in entry["remediation"]["summary"].lower()
+    for words in ("cloud KMS", "key vault", "Vault transit", "Google Cloud KMS", "Azure Key Vault"):
+        assert words in entry["description"], words
+    assert "imported material" in entry["description"]  # the AWS exception is still stated (CB-33 B1)
+    steps = {s["platform"]: s["how"] for s in entry["remediation"]["steps"]}
+    assert steps["AWS KMS"].startswith("aws kms enable-key-rotation")
+    assert steps["Google Cloud KMS"].startswith("gcloud kms keys update") and "--rotation-period" in steps["Google Cloud KMS"]
+    assert steps["Azure Key Vault"].startswith("az keyvault key rotation-policy update")
+    assert steps["HashiCorp Vault transit"].startswith("vault write transit/keys/<key>/config auto_rotate_period=90d")
+    verify = " | ".join(v["command"] for v in entry["verify"])
+    for command in ("aws kms get-key-rotation-status", "gcloud kms keys describe", "az keyvault key rotation-policy show",
+                    "vault read transit/keys/"):
+        assert command in verify, command
+    # the read-only checks render with the asset's own identifier
+    kid = "https://myvault.vault.azure.net/keys/CreateSoftKeyTest"
+    shown = crypto_kb.render("node", ["KMS_NO_ROTATION"], context={"resource": kid, "name": "app-aes"})[0]
+    assert f"az keyvault key rotation-policy show --id {kid}" in [v["command"] for v in shown["verify"]]
+    assert "vault read transit/keys/app-aes" in [v["command"] for v in shown["verify"]]
+    # both shipped copies were regenerated together, with a newer version
+    root = Path(__file__).resolve().parents[2]
+    backend_kb = (root / "backend/utilities/cbom_sources/data/crypto_kb.json").read_bytes()
+    assert backend_kb == (root / "aibom/src/aibom/cbom/data/crypto_kb.json").read_bytes()
+    assert crypto_kb.load()["kb_version"] >= "2026.11.14.6"
+
+
+def test_c9_each_finding_text_names_its_own_provider_command():
+    aws = {"key_spec": "SYMMETRIC_DEFAULT", "key_manager": "CUSTOMER", "rotation_enabled": False, "origin": "AWS_KMS",
+           "identity": "arn:aws:kms:ap-south-1:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab"}
+    _out, found, _rec = recorded._gcp(recorded._gcp_routes())
+    gcp = next(a for a in found if a["type"] == "kms_key" and a["name"] == "no-rotation")
+    no_policy = {"lifetimeActions": [{"trigger": {"timeBeforeExpiry": "P30D"}, "action": {"type": "Notify"}}]}
+    azure = azure_collect._key_asset(recorded.GET_KEY, no_policy, None, "myvault", "azure:sub")
+    texts = {
+        "aws": classify("kms_key", "AES", 256, None, aws)["texts"]["KMS_NO_ROTATION"],
+        "gcp": classify("kms_key", gcp["algorithm"], gcp["key_size"], None, gcp["facts"])["texts"]["KMS_NO_ROTATION"],
+        "azure": classify("kms_key", azure["algorithm"], azure["key_size"], None, azure["facts"])["texts"]["KMS_NO_ROTATION"],
+        "vault": classify("managed_key", "AES", 256, None, {"store": "vault_transit", "mount": "transit-payments",
+                                                           "key_class": "secret", "auto_rotate_period_s": 0})["texts"]["KMS_NO_ROTATION"],
+    }
+    assert f"aws kms enable-key-rotation --key-id {aws['identity']}" in texts["aws"]
+    assert f"gcloud kms keys update {gcp['facts']['identity']} --rotation-period 90d" in texts["gcp"]
+    assert "az keyvault key rotation-policy update --id https://myvault.vault.azure.net/keys/CreateSoftKeyTest" in texts["azure"]
+    assert "vault write transit-payments/keys/<key>/config auto_rotate_period=90d" in texts["vault"]
+    for name, text in texts.items():
+        others = {"aws": "aws kms", "gcp": "gcloud", "azure": "az keyvault", "vault": "vault write"}
+        assert not [w for p, w in others.items() if p != name and w in text], (name, text)
+
+
+# ----------------------------------------------------------------------------- C1 (review): Save and validate time limit
+def test_c1_validation_has_a_time_limit_and_says_what_it_did_not_check(monkeypatch):
+    monkeypatch.setattr(gcp_collect, "VALIDATE_DEADLINE_S", -1.0)  # out of time after the first project
+    routes = [_all_permissions(recorded.PROJECT), *recorded._gcp_routes(), *_gcp_unreadable_routes()]
+    out, rec = _validate_gcp(routes, {**recorded.GCP_CFG, "project_ids": [recorded.PROJECT, UNREADABLE, "third"]})
+    warning = next(c for c in out["checks"] if c["check"] == "Projects checked")
+    assert warning["status"] == "warning" and "1 of 3 projects were checked (time limit reached)" in warning["detail"]
+    assert f"not checked: {UNREADABLE}, third" in warning["detail"]
+    assert out["status"] == "passed" and not any(UNREADABLE in r["url"] for r in rec.seen)
+
+    monkeypatch.setattr(azure_collect, "VALIDATE_DEADLINE_S", -1.0)
+    sub2 = "11111111-1111-1111-1111-111111111111"
+    rec = recorded.Recorder(recorded._azure_routes())
+    out = azure_collect.test_azure({**recorded.AZ_CFG, "subscription_ids": [recorded.SUB, sub2]},
+                                   {"client_secret": recorded.CLIENT_SECRET}, transport=httpx.MockTransport(rec))
+    warning = next(c for c in out["checks"] if c["check"] == "Subscriptions checked")
+    assert "1 of 2 subscriptions were checked (time limit reached)" in warning["detail"] and sub2 in warning["detail"]
+    assert not any(sub2 in r["url"] for r in rec.seen)
+
+
+# ----------------------------------------------------------------------------- C2 (review): a stop is a cancel
+def test_c2_a_stop_after_a_failed_target_ends_cancelled_not_failed():
+    stopped = {"counts": {"total": 2, "ok": 0, "partial": 0, "failed": 1, "skipped": 1},
+               "targets": [{"target": "gcp:a", "status": "error", "error": "cloudkms: denied"},
+                           {"target": "gcp:b", "status": "skipped_cancelled", "error": "Run cancelled"}]}
+    assert cbom_cloud_worker._nothing_read(stopped, 0) is None
+    refused = {"counts": {"total": 2, "ok": 0, "partial": 0, "failed": 2, "skipped": 0},
+               "targets": [{"target": "gcp:a", "status": "error", "error": "cloudkms: denied"},
+                           {"target": "gcp:b", "status": "auth_failed", "error": "sign-in"}]}
+    assert cbom_cloud_worker._nothing_read(refused, 0) == "No target could be read (0 of 2): gcp:a: cloudkms: denied"
+    assert cbom_cloud_worker._nothing_read(refused, 1) is None  # an asset was read: partial, never a failure

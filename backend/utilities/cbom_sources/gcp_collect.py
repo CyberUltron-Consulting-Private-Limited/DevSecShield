@@ -386,6 +386,7 @@ def collect_gcp(team_id: int, cfg: dict[str, Any], secrets: dict[str, str], emit
 READ_PERMISSIONS = ("cloudkms.keyRings.list", "cloudkms.cryptoKeys.list", "cloudkms.cryptoKeyVersions.list",
                     "privateca.caPools.list", "privateca.certificateAuthorities.list", "secretmanager.secrets.list")
 VALIDATE_PROJECT_CAP = 25  # projects checked one by one at Save and validate (each is two small calls)
+VALIDATE_DEADLINE_S = 45.0  # Save and validate answers in the browser: projects left when it runs out are a warning
 
 
 def _project_access(http: CloudHttp, access: str, project: str) -> list[dict[str, str]]:
@@ -436,6 +437,7 @@ def test_gcp(cfg: dict[str, Any], secrets: dict[str, str], *, transport: Any = N
     """Validation: sign in, then prove the account can read EVERY configured project (up to VALIDATE_PROJECT_CAP): the
     collector's permissions on the project and one real Cloud KMS read.  A project the account cannot read fails the
     validation with the reason.  Never raises."""
+    started = time.monotonic()
     checks: list[dict[str, str]] = []
     try:
         key = service_account(cfg, secrets)
@@ -456,20 +458,26 @@ def test_gcp(cfg: dict[str, Any], secrets: dict[str, str], *, transport: Any = N
         else:
             if not projects:
                 checks.append({"check": "List projects", "status": "fail", "detail": "No project is visible to this service account"})
+        checked: list[str] = []
         for project in projects[:VALIDATE_PROJECT_CAP]:
+            if checked and time.monotonic() - started > VALIDATE_DEADLINE_S:  # the first project is always checked
+                break
             checks += _project_access(http, access, project)
-        if len(projects) > VALIDATE_PROJECT_CAP:
+            checked.append(project)
+        if len(checked) < len(projects):
             checks.append({"check": "Projects checked", "status": "warning", "detail": (
-                f"The first {VALIDATE_PROJECT_CAP} of {len(projects)} projects were checked; a project the account "
-                "cannot read is reported as a failed target on the run")[:240]})
+                f"{len(checked)} of {len(projects)} projects were checked "
+                f"({'time limit reached' if len(checked) < min(len(projects), VALIDATE_PROJECT_CAP) else 'check limit'}); "
+                f"not checked: {', '.join(projects[len(checked):len(checked) + 5])}"
+                f"{' ...' if len(projects) - len(checked) > 5 else ''}. A project the account cannot read is reported "
+                "as a failed target on the run")[:240]})
         if projects:
             checks += _probe_optional(http, access, projects[0])
     from backend.utilities.cbom_sources.azure_collect import _verdict
 
     out = _verdict(checks)
     if out["status"] == "passed" and not any(c["status"] == "warning" for c in checks):
-        read = projects[:VALIDATE_PROJECT_CAP]
-        out["message"] = f"Read access proven on {len(read)} project(s): {', '.join(read)}"[:512]
+        out["message"] = f"Read access proven on {len(checked)} project(s): {', '.join(checked)}"[:512]
     return out
 
 

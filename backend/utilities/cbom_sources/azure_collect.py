@@ -423,7 +423,9 @@ def collect_azure(team_id: int, cfg: dict[str, Any], secrets: dict[str, str], em
 
 
 def test_azure(cfg: dict[str, Any], secrets: dict[str, str], *, transport: Any = None) -> dict[str, Any]:
-    """Validation: sign in (ARM and Key Vault scopes) and make one list call.  Never raises."""
+    """Validation: sign in (ARM and Key Vault scopes) and list the vaults of every configured subscription (up to
+    VALIDATE_SUBSCRIPTION_CAP, within VALIDATE_DEADLINE_S; the first is always read).  Never raises."""
+    started = time.monotonic()
     checks: list[dict[str, str]] = []
     with CloudHttp(transport) as http:
         try:
@@ -447,8 +449,12 @@ def test_azure(cfg: dict[str, Any], secrets: dict[str, str], *, transport: Any =
                 checks.append({"check": "List key vaults", "status": "fail", "detail": "No subscription is visible to this app"})
         # every configured subscription is read once (the collector lists its vaults the same way): one the app cannot
         # read fails the validation, instead of passing on the first subscription alone (C1)
-        readable = []
+        readable: list[str] = []
+        checked: list[str] = []
         for sub in subs[:VALIDATE_SUBSCRIPTION_CAP]:
+            if checked and time.monotonic() - started > VALIDATE_DEADLINE_S:
+                break
+            checked.append(sub)
             check = "List key vaults" if len(subs) == 1 else f"List key vaults in {sub}"
             try:
                 vaults, _t = http.azure_pages(
@@ -461,16 +467,19 @@ def test_azure(cfg: dict[str, Any], secrets: dict[str, str], *, transport: Any =
                     f"The app cannot read subscription {sub} ({exc}): give it the Reader role there (run the ZeroShield "
                     "reader script), or remove the subscription from the source" if status in ("denied", "not_found")
                     else str(exc))[:240]})
-        if len(subs) > VALIDATE_SUBSCRIPTION_CAP:
+        if len(checked) < len(subs):
             checks.append({"check": "Subscriptions checked", "status": "warning", "detail": (
-                f"The first {VALIDATE_SUBSCRIPTION_CAP} of {len(subs)} subscriptions were checked; one the app cannot "
-                "read is reported as a failed target on the run")[:240]})
+                f"{len(checked)} of {len(subs)} subscriptions were checked "
+                f"({'time limit reached' if len(checked) < min(len(subs), VALIDATE_SUBSCRIPTION_CAP) else 'check limit'}); "
+                f"not checked: {', '.join(subs[len(checked):len(checked) + 3])}{' ...' if len(subs) - len(checked) > 3 else ''}. "
+                "One the app cannot read is reported as a failed target on the run")[:240]})
         if readable:
             checks += _probe_control_plane(http, arm_token, readable[0])
     return _verdict(checks)
 
 
 VALIDATE_SUBSCRIPTION_CAP = 25  # subscriptions read one by one at Save and validate
+VALIDATE_DEADLINE_S = 45.0  # Save and validate answers in the browser: subscriptions left after it are a warning
 
 
 def _probe_control_plane(http: CloudHttp, arm_token: str, sub: str) -> list[dict[str, str]]:
