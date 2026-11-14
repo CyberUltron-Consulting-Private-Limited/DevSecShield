@@ -129,7 +129,7 @@ export default function CertCalendar({ certs, now, testId = "cert-calendar" }: {
               {week.map((date, di) => {
                 if (!date) return <div key={di} role="gridcell" aria-hidden="true" className="h-9 sm:h-10" />;
                 const key = dayKey(date);
-                const due = byDay.get(key) ?? [];
+                const due = dedupeCerts(byDay.get(key) ?? []); // the badge counts what the day's list shows
                 const soonest = due.map((c) => parseExpiry(c.not_after)!).sort((a, b) => a.getTime() - b.getTime())[0];
                 const band = soonest ? expiryBand(daysLeft(soonest, today)) : null;
                 const day = date.getUTCDate();

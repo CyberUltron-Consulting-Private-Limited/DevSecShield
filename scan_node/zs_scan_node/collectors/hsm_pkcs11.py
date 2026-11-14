@@ -22,8 +22,8 @@ import time
 from typing import Any
 
 from zs_scan_node.certparse import cert_facts, load_certs
-from zs_scan_node.collectors import ConfigError
-from zs_scan_node.jobctx import JobContext, register_asset_types
+from zs_scan_node.collectors import ConfigError, target_error
+from zs_scan_node.jobctx import JobContext, LeaseLost, register_asset_types
 from zs_scan_node.scrub import printable
 
 register_asset_types("key_store", "managed_key")
@@ -407,4 +407,9 @@ def test(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
         except PKCS11Error as exc:
             ctx.samples.append({"target": label, "status": "auth_failed" if "Pin" in exc.__class__.__name__ else "error",
                                 "reachable": True, "login": False, "privilege": None, "note": exc.__class__.__name__})
+        except LeaseLost:
+            raise
+        except Exception as exc:  # noqa: BLE001 - one token's error fails its sample, never the test job
+            ctx.samples.append({"target": label, "status": "error", "reachable": True, "login": False,
+                                "privilege": None, "note": ctx.scrubber.text(target_error(exc)[1])})
     return f"{sum(1 for s in ctx.samples if s['status'] == 'ready')} of {len(ctx.samples)} tokens ready"

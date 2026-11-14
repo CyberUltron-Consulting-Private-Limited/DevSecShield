@@ -6201,26 +6201,12 @@ export const INFO_TIPS = {
     example: "dc-mumbai-linux · job #4410 · node-dc1 · 13 Nov 23:10.",
   },
   // ────────────────────────────────────────────────────────────── CBOM Sources: in-tab run results and posture (components/cbom/sources/RunResults.tsx, RunPosture.tsx)
-  // src: frontend/components/cbom/sources/RunResults.tsx:127-132 — each target's outcome
+  // src: frontend/components/cbom/sources/RunResults.tsx:103-108 — each target's outcome
   "cbom.run.targets": {
     label: "Targets",
     what: "Each target the run's jobs tried, with its outcome: read, unreachable, login failed and so on.",
     why: "Targets that could not be read are blind spots in this run.",
     example: "10.20.0.17 · unreachable (port 22 filtered).",
-  },
-  // src: frontend/components/cbom/sources/RunResults.tsx:386-399,355 — assets with a wave can be selected
-  "cbom.run.col.select_wave": {
-    label: "Select for wave assignment",
-    what: "Select assets that have a remediation wave, to assign a wave, owner, target date or status together.",
-    why: "Plans a group of similar assets in one step.",
-    example: "Tick the 12 certificates of api.bank.in, set Wave 2.",
-  },
-  // src: backend/utilities/cbom_sources/posture.py:3-5 — quantum-vulnerable class
-  "cbom.run.col.qv": {
-    label: "Quantum-vulnerable",
-    what: "Whether the asset was judged quantum-vulnerable when it was collected: public-key cryptography a quantum computer breaks (RSA, DH, elliptic curves).",
-    why: "These assets need a post-quantum replacement.",
-    example: "Yes for ECDHE P-256 key exchange.",
   },
   // src: backend/utilities/cbom_sources/posture.py:1-15 — HNDL, Mosca, risk score, compliance, from the knowledge base
   "cbom.run.posture": {

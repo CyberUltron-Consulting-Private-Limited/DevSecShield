@@ -45,6 +45,7 @@ from backend.routers import cbom_node_artifacts as NODE_ARTIFACTS  # install lin
 from backend.utilities.cbom_sources import agility as AGILITY
 from backend.utilities.cbom_sources import agility_rollup as AGILITY_ROLLUP
 from backend.utilities.cbom_sources import agents as AG
+from backend.utilities.cbom_sources import held as HELD
 from backend.utilities.cbom_sources import jobs as J
 from backend.utilities.cbom_sources import source_cap as SOURCE_CAP
 from backend.utilities.cbom_sources import targets as T
@@ -1067,10 +1068,15 @@ async def get_job(team_id: TeamId, job_id: ObjectId, Authorization: AuthHeader =
 
 
 # ============================================================================ settings
+def _settings_body(session: Session, row: CbomCollectionSettings, now) -> dict:
+    """The settings, with the never-scan host names a scan node cannot resolve (held there; held.never_scan_held)."""
+    return {**public_settings(row, now), "never_scan_held": HELD.never_scan_held(session, row.team_id, row)}
+
+
 def _get_settings(engine, team_id: int) -> dict:
     now = utcnow()
     with Session(engine) as session:
-        return {"settings": public_settings(get_or_create_settings(session, team_id), now)}
+        return {"settings": _settings_body(session, get_or_create_settings(session, team_id), now)}
 
 
 @router.get(BASE + "/settings", dependencies=READ, summary="Network scope, safety, certificate domains, AWS external ID")
@@ -1168,7 +1174,7 @@ def _update_settings(engine, team_id: int, user_id: int, body: SettingsUpdate) -
             if "require_signed_nodes" in changes:
                 log("signed scan nodes " + ("required" if changes["require_signed_nodes"] else "not required"),
                     team=team_id, by=user_id)
-        return {"settings": public_settings(row, now)}
+        return {"settings": _settings_body(session, row, now)}
 
 
 @router.patch(BASE + "/settings", dependencies=WRITE, summary="Update team settings (admin; send only changed sections)")
@@ -1195,7 +1201,7 @@ def _stop_all(engine, team_id: int, user_id: int, on: bool) -> dict:
             session.commit()
             session.refresh(row)
             log("network stop" if on else "network resume", team=team_id, by=user_id)
-        return {"settings": public_settings(row, now)}
+        return {"settings": _settings_body(session, row, now)}
 
 
 @router.post(BASE + "/settings/stop-all", dependencies=WRITE,
@@ -1735,7 +1741,16 @@ def _asset_detail(engine, team_id: int, asset_id: int) -> dict:
             now_grade = grading.with_inputs(current).grade_row(row, asset["finding_codes"], explain=False,
                                                                cls=asset["pqc_class"])
             q_now = {"q_grade": now_grade.q_grade, "q_label": now_grade.q_label, "q_reason": now_grade.q_reason}
-        out = {**asset, **graded.fields(), "q_explain": graded.explain, "q_now": q_now}
+        # the run's findings-table row of this asset (type label, strength, risk score, status, wave, fix class,
+        # ticket, job ...), from the same functions as GET /runs/{id}/assets: a dialog opened from top risks or a
+        # certificate (an asset not on the table's page) renders the table's row, not a bare id (staging QA B7)
+        row_item: dict = {}
+        run = session.get(CbomCollectionRun, row.run_id) if row.run_id is not None else None
+        if run is not None and run.team_id == team_id:
+            row_item = RUN_ASSETS.run_item(session, team_id, run, row, grade=graded.fields(),
+                                           pqc=(asset["pqc_class"], asset["pqc_class_basis"]))
+            RUN_TICKETS.add_ticket_fields(session, team_id, run, [row_item])
+        out = {**row_item, **asset, **graded.fields(), "q_explain": graded.explain, "q_now": q_now}
         # the code page's dialog fields, from the same function as the run's /assets items (CB-38 W2b): a dialog
         # opened from top risks or a certificate shows the same OWASP / controls / fix as one opened from the table
         RUN_ASSETS.add_code_page_fields(out)

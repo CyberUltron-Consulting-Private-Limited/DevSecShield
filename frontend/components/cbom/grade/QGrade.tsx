@@ -19,7 +19,7 @@ import {
   humanize,
   q0ItemCountText,
   q0ItemLine,
-  q0Reasons,
+  q0Breakdown,
   qDistribution,
   reasonTexts,
   SHA_CHECK_TEXT,
@@ -223,6 +223,8 @@ export function QGradeModelDialog({ teamId, open, onOpenChange, model }: {
   );
 }
 
+const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
+
 /** The posture card "Quantum risk": distribution, Q0 Unknown reasons with counts, the Q0 Unknown item list and the model dialog.
  * Renders nothing when the posture has no grades (an older backend). */
 export function QDistributionCard({ teamId, posture, onOpenAsset, model }: {
@@ -236,9 +238,9 @@ export function QDistributionCard({ teamId, posture, onOpenAsset, model }: {
   const m = useModel(teamId, model);
   const reasons = useMemo(() => reasonTexts(m), [m]);
   if (!posture.q_grades) return null;
-  const q0 = q0Reasons(posture);
+  const q0 = q0Breakdown(posture);
   const items = posture.q0_items ?? [];
-  const total = posture.q0_items_total ?? items.length;
+  const total = q0.total;
   const counts = posture.q0_counts;
   const inputs = posture.grade_inputs;
   return (
@@ -253,23 +255,51 @@ export function QDistributionCard({ teamId, posture, onOpenAsset, model }: {
       </div>
       <QDistributionBar posture={posture} />
       <GradeInputsBanner posture={posture} />
-      {q0.length > 0 && (
-        <div className="space-y-1" data-testid="posture-q0-reasons">
-          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Q0 Unknown: why</p>
-          <ul className="space-y-0.5">
-            {q0.map((r) => (
-              <li key={r.code} className="text-xs text-zinc-700 dark:text-zinc-300 flex gap-2" data-testid={`posture-q0-reason-${r.code}`}
-                  data-count={r.count}>
-                <span className="font-semibold tabular-nums w-8 shrink-0 text-right">{r.count}</span>
-                <span className="min-w-0">{reasons.get(r.code) ?? humanize(r.code)}</span>
-              </li>
-            ))}
-          </ul>
+      {(q0.assets.length > 0 || q0.scope.length > 0) && (
+        <div className="space-y-1" data-testid="posture-q0-reasons" data-basis={q0.basis}>
+          {q0.assets.length > 0 && (
+            <>
+              <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Q0 Unknown: why</p>
+              <ul className="space-y-0.5">
+                {q0.assets.map((r) => (
+                  <li key={r.code} className="text-xs text-zinc-700 dark:text-zinc-300 flex gap-2" data-testid={`posture-q0-reason-${r.code}`}
+                      data-count={r.count}>
+                    <span className="font-semibold tabular-nums w-8 shrink-0 text-right">{r.count}</span>
+                    <span className="min-w-0">{reasons.get(r.code) ?? humanize(r.code)}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          {q0.scope.length > 0 && (
+            <>
+              <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 pt-1"
+                 data-testid="posture-q0-scope">
+                Not read in this run (places and sources, not assets)
+              </p>
+              <ul className="space-y-0.5">
+                {q0.scope.map((r) => (
+                  <li key={r.code} className="text-xs text-zinc-700 dark:text-zinc-300 flex gap-2" data-testid={`posture-q0-scope-${r.code}`}
+                      data-count={r.count}>
+                    <span className="font-semibold tabular-nums w-8 shrink-0 text-right">{r.count}</span>
+                    <span className="min-w-0">{reasons.get(r.code) ?? humanize(r.code)}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
           {counts && (
             <p className="text-xs text-zinc-500 dark:text-zinc-400" data-testid="posture-q0-counts">
-              {counts.assets} asset{counts.assets === 1 ? "" : "s"} graded Q0 Unknown; {counts.scope_items} unread scope
-              item{counts.scope_items === 1 ? "" : "s"} ({counts.scope_rows} row{counts.scope_rows === 1 ? "" : "s"}). Counts are items: a
-              missing Mosca setting is one item for every asset it leaves ungraded.
+              {q0.basis === "assets"
+                ? <>
+                    {plural(counts.assets, "asset")} graded Q0 Unknown, by reason above. Places and sources not read (not assets, so
+                    not in that count): {plural(counts.scope_items, "item")}, {plural(counts.scope_rows, "row")}.
+                  </>
+                : <>
+                    {counts.assets} asset{counts.assets === 1 ? "" : "s"} graded Q0 Unknown; {counts.scope_items} unread scope
+                    item{counts.scope_items === 1 ? "" : "s"} ({counts.scope_rows} row{counts.scope_rows === 1 ? "" : "s"}). Counts are items: a
+                    missing Mosca setting is one item for every asset it leaves ungraded.
+                  </>}
             </p>
           )}
         </div>
@@ -280,6 +310,7 @@ export function QDistributionCard({ teamId, posture, onOpenAsset, model }: {
                   onClick={() => setShowItems(!showItems)} aria-expanded={showItems} data-testid="posture-q0-items-toggle">
             {showItems ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
             {showItems ? "Hide" : "Show"} the {total} Q0 Unknown item{total === 1 ? "" : "s"}
+            {q0.byChoice > 0 ? ` (${q0.toClose} to close, ${q0.byChoice} left out by the team's choice)` : ""}
           </button>
           {showItems && <div className="mt-2"><Q0ItemList items={items} total={total} reasons={reasons} onOpenAsset={onOpenAsset} limit={25} /></div>}
         </div>
