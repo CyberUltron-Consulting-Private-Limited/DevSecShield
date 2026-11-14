@@ -44,6 +44,7 @@ import {
   viewCounts,
   type RunTableFilters,
 } from "./model";
+import { InfoTip } from "@/components/ui/info-tip";
 
 const IMPACTS: CbomImpact[] = ["Critical", "High", "Medium", "Low"];
 const IMPACT_TONE = { Critical: "red", High: "red", Medium: "amber", Low: "blue" } as const;
@@ -162,7 +163,7 @@ export function RunFindingsTable({
   return (
     <Card id="bom-findings" data-testid="run-results" className="min-w-0">
       <CardHeader>
-        <CardTitle>Cryptographic findings</CardTitle>
+        <CardTitle>Cryptographic findings <InfoTip id="cbom.run.findings" /></CardTitle>
         <CardDescription>
           {effectiveView === "findings"
             ? "Assets of this run with a finding. Select rows to change their status or plan a remediation wave; click a row for its explanation."
@@ -181,6 +182,7 @@ export function RunFindingsTable({
               </button>
             ))}
           </div>
+          <InfoTip id="cbom.run.view" />
           {page && (
             <p className="text-sm font-medium text-zinc-900 dark:text-white" data-testid="run-results-total">
               {effectiveView === "all"
@@ -218,6 +220,7 @@ export function RunFindingsTable({
                    onChange={(e) => { setSearch(e.target.value); applySearch(e.target.value, SEARCH_DEBOUNCE_MS); }}
                    onKeyDown={(e) => e.key === "Enter" && applySearch(search, 0)} />
           </div>
+          <InfoTip id="cbom.run.search" className="-ml-1" />
           <Select value={filters.impact ?? "all"} onValueChange={(v) => onFilters({ impact: v === "all" ? undefined : (v as CbomImpact), page: 1 })}>
             <SelectTrigger className="h-9 min-w-[140px] cursor-pointer" aria-label="Impact" data-testid="run-results-impact"><SelectValue /></SelectTrigger>
             <SelectContent>
@@ -225,6 +228,7 @@ export function RunFindingsTable({
               {IMPACTS.map((i) => <SelectItem key={i} value={i}>{i}</SelectItem>)}
             </SelectContent>
           </Select>
+          <InfoTip id="cbom.run.filter.impact" className="-ml-1" />
           <Select value={filters.type ?? "all"} onValueChange={(v) => onFilters({ type: v === "all" ? undefined : v, page: 1 })}>
             <SelectTrigger className="h-9 min-w-[180px] cursor-pointer" aria-label="Type" data-testid="run-results-type"><SelectValue /></SelectTrigger>
             <SelectContent>
@@ -234,6 +238,7 @@ export function RunFindingsTable({
               ))}
             </SelectContent>
           </Select>
+          <InfoTip id="cbom.run.filter.type" className="-ml-1" />
           <Select value={filters.quantum ? "vulnerable" : "all"} onValueChange={(v) => onFilters({ quantum: v === "vulnerable" ? true : undefined, page: 1 })}>
             <SelectTrigger className="h-9 min-w-[150px] cursor-pointer" aria-label="Quantum" data-testid="run-results-quantum"><SelectValue /></SelectTrigger>
             <SelectContent>
@@ -241,24 +246,31 @@ export function RunFindingsTable({
               <SelectItem value="vulnerable">Quantum-vulnerable</SelectItem>
             </SelectContent>
           </Select>
+          <InfoTip id="cbom.run.filter.quantum" className="-ml-1" />
           {sources.some((s) => s.id != null) && (
-            <Select value={filters.source_id != null ? String(filters.source_id) : "all"}
-                    onValueChange={(v) => onFilters({ source_id: v === "all" ? undefined : Number(v), page: 1 })}>
-              <SelectTrigger className="h-9 min-w-[160px] cursor-pointer" aria-label="Source" data-testid="run-results-source"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All sources</SelectItem>
-                {sources.filter((s) => s.id != null).map((s) => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <>
+              <Select value={filters.source_id != null ? String(filters.source_id) : "all"}
+                      onValueChange={(v) => onFilters({ source_id: v === "all" ? undefined : Number(v), page: 1 })}>
+                <SelectTrigger className="h-9 min-w-[160px] cursor-pointer" aria-label="Source" data-testid="run-results-source"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All sources</SelectItem>
+                  {sources.filter((s) => s.id != null).map((s) => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <InfoTip id="cbom.run.filter.source" className="-ml-1" />
+            </>
           )}
           {supportsView && (
-            <Select value={filters.status ?? "all"} onValueChange={(v) => onFilters({ status: v === "all" ? undefined : (v as CbomFindingStatus), page: 1 })}>
-              <SelectTrigger className="h-9 min-w-[140px] cursor-pointer" aria-label="Status" data-testid="run-results-status-filter"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All statuses</SelectItem>
-                {FINDING_STATUSES.map((s) => <SelectItem key={s} value={s}>{FINDING_STATUS_LABEL[s]}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <>
+              <Select value={filters.status ?? "all"} onValueChange={(v) => onFilters({ status: v === "all" ? undefined : (v as CbomFindingStatus), page: 1 })}>
+                <SelectTrigger className="h-9 min-w-[140px] cursor-pointer" aria-label="Status" data-testid="run-results-status-filter"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All statuses</SelectItem>
+                  {FINDING_STATUSES.map((s) => <SelectItem key={s} value={s}>{FINDING_STATUS_LABEL[s]}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <InfoTip id="cbom.run.filter.status" className="-ml-1" />
+            </>
           )}
           {hasActiveFilters(filters) && (
             <Button variant="ghost" size="sm" className="cursor-pointer" onClick={() => {
@@ -296,6 +308,8 @@ export function RunFindingsTable({
               <TableHeader>
                 <TableRow>
                   <TableHead className={`w-[48px] ${STICKY_SELECT}`}>
+                    {/* infotip-shared: the select column stays 48 px (the sticky name column sits at left-12); the
+                        Cryptographic findings title's tip explains selecting rows */}
                     <Checkbox checked={allSelected} aria-label="Select all rows" className="cursor-pointer" disabled={selectable.length === 0}
                               onCheckedChange={() => {
                                 const next = new Map(selection);
@@ -304,20 +318,20 @@ export function RunFindingsTable({
                                 onSelection(next);
                               }} />
                   </TableHead>
-                  <TableHead className="min-w-[90px]">Impact</TableHead>
-                  <TableHead className={`min-w-[160px] ${STICKY_NAME}`}>Algorithm</TableHead>
-                  <TableHead className="min-w-[120px]">Type</TableHead>
-                  <TableHead className="min-w-[200px]">Where</TableHead>
-                  <TableHead className="min-w-[220px]">Finding</TableHead>
-                  <TableHead className="min-w-[100px]">Strength</TableHead>
-                  <TableHead className="min-w-[100px]">Quantum</TableHead>
-                  <TableHead className="min-w-[90px] text-center">Risk score</TableHead>
-                  <TableHead className="min-w-[120px]">Source</TableHead>
-                  <TableHead className="min-w-[110px]">Wave</TableHead>
-                  <TableHead className="min-w-[100px]">Status</TableHead>
-                  {cols.qGrade && <TableHead className="min-w-[100px]">Quantum risk</TableHead>}
-                  {cols.fixClass && <TableHead className="min-w-[110px]">Fix class</TableHead>}
-                  <TableHead className="min-w-[170px] text-right">Actions</TableHead>
+                  <TableHead className="min-w-[90px]">Impact <InfoTip id="results.table.impact" /></TableHead>
+                  <TableHead className={`min-w-[160px] ${STICKY_NAME}`}>Algorithm <InfoTip id="cbom.res.col.algorithm" /></TableHead>
+                  <TableHead className="min-w-[120px]">Type <InfoTip id="cbom.res.col.type" /></TableHead>
+                  <TableHead className="min-w-[200px]">Where <InfoTip id="cbom.run.col.where" /></TableHead>
+                  <TableHead className="min-w-[220px]">Finding <InfoTip id="cbom.run.col.finding" /></TableHead>
+                  <TableHead className="min-w-[100px]">Strength <InfoTip id="cbom.res.col.strength" /></TableHead>
+                  <TableHead className="min-w-[100px]">Quantum <InfoTip id="cbom.res.col.quantum" /></TableHead>
+                  <TableHead className="min-w-[90px] text-center">Risk score <InfoTip id="cbom.run.f.risk" /></TableHead>
+                  <TableHead className="min-w-[120px]">Source <InfoTip id="cbom.run.col.source" /></TableHead>
+                  <TableHead className="min-w-[110px]">Wave <InfoTip id="cbom.run.col.wave" /></TableHead>
+                  <TableHead className="min-w-[100px]">Status <InfoTip id="cbom.run.col.status" /></TableHead>
+                  {cols.qGrade && <TableHead className="min-w-[100px]">Quantum risk <InfoTip id="cbom.run.col.qgrade" /></TableHead>}
+                  {cols.fixClass && <TableHead className="min-w-[110px]">Fix class <InfoTip id="cbom.res.col.fix_class" /></TableHead>}
+                  <TableHead className="min-w-[170px] text-right"><span className="inline-flex items-center gap-1">Actions <InfoTip id="results.finding.action" /></span></TableHead>
                   <TableHead className="w-8"><span className="sr-only">Expand</span></TableHead>
                 </TableRow>
               </TableHeader>
@@ -334,6 +348,7 @@ export function RunFindingsTable({
                                 className={`cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50 ${selection.has(item.id) ? "bg-zinc-100 dark:bg-zinc-800/70" : ""}`}
                                 onClick={() => setExpanded(open ? null : item.id)}>
                         <TableCell onClick={(e) => e.stopPropagation()} className={`w-[48px] ${STICKY_SELECT}`}>
+                          {/* infotip-shared: one row of the selection; the Select all tip in the header explains it */}
                           <Checkbox checked={selection.has(item.id)} disabled={!key} className="cursor-pointer"
                                     aria-label={`Select ${item.location}`} data-testid={`run-asset-select-${item.id}`}
                                     title={key ? undefined : "This row has no stable key to plan or track"}
@@ -389,6 +404,7 @@ export function RunFindingsTable({
                         <TableCell className="text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                           <div className="inline-flex items-center gap-1.5">
                             <DropdownMenu>
+                              {/* infotip-shared: explained by the (i) on the Actions column header */}
                               <DropdownMenuTrigger asChild>
                                 <Button variant="outline" size="sm" className="cursor-pointer gap-1.5 h-8" aria-label="Finding actions"
                                         disabled={!key} title={key ? undefined : "This row has no stable key to track a status"}

@@ -12,7 +12,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
 import {
   Select,
   SelectContent,
@@ -414,9 +414,9 @@ export function DASTOptionsSidebar({
                 </div>
               )}
               <div className="space-y-2 w-full">
-                <Label htmlFor="target-url" className="text-zinc-300">
-                  Target URL <span className="text-red-500">*</span>
-                </Label>
+                <FieldLabel htmlFor="target-url" infoId="dast.cfg.target_url" labelClassName="text-zinc-300" required>
+                  Target URL
+                </FieldLabel>
                 <Input
                   id="target-url"
                   placeholder="https://example.com"
@@ -427,9 +427,9 @@ export function DASTOptionsSidebar({
               </div>
 
               <div className="space-y-2 w-full">
-                <Label htmlFor="scan-speed" className="text-zinc-300">
+                <FieldLabel htmlFor="scan-speed" infoId="dast.cfg.speed" labelClassName="text-zinc-300">
                   Scan speed
-                </Label>
+                </FieldLabel>
                 <Select
                   value={scanSpeed}
                   onValueChange={(v: "fast" | "medium" | "slow") => setScanSpeed(v)}
@@ -467,9 +467,9 @@ export function DASTOptionsSidebar({
               </div>
 
               <div className="space-y-2 w-full">
-                <Label htmlFor="max-urls" className="text-zinc-300">
+                <FieldLabel htmlFor="max-urls" infoId="dast.cfg.max_urls" labelClassName="text-zinc-300">
                   Max URLs
-                </Label>
+                </FieldLabel>
                 <Input
                   id="max-urls"
                   type="number"
@@ -487,6 +487,7 @@ export function DASTOptionsSidebar({
                     <AccordionTrigger className="text-zinc-300 hover:text-white cursor-pointer text-sm flex-1 [&[data-state=open]>svg]:rotate-180">
                       Authentication <span className="text-red-500">*</span>
                     </AccordionTrigger>
+                    <InfoTip id="dast.cfg.auth" />
                     <Dialog>
                       <DialogTrigger asChild>
                         <button
@@ -520,9 +521,9 @@ export function DASTOptionsSidebar({
                   </div>
                   <AccordionContent className="pt-4 space-y-4 w-full">
                     <div className="space-y-2">
-                      <Label htmlFor="login-url" className="text-zinc-300">
-                        Login URL <span className="text-red-500">*</span>
-                      </Label>
+                      <FieldLabel htmlFor="login-url" infoId="dast.cfg.login_url" labelClassName="text-zinc-300" required>
+                        Login URL
+                      </FieldLabel>
                       <Input
                         id="login-url"
                         type="url"
@@ -533,9 +534,9 @@ export function DASTOptionsSidebar({
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="xpath-username" className="text-zinc-300">
-                        XPath of username field <span className="text-red-500">*</span>
-                      </Label>
+                      <FieldLabel htmlFor="xpath-username" infoId="dast.cfg.xpath_user" labelClassName="text-zinc-300" required>
+                        XPath of username field
+                      </FieldLabel>
                       <Input
                         id="xpath-username"
                         placeholder="//input[@name='username']"
@@ -545,9 +546,9 @@ export function DASTOptionsSidebar({
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="xpath-password" className="text-zinc-300">
-                        XPath of password field <span className="text-red-500">*</span>
-                      </Label>
+                      <FieldLabel htmlFor="xpath-password" infoId="dast.cfg.xpath_pass" labelClassName="text-zinc-300" required>
+                        XPath of password field
+                      </FieldLabel>
                       <Input
                         id="xpath-password"
                         placeholder="//input[@name='password']"
@@ -557,9 +558,9 @@ export function DASTOptionsSidebar({
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="auth-username" className="text-zinc-300">
-                        Username <span className="text-red-500">*</span>
-                      </Label>
+                      <FieldLabel htmlFor="auth-username" infoId="dast.cfg.username" labelClassName="text-zinc-300" required>
+                        Username
+                      </FieldLabel>
                       <Input
                         id="auth-username"
                         placeholder="user@example.com"
@@ -569,9 +570,9 @@ export function DASTOptionsSidebar({
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="auth-password" className="text-zinc-300">
-                        Password <span className="text-red-500">*</span>
-                      </Label>
+                      <FieldLabel htmlFor="auth-password" infoId="dast.cfg.password" labelClassName="text-zinc-300" required>
+                        Password
+                      </FieldLabel>
                       <Input
                         id="auth-password"
                         type="password"
@@ -582,9 +583,9 @@ export function DASTOptionsSidebar({
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="xpath-submit" className="text-zinc-300">
-                        XPath of submit button <span className="text-red-500">*</span>
-                      </Label>
+                      <FieldLabel htmlFor="xpath-submit" infoId="dast.cfg.xpath_submit" labelClassName="text-zinc-300" required>
+                        XPath of submit button
+                      </FieldLabel>
                       <Input
                         id="xpath-submit"
                         placeholder="//button[@type='submit']"
@@ -598,9 +599,10 @@ export function DASTOptionsSidebar({
               </Accordion>
 
               <div className="space-y-2 w-full">
-                <Label className="text-zinc-300">Additional URLs to scan</Label>
+                <FieldLabel htmlFor="dast-additional-url" infoId="dast.cfg.additional_urls" labelClassName="text-zinc-300">Additional URLs to scan</FieldLabel>
                 <div className="flex gap-2 w-full">
                   <Input
+                    id="dast-additional-url"
                     placeholder="https://example.com/path"
                     className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 flex-1 min-w-0"
                     value={additionalUrlInput}
@@ -646,7 +648,7 @@ export function DASTOptionsSidebar({
 
               <div className="space-y-2 w-full">
                 <div className="flex flex-row items-center gap-2">
-                  <Label className="text-zinc-300">URL patterns</Label>
+                  <FieldLabel htmlFor="dast-url-pattern-mode" infoId="dast.cfg.url_patterns" labelClassName="text-zinc-300">URL patterns</FieldLabel>
                   <Dialog open={infoDialogOpen} onOpenChange={setInfoDialogOpen}>
                     <DialogTrigger asChild>
                       <Button
@@ -674,7 +676,8 @@ export function DASTOptionsSidebar({
                   value={urlPatternMode}
                   onValueChange={(v: UrlPatternMode) => setUrlPatternMode(v)}
                 >
-                  <SelectTrigger className="w-full bg-zinc-800 border-zinc-700 text-white cursor-pointer">
+                  {/* infotip-shared: the URL patterns label above carries the tip (its help dialog sits between) */}
+                  <SelectTrigger id="dast-url-pattern-mode" className="w-full bg-zinc-800 border-zinc-700 text-white cursor-pointer">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="bg-zinc-800 border-zinc-700 w-[280px]">
@@ -701,7 +704,9 @@ export function DASTOptionsSidebar({
                 {(urlPatternMode === "include" || urlPatternMode === "exclude") && (
                   <>
                     <div className="flex gap-2 w-full mt-2">
+                      {/* infotip-shared: a pattern of the URL patterns field above */}
                       <Input
+                        aria-label="URL pattern"
                         placeholder="/api/.* or path pattern"
                         className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 flex-1 min-w-0"
                         value={urlPatternInput}
@@ -755,7 +760,7 @@ export function DASTOptionsSidebar({
 
           {/* Estimate scan credits */}
           <div className="p-6">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-2">Estimate scan credits</h3>
+            <h3 className="text-sm font-semibold text-zinc-200 mb-2 flex items-center gap-1">Estimate scan credits <InfoTip id="dast.cfg.estimate" /></h3>
             <Button
               variant="ghost"
               size="sm"
@@ -796,7 +801,7 @@ export function DASTOptionsSidebar({
 
           {/* Run scan — allowed only after estimation process has been run this session */}
           <div className="p-6">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-2">Run scan</h3>
+            <h3 className="text-sm font-semibold text-zinc-200 mb-2 flex items-center gap-1">Run scan <InfoTip id="scan.cfg.run" /></h3>
             {canRunScan ? (
               <div className="space-y-2">
                 <Button
