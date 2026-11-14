@@ -97,7 +97,8 @@ def managed_key(out, facts: dict[str, Any], algorithm: Any, key_size: Any, now) 
     where = _where(facts)
     weak = weak_symmetric(text)
     if weak:
-        out.add("KEY_WEAK_SYMMETRIC", "High", f"{what} {where} uses {weak}, a broken or deprecated cipher".replace("  ", " "))
+        out.add("KEY_WEAK_SYMMETRIC", "High", f"{what} {where} uses {weak}, a broken or deprecated cipher".replace("  ", " "),
+                weak)
     if facts.get("role") == "Always Encrypted column master key" or not symmetric:
         C._key_rules(out, identifier, key_size, f"{what} {where}".strip())
     klass = str(facts.get("key_class") or "")
@@ -150,7 +151,7 @@ def db_encryption(out, facts: dict[str, Any], algorithm: Any, key_size: Any, now
         return None
     weak = weak_symmetric(_alg_text(algorithm, facts))
     if weak:
-        out.add("KEY_WEAK_SYMMETRIC", "High", f"{what} is encrypted with {weak}, a deprecated cipher")
+        out.add("KEY_WEAK_SYMMETRIC", "High", f"{what} is encrypted with {weak}, a deprecated cipher", weak)
     return False
 
 
@@ -197,7 +198,7 @@ def db_crypto_policy(out, facts: dict[str, Any], algorithm: Any, key_size: Any, 
                                           "security fixes")
     weak = sorted({w for w in (weak_symmetric(a) for a in C.fact_list(facts.get("sessions_nne_algorithms"))) if w})
     if weak:
-        out.add("WEAK_CIPHER", "High", f"Sessions use Oracle native network encryption with {', '.join(weak)}")
+        out.add("WEAK_CIPHER", "High", f"Sessions use Oracle native network encryption with {', '.join(weak)}", weak)
     return None
 
 
@@ -215,7 +216,8 @@ def ca_authority(out, facts: dict[str, Any], algorithm: Any, key_size: Any, now)
     weak = _weak_hash(facts.get("hash_algorithm") or facts.get("signature_algorithm"))
     if weak:
         out.add("CA_WEAK_SIGNING", "Critical" if weak == "MD5" else "High",
-                f"The CA signs certificates and CRLs with {weak} ({facts.get('hash_algorithm') or facts.get('signature_algorithm')})")
+                f"The CA signs certificates and CRLs with {weak} ({facts.get('hash_algorithm') or facts.get('signature_algorithm')})",
+                [weak, facts.get("hash_algorithm") or facts.get("signature_algorithm")])
     if facts.get("san_from_request_attributes") is True:
         esc6 = ("The CA takes subject alternative names from request attributes (EDITF_ATTRIBUTESUBJECTALTNAME2) for "
                 "every template (AD CS ESC6 pattern)")
@@ -261,7 +263,8 @@ def ca_template(out, facts: dict[str, Any], algorithm: Any, key_size: Any, now) 
             out.add("CA_ALLOWS_WEAK_KEY", "High", f"{name} issues certificates for {bits}-bit EC keys")
     weak = _weak_hash(facts.get("signature_hash") or facts.get("signature_algorithm"))
     if weak:
-        out.add("CA_WEAK_SIGNING", "Critical" if weak == "MD5" else "High", f"{name} signs issued certificates with {weak}")
+        out.add("CA_WEAK_SIGNING", "Critical" if weak == "MD5" else "High", f"{name} signs issued certificates with {weak}",
+                [weak, facts.get("signature_hash") or facts.get("signature_algorithm")])
     acl_read = facts.get("acl_status") == "read"
     if facts.get("allow_any_name") is True:
         out.add("CA_ALLOWS_ANY_NAME", "Medium", f"{name} issues certificates for any name the requester asks for "

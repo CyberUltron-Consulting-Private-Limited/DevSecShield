@@ -1,0 +1,1549 @@
+{
+ "_about": "Regulatory clauses per KB finding code (#269). Hand-written and reviewed: one row per code. 'clauses' are the clauses the finding always breaks (or whose obligation it always triggers, e.g. the post-quantum migration clauses for quantum-vulnerable public-key cryptography, CERT-In 8.4.1.6 VEX for a published vulnerability); 'rules' add clauses only when the asset's evidence matches 'match' (case-insensitive), e.g. TDEA only when Triple DES is named. The evidence is algorithm names only (#289): the algorithms the classifier flagged for the code (classify._Out algorithms) and the asset's algorithm, never its name, location or a sentence; when no algorithm was recorded every rule's clauses are cited with a note saying so. 'match_from' reads the pattern (a regex or a set of names) from the classifier source (path:NAME) instead of repeating it; 'unless' excludes names that match it. 'notes' attach an explanation to one clause of the row. A code that breaks no clause of a framework is not cited under it. Clause keys are those of kb_compliance.CLAUSES. build_kb.py copies clauses and rules (match, clauses) into each entry as 'clauses' / 'clause_rules', and fails on a missing or extra row, an unknown clause key, a row without a basis, or a rule whose pattern does not match its example.",
+ "node": {
+  "CA_ALLOWS_ANY_NAME": {
+   "clauses": [],
+   "basis": "no clause of the five frameworks in the knowledge base covers authentication policy or access control of this kind; the RBI cryptographic-controls paragraphs govern algorithm strength, not who may connect",
+   "rules": []
+  },
+  "CA_ALLOWS_WEAK_KEY": {
+   "clauses": [
+    "nist-800-131a-below-112-bit",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140"
+   ],
+   "basis": "the CA issues certificates for RSA < 2048 / EC < 224 keys: below 112-bit security (SP 800-131A) and not a strong key length (RBI)",
+   "rules": []
+  },
+  "CA_LONG_VALIDITY": {
+   "clauses": [],
+   "basis": "validity length is not covered by a clause in the knowledge base (SEBI PR.DS.S4 asks for timely renewal, which a long validity does not break)",
+   "rules": []
+  },
+  "CA_TEMPLATE_WRITABLE": {
+   "clauses": [],
+   "basis": "no clause of the five frameworks in the knowledge base covers authentication policy or access control of this kind; the RBI cryptographic-controls paragraphs govern algorithm strength, not who may connect",
+   "rules": []
+  },
+  "CA_WEAK_SIGNING": {
+   "clauses": [
+    "certin-bom-8.4.2.2",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140"
+   ],
+   "basis": "the CA signs certificate chains with MD5 or SHA-1, a deprecated algorithm (CERT-In 8.4.2.2 approved certificate chains; RBI); SHA-1 signature generation only when the evidence names SHA-1",
+   "rules": [
+    {
+     "match": "sha-?1(?![0-9])|ssh-rsa(?![a-z0-9-])",
+     "clauses": [
+      "nist-800-131a-sha1-signatures"
+     ],
+     "example": "SHA-1 (sha1WithRSAEncryption)",
+     "basis": "the CA generates SHA-1 signatures: SP 800-131A Table 8 disallows SHA-1 digital signature generation"
+    }
+   ]
+  },
+  "CBC_ACCEPTED": {
+   "clauses": [
+    "certin-bom-8.4.2.2",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140"
+   ],
+   "basis": "CBC-mode (MAC-then-encrypt) TLS suites are weak cipher suites (CERT-In 8.4.2.2, RBI); the algorithm itself is AES, so no NIST or SEBI algorithm clause",
+   "rules": []
+  },
+  "CBC_ONLY": {
+   "clauses": [
+    "certin-bom-8.4.2.2",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140"
+   ],
+   "basis": "as CBC_ACCEPTED, with no AEAD alternative offered",
+   "rules": []
+  },
+  "CERT_CHAIN_EXTRA_EXPIRED": {
+   "clauses": [],
+   "basis": "current clients still build a valid path (the expired cross-sign is ignored), so no clause is broken; old clients that fail are covered by the CHAIN codes",
+   "rules": []
+  },
+  "CERT_EXPIRED": {
+   "clauses": [
+    "sebi-pr-ds-s4-item-5",
+    "certin-gov-6.1.7"
+   ],
+   "basis": "an expired certificate was not renewed in time (SEBI PR.DS.S4 item 5) and is not a valid TLS certificate (CERT-In 6.1.7)",
+   "rules": []
+  },
+  "CERT_EXPIRES_30D": {
+   "clauses": [
+    "sebi-pr-ds-s4-item-5"
+   ],
+   "basis": "renewal is due (SEBI PR.DS.S4 item 5); the certificate is still valid, so CERT-In 6.1.7 is not broken yet",
+   "rules": []
+  },
+  "CERT_NOT_YET_VALID": {
+   "clauses": [
+    "certin-gov-6.1.7"
+   ],
+   "basis": "a certificate served before its notBefore date is not a valid TLS certificate (CERT-In 6.1.7)",
+   "rules": []
+  },
+  "CERT_REVOKED": {
+   "clauses": [
+    "certin-gov-6.1.7"
+   ],
+   "basis": "a revoked certificate is not a valid TLS certificate (CERT-In 6.1.7)",
+   "rules": []
+  },
+  "CERT_SELF_SHA1": {
+   "clauses": [],
+   "basis": "informational: a self-signature on a trust anchor is never verified, so no SHA-1 signature is relied on and no clause is broken",
+   "rules": []
+  },
+  "CERT_SELF_SIGNED": {
+   "clauses": [
+    "certin-gov-6.1.7"
+   ],
+   "basis": "a certificate the clients do not trust is not a valid TLS certificate (CERT-In 6.1.7)",
+   "rules": []
+  },
+  "CERT_UNEXPECTED_CA": {
+   "clauses": [],
+   "basis": "CA allow-listing is team policy; no clause in the knowledge base requires it",
+   "rules": []
+  },
+  "CERT_UNUSED": {
+   "clauses": [],
+   "basis": "key or certificate lifecycle hygiene (rotation, deletion protection, inventory): no clause in the knowledge base requires it, so it is not cited under any framework",
+   "rules": []
+  },
+  "CERT_WILDCARD_SPRAWL": {
+   "clauses": [],
+   "basis": "key or certificate lifecycle hygiene (rotation, deletion protection, inventory): no clause in the knowledge base requires it, so it is not cited under any framework",
+   "rules": []
+  },
+  "CHAIN_INCOMPLETE": {
+   "clauses": [
+    "certin-bom-8.4.2.2"
+   ],
+   "basis": "CERT-In 8.4.2.2 asks for strict TLS configurations that specify the certificate chains: a server that does not send its intermediates breaks it",
+   "rules": []
+  },
+  "DB_10G_VERIFIER": {
+   "clauses": [
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140"
+   ],
+   "basis": "a DES-based password verifier is a deprecated algorithm for an authentication purpose (RBI cryptographic controls)",
+   "rules": []
+  },
+  "DB_CLEARTEXT_PW": {
+   "clauses": [
+    "sebi-pr-ds-standard-1",
+    "sebi-annexure-i",
+    "rbi-cb-2026-para-106",
+    "certin-gov-6.2.7"
+   ],
+   "basis": "the password crosses the network unencrypted: data in transit not protected",
+   "rules": []
+  },
+  "DB_EOL_VERSION": {
+   "clauses": [],
+   "basis": "an end-of-life or bundled component is not a vulnerability record: CERT-In 8.4.1.6 (VEX) applies only once a vulnerability is published, and no other clause in the knowledge base covers support status",
+   "rules": []
+  },
+  "DB_LEGACY_NNE": {
+   "clauses": [
+    "certin-gov-6.2.7"
+   ],
+   "basis": "the data is encrypted (AES under NNE) but not over TLS: CERT-In 6.2.7 asks for SSL/TLS only; SEBI and RBI ask for strong transport encryption, which NNE with AES is",
+   "rules": []
+  },
+  "DB_LEGACY_PW_HASH": {
+   "clauses": [
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140"
+   ],
+   "basis": "a SHA-1 based password hash is a deprecated algorithm for an authentication purpose",
+   "rules": []
+  },
+  "DB_LOGIN_NO_POLICY": {
+   "clauses": [],
+   "basis": "no clause of the five frameworks in the knowledge base covers authentication policy or access control of this kind; the RBI cryptographic-controls paragraphs govern algorithm strength, not who may connect",
+   "rules": []
+  },
+  "DB_MD5_ACCEPTED": {
+   "clauses": [
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140"
+   ],
+   "basis": "MD5 password authentication is a deprecated algorithm for an authentication purpose",
+   "rules": []
+  },
+  "DB_MD5_DEFAULT": {
+   "clauses": [
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140"
+   ],
+   "basis": "new passwords hashed with MD5, a deprecated algorithm for an authentication purpose",
+   "rules": []
+  },
+  "DB_NATIVE_PW": {
+   "clauses": [
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140"
+   ],
+   "basis": "mysql_native_password (SHA-1 based, deprecated by MySQL) for an authentication purpose",
+   "rules": []
+  },
+  "DB_NO_AUTH": {
+   "clauses": [],
+   "basis": "no clause of the five frameworks in the knowledge base covers authentication policy or access control of this kind; the RBI cryptographic-controls paragraphs govern algorithm strength, not who may connect",
+   "rules": []
+  },
+  "DB_NO_TDE": {
+   "clauses": [],
+   "basis": "only database-level encryption is visible; the volume may be encrypted, so the at-rest clauses are not shown to be broken",
+   "rules": []
+  },
+  "DB_NO_TLS": {
+   "clauses": [
+    "sebi-pr-ds-standard-1",
+    "sebi-annexure-i",
+    "rbi-cb-2026-para-106",
+    "certin-gov-6.2.7"
+   ],
+   "basis": "the database accepts plaintext connections only: data in transit not protected",
+   "rules": []
+  },
+  "DB_OLD_PASSWORD": {
+   "clauses": [
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140"
+   ],
+   "basis": "the pre-4.1 MySQL hash is a broken algorithm for an authentication purpose",
+   "rules": []
+  },
+  "DB_PLAINTEXT_PW": {
+   "clauses": [
+    "sebi-pr-ds-standard-1",
+    "sebi-pr-ds-s1-s3-1a",
+    "rbi-cb-2026-para-106",
+    "certin-gov-7.1"
+   ],
+   "basis": "passwords stored unhashed: sensitive data at rest without protection",
+   "rules": []
+  },
+  "DB_TDE_OFF": {
+   "clauses": [],
+   "basis": "only database-level encryption is visible; the volume or managed storage may be encrypted, so the at-rest clauses are not shown to be broken",
+   "rules": []
+  },
+  "DB_TLS_MODE": {
+   "clauses": [
+    "sebi-pr-ds-standard-1",
+    "sebi-annexure-i",
+    "rbi-cb-2026-para-106",
+    "certin-gov-6.2.7"
+   ],
+   "basis": "the TLS mode allows plaintext connections: data in transit not protected",
+   "rules": []
+  },
+  "DB_TLS_OPTIONAL": {
+   "clauses": [
+    "sebi-pr-ds-standard-1",
+    "sebi-annexure-i",
+    "rbi-cb-2026-para-106",
+    "certin-gov-6.2.7"
+   ],
+   "basis": "TLS is not required, so plaintext connections are accepted",
+   "rules": []
+  },
+  "DB_TRUST": {
+   "clauses": [],
+   "basis": "no clause of the five frameworks in the knowledge base covers authentication policy or access control of this kind; the RBI cryptographic-controls paragraphs govern algorithm strength, not who may connect",
+   "rules": []
+  },
+  "DB_WEAK_HASH": {
+   "clauses": [
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140"
+   ],
+   "basis": "MD5 password hashing is a deprecated algorithm for an authentication purpose",
+   "rules": []
+  },
+  "DH_LT_2048": {
+   "clauses": [
+    "nist-800-131a-below-112-bit",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140"
+   ],
+   "basis": "Diffie-Hellman below 2048 bits: key agreement below 112-bit security (SP 800-131A); not a strong key length (RBI)",
+   "rules": []
+  },
+  "DISK_CBC": {
+   "clauses": [],
+   "basis": "the volume is encrypted with AES; CBC instead of XTS is weaker practice but breaks no clause in the knowledge base",
+   "rules": []
+  },
+  "DISK_PROTECTION_OFF": {
+   "clauses": [
+    "sebi-pr-ds-standard-1",
+    "sebi-pr-ds-s1-s3-1a",
+    "rbi-cb-2026-para-106",
+    "certin-gov-7.1"
+   ],
+   "basis": "with BitLocker suspended the volume key sits unprotected on the disk, so the data is effectively not encrypted at rest",
+   "rules": []
+  },
+  "DISK_UNENCRYPTED": {
+   "clauses": [
+    "sebi-pr-ds-standard-1",
+    "sebi-pr-ds-s1-s3-1a",
+    "rbi-cb-2026-para-106",
+    "certin-gov-7.1"
+   ],
+   "basis": "no encryption at rest",
+   "rules": []
+  },
+  "DISK_XTS_128": {
+   "clauses": [
+    "cnsa-2.0"
+   ],
+   "basis": "AES-128 is below the AES-256 CNSA 2.0 requires; the other post-quantum clauses are about public-key cryptography and do not apply",
+   "rules": []
+  },
+  "DOTNET_WEAK_TLS": {
+   "clauses": [
+    "certin-bom-8.4.2.2",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140",
+    "sebi-annexure-i"
+   ],
+   "basis": ".NET may offer SSL 3.0 / TLS 1.0 and RC4: deprecated protocols and weak suites, not strong transport encryption",
+   "rules": []
+  },
+  "DOWNGRADE": {
+   "clauses": [
+    "certin-bom-8.4.2.2"
+   ],
+   "basis": "a downgradeable handshake is not a strict TLS configuration (CERT-In 8.4.2.2 session parameters)",
+   "rules": []
+  },
+  "DSA": {
+   "clauses": [
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140"
+   ],
+   "basis": "DSA is no longer approved for signature generation (FIPS 186-5): a deprecated algorithm (RBI); the 112-bit clause is not cited because this code does not carry the key size",
+   "rules": []
+  },
+  "EBS_DEFAULT_OFF": {
+   "clauses": [],
+   "basis": "a default setting: volumes may still be encrypted, so the at-rest clauses are not shown to be broken",
+   "rules": []
+  },
+  "EC_LT_224": {
+   "clauses": [
+    "nist-800-131a-below-112-bit",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140"
+   ],
+   "basis": "EC below 224 bits: below 112-bit security (SP 800-131A); not a strong key length (RBI)",
+   "rules": []
+  },
+  "GLUE_CATALOG_UNENCRYPTED": {
+   "clauses": [
+    "sebi-pr-ds-standard-1",
+    "sebi-pr-ds-s1-s3-1a",
+    "rbi-cb-2026-para-106",
+    "certin-gov-7.1"
+   ],
+   "basis": "catalog metadata (including connection properties) not encrypted at rest",
+   "rules": []
+  },
+  "GLUE_JDBC_NO_TLS": {
+   "clauses": [
+    "sebi-pr-ds-standard-1",
+    "sebi-annexure-i",
+    "rbi-cb-2026-para-106",
+    "certin-gov-6.2.7"
+   ],
+   "basis": "Glue may connect to the database without TLS: data in transit not protected",
+   "rules": []
+  },
+  "GLUE_PLAINTEXT_PASSWORD": {
+   "clauses": [
+    "sebi-pr-ds-standard-1",
+    "sebi-pr-ds-s1-s3-1a",
+    "rbi-cb-2026-para-106",
+    "certin-gov-7.1"
+   ],
+   "basis": "a database password stored unencrypted: sensitive data at rest without protection (a password, not an encryption key, so not SEBI Annexure-H item 5)",
+   "rules": []
+  },
+  "IKEV1_ENABLED": {
+   "clauses": [
+    "certin-bom-8.4.2.2",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140"
+   ],
+   "basis": "IKEv1 is deprecated (RFC 9395): a deprecated protocol (CERT-In 8.4.2.2, RBI)",
+   "rules": []
+  },
+  "IKE_AGGRESSIVE": {
+   "clauses": [
+    "certin-bom-8.4.2.2",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140"
+   ],
+   "basis": "Aggressive Mode with a PSK exposes an offline-crackable hash: a protocol configuration demonstrated to be insecure",
+   "rules": []
+  },
+  "IKE_NO_PQ": {
+   "clauses": [
+    "nist-ir-8547",
+    "cnsa-2.0",
+    "sebi-box-item-7",
+    "sebi-id-ra-standard-2",
+    "certin-bom-8.5.1"
+   ],
+   "basis": "classical Diffie-Hellman only: quantum-vulnerable key establishment",
+   "rules": []
+  },
+  "IKE_WEAK_DH": {
+   "clauses": [
+    "certin-bom-8.4.2.2",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140"
+   ],
+   "basis": "weak or suspect DH groups (RFC 8247 MUST NOT / SHOULD NOT); below 112-bit security only for MODP-768/1024/1536 and ECP-192 (the RFC 5114 2048-bit groups are 112-bit)",
+   "rules": [
+    {
+     "match": "modp-?(768|1024|1536)(?![0-9])|ecp-?192(?![0-9])",
+     "clauses": [
+      "nist-800-131a-below-112-bit"
+     ],
+     "example": "MODP-1024",
+     "basis": "the evidence names a group below 112-bit security: SP 800-131A disallows key agreement below 112 bits"
+    }
+   ]
+  },
+  "IKE_WEAK_ENCR": {
+   "clauses": [
+    "certin-bom-8.4.2.2",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140"
+   ],
+   "basis": "every algorithm the classifier flags for this code is in node_net.WEAK_ENCR (DES, 3DES, Blowfish, IDEA, CAST, NULL; RFC 8247 MUST NOT / SHOULD NOT): a deprecated algorithm (CERT-In, RBI); SEBI H-5 for an encryption algorithm (not NULL); TDEA only when 3DES is named",
+   "rules": [
+    {
+     "match_from": "classify_ext/node_net.py:WEAK_ENCR",
+     "unless": "^null(-\\d+)?$",
+     "clauses": [
+      "sebi-annexure-h-5"
+     ],
+     "example": "IDEA",
+     "basis": "a weak encryption transform, read from the classifier's own list (node_net.WEAK_ENCR): SEBI Annexure-H item 5 asks for strong encryption algorithms wherever encryption is implemented, so NULL (no encryption) and integrity algorithms are not cited under it"
+    },
+    {
+     "match": "3des|(?<![a-z])des[23](?![a-z0-9])|des[-_]?ede|des-cbc3|triple[-_ ]?des|tdea|desede",
+     "clauses": [
+      "nist-800-131a-tdea",
+      "sebi-annexure-h-5"
+     ],
+     "example": "3des-cbc",
+     "basis": "the evidence names Triple DES (TDEA): SP 800-131A Table 1 disallows three-key TDEA for encryption after 2023, and SEBI asks for strong encryption algorithms"
+    }
+   ]
+  },
+  "IKE_WEAK_INTEG": {
+   "clauses": [],
+   "basis": "HMAC-SHA-1 is still allowed (RFC 8247 MUST-; SP 800-131A accepts HMAC-SHA-1); only MD5 is deprecated, so clauses are cited only when the evidence names MD5",
+   "rules": [
+    {
+     "match": "md5|des-mac",
+     "clauses": [
+      "certin-bom-8.4.2.2",
+      "rbi-md-2023-para-16",
+      "rbi-cb-2026-para-140"
+     ],
+     "example": "HMAC-MD5",
+     "basis": "MD5-based integrity or PRF in IKE is MUST NOT (RFC 8247), as node_net._md5_class decides: a deprecated algorithm"
+    }
+   ]
+  },
+  "IPSEC_WEAK_TRANSFORM": {
+   "clauses": [],
+   "basis": "the code covers the ESP transforms the classifier flags: node_net.WEAK_ENCR encryption, MD5 / DES-MAC integrity and node_net.WEAK_GROUPS PFS groups (deprecated, RFC 8221 / RFC 8247: Medium), and HMAC-SHA-1 alone (still allowed, RFC 8221 MUST-: Low, no clause); clauses follow the transforms the evidence names",
+   "rules": [
+    {
+     "match_from": "classify_ext/node_net.py:WEAK_ENCR",
+     "clauses": [
+      "certin-bom-8.4.2.2",
+      "rbi-md-2023-para-16",
+      "rbi-cb-2026-para-140"
+     ],
+     "example": "CAST",
+     "basis": "a deprecated ESP encryption transform, read from the classifier's own list (node_net.WEAK_ENCR)"
+    },
+    {
+     "match": "md5|des-mac",
+     "clauses": [
+      "certin-bom-8.4.2.2",
+      "rbi-md-2023-para-16",
+      "rbi-cb-2026-para-140"
+     ],
+     "example": "HMAC-MD5",
+     "basis": "MD5-based or DES-MAC integrity (RFC 8221 MUST NOT), as node_net._md5_class decides"
+    },
+    {
+     "match_from": "classify_ext/node_net.py:WEAK_GROUPS",
+     "clauses": [
+      "certin-bom-8.4.2.2",
+      "rbi-md-2023-para-16",
+      "rbi-cb-2026-para-140"
+     ],
+     "example": "PFS MODP-1024",
+     "basis": "a weak PFS group, read from the classifier's own list (node_net.WEAK_GROUPS)"
+    },
+    {
+     "match": "3des|(?<![a-z])des[23](?![a-z0-9])|des[-_]?ede|des-cbc3|triple[-_ ]?des|tdea|desede",
+     "clauses": [
+      "nist-800-131a-tdea",
+      "sebi-annexure-h-5"
+     ],
+     "example": "3des-cbc",
+     "basis": "the evidence names Triple DES (TDEA): SP 800-131A Table 1 disallows three-key TDEA for encryption after 2023, and SEBI asks for strong encryption algorithms"
+    },
+    {
+     "match_from": "classify_ext/node_net.py:WEAK_ENCR",
+     "unless": "^null(-\\d+)?$",
+     "clauses": [
+      "sebi-annexure-h-5"
+     ],
+     "example": "IDEA",
+     "basis": "a weak encryption transform, read from the classifier's own list (node_net.WEAK_ENCR): SEBI Annexure-H item 5 asks for strong encryption algorithms wherever encryption is implemented, so NULL (no encryption) and integrity algorithms are not cited under it"
+    },
+    {
+     "match": "modp-?(768|1024|1536)(?![0-9])|ecp-?192(?![0-9])",
+     "clauses": [
+      "nist-800-131a-below-112-bit"
+     ],
+     "example": "PFS MODP-1024",
+     "basis": "a PFS group below 112-bit security (SP 800-131A)"
+    }
+   ]
+  },
+  "KEYSTORE_JKS": {
+   "clauses": [
+    "sebi-annexure-h-5"
+   ],
+   "basis": "JKS protects the stored keys with a weak integrity scheme: not a right methodology for storing encryption keys (SEBI Annexure-H item 5)",
+   "rules": []
+  },
+  "KEY_COMPROMISED": {
+   "clauses": [],
+   "basis": "key or certificate lifecycle hygiene (rotation, deletion protection, inventory): no clause in the knowledge base requires it, so it is not cited under any framework",
+   "rules": []
+  },
+  "KEY_EXTRACTABLE": {
+   "clauses": [
+    "sebi-annexure-h-5"
+   ],
+   "basis": "the key can leave the HSM / key manager: key storage methodology (SEBI Annexure-H item 5)",
+   "rules": []
+  },
+  "KEY_IN_CONFIGMAP": {
+   "clauses": [
+    "sebi-annexure-h-5"
+   ],
+   "basis": "a private key in plain text in a ConfigMap: key storage methodology",
+   "rules": []
+  },
+  "KEY_IN_DOCUMENT": {
+   "clauses": [
+    "sebi-annexure-h-5"
+   ],
+   "basis": "a private key embedded in a document or script: key storage methodology",
+   "rules": []
+  },
+  "KEY_NO_ROTATION": {
+   "clauses": [],
+   "basis": "key or certificate lifecycle hygiene (rotation, deletion protection, inventory): no clause in the knowledge base requires it, so it is not cited under any framework",
+   "rules": []
+  },
+  "KEY_PLAINTEXT_EXPORT": {
+   "clauses": [
+    "sebi-annexure-h-5"
+   ],
+   "basis": "the key can be read out in plain text: key storage methodology",
+   "rules": []
+  },
+  "KEY_READABLE": {
+   "clauses": [
+    "sebi-annexure-h-5"
+   ],
+   "basis": "an unencrypted private key readable without root: key storage methodology",
+   "rules": []
+  },
+  "KEY_WEAK_SYMMETRIC": {
+   "clauses": [
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140",
+    "sebi-annexure-h-5"
+   ],
+   "basis": "a stored key or data encrypted with a broken or deprecated cipher (RBI; SEBI strong encryption algorithms); TDEA only when the evidence names Triple DES",
+   "rules": [
+    {
+     "match": "3des|(?<![a-z])des[23](?![a-z0-9])|des[-_]?ede|des-cbc3|triple[-_ ]?des|tdea|desede",
+     "clauses": [
+      "nist-800-131a-tdea",
+      "sebi-annexure-h-5"
+     ],
+     "example": "3des-cbc",
+     "basis": "the evidence names Triple DES (TDEA): SP 800-131A Table 1 disallows three-key TDEA for encryption after 2023, and SEBI asks for strong encryption algorithms"
+    }
+   ]
+  },
+  "KEY_WORLD_READABLE": {
+   "clauses": [
+    "sebi-annexure-h-5"
+   ],
+   "basis": "an unencrypted private key readable by every user: key storage methodology",
+   "rules": []
+  },
+  "KMS_KEY_MATERIAL_EXPIRES": {
+   "clauses": [],
+   "basis": "key or certificate lifecycle hygiene (rotation, deletion protection, inventory): no clause in the knowledge base requires it, so it is not cited under any framework",
+   "rules": []
+  },
+  "KMS_KEY_NO_MATERIAL": {
+   "clauses": [],
+   "basis": "key or certificate lifecycle hygiene (rotation, deletion protection, inventory): no clause in the knowledge base requires it, so it is not cited under any framework",
+   "rules": []
+  },
+  "KMS_NO_ROTATION": {
+   "clauses": [],
+   "basis": "key or certificate lifecycle hygiene (rotation, deletion protection, inventory): no clause in the knowledge base requires it, so it is not cited under any framework",
+   "rules": []
+  },
+  "KMS_PENDING_DELETION": {
+   "clauses": [],
+   "basis": "key or certificate lifecycle hygiene (rotation, deletion protection, inventory): no clause in the knowledge base requires it, so it is not cited under any framework",
+   "rules": []
+  },
+  "KV_NO_PURGE_PROTECTION": {
+   "clauses": [],
+   "basis": "key or certificate lifecycle hygiene (rotation, deletion protection, inventory): no clause in the knowledge base requires it, so it is not cited under any framework",
+   "rules": []
+  },
+  "KV_PUBLIC_NETWORK": {
+   "clauses": [],
+   "basis": "network reachability of the vault; access still needs authorisation, so no key storage clause is shown to be broken",
+   "rules": []
+  },
+  "KV_SOFT_DELETE_OFF": {
+   "clauses": [],
+   "basis": "key or certificate lifecycle hygiene (rotation, deletion protection, inventory): no clause in the knowledge base requires it, so it is not cited under any framework",
+   "rules": []
+  },
+  "LIB_DELETED_IN_USE": {
+   "clauses": [],
+   "basis": "an end-of-life or bundled component is not a vulnerability record: CERT-In 8.4.1.6 (VEX) applies only once a vulnerability is published, and no other clause in the knowledge base covers support status",
+   "rules": []
+  },
+  "LIB_EOL": {
+   "clauses": [],
+   "basis": "an end-of-life or bundled component is not a vulnerability record: CERT-In 8.4.1.6 (VEX) applies only once a vulnerability is published, and no other clause in the knowledge base covers support status",
+   "rules": []
+  },
+  "LIB_KNOWN_CVE": {
+   "clauses": [
+    "certin-bom-8.4.1.6"
+   ],
+   "basis": "a crypto component with a published vulnerability: CERT-In 8.4.1.6 asks for a VEX status for it",
+   "rules": []
+  },
+  "LIB_STATIC": {
+   "clauses": [],
+   "basis": "an end-of-life or bundled component is not a vulnerability record: CERT-In 8.4.1.6 (VEX) applies only once a vulnerability is published, and no other clause in the knowledge base covers support status",
+   "rules": []
+  },
+  "LINKERD_UNAUTHENTICATED_SERVER": {
+   "clauses": [
+    "sebi-pr-ds-standard-1",
+    "sebi-annexure-i",
+    "rbi-cb-2026-para-106",
+    "certin-gov-6.2.7"
+   ],
+   "basis": "clients without a mesh TLS identity are admitted, so their traffic is not mTLS-protected in transit",
+   "rules": []
+  },
+  "LUKS1": {
+   "clauses": [],
+   "basis": "the volume is encrypted; the PBKDF2 key-slot format is weaker practice but breaks no clause in the knowledge base",
+   "rules": []
+  },
+  "MESH_DR_TLS_DISABLED": {
+   "clauses": [
+    "sebi-pr-ds-standard-1",
+    "sebi-annexure-i",
+    "rbi-cb-2026-para-106",
+    "certin-gov-6.2.7"
+   ],
+   "basis": "sidecars send plaintext: data in transit not protected",
+   "rules": []
+  },
+  "MESH_MTLS_OFF": {
+   "clauses": [
+    "sebi-pr-ds-standard-1",
+    "sebi-annexure-i",
+    "rbi-cb-2026-para-106",
+    "certin-gov-6.2.7"
+   ],
+   "basis": "mTLS off: data in transit not protected",
+   "rules": []
+  },
+  "MESH_MTLS_PERMISSIVE": {
+   "clauses": [
+    "sebi-pr-ds-standard-1",
+    "sebi-annexure-i",
+    "rbi-cb-2026-para-106",
+    "certin-gov-6.2.7"
+   ],
+   "basis": "plaintext still accepted",
+   "rules": []
+  },
+  "MIN_SSLv2": {
+   "clauses": [
+    "certin-bom-8.4.2.2",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140",
+    "sebi-annexure-i"
+   ],
+   "basis": "a deprecated protocol version (RFC 6176 / 7568 / 8996) is allowed: not a strict TLS configuration (CERT-In 8.4.2.2), not strong transport encryption (SEBI Annexure-I), a deprecated protocol (RBI)",
+   "rules": []
+  },
+  "MIN_SSLv3": {
+   "clauses": [
+    "certin-bom-8.4.2.2",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140",
+    "sebi-annexure-i"
+   ],
+   "basis": "a deprecated protocol version (RFC 6176 / 7568 / 8996) is allowed: not a strict TLS configuration (CERT-In 8.4.2.2), not strong transport encryption (SEBI Annexure-I), a deprecated protocol (RBI)",
+   "rules": []
+  },
+  "MIN_TLS10": {
+   "clauses": [
+    "certin-bom-8.4.2.2",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140",
+    "sebi-annexure-i"
+   ],
+   "basis": "a deprecated protocol version (RFC 6176 / 7568 / 8996) is allowed: not a strict TLS configuration (CERT-In 8.4.2.2), not strong transport encryption (SEBI Annexure-I), a deprecated protocol (RBI)",
+   "rules": []
+  },
+  "MIN_TLS11": {
+   "clauses": [
+    "certin-bom-8.4.2.2",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140",
+    "sebi-annexure-i"
+   ],
+   "basis": "a deprecated protocol version (RFC 6176 / 7568 / 8996) is allowed: not a strict TLS configuration (CERT-In 8.4.2.2), not strong transport encryption (SEBI Annexure-I), a deprecated protocol (RBI)",
+   "rules": []
+  },
+  "MODBUS_PLAINTEXT": {
+   "clauses": [
+    "sebi-pr-ds-standard-1",
+    "sebi-annexure-i",
+    "rbi-cb-2026-para-106",
+    "certin-gov-6.2.7"
+   ],
+   "basis": "Modbus/TCP has no encryption: data in transit not protected",
+   "rules": []
+  },
+  "NO_FALLBACK_SCSV": {
+   "clauses": [
+    "certin-bom-8.4.2.2"
+   ],
+   "basis": "the fallback signal is ignored: not a strict TLS configuration (CERT-In 8.4.2.2 session parameters)",
+   "rules": []
+  },
+  "NO_PQ_KEX": {
+   "clauses": [
+    "nist-ir-8547",
+    "cnsa-2.0",
+    "sebi-box-item-7",
+    "sebi-id-ra-standard-2",
+    "certin-bom-8.5.1"
+   ],
+   "basis": "classical key exchange only: quantum-vulnerable key establishment",
+   "rules": []
+  },
+  "NO_TLS": {
+   "clauses": [
+    "sebi-pr-ds-standard-1",
+    "sebi-annexure-i",
+    "rbi-cb-2026-para-106",
+    "certin-gov-6.2.7"
+   ],
+   "basis": "plaintext only: data in transit not protected",
+   "rules": []
+  },
+  "NO_TLS12": {
+   "clauses": [
+    "certin-bom-8.4.2.2",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140",
+    "sebi-annexure-i"
+   ],
+   "basis": "only deprecated protocol versions are offered",
+   "rules": []
+  },
+  "OPCUA_ANON": {
+   "clauses": [],
+   "basis": "no clause of the five frameworks in the knowledge base covers authentication policy or access control of this kind; the RBI cryptographic-controls paragraphs govern algorithm strength, not who may connect",
+   "rules": []
+  },
+  "OPCUA_DEPRECATED_POLICY": {
+   "clauses": [
+    "certin-bom-8.4.2.2",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140",
+    "nist-800-131a-sha1-signatures"
+   ],
+   "basis": "Basic128Rsa15 and Basic256 (deprecated in OPC UA 1.04) both sign with RSA-SHA1 (SP 800-131A Table 8); PKCS#1 v1.5 key transport only for Basic128Rsa15",
+   "rules": [
+    {
+     "match": "basic128rsa15",
+     "clauses": [
+      "nist-800-131a-pkcs1-v1_5"
+     ],
+     "example": "Basic128Rsa15",
+     "basis": "Basic128Rsa15 uses RSA PKCS#1 v1.5 key transport, disallowed by SP 800-131A Sec. 6 Table 5"
+    }
+   ]
+  },
+  "OPCUA_NONE_POLICY": {
+   "clauses": [
+    "sebi-pr-ds-standard-1",
+    "sebi-annexure-i",
+    "rbi-cb-2026-para-106",
+    "certin-gov-6.2.7"
+   ],
+   "basis": "messages neither signed nor encrypted: data in transit not protected",
+   "rules": []
+  },
+  "OPCUA_USERNAME_PLAINTEXT": {
+   "clauses": [
+    "sebi-pr-ds-standard-1",
+    "sebi-annexure-i",
+    "rbi-cb-2026-para-106",
+    "certin-gov-6.2.7"
+   ],
+   "basis": "the password is sent unencrypted",
+   "rules": []
+  },
+  "OPENSSL_ENC_WEAK_KDF": {
+   "clauses": [
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140"
+   ],
+   "basis": "EVP_BytesToKey (one MD5/SHA-256 round) is a key derivation demonstrated to be weak (RBI cryptographic controls for processing of data)",
+   "rules": []
+  },
+  "PLAINTEXT_LISTENER": {
+   "clauses": [
+    "sebi-pr-ds-standard-1",
+    "sebi-annexure-i",
+    "rbi-cb-2026-para-106",
+    "certin-gov-6.2.7"
+   ],
+   "basis": "the application is also served over plaintext HTTP",
+   "rules": []
+  },
+  "POLICY_LEGACY": {
+   "clauses": [
+    "certin-bom-8.4.2.2",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140",
+    "nist-800-131a-sha1-signatures"
+   ],
+   "basis": "LEGACY re-enables TLS 1.0/1.1 and SHA-1 signatures host-wide: deprecated protocols and SHA-1 signature generation (SP 800-131A Table 8)",
+   "rules": []
+  },
+  "PROTO_SSLv2": {
+   "clauses": [
+    "certin-bom-8.4.2.2",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140",
+    "sebi-annexure-i"
+   ],
+   "basis": "a deprecated protocol version (RFC 6176 / 7568 / 8996) is negotiated: not a strict TLS configuration (CERT-In 8.4.2.2), not strong transport encryption (SEBI Annexure-I), a deprecated protocol (RBI)",
+   "rules": []
+  },
+  "PROTO_SSLv3": {
+   "clauses": [
+    "certin-bom-8.4.2.2",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140",
+    "sebi-annexure-i"
+   ],
+   "basis": "a deprecated protocol version (RFC 6176 / 7568 / 8996) is negotiated: not a strict TLS configuration (CERT-In 8.4.2.2), not strong transport encryption (SEBI Annexure-I), a deprecated protocol (RBI)",
+   "rules": []
+  },
+  "PROTO_TLS10": {
+   "clauses": [
+    "certin-bom-8.4.2.2",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140",
+    "sebi-annexure-i"
+   ],
+   "basis": "a deprecated protocol version (RFC 6176 / 7568 / 8996) is negotiated: not a strict TLS configuration (CERT-In 8.4.2.2), not strong transport encryption (SEBI Annexure-I), a deprecated protocol (RBI)",
+   "rules": []
+  },
+  "PROTO_TLS11": {
+   "clauses": [
+    "certin-bom-8.4.2.2",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140",
+    "sebi-annexure-i"
+   ],
+   "basis": "a deprecated protocol version (RFC 6176 / 7568 / 8996) is negotiated: not a strict TLS configuration (CERT-In 8.4.2.2), not strong transport encryption (SEBI Annexure-I), a deprecated protocol (RBI)",
+   "rules": []
+  },
+  "QUANTUM_VULNERABLE": {
+   "clauses": [
+    "nist-ir-8547",
+    "cnsa-2.0",
+    "sebi-box-item-7",
+    "sebi-id-ra-standard-2",
+    "certin-bom-8.5.1"
+   ],
+   "basis": "RSA / EC / DH public-key cryptography: the post-quantum migration clauses",
+   "rules": []
+  },
+  "RDP_NO_NLA": {
+   "clauses": [],
+   "basis": "no clause of the five frameworks in the knowledge base covers authentication policy or access control of this kind; the RBI cryptographic-controls paragraphs govern algorithm strength, not who may connect",
+   "rules": []
+  },
+  "RDP_NO_TLS": {
+   "clauses": [
+    "sebi-pr-ds-standard-1",
+    "sebi-annexure-i",
+    "rbi-cb-2026-para-106",
+    "certin-gov-6.2.7",
+    "certin-gov-4.5.7"
+   ],
+   "basis": "the legacy RDP security layer (RC4, no server certificate) instead of TLS for a remote connection to a server (CERT-In 4.5.7, 6.2.7; SEBI; RBI para 106)",
+   "rules": []
+  },
+  "RSA_LT_1024": {
+   "clauses": [
+    "nist-800-131a-below-112-bit",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140"
+   ],
+   "basis": "RSA below 1024 bits: below 112-bit security; not a strong key length",
+   "rules": []
+  },
+  "RSA_LT_2048": {
+   "clauses": [
+    "nist-800-131a-below-112-bit",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140"
+   ],
+   "basis": "RSA below 2048 bits: below 112-bit security (SP 800-131A); not a strong key length",
+   "rules": []
+  },
+  "SAML_METADATA_UNSIGNED": {
+   "clauses": [],
+   "basis": "metadata integrity is not covered by a clause in the knowledge base",
+   "rules": []
+  },
+  "SECRET_IN_CONFIG": {
+   "clauses": [
+    "sebi-annexure-h-5"
+   ],
+   "basis": "a key or passphrase in clear text in a service, script or cloud configuration: key storage methodology",
+   "rules": []
+  },
+  "SECRET_NO_ROTATION": {
+   "clauses": [],
+   "basis": "key or certificate lifecycle hygiene (rotation, deletion protection, inventory): no clause in the knowledge base requires it, so it is not cited under any framework",
+   "rules": []
+  },
+  "SECRET_PLAINTEXT_PARAM": {
+   "clauses": [
+    "sebi-pr-ds-standard-1",
+    "sebi-pr-ds-s1-s3-1a",
+    "rbi-cb-2026-para-106",
+    "certin-gov-7.1"
+   ],
+   "basis": "a secret stored and returned unencrypted: sensitive data at rest without protection",
+   "rules": []
+  },
+  "SIG_MD5": {
+   "clauses": [
+    "certin-bom-8.4.2.2",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140",
+    "certin-gov-6.1.7"
+   ],
+   "basis": "an MD5-signed certificate: a broken algorithm in the certificate chain (CERT-In 8.4.2.2, RBI), not a valid certificate for clients (CERT-In 6.1.7); no NIST clause names MD5",
+   "rules": []
+  },
+  "SIG_SHA1": {
+   "clauses": [
+    "certin-bom-8.4.2.2",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140",
+    "certin-gov-6.1.7",
+    "nist-800-131a-sha1-signatures"
+   ],
+   "basis": "a SHA-1 certificate signature: SHA-1 signature generation (SP 800-131A Table 8), a deprecated algorithm in the chain (CERT-In 8.4.2.2, RBI), rejected by clients (CERT-In 6.1.7)",
+   "rules": []
+  },
+  "SSH_CBC_CIPHER": {
+   "clauses": [
+    "certin-bom-8.4.2.2",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140"
+   ],
+   "basis": "CBC-mode SSH ciphers are weak (plaintext-recovery attacks): CERT-In 8.4.2.2, RBI. TDEA and SEBI only when 3des-cbc is among them; no PKCS#1 or SHA-1 clause",
+   "rules": [
+    {
+     "match": "3des|(?<![a-z])des[23](?![a-z0-9])|des[-_]?ede|des-cbc3|triple[-_ ]?des|tdea|desede",
+     "clauses": [
+      "nist-800-131a-tdea",
+      "sebi-annexure-h-5"
+     ],
+     "example": "3des-cbc",
+     "basis": "the evidence names Triple DES (TDEA): SP 800-131A Table 1 disallows three-key TDEA for encryption after 2023, and SEBI asks for strong encryption algorithms"
+    }
+   ]
+  },
+  "SSH_DH_GROUP1": {
+   "clauses": [
+    "nist-800-131a-below-112-bit",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140",
+    "certin-bom-8.4.2.2",
+    "nist-800-131a-sha1-signatures"
+   ],
+   "basis": "1024-bit MODP key agreement (below 112-bit security) whose SHA-1 exchange hash is what the host key signs (SP 800-131A Table 8)",
+   "rules": [],
+   "notes": {
+    "nist-800-131a-sha1-signatures": "Cited because the host key signs the SSH exchange hash H, which this key exchange computes with SHA-1 (RFC 4253 sec. 8); the host-key algorithm may hash H again with SHA-2 (rsa-sha2-256). SP 800-131A keeps SHA-1 acceptable for non-signature applications such as the key derivation."
+   }
+  },
+  "SSH_DH_SHA1": {
+   "clauses": [
+    "certin-bom-8.4.2.2",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140",
+    "nist-800-131a-sha1-signatures"
+   ],
+   "basis": "SHA-1 key exchange (RFC 9142 SHOULD NOT): the SHA-1 exchange hash is what the server's host key signs, so the signature rests on SHA-1 (SP 800-131A Table 8); no TDEA or PKCS#1 clause",
+   "rules": [],
+   "notes": {
+    "nist-800-131a-sha1-signatures": "Cited because the host key signs the SSH exchange hash H, which this key exchange computes with SHA-1 (RFC 4253 sec. 8); the host-key algorithm may hash H again with SHA-2 (rsa-sha2-256). SP 800-131A keeps SHA-1 acceptable for non-signature applications such as the key derivation."
+   }
+  },
+  "SSH_DSS": {
+   "clauses": [
+    "nist-800-131a-below-112-bit",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140",
+    "certin-bom-8.4.2.2"
+   ],
+   "basis": "1024-bit DSA host keys: signature generation below 112-bit security; removed by OpenSSH",
+   "rules": []
+  },
+  "SSH_HMAC_SHA1": {
+   "clauses": [],
+   "basis": "HMAC-SHA1 is still acceptable (SP 800-131A Rev. 2 Table 9 allows HMAC with SHA-1) and not deprecated for SSH: no clause is broken",
+   "rules": []
+  },
+  "SSH_NO_PQ_KEX": {
+   "clauses": [
+    "nist-ir-8547",
+    "cnsa-2.0",
+    "sebi-box-item-7",
+    "sebi-id-ra-standard-2",
+    "certin-bom-8.5.1"
+   ],
+   "basis": "classical key exchange only: quantum-vulnerable key establishment",
+   "rules": []
+  },
+  "SSH_RSA_SHA1": {
+   "clauses": [
+    "certin-bom-8.4.2.2",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140",
+    "nist-800-131a-sha1-signatures"
+   ],
+   "basis": "ssh-rsa signs with SHA-1: SHA-1 signature generation (SP 800-131A Table 8)",
+   "rules": []
+  },
+  "SSH_UMAC64": {
+   "clauses": [],
+   "basis": "64-bit tags are weaker practice for long sessions but not deprecated: no clause is broken",
+   "rules": []
+  },
+  "SSH_V1_ENABLED": {
+   "clauses": [
+    "certin-bom-8.4.2.2",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140",
+    "certin-gov-4.5.7"
+   ],
+   "basis": "SSH-1 is a broken protocol for remote connections (CERT-In 4.5.7 asks for secure protocols such as SSH)",
+   "rules": []
+  },
+  "SSH_WEAK_CIPHER": {
+   "clauses": [
+    "certin-bom-8.4.2.2",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140",
+    "sebi-annexure-h-5"
+   ],
+   "basis": "arcfour, 3DES, Blowfish, CAST128 or none: broken encryption ciphers; TDEA only when 3DES is named",
+   "rules": [
+    {
+     "match": "3des|(?<![a-z])des[23](?![a-z0-9])|des[-_]?ede|des-cbc3|triple[-_ ]?des|tdea|desede",
+     "clauses": [
+      "nist-800-131a-tdea",
+      "sebi-annexure-h-5"
+     ],
+     "example": "3des-cbc",
+     "basis": "the evidence names Triple DES (TDEA): SP 800-131A Table 1 disallows three-key TDEA for encryption after 2023, and SEBI asks for strong encryption algorithms"
+    }
+   ]
+  },
+  "SSH_WEAK_MAC": {
+   "clauses": [
+    "certin-bom-8.4.2.2",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140"
+   ],
+   "basis": "hmac-md5 or truncated MACs: deprecated integrity algorithms",
+   "rules": []
+  },
+  "STATIC_RSA_KEX": {
+   "clauses": [
+    "certin-bom-8.4.2.2",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140",
+    "nist-800-131a-pkcs1-v1_5",
+    "nist-ir-8547",
+    "cnsa-2.0",
+    "sebi-box-item-7",
+    "sebi-id-ra-standard-2",
+    "certin-bom-8.5.1"
+   ],
+   "basis": "TLS_RSA_* key exchange encrypts the premaster secret with RSA PKCS#1 v1.5 (key transport, SP 800-131A Sec. 6 Table 5), without forward secrecy, and is quantum-vulnerable",
+   "rules": []
+  },
+  "STORAGE_NO_TLS_ONLY": {
+   "clauses": [
+    "sebi-pr-ds-standard-1",
+    "sebi-annexure-i",
+    "rbi-cb-2026-para-106",
+    "certin-gov-6.2.7"
+   ],
+   "basis": "requests without TLS are not denied",
+   "rules": []
+  },
+  "STORAGE_UNENCRYPTED": {
+   "clauses": [
+    "sebi-pr-ds-standard-1",
+    "sebi-pr-ds-s1-s3-1a",
+    "rbi-cb-2026-para-106",
+    "certin-gov-7.1"
+   ],
+   "basis": "no encryption at rest",
+   "rules": []
+  },
+  "TLS_POLICY_OVERRIDE": {
+   "clauses": [
+    "certin-bom-8.4.2.2",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140",
+    "sebi-annexure-i"
+   ],
+   "basis": "a per-service override re-enables protocols and algorithms the system policy forbids",
+   "rules": []
+  },
+  "WEAK_CIPHER": {
+   "clauses": [
+    "certin-bom-8.4.2.2",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140"
+   ],
+   "basis": "weak TLS suites are accepted (CERT-In 8.4.2.2, RBI); SEBI and TDEA follow the ciphers the evidence names",
+   "rules": [
+    {
+     "match": "3des|(?<![a-z])des(?![a-z])|des-cbc|desx|des40|rc4|arcfour|(?<![a-z])null(?![a-z])|export|(?<![a-z])exp-|rc2|skipjack|blowfish|(?<![a-z])idea(?![a-z])|cast-?(5|128)",
+     "clauses": [
+      "sebi-annexure-h-5"
+     ],
+     "example": "RC4-SHA",
+     "basis": "the evidence names a broken or deprecated encryption cipher (DES, 3DES, RC4, RC2, NULL, EXPORT, Blowfish, IDEA, CAST): SEBI Annexure-H item 5 asks for strong encryption algorithms"
+    },
+    {
+     "match": "3des|(?<![a-z])des[23](?![a-z0-9])|des[-_]?ede|des-cbc3|triple[-_ ]?des|tdea|desede",
+     "clauses": [
+      "nist-800-131a-tdea",
+      "sebi-annexure-h-5"
+     ],
+     "example": "3des-cbc",
+     "basis": "the evidence names Triple DES (TDEA): SP 800-131A Table 1 disallows three-key TDEA for encryption after 2023, and SEBI asks for strong encryption algorithms"
+    }
+   ]
+  }
+ },
+ "code": {
+  "AT_REST_ENCRYPTION_WEAK": {
+   "clauses": [
+    "sebi-pr-ds-standard-1",
+    "sebi-pr-ds-s1-s3-1a"
+   ],
+   "basis": "a legacy cipher or provider default where a customer key is required: not strong encryption at rest (SEBI); data is still encrypted, so RBI 106 / CERT-In 7.1 hold",
+   "rules": []
+  },
+  "CERT_NEAR_EXPIRY": {
+   "clauses": [
+    "sebi-pr-ds-s4-item-5"
+   ],
+   "basis": "renewal is due (SEBI PR.DS.S4 item 5)",
+   "rules": []
+  },
+  "CERT_SELF_SIGNED": {
+   "clauses": [
+    "certin-gov-6.1.7"
+   ],
+   "basis": "a certificate clients do not trust is not a valid TLS certificate (CERT-In 6.1.7)",
+   "rules": []
+  },
+  "CUSTOM_CRYPTO": {
+   "clauses": [
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140",
+    "sebi-annexure-h-5"
+   ],
+   "basis": "a home-made cipher or hash is not an internationally accepted, published standard (RBI) nor an industry-standard algorithm (SEBI Annexure-H item 5)",
+   "rules": []
+  },
+  "DOWNGRADE_PROTECTION_MISSING": {
+   "clauses": [
+    "certin-bom-8.4.2.2"
+   ],
+   "basis": "no downgrade protection: not a strict TLS configuration",
+   "rules": []
+  },
+  "EOL_BASE_IMAGE": {
+   "clauses": [],
+   "basis": "an end-of-life or bundled component is not a vulnerability record: CERT-In 8.4.1.6 (VEX) applies only once a vulnerability is published, and no other clause in the knowledge base covers support status",
+   "rules": []
+  },
+  "EOL_CRYPTO_LIBRARY": {
+   "clauses": [],
+   "basis": "an end-of-life or bundled component is not a vulnerability record: CERT-In 8.4.1.6 (VEX) applies only once a vulnerability is published, and no other clause in the knowledge base covers support status",
+   "rules": []
+  },
+  "EXPIRED_CERTIFICATE": {
+   "clauses": [
+    "sebi-pr-ds-s4-item-5",
+    "certin-gov-6.1.7"
+   ],
+   "basis": "expired: not renewed in time and not a valid certificate",
+   "rules": []
+  },
+  "HARDCODED_KEY": {
+   "clauses": [
+    "sebi-annexure-h-5"
+   ],
+   "basis": "a key embedded in source: key storage methodology (SEBI Annexure-H item 5)",
+   "rules": []
+  },
+  "KMS_KEY_DELETION_UNPROTECTED": {
+   "clauses": [],
+   "basis": "key or certificate lifecycle hygiene (rotation, deletion protection, inventory): no clause in the knowledge base requires it, so it is not cited under any framework",
+   "rules": []
+  },
+  "KMS_KEY_POLICY_PUBLIC": {
+   "clauses": [
+    "sebi-annexure-h-5"
+   ],
+   "basis": "any principal may use the key: key storage methodology",
+   "rules": []
+  },
+  "KMS_KEY_ROTATION_DISABLED": {
+   "clauses": [],
+   "basis": "key or certificate lifecycle hygiene (rotation, deletion protection, inventory): no clause in the knowledge base requires it, so it is not cited under any framework",
+   "rules": []
+  },
+  "KNOWN_TLS_VULNERABILITY": {
+   "clauses": [
+    "certin-bom-8.4.1.6",
+    "certin-bom-8.4.2.2",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140"
+   ],
+   "basis": "a named TLS vulnerability: a protocol configuration demonstrated to be vulnerable (RBI, CERT-In 8.4.2.2) and a VEX status is due (CERT-In 8.4.1.6)",
+   "rules": []
+  },
+  "LIBRARY_CVE_RANGE": {
+   "clauses": [
+    "certin-bom-8.4.1.6"
+   ],
+   "basis": "a crypto component with a published vulnerability: VEX status due",
+   "rules": []
+  },
+  "PLAINTEXT_LISTENER": {
+   "clauses": [
+    "sebi-pr-ds-standard-1",
+    "sebi-annexure-i",
+    "rbi-cb-2026-para-106",
+    "certin-gov-6.2.7"
+   ],
+   "basis": "a listener without TLS: data in transit not protected",
+   "rules": []
+  },
+  "PROVIDER_MANAGED_KEY": {
+   "clauses": [],
+   "basis": "the data is encrypted at rest; a customer-managed key is better practice, not a clause requirement",
+   "rules": []
+  },
+  "QUANTUM_VULNERABLE": {
+   "clauses": [
+    "nist-ir-8547",
+    "cnsa-2.0",
+    "sebi-box-item-7",
+    "sebi-id-ra-standard-2",
+    "certin-bom-8.5.1"
+   ],
+   "basis": "RSA / EC / DH public-key cryptography: the post-quantum migration clauses",
+   "rules": []
+  },
+  "REUSED_NONCE": {
+   "clauses": [
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140"
+   ],
+   "basis": "nonce reuse with an approved cipher (GCM, CTR, CBC) is a configuration demonstrated to be insecure (it leaks the XOR of the plaintexts and, in GCM, the authentication key), the same basis as ECB (WEAK_CIPHER_MODE): RBI; the cipher itself may be strong, so no SEBI clause",
+   "rules": []
+  },
+  "SELF_SIGNED_LEAF": {
+   "clauses": [
+    "certin-gov-6.1.7"
+   ],
+   "basis": "a self-signed leaf is not a valid TLS certificate for clients",
+   "rules": []
+  },
+  "STATIC_IV": {
+   "clauses": [
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140"
+   ],
+   "basis": "IV reuse with an approved cipher (GCM, CTR, CBC) is a configuration demonstrated to be insecure (it leaks the XOR of the plaintexts and, in GCM, the authentication key), the same basis as ECB (WEAK_CIPHER_MODE): RBI; the cipher itself may be strong, so no SEBI clause",
+   "rules": []
+  },
+  "TLS_VERIFICATION_DISABLED": {
+   "clauses": [
+    "certin-bom-8.4.2.2",
+    "certin-gov-6.2.7"
+   ],
+   "basis": "certificate chains are not checked (CERT-In 8.4.2.2) so the TLS connection is not secure (CERT-In 6.2.7); encryption itself is still in place",
+   "rules": []
+  },
+  "UNENCRYPTED_AT_REST": {
+   "clauses": [
+    "sebi-pr-ds-standard-1",
+    "sebi-pr-ds-s1-s3-1a",
+    "rbi-cb-2026-para-106",
+    "certin-gov-7.1"
+   ],
+   "basis": "no encryption at rest",
+   "rules": []
+  },
+  "UNENCRYPTED_IN_TRANSIT": {
+   "clauses": [
+    "sebi-pr-ds-standard-1",
+    "sebi-annexure-i",
+    "rbi-cb-2026-para-106",
+    "certin-gov-6.2.7"
+   ],
+   "basis": "no TLS: data in transit not protected",
+   "rules": []
+  },
+  "VULNERABLE_CRYPTO_LIBRARY": {
+   "clauses": [
+    "certin-bom-8.4.1.6"
+   ],
+   "basis": "a crypto component with a published advisory: VEX status due",
+   "rules": []
+  },
+  "WEAK_ALGORITHM": {
+   "clauses": [
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140"
+   ],
+   "basis": "a broken or deprecated algorithm (RBI). Algorithm-specific clauses follow the evidence: TDEA for 3DES, SEBI for weak ciphers, SHA-1 signatures only for a SHA-1 signature algorithm, 112-bit for small public keys",
+   "rules": [
+    {
+     "match": "3des|(?<![a-z])des[23](?![a-z0-9])|des[-_]?ede|des-cbc3|triple[-_ ]?des|tdea|desede",
+     "clauses": [
+      "nist-800-131a-tdea",
+      "sebi-annexure-h-5"
+     ],
+     "example": "3des-cbc",
+     "basis": "the evidence names Triple DES (TDEA): SP 800-131A Table 1 disallows three-key TDEA for encryption after 2023, and SEBI asks for strong encryption algorithms"
+    },
+    {
+     "match": "3des|(?<![a-z])des(?![a-z])|des-cbc|desx|des40|rc4|arcfour|(?<![a-z])null(?![a-z])|export|(?<![a-z])exp-|rc2|skipjack|blowfish|(?<![a-z])idea(?![a-z])|cast-?(5|128)",
+     "clauses": [
+      "sebi-annexure-h-5"
+     ],
+     "example": "RC4-SHA",
+     "basis": "the evidence names a broken or deprecated encryption cipher (DES, 3DES, RC4, RC2, NULL, EXPORT, Blowfish, IDEA, CAST): SEBI Annexure-H item 5 asks for strong encryption algorithms"
+    },
+    {
+     "match": "sha-?1[-_ ]?with[-_ ]?(rsa|ecdsa|dsa)|(rsa|ecdsa|dsa)[-_ ]?(with[-_ ]?)?sha-?1(?![0-9])|ssh-rsa(?![a-z0-9-])",
+     "clauses": [
+      "nist-800-131a-sha1-signatures"
+     ],
+     "example": "sha1WithRSAEncryption",
+     "basis": "a SHA-1 signature algorithm: SP 800-131A Table 8"
+    },
+    {
+     "match": "(?<![a-z])(rsa|dsa|dh|diffie-hellman)\\W{0,3}(384|512|768|1024|1536)(?![0-9])|(?<![a-z])(ecdsa|ecdh|ec)\\W{0,3}(112|128|160|192)(?![0-9])|secp(112|128|160|192)|prime192|p-?192(?![0-9])",
+     "clauses": [
+      "nist-800-131a-below-112-bit"
+     ],
+     "example": "Undersized asymmetric key on RSA: 1024-bit is below the 2048-bit floor",
+     "basis": "a public key below 112-bit security (SP 800-131A): RSA/DSA/DH under 2048 bits or an EC key under 224 bits, also as the code scanner words it (\"RSA: 1024-bit\")"
+    }
+   ]
+  },
+  "WEAK_CERTIFICATE_KEY": {
+   "clauses": [
+    "nist-800-131a-below-112-bit",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140"
+   ],
+   "basis": "a certificate key below RSA 2048 / EC 224: below 112-bit security",
+   "rules": []
+  },
+  "WEAK_CERTIFICATE_SIGNATURE": {
+   "clauses": [
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140",
+    "certin-gov-6.1.7"
+   ],
+   "basis": "an MD5 or SHA-1 certificate signature: deprecated (RBI), not valid for clients (CERT-In 6.1.7); SHA-1 signature generation only when SHA-1 is named",
+   "rules": [
+    {
+     "match": "sha-?1(?![0-9])|ssh-rsa(?![a-z0-9-])",
+     "clauses": [
+      "nist-800-131a-sha1-signatures"
+     ],
+     "example": "SHA1withRSA",
+     "basis": "a SHA-1 signature: SP 800-131A Table 8"
+    }
+   ]
+  },
+  "WEAK_CIPHER_MODE": {
+   "clauses": [
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140"
+   ],
+   "basis": "ECB is demonstrated to be insecure for multi-block data (RBI); the cipher itself may be strong, so no SEBI clause",
+   "rules": []
+  },
+  "WEAK_CIPHER_SUITE": {
+   "clauses": [
+    "certin-bom-8.4.2.2",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140"
+   ],
+   "basis": "weak suites or legacy SSH / IKE algorithms configured (CERT-In 8.4.2.2, RBI); SEBI and TDEA follow the ciphers the evidence names",
+   "rules": [
+    {
+     "match": "3des|(?<![a-z])des(?![a-z])|des-cbc|desx|des40|rc4|arcfour|(?<![a-z])null(?![a-z])|export|(?<![a-z])exp-|rc2|skipjack|blowfish|(?<![a-z])idea(?![a-z])|cast-?(5|128)",
+     "clauses": [
+      "sebi-annexure-h-5"
+     ],
+     "example": "RC4-SHA",
+     "basis": "the evidence names a broken or deprecated encryption cipher (DES, 3DES, RC4, RC2, NULL, EXPORT, Blowfish, IDEA, CAST): SEBI Annexure-H item 5 asks for strong encryption algorithms"
+    },
+    {
+     "match": "3des|(?<![a-z])des[23](?![a-z0-9])|des[-_]?ede|des-cbc3|triple[-_ ]?des|tdea|desede",
+     "clauses": [
+      "nist-800-131a-tdea",
+      "sebi-annexure-h-5"
+     ],
+     "example": "3des-cbc",
+     "basis": "the evidence names Triple DES (TDEA): SP 800-131A Table 1 disallows three-key TDEA for encryption after 2023, and SEBI asks for strong encryption algorithms"
+    }
+   ]
+  },
+  "WEAK_KEY_SIZE": {
+   "clauses": [
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140"
+   ],
+   "basis": "a key below the minimum size (RBI key length); the 112-bit clause only for public keys the evidence names",
+   "rules": [
+    {
+     "match": "(?<![a-z])(rsa|dsa|dh|diffie-hellman)\\W{0,3}(384|512|768|1024|1536)(?![0-9])|(?<![a-z])(ecdsa|ecdh|ec)\\W{0,3}(112|128|160|192)(?![0-9])|secp(112|128|160|192)|prime192|p-?192(?![0-9])",
+     "clauses": [
+      "nist-800-131a-below-112-bit"
+     ],
+     "example": "Undersized asymmetric key on RSA: 1024-bit is below the 2048-bit floor",
+     "basis": "a public key below 112-bit security (SP 800-131A): RSA/DSA/DH under 2048 bits or an EC key under 224 bits, also as the code scanner words it (\"RSA: 1024-bit\")"
+    }
+   ]
+  },
+  "WEAK_PADDING": {
+   "clauses": [
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140",
+    "nist-800-131a-pkcs1-v1_5"
+   ],
+   "basis": "RSA encryption with PKCS#1 v1.5 (or no) padding: SP 800-131A Sec. 6 Table 5 disallows PKCS#1 v1.5 key transport",
+   "rules": []
+  },
+  "WEAK_PROTOCOL": {
+   "clauses": [
+    "certin-bom-8.4.2.2",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140"
+   ],
+   "basis": "SSLv3, TLS 1.0/1.1, SSH-1 or IKEv1: deprecated protocols; SEBI Annexure-I only for SSL/TLS",
+   "rules": [
+    {
+     "match": "ssl|tls",
+     "clauses": [
+      "sebi-annexure-i"
+     ],
+     "example": "TLSv1.0",
+     "basis": "a deprecated SSL/TLS version is not strong transport encryption"
+    }
+   ]
+  },
+  "WEAK_RNG": {
+   "clauses": [
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140"
+   ],
+   "basis": "a non-cryptographic generator for key material is an algorithm demonstrated to be insecure",
+   "rules": []
+  }
+ }
+}

@@ -857,7 +857,8 @@ def _collected_exposure(view: TeamCbomView, styles: Styles) -> list[Flowable]:
     rows = collected_clauses(view)
     if not rows:
         return []
-    body = [[f"{r.framework} {r.clause}", str(r.assets), ", ".join(r.codes)] for r in rows]
+    body = [[f"{r.framework} {r.clause}", str(r.assets), ", ".join(r.codes)
+             + (f" (algorithm not recorded for {r.unrecorded}: verify)" if r.unrecorded else "")] for r in rows]
     return [
         _para(EXPOSURE_COLLECTED_LEAD, styles),
         _gap(3),

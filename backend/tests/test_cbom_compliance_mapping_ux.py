@@ -20,6 +20,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import test_cb38_runs_in_results_api as RUNS
 from backend.new_models import CbomCollectedAsset
+from backend.utilities.cbom_sources import clause_evidence as CE
 from backend.utilities.cbom_sources import crypto_kb
 from backend.utilities.cbom_sources import posture as POSTURE
 from backend.utilities.cbom_sources import run_results as RR
@@ -155,3 +156,80 @@ def test_c4_asset_id_filter(api, world, no_mongo):
     for bad in ("", "1,x", "-1", "0", ",".join(str(i) for i in range(1, 502)), "99999999999"):
         r = api("GET", path, params={"asset_id": bad})
         assert r.status_code == 400, (bad, r.text)
+
+
+# ------------------------------------------------------------------- C5: drill by clause, not by code (#289 x #291)
+CLAUSE_ROWS = [  # (impact, quantum_vulnerable, asset_type, codes) + name and facts set below
+    ("Medium", False, "ssh_endpoint", ["SSH_CBC_CIPHER"]),  # des3-gw: aes128-cbc only, so no TDEA
+    ("High", False, "ssh_endpoint", ["SSH_CBC_CIPHER", "SSH_WEAK_CIPHER"]),  # 3des-cbc: TDEA
+    ("High", False, "tls_endpoint", ["WEAK_CIPHER"]),  # no algorithm recorded: TDEA cited for review
+    ("High", None, "coverage", ["COVERAGE_AUTH"]),
+]
+CLAUSE_FACTS = [
+    ("des3-gw", {"kex": ["curve25519-sha256"], "hostkey_algorithms": ["ssh-ed25519"], "ciphers": ["aes128-cbc"]}),
+    ("box2", {"kex": ["curve25519-sha256"], "hostkey_algorithms": ["ssh-ed25519"],
+              "ciphers": ["3des-cbc", "aes128-cbc"]}),
+    ("legacy", {"protocols": ["TLSv1.2"]}),
+    ("gap", {}),
+]
+TDEA = "NIST:SP 800-131A Rev. 2, Sec. 2 Table 1 (TDEA)"
+
+
+def _seed_clause_run(engine, ids, name):
+    run_id = seed_run(engine, 1, ids["alice"], rows=CLAUSE_ROWS, source_name=name)
+    with Session(engine) as s:
+        rows = sorted(s.exec(select(CbomCollectedAsset).where(CbomCollectedAsset.run_id == run_id)).all(),
+                      key=lambda r: r.id)
+        for row, (asset_name, facts) in zip(rows, CLAUSE_FACTS):
+            row.name, row.facts = asset_name, facts
+            s.add(row)
+        s.commit()
+        return run_id, {r.name: r.id for r in rows}
+
+
+def test_c5_clause_filter_equals_each_clause_count(api, world, no_mongo):
+    """A rule-based code: SSH_CBC_CIPHER cites TDEA only on the asset that offers 3des-cbc, so the code filter is wider
+    than the clause; the clause filter lists exactly the assets the clause counts (same clause_evidence function)."""
+    engine, ids = world
+    run_id, by_name = _seed_clause_run(engine, ids, "c5")
+    out = _get(api, f"/1/cbom/sources/runs/{run_id}/results")
+    path = f"/1/cbom/sources/runs/{run_id}/assets"
+    checked = 0
+    with Session(engine) as s:
+        rows = {r.id: r for r in s.exec(select(CbomCollectedAsset).where(CbomCollectedAsset.run_id == run_id)).all()}
+    for fw in out["compliance"]["frameworks"]:
+        for clause in fw["clauses"]:
+            page = _get(api, path, clause=f"{fw['framework']}:{clause['clause']}", page_size=200)
+            assert page["total"] == clause["assets"] == len(page["items"]), clause["clause"]
+            assert page["clause_filter"] == f"{fw['framework']}:{clause['clause']}"
+            keys = {k for k, ref in crypto_kb.load()["clauses"].items() if ref["id"] == clause["clause"]}
+            expected = {aid for aid, row in rows.items() if CE.matches(row, row.finding_codes or [], keys)}
+            assert {i["id"] for i in page["items"]} == expected, clause["clause"]
+            checked += 1
+        if fw["clauses"]:
+            assert _get(api, path, clause=fw["framework"], page_size=200)["total"] == fw["assets"], fw["framework"]
+    assert checked >= 4
+    tdea = _get(api, path, clause=TDEA, page_size=200)
+    assert {i["id"] for i in tdea["items"]} == {by_name["box2"], by_name["legacy"]}  # never des3-gw
+    nist = next(f for f in out["compliance"]["frameworks"] if f["framework"] == "NIST")
+    tdea_clause = next(c for c in nist["clauses"] if c["clause"] == TDEA.split(":", 1)[1])
+    assert tdea_clause["assets"] == 2 and "not recorded" in (tdea_clause["note"] or "")
+    # the old drill (by code) names des3-gw too: 3 rows for a clause that counts 2
+    assert _get(api, path, code=",".join(tdea_clause["codes"]))["total"] == 3
+    # the clause filter combines with the other filters and keeps the run-wide totals
+    high = _get(api, path, clause=TDEA, impact="High")
+    assert high["total"] == 2 and high["all_total"] == _get(api, path)["all_total"]
+
+
+def test_c5_clause_filter_validation_and_team_scope(api, world, no_mongo):
+    engine, ids = world
+    run_id, _ = _seed_clause_run(engine, ids, "c5v")
+    path = f"/1/cbom/sources/runs/{run_id}/assets"
+    for bad in ("", "Nope", "Nope:x", "CERT-In:DROP TABLE x", "NIST:SP 800-131A\x01", "x" * 301):
+        r = api("GET", path, params={"clause": bad})
+        assert r.status_code in (400, 422), (bad, r.text)
+        assert "DROP" not in r.text
+    # the KB's own framework name and the results page's alias name the same clauses
+    assert _get(api, path, clause="NSA CNSA 2.0")["total"] == _get(api, path, clause="CNSA 2.0")["total"]
+    assert api("GET", f"/2/cbom/sources/runs/{run_id}/assets", "carol", params={"clause": TDEA}).status_code == 404
+    assert api("GET", path, "carol", params={"clause": TDEA}).status_code == 403

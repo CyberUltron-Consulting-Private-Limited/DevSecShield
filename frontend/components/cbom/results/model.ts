@@ -288,9 +288,16 @@ export function runSectionPlan(input: {
 /** S10 frameworks: /results.compliance when present, else the posture's clauses (the same KB mapping). */
 export interface ComplianceRow {
   framework: string;
-  clauses: { clause: string; title: string; assets: number; codes: string[]; source?: string | null; note?: string | null; findings?: CbomClauseFinding[] }[];
+  clauses: {
+    clause: string; title: string; assets: number; codes: string[]; source?: string | null; note?: string | null; findings?: CbomClauseFinding[];
+    /** assets cited for review only: the algorithm the clause depends on was not recorded (#289) */
+    unrecorded?: number;
+    verdict?: "fail" | "needs_evidence";
+  }[];
   /** distinct assets behind any clause (#270); null / absent on an older backend */
   assets?: number | null;
+  /** distinct assets behind its clauses only for review (#289); null when it cannot be known, absent on an older backend */
+  unrecorded?: number | null;
 }
 
 export const FRAMEWORK_ORDER = ["CERT-In", "RBI", "SEBI CSCRF", "NIST", "CNSA 2.0"];
@@ -301,14 +308,22 @@ export function complianceRows(results: CbomRunResults | null | undefined,
   const sort = (rows: ComplianceRow[]) => [...rows].sort((a, b) => order(a.framework) - order(b.framework) || a.framework.localeCompare(b.framework));
   // /results always lists the five frameworks, empty ones included: only frameworks with a clause are shown
   const fromResults = (results?.compliance?.frameworks ?? []).filter((f) => (f.clauses ?? []).length > 0);
-  if (fromResults.length) return { rows: sort(fromResults.map((f) => ({ framework: f.framework, clauses: f.clauses, ...(f.assets !== undefined ? { assets: f.assets } : {}) }))), basis: "results" };
+  if (fromResults.length) {
+    return {
+      rows: sort(fromResults.map((f) => ({ framework: f.framework, clauses: f.clauses, ...(f.assets !== undefined ? { assets: f.assets } : {}),
+                                           ...(f.unrecorded !== undefined ? { unrecorded: f.unrecorded } : {}) }))),
+      basis: "results",
+    };
+  }
   const fromPosture = (posture?.compliance ?? []).filter((f) => (f.clauses ?? []).length > 0);
   if (fromPosture.length) {
     return {
       rows: sort(fromPosture.map((f) => ({
         framework: f.framework,
-        clauses: f.clauses.map((c) => ({ clause: c.id, title: c.text, assets: c.assets, codes: c.codes, source: c.source, ...(c.note ? { note: c.note } : {}) })),
+        clauses: f.clauses.map((c) => ({ clause: c.id, title: c.text, assets: c.assets, codes: c.codes, source: c.source, ...(c.note ? { note: c.note } : {}),
+                                         ...(typeof c.unrecorded === "number" ? { unrecorded: c.unrecorded } : {}), ...(c.verdict ? { verdict: c.verdict } : {}) })),
         ...(typeof f.assets === "number" ? { assets: f.assets } : {}),
+        ...(typeof f.unrecorded === "number" ? { unrecorded: f.unrecorded } : {}),
       }))),
       basis: "posture",
     };
@@ -387,7 +402,9 @@ export interface RunTableFilters {
   q?: string;
   source_id?: number;
   status?: CbomFindingStatus;
-  /** #270 compliance drill-down: assets with any of these finding codes (a clause), or these asset ids (a requirement) */
+  /** #270 compliance drill-down: the assets behind a KB clause (`<framework>:<clause id>`, or `<framework>` for every
+   * clause of it; #289), assets with any of these finding codes, or these asset ids (a requirement) */
+  clause?: string;
   codes?: string[];
   asset_ids?: number[];
   /** what the drill-down shows, for the table's filter chip ("NIST · SP 800-131A …") */
@@ -407,13 +424,14 @@ export function filtersToParams(f: RunTableFilters): Record<string, string | num
   if (f.q) out.q = f.q;
   if (f.source_id != null) out.source_id = f.source_id;
   if (f.status) out.status = f.status;
+  if (f.clause) out.clause = f.clause;
   if (f.codes?.length) out.code = f.codes.join(",");
   if (f.asset_ids?.length) out.asset_id = f.asset_ids.join(",");
   return out;
 }
 
 export function hasActiveFilters(f: RunTableFilters): boolean {
-  return !!(f.type || f.impact || f.quantum || f.q || f.source_id != null || f.status || f.codes?.length || f.asset_ids?.length);
+  return !!(f.type || f.impact || f.quantum || f.q || f.source_id != null || f.status || f.clause || f.codes?.length || f.asset_ids?.length);
 }
 
 /** The server understands `view` / `status` (W1) when it reports `findings_total`; an older server lists every asset. */
