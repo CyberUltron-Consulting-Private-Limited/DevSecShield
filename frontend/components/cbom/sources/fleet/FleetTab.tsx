@@ -11,6 +11,9 @@ import { useFleetStatus } from "./useFleetStatus";
 
 export { useFleetStatus };
 
+// #227: on the hosted product only ZeroShield can turn fleet onboarding on, so the customer is pointed to support.
+const FLEET_SUPPORT_EMAIL = "support@zeroshield.ai";
+
 export default function FleetTab({ teamId }: { teamId: number; onNavigate?: (tab: string) => void }) {
   const status = useFleetStatus(teamId);
   const state = fleetTabState(status);
@@ -22,10 +25,20 @@ export default function FleetTab({ teamId }: { teamId: number; onNavigate?: (tab
   if (sections.length === 0) {
     // The page hides the tab in this case (fleetTabMode); this only shows if the flags change while the tab is open.
     return (
-      <EmptyState
-        title="Fleet onboarding isn't available yet"
-        body="Ask your administrator if you expected to see it here."
-      />
+      <div data-testid="fleet-off">
+        <EmptyState
+          title="Fleet onboarding isn't enabled on this ZeroShield deployment"
+          body={
+            <>
+              Contact ZeroShield support at{" "}
+              <a href={`mailto:${FLEET_SUPPORT_EMAIL}`} className="font-medium underline underline-offset-2">
+                {FLEET_SUPPORT_EMAIL}
+              </a>{" "}
+              to have it turned on.
+            </>
+          }
+        />
+      </div>
     );
   }
   return (

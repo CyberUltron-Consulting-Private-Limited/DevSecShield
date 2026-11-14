@@ -1,22 +1,43 @@
 // Lab mode (backend lab_mode.py): on a test deployment with CBOM_AWS_LAB_SAME_ACCOUNT=1, an AWS role in the
 // deployment's own account is accepted so AWS collection can be tested end to end. The AWS source form and every run
-// of such a source carry this banner; it cannot be dismissed. Same sentence as the backend's lab_mode.LAB_BANNER.
+// of such a source carry this notice; it cannot be dismissed. Same sentence as the backend's lab_mode.LAB_BANNER.
+// It is a permanent, informational note (#272): role="note" (never "alert", which screen readers announce as urgent
+// on every render), a 1 px border like the other notes on the Sources pages, only the key phrase bold, and on a phone
+// one line with the detail behind "Details". Spacing comes from the caller (className) or the parent's space-y.
 import { FlaskConical } from "lucide-react";
 
-export const AWS_LAB_BANNER = "Lab mode: same-account collection — not for production";
+import { cn } from "@/lib/utils";
 
-export function LabModeBanner({ testId, detail }: { testId: string; detail?: string }) {
+export const AWS_LAB_BANNER = "Lab mode: same-account collection — not for production";
+const KEY_PHRASE = "Lab mode:";
+const REST = AWS_LAB_BANNER.slice(KEY_PHRASE.length);
+
+export function LabModeBanner({ testId, detail, className }: { testId: string; detail?: string; className?: string }) {
   return (
     <div
-      role="alert"
+      role="note"
       data-testid={testId}
-      className="flex items-start gap-2 rounded-lg border-2 border-amber-400 dark:border-amber-600 bg-amber-100 dark:bg-amber-950/40 p-3 text-sm font-semibold text-amber-950 dark:text-amber-100"
+      className={cn(
+        "flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-sm text-zinc-700 dark:text-zinc-300",
+        className,
+      )}
     >
-      <FlaskConical className="h-4 w-4 mt-0.5 shrink-0" aria-hidden />
-      <span>
-        {AWS_LAB_BANNER}
-        {detail && <span className="block font-normal text-amber-900 dark:text-amber-200">{detail}</span>}
-      </span>
+      <FlaskConical className="h-4 w-4 mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden />
+      <div className="min-w-0">
+        <p>
+          <strong className="font-semibold text-amber-700 dark:text-amber-400">{KEY_PHRASE}</strong>
+          {REST}
+        </p>
+        {detail && (
+          <>
+            <p className="hidden sm:block text-zinc-600 dark:text-zinc-400">{detail}</p>
+            <details className="sm:hidden text-zinc-600 dark:text-zinc-400">
+              <summary className="cursor-pointer text-xs">Details</summary>
+              <p className="mt-1">{detail}</p>
+            </details>
+          </>
+        )}
+      </div>
     </div>
   );
 }

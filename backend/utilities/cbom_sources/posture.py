@@ -28,6 +28,7 @@ from sqlmodel import Session, select
 from backend.new_models import CbomCollectedAsset, CbomCollectionJob, CbomCollectionSource, CbomScanNode
 from backend.utilities.cbom_sources import agility as AGILITY
 from backend.utilities.cbom_sources import algid, crypto_kb
+from backend.utilities.cbom_sources import standards as STD
 from backend.utilities.cbom_sources.cbom_metrics import quantum_readiness_pct
 from backend.utilities.cbom_sources.classify import (
     KEX_PRIMITIVES,
@@ -552,8 +553,10 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
     readiness_value, readiness_basis = readiness(classes)
     actions_top, actions_all = readiness_actions(vulnerable_groups, classes)
     frameworks: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    framework_assets: dict[str, set[int]] = defaultdict(set)  # distinct assets behind any clause (#270)
     for clause, assets in sorted(clause_assets.items(), key=lambda kv: (kv[0][0], -len(kv[1]))):
         meta = clause_meta[clause]
+        framework_assets[clause[0]].update(assets)
         frameworks[clause[0]].append({"id": meta["id"], "text": meta["text"], "source": meta["source"],
                                       "note": meta.get("note"), "assets": len(assets), "codes": sorted(meta["codes"])})
     risky.sort(key=lambda r: (-r["score"], r["id"]))
@@ -580,7 +583,8 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
         "top_risks": risky[:top],
         "exposure": {e: exposure_counts.get(e, 0) for e in EXPOSURES},
         "exposure_factors": dict(EXPOSURE_FACTOR),
-        "compliance": [{"framework": fw, "clauses": items} for fw, items in sorted(frameworks.items())],
+        "compliance": [{"framework": fw, "clauses": items, "assets": len(framework_assets[fw])}
+                       for fw, items in sorted(frameworks.items())],
         "kb_version": crypto_kb.version(),
         **agility.result(),
         "pqc_context": {k: v for k, v in crypto_kb.pqc_context().items() if k in ("mosca", "expert_survey",
@@ -672,6 +676,8 @@ def asset_detail(row: CbomCollectedAsset, source: CbomCollectionSource | None, *
         "exposure_basis": exposure_basis,
         "exposure_factor": EXPOSURE_FACTOR[exposure],
         "agility": AGILITY.detail(row.asset_type, codes, facts, AGILITY.node_context(job, source), row.location),
+        # CB-16: which standards the asset meets or fails (FIPS 203/204/205, CNSA 2.0, SP 800-131A), with reasons
+        "standards": STD.rows(verdict.get("standards")),
         "facts": facts,
         "details": [{**d, "impact": verdict["impacts"].get(d["code"]) or d["impact"]}
                     for d in crypto_kb.render("node", ordered, context=ctx, evidence=view["finding"] or "", texts=texts,

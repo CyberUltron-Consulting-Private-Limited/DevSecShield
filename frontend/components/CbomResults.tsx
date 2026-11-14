@@ -80,7 +80,9 @@ import { type CertInRollupData } from "@/components/certin/certinShared";
 import { InfoTip } from "@/components/ui/info-tip";
 import { CompareDialog, RunInsights } from "@/components/cbom/sources/ChangesPanel";
 import { RunPostureCard } from "@/components/cbom/sources/RunPosture";
-import { applyPostureToDistributions, endpointsProbed, parityNotes, resolveMigrationRows, RUN_TICKETING_TAB_AVAILABLE, runDurationSeconds, runTitle } from "@/components/cbom/results/model";
+import { applyPostureToDistributions, complianceRows, endpointsProbed, parityNotes, resolveMigrationRows, RUN_TICKETING_TAB_AVAILABLE, runDurationSeconds, runTitle } from "@/components/cbom/results/model";
+import { ComplianceMappingSection } from "@/components/cbom/results/ComplianceSummary";
+import { buildComplianceSummary, runDrillFilters, type DrillTarget } from "@/components/cbom/results/complianceSummary";
 import { RunFindingDialog } from "@/components/cbom/results/RunFindingDialog";
 import { RunFindingsTable } from "@/components/cbom/results/RunFindingsTable";
 import { ColumnChooser, useColumnPrefs } from "@/components/cbom/results/ColumnChooser";
@@ -88,7 +90,6 @@ import { FINDING_DIALOG_BODY, FINDING_DIALOG_CONTENT, FINDING_DIALOG_FULLSCREEN_
 import {
   RunCertificatesSection,
   RunChangesSection,
-  RunComplianceSection,
   RunCoverageSection,
   RunDashboardSection,
   RunHeaderActions,
@@ -101,6 +102,7 @@ import {
 import { ReadinessExplainer } from "@/components/cbom/results/ReadinessExplainer";
 import RunTicketingTab from "@/components/cbom/results/RunTicketingTab";
 import type { ResultsSource } from "@/components/cbom/results/source";
+import { advisoryLine, readAdvisoryData, staleNote } from "@/components/cbom/advisoryData";
 
 interface CbomResultsProps {
   data: unknown;
@@ -501,6 +503,8 @@ export default function CbomResults({
   const importReport = ((scanMetadata as Record<string, unknown> | null)?.cbom_input ?? null) as CbomImportReport | null;
   // A code scan's coverage: archives, images, binaries and firmware it skipped or only counted (null when none)
   const coverageReport = ((scanMetadata as Record<string, unknown> | null)?.cbom_coverage ?? null) as CbomCoverageReport | null;
+  // CB-29: the crypto-library advisory data the code scan matched (offline OSV snapshot version and date)
+  const advisoryData = run ? null : readAdvisoryData(data, scanMetadata);
   const informationalRows = dashboard?.card_data?.total_informational ?? 0;
   // Every crypto asset (findings + clean inventory) for the readiness gauge, as the PDF and the scan list count them
   const allRows = useMemo(() => inventoryRows(data, findingsList ?? []), [data, findingsList]);
@@ -552,6 +556,38 @@ export default function CbomResults({
     const c = (fromData ?? fromMeta) as CbomCompliance | undefined;
     return c && typeof c === "object" ? c : null;
   }, [data, scanMetadata]);
+
+  // Compliance mapping (#270): one view over the tri-state checks (code scans and runs) and, for a run, the knowledge
+  // base clauses its findings touch; every asset count drills into the findings table.
+  const complianceMapping = useMemo(() => {
+    const kb = run ? complianceRows(run.results, run.posture) : { rows: [], basis: "none" as const };
+    return {
+      basis: kb.basis,
+      frameworks: buildComplianceSummary({
+        engine: cryptoCompliance,
+        mapping: kb.rows,
+        findings: run ? null : findingsList ?? [],
+        refAliases: relatedRefAliases,
+        titles: Object.fromEntries((run?.posture?.top_codes ?? []).map((c) => [c.code, c.title])),
+      }),
+    };
+  }, [run, cryptoCompliance, findingsList, relatedRefAliases]);
+
+  const handleComplianceDrill = (target: DrillTarget) => {
+    if (run) {
+      const { patch, truncated } = runDrillFilters(target);
+      run.onFilters(patch);
+      if (truncated) toast.warning("The findings table shows the first assets of this requirement only (one request carries up to 500)");
+      requestAnimationFrame(() => document.getElementById("bom-findings")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    } else if (target.kind === "refs") {
+      handleViewRelatedFindings(target.refs);
+    } else {
+      // a code scan's findings carry their finding codes: the same filter, in the browser like its other filters
+      const refs = (findingsList ?? []).filter((f) => (f.finding_codes ?? []).some((c) => target.codes.includes(c))).map((f) => f.bom_ref || f.id);
+      if (refs.length) handleViewRelatedFindings(refs);
+      else toast.info("No finding of this scan carries these finding codes");
+    }
+  };
 
   const showTabs = team_id && scan_id != null;
   const hasTicketingTab = run ? RUN_TICKETING_TAB_AVAILABLE : showTabs && onIntegrationSettingsUpdated != null;
@@ -748,6 +784,14 @@ export default function CbomResults({
         </Card>
       )}
 
+      {advisoryData && (
+        <p className={`mb-6 text-xs ${advisoryData.stale ? "text-amber-800 dark:text-amber-300" : "text-zinc-500 dark:text-zinc-400"}`}
+           data-testid="cbom-advisory-data" data-stale={advisoryData.stale ? "true" : "false"}
+           role={advisoryData.stale ? "status" : undefined}>
+          {advisoryLine(advisoryData)}{staleNote(advisoryData) ? ` ${staleNote(advisoryData)}` : ""}
+        </p>
+      )}
+
       {run && run.run && <RunCoverageSection run={run.run} targets={run.page?.targets ?? null} provenance={run.results?.provenance} />}
 
       {hasTicketingTab && (
@@ -915,7 +959,11 @@ export default function CbomResults({
             refAliases={relatedRefAliases}
           />
 
-          {run && <RunComplianceSection view={run.plan.compliance} results={run.results} posture={run.posture} />}
+          {(!run || run.plan.compliance.show) && (
+            <ComplianceMappingSection frameworks={complianceMapping.frameworks} onDrill={handleComplianceDrill} scope={run ? "run" : "scan"}
+                                      note={run?.plan.compliance.note ?? null}
+                                      footnote={complianceMapping.basis === "posture" ? "From the run posture (this server does not send the run results summary yet)." : null} />
+          )}
 
           {/* Dashboard */}
           {run && (
@@ -1065,7 +1113,7 @@ export default function CbomResults({
                 <Table className="min-w-max">
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-[72px]">
+                      <TableHead data-col="select" className="w-[72px]">
                         <div className="flex items-center gap-0.5">
                           <Checkbox
                             checked={filteredFindings.length > 0 && selectedFindings.size === filteredFindings.length}
@@ -1079,16 +1127,16 @@ export default function CbomResults({
                           <InfoTip id="cbom.res.select_all" />
                         </div>
                       </TableHead>
-                      {showCol("algorithm") && <TableHead className="min-w-[160px]">Algorithm <InfoTip id="cbom.res.col.algorithm" /></TableHead>}
-                      {showCol("type") && <TableHead className="min-w-[120px]">Type <InfoTip id="cbom.res.col.type" /></TableHead>}
-                      {showCol("impact") && <TableHead className="min-w-[90px]">Impact <InfoTip id="results.table.impact" /></TableHead>}
-                      {showCol("strength") && <TableHead className="min-w-[110px]">Strength <InfoTip id="cbom.res.col.strength" /></TableHead>}
-                      {showCol("quantum") && <TableHead className="min-w-[100px]">Quantum <InfoTip id="cbom.res.col.quantum" /></TableHead>}
-                      {showCol("fixclass") && <TableHead className="min-w-[110px]">Fix class <InfoTip id="cbom.res.col.fix_class" /></TableHead>}
-                      {showCol("risk") && <TableHead className="min-w-[90px] text-center">Risk score <InfoTip id="cbom.res.col.risk" /></TableHead>}
-                      {showCol("location") && <TableHead className="min-w-[140px]">Location <InfoTip id="cbom.res.col.location" /></TableHead>}
-                      {showCol("status") && <TableHead className="min-w-[100px]">Status <InfoTip id="results.table.status" /></TableHead>}
-                      <TableHead className={`min-w-[150px] text-right ${STICKY_ACTIONS}`}>
+                      {showCol("algorithm") && <TableHead data-col="algorithm" className="min-w-[160px]">Algorithm <InfoTip id="cbom.res.col.algorithm" /></TableHead>}
+                      {showCol("type") && <TableHead data-col="type" className="min-w-[120px]">Type <InfoTip id="cbom.res.col.type" /></TableHead>}
+                      {showCol("impact") && <TableHead data-col="impact" className="min-w-[90px]">Impact <InfoTip id="results.table.impact" /></TableHead>}
+                      {showCol("strength") && <TableHead data-col="strength" className="min-w-[110px]">Strength <InfoTip id="cbom.res.col.strength" /></TableHead>}
+                      {showCol("quantum") && <TableHead data-col="quantum" className="min-w-[100px]">Quantum <InfoTip id="cbom.res.col.quantum" /></TableHead>}
+                      {showCol("fixclass") && <TableHead data-col="fixclass" className="min-w-[110px]">Fix class <InfoTip id="cbom.res.col.fix_class" /></TableHead>}
+                      {showCol("risk") && <TableHead data-col="risk" className="min-w-[90px] text-center">Risk score <InfoTip id="cbom.res.col.risk" /></TableHead>}
+                      {showCol("location") && <TableHead data-col="location" className="min-w-[140px]">Location <InfoTip id="cbom.res.col.location" /></TableHead>}
+                      {showCol("status") && <TableHead data-col="status" className="min-w-[100px]">Status <InfoTip id="results.table.status" /></TableHead>}
+                      <TableHead data-col="actions" className={`min-w-[150px] text-right ${STICKY_ACTIONS}`}>
                         <span className="inline-flex items-center gap-1">Actions <InfoTip id="results.finding.action" /></span>
                       </TableHead>
                     </TableRow>
@@ -1112,7 +1160,7 @@ export default function CbomResults({
                             {...rowOpenProps(() => setSelectedFinding(finding), `Open details of ${finding.algorithm_name || finding.title}`)}
                             className={`cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50 focus-visible:outline-none focus-visible:bg-blue-50 dark:focus-visible:bg-blue-950/40 ${selectedFindings.has(finding.id) ? "bg-zinc-100 dark:bg-zinc-800/70" : ""}`}
                           >
-                            <TableCell onClick={(e) => e.stopPropagation()} className="w-[72px]">
+                            <TableCell data-col="select" onClick={(e) => e.stopPropagation()} className="w-[72px]">
                               {/* infotip-shared: one row of the selection; the Select all tip in the header explains it */}
                               <Checkbox
                                 checked={selectedFindings.has(finding.id)}
@@ -1127,7 +1175,7 @@ export default function CbomResults({
                               />
                             </TableCell>
                             {showCol("algorithm") && (
-                            <TableCell className="font-medium">
+                            <TableCell data-col="algorithm" className="font-medium">
                               <button
                                 type="button"
                                 onClick={() => setSelectedFinding(finding)}
@@ -1139,34 +1187,34 @@ export default function CbomResults({
                             </TableCell>
                             )}
                             {showCol("type") && (
-                            <TableCell className="text-sm text-zinc-600 dark:text-zinc-400">
+                            <TableCell data-col="type" className="text-sm text-zinc-600 dark:text-zinc-400">
                               {finding.algorithm_type?.replace(/_/g, " ") ?? "—"}
                             </TableCell>
                             )}
                             {showCol("impact") && (
-                            <TableCell>
+                            <TableCell data-col="impact">
                               <Badge variant="outline" className={getImpactBadgeClass(finding.impact)}>{finding.impact}</Badge>
                             </TableCell>
                             )}
                             {showCol("strength") && (
-                            <TableCell>
+                            <TableCell data-col="strength">
                               <Badge variant="outline" className={getStrengthBadgeClass(finding.crypto_strength)}>
                                 {finding.crypto_strength ?? "—"}
                               </Badge>
                             </TableCell>
                             )}
                             {showCol("quantum") && (
-                            <TableCell>
+                            <TableCell data-col="quantum">
                               <QuantumBadge quantumSafe={finding.quantum_safe} strength={finding.crypto_strength} />
                             </TableCell>
                             )}
                             {showCol("fixclass") && (
-                            <TableCell>
+                            <TableCell data-col="fixclass">
                               <FixClassChip item={finding as FixClassFields} testId={`cbom-finding-fixclass-${finding.id}`} />
                             </TableCell>
                             )}
                             {showCol("risk") && (
-                            <TableCell className="text-center">
+                            <TableCell data-col="risk" className="text-center">
                               <span
                                 className={`inline-flex items-center justify-center min-w-9 px-2 py-1 rounded-md text-xs font-semibold tabular-nums ${getRiskScoreBoxClass(finding.risk_score)}`}
                                 title="Risk score"
@@ -1176,18 +1224,18 @@ export default function CbomResults({
                             </TableCell>
                             )}
                             {showCol("location") && (
-                            <TableCell className="text-sm text-zinc-600 dark:text-zinc-400 max-w-[150px] truncate" title={finding.location ?? ""}>
+                            <TableCell data-col="location" className="text-sm text-zinc-600 dark:text-zinc-400 max-w-[150px] truncate" title={finding.location ?? ""}>
                               {finding.location ?? "—"}
                             </TableCell>
                             )}
                             {showCol("status") && (
-                            <TableCell>
+                            <TableCell data-col="status">
                               <span className={`inline-flex items-center justify-center px-2.5 py-1 rounded-md text-xs font-medium capitalize ${getFindingStatusBadgeClass(finding.status ?? "not_started")}`}>
                                 {statusLabel}
                               </span>
                             </TableCell>
                             )}
-                            <TableCell className={`text-right whitespace-nowrap ${STICKY_ACTIONS}`} onClick={(e) => e.stopPropagation()}
+                            <TableCell data-col="actions" className={`text-right whitespace-nowrap ${STICKY_ACTIONS}`} onClick={(e) => e.stopPropagation()}
                                        data-testid={`cbom-finding-actions-${finding.id}`}>
                               <div className="inline-flex items-center gap-1.5">
                               <DropdownMenu>

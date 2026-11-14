@@ -298,7 +298,8 @@ export function CodeChanges({ teamId, scanId }: { teamId: number; scanId: number
   );
 }
 
-/** Heat-map (family x source, or x asset type) and the certificate calendar of one run. */
+/** Heat-map (family x source, or x asset type) and the certificate calendar of one run, stacked: each gets the full
+ * width (side by side the heat-map got half a row and scrolled sideways at 1366 px, #268). */
 export function RunInsights({ teamId, runId, active }: { teamId: number; runId: number; active: boolean }) {
   const [by, setBy] = useState<"source" | "type">("source");
   const q = useQuery({
@@ -311,7 +312,7 @@ export function RunInsights({ teamId, runId, active }: { teamId: number; runId: 
   if (q.isError || !q.data) return <ErrorBlock error={q.error} onRetry={() => q.refetch()} />;
   if (q.data.rows.length === 0) return null;
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 rounded-lg border border-zinc-200 dark:border-zinc-800 p-4" data-testid="run-insights">
+    <div className="space-y-6 rounded-lg border border-zinc-200 dark:border-zinc-800 p-4" data-testid="run-insights">
       <div className="space-y-2 min-w-0">
         <div className="flex gap-2 text-xs" role="group" aria-label="Heat-map columns">
           {(["source", "type"] as const).map((v) => (
