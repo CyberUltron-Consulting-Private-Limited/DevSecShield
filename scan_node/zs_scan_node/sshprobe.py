@@ -9,17 +9,21 @@ family.  The exchange is never completed (no NEWKEYS, no authentication): the cl
 closes.  ssh-audit reads host keys the same way; OpenSSH's own ssh-keyscan uses one connection per key type too.
 
 Why not paramiko (the node's SSH library): it negotiates one host key per handshake and implements none of the
-post-quantum key exchanges (``mlkem768x25519-sha256``, ``sntrup761x25519-sha512``, RFC 10042's NIST-curve hybrids),
-so a PQ-only server's host key was never read (KF-6) and a second host key never seen (KF-17).  The node image has no
-OpenSSH client either.
+post-quantum key exchanges (the OpenSSH 10 default, the NTRU Prime hybrid OpenSSH ships, RFC 10042's NIST-curve
+hybrids), so a PQ-only server's host key was never read (KF-6) and a second host key never seen (KF-17).  The node
+image has no OpenSSH client either.
 
-The reply's signature is not verified: that needs the key exchange's shared secret, and for ML-KEM the decapsulation
-key, which this node's ``cryptography`` does not provide.  Every key is reported with ``read_by: "kex_reply"``.
+The reply's signature is not verified: that needs the key exchange's shared secret, and for a FIPS 203 KEM the
+decapsulation key, which this node's ``cryptography`` does not provide.  Every key is reported with
+``read_by: "kex_reply"``.
 The Linux collector, which sends credentials, keeps paramiko's verified handshake and host-key pinning.
 
 This module never opens a connection: the caller hands in sockets it opened through the network gate (never-scan,
-stop-all, rate limits), one per call of ``open_conn``.  Client key shares are generated at run time; the ML-KEM
-encapsulation key is a valid FIPS 203 encoding (every coefficient below q) whose secret half is never needed.
+stop-all, rate limits), one per call of ``open_conn``.  Client key shares are generated at run time; a FIPS 203
+encapsulation key is a valid encoding (every coefficient below q) whose secret half is never needed.
+
+Post-quantum names, and how each one's client share is built, come from algid (CB-04 single source): the reader's
+post-quantum key exchanges are ``algid.SSH_PQ_PROBE_KEX`` and their shares ``algid.ssh_kex_client_share``.
 """
 from __future__ import annotations
 
@@ -33,6 +37,7 @@ import struct
 import time
 from typing import Any, Callable
 
+from zs_scan_node import algid as A
 from zs_scan_node import tlsprobe as T
 
 CLIENT_BANNER = b"SSH-2.0-ZeroShieldScan_1.0\r\n"  # the same version string the KEXINIT probe always sent
@@ -44,19 +49,15 @@ MSG_DISCONNECT, MSG_IGNORE, MSG_DEBUG, MSG_KEXINIT = 1, 2, 4, 20
 MSG_KEX_INIT, MSG_KEX_REPLY = 30, 31  # KEXDH / KEX_ECDH / KEX_HYBRID (RFC 4253, 5656, 10042); KEXRSA_PUBKEY = 30
 MSG_GEX_REQUEST, MSG_GEX_GROUP, MSG_GEX_INIT, MSG_GEX_REPLY = 34, 31, 32, 33  # RFC 4419
 
-ML_KEM_EK = {512: 800, 768: 1184, 1024: 1568}  # FIPS 203 encapsulation-key bytes (384 k + 32)
-SNTRUP761_PK = 1158
 # Key exchanges the reader speaks, in the order it picks them.  Classical first (smallest messages); the post-quantum
-# and hybrid ones are used when the server offers nothing else.  Names: IANA "Key Exchange Method Names" (RFC 4253,
-# 4419, 4432, 5656, 8268, 8731, 10042), OpenSSH aliases, draft-harrison-mlkem-ssh (pure ML-KEM).
+# and hybrid ones (algid's list, CB-04) are used when the server offers nothing else.  Names: IANA "Key Exchange
+# Method Names" (RFC 4253, 4419, 4432, 5656, 8268, 8731, 10042) and OpenSSH aliases.
 CLASSICAL_KEX = ("curve25519-sha256", "curve25519-sha256@libssh.org", "ecdh-sha2-nistp256", "ecdh-sha2-nistp384",
                  "ecdh-sha2-nistp521", "curve448-sha512", "diffie-hellman-group14-sha256",
                  "diffie-hellman-group16-sha512", "diffie-hellman-group15-sha512", "diffie-hellman-group18-sha512",
                  "diffie-hellman-group17-sha512", "diffie-hellman-group14-sha1", "diffie-hellman-group-exchange-sha256",
                  "diffie-hellman-group-exchange-sha1", "diffie-hellman-group1-sha1", "rsa2048-sha256", "rsa1024-sha1")
-PQ_KEX = ("mlkem768x25519-sha256", "sntrup761x25519-sha512", "sntrup761x25519-sha512@openssh.com",
-          "mlkem768nistp256-sha256", "mlkem1024nistp384-sha384", "mlkem768-sha256", "mlkem512-sha256",
-          "mlkem1024-sha384")
+PQ_KEX: tuple[str, ...] = A.SSH_PQ_PROBE_KEX
 READER_KEX = CLASSICAL_KEX + PQ_KEX
 _DH_BITS = {"diffie-hellman-group1-sha1": 1024, "diffie-hellman-group14-sha1": 2048,
             "diffie-hellman-group14-sha256": 2048, "diffie-hellman-group15-sha512": 3072,
@@ -262,8 +263,9 @@ def families(host_key_algs: list[str]) -> list[list[str]]:
 
 
 # ----------------------------------------------------------------------------- client key shares
-def _mlkem_ek(k: int) -> bytes:
-    """A FIPS 203 encapsulation key: ByteEncode12 of 256 k coefficients drawn below q = 3329, then a random rho."""
+def _fips203_ek(k: int) -> bytes:
+    """A FIPS 203 encapsulation key (384 k + 32 bytes): ByteEncode12 of 256 k coefficients drawn below
+    q = 3329, then a random rho."""
     out = bytearray()
     for _ in range(128 * k):
         a, b = secrets.randbelow(3329), secrets.randbelow(3329)
@@ -293,6 +295,15 @@ def _ec_point(curve_name: str) -> bytes:
     return ec.generate_private_key(curve).public_key().public_bytes(Encoding.X962, PublicFormat.UncompressedPoint)
 
 
+# algid.ssh_kex_client_share part kinds -> the bytes a client sends for that part
+_SHARE_PART: dict[str, Callable[[int], bytes]] = {
+    "fips203": _fips203_ek,
+    "opaque": os.urandom,  # a public key the server takes as it is (the NTRU Prime hybrid)
+    "x25519": lambda _size: _x25519(),
+    "nistp": lambda bits: _ec_point(f"nistp{bits}"),
+}
+
+
 def _client_share(kex: str) -> bytes:
     if kex in ("curve25519-sha256", "curve25519-sha256@libssh.org"):
         return _x25519()
@@ -300,21 +311,10 @@ def _client_share(kex: str) -> bytes:
         return _x448()
     if kex.startswith("ecdh-sha2-"):
         return _ec_point(kex[len("ecdh-sha2-"):])
-    if kex == "mlkem768x25519-sha256":
-        return _mlkem_ek(3) + _x25519()  # RFC 10042: C_INIT = C_PK2 (ML-KEM) || C_PK1 (classical)
-    if kex == "mlkem768nistp256-sha256":
-        return _mlkem_ek(3) + _ec_point("nistp256")
-    if kex == "mlkem1024nistp384-sha384":
-        return _mlkem_ek(4) + _ec_point("nistp384")
-    if kex in ("sntrup761x25519-sha512", "sntrup761x25519-sha512@openssh.com"):
-        return os.urandom(SNTRUP761_PK) + _x25519()  # OpenSSH kexsntrup761x25519.c: sntrup761 pk || X25519
-    if kex == "mlkem512-sha256":
-        return _mlkem_ek(2)
-    if kex == "mlkem768-sha256":
-        return _mlkem_ek(3)
-    if kex == "mlkem1024-sha384":
-        return _mlkem_ek(4)
-    raise ValueError(kex)
+    parts = A.ssh_kex_client_share(kex)  # post-quantum and hybrid: the parts in wire order (RFC 10042: C_PK2 || C_PK1)
+    if parts is None:
+        raise ValueError(kex)
+    return b"".join(_SHARE_PART[kind](arg) for kind, arg in parts)
 
 
 def _dh_public(bits: int) -> int:

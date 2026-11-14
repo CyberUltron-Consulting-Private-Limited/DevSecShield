@@ -115,7 +115,7 @@ def _pinned_known_hosts(text: str) -> paramiko.HostKeys:
 def _accept_rfc8731_curve25519(transport: Any) -> None:
     """(``transport``: the paramiko Transport open_session made on its gated socket; nothing here connects.)
     paramiko implements curve25519-sha256 under its libssh name only (``curve25519-sha256@libssh.org``); RFC 8731
-    gave the same algorithm the name ``curve25519-sha256``, and a server that lists only that name (with ML-KEM
+    gave the same algorithm the name ``curve25519-sha256``, and a server that lists only that name (with post-quantum
     hybrids, for example) refused every login (CB-13).  The class does not use the name, so it serves both."""
     try:
         from paramiko.kex_curve25519 import KexCurve25519
