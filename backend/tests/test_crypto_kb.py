@@ -91,8 +91,10 @@ def test_every_reference_resolves():
             assert e["owasp_2021"] and e["owasp_2025"], code
             for key in e["compliance"]:
                 assert data["compliance"][key], (code, key)
-                for ref in data["compliance"][key]:
-                    assert ref["source"].startswith("https://"), ref
+                for clause in data["compliance"][key]:
+                    assert data["clauses"][clause]["source"].startswith("https://"), clause
+            for clause in e["clauses"] + [k for r in e["clause_rules"] for k in r["clauses"]]:  # #269
+                assert data["clauses"][clause]["source"].startswith("https://"), (code, clause)
             assert e["remediation"]["summary"]
 
 

@@ -73,7 +73,26 @@ def explain(finding: dict[str, Any], namespace: str = "code") -> list[dict[str, 
     codes = [c for c in codes if c != "QUANTUM_VULNERABLE"] + [c for c in codes if c == "QUANTUM_VULNERABLE"]
     evidence = " ".join(str(finding.get(k) or "") for k in ("title", "description", "finding", "algorithm_name"))
     title = str(finding.get("title") or finding.get("algorithm_name") or "")
-    return crypto_kb.render(namespace, codes, context=_location_context(finding), evidence=evidence, title=title)
+    names = code_evidence(finding)
+    return crypto_kb.render(namespace, codes, context=_location_context(finding), evidence=evidence, title=title,
+                            clause_evidence={code: names for code in codes})
+
+
+def code_evidence(finding: dict[str, Any]) -> list[str]:
+    """What a code-scan finding says about its algorithm, for the compliance clause rules (#289): the scanner's
+    algorithm field, its sentence about that algorithm (the description, e.g. "Undersized asymmetric key on RSA:
+    1024-bit") and ``<algorithm>-<key size>``. Only when the scanner named the algorithm: a row without one has no
+    algorithm evidence (its title may be a file name such as ``des3_keys.pem``, its sentence may name a path), so the
+    algorithm clauses are cited for review ("not recorded"), never decided by a name. Never the location."""
+    algorithm = finding.get("algorithm_name")
+    if not isinstance(algorithm, str) or not algorithm.strip():
+        return []
+    keys = ("algorithm_name", "description", "finding")
+    names = [str(finding.get(k)).strip() for k in keys if isinstance(finding.get(k), str) and finding.get(k).strip()]
+    size = finding.get("key_size")
+    if str(size or "").strip().isdigit():
+        names.append(f"{algorithm.strip()}-{int(str(size).strip())}")
+    return list(dict.fromkeys(names))
 
 
 def remediation(finding: dict[str, Any], namespace: str = "code") -> dict[str, Any]:
