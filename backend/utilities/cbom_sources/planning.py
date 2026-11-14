@@ -108,8 +108,8 @@ def network_sweep_totals(sources: list[CbomCollectionSource], settings: CbomColl
             disabled += 1
             continue
         enabled += 1
-        merged = T.merge(merged + list(source_targets(source, settings).get("intervals") or []))
-    return {"addresses": T.size(merged), "ranges_enabled": enabled, "ranges_disabled": disabled}
+        merged += list(source_targets(source, settings).get("intervals") or [])
+    return {"addresses": T.size(T.merge(merged)), "ranges_enabled": enabled, "ranges_disabled": disabled}
 
 @dataclass
 class PlanItem:

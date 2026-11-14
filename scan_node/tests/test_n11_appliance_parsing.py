@@ -65,6 +65,11 @@ def test_asa_ssl_dh_group_is_normalised_and_ike_group2_stays_modp1024():
     assert ok["dh_groups"] == ["MODP-2048"]
 
 
+def test_asa_config_with_only_ssl_dh_group_still_makes_the_ssl_row():
+    tls = _rows("cisco_asa", load_fixture(FIX / "cisco_asa_dh_only.txt"))["ssl"][5]
+    assert tls["dh_group"] == "group2" and tls["dh_groups"] == ["MODP-1024"] and "min_version" not in tls
+
+
 def test_fortios_dh_params_is_read():
     tls = _rows("fortios", load_fixture(FIX / "fortios_dh.txt"))["system global"][5]
     assert tls["dh_bits"] == 1024 and tls["protocols"] == ["TLSv1.2", "TLSv1.3"]

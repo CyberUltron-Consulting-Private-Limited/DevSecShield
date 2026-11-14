@@ -82,6 +82,11 @@ def test_asa_dh_group2_is_weak_dh_on_tls_and_ike():
     assert "DH_LT_2048" in _judged("cisco_asa", _fixture(FIX / "cisco_asa.txt"))["ssl"]["finding_codes"]
 
 
+def test_asa_with_only_ssl_dh_group2_is_flagged():
+    tls = _judged("cisco_asa", _fixture(FIX / "n11/cisco_asa_dh_only.txt"))["ssl"]
+    assert tls["finding_codes"] == ["DH_LT_2048"] and tls["impacts"]["DH_LT_2048"] == "High"
+
+
 def test_fortios_dh_params_1024_is_weak_dh():
     tls = _judged("fortios", _fixture(FIX / "n11/fortios_dh.txt"))["system global"]
     assert tls["finding_codes"] == ["DH_LT_2048"] and tls["impacts"]["DH_LT_2048"] == "High"

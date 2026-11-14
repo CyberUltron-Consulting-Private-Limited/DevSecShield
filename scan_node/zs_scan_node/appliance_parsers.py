@@ -219,7 +219,8 @@ def parse_cisco_asa(outputs: dict[str, str]) -> list[Row]:
     vendor = "cisco_asa"
     m = re.search(r"^ssl server-version (\S+)", base, re.M)
     ciphers = re.findall(r"^ssl cipher (\S+) (\S+)(?: \"([^\"]*)\")?", base, re.M)
-    if m or ciphers:
+    dh = re.search(r"^ssl dh-group (\S+)", base, re.M)
+    if m or ciphers or dh:  # a config with only 'ssl dh-group group2' still gets its ssl row (and its DH verdict)
         weak = []
         for proto, level, custom in ciphers:
             if level in ("all", "low"):
@@ -230,7 +231,6 @@ def parse_cisco_asa(outputs: dict[str, str]) -> list[Row]:
                                "cipher_levels": [f"{p} {lvl}" for p, lvl, _c in ciphers]}
         if m:
             tls["min_version"] = ASA_TLS.get(m.group(1).lower(), m.group(1))
-        dh = re.search(r"^ssl dh-group (\S+)", base, re.M)
         if dh:
             tls["dh_group"] = dh.group(1)
             name = _group(dh.group(1))  # group2 -> MODP-1024 (the DHE group the ASA uses for TLS)
