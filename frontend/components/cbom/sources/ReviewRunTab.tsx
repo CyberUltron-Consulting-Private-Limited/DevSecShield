@@ -26,6 +26,7 @@ import {
 } from "@/utils/backend_api";
 
 import { CompareDialog, RunChanges } from "./ChangesPanel";
+import GradeInputsCard from "./GradeInputsCard";
 import { cbomSourcesKeys, TERMINAL_RUN } from "./keys";
 import RunResults from "./RunResults";
 import { CriticalityCard } from "./RunPosture";
@@ -354,6 +355,7 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
 
       <CriticalityCard teamId={teamId} />
       <SourceMetadataCard teamId={teamId} />
+      <GradeInputsCard teamId={teamId} isAdmin={!!overview.viewer?.is_admin} />
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
         <div className="xl:col-span-2 min-w-0">

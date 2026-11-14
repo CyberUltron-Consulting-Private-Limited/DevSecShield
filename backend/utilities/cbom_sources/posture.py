@@ -521,7 +521,9 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
         "impacts": {k: impacts.get(k, 0) for k in IMPACT_WEIGHT},
         "top_codes": [{"code": c, "count": n, "title": (crypto_kb.entry("node", c) or {}).get("title", c)}
                       for c, n in codes.most_common(15)],
-        "mosca": mosca(risk_model),
+        # the run's Mosca: the snapshot taken at Start (CB-19 PR-2), else the team's now; the team's now beside it
+        "mosca": mosca(grades.record_risk_model),
+        "mosca_now": mosca(risk_model) if grades.now is not None else None,
         "top_risks": risky[:top],
         "exposure": {e: exposure_counts.get(e, 0) for e in EXPOSURES},
         "exposure_factors": dict(EXPOSURE_FACTOR),

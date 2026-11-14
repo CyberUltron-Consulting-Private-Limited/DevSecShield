@@ -34,6 +34,7 @@ import {
 
 import { handleApiError } from "@/utils/error-handler";
 
+import { distributionText, gradeNowText, inputsChangedText, type CbomGradeNow, type CbomPostureGrades } from "./gradeInputs";
 import { cbomSourcesKeys } from "./keys";
 import { EXPOSURE_CHOICES, pluralize } from "./logic";
 import { ErrorBlock, LoadingBlock, SectionCard, StatusBadge, Truncate, type Tone } from "./shared";
@@ -89,7 +90,7 @@ const MOSCA_FIELDS: { key: keyof CbomRiskModel; label: string; hint: string }[] 
   { key: "threat_years", label: "Z: years until a quantum computer", hint: "your organisation's assumption" },
 ];
 
-function MoscaEditor({ teamId, onDone }: { teamId: number; onDone: () => void }) {
+export function MoscaEditor({ teamId, onDone }: { teamId: number; onDone: () => void }) {
   const queryClient = useQueryClient();
   const settings = useQuery({ queryKey: cbomSourcesKeys.settings(teamId), queryFn: () => getCbomSourcesSettings(teamId) });
   const [draft, setDraft] = useState<Record<string, string>>({});
@@ -150,6 +151,25 @@ function MoscaEditor({ teamId, onDone }: { teamId: number; onDone: () => void })
   );
 }
 
+/** CB-19 PR-2: the run grades with the inputs it recorded at Start; when the team's differ now, say so and show the
+ * grades with the current inputs beside the record (the list, filters and export stay on the record). */
+export function GradeInputsBanner({ p }: { p: CbomPostureGrades }) {
+  const text = inputsChangedText(p);
+  if (!text) return null;
+  return (
+    <div className="rounded-md border border-blue-200 dark:border-blue-900 bg-blue-50 dark:bg-blue-950/40 p-3 space-y-1"
+         role="status" data-testid="grade-inputs-banner" data-changed={p.q_changed_now ?? 0}>
+      <p className="text-xs text-zinc-800 dark:text-zinc-200 flex gap-1"><Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />{text}</p>
+      <p className="text-xs text-zinc-600 dark:text-zinc-400" data-testid="grade-inputs-record">
+        Recorded at Start: {distributionText(p.q_grades)}
+      </p>
+      <p className="text-xs text-zinc-600 dark:text-zinc-400" data-testid="grade-inputs-now">
+        With current inputs: {distributionText(p.q_grades_now)}
+      </p>
+    </div>
+  );
+}
+
 export function RunPostureCard({ teamId, runId, active }: { teamId: number; runId: number; active: boolean }) {
   const [showCompliance, setShowCompliance] = useState(false);
   const [editMosca, setEditMosca] = useState(false);
@@ -165,13 +185,14 @@ export function RunPostureCard({ teamId, runId, active }: { teamId: number; runI
   if (query.isError || !query.data) return <ErrorBlock error={query.error} onRetry={() => query.refetch()} />;
   const p = query.data;
   if (p.assets === 0) return null;
-  const m = p.mosca;
+  const m = p.mosca; // the Mosca this run recorded at Start (the team's now: the banner and the editor)
   return (
     <div className="space-y-3 rounded-lg border border-zinc-200 dark:border-zinc-800 p-4" data-testid="run-posture">
       <div className="flex flex-wrap items-center gap-2">
         <p className="text-sm font-medium text-zinc-900 dark:text-white">Post-quantum and risk posture</p>
         <span className="text-xs text-zinc-500">Knowledge base {p.kb_version} · no AI</span>
       </div>
+      <GradeInputsBanner p={p as CbomPostureGrades} />
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Stat label="PQC readiness" value={readinessText(p).value} hint={readinessText(p).hint} testId="posture-readiness" />
         <Stat label="Harvest now, decrypt later" value={String(p.hndl_assets)}
@@ -189,10 +210,16 @@ export function RunPostureCard({ teamId, runId, active }: { teamId: number; runI
           ) : (
             <p className="text-xs text-zinc-500 mt-1">Not set</p>
           )}
+          {p.mosca_now && (
+            <p className="text-xs text-zinc-500 mt-0.5" data-testid="posture-mosca-now">
+              Team now: {p.mosca_now.configured ? `X ${p.mosca_now.x} + Y ${p.mosca_now.y} vs Z ${p.mosca_now.z}` : "not set"} (applies to new runs)
+            </p>
+          )}
           {isAdmin ? (
             <button type="button" className="text-xs text-blue-600 dark:text-blue-400 cursor-pointer mt-1" data-testid="mosca-edit"
+                    title="Team setting: new runs record it at Start; this run keeps the values it started with"
                     onClick={() => setEditMosca(!editMosca)}>
-              {m.configured ? "Change X, Y, Z" : "Set X, Y, Z"}
+              {m.configured || p.mosca_now ? "Change X, Y, Z" : "Set X, Y, Z"}
             </button>
           ) : (
             <p className="text-xs text-zinc-500 mt-1" data-testid="mosca-admin-only">A team admin sets X, Y and Z</p>
@@ -280,6 +307,8 @@ export function AssetDetailPanel({ teamId, assetId }: { teamId: number; assetId:
   if (query.isLoading) return <LoadingBlock />;
   if (query.isError || !query.data) return <ErrorBlock error={query.error} onRetry={() => query.refetch()} />;
   const a = query.data;
+  const gradeNow = gradeNowText((a as { q_grade?: string | null }).q_grade,
+                                (a as { q_now?: CbomGradeNow | null }).q_now);
   // a class this bundle does not know (a newer backend) reads as Unknown, never as "Not applicable" or a crash
   const cls = CLASS_LABEL[a.pqc_class] ?? CLASS_LABEL.unknown;
   return (
@@ -300,6 +329,7 @@ export function AssetDetailPanel({ teamId, assetId }: { teamId: number; assetId:
         )}
         {a.exposure_basis && <span className="text-xs text-zinc-500">{a.exposure_basis}</span>}
       </div>
+      {gradeNow && <p className="text-xs text-zinc-600 dark:text-zinc-400" data-testid="asset-q-now">{gradeNow}</p>}
       {a.pqc_class_basis_text && (
         <p className="text-xs text-zinc-500" data-testid="asset-pqc-basis">
           {a.pqc_class_basis_text}

@@ -691,6 +691,42 @@ def coverage_gaps(rows: list[CbomCollectedAsset], names: dict[int, str], job_nam
     return out
 
 
+Q0_GAP_CAP = 5_000  # zs:q0_gap properties per document; zs:q0_gap_count is always the exact number
+
+
+def q0_gap_properties(snapshot: dict[str, Any] | None, scope: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """The run's Q0 gaps (CB-19 PR-2, KF-14-snapshot): ``zs:q0_gap_count`` and one ``zs:q0_gap`` per gap (at most
+    ``Q0_GAP_CAP``), compact JSON. First the evidence gaps of the snapshot taken at Start (``kind`` area / vendor,
+    ``key`` the area key or vendor id, ``level`` E0, ``reason`` the CB-18 sub-reason, ``as_of`` the day it was
+    judged); areas and vendors above E0 are in the snapshot but are not gaps. Then the run's unread scope
+    (``qgrade.scope_items``, ``kind: scope``); its coverage rows are also ``zs:coverage_gap`` (``refs`` links them).
+    A run from before the snapshot has no evidence part."""
+    evidence = (snapshot or {}).get("evidence") if isinstance(snapshot, dict) else None
+    as_of = evidence.get("as_of") if isinstance(evidence, dict) else None
+    gaps: list[dict[str, Any]] = []
+    for item in (evidence.get("items") or []) if isinstance(evidence, dict) else []:
+        if isinstance(item, dict) and item.get("level") == "E0" and item.get("reason"):
+            gaps.append({"key": item.get("key"), "kind": item.get("kind"), "reason": item.get("reason"),
+                         "detail": item.get("detail"), "as_of": as_of, "level": "E0", "title": item.get("title")})
+    for item in scope:
+        gap = {"key": item["key"], "kind": item.get("kind") or "scope", "reason": item["reason"],
+               "detail": item.get("detail"), "as_of": None, "count": item.get("count", 1)}
+        if item.get("refs"):
+            gap["refs"] = [f"zs-asset-{i}" for i in item["refs"][:20]]
+        gaps.append(gap)
+    if not gaps:
+        return []
+    return [{"name": "zs:q0_gap_count", "value": str(len(gaps))},
+            *[{"name": "zs:q0_gap", "value": json.dumps(g, sort_keys=True, separators=(",", ":"), ensure_ascii=False)}
+              for g in gaps[:Q0_GAP_CAP]]]
+
+
+def _run_scope_items(session: Session, run: CbomCollectionRun, coverage: list[CbomCollectedAsset]) -> list[dict[str, Any]]:
+    ctx = QG.load_context(session, team_id=run.team_id, run_id=run.id)
+    graded = [(row, ctx.grade_row(row, None, explain=False)) for row in coverage]
+    return QG.scope_items(ctx, graded)[0]
+
+
 def _document(session: Session, run: CbomCollectionRun, now: _dt.datetime
               ) -> tuple[dict[str, Any], Iterator[dict[str, Any]], Callable[[], list[dict[str, Any]]]]:
     """The run's CycloneDX document in three parts, for writing it piece by piece: the head (every key before
@@ -750,6 +786,7 @@ def _document(session: Session, run: CbomCollectionRun, now: _dt.datetime
                 {"name": "zs:pqc_readiness_status", "value": summary["readiness_basis"]["status"]},
                 *[{"name": "zs:gap", "value": gap[:255]} for gap in gaps[:500]],
                 *coverage_gaps(coverage, names, job_names, provs),
+                *q0_gap_properties(run.grade_inputs, _run_scope_items(session, run, coverage)),
             ],
         },
     }
