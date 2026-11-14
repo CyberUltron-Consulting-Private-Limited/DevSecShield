@@ -4,7 +4,7 @@ from typing import Dict, Literal
 from sqlmodel import JSON, Column, DateTime, Field, SQLModel, String, Relationship
 from sqlalchemy import Text, UniqueConstraint
 from sqlalchemy.types import TypeDecorator as _SaTypeDecorator
-from sqlalchemy import Index as _SaIndex, func as _sa_func
+from sqlalchemy import Index as _SaIndex, func as _sa_func, text as _sa_text
 scan_types = Literal["sast", "llm", "mcp" , "iac" , "leakage" , "sbom_sca" , "agent_discovery", "dast", "cbom", "ai_bom"]
 
 
@@ -670,6 +670,67 @@ class CbomRemediationAssignment(SQLModel, table=True):
     row_version: int = Field(default=1)
     created_at: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
     last_updated: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
+
+
+class CbomQ0Gap(SQLModel, table=True):
+    """One opening of a Q0 item of the team's quantum risk register (CB-23 PR-A): an evidence area or vendor at E0,
+    an unread scope, an asset whose class is unknown, a missing Mosca input. Open while ``closed_at`` is NULL; at most
+    one open row per (team, kind, key) (partial unique index); closing writes the cause and the grade it closed to,
+    and a later reopening is a new row with a new ``opened_at`` (so a new ``q0_closed`` dedupe key)."""
+    __tablename__ = "cbomq0gap"
+    __table_args__ = (
+        _SaIndex("uq_cbomq0gap_open_item", "team_id", "item_kind", "item_key", unique=True,
+                 postgresql_where=_sa_text("closed_at IS NULL"), sqlite_where=_sa_text("closed_at IS NULL")),
+        _SaIndex("ix_cbomq0gap_team_closed_opened", "team_id", "closed_at", "opened_at"),
+    )
+    id: int | None = Field(default=None, primary_key=True)
+    team_id: int = Field(foreign_key="team.id")
+    item_kind: str = Field(max_length=16)  # evidence | scope | asset | inputs
+    item_key: str = Field(max_length=128)
+    reason: str = Field(max_length=32)  # the Q0 reason code (qgrade.REASONS); evidence: evidence_e0 + detail.sub_reason
+    detail: Dict | None = Field(default_factory=dict, sa_column=Column(JSON))
+    opened_at: datetime.datetime = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
+    as_of: str | None = Field(default=None, max_length=10)  # the day the server last judged it (YYYY-MM-DD)
+    last_seen_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    closed_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    close_cause: str | None = Field(default=None, max_length=16)  # evidence|removed|observation|inputs|model_change
+    closed_grade: str | None = Field(default=None, max_length=2)  # Q1..Q4 when known, else NULL (no grade)
+    run_id: int | None = Field(default=None)  # the run that last saw it (scope / asset / inputs items)
+
+
+class CbomRiskRegister(SQLModel, table=True):
+    """The team's quantum risk register (CB-23 PR-B): one row per estate asset key (CB-20/CB-21) with its CURRENT
+    grade (the team's inputs now, the current grade model) and what a CISO filters on. Written by the estate hook
+    only for keys whose graded content, inputs or model changed (``grade_digest``), and by the background re-grade
+    after an inputs or model change. ``q_rank``: Q1 1 .. Q4 4, Q0 5, no grade 6 (the list's keyset order)."""
+    __tablename__ = "cbomriskregister"
+    __table_args__ = (UniqueConstraint("team_id", "item_key", name="uq_cbomriskregister_team_key"),
+                      _SaIndex("ix_cbomriskregister_team_rank_key", "team_id", "q_rank", "item_key"),
+                      _SaIndex("ix_cbomriskregister_team_reason", "team_id", "q_reason"),
+                      _SaIndex("ix_cbomriskregister_team_family_source_grade", "team_id", "family", "source_ref",
+                               "q_grade"))
+    id: int | None = Field(default=None, primary_key=True)
+    team_id: int = Field(foreign_key="team.id")
+    item_key: str = Field(max_length=64)  # the estate asset key
+    item_kind: str = Field(default="asset", max_length=16)
+    q_grade: str | None = Field(default=None, max_length=2)  # Q0..Q4, NULL = no grade
+    q_rank: int = Field(default=6)
+    q_reason: str = Field(max_length=32)
+    label: str | None = Field(default=None, max_length=255)
+    asset_type: str | None = Field(default=None, max_length=32)
+    family: str | None = Field(default=None, max_length=32)
+    source_ref: str | None = Field(default=None, max_length=255)  # the observation the grade comes from
+    source_name: str | None = Field(default=None, max_length=255)
+    application: str | None = Field(default=None, max_length=128)
+    exposure: str | None = Field(default=None, max_length=16)
+    presence: str = Field(default="present", max_length=16)
+    sources: int = Field(default=1)  # observations (sources) of the key
+    last_run_id: int | None = Field(default=None)
+    last_observed_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    model_version: str = Field(max_length=32)
+    inputs_digest: str = Field(max_length=16)
+    grade_digest: str = Field(max_length=16)
+    updated_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
 
 
 # ========================================= estate store (CB-20) =========================================
