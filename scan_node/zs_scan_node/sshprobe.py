@@ -229,6 +229,8 @@ def read_kexinit(sock: socket.socket, deadline: float) -> dict[str, Any]:
         raise T.ProbeError("error", exc.reason) from None
     except ValueError as exc:
         raise T.ProbeError("error", str(exc)) from None
+    except (ConnectionResetError, BrokenPipeError):  # reset after the banner: a refusal, as a reset read is
+        raise T.ProbeError("refused", "connection reset after the banner") from None
     except OSError as exc:
         raise T.ProbeError("error", exc.__class__.__name__) from None
     return {"banner": banner.decode("latin-1", "replace").strip()[:200], "pre_banner": pre, "lists": lists}
@@ -371,6 +373,10 @@ def exchange(sock: socket.socket, lists: dict[str, list[str]], kex: str, host_ke
         raise _Fail("the server closed the connection during the key exchange") from None
     except ValueError as exc:
         raise _Fail(f"malformed key exchange reply ({exc})") from None
+    except (ConnectionResetError, BrokenPipeError):  # a write after the server reset: a refusal, as on a read
+        raise T.ProbeError("refused", "connection reset during the key exchange") from None
+    except OSError as exc:  # a write timeout, a lost route: this family only
+        raise _Fail(f"connection lost during the key exchange ({exc.__class__.__name__})") from None
     finally:
         try:  # SSH_MSG_DISCONNECT, reason 11 (by application): the server logs a clean disconnect
             sock.sendall(_packet(bytes([MSG_DISCONNECT]) + struct.pack("!I", 11) + _string(b"host key read")
@@ -428,6 +434,8 @@ def _certificate(name: str, r: _Reader) -> dict[str, Any]:
     """OpenSSH certificate fields (PROTOCOL.certkeys): the certified key, serial, type, key id, principals, validity,
     and the CA's key and signature algorithm."""
     key_type = name.replace("-cert-v01@openssh.com", "")
+    if key_type.startswith("sk-"):  # security-key types keep their suffix: sk-ssh-ed25519@openssh.com
+        key_type += "@openssh.com"
     r.string()  # nonce
     key = _plain_key(key_type, r)
     serial, ctype, key_id = r.u64(), r.u32(), r.text()[:200]
@@ -506,6 +514,12 @@ def read_server(open_conn: Callable[[], socket.socket], deadline: float,
     def until() -> float:
         return min(deadline, time.monotonic() + timeout)
 
+    def failed(exc: T.ProbeError) -> tuple[str, str | None]:
+        """(reason, stop reason): a reset or refused connection is the server refusing, so it ends the reads (back
+        off, as after a close before the banner); any other probe error loses this family only."""
+        reason = f"{exc.code}: {exc.detail}"[:200]
+        return (f"server_refused: {exc.detail}"[:200], "refused") if exc.code == "refused" else (reason, None)
+
     sock = open_conn()
     try:
         hello = read_kexinit(sock, until())
@@ -543,7 +557,12 @@ def read_server(open_conn: Callable[[], socket.socket], deadline: float,
                     status = "server_refused" if stopped.startswith("server_refused") else "partial"
                     continue
                 except T.ProbeError as exc:
-                    unread.append({"algorithms": algs, "reason": f"{exc.code}: {exc.detail}"[:200]})
+                    reason, refused = failed(exc)
+                    unread.append({"algorithms": algs, "reason": reason})
+                    stopped, status = (reason, "server_refused") if refused else (stopped, "partial")
+                    continue
+                except OSError as exc:  # open_conn's own socket errors (its contract maps them, but never escape)
+                    unread.append({"algorithms": algs, "reason": f"error: {exc.__class__.__name__}"})
                     status = "partial"
                     continue
                 try:
@@ -554,8 +573,9 @@ def read_server(open_conn: Callable[[], socket.socket], deadline: float,
                     status = "server_refused"
                     continue
                 except T.ProbeError as exc:
-                    unread.append({"algorithms": algs, "reason": f"{exc.code}: {exc.detail}"[:200]})
-                    status = "partial"
+                    reason, refused = failed(exc)
+                    unread.append({"algorithms": algs, "reason": reason})
+                    stopped, status = (reason, "server_refused") if refused else (stopped, "partial")
                     continue
                 lists_now = again["lists"]
             else:
@@ -572,8 +592,9 @@ def read_server(open_conn: Callable[[], socket.socket], deadline: float,
             unread.append({"algorithms": algs, "reason": exc.reason[:200]})
             status = "partial"
         except T.ProbeError as exc:
-            unread.append({"algorithms": algs, "reason": f"{exc.code}: {exc.detail}"[:200]})
-            status = "partial"
+            reason, refused = failed(exc)
+            unread.append({"algorithms": algs, "reason": reason})
+            stopped, status = (reason, "server_refused") if refused else (stopped, "partial")
         finally:
             if sock is not None:
                 try:

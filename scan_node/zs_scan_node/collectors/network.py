@@ -448,12 +448,12 @@ class NetworkScan:
         budget = Budget(2 if mode == "fragile" else max(self.per_endpoint, 2))
 
         def open_conn():
-            self._ssh_slot(ep.ip)
             if not budget.take():
                 raise S.Stop("budget: handshakes per endpoint")
             gate = self._gate(ep.ip)  # stop-all, never-scan (live), deadline, the node's rate limiter
             if gate:
                 raise S.Stop(gate)
+            self._ssh_slot(ep.ip)  # the address's slot only for a connection that is about to be made
             self._ssh_pace(ep.ip)
             try:
                 return _tcp(ep.ip, ep.port, self.ctx.never_scan, 3.0)

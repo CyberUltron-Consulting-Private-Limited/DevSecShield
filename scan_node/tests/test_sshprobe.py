@@ -109,9 +109,13 @@ class Stub:
     """One SSH server endpoint on 127.0.0.1; every accepted connection is recorded in ``self.seen``."""
 
     def __init__(self, kex, hostkeys, blobs=None, refuse=None, gex_bits=2048, ciphers=("aes128-ctr",),
-                 macs=("hmac-sha2-256",), pre_banner=()):
+                 macs=("hmac-sha2-256",), pre_banner=(), reset_from=None, reset_at="exchange"):
         self.kex, self.hostkeys, self.blobs = list(kex), list(hostkeys), dict(blobs or BLOBS)
         self.refuse, self.gex_bits, self.ciphers, self.macs, self.pre_banner = refuse, gex_bits, ciphers, macs, pre_banner
+        # from connection number ``reset_from`` (0-based) on, the stub sends a TCP RST (SO_LINGER 0): right after its
+        # banner (reset_at="banner"), or after reading the client's KEXINIT (reset_at="exchange"), as an IPS,
+        # sshguard or an overloaded server does
+        self.reset_from, self.reset_at = reset_from, reset_at
         self.seen: list[dict] = []
         self.sock = socket.socket()
         self.sock.bind(("127.0.0.1", 0))
@@ -136,9 +140,14 @@ class Stub:
                 return
             threading.Thread(target=self._one, args=(conn,), daemon=True).start()
 
+    def _reset(self, conn, rec):
+        conn.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+        rec["reset"] = True
+
     def _one(self, conn):
         rec: dict = {}
         self.seen.append(rec)
+        resets = self.reset_from is not None and len(self.seen) - 1 >= self.reset_from
         try:
             conn.settimeout(5)
             if self.refuse is not None:
@@ -147,6 +156,9 @@ class Stub:
             for line in self.pre_banner:
                 conn.sendall(line)
             conn.sendall(b"SSH-2.0-StubSSH_1.0\r\n")
+            if resets and self.reset_at == "banner":
+                self._reset(conn, rec)
+                return
             kexinit = (b"\x14" + os.urandom(16) + _names(self.kex) + _names(self.hostkeys) + _names(self.ciphers) * 2
                        + _names(self.macs) * 2 + _names(["none"]) * 2 + _names([]) * 2 + b"\x00" + b"\x00" * 4)
             conn.sendall(_packet(kexinit))
@@ -162,6 +174,9 @@ class Stub:
                 names, pos = _parse_names(ck, pos)
                 lists.append(names)
             rec["client_kex"], rec["client_hostkeys"] = lists[0], lists[1]
+            if resets:
+                self._reset(conn, rec)
+                return
             kex = next(k for k in lists[0] if k in self.kex)
             alg = next(h for h in lists[1] if h in self.hostkeys)
             rec["kex"], rec["hostkey"] = kex, alg
@@ -215,7 +230,8 @@ class Stub:
     def settled(self, timeout=3.0):
         """Every connection's handler has finished (the client may close before the stub has read its last bytes)."""
         end = time.monotonic() + timeout
-        while time.monotonic() < end and not all("after" in r or "error" in r or "init" in r for r in self.seen):
+        while time.monotonic() < end and not all("after" in r or "error" in r or "init" in r or "reset" in r
+                                                 for r in self.seen):
             time.sleep(0.01)
         return self.seen
 
@@ -240,7 +256,15 @@ def _read_all(stub, max_connections=8):
                                  "sntrup761x25519-sha512@openssh.com", "mlkem768nistp256-sha256",
                                  "mlkem1024nistp384-sha384", "mlkem512-sha256", "mlkem768-sha256",
                                  "mlkem1024-sha384"])
-def test_pq_only_server_host_key_is_read(kex):
+def test_pq_only_server_host_key_is_read(kex, monkeypatch):
+    x25519_sent = []
+    real_x25519 = S._x25519
+
+    def x25519():
+        x25519_sent.append(real_x25519())
+        return x25519_sent[-1]
+
+    monkeypatch.setattr(S, "_x25519", x25519)
     stub = Stub([kex], ["ssh-ed25519"])
     try:
         got, conns = _read_all(stub)
@@ -249,6 +273,8 @@ def test_pq_only_server_host_key_is_read(kex):
     rec = stub.seen[0]
     assert "error" not in rec, rec
     assert rec["kex"] == kex and len(rec["share"]) == C_INIT[kex]
+    if "x25519" in kex:  # RFC 10042 s2.1 and OpenSSH kexsntrup761x25519.c: the PQ part first, X25519 last
+        assert x25519_sent and rec["share"][-32:] == x25519_sent[-1]
     if kex in MLKEM_EK:
         assert rec["ek_valid"] is True  # the server's FIPS 203 modulus check passes
     assert got["host_keys_status"] == "complete" and conns == 1
@@ -387,6 +413,30 @@ def test_certificate_valid_forever_and_unknown_host_key_types():
         assert S.parse_host_key(bad)["type"] in ("unknown", "ssh-rsa")  # never raises on a hostile blob
 
 
+@pytest.mark.parametrize("cert_name,pub,key_type,bits", [
+    ("sk-ssh-ed25519-cert-v01@openssh.com", _str(os.urandom(32)), "sk-ssh-ed25519@openssh.com", 256),
+    ("sk-ecdsa-sha2-nistp256-cert-v01@openssh.com", _str(b"nistp256") + _str(b"\x04" + os.urandom(64)),
+     "sk-ecdsa-sha2-nistp256@openssh.com", 256),
+])
+def test_fido_host_certificates_are_read_at_the_right_offsets(cert_name, pub, key_type, bits):
+    """Review 5901887452 #5: OpenSSH PROTOCOL.certkeys, the security-key certificate layouts (nonce, key fields,
+    application, serial, ...), built by hand: cryptography cannot make them."""
+    ca = ed25519.Ed25519PrivateKey.generate()
+    ca_blob = _openssh_blob(ca.public_key())
+    blob = (_str(cert_name.encode()) + _str(os.urandom(32)) + pub + _str(b"ssh:") + struct.pack("!QI", 77, 2)
+            + _str(b"fido-host") + _str(_str(b"h1.example")) + struct.pack("!QQ", 1735689600, 1767225599)
+            + _str(b"") + _str(b"") + _str(b"") + _str(ca_blob) + _str(_str(b"ssh-ed25519") + _str(os.urandom(64))))
+    facts = S.parse_host_key(blob)
+    assert "parse_error" not in facts, facts
+    assert (facts["type"], facts["key_type"], facts["bits"], facts["application"]) == (cert_name, key_type, bits,
+                                                                                       "ssh:")
+    cert = facts["certificate"]
+    assert (cert["serial"], cert["cert_type"], cert["key_id"], cert["principals"]) == (77, "host", "fido-host",
+                                                                                       ["h1.example"])
+    assert cert["valid_after"] == "2025-01-01T00:00:00+00:00" and cert["valid_before"].startswith("2025-12-31")
+    assert cert["ca"]["fingerprint"] == _fp(ca_blob) and cert["signature_algorithm"] == "ssh-ed25519"
+
+
 def test_families_group_algorithms_that_use_the_same_key():
     assert S.families(["rsa-sha2-512", "ssh-ed25519", "rsa-sha2-256", "ssh-rsa", "ecdsa-sha2-nistp256",
                        "rsa-sha2-512-cert-v01@openssh.com", "ssh-rsa-cert-v01@openssh.com", "ssh-mldsa-65"]) == [
@@ -433,6 +483,85 @@ def test_a_refusal_after_the_first_family_ends_the_reads_as_server_refused():
     assert len(calls) == 2  # no third connection after the refusal
     assert got["host_keys_status"] == "server_refused" and [k["type"] for k in got["host_keys"]] == ["ssh-ed25519"]
     assert got["host_keys_unread"][0]["reason"].startswith("server_refused")
+
+
+@pytest.mark.parametrize("reset_at", ["exchange", "banner"])
+def test_a_reset_on_a_later_connection_keeps_what_was_read_and_stops(reset_at):
+    """Review 5901887452 #1/#2: a server (or IPS) that resets the 2nd connection, after its banner or during the key
+    exchange, ends the reads as a refusal: the lists and the first key are kept, no third connection is made."""
+    stub = Stub(["curve25519-sha256"], ["ssh-ed25519", "ecdsa-sha2-nistp256", "rsa-sha2-512"], reset_from=1,
+                reset_at=reset_at)
+    try:
+        got, conns = _read_all(stub)
+    finally:
+        stub.close()
+    assert conns == 2
+    assert got["host_keys_status"] == "server_refused" and [k["type"] for k in got["host_keys"]] == ["ssh-ed25519"]
+    assert got["kex"] == ["curve25519-sha256"] and got["host_key"]["key_type"] == "ssh-ed25519"
+    assert [u["algorithms"] for u in got["host_keys_unread"]] == [["ecdsa-sha2-nistp256"], ["rsa-sha2-512"]]
+    assert all(u["reason"].startswith("server_refused") for u in got["host_keys_unread"])
+
+
+class _SendFails:
+    """A real connection to the stub whose ``sendall`` raises ``exc`` once the client banner and KEXINIT are sent,
+    i.e. on the key exchange's first message: the server reset the connection while the client was writing."""
+
+    def __init__(self, sock, exc):
+        self.sock, self.exc, self.sent = sock, exc, 0
+
+    def sendall(self, data):
+        self.sent += 1
+        if self.sent == 3:
+            raise self.exc
+        return self.sock.sendall(data)
+
+    def __getattr__(self, name):
+        return getattr(self.sock, name)
+
+
+@pytest.mark.parametrize("exc,status,reason", [
+    (ConnectionResetError(104, "reset"), "server_refused", "server_refused: connection reset during the key exchange"),
+    (BrokenPipeError(32, "pipe"), "server_refused", "server_refused: connection reset during the key exchange"),
+    (TimeoutError("write timed out"), "partial", "connection lost during the key exchange (TimeoutError)"),
+])
+def test_a_write_error_during_the_key_exchange_never_escapes(exc, status, reason):
+    """Review 5901887452 #1: ``exchange`` let OSError from ``sendall`` escape ``read_server``, and the network
+    collector then dropped the whole endpoint.  On the first family too, the lists are kept."""
+    stub = Stub(["curve25519-sha256"], ["ssh-ed25519", "ecdsa-sha2-nistp256"])
+    calls = []
+
+    def open_conn():
+        calls.append(1)
+        return _SendFails(stub.connect(), exc) if len(calls) == 1 else stub.connect()
+
+    try:
+        got = S.read_server(open_conn, time.monotonic() + 30)
+    finally:
+        stub.close()
+    assert got["host_keys_status"] == status and got["kex"] == ["curve25519-sha256"]
+    assert got["host_keys_unread"][0] == {"algorithms": ["ssh-ed25519"], "reason": reason}
+    if status == "server_refused":
+        assert len(calls) == 1 and got["host_keys"] == []
+    else:
+        assert len(calls) == 2 and [k["type"] for k in got["host_keys"]] == ["ecdsa-sha2-nistp256"]
+
+
+def test_an_oserror_opening_a_later_connection_is_an_unread_family():
+    stub = Stub(["curve25519-sha256"], ["ssh-ed25519", "ecdsa-sha2-nistp256"])
+    calls = []
+
+    def open_conn():
+        calls.append(1)
+        if len(calls) == 2:
+            raise OSError(113, "No route to host")
+        return stub.connect()
+
+    try:
+        got = S.read_server(open_conn, time.monotonic() + 30)
+    finally:
+        stub.close()
+    assert got["host_keys_status"] == "partial" and [k["type"] for k in got["host_keys"]] == ["ssh-ed25519"]
+    assert got["host_keys_unread"] == [{"algorithms": ["ecdsa-sha2-nistp256"], "reason": "error: OSError"}]
 
 
 def test_pre_banner_lines_are_allowed_and_the_banner_is_kept():
@@ -529,6 +658,45 @@ def test_network_per_address_budget_spans_ports_and_leaves_a_scoped_coverage_row
         f = row["facts"]
         assert f["status"] == "truncated" and f["incomplete"] is True and "budget" in f["detail"]
         assert len(f["scope"]) == 1 and f["scope"][0] in partial
+
+
+def test_network_reset_during_a_later_exchange_keeps_the_endpoint_with_a_scoped_row(monkeypatch):
+    """Review 5901887452 #1: the endpoint (lists, the key already read) is emitted, its unread families get one
+    incomplete coverage row scoped to it, and the address gets no further SSH connection."""
+    # connection 0 is the sweep's TCP connect, 1 the first family; the second family's connection is reset
+    stub = Stub(["curve25519-sha256"], ["ssh-ed25519", "ecdsa-sha2-nistp256", "rsa-sha2-512"], reset_from=2)
+    try:
+        ctx, starts = _net(monkeypatch, {"192.0.2.10": stub})
+    finally:
+        stub.close()
+    [ep] = [a for a in ctx.collected if a["type"] == "ssh_endpoint"]
+    assert ep["facts"]["host_keys_status"] == "server_refused" and ep["facts"]["kex"] == ["curve25519-sha256"]
+    assert [k["type"] for k in ep["facts"]["host_keys"]] == ["ssh-ed25519"] and ep["algorithm"] == "ssh-ed25519"
+    [cov] = [a for a in ctx.collected if a["type"] == "coverage"]
+    assert cov["facts"]["status"] == "refused" and cov["facts"]["incomplete"] is True
+    assert cov["facts"]["scope"] == ["192.0.2.10:22"] and "ecdsa-sha2-nistp256" in cov["facts"]["detail"]
+    assert len(starts) == 1 + 2  # the sweep, the first family, the reset one; nothing after the reset
+
+
+def test_network_per_address_slot_is_taken_only_for_a_connection_that_is_made(monkeypatch):
+    """Review 5901887452 #6: a Stop from the endpoint budget does not use one of the address's 8 slots."""
+    from zs_scan_node.collectors import network as N
+    from zs_scan_node.jobctx import JobContext
+    from zs_scan_node.netutil import NeverScan
+    from zs_scan_node.scrub import Scrubber
+
+    stub = Stub(["curve25519-sha256"], ["ssh-ed25519", "ecdsa-sha2-nistp256", "rsa-sha2-512"])
+    monkeypatch.setattr(N, "_tcp", lambda ip, port, never, timeout: stub.connect())
+    monkeypatch.setattr(N, "SSH_SPACING_S", 0.0)
+    ctx = JobContext(job_id=1, attempt=1, run_id=None, kind="collect", source_kind="network_range",
+                     scrubber=Scrubber(), never_scan=NeverScan([]), deadline=time.monotonic() + 60)
+    scan = N.NetworkScan(ctx, {"rate_limits": {"connections_per_second": 1000, "handshakes_per_endpoint": 2}})
+    try:
+        status, _detail, _n = scan._ssh(N.Endpoint("192.0.2.10", 22, "ssh", "ssh"))
+    finally:
+        stub.close()
+    assert status == "ok" and len(stub.seen) == 2  # the endpoint budget (2) stopped the third family
+    assert scan._ssh_addr["192.0.2.10"]["used"] == 2
 
 
 def test_network_kex_unsupported_keeps_the_lists_and_names_the_server_kex(monkeypatch):
