@@ -25,8 +25,9 @@ from backend.utilities.cbom_sources.common import iso_z
 # CB-06: per-component provenance, PQC class and algorithm families for the export
 from backend.utilities.cbom_sources import provenance as PROV
 from backend.utilities.cbom_sources.classify import family, quantum_vulnerable
-from backend.utilities.cbom_sources.posture import pqc_class
+from backend.utilities.cbom_sources import posture as POSTURE
 from backend.utilities.cbom_sources import tls_suites
+from backend.utilities.cbom_sources import vex_semantics as VEX
 
 EXPORT_CAP = 50_000
 # serialNumber = uuid5(this namespace, "<run id>:<KB version>"): the same run exported with the same knowledge base is
@@ -34,10 +35,12 @@ EXPORT_CAP = 50_000
 _SERIAL_NS = uuid.uuid5(uuid.NAMESPACE_URL, "https://zeroshield.ai/cbom/sources/run")
 
 
-def export_serial(run_id: int, kb_version: str, judged_on: str | None = None) -> str:
+def export_serial(run_id: int, kb_version: str, judged_on: str | None = None, class_model: str | None = None) -> str:
     """``judged_on``: the day a date-based rule (certificate expiry, library end of life) changed a finding since the
-    run; the export then differs from the run's own record, so it gets its own serial."""
-    key = f"{run_id}:{kb_version}" + (f":{judged_on}" if judged_on else "")
+    run; the export then differs from the run's own record, so it gets its own serial. ``class_model``:
+    ``posture.PQC_CLASS_MODEL`` (CB-18 ST-A): a release that changes the class rules changes ``zs:pqc_class`` on old
+    runs, so the same run exported after it is a new BOM."""
+    key = f"{run_id}:{kb_version}" + (f":{judged_on}" if judged_on else "") + (f":{class_model}" if class_model else "")
     return f"urn:uuid:{uuid.uuid5(_SERIAL_NS, key)}"
 _IMPACT_ORDER = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
 
@@ -84,7 +87,8 @@ def _filtered(query, *, asset_type: str | None, impact: str | None, quantum: boo
 
 
 def public_asset(row: CbomCollectedAsset, source_names: dict[int, str], job_names: dict[int, str] | None = None,
-                 view: dict[str, Any] | None = None, grade: dict[str, Any] | None = None) -> dict[str, Any]:
+                 view: dict[str, Any] | None = None, grade: dict[str, Any] | None = None,
+                 pqc: tuple[str, str] | None = None) -> dict[str, Any]:
     """One asset as the list shows it: findings judged today (``classify.shown``); ``as_of_run`` holds the run's own
     verdict when a date-based rule changed it since; ``q_grade`` / ``q_label`` / ``q_reason`` / ``q_item_key`` the
     quantum risk grade (``qgrade``; null when the asset has no grade)."""
@@ -100,6 +104,7 @@ def public_asset(row: CbomCollectedAsset, source_names: dict[int, str], job_name
         "as_of_run": view["as_of_run"],
         "q_grade": grade.get("q_grade"), "q_label": grade.get("q_label"), "q_reason": grade.get("q_reason"),
         "q_item_key": grade.get("q_item_key"),
+        "pqc_class": pqc[0] if pqc else None, "pqc_class_basis": pqc[1] if pqc else None,
         "facts": row.facts or {},
     }
 
@@ -162,11 +167,15 @@ def list_assets(session: Session, *, team_id: int, run_id: int | None = None, jo
     names = _source_names(session, team_id, list(jobs))
     job_names = {j.id: names.get(j.source_id or 0) or (j.params or {}).get("source_name") for j in jobs}
     grading = QG.load_context(session, team_id=team_id, run_id=run_id, job_id=job_id, risk_model=risk_model)
-    grades = {r.id: grading.grade_row(r, views[r.id]["finding_codes"], explain=False).fields() for r in rows}
+    pqcs = {r.id: POSTURE.classify_pqc(r, list(views[r.id]["finding_codes"]), elsewhere=grading.elsewhere)
+            for r in rows}  # the class the list shows is the one the grade reads (CB-18 OB-1)
+    grades = {r.id: grading.grade_row(r, views[r.id]["finding_codes"], explain=False, cls=pqcs[r.id][0]).fields()
+              for r in rows}
     return {
         "total": total, "all_total": all_total, "page": page, "page_size": page_size,
         "items": AGILITY.annotate_assets(session, team_id, jobs,  # CB-24: fix class per asset
-                                         [public_asset(r, names, job_names, views[r.id], grades[r.id]) for r in rows]),
+                                         [public_asset(r, names, job_names, views[r.id], grades[r.id], pqcs[r.id])
+                                          for r in rows]),
         "grade_model_version": QG.GRADE_MODEL_VERSION, "grade_inputs": grading.inputs(),
         "facets": {"type": by_type, "impact": by_impact, "quantum_vulnerable": quantum_count},
         "targets": [_job_targets(job, names) for job in jobs],
@@ -184,6 +193,7 @@ def _job_targets(job: CbomCollectionJob, names: dict[int, str]) -> dict[str, Any
         "asset_mismatch": result.get("asset_mismatch"), "error": job.error,
         "targets": [t for t in targets[:1000] if isinstance(t, dict)],
         "duration_s": result.get("duration_s"),
+        "lab_mode": result.get("lab_mode") if isinstance(result.get("lab_mode"), str) else None,
     }
 
 
@@ -219,12 +229,24 @@ def _code_impacts(row: CbomCollectedAsset) -> dict[str, str | None]:
         return {}
 
 
-def vulnerabilities(rows: list[CbomCollectedAsset], views: dict[int, dict[str, Any]] | None = None) -> list[dict[str, Any]]:
-    """CycloneDX vulnerabilities with VEX analysis.
+def vulnerabilities(rows: list[CbomCollectedAsset], views: dict[int, dict[str, Any]] | None = None, *,
+                    grade_of: Callable[[CbomCollectedAsset], str | None] | None = None,
+                    resolved: list[dict[str, Any]] | None = None, ref_of: dict[str, str] | None = None,
+                    grade_meta: dict[str, str] | None = None,
+                    link_of: Callable[[dict[str, Any]], str | None] | None = None,
+                    drift_truncated: bool = False) -> list[dict[str, Any]]:
+    """CycloneDX vulnerabilities with VEX analysis (``vex_semantics``, CB-22; KF-11 was "exploitable" for every code).
 
-    One entry per finding code (the weak setting was observed on the listed assets, so the analysis state is
-    "exploitable", CERT-In's "Affected"), and one per CVE matched from that evidence or from a library version
-    ("in_triage": a version or configuration match is not proof; distribution back-ports are not checked)."""
+    One entry per finding code, its state by the code's reviewed ``vex_default`` (KB): a weakness the collector
+    observed is ``exploitable`` (CERT-In "Affected"); a posture/hygiene code, a quantum-only code (no classical attack
+    today) and a code inferred from a version or date are ``in_triage`` (CERT-In "Under Investigation"), the
+    quantum-only detail citing the listed assets' Q-grades (``grade_of``: the run's ``qgrade`` per row). One per CVE
+    and basis: a CVE inherent to an algorithm or protocol an observed code found (SWEET32 from 3DES) is
+    ``exploitable`` on those assets, any other match (a library version, an implementation-specific flaw) ``in_triage``.
+    One ``resolved`` per code the run's drift resolved (``resolved``: ``vex_semantics.drift_resolved``; ``ref_of``:
+    stable asset key -> bom-ref in this export; ``link_of``: BOM-Link into the baseline export for an asset that is
+    gone; ``drift_truncated``: drift reached its event cap). ``affects`` lists at most ``AFFECTS_CAP`` assets; a cut
+    entry says so with the true count (``zs:affected_truncated`` / ``zs:affected_total``)."""
     by_code: dict[str, list[CbomCollectedAsset]] = {}
     code_impacts: dict[str, list[str]] = {}
     by_cve: dict[str, dict[str, Any]] = {}
@@ -241,21 +263,30 @@ def vulnerabilities(rows: list[CbomCollectedAsset], views: dict[int, dict[str, A
                 for cve in crypto_kb.cves_for("node", code, view["finding"] or ""):
                     if code == "LIB_KNOWN_CVE":
                         continue
-                    hit = by_cve.setdefault(cve["id"], {"cve": cve, "rows": [], "why": set()})
-                    hit["rows"].append(row)
-                    hit["why"].add(f"{code} ({cve.get('matched_on')})")
+                    hit = by_cve.setdefault(cve["id"], {"cve": cve, "rows": {}, "why": {}})
+                    hit["rows"].setdefault(row.id, set()).add(code)
+                    hit["why"].setdefault(row.id, set()).add(f"{code} ({cve.get('matched_on')})")
         facts = row.facts or {}
         if "LIB_KNOWN_CVE" in view["finding_codes"] and facts.get("version"):
             status = crypto_kb.library_status(str(facts.get("name") or facts.get("package") or ""), str(facts["version"]))
             for cid in (status or {}).get("cves") or []:
-                hit = by_cve.setdefault(cid, {"cve": crypto_kb.cve(cid) or {"id": cid}, "rows": [], "why": set()})
-                hit["rows"].append(row)
-                hit["why"].add(f"{status['package']} {status['upstream_version']} is in the affected range")
+                hit = by_cve.setdefault(cid, {"cve": crypto_kb.cve(cid) or {"id": cid}, "rows": {}, "why": {}})
+                hit["rows"].setdefault(row.id, set()).add("LIB_KNOWN_CVE")
+                hit["why"].setdefault(row.id, set()).add(
+                    f"{status['package']} {status['upstream_version']} is in the affected range")
     out: list[dict[str, Any]] = []
+    cap = VEX.AFFECTS_CAP
     for code, hits in sorted(by_code.items()):
         e = crypto_kb.entry("node", code) or {}
         # the severity of THIS finding (worst across the assets that have it), not the worst finding on those assets
         worst = min(code_impacts.get(code) or [], key=_rank, default=None)
+        unique = list({h.id: h for h in hits}.values())
+        basis = VEX.code_basis(code, "node")
+        grades: dict[str | None, int] = {}
+        if basis == VEX.QUANTUM_ONLY and grade_of is not None:
+            for h in unique:
+                grade = grade_of(h)
+                grades[grade] = grades.get(grade, 0) + 1
         out.append({
             "bom-ref": f"zs-vuln-{code.lower()}", "id": f"ZS-CBOM-{code}",
             "source": {"name": "ZeroShield crypto knowledge base", "url": "https://cwe.mitre.org/"},
@@ -263,9 +294,11 @@ def vulnerabilities(rows: list[CbomCollectedAsset], views: dict[int, dict[str, A
             "cwes": [int(c[4:]) for c in e.get("cwe") or []],
             "description": e.get("description"), "detail": e.get("attack"),
             "recommendation": (e.get("remediation") or {}).get("summary"),
-            "analysis": {"state": "exploitable", "detail": "Observed directly by the collector on each affected asset."},
-            "affects": [{"ref": f"zs-asset-{rid}"} for rid in list(dict.fromkeys(h.id for h in hits))[:5000]],
-            "properties": [{"name": "zs:kb_version", "value": crypto_kb.version()}],
+            "analysis": VEX.analysis_for(basis, code=code, q_grades=grades or None),
+            "affects": [{"ref": f"zs-asset-{h.id}"} for h in unique[:cap]],
+            "properties": [{"name": "zs:kb_version", "value": crypto_kb.version()}, VEX.prop("zs:vex_basis", basis),
+                           *VEX.affects_cut(min(len(unique), cap), len(unique)),
+                           *(VEX.grade_props(grades, **(grade_meta or {})) if grades else [])],
         })
     for cid, hit in sorted(by_cve.items()):
         cve = hit["cve"]
@@ -274,17 +307,38 @@ def vulnerabilities(rows: list[CbomCollectedAsset], views: dict[int, dict[str, A
         if cvss.get("score") is not None:
             rating.update({"score": cvss["score"], "severity": str(cvss.get("severity") or "unknown").lower(),
                            "vector": cvss.get("vector")})
-        out.append({
-            "bom-ref": f"zs-vuln-{cid.lower()}", "id": cid,
-            "source": {"name": "NVD", "url": cve.get("url") or f"https://nvd.nist.gov/vuln/detail/{cid}"},
-            "ratings": [{k: v for k, v in rating.items() if v is not None}],
-            "cwes": [int(c[4:]) for c in cve.get("cwe") or [] if c[4:].isdigit()],
-            "description": cve.get("summary") or f"{cid}: see the NVD record (not in the offline knowledge base).",
-            "analysis": {"state": "in_triage",
-                         "detail": "Matched on: " + "; ".join(sorted(hit["why"]))[:900] +
-                                   ". A version or configuration match is not proof of exposure."},
-            "affects": [{"ref": f"zs-asset-{rid}"} for rid in list(dict.fromkeys(r.id for r in hit["rows"]))[:5000]],
-        })
+        # one entry per basis: a CVE inherent to an algorithm or protocol a collector observed is exploitable on that
+        # asset; elsewhere (a library version, an implementation flaw, an unobserved finding) it stays in triage
+        groups: dict[str, dict[str, Any]] = {}
+        for rid, codes in hit["rows"].items():
+            basis, anchor = VEX.cve_basis(cid, codes)
+            group = groups.setdefault(basis, {"ids": [], "why": set(), "anchor": anchor, "codes": set()})
+            group["ids"].append(rid)
+            group["why"] |= hit["why"][rid]
+            group["codes"] |= codes
+        for index, basis in enumerate(sorted(groups, key=lambda b: b != VEX.OBSERVED)):
+            group = groups[basis]
+            matched = "Matched on: " + "; ".join(sorted(group["why"]))[:900] + ". "
+            if basis == VEX.OBSERVED:
+                detail = matched + VEX.DETAIL_CVE_INHERENT.format(code=group["anchor"], cve=cid)
+            elif group["codes"] <= {"LIB_KNOWN_CVE"} or VEX.cve_inherent(cid):
+                detail = matched + VEX.DETAIL_CVE
+            else:
+                detail = matched + VEX.DETAIL_CVE_IMPLEMENTATION
+            ids = list(dict.fromkeys(group["ids"]))
+            out.append({
+                "bom-ref": f"zs-vuln-{cid.lower()}" + (f"-{basis}" if index else ""), "id": cid,
+                "source": {"name": "NVD", "url": cve.get("url") or f"https://nvd.nist.gov/vuln/detail/{cid}"},
+                "ratings": [{k: v for k, v in rating.items() if v is not None}],
+                "cwes": [int(c[4:]) for c in cve.get("cwe") or [] if c[4:].isdigit()],
+                "description": cve.get("summary") or f"{cid}: see the NVD record (not in the offline knowledge base).",
+                "analysis": VEX.analysis_for(basis, cve_detail=detail),
+                "affects": [{"ref": f"zs-asset-{rid}"} for rid in ids[:cap]],
+                "properties": [VEX.prop("zs:vex_basis", basis), *VEX.affects_cut(min(len(ids), cap), len(ids))],
+            })
+    if resolved:
+        out += VEX.resolved_entries(resolved, ref_of or {}, namespace="node", baseline_name="run",
+                                    taken={v["bom-ref"] for v in out}, link_of=link_of, truncated=drift_truncated)
     return out
 
 
@@ -529,11 +583,12 @@ def _certificate_parts(row: CbomCollectedAsset, facts: dict[str, Any], size: int
 
 
 def _detail_properties(row: CbomCollectedAsset, facts: dict[str, Any], crypto: dict[str, Any], size: int | None,
-                       curve: str | None, signature: str | None, view: dict[str, Any]) -> list[dict[str, str]]:
+                       curve: str | None, signature: str | None, pqc: tuple[str, str]) -> list[dict[str, str]]:
     """The values the asset table and the oracle compare that CycloneDX has no field for (or not on this asset type):
-    PQC class, key size, curve, signature algorithm, key-exchange groups, SSH algorithm lists, CB-04 identity facts."""
+    PQC class and why (``posture.classify_pqc``), key size, curve, signature algorithm, key-exchange groups, SSH
+    algorithm lists, CB-04 identity facts."""
     out: list[tuple[str, str | None]] = [
-        ("zs:pqc_class", pqc_class(row.asset_type, row.quantum_vulnerable, list(view["finding_codes"]), facts)),
+        ("zs:pqc_class", pqc[0]), ("zs:pqc_class_basis", pqc[1]),
         ("zs:key_size", str(size) if size else None), ("zs:curve", curve), ("zs:signature_algorithm", signature),
     ]
     out += [(f"zs:{name}", _text(facts.get(name))) for name in _IDENTITY_FACTS]
@@ -558,7 +613,8 @@ def _detail_properties(row: CbomCollectedAsset, facts: dict[str, Any], crypto: d
 
 def _component(row: CbomCollectedAsset, source_name: str | None, view: dict[str, Any] | None = None,
                prov: PROV.JobProvenance | None = None, shared: dict[tuple, list] | None = None,
-               parts: CertificateParts | None = None) -> dict[str, Any]:
+               parts: CertificateParts | None = None,
+               elsewhere: POSTURE.JudgedElsewhere | None = None) -> dict[str, Any]:
     """One asset as a CycloneDX component. ``shared``: one export's cache of provenance property lists. Rows of one
     job attempt stored in one batch have the same provenance, so their components share the same (read-only)
     property objects: a 50k-asset export then holds a few hundred provenance lists instead of 50,000. ``parts``: the
@@ -567,13 +623,17 @@ def _component(row: CbomCollectedAsset, source_name: str | None, view: dict[str,
     facts = row.facts or {}
     view = view or shown(row)
     ref = f"zs-asset-{row.id}"
+    pqc = POSTURE.classify_pqc(row, list(view["finding_codes"]), elsewhere=elsewhere)
+    # one "unknown" per document (OB-7): a verdict-less row reads unknown only when its class is unknown
+    qv_text = str(row.quantum_vulnerable).lower() if row.quantum_vulnerable is not None else (
+        "unknown" if pqc[0] == "unknown" else "not-applicable")
     props = [
         {"name": "zs:location", "value": row.location},
         {"name": "zs:asset_type", "value": row.asset_type},
         {"name": "zs:target", "value": row.target or ""},
         {"name": "zs:source", "value": source_name or ""},
         {"name": "zs:impact", "value": view["impact"] or "Info"},
-        {"name": "zs:quantum_vulnerable", "value": "unknown" if row.quantum_vulnerable is None else str(row.quantum_vulnerable).lower()},
+        {"name": "zs:quantum_vulnerable", "value": qv_text},
     ]
     if view["finding"]:
         props.append({"name": "zs:finding", "value": view["finding"]})
@@ -600,7 +660,7 @@ def _component(row: CbomCollectedAsset, source_name: str | None, view: dict[str,
         from backend.utilities.cbom_sources.sbom_link import ecosystem_of, library_purl
 
         package, version = str(facts.get("package") or name)[:255], str(facts.get("version") or "")
-        props += _detail_properties(row, facts, {}, size, curve, signature, view) + provenance
+        props += _detail_properties(row, facts, {}, size, curve, signature, pqc) + provenance
         out = {"type": "library", "bom-ref": ref, "name": package, "version": version,
                "evidence": {"occurrences": [{"location": row.location}]}, "properties": props}
         # an OS package the node read from a package database carries its own purl (pkg:deb/ubuntu/libssl3@...,
@@ -647,7 +707,7 @@ def _component(row: CbomCollectedAsset, source_name: str | None, view: dict[str,
         props.append({"name": "zs:algorithm", "value": row.algorithm})
     if row.protocol:  # the asset table's protocol column as stored (protocolProperties.type is CycloneDX's enum)
         props.append({"name": "zs:protocol", "value": row.protocol})
-    props += _detail_properties(row, facts, crypto, size, curve, signature, view) + provenance
+    props += _detail_properties(row, facts, crypto, size, curve, signature, pqc) + provenance
     if facts.get("source") == "ct":
         props += ct_properties(facts)
     return {"type": "cryptographic-asset", "bom-ref": ref, "name": str(name)[:255], "cryptoProperties": crypto,
@@ -707,12 +767,19 @@ def _document(session: Session, run: CbomCollectionRun, now: _dt.datetime
         if job.status != "success":
             gaps.append(f"{info['source_name']}: job {job.status}")
     kb_version = crypto_kb.version()
+    # whole-run class counts from the one class function, so a document cut at EXPORT_CAP still says how many assets
+    # of each class the run holds (CB-18 EC-8); the components' classes use the same read-elsewhere rule
+    summary = POSTURE.run_class_summary(session, team_id=run.team_id, run_id=run.id or 0)
+    elsewhere = POSTURE.JudgedElsewhere(session=session, team_id=run.team_id, run_id=run.id)
     versions = [(name, value) for name, value in (("zs:run_kb_version", run.kb_version),
                                                    ("zs:classifier_version", run.classifier_version),
                                                    ("zs:engine_version", run.engine_version)) if value]
+    grading = QG.load_context(session, team_id=run.team_id, run_id=run.id)
+    drift_cut = run.id is not None and VEX.drift_truncated(session, team_id=run.team_id, run_id=run.id)
     head = {
-        "bomFormat": "CycloneDX", "specVersion": "1.6", "serialNumber": export_serial(run.id or 0, kb_version, judged_on),
-        "version": 1,
+        "bomFormat": "CycloneDX", "specVersion": "1.6",
+        "serialNumber": export_serial(run.id or 0, kb_version, judged_on, POSTURE.PQC_CLASS_MODEL),
+        "version": export_version(run),
         "metadata": {
             "timestamp": iso_z(now),
             # the build that wrote this file; the run's own judge is zs:engine_version (CB-03)
@@ -721,8 +788,21 @@ def _document(session: Session, run: CbomCollectionRun, now: _dt.datetime
                 {"name": "zs:run_id", "value": str(run.id)}, {"name": "zs:run_status", "value": run.status},
                 {"name": "zs:asset_count", "value": str(len(rows))}, {"name": "zs:truncated", "value": str(truncated).lower()},
                 {"name": "zs:kb_version", "value": kb_version}, {"name": "zs:build", "value": build_sha()},
+                {"name": "zs:vex_rules", "value": VEX.VEX_RULES},
+                # the VEX reads inputs that change after the run: drift (recorded once the run finished; version 2
+                # from then on) and the grade inputs (team Mosca, source settings)
+                {"name": "zs:drift_recorded", "value": iso_z(run.drift_at) if run.drift_at else "false"},
+                *([{"name": "zs:drift_events_truncated", "value": "true"}] if drift_cut else []),
+                {"name": "zs:grade_model_version", "value": QG.GRADE_MODEL_VERSION},
+                {"name": "zs:grade_inputs_digest", "value": grading.digest},
                 *[{"name": name, "value": str(value)} for name, value in versions],
                 *([{"name": "zs:judged_on", "value": judged_on}] if judged_on else []),
+                {"name": "zs:pqc_class_model", "value": POSTURE.PQC_CLASS_MODEL},
+                {"name": "zs:run_asset_count", "value": str(summary["assets"])},
+                *[{"name": f"zs:pqc_class_count:{cls}", "value": str(n)} for cls, n in summary["pqc_classes"].items()],
+                *([{"name": "zs:pqc_readiness_pct", "value": str(summary["pqc_readiness_pct"])}]
+                  if summary["pqc_readiness_pct"] is not None else []),
+                {"name": "zs:pqc_readiness_status", "value": summary["readiness_basis"]["status"]},
                 *[{"name": "zs:gap", "value": gap[:255]} for gap in gaps[:500]],
                 *coverage_gaps(coverage, names, job_names, provs),
             ],
@@ -732,10 +812,65 @@ def _document(session: Session, run: CbomCollectionRun, now: _dt.datetime
     def components() -> Iterator[dict[str, Any]]:
         for row in rows:  # the assets, then the certificate parts they reference
             yield _component(row, names.get(row.source_id or 0) or job_names.get(row.job_id), views[row.id],
-                             provs.get(row.job_id), shared, parts)
+                             provs.get(row.job_id), shared, parts, elsewhere)
         yield from parts.components()
 
-    return head, components(), lambda: vulnerabilities(list(rows), views)
+    return head, components(), lambda: vulnerabilities(
+        list(rows), views, **_vex_inputs(session, run, rows, views, jobs, grading, now), drift_truncated=drift_cut)
+
+
+def export_version(run: CbomCollectionRun) -> int:
+    """The export's CycloneDX ``version``: 2 once the run's drift is recorded (its VEX then carries the drift-resolved
+    findings, content added after the run finished), else 1."""
+    return 2 if run.drift_at is not None else 1
+
+
+def export_identity(session: Session, run: CbomCollectionRun, now: _dt.datetime) -> tuple[str, int]:
+    """(serialNumber, version) of the run's export as ``_document`` would write it ``now``: the BOM-Link target of a
+    later run's drift-resolved finding whose asset is gone."""
+    today = now if now.tzinfo is None else now.astimezone(_dt.timezone.utc).replace(tzinfo=None)
+    scope = select(CbomCollectedAsset).where(CbomCollectedAsset.team_id == run.team_id,
+                                             CbomCollectedAsset.run_id == run.id)
+    judged_on = today.date().isoformat() if changed_today(session, scope, today) else None
+    return export_serial(run.id or 0, crypto_kb.version(), judged_on, POSTURE.PQC_CLASS_MODEL), export_version(run)
+
+
+def _vex_inputs(session: Session, run: CbomCollectionRun, rows: list[CbomCollectedAsset],
+                views: dict[int, dict[str, Any]], jobs: list[CbomCollectionJob], grading: Any,
+                now: _dt.datetime) -> dict[str, Any]:
+    """What the VEX analysis reads besides the rows (CB-22): each row's Q-grade (``qgrade``, the run API's grade; only
+    asked for rows with a quantum-only code), the run's drift-resolved findings with the bom-ref of each asset still
+    listed (by the stable key drift records, ``identity``) and a BOM-Link into the baseline export for each asset that
+    is gone."""
+    from backend.utilities.cbom_sources import identity as ID
+
+    def grade_of(row: CbomCollectedAsset) -> str | None:
+        return grading.grade_row(row, views[row.id]["finding_codes"], explain=False).q_grade
+
+    resolved = VEX.drift_resolved(session, team_id=run.team_id, run_id=run.id) if run.id is not None else []
+    ref_of: dict[str, str] = {}
+    baselines: dict[int, tuple[str, int] | None] = {}
+
+    def link_of(event: dict[str, Any]) -> str | None:
+        base_id, asset_id = event.get("baseline"), event.get("baseline_asset_id")
+        if base_id is None or asset_id is None:
+            return None
+        if base_id not in baselines:
+            base = session.get(CbomCollectionRun, base_id)
+            baselines[base_id] = export_identity(session, base, now) if base is not None and \
+                base.team_id == run.team_id else None
+        identity = baselines[base_id]
+        return VEX.bom_link(identity[0], identity[1], f"zs-asset-{asset_id}") if identity else None
+
+    if resolved:
+        sources = {s.id: s for s in session.exec(select(CbomCollectionSource).where(
+            CbomCollectionSource.team_id == run.team_id)).all()}
+        by_job = {j.id: ID.job_source_ref(j, sources.get(j.source_id or 0)) for j in jobs}
+        for row in rows:
+            if row.job_id in by_job:
+                ref_of.setdefault(ID.stable_key("node", by_job[row.job_id], ID.node_identity(row)), f"zs-asset-{row.id}")
+    return {"grade_of": grade_of, "resolved": resolved, "ref_of": ref_of, "link_of": link_of,
+            "grade_meta": {"model_version": QG.GRADE_MODEL_VERSION, "inputs_digest": grading.digest}}
 
 
 def cyclonedx(session: Session, run: CbomCollectionRun, now: _dt.datetime) -> dict[str, Any]:

@@ -52,7 +52,7 @@ from backend.new_models import (
 )
 from backend.utilities.cbom_sources import algid
 from backend.utilities.cbom_sources import identity as ID
-from backend.utilities.cbom_sources.cbom_metrics import code_row_quantum_vulnerable, quantum_readiness_pct
+from backend.utilities.cbom_sources.cbom_metrics import code_row_quantum_vulnerable
 from backend.utilities.cbom_sources.cbom_rows import display_row, is_finding
 from backend.utilities.cbom_sources.common import iso_z, log
 
@@ -116,7 +116,7 @@ def node_views(rows: Iterable[CbomCollectedAsset], source_ref: str, *, reclassif
     """Views of one collect job's assets; ``reclassify`` re-judges them with the current classifier (as of each
     asset's own collection time, so certificate expiry is still "as of the run")."""
     from backend.utilities.cbom_sources.classify import classify
-    from backend.utilities.cbom_sources.posture import pqc_class
+    from backend.utilities.cbom_sources.posture import JUDGED_CLASSES, classify_pqc
 
     out: dict[str, View] = {}
     for row in rows:
@@ -133,19 +133,21 @@ def node_views(rows: Iterable[CbomCollectedAsset], source_ref: str, *, reclassif
         clean = frozenset(c for c in codes if isinstance(c, str) and c and not c.startswith("COVERAGE_"))
         facts = row.facts or {}
         ident = ID.node_identity(row)
-        cls = pqc_class(row.asset_type, qv, sorted(clean), facts)
+        # the one class function, on the (re-judged) verdict; per job, so no read-elsewhere rule here: an unknown
+        # row and a not-applicable one are both outside the readiness denominator, so readiness is the same
+        cls, basis = classify_pqc(row, sorted(clean), quantum_vulnerable=qv)
         cert = ID.is_certificate(row)
         _merge(out, View(
             identity=ident, key=ID.stable_key("node", source_ref, ident), label=ID.node_label(row),
             asset_type=row.asset_type, codes=clean, impact=impact if clean or impact else None,
-            quantum_vulnerable=qv, finding=bool(clean), judged=cls != "not-applicable",
+            quantum_vulnerable=qv, finding=bool(clean), judged=cls in JUDGED_CLASSES,
             # an OID or a cloud enum compares as its canonical name: a node upgrade that names an algorithm it used
             # to report as an OID is not a change (S-2); any other text compares as stored
             algorithm=algid.compare_key(row.algorithm), key_size=row.key_size, protocol=row.protocol,
             fingerprint=(str(facts.get("fingerprint_sha256")) if cert and facts.get("fingerprint_sha256") else None),
             not_after=(str(facts.get("not_after")) if cert and facts.get("not_after") else None),
             certificate=cert, asset_id=row.id,
-            extra={"target": row.target, "location": row.location, "pqc_class": cls},
+            extra={"target": row.target, "location": row.location, "pqc_class": cls, "pqc_class_basis": basis},
         ))
     return out
 
@@ -270,8 +272,13 @@ def _gap_for(view: View, gaps: list[Gap], *, listed: bool) -> Gap | None:
 
 
 def readiness(views: Mapping[str, View]) -> float | None:
+    """Readiness of one side, by the posture card's rule (``posture.readiness``): withheld when more assets are
+    ``unknown`` than judged."""
+    from backend.utilities.cbom_sources.posture import readiness_pct
+
     judged = [v for v in views.values() if v.judged]
-    return quantum_readiness_pct(sum(1 for v in judged if v.quantum_vulnerable is True), len(judged))
+    unknown = sum(1 for v in views.values() if not v.judged and v.extra.get("pqc_class") == "unknown")
+    return readiness_pct(sum(1 for v in judged if v.quantum_vulnerable is True), len(judged), unknown)
 
 
 # ----------------------------------------------------------------------------- compare

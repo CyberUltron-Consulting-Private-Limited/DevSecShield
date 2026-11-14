@@ -48,8 +48,12 @@ def quantum_readiness_pct(vulnerable: int, judged: int) -> float | None:
 def code_row_quantum_vulnerable(row: dict[str, Any]) -> bool | None:
     """A code-scan row's quantum verdict: True (vulnerable), False (ready) or None (not judged).
 
-    ``quantum_safe`` is the stored tri-state (certificates, keys and protocols keep None)."""
+    ``quantum_safe`` is the stored tri-state (certificates, keys and protocols keep None). A row the rule base could
+    not identify (``crypto_strength`` "unknown") is not judged, also when an older engine stored it as quantum-safe:
+    the rule is read-time, so stored scans need no rewrite (CB-18 HF-1, ST-C)."""
     qs = row.get("quantum_safe") if isinstance(row, dict) else None
+    if qs is True and str(row.get("crypto_strength") or "").strip().lower() == "unknown":
+        return None
     if qs is True:
         return False
     if qs is False:

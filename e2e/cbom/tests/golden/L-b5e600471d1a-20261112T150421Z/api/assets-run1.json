@@ -1,0 +1,1321 @@
+{
+  "all_total": 25,
+  "facets": {
+    "impact": {
+      "High": 4,
+      "Low": 4,
+      "Medium": 1,
+      "none": 16
+    },
+    "quantum_vulnerable": 14,
+    "type": {
+      "certificate": 10,
+      "coverage": 5,
+      "ssh_endpoint": 2,
+      "tls_endpoint": 8
+    }
+  },
+  "items": [
+    {
+      "algorithm": "ECDHE-RSA-AES128-SHA",
+      "as_of_run": null,
+      "cdx_type": "protocol",
+      "facts": {
+        "chain_length": 1,
+        "client_auth_requested": false,
+        "downgrade_exposed": false,
+        "fallback_scsv": true,
+        "handshake_budget": 12,
+        "handshake_tool": "openssl",
+        "handshakes_used": 10,
+        "leaf": {
+          "curve": null,
+          "fingerprint_sha256": "42ee79413b5a13a7b8d2824ee7d599a7e8d6a7eac15fcd64265483503fe178b2",
+          "issuer": "CN=z02.lab",
+          "key_alg": "RSA",
+          "key_size": 1024,
+          "not_after": "2027-12-14T15:21:45Z",
+          "san": [
+            "z02.lab"
+          ],
+          "self_signed": true,
+          "sig_alg": "sha1WithRSAEncryption",
+          "subject": "CN=z02.lab"
+        },
+        "mode": "full",
+        "negotiated_cipher": "ECDHE-RSA-AES128-SHA",
+        "negotiated_group": "prime256v1",
+        "negotiated_version": "TLSv1.2",
+        "peer_signature_type": "rsa_pss_rsae_sha256",
+        "peer_signing_digest": "SHA256",
+        "pq_hybrid": false,
+        "protocol_label": "HTTPS",
+        "secure_renegotiation": true,
+        "server_temp_key": "ECDH, prime256v1, 256 bits",
+        "service": "tls",
+        "tls": true,
+        "versions": {
+          "SSLv3": false,
+          "TLSv1.0": true,
+          "TLSv1.1": true,
+          "TLSv1.2": true,
+          "TLSv1.3": false
+        },
+        "weak_cipher_probe_version": "TLSv1.2",
+        "weak_ciphers_accepted": {
+          "cbc": [
+            "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA"
+          ],
+          "static_rsa": [
+            "TLS_RSA_WITH_AES_128_CBC_SHA"
+          ]
+        }
+      },
+      "finding": "Endpoint accepts TLS 1.0; Endpoint accepts TLS 1.1; Endpoint accepts RSA key exchange without forward secrecy; Endpoint still accepts CBC-mode cipher suites; Endpoint has no post-quantum key exchange",
+      "finding_codes": [
+        "PROTO_TLS10",
+        "PROTO_TLS11",
+        "STATIC_RSA_KEX",
+        "CBC_ACCEPTED",
+        "NO_PQ_KEX"
+      ],
+      "id": 446,
+      "impact": "High",
+      "job_id": 84,
+      "key_size": null,
+      "location": "10.231.0.18:443",
+      "name": "HTTPS 10.231.0.18:443",
+      "protocol": "TLSv1.2",
+      "quantum_vulnerable": true,
+      "source_id": 69,
+      "source_name": "range-10.231.0.16-28",
+      "target": "10.231.0.18",
+      "type": "tls_endpoint"
+    },
+    {
+      "algorithm": "RSA",
+      "as_of_run": null,
+      "cdx_type": "certificate",
+      "facts": {
+        "chain_index": 0,
+        "fingerprint_sha256": "42ee79413b5a13a7b8d2824ee7d599a7e8d6a7eac15fcd64265483503fe178b2",
+        "is_ca": false,
+        "issuer": "CN=z02.lab",
+        "key_alg": "RSA",
+        "key_size": 1024,
+        "not_after": "2027-12-14T15:21:45Z",
+        "not_before": "2026-11-11T15:21:45Z",
+        "san": [
+          "z02.lab"
+        ],
+        "self_signed": true,
+        "serial": "41d59cd844e46439a67d0cb5559c0cca167708dd",
+        "sig_alg": "sha1WithRSAEncryption",
+        "source": "tls",
+        "subject": "CN=z02.lab"
+      },
+      "finding": "Certificate key uses RSA-1024; the minimum is 2048 bits; Self-signed certificate; its sha1WithRSAEncryption self-signature is not checked by clients (they trust the certificate itself), so it is deliberately not reported as a weak SHA-1 signature (SIG_SHA1); re-issue it with SHA-256 so policies and scanners stop flagging it; Uses public-key cryptography that a quantum computer can break",
+      "finding_codes": [
+        "CERT_SELF_SIGNED",
+        "RSA_LT_2048",
+        "QUANTUM_VULNERABLE"
+      ],
+      "id": 447,
+      "impact": "High",
+      "job_id": 84,
+      "key_size": 1024,
+      "location": "10.231.0.18:443#chain[0]",
+      "name": "CN=z02.lab",
+      "protocol": null,
+      "quantum_vulnerable": true,
+      "source_id": 69,
+      "source_name": "range-10.231.0.16-28",
+      "target": "10.231.0.18",
+      "type": "certificate"
+    },
+    {
+      "algorithm": "ECDHE-RSA-AES128-SHA",
+      "as_of_run": null,
+      "cdx_type": "protocol",
+      "facts": {
+        "chain_length": 2,
+        "client_auth_requested": false,
+        "handshake_budget": 12,
+        "handshake_tool": "openssl",
+        "handshakes_used": 10,
+        "leaf": {
+          "curve": null,
+          "fingerprint_sha256": "473e278da7672c6b031847fd5686fe9dff67839f3c76633bfdb5fb052abdabbf",
+          "issuer": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+          "key_alg": "RSA",
+          "key_size": 2048,
+          "not_after": "2027-12-14T15:21:45Z",
+          "san": [
+            "z16.lab"
+          ],
+          "self_signed": false,
+          "sig_alg": "sha256WithRSAEncryption",
+          "subject": "CN=z16.lab"
+        },
+        "mode": "full",
+        "negotiated_cipher": "ECDHE-RSA-AES128-SHA",
+        "negotiated_group": "prime256v1",
+        "negotiated_version": "TLSv1",
+        "peer_signature_type": "rsa_pkcs1_md5_sha1",
+        "peer_signing_digest": "MD5-SHA1",
+        "pq_hybrid": false,
+        "protocol_label": "HTTPS",
+        "secure_renegotiation": true,
+        "server_temp_key": "ECDH, prime256v1, 256 bits",
+        "service": "tls",
+        "tls": true,
+        "versions": {
+          "SSLv3": false,
+          "TLSv1.0": true,
+          "TLSv1.1": false,
+          "TLSv1.2": false,
+          "TLSv1.3": false
+        },
+        "weak_cipher_probe_version": "TLSv1.0",
+        "weak_ciphers_accepted": {
+          "cbc": [
+            "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA"
+          ],
+          "static_rsa": [
+            "TLS_RSA_WITH_AES_128_CBC_SHA"
+          ]
+        }
+      },
+      "finding": "Endpoint accepts TLS 1.0; Endpoint supports neither TLS 1.2 nor TLS 1.3; Endpoint accepts RSA key exchange without forward secrecy; Endpoint still accepts CBC-mode cipher suites; Endpoint has no post-quantum key exchange",
+      "finding_codes": [
+        "PROTO_TLS10",
+        "NO_TLS12",
+        "STATIC_RSA_KEX",
+        "CBC_ACCEPTED",
+        "NO_PQ_KEX"
+      ],
+      "id": 448,
+      "impact": "High",
+      "job_id": 84,
+      "key_size": null,
+      "location": "10.231.0.26:443",
+      "name": "HTTPS 10.231.0.26:443",
+      "protocol": "TLSv1.0",
+      "quantum_vulnerable": true,
+      "source_id": 69,
+      "source_name": "range-10.231.0.16-28",
+      "target": "10.231.0.26",
+      "type": "tls_endpoint"
+    },
+    {
+      "algorithm": "RSA",
+      "as_of_run": null,
+      "cdx_type": "certificate",
+      "facts": {
+        "chain_index": 0,
+        "fingerprint_sha256": "0e88643a7dfe1b9a7630d545cde42d6848594f3dbc2b70b1482e89d074fe7528",
+        "is_ca": false,
+        "issuer": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+        "key_alg": "RSA",
+        "key_size": 2048,
+        "not_after": "2025-10-08T15:21:45Z",
+        "not_before": "2024-10-08T15:21:45Z",
+        "san": [
+          "z04.lab"
+        ],
+        "self_signed": false,
+        "serial": "72377c7cc8dc61b9",
+        "sig_alg": "sha256WithRSAEncryption",
+        "source": "tls",
+        "subject": "CN=z04.lab"
+      },
+      "finding": "Certificate expired on 2025-10-08; Uses public-key cryptography that a quantum computer can break",
+      "finding_codes": [
+        "CERT_EXPIRED",
+        "QUANTUM_VULNERABLE"
+      ],
+      "id": 452,
+      "impact": "High",
+      "job_id": 84,
+      "key_size": 2048,
+      "location": "10.231.0.19:443#chain[0]",
+      "name": "CN=z04.lab",
+      "protocol": null,
+      "quantum_vulnerable": true,
+      "source_id": 69,
+      "source_name": "range-10.231.0.16-28",
+      "target": "10.231.0.19",
+      "type": "certificate"
+    },
+    {
+      "algorithm": "ssh-ed25519",
+      "as_of_run": null,
+      "cdx_type": "protocol",
+      "facts": {
+        "banner": "SSH-2.0-OpenSSH_10.0",
+        "ciphers_c2s": [
+          "aes128-ctr",
+          "aes256-ctr"
+        ],
+        "ciphers_s2c": [
+          "aes128-ctr",
+          "aes256-ctr"
+        ],
+        "compression_c2s": [
+          "none",
+          "zlib@openssh.com"
+        ],
+        "compression_s2c": [
+          "none",
+          "zlib@openssh.com"
+        ],
+        "host_key": {
+          "bits": 256,
+          "fingerprint_sha256": "e6144df79a9615b56a8bf485658d66815641db3bbc0a60614ad25c02c9c06933",
+          "key_type": "ssh-ed25519"
+        },
+        "host_key_algs": [
+          "rsa-sha2-512",
+          "rsa-sha2-256",
+          "ssh-ed25519"
+        ],
+        "kex": [
+          "curve25519-sha256",
+          "ecdh-sha2-nistp256",
+          "diffie-hellman-group14-sha256",
+          "diffie-hellman-group14-sha1",
+          "ext-info-s",
+          "kex-strict-s-v00@openssh.com"
+        ],
+        "macs_c2s": [
+          "hmac-sha1",
+          "hmac-sha2-256"
+        ],
+        "macs_s2c": [
+          "hmac-sha1",
+          "hmac-sha2-256"
+        ]
+      },
+      "finding": "SSH server offers SHA-1 key exchange (diffie-hellman-group14-sha1); SSH server offers HMAC-SHA1 (hmac-sha1); SSH server has no post-quantum key exchange",
+      "finding_codes": [
+        "SSH_DH_SHA1",
+        "SSH_HMAC_SHA1",
+        "SSH_NO_PQ_KEX"
+      ],
+      "id": 439,
+      "impact": "Medium",
+      "job_id": 84,
+      "key_size": 256,
+      "location": "10.231.0.23:22",
+      "name": "SSH 10.231.0.23:22",
+      "protocol": "ssh",
+      "quantum_vulnerable": true,
+      "source_id": 69,
+      "source_name": "range-10.231.0.16-28",
+      "target": "10.231.0.23",
+      "type": "ssh_endpoint"
+    },
+    {
+      "algorithm": "TLS_AES_128_GCM_SHA256",
+      "as_of_run": null,
+      "cdx_type": "protocol",
+      "facts": {
+        "chain_length": 2,
+        "client_auth_requested": false,
+        "handshake_budget": 12,
+        "handshake_tool": "openssl",
+        "handshakes_used": 6,
+        "leaf": {
+          "curve": "secp256r1",
+          "fingerprint_sha256": "7418f4121ab0544d76c378c4d228116e79c6ce19042938925e4111617340b20e",
+          "issuer": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+          "key_alg": "EC",
+          "key_size": 256,
+          "not_after": "2027-12-14T15:21:45Z",
+          "san": [
+            "z01.lab"
+          ],
+          "self_signed": false,
+          "sig_alg": "sha256WithRSAEncryption",
+          "subject": "CN=z01.lab"
+        },
+        "mode": "full",
+        "negotiated_cipher": "TLS_AES_128_GCM_SHA256",
+        "negotiated_group": "X25519",
+        "negotiated_version": "TLSv1.3",
+        "peer_signature_type": "ecdsa_secp256r1_sha256",
+        "peer_signing_digest": "SHA256",
+        "pq_group": null,
+        "pq_hybrid": false,
+        "protocol_label": "HTTPS",
+        "secure_renegotiation": null,
+        "server_temp_key": "X25519, 253 bits",
+        "service": "tls",
+        "tls": true,
+        "versions": {
+          "SSLv3": false,
+          "TLSv1.0": false,
+          "TLSv1.1": false,
+          "TLSv1.2": false,
+          "TLSv1.3": true
+        }
+      },
+      "finding": "Endpoint has no post-quantum key exchange",
+      "finding_codes": [
+        "NO_PQ_KEX"
+      ],
+      "id": 441,
+      "impact": "Low",
+      "job_id": 84,
+      "key_size": null,
+      "location": "10.231.0.17:443",
+      "name": "HTTPS 10.231.0.17:443",
+      "protocol": "TLSv1.3",
+      "quantum_vulnerable": true,
+      "source_id": 69,
+      "source_name": "range-10.231.0.16-28",
+      "target": "10.231.0.17",
+      "type": "tls_endpoint"
+    },
+    {
+      "algorithm": "TLS_AES_256_GCM_SHA384",
+      "as_of_run": null,
+      "cdx_type": "protocol",
+      "facts": {
+        "chain_length": 1,
+        "client_auth_requested": false,
+        "handshake_budget": 12,
+        "handshake_tool": "openssl",
+        "handshakes_used": 6,
+        "leaf": {
+          "curve": null,
+          "fingerprint_sha256": "3ef7beba268042a9143f7bc3f9691d6c30f8a6f11f2a57c42ef7beee5ebbe90d",
+          "issuer": "CN=z05b.lab",
+          "key_alg": "2.16.840.1.101.3.4.3.18",
+          "key_size": null,
+          "not_after": "2027-12-14T15:21:45Z",
+          "san": [
+            "z05b.lab"
+          ],
+          "self_signed": true,
+          "sig_alg": "Unknown OID",
+          "subject": "CN=z05b.lab"
+        },
+        "mode": "full",
+        "negotiated_cipher": "TLS_AES_256_GCM_SHA384",
+        "negotiated_group": "X25519MLKEM768",
+        "negotiated_version": "TLSv1.3",
+        "peer_signature_type": "mldsa65",
+        "peer_signing_digest": null,
+        "pq_group": null,
+        "pq_hybrid": false,
+        "protocol_label": "HTTPS",
+        "secure_renegotiation": null,
+        "server_temp_key": null,
+        "service": "tls",
+        "tls": true,
+        "versions": {
+          "SSLv3": false,
+          "TLSv1.0": false,
+          "TLSv1.1": false,
+          "TLSv1.2": false,
+          "TLSv1.3": true
+        }
+      },
+      "finding": "Endpoint has no post-quantum key exchange",
+      "finding_codes": [
+        "NO_PQ_KEX"
+      ],
+      "id": 444,
+      "impact": "Low",
+      "job_id": 84,
+      "key_size": null,
+      "location": "10.231.0.21:443",
+      "name": "HTTPS 10.231.0.21:443",
+      "protocol": "TLSv1.3",
+      "quantum_vulnerable": false,
+      "source_id": 69,
+      "source_name": "range-10.231.0.16-28",
+      "target": "10.231.0.21",
+      "type": "tls_endpoint"
+    },
+    {
+      "algorithm": "2.16.840.1.101.3.4.3.18",
+      "as_of_run": null,
+      "cdx_type": "certificate",
+      "facts": {
+        "chain_index": 0,
+        "fingerprint_sha256": "3ef7beba268042a9143f7bc3f9691d6c30f8a6f11f2a57c42ef7beee5ebbe90d",
+        "is_ca": false,
+        "issuer": "CN=z05b.lab",
+        "key_alg": "2.16.840.1.101.3.4.3.18",
+        "not_after": "2027-12-14T15:21:45Z",
+        "not_before": "2026-11-11T15:21:45Z",
+        "san": [
+          "z05b.lab"
+        ],
+        "self_signed": true,
+        "serial": "6d4105b785a88b2517899390df4e197ee9ac41bc",
+        "sig_alg": "Unknown OID",
+        "source": "tls",
+        "subject": "CN=z05b.lab"
+      },
+      "finding": "Self-signed certificate",
+      "finding_codes": [
+        "CERT_SELF_SIGNED"
+      ],
+      "id": 445,
+      "impact": "Low",
+      "job_id": 84,
+      "key_size": null,
+      "location": "10.231.0.21:443#chain[0]",
+      "name": "CN=z05b.lab",
+      "protocol": null,
+      "quantum_vulnerable": null,
+      "source_id": 69,
+      "source_name": "range-10.231.0.16-28",
+      "target": "10.231.0.21",
+      "type": "certificate"
+    },
+    {
+      "algorithm": "TLS_AES_128_GCM_SHA256",
+      "as_of_run": null,
+      "cdx_type": "protocol",
+      "facts": {
+        "chain_length": 2,
+        "client_auth_requested": false,
+        "downgrade_exposed": false,
+        "fallback_scsv": true,
+        "handshake_budget": 12,
+        "handshake_tool": "openssl",
+        "handshakes_used": 11,
+        "leaf": {
+          "curve": null,
+          "fingerprint_sha256": "0e88643a7dfe1b9a7630d545cde42d6848594f3dbc2b70b1482e89d074fe7528",
+          "issuer": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+          "key_alg": "RSA",
+          "key_size": 2048,
+          "not_after": "2025-10-08T15:21:45Z",
+          "san": [
+            "z04.lab"
+          ],
+          "self_signed": false,
+          "sig_alg": "sha256WithRSAEncryption",
+          "subject": "CN=z04.lab"
+        },
+        "mode": "full",
+        "negotiated_cipher": "TLS_AES_128_GCM_SHA256",
+        "negotiated_group": "X25519",
+        "negotiated_version": "TLSv1.3",
+        "peer_signature_type": "rsa_pss_rsae_sha256",
+        "peer_signing_digest": "SHA256",
+        "pq_group": null,
+        "pq_hybrid": false,
+        "protocol_label": "HTTPS",
+        "secure_renegotiation": null,
+        "server_temp_key": "X25519, 253 bits",
+        "service": "tls",
+        "tls": true,
+        "versions": {
+          "SSLv3": false,
+          "TLSv1.0": false,
+          "TLSv1.1": false,
+          "TLSv1.2": true,
+          "TLSv1.3": true
+        },
+        "weak_cipher_probe_version": "TLSv1.2",
+        "weak_ciphers_accepted": {}
+      },
+      "finding": "Endpoint has no post-quantum key exchange",
+      "finding_codes": [
+        "NO_PQ_KEX"
+      ],
+      "id": 451,
+      "impact": "Low",
+      "job_id": 84,
+      "key_size": null,
+      "location": "10.231.0.19:443",
+      "name": "HTTPS 10.231.0.19:443",
+      "protocol": "TLSv1.3",
+      "quantum_vulnerable": true,
+      "source_id": 69,
+      "source_name": "range-10.231.0.16-28",
+      "target": "10.231.0.19",
+      "type": "tls_endpoint"
+    },
+    {
+      "algorithm": null,
+      "as_of_run": null,
+      "cdx_type": "protocol",
+      "facts": {
+        "chain_length": 0,
+        "client_auth_requested": false,
+        "detail": "no TLS version accepted",
+        "handshake_tool": "openssl",
+        "mode": "full",
+        "negotiated_cipher": null,
+        "negotiated_group": "<NULL>",
+        "negotiated_version": null,
+        "peer_signature_type": null,
+        "peer_signing_digest": null,
+        "protocol_label": "HTTPS",
+        "secure_renegotiation": null,
+        "server_temp_key": null,
+        "service": "tls",
+        "tls": null,
+        "versions": {
+          "SSLv3": false,
+          "TLSv1.0": false,
+          "TLSv1.1": false,
+          "TLSv1.2": false,
+          "TLSv1.3": false
+        }
+      },
+      "finding": null,
+      "finding_codes": [],
+      "id": 434,
+      "impact": null,
+      "job_id": 85,
+      "key_size": null,
+      "location": "10.231.0.34:443",
+      "name": "HTTPS 10.231.0.34:443",
+      "protocol": "tls",
+      "quantum_vulnerable": null,
+      "source_id": 70,
+      "source_name": "range-10.231.0.32-30",
+      "target": "10.231.0.34",
+      "type": "tls_endpoint"
+    },
+    {
+      "algorithm": "TLS_AES_256_GCM_SHA384",
+      "as_of_run": null,
+      "cdx_type": "protocol",
+      "facts": {
+        "chain_length": 2,
+        "client_auth_requested": false,
+        "handshake_budget": 12,
+        "handshake_tool": "openssl",
+        "handshakes_used": 6,
+        "leaf": {
+          "curve": null,
+          "fingerprint_sha256": "21c1a307f8d822fbb92db4fc0c9ccbade83de1654ac72acc89b63d58d37bc296",
+          "issuer": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+          "key_alg": "RSA",
+          "key_size": 2048,
+          "not_after": "2027-12-14T15:21:45Z",
+          "san": [
+            "z05.lab"
+          ],
+          "self_signed": false,
+          "sig_alg": "sha256WithRSAEncryption",
+          "subject": "CN=z05.lab"
+        },
+        "mode": "full",
+        "negotiated_cipher": "TLS_AES_256_GCM_SHA384",
+        "negotiated_group": "X25519MLKEM768",
+        "negotiated_version": "TLSv1.3",
+        "peer_signature_type": "rsa_pss_rsae_sha256",
+        "peer_signing_digest": "SHA256",
+        "pq_group": "X25519MLKEM768",
+        "pq_hybrid": true,
+        "protocol_label": "HTTPS",
+        "secure_renegotiation": null,
+        "server_temp_key": null,
+        "service": "tls",
+        "tls": true,
+        "versions": {
+          "SSLv3": false,
+          "TLSv1.0": false,
+          "TLSv1.1": false,
+          "TLSv1.2": false,
+          "TLSv1.3": true
+        }
+      },
+      "finding": null,
+      "finding_codes": [],
+      "id": 435,
+      "impact": null,
+      "job_id": 84,
+      "key_size": null,
+      "location": "10.231.0.20:443",
+      "name": "HTTPS 10.231.0.20:443",
+      "protocol": "TLSv1.3",
+      "quantum_vulnerable": false,
+      "source_id": 69,
+      "source_name": "range-10.231.0.16-28",
+      "target": "10.231.0.20",
+      "type": "tls_endpoint"
+    },
+    {
+      "algorithm": "RSA",
+      "as_of_run": null,
+      "cdx_type": "certificate",
+      "facts": {
+        "chain_index": 0,
+        "fingerprint_sha256": "21c1a307f8d822fbb92db4fc0c9ccbade83de1654ac72acc89b63d58d37bc296",
+        "is_ca": false,
+        "issuer": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+        "key_alg": "RSA",
+        "key_size": 2048,
+        "not_after": "2027-12-14T15:21:45Z",
+        "not_before": "2026-11-11T15:21:45Z",
+        "san": [
+          "z05.lab"
+        ],
+        "self_signed": false,
+        "serial": "ccb4945e9b488f88",
+        "sig_alg": "sha256WithRSAEncryption",
+        "source": "tls",
+        "subject": "CN=z05.lab"
+      },
+      "finding": "Uses public-key cryptography that a quantum computer can break",
+      "finding_codes": [
+        "QUANTUM_VULNERABLE"
+      ],
+      "id": 436,
+      "impact": null,
+      "job_id": 84,
+      "key_size": 2048,
+      "location": "10.231.0.20:443#chain[0]",
+      "name": "CN=z05.lab",
+      "protocol": null,
+      "quantum_vulnerable": true,
+      "source_id": 69,
+      "source_name": "range-10.231.0.16-28",
+      "target": "10.231.0.20",
+      "type": "certificate"
+    },
+    {
+      "algorithm": "RSA",
+      "as_of_run": null,
+      "cdx_type": "certificate",
+      "facts": {
+        "chain_index": 1,
+        "fingerprint_sha256": "1723b921c4a5b089958d2053cd0d8d6936f4f39cd7ec99c0b57f1c2cf2d3218a",
+        "is_ca": true,
+        "issuer": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+        "key_alg": "RSA",
+        "key_size": 2048,
+        "not_after": "2036-11-09T15:21:45Z",
+        "not_before": "2026-11-10T15:21:45Z",
+        "san": [],
+        "self_signed": true,
+        "serial": "37971095f5d9abc56a18c5d85f42492efd778ab4",
+        "sig_alg": "sha256WithRSAEncryption",
+        "source": "tls",
+        "subject": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab"
+      },
+      "finding": "Uses public-key cryptography that a quantum computer can break",
+      "finding_codes": [
+        "QUANTUM_VULNERABLE"
+      ],
+      "id": 437,
+      "impact": null,
+      "job_id": 84,
+      "key_size": 2048,
+      "location": "10.231.0.20:443#chain[1]",
+      "name": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+      "protocol": null,
+      "quantum_vulnerable": true,
+      "source_id": 69,
+      "source_name": "range-10.231.0.16-28",
+      "target": "10.231.0.20",
+      "type": "certificate"
+    },
+    {
+      "algorithm": null,
+      "as_of_run": null,
+      "cdx_type": "protocol",
+      "facts": {
+        "chain_length": 0,
+        "client_auth_requested": false,
+        "detail": "no TLS version accepted",
+        "handshake_tool": "openssl",
+        "mode": "full",
+        "negotiated_cipher": null,
+        "negotiated_group": "<NULL>",
+        "negotiated_version": null,
+        "peer_signature_type": null,
+        "peer_signing_digest": null,
+        "protocol_label": "HTTPS",
+        "secure_renegotiation": null,
+        "server_temp_key": null,
+        "service": "tls",
+        "tls": null,
+        "versions": {
+          "SSLv3": false,
+          "TLSv1.0": false,
+          "TLSv1.1": false,
+          "TLSv1.2": false,
+          "TLSv1.3": false
+        }
+      },
+      "finding": null,
+      "finding_codes": [],
+      "id": 438,
+      "impact": null,
+      "job_id": 84,
+      "key_size": null,
+      "location": "10.231.0.22:443",
+      "name": "HTTPS 10.231.0.22:443",
+      "protocol": "tls",
+      "quantum_vulnerable": null,
+      "source_id": 69,
+      "source_name": "range-10.231.0.16-28",
+      "target": "10.231.0.22",
+      "type": "tls_endpoint"
+    },
+    {
+      "algorithm": null,
+      "as_of_run": null,
+      "cdx_type": "protocol",
+      "facts": {
+        "banner": "SSH-2.0-OpenSSH_10.0",
+        "ciphers_c2s": [
+          "aes256-gcm@openssh.com",
+          "chacha20-poly1305@openssh.com"
+        ],
+        "ciphers_s2c": [
+          "aes256-gcm@openssh.com",
+          "chacha20-poly1305@openssh.com"
+        ],
+        "compression_c2s": [
+          "none",
+          "zlib@openssh.com"
+        ],
+        "compression_s2c": [
+          "none",
+          "zlib@openssh.com"
+        ],
+        "host_key": {
+          "error": "IncompatiblePeer"
+        },
+        "host_key_algs": [
+          "ssh-ed25519"
+        ],
+        "kex": [
+          "mlkem768x25519-sha256",
+          "ext-info-s",
+          "kex-strict-s-v00@openssh.com"
+        ],
+        "macs_c2s": [
+          "hmac-sha2-256-etm@openssh.com"
+        ],
+        "macs_s2c": [
+          "hmac-sha2-256-etm@openssh.com"
+        ]
+      },
+      "finding": null,
+      "finding_codes": [],
+      "id": 440,
+      "impact": null,
+      "job_id": 84,
+      "key_size": null,
+      "location": "10.231.0.24:22",
+      "name": "SSH 10.231.0.24:22",
+      "protocol": "ssh",
+      "quantum_vulnerable": false,
+      "source_id": 69,
+      "source_name": "range-10.231.0.16-28",
+      "target": "10.231.0.24",
+      "type": "ssh_endpoint"
+    },
+    {
+      "algorithm": "EC",
+      "as_of_run": null,
+      "cdx_type": "certificate",
+      "facts": {
+        "chain_index": 0,
+        "curve": "secp256r1",
+        "fingerprint_sha256": "7418f4121ab0544d76c378c4d228116e79c6ce19042938925e4111617340b20e",
+        "is_ca": false,
+        "issuer": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+        "key_alg": "EC",
+        "key_size": 256,
+        "not_after": "2027-12-14T15:21:45Z",
+        "not_before": "2026-11-11T15:21:45Z",
+        "san": [
+          "z01.lab"
+        ],
+        "self_signed": false,
+        "serial": "7368b7b81ccc095e",
+        "sig_alg": "sha256WithRSAEncryption",
+        "source": "tls",
+        "subject": "CN=z01.lab"
+      },
+      "finding": "Uses public-key cryptography that a quantum computer can break",
+      "finding_codes": [
+        "QUANTUM_VULNERABLE"
+      ],
+      "id": 442,
+      "impact": null,
+      "job_id": 84,
+      "key_size": 256,
+      "location": "10.231.0.17:443#chain[0]",
+      "name": "CN=z01.lab",
+      "protocol": null,
+      "quantum_vulnerable": true,
+      "source_id": 69,
+      "source_name": "range-10.231.0.16-28",
+      "target": "10.231.0.17",
+      "type": "certificate"
+    },
+    {
+      "algorithm": "RSA",
+      "as_of_run": null,
+      "cdx_type": "certificate",
+      "facts": {
+        "chain_index": 1,
+        "fingerprint_sha256": "1723b921c4a5b089958d2053cd0d8d6936f4f39cd7ec99c0b57f1c2cf2d3218a",
+        "is_ca": true,
+        "issuer": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+        "key_alg": "RSA",
+        "key_size": 2048,
+        "not_after": "2036-11-09T15:21:45Z",
+        "not_before": "2026-11-10T15:21:45Z",
+        "san": [],
+        "self_signed": true,
+        "serial": "37971095f5d9abc56a18c5d85f42492efd778ab4",
+        "sig_alg": "sha256WithRSAEncryption",
+        "source": "tls",
+        "subject": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab"
+      },
+      "finding": "Uses public-key cryptography that a quantum computer can break",
+      "finding_codes": [
+        "QUANTUM_VULNERABLE"
+      ],
+      "id": 443,
+      "impact": null,
+      "job_id": 84,
+      "key_size": 2048,
+      "location": "10.231.0.17:443#chain[1]",
+      "name": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+      "protocol": null,
+      "quantum_vulnerable": true,
+      "source_id": 69,
+      "source_name": "range-10.231.0.16-28",
+      "target": "10.231.0.17",
+      "type": "certificate"
+    },
+    {
+      "algorithm": "RSA",
+      "as_of_run": null,
+      "cdx_type": "certificate",
+      "facts": {
+        "chain_index": 0,
+        "fingerprint_sha256": "473e278da7672c6b031847fd5686fe9dff67839f3c76633bfdb5fb052abdabbf",
+        "is_ca": false,
+        "issuer": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+        "key_alg": "RSA",
+        "key_size": 2048,
+        "not_after": "2027-12-14T15:21:45Z",
+        "not_before": "2026-11-11T15:21:45Z",
+        "san": [
+          "z16.lab"
+        ],
+        "self_signed": false,
+        "serial": "1bdf307c5b1fbc85",
+        "sig_alg": "sha256WithRSAEncryption",
+        "source": "tls",
+        "subject": "CN=z16.lab"
+      },
+      "finding": "Uses public-key cryptography that a quantum computer can break",
+      "finding_codes": [
+        "QUANTUM_VULNERABLE"
+      ],
+      "id": 449,
+      "impact": null,
+      "job_id": 84,
+      "key_size": 2048,
+      "location": "10.231.0.26:443#chain[0]",
+      "name": "CN=z16.lab",
+      "protocol": null,
+      "quantum_vulnerable": true,
+      "source_id": 69,
+      "source_name": "range-10.231.0.16-28",
+      "target": "10.231.0.26",
+      "type": "certificate"
+    },
+    {
+      "algorithm": "RSA",
+      "as_of_run": null,
+      "cdx_type": "certificate",
+      "facts": {
+        "chain_index": 1,
+        "fingerprint_sha256": "1723b921c4a5b089958d2053cd0d8d6936f4f39cd7ec99c0b57f1c2cf2d3218a",
+        "is_ca": true,
+        "issuer": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+        "key_alg": "RSA",
+        "key_size": 2048,
+        "not_after": "2036-11-09T15:21:45Z",
+        "not_before": "2026-11-10T15:21:45Z",
+        "san": [],
+        "self_signed": true,
+        "serial": "37971095f5d9abc56a18c5d85f42492efd778ab4",
+        "sig_alg": "sha256WithRSAEncryption",
+        "source": "tls",
+        "subject": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab"
+      },
+      "finding": "Uses public-key cryptography that a quantum computer can break",
+      "finding_codes": [
+        "QUANTUM_VULNERABLE"
+      ],
+      "id": 450,
+      "impact": null,
+      "job_id": 84,
+      "key_size": 2048,
+      "location": "10.231.0.26:443#chain[1]",
+      "name": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+      "protocol": null,
+      "quantum_vulnerable": true,
+      "source_id": 69,
+      "source_name": "range-10.231.0.16-28",
+      "target": "10.231.0.26",
+      "type": "certificate"
+    },
+    {
+      "algorithm": "RSA",
+      "as_of_run": null,
+      "cdx_type": "certificate",
+      "facts": {
+        "chain_index": 1,
+        "fingerprint_sha256": "1723b921c4a5b089958d2053cd0d8d6936f4f39cd7ec99c0b57f1c2cf2d3218a",
+        "is_ca": true,
+        "issuer": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+        "key_alg": "RSA",
+        "key_size": 2048,
+        "not_after": "2036-11-09T15:21:45Z",
+        "not_before": "2026-11-10T15:21:45Z",
+        "san": [],
+        "self_signed": true,
+        "serial": "37971095f5d9abc56a18c5d85f42492efd778ab4",
+        "sig_alg": "sha256WithRSAEncryption",
+        "source": "tls",
+        "subject": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab"
+      },
+      "finding": "Uses public-key cryptography that a quantum computer can break",
+      "finding_codes": [
+        "QUANTUM_VULNERABLE"
+      ],
+      "id": 453,
+      "impact": null,
+      "job_id": 84,
+      "key_size": 2048,
+      "location": "10.231.0.19:443#chain[1]",
+      "name": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+      "protocol": null,
+      "quantum_vulnerable": true,
+      "source_id": 69,
+      "source_name": "range-10.231.0.16-28",
+      "target": "10.231.0.19",
+      "type": "certificate"
+    },
+    {
+      "algorithm": null,
+      "as_of_run": null,
+      "cdx_type": "other",
+      "facts": {
+        "check": "no answer",
+        "detail": "10.231.0.25 did not answer on any listed port (443, 8443, 636, 389, 25, 587, 465, 993, 995, 5432, 3306, 1433, 22, 3389, 9093, 8883, 500, 4500); filtered, down or no host at this address",
+        "status": "unreachable"
+      },
+      "finding": "Not collected: 10.231.0.25 did not answer on any listed port (443, 8443, 636, 389, 25, 587, 465, 993, 995, 5432, 3306, 1433, 22, 3389, 9093, 8883, 500, 4500); filtered, down or no host at this address",
+      "finding_codes": [
+        "COVERAGE_UNREACHABLE"
+      ],
+      "id": 454,
+      "impact": null,
+      "job_id": 84,
+      "key_size": null,
+      "location": "10.231.0.25#no answer",
+      "name": "no answer",
+      "protocol": null,
+      "quantum_vulnerable": null,
+      "source_id": 69,
+      "source_name": "range-10.231.0.16-28",
+      "target": "10.231.0.25",
+      "type": "coverage"
+    },
+    {
+      "algorithm": null,
+      "as_of_run": null,
+      "cdx_type": "other",
+      "facts": {
+        "check": "no answer",
+        "detail": "10.231.0.27 did not answer on any listed port (443, 8443, 636, 389, 25, 587, 465, 993, 995, 5432, 3306, 1433, 22, 3389, 9093, 8883, 500, 4500); filtered, down or no host at this address",
+        "status": "unreachable"
+      },
+      "finding": "Not collected: 10.231.0.27 did not answer on any listed port (443, 8443, 636, 389, 25, 587, 465, 993, 995, 5432, 3306, 1433, 22, 3389, 9093, 8883, 500, 4500); filtered, down or no host at this address",
+      "finding_codes": [
+        "COVERAGE_UNREACHABLE"
+      ],
+      "id": 455,
+      "impact": null,
+      "job_id": 84,
+      "key_size": null,
+      "location": "10.231.0.27#no answer",
+      "name": "no answer",
+      "protocol": null,
+      "quantum_vulnerable": null,
+      "source_id": 69,
+      "source_name": "range-10.231.0.16-28",
+      "target": "10.231.0.27",
+      "type": "coverage"
+    },
+    {
+      "algorithm": null,
+      "as_of_run": null,
+      "cdx_type": "other",
+      "facts": {
+        "check": "no answer",
+        "detail": "10.231.0.28 did not answer on any listed port (443, 8443, 636, 389, 25, 587, 465, 993, 995, 5432, 3306, 1433, 22, 3389, 9093, 8883, 500, 4500); filtered, down or no host at this address",
+        "status": "unreachable"
+      },
+      "finding": "Not collected: 10.231.0.28 did not answer on any listed port (443, 8443, 636, 389, 25, 587, 465, 993, 995, 5432, 3306, 1433, 22, 3389, 9093, 8883, 500, 4500); filtered, down or no host at this address",
+      "finding_codes": [
+        "COVERAGE_UNREACHABLE"
+      ],
+      "id": 456,
+      "impact": null,
+      "job_id": 84,
+      "key_size": null,
+      "location": "10.231.0.28#no answer",
+      "name": "no answer",
+      "protocol": null,
+      "quantum_vulnerable": null,
+      "source_id": 69,
+      "source_name": "range-10.231.0.16-28",
+      "target": "10.231.0.28",
+      "type": "coverage"
+    },
+    {
+      "algorithm": null,
+      "as_of_run": null,
+      "cdx_type": "other",
+      "facts": {
+        "check": "no answer",
+        "detail": "10.231.0.29 did not answer on any listed port (443, 8443, 636, 389, 25, 587, 465, 993, 995, 5432, 3306, 1433, 22, 3389, 9093, 8883, 500, 4500); filtered, down or no host at this address",
+        "status": "unreachable"
+      },
+      "finding": "Not collected: 10.231.0.29 did not answer on any listed port (443, 8443, 636, 389, 25, 587, 465, 993, 995, 5432, 3306, 1433, 22, 3389, 9093, 8883, 500, 4500); filtered, down or no host at this address",
+      "finding_codes": [
+        "COVERAGE_UNREACHABLE"
+      ],
+      "id": 457,
+      "impact": null,
+      "job_id": 84,
+      "key_size": null,
+      "location": "10.231.0.29#no answer",
+      "name": "no answer",
+      "protocol": null,
+      "quantum_vulnerable": null,
+      "source_id": 69,
+      "source_name": "range-10.231.0.16-28",
+      "target": "10.231.0.29",
+      "type": "coverage"
+    },
+    {
+      "algorithm": null,
+      "as_of_run": null,
+      "cdx_type": "other",
+      "facts": {
+        "check": "no answer",
+        "detail": "10.231.0.30 did not answer on any listed port (443, 8443, 636, 389, 25, 587, 465, 993, 995, 5432, 3306, 1433, 22, 3389, 9093, 8883, 500, 4500); filtered, down or no host at this address",
+        "status": "unreachable"
+      },
+      "finding": "Not collected: 10.231.0.30 did not answer on any listed port (443, 8443, 636, 389, 25, 587, 465, 993, 995, 5432, 3306, 1433, 22, 3389, 9093, 8883, 500, 4500); filtered, down or no host at this address",
+      "finding_codes": [
+        "COVERAGE_UNREACHABLE"
+      ],
+      "id": 458,
+      "impact": null,
+      "job_id": 84,
+      "key_size": null,
+      "location": "10.231.0.30#no answer",
+      "name": "no answer",
+      "protocol": null,
+      "quantum_vulnerable": null,
+      "source_id": 69,
+      "source_name": "range-10.231.0.16-28",
+      "target": "10.231.0.30",
+      "type": "coverage"
+    }
+  ],
+  "pages": 1,
+  "run_id": 21,
+  "targets": [
+    {
+      "asset_count": 1,
+      "asset_mismatch": null,
+      "attempt": 1,
+      "counts": {
+        "failed": 0,
+        "ok": 1,
+        "skipped": 1,
+        "total": 2
+      },
+      "duration_s": 11,
+      "error": null,
+      "job_id": 85,
+      "outcome": "partial",
+      "source_id": 70,
+      "source_name": "range-10.231.0.32-30",
+      "status": "success",
+      "summary": "1 open endpoints",
+      "targets": [
+        {
+          "assets": 0,
+          "counted": true,
+          "duration_ms": 0,
+          "error": null,
+          "status": "skipped_never_scan",
+          "target": "10.231.0.33"
+        },
+        {
+          "assets": 1,
+          "counted": true,
+          "duration_ms": 11503,
+          "error": null,
+          "status": "ok",
+          "target": "10.231.0.34"
+        }
+      ],
+      "truncated": false
+    },
+    {
+      "asset_count": 24,
+      "asset_mismatch": null,
+      "attempt": 1,
+      "counts": {
+        "failed": 0,
+        "ok": 14,
+        "skipped": 0,
+        "total": 14
+      },
+      "duration_s": 23,
+      "error": null,
+      "job_id": 84,
+      "outcome": "ok",
+      "source_id": 69,
+      "source_name": "range-10.231.0.16-28",
+      "status": "success",
+      "summary": "9 open endpoints",
+      "targets": [
+        {
+          "assets": 1,
+          "counted": true,
+          "duration_ms": 8450,
+          "error": null,
+          "status": "ok",
+          "target": "10.231.0.22"
+        },
+        {
+          "assets": 3,
+          "counted": true,
+          "duration_ms": 9550,
+          "error": null,
+          "status": "ok",
+          "target": "10.231.0.20"
+        },
+        {
+          "assets": 1,
+          "counted": true,
+          "duration_ms": 11239,
+          "error": null,
+          "status": "ok",
+          "target": "10.231.0.23"
+        },
+        {
+          "assets": 1,
+          "counted": true,
+          "duration_ms": 12338,
+          "error": null,
+          "status": "ok",
+          "target": "10.231.0.24"
+        },
+        {
+          "assets": 2,
+          "counted": true,
+          "duration_ms": 12804,
+          "error": null,
+          "status": "ok",
+          "target": "10.231.0.21"
+        },
+        {
+          "assets": 3,
+          "counted": true,
+          "duration_ms": 12901,
+          "error": null,
+          "status": "ok",
+          "target": "10.231.0.17"
+        },
+        {
+          "assets": 2,
+          "counted": true,
+          "duration_ms": 14000,
+          "error": null,
+          "status": "ok",
+          "target": "10.231.0.18"
+        },
+        {
+          "assets": 3,
+          "counted": true,
+          "duration_ms": 14884,
+          "error": null,
+          "status": "ok",
+          "target": "10.231.0.26"
+        },
+        {
+          "assets": 3,
+          "counted": true,
+          "duration_ms": 15151,
+          "error": null,
+          "status": "ok",
+          "target": "10.231.0.19"
+        },
+        {
+          "assets": 0,
+          "counted": true,
+          "duration_ms": 21828,
+          "error": null,
+          "status": "ok",
+          "target": "10.231.0.25"
+        },
+        {
+          "assets": 0,
+          "counted": true,
+          "duration_ms": 21840,
+          "error": null,
+          "status": "ok",
+          "target": "10.231.0.27"
+        },
+        {
+          "assets": 0,
+          "counted": true,
+          "duration_ms": 23146,
+          "error": null,
+          "status": "ok",
+          "target": "10.231.0.28"
+        },
+        {
+          "assets": 0,
+          "counted": true,
+          "duration_ms": 23306,
+          "error": null,
+          "status": "ok",
+          "target": "10.231.0.29"
+        },
+        {
+          "assets": 0,
+          "counted": true,
+          "duration_ms": 23849,
+          "error": null,
+          "status": "ok",
+          "target": "10.231.0.30"
+        }
+      ],
+      "truncated": false
+    }
+  ],
+  "total": 25
+}

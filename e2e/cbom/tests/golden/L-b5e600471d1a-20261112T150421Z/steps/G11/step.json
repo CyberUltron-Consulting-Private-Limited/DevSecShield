@@ -1,0 +1,62 @@
+{
+  "checks": [
+    {
+      "evidence": [],
+      "expected": {
+        "label": "All targets read",
+        "outcome": "ok",
+        "status": "success"
+      },
+      "gate": "G11",
+      "id": "G11/job_84_label_eq_db",
+      "kind": "flow",
+      "observed": "range-10.231.0.16-28All targets read14 read \u00b7 0 failed \u00b7 0 skipped of 14 \u00b7 24 assets \u00b7 23s",
+      "reason": "",
+      "subject": {
+        "check": "job_84_label_eq_db",
+        "job": 84
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [],
+      "expected": {
+        "label": "Partly read",
+        "outcome": "partial",
+        "status": "success"
+      },
+      "gate": "G11",
+      "id": "G11/job_85_label_eq_db",
+      "kind": "flow",
+      "observed": "range-10.231.0.32-30Partly read1 read \u00b7 0 failed \u00b7 1 skipped of 2 \u00b7 1 asset \u00b7 11s1 target not fully read",
+      "reason": "",
+      "subject": {
+        "check": "job_85_label_eq_db",
+        "job": 85
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [],
+      "expected": 25,
+      "gate": "G11",
+      "id": "G11/dom_rows_eq_api",
+      "kind": "flow",
+      "observed": {
+        "paging_stuck": false,
+        "rows": 25
+      },
+      "reason": "",
+      "subject": {
+        "check": "dom_rows_eq_api"
+      },
+      "verdict": "PASS"
+    }
+  ],
+  "ended": "2026-11-12T15:24:03Z",
+  "gate": "G11",
+  "note": "",
+  "seconds": 4.7,
+  "started": "2026-11-12T15:23:58Z",
+  "status": "ran"
+}
