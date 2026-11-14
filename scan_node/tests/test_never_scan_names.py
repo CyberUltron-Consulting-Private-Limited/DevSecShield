@@ -126,8 +126,8 @@ def test_ranges_keep_per_address_skipping(dns):
     never = NeverScan(["10.0.0.3", "2001:db8::2", "10.0.1.5-10.0.1.6", "2001:db8::a-2001:db8::b"])
     targets, skipped = expand_targets(["10.0.0.0/29", "2001:db8::/126", "10.0.1.4-10.0.1.7", "10.0.0.3",
                                        "2001:db8::8/125"], never)
-    assert [t.ip for t in targets] == ["10.0.0.1", "10.0.0.2", "10.0.0.4", "10.0.0.5", "10.0.0.6",
-                                       "2001:db8::", "2001:db8::1", "2001:db8::3", "10.0.1.4", "10.0.1.7",
+    assert [t.ip for t in targets] == ["10.0.0.0", "10.0.0.1", "10.0.0.2", "10.0.0.4", "10.0.0.5", "10.0.0.6",
+                                       "10.0.0.7", "2001:db8::", "2001:db8::1", "2001:db8::3", "10.0.1.4", "10.0.1.7",
                                        "2001:db8::8", "2001:db8::9", "2001:db8::c", "2001:db8::d", "2001:db8::e",
                                        "2001:db8::f"]
     assert skipped == ["10.0.0.3", "2001:db8::2", "10.0.1.5", "10.0.1.6", "2001:db8::a", "2001:db8::b"]
@@ -205,7 +205,7 @@ def test_a_listed_name_covers_every_address_it_resolves_to(dns):
         resolve_checked("alias.internal", never)  # a CNAME to it
     reasons: dict[str, str] = {}
     targets, skipped = expand_targets(["10.0.0.4/30", "fd00::5"], never, reasons=reasons)
-    assert [t.ip for t in targets] == ["10.0.0.6"] and skipped == ["10.0.0.5", "fd00::5"]
+    assert [t.ip for t in targets] == ["10.0.0.4", "10.0.0.6", "10.0.0.7"] and skipped == ["10.0.0.5", "fd00::5"]
     assert reasons["10.0.0.5"] == "10.0.0.5 is on the never-scan list (an address of db.corp.internal)"
 
 
@@ -276,8 +276,8 @@ def test_network_range_sweep_skips_only_the_listed_addresses(monkeypatch):
                   discovery_only=True)
     skipped = sorted(o.target for o in ctx.outcomes if o.status == "skipped_never_scan")
     assert skipped == ["192.0.2.3", "2001:db8::2"]
-    assert contacted == {"192.0.2.1", "192.0.2.2", "192.0.2.4", "192.0.2.5", "192.0.2.6",
-                         "2001:db8::", "2001:db8::1", "2001:db8::3"}
+    assert contacted == {"192.0.2.0", "192.0.2.1", "192.0.2.2", "192.0.2.4", "192.0.2.5", "192.0.2.6", "192.0.2.7",
+                         "2001:db8::", "2001:db8::1", "2001:db8::3"}  # a /29 is swept whole (N3)
 
 
 def test_a_skipped_server_name_says_which_address_matched(dns):

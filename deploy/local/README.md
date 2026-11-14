@@ -237,6 +237,45 @@ model answers safely (the checks hold) but thinly, so prefer 4-8 B. Unset everyt
 page reload). `CBOM_ALLOW_LLM` is a different, older switch (the whole-scan chat through the SAST lane's Bedrock
 client) and stays off.
 
+### Cloud worker pool (F1)
+
+The cloud worker collects node-less sources (AWS, Azure, Google Cloud, identity providers, CT logs). It runs as a pool:
+`CBOM_CLOUD_REPLICAS` containers, each with `CBOM_CLOUD_WORKERS` claim loops (default 1 x 1, one claim at a time as
+before). One change applies even at 1 x 1: AWS sources are collected as slices (one job per account x region, below);
+`CBOM_AWS_SLICES=0` keeps the serial walk.
+Set these in this folder's `.env` (compose interpolation; a value in `backend.env` would be overridden by the service's
+`environment:` default), then `docker compose up -d cbom-cloud-worker`.
+
+| Variable | Default | Effect |
+|---|---|---|
+| `CBOM_CLOUD_REPLICAS` | `1` | Cloud-worker containers (`deploy.replicas`; `docker compose up -d --scale cbom-cloud-worker=N` does the same). |
+| `CBOM_CLOUD_WORKERS` | `1` | Claim loops (threads) per container. Each uses up to two database connections from the backend engine's pool (30); keep it at 8 or less and add replicas beyond that. |
+| `CBOM_CLOUD_TEAM_MAX_CONCURRENCY` | `8` | Most cloud jobs one team may have running at once across the whole pool **while another team has queued work**. Teams with queued work are served least-busy first, so a 1,000-account organisation never holds every worker while another team waits; a team alone in the queue may use the whole pool. |
+| `CBOM_CLOUD_LEASE_S` | `900` | Lease of a claimed cloud job. A heartbeat renews it every third of it; a job whose worker died is queued again within one lease (the reaper runs every minute). |
+| `CBOM_CLOUD_SHUTDOWN_GRACE_S` | `20` | On SIGTERM (`docker compose stop`, a deploy) a container stops claiming, lets running jobs finish for this long, then gives their leases back so another replica takes them at once. `stop_grace_period` is 60 s. |
+| `CBOM_CLOUD_QUEUE_LOG_S` | `60` | Period of the `cbom sources cloud queue` log line (pending, running, oldest pending age, busiest teams); `0` turns it off. |
+| `CBOM_AWS_SLICES` | `1` | `1`: an AWS source is collected as one job per account x region (below). `0`: the serial walk in one job, as before (also without the 200-account cap). |
+| `CBOM_AWS_MAX_ASSETS_PER_SOURCE` | `50000` | Assets one AWS source may store per run, summed over its slices (the cap a single job always had). Slices after it is reached are not run and show as `skipped_cap` coverage rows; the run is partial. |
+| `CBOM_AWS_ORG_WORKERS` | `16` | Threads that check an organisation's member roles in parallel during the organisation walk. |
+| `CBOM_AWS_THROTTLE_RETRIES` | `6` | Tries of an AWS call that is throttled (capped exponential backoff with jitter), on top of botocore's own retries. |
+
+Charges (owner decision): an organisation run reads **and charges** every member account counted at the last
+**Validate connection** (4 credits each). Before F1 the count stopped at 200, so the first validation after the
+upgrade can raise a source's charge: Cloud & Identity shows "Estimated per run: N accounts × 4 credits = … credits"
+and, when the count changed, "Changed from 200 accounts (800 credits) on <date>". Scheduled runs charge that recorded
+count; a source not validated again keeps its old count.
+
+AWS at organisation scale: the worker that takes an AWS source's job runs the safety checks, lists every member account
+(paged to the end; it used to stop at 200), checks each member's reader role in parallel, then queues one *slice* job per
+account x region (`global` for IAM, S3 and CloudFront, plus each region). Any replica runs slices. The run, its
+credits, its results, drift and exports still see one job per source: slices store their assets under it, and the
+worker that ends the last slice ends it (the reaper does it if that worker died). While it runs, the run's job shows
+its asset count growing and `progress` "N of M account-regions" (refreshed by the reaper, at most a minute old). A
+slice AWS keeps throttling (after botocore's and our own retries) goes back to the queue after a backoff and is tried up
+to 3 times; only its last try reports the throttle, as an `error` row. Each claim and each end is one log line:
+`cbom sources cloud claim team=… job=… account=… region=… wait_ms=…` and
+`cbom sources cloud finish team=… job=… account=… region=… ms=… outcome=…`.
+
 Other scans: SAST, IaC and the SCA + SBOM chat need Amazon Bedrock and a Qdrant store (`QDRANT_*`, `LLM_MODEL`); without
 them they end as "failed". CBOM and AI-BOM code scans need neither.
 

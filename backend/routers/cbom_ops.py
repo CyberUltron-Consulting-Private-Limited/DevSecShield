@@ -94,7 +94,10 @@ def _run_diff(engine, team_id: int, run_id: int, against: int | None) -> dict:
         if base.id == run.id:
             raise HTTPException(status_code=400, detail="against: choose another run")
         older, newer = (base, run) if base.id < run.id else (run, base)
-        return DRIFT.run_diff(session, newer, older)
+        out = DRIFT.run_diff(session, newer, older)
+        # the code page's diff carries the newer side's drift events too (code_diff); same here (CB-38 W2b parity)
+        out["events"] = _events(session, team_id, run_id=newer.id, limit=200)
+        return out
 
 
 @router.get(SRC + "/runs/{run_id}/diff", dependencies=READ,
