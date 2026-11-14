@@ -4,6 +4,7 @@ the process environment. Every function here is fail closed: what it cannot read
 """
 from __future__ import annotations
 
+import itertools
 import re
 from collections import Counter
 from dataclasses import dataclass
@@ -222,9 +223,69 @@ _CHOICE_NODES = {"ternary", "ternary_expression", "conditional_expression", "elv
                  "if_expression", "when_expression", "when_entry", "switch_expression", "switch_expression_arm",
                  "switch_block", "switch_body", "switch_rule", "control_structure_body", "block", "statements",
                  "slice_expression", "starred", "spread_element", "variadic_argument"}
-# binding operators that make the target the same object as the value (not ``+=``, which writes into the target)
-_ALIAS_OPS = {"=", ":=", "for"}
+# in-place operators: they write the value INTO the target (a write-into, see ``key_writes``), they do not make the
+# target the same object as the value. Every other binding operator (``=``, ``:=``, loop targets, ``instanceof`` /
+# ``is`` patterns, ``??=`` / ``||=`` / ``&&=``, ref locals, ...) is treated as aliasing (fail closed)
+_INPLACE_OPS = {"+=", "-=", "*=", "/=", "//=", "%=", "**=", "@=", "<<=", ">>=", ">>>=", "&=", "|=", "^=", "&^=",
+                "?="}
 _SELF_NAMES = {"this", "self", "super", "base"}
+# calls whose result is their receiver (``bb.position(0)``, ``a.fill(0)``, ``ct.apply { }``): may alias it
+_RETURNS_SELF = {"position", "limit", "clear", "flip", "rewind", "mark", "reset", "compact", "order", "fill", "reverse",
+                 "sort", "copyWithin", "apply", "also", "let", "run", "takeIf", "takeUnless", "requireNotNull",
+                 "checkNotNull", "orEmpty", "put", "set", "putInt", "putLong", "putShort", "append", "AsSpan"}
+# calls whose result holds their arguments / receiver (containers, iterators, choosers): may alias any of them
+_CONTAINERS = {"arrayOf", "listOf", "mutableListOf", "arrayListOf", "setOf", "mutableSetOf", "mapOf", "mutableMapOf",
+               "of", "asList", "singletonList", "singleton", "List", "ArrayList", "LinkedList", "list", "tuple", "set",
+               "frozenset", "dict", "iter", "next", "reversed", "sorted", "max", "min", "first", "last", "single",
+               "firstOrNull", "lastOrNull", "get", "getOrDefault", "getOrElse", "getValue", "elementAt", "ElementAt",
+               "First", "Last", "Single", "pop", "popleft", "shift", "values", "items", "toList", "toTypedArray",
+               "Of", "Create", "setdefault", "Iterator", "iterator", "chain", "zip", "enumerate", "requireNonNull",
+               "ofNullable", "orElse", "Value", "GetValueOrDefault", "flat", "flatten", "concat", "Concat"}
+# ------------------------------------------------------------------- the sink-side rule (``Flow.key_writes``)
+# Key material (KEY / KEY_DERIVED / ABSORBED, environment secrets) may appear only in a KEY POSITION of an
+# allow-listed crypto call. As the source of any write-into operation (a copy, put / set / fill, append / extend /
+# add / push, an index or slice store, an in-place operator, a concatenation, string formatting, a container
+# literal) it withholds the fix, wherever the destination points. Allow-listed calls that never write into an input
+# and whose extra arguments are offsets / encodings: a key may be converted by them (``Buffer.from(env, 'base64')``,
+# ``Base64.getDecoder().decode(env)``, ``key[:16]``).
+_CONVERSIONS = {"encode", "decode", "decodeString", "DecodeString", "EncodeToString", "encodeToString", "hex",
+                "fromhex", "unhexlify", "hexlify", "b64encode", "b64decode", "urlsafe_b64encode", "urlsafe_b64decode",
+                "standard_b64encode", "standard_b64decode", "b32encode", "b32decode", "b16encode", "b16decode",
+                "a85decode", "b85decode", "FromBase64String", "ToBase64String", "FromHexString", "ToHexString",
+                "GetBytes", "GetString", "getBytes", "toByteArray", "toString", "ToString", "from_bytes", "to_bytes",
+                "bytes", "bytearray", "from", "slice", "subarray", "Slice", "AsSpan", "AsMemory", "AsReadOnlySpan",
+                "ToArray", "toArray", "copyOf", "copyOfRange", "substring", "Substring", "strip", "rstrip", "lstrip",
+                "ljust", "rjust", "zfill", "lower", "upper", "trim", "Trim", "String", "str", "string", "memoryview",
+                "Uint8Array", "encodeToByteArray", "decodeToString", "toUByteArray", "asUByteArray", "toCharArray",
+                "ReadOnlySpan", "Span", "Memory", "ReadOnlyMemory", "Bytes", "copy", "array", "duplicate", "view"}
+# copy-by-value conversions that are also names of a write (JS ``k.copy(dst)``): a conversion only without operands
+_CONVERSION_IF_ALONE = {"copy", "array", "duplicate", "view", "from", "bytearray", "bytes", "Uint8Array"}
+# string formatting / joining: any key material in them withholds
+_FORMATS = {"format", "Format", "Sprintf", "Sprint", "Sprintln", "Fprintf", "Errorf", "formatted", "join", "Join",
+            "printf", "sprintf", "format_map", "AppendFormat", "Appendf", "joinToString", "Concat", "concat", "plus",
+            "repeat", "padStart", "padEnd", "PadLeft", "PadRight", "Insert", "insert", "replace", "Replace",
+            "expandtabs", "translate", "center"}
+# binary operators that do not build a value out of their operands (comparisons) or pick one (choices)
+_NOT_BUILDING = {"==", "!=", "===", "!==", "<", ">", "<=", ">=", "in", "not in", "is", "is not", "instanceof", "!in",
+                 "is!", "!is", "as", "as?", "is_not", "notin"} | {"or", "and", "||", "&&", "??", "?:"}
+# write-into calls by where the destination is: the receiver (``dst.put(x)``), the first argument (``x.CopyTo(dst)``),
+# or a fixed argument of a function (``copy(dst, src)``, ``System.arraycopy(src, i, dst, j, n)``)
+_RECV_DEST = {"put", "set", "write", "Write", "extend", "append", "push", "unshift", "Add", "AddRange", "add", "addAll",
+              "fill", "insert", "Insert", "writeBytes", "WriteByte", "write_bytes", "putInt", "putLong", "putShort",
+              "update", "setdefault", "splice", "Append", "AppendLiteral", "Push", "Enqueue", "offer", "putAll",
+              "writeUInt8", "writeUInt32BE", "writeUInt32LE", "writeInt32BE", "setUint8", "setUint32", "Fill",
+              "Clear", "clear", "WriteString", "WriteRune"}
+_RECV_SRC = {"copy", "CopyTo", "copyInto", "TryCopyTo", "copyTo"}
+_FUNC_DEST = {"copy": (0, (1,)), "arraycopy": (2, (0,)), "BlockCopy": (2, (0,)), "fill": (0, (1,)),
+              "assign": (0, (1, 2, 3, 4)), "Copy": (-1, (0,)), "ConstrainedCopy": (2, (0,)), "Fill": (0, (1,))}
+# environment variable words that name configuration, not secrets (``CA_BUNDLE``, ``TLS_MIN_VERSION``)
+_ENV_CONFIG_WORDS = {"ca", "bundle", "cafile", "capath", "cert", "certs", "certificate", "host", "hostname", "port",
+                     "region", "endpoint", "dir", "directory", "timeout", "level", "debug", "min", "max", "tls", "ssl",
+                     "url", "uri", "addr", "address", "server", "verify", "cipher", "ciphers", "curve", "curves"}
+# fresh, empty buffers / containers a fix may build its ``nonce || ciphertext`` frame in
+_FRESH_CALLS = {"make", "ByteArray", "alloc", "allocUnsafe", "allocate", "allocateDirect", "bytearray", "Buffer",
+                "ByteArrayOutputStream", "MemoryStream", "ArrayList", "List", "mutableListOf", "arrayListOf",
+                "bytes", "BytesIO", "StringBuilder", "zeros"}
 # TLS options whose every value is checked by ``downgrades`` (a version floor / ceiling, a cipher list,
 # verification on): a fix may change them inline in a call outside the allow-list (``tls.connect({.., minVersion})``)
 TLS_RAISE = {"ciphers", "ciphersuites", "minversion", "maxversion", "minimumversion", "maximumversion",
@@ -358,9 +419,18 @@ def binds(root: N) -> list[tuple[N, N | None, str, N]]:
     return out
 
 
+_UNWRAP_OTHER = {"ref_expression", "argument", "parenthesized_expression", "out_expression", "in_expression",
+                 "declaration_expression", "non_null_expression", "postfix_expression", "checked_expression",
+                 "await_expression", "satisfies_expression", "as_expression"}
+
+
 def unwrap(v: N | None) -> N | None:
-    while v is not None and v.kind in ("seq", "cast", "unary") and len(v.kids) == 1 and \
-            (v.kind != "unary" or v.name in ("&", "*", "await", "+")):
+    """The value of ``v`` without wrappers that keep the object: a 1-tuple, a cast, ``&x`` / ``*p`` / ``await``,
+    C# ``ref`` / ``out`` / ``in`` argument modifiers, ``x!`` (non-null)."""
+    while v is not None and len(v.kids) == 1 and (
+            v.kind in ("seq", "cast") or v.kind == "unary" and v.name in ("&", "*", "await", "+", "ref", "out", "in",
+                                                                         "!!") or
+            v.kind == "other" and v.name in _UNWRAP_OTHER):
         v = v.kids[0]
     return v
 
@@ -846,6 +916,8 @@ class Flow:
         if v is None or depth > 8:
             return set()
         k = v.kind
+        if k == "member" and v.name in _SIZE_MEMBERS:  # ct.length is a number, not the buffer
+            return set()
         if k in ("name", "member", "index", "cast"):
             p = path(v)
             if p is not None:
@@ -857,7 +929,12 @@ class Flow:
             f = v.kids[0] if v.kids else None
             local = k == "call" and f is not None and f.kind == "name" and name in self.scope.funcs and \
                 any(self._returns_param(fn) for fn in self.scope.func_nodes.get(name, []))
-            if name in VIEWS or local:
+            # fail closed: a constructor that is not a key holder may keep its arguments (``new H(ct)``,
+            # ``new ArrayList<>(List.of(ct))``); views, containers and calls returning their receiver alias them
+            keeps = k == "new" and name not in KEY_TAKERS and not _allocation(v)
+            if name in ("concat", "Concat") and recv is not None and (path(recv) or "") in ("Buffer", "bytes"):
+                return set()  # Buffer.concat copies the bytes; [a].concat([b]) keeps the elements
+            if name in VIEWS or name in _CONTAINERS or name in _RETURNS_SELF or local or keeps:
                 out: set[str] = set()
                 for x in ([recv] if recv is not None else []) + args:
                     out |= self.view_roots(x, depth + 1)
@@ -865,6 +942,13 @@ class Flow:
             return set()
         if k == "binary" and v.name in _CHOICE_OPS or k in ("other", "ctl") and v.name in _CHOICE_NODES or \
                 k in ("seq", "obj", "pair"):
+            out = set()
+            for x in v.kids:
+                out |= self.view_roots(x, depth + 1)
+            return out
+        if k == "other" and v.name not in ("params", "compare", "del", "assert"):  # fail closed: a form not classified above (array creation with
+            # an initialiser ``new[] { ct }`` / ``new byte[][] { ct }``, collection expressions, ``with`` items, a
+            # dict entry, a comprehension) may hold any buffer it mentions
             out = set()
             for x in v.kids:
                 out |= self.view_roots(x, depth + 1)
@@ -891,7 +975,7 @@ class Flow:
         for _ in range(4):
             before = dict(self._parent)
             for t, v, op, _n in self.binds:
-                if op not in _ALIAS_OPS or t is None or v is None:
+                if op in _INPLACE_OPS or t is None or v is None:  # every other binding form aliases (fail closed)
                     continue
                 dst = self.view_roots(t) if unwrap(t) is not None and unwrap(t).kind != "seq" else set()
                 if not dst and t.kind == "seq":
@@ -899,6 +983,11 @@ class Flow:
                 src = self.view_roots(v)
                 for a in dst:
                     for b in src:
+                        self._union(a, b)
+            for n in self.calls:  # C# ``out`` / ``ref`` arguments: the callee may bind any of them to any other
+                if self.scope.lang == "csharp" and n.kind == "call" and re.search(r"[(,]\s*(?:out|ref)\s", n.text):
+                    roots = [r for a in n.kids[1:] for r in self.view_roots(a)]
+                    for a, b in itertools.pairwise(roots):
                         self._union(a, b)
             if self._parent == before:
                 break
@@ -1050,7 +1139,7 @@ class Flow:
                     # a store into an element / field / through a pointer, an in-place operator (``b += k``), or any
                     # assignment to a C# parameter (``ref`` / ``out``) writes into what the caller passed
                     tt = t
-                    if tt is not None and (tt.kind in ("member", "index", "unary", "other") or op not in _ALIAS_OPS or
+                    if tt is not None and (tt.kind in ("member", "index", "unary", "other") or op in _INPLACE_OPS or
                                            self.scope.lang == "csharp"):
                         self._record_write({r for p in target_paths(tt) for r in (self._root(p),) if r}, m, bn)
             for n in self.calls:
@@ -1106,6 +1195,299 @@ class Flow:
                 break
         self._memo.clear()
 
+    # ------------------------------------------------------------------------- sink-side rule: write-into
+    def _flat(self, x: N | None) -> list[N]:
+        """The elements of a value: a container literal / spread / keyword argument is its elements."""
+        x = unwrap(x)
+        if x is None:
+            return []
+        if x.kind in ("seq", "obj") or x.kind == "pair" or x.kind == "kwarg" or \
+                x.kind == "other" and x.name in ("starred", "spread_element", "variadic_argument", "entry",
+                                                 "array_creation_expression", "implicit_array_creation_expression",
+                                                 "collection_expression"):
+            return [e for k in x.kids if k.value != "typeref" for e in self._flat(k)]
+        return [x]
+
+    def operand(self, x: N | None) -> bool:
+        """``x`` may carry data / be a buffer: anything but a literal, a size, a verdict (``len(k)``), a package /
+        module member or constant (``AES.MODE_GCM``, ``StandardCharsets.UTF_8``), a lambda."""
+        x = unwrap(x)
+        if x is None or x.kind in ("str", "num", "bool", "null", "regex", "func", "import"):
+            return x is not None and x.kind == "str" and any(self.operand(k) for k in x.kids)
+        if x.kind in ("binary", "unary"):
+            return any(self.operand(k) for k in x.kids)
+        if x.kind == "member" and x.name in _SIZE_MEMBERS:
+            return False
+        if x.kind in ("name", "member", "index"):
+            p = path(x)
+            if p is None:
+                return True
+            root = p.split(".")[0]
+            if root in _SELF_NAMES:
+                return True
+            return self.scope.is_local_path(p) or root in self.scope.imported and x.kind == "index"
+        if x.kind in ("call", "new"):
+            name, _recv, _args = self.callee(x)
+            return not (name in VERDICTS or name in _SIZE_MEMBERS)
+        if x.kind in ("seq", "obj", "pair", "kwarg"):
+            return any(self.operand(k) for k in x.kids if k.value != "typeref")
+        return True
+
+    def _aead_part(self, x: N | None) -> bool:
+        """``x`` is the ciphertext / tag of an allow-listed AEAD of this tree (a call, a local only ever holding
+        one, a C# output buffer an AEAD writes), or a frame of nonce and such ciphertext."""
+        x = unwrap(x)
+        if x is None or self.label(x) & ~IV:
+            return False
+        if x.kind in ("call", "new") and self.classify(x) in ("cipher", "digest"):
+            return self.aead(x)
+        p = path(x) if x.kind == "name" else None
+        if p is not None:
+            vals = self.scope.locals.get(p, [])
+            if vals and all(v is not None and self.out_buffer(p, v) for v in vals):
+                return True
+        ok, aead = self._envelope(x, frozenset())
+        return ok and aead
+
+    def _fresh(self, d: N | None, depth: int = 0) -> tuple[bool, Any]:
+        """(``d`` is a buffer / container this tree freshly allocates, the key of that buffer): ``new byte[n]``,
+        ``ByteBuffer.allocate(n)`` (and calls on it returning it), ``bytearray()``, ``[]``, or a local whose every
+        value is one."""
+        d = unwrap(d)
+        if d is None or depth > 6:
+            return False, None
+        if _allocation(d) or d.kind in ("seq", "obj") and not d.kids:
+            return True, id(d)
+        if d.kind in ("call", "new"):
+            name, recv, args = self.callee(d)
+            if name in _RETURNS_SELF and recv is not None:
+                return self._fresh(recv, depth + 1)
+            if name in _FRESH_CALLS and not any(self.operand(a) for a in args if a.kind != "kwarg"):
+                return True, id(d)
+            return False, None
+        p = path(d) if d.kind == "name" else None
+        if p is None:
+            return False, None
+        # a local: every value it is given in the tree is fresh, and one is given before this use in the same or an
+        # enclosing block (a parameter of the same name is shadowed only then)
+        own = [(t, v, bn) for t, v, op, bn in self.binds if t is not None and op not in _INPLACE_OPS and
+               any(x.kind == "name" and x.name == p for x in ([t] if t.kind != "seq" else t.kids))]
+        if not own or not all(v is not None and self._fresh(v, depth + 1)[0] for _t, v, _bn in own):
+            return False, None
+        params = any(v is None for v in self.scope.locals.get(p, []))
+        if params:
+            order = self._order()
+            here = order.get(id(d), -1)
+            if not any(order.get(id(bn), 1 << 30) < here and d.ctx[:len(bn.ctx)] == bn.ctx for _t, _v, bn in own):
+                return False, None
+        return True, self._find(p)
+
+    def _order(self) -> dict[int, int]:
+        if not hasattr(self, "_order_memo"):
+            self._order_memo = {id(n): i for i, n in enumerate(walk(self.root))}
+        return self._order_memo
+
+    def _dest(self, n: N) -> tuple[N | None, list[N]] | None:
+        """(destination, sources) of a write-into call, None for a call that is not one."""
+        name, recv, args = self.callee(n)
+        if recv is not None and name in _RECV_SRC and args:
+            return args[0], [recv]
+        if recv is not None and name in _RECV_DEST:
+            return recv, list(args)
+        if name in _FUNC_DEST:
+            d, srcs = _FUNC_DEST[name]
+            if d == -1:  # Array.Copy(src, dst, n) / Array.Copy(src, si, dst, di, n)
+                d = 2 if len(args) >= 5 else 1
+            if d < len(args):
+                return args[d], [args[i] for i in srcs if i < len(args)]
+        return None
+
+    def key_writes(self) -> list[str]:
+        """The sink-side rule, independent of the alias / view machinery. KEY-class data (key material, key-derived
+        values, a cipher that absorbed a key, environment secrets) appears in a write-into operation (a copy,
+        put / set / fill, append / extend / add, an index or slice store, an in-place operator, a concatenation,
+        string formatting, a container literal with other values): withheld, wherever the destination points.
+        IV / nonce material may be written only into a buffer this tree freshly allocates whose every other input
+        is ciphertext of an allow-listed AEAD of this tree (``nonce || ct || tag``), or framed so by a
+        concatenation; anything else is withheld. Calls in a key position of a crypto call are not writes."""
+        out: list[str] = []
+        groups: dict[Any, list[tuple[N, N]]] = {}  # fresh destination -> [(source, at)] of every write into it
+        iv_groups: set[Any] = set()
+
+        def key(x: N | None) -> bool:
+            return bool(x is not None and self.label(x) & KEYISH and not self._env_config(x))
+
+        def iv(x: N | None) -> bool:
+            return bool(x is not None and self.label(x) & IV)
+
+        def note(n: N, what: str) -> None:
+            out.append(f"{what}: {norm(n.text)[:70]}")
+
+        def into(dest: N | None, sources: list[N], at: N) -> None:
+            """A write of ``sources`` into ``dest``: IV sources only into a fresh frame (checked per frame below)."""
+            srcs = [e for s in sources for e in self._flat(s)]
+            if not any(iv(s) for s in srcs):
+                fresh, gk = self._fresh(dest)
+                if fresh:
+                    groups.setdefault(gk, []).extend((s, at) for s in srcs)
+                return
+            fresh, gk = self._fresh(dest)
+            if not fresh:
+                note(at, "nonce / IV copied into a buffer that is not a fresh nonce || ciphertext frame")
+                return
+            groups.setdefault(gk, []).extend((s, at) for s in srcs)
+            iv_groups.add(gk)
+
+        for n in self.calls:
+            if self.classify(n) != "propagate" or self._consumed(n):
+                continue
+            name, _recv, _args = self.callee(n)
+            data, _key = self.split_inputs(n)
+            literal_in = any(unwrap(a) is not None and unwrap(a).kind in ("seq", "obj") for a in data)
+            elems = [e for a in data for e in self._flat(a) if e.kind != "func"]  # a callback is checked itself
+            ks = [e for e in elems if key(e)]
+            ivs = [e for e in elems if iv(e) and not key(e)]
+            # every input that may be data, whatever its label (a destination the copy itself taints counts too)
+            ops = [e for e in elems if key(e) or iv(e) or self.operand(e)]
+            # a conversion takes one value (and offsets / encodings); one that is also the name of a copy
+            # (``k.copy(dst)``, ``copy(dst, k)``) only while it is given nothing else that may be data
+            conversion = name in _CONVERSIONS and not literal_in and (name not in _CONVERSION_IF_ALONE or len(ops) <= 1)
+            if ks:
+                if name in _FORMATS or not conversion and len(ops) > 1:
+                    note(n, "key material written into another value")
+                continue
+            dest = self._dest(n)
+            parts = _concat_parts(n)
+            if dest is not None and not conversion:
+                into(dest[0], dest[1], n)
+            elif ivs and parts is not None and len(parts) > 1:
+                if not self.envelope(n):
+                    note(n, "nonce / IV concatenated with something other than AEAD ciphertext")
+            elif ivs and (name in _FORMATS or not conversion and len(ops) > 1):
+                note(n, "nonce / IV written into another value")
+        for t, v, op, bn in self.binds:  # index / slice stores and in-place operators
+            if v is None or t is None:
+                continue
+            tt = unwrap(t)
+            store = tt is not None and tt.kind == "index"
+            if not (store or op in _INPLACE_OPS):
+                continue
+            if key(v):
+                note(bn, "key material stored into a buffer")
+            elif store:
+                into(tt.kids[0] if tt.kids else None, [v], bn)
+            else:
+                into(tt, [v], bn)
+        for n in walk(self.root):
+            if self._consumed(n):  # built only to be hashed / encrypted / derived from: no buffer holds it
+                continue
+            if n.kind == "binary" and n.name not in _NOT_BUILDING:
+                if any(key(k) for k in n.kids):
+                    note(n, "key material concatenated / combined with another value")
+                elif any(iv(k) for k in n.kids) and not self.envelope(n):
+                    p = n.parent  # judged once, as the whole ``a + b + c``
+                    if not (p is not None and p.kind == "binary" and p.name == n.name and self.envelope(p)):
+                        note(n, "nonce / IV concatenated with something other than AEAD ciphertext")
+            elif n.kind == "str" and n.kids:
+                if any(key(k) or iv(k) for k in n.kids):
+                    note(n, "key material / nonce in string formatting")
+            elif n.kind in ("seq", "obj") and not self._target_side(n):
+                elems = self._flat(n)
+                if any(key(e) for e in elems) and len([e for e in elems if key(e) or self.operand(e)]) > 1:
+                    note(n, "key material put in a container with other values")
+        for gk in iv_groups:  # a fresh frame with a nonce in it: every other input is AEAD ciphertext
+            for s, at in groups.get(gk, []):  # (a nonce by where it comes from: a copy spreads the IV label)
+                if self.operand(s) and not self._iv_origin(s) and not self._aead_part(s):
+                    note(at, "nonce / IV frame also holds something other than AEAD ciphertext")
+        return sorted(set(out))
+
+    def _iv_origin(self, x: N | None, depth: int = 0) -> bool:
+        """``x`` is a nonce / IV by where it comes from (not by the label a copy may have spread): a random source,
+        a buffer a random fill writes, a name / member that says iv / nonce / salt, a conversion of one."""
+        x = unwrap(x)
+        if x is None or depth > 4 or self.label(x) & ~(IV | HOLDER) or not self.label(x) & IV:
+            return False
+        if x.kind in ("call", "new"):
+            name, recv, args = self.callee(x)
+            if name in RANDOM_SOURCES:
+                return True
+            if name in _CONVERSIONS:
+                src = recv if recv is not None and self.operand(recv) else (args[0] if args else None)
+                return self._iv_origin(src, depth + 1)
+            return False
+        if x.kind == "member" and secret_name(x.name) and self._word_label(x.name) == IV:
+            return True
+        p = path(x) if x.kind == "name" else None
+        if p is None:
+            return False
+        if secret_name(p) and self._word_label(p) == IV:
+            return True
+        vals = self.scope.locals.get(p, [])
+        filled = any(self.classify(n) == "fill" and any(path(unwrap(a)) == p for a in self.inputs(n))
+                     for n in self.calls)
+        return bool(vals) and all(v is not None and (self._iv_origin(v, depth + 1) or filled and self._fresh(v)[0])
+                                  for v in vals)
+
+    def _consumed(self, n: N) -> bool:
+        """``n`` (a concatenation / join / literal) is itself a DATA argument of a hash / cipher / KDF call
+        (``PasswordHasher().hash(key + msg)``, ``sha256(salt + pw)``): it exists only as that call's input, and the
+        call's result carries the key-derived label."""
+        if n.kind not in ("binary", "seq", "obj", "str", "call"):
+            return False
+        cur = n
+        while cur.parent is not None and (cur.parent.kind in ("cast", "kwarg") or cur.parent.kind == "other" and
+                                          cur.parent.name in _UNWRAP_OTHER or cur.parent.kind == "seq" and
+                                          len(cur.parent.kids) == 1):
+            cur = cur.parent
+        p = cur.parent
+        if p is None or p.kind not in ("call", "new") or not p.kids or p.kids[0] is cur:
+            return False
+        if self.classify(p) not in ("digest", "cipher", "source") or self.callee(p)[0] in VERDICTS:
+            return False
+        data, _key = self.split_inputs(p)
+        return any(unwrap(a) is unwrap(cur) for a in data)
+
+    def _env_config(self, x: N) -> bool:
+        """``x`` reads one environment variable by a literal name that is configuration, not a secret
+        (``environ['CA_BUNDLE']``, ``process.env.PORT``): the environment is key material otherwise."""
+        x = unwrap(x)
+        if x is None or self.label(x) & ~KEY:
+            return False
+        lit = None
+        if x.kind == "index" and len(x.kids) > 1 and (path(x.kids[0]) or "").endswith(("environ", "env")):
+            k = unwrap(x.kids[1])
+            lit = k.value if k is not None and k.kind == "str" else None
+        elif x.kind == "member" and any((path(x) or "").startswith(e + ".") for e in _ENV_PATHS):
+            lit = x.name
+        elif x.kind == "call":
+            name, _recv, args = self.callee(x)
+            if name in ("getenv", "getenvb", "Getenv", "LookupEnv", "GetEnvironmentVariable", "get") and args:
+                a = unwrap(args[0])
+                if name == "get" and not (path(self.callee(x)[1]) or "").endswith(("environ", "env")):
+                    return False
+                lit = a.value if a is not None and a.kind == "str" else None
+            if len([a for a in args if self.operand(a)]) > 0:
+                return False
+        if not isinstance(lit, str) or not lit:
+            return False
+        ws = words(lit)
+        return not any(w in _KEY_WORDS or (len(w) > 3 and w.endswith("key")) for w in ws) and \
+            any(w in _ENV_CONFIG_WORDS or w in _NOT_KEY_WORDS for w in ws)
+
+    @staticmethod
+    def _target_side(n: N) -> bool:
+        """``n`` is (in) the target of a binding, or the value list of a split ``a, b = x, y``."""
+        cur, prev = n.parent, n
+        while cur is not None and cur.kind in ("seq", "obj", "pair"):
+            cur, prev = cur.parent, cur
+        if cur is None or cur.kind not in ("assign", "for") or not cur.kids:
+            return False
+        if cur.kids[0] is prev:
+            return True
+        t = cur.kids[0]
+        return cur.kind == "assign" and len(cur.kids) > 1 and cur.kids[1] is prev and t.kind == "seq" and \
+            prev.kind == "seq" and len(t.kids) == len(prev.kids)
+
     # ------------------------------------------------------------------------------------- framed nonce
     def aead(self, n: N) -> bool:
         """A cipher call on an AEAD construction (GCM / CCM / ChaCha20-Poly1305 / SIV / OCB), from its own text or
@@ -1119,6 +1501,11 @@ class Flow:
                 for v in self.scope.locals.get(r.split(".")[0], []):
                     if v is not None:
                         texts.append(v.text)
+                        if v.kind in ("call", "new"):  # the algorithm named by a string local: alg = `aes-..-gcm`
+                            for a in self.callee(v)[2][:1]:
+                                vals = self.scope.locals.get(path(unwrap(a)) or "", []) if unwrap(a) is not None \
+                                    and unwrap(a).kind == "name" else []
+                                texts += [x.text for x in vals if x is not None and x.kind == "str"]
                         inner = unwind(v).head
                         if inner:
                             nxt.append(inner)
@@ -1134,7 +1521,7 @@ class Flow:
     def _envelope(self, v: N | None, seen: frozenset[int]) -> tuple[bool, bool]:
         """(is an envelope, holds AEAD ciphertext)."""
         v = unwrap(v)
-        if v is None or id(v) in seen or self.label(v) & ~IV:
+        if v is None or id(v) in seen or self.label(v) & ~(IV | HOLDER):  # HOLDER: ``c.nonce`` of a cipher
             return False, False
         seen = seen | {id(v)}
         parts = _concat_parts(v)
@@ -1157,10 +1544,19 @@ class Flow:
                 if all(ok for ok, _a in got):
                     aead |= any(a for _ok, a in got)
                     continue
-            if self.label(part) == IV and part.kind in ("name", "member", "call"):
+            if self._iv_only(part) and part.kind in ("name", "member", "call"):
                 continue
             return False, False
         return aead or (len(parts) == 1 and not self.label(v)), aead
+
+    def _iv_only(self, x: N) -> bool:
+        """IV material and nothing else; a cipher's own ``.nonce`` / ``.iv`` member counts (the object holds a key,
+        the member is the public nonce)."""
+        lab = self.label(x)
+        if lab == IV:
+            return True
+        return lab & ~(IV | HOLDER) == 0 and bool(lab & IV) and x.kind == "member" and \
+            self._word_label(x.name) == IV and secret_name(x.name)
 
     def out_buffer(self, name: str, v: N | None) -> bool:
         """``var ct = new byte[d.Length]; aead.Encrypt(n, d, ct, tag)``: a fresh buffer that an AEAD call writes
@@ -1296,6 +1692,11 @@ def _concat_parts(v: N) -> list[N] | None:
         if f.kind == "member" and f.name == "concat" and len(args) == 1 and args[0] is not None and \
                 args[0].kind == "seq":  # Buffer.concat([...])
             return [x for x in args[0].kids]
+        if f.kind == "member" and f.name == "join" and len(args) == 1 and args[0] is not None and \
+                args[0].kind == "seq" and f.kids and f.kids[0].kind == "str" and f.kids[0].value == "":
+            return [x for x in args[0].kids]  # b"".join([nonce, ct, tag])
+        if f.kind == "member" and f.name == "plus" and len(args) == 1 and f.kids:  # Kotlin iv.plus(ct)
+            return [f.kids[0], args[0]] if args[0] is not None else None
         if f.kind == "name" and f.name == "append" and args:  # Go append(a, b...)
             return [_spread(a) for a in args if a is not None]
     if v.kind in ("call", "new", "name", "member"):

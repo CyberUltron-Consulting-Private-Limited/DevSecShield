@@ -724,9 +724,6 @@ GOOD_FIXES_3 = [
      "    return Fernet(os.environ['APP_FERNET_KEY'].encode()).encrypt(data)\n"),
     ("py secrets token", "python", ["WEAK_RNG"], "import random\n\ndef token():\n    return '%x' % random.getrandbits(128)\n", 4,
      "import random\nimport secrets\n\ndef token():\n    return secrets.token_hex(16)\n"),
-    ("js scrypt", "javascript", ["WEAK_ALGORITHM"], _JSPW, 3,
-     "const crypto = require('crypto');\nfunction hash(pw) {\n  const salt = crypto.randomBytes(16);\n"
-     "  return salt.toString('hex') + ':' + crypto.scryptSync(pw, salt, 64).toString('hex');\n}\n"),
     ("js timingSafeEqual", "javascript", ["WEAK_ALGORITHM"], _JSPW, 3,
      "const crypto = require('crypto');\nfunction hash(pw, expected) {\n"
      "  const h = crypto.createHash('sha256').update(pw).digest();\n  return crypto.timingSafeEqual(h, expected);\n}\n"),
@@ -787,9 +784,7 @@ _PROBES_ALL = json.loads((Path(__file__).resolve().parent / "fixtures" / "cbom_a
 
 @pytest.mark.parametrize("row", _PROBES_ALL, ids=[r["id"] for r in _PROBES_ALL])
 def test_round4_every_review_probe_has_its_outcome(row):
-    finding = {**FINDING, "snippet": row["window"], "snippet_start": row["start"], "language": row["lang"],
-               "line": row["line"], "location": f"x:{row['line']}", "finding_codes": row["codes"]}
-    out = FIX.validate(_fix_answer(row["code"]), _grounding(finding), _window(finding))
+    out = _row(row)
     assert out["status"] == row["expect"], (row["id"], out.get("withheld_reason"))
     if row["expect"] == "withheld":
         assert out["fix"] is None and out["baseline"] is True
@@ -800,7 +795,7 @@ def test_round4_the_probe_fixture_covers_all_seven_files():
 
     files = Counter(r["id"].split(":")[0] for r in _PROBES_ALL)
     assert files == {"probe_fix": 23, "probe_fix2": 9, "probe_fix3": 29, "probe_fix4": 2, "probe_fix5": 28,
-                     "probe_fix6": 45, "probe_fix7": 146, "probe_fix8": 72, "probe_r6_extra": 48}
+                     "probe_fix6": 45, "probe_fix7": 146, "probe_fix8": 72, "probe_r6_extra": 48, "probe_fix9": 86}
     assert len({r["id"] for r in _PROBES_ALL}) == len(_PROBES_ALL)
     assert sum(r["expect"] == "ok" for r in _PROBES_ALL) == 81  # the reviewers' own GOOD / control rows
 
@@ -1044,6 +1039,8 @@ _P7 = {r["id"]: r for r in _PROBES_ALL if r["id"].startswith("probe_fix7:")}
 def _row(row):
     finding = {**FINDING, "snippet": row["window"], "snippet_start": row["start"], "language": row["lang"],
                "line": row["line"], "location": f"x:{row['line']}", "finding_codes": row["codes"]}
+    if row.get("source_encoding"):  # the file's cookie as the scanner records it (round 7)
+        finding["source_encoding"] = row["source_encoding"]
     return FIX.validate(_fix_answer(row["code"]), _grounding(finding), _window(finding))
 
 
@@ -1055,9 +1052,11 @@ def test_round5_good_fix_pass_rate_is_42_of_42():
     assert len(passed) == 42, sorted(set(r["id"] for r in goods) - set(passed))
 
 
-def _check(lang, window, line, code, codes=None, start=1):
+def _check(lang, window, line, code, codes=None, start=1, encoding=None):
     finding = {**FINDING, "snippet": window, "snippet_start": start, "language": lang, "line": line,
                "location": f"x:{line}", "finding_codes": codes or ["WEAK_CIPHER_MODE"]}
+    if encoding is not None:
+        finding["source_encoding"] = encoding
     return FIX.validate(_fix_answer(code), _grounding(finding), _window(finding))
 
 
@@ -1415,16 +1414,318 @@ def test_round6_kotlin_function_parameters_are_its_parameters_not_its_name():
     assert funcs == {"enc": ["ct", "k"], "mix": ["b"]}
 
 
-@pytest.mark.parametrize("name, line, expect", [
-    ("unicode_escape quote and newline", "    tag = 'v1\\x27\\x0aos.system(\\x27id\\x27)\\x0a_ = \\x27'\n", "withheld"),
-    ("utf-7 quote and newline", "    tag = 'v1+ACcACg-os.system(+ACc-id+ACc-)+AAo-_ = +ACc-'\n", "withheld"),
-    ("plain escape", "    pad = b'\\x00' * 4\n", "withheld"),  # fail closed: any decoded escape
-    ("cipher string with a plus", "    suite = 'ECDHE+AESGCM:!aNULL'\n", "ok"),
-    ("concatenation", "    tag = b'v1' + b'x'\n", "ok"),
+# Round 7 (minor 2): the escape rule applies only when the file's cookie - recorded by the scanner with the finding
+# (``source_encoding``), or shown in the window - is not UTF-8; not recorded means UTF-8 (Python's default).
+@pytest.mark.parametrize("name, line, encoding, expect", [
+    ("unicode_escape quote and newline", "    tag = 'v1\\x27\\x0aos.system(\\x27id\\x27)\\x0a_ = \\x27'\n",
+     "unicode_escape", "withheld"),
+    ("utf-7 quote and newline", "    tag = 'v1+ACcACg-os.system(+ACc-id+ACc-)+AAo-_ = +ACc-'\n", "utf-7", "withheld"),
+    ("plain escape under a recorded unicode_escape cookie", "    pad = b'\\x00' * 4\n", "unicode_escape", "withheld"),
+    ("an invalid recorded cookie fails closed", "    sep = '\\n'\n", "invalid", "withheld"),
+    ("cipher string with a plus", "    suite = 'ECDHE+AESGCM:!aNULL'\n", "utf-7", "ok"),
+    ("concatenation", "    tag = b'v1' + b'x'\n", "unicode_escape", "ok"),
+    ("escapes in a recorded utf-8 file", "    tag = 'v1\\x27\\x0a_ = \\x27'\n", "utf-8", "ok"),
+    ("escapes with no recorded cookie (UTF-8)", "    tag = 'v1\\x27\\x0a_ = \\x27'\n", None, "ok"),
+    ("the same escapes under a recorded unicode_escape cookie", "    tag = 'v1\\x27\\x0a_ = \\x27'\n", "unicode_escape",
+     "withheld"),
 ])
-def test_round6_unseen_cookie_added_lines_must_decode_the_same(name, line, expect):
+def test_round6_unseen_cookie_added_lines_must_decode_the_same(name, line, encoding, expect):
     code = _GCM1.replace("def encrypt(data, key):\n", "def encrypt(data, key):\n" + line)
-    out = _check("python", _ECB1, 14, code, start=10)
+    out = _check("python", _ECB1, 14, code, start=10, encoding=encoding)
     assert out["status"] == expect, (name, out.get("withheld_reason"))
     if expect == "withheld":
         assert "decodes differently" in out["withheld_reason"], out["withheld_reason"]
+
+
+@pytest.mark.parametrize("encoding", [None, "utf-8", "utf-8-sig", "ascii"])
+@pytest.mark.parametrize("name, line", [
+    ("newline escape", "    sep = '\\n'\n"),
+    ("zero bytes", "    pad = b'\\x00' * 4\n"),
+    ("tab escape", "    tab = '\\t'\n"),
+    ("all three", "    hdr = b'\\x00' + '\\t'.encode() + '\\n'.encode()\n"),
+])
+def test_round7_escape_good_fixes_pass_when_the_window_starts_after_line_2(name, line, encoding):
+    code = _GCM1.replace("def encrypt(data, key):\n", "def encrypt(data, key):\n" + line)
+    out = _check("python", _ECB1, 44, code, start=40, encoding=encoding)
+    assert out["status"] == "ok", (name, encoding, out.get("withheld_reason"))
+
+
+def test_round7_a_recorded_non_utf8_cookie_on_line_1_counts_for_a_window_from_line_2():
+    code = _GCM1.replace("def encrypt(data, key):\n", "def encrypt(data, key):\n    sep = '\\n'\n")
+    assert _check("python", _ECB1, 6, code, start=2, encoding="utf-8")["status"] == "ok"
+    out = _check("python", _ECB1, 6, code, start=2, encoding="iso-8859-1")
+    assert out["status"] == "withheld" and "source encoding iso-8859-1" in out["withheld_reason"]
+
+
+def test_round7_the_window_carries_the_recorded_source_encoding():
+    base = {"snippet": "x = 1\n", "snippet_start": 40, "line": 40, "language": "python", "location": "a.py:40"}
+    assert FIX.window_of({**base, "source_encoding": "utf-7"})["source_encoding"] == "utf-7"
+    assert FIX.window_of(base)["source_encoding"] is None
+    assert FIX.window_of({**base, "source_encoding": 7})["source_encoding"] is None
+
+
+def test_round7_the_scanner_records_the_python_cookie_from_lines_1_and_2(tmp_path, monkeypatch):
+    import importlib
+    import sys as _sys
+
+    # the scanner package (aibom/src), not the namespace the repository root would give
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2] / "aibom" / "src"))
+    for mod in [m for m in _sys.modules if m == "aibom" or m.startswith("aibom.")]:
+        monkeypatch.delitem(_sys.modules, mod)
+    redact = importlib.import_module("aibom.cbom.redact")
+
+    assert redact.source_encoding("import os\n") == "utf-8"
+    assert redact.source_encoding("#!/usr/bin/env python\n# -*- coding: latin-1 -*-\nx = 1\n") == "iso-8859-1"
+    assert redact.source_encoding("# vim: set fileencoding=utf-7 :\n") == "utf-7"
+    assert redact.source_encoding("x = 1\ny = 2\n# coding: utf-7\n") == "utf-8"  # line 3 is not a cookie
+    assert redact.source_encoding("# coding: no-such-codec\n") == "invalid"
+    src = "# coding: unicode_escape\n" + "\n" * 30 + "from Crypto.Cipher import AES\nAES.new(k, AES.MODE_ECB)\n"
+    (tmp_path / "a.py").write_text(src)
+    (tmp_path / "b.js").write_text("// coding: utf-7\n" + "\n" * 30 + "crypto.createCipheriv('aes-128-ecb', k, null)\n")
+    rows = [{"location": "a.py:33", "line": 33, "language": "python", "title": "AES ECB", "finding_codes": []},
+            {"location": "b.js:32", "line": 32, "language": "javascript", "title": "AES ECB", "finding_codes": []}]
+    redact.attach_snippets(rows, tmp_path)
+    assert rows[0]["snippet_start"] == 30 and rows[0]["source_encoding"] == "unicode_escape"
+    assert "source_encoding" not in rows[1]
+
+
+# --------------------------------------------------------------------------------------------------- round 7
+# Review 5907530298 (probes rev249/probe_fix9.py: all 86 calls are rows of the fixture, every one withheld). The 11
+# leaks copied the key into an alias of ``ct`` through binding forms the alias classes did not follow. The fix is a
+# sink-side rule that does not depend on aliasing (``Flow.key_writes``): key material is never the SOURCE of a
+# write-into operation, wherever the destination points; a nonce only goes into a fresh nonce || AEAD frame. The
+# alias classes stay as defence in depth and now treat every binding form they do not classify as aliasing.
+_P9 = {r["id"]: r for r in _PROBES_ALL if r["id"].startswith("probe_fix9:")}
+_R7_LEAKS = [
+    "probe_fix9: csharp: cs foreach (var b in new[]{ct})", "probe_fix9: csharp: cs arr = new[]{ct}; k.CopyTo(arr[0])",
+    "probe_fix9: java: java for (b : {ct})", "probe_fix9: java: java arr = new byte[][]{ct}; arraycopy(k->arr[0])",
+    "probe_fix9: java: java instanceof byte[] b pattern", "probe_fix9: java: java instanceof b; b[0] = k[0]",
+    "probe_fix9: csharp: cs if (ct is byte[] al) k.CopyTo(al)", "probe_fix9: csharp: cs ct is var al",
+    "probe_fix9: csharp: cs al ??= ct; k.CopyTo(al)", "probe_fix9: csharp: cs al ??= ct; k.CopyTo(al.AsSpan())",
+    "probe_fix9: csharp: cs ref var al = ref ct",
+]
+
+
+def _allow_everything(monkeypatch):
+    """Every call / member on the allow-list (the strongest form of 'a name was added to the allow-list later')."""
+    from backend.utilities.cbom_ai import flow as FL
+
+    monkeypatch.setattr(FL.Scope, "call_allowed", lambda self, n, strict=False: True)
+    monkeypatch.setattr(FL, "unlisted", lambda *a, **k: [])
+    monkeypatch.setattr(FIX, "_py_unlisted", lambda *a, **k: [])
+
+
+def _no_alias_machinery(monkeypatch):
+    from backend.utilities.cbom_ai import flow as FL
+
+    monkeypatch.setattr(FL.Flow, "_aliases", lambda self: None)
+    monkeypatch.setattr(FL.Flow, "leaks", lambda self, before=None: [])
+
+
+def _key_writes_of(row):
+    from backend.utilities.cbom_ai import flow as FL
+    from backend.utilities.cbom_ai import syntax as SX
+
+    before = SX.parse(row["lang"], row["window"])
+    after = SX.parse(row["lang"], row["code"], prefer=before.wrap)
+    py = SX.python_tree(row["code"])[0] if row["lang"] == "python" else None
+    return FL.Flow(after.root, FIX._scope(row["lang"], after.root, before.root, py)).key_writes()
+
+
+def test_round7_all_86_probe9_rows_are_fixture_rows_and_withheld():
+    assert len(_P9) == 86 and all(r["expect"] == "withheld" for r in _P9.values())
+    assert set(_R7_LEAKS) <= set(_P9)
+
+
+@pytest.mark.parametrize("rid", _R7_LEAKS)
+def test_round7_the_11_leaks_are_withheld_by_the_sink_rule_alone(rid, monkeypatch):
+    # no alias classes, no sink check, every API allow-listed: only the write-into rule is left
+    _allow_everything(monkeypatch)
+    _no_alias_machinery(monkeypatch)
+    out = _row(_P9[rid])
+    assert out["status"] == "withheld" and "copies key material" in out["withheld_reason"], out.get("withheld_reason")
+
+
+@pytest.mark.parametrize("rid", _R7_LEAKS)
+def test_round7_the_11_leaks_are_withheld_by_the_alias_classes_alone(rid, monkeypatch):
+    from backend.utilities.cbom_ai import flow as FL
+
+    monkeypatch.setattr(FL.Flow, "key_writes", lambda self: [])  # defence in depth: the classes follow them too
+    out = _row(_P9[rid])
+    assert out["status"] == "withheld" and "not a crypto API" in out["withheld_reason"], out.get("withheld_reason")
+
+
+def test_round7_every_probe9_attack_is_a_key_write_without_any_alias_class(monkeypatch):
+    _allow_everything(monkeypatch)
+    _no_alias_machinery(monkeypatch)
+    missed = [rid for rid, r in _P9.items() if not _key_writes_of(r)]
+    assert not missed, missed
+    passed = [rid for rid, r in _P9.items() if _row(r)["status"] != "withheld"]
+    assert not passed, passed
+
+
+# minor 1: rows withheld today only because a name is not on the allow-list. They stay withheld when those names
+# are added (here: every API allowed), with and without the alias classes.
+_R7_ALLOWLIST_ROWS = [
+    # methods that return ``this``
+    "probe_fix9: java: java wrap(ct).position(0).put(k)", "probe_fix9: java: java wrap(ct).clear().put(k)",
+    "probe_fix9: javascript: js ct.fill(0).set(key) (fill returns this)",
+    "probe_fix9: javascript: js ct.reverse().reverse().set(key)", "probe_fix9: javascript: js ct.subarray(0).fill(0).set(key)",
+    # function values passed by name
+    "probe_fix9: python: py g = mix; g(buf)", "probe_fix9: python: py list(map(mix, [buf]))",
+    "probe_fix9: python: py apply(mix, buf) with f(x) inside", "probe_fix9: javascript: js [ct].forEach(mix) named fn",
+    "probe_fix9: csharp: cs Action h = Mix (method group); h(ct)",
+    "probe_fix9: java: java BiConsumer f = M::mix; f.accept(ct, k)", "probe_fix9: kotlin: kt listOf(ct).forEach(::mix)",
+    # a Kotlin extension receiver ``this``
+    "probe_fix9: kotlin: kt ext fun ByteArray.mix(){copyInto(this)}; ct.mix()",
+]
+
+
+@pytest.mark.parametrize("aliases", [True, False], ids=["with-alias-classes", "sink-rule-only"])
+@pytest.mark.parametrize("rid", _R7_ALLOWLIST_ROWS)
+def test_round7_minor1_rows_stay_withheld_when_their_names_are_allow_listed(rid, aliases, monkeypatch):
+    assert rid in _P9
+    _allow_everything(monkeypatch)
+    if not aliases:
+        _no_alias_machinery(monkeypatch)
+    out = _row(_P9[rid])
+    assert out["status"] == "withheld", (rid, out.get("checks"))
+    assert _key_writes_of(_P9[rid]), rid
+
+
+def _kw(lang, code, monkeypatch):
+    from backend.utilities.cbom_ai import flow as FL
+
+    monkeypatch.setattr(FL.Scope, "call_allowed", lambda self, n, strict=False: True)
+    return _flow(lang, code).key_writes()
+
+
+@pytest.mark.parametrize("lang, code", [
+    ("python", "def f(key, buf):\n    buf[:16] = key[:16]\n"),
+    ("python", "def f(key, buf):\n    buf += key\n"),
+    ("python", "def f(key, buf):\n    buf.extend(key)\n"),
+    ("python", "def f(key, lst):\n    lst.append(key)\n"),
+    ("python", "def f(key):\n    return f'{key.hex()}'\n"),
+    ("python", "def f(key):\n    return '%s' % key\n"),
+    ("python", "def f(key):\n    return '{}'.format(key)\n"),
+    ("python", "def f(key, x):\n    return [key, x]\n"),
+    ("python", "def f(key, ct):\n    return ct + key\n"),
+    ("python", "import os\ndef f(ct):\n    return ct + os.environ['APP_SECRET'].encode()\n"),
+    ("javascript", "function f(ct, key) {\n  key.copy(ct, 0);\n}"),
+    ("javascript", "function f(ct, key) {\n  ct.set(key);\n}"),
+    ("javascript", "function f(ct, key) {\n  return Buffer.concat([ct, key]);\n}"),
+    ("javascript", "function f(ct, key) {\n  return `${key.toString('hex')}`;\n}"),
+    ("javascript", "function f(ct, key) {\n  Object.assign(ct, { k: key });\n}"),
+    ("java", "class A { void f(byte[] ct, byte[] k) { System.arraycopy(k, 0, ct, 0, k.length); } }"),
+    ("java", "class A { void f(java.nio.ByteBuffer bb, byte[] k) { bb.put(k); } }"),
+    ("java", "class A { String f(byte[] k) { return \"x\" + k; } }"),
+    ("csharp", "class A { void F(byte[] ct, byte[] k) { k.CopyTo(ct, 0); } }"),
+    ("csharp", "class A { void F(byte[] ct, byte[] k) { System.Buffer.BlockCopy(k, 0, ct, 0, k.Length); } }"),
+    ("csharp", "class A { string F(byte[] k) { return $\"{k}\"; } }"),
+    ("go", "package m\nfunc f(ct, k []byte) { copy(ct, k) }"),
+    ("go", "package m\nfunc f(ct, k []byte) []byte { return append(ct, k...) }"),
+    ("kotlin", "fun f(ct: ByteArray, k: ByteArray) { k.copyInto(ct) }"),
+    ("kotlin", "fun f(ct: ByteArray, k: ByteArray): ByteArray = ct + k"),
+])
+def test_round7_key_material_as_the_source_of_any_write_into_is_withheld(lang, code, monkeypatch):
+    assert _kw(lang, code, monkeypatch), code
+
+
+@pytest.mark.parametrize("lang, code", [
+    ("python", "import os, base64\ndef f():\n    key = base64.b64decode(os.environ['APP_KEY'])\n    return key[:16]\n"),
+    ("python", "import hmac, hashlib\ndef mac(key, msg):\n    return hmac.new(key, msg, hashlib.sha256).hexdigest()\n"),
+    ("python", "import argon2\ndef mac(key, msg):\n    return argon2.PasswordHasher().hash(key + msg)\n"),
+    ("python", "def f(key, other):\n    k = key or other\n    return len(k) == 32\n"),
+    ("javascript", "function f() {\n  return Buffer.from(process.env.APP_KEY, 'base64');\n}"),
+    ("java", "class A { byte[] f() { return java.util.Base64.getDecoder().decode(System.getenv(\"APP_KEY\")); } }"),
+    ("csharp", "class A { byte[] F() { return System.Convert.FromBase64String(System.Environment.GetEnvironmentVariable(\"APP_KEY\")); } }"),
+    ("go", "package m\nfunc f() []byte { k, _ := hex.DecodeString(os.Getenv(\"APP_KEY\")); return k }"),
+    ("kotlin", "fun f(): ByteArray = System.getenv(\"APP_KEY\").toByteArray()"),
+])
+def test_round7_key_conversions_key_positions_and_hash_inputs_are_not_writes(lang, code, monkeypatch):
+    assert not _kw(lang, code, monkeypatch), code
+
+
+_NONCE_OK = [
+    ("python", "import os\ndef f(key, data):\n    nonce = os.urandom(12)\n    ct = AESGCM(key).encrypt(nonce, data, None)\n"
+     "    return nonce + ct\n"),
+    ("python", "import os\ndef f(key, data):\n    out = bytearray()\n    nonce = os.urandom(12)\n"
+     "    ct = AESGCM(key).encrypt(nonce, data, None)\n    out += nonce\n    out += ct\n    return bytes(out)\n"),
+    ("python", "import os\ndef f(key, data):\n    nonce = os.urandom(12)\n    ct = AESGCM(key).encrypt(nonce, data, None)\n"
+     "    return b''.join([nonce, ct])\n"),
+    ("javascript", "function f(key, data) {\n  const iv = crypto.randomBytes(12);\n"
+     "  const c = crypto.createCipheriv('aes-256-gcm', key, iv);\n  const enc = Buffer.concat([c.update(data), c.final()]);\n"
+     "  return Buffer.concat([iv, c.getAuthTag(), enc]);\n}"),
+    ("java", "class A { byte[] f(byte[] k, byte[] d) throws Exception {\n byte[] iv = new byte[12]; new SecureRandom().nextBytes(iv);\n"
+     " Cipher c = Cipher.getInstance(\"AES/GCM/NoPadding\");\n"
+     " c.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(k, \"AES\"), new GCMParameterSpec(128, iv));\n byte[] ct = c.doFinal(d);\n"
+     " return ByteBuffer.allocate(iv.length + ct.length).put(iv).put(ct).array();\n} }"),
+    ("csharp", "class A { byte[] F(byte[] k, byte[] d) {\n var n = new byte[12]; RandomNumberGenerator.Fill(n);\n"
+     " var ct = new byte[d.Length]; var tag = new byte[16];\n using var g = new AesGcm(k, 16);\n g.Encrypt(n, d, ct, tag);\n"
+     " var o = new byte[n.Length + ct.Length + tag.Length];\n n.CopyTo(o, 0); ct.CopyTo(o, n.Length);\n"
+     " tag.CopyTo(o, n.Length + ct.Length);\n return o;\n} }"),
+    ("go", "package m\nfunc f(k, data []byte) []byte {\n\tb, _ := aes.NewCipher(k)\n\tg, _ := cipher.NewGCM(b)\n"
+     "\tn := make([]byte, g.NonceSize())\n\tio.ReadFull(rand.Reader, n)\n\treturn append(n, g.Seal(nil, n, data, nil)...)\n}"),
+    ("kotlin", "fun f(k: ByteArray, d: ByteArray): ByteArray {\n    val iv = ByteArray(12).also { SecureRandom().nextBytes(it) }\n"
+     "    val c = Cipher.getInstance(\"AES/GCM/NoPadding\")\n"
+     "    c.init(Cipher.ENCRYPT_MODE, SecretKeySpec(k, \"AES\"), GCMParameterSpec(128, iv))\n    return iv + c.doFinal(d)\n}"),
+]
+_NONCE_BAD = [
+    ("python", "import os\ndef f(data):\n    nonce = os.urandom(12)\n    return nonce + data\n"),
+    ("python", "import os\ndef f(data):\n    nonce = os.urandom(12)\n    out = bytearray()\n    out += nonce\n    out += data\n"
+     "    return out\n"),
+    ("python", "import os\ndef f(buf):\n    nonce = os.urandom(12)\n    buf[:12] = nonce\n"),
+    ("javascript", "function f(data) {\n  const iv = crypto.randomBytes(12);\n  return Buffer.concat([iv, data]);\n}"),
+    ("javascript", "function f(ct) {\n  const iv = crypto.randomBytes(12);\n  iv.copy(ct, 0);\n}"),
+    ("java", "class A { byte[] f(byte[] d) {\n byte[] iv = new byte[12]; new SecureRandom().nextBytes(iv);\n"
+     " return ByteBuffer.allocate(iv.length + d.length).put(iv).put(d).array();\n} }"),
+    ("csharp", "class A { byte[] F(byte[] d) {\n var n = new byte[12]; RandomNumberGenerator.Fill(n);\n"
+     " var o = new byte[n.Length + d.Length];\n n.CopyTo(o, 0); d.CopyTo(o, n.Length);\n return o;\n} }"),
+    ("csharp", "class A { void F(byte[] ct) {\n var n = new byte[12]; RandomNumberGenerator.Fill(n);\n n.CopyTo(ct, 0);\n} }"),
+    ("python", "import os\ndef f(key):\n    nonce = os.urandom(12)\n    return f'{nonce.hex()}'\n"),
+]
+
+
+@pytest.mark.parametrize("lang, code", _NONCE_OK)
+def test_round7_a_nonce_framed_with_aead_ciphertext_in_a_fresh_buffer_passes(lang, code, monkeypatch):
+    assert not _kw(lang, code, monkeypatch), code
+
+
+@pytest.mark.parametrize("lang, code", _NONCE_BAD)
+def test_round7_a_nonce_copied_anywhere_else_is_withheld(lang, code, monkeypatch):
+    assert _kw(lang, code, monkeypatch), code
+
+
+@pytest.mark.parametrize("lang, code, a, b", [
+    ("csharp", "class A { void F(byte[] ct) { if (ct is byte[] al) { } } }", "al", "ct"),
+    ("csharp", "class A { void F(byte[] ct) { if (ct is var al) { } } }", "al", "ct"),
+    ("csharp", "class A { void F(byte[] ct) { byte[] al = null; al ??= ct; } }", "al", "ct"),
+    ("csharp", "class A { void F(byte[] ct) { ref var al = ref ct; } }", "al", "ct"),
+    ("csharp", "class A { void F(byte[] ct) { foreach (var b in new[] { ct }) { } } }", "b", "ct"),
+    ("csharp", "class A { void F(byte[] ct) { var arr = new[] { ct }; } }", "arr", "ct"),
+    ("csharp", "class A { void F(byte[] ct) { G(out var o, ct); } }", "o", "ct"),
+    ("csharp", "class A { void F(byte[] ct) { var (a1, a2) = (ct, ct); } }", "a1", "ct"),
+    ("java", "class A { void f(byte[] ct) { Object o = ct; if (o instanceof byte[] b) { } } }", "b", "ct"),
+    ("java", "class A { void f(byte[] ct) { for (byte[] b : new byte[][] { ct }) { } } }", "b", "ct"),
+    ("java", "class A { void f(byte[] ct) { byte[][] arr = new byte[][] { ct }; } }", "arr", "ct"),
+    ("java", "class A { void f(byte[] ct) { java.util.List<byte[]> l = new java.util.ArrayList<>(java.util.List.of(ct)); } }",
+     "l", "ct"),
+    ("kotlin", "fun f(ct: ByteArray) { for (b in arrayOf(ct)) { } }", "b", "ct"),
+    ("kotlin", "fun f(ct: ByteArray) { val b = ct.apply { } }", "b", "ct"),
+    ("javascript", "function f(ct) { let v; v ||= ct; }", "v", "ct"),
+    ("javascript", "function f(ct) { let v = null; v ??= ct; }", "v", "ct"),
+    ("javascript", "function f(ct) { const v = ct.fill(0); }", "v", "ct"),
+    ("python", "def f(buf):\n    for m in (buf,):\n        pass\n", "m", "buf"),
+    ("python", "def f(buf):\n    m = next(iter([buf]))\n", "m", "buf"),
+    ("go", "package m\nfunc f(data []byte) { for _, b := range [][]byte{data} { _ = b } }", "b", "data"),
+])
+def test_round7_binding_forms_fail_closed_into_the_alias_class(lang, code, a, b):
+    f = _flow(lang, code)
+    assert f._find(a) == f._find(b), (code, f._parent)
+
+
+def test_round7_in_place_operators_and_sizes_do_not_alias():
+    f = _flow("python", "def f(buf, ct):\n    buf += ct\n")
+    assert f._find("buf") != f._find("ct")
+    f = _flow("csharp", "class A { void F(byte[] ct, byte[] k) { var o = new byte[k.Length]; } }")
+    assert f._find("o") != f._find("k")

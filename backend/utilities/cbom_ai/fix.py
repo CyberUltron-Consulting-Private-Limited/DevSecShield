@@ -238,7 +238,10 @@ def window_of(finding: dict[str, Any]) -> dict[str, Any] | None:
         return None
     return {"path": re.sub(r":\d+$", "", str(finding.get("location") or "")), "start": start, "line": line,
             "language": language(finding.get("language")), "lines": lines,
-            "codes": [c for c in finding.get("finding_codes") or [] if isinstance(c, str)]}
+            "codes": [c for c in finding.get("finding_codes") or [] if isinstance(c, str)],
+            # the file's PEP 263 encoding, recorded by the scanner from lines 1 - 2 (None: not recorded)
+            "source_encoding": finding.get("source_encoding") if isinstance(finding.get("source_encoding"), str)
+            else None}
 
 
 def allowed_modules(window: dict[str, Any]) -> set[str]:
@@ -748,12 +751,20 @@ def _py_decodes_differently(line: str) -> bool:
     return False
 
 
-def _py_encoding_problems(before: list[str], after: list[str], start: int) -> list[str]:
+_UTF8_NAMES = ("utf-8", "utf8", "utf-8-sig", "ascii", "us-ascii")
+
+
+def _utf8(enc: str | None) -> bool:
+    return enc is None or enc.lower().replace("_", "-") in _UTF8_NAMES
+
+
+def _py_encoding_problems(before: list[str], after: list[str], start: int, recorded: str | None = None) -> list[str]:
     """Why the rewritten Python window could decode differently from the text that was checked: a byte order mark,
     an added coding declaration (anywhere), a declared encoding other than UTF-8 (a cookie the window shows, or one
     a rewrite of line 1 / 2 would give), an added comment with a non-ASCII character, a backslash escape or a UTF-7
-    shift (``+AAo-``): those are code under ``utf-7`` / ``unicode_escape``, and lines 1 - 2 of the file may be
-    outside the window."""
+    shift (``+AAo-``): those are code under ``utf-7`` / ``unicode_escape``. When lines 1 - 2 are outside the window
+    the cookie is the one the scanner recorded with the finding (``recorded``); not recorded means UTF-8, Python's
+    default. Added lines must decode the same under another codec only when that cookie is not UTF-8."""
     out: list[str] = []
     text = "\n".join(after)
     if "\ufeff" in text or "\ufffe" in text:
@@ -768,11 +779,14 @@ def _py_encoding_problems(before: list[str], after: list[str], start: int) -> li
             continue
         if any(ord(ch) > 127 for ch in comment) or "\\" in comment or _UTF7_SHIFT.search(comment):
             out.append(f"comment on line {start + j} that decodes differently under another source encoding")
-    if start > 2:  # lines 1 - 2 (the cookie) are outside the window: an added line that is other code under
-        # unicode_escape / utf-7 (``'v1\\x27\\x0a...'`` is a quote and a newline) may be a hidden statement
+    if start > 2 and not _utf8(recorded):  # lines 1 - 2 are outside the window and the file declares another
+        # codec: an added line that is other code under unicode_escape / utf-7 (``'v1\\x27\\x0a...'`` is a quote
+        # and a newline) may be a hidden statement
         for j in sorted(added):
             if _py_decodes_differently(after[j]):
                 out.append(f"line {start + j} that decodes differently under another source encoding")
+    if start == 2 and not _utf8(recorded):  # line 1 (outside the window) declares the codec
+        out.append(f"source encoding {recorded}")
     if start <= 2:  # the window holds line 1 / 2: the encoding the interpreter would use (line 1 above a window
         # that starts on line 2 is taken to be a comment, the case where a cookie on line 2 counts)
         for lines in (before, after):
@@ -916,7 +930,7 @@ def validate(raw: str, grounding: Grounding, window: dict[str, Any] | None) -> d
             (forbidden + escaped)[:3]) + ")", checks)
 
     if lang == "python":  # what CPython runs is the text decoded with the file's source encoding
-        enc = _py_encoding_problems(before, after, window["start"])
+        enc = _py_encoding_problems(before, after, window["start"], window.get("source_encoding"))
         if not check("python source encoding unchanged (UTF-8)", not enc, ", ".join(enc[:3])):
             return _withheld(grounding, "it could change how the file is decoded (" + ", ".join(enc[:2]) + ")",
                              checks)
@@ -995,6 +1009,13 @@ def validate(raw: str, grounding: Grounding, window: dict[str, Any] | None) -> d
     if not check("no key material returned or yielded", not returned, ", ".join(returned[:3])):
         return _withheld(grounding, "it returns or yields key material to the caller (" + ", ".join(returned[:2]) +
                          ")", checks)
+    # sink-side rule (does not depend on aliasing): key material only in key positions of crypto calls, never the
+    # source of a copy / append / store / concatenation / format; a nonce only into a fresh nonce || AEAD frame
+    writes = flow_after.key_writes()
+    if not check("key material only in key positions, nonce only in an AEAD frame", not writes,
+                 ", ".join(writes[:3])):
+        return _withheld(grounding, "it copies key material or the nonce into another value (" +
+                         ", ".join(writes[:2]) + ")", checks)
     moved = FL.moved_sinks(flow_after, flow_before)
     if not check("calls outside the allow-list stay where they are", not moved, ", ".join(moved[:3])):
         return _withheld(grounding, "it moves or repeats a call that is not on the allow-list (" +
