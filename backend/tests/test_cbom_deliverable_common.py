@@ -71,6 +71,7 @@ NEW_KEYS = (
     "cbom_methodology",
     "cbom_cert_register",
     "cbom_assurance_register",
+    "cbom_risk_register",
     "cbom_pqc_roadmap",
     "cbom_board_report",
     "cbom_infra_posture",

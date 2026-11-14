@@ -27,6 +27,7 @@ import { createLine, sharedSegments } from "./cmdbLogic";
 
 import { cbomSourcesKeys } from "./keys";
 import { ChoiceCards, Checkbox2, Field, NodeSelect, StatusBadge } from "./shared";
+import { InfoTip } from "@/components/ui/info-tip";
 
 const MAX_CSV = 2 * 1024 * 1024;
 const SAMPLE = "hostname,ip_address,owner,application,criticality,exposure,data_classification,environment,os,segment\n" +
@@ -69,7 +70,7 @@ function PlanView({ plan }: { plan: CmdbPlan }) {
       ))}
       {plan.updates.length > 0 && (
         <div>
-          <p className="font-medium mb-1">Metadata updates</p>
+          <p className="font-medium mb-1">Metadata updates <InfoTip id="cbsrc.cmdb.updates" /></p>
           <ul className="space-y-1 text-xs">
             {plan.updates.map((u) => (
               <li key={u.source_id}>
@@ -82,7 +83,7 @@ function PlanView({ plan }: { plan: CmdbPlan }) {
       )}
       {plan.creates.length > 0 && (
         <div>
-          <p className="font-medium mb-1">New sources</p>
+          <p className="font-medium mb-1">New sources <InfoTip id="cbsrc.cmdb.creates" /></p>
           <ul className="space-y-1 text-xs">
             {plan.creates.map((c) => (
               <li key={c.name}>
@@ -108,7 +109,7 @@ function PlanView({ plan }: { plan: CmdbPlan }) {
       )}
       {plan.conflicts.length > 0 && (
         <div>
-          <p className="font-medium mb-1 text-amber-600 dark:text-amber-400">Conflicts (left unchanged)</p>
+          <p className="font-medium mb-1 text-amber-600 dark:text-amber-400">Conflicts (left unchanged) <InfoTip id="cbsrc.cmdb.conflicts" /></p>
           <ul className="space-y-1 text-xs">
             {plan.conflicts.map((c) => (
               <li key={`${c.source_id}-${c.field}`}>
@@ -120,7 +121,7 @@ function PlanView({ plan }: { plan: CmdbPlan }) {
       )}
       {plan.skipped.length > 0 && (
         <div>
-          <p className="font-medium mb-1 text-red-600 dark:text-red-400">Skipped or partly read rows</p>
+          <p className="font-medium mb-1 text-red-600 dark:text-red-400">Skipped or partly read rows <InfoTip id="cbsrc.cmdb.skipped" /></p>
           <ul className="space-y-1 text-xs max-h-40 overflow-y-auto">
             {plan.skipped.map((s, i) => (
               <li key={i}>{s.line ? `Line ${s.line}` : s.label ?? "Row"}: {s.reason}</li>
@@ -181,7 +182,7 @@ export default function CmdbImportDialog({ teamId }: { teamId: number }) {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Import sources and metadata from a CMDB</DialogTitle>
+            <DialogTitle>Import sources and metadata from a CMDB <InfoTip id="cbsrc.cmdb.dialog" /></DialogTitle>
             <DialogDescription>
               Preview first: nothing changes until you confirm. Hosts already in a server source get its owner, application,
               criticality, exposure, data classification and environment updated; running and queued collections are not
@@ -190,6 +191,7 @@ export default function CmdbImportDialog({ teamId }: { teamId: number }) {
           </DialogHeader>
           <div className="space-y-4">
             <ChoiceCards
+              infoId="cbsrc.cmdb.source"
               name="cmdb-source"
               label="Import from"
               value={source}
@@ -200,11 +202,12 @@ export default function CmdbImportDialog({ teamId }: { teamId: number }) {
               ]}
             />
             {source === "csv" && (
-              <Field label="CSV" htmlFor="cmdb-csv" hint="Up to 5,000 rows and 2 MB. A header row is required.">
+              <Field infoId="cbsrc.cmdb.csv" label="CSV" htmlFor="cmdb-csv" hint="Up to 5,000 rows and 2 MB. A header row is required.">
                 <div className="space-y-2">
                   <label className="inline-flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 cursor-pointer">
                     <Upload className="h-4 w-4" />
                     Choose a file
+                    {/* infotip-shared: file picker behind Choose a file; the CSV field's tip covers it */}
                     <input type="file" accept=".csv,text/csv" className="sr-only" data-testid="cmdb-file" onChange={async (e) => {
                       const file = e.target.files?.[0];
                       if (!file) return;
@@ -218,11 +221,11 @@ export default function CmdbImportDialog({ teamId }: { teamId: number }) {
                 </div>
               </Field>
             )}
-            <Checkbox2 id="cmdb-create" checked={createMissing} onChange={(v) => { setCreateMissing(v); reset(); }}>
+            <Checkbox2 infoId="cbsrc.cmdb.create" id="cmdb-create" checked={createMissing} onChange={(v) => { setCreateMissing(v); reset(); }}>
               Create sources for hosts that are not in any source yet (Linux servers, scan-node key login; CIDRs as network ranges)
             </Checkbox2>
             {createMissing && (
-              <Field label="Scan node for new sources" htmlFor="cmdb-node"
+              <Field infoId="cbsrc.cmdb.node" label="Scan node for new sources" htmlFor="cmdb-node"
                      hint="For rows with no segment or scan_node column. A row's segment picks the scan node of that segment.">
                 <NodeSelect id="cmdb-node" nodes={nodes.data?.nodes ?? []} value={nodeId} onChange={(v) => { setNodeId(v); reset(); }} />
               </Field>

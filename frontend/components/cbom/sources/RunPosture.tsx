@@ -43,6 +43,7 @@ import { handleApiError } from "@/utils/error-handler";
 import { cbomSourcesKeys } from "./keys";
 import { EXPOSURE_CHOICES, pluralize } from "./logic";
 import { ErrorBlock, LoadingBlock, SectionCard, StatusBadge, Truncate, type Tone } from "./shared";
+import { InfoTip } from "@/components/ui/info-tip";
 
 const CLASS_LABEL: Record<CbomPqcClass, [string, Tone, string]> = {
   "quantum-vulnerable": ["Quantum-vulnerable", "red", "RSA, elliptic-curve or Diffie-Hellman: a large quantum computer breaks it"],
@@ -140,7 +141,7 @@ export function MoscaEditor({ teamId, onDone }: { teamId: number; onDone: () => 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
         {MOSCA_FIELDS.map((f) => (
           <label key={f.key} className="text-xs text-zinc-600 dark:text-zinc-400 space-y-1">
-            <span>{f.label}</span>
+            <span className="flex items-center gap-0.5">{f.label} <InfoTip id="cbom.run.mosca" /></span>
             <Input inputMode="numeric" value={value(f.key)} placeholder={f.hint} data-testid={`mosca-${f.key}`}
                    onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))} />
           </label>
@@ -181,7 +182,7 @@ export function RunPostureCard({ teamId, runId, active, onOpenAsset }: {
   return (
     <div className="space-y-3 rounded-lg border border-zinc-200 dark:border-zinc-800 p-4" data-testid="run-posture">
       <div className="flex flex-wrap items-center gap-2">
-        <p className="text-sm font-medium text-zinc-900 dark:text-white">Post-quantum and risk posture</p>
+        <p className="text-sm font-medium text-zinc-900 dark:text-white">Post-quantum and risk posture <InfoTip id="cbom.run.posture" /></p>
         <span className="text-xs text-zinc-500">Knowledge base {p.kb_version} · no AI</span>
       </div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -399,6 +400,7 @@ function CriticalitySelect({ teamId, source }: { teamId: number; source: CbomSou
   });
   return (
     <Select value={current} onValueChange={(v) => v !== current && save.mutate(v)} disabled={save.isPending}>
+      {/* infotip-shared: the Business criticality and exposure card's tip explains it */}
       <SelectTrigger className="w-[140px] cursor-pointer" data-testid={`criticality-${source.id}`} aria-label={`Business criticality of ${source.name}`}>
         <SelectValue />
       </SelectTrigger>
@@ -425,6 +427,7 @@ function ExposureSelect({ teamId, source }: { teamId: number; source: CbomSource
   });
   return (
     <Select value={current} onValueChange={(v) => v !== current && save.mutate(v as CbomExposure | "auto")} disabled={save.isPending}>
+      {/* infotip-shared: the Business criticality and exposure card's tip explains it */}
       <SelectTrigger className="w-[170px] cursor-pointer" data-testid={`exposure-${source.id}`} aria-label={`Internet exposure of ${source.name}`}>
         <SelectValue />
       </SelectTrigger>
@@ -444,7 +447,7 @@ export function CriticalityCard({ teamId }: { teamId: number }) {
   const sources = query.data?.sources ?? [];
   if (query.isLoading || sources.length === 0) return null;
   return (
-    <SectionCard title="Business criticality and exposure"
+    <SectionCard infoId="cbsrc.rr.criticality" title="Business criticality and exposure"
                  description="Weights each source's findings in the risk ranking of the next run (default: medium; exposure from the collected facts, internet-facing x1.5)">
       <ul className="divide-y divide-zinc-200 dark:divide-zinc-800" data-testid="criticality-card">
         {sources.map((src) => (

@@ -343,11 +343,14 @@ def _heartbeat(token: str | None, req: NA.NodeRequest, raw: bytes, ip: str) -> d
         busy = session.exec(select(CbomCollectionJob.id).where(
             CbomCollectionJob.node_id == node.id, CbomCollectionJob.status == "claimed")).first() is not None
         exclusions = team_exclusions(settings)
+        window_ends = J.window_ends_for_node(session, node, settings, now)
         session.commit()
         if gap is not None and gap > 120:
             log("node back", team=node.team_id, node=node.id, gap_s=int(gap))
         return {"server_time": iso_z(now), "stop_all_network": settings.stop_all_network,
                 "never_scan": exclusions.normalized, "pending_jobs": pending, "cancel_job_ids": cancel_ids,
+                # N4: when each running job's scan window ends (now, if the customer closed it): the node stops there
+                "window_ends": window_ends,
                 # while a job runs, beat faster so a cancel or a network stop reaches the node within seconds
                 "heartbeat_interval_s": BUSY_HEARTBEAT_SECONDS if busy else HEARTBEAT_SECONDS}
 
