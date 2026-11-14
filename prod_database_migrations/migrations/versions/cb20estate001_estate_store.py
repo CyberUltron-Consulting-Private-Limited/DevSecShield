@@ -1,14 +1,15 @@
-"""cbom estate store (CB-20 PR-1): ``cbomestatesource``, ``cbomestateasset``, ``cbomestateobservation``
+"""cbom estate store (CB-20 PR-1): ``cbomestatesource``, ``cbomestateasset``, ``cbomestateobservation``, ``cbomestateteam``
 
 Revision ID: cb20estate001
-Revises: cb18evconf001
+Revises: r6f12pol001
 Create Date: 2026-11-14 12:00:00.000000
 
-Three new tables, no change to existing ones (so no lock on a busy table): one row per (team, source) with the newest
+Four new tables, no change to existing ones (so no lock on a busy table): one row per (team, source) with the newest
 job written, one per (team, cross-source asset key) and one per (team, asset key, source) with the latest observation.
 Indexes: the unique ``(team_id, asset_key)`` (the keyset page and the register's join), ``(team_id, asset_type,
 asset_key)`` and ``(team_id, presence, asset_key)`` for the filtered pages, ``(team_id, updated_run_id)`` for "what did
-this run change", ``(team_id, source_ref)`` for the per-source read of the stored observations. The data is filled by
+this run change", ``(team_id, source_ref)`` for the per-source read of the stored observations; ``cbomestateteam``
+flags a team whose store missed a run's write until the backfill repairs it. The data is filled by
 ``python -m backend.utilities.cbom_sources.estate backfill`` (idempotent), then by every run's drift recording.
 """
 from typing import Sequence, Union
@@ -19,7 +20,7 @@ import sqlmodel
 
 
 revision: str = 'cb20estate001'
-down_revision: Union[str, Sequence[str], None] = 'cb18evconf001'
+down_revision: Union[str, Sequence[str], None] = 'r6f12pol001'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -29,6 +30,20 @@ def _s(length: int):
 
 
 def upgrade() -> None:
+    op.create_table(
+        'cbomestateteam',
+        sa.Column('id', sa.Integer(), nullable=False),
+        sa.Column('team_id', sa.Integer(), nullable=False),
+        sa.Column('stale', sa.Boolean(), nullable=False),
+        sa.Column('stale_run_id', sa.Integer(), nullable=True),
+        sa.Column('stale_reason', _s(300), nullable=True),
+        sa.Column('stale_at', sa.DateTime(), nullable=True),
+        sa.Column('repaired_at', sa.DateTime(), nullable=True),
+        sa.Column('updated_at', sa.DateTime(), nullable=True),
+        sa.ForeignKeyConstraint(['team_id'], ['team.id']),
+        sa.PrimaryKeyConstraint('id'),
+        sa.UniqueConstraint('team_id', name='uq_cbomestateteam_team'),
+    )
     op.create_table(
         'cbomestatesource',
         sa.Column('id', sa.Integer(), nullable=False),
@@ -106,3 +121,4 @@ def downgrade() -> None:
     op.drop_index('ix_cbomestateasset_team_type_key', table_name='cbomestateasset')
     op.drop_table('cbomestateasset')
     op.drop_table('cbomestatesource')
+    op.drop_table('cbomestateteam')

@@ -20,10 +20,16 @@ query per 500 keys; the API shows them.
 
 Rules:
 
-* Written ONCE per run, by ``record_run``, which ``drift.record_run_drift`` calls after it won the ``drift_at``
-  compare-and-set, in the same transaction (the caller commits). Registered hooks (``register_hook``; CB-23's risk
-  register) run in that transaction too, exactly once per run; a hook that raises rolls the whole recording back (the
-  scheduler retries it), so the register never disagrees with the store.
+* Written ONCE per run, by ``record_run``, which ``drift.record_run_drift`` calls (through ``record_run_safely``)
+  after it won the ``drift_at`` compare-and-set, in the same transaction (the caller commits) but inside a SAVEPOINT:
+  a store error rolls back only the store's write (and its hooks'), is logged at ERROR, and marks the team's store
+  stale (``cbomestateteam``) until ``backfill`` replays its runs; drift itself always commits, so one broken team never
+  blocks drift recording, the scheduler's batch or ``/changes``.
+* Hooks (``register_hook``; CB-23's risk register) run in that savepoint, exactly once per run. A hook registered
+  ``atomic=True`` is all-or-nothing with the store: if it raises, the store's write and every hook's are rolled back
+  together and the store is marked stale (so a register and the store never disagree; the backfill, run with hooks,
+  repairs both). A plain hook runs in its own nested savepoint: if it raises, only its own writes are undone, it is
+  logged at ERROR and the store's write stands.
 * Only what changed is written (scale: 1.5M assets per team): a new key, an observation whose row, place or presence
   changed, the assets those touch, and one row per source. An asset re-read unchanged costs its key computation and
   one compare, no write.
@@ -45,6 +51,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
+import logging
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Mapping, Sequence
@@ -60,6 +67,7 @@ from backend.new_models import (
     CbomEstateAsset,
     CbomEstateObservation,
     CbomEstateSource,
+    CbomEstateTeam,
 )
 from backend.utilities.cbom_sources import asset_keys as AK  # CB-21: the one cross-source identity module
 from backend.utilities.cbom_sources import drift as D
@@ -70,6 +78,8 @@ PRESENCE = ("present", "not_read", "removed")
 KEY_KINDS = ("cross", "source", "not_correlated")
 BATCH = 500
 _EO, _EA, _ES = CbomEstateObservation.__table__, CbomEstateAsset.__table__, CbomEstateSource.__table__
+_ET = CbomEstateTeam.__table__
+SOURCE_DELETED = "source deleted"
 _ROW_COLUMNS = (CbomCollectedAsset.id, CbomCollectedAsset.job_id, CbomCollectedAsset.attempt,
                 CbomCollectedAsset.asset_key, CbomCollectedAsset.asset_type, CbomCollectedAsset.cdx_type,
                 CbomCollectedAsset.target, CbomCollectedAsset.location, CbomCollectedAsset.name,
@@ -100,19 +110,20 @@ class EstateWrite:
 
 
 Hook = Callable[[Session, EstateWrite], None]
-HOOKS: list[Hook] = []
+HOOKS: list[tuple[Hook, bool]] = []  # (hook, atomic)
+_LOG = logging.getLogger(__name__)
 
 
-def register_hook(fn: Hook) -> Hook:
-    """Call ``fn(session, write)`` after each run's estate write, in the same transaction (once per run)."""
-    if fn not in HOOKS:
-        HOOKS.append(fn)
+def register_hook(fn: Hook, *, atomic: bool = False) -> Hook:
+    """Call ``fn(session, write)`` after each run's estate write, in the same transaction (once per run). ``atomic``:
+    a failure undoes the store's write too and marks the store stale (see the module docstring)."""
+    unregister_hook(fn)
+    HOOKS.append((fn, atomic))
     return fn
 
 
 def unregister_hook(fn: Hook) -> None:
-    if fn in HOOKS:
-        HOOKS.remove(fn)
+    HOOKS[:] = [(h, a) for h, a in HOOKS if h is not fn]
 
 
 def present_keys(session: Session, team_id: int, source_refs: Sequence[str], *, batch: int = 5_000
@@ -344,6 +355,23 @@ def record_run(session: Session, run: CbomCollectionRun, now: _dt.datetime, *,
             last = (prev[0], prev[1], prev[2], sql.ts(prev[3])) if old[4] == "present" and prev is not None else None
             transitions.setdefault((presence, reason), []).append((old[0], last))
             touched.setdefault(key, None)
+    # a deleted source reads nothing any more: what it still had is "not read" ("source deleted"), never removed
+    deleted_refs: list[str] = []
+    for ref, source_id, job_id, attempt, last_run, last_at in session.execute(sa.select(
+            _ES.c.source_ref, _ES.c.source_id, _ES.c.latest_job_id, _ES.c.latest_attempt, _ES.c.latest_run_id,
+            _ES.c.latest_at).where(_ES.c.team_id == team_id, _ES.c.source_id.is_not(None),
+                                   _ES.c.latest_status != "deleted")).all():
+        if source_id in sources or ref in by_ref:
+            continue
+        deleted_refs.append(ref)
+        for obs_id, key, presence in sql.query(
+                "SELECT id, asset_key, presence FROM cbomestateobservation WHERE team_id = ? AND source_ref = ? "
+                "AND presence != 'removed'", (team_id, ref)):
+            last = (job_id, attempt, last_run, sql.ts(last_at)) if presence == "present" else None
+            transitions.setdefault(("not_read", SOURCE_DELETED), []).append((obs_id, last))
+            touched.setdefault(key, None)
+    sql.many("UPDATE cbomestatesource SET latest_status = 'deleted', updated_at = ? WHERE team_id = ? AND "
+             "source_ref = ?", [(stamp, team_id, ref) for ref in deleted_refs])
     obs_cols = ("team_id", "asset_key", "source_ref", "observation_key", "row_key", "asset_type", "target", "location",
                 "occurrences", "presence", "presence_reason", "seen_job_id", "seen_attempt", "seen_run_id", "seen_at",
                 "first_seen_run_id", "state_run_id", "updated_at")
@@ -398,20 +426,70 @@ def record_run(session: Session, run: CbomCollectionRun, now: _dt.datetime, *,
     _settle(session, sql, write, sorted(k for k, v in touched.items() if v is None and k not in seen_keys), now)
     marks["assets"] = time.perf_counter()
 
-    write.counts = {"sources": len(jobs), "seen": len(seen), "inserted": len(inserts), "updated": len(updates),
+    write.counts = {"sources": len(jobs), "deleted_sources": len(deleted_refs), "seen": len(seen), "inserted": len(inserts), "updated": len(updates),
                     "moved": len(moved_ids), "assets_changed": len(write.changed),
                     "not_read": sum(1 for p in write.changed.values() if p == "not_read"),
                     "removed": sum(1 for p in write.changed.values() if p == "removed"),
                     "deleted": len(write.removed_keys)}
     if hooks:
-        for hook in list(HOOKS):
-            hook(session, write)
+        _run_hooks(session, write)
     phases, last_mark = {}, t0
     for name, at in marks.items():  # where the time went (the scale budget's evidence, CB-20)
         phases[f"{name}_ms"], last_mark = round(1000 * (at - last_mark)), at
     log("estate recorded", team=team_id, run=run_id, ms=round(1000 * (time.perf_counter() - t0)), **write.counts,
         **phases)
     return write
+
+
+def _run_hooks(session: Session, write: EstateWrite) -> None:
+    failed = 0
+    for hook, atomic in list(HOOKS):
+        if atomic:  # raises out of the store's savepoint: store and register are rolled back together
+            hook(session, write)
+            continue
+        try:
+            with session.begin_nested():
+                hook(session, write)
+        except Exception as exc:
+            failed += 1
+            _LOG.error("cbom estate hook %s failed for team %s run %s: %s", getattr(hook, "__name__", "hook"),
+                       write.team_id, write.run_id, type(exc).__name__)
+            log("estate hook FAILED", team=write.team_id, run=write.run_id, error=type(exc).__name__)
+    write.counts["hook_errors"] = failed
+
+
+def record_run_safely(session: Session, run: CbomCollectionRun, now: _dt.datetime, *,
+                      loaded: Mapping[int, list[Any]] | None = None) -> EstateWrite | None:
+    """``record_run`` inside a savepoint: on any error the store's write (and the hooks') is rolled back, logged at
+    ERROR, the team's store is marked stale, and None is returned; the caller's own work (drift) stands."""
+    try:
+        with session.begin_nested():
+            return record_run(session, run, now, loaded=loaded)
+    except Exception as exc:
+        _LOG.error("cbom estate write failed for team %s run %s: %s; the store is stale until the backfill",
+                   run.team_id, run.id, type(exc).__name__)
+        log("estate write FAILED", team=run.team_id, run=run.id, error=type(exc).__name__)
+        mark_stale(session, run.team_id, int(run.id or 0), f"{type(exc).__name__} writing run #{run.id}", now)
+        return None
+
+
+def mark_stale(session: Session, team_id: int, run_id: int, reason: str, now: _dt.datetime) -> None:
+    """Flag the team's store as having missed a run's write (keeps the FIRST missed run)."""
+    row = session.exec(select(CbomEstateTeam).where(CbomEstateTeam.team_id == team_id)).first()
+    if row is None:
+        session.add(CbomEstateTeam(team_id=team_id, stale=True, stale_run_id=run_id, stale_reason=reason[:300],
+                                   stale_at=now, updated_at=now))
+    elif not row.stale:
+        row.stale, row.stale_run_id, row.stale_reason, row.stale_at, row.updated_at = True, run_id, reason[:300], now, now
+    session.flush()
+
+
+def stale_status(session: Session, team_id: int) -> dict[str, Any] | None:
+    row = session.exec(select(CbomEstateTeam).where(CbomEstateTeam.team_id == team_id,
+                                                    CbomEstateTeam.stale.is_(True))).first()  # type: ignore[attr-defined]
+    if row is None:
+        return None
+    return {"since_run_id": row.stale_run_id, "reason": row.stale_reason, "at": iso_z(row.stale_at)}
 
 
 def _settle(session: Session, sql: _Sql, write: EstateWrite, keys: list[str], now: _dt.datetime) -> None:
@@ -507,7 +585,8 @@ def backfill(engine, now: _dt.datetime, *, team_id: int | None = None, hooks: bo
         if team_id is not None:
             query = query.where(CbomCollectionRun.team_id == team_id)
         ids = list(session.exec(query.order_by(CbomCollectionRun.id)).all())
-    out = {"runs": 0, "sources": 0, "inserted": 0}
+        stale_before = {t for t, in session.execute(sa.select(_ET.c.team_id).where(_ET.c.stale.is_(True))).all()}
+    out = {"runs": 0, "sources": 0, "inserted": 0, "repaired_teams": 0}
     for run_id in ids:
         with Session(engine) as session:
             run = session.get(CbomCollectionRun, run_id)
@@ -518,6 +597,13 @@ def backfill(engine, now: _dt.datetime, *, team_id: int | None = None, hooks: bo
         out["runs"] += 1
         out["sources"] += write.counts.get("sources", 0)
         out["inserted"] += write.counts.get("inserted", 0)
+    with Session(engine) as session:  # every run of these teams is written: the stores are whole again
+        query = sa.update(_ET).where(_ET.c.stale.is_(True), _ET.c.team_id.in_(stale_before))
+        if team_id is not None:
+            query = query.where(_ET.c.team_id == team_id)
+        out["repaired_teams"] = int(session.execute(query.values(stale=False, repaired_at=now, updated_at=now))
+                                    .rowcount or 0)
+        session.commit()
     log("estate backfill", team=team_id, **out)
     return out
 
@@ -561,8 +647,20 @@ def prune_collected_assets(session: Session, team_id: int, *, keep_runs: int) ->
     for chunk in _chunks(old_jobs):
         deleted += int(session.execute(sa.delete(CbomCollectedAsset.__table__).where(
             CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.job_id.in_(chunk))).rowcount or 0)  # type: ignore[attr-defined]
-    log("estate prune", team=team_id, jobs=len(old_jobs), rows=deleted)
+    purged = purge_removed(session, team_id, before_run_id=min(recent))
+    log("estate prune", team=team_id, jobs=len(old_jobs), rows=deleted, **purged)
     return deleted
+
+
+def purge_removed(session: Session, team_id: int, *, before_run_id: int) -> dict[str, int]:
+    """Drop what the store has known as ``removed`` since before ``before_run_id``: those observations, and the asset
+    rows that are removed and have no observation left. Part of ``prune``. The caller commits."""
+    obs = int(session.execute(sa.delete(_EO).where(_EO.c.team_id == team_id, _EO.c.presence == "removed",
+                                                   _EO.c.state_run_id < before_run_id)).rowcount or 0)
+    assets = int(session.execute(sa.delete(_EA).where(
+        _EA.c.team_id == team_id, _EA.c.presence == "removed", _EA.c.updated_run_id < before_run_id,
+        ~sa.exists().where(_EO.c.team_id == team_id, _EO.c.asset_key == _EA.c.asset_key))).rowcount or 0)
+    return {"removed_observations": obs, "removed_assets": assets}
 
 
 # ----------------------------------------------------------------------------- read side
@@ -606,7 +704,7 @@ def list_estate(session: Session, team_id: int, *, after: str | None = None, lim
     rows = rows[:limit]
     latest = latest_rows(session, team_id, [a.asset_key for a in rows])
     return {"items": [public_asset(a, latest.get(a.asset_key)) for a in rows],
-            "next": rows[-1].asset_key if more else None, "limit": limit}
+            "next": rows[-1].asset_key if more else None, "limit": limit, "stale": stale_status(session, team_id)}
 
 
 def get_estate_asset(session: Session, team_id: int, asset_key: str) -> dict[str, Any] | None:

@@ -34,9 +34,11 @@ from backend.new_models import (  # noqa: E402
     CbomCollectionJob,
     CbomCollectionRun,
     CbomCollectionSource,
+    CbomDriftEvent,
     CbomEstateAsset,
     CbomEstateObservation,
     CbomEstateSource,
+    CbomEstateTeam,
     Team,
 )
 from backend.utilities.cbom_sources import drift as D  # noqa: E402
@@ -356,23 +358,109 @@ def test_the_hook_runs_in_the_drift_transaction_exactly_once_per_run(world):
     assert calls == [(run, NOW, 2, 2)]
 
 
-def test_a_failing_hook_rolls_back_the_whole_recording_and_the_scheduler_retries(world):
+def _stale(world, team_id: int = 1):
+    with Session(world.engine) as s:
+        row = s.exec(select(CbomEstateTeam).where(CbomEstateTeam.team_id == team_id)).first()
+        return None if row is None else (row.stale, row.stale_run_id)
+
+
+def test_a_failing_plain_hook_is_isolated_and_the_store_write_stands(world, caplog):
+    net = world.source("network", "lab")
+    run = world.run({net: {"rows": [endpoint("10.0.0.1")]}})
+    calls = []
+
+    def boom(session, _write):
+        session.add(CbomEstateTeam(team_id=2, stale=True))  # its own writes are undone with it
+        session.flush()
+        raise RuntimeError("register down")
+
+    E.register_hook(boom)
+    E.register_hook(ok := (lambda _s, w: calls.append(w.run_id)))
+    try:
+        with caplog.at_level("ERROR"):
+            assert world.finalise(run) is not None
+    finally:
+        E.unregister_hook(boom)
+        E.unregister_hook(ok)
+    assert calls == [run] and len(world.assets()) == 1 and _stale(world) is None and _stale(world, 2) is None
+    assert any(r.levelname == "ERROR" and "hook" in r.getMessage() for r in caplog.records)
+
+
+def test_a_failing_atomic_hook_rolls_back_store_and_register_only_drift_commits(world, caplog):
     net = world.source("network", "lab")
     run = world.run({net: {"rows": [endpoint("10.0.0.1")]}})
 
     def boom(_session, _write):
         raise RuntimeError("register down")
 
-    E.register_hook(boom)
+    E.register_hook(boom, atomic=True)
     try:
-        assert D.record_pending_drift(world.engine, NOW) == 0
+        with caplog.at_level("ERROR"):
+            assert D.record_pending_drift(world.engine, NOW) == 1  # drift recorded all the same
     finally:
         E.unregister_hook(boom)
     with Session(world.engine) as s:
-        assert s.get(CbomCollectionRun, run).drift_at is None  # drift and store rolled back together
-    assert world.assets() == {}
-    assert D.record_pending_drift(world.engine, NOW) == 1
-    assert len(world.assets()) == 1
+        assert s.get(CbomCollectionRun, run).drift_at == NOW
+    assert world.assets() == {} and _stale(world) == (True, run)
+    assert any(r.levelname == "ERROR" and "estate write failed" in r.getMessage() for r in caplog.records)
+    assert E.backfill(world.engine, NOW)["repaired_teams"] == 1
+    assert len(world.assets()) == 1 and _stale(world) == (False, run)
+
+
+def test_a_store_error_never_blocks_drift_other_teams_or_changes_and_backfill_repairs_it(world, monkeypatch):
+    mine, theirs = world.source("network", "lab"), world.source("network", "lab", team_id=2)
+    first = world.run({mine: {"rows": [endpoint("10.0.0.1"), endpoint("10.0.0.2")]}})
+    world.finalise(first)
+    broken = world.run({mine: {"rows": [endpoint("10.0.0.1")]}})  # 10.0.0.2 removed: a drift event
+    other = world.run({theirs: {"rows": [endpoint("10.0.0.1")]}}, team_id=2)
+    real = E._lock_source
+
+    def lock(session, sql, team_id, ref):
+        if team_id == 1:
+            raise RuntimeError("store broken for team 1")
+        return real(session, sql, team_id, ref)
+
+    monkeypatch.setattr(E, "_lock_source", lock)
+    assert D.record_pending_drift(world.engine, NOW) == 2  # neither run is stuck
+    monkeypatch.setattr(E, "_lock_source", real)
+    with Session(world.engine) as s:
+        assert s.get(CbomCollectionRun, broken).drift_at == NOW and s.get(CbomCollectionRun, other).drift_at == NOW
+        kinds = {e.kind for e in s.exec(select(CbomDriftEvent).where(CbomDriftEvent.run_id == broken))}
+        assert "removed_asset" in kinds
+    assert _stale(world) == (True, broken) and _stale(world, 2) is None
+    assert {a.presence for a in world.assets(1).values()} == {"present"}  # still run 1's state: stale
+    assert [a.presence for a in world.assets(2).values()] == ["present"]
+    E.backfill(world.engine, NOW)
+    assert sorted(a.presence for a in world.assets(1).values()) == ["present", "removed"]
+    assert _stale(world) == (False, broken)
+
+
+def test_a_deleted_sources_assets_are_not_read_source_deleted(world):
+    lab, dmz = world.source("network", "lab"), world.source("network", "dmz")
+    world.finalise(world.run({lab: {"rows": [endpoint("10.0.0.1")]}, dmz: {"rows": [endpoint("10.9.0.1")]}}))
+    with Session(world.engine) as s:  # what removal.py does: jobs and rows detached, the source row deleted
+        s.execute(sa.update(CbomCollectionJob).where(CbomCollectionJob.source_id == dmz).values(source_id=None))
+        s.execute(sa.update(CbomCollectedAsset).where(CbomCollectedAsset.source_id == dmz).values(source_id=None))
+        s.execute(sa.delete(CbomCollectionSource).where(CbomCollectionSource.id == dmz))
+        s.commit()
+    world.finalise(world.run({lab: {"rows": [endpoint("10.0.0.1")]}}))
+    reasons = sorted((a.presence, a.presence_reason) for a in world.assets().values())
+    assert reasons == [("not_read", "dmz: source deleted"), ("present", None)]
+    gone = next(k for k, a in world.assets().items() if a.presence == "not_read")
+    assert world.latest()[gone]["latest"]["asset_id"] is not None  # its last reading is still there
+
+
+def test_prune_purges_long_removed_rows(world):
+    net = world.source("network", "lab")
+    runs = [world.run({net: {"rows": [endpoint("10.0.0.1"), endpoint("10.0.0.2")]}})]
+    runs += [world.run({net: {"rows": [endpoint("10.0.0.1")]}}) for _ in range(3)]
+    for r in runs:
+        world.finalise(r)
+    assert sorted(a.presence for a in world.assets().values()) == ["present", "removed"]
+    with Session(world.engine) as s:
+        E.prune_collected_assets(s, 1, keep_runs=2)  # removed in run 2, before the 2 newest runs
+        s.commit()
+    assert [a.presence for a in world.assets().values()] == ["present"] and len(world.observations()) == 1
 
 
 def test_concurrent_finalisations_of_one_run_write_once(world):
@@ -521,7 +609,7 @@ def test_the_migration_is_the_one_head():
 def _schema(engine) -> dict:
     insp = sa.inspect(engine)
     out = {}
-    for table in ("cbomestatesource", "cbomestateasset", "cbomestateobservation"):
+    for table in TABLES:
         cols = {c["name"]: c["nullable"] for c in insp.get_columns(table)}
         idx = {i["name"]: tuple(i["column_names"]) for i in insp.get_indexes(table)}
         uq = {u["name"]: tuple(u["column_names"]) for u in insp.get_unique_constraints(table)}
@@ -539,7 +627,7 @@ def _migrate(engine, *steps: str) -> None:
                 getattr(_migration(), step)()
 
 
-TABLES = ("cbomestatesource", "cbomestateasset", "cbomestateobservation")
+TABLES = ("cbomestatesource", "cbomestateasset", "cbomestateobservation", "cbomestateteam")
 
 
 def _up_down_up(engine) -> None:
@@ -558,7 +646,7 @@ def test_migration_up_down_up_matches_the_models_sqlite(tmp_path):
     modelled = create_engine(f"sqlite:///{tmp_path / 'n.db'}")
     with modelled.begin() as conn:
         for t in (Team.__table__, CbomEstateSource.__table__, CbomEstateAsset.__table__,
-                  CbomEstateObservation.__table__):
+                  CbomEstateObservation.__table__, CbomEstateTeam.__table__):
             t.create(conn)
     assert _schema(migrated) == _schema(modelled)
 
@@ -574,5 +662,5 @@ def test_migration_up_down_up_on_postgresql():
     finally:
         with engine.begin() as conn:
             conn.execute(sa.text("DROP TABLE IF EXISTS cbomestateobservation, cbomestateasset, cbomestatesource, "
-                                 "team CASCADE"))
+                                 "cbomestateteam, team CASCADE"))
         engine.dispose()

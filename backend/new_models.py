@@ -682,6 +682,21 @@ class CbomEstateSource(SQLModel, table=True):
     updated_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
 
 
+class CbomEstateTeam(SQLModel, table=True):
+    """Per team: whether the estate store missed a run's write (it failed and was rolled back to its savepoint while
+    drift committed). ``stale`` stays set until ``estate.backfill`` has replayed the team's runs."""
+    __tablename__ = "cbomestateteam"
+    __table_args__ = (UniqueConstraint("team_id", name="uq_cbomestateteam_team"),)
+    id: int | None = Field(default=None, primary_key=True)
+    team_id: int = Field(foreign_key="team.id")
+    stale: bool = Field(default=False)
+    stale_run_id: int | None = Field(default=None)  # the first run whose write was missed
+    stale_reason: str | None = Field(default=None, max_length=300)
+    stale_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    repaired_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    updated_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+
+
 class CbomEstateAsset(SQLModel, table=True):
     """One asset of a team's estate, keyed by its cross-source asset key (CB-21; ``obs:<observation key>`` when the
     asset has no cross-source identity or its correlation is missing). Written by ``estate.record_run`` inside the

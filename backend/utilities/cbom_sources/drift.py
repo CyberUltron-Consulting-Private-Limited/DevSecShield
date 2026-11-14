@@ -973,10 +973,11 @@ def record_run_drift(session: Session, run: CbomCollectionRun, now: _dt.datetime
 
 def record_estate(session: Session, run: CbomCollectionRun, now: _dt.datetime,
                   loaded: Mapping[int, list[CbomCollectedAsset]] | None = None) -> None:
-    """The run's estate-store write (CB-20) and its hooks (CB-23), in the transaction that won ``drift_at``."""
+    """The run's estate-store write (CB-20) and its hooks (CB-23), in the transaction that won ``drift_at`` but in a
+    savepoint: a store error never undoes the drift recording (the store is marked stale for the backfill)."""
     from backend.utilities.cbom_sources import estate
 
-    estate.record_run(session, run, now, loaded=loaded)
+    estate.record_run_safely(session, run, now, loaded=loaded)
 
 
 def run_not_read(session: Session, run: CbomCollectionRun) -> list[dict[str, Any]]:
