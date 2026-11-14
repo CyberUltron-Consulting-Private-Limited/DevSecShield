@@ -173,6 +173,8 @@ class PathFilters(unittest.TestCase):
         "frontend/components/cbom/sources/logic.ts": {"frontend", "backend", "scan-node"},
         "frontend/utils/scanRerun.ts": {"frontend", "backend"},
         "frontend/app/[team_id]/page.tsx": {"frontend", "backend"},          # test_certin_india_ux_lock
+        # review 5903702387: the backend <-> UI contract files are read by both suites' tests
+        "contracts/cbom/grade_keys.json": {"frontend", "backend"},           # gradeContract.test.ts, ui_contract
         "scan_node/zs_scan_node/collectors/kubernetes.py": {"scan-node", "backend"},
         "backend/utilities/cbom_sources/node_auth.py": {"backend", "scan-node", "aibom"},
         "backend/utilities/cbom_sources/data/crypto_kb.json": {"backend", "aibom"},

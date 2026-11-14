@@ -1,0 +1,131 @@
+{
+  "run": {
+    "breakdown": {
+      "groups": {
+        "network": {
+          "credits": 1,
+          "credits_c": 100,
+          "queued": 2,
+          "skipped": 0,
+          "units": 19
+        }
+      },
+      "skipped": []
+    },
+    "cancelled_at": null,
+    "cancelled_by": null,
+    "created_at": "2026-11-12T15:23:26Z",
+    "credits": {
+      "charged": 1,
+      "net": 1,
+      "refunded": 0
+    },
+    "finished_at": "2026-11-12T15:23:51Z",
+    "id": 21,
+    "include": {
+      "cloud": false,
+      "databases": false,
+      "kubernetes": false,
+      "network": true,
+      "servers": false
+    },
+    "job_counts": {
+      "success": 2
+    },
+    "jobs": [
+      {
+        "asset_count": 24,
+        "attempts": 1,
+        "cancel_requested": false,
+        "claimed_at": "2026-11-12T15:23:27Z",
+        "created_at": "2026-11-12T15:23:26Z",
+        "credits": 1,
+        "error": null,
+        "finished_at": "2026-11-12T15:23:51Z",
+        "id": 84,
+        "kind": "collect",
+        "node_id": 35,
+        "node_name": "e2e-node-1",
+        "outcome": "ok",
+        "progress": null,
+        "refunded": false,
+        "result": {
+          "asset_count": 24,
+          "assets_lost": 0,
+          "counts": {
+            "failed": 0,
+            "ok": 14,
+            "skipped": 0,
+            "total": 14
+          },
+          "duration_s": 23,
+          "node_version": "1.0.0",
+          "stored_asset_count": 24,
+          "summary": "9 open endpoints",
+          "truncated": false
+        },
+        "run_id": 21,
+        "runner": "node",
+        "samples": [],
+        "server_time": "2026-11-12T15:24:01Z",
+        "source_id": 69,
+        "source_name": "range-10.231.0.16-28",
+        "status": "success",
+        "waiting_reason": null
+      },
+      {
+        "asset_count": 1,
+        "attempts": 1,
+        "cancel_requested": false,
+        "claimed_at": "2026-11-12T15:23:27Z",
+        "created_at": "2026-11-12T15:23:26Z",
+        "credits": 0,
+        "error": null,
+        "finished_at": "2026-11-12T15:23:38Z",
+        "id": 85,
+        "kind": "collect",
+        "node_id": 35,
+        "node_name": "e2e-node-1",
+        "outcome": "partial",
+        "progress": null,
+        "refunded": false,
+        "result": {
+          "asset_count": 1,
+          "assets_lost": 0,
+          "counts": {
+            "failed": 0,
+            "ok": 1,
+            "skipped": 1,
+            "total": 2
+          },
+          "duration_s": 11,
+          "node_version": "1.0.0",
+          "stored_asset_count": 1,
+          "summary": "1 open endpoints",
+          "truncated": false
+        },
+        "run_id": 21,
+        "runner": "node",
+        "samples": [],
+        "server_time": "2026-11-12T15:24:01Z",
+        "source_id": 70,
+        "source_name": "range-10.231.0.32-30",
+        "status": "success",
+        "waiting_reason": null
+      }
+    ],
+    "last_updated": "2026-11-12T15:23:51Z",
+    "owner_user_id": 52,
+    "scan_id": null,
+    "soc_ack_at": "2026-11-12T15:23:26Z",
+    "soc_ack_by": 52,
+    "status": "partial",
+    "team_id": 52,
+    "versions": {
+      "classifier": "rules-9b4b32ed36c3",
+      "engine": "unknown",
+      "kb": "2026.11.10.1"
+    }
+  },
+  "server_time": "2026-11-12T15:24:01Z"
+}

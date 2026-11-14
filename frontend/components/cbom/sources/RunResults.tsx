@@ -22,6 +22,7 @@ import {
   type CbomJobTargets,
 } from "@/utils/backend_api";
 
+import { FixClassChip, QGradeChip, type FixClassFields, type QGradeFields } from "@/components/cbom/grade";
 import { downloadCbomRunBom } from "@/utils/api/cbom_outputs";
 import { downloadOscal } from "@/utils/api/integrations";
 
@@ -351,7 +352,9 @@ export default function RunResults({ teamId, runId, active }: { teamId: number; 
                   <TableHead>Where</TableHead>
                   <TableHead>Algorithm</TableHead>
                   <TableHead>Finding</TableHead>
-                  <TableHead>Quantum</TableHead>
+                  <TableHead>Quantum-vulnerable</TableHead>
+                  <TableHead>Quantum risk</TableHead>
+                  <TableHead>Fix class</TableHead>
                   <TableHead>Wave</TableHead>
                 </TableRow>
               </TableHeader>
@@ -393,11 +396,13 @@ export default function RunResults({ teamId, runId, active }: { teamId: number; 
                       <TableCell className="text-zinc-600 dark:text-zinc-400">
                         {asset.quantum_vulnerable === true ? "Vulnerable" : asset.quantum_vulnerable === false ? "Safe" : "—"}
                       </TableCell>
+                      <TableCell><QGradeChip item={asset as QGradeFields} assetId={asset.id} /></TableCell>
+                      <TableCell><FixClassChip item={asset as FixClassFields} assetId={asset.id} /></TableCell>
                       <TableCell><WaveBadge item={waves.byAsset.get(asset.id)} /></TableCell>
                     </TableRow>
                     {expanded === asset.id && (
                       <TableRow>
-                        <TableCell colSpan={9} className="bg-zinc-50 dark:bg-zinc-800/50">
+                        <TableCell colSpan={11} className="bg-zinc-50 dark:bg-zinc-800/50">
                           <div className="max-w-[900px] space-y-2 whitespace-normal">
                             {asset.finding && <p className="text-sm text-zinc-900 dark:text-white">{asset.finding}</p>}
                             {asset.as_of_run && (
