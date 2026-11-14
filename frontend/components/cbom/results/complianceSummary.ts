@@ -5,7 +5,7 @@
 //   - `mapping`: the knowledge-base clauses the run's findings touch (/runs/{id}/results compliance; runs only). Each
 //     clause carries its finding codes with their KB title and remediation summary.
 // Nothing here counts table rows: clause and framework asset counts are the API's (Rule P); the drill-down hands the
-// table a filter (finding codes or asset ids) and the table's total comes from the server.
+// table a filter (a clause, or asset ids) and the table's total comes from the server.
 
 import type { Compliance, ComplianceRequirement, ComplianceVerdict, FrameworkCoverage } from "@/components/compliance/types";
 import { labelFramework } from "@/components/compliance/frameworkLabels";
@@ -41,8 +41,12 @@ export const ENGINE_KEYS: Record<string, string[]> = {
   "CNSA 2.0": ["cnsa_2_0"],
 };
 
-/** A count's drill-down: the findings table filtered to a clause's codes or a requirement's assets (bom-refs). */
+/** A count's drill-down: the findings table filtered to a KB clause (or every clause of a framework), to finding codes,
+ * or to a requirement's assets (bom-refs). A clause drills by the clause, not by its codes: whether a code cites a
+ * clause can depend on the asset's algorithm (#289: SSH_CBC_CIPHER cites TDEA only for 3des-cbc), so the server
+ * decides with the same rule its "N assets" count uses. `codes` stays for the code scan's in-browser filter. */
 export type DrillTarget =
+  | { kind: "clause"; clause: string; codes: string[]; label: string }
   | { kind: "codes"; codes: string[]; label: string }
   | { kind: "refs"; refs: string[]; label: string };
 
@@ -156,7 +160,9 @@ function kbClause(framework: string, c: ComplianceRow["clauses"][number], titles
     note: c.note ?? null,
     verdict: "fail",
     assets: c.assets,
-    drill: c.codes.length && c.assets > 0 ? { kind: "codes", codes: [...c.codes], label: `${framework} · ${c.clause}` } : null,
+    drill: c.codes.length && c.assets > 0
+      ? { kind: "clause", clause: `${framework}:${c.clause}`, codes: [...c.codes], label: `${framework} · ${c.clause}` }
+      : null,
     fixes,
     origin: "kb",
   };
@@ -227,7 +233,7 @@ export function buildComplianceSummary(input: {
     if (kbClauses.length) {
       const codes = [...new Set(row!.clauses.flatMap((c) => c.codes))].sort();
       assets = typeof row?.assets === "number" ? row.assets : null;
-      if (codes.length && assets !== 0) drill = { kind: "codes", codes, label: `${name} · every clause` };
+      if (codes.length && assets !== 0) drill = { kind: "clause", clause: name, codes, label: `${name} · every clause` };
     } else {
       const refs = [...new Set(engineRows.filter((c) => c.verdict === "fail").flatMap((c) => (c.drill?.kind === "refs" ? c.drill.refs : [])))];
       assets = refs.length;
@@ -269,19 +275,22 @@ export const MAX_DRILL_IDS = 500; // backend run_assets.MAX_IDS
 export const MAX_DRILL_CODES = 50; // backend run_assets.MAX_CODES
 
 /** The run findings table filter a drill-down sets (all other filters cleared, the All view so the total equals the
- * clause count: the posture counts every collected asset with the code). `truncated` when a requirement names more
- * assets than one request may carry. */
+ * clause count: the posture counts every collected asset behind the clause). A clause drills by `clause=` (the server
+ * applies the posture's own rule); `truncated` when a requirement names more assets than one request may carry. */
 export function runDrillFilters(target: DrillTarget): {
-  patch: { codes?: string[]; asset_ids?: number[]; drill_label: string; view: "all"; page: 1;
+  patch: { clause?: string; codes?: string[]; asset_ids?: number[]; drill_label: string; view: "all"; page: 1;
            type: undefined; impact: undefined; quantum: undefined; q: undefined; source_id: undefined; status: undefined };
   truncated: boolean;
 } {
   const cleared = { type: undefined, impact: undefined, quantum: undefined, q: undefined, source_id: undefined, status: undefined } as const;
+  if (target.kind === "clause") {
+    return { patch: { ...cleared, clause: target.clause, codes: undefined, asset_ids: undefined, drill_label: target.label, view: "all", page: 1 }, truncated: false };
+  }
   if (target.kind === "codes") {
     const codes = target.codes.slice(0, MAX_DRILL_CODES);
-    return { patch: { ...cleared, codes, asset_ids: undefined, drill_label: target.label, view: "all", page: 1 }, truncated: codes.length < target.codes.length };
+    return { patch: { ...cleared, clause: undefined, codes, asset_ids: undefined, drill_label: target.label, view: "all", page: 1 }, truncated: codes.length < target.codes.length };
   }
   const ids = [...new Set(target.refs.map(runAssetId).filter((x): x is number => x != null))];
   const kept = ids.slice(0, MAX_DRILL_IDS);
-  return { patch: { ...cleared, codes: undefined, asset_ids: kept, drill_label: target.label, view: "all", page: 1 }, truncated: kept.length < ids.length };
+  return { patch: { ...cleared, clause: undefined, codes: undefined, asset_ids: kept, drill_label: target.label, view: "all", page: 1 }, truncated: kept.length < ids.length };
 }

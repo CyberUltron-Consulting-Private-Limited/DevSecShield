@@ -292,10 +292,59 @@ def load_compliance_clauses() -> dict:
     return json.load(open(os.path.join(SRC, "compliance_clauses.json"), encoding="utf-8"))
 
 
+# the classifier the clause rules read their algorithm lists from (``match_from``: "classify_ext/node_net.py:WEAK_ENCR")
+CLASSIFIER_DIR = os.path.join(HERE, "..", "..", "backend", "utilities", "cbom_sources")
+
+
+def _runtime_kb():
+    """The API's crypto_kb module (standard library only), loaded from its file: the build checks each rule's example
+    with the very matcher the API and the code-scan engine run (crypto_kb.rule_matches)."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("_crypto_kb_runtime", os.path.join(CLASSIFIER_DIR, "crypto_kb.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def classifier_pattern(ref: str) -> str:
+    """The pattern of a classifier list, read from its source without importing it (``path:NAME``): a
+    ``re.compile("...")`` literal as written, or a set of names (literals, other sets of the module, unions) as one
+    anchored alternation. The rule then follows the classifier: a name added there is cited here on the next build."""
+    import ast
+
+    path, _, name = ref.partition(":")
+    full = os.path.normpath(os.path.join(CLASSIFIER_DIR, path))
+    if not name or not os.path.isfile(full):
+        fail(f"match_from {ref!r}: expected <file under backend/utilities/cbom_sources>:<NAME>")
+    assigned = {t.id: node.value for node in ast.parse(open(full, encoding="utf-8").read()).body
+                if isinstance(node, ast.Assign) for t in node.targets if isinstance(t, ast.Name)}
+
+    def names_of(value) -> set:
+        if isinstance(value, ast.Set):
+            return {v.value for v in value.elts if isinstance(v, ast.Constant) and isinstance(v.value, str)}
+        if isinstance(value, ast.Name) and value.id in assigned:
+            return names_of(assigned[value.id])
+        if isinstance(value, ast.BinOp) and isinstance(value.op, ast.BitOr):
+            return names_of(value.left) | names_of(value.right)
+        fail(f"match_from {ref!r}: not a set of names or a re.compile literal")
+        return set()
+
+    value = assigned.get(name)
+    if value is None:
+        fail(f"match_from {ref!r}: {name} is not assigned in {path}")
+    if isinstance(value, ast.Call) and getattr(value.func, "attr", "") == "compile" and value.args and \
+            isinstance(value.args[0], ast.Constant) and isinstance(value.args[0].value, str):
+        return value.args[0].value
+    return "^(?:" + "|".join(re.escape(n) for n in sorted(names_of(value))) + ")$"
+
+
 def attach_clauses(findings: dict, table: dict, catalog: dict) -> None:
-    """Copy each code's reviewed clauses into its entry as ``clauses`` (always cited) and ``clause_rules`` (cited when
-    the asset's evidence matches). Fails on a code without a row, a row for a code the KB lacks, an unknown clause
-    key, a row without a basis, or a rule whose pattern is invalid or does not match its own example."""
+    """Copy each code's reviewed clauses into its entry as ``clauses`` (always cited), ``clause_rules`` (cited when
+    the asset's algorithm evidence matches; ``match_from`` resolved from the classifier source) and ``clause_notes``.
+    Fails on a code without a row, a row for a code the KB lacks, an unknown clause key, a row without a basis, or a
+    rule whose pattern is invalid or does not match its own example (with the API's own matcher)."""
+    runtime = _runtime_kb()
     for ns, section in findings.items():
         rows = table.get(ns) or {}
         missing, extra = sorted(set(section) - set(rows)), sorted(set(rows) - set(section))
@@ -309,19 +358,28 @@ def attach_clauses(findings: dict, table: dict, catalog: dict) -> None:
                 fail(f"compliance_clauses {ns}:{code}: needs a basis")
             rules = []
             for rule in row.get("rules") or []:
+                built = {"match": classifier_pattern(rule["match_from"]) if rule.get("match_from") else rule.get("match")}
+                if rule.get("unless"):
+                    built["unless"] = rule["unless"]
+                built["clauses"] = list(rule.get("clauses") or [])
                 try:
-                    pattern = re.compile(rule["match"], re.IGNORECASE)
-                except (re.error, KeyError, TypeError) as exc:
+                    for key in ("match", "unless"):
+                        if key in built:
+                            re.compile(built[key], re.IGNORECASE)
+                except (re.error, TypeError) as exc:
                     fail(f"compliance_clauses {ns}:{code}: bad rule pattern ({exc})")
-                if not rule.get("clauses") or not pattern.search(str(rule.get("example") or "")):
-                    fail(f"compliance_clauses {ns}:{code}: rule {rule['match']!r} needs clauses and an example "
+                if not built["clauses"] or not runtime.rule_matches(built, [str(rule.get("example") or "")]):
+                    fail(f"compliance_clauses {ns}:{code}: rule {built['match']!r} needs clauses and an example "
                          "it matches")
-                rules.append({"match": rule["match"], "clauses": list(rule["clauses"])})
-            for key in list(row.get("clauses") or []) + [k for r in rules for k in r["clauses"]]:
+                rules.append(built)
+            notes = dict(row.get("notes") or {})
+            for key in list(row.get("clauses") or []) + [k for r in rules for k in r["clauses"]] + list(notes):
                 if key not in catalog:
                     fail(f"compliance_clauses {ns}:{code}: unknown clause key {key}")
             entry["clauses"] = list(row.get("clauses") or [])
             entry["clause_rules"] = rules
+            if notes:
+                entry["clause_notes"] = notes
 
 
 FIX_CLASSES = ("configurable", "code-fixed", "vendor-fixed", "hardware-fixed")

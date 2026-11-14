@@ -43,7 +43,8 @@ export function AssetCount({ count, drill, onDrill, testId }: {
   if (!drill || !onDrill || count === 0) return <span className="tabular-nums" data-testid={testId}>{text}</span>;
   return (
     <button type="button" className="tabular-nums text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
-            title={`Show these assets in the findings table (${drill.label})`} data-testid={testId}
+            title={`Show these assets in the findings table (${drill.label})`}
+            aria-label={`${text}: ${drill.label}, show in the findings table`} data-testid={testId}
             onClick={() => onDrill(drill)}>
       {text}
     </button>

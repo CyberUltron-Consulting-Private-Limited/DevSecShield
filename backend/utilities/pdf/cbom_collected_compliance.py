@@ -24,6 +24,7 @@ class ClauseRow:
     clause: str
     assets: int  # current collected assets with at least one finding code mapped to the clause
     codes: tuple[str, ...]
+    unrecorded: int = 0  # assets cited for review: the algorithm behind the finding was not recorded (#289)
 
 
 def collected_clauses(view: TeamCbomView) -> list[ClauseRow]:
@@ -31,18 +32,22 @@ def collected_clauses(view: TeamCbomView) -> list[ClauseRow]:
     gave, ``AssetAgg.collector_codes``, as the run API counts them): by framework, then most assets first."""
     assets: dict[tuple[str, str], set[str]] = defaultdict(set)
     codes: dict[tuple[str, str], set[str]] = defaultdict(set)
+    unrecorded: dict[tuple[str, str], set[str]] = defaultdict(set)
     for asset in view.assets:
         if not asset.current or not asset.source_key.startswith(SOURCES_PREFIX):
             continue
-        evidence = " ".join(p for p in (asset.title, asset.description) if p)
+        evidence = asset.clause_evidence or {}  # algorithm names only, never the asset's title or sentence (#289)
         for code in dict.fromkeys((*asset.finding_codes, *asset.collector_codes)):
             if code.startswith("COVERAGE_"):  # a check that was not collected is not a finding
                 continue
-            for ref in crypto_kb.clauses_for("node", code, evidence):  # the clauses this code breaks (#269)
+            for ref in crypto_kb.clauses_for("node", code, evidence.get(code)):  # the clauses it breaks (#269)
                 key = (str(ref["framework"]), str(ref["id"]))
-                assets[key].add(f"{asset.source_key}|{asset.asset_type}|{asset.ident}")
+                ident = f"{asset.source_key}|{asset.asset_type}|{asset.ident}"
+                assets[key].add(ident)
                 codes[key].add(code)
-    rows = [ClauseRow(fw, clause, len(ids), tuple(sorted(codes[(fw, clause)])))
+                if ref.get("evidence") == "not_recorded":
+                    unrecorded[key].add(ident)
+    rows = [ClauseRow(fw, clause, len(ids), tuple(sorted(codes[(fw, clause)])), len(unrecorded[(fw, clause)] & ids))
             for (fw, clause), ids in assets.items()]
     rows.sort(key=lambda r: (r.framework.casefold(), -r.assets, r.clause.casefold()))
     return rows

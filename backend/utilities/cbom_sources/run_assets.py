@@ -29,6 +29,7 @@ from sqlalchemy import String, and_, cast, false, func, or_
 from sqlmodel import Session, select
 
 from backend.new_models import CbomCollectedAsset, CbomCollectionJob, CbomCollectionRun, CbomCollectionSource
+from backend.utilities.cbom_sources import clause_evidence as CE
 from backend.utilities.cbom_sources import identity as ID
 from backend.utilities.cbom_sources import inventory as INV
 from backend.utilities.cbom_sources import waves as WAVES
@@ -118,6 +119,25 @@ def _codes_clause(codes: list[str], changed: dict[int, dict[str, Any]]):
         if today:
             stored = or_(stored, CbomCollectedAsset.id.in_(today))  # type: ignore[union-attr]
     return and_(CbomCollectedAsset.asset_type != COVERAGE, stored)
+
+
+def _clause_clause(session: Session, team_id: int, run_id: int, clause: tuple[str, str | None],
+                   changed: dict[int, dict[str, Any]]):
+    """Collected assets behind a compliance clause (``clause=<framework>[:<clause id>]``), decided per asset by the
+    function the run posture counts with (clause_evidence.matches: the asset's non-coverage codes judged today, the
+    algorithms the classifier flagged for them). A clause's evidence-gated rules make "has the code" too wide (#291 x
+    #289), so the "N assets" of a clause and this filter's total are the same set of assets."""
+    keys = CE.clause_keys(*clause)
+    candidates = CE.codes_citing(keys)
+    if not candidates:
+        return false()
+    rows = session.exec(select(CbomCollectedAsset).where(
+        CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run_id,
+        _codes_clause(candidates, changed))).all()
+    ids = [int(row.id) for row in rows
+           if CE.matches(row, (changed[row.id].get("finding_codes") if row.id in changed else row.finding_codes) or [],
+                         keys)]
+    return CbomCollectedAsset.id.in_(ids) if ids else false()  # type: ignore[union-attr]
 
 
 def _job_refs(session: Session, team_id: int, run: CbomCollectionRun) -> dict[int, str]:
@@ -262,7 +282,7 @@ def add_code_page_fields(item: dict[str, Any]) -> None:
 # ----------------------------------------------------------------------------- the page
 def list_run_assets(session: Session, *, team_id: int, run: CbomCollectionRun, params: dict[str, Any],
                     view: str = "all", status: str | None = None, codes: list[str] | None = None,
-                    asset_ids: list[int] | None = None) -> dict[str, Any]:
+                    asset_ids: list[int] | None = None, clause: tuple[str, str | None] | None = None) -> dict[str, Any]:
     if view not in VIEWS:
         raise ValueError(f"view: {view}")
     if status is not None and status not in FINDING_STATUSES:
@@ -277,6 +297,8 @@ def list_run_assets(session: Session, *, team_id: int, run: CbomCollectionRun, p
             query = query.where(_status_clause(session, team_id, run, status))
         if codes:
             query = query.where(_codes_clause(codes, changed))
+        if clause:
+            query = query.where(_clause_clause(session, team_id, int(run.id), clause, changed))
         if asset_ids:  # the run's own rows only: the base query is already this team's run
             query = query.where(CbomCollectedAsset.id.in_(asset_ids))  # type: ignore[union-attr]
         return query
@@ -287,9 +309,12 @@ def list_run_assets(session: Session, *, team_id: int, run: CbomCollectionRun, p
     out["status_filter"] = status
     out["code_filter"] = codes
     out["asset_id_filter"] = len(asset_ids) if asset_ids else None
+    out["clause_filter"] = ":".join(p for p in clause if p) if clause else None
     enrich_items(session, team_id, run, out["items"])
     return out
 
 
+parse_clause = CE.parse_clause
+
 __all__ = ["FINDING_STATUSES", "TYPE_LABEL", "VIEWS", "enrich_items", "findings_total", "list_run_assets",
-           "parse_codes", "parse_ids", "run_asset_keys", "type_label"]
+           "parse_clause", "parse_codes", "parse_ids", "run_asset_keys", "type_label"]

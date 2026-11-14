@@ -202,9 +202,9 @@ ALLOW: dict[str, dict[str, set[tuple[str, str]]]] = {
         "PLAINTEXT_LISTENER": {CERTIN_627, RBI_106, SEBI_I, SEBI_PRDS1},
         "PROVIDER_MANAGED_KEY": set(),
         "QUANTUM_VULNERABLE": {CERTIN_851, CNSA2, NIST_IR8547, SEBI_BOX7, SEBI_RA2},
-        "REUSED_NONCE": set(),
+        "REUSED_NONCE": {RBI_140, RBI_16},
         "SELF_SIGNED_LEAF": {CERTIN_617},
-        "STATIC_IV": set(),
+        "STATIC_IV": {RBI_140, RBI_16},
         "TLS_VERIFICATION_DISABLED": {CERTIN_627, CERTIN_8422},
         "UNENCRYPTED_AT_REST": {CERTIN_71, RBI_106, SEBI_PRDS1, SEBI_PRDS_1A},
         "UNENCRYPTED_IN_TRANSIT": {CERTIN_627, RBI_106, SEBI_I, SEBI_PRDS1},
@@ -246,11 +246,21 @@ def _fresh_kb(monkeypatch):
     crypto_kb.load.cache_clear()
 
 
-def _cited(namespace: str, code: str, evidence: str) -> set[tuple[str, str]]:
+def _refs(namespace: str, code: str, evidence: str) -> list[dict]:
     """The clauses the finding detail (the KB panel, the AI grounding) cites for one code and one asset's evidence."""
     out = crypto_kb.render(namespace, [code], evidence=evidence, title=evidence)
     assert len(out) == 1, (namespace, code)
-    return {(ref["framework"], ref["id"]) for ref in out[0]["compliance"]}
+    return out[0]["compliance"]
+
+
+def _cited(namespace: str, code: str, evidence: str) -> set[tuple[str, str]]:
+    return {(ref["framework"], ref["id"]) for ref in _refs(namespace, code, evidence)}
+
+
+def _decided(namespace: str, code: str, evidence: str) -> set[tuple[str, str]]:
+    """Cited on the evidence (not "cited for review" because no algorithm was recorded)."""
+    return {(ref["framework"], ref["id"]) for ref in _refs(namespace, code, evidence)
+            if ref.get("evidence") != "not_recorded"}
 
 
 def _codes():
@@ -284,7 +294,7 @@ def test_issue_269_ssh_findings_cite_only_what_they_break():
 @pytest.mark.parametrize("namespace,code", _codes())
 def test_tdea_pkcs1_and_sha1_signature_clauses_only_where_they_apply(namespace, code):
     for evidence in PROBES:
-        cited = _cited(namespace, code, evidence)
+        cited = _decided(namespace, code, evidence)
         if NIST_TDEA in cited:
             assert code in TDEA_CODES and evidence not in NO_3DES, (code, evidence)
         if NIST_PKCS1 in cited:

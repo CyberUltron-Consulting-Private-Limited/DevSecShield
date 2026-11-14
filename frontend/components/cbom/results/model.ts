@@ -387,7 +387,9 @@ export interface RunTableFilters {
   q?: string;
   source_id?: number;
   status?: CbomFindingStatus;
-  /** #270 compliance drill-down: assets with any of these finding codes (a clause), or these asset ids (a requirement) */
+  /** #270 compliance drill-down: the assets behind a KB clause (`<framework>:<clause id>`, or `<framework>` for every
+   * clause of it; #289), assets with any of these finding codes, or these asset ids (a requirement) */
+  clause?: string;
   codes?: string[];
   asset_ids?: number[];
   /** what the drill-down shows, for the table's filter chip ("NIST · SP 800-131A …") */
@@ -407,13 +409,14 @@ export function filtersToParams(f: RunTableFilters): Record<string, string | num
   if (f.q) out.q = f.q;
   if (f.source_id != null) out.source_id = f.source_id;
   if (f.status) out.status = f.status;
+  if (f.clause) out.clause = f.clause;
   if (f.codes?.length) out.code = f.codes.join(",");
   if (f.asset_ids?.length) out.asset_id = f.asset_ids.join(",");
   return out;
 }
 
 export function hasActiveFilters(f: RunTableFilters): boolean {
-  return !!(f.type || f.impact || f.quantum || f.q || f.source_id != null || f.status || f.codes?.length || f.asset_ids?.length);
+  return !!(f.type || f.impact || f.quantum || f.q || f.source_id != null || f.status || f.clause || f.codes?.length || f.asset_ids?.length);
 }
 
 /** The server understands `view` / `status` (W1) when it reports `findings_total`; an older server lists every asset. */

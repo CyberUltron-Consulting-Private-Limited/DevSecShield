@@ -2395,7 +2395,10 @@
     "attack": "For AES-GCM or ChaCha20-Poly1305, nonce reuse reveals the XOR of the plaintexts and lets an attacker forge messages.",
     "category": "code",
     "clause_rules": [],
-    "clauses": [],
+    "clauses": [
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140"
+    ],
     "compliance": [
      "algorithms"
     ],
@@ -2537,7 +2540,10 @@
     "attack": "With CBC, a predictable IV enables chosen-plaintext attacks; with GCM/CTR, a repeated nonce leaks the XOR of plaintexts and the authentication key.",
     "category": "code",
     "clause_rules": [],
-    "clauses": [],
+    "clauses": [
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140"
+    ],
     "compliance": [
      "algorithms"
     ],
@@ -2943,7 +2949,7 @@
       "clauses": [
        "nist-800-131a-below-112-bit"
       ],
-      "match": "(rsa|dsa|dh|diffie-hellman|ecdsa|ecdh)[-_ ]?(384|512|768|1024|1536)(?![0-9])|secp(112|128|160|192)|prime192|p-?192(?![0-9])"
+      "match": "(?<![a-z])(rsa|dsa|dh|diffie-hellman)\\W{0,3}(384|512|768|1024|1536)(?![0-9])|(?<![a-z])(ecdsa|ecdh|ec)\\W{0,3}(112|128|160|192)(?![0-9])|secp(112|128|160|192)|prime192|p-?192(?![0-9])"
      }
     ],
     "clauses": [
@@ -3490,7 +3496,7 @@
       "clauses": [
        "nist-800-131a-below-112-bit"
       ],
-      "match": "(rsa|dsa|dh|diffie-hellman|ecdsa|ecdh)[-_ ]?(384|512|768|1024|1536)(?![0-9])|secp(112|128|160|192)|prime192|p-?192(?![0-9])"
+      "match": "(?<![a-z])(rsa|dsa|dh|diffie-hellman)\\W{0,3}(384|512|768|1024|1536)(?![0-9])|(?<![a-z])(ecdsa|ecdh|ec)\\W{0,3}(112|128|160|192)(?![0-9])|secp(112|128|160|192)|prime192|p-?192(?![0-9])"
      }
     ],
     "clauses": [
@@ -8326,6 +8332,13 @@
     "clause_rules": [
      {
       "clauses": [
+       "sebi-annexure-h-5"
+      ],
+      "match": "^(DES|DES-IV64|3DES|BLOWFISH|IDEA|CAST|NULL)(-\\d+)?$",
+      "unless": "^null(-\\d+)?$"
+     },
+     {
+      "clauses": [
        "nist-800-131a-tdea",
        "sebi-annexure-h-5"
       ],
@@ -8335,8 +8348,7 @@
     "clauses": [
      "certin-bom-8.4.2.2",
      "rbi-md-2023-para-16",
-     "rbi-cb-2026-para-140",
-     "sebi-annexure-h-5"
+     "rbi-cb-2026-para-140"
     ],
     "compliance": [
      "algorithms"
@@ -8451,7 +8463,7 @@
        "rbi-md-2023-para-16",
        "rbi-cb-2026-para-140"
       ],
-      "match": "md5"
+      "match": "md5|des-mac"
      }
     ],
     "clauses": [],
@@ -8559,7 +8571,23 @@
        "rbi-md-2023-para-16",
        "rbi-cb-2026-para-140"
       ],
-      "match": "(?<![a-z])des(?![a-z])|3des|null|blowfish|md5|pfs"
+      "match": "^(DES|DES-IV64|3DES|BLOWFISH|IDEA|CAST|NULL)(-\\d+)?$"
+     },
+     {
+      "clauses": [
+       "certin-bom-8.4.2.2",
+       "rbi-md-2023-para-16",
+       "rbi-cb-2026-para-140"
+      ],
+      "match": "md5|des-mac"
+     },
+     {
+      "clauses": [
+       "certin-bom-8.4.2.2",
+       "rbi-md-2023-para-16",
+       "rbi-cb-2026-para-140"
+      ],
+      "match": "^(?:ECP\\-192|MODP\\-1024|MODP\\-1024\\-S160|MODP\\-1536|MODP\\-2048\\-S224|MODP\\-2048\\-S256|MODP\\-768)$"
      },
      {
       "clauses": [
@@ -8572,7 +8600,8 @@
       "clauses": [
        "sebi-annexure-h-5"
       ],
-      "match": "(?<![a-z])des(?![a-z])|3des|null|blowfish"
+      "match": "^(DES|DES-IV64|3DES|BLOWFISH|IDEA|CAST|NULL)(-\\d+)?$",
+      "unless": "^null(-\\d+)?$"
      },
      {
       "clauses": [
@@ -13665,6 +13694,9 @@
    "SSH_DH_GROUP1": {
     "attack": "1024-bit DH over a widely shared group is within reach of well-resourced attackers who precompute for that group (the Logjam research).",
     "category": "ssh",
+    "clause_notes": {
+     "nist-800-131a-sha1-signatures": "Cited because the host key signs the SSH exchange hash H, which this key exchange computes with SHA-1 (RFC 4253 sec. 8); the host-key algorithm may hash H again with SHA-2 (rsa-sha2-256). SP 800-131A keeps SHA-1 acceptable for non-signature applications such as the key derivation."
+    },
     "clause_rules": [],
     "clauses": [
      "nist-800-131a-below-112-bit",
@@ -13747,6 +13779,9 @@
    "SSH_DH_SHA1": {
     "attack": "SHA-1 in the key exchange hash weakens the session's integrity guarantees; RFC 9142 recommends against these methods.",
     "category": "ssh",
+    "clause_notes": {
+     "nist-800-131a-sha1-signatures": "Cited because the host key signs the SSH exchange hash H, which this key exchange computes with SHA-1 (RFC 4253 sec. 8); the host-key algorithm may hash H again with SHA-2 (rsa-sha2-256). SP 800-131A keeps SHA-1 acceptable for non-signature applications such as the key derivation."
+    },
     "clause_rules": [],
     "clauses": [
      "certin-bom-8.4.2.2",
@@ -14949,7 +14984,7 @@
    }
   }
  },
- "kb_version": "2026.11.15.2",
+ "kb_version": "2026.11.15.3",
  "legacy_controls": {
   "access": {
    "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control",

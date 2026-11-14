@@ -1,5 +1,5 @@
 {
- "_about": "Regulatory clauses per KB finding code (#269). Hand-written and reviewed: one row per code. 'clauses' are the clauses the finding always breaks (or whose obligation it always triggers, e.g. the post-quantum migration clauses for quantum-vulnerable public-key cryptography, CERT-In 8.4.1.6 VEX for a published vulnerability); 'rules' add clauses only when the asset's evidence (algorithm, name, finding text) matches 'match' (case-insensitive), e.g. TDEA only when Triple DES is named. A code that breaks no clause of a framework is not cited under it. Clause keys are those of kb_compliance.CLAUSES. build_kb.py copies clauses and rules (match, clauses) into each entry as 'clauses' / 'clause_rules', and fails on a missing or extra row, an unknown clause key, a row without a basis, or a rule whose pattern does not match its example.",
+ "_about": "Regulatory clauses per KB finding code (#269). Hand-written and reviewed: one row per code. 'clauses' are the clauses the finding always breaks (or whose obligation it always triggers, e.g. the post-quantum migration clauses for quantum-vulnerable public-key cryptography, CERT-In 8.4.1.6 VEX for a published vulnerability); 'rules' add clauses only when the asset's evidence matches 'match' (case-insensitive), e.g. TDEA only when Triple DES is named. The evidence is algorithm names only (#289): the algorithms the classifier flagged for the code (classify._Out algorithms) and the asset's algorithm, never its name, location or a sentence; when no algorithm was recorded every rule's clauses are cited with a note saying so. 'match_from' reads the pattern (a regex or a set of names) from the classifier source (path:NAME) instead of repeating it; 'unless' excludes names that match it. 'notes' attach an explanation to one clause of the row. A code that breaks no clause of a framework is not cited under it. Clause keys are those of kb_compliance.CLAUSES. build_kb.py copies clauses and rules (match, clauses) into each entry as 'clauses' / 'clause_rules', and fails on a missing or extra row, an unknown clause key, a row without a basis, or a rule whose pattern does not match its example.",
  "node": {
   "CA_ALLOWS_ANY_NAME": {
    "clauses": [],
@@ -433,11 +433,19 @@
    "clauses": [
     "certin-bom-8.4.2.2",
     "rbi-md-2023-para-16",
-    "rbi-cb-2026-para-140",
-    "sebi-annexure-h-5"
+    "rbi-cb-2026-para-140"
    ],
-   "basis": "DES, 3DES, Blowfish (RFC 8247 MUST NOT / SHOULD NOT): weak encryption algorithms; TDEA only when 3DES is named",
+   "basis": "every algorithm the classifier flags for this code is in node_net.WEAK_ENCR (DES, 3DES, Blowfish, IDEA, CAST, NULL; RFC 8247 MUST NOT / SHOULD NOT): a deprecated algorithm (CERT-In, RBI); SEBI H-5 for an encryption algorithm (not NULL); TDEA only when 3DES is named",
    "rules": [
+    {
+     "match_from": "classify_ext/node_net.py:WEAK_ENCR",
+     "unless": "^null(-\\d+)?$",
+     "clauses": [
+      "sebi-annexure-h-5"
+     ],
+     "example": "IDEA",
+     "basis": "a weak encryption transform, read from the classifier's own list (node_net.WEAK_ENCR): SEBI Annexure-H item 5 asks for strong encryption algorithms wherever encryption is implemented, so NULL (no encryption) and integrity algorithms are not cited under it"
+    },
     {
      "match": "3des|(?<![a-z])des[23](?![a-z0-9])|des[-_]?ede|des-cbc3|triple[-_ ]?des|tdea|desede",
      "clauses": [
@@ -454,30 +462,50 @@
    "basis": "HMAC-SHA-1 is still allowed (RFC 8247 MUST-; SP 800-131A accepts HMAC-SHA-1); only MD5 is deprecated, so clauses are cited only when the evidence names MD5",
    "rules": [
     {
-     "match": "md5",
+     "match": "md5|des-mac",
      "clauses": [
       "certin-bom-8.4.2.2",
       "rbi-md-2023-para-16",
       "rbi-cb-2026-para-140"
      ],
      "example": "HMAC-MD5",
-     "basis": "HMAC-MD5 / MD5 in IKE is MUST NOT (RFC 8247): a deprecated algorithm"
+     "basis": "MD5-based integrity or PRF in IKE is MUST NOT (RFC 8247), as node_net._md5_class decides: a deprecated algorithm"
     }
    ]
   },
   "IPSEC_WEAK_TRANSFORM": {
    "clauses": [],
-   "basis": "the code covers DES/3DES/NULL/MD5/weak PFS (deprecated) and HMAC-SHA-1 (still allowed); clauses follow the transforms the evidence names",
+   "basis": "the code covers the ESP transforms the classifier flags: node_net.WEAK_ENCR encryption, MD5 / DES-MAC integrity and node_net.WEAK_GROUPS PFS groups (deprecated, RFC 8221 / RFC 8247: Medium), and HMAC-SHA-1 alone (still allowed, RFC 8221 MUST-: Low, no clause); clauses follow the transforms the evidence names",
    "rules": [
     {
-     "match": "(?<![a-z])des(?![a-z])|3des|null|blowfish|md5|pfs",
+     "match_from": "classify_ext/node_net.py:WEAK_ENCR",
      "clauses": [
       "certin-bom-8.4.2.2",
       "rbi-md-2023-para-16",
       "rbi-cb-2026-para-140"
      ],
-     "example": "3DES",
-     "basis": "a deprecated ESP transform (RFC 8221) is allowed"
+     "example": "CAST",
+     "basis": "a deprecated ESP encryption transform, read from the classifier's own list (node_net.WEAK_ENCR)"
+    },
+    {
+     "match": "md5|des-mac",
+     "clauses": [
+      "certin-bom-8.4.2.2",
+      "rbi-md-2023-para-16",
+      "rbi-cb-2026-para-140"
+     ],
+     "example": "HMAC-MD5",
+     "basis": "MD5-based or DES-MAC integrity (RFC 8221 MUST NOT), as node_net._md5_class decides"
+    },
+    {
+     "match_from": "classify_ext/node_net.py:WEAK_GROUPS",
+     "clauses": [
+      "certin-bom-8.4.2.2",
+      "rbi-md-2023-para-16",
+      "rbi-cb-2026-para-140"
+     ],
+     "example": "PFS MODP-1024",
+     "basis": "a weak PFS group, read from the classifier's own list (node_net.WEAK_GROUPS)"
     },
     {
      "match": "3des|(?<![a-z])des[23](?![a-z0-9])|des[-_]?ede|des-cbc3|triple[-_ ]?des|tdea|desede",
@@ -489,12 +517,13 @@
      "basis": "the evidence names Triple DES (TDEA): SP 800-131A Table 1 disallows three-key TDEA for encryption after 2023, and SEBI asks for strong encryption algorithms"
     },
     {
-     "match": "(?<![a-z])des(?![a-z])|3des|null|blowfish",
+     "match_from": "classify_ext/node_net.py:WEAK_ENCR",
+     "unless": "^null(-\\d+)?$",
      "clauses": [
       "sebi-annexure-h-5"
      ],
-     "example": "DES",
-     "basis": "a weak ESP encryption transform: SEBI asks for strong encryption algorithms"
+     "example": "IDEA",
+     "basis": "a weak encryption transform, read from the classifier's own list (node_net.WEAK_ENCR): SEBI Annexure-H item 5 asks for strong encryption algorithms wherever encryption is implemented, so NULL (no encryption) and integrity algorithms are not cited under it"
     },
     {
      "match": "modp-?(768|1024|1536)(?![0-9])|ecp-?192(?![0-9])",
@@ -1007,7 +1036,10 @@
     "nist-800-131a-sha1-signatures"
    ],
    "basis": "1024-bit MODP key agreement (below 112-bit security) whose SHA-1 exchange hash is what the host key signs (SP 800-131A Table 8)",
-   "rules": []
+   "rules": [],
+   "notes": {
+    "nist-800-131a-sha1-signatures": "Cited because the host key signs the SSH exchange hash H, which this key exchange computes with SHA-1 (RFC 4253 sec. 8); the host-key algorithm may hash H again with SHA-2 (rsa-sha2-256). SP 800-131A keeps SHA-1 acceptable for non-signature applications such as the key derivation."
+   }
   },
   "SSH_DH_SHA1": {
    "clauses": [
@@ -1017,7 +1049,10 @@
     "nist-800-131a-sha1-signatures"
    ],
    "basis": "SHA-1 key exchange (RFC 9142 SHOULD NOT): the SHA-1 exchange hash is what the server's host key signs, so the signature rests on SHA-1 (SP 800-131A Table 8); no TDEA or PKCS#1 clause",
-   "rules": []
+   "rules": [],
+   "notes": {
+    "nist-800-131a-sha1-signatures": "Cited because the host key signs the SSH exchange hash H, which this key exchange computes with SHA-1 (RFC 4253 sec. 8); the host-key algorithm may hash H again with SHA-2 (rsa-sha2-256). SP 800-131A keeps SHA-1 acceptable for non-signature applications such as the key derivation."
+   }
   },
   "SSH_DSS": {
    "clauses": [
@@ -1297,8 +1332,11 @@
    "rules": []
   },
   "REUSED_NONCE": {
-   "clauses": [],
-   "basis": "misuse of an approved algorithm; no clause in the knowledge base covers nonce handling",
+   "clauses": [
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140"
+   ],
+   "basis": "nonce reuse with an approved cipher (GCM, CTR, CBC) is a configuration demonstrated to be insecure (it leaks the XOR of the plaintexts and, in GCM, the authentication key), the same basis as ECB (WEAK_CIPHER_MODE): RBI; the cipher itself may be strong, so no SEBI clause",
    "rules": []
   },
   "SELF_SIGNED_LEAF": {
@@ -1309,8 +1347,11 @@
    "rules": []
   },
   "STATIC_IV": {
-   "clauses": [],
-   "basis": "misuse of an approved algorithm; no clause in the knowledge base covers IV handling",
+   "clauses": [
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140"
+   ],
+   "basis": "IV reuse with an approved cipher (GCM, CTR, CBC) is a configuration demonstrated to be insecure (it leaks the XOR of the plaintexts and, in GCM, the authentication key), the same basis as ECB (WEAK_CIPHER_MODE): RBI; the cipher itself may be strong, so no SEBI clause",
    "rules": []
   },
   "TLS_VERIFICATION_DISABLED": {
@@ -1381,12 +1422,12 @@
      "basis": "a SHA-1 signature algorithm: SP 800-131A Table 8"
     },
     {
-     "match": "(rsa|dsa|dh|diffie-hellman|ecdsa|ecdh)[-_ ]?(384|512|768|1024|1536)(?![0-9])|secp(112|128|160|192)|prime192|p-?192(?![0-9])",
+     "match": "(?<![a-z])(rsa|dsa|dh|diffie-hellman)\\W{0,3}(384|512|768|1024|1536)(?![0-9])|(?<![a-z])(ecdsa|ecdh|ec)\\W{0,3}(112|128|160|192)(?![0-9])|secp(112|128|160|192)|prime192|p-?192(?![0-9])",
      "clauses": [
       "nist-800-131a-below-112-bit"
      ],
-     "example": "RSA-1024",
-     "basis": "a public key below 112-bit security: SP 800-131A"
+     "example": "Undersized asymmetric key on RSA: 1024-bit is below the 2048-bit floor",
+     "basis": "a public key below 112-bit security (SP 800-131A): RSA/DSA/DH under 2048 bits or an EC key under 224 bits, also as the code scanner words it (\"RSA: 1024-bit\")"
     }
    ]
   },
@@ -1460,12 +1501,12 @@
    "basis": "a key below the minimum size (RBI key length); the 112-bit clause only for public keys the evidence names",
    "rules": [
     {
-     "match": "(rsa|dsa|dh|diffie-hellman|ecdsa|ecdh)[-_ ]?(384|512|768|1024|1536)(?![0-9])|secp(112|128|160|192)|prime192|p-?192(?![0-9])",
+     "match": "(?<![a-z])(rsa|dsa|dh|diffie-hellman)\\W{0,3}(384|512|768|1024|1536)(?![0-9])|(?<![a-z])(ecdsa|ecdh|ec)\\W{0,3}(112|128|160|192)(?![0-9])|secp(112|128|160|192)|prime192|p-?192(?![0-9])",
      "clauses": [
       "nist-800-131a-below-112-bit"
      ],
-     "example": "RSA-1024",
-     "basis": "a public key below 112-bit security"
+     "example": "Undersized asymmetric key on RSA: 1024-bit is below the 2048-bit floor",
+     "basis": "a public key below 112-bit security (SP 800-131A): RSA/DSA/DH under 2048 bits or an EC key under 224 bits, also as the code scanner words it (\"RSA: 1024-bit\")"
     }
    ]
   },

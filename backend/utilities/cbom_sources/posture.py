@@ -28,6 +28,7 @@ from sqlmodel import Session, select
 from backend.new_models import CbomCollectedAsset, CbomCollectionJob, CbomCollectionSource, CbomScanNode
 from backend.utilities.cbom_sources import agility as AGILITY
 from backend.utilities.cbom_sources import algid, crypto_kb
+from backend.utilities.cbom_sources import clause_evidence as CE
 from backend.utilities.cbom_sources import standards as STD
 from backend.utilities.cbom_sources.cbom_metrics import quantum_readiness_pct
 from backend.utilities.cbom_sources.classify import (
@@ -462,6 +463,7 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
     risky: list[dict[str, Any]] = []
     clause_assets: dict[tuple[str, str], set[int]] = defaultdict(set)
     clause_meta: dict[tuple[str, str], dict[str, Any]] = {}
+    clause_unrecorded: dict[tuple[str, str], set[int]] = defaultdict(set)  # cited without a recorded algorithm
     for row in rows:
         aid, a_type, qv, facts, source_id = row.id, row.asset_type, row.quantum_vulnerable, row.facts, row.source_id
         location, name, job_id, target = row.location, row.name, row.job_id, row.target
@@ -495,22 +497,28 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
                           "score": round(IMPACT_WEIGHT.get(impact, 0) * CRITICALITY.get(crit, 1.0)
                                          * EXPOSURE_FACTOR[exposure], 1),
                           "hndl": hndl(a_type, qv), "finding": finding})
-        # each code's own clauses, algorithm-specific ones only when this asset's evidence names the algorithm (#269)
-        evidence = " ".join(str(p) for p in (row.algorithm, name, finding) if p)
-        for code in a_codes:
-            for ref in crypto_kb.clauses_for("node", code, evidence):
-                clause = (ref["framework"], ref["id"])
-                clause_assets[clause].add(aid)
-                meta = clause_meta.setdefault(clause, {**ref, "codes": set()})
-                meta["codes"].add(code)
+        # each code's own clauses; algorithm-specific ones decided on the algorithms the classifier flagged, never on
+        # the asset's name or sentence (#269, #289); clause_evidence is also the run assets filter's (clause=)
+        for code, ref in CE.asset_clauses(row, a_codes):
+            clause = (ref["framework"], ref["id"])
+            clause_assets[clause].add(aid)
+            if ref.get("evidence") == "not_recorded":
+                clause_unrecorded[clause].add(aid)
+            meta = clause_meta.setdefault(clause, {**ref, "codes": set()})
+            meta["codes"].add(code)
     readiness_value, readiness_basis = readiness(classes)
     frameworks: dict[str, list[dict[str, Any]]] = defaultdict(list)
     framework_assets: dict[str, set[int]] = defaultdict(set)  # distinct assets behind any clause (#270)
     for clause, assets in sorted(clause_assets.items(), key=lambda kv: (kv[0][0], -len(kv[1]))):
         meta = clause_meta[clause]
         framework_assets[clause[0]].update(assets)
+        unrecorded = len(clause_unrecorded.get(clause) or ())
+        note = meta.get("note") if meta.get("evidence") != "not_recorded" else None
+        if unrecorded:  # #289: an algorithm clause is cited, flagged for review, when the algorithm was not recorded
+            note = " ".join(p for p in (f"{unrecorded} of {len(assets)} asset(s): {crypto_kb.NOT_RECORDED}", note) if p)
         frameworks[clause[0]].append({"id": meta["id"], "text": meta["text"], "source": meta["source"],
-                                      "note": meta.get("note"), "assets": len(assets), "codes": sorted(meta["codes"])})
+                                      "note": note, "assets": len(assets), "codes": sorted(meta["codes"]),
+                                      "key": meta.get("key"), **({"unrecorded": unrecorded} if unrecorded else {})})
     risky.sort(key=lambda r: (-r["score"], r["id"]))
     return {
         "assets": sum(classes.values()),
@@ -629,7 +637,8 @@ def asset_detail(row: CbomCollectedAsset, source: CbomCollectionSource | None, *
         "facts": facts,
         "details": [{**d, "impact": verdict["impacts"].get(d["code"]) or d["impact"]}
                     for d in crypto_kb.render("node", ordered, context=ctx, evidence=view["finding"] or "", texts=texts,
-                                              title=str(row.algorithm or row.name or ""))],
+                                              title=str(row.algorithm or row.name or ""),
+                                              clause_evidence=CE.evidence_by_code(row, ordered))],
         "library": library,
         "kb_version": crypto_kb.version(),
     }

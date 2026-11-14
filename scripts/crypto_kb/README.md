@@ -29,7 +29,7 @@ distributions back-port fixes without changing the upstream version, so a versio
 ## Rebuild
 
 ```bash
-python scripts/crypto_kb/build_kb.py 2026.11.15.2 /tmp/crypto_kb.json   # version must sort after the shipped one
+python scripts/crypto_kb/build_kb.py 2026.11.15.3 /tmp/crypto_kb.json   # version must sort after the shipped one
 cp /tmp/crypto_kb.json aibom/src/aibom/cbom/data/crypto_kb.json
 cp /tmp/crypto_kb.json backend/utilities/cbom_sources/data/crypto_kb.json
 ```

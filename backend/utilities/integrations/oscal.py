@@ -125,8 +125,9 @@ def controls_for(namespace: str, code: str) -> list[str]:
     return [c for c in dict.fromkeys(out or ["sc-13"]) if c in known]
 
 
-def _references(namespace: str, code: str, evidence: Iterable[str] = ("",)) -> list[dict[str, str]]:
-    """Links to the clauses the code breaks on the assets that carry it (one evidence text per asset; #269)."""
+def _references(namespace: str, code: str, evidence: Iterable[Any] = (None,)) -> list[dict[str, str]]:
+    """Links to the clauses the code breaks on the assets that carry it (one algorithm-name list per asset, None when
+    not recorded; #269, #289)."""
     from backend.utilities.cbom_sources.crypto_kb import clauses_for
 
     links, seen = [], set()
@@ -139,10 +140,20 @@ def _references(namespace: str, code: str, evidence: Iterable[str] = ("",)) -> l
     return links
 
 
-def _evidence(view: Any) -> str:
-    """What the asset says about its algorithm: name, label and the stored finding text of its rows."""
-    parts = [view.algorithm, view.label, *(getattr(r, "finding", None) for r in view.rows or ())]
-    return " ".join(str(p) for p in parts if p)
+def _evidence(view: Any, namespace: str, code: str) -> list[str] | None:
+    """The algorithm names the code's clauses are decided on (#289): for a collected asset the algorithms the
+    classifier flagged for the code on its rows (never its name, label or finding sentence); for a code-scan finding
+    the scanner's own algorithm fields. None when nothing was recorded."""
+    if namespace == "node":
+        from backend.utilities.cbom_sources import clause_evidence as CE
+
+        names = [n for row in view.rows or () if hasattr(row, "asset_type")
+                 for n in (CE.evidence_by_code(row, [code]).get(code) or [])]
+        return list(dict.fromkeys(names)) or None
+    from backend.utilities.cbom_sources.kb_remediation import code_evidence
+
+    names = [n for row in view.rows or () if isinstance(row, dict) for n in code_evidence(row)]
+    return list(dict.fromkeys(names or ([view.algorithm] if view.algorithm else []))) or None
 
 
 def _text(value: Any, fallback: str) -> str:
@@ -166,7 +177,7 @@ def assessment_results(*, team_id: int, anchor: str, title: str, namespace: str,
     collected = _ts(end or start)
     items, observations = [], []
     by_code: dict[str, list[tuple[str, str | None]]] = {}
-    evidence_by_code: dict[str, list[str]] = {}
+    evidence_by_code: dict[str, list[list[str] | None]] = {}
     for source_name, view in findings_views:
         item_uuid, obs_uuid = _uuid(team_id, "item", view.key), _uuid(team_id, anchor, "obs", view.key)
         extra = view.extra or {}
@@ -186,7 +197,7 @@ def assessment_results(*, team_id: int, anchor: str, title: str, namespace: str,
         })
         for code in codes:
             by_code.setdefault(code, []).append((obs_uuid, view.impact))
-            evidence_by_code.setdefault(code, []).append(_evidence(view))
+            evidence_by_code.setdefault(code, []).append(_evidence(view, namespace, code))
     findings, reviewed = [], set()
     known = catalog()
     for code in sorted(by_code):

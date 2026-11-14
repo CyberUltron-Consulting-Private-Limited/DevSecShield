@@ -63,7 +63,7 @@ assert.ok(ENGINE_KEYS.NIST.every((k) => k.startsWith("nist_") || k === "fips_140
 assert.equal(by["CERT-In"].assets, 4);
 assert.equal(by["CERT-In"].clausesTouched, 2);
 assert.equal(by.RBI.assets, 2);
-assert.deepEqual(by["CERT-In"].drill, { kind: "codes", codes: ["NO_PQ_KEX", "QUANTUM_VULNERABLE", "WEAK_CIPHER"], label: "CERT-In · every clause" });
+assert.deepEqual(by["CERT-In"].drill, { kind: "clause", clause: "CERT-In", codes: ["NO_PQ_KEX", "QUANTUM_VULNERABLE", "WEAK_CIPHER"], label: "CERT-In · every clause" });
 // clause rows: readable one-line summary, fixes, regulation text kept for the collapsed block, codes drill-down
 const sha1 = by.NIST.clauses[0];
 assert.equal(sha1.summary, "SHA-1 based SSH key exchange, Weak cipher suites accepted");
@@ -71,7 +71,7 @@ assert.ok(!/[A-Z]+_[A-Z0-9_]+/.test(sha1.summary), "no raw finding code in the s
 assert.deepEqual(sha1.fixes.map((f) => f.label), ["SHA-1 based SSH key exchange", "Weak cipher suites accepted"]);
 assert.equal(sha1.quote, "Digital signature generation: Disallowed ...");
 assert.equal(sha1.verdict, "fail");
-assert.deepEqual(sha1.drill, { kind: "codes", codes: ["SSH_DH_SHA1", "WEAK_CIPHER"], label: "NIST · SP 800-131A Rev. 2, Sec. 9 Table 8 (SHA-1)" });
+assert.deepEqual(sha1.drill, { kind: "clause", clause: "NIST:SP 800-131A Rev. 2, Sec. 9 Table 8 (SHA-1)", codes: ["SSH_DH_SHA1", "WEAK_CIPHER"], label: "NIST · SP 800-131A Rev. 2, Sec. 9 Table 8 (SHA-1)" });
 assert.equal(by.RBI.clauses[0].note, "Applies to REs other than commercial banks");
 assert.equal(by.RBI.clauses[0].fixes.length, 1, "one fix per distinct remediation");
 // a framework the KB does not touch lists the engine's open requirements instead (fail and needs-evidence)
@@ -108,17 +108,25 @@ assert.equal(runAssetId("zs-asset-42"), 42);
 assert.equal(runAssetId("crypto-algo-rsa"), null);
 assert.equal(runAssetId("zs-asset-0"), null);
 assert.equal(runAssetId("zs-asset-99999999999"), null);
-const codesDrill = runDrillFilters(sha1.drill!);
-assert.equal(codesDrill.truncated, false);
-assert.deepEqual(codesDrill.patch.codes, ["SSH_DH_SHA1", "WEAK_CIPHER"]);
-assert.equal(codesDrill.patch.view, "all", "the All view: the clause counts every collected asset with the code");
-assert.ok("impact" in codesDrill.patch && codesDrill.patch.impact === undefined, "other filters cleared");
-const filters = { ...DEFAULT_FILTERS, ...codesDrill.patch };
-assert.deepEqual(filtersToParams(filters), { view: "all", page: 1, page_size: 50, code: "SSH_DH_SHA1,WEAK_CIPHER" });
+// #289: a clause drills by the clause (the server applies the posture's rule), never by its codes: SSH_CBC_CIPHER is
+// behind TDEA only on a 3des-cbc asset, so "assets with the code" would list more rows than the clause counts
+const clauseDrill = runDrillFilters(sha1.drill!);
+assert.equal(clauseDrill.truncated, false);
+assert.equal(clauseDrill.patch.clause, "NIST:SP 800-131A Rev. 2, Sec. 9 Table 8 (SHA-1)");
+assert.equal(clauseDrill.patch.codes, undefined, "no code filter: the clause decides");
+assert.equal(clauseDrill.patch.view, "all", "the All view: the clause counts every collected asset behind it");
+assert.ok("impact" in clauseDrill.patch && clauseDrill.patch.impact === undefined, "other filters cleared");
+const filters = { ...DEFAULT_FILTERS, ...clauseDrill.patch };
+assert.deepEqual(filtersToParams(filters), { view: "all", page: 1, page_size: 50, clause: "NIST:SP 800-131A Rev. 2, Sec. 9 Table 8 (SHA-1)" });
 assert.equal(hasActiveFilters(filters), true, "the table shows the filtered total and Clear filters");
+assert.deepEqual(filtersToParams({ ...DEFAULT_FILTERS, ...runDrillFilters(by["CERT-In"].drill!).patch }),
+  { view: "all", page: 1, page_size: 50, clause: "CERT-In" }, "a framework's count drills into every clause of it");
+const codesDrill = runDrillFilters({ kind: "codes", codes: ["SSH_DH_SHA1", "WEAK_CIPHER"], label: "x" });
+assert.deepEqual(filtersToParams({ ...DEFAULT_FILTERS, ...codesDrill.patch }), { view: "all", page: 1, page_size: 50, code: "SSH_DH_SHA1,WEAK_CIPHER" });
 const refsDrill = runDrillFilters(by["CNSA 2.0"].drill!);
 assert.deepEqual(refsDrill.patch.asset_ids, [11, 13], "only the run's zs-asset refs");
 assert.equal(refsDrill.patch.codes, undefined, "a refs drill replaces a codes drill");
+assert.equal(refsDrill.patch.clause, undefined, "a refs drill replaces a clause drill");
 assert.deepEqual(filtersToParams({ ...DEFAULT_FILTERS, ...refsDrill.patch }), { view: "all", page: 1, page_size: 50, asset_id: "11,13" });
 const many = runDrillFilters({ kind: "refs", refs: Array.from({ length: 600 }, (_, i) => `zs-asset-${i + 1}`), label: "x" });
 assert.equal(many.patch.asset_ids!.length, MAX_DRILL_IDS);
