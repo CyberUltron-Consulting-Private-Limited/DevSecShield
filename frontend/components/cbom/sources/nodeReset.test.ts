@@ -30,6 +30,6 @@ assert.ok(success.includes("token: outcome.token"), "the wizard only gets a real
 assert.ok(tab.includes('data-testid="node-reenrolling"'), "the notice is on the page")
 assert.ok(tab.includes("{offersRegistrationToken(node) ? ("), "the row menu asks the same rule")
 const api = fs.readFileSync(path.join(__dirname, "../../../utils/backend_api.ts"), "utf8")
-assert.ok(api.includes("registration_token: string | null }> => {"), "the reset response type allows no token")
+assert.ok(api.includes("registration_token: string | null; install_links?: InstallLinks | null }> => {"), "the reset response type allows no token (and no install links)")
 
 console.log("node reset tests passed")

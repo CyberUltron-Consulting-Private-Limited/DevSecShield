@@ -27,9 +27,10 @@ import { apiBaseURL } from "@/utils/interceptors";
 
 import { cbomSourcesKeys } from "./keys";
 import { AgentPoolsCard } from "./AgentPoolsCard";
-import { ApiEgressRow, NodeInstallCommand, apiHost } from "./NodeInstall";
+import { ApiEgressRow, NodeCommandBlock, NodeInstallCommand, NodeOnePaste, apiHost } from "./NodeInstall";
 import { NodeDownloads } from "./NodeDownloads";
 import {
+  DEFAULT_PROXY_CA_FILE,
   DEPLOY_SUPPORT,
   ago,
   insecureApiWarning,
@@ -39,8 +40,10 @@ import {
   offersRegistrationToken,
   readTextFile,
   registrationOutcome,
+  registryInstall,
   singleFlight,
   type DeployMethod,
+  type InstallLinks,
 } from "./logic";
 import { revealById } from "./reveal";
 import {
@@ -140,7 +143,8 @@ export default function ScanNodesTab({
   const [wizard, setWizard] = useState<WizardState>(EMPTY_WIZARD);
   const [wizardError, setWizardError] = useState<string | null>(null);
   // again: a new token for a node that exists (New registration token, Reset), whose old container may still run
-  const [created, setCreated] = useState<{ nodeId: number; token: string; again?: boolean } | null>(null);
+  // links: the install links of that token (one-paste install on a terminal-only host; null without server files)
+  const [created, setCreated] = useState<{ nodeId: number; token: string; again?: boolean; links?: InstallLinks | null } | null>(null);
   const [editing, setEditing] = useState<CbomScanNode | null>(null);
   const [deleting, setDeleting] = useState<CbomScanNode | null>(null);
   const [resetting, setResetting] = useState<CbomScanNode | null>(null);
@@ -187,7 +191,7 @@ export default function ScanNodesTab({
         proxy_ca_pem: wizard.proxyCa || null,
         proxy_tls_inspect: wizard.tlsInspect,
       }),
-    onSuccess: (data) => setCreated({ nodeId: data.node.id, token: data.registration_token }),
+    onSuccess: (data) => setCreated({ nodeId: data.node.id, token: data.registration_token, links: data.install_links ?? null }),
     onSettled: invalidate,
   });
 
@@ -202,7 +206,7 @@ export default function ScanNodesTab({
         return;
       }
       setReenrolling(null);
-      setCreated({ nodeId: data.node.id, token: outcome.token, again: true });
+      setCreated({ nodeId: data.node.id, token: outcome.token, again: true, links: data.install_links ?? null });
       // The (read-only) wizard shows the node this token is for, not the last values typed into it.
       setWizard({
         ...EMPTY_WIZARD,
@@ -258,6 +262,32 @@ export default function ScanNodesTab({
   const mainImage = method === "helm" && images.pulled ? images.pulled : images.loaded;
   // The install command uses this deployment's API URL: say before the customer runs it when a node cannot connect.
   const apiWarning = insecureApiWarning(apiUrl);
+  // The one-paste download trusts the proxy's CA (a file on the host) only when the proxy inspects TLS and a CA was
+  // given ("trust its CA only for ZeroShield hostnames"): curl/wget use it for the download from ZeroShield only.
+  const caGiven = (createdNode?.proxy_tls_inspect ?? wizard.tlsInspect) && (createdNode?.has_proxy_ca ?? !!wizard.proxyCa);
+  const caFile = caGiven ? (/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(wizard.proxyCaName) ? wizard.proxyCaName : DEFAULT_PROXY_CA_FILE) : null;
+  const nodeName = createdNode?.name ?? wizard.name;
+  const nodeProxy = createdNode?.proxy_url ?? (wizard.proxyUrl.trim() || null);
+  // A public registry (the server names its image, and for Helm its chart): docker pull / helm from oci://.
+  const registryHost = artifactsQuery.data?.pull_image_ref?.split("/")[0] ?? "";
+  const registryCmd = created
+    ? registryInstall(method, artifactsQuery.data, { apiUrl, token: created.token, name: nodeName, proxyUrl: nodeProxy,
+        insecureHttp: apiUrl.trim().startsWith("http://") })
+    : null;
+  // The commands from files served by ZeroShield: the one-paste download (curl/wget) and the command for files
+  // downloaded in the browser. With a public registry they are the air-gapped alternative (the file's image then).
+  const fileImage = registryCmd ? images.loaded : mainImage;
+  const fileCommands = created ? (
+    <>
+      <NodeOnePaste apiUrl={apiUrl} method={method} links={created.links} token={created.token} name={nodeName}
+        proxyUrl={nodeProxy} caFile={caFile} image={images.loaded.image} />
+      {created.links && (
+        <p className="text-xs text-zinc-600 dark:text-zinc-400">Or, with the files you downloaded in the browser above:</p>
+      )}
+      <NodeInstallCommand apiUrl={apiUrl} method={method} token={created.token} name={nodeName} proxyUrl={nodeProxy}
+        image={fileImage.image} source={fileImage} />
+    </>
+  ) : null;
 
   return (
     <div className="space-y-6">
@@ -452,31 +482,44 @@ export default function ScanNodesTab({
                 loading={artifactsQuery.isLoading} error={artifactsQuery.error} />
               {created && (
                 <div className="mt-4 space-y-2">
-                  <NodeInstallCommand
-                    apiUrl={apiUrl}
-                    method={method}
-                    token={created.token}
-                    name={createdNode?.name ?? wizard.name}
-                    proxyUrl={createdNode?.proxy_url ?? (wizard.proxyUrl.trim() || null)}
-                    image={mainImage.image}
-                    source={mainImage}
-                  />
-                  {method === "docker" && images.pulled && (
-                    <div className="space-y-1" data-testid="node-command-pull">
-                      <p className="text-xs text-zinc-600 dark:text-zinc-400">
-                        Or, on a host that can reach <span className="font-mono">{images.pulled.image.split("/")[0]}</span>,
-                        pull the image instead of loading the file:
-                      </p>
-                      <NodeInstallCommand
-                        apiUrl={apiUrl}
-                        method="docker"
-                        token={created.token}
-                        name={createdNode?.name ?? wizard.name}
-                        proxyUrl={createdNode?.proxy_url ?? (wizard.proxyUrl.trim() || null)}
-                        image={images.pulled.image}
-                        source={images.pulled}
-                      />
-                    </div>
+                  {registryCmd ? (
+                    <>
+                      {/* A public registry (staging: GHCR): the main command pulls the pinned release, no login. */}
+                      <div className="space-y-1" data-testid="node-command-pull">
+                        <p className="text-sm font-medium text-zinc-900 dark:text-white">
+                          Install with one command: the image comes from{" "}
+                          <span className="font-mono">{registryHost}</span> (public, no login needed)
+                        </p>
+                        <NodeCommandBlock apiUrl={apiUrl} code={registryCmd} />
+                      </div>
+                      <div className="space-y-2 pt-2" data-testid="node-air-gapped">
+                        <p className="text-sm font-medium text-zinc-900 dark:text-white">
+                          Air-gapped host, or no access to <span className="font-mono">{registryHost}</span>? Use the files from ZeroShield:
+                        </p>
+                        {fileCommands}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      {fileCommands}
+                      {method === "docker" && images.pulled && (
+                        <div className="space-y-1" data-testid="node-command-pull">
+                          <p className="text-xs text-zinc-600 dark:text-zinc-400">
+                            Or, on a host that can reach <span className="font-mono">{images.pulled.image.split("/")[0]}</span>,
+                            pull the image instead of loading the file:
+                          </p>
+                          <NodeInstallCommand
+                            apiUrl={apiUrl}
+                            method="docker"
+                            token={created.token}
+                            name={createdNode?.name ?? wizard.name}
+                            proxyUrl={createdNode?.proxy_url ?? (wizard.proxyUrl.trim() || null)}
+                            image={images.pulled.image}
+                            source={images.pulled}
+                          />
+                        </div>
+                      )}
+                    </>
                   )}
                   {(method === "ova" || method === "ami") && (
                     <p className="text-xs text-zinc-600 dark:text-zinc-400" data-testid="deploy-build-kit">

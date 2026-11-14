@@ -33,12 +33,15 @@ TYPES: dict[str, str] = {
     "cert_expiring": "certificate.expiring",
     "schedule_skipped": "schedule.skipped",
     "scan_finished": "scan.finished",
+    "q0_closed": "register.q0_closed",  # CB-23: a Q0 gap of the quantum risk register closed (one per opening)
 }
 EVENT_KINDS = tuple(TYPES)
 SEVERITIES = ("Critical", "High", "Medium", "Low", "Info")
 ENQUEUE_BATCH = 1000
 _DETAIL_KEYS = ("finding_codes", "type", "location", "target", "changes", "asset_removed", "new_asset", "not_after",
-                "bom_ref", "rule_change", "reason", "cause")
+                "bom_ref", "rule_change", "reason", "cause",
+                # q0_closed (CB-23)
+                "item_kind", "item_key", "sub_reason", "new_grade", "opened_at", "run_id")
 
 
 def event_uid(*parts: Any) -> str:

@@ -602,7 +602,8 @@ def test_the_migration_is_the_one_head():
         revs.add(rev.group(1))
         if down:
             downs.add(down.group(1))
-    assert revs - downs == {"cb20estate001"}
+    # one head; later revisions (CB-23 cb23q0gap001) chain after this one
+    assert len(revs - downs) == 1 and ("cb20estate001" in downs or revs - downs == {"cb20estate001"})
     assert _migration().down_revision in revs
 
 
