@@ -14,7 +14,8 @@ backend test fails when the copies differ. algid_tables.py is written by
 scripts/algid/build_algid.py from the captured registries in scripts/algid/sources:
 change a source and regenerate, never edit a table by hand. This file is hand-written:
 edit the backend copy only, then run ``build_algid.py --sync``. Stdlib only. The tables
-are read-only and nothing is memoised, so a lookup never changes module state.
+are read-only. ``resolve`` keeps one bounded LRU memo of str lookups (CB-04 ST-9),
+cleared when a table it reads is rebound, so it never answers from an older table.
 
 ``status`` follows one rule for every registry row (curated.json "status_rule"): a
 published RFC is ``standard``; an RFC-to-be (``RFC-ietf-*``) or an Internet-Draft is
@@ -25,6 +26,7 @@ given for ``standard`` (CB-16).
 
 from __future__ import annotations
 
+import functools
 import re
 import unicodedata
 from collections.abc import Mapping
@@ -70,6 +72,22 @@ _OPENSSL_TEXT: Mapping[str, str] = _t.OPENSSL_TEXT
 _ALIASES: Mapping[str, str] = _t.ALIASES
 _X509_NAMES: Mapping[str, str] = _t.CODE_LANE_X509_NAMES
 _X509_KEYS: Mapping[str, str] = _t.CODE_LANE_X509_KEYS
+_GCP: Mapping[str, str] = _t.GCP
+_KMIP: Mapping[int, str] = _t.KMIP
+_PKCS11_KEY_TYPES: Mapping[int, str] = _t.PKCS11_KEY_TYPES
+_PKCS11_PARAMETER_SETS: Mapping[int, Mapping[int, str]] = _t.PKCS11_PARAMETER_SETS
+_JOSE_KEY_TYPES: tuple[str, ...] = _t.JOSE_KEY_TYPES
+_JOSE_KTY: Mapping[str, str] = _t.JOSE_KTY
+_JOSE_CRV: Mapping[str, str] = _t.JOSE_CRV
+_JOSE_ALG: Mapping[str, str] = _t.JOSE_ALG
+# The families a crv or alg may name for each JWK key type (RFC 7518 s6, RFC 8037,
+# RFC 9964); oct (symmetric) has none.
+_JOSE_FAMILIES: Mapping[str, frozenset[str]] = MappingProxyType({
+    "RSA": frozenset({"RSA"}),
+    "EC": frozenset({"EC", "ECDSA"}),
+    "OKP": frozenset({"ED25519", "ED448", "X25519", "X448", "EDDSA"}),
+    "AKP": frozenset({"PQ"}),
+})
 _OID_PREFIXES: tuple[tuple[str, str, str | None], ...] = _t.OID_PREFIXES
 _GREASE: tuple[int, ...] = _t.GREASE
 _PQ_MARKERS: tuple[str, ...] = _t.PQ_MARKERS
@@ -246,6 +264,17 @@ def resolve(value: object, namespace: str | None = None) -> Identity | None:
         return None
     if not isinstance(value, str):
         return None
+    if len(value) > _MEMO_MAX_TEXT:
+        return _resolve_text(value, namespace)
+    global _memo_tables
+    tables = _lookup_tables()
+    if tables != _memo_tables:  # a table was rebound in this process
+        _resolve_memo.cache_clear()
+        _memo_tables = tables
+    return _resolve_memo(value, namespace)
+
+
+def _resolve_text(value: str, namespace: str | None) -> Identity | None:
     text = value.strip()
     if text.casefold() in _SENTINELS:
         return None
@@ -254,6 +283,24 @@ def resolve(value: object, namespace: str | None = None) -> Identity | None:
     if namespace is not None:
         return _strict(text, namespace)
     return _named(text) or _marker(text) or _fallback(text)
+
+
+# The memo (CB-04 ST-9): an LRU of at most 4,096 str lookups, never an unbounded dict
+# (identifiers come from scan nodes), and none for text longer than 256 characters.
+# An Identity is immutable, so one cached answer can be shared. Every table a str
+# lookup reads is compared by identity on each call; when one was rebound (a test, a
+# reload) the memo is cleared first, so it never serves an older table's answer.
+_MEMO_MAX_TEXT = 256
+_resolve_memo = functools.lru_cache(maxsize=4096)(_resolve_text)
+
+
+def _lookup_tables() -> tuple[object, ...]:
+    return (
+        _ALGS, _OIDS, _ALIASES, _REVERSE_OID, _OID_PREFIXES, _PQ_MARKERS,
+        _PRE_STANDARD_MARKERS, _CLASSICAL_MARKERS, _KEM_MARKERS, _TOKEN_MARKERS,
+        _STATEFUL, _QV_FAMILIES, _SENTINELS, _NOT_DSA, _OPENSSL_TEXT, _SSH_KEX,
+        _IKE_KE, _IKE_KE_NAMES, _TLS_GROUPS, _TLS_SIGSCHEMES,
+    )
 
 
 def _named(text: str) -> Identity | None:
@@ -369,6 +416,58 @@ def aws_tls_policy(service: str, name: object) -> tuple[str, ...] | None:
     return table.get(name)
 
 
+def gcp(value: object) -> Identity | None:
+    """A Cloud KMS CryptoKeyVersionAlgorithm value, e.g. "KEM_XWING" or
+    "PQ_SIGN_ML_DSA_65" (case-insensitive). The identity is the key's: the signing
+    scheme and digest an enum names stay in the enum."""
+    if not isinstance(value, str):
+        return None
+    name = _GCP.get(value.strip().upper())
+    return _identity(name, "enum") if name else None
+
+
+def kmip(value: int) -> Identity | None:
+    """A KMIP Cryptographic Algorithm enumeration value (KMIP 3.0: 0x3D is ML-DSA-65).
+    Symmetric ciphers, hashes and MACs with no algid row give None."""
+    if not _codepoint(value):
+        return None
+    name = _KMIP.get(value)
+    return _identity(name, "enum") if name else None
+
+
+def pkcs11_key_type(key_type: int, parameter_set: int | None = None) -> Identity | None:
+    """A PKCS#11 CKA_KEY_TYPE (CKK_*), refined by CKA_PARAMETER_SET (CKP_*) for ML-DSA,
+    SLH-DSA and ML-KEM keys: pkcs11_key_type(0x4A, 2) is ML-DSA-65, and 0x4A alone (or
+    with a parameter set PKCS#11 3.2 does not define) is the ML-DSA family."""
+    if not _codepoint(key_type):
+        return None
+    name = _PKCS11_KEY_TYPES.get(key_type)
+    if name is None:
+        return None
+    sets = _PKCS11_PARAMETER_SETS.get(key_type) or {}
+    if isinstance(parameter_set, int) and not isinstance(parameter_set, bool):
+        name = sets.get(parameter_set, name)
+    return _identity(name, "enum")
+
+
+def jose(kty: object, alg: object = None, crv: object = None) -> Identity | None:
+    """A JSON Web Key's algorithm. ``kty`` (REQUIRED, RFC 7517 s4.1) must be a
+    registered key type and decides the family; ``crv`` (EC, OKP), else ``alg``
+    (OPTIONAL, only the intended use), refines it when its family fits the key type:
+    an AKP key (RFC 9964) is named by its alg, ML-DSA-44/65/87. A crv or alg of another
+    family is ignored (an RSA key with alg ML-DSA-65 is RSA), so the key type alone
+    answers: EC, RSA, or None for a symmetric ``oct`` key and an OKP/AKP key."""
+    if not isinstance(kty, str) or kty not in _JOSE_KEY_TYPES:
+        return None
+    fits = _JOSE_FAMILIES.get(kty, frozenset())
+    for table, member in ((_JOSE_CRV, crv), (_JOSE_ALG, alg)):
+        name = table.get(member) if isinstance(member, str) else None
+        if name and _ALGS[name][0] in fits:
+            return _identity(name, "enum")
+    name = _JOSE_KTY.get(kty)
+    return _identity(name, "enum") if name else None
+
+
 def openssl_text(text: str) -> Identity | None:
     """The algorithm text OpenSSL 3.0 or 3.5 prints in ``x509 -text`` (strict)."""
     return resolve(text, "openssl_text")
@@ -385,6 +484,12 @@ def hint(value: object) -> str | None:
         if text.startswith(prefix):
             return hint_text
     return None
+
+
+def is_sentinel(value: object) -> bool:
+    """True for the placeholder texts tools print where there is no algorithm
+    ("<NULL>", "(NONE)", "Unknown OID", "none", ""): absent, not unknown."""
+    return isinstance(value, str) and value.strip().casefold() in _SENTINELS
 
 
 def family_label(value: object) -> str | None:
@@ -548,3 +653,6 @@ def tbs_spki_alg(tbs_der: bytes) -> tuple[str, str | None] | None:
         return None
     _tag, begin, _body, end = kids[5]
     return spki_alg(data[begin:end])
+
+
+_memo_tables: tuple[object, ...] = _lookup_tables()

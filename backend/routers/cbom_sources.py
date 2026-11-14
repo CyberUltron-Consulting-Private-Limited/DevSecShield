@@ -14,12 +14,14 @@ never returned.  Responses carry ``secrets_set`` (names) instead.
 """
 from __future__ import annotations
 
+import contextlib
 import datetime as _dt
-from typing import Annotated, Any
+import tempfile
+from typing import IO, Annotated, Any, Iterator
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import ValidationError
 from sqlalchemy import func, update
 from sqlalchemy.exc import IntegrityError
@@ -39,6 +41,7 @@ from backend.new_models import (
     Scan,
     Team,
 )
+from backend.utilities.cbom_sources import agility as AGILITY
 from backend.utilities.cbom_sources import agents as AG
 from backend.utilities.cbom_sources import jobs as J
 from backend.utilities.cbom_sources import targets as T
@@ -64,12 +67,16 @@ from backend.utilities.cbom_sources.http import (
     write_limiter,
 )
 from backend.utilities.cbom_sources import cdx_xml as CDX_XML
+from backend.utilities.cbom_sources import export_slots as EXPORT_SLOTS
 from backend.utilities.cbom_sources import inventory as INV
 from backend.utilities.cbom_sources import posture as POSTURE
+from backend.utilities.cbom_sources import qgrade as QGRADE
 from backend.utilities.cbom_sources import runs as RUNS
+from backend.utilities.cbom_sources import run_assets as RUN_ASSETS
 from backend.utilities.cbom_sources import schedules as SCHED
 from backend.utilities.cbom_sources.classify import ASSET_TYPES
-from backend.utilities.cbom_sources.kinds import KINDS, METADATA_FIELDS, credential_target_problem, validate_secret_value
+from backend.utilities.cbom_sources.kinds import (KINDS, METADATA_FIELDS, credential_target_problem, ct_discovery_enabled,
+                                                validate_secret_value)
 from backend.utilities.cbom_sources.planning import RATES_C, credits, node_status, plan_run, source_targets
 from backend.utilities.cbom_sources.schemas import (
     AreaUpdate,
@@ -222,7 +229,7 @@ def _overview(engine, team_id: int, user_id: int) -> dict:
             "code": {"cbom_scans": int(code_scans or 0)},
             "settings": {k: v for k, v in public_settings(settings, now).items()
                          if k in ("stop_all_network", "next_window_start", "in_window_now", "window_timezone",
-                                  "aws_external_id", "aws_collection_configured")} | {
+                                  "aws_external_id", "aws_collection_configured", "ct_discovery_enabled")} | {
                 "network_exclusions": len(settings.network_exclusions or []),
                 "ports": len(settings.ports or []), "sni_hostnames": len(settings.sni_hostnames or []),
                 "cert_domains": len(settings.cert_domains or []),
@@ -505,9 +512,29 @@ def _queue_test(session: Session, source: CbomCollectionSource, settings, user_i
     return {"job_id": job.id}
 
 
+CT_SOURCE_NAME = "Certificate Transparency"
+
+
+def _ct_prepare(engine, team_id: int, body: SourceCreate) -> SourceCreate:
+    """A ``ct_logs`` source: only when the server has CT discovery on; one per team (its fixed name, so the unique
+    (team, kind, name) index enforces it); ``import_saved_domains`` adds the saved certificate domains."""
+    if not ct_discovery_enabled():
+        raise HTTPException(status_code=400, detail="Certificate Transparency discovery is not enabled on this server")
+    config = dict(body.config or {})
+    if body.import_saved_domains:
+        with Session(engine) as session:
+            saved = list(get_or_create_settings(session, team_id).cert_domains or [])
+        config["domains"] = list(config.get("domains") or []) + [d for d in saved if isinstance(d, str)]
+    return body.model_copy(update={"name": CT_SOURCE_NAME, "config": config})
+
+
 def _create_source(engine, team_id: int, user_id: int, body: SourceCreate) -> dict:
     now = utcnow()
     spec = KINDS[body.kind]
+    if body.kind == "ct_logs":
+        body = _ct_prepare(engine, team_id, body)
+    elif body.import_saved_domains:
+        raise HTTPException(status_code=400, detail="import_saved_domains: only for a Certificate Transparency source")
     cfg = _validate_config(body.kind, body.config)
     with Session(engine) as session:
         settings = get_or_create_settings(session, team_id)
@@ -540,10 +567,21 @@ def _create_source(engine, team_id: int, user_id: int, body: SourceCreate) -> di
             session.flush()
         except IntegrityError:
             session.rollback()
+            if body.kind == "ct_logs":
+                raise HTTPException(status_code=409, detail="This team already has a Certificate Transparency source; "
+                                                            "edit its domains instead") from None
             raise HTTPException(status_code=409, detail=f"A {spec.label.lower()} named {body.name} already exists") from None
         test = None
         if body.test_after_save and body.kind not in _LIVE_TESTS:
             test = _queue_test(session, source, settings, user_id, now)
+        if body.kind == "ct_logs" and body.import_saved_domains and settings.cert_domains:
+            # one list: the saved domains now live in the source (same transaction as the source itself)
+            settings.cert_domains = []
+            settings.row_version = (settings.row_version or 1) + 1
+            settings.updated_by_user_id, settings.last_updated = user_id, now
+            session.add(settings)
+            audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="settings.update",
+                  object_type="settings", object_id=settings.id, changed_fields=["cert_domains:moved_to_source"])
         audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="source.create",
               object_type="source", object_id=source.id,
               changed_fields=["kind", "name", "config", "node_id"] + [f"secrets.{k}" for k in secrets_])
@@ -610,6 +648,8 @@ def _update_source(engine, team_id: int, user_id: int, source_id: int, body: Sou
         check_version(source, body.expected_version)
         if body.kind is not None and body.kind != source.kind:
             raise HTTPException(status_code=400, detail="kind: a source's kind cannot be changed; add a new source")
+        if source.kind == "ct_logs" and body.name is not None and body.name != source.name:
+            raise HTTPException(status_code=400, detail="name: the Certificate Transparency source keeps its name")
         settings = get_or_create_settings(session, team_id)
         spec = KINDS[source.kind]
         old_cfg = _validate_config(source.kind, source.config or {}) if source.config else None
@@ -733,10 +773,11 @@ def _remove_source(session: Session, source: CbomCollectionSource, team_id: int,
     J.stop_discoveries_using(session, source, now, "A range in this discovery was deleted")
     for job in session.exec(select(CbomCollectionJob).where(CbomCollectionJob.source_id == source.id)).all():
         # the stable uid stays on the job, so the deleted source's runs still compare with each other
-        job.params = {**(job.params or {}), "source_name": source.name,
+        job.params = {**(job.params or {}), "source_name": source.name, "source_kind": source.kind,
                       "source_uid": (job.params or {}).get("source_uid") or source.source_uid}
         job.source_id = None
         session.add(job)
+        job.params = {**job.params, **AGILITY.deleted_source_params(source)}  # CB-24: old runs keep their class
     # collected assets stay with their run; only the link to the deleted source goes
     session.exec(update(CbomCollectedAsset).where(CbomCollectedAsset.source_id == source.id).values(source_id=None))
     session.flush()
@@ -977,6 +1018,12 @@ def _update_settings(engine, team_id: int, user_id: int, body: SettingsUpdate) -
                     parsed = T.parse_exclusions([item.cidr])
                 except T.TargetError as exc:
                     raise HTTPException(status_code=400, detail=f"network_exclusions: {exc}") from None
+                if parsed.hostnames:
+                    # Same rule and words as the UI (teamNeverScan.ts teamExclusionError). On the node a listed name
+                    # that does not resolve holds every target of the jobs that carry it; at team level that would be
+                    # every job of the team.
+                    raise HTTPException(status_code=422, detail="network_exclusions: "
+                                        + T.HOST_NAME_NOT_ALLOWED.format(entry=item.cidr.strip()))
                 if not parsed.normalized:
                     continue
                 canonical = parsed.normalized[0]
@@ -1369,9 +1416,11 @@ async def get_run(team_id: TeamId, run_id: ObjectId, Authorization: AuthHeader =
 
 
 def _run_assets(engine, team_id: int, run_id: int, params: dict) -> dict:
+    view, status = params.pop("view", "all"), params.pop("status", None)
     with Session(engine) as session:
         run = _get_owned(session, CbomCollectionRun, run_id, team_id, "Run")
-        out = INV.list_assets(session, team_id=team_id, run_id=run.id, **params)
+        # CB-38: the inventory page plus the unified results table's fields (view, status, key, wave, risk score)
+        out = RUN_ASSETS.list_run_assets(session, team_id=team_id, run=run, params=params, view=view, status=status)
         out["run"] = public_run(run)
         return out
 
@@ -1392,16 +1441,50 @@ async def run_assets(team_id: TeamId, run_id: ObjectId,
                      q: str | None = Query(default=None, max_length=100),
                      source_id: int | None = Query(default=None, ge=1, le=2_147_483_647),
                      page: int = Query(default=1, ge=1, le=10_000), page_size: int = Query(default=50, ge=1, le=200),
+                     view: str = Query(default="all", pattern="^(all|findings)$"),
+                     status: str | None = Query(default=None, pattern="^(not_started|in_progress|fixed|ignored)$"),
                      Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
-    params = _asset_params(type, impact, quantum, q, source_id, page, page_size)
+    params = {**_asset_params(type, impact, quantum, q, source_id, page, page_size), "view": view, "status": status}
     return _ok(await _run("run assets", team_id, _run_assets, engine, team_id, run_id, params))
 
 
-def _run_cbom(engine, team_id: int, run_id: int) -> dict:
+EXPORT_SPOOL_BYTES = 8 * 1024 * 1024  # an export up to this size stays in memory; a larger one goes to a temp file
+
+
+def _run_cbom(engine, team_id: int, run_id: int, fmt: str = "json") -> IO[bytes]:
+    """The run's CycloneDX document written to a temporary file (positioned at its start), checked first: 404 for
+    another team's run; 429 with Retry-After when the run is large and every export slot is taken (export_slots).
+    The document is written one component at a time (inventory.write_cyclonedx), so a 50,000-component export never
+    holds the whole document, an XML tree or the encoded bytes in memory (review 5879114669 major 2)."""
     with Session(engine) as session:
         run = _get_owned(session, CbomCollectionRun, run_id, team_id, "Run")
-        return INV.cyclonedx(session, run, utcnow())
+        rows = int(session.exec(select(func.count()).select_from(CbomCollectedAsset).where(
+            CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run_id)).one())
+        try:  # a large export holds one of a few host-wide slots while it is written
+            with EXPORT_SLOTS.slot() if EXPORT_SLOTS.is_large(rows) else contextlib.nullcontext():
+                out = tempfile.SpooledTemporaryFile(max_size=EXPORT_SPOOL_BYTES)
+                try:
+                    INV.write_cyclonedx(session, run, utcnow(), fmt, out)
+                    out.seek(0)
+                except BaseException:
+                    out.close()
+                    raise
+                return out
+        except EXPORT_SLOTS.Busy:  # 429 + Retry-After: the UI's error handler already says "try again in N seconds"
+            log("run cbom export busy", team=team_id, run=run_id, rows=rows, slots=EXPORT_SLOTS.SLOTS)
+            raise HTTPException(
+                status_code=429, headers={**PRIVATE, "Retry-After": str(EXPORT_SLOTS.RETRY_AFTER_S)},
+                detail=f"The server is busy building other large CBOM exports; retry in {EXPORT_SLOTS.RETRY_AFTER_S} s.",
+            ) from None
+
+
+def _chunks(out: IO[bytes], size: int = 1024 * 1024) -> Iterator[bytes]:
+    try:
+        while chunk := out.read(size):
+            yield chunk
+    finally:
+        out.close()
 
 
 @router.get(BASE + "/runs/{run_id}/cbom", dependencies=READ,
@@ -1409,13 +1492,14 @@ def _run_cbom(engine, team_id: int, run_id: int) -> dict:
 async def run_cbom(team_id: TeamId, run_id: ObjectId, format: str = Query(default="json", pattern="^(json|xml)$"),
                    Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
-    payload = await _run("run cbom", team_id, _run_cbom, engine, team_id, run_id)
-    if format == "xml":  # the same document, written as XML (cdx_xml); the signature covers the JSON form only
-        body = await _run("run cbom xml", team_id, CDX_XML.to_xml, payload)
-        return Response(body, media_type=CDX_XML.XML_MEDIA_TYPE, headers={
-            **PRIVATE, "Content-Disposition": f'attachment; filename="cbom-sources-run-{run_id}.cdx.xml"',
-            "X-ZS-Signature-Scope": CDX_XML.SIGNATURE_SCOPE})
-    return JSONResponse(payload, headers={**PRIVATE, "Content-Disposition": f'attachment; filename="cbom-sources-run-{run_id}.cdx.json"'})
+    out = await _run("run cbom", team_id, _run_cbom, engine, team_id, run_id, format)
+    length = out.seek(0, 2)
+    out.seek(0)
+    # A run's CBOM is not signed (only code-scan BOMs are, certin.py), so the XML response states no signature scope
+    media, ext = (CDX_XML.XML_MEDIA_TYPE, "xml") if format == "xml" else ("application/json", "json")
+    return StreamingResponse(_chunks(out), media_type=media, headers={
+        **PRIVATE, "Content-Length": str(length),
+        "Content-Disposition": f'attachment; filename="cbom-sources-run-{run_id}.cdx.{ext}"'})
 
 
 def _run_posture(engine, team_id: int, run_id: int) -> dict:
@@ -1443,8 +1527,18 @@ def _asset_detail(engine, team_id: int, asset_id: int) -> dict:
         node = session.get(CbomScanNode, source.node_id) if source is not None and source.node_id else None
         if node is not None and node.team_id != team_id:
             node = None
-        return {"asset": POSTURE.asset_detail(row, source, job=job if job and job.team_id == team_id else None,
-                                              node=node)}
+        asset = POSTURE.asset_detail(row, source, job=job if job and job.team_id == team_id else None, node=node)
+        # the quantum risk grade, from the same context loader as the run's list and posture (CB-19)
+        grading = QGRADE.load_context(session, team_id=team_id, run_id=row.run_id, job_id=row.job_id)
+        graded = grading.grade_row(row, asset["finding_codes"])
+        return {"asset": {**asset, **graded.fields(), "q_explain": graded.explain}}
+
+
+@router.get(BASE + "/grade-model", dependencies=READ,
+            summary="The quantum risk grade model (qg-1): signed text, its sha256, grades and reason codes")
+async def grade_model(team_id: TeamId, Authorization: AuthHeader = None):
+    await authorize(team_id, Authorization)
+    return _ok(QGRADE.model_payload())
 
 
 @router.get(BASE + "/assets/{asset_id}", dependencies=READ,
@@ -1452,6 +1546,13 @@ def _asset_detail(engine, team_id: int, asset_id: int) -> dict:
 async def asset_detail(team_id: TeamId, asset_id: ObjectId, Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
     return _ok(await _run("asset detail", team_id, _asset_detail, engine, team_id, asset_id))
+
+
+@router.get(BASE + "/agility-model", dependencies=READ,
+            summary="Crypto-agility fix classes, their order and text, and the rules that decide them (CB-24)")
+async def agility_model(team_id: TeamId, Authorization: AuthHeader = None):
+    await authorize(team_id, Authorization)
+    return _ok(AGILITY.model())
 
 
 def _job_assets(engine, team_id: int, job_id: int, params: dict) -> dict:

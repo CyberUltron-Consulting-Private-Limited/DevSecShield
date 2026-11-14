@@ -6,6 +6,7 @@ Inputs:
   sources/nvd_cves.json      NVD API 2.0 records (description, CVSS, CWE, CPE ranges), fetched by nvd_fetch.py
   sources/cna_<CVE>.json     CVE records from cveawg.mitre.org for CVEs NVD has not analysed (CNA ranges)
   sources/cwe_names.json     MITRE CWE names (cwe-api.mitre.org)
+  sources/fix_class.json     crypto-agility fix class per code (CB-24): hand table, a basis and sources per row
   sources/compliance.json    OWASP 2021/2025 categories with mapped CWEs, NIST, CNSA 2.0, CERT-In, SEBI, RBI quotes
 
 The output is deterministic (sorted keys, no timestamps besides the version you pass) so the file can be diffed and
@@ -242,6 +243,7 @@ def build(version: str) -> dict:
 
     node = {code: finish(code, entries[code]) for code in sorted(NODE_CODES)}
     code_ns = {code: finish(code, entries[code], CODE_OVERRIDES.get(code)) for code in sorted(CODE_CODES)}
+    attach_fix_class({"node": node, "code": code_ns}, load_fix_class())
 
     if not research:
         fail("research/compliance.json is required (OWASP mapped CWEs and regulatory references)")
@@ -276,6 +278,35 @@ def build(version: str) -> dict:
         "compliance": compliance,
         "pqc_context": kb_compliance.pqc_context(research),
     }
+
+
+FIX_CLASSES = ("configurable", "code-fixed", "vendor-fixed", "hardware-fixed")
+
+
+def load_fix_class() -> dict:
+    """The reviewed crypto-agility fix-class table (CB-24): sources/fix_class.json, one row per code."""
+    return json.load(open(os.path.join(SRC, "fix_class.json"), encoding="utf-8"))
+
+
+def attach_fix_class(findings: dict, table: dict) -> None:
+    """Copy each code's reviewed row (class, capability, basis) into its entry as ``fix_class``. Fails on a code
+    without a row, a row for a code the KB lacks, a class outside the four, or a row without basis or sources."""
+    for ns, section in findings.items():
+        rows = table.get(ns) or {}
+        missing, extra = sorted(set(section) - set(rows)), sorted(set(rows) - set(section))
+        if missing:
+            fail(f"fix_class.json has no row for {ns}:{', '.join(missing)}")
+        if extra:
+            fail(f"fix_class.json has a row for {ns}:{', '.join(extra)}, which the KB does not have")
+        for code, entry in section.items():
+            row = rows[code]
+            if row.get("class") not in FIX_CLASSES:
+                fail(f"fix_class {ns}:{code}: class {row.get('class')!r} is not one of {', '.join(FIX_CLASSES)}")
+            if not isinstance(row.get("capability"), bool):
+                fail(f"fix_class {ns}:{code}: capability must be true or false")
+            if not str(row.get("basis") or "").strip() or not [s for s in row.get("sources") or [] if str(s).strip()]:
+                fail(f"fix_class {ns}:{code}: needs a basis and at least one source")
+            entry["fix_class"] = {"class": row["class"], "capability": row["capability"], "basis": row["basis"]}
 
 
 def _owasp(entry: dict, table: dict, tag_ids: dict) -> list[dict]:
