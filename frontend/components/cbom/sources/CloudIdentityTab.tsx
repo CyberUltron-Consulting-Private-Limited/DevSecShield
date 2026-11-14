@@ -69,8 +69,18 @@ type MetadataProvider = "saml_metadata" | "oidc_discovery";
 
 const PROVIDERS: { value: Provider; label: string; description: string }[] = [
   { value: "aws", label: "AWS", description: "About five minutes; no keys are exchanged." },
-  { value: "azure", label: "Azure", description: "Key Vault metadata through an app registration (client secret or certificate)." },
-  { value: "gcp", label: "Google Cloud", description: "Cloud KMS, CA Service and Secret Manager metadata through a service account." },
+  {
+    value: "azure",
+    label: "Azure",
+    description:
+      "Key Vault keys, certificates and secrets (metadata), plus the TLS and encryption settings of storage accounts, App Service, Application Gateway, Front Door and Azure SQL, through a read-only app registration.",
+  },
+  {
+    value: "gcp",
+    label: "Google Cloud",
+    description:
+      "Cloud KMS keys and versions, CA Service, Secret Manager and Certificate Manager (metadata), plus load-balancer TLS policies and certificates and bucket encryption, through a read-only service account.",
+  },
 ];
 const PROVIDER_LABEL: Record<Provider, string> = { aws: "AWS", azure: "Azure", gcp: "Google Cloud" };
 const PROVIDER_OF_KIND: Record<string, Provider> = { aws_account: "aws", azure_subscription: "azure", gcp_project: "gcp" };
@@ -114,9 +124,9 @@ interface IdpRow {
   defaultName: string;
 }
 const IDP_ROWS: IdpRow[] = [
-  { provider: "entra_id", label: "Microsoft Entra ID", detail: "Application.Read.All, read-only", defaultName: "Entra ID" },
-  { provider: "okta", label: "Okta", defaultName: "Okta" },
-  { provider: "keycloak", label: "Keycloak", defaultName: "Keycloak" },
+  { provider: "entra_id", label: "Microsoft Entra ID", detail: "public metadata; no permission needed", defaultName: "Entra ID" },
+  { provider: "okta", label: "Okta", detail: "public metadata; no permission needed", defaultName: "Okta" },
+  { provider: "keycloak", label: "Keycloak", detail: "public metadata; no permission needed", defaultName: "Keycloak" },
 ];
 const METADATA_LABEL: Record<MetadataProvider, string> = { saml_metadata: "SAML metadata", oidc_discovery: "OIDC discovery" };
 
@@ -125,6 +135,7 @@ const CHECK_BADGE: Record<CbomAwsCheck["status"], [Tone, string]> = {
   fail: ["red", "Fail"],
   skipped: ["zinc", "Skipped"],
   error: ["amber", "Error"],
+  warning: ["amber", "Warning"], // a grant the reader script adds; the run reports the service as a coverage gap
 };
 
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$/;
@@ -139,7 +150,43 @@ const DOMAIN_LABEL_RE = /^[a-z0-9_]([a-z0-9_-]{0,61}[a-z0-9_])?$/;
 const MAX_DOMAINS = 200;
 const CLOUDFORMATION_CONSOLE = "https://console.aws.amazon.com/cloudformation/home";
 const NOT_AVAILABLE = "Validation is not available yet; collection is not available yet.";
-const IDP_HOW = "ZeroShield reads the signing keys from your identity provider's public metadata; no secret is needed for that.";
+// Same sentences as the backend's planning.CLOUD_NOT_CONNECTED (the run estimate's skip reason).
+const CLOUD_NOT_CONNECTED: Record<"azure" | "gcp", string> = {
+  azure: "Not available until the Azure tenant is connected: Save and validate must pass first",
+  gcp: "Not available until the Google Cloud project is connected: Save and validate must pass first",
+};
+// The exact read-only grants the reader scripts make (templates.AZURE_READER / GCP_READER); nothing else is needed.
+const AZURE_READ_ACTIONS = [
+  "Microsoft.Resources/subscriptions/read",
+  "Microsoft.KeyVault/vaults/read",
+  "Microsoft.Storage/storageAccounts/read",
+  "Microsoft.Web/sites/read",
+  "Microsoft.Web/sites/config/read",
+  "Microsoft.Web/certificates/read",
+  "Microsoft.Network/applicationGateways/read",
+  "Microsoft.Cdn/profiles/read",
+  "Microsoft.Cdn/profiles/customdomains/read",
+  "Microsoft.Sql/servers/read",
+];
+const AZURE_DATA_ACCESS = [
+  "Key Vault Reader (vaults with Azure RBAC): keys and certificates read, secrets readMetadata",
+  "Access policy (other vaults): keys get/list, certificates get/list, secrets list",
+];
+const GCP_READ_ROLES = ["roles/cloudkms.viewer", "roles/privateca.auditor", "roles/secretmanager.viewer", "roles/certificatemanager.viewer"];
+const GCP_READ_PERMISSIONS = [
+  "compute.sslPolicies.list",
+  "compute.regionSslPolicies.list",
+  "compute.sslCertificates.list",
+  "compute.regionSslCertificates.list",
+  "compute.targetHttpsProxies.list",
+  "compute.regionTargetHttpsProxies.list",
+  "compute.targetSslProxies.list",
+  "compute.forwardingRules.list",
+  "compute.globalForwardingRules.list",
+  "storage.buckets.list",
+];
+// idp_collect reads public OIDC / SAML metadata and sends no credential (backend/tests/test_cbom_cb08_promises.py)
+const IDP_HOW = "ZeroShield reads the signing keys from your identity provider's public metadata only; a secret is not used yet.";
 // Cloud, CLM and IdP secrets never go to a scan node, so the node wording of the default hint would be wrong here.
 const STORED_HINT = "Encrypted at rest by ZeroShield. Never shown again.";
 
@@ -339,6 +386,16 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
     retry: 1,
     refetchInterval: 30000,
   });
+  // The planner's own sentence for an AWS Private CA connector: its AWS account source reads it (aws_collect
+  // "acm-pca"), is skipped in this run, or was removed (planning._aws_private_ca). One source of truth with Review & Run.
+  const overviewQuery = useQuery({
+    queryKey: cbomSourcesKeys.overview(teamId),
+    queryFn: () => getCbomSourcesOverview(teamId),
+    enabled,
+    retry: 1,
+    refetchInterval: 30000,
+  });
+  const planReason = (sourceId: number) => overviewQuery.data?.plan.items?.find((i) => i.source_id === sourceId)?.reason ?? null;
 
   const resetForm = (provider?: Provider) =>
     setForm((f) => ({ provider: provider ?? f.provider, source: null, nonce: f.nonce + 1 }));
@@ -569,6 +626,11 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
                         <TableCell className="text-zinc-600 dark:text-zinc-400">{s.last_test_at ? formatDateTime(s.last_test_at) : "Never"}</TableCell>
                         <TableCell>
                           {busy ? <TestStatusBadge status="pending" /> : <TestStatusBadge status={s.last_test_status} title={s.last_test_summary} />}
+                          {!busy && s.kind !== "aws_account" && s.last_test_status !== "passed" && s.last_test_status !== "failed" && (
+                            <span className="mt-1 block max-w-[220px] text-xs text-zinc-500" data-testid={`cloud-account-not-connected-${s.id}`}>
+                              {CLOUD_NOT_CONNECTED[PROVIDER_OF_KIND[s.kind] === "gcp" ? "gcp" : "azure"]}
+                            </span>
+                          )}
                         </TableCell>
                         <TableCell>
                           <DropdownMenu>
@@ -643,8 +705,8 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
                         <NodeTestLine teamId={teamId} source={s} />
                       ) : row.key === "aws_private_ca" ? (
                         <span className="text-xs text-zinc-500">
-                          through {awsSources.find((a) => a.id === cfgNumber(s, "aws_source_id"))?.name ?? "an AWS account that was removed"} ·{" "}
-                          {NOT_AVAILABLE}
+                          through {awsSources.find((a) => a.id === cfgNumber(s, "aws_source_id"))?.name ?? "an AWS account that was removed"}
+                          {planReason(s.id) ? ` · ${planReason(s.id)}` : ""}
                         </span>
                       ) : (
                         <span className="text-xs text-zinc-500">
@@ -683,10 +745,14 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-zinc-200 dark:border-zinc-800 px-4 py-3">
                 <div className="min-w-0">
                   <span className="text-sm font-medium text-zinc-900 dark:text-white">ADFS</span>
-                  <span className="ml-1.5 text-xs text-zinc-500">read from the Windows servers you add on the Servers tab</span>
+                  <span className="ml-1.5 text-xs text-zinc-500 break-words">
+                    add its SAML metadata URL below (
+                    <span className="font-mono break-all">https://your-adfs/FederationMetadata/2007-06/FederationMetadata.xml</span>); the
+                    Windows servers you add are read for their certificate stores and TLS settings, nothing ADFS-specific
+                  </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <StatusBadge tone="zinc">Via servers</StatusBadge>
+                  <StatusBadge tone="zinc">Metadata URL</StatusBadge>
                   <Button variant="outline" size="sm" className="cursor-pointer" onClick={() => onNavigate("servers")}>
                     Servers
                   </Button>
@@ -874,6 +940,11 @@ function ValidationPanel({ view, pending, provider, awsNotConfigured = false }: 
             : "Fill in the form, then choose Save and validate. ZeroShield signs in and lists what it would read; each check is listed here."}
         </p>
       )}
+      {!isAws && (!view || view.checks.some((c) => c.status === "fail" || c.status === "error")) && (
+        <p className="text-xs text-amber-700 dark:text-amber-300" data-testid="cloud-validation-not-connected">
+          {CLOUD_NOT_CONNECTED[provider as "azure" | "gcp"]}.
+        </p>
+      )}
       {view && (
         <ul className={cn("divide-y divide-zinc-200 dark:divide-zinc-800", pending && "opacity-50")}>
           {view.checks.map((check) => {
@@ -907,6 +978,12 @@ function ValidationPanel({ view, pending, provider, awsNotConfigured = false }: 
             ? "Every call lands in your Azure Activity Log and the vaults' diagnostic logs."
             : "Every call lands in your Cloud Audit Logs (Data Access logs, where enabled)."}
       </p>
+      {!isAws && view?.checks.some((c) => c.status === "warning") && (
+        <p className="text-xs text-amber-700 dark:text-amber-300" data-testid="cloud-validation-rerun-script">
+          Some services are not granted yet: re-run the reader script above to add them. Until then each run reads everything
+          else and lists those services as coverage gaps.
+        </p>
+      )}
     </div>
   );
 }
@@ -1341,8 +1418,9 @@ function AzureForm({
       <ReaderScript
         teamId={teamId}
         provider="azure"
-        text="Run this script in Azure Cloud Shell. It gives the app read-only access to Key Vault metadata: the built-in Key Vault Reader role (no decrypt, unwrap, sign or secret values), a small role that lists vaults, and list-only secret access on vaults that use access policies."
+        text="Run this script in Azure Cloud Shell. It gives the app read-only access: a custom role with read actions only (vault, storage, App Service, Application Gateway, Front Door and SQL settings), the built-in Key Vault Reader role (no decrypt, unwrap, sign or secret values), and list-only secret access on vaults that use access policies."
       />
+      <PermissionsHelp provider="azure" />
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Field label="Name" htmlFor="azure-name" required error={errors.name}>
           <Input id="azure-name" data-testid="cloud-azure-name" value={name} maxLength={64} placeholder="azure-prod" onChange={(e) => setName(e.target.value)} />
@@ -1506,8 +1584,9 @@ function GcpForm({
       <ReaderScript
         teamId={teamId}
         provider="gcp"
-        text="Run this script with gcloud. It grants the service account viewer roles only: Cloud KMS Viewer (no key use), CA Service Auditor and Secret Manager Viewer (metadata, never secret payloads)."
+        text="Run this script with gcloud. It grants the service account viewer roles only: Cloud KMS Viewer (no key use), CA Service Auditor, Secret Manager Viewer (metadata, never secret payloads) and Certificate Manager Viewer, plus a custom role with list permissions for load-balancer TLS and buckets."
       />
+      <PermissionsHelp provider="gcp" />
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Field label="Name" htmlFor="gcp-name" required error={errors.name}>
           <Input id="gcp-name" data-testid="cloud-gcp-name" value={name} maxLength={64} placeholder="gcp-prod" onChange={(e) => setName(e.target.value)} />
@@ -1623,6 +1702,38 @@ function ReaderScript({ teamId, provider, text }: { teamId: number; provider: "a
   );
 }
 
+function PermissionsHelp({ provider }: { provider: "azure" | "gcp" }) {
+  const azure = provider === "azure";
+  return (
+    <details className="rounded-lg border border-zinc-200 dark:border-zinc-800 p-4 text-sm" data-testid={`cloud-${provider}-permissions`}>
+      <summary className="cursor-pointer font-medium text-zinc-900 dark:text-white">Exact permissions ZeroShield needs (read-only)</summary>
+      <div className="mt-3 space-y-3 text-zinc-600 dark:text-zinc-400">
+        <div>
+          <p className="text-xs font-medium text-zinc-500">{azure ? "Control-plane read actions (custom role, per subscription)" : "Predefined roles"}</p>
+          <ul className="mt-1 list-disc pl-5 font-mono text-xs">
+            {(azure ? AZURE_READ_ACTIONS : GCP_READ_ROLES).map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </div>
+        <div>
+          <p className="text-xs font-medium text-zinc-500">{azure ? "Key Vault data plane" : "Custom role, list permissions only"}</p>
+          <ul className={cn("mt-1 list-disc pl-5 text-xs", !azure && "font-mono")}>
+            {(azure ? AZURE_DATA_ACCESS : GCP_READ_PERMISSIONS).map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </div>
+        <p className="text-xs">
+          {azure
+            ? "Metadata only: never secret values, key material, app settings or connection strings (no getSecret, listKeys or config/list). A permission left out shows as a coverage row on the run, naming the action to grant."
+            : "Metadata only: never secret payloads or key use (no secretmanager.versions.access, no cloudkms useTo*). An API a project has not enabled, or a permission left out, shows as a coverage row on the run."}
+        </p>
+      </div>
+    </details>
+  );
+}
+
 function FormFooter({ pending, onSave, testId }: { pending: boolean; onSave: () => void; testId: string }) {
   return (
     <div className="flex flex-wrap items-center justify-end gap-3">
@@ -1673,7 +1784,7 @@ function CertDomains({ teamId, settings }: { teamId: number; settings: CbomSourc
       label="Domains to search in Certificate Transparency logs"
       htmlFor="cert-domain-input"
       error={error}
-      hint="Saved for the certificate collector. ZeroShield does not query Certificate Transparency logs yet."
+      hint="Saved, but not read: Certificate Transparency discovery is not turned on for this server. When it is, these domains move into the Certificate Transparency source."
     >
       <div className="space-y-2">
         {settings.cert_domains.length > 0 ? (
@@ -2165,7 +2276,7 @@ function CaDialog({
                   ? "A scan node reads the CAs and certificate profiles through the EJBCA REST API, signing in with a client certificate."
                   : isAwsCa
                     ? "Read through the read-only role of a connected AWS account. No new credential is needed."
-                    : "ZeroShield keeps the API address and key for the certificate collector."}
+                    : "Not collected yet: ZeroShield only stores the API address and key. Nothing is read from it and it is never charged."}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
@@ -2443,10 +2554,10 @@ function IdpDialog({
           <DialogTitle>{source ? `Edit ${source.name}` : `Connect ${row.label}`}</DialogTitle>
           <DialogDescription>
             {provider === "entra_id"
-              ? "An app registration with the Application.Read.All application permission (read-only)."
+              ? "ZeroShield reads this tenant's public OpenID and federation metadata: its signing keys and certificates. No permission is needed; the application ID is kept for API reads that are not built yet."
               : provider === "okta"
-                ? "A read-only API token from your Okta admin console."
-                : "A confidential client in the realm with read-only access to clients and keys."}
+                ? "ZeroShield reads your Okta org's public OpenID metadata: its signing keys. No API token is needed or used yet."
+                : "ZeroShield reads the realm's public OpenID and SAML metadata: its signing keys and certificates. The client ID is kept for API reads that are not built yet."}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
@@ -2586,8 +2697,8 @@ function MetadataUrls({
   return (
     <div className="space-y-4">
       <p className="text-xs text-zinc-500">
-        No admin access? Public metadata is enough to read signing keys and their rotation. ZeroShield&apos;s cloud reads these URLs when
-        you press Test and during each run; only public https addresses can be read.
+        Public metadata is all ZeroShield reads: signing keys and their rotation. ZeroShield&apos;s cloud reads these URLs when you
+        press Test and during each run; only public https addresses can be read.
       </p>
       {input("saml_metadata", "SAML metadata URL", "https://login.example.com/saml/metadata", "cloud-saml")}
       {input("oidc_discovery", "OIDC discovery URL", "https://login.example.com/.well-known/openid-configuration", "cloud-oidc")}

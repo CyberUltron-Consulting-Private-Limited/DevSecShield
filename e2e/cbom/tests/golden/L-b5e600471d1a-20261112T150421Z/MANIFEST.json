@@ -1,0 +1,251 @@
+{
+  "assets": {
+    "1": [
+      434,
+      435,
+      436,
+      437,
+      438,
+      439,
+      440,
+      441,
+      442,
+      443,
+      444,
+      445,
+      446,
+      447,
+      448,
+      449,
+      450,
+      451,
+      452,
+      453,
+      454,
+      455,
+      456,
+      457,
+      458
+    ]
+  },
+  "clock_offset_s": 0.0,
+  "gate_seconds": 173,
+  "harness": {
+    "commit": "48d3b73384dae66309a06054037bf3c2724e05a0",
+    "dirty": false
+  },
+  "images": {
+    "cb02-pg-tls": {
+      "id": "sha256:aa6cb33cf4c19c765cefcf48d96176258800870a9a1e930ad126200f9d825139",
+      "image": "mirror.gcr.io/library/postgres:16-alpine@sha256:aa6cb33cf4c19c765cefcf48d96176258800870a9a1e930ad126200f9d825139",
+      "revision": null,
+      "version": null
+    },
+    "dss-staging-backend-1": {
+      "id": "sha256:d07684ec54fa169bd33463b7e40371cda26eec40b75ed46052e1ba306f0e5b96",
+      "image": "dss-staging/devsecshield-backend:stack",
+      "revision": "3df26fd8ec020f44d9cdbec1e793b29327e03d39",
+      "version": "k-6a82788e70cd"
+    },
+    "dss-staging-cbom-cloud-worker-1": {
+      "id": "sha256:d07684ec54fa169bd33463b7e40371cda26eec40b75ed46052e1ba306f0e5b96",
+      "image": "dss-staging/devsecshield-backend:stack",
+      "revision": "3df26fd8ec020f44d9cdbec1e793b29327e03d39",
+      "version": "k-6a82788e70cd"
+    },
+    "dss-staging-cicd-worker-1": {
+      "id": "sha256:d694ff2739f033080755ca6621540993c96bc888dd85770e5e1a157ad0196324",
+      "image": "dss-staging/scan-worker:stack",
+      "revision": "3399452d6692bc729dd668f91c9195bfbd143cfd",
+      "version": "k-8a6c4a9b9770"
+    },
+    "dss-staging-dast-scheduler-1": {
+      "id": "sha256:d07684ec54fa169bd33463b7e40371cda26eec40b75ed46052e1ba306f0e5b96",
+      "image": "dss-staging/devsecshield-backend:stack",
+      "revision": "3df26fd8ec020f44d9cdbec1e793b29327e03d39",
+      "version": "k-6a82788e70cd"
+    },
+    "dss-staging-dast-worker-1": {
+      "id": "sha256:c00d13d9cc63e60c905a68bd864c764869644b70cc3c8309e9e4c8bce32203c6",
+      "image": "dss-staging/dast-worker:stack",
+      "revision": "3399452d6692bc729dd668f91c9195bfbd143cfd",
+      "version": "k-6bf357a82a7f"
+    },
+    "dss-staging-frontend-1": {
+      "id": "sha256:169306b0bd8978bed680ab2907a0cbeebb1be8b2e3e99e4670a92abb7f91bd6d",
+      "image": "dss-staging/devsecshield-frontend:stack",
+      "revision": "3df26fd8ec020f44d9cdbec1e793b29327e03d39",
+      "version": "k-b412547af3b6"
+    },
+    "dss-staging-mailpit-1": {
+      "id": "sha256:aef2aacc11f075ec0fb6874275ee4a421e688e11a96ebb296134d1735c7761ce",
+      "image": "axllent/mailpit:latest",
+      "revision": null,
+      "version": null
+    },
+    "dss-staging-minio-1": {
+      "id": "sha256:50cefea31a048c9f0b3714b5e6ce6658d7c5132dca7704b3bcb061d5bbb138c8",
+      "image": "l1/minio:RELEASE.2025-04-22T22-12-26Z-src",
+      "revision": "ea4560831e503c6ce34d18739476a71ac6e9a9de",
+      "version": "0.9.30-python3.12-bookworm-slim"
+    },
+    "dss-staging-mongo-1": {
+      "id": "sha256:ab6556e6d71d9773dd74002db924dc637abb49d079d6ef945982af3078fdf22c",
+      "image": "mongo:8.0.6",
+      "revision": null,
+      "version": "24.04"
+    },
+    "dss-staging-nginx-1": {
+      "id": "sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10",
+      "image": "nginx:1.27-alpine",
+      "revision": null,
+      "version": null
+    },
+    "dss-staging-postgres-1": {
+      "id": "sha256:eab009ce9447a891d9482702d370bbf132c18563bb87cfdcc2b815c6d3b0372f",
+      "image": "postgres:15-alpine",
+      "revision": null,
+      "version": null
+    },
+    "dss-staging-rabbitmq-1": {
+      "id": "sha256:42c6214e0e2093caa2484718faacb733631cc9ddc869b3298397613237dbea4a",
+      "image": "rabbitmq:4.1-management-alpine",
+      "revision": null,
+      "version": null
+    },
+    "dss-staging-scan-worker-1": {
+      "id": "sha256:d694ff2739f033080755ca6621540993c96bc888dd85770e5e1a157ad0196324",
+      "image": "dss-staging/scan-worker:stack",
+      "revision": "3399452d6692bc729dd668f91c9195bfbd143cfd",
+      "version": "k-8a6c4a9b9770"
+    },
+    "zs-scan-node-e2e-node-1": {
+      "id": "sha256:e8610ced5066afdffcdfb46726aae28c0de0bb92d8871de1364c35e257fbe63c",
+      "image": "dss-staging/scan-node:k-918389c68ef0",
+      "revision": "3df26fd8ec020f44d9cdbec1e793b29327e03d39",
+      "version": "k-918389c68ef0"
+    }
+  },
+  "jobs": [
+    {
+      "asset_count": "24",
+      "id": "84",
+      "kind": "collect",
+      "outcome": "ok",
+      "run_id": "21",
+      "status": "success"
+    },
+    {
+      "asset_count": "1",
+      "id": "85",
+      "kind": "collect",
+      "outcome": "partial",
+      "run_id": "21",
+      "status": "success"
+    }
+  ],
+  "lab": {
+    "commit": "052e94dd550755ddaf87a890e360b934f64eceba",
+    "containers": [
+      "cb02-canary",
+      "cb02-control",
+      "cb02-host",
+      "cb02-idn-fass",
+      "cb02-idn-punycode",
+      "cb02-pg-tls",
+      "cb02-sshd-legacy",
+      "cb02-sshd-pq",
+      "cb02-z01",
+      "cb02-z02",
+      "cb02-z04",
+      "cb02-z05",
+      "cb02-z05b",
+      "cb02-z09",
+      "cb02-z16"
+    ],
+    "generator": "e2e/cbom/lab/gen.py cb02-gen/1",
+    "images": {
+      "mysql": {
+        "id": "sha256:a81d043930e51745522bd5c430961cf8286f0a23f0a9a2a6e0108f7ea71b0902",
+        "inputs": null,
+        "ref": "mirror.gcr.io/library/mysql:8.4@sha256:a81d043930e51745522bd5c430961cf8286f0a23f0a9a2a6e0108f7ea71b0902"
+      },
+      "postgres": {
+        "id": "sha256:aa6cb33cf4c19c765cefcf48d96176258800870a9a1e930ad126200f9d825139",
+        "inputs": null,
+        "ref": "mirror.gcr.io/library/postgres:16-alpine@sha256:aa6cb33cf4c19c765cefcf48d96176258800870a9a1e930ad126200f9d825139"
+      },
+      "target": {
+        "id": "sha256:803e132e9852c8030e6c60dfb71ed9523096a50fe3f30218bc4fe2c74aaf51c5",
+        "inputs": "b0827fb5847868fc49e8624473549203cc3a4136adbe4a0a95ab0feb80356bde",
+        "ref": "cb02-lab/target:dev"
+      },
+      "tools": {
+        "id": "sha256:3c36751a77a492f8579f092ecffec2b17f3ef143b77631924ab3138beab9d718",
+        "inputs": "b0827fb5847868fc49e8624473549203cc3a4136adbe4a0a95ab0feb80356bde",
+        "ref": "cb02-lab/tools:dev"
+      }
+    }
+  },
+  "node": {
+    "addresses": [
+      "10.231.0.2"
+    ],
+    "container": "zs-scan-node-e2e-node-1",
+    "id": 35,
+    "image": "dss-staging/scan-node:k-918389c68ef0",
+    "volume": "zs-node-e2e-node-1"
+  },
+  "node_image": {
+    "id": "sha256:e8610ced5066afdffcdfb46726aae28c0de0bb92d8871de1364c35e257fbe63c",
+    "ref": "dss-staging/scan-node:k-918389c68ef0"
+  },
+  "oracle": {
+    "files": [
+      "oracle/SHA256SUMS",
+      "oracle/canaries.json",
+      "oracle/facts/canary.json",
+      "oracle/facts/control.json",
+      "oracle/facts/host.json",
+      "oracle/facts/idn-fass.json",
+      "oracle/facts/idn-punycode.json",
+      "oracle/facts/index.json",
+      "oracle/facts/pg-tls.json",
+      "oracle/facts/sshd-legacy.json",
+      "oracle/facts/sshd-pq.json",
+      "oracle/facts/z01.json",
+      "oracle/facts/z02.json",
+      "oracle/facts/z04.json",
+      "oracle/facts/z05.json",
+      "oracle/facts/z05b.json",
+      "oracle/facts/z09.json",
+      "oracle/facts/z16.json",
+      "oracle/run1.json"
+    ],
+    "frozen_at": "2026-11-12T15:22:42Z",
+    "sha256": "29572bdd189b5e8840bae777f78a3844555c625134b37dffd305b3ed34fceb88"
+  },
+  "playwright": {
+    "browsers": [
+      "chromium-1234",
+      "chromium_headless_shell-1234"
+    ],
+    "version": "1.62.0"
+  },
+  "ref": "origin/dev",
+  "runs": [
+    21
+  ],
+  "schema": "zs-cbom-gate-manifest/1",
+  "serialNumbers": {
+    "1": "urn:uuid:25701816-1004-5026-b7c5-6a0d23eacff7"
+  },
+  "sha": "b5e600471d1a6a81fe6eb19c8d5b3cc46428546a",
+  "stack_status": "READY b5e6004 2026-11-12T15:15:59Z from dev ( backend(reuse k-6a82788e70cd) frontend(reuse k-b412547af3b6) scan-worker(unchanged) dast-worker(unchanged) scan-node(unchanged) ) - UI /login 200; API /health 200; queues [cicd_worker_queue=1 dast_worker_queue=1 scan_worker_queue=1]; migrate exited exit=0; db alembic rv6p1nodename001; identity n/a (no /health.build at this ref); node net [10.231.0.10 healthy 1.0.0] label=3df26fd8ec02",
+  "started": "2026-11-12T15:21:44Z",
+  "teams": {
+    "A": 52,
+    "B": 53
+  },
+  "tier": "L"
+}

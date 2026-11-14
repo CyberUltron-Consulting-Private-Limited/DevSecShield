@@ -1,0 +1,12 @@
+id,team_id,at,actor_type,actor_id,action,object_type,object_id,changed_fields
+541,52,2026-11-12 15:23:08.432771,user,52,node.create,node,35,"[""deployment"", ""name"", ""proxy_ca_pem"", ""proxy_tls_inspect"", ""proxy_url"", ""segment"", ""timezone""]"
+542,52,2026-11-12 15:23:12.036159,node,35,node.enroll,node,35,[]
+543,52,2026-11-12 15:23:18.578438,user,52,source.create,source,69,"[""config"", ""kind"", ""name"", ""node_id""]"
+544,52,2026-11-12 15:23:19.424473,user,52,source.create,source,70,"[""config"", ""kind"", ""name"", ""node_id""]"
+545,52,2026-11-12 15:23:20.410337,user,52,settings.update,settings,67,"[""sni_hostnames""]"
+546,52,2026-11-12 15:23:22.907306,user,52,settings.update,settings,67,"[""emergency_contact"", ""network_exclusions"", ""scan_window"", ""soc_email"", ""window_timezone""]"
+547,52,2026-11-12 15:23:26.11861,user,52,run.create,run,21,"[""network""]"
+548,52,2026-11-12 15:23:27.237907,node,35,job.claim,job,84,[]
+549,52,2026-11-12 15:23:27.306305,node,35,job.claim,job,85,[]
+550,52,2026-11-12 15:23:38.955245,node,35,job.success,job,85,[]
+551,52,2026-11-12 15:23:51.268357,node,35,job.success,job,84,[]

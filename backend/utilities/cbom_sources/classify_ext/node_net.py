@@ -164,7 +164,7 @@ def mesh_destination_rule(out: Any, facts: dict[str, Any], algorithm: Any, key_s
 
 
 def mesh_server_rule(out: Any, facts: dict[str, Any], algorithm: Any, key_size: Any, now: Any) -> bool | None:
-    reasons = [str(r) for r in facts.get("unauthenticated_by") or []]
+    reasons = [str(r) for r in C.fact_list(facts.get("unauthenticated_by"))]
     if facts.get("unauthenticated") and reasons:
         out.add("LINKERD_UNAUTHENTICATED_SERVER", "Medium",
                 f"Linkerd Server {facts.get('namespace')}/{facts.get('name')} (port {facts.get('port')}) allows "
@@ -190,25 +190,25 @@ def appliance_rule(out: Any, facts: dict[str, Any], algorithm: Any, key_size: An
     vendor = str(facts.get("vendor_label") or facts.get("vendor") or "Appliance")
     what = f"{vendor} {facts.get('section') or kind}".strip()
     if kind == "ike_policy":
-        enc = [n for n in facts.get("encryption") or [] if WEAK_ENCR.match(str(n))]
-        integ = [n for n in facts.get("integrity") or [] if WEAK_INTEG.match(str(n))]
-        integ += ["PRF " + n for n in facts.get("prf") or [] if WEAK_INTEG.match(str(n))]
-        dh = [g for g in facts.get("groups") or [] if g in WEAK_GROUPS]
+        enc = [n for n in C.fact_list(facts.get("encryption")) if WEAK_ENCR.match(str(n))]
+        integ = [n for n in C.fact_list(facts.get("integrity")) if WEAK_INTEG.match(str(n))]
+        integ += [f"PRF {n}" for n in C.fact_list(facts.get("prf")) if WEAK_INTEG.match(str(n))]
+        dh = [g for g in C.fact_list(facts.get("groups")) if isinstance(g, str) and g in WEAK_GROUPS]
         _weak_findings(out, enc, integ, dh, what)
         if facts.get("version") == 1 and facts.get("active", True):
             out.add("IKEV1_ENABLED", "Medium", f"{what} configures IKEv1 (deprecated by RFC 9395)")
         if facts.get("aggressive") is True:
             out.add("IKE_AGGRESSIVE", "High", f"{what}: IKEv1 Aggressive Mode is allowed"
                     + (f" ({facts.get('aggressive_reason')})" if facts.get("aggressive_reason") else ""))
-        if facts.get("pq") is True or any(_pq_ike_group(g) for g in facts.get("groups") or []):
+        if facts.get("pq") is True or any(_pq_ike_group(g) for g in C.fact_list(facts.get("groups"))):
             return False  # an ML-KEM additional key exchange is configured (RFC 9370)
         if facts.get("pq") is False:
             out.add("IKE_NO_PQ", "Low", f"{what} has no post-quantum (ML-KEM) key exchange")
         return True  # IKE without a configured ML-KEM exchange keys the SA with classical Diffie-Hellman only
     if kind == "ipsec_policy":
-        enc = [n for n in facts.get("encryption") or [] if WEAK_ENCR.match(str(n))]
-        integ = [n for n in facts.get("integrity") or [] if WEAK_INTEG.match(str(n))]
-        pfs = [f"PFS {g}" for g in facts.get("pfs_groups") or [] if g in WEAK_GROUPS]
+        enc = [n for n in C.fact_list(facts.get("encryption")) if WEAK_ENCR.match(str(n))]
+        integ = [n for n in C.fact_list(facts.get("integrity")) if WEAK_INTEG.match(str(n))]
+        pfs = [f"PFS {g}" for g in C.fact_list(facts.get("pfs_groups")) if isinstance(g, str) and g in WEAK_GROUPS]
         weak = enc + integ + pfs
         if enc or pfs or _md5_class(integ):
             out.add("IPSEC_WEAK_TRANSFORM", "Medium", f"{what} allows weak ESP transforms ({', '.join(weak[:5])})")
@@ -217,7 +217,7 @@ def appliance_rule(out: Any, facts: dict[str, Any], algorithm: Any, key_size: An
                                                    f"{SHA1_NOTE}")
         return None
     if kind == "ssh":
-        versions = [int(v) for v in facts.get("versions") or [] if str(v).isdigit()]
+        versions = [int(v) for v in C.fact_list(facts.get("versions")) if str(v).isdigit()]
         if 1 in versions:
             out.add("SSH_V1_ENABLED", "High", f"{what} allows SSH protocol version 1")
         if any(facts.get(k) for k in ("ciphers", "macs", "kex")):
