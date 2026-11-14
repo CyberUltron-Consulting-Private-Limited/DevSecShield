@@ -11,7 +11,7 @@ from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Any
 
-SOURCES_SHA256 = "90f2404a05f3517c749462843e6cb69092ff99a8dbcab7cfa4fd1b98aea85ab4"
+SOURCES_SHA256 = "54c4f5b2a9b04291bfefb45a16d982ed830dcc9b3d3632304b93247393c6382c"
 
 # canonical name -> (family_label, primitive, standard, status, parameter_set,
 #                    nist_category, construction, quantum, key_size, components)
@@ -2708,4 +2708,12 @@ TLS_CLASSICAL_SIGSCHEME_NAMES = (
     "ecdsa_sha1", "rsa_pkcs1_sha1",
     "ecdsa_brainpoolP256r1tls13_sha256", "ecdsa_brainpoolP384r1tls13_sha384",
     "ecdsa_brainpoolP512r1tls13_sha512",
+)
+
+# the CB-13 SSH host-key reader's post-quantum and hybrid key exchanges, in its order
+SSH_PQ_PROBE_KEX = (
+    "mlkem768x25519-sha256", "sntrup761x25519-sha512",
+    "sntrup761x25519-sha512@openssh.com", "mlkem768nistp256-sha256",
+    "mlkem1024nistp384-sha384", "mlkem768-sha256",
+    "mlkem512-sha256", "mlkem1024-sha384",
 )

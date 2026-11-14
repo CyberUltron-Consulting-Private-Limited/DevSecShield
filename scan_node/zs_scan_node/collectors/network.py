@@ -37,6 +37,7 @@ from typing import Any
 
 from zs_scan_node import ikeprobe
 from zs_scan_node import otprobe
+from zs_scan_node import sshprobe as S
 from zs_scan_node import tls_registry as R
 from zs_scan_node import tlsenum as E
 from zs_scan_node import tlsprobe as T
@@ -62,6 +63,13 @@ MAX_NO_ANSWER_ROWS = 2048
 TARPIT_TIMEOUTS = 3
 ENDPOINT_MAX_S = 90
 IKE_SPACING = 0.2  # seconds between two packets to the same IKE endpoint (at least)
+# SSH host keys are read with one connection per host-key family (sshprobe), none of which authenticates.  OpenSSH >=
+# 9.8 PerSourcePenalties charges every such connection ``noauth`` (default 1 s) and refuses the source once more than
+# ``min`` (default 15 s) is pending.  At most this many unauthenticated SSH connections per address per job (every SSH
+# port of the address together), at least SSH_SPACING_S apart: the pending penalty never exceeds about one second at
+# the defaults, and even unpaced 8 connections plus the sweep's connects stay below 15 s.
+SSH_MAX_CONNECTIONS_PER_ADDRESS = 8
+SSH_SPACING_S = 1.0
 IKE_TIMEOUT = 3.0  # wait for an answer per packet
 IKE_FRAGILE_BUDGET = 6
 NON_ESP_MARKER = b"\x00\x00\x00\x00"  # RFC 3948 section 2.2: IKE on port 4500
@@ -178,6 +186,8 @@ class NetworkScan:
         self.timeouts: dict[str, int] = {}
         self._timeouts_lock = threading.Lock()
         self.open_count = 0
+        self._ssh_lock = threading.Lock()
+        self._ssh_addr: dict[str, dict[str, Any]] = {}  # per address: next connection time, used, refusal
         self._sni_lock = threading.Lock()
         self._sni_order: list[str] | None = None  # the names, in the team's order, resolved once per job
         self._sni_addresses: dict[str, set[str]] = {}
@@ -260,7 +270,7 @@ class NetworkScan:
             if ep.protocol in TLS_LIKE:
                 return self._tls(ep, mode)
             if ep.protocol == "ssh":
-                return self._ssh(ep)
+                return self._ssh(ep, mode)
             if ep.protocol == "tds":
                 return self._tds(ep)
             if ep.protocol == "opcua":
@@ -707,14 +717,85 @@ class NetworkScan:
                          scope=[f"{ep.where}#sni="], incomplete=False)
         return assets
 
-    def _ssh(self, ep: Endpoint) -> tuple[str, str | None, int]:
-        budget = Budget(2)
-        algs = self.handshake(ep, budget, T.ssh_kexinit, ep.ip, ep.port, 8.0)
-        host = self.handshake(ep, budget, T.ssh_host_key, ep.ip, ep.port, 10.0)
-        facts = {"banner": algs.pop("banner", None), **algs, "host_key": host if isinstance(host, dict) else None}
-        self.ctx.emit("ssh_endpoint", ep.ip, ep.where, name=f"SSH {ep.where}",
-                      algorithm=(host or {}).get("key_type") if isinstance(host, dict) else None,
-                      key_size=(host or {}).get("bits") if isinstance(host, dict) else None, protocol="ssh", facts=facts)
+    def _ssh_slot(self, ip: str) -> None:
+        """Count one more unauthenticated SSH connection to ``ip`` (PerSourcePenalties budget); raises sshprobe.Stop
+        when the address's budget is used up or the server refused an earlier connection."""
+        with self._ssh_lock:
+            st = self._ssh_addr.setdefault(ip, {"next": 0.0, "used": 0, "refused": None})
+            if st["refused"]:
+                raise S.Stop(f"server_refused: {st['refused']}")
+            if st["used"] >= SSH_MAX_CONNECTIONS_PER_ADDRESS:
+                raise S.Stop(f"budget: {SSH_MAX_CONNECTIONS_PER_ADDRESS} SSH connections per address per scan")
+            st["used"] += 1
+
+    def _ssh_pace(self, ip: str) -> None:
+        """Wait until SSH_SPACING_S after the last SSH connection to ``ip`` (any port), right before connecting."""
+        while True:
+            with self._ssh_lock:
+                st = self._ssh_addr.setdefault(ip, {"next": 0.0, "used": 0, "refused": None})
+                now = time.monotonic()
+                if now >= st["next"]:
+                    st["next"] = now + SSH_SPACING_S
+                    return
+                wait = st["next"] - now
+            if self.ctx.cancel.wait(wait):
+                raise S.Stop("skipped_cancelled")
+
+    def _ssh_refused(self, ip: str, why: str) -> None:
+        with self._ssh_lock:
+            self._ssh_addr.setdefault(ip, {"next": 0.0, "used": 0, "refused": None})["refused"] = why[:150]
+
+    def _ssh(self, ep: Endpoint, mode: str = "full") -> tuple[str, str | None, int]:
+        """KEXINIT lists and every host key the server holds (sshprobe: one connection per host-key family, none
+        authenticates).  Unread families get a coverage row scoped to the endpoint, so drift keeps their earlier
+        findings "not read" instead of resolving them."""
+        budget = Budget(2 if mode == "fragile" else max(self.per_endpoint, 2))
+
+        def open_conn():
+            if not budget.take():
+                raise S.Stop("budget: handshakes per endpoint")
+            gate = self._gate(ep.ip)  # stop-all, never-scan (live), deadline, the node's rate limiter
+            if gate:
+                raise S.Stop(gate)
+            self._ssh_slot(ep.ip)  # the address's slot only for a connection that is about to be made
+            self._ssh_pace(ep.ip)
+            try:
+                return _tcp(ep.ip, ep.port, self.ctx.never_scan, 3.0)
+            except Blocked:
+                raise S.Stop("skipped_never_scan") from None
+
+        deadline = time.monotonic() + min(ENDPOINT_MAX_S, max(self.ctx.time_left(), 1))
+        try:
+            with self.limiter.server(ep.ip):
+                facts = S.read_server(open_conn, deadline)
+        except S.Stop as stop:
+            if stop.reason.startswith("skipped_"):
+                raise _Skip(stop.reason) from None
+            return "error", stop.reason[:200], 0
+        except S.ServerRefused as exc:
+            self._ssh_refused(ep.ip, str(exc))
+            return "refused", f"{exc}; no further SSH connections to this address in this scan"[:200], 0
+        status = facts.get("host_keys_status")
+        if status == "server_refused":
+            self._ssh_refused(ep.ip, "the server refused a later connection")
+        primary = facts.get("host_key") or {}
+        self.ctx.emit("ssh_endpoint", ep.ip, ep.where, name=f"SSH {ep.where}", algorithm=primary.get("key_type"),
+                      key_size=primary.get("bits"), protocol="ssh", facts=facts)
+        if status != "complete":
+            unread = facts.get("host_keys_unread") or []
+            algs = ", ".join(a for u in unread for a in u.get("algorithms") or [])[:300]
+            if status == "kex_unsupported":
+                kex = ", ".join(facts.get("kex") or [])[:400]
+                detail = (f"SSH {ep.where}: the server offers only key exchanges the scan node cannot start ({kex}); "
+                          f"its host keys ({algs}) were not read")
+            else:
+                reasons = "; ".join(dict.fromkeys(str(u.get("reason")) for u in unread))[:300]
+                detail = f"SSH {ep.where}: host keys not read ({algs}): {reasons}"
+            cov = {"kex_unsupported": "kex_unsupported", "server_refused": "refused"}.get(str(status))
+            if cov is None:
+                cov = "truncated" if any(str(u.get("reason", "")).startswith(("budget", "skipped_"))
+                                         for u in unread) else "error"
+            self.ctx.coverage(ep.ip, f"ssh host keys {ep.where}", cov, detail, scope=[ep.where], incomplete=True)
         return "ok", None, 1
 
     def _tds(self, ep: Endpoint) -> tuple[str, str | None, int]:

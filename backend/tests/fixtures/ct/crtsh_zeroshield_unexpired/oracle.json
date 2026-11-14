@@ -1,0 +1,123 @@
+{
+ "kind": "crtsh",
+ "rows": [
+  {
+   "common_name": "aisecshield.zeroshield.ai",
+   "dns_names": [
+    "aisecshield.zeroshield.ai",
+    "aisecshieldbackend.zeroshield.ai",
+    "aisecshieldgateway.zeroshield.ai"
+   ],
+   "id": 29688810124,
+   "issuer": "C=US, O=Google Trust Services, CN=WR3",
+   "issuer_ca_id": 286244,
+   "not_after": "2026-12-03T18:02:08",
+   "not_before": "2026-09-04T17:20:01",
+   "serial": "1238e52d7849da8712a1bac3fd41236c"
+  },
+  {
+   "common_name": "aimeshfirewall.zeroshield.ai",
+   "dns_names": [
+    "aimeshbackend.zeroshield.ai",
+    "aimeshfirewall.zeroshield.ai",
+    "aimeshgateway.zeroshield.ai"
+   ],
+   "id": 29967801448,
+   "issuer": "C=US, O=Google Trust Services, CN=WR3",
+   "issuer_ca_id": 286244,
+   "not_after": "2026-11-23T16:16:55",
+   "not_before": "2026-08-25T15:22:41",
+   "serial": "229f43d64861bfde0a8290883f5fce1c"
+  },
+  {
+   "common_name": "zeroshield.ai",
+   "dns_names": [
+    "*.zeroshield.ai",
+    "zeroshield.ai"
+   ],
+   "id": 29910207105,
+   "issuer": "C=US, O=Let's Encrypt, CN=YE1",
+   "issuer_ca_id": 432952,
+   "not_after": "2026-12-20T17:44:50",
+   "not_before": "2026-09-21T17:44:51",
+   "serial": "54579bf10e4c8d3282b06e6b1caadd0b392"
+  },
+  {
+   "common_name": "zeroshield.ai",
+   "dns_names": [
+    "www.zeroshield.ai",
+    "zeroshield.ai"
+   ],
+   "id": 29711454678,
+   "issuer": "C=US, O=Let's Encrypt, CN=YE1",
+   "issuer_ca_id": 432952,
+   "not_after": "2027-01-01T07:01:15",
+   "not_before": "2026-10-03T07:01:16",
+   "serial": "57e16555eff69194a49740453f988d20870"
+  },
+  {
+   "common_name": "dpdplawshield.zeroshield.ai",
+   "dns_names": [
+    "dpdplawshield.zeroshield.ai"
+   ],
+   "id": 29759519398,
+   "issuer": "C=US, O=Let's Encrypt, CN=YR1",
+   "issuer_ca_id": 432476,
+   "not_after": "2026-11-28T22:55:45",
+   "not_before": "2026-08-30T22:55:46",
+   "serial": "644b3013b13bc692e2d10445c72c4634953"
+  },
+  {
+   "common_name": "threatshieldbackend.zeroshield.ai",
+   "dns_names": [
+    "threatshieldbackend.zeroshield.ai"
+   ],
+   "id": 29637837329,
+   "issuer": "C=US, O=Let's Encrypt, CN=YE1",
+   "issuer_ca_id": 432952,
+   "not_after": "2026-12-10T12:32:00",
+   "not_before": "2026-09-11T12:32:01",
+   "serial": "67152484e1898701f59316a3b4c83285c35"
+  },
+  {
+   "common_name": "devsecshield.zeroshield.ai",
+   "dns_names": [
+    "devsecshield.zeroshield.ai",
+    "devsecshieldapi.zeroshield.ai"
+   ],
+   "id": 29061408505,
+   "issuer": "C=US, O=Let's Encrypt, CN=YE2",
+   "issuer_ca_id": 431054,
+   "not_after": "2026-11-22T09:54:09",
+   "not_before": "2026-08-24T09:54:10",
+   "serial": "6b874f5ff3b646678eb6b47a6952b395ba4"
+  },
+  {
+   "common_name": "apisecurity.zeroshield.ai",
+   "dns_names": [
+    "apisecurity.zeroshield.ai",
+    "apisecuritybackend.zeroshield.ai"
+   ],
+   "id": 29695089966,
+   "issuer": "C=US, O=Let's Encrypt, CN=YE2",
+   "issuer_ca_id": 431054,
+   "not_after": "2027-01-01T11:22:06",
+   "not_before": "2026-10-03T11:22:07",
+   "serial": "6bf6f63e80cd2b85da91d3765caf13280d1"
+  },
+  {
+   "common_name": "docs.zeroshield.ai",
+   "dns_names": [
+    "docs.zeroshield.ai"
+   ],
+   "id": 29516464131,
+   "issuer": "C=US, O=Google Trust Services, CN=WE1",
+   "issuer_ca_id": 286236,
+   "not_after": "2026-12-17T10:37:14",
+   "not_before": "2026-09-18T09:37:19",
+   "serial": "fec4591446ab50130e2d3d732853d144"
+  }
+ ],
+ "source": "crtsh_zeroshield_unexpired",
+ "tool": "openssl x509"
+}

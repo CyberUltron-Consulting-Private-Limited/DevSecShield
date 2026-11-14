@@ -37,6 +37,7 @@ import {
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import RemediationPanel from "@/components/RemediationPanel";
+import AiRemediationPanel from "@/components/cbom/results/AiRemediationPanel";
 import {
   Dialog,
   DialogContent,
@@ -1873,6 +1874,12 @@ export default function CbomResults({
                     existingRemediation={selectedFinding.remediation}
                     snippetStart={selectedFinding.snippet_start}
                     line={selectedFinding.line}
+                  />
+                  {/* CB-38 PR-6: optional AI assistant under the KB remediation; renders nothing unless configured */}
+                  <AiRemediationPanel
+                    key={selectedFinding.id}
+                    teamId={Number(team_id)}
+                    subject={{ kind: "scan_finding", scanId: Number(scan_id), findingId: selectedFinding.id }}
                   />
                 </div>
               </ScrollArea>

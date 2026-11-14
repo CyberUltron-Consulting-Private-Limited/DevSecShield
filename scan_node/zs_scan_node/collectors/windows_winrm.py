@@ -18,20 +18,37 @@ from typing import Any
 
 from urllib.parse import urlsplit
 
-from zs_scan_node import netutil
+from zs_scan_node import algid, netutil
 from zs_scan_node.collectors import ConfigError, skipped_never_scan
 from zs_scan_node.jobctx import JobContext
 from zs_scan_node.netutil import Blocked, Target, checked_ip, expand_targets, is_ip, resolve_checked
 from zs_scan_node.scrub import printable
 
 SCRIPTS = {
+    # Certificates in the machine stores.  Key size from the key object: PublicKey.Key works only for RSA and DSA on
+    # .NET Framework 4.x (it throws for ECC), so RSA and ECC go through GetRSAPublicKey / GetECDsaPublicKey (.NET
+    # Framework 4.6 / 4.6.1).  The curve is the named-curve OID in the public key's EncodedParameters (DER, as hex).
+    # Public keys only: no private key is ever opened (CB-24 plan section 5; opening one needs key ACLs the
+    # least-privilege account does not have, and logs an "Open Key" audit event).  A public key that cannot be read
+    # leaves KeySize null and its base exception in KeyError; the row is still emitted.  RSA and ECC are told apart
+    # by OID, as FriendlyName is localised.  Windows PowerShell 5.1 syntax only.
     "certificates": (
+        "& { $rsa='1.2.840.113549.1.1.1'; $ec='1.2.840.10045.2.1'; "
         "Get-ChildItem -Path Cert:\\LocalMachine\\My,Cert:\\LocalMachine\\WebHosting,Cert:\\LocalMachine\\Remote` Desktop "
-        "-ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{ Store=$_.PSParentPath.Split('\\')[-1]; "
-        "Subject=$_.Subject; Issuer=$_.Issuer; Thumbprint=$_.Thumbprint; NotAfter=$_.NotAfter.ToUniversalTime()."
-        "ToString('o'); SignatureAlgorithm=$_.SignatureAlgorithm.FriendlyName; KeyAlgorithm=$_.PublicKey.Oid."
-        "FriendlyName; KeySize=$(try { $_.PublicKey.Key.KeySize } catch { $null }); HasPrivateKey=$_.HasPrivateKey } } "
-        "| ConvertTo-Json -Depth 3 -Compress"
+        "-ErrorAction SilentlyContinue | ForEach-Object { $c=$_; $oid=$c.PublicKey.Oid.Value; $size=$null; $k=$null; "
+        "$kerr=$null; $par=$null; "
+        "try { if ($c.PublicKey.EncodedParameters) { $par=[BitConverter]::ToString($c.PublicKey.EncodedParameters."
+        "RawData) } } catch { $par=$null }; "
+        "try { if ($oid -eq $rsa) { $k=[System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::"
+        "GetRSAPublicKey($c) } elseif ($oid -eq $ec) { $k=[System.Security.Cryptography.X509Certificates."
+        "ECDsaCertificateExtensions]::GetECDsaPublicKey($c) } else { $k=$c.PublicKey.Key }; "
+        "if ($k) { $size=$k.KeySize } } "
+        "catch { $e=$_.Exception.GetBaseException(); $kerr=$e.GetType().Name + ': ' + $e.Message }; "
+        "[pscustomobject]@{ Store=$c.PSParentPath.Split('\\')[-1]; Subject=$c.Subject; Issuer=$c.Issuer; "
+        "Thumbprint=$c.Thumbprint; NotAfter=$c.NotAfter.ToUniversalTime().ToString('o'); "
+        "SignatureAlgorithm=$c.SignatureAlgorithm.FriendlyName; KeyAlgorithm=$c.PublicKey.Oid.FriendlyName; "
+        "KeyAlgorithmOid=$oid; KeyParameters=$par; KeySize=$size; KeyError=$kerr; HasPrivateKey=$c.HasPrivateKey } "
+        "} } | ConvertTo-Json -Depth 3 -Compress"
     ),
     "schannel": (
         "$b='HKLM:\\SYSTEM\\CurrentControlSet\\Control\\SecurityProviders\\SCHANNEL\\Protocols'; "
@@ -98,20 +115,83 @@ def _json_list(text: str) -> list[dict]:
     return [d for d in data if isinstance(d, (dict, str))] if isinstance(data, list) else []
 
 
+_KEY_ALGS = {"1.2.840.113549.1.1.1": "RSA", "1.2.840.10045.2.1": "EC", "1.2.840.10040.4.1": "DSA"}
+_FRIENDLY = {"RSA": "RSA", "ECC": "EC", "DSA": "DSA"}
+# Private-key facts are not read by this node (no key is opened): the fact names are kept, unread, so rules that
+# need them (CB-24 R-HW-UNREAD) see them as not read.  Reading the provider from the certificate's KEY_PROV_INFO
+# property, which needs no key access, is CB-24 PR-4b.
+KEY_NOT_READ = "needs_key_open"
+
+
+def _der_oid(hex_text: Any) -> str | None:
+    """The OID in a DER OBJECT IDENTIFIER written as [BitConverter]::ToString hex ("06-08-2A-86-...")."""
+    try:
+        der = bytes.fromhex(str(hex_text or "").replace("-", ""))
+    except ValueError:
+        return None
+    if len(der) < 3 or der[0] != 0x06 or der[1] != len(der) - 2:
+        return None
+    parts, value = [], 0
+    for b in der[2:]:
+        value = (value << 7) | (b & 0x7F)
+        if not b & 0x80:
+            parts.append(value)
+            value = 0
+    if not parts or der[-1] & 0x80:
+        return None
+    first = parts[0]
+    head = [first // 40, first % 40] if first < 80 else [2, first - 80]
+    return ".".join(str(p) for p in head + parts[1:])
+
+
+def _int(value: Any) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else None
+
+
+def _key_alg(c: dict) -> tuple[str, str | None, int | None]:
+    """(key algorithm, curve, curve bits).  The OID decides (FriendlyName is localised); algid names the curve."""
+    oid = str(c.get("KeyAlgorithmOid") or "")
+    friendly = str(c.get("KeyAlgorithm") or "")
+    alg = _KEY_ALGS.get(oid) or _FRIENDLY.get(friendly)
+    if alg is None:
+        ident = algid.resolve(oid) if oid else None
+        alg = ident.name if ident is not None and ident.name else printable(friendly or oid, 40)
+    curve = bits = None
+    if alg == "EC":
+        curve_oid = _der_oid(c.get("KeyParameters"))
+        ident = algid.resolve(curve_oid) if curve_oid else None
+        if ident is not None and ident.name:
+            curve, bits = ident.name, ident.key_size
+        elif curve_oid:
+            curve = curve_oid
+    return alg, curve, bits
+
+
+def _key_facts() -> dict[str, Any]:
+    """Provider and exportability of a certificate's private key: not read (reading them needs opening the key)."""
+    return {"key_provider": None, "key_provider_type": None, "key_provider_class": None, "key_exportable": None,
+            "exportable_basis": f"not read: {KEY_NOT_READ}", "key_not_read_reason": KEY_NOT_READ}
+
+
 def parse_certificates(text: str) -> list[dict[str, Any]]:
     out = []
     for c in _json_list(text)[:2000]:
         if not isinstance(c, dict):
             continue
-        out.append({"store": printable(str(c.get("Store") or ""), 60), "subject": printable(str(c.get("Subject") or ""), 512),
-                    "issuer": printable(str(c.get("Issuer") or ""), 512),
-                    "thumbprint": printable(str(c.get("Thumbprint") or ""), 64),
-                    "not_after": printable(str(c.get("NotAfter") or ""), 40) or None,
-                    "sig_alg": printable(str(c.get("SignatureAlgorithm") or ""), 60) or None,
-                    "key_alg": {"RSA": "RSA", "ECC": "EC", "DSA": "DSA"}.get(str(c.get("KeyAlgorithm") or ""),
-                                                                            printable(str(c.get("KeyAlgorithm") or ""), 40)),
-                    "key_size": c.get("KeySize") if isinstance(c.get("KeySize"), int) else None,
-                    "has_private_key": bool(c.get("HasPrivateKey")), "source": "windows-store"})
+        alg, curve, curve_bits = _key_alg(c)
+        row = {"store": printable(str(c.get("Store") or ""), 60), "subject": printable(str(c.get("Subject") or ""), 512),
+               "issuer": printable(str(c.get("Issuer") or ""), 512),
+               "thumbprint": printable(str(c.get("Thumbprint") or ""), 64),
+               "not_after": printable(str(c.get("NotAfter") or ""), 40) or None,
+               "sig_alg": printable(str(c.get("SignatureAlgorithm") or ""), 60) or None,
+               "key_alg": alg, "key_size": _int(c.get("KeySize")) or curve_bits, "curve": curve,
+               "has_private_key": bool(c.get("HasPrivateKey")), "source": "windows-store"}
+        error = printable(" ".join(str(c.get("KeyError") or "").split()), 160)
+        if error:
+            row["key_read_error"] = error
+        if row["has_private_key"]:
+            row.update(_key_facts())
+        out.append(row)
     return out
 
 
