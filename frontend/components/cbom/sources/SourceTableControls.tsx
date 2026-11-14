@@ -9,6 +9,7 @@ import { Loader2, Search, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -77,6 +78,8 @@ export function SourceFilterBar({
           data-testid={`${idPrefix}-search`}
         />
       </div>
+      <InfoTip id="cbsrc.sources.search" />
+      {kinds.length > 1 && <InfoTip id="cbsrc.sources.filter_kind" />}
       {kinds.length > 1 && (
         <Select value={filters.kind || ALL} onValueChange={(v) => onChange({ ...filters, kind: v === ALL ? "" : v })}>
           <SelectTrigger className="w-[180px] cursor-pointer" aria-label="Filter by type" data-testid={`${idPrefix}-kind`}>
@@ -88,6 +91,7 @@ export function SourceFilterBar({
           </SelectContent>
         </Select>
       )}
+      {segments.length > 0 && <InfoTip id="cbsrc.sources.filter_segment" />}
       {segments.length > 0 && (
         <Select value={filters.segment || ALL} onValueChange={(v) => onChange({ ...filters, segment: v === ALL ? "" : v })}>
           <SelectTrigger className="w-[180px] cursor-pointer" aria-label="Filter by segment" data-testid={`${idPrefix}-segment`}>
@@ -99,6 +103,7 @@ export function SourceFilterBar({
           </SelectContent>
         </Select>
       )}
+      <InfoTip id="cbsrc.sources.filter_status" />
       <Select value={filters.status || ALL} onValueChange={(v) => onChange({ ...filters, status: (v === ALL ? "" : v) as SourceStatusFilter })}>
         <SelectTrigger className="w-[170px] cursor-pointer" aria-label="Filter by status" data-testid={`${idPrefix}-status`}>
           <SelectValue />
@@ -160,7 +165,7 @@ export function SourceBrowser({ teamId }: { teamId: number }) {
   const { query, sources, total } = usePagedSources(teamId, undefined, [], filters);
 
   return (
-    <SectionCard title="All sources" description="Search and filter every source this team has; each run covers the enabled ones in the groups you choose.">
+    <SectionCard infoId="cbsrc.sources.all" title="All sources" description="Search and filter every source this team has; each run covers the enabled ones in the groups you choose.">
       <SourceFilterBar teamId={teamId} filters={filters} onChange={setFilters} kinds={ALL_KINDS} idPrefix="review-sources" />
       {query.isLoading ? (
         <LoadingBlock />
@@ -177,11 +182,11 @@ export function SourceBrowser({ teamId }: { teamId: number }) {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Name</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead className="text-right">Targets</TableHead>
-                    <TableHead>Scan node</TableHead>
-                    <TableHead>Segment</TableHead>
-                    <TableHead>Last test</TableHead>
+                    <TableHead>Type <InfoTip id="cbsrc.col.type" /></TableHead>
+                    <TableHead className="text-right">Targets <InfoTip id="cbsrc.col.targets" /></TableHead>
+                    <TableHead>Scan node <InfoTip id="cbsrc.col.node" /></TableHead>
+                    <TableHead>Segment <InfoTip id="cbsrc.col.segment" /></TableHead>
+                    <TableHead>Last test <InfoTip id="cbsrc.col.last_test" /></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>

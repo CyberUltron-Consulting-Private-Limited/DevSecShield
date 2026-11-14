@@ -2616,6 +2616,48 @@ export const INFO_TIPS = {
     why: "It proves the node, network path and credential work before a full run spends credits.",
     example: "4 of 5 samples ready: 10.20.0.9 refused the login.",
   },
+  // src: backend/routers/cbom_sources.py:624-648 — #225: server-side search
+  "cbsrc.sources.search": {
+    label: "Search sources",
+    what: "Finds sources by name or by anything in their settings: a target host or IP address, owner, application, API URL. Searched on the server, so it covers every source, not only the rows loaded.",
+    why: "With thousands of sources, scrolling is not a way to find one.",
+    example: "10.20.0.11 finds the server source that lists it.",
+  },
+  // src: backend/routers/cbom_sources.py:624-648 — #225: kind filter
+  "cbsrc.sources.filter_kind": {
+    label: "Filter by type",
+    what: "Shows only sources of one kind, such as Windows servers or databases.",
+    why: "Narrows a long list to the sources you are working on.",
+    example: "Windows servers.",
+  },
+  // src: backend/routers/cbom_sources.py:624-648, backend/utilities/cbom_sources/serialize.py:111 — #225: segment of the source's scan node
+  "cbsrc.sources.filter_segment": {
+    label: "Filter by segment",
+    what: "Shows only sources whose scan node is in this segment (the segment set on the scan node).",
+    why: "Per data centre or network zone, you can check what each node covers.",
+    example: "dc-chennai.",
+  },
+  // src: backend/routers/cbom_sources.py:615-648 — #225: enabled, disabled or the last test result
+  "cbsrc.sources.filter_status": {
+    label: "Filter by status",
+    what: "Shows enabled or disabled sources, or sources by their last connection test: passed, partly passed, failed, error, running or never tested.",
+    why: "Failed and untested sources are the ones to fix before a run.",
+    example: "Test failed.",
+  },
+  // src: frontend/components/cbom/sources/SourceTableControls.tsx:163-217 — #225: every source, searchable and paged
+  "cbsrc.sources.all": {
+    label: "All sources",
+    what: "Every source of the team across all tabs, searched and filtered on the server and loaded 100 at a time.",
+    why: "One place to check what a run covers, however many sources the team has.",
+    example: "Showing 100 of 4,512 sources.",
+  },
+  // src: backend/utilities/cbom_sources/serialize.py:111 — #225: the scan node's segment
+  "cbsrc.col.segment": {
+    label: "Segment",
+    what: "The segment of the scan node that runs this source, as set on the scan node.",
+    why: "Shows which network zone or data centre the source is reached from.",
+    example: "dc-mumbai.",
+  },
   // src: frontend/components/cbom/sources/ServersTab.tsx:117-124 — the source kind
   "cbsrc.col.type": {
     label: "Type",
@@ -4512,7 +4554,7 @@ export const INFO_TIPS = {
   // src: frontend/components/cbom/sources/CmdbImportDialog.tsx:1-4, frontend/components/cbom/sources/CmdbImportDialog.tsx:57-68 — new Linux server sources or network ranges
   "cbsrc.cmdb.creates": {
     label: "New sources",
-    what: "Sources the import would create: hosts not yet in any server source become Linux server sources on the chosen node; CIDRs become network ranges.",
+    what: "Sources the import would create, each on its scan node: new Linux hosts become Linux server sources, Windows hosts WinRM sources (login from your vault), database, cluster and HSM rows sources of those kinds; CIDRs become network ranges. Nothing past the team's source limit is created.",
     why: "New sources still need a credential and a passing test before they are collected.",
     example: "cmdb-import-1 (14 Linux hosts) · owner: Cards ops.",
   },
@@ -4533,7 +4575,7 @@ export const INFO_TIPS = {
   // src: frontend/components/cbom/sources/CmdbImportDialog.tsx:142-151 — CSV or ServiceNow CMDB
   "cbsrc.cmdb.source": {
     label: "Import from",
-    what: "CSV file: columns host / fqdn / ip / cidr, owner, application, criticality, exposure, data_classification, environment, os. ServiceNow CMDB: reads the CMDB table set in Settings > Integrations (default cmdb_ci_server).",
+    what: "CSV file: host / fqdn / ip / cidr, owner, application, criticality, exposure, data_classification, environment, os, segment or scan_node; for databases, clusters and HSMs also kind, engine, port, login, api_url, module, vault_path. ServiceNow CMDB: the table set in Settings > Integrations.",
     why: "Importing keeps owners and criticality in one place instead of typing them per source.",
     example: "ServiceNow CMDB, table cmdb_ci_server.",
   },
@@ -4554,9 +4596,37 @@ export const INFO_TIPS = {
   // src: frontend/components/cbom/sources/CmdbImportDialog.tsx:175-176 — the node that can reach the new hosts
   "cbsrc.cmdb.node": {
     label: "Scan node for new sources",
-    what: "The scan node new sources use: it must reach the new hosts.",
+    what: "The scan node for rows with no segment or scan_node column. A row's segment picks the scan node of that segment instead.",
     why: "A node that cannot reach them makes every new source fail its test.",
     example: "node-dc1.",
+  },
+  // src: backend/utilities/integrations/cmdb.py:654-670, backend/utilities/cbom_sources/source_cap.py:91-96 — #224: new sources past the team's cap
+  "cbsrc.cmdb.over_limit": {
+    label: "Over the source limit",
+    what: "New sources this import would make past the team's source limit (CBOM_MAX_SOURCES, or the team's own override). They are listed with the reason and are not created; the others are.",
+    why: "The preview shows the real result, so Apply never surprises you with a refusal.",
+    example: "145 of 500 new sources are over the limit (355 of 500 used).",
+  },
+  // src: backend/utilities/integrations/cmdb.py:378-400, backend/routers/integrations.py:114 — #225: one choice per shared segment
+  "cbsrc.cmdb.segment_node": {
+    label: "Scan node for a segment",
+    what: "Several scan nodes serve this segment, so the import needs to know which one takes its rows. Without a choice those rows are skipped with the reason. A row's scan_node column still wins.",
+    why: "A node that cannot reach a segment's hosts makes every source there fail its test.",
+    example: "dc-mumbai: mum-01.",
+  },
+  // src: backend/utilities/integrations/cmdb.py:403-476, backend/routers/integrations.py:116 — #225: credentials only from a vault
+  "cbsrc.cmdb.vault": {
+    label: "Vault for credentials",
+    what: "The vault that holds the logins named in a vault_path column (databases, cluster kubeconfigs, HSM PINs) and the Windows login below. Passwords, kubeconfigs and certificates are never read from the file; rows that need one are skipped.",
+    why: "Credentials stay in your vault, read by the scan node at run time.",
+    example: "HashiCorp Vault.",
+  },
+  // src: backend/utilities/integrations/cmdb.py:576-588, backend/routers/integrations.py:117 — #225: Windows rows become WinRM sources
+  "cbsrc.cmdb.windows_vault": {
+    label: "Windows WinRM login",
+    what: "The vault secret path of the WinRM login for Windows rows. They become Windows sources over WinRM HTTPS (port 5986) that read it; a row's vault_path overrides it. Without either, Windows rows are skipped.",
+    why: "Windows hosts can then be onboarded in bulk instead of one by one in the Servers tab.",
+    example: "secret/data/cbom/winrm.",
   },
   // src: frontend/components/cbom/sources/CmdbImportDialog.tsx:1-4, frontend/components/cbom/sources/CmdbImportDialog.tsx:134 — admins only; preview, then confirm
   "cbsrc.cmdb.dialog": {

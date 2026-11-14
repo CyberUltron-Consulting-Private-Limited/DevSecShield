@@ -96,7 +96,7 @@ function PlanView({ plan }: { plan: CmdbPlan }) {
       )}
       {(plan.over_limit ?? []).length > 0 && (
         <div data-testid="cmdb-over-limit">
-          <p className="font-medium mb-1 text-red-600 dark:text-red-400">Over the source limit (will not be created)</p>
+          <p className="font-medium mb-1 text-red-600 dark:text-red-400">Over the source limit (will not be created) <InfoTip id="cbsrc.cmdb.over_limit" /></p>
           <p className="text-xs text-zinc-500 mb-1">{plan.over_limit![0].reason}</p>
           <ul className="space-y-1 text-xs max-h-40 overflow-y-auto">
             {plan.over_limit!.map((c) => (
@@ -231,7 +231,7 @@ export default function CmdbImportDialog({ teamId }: { teamId: number }) {
               </Field>
             )}
             {createMissing && shared.map(({ segment, nodes: choices }) => (
-              <Field key={segment} label={`Scan node for segment ${segment}`} htmlFor={`cmdb-seg-${segment}`}
+              <Field key={segment} infoId="cbsrc.cmdb.segment_node" label={`Scan node for segment ${segment}`} htmlFor={`cmdb-seg-${segment}`}
                      hint={`${choices.length} scan nodes serve this segment; rows in it go to the one you choose`}>
                 <NodeSelect id={`cmdb-seg-${segment}`} nodes={choices} value={segmentNodes[segment] ?? null}
                             onChange={(v) => {
@@ -246,7 +246,7 @@ export default function CmdbImportDialog({ teamId }: { teamId: number }) {
             ))}
             {createMissing && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" data-testid="cmdb-vault">
-                <Field label="Vault for credentials" htmlFor="cmdb-vault-provider"
+                <Field infoId="cbsrc.cmdb.vault" label="Vault for credentials" htmlFor="cmdb-vault-provider"
                        hint="Logins are read from your vault, never imported from the file (vault_path column, and Windows below)">
                   <Select value={vaultProvider ?? NONE} onValueChange={(v) => { setVaultProvider(v === NONE ? null : v as CmdbVaultProvider); reset(); }}>
                     <SelectTrigger id="cmdb-vault-provider" className="w-full cursor-pointer"><SelectValue /></SelectTrigger>
@@ -256,7 +256,7 @@ export default function CmdbImportDialog({ teamId }: { teamId: number }) {
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field label="Windows WinRM login (vault secret path)" htmlFor="cmdb-win-path"
+                <Field infoId="cbsrc.cmdb.windows_vault" label="Windows WinRM login (vault secret path)" htmlFor="cmdb-win-path"
                        hint="Windows rows become WinRM (HTTPS 5986) sources that read this login; without it they are skipped">
                   <Input id="cmdb-win-path" value={winPath} disabled={!vaultProvider} placeholder="secret/data/cbom/winrm"
                          onChange={(e) => { setWinPath(e.target.value); reset(); }} data-testid="cmdb-win-path" />
