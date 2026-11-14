@@ -799,6 +799,30 @@ def test_prober_lists_pinned():
         assert A.resolve(name, "tls_sigscheme").quantum == "vulnerable", name
 
 
+def test_ssh_pq_probe_kex_and_client_shares():
+    """CB-13: the SSH host-key reader's post-quantum key exchanges and the parts of its first message, in wire order
+    (RFC 10042 s2: the ML-KEM key, then the classical share; OpenSSH kexsntrup761x25519.c likewise)."""
+    assert A.SSH_PQ_PROBE_KEX == (
+        "mlkem768x25519-sha256", "sntrup761x25519-sha512", "sntrup761x25519-sha512@openssh.com",
+        "mlkem768nistp256-sha256", "mlkem1024nistp384-sha384", "mlkem768-sha256", "mlkem512-sha256",
+        "mlkem1024-sha384")
+    shares = {name: A.ssh_kex_client_share(name) for name in A.SSH_PQ_PROBE_KEX}
+    assert shares == {
+        "mlkem768x25519-sha256": (("fips203", 3), ("x25519", 32)),
+        "sntrup761x25519-sha512": (("opaque", 1158), ("x25519", 32)),
+        "sntrup761x25519-sha512@openssh.com": (("opaque", 1158), ("x25519", 32)),
+        "mlkem768nistp256-sha256": (("fips203", 3), ("nistp", 256)),
+        "mlkem1024nistp384-sha384": (("fips203", 4), ("nistp", 384)),
+        "mlkem768-sha256": (("fips203", 3),),
+        "mlkem512-sha256": (("fips203", 2),),
+        "mlkem1024-sha384": (("fips203", 4),),
+    }
+    for name in A.SSH_PQ_PROBE_KEX:
+        assert A.ssh_kex(name).quantum in ("safe", "hybrid"), name
+    for name in ("curve25519-sha256", "diffie-hellman-group14-sha256", "ecdh-sha2-nistp256", "bogus", "", None, 5):
+        assert A.ssh_kex_client_share(name) is None, name  # type: ignore[arg-type]
+
+
 def test_generator_refuses_hand_edits_and_wraps_safely(tmp_path):
     """build_algid.py writes only from the master copy, and its string wrapper never loops."""
     import importlib.util
