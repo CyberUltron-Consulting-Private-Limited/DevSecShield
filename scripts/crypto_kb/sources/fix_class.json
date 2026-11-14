@@ -518,6 +518,24 @@
     "kb:findings.node.KEY_WORLD_READABLE.remediation"
    ]
   },
+  "KMS_KEY_MATERIAL_EXPIRES": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "key material import is a cloud control-plane operation the account owner performs; no code or protocol change",
+   "sources": [
+    "kb:findings.node.KMS_KEY_MATERIAL_EXPIRES.remediation",
+    "https://docs.aws.amazon.com/kms/latest/developerguide/importing-keys-import-key-material.html (checked 2026-11-14): expired material is deleted, the key goes to PendingImport and works again only after a copy of the original material is reimported"
+   ]
+  },
+  "KMS_KEY_NO_MATERIAL": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "key material import is a cloud control-plane operation the account owner performs; no code or protocol change",
+   "sources": [
+    "kb:findings.node.KMS_KEY_NO_MATERIAL.remediation",
+    "https://docs.aws.amazon.com/kms/latest/developerguide/importing-keys-import-key-material.html (checked 2026-11-14): expired material is deleted, the key goes to PendingImport and works again only after a copy of the original material is reimported"
+   ]
+  },
   "KMS_NO_ROTATION": {
    "class": "configurable",
    "capability": false,

@@ -167,8 +167,38 @@ def jira_candidates(scan_type: str, finding_docs: list[dict]) -> list[dict]:
             if isinstance(doc, dict) and is_ticketable_finding(scan_type, doc.get("finding_data"))]
 
 
+def carried_tickets(finding_docs: list[dict]) -> dict[str, tuple[str, str | None]]:
+    """CBOM code scans: the Jira tickets still open on the previous scan of the same repository and branch, by the
+    finding's line-independent identity (``code_identity``, the identity drift and close-on-fixed use). A re-scan
+    that still has a finding keeps its ticket instead of opening a second one; when a later scan no longer has the
+    finding, close-on-fixed closes that one ticket. ``finding_docs`` are the previous scan's stored findings."""
+    from backend.utilities.cbom_sources.identity import code_identity
+
+    out: dict[str, tuple[str, str | None]] = {}
+    for doc in finding_docs:
+        info = doc.get("info") if isinstance(doc.get("info"), dict) else {}
+        key = (info.get("jira_issue_key") or "").strip()
+        if not key or doc.get("finding_status") == "fixed":  # fixed: its ticket was closed
+            continue
+        data = doc.get("finding_data") if isinstance(doc.get("finding_data"), dict) else {}
+        out.setdefault(code_identity(data), (key, info.get("jira_project_id")))
+    return out
+
+
+def _previous_tickets(session: Session, scan: Scan, mongo_db) -> tuple[int | None, dict[str, tuple[str, str | None]]]:
+    if scan.scan_type != "cbom":
+        return None, {}
+    from backend.utilities.cbom_sources.drift import previous_code_scan
+
+    base = previous_code_scan(session, scan)
+    if base is None:
+        return None, {}
+    return base.id, carried_tickets(list(mongo_db["scan_findings"].find({"scan_id": base.id})))
+
+
 def auto_create_tickets_for_successful_scan(scan_id: int, engine: Engine) -> int:
-    """Create one Jira Task per finding when the scan opted in. Returns tickets created."""
+    """Create one Jira Task per finding when the scan opted in. Returns tickets created. A CBOM re-scan of the same
+    repository and branch reuses the open ticket of a finding it still has (``carried_tickets``)."""
     from backend.get_db import get_mongo_client_db
 
     mongo_db = get_mongo_client_db()
@@ -186,7 +216,19 @@ def auto_create_tickets_for_successful_scan(scan_id: int, engine: Engine) -> int
             return 0
         scan_type = scan.scan_type
         findings = jira_candidates(scan_type, list(mongo_db["scan_findings"].find({"scan_id": scan_id})))
+        base_id, carried = _previous_tickets(session, scan, mongo_db)
         for finding in findings:
+            info = finding.get("info") if isinstance(finding.get("info"), dict) else {}
+            if carried and not (info.get("jira_issue_key") or "").strip():
+                from backend.utilities.cbom_sources.identity import code_identity
+
+                data = finding.get("finding_data") if isinstance(finding.get("finding_data"), dict) else {}
+                hit = carried.get(code_identity(data))
+                if hit and str(hit[1] or project_id) == str(project_id):  # same Jira project: the same ticket
+                    mongo_db["scan_findings"].update_one({"_id": finding["_id"]}, {"$set": {"info": {
+                        **info, "jira_issue_key": hit[0], "jira_project_id": project_id,
+                        "jira_carried_from_scan": base_id}}})
+                    continue
             if created >= MAX_AUTO_TICKETS:
                 console.print(
                     f"Auto-Jira cap {MAX_AUTO_TICKETS} reached for scan {scan_id}; remaining findings skipped",

@@ -92,7 +92,7 @@ async function main() {
 
   // 2. the agent-pool card: plain HTTP warns once the form is open, https:// never does
   for (const [url, shown] of [[HTTP_API, true], ["https://api.example", false]] as const) {
-    const card = await mount(React.createElement(AgentPoolsCard, { teamId: 1, image: "img:1", apiUrl: url }))
+    const card = await mount(React.createElement(AgentPoolsCard, { teamId: 1, image: { image: "img:1" }, apiUrl: url }))
     await click(card.host, /Create agent pool token/)
     assert.ok(card.host.querySelector('[data-testid="agent-pool-form"]'), "the pool form is open")
     const pool = card.host.querySelector('[data-testid="pool-api-insecure"]')

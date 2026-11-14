@@ -545,16 +545,17 @@ def test_network_run_needs_soc_ack_and_respects_stop(api, world):
 
 # ----------------------------------------------------------------------------- evidence and vendors
 def test_evidence_confidence_rules(api):
-    r = api("PATCH", "/1/cbom/sources/evidence/hsm_firmware", json={"confidence": "Q2"})
+    r = api("PATCH", "/1/cbom/sources/evidence/hsm_firmware", json={"confidence": "E2"})
     assert r.status_code == 400 and "evidence" in r.json()["detail"]
     today = dt.date.today().isoformat()
     r = api("PATCH", "/1/cbom/sources/evidence/hsm_firmware", json={
-        "confidence": "Q3", "evidence_title": "FIPS cert", "evidence_url": "https://csrc.nist.gov/x", "evidence_date": today,
+        "confidence": "E3", "evidence_title": "FIPS cert", "evidence_url": "https://csrc.nist.gov/x", "evidence_date": today,
         "answers": {"model": "<script>alert(1)</script>", "process": "yes"}})
-    assert r.status_code == 200 and r.json()["area"]["effective_confidence"] == "Q3"
+    assert r.status_code == 200 and r.json()["area"]["effective_confidence"] == "E3"
     old = (dt.date.today() - dt.timedelta(days=400)).isoformat()
     r = api("PATCH", "/1/cbom/sources/evidence/hsm_firmware", json={"evidence_date": old})
-    assert r.json()["area"]["effective_confidence"] == "Q0"
+    assert r.json()["area"]["effective_confidence"] == "E0"
+    assert r.json()["area"]["q0_gap"]["reason"] == "evidence_expired"
     assert api("PATCH", "/1/cbom/sources/evidence/hsm_firmware", json={"answers": {"process": "maybe"}}).status_code == 400
     assert api("PATCH", "/1/cbom/sources/evidence/nope", json={}).status_code == 404
 
@@ -569,11 +570,12 @@ def test_vendor_link_is_single_use_and_replaceable(api):
     assert shown.status_code == 200 and shown.json()["team_name"] == "Bank One"
     assert shown.headers["referrer-policy"] == "no-referrer"
     ans = api("POST", f"/cbom/vendor-questionnaire/{t2}", None, json={"answers": {"tls": "TLS 1.2+", "junk": "x"}})
-    assert ans.status_code == 200 and ans.json()["confidence"] == "Q1"
+    assert ans.status_code == 200 and ans.json() == {"received": True}  # the level is not disclosed (EC-12)
     assert api("POST", f"/cbom/vendor-questionnaire/{t2}", None, json={"answers": {"tls": "again"}}).status_code == 404
     assert api("GET", f"/cbom/vendor-questionnaire/{t2}", None).status_code == 404
     ev = api("GET", "/1/cbom/sources/evidence").json()
     assert ev["vendors"][0]["status"] == "answered" and ev["vendors"][0]["answers"] == {"tls": "TLS 1.2+"}
+    assert ev["vendors"][0]["effective_confidence"] == "E1"
     big = api("POST", f"/cbom/vendor-questionnaire/{t2}", None, content=b"x" * (40 * 1024),
               headers={"content-type": "application/json"})
     assert big.status_code == 413

@@ -127,7 +127,8 @@ export function FieldLabel({
   labelClassName,
   required,
 }: {
-  infoId: InfoTipId;
+  /** Optional only for files the coverage test lists in NOT_YET_COVERED; every covered file must pass one. */
+  infoId?: InfoTipId;
   htmlFor?: string;
   children: ReactNode;
   className?: string;
@@ -140,7 +141,7 @@ export function FieldLabel({
         {children}
         {required && <span className="text-red-500">*</span>}
       </Label>
-      <InfoTip id={infoId} />
+      {infoId && <InfoTip id={infoId} />}
     </div>
   );
 }

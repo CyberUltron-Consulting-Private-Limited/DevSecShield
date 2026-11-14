@@ -44,7 +44,7 @@ export const CONTROL_WINDOW_LINES = 25;
 export const MAX_CLIMB = 3;
 
 /** Table headers whose meaning is the word itself; everything else gets a tip. */
-export const SELF_EXPLANATORY_HEADERS = new Set(["Actions", "Title", "Name", "#", "View scan metadata", "Remove", "Action"]);
+export const SELF_EXPLANATORY_HEADERS = new Set(["Actions", "Title", "Name", "#", "View scan metadata", "Remove", "Action", "Expand"]);
 
 export const CONTROL_TAGS = new Set([
   "Input", "Textarea", "SelectTrigger", "Switch", "Checkbox", "input", "select", "textarea",

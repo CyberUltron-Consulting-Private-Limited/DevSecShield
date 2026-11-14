@@ -75,15 +75,17 @@ export const COVERED: string[] = [
   "components/cbom/CertCalendar.tsx",
   "components/cbom/CryptoHeatmap.tsx",
   "components/cbom/KbFindingDetails.tsx",
-  // quantum-risk grade and crypto-agility (Sources run results and code results), the AI remediation assistant
+  // quantum-risk grade and crypto-agility, and the shared run results page (sections, findings, jobs, AI assistant)
   "components/cbom/grade",
-  "components/cbom/results/AiRemediationPanel.tsx",
+  "components/cbom/results",
 ];
 /** Files under a covered directory that are not covered yet, each with the reason. */
 export const NOT_YET_COVERED = new Map<string, string>([
-  // The run results view: CB-38 PR #120 moves it to components/cbom/results; its tips follow there.
-  ["components/cbom/sources/RunResults.tsx", "run results view, replaced by components/cbom/results (CB-38 #120)"],
-  ["components/cbom/sources/RunPosture.tsx", "run posture view, replaced by components/cbom/results (CB-38 #120)"],
+  // The Fleet tab's Inventory, Policies and Credentials sections (F1.2 UI, PR #81) reached dev while this PR was open;
+  // their tips follow in their own PR so this one does not grow further.
+  ["components/cbom/sources/fleet/CredentialsSection.tsx", "Fleet credentials (F1.2 UI, PR #81): tips in a follow-up PR"],
+  ["components/cbom/sources/fleet/InventorySection.tsx", "Fleet inventory (F1.2 UI, PR #81): tips in a follow-up PR"],
+  ["components/cbom/sources/fleet/PoliciesSection.tsx", "Fleet policies (F1.2 UI, PR #81): tips in a follow-up PR"],
 ]);
 /** Dashboards: their h2/h3 chart titles need a tip as well. */
 export const DASHBOARDS = new Set<string>(["app/[team_id]/page.tsx"]);

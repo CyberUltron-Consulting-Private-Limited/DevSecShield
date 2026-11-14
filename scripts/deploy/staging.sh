@@ -5,24 +5,34 @@
 #   staging.sh build                     build the images for DSS_TAG (scripts/deploy/build_images.sh)
 #   staging.sh save                      docker save | gzip -> deploy/staging/images/dss-staging-<tag>.tar.gz + .sha256
 #                                        + .need (bytes loading it needs where the host stores images)
+#   staging.sh node-artifacts            the scan-node downloads the API serves on Add scan node, in
+#                                        deploy/staging/images/node-artifacts/: the node image file
+#                                        (scripts/release/scan_node_image.sh), the Helm chart, the OVA and AMI build
+#                                        kits and manifest.json (scripts/release/node_artifacts.py); push ships them
 #   staging.sh push <user@host> [dir]    scp the deploy bundle to <dir> (default /opt/devsecshield-staging), check the
-#                                        host's disk there (disk-check), scp the archive, then run
-#                                        `staging.sh deploy <tag>` there over ssh
+#                                        host's disk there (disk-check, the node downloads included), scp the archive
+#                                        and the node downloads, then run `staging.sh deploy <tag>` there over ssh
 #   staging.sh release <user@host> [dir] build + save + push
 # On the staging host (inside <dir>, which holds deploy/staging/.env, backend.env and certs/):
-#   staging.sh deploy [tag]              check + docker load the archive (after the disk check), refuse a tag whose
+#   staging.sh deploy [tag]              check + docker load the archive (after the disk check), check and put the
+#                                        tag's node downloads in deploy/staging/node-artifacts/<tag>/ (the backend's
+#                                        CBOM_NODE_ARTIFACT_DIR), refuse a tag whose
 #                                        migrations do not contain the database's revision, keep the tag's deploy files
 #                                        and Alembic head in deploy/staging/releases/<tag>/, switch DSS_TAG, compose up,
 #                                        checks; then keep the images of this tag, the previous one and the last that
 #                                        passed its checks, and this tag's archive only
-#   staging.sh disk-check <tag> [--archive-bytes N] [--need-bytes N]
+#   staging.sh disk-check <tag> [--archive-bytes N] [--need-bytes N] [--node-artifacts-bytes N]
 #                                        enough free disk to copy and load <tag>'s archive? If not, remove this
 #                                        deployment's other images and archives (never the running tag, its rollback
 #                                        target, the last that passed or <tag>; never another site's) and check again;
 #                                        fail when still short
-#   staging.sh disk-plan <tag> [--archive-bytes N] [--need-bytes N]
+#   staging.sh disk-plan <tag> [--archive-bytes N] [--need-bytes N] [--node-artifacts-bytes N]
 #                                        what disk-check and the deploy's retention would remove; removes nothing
 #   staging.sh check                     every service runs DSS_TAG's images and is up; health and hydration via nginx
+#   staging.sh backend-env               read KEY=VALUE lines on stdin and set exactly those keys in backend.env (only
+#                                        the BACKEND_ENV_KEYS below; empty values are skipped; never prints a value).
+#                                        `push` runs it just before `deploy` when STAGING_SET_<KEY> is set (CI: the
+#                                        staging environment's CBOM_AWS_* secrets; deploy/staging/README.md "AWS")
 #   staging.sh rollback [--allow-downgrade]
 #                                        back to the previously deployed tag and its own deploy files (compose file,
 #                                        nginx, this script). When that tag's migrations do not contain the database's
@@ -39,7 +49,11 @@
 #      STAGING_DISK_FACTOR (free space loading needs in the image store, times the archive size, when no .need was
 #      measured; default 3.3),
 #      STAGING_DISK_RESERVE_MB (left free on every filesystem after that; default 1024), STAGING_CONTAINERD_ROOT
-#      (containerd's root when Docker uses the containerd image store; default: found from the containerd config).
+#      (containerd's root when Docker uses the containerd image store; default: found from the containerd config),
+#      CBOM_NODE_VERSION (node-artifacts: the scan-node version; default scan_node/zs_scan_node/__init__.py VERSION),
+#      SCAN_NODE_IMAGE (node-artifacts: the name the node image file loads as; default localhost/zeroshield/cbom-scan-node),
+#      STAGING_SET_<KEY> for each of BACKEND_ENV_KEYS (push: set <KEY> in the host's backend.env; unset or empty:
+#      the host's value is left as it is).
 set -euo pipefail
 export LC_ALL=C # df, awk and sort read the same everywhere (an ssh session may forward the caller's LC_*)
 
@@ -49,6 +63,10 @@ COMPOSE_FILE="${STAGING_DIR}/docker-compose.yml"
 ENV_FILE="${STAGING_DIR}/.env"
 HISTORY_FILE="${STAGING_DIR}/deploy-history"
 IMAGES_DIR="${STAGING_DIR}/images"
+# Scan-node downloads: built into images/node-artifacts/ on the build machine; on the host one directory per tag,
+# node-artifacts/<tag>/, which docker-compose.yml mounts read-only into the backend (CBOM_NODE_ARTIFACT_DIR).
+NODE_BUILD_DIR="${IMAGES_DIR}/node-artifacts"
+NODE_ARTIFACTS_DIR="${STAGING_DIR}/node-artifacts"
 # One directory per deployed tag: files.tar.gz (the deploy files it was started with) and alembic-head (the head of
 # its migrations). files-tag names the tag whose recorded files are in place; it is absent when they came from a
 # pushed bundle or a checkout.
@@ -76,6 +94,8 @@ DSS_REPOS=(devsecshield-backend devsecshield-frontend scan-worker dast-worker)
 # classic-store builder holds uncompressed layer tars and needs about 4x: set STAGING_DISK_FACTOR=4 for one.
 DEFAULT_DISK_FACTOR=3.3
 DEFAULT_DISK_RESERVE_MB=1024  # left free on every filesystem after the copy and the load (the host is shared)
+# The only backend.env keys a deploy may set (push -> backend-env): the AWS collector identity and the lab switch.
+BACKEND_ENV_KEYS=(CBOM_AWS_ACCESS_KEY_ID CBOM_AWS_SECRET_ACCESS_KEY CBOM_AWS_PRINCIPAL_ARN CBOM_AWS_LAB_SAME_ACCOUNT)
 
 log() { printf '[staging %s] %s\n' "$(date -u +%H:%M:%S)" "$*"; }
 die() { printf '[staging] ERROR: %s\n' "$*" >&2; exit 1; }
@@ -162,6 +182,28 @@ cmd_save() {
   fi
 }
 
+# The scan-node downloads of this checkout: the image file (built and checked by scan_node_image.sh), then the chart,
+# the kits and manifest.json (node_artifacts.py). The node image is removed from the builder's Docker afterwards.
+cmd_node_artifacts() {
+  local version image
+  version="${CBOM_NODE_VERSION:-$(sed -n -E 's/^VERSION = "([^"]+)"$/\1/p' "${REPO_ROOT}/scan_node/zs_scan_node/__init__.py")}"
+  [[ -n "${version}" ]] || die "cannot read the scan-node VERSION from scan_node/zs_scan_node/__init__.py"
+  image="${SCAN_NODE_IMAGE:-localhost/zeroshield/cbom-scan-node}"
+  rm -rf "${NODE_BUILD_DIR}"
+  mkdir -p "${NODE_BUILD_DIR}"
+  log "scan-node downloads ${version} (${image}:${version}) in ${NODE_BUILD_DIR}"
+  SCAN_NODE_IMAGE="${image}" OUT_DIR="${NODE_BUILD_DIR}" "${REPO_ROOT}/scripts/release/scan_node_image.sh" build "${version}"
+  python3 -I "${REPO_ROOT}/scripts/release/node_artifacts.py" --version "${version}" --image-ref "${image}:${version}" \
+    --out "${NODE_BUILD_DIR}"
+  docker image rm "${image}:${version}" >/dev/null 2>&1 || true
+  log "scan-node downloads: $(du -sh "${NODE_BUILD_DIR}" | cut -f1)"
+}
+
+node_files() { # the files of the scan-node downloads on the build machine (none when node-artifacts was not run)
+  [[ -f "${NODE_BUILD_DIR}/manifest.json" ]] || return 0
+  find "${NODE_BUILD_DIR}" -maxdepth 1 -type f ! -name '*.part' | sort
+}
+
 cmd_push() {
   local target=${1:?usage: staging.sh push <user@host> [dir]} dir=${2:-/opt/devsecshield-staging}
   local tag=${DSS_TAG:-$(default_tag)} archive bundle bytes remote_env need_bytes
@@ -175,12 +217,26 @@ cmd_push() {
     need_arg=" --need-bytes ${need_bytes}"
     files+=("${archive}.need")
   fi
+  # The scan-node downloads (node-artifacts) ride along: their size counts in the host's disk check.
+  local -a node=()
+  local f node_bytes=0
+  while IFS= read -r f; do
+    [[ -n "${f}" ]] || continue
+    node+=("${f}")
+    node_bytes=$((node_bytes + $(wc -c <"${f}" | tr -d '[:space:]')))
+  done < <(node_files)
+  if ((${#node[@]})); then
+    need_arg+=" --node-artifacts-bytes ${node_bytes}"
+  else
+    log "WARNING: no scan-node downloads in ${NODE_BUILD_DIR} (staging.sh node-artifacts): Add scan node will say they are not available"
+  fi
   # The deploy bundle: compose file, nginx config, examples, the rollup overlay the backend mounts, and this script.
   # Never the host's .env, backend.env or certificates: they live only on the host.
   bundle="$(mktemp -d)/dss-staging-bundle-${tag}.tar.gz"
   tar -C "${REPO_ROOT}" -czf "${bundle}" \
     --exclude='deploy/staging/.env' --exclude='deploy/staging/*.env' --exclude='deploy/staging/certs' \
     --exclude='deploy/staging/images' --exclude='deploy/staging/deploy-history' --exclude='deploy/staging/releases' \
+    --exclude='deploy/staging/node-artifacts' \
     deploy/staging compose/aibom-config-overlay scripts/deploy/staging.sh scripts/deploy/staging_browser_check.py
   local -a ssh_opts=()
   # shellcheck disable=SC2206 # operator-supplied options, split on purpose
@@ -200,9 +256,75 @@ cmd_push() {
     && ${remote_env} scripts/deploy/staging.sh disk-check '${tag}' --archive-bytes ${bytes}${need_arg}"
   log "copying the archive ($(kib_h $(((bytes + 1023) / 1024)))) to ${target}:${dir}"
   scp "${ssh_opts[@]}" "${files[@]}" "${target}:${dir}/deploy/staging/images/"
+  if ((${#node[@]})); then
+    log "copying the scan-node downloads ($(kib_h $(((node_bytes + 1023) / 1024)))) to ${target}:${dir}"
+    # into <tag>.part: `deploy` checks every file against its .sha256 before it becomes node-artifacts/<tag>
+    # shellcheck disable=SC2029
+    ssh "${ssh_opts[@]}" "${target}" "rm -rf '${dir}/deploy/staging/node-artifacts/${tag}.part' \
+      && mkdir -p '${dir}/deploy/staging/node-artifacts/${tag}.part'"
+    scp "${ssh_opts[@]}" "${node[@]}" "${target}:${dir}/deploy/staging/node-artifacts/${tag}.part/"
+  fi
+  # backend.env keys from STAGING_SET_<KEY> (CI: the staging environment's secrets) go over ssh's stdin, never on a
+  # command line or in the log; the host sets exactly those keys just before the deploy, which then reads them.
+  local key name set_env="" payload=""
+  for key in "${BACKEND_ENV_KEYS[@]}"; do
+    name="STAGING_SET_${key}"
+    if [[ -n "${!name:-}" ]]; then
+      payload+="${key}=${!name}"$'\n'
+    fi
+  done
+  [[ -z "${payload}" ]] || set_env="scripts/deploy/staging.sh backend-env && "
   # shellcheck disable=SC2029
-  ssh "${ssh_opts[@]}" "${target}" "cd '${dir}' \
-    && ${remote_env} STAGING_SERVICES='${STAGING_SERVICES:-}' scripts/deploy/staging.sh deploy '${tag}'"
+  printf '%s' "${payload}" | ssh "${ssh_opts[@]}" "${target}" "cd '${dir}' && ${set_env}\
+    ${remote_env} STAGING_SERVICES='${STAGING_SERVICES:-}' scripts/deploy/staging.sh deploy '${tag}' </dev/null"
+}
+
+# ------------------------------------------------------------------------------------------------ backend.env keys
+cmd_backend_env() { # stdin: KEY=VALUE lines; sets exactly those keys in backend.env, prints key names only
+  local file="${STAGING_DIR}/backend.env" line key value k known tmp changed=0
+  [[ -f "${file}" ]] || die "missing ${file} (cp backend.env.example backend.env)"
+  local -A want=()
+  local -a order=()
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    [[ -n "${line}" ]] || continue
+    key="${line%%=*}"
+    value="${line#*=}"
+    [[ "${line}" == *=* ]] || die "backend-env: a line without KEY=VALUE"
+    known=0
+    for k in "${BACKEND_ENV_KEYS[@]}"; do [[ "${k}" == "${key}" ]] && known=1; done
+    ((known)) || die "backend-env: ${key:0:64} is not one of: ${BACKEND_ENV_KEYS[*]}"
+    [[ -n "${value}" ]] || continue # not provided: leave the host's value
+    # AWS key ids, secret keys and ARNs, or 0/1: nothing that could break the env file or a shell
+    [[ "${value}" =~ ^[A-Za-z0-9/+=:@._,-]{1,512}$ ]] || die "backend-env: the value of ${key} has characters an env file cannot hold"
+    [[ -n "${want[${key}]+x}" ]] || order+=("${key}")
+    want[${key}]="${value}"
+  done
+  ((${#order[@]})) || { log "backend-env: no keys given; backend.env unchanged"; return 0; }
+  tmp="$(mktemp "${STAGING_DIR}/.backend.env.XXXXXX")" # 0600, same filesystem: replaced atomically below
+  chmod --reference="${file}" "${tmp}" 2>/dev/null || chmod 600 "${tmp}"
+  local -A done_=()
+  {
+    while IFS= read -r line || [[ -n "${line}" ]]; do
+      key="${line%%=*}"
+      if [[ "${line}" == *=* && -n "${want[${key}]+x}" ]]; then
+        [[ -n "${done_[${key}]+x}" ]] && continue # a later duplicate of a key set here: dropped
+        done_[${key}]=1
+        printf '%s=%s\n' "${key}" "${want[${key}]}"
+      else
+        printf '%s\n' "${line}"
+      fi
+    done <"${file}"
+    for key in "${order[@]}"; do
+      [[ -n "${done_[${key}]+x}" ]] || printf '%s=%s\n' "${key}" "${want[${key}]}"
+    done
+  } >"${tmp}"
+  if cmp -s "${tmp}" "${file}"; then
+    rm -f "${tmp}"
+  else
+    mv -f "${tmp}" "${file}"
+    changed=1
+  fi
+  log "backend-env: ${order[*]} $( ((changed)) && echo "set in backend.env" || echo "already set; backend.env unchanged")"
 }
 
 # ------------------------------------------------------------------------------------------------ staging host
@@ -335,6 +457,7 @@ sidecar_need() { # <archive>: the bytes `save` measured that loading it needs (<
 # DISK_REPORT (one line per filesystem) and DISK_SHORT (1 when one is short); call it plainly, never as a condition.
 DISK_REPORT=""
 DISK_SHORT=0
+NODE_KIB=0 # the scan-node downloads still to copy (push's --node-artifacts-bytes), on node-artifacts/'s filesystem
 disk_room() { # <archive KiB> <KiB of it already on disk> [<measured need KiB>]
   local akib=$1 have=$2 measured=${3:-} store out dev m a copy load how line
   local -A need=() free=() what=() mounts=()
@@ -357,6 +480,15 @@ disk_room() { # <archive KiB> <KiB of it already on disk> [<measured need KiB>]
   else
     load="$(awk -v k="${akib}" -v f="${DISK_FACTOR}" 'BEGIN { n = k * f; if (n > int(n)) n = int(n) + 1; printf "%d\n", n }')"
     how="x${DISK_FACTOR} the archive"
+  fi
+  if ((NODE_KIB > 0)); then
+    out="$(fs_of "${NODE_ARTIFACTS_DIR}")" || die "stat/df failed for ${NODE_ARTIFACTS_DIR}; nothing was changed"
+    read -r dev m a <<<"${out}"
+    need[${dev}]=$((${need[${dev}]:-0} + NODE_KIB))
+    free[${dev}]=${a}
+    if [[ -n "${mounts[${dev}]:-}" && "${mounts[${dev}]}" != "${m}" ]]; then m="${mounts[${dev}]}, ${m}"; fi
+    mounts[${dev}]=${m}
+    what[${dev}]="${what[${dev}]:+${what[${dev}]} + }scan-node downloads ${NODE_ARTIFACTS_DIR} ($(kib_h "${NODE_KIB}") to copy)"
   fi
   out="$(fs_of "${store}")" || die "stat/df failed for ${store}; nothing was changed"
   read -r dev m a <<<"${out}"
@@ -476,6 +608,17 @@ stale_archives() { # <kept tag>: this deployment's archives (.tar.gz, .sha256, .
   done <<<"${tags}"
 }
 
+stale_node_artifacts() { # <kept tags...>: node-artifacts/<tag> (and <tag>.part) directories of every other tag
+  local d t
+  [[ -d "${NODE_ARTIFACTS_DIR}" ]] || return 0
+  for d in "${NODE_ARTIFACTS_DIR}"/*; do
+    [[ -d "${d}" && ! -L "${d}" ]] || continue
+    t="$(basename "${d}")"
+    t="${t%.part}"
+    kept "${t}" "$@" || printf '%s\n' "${d}"
+  done
+}
+
 remove_stale() { # <label> <archive kept> <image tags kept...>: remove this deployment's other images and archives
   local label=$1 akeep=$2 images archives ref size f kib err
   shift 2
@@ -497,6 +640,12 @@ remove_stale() { # <label> <archive kept> <image tags kept...>: remove this depl
     rm -f -- "${f}"
     log "${label}: removed ${f} ($(kib_h "${kib}"))"
   done <<<"${archives}"
+  # the scan-node downloads go with their tag's images (the backend of a kept tag mounts them)
+  while IFS= read -r f; do
+    [[ -n "${f}" ]] || continue
+    rm -rf -- "${f}"
+    log "${label}: removed ${f}/ (scan-node downloads)"
+  done < <(stale_node_artifacts "$@")
 }
 
 plan_stale() { # <label> <archive kept> <image tags kept...>: what remove_stale would remove
@@ -514,6 +663,11 @@ plan_stale() { # <label> <archive kept> <image tags kept...>: what remove_stale 
     log "${label}: would remove ${f} ($(kib_h "$(file_kib "${f}")"))"
     n=$((n + 1))
   done <<<"${archives}"
+  while IFS= read -r f; do
+    [[ -n "${f}" ]] || continue
+    log "${label}: would remove ${f}/ (scan-node downloads)"
+    n=$((n + 1))
+  done < <(stale_node_artifacts "$@")
   if ((n == 0)); then log "${label}: nothing to remove"; fi
 }
 
@@ -568,20 +722,24 @@ make_room() { # <check|plan> <tag> <archive KiB> <KiB of it already on disk> [<m
   plan_stale "after the deploy" "${tag}" ${after}
 }
 
-cmd_disk() { # <check|plan> <tag> [--archive-bytes N] [--need-bytes N]
+cmd_disk() { # <check|plan> <tag> [--archive-bytes N] [--need-bytes N] [--node-artifacts-bytes N]
   local mode=$1 tag="" bytes="" need_bytes="" archive akib have=0
   shift
   while (($#)); do
     case "$1" in
-      --archive-bytes | --need-bytes)
+      --archive-bytes | --need-bytes | --node-artifacts-bytes)
         (($# >= 2)) || die "$1 needs a value"
         [[ "$2" =~ ^[0-9]+$ ]] || die "$1 $2 is not a number of bytes"
-        if [[ "$1" == --archive-bytes ]]; then bytes=$2; else need_bytes=$2; fi
+        case "$1" in
+          --archive-bytes) bytes=$2 ;;
+          --need-bytes) need_bytes=$2 ;;
+          *) NODE_KIB="$(need_kib "$2")" ;;
+        esac
         shift 2
         ;;
       -*) die "unknown disk-${mode} option $1 (see --help)" ;;
       *)
-        [[ -z "${tag}" ]] || die "usage: staging.sh disk-${mode} <tag> [--archive-bytes N] [--need-bytes N]"
+        [[ -z "${tag}" ]] || die "usage: staging.sh disk-${mode} <tag> [--archive-bytes N] [--need-bytes N] [--node-artifacts-bytes N]"
         tag=$1
         shift
         ;;
@@ -719,6 +877,35 @@ up() { # compose up; returns compose's status (the listing after it is for the o
   return "${rc}"
 }
 
+# node-artifacts/<tag>.part (copied by push) becomes node-artifacts/<tag> once it has its manifest.json and every file
+# has a .sha256 beside it that matches; the backend of <tag> mounts it read-only (docker-compose.yml). A tag
+# deployed without downloads gets an empty directory (the API then says they are not available), never one that
+# Docker would create as root.
+install_node_artifacts() { # <tag>
+  local tag=$1 part="${NODE_ARTIFACTS_DIR}/$1.part" dest="${NODE_ARTIFACTS_DIR}/$1" sums f
+  mkdir -p "${NODE_ARTIFACTS_DIR}"
+  if [[ -d "${part}" ]]; then
+    [[ -f "${part}/manifest.json" ]] || die "${part} has no manifest.json; nothing was switched"
+    sums="$(cd "${part}" && find . -maxdepth 1 -name '*.sha256' -printf '%f\n' | sort)"
+    [[ -n "${sums}" ]] || die "${part} has no .sha256 files; nothing was switched"
+    # shellcheck disable=SC2086 # file names without spaces (node_artifacts.py names them)
+    (cd "${part}" && sha256sum --quiet -c ${sums}) ||
+      die "the scan-node downloads in ${part} do not match their .sha256 (copy damaged?); nothing was switched"
+    for f in "${part}"/*; do
+      case "${f}" in *.sha256 | */manifest.json) continue ;; esac
+      [[ -f "${f}.sha256" ]] || die "${f} has no .sha256 beside it; nothing was switched"
+    done
+    rm -rf "${dest}"
+    mv "${part}" "${dest}"
+    log "scan-node downloads of ${tag} in place: $(paste -sd' ' <(cd "${dest}" && ls))"
+  elif [[ -f "${dest}/manifest.json" ]]; then
+    log "scan-node downloads of ${tag} already in place (${dest})"
+  else
+    mkdir -p "${dest}"
+    log "WARNING: no scan-node downloads for ${tag} (push them with staging.sh node-artifacts): Add scan node will say they are not available"
+  fi
+}
+
 # A tag can start only on a database at a revision its migrations contain: otherwise its migrate one-shot fails
 # ("Can't locate revision identified by ...") and everything that waits for it never starts.
 cmd_deploy() {
@@ -753,6 +940,7 @@ cmd_deploy() {
       fi
     fi
   fi
+  install_node_artifacts "${tag}"
   in_place="$(cat "${FILES_TAG_FILE}" 2>/dev/null || true)"
   if [[ -n "${in_place}" && "${in_place}" != "${tag}" && -f "${RELEASES_DIR}/${tag}/files.tar.gz" ]]; then
     log "the deploy files in place are ${in_place}'s (rollback); putting back ${tag}'s"
@@ -851,6 +1039,7 @@ EOF
   else
     log "WARNING: no deploy files are recorded for ${previous} (deployed before they were kept); using ${current}'s"
   fi
+  mkdir -p "${NODE_ARTIFACTS_DIR}/${previous}" # kept with its images; never one Docker creates as root
   set_tag "${previous}"
   if ! up; then
     printf '%s rollback %s previous %s alembic %s FAILED\n' "$(date -u +%FT%TZ)" "${previous}" "${current}" "${head}" \
@@ -964,7 +1153,9 @@ main() {
     rollback) cmd_rollback "$@" ;;
     disk-check) cmd_disk check "$@" ;;
     disk-plan) cmd_disk plan "$@" ;;
-    -h | --help | help | "") sed -n '2,42p' "${BASH_SOURCE[0]}" ;;
+    node-artifacts) cmd_node_artifacts ;;
+    backend-env) cmd_backend_env ;;
+    -h | --help | help | "") sed -n '2,56p' "${BASH_SOURCE[0]}" ;;
     *) die "unknown command ${cmd} (see --help)" ;;
   esac
 }

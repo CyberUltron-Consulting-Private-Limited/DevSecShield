@@ -44,16 +44,27 @@ def validate_jira_url(url: str) -> bool:
         raise ValueError("Cannot connect to localhost or loopback addresses")
     
     # Resolve hostname and check IP
+    # A self-hosted Jira (Server / Data Center) on the bank's own network is a private address: like every other
+    # integration destination it is allowed only when the operator lists it in INTEGRATION_ALLOWED_PRIVATE
+    # (outbound.check_address). Loopback, link-local (cloud metadata), CGNAT and reserved addresses stay refused.
+    from backend.utilities.integrations import outbound
+
+    rules = outbound.allowlist()
+    operator_allowed = False
     try:
         # Get all IP addresses for the hostname
         ip_addresses = socket.getaddrinfo(hostname, None)
         for family, type, proto, canonname, sockaddr in ip_addresses:
             ip = sockaddr[0]
             ip_obj = ipaddress.ip_address(ip)
-            
+            if ip_obj.is_private and not outbound._never(ip) and outbound.check_address(hostname, ip, rules) is None:
+                operator_allowed = True
+                continue
+
             # Block private, loopback, link-local, and reserved addresses
             if ip_obj.is_private:
-                raise ValueError(f"Cannot connect to private IP address: {ip}")
+                raise ValueError(f"Cannot connect to private IP address: {ip} (an operator can allow an on-premises "
+                                 f"Jira in {outbound.ENV_ALLOWED_PRIVATE})")
             if ip_obj.is_loopback:
                 raise ValueError(f"Cannot connect to loopback address: {ip}")
             if ip_obj.is_link_local:
@@ -75,7 +86,7 @@ def validate_jira_url(url: str) -> bool:
     ]
     hostname_lower = hostname.lower()
     for pattern in blocked_patterns:
-        if pattern in hostname_lower:
+        if pattern in hostname_lower and not operator_allowed:  # jira.bank.local is fine once the operator lists it
             raise ValueError(f"Cannot connect to internal domain: {hostname}")
     
     # Must end with atlassian.net or be a known Jira domain

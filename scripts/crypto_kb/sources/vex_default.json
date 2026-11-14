@@ -1025,6 +1025,26 @@
     "CycloneDX 1.6.2 impactAnalysisState"
    ]
   },
+  "KMS_KEY_MATERIAL_EXPIRES": {
+   "basis": "posture",
+   "reason": "availability/lifecycle: when imported key material expires, encrypt and decrypt calls fail (an outage); no confidentiality or integrity attack (the KB entry says it is not an attack path)",
+   "sources": [
+    "kb:findings.node.KMS_KEY_MATERIAL_EXPIRES.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState",
+    "CB-33 PR-C (#144) kb_text entry"
+   ]
+  },
+  "KMS_KEY_NO_MATERIAL": {
+   "basis": "posture",
+   "reason": "availability/lifecycle: when imported key material is missing, encrypt and decrypt calls fail (an outage); no confidentiality or integrity attack (the KB entry says it is not an attack path)",
+   "sources": [
+    "kb:findings.node.KMS_KEY_NO_MATERIAL.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState",
+    "CB-33 PR-C (#144) kb_text entry"
+   ]
+  },
   "KMS_NO_ROTATION": {
    "basis": "posture",
    "reason": "rotation hygiene: limits blast radius after a leak; no attack on the key as it is",

@@ -79,7 +79,11 @@ ${indent(cbomGateDetailsJq("response.json"), 10)}
 ${indent(cbomGateScript("response.json"), 10)}`;
 }
 
-export function jenkinsfile({ kind: rawKind, endpoint, apiKey }: TemplateOptions & { apiKey: string }): string {
+// The key is never written into a file: every template reads it from the CI system's secret store under this name
+// (GitHub Actions secret, GitLab CI/CD variable, Jenkins "Secret text" credential ID; Bamboo uses cicd_api_key).
+export const CI_SECRET_NAME = "CICD_API_KEY";
+
+export function jenkinsfile({ kind: rawKind, endpoint }: TemplateOptions): string {
   const kind = kindOf(rawKind);
   const label = kind.toUpperCase();
   const zipPath = `${D}{WORKSPACE_TMP:-/tmp}/devsecshield-project.zip`;
@@ -113,7 +117,7 @@ ${cbomGateScript("devsecshield-response.json")}
     agent any
 
     environment {
-        CICD_API_KEY = '${apiKey}'
+        CICD_API_KEY = credentials('CICD_API_KEY')
         SCAN_API_URL = '${endpoint}'
     }
 

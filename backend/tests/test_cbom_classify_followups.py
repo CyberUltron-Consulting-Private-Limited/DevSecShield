@@ -40,14 +40,15 @@ def test_algid_elb_table_is_the_thirteen_documented_pq_policies():
 
 @pytest.mark.parametrize("policy", ELB_PQ)
 def test_an_alb_or_nlb_listener_on_a_pq_policy_is_not_quantum_vulnerable(policy):
-    from backend.utilities.cbom_sources.posture import pqc_class
+    from backend.utilities.cbom_sources.posture import classify_pqc
 
     facts = {**LISTENER, "ssl_policy": policy}
     v = classify("load_balancer_tls", None, None, "HTTPS", facts, NOW)
     assert v["quantum_vulnerable"] is False
     assert "QUANTUM_VULNERABLE" not in v["finding_codes"] and "NO_PQ_KEX" not in v["finding_codes"]
     # a hybrid key exchange (classical + ML-KEM), not a pure post-quantum one: the posture class says so
-    assert pqc_class("load_balancer_tls", False, v["finding_codes"], facts) == "hybrid"
+    row = {"asset_type": "load_balancer_tls", "quantum_vulnerable": False, "facts": facts}
+    assert classify_pqc(row, v["finding_codes"])[0] == "hybrid"
 
 
 @pytest.mark.parametrize("policy", ["ELBSecurityPolicy-TLS13-1-2-2021-06", "ELBSecurityPolicy-2016-08",
@@ -99,13 +100,18 @@ AWS_PQ_ROWS = ([("load_balancer_tls", {**LISTENER, "protocols": ["TLSv1.3"], "ss
 @pytest.mark.parametrize("asset_type, facts", AWS_PQ_ROWS, ids=[f["ssl_policy" if "ssl_policy" in f else "security_policy"]
                                                                 for _t, f in AWS_PQ_ROWS])
 def test_every_aws_pq_policy_is_graded_on_its_classical_fallback(asset_type, facts):
-    from backend.utilities.cbom_sources.posture import pqc_class
+    from backend.utilities.cbom_sources.posture import classify_pqc
 
     v = classify(asset_type, None, None, "TLS", facts, NOW)
-    cls = pqc_class(asset_type, v["quantum_vulnerable"], v["finding_codes"], facts)
+    row = {"asset_type": asset_type, "quantum_vulnerable": v["quantum_vulnerable"], "facts": facts}
+    cls, basis = classify_pqc(row, v["finding_codes"])
     fallback, why = qgrade.classical_fallback(asset_type, facts, v["finding_codes"])
-    assert cls == "hybrid" and fallback is True and "also accepts classical key exchange" in why
-    assert qgrade.graded_class(cls, fallback) == "quantum-vulnerable"
+    assert fallback is True and "also accepts classical key exchange" in why
+    if asset_type == "load_balancer_tls":  # AWS names the ELB PQ policies' groups (algid): a hybrid, graded classical
+        assert (cls, basis) == ("hybrid", "pq_kex_accepted")
+        assert qgrade.graded_class(cls, fallback) == "quantum-vulnerable"
+    else:  # AWS names no group for the API Gateway PQ policies: unknown (CB-18 EC-1), which grade rule 4 makes Q0
+        assert (cls, basis) == ("unknown", "pq_group_unnamed")
 
 
 def test_a_classic_or_non_pq_aws_policy_gets_no_aws_fallback_reason():

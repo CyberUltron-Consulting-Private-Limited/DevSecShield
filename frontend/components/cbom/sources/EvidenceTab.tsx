@@ -33,6 +33,7 @@ import { formatDay, pluralize } from "./logic";
 import {
   ChoiceCards,
   CONFIDENCE_LABEL,
+  CONFIDENCE_LEVELS,
   ConfidenceBadge,
   ConfirmDialog,
   CopyButton,
@@ -40,6 +41,7 @@ import {
   ErrorBlock,
   Field,
   LoadingBlock,
+  Q0GapBadge,
   SectionCard,
   StatCard,
   StatusBadge,
@@ -49,8 +51,8 @@ import {
 import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
 import type { InfoTipId } from "@/content/infotips";
 
-const LEVELS: CbomConfidence[] = ["Q0", "Q1", "Q2", "Q3"];
-const LEVEL_TIP: Record<CbomConfidence, InfoTipId> = { Q0: "cbsrc.ev.q0", Q1: "cbsrc.ev.q1", Q2: "cbsrc.ev.q2", Q3: "cbsrc.ev.q3" };
+const LEVELS: CbomConfidence[] = CONFIDENCE_LEVELS;
+const LEVEL_TIP: Record<CbomConfidence, InfoTipId> = { E0: "cbsrc.ev.e0", E1: "cbsrc.ev.e1", E2: "cbsrc.ev.e2", E3: "cbsrc.ev.e3" };
 const CHOICES: { value: string; label: string }[] = [
   { value: "yes", label: "Yes" },
   { value: "no", label: "No" },
@@ -68,6 +70,7 @@ const VENDOR_STATUS: Record<CbomVendor["status"], [Tone, string]> = {
   link_created: ["blue", "Link created"],
   overdue: ["red", "Overdue"],
   answered: ["green", "Answered"],
+  refresh_pending: ["blue", "New link sent"],
   expired: ["amber", "Expired"],
 };
 
@@ -157,19 +160,22 @@ function sameAnswers(a: Record<string, string>, b: Record<string, string>): bool
   return ka.length === kb.length && ka.every((k, i) => k === kb[i] && a[k] === b[k]);
 }
 
+/** The note under an area's level, from the server's level and Q0 gap reason (no client copy of the rules, OB-4). */
 function confidenceNote(area: CbomEvidenceArea, vendorCount: number): string | null {
-  if (area.confidence === area.effective_confidence) return null;
-  if (area.area_key === VENDOR_AREA && vendorCount > 0) {
+  if (area.area_key === VENDOR_AREA && vendorCount > 0 && area.confidence !== area.effective_confidence) {
     return `Taken from the lowest vendor answer (set here: ${area.confidence} ${CONFIDENCE_LABEL[area.confidence]})`;
   }
-  return `Set as ${area.confidence} ${CONFIDENCE_LABEL[area.confidence]}, but the evidence is older than 12 months, so it counts as Q0 until renewed`;
+  if (area.q0_gap?.reason === "evidence_expired") {
+    return `Set as ${area.confidence} ${CONFIDENCE_LABEL[area.confidence]}, but ${area.q0_gap.text}`;
+  }
+  return null;
 }
 
 function areaReminder(area: CbomEvidenceArea): string {
   const due = area.due_date ? ` by ${formatDay(area.due_date)}` : "";
   return [
     `Reminder${area.owner ? ` for ${area.owner}` : ""}: please answer the "${area.title}" questions in ZeroShield DevSecShield (CBOM Sources, Evidence tab)${due}.`,
-    `Current status: ${area.effective_confidence} ${CONFIDENCE_LABEL[area.effective_confidence]}. Until it is answered it stays a visible Q0 gap.`,
+    `Current status: ${area.effective_confidence} ${CONFIDENCE_LABEL[area.effective_confidence]}. Until it is answered it stays a visible Q0 gap in the risk register.`,
   ].join("\n");
 }
 
@@ -190,6 +196,8 @@ function vendorDates(vendor: CbomVendor, serverNow: string | undefined): string 
       return "No link yet";
     case "answered":
       return `Answered ${shortDate(vendor.answered_at)}`;
+    case "refresh_pending":
+      return `Answered ${shortDate(vendor.answered_at)} · new link expires ${shortDate(vendor.link_expires_at)}`;
     case "expired":
       return `Expired ${shortDate(vendor.link_expires_at)}`;
     case "overdue": {
@@ -202,7 +210,7 @@ function vendorDates(vendor: CbomVendor, serverNow: string | undefined): string 
 }
 
 function vendorLevel(vendor: CbomVendor): CbomConfidence {
-  return vendor.answered_at ? vendor.confidence : "Q0";
+  return vendor.effective_confidence ?? "E0"; // the server's level: E0 until the vendor answers
 }
 
 // ---------------------------------------------------------------------------- tab
@@ -257,8 +265,8 @@ export default function EvidenceTab({ teamId, onNavigate }: { teamId: number; on
   const today = /^\d{4}-\d{2}-\d{2}/.test(serverNow ?? "") ? serverNow.slice(0, 10) : null;
   // The backend accepts an evidence date up to one day ahead of its UTC date (time zones east of UTC).
   const maxEvidenceDate = today ? addDays(today, 1) : null;
-  const counts: Record<CbomConfidence, number> = { Q0: 0, Q1: 0, Q2: 0, Q3: 0 };
-  for (const area of areas) counts[area.effective_confidence] = (counts[area.effective_confidence] ?? 0) + 1;
+  const counts: Partial<Record<CbomConfidence, number>> = data.by_confidence ?? {};
+  const gapCount = data.q0_gap_count ?? 0;
   const answeredVendors = vendors.filter((v) => !!v.answered_at).length;
   const previewArea = areas.find((a) => a.area_key === previewKey) ?? areas[0] ?? null;
   const linkArea = createdLink ? areas.find((a) => a.area_key === createdLink.areaKey) ?? areas.find((a) => a.area_key === VENDOR_AREA) : null;
@@ -282,8 +290,8 @@ export default function EvidenceTab({ teamId, onNavigate }: { teamId: number; on
           <StatCard infoId={LEVEL_TIP[q]}
             key={q}
             label={`${q} ${CONFIDENCE_LABEL[q]}`}
-            value={pluralize(counts[q], "area")}
-            tone={q === "Q0" && counts.Q0 > 0 ? "red" : q === "Q3" && counts.Q3 > 0 ? "green" : undefined}
+            value={pluralize(counts[q] ?? 0, "area")}
+            hint={q === "E0" ? `${pluralize(gapCount, "Q0 gap")} in the risk register (areas and vendors)` : undefined}
           />
         ))}
       </div>
@@ -323,7 +331,7 @@ export default function EvidenceTab({ teamId, onNavigate }: { teamId: number; on
                   {areas.map((area) => {
                     const note = confidenceNote(area, vendors.length);
                     const href = safeHref(area.evidence_url);
-                    const answered = Object.keys(area.answers ?? {}).length > 0 || area.confidence !== "Q0";
+                    const answered = Object.keys(area.answers ?? {}).length > 0 || area.confidence !== "E0";
                     return (
                       <TableRow key={area.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800" data-testid={`evidence-area-${area.area_key}`}>
                         <TableCell className="font-medium text-zinc-900 dark:text-white max-w-[240px]">
@@ -340,7 +348,10 @@ export default function EvidenceTab({ teamId, onNavigate }: { teamId: number; on
                           )}
                         </TableCell>
                         <TableCell>
-                          <ConfidenceBadge level={area.effective_confidence} />
+                          <div className="flex flex-wrap items-center gap-1">
+                            <ConfidenceBadge level={area.effective_confidence} testId={`evidence-level-${area.area_key}`} />
+                            <Q0GapBadge gap={area.q0_gap} testId={`evidence-gap-${area.area_key}`} />
+                          </div>
                           {note && <p className="mt-1 max-w-[240px] whitespace-normal text-xs text-amber-600 dark:text-amber-400">{note}</p>}
                         </TableCell>
                         <TableCell className="max-w-[260px]">
@@ -375,7 +386,7 @@ export default function EvidenceTab({ teamId, onNavigate }: { teamId: number; on
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center justify-end gap-2">
-                            {area.effective_confidence === "Q0" && <CopyButton text={areaReminder(area)} label="Copy reminder" />}
+                            {area.effective_confidence === "E0" && <CopyButton text={areaReminder(area)} label="Copy reminder" />}
                             <Button
                               size="sm"
                               variant="outline"
@@ -403,7 +414,7 @@ export default function EvidenceTab({ teamId, onNavigate }: { teamId: number; on
           <SectionCard
             infoId="cbsrc.ev.vendors"
             title="Vendors"
-            description="Single-use links, no login, expire in 14 days. A vendor who does not answer stays Q0."
+            description="Single-use links, no login, expire in 14 days. A vendor who does not answer stays E0 Unknown, a Q0 gap."
             actions={
               <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" onClick={openAddVendor} data-testid="vendor-add">
                 <Plus className="h-4 w-4 mr-2" />
@@ -452,7 +463,10 @@ export default function EvidenceTab({ teamId, onNavigate }: { teamId: number; on
                               <p className="text-xs text-zinc-500 mt-1">{vendorDates(vendor, serverNow)}</p>
                             </TableCell>
                             <TableCell>
-                              <ConfidenceBadge level={vendorLevel(vendor)} />
+                              <div className="flex flex-wrap items-center gap-1">
+                                <ConfidenceBadge level={vendorLevel(vendor)} testId={`vendor-level-${vendor.id}`} />
+                                <Q0GapBadge gap={vendor.q0_gap} testId={`vendor-gap-${vendor.id}`} />
+                              </div>
                             </TableCell>
                             <TableCell>
                               <div className="flex items-center justify-end gap-2">
@@ -467,7 +481,7 @@ export default function EvidenceTab({ teamId, onNavigate }: { teamId: number; on
                                     {linking ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Link2 className="h-4 w-4 mr-1.5" />}
                                     {vendor.status === "not_sent" ? "Create link" : "New link"}
                                   </Button>
-                                ) : vendor.status === "answered" ? (
+                                ) : vendor.status === "answered" || vendor.status === "refresh_pending" ? (
                                   <Button size="sm" variant="outline" className="cursor-pointer" data-testid={`vendor-view-${vendor.id}`} onClick={() => setViewing(vendor)}>
                                     <Eye className="h-4 w-4 mr-1.5" />
                                     View answers
@@ -482,7 +496,8 @@ export default function EvidenceTab({ teamId, onNavigate }: { teamId: number; on
                                     </Button>
                                   </DropdownMenuTrigger>
                                   <DropdownMenuContent align="end">
-                                    {(vendor.status === "link_created" || vendor.status === "overdue" || vendor.status === "answered") && (
+                                    {(vendor.status === "link_created" || vendor.status === "overdue" || vendor.status === "answered"
+                                      || vendor.status === "refresh_pending") && (
                                       <DropdownMenuItem className="cursor-pointer" onSelect={() => setRelinking(vendor)}>
                                         <Link2 className="h-4 w-4" />
                                         New link
@@ -616,13 +631,13 @@ export default function EvidenceTab({ teamId, onNavigate }: { teamId: number; on
         title="Create a new link?"
         description={
           relinking
-            ? relinking.status === "answered"
-              ? `${relinking.name} has already answered. A new link clears their answers and puts them back to Q0 until they answer it.`
+            ? relinking.status === "answered" || relinking.status === "refresh_pending"
+              ? `${relinking.name} has already answered. Their answer and its level stay until they answer the new link; send it to them yourself.`
               : `The link you created on ${shortDate(relinking.link_created_at)} stops working. Send the new link to ${relinking.name} yourself.`
             : ""
         }
         confirmLabel="Create new link"
-        destructive={relinking?.status === "answered"}
+        destructive={false}
         pending={linkMutation.isPending}
         onConfirm={() => relinking && linkMutation.mutate(relinking)}
       />
@@ -674,9 +689,9 @@ function QuestionnairePreview({ area }: { area: CbomEvidenceArea }) {
           Link to supporting evidence (optional)
         </FieldLabel>
         <Input id={`preview-${area.area_key}-evidence`} disabled placeholder="https://" />
-        <p className="text-xs text-zinc-500">A policy, certificate or report. Documented (Q2) and Verified (Q3) need one.</p>
+        <p className="text-xs text-zinc-500">A policy, certificate or report. Documented (E2) and Verified (E3) need one.</p>
       </div>
-      <p className="text-xs text-zinc-500">Evidence older than 12 months drops back to Q0 until renewed.</p>
+      <p className="text-xs text-zinc-500">Evidence older than 12 months drops back to E0 (a Q0 gap) until renewed.</p>
     </fieldset>
   );
 }
@@ -722,7 +737,7 @@ function AreaDialog({
     onSettled: onSaved,
   });
 
-  const needsDocument = confidence === "Q2" || confidence === "Q3";
+  const needsDocument = confidence === "E2" || confidence === "E3";
   const stale =
     needsDocument && today && isValidDay(evidenceDate) && daysBetween(evidenceDate, today) > EVIDENCE_MAX_AGE_DAYS;
 
@@ -771,7 +786,7 @@ function AreaDialog({
         <DialogHeader>
           <DialogTitle>{area.title}</DialogTitle>
           <DialogDescription>
-            Currently <ConfidenceBadge level={area.effective_confidence} />. A missing answer stays Q0 and is never treated as safe.
+            Currently <ConfidenceBadge level={area.effective_confidence} />. A missing answer stays E0, a Q0 gap, and is never treated as safe.
           </DialogDescription>
         </DialogHeader>
 
@@ -877,9 +892,9 @@ function AreaDialog({
               htmlFor="evidence-date"
               hint={
                 stale ? (
-                  <span className="text-amber-600 dark:text-amber-400">Older than 12 months: it counts as Q0 until renewed</span>
+                  <span className="text-amber-600 dark:text-amber-400">Older than 12 months: it counts as E0 until renewed</span>
                 ) : (
-                  "Date of the document. Evidence older than 12 months drops back to Q0 until renewed."
+                  "Date of the document. Evidence older than 12 months drops back to E0 until renewed."
                 )
               }
               error={errors.evidence_date}
@@ -1014,7 +1029,7 @@ function VendorAnswersDialog({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [confidence, setConfidence] = useState<CbomConfidence>(vendorLevel(vendor));
+  const [confidence, setConfidence] = useState<CbomConfidence>(vendor.confidence ?? "E0");
   const href = safeHref(vendor.evidence_url);
 
   const save = useMutation({
@@ -1069,7 +1084,7 @@ function VendorAnswersDialog({
             infoId="cbsrc.ev.vendor_confidence"
             label="Confidence"
             htmlFor="vendor-confidence"
-            hint="Set to Q1 when answered, or Q2 when the vendor gave an evidence link. Raise it to Q3 once you have verified the evidence."
+            hint="Set to E1 when answered, or E2 when the vendor gave an evidence link. Raise it to E3 once you have verified the evidence. It counts only once the vendor has answered."
           >
             <Select value={confidence} onValueChange={(v) => setConfidence(v as CbomConfidence)}>
               <SelectTrigger id="vendor-confidence" className="w-full cursor-pointer" data-testid="vendor-confidence">
@@ -1091,7 +1106,7 @@ function VendorAnswersDialog({
           </Button>
           <Button
             className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
-            disabled={save.isPending || confidence === vendorLevel(vendor)}
+            disabled={save.isPending || confidence === (vendor.confidence ?? "E0")}
             onClick={() => save.mutate()}
             data-testid="vendor-confidence-save"
           >

@@ -43,8 +43,9 @@ scripts/deploy/staging.sh release deploy@staging-host /opt/devsecshield-staging
 ```
 = `build` (all images, tag = short commit; the frontend gets `NEXT_PUBLIC_BACKEND_URL=https://<API_HOST>`),
 `save` (`deploy/staging/images/dss-staging-<tag>.tar.gz` + `.sha256` + `.need`, what loading it needs), `push` (scp
-of the bundle, `staging.sh disk-check <tag>` on the host, scp of the archive, then `staging.sh deploy <tag>` on the
-host over ssh). On the host,
+of the bundle, `staging.sh disk-check <tag>` on the host, scp of the archive and of the scan node downloads when
+`staging.sh node-artifacts` made them (see "Scan node downloads"), then `staging.sh deploy <tag>` on the host over
+ssh). On the host,
 `deploy` verifies the checksum, checks the disk (below), `docker load`s the archive, writes `DSS_TAG` into `.env`,
 runs `docker compose up -d --wait`, then the checks below; a failed `compose up` fails the deploy (recorded as
 `FAILED` in `deploy-history`). After a successful deploy the images of the new tag, the previous tag (recorded in
@@ -59,6 +60,32 @@ worker), `NODE_BASE_IMAGE` (frontend) and `GO_BASE_IMAGE` (the scan worker's cbo
 that trust the proxy CA: the system bundle (`/etc/ssl/certs/ca-certificates.crt`, which apt, apk, curl, git and
 Python read) must contain it, and `SSL_CERT_FILE` / `UV_NATIVE_TLS=1` / `NODE_EXTRA_CA_CERTS` set so uv and npm do. Plain-HTTP staging (no certificates): build with
 `NEXT_PUBLIC_BACKEND_URL=http://<API_HOST>` and set `CORS_ORIGINS=http://<FRONTEND_HOST>`.
+
+## Scan node downloads
+
+Customers have no repository access and no ZeroShield registry, so **CBOM > Sources > Scan nodes > Add scan node**
+offers the scan node as downloads served by the API to members of the team (`GET /{team}/cbom/node-artifacts`, and a
+short-lived link per file; `backend/routers/cbom_node_artifacts.py`):
+
+| File | Made by |
+|---|---|
+| `scan-node-<version>.tar.gz` + `.sha256` | `scripts/release/scan_node_image.sh build <version>`: `docker save` of `localhost/zeroshield/cbom-scan-node:<version>`, the name the wizard's `docker run --pull never` uses |
+| `cbom-scan-node-<version>.tgz` + `.sha256` | `scripts/release/node_artifacts.py`: `deploy/helm/cbom-scan-node`, version and appVersion = `<version>` |
+| `cbom-scan-node-ova-kit-<version>.zip`, `cbom-scan-node-ami-kit-<version>.zip` + `.sha256` | `node_artifacts.py`: the Packer kit from `deploy/node-images` with a customer README (`deploy/node-images/kit/`), building from the image file |
+| `manifest.json` | `node_artifacts.py`: version, `image_ref`, the file names; the API lists only what it names |
+
+`<version>` is `scan_node/zs_scan_node/__init__.py` `VERSION` (or `CBOM_NODE_VERSION`). `staging.sh node-artifacts`
+(the workflow's "Scan node downloads" step) builds them into `deploy/staging/images/node-artifacts/` (the chart and
+the kits are about 25 KB together; the size is the image file's, which the deploy log prints); `push` counts their size in the host's disk check (`--node-artifacts-bytes`) and
+copies them to `deploy/staging/node-artifacts/<tag>.part/`; `deploy` checks every file against its `.sha256` and
+moves them to `deploy/staging/node-artifacts/<tag>/`, which `docker-compose.yml` mounts read-only into the backend at
+`/node-artifacts` (`CBOM_NODE_ARTIFACT_DIR`). They are kept and removed with their tag's images (retention, the disk
+preflight), so a rollback serves the downloads of the tag it went back to. A tag deployed without them gets an empty
+directory: the wizard then says each download is "not available on this server yet. Contact your administrator."
+
+**What the host must provide:** nothing new beyond disk space (the downloads count in the disk check) and `sha256sum`
+(coreutils). Optional, in `.env`: `CBOM_NODE_IMAGE_REF`, a tagged node image in a registry customers can pull from;
+only then does the wizard also show a `docker pull`-style command (unset by default: the image file only).
 
 ## Disk space
 
@@ -188,12 +215,152 @@ and Application Gateway do); the backend side (`FORWARDED_ALLOW_IPS` = nginx) is
 `MONGO_INITDB_ROOT_USERNAME`, `MONGO_INITDB_ROOT_PASSWORD`, `RABBITMQ_HOST`, `RABBITMQ_PORT`,
 `RABBIT_ADMIN_USERNAME`, `RABBIT_ADMIN_PASSWORD`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
 `AWS_DEFAULT_REGION`, `AWS_ENDPOINT_URL_S3`, `GIT_ALLOWED_HOSTS`, optional `MINIO_IMAGE`; read only by
-`staging.sh` (optional, see "Disk space"): `STAGING_DISK_FACTOR`, `STAGING_DISK_RESERVE_MB`, `STAGING_CONTAINERD_ROOT`.
+`staging.sh` (optional, see "Disk space"): `STAGING_DISK_FACTOR`, `STAGING_DISK_RESERVE_MB`, `STAGING_CONTAINERD_ROOT`;
+optional for the backend: `CBOM_NODE_IMAGE_REF` (see "Scan node downloads").
 
 `backend.env` (backend-image containers only): `JWT_SECRET_KEY`, `JWT_REFRESH_SECRET_KEY`, `ENCRYPTION_KEY`,
 `CERTIN_HMAC_SECRET`, `CORS_ORIGINS`, `CBOM_PUBLIC_APP_URL`, mail (`SMTP_*`, `MAIL_FROM` or `TENANT_ID`,
 `CLIENT_ID`, `CLIENT_SECRET`, `EMAIL_SENDER`), `CBOM_AWS_*`, `CBOM_IDP_ALLOWED_PRIVATE`, `CBOM_EXTRA_CA_FILE`;
 the full list is `backend/.env.example`.
+
+## AWS collection on staging (lab mode)
+
+Without `CBOM_AWS_PRINCIPAL_ARN` the AWS form says "This ZeroShield deployment is not set up for AWS collection; contact
+your administrator". Staging's only AWS account is the sandbox **935951870001**, which is also the account of the
+collector identity, and a customer role in the deployment's own account is refused ("This role is in ZeroShield's own
+AWS account") unless **lab mode** is on. Lab mode (`CBOM_AWS_LAB_SAME_ACCOUNT=1`, `backend/utilities/cbom_sources/lab_mode.py`)
+accepts such a role for a single-account source, on a deployment whose `DSS_ENV` names a test deployment
+(`docker-compose.yml` sets `DSS_ENV: staging` for `backend` and `cbom-cloud-worker`); `DSS_ENV=production`, any other
+value or none refuses it. Every other check still runs and must pass: AssumeRole with the external ID, refusal
+without it, SecurityAudit, the data-plane deny, the denied secret read. The AWS form and every run of such a source
+show "Lab mode: same-account collection — not for production"; each use is logged (`lab_mode same_account USED`) and
+audited (`source.validate.lab_same_account`, `job.lab_same_account`).
+
+### 1. Set four values (once)
+
+GitHub > repository Settings > Environments > `staging`:
+
+| Where | Name | Value |
+|---|---|---|
+| Environment secret | `CBOM_AWS_PRINCIPAL_ARN` | `arn:aws:iam::935951870001:user/devsecshield/devsecshield-developer` |
+| Environment secret | `CBOM_AWS_ACCESS_KEY_ID` | that user's access key id (`<ACCESS_KEY_ID>`; never in the repo, an issue or a PR) |
+| Environment secret | `CBOM_AWS_SECRET_ACCESS_KEY` | that key's secret (`<SECRET_ACCESS_KEY>`) |
+| Environment variable (or secret) | `CBOM_AWS_LAB_SAME_ACCOUNT` | `1` |
+
+The next Deploy staging run (a push to `staging`, or re-run the latest one) writes exactly these keys into the host's
+`backend.env` (`staging.sh push` sends them over ssh's stdin to `staging.sh backend-env`; they are never on a command
+line or in the log, and GitHub masks the secrets) and recreates the backend containers with them. An unset or empty
+secret leaves the host's value as it is; to turn lab mode off set the variable to `0`. Without GitHub, the same on the
+host: `cd /opt/devsecshield-staging && printf 'CBOM_AWS_LAB_SAME_ACCOUNT=1\n' | scripts/deploy/staging.sh backend-env`
+(one `KEY=VALUE` line per key; type secrets into the pipe from a file you delete, not into shell history), then
+`docker compose --project-directory deploy/staging -f deploy/staging/docker-compose.yml up -d backend cbom-cloud-worker`.
+
+Check: Sources > Cloud & Identity > AWS shows the lab-mode banner and the form (no "not set up" message), and the
+backend log has `cbom sources` lines naming `lab_mode` once you validate.
+
+### 2. The customer role in the sandbox
+
+The existing `arn:aws:iam::935951870001:role/DevSecShieldScannerReadOnlyRole` will NOT pass validation as it is
+(CB-A1 run R1, `V2-validate`): its trust policy has no `sts:ExternalId` condition ("The role can be assumed without the
+external ID") and it has no data-plane deny ("The deny statement is missing: kms:Decrypt, ..."). Use one of these
+(an account administrator does it; the developer user cannot create IAM roles):
+
+**A. Recommended: the product's own reader template.** In Sources > Cloud & Identity > AWS, choose "Single account",
+download the CloudFormation template (it trusts account 935951870001 and carries this team's external ID) and deploy
+it as a stack in the sandbox (CloudFormation console, any region, e.g. ap-south-1; acknowledge IAM resources). It
+creates `arn:aws:iam::935951870001:role/ZeroShieldCBOMReader` with the `sts:ExternalId` condition, SecurityAudit and
+the deny. Its trust policy names the account (`arn:aws:iam::935951870001:root`), so in the SAME account the collector
+user also needs an identity policy allowing the role (AWS evaluates both in that case); unless the user already has
+one, attach this inline policy to `devsecshield-developer`:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "sts:AssumeRole",
+      "Resource": "arn:aws:iam::935951870001:role/ZeroShieldCBOMReader"
+    }
+  ]
+}
+```
+
+Then add the source with role ARN `arn:aws:iam::935951870001:role/ZeroShieldCBOMReader` and **Validate connection**.
+
+**B. Or fix the existing role** `DevSecShieldScannerReadOnlyRole` (IAM console > Roles > the role):
+1. Trust relationships > Edit: replace the WHOLE trust policy with the one below, putting this team's external ID
+   (shown on the AWS form, `zs-ext-XXXX-XXXX-XXXX-XXXX`) in place of `<EXTERNAL_ID>`. Any other statement that lets
+   the user or the account assume the role without the condition makes "Role refused without external ID" fail.
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": { "AWS": "arn:aws:iam::935951870001:user/devsecshield/devsecshield-developer" },
+      "Action": "sts:AssumeRole",
+      "Condition": { "StringEquals": { "sts:ExternalId": "<EXTERNAL_ID>" } }
+    }
+  ]
+}
+```
+
+2. Permissions > Add permissions > Create inline policy (JSON), name `ZeroShieldCBOMReaderDeny`; keep the AWS managed
+   `SecurityAudit` attached:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyKeyUseAndDataPlaneReads",
+      "Effect": "Deny",
+      "Action": [
+        "kms:Decrypt",
+        "kms:Encrypt",
+        "kms:GenerateDataKey",
+        "kms:GenerateDataKeyPair",
+        "kms:GenerateDataKeyPairWithoutPlaintext",
+        "kms:GenerateDataKeyWithoutPlaintext",
+        "kms:GenerateMac",
+        "kms:VerifyMac",
+        "kms:ReEncryptFrom",
+        "kms:ReEncryptTo",
+        "kms:Sign",
+        "kms:Verify",
+        "kms:DeriveSharedSecret",
+        "kms:GenerateRandom",
+        "secretsmanager:GetSecretValue",
+        "secretsmanager:BatchGetSecretValue",
+        "ssm:GetParameter",
+        "ssm:GetParameters",
+        "ssm:GetParametersByPath",
+        "ssm:GetParameterHistory",
+        "s3:GetObject",
+        "s3:GetObjectVersion",
+        "acm:ExportCertificate",
+        "dynamodb:GetItem",
+        "dynamodb:BatchGetItem",
+        "dynamodb:Query",
+        "dynamodb:Scan",
+        "rds-data:*",
+        "lambda:GetFunction",
+        "lambda:InvokeFunction",
+        "ec2:GetPasswordData",
+        "ecr:BatchGetImage",
+        "ecr:GetDownloadUrlForLayer",
+        "codecommit:GitPull"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+Then add the source with role ARN `arn:aws:iam::935951870001:role/DevSecShieldScannerReadOnlyRole` and validate.
+Every check must pass before a run collects; the run shows the lab-mode banner.
 
 ## Build identity
 

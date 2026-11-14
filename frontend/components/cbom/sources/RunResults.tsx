@@ -27,11 +27,13 @@ import { downloadCbomRunBom } from "@/utils/api/cbom_outputs";
 import { downloadOscal } from "@/utils/api/integrations";
 
 import { cbomSourcesKeys } from "./keys";
+import { LabModeBanner } from "./LabModeBanner";
 import { pluralize, targetGuidance } from "./logic";
 import { RunInsights } from "./ChangesPanel";
 import { AssetDetailPanel, RunPostureCard } from "./RunPosture";
 import { BulkAssignBar, useRunRemediation, WaveBadge } from "./WavesControls";
 import { ErrorBlock, LoadingBlock, StatusBadge, Truncate, type Tone } from "./shared";
+import { InfoTip } from "@/components/ui/info-tip";
 
 export const ASSET_TYPE_LABEL: Record<string, string> = {
   certificate: "Certificate",
@@ -86,12 +88,12 @@ const TARGET_LABEL: Record<string, string> = {
   skipped_deadline: "Skipped: time limit", skipped_cancelled: "Skipped: cancelled",
 };
 
-function ImpactBadge({ impact }: { impact: CbomImpact | null }) {
+export function ImpactBadge({ impact }: { impact: CbomImpact | null }) {
   if (!impact) return <span className="text-xs text-zinc-500">Info</span>;
   return <StatusBadge tone={IMPACT_TONE[impact]}>{impact}</StatusBadge>;
 }
 
-function factsRows(asset: CbomAsset): [string, string][] {
+export function factsRows(asset: CbomAsset): [string, string][] {
   const out: [string, string][] = [];
   for (const [key, value] of Object.entries(asset.facts ?? {})) {
     if (value === null || value === undefined || value === "" || (Array.isArray(value) && value.length === 0)) continue;
@@ -118,12 +120,12 @@ export function TargetProblemRow({ t }: { t: { target: string; status: string; e
   );
 }
 
-function TargetsBlock({ jobs }: { jobs: CbomJobTargets[] }) {
+export function TargetsBlock({ jobs }: { jobs: CbomJobTargets[] }) {
   const [open, setOpen] = useState<number | null>(null);
   if (jobs.length === 0) return null;
   return (
     <div className="space-y-2" data-testid="run-results-targets">
-      <p className="text-sm font-medium text-zinc-900 dark:text-white">Targets</p>
+      <p className="text-sm font-medium text-zinc-900 dark:text-white">Targets <InfoTip id="cbom.run.targets" /></p>
       <ul className="space-y-2">
         {jobs.map((job) => {
           const problems = job.targets.filter((t) => t.status !== "ok");
@@ -139,6 +141,11 @@ function TargetsBlock({ jobs }: { jobs: CbomJobTargets[] }) {
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-medium text-zinc-900 dark:text-white break-all">{job.source_name ?? `Source ${job.source_id ?? "—"}`}</span>
                 <StatusBadge tone={tone as Tone}>{label}</StatusBadge>
+                {job.lab_mode && (
+                  <StatusBadge tone="amber" title="Lab mode: same-account collection — not for production">
+                    Lab mode
+                  </StatusBadge>
+                )}
                 {job.truncated && <StatusBadge tone="amber">Truncated</StatusBadge>}
                 {job.asset_mismatch && (
                   <StatusBadge tone="amber" title={`Node reported ${job.asset_mismatch.reported}, stored ${job.asset_mismatch.stored}`}>
@@ -209,6 +216,9 @@ export default function RunResults({ teamId, runId, active }: { teamId: number; 
 
   return (
     <div className="space-y-4 min-w-0" data-testid="run-results">
+      {data.targets.some((job) => job.lab_mode) && (
+        <LabModeBanner testId="run-results-lab-mode" detail="An AWS source in this run was read from the deployment's own AWS account." />
+      )}
       <TargetsBlock jobs={data.targets} />
       <RunPostureCard teamId={teamId} runId={runId} active={active} />
       <RunInsights teamId={teamId} runId={runId} active={active} />
@@ -318,6 +328,7 @@ export default function RunResults({ teamId, runId, active }: { teamId: number; 
             ))}
           </SelectContent>
         </Select>
+        <InfoTip id="cbom.run.filter.type" className="self-center" />
         <Input
           className="w-full sm:w-[260px]"
           placeholder="Search location, algorithm or finding"
@@ -327,6 +338,7 @@ export default function RunResults({ teamId, runId, active }: { teamId: number; 
           onKeyDown={(e) => e.key === "Enter" && set({ q: search.trim() || undefined })}
           onBlur={() => set({ q: search.trim() || undefined })}
         />
+        <InfoTip id="cbom.run.search" className="self-center" />
         {(filters.type || filters.impact || filters.quantum || filters.q) && (
           <Button variant="ghost" size="sm" className="cursor-pointer" onClick={() => { setSearch(""); setFilters({ page: 1, page_size: 50 }); }}>
             Clear filters
@@ -346,16 +358,16 @@ export default function RunResults({ teamId, runId, active }: { teamId: number; 
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-6"><span className="sr-only">Expand</span></TableHead>
-                  <TableHead className="w-6"><span className="sr-only">Select for wave assignment</span></TableHead>
-                  <TableHead>Impact</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Where</TableHead>
-                  <TableHead>Algorithm</TableHead>
-                  <TableHead>Finding</TableHead>
-                  <TableHead>Quantum-vulnerable</TableHead>
-                  <TableHead>Quantum risk</TableHead>
-                  <TableHead>Fix class</TableHead>
-                  <TableHead>Wave</TableHead>
+                  <TableHead className="w-6"><span className="sr-only">Select for wave assignment</span><InfoTip id="cbom.run.col.select_wave" /></TableHead>
+                  <TableHead>Impact <InfoTip id="results.table.impact" /></TableHead>
+                  <TableHead>Type <InfoTip id="cbom.run.f.type" /></TableHead>
+                  <TableHead>Where <InfoTip id="cbom.run.col.where" /></TableHead>
+                  <TableHead>Algorithm <InfoTip id="cbom.res.col.algorithm" /></TableHead>
+                  <TableHead>Finding <InfoTip id="cbom.run.col.finding" /></TableHead>
+                  <TableHead>Quantum-vulnerable <InfoTip id="cbom.run.col.qv" /></TableHead>
+                  <TableHead>Quantum risk <InfoTip id="cbom.run.col.qgrade" /></TableHead>
+                  <TableHead>Fix class <InfoTip id="cbom.res.col.fix_class" /></TableHead>
+                  <TableHead>Wave <InfoTip id="cbom.run.col.wave" /></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -369,6 +381,7 @@ export default function RunResults({ teamId, runId, active }: { teamId: number; 
                       <TableCell>{expanded === asset.id ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}</TableCell>
                       <TableCell onClick={(e) => e.stopPropagation()}>
                         {waves.byAsset.get(asset.id) && (
+                          /* infotip-shared: one row of the selection; the header tip of this column explains it */
                           <input
                             type="checkbox"
                             className="cursor-pointer"

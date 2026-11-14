@@ -326,6 +326,10 @@ class AssetAgg:
     latest_scan_id: int | None = None
     # the results table's "Broken today" (cbom_metrics.code_row_broken_today): not quantum-vulnerable, not ready
     broken_today: bool = False
+    # CBOM Sources rows only: every code the collector's classification gave, including the informational ones
+    # (QUANTUM_VULNERABLE on a host key) that ``finding_codes`` leaves out (collections_view.node_row). The run API
+    # maps all of them to compliance clauses, so the deliverables' clause counts read them too.
+    collector_codes: tuple[str, ...] = ()
 
 
 @dataclass
@@ -1097,6 +1101,7 @@ def _asset_from_row(row: Mapping[str, Any], facts: ScanFacts) -> AssetAgg:
         location=location,
         impact=INFO if severity is None else severity.capitalize(),
         finding_codes=_codes_of(row.get("finding_codes")),
+        collector_codes=_codes_of(row.get("collector_codes")),
         bom_ref=bom_ref,
         description=_text(row.get("description")) or "",
         primitive=primitive,
@@ -3056,7 +3061,8 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
     ("sources:<uid>", labelled "Sources run #<run> · <name>").  Headline counts are recomputed by ``_headline`` over
     the merged current assets, so every document agrees with the CBOM dashboard.  TLS endpoints a scan node probed
     become posture facts with evidence ``probed:CBOM Sources`` (the Network TLS document lists them)."""
-    from backend.utilities.cbom_sources.collections_view import cert_identity, resolve
+    from backend.utilities.cbom_sources.asset_keys import code_certificate_key
+    from backend.utilities.cbom_sources.collections_view import resolve
 
     if not collections:
         return view
@@ -3067,7 +3073,7 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
     # 1. code certificates with a cross-scope identity; latest observation wins
     code_ident: dict[str, str] = {}
     for cert in view.certs:
-        ident = cert_identity(cert.subject_cn, cert.issuer_cn, cert.not_before, cert.not_after)
+        ident = code_certificate_key(cert.subject_cn, cert.issuer_cn, cert.not_before, cert.not_after)
         if cert.current and ident:
             code_ident[cert.key] = ident
     by_key = {cert.key: cert for cert in view.certs}
@@ -3097,11 +3103,11 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
         assets.append(asset)
         if asset.asset_type == ASSET_CERTIFICATE:
             f = item.facts if isinstance(item.facts, Mapping) else {}
-            earlier = [c for c in dropped_certs if code_ident.get(c.key) == item.identity]
+            earlier = [c for c in dropped_certs if resolution.canonical(code_ident.get(c.key)) == item.identity]
             places = [(agg.label, asset.location)] + [p for c in earlier for p in c.locations]
             certs.append(CertAgg(
                 key="src:" + hashlib.sha256(item.identity.encode("utf-8", "replace")).hexdigest()[:16],
-                identity_strong=item.identity.startswith("cert|"), name=_text(f.get("subject")) or asset.title,
+                identity_strong=item.identity.startswith("cert:"), name=_text(f.get("subject")) or asset.title,
                 file_names=tuple(dict.fromkeys([asset.location] + [n for c in earlier for n in c.file_names])),
                 subject_cn=_text(f.get("subject")), issuer_cn=_text(f.get("issuer")),
                 not_before=_text(f.get("not_before")), not_after=_text(f.get("not_after")),

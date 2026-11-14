@@ -13,10 +13,16 @@ export function isBrokenToday(f: QuantumFields): boolean {
   return f.quantum_safe === true && String(f.crypto_strength ?? "").toLowerCase() === "weak";
 }
 
+/** An algorithm the rule base could not identify (strength "unknown"): not judged, never "Safe", even when an engine
+ * before CB-18 stored it with quantum_safe true (the backend's cbom_metrics.code_row_quantum_vulnerable rule). */
+export function isUnidentified(f: QuantumFields): boolean {
+  return f.quantum_safe === true && String(f.crypto_strength ?? "").toLowerCase() === "unknown";
+}
+
 /** "Quantum-Safe" lists only the rows the column calls Safe; the rows it calls "Broken today" have their own option
  * (they were listed under Quantum-Safe: lab UI run u2, round 5). */
 export function matchesQuantumFilter(f: QuantumFields, filter: string): boolean {
-  if (filter === "safe") return f.quantum_safe === true && !isBrokenToday(f);
+  if (filter === "safe") return f.quantum_safe === true && !isBrokenToday(f) && !isUnidentified(f);
   if (filter === "broken") return isBrokenToday(f);
   if (filter === "vulnerable") return f.quantum_safe === false;
   return true;
@@ -51,6 +57,7 @@ export function quantumCounts(rows: QuantumFields[]): QuantumCounts {
   let vulnerable = 0;
   for (const r of rows) {
     if (isBrokenToday(r)) broken += 1;
+    else if (isUnidentified(r)) continue;
     else if (r.quantum_safe === true) safe += 1;
     else if (r.quantum_safe === false) vulnerable += 1;
   }
@@ -70,22 +77,4 @@ export function inventoryRows(data: unknown, findings: QuantumFields[]): Quantum
     if (rows.length > 0) return rows;
   }
   return findings;
-}
-
-/** The bars of a "Quantum readiness" chart (CBOM scan list and code results): the three verdicts the backend counts
- * (cbom_metrics.CodeRowSummary.quantum), so the chart, its (i) tip and the "Quantum ready" card agree. Broken today
- * (weak even without a quantum computer, e.g. MD5, DES) counts against readiness and gets its own bar. */
-export interface QuantumReadinessCounts {
-  quantum_safe?: number | null;
-  quantum_vulnerable?: number | null;
-  broken_today?: number | null;
-}
-
-export function quantumReadinessBars(q: QuantumReadinessCounts | null | undefined): { name: string; count: number; fill: string }[] {
-  if (!q) return [];
-  return [
-    { name: "Safe", count: Number(q.quantum_safe ?? 0), fill: "hsl(142 71% 45%)" },
-    { name: "Vulnerable", count: Number(q.quantum_vulnerable ?? 0), fill: "hsl(0 72% 51%)" },
-    { name: "Broken today", count: Number(q.broken_today ?? 0), fill: "hsl(25 95% 53%)" },
-  ].filter((d) => d.count > 0);
 }

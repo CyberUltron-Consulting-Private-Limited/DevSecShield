@@ -529,6 +529,7 @@ jobs:
       # host-agent DaemonSet switched on, so Checkov sees every manifest the chart can produce.
       helm-charts: >-
         deploy/helm/cbom-scan-node --set apiUrl=https://ci.invalid --set registrationToken=ci-placeholder
+        --set image.repository=registry.ci.invalid/zeroshield/cbom-scan-node
         --set agent.enabled=true --set agent.poolToken=ci-placeholder
 
   codeql:

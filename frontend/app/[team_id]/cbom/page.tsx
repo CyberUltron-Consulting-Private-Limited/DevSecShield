@@ -106,7 +106,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { quantumReadinessBars } from "@/components/cbom/quantumFilter";
+import { quantumReadinessBars } from "@/utils/cbomReadiness";
 
 type ScanStatus = "pending" | "started" | "retry" | "failure" | "success" | "partial" | "not_started" | "cancelled";
 

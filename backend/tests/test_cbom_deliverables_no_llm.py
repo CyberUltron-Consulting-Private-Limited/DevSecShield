@@ -202,6 +202,8 @@ def _policy(path: Path) -> tuple[set[str], tuple[str, ...]]:
         backend += ("backend.utilities.cbom_sources.waves",)
     # CBOM Sources collections as CBOM results (M1x): stored assets and the latest-observation rule; database only
     backend += ("backend.utilities.cbom_sources.collections_view",)
+    # cross-source asset keys (CB-21): pure, stdlib only, no AI
+    backend += ("backend.utilities.cbom_sources.asset_keys",)
     if path.parent == _ROUTERS:
         roots |= {"fastapi", "starlette", "sqlmodel", "sqlalchemy", "rich"}
         backend += (

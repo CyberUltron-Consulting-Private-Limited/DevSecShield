@@ -333,7 +333,7 @@ def _add(acc: _Acc, memo: _Memo, row: CbomCollectedAsset, view: dict[str, Any], 
     facts = row.facts if isinstance(row.facts, dict) else {}
     impact = view["impact"] if view["impact"] in _IMPACT_RANK else None
     codes = tuple(c for c in view["finding_codes"] or [] if isinstance(c, str) and not c.startswith("COVERAGE_"))
-    klass = POSTURE.pqc_class(row.asset_type, row.quantum_vulnerable, list(codes), facts)  # posture's own function
+    klass = POSTURE.classify_pqc(row, list(codes))[0]  # posture's own function (CB-18: the one class function)
 
     a_type = _algorithm_type(row)
     acc.algorithm_types[a_type] += 1
@@ -501,7 +501,8 @@ def _assemble(acc: _Acc, posture: dict[str, Any], top_risks: list[dict[str, Any]
         "strength_distribution": {"weak": acc.strengths["weak"], "moderate": acc.strengths["moderate"],
                                   "strong": acc.strengths["strong"], "quantum_safe": ready},
         "quantum_readiness": {"quantum_safe": ready, "quantum_vulnerable": vulnerable,
-                              "unknown": int(classes.get("not-applicable", 0))},
+                              # not judged: CB-18's unknown class and not-applicable
+                              "unknown": int(classes.get("unknown", 0)) + int(classes.get("not-applicable", 0))},
         "owasp_top_10_issues": dict(sorted(acc.owasp.items())),
         "compliance_controls": dict(sorted(acc.controls.items())),
         "top_risks": top_risks,
@@ -613,7 +614,7 @@ def _dashboard_top_risks(session: Session, team_id: int, risks: list[dict[str, A
         if row is not None:
             view = shown(row, now)
             codes = [c for c in view["finding_codes"] or [] if not str(c).startswith("COVERAGE_")]
-            klass = POSTURE.pqc_class(row.asset_type, row.quantum_vulnerable, codes, row.facts or {})
+            klass = POSTURE.classify_pqc(row, codes)[0]
             item.update({"algorithm_name": row.algorithm or row.name or item["algorithm_name"],
                          "algorithm_type": _algorithm_type(row), "crypto_strength": strength(klass, codes, memo),
                          "quantum_safe": klass in _READY, "pqc_class": klass})

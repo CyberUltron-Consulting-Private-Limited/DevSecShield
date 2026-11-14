@@ -3580,30 +3580,30 @@ export const INFO_TIPS = {
     example: "www.bank.in, api.bank.in, mail.bank.in.",
   },
   // ────────────────────────────────────────────────────────────── CBOM Sources: Evidence (components/cbom/sources/EvidenceTab.tsx)
-  // src: frontend/components/cbom/sources/shared.tsx:127-132, frontend/components/cbom/sources/EvidenceTab.tsx:275-284 — areas at Q0
-  "cbsrc.ev.q0": {
-    label: "Q0 Unknown",
+  // src: frontend/components/cbom/sources/shared.tsx:130-136, frontend/components/cbom/sources/EvidenceTab.tsx:275-284 — areas at E0
+  "cbsrc.ev.e0": {
+    label: "E0 Unknown",
     what: "Areas with no usable answer: never answered, answered without evidence where evidence is needed, or with evidence older than 12 months.",
-    why: "Q0 areas are open gaps in the CBOM and are listed as such on Review & Run.",
+    why: "Each E0 area is a Q0 gap in the risk register, listed on Review & Run and never treated as safe.",
     example: "3 areas: the payment HSM vendor has not answered.",
   },
-  // src: frontend/components/cbom/sources/shared.tsx:127-132, frontend/components/cbom/sources/EvidenceTab.tsx:275-284 — areas at Q1
-  "cbsrc.ev.q1": {
-    label: "Q1 Self-attested",
+  // src: frontend/components/cbom/sources/shared.tsx:130-136, frontend/components/cbom/sources/EvidenceTab.tsx:275-284 — areas at E1
+  "cbsrc.ev.e1": {
+    label: "E1 Self-attested",
     what: "Areas answered by their owner or vendor without supporting evidence.",
     why: "A self-attested answer is better than nothing but would not satisfy an auditor.",
     example: "The card vendor says its terminals use AES-256, with no document.",
   },
-  // src: frontend/components/cbom/sources/shared.tsx:127-132, frontend/components/cbom/sources/EvidenceTab.tsx:275-284 — areas at Q2
-  "cbsrc.ev.q2": {
-    label: "Q2 Documented",
+  // src: frontend/components/cbom/sources/shared.tsx:130-136, frontend/components/cbom/sources/EvidenceTab.tsx:275-284 — areas at E2
+  "cbsrc.ev.e2": {
+    label: "E2 Documented",
     what: "Areas answered with a dated evidence document, such as a policy, certificate or report.",
     why: "Documented answers can be shown to an auditor and re-checked when the document is renewed.",
     example: "Key management policy v3 (PDF), dated March 2026.",
   },
-  // src: frontend/components/cbom/sources/shared.tsx:127-132, frontend/components/cbom/sources/EvidenceTab.tsx:275-284 — areas at Q3
-  "cbsrc.ev.q3": {
-    label: "Q3 Verified",
+  // src: frontend/components/cbom/sources/shared.tsx:130-136, frontend/components/cbom/sources/EvidenceTab.tsx:275-284 — areas at E3
+  "cbsrc.ev.e3": {
+    label: "E3 Verified",
     what: "Areas whose evidence your team has checked and confirmed.",
     why: "Verified evidence carries the same weight as a scan result.",
     example: "The HSM's FIPS 140-3 certificate checked against the NIST CMVP list.",
@@ -3613,7 +3613,7 @@ export const INFO_TIPS = {
     label: "Areas that cannot be scanned",
     what: "Parts of your crypto estate no scan can read, such as vendor services and offline key ceremonies. Each has an owner questionnaire, a confidence level and an optional evidence link; a missing answer stays a visible gap.",
     why: "A CBOM that only lists what scans can see overstates your readiness.",
-    example: "Card personalisation bureau: owner Cards ops, Q1, due 30 Nov.",
+    example: "Card personalisation bureau: owner Cards ops, E1, due 30 Nov.",
   },
   // src: frontend/components/cbom/sources/EvidenceTab.tsx:307 — the evidence area
   "cbsrc.ev.col.area": {
@@ -3629,17 +3629,17 @@ export const INFO_TIPS = {
     why: "An area without an owner is never answered.",
     example: "PKI team.",
   },
-  // src: frontend/components/cbom/sources/shared.tsx:127-132 — Q0 Unknown to Q3 Verified
+  // src: frontend/components/cbom/sources/shared.tsx:130-136 — E0 Unknown to E3 Verified
   "cbsrc.ev.col.confidence": {
     label: "Confidence",
-    what: "How much the answer can be trusted: Q0 Unknown, Q1 Self-attested, Q2 Documented (evidence document), Q3 Verified (evidence checked by your team).",
+    what: "How much the answer can be trusted: E0 Unknown, E1 Self-attested, E2 Documented (evidence document), E3 Verified (evidence checked by your team).",
     why: "Reports and the run's coverage weigh answers by this level.",
-    example: "Q2 Documented.",
+    example: "E2 Documented.",
   },
   // src: frontend/components/cbom/sources/EvidenceTab.tsx:310, frontend/components/cbom/sources/EvidenceTab.tsx:848-873 — the evidence document and its date
   "cbsrc.ev.col.evidence": {
     label: "Evidence",
-    what: "The supporting document's title and link, and its date. Evidence older than 12 months drops back to Q0 until renewed.",
+    what: "The supporting document's title and link, and its date. Evidence older than 12 months drops back to E0 until renewed.",
     why: "Dated evidence shows the answer was true recently, not years ago.",
     example: "HSM FIPS certificate (PDF), 4 Feb 2026.",
   },
@@ -3653,9 +3653,9 @@ export const INFO_TIPS = {
   // src: frontend/components/cbom/sources/EvidenceTab.tsx:397-400 — single-use links, no login, 14 days
   "cbsrc.ev.vendors": {
     label: "Vendors",
-    what: "Vendors asked to answer a questionnaire through a single-use link, with no login; the link expires in 14 days. A vendor who does not answer stays Q0.",
+    what: "Vendors asked to answer a questionnaire through a single-use link, with no login; the link expires in 14 days. A vendor who does not answer stays E0 Unknown, a Q0 gap.",
     why: "Third-party services use crypto you cannot scan but still answer for in an audit.",
-    example: "Acme Payments, link sent 2 Nov, answered 6 Nov, Q2.",
+    example: "Acme Payments, link sent 2 Nov, answered 6 Nov, E2.",
   },
   // src: frontend/components/cbom/sources/EvidenceTab.tsx:424 — vendor name
   "cbsrc.ev.col.vendor": {
@@ -3692,10 +3692,10 @@ export const INFO_TIPS = {
     why: "Each answer feeds the area's confidence; an unanswered question keeps it a gap.",
     example: "Are keys generated inside a FIPS 140-3 Level 3 HSM? Yes.",
   },
-  // src: frontend/components/cbom/sources/EvidenceTab.tsx:664-666 — Q2 and Q3 need one
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:664-666 — E2 and E3 need one
   "cbsrc.ev.preview_link": {
     label: "Link to supporting evidence",
-    what: "Where the person answering links a policy, certificate or report. Documented (Q2) and Verified (Q3) need one.",
+    what: "Where the person answering links a policy, certificate or report. Documented (E2) and Verified (E3) need one.",
     why: "Without evidence an answer stays Self-attested at best.",
     example: "https://intranet.bank.in/pki/ceremony-2026.pdf.",
   },
@@ -3709,9 +3709,9 @@ export const INFO_TIPS = {
   // src: frontend/components/cbom/sources/EvidenceTab.tsx:822-829 — Documented and Verified need a document and date
   "cbsrc.ev.confidence": {
     label: "Confidence",
-    what: "The confidence of this area's answer: Q0 Unknown, Q1 Self-attested, Q2 Documented or Q3 Verified. Documented and Verified need an evidence document and its date.",
+    what: "The confidence of this area's answer: E0 Unknown, E1 Self-attested, E2 Documented or E3 Verified. Documented and Verified need an evidence document and its date.",
     why: "It decides how the area counts in coverage and reports.",
-    example: "Q3 after you checked the vendor's certificate yourself.",
+    example: "E3 after you checked the vendor's certificate yourself.",
   },
   // src: frontend/components/cbom/sources/EvidenceTab.tsx:848-849 — up to 200 characters
   "cbsrc.ev.title": {
@@ -3727,10 +3727,10 @@ export const INFO_TIPS = {
     why: "The link lets a reviewer open the evidence in one click.",
     example: "https://intranet.bank.in/policies/kms-v3.pdf.",
   },
-  // src: frontend/components/cbom/sources/EvidenceTab.tsx:861-873 — evidence older than 12 months drops to Q0
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:861-873 — evidence older than 12 months drops to E0
   "cbsrc.ev.date": {
     label: "Evidence date",
-    what: "The date of the document, not later than today. Evidence older than 12 months drops back to Q0 until renewed.",
+    what: "The date of the document, not later than today. Evidence older than 12 months drops back to E0 until renewed.",
     why: "Crypto policies change; old evidence may describe a setup that no longer exists.",
     example: "14 Mar 2026.",
   },
@@ -3755,12 +3755,12 @@ export const INFO_TIPS = {
     why: "Keeps who was asked next to the answer.",
     example: "security@acmepayments.in.",
   },
-  // src: frontend/components/cbom/sources/EvidenceTab.tsx:1054-1060 — Q1 when answered, Q2 with a link, Q3 once verified
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:1054-1060 — E1 when answered, E2 with a link, E3 once verified
   "cbsrc.ev.vendor_confidence": {
     label: "Confidence",
-    what: "The confidence of the vendor's answer. Set Q1 when answered, Q2 when the vendor gave an evidence link, Q3 once you have verified the evidence.",
+    what: "The confidence of the vendor's answer. Set E1 when answered, E2 when the vendor gave an evidence link, E3 once you have verified the evidence.",
     why: "It decides how much the vendor's answer counts.",
-    example: "Q2: the vendor linked its PCI PIN attestation.",
+    example: "E2: the vendor linked its PCI PIN attestation.",
   },
   // ────────────────────────────────────────────────────────────── CBOM Sources: Review & Run (components/cbom/sources/ReviewRunTab.tsx)
   // src: frontend/components/cbom/sources/ReviewRunTab.tsx:235-309, frontend/components/cbom/sources/ReviewRunTab.tsx:319 — one row per source group
@@ -3889,7 +3889,7 @@ export const INFO_TIPS = {
     why: "You pay only for jobs that completed.",
     example: "12.40 charged / 1.00 refunded.",
   },
-  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:828-830 — scan node or ZeroShield cloud
+  // src: frontend/components/cbom/results/RunJobsTable.tsx:28 — scan node or ZeroShield cloud
   "cbsrc.rr.job.runs_on": {
     label: "Runs on",
     what: "Where the job ran: a scan node, or ZeroShield's cloud for cloud accounts, CT logs and identity providers.",
@@ -3903,42 +3903,42 @@ export const INFO_TIPS = {
     why: "Expired and failed jobs are refunded and their source has no new results in this run.",
     example: "Waiting · outside the scan window; starts at 22:00.",
   },
-  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:838 — assets the job collected
+  // src: frontend/components/cbom/results/RunJobsTable.tsx:30 — assets the job collected
   "cbsrc.rr.job.assets": {
     label: "Assets",
     what: "How many assets this job collected from its source.",
     why: "Zero from a source that had assets before deserves a look.",
     example: "212 from dc-mumbai-linux.",
   },
-  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:839-842 — charged for the job; refunded marker
+  // src: frontend/components/cbom/results/RunJobsTable.tsx:31 — charged for the job; refunded marker
   "cbsrc.rr.job.credits": {
     label: "Credits",
     what: "The credits charged for this job, marked refunded when it failed, expired or was cancelled.",
     why: "Shows which part of the run's cost came back.",
     example: "25.60 refunded: a 128-target server job that expired.",
   },
-  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:843 — how many times the job was tried
+  // src: frontend/components/cbom/results/RunJobsTable.tsx:32 — how many times the job was tried
   "cbsrc.rr.job.attempts": {
     label: "Attempts",
     what: "How many times a node tried this job. A job is retried after a transient failure.",
     why: "Many attempts point at a flaky network path or an overloaded node.",
     example: "2: the first try timed out, the second finished.",
   },
-  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:844-846 — the job's last error
+  // src: frontend/components/cbom/results/RunJobsTable.tsx:33 — the job's last error
   "cbsrc.rr.job.error": {
     label: "Error",
     what: "The last error the job reported, if any.",
     why: "It names the exact failure to fix before the next run.",
     example: "connect timeout to 10.20.0.17:22.",
   },
-  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:862-872 — sources skipped at start
+  // src: frontend/components/cbom/results/RunJobsTable.tsx:79 — sources skipped at start
   "cbsrc.rr.skipped_start": {
     label: "Skipped when the run started",
     what: "Sources that were not queued when the run started, each with the reason.",
     why: "They are not in this run's results and were not charged.",
     example: "dc-mumbai-windows: the scan node was offline.",
   },
-  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:874-878 — what changed since the previous run
+  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:816 — what changed since the previous run
   "cbsrc.rr.changes": {
     label: "Changes",
     what: "What changed in this run compared with the previous run of the same sources: assets added, removed or changed.",
@@ -3946,7 +3946,7 @@ export const INFO_TIPS = {
     example: "+3 certificates, -1 SSH host key, 2 changed.",
   },
   // ────────────────────────────────────────────────────────────── CBOM Sources: Review & Run, run details
-  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:825-827 — one job per source
+  // src: frontend/components/cbom/results/RunJobsTable.tsx:27 — one job per source
   "cbsrc.rr.job.source": {
     label: "Source",
     what: "The source this job collected from; each source in the run has one job.",
@@ -5283,7 +5283,7 @@ export const INFO_TIPS = {
     why: "Quantum-vulnerable assets are your post-quantum migration list.",
     example: "safe 30, quantum-vulnerable 9, broken today 3.",
   },
-  // src: frontend/components/CbomResults.tsx:305-314, backend/utilities/dashboard/bom_risk_score.py:101-120 — top 24 by score
+  // src: frontend/components/cbom/results/CbomDashboardCharts.tsx:94, backend/utilities/dashboard/bom_risk_score.py:101-120 — top 24 by score
   "cbom.res.risk_scores": {
     label: "Risk scores per finding",
     what: "The 24 highest-scoring findings, highest first (F1 is the highest). Each score is 0 to 10: the impact's base plus additions for weak strength, quantum vulnerability and the finding's codes.",
@@ -5297,56 +5297,56 @@ export const INFO_TIPS = {
     why: "Shows whether fixes keep pace with what the scans find.",
     example: "Mark a finding Fixed in the table below and these numbers update.",
   },
-  // src: frontend/components/CbomResults.tsx:1281-1301 — the CycloneDX import report
+  // src: frontend/components/CbomResults.tsx:660 — the CycloneDX import report
   "cbom.res.import_notes": {
     label: "About the uploaded CBOM file",
     what: "What happened when your uploaded CycloneDX CBOM was read: how many cryptographic assets were imported, and which components were skipped as not crypto, unreadable, duplicate or past the limit.",
     why: "Skipped components are missing from the results, so check them.",
     example: "40 of 42 cryptographic assets imported · CycloneDX 1.6 · 2 unreadable.",
   },
-  // src: frontend/components/CbomResults.tsx:1304-1326 — coverage notes of the scan
+  // src: frontend/components/CbomResults.tsx:685 — coverage notes of the scan
   "cbom.res.coverage": {
     label: "What this scan covered",
     what: "Which files and languages the scan read and what it skipped, with the reason.",
     why: "Skipped files are not in the inventory, so a clean result may be incomplete.",
     example: "312 files read; 14 skipped as larger than the size limit.",
   },
-  // src: frontend/components/CbomResults.tsx:1410-1421 — an uploaded CBOM file
+  // src: frontend/components/CbomResults.tsx:792 — an uploaded CBOM file
   "cbom.res.input": {
     label: "Input",
     what: "This scan read an uploaded CycloneDX CBOM file instead of source code.",
     why: "Results are only as complete as the file.",
     example: "CBOM file.",
   },
-  // src: frontend/components/CbomResults.tsx:1470-1478 — finding rows; clean inventory is not listed here
+  // src: frontend/components/CbomResults.tsx:845 — finding rows; clean inventory is not listed here
   "cbom.res.findings": {
     label: "Cryptographic findings",
     what: "This scan's findings, one per row, each with a status your team sets. Clean assets (for example AES-GCM or SHA-256) are in the charts and the CycloneDX download, not in this table.",
     why: "Each row is something to fix, accept or plan for migration.",
     example: "RSA-2048 in src/crypto/keys.py:42, High, quantum-vulnerable, Not started.",
   },
-  // src: frontend/components/CbomResults.tsx:836-850 — algorithm, description, location or id
+  // src: frontend/components/CbomResults.tsx:873 — algorithm, description, location or id
   "cbom.res.search": {
     label: "Search",
     what: "Shows only the findings whose algorithm, description, location or id contains this text (upper or lower case does not matter).",
     why: "Find every use of one algorithm or file quickly.",
     example: "\"rsa\" keeps RSA-2048 and RSA-1024 findings.",
   },
-  // src: frontend/components/CbomResults.tsx:858, frontend/components/SASTResults.tsx:692-700 — tiers on the 0-10 risk score
+  // src: frontend/components/CbomResults.tsx:899, frontend/components/SASTResults.tsx:692-700 — tiers on the 0-10 risk score
   "cbom.res.filter.risk": {
     label: "Risk score filter",
     what: "Shows only findings whose risk score (0 to 10) is in a tier: Critical 9 or more, High 7 to 9, Medium 5 to 7, Low under 5.",
     why: "Focus on the findings that score highest.",
     example: "High keeps a finding scored 7.6 and hides one scored 9.4.",
   },
-  // src: frontend/components/CbomResults.tsx:854 — exact crypto_strength
+  // src: frontend/components/CbomResults.tsx:912 — exact crypto_strength
   "cbom.res.filter.strength": {
     label: "Strength filter",
     what: "Shows only findings of one strength: weak, moderate, strong or quantum-safe.",
     why: "Weak findings are exploitable today.",
     example: "Weak.",
   },
-  // src: frontend/components/CbomResults.tsx:855 — exact algorithm_type
+  // src: frontend/components/CbomResults.tsx:924 — exact algorithm_type
   "cbom.res.filter.type": {
     label: "Type filter",
     what: "Shows only findings of one algorithm type, from the types found in this scan.",
@@ -5360,28 +5360,28 @@ export const INFO_TIPS = {
     why: "Vulnerable gives your post-quantum migration list; Broken today the fixes that cannot wait.",
     example: "Vulnerable: the RSA and ECDH findings.",
   },
-  // src: frontend/components/CbomResults.tsx:1576-1585 — selects the rows shown
+  // src: frontend/components/CbomResults.tsx:968 — selects the rows shown
   "cbom.res.select_all": {
     label: "Select all",
     what: "Selects every finding the table shows (after search and filters), for the actions above the table: change their status or file Jira tickets.",
     why: "Handle a group of similar findings in one step.",
     example: "Filter Type: certificate, select all, mark In progress.",
   },
-  // src: frontend/components/CbomResults.tsx:1587 — algorithm name
+  // src: frontend/components/CbomResults.tsx:971 — algorithm name
   "cbom.res.col.algorithm": {
     label: "Algorithm",
     what: "The algorithm, key, certificate or protocol found, as named in the code or file. Click it for the details and the suggested fix.",
     why: "Names exactly what to replace.",
     example: "RSA-2048.",
   },
-  // src: frontend/components/CbomResults.tsx:1588 — algorithm_type
+  // src: frontend/components/CbomResults.tsx:972 — algorithm_type
   "cbom.res.col.type": {
     label: "Type",
     what: "The kind of cryptography: symmetric, asymmetric, hash, signature, key exchange, certificate, key, protocol or other.",
     why: "Each type has its own replacement path.",
     example: "asymmetric.",
   },
-  // src: frontend/components/CbomResults.tsx:1590, backend/utilities/cbom_sources/cbom_metrics.py:117-125 — weak, moderate, strong, quantum-safe
+  // src: frontend/components/CbomResults.tsx:974, backend/utilities/cbom_sources/cbom_metrics.py:117-125 — weak, moderate, strong, quantum-safe
   "cbom.res.col.strength": {
     label: "Strength",
     what: "How strong it is today: weak (broken or deprecated), moderate, strong, or quantum-safe.",
@@ -5402,7 +5402,7 @@ export const INFO_TIPS = {
     why: "Orders findings of the same impact by how much they matter.",
     example: "9.8 for an RSA-1024 signing key.",
   },
-  // src: frontend/components/CbomResults.tsx:1593 — file and line
+  // src: frontend/components/CbomResults.tsx:978 — file and line
   "cbom.res.col.location": {
     label: "Location",
     what: "Where it was found: the file and line, or the component in an uploaded CBOM.",
@@ -5416,7 +5416,7 @@ export const INFO_TIPS = {
     why: "Start here when you have time for only a few fixes.",
     example: "RSA-1024 signing key, weak, not quantum-safe, Critical.",
   },
-  // src: frontend/components/CbomResults.tsx:765-781 — QuantumBadge yesNo: Yes, No, Broken today (weak and quantum-safe), or a dash when quantum readiness does not apply
+  // src: frontend/components/CbomResults.tsx:1109 — QuantumBadge yesNo: Yes, No, Broken today (weak and quantum-safe), or a dash when quantum readiness does not apply
   "cbom.res.col.quantum_safe": {
     label: "Quantum safe",
     what: "Whether the asset is quantum-safe: Yes, No (needs a post-quantum replacement), Broken today (weak even without a quantum computer, such as MD5), or a dash when quantum readiness does not apply to it.",
@@ -5652,6 +5652,422 @@ export const INFO_TIPS = {
     what: "Crypto-agility: each asset by the hardest fix class among its findings, Configurable, Code-fixed, Vendor-fixed, Hardware-fixed or Unknown, and the share your own team can fix.",
     why: "Separates what you can change this sprint from what waits on a vendor or new hardware.",
     example: "40 of 100 assets self-fixable: 30 configurable, 10 code-fixed.",
+  },
+  // ────────────────────────────────────────────────────────────── CBOM Sources run results page (components/cbom/results/*, CB-38 #120)
+  // src: frontend/components/cbom/results/RunSections.tsx:76-78 — jobs, skipped sources, provenance
+  "cbom.run.covered": {
+    label: "What was covered",
+    what: "Every job of the run with where it ran and how it ended, the sources skipped when it started, and per source what was collected.",
+    why: "A finding list is only as complete as what was read; this shows what the run could and could not read.",
+    example: "9 jobs: 8 done, 1 expired on node-dr1; dc-mumbai-windows skipped (node offline).",
+  },
+  // src: frontend/components/cbom/results/RunSections.tsx:82-96 — per source: kind, runner, outcome, assets, endpoints, duration, credits
+  "cbom.run.provenance": {
+    label: "Provenance per source",
+    what: "For each source of the run: its kind, where it ran (a scan node or ZeroShield's cloud), its outcome, the assets collected (not counting the Not collected rows), endpoints probed, duration and credits.",
+    why: "Lets an auditor trace every asset back to the job that read it.",
+    example: "dc-mumbai-linux · Linux servers · node-dc1 · success · 212 assets · 0 endpoints · 4 min · 51.20.",
+  },
+  // src: frontend/components/cbom/results/RunSections.tsx:89 — the source kind
+  "cbom.run.col.kind": {
+    label: "Kind",
+    what: "The kind of source: Linux servers, database, AWS account, network range and so on.",
+    why: "Each kind is read differently and has its own blind spots.",
+    example: "AWS account.",
+  },
+  // src: frontend/components/cbom/results/RunSections.tsx:91 — job outcome
+  "cbom.run.col.outcome": {
+    label: "Outcome",
+    what: "How the source's job ended: success, partial (some targets or checks could not be read), failed, expired or cancelled.",
+    why: "A partial or failed outcome means some of that source's crypto is missing from the results.",
+    example: "partial: 2 of 254 servers refused the login.",
+  },
+  // src: frontend/components/cbom/results/RunSections.tsx:92 — collected assets only
+  "cbom.run.col.assets_collected": {
+    label: "Assets (excl. not collected)",
+    what: "Assets collected from this source. Rows that only record a part the job could not read (Not collected) are left out; the jobs table above counts them.",
+    why: "Separates what was actually read from what was attempted.",
+    example: "212 assets collected.",
+  },
+  // src: frontend/components/cbom/results/RunSections.tsx:93 — TLS/SSH endpoints probed
+  "cbom.run.col.endpoints": {
+    label: "Endpoints probed",
+    what: "How many network endpoints (address and port) the job probed with a TLS or SSH handshake.",
+    why: "Shows how much of a network range answered.",
+    example: "48 endpoints on 10.20.0.0/24.",
+  },
+  // src: frontend/components/cbom/results/RunSections.tsx:94 — job duration
+  "cbom.run.col.duration": {
+    label: "Duration",
+    what: "How long the source's job ran, from claim to result.",
+    why: "A very long job may hit timeouts; consider splitting the source.",
+    example: "4 min 12 s.",
+  },
+  // src: frontend/components/cbom/results/RunSections.tsx:95, backend/utilities/cbom_sources/planning.py:24 — credits of the source's job
+  "cbom.run.col.credits": {
+    label: "Credits",
+    what: "The credits charged for this source's job (0.2 per server target, 1 per database, 2 per cluster, 4 per cloud account, 1 per /24).",
+    why: "Shows where the run's cost went.",
+    example: "51.20 for 256 server targets.",
+  },
+  // src: frontend/components/cbom/results/RunSections.tsx:214-221 — within this run's scope
+  "cbom.run.certs": {
+    label: "Orphaned and unmanaged certificates",
+    what: "Within this run's scope: orphaned certificates are stored somewhere but presented by no endpoint the run read; unmanaged ones are held by no managing system the run saw (ACM, cert-manager, AD CS, Key Vault and similar).",
+    why: "Orphaned certificates are clutter that can be stolen; unmanaged ones expire without anyone being told.",
+    example: "3 orphaned (old keystore copies), 5 unmanaged (hand-installed on web servers).",
+  },
+  // src: frontend/components/cbom/results/RunSections.tsx:219 — stored, presented by no endpoint read
+  "cbom.run.certs.orphaned": {
+    label: "Orphaned certificates",
+    what: "Certificates found in files, keystores or secrets that no endpoint read by this run presents.",
+    why: "A forgotten certificate with its private key is a credential waiting to be misused.",
+    example: "/opt/app/old/server.p12, CN=api-old.bank.in.",
+  },
+  // src: frontend/components/cbom/results/RunSections.tsx:220 — no managing system saw them
+  "cbom.run.certs.unmanaged": {
+    label: "Unmanaged certificates",
+    what: "Certificates the run found that no certificate manager in this run's scope (ACM, cert-manager, AD CS, Key Vault and similar) holds.",
+    why: "Nothing renews or reports on them, so they expire unnoticed.",
+    example: "CN=intranet.bank.local installed by hand on web-07.",
+  },
+  // src: frontend/components/cbom/results/RunSections.tsx:173 — certificate subject
+  "cbom.run.cert.subject": {
+    label: "Subject",
+    what: "The certificate's subject: whom it was issued to.",
+    why: "Identifies the service the certificate belongs to.",
+    example: "CN=api.bank.in, O=Bank Ltd.",
+  },
+  // src: frontend/components/cbom/results/RunSections.tsx:174 — certificate issuer
+  "cbom.run.cert.issuer": {
+    label: "Issuer",
+    what: "The CA that issued the certificate.",
+    why: "An unexpected issuer can mean a certificate bought outside policy.",
+    example: "CN=BANK-ISSUING-CA.",
+  },
+  // src: frontend/components/cbom/results/RunSections.tsx:175 — not_after
+  "cbom.run.cert.expires": {
+    label: "Expires",
+    what: "When the certificate stops being valid.",
+    why: "Expired certificates break services; long-lived ones delay migration.",
+    example: "2 Dec 2026.",
+  },
+  // src: frontend/components/cbom/results/RunSections.tsx:176 — where it was found
+  "cbom.run.cert.location": {
+    label: "Location",
+    what: "Where the run found the certificate: a file path, keystore, secret or endpoint.",
+    why: "Tells you where to remove or renew it.",
+    example: "web-07:/etc/ssl/intranet.pem.",
+  },
+  // src: frontend/components/cbom/results/RunSections.tsx:177 — the source that found it
+  "cbom.run.cert.source": {
+    label: "Source",
+    what: "The source whose job found the certificate.",
+    why: "Points to the owner of the system.",
+    example: "dc-mumbai-linux.",
+  },
+  // src: frontend/components/cbom/results/RunSections.tsx:248-256 — drift against each source's previous complete collection
+  "cbom.run.changes": {
+    label: "Changes",
+    what: "What changed against each source's previous complete collection: assets added, removed or changed. Partial or failed collections are not compared.",
+    why: "Drift shows new weak crypto, and fixes that landed, as soon as they happen.",
+    example: "+3 certificates, -1 SSH host key, 2 changed.",
+  },
+  // src: frontend/components/cbom/results/RunSections.tsx:271-290, backend/utilities/cbom_sources/waves.py:44-60 — wave counts of the run's assets
+  "cbom.run.waves": {
+    label: "Remediation waves",
+    what: "This run's assets per remediation wave (1 most urgent to 4 post-quantum migration). Select findings in the table below to assign a wave, owner, target date or status; plans follow the asset to later runs.",
+    why: "Turns the findings into an ordered plan with owners and dates.",
+    example: "Wave 1: 4 · Wave 2: 11 · Wave 3: 30 · Wave 4: 52.",
+  },
+  // src: frontend/components/cbom/results/RunSections.tsx:301-330 — CERT-In, RBI, SEBI CSCRF, NIST, CNSA 2.0
+  "cbom.run.compliance": {
+    label: "Compliance mapping",
+    what: "Regulatory clauses this run's findings touch, per framework (CERT-In, RBI, SEBI CSCRF, NIST, CNSA 2.0), with the number of assets and finding codes per clause. From the knowledge base, no AI.",
+    why: "Shows auditors exactly which requirements each weakness affects.",
+    example: "RBI · 3 clauses: 4.2 Encryption of data in transit, 12 assets, WEAK_TLS_VERSION.",
+  },
+  // src: frontend/components/cbom/results/RunSections.tsx:370-386, backend/utilities/cbom_sources/posture.py:35-39 — impact x criticality x exposure
+  "cbom.run.top_risks": {
+    label: "Top cryptographic risks",
+    what: "The run's riskiest assets, ranked by priority = impact weight x the source's business criticality x its internet exposure, from the run posture.",
+    why: "Puts the fixes that cut the most risk first.",
+    example: "Priority 21: RSA-1024 on api.bank.in:443, High, critical source, internet-facing, HNDL.",
+  },
+  // src: backend/utilities/cbom_sources/posture.py:35-39, backend/utilities/cbom_sources/posture.py:192-193 — impact x criticality x exposure
+  "cbom.run.col.priority": {
+    label: "Priority",
+    what: "Impact weight (Critical 10, High 7, Medium 4, Low 1) x business criticality (0.5 to 2) x exposure (1.5 internet-facing, else 1).",
+    why: "Ranks the same weakness higher on critical, exposed systems.",
+    example: "7 x 2 x 1.5 = 21.",
+  },
+  // src: frontend/components/cbom/results/RunSections.tsx:380 — the asset
+  "cbom.run.col.asset": {
+    label: "Asset",
+    what: "The cryptographic asset: an endpoint, key, certificate or library, with where it is.",
+    why: "Names exactly what to change.",
+    example: "api.bank.in:443 TLS.",
+  },
+  // src: backend/utilities/cbom_sources/posture.py:36 — the source's business criticality
+  "cbom.run.col.criticality": {
+    label: "Criticality",
+    what: "The business criticality of the asset's source when the run started: low, medium, high or critical.",
+    why: "Critical systems rank higher.",
+    example: "critical.",
+  },
+  // src: backend/utilities/cbom_sources/posture.py:39, backend/utilities/cbom_sources/posture.py:99 — from facts or the source's override
+  "cbom.run.col.exposure": {
+    label: "Exposure",
+    what: "Whether the asset is internet-facing, internal or unknown, from the collected facts or the source's override. Hover for the basis.",
+    why: "Internet-facing assets are attacked first.",
+    example: "Internet-facing (public load balancer).",
+  },
+  // src: backend/utilities/cbom_sources/posture.py:8-9 — harvest now, decrypt later
+  "cbom.run.col.hndl": {
+    label: "HNDL",
+    what: "Harvest now, decrypt later: the asset's key exchange is quantum-vulnerable, so traffic recorded today could be decrypted by a future quantum computer.",
+    why: "Long-lived secrets on these channels are already at risk.",
+    example: "HNDL on vpn.bank.in (IKE with DH group 14).",
+  },
+  // src: frontend/components/cbom/results/RunFindingsTable.tsx:165-170 — the run's assets, Findings or All assets
+  "cbom.run.findings": {
+    label: "Cryptographic findings",
+    what: "Findings: the assets of this run with a finding; select rows to change their status or plan a wave, click a row for its explanation. All assets: every asset collected, including clean ones and the parts it could not read (Not collected).",
+    why: "Each row is something to fix, accept or plan for migration.",
+    example: "RSA-2048 on api.bank.in:443 · High · quantum-vulnerable · Wave 1 · Not started.",
+  },
+  // src: frontend/components/cbom/results/RunFindingsTable.tsx:173-182 — view=findings or all
+  "cbom.run.view": {
+    label: "Findings or all assets",
+    what: "Switch between the assets with a finding and every asset the run collected (clean ones and Not collected rows included).",
+    why: "All assets is the complete inventory; Findings is the work list.",
+    example: "Findings (96) · All assets (1,284).",
+  },
+  // src: frontend/components/cbom/results/RunFindingsTable.tsx:216-220 — location, algorithm or finding
+  "cbom.run.search": {
+    label: "Search",
+    what: "Shows only rows whose location, algorithm or finding text contains this text.",
+    why: "Finds every asset of one host or algorithm quickly.",
+    example: "\"api.bank.in\" keeps that host's endpoints and certificates.",
+  },
+  // src: frontend/components/cbom/results/RunFindingsTable.tsx:222-228 — Critical, High, Medium, Low
+  "cbom.run.filter.impact": {
+    label: "Impact filter",
+    what: "Shows only rows of one impact: Critical, High, Medium or Low.",
+    why: "Focuses on the most serious findings.",
+    example: "Critical.",
+  },
+  // src: frontend/components/cbom/results/RunFindingsTable.tsx:229-237 — asset type
+  "cbom.run.filter.type": {
+    label: "Type filter",
+    what: "Shows only one type of asset: TLS endpoint, certificate, key, SSH host key, library and others.",
+    why: "Plan migration one asset type at a time.",
+    example: "Certificate.",
+  },
+  // src: frontend/components/cbom/results/RunFindingsTable.tsx:238-245 — quantum-vulnerable only
+  "cbom.run.filter.quantum": {
+    label: "Quantum filter",
+    what: "Shows only quantum-vulnerable assets.",
+    why: "This is your post-quantum migration list.",
+    example: "Quantum-vulnerable.",
+  },
+  // src: frontend/components/cbom/results/RunFindingsTable.tsx:247-253 — one source
+  "cbom.run.filter.source": {
+    label: "Source filter",
+    what: "Shows only the assets of one source of the run.",
+    why: "Hand one source's list to its owner.",
+    example: "dc-mumbai-linux.",
+  },
+  // src: frontend/components/cbom/results/RunFindingsTable.tsx:256-262 — Not started, In progress, Fixed, Ignored
+  "cbom.run.filter.status": {
+    label: "Status filter",
+    what: "Shows only findings with one status: Not started, In progress, Fixed or Ignored.",
+    why: "Track what is still open.",
+    example: "Not started.",
+  },
+  // src: frontend/components/cbom/results/RunFindingsTable.tsx:310 — host, port, path
+  "cbom.run.col.where": {
+    label: "Where",
+    what: "Where the asset is: host and port, file path, keystore or cloud resource.",
+    why: "Takes you straight to the system to change.",
+    example: "api.bank.in:443.",
+  },
+  // src: frontend/components/cbom/results/RunFindingsTable.tsx:311 — the finding text
+  "cbom.run.col.finding": {
+    label: "Finding",
+    what: "What is wrong with the asset, from the knowledge base.",
+    why: "Explains why it is a finding before you open it.",
+    example: "TLS 1.0 accepted; key exchange quantum-vulnerable.",
+  },
+  // src: frontend/components/cbom/results/RunFindingsTable.tsx:315 — the source
+  "cbom.run.col.source": {
+    label: "Source",
+    what: "The source whose job collected this asset.",
+    why: "Points to the owner of the system.",
+    example: "dc-mumbai-linux.",
+  },
+  // src: backend/utilities/cbom_sources/waves.py:44-60 — suggested or assigned wave
+  "cbom.run.col.wave": {
+    label: "Wave",
+    what: "The remediation wave: the one your team assigned, or the suggested one (1 most urgent to 4 post-quantum migration), with owner and target date when set.",
+    why: "Turns findings into an ordered plan.",
+    example: "Wave 1 · Payments · 31 Dec.",
+  },
+  // src: contracts/cbom/status_buckets.json:2 — open, in progress, done, accepted risk
+  "cbom.run.col.status": {
+    label: "Status",
+    what: "The finding's status from its remediation plan: Not started, In progress, Fixed or Ignored (risk accepted).",
+    why: "Fixed and Ignored findings leave the open backlog.",
+    example: "In progress.",
+  },
+  // src: backend/utilities/cbom_sources/qgrade.py:46-99 — Q0..Q4
+  "cbom.run.col.qgrade": {
+    label: "Quantum risk",
+    what: "The asset's quantum risk grade, Q1 Critical to Q4 Low, or Q0 Unknown when a deciding fact or the team's Mosca settings are missing.",
+    why: "Ranks post-quantum migration by how soon the data is at risk.",
+    example: "Q1 Critical: quantum-vulnerable, internet-facing, X + Y > Z.",
+  },
+  // src: frontend/components/cbom/results/RunSections.tsx:347-351 — the rows of the current table page
+  "cbom.run.risk_scores": {
+    label: "Risk scores on this table page",
+    what: "The risk score (0 to 10) of the rows on the findings table's current page and filter, highest first, at most 24. It never counts the whole run.",
+    why: "Shows whether this page's risk is concentrated in a few rows.",
+    example: "F1: RSA-1024 signing key, 9.8.",
+  },
+  // src: frontend/components/cbom/results/RunHeader.tsx:65-87 — CycloneDX JSON and XML, OSCAL
+  "cbom.run.downloads": {
+    label: "Downloads",
+    what: "The run's CBOM as CycloneDX 1.6 JSON or XML (schema-valid), and OSCAL 1.2.3 assessment results for a GRC tool once the run has finished.",
+    why: "Hands the inventory to auditors and other tools in standard formats.",
+    example: "CycloneDX JSON (1,284) for the auditor's CBOM request.",
+  },
+  // src: frontend/components/cbom/results/RunFindingDialog.tsx:63 — asset type
+  "cbom.run.f.type": {
+    label: "Type",
+    what: "The kind of asset: TLS endpoint, certificate, key, SSH host key, library and others.",
+    why: "Each type has its own replacement path.",
+    example: "TLS endpoint.",
+  },
+  // src: frontend/components/cbom/results/RunFindingDialog.tsx:64-66 — weak, moderate, strong, quantum-safe
+  "cbom.run.f.strength": {
+    label: "Crypto strength",
+    what: "How strong the cryptography is today: weak, moderate, strong or quantum-safe.",
+    why: "Weak is exploitable now.",
+    example: "weak.",
+  },
+  // src: frontend/components/cbom/results/RunFindingDialog.tsx:67 — bits
+  "cbom.run.f.key_size": {
+    label: "Key size",
+    what: "The key length in bits, when the asset has one.",
+    why: "Short keys can be broken without a quantum computer.",
+    example: "1024 bits.",
+  },
+  // src: frontend/components/cbom/results/RunFindingDialog.tsx:68-72 — quantum verdict
+  "cbom.run.f.quantum": {
+    label: "Quantum",
+    what: "Whether a quantum computer breaks it: quantum-vulnerable, quantum-safe or broken today.",
+    why: "Quantum-vulnerable assets need a post-quantum replacement.",
+    example: "Quantum-vulnerable.",
+  },
+  // src: frontend/components/cbom/results/RunFindingDialog.tsx:73-75 — impact as collected
+  "cbom.run.f.impact": {
+    label: "Impact",
+    what: "The impact the asset was judged with when it was collected: Critical, High, Medium, Low, or Info for clean inventory.",
+    why: "Fix Critical and High first.",
+    example: "High.",
+  },
+  // src: frontend/components/cbom/results/RunFindingDialog.tsx:76-80 — 0-10
+  "cbom.run.f.risk": {
+    label: "Risk score",
+    what: "The asset's risk score, 0 to 10, from its impact, findings, strength and quantum verdict.",
+    why: "Orders findings of the same impact.",
+    example: "8.6 out of 10.",
+  },
+  // src: frontend/components/cbom/results/RunFindingDialog.tsx:81-85 — remediation status
+  "cbom.run.f.status": {
+    label: "Status",
+    what: "The status of the asset's remediation plan: Not started, In progress, Fixed or Ignored.",
+    why: "Shows whether anyone is working on it.",
+    example: "In progress.",
+  },
+  // src: frontend/components/cbom/results/RunFindingDialog.tsx:89-95 — linked Jira ticket
+  "cbom.run.f.ticket": {
+    label: "Ticket",
+    what: "The Jira ticket filed for this asset, if any.",
+    why: "Follow the fix in your team's tracker.",
+    example: "SEC-1423.",
+  },
+  // src: frontend/components/cbom/results/RunFindingDialog.tsx:99-106 — where it is
+  "cbom.run.f.location": {
+    label: "Location",
+    what: "Exactly where the asset is: host and port, file path, keystore or cloud resource.",
+    why: "Takes you to the system to change.",
+    example: "web-07:/etc/ssl/intranet.pem.",
+  },
+  // src: frontend/components/cbom/results/RunFindingDialog.tsx:109-110 — the finding text
+  "cbom.run.f.finding": {
+    label: "Finding",
+    what: "What is wrong, from the knowledge base.",
+    why: "Explains the risk in plain words.",
+    example: "Key exchange uses RSA: quantum-vulnerable.",
+  },
+  // src: frontend/components/cbom/results/RunFindingDialog.tsx:112-113 — extra description
+  "cbom.run.f.description": {
+    label: "Description",
+    what: "More detail about the asset and the finding.",
+    why: "Context helps choose the right fix.",
+    example: "Endpoint offers TLS 1.0-1.2 with RSA key exchange.",
+  },
+  // src: frontend/components/cbom/results/RunFindingDialog.tsx:117-125 — source, job, node
+  "cbom.run.f.origin": {
+    label: "Where it came from",
+    what: "The source, job and scan node (or cloud) that collected this asset, and when.",
+    why: "Lets you trace and re-check the evidence.",
+    example: "dc-mumbai-linux · job #4410 · node-dc1 · 13 Nov 23:10.",
+  },
+  // ────────────────────────────────────────────────────────────── CBOM Sources: in-tab run results and posture (components/cbom/sources/RunResults.tsx, RunPosture.tsx)
+  // src: frontend/components/cbom/sources/RunResults.tsx:125-130 — each target's outcome
+  "cbom.run.targets": {
+    label: "Targets",
+    what: "Each target the run's jobs tried, with its outcome: read, unreachable, login failed and so on.",
+    why: "Targets that could not be read are blind spots in this run.",
+    example: "10.20.0.17 · unreachable (port 22 filtered).",
+  },
+  // src: frontend/components/cbom/sources/RunResults.tsx:379-392 — assets with a wave can be selected
+  "cbom.run.col.select_wave": {
+    label: "Select for wave assignment",
+    what: "Select assets that have a remediation wave, to assign a wave, owner, target date or status together.",
+    why: "Plans a group of similar assets in one step.",
+    example: "Tick the 12 certificates of api.bank.in, set Wave 2.",
+  },
+  // src: backend/utilities/cbom_sources/posture.py:3-5 — quantum-vulnerable class
+  "cbom.run.col.qv": {
+    label: "Quantum-vulnerable",
+    what: "Whether the asset was judged quantum-vulnerable when it was collected: public-key cryptography a quantum computer breaks (RSA, DH, elliptic curves).",
+    why: "These assets need a post-quantum replacement.",
+    example: "Yes for ECDHE P-256 key exchange.",
+  },
+  // src: backend/utilities/cbom_sources/posture.py:1-15 — HNDL, Mosca, risk score, compliance, from the knowledge base
+  "cbom.run.posture": {
+    label: "Post-quantum and risk posture",
+    what: "The run's posture from the knowledge base (no AI): harvest-now-decrypt-later exposure, the Mosca test X + Y > Z with your team's values, risk scores and the regulatory clauses touched.",
+    why: "Turns the inventory into the questions a board and a regulator ask.",
+    example: "14 HNDL endpoints; with X 10, Y 3, Z 10 the data is at risk now.",
+  },
+  // src: frontend/components/cbom/sources/RunPosture.tsx:93-97,155, backend/utilities/cbom_sources/posture.py:10-11 — X, Y, Z in years, 0-100, team admins
+  "cbom.run.mosca": {
+    label: "Mosca inputs",
+    what: "The team's Mosca values in whole years, 0 to 100: X how long data must stay secret, Y how long migration takes, Z years until a cryptographically relevant quantum computer. Team admins only; blank clears.",
+    why: "X + Y > Z means data protected by quantum-vulnerable crypto is already at risk.",
+    example: "X 10, Y 5, Z 12: 15 > 12, migration is overdue.",
+  },
+  // ────────────────────────────────────────────────────────────── CBOM Sources: Review & Run, grade inputs (components/cbom/sources/GradeInputsCard.tsx)
+  // src: frontend/components/cbom/sources/GradeInputsCard.tsx:3-4, frontend/components/cbom/sources/GradeInputsCard.tsx:29-70 — Mosca X/Y/Z, per-source data lifetime, Q0 gaps; recorded at Start
+  "cbsrc.rr.grade_inputs": {
+    label: "Grade inputs",
+    what: "What the next run's quantum risk grades use, recorded when you start it: the team's Mosca X, Y and Z, each source's own data lifetime (its X), and the evidence Q0 gaps. Later changes apply to new runs only.",
+    why: "Without X, Y and Z, quantum-vulnerable assets grade as Unknown, and the record lets an old run's grade be explained later.",
+    example: "X 10, Y 3, Z 12; Core banking DB keeps data 25 y; 2 Q0 gaps.",
   },
 } as const satisfies Record<string, InfoTipEntry>;
 
