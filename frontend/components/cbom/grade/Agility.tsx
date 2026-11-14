@@ -155,7 +155,7 @@ export function AgilityPostureCard({ teamId, posture, model }: {
     <div className="space-y-3 rounded-lg border border-zinc-200 dark:border-zinc-800 p-3 min-w-0" data-testid="posture-fix"
          data-agility-version={posture.agility_version}>
       <div className="flex flex-wrap items-center gap-2">
-        <p className="text-sm font-medium text-zinc-900 dark:text-white">How hard is this to fix?</p>
+        <p className="text-sm font-medium text-zinc-900 dark:text-white">How hard is this to fix? <InfoTip id="cbom.agility.section" /></p>
         <span className="text-xs text-zinc-500 dark:text-zinc-400">Crypto-agility: the hardest fix class of each asset</span>
       </div>
       <AgilityDistribution posture={posture} />

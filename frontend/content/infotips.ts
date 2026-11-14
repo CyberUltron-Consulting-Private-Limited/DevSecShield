@@ -5286,6 +5286,28 @@ export const INFO_TIPS = {
     why: "You pay only for the jobs that completed.",
     example: "12.4 (1 refunded).",
   },
+  // ────────────────────────────────────────────────────────────── CBOM results: AI remediation assistant, crypto-agility and quantum-risk headings
+  // src: frontend/components/cbom/results/AiRemediationPanel.tsx:1-5, frontend/components/cbom/results/aiPanelLogic.ts:22-35 — shown only when available; every answer validated against the knowledge base
+  "cbom.ai.panel": {
+    label: "AI assistant",
+    what: "Explain describes this finding in plain words; Plan gives ordered remediation steps; Ask a question answers about this finding only. Answers come from the configured model (AWS Bedrock, or an on-prem model) grounded in ZeroShield's knowledge base: every step cites it, and an answer that fails validation is withheld. The line beside it names the only outbound host.",
+    why: "It turns a finding into concrete steps for your stack, without sending data anywhere but the named endpoint.",
+    example: "Plan for RSA-2048 on api.bank.in:443: enable hybrid X25519MLKEM768, rotate to an ML-DSA certificate, cited KB steps.",
+  },
+  // src: frontend/components/cbom/results/aiPanelLogic.ts:7, frontend/components/cbom/results/AiRemediationPanel.tsx:86-95 — up to 500 characters, about this finding
+  "cbom.ai.question": {
+    label: "Your question",
+    what: "A question about this finding, up to 500 characters. The answer uses only this finding and the knowledge base.",
+    why: "Lets you ask how a fix applies to your own setup.",
+    example: "Which of these steps applies to an nginx reverse proxy?",
+  },
+  // src: backend/utilities/cbom_sources/agility.py:76-113, frontend/components/cbom/grade/Agility.tsx:150-160 — the hardest fix class of each asset
+  "cbom.agility.section": {
+    label: "How hard is this to fix?",
+    what: "Crypto-agility: each asset by the hardest fix class among its findings, Configurable, Code-fixed, Vendor-fixed, Hardware-fixed or Unknown, and the share your own team can fix.",
+    why: "Separates what you can change this sprint from what waits on a vendor or new hardware.",
+    example: "40 of 100 assets self-fixable: 30 configurable, 10 code-fixed.",
+  },
 } as const satisfies Record<string, InfoTipEntry>;
 
 export type InfoTipId = keyof typeof INFO_TIPS;

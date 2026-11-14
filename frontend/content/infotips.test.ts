@@ -75,6 +75,9 @@ export const COVERED: string[] = [
   "components/cbom/CertCalendar.tsx",
   "components/cbom/CryptoHeatmap.tsx",
   "components/cbom/KbFindingDetails.tsx",
+  // quantum-risk grade and crypto-agility (Sources run results and code results), the AI remediation assistant
+  "components/cbom/grade",
+  "components/cbom/results/AiRemediationPanel.tsx",
 ];
 /** Files under a covered directory that are not covered yet, each with the reason. */
 export const NOT_YET_COVERED = new Map<string, string>([
