@@ -18,7 +18,7 @@ from backend.utilities.cbom_sources.common import iso_z
 from backend.utilities.cbom_sources.evidence import AREAS, CONFIDENCE_LABEL, area_level, level, vendor_level, vendor_status
 from backend.utilities.cbom_sources.jobs import job_waiting_reason, run_credit_summary
 from backend.utilities.cbom_sources.kinds import KINDS
-from backend.utilities.cbom_sources.planning import node_status, source_targets
+from backend.utilities.cbom_sources.planning import RangeContext, node_status, source_targets
 from backend.utilities.cbom_sources.settings import next_window_start
 
 
@@ -94,9 +94,11 @@ def last_collects(session: Any, team_id: int, source_ids: list[int]) -> dict[int
 
 
 def public_source(source: CbomCollectionSource, settings: CbomCollectionSettings, node: CbomScanNode | None,
-                  now: _dt.datetime, last_collect: dict[str, Any] | None = None) -> dict[str, Any]:
+                  now: _dt.datetime, last_collect: dict[str, Any] | None = None,
+                  ranges: RangeContext | None = None) -> dict[str, Any]:
+    """``ranges``: the request's planning.RangeContext when it lists several sources (built once per request)."""
     spec = KINDS.get(source.kind)
-    info = source_targets(source, settings)
+    info = source_targets(source, settings, ranges)
     config = dict(source.config or {})
     return {
         "id": source.id,
