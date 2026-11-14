@@ -9,6 +9,7 @@ import { Download, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/utils/toast";
 import { downloadCbomRunDeliverable, type CbomRunDeliverable } from "@/utils/backend_api";
+import { InfoTip } from "@/components/ui/info-tip";
 
 export interface RunDeliverablesMenuProps {
   teamId: number;
@@ -79,6 +80,7 @@ export default function RunDeliverablesMenu({ teamId, runId, active }: RunDelive
           </Button>
         );
       })}
+      <InfoTip id="cbom.run.deliverables" />
     </>
   );
 }

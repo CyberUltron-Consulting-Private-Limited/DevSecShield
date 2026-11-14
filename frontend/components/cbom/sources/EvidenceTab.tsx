@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -49,8 +48,11 @@ import {
   Truncate,
   type Tone,
 } from "./shared";
+import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
+import type { InfoTipId } from "@/content/infotips";
 
 const LEVELS: CbomConfidence[] = CONFIDENCE_LEVELS;
+const LEVEL_TIP: Record<CbomConfidence, InfoTipId> = { E0: "cbsrc.ev.e0", E1: "cbsrc.ev.e1", E2: "cbsrc.ev.e2", E3: "cbsrc.ev.e3" };
 const CHOICES: { value: string; label: string }[] = [
   { value: "yes", label: "Yes" },
   { value: "no", label: "No" },
@@ -285,7 +287,7 @@ export default function EvidenceTab({ teamId, onNavigate }: { teamId: number; on
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {LEVELS.map((q) => (
-          <StatCard
+          <StatCard infoId={LEVEL_TIP[q]}
             key={q}
             label={`${q} ${CONFIDENCE_LABEL[q]}`}
             value={pluralize(counts[q] ?? 0, "area")}
@@ -295,6 +297,7 @@ export default function EvidenceTab({ teamId, onNavigate }: { teamId: number; on
       </div>
 
       <SectionCard
+        infoId="cbsrc.ev.areas"
         title="Areas that cannot be scanned"
         description={`${pluralize(areas.length, "area")} · ${data.answered.toLocaleString()} answered`}
       >
@@ -314,11 +317,11 @@ export default function EvidenceTab({ teamId, onNavigate }: { teamId: number; on
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Area</TableHead>
-                    <TableHead>Owner</TableHead>
-                    <TableHead>Confidence</TableHead>
-                    <TableHead>Evidence</TableHead>
-                    <TableHead>Due</TableHead>
+                    <TableHead>Area <InfoTip id="cbsrc.ev.col.area" /></TableHead>
+                    <TableHead>Owner <InfoTip id="cbsrc.ev.col.owner" /></TableHead>
+                    <TableHead>Confidence <InfoTip id="cbsrc.ev.col.confidence" /></TableHead>
+                    <TableHead>Evidence <InfoTip id="cbsrc.ev.col.evidence" /></TableHead>
+                    <TableHead>Due <InfoTip id="cbsrc.ev.col.due" /></TableHead>
                     <TableHead>
                       <span className="sr-only">Action</span>
                     </TableHead>
@@ -409,6 +412,7 @@ export default function EvidenceTab({ teamId, onNavigate }: { teamId: number; on
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
         <div className="xl:col-span-2 min-w-0">
           <SectionCard
+            infoId="cbsrc.ev.vendors"
             title="Vendors"
             description="Single-use links, no login, expire in 14 days. A vendor who does not answer stays E0 Unknown, a Q0 gap."
             actions={
@@ -435,9 +439,9 @@ export default function EvidenceTab({ teamId, onNavigate }: { teamId: number; on
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Vendor</TableHead>
-                        <TableHead>Link status</TableHead>
-                        <TableHead>Confidence</TableHead>
+                        <TableHead>Vendor <InfoTip id="cbsrc.ev.col.vendor" /></TableHead>
+                        <TableHead>Link status <InfoTip id="cbsrc.ev.col.link" /></TableHead>
+                        <TableHead>Confidence <InfoTip id="cbsrc.ev.col.confidence" /></TableHead>
                         <TableHead>
                           <span className="sr-only">Action</span>
                         </TableHead>
@@ -524,10 +528,10 @@ export default function EvidenceTab({ teamId, onNavigate }: { teamId: number; on
           </SectionCard>
         </div>
 
-        <SectionCard title="Questionnaire preview" description="What an owner or a vendor is asked. Read-only.">
+        <SectionCard infoId="cbsrc.ev.preview" title="Questionnaire preview" description="What an owner or a vendor is asked. Read-only.">
           {previewArea ? (
             <div className="space-y-5">
-              <Field label="Area" htmlFor="evidence-preview-area">
+              <Field infoId="cbsrc.ev.preview_area" label="Area" htmlFor="evidence-preview-area">
                 <Select value={previewArea.area_key} onValueChange={setPreviewKey}>
                   <SelectTrigger id="evidence-preview-area" className="w-full cursor-pointer" data-testid="evidence-preview-area">
                     <SelectValue />
@@ -659,16 +663,17 @@ export default function EvidenceTab({ teamId, onNavigate }: { teamId: number; on
 // ---------------------------------------------------------------------------- read-only preview
 function QuestionnairePreview({ area }: { area: CbomEvidenceArea }) {
   return (
-    <fieldset disabled className="space-y-5" aria-label={`Preview of ${area.title}`}>
+    <fieldset className="space-y-5" aria-label={`Preview of ${area.title}`} data-preview="read-only">
       {area.questions.map((q) => (
         <div key={q.id} className="space-y-2">
-          <Label htmlFor={`preview-${area.area_key}-${q.id}`} className="leading-snug">
+          <FieldLabel infoId="cbsrc.ev.question" htmlFor={`preview-${area.area_key}-${q.id}`} labelClassName="leading-snug">
             {q.prompt}
-          </Label>
+          </FieldLabel>
           {q.type === "choice" ? (
             <div role="radiogroup" aria-label={q.prompt} className="flex flex-wrap gap-4">
               {CHOICES.map((c) => (
                 <label key={c.value} className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
+                  {/* infotip-shared: a disabled preview of the question's choices; the question's tip explains them */}
                   <input type="radio" name={`preview-${area.area_key}-${q.id}`} className="h-4 w-4 accent-blue-600" disabled />
                   {c.label}
                 </label>
@@ -680,7 +685,9 @@ function QuestionnairePreview({ area }: { area: CbomEvidenceArea }) {
         </div>
       ))}
       <div className="space-y-2">
-        <Label htmlFor={`preview-${area.area_key}-evidence`}>Link to supporting evidence (optional)</Label>
+        <FieldLabel infoId="cbsrc.ev.preview_link" htmlFor={`preview-${area.area_key}-evidence`}>
+          Link to supporting evidence (optional)
+        </FieldLabel>
         <Input id={`preview-${area.area_key}-evidence`} disabled placeholder="https://" />
         <p className="text-xs text-zinc-500">A policy, certificate or report. Documented (E2) and Verified (E3) need one.</p>
       </div>
@@ -784,7 +791,7 @@ function AreaDialog({
         </DialogHeader>
 
         <div className="space-y-6 py-2 min-w-0">
-          <Field label="Owner" htmlFor="evidence-owner" hint={area.owner_hint ? `Usually: ${area.owner_hint}` : undefined} error={errors.owner}>
+          <Field infoId="cbsrc.ev.owner" label="Owner" htmlFor="evidence-owner" hint={area.owner_hint ? `Usually: ${area.owner_hint}` : undefined} error={errors.owner}>
             <Input
               id="evidence-owner"
               data-testid="evidence-owner"
@@ -800,6 +807,7 @@ function AreaDialog({
             {area.questions.map((q) =>
               q.type === "choice" ? (
                 <Field
+                  infoId="cbsrc.ev.question"
                   key={q.id}
                   label={q.prompt}
                   hint={
@@ -824,7 +832,7 @@ function AreaDialog({
                   />
                 </Field>
               ) : (
-                <Field key={q.id} label={q.prompt} htmlFor={`evidence-${area.area_key}-${q.id}`}>
+                <Field infoId="cbsrc.ev.question" key={q.id} label={q.prompt} htmlFor={`evidence-${area.area_key}-${q.id}`}>
                   <Textarea
                     id={`evidence-${area.area_key}-${q.id}`}
                     data-testid={`evidence-answer-input-${q.id}`}
@@ -839,6 +847,7 @@ function AreaDialog({
           </div>
 
           <Field
+            infoId="cbsrc.ev.confidence"
             label="Confidence"
             htmlFor="evidence-confidence"
             hint="Documented and Verified need an evidence document and its date"
@@ -864,10 +873,10 @@ function AreaDialog({
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Field label="Evidence title" htmlFor="evidence-title" hint="For example: Key management policy v3 (PDF)">
+            <Field infoId="cbsrc.ev.title" label="Evidence title" htmlFor="evidence-title" hint="For example: Key management policy v3 (PDF)">
               <Input id="evidence-title" value={evidenceTitle} maxLength={200} onChange={(e) => setEvidenceTitle(e.target.value)} />
             </Field>
-            <Field label="Evidence link" htmlFor="evidence-url" hint="http:// or https:// link to the document" error={errors.evidence_url}>
+            <Field infoId="cbsrc.ev.url" label="Evidence link" htmlFor="evidence-url" hint="http:// or https:// link to the document" error={errors.evidence_url}>
               <Input
                 id="evidence-url"
                 data-testid="evidence-url"
@@ -878,6 +887,7 @@ function AreaDialog({
               />
             </Field>
             <Field
+              infoId="cbsrc.ev.date"
               label="Evidence date"
               htmlFor="evidence-date"
               hint={
@@ -897,7 +907,7 @@ function AreaDialog({
                 onChange={(e) => setEvidenceDate(e.target.value)}
               />
             </Field>
-            <Field label="Due date" htmlFor="evidence-due" hint="When the owner should answer by" error={errors.due_date}>
+            <Field infoId="cbsrc.ev.due" label="Due date" htmlFor="evidence-due" hint="When the owner should answer by" error={errors.due_date}>
               <Input id="evidence-due" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
             </Field>
           </div>
@@ -970,7 +980,7 @@ function VendorDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
-          <Field label="Vendor name" htmlFor="vendor-name" required error={errors.name}>
+          <Field infoId="cbsrc.ev.vendor_name" label="Vendor name" htmlFor="vendor-name" required error={errors.name}>
             <Input
               id="vendor-name"
               data-testid="vendor-name"
@@ -980,7 +990,7 @@ function VendorDialog({
               onChange={(e) => setName(e.target.value)}
             />
           </Field>
-          <Field label="Contact email (optional)" htmlFor="vendor-email" hint="For your records only" error={errors.email}>
+          <Field infoId="cbsrc.ev.vendor_email" label="Contact email (optional)" htmlFor="vendor-email" hint="For your records only" error={errors.email}>
             <Input
               id="vendor-email"
               data-testid="vendor-email"
@@ -1071,6 +1081,7 @@ function VendorAnswersDialog({
             </div>
           </dl>
           <Field
+            infoId="cbsrc.ev.vendor_confidence"
             label="Confidence"
             htmlFor="vendor-confidence"
             hint="Set to E1 when answered, or E2 when the vendor gave an evidence link. Raise it to E3 once you have verified the evidence. It counts only once the vendor has answered."

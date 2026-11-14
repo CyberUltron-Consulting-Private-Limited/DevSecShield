@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { Label } from "@/components/ui/label";
+import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -299,9 +299,9 @@ export function MCPOptionsSidebar({
         <>
           <div className="p-6 space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="mcp-server-url" className="text-zinc-300">
-                MCP server URL <span className="text-red-500">*</span>
-              </Label>
+              <FieldLabel htmlFor="mcp-server-url" infoId="mcp.cfg.server_url" labelClassName="text-zinc-300" required>
+                MCP server URL
+              </FieldLabel>
               <Input
                 id="mcp-server-url"
                 type="url"
@@ -313,9 +313,9 @@ export function MCPOptionsSidebar({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="server-mode" className="text-zinc-300">
-                Server mode <span className="text-red-500">*</span>
-              </Label>
+              <FieldLabel htmlFor="server-mode" infoId="mcp.cfg.server_mode" labelClassName="text-zinc-300" required>
+                Server mode
+              </FieldLabel>
               <Select
                 value={serverMode}
                 onValueChange={(v) => setServerMode(v as ServerMode)}
@@ -341,9 +341,9 @@ export function MCPOptionsSidebar({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="mcp-environment" className="text-zinc-300">
+              <FieldLabel htmlFor="mcp-environment" infoId="mcp.cfg.environment" labelClassName="text-zinc-300">
                 Environment
-              </Label>
+              </FieldLabel>
               <Select
                 value={environment}
                 onValueChange={(v) => setEnvironment(v as MCPEnvironment)}
@@ -369,9 +369,9 @@ export function MCPOptionsSidebar({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="headers-json" className="text-zinc-300">
+              <FieldLabel htmlFor="headers-json" infoId="mcp.cfg.headers" labelClassName="text-zinc-300">
                 Headers (JSON, optional)
-              </Label>
+              </FieldLabel>
               <Textarea
                 id="headers-json"
                 placeholder='{"Authorization": "Bearer ...", "X-Custom": "value"}'
@@ -402,7 +402,7 @@ export function MCPOptionsSidebar({
           <Separator className="bg-zinc-800" />
 
           <div className="p-6">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-2">Estimate scan credits</h3>
+            <h3 className="text-sm font-semibold text-zinc-200 mb-2 flex items-center gap-1">Estimate scan credits <InfoTip id="mcp.cfg.estimate" /></h3>
             <Button
               variant="ghost"
               size="sm"
@@ -437,7 +437,7 @@ export function MCPOptionsSidebar({
           <Separator className="bg-zinc-800" />
 
           <div className="p-6">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-2">Run scan</h3>
+            <h3 className="text-sm font-semibold text-zinc-200 mb-2 flex items-center gap-1">Run scan <InfoTip id="scan.cfg.run" /></h3>
             {canRunScan ? (
               <div className="space-y-2">
                 <Button

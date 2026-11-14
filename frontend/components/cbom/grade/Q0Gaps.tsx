@@ -22,6 +22,7 @@ import {
   type Q0Gap,
   type Q0GapStatus,
 } from "./q0gaps";
+import { InfoTip } from "@/components/ui/info-tip";
 
 function GapRow({ gap }: { gap: Q0Gap }) {
   const sub = subReasonText(gap.sub_reason);
@@ -82,10 +83,10 @@ export function Q0GapList({ items, byReason, model, status }: {
                 <thead>
                   <tr className="text-left text-xs text-zinc-500 dark:text-zinc-400">
                     <th className="py-1 pr-3 font-medium">Item</th>
-                    <th className="py-1 pr-3 font-medium">Age</th>
-                    <th className="py-1 pr-3 font-medium">Opened</th>
-                    <th className="py-1 pr-3 font-medium">Closed</th>
-                    <th className="py-1 font-medium">Cause</th>
+                    <th className="py-1 pr-3 font-medium">Age <InfoTip id="cbom.q0.col.age" /></th>
+                    <th className="py-1 pr-3 font-medium">Opened <InfoTip id="cbom.q0.col.opened" /></th>
+                    <th className="py-1 pr-3 font-medium">Closed <InfoTip id="cbom.q0.col.closed" /></th>
+                    <th className="py-1 font-medium">Cause <InfoTip id="cbom.q0.col.cause" /></th>
                   </tr>
                 </thead>
                 <tbody>{group.items.map((gap) => <GapRow key={gap.id} gap={gap} />)}</tbody>
@@ -117,6 +118,7 @@ export function Q0GapRegister({ teamId }: { teamId: number }) {
             {s === "open" ? "Open" : "Closed"}{first ? ` (${first.counts[s] ?? 0})` : ""}
           </button>
         ))}
+        <InfoTip id="cbom.q0.status" />
       </div>
       {query.isLoading && <p className="text-sm text-zinc-500">Loading Q0 gaps…</p>}
       {query.isError && (
