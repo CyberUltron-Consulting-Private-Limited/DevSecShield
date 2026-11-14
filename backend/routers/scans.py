@@ -6,7 +6,7 @@ from typing import Annotated
 from bson import ObjectId
 from bson.errors import InvalidId
 from fastapi import APIRouter, Form, UploadFile
-from fastapi import BackgroundTasks, Depends, HTTPException, Header, Request, status
+from fastapi import BackgroundTasks, Depends, HTTPException, Header, Query, Request, status
 from fastapi.responses import FileResponse, JSONResponse
 from backend.utilities.ratelimit import RateLimiter
 from pydantic import ValidationError
@@ -70,9 +70,10 @@ async def list_scans(
     type: scan_types, 
     background_tasks: BackgroundTasks, 
     Authorization: Annotated[str | None, Header()] = None ,
+    runs_before: Annotated[int | None, Query(ge=1, le=2_147_483_647)] = None,
     ):
     """
-    List all scans for a team.
+    List all scans for a team.  CBOM: also the team's Sources runs (``runs_list_data``, newest 200, ``runs_before``).
     """
     try:
         # STEP [ 0 ] : =========== Get the engine and user ======================
@@ -113,7 +114,10 @@ async def list_scans(
                      "finished_at": c.observed_at.strftime("%Y-%m-%dT%H:%M:%SZ"), "asset_count": c.asset_count,
                      "endpoints_probed": c.endpoints_probed}
                     for c in sources.collections
-                ]
+                ]  # deprecated (CB-38): runs_list_data lists every run
+                from backend.utilities.cbom_sources.run_list import list_runs_for_scan_list
+
+                body.update(list_runs_for_scan_list(session, team_id, before_id=runs_before))
             return body
 
     except HTTPException as e:
