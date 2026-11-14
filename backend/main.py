@@ -123,7 +123,7 @@ app = DssApp(lifespan=lifespan, middleware=[
         allow_methods=["*"],
         allow_headers=["*"],
         # the UI can show the request id next to an error's ref (build_info.py); X-ZS-Build only where exposed
-        expose_headers=["X-ZS-Request-Id", "X-ZS-Build"],
+        expose_headers=["X-ZS-Request-Id", "X-ZS-Build", "Retry-After"],  # the UI reads Retry-After on a 429
     ),
     # X-ZS-Deployment on every /cbom/node/* response (401s included), so a scan node can tell its own server apart
     Middleware(NodeDeploymentHeader),
