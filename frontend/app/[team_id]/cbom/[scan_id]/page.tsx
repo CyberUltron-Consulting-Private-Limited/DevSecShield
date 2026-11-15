@@ -8,6 +8,8 @@ import ChatWindow from "@/components/ai/ChatWindow";
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getCBOMScanData } from "@/utils/backend_api";
+import { isScanGone, scanErrorText } from "@/components/cbom/scanQuery";
+import { queryRetry } from "@/utils/query_client";
 import { useParams } from "next/navigation";
 import { toast } from "@/utils/toast";
 import { Mode } from "@/app/[team_id]/sast/[scan_id]/page";
@@ -30,6 +32,7 @@ export default function CBOMScanPage() {
     queryKey: ["cbom-conversation-data", team_id, scan_id],
     queryFn: getCBOMScanData,
     enabled: hasValidIds,
+    retry: (failureCount, error) => !isScanGone(error) && queryRetry(failureCount, error),
   });
 
   useEffect(() => {
@@ -63,8 +66,8 @@ export default function CBOMScanPage() {
 
   if (query.isError) {
     return <div className="flex h-screen w-full items-center justify-center">
-      <p className="text-zinc-600 dark:text-zinc-400 mb-4">
-        Error in fetching scan data, please try again later
+      <p className="text-zinc-600 dark:text-zinc-400 mb-4" data-testid="cbom-scan-error">
+        {scanErrorText(query.error)}
       </p>
     </div>
   }

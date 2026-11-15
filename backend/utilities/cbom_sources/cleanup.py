@@ -2,8 +2,16 @@
 from __future__ import annotations
 
 from sqlalchemy import delete
+from backend.utilities.cbom_sources.fleet.models import FLEET_MODELS  # F1.2 fleet (inventory, policies, credentials)
 from sqlalchemy.engine import Engine
 from sqlmodel import Session
+from backend.utilities.cbom_sources.sshca.models import (  # F1.4
+    CbomSshCa,
+    CbomSshCaTrust,
+    CbomSshCaTrustFetch,
+    CbomSshCaTrustToken,
+    CbomSshCertIssued,
+)
 
 from backend.new_models import (
     CbomCollectedAsset,
@@ -14,6 +22,10 @@ from backend.new_models import (
     CbomCollectionSettings,
     CbomCollectionSource,
     CbomDriftEvent,
+    CbomEstateAsset,
+    CbomEstateObservation,
+    CbomEstateSource,
+    CbomEstateTeam,
     CbomEvidenceArea,
     CbomEvidenceVendor,
     CbomRemediationAssignment,
@@ -22,11 +34,21 @@ from backend.new_models import (
     IntegrationDelivery,
     TeamIntegration,
 )
+from backend.utilities.cbom_sources.transports.models import CbomTransport  # F1.3
+from backend.utilities.cbom_sources.billing import CbomCreditEntry  # CB-14
+from backend.utilities.cbom_sources.api_keys import CbomApiKey  # #226
 
 _ORDER = (
+    CbomCreditEntry,  # CB-14 credit ledger (points at runs)
+    CbomApiKey,  # #226 API keys (nothing points at them)
     IntegrationDelivery,  # integrations (WP11): deliveries before their integration
     TeamIntegration,
+    *FLEET_MODELS,  # F1.2: targets, inventory sources, policies, credentials (no foreign keys to the rows below)
     CbomDriftEvent,
+    CbomEstateObservation,  # CB-20 estate store
+    CbomEstateAsset,
+    CbomEstateSource,
+    CbomEstateTeam,
     CbomRemediationAssignment,
     CbomCollectionSchedule,
     CbomCollectedAsset,
@@ -36,8 +58,14 @@ _ORDER = (
     CbomScanNode,
     CbomNodePool,  # agent pool tokens (WP8b): after the nodes that point at them
     CbomCollectionSettings,
+    CbomTransport,  # F1.3 transports (the deployment-wide zs-collect releases are not a team's)
     CbomEvidenceVendor,
     CbomEvidenceArea,
+    CbomSshCertIssued,  # F1.4: the certificate audit, the trust bundle's rows, then the CA keys
+    CbomSshCaTrustFetch,
+    CbomSshCaTrustToken,
+    CbomSshCaTrust,
+    CbomSshCa,
     CbomCollectionAuditEvent,
 )
 
@@ -48,5 +76,10 @@ def delete_cbom_sources_for_team(engine: Engine, team_id: int) -> dict[str, int]
         for model in _ORDER:
             result = session.exec(delete(model).where(model.team_id == team_id))  # type: ignore[attr-defined]
             counts[model.__tablename__] = int(result.rowcount or 0)
+        # CB-32: the triggers kept the summaries in step with the deletes; recompute them from what is left (rows
+        # of tables not listed above, such as the risk register, stay and stay counted)
+        from backend.utilities.cbom_sources import estate_summary_ddl as SUMMARY
+
+        SUMMARY.rebuild(session.connection(), team_id)
         session.commit()
     return counts

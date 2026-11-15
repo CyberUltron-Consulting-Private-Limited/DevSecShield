@@ -1,0 +1,9 @@
+### show full-configuration system global
+config system global
+    set admin-https-ssl-versions tlsv1-2 tlsv1-3
+    set ssl-min-proto-version TLSv1-2
+    set strong-crypto enable
+    set dh-params 1024
+end
+### show full-configuration vpn ipsec phase1-interface
+### show full-configuration vpn ipsec phase2-interface

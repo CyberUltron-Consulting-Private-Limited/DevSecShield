@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from backend.utilities.cbom_sources import algid
 from backend.utilities.cbom_sources import classify as C
 
 # broken or deprecated symmetric ciphers: single DES (56-bit), 2/3-key Triple DES (64-bit block, NIST SP 800-131A
@@ -18,6 +19,9 @@ from backend.utilities.cbom_sources import classify as C
 _WEAK_SYMMETRIC = re.compile(r"(^|[^A-Z0-9])(DES|DES2|DES3|3DES|3DES112|3DES168|TDEA|TRIPLE[-_ ]?DES(?:[-_ ]?\dKEY)?|"
                              r"DESX|DES40|RC4(?:[-_]\d+)?|RC2|SKIPJACK|BLOWFISH|IDEA|CAST5|CAST128)($|[^A-Z0-9])", re.I)
 _SYMMETRIC = re.compile(r"^(AES|CHACHA|CAMELLIA|ARIA|SEED|SM4|GENERIC[-_]SECRET|HMAC|TWOFISH|GOST)", re.I)
+# algid primitives (CycloneDX 1.6) of a public-key algorithm: such a key is never judged as a symmetric one, whatever
+# its name starts with (GOST R 34.10-2012 is an elliptic-curve signature; GOST 28147-89 is a block cipher)
+_ASYMMETRIC_PRIMITIVES = frozenset({"signature", "kem", "key-agree", "pke"})
 _CLASS_WORD = {"private": "Private key", "secret": "Secret key", "public": "Public key", "secret_data": "Secret",
                "certificate": "Certificate key", "split": "Key share"}
 # Internal CAs (AD CS templates, Vault PKI roles, EJBCA profiles) are not bound by the CA/Browser Forum's 398 days,
@@ -72,7 +76,11 @@ def weak_symmetric(text: str) -> str | None:
     return m.group(2).upper() if m else None
 
 
-def _is_symmetric(text: str) -> bool:
+def _is_symmetric(text: str, identifier: Any = None) -> bool:
+    """Whether a key is symmetric: algid's primitive for ``identifier`` first, then the name patterns of ``text``."""
+    found = algid.resolve(identifier) if identifier else None
+    if found is not None and found.primitive in _ASYMMETRIC_PRIMITIVES:
+        return False
     return bool(_SYMMETRIC.match(str(text or "").strip())) or weak_symmetric(text) is not None
 
 
@@ -83,13 +91,16 @@ def _where(facts: dict[str, Any]) -> str:
 
 def managed_key(out, facts: dict[str, Any], algorithm: Any, key_size: Any, now) -> bool | None:
     text = _alg_text(algorithm, facts)
+    identifier = algorithm or facts.get("key_type")
+    symmetric = _is_symmetric(text, identifier)
     what = _CLASS_WORD.get(str(facts.get("key_class") or ""), "Key")
     where = _where(facts)
     weak = weak_symmetric(text)
     if weak:
-        out.add("KEY_WEAK_SYMMETRIC", "High", f"{what} {where} uses {weak}, a broken or deprecated cipher".replace("  ", " "))
-    if facts.get("role") == "Always Encrypted column master key" or not _is_symmetric(text):
-        C._key_rules(out, algorithm or facts.get("key_type"), key_size, f"{what} {where}".strip())
+        out.add("KEY_WEAK_SYMMETRIC", "High", f"{what} {where} uses {weak}, a broken or deprecated cipher".replace("  ", " "),
+                weak)
+    if facts.get("role") == "Always Encrypted column master key" or not symmetric:
+        C._key_rules(out, identifier, key_size, f"{what} {where}".strip())
     klass = str(facts.get("key_class") or "")
     # PKCS#11 only: in an HSM a key is meant to stay inside, so CKA_SENSITIVE/CKA_EXTRACTABLE say whether it can
     # leave.  A KMIP server exists to hand keys to its clients (Sensitive defaults to false and Extractable to true
@@ -109,13 +120,18 @@ def managed_key(out, facts: dict[str, Any], algorithm: Any, key_size: Any, now) 
             out.add("KEY_PLAINTEXT_EXPORT", "High", "Vault transit key allows a plaintext backup of its key material")
         period = facts.get("auto_rotate_period_s")
         if isinstance(period, (int, float)) and period == 0:
-            out.add("KEY_NO_ROTATION", "Low", "Vault transit key has no automatic rotation (auto_rotate_period 0)")
+            # the same finding as a cloud KMS key without rotation (AWS, Google Cloud, Azure Key Vault): same code and
+            # severity wherever the key lives (C9); the text names the Vault setting
+            out.add("KMS_NO_ROTATION", "Medium", C.vault_no_rotation_text(facts))
     state = str(facts.get("state") or facts.get("key_state") or "")
     if state == "Compromised":
         out.add("KEY_COMPROMISED", "High", f"{what} {where} is marked compromised but is still stored".replace("  ", " "))
-    if _is_symmetric(text):
+    if symmetric:
         return None if weak else False
-    return C.quantum_vulnerable(algorithm or facts.get("key_type"))
+    qv = C.quantum_vulnerable(identifier)
+    if qv is None:
+        C.note_unknown("managed_key", identifier)
+    return qv
 
 
 def key_store(out, facts: dict[str, Any], algorithm: Any, key_size: Any, now) -> bool | None:
@@ -135,7 +151,7 @@ def db_encryption(out, facts: dict[str, Any], algorithm: Any, key_size: Any, now
         return None
     weak = weak_symmetric(_alg_text(algorithm, facts))
     if weak:
-        out.add("KEY_WEAK_SYMMETRIC", "High", f"{what} is encrypted with {weak}, a deprecated cipher")
+        out.add("KEY_WEAK_SYMMETRIC", "High", f"{what} is encrypted with {weak}, a deprecated cipher", weak)
     return False
 
 
@@ -145,7 +161,7 @@ def _names(found: list[str]) -> str:
 
 def db_login_policy(out, facts: dict[str, Any], algorithm: Any, key_size: Any, now) -> bool | None:
     if facts.get("engine") == "oracle":
-        users = [u for u in facts.get("users") or [] if isinstance(u, dict)]
+        users = [u for u in C.fact_list(facts.get("users")) if isinstance(u, dict)]
         tenG = sorted(str(u.get("name")) for u in users if "10G" in str(u.get("password_versions") or "").upper())
         elevenG = sorted(str(u.get("name")) for u in users if "11G" in str(u.get("password_versions") or "").upper()
                          and str(u.get("name")) not in tenG)
@@ -156,7 +172,7 @@ def db_login_policy(out, facts: dict[str, Any], algorithm: Any, key_size: Any, n
             out.add("DB_LEGACY_PW_HASH", "Medium", f"{len(elevenG)} user(s) keep the 11G password verifier (salted "
                                                    f"SHA-1): {_names(elevenG)}")
         return None
-    logins = [x for x in facts.get("logins") or [] if isinstance(x, dict)]
+    logins = [x for x in C.fact_list(facts.get("logins")) if isinstance(x, dict)]
     sha1 = sorted(str(x.get("name")) for x in logins if x.get("hash_version") == 1)
     if sha1:
         out.add("DB_LEGACY_PW_HASH", "Medium", f"{len(sha1)} SQL login(s) still have a SHA-1 password hash from before "
@@ -180,9 +196,9 @@ def db_crypto_policy(out, facts: dict[str, Any], algorithm: Any, key_size: Any, 
     if facts.get("version_unsupported"):
         out.add("DB_EOL_VERSION", "High", "Oracle Database older than 12.1: past Oracle's extended support, no "
                                           "security fixes")
-    weak = sorted({w for w in (weak_symmetric(a) for a in facts.get("sessions_nne_algorithms") or []) if w})
+    weak = sorted({w for w in (weak_symmetric(a) for a in C.fact_list(facts.get("sessions_nne_algorithms"))) if w})
     if weak:
-        out.add("WEAK_CIPHER", "High", f"Sessions use Oracle native network encryption with {', '.join(weak)}")
+        out.add("WEAK_CIPHER", "High", f"Sessions use Oracle native network encryption with {', '.join(weak)}", weak)
     return None
 
 
@@ -200,7 +216,8 @@ def ca_authority(out, facts: dict[str, Any], algorithm: Any, key_size: Any, now)
     weak = _weak_hash(facts.get("hash_algorithm") or facts.get("signature_algorithm"))
     if weak:
         out.add("CA_WEAK_SIGNING", "Critical" if weak == "MD5" else "High",
-                f"The CA signs certificates and CRLs with {weak} ({facts.get('hash_algorithm') or facts.get('signature_algorithm')})")
+                f"The CA signs certificates and CRLs with {weak} ({facts.get('hash_algorithm') or facts.get('signature_algorithm')})",
+                [weak, facts.get("hash_algorithm") or facts.get("signature_algorithm")])
     if facts.get("san_from_request_attributes") is True:
         esc6 = ("The CA takes subject alternative names from request attributes (EDITF_ATTRIBUTESUBJECTALTNAME2) for "
                 "every template (AD CS ESC6 pattern)")
@@ -228,18 +245,26 @@ def _days(seconds: Any) -> float | None:
     return seconds / 86400 if isinstance(seconds, (int, float)) and seconds > 0 else None
 
 
+def _allowed_algs(facts: dict[str, Any]) -> list[str]:
+    """Every key algorithm a template or profile allows (EJBCA ``available_key_algs``), upper-cased."""
+    return [str(a).upper() for a in C.fact_list(facts.get("available_key_algs")) if str(a).strip()]
+
+
 def ca_template(out, facts: dict[str, Any], algorithm: Any, key_size: Any, now) -> bool | None:
     name = facts.get("name") or "template"
     key_type = str(facts.get("key_type") or algorithm or "").upper()
+    allowed = _allowed_algs(facts)
     bits = facts.get("key_bits") if isinstance(facts.get("key_bits"), int) else key_size
     if isinstance(bits, int) and bits > 0:
-        if "RSA" in key_type and bits < 2048:
+        # key_bits is the smallest RSA size an EJBCA profile allows, also when its label is a post-quantum algorithm
+        if ("RSA" in key_type or "RSA" in allowed) and bits < 2048:
             out.add("CA_ALLOWS_WEAK_KEY", "Critical" if bits < 1024 else "High", f"{name} issues certificates for RSA-{bits} keys")
         elif key_type.startswith("EC") and bits < 224:
             out.add("CA_ALLOWS_WEAK_KEY", "High", f"{name} issues certificates for {bits}-bit EC keys")
     weak = _weak_hash(facts.get("signature_hash") or facts.get("signature_algorithm"))
     if weak:
-        out.add("CA_WEAK_SIGNING", "Critical" if weak == "MD5" else "High", f"{name} signs issued certificates with {weak}")
+        out.add("CA_WEAK_SIGNING", "Critical" if weak == "MD5" else "High", f"{name} signs issued certificates with {weak}",
+                [weak, facts.get("signature_hash") or facts.get("signature_algorithm")])
     acl_read = facts.get("acl_status") == "read"
     if facts.get("allow_any_name") is True:
         out.add("CA_ALLOWS_ANY_NAME", "Medium", f"{name} issues certificates for any name the requester asks for "
@@ -272,6 +297,11 @@ def ca_template(out, facts: dict[str, Any], algorithm: Any, key_size: Any, now) 
         out.add("CA_LONG_VALIDITY", "Low", f"{name} issues server certificates valid for up to {int(days)} days, more "
                                            f"than the {INTERNAL_TLS_MAX_DAYS} days Apple platforms accept from any "
                                            "CA, enterprise roots included")
+    if any(algid.family_label(a) == "PQ" for a in allowed):
+        # A profile that offers a post-quantum algorithm can issue post-quantum certificates (owner bug C10d: such a
+        # profile was labelled RSA, also in rows stored by scan nodes from before the fix).  The classical algorithms
+        # it still allows keep their size rules above; each certificate it issued is judged on its own key.
+        return False
     if not key_type or key_type in ("ANY",):
         return None
     return C.quantum_vulnerable(key_type)

@@ -1,0 +1,32 @@
+Public Key Object; EC  EC_POINT 256 bits
+  EC_POINT:   044104d4c7fd30cf61227ecd2b5920bac63b56891509facc028a7b7263faa453d072681e2713fe5b6be111ab8be2efe4560622222faea47c08ff53a9d522130d7733d3
+  EC_PARAMS:  06082a8648ce3d030107 (OID 1.2.840.10045.3.1.7)
+  label:      ec-p256-signing
+  ID:         02
+  Usage:      encrypt, verify, verifyRecover, wrap, derive
+  Access:     local
+  uri:        pkcs11:model=SoftHSM%20v2;manufacturer=SoftHSM%20project;serial=2dc6ddb2b6ac6948;token=cb02-tok-a;id=%02;object=ec-p256-signing;type=public
+Private Key Object; RSA 
+  label:      rsa-2048-signing
+  ID:         01
+  Usage:      decrypt, sign, signRecover, unwrap
+  Access:     sensitive, always sensitive, never extractable, local
+  uri:        pkcs11:model=SoftHSM%20v2;manufacturer=SoftHSM%20project;serial=2dc6ddb2b6ac6948;token=cb02-tok-a;id=%01;object=rsa-2048-signing;type=private
+Public Key Object; RSA 2048 bits
+  label:      rsa-2048-signing
+  ID:         01
+  Usage:      encrypt, verify, verifyRecover, wrap
+  Access:     local
+  uri:        pkcs11:model=SoftHSM%20v2;manufacturer=SoftHSM%20project;serial=2dc6ddb2b6ac6948;token=cb02-tok-a;id=%01;object=rsa-2048-signing;type=public
+Secret Key Object; AES length 16
+  label:      aes-128-wrap
+  ID:         03
+  Usage:      encrypt, decrypt, sign, verify, wrap, unwrap
+  Access:     sensitive, always sensitive, extractable, local
+  uri:        pkcs11:model=SoftHSM%20v2;manufacturer=SoftHSM%20project;serial=2dc6ddb2b6ac6948;token=cb02-tok-a;id=%03;object=aes-128-wrap;type=secret-key
+Private Key Object; EC
+  label:      ec-p256-signing
+  ID:         02
+  Usage:      decrypt, sign, signRecover, unwrap, derive
+  Access:     sensitive, always sensitive, never extractable, local
+  uri:        pkcs11:model=SoftHSM%20v2;manufacturer=SoftHSM%20project;serial=2dc6ddb2b6ac6948;token=cb02-tok-a;id=%02;object=ec-p256-signing;type=private

@@ -3,7 +3,9 @@
 #
 # /etc/zs-node/env is written at first boot: by cloud-init from the EC2 user data the "Add scan node" wizard shows
 # (AMI), or by zs-ovf-env from the vApp properties (OVA).  One KEY=value per line, no quotes (docker --env-file
-# format): ZS_API_URL, ZS_REGISTRATION_TOKEN, optionally HTTPS_PROXY, ZS_MODE=agent.
+# format): ZS_API_URL, ZS_REGISTRATION_TOKEN, optionally HTTPS_PROXY, ZS_MODE=agent, and (CB-15) ZS_CA_FILE /
+# ZS_CLIENT_CERT / ZS_CLIENT_KEY naming files under /etc/zs-node/trust, which is mounted read-only at the same path
+# when it exists (a private CA for the ZeroShield API; a client certificate when the API requires mTLS).
 # With ZS_MODE=agent the node reads only this VM, through a read-only mount of / at /host, and is never given a
 # credential.  The node's state (enrollment, keys) lives in the Docker volume zs-node.
 set -eu
@@ -15,6 +17,10 @@ if grep -q '^ZS_MODE=agent$' "$ENV_FILE"; then
   set -- -v /:/host:ro -e ZS_HOST_ROOT=/host -e "ZS_NODE_NAME=$(hostname)"
 else
   set --
+fi
+TRUST_DIR=${ZS_NODE_TRUST_DIR:-/etc/zs-node/trust}
+if [ -d "$TRUST_DIR" ]; then
+  set -- "$@" -v "$TRUST_DIR:/etc/zs-node/trust:ro"
 fi
 exec "${ZS_DOCKER:-/usr/bin/docker}" run --rm --name "${ZS_NODE_CONTAINER:-zs-scan-node}" --env-file "$ENV_FILE" \
   -v "${ZS_NODE_VOLUME:-zs-node}:/var/lib/zs-node" "$@" "$IMAGE"

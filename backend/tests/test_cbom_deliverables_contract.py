@@ -43,6 +43,7 @@ from backend.utilities.pdf import (  # noqa: E402
     cbom_methodology_pdf,
     cbom_network_tls_pdf,
     cbom_pqc_roadmap_pdf,
+    cbom_risk_register_pdf,
     cbom_scope_register_pdf,
 )
 from backend.utilities.pdf import cbom_deliverable_text as authored  # noqa: E402
@@ -61,10 +62,11 @@ UTC = timezone.utc
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 NOW = datetime(2026, 10, 19, 12, 28, tzinfo=UTC)
 
-# The nine documents, in menu order.  Literals on purpose: the registry must not be able to
+# The ten documents, in menu order.  Literals on purpose: the registry must not be able to
 # "agree with itself" after an accidental edit.
 EXPECTED = [
     ("scope-baseline-register", 1, "Scope Baseline & Asset Population Register"),
+    ("quantum-risk-register", 2, "Quantum Risk Register"),
     ("methodology-evidence-plan", 3, "Cryptographic Discovery Methodology & Evidence Plan"),
     (
         "infrastructure-cloud-encryption-posture",
@@ -96,6 +98,7 @@ EXPECTED = [
 ]
 RENDERERS = {
     "scope-baseline-register": (cbom_scope_register_pdf, "DELIVERABLE_NUMBER"),
+    "quantum-risk-register": (cbom_risk_register_pdf, "NUMBER"),
     "methodology-evidence-plan": (cbom_methodology_pdf, "NUMBER"),
     "infrastructure-cloud-encryption-posture": (cbom_infra_posture_pdf, "DOCUMENT_NUMBER"),
     "network-tls-protocol-assessment": (cbom_network_tls_pdf, "DOCUMENT_NUMBER"),
@@ -186,8 +189,8 @@ def test_registry_keys_are_the_slugs_and_slugs_are_url_safe():
     for key, spec in DELIVERABLES.items():
         assert key == spec.slug
         assert re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", key), key
-    assert len({s.number for s in DELIVERABLES.values()}) == 9
-    assert len({s.title for s in DELIVERABLES.values()}) == 9
+    assert len({s.number for s in DELIVERABLES.values()}) == 10
+    assert len({s.title for s in DELIVERABLES.values()}) == 10
 
 
 @pytest.mark.parametrize("slug", [e[0] for e in EXPECTED])
@@ -455,7 +458,7 @@ def test_authored_scanner_list_equals_the_registry_fixture():
     assert [(s.name, s.order) for s in authored.CBOM_SCANNERS] == [
         (s["name"], s["order"]) for s in registry["scanners"]
     ]
-    assert len(authored.CBOM_SCANNERS) == 20  # + crypto_artifacts (WP8, order 18)
+    assert len(authored.CBOM_SCANNERS) == 21  # + crypto_artifacts (WP8, 18), crypto_lang_misuse (CB-28, 26)
     described = (s.discovers for s in authored.CBOM_SCANNERS)
     printed = " ".join([authored.CBOM_SCANNER_INTRO, *described])
     unwired_names = (
@@ -473,7 +476,7 @@ def test_scanner_registry_fixture_equals_the_engine_source():
     wired = re.search(r"from aibom\.cbom\.scanners import \((.*?)\)", scanners, re.S)
     assert wired, "scanners/__init__.py no longer imports its modules in one block"
     modules = re.findall(r"^\s+(\w+),", wired.group(1), re.M)
-    assert len(modules) == 20  # + artifact_scan (WP8)
+    assert len(modules) == 21  # + artifact_scan (WP8), lang_misuse_scan (CB-28)
     found: list[tuple[str, int]] = []
     for module in modules:
         text = _read(f"aibom/src/aibom/cbom/scanners/{module}.py", needs_engine=True)
@@ -499,6 +502,7 @@ def test_all_six_report_meta_keys_exist_and_belong_to_the_registry():
     keys = [spec.report_key for spec in DELIVERABLES.values()]
     assert keys == [
         "cbom_scope_register",
+        "cbom_risk_register",
         "cbom_methodology",
         "cbom_infra_posture",
         "cbom_network_tls",
@@ -508,7 +512,7 @@ def test_all_six_report_meta_keys_exist_and_belong_to_the_registry():
         "cbom_pqc_roadmap",
         "cbom_board_report",
     ]
-    assert len(set(keys)) == 9
+    assert len(set(keys)) == 10
     labels = []
     for spec in DELIVERABLES.values():
         meta = REPORT_META[spec.report_key]
@@ -517,7 +521,7 @@ def test_all_six_report_meta_keys_exist_and_belong_to_the_registry():
         assert spec.title == meta["title"]
         assert spec.description == meta["intro"]
         labels.append(meta["footer_label"])
-    assert len(set(labels)) == 9, "every document must print its own footer label"
+    assert len(set(labels)) == 10, "every document must print its own footer label"
     assert "SAST" not in " ".join(labels)
 
 

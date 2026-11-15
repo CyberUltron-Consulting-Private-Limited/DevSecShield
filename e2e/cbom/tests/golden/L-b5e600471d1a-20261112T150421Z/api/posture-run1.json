@@ -1,0 +1,544 @@
+{
+  "posture": {
+    "assets": 20,
+    "compliance": [
+      {
+        "clauses": [
+          {
+            "assets": 15,
+            "codes": [
+              "NO_PQ_KEX",
+              "QUANTUM_VULNERABLE",
+              "SSH_NO_PQ_KEX",
+              "STATIC_RSA_KEX"
+            ],
+            "id": "BOM Guidelines v2.0, 8.5.1",
+            "note": null,
+            "source": "https://www.cert-in.org.in/PDF/TechnicalGuidelines-on-SBOM,QBOM&CBOM,AIBOM_and_HBOM_ver2.0.pdf",
+            "text": "Public key systems using RSA, ECC, Diffie-Hellman, and DSA algorithms are vulnerable to Shor's algorithm"
+          },
+          {
+            "assets": 5,
+            "codes": [
+              "CERT_EXPIRED",
+              "CERT_SELF_SIGNED",
+              "NO_TLS12",
+              "PROTO_TLS10",
+              "PROTO_TLS11"
+            ],
+            "id": "Guidelines for Government Entities (2023), 6.1.7",
+            "note": null,
+            "source": "https://www.cert-in.org.in/PDF/guidelinesgovtentities.pdf",
+            "text": "Ensure that all Websites and Applications are \"https\" enabled with a valid SSL/TLS Certificate."
+          },
+          {
+            "assets": 3,
+            "codes": [
+              "CBC_ACCEPTED",
+              "NO_TLS12",
+              "PROTO_TLS10",
+              "PROTO_TLS11",
+              "SSH_DH_SHA1",
+              "SSH_HMAC_SHA1",
+              "STATIC_RSA_KEX"
+            ],
+            "id": "BOM Guidelines v2.0, 8.4.2.2",
+            "note": null,
+            "source": "https://www.cert-in.org.in/PDF/TechnicalGuidelines-on-SBOM,QBOM&CBOM,AIBOM_and_HBOM_ver2.0.pdf",
+            "text": "Enforce strict TLS configurations by specifying approved cipher suites, certificate chains, and session parameters, and prohibit the use of weak or deprecated algorithms."
+          }
+        ],
+        "framework": "CERT-In"
+      },
+      {
+        "clauses": [
+          {
+            "assets": 15,
+            "codes": [
+              "NO_PQ_KEX",
+              "QUANTUM_VULNERABLE",
+              "SSH_NO_PQ_KEX",
+              "STATIC_RSA_KEX"
+            ],
+            "id": "IR 8547 (final, 2026)",
+            "note": null,
+            "source": "https://nvlpubs.nist.gov/nistpubs/ir/2026/NIST.IR.8547.pdf",
+            "text": "NIST will deprecate quantum-vulnerable public-key cryptography after 2030 and disallow its use under NIST standards and guidelines after 2035."
+          },
+          {
+            "assets": 3,
+            "codes": [
+              "CBC_ACCEPTED",
+              "SSH_DH_SHA1",
+              "SSH_HMAC_SHA1",
+              "STATIC_RSA_KEX"
+            ],
+            "id": "SP 800-131A Rev. 2, Sec. 9 Table 8 (SHA-1)",
+            "note": null,
+            "source": "https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-131Ar2.pdf",
+            "text": "Digital signature generation: Disallowed, except where specifically allowed by NIST protocol-specific guidance; verification: Legacy use."
+          },
+          {
+            "assets": 3,
+            "codes": [
+              "CBC_ACCEPTED",
+              "SSH_DH_SHA1",
+              "SSH_HMAC_SHA1",
+              "STATIC_RSA_KEX"
+            ],
+            "id": "SP 800-131A Rev. 2, Sec. 2 Table 1 (TDEA)",
+            "note": null,
+            "source": "https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-131Ar2.pdf",
+            "text": "After December 31, 2023, three-key TDEA is disallowed for encryption unless specifically allowed by other NIST guidance."
+          },
+          {
+            "assets": 3,
+            "codes": [
+              "CBC_ACCEPTED",
+              "SSH_DH_SHA1",
+              "SSH_HMAC_SHA1",
+              "STATIC_RSA_KEX"
+            ],
+            "id": "SP 800-131A Rev. 2, Sec. 6 Table 5",
+            "note": null,
+            "source": "https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-131Ar2.pdf",
+            "text": "After December 31, 2023, the use of PKCS1-v 1_5 padding scheme is disallowed."
+          },
+          {
+            "assets": 1,
+            "codes": [
+              "RSA_LT_2048"
+            ],
+            "id": "SP 800-131A Rev. 2, Tables 2, 4, 5 (below 112-bit security)",
+            "note": null,
+            "source": "https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-131Ar2.pdf",
+            "text": "Signature generation and key agreement below 112 bits of security strength are disallowed (Disallowed for < 112 bits (RSA len(n) < 2048; ECDSA len(n) < 224; DSA (L,N) not (2048,224),(2048,256),(3072,256)))."
+          }
+        ],
+        "framework": "NIST"
+      },
+      {
+        "clauses": [
+          {
+            "assets": 15,
+            "codes": [
+              "NO_PQ_KEX",
+              "QUANTUM_VULNERABLE",
+              "SSH_NO_PQ_KEX",
+              "STATIC_RSA_KEX"
+            ],
+            "id": "CNSA 2.0 FAQ (April 2024)",
+            "note": null,
+            "source": "https://media.defense.gov/2022/Sep/07/2003071836/-1/-1/1/CSI_CNSA_2.0_FAQ_.PDF",
+            "text": "NSA intends that all NSS will be quantum-resistant by 2035. Algorithms: AES-256, ML-KEM-1024, ML-DSA-87, SHA-384/512, LMS/XMSS."
+          }
+        ],
+        "framework": "NSA CNSA 2.0"
+      },
+      {
+        "clauses": [
+          {
+            "assets": 4,
+            "codes": [
+              "CBC_ACCEPTED",
+              "NO_TLS12",
+              "PROTO_TLS10",
+              "PROTO_TLS11",
+              "RSA_LT_2048",
+              "SSH_DH_SHA1",
+              "SSH_HMAC_SHA1",
+              "STATIC_RSA_KEX"
+            ],
+            "id": "Master Direction on IT Governance (2023), para 16 Cryptographic controls",
+            "note": "Applies to REs other than commercial banks; repealed for commercial banks by the 2026 Directions.",
+            "source": "https://www.rbi.org.in/Scripts/NotificationUser.aspx?Id=12562",
+            "text": "The key length, algorithms, cipher suites and applicable protocols used in transmission channels, processing of data and authentication purpose shall be strong. REs shall adopt internationally accepted and published standards that are not deprecated/ demonstrated to be insecure/ vulnerable and the configurations involved in implementing such controls shall be compliant with extant laws and regulatory instructions."
+          },
+          {
+            "assets": 4,
+            "codes": [
+              "CBC_ACCEPTED",
+              "NO_TLS12",
+              "PROTO_TLS10",
+              "PROTO_TLS11",
+              "RSA_LT_2048",
+              "SSH_DH_SHA1",
+              "SSH_HMAC_SHA1",
+              "STATIC_RSA_KEX"
+            ],
+            "id": "Commercial Banks Cybersecurity Directions 2026, para 140",
+            "note": "Commercial banks (from 31 July 2026).",
+            "source": "https://www.rbi.org.in/scripts/NotificationUser.aspx?Id=13643",
+            "text": "The key length, algorithms, cipher suites and applicable protocols used in transmission channels, processing of data and authentication purpose shall be strong. The bank shall adopt internationally accepted and published standards that are not deprecated / demonstrated to be insecure / vulnerable, and the configurations involved in implementing such controls shall be compliant with extant laws and regulatory instructions."
+          }
+        ],
+        "framework": "RBI"
+      },
+      {
+        "clauses": [
+          {
+            "assets": 15,
+            "codes": [
+              "NO_PQ_KEX",
+              "QUANTUM_VULNERABLE",
+              "SSH_NO_PQ_KEX",
+              "STATIC_RSA_KEX"
+            ],
+            "id": "Box Item 7: Cybersecurity and Quantum Computing",
+            "note": null,
+            "source": "https://www.sebi.gov.in/sebi_data/attachdocs/aug-2024/1724326790365.pdf",
+            "text": "REs shall maintain an inventory of cryptographic assets, prioritizing critical assets for Post Quantum Cryptography (PQC) migration, and assess their IT infrastructure capabilities. ... REs shall enhance their crypto-agility to ensure a seamless transition to quantum-resistant solutions without disrupting their current IT systems."
+          },
+          {
+            "assets": 15,
+            "codes": [
+              "NO_PQ_KEX",
+              "QUANTUM_VULNERABLE",
+              "SSH_NO_PQ_KEX",
+              "STATIC_RSA_KEX"
+            ],
+            "id": "ID.RA Standard 2",
+            "note": null,
+            "source": "https://www.sebi.gov.in/sebi_data/attachdocs/aug-2024/1724326790365.pdf",
+            "text": "Risk assessment (including post-quantum risks) of REs' IT environment shall be done on a periodic basis."
+          },
+          {
+            "assets": 3,
+            "codes": [
+              "CBC_ACCEPTED",
+              "SSH_DH_SHA1",
+              "SSH_HMAC_SHA1",
+              "STATIC_RSA_KEX"
+            ],
+            "id": "Annexure-H item 5",
+            "note": null,
+            "source": "https://www.sebi.gov.in/sebi_data/attachdocs/aug-2024/1724326790365.pdf",
+            "text": "Use industry standard, strong encryption algorithms (eg: RSA, AES etc.) wherever encryption is implemented. ... the right methodologies for storing the encryption keys"
+          },
+          {
+            "assets": 3,
+            "codes": [
+              "CERT_EXPIRED",
+              "CERT_SELF_SIGNED"
+            ],
+            "id": "PR.DS.S4 item 5",
+            "note": null,
+            "source": "https://www.sebi.gov.in/sebi_data/attachdocs/aug-2024/1724326790365.pdf",
+            "text": "REs shall renew their digital certificates used in IT systems well in time."
+          },
+          {
+            "assets": 2,
+            "codes": [
+              "NO_TLS12",
+              "PROTO_TLS10",
+              "PROTO_TLS11"
+            ],
+            "id": "Annexure-I Data Transport Security",
+            "note": null,
+            "source": "https://www.sebi.gov.in/sebi_data/attachdocs/aug-2024/1724326790365.pdf",
+            "text": "Strong transport encryption mechanism such as TLS (Transport Layer Security, also referred to as SSL) should be used."
+          }
+        ],
+        "framework": "SEBI CSCRF"
+      }
+    ],
+    "exposure": {
+      "internal": 20,
+      "internet": 0,
+      "unknown": 0
+    },
+    "exposure_factors": {
+      "internal": 1,
+      "internet": 1.5,
+      "unknown": 1
+    },
+    "hndl_assets": 5,
+    "impacts": {
+      "Critical": 0,
+      "High": 4,
+      "Low": 4,
+      "Medium": 1
+    },
+    "kb_version": "2026.11.10.1",
+    "mosca": {
+      "configured": false,
+      "note": "Set how long your data must stay secret (X), how long migration takes (Y) and when you expect a cryptographically relevant quantum computer (Z) in Settings.",
+      "x": null,
+      "y": null,
+      "z": null
+    },
+    "pqc_classes": {
+      "grover-weakened": 0,
+      "hybrid": 1,
+      "not-applicable": 3,
+      "quantum-safe": 2,
+      "quantum-vulnerable": 14
+    },
+    "pqc_context": {
+      "expert_survey": {
+        "published": "March 2026 (web page datePublished 2026-03-09)",
+        "quotes": [
+          "the average estimated probability is ~51% by the 15-year mark, and ~69% by the 20-year mark.",
+          "a substantial majority (19/26) felt it was more than 5%-likely already within a 10-year timeframe, with half of the respondents (13/26) indicating a likelihood of about 50% or more."
+        ],
+        "source": "https://globalriskinstitute.org/mp-files/pdf-quantum-threat-timeline-report-2025.pdf",
+        "title": "Quantum Threat Timeline Report 2025"
+      },
+      "mosca": {
+        "definitions": {
+          "X_shelf_life": "the number of years the information should be protected for",
+          "Y_migration": "the number of years needed to safely and adequately migrate the cyber-system to a quantum-safe solution",
+          "Z_threat": "the number of years before the relevant threat actors will be able to break the quantum-vulnerable systems, an event often referred to as \"Q-Day\""
+        },
+        "inequality": "X + Y > Z",
+        "paper": "Michele Mosca, 'Cybersecurity in an Era with Quantum Computers: Will We Be Ready?', IEEE Security & Privacy 16(5):38-41, Sept 2018, doi:10.1109/MSP.2018.3761723",
+        "source": "https://globalriskinstitute.org/mp-files/pdf-quantum-threat-timeline-report-2025.pdf"
+      },
+      "nist_ir_8547": {
+        "federal": "These systems must adopt post-quantum cryptography for key establishment by December 31, 2030, and for digital signatures by December 31, 2031.",
+        "quote": "NIST will deprecate quantum-vulnerable public-key cryptography after 2030 and disallow its use under NIST standards and guidelines after 2035.",
+        "source": "https://nvlpubs.nist.gov/nistpubs/ir/2026/NIST.IR.8547.pdf"
+      },
+      "z_note": "There is no authoritative date for a cryptographically relevant quantum computer. Set Z (years until one exists) for your organisation; the expert survey above is one input."
+    },
+    "pqc_readiness_pct": 17.6,
+    "top_codes": [
+      {
+        "code": "QUANTUM_VULNERABLE",
+        "count": 9,
+        "title": "Quantum-vulnerable algorithm"
+      },
+      {
+        "code": "NO_PQ_KEX",
+        "count": 5,
+        "title": "No post-quantum key exchange"
+      },
+      {
+        "code": "CERT_SELF_SIGNED",
+        "count": 2,
+        "title": "Self-signed certificate"
+      },
+      {
+        "code": "PROTO_TLS10",
+        "count": 2,
+        "title": "TLS 1.0 accepted"
+      },
+      {
+        "code": "STATIC_RSA_KEX",
+        "count": 2,
+        "title": "RSA key exchange without forward secrecy"
+      },
+      {
+        "code": "CBC_ACCEPTED",
+        "count": 2,
+        "title": "CBC-mode cipher suites still accepted"
+      },
+      {
+        "code": "SSH_DH_SHA1",
+        "count": 1,
+        "title": "SHA-1 based SSH key exchange"
+      },
+      {
+        "code": "SSH_HMAC_SHA1",
+        "count": 1,
+        "title": "HMAC-SHA1 offered"
+      },
+      {
+        "code": "SSH_NO_PQ_KEX",
+        "count": 1,
+        "title": "SSH has no post-quantum key exchange"
+      },
+      {
+        "code": "PROTO_TLS11",
+        "count": 1,
+        "title": "TLS 1.1 accepted"
+      },
+      {
+        "code": "RSA_LT_2048",
+        "count": 1,
+        "title": "RSA key below 2048 bits"
+      },
+      {
+        "code": "NO_TLS12",
+        "count": 1,
+        "title": "Neither TLS 1.2 nor TLS 1.3 offered"
+      },
+      {
+        "code": "CERT_EXPIRED",
+        "count": 1,
+        "title": "Certificate expired"
+      }
+    ],
+    "top_risks": [
+      {
+        "criticality": "medium",
+        "exposure": "internal",
+        "exposure_basis": "private IP address 10.231.0.18",
+        "finding": "Endpoint accepts TLS 1.0; Endpoint accepts TLS 1.1; Endpoint accepts RSA key exchange without forward secrecy; Endpoint still accepts CBC-mode cipher suites; Endpoint has no post-quantum key exchange",
+        "hndl": true,
+        "id": 446,
+        "impact": "High",
+        "location": "10.231.0.18:443",
+        "name": "HTTPS 10.231.0.18:443",
+        "score": 7,
+        "source_name": "range-10.231.0.16-28",
+        "type": "tls_endpoint"
+      },
+      {
+        "criticality": "medium",
+        "exposure": "internal",
+        "exposure_basis": "private IP address 10.231.0.18",
+        "finding": "Certificate key uses RSA-1024; the minimum is 2048 bits; Self-signed certificate; its sha1WithRSAEncryption self-signature is not checked by clients (they trust the certificate itself), so it is deliberately not reported as a weak SHA-1 signature (SIG_SHA1); re-issue it with SHA-256 so policies and scanners stop flagging it; Uses public-key cryptography that a quantum computer can break",
+        "hndl": false,
+        "id": 447,
+        "impact": "High",
+        "location": "10.231.0.18:443#chain[0]",
+        "name": "CN=z02.lab",
+        "score": 7,
+        "source_name": "range-10.231.0.16-28",
+        "type": "certificate"
+      },
+      {
+        "criticality": "medium",
+        "exposure": "internal",
+        "exposure_basis": "private IP address 10.231.0.26",
+        "finding": "Endpoint accepts TLS 1.0; Endpoint supports neither TLS 1.2 nor TLS 1.3; Endpoint accepts RSA key exchange without forward secrecy; Endpoint still accepts CBC-mode cipher suites; Endpoint has no post-quantum key exchange",
+        "hndl": true,
+        "id": 448,
+        "impact": "High",
+        "location": "10.231.0.26:443",
+        "name": "HTTPS 10.231.0.26:443",
+        "score": 7,
+        "source_name": "range-10.231.0.16-28",
+        "type": "tls_endpoint"
+      },
+      {
+        "criticality": "medium",
+        "exposure": "internal",
+        "exposure_basis": "private IP address 10.231.0.19",
+        "finding": "Certificate expired on 2025-10-08; Uses public-key cryptography that a quantum computer can break",
+        "hndl": false,
+        "id": 452,
+        "impact": "High",
+        "location": "10.231.0.19:443#chain[0]",
+        "name": "CN=z04.lab",
+        "score": 7,
+        "source_name": "range-10.231.0.16-28",
+        "type": "certificate"
+      },
+      {
+        "criticality": "medium",
+        "exposure": "internal",
+        "exposure_basis": "private IP address 10.231.0.23",
+        "finding": "SSH server offers SHA-1 key exchange (diffie-hellman-group14-sha1); SSH server offers HMAC-SHA1 (hmac-sha1); SSH server has no post-quantum key exchange",
+        "hndl": true,
+        "id": 439,
+        "impact": "Medium",
+        "location": "10.231.0.23:22",
+        "name": "SSH 10.231.0.23:22",
+        "score": 4,
+        "source_name": "range-10.231.0.16-28",
+        "type": "ssh_endpoint"
+      },
+      {
+        "criticality": "medium",
+        "exposure": "internal",
+        "exposure_basis": "private IP address 10.231.0.17",
+        "finding": "Endpoint has no post-quantum key exchange",
+        "hndl": true,
+        "id": 441,
+        "impact": "Low",
+        "location": "10.231.0.17:443",
+        "name": "HTTPS 10.231.0.17:443",
+        "score": 1,
+        "source_name": "range-10.231.0.16-28",
+        "type": "tls_endpoint"
+      },
+      {
+        "criticality": "medium",
+        "exposure": "internal",
+        "exposure_basis": "private IP address 10.231.0.21",
+        "finding": "Endpoint has no post-quantum key exchange",
+        "hndl": false,
+        "id": 444,
+        "impact": "Low",
+        "location": "10.231.0.21:443",
+        "name": "HTTPS 10.231.0.21:443",
+        "score": 1,
+        "source_name": "range-10.231.0.16-28",
+        "type": "tls_endpoint"
+      },
+      {
+        "criticality": "medium",
+        "exposure": "internal",
+        "exposure_basis": "private IP address 10.231.0.21",
+        "finding": "Self-signed certificate",
+        "hndl": false,
+        "id": 445,
+        "impact": "Low",
+        "location": "10.231.0.21:443#chain[0]",
+        "name": "CN=z05b.lab",
+        "score": 1,
+        "source_name": "range-10.231.0.16-28",
+        "type": "certificate"
+      },
+      {
+        "criticality": "medium",
+        "exposure": "internal",
+        "exposure_basis": "private IP address 10.231.0.19",
+        "finding": "Endpoint has no post-quantum key exchange",
+        "hndl": true,
+        "id": 451,
+        "impact": "Low",
+        "location": "10.231.0.19:443",
+        "name": "HTTPS 10.231.0.19:443",
+        "score": 1,
+        "source_name": "range-10.231.0.16-28",
+        "type": "tls_endpoint"
+      }
+    ]
+  },
+  "run": {
+    "breakdown": {
+      "groups": {
+        "network": {
+          "credits": 1,
+          "credits_c": 100,
+          "queued": 2,
+          "skipped": 0,
+          "units": 19
+        }
+      },
+      "skipped": []
+    },
+    "cancelled_at": null,
+    "cancelled_by": null,
+    "created_at": "2026-11-12T15:23:26Z",
+    "credits": {
+      "charged": 1,
+      "net": 1,
+      "refunded": 0
+    },
+    "finished_at": "2026-11-12T15:23:51Z",
+    "id": 21,
+    "include": {
+      "cloud": false,
+      "databases": false,
+      "kubernetes": false,
+      "network": true,
+      "servers": false
+    },
+    "last_updated": "2026-11-12T15:23:51Z",
+    "owner_user_id": 52,
+    "scan_id": null,
+    "soc_ack_at": "2026-11-12T15:23:26Z",
+    "soc_ack_by": 52,
+    "status": "partial",
+    "team_id": 52,
+    "versions": {
+      "classifier": "rules-9b4b32ed36c3",
+      "engine": "unknown",
+      "kb": "2026.11.10.1"
+    }
+  }
+}

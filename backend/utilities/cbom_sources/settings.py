@@ -21,7 +21,9 @@ DEFAULT_PORTS = [
     {"port": 587, "protocol": "starttls-smtp", "label": "Submission"},
     {"port": 465, "protocol": "tls", "label": "SMTPS"},
     {"port": 993, "protocol": "tls", "label": "IMAPS"},
+    {"port": 143, "protocol": "starttls-imap", "label": "IMAP StartTLS"},
     {"port": 995, "protocol": "tls", "label": "POP3S"},
+    {"port": 110, "protocol": "starttls-pop3", "label": "POP3 STLS"},
     {"port": 5432, "protocol": "starttls-postgres", "label": "PostgreSQL"},
     {"port": 3306, "protocol": "starttls-mysql", "label": "MySQL"},
     {"port": 1433, "protocol": "tds", "label": "SQL Server"},
@@ -33,6 +35,11 @@ DEFAULT_PORTS = [
     {"port": 8883, "protocol": "tls", "label": "MQTT"},
 ]
 PORT_PROTOCOLS = ("tls", "starttls-ldap", "starttls-smtp", "starttls-imap", "starttls-postgres", "starttls-mysql",
+                  # CB-34: not in DEFAULT_PORTS.  FTP (21) answers AUTH TLS on most hosts but is a port a team adds on
+                  # purpose; XMPP (5222 client, 5269 server-to-server) needs the server's XMPP domain, which the node
+                  # takes from the team's SNI names for the address (an address alone gets host-unknown from most
+                  # servers, reported as an error, never as "plaintext only")
+                  "starttls-pop3", "starttls-ftp", "starttls-xmpp", "starttls-xmpp-server",
                   "tds", "ssh", "rdp", "ike",
                   # OT (not in DEFAULT_PORTS: a team adds them for its OT ranges; an address with one open is scanned
                   # in fragile mode by the node)
@@ -59,6 +66,28 @@ def new_external_id() -> str:
     return "zs-ext-" + "-".join(groups)
 
 
+# CB-15: a team that starts using CBOM Sources requires signed scan nodes (every node since 1.1 signs its requests).
+# A team that already has unsigned (legacy) nodes when its settings row is first made keeps them working instead
+# (the toggle on Scan nodes turns the requirement on once they are upgraded). An operator can turn the default off
+# for every new team (an on-prem estate of 1.0 nodes) with CBOM_NEW_TEAMS_REQUIRE_SIGNED_NODES=0.
+NEW_TEAMS_REQUIRE_SIGNED_ENV = "CBOM_NEW_TEAMS_REQUIRE_SIGNED_NODES"
+
+
+def new_team_requires_signed_nodes(session: Session, team_id: int) -> bool:
+    """The ``require_signed_nodes`` a team's first settings row gets: True unless the operator turned the default off,
+    or the team already has an enrolled scan node that does not sign (it would be refused at once)."""
+    import os
+
+    from backend.new_models import CbomScanNode
+
+    if os.environ.get(NEW_TEAMS_REQUIRE_SIGNED_ENV, "1").strip().lower() in ("0", "false", "no", "off"):
+        return False
+    legacy = session.exec(select(CbomScanNode.id).where(
+        CbomScanNode.team_id == team_id, CbomScanNode.enrolled_at.is_not(None),  # type: ignore[union-attr]
+        CbomScanNode.signing_public_key.is_(None)).limit(1)).first()  # type: ignore[union-attr]
+    return legacy is None
+
+
 def get_or_create_settings(session: Session, team_id: int, *, commit: bool = True) -> CbomCollectionSettings:
     """The team's settings row, created on first use with ``INSERT ... ON CONFLICT (team_id) DO NOTHING``: never a
     rollback of the caller's work (security review S-9: a heartbeat that had just released a job lost the release
@@ -70,7 +99,8 @@ def get_or_create_settings(session: Session, team_id: int, *, commit: bool = Tru
     if row is not None:
         return row
     fresh = CbomCollectionSettings(team_id=team_id, aws_external_id=new_external_id(), ports=list(DEFAULT_PORTS),
-                                   scan_window=default_window())
+                                   scan_window=default_window(),
+                                   require_signed_nodes=new_team_requires_signed_nodes(session, team_id))
     table = CbomCollectionSettings.__table__
     values = {c.name: getattr(fresh, c.name) for c in table.columns if c.name != "id"}
     dialect = session.get_bind().dialect.name

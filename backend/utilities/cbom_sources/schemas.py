@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from backend.utilities.cbom_sources.common import NAME_RE
+from backend.utilities.cbom_sources.common import NAME_RE, log
 from backend.utilities.cbom_sources.kinds import KIND_NAMES, check_http_url, check_pem_certificates, check_timezone, check_window_grid
 
 _EMAIL_RE = re.compile(r"^[^@\s'\"<>]{1,64}@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{2,}$")
@@ -32,6 +32,7 @@ class NodeCreate(_Body):
     proxy_url: str | None = Field(default=None, max_length=512)
     proxy_ca_pem: str | None = Field(default=None, max_length=64 * 1024)
     proxy_tls_inspect: bool = False
+    proxy_user: str | None = Field(default=None, max_length=128)
 
     _n = field_validator("name")(classmethod(lambda cls, v: _name(v)))
 
@@ -50,12 +51,36 @@ class NodeCreate(_Body):
     @field_validator("proxy_url")
     @classmethod
     def _proxy(cls, v: str | None) -> str | None:
-        return check_http_url(v)
+        return check_proxy_url(v)
+
+    @field_validator("proxy_user")
+    @classmethod
+    def _proxy_user(cls, v: str | None) -> str | None:
+        return check_proxy_user(v)
 
     @field_validator("proxy_ca_pem")
     @classmethod
     def _ca(cls, v: str | None) -> str | None:
         return check_pem_certificates(v)
+
+    @model_validator(mode="after")
+    def _inspect(self) -> "NodeCreate":
+        problem = proxy_inspect_problem(self.proxy_tls_inspect, self.proxy_url, self.proxy_ca_pem)
+        if problem:
+            raise ValueError(problem)
+        return self
+
+
+def proxy_inspect_problem(inspect: bool, proxy_url: str | None, proxy_ca_pem: str | None) -> str | None:
+    """#202: "My proxy inspects TLS" only means something with a proxy, and the node can only trust that proxy with
+    its CA certificate."""
+    if not inspect:
+        return None
+    if not (proxy_url or "").strip():
+        return "proxy_url: enter the proxy that inspects TLS, or untick \"My proxy inspects TLS\""
+    if not (proxy_ca_pem or "").strip():
+        return "proxy_ca_pem: upload the CA certificate your proxy signs with, so the node can trust only that proxy"
+    return None
 
 
 class NodeUpdate(_Body):
@@ -66,6 +91,7 @@ class NodeUpdate(_Body):
     proxy_url: str | None = Field(default=None, max_length=512)
     proxy_ca_pem: str | None = Field(default=None, max_length=64 * 1024)
     proxy_tls_inspect: bool | None = None
+    proxy_user: str | None = Field(default=None, max_length=128)
     expected_version: int | None = None
 
     @field_validator("name")
@@ -88,12 +114,42 @@ class NodeUpdate(_Body):
     @field_validator("proxy_url")
     @classmethod
     def _proxy(cls, v: str | None) -> str | None:
-        return check_http_url(v)
+        return check_proxy_url(v)
+
+    @field_validator("proxy_user")
+    @classmethod
+    def _proxy_user(cls, v: str | None) -> str | None:
+        return check_proxy_user(v)
 
     @field_validator("proxy_ca_pem")
     @classmethod
     def _ca(cls, v: str | None) -> str | None:
         return check_pem_certificates(v)
+
+
+# #199: a proxy user name goes into the node's login file as "user:password" and into the install command in single
+# quotes: no colon, quote, space, $ or control character. A Windows domain user (CORP\\svc-zs) and user@realm are fine.
+_PROXY_USER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._@\\-]{0,127}$")
+PROXY_LOGIN_HELP = ("enter the user name in Proxy user and the URL without it; the password stays on the scan node "
+                    "host (the install command asks for it there) and is never sent to ZeroShield")
+
+
+def check_proxy_url(v: str | None) -> str | None:
+    try:
+        return check_http_url(v)
+    except ValueError as exc:
+        if "user name or password" in str(exc):
+            raise ValueError(PROXY_LOGIN_HELP) from None
+        raise
+
+
+def check_proxy_user(v: str | None) -> str | None:
+    if v is None:
+        return None
+    if not _PROXY_USER.match(v):
+        raise ValueError("use letters, digits, dots, dashes, underscores, @ or a backslash (DOMAIN\\user), at most "
+                         "128 characters; the password is never entered here")
+    return v
 
 
 # ----------------------------------------------------------------------------- sources
@@ -105,6 +161,8 @@ class SourceCreate(_Body):
     config: dict[str, Any] = Field(default_factory=dict)
     secrets: dict[str, str] = Field(default_factory=dict)
     test_after_save: bool = False
+    # ct_logs only: add the team's saved certificate domains (settings.cert_domains) and empty that list, in one step
+    import_saved_domains: bool = False
 
     _n = field_validator("name")(classmethod(lambda cls, v: _name(v)))
 
@@ -143,7 +201,8 @@ class ExclusionItem(_Body):
 class PortItem(_Body):
     port: int = Field(ge=1, le=65535)
     protocol: Literal["tls", "starttls-ldap", "starttls-smtp", "starttls-imap", "starttls-postgres",
-                      "starttls-mysql", "tds", "ssh", "rdp", "ike",
+                      "starttls-mysql", "starttls-pop3", "starttls-ftp", "starttls-xmpp", "starttls-xmpp-server",
+                      "tds", "ssh", "rdp", "ike",
                       "opcua", "modbus", "modbus-tls"] = "tls"
     label: str = Field(default="", max_length=40)
 
@@ -160,7 +219,9 @@ class SettingsUpdate(_Body):
     network_exclusions: list[ExclusionItem] | None = Field(default=None, max_length=500)
     sni_hostnames: list[str] | None = Field(default=None, max_length=10_000)
     ports: list[PortItem] | None = Field(default=None, max_length=64)
-    zeek_span: bool | None = None
+    zeek_span: bool | None = Field(default=None, description=(
+        "Ignored: ZeroShield has no Zeek ssl.log reader, so this setting is stored for older clients and never sent "
+        "to scan nodes."))
     scan_window: list[list[bool]] | None = None
     window_timezone: str | None = Field(default=None, max_length=64)
     rate_conn_per_s: int | None = Field(default=None, ge=1, le=500)
@@ -237,9 +298,21 @@ class RunCreate(_Body):
 
 
 # ----------------------------------------------------------------------------- evidence
+def _legacy_level(value: Any) -> Any:
+    """A browser tab still running the bundle from before CB-18 sends Q0..Q3: accepted as E0..E3 for one release,
+    and logged, so the owner can see when nobody sends them any more (EC-12)."""
+    if isinstance(value, str) and value.strip().upper() in ("Q0", "Q1", "Q2", "Q3"):
+        log("evidence legacy level input", value=value.strip().upper())
+        return "E" + value.strip()[1]
+    return value
+
+
+Level = Literal["E0", "E1", "E2", "E3"]
+
+
 class AreaUpdate(_Body):
     owner: str | None = Field(default=None, max_length=128)
-    confidence: Literal["Q0", "Q1", "Q2", "Q3"] | None = None
+    confidence: Level | None = None
     answers: dict[str, str] | None = None
     evidence_title: str | None = Field(default=None, max_length=200)
     evidence_url: str | None = Field(default=None, max_length=1000)
@@ -251,6 +324,11 @@ class AreaUpdate(_Body):
     @classmethod
     def _url(cls, v: str | None) -> str | None:
         return check_http_url(v)
+
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def _level(cls, v: Any) -> Any:
+        return _legacy_level(v)
 
     @field_validator("evidence_date", "due_date")
     @classmethod
@@ -279,8 +357,13 @@ class VendorCreate(_Body):
 
 class VendorUpdate(VendorCreate):
     name: str | None = Field(default=None, min_length=1, max_length=128)
-    confidence: Literal["Q0", "Q1", "Q2", "Q3"] | None = None
+    confidence: Level | None = None
     expected_version: int | None = None
+
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def _level(cls, v: Any) -> Any:
+        return _legacy_level(v)
 
 
 class VendorAnswer(_Body):

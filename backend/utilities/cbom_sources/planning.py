@@ -15,15 +15,51 @@ from sqlmodel import Session, select
 from backend.new_models import CbomCollectionJob, CbomCollectionSettings, CbomCollectionSource, CbomScanNode
 from backend.utilities.cbom_sources import targets as T
 from backend.utilities.cbom_sources.agents import kind_problem
+from backend.utilities.cbom_sources.common import log
 from backend.utilities.cbom_sources.kinds import KINDS
 from backend.utilities.cbom_sources.settings import team_exclusions
 
 ONLINE_SECONDS = 120
 
 # Rates chosen by product (per target): server 0.2, cluster 2, database 1, cloud account 4, network 1 per /24.
+# Azure and Google Cloud are collected only once Save and validate has signed in to the customer's tenant / project
+# (as AWS needs a validated role): until then the account is listed, and its collection is "not available".
+CLOUD_NOT_CONNECTED = {
+    "azure_subscription": "Not available until the Azure tenant is connected: Save and validate must pass first",
+    "gcp_project": "Not available until the Google Cloud project is connected: Save and validate must pass first",
+}
 RATES_C = {"server": 20, "kubernetes": 200, "database": 100, "cloud_account": 400, "network_block": 100}
 # WP8b: a host agent is charged like one server; a registry image like one code scan (1 credit, decision D3).
 RATES_C["image"] = 100
+# CT discovery: each domain searched is charged like one server target (0.2 credits; owner question CT-2).
+RATES_C["ct_domain"] = 20
+
+NETWORK_STOPPED = "Network scanning is stopped"  # a plan item's reason while Stop all is on (runs.py)
+
+
+def org_estimate(accounts: int, previous: dict[str, Any] | None, now: _dt.datetime) -> dict[str, Any]:
+    """What one run of an AWS organisation source is charged, recorded on the source at each validation, with the last
+    change ("changed from 200 accounts on <date>"), so a new count is visible before the next scheduled run charges it.
+    Before F1 the count stopped at 200 accounts; the first validation after it may raise the charge."""
+    rate = RATES_C["cloud_account"]
+    out: dict[str, Any] = {"accounts": accounts, "credits_per_account": credits(rate),
+                           "credits_per_run": credits(rate * max(accounts, 1))}
+    before = previous.get("accounts") if isinstance(previous, dict) else None
+    if isinstance(before, int) and before != accounts:
+        out["changed_from"] = {"accounts": before, "credits_per_run": credits(rate * max(before, 1))}
+        out["changed_at"] = now.replace(microsecond=0).isoformat() + "Z"
+    elif isinstance(previous, dict) and previous.get("changed_from"):
+        out["changed_from"], out["changed_at"] = previous["changed_from"], previous.get("changed_at")
+    return out
+
+
+def org_estimate_stale(source: CbomCollectionSource) -> bool:
+    """An AWS organisation validated before F1: its count stopped at 200 and no estimate was recorded, so its charge
+    per run is not yet the count F1 reads (the Cloud & Identity row asks for a re-validation)."""
+    result = source.last_test_result or {}
+    members = result.get("member_accounts")
+    return (source.kind == "aws_account" and (source.config or {}).get("scope") == "organization"
+            and isinstance(members, int) and members <= 200 and not result.get("estimate"))
 
 
 def credits(centi: int) -> float:
@@ -54,8 +90,54 @@ def segment_status(nodes: dict[int, CbomScanNode], segment: str, now: _dt.dateti
     return "online" if any(node_status(n, now) == "online" for n in members) else "offline"
 
 
-def source_targets(source: CbomCollectionSource, settings: CbomCollectionSettings) -> dict[str, Any]:
-    """Units the source covers after the team's never-scan list (and its own, for servers)."""
+def team_range_cidrs(session, team_id: int) -> list[str]:
+    """Every network range the team configured (enabled or not): together they are the networks the customer entered,
+    whose outer network/broadcast addresses the sweep leaves out (targets.boundary_skips, N3).  One query."""
+    from sqlmodel import select
+
+    rows = session.exec(select(CbomCollectionSource.config).where(
+        CbomCollectionSource.team_id == team_id, CbomCollectionSource.kind == "network_range")).all()
+    return [str((cfg or {}).get("cidr") or "") for cfg in rows if (cfg or {}).get("cidr")]
+
+
+@dataclass
+class RangeContext:
+    """What every network range of one request is counted with, built once (review of #273: per range it cost a
+    query and a pass over all of the team's ranges): the team's network/broadcast skip map and its parsed never-scan
+    list."""
+    skips: T.SkipMap
+    exclusions: T.ParsedTargets
+
+    @classmethod
+    def of_sources(cls, sources: list[CbomCollectionSource], settings: CbomCollectionSettings) -> RangeContext:
+        """From the team's sources already loaded (every source of the team, or at least every network range)."""
+        cidrs = [str((s.config or {}).get("cidr") or "") for s in sources
+                 if s.kind == "network_range" and (s.config or {}).get("cidr")]
+        return cls(T.SkipMap(cidrs), team_exclusions(settings))
+
+    @classmethod
+    def of_team(cls, session, team_id: int, settings: CbomCollectionSettings) -> RangeContext:
+        """With one query for the team's ranges."""
+        return cls(T.SkipMap(team_range_cidrs(session, team_id)), team_exclusions(settings))
+
+
+def _range_context(source: CbomCollectionSource, settings: CbomCollectionSettings,
+                   ctx: RangeContext | None) -> RangeContext:
+    """The caller's context, or (one source on its own: get, create, update) one built here with one query."""
+    if ctx is not None:
+        return ctx
+    from sqlalchemy.orm import object_session
+
+    session = object_session(source)
+    if session is None:
+        return RangeContext(T.SkipMap([str((source.config or {}).get("cidr") or "")]), team_exclusions(settings))
+    return RangeContext.of_team(session, source.team_id, settings)
+
+
+def source_targets(source: CbomCollectionSource, settings: CbomCollectionSettings,
+                   ranges: RangeContext | None = None) -> dict[str, Any]:
+    """Units the source covers after the team's never-scan list (and its own, for servers).  ``ranges``: the request's
+    ``RangeContext`` (pass it whenever more than one source is counted); without it a network range builds its own."""
     cfg = source.config or {}
     spec = KINDS.get(source.kind)
     group = spec.group if spec else "other"
@@ -63,11 +145,16 @@ def source_targets(source: CbomCollectionSource, settings: CbomCollectionSetting
         return {"units": 1, "unit": "hosts"}
     if source.kind == "container_images":
         return {"units": len(cfg.get("images") or []), "unit": "images"}
+    if source.kind == "ct_logs":  # the names actually searched: a subdomain of a listed domain is in its answer
+        from backend.utilities.cbom_sources.ct_domains import query_set
+
+        domains = [d for d in cfg.get("domains") or [] if isinstance(d, str)]
+        return {"units": len(query_set(domains, bool(cfg.get("include_subdomains", True)))), "unit": "domains"}
     if group == "servers" or source.kind == "appliance":  # appliances list devices like servers do
         try:
             parsed = T.parse_targets(cfg.get("targets") or [], allow_empty=True)
             own = T.parse_exclusions(cfg.get("exclusions") or [])
-            team = team_exclusions(settings)
+            team = ranges.exclusions if ranges is not None else team_exclusions(settings)
             excl = T.ParsedTargets(
                 intervals=T.merge(own.intervals + team.intervals),
                 hostnames=sorted(set(own.hostnames) | set(team.hostnames)),
@@ -78,17 +165,39 @@ def source_targets(source: CbomCollectionSource, settings: CbomCollectionSetting
         return {"units": count, "unit": "targets"}
     if group == "network":
         try:
-            kind, interval, _canonical = T.parse_line(cfg.get("cidr", ""))
-            intervals = T.subtract([interval], team_exclusions(settings).intervals) if kind == "net" else []
+            # what the sweep visits: the range minus the outer network/broadcast edges of the networks the team's
+            # ranges form together (N3), then the never-scan list
+            ctx = _range_context(source, settings, ranges)
+            swept = T.swept_interval_parts(cfg.get("cidr", ""), skips=ctx.skips)
+            intervals = T.in_scope(T.ParsedTargets(intervals=swept), ctx.exclusions)[0] if swept else []
         except T.TargetError:
             intervals = []
         return {"units": T.size(intervals), "unit": "addresses", "blocks": T.count_blocks(intervals),
                 "intervals": intervals}
     if group == "cloud" and source.kind == "aws_account" and cfg.get("scope") == "organization":
         members = (source.last_test_result or {}).get("member_accounts")
+        # every member account counted at the last validation is read and charged (owner decision, F1)
         return {"units": int(members) if isinstance(members, int) and members > 0 else 1, "unit": "accounts"}
     return {"units": 1, "unit": {"kubernetes": "clusters", "databases": "databases", "cloud": "accounts"}.get(group, "sources")}
 
+
+
+def network_sweep_totals(sources: list[CbomCollectionSource], settings: CbomCollectionSettings,
+                         ranges: RangeContext | None = None) -> dict[str, int]:
+    """What the team's network ranges will sweep, for "Before the first run" (N7): unique addresses after the never-scan
+    list, over ENABLED ranges only.  An address in two overlapping ranges counts once (the per-range target_count
+    counts it in each); a disabled range counts nothing (plan_run skips it).  Same intervals as plan_run's units."""
+    merged: list[T.Interval] = []
+    enabled = disabled = 0
+    in_team = [s for s in sources if s.kind == "network_range"]
+    ctx = ranges or RangeContext.of_sources(in_team, settings)
+    for source in in_team:
+        if not source.enabled:
+            disabled += 1
+            continue
+        enabled += 1
+        merged += list(source_targets(source, settings, ctx).get("intervals") or [])
+    return {"addresses": T.size(T.merge(merged)), "ranges_enabled": enabled, "ranges_disabled": disabled}
 
 @dataclass
 class PlanItem:
@@ -101,13 +210,15 @@ class PlanItem:
     units: int
     unit: str
     credits_c: int
-    status: str  # queued | skipped
+    status: str  # queued | skipped | covered (read by another source in this plan: an AWS Private CA connector)
     reason: str | None = None
     waiting: bool = False
     # a scan-node job waits for its scan window (the team's, or a server source's own; jobs.job_waiting_reason):
     # window_applies says the source has one; window_starts_at is when a run queued now may start (None: now)
     window_applies: bool = False
     window_starts_at: _dt.datetime | None = None
+    # CB-11: what the estimate cannot know (host names on the never-scan list resolve on the node), and what happens
+    note: str | None = None
 
     def public(self) -> dict[str, Any]:
         starts = self.window_starts_at
@@ -117,6 +228,7 @@ class PlanItem:
             "credits": credits(self.credits_c), "status": self.status, "reason": self.reason,
             "waiting_for_node": self.waiting, "window_applies": self.window_applies,
             "window_starts_at": starts.strftime("%Y-%m-%dT%H:%M:%SZ") if starts else None,
+            "note": self.note,
         }
 
 
@@ -136,7 +248,7 @@ class Plan:
                 g["credits_c"] += item.credits_c
                 g["queued"] += 1
                 g["units"] += item.units
-            else:
+            elif item.status == "skipped":  # "covered": read by another source of the plan, nothing to fix
                 g["skipped"] += 1
         return {k: {**v, "credits": credits(v.pop("credits_c"))} for k, v in out.items()}
 
@@ -173,7 +285,9 @@ def plan_run(
         ).all()
     }
     wanted = set(source_ids) if source_ids else None
+    range_ctx = RangeContext.of_sources(list(sources), settings)  # every source of the team: built once
     plan = Plan()
+    listed_names = len(team_exclusions(settings).hostnames)
     counted_blocks: list[T.Interval] = []
     segments: dict[str, str] = {}
     for source in sources:
@@ -188,8 +302,10 @@ def plan_run(
             continue
         node = nodes.get(source.node_id) if source.node_id else None
         segment = getattr(source, "node_segment", None) if not source.node_id else None
-        info = source_targets(source, settings)
+        info = source_targets(source, settings, range_ctx)
         units = int(info["units"])
+        if org_estimate_stale(source):
+            log("aws org estimate stale: re-validate", team=team_id, source=source.id, accounts=units)
         item = PlanItem(source.id, source.name, source.kind, group, source.node_id,
                         node.name if node else (f"segment {segment}" if segment else None),
                         units, info["unit"], 0, "skipped")
@@ -208,7 +324,9 @@ def plan_run(
             item.reason = "Configuration is no longer valid; edit and save it again"
         elif not collectable:
             item.reason = ("Cloud collection is not available yet" if group == "cloud"
-                           else "Collection for this connector is not available yet")
+                           else _AWS_PCA if getattr(cfg_model, "provider", None) == "aws_private_ca"
+                           else "Certificate Transparency discovery is not enabled on this server"
+                           if source.kind == "ct_logs" else "Collection for this connector is not available yet")
         elif needs_node and segment and status == "missing":
             item.reason = f"No enrolled, signed agentless scan node is in segment {segment}"
         elif needs_node and node is None and not segment:
@@ -219,12 +337,16 @@ def plan_run(
             item.reason = kind_problem(node, source.kind)
         elif source.kind == "aws_account" and source.last_test_status != "passed":
             item.reason = "Validate the AWS role first; only a role that passed validation is scanned"
+        elif source.last_test_status == "failed" and (source.last_test_result or {}).get("credential_refused"):
+            item.reason = source.last_test_summary or "Credential refused; edit the credential"  # CB-10
         elif source.last_test_status == "failed":
             item.reason = "Last connection test failed; fix it and test again"
+        elif source.kind in CLOUD_NOT_CONNECTED and source.last_test_status != "passed":
+            item.reason = CLOUD_NOT_CONNECTED[source.kind]
         elif units <= 0:
             item.reason = "0 targets left after the never-scan list"
         elif group == "network" and source.kind != "appliance" and settings.stop_all_network:  # a config read, not a sweep
-            item.reason = "Network scanning is stopped"
+            item.reason = NETWORK_STOPPED
         elif source.id in active:
             item.reason = f"Already queued in run #{active[source.id]}"
         else:
@@ -243,8 +365,12 @@ def plan_run(
                         item.status = "skipped"
                         plan.items.append(item)
                         continue
+            if listed_names and (group in ("servers", "network") or source.kind == "appliance"):
+                item.note = never_scan_note(listed_names, per_target=info["unit"] == "targets")
             if source.kind == "container_images":
                 item.credits_c = RATES_C["image"] * units
+            elif source.kind == "ct_logs":
+                item.credits_c = RATES_C["ct_domain"] * units
             elif group == "servers" or source.kind == "appliance":
                 item.credits_c = RATES_C["server"] * units
             elif group == "kubernetes":
@@ -261,4 +387,40 @@ def plan_run(
             else:
                 item.credits_c = 0
         plan.items.append(item)
+    _aws_private_ca(plan, sources)
     return plan
+
+
+_AWS_PCA = "Read by its AWS account source; nothing separate to collect"
+
+
+def never_scan_note(names: int, *, per_target: bool) -> str:
+    """CB-11: the estimate subtracts every listed address and every listed name that is a target; a listed host name
+    is resolved by the scan node, so the addresses it blocks are known only when the job ends."""
+    lead = (f"{names} host name{'s' if names != 1 else ''} on the never-scan list "
+            f"{'are' if names != 1 else 'is'} resolved by the scan node: a target {'they block' if names != 1 else 'it blocks'} "
+            "is not scanned")
+    if per_target:
+        return f"{lead}, and its charge is refunded when the job ends."
+    return f"{lead} (a range is charged per /24 block, which one blocked address does not change)."
+
+
+def _aws_private_ca(plan: Plan, sources: list[CbomCollectionSource]) -> None:
+    """An AWS Private CA connector is read by the AWS account source it names (aws_collect reads acm-pca with that
+    account's role), so its item says what this plan does with that source (CB-08, review 5876424957)."""
+    by_id = {s.id: s for s in sources}
+    items = {i.source_id: i for i in plan.items}
+    for item in plan.items:
+        if item.reason != _AWS_PCA:
+            continue
+        aws_id = (by_id[item.source_id].config or {}).get("aws_source_id")
+        aws = by_id.get(aws_id) if isinstance(aws_id, int) else None
+        aws_item = items.get(aws.id) if aws is not None and aws.kind == "aws_account" else None
+        if aws is None or aws.kind != "aws_account":
+            item.reason = "Not read: its AWS account was removed"
+        elif aws_item is None:
+            item.reason = f"Not read in this run: AWS account {aws.name} is not in this run"
+        elif aws_item.status != "queued":
+            item.reason = f"Not read in this run: AWS account {aws.name} is skipped ({aws_item.reason})"
+        else:
+            item.status = "covered"

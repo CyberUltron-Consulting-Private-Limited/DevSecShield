@@ -1,0 +1,7 @@
+{
+ "url": "https://crt.sh/?q=zs-ct-empty-proof.example.com&output=json",
+ "method": "GET",
+ "started": "2026-11-12T17:47:34.381994Z",
+ "duration_ms": 26313,
+ "user_agent": "zeroshield-ct-capture/1 (+https://zeroshield.ai)"
+}

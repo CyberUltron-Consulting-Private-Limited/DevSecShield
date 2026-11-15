@@ -475,3 +475,27 @@ def test_an_older_answer_never_cancels_a_newer_grant(tmp_path, monkeypatch):
     assert ag.grants == 1
     ag.take_grant({"claim": 0, "protocol": 2}, sent=11.0)  # newer news wins
     assert ag.grants == 0
+def test_no_heartbeat_without_a_node_token_after_a_revocation(server, tmp_path, monkeypatch):
+    """Staging QA 14 Nov: a node deleted in ZeroShield logged the revocation correctly, cleared its token, then kept
+    heartbeating with no token every 30 s; ZeroShield answered node_token_missing and the node logged, forever, that a
+    proxy had dropped its token. Without a node token there is nothing to heartbeat with: the loop only keeps the node
+    alive (healthcheck) until the claim loop has enrolled it again."""
+    api, url = server
+    ag = _agent(tmp_path, url, monkeypatch)
+    ag.ensure_enrolled()
+    ag.on_unauthorized()  # ZeroShield said node_token_revoked: the token is gone
+    assert not ag.state.node_token
+    calls, logs = [], []
+    monkeypatch.setattr(ag.api, "heartbeat", lambda body: calls.append(body) or {})
+    monkeypatch.setattr(A, "log", lambda msg, **kw: logs.append(msg))
+    alive = os.path.join(ag.state.directory, A.ALIVE_FILE)
+    if os.path.exists(alive):
+        os.remove(alive)
+    t = threading.Thread(target=ag.heartbeat_loop, daemon=True)
+    t.start()
+    assert _wait(lambda: os.path.exists(alive))  # the loop turns (the image HEALTHCHECK stays green)
+    time.sleep(0.5)
+    ag.shutdown.set()
+    t.join(10)
+    assert calls == []
+    assert not [m for m in logs if "wrong server or proxy" in m]

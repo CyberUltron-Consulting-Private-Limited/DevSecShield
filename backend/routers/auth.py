@@ -46,6 +46,7 @@ from backend.utilities.auth.auth_utils import (
     user_by_email,
     verify_and_update_password,
 )
+from backend.utilities.build_info import build_sha, build_version
 from backend.utilities.ratelimit import RateLimiter, ip_key, user_key
 
 log = logging.getLogger("backend.auth")
@@ -214,6 +215,23 @@ async def refresh(data:RefreshToken,Authorization: Annotated[str | None, Header(
         if isinstance(e, psycopg2.Error):
             raise HTTPException(status_code=500, detail="Server is busy, please try again later")
         raise HTTPException(status_code=403, detail="Could not refresh token, please try again later")
+
+
+@router.get('/version', summary="The build this API runs (signed-in users)", dependencies=[Depends(session_limiter)])
+async def version(Authorization: Annotated[str | None, Header()] = None):
+    """The commit and version string of this API build, for signed-in users and operators. Public responses name
+    the build only where the deployment exposes it (DSS_EXPOSE_BUILD, backend/utilities/build_info.py)."""
+    parts = (Authorization or "").split(" ")
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authorization header is required")
+    try:
+        await get_current_user_from_access_token(get_db(), parts[1])
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error("version failed: %s", type(e).__name__)
+        raise HTTPException(status_code=500, detail="Server is busy, please try again later") from None
+    return {"build": build_sha(), "version": build_version()}
 
 
 @router.get('/get_user', summary="Get user details", dependencies=[Depends(session_limiter)])

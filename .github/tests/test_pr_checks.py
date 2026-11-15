@@ -1,4 +1,4 @@
-"""Self-tests for reusable-pr-checks.yml: the branch-flow script and the pr-hygiene default regexes.
+"""Self-tests for reusable-pr-checks.yml: the branch-flow script and the pr-hygiene step.
 
 Both are read straight from the workflow file, so the test exercises exactly what CI runs.
 Run: python3 -m unittest discover -s .github/tests -v
@@ -55,42 +55,6 @@ class BranchFlow(unittest.TestCase):
         self.assertNotEqual(self.flow("main", "staging", head_repo="fork/r"), 0)
 
 
-class HygieneRegexes(unittest.TestCase):
-    """The security review's path list (PR #16, review 5855812689)."""
-
-    forbid = re.compile(input_default("forbidden-files-regex"), re.I)
-    allow = re.compile(input_default("allowed-files-regex"), re.I)
-    config = re.compile(input_default("security-config-regex"))
-
-    def blocked(self, path: str) -> bool:
-        return bool(self.forbid.search(path)) and not self.allow.search(path)
-
-    def test_secret_files_are_blocked_in_any_case_and_name(self):
-        for p in [".env", "backend/.env.local", "x.ENV", "backend/.ENV", "cu-devsecshield-key.PEM", "deploy/tls/server.Key",
-                  "ID_RSA", ".ssh/id_rsa_prod", ".ssh/id_ed25519_sk", "keys/id_rsa.old", "secrets/aws-dev.env",
-                  "compose/prod.env", ".envrc", ".aws/credentials", ".npmrc", ".pypirc", ".netrc", ".git-credentials",
-                  "infra/prod.tfvars", "deploy/kubeconfig", "gcp/service-account.json", "apple/AuthKey_ABC123.p8",
-                  "aibom/tests/fixtures/leak/.env", "backend/tests/fixtures/real.pem",
-                  # security re-review 5856745968
-                  "infra/terraform.tfstate.backup", "Downloads/accessKeys.csv", "aws/credentials.csv", ".pgpass",
-                  "deploy/.htpasswd", ".s3cfg", "vpn/office.ovpn", "krb/svc.keytab", ".docker/config.json",
-                  "home/ci/.docker/config.json"]:
-            with self.subTest(p):
-                self.assertTrue(self.blocked(p))
-
-    def test_templates_public_keys_and_code_pass(self):
-        for p in [".env.example", "backend/.env.sample", "keys/deploy.pub", "frontend/app/page.tsx", "docs/ci/README.md",
-                  "docker/config.json", "docs/credentials-rotation.md"]:
-            with self.subTest(p):
-                self.assertFalse(self.blocked(p))
-
-    def test_gate_files_need_the_security_label(self):
-        for p in [".github/workflows/ci.yml", ".gitleaks.toml", ".gitleaksignore", "backend/.semgrepignore", ".gitattributes"]:
-            with self.subTest(p):
-                self.assertTrue(self.config.search(p))
-        self.assertFalse(self.config.search("backend/main.py"))
-
-
 def hygiene_script() -> str:
     blocks = [textwrap.dedent(b) for b in re.findall(r"<<'PY'\n(.*?)\n[ \t]*PY\n", TEXT, re.S) if "TITLE_RE" in b]
     assert len(blocks) == 1
@@ -104,26 +68,17 @@ PROMOTION = (Path(__file__).resolve().parents[1] / "PULL_REQUEST_TEMPLATE" / "pr
 class Hygiene(unittest.TestCase):
     """The pr-hygiene script, on PR data as the API returns it (QA review 5856030118)."""
 
-    def check(self, title: str, body: str, files: list = (), labels: list[str] = (), base: str = "dev",
-              bot: bool = False) -> subprocess.CompletedProcess:
-        """files: paths (status "modified", a one-line patch) or dicts as the pulls/<n>/files API returns them."""
+    def check(self, title: str, body: str, base: str = "dev", bot: bool = False) -> subprocess.CompletedProcess:
         import json
         import tempfile
         with tempfile.TemporaryDirectory() as d:
-            pr = {"title": title, "body": body, "labels": [{"name": n} for n in labels], "base": {"ref": base},
-                  "user": {"type": "Bot" if bot else "User"}}
+            pr = {"title": title, "body": body, "base": {"ref": base}, "user": {"type": "Bot" if bot else "User"}}
             (Path(d) / "pr.json").write_text(json.dumps(pr))
-            entries = [f if isinstance(f, dict) else {"status": "modified", "filename": f, "patch": "@@ -1 +1 @@\n+x"}
-                       for f in files]
-            (Path(d) / "files.txt").write_text("".join(json.dumps(e) + "\n" for e in entries))
             env = dict(os.environ, GITHUB_STEP_SUMMARY=str(Path(d) / "s.md"), NEED_AC="true",
                        **{k: input_default(v) for k, v in [
                            ("TITLE_RE", "title-regex"), ("TITLE_MAX", "title-max-length"),
-                           ("AC_RE", "acceptance-heading-regex"), ("FORBID_RE", "forbidden-files-regex"),
-                           ("ALLOW_RE", "allowed-files-regex"), ("FIXTURE_LABEL", "secret-fixture-label"),
-                           ("FIXTURE_RE", "secret-fixture-regex"), ("CONFIG_RE", "security-config-regex"),
-                           ("CONFIG_LABEL", "security-config-label"), ("SUPPRESS_RE", "suppression-regex")]})
-            return subprocess.run(["python3", "-c", hygiene_script(), str(Path(d) / "pr.json"), str(Path(d) / "files.txt")],
+                           ("AC_RE", "acceptance-heading-regex")]})
+            return subprocess.run(["python3", "-c", hygiene_script(), str(Path(d) / "pr.json")],
                                   env=env, capture_output=True, text=True)
 
     @staticmethod
@@ -163,98 +118,69 @@ class Hygiene(unittest.TestCase):
         self.assertEqual(self.check(title, self.body("ci-gate run https://example.invalid/2")).returncode, 0)
         self.assertEqual(self.check('Revert something', self.body("x")).returncode, 1)
 
-    def test_dependabot_actions_bump_needs_the_security_label(self):
-        files = [".github/workflows/ci.yml"]
-        out = self.check("chore(deps): bump actions/checkout from 7.0.1 to 7.0.2", "Bumps ...", files, bot=True)
-        self.assertEqual(out.returncode, 1, out.stdout)
-        self.assertIn("security-config-reviewed", out.stdout)
-        out = self.check("chore(deps): bump actions/checkout from 7.0.1 to 7.0.2", "Bumps ...", files,
-                         labels=["security-config-reviewed"], bot=True)
-        self.assertEqual(out.returncode, 0, out.stdout)
 
-    def test_deleting_a_gate_file_needs_the_security_label(self):
-        # security re-review 5856745968: removed files were dropped before the config rule saw them
-        removed = [{"status": "removed", "filename": f} for f in
-                   (".github/CODEOWNERS", ".github/workflows/security-scheduled.yml", ".github/dependabot.yml")]
-        out = self.check("chore: tidy", self.body("x"), removed)
-        self.assertEqual(out.returncode, 1, out.stdout)
-        self.assertIn("3 file(s) that configure the CI or security gates", out.stdout)
-        self.assertEqual(self.check("chore: tidy", self.body("x"), removed, labels=["security-config-reviewed"]).returncode, 0)
-
-    def test_renaming_a_gate_file_away_needs_the_security_label(self):
-        moved = [{"status": "renamed", "filename": "docs/old-ci.yml", "previous_filename": ".github/workflows/ci.yml",
-                  "patch": ""}]
-        self.assertEqual(self.check("chore: tidy", self.body("x"), moved).returncode, 1)
-
-    def test_deleting_a_secret_file_is_allowed(self):
-        out = self.check("fix(backend): stop tracking .env", self.body("x"), [{"status": "removed", "filename": "backend/.env"}])
-        self.assertEqual(out.returncode, 0, out.stdout)
-
-    def test_added_inline_suppressions_need_the_security_label(self):
-        for line in ("+    eval(x)  # nosemgrep", "+# checkov:skip=CKV_K8S_20: reason", "+# hadolint ignore=DL3008",
-                     "+# shellcheck disable=SC2086", "+  #trivy:ignore:AVD-DS-0002"):
-            with self.subTest(line):
-                f = [{"status": "modified", "filename": "backend/app.py", "patch": f"@@ -1,2 +1,3 @@\n a\n{line}\n b"}]
-                out = self.check("feat(api): add an endpoint", self.body("x"), f)
-                self.assertEqual(out.returncode, 1, out.stdout)
-                self.assertIn("inline scanner suppression", out.stdout)
-                self.assertEqual(self.check("feat(api): add an endpoint", self.body("x"), f, labels=["security-config-reviewed"]).returncode, 0)
-        # removing a suppression, or one that was already there (context line), needs nothing
-        f = [{"status": "modified", "filename": "backend/app.py", "patch": "@@ -1,2 +1,2 @@\n x  # nosemgrep\n-y  # nosemgrep\n+y"}]
-        self.assertEqual(self.check("feat(api): add an endpoint", self.body("x"), f).returncode, 0)
-
-    def test_modified_env_file_blocks_a_promotion(self):
-        out = self.check("release: promote staging to main", self.body("run 1"), ["backend/.env"], base="main")
-        self.assertEqual(out.returncode, 1, out.stdout)
+# A stand-in for `gh api <path>`: answers from the JSON fixture in FAKE_GH; any other path fails (HTTP 500).
+FAKE_GH = """#!/usr/bin/env python3
+import json, os, sys
+path = [a for a in sys.argv[2:] if not a.startswith("-")][-1].split("?")[0]
+data = json.load(open(os.environ["FAKE_GH"]))
+if path not in data:
+    print("gh: Server Error (HTTP 500)", file=sys.stderr)
+    sys.exit(1)
+print(json.dumps(data[path]))
+"""
 
 
-def review_labels_script() -> str:
-    blocks = [textwrap.dedent(b) for b in re.findall(r"<<'PY'\n(.*?)\n[ \t]*PY\n", TEXT, re.S) if "review = [" in b]
-    assert len(blocks) == 1
-    return blocks[0]
+class NoReviewGates(unittest.TestCase):
+    """Owner decision 2026-11-12 (~11:40Z): no secret-bearing-file rule and no review label. A PR that touches
+    .github/**, scanner configs or .env files, or adds an inline suppression, passes pr-hygiene with no label."""
 
+    WF = TEXT
 
-class ReviewLabels(unittest.TestCase):
-    """review-labels: which review labels a new push outdates (security re-review 5856745968)."""
-
-    def drop(self, labels: list[str], files: list[dict] | None) -> list[str]:
+    def run_step(self, files: list[dict], labels: list[str] = ()) -> subprocess.CompletedProcess:
+        """The whole pr-hygiene step (bash + Python) against a fake API, as CI runs it."""
         import json
         import tempfile
+        body = Hygiene.body("test_x passes", "run https://example.invalid/1")
         with tempfile.TemporaryDirectory() as d:
-            (Path(d) / "labels.txt").write_text("\n".join(labels) + "\n")
-            if files is not None:
-                (Path(d) / "new.jsonl").write_text("".join(json.dumps(f) + "\n" for f in files))
-            env = dict(os.environ, CONFIG_LABEL="security-config-reviewed", FIXTURE_LABEL="secret-fixtures-reviewed",
-                       CONFIG_RE=input_default("security-config-regex"), FIXTURE_RE=input_default("secret-fixture-regex"),
-                       SUPPRESS_RE=input_default("suppression-regex"))
-            out = subprocess.run(["python3", "-c", review_labels_script(), str(Path(d) / "labels.txt"),
-                                  str(Path(d) / "new.jsonl")], env=env, capture_output=True, text=True)
-            self.assertEqual(out.returncode, 0, out.stderr)
-            return [l for l in out.stdout.split("\n") if l]
+            (Path(d) / "bin").mkdir()
+            (Path(d) / "bin" / "gh").write_text(FAKE_GH)
+            (Path(d) / "bin" / "gh").chmod(0o755)
+            pr = {"title": "ci: drop the review gates", "body": body, "base": {"ref": "dev"},
+                  "user": {"type": "User"}, "labels": [{"name": n} for n in labels]}
+            (Path(d) / "api.json").write_text(json.dumps({"repos/o/r/pulls/7": pr, "repos/o/r/pulls/7/files": files}))
+            env = dict(os.environ, PATH=f"{Path(d) / 'bin'}:{os.environ['PATH']}", FAKE_GH=str(Path(d) / "api.json"),
+                       GITHUB_REPOSITORY="o/r", RUNNER_TEMP=d, GITHUB_STEP_SUMMARY=str(Path(d) / "s.md"), PR="7",
+                       GH_TOKEN="x", NEED_AC="true", TITLE_RE=input_default("title-regex"),
+                       TITLE_MAX=input_default("title-max-length"), AC_RE=input_default("acceptance-heading-regex"))
+            return subprocess.run(["bash", "-c", step_script("Title and acceptance criteria")], env=env,
+                                  capture_output=True, text=True)
 
-    BOTH = ["security-config-reviewed", "secret-fixtures-reviewed", "size/S"]
+    def test_gate_files_secret_files_and_suppressions_pass_without_a_label(self):
+        files = [{"status": "modified", "filename": ".github/workflows/ci.yml", "patch": "@@ -1 +1 @@\n+x"},
+                 {"status": "removed", "filename": ".github/CODEOWNERS"},
+                 {"status": "modified", "filename": ".gitleaksignore", "patch": "@@ -1 +1 @@\n+x"},
+                 {"status": "added", "filename": "backend/.env", "patch": "@@ -0,0 +1 @@\n+A=1"},
+                 {"status": "modified", "filename": "RabbitMQ/worker/.env", "patch": "@@ -1 +1 @@\n-A=1\n+A=2"},
+                 {"status": "added", "filename": "deploy/tls/server.key", "patch": ""},
+                 {"status": "modified", "filename": "backend/app.py", "patch": "@@ -1 +1 @@\n+eval(x)  # nosemgrep"}]
+        out = self.run_step(files)
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.assertNotIn("::error", out.stdout)
 
-    def test_a_new_gate_change_drops_the_config_label(self):
-        self.assertEqual(self.drop(self.BOTH, [{"filename": ".gitleaksignore", "patch": "+x"}]), ["security-config-reviewed"])
-        self.assertEqual(self.drop(self.BOTH, [{"filename": "docs/x.yml", "previous_filename": ".github/workflows/a.yml"}]),
-                         ["security-config-reviewed"])
+    def test_the_title_and_acceptance_table_still_fail(self):
+        self.assertEqual(Hygiene().check("tidy things", Hygiene.body("x")).returncode, 1)
+        self.assertEqual(Hygiene().check("ci: tidy", Hygiene.body("pending")).returncode, 1)
 
-    def test_a_new_fixture_drops_the_fixture_label(self):
-        self.assertEqual(self.drop(self.BOTH, [{"filename": "backend/tests/fixtures/k.env", "patch": "+A=1"}]),
-                         ["secret-fixtures-reviewed"])
-
-    def test_a_new_suppression_drops_the_config_label(self):
-        self.assertEqual(self.drop(self.BOTH, [{"filename": "a.py", "patch": "@@ -1 +1 @@\n+x()  # nosemgrep"}]),
-                         ["security-config-reviewed"])
-
-    def test_ordinary_code_keeps_the_labels(self):
-        self.assertEqual(self.drop(self.BOTH, [{"filename": "backend/app.py", "patch": "+x = 1"}]), [])
-
-    def test_an_unreadable_comparison_drops_both(self):
-        self.assertEqual(sorted(self.drop(self.BOTH, None)), ["secret-fixtures-reviewed", "security-config-reviewed"])
-
-    def test_only_labels_that_are_present_are_dropped(self):
-        self.assertEqual(self.drop(["size/S"], None), [])
+    def test_no_label_logic_or_secret_file_rule_is_left_in_the_workflow(self):
+        jobs = self.WF[self.WF.index("\njobs:\n"):]
+        self.assertNotIn("review-labels", jobs)
+        for gone in ("forbidden-files-regex", "allowed-files-regex", "secret-fixture-label", "secret-fixture-regex",
+                     "security-config-regex", "security-config-label", "suppression-regex"):
+            with self.subTest(gone):
+                self.assertNotIn(gone, self.WF)
+        self.assertNotIn("pull-requests: write", self.WF)  # nothing removes labels any more
+        self.assertNotIn("/files", jobs)  # pr-hygiene no longer reads the changed files
 
 
 if __name__ == "__main__":

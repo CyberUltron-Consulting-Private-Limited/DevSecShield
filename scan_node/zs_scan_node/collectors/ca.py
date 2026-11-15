@@ -22,6 +22,7 @@ import time
 from typing import Any
 from urllib.parse import quote, urlsplit
 
+from zs_scan_node import algid
 from zs_scan_node.certparse import cert_facts, load_certs
 from zs_scan_node.collectors import ConfigError
 from zs_scan_node.jobctx import JobContext, register_asset_types
@@ -45,8 +46,8 @@ def _target(ctx: JobContext, url: str) -> Target:
     host = (urlsplit(url).hostname or "").lower().rstrip(".")
     try:
         return Target(host, resolve_checked(host, ctx.never_scan)[0])  # the network gate: resolve once, check
-    except Blocked:
-        raise CaFail("skipped_never_scan", f"{host} is on the never-scan list") from None
+    except Blocked as exc:
+        raise CaFail("skipped_never_scan", str(exc)) from None
     except OSError as exc:
         raise CaFail("unreachable", f"could not resolve {host}: {exc.__class__.__name__}") from None
 
@@ -103,6 +104,8 @@ class Vault:
             raise CaFail(self.ctx.should_stop() or "skipped_deadline", "stopped")
         try:
             r = self.client.get(f"/v1/{path.lstrip('/')}", params={"list": "true"} if listing else None)
+        except Blocked as exc:  # the address was listed while the job ran
+            raise CaFail("skipped_never_scan", str(exc)) from None
         except Exception as exc:  # httpx.HTTPError, ssl errors
             raise _http_error(exc, "Vault") from None
         try:
@@ -273,6 +276,8 @@ def collect_ejbca(ctx: JobContext, config: dict, secrets: dict) -> tuple[Target,
                 raise CaFail(ctx.should_stop() or "skipped_deadline", "stopped")
             try:
                 return client.get(sub)  # relative to the pinned base URL (.../ejbca/ejbca-rest-api/)
+            except Blocked as exc:
+                raise CaFail("skipped_never_scan", str(exc)) from None
             except Exception as exc:
                 text = str(exc).lower()
                 if "alert" in text or "handshake" in text and "certificate" in text:
@@ -319,14 +324,33 @@ def collect_ejbca(ctx: JobContext, config: dict, secrets: dict) -> tuple[Target,
         client.close()
 
 
+def ejbca_profile_label(algs: list[str]) -> tuple[str | None, list[str], list[str]]:
+    """(label, post-quantum algorithms, classical algorithms) of the key algorithms a profile allows.  algid decides
+    what is post-quantum (no names here).  A profile that offers a post-quantum algorithm is labelled with the first
+    one it lists (owner bug C10d: such profiles were labelled RSA); otherwise RSA when allowed, else the first one."""
+    pq: list[str] = []
+    classical: list[str] = []
+    for alg in algs:
+        ident = algid.resolve(alg)
+        if ident is not None and ident.family_label == "PQ":
+            pq.append(ident.name or alg)
+        else:
+            classical.append(alg)
+    label = pq[0] if pq else ("RSA" if "RSA" in classical else (classical[0] if classical else None))
+    return label, pq, classical
+
+
 def _ejbca_profile(ctx: JobContext, target: Target, base: str, profile: str, body: dict) -> int:
-    algs = [str(a).upper() for a in body.get("available_key_algs") or body.get("available_key_algorithms") or []]
+    algs = [str(a).upper() for a in body.get("available_key_algs") or body.get("available_key_algorithms") or []
+            if str(a).strip()]
     bits = [int(b) for b in body.get("available_bit_lengths") or [] if str(b).isdigit()]
+    label, pq, classical = ejbca_profile_label(algs)
+    # available_bit_lengths are RSA (and DSA) modulus sizes: the smallest is judged when the profile allows RSA
     rsa_min = min(bits) if bits and ("RSA" in algs or not algs) else None
     ctx.emit("ca_template", target.label, f"{base}/profile/{profile}", name=f"EJBCA {profile}",
-             algorithm="RSA" if "RSA" in algs else (algs[0] if algs else None), key_size=rsa_min,
-             facts={"provider": "ejbca", "name": f"EJBCA profile {profile}", "key_type": "RSA" if "RSA" in algs else
-                    (algs[0] if algs else None), "key_bits": rsa_min, "available_key_algs": algs[:20],
+             algorithm=label, key_size=rsa_min if label == "RSA" or label is None else None,
+             facts={"provider": "ejbca", "name": f"EJBCA profile {profile}", "key_type": label, "key_bits": rsa_min,
+                    "available_key_algs": algs[:20], "pq_key_algs": pq[:20], "classical_key_algs": classical[:20],
                     "available_bit_lengths": bits[:20], "available_cas": (body.get("available_cas") or [])[:20],
                     "server_auth": profile in ("SERVER", "ENDUSER")})
     return 1
@@ -537,8 +561,8 @@ def collect_adcs(ctx: JobContext, config: dict, password: str) -> tuple[Target, 
     label = host.strip("[]").lower().rstrip(".")
     try:
         target = Target(label, resolve_checked(host, ctx.never_scan)[0])
-    except Blocked:
-        raise CaFail("skipped_never_scan", f"{label} is on the never-scan list") from None
+    except Blocked as exc:
+        raise CaFail("skipped_never_scan", str(exc)) from None
     except OSError as exc:
         raise CaFail("unreachable", f"could not resolve {label}: {exc.__class__.__name__}") from None
     wcfg = {"port": int(config.get("port") or 5986), "login_user": config.get("login"), "ca_pem": config.get("ca_pem")}

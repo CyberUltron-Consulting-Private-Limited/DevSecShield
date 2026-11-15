@@ -8,7 +8,7 @@ logged once. Names and defaults follow the F1 contract (section 3); defaults are
 | Limit / timing                                  | Environment variable          | Default | Range           |
 |-------------------------------------------------|-------------------------------|---------|-----------------|
 | agentless scan nodes per team                   | CBOM_MAX_AGENTLESS_NODES      | 500     | 1 - 1,000,000   |
-| hand-made sources per team (UI, API, CMDB)      | CBOM_MAX_SOURCES              | 5,000   | 1 - 1,000,000   |
+| sources per team (UI, API, CMDB, fleet)         | CBOM_MAX_SOURCES (*source_cap*) | 10,000 | 1 - 1,000,000   |
 | agent-mode nodes per team                       | CBOM_MAX_AGENT_NODES          | 20,000  | 1 - 1,000,000   |
 | agent pool tokens per team                      | CBOM_MAX_POOLS                | 200     | 1 - 100,000     |
 | enrollments one pool token may allow            | CBOM_MAX_POOL_ENROLLMENTS     | 20,000  | 1 - 1,000,000   |
@@ -37,7 +37,6 @@ from backend.utilities.cbom_sources.common import log
 
 _SPEC: dict[str, tuple[int, int, int]] = {  # name: (default, minimum, maximum)
     "CBOM_MAX_AGENTLESS_NODES": (500, 1, 1_000_000),
-    "CBOM_MAX_SOURCES": (5_000, 1, 1_000_000),
     "CBOM_MAX_AGENT_NODES": (20_000, 1, 1_000_000),
     "CBOM_MAX_POOLS": (200, 1, 100_000),
     "CBOM_MAX_POOL_ENROLLMENTS": (20_000, 1, 1_000_000),
@@ -79,7 +78,10 @@ def max_agentless_nodes() -> int:
 
 
 def max_sources() -> int:
-    return get("CBOM_MAX_SOURCES")
+    """The deployment-wide source cap.  ``source_cap`` (#224) owns it: same variable, per-team overrides, its default."""
+    from backend.utilities.cbom_sources import source_cap
+
+    return source_cap.deployment_cap()
 
 
 def max_agent_nodes() -> int:

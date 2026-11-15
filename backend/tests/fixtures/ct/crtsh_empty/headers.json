@@ -1,0 +1,10 @@
+{
+ "access-control-allow-origin": "*",
+ "connection": "close",
+ "content-length": "2",
+ "content-type": "application/json",
+ "date": "Thu, 12 Nov 2026 17:48:00 GMT",
+ "expect-ct": "preload",
+ "server": "nginx",
+ "strict-transport-security": "max-age=15768000; includeSubDomains; preload"
+}

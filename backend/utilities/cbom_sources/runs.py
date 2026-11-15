@@ -15,13 +15,17 @@ from sqlmodel import Session, select
 
 from backend.new_models import CbomCollectionJob, CbomCollectionRun, CbomCollectionSettings, CbomCollectionSource, \
     CbomScanNode, Scan, Team
+from backend.utilities.cbom_sources import billing as BILLING
 from backend.utilities.cbom_sources import crypto_kb
 from backend.utilities.cbom_sources import jobs as J
+from backend.utilities.cbom_sources import qgrade as QG
 from backend.utilities.cbom_sources.classify import CLASSIFIER_VERSION
 from backend.utilities.cbom_sources.common import audit, engine_version
 from backend.utilities.cbom_sources.kinds import KINDS
-from backend.utilities.cbom_sources.planning import credits, plan_run
+from backend.utilities.cbom_sources.planning import NETWORK_STOPPED, credits, plan_run
 from backend.utilities.cbom_sources.schemas import RunCreate
+
+STOPPED_REFUSAL = "Scanning is stopped (Stop all). Resume scanning to start a run."
 
 
 def _existing(session: Session, team_id: int, client_request_id: str) -> CbomCollectionRun | None:
@@ -49,6 +53,12 @@ def queue_run(session: Session, team_id: int, user_id: int, body: RunCreate, set
     if not queued:
         if plan.items and all((i.reason or "").startswith("Already queued") for i in plan.items):
             raise HTTPException(status_code=409, detail="Every selected source is already queued in a run")
+        if any(i.reason == NETWORK_STOPPED for i in plan.items):
+            # say WHY (N12): "every selected source is skipped" alone hid that Stop all is on
+            others = [i for i in plan.items if i.reason != NETWORK_STOPPED and i.status == "skipped"]
+            raise HTTPException(status_code=400, detail=STOPPED_REFUSAL + (
+                f" {len(others)} other selected source{'s are' if len(others) != 1 else ' is'} skipped too "
+                "(see 'Will be skipped')." if others else ""))
         raise HTTPException(status_code=400, detail="Nothing to scan: every selected source is skipped (see 'Will be skipped')")
     if any(i.group == "network" for i in queued) and not body.soc_ack:
         raise HTTPException(status_code=400, detail="soc_ack: confirm that your SOC has agreed the network ranges and scan windows")
@@ -68,6 +78,8 @@ def queue_run(session: Session, team_id: int, user_id: int, body: RunCreate, set
         # what judges this run's facts (classification happens here, on the API)
         kb_version=(crypto_kb.version() or None), classifier_version=CLASSIFIER_VERSION,
         engine_version=engine_version(),
+        # the grade inputs at Start (CB-19 PR-2): run views grade with these; later team edits are shown beside them
+        grade_model_version=QG.GRADE_MODEL_VERSION, grade_inputs=QG.snapshot_inputs(session, team_id, settings, now),
     )
     session.add(run)
     try:
@@ -78,6 +90,9 @@ def queue_run(session: Session, team_id: int, user_id: int, body: RunCreate, set
         if existing is None:
             raise
         return existing, True
+    # the charge's ledger row (CB-14): Start is the one place credits are taken
+    BILLING.record(session, team_id=team_id, run_id=run.id, job_id=None, kind="charge", reason="start",
+                   amount_c=total_c, idem_key=BILLING.charge_key(run.id))  # type: ignore[arg-type]
     sources = {s.id: s for s in session.exec(select(CbomCollectionSource).where(CbomCollectionSource.team_id == team_id)).all()}
     nodes = {n.id: n for n in session.exec(select(CbomScanNode).where(CbomScanNode.team_id == team_id)).all()}
     snapshot = [str(i.get("cidr")) for i in (settings.network_exclusions or []) if isinstance(i, dict)]
@@ -101,7 +116,14 @@ def queue_run(session: Session, team_id: int, user_id: int, body: RunCreate, set
         ))
     # the jobs are flushed first, the team is charged last (DA C3): the team row is locked from the charge to the
     # commit only, not for the whole insert of thousands of jobs (a concurrent team UPDATE waited 2.4 s)
-    session.flush()
+    try:
+        session.flush()
+    except IntegrityError:
+        # CB-14: another Start (a second tab, a schedule) queued one of these sources after this one planned it; the
+        # unique open-collection index refuses the second job, and the rollback takes back this run and its charge
+        session.rollback()
+        raise HTTPException(status_code=409, detail="A selected source was already queued in another run just now. "
+                                                    "Review the plan and start again.") from None
     if not J.charge_team(session, team_id, total_c):
         session.rollback()
         team = session.get(Team, team_id)

@@ -140,6 +140,47 @@ def test_cluster_roles_grant_exactly_what_the_collector_reads():
         assert not any(r == gone for _g, r in tier1)
 
 
+
+# CB36-BUG-04: the cluster form's tier text said Tier 1 reads "issuers" and "images in use"; the ClusterRole grants
+# neither (no pods, no cert-manager Issuers) and the collector reads neither. Each phrase of the text names the
+# resources it needs; together (plus namespaces, used by the connection test) they are exactly the tier's grants.
+TIER_TEXT = {
+    1: ("Cluster and node versions, API server TLS, ingress TLS hosts and Secret names, cert-manager Certificates, "
+        "certificates and private keys in ConfigMaps, Istio and Linkerd mTLS policy"),
+    # the Tier 2 role lists TLS Secrets with their tls.key (Kubernetes cannot grant one without the other); the
+    # collector drops it unparsed (kubernetes.py, data.pop("tls.key")), as the amber Tier 2 warning says
+    2: ("Adds the certificates of TLS Secrets (kubernetes.io/tls); the API also returns their private keys, which are "
+        "dropped unparsed and never stored or sent"),
+}
+TIER1_CLAIMS = {
+    "Cluster and node versions": {("", "nodes")},  # plus /version, open to every authenticated client
+    "API server TLS": set(),  # a TLS handshake with the API server, no RBAC resource
+    "ingress TLS hosts and Secret names": {("networking.k8s.io", "ingresses")},  # spec.tls only; the certificate is Tier 2
+    "cert-manager Certificates": {("cert-manager.io", "certificates")},
+    "certificates and private keys in ConfigMaps": {("", "configmaps")},
+    "Istio and Linkerd mTLS policy": {("security.istio.io", "peerauthentications"),
+                                      ("networking.istio.io", "destinationrules"),
+                                      *{("policy.linkerd.io", r) for r in ("servers", "serverauthorizations",
+                                                                          "authorizationpolicies",
+                                                                          "meshtlsauthentications",
+                                                                          "networkauthentications")}},
+}
+
+
+def test_k8s_tier_text_says_exactly_what_the_cluster_role_grants():
+    tsx = (ROOT / "frontend/components/cbom/sources/ClustersDatabasesTab.tsx").read_text()
+    for tier, text in TIER_TEXT.items():
+        assert f'description: "{text}"' in tsx, f"Tier {tier} text changed: update TIER_TEXT and its claims"
+    assert TIER_TEXT[1] == ", ".join(TIER1_CLAIMS)
+    claimed = set().union(*TIER1_CLAIMS.values())
+    assert claimed | {("", "namespaces")} == _grants(templates.K8S_TIER1)
+    assert _grants(templates.K8S_TIER2) - _grants(templates.K8S_TIER1) == {("", "secrets")}
+    tier_block = tsx[tsx.index('name="k8s-tier"'):tsx.index('data-testid="k8s-tier2-warning"')]
+    shown = " ".join(re.findall(r'(?:title|description): "([^"]*)"', tier_block)).lower()
+    assert "tier 1" in shown and "tier 2" in shown
+    for word in ("image", "issuer", "pod"):
+        assert word not in shown, f"the tier choice claims {word}s, which no tier reads"
+
 def test_postgres_grant_installs_a_locked_down_hash_type_function():
     sql = templates.template_text("grant-postgres")
     assert "SECURITY DEFINER" in sql and "SET search_path = pg_catalog, pg_temp" in sql

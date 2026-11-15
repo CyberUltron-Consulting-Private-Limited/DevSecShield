@@ -1,8 +1,23 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { generateFindingRemediation, type RemediationData } from "@/utils/backend_api";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  askCbomAi,
+  generateFindingRemediation,
+  getCbomAiStatus,
+  getCbomRunAssetRemediation,
+  type CbomAiAnswer,
+  type RemediationData,
+} from "@/utils/backend_api";
+import {
+  aiFixButtonLabel,
+  aiFixLabel,
+  aiPanelVisible,
+  citationLabel,
+  outcomeNote,
+  remediationBadge,
+} from "@/components/cbom/results/aiPanelLogic";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -30,6 +45,12 @@ interface RemediationPanelProps {
   /** CBOM: first line number of the stored code window and the reported line (for line numbers). */
   snippetStart?: number | null;
   line?: number | null;
+  /** CBOM Sources run asset (CB-38): load from GET /runs/{runId}/assets/{assetId}/remediation instead of the scan route.
+   * The panel then hides itself when the server has no such route (older backend). */
+  runAsset?: { runId: number; assetId: number } | null;
+  /** CBOM: false where the dialog already shows the knowledge-base details (the run dialog's AssetDetailPanel), so
+   * "Standards and regulations" is not shown twice (#266). */
+  standardsTab?: boolean;
 }
 
 function CopyButton({ text }: { text: string }) {
@@ -124,36 +145,67 @@ function CodeWithLines({ code, start, highlight, tone }: { code: string; start?:
  * rebuild; a stored result is shown first only when it already has the current shape (engine stamp), and a failed
  * rebuild is reported even when an older result is on screen. Views without a scan (the CI page) show what they
  * were given. */
-function CbomKnowledgePanel({ teamId, scanId, findingId, existingRemediation, snippetStart, line }: RemediationPanelProps) {
+function CbomKnowledgePanel({ teamId, scanId, findingId, existingRemediation, snippetStart, line, runAsset, standardsTab = true }: RemediationPanelProps) {
   const stored = existingRemediation?.source === "knowledge_base" && existingRemediation.status === "completed"
     && !!existingRemediation.engine;
-  const canLoad = Number.isInteger(scanId) && scanId > 0 && !!findingId;
+  const canLoad = runAsset ? runAsset.runId > 0 && runAsset.assetId > 0 : Number.isInteger(scanId) && scanId > 0 && !!findingId;
   const [data, setData] = useState<RemediationData | null>(stored ? existingRemediation! : null);
   const load = useMutation({
     mutationFn: () =>
-      generateFindingRemediation({ team_id: parseInt(teamId, 10), type: "cbom", scan_id: scanId, finding_id: findingId }),
+      runAsset
+        ? getCbomRunAssetRemediation(parseInt(teamId, 10), runAsset.runId, runAsset.assetId)
+        : generateFindingRemediation({ team_id: parseInt(teamId, 10), type: "cbom", scan_id: scanId, finding_id: findingId }),
     onSuccess: (d) => setData(d),
-    onError: (err) => showErrorToast(err, "Could not load the remediation"),
+    onError: (err) => {
+      if (!(runAsset && remediationRouteMissing(err))) showErrorToast(err, "Could not load the remediation");
+    },
   });
   useEffect(() => {
     if (canLoad) load.mutate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [findingId, scanId]);
+  }, [findingId, scanId, runAsset?.runId, runAsset?.assetId]);
   useEffect(() => {
     if (!canLoad && existingRemediation?.source === "knowledge_base") setData(existingRemediation);
   }, [canLoad, existingRemediation]);
 
   const fix = data?.code_fix;
   const demo = data?.exploit_demo;
-  const defaultTab = fix?.available ? "fix" : demo ? "exploit" : "details";
+  // AI fix generation (CB-38): offered when the deployment has the assistant (AWS Bedrock or an on-prem model)
+  const teamNumber = parseInt(teamId, 10);
+  const aiStatus = useQuery({
+    queryKey: ["cbom-ai-status", teamNumber],
+    queryFn: () => getCbomAiStatus(teamNumber),
+    // run dialogs carry their own AiRemediationPanel; this one is for code findings only
+    enabled: Number.isInteger(teamNumber) && teamNumber > 0 && canLoad && !runAsset,
+    staleTime: 60_000,
+    retry: false,
+  });
+  const aiAvailable = !runAsset && aiPanelVisible(aiStatus.data) && canLoad;
+  const [aiFix, setAiFix] = useState<CbomAiAnswer | null>(null);
+  useEffect(() => { setAiFix(null); }, [findingId, scanId]);
+  const askFix = useMutation({
+    mutationFn: () => askCbomAi({ team_id: teamNumber, subject: { kind: "scan_finding", scanId, findingId }, mode: "fix" }),
+    onMutate: () => setAiFix(null),
+    onSuccess: (a) => setAiFix(a),
+  });
+  const aiFixNote = outcomeNote(aiFix);
+  const aiDiff = aiFix?.status === "ok" ? aiFix.fix?.diff ?? "" : "";
+  const defaultTab = fix?.available || aiAvailable ? "fix" : demo ? "exploit" : standardsTab ? "details" : "fix";
+  // an older backend has no run-asset route: say nothing rather than an error (the dialog keeps its KB details);
+  // after every hook, so the hook count never changes between renders (rules of hooks)
+  if (runAsset && load.isError && remediationRouteMissing(load.error) && !data) return null;
   return (
     <div className="space-y-3 pt-2" data-testid="cbom-kb-panel">
       <div className="flex items-center gap-2">
         <Shield className="h-4 w-4 text-green-600 dark:text-green-400" />
         <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">Remediation, fix code and exploit demo</span>
         {data?.kb_version && (
-          <Badge variant="outline" className="ml-auto text-[10px]" title="Built in-house from rewrite rules and the offline crypto knowledge base; no AI, no network, no credits">
-            In-house · KB {data.kb_version} · no AI
+          <Badge variant="outline" className="ml-auto h-auto max-w-full whitespace-normal break-words text-left text-[10px]"
+            data-testid="cbom-kb-badge"
+            title={aiFix?.status === "ok" && aiFix.fix
+              ? "The fix shown under Fix code was written by an AI model and checked by the product; the rest is built in-house from the offline crypto knowledge base"
+              : "Built in-house from rewrite rules and the offline crypto knowledge base; no AI, no network, no credits"}>
+            {remediationBadge(data.kb_version, aiFix)}
           </Badge>
         )}
       </div>
@@ -172,11 +224,13 @@ function CbomKnowledgePanel({ teamId, scanId, findingId, existingRemediation, sn
       )}
       {data && (
         <Tabs defaultValue={defaultTab} key={defaultTab} className="w-full">
-          <TabsList className="w-full grid grid-cols-4">
+          <TabsList className={`w-full grid ${standardsTab ? "grid-cols-4" : "grid-cols-3"}`}>
             <TabsTrigger value="fix" className="text-xs gap-1" data-testid="cbom-tab-fix"><Shield className="h-3 w-3" />Fix code</TabsTrigger>
-            <TabsTrigger value="diff" className="text-xs gap-1" data-testid="cbom-tab-diff" disabled={!data.diff}>Diff</TabsTrigger>
+            <TabsTrigger value="diff" className="text-xs gap-1" data-testid="cbom-tab-diff" disabled={!data.diff && !aiDiff}>Diff</TabsTrigger>
             <TabsTrigger value="exploit" className="text-xs gap-1" data-testid="cbom-tab-exploit" disabled={!demo}><Zap className="h-3 w-3" />Exploit demo</TabsTrigger>
-            <TabsTrigger value="details" className="text-xs gap-1" data-testid="cbom-tab-details">Standards</TabsTrigger>
+            {standardsTab && (
+              <TabsTrigger value="details" className="text-xs gap-1" data-testid="cbom-tab-details">Standards</TabsTrigger>
+            )}
           </TabsList>
 
           <TabsContent value="fix" className="mt-3 space-y-3" data-testid="cbom-fix">
@@ -221,7 +275,68 @@ function CbomKnowledgePanel({ teamId, scanId, findingId, existingRemediation, sn
               </div>
             )}
             {!fix?.available && (
-              <p className="text-xs text-zinc-500">No automatic code change for this finding: follow the steps under Standards.</p>
+              <p className="text-xs text-zinc-500">
+                {runAsset
+                  ? `No automatic code change for this asset (a setting, certificate or key, not source code): follow the fix steps and verify commands ${standardsTab ? "under Standards" : "in the details above"}.`
+                  : "No automatic code change for this finding: follow the steps under Standards."}
+              </p>
+            )}
+            {aiAvailable && (
+              <div className="space-y-2 rounded-md border border-violet-200 p-3 dark:border-violet-800" data-testid="cbom-ai-fix">
+                <Button size="sm" variant={fix?.available ? "outline" : "default"} className="h-7 gap-1.5 text-xs"
+                  disabled={askFix.isPending} onClick={() => askFix.mutate()} data-testid="cbom-ai-fix-generate">
+                  {askFix.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3" />}
+                  {aiFixButtonLabel(aiStatus.data, !!fix?.available)}
+                </Button>
+                {askFix.isPending && <p className="text-xs text-zinc-500">Asking the model (up to 90 s)…</p>}
+                {askFix.isError && (
+                  <p className="text-xs text-amber-700 dark:text-amber-400" data-testid="cbom-ai-fix-request-error">
+                    The AI assistant could not be reached. The knowledge-base remediation is unaffected.
+                  </p>
+                )}
+                {aiFixNote && (
+                  <div className="flex gap-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
+                    data-testid={aiFix?.status === "withheld" ? "cbom-ai-fix-withheld" : "cbom-ai-fix-note"}>
+                    <AlertTriangle className="h-4 w-4 shrink-0" />
+                    <span>{aiFix?.status === "withheld" ? `${aiFix.withheld_reason}. Follow the knowledge-base steps under Standards.` : aiFixNote.text}</span>
+                  </div>
+                )}
+                {aiFix?.status === "ok" && aiFix.fix && (
+                  <div className="space-y-2" data-testid="cbom-ai-fix-result">
+                    <Badge variant="outline" className="h-auto max-w-full whitespace-normal break-words border-violet-300 text-left text-[10px] text-violet-800 dark:border-violet-700 dark:text-violet-300"
+                      data-testid="cbom-ai-fix-label">
+                      {aiFixLabel(aiFix)}
+                    </Badge>
+                    <ul className="list-disc space-y-1 pl-5 text-sm text-zinc-700 dark:text-zinc-300">
+                      {aiFix.fix.explanation.map((e, i) => (
+                        <li key={i} className="whitespace-pre-wrap break-words">
+                          {e.text}
+                          {e.cites.map((c) => (
+                            <Badge key={c} variant="outline" className="ml-1 px-1 py-0 text-[10px] font-normal">{citationLabel(c, aiFix.items)}</Badge>
+                          ))}
+                        </li>
+                      ))}
+                    </ul>
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-medium text-violet-700 dark:text-violet-300">
+                          {aiFix.fix.kind === "config" ? "Configuration change (AI)" : "Fixed code (AI)"}
+                        </span>
+                        <CopyButton text={aiFix.fix.fixed_code} />
+                      </div>
+                      <CodeWithLines code={aiFix.fix.fixed_code} start={aiFix.fix.start_line} highlight={null} tone="green" />
+                    </div>
+                    {aiFix.fix.notes.length > 0 && (
+                      <ul className="list-disc space-y-0.5 pl-5 text-xs text-zinc-500">{aiFix.fix.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>
+                    )}
+                    {(aiFix.checks ?? []).length > 0 && (
+                      <p className="text-[11px] text-zinc-500" data-testid="cbom-ai-fix-checks">
+                        Checked: {(aiFix.checks ?? []).map((c) => c.note ? `${c.name} (${c.note})` : c.name).join("; ")}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
             )}
             {(fix?.notes ?? []).length > 0 && (
               <div className="rounded-md bg-blue-50 p-3 text-xs text-blue-800 dark:bg-blue-900/20 dark:text-blue-300">
@@ -231,8 +346,14 @@ function CbomKnowledgePanel({ teamId, scanId, findingId, existingRemediation, sn
             )}
           </TabsContent>
 
-          <TabsContent value="diff" className="mt-3">
-            {data.diff ? <DiffViewer diff={data.diff} /> : <p className="text-xs text-zinc-500">No code change to show.</p>}
+          <TabsContent value="diff" className="mt-3 space-y-3">
+            {data.diff ? <DiffViewer diff={data.diff} /> : !aiDiff && <p className="text-xs text-zinc-500">No code change to show.</p>}
+            {aiDiff && aiFix && (
+              <div className="space-y-1" data-testid="cbom-ai-fix-diff">
+                <span className="text-xs font-medium text-violet-700 dark:text-violet-300">{aiFixLabel(aiFix)}</span>
+                <DiffViewer diff={aiDiff} />
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="exploit" className="mt-3 space-y-3" data-testid="cbom-exploit">
@@ -280,13 +401,21 @@ function CbomKnowledgePanel({ teamId, scanId, findingId, existingRemediation, sn
             )}
           </TabsContent>
 
-          <TabsContent value="details" className="mt-3">
-            <KbFindingDetails details={data.details ?? []} />
-          </TabsContent>
+          {standardsTab && (
+            <TabsContent value="details" className="mt-3">
+              <KbFindingDetails details={data.details ?? []} />
+            </TabsContent>
+          )}
         </Tabs>
       )}
     </div>
   );
+}
+
+/** 404 / 405 from the run-asset remediation route: the server predates it. */
+function remediationRouteMissing(err: unknown): boolean {
+  const status = (err as { response?: { status?: number } } | null)?.response?.status;
+  return status === 404 || status === 405;
 }
 
 export default function RemediationPanel(props: RemediationPanelProps) {

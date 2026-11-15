@@ -9,8 +9,13 @@ import type { ComponentType } from "react";
 import type { CbomFleetStatus } from "@/utils/api/cbom_fleet";
 
 // F1.2 import
+import CredentialsSection from "./CredentialsSection";
+import InventorySection from "./InventorySection";
+import PoliciesSection from "./PoliciesSection";
 // F1.3 import
+import TransportsSection from "./TransportsSection";
 // F1.4 import
+import { SshCaFleetSection } from "./SshCaSection";
 
 export interface FleetSectionProps {
   teamId: number;
@@ -25,6 +30,11 @@ export interface FleetSection {
 
 export const FLEET_SECTIONS: FleetSection[] = [
   // F1.2
+  { id: "inventory", flag: "inventory", Component: InventorySection },
+  { id: "policies", flag: "policies", Component: PoliciesSection },
+  { id: "credentials", flag: "policies", Component: CredentialsSection },
   // F1.3
+  { id: "transports", flag: "transports", Component: TransportsSection },
   // F1.4
+  { id: "ssh-ca", flag: "ssh_ca", Component: SshCaFleetSection },
 ];
