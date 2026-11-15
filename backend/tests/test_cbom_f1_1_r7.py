@@ -734,10 +734,21 @@ def test_c2_a_refund_due_job_is_settled_by_the_next_reaper_pass_once(api, world)
     p = client.claim()
     with Session(engine) as s:
         before = s.get(Team, 1).credit_balance
-    F._finish(client, p, status="failure")  # the run still has a pending job: nothing is settled yet
+    # the job end marks the refund due on its own row; it is settled right after that commit (CB-14: the refund
+    # shows at once), outside the job's transaction, so no job end ever locks the run or team row (DA C2)
+    F._finish(client, p, status="failure")
     with Session(engine) as s:
-        assert s.get(CbomCollectionRun, run_id).credits_refunded_c == 0
-        assert s.get(Team, 1).credit_balance == pytest.approx(before)
+        run = s.get(CbomCollectionRun, run_id)
+        assert run.credits_refunded_c == run.credits_charged_c // 2
+        assert s.get(Team, 1).credit_balance == pytest.approx(before + run.credits_refunded_c / 100)
+    # a settlement that did not run after the commit (a crash between the two) is the reaper's: once, never twice
+    with Session(engine) as s:
+        s.exec(update(CbomCollectionJob).where(CbomCollectionJob.id == p["job"]["id"]).values(refunded=False))
+        s.exec(update(CbomCollectionRun).where(CbomCollectionRun.id == run_id).values(credits_refunded_c=0))
+        team = s.get(Team, 1)
+        team.credit_balance = before
+        s.add(team)
+        s.commit()
     reap_all(engine)
     reap_all(engine)
     with Session(engine) as s:
@@ -1052,7 +1063,7 @@ def test_d2_hint_fan_out_through_the_real_routers_is_bounded_by_the_rate(api, wo
             s.add(CbomScanNode(team_id=1, owner_user_id=1, name=f"fan-{i}", segment="DC", enrolled_at=dt.datetime.utcnow(),
                                node_token_hash=hashlib.sha256(token.encode()).hexdigest(), signing_public_key=pub,
                                capabilities={"collectors": ["linux_servers"], "max_jobs": 2, "protocol": 2}))
-            nodes.append([token, 0])  # token, grants
+            nodes.append([token, 0, None])  # token, grants, the grant's claim ticket
         s.commit()
     F._segment_sources(engine, nodes_n)
     F._run(api)
@@ -1068,19 +1079,24 @@ def test_d2_hint_fan_out_through_the_real_routers_is_bounded_by_the_rate(api, wo
         clock["t"] = 1000.0 + step * 0.1
         window = int(clock["t"] - 1000.0)
         for node in nodes[step * 20:(step + 1) * 20]:
-            node[1] = call(node[0], "/cbom/node/heartbeat").json()["claim"]
+            hb = call(node[0], "/cbom/node/heartbeat").json()
+            node[1], node[2] = hb["claim"], hb.get("claim_ticket")
         for node in nodes:
             while node[1] > 0:
                 node[1] -= 1
-                r = call(node[0], "/cbom/node/jobs/claim")
+                r = call(node[0], "/cbom/node/jobs/claim", {"claim_ticket": node[2]} if node[2] else None)
                 if r.status_code != 200:
                     node[1] = 0
                     break
                 claims_per_window[window] = claims_per_window.get(window, 0) + 1
                 job = r.json()["job"]
-                done = call(node[0], f"/cbom/node/jobs/{job['id']}/result",
-                            {"lease_id": job["lease_id"], "status": "success", "result": {"counts": {"ok": 1}}})
-                node[1] = r.json()["claim"] + done.json()["claim"]
+                node[1], node[2] = r.json()["claim"], r.json().get("claim_ticket")
+                body = {"lease_id": job["lease_id"], "status": "success", "result": {"counts": {"ok": 1}}}
+                if node[1] > 0 and node[2]:
+                    body["claim_ticket"] = node[2]  # as the node: unused claims are topped up, not paid twice
+                done = call(node[0], f"/cbom/node/jobs/{job['id']}/result", body)
+                # as the node: the newest answer's grant and its ticket (the result was sent after the claim)
+                node[1], node[2] = done.json()["claim"], done.json().get("claim_ticket")
     assert claims_per_window and max(claims_per_window.values()) <= 1.1 * rate, claims_per_window
     assert sum(claims_per_window.values()) >= 4 * rate, claims_per_window  # and it does dispatch at the rate
 
@@ -1158,7 +1174,8 @@ def test_d2_one_team_draining_the_bucket_cannot_starve_another_team():
 def test_d2_a_worker_whose_node_threads_are_all_queued_grants_no_new_work():
     """EC2 E2a/E4a (round 7): at the default rate the bucket granted 75 claims/s while the box served about 24 jobs/s
     of the 5.2 mix, so node requests queued for threads until clients timed out.  A worker whose node requests wait
-    for a thread gives no new permits (grant 0, a fresh claim 204); grants it already gave stay valid."""
+    for a thread gives no new permits (grant 0, a fresh claim 204); grants it already gave stay valid (the claim
+    carries their ticket)."""
     _t, clock = _virtual()
     busy = [False]
     d = D.Dispatcher(10, clock=clock, busy=lambda: busy[0])
@@ -1166,12 +1183,102 @@ def test_d2_a_worker_whose_node_threads_are_all_queued_grants_no_new_work():
     busy[0] = True
     assert d.grant(2, 1, 2) == 0
     assert d.admit(3, 1) is None
-    assert d.admit(1, 1) == "grant"  # already paid: honoured
-    assert d.grant(1, 1, 2) == 1  # the remaining held grant, nothing new
+    assert d.admit(1, 1, granted=True) == "grant"  # already paid: honoured
     counters = d.take_counters()
-    assert counters["dispatch_held_busy"] == 3
+    assert counters["dispatch_held_busy"] == 2
     busy[0] = False
     assert d.grant(2, 1, 2) == 2
+
+
+def test_e3_grant_locality_a_ticket_is_honoured_by_any_worker_and_cannot_be_forged(monkeypatch):
+    """#41 owner item (EC2 E2a run 3): a grant was remembered only by the worker that gave it, so with 3 workers two
+    of three claims landed where no grant was held (12,045 granted, 3,452 taken, 5,632 denied).  The grant is now an
+    HMAC ticket every worker checks with the same deployment key: no process state."""
+    monkeypatch.setenv("CBOM_DISPATCH_KEY", "k-one")
+    D.reset(None)
+    issued = dt.datetime(2026, 11, 15, 6, 0, 0, 123456)
+    t = D.ticket(7, 2, issued)
+    soon = issued + dt.timedelta(seconds=1)
+    assert D.read_ticket(t, 7, soon) == (2, issued)
+    assert D.read_ticket(t, 8, soon) is None  # another node's ticket buys nothing
+    assert D.read_ticket(t, 7, issued + dt.timedelta(seconds=D.GRANT_TTL_S + 1)) is None  # expired
+    forged = t[:-1] + ("A" if t[-1] != "A" else "B")
+    assert D.read_ticket(forged, 7, soon) is None
+    raised = t.replace("g1.7.2.", "g1.7.9.")
+    assert D.read_ticket(raised, 7, soon) is None  # n is under the MAC
+    assert D.ticket(7, 0, issued) is None
+    monkeypatch.setenv("CBOM_DISPATCH_KEY", "k-two")
+    D.reset(None)  # another deployment (or a rotated key): an old ticket falls back to a fresh permit
+    assert D.read_ticket(t, 7, soon) is None
+    D.reset(None)
+
+
+def test_e3_a_claim_granted_by_one_worker_is_served_by_another_with_an_empty_bucket(api, world, monkeypatch):
+    """Through the real routers and the real node client: worker A's heartbeat grants a claim; the claim reaches worker
+    B, whose bucket is empty.  With the ticket it is served; without it (or once the ticket is used up) it is 204."""
+    monkeypatch.setenv("CBOM_DISPATCH_KEY", "shared-deployment-key")
+    engine, _ = world
+    node_id, client, _key, _ = F._signed_node(api)
+    _pinned_jobs(engine, node_id, 3, window="any")
+    _t, clock = _virtual()
+    worker_a = D.Dispatcher(10, clock=clock, start_full=True)
+    worker_b = D.Dispatcher(10, clock=clock, start_full=False)  # nothing left to give
+    D.reset(worker_a)
+    hb = client.heartbeat({"capabilities": {"collectors": ["linux_servers"], "max_jobs": 1, "protocol": 2}})
+    assert hb["claim"] == 1 and hb["claim_ticket"]
+    D.reset(worker_b)
+    assert client.claim({"mode": "agentless"}) is None  # no ticket: B has no permit
+    first = client.claim({"mode": "agentless", "claim_ticket": hb["claim_ticket"]})
+    assert first is not None and first["job"]["id"]
+    assert worker_b.counters["dispatch_taken"] == 1 and worker_b.level() < 1.0
+    # replaying the same ticket: its one claim is used (a job claimed after it was issued), so it buys nothing
+    assert client.claim({"mode": "agentless", "claim_ticket": hb["claim_ticket"]}) is None
+    with Session(engine) as s:
+        claimed = s.exec(select(CbomCollectionJob).where(CbomCollectionJob.node_id == node_id,
+                                                         CbomCollectionJob.status == "claimed")).all()
+    assert len(claimed) == 1
+    D.reset(None)
+
+
+def test_e3_an_answer_tops_the_nodes_grant_up_instead_of_paying_for_it_twice(api, world, monkeypatch):
+    """The node sends its ticket with claims, heartbeats and results; the claims still unused on it count towards the
+    answer's grant, so a heartbeat's grant of 2 followed by a claim (1 used, 1 left) takes no new permit."""
+    monkeypatch.setenv("CBOM_DISPATCH_KEY", "shared-deployment-key")
+    engine, _ = world
+    node_id, client, _key, _ = F._signed_node(api)
+    _pinned_jobs(engine, node_id, 4, window="any")
+    _t, clock = _virtual()
+    d = D.Dispatcher(10, clock=clock, start_full=True)
+    D.reset(d)
+    caps = {"collectors": ["linux_servers"], "max_jobs": 2, "protocol": 2}
+    hb = client.heartbeat({"capabilities": caps})
+    assert hb["claim"] == 2 and d.counters["dispatch_granted"] == 2
+    p = client.claim({"mode": "agentless", "claim_ticket": hb["claim_ticket"]})
+    assert p["claim"] == 1 and d.counters["dispatch_granted"] == 2  # the unused claim carried over, no new permit
+    again = client.heartbeat({"capabilities": caps, "claim_ticket": p["claim_ticket"],
+                              "running": [{"job_id": p["job"]["id"], "lease_id": p["job"]["lease_id"]}]})
+    assert again["claim"] == 1 and d.counters["dispatch_granted"] == 2
+    second = client.claim({"mode": "agentless", "claim_ticket": again["claim_ticket"]})
+    assert second is not None and second["claim"] == 0  # both slots busy
+    assert d.counters["dispatch_granted"] == 2 and d.counters["dispatch_taken"] == 2
+    D.reset(None)
+
+
+def test_e3_the_node_sends_the_ticket_of_the_newest_grant(tmp_path, monkeypatch):
+    """The node keeps the ticket of the answer that set its grant and sends it with the claim; an older answer (even
+    with a ticket) never replaces it, and a 204 drops it."""
+    from zs_scan_node import agent as A
+
+    ag = A.Agent.__new__(A.Agent)
+    import threading as _threading
+
+    ag.lock, ag.claim_wanted = _threading.Lock(), _threading.Event()
+    ag.server_hints, ag.grants, ag.grant_sent, ag.grant_ticket = None, 0, 0.0, None
+    ag.take_grant({"claim": 2, "protocol": 2, "claim_ticket": "g1.new"}, sent=10.0)
+    ag.take_grant({"claim": 1, "protocol": 2, "claim_ticket": "g1.old"}, heartbeat=True, sent=5.0)
+    assert ag.grants == 2 and ag.grant_ticket == "g1.new"
+    ag.take_grant({"claim": 0, "protocol": 2, "claim_ticket": None}, sent=11.0)
+    assert ag.grants == 0 and ag.grant_ticket is None
 
 
 def test_d2_the_workers_dispatcher_is_busy_while_node_requests_wait_for_a_thread(monkeypatch):
@@ -1403,7 +1510,8 @@ def test_a1_every_node_response_carries_server_timing_and_a_request_id(api, worl
         assert "app;dur=" in timing and "tp;dur=" in timing and "pool;dur=" in timing, (r.status_code, timing)
         assert r.headers.get("X-ZS-Request-Id")
     assert (ok.status_code, bad.status_code, none.status_code) == (200, 401, 204)
-    assert ok.headers["X-ZS-Request-Id"] == "trace-abc.123"
+    # dev's build identity (CB-31): the id is always the server's own, never the caller's; the caller's is only logged
+    assert ok.headers["X-ZS-Request-Id"] != "trace-abc.123" and len(ok.headers["X-ZS-Request-Id"]) >= 16
 
 
 def test_a1_a_claim_whose_commit_fails_is_not_logged_as_claimed(api, world, capsys, monkeypatch):

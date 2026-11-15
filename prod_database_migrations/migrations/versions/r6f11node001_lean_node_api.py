@@ -10,9 +10,11 @@ Create Date: 2026-11-11 12:00:00.000000
 * ``cbomcollectionsource.node_segment`` / ``cbomcollectionjob.node_segment`` (varchar 64, NULL): a source with a
   segment and no node queues segment jobs that any agentless node of the team in that ``cbomscannode.segment``
   may claim; NULL everywhere for existing rows, so every existing source and job behaves as before.
-* ``cbomcollectionjob.refund_due`` (bool, false): a job end marks its credits owed here; ``jobs.settle_refunds`` moves
-  the money in one statement per run and sets ``refunded`` (partial index ``ix_cbomcollectionjob_refund_due``).
+* ``cbomcollectionjob.refund_due`` (bool, false): a job end marks its credits owed here (the amount in CB-14's
+  ``refunded_c``); ``jobs.settle_refunds`` moves the money right after that commit, or in the reaper's pass, and sets
+  ``refunded`` (partial index ``ix_cbomcollectionjob_refund_due``).
 * Indexes for the claim, heartbeat, reaper and run-status paths; the partial ones cover only open jobs.
+  ``(node_id, claimed_at)`` counts the claims a node made since a claim ticket was issued (stateless grants).
 * Each node's replay window is seeded from the protocol-2 (``s2_``) nonces the previous code stored in
   ``cbomnodenonce`` (security review S5): the highest such sequence becomes ``replay_hwm`` with every window bit set,
   so a request the older code accepted is refused by this code.  Only well-formed values count (``s2_`` + 19 digits,
@@ -48,6 +50,7 @@ INDEXES = (
     ('ix_cbomcollectionjob_pending_created', ['created_at'], PENDING),
     ('ix_cbomcollectionjob_team_status_segment', ['team_id', 'status', 'node_segment', 'id'], None),
     ('ix_cbomcollectionjob_refund_due', ['run_id'], "refund_due AND NOT refunded"),
+    ('ix_cbomcollectionjob_node_claimed_at', ['node_id', 'claimed_at'], None),  # claim tickets' used claims
 )
 _S2 = re.compile(r"^s2_([0-9]{19})$")
 _TOP = (1 << 63) - 1

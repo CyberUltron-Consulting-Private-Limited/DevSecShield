@@ -567,6 +567,8 @@ _SaIndex("ix_cbomcollectionjob_pending_created", CbomCollectionJob.created_at,
          postgresql_where=_PENDING, sqlite_where=_PENDING)
 _SaIndex("ix_cbomcollectionjob_team_status_segment", CbomCollectionJob.team_id, CbomCollectionJob.status,
          CbomCollectionJob.node_segment, CbomCollectionJob.id)
+# claims a node made after a claim ticket was issued (dispatch: a ticket's used claims, counted only when one is sent)
+_SaIndex("ix_cbomcollectionjob_node_claimed_at", CbomCollectionJob.node_id, CbomCollectionJob.claimed_at)
 _REFUND_DUE = _sa_text("refund_due AND NOT refunded")
 _SaIndex("ix_cbomcollectionjob_refund_due", CbomCollectionJob.run_id,
          postgresql_where=_REFUND_DUE, sqlite_where=_REFUND_DUE)

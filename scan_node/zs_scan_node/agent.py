@@ -123,6 +123,7 @@ class Agent:
         # does not fall back to polling a server that may be recovering)
         self.server_hints: bool | None = None
         self.grants = 0  # claims the last answer granted (protocol 2)
+        self.grant_ticket: str | None = None  # that answer's ``claim_ticket``: sent with the claims it pays for
         self.grant_sent = 0.0  # when the request whose answer set ``grants`` was sent (monotonic)
         self.claim_wanted = threading.Event()
         self.last_error: str | None = None
@@ -228,8 +229,11 @@ class Agent:
     def heartbeat_once(self) -> None:
         with self.lock:
             running = [{"job_id": r.job_id, "lease_id": r.lease_id} for r in self.running.values()]
+            ticket = self.grant_ticket if self.grants > 0 else None
         body = {"hostname": socket.gethostname()[:255], "version": reported_version(), "source_ips": local_ips(),
                 "capabilities": self.capabilities(), "clock": _now_iso(), "running": running}
+        if ticket:
+            body["claim_ticket"] = ticket  # its unused claims count towards this answer's grant (never paid twice)
         if self.last_error:
             body["last_error"] = global_scrubber().text(self.last_error)[:1900]
         sent = time.monotonic()
@@ -271,6 +275,9 @@ class Agent:
                 return
             self.grant_sent = sent
             self.grants = max(0, min(n, 8))
+            ticket = data.get("claim_ticket")
+            # any backend worker honours it (a grant is not remembered by the worker that gave it, F1.1)
+            self.grant_ticket = ticket if self.grants and isinstance(ticket, str) and len(ticket) <= 80 else None
         if self.grants:
             self.claim_wanted.set()
 
@@ -386,14 +393,19 @@ class Agent:
                 self.claim_wanted.clear()
                 continue
             self.claim_wanted.clear()
+            ticket = None
             if self.server_hints:
                 with self.lock:
                     self.grants = max(0, self.grants - 1)
+                    ticket = self.grant_ticket
             sent = time.monotonic()
             try:
                 # the mode goes with every claim: a node restarted in agent mode is never handed a secret, even
                 # before its first heartbeat reaches ZeroShield
-                payload = self.api.claim({"mode": "agent" if self.agent_mode else "agentless"})
+                body: dict = {"mode": "agent" if self.agent_mode else "agentless"}
+                if ticket:
+                    body["claim_ticket"] = ticket  # the grant that pays for this claim, whichever worker answers
+                payload = self.api.claim(body)
             except Unauthorized:
                 self.on_unauthorized()
                 continue
@@ -410,6 +422,7 @@ class Agent:
                 if self.server_hints:
                     with self.lock:
                         self.grants = 0  # nothing (or no permit) now: wait for the next grant
+                        self.grant_ticket = None
                 else:
                     self.shutdown.wait(POLL_SECONDS)
                 continue
@@ -508,8 +521,13 @@ class Agent:
         body = {"lease_id": running.lease_id, "status": status, "result": result,
                 "error": ctx.scrubber.text(error)[:3900] if error else None}
         try:
+            body = ctx.scrubber.obj(body)
+            with self.lock:
+                ticket = self.grant_ticket if self.grants > 0 else None
+            if ticket:
+                body["claim_ticket"] = ticket  # its unused claims count towards the answer's grant
             sent = time.monotonic()
-            answer = self.api.result(running.job_id, ctx.attempt, ctx.scrubber.obj(body))
+            answer = self.api.result(running.job_id, ctx.attempt, body)
             self.take_grant(answer, sent=sent)  # the result answer grants the next claims
             ctx.log("job finished", status=status, assets=ctx.accepted, ok=result["counts"]["ok"],
                     failed=result["counts"]["failed"], skipped=result["counts"]["skipped"],
@@ -577,12 +595,13 @@ class Agent:
             self.running.pop(running.job_id, None)
             # a window end that arrived after the watcher's last tick is dropped with its job (review of #250)
             getattr(self, "job_window_ends", {}).pop(running.job_id, None)
-            wake = self.grants > 0 or not self.server_hints
+            wake = getattr(self, "grants", 0) > 0 or not getattr(self, "server_hints", None)
         close = getattr(running.ctx.never_scan, "close", None)
         if close is not None:
             close()  # the resolver stops looking up names no running job lists
-        if wake:
-            self.claim_wanted.set()  # a slot is free and a claim is granted (or an older server: poll)
+        wanted = getattr(self, "claim_wanted", None)
+        if wake and wanted is not None:
+            wanted.set()  # a slot is free and a claim is granted (or an older server: poll)
 
     # ------------------------------------------------------------------ main
     def run(self) -> None:

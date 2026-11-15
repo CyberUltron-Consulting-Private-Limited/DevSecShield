@@ -46,6 +46,13 @@ class FakeApi:
         self.claim_hints = False  # True: heartbeat answers carry "claim" like a protocol-2 server (F1.1)
         self.grants = False  # True: like this server: enroll says "protocol", every answer grants "claim": n
         self.fail_heartbeats = 0  # answer this many heartbeats 503
+        self.tickets_issued: list[str] = []  # grants mode: every answer that grants carries a claim_ticket
+        self.claim_tickets: list[str | None] = []  # the claim_ticket each claim body carried
+
+    def _ticket(self) -> str:
+        ticket = f"g1.t{len(self.tickets_issued)}"
+        self.tickets_issued.append(ticket)
+        return ticket
 
     def check_signature(self, method, path, headers, raw, key):
         ts, nonce, sig = (headers.get(h) for h in ("X-ZS-Timestamp", "X-ZS-Nonce", "X-ZS-Signature"))
@@ -112,17 +119,20 @@ class FakeApi:
                 answer["protocol"] = 2
                 with self.lock:
                     answer["claim"] = min(len(self.jobs), 2)
+                    answer["claim_ticket"] = self._ticket() if answer["claim"] else None
             elif self.claim_hints:
                 with self.lock:
                     answer["claim"] = bool(self.jobs)
             return 200, answer
         if path == "/cbom/node/jobs/claim":
             with self.lock:
+                self.claim_tickets.append((body or {}).get("claim_ticket") if isinstance(body, dict) else None)
                 if not self.jobs:
                     return 204, None
                 payload = self.jobs.pop(0)
                 if self.grants:
-                    payload = {**payload, "claim": 1 if self.jobs else 0}
+                    n = 1 if self.jobs else 0
+                    payload = {**payload, "claim": n, "claim_ticket": self._ticket() if n else None}
                 return 200, payload
         job_id = int(path.split("/")[4])
         if path.endswith("/assets"):
@@ -140,6 +150,7 @@ class FakeApi:
             if self.grants:
                 with self.lock:
                     out["claim"] = 1 if self.jobs else 0
+                    out["claim_ticket"] = self._ticket() if out["claim"] else None
             return 200, out
         return 404, {"detail": "no"}
 
@@ -438,6 +449,9 @@ def test_a_node_drains_its_queue_within_grants_without_waiting_for_heartbeats(se
     ag.shutdown.set()
     assert took <= 1.15 * 5.0, took
     assert api.calls.count("/cbom/node/heartbeat") == 1
+    # F1.1 grant locality: every claim carries a ticket the server issued (any backend worker can honour it)
+    sent = [t for t in api.claim_tickets if t]
+    assert len(sent) >= 19 and set(sent) <= set(api.tickets_issued), (api.claim_tickets, api.tickets_issued)
 
 
 def test_a_node_whose_heartbeats_fail_makes_no_claim_until_one_succeeds(server, tmp_path, monkeypatch):

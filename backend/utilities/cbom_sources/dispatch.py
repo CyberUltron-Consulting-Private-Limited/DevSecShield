@@ -5,11 +5,19 @@ permits come from ONE token bucket per worker process (``CBOM_DISPATCH_PER_WORKE
 of rate), so a 10,000-node fleet told about a 10,000-job run cannot turn every node into a closed-loop requester: the
 claims a deployment serves are bounded by rate x workers, whatever the fleet size.
 
-* ``grant(node, team, want)``: takes up to ``want`` permits for the node (the answer's ``n``) and remembers them for
-  ``GRANT_TTL_S``, so the claims that follow on this worker are already paid for.
-* ``admit(node, team)``: ``/jobs/claim`` asks before ``claim_next`` runs, for every node version (a 1.0 node polls
-  every 5 s and ignores grants): a remembered grant, else a fresh permit, else no (the claim answers 204 without
-  touching the queue).  ``give_back`` returns the permit when the claim then found nothing, so a 204 costs none.
+* ``grant(node, team, want)``: takes up to ``want`` permits for the node (the answer's ``n``).  The answer also carries
+  ``claim_ticket`` (``ticket``): an HMAC over (node, n, the jobs the node held, expiry) with a key every worker and
+  replica derives from the same deployment secret.  The node sends it back with its claims, so ANY worker honours a
+  claim another worker already paid for.  Nothing is remembered in the process (grant locality, EC2 E2a run 3:
+  12,045 grants given, 3,452 taken, 5,632 claims denied because two of three landed on a worker that did not hold the
+  grant).  A ticket is good for ``GRANT_TTL_S`` and for ``n`` claims: the jobs this node claimed after the ticket
+  was issued (one indexed count, ``ix_cbomcollectionjob_node_claimed_at``) are the claims already used, so replaying
+  it buys nothing.  The node also sends its ticket with heartbeats and results, so an answer tops a grant up instead
+  of paying for it twice (the claims still unused count towards the new ``n``).
+* ``admit(node, team, granted)``: ``/jobs/claim`` asks before ``claim_next`` runs, for every node version (a 1.0 node
+  polls every 5 s and sends no ticket): a valid ticket (``granted``), else a fresh permit, else no (the claim answers
+  204 without touching the queue).  ``give_back`` returns a fresh permit when the claim then found nothing, so a 204
+  costs none.
 * Fairness (max-min, per worker): while the bucket holds less than ``RESERVE`` of its burst, a permit goes only to a
   team whose use in the last second is below rate / active teams.  A team with one job waiting therefore gets it
   within a heartbeat even while another team's 10,000-node run drains the bucket.
@@ -19,11 +27,19 @@ claims a deployment serves are bounded by rate x workers, whatever the fleet siz
   EC2 round 7: at 25/s per worker the bucket granted 75 claims/s while the box served about 24 jobs/s of the 5.2
   mix; the surplus queued in front of the node threads until clients timed out (E2a, E4a).
 
-No database, no queue, a lock around a few floats.  Load shaping only: a node that claims without a permit simply gets
+No database, no queue, no per-node memory: a lock around a few floats, and an HMAC per answer that grants.  Load
+shaping only: a node that claims without a permit simply gets
 204, and every correctness rule (leases, guards, SKIP LOCKED) is unchanged.
 """
 from __future__ import annotations
 
+import base64
+import datetime as _dt
+import hashlib
+import hmac
+import os
+import re
+import secrets
 import threading
 import time
 from collections import deque
@@ -47,7 +63,6 @@ class Dispatcher:
         self.lock = threading.Lock()
         self.tokens = self.burst if start_full else 0.0
         self.last = clock()
-        self.grants: dict[int, tuple[int, float]] = {}
         self.team_use: dict[int, deque] = {}
         self.team_seen: dict[int, float] = {}
         self.counters = {"dispatch_granted": 0, "dispatch_taken": 0, "dispatch_returned": 0,
@@ -99,59 +114,46 @@ class Dispatcher:
 
     # -- API
     def grant(self, node_id: int, team_id: int, want: int) -> int:
-        """Permits for up to ``want`` claims by this node now (the answer's ``claim``)."""
+        """Permits for up to ``want`` claims by this node now (the answer's ``claim``; ``ticket`` carries them)."""
         if want <= 0:
             return 0
         with self.lock:
             now = self.clock()
             self._refill(now)
             self.team_seen[team_id] = now
-            held, expires = self.grants.get(node_id, (0, 0.0))
-            held = held if expires > now else 0
-            n = min(held, want)
-            if n < want and not self._saturated():
+            n = 0
+            if not self._saturated():
                 while n < want and self._permit(team_id, now):
                     n += 1
-            if n > held:
-                self.counters["dispatch_granted"] += n - held
-            if n:
-                self.grants[node_id] = (n, now + GRANT_TTL_S)
-            else:
-                self.grants.pop(node_id, None)
+            self.counters["dispatch_granted"] += n
             return n
 
-    def admit(self, node_id: int, team_id: int) -> str | None:
-        """May this node claim now?  'grant' (paid by an earlier answer), 'permit' (paid now) or None (answer 204)."""
+    def admit(self, node_id: int, team_id: int, granted: bool = False) -> str | None:
+        """May this node claim now?  'grant' (a valid ticket: paid by an earlier answer, on any worker), 'permit' (paid
+        now) or None (answer 204)."""
         with self.lock:
             now = self.clock()
             self._refill(now)
             self.team_seen[team_id] = now
-            held, expires = self.grants.get(node_id, (0, 0.0))
-            if held > 0 and expires > now:
-                if held > 1:
-                    self.grants[node_id] = (held - 1, expires)
-                else:
-                    self.grants.pop(node_id, None)
+            if granted:
                 self.counters["dispatch_taken"] += 1
                 return "grant"
-            self.grants.pop(node_id, None)
             if not self._saturated() and self._permit(team_id, now):
                 self.counters["dispatch_taken"] += 1
                 return "permit"
             self.counters["dispatch_denied"] += 1
             return None
 
-    def give_back(self) -> None:
-        """An admitted claim found nothing to run: its permit goes back to the bucket."""
+    def give_back(self, how: str | None = "permit") -> None:
+        """An admitted claim found nothing to run.  A fresh permit goes back to this worker's bucket; a ticket's permit
+        was taken from the bucket of the worker that granted it, so it is not credited here (never more than paid)."""
         with self.lock:
             self._refill(self.clock())
-            self.tokens = min(self.burst, self.tokens + 1.0)
-            self.counters["dispatch_returned"] += 1
-            self.counters["dispatch_204_after_grant"] += 1
-
-    def forget(self, node_id: int) -> None:
-        with self.lock:
-            self.grants.pop(node_id, None)
+            if how == "permit":
+                self.tokens = min(self.burst, self.tokens + 1.0)
+                self.counters["dispatch_returned"] += 1
+            else:
+                self.counters["dispatch_204_after_grant"] += 1
 
     def take_counters(self) -> dict[str, int]:
         with self.lock:
@@ -160,6 +162,60 @@ class Dispatcher:
             for key in self.counters:
                 self.counters[key] = 0
         return out
+
+
+# ----------------------------------------------------------------------------- claim tickets (stateless grants)
+_TICKET = re.compile(r"^g1\.([0-9]{1,10})\.([0-9])\.([0-9]{16})\.([A-Za-z0-9_-]{22})$")
+_KEY: list[bytes | None] = [None]
+TICKET_ENV = "CBOM_DISPATCH_KEY"
+_EPOCH = _dt.datetime(1970, 1, 1)
+
+
+def _key() -> bytes:
+    """The ticket key every worker and replica of a deployment shares: ``CBOM_DISPATCH_KEY`` if set, else derived from
+    ``JWT_SECRET_KEY`` (required by the backend).  Neither set (a bare test process): a random per-process key, so a
+    ticket is honoured only by the worker that gave it (the old behaviour), and the claim falls back to a permit."""
+    if _KEY[0] is None:
+        base = os.environ.get(TICKET_ENV) or os.environ.get("JWT_SECRET_KEY") or ""
+        if not base:
+            log("job dispatch: no shared key, claim tickets are worker-local", level="warn")
+            base = secrets.token_hex(32)
+        _KEY[0] = hashlib.sha256(b"zs-cbom-claim-ticket-v1|" + base.encode("utf-8")).digest()
+    return _KEY[0]  # type: ignore[return-value]
+
+
+def _mac(body: str) -> str:
+    raw = hmac.new(_key(), body.encode("ascii"), hashlib.sha256).digest()[:16]
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def _us(moment: _dt.datetime) -> int:
+    return int((moment - _EPOCH).total_seconds() * 1_000_000)
+
+
+def ticket(node_id: int, n: int, issued: _dt.datetime) -> str | None:
+    """The claim ticket for a grant of ``n`` claims to a node, issued at ``issued`` (the request's ``now``, UTC naive,
+    the clock ``claimed_at`` is written with).  None when n is 0."""
+    if n <= 0:
+        return None
+    body = f"g1.{int(node_id)}.{min(int(n), 9)}.{_us(issued):016d}"
+    return f"{body}.{_mac(body)}"
+
+
+def read_ticket(value: object, node_id: int, now: _dt.datetime) -> tuple[int, _dt.datetime] | None:
+    """(n, issued) of a valid, unexpired ticket given to this node, else None.  Constant-time MAC check.  How many of
+    its n claims are used is the caller's one indexed count (jobs this node claimed after ``issued``)."""
+    if not isinstance(value, str) or len(value) > 80:
+        return None
+    m = _TICKET.match(value)
+    if not m or int(m.group(1)) != int(node_id):
+        return None
+    if not hmac.compare_digest(_mac(value[:value.rindex(".")]), m.group(4)):
+        return None
+    issued = _EPOCH + _dt.timedelta(microseconds=int(m.group(3)))
+    if not issued - _dt.timedelta(seconds=5) <= now <= issued + _dt.timedelta(seconds=GRANT_TTL_S):
+        return None
+    return int(m.group(2)), issued
 
 
 _INSTANCE: list[Dispatcher | None] = [None]
@@ -183,6 +239,7 @@ def get() -> Dispatcher:
 
 
 def reset(dispatcher: Dispatcher | None = None) -> None:
-    """Replace (tests) or forget (re-read the rate at next use) the worker's dispatcher."""
+    """Replace (tests) or forget (re-read the rate and the ticket key at next use) the worker's dispatcher."""
     with _INSTANCE_LOCK:
         _INSTANCE[0] = dispatcher
+        _KEY[0] = None

@@ -27,7 +27,7 @@ from sqlalchemy import func, update
 from sqlmodel import Session, select
 
 from backend.get_db import get_db
-from backend.new_models import CbomNodePool, CbomScanNode
+from backend.new_models import CbomCollectionJob, CbomNodePool, CbomScanNode
 from backend.utilities import request_timing as RT
 from backend.utilities.cbom_sources import agents as AG
 from backend.utilities.cbom_sources import dispatch as D
@@ -425,13 +425,14 @@ def _heartbeat(token: str | None, req: NA.NodeRequest, raw: bytes, ip: str) -> d
             base = min(pending, free) if free > 0 else 0
         else:
             pending, base = J.claimable_count(session, node, settings, now), 0
+        carried = _ticket_left(session, node, body.claim_ticket, now) if base > 0 else None
         exclusions = team_exclusions(settings)
         # N4: when each running job's scan window ends (now, if the customer closed it): the node stops there
         window_ends = J.window_ends_for_node(session, node, settings, now, busy) if busy else {}
         J.defer_closers(session)
         session.commit()
         J.run_closers(session, now)
-    grant = D.get().grant(node.id, node.team_id, base) if base > 0 else 0
+    grant, ticket = _answer_grant(node, base, carried, now)
     if gap is not None and gap > 120:
         log("node back", team=node.team_id, node=node.id, gap_s=int(gap))
     return {"server_time": iso_z(now), "stop_all_network": settings.stop_all_network,
@@ -441,7 +442,7 @@ def _heartbeat(token: str | None, req: NA.NodeRequest, raw: bytes, ip: str) -> d
             # reaches it fast; a busy node, or one just granted claims, in between (limits.heartbeat_seconds)
             "heartbeat_interval_s": LIM.heartbeat_seconds(busy=bool(busy) or grant > 0, network=network),
             # protocol 2: how many claims the node may make now (0: wait for the next answer that grants one)
-            "claim": grant, "protocol": PROTOCOL}
+            "claim": grant, "claim_ticket": ticket, "protocol": PROTOCOL}
 
 
 @router.post("/cbom/node/heartbeat", dependencies=[Depends(node_limiter)], summary="Report that the node is alive")
@@ -453,6 +454,32 @@ async def heartbeat(request: Request, token: Annotated[str | None, Security(node
 
 
 # ----------------------------------------------------------------------------- claim
+def _ticket_left(session: Session, node: CbomScanNode, value: Any, now: _dt.datetime) -> int | None:
+    """Claims still unused on the ticket the node sent (``dispatch.ticket``, from any worker's answer), or None when it
+    sent none or one that is not valid (forged, another node's, expired).  The used ones are the jobs this node
+    claimed after the ticket was issued: one indexed count, only when a ticket is sent."""
+    if not value:
+        return None
+    grant = D.read_ticket(value, node.id, now)
+    if grant is None:
+        OBS.STATS.bump("dispatch_ticket_refused")
+        return None
+    n, issued = grant
+    used = session.exec(select(func.count()).select_from(CbomCollectionJob).where(
+        CbomCollectionJob.node_id == node.id, CbomCollectionJob.claimed_at > issued)).one()
+    return max(0, n - int(used))
+
+
+def _answer_grant(node: CbomScanNode, base: int, carried: int | None, now: _dt.datetime) -> tuple[int, str | None]:
+    """The answer's ``claim`` and ``claim_ticket``: the claims still unused on the node's ticket count first, and only
+    the rest takes new permits from this worker's bucket (a grant is topped up, never paid for twice)."""
+    if base <= 0:
+        return 0, None
+    keep = min(base, carried or 0)
+    n = keep + (D.get().grant(node.id, node.team_id, base - keep) if base > keep else 0)
+    return n, D.ticket(node.id, n, now)
+
+
 def _claim(token: str | None, req: NA.NodeRequest, raw: bytes, ip: str) -> tuple[dict | None, int]:
     """One claim.  Every node version draws on the worker's dispatch rate before the queue is read (no permit: 204
     without touching the queue; a claim that finds nothing returns its permit).  The node row is written as the
@@ -467,11 +494,13 @@ def _claim(token: str | None, req: NA.NodeRequest, raw: bytes, ip: str) -> tuple
         AG.reconcile_mode(session, node, body.mode if body else None, now)
         dispatcher = D.get()
         payload, base = None, 0
-        if dispatcher.admit(node.id, node.team_id):
+        left = _ticket_left(session, node, body.claim_ticket if body else None, now)
+        how = dispatcher.admit(node.id, node.team_id, granted=bool(left))
+        if how:
             settings = get_or_create_settings(session, node.team_id, commit=False)
             payload = J.claim_next(session, node, settings, now)
             if payload is None:
-                dispatcher.give_back()
+                dispatcher.give_back(how)
             else:
                 RT.note(job_id=payload["job"]["id"])
                 base = _grant_base(session, node, settings, now, len(J.claimed_jobs(session, node)))
@@ -486,7 +515,9 @@ def _claim(token: str | None, req: NA.NodeRequest, raw: bytes, ip: str) -> tuple
         J.run_closers(session, now)
     if payload is not None:
         OBS.STATS.bump("claims_committed")
-        payload["claim"] = dispatcher.grant(node.id, node.team_id, base) if base > 0 else 0
+        # this claim used one of the ticket's claims (when it came with one); the rest carry over
+        payload["claim"], payload["claim_ticket"] = _answer_grant(node, base, (left or 1) - 1 if how == "grant" else 0,
+                                                                  now)
     return payload, node.id  # type: ignore[return-value]
 
 
@@ -558,12 +589,13 @@ def _result(token: str | None, job_id: int, req: NA.NodeRequest, raw: bytes) -> 
         job = J.finish_job(session, node, job_id, body.lease_id, body.status, body.result, body.error, now)
         settings = get_or_create_settings(session, node.team_id, commit=False)
         base = _grant_base(session, node, settings, now, len(J.claimed_jobs(session, node)))
+        carried = _ticket_left(session, node, body.claim_ticket, now) if base > 0 else None
         out = {"job_id": job.id, "status": job.status, "server_time": iso_z(now)}
         J.defer_closers(session)
         session.commit()
         J.run_closers(session, now)
     OBS.STATS.bump("results_committed")
-    out["claim"] = D.get().grant(node.id, node.team_id, base) if base > 0 else 0
+    out["claim"], out["claim_ticket"] = _answer_grant(node, base, carried, now)
     return out
 
 
