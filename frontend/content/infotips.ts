@@ -4143,12 +4143,19 @@ export const INFO_TIPS = {
     why: "Nodes in locked-down segments often reach the internet only through a proxy.",
     example: "http://proxy.bank.local:8080.",
   },
-  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:576-585 — PEM up to 64 KB
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:633, frontend/components/cbom/sources/logic.ts:376 (apiCa, #196) — PEM up to 64 KB
   "cbsrc.nodes.proxy_ca": {
     label: "Proxy CA certificate",
-    what: "Only if your proxy inspects TLS: the PEM certificate of the proxy's CA, up to 64 KB.",
+    what: "Only if your proxy inspects TLS: the PEM certificate of the proxy's CA, up to 64 KB. With \"My proxy inspects TLS\" ticked, the install command gives it to the node (ZS_CA_FILE) from the file in the directory where you run it.",
     why: "Without it the node refuses the proxy's re-signed certificate and cannot connect.",
     example: "bank-proxy-ca.pem.",
+  },
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:629, frontend/components/cbom/sources/logic.ts:387 (proxyAuthCreate, #199)
+  "cbsrc.nodes.proxy_user": {
+    label: "Proxy user",
+    what: "Optional: the user name, when your proxy needs a login. The install command asks for the password on the host where you run it and keeps it there in a read-only file the node reads (ZS_PROXY_AUTH_FILE); ZeroShield never sees it.",
+    why: "Corporate proxies that need a login refuse a node without one (HTTP 407).",
+    example: "svc-zs, or CORP\\svc-zs.",
   },
   // src: frontend/components/cbom/sources/ScanNodesTab.tsx:624, deploy/helm/cbom-scan-node/values.yaml — CB-15 section
   "cbsrc.nodes.trust": {

@@ -46,8 +46,8 @@ spec:
       securityContext:
         seccompProfile:
           type: RuntimeDefault
-        {{- if .Values.trust.clientSecret }}
-        fsGroup: {{ $uid }}   # the client key's Secret volume is 0440: readable by the agent's group only
+        {{- if or .Values.trust.clientSecret .Values.proxyAuthSecret }}
+        fsGroup: {{ $uid }}   # the client key's and the proxy login's Secret volumes are 0440: the agent's group only
         {{- end }}
       initContainers:
         # hostPath volumes are created root-owned and fsGroup does not apply to them: hand the per-node state

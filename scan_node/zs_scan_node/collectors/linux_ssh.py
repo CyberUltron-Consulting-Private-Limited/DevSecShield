@@ -8,8 +8,9 @@ Safety rules:
   mismatch stops that target before any credential is sent.
 * Authentication is tried once.  Keyboard-interactive is answered only for a single password prompt; anything
   else (OTP, Duo, several prompts) is reported as ``mfa_required``.  No agent, no local key files.
-* Every command is from ``zs_scan_node.commands``; file paths come only from the Tier 2 find, must be absolute
-  without control characters, and are shell-quoted.  Commands run without a PTY, with stdin closed, a timeout and
+* Every command is from ``zs_scan_node.commands``; file paths come only from the Tier 2 find or sshd's own HostKey
+  and Include lines (#116), must be absolute without control characters, and are shell-quoted (an Include wildcard
+  under /etc/ssh goes unquoted only within ``commands.include_allowed``).  Commands run without a PTY, with stdin closed, a timeout and
   an output cap.
 * Private key material never leaves the host: only ``openssl pkey -pubout`` (public half) and
   ``ssh-keygen -l`` (fingerprint) are run on key files.
@@ -20,8 +21,8 @@ import concurrent.futures as cf
 import io
 import json
 import os
+import re
 import shlex
-import socket
 import threading
 import time
 from dataclasses import dataclass
@@ -34,7 +35,7 @@ from zs_scan_node import linux_parsers as P
 from zs_scan_node.certparse import public_key_facts_from_pem
 from zs_scan_node.collectors import ConfigError, skipped_never_scan, target_error
 from zs_scan_node.jobctx import JobContext, LeaseLost
-from zs_scan_node import netutil
+from zs_scan_node import errtext, netutil
 from zs_scan_node.netutil import Target, expand_targets
 
 OUTPUT_CAP = 4 * 1024 * 1024
@@ -80,6 +81,44 @@ def save_pin(state_dir: str, host_port: str, key_type: str, fingerprint: str) ->
             json.dump(pins, f)
         os.chmod(tmp, 0o600)
         os.replace(tmp, _pins_path(state_dir))
+
+
+def forget_pins(state_dir: str, host_port: str) -> None:
+    """#150: drop every pin of ``host_port`` (an admin's "forget"); the next connection pins on first use again."""
+    replace_pins(state_dir, host_port, None)
+
+
+def replace_pins(state_dir: str, host_port: str, pins_for_host: dict[str, str] | None) -> None:
+    """#150: set (or with None remove) all pins of ``host_port`` at once, atomically, other hosts unchanged."""
+    with _pin_lock:
+        pins = load_pins(state_dir)
+        if pins_for_host:
+            pins[host_port] = dict(pins_for_host)
+        else:
+            pins.pop(host_port, None)
+        tmp = _pins_path(state_dir) + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(pins, f)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, _pins_path(state_dir))
+
+
+def _resets_for(config: dict, target: Target, port: int) -> list[dict]:
+    """#150: the admin decisions ZeroShield sent with this job for this target (by the name the outcome showed) and
+    port.  Anything malformed is ignored: a decision can only ever loosen a pin as the admin asked."""
+    out = []
+    for r in config.get("host_key_resets") or []:
+        if not isinstance(r, dict) or not isinstance(r.get("id"), int) or r.get("target") != target.label:
+            continue
+        try:
+            if int(r.get("port") or 22) != port:
+                continue
+        except (TypeError, ValueError):
+            continue
+        if r.get("action") == "forget" or (r.get("action") == "accept" and isinstance(r.get("fingerprint"), str)
+                                           and r["fingerprint"].startswith("SHA256:")):
+            out.append(r)
+    return out
 
 
 def _fp(key: paramiko.PKey) -> str:
@@ -310,6 +349,16 @@ def verified_host_policy(policy: str) -> bool:
     return policy in ("pinned", "host_ca")
 
 
+def handshake_budget(ctx: JobContext, config: dict) -> float:
+    """#152: the source's "Timeout per server" bounds the SSH connect, banner, key exchange and login too (they
+    were fixed at 10, 15 and 20 s), and never outlives the job."""
+    return max(0.5, min(float(config.get("timeout_s") or 300), max(ctx.time_left(), 0.5)))
+
+
+def _secs(value: float) -> str:
+    return f"{value:g}"
+
+
 def open_session(ctx: JobContext, target: Target, config: dict, creds: dict) -> Session:
     port = int(config.get("port") or 22)
     user = str(config.get("login_user") or "zs-cbom")
@@ -325,17 +374,13 @@ def open_session(ctx: JobContext, target: Target, config: dict, creds: dict) -> 
         # the key.
         raise TargetFail("identity_unverified", "password logins need a pinned host key (known_hosts) or a host CA; "
                          "the password was not sent")
-    try:
-        sock = netutil.connect(target.ip, port, ctx.never_scan, 10)  # the network gate: never-scan at connect time
+    budget = handshake_budget(ctx, config)
+    try:  # the network gate: never-scan at connect time
+        sock = netutil.connect(target.ip, port, ctx.never_scan, min(10.0, budget))
     except netutil.Blocked:
         raise TargetFail("skipped_never_scan", f"{target.ip} is on the never-scan list") from None
-    except socket.timeout:
-        raise TargetFail("timeout", f"no answer on port {port}") from None
-    except ConnectionRefusedError:
-        raise TargetFail("refused", f"port {port} refused") from None
-    except OSError as exc:
-        code = "no_route" if getattr(exc, "errno", None) in (101, 113) else "unreachable"
-        raise TargetFail(code, exc.__class__.__name__) from None
+    except OSError as exc:  # refused, no route, timeout ...: in words (#153)
+        raise TargetFail(*errtext.socket_problem(exc, target.ip, port)) from None
     transport = None
     try:
         transport = paramiko.Transport(sock)
@@ -349,11 +394,22 @@ def open_session(ctx: JobContext, target: Target, config: dict, creds: dict) -> 
         raise
 
 
+def _ssh_failure(step: str, exc: BaseException, target: Target, port: int) -> str:
+    """#153: what broke during the SSH handshake or login, in words (never the exception class)."""
+    if isinstance(exc, EOFError):
+        return f"{target.ip}:{port} closed the connection during {step}"
+    if isinstance(exc, OSError):
+        return f"{step} failed: " + errtext.socket_problem(exc, target.ip, port)[1]
+    text = " ".join(str(exc).split())[:160]
+    return f"{step} failed" + (f": {text}" if text else "")
+
+
 def _login(ctx: JobContext, target: Target, config: dict, creds: dict, transport: paramiko.Transport, port: int,
            user: str, policy: str, host_port: str) -> Session:
     """Handshake, host key check and login on a connected ``transport`` (open_session closes it on any raise)."""
-    transport.banner_timeout = 15
-    transport.auth_timeout = 20
+    budget = handshake_budget(ctx, config)
+    transport.banner_timeout = min(15.0, budget)
+    transport.auth_timeout = min(20.0, budget)
     _accept_rfc8731_curve25519(transport)
     pinned_types: list[str] = []
     if policy == "host_ca":
@@ -377,6 +433,12 @@ def _login(ctx: JobContext, target: Target, config: dict, creds: dict, transport
             raise TargetFail("host_key_changed", "this host is not in the pinned known_hosts")
         pinned_types = list(entry.keys())
     else:
+        resets = _resets_for(config, target, port)
+        for r in resets:
+            if r["action"] == "forget":  # #150: an admin chose to forget this host's remembered keys
+                forget_pins(ctx.state_dir, host_port)
+                ctx.host_key_reset_applied(r["id"])
+                ctx.log("host key pins forgotten", target=target.label, port=port, reset=r["id"])
         pins = load_pins(ctx.state_dir).get(host_port, {})
         pinned_types = list(pins.keys())
     if pinned_types:
@@ -386,9 +448,13 @@ def _login(ctx: JobContext, target: Target, config: dict, creds: dict, transport
         except Exception:
             pass
     try:
-        transport.start_client(timeout=20)
+        # paramiko's start_client returns quietly when ITS timeout passes first: leave the banner timeout room to fire
+        transport.start_client(timeout=min(20.0, budget) + 2)
     except paramiko.SSHException as exc:
         transport.close()
+        if "protocol banner" in str(exc).lower():  # #152: accepted TCP, never spoke SSH within the budget
+            raise TargetFail("timeout", f"no SSH banner from {target.ip} within {_secs(transport.banner_timeout)} s "
+                             "(not an SSH server, or sshd is hung)") from None
         if policy == "host_ca" and "key" in str(exc).lower():
             raise TargetFail("host_key_mismatch", "the server offers no host certificate (host_ca trusts only "
                              "certificates from the listed host CAs); nothing was sent") from None
@@ -396,11 +462,15 @@ def _login(ctx: JobContext, target: Target, config: dict, creds: dict, transport
             raise TargetFail("host_key_changed", "the server no longer offers the pinned host key type") from None
         if isinstance(exc, paramiko.IncompatiblePeer):
             raise _incompatible(ctx, target, port, str(exc)) from None
-        raise TargetFail("error", f"SSH handshake failed ({exc.__class__.__name__})") from None
+        raise TargetFail("error", _ssh_failure("SSH handshake", exc, target, port)) from None
     except (EOFError, OSError) as exc:
         transport.close()
-        raise TargetFail("error", f"SSH handshake failed ({exc.__class__.__name__})") from None
-    key = transport.get_remote_server_key()
+        raise TargetFail("error", _ssh_failure("SSH handshake", exc, target, port)) from None
+    try:
+        key = transport.get_remote_server_key()
+    except paramiko.SSHException:  # the key exchange did not finish in time (start_client gave up quietly)
+        transport.close()
+        raise TargetFail("timeout", f"the SSH handshake with {target.ip} did not finish within {_secs(budget)} s") from None
     ktype, fp = key.get_name(), _fp(key)
     host_key = {"key_type": ktype, "bits": key.get_bits(), "fingerprint": fp}
     if policy == "host_ca":
@@ -422,12 +492,22 @@ def _login(ctx: JobContext, target: Target, config: dict, creds: dict, transport
             raise TargetFail("host_key_changed", f"host key {fp} does not match the pinned known_hosts")
     else:
         pins = load_pins(ctx.state_dir).get(host_port, {})
+        accepted = [r for r in resets if r["action"] == "accept" and r["fingerprint"] == fp]
         if ktype in pins and pins[ktype] != fp:
-            transport.close()
-            raise TargetFail("host_key_changed", f"host key changed (pinned {pins[ktype]}, now {fp})")
-        if ktype not in pins:
+            if not accepted:  # an accepted fingerprint is the only way past a changed key: any other key still fails
+                transport.close()
+                raise TargetFail("host_key_changed", f"host key changed (pinned {pins[ktype]}, now {fp})")
+            # #150: the admin reviewed exactly this key; it replaces every pin of the host (a rebuilt server
+            # changed them all, and the node offers only pinned key types)
+            replace_pins(ctx.state_dir, host_port, {ktype: fp})
+            host_key["accepted"] = True
+            ctx.log("changed host key accepted", target=target.label, port=port, fingerprint=fp,
+                    reset=accepted[0]["id"])
+        elif ktype not in pins:
             save_pin(ctx.state_dir, host_port, ktype, fp)
             host_key["first_use"] = True
+        for r in accepted:  # also when the key already matched (applied before, or pinned anew): nothing left to do
+            ctx.host_key_reset_applied(r["id"])
     # authenticate once
     try:
         if "cert_source" in creds:  # F1.4: a certificate good for this login (renewed before it runs out)
@@ -469,7 +549,7 @@ def _login(ctx: JobContext, target: Target, config: dict, creds: dict, transport
         raise TargetFail("auth_failed", f"login as {user} was refused") from None
     except (paramiko.SSHException, EOFError, OSError) as exc:
         transport.close()
-        raise TargetFail("error", f"authentication failed ({exc.__class__.__name__})") from None
+        raise TargetFail("error", _ssh_failure("the login", exc, target, port)) from None
     if not transport.is_authenticated():
         transport.close()
         raise TargetFail("auth_failed", f"login as {user} was refused")
@@ -565,13 +645,6 @@ def collect_on_session(ctx: JobContext, sess: Any, label: str, config: dict,
         facts["openssl"] = P.openssl_version(text) if status == 0 else None
         for pkg in pkgs:
             emit("crypto_library", loc, f"package:{pkg['name']}", name=pkg["name"], facts={**pkg, "source": "package"})
-        # SSH host keys
-        for ktype in C.HOST_KEY_TYPES:
-            path = f"/etc/ssh/ssh_host_{ktype}_key.pub"
-            status, text, _ = _t1(sess, C.SSH_KEY_FINGERPRINT.format(file=path))
-            for k in P.ssh_keygen_l(text) if status == 0 else []:
-                emit("ssh_host_key", loc, path, name=f"{k['type']} host key", algorithm=k["type"], key_size=k["bits"],
-                     facts=k)
         processes: dict[int, str] = {}
         status, text, _ = _t1(sess, C.PROCESSES)
         if status == 0:
@@ -594,14 +667,18 @@ def collect_on_session(ctx: JobContext, sess: Any, label: str, config: dict,
                                  detail or state)
         # sshd
         state, out, _ = tier2.get("sshd_effective_config", ("skip", "", ""))
+        host_key_values: list[str] | None = None  # HostKey values of sshd's configuration (None: it was not read)
         if state == "ok" and out.strip():
             emit("ssh_server_config", loc, "sshd -T", name="sshd effective configuration",
                  facts=P.sshd_config(out, effective=True))
+            host_key_values = [v for _k, v in P.sshd_directives(out, ("hostkey",))]  # sshd -T resolved the Includes
         else:
             status, text, _ = _t1(sess, C.SSHD_CONFIG)
             if status == 0 and text.strip():
                 emit("ssh_server_config", loc, "/etc/ssh/sshd_config", name="sshd configuration (file)",
                      facts=P.sshd_config(text, effective=False))
+                host_key_values = _file_host_key_values(ctx, sess, loc, text, 0, set())
+        _host_keys(ctx, sess, loc, host_key_values, emit)
         # processes -> crypto libraries
         maps = P.proc_maps(tier2.get("process_crypto_libraries", ("", "", ""))[1] or "")
         exes = P.proc_exe(tier2.get("process_executables", ("", "", ""))[1] or "")
@@ -680,6 +757,121 @@ def collect_on_session(ctx: JobContext, sess: Any, label: str, config: dict,
         return "ok", None, emitted
     finally:
         sess.close()
+
+
+# ----------------------------------------------------------------------------- SSH host keys (#116)
+SSHD_DIR = "/etc/ssh/"  # sshd resolves a relative Include against this directory
+MAX_HOST_KEY_PATHS = 10
+MAX_INCLUDES = 10  # Include files (or patterns) read per server
+MAX_INCLUDE_DEPTH = 3
+_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _refusal(value: str) -> str | None:
+    """Why a path from sshd's configuration must not be used in a command (None: it may, shell-quoted)."""
+    if _CONTROL_CHARS.search(value):
+        return "contains control characters"
+    if not value.startswith("/"):
+        return "is not an absolute path"
+    if not P.safe_path(value):
+        return "is not a usable path"
+    return None
+
+
+def _include_patterns(value: str) -> list[str]:
+    """The paths/patterns of one Include line (several may be given, double-quoted when they hold spaces)."""
+    try:
+        return shlex.split(value, comments=False, posix=True)
+    except ValueError:  # an unbalanced quote: split on blanks, each part is still validated before use
+        return value.split()
+
+
+def _file_host_key_values(ctx: JobContext, sess: Any, loc: str, text: str, depth: int, seen: set[str]) -> list[str]:
+    """Tier 1: the HostKey values of an sshd_config text in sshd's order, with the files its Include lines name read
+    in place (nested Includes followed up to MAX_INCLUDE_DEPTH, at most MAX_INCLUDES files or patterns per server).
+    A refused or unreadable Include is a coverage note; one that matches nothing is ignored, as sshd does."""
+    out: list[str] = []
+    for keyword, value in P.sshd_directives(text, ("hostkey", "include")):
+        if keyword == "hostkey":
+            out.append(value[1:-1] if len(value) >= 2 and value[0] == value[-1] == '"' else value)
+            continue
+        for pattern in _include_patterns(value):
+            if not _CONTROL_CHARS.search(pattern) and not pattern.startswith("/"):
+                pattern = SSHD_DIR + pattern
+            if pattern in seen:
+                continue
+            seen.add(pattern)
+            shown = P.printable(pattern, 200)
+            why = _refusal(pattern)
+            wildcard = any(c in pattern for c in "*?[")
+            if why is None and not C.include_allowed(pattern):
+                why = ("is outside /etc/ssh (Tier 2 reads it with sshd -T)" if not pattern.startswith(SSHD_DIR)
+                       or ".." in pattern.split("/") else
+                       "is a wildcard pattern with characters other than letters, digits and ._/*?+-")
+            if why:
+                ctx.coverage(loc, f"ssh host keys: Include {shown}", "refused",
+                             f"sshd_config Include {shown} {why}; it was not read")
+                continue
+            if depth >= MAX_INCLUDE_DEPTH or len(seen) > MAX_INCLUDES:
+                ctx.coverage(loc, "ssh host keys: Include", "truncated",
+                             f"sshd_config Include {shown} was not read (at most {MAX_INCLUDES} Include files, "
+                             f"nested {MAX_INCLUDE_DEPTH} deep, are read)")
+                continue
+            status, included, err = _t1(sess, C.SSHD_INCLUDE.format(file=pattern if wildcard else shlex.quote(pattern)))
+            if status == 0:
+                out.extend(_file_host_key_values(ctx, sess, loc, included, depth + 1, seen))
+            elif "permission denied" in (err or "").lower():
+                ctx.coverage(loc, f"ssh host keys: Include {shown}", "denied",
+                             f"sshd_config Include {shown} is not readable by the login user; HostKey lines in it "
+                             "were not read (Tier 2 reads them with sshd -T)")
+    return out
+
+
+def _host_keys(ctx: JobContext, sess: Any, loc: str, configured: list[str] | None, emit) -> None:
+    """One ``ssh_host_key`` per key sshd's configuration names (``configured: true``, the ``.pub`` beside each
+    HostKey path), then the default /etc/ssh paths it does not name (``configured: false`` when the configuration
+    has HostKey lines; no flag when it has none or was not read, since sshd then uses the defaults)."""
+    named: list[str] = []
+    for value in configured or []:
+        why = _refusal(value)
+        if why:
+            shown = P.printable(value, 200)
+            ctx.coverage(loc, f"ssh host keys: HostKey {shown}", "refused",
+                         f"HostKey {shown} {why}; it was not read")
+        elif value not in named:
+            named.append(value)
+    if len(named) > MAX_HOST_KEY_PATHS:
+        ctx.coverage(loc, "ssh host keys", "truncated",
+                     f"sshd's configuration names {len(named)} HostKey paths; the first {MAX_HOST_KEY_PATHS} were "
+                     f"read, {len(named) - MAX_HOST_KEY_PATHS} more were not")
+        named = named[:MAX_HOST_KEY_PATHS]
+    defaults = {f"/etc/ssh/ssh_host_{t}_key" for t in C.HOST_KEY_TYPES}
+    for path in named:
+        pub = path + ".pub"
+        status, text, err, _t = sess.run(_file_cmd(C.SSH_KEY_FINGERPRINT, pub), FILE_CMD_TIMEOUT)
+        keys = P.ssh_keygen_l(text) if status == 0 else []
+        shown = P.printable(P.display_path(pub), 200)
+        for k in keys[:1]:
+            emit("ssh_host_key", loc, P.display_path(pub), name=f"{k['type']} host key", algorithm=k["type"],
+                 key_size=k["bits"], facts={**k, "configured": True})
+        low = (err or "").lower()
+        if keys:
+            continue
+        if "permission denied" in low:
+            ctx.coverage(loc, f"ssh host keys: {shown}", "denied",
+                         f"{shown} (beside HostKey {P.printable(path, 200)}) is not readable by the login user")
+        elif path not in defaults or "no such file" not in low:  # sshd -T lists every default path, present or not
+            ctx.coverage(loc, f"ssh host keys: {shown}", "error",
+                         f"{shown} (beside HostKey {P.printable(path, 200)}) could not be read: "
+                         f"{P.printable(err or 'no key in the file', 160).strip()}")
+    for ktype in C.HOST_KEY_TYPES:
+        path = f"/etc/ssh/ssh_host_{ktype}_key"
+        if path in named:
+            continue
+        status, text, _ = _t1(sess, C.SSH_KEY_FINGERPRINT.format(file=path + ".pub"))
+        for k in P.ssh_keygen_l(text) if status == 0 else []:
+            emit("ssh_host_key", loc, path + ".pub", name=f"{k['type']} host key", algorithm=k["type"],
+                 key_size=k["bits"], facts={**k, "configured": False} if configured else k)
 
 
 def _inspect_file(ctx: JobContext, sess: Session, loc: str, real_path: str) -> int:
@@ -1033,7 +1225,8 @@ def _test_target(ctx: JobContext, target: Target, config: dict, creds: dict, tie
                 sample["note"] = ("sudo asks for a password: install the zs-cbom sudoers file with NOPASSWD"
                                   if state == "password" else
                                   "the zs-cbom sudoers file is missing or does not match; this server runs at Tier 1")
-        first = " (host key pinned on first use)" if sess.host_key.get("first_use") else ""
+        first = (" (host key pinned on first use)" if sess.host_key.get("first_use") else
+                 " (new host key accepted by a ZeroShield admin)" if sess.host_key.get("accepted") else "")
         if sample["status"] == "ready":
             sample["note"] = f"{sess.host_key['key_type']} {sess.host_key['fingerprint']}{first}{missing}"
     finally:

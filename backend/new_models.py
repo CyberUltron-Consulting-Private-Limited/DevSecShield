@@ -296,6 +296,9 @@ class CbomScanNode(SQLModel, table=True):
     proxy_url: str | None = Field(default=None, max_length=512)
     proxy_ca_pem: str | None = Field(default=None, sa_type=Text)
     proxy_tls_inspect: bool = Field(default=False)
+    # #199: the proxy's user name when it needs a login (never the password: that stays on the node's host, in the
+    # file ZS_PROXY_AUTH_FILE names, created by the install command)
+    proxy_user: str | None = Field(default=None, max_length=128)
     registration_token_hash: str | None = Field(default=None, max_length=64, index=True)
     registration_issued_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
     registration_expires_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
@@ -479,6 +482,32 @@ class CbomCollectionJob(SQLModel, table=True):
     # Slices have no run (run_id NULL) and no credits: their assets are stored under the parent job, which stays the
     # one job per source that runs, drift, posture and credits know about (``cbom_sources.slices``).
     parent_job_id: int | None = Field(default=None, foreign_key="cbomcollectionjob.id", index=True, ondelete="CASCADE")
+
+
+class CbomHostKeyReset(SQLModel, table=True):
+    """#150: a team admin's decision about a host key a scan node remembered under trust on first use.
+
+    ``accept``: the node replaces its pin for ``target``:``port`` with exactly ``fingerprint`` (the key the admin
+    reviewed on a ``host_key_changed`` result), and any other key still fails.  ``forget``: the node drops its pins
+    for that address, and the next connection pins on first use again.  The node that reported the change applies it
+    on its next job for the source and acknowledges it in that job's result (``applied``).  This row is the record of
+    who decided what and when; plain ints (no foreign keys), so it outlives the source, node and job it names."""
+    __tablename__ = "cbomhostkeyreset"
+    id: int | None = Field(default=None, primary_key=True)
+    team_id: int = Field(foreign_key="team.id", index=True)
+    source_id: int = Field(index=True)
+    node_id: int
+    job_id: int  # the job whose result showed the changed key (the evidence the admin reviewed)
+    target: str = Field(max_length=255)
+    port: int = Field(default=22)
+    action: str = Field(max_length=8)  # accept | forget
+    fingerprint: str | None = Field(default=None, max_length=64)  # accept: the key the node may now trust
+    pinned_fingerprint: str | None = Field(default=None, max_length=64)  # the key it remembered until then
+    status: str = Field(default="pending", max_length=12)  # pending | applied | superseded
+    requested_by_user_id: int
+    requested_at: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
+    applied_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    applied_job_id: int | None = Field(default=None)
 
 
 class CbomCollectedAsset(SQLModel, table=True):

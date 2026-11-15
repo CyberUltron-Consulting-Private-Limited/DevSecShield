@@ -31,11 +31,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import {
   countCbomTargets,
+  createCbomHostKeyReset,
   createCbomSource,
   deleteCbomSource,
   getCbomSourcesOverview,
   getCbomSourcesSettings,
   getCbomTemplate,
+  listCbomHostKeyResets,
   listCbomScanNodes,
   testCbomSource,
   updateCbomSource,
@@ -100,6 +102,7 @@ import {
 import { SOURCE_NEVER_SCAN_HINT } from "./teamNeverScan";
 import { displayHostLines } from "./idnDisplay";
 import { hostCaKeysProblem, hostCaLines } from "./hostCaKeys";
+import { ACCEPT_WARNING, FORGET_WARNING, decisionsAllowed, hostKeyChange, pendingFor, pendingLabel } from "./hostKeyDecision";
 import { InfoTip } from "@/components/ui/info-tip";
 
 // ---------------------------------------------------------------------------- constants (mirror backend kinds.py / templates.py)
@@ -152,7 +155,9 @@ const TIER1_COMMANDS = [
   "cat /proc/sys/crypto/fips_enabled",
   "openssl version -a",
   "cat /etc/ssh/sshd_config",
+  "cat <file named by an sshd_config Include line>",
   "ssh-keygen -l -f /etc/ssh/ssh_host_<type>_key.pub",
+  "ssh-keygen -l -f <path named by a HostKey line>.pub",
   "ps -eo pid=,comm=",
   "openssl storeutl -noout -text -certs <file>",
   "openssl pkey -pubout -passin pass: -in <file>",
@@ -522,6 +527,7 @@ export default function ServersTab({ teamId, onNavigate }: { teamId: number; onN
 
       {testView && testedSource && (
         <TestResultsCard
+          teamId={teamId}
           source={testedSource}
           job={jobQuery.data && jobQuery.data.id === testView.jobId ? jobQuery.data : undefined}
           jobLoading={!!testView.jobId && jobQuery.isLoading}
@@ -1774,6 +1780,7 @@ function WhatRuns({ kind, login, tier }: { kind: ServerKind; login: string; tier
 
 // ---------------------------------------------------------------------------- test results
 function TestResultsCard({
+  teamId,
   source,
   job,
   jobLoading,
@@ -1789,6 +1796,7 @@ function TestResultsCard({
   retesting: boolean;
   onRetest: () => void;
   onClose: () => void;
+  teamId: number;
 }) {
   // A polled job is the freshest view while it runs; once the source has a newer test, the source wins.
   const jobIsCurrent = !!job && (source.last_test_job_id == null || source.last_test_job_id === job.id);
@@ -1808,6 +1816,10 @@ function TestResultsCard({
         : sourceSamples;
   const isLinux = source.kind === "linux_servers";
   const tier1 = isLinux && source.config?.tier !== 2;
+  // #150: the job whose result these rows are (the evidence a host key decision is bound to)
+  const evidenceJobId = jobSamples && jobSamples.length && job ? job.id : source.last_test_job_id ?? null;
+  const canDecide = decisionsAllowed(source.config?.host_key_policy) && evidenceJobId != null && !open;
+  const anyChanged = canDecide && rows.some((r) => r.status === "host_key_changed");
 
   return (
     <SectionCard
@@ -1887,6 +1899,9 @@ function TestResultsCard({
                             {sampleLabel(sample.status)}
                           </StatusBadge>
                           {sample.note && <p className="text-xs text-zinc-500 mt-1 whitespace-normal break-words">{sample.note}</p>}
+                          {anyChanged && evidenceJobId != null && (
+                            <HostKeyDecisionActions teamId={teamId} sourceId={source.id} jobId={evidenceJobId} sample={sample} />
+                          )}
                         </TableCell>
                       </TableRow>
                     );
@@ -1899,5 +1914,88 @@ function TestResultsCard({
         )}
       </div>
     </SectionCard>
+  );
+}
+
+// ---------------------------------------------------------------------------- host key decisions (#150)
+function HostKeyDecisionActions({
+  teamId,
+  sourceId,
+  jobId,
+  sample,
+}: {
+  teamId: number;
+  sourceId: number;
+  jobId: number;
+  sample: CbomTestSample;
+}) {
+  const queryClient = useQueryClient();
+  const change = hostKeyChange(sample.status, sample.note);
+  const [asking, setAsking] = useState<"accept" | "forget" | null>(null);
+  const resetsQuery = useQuery({
+    queryKey: cbomSourcesKeys.hostKeyResets(teamId, sourceId),
+    queryFn: () => listCbomHostKeyResets(teamId, sourceId),
+    enabled: !!change,
+  });
+  const decide = useMutation({
+    mutationFn: (action: "accept" | "forget") =>
+      createCbomHostKeyReset(teamId, sourceId, {
+        job_id: jobId,
+        target: sample.target,
+        action,
+        ...(action === "accept" && change?.presented ? { fingerprint: change.presented } : {}),
+      }),
+    onSuccess: () => {
+      setAsking(null);
+      queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.hostKeyResets(teamId, sourceId) });
+    },
+  });
+  if (!change) return null;
+  const pending = pendingFor(resetsQuery.data, sample.target);
+  return (
+    <div className="mt-2 space-y-1" data-testid="host-key-decision">
+      {pending ? (
+        <p className="text-xs text-amber-700 dark:text-amber-400 whitespace-normal break-words" data-testid="host-key-decision-pending">
+          {pendingLabel(pending)}
+        </p>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {change.presented && (
+            <Button size="sm" variant="outline" className="cursor-pointer" onClick={() => setAsking("accept")}
+                    data-testid="host-key-accept">
+              Accept new host key
+            </Button>
+          )}
+          <Button size="sm" variant="ghost" className="cursor-pointer" onClick={() => setAsking("forget")}
+                  data-testid="host-key-forget">
+            Forget remembered key
+          </Button>
+        </div>
+      )}
+      <ConfirmDialog
+        open={asking !== null}
+        onOpenChange={(v) => !v && setAsking(null)}
+        title={asking === "accept" ? `Accept the new host key of ${sample.target}?` : `Forget the remembered host key of ${sample.target}?`}
+        description={
+          <span className="block space-y-2">
+            <span className="block font-medium text-red-700 dark:text-red-400">
+              {asking === "accept" ? ACCEPT_WARNING : FORGET_WARNING}
+            </span>
+            {change.pinned && <span className="block font-mono text-xs break-all">Remembered: {change.pinned}</span>}
+            {asking === "accept" && change.presented && (
+              <span className="block font-mono text-xs break-all">New: {change.presented}</span>
+            )}
+            <span className="block text-xs">
+              Compare the new key with the server itself (ssh-keygen -l -f /etc/ssh/ssh_host_*_key.pub). Your decision
+              is recorded in the audit log with your name.
+            </span>
+          </span>
+        }
+        confirmLabel={asking === "accept" ? "Accept this key" : "Forget the key"}
+        destructive
+        pending={decide.isPending}
+        onConfirm={() => asking && decide.mutate(asking)}
+      />
+    </div>
   );
 }

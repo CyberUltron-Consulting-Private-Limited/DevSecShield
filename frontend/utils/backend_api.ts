@@ -4306,6 +4306,8 @@ export interface CbomScanNode {
     proxy_url: string | null
     has_proxy_ca: boolean
     proxy_tls_inspect: boolean
+    /** #199: the proxy's user name when it needs a login (never the password: it stays on the node's host) */
+    proxy_user?: string | null
     status: CbomNodeStatus
     registration_issued_at: string | null
     registration_expires_at: string | null
@@ -4357,6 +4359,7 @@ export interface CbomNodeWrite {
     proxy_url?: string | null
     proxy_ca_pem?: string | null
     proxy_tls_inspect?: boolean
+    proxy_user?: string | null
     expected_version?: number
 }
 
@@ -4367,6 +4370,31 @@ export interface CbomTestSample {
     login?: boolean
     privilege?: boolean
     note?: string
+}
+
+// #150: an admin's decision about a host key a scan node remembered under trust on first use
+export interface CbomHostKeyReset {
+    id: number
+    source_id: number
+    node_id: number
+    job_id: number
+    target: string
+    port: number
+    action: "accept" | "forget"
+    fingerprint: string | null
+    pinned_fingerprint: string | null
+    status: "pending" | "applied" | "superseded"
+    requested_by_user_id: number
+    requested_at: string
+    applied_at: string | null
+    applied_job_id: number | null
+}
+
+export interface CbomHostKeyResetBody {
+    job_id: number
+    target: string
+    action: "accept" | "forget"
+    fingerprint?: string
 }
 
 export interface CbomAwsCheck {
@@ -5091,6 +5119,23 @@ const testCbomSource = async (team_id: number, source_id: number): Promise<CbomT
     }
 }
 
+const createCbomHostKeyReset = async (team_id: number, source_id: number, body: CbomHostKeyResetBody): Promise<CbomHostKeyReset> => {
+    try {
+        const response = await api.post(`${cbomSourcesBase(team_id)}/items/${source_id}/host-key-resets`, body)
+        const data = response.data as { reset: CbomHostKeyReset; message: string }
+        toast.success(data.message || "Saved: the scan node applies it on its next job for this source")
+        return data.reset
+    } catch (error) {
+        showErrorToast(error, body.action === "accept" ? "Error accepting the host key" : "Error forgetting the host key")
+        throw error
+    }
+}
+
+const listCbomHostKeyResets = async (team_id: number, source_id: number): Promise<CbomHostKeyReset[]> => {
+    const response = await api.get(`${cbomSourcesBase(team_id)}/items/${source_id}/host-key-resets`)
+    return (response.data as { resets: CbomHostKeyReset[] }).resets
+}
+
 const updateCbomSourcesSettings = async (team_id: number, body: CbomSettingsWrite): Promise<CbomSourcesSettings> => {
     try {
         const response = await api.patch(`${cbomSourcesBase(team_id)}/settings`, body)
@@ -5656,6 +5701,8 @@ export {
     updateCbomSource,
     deleteCbomSource,
     testCbomSource,
+    createCbomHostKeyReset,
+    listCbomHostKeyResets,
     updateCbomSourcesSettings,
     setCbomNetworkStop,
     startCbomDiscovery,
