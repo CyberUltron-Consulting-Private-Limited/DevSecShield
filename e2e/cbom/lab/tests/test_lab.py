@@ -386,12 +386,13 @@ def test_ml_dsa_fallback_rows_are_marked_not_independent() -> None:
 
 
 def test_lab_json_marks_every_deferred_part() -> None:
+    """Issue #93 built the four parts, so a generated lab marks nothing deferred."""
     lab = oraclefmt.lab_json([], "t", "c", "core", S.NETWORK, S.NODE_IP)
-    parts = {d["part"]: d for d in lab["deferred"]}
-    assert set(parts) >= {"idp", "receiver", "ubuntu-tier2", "k8s"}
-    for d in parts.values():
-        assert d["deferred"] is True and d["reason"] and d["gate"] and d["issue_draft"].endswith("issue-deferred.md")
-    assert parts["idp"]["address"] == "10.231.0.42" and "G7" in parts["idp"]["gate"]
+    assert lab["deferred"] == []
+    assert S.by_id("idp")["ip"] == "10.231.0.42"
+    assert S.by_id("receiver")["ip"] == "10.231.0.43"
+    assert S.by_id("host")["os"] == "ubuntu"
+    assert S.by_id("k8s")["profile"] == "k8s"
 
 
 def test_bench_line_cells_beyond_the_file_are_flagged_unreliable() -> None:
@@ -727,7 +728,8 @@ def test_keystore_entries_compare_signature_algorithms_by_oid() -> None:
 
 def test_deferred_parts_point_at_the_filed_issue() -> None:
     assert S.DEFERRED_ISSUE == "#93"
-    assert all(d["issue"] == "#93" for d in oraclefmt.lab_json([], "t", "c", "core", S.NETWORK, S.NODE_IP)["deferred"])
+    assert S.DEFERRED == []
+    assert oraclefmt.lab_json([], "t", "c", "core", S.NETWORK, S.NODE_IP)["deferred"] == []
 
 
 def test_negative_proofs_cover_the_review_mutations() -> None:
