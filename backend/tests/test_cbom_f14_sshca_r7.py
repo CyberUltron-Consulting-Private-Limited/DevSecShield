@@ -1038,7 +1038,7 @@ def test_an_unknown_provider_is_refused_not_signed_as_builtin(api, ca_world):
     s = F.setup_job(api)
     with Session(engine) as session:
         row = session.get(CbomSshCa, s["ca"]["id"])
-        row.provider = "node"
+        row.provider = "hsm"  # a provider this code does not know ("node" is #61's now)
         session.add(row)
         session.commit()
     r = F.cert_route(api, s["token"], s["job_id"], s["lease"])

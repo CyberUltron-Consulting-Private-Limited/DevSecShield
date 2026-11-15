@@ -332,11 +332,11 @@ def missing_count(session: Session, team_id: int, *, graded_live: int | None = N
     live register rows). Exact while the register follows the store (its hook runs in the store's write; a failed
     write marks the store stale and the backfill, with hooks, repairs both). An anti-join of 1.5M keys took ~1 s per
     call and ran on every summary and every scheduler tick (CB-32)."""
-    _EA = CbomEstateAsset.__table__
-    live = int(session.execute(sa.select(sa.func.count()).select_from(_EA).where(
-        _EA.c.team_id == team_id, _EA.c.presence != "removed")).scalar_one())
-    graded = graded_live if graded_live is not None else int(session.execute(sa.select(sa.func.count()).select_from(
-        _RT).where(_RT.c.team_id == team_id, _RT.c.presence != "removed")).scalar_one())
+    from backend.utilities.cbom_sources import estate_summary_ddl as SUMMARY
+
+    live = SUMMARY.count(session, team_id, "assets_live")  # CB-32: trigger-kept counters, not two 1.5M counts
+    graded = graded_live if graded_live is not None else sum(
+        n for _g, _r, _f, presence, n in SUMMARY.register_groups(session, team_id) if presence != "removed")
     return max(0, live - graded)
 
 
@@ -459,6 +459,25 @@ def public_row(r: Any) -> dict[str, Any]:
             "model_version": r.model_version, "updated_at": iso_z(r.updated_at)}
 
 
+_SUMMARY_FILTERS = {"grade", "reason", "family", "presence"}
+
+
+def _total(session: Session, team_id: int, filters: dict[str, Any]) -> int:
+    """The filtered row count: from cbomregistersummary when every filter is one of its dimensions (CB-32), else a
+    count over the filter's index."""
+    active = {k: v for k, v in filters.items() if v}
+    if set(active) <= _SUMMARY_FILTERS:
+        from backend.utilities.cbom_sources import estate_summary_ddl as SUMMARY
+
+        want_grade = active.get("grade")
+        return sum(n for grade, reason, fam, presence, n in SUMMARY.register_groups(session, team_id)
+                   if (not want_grade or (grade is None if want_grade == "none" else grade == want_grade))
+                   and (not active.get("reason") or reason == active["reason"])
+                   and (not active.get("family") or fam == active["family"])
+                   and (not active.get("presence") or presence == active["presence"]))
+    return int(session.execute(sa.select(sa.func.count()).select_from(_RT).where(*_where(team_id, filters))).scalar_one())
+
+
 def list_register(session: Session, team_id: int, filters: dict[str, Any], *, after: tuple[int, str] | None,
                   limit: int) -> dict[str, Any]:
     """One keyset page in (q_rank, item_key) order. ``total`` is counted on the first page only (``None`` on the
@@ -469,8 +488,7 @@ def list_register(session: Session, team_id: int, filters: dict[str, Any], *, af
     rows = list(session.execute(q.order_by(_RT.c.q_rank, _RT.c.item_key).limit(limit + 1)).all())
     more = len(rows) > limit
     rows = rows[:limit]
-    total = None if after is not None else int(session.execute(
-        sa.select(sa.func.count()).select_from(_RT).where(*_where(team_id, filters))).scalar_one())
+    total = None if after is not None else _total(session, team_id, filters)
     items = [public_row(r) for r in rows]
     _add_business(session, team_id, items)
     return {"items": items, "total": total,
@@ -482,15 +500,14 @@ def summary(session: Session, team_id: int, now: _dt.datetime, *, weeks: int = 1
     from backend.utilities.cbom_sources import estate as E
     from backend.utilities.cbom_sources import qgrade as QG
 
-    # one index-only GROUP BY (ix_cbomriskregister_team_summary) for the three tallies and the live rows "pending"
-    # needs (CB-32: four scans of 1.5M rows before)
+    # the tallies and the live rows "pending" needs come from cbomregistersummary, kept by triggers (CB-32)
+    from backend.utilities.cbom_sources import estate_summary_ddl as SUMMARY
+
     grades: dict[str | None, int] = {}
     q0_reasons: dict[str, int] = {}
     families: dict[str, dict[str, int]] = {}
     live = 0
-    for grade, reason, fam, presence, n in session.execute(sa.select(
-            _RT.c.q_grade, _RT.c.q_reason, _RT.c.family, _RT.c.presence, sa.func.count()).where(
-            _RT.c.team_id == team_id).group_by(_RT.c.q_grade, _RT.c.q_reason, _RT.c.family, _RT.c.presence)).all():
+    for grade, reason, fam, presence, n in SUMMARY.register_groups(session, team_id):
         live += int(n) if presence != "removed" else 0
         grades[grade] = grades.get(grade, 0) + int(n)
         if grade == "Q0":

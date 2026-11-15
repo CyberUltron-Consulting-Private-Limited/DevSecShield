@@ -304,6 +304,14 @@ class Api:
                          retries=0, lease_sensitive=True)[1] or {}
 
 
+    def ssh_cert_report(self, job_id: int, attempt: int, lease_id: str, certificate: str) -> dict:
+        """#61: the certificate this node signed with the customer's CA key, for ZeroShield's audit row (checked
+        against what ZeroShield granted).  One call, no retry: a certificate that was not recorded is not used."""
+        return self.call("POST", f"/cbom/node/jobs/{job_id}/ssh-cert/report",
+                         {"lease_id": lease_id, "certificate": certificate}, job=f"{job_id}/{attempt}", retries=0,
+                         lease_sensitive=True)[1] or {}
+
+
 def _retry_after(r: httpx.Response) -> float | None:
     """``Retry-After`` in seconds (delta-seconds or an HTTP date), capped at an hour; None when absent or unreadable."""
     raw = (r.headers.get("Retry-After") or "").strip()
