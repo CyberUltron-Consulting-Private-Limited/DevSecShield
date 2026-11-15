@@ -32,6 +32,7 @@ class NodeCreate(_Body):
     proxy_url: str | None = Field(default=None, max_length=512)
     proxy_ca_pem: str | None = Field(default=None, max_length=64 * 1024)
     proxy_tls_inspect: bool = False
+    proxy_user: str | None = Field(default=None, max_length=128)
 
     _n = field_validator("name")(classmethod(lambda cls, v: _name(v)))
 
@@ -50,7 +51,12 @@ class NodeCreate(_Body):
     @field_validator("proxy_url")
     @classmethod
     def _proxy(cls, v: str | None) -> str | None:
-        return check_http_url(v)
+        return check_proxy_url(v)
+
+    @field_validator("proxy_user")
+    @classmethod
+    def _proxy_user(cls, v: str | None) -> str | None:
+        return check_proxy_user(v)
 
     @field_validator("proxy_ca_pem")
     @classmethod
@@ -85,6 +91,7 @@ class NodeUpdate(_Body):
     proxy_url: str | None = Field(default=None, max_length=512)
     proxy_ca_pem: str | None = Field(default=None, max_length=64 * 1024)
     proxy_tls_inspect: bool | None = None
+    proxy_user: str | None = Field(default=None, max_length=128)
     expected_version: int | None = None
 
     @field_validator("name")
@@ -107,12 +114,42 @@ class NodeUpdate(_Body):
     @field_validator("proxy_url")
     @classmethod
     def _proxy(cls, v: str | None) -> str | None:
-        return check_http_url(v)
+        return check_proxy_url(v)
+
+    @field_validator("proxy_user")
+    @classmethod
+    def _proxy_user(cls, v: str | None) -> str | None:
+        return check_proxy_user(v)
 
     @field_validator("proxy_ca_pem")
     @classmethod
     def _ca(cls, v: str | None) -> str | None:
         return check_pem_certificates(v)
+
+
+# #199: a proxy user name goes into the node's login file as "user:password" and into the install command in single
+# quotes: no colon, quote, space, $ or control character. A Windows domain user (CORP\\svc-zs) and user@realm are fine.
+_PROXY_USER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._@\\-]{0,127}$")
+PROXY_LOGIN_HELP = ("enter the user name in Proxy user and the URL without it; the password stays on the scan node "
+                    "host (the install command asks for it there) and is never sent to ZeroShield")
+
+
+def check_proxy_url(v: str | None) -> str | None:
+    try:
+        return check_http_url(v)
+    except ValueError as exc:
+        if "user name or password" in str(exc):
+            raise ValueError(PROXY_LOGIN_HELP) from None
+        raise
+
+
+def check_proxy_user(v: str | None) -> str | None:
+    if v is None:
+        return None
+    if not _PROXY_USER.match(v):
+        raise ValueError("use letters, digits, dots, dashes, underscores, @ or a backslash (DOMAIN\\user), at most "
+                         "128 characters; the password is never entered here")
+    return v
 
 
 # ----------------------------------------------------------------------------- sources

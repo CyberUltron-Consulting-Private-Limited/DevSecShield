@@ -4306,6 +4306,8 @@ export interface CbomScanNode {
     proxy_url: string | null
     has_proxy_ca: boolean
     proxy_tls_inspect: boolean
+    /** #199: the proxy's user name when it needs a login (never the password: it stays on the node's host) */
+    proxy_user?: string | null
     status: CbomNodeStatus
     registration_issued_at: string | null
     registration_expires_at: string | null
@@ -4357,6 +4359,7 @@ export interface CbomNodeWrite {
     proxy_url?: string | null
     proxy_ca_pem?: string | null
     proxy_tls_inspect?: boolean
+    proxy_user?: string | null
     expected_version?: number
 }
 

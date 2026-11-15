@@ -54,6 +54,7 @@ def public_node(node: CbomScanNode, now: _dt.datetime, *, assigned_targets: int 
         "proxy_url": node.proxy_url,
         "has_proxy_ca": bool(node.proxy_ca_pem),
         "proxy_tls_inspect": node.proxy_tls_inspect,
+        "proxy_user": node.proxy_user,
         "status": status,
         "registration_issued_at": iso_z(node.registration_issued_at),
         "registration_expires_at": iso_z(node.registration_expires_at),

@@ -298,7 +298,7 @@ def _create_node(engine, team_id: int, user_id: int, body: NodeCreate) -> dict:
         node = CbomScanNode(
             team_id=team_id, owner_user_id=user_id, updated_by_user_id=user_id, name=body.name, segment=body.segment,
             timezone=body.timezone, deployment=body.deployment, proxy_url=body.proxy_url,
-            proxy_ca_pem=body.proxy_ca_pem, proxy_tls_inspect=body.proxy_tls_inspect,
+            proxy_ca_pem=body.proxy_ca_pem, proxy_tls_inspect=body.proxy_tls_inspect, proxy_user=body.proxy_user,
             registration_token_hash=sha256_hex(token), registration_issued_at=now,
             registration_expires_at=now + REGISTRATION_TTL, created_at=now, last_updated=now,
         )
@@ -589,6 +589,8 @@ def _create_source(engine, team_id: int, user_id: int, body: SourceCreate) -> di
             config=cfg.model_dump(mode="json"), secret_encrypted=encrypt_secrets(secrets_),
             secret_fields=sorted(secrets_), created_at=now, last_updated=now,
             last_test_status="never" if spec.collectable(cfg) or body.kind == "aws_account" else "not_available",
+            # #153: say why there is no test (the Last test column showed "None")
+            last_test_summary=None if spec.collectable(cfg) or body.kind == "aws_account" else NOT_AVAILABLE,
         )
         session.add(source)
         try:
@@ -630,6 +632,7 @@ async def create_source(team_id: TeamId, body: SourceCreate, Authorization: Auth
 
 
 # #225: server-side search, filters and keyset paging for the source tables
+NOT_AVAILABLE = "Validation for this source is not available yet"
 SOURCE_STATUSES = ("enabled", "disabled", "never", "pending", "passed", "partial", "failed", "error", "not_available")
 MAX_PAGE = 500
 
@@ -823,6 +826,8 @@ def _update_source(engine, team_id: int, user_id: int, source_id: int, body: Sou
                 J.cancel_open_jobs(session, source, now, reason="Source changed")
                 source.last_test_status = "never" if spec.collectable(cfg) or source.kind == "aws_account" else "not_available"
                 source.last_test_summary, source.last_test_at, source.last_test_job_id = None, None, None
+                if source.last_test_status == "not_available":
+                    source.last_test_summary = NOT_AVAILABLE  # #153: never "None" in the Last test column
                 source.last_test_result = {}
             session.add(source)
             try:
@@ -897,7 +902,7 @@ def _test_source(engine, team_id: int, user_id: int, source_id: int) -> dict:
             return {"cloud_http": True}
         if not (spec.needs_node(cfg) and spec.collectable(cfg)):
             source.last_test_status = "not_available"
-            source.last_test_summary = "Validation for this source is not available yet"
+            source.last_test_summary = NOT_AVAILABLE
             source.last_test_at = now
             session.add(source)
             session.commit()
