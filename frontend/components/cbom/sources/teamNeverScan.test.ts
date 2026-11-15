@@ -94,6 +94,9 @@ assert.equal(storedExclusionIssue("ip6-localhost"), loopbackIssue)
 assert.ok(storedExclusionIssue("printer")!.includes("every job of this team waits"))
 // the hint of a server source's own list says it too (rendered by ServersTab: neverScanRender.test.ts)
 assert.ok(SOURCE_NEVER_SCAN_HINT.includes("are not looked up: they cover only 127.0.0.0/8 and ::1"))
+// #17: a name is skipped with every address it resolves to; the range limit is stated, with what covers it
+assert.ok(SOURCE_NEVER_SCAN_HINT.includes("skipped, with every address it resolves to"))
+assert.ok(SOURCE_NEVER_SCAN_HINT.includes("list such a host by name or by both addresses"))
 
 // the Network tab and the Servers tab are tested rendered, as a customer uses them: neverScanRender.test.ts
 console.log("team never-scan tests passed")

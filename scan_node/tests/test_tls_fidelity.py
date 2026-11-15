@@ -673,7 +673,13 @@ def test_never_scan_names_are_never_sent(monkeypatch):
     ctx = JobContext(job_id=1, attempt=1, run_id=None, kind="collect", source_kind="network_range", scrubber=Scrubber(),
                      never_scan=never, deadline=time.monotonic() + 60)
     scan = N.NetworkScan(ctx, {"sni_hostnames": ["secret.test", "ok.test"]})
-    assert scan.sni_names_for("10.0.0.7") == ["ok.test"]  # the listed name is never sent, even resolved here
+    # the listed name is never sent, even resolved here; and since the node now saw it answer 10.0.0.7, that address
+    # is the listed host (#17): no name is sent to it and the sweep leaves it out
+    assert scan.sni_names_for("10.0.0.7") == []
+    assert never.match_ip("10.0.0.7") == "an address of secret.test, which is on the never-scan list"
+    scan = N.NetworkScan(ctx, {"sni_hostnames": ["ok.test"]})
+    dns["ok.test"] = ["10.0.0.8"]
+    assert scan.sni_names_for("10.0.0.8") == ["ok.test"]  # a name not tied to the listed host is still sent
 
 
 # ----------------------------------------------------------------------------- PostgreSQL TLS versions

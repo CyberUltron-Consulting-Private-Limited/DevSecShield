@@ -11,7 +11,11 @@ import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import { FIX_CLASSES, FIX_LABEL, FIX_VALUES, GRADE_KEYS, GRADE_TEXT, GRADE_WORD, SELF_FIXABLE, isFixValue, sha256Hex } from "./model";
-import { GRADE_TIPS, fixClassTipId } from "./tips";
+import { INFO_TIPS } from "../../../content/infotips/all";
+import { tipTextSource } from "../../../content/infotipSources";
+import { GRADE_TIP_IDS, fixClassTipId } from "./tips";
+
+const GRADE_TIPS = Object.fromEntries(GRADE_TIP_IDS.map((id) => [id, INFO_TIPS[id]]));
 
 const root = path.join(__dirname, "..", "..", "..", "..");
 const contract = JSON.parse(readFileSync(path.join(root, "contracts", "cbom", "grade_keys.json"), "utf8")) as {
@@ -71,7 +75,7 @@ for (const v of contract.fix_values) {
 }
 assert.equal(GRADE_TIPS["cbom.agility.inferred"].what, contract.fix_inferred_text);
 // every tip has text and a `// src:` line above it
-const tipsSource = readFileSync(path.join(__dirname, "..", "..", "..", "content", "infotips.ts"), "utf8");
+const tipsSource = tipTextSource();
 for (const [id, tip] of Object.entries(GRADE_TIPS)) {
   assert.ok(tip.label && tip.what && tip.example, id);
   assert.match(tipsSource, new RegExp(`// src: [^\\n]+\\n\\s+"${id.replace(/\./g, "\\.")}"`), `${id}: no // src: line`);

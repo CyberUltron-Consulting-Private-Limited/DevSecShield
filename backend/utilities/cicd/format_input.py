@@ -4,6 +4,7 @@ from backend.utilities.db.s3_utils import upload_file
 from io import BytesIO
 from rich.console import Console
 from backend.utilities.scan.sanitize_path_patterns import sanitize_path_patterns
+from backend.utilities.log_redaction import safe_repr
 console = Console()
 
 # SECURITY: Maximum upload size (50MB)
@@ -102,7 +103,8 @@ async def format_cicd_input(
                 cicd_kwargs["app_lang"] = sast_scan_settings.get("app_lang")
                 cicd_kwargs["exclude_path_arrays"] = sanitize_path_patterns(sast_scan_settings.get("exclude_path_arrays")) if sast_scan_settings.get("exclude_path_arrays") else None
                 
-                console.print(f"Cicd kwargs assembled successfully: {cicd_kwargs}",style="dim bold yellow")
+                console.print(f"Cicd kwargs assembled successfully: {safe_repr(cicd_kwargs)}", style="dim bold yellow",
+                              markup=False)
                 return cicd_kwargs
             case "cbom":
                 cbom_scan_settings: dict | None = scan_settings.get("cbom") if scan_settings else None
@@ -111,13 +113,15 @@ async def format_cicd_input(
                 if cbom_scan_settings and cbom_scan_settings.get("include_vendored") is True:
                     cicd_kwargs["include_vendored"] = True
 
-                console.print(f"Cicd kwargs assembled successfully: {cicd_kwargs}",style="dim bold yellow")
+                console.print(f"Cicd kwargs assembled successfully: {safe_repr(cicd_kwargs)}", style="dim bold yellow",
+                              markup=False)
                 return cicd_kwargs
             case "ai_bom":
                 ai_bom_scan_settings: dict | None = scan_settings.get("ai_bom") if scan_settings else None
                 cicd_kwargs["scan_binaries"] = ai_bom_scan_settings.get("scan_binaries", False) if ai_bom_scan_settings else False
 
-                console.print(f"Cicd kwargs assembled successfully: {cicd_kwargs}",style="dim bold yellow")
+                console.print(f"Cicd kwargs assembled successfully: {safe_repr(cicd_kwargs)}", style="dim bold yellow",
+                              markup=False)
                 return cicd_kwargs
 
                 

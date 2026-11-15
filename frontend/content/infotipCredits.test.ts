@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 
-import { INFO_TIPS } from "./infotips";
+import { INFO_TIPS } from "./infotips/all";
 
 const planning = fs.readFileSync(path.join(__dirname, "..", "..", "backend", "utilities", "cbom_sources", "planning.py"), "utf8");
 const rates: Record<string, number> = {};

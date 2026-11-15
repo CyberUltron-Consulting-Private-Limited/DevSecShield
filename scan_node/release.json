@@ -1,0 +1,5 @@
+{
+  "after": "4c477e457c42d7c2fbdb03272c460f01d1b63758",
+  "first": "1.0.1",
+  "about": "The scan node release version (issue #361): on staging's first-parent history after `after`, the first promotion that carries this file and changes scan_node/, the Helm chart or scripts/release/ is released as `first`; each later one adds 1 to the patch (.github/ci/node_version.py). A minor or major release: set `first` (e.g. 1.1.0) and `after` (the head of staging at the time). Published versions are immutable."
+}
