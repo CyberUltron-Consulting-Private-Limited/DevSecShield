@@ -40,7 +40,7 @@ from backend.utilities.scan.cancel_scan import CancelRefused, cancel_scan, refun
 from backend.utilities.scan.estimate_scan import estimate_credits
 from backend.utilities.scan import credit_estimate
 from backend.utilities.team.credits import check_if_team_has_enough_credits , deduct_credits_from_team , update_scan_credit_consumed , refund_credits_to_team
-from backend.utilities.log_redaction import safe_repr
+from backend.utilities.log_redaction import redact, safe_repr
 from backend.utilities.db.schemas import * 
 from backend.utilities.celery.celery_connection import get_status_and_update_db
 from backend.utilities.db.encryption import decrypt_if_encrypted
@@ -126,7 +126,7 @@ async def list_scans(
     except HTTPException as e:
         raise e
     except Exception as e:
-        console.print(f"Error in listing {type} scans for team {team_id}: {e}",style="bold red")
+        console.print(f"Error in listing {type} scans for team {team_id}: {redact(str(e))}",style="bold red", markup=False)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in listing scans , please try again later")
 
     
@@ -170,7 +170,7 @@ async def create_scan(
     except HTTPException as e:
         raise e
     except Exception as e:
-        console.print(f"Error in creating {type} scan for team {team_id}: {e}",style="bold red")
+        console.print(f"Error in creating {type} scan for team {team_id}: {redact(str(e))}",style="bold red", markup=False)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in creating scan , please try again later")
 
 
@@ -305,7 +305,7 @@ async def send_message_to_scan(
 
         
     except Exception as e:
-        console.print(f"Error in send_message_to_{type}_scan_conversation: {e}",style="bold red")
+        console.print(f"Error in send_message_to_{type}_scan_conversation: {redact(str(e))}",style="bold red", markup=False)
         if isinstance(e,HTTPException):
             raise e
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in sending message , please try again later")
@@ -451,7 +451,7 @@ async def get_scan(
     except HTTPException as e:
         raise e
     except Exception as e:
-        console.print(f"Error in get_scan: {e}",style="bold red")
+        console.print(f"Error in get_scan: {redact(str(e))}",style="bold red", markup=False)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in getting scan , please try again later")
 
 
@@ -524,7 +524,7 @@ def _release_scan_claim(engine, scan_id: int, team_id: int) -> None:
             )
             session.commit()
     except Exception as e:
-        console.print(f"Failed to release scan claim for scan {scan_id}: {e}", style="bold red")
+        console.print(f"Failed to release scan claim for scan {scan_id}: {redact(str(e))}", style="bold red", markup=False)
 
 
 # revamped ✅
@@ -550,7 +550,7 @@ async def start_scan(
         try:
             start_scan_payload = StartScanPayload.model_validate_json(start_scan_payload_string)
         except ValidationError as ve:
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Invalid start scan payload: {ve.errors()}")
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Invalid start scan payload: {ve.errors(include_input=False, include_url=False)}")
         
 
 
@@ -701,7 +701,7 @@ async def start_scan(
             "message": "Scan started successfully",
         }
     except Exception as e:
-        console.print(f"Error in starting {type} scan: {e}",style="bold red")
+        console.print(f"Error in starting {type} scan: {redact(str(e))}",style="bold red", markup=False)
         if isinstance(e,HTTPException):
             raise e
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in starting scan , please try again later")
@@ -732,7 +732,7 @@ async def cancel_scan_route(
     except HTTPException as e:
         raise e
     except Exception as e:
-        console.print(f"Error in cancelling {type} scan {scan_id}: {e}", style="bold red")
+        console.print(f"Error in cancelling {type} scan {scan_id}: {redact(str(e))}", style="bold red", markup=False)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in cancelling the scan, please try again later")
 
 
@@ -804,7 +804,7 @@ async def delete_scan(
     except HTTPException as e:
         raise e
     except Exception as e:
-        console.print(f"Error in deleting scan with id: {scan_id} for team: {team_id}: {e}",style="bold red")
+        console.print(f"Error in deleting scan with id: {scan_id} for team: {team_id}: {redact(str(e))}",style="bold red", markup=False)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in deleting scan , please try again later")
 
     
@@ -883,7 +883,7 @@ async def update_scan(
     except HTTPException as e:
         raise e
     except Exception as e:
-        console.print(f"Error in updating scan with id: {scan_id} for team: {team_id}: {e}",style="bold red")
+        console.print(f"Error in updating scan with id: {scan_id} for team: {team_id}: {redact(str(e))}",style="bold red", markup=False)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in updating scan , please try again later")
 
 
@@ -948,7 +948,7 @@ async def export_scan(
     except HTTPException as e:
         raise e
     except Exception as e:
-        console.print(f"Error in exporting scan with id: {scan_id} for team: {team_id}: {e}",style="bold red")
+        console.print(f"Error in exporting scan with id: {scan_id} for team: {team_id}: {redact(str(e))}",style="bold red", markup=False)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in exporting scan , please try again later")
 
 
@@ -977,7 +977,7 @@ async def reinitialize_scan(
         try:
             start_scan_payload = StartScanPayload.model_validate_json(start_scan_payload_string)
         except ValidationError as ve:
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Invalid start scan payload: {ve.errors()}")
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Invalid start scan payload: {ve.errors(include_input=False, include_url=False)}")
 
         # STEP [ 1 ] : =========== Check if user is in team ======================
         check_if_user_is_in_team(user.id, team_id, engine)
@@ -1011,7 +1011,7 @@ async def reinitialize_scan(
             "message": "Scan reinitialized successfully",
         }
     except Exception as e:
-        console.print(f"Error in reinitializing {type} scan: {e}",style="bold red")
+        console.print(f"Error in reinitializing {type} scan: {redact(str(e))}",style="bold red", markup=False)
         if isinstance(e,HTTPException):
             raise e
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in reinitializing scan , please try again later")
@@ -1042,7 +1042,7 @@ async def estimate_credits_for_scan(
         try:
             start_scan_payload = StartScanPayload.model_validate_json(start_scan_payload_string)
         except ValidationError as ve:
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Invalid start scan payload: {ve.errors()}")
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Invalid start scan payload: {ve.errors(include_input=False, include_url=False)}")
 
         console.print(f"Start scan payload: {safe_repr(start_scan_payload)}", style="bold yellow", markup=False)
 
@@ -1089,7 +1089,7 @@ async def estimate_credits_for_scan(
             "minimum_credits": minimum,
         }
     except Exception as e:
-        console.print(f"Error in estimating credits for {type} scan: {e}",style="bold red")
+        console.print(f"Error in estimating credits for {type} scan: {redact(str(e))}",style="bold red", markup=False)
         if isinstance(e,HTTPException):
             raise e
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in estimating credits for scan , please try again later")
@@ -1197,7 +1197,7 @@ async def create_ticket(
     except HTTPException as e:
         raise e
     except Exception as e:
-        console.print(f"Error in creating ticket for {type} scan: {e}",style="bold red")
+        console.print(f"Error in creating ticket for {type} scan: {redact(str(e))}",style="bold red", markup=False)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in creating ticket for scan , please try again later")
 
 
@@ -1262,7 +1262,7 @@ async def toggle_finding_state(
     except HTTPException as e:
         raise e
     except Exception as e:
-        console.print(f"Error in toggling finding state for {type} scan: {e}",style="bold red")
+        console.print(f"Error in toggling finding state for {type} scan: {redact(str(e))}",style="bold red", markup=False)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in toggling finding state for scan , please try again later")
 
 
@@ -1352,7 +1352,7 @@ async def generate_finding_remediation(
     except HTTPException as e:
         raise e
     except Exception as e:
-        console.print(f"Error generating remediation for finding {finding_id}: {e}", style="bold red")
+        console.print(f"Error generating remediation for finding {finding_id}: {redact(str(e))}", style="bold red", markup=False)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error generating remediation, please try again later",
