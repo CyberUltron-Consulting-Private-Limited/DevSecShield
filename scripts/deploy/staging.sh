@@ -34,8 +34,7 @@
 #   staging.sh backend-env               read KEY=VALUE lines on stdin and set exactly those keys in backend.env (only
 #                                        the BACKEND_ENV_KEYS below; empty values are skipped; never prints a value).
 #                                        `push` runs it just before `deploy` when STAGING_SET_<KEY> is set (CI: the
-#                                        staging environment's CBOM_AWS_* / CBOM_AI_AWS_* secrets; deploy/staging/
-#                                        README.md "AWS collection" and "AI remediation")
+#                                        staging environment's CBOM_AWS_* / CBOM_AI_AWS_* secrets; README "AWS")
 #   staging.sh rollback [--allow-downgrade]
 #                                        back to the previously deployed tag and its own deploy files (compose file,
 #                                        nginx, this script). When that tag's migrations do not contain the database's
