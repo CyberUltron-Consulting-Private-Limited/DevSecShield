@@ -198,18 +198,41 @@ async def code_diff(team_id: TeamId, scan_id: ObjectId, against: int | None = Qu
 
 
 # ============================================================================ heat-map and certificates
-def _heatmap(engine, team_id: int, run_id: int, by: str) -> dict:
+def _heatmap(engine, team_id: int, run_id: int, by: str, metric: str = "impact") -> dict:
     with Session(engine) as session:
         run = _owned_run(session, team_id, run_id)
-        return {"run_id": run.id, **HEAT.run_heatmap(session, team_id, run.id, by=by)}
+        return {"run_id": run.id, **HEAT.run_heatmap(session, team_id, run.id, by=by, metric=metric)}
 
 
 @router.get(SRC + "/runs/{run_id}/heatmap", dependencies=READ,
-            summary="Algorithm family x source (or asset type) by worst impact, and the certificates with expiry dates")
+            summary="Algorithm family x source (or asset type) by worst impact or quantum risk grade, and the "
+                    "certificates with expiry dates")
 async def run_heatmap(team_id: TeamId, run_id: ObjectId, by: str = Query(default="source", pattern="^(source|type)$"),
+                      metric: str = Query(default="impact", pattern="^(impact|grade)$"),
                       Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
-    return _ok(await _run("heatmap", team_id, _heatmap, engine, team_id, run_id, by))
+    return _ok(await _run("heatmap", team_id, _heatmap, engine, team_id, run_id, by, metric))
+
+
+def _heatmap_cell(engine, team_id: int, run_id: int, query: dict) -> dict:
+    with Session(engine) as session:
+        run = _owned_run(session, team_id, run_id)
+        return {"run_id": run.id, **HEAT.heatmap_cell(session, team_id, run.id, **query)}
+
+
+@router.get(SRC + "/runs/{run_id}/heatmap/cell", dependencies=READ,
+            summary="The assets of one heat-map cell (algorithm family x source or asset type), worst first")
+async def run_heatmap_cell(team_id: TeamId, run_id: ObjectId,
+                           row: str = Query(min_length=1, max_length=64),
+                           column: str = Query(min_length=1, max_length=255),
+                           by: str = Query(default="source", pattern="^(source|type)$"),
+                           metric: str = Query(default="impact", pattern="^(impact|grade)$"),
+                           page: int = Query(default=1, ge=1, le=10_000),
+                           page_size: int = Query(default=50, ge=1, le=HEAT.CELL_PAGE_MAX),
+                           Authorization: AuthHeader = None):
+    engine, _user = await authorize(team_id, Authorization)
+    query = {"by": by, "row": row, "column": column, "metric": metric, "page": page, "page_size": page_size}
+    return _ok(await _run("heatmap cell", team_id, _heatmap_cell, engine, team_id, run_id, query))
 
 
 # ============================================================================ schedules

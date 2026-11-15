@@ -112,7 +112,31 @@ zs-cbom ALL=(root) NOPASSWD: ZS_CBOM_TIER2
 # namespaces (connection test), nodes, configmaps (CA bundles, pasted keys), ingresses, cert-manager Certificates,
 # Istio PeerAuthentications (security.istio.io) and DestinationRules (networking.istio.io: their API group), and the
 # Linkerd policy objects (policy.linkerd.io) that decide whether a Server accepts clients without a mesh identity.
-K8S_TIER1 = """apiVersion: rbac.authorization.k8s.io/v1
+# #207: the template also creates what the binding names (namespace and service account zs-cbom) and a long-lived token
+# for it (a kubernetes.io/service-account-token Secret, which the control plane fills in); K8S_KUBECONFIG builds the
+# kubeconfig from that Secret.  `kubectl create token` tokens expire (1 hour by default), so scheduled scans would fail.
+K8S_TOKEN_SECRET = "zs-cbom-token"
+K8S_TIER1 = f"""apiVersion: v1
+kind: Namespace
+metadata:
+  name: zs-cbom
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: zs-cbom
+  namespace: zs-cbom
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {K8S_TOKEN_SECRET}
+  namespace: zs-cbom
+  annotations:
+    kubernetes.io/service-account.name: zs-cbom
+type: kubernetes.io/service-account-token
+---
+apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: zs-cbom-tier1
@@ -157,6 +181,26 @@ K8S_TIER2 = K8S_TIER1.replace("zs-cbom-tier1", "zs-cbom-tier2").replace(
     1,
 )
 assert "secrets" in K8S_TIER2  # the replace above must have matched
+
+# #207: after `kubectl apply -f zs-cbom-tier1.yaml` (or tier2), as a cluster admin: a kubeconfig with the Secret's
+# token and the cluster's CA embedded, the file ZeroShield's form uploads.
+K8S_KUBECONFIG = f"""# Build the kubeconfig ZeroShield uploads, from the long-lived token Secret the template created.
+# Run as a cluster admin after: kubectl apply -f zs-cbom-tier1.yaml   (or zs-cbom-tier2.yaml)
+# Do not use `kubectl create token zs-cbom`: those tokens expire (1 hour by default) and scheduled scans then fail
+# with "the API server refused the credential".
+set -euo pipefail
+SERVER=$(kubectl config view --minify -o jsonpath='{{.clusters[0].cluster.server}}')
+kubectl -n zs-cbom get secret {K8S_TOKEN_SECRET} -o jsonpath='{{.data.ca\\.crt}}' | base64 -d > zs-cbom-ca.crt
+TOKEN=$(kubectl -n zs-cbom get secret {K8S_TOKEN_SECRET} -o jsonpath='{{.data.token}}' | base64 -d)
+kubectl config --kubeconfig=zs-cbom.kubeconfig set-cluster zs-cbom --server="$SERVER" --certificate-authority=zs-cbom-ca.crt --embed-certs=true
+kubectl config --kubeconfig=zs-cbom.kubeconfig set-credentials zs-cbom --token="$TOKEN"
+kubectl config --kubeconfig=zs-cbom.kubeconfig set-context zs-cbom --cluster=zs-cbom --user=zs-cbom
+kubectl config --kubeconfig=zs-cbom.kubeconfig use-context zs-cbom
+unset TOKEN
+rm zs-cbom-ca.crt
+chmod 600 zs-cbom.kubeconfig
+echo "Upload zs-cbom.kubeconfig in ZeroShield (API server URL: $SERVER, context: zs-cbom), then delete the file."
+"""
 
 DB_GRANTS = {
     "postgres": (
@@ -449,6 +493,7 @@ TEMPLATE_NAMES = {
     "gcp-reader": ("text/plain", "zs-cbom-gcp-reader.sh"),
     "k8s-tier1": ("application/yaml", "zs-cbom-tier1.yaml"),
     "k8s-tier2": ("application/yaml", "zs-cbom-tier2.yaml"),
+    "k8s-kubeconfig": ("text/plain", "zs-cbom-kubeconfig.sh"),
     **{f"grant-{engine}": ("text/plain", f"zs-cbom-grant-{engine}.sql") for engine in DB_GRANTS},
 }
 
@@ -466,6 +511,8 @@ def template_text(name: str) -> str | None:
         return K8S_TIER1
     if name == "k8s-tier2":
         return K8S_TIER2
+    if name == "k8s-kubeconfig":
+        return K8S_KUBECONFIG
     if name == "vault-policy":
         return VAULT_POLICY
     if name.startswith("grant-"):

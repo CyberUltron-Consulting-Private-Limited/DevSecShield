@@ -74,8 +74,9 @@ def test_expired_evidence_is_e0_with_its_reason_everywhere(api):
     assert a["q0_gap"]["reason"] == "evidence_expired" and old in a["q0_gap"]["detail"]
     body = ev(api)
     gap = next(g for g in body["q0_gaps"] if g["id"] == "area:key_hierarchy")
-    assert (gap["kind"], gap["reason"], gap["counted"], gap["as_of"]) == ("area", "evidence_expired", True,
-                                                                          TODAY.isoformat())
+    # as_of is the day the request ran: TODAY (module import) or, for a run that crossed midnight UTC, the next day
+    assert (gap["kind"], gap["reason"], gap["counted"]) == ("area", "evidence_expired", True)
+    assert gap["as_of"] in {TODAY.isoformat(), dt.datetime.utcnow().date().isoformat()}, gap["as_of"]
     rows = [s for s in overview(api)["plan"]["skipped"] if s.get("gap_id") == "area:key_hierarchy"]
     assert len(rows) == 1 and "older than 12 months" in rows[0]["reason"] and "unanswered" not in rows[0]["reason"]
     assert rows[0]["gap_reason"] == "evidence_expired" and "Q0 gap" in rows[0]["reason"]
