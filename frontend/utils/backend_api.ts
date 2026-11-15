@@ -4444,6 +4444,8 @@ export interface CbomSource {
     last_test_result: { samples?: CbomTestSample[]; checks?: CbomAwsCheck[]; member_accounts?: number; summary?: string; status?: string; estimate?: CbomOrgEstimate }
     // the newest finished collection of this source (list and get only; null on save responses and before the first)
     last_collect?: { status: "ok" | "partial" | "failed"; at: string | null; summary: string | null; job_id: number; run_id: number | null } | null
+    /** AWS Private CA sources only (#368): what the account's last collection read of ACM PCA, per region */
+    pca_read?: import("@/components/cbom/sources/awsPrivateCaStatus").AwsPcaRead | null
     row_version: number
     created_at: string | null
     last_updated: string | null

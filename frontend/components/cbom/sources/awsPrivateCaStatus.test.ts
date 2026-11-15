@@ -19,6 +19,7 @@ import {
   awsPrivateCaStatus,
   worstAwsPrivateCaStatus,
   type AwsAccountStatusInput,
+  type AwsPcaRead,
 } from "./awsPrivateCaStatus"
 
 const NOW = new Date("2026-11-14T12:00:00Z")
@@ -117,5 +118,56 @@ assert.ok(tab.includes('unavailable={row.key === "aws_private_ca" && awsUnavaila
 assert.ok(tab.includes("data-testid={`${testId}-unavailable`}"), "the row says why it cannot be connected")
 assert.ok(tab.includes('data-testid="cloud-accounts-aws-off"'), "the empty accounts card does not pitch AWS when it is off")
 assert.ok(tab.includes(`href={\`mailto:\${AWS_SUPPORT_EMAIL}\`}`), "a link to support")
+
+// #368 (a): the card says what the account's last collection read of ACM Private CA (backend pca_read), per region
+{
+  const collected = account({
+    name: "stgqa-aws-ap-south-1", last_test_status: "passed", last_test_at: hoursAgo(3),
+    last_collect: { status: "ok", at: hoursAgo(1), summary: "2 of 2 account-regions read (2 slices)", job_id: 292, run_id: 29 },
+  })
+  const read = (over: Partial<AwsPcaRead> = {}): AwsPcaRead => ({
+    account_source_id: 434, job_id: 292, run_id: 29, at: hoursAgo(1), status: "read", cas: 0, reason: null,
+    regions: [{ region: "ap-south-1", status: "ok", cas: 0, error: null }], ...over,
+  })
+  // the issue's run: ACM PCA read in ap-south-1, none found
+  let s = awsPrivateCaStatus(collected, true, NOW, read())
+  assert.equal(s.kind, "passed")
+  assert.equal(s.label, "Read")
+  assert.equal(s.detail, "Last collection of AWS account stgqa-aws-ap-south-1, 14 Nov 2026, 11:00 UTC: no Private CA found in ap-south-1")
+  // some found
+  s = awsPrivateCaStatus(collected, true, NOW, read({ cas: 2, regions: [
+    { region: "ap-south-1", status: "ok", cas: 0, error: null }, { region: "us-east-1", status: "ok", cas: 2, error: null }] }))
+  assert.equal(s.detail, "Last collection of AWS account stgqa-aws-ap-south-1, 14 Nov 2026, 11:00 UTC: 2 private CAs in us-east-1; none in ap-south-1")
+  assert.equal(awsPrivateCaStatus(collected, true, NOW, read({ cas: 1, regions: [{ region: "us-east-1", status: "ok", cas: 1, error: null }] })).detail,
+    "Last collection of AWS account stgqa-aws-ap-south-1, 14 Nov 2026, 11:00 UTC: 1 private CA in us-east-1")
+  // a region not read: partial, with the reason
+  s = awsPrivateCaStatus(collected, true, NOW, read({ status: "partial", regions: [
+    { region: "ap-south-1", status: "ok", cas: 0, error: null }, { region: "us-east-1", status: "denied", cas: 0, error: "acm-pca: denied AccessDeniedException" }] }))
+  assert.equal(s.kind, "partial")
+  assert.equal(s.label, "Partly read")
+  assert.match(s.detail ?? "", /: no Private CA found in ap-south-1; us-east-1 not read \(acm-pca: denied AccessDeniedException\)$/)
+  // the account failed: not read, and why
+  s = awsPrivateCaStatus({ ...collected, last_collect: { ...collected.last_collect!, status: "failed" } }, true, NOW,
+    read({ status: "not_read", regions: [], reason: "AWS role could not be assumed" }))
+  assert.equal(s.kind, "failed")
+  assert.equal(s.label, "Not read")
+  assert.match(s.detail ?? "", /: Private CAs not read: AWS role could not be assumed$/)
+  // a newer failed validation decides the status; the line still says what the last collection read
+  s = awsPrivateCaStatus({ ...collected, last_test_status: "failed", last_test_at: hoursAgo(0.5), last_test_summary: "4 of 6 checks passed" },
+    true, NOW, read())
+  assert.equal(s.kind, "failed")
+  assert.equal(s.detail, "Last validation of AWS account stgqa-aws-ap-south-1: Failed, 14 Nov 2026, 11:30 UTC · 4 of 6 checks passed. " +
+    "At its last collection (14 Nov 2026, 11:00 UTC): no Private CA found in ap-south-1")
+  // a collection older than a day: "Not checked since", with the read in the line
+  const old = { ...collected, last_test_at: hoursAgo(50), last_collect: { ...collected.last_collect!, at: hoursAgo(30) } }
+  s = awsPrivateCaStatus(old, true, NOW, read({ at: hoursAgo(30) }))
+  assert.equal(s.kind, "stale")
+  assert.match(s.label, /^Not checked since/)
+  assert.match(s.detail ?? "", /no Private CA found in ap-south-1$/)
+  // no read yet (account never collected): as before
+  assert.equal(awsPrivateCaStatus(account({ name: "x", last_test_status: "passed", last_test_at: hoursAgo(1) }), true, NOW, null).label, "Passed")
+  // the tab passes the source's pca_read
+  assert.ok(tab.includes("s.pca_read"), "the tab reads the source's pca_read")
+}
 
 console.log("awsPrivateCaStatus: ok")

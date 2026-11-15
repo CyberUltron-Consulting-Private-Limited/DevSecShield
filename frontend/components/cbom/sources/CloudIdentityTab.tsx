@@ -37,6 +37,7 @@ import {
 } from "@/utils/backend_api";
 
 import { AWS_NOT_CONFIGURED, AWS_SUPPORT_EMAIL, awsPrivateCaStatus, worstAwsPrivateCaStatus } from "./awsPrivateCaStatus";
+import { CA_API_URL_EXAMPLE, alreadyListed, normalizeDomain } from "./certDomain";
 import { caCardStatus, worstCardStatus, type CaCardStatus } from "./caCardStatus";
 import { cbomSourcesKeys } from "./keys";
 import { keepLiveValidation } from "./liveValidation";
@@ -157,7 +158,6 @@ const GUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0
 const GCP_PROJECT_RE = /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/;
 const GCP_SA_RE = /^[a-z0-9-]+@[a-z0-9-]+\.iam\.gserviceaccount\.com$/;
 const LOGIN_RE = /^[A-Za-z0-9._@$\\-]{1,64}$/;
-const DOMAIN_LABEL_RE = /^[a-z0-9_]([a-z0-9_-]{0,61}[a-z0-9_])?$/;
 const MAX_DOMAINS = 200;
 const CLOUDFORMATION_CONSOLE = "https://console.aws.amazon.com/cloudformation/home";
 // Venafi, Keyfactor, DigiCert, Sectigo and other CAs: no collector (kinds._ca_secrets asks for no key; owner bug C6)
@@ -244,17 +244,6 @@ function httpsUrlError(value: string, label: string, maxLength = 512): string | 
   if (url.protocol !== "https:" || !url.hostname) return `The ${label} must start with https://`;
   if (url.username || url.password) return `The ${label} must not contain a user name or password`;
   return null;
-}
-
-function normalizeDomain(raw: string): { value: string; error: string | null } {
-  const value = raw.trim().toLowerCase().replace(/\.$/, "");
-  if (!value) return { value, error: "Enter a domain such as example.com" };
-  if (/[^\x00-\x7f]/.test(value)) return { value, error: null }; // internationalised names: the server converts and checks them
-  const labels = value.split(".");
-  if (value.length > 253 || labels.length < 2 || !labels.every((l) => DOMAIN_LABEL_RE.test(l)) || /^\d+$/.test(labels[labels.length - 1])) {
-    return { value, error: `${raw.trim()} is not a domain name such as example.com` };
-  }
-  return { value, error: null };
 }
 
 /** A unique source name (the server enforces unique names per kind) that matches the name rule. */
@@ -529,7 +518,8 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
   const provider = PROVIDERS.find((p) => p.value === form.provider) ?? PROVIDERS[0];
   // #223 (a): an AWS Private CA has the status of the AWS account that reads it, never a bare "Connected"
   const awsCaStatus = (s: CbomSource) =>
-    awsPrivateCaStatus(awsSources.find((a) => a.id === cfgNumber(s, "aws_source_id")) ?? null, settings.aws_collection_configured);
+    awsPrivateCaStatus(awsSources.find((a) => a.id === cfgNumber(s, "aws_source_id")) ?? null, settings.aws_collection_configured,
+      new Date(), s.pca_read ?? null);
 
   return (
     <div className="space-y-6">
@@ -1847,7 +1837,7 @@ function CertDomains({ teamId, settings }: { teamId: number; settings: CbomSourc
       return;
     }
     if (settings.cert_domains.includes(value)) {
-      setError(`${value} is already in the list`);
+      setError(alreadyListed(input, value)); // a Unicode name is compared in its ASCII form, as the server stores it (#368)
       return;
     }
     if (settings.cert_domains.length >= MAX_DOMAINS) {
@@ -1960,7 +1950,7 @@ function CtDiscovery({ teamId, settings, source, onDelete }: {
   const addDomain = () => {
     const { value, error: err } = normalizeDomain(domain.replace(/^\*\./, ""));
     if (err) return setError(err);
-    if (domains.includes(value)) return setError(`${value} is already in the list`);
+    if (domains.includes(value)) return setError(alreadyListed(domain.replace(/^\*\./, ""), value));
     if (domains.length >= MAX_CT_DOMAINS) return setError(`At most ${MAX_CT_DOMAINS} domains`);
     save.mutate({ domains: [...domains, value], include_subdomains: subdomains, expected_issuers: issuers });
   };
@@ -2478,7 +2468,7 @@ function CaDialog({
                 value={apiUrl}
                 maxLength={512}
                 spellCheck={false}
-                placeholder={isVault ? "https://vault.corp.example.com:8200" : isEjbca ? "https://ejbca.corp.example.com" : "https://tpp.example.com/vedsdk"}
+                placeholder={CA_API_URL_EXAMPLE[provider] ?? CA_API_URL_EXAMPLE.other}
                 onChange={(e) => setApiUrl(e.target.value)}
               />
             </Field>
