@@ -38,7 +38,7 @@ const ui = fs.readFileSync(path.join(dir, "..", "..", "ui", "scroll-area.tsx"), 
 assert.ok(ui.includes('data-slot="scroll-area-viewport"'));
 
 // mobile: the page does not clip sideways overflow (it must not have any); select + name stay sticky below 768 px
-const page = fs.readFileSync(path.join(dir, "..", "..", "..", "app", "[team_id]", "cbom", "runs", "[run_id]", "results", "page.tsx"), "utf8");
+const page = fs.readFileSync(path.join(dir, "RunResultsRoute.tsx"), "utf8");
 assert.ok(!page.includes("overflow-x-hidden"), "no overflow clipping on the page wrapper");
 assert.match(table, /const STICKY_SELECT = "max-md:sticky max-md:left-0/);
 // the select column holds the row's Open chevron below md (QA round 4 E): the name column starts after its 76 px
