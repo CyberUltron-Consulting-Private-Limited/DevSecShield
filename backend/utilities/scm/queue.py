@@ -10,6 +10,13 @@ Credits per run
   From the moment a Scan row exists its ``credit_charged`` is the charge, and the existing paths refund it: a worker
   failure (``get_status_and_update_db``) or a cancel (``cancel_scan``). A Scan that could not be sent loses its
   ``credit_charged`` before this module refunds, so no charge is ever refunded twice.
+* A dispatched scan is a Scan row exactly like one ``/start`` charged: ``credit_consumed`` (the estimate),
+  ``credit_estimate`` (``credit_estimate.input_digest`` of the payload without its token, plus the price and the
+  minimum) and ``credit_charged`` (what was taken). The minimum charge per type comes from ``credit_estimate`` too.
+  When the scan path refunds it (a worker failure, a cancel on the scan page), ``poll_tick`` records that refund on
+  the request and the run without moving credits again, so a run's charged and refunded totals match the balance.
+* A launcher that raised AFTER the scan reached a worker (its ``task_id`` is stored) leaves a dispatched scan, not a
+  failed one: refunding it would make a running scan free (and its later failure refund would pay twice).
 
 The queue (``scmscanrequest``) and the dispatcher
 * Priority: push (0) > manual (1) > schedule (2), then age.
@@ -45,8 +52,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from backend.new_models import Scan, Team
+from backend.utilities.scan import credit_estimate
 from backend.utilities.scm import pricing, rollup
-from backend.utilities.scm.common import log
+from backend.utilities.scm.common import log, redact_urls
 from backend.utilities.scm.inventory import filter_input
 from backend.utilities.scm.models import ScmConnection, ScmRepository, ScmScanPolicy, ScmScanRequest, ScmScanRun
 from backend.utilities.scm.policies import team_policies, winning_policy
@@ -501,10 +509,16 @@ def _dispatch_one(engine: Engine, request_id: int, now: dt.datetime, launcher: L
                     "trigger": req.trigger, "full_name": repo.full_name, "commit": req.commit_sha}
         metadata = {**get_scan_metadata_for_type(req.product, payload), "scm": scm_meta}
         credits = pricing.as_credits(req.credits_c)
+        # what /estimate stores for a scan (credit_estimate.input_digest: the payload minus its token), priced by
+        # the SCM-size formula; credit_charged is what the run took for it, so every existing refund path gives
+        # back exactly this
+        measured = credit_estimate.input_digest(req.product, getattr(payload, req.product).model_dump(mode="json"),
+                                                None)
         scan = Scan(team_id=req.team_id, owner_user_id=req.owner_user_id, scan_type=req.product,
                     title=f"{repo.full_name}@{req.branch} ({req.trigger})"[:250], scan_status="pending",
                     credit_consumed=credits, credit_charged=credits,
-                    credit_estimate={"formula": pricing.FORMULA, "credits": credits, "size_kb": repo.size_kb},
+                    credit_estimate={**measured, "credits": credits, "minimum": pricing.minimum(req.product),
+                                     "pricing": pricing.FORMULA, "size_kb": repo.size_kb},
                     scan_metadata=metadata)
         session.add(scan)
         session.flush()
@@ -520,12 +534,21 @@ def _dispatch_one(engine: Engine, request_id: int, now: dt.datetime, launcher: L
     except Exception as exc:
         reason = f"The scan could not be sent to a worker ({_safe_reason(exc)})"
         with Session(engine) as session:
-            _fail_unsent_scan(session, scan_id, reason)
-            _refund_requests(session, team_id, [rid], "failed", f"The scan could not be sent: {_safe_reason(exc)}",
-                             now, from_status=("dispatching",))
-            session.commit()
-        log("dispatch FAILED", team=team_id, request=rid, scan=scan_id, error=type(exc).__name__)
-        return "failed"
+            sent_task = session.exec(select(Scan.task_id).where(Scan.id == scan_id)).first()
+        if sent_task:
+            # the scan reached a worker before the launcher failed: it runs and stays charged (refunding it here
+            # would make it free, and its own failure refund would then pay twice)
+            log("dispatch raised after the scan was sent", team=team_id, request=rid, scan=scan_id,
+                error=type(exc).__name__)
+            task_id = sent_task
+        else:
+            with Session(engine) as session:
+                _fail_unsent_scan(session, scan_id, reason)
+                _refund_requests(session, team_id, [rid], "failed",
+                                 f"The scan could not be sent: {_safe_reason(exc)}", now, from_status=("dispatching",))
+                session.commit()
+            log("dispatch FAILED", team=team_id, request=rid, scan=scan_id, error=type(exc).__name__)
+            return "failed"
     with Session(engine) as session:
         scan = session.get(Scan, scan_id)
         if scan is not None:  # /start's helper rewrites scan_metadata; keep the repository link on it
@@ -652,6 +675,35 @@ def _close_runs(session: Session, run_ids: set[int], now: dt.datetime) -> None:
             session.add(run)
 
 
+def scan_path_refund(scan: Scan) -> float:
+    """What the scan's own path gave back when it ended: a worker failure refunds ``credit_charged``
+    (``get_status_and_update_db``); a cancel on the scan page refunds it and records ``info.refunded_credits``
+    (``cancel_scan``). A scan that never reached a worker has no ``credit_charged`` left (``_fail_unsent_scan``)."""
+    if scan.scan_status == "cancelled":
+        info = scan.info if isinstance(scan.info, dict) else {}
+        return round(float(info.get("refunded_credits") or 0), 2)
+    if scan.scan_status == "failure" and scan.credit_charged:
+        return round(float(scan.credit_charged), 2)
+    return 0.0
+
+
+def _record_scan_path_refund(session: Session, req: ScmScanRequest, scan: Scan) -> None:
+    """Book on the request and its run a refund the scan path already paid (no credit moves here). Compare-and-set
+    on ``refunded``, so it is booked once and this module can never refund the same request afterwards."""
+    cents = min(round(scan_path_refund(scan) * 100), int(req.credits_c or 0))
+    if cents <= 0 or req.refunded:
+        return
+    won = session.exec(update(ScmScanRequest)  # type: ignore[call-overload]
+                       .where(ScmScanRequest.id == req.id, ScmScanRequest.refunded == False)
+                       .values(refunded=True).execution_options(synchronize_session=False)).rowcount == 1
+    if not won:
+        return
+    req.refunded = True
+    if req.run_id:
+        session.exec(update(ScmScanRun).where(ScmScanRun.id == req.run_id)  # type: ignore[call-overload]
+                     .values(refunded_c=ScmScanRun.refunded_c + cents).execution_options(synchronize_session=False))
+
+
 def poll_tick(engine: Engine, now: dt.datetime, *, status_reader: StatusReader | None = None,
               limit: int = 500) -> dict[str, int]:
     status_reader = status_reader or celery_status
@@ -684,8 +736,10 @@ def poll_tick(engine: Engine, now: dt.datetime, *, status_reader: StatusReader |
             if final is None:
                 continue
             req.status, req.finished_at = final, now
+            _record_scan_path_refund(session, req, scan)
             if final == "failed":
-                req.error = str((scan.info or {}).get("error") or "The scan failed")[:255] \
+                # the worker's sentence, with the user info of any URL in it dropped (a clone URL carries the token)
+                req.error = redact_urls(str((scan.info or {}).get("error") or "The scan failed"))[:255] \
                     if isinstance(scan.info, dict) else "The scan failed"
             repo = session.get(ScmRepository, req.repo_id)
             summary: dict[str, Any] = {"scan_id": scan.id, "status": scan.scan_status, "at": now.isoformat() + "Z",

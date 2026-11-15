@@ -1,6 +1,7 @@
 """Shared helpers of the SCM package: one greppable log line per state change (ids, enums and numbers only)."""
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from rich.console import Console
@@ -20,4 +21,13 @@ def log(action: str, **fields: Any) -> None:
         pass
 
 
-__all__ = ["log"]
+_URL_USERINFO = re.compile(r"(?i)\b(https?://)[^/@\s'\"]+@")
+
+
+def redact_urls(text: str) -> str:
+    """``text`` with the user info of every URL dropped (``https://x-access-token:<token>@host`` -> ``https://***@host``),
+    for a worker's error sentence copied onto a request: a clone URL carries the connection's token."""
+    return _URL_USERINFO.sub(r"\1***@", str(text))
+
+
+__all__ = ["log", "redact_urls"]

@@ -1,4 +1,5 @@
 import json
+import re
 from backend.utilities.db.schemas import StartScanPayload
 from backend.new_models import scan_types
 from fastapi import UploadFile, HTTPException, status
@@ -9,6 +10,25 @@ from backend.utilities.scan.sanitize_path_patterns import sanitize_path_patterns
 from backend.utilities.dast.ssrf import DastSsrfError, assert_manual_dast_allowed
 import zipfile
 console = Console()
+
+# Keys whose values are credentials: the repository access token (PAT, also an SCM App installation token from F3
+# org connections), passwords, API keys and request headers. Their values never reach the log (issue #88).
+_SECRET_KEYS = frozenset({"pat", "password", "token", "api_key", "apikey", "secret", "client_secret", "auth",
+                          "authorization", "headers", "cookies", "cookie", "login_password", "bearer", "private_key"})
+_URL_USERINFO = re.compile(r"(?i)\b(https?://)[^/@\s'\"]+@")
+
+
+def _loggable(value):
+    """A copy of worker kwargs that is safe to print: every credential value replaced by ``***`` and the user info of
+    every URL (``https://user:token@host``) dropped. The kwargs sent to the worker are not changed."""
+    if isinstance(value, dict):
+        return {k: ("***" if str(k).lower() in _SECRET_KEYS and v not in (None, "") else _loggable(v))
+                for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_loggable(v) for v in value]
+    if isinstance(value, str):
+        return _URL_USERINFO.sub(r"\1***@", value)
+    return value
 
 
 def _require_zip(data: bytes) -> None:
@@ -65,7 +85,7 @@ async def format_input_for_scan(
                 scan_kwargs["app_lang"] = start_scan_payload.sast.app_lang
 
                 scan_kwargs["exclude_path_arrays"] = sanitize_path_patterns(start_scan_payload.sast.exclude_path_arrays) if start_scan_payload.sast.exclude_path_arrays else None
-                console.print(f"SAST kwargs: {scan_kwargs} assembled successfully", style="dim bright_cyan")
+                console.print(f"SAST kwargs: {_loggable(scan_kwargs)} assembled successfully", style="dim bright_cyan")
                 return scan_kwargs
 
                 
@@ -94,7 +114,7 @@ async def format_input_for_scan(
                 else:
                     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No zip file or repo context provided")
                 scan_kwargs["iac_dict_contexts"] = [iac_context.model_dump() for iac_context in start_scan_payload.iac.iac_contexts]
-                console.print(f"IAC kwargs: {scan_kwargs} assembled successfully", style="dim bright_cyan")
+                console.print(f"IAC kwargs: {_loggable(scan_kwargs)} assembled successfully", style="dim bright_cyan")
                 return scan_kwargs
                 
                 
@@ -145,21 +165,21 @@ async def format_input_for_scan(
                 else:
                     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No zip file or repo context or sbom file provided")
                 
-                console.print(f"SBOM kwargs: {scan_kwargs} assembled successfully", style="dim bright_cyan")
+                console.print(f"SBOM kwargs: {_loggable(scan_kwargs)} assembled successfully", style="dim bright_cyan")
                 return scan_kwargs
 
             case "mcp":
                 if not start_scan_payload.mcp:
                     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="MCP context is required")
                 scan_kwargs["mcp_dict_context"] = start_scan_payload.mcp.model_dump()
-                console.print(f"MCP kwargs: {scan_kwargs} assembled successfully", style="dim bright_cyan")
+                console.print(f"MCP kwargs: {_loggable(scan_kwargs)} assembled successfully", style="dim bright_cyan")
                 return scan_kwargs
 
             case "llm":
                 if not start_scan_payload.llm:
                     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="LLM context is required")
                 scan_kwargs["llm_benchmark_dict_context"] = start_scan_payload.llm.model_dump()
-                console.print(f"LLM kwargs: {scan_kwargs} assembled successfully", style="dim bright_cyan")
+                console.print(f"LLM kwargs: {_loggable(scan_kwargs)} assembled successfully", style="dim bright_cyan")
                 return scan_kwargs
             
             case "dast":
@@ -234,7 +254,7 @@ async def format_input_for_scan(
                 # repository scans only: an uploaded archive's own .git is read by the engine when it is complete
                 if start_scan_payload.cbom.scan_history and "repo_dict_context" in scan_kwargs:
                     scan_kwargs["scan_history"] = True
-                console.print(f"CBOM kwargs: {scan_kwargs} assembled successfully", style="dim bright_cyan")
+                console.print(f"CBOM kwargs: {_loggable(scan_kwargs)} assembled successfully", style="dim bright_cyan")
                 return scan_kwargs
 
             case "ai_bom":
@@ -284,7 +304,7 @@ async def format_input_for_scan(
                 else:
                     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No zip file or repo context or AI-BOM file provided")
                 scan_kwargs["scan_binaries"] = start_scan_payload.ai_bom.scan_binaries
-                console.print(f"AI-BOM kwargs: {scan_kwargs} assembled successfully", style="dim bright_cyan")
+                console.print(f"AI-BOM kwargs: {_loggable(scan_kwargs)} assembled successfully", style="dim bright_cyan")
                 return scan_kwargs
 
             case _:

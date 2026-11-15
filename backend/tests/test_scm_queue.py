@@ -425,8 +425,11 @@ def test_dispatch_failure_and_worker_failure_refund_exactly_once(engine):
         assert scan.scan_status == "failure" and scan.credit_charged is None  # nobody refunds it again
     ok = requests(engine, status="dispatched")[0]
     worker.finish(ok.scan_id, "failure")  # the worker failed: get_status_and_update_db refunds credit_charged
+    before = balance(engine, 1)
     tick(engine, launcher, worker)
-    assert requests(engine, id=ok.id)[0].status == "failed" and not requests(engine, id=ok.id)[0].refunded
+    done = requests(engine, id=ok.id)[0]
+    # the scan path's refund is booked on the request (so the queue can never refund it again); no credit moves here
+    assert done.status == "failed" and done.refunded and balance(engine, 1) == before
 
 
 def test_a_removed_repository_is_skipped_and_refunded(engine):
