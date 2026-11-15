@@ -380,18 +380,21 @@ def carry_unchanged(session: Any, team_id: int, refs: Sequence[str]) -> tuple[in
         "asset_type", "cdx_type", "location", "algorithm", "key_size", "protocol", "impact", "finding")),
         sa.not_(text(n.c.finding_codes).is_distinct_from(text(o.c.finding_codes))),
         sa.not_(text(n.c.facts).is_distinct_from(text(o.c.facts))))
-    latest = {p.source_ref: (p.latest_job_id, p.latest_attempt) for p in pairs}
-    carried = 0
-    for ref, old_job in sorted(same):
-        job, attempt = latest[ref]
-        # one statement per source and old job, all in SQL: an observation moves forward when its row in the new job
-        # equals the row it was judged from (both found through the unique (job, attempt, asset_key) index)
-        unchanged = sa.exists(sa.select(sa.literal(1)).select_from(n.join(o, o.c.asset_key == n.c.asset_key)).where(
-            n.c.team_id == team_id, n.c.job_id == job, n.c.attempt == attempt, n.c.asset_key == eo.c.row_key,
-            o.c.team_id == team_id, o.c.job_id == eo.c.fix_job_id, o.c.attempt == eo.c.fix_attempt, same_row))
-        carried += int(session.execute(sa.update(eo).where(
-            eo.c.team_id == team_id, eo.c.source_ref == ref, eo.c.presence == "present", eo.c.fix_version == version,
-            eo.c.fix_job_id == old_job, unchanged).values(fix_job_id=job, fix_attempt=attempt)).rowcount or 0)
+    # One statement for the whole run, all in SQL (#352). The observations of the (source, old job) pairs whose
+    # context did not change, each with its source's latest job, are taken first (a MATERIALIZED CTE: one relation
+    # that holds both halves of each row's keys), then each is looked up in its new and its old job through the
+    # unique (job, attempt, asset_key) index. Written as one join, or as one correlated statement per pair (before),
+    # PostgreSQL could scan a whole job's rows for every observation (3M rows read at 5k assets, minutes at 50k).
+    c = sa.select(eo.c.id, eo.c.row_key, eo.c.fix_job_id, eo.c.fix_attempt, es.c.latest_job_id.label("new_job"),
+                  es.c.latest_attempt.label("new_attempt")).select_from(joined).where(
+        eo.c.team_id == team_id, sa.tuple_(eo.c.source_ref, eo.c.fix_job_id).in_(sorted(same)),
+        eo.c.presence == "present", eo.c.fix_version == version).cte("carry").prefix_with("MATERIALIZED")
+    carried = int(session.execute(sa.update(eo).where(
+        eo.c.id == c.c.id,
+        n.c.job_id == c.c.new_job, n.c.attempt == c.c.new_attempt, n.c.asset_key == c.c.row_key, n.c.team_id == team_id,
+        o.c.job_id == c.c.fix_job_id, o.c.attempt == c.c.fix_attempt, o.c.asset_key == c.c.row_key,
+        o.c.team_id == team_id, same_row,
+    ).values(fix_job_id=c.c.new_job, fix_attempt=c.c.new_attempt).add_cte(c)).rowcount or 0)
     return carried, len(pairs)
 
 
