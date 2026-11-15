@@ -1,7 +1,7 @@
 // Run: npx --yes tsx components/cbom/heatmapLogic.test.ts
 import assert from "node:assert/strict";
 
-import { algorithmFamily, codeHeatmap, daysLeft, expiryBand, groupByDay, isFindingRow, monthGrid } from "./heatmapLogic";
+import { algorithmFamily, codeHeatmap, codeSourceColumn, daysLeft, expiryBand, groupByDay, isFindingRow, monthGrid } from "./heatmapLogic";
 
 // the same table as backend heatmap.algorithm_family
 assert.equal(algorithmFamily(["RSA"], "certificate"), "RSA");
@@ -33,6 +33,15 @@ const rsaAlgo = heat.cells.find((c) => c.row === "RSA" && c.column === "algorith
 assert.equal(rsaAlgo.count, 2);
 assert.equal(rsaAlgo.worst, "High");
 assert.equal(heat.cells.find((c) => c.row === "AES")!.worst, "none");
+
+assert.equal(codeSourceColumn({ location: "sample/crypto_app.py:5" }), "sample/crypto_app.py");
+assert.equal(codeSourceColumn({ location: "" }), "repository");
+const bySource = codeHeatmap([
+  { title: "AES-ECB", asset_type: "algorithm", location: "sample/crypto_app.py:5", impact: "High", finding_codes: ["WEAK_CIPHER_MODE"] },
+  { title: "pyjwt", asset_type: "library", location: "sample/requirements.txt:1", impact: "High", finding_codes: ["VULNERABLE_CRYPTO_LIBRARY"] },
+], "source");
+assert.deepEqual(bySource.columns, ["sample/crypto_app.py", "sample/requirements.txt"]);
+assert.equal(bySource.cells.find((c) => c.column === "sample/crypto_app.py")!.row, "AES");
 
 assert.equal(expiryBand(-1), "expired");
 assert.equal(expiryBand(0), "30");

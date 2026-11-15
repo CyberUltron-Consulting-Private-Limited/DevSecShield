@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   askCbomAi,
@@ -17,6 +17,9 @@ import {
   citationLabel,
   outcomeNote,
   remediationBadge,
+  shouldAutoRequestAiFix,
+  showInhouseMissSummary,
+  type AiFixPhase,
 } from "@/components/cbom/results/aiPanelLogic";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -190,6 +193,26 @@ function CbomKnowledgePanel({ teamId, scanId, findingId, existingRemediation, sn
   });
   const aiFixNote = outcomeNote(aiFix);
   const aiDiff = aiFix?.status === "ok" ? aiFix.fix?.diff ?? "" : "";
+  const aiPhase: AiFixPhase = askFix.isPending ? "pending"
+    : aiFix?.status === "ok" && aiFix.fix ? "ok"
+    : aiFix || askFix.isError ? "miss"
+    : "idle";
+  const aiStatusKind = aiStatus.isPending ? "loading" : aiAvailable ? "on" : "off";
+  const showMiss = showInhouseMissSummary({
+    hasDeterministicFix: !!fix?.available,
+    aiStatus: aiStatusKind,
+    phase: aiPhase,
+  });
+  const autoKey = `${scanId}:${findingId}`;
+  const autoAsked = useRef<string | null>(null);
+  useEffect(() => {
+    // Wait until the in-house result is in hand, so a rule that already rewrote the line is not also sent to the model.
+    if (load.isPending || !data) return;
+    if (!shouldAutoRequestAiFix({ aiAvailable, hasDeterministicFix: !!fix?.available, phase: aiPhase })) return;
+    if (autoAsked.current === autoKey) return;
+    autoAsked.current = autoKey;
+    askFix.mutate();
+  }, [aiAvailable, aiPhase, autoKey, askFix, data, fix?.available, load.isPending]);
   const defaultTab = fix?.available || aiAvailable ? "fix" : demo ? "exploit" : standardsTab ? "details" : "fix";
   // an older backend has no run-asset route: say nothing rather than an error (the dialog keeps its KB details);
   // after every hook, so the hook count never changes between renders (rules of hooks)
@@ -234,7 +257,9 @@ function CbomKnowledgePanel({ teamId, scanId, findingId, existingRemediation, sn
           </TabsList>
 
           <TabsContent value="fix" className="mt-3 space-y-3" data-testid="cbom-fix">
-            <p className="text-sm text-zinc-700 dark:text-zinc-300">{fix?.summary || data.fix?.description}</p>
+            {(showMiss || !!fix?.available) && (
+              <p className="text-sm text-zinc-700 dark:text-zinc-300">{fix?.summary || data.fix?.description}</p>
+            )}
             {fix?.available && fix.kind !== "dependency" && (
               <div className="space-y-1">
                 <span className="text-xs font-medium text-zinc-500">Confidence (rule {fix.rules.join(", ")})</span>
@@ -274,7 +299,7 @@ function CbomKnowledgePanel({ teamId, scanId, findingId, existingRemediation, sn
                 ))}
               </div>
             )}
-            {!fix?.available && (
+            {!fix?.available && showMiss && (
               <p className="text-xs text-zinc-500">
                 {runAsset
                   ? `No automatic code change for this asset (a setting, certificate or key, not source code): follow the fix steps and verify commands ${standardsTab ? "under Standards" : "in the details above"}.`
