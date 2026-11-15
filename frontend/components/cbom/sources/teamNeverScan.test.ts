@@ -97,6 +97,8 @@ assert.ok(SOURCE_NEVER_SCAN_HINT.includes("are not looked up: they cover only 12
 // #17: a name is skipped with every address it resolves to; the range limit is stated, with what covers it
 assert.ok(SOURCE_NEVER_SCAN_HINT.includes("skipped, with every address it resolves to"))
 assert.ok(SOURCE_NEVER_SCAN_HINT.includes("list such a host by name or by both addresses"))
+// #370 review: the shared-address effect is stated where the customer types the list
+assert.ok(SOURCE_NEVER_SCAN_HINT.includes("shared load-balancer or VIP address"))
 
 // the Network tab and the Servers tab are tested rendered, as a customer uses them: neverScanRender.test.ts
 console.log("team never-scan tests passed")
