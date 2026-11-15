@@ -76,7 +76,7 @@ def is_team_admin(user_id: int, team_id: int, engine: Engine) -> bool:
         membership = session.exec(
             select(TeamMembership).where(TeamMembership.user_id == user_id, TeamMembership.team_id == team_id)
         ).first()
-    return membership is not None and membership.role == "admin"
+    return membership is not None and membership.role in ("admin", "owner")  # owners hold every admin right
 
 
 def can_manage_key(integration: CicdIntegration, user_id: int, admin: bool) -> bool:
