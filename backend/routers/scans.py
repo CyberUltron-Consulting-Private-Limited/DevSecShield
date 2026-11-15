@@ -227,12 +227,11 @@ async def send_message_to_scan(
             if not scan:
                 console.print(f"Scan with id: {scan_id} and team_id: {team_id} not found in main database" ,style="bold red")
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found ")
-            
-            scan.last_updated = datetime.now(timezone.utc) # updating last_updated field
+            # A chat message is not a change to the scan, so last_updated is not written.
+            # Commit still runs so the loaded row stays usable after this block, as before.
             session.add(scan)
             session.commit()
             session.refresh(scan)
-            
             SCAN = scan
             SCAN_STATUS = scan.scan_status
             SCAN_DATA = scan.scan_data

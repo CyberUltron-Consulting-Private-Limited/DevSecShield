@@ -197,7 +197,9 @@ def get_status_and_update_db(
                 # a conditional UPDATE, not an ORM write of the row read above: a final state committed in between
                 # (a cancel, or another poll's success / failure) is never moved back to "started" -- that would let a
                 # cancel refund a scan that completed, or refund a failed scan a second time
-                values = {"last_updated": now}
+                # A poll that learns nothing new must not move last_updated: list pages show that
+                # time as "last updated", and they re-poll every pending or started scan.
+                values = {}
                 if previous_status != SCAN_STATUS and SCAN_STATUS not in ("success", "failure"):
                     values["scan_status"] = SCAN_STATUS
                     console.print(f"Scan with id: {task_id} status updated to {SCAN_STATUS} in main database" ,style="bold green")
@@ -205,20 +207,25 @@ def get_status_and_update_db(
                     info = async_result.info
                     # info is None until the task emits its first progress meta (race at scan start) — guard the type.
                     if isinstance(info, dict) and "current" in info:
-                        values["info"] = {"current": info["current"]}  # for progress bar updates
-                        console.print(f"Scan with id: {task_id} progress updated to {info['current']} in main database" ,style="bold green")
+                        previous_current = scan.info.get("current") if isinstance(scan.info, dict) else None
+                        if info["current"] != previous_current:
+                            values["info"] = {"current": info["current"]}  # for progress bar updates
+                            console.print(f"Scan with id: {task_id} progress updated to {info['current']} in main database" ,style="bold green")
                 elif SCAN_STATUS == "success":
                     SCAN_DATA = scan.scan_data  # already ingested on a prior poll
-                    values["info"] = None
-                elif SCAN_STATUS != "failure":
-                    values["info"] = None # reset the info field
-                session.exec(
-                    update(table)
-                    .where(table.id == scan_id, or_(table.scan_status.is_(None),
-                                                    table.scan_status.not_in(("success", "failure", "cancelled"))))
-                    .values(**values)
-                )
-                session.commit()
+                    if scan.info is not None:
+                        values["info"] = None
+                elif SCAN_STATUS != "failure" and scan.info is not None:
+                    values["info"] = None  # left over from a progress update
+                if values:
+                    values["last_updated"] = now
+                    session.exec(
+                        update(table)
+                        .where(table.id == scan_id, or_(table.scan_status.is_(None),
+                                                        table.scan_status.not_in(("success", "failure", "cancelled"))))
+                        .values(**values)
+                    )
+                    session.commit()
 
             if SCAN_STATUS in ("success", "failure"):
                 try:
