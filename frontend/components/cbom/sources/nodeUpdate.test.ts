@@ -18,7 +18,10 @@ const lab = { state: "update_available", reason: "no_build_id", server_build: se
 // the staging lab node: amber "Update available", and what is missing
 assert.deepEqual(nodeUpdateBadge(lab), { tone: "amber", label: "Update available",
   short: "No build id: older than the server's node build", message: lab.message })
-assert.equal(nodeUpdateBadge({ ...lab, reason: "older_version" })?.short, "Older than the server's node build")
+assert.equal(nodeUpdateBadge({ ...lab, reason: "older_version" })?.short, "Older than the current release")
+// #361: the badge names the release to install when the API says which one it is
+assert.equal(nodeUpdateBadge({ ...lab, reason: "older_version", server_version: "1.0.1" })?.label, "Update available: 1.0.1")
+assert.equal(nodeUpdateBadge({ ...lab, server_version: null })?.label, "Update available")
 assert.equal(nodeUpdateBadge({ ...lab, reason: "different_build" })?.short, "Not the server's node build")
 // a node ahead of the server is said so, without asking for an update
 assert.equal(nodeUpdateBadge({ state: "newer", reason: "newer_version", server_build: server, message: "Runs 1.2.0" })?.label, "Newer than server")

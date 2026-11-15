@@ -35,7 +35,9 @@ OTHER = "0123456789abcdef0123456789abcdef01234567"
     # the staging lab node: 1.0.0 with no build id, the server ships 1.0.0 built from SHA
     ("1.0.0", "1.0.0", SHA, "update_available", "no_build_id"),
     (f"1.0.0+{SHA[:12]}", "1.0.0", SHA, "current", "same_build"),
-    (f"1.0.0+{OTHER[:12]}", "1.0.0", SHA, "update_available", "different_build"),
+    # #361: a version names one node, so the same release from another commit (the GHCR image of 1.0.4 against the
+    # server's own build of the 1.0.4 download) is current
+    (f"1.0.0+{OTHER[:12]}", "1.0.0", SHA, "current", "same_version"),
     (f"1.0.0+{SHA[:12]}", "1.1.0", SHA, "update_available", "older_version"),
     ("1.0.0", "1.0.10", None, "update_available", "older_version"),  # numeric, not text order
     ("2.0.0-rc.1", "2.0.0", SHA, "update_available", "older_version"),  # a pre-release is before its release
@@ -51,7 +53,17 @@ def test_node_update_states(reported, server, build, state, reason):
     got = NR.node_update(reported, server, build)
     assert (got["state"], got["reason"]) == (state, reason), got
     assert got["server_build"] == (None if not server else f"{server}+{build[:12]}" if build else server)
+    assert got["server_version"] == server
     assert (got["message"] is not None) == (state in ("update_available", "newer"))
+
+
+def test_a_node_from_the_frozen_1_0_0_image_is_told_the_release_it_should_run():
+    # issue #361: every node said 1.0.0; GHCR 1.0.0 was built from b492d2e7 on 14 Nov, before 63 node changes
+    got = NR.node_update("1.0.0+b492d2e7a1c3", "1.0.1", SHA)
+    assert (got["state"], got["reason"], got["server_version"]) == ("update_available", "older_version", "1.0.1")
+    assert got["message"] == f"Runs 1.0.0+b492d2e7a1c3, older than the current release 1.0.1 (1.0.1+{SHA[:12]})."
+    assert NR.node_update(f"1.0.1+{OTHER[:12]}", "1.0.1", SHA)["state"] == "current"
+    assert NR.node_update("1.0.2+abcdefabcdef", "1.0.10", SHA)["state"] == "update_available"  # numeric order
 
 
 @pytest.mark.parametrize("reported, server, state, reason", [
@@ -216,10 +228,16 @@ def test_scan_nodes_say_which_node_needs_an_update(api, world, shipped):  # noqa
     api("POST", "/cbom/node/heartbeat", None, headers={"X-ZS-Node-Token": lab_token}, json={"version": f"1.0.0+{SHA[:12]}"})
     assert _node(api, lab)["update"]["state"] == "current"
 
-    # a new server build (the next deploy rewrites the manifest): both are now behind, no restart of the API needed
+    # the same release built from another commit (#361: a version names one node): still current
     (shipped / "manifest.json").write_text(json.dumps({"version": "1.0.0", "build": OTHER, "files": {}}))
     os.utime(shipped / "manifest.json", ns=(1, 1))  # a different mtime even within the same clock tick
-    assert {_node(api, n)["update"]["reason"] for n in (lab, fresh)} == {"different_build"}
+    assert {_node(api, n)["update"]["state"] for n in (lab, fresh)} == {"current"}
+    # a new release (the next promotion that ships node changes rewrites the manifest): both are now behind, no
+    # restart of the API needed, and the tab can name the release to install
+    (shipped / "manifest.json").write_text(json.dumps({"version": "1.0.1", "build": OTHER, "files": {}}))
+    os.utime(shipped / "manifest.json", ns=(2, 2))
+    updates = [_node(api, n)["update"] for n in (lab, fresh)]
+    assert {u["reason"] for u in updates} == {"older_version"} and {u["server_version"] for u in updates} == {"1.0.1"}
 
 
 def test_a_four_part_node_version_does_not_take_the_list_down(api, world, shipped):  # noqa: F811
@@ -280,7 +298,7 @@ def test_without_node_downloads_nothing_is_claimed(api, world, monkeypatch):  # 
     node_id, token, _ = enroll_node(api)
     api("POST", "/cbom/node/heartbeat", None, headers={"X-ZS-Node-Token": token}, json={"version": "1.0.0"})
     assert _node(api, node_id)["update"] == {"state": "unknown", "reason": "no_server_build", "message": None,
-                                             "server_build": None}
+                                             "server_build": None, "server_version": None}
 
 
 def test_downloads_listing_names_the_build(api, world, shipped):  # noqa: F811

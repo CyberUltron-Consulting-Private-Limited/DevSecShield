@@ -20,6 +20,7 @@ import datetime as dt
 import secrets
 import sys
 import types
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -72,12 +73,13 @@ class FakeCelery:
         self.sent: list[dict] = []
         self.states: dict[str, _Result] = {}
         self.revoked: list[str] = []
-        marks = types.SimpleNamespace(update_one=lambda *_a, **_k: None)
+        self.marked: list[str] = []  # the cancel marks a worker checks before and while it runs a task
+        marks = types.SimpleNamespace(update_one=lambda flt, *_a, **_k: self.marked.append(flt["_id"]))
         self.control = types.SimpleNamespace(revoke=lambda task_id, **_kw: self.revoked.append(task_id))
         self.backend = types.SimpleNamespace(database={"scan_cancellations": marks})
 
-    def send_task(self, name, kwargs, queue):
-        task_id = f"task-{len(self.sent) + 1}"
+    def send_task(self, name, kwargs, queue, task_id=None):
+        task_id = task_id or f"task-{len(self.sent) + 1}"
         self.sent.append({"name": name, "kwargs": kwargs, "queue": queue, "id": task_id})
         return types.SimpleNamespace(id=task_id)
 
@@ -230,8 +232,8 @@ def test_a_launcher_that_fails_after_the_task_was_sent_keeps_the_scan_dispatched
     run = _run(engine, ids, ["iac"])
 
     class SentThenRaised(FakeLauncher):
-        def __call__(self, engine, scan_type, scan_id, team_id, payload):
-            super().__call__(engine, scan_type, scan_id, team_id, payload)  # the task reached a worker
+        def __call__(self, engine, scan_type, scan_id, team_id, payload, *, task_id=None):
+            super().__call__(engine, scan_type, scan_id, team_id, payload, task_id=task_id)  # the task reached a worker
             raise RuntimeError("database went away while reading the task id back")
 
     launcher = SentThenRaised()
@@ -280,3 +282,174 @@ def test_a_worker_error_copied_onto_a_request_never_carries_a_clone_token():
         "Clone failed: https://***@github.com/o/r (exit 128)"
     assert token not in redact_urls(f"see http://u:{token}@h/x and https://{token}@h/y")
     assert redact_urls("no URL here") == "no URL here"
+
+
+# ----------------------------------------------------------------------------- lost tasks, caps, crash windows
+def _tick_at(engine, now, token="ghp_x", **kw):
+    """One queue tick with the real Celery-facing code (launcher, poller, cancel path), on the fake Celery app."""
+    Q.poll_tick(engine, now)
+    return Q.dispatch_tick(engine, now, token_for=lambda _c: token, task_state=Q.celery_task_state,
+                           withdraw=Q.celery_withdraw, **kw)
+
+
+def _team_world(engine, repos_per_team, balances=None):
+    return make_world(engine, repos_per_team=repos_per_team, balances=balances or {t: 1000.0 for t in repos_per_team})
+
+
+def _queue(engine, ids, team, products=("iac",), n=None, client_id=None):
+    repo_ids = ids["repos"][team][:n] if n else ids["repos"][team]
+    with Session(engine) as s:
+        est = Q.estimate(s, team, repo_ids=repo_ids, products=list(products))
+    return Q.create_run(engine, team, ids["users"][team], trigger="manual", repo_ids=repo_ids, products=list(products),
+                        expected_credits=est["credits"], client_request_id=client_id or f"run-{team}", now=NOW)
+
+
+def test_the_default_team_cap_is_half_the_global_cap_and_configurable(engine, celery, monkeypatch):
+    monkeypatch.delenv("REPO_SCAN_TEAM_MAX_INFLIGHT", raising=False)
+    assert Q.env_team_max_inflight(8) == 4 and Q.env_team_max_inflight(1) == 1
+    monkeypatch.setenv("REPO_SCAN_TEAM_MAX_INFLIGHT", "0")
+    assert Q.env_team_max_inflight(8) == 0  # explicit: no per-team limit
+    monkeypatch.setenv("REPO_SCAN_TEAM_MAX_INFLIGHT", "3")
+    assert Q.env_team_max_inflight(8) == 3
+    monkeypatch.delenv("REPO_SCAN_TEAM_MAX_INFLIGHT")
+    ids = _team_world(engine, {1: 12, 2: 3})
+    _queue(engine, ids, 1)
+    assert len(_tick_at(engine, NOW, max_inflight=8)) == 4  # alone, one team still takes only half the slots
+    _queue(engine, ids, 2)
+    assert len(_tick_at(engine, NOW, max_inflight=8)) == 3  # the other team gets slots straight away
+    by_team = Counter(r.team_id for r in requests(engine, status="dispatched"))
+    assert by_team == {1: 4, 2: 3}
+
+
+def test_a_lost_task_frees_its_slot_and_is_refunded_once_through_the_cancel_path(engine, celery, monkeypatch):
+    monkeypatch.setenv("REPO_SCAN_START_TIMEOUT_MIN", "60")
+    ids = _team_world(engine, {1: 2, 2: 1})
+    start1, start2 = balance(engine, 1), balance(engine, 2)
+    run = _queue(engine, ids, 1, n=1)
+    # a worker took the message and died (OOM, restart): the task stays PENDING for ever
+    assert len(_tick_at(engine, NOW, max_inflight=1, team_max=1)) == 1
+    _queue(engine, ids, 2)
+    assert _tick_at(engine, NOW + dt.timedelta(minutes=59), max_inflight=1, team_max=1) == []  # slot still held
+    (lost,) = requests(engine, team_id=1)
+    with Session(engine) as s:
+        task = s.get(Scan, lost.scan_id).task_id
+    sent = _tick_at(engine, NOW + dt.timedelta(minutes=61), max_inflight=1, team_max=1)
+    lost = requests(engine, id=lost.id)[0]
+    assert lost.status == "failed" and lost.refunded and "No scan worker picked this scan up within 60" in lost.error
+    with Session(engine) as s:
+        scan = s.get(Scan, lost.scan_id)
+        assert scan.scan_status == "cancelled" and scan.info["timed_out"] and scan.info["refunded_credits"] > 0
+    assert task in celery.revoked and task in celery.marked  # a worker that finds it later never runs it
+    assert balance(engine, 1) == start1  # charged once, refunded once
+    row = _run_row(engine, run["run_id"])
+    assert row.refunded_c == row.credits_c and row.status == "done"
+    assert len(sent) == 1 and requests(engine, team_id=2)[0].status == "dispatched"  # the freed slot is used
+    assert balance(engine, 2) < start2
+    _tick_at(engine, NOW + dt.timedelta(minutes=90), max_inflight=1, team_max=1)
+    assert balance(engine, 1) == start1  # nothing refunded twice
+
+
+def test_a_scan_that_finished_meanwhile_is_kept_not_refunded(engine, celery, monkeypatch):
+    monkeypatch.setenv("REPO_SCAN_RUN_TIMEOUT_MIN", "180")
+    ids = _team_world(engine, {1: 1})
+    start = balance(engine, 1)
+    run = _queue(engine, ids, 1)
+    _tick_at(engine, NOW)
+    (req,) = requests(engine)
+    with Session(engine) as s:
+        task = s.get(Scan, req.scan_id).task_id
+    celery.states[task] = _Result("STARTED")
+    _tick_at(engine, NOW + dt.timedelta(minutes=170))
+    assert requests(engine)[0].status == "dispatched"  # running, within the run timeout
+    celery.states[task] = _Result("SUCCESS", {"results": []})  # it finished just as the timeout passed
+    _tick_at(engine, NOW + dt.timedelta(minutes=181))
+    (req,) = requests(engine)
+    assert req.status == "done" and not req.refunded and task not in celery.revoked
+    assert balance(engine, 1) == round(start - run["credits"], 2)
+
+
+def test_a_scan_running_past_the_run_timeout_is_stopped_and_refunded(engine, celery, monkeypatch):
+    monkeypatch.setenv("REPO_SCAN_RUN_TIMEOUT_MIN", "180")
+    ids = _team_world(engine, {1: 1})
+    start = balance(engine, 1)
+    _queue(engine, ids, 1)
+    _tick_at(engine, NOW)
+    (req,) = requests(engine)
+    with Session(engine) as s:
+        task = s.get(Scan, req.scan_id).task_id
+    celery.states[task] = _Result("STARTED")  # its worker is gone, the result backend still says STARTED
+    _tick_at(engine, NOW + dt.timedelta(minutes=181))
+    (req,) = requests(engine)
+    assert req.status == "failed" and req.refunded and "did not finish within 180 minutes" in req.error
+    assert task in celery.marked and balance(engine, 1) == start
+
+
+class _DiesAfterSend:
+    """The real launcher's send (the queue's chosen task id reaches the broker), then the dispatcher process dies
+    before the id is stored on the scan: BaseException, as a SIGKILL would leave it."""
+
+    def __init__(self, app):
+        self.app = app
+
+    def __call__(self, engine, scan_type, scan_id, team_id, payload, *, task_id=None):
+        self.app.send_task(name=f"scan_worker.{scan_type}", kwargs={}, queue="scan_worker_queue", task_id=task_id)
+        raise SystemExit("dispatcher killed")
+
+
+def _crash_after_send(engine, celery):
+    with pytest.raises(SystemExit):
+        Q.dispatch_tick(engine, NOW, launcher=_DiesAfterSend(celery), token_for=lambda _c: "ghp_x",
+                        max_inflight=4, team_max=4)
+    (req,) = requests(engine)
+    assert req.status == "dispatching" and req.task_id and len(celery.sent) == 1
+    assert req.task_id == celery.sent[0]["id"]  # the id was stored before the send
+    return req
+
+
+def test_crash_right_after_send_a_task_a_worker_has_is_adopted_not_sent_again(engine, celery):
+    ids = _team_world(engine, {1: 1})
+    start = balance(engine, 1)
+    run = _queue(engine, ids, 1)
+    req = _crash_after_send(engine, celery)
+    celery.states[req.task_id] = _Result("STARTED")  # a worker is running it
+    later = NOW + Q.DISPATCH_LEASE + dt.timedelta(seconds=1)
+    _tick_at(engine, later)
+    (adopted,) = requests(engine)
+    assert adopted.status == "dispatched" and adopted.task_id == req.task_id
+    assert len(celery.sent) == 1 and req.task_id not in celery.revoked  # not run twice
+    celery.states[req.task_id] = _Result("SUCCESS", {"results": []})
+    _tick_at(engine, later + dt.timedelta(minutes=1))
+    assert requests(engine)[0].status == "done"
+    assert balance(engine, 1) == round(start - run["credits"], 2)  # charged once: not free
+
+
+def test_crash_right_after_send_a_task_no_worker_has_is_withdrawn_and_sent_once_more(engine, celery):
+    ids = _team_world(engine, {1: 1})
+    start = balance(engine, 1)
+    run = _queue(engine, ids, 1)
+    req = _crash_after_send(engine, celery)
+    first = req.task_id  # PENDING: still in the broker, or never there
+    later = NOW + Q.DISPATCH_LEASE + dt.timedelta(seconds=1)
+    _tick_at(engine, later)  # recovery withdraws it and re-queues ...
+    _tick_at(engine, later + dt.timedelta(seconds=5))  # ... and the next tick sends it under a new id
+    (again,) = requests(engine)
+    assert again.status == "dispatched" and again.task_id != first and again.attempts == 2
+    assert first in celery.revoked and first in celery.marked  # the first copy can never run: one run in all
+    assert [c["id"] for c in celery.sent] == [first, again.task_id]
+    assert balance(engine, 1) == round(start - run["credits"], 2)  # still charged exactly once
+
+
+def test_a_launcher_error_after_send_withdraws_the_task_before_refunding(engine, celery):
+    ids = _team_world(engine, {1: 1})
+    start = balance(engine, 1)
+    _queue(engine, ids, 1)
+
+    class SentThenFailed(_DiesAfterSend):
+        def __call__(self, engine, scan_type, scan_id, team_id, payload, *, task_id=None):
+            self.app.send_task(name="scan_worker.iac", kwargs={}, queue="scan_worker_queue", task_id=task_id)
+            raise RuntimeError("could not store the task id")  # e.g. get_scan_metadata_for_type raised
+
+    assert _tick_at(engine, NOW, launcher=SentThenFailed(celery)) == []
+    (req,) = requests(engine)
+    assert req.status == "failed" and req.refunded and balance(engine, 1) == start
+    assert celery.sent[0]["id"] in celery.marked  # refunded AND withdrawn: it can never run for free

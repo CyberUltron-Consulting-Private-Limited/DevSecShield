@@ -13,7 +13,7 @@ export interface PathArraysInputProps {
   onChange: (value: string[][]) => void;
   /** Label shown above the control (e.g. "Exclude paths"). */
   label?: string;
-  /** The (i) tip beside the label: what the patterns do in this scan (content/infotips.ts). */
+  /** The (i) tip beside the label: what the patterns do in this scan (content/infotips). */
   infoId: InfoTipId;
   /** Placeholder for segment inputs. */
   segmentPlaceholder?: string;

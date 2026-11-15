@@ -108,12 +108,12 @@ class FakeLauncher:
         self.fail_for = fail_for or set()
         self.counter = itertools.count(1)
 
-    def __call__(self, engine, scan_type, scan_id, team_id, payload: StartScanPayload) -> str:
+    def __call__(self, engine, scan_type, scan_id, team_id, payload: StartScanPayload, *, task_id=None) -> str:
         if scan_id in self.fail_for:
             raise RuntimeError("broker down")
         section = getattr(payload, scan_type)
         assert section is not None and section.repo_context is not None
-        task_id = f"task-{next(self.counter)}"
+        task_id = task_id or f"task-{next(self.counter)}"
         with Session(engine) as s:
             scan = s.get(Scan, scan_id)
             scan.task_id, scan.scan_status = task_id, "pending"
@@ -315,7 +315,8 @@ def test_caps_are_never_exceeded_and_each_team_gets_its_share(engine):
 
 
 def test_a_team_alone_uses_every_slot_and_a_newcomer_takes_the_next_free_ones(engine):
-    """Work-conserving water-filling (no per-team limit, the default): one team with a backlog fills the global cap;
+    """Work-conserving water-filling with the per-team limit turned off (REPO_SCAN_TEAM_MAX_INFLIGHT=0; the default
+    limit, half the global cap, is tested in test_scm_credits_and_secrets.py): one team with a backlog fills the cap;
     a second team that queues work takes the slots that free up until both have the same number in flight."""
     ids = make_world(engine, repos_per_team={1: 30, 2: 6}, balances={1: 1e4, 2: 1e4})
     with Session(engine) as s:
@@ -323,19 +324,19 @@ def test_a_team_alone_uses_every_slot_and_a_newcomer_takes_the_next_free_ones(en
     Q.create_run(engine, 1, ids["users"][1], trigger="manual", repo_ids=ids["repos"][1], products=["sbom_sca"],
                  expected_credits=est["credits"], client_request_id="big", now=NOW)
     launcher, worker = FakeLauncher(), FakeWorker(engine)
-    assert len(tick(engine, launcher, worker, max_inflight=6)) == 6  # alone: all six slots
+    assert len(tick(engine, launcher, worker, max_inflight=6, team_max=0)) == 6  # alone: all six slots
     with Session(engine) as s:
         est2 = Q.estimate(s, 2, repo_ids=ids["repos"][2], products=["sbom_sca"])
     Q.create_run(engine, 2, ids["users"][2], trigger="manual", repo_ids=ids["repos"][2], products=["sbom_sca"],
                  expected_credits=est2["credits"], client_request_id="small", now=NOW)
-    assert tick(engine, launcher, worker, max_inflight=6) == []  # full: nobody is pre-empted
+    assert tick(engine, launcher, worker, max_inflight=6, team_max=0) == []  # full: nobody is pre-empted
     for r in requests(engine, status="dispatched")[:3]:  # three of team 1's scans finish
         worker.finish(r.scan_id)
-    tick(engine, launcher, worker, max_inflight=6)
+    tick(engine, launcher, worker, max_inflight=6, team_max=0)
     assert Counter(r.team_id for r in requests(engine, status="dispatched")) == {1: 3, 2: 3}  # the newcomer caught up
     for r in requests(engine, status="dispatched"):
         worker.finish(r.scan_id)
-    tick(engine, launcher, worker, max_inflight=6)
+    tick(engine, launcher, worker, max_inflight=6, team_max=0)
     assert Counter(r.team_id for r in requests(engine, status="dispatched")) == {1: 3, 2: 3}  # equal shares
     # an operator limit per team still holds when it is set
     for r in requests(engine, status="dispatched"):

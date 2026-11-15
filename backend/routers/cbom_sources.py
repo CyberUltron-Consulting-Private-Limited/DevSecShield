@@ -80,6 +80,7 @@ from backend.utilities.cbom_sources import q0register as Q0REG
 from backend.utilities.cbom_sources import qgrade as QGRADE
 from backend.utilities.cbom_sources import qgrade_store as QSTORE
 from backend.utilities.cbom_sources import run_deliverables as RUN_DELIVERABLES
+from backend.utilities.cbom_sources import run_list as RUN_LIST
 from backend.utilities.cbom_sources import run_parity as RUN_PARITY
 from backend.utilities.cbom_sources import run_results as RUN_RESULTS
 from backend.utilities.cbom_sources import run_tickets as RUN_TICKETS
@@ -1561,14 +1562,14 @@ def _list_runs(engine, team_id: int, scan_id: int | None) -> dict:
         if scan_id is not None:
             query = query.where(CbomCollectionRun.scan_id == scan_id)
         runs = session.exec(query.order_by(CbomCollectionRun.id.desc()).limit(50)).all()  # type: ignore[union-attr]
+        # issue #159 (Rule P): the asset count the Scans table shows too, from the one function, one query for the page
+        assets = RUN_LIST.asset_counts(session, team_id, [int(run.id) for run in runs])
         out = []
         for run in runs:
             counts: dict[str, int] = {}
             for job in session.exec(select(CbomCollectionJob).where(CbomCollectionJob.run_id == run.id)).all():
                 counts[job.status] = counts.get(job.status, 0) + 1
-            assets = session.exec(select(func.count()).select_from(CbomCollectedAsset)
-                                  .where(CbomCollectedAsset.run_id == run.id)).one()
-            out.append({**public_run(run), "job_counts": counts, "asset_count": int(assets)})
+            out.append({**public_run(run), "job_counts": counts, "asset_count": assets.get(int(run.id), 0)})
         return {"runs": out, "server_time": iso_z(now)}
 
 

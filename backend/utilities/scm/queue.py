@@ -21,16 +21,20 @@ Credits per run
 The queue (``scmscanrequest``) and the dispatcher
 * Priority: push (0) > manual (1) > schedule (2), then age.
 * Bounded: at most ``REPO_SCAN_MAX_INFLIGHT`` (default 8) repository scans in Celery at once, so bulk runs never
-  fill ``scan_worker_queue`` ahead of the scans people start by hand. ``REPO_SCAN_TEAM_MAX_INFLIGHT`` (default 0: no
-  limit) can also bound one team's parallelism, e.g. to spare a customer's SCM.
+  fill ``scan_worker_queue`` ahead of the scans people start by hand. ``REPO_SCAN_TEAM_MAX_INFLIGHT`` (default: half the
+  global cap, at least 1; 0: no limit) bounds one team's parallelism, so one tenant's long scans never hold every slot.
 * Fair and work-conserving: each free slot goes to the waiting team with the FEWEST scans in flight (ties: the team
   served least recently, then the lower team id). A team alone uses every slot; when another team queues work it takes
   the next slots that free up until both have the same number in flight. A team with 1,000 queued repositories gets
   the same share as a team with 3 while both are waiting, so the small team is never behind the big one's backlog.
 * One decider at a time: on PostgreSQL the tick holds an advisory lock (so two dispatchers cannot both see a free
   slot), and every claim is a compare-and-set (``queued -> dispatching``), so no request is ever sent twice.
-* A dispatcher that died mid-claim leaves ``dispatching`` rows; after ``DISPATCH_LEASE`` they are re-queued (or
-  failed and refunded after ``MAX_ATTEMPTS``).
+* A dispatcher that died mid-claim leaves ``dispatching`` rows; after ``DISPATCH_LEASE`` they are adopted when the
+  task id the queue chose (stored before sending) is known to a worker, else withdrawn and re-queued (or failed and
+  refunded after ``MAX_ATTEMPTS``): never sent twice, never run uncharged.
+* A dispatched scan no worker picked up within ``REPO_SCAN_START_TIMEOUT_MIN`` (60) or that has not finished within
+  ``REPO_SCAN_RUN_TIMEOUT_MIN`` (180) is reconciled with the worker, then stopped and refunded by the cancel path
+  (``expire_lost_scan``), so a lost task frees its slot.
 
 Completion: ``poll_tick`` reads each in-flight scan through ``get_status_and_update_db`` (results, Mongo findings and
 the failure refund are unchanged), closes the request, records the repository's last scan and folds the roll-up.
@@ -41,6 +45,7 @@ import asyncio
 import datetime as dt
 import hashlib
 import os
+import uuid
 from collections import Counter
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
@@ -75,9 +80,24 @@ def env_max_inflight() -> int:
     return max(1, int(os.environ.get("REPO_SCAN_MAX_INFLIGHT", "8") or 8))
 
 
-def env_team_max_inflight() -> int:
-    """0 (the default): no per-team limit; water-filling alone shares the slots."""
-    return max(0, int(os.environ.get("REPO_SCAN_TEAM_MAX_INFLIGHT", "0") or 0))
+def env_team_max_inflight(cap: int | None = None) -> int:
+    """At most this many of one team's repository scans in flight. Unset: half the global cap (at least 1), so one
+    team's long scans can never hold every slot; ``0``: no per-team limit (water-filling alone shares the slots)."""
+    raw = os.environ.get("REPO_SCAN_TEAM_MAX_INFLIGHT")
+    if raw is None or not raw.strip():
+        return max(1, (cap or env_max_inflight()) // 2)
+    return max(0, int(raw))
+
+
+def env_start_timeout() -> dt.timedelta:
+    """A dispatched scan no worker has picked up (still ``pending``) after this long is treated as lost."""
+    return dt.timedelta(minutes=max(1, int(os.environ.get("REPO_SCAN_START_TIMEOUT_MIN", "60") or 60)))
+
+
+def env_run_timeout() -> dt.timedelta:
+    """A dispatched scan not finished after this long is treated as lost: the longest scan task's hard time limit
+    (``scan_worker.py``: 9,000 s) plus a margin."""
+    return dt.timedelta(minutes=max(1, int(os.environ.get("REPO_SCAN_RUN_TIMEOUT_MIN", "180") or 180)))
 
 
 class EstimateChanged(Exception):
@@ -380,8 +400,24 @@ def cancel_run(engine: Engine, team_id: int, run_id: int, now: dt.datetime | Non
 
 # ---------------------------------------------------------------------------- dispatch
 TokenFor = Callable[[ScmConnection], str]
-Launcher = Callable[[Engine, str, int, int, Any], str]
+Launcher = Callable[..., str]  # (engine, scan_type, scan_id, team_id, payload, *, task_id) -> the Celery task id
 StatusReader = Callable[[Engine, Scan], None]
+TaskState = Callable[[str], str]  # a Celery task id -> its state (PENDING, STARTED, SUCCESS, ...)
+Withdraw = Callable[[str], None]  # a Celery task id -> revoked and marked so no worker ever runs it
+
+
+def celery_task_state(task_id: str) -> str:
+    from backend.utilities.celery.celery_connection import get_celery_app
+
+    return str(get_celery_app().AsyncResult(task_id).state).upper()
+
+
+def celery_withdraw(task_id: str) -> None:
+    """The cancel path's own revoke + mark (``cancel_scan.tell_workers``): a worker that picks the task up later,
+    even after a restart, sees the mark and never runs it."""
+    from backend.utilities.scan.cancel_scan import tell_workers
+
+    tell_workers(task_id)
 
 
 def default_token_for(connection: ScmConnection) -> str:
@@ -394,12 +430,14 @@ def default_token_for(connection: ScmConnection) -> str:
         provider.close()
 
 
-def celery_launcher(engine: Engine, scan_type: str, scan_id: int, team_id: int, payload: Any) -> str:
-    """Send the scan exactly as /start does (``start_scan_and_update_db``) and return its Celery task id."""
+def celery_launcher(engine: Engine, scan_type: str, scan_id: int, team_id: int, payload: Any, *,
+                    task_id: str | None = None) -> str:
+    """Send the scan exactly as /start does (``start_scan_and_update_db``) under the task id the queue chose and
+    stored first, and return the Celery task id."""
     from backend.utilities.scan.start_scan import start_scan_and_update_db
 
     asyncio.run(start_scan_and_update_db(scan_type=scan_type, engine=engine, scan_id=scan_id, team_id=team_id,
-                                         start_scan_payload=payload))
+                                         start_scan_payload=payload, task_id=task_id))
     with Session(engine) as session:
         scan = session.get(Scan, scan_id)
         if scan is None or not scan.task_id:
@@ -472,7 +510,7 @@ def _fail_unsent_scan(session: Session, scan_id: int, reason: str) -> None:
 
 
 def _dispatch_one(engine: Engine, request_id: int, now: dt.datetime, launcher: Launcher,
-                  token_for: TokenFor) -> str:
+                  token_for: TokenFor, withdraw: Withdraw) -> str:
     with Session(engine) as session:
         won = session.exec(update(ScmScanRequest)  # type: ignore[call-overload]
                            .where(ScmScanRequest.id == request_id, ScmScanRequest.status == "queued")
@@ -522,15 +560,17 @@ def _dispatch_one(engine: Engine, request_id: int, now: dt.datetime, launcher: L
                     scan_metadata=metadata)
         session.add(scan)
         session.flush()
-        req.scan_id = scan.id
+        # the Celery task id is chosen and stored BEFORE anything is sent: a dispatcher that dies right after
+        # sending leaves a request whose task can be found (adopted) or withdrawn, never sent a second time
+        req.scan_id, req.task_id = scan.id, str(uuid.uuid4())
         session.add(req)
         if req.run_id:
             session.exec(update(ScmScanRun).where(ScmScanRun.id == req.run_id, ScmScanRun.status == "queued")  # type: ignore[call-overload]
                          .values(status="running", last_updated=now).execution_options(synchronize_session=False))
         session.commit()
-        scan_id, team_id, product, rid = scan.id, req.team_id, req.product, req.id
+        scan_id, team_id, product, rid, chosen_id = scan.id, req.team_id, req.product, req.id, req.task_id
     try:
-        task_id = launcher(engine, product, scan_id, team_id, payload)
+        task_id = launcher(engine, product, scan_id, team_id, payload, task_id=chosen_id)
     except Exception as exc:
         reason = f"The scan could not be sent to a worker ({_safe_reason(exc)})"
         with Session(engine) as session:
@@ -542,6 +582,9 @@ def _dispatch_one(engine: Engine, request_id: int, now: dt.datetime, launcher: L
                 error=type(exc).__name__)
             task_id = sent_task
         else:
+            # it may have reached the broker before the launcher failed (e.g. storing its id raised): withdrawn, so
+            # it can never run uncharged once this request is refunded
+            _withdraw_quietly(withdraw, chosen_id)
             with Session(engine) as session:
                 _fail_unsent_scan(session, scan_id, reason)
                 _refund_requests(session, team_id, [rid], "failed",
@@ -560,8 +603,23 @@ def _dispatch_one(engine: Engine, request_id: int, now: dt.datetime, launcher: L
     return "dispatched"
 
 
-def _recover(session: Session, now: dt.datetime) -> int:
-    """Requests a dead dispatcher left in ``dispatching``: re-queued, or failed and refunded after MAX_ATTEMPTS."""
+def _withdraw_quietly(withdraw: Withdraw, task_id: str | None) -> None:
+    if not task_id:
+        return
+    try:
+        withdraw(task_id)
+    except Exception as exc:  # noqa: BLE001  # best effort, like the cancel path: the request is settled anyway
+        log("withdraw FAILED", task=task_id, error=type(exc).__name__)
+
+
+def _recover(session: Session, now: dt.datetime, task_state: TaskState, withdraw: Withdraw) -> int:
+    """Requests a dead dispatcher left in ``dispatching``. Exactly once, never free:
+
+    * the scan has its task id: it was sent and stored -> dispatched;
+    * the task id the queue chose is known to Celery (a worker started or finished it) -> adopted: dispatched under
+      that id, still charged, and the poll reads its real result;
+    * otherwise the chosen task is withdrawn (revoked and marked, so a copy still in the broker never runs) and the
+      request is re-queued under a new id, or failed and refunded after MAX_ATTEMPTS."""
     stuck = session.exec(select(ScmScanRequest).where(ScmScanRequest.status == "dispatching",
                                                       ScmScanRequest.dispatched_at < now - DISPATCH_LEASE)).all()
     for req in stuck:
@@ -570,13 +628,28 @@ def _recover(session: Session, now: dt.datetime) -> int:
             req.status, req.task_id = "dispatched", scan.task_id
             session.add(req)
             continue
+        if scan is not None and req.task_id:
+            try:
+                state = task_state(req.task_id)
+            except Exception as exc:  # noqa: BLE001  # the broker or result backend is down: decide on a later tick
+                log("recover deferred", request=req.id, error=type(exc).__name__)
+                continue
+            if state != "PENDING":  # a worker has it: the scan was sent before the dispatcher died
+                won = session.exec(update(Scan).where(Scan.id == scan.id, Scan.task_id == None)  # type: ignore[call-overload]
+                                   .values(task_id=req.task_id).execution_options(synchronize_session=False)).rowcount
+                if won:
+                    req.status = "dispatched"
+                    session.add(req)
+                    log("recover adopted a sent scan", request=req.id, scan=scan.id, state=state)
+                    continue
+            _withdraw_quietly(withdraw, req.task_id)
         if scan is not None:
             _fail_unsent_scan(session, scan.id, "The scan was not sent (the dispatcher stopped)")
         if req.attempts >= MAX_ATTEMPTS:
             _refund_requests(session, req.team_id, [req.id], "failed", "Could not be dispatched after "
                              f"{MAX_ATTEMPTS} attempts", now, from_status=("dispatching",))
         else:
-            req.status, req.scan_id = "queued", None
+            req.status, req.scan_id, req.task_id = "queued", None, None
             session.add(req)
     return len(stuck)
 
@@ -602,20 +675,30 @@ class _PgLock:
                 self.conn.close()
 
 
+def _task_ops(launcher: Launcher | None, task_state: TaskState | None,
+              withdraw: Withdraw | None) -> tuple[Launcher, TaskState, Withdraw]:
+    """Celery by default; a stand-in launcher (tests, benches) brings its own ``task_state`` / ``withdraw`` or none."""
+    if launcher is None:
+        return celery_launcher, task_state or celery_task_state, withdraw or celery_withdraw
+    return (launcher, task_state or getattr(launcher, "task_state", lambda _t: "PENDING"),
+            withdraw or getattr(launcher, "withdraw", lambda _t: None))
+
+
 def dispatch_tick(engine: Engine, now: dt.datetime, *, launcher: Launcher | None = None,
                   token_for: TokenFor | None = None, max_inflight: int | None = None,
-                  team_max: int | None = None) -> list[int]:
+                  team_max: int | None = None, task_state: TaskState | None = None,
+                  withdraw: Withdraw | None = None) -> list[int]:
     """Fill the free slots fairly. Returns the ids of the requests sent this tick."""
-    launcher = launcher or celery_launcher
+    launcher, task_state, withdraw = _task_ops(launcher, task_state, withdraw)
     token_for = token_for or default_token_for
     cap = max_inflight or env_max_inflight()
-    per_team = env_team_max_inflight() if team_max is None else team_max
+    per_team = env_team_max_inflight(cap) if team_max is None else team_max
     sent: list[int] = []
     with _PgLock(engine) as locked:
         if not locked:
             return sent
         with Session(engine) as session:
-            _recover(session, now)
+            _recover(session, now, task_state, withdraw)
             session.commit()
             inflight = Counter({t: n for t, n in session.exec(
                 select(ScmScanRequest.team_id, func.count()).where(
@@ -650,7 +733,7 @@ def dispatch_tick(engine: Engine, now: dt.datetime, *, launcher: Launcher | None
                     exhausted.add(team)
                     continue
             request_id = backlog[team].pop(0)
-            outcome = _dispatch_one(engine, request_id, now, launcher, token_for)
+            outcome = _dispatch_one(engine, request_id, now, launcher, token_for, withdraw)
             if outcome == "dispatched":
                 sent.append(request_id)
                 inflight[team] += 1
@@ -704,9 +787,54 @@ def _record_scan_path_refund(session: Session, req: ScmScanRequest, scan: Scan) 
                      .values(refunded_c=ScmScanRun.refunded_c + cents).execution_options(synchronize_session=False))
 
 
+Expirer = Callable[[Engine, Scan, str], bool]  # (engine, scan, reason) -> True when this call stopped and refunded it
+
+
+def expire_lost_scan(engine: Engine, scan: Scan, reason: str) -> bool:
+    """Stop a scan no worker finished in time through the cancel path a customer's Cancel uses (``cancel_scan``): it
+    reads the worker's real state first (a scan that finished meanwhile is kept, never refunded), then in one
+    compare-and-set marks it cancelled and refunds ``credit_charged`` once, and withdraws the task so a worker that
+    picks it up later never runs it. The reason is kept on the scan."""
+    from backend.utilities.scan.cancel_scan import CancelRefused, cancel_scan
+
+    try:
+        cancel_scan(engine, scan_id=scan.id, team_id=scan.team_id, scan_type=scan.scan_type,
+                    user_id=None)  # type: ignore[arg-type]  # the queue, not a person
+    except CancelRefused:
+        return False
+    with Session(engine) as session:
+        row = session.get(Scan, scan.id)
+        if row is not None and isinstance(row.info, dict):
+            row.info = {**row.info, "timed_out": True, "error": reason[:500]}
+            session.add(row)
+            session.commit()
+    return True
+
+
+def _lost_reason(req: ScmScanRequest, scan: Scan, now: dt.datetime) -> str | None:
+    """Why a dispatched scan counts as lost (its worker died, the task was dropped), or None while it may still end."""
+    if req.dispatched_at is None:
+        return None
+    age = now - req.dispatched_at
+    start, run = env_start_timeout(), env_run_timeout()
+    if (scan.scan_status or "pending") in ("pending", "received") and age > start:
+        return (f"No scan worker picked this scan up within {int(start.total_seconds() // 60)} minutes; "
+                "it was stopped and its credits refunded")
+    if age > run:
+        return (f"The scan did not finish within {int(run.total_seconds() // 60)} minutes; "
+                "it was stopped and its credits refunded")
+    return None
+
+
 def poll_tick(engine: Engine, now: dt.datetime, *, status_reader: StatusReader | None = None,
-              limit: int = 500) -> dict[str, int]:
-    status_reader = status_reader or celery_status
+              limit: int = 500, expirer: Expirer | None = None) -> dict[str, int]:
+    """Close finished scans and free their slots. A scan still pending past ``REPO_SCAN_START_TIMEOUT_MIN`` or
+    unfinished past ``REPO_SCAN_RUN_TIMEOUT_MIN`` (its worker died, the task was lost) is reconciled with the worker
+    first and then stopped and refunded (``expire_lost_scan``), so a lost task never holds a slot for ever."""
+    if status_reader is None:
+        status_reader, expirer = celery_status, expirer or expire_lost_scan
+    else:
+        expirer = expirer or getattr(status_reader, "expire", None)
     counts: Counter = Counter()
     with Session(engine) as session:
         ids = list(session.exec(select(ScmScanRequest.id).where(ScmScanRequest.status == "dispatched")
@@ -733,11 +861,27 @@ def poll_tick(engine: Engine, now: dt.datetime, *, status_reader: StatusReader |
                 session.expire_all()
                 scan = session.get(Scan, req.scan_id)
             final = {"success": "done", "failure": "failed", "cancelled": "cancelled"}.get(scan.scan_status or "")
+            lost = None
             if final is None:
-                continue
+                lost = _lost_reason(req, scan, now) if expirer is not None else None
+                if lost is None:
+                    continue
+                stopped = expirer(engine, scan, lost)
+                session.expire_all()
+                scan = session.get(Scan, req.scan_id)
+                final = {"success": "done", "failure": "failed", "cancelled": "cancelled"}.get(scan.scan_status or "")
+                if final is None:
+                    continue
+                if stopped:
+                    final = "failed"
+                    log("lost scan stopped", team=req.team_id, request=rid, scan=scan.id)
+                else:
+                    lost = None  # it ended on its own meanwhile: closed with its real outcome
             req.status, req.finished_at = final, now
             _record_scan_path_refund(session, req, scan)
-            if final == "failed":
+            if lost is not None:
+                req.error = lost[:255]
+            elif final == "failed":
                 # the worker's sentence, with the user info of any URL in it dropped (a clone URL carries the token)
                 req.error = redact_urls(str((scan.info or {}).get("error") or "The scan failed"))[:255] \
                     if isinstance(scan.info, dict) else "The scan failed"

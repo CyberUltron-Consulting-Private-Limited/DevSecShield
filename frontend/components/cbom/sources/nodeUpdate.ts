@@ -10,7 +10,7 @@ export type NodeUpdateBadge = { tone: "amber" | "zinc"; label: string; short: st
 
 const SHORT: Record<string, string> = {
   no_build_id: "No build id: older than the server's node build",
-  older_version: "Older than the server's node build",
+  older_version: "Older than the current release",
   different_version: "Not the server's node build",
   different_build: "Not the server's node build",
   newer_version: "Newer than the server's node build",
@@ -19,7 +19,9 @@ const SHORT: Record<string, string> = {
 export function nodeUpdateBadge(update: CbomNodeUpdate | null | undefined): NodeUpdateBadge | null {
   if (!update || !update.message) return null;
   if (update.state === "update_available") {
-    return { tone: "amber", label: "Update available", short: SHORT[update.reason ?? ""] ?? "Not the server's node build", message: update.message };
+    // #361: name the release to install ("Update available: 1.0.4"); an older API sends no server_version
+    const label = update.server_version ? `Update available: ${update.server_version}` : "Update available";
+    return { tone: "amber", label, short: SHORT[update.reason ?? ""] ?? "Not the server's node build", message: update.message };
   }
   if (update.state === "newer") {
     return { tone: "zinc", label: "Newer than server", short: SHORT.newer_version, message: update.message };

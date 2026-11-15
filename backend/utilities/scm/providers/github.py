@@ -31,6 +31,10 @@ _TOKEN_CACHE: dict[tuple[str, str, str, str], tuple[str, float]] = {}
 _CACHE_LOCK = threading.Lock()
 
 
+# what an installation token may do: read the code and the repository metadata (GitHub: "Create an installation
+# access token for an app", permissions body); a token never gets write access through ZeroShield
+TOKEN_PERMISSIONS = {"permissions": {"contents": "read", "metadata": "read"}}
+
 def _b64(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
 
@@ -99,8 +103,10 @@ class GitHubProvider:
             if cached and cached[1] - time.time() > 300:
                 return cached[0]
         jwt = app_jwt(app_id, self.secrets.get("private_key", ""))
+        # least privilege: the token lists and clones, nothing else, whatever else the customer granted the App
+        # (it travels in every scan's Celery message and every worker clone)
         response = self.http.request("POST", f"/app/installations/{quote(installation, safe='')}/access_tokens",
-                                     headers={"Authorization": f"Bearer {jwt}"})
+                                     headers={"Authorization": f"Bearer {jwt}"}, json_body=TOKEN_PERMISSIONS)
         try:
             body = response.json()
             token = str(body["token"])

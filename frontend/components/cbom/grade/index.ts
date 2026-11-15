@@ -34,7 +34,7 @@ export * from "./q0gaps";
 //                           register-heatmap, heatmap-cell-<family>-<source> (data-worst, data-total; click drills down)
 export { RegisterHeatmap, RegisterSummaryCard, RegisterTable, RiskRegister } from "./RiskRegister";
 export * from "./register";
-export { GRADE_TIPS, fixClassTipId, type GradeTipId, type TipEntry } from "./tips";
+export { GRADE_TIP_IDS, fixClassTipId, type GradeTipId, type TipEntry } from "./tips";
 export { gradeKeys, getCbomAgilityBaseline, getCbomAgilityHistory, getCbomAgilityModel, getCbomAgilitySubjects, getCbomGradeModel, useAgilityModel, useGradeModel } from "./api";
 export * from "./model";
 export * from "./inputs";

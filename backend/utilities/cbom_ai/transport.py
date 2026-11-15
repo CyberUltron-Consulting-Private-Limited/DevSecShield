@@ -228,6 +228,11 @@ def credential_plan(cfg: AiConfig) -> list[dict[str, Any]]:
     """The endpoints the configured credential source will contact, worked out from the configuration alone (no
     network: the status route calls this). Raises EndpointRefused when the source is not usable as configured."""
     kind = cfg.aws_credentials
+    if kind == "static":
+        if cfg.aws_static is None:
+            raise EndpointRefused("CBOM_AI_AWS_CREDENTIALS=static but CBOM_AI_AWS_ACCESS_KEY_ID / "
+                                  "CBOM_AI_AWS_SECRET_ACCESS_KEY are not both set")
+        return []  # the assistant's own keys, from its configuration: no network
     if kind == "env":
         if not cfg.aws("env_keys_present"):
             raise EndpointRefused("CBOM_AI_AWS_CREDENTIALS=env but AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY are not set")
@@ -278,6 +283,18 @@ def _credential_provider(cfg: AiConfig, botocore_session: Any) -> Any:
     from botocore.utils import ContainerMetadataFetcher, FileWebIdentityTokenLoader, InstanceMetadataFetcher
 
     kind = cfg.aws_credentials
+    if kind == "static":
+        keys = cfg.aws_static
+        if keys is None:
+            raise EndpointRefused("static credentials are not configured")
+
+        class _Static(BC.CredentialProvider):
+            METHOD = "cbom-ai-static"
+
+            def load(self) -> Any:
+                return BC.Credentials(keys.access_key, keys.secret_key, keys.token, method=self.METHOD)
+
+        return BC.CredentialResolver([_Static()])
     if kind in ("env", "profile"):
         wanted = {"env"} if kind == "env" else {"shared-credentials-file", "config-file"}
         resolver = BC.create_credential_resolver(botocore_session, region_name=cfg.region)
@@ -319,7 +336,9 @@ def _credential_provider(cfg: AiConfig, botocore_session: Any) -> Any:
 def _botocore_session(cfg: AiConfig) -> Any:
     import botocore.session  # lazily: the backend imports and runs without boto3 / botocore being loaded
 
-    session = botocore.session.Session(profile=cfg.aws_profile) if cfg.aws_profile else botocore.session.Session()
+    # a named profile is read only when it is the source (static keys never look at the shared files)
+    profile = cfg.aws_profile if cfg.aws_credentials != "static" else None
+    session = botocore.session.Session(profile=profile) if profile else botocore.session.Session()
     session.register_component("credential_provider", _credential_provider(cfg, session))
     return session
 

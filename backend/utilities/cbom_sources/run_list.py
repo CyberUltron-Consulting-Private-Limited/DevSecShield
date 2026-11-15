@@ -10,10 +10,12 @@ not a ``coverage`` row ("could not read X"), informational = the other assets, q
 ``quantum_vulnerable`` true. That is exactly what ``cbom_metrics.summarize_code_rows`` counts over
 ``collections_view.node_row`` rows judged at collection (``node_row`` makes an asset a finding iff it has an impact),
 so a run row and a code-scan row use one rule (test B3). ``asset_count`` is every stored row of the run, coverage rows
-included: the number Review & Run (``GET /runs``) and the run's assets API (``all_total``) show (issue #159).
+included: the number Review & Run (``GET /runs``) and the run's assets API (``total`` / ``all_total``) show (issue #159).
+Both run lists take it from ``asset_counts`` (Rule P: one function; test_cbom_159_run_asset_count_single_source.py).
 
 Database work per list request (independent of the number of runs listed): one query for the page of runs, one count,
-one grouped count over ``cbomcollectedasset (run_id, impact, quantum_vulnerable)`` for the runs not in the cache, one
+one grouped count over ``cbomcollectedasset (run_id, impact, quantum_vulnerable)`` and one over ``(run_id)``
+(``asset_counts``) for the runs not in the cache, one
 query for their jobs (plus one for deleted sources' names, only when such jobs exist), one for the team's sources and
 one for the owners. Counts of finished runs are cached in-process by ``(run_id, last_updated, status)``; an active
 run's counts are read live (its assets arrive without a status change).
@@ -105,14 +107,32 @@ def _empty_counts() -> dict[str, Any]:
             "asset_count": 0, "endpoints_probed": 0}
 
 
+def asset_counts(session: Session, team_id: int, run_ids: Iterable[int]) -> dict[int, int]:
+    """THE asset count of each run (issue #159, Rule P): every stored row of the run, ``coverage`` rows included, the
+    number the CBOM Scans table, Review & Run (``GET /runs``) and the run's assets API (``total`` / ``all_total`` of
+    the unfiltered list) show. One grouped query; a run of another team (or with no rows) counts 0."""
+    ids = sorted({int(i) for i in run_ids})
+    out = {i: 0 for i in ids}
+    if not ids:
+        return out
+    query = (select(CbomCollectedAsset.run_id, func.count())
+             .where(CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id.in_(ids))  # type: ignore[union-attr]
+             .group_by(CbomCollectedAsset.run_id))
+    for run_id, count in session.exec(query).all():
+        out[int(run_id)] = int(count or 0)
+    return out
+
+
 def grouped_counts(session: Session, team_id: int, run_ids: Iterable[int]) -> dict[int, dict[str, Any]]:
-    """Severity, informational, quantum-vulnerable, asset and probed-endpoint counts per run, as collected, in ONE
-    grouped query. ``coverage`` rows count only in ``asset_count`` (as in GET /runs and the assets API, issue #159),
+    """Severity, informational, quantum-vulnerable and probed-endpoint counts per run, as collected, in ONE grouped
+    query, and ``asset_count`` from ``asset_counts`` (issue #159). ``coverage`` rows count only in ``asset_count``,
     never as a severity, informational, quantum-vulnerable or probed endpoint."""
     ids = sorted({int(i) for i in run_ids})
     out: dict[int, dict[str, Any]] = {i: _empty_counts() for i in ids}
     if not ids:
         return out
+    for run_id, count in asset_counts(session, team_id, ids).items():
+        out[run_id]["asset_count"] = count
     net = case((CbomCollectedAsset.asset_type.in_(sorted(NETWORK_TYPES)), 1), else_=0)  # type: ignore[union-attr]
     cov = case((CbomCollectedAsset.asset_type == COVERAGE, 1), else_=0)
     query = (select(CbomCollectedAsset.run_id, CbomCollectedAsset.impact, CbomCollectedAsset.quantum_vulnerable, net,
@@ -124,7 +144,6 @@ def grouped_counts(session: Session, team_id: int, run_ids: Iterable[int]) -> di
         counts = out[int(run_id)]
         risk = counts["risk_data"]
         count = int(count or 0)
-        counts["asset_count"] += count
         if is_cov:
             continue  # "could not read X": a row of the run, never a finding or an endpoint (B3)
         if is_net:
@@ -299,6 +318,7 @@ def clear_cache() -> None:
     _COUNTS.clear()
 
 
-__all__ = ["ASSIGNMENT_TO_FINDING", "COUNTS_BASIS", "LIST_LIMIT", "RUN_TO_UNIFIED", "clear_cache", "finding_status",
+__all__ = ["ASSIGNMENT_TO_FINDING", "COUNTS_BASIS", "LIST_LIMIT", "RUN_TO_UNIFIED", "asset_counts", "clear_cache",
+           "finding_status",
            "grouped_counts", "list_run_rows", "list_runs_for_scan_list", "log_line", "runs_for_scan_list", "run_row", "unified_run_status"]
 
