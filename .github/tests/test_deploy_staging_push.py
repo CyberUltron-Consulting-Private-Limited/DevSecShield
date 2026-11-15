@@ -274,7 +274,8 @@ class OnlyStaging(unittest.TestCase):
         # ... the scan node registry switch (README "Public registry") and the AI remediation provider (README "AI remediation")
         self.assertEqual(sorted(set(re.findall(r"vars\.([A-Z_]+)", WF))),
                          ["CBOM_AI_AWS_CREDENTIALS", "CBOM_AI_BEDROCK_REGION", "CBOM_AI_PROVIDER",
-                          "CBOM_AWS_LAB_SAME_ACCOUNT", "CBOM_NODE_REGISTRY_PUBLIC", "STAGING_DIR"])
+                          "CBOM_AWS_LAB_SAME_ACCOUNT", "CBOM_CT_DISCOVERY", "CBOM_NODE_REGISTRY_PUBLIC",
+                          "STAGING_DIR"])
         # Only the deploy job (the staging environment) sees the AWS ones.
         self.assertNotIn("CBOM_AWS", JOBS["build"])
         self.assertNotIn("CBOM_AI_AWS", JOBS["build"])
