@@ -28,6 +28,7 @@ from backend.new_models import (
     Team,
 )
 from backend.utilities.cbom_sources import billing as BILLING  # CB-14 credit ledger
+from backend.utilities.cbom_sources import host_key_resets as HKR  # #150
 from backend.utilities.cbom_sources import targets as T
 from backend.utilities.cbom_sources.classify import ASSET_TYPES, CDX_TYPE, classify
 from backend.utilities.cbom_sources.node_facts import normalise_tls
@@ -702,8 +703,12 @@ def claim_next(session: Session, node: CbomScanNode, settings: CbomCollectionSet
                 {**item, "skip_addresses": T.range_skip_addresses(str(item["cidr"]), skips=skips)}
                 if isinstance(item, dict) and item.get("cidr") else item for item in payload["scope"]["ranges"]]
         if source is not None:
+            config = source.config or {}
+            resets = HKR.for_claim(session, source, node.id)  # #150: admins' host key decisions for this node
+            if resets:
+                config = {**config, "host_key_resets": resets}  # a copy: the stored config is never changed
             payload["source"] = {
-                "id": source.id, "kind": source.kind, "name": source.name, "config": source.config or {},
+                "id": source.id, "kind": source.kind, "name": source.name, "config": config,
                 # an agent-mode node is never given a credential, whatever a source holds (WP8b)
                 "secrets": {} if (node.mode or "agentless") == "agent" else decrypt_secrets(source.secret_encrypted),
             }
@@ -1047,6 +1052,8 @@ def finish_job(
         refunded = refund_policy_excluded(session, job, _run_of(session, job), clean_result)
     _test_result_from_job(session, job, now)
     _credential_refused_from_job(session, job, status, clean_result, now)
+    if node is not None:  # #150: the host key decisions the node applied in this job
+        HKR.applied(session, job, node.id, clean_result if isinstance(clean_result, dict) else None, now)
     recompute_run(session, job.run_id, now)
     audit(session, team_id=job.team_id, actor_type="node" if node else "system", actor_id=node.id if node else None,
           action=f"job.{status}", object_type="job", object_id=job.id)

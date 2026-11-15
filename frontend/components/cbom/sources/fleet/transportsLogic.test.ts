@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 
 import {
   ARTIFACTS_OF,
+  NEEDS_RELEASE,
   SECRETS_OF,
   TEST_ELSEWHERE,
   TRANSPORT_LABEL,
@@ -34,6 +35,8 @@ assert.deepEqual(SECRETS_OF, { awx: ["token"], salt: ["username", "password"], s
 assert.deepEqual(ARTIFACTS_OF.awx, ["ansible-collection"]);
 assert.deepEqual(ARTIFACTS_OF.salt, ["salt-state"]);
 assert.deepEqual(ARTIFACTS_OF.ssm, ["ssm-document", "ssm-role-cfn"]);
+// backend/utilities/cbom_sources/transports/artifacts.py NEEDS_RELEASE: these 400 while no zs-collect release is active
+assert.deepEqual([...NEEDS_RELEASE].sort(), ["ansible-collection", "salt-state", "ssm-document", "zs-collect-manifest"]);
 
 // the body the backend expects (backend/routers/cbom_transports.py: AwxConfig, SaltConfig, SsmConfig, SECRETS)
 assert.deepEqual(transportBody(awx()), {

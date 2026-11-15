@@ -46,6 +46,7 @@ from backend.utilities.cbom_sources import agility as AGILITY
 from backend.utilities.cbom_sources import agility_rollup as AGILITY_ROLLUP
 from backend.utilities.cbom_sources import agents as AG
 from backend.utilities.cbom_sources import held as HELD
+from backend.utilities.cbom_sources import host_key_resets as HKR  # #150
 from backend.utilities.cbom_sources import jobs as J
 from backend.utilities.cbom_sources import source_cap as SOURCE_CAP
 from backend.utilities.cbom_sources import targets as T
@@ -588,6 +589,8 @@ def _create_source(engine, team_id: int, user_id: int, body: SourceCreate) -> di
             config=cfg.model_dump(mode="json"), secret_encrypted=encrypt_secrets(secrets_),
             secret_fields=sorted(secrets_), created_at=now, last_updated=now,
             last_test_status="never" if spec.collectable(cfg) or body.kind == "aws_account" else "not_available",
+            # #153: say why there is no test (the Last test column showed "None")
+            last_test_summary=None if spec.collectable(cfg) or body.kind == "aws_account" else NOT_AVAILABLE,
         )
         session.add(source)
         try:
@@ -629,6 +632,7 @@ async def create_source(team_id: TeamId, body: SourceCreate, Authorization: Auth
 
 
 # #225: server-side search, filters and keyset paging for the source tables
+NOT_AVAILABLE = "Validation for this source is not available yet"
 SOURCE_STATUSES = ("enabled", "disabled", "never", "pending", "passed", "partial", "failed", "error", "not_available")
 MAX_PAGE = 500
 
@@ -822,6 +826,8 @@ def _update_source(engine, team_id: int, user_id: int, source_id: int, body: Sou
                 J.cancel_open_jobs(session, source, now, reason="Source changed")
                 source.last_test_status = "never" if spec.collectable(cfg) or source.kind == "aws_account" else "not_available"
                 source.last_test_summary, source.last_test_at, source.last_test_job_id = None, None, None
+                if source.last_test_status == "not_available":
+                    source.last_test_summary = NOT_AVAILABLE  # #153: never "None" in the Last test column
                 source.last_test_result = {}
             session.add(source)
             try:
@@ -896,7 +902,7 @@ def _test_source(engine, team_id: int, user_id: int, source_id: int) -> dict:
             return {"cloud_http": True}
         if not (spec.needs_node(cfg) and spec.collectable(cfg)):
             source.last_test_status = "not_available"
-            source.last_test_summary = "Validation for this source is not available yet"
+            source.last_test_summary = NOT_AVAILABLE
             source.last_test_at = now
             session.add(source)
             session.commit()
@@ -1039,6 +1045,41 @@ async def test_source(team_id: TeamId, source_id: ObjectId, Authorization: AuthH
     elif result.get("cloud_http"):
         result = await _run("test cloud", team_id, _test_cloud_http, engine, team_id, user.id, source_id)
     return _ok(result)
+
+
+# ---------------------------------------------------------------------------- host key decisions (#150)
+def _host_key_reset(engine, team_id: int, user_id: int, source_id: int, body: Any) -> dict:
+    now = utcnow()
+    with Session(engine) as session:
+        source = _get_owned(session, CbomCollectionSource, source_id, team_id, "Source")
+        require_admin(session, user_id, team_id, "a host key the scan node remembered")
+        row = HKR.request(session, source, user_id, body if isinstance(body, dict) else {}, now)
+        session.commit()
+        return {"reset": HKR.as_dict(row),
+                "warning": HKR.WARNING_ACCEPT if row.action == "accept" else HKR.WARNING_FORGET,
+                "message": "The scan node applies this on its next job for this source. Run the connection test "
+                           "again to apply it now."}
+
+
+@router.post(BASE + "/items/{source_id}/host-key-resets", dependencies=WRITE,
+             summary="Accept a changed host key, or forget the remembered one, on the scan node that reported it (admin)")
+async def create_host_key_reset(team_id: TeamId, source_id: ObjectId, body: dict, Authorization: AuthHeader = None):
+    engine, user = await authorize(team_id, Authorization)
+    return _ok(await _run("host key reset", team_id, _host_key_reset, engine, team_id, user.id, source_id, body),
+               status_code=201)
+
+
+def _host_key_resets(engine, team_id: int, source_id: int) -> dict:
+    with Session(engine) as session:
+        source = _get_owned(session, CbomCollectionSource, source_id, team_id, "Source")
+        return {"resets": HKR.recent(session, source)}
+
+
+@router.get(BASE + "/items/{source_id}/host-key-resets", dependencies=READ,
+            summary="Host key decisions for a source: pending, applied and superseded")
+async def list_host_key_resets(team_id: TeamId, source_id: ObjectId, Authorization: AuthHeader = None):
+    engine, _user = await authorize(team_id, Authorization)
+    return _ok(await _run("host key resets", team_id, _host_key_resets, engine, team_id, source_id))
 
 
 def _count_targets(body: dict) -> dict:
