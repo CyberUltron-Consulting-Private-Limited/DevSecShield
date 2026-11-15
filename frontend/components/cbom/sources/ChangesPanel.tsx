@@ -288,7 +288,7 @@ export function CodeChanges({ teamId, scanId }: { teamId: number; scanId: number
     <details className="rounded-lg border border-zinc-200 dark:border-zinc-800 p-4" data-testid="code-changes"
              onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
       <summary className="cursor-pointer text-sm font-medium text-zinc-900 dark:text-white">
-        Changes since the previous scan of this repository and branch
+        Drift since the previous scan of this repository and branch
       </summary>
       <div className="mt-3">
         {!open ? null : q.isLoading ? <LoadingBlock /> : q.isError || !q.data ? <ErrorBlock error={q.error} onRetry={() => q.refetch()} /> : (

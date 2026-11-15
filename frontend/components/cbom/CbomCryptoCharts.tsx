@@ -20,7 +20,7 @@
  * payload is present (legacy worker scans carry none).
  */
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -1318,11 +1318,12 @@ export function CbomCryptoCharts({
   );
 }
 
-/** Heat-map (algorithm family x asset type, worst impact) from the scan's rows, and the certificate calendar from
+/** Heat-map (algorithm family × source file, or asset type) and the certificate calendar from
  * ``cbom_distributions.certificates``: the same views a collection run shows, built from data this page has, stacked
- * full width like the run's (RunInsights). */
+ * full width like the run's (RunInsights). Source is the default, matching "Algorithm family × source". */
 function CodeHeatmapAndCalendar({ findings, certificates }: { findings: CbomFinding[]; certificates: CertRow[] }) {
-  const heat = useMemo(() => codeHeatmap(findings as unknown as CodeHeatRow[]), [findings]);
+  const [by, setBy] = useState<"source" | "type">("source");
+  const heat = useMemo(() => codeHeatmap(findings as unknown as CodeHeatRow[], by), [findings, by]);
   const certs = useMemo(
     () => certificates.filter((c) => c.not_valid_after).map((c) => ({ name: c.name, not_after: c.not_valid_after, location: c.location })),
     [certificates],
@@ -1332,18 +1333,28 @@ function CodeHeatmapAndCalendar({ findings, certificates }: { findings: CbomFind
     <div className="grid grid-cols-1 gap-6">
       {heat.rows.length > 0 && (
         <Card>
-          <CardContent className="pt-6">
-            <CryptoHeatmap data={heat} title="Algorithm family × asset type" testId="code-heatmap" />
+          <CardContent className="pt-6 space-y-2">
+            <div className="flex gap-2 text-xs" role="group" aria-label="Heat-map columns">
+              {(["source", "type"] as const).map((v) => (
+                <button key={v} type="button" aria-pressed={by === v} onClick={() => setBy(v)}
+                  className={`rounded px-2 py-0.5 cursor-pointer border ${by === v ? "bg-zinc-900 text-white dark:bg-white dark:text-zinc-900" : "border-zinc-300 dark:border-zinc-700"}`}>
+                  By {v === "source" ? "source" : "asset type"}
+                </button>
+              ))}
+            </div>
+            <CryptoHeatmap data={heat} title={`Algorithm family × ${by === "source" ? "source" : "asset type"}`} testId="code-heatmap" />
           </CardContent>
         </Card>
       )}
-      {certs.length > 0 && (
-        <Card>
-          <CardContent className="pt-6">
+      <Card>
+        <CardContent className="pt-6">
+          {certs.length > 0 ? (
             <CertCalendar certs={certs} testId="code-cert-calendar" />
-          </CardContent>
-        </Card>
-      )}
+          ) : (
+            <p className="text-xs text-zinc-500" data-testid="code-cert-calendar">No certificates with an expiry date in this scan.</p>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

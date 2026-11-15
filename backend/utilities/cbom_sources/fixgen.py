@@ -155,6 +155,10 @@ RULES: tuple[Rule, ...] = (
          "Use authenticated AES-GCM instead of {old}.",
          N_GCM + ("With PyCryptodome: ciphertext, tag = cipher.encrypt_and_digest(data); keep cipher.nonce; "
                   "decrypt with AES.new(key, AES.MODE_GCM, nonce=nonce).decrypt_and_verify(ciphertext, tag).",)),
+    Rule("py-cryptography-ecb", PY, MODE, _r(r"\bmodes\.ECB\(\s*\)"), "modes.GCM(os.urandom(12))", 55,
+         "Use AES-GCM with a fresh 12-byte nonce instead of {old}.",
+         N_GCM + ("Add `import os` if it is not already imported. The nonce is not secret: store it with the "
+                  "ciphertext.",)),
     Rule("py-pycryptodome-cipher", PY, WEAK, _r(r"\b(DES3|DES|ARC4|Blowfish|ARC2|CAST)\.new\("), "AES.new(", 45,
          "Replace {old} with AES (GCM mode).", N_GCM, BLOCK64,
          imports=((_r(r"^(\s*from\s+Crypto(?:dome)?\.Cipher\s+import\s+.*?)\b(DES3|DES|ARC4|Blowfish|ARC2|CAST)\b"),

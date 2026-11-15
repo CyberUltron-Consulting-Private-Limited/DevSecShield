@@ -71,6 +71,7 @@ import {
   type CbomCompliance,
 } from "@/components/cbom/CbomCryptoCharts";
 import { RbiCsfRollup, type RbiCsfRollupData } from "@/components/rbi/RbiCsfRollup";
+import { CertHygieneSection } from "@/components/cbom/certificates/CertHygiene";
 import { CodeChanges } from "@/components/cbom/sources/ChangesPanel";
 import { CodeWavesPanel } from "@/components/cbom/sources/WavesControls";
 import { CertInLanePosture } from "@/components/certin/CertInLanePosture";
@@ -907,6 +908,13 @@ export default function CbomResults({
             </div>
           )}
 
+          {/* Code scans have no Sources posture payload. The same heading still introduces the PQC charts
+              this page already renders, so a code scan and a Sources run share the section name. */}
+          {!run && cryptoDistributions && (
+            <h2 className="text-base font-semibold text-zinc-900 dark:text-white" data-testid="code-posture-heading">
+              Post-quantum and risk posture
+            </h2>
+          )}
           {/* Crypto-asset charts (aibom CBOM lane) */}
           {cryptoDistributions && (
             <CbomCryptoCharts
@@ -943,6 +951,11 @@ export default function CbomResults({
               <CodeChanges teamId={tid} scanId={sid} />
               <CodeWavesPanel teamId={tid} scanId={sid} />
             </>
+          )}
+          {!run && Number.isFinite(tid) && tid > 0 && (
+            <div className="mt-6" data-testid="code-cert-hygiene">
+              <CertHygieneSection teamId={tid} />
+            </div>
           )}
           <RbiCsfRollup
             rollup={meta?.rbi_csf_rollup as RbiCsfRollupData | undefined}

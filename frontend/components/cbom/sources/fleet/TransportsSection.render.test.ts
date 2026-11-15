@@ -168,7 +168,9 @@ void run([
       assert.equal(btn(name)?.disabled, true, `${name} can be clicked without a release`);
       assert.match(btn(name)?.getAttribute("title") ?? "", /zs-collect release/);
     }
-    for (const name of ["ssm-role-cfn", "zs-collect-pubkey"]) assert.equal(btn(name)?.disabled, false, `${name} is off`);
+    for (const name of ["ssm-role-cfn", "zs-collect-pubkey", "sshca-trust-salt", "sshca-trust-ansible", "sshca-trust-ssm"]) {
+      assert.equal(btn(name)?.disabled, false, `${name} is off`);
+    }
     await act(async () => btn("ansible-collection")!.click());
     await settle();
     assert.equal(fake.calls("get", /\/artifacts\//).length, 0, "a file that needs a release was asked for");
