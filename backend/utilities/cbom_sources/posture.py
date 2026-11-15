@@ -352,7 +352,8 @@ def readiness_actions(groups: Mapping[tuple[str, str | None], int],
         entry = (crypto_kb.entry("node", code) or {}) if code else {}
         fixed = {**classes, "quantum-vulnerable": max(0, vulnerable - n),
                  "quantum-safe": int(classes.get("quantum-safe", 0) or 0) + min(n, vulnerable)}
-        out.append({"asset_type": a_type, "type_label": type_label(a_type), "code": code, "assets": n,
+        out.append({"asset_type": a_type, "type_label": type_label(a_type), "type_label_plural": type_label_plural(a_type),
+                    "code": code, "assets": n,
                     "title": entry.get("title") or CLASS_BASIS["shor_breaks"][1],
                     "fix": crypto_kb.summary_fix("node", [code]) if code else None,
                     "readiness_after": readiness(fixed)[0]})
@@ -362,6 +363,13 @@ def readiness_actions(groups: Mapping[tuple[str, str | None], int],
 def type_label(asset_type: str | None) -> str:
     """The run table's type name (``run_assets.type_label``), imported late to keep this module import-cycle free."""
     from backend.utilities.cbom_sources.run_assets import type_label as label
+
+    return label(asset_type)
+
+
+def type_label_plural(asset_type: str | None) -> str:
+    """``type_label`` counted ("CA templates"), imported late like ``type_label``."""
+    from backend.utilities.cbom_sources.run_assets import type_label_plural as label
 
     return label(asset_type)
 

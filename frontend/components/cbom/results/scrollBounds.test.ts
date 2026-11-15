@@ -41,7 +41,8 @@ assert.ok(ui.includes('data-slot="scroll-area-viewport"'));
 const page = fs.readFileSync(path.join(dir, "..", "..", "..", "app", "[team_id]", "cbom", "runs", "[run_id]", "results", "page.tsx"), "utf8");
 assert.ok(!page.includes("overflow-x-hidden"), "no overflow clipping on the page wrapper");
 assert.match(table, /const STICKY_SELECT = "max-md:sticky max-md:left-0/);
-assert.match(table, /const STICKY_NAME = "max-md:sticky max-md:left-12/);
+// the select column holds the row's Open chevron below md (QA round 4 E): the name column starts after its 76 px
+assert.match(table, /const STICKY_NAME = "max-md:sticky max-md:left-\[76px\]/);
 // the Table's own overflow-auto wrapper must not be the sticky cells' scroll container (R-qa re-QA, PR #120)
 assert.match(table, /TABLE_WRAPPER_VISIBLE = "\[&_div:has\(>table\[data-slot=table\]\)\]:overflow-visible"/);
 assert.match(table, /<ScrollArea className=\{`[^`]*\$\{VIEWPORT_MAX_H_TABLE\} \$\{TABLE_WRAPPER_VISIBLE\}`\} data-testid="run-results-scroll">/);

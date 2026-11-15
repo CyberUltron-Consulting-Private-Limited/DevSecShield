@@ -31,6 +31,7 @@ import type { CbomRemediationItem } from "@/utils/api/cbom_ops";
 import { pluralize } from "@/components/cbom/sources/logic";
 import { ASSET_TYPE_LABEL, factsRows } from "@/components/cbom/sources/RunResults";
 import { BulkAssignBar, WaveBadge } from "@/components/cbom/sources/WavesControls";
+import { RowOpenButton } from "./RowOpenButton";
 import { ErrorBlock, LoadingBlock, StatusBadge, Truncate } from "@/components/cbom/sources/shared";
 
 import { getFindingStatusBadgeClass, getImpactBadgeClass, getRiskScoreBoxClass, getStrengthBadgeClass } from "./badgeClasses";
@@ -63,7 +64,10 @@ export const VIEWPORT_MAX_H_TABLE = "[&>[data-slot=scroll-area-viewport]]:max-h-
 export const TABLE_WRAPPER_VISIBLE = "[&_div:has(>table[data-slot=table])]:overflow-visible";
 /** Below 768 px the select and name columns stay on screen while the table scrolls sideways (PLAN §4.5). */
 const STICKY_SELECT = "max-md:sticky max-md:left-0 max-md:z-10 max-md:bg-white max-md:dark:bg-zinc-900";
-const STICKY_NAME = "max-md:sticky max-md:left-12 max-md:z-10 max-md:bg-white max-md:dark:bg-zinc-900";
+// below md the select column also holds the row's "Open" chevron (RowOpenButton, QA round 4 E), so it is 76 px wide
+// there and the sticky name column starts right after it
+const SELECT_COL = "w-[48px] max-md:w-[76px] max-md:min-w-[76px]";
+const STICKY_NAME = "max-md:sticky max-md:left-[76px] max-md:z-10 max-md:bg-white max-md:dark:bg-zinc-900";
 const SEARCH_DEBOUNCE_MS = 400;
 
 export interface RunTableSelection {
@@ -358,7 +362,7 @@ export function RunFindingsTable({
             <Table className="min-w-max">
               <TableHeader>
                 <TableRow>
-                  <TableHead data-col="select" className={`w-[48px] ${STICKY_SELECT}`}>
+                  <TableHead data-col="select" className={`${SELECT_COL} ${STICKY_SELECT}`}>
                     {/* infotip-shared: the select column stays 48 px (the sticky name column sits at left-12); the
                         Cryptographic findings title's tip explains selecting rows */}
                     <Checkbox checked={allSelected} aria-label="Select all rows" className="cursor-pointer" disabled={selectable.length === 0}
@@ -396,12 +400,15 @@ export function RunFindingsTable({
                                 data-type-label={item.type_label ?? ASSET_TYPE_LABEL[item.type] ?? item.type}
                                 {...rowOpenProps(() => onOpenDetails(item), `Open details of ${assetName(item)} at ${item.location}`)}
                                 className={`cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50 focus-visible:outline-none focus-visible:bg-blue-50 dark:focus-visible:bg-blue-950/40 ${selection.has(item.id) ? "bg-zinc-100 dark:bg-zinc-800/70" : ""}`}>
-                        <TableCell data-col="select" onClick={(e) => e.stopPropagation()} className={`w-[48px] ${STICKY_SELECT}`}>
+                        <TableCell data-col="select" onClick={(e) => e.stopPropagation()} className={`${SELECT_COL} ${STICKY_SELECT}`}>
+                          <div className="flex items-center gap-1">
                           {/* infotip-shared: one row of the selection; the Select all tip in the header explains it */}
                           <Checkbox checked={selection.has(item.id)} disabled={!key} className="cursor-pointer"
                                     aria-label={`Select ${item.location}`} data-testid={`run-asset-select-${item.id}`}
                                     title={key ? undefined : "This row has no stable key to plan or track"}
                                     onCheckedChange={() => toggle(item)} />
+                          <RowOpenButton label={`Open details of ${assetName(item)}`} onOpen={() => onOpenDetails(item)} />
+                          </div>
                         </TableCell>
                         {show("impact") && (
                         <TableCell data-col="impact">

@@ -101,7 +101,7 @@ export function statusRequestBodies(runId: number, keys: (string | null | undefi
 /** Posture classes that count as "ready" in posture's own readiness (posture.py: judged minus quantum-vulnerable). */
 export const READY_CLASSES = ["hybrid", "quantum-safe", "grover-weakened"] as const;
 
-type PostureLike = Pick<CbomRunPosture, "pqc_readiness_pct" | "pqc_classes" | "impacts">;
+type PostureLike = Pick<CbomRunPosture, "pqc_readiness_pct" | "pqc_classes" | "impacts"> & Partial<Pick<CbomRunPosture, "readiness_basis">>;
 
 /** Overlay the posture figures onto the run dashboard, 1:1 (Rule P). The /results dashboard already carries the same
  * values (W2 maps them from run_posture); the page still takes them from /posture so the card, the readiness chart and
@@ -116,8 +116,10 @@ export function applyPostureToDashboard(dashboard: CbomScanDashboardData, postur
     ...dashboard,
     card_data: {
       ...dashboard.card_data,
-      quantum_readiness_score: posture.pqc_readiness_pct ?? 0,
+      // a withheld readiness stays null with posture's status (QA round 4, C): the card says why, never 0 %
+      quantum_readiness_score: posture.pqc_readiness_pct ?? null,
       quantum_readiness_judged: posture.pqc_readiness_pct != null,
+      quantum_readiness_status: posture.readiness_basis?.status ?? dashboard.card_data.quantum_readiness_status,
       total_quantum_vulnerable: vulnerable,
     },
     severity_distribution: {
@@ -139,7 +141,8 @@ export function applyPostureToDistributions(dist: CbomDistributions, posture: Po
     ...dist,
     pqc: {
       ...dist.pqc,
-      readiness_pct: posture.pqc_readiness_pct ?? 0,
+      readiness_pct: posture.pqc_readiness_pct ?? null,
+      readiness_basis: posture.readiness_basis ?? dist.pqc?.readiness_basis ?? null,
       quantum_vulnerable: classes["quantum-vulnerable"] ?? 0,
       quantum_safe: READY_CLASSES.reduce((n, c) => n + (classes[c] ?? 0), 0),
       hybrid: classes.hybrid ?? 0,
