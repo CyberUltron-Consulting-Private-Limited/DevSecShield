@@ -61,24 +61,36 @@ class ParsedTargets:
     notes: list[str] = field(default_factory=list)  # names IDNA 2003 software reads as another host (CB-09)
 
 
-def clean_lines(value: str | list[str] | None) -> list[str]:
-    """Split, strip CR/BOM/whitespace, drop blanks and ``#`` comments, take the first CSV column."""
+_SEPARATORS = re.compile(r"[,;\t]")
+
+
+def _unquote(text: str) -> str:
+    return text.strip().strip('"').strip("'").strip()
+
+
+def clean_lines(value: str | list[str] | None, *, separators: str = "refuse") -> list[str]:
+    """Split, strip CR/BOM/whitespace, drop blanks and ``#`` comments.  A line holding a comma, semicolon or tab is
+    never cut short (#148: the text after it used to be dropped silently): ``separators="split"`` (never-scan lists,
+    whose box says "one per line or separated by commas") keeps every entry; ``"refuse"`` (targets) raises
+    TargetError.  A first line that is a CSV header (``host``, ``host,owner``) is skipped whole.  Taking the first
+    column of an imported CSV file is the import's job (the UI's csvFirstColumn), not this one's."""
     if value is None:
         return []
     raw = value.splitlines() if isinstance(value, str) else [str(v) for v in value]
     out: list[str] = []
     for index, line in enumerate(raw):
-        text = line.replace("﻿", "").replace("\r", "").replace("\x00", "")
+        text = line.replace("\ufeff", "").replace("\r", "").replace("\x00", "")
         if "#" in text:
             text = text.split("#", 1)[0]
-        if "," in text or ";" in text or "\t" in text:
-            text = re.split(r"[,;\t]", text, maxsplit=1)[0]
-        text = text.strip().strip('"').strip("'").strip()
-        if not text:
+        parts = [p for p in (_unquote(x) for x in _SEPARATORS.split(text)) if p]
+        if not parts:
             continue
-        if index == 0 and not out and text.lower() in _HEADER_WORDS:
+        if index == 0 and not out and parts[0].lower() in _HEADER_WORDS:
             continue  # a CSV header row
-        out.append(text)
+        if len(parts) > 1 and separators != "split":
+            raise TargetError(f"line {index + 1} ({_unquote(text)[:60]!r}) holds {len(parts)} entries separated by a "
+                              "comma, semicolon or tab: put one target per line")
+        out.extend(parts)
     return out
 
 
@@ -427,8 +439,9 @@ def sample_targets(targets: ParsedTargets, exclusions: ParsedTargets | None, n: 
 
 
 def parse_exclusions(value: str | list[str] | None) -> ParsedTargets:
-    """Never-scan lists may be large networks (a /8 is a valid thing to never scan)."""
-    lines = clean_lines(value)
+    """Never-scan lists may be large networks (a /8 is a valid thing to never scan).  Entries may be separated by
+    commas as well as new lines (#148)."""
+    lines = clean_lines(value, separators="split")
     parsed = ParsedTargets()
     raw: list[Interval] = []
     seen: set[str] = set()

@@ -43,11 +43,58 @@ export function splitLines(text: string): string[] {
     .filter((line) => line.length > 0)
 }
 
-/** First column of a CSV (header row dropped when it is not an address). */
+/** Header words of a target CSV: the same set as the backend (backend/utilities/cbom_sources/targets.py _HEADER_WORDS,
+ * kept equal by sourceFormChecks.test.ts), so a "hosts" or "targets" header is never imported as a target (#151). */
+export const TARGET_HEADER_WORDS = ["ip", "ips", "host", "hosts", "hostname", "address", "addresses", "target", "targets", "name"] as const
+
+/** First column of a CSV, the file's own header row dropped (before the rows are added to the box, #151). */
 export function csvFirstColumn(text: string): string[] {
   const rows = splitLines(text).map((line) => line.split(/[,;\t]/)[0].trim().replace(/^"|"$/g, ""))
-  if (rows.length && /^(ip|ips|host|hostname|address|target|name)$/i.test(rows[0])) rows.shift()
+  if (rows.length && (TARGET_HEADER_WORDS as readonly string[]).includes(rows[0].toLowerCase())) rows.shift()
   return rows.filter(Boolean)
+}
+
+/** The target box after an import: the box's lines plus the file's, each once; with the line-limit message when the
+ * result is over the per-source limit (the same message the box shows when typed, #151). */
+export function mergeImportedTargets(box: string, rows: string[], maxLines: number): { text: string; error: string | null } {
+  const lines = [...splitLines(box), ...rows].filter((v, i, all) => all.indexOf(v) === i)
+  const error = lines.length > maxLines
+    ? `${lines.length.toLocaleString("en-US")} lines; the limit is ${maxLines.toLocaleString("en-US")} per source`
+    : null
+  return { text: lines.join("\n"), error }
+}
+
+/** Why pasted or uploaded text is not known_hosts lines (#149: the backend's kinds.check_known_hosts, simplified), or
+ * null. A private key is refused before it is ever put in the box. */
+export function knownHostsProblem(text: string): string | null {
+  if (/PRIVATE KEY/.test(text)) {
+    return "This is a private key, not known_hosts lines. Paste the servers' public host keys (ssh-keyscan output)"
+  }
+  let lines = 0
+  const all = text.replace(/\r\n?/g, "\n").split("\n")
+  for (let i = 0; i < all.length; i++) {
+    const line = all[i].trim()
+    if (!line || line.startsWith("#")) continue
+    let fields = line.split(/\s+/)
+    if (fields[0] === "@cert-authority" || fields[0] === "@revoked") fields = fields.slice(1)
+    if (fields.length < 3 || !/^[a-z0-9][a-z0-9@._-]{2,63}$/.test(fields[1]) || !/^[A-Za-z0-9+/]+={0,2}$/.test(fields[2])) {
+      return `Line ${i + 1} is not a known_hosts line: expected host, key type and base64 key (ssh-keyscan output)`
+    }
+    lines++
+  }
+  return lines ? null : "Paste the known_hosts lines to pin, or choose trust on first use"
+}
+
+/** #156: a Windows or Active Directory port that would send the login to a server that is not verified, or null
+ * (the backend's kinds.credential_target_problem: WINRM_HTTP_PORTS and AD_NOT_LDAPS_PORTS). */
+export function windowsPortProblem(kind: string, port: number): string | null {
+  if (kind === "windows_servers" && [80, 5985, 8080].includes(port)) {
+    return `${port} is a plain-HTTP port: WinRM over HTTP cannot prove the server; use HTTPS (5986)`
+  }
+  if (kind === "active_directory" && [389, 3268, 80, 5985, 5986, 8080].includes(port)) {
+    return `${port} is not LDAPS: use 636, or 3269 for the global catalog`
+  }
+  return null
 }
 
 /** Host names from a BIND zone file export (A, AAAA and CNAME owners). */
