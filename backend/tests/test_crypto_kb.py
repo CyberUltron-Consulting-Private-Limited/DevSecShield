@@ -153,6 +153,9 @@ def test_render_never_injects_shell_from_context():
     out = kb.render("node", ["PROTO_TLS10"], context={"host": "bücher.example", "port": "443; id"})
     cmds = " ".join(v["command"] for v in out[0]["verify"])
     assert "xn--bcher-kva.example" in cmds and "; id" not in cmds and "<port>" in cmds
+    out = kb.render("node", ["PROTO_TLS10"], context={"host": "faß.lab", "port": 443})
+    cmds = " ".join(v["command"] for v in out[0]["verify"])
+    assert "xn--fa-hia.lab" in cmds and "fass.lab" not in cmds
     out = kb.render("node", ["KEY_READABLE"], context={"path": "-rf /etc/ssl/k.pem"})
     assert "'./-rf /etc/ssl/k.pem'" in " ".join(v["command"] for v in out[0]["verify"])
 
