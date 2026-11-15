@@ -322,9 +322,15 @@ const TEXT = {
   },
   // src: frontend/components/cbom/sources/logic.ts:612-634, frontend/components/cbom/sources/ScanNodesTab.tsx:488-498 — docker pull or helm from the public registry
   "cbsrc.nodes.registry_pull": {
-    what: "When ZeroShield publishes the node image in a public registry, one command pulls the pinned release and starts the node (Docker), or installs the Helm chart from that registry. No registry login is needed. Hosts without access to the registry use the downloaded files below instead.",
-    why: "The quickest install on a host with internet access; the pinned version matches this ZeroShield.",
+    what: "When ZeroShield publishes the node image in a public registry, one command pulls the release this server ships and starts the node (Docker), or installs the Helm chart from that registry. No login is needed. Hosts without registry access use the downloaded files below. A registry image that is not this server's release is never offered: the wizard says why and uses the files.",
+    why: "The quickest install on a host with internet access; the release matches this ZeroShield, so the node signs its requests and passes the Helm readiness probe.",
     example: "docker pull ghcr.io/… && docker run … on the scan host.",
+  },
+  // src: backend/utilities/cbom_sources/node_release.py:124-182, frontend/components/cbom/sources/ScanNodesTab.tsx:1050-1076 — a registry image that is not the server's node release (#197)
+  "cbsrc.nodes.registry_stale": {
+    what: "The registry image this server names is not the scan node release it ships: an older release, another commit, or 1.0.0, the version every build reported before release versions existed. Installing it gives a node without the newest fixes, such as request signing or the Helm readiness file, so the wizard installs this server's image file instead.",
+    why: "Every node you add runs the same release as this ZeroShield, so Scan nodes shows no Update available right after install.",
+    example: "ghcr.io/…/devsecshield-scan-node:1.0.0 while the server ships 1.0.4+5d41b4cc9a1f.",
   },
   // ────────────────────────────────────────────────────────────── CBOM Sources: node install without the public registry (#233)
   // src: backend/routers/cbom_node_artifacts.py:26-33, frontend/components/cbom/sources/ScanNodesTab.tsx:312-322,501 — one paste with curl or wget, or the downloaded files

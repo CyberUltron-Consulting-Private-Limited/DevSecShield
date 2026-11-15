@@ -917,6 +917,7 @@ export const INFO_TIP_LABELS = {
   "cbom.run.tickets.select": "Select findings",
   "cbsrc.net.before_first": "Before the first run",
   "cbsrc.nodes.registry_pull": "Install with one command",
+  "cbsrc.nodes.registry_stale": "Registry image not offered",
   "cbom.run.quantum": "Quantum readiness",
   "cbsrc.nodes.files_install": "Air-gapped install",
   "cbom.run.deliverables": "VEX, Signature, Evidence pack, PDF Report",
