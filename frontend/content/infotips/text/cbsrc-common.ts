@@ -25,11 +25,11 @@ const TEXT = {
     why: "Keeps fragile or out-of-scope systems (a core banking host, a partner's range) out of every job.",
     example: "10.20.0.1, 10.20.0.254 keeps the two gateways out of 10.20.0.0/24.",
   },
-  // src: frontend/components/cbom/sources/ServersTab.tsx:136-141 — HashiCorp Vault, CyberArk, AWS Secrets Manager, Azure Key Vault
+  // src: frontend/components/cbom/sources/vaultProviders.ts:35-60, scan_node/zs_scan_node/vault.py — #364: what the node reads
   "cbsrc.common.vault_provider": {
-    what: "The secrets manager the scan node reads the credential from when a job runs: HashiCorp Vault, CyberArk, AWS Secrets Manager or Azure Key Vault.",
+    what: "The secrets manager the scan node reads the credential from when a job runs: HashiCorp Vault (KV v2) or AWS Secrets Manager. CyberArk and Azure Key Vault are not available yet: no scan node version reads them. The settings the node's operator sets for the chosen vault are listed under it.",
     why: "The password stays in your vault and is never stored by ZeroShield.",
-    example: "CyberArk, where the svc-zscbom password is already rotated daily.",
+    example: "HashiCorp Vault at secret/data/cbom/linux, on a node with ZS_VAULT_PATH_PREFIX=secret/cbom.",
   },
   // src: frontend/components/cbom/sources/ServersTab.tsx:1373-1381 — only the reference is stored
   "cbsrc.common.vault_path": {

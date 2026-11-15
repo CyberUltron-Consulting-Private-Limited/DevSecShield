@@ -219,9 +219,9 @@ const TEXT = {
   },
   // src: frontend/components/integrations/IntegrationsPage.tsx:112, backend/utilities/integrations/servicenow.py:56-60 — #225: optional import column
   "int.sn.cmdb_vault_provider": {
-    what: "The CMDB field naming the vault of a CI's vault path when it is not the one chosen in the import: hashicorp, cyberark, aws_secrets_manager or azure_key_vault.",
+    what: "The CMDB field naming the vault of a CI's vault path when it is not the one chosen in the import: hashicorp or aws_secrets_manager (cyberark and azure_key_vault rows are skipped: not available yet).",
     why: "Lets one import read logins from more than one vault.",
-    example: "u_vault_provider = cyberark.",
+    example: "u_vault_provider = aws_secrets_manager.",
   },
   // src: frontend/components/integrations/IntegrationsPage.tsx:113, backend/utilities/integrations/servicenow.py:56-60 — #225: optional import column
   "int.sn.cmdb_api_url": {
