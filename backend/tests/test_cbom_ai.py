@@ -183,7 +183,7 @@ def test_cbom_ai_imports_no_cloud_sdk():
     no boto3."""
     code = (
         "import os, sys, json\n"
-        # backend/.env is tracked in the repo and holds AWS_* keys; an air-gapped install has none, so dotenv is off
+        # backend/.env is gitignored (cp .env.example .env). An air-gapped install has no AWS_* keys, so dotenv is off
         "import dotenv\n"
         "dotenv.load_dotenv = lambda *a, **k: False\n"
         "import backend.utilities.cbom_ai, backend.utilities.cbom_ai.service, backend.utilities.cbom_ai.transport\n"
@@ -1151,8 +1151,8 @@ def test_withheld_baseline_commands_are_unique(api, world):
 
 
 def test_aws_keys_alone_never_turn_the_assistant_on(api, world, monkeypatch):
-    """The tracked backend/.env gives load_dotenv() AWS keys: without CBOM_AI_PROVIDER (or CBOM_AI_BASE_URL) the
-    assistant stays off."""
+    """AWS keys in the environment, without CBOM_AI_PROVIDER (or CBOM_AI_BASE_URL), leave the assistant off.
+    A local backend/.env, if present, must not set CBOM_AI_."""
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", "AKIAEXAMPLEEXAMPLE00")
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "x")
     monkeypatch.setenv("AWS_DEFAULT_REGION", "ap-south-1")
