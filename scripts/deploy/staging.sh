@@ -34,7 +34,8 @@
 #   staging.sh backend-env               read KEY=VALUE lines on stdin and set exactly those keys in backend.env (only
 #                                        the BACKEND_ENV_KEYS below; empty values are skipped; never prints a value).
 #                                        `push` runs it just before `deploy` when STAGING_SET_<KEY> is set (CI: the
-#                                        staging environment's CBOM_AWS_* secrets; deploy/staging/README.md "AWS")
+#                                        staging environment's CBOM_AWS_* / CBOM_AI_AWS_* secrets; deploy/staging/
+#                                        README.md "AWS collection" and "AI remediation")
 #   staging.sh rollback [--allow-downgrade]
 #                                        back to the previously deployed tag and its own deploy files (compose file,
 #                                        nginx, this script). When that tag's migrations do not contain the database's
@@ -102,9 +103,11 @@ DSS_REPOS=(devsecshield-backend devsecshield-frontend scan-worker dast-worker)
 DEFAULT_DISK_FACTOR=3.3
 DEFAULT_DISK_RESERVE_MB=1024  # left free on every filesystem after the copy and the load (the host is shared)
 # The only backend.env keys a deploy may set (push -> backend-env): the AWS collector identity, the lab switch, and
-# the AI remediation provider (CB-38: AWS Bedrock with the AWS_* the SAST chat already uses; no secret among them).
+# the AI remediation settings (CB-38: AWS Bedrock; the provider, region and credential source are not secrets, the
+# assistant's own IAM user keys are, and travel like the collector's: stdin only, never printed).
 BACKEND_ENV_KEYS=(CBOM_AWS_ACCESS_KEY_ID CBOM_AWS_SECRET_ACCESS_KEY CBOM_AWS_PRINCIPAL_ARN CBOM_AWS_LAB_SAME_ACCOUNT
-  CBOM_AI_PROVIDER CBOM_AI_BEDROCK_REGION CBOM_AI_AWS_CREDENTIALS)
+  CBOM_AI_PROVIDER CBOM_AI_BEDROCK_REGION CBOM_AI_AWS_CREDENTIALS CBOM_AI_AWS_ACCESS_KEY_ID
+  CBOM_AI_AWS_SECRET_ACCESS_KEY)
 
 log() { printf '[staging %s] %s\n' "$(date -u +%H:%M:%S)" "$*"; }
 die() { printf '[staging] ERROR: %s\n' "$*" >&2; exit 1; }
