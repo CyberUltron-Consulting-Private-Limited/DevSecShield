@@ -316,7 +316,11 @@ cmd_backend_env() { # stdin: KEY=VALUE lines; sets exactly those keys in backend
     [[ "${line}" == *=* ]] || die "backend-env: a line without KEY=VALUE"
     known=0
     for k in "${BACKEND_ENV_KEYS[@]}"; do [[ "${k}" == "${key}" ]] && known=1; done
-    ((known)) || die "backend-env: ${key:0:64} is not one of: ${BACKEND_ENV_KEYS[*]}"
+    # name a refused key only when it looks like one: a multi-line secret's next line must not show up here, in part
+    if ! ((known)); then
+      [[ "${key}" =~ ^[A-Z0-9_]{1,64}$ ]] || die "backend-env: an unknown key is not one of: ${BACKEND_ENV_KEYS[*]}"
+      die "backend-env: ${key} is not one of: ${BACKEND_ENV_KEYS[*]}"
+    fi
     [[ -n "${value}" ]] || continue # not provided: leave the host's value
     # AWS key ids, secret keys and ARNs, or 0/1: nothing that could break the env file or a shell
     [[ "${value}" =~ ^[A-Za-z0-9/+=:@._,-]{1,512}$ ]] || die "backend-env: the value of ${key} has characters an env file cannot hold"

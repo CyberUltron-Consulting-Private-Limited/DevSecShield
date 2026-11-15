@@ -225,8 +225,9 @@ def test_low_balance_concurrent_requests_never_get_a_free_remediation(world):
             assert "not have enough credits" in r.json()["detail"]
         else:
             assert doc["remediation"]["status"] == "completed"
-    # a refused finding is still refused at 0 credits (no cached copy exists)
-    assert _post_all([world.ids[5]])[0].status_code == 402 and world.calls["generate"] == 2
+    # a refused finding is still refused at 0 credits (no cached copy exists); which two won is up to the race
+    refused = next(oid for oid, r in zip(world.ids[:6], responses) if r.status_code == 402)
+    assert _post_all([refused])[0].status_code == 402 and world.calls["generate"] == 2
 
 
 @pytest.mark.parametrize("mode, code", [("failed", 200), ("raise", 500)])
@@ -271,3 +272,144 @@ def test_cbom_ai_assist_moves_no_credits():
         text = path.read_text()
         for name in ("deduct_credits", "refund_credits", "credit_balance", "check_if_team_has_enough_credits"):
             assert name not in text, (path.name, name)
+
+
+# ------------------------------------------------------------------------------------------------ follow-up (#374 review)
+# A claim records the debit it carries (``debit``: the token of the claim that debited, ``state``: claimed / debiting /
+# charged). Whoever removes a claim decides its debit's fate exactly once: a store consumes it, an unset refunds it.
+def _claim(world, oid, **claim):
+    _doc(world, oid)["remediation_claim"] = {"at": time.time(), **claim}
+
+
+def test_a_crash_after_the_debit_is_recovered_by_the_retry_without_a_second_charge(world):
+    """The worker died after debiting (claim state charged, stale): the retry reuses that charge."""
+    from backend.utilities.ai import paid_remediation as PR
+
+    world.calls["delay"] = 0
+    _set_balance(world.engine, 1.0 - COST)  # the dead worker's debit
+    oid = world.ids[0]
+    _claim(world, oid, token="dead", debit="dead", state="charged", at=time.time() - PR.CLAIM_TTL_S - 1)
+    r = _post_all([oid])[0]
+    assert r.status_code == 200 and r.json()["status"] == "completed", r.text
+    assert _balance(world.engine) == pytest.approx(1.0 - COST)  # no second charge
+    assert "remediation_claim" not in _doc(world, oid)
+
+
+@pytest.mark.parametrize("state", ["charged", "debiting"])
+def test_a_crash_after_the_debit_is_refunded_when_the_retry_fails_and_the_finding_is_free_again(world, state):
+    from backend.utilities.ai import paid_remediation as PR
+
+    world.calls["delay"] = 0
+    world.calls["mode"] = "failed"
+    _set_balance(world.engine, 1.0 - COST)
+    oid = world.ids[1]
+    _claim(world, oid, token="dead", debit="dead", state=state, at=time.time() - PR.CLAIM_TTL_S - 1)
+    r = _post_all([oid])[0]
+    assert r.status_code == 200 and r.json()["status"] == "failed"
+    assert _balance(world.engine) == pytest.approx(1.0)  # the dead worker's charge, refunded once
+    assert "remediation_claim" not in _doc(world, oid)  # the refund cleared the claim: no 600 s block
+    world.calls["mode"] = "ok"
+    again = _post_all([oid])[0]
+    assert again.status_code == 200 and again.json()["status"] == "completed"
+    assert _balance(world.engine) == pytest.approx(1.0 - COST)
+
+
+def test_a_claim_without_a_debit_is_taken_over_and_charged_once(world):
+    from backend.utilities.ai import paid_remediation as PR
+
+    world.calls["delay"] = 0
+    oid = world.ids[2]
+    _claim(world, oid, token="dead", debit=None, state="claimed", at=time.time() - PR.CLAIM_TTL_S - 1)
+    assert _post_all([oid])[0].status_code == 200
+    assert _balance(world.engine) == pytest.approx(1.0 - COST)
+
+
+def test_a_refund_whose_bookkeeping_raises_is_never_repeated(world, monkeypatch):
+    """refund_credits_to_team commits, then its read-back raises: the credits go back once, not twice."""
+    from backend.utilities.team import credits as credits_mod
+
+    world.calls["delay"] = 0
+    world.calls["mode"] = "failed"
+    real = credits_mod.refund_credits_to_team
+
+    def refund_then_raise(team_id, credits):
+        real(team_id, credits)
+        raise RuntimeError("read-back failed after the commit")
+
+    monkeypatch.setattr(credits_mod, "refund_credits_to_team", refund_then_raise)
+    r = _post_all([world.ids[3]])[0]
+    assert r.status_code == 500
+    assert _balance(world.engine) == pytest.approx(1.0)  # 1.0 - 0.05 + 0.05, not + 0.10
+    assert "remediation_claim" not in _doc(world, world.ids[3])
+
+
+def _slow_then_fast(world, monkeypatch, second_mode="ok", a_first=False):
+    """Request A generates slowly; after its claim's lifetime request B takes the finding over and finishes first
+    (or, with ``a_first``, A finishes while B is still generating)."""
+    from backend.utilities.ai import paid_remediation as PR
+    from backend.utilities.ai import remediation as remediation_mod
+
+    monkeypatch.setattr(PR, "CLAIM_TTL_S", 0.2)
+    a_in, release, b_in, b_release = threading.Event(), threading.Event(), threading.Event(), threading.Event()
+    n = {"calls": 0}
+
+    def generate(finding_data, scan_type):
+        n["calls"] += 1
+        if n["calls"] == 1:
+            a_in.set()
+            release.wait(10)
+            return {"generated_at": "a", "status": "completed", "fix": {"by": "A"}, "exploit_payload": {}, "diff": ""}
+        if a_first:
+            b_in.set()
+            b_release.wait(10)
+        if second_mode == "failed":
+            return {"generated_at": "b", "status": "failed", "error": "model said no"}
+        return {"generated_at": "b", "status": "completed", "fix": {"by": "B"}, "exploit_payload": {}, "diff": ""}
+
+    monkeypatch.setattr(remediation_mod, "generate_remediation", generate)
+    oid = world.ids[4]
+    results = {}
+    a = threading.Thread(target=lambda: results.setdefault("a", _post_all([oid])[0]))
+    a.start()
+    assert a_in.wait(10)
+    time.sleep(0.3)  # A's claim is now stale
+    if a_first:
+        bt = threading.Thread(target=lambda: results.setdefault("b", _post_all([oid])[0]))
+        bt.start()
+        assert b_in.wait(10)
+        release.set()
+        a.join(20)
+        b_release.set()
+        bt.join(20)
+    else:
+        results["b"] = _post_all([oid])[0]
+        release.set()
+        a.join(20)
+    return oid, results["a"], results["b"], n
+
+
+def test_a_takeover_never_charges_twice(world, monkeypatch):
+    oid, a, b, n = _slow_then_fast(world, monkeypatch)
+    assert n["calls"] == 2
+    assert b.status_code == 200 and b.json()["fix"] == {"by": "B"}  # B used A's charge (no debit of its own)
+    assert a.status_code == 200 and a.json()["fix"] == {"by": "B"}  # A's result is not stored: the stored one
+    assert _balance(world.engine) == pytest.approx(1.0 - COST)  # one charge in all
+    assert _doc(world, oid)["remediation"]["fix"] == {"by": "B"} and "remediation_claim" not in _doc(world, oid)
+
+
+def test_a_takeover_that_fails_refunds_once_and_the_slow_result_is_not_given_away(world, monkeypatch):
+    oid, a, b, n = _slow_then_fast(world, monkeypatch, second_mode="failed")
+    assert b.status_code == 200 and b.json()["status"] == "failed"
+    assert a.status_code == 409  # its charge was refunded by the takeover: nothing paid, nothing stored
+    assert _balance(world.engine) == pytest.approx(1.0)  # A's debit, refunded once
+    assert (_doc(world, oid).get("remediation") or {}).get("status") == "failed"
+    assert "remediation_claim" not in _doc(world, oid)
+
+
+def test_a_takeover_where_the_slow_request_finishes_first_never_charges_twice(world, monkeypatch):
+    """A's late store used to keep A's charge while B (which had debited again) stored over it: two charges."""
+    oid, a, b, n = _slow_then_fast(world, monkeypatch, a_first=True)
+    assert n["calls"] == 2 and a.status_code == 200 and b.status_code == 200
+    assert a.json()["fix"] == {"by": "A"} and b.json()["fix"] == {"by": "A"}  # B serves what was stored
+    assert _balance(world.engine) == pytest.approx(1.0 - COST)  # one charge in all
+    assert _doc(world, oid)["remediation"]["fix"] == {"by": "A"} and "remediation_claim" not in _doc(world, oid)

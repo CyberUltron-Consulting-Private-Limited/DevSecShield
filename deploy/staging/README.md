@@ -553,10 +553,11 @@ in `backend.env`), not the `AWS_*` of `.env` that the SAST chat (and, on some ho
    `CBOM_AI_PROVIDER=bedrock`, `CBOM_AI_BEDROCK_REGION=ap-south-1`, `CBOM_AI_AWS_CREDENTIALS=static` and the two keys
    into the host's `backend.env` (`staging.sh push` sends them over ssh's stdin to `staging.sh backend-env`, which
    prints key names only; GitHub masks the secrets; they are never on a command line or in the log) and recreates the
-   backend containers. With the secrets unset, the source stays `env` (the `.env` `AWS_*`); an empty secret leaves the
-   host's value as it is, and the environment variable `CBOM_AI_AWS_CREDENTIALS` (`static`, `env`, `instance`, ...)
-   overrides the choice. Half a key pair is refused (the assistant is then unavailable), never replaced by the `.env`
-   keys. To rotate: create the new key, update both secrets, deploy, then delete the old key in IAM.
+   backend containers. With neither secret set, no key and no credential source is written (the host's values stay
+   as they are); with only one of the two the deploy fails ("set both ... or neither"), without printing it. The
+   environment variable `CBOM_AI_AWS_CREDENTIALS` (`static`, `env`, `instance`, ...) overrides the choice. On the
+   host, half a key pair is refused (the assistant is then unavailable), never replaced by the `.env` keys. To
+   rotate: create the new key, update both secrets, deploy, then delete the old key in IAM.
 4. **Verify**: signed in as a member of a team, `GET https://<API_HOST>/{team_id}/cbom/ai/status` (or open a CBOM
    finding: the panel appears only when this says available) answers
    `{"available": true, "provider": "bedrock", "model": "openai.gpt-oss-120b-1:0", "region": "ap-south-1",

@@ -166,8 +166,10 @@ def test_the_workflow_sets_bedrock_ai_remediation_for_staging_with_no_secret():
     assert not re.search(r"CBOM_AI_PROVIDER \|\|", wf)  # no forced default over the host's value
     assert "STAGING_SET_CBOM_AI_BEDROCK_REGION: ${{ vars.CBOM_AI_BEDROCK_REGION || 'ap-south-1' }}" in step
     # static (the assistant's own keys) when the environment has them, else env; the variable still wins
+    # without the pair the host's value stays (never a forced env: review 5909551771)
     assert ("STAGING_SET_CBOM_AI_AWS_CREDENTIALS: ${{ vars.CBOM_AI_AWS_CREDENTIALS || "
-            "(secrets.CBOM_AI_AWS_ACCESS_KEY_ID != '' && 'static') || 'env' }}") in step
+            "(secrets.CBOM_AI_AWS_ACCESS_KEY_ID != '' && secrets.CBOM_AI_AWS_SECRET_ACCESS_KEY != '' && 'static') "
+            "|| '' }}") in step
     # the only AI secrets are the dedicated key pair, passed to push like CBOM_AWS_* and nowhere else
     assert sorted(set(re.findall(r"secrets\.(CBOM_AI_[A-Z_]+)", wf))) == ["CBOM_AI_AWS_ACCESS_KEY_ID",
                                                                         "CBOM_AI_AWS_SECRET_ACCESS_KEY"]
@@ -220,3 +222,20 @@ def test_push_forwards_the_dedicated_bedrock_keys_over_stdin_only(tmp_path):
     calls = (h.root / "ssh.log").read_text()
     out = proc.stdout + proc.stderr + calls
     assert AI_KEY_ID not in out and AI_SECRET not in out  # not in the log, not on any command line
+
+
+@pytest.mark.parametrize("line", [
+    "CBOM_AI_AWS_SECRET_ACCESS_KEY=x\nsecretPart0123456789/abc=def\n",   # a multi-line secret's second line
+    "Wjalr XUtnFEMI/K7MDENG=bPxRfiCY\n",
+])
+def test_an_unknown_key_is_never_printed_even_in_part(host, line):
+    """staging.sh printed ${key:0:64} of a refused key: a multi-line secret's next line would show up to 64 of its
+    characters (review 5909551771, nit)."""
+    proc = failed(set_env(host, line))
+    assert "an unknown key" in proc.stderr
+    assert "secretPart" not in proc.stderr and "Wjalr" not in proc.stderr
+
+
+def test_a_well_formed_unknown_key_name_is_still_named(host):
+    proc = failed(set_env(host, "JWT_SECRET_KEY=evil\n"))
+    assert "JWT_SECRET_KEY is not one of" in proc.stderr

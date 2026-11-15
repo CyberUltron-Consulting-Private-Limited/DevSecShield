@@ -214,6 +214,55 @@ class SupersededPush(unittest.TestCase):
         self.assertIn("::error::staging has no tip", log)
 
 
+def copy_and_deploy(**env: str) -> tuple[int, str, bool]:
+    """Run the deploy job's "Copy and deploy" script with a stub scripts/deploy/staging.sh (records that it ran)."""
+    found = [p for p in steps("deploy") if p.startswith("name: Copy and deploy\n")]
+    assert len(found) == 1, "no Copy and deploy step"
+    with tempfile.TemporaryDirectory() as d:
+        stub = Path(d) / "scripts" / "deploy" / "staging.sh"
+        stub.parent.mkdir(parents=True)
+        stub.write_text("#!/bin/sh\ntouch \"$STUB_DIR/ran\"\n")
+        stub.chmod(0o755)
+        full = {"PATH": os.environ["PATH"], "HOME": d, "STUB_DIR": d, "EVENT": "push", "NODE_REGISTRY_PUBLIC": "",
+                "STAGING_SSH_TARGET": "deploy@stage", "STAGING_DIR": "/opt/x", **env}
+        p = subprocess.run(["bash", "-e", "-c", run_block(found[0])], cwd=d, env=full, capture_output=True,
+                           text=True, timeout=30)
+        return p.returncode, p.stdout + p.stderr, (Path(d) / "ran").exists()
+
+
+class AiAssistantKeys(unittest.TestCase):
+    """The AI assistant's own IAM user (review 5909551771): both halves of the pair or neither, and the credential
+    source is written only when the pair is (or the environment variable says so); never a fall-back to env."""
+
+    KEY_ID = "AKIATESTONLY" + secrets.token_hex(4).upper()
+    SECRET = "testOnly/" + secrets.token_urlsafe(24)
+
+    def test_half_a_pair_fails_the_deploy_without_printing_it(self):
+        for env in ({"STAGING_SET_CBOM_AI_AWS_ACCESS_KEY_ID": self.KEY_ID},
+                    {"STAGING_SET_CBOM_AI_AWS_SECRET_ACCESS_KEY": self.SECRET}):
+            rc, out, ran = copy_and_deploy(**env)
+            self.assertEqual(rc, 1, out)
+            self.assertFalse(ran)
+            self.assertIn("::error::set both", out)
+            self.assertNotIn(self.KEY_ID, out)
+            self.assertNotIn(self.SECRET, out)
+
+    def test_both_or_neither_deploys(self):
+        rc, out, ran = copy_and_deploy()
+        self.assertEqual((rc, ran), (0, True), out)
+        rc, out, ran = copy_and_deploy(STAGING_SET_CBOM_AI_AWS_ACCESS_KEY_ID=self.KEY_ID,
+                                       STAGING_SET_CBOM_AI_AWS_SECRET_ACCESS_KEY=self.SECRET)
+        self.assertEqual((rc, ran), (0, True), out)
+        self.assertNotIn(self.SECRET, out)
+
+    def test_the_source_is_static_with_the_pair_and_unwritten_without_it(self):
+        step = [p for p in steps("deploy") if p.startswith("name: Copy and deploy\n")][0]
+        line = re.search(r"STAGING_SET_CBOM_AI_AWS_CREDENTIALS: (.*)", step).group(1)
+        self.assertEqual(line, "${{ vars.CBOM_AI_AWS_CREDENTIALS || (secrets.CBOM_AI_AWS_ACCESS_KEY_ID != '' && "
+                               "secrets.CBOM_AI_AWS_SECRET_ACCESS_KEY != '' && 'static') || '' }}")
+        self.assertNotIn("'env'", line)  # no forced fall-back to the host's AWS_*
+
+
 class OnlyStaging(unittest.TestCase):
     def test_nothing_but_the_staging_environment_and_its_secrets(self):
         self.assertEqual(re.findall(r"\n    environment: (\S+)", WF), ["staging"])
