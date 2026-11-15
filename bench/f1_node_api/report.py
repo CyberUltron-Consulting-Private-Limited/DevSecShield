@@ -5,6 +5,21 @@
 Reads sim.json, server.log, pg.log, db.json and reaper.log from ``--dir``.  Every gate is listed with its value and
 threshold; ``valid`` is the validity gates (V1-V8), ``pass`` the scenario's thresholds.  A run that is not valid is
 re-run once and never quoted (DA 5.1).
+
+B1 (PR #41 revival, 15 Nov 2026): 10,000 protocol-2 nodes heartbeating at the server's cadence and claiming a run's
+segment jobs through grants, on PostgreSQL 16.  Its gates are the lean-API budget this PR documents (per request, so
+they hold on any box size; the absolute rates are reported beside them):
+
+| Budget                                              | Threshold | Where it comes from                              |
+|-----------------------------------------------------|-----------|--------------------------------------------------|
+| heartbeat p99                                       | < 300 ms  | AC 1, ENTERPRISE-SCALE F9                        |
+| attempt errors, nonce INSERTs, nodes silent > 120 s | 0         | AC 1 / 1a                                        |
+| claims denied while a grant was held                | 0         | grant locality (EC2 E2a run 3: 5,632 denied)     |
+| claims taken / grants given                         | >= 0.9    | grant locality (EC2 E2a run 3: 3,452 / 12,045)   |
+| DB statements per node request (pg_stat_statements)  | <= 12     | idle heartbeat 7 statements + commit; a claim more |
+| DB execution time per node request                  | <= 2 ms   | the lean hot path (indexed reads, 1 UPDATE)      |
+| backend CPU per node request                        | <= 12 ms  | EC2 E1: 7.7 ms (127.5% of a CPU at 166 req/s)    |
+| PostgreSQL CPU per node request                     | <= 3 ms   | the same E1 mix, measured here                   |
 """
 from __future__ import annotations
 
@@ -36,7 +51,7 @@ def server_facts(log: str, since: float, workers: int) -> dict:
         stats.append(fields)
         for key in ("claims_committed", "results_committed", "undelivered", "shed_429", "limiter_miss",
                     "limiter_lookups", "pool_checkouts", "requests", "dispatch_granted", "dispatch_taken",
-                    "dispatch_returned", "dispatch_denied", "dispatch_204_after_grant"):
+                    "dispatch_returned", "dispatch_denied", "dispatch_204_after_grant", "dispatch_ticket_refused"):
             if key in fields and fields[key].lstrip("-").isdigit():
                 sums[key] = sums.get(key, 0) + int(fields[key])
         for key in ("inflight_max", "tp_waiting_max", "pool_out_max", "pool_overflow_max", "loop_lag_max_ms"):
@@ -144,6 +159,35 @@ def main() -> None:
         req, chk = srv["sums"].get("requests"), srv["sums"].get("pool_checkouts")
         gate(gates, "pool checkouts per request", round(chk / req, 3) if req else None,
              bool(req) and chk / req <= 2.05, "<= 2.05 (no E3)")
+    if name.startswith("B1"):
+        req_n = sim.get("attempts") or 0
+        gate(gates, "heartbeat p99 (ms)", hb.get("p99"), hb.get("p99") is not None and hb["p99"] < 300, "< 300")
+        gate(gates, "heartbeat p99 worst 10 s window (ms, reported)", hb_worst, None, "report")
+        gate(gates, "attempt errors", errors, errors == 0, "0")
+        gate(gates, "nonce INSERTs", stm.get("nonce_inserts"), stm.get("nonce_inserts") == 0, "0")
+        gate(gates, "nodes silent > 120 s", db.get("nodes_silent_over_120s"), db.get("nodes_silent_over_120s") == 0, "0")
+        sums = srv["sums"]
+        refused = sums.get("dispatch_ticket_refused", 0)
+        gate(gates, "claims denied while a grant was held (tickets refused)", refused, refused == 0, "0")
+        granted, taken = sums.get("dispatch_granted", 0), sums.get("dispatch_taken", 0)
+        ratio = round(taken / granted, 3) if granted else None
+        gate(gates, "claims taken / grants given", [taken, granted, ratio], ratio is not None and ratio >= 0.9, ">= 0.9")
+        calls, exec_ms = stm.get("calls"), stm.get("exec_ms")
+        per = (lambda v: round(v / req_n, 3) if v is not None and req_n else None)
+        gate(gates, "DB statements per node request", per(calls), per(calls) is not None and per(calls) <= 12, "<= 12")
+        gate(gates, "DB execution ms per node request", per(exec_ms), per(exec_ms) is not None and per(exec_ms) <= 2,
+             "<= 2")
+        cpu = sim.get("cpu_pct_of_one_cpu") or {}
+        served = sim.get("served_per_s") or 0
+
+        def cpu_ms(avg):
+            return round(10.0 * avg / served, 3) if avg is not None and served else None  # % of a CPU -> ms per request
+
+        server_ms, pg_ms = cpu_ms(cpu.get("server_avg")), cpu_ms(cpu.get("pg_avg"))
+        gate(gates, "backend CPU ms per node request", server_ms, server_ms is not None and server_ms <= 12, "<= 12")
+        gate(gates, "PostgreSQL CPU ms per node request", pg_ms, pg_ms is not None and pg_ms <= 3, "<= 3")
+        r = runs[0] if runs else {}
+        gate(gates, "run jobs done in the window (reported)", [r.get("jobs_done"), r.get("jobs")], None, "report")
     if name.startswith(("E2", "E4a", "E5", "E6", "E7", "L5")):
         r = runs[0] if runs else {}
         o = overhead(r)

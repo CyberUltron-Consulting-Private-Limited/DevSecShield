@@ -4,7 +4,7 @@
 #   bench/f1_node_api/stack.sh up   <src-root> <workdir> [workers]   # src-root holds backend/ (dev baseline or branch)
 #   bench/f1_node_api/stack.sh down <workdir>
 #
-# PostgreSQL 15 (the stack's image) with staging defaults plus the DA's measurement settings: max_connections=100,
+# PostgreSQL 15 (the stack's image; F1_PG=local: a local initdb PostgreSQL 16, pg_local.sh) with staging defaults plus the DA's measurement settings: max_connections=100,
 # log_lock_waits=on, deadlock_timeout=100ms, pg_stat_statements (V5); on 127.0.0.1:${F1_PG_PORT:-55440}, container
 # ${F1_PG_NAME:-f1bench-pg}, its log is `docker logs`.  gunicorn on 127.0.0.1:${F1_API_PORT:-18080} with
 # gunicorn_bench.py (worker hooks); with F1_REAPER=1 also the reaper loop (reaper.py, the cloud worker's reap_all).
@@ -34,12 +34,22 @@ if [[ $cmd == stop-api ]]; then  # an API outage (E7): gunicorn only; PostgreSQL
   exit 0
 fi
 
+# F1_PG=local: a local initdb cluster (pg_local.sh, PG_BIN picks the version, default PostgreSQL 16) instead of docker,
+# for boxes without a docker daemon; its data and log live in ${F1_PG_DIR:-/tmp/f1bench-pg}.
+PG_MODE=${F1_PG:-docker}
+PG_DIR=${F1_PG_DIR:-/tmp/f1bench-pg}
+
 if [[ $cmd == down ]]; then
   work=${2:?workdir}
   if [[ -f $work/gunicorn.pid ]]; then kill "$(cat "$work/gunicorn.pid")" 2>/dev/null || true; rm -f "$work/gunicorn.pid"; fi
   if [[ -f $work/reaper.pid ]]; then kill "$(cat "$work/reaper.pid")" 2>/dev/null || true; rm -f "$work/reaper.pid"; fi
   sleep 2
-  docker rm -f "$PG_NAME" >/dev/null 2>&1 || true
+  if [[ $PG_MODE == local ]]; then
+    [[ -f $PG_DIR/pg.log ]] && cp "$PG_DIR/pg.log" "$work/pg-local.log" 2>/dev/null || true
+    "$here/pg_local.sh" down "$PG_DIR" >/dev/null 2>&1 || true
+  else
+    docker rm -f "$PG_NAME" >/dev/null 2>&1 || true
+  fi
   echo "stack down"
   exit 0
 fi
@@ -62,7 +72,15 @@ if [[ ! -f $work/env ]]; then
 fi
 set -a; . "$work/env"; set +a
 
-if ! docker inspect "$PG_NAME" >/dev/null 2>&1; then
+if [[ $PG_MODE == local ]]; then
+  if [[ ! -f $PG_DIR/postmaster.pid ]]; then
+    pwf=$(mktemp); printf '%s' "$PG_USER_PASS" > "$pwf"
+    pin_pg=()
+    [[ -n $PIN ]] && pin_pg=(taskset -c "$PIN")
+    "${pin_pg[@]}" "$here/pg_local.sh" up "$PG_DIR" "$PG_PORT" "$pwf" "$PG_DB"
+    rm -f "$pwf"
+  fi
+elif ! docker inspect "$PG_NAME" >/dev/null 2>&1; then
   cpus=()
   [[ -n $PIN ]] && cpus=(--cpuset-cpus "$PIN")
   docker run -d --name "$PG_NAME" --label zs-owner=f1-1 -p "127.0.0.1:$PG_PORT:5432" "${cpus[@]}" \

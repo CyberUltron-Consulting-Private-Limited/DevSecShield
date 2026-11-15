@@ -25,7 +25,11 @@ export CBOM_NODE_STATS_S=${CBOM_NODE_STATS_S:-10}
 collect() {
   cp "$work/gunicorn.log" "$out/server.log" 2>/dev/null || true
   cp "$work/reaper.log" "$out/reaper.log" 2>/dev/null || true
-  docker logs "${F1_PG_NAME:-f1bench-pg}" > "$out/pg.log" 2>&1 || true
+  if [[ ${F1_PG:-docker} == local ]]; then
+    cp "${F1_PG_DIR:-/tmp/f1bench-pg}/pg.log" "$out/pg.log" 2>/dev/null || true
+  else
+    docker logs "${F1_PG_NAME:-f1bench-pg}" > "$out/pg.log" 2>&1 || true
+  fi
   if [[ -f $work/db_url ]]; then
     PYTHONPATH="$src" "$VENV/bin/python" "$here/facts.py" --db "$(cat "$work/db_url")" > "$out/db.json" 2>"$out/facts.err" || true
   fi
@@ -47,8 +51,12 @@ lscpu -e > "$out/lscpu.txt" 2>/dev/null || true
 free -m > "$out/free-before.txt" 2>/dev/null || true
 ulimit -n 65536 2>/dev/null || ulimit -n "$(ulimit -Hn)" 2>/dev/null || true
 cd "$src/backend"
+pgpid=()
+if [[ ${F1_PG:-docker} == local && -f ${F1_PG_DIR:-/tmp/f1bench-pg}/postmaster.pid ]]; then
+  pgpid=(--pg-pid "$(head -1 "${F1_PG_DIR:-/tmp/f1bench-pg}/postmaster.pid")")
+fi
 PYTHONPATH="$src" "${pin[@]}" "$VENV/bin/python" "$here/sim.py" --api "http://127.0.0.1:$PORT" \
-  --creds "$work/creds.json" --db "$db" --server-pid "$master" --port "$PORT" \
+  --creds "$work/creds.json" --db "$db" --server-pid "$master" --port "$PORT" "${pgpid[@]}" \
   --out "$out/sim.json" --trace "$out/trace.tsv" "$@" | tee "$out/sim-summary.json"
 free -m > "$out/free-after.txt" 2>/dev/null || true
 sleep $(( ${CBOM_NODE_STATS_S%.*} + 2 ))  # the server's last stats line

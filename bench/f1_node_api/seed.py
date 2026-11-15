@@ -12,7 +12,7 @@ one target each and ``window: any`` (claimable at any hour), stored exactly as t
 claims any job (F1.1 segment jobs; the code under test must have ``node_segment``).
 Round 7 (DA section 5): ``--big-frac`` of the sources carry ``--big-targets`` targets (default 10% x 100); a second
 team (``--team-b-nodes``, ``--team-b-sources``; nodes numbered after team A's, their own admin ``bench2@f1.test``);
-``--closed-window-team T``: team T's scan window is closed every hour and its sources follow the team window.
+``--closed-window-team T``: team T's sources follow the team window; sim.py closes it once T's run is queued.
 DESTRUCTIVE: drops every table of the target database. Use only a throwaway database.
 """
 from __future__ import annotations
@@ -52,6 +52,7 @@ def main() -> None:
     args = ap.parse_args()
 
     from backend import new_models as M  # the code under test
+    import backend.main  # noqa: F401  every table model the app imports (ledger, SSH CA, fleet ...), not only new_models
     from backend.utilities.cbom_sources.kinds import KINDS
     from backend.utilities.cbom_sources.settings import get_or_create_settings
 
@@ -73,11 +74,10 @@ def main() -> None:
             s.commit()
             s.add(M.TeamMembership(team_id=team_id, user_id=team_id, role="admin"))
             s.commit()
-            settings = get_or_create_settings(s, team_id)
-            if team_id in args.closed_window_team:
-                settings.scan_window = [[False] * 24 for _ in range(7)]
-                s.add(settings)
-                s.commit()
+            # ``--closed-window-team``: the window stays OPEN here.  The planner refuses a run whose every source is
+            # outside its window ("Nothing to scan"), so the simulator queues that team's run first and closes the
+            # window after (sim.py --closed-window-team), as a customer closing the window on a queued run (E5, L4).
+            get_or_create_settings(s, team_id)
     has_segments = "node_segment" in M.CbomCollectionSource.__table__.c
     if args.assign == "segment" and not has_segments:
         raise SystemExit("--assign segment: the code under test has no segment jobs")
@@ -131,7 +131,8 @@ def main() -> None:
     nodes_total = args.nodes + args.team_b_nodes
     Path(args.creds).write_text(json.dumps({"secret": secret, "nodes": nodes_total, "node_ids": ids,
                                             "team_a_nodes": args.nodes, "sources": total_sources,
-                                            "assign": args.assign, "segment": SEGMENT}))
+                                            "assign": args.assign, "segment": SEGMENT,
+                                            "closed_window_teams": sorted(set(args.closed_window_team))}))
     print(json.dumps({"seeded_nodes": len(ids), "seeded_sources": total_sources, "assign": args.assign,
                       "seconds": round(time.monotonic() - t0, 1)}))
 

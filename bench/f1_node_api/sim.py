@@ -279,6 +279,7 @@ class Node:
         self.signer = Signer(node_key(sim.secret, i), protocol)
         self.grants = 0
         self.grant_sent = 0.0
+        self.ticket: str | None = None  # the newest grant's claim_ticket, sent with the claims it pays for (as the node)
         self.running: dict[int, str] = {}
         self.interval = 60.0
         self.wake = asyncio.Event()
@@ -290,10 +291,13 @@ class Node:
 
     def body(self) -> dict:
         collectors = CAPS_COLLECTORS + ([self.sim.args.cap_x] if self.i in self.sim.cap_nodes else [])
-        return {"hostname": f"bench-{self.i}", "version": "1.2" if self.protocol >= 2 else "1.0.0",
-                "running": [{"job_id": j, "lease_id": lease} for j, lease in self.running.items()],
-                "capabilities": {"collectors": collectors, "max_jobs": self.max_jobs,
-                                 **({"protocol": 2} if self.protocol >= 2 else {})}}
+        out = {"hostname": f"bench-{self.i}", "version": "1.2" if self.protocol >= 2 else "1.0.0",
+               "running": [{"job_id": j, "lease_id": lease} for j, lease in self.running.items()],
+               "capabilities": {"collectors": collectors, "max_jobs": self.max_jobs,
+                                **({"protocol": 2} if self.protocol >= 2 else {})}}
+        if self.protocol >= 2 and self.ticket and self.grants > 0:
+            out["claim_ticket"] = self.ticket  # as the node (agent.heartbeat_once)
+        return out
 
     @property
     def team(self) -> str:
@@ -313,6 +317,8 @@ class Node:
         self.grant_sent = sent
         value = data.get("claim")
         self.grants = max(0, min(8, 1 if value is True else int(value or 0)))
+        ticket = data.get("claim_ticket")
+        self.ticket = ticket if self.grants and isinstance(ticket, str) else None
         if self.grants:
             self.wake.set()
 
@@ -353,11 +359,13 @@ class Node:
                 self.grants -= 1
             intended = time.perf_counter()
             self.count("claim_requests")
-            status, data = await self.sim.client.call(self, self.kind("claim"), "/cbom/node/jobs/claim",
-                                                      {"mode": "agentless"} if self.protocol >= 2 else None,
+            body = None
+            if self.protocol >= 2:
+                body = {"mode": "agentless", **({"claim_ticket": self.ticket} if self.ticket else {})}
+            status, data = await self.sim.client.call(self, self.kind("claim"), "/cbom/node/jobs/claim", body,
                                                       retries=1, intended=intended)
             if status != 200 or not data:
-                self.grants = 0
+                self.grants, self.ticket = 0, None
                 if self.protocol < 2:
                     await asyncio.sleep(5.0 if status == 204 else 15.0)
                 continue
@@ -391,9 +399,11 @@ class Node:
         else:
             result = {"counts": {"total": 1, "failed": 1}}
         sent = time.perf_counter()
-        st, data = await self.sim.client.call(self, self.kind("result"), f"/cbom/node/jobs/{job_id}/result",
-                                              {"lease_id": lease, "status": status, "result": result,
-                                               "error": None if status == "success" else "unreachable"},
+        body = {"lease_id": lease, "status": status, "result": result,
+                "error": None if status == "success" else "unreachable"}
+        if self.protocol >= 2 and self.ticket and self.grants > 0:
+            body["claim_ticket"] = self.ticket  # as the node: unused claims count towards the answer's grant
+        st, data = await self.sim.client.call(self, self.kind("result"), f"/cbom/node/jobs/{job_id}/result", body,
                                               retries=6, lease_sensitive=True)
         self.running.pop(job_id, None)
         if st == 200:
@@ -442,9 +452,9 @@ class Sampler(threading.Thread):
     """Every second: the simulator's own CPU, the server processes' CPU (``--server-pid`` and its children), the
     accept queue of the API port, PostgreSQL transactions."""
 
-    def __init__(self, db: str | None, server_pid: int | None, port: int | None) -> None:
+    def __init__(self, db: str | None, server_pid: int | None, port: int | None, pg_pid: int | None = None) -> None:
         super().__init__(daemon=True)
-        self.db, self.server_pid, self.port = db, server_pid, port
+        self.db, self.server_pid, self.port, self.pg_pid = db, server_pid, port, pg_pid
         self.stop = threading.Event()
         self.points: list[dict] = []
 
@@ -459,7 +469,9 @@ class Sampler(threading.Thread):
         while not self.stop.is_set():
             pids = _children(self.server_pid) if self.server_pid else []
             point = {"t": time.time(), "sim": _proc_cpu([os.getpid()]), "server": _proc_cpu(pids),
-                     "recv_q": _recv_q(self.port)}
+                     "recv_q": _recv_q(self.port),
+                     # PostgreSQL's own CPU (the postmaster and every backend), when the bench knows its pid
+                     "pg": _proc_cpu(_children(self.pg_pid)) if self.pg_pid else None}
             if conn:
                 with conn.cursor() as cur:
                     cur.execute("SELECT xact_commit + xact_rollback FROM pg_stat_database "
@@ -468,7 +480,7 @@ class Sampler(threading.Thread):
             if last is not None:
                 dt = point["t"] - last["t"] or 1.0
                 out = {"t": point["t"], "recv_q": point["recv_q"]}
-                for key in ("sim", "server"):
+                for key in ("sim", "server", "pg"):
                     if point[key] is not None and last[key] is not None:
                         out[f"{key}_cpu_pct"] = round(100 * (point[key] - last[key]) / dt, 1)
                 if "xacts" in point and "xacts" in last:
@@ -527,6 +539,9 @@ class Sim:
         lo, hi = args.node_range or (0, creds["nodes"])
         self.indexes = list(range(lo, min(hi, creds["nodes"])))[: args.nodes or None]
         self.team_a_nodes = int(creds.get("team_a_nodes") or creds["nodes"])
+        # teams seeded with --closed-window-team: their run is queued first, then their window closes (E5, L4)
+        self.closed_teams: list[int] = [int(t) for t in creds.get("closed_window_teams") or []]
+        self.prequeued: dict[int, list[dict]] = {}
         self.cap_nodes: set[int] = set()
         for part in (args.cap_x_ranges or "").split(","):
             if ":" in part:
@@ -596,6 +611,7 @@ class Sim:
         conn = psycopg2.connect(self.args.db)
         conn.autocommit = True
         timeline, status, jobs_done_s = [], None, None
+        counts: dict = {}
         deadline = time.monotonic() + self.args.run_timeout
         try:
             while time.monotonic() < deadline:
@@ -617,7 +633,9 @@ class Sim:
         finally:
             conn.close()
         final = status in ("done", "partial", "failed", "cancelled")
+        finished = sum(n for k, n in counts.items() if k not in ("pending", "claimed"))
         return {"status": status, "done_s": round(time.monotonic() - t0, 1) if final else None,
+                "jobs": sum(counts.values()), "jobs_done": finished,
                 "jobs_done_s": jobs_done_s, "run_stuck_open": bool(jobs_done_s is not None and not final),
                 "timeline": timeline[:: max(1, len(timeline) // 60)]}
 
@@ -638,9 +656,31 @@ class Sim:
         conn.close()
         self.events.append({"t": float(when), "cmd": f"open window team {team}", "rc": 0, "wall": time.time()})
 
+    def set_window(self, team: int, open_: bool) -> None:
+        import psycopg2
+
+        conn = psycopg2.connect(self.args.db)
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute("UPDATE cbomcollectionsettings SET scan_window = %s, row_version = row_version + 1 "
+                        "WHERE team_id = %s", (json.dumps([[open_] * 24 for _ in range(7)]), int(team)))
+        conn.close()
+
+    async def prequeue_closed(self) -> None:
+        """E5/L4: a team whose window is to be closed gets its run queued while the window is open, BEFORE any node
+        starts, and then the window closes (the planner refuses a run whose every source is outside its window, which
+        made the round-7 E5/L4 runs vacuous)."""
+        for team in self.closed_teams:
+            info = await self.start_run(team)
+            self.set_window(team, False)
+            self.events.append({"t": 0.0, "cmd": f"close window team {team} (run {info['run_id']} queued)", "rc": 0,
+                                "wall": time.time()})
+            self.prequeued.setdefault(team, []).append(info)
+
     async def one_run(self, delay: float, team: int, t0: float) -> dict:
         await self.sleep_until(t0 + delay)
-        info = await self.start_run(team)
+        queued = self.prequeued.get(team) or []
+        info = queued.pop(0) if queued else await self.start_run(team)
         info.update(await self.watch_run(info["run_id"], time.monotonic()))
         info["queued_at_s"] = delay
         return info
@@ -657,8 +697,10 @@ class Sim:
 
     async def main(self) -> dict:
         await self.client.open()
-        sampler = Sampler(self.args.db, self.args.server_pid, self.args.port)
+        sampler = Sampler(self.args.db, self.args.server_pid, self.args.port, self.args.pg_pid)
         early: dict | None = None
+        if self.args.run:
+            await self.prequeue_closed()
         if self.args.run_before_nodes:  # a deep queue: the run exists before any node starts (L1, L2)
             early = await self.start_run(self.runs[0][1])
             early["t0"] = time.monotonic()
@@ -728,6 +770,7 @@ class Sim:
         residual = {k: pct_summary(v) for k, v in m.residual.items()}
         sim_cpu = sorted(p["sim_cpu_pct"] for p in points if "sim_cpu_pct" in p)
         server_cpu = sorted(p["server_cpu_pct"] for p in points if "server_cpu_pct" in p)
+        pg_cpu = sorted(p["pg_cpu_pct"] for p in points if "pg_cpu_pct" in p)
         recv = [p["recv_q"] for p in points if p.get("recv_q") is not None]
         by_s = m.claims_by_s
         claims_1s = max(by_s.values()) if by_s else 0
@@ -780,7 +823,8 @@ class Sim:
             "sim_loop_lag_ms": {"p50": _r(percentile(lag, 50)), "p99": _r(percentile(lag, 99)),
                                 "max": _r(lag[-1] if lag else None)},
             "cpu_pct_of_one_cpu": {"sim_p95": _r(percentile(sim_cpu, 95)), "server_avg": _r(
-                sum(server_cpu) / len(server_cpu)) if server_cpu else None, "server_p95": _r(percentile(server_cpu, 95))},
+                sum(server_cpu) / len(server_cpu)) if server_cpu else None, "server_p95": _r(percentile(server_cpu, 95)),
+                "pg_avg": _r(sum(pg_cpu) / len(pg_cpu)) if pg_cpu else None, "pg_p95": _r(percentile(pg_cpu, 95))},
             "db": {"tps_avg": _r(sum(p.get("db_tps", 0) for p in points) / max(1, len(points))), **statements},
             "validity": validity, "valid": not fails, "invalid_because": fails,
             "events": self.events, "run": run_info,
@@ -807,6 +851,7 @@ def main() -> None:
     ap.add_argument("--db", default=None, help="PostgreSQL URL of the server under test (stats and run watch)")
     ap.add_argument("--server-pid", type=int, default=None, help="gunicorn master pid (CPU of it and its workers)")
     ap.add_argument("--port", type=int, default=None, help="API port, for the accept-queue sampler")
+    ap.add_argument("--pg-pid", type=int, default=None, help="postmaster pid (PostgreSQL CPU, local PostgreSQL only)")
     ap.add_argument("--nodes", type=int, default=0, help="at most this many nodes (default: every node in --node-range)")
     ap.add_argument("--node-range", type=lambda s: tuple(int(x) for x in s.split(":")), default=None)
     ap.add_argument("--p1-frac", type=float, default=0.0, help="share of nodes that behave as scan node 1.0")
