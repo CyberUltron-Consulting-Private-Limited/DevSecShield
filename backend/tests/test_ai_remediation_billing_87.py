@@ -34,7 +34,9 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from bson import ObjectId  # noqa: E402
-from sqlmodel import Session, SQLModel, create_engine  # noqa: E402
+from sqlmodel import Session, SQLModel, create_engine, select  # noqa: E402
+
+import backend.utilities.cbom_sources.billing  # noqa: E402,F401  (the ledger table, in create_all)
 
 from backend.new_models import Scan, Team  # noqa: E402
 
@@ -69,6 +71,9 @@ def _matches(doc, flt) -> bool:
                     return False
                 if op not in ("$ne", "$exists", "$lt"):
                     raise AssertionError(f"operator {op} not supported by the stand-in")
+        elif cond is None:  # Mongo: {field: null} matches a null or a missing field
+            if value is not _MISSING and value is not None:
+                return False
         elif value is _MISSING or value != cond:
             return False
     return True
@@ -275,39 +280,66 @@ def test_cbom_ai_assist_moves_no_credits():
             assert name not in text, (path.name, name)
 
 
-# ------------------------------------------------------------------------------------------------ follow-up (#374 review)
-# A claim records the debit it carries (``debit``: the token of the claim that debited, ``state``: claimed / debiting /
-# charged). Whoever removes a claim decides its debit's fate exactly once: a store consumes it, an unset refunds it.
+# ------------------------------------------------------------------------------------------------ follow-up (#374, #382 reviews)
+# A claim lineage carries one debit id; its charge and refund are ledger rows with unique keys (airem:<debit>:charge /
+# :refund), each written with its balance change. Whoever drops the claim carrying a debit decides its fate once.
 def _claim(world, oid, **claim):
     _doc(world, oid)["remediation_claim"] = {"at": time.time(), **claim}
 
 
-def test_a_crash_after_the_debit_is_recovered_by_the_retry_without_a_second_charge(world):
-    """The worker died after debiting (claim state charged, stale): the retry reuses that charge."""
+def _ledger(world):
+    from backend.utilities.cbom_sources.billing import CbomCreditEntry
+
+    with Session(world.engine) as s:
+        return sorted((r.idem_key, r.kind, r.amount_c) for r in s.exec(select(CbomCreditEntry)).all())
+
+
+def _stale():
+    from backend.utilities.ai import paid_remediation as PR
+
+    return time.time() - PR.CLAIM_TTL_S - 1
+
+
+def test_a_crash_after_the_charge_committed_is_recovered_without_a_second_charge(world):
+    """The worker died after its charge committed: the retry finds the debit's ledger row and reuses it."""
     from backend.utilities.ai import paid_remediation as PR
 
     world.calls["delay"] = 0
-    _set_balance(world.engine, 1.0 - COST)  # the dead worker's debit
+    assert PR.charge(1, "dead") is True  # the dead worker's committed charge
     oid = world.ids[0]
-    _claim(world, oid, token="dead", debit="dead", state="charged", at=time.time() - PR.CLAIM_TTL_S - 1)
+    _claim(world, oid, token="dead", debit="dead", state="claimed", at=_stale())  # died before recording "charged"
     r = _post_all([oid])[0]
     assert r.status_code == 200 and r.json()["status"] == "completed", r.text
-    assert _balance(world.engine) == pytest.approx(1.0 - COST)  # no second charge
+    assert _balance(world.engine) == pytest.approx(1.0 - COST)  # one charge in all
+    assert _ledger(world) == [("airem:dead:charge", "charge", 5)]
     assert "remediation_claim" not in _doc(world, oid)
 
 
-@pytest.mark.parametrize("state", ["charged", "debiting"])
-def test_a_crash_after_the_debit_is_refunded_when_the_retry_fails_and_the_finding_is_free_again(world, state):
+def test_a_crash_before_the_charge_committed_is_charged_once_by_the_retry(world):
+    world.calls["delay"] = 0
+    oid = world.ids[1]
+    _claim(world, oid, token="dead", debit="dead", state="claimed", at=_stale())  # no ledger row: nothing was paid
+    r = _post_all([oid])[0]
+    assert r.status_code == 200 and r.json()["status"] == "completed"
+    assert _balance(world.engine) == pytest.approx(1.0 - COST)
+    assert _ledger(world) == [("airem:dead:charge", "charge", 5)]  # under the inherited debit id
+
+
+@pytest.mark.parametrize("committed", [True, False])
+def test_a_failed_retry_refunds_only_a_charge_that_committed_and_frees_the_finding(world, committed):
+    """Review 5909721853 minor 1: a charge that never committed is never refunded (no credit is minted)."""
     from backend.utilities.ai import paid_remediation as PR
 
     world.calls["delay"] = 0
     world.calls["mode"] = "failed"
-    _set_balance(world.engine, 1.0 - COST)
-    oid = world.ids[1]
-    _claim(world, oid, token="dead", debit="dead", state=state, at=time.time() - PR.CLAIM_TTL_S - 1)
+    if committed:
+        PR.charge(1, "dead")
+    oid = world.ids[2]
+    _claim(world, oid, token="dead", debit="dead", state="charged" if committed else "claimed", at=_stale())
     r = _post_all([oid])[0]
     assert r.status_code == 200 and r.json()["status"] == "failed"
-    assert _balance(world.engine) == pytest.approx(1.0)  # the dead worker's charge, refunded once
+    assert _balance(world.engine) == pytest.approx(1.0)  # charged once (by the crash or the retry), refunded once
+    assert _ledger(world) == [("airem:dead:charge", "charge", 5), ("airem:dead:refund", "refund", 5)]
     assert "remediation_claim" not in _doc(world, oid)  # the refund cleared the claim: no 600 s block
     world.calls["mode"] = "ok"
     again = _post_all([oid])[0]
@@ -315,33 +347,110 @@ def test_a_crash_after_the_debit_is_refunded_when_the_retry_fails_and_the_findin
     assert _balance(world.engine) == pytest.approx(1.0 - COST)
 
 
-def test_a_claim_without_a_debit_is_taken_over_and_charged_once(world):
+def test_refunds_are_once_and_only_for_committed_charges(world):
     from backend.utilities.ai import paid_remediation as PR
 
-    world.calls["delay"] = 0
-    oid = world.ids[2]
-    _claim(world, oid, token="dead", debit=None, state="claimed", at=time.time() - PR.CLAIM_TTL_S - 1)
-    assert _post_all([oid])[0].status_code == 200
+    assert PR.refund(1, "never-charged") is False and _balance(world.engine) == pytest.approx(1.0)
+    assert PR.charge(1, "d1") is True and PR.charge(1, "d1") is False  # a debit is charged once
     assert _balance(world.engine) == pytest.approx(1.0 - COST)
+    assert PR.refund(1, "d1") is True and PR.refund(1, "d1") is False  # and refunded once
+    assert _balance(world.engine) == pytest.approx(1.0)
 
 
 def test_a_refund_whose_bookkeeping_raises_is_never_repeated(world, monkeypatch):
-    """refund_credits_to_team commits, then its read-back raises: the credits go back once, not twice."""
-    from backend.utilities.team import credits as credits_mod
+    """The refund commits, then something after it raises: the credits go back once, and a repeat is a no-op."""
+    from backend.utilities.ai import paid_remediation as PR
 
     world.calls["delay"] = 0
     world.calls["mode"] = "failed"
-    real = credits_mod.refund_credits_to_team
+    real = PR.refund
 
-    def refund_then_raise(team_id, credits):
-        real(team_id, credits)
+    def refund_then_raise(team_id, debit):
+        real(team_id, debit)
         raise RuntimeError("read-back failed after the commit")
 
-    monkeypatch.setattr(credits_mod, "refund_credits_to_team", refund_then_raise)
+    monkeypatch.setattr(PR, "refund", refund_then_raise)
     r = _post_all([world.ids[3]])[0]
     assert r.status_code == 500
     assert _balance(world.engine) == pytest.approx(1.0)  # 1.0 - 0.05 + 0.05, not + 0.10
     assert "remediation_claim" not in _doc(world, world.ids[3])
+    debit = next(k for k, kind, _ in _ledger(world) if kind == "charge").split(":")[1]
+    assert real(1, debit) is False and _balance(world.engine) == pytest.approx(1.0)
+
+
+@pytest.mark.parametrize("after_commit", [False, True])
+def test_a_charge_that_raises_releases_the_claim_only_when_nothing_committed(world, monkeypatch, after_commit):
+    """Review 5909721853 minor 2: a transient charge error that provably did not commit frees the finding at once
+    (no 409 for 600 s); one that raised after its commit carries on as charged."""
+    from backend.utilities.ai import paid_remediation as PR
+
+    world.calls["delay"] = 0
+    real = PR.charge
+    state = {"n": 0}
+
+    def flaky(team_id, debit):
+        state["n"] += 1
+        if state["n"] == 1:
+            if after_commit:
+                real(team_id, debit)
+            raise RuntimeError("database connection reset")
+        return real(team_id, debit)
+
+    monkeypatch.setattr(PR, "charge", flaky)
+    oid = world.ids[5]
+    first = _post_all([oid])[0]
+    if after_commit:
+        assert first.status_code == 200 and first.json()["status"] == "completed"
+        assert _balance(world.engine) == pytest.approx(1.0 - COST)
+        return
+    assert first.status_code == 500 and _balance(world.engine) == pytest.approx(1.0)
+    assert "remediation_claim" not in _doc(world, oid)
+    second = _post_all([oid])[0]  # straight away, not after the claim's lifetime
+    assert second.status_code == 200 and second.json()["status"] == "completed"
+    assert _balance(world.engine) == pytest.approx(1.0 - COST) and len(_ledger(world)) == 1
+
+
+def test_a_takeover_never_wipes_the_debit_of_a_holder_that_resumes(world):
+    """Review 5909721853 major (its repro /tmp/rev382/race.py as a test): B reads A's stale claim while it is
+    "claimed"; A then resumes, charges and moves on; B's compare-and-set must miss, so the finding is charged once and
+    A can still store under its debit."""
+    import asyncio
+
+    from backend.utilities.ai import paid_remediation as PR
+
+    oid = world.ids[6]
+    _claim(world, oid, token="A", debit="A", state="claimed", at=_stale())
+    coll = world.findings
+    real_find = coll.find_one
+
+    def read_then_a_resumes(flt):
+        doc = real_find(flt)
+        claim = doc["remediation_claim"]
+        PR.charge(1, "A")  # A (stalled after its claim) resumes: charges its debit, records it, refreshes its claim
+        assert coll.update_one({"_id": oid, "remediation_claim.token": "A"},
+                               {"$set": {"remediation_claim": {**claim, "state": "charged", "at": time.time()}}}
+                               ).modified_count
+        coll.find_one = real_find
+        return doc
+
+    coll.find_one = read_then_a_resumes
+    with pytest.raises(PR.RemediationBusy):
+        asyncio.run(PR.remediate(coll, finding_id=oid, scan_id=7, team_id=1, finding_data={}, scan_type="sast",
+                                 generate=lambda d, s: {"status": "completed", "fix": {"by": "B"}}))
+    assert coll.docs[oid]["remediation_claim"]["token"] == "A"  # A's claim, with A's debit, untouched
+    assert coll.update_one({"_id": oid, "remediation_claim.debit": "A", "remediation.status": {"$ne": "completed"}},
+                           {"$set": {"remediation": {"status": "completed", "fix": {"by": "A"}}},
+                            "$unset": {"remediation_claim": ""}}).modified_count == 1  # A can still store
+    assert _balance(world.engine) == pytest.approx(1.0 - COST)
+    assert _ledger(world) == [("airem:A:charge", "charge", 5)]
+
+
+def test_a_legacy_claim_without_a_debit_is_taken_over_and_charged_once(world):
+    world.calls["delay"] = 0
+    oid = world.ids[7]
+    _claim(world, oid, token="old", at=_stale())  # a claim written before debit ids existed
+    assert _post_all([oid])[0].status_code == 200
+    assert _balance(world.engine) == pytest.approx(1.0 - COST)
 
 
 def _slow_then_fast(world, monkeypatch, second_mode="ok", a_first=False):
