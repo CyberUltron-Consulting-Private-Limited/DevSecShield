@@ -406,6 +406,13 @@ class Tags(unittest.TestCase):
         self.assertEqual(ghcr_meta.release_tags("12.40.3"), ["12.40.3", "12.40", "latest"])
         self.assertEqual(ghcr_meta.release_tags("2.0.0-rc.1"), ["2.0.0-rc.1"])  # never latest, never the minor line
 
+    def test_dev_publish_reads_the_scan_node_version_constant(self):
+        """Dev, PR and manual images bake VERSION from __init__.py and do not write the immutable release tag."""
+        init = ROOT / "scan_node" / "zs_scan_node" / "__init__.py"
+        self.assertRegex(init.read_text(encoding="utf-8"), r'(?m)^VERSION = "1\.0\.1"$')
+        rc, out, err = meta("tags", PREFIX="dev", SHA=SHA, NODE_VERSION_FILE=str(init))
+        self.assertEqual((rc, out["node_version"], out["node_release_tags"]), (0, "1.0.1", ""), err)
+
     def test_no_release_tags_without_a_release(self):
         f = self._version_file('VERSION = "1.0.0"\n')
         for prefix in ("dev", "pr-93", "manual"):

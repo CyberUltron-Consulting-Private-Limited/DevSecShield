@@ -174,9 +174,8 @@ services:
       # A test deployment: CBOM_AWS_LAB_SAME_ACCOUNT (backend.env) may work here; production refuses it (lab_mode.py).
       DSS_ENV: staging
       <<: *fleet-flags
-      # Certificate Transparency discovery (#369): on for staging only (production: the code's default, off); the
-      # API accepts a ct_logs source and says so to the UI. Set CBOM_CT_DISCOVERY=0 in .env to turn it off here.
-      CBOM_CT_DISCOVERY: ${CBOM_CT_DISCOVERY:-1}
+      # CBOM_CT_DISCOVERY is not set here. A compose `environment` entry would hide backend.env, so the flag
+      # would never follow the Deploy staging write (README "Certificate Transparency discovery on staging").
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -217,7 +216,7 @@ services:
       SKIP_ALEMBIC: "1"
       DSS_ENV: staging  # as the backend's (lab mode is decided again at collection)
       <<: *fleet-flags
-      CBOM_CT_DISCOVERY: ${CBOM_CT_DISCOVERY:-1}  # the cloud worker runs the CT searches (#369)
+      # CBOM_CT_DISCOVERY comes from backend.env, same as the API (the worker runs the CT searches).
       CBOM_CLOUD_WORKERS: ${CBOM_CLOUD_WORKERS:-1}
       CBOM_CLOUD_TEAM_MAX_CONCURRENCY: ${CBOM_CLOUD_TEAM_MAX_CONCURRENCY:-8}
       CBOM_CLOUD_LEASE_S: ${CBOM_CLOUD_LEASE_S:-900}

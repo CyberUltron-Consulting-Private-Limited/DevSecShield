@@ -61,8 +61,24 @@ deploy/local/init-env.sh dev          # writes deploy/local/.env (mode 600) with
 ```
 
 It copies `.env.example` and replaces every `change-me` with a fresh random value (it never overwrites an existing
-`.env`). Or copy the file yourself and replace each `change-me`. `.env` is git-ignored; never commit it. To change the
-tag later, edit `DSS_TAG` in `.env`.
+`.env`). Or copy the file yourself:
+
+```sh
+cp .env.example .env
+```
+
+`.env` is git-ignored; never commit it. To change the tag later, edit `DSS_TAG` in `.env`.
+
+Running the API or the scan worker from a checkout (not this compose file) uses a gitignored `.env` next to the
+code. Staging does not read those files; it uses `/opt/devsecshield-staging/deploy/staging/backend.env`. From the
+repository root:
+
+```sh
+cp backend/.env.example backend/.env
+cp backend/utilities/ai/.env.example backend/utilities/ai/.env
+cp RabbitMQ/worker/.env.example RabbitMQ/worker/.env
+cp RabbitMQ/worker/helpers/context/.env.example RabbitMQ/worker/helpers/context/.env
+```
 
 ## 4. Start
 

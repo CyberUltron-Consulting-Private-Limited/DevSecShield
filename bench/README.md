@@ -36,6 +36,7 @@ uv tool install ai-bom                                          # Trusera
 uv tool install --python 3.13 "cisco-aibom[agentic,llm-aws]"    # Cisco
 export PATH="$HOME/.local/bin:$PATH"
 # 2. AWS creds for Cisco's mandatory Bedrock LLM pass
+cp RabbitMQ/worker/.env.example RabbitMQ/worker/.env   # then set AWS values; never commit .env
 set -a; source RabbitMQ/worker/.env; set +a
 export AWS_REGION=ap-south-1 BEDROCK_MODEL=global.anthropic.claude-haiku-4-5-20251001-v1:0
 # 3. clone + run Trusera + Cisco + ours on the synthetic fixture + all 10 real repos

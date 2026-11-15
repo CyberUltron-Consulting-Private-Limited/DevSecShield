@@ -183,7 +183,7 @@ def test_staging_node_artifacts_ships_the_commit_the_image_reports(tmp_path, dir
                           text=True, timeout=120)
     assert proc.returncode == 0, proc.stdout + proc.stderr
     manifest = json.loads((repo / "deploy/staging/images/node-artifacts/manifest.json").read_text())
-    assert manifest["version"] == "1.0.0"
+    assert manifest["version"] == "1.0.1"
     if dirty:
         assert manifest["build"] is None and "carries no commit" in proc.stdout + proc.stderr
     else:

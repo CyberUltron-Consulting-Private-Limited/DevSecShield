@@ -1,5 +1,9 @@
 # Local container test compose - builds from source, connects to host-exposed infra
 # Usage: docker compose -f compose/container-test/docker-compose.yml up --build
+# env_file paths are gitignored. From the repo root:
+#   cp backend/.env.example backend/.env
+#   cp RabbitMQ/worker/.env.example RabbitMQ/worker/.env
+#   cp RabbitMQ/dast_worker/.env.example RabbitMQ/dast_worker/.env
 
 services:
 
