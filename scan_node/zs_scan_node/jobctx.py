@@ -232,6 +232,8 @@ class JobContext:
     _progress_refused: bool = False
     # F1.4: () -> {"certificate", "expires_in_s", ...}, a fresh SSH CA certificate for this job (agent.start_job)
     cert_refresher: Callable[[], dict] | None = None
+    # #61: (certificate line) -> ZeroShield's answer; reports a certificate this node signed with the customer's CA key
+    cert_reporter: Callable[[str], dict] | None = None
     # CB-10: the lockout guard for this job's credential (collectors that log in with a password call login_gate)
     breaker: CredentialBreaker = field(default_factory=CredentialBreaker)
     # #150: ids of the admins' host key decisions (accept / forget) this job applied, reported in the result

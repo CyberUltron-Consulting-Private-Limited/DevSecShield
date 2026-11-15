@@ -237,9 +237,17 @@ def _credentials(ctx: JobContext, config: dict, secrets: dict) -> dict[str, Any]
         if ca.get("error"):
             raise ConfigError(f"SSH CA: {ca['error']}")
         path = ctx.node_private_key_path or os.path.join(ctx.state_dir, "id_ed25519")
+        from zs_scan_node import sshca_node as SN
+
+        # a node CA (#61): ZeroShield sends a grant (at the claim and on every renewal) and this node signs it with
+        # the customer's CA key file, reports it, and only then uses it; the other CAs send the certificate itself
+        refresh = SN.adapt_refresher(ctx.state_dir, path, ctx.cert_refresher, ctx.cert_reporter)
+        first = secrets.get("ssh_certificate")
+        if isinstance(ca.get("node_sign"), dict):
+            first = SN.sign_and_report(SN.NodeSigner.from_state(ctx.state_dir), ca["node_sign"],
+                                       SN.node_public_line(path), ctx.cert_reporter)
         try:
-            source = CertSource(path, secrets.get("ssh_certificate"), ca.get("expires_in_s"),
-                                ca.get("refresh_before_s") or 120, ctx.cert_refresher,
+            source = CertSource(path, first, ca.get("expires_in_s"), ca.get("refresh_before_s") or 120, refresh,
                                 backdated_s=ca.get("backdated_s"))
             source.key()  # a certificate now (the claim's, or one asked for here), or the job fails with the reason
         except CertUnavailable as exc:

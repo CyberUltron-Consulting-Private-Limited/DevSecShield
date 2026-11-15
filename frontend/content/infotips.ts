@@ -4734,6 +4734,13 @@ export const INFO_TIPS = {
     why: "Without source-address the certificates would work from any machine.",
     example: "zs-cbom-signer.",
   },
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:220-240, scan_node/zs_scan_node/sshca_node.py — the key stays on the node (#61)
+  "cbsrc.sshca.node_public_key": {
+    label: "CA public key",
+    what: "The public half of the CA key you install on the scan node (ZS_SSH_CA_KEY, default <state dir>/ssh-ca/ca_key, mode 0400). ZeroShield stores only this public key; for each job it records the certificate it allows and the node signs exactly that with your key, then reports it.",
+    why: "No login-capable CA key is held by ZeroShield; the audit list and the KRL still have every certificate's serial.",
+    example: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... ca@bank, from ssh-keygen -t ed25519 -N '' -f ca_key.",
+  },
   // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:249-250 — write-only; may only call <mount>/sign/<role>
   "cbsrc.sshca.vault_token": {
     label: "Vault token",

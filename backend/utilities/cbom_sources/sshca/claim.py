@@ -80,9 +80,13 @@ def claim_extras(session: Session, source: CbomCollectionSource, node: CbomScanN
         config["ssh_ca"] = {"fetch": True}
         return {"config": config, "secrets": secrets}
     payload = minted.payload(now)
-    secrets["ssh_certificate"] = payload.pop("certificate")
+    certificate = payload.pop("certificate")
+    if certificate:
+        secrets["ssh_certificate"] = certificate
     config["ssh_ca"] = {k: payload[k] for k in ("serial", "expires_in_s", "refresh_before_s", "valid_before",
                                                 "backdated_s", "ca_id")}
+    if payload.get("node_sign"):  # #61: the node signs this grant with the customer's CA key and reports it
+        config["ssh_ca"]["node_sign"] = payload["node_sign"]
     return {"config": config, "secrets": secrets}
 
 

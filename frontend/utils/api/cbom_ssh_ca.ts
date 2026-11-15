@@ -7,7 +7,7 @@
 import api from "@/utils/interceptors"
 
 export type SshCaState = "next" | "active" | "retired" | "revoked"
-export type SshCaProvider = "builtin" | "vault"
+export type SshCaProvider = "builtin" | "vault" | "node"
 export type SshCaKeyWrap = "fernet" | "aws_kms"
 
 export interface SshCa {
@@ -87,6 +87,8 @@ export interface SshCaCreate {
   kms_key?: string
   vault_config?: { addr: string; mount?: string; role: string; namespace?: string; ca_pem?: string }
   secrets?: { token?: string; role_id?: string; secret_id?: string }
+  /** provider node (#61): the public key of the CA key installed on the scan node; the key itself never leaves it. */
+  public_key?: string
   default_ttl_s?: number
 }
 

@@ -69,6 +69,13 @@ class CertBody(BaseModel):
     lease_id: str = Field(min_length=8, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
 
 
+class ReportBody(CertBody):
+    certificate: str = Field(min_length=20, max_length=8192)
+
+
+REPORT_BODY = 16 * 1024
+
+
 _HTTP_CODES = {400: "bad_request", 404: "not_this_node", 409: "lease_lost"}
 
 
@@ -130,6 +137,92 @@ def _issue(token: str | None, job_id: int, req: NA.NodeRequest, raw: bytes) -> d
             raise
         session.commit()
         return minted.payload(now)
+
+
+def _report(token: str | None, job_id: int, req: NA.NodeRequest, raw: bytes) -> dict:
+    """#61: a node CA's certificate, signed on the node for a grant this route (or the claim) recorded.  It must be
+    that grant exactly; otherwise the grant's serial is revoked (servers that fetch the KRL refuse it) and the node is
+    told why.  Recorded as ``via`` ``node_signed``."""
+    from sqlmodel import select
+
+    from backend.utilities.cbom_sources.common import audit
+    from backend.utilities.cbom_sources.sshca import certs as C
+    from backend.utilities.cbom_sources.sshca import trust as T
+    from backend.utilities.cbom_sources.sshca.ca import report_problems, to_db_serial
+    from backend.utilities.cbom_sources.sshca.models import CbomSshCa, CbomSshCertIssued
+
+    now = utcnow()
+    with Session(get_db()) as session:
+        node = authenticate_node(session, token, req, raw, now)
+        try:
+            try:
+                body = ReportBody.model_validate(parse_json(raw))
+            except ValidationError as exc:
+                raise bad_request(exc) from None
+            job = _leased_job(session, node, job_id, body.lease_id)
+        except HTTPException as exc:
+            _denied(session, node, job_id, _HTTP_CODES.get(exc.status_code, f"http_{exc.status_code}"), exc.status_code)
+            raise
+
+        def refuse(code: str, detail: str, ca_id: int | None = None) -> HTTPException:
+            _denied(session, node, job_id, code, 400, job.source_id, ca_id)
+            return HTTPException(status_code=400, detail=detail[:300])
+
+        try:
+            facts = C.read_cert(body.certificate)  # parses it and checks its CA signature
+        except C.CertError as exc:
+            raise refuse("report_unreadable", f"the reported certificate was refused: {exc}") from None
+        record = session.exec(select(CbomSshCertIssued).where(
+            CbomSshCertIssued.team_id == node.team_id, CbomSshCertIssued.job_id == job.id,
+            CbomSshCertIssued.node_id == node.id, CbomSshCertIssued.serial == to_db_serial(facts.serial),
+            CbomSshCertIssued.via.in_(("node_grant", "node_signed")))).first()  # type: ignore[attr-defined]
+        if record is None:
+            raise refuse("report_not_granted", f"no certificate with serial {facts.serial} was granted to this job")
+        ca = session.get(CbomSshCa, record.ca_id)
+        if ca is None or ca.team_id != node.team_id or facts.signature_key_blob != C.public_blob(ca.public_key):
+            raise refuse("report_other_ca", "the reported certificate is not signed by this job's CA (the key "
+                                            "installed on the scan node is not the node CA's key)", record.ca_id)
+        problems = report_problems(record, ca, facts)
+        if problems:
+            reason = f"the node reported a certificate that differs from its grant: {'; '.join(problems)}"
+            if record.revoked_at is None:  # the serial goes into the KRL: servers that fetch it refuse that certificate
+                record.revoked_at, record.revoked_reason = now, reason[:512]
+                record.last_updated, record.row_version = now, (record.row_version or 0) + 1
+                session.add(record)
+                T.bump(session, node.team_id, now, revocation=True)
+                audit(session, team_id=node.team_id, actor_type="node", actor_id=node.id, action="sshca.cert.revoke",
+                      object_type="ssh_cert", object_id=record.id, changed_fields=["revoked_at", "revoked_reason"])
+                session.commit()
+            log("node-signed ssh certificate refused", team=node.team_id, node=node.id, job=job_id,
+                serial=facts.serial, problems=len(problems))
+            raise refuse("report_differs", f"the reported certificate was refused and revoked: {reason}", record.ca_id)
+        if record.revoked_at is not None:
+            raise refuse("report_revoked", f"serial {facts.serial} was revoked", record.ca_id)
+        if record.via != "node_signed":
+            record.via, record.last_updated = "node_signed", now
+            record.row_version = (record.row_version or 0) + 1
+            session.add(record)
+            session.commit()
+        log("node-signed ssh certificate recorded", team=node.team_id, ca=record.ca_id, serial=facts.serial,
+            node=node.id, job=job_id)
+        return {"recorded": True, "serial": facts.serial}
+
+
+@router.post("/cbom/node/jobs/{job_id}/ssh-cert/report", dependencies=[Depends(node_limiter)],
+             openapi_extra=OPENAPI_EXTRA,
+             summary="Report the certificate the node signed with the customer's CA key (provider node)")
+async def ssh_cert_report(job_id: int, request: Request,
+                          token: Annotated[str | None, Security(node_token_header)] = None):
+    if job_id < 1 or job_id > 2_147_483_647:
+        raise HTTPException(status_code=404, detail="Job not found")
+    raw = await read_capped_body(request, REPORT_BODY)
+    try:
+        payload = await run_in_threadpool(_report, token, job_id, NA.NodeRequest.of(request), raw)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise server_error("cbom node ssh-cert report", exc) from None
+    return JSONResponse(payload, headers=PRIVATE)
 
 
 @router.post("/cbom/node/jobs/{job_id}/ssh-cert", dependencies=[Depends(node_limiter)],

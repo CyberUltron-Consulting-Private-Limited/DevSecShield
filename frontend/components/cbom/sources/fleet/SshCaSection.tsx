@@ -13,6 +13,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
@@ -38,6 +39,7 @@ import { getCbomSourcesOverview } from "@/utils/backend_api";
 
 import { cbomSourcesKeys } from "../keys";
 import { readinessText } from "./sshCaLogic";
+import { nodeCaKeyProblem } from "./sshCaNode";
 import { formatDateTime } from "../logic";
 import { CodeSnippet, ConfirmDialog, EmptyState, ErrorBlock, Field, LoadingBlock, SectionCard, StatusBadge, type Tone } from "../shared";
 import type { FleetSectionProps } from "./sections";
@@ -88,7 +90,8 @@ export function SshCaSection({ teamId, isAdmin }: { teamId: number; isAdmin: boo
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
-  const [provider, setProvider] = useState<"builtin" | "vault">("builtin");
+  const [provider, setProvider] = useState<"builtin" | "vault" | "node">("builtin");
+  const [nodeKey, setNodeKey] = useState("");
   const [alg, setAlg] = useState<"ed25519" | "ecdsa-p256">("ed25519");
   const [wrap, setWrap] = useState<SshCaKeyWrap | "">("");
   const [kmsKey, setKmsKey] = useState("");
@@ -127,7 +130,9 @@ export function SshCaSection({ teamId, isAdmin }: { teamId: number; isAdmin: boo
     mutationFn: () =>
       createSshCa(teamId, provider === "builtin"
         ? { name: name.trim(), provider, key_alg: alg, key_wrap: wrap || undefined, kms_key: kmsKey || undefined, default_ttl_s: Number(ttl) }
-        : { name: name.trim(), provider, vault_config: { addr: vaultAddr.trim(), mount: vaultMount.trim(), role: vaultRole.trim() }, secrets: { token: vaultToken }, default_ttl_s: Number(ttl) }),
+        : provider === "node"
+          ? { name: name.trim(), provider, public_key: nodeKey.trim(), default_ttl_s: Number(ttl) }
+          : { name: name.trim(), provider, vault_config: { addr: vaultAddr.trim(), mount: vaultMount.trim(), role: vaultRole.trim() }, secrets: { token: vaultToken }, default_ttl_s: Number(ttl) }),
     onSuccess: () => { setOpen(false); setVaultToken(""); setName(""); },
     onError: (err) => setFormError(errorText(err, "The CA was not created")),
     onSettled: invalidate,
@@ -154,6 +159,10 @@ export function SshCaSection({ teamId, isAdmin }: { teamId: number; isAdmin: boo
     if (!Number.isInteger(t) || t < 60 || t > 3600) return setFormError("Certificate lifetime: between 60 and 3600 seconds.");
     if (provider === "vault" && (!vaultAddr.startsWith("https://") || !vaultRole.trim() || !vaultToken))
       return setFormError("Vault needs its https:// address, the SSH engine role and a token.");
+    if (provider === "node") {
+      const problem = nodeCaKeyProblem(nodeKey);
+      if (problem) return setFormError(problem);
+    }
     setFormError(null);
     create.mutate();
   };
@@ -193,19 +202,40 @@ export function SshCaSection({ teamId, isAdmin }: { teamId: number; isAdmin: boo
             <Field infoId="cbsrc.sshca.name" label="Name" htmlFor="ssh-ca-name" required error={formError}>
               <Input id="ssh-ca-name" value={name} maxLength={64} placeholder="prod-servers-ca" onChange={(e) => setName(e.target.value)} />
             </Field>
-            <Field infoId="cbsrc.sshca.provider" label="Where the CA key lives" htmlFor="ssh-ca-provider" hint="Built in: ZeroShield holds the key, encrypted (AWS KMS when this deployment has a key). Vault: your HashiCorp Vault SSH engine signs.">
-              <Select value={provider} onValueChange={(v) => setProvider(v as "builtin" | "vault")}>
+            <Field infoId="cbsrc.sshca.provider" label="Where the CA key lives" htmlFor="ssh-ca-provider" hint="Built in: ZeroShield holds the key, encrypted (AWS KMS when this deployment has a key). Vault: your HashiCorp Vault SSH engine signs. On my scan node: you keep the key; ZeroShield stores only its public key.">
+              <Select value={provider} onValueChange={(v) => setProvider(v as "builtin" | "vault" | "node")}>
                 <SelectTrigger id="ssh-ca-provider" className="w-full cursor-pointer"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="builtin" className="cursor-pointer">Built in (ZeroShield)</SelectItem>
                   <SelectItem value="vault" className="cursor-pointer">HashiCorp Vault SSH engine</SelectItem>
+                  <SelectItem value="node" className="cursor-pointer">On my scan node (I keep the key)</SelectItem>
                 </SelectContent>
               </Select>
             </Field>
             <Field infoId="cbsrc.sshca.ttl" label="Certificate lifetime (seconds)" htmlFor="ssh-ca-ttl" hint="60 to 3600. A job renews its certificate before it runs out.">
               <Input id="ssh-ca-ttl" type="number" min={60} max={3600} value={ttl} onChange={(e) => setTtl(e.target.value)} />
             </Field>
-            {provider === "builtin" ? (
+            {provider === "node" ? (
+              <Field
+                infoId="cbsrc.sshca.node_public_key"
+                label="CA public key"
+                htmlFor="ssh-ca-node-key"
+                required
+                className="md:col-span-3"
+                hint="The public half of the CA key you install on the scan node, at ZS_SSH_CA_KEY (default <state dir>/ssh-ca/ca_key), owned by the node's user, mode 0400. The node signs each job's 5-minute certificate itself, only for what ZeroShield granted, and reports it for the audit list and the KRL."
+              >
+                <Textarea
+                  id="ssh-ca-node-key"
+                  data-testid="ssh-ca-node-public-key"
+                  rows={2}
+                  spellCheck={false}
+                  className="font-mono text-xs"
+                  placeholder="ssh-ed25519 AAAAC3Nza... ca@bank"
+                  value={nodeKey}
+                  onChange={(e) => setNodeKey(e.target.value)}
+                />
+              </Field>
+            ) : provider === "builtin" ? (
               <>
                 <Field infoId="cbsrc.sshca.alg" label="Key type" htmlFor="ssh-ca-alg">
                   <Select value={alg} onValueChange={(v) => setAlg(v as "ed25519" | "ecdsa-p256")}>
