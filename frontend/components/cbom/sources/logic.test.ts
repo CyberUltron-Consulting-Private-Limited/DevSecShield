@@ -167,17 +167,17 @@ assert.equal(mixedGroupScope("databases", { key_manager: 2 }, 2), "2 HSMs or key
   const opts = { token: "zsr_T", apiUrl: "https://api.example", name: "dc-1" }
   const loaded = nodeImages(undefined).loaded
   assert.equal(loaded.image, DEFAULT_NODE_IMAGE)
-  assert.equal(DEFAULT_NODE_IMAGE, "localhost/zeroshield/cbom-scan-node:1.0.0")
+  assert.equal(DEFAULT_NODE_IMAGE, "localhost/zeroshield/cbom-scan-node:1.1.0")
   const docker = installCommand("docker", { ...opts, ...loaded })
-  const check = docker.indexOf("sha256sum -c scan-node-1.0.0.tar.gz.sha256")
-  const load = docker.indexOf("docker load -i scan-node-1.0.0.tar.gz")
+  const check = docker.indexOf("sha256sum -c scan-node-1.1.0.tar.gz.sha256")
+  const load = docker.indexOf("docker load -i scan-node-1.1.0.tar.gz")
   const run = docker.indexOf("docker run -d --pull never --name zs-scan-node-dc-1")
   assert.ok(check >= 0 && load > check && run > load, docker)
-  assert.ok(docker.trimEnd().endsWith("  localhost/zeroshield/cbom-scan-node:1.0.0"), "runs the name the file loads as")
+  assert.ok(docker.trimEnd().endsWith("  localhost/zeroshield/cbom-scan-node:1.1.0"), "runs the name the file loads as")
   // the image the scan_node_image.sh archive is saved under is the one the command runs (SCAN_NODE_IMAGE default)
   const script = readFileSync(join("..", "scripts", "release", "scan_node_image.sh"), "utf8")
   assert.ok(script.includes('IMAGE="${SCAN_NODE_IMAGE:-localhost/zeroshield/cbom-scan-node}"'))
-  assert.ok(readFileSync(join("..", "scan_node", "zs_scan_node", "__init__.py"), "utf8").includes('VERSION = "1.0.0"'))
+  assert.ok(readFileSync(join("..", "scan_node", "zs_scan_node", "__init__.py"), "utf8").includes('VERSION = "1.1.0"'))
   // the server's names win: its file names and the name its file loads as
   const served = nodeImages({
     version: "1.2.0", image_ref: "localhost/zeroshield/cbom-scan-node:1.2.0", pull_image_ref: null,

@@ -2,7 +2,7 @@
 # the settings EC2 user data writes to /etc/zs-node/env (the "Add scan node" wizard shows that cloud-config).
 #
 #   packer init ami.pkr.hcl
-#   packer build -var region=ap-south-1 -var node_image_archive=scan-node-1.0.0.tar.gz ami.pkr.hcl
+#   packer build -var region=ap-south-1 -var node_image_archive=scan-node-1.1.0.tar.gz ami.pkr.hcl
 #
 # The image comes from the file (Add scan node > Download scan node image, or scripts/release/scan_node_image.sh):
 # the build instance loads it with `docker load` and pulls nothing. Customers get this template as the "AMI build
@@ -30,13 +30,13 @@ variable "instance_type" {
 
 variable "node_image_archive" {
   type        = string
-  default     = "scan-node-1.0.0.tar.gz"
+  default     = "scan-node-1.1.0.tar.gz"
   description = "The scan-node image file (docker save archive), copied to the build instance and loaded there."
 }
 
 variable "node_image" {
   type        = string
-  default     = "localhost/zeroshield/cbom-scan-node:1.0.0"
+  default     = "localhost/zeroshield/cbom-scan-node:1.1.0"
   description = "The image name the archive loads as (docker load); the AMI runs it."
 }
 

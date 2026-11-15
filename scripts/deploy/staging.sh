@@ -373,11 +373,17 @@ anonymous_pull() { # <host>/<repository> <tag>: 0 when anyone can read the manif
 # scan node in the public registry, so the Add scan node wizard offers `docker pull` and `helm ... oci://` beside the
 # one-paste download. Only while CBOM_NODE_REGISTRY_PUBLIC=1 (the GHCR packages are PRIVATE until the owner changes
 # their visibility; README "Public registry"): a private package must never be offered, so 0 clears both.
-# publish-ghcr.yml releases devsecshield-scan-node:<version> and charts/cbom-scan-node:<version> (written once) on a
-# push to staging; <version> is the one in node-artifacts/<tag>/manifest.json (scan_node VERSION). Without one, the
-# commit's own immutable staging-<sha12> image (every push to staging has one).
+# The image is the node build this tag ships (issue #197): node-artifacts/<tag>/manifest.json `build` (the commit its
+# image file was built from) and `version`, as publish-ghcr.yml tags it: <version>-<sha12>, else staging-<sha12> or
+# dev-<sha12> (the same commit published from either branch), the first anyone can pull; not published yet, the moving
+# channel tag :staging. NEVER devsecshield-scan-node:<version>: that release tag is written once, so it keeps the first
+# build of a version (the 2 Nov 1.0.0, without request signing, ZS_CA_FILE or the alive file) for good. Without a
+# build in the manifest, the deployed commit (a 12-character tag) stands in for it. The chart
+# (charts/cbom-scan-node:<version>, written once per version) is offered only once anyone can pull it; the wizard's
+# helm command sets the image above either way.
 set_node_refs() { # <tag>
-  local tag=$1 public registry image="" chart="" version=""
+  local tag=$1 public registry repo image="" chart="" version="" build="" commit="" t
+  local -a candidates=()
   if [[ -n "${CBOM_NODE_REGISTRY_PUBLIC:-}" ]]; then
     public=0
     if [[ "${CBOM_NODE_REGISTRY_PUBLIC}" == 1 ]]; then public=1; fi
@@ -389,11 +395,29 @@ set_node_refs() { # <tag>
   if [[ "${public}" == 1 ]]; then
     registry="${CBOM_NODE_REGISTRY:-$(env_get CBOM_NODE_REGISTRY "${DEFAULT_NODE_REGISTRY}")}"
     [[ "${registry}" =~ ^[a-z0-9.-]+(:[0-9]{1,5})?(/[a-z0-9._-]+)+$ ]] || die "CBOM_NODE_REGISTRY ${registry:0:80} is not <host>/<path> (lower case)"
-    version="$(sed -n -E 's/^[[:space:]]*"version": "([0-9][0-9A-Za-z.-]{0,18})".*$/\1/p' \
-      "${NODE_ARTIFACTS_DIR}/${tag}/manifest.json" 2>/dev/null | head -n 1 || true)"
-    if [[ -n "${version}" ]]; then
-      # the release the wizard pins: written once by publish-ghcr.yml (job release), never a moving tag
-      image="${registry}/devsecshield-scan-node:${version}"
+    repo="${registry}/devsecshield-scan-node"
+    local manifest="${NODE_ARTIFACTS_DIR}/${tag}/manifest.json"
+    version="$(sed -n -E 's/^[[:space:]]*"version": "([0-9][0-9A-Za-z.-]{0,18})".*$/\1/p' "${manifest}" 2>/dev/null | head -n 1 || true)"
+    build="$(sed -n -E 's/^[[:space:]]*"build": "([0-9a-f]{40})".*$/\1/p' "${manifest}" 2>/dev/null | head -n 1 || true)"
+    if [[ -n "${build}" ]]; then
+      commit="${build:0:12}"
+    elif [[ "${tag}" =~ ^[0-9a-f]{12}$ ]]; then
+      commit="${tag}" # the manifest names no build (an image from a dirty tree, or no downloads): the deployed commit
+    fi
+    if [[ -n "${commit}" ]]; then
+      if [[ -n "${version}" && "${version}" =~ ^[0-9][0-9A-Za-z.]{0,18}$ ]]; then candidates+=("${version}-${commit}"); fi
+      candidates+=("staging-${commit}" "dev-${commit}")
+      for t in "${candidates[@]}"; do
+        if anonymous_pull "${repo}" "${t}"; then image="${repo}:${t}"; break; fi
+      done
+    fi
+    if [[ -z "${image}" && ( -n "${version}" || -n "${commit}" ) ]]; then
+      image="${repo}:staging" # the moving channel tag: the newest staging node build (the wizard says it is not pinned)
+      log "WARNING: no published image of scan node build ${version:-?}+${commit:-unknown} (${candidates[*]:-no commit}): offering the moving tag ${image}"
+    elif [[ -z "${image}" ]]; then
+      log "WARNING: no scan-node version for ${tag} and it is not a 12-character commit: no registry pull offered"
+    fi
+    if [[ -n "${image}" && -n "${version}" ]]; then
       # The chart is its own GHCR package, private when first pushed: offered only once anyone can pull it (else the
       # wizard installs the downloaded chart with this image).
       if anonymous_pull "${registry}/charts/cbom-scan-node" "${version}"; then
@@ -401,11 +425,6 @@ set_node_refs() { # <tag>
       else
         log "scan node chart ${registry}/charts/cbom-scan-node:${version} cannot be pulled without a login (not pushed yet, or the package is private): no helm oci:// offered"
       fi
-    elif [[ "${tag}" =~ ^[0-9a-f]{12}$ ]]; then
-      image="${registry}/devsecshield-scan-node:staging-${tag}" # no downloads manifest: this commit's immutable tag
-      log "WARNING: no scan-node version for ${tag} (node-artifacts manifest.json): offering its staging-${tag} image, no chart"
-    else
-      log "WARNING: no scan-node version for ${tag} and it is not a 12-character commit: no registry pull offered"
     fi
   fi
   set_env_line CBOM_NODE_IMAGE_REF "${image}"

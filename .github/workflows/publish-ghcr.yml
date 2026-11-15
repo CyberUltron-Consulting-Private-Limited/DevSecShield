@@ -7,6 +7,8 @@
 #   pull request from THIS repository  pr-<n>-<head sha12> and pr-<n>, only while it carries the label publish-preview
 #     (labeled, synchronize, reopened) (fork pull requests never publish)
 #   workflow_dispatch (ref, api_url)   manual-<sha12> (another api_url: manual-<sha12>-<8 hex of sha256(api_url)>)
+#   push to dev / staging              also, for the scan node only: devsecshield-scan-node:<version>-<sha12> (written once;
+#                                      job merge; the tag the Add scan node wizard pins, issue #197)
 #   push to staging (a release)        also, for the scan node only: devsecshield-scan-node:<version> (written once,
 #                                      never overwritten), :<major.minor> and :latest (= that version), and the Helm
 #                                      chart as an OCI artifact ghcr.io/<owner>/charts/cbom-scan-node:<version> (written
@@ -86,6 +88,7 @@ jobs:
       sha: ${{ steps.tags.outputs.sha }}
       tag: ${{ steps.tags.outputs.tag }}
       node_version: ${{ steps.tags.outputs.node_version }}
+      node_build_tag: ${{ steps.tags.outputs.node_build_tag }}
       node_release_tags: ${{ steps.tags.outputs.node_release_tags }}
     steps:
       - name: Checkout (the workflow's commit, for the script)
@@ -438,6 +441,47 @@ jobs:
           subject-digest: ${{ steps.index.outputs.digest }}
           push-to-registry: true
 
+      - name: Scan node build tag (version + commit)
+        # Issue #197: devsecshield-scan-node:<version>-<sha12> (1.1.0-0123456789ab), the index just checked and attested
+        # (same digest, same attestation), on every push to dev / staging. Written once like the immutable tag: an
+        # existing one is kept, never overwritten. It names what a node built from it reports (<version>+<sha12>), and
+        # staging.sh set_node_refs pins it for the Add scan node wizard (never the release tag <version>, written once).
+        if: matrix.name == 'scan-node' && needs.meta.outputs.node_build_tag != ''
+        env:
+          BUILD_TAG: ${{ needs.meta.outputs.node_build_tag }}
+          DIGEST: ${{ steps.index.outputs.digest }}
+        run: |
+          set -uo pipefail
+          [[ "$BUILD_TAG" =~ ^[0-9][0-9A-Za-z.]{0,18}-[0-9a-f]{12}$ ]] || { echo "::error::not a scan node build tag: $BUILD_TAG"; exit 1; }
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::no index digest for $IMAGE ($DIGEST)"; exit 1; }
+          digest_of() { # <ref>: sha256:<hex> of the manifest bytes; fails when it cannot be read
+            docker buildx imagetools inspect --raw "$1" > "$RUNNER_TEMP/b.json" 2> "$RUNNER_TEMP/b.err" || return 1
+            echo "sha256:$(sha256sum "$RUNNER_TEMP/b.json" | cut -d' ' -f1)"
+          }
+          if have=$(digest_of "$IMAGE:$BUILD_TAG"); then
+            if [ "$have" = "$DIGEST" ]; then
+              echo "$IMAGE:$BUILD_TAG already = $DIGEST"
+            else
+              echo "::warning::$IMAGE:$BUILD_TAG exists already at $have: kept as it is (written once)"
+            fi
+            exit 0
+          fi
+          if ! grep -q ': not found' "$RUNNER_TEMP/b.err"; then
+            cat "$RUNNER_TEMP/b.err"
+            echo "::error::cannot tell whether $IMAGE:$BUILD_TAG exists (registry error above); nothing was written"
+            exit 1
+          fi
+          for i in 1 2 3; do
+            if docker buildx imagetools create -t "$IMAGE:$BUILD_TAG" "$IMAGE@$DIGEST" && [ "$(digest_of "$IMAGE:$BUILD_TAG" || true)" = "$DIGEST" ]; then
+              echo "$IMAGE:$BUILD_TAG = $IMAGE@$DIGEST" | tee -a "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            echo "::warning::attempt $i to write $IMAGE:$BUILD_TAG failed"
+            if [ "$i" -lt 3 ]; then sleep $((i * 5)); fi
+          done
+          echo "::error::$IMAGE:$BUILD_TAG is not confirmed on $DIGEST after 3 attempts"
+          exit 1
+
   promote:
     name: moving tags
     needs: [meta, merge]
@@ -655,8 +699,9 @@ jobs:
           password: ${{ github.token }}
 
       - name: Point the scan node release tags at this commit's image
-        # The first word of RELEASE_TAGS is the version (1.0.0): IMMUTABLE, written once from this commit's
-        # devsecshield-scan-node:<immutable tag> and never overwritten (the Add scan node wizard pins it); a new
+        # The first word of RELEASE_TAGS is the version (1.1.0): IMMUTABLE, written once from this commit's
+        # devsecshield-scan-node:<immutable tag> and never overwritten (so it keeps the FIRST build of a version: the
+        # wizard pins <version>-<sha12> instead, issue #197); a new
         # release is a new scan_node VERSION. The others (1.0, latest) then point at that version's index (same
         # digest, same attestation), so they change only when the version does. Each write is read back and retried
         # 3 times; a failure fails the job (the moving tags stay where promote put them).

@@ -1,6 +1,7 @@
 """The scan node from the public registry on staging (deploy/staging/README.md, "Public registry"): `staging.sh deploy`
-points the Add scan node wizard at GHCR (CBOM_NODE_IMAGE_REF = devsecshield-scan-node:<version>, the release, never a
-moving tag; CBOM_NODE_CHART_REF = oci://.../charts/cbom-scan-node:<version> only once the chart can be pulled without a
+points the Add scan node wizard at GHCR (CBOM_NODE_IMAGE_REF = the image of the node build this deploy ships, from its
+downloads' manifest.json `build`: <version>-<sha12>, else staging-<sha12> / dev-<sha12>, whichever anyone can pull,
+else the moving channel tag :staging; never the frozen <version> release tag, issue #197; CBOM_NODE_CHART_REF = oci://.../charts/cbom-scan-node:<version> only once the chart can be pulled without a
 login) while CBOM_NODE_REGISTRY_PUBLIC=1 (the default of a push deploy: the image package is public). 0 clears both;
 never given, the host's own values are left alone; a rollback follows the switch kept in .env.
 Run against the real staging.sh on a stubbed host (test_deploy_staging_script.Host)."""
@@ -27,18 +28,27 @@ def env_values(host: Host) -> dict[str, str]:
     return out
 
 
-def with_manifest(host: Host, tag: str, version: str = "1.0.0") -> None:
+def build_of(tag: str) -> str:
+    """The 40-character commit a tag's node image was built from (the tag is its first 12 characters)."""
+    return (tag * 4)[:40] if all(c in "0123456789abcdef" for c in tag) else "f" * 40
+
+
+def with_manifest(host: Host, tag: str, version: str = "1.0.0", build: str | None = "auto") -> None:
     d = host.root / "deploy/staging/node-artifacts" / tag
     d.mkdir(parents=True, exist_ok=True)
-    (d / "manifest.json").write_text(json.dumps({"files": {}, "image_ref": f"localhost/zeroshield/cbom-scan-node:{version}",
-                                                 "version": version}, indent=2, sort_keys=True) + "\n")
+    body = {"files": {}, "image_ref": f"localhost/zeroshield/cbom-scan-node:{version}", "version": version}
+    if build:
+        body["build"] = build_of(tag) if build == "auto" else build
+    (d / "manifest.json").write_text(json.dumps(body, indent=2, sort_keys=True) + "\n")
 
 
-# curl on the host: GHCR's anonymous token API and manifests (the chart is public when $FAKE_CHART_PUBLIC=1), the
-# rest to the harness's own stub (health checks)
+# curl on the host: GHCR's anonymous token API and manifests (the chart is public when $FAKE_CHART_PUBLIC=1; an image
+# tag listed in $FAKE_GHCR_MISSING is not published), the rest to the harness's own stub (health checks)
 GHCR_CURL = r'''#!/usr/bin/env bash
 for a in "$@"; do case "$a" in
   https://ghcr.io/token*) echo "$a" >> "$(dirname "$0")/ghcr.log"; printf '{"token":"anonTESTONLY"}'; exit 0;;
+  https://ghcr.io/v2/*/devsecshield-scan-node/manifests/*) echo "$a $*" >> "$(dirname "$0")/ghcr.log"
+    for m in ${FAKE_GHCR_MISSING:-}; do [ "${a##*/}" = "$m" ] && { echo "curl: (22) 404" >&2; exit 22; }; done; exit 0;;
   https://ghcr.io/v2/*/manifests/*) echo "$a $*" >> "$(dirname "$0")/ghcr.log"
     if [ "${FAKE_CHART_PUBLIC:-1}" = 1 ]; then exit 0; else echo "curl: (22) 401" >&2; exit 22; fi;;
 esac; done
@@ -60,10 +70,11 @@ def host(tmp_path):
 def test_public_sets_the_ghcr_image_of_the_deployed_commit_and_its_chart(host):
     proc = ok(host.ship(A, env={"CBOM_NODE_REGISTRY_PUBLIC": "1"}))
     v = env_values(host)
-    assert v["CBOM_NODE_IMAGE_REF"] == f"{GHCR}/devsecshield-scan-node:1.0.0"  # the release, never a moving tag
+    # the image of the node build this deploy ships (manifest build), never the release tag written once (#197)
+    assert v["CBOM_NODE_IMAGE_REF"] == f"{GHCR}/devsecshield-scan-node:1.0.0-{A}"
     assert v["CBOM_NODE_CHART_REF"] == f"oci://{GHCR}/charts/cbom-scan-node:1.0.0"
     assert v["CBOM_NODE_REGISTRY_PUBLIC"] == "1"
-    assert f"scan node registry refs: {GHCR}/devsecshield-scan-node:1.0.0" in proc.stdout
+    assert f"scan node registry refs: {GHCR}/devsecshield-scan-node:1.0.0-{A}" in proc.stdout
     # the backend reads exactly these (compose interpolates them from .env)
     compose = (ROOT / "deploy/staging/docker-compose.yml").read_text()
     backend = compose.split("\n  backend:\n", 1)[1].split("\n  cbom-cloud-worker:", 1)[0]
@@ -73,7 +84,7 @@ def test_public_sets_the_ghcr_image_of_the_deployed_commit_and_its_chart(host):
 def test_a_chart_nobody_can_pull_yet_is_not_offered_but_the_image_is(host):
     proc = ok(host.ship(A, env={"CBOM_NODE_REGISTRY_PUBLIC": "1", "FAKE_CHART_PUBLIC": "0"}))
     v = env_values(host)
-    assert v["CBOM_NODE_IMAGE_REF"] == f"{GHCR}/devsecshield-scan-node:1.0.0" and v["CBOM_NODE_CHART_REF"] == ""
+    assert v["CBOM_NODE_IMAGE_REF"] == f"{GHCR}/devsecshield-scan-node:1.0.0-{A}" and v["CBOM_NODE_CHART_REF"] == ""
     assert "cannot be pulled without a login" in proc.stdout
     log = (host.root / "bin/ghcr.log").read_text()
     assert f"https://ghcr.io/token?scope=repository:{GHCR.split('/', 1)[1]}/charts/cbom-scan-node:pull" in log
@@ -104,13 +115,13 @@ def test_never_given_leaves_the_hosts_own_values_alone(host):
 def test_the_switch_is_kept_so_the_next_deploy_and_a_rollback_follow_it(host):
     ok(host.ship(A, env={"CBOM_NODE_REGISTRY_PUBLIC": "1"}))
     with_manifest(host, B, "1.1.0")  # pushed with B (retention removed the copy the fixture made)
-    ok(host.ship(B))  # no switch given: .env's 1 is kept, and the refs follow the new tag and its version
+    ok(host.ship(B))  # no switch given: .env's 1 is kept, and the refs follow the new tag, its build and its version
     v = env_values(host)
-    assert v["CBOM_NODE_IMAGE_REF"] == f"{GHCR}/devsecshield-scan-node:1.1.0"
+    assert v["CBOM_NODE_IMAGE_REF"] == f"{GHCR}/devsecshield-scan-node:1.1.0-{B}"
     assert v["CBOM_NODE_CHART_REF"] == f"oci://{GHCR}/charts/cbom-scan-node:1.1.0"
     ok(host.staging("rollback"))
     v = env_values(host)
-    assert v["DSS_TAG"] == A and v["CBOM_NODE_IMAGE_REF"] == f"{GHCR}/devsecshield-scan-node:1.0.0"
+    assert v["DSS_TAG"] == A and v["CBOM_NODE_IMAGE_REF"] == f"{GHCR}/devsecshield-scan-node:1.0.0-{A}"
     assert v["CBOM_NODE_CHART_REF"] == f"oci://{GHCR}/charts/cbom-scan-node:1.0.0"
 
 
@@ -128,9 +139,37 @@ def test_no_downloads_manifest_means_the_commits_immutable_image_and_no_chart(ho
     assert v["CBOM_NODE_IMAGE_REF"] == f"{GHCR}/devsecshield-scan-node:staging-{A}" and v["CBOM_NODE_CHART_REF"] == ""
 
 
+def test_issue_197_the_frozen_release_tag_is_never_offered(host):
+    """The release tag <version> is written once: offering it installed the 2 Nov build on every new node."""
+    for missing, want in (
+        ("", f"1.0.0-{A}"),                                          # the build's own <version>-<sha12> tag
+        (f"1.0.0-{A}", f"staging-{A}"),                              # published before <version>-<sha12> existed
+        (f"1.0.0-{A} staging-{A}", f"dev-{A}"),                      # the same commit, published from dev
+        (f"1.0.0-{A} staging-{A} dev-{A}", "staging"),               # not published yet: the moving channel tag
+    ):
+        proc = ok(host.ship(A, env={"CBOM_NODE_REGISTRY_PUBLIC": "1", "FAKE_GHCR_MISSING": missing}))
+        image = env_values(host)["CBOM_NODE_IMAGE_REF"]
+        assert image == f"{GHCR}/devsecshield-scan-node:{want}", (missing, image)
+        assert not image.endswith(":1.0.0"), image
+        if want == "staging":
+            assert "WARNING: no published image of scan node build 1.0.0+" in proc.stdout, proc.stdout
+
+
+def test_a_manifest_without_a_build_uses_the_deployed_commit(host):
+    with_manifest(host, A, build=None)  # an image built from a dirty tree claims no commit
+    ok(host.ship(A, env={"CBOM_NODE_REGISTRY_PUBLIC": "1"}))
+    assert env_values(host)["CBOM_NODE_IMAGE_REF"] == f"{GHCR}/devsecshield-scan-node:1.0.0-{A}"
+    ok(host.ship(A, env={"CBOM_NODE_REGISTRY_PUBLIC": "1", "FAKE_GHCR_MISSING": f"1.0.0-{A}"}))
+    assert env_values(host)["CBOM_NODE_IMAGE_REF"] == f"{GHCR}/devsecshield-scan-node:staging-{A}"
+    with_manifest(host, "custom-tag", build=None)
+    proc = ok(host.ship("custom-tag", env={"CBOM_NODE_REGISTRY_PUBLIC": "1"}))
+    assert env_values(host)["CBOM_NODE_IMAGE_REF"] == f"{GHCR}/devsecshield-scan-node:staging"
+    assert "WARNING" in proc.stdout
+
+
 def test_another_registry_and_a_bad_one(host):
     ok(host.ship(A, env={"CBOM_NODE_REGISTRY_PUBLIC": "1", "CBOM_NODE_REGISTRY": "ghcr.io/acme"}))
-    assert env_values(host)["CBOM_NODE_IMAGE_REF"] == "ghcr.io/acme/devsecshield-scan-node:1.0.0"
+    assert env_values(host)["CBOM_NODE_IMAGE_REF"] == f"ghcr.io/acme/devsecshield-scan-node:1.0.0-{A}"
     proc = failed(host.ship(B, env={"CBOM_NODE_REGISTRY_PUBLIC": "1", "CBOM_NODE_REGISTRY": "ghcr.io/x|rm -rf /"}))
     assert "CBOM_NODE_REGISTRY" in proc.stderr
 

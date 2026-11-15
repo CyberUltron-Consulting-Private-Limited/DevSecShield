@@ -24,7 +24,7 @@ from test_staging_deploy_disk import ARCH, IMG, NEED, ShortHost, build_machine, 
 
 pytestmark = pytest.mark.skipif(BASH is None or shutil.which("sha256sum") is None, reason="needs bash and sha256sum")
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 IMAGE_REF = f"localhost/zeroshield/cbom-scan-node:{VERSION}"
 KINDS = ("image", "helm-chart", "ova-kit", "ami-kit")
 

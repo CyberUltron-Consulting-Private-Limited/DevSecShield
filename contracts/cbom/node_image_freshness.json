@@ -1,0 +1,28 @@
+{
+  "_doc": "Is a scan node IMAGE (what the Add scan node wizard would install) this server's node build? Issue #197. One table, read by backend/tests/test_cbom_node_image_freshness.py (node_release.image_freshness) and frontend/components/cbom/sources/nodeImageFreshness.test.ts (logic.imageFreshness), so the two can never disagree. server_build is the 40-character commit of the server's downloads manifest.json (or null); stale states (outdated, different, unverified) make the wizard warn and install this server's image file instead.",
+  "server_build": "5d41b4cc9a1f2e3d4c5b6a79881726354a5b6c7d",
+  "other_build": "0123456789abcdef0123456789abcdef01234567",
+  "stale_states": ["outdated", "different", "unverified"],
+  "cases": [
+    {"ref": "ghcr.io/o/devsecshield-scan-node:staging-5d41b4cc9a1f", "server_version": "1.1.0", "server_build": "SERVER", "state": "current", "reason": "same_build"},
+    {"ref": "ghcr.io/o/devsecshield-scan-node:dev-5d41b4cc9a1f", "server_version": "1.1.0", "server_build": "SERVER", "state": "current", "reason": "same_build"},
+    {"ref": "ghcr.io/o/devsecshield-scan-node:1.1.0-5d41b4cc9a1f", "server_version": "1.1.0", "server_build": "SERVER", "state": "current", "reason": "same_build"},
+    {"ref": "ghcr.io/o/devsecshield-scan-node:manual-5d41b4cc9a1f-0a1b2c3d", "server_version": "1.1.0", "server_build": "SERVER", "state": "current", "reason": "same_build"},
+    {"ref": "ghcr.io/o/devsecshield-scan-node:staging-0123456789ab", "server_version": "1.1.0", "server_build": "SERVER", "state": "different", "reason": "different_build"},
+    {"ref": "ghcr.io/o/devsecshield-scan-node:1.0.0-5d41b4cc9a1f", "server_version": "1.1.0", "server_build": "SERVER", "state": "outdated", "reason": "older_version"},
+    {"ref": "ghcr.io/o/devsecshield-scan-node:staging-5d41b4cc9a1f", "server_version": "1.1.0", "server_build": null, "state": "unknown", "reason": "no_server_build_id"},
+    {"ref": "ghcr.io/o/devsecshield-scan-node:1.0.0", "server_version": "1.1.0", "server_build": "SERVER", "state": "outdated", "reason": "older_version"},
+    {"ref": "ghcr.io/o/devsecshield-scan-node:1.0.0", "server_version": "1.0.0", "server_build": "SERVER", "state": "unverified", "reason": "release_tag"},
+    {"ref": "ghcr.io/o/devsecshield-scan-node:1.0.0", "server_version": "1.0.0", "server_build": null, "state": "current", "reason": "same_version"},
+    {"ref": "ghcr.io/o/devsecshield-scan-node:1.2.0", "server_version": "1.1.0", "server_build": "SERVER", "state": "different", "reason": "newer_version"},
+    {"ref": "ghcr.io/o/devsecshield-scan-node:1.0.10", "server_version": "1.0.9", "server_build": "SERVER", "state": "different", "reason": "newer_version"},
+    {"ref": "registry.zeroshield.ai/cbom/scan-node:1.0", "server_version": "1.1.0", "server_build": "SERVER", "state": "moving", "reason": "moving_tag"},
+    {"ref": "ghcr.io/o/devsecshield-scan-node:staging", "server_version": "1.1.0", "server_build": "SERVER", "state": "moving", "reason": "moving_tag"},
+    {"ref": "ghcr.io/o/devsecshield-scan-node:stable", "server_version": "1.1.0", "server_build": "SERVER", "state": "moving", "reason": "moving_tag"},
+    {"ref": "ghcr.io/o/devsecshield-scan-node:latest", "server_version": "1.1.0", "server_build": "SERVER", "state": "moving", "reason": "moving_tag"},
+    {"ref": "ghcr.io/o/devsecshield-scan-node:pr-93", "server_version": "1.1.0", "server_build": "SERVER", "state": "moving", "reason": "moving_tag"},
+    {"ref": "registry.bank.example:5000/zs/cbom-scan-node:bank-approved", "server_version": "1.1.0", "server_build": "SERVER", "state": "unknown", "reason": "unrecognised_tag"},
+    {"ref": "ghcr.io/o/devsecshield-scan-node:1.1.0", "server_version": null, "server_build": null, "state": "unknown", "reason": "no_server_build"},
+    {"ref": "localhost:5000/zs/cbom-scan-node", "server_version": "1.1.0", "server_build": "SERVER", "state": "moving", "reason": "moving_tag"}
+  ]
+}

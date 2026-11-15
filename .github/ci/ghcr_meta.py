@@ -7,8 +7,10 @@
     ghcr_meta.py tags     reads PREFIX, SHA (the commit actually checked out), API_URL, RELEASE and NODE_VERSION_FILE
                           (the checked-out scan_node/zs_scan_node/__init__.py), writes sha,
                           tag=<prefix>-<sha12> (manual runs with another api_url: manual-<sha12>-<8 hex of its sha256>),
-                          node_version (the scan node's VERSION) and node_release_tags (RELEASE only: "1.0.0 1.0 latest"
-                          for a X.Y.Z version, just the version otherwise)
+                          node_version (the scan node's VERSION), node_build_tag (<version>-<sha12>: the scan node's
+                          own immutable tag, semver + commit, on every push to dev / staging; empty otherwise) and
+                          node_release_tags (RELEASE only: "1.1.0 1.1 latest" for a X.Y.Z version, just the version
+                          otherwise)
 
 Tag scheme:
     push to dev / staging                 <branch>-<sha12>, moving <branch>
@@ -18,8 +20,11 @@ Tag scheme:
                                           manual-<sha12>, or manual-<sha12>-<hash8> when api_url is not the default
                                           (the frontend differs by api_url), no moving tag
 Immutable tags are written once: publish-ghcr.yml reuses an existing one and never overwrites it.
+Scan node build tag (push to dev / staging): devsecshield-scan-node:<version>-<sha12> (e.g. 1.1.0-0123456789ab), the
+same index as <branch>-<sha12>, written once. It names both the version and the commit a node built from it reports
+(<version>+<sha12>), so a stale node and its image can be told apart (issue #197); staging.sh set_node_refs pins it.
 Release tags (scan-node only, push to a release branch): <version>, <major.minor> and latest move with the release
-branch like the moving tag (devsecshield-scan-node:1.0.0 = :staging), and the Helm chart is pushed as an OCI artifact
+branch like the moving tag (devsecshield-scan-node:1.1.0 = :staging when 1.1.0 is first released), and the Helm chart is pushed as an OCI artifact
 to <registry>/charts/cbom-scan-node:<version> (deploy/staging/README.md, "Public registry").
 
 Environment (set by the workflow from the event; never pasted into a shell script):
@@ -40,6 +45,7 @@ PREVIEW_LABEL = "publish-preview"
 BRANCHES = ("dev", "staging")
 RELEASE_BRANCHES = ("staging", "main")  # only those that also publish (BRANCHES) ever release
 NODE_VERSION_RE = re.compile(r"^[0-9][0-9A-Za-z.-]{0,18}$")  # scripts/release/scan_node_image.sh NODE_VERSION_RE
+BUILD_TAG_VERSION_RE = re.compile(r"^[0-9][0-9A-Za-z.]{0,18}$")  # no "-": <version>-<sha12> stays unambiguous
 SEMVER_RE = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
 DEFAULT_API_URL = "http://localhost:8000"
 REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$")
@@ -145,7 +151,8 @@ def tags() -> dict[str, str]:
         raise InputError(f"only a release branch ({', '.join(RELEASE_BRANCHES)}) gets release tags, not {prefix!r}")
     if release and not node_version:
         raise InputError(f"no scan-node VERSION in {env('NODE_VERSION_FILE') or 'NODE_VERSION_FILE (unset)'}")
-    return {"sha": sha, "tag": tag, "node_version": node_version,
+    build_tag = f"{node_version}-{sha[:12]}" if node_version and prefix in BRANCHES and BUILD_TAG_VERSION_RE.match(node_version) else ""
+    return {"sha": sha, "tag": tag, "node_version": node_version, "node_build_tag": build_tag,
             "node_release_tags": " ".join(release_tags(node_version)) if release else ""}
 
 

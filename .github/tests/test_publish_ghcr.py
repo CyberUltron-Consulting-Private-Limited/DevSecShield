@@ -384,6 +384,105 @@ class Tags(unittest.TestCase):
             self.assertEqual(meta("tags", PREFIX=prefix, SHA=sha)[0], 1, (prefix, sha))
 
 
+class NodeBuildTag(unittest.TestCase):
+    """Issue #197: the scan node gets an immutable <version>-<sha12> tag on every push to dev / staging, so an image
+    names the version AND the commit a node built from it reports; the wizard pins it (never the release tag)."""
+
+    def _version_file(self, text: str) -> str:
+        d = tempfile.mkdtemp()
+        self.addCleanup(lambda: __import__("shutil").rmtree(d, ignore_errors=True))
+        path = Path(d) / "__init__.py"
+        path.write_text(text)
+        return str(path)
+
+    def test_every_branch_push_gets_version_and_commit(self):
+        f = self._version_file('VERSION = "1.1.0"\n')
+        for prefix, release in (("dev", ""), ("staging", "true")):
+            rc, out, err = meta("tags", PREFIX=prefix, SHA=SHA, RELEASE=release, NODE_VERSION_FILE=f)
+            self.assertEqual((rc, out["node_build_tag"]), (0, f"1.1.0-{SHA[:12]}"), (prefix, err))
+            self.assertEqual(out["tag"], f"{prefix}-{SHA[:12]}")
+
+    def test_previews_manual_runs_and_unknown_versions_get_none(self):
+        f = self._version_file('VERSION = "1.1.0"\n')
+        for prefix in ("pr-93", "manual"):
+            self.assertEqual(meta("tags", PREFIX=prefix, SHA=SHA, NODE_VERSION_FILE=f)[1]["node_build_tag"], "", prefix)
+        self.assertEqual(meta("tags", PREFIX="dev", SHA=SHA)[1]["node_build_tag"], "")  # no VERSION file
+        # a pre-release keeps its own release tag but no build tag: 2.0.0-rc.1-<sha12> would read as one pre-release
+        rc_file = self._version_file('VERSION = "2.0.0-rc.1"\n')
+        self.assertEqual(meta("tags", PREFIX="dev", SHA=SHA, NODE_VERSION_FILE=rc_file)[1]["node_build_tag"], "")
+
+    def test_the_real_version_is_past_the_frozen_release(self):
+        rc, out, _ = meta("tags", PREFIX="dev", SHA=SHA, NODE_VERSION_FILE=str(ROOT / "scan_node" / "zs_scan_node" / "__init__.py"))
+        self.assertEqual(rc, 0)
+        self.assertRegex(out["node_build_tag"], rf"^\d+\.\d+\.\d+-{SHA[:12]}$")
+        self.assertNotEqual(out["node_version"], "1.0.0", "1.0.0 is the frozen 2 Nov release tag (#197)")
+
+    def test_meta_exports_it_and_only_the_scan_node_merge_writes_it(self):
+        self.assertIn("node_build_tag: ${{ steps.tags.outputs.node_build_tag }}", JOBS["meta"])
+        merge = JOBS["merge"]
+        step = merge.split("      - name: Scan node build tag (version + commit)\n", 1)[1].split("\n      - name:", 1)[0]
+        self.assertIn("if: matrix.name == 'scan-node' && needs.meta.outputs.node_build_tag != ''", step)
+        self.assertIn("BUILD_TAG: ${{ needs.meta.outputs.node_build_tag }}", step)
+        self.assertIn("DIGEST: ${{ steps.index.outputs.digest }}", step)
+        # after the index is checked and attested: a tag is never written for an unattested index
+        self.assertLess(merge.index("name: Attest build provenance"), merge.index("name: Scan node build tag"))
+
+
+class BuildTagStep(unittest.TestCase):
+    IMG = f"{REG}/devsecshield-scan-node"
+    BUILD_TAG = f"1.1.0-{SHA[:12]}"
+
+    def setUp(self):
+        self.reg = Registry()
+        self.script = step_script("merge", "Scan node build tag (version + commit)")
+        self.hexd = self.reg.put(f"{self.IMG}:dev-{SHA[:12]}", _index({"amd64": "2" * 64, "arm64": "3" * 64}))
+
+    def tearDown(self):
+        self.reg.close()
+
+    def run_it(self, tag=None, digest=None):
+        return self.reg.run(self.script, IMAGE=self.IMG, BUILD_TAG=tag or self.BUILD_TAG, DIGEST=digest or f"sha256:{self.hexd}")
+
+    def test_written_from_the_attested_index(self):
+        p = self.run_it()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(self.reg.tag(f"{self.IMG}:{self.BUILD_TAG}"), self.hexd)
+        self.assertIn(f"{self.IMG}:{self.BUILD_TAG} = {self.IMG}@sha256:{self.hexd}", self.reg.summary.read_text())
+
+    def test_written_once_never_overwritten(self):
+        old = self.reg.put(f"{self.IMG}:{self.BUILD_TAG}", _index({"amd64": "1" * 64, "arm64": "0" * 64}))
+        p = self.run_it()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(self.reg.tag(f"{self.IMG}:{self.BUILD_TAG}"), old)
+        self.assertIn("kept as it is", p.stdout)
+        self.assertFalse([c for c in self.reg.calls() if "imagetools create" in c])
+        p = self.run_it()  # a re-run on the same digest: nothing to do
+        self.assertEqual(p.returncode, 0)
+
+    def test_retried_then_failed_and_a_registry_error_writes_nothing(self):
+        self.reg.knob("create-fail.json", {f"{self.IMG}:{self.BUILD_TAG}": 2})
+        p = self.run_it()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(self.reg.tag(f"{self.IMG}:{self.BUILD_TAG}"), self.hexd)
+        other = f"1.1.0-{'a' * 12}"
+        self.reg.knob("create-fail.json", {f"{self.IMG}:{other}": 9})
+        p = self.run_it(tag=other)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("is not confirmed", p.stdout)
+        third = f"1.1.0-{'b' * 12}"
+        self.reg.knob("inspect-error.json", [f"{self.IMG}:{third}"])
+        p = self.run_it(tag=third)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("cannot tell whether", p.stdout)
+        self.assertIsNone(self.reg.tag(f"{self.IMG}:{third}"))
+
+    def test_malformed_inputs_are_refused_before_anything_is_written(self):
+        for tag, digest in (("1.1.0;rm", None), ("staging", None), (None, "sha256:xyz")):
+            p = self.run_it(tag=tag, digest=digest)
+            self.assertNotEqual(p.returncode, 0, (tag, digest))
+        self.assertFalse([c for c in self.reg.calls() if "imagetools create" in c])
+
+
 class Triggers(unittest.TestCase):
     def test_no_pull_request_target(self):
         self.assertNotIn("pull_request_target", WF)

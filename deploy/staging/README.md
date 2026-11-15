@@ -97,11 +97,18 @@ another commit, or no build id), `newer`, or `unknown` (no downloads on this ser
 **Scan nodes** shows "Update available" under the version, what is missing, a banner counting the nodes behind, and
 how to update. Nothing is enforced: a node without a build id still enrols, heartbeats and collects.
 
-The release tag `devsecshield-scan-node:<version>` in GHCR is written once ("Public registry"), so while `VERSION`
-stays `1.0.0` a `docker pull` of it gets the first `1.0.0` build, not this deploy's. To bring a node to this server's
-build, use this deploy's image file (Add scan node > Download scan node image) or the commit's own
-`ghcr.io/cyberultron-consulting-private-limited/devsecshield-scan-node:staging-<sha12>` tag, or bump `VERSION` to
-release a new one.
+The release tag `devsecshield-scan-node:<version>` in GHCR is written once ("Public registry"): it keeps the FIRST
+build of a version for good (issue #197: `1.0.0` was the 2 Nov build, without request signing, `ZS_CA_FILE` or the
+`alive` file the Helm readiness probe reads, so nodes installed from it never signed and never became Ready). The
+wizard therefore never offers it: the deploy pins this deploy's own node build (`<version>-<sha12>`, "Public
+registry"), and the API judges whatever image it offers against the downloads' `build`
+(`node-artifacts` `pull_image_freshness`: `current`, `outdated`, `different`, `unverified`, `moving`, `unknown`;
+`node_release.image_freshness`, cases in `contracts/cbom/node_image_freshness.json`). A stale one (`outdated`,
+`different`, `unverified`) is not shown as a command: the wizard says why and installs this server's image file. The
+air-gapped Helm commands push the downloaded image as `$REGISTRY/cbom-scan-node:<version>-<sha12>`, so a cluster that
+holds an older image of the same version cannot keep running it (`pullPolicy: IfNotPresent`). Bump
+`scan_node/zs_scan_node/__init__.py` `VERSION` (and `deploy/helm/cbom-scan-node/Chart.yaml`) when node behaviour
+changes; `backend/tests/test_cbom_node_image_freshness.py` keeps them equal.
 
 ### The staging lab nodes are not part of the deploy
 
@@ -114,8 +121,8 @@ node token and keys live in its state volume):
 
 ```sh
 # 1. this deploy's node image (either one)
-docker pull ghcr.io/cyberultron-consulting-private-limited/devsecshield-scan-node:staging-<sha12>
-#    or: sha256sum -c scan-node-1.0.0.tar.gz.sha256 && docker load -i scan-node-1.0.0.tar.gz   (from Add scan node)
+docker pull ghcr.io/cyberultron-consulting-private-limited/devsecshield-scan-node:<version>-<sha12>   # or :staging-<sha12>
+#    or: sha256sum -c scan-node-1.1.0.tar.gz.sha256 && docker load -i scan-node-1.1.0.tar.gz   (from Add scan node)
 # 2. note how the container runs now: name, restart policy, state volume, networks (printed without its environment)
 docker inspect staging-lab-node --format '{{.Name}} restart={{.HostConfig.RestartPolicy.Name}} {{range .Mounts}}{{.Type}}:{{if .Name}}{{.Name}}{{else}}{{.Source}}{{end}}->{{.Destination}} {{end}}{{range $net, $_ := .NetworkSettings.Networks}}network:{{$net}} {{end}}'
 #    Its env file stays where the node was set up; read it there and never paste the env (docker inspect's .Config.Env,
@@ -127,7 +134,7 @@ docker run -d --name staging-lab-node --restart unless-stopped --env-file <its e
 #    (docker network connect <each further network> staging-lab-node, as step 2 listed)
 ```
 
-Within a minute Scan nodes shows the node's version as `1.0.0+<sha12>` with no "Update available". Helm host agents:
+Within a minute Scan nodes shows the node's version as `<version>+<sha12>` (1.1.0 or later) with no "Update available". Helm host agents:
 `kind load docker-image <the new image> --name cbom-lab-2`, then `helm upgrade <release> <the new chart> --reuse-values
 --set image.repository=<repo> --set image.tag=<tag>`.
 
@@ -153,16 +160,22 @@ history of the host: start the command with a space (bash `HISTCONTROL=ignorespa
 (`ghcr.io/cyberultron-consulting-private-limited/devsecshield-scan-node:<branch>-<sha12>`), and on a push to
 **staging** it also releases (job `release`):
 
+* on every push to dev / staging also `devsecshield-scan-node:<version>-<sha12>` (job `merge`; written once): semver
+  plus commit, what a node built from it reports (`<version>+<sha12>`); this is the tag the wizard pins;
 * `devsecshield-scan-node:<version>`: **written once, never overwritten** (`<version>` = `scan_node/zs_scan_node/__init__.py`
   `VERSION`; bump it to release a new node), and `:<major.minor>` and `:latest` pointing at that version;
 * the Helm chart as an OCI artifact, `ghcr.io/cyberultron-consulting-private-limited/charts/cbom-scan-node:<version>`
   (written once; its default image is the GHCR image above).
 
 The staging deploy points the Add scan node wizard at them (`staging.sh` `set_node_refs`, `.env` ->
-`docker-compose.yml` -> the backend): `CBOM_NODE_IMAGE_REF=ghcr.io/.../devsecshield-scan-node:<version>` (the release,
-never a moving tag) and, only once anyone can pull it without a login (checked with GHCR's anonymous token API at
-deploy), `CBOM_NODE_CHART_REF=oci://ghcr.io/.../charts/cbom-scan-node:<version>`. The wizard's main command is then
-`docker pull ghcr.io/...:<version> && docker run ...` (Helm: `helm upgrade --install ... oci://... --version <version>`,
+`docker-compose.yml` -> the backend): `CBOM_NODE_IMAGE_REF` = the node build this deploy ships (its downloads'
+`manifest.json` `build` and `version`): the first of `devsecshield-scan-node:<version>-<sha12>`, `:staging-<sha12>`,
+`:dev-<sha12>` that anyone can pull (GHCR's anonymous token API, at deploy), else the moving channel tag `:staging`
+with a WARNING in the deploy log (publish-ghcr.yml had not published the commit yet: the wizard then notes the tag is
+not pinned; the next deploy pins it). Never `:<version>` (issue #197). And, only once anyone can pull it without a
+login, `CBOM_NODE_CHART_REF=oci://ghcr.io/.../charts/cbom-scan-node:<version>` (the wizard's helm command sets the
+image above, so the chart's own default image does not matter). The wizard's main command is then
+`docker pull ghcr.io/...:<version>-<sha12> && docker run ...` (Helm: `helm upgrade --install ... oci://... --version <version>`,
 or the downloaded chart with the GHCR image while the chart is not public); the downloads and the one-paste install
 stay below it as the air-gapped alternative.
 

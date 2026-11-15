@@ -3,7 +3,7 @@
 # zs.https_proxy, zs.mode) into /etc/zs-node/env, which zs-scan-node.service reads.
 #
 #   packer init ova.pkr.hcl
-#   packer build -var node_image_archive=scan-node-1.0.0.tar.gz -var build_password="$(openssl rand -hex 16)" ova.pkr.hcl
+#   packer build -var node_image_archive=scan-node-1.1.0.tar.gz -var build_password="$(openssl rand -hex 16)" ova.pkr.hcl
 #   (needs KVM and qemu-img)
 #
 # Output: output-ova/zeroshield-cbom-scan-node-<version>.ova (scripts/make-ova.sh: streamOptimized VMDK + OVF with
@@ -23,13 +23,13 @@ packer {
 
 variable "node_image_archive" {
   type        = string
-  default     = "scan-node-1.0.0.tar.gz"
+  default     = "scan-node-1.1.0.tar.gz"
   description = "The scan-node image file (docker save archive), copied to the build VM and loaded there."
 }
 
 variable "node_image" {
   type        = string
-  default     = "localhost/zeroshield/cbom-scan-node:1.0.0"
+  default     = "localhost/zeroshield/cbom-scan-node:1.1.0"
   description = "The image name the archive loads as (docker load); the OVA runs it."
 }
 

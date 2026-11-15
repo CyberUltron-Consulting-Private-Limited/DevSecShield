@@ -17,7 +17,8 @@
 # of CBOM_AI_PROVIDER=off on the host is never reset). CBOM_AI_BEDROCK_REGION (default ap-south-1) and
 # CBOM_AI_AWS_CREDENTIALS (default env: the AWS_* of the host's .env) are set from the variables of those names.
 # The scan node from the public registry (deploy/staging/README.md, "Public registry"): the GHCR packages are public,
-# so a push deploy points the Add scan node wizard at ghcr.io/<owner>/devsecshield-scan-node:<version> and the chart
+# so a push deploy points the Add scan node wizard at ghcr.io/<owner>/devsecshield-scan-node:<version>-<sha12> (the
+# node build it ships; never the release tag <version>, written once: issue #197) and the chart
 # (docker pull / helm oci://, no login) by default; a manual run clears them (it may deploy any commit).
 #   var  CBOM_NODE_REGISTRY_PUBLIC   unset or 1: as above. 0: never offer a pull (clears them; set it if the packages
 #                                    are ever made private again).

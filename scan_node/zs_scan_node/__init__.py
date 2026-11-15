@@ -2,7 +2,7 @@
 import os
 import re
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 _SHA = re.compile(r"[0-9a-f]{40}")
 # a release version that keeps "<version>+<12-character commit>" within 32 characters

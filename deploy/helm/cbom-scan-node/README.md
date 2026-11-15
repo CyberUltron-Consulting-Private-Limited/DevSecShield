@@ -12,13 +12,13 @@ Run it as one block: nothing is loaded, pushed or installed if the image file fa
 ```sh
 REGISTRY=registry.example.internal/zeroshield    # a registry your cluster can pull from
 ZS_API_URL='<the API URL shown in the Add scan node wizard>'
-sha256sum -c scan-node-1.0.0.tar.gz.sha256 && \
-docker load -i scan-node-1.0.0.tar.gz && \
-docker tag localhost/zeroshield/cbom-scan-node:1.0.0 "$REGISTRY/cbom-scan-node:1.0.0" && \
-docker push "$REGISTRY/cbom-scan-node:1.0.0" && \
-helm upgrade --install zs-scan-node ./cbom-scan-node-1.0.0.tgz \
+sha256sum -c scan-node-1.1.0.tar.gz.sha256 && \
+docker load -i scan-node-1.1.0.tar.gz && \
+docker tag localhost/zeroshield/cbom-scan-node:1.1.0 "$REGISTRY/cbom-scan-node:1.1.0" && \
+docker push "$REGISTRY/cbom-scan-node:1.1.0" && \
+helm upgrade --install zs-scan-node ./cbom-scan-node-1.1.0.tgz \
   --namespace zs-cbom --create-namespace \
-  --set image.repository="$REGISTRY/cbom-scan-node" --set image.tag='1.0.0' \
+  --set image.repository="$REGISTRY/cbom-scan-node" --set image.tag='1.1.0' \
   --set apiUrl="$ZS_API_URL" --set registrationToken='zsr_...'
 ```
 
@@ -27,9 +27,9 @@ store). Host agents (one pod per Kubernetes node, each reads only its own node a
 command that **Create agent pool token** shows, or, with the image pushed as above:
 
 ```sh
-helm upgrade --install zs-host-agents ./cbom-scan-node-1.0.0.tgz \
+helm upgrade --install zs-host-agents ./cbom-scan-node-1.1.0.tgz \
   --namespace zs-cbom --create-namespace \
-  --set image.repository="$REGISTRY/cbom-scan-node" --set image.tag='1.0.0' \
+  --set image.repository="$REGISTRY/cbom-scan-node" --set image.tag='1.1.0' \
   --set apiUrl="$ZS_API_URL" \
   --set deployment.enabled=false --set agent.enabled=true --set agent.poolToken='zsp_...'
 ```

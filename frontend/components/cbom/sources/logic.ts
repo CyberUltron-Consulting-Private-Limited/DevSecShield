@@ -222,11 +222,15 @@ export interface NodeImage {
    * by a missing .sha256 file (#228) */
   archiveSha256?: string
   chartSha256?: string
+  /** #197: the 40-character commit the image file was built from (manifest build): the tag the Helm commands push it
+   * under to the customer's registry carries it (<version>-<sha12>), so a cluster that already holds an older image of
+   * the same version (pullPolicy IfNotPresent) never keeps running it */
+  build?: string
 }
 
 /** The name scripts/release/scan_node_image.sh saves the image under (SCAN_NODE_IMAGE's default) for the scan node's
  * VERSION: what the wizard runs until the server says what its image file holds. */
-export const DEFAULT_NODE_IMAGE = "localhost/zeroshield/cbom-scan-node:1.0.0"
+export const DEFAULT_NODE_IMAGE = "localhost/zeroshield/cbom-scan-node:1.1.0"
 
 /** What the server offers (GET /{team}/cbom/node-artifacts). */
 export interface NodeArtifact {
@@ -245,25 +249,134 @@ export interface NodeArtifacts {
   node_build?: string | null
   image_ref: string | null
   pull_image_ref: string | null
+  /** #197: is pull_image_ref this server's node build (backend node_release.image_freshness) */
+  pull_image_freshness?: ImageFreshness | null
   /** the Helm chart in the same registry (CBOM_NODE_CHART_REF): oci://... and its version; only with pull_image_ref */
   pull_chart_ref?: string | null
   pull_chart_version?: string | null
   artifacts: NodeArtifact[]
 }
 
-/** The image the commands load and run, and the registry image when one is configured. */
-export function nodeImages(data: NodeArtifacts | undefined | null, buildPullRef?: string | null): { loaded: NodeImage; pulled: NodeImage | null } {
+/** #197: is a registry image this server's node build? The same rules as the backend's node_release.image_freshness
+ * (one table of cases for both: contracts/cbom/node_image_freshness.json), from the tag alone:
+ * <prefix>-<sha12> / <version>-<sha12> name a commit, X.Y.Z is a release tag (written once: it can hold an older build
+ * of that version), staging / dev / stable / latest / pr-<n> / X.Y / no tag are moving tags. */
+export type ImageFreshnessState = "current" | "outdated" | "different" | "unverified" | "moving" | "unknown"
+export interface ImageFreshness {
+  state: ImageFreshnessState
+  reason: string | null
+  message: string | null
+  server_build?: string | null
+  tag?: string | null
+}
+/** The states in which the wizard does not install the registry image: it says why and uses this server's file. */
+export const STALE_IMAGE_STATES: readonly ImageFreshnessState[] = ["outdated", "different", "unverified"]
+
+const SHA_TAG = /^(?:(?:dev|staging|manual|pr-[1-9][0-9]{0,6})|([0-9][0-9A-Za-z.]{0,18}))-([0-9a-f]{12})(?:-[0-9a-f]{8})?$/
+const RELEASE_TAG = /^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$/
+const MOVING_TAG = /^(?:dev|staging|stable|latest|main|pr-[1-9][0-9]{0,6}|[0-9]+\.[0-9]+|[0-9]+)$/
+
+/** -1 / 0 / 1 for two semver-like versions (a pre-release before its release), null when either is not one. */
+export function compareNodeVersions(a: string, b: string): number | null {
+  if (a === b) return 0
+  const parse = (v: string) => {
+    const m = /^([0-9]+(?:\.[0-9]+)*)(?:-([0-9A-Za-z.-]+))?$/.exec(v)
+    return m ? { core: m[1].split(".").map(Number), pre: m[2] ?? null } : null
+  }
+  const x = parse(a), y = parse(b)
+  if (!x || !y) return null
+  const width = Math.max(x.core.length, y.core.length, 3)
+  for (let i = 0; i < width; i++) {
+    const d = (x.core[i] ?? 0) - (y.core[i] ?? 0)
+    if (d) return d < 0 ? -1 : 1
+  }
+  if (x.pre === y.pre) return 0
+  if (x.pre === null) return 1
+  if (y.pre === null) return -1
+  const xp = x.pre.split("."), yp = y.pre.split(".")
+  for (let i = 0; i < Math.max(xp.length, yp.length); i++) {
+    if (xp[i] === undefined) return -1
+    if (yp[i] === undefined) return 1
+    if (xp[i] === yp[i]) continue
+    const xn = /^[0-9]+$/.test(xp[i]), yn = /^[0-9]+$/.test(yp[i])
+    if (xn && yn) return Number(xp[i]) < Number(yp[i]) ? -1 : 1
+    if (xn !== yn) return xn ? -1 : 1
+    return xp[i] < yp[i] ? -1 : 1
+  }
+  return 0
+}
+
+export function imageFreshness(ref: string | null | undefined, serverVersion: string | null | undefined,
+  serverBuild: string | null | undefined): ImageFreshness | null {
+  const image = (ref ?? "").trim()
+  if (!image) return null
+  const [, tag] = splitImage(image.split("@")[0])
+  const build = serverBuild && /^[0-9a-f]{40}$/.test(serverBuild) ? serverBuild : null
+  const server = serverVersion ? (build ? `${serverVersion}+${build.slice(0, 12)}` : serverVersion) : null
+  const say = (state: ImageFreshnessState, reason: string, message: string | null): ImageFreshness =>
+    ({ state, reason, message, server_build: server, tag })
+  if (!serverVersion) return say("unknown", "no_server_build", null)
+  const sha = SHA_TAG.exec(tag)
+  if (sha) {
+    const version = sha[1]
+    if (version && (compareNodeVersions(version, serverVersion) ?? 0) < 0) {
+      return say("outdated", "older_version", `${image} is scan node ${version}, older than this server's node build ${server}.`)
+    }
+    if (!build) return say("unknown", "no_server_build_id", null)
+    if (build.startsWith(sha[2])) return say("current", "same_build", null)
+    return say("different", "different_build", `${image} was built from commit ${sha[2]}, not this server's node build ${server}.`)
+  }
+  if (RELEASE_TAG.test(tag)) {
+    const order = compareNodeVersions(tag, serverVersion)
+    if (order !== null && order < 0) return say("outdated", "older_version", `${image} is scan node ${tag}, older than this server's node build ${server}.`)
+    if (order !== null && order > 0) return say("different", "newer_version", `${image} is scan node ${tag}, newer than this server's node build ${server}.`)
+    if (!build) return say("current", "same_version", null)
+    return say("unverified", "release_tag", `${image} is a release tag, written once when ${tag} was first published: it can hold an older build than this server's node build ${server}.`)
+  }
+  if (MOVING_TAG.test(tag)) {
+    return say("moving", "moving_tag", `${image} is a moving tag: it names whatever was published last, which may not be this server's node build ${server}.`)
+  }
+  return say("unknown", "unrecognised_tag", null)
+}
+
+/** The registry image the wizard would install and what it is against the server's node build. */
+export interface RegistryImage { image: string; freshness: ImageFreshness | null; stale: boolean }
+
+/** The image the commands load and run, and the registry image when one is configured. #197: a registry image that
+ * is not this server's node build (STALE_IMAGE_STATES) is never offered (`pulled` null): `registry` says what it is,
+ * and the commands use this server's image file, which is its node build by definition. */
+export function nodeImages(data: NodeArtifacts | undefined | null, buildPullRef?: string | null):
+  { loaded: NodeImage; pulled: NodeImage | null; registry: RegistryImage | null } {
   const found = (kind: NodeArtifact["kind"]) => data?.artifacts.find((a) => a.kind === kind && a.available) ?? null
   const sha = (kind: NodeArtifact["kind"]) => {
     const value = found(kind)?.sha256
     return value && /^[0-9a-f]{64}$/.test(value) ? value : undefined
   }
+  const build = data?.build && /^[0-9a-f]{40}$/.test(data.build) ? data.build : undefined
   const loaded: NodeImage = {
     image: data?.image_ref || DEFAULT_NODE_IMAGE, pull: false, archive: found("image")?.filename ?? undefined,
-    chart: found("helm-chart")?.filename ?? undefined, archiveSha256: sha("image"), chartSha256: sha("helm-chart"),
+    chart: found("helm-chart")?.filename ?? undefined, archiveSha256: sha("image"), chartSha256: sha("helm-chart"), build,
   }
-  const ref = (data?.pull_image_ref || buildPullRef || "").trim()
-  return { loaded, pulled: ref ? { image: ref, pull: true, chart: loaded.chart, chartSha256: loaded.chartSha256 } : null }
+  const serverRef = (data?.pull_image_ref || "").trim()
+  const ref = (serverRef || buildPullRef || "").trim()
+  if (!ref) return { loaded, pulled: null, registry: null }
+  // the server's own verdict on its registry image; the build's image (NEXT_PUBLIC_CBOM_NODE_IMAGE) is judged here
+  const freshness = serverRef && data?.pull_image_freshness !== undefined
+    ? data.pull_image_freshness
+    : imageFreshness(ref, data?.version, build)
+  const stale = !!freshness && STALE_IMAGE_STATES.includes(freshness.state)
+  return {
+    loaded,
+    pulled: stale ? null : { image: ref, pull: true, chart: loaded.chart, chartSha256: loaded.chartSha256 },
+    registry: { image: ref, freshness, stale },
+  }
+}
+
+/** The tag a downloaded image is pushed under to the customer's registry: <tag>-<sha12> when the server names the
+ * commit it was built from (#197), so a new build never reuses the tag of an older one of the same version. */
+export function pushTag(img: NodeImage): string {
+  const [, tag] = splitImage(img.image)
+  return !img.pull && img.build && /^[0-9a-f]{40}$/.test(img.build) ? `${tag}-${img.build.slice(0, 12)}` : tag
 }
 
 function splitImage(image: string): [string, string] {
@@ -290,7 +403,7 @@ export function checkFile(file: string, sha256?: string): string {
  * step is chained with && from the checks on (#228): a file that fails its SHA-256 check is never loaded, pushed or
  * installed. */
 function helmSource(img: NodeImage): { steps: string[]; chart: string; repoArg: string; tag: string } {
-  const { archive, chart, tag } = nodeFiles(img)
+  const { archive, chart } = nodeFiles(img)
   const chartCheck = `${checkFile(chart, img.chartSha256)} && \\`
   if (img.pull) {
     const [repo, ptag] = splitImage(img.image)
@@ -300,6 +413,7 @@ function helmSource(img: NodeImage): { steps: string[]; chart: string; repoArg: 
     }
   }
   const base = splitImage(img.image)[0].split("/").pop() || "cbom-scan-node"
+  const pushed = pushTag(img)
   return {
     steps: [
       "# The image file and the chart you downloaded (Download scan node image, Download Helm chart): the image is pushed",
@@ -308,12 +422,12 @@ function helmSource(img: NodeImage): { steps: string[]; chart: string; repoArg: 
       `${checkFile(archive, img.archiveSha256)} && \\`,
       chartCheck,
       `docker load -i ${archive} && \\`,
-      `docker tag ${img.image} "$REGISTRY/${base}:${tag}" && \\`,
-      `docker push "$REGISTRY/${base}:${tag}" && \\`,
+      `docker tag ${img.image} "$REGISTRY/${base}:${pushed}" && \\`,
+      `docker push "$REGISTRY/${base}:${pushed}" && \\`,
     ],
     chart: `./${chart}`,
     repoArg: `"$REGISTRY/${base}"`,
-    tag,
+    tag: pushed,
   }
 }
 
@@ -417,6 +531,8 @@ type NodeCommandOpts = {
   caFile?: string | null
   /** #199: the proxy's user name when it needs a login (the password is typed on the host: proxyAuthCreate) */
   proxyUser?: string | null
+  /** #197: the commit the downloaded image file was built from (NodeImage.build): the Helm push tag carries it */
+  build?: string | null
 }
 
 /** #196: where the node's API CA comes from: the private CA path (CB-15), the proxy's CA file here, or both bundled. */
@@ -487,7 +603,7 @@ export function installCommand(
   const proxy = opts.proxyUrl ? opts.proxyUrl : ""
   const names = nodeInstallNames(opts.name)
   const img: NodeImage = { image: opts.image, pull: opts.pull, archive: opts.archive, chart: opts.chart,
-    archiveSha256: opts.archiveSha256, chartSha256: opts.chartSha256 }
+    archiveSha256: opts.archiveSha256, chartSha256: opts.chartSha256, build: opts.build ?? undefined }
   if (method === "docker") {
     const { archive } = nodeFiles(img)
     return [
@@ -650,8 +766,9 @@ export function onePasteInstall(
   if (method === "helm") {
     const chart = file("helm-chart")
     if (!chart) return null
-    const [repo, tag] = splitImage(opts.image)
+    const [repo] = splitImage(opts.image)
     const base = repo.split("/").pop() || "cbom-scan-node"
+    const tag = pushTag({ image: opts.image, build: opts.build ?? undefined })
     return [
       "REGISTRY=registry.example.internal/zeroshield   # change to the registry your cluster pulls from",
       ...auth,
@@ -781,10 +898,10 @@ export function notAvailable(kind: NodeArtifact["kind"], artifact?: NodeArtifact
 
 /** The Helm command for agent mode: a DaemonSet whose pods each enroll with the agent pool token as their own node
  * (named after the Kubernetes node) and read only that node, from a read-only mount of its file system. */
-export function helmAgentCommand(opts: { poolToken: string; apiUrl: string; proxyUrl?: string | null; image: string; insecureHttp?: boolean; pull?: boolean; archive?: string; chart?: string; archiveSha256?: string; chartSha256?: string }): string {
+export function helmAgentCommand(opts: { poolToken: string; apiUrl: string; proxyUrl?: string | null; image: string; insecureHttp?: boolean; pull?: boolean; archive?: string; chart?: string; archiveSha256?: string; chartSha256?: string; build?: string }): string {
   const proxy = opts.proxyUrl ? opts.proxyUrl : ""
   const src = helmSource({ image: opts.image, pull: opts.pull, archive: opts.archive, chart: opts.chart,
-    archiveSha256: opts.archiveSha256, chartSha256: opts.chartSha256 })
+    archiveSha256: opts.archiveSha256, chartSha256: opts.chartSha256, build: opts.build })
   return [
     ...src.steps,
     `helm upgrade --install zs-host-agents ${src.chart} \\`,
