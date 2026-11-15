@@ -88,6 +88,24 @@ def sshd_config(text: str, effective: bool) -> dict[str, Any]:
     return out
 
 
+_SSHD_DIRECTIVE = re.compile(r"([A-Za-z]+)(?:[ \t]*=[ \t]*|[ \t]+)(.*)$")
+
+
+def sshd_directives(text: str, keywords: tuple[str, ...]) -> list[tuple[str, str]]:
+    """(keyword, raw value) of every line of ``sshd -T`` or an sshd_config file whose keyword (any case, ``Key value``
+    or ``Key=value``) is in ``keywords``, in file order.  Values are NOT cleaned: a caller validates a value before it
+    is used in a command, and shows it only through ``printable``."""
+    out = []
+    for raw in text.splitlines():
+        line = raw.strip(" \t")
+        if not line or line.startswith("#"):
+            continue
+        m = _SSHD_DIRECTIVE.match(line)
+        if m and m.group(1).lower() in keywords and m.group(2).strip(" \t"):
+            out.append((m.group(1).lower(), m.group(2).strip(" \t")))
+    return out
+
+
 def ssh_keygen_l(text: str) -> list[dict[str, Any]]:
     """``ssh-keygen -l`` lines: '256 SHA256:abc comment (ED25519)'."""
     out = []

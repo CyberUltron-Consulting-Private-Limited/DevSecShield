@@ -243,7 +243,8 @@ def test_allow_list_covers_every_command_the_collector_has():
     fixed = {getattr(C, n) for n in dir(C) if n.isupper() and isinstance(getattr(C, n), str)}
     fixed -= {C.T1_ENV, C.SUDO, C.CRYPTO_LIBS_RE, C.KEY_FILE_RE}
     for cmd in fixed:
-        line = C.tier1_line(cmd.format(file="/etc/ssl/x.pem") if "{file}" in cmd else cmd)
+        path = "/etc/ssh/sshd_config.d/x.conf" if cmd == C.SSHD_INCLUDE else "/etc/ssl/x.pem"  # #116: /etc/ssh only
+        line = C.tier1_line(cmd.format(file=path) if "{file}" in cmd else cmd)
         assert Z.allowed_line(line), cmd
     for variants in C.TIER2.values():
         for argv in variants:
