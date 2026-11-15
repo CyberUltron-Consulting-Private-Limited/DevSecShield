@@ -34,6 +34,7 @@ from typing import Any, Callable
 
 import httpx
 
+from zs_scan_node import errtext
 from zs_scan_node import reported_version
 from zs_scan_node.jobctx import LeaseLost
 from zs_scan_node.log import log
@@ -176,9 +177,11 @@ class Api:
             try:
                 r = self.client.request(method, path, content=data, headers=headers)
             except httpx.HTTPError as exc:
+                cause = errtext.api_transport_error(exc)  # #198: an untrusted certificate says so, with the hint
                 if attempt >= retries:
-                    raise ApiError(0, exc.__class__.__name__) from None
-                log("api unreachable, retrying", path=path, error=exc.__class__.__name__, wait_s=int(delay), job=job)
+                    raise ApiError(0, cause) from None
+                log("api unreachable, retrying", path=path, error=exc.__class__.__name__, cause=cause,
+                    wait_s=int(delay), job=job)
                 self._wait(delay + random.random())
                 delay = min(delay * 2, MAX_BACKOFF)
                 attempt += 1

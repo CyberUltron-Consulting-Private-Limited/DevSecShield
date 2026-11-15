@@ -20,7 +20,6 @@ import io
 import json
 import os
 import shlex
-import socket
 import threading
 import time
 from dataclasses import dataclass
@@ -33,7 +32,7 @@ from zs_scan_node import linux_parsers as P
 from zs_scan_node.certparse import public_key_facts_from_pem
 from zs_scan_node.collectors import ConfigError, skipped_never_scan, target_error
 from zs_scan_node.jobctx import JobContext, LeaseLost
-from zs_scan_node import netutil
+from zs_scan_node import errtext, netutil
 from zs_scan_node.netutil import Target, expand_targets
 
 OUTPUT_CAP = 4 * 1024 * 1024
@@ -303,6 +302,16 @@ def _cert_login_key(ctx: JobContext, source: Any) -> paramiko.PKey:
         raise TargetFail("error", f"ZeroShield stopped this job ({detail})") from None
 
 
+def handshake_budget(ctx: JobContext, config: dict) -> float:
+    """#152: the source's "Timeout per server" bounds the SSH connect, banner, key exchange and login too (they
+    were fixed at 10, 15 and 20 s), and never outlives the job."""
+    return max(0.5, min(float(config.get("timeout_s") or 300), max(ctx.time_left(), 0.5)))
+
+
+def _secs(value: float) -> str:
+    return f"{value:g}"
+
+
 def open_session(ctx: JobContext, target: Target, config: dict, creds: dict) -> Session:
     port = int(config.get("port") or 22)
     user = str(config.get("login_user") or "zs-cbom")
@@ -317,17 +326,13 @@ def open_session(ctx: JobContext, target: Target, config: dict, creds: dict) -> 
         # easy): passwords go only to hosts pinned in known_hosts.  Key logins never reveal the key.
         raise TargetFail("identity_unverified", "password logins need a pinned host key (known_hosts); the password "
                          "was not sent")
-    try:
-        sock = netutil.connect(target.ip, port, ctx.never_scan, 10)  # the network gate: never-scan at connect time
+    budget = handshake_budget(ctx, config)
+    try:  # the network gate: never-scan at connect time
+        sock = netutil.connect(target.ip, port, ctx.never_scan, min(10.0, budget))
     except netutil.Blocked:
         raise TargetFail("skipped_never_scan", f"{target.ip} is on the never-scan list") from None
-    except socket.timeout:
-        raise TargetFail("timeout", f"no answer on port {port}") from None
-    except ConnectionRefusedError:
-        raise TargetFail("refused", f"port {port} refused") from None
-    except OSError as exc:
-        code = "no_route" if getattr(exc, "errno", None) in (101, 113) else "unreachable"
-        raise TargetFail(code, exc.__class__.__name__) from None
+    except OSError as exc:  # refused, no route, timeout ...: in words (#153)
+        raise TargetFail(*errtext.socket_problem(exc, target.ip, port)) from None
     transport = None
     try:
         transport = paramiko.Transport(sock)
@@ -341,11 +346,22 @@ def open_session(ctx: JobContext, target: Target, config: dict, creds: dict) -> 
         raise
 
 
+def _ssh_failure(step: str, exc: BaseException, target: Target, port: int) -> str:
+    """#153: what broke during the SSH handshake or login, in words (never the exception class)."""
+    if isinstance(exc, EOFError):
+        return f"{target.ip}:{port} closed the connection during {step}"
+    if isinstance(exc, OSError):
+        return f"{step} failed: " + errtext.socket_problem(exc, target.ip, port)[1]
+    text = " ".join(str(exc).split())[:160]
+    return f"{step} failed" + (f": {text}" if text else "")
+
+
 def _login(ctx: JobContext, target: Target, config: dict, creds: dict, transport: paramiko.Transport, port: int,
            user: str, policy: str, host_port: str) -> Session:
     """Handshake, host key check and login on a connected ``transport`` (open_session closes it on any raise)."""
-    transport.banner_timeout = 15
-    transport.auth_timeout = 20
+    budget = handshake_budget(ctx, config)
+    transport.banner_timeout = min(15.0, budget)
+    transport.auth_timeout = min(20.0, budget)
     _accept_rfc8731_curve25519(transport)
     pinned_types: list[str] = []
     if policy == "pinned":
@@ -370,18 +386,26 @@ def _login(ctx: JobContext, target: Target, config: dict, creds: dict, transport
         except Exception:
             pass
     try:
-        transport.start_client(timeout=20)
+        # paramiko's start_client returns quietly when ITS timeout passes first: leave the banner timeout room to fire
+        transport.start_client(timeout=min(20.0, budget) + 2)
     except paramiko.SSHException as exc:
         transport.close()
+        if "protocol banner" in str(exc).lower():  # #152: accepted TCP, never spoke SSH within the budget
+            raise TargetFail("timeout", f"no SSH banner from {target.ip} within {_secs(transport.banner_timeout)} s "
+                             "(not an SSH server, or sshd is hung)") from None
         if pinned_types and "key" in str(exc).lower():
             raise TargetFail("host_key_changed", "the server no longer offers the pinned host key type") from None
         if isinstance(exc, paramiko.IncompatiblePeer):
             raise _incompatible(ctx, target, port, str(exc)) from None
-        raise TargetFail("error", f"SSH handshake failed ({exc.__class__.__name__})") from None
+        raise TargetFail("error", _ssh_failure("SSH handshake", exc, target, port)) from None
     except (EOFError, OSError) as exc:
         transport.close()
-        raise TargetFail("error", f"SSH handshake failed ({exc.__class__.__name__})") from None
-    key = transport.get_remote_server_key()
+        raise TargetFail("error", _ssh_failure("SSH handshake", exc, target, port)) from None
+    try:
+        key = transport.get_remote_server_key()
+    except paramiko.SSHException:  # the key exchange did not finish in time (start_client gave up quietly)
+        transport.close()
+        raise TargetFail("timeout", f"the SSH handshake with {target.ip} did not finish within {_secs(budget)} s") from None
     ktype, fp = key.get_name(), _fp(key)
     host_key = {"key_type": ktype, "bits": key.get_bits(), "fingerprint": fp}
     if policy == "pinned":
@@ -438,7 +462,7 @@ def _login(ctx: JobContext, target: Target, config: dict, creds: dict, transport
         raise TargetFail("auth_failed", f"login as {user} was refused") from None
     except (paramiko.SSHException, EOFError, OSError) as exc:
         transport.close()
-        raise TargetFail("error", f"authentication failed ({exc.__class__.__name__})") from None
+        raise TargetFail("error", _ssh_failure("the login", exc, target, port)) from None
     if not transport.is_authenticated():
         transport.close()
         raise TargetFail("auth_failed", f"login as {user} was refused")

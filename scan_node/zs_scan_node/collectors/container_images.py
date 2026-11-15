@@ -43,7 +43,7 @@ from typing import Any, Callable, Iterator
 from urllib.parse import urlencode, urljoin, urlsplit
 
 from zs_scan_node import linux_parsers as P
-from zs_scan_node import netutil, pkgdb
+from zs_scan_node import errtext, netutil, pkgdb
 from zs_scan_node.collectors import ConfigError
 from zs_scan_node.jobctx import JobContext
 from zs_scan_node.scrub import printable
@@ -220,10 +220,8 @@ class Registry:
                 response = client.send(request, stream=stream)
             except netutil.Blocked as exc:  # the address was listed while the pull ran
                 raise ImageError("skipped_never_scan", str(exc)) from None
-            except httpx.HTTPError as exc:
-                raise ImageError(_http_status(exc), f"{parts.hostname}: {exc.__class__.__name__}") from None
-            except ssl.SSLError as exc:
-                raise ImageError("tls_unavailable", f"{parts.hostname}: TLS failed ({exc.__class__.__name__})") from None
+            except (httpx.HTTPError, ssl.SSLError) as exc:  # #214: the cause in words, never the class name
+                raise ImageError(*registry_error(exc, parts.hostname or "")) from None
             if response.status_code in (301, 302, 303, 307, 308) and response.headers.get("location"):
                 response.close()
                 url = urljoin(url, response.headers["location"])
@@ -282,7 +280,8 @@ class Registry:
         except netutil.Blocked as exc:
             raise ImageError("skipped_never_scan", str(exc)) from None
         except Exception as exc:  # httpx.HTTPError, ssl errors
-            raise ImageError("unreachable", f"token service: {exc.__class__.__name__}") from None
+            status, note = registry_error(exc, parts.hostname or "")
+            raise ImageError(status, f"token service {note}") from None
         if r.status_code != 200:
             raise ImageError("auth_failed", f"the token service refused the request ({r.status_code})")
         try:
@@ -330,6 +329,18 @@ def _internal_address(ip: str, registry_ip: str | None) -> str | None:
         if own is None or not own.is_loopback:
             return f"a loopback address ({ip})"
     return None
+
+
+def registry_error(exc: BaseException, host: str) -> tuple[str, str]:
+    """(status, note) for a registry call that failed below HTTP: a certificate the node does not trust (upload its
+    CA), another TLS failure, or the socket cause."""
+    verify = errtext.tls_verify_problem(exc)
+    if verify:
+        return "tls_unavailable", f"{host}: the registry certificate is not trusted ({verify}); upload the CA that issued it"
+    for e in errtext.chain(exc):
+        if isinstance(e, ssl.SSLError):
+            return "tls_unavailable", f"{host}: TLS failed ({str(getattr(e, 'reason', None) or e)[:120]})"
+    return errtext.socket_problem(exc, host, None)
 
 
 def _http_status(exc: Exception) -> str:
