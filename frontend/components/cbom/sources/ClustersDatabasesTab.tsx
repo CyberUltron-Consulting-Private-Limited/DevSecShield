@@ -53,6 +53,7 @@ import {
   usePolledJob,
 } from "./shared";
 import { InfoTip } from "@/components/ui/info-tip";
+import { contextProblem, kubeconfigSettingProblem, kubeconfigSummary } from "./kubeconfigSummary";
 
 // ---------------------------------------------------------------------------- constants (mirror backend kinds.py / templates.py)
 type Engine = "postgres" | "mysql" | "mssql" | "oracle" | "mongodb" | "redis";
@@ -194,7 +195,7 @@ function kubeconfigProblem(text: string): string | null {
     if (key(name).test(text)) return `This kubeconfig points at a file (${name}); embed the data instead`;
   }
   if (key("certificate-authority").test(text)) return "This kubeconfig points at a CA file; embed certificate-authority-data instead";
-  return null;
+  return kubeconfigSettingProblem(text); // #209
 }
 
 function endpointOf(source: CbomSource): string {
@@ -797,6 +798,14 @@ function ClusterForm({
       (form.credentialType === "vault" ? `${form.vaultProvider}|${form.vaultPath.trim()}` : null) !==
         (cfg.vault ? `${cfg.vault.provider}|${cfg.vault.path}` : null));
   const templateName = form.tier === 2 ? "k8s-tier2" : "k8s-tier1";
+  const kubeSummary = useMemo(() => kubeconfigSummary(form.kubeconfig), [form.kubeconfig]); // #208
+  const stepsQuery = useQuery({ // #207: the kubeconfig from the template's long-lived token Secret
+    queryKey: cbomSourcesKeys.template(teamId, "k8s-kubeconfig"),
+    queryFn: () => getCbomTemplate(teamId, "k8s-kubeconfig"),
+    enabled: Number.isFinite(teamId),
+    retry: 1,
+    staleTime: Infinity,
+  });
   const roleQuery = useQuery({
     queryKey: cbomSourcesKeys.template(teamId, templateName),
     queryFn: () => getCbomTemplate(teamId, templateName),
@@ -840,6 +849,10 @@ function ClusterForm({
       }
     }
     if (form.context.trim().length > 128) e.context = "128 characters at most";
+    else if (form.credentialType === "kubeconfig" && form.kubeconfig) {
+      const problem = contextProblem(form.context, kubeSummary); // #208: the save refuses it too
+      if (problem) e.context = problem;
+    }
     if (form.credentialType === "vault" && !form.vaultPath.trim()) e.vaultPath = "Enter the secret path in your vault";
     if (form.credentialType === "vault" && !isAdmin) e.vaultPath = "Only a team admin can add or change a vault reference";
     if (!form.nodeId) e.nodeId = "Choose the scan node that reaches this cluster";
@@ -1031,7 +1044,17 @@ function ClusterForm({
                         setErrors((er) => ({ ...er, kubeconfig: problem }));
                         return;
                       }
-                      set({ kubeconfig: text, kubeconfigName: file.name });
+                      // #208: offer the file's contexts; name the current one when there are several, and fill the
+                      // API server URL from the chosen context's cluster when it is still empty
+                      const summary = kubeconfigSummary(text);
+                      const chosen = form.context.trim() || (summary.contexts.length > 1 ? summary.current ?? "" : "");
+                      const server = summary.servers[chosen || summary.current || summary.contexts[0] || ""] ?? "";
+                      set({
+                        kubeconfig: text,
+                        kubeconfigName: file.name,
+                        context: chosen,
+                        apiUrl: form.apiUrl.trim() ? form.apiUrl : summary.servers[chosen] || server || form.apiUrl,
+                      });
                     } catch (err) {
                       setErrors((er) => ({ ...er, kubeconfig: (err as Error).message }));
                     }
@@ -1049,8 +1072,35 @@ function ClusterForm({
                   )}
                 </div>
               </Field>
-              <Field infoId="cbsrc.k8s.context" label="Context" htmlFor="k8s-context" error={errors.context} hint="Optional. Blank uses current-context." className="sm:col-span-2">
-                <Input id="k8s-context" data-testid="k8s-context" value={form.context} maxLength={128} onChange={(e) => set({ context: e.target.value })} />
+              <Field
+                infoId="cbsrc.k8s.context"
+                label="Context"
+                htmlFor="k8s-context"
+                error={errors.context}
+                hint={
+                  kubeSummary.contexts.length
+                    ? `In this kubeconfig: ${kubeSummary.contexts.join(", ")}. Blank uses current-context${kubeSummary.current ? ` (${kubeSummary.current})` : ""}.`
+                    : "Optional. Blank uses current-context."
+                }
+                className="sm:col-span-2"
+              >
+                <Input
+                  id="k8s-context"
+                  data-testid="k8s-context"
+                  list="k8s-contexts"
+                  value={form.context}
+                  maxLength={128}
+                  onChange={(e) => {
+                    const context = e.target.value;
+                    const server = kubeSummary.servers[context.trim()];
+                    set(server && !form.apiUrl.trim() ? { context, apiUrl: server } : { context });
+                  }}
+                />
+                <datalist id="k8s-contexts" data-testid="k8s-contexts">
+                  {kubeSummary.contexts.map((name) => (
+                    <option key={name} value={name} />
+                  ))}
+                </datalist>
               </Field>
             </div>
           ) : (
@@ -1105,7 +1155,7 @@ function ClusterForm({
           <div className="space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-xs font-medium text-zinc-500">
-                Apply this ClusterRole and binding for the service account zs-cbom (Tier {form.tier})
+                Apply this file: the zs-cbom namespace, service account and token Secret, and the ClusterRole and binding (Tier {form.tier})
               </p>
               <Button type="button" variant="outline" size="sm" className="cursor-pointer" onClick={downloadRole} data-testid="k8s-download-role">
                 <Download className="h-4 w-4 mr-1.5" />
@@ -1129,6 +1179,19 @@ function ClusterForm({
                 <CodeSnippet code={roleQuery.data} language="yaml" />
               </div>
             )}
+            <div className="space-y-1.5" data-testid="k8s-kubeconfig-steps">
+              <p className="text-xs font-medium text-zinc-500">
+                Then build the kubeconfig to upload, from the service account&apos;s long-lived token. Tokens from{" "}
+                <code className="font-mono">kubectl create token</code> expire (1 hour by default) and scheduled scans would then fail.
+              </p>
+              {stepsQuery.data ? (
+                <div className="max-h-72 overflow-y-auto rounded-md">
+                  <CodeSnippet code={stepsQuery.data} language="bash" />
+                </div>
+              ) : stepsQuery.isError ? (
+                <p className="text-xs text-zinc-500">Could not load the kubeconfig steps.</p>
+              ) : null}
+            </div>
           </div>
         </div>
 

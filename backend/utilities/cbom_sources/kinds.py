@@ -349,6 +349,14 @@ def credential_target_problem(kind: str, cfg: Any, secrets: dict[str, str]) -> s
             name = {"mysql": "MySQL", "redis": "Redis", "mssql": "SQL Server"}[cfg.engine]
             return (f"ca_pem: {name} logins need TLS and the CA certificate that signed the server's certificate, so "
                     "the password only goes to the real server")
+    if kind == "kubernetes" and cfg.credential_type == "kubeconfig" and cfg.context and secrets.get("kubeconfig"):
+        # #208: a context the kubeconfig does not have would silently fall back to its current-context
+        summary = check_kubeconfig(secrets["kubeconfig"])
+        if cfg.context not in summary["contexts"]:
+            names = ", ".join(summary["contexts"]) or "none"
+            current = summary["current_context"]
+            return (f"context: {cfg.context!r} is not in the kubeconfig; its contexts are {names}"
+                    + (f" (blank uses its current-context, {current})" if current else ""))
     if kind == "ca_connector" and cfg.provider == "ejbca" and secrets.get("client_cert") and secrets.get("client_key"):
         return client_pair_problem(secrets["client_cert"], secrets["client_key"])
     return None
@@ -489,11 +497,23 @@ def check_kubeconfig(text: str) -> dict[str, Any]:
         for key in ("client-certificate", "client-key", "tokenFile"):
             if key in detail:
                 raise ValueError(f"kubeconfig points at a file ({key}); embed the data instead")
+    servers: dict[str, str] = {}
     for cluster in data.get("clusters") or []:
-        if "certificate-authority" in ((cluster or {}).get("cluster") or {}):
+        detail = (cluster or {}).get("cluster") or {}
+        if "certificate-authority" in detail:
             raise ValueError("kubeconfig points at a CA file; embed certificate-authority-data instead")
-    contexts = [c.get("name") for c in data.get("contexts") or [] if isinstance(c, dict)]
-    return {"contexts": [c for c in contexts if c], "current_context": data.get("current-context")}
+        # #209: refused at save in the words the scan node uses at run time (collectors/kubernetes.py)
+        if detail.get("insecure-skip-tls-verify") is True:
+            raise ValueError("kubeconfig disables certificate checks (insecure-skip-tls-verify); remove it")
+        if detail.get("proxy-url"):
+            raise ValueError("kubeconfig sets proxy-url, which the scan node does not use (it connects to the API "
+                             "server directly); remove it")
+        if isinstance(cluster, dict) and cluster.get("name"):
+            servers[str(cluster["name"])] = str(detail.get("server") or "")
+    contexts = [c for c in data.get("contexts") or [] if isinstance(c, dict) and c.get("name")]
+    return {"contexts": [str(c["name"]) for c in contexts], "current_context": data.get("current-context"),
+            # each context's API server (#208: the form offers the contexts and fills the URL from the chosen one)
+            "servers": {str(c["name"]): servers.get(str((c.get("context") or {}).get("cluster")), "") for c in contexts}}
 
 
 # ----------------------------------------------------------------------------- databases
