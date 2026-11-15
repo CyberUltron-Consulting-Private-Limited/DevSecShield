@@ -217,6 +217,30 @@ const TEXT = {
     why: "A node that cannot reach them makes every new source fail its test.",
     example: "node-dc1.",
   },
+  // src: backend/utilities/integrations/cmdb.py:649-669 — #362: one source per host, disagreements are conflicts
+  "cbsrc.cmdb.merged": {
+    what: "Rows of the file that name the same host (by any host column), CIDR, database (engine, host and port), cluster or HSM token. They become one planned source; fields the rows disagree on are listed as conflicts and left blank.",
+    why: "A host listed twice is scanned and charged once, with one owner.",
+    example: "qa-dup.bank.local: lines 30, 31.",
+  },
+  // src: backend/utilities/integrations/cmdb.py:703-707 — #367: matched sources with nothing to change
+  "cbsrc.cmdb.unchanged": {
+    what: "Existing sources the file's rows matched whose metadata already equals the file's, with the lines that matched each. Nothing is changed or created for them.",
+    why: "Shows where every row went, so a row that matched an existing source does not seem to vanish.",
+    example: "CMDB Payments prod: lines 2, 3, nothing to change.",
+  },
+  // src: backend/utilities/integrations/cmdb.py:472-474, backend/routers/integrations.py:124-125 — #363: one CA per engine
+  "cbsrc.cmdb.db_ca_engine": {
+    what: "MySQL, SQL Server, Oracle, MongoDB and Redis logins are only sent over TLS to a server proven by its CA. Choose the engine (or every engine without its own CA), then upload its CA certificate; the import applies it to that engine's rows.",
+    why: "Without the CA these rows are skipped, so most database estates could only be added one by one.",
+    example: "MySQL: bank-db-root-ca.pem.",
+  },
+  // src: backend/routers/integrations.py:124-125 — #363: a PEM certificate or bundle, 64 KB at most
+  "cbsrc.cmdb.db_ca_file": {
+    what: "The PEM certificate (or bundle) of the CA that signed the database servers' TLS certificates, 64 KB at most. It is checked in the preview and stored on each database source it applies to.",
+    why: "The scan node verifies each server with it before sending the login.",
+    example: "bank-db-root-ca.pem with the root and one intermediate.",
+  },
   // src: backend/utilities/integrations/cmdb.py:378-400, backend/routers/integrations.py:114 — #225: one choice per shared segment
   "cbsrc.cmdb.segment_node": {
     what: "Several scan nodes serve this segment, so the import needs to know which one takes its rows. Without a choice those rows are skipped with the reason. A row's scan_node column still wins.",
