@@ -234,6 +234,13 @@ class JobContext:
     cert_refresher: Callable[[], dict] | None = None
     # CB-10: the lockout guard for this job's credential (collectors that log in with a password call login_gate)
     breaker: CredentialBreaker = field(default_factory=CredentialBreaker)
+    # #150: ids of the admins' host key decisions (accept / forget) this job applied, reported in the result
+    host_key_resets_applied: list[int] = field(default_factory=list)
+
+    def host_key_reset_applied(self, reset_id: int) -> None:
+        with self._lock:
+            if reset_id not in self.host_key_resets_applied:
+                self.host_key_resets_applied.append(reset_id)
 
     # ------------------------------------------------------------------ progress
     def set_progress_total(self, total: int) -> None:
@@ -458,4 +465,6 @@ class JobContext:
             out["credential_refused"] = refused
         if self.kind == "test_connection":
             out["samples"] = self.scrubber.obj(self.samples)
+        if self.host_key_resets_applied:
+            out["host_key_resets_applied"] = list(self.host_key_resets_applied[:200])
         return out

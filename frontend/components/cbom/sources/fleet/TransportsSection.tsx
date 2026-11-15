@@ -34,6 +34,7 @@ import { cbomFleetKeys, refreshFleet } from "./keys";
 import type { FleetSectionProps } from "./sections";
 import {
   ARTIFACTS_OF,
+  NEEDS_RELEASE,
   TEST_ELSEWHERE,
   TRANSPORT_LABEL,
   canTest,
@@ -313,11 +314,17 @@ export default function TransportsSection({ teamId }: FleetSectionProps) {
               : "No verified zs-collect release is active in this deployment yet: only the role template and the signing key can be made."}
           </p>
           <div className="flex flex-wrap gap-2">
-            {FILES.map((name) => (
-              <Button key={name} size="sm" variant="outline" className="cursor-pointer" disabled={fetchFile.isPending} onClick={() => fetchFile.mutate(name)}>
-                <FileText className="h-3.5 w-3.5 mr-1" />{name}
-              </Button>
-            ))}
+            {FILES.map((name) => {
+              // made from the zs-collect release: without one the API can only refuse it, so it is not offered
+              const waiting = !data.release && NEEDS_RELEASE.has(name);
+              return (
+                <Button key={name} size="sm" variant="outline" className="cursor-pointer" disabled={fetchFile.isPending || waiting}
+                  title={waiting ? "Available once a verified zs-collect release is active in this deployment" : undefined}
+                  onClick={() => fetchFile.mutate(name)}>
+                  <FileText className="h-3.5 w-3.5 mr-1" />{name}
+                </Button>
+              );
+            })}
           </div>
           {fileError && <p className="text-sm text-red-600 dark:text-red-400" role="alert">{fileError}</p>}
           {file && (
