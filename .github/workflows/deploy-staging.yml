@@ -18,6 +18,10 @@
 # CBOM_AI_AWS_CREDENTIALS are set from the variables of those names; the credential source is written as static when
 # both secrets of the assistant's own IAM user are set, and not written at all without them (half a pair fails):
 #   secrets  CBOM_AI_AWS_ACCESS_KEY_ID, CBOM_AI_AWS_SECRET_ACCESS_KEY   (Bedrock invoke only; unset: host value stays)
+# Certificate Transparency discovery (#369; deploy/staging/README.md "Certificate Transparency discovery on staging"):
+# CBOM_CT_DISCOVERY is not a secret. Every staging deploy writes it into the host's backend.env (1 when the staging
+# environment variable of that name is unset, so discovery stays on; set the variable to 0 to turn it off). Production
+# env files are not set. Compose does not put the variable in `environment:` (that would hide backend.env).
 # The scan node from the public registry (deploy/staging/README.md, "Public registry"): the GHCR packages are public,
 # so a push deploy points the Add scan node wizard at ghcr.io/<owner>/devsecshield-scan-node:<version> and the chart
 # (docker pull / helm oci://, no login) by default; a manual run clears them (it may deploy any commit).
@@ -243,6 +247,9 @@ jobs:
           # static with the whole pair; without it nothing is written (the host's value stays: never a fall-back to
           # the host's AWS_*); half a pair fails this step below. The environment variable still overrides.
           STAGING_SET_CBOM_AI_AWS_CREDENTIALS: ${{ vars.CBOM_AI_AWS_CREDENTIALS || (secrets.CBOM_AI_AWS_ACCESS_KEY_ID != '' && secrets.CBOM_AI_AWS_SECRET_ACCESS_KEY != '' && 'static') || '' }}
+          # Certificate Transparency (#369). Not a secret. Unset staging variable -> 1, so a deploy leaves discovery
+          # on. Set the variable to 0 to turn it off. Written into backend.env like CBOM_AI_PROVIDER (stdin only).
+          STAGING_SET_CBOM_CT_DISCOVERY: ${{ vars.CBOM_CT_DISCOVERY || '1' }}
           NODE_REGISTRY_PUBLIC: ${{ vars.CBOM_NODE_REGISTRY_PUBLIC }}
           EVENT: ${{ github.event_name }}
         run: |
