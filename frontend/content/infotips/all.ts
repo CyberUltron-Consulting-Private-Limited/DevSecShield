@@ -26,6 +26,7 @@ import iac from "./text/iac";
 import integrations from "./text/integrations";
 import llm from "./text/llm";
 import mcp from "./text/mcp";
+import repos from "./text/repos";
 import results from "./text/results";
 import sast from "./text/sast";
 import sbom from "./text/sbom";
@@ -61,6 +62,7 @@ export const AREA_TEXT: Record<TipArea, TipAreaText> = {
   "cbsrc-run": cbsrcRun,
   "cbsrc-ssh-ca": cbsrcSshCa,
   fleet,
+  repos,
 };
 
 /** Every tip, label and text, in the order of labels.ts. An id whose text is missing has empty fields (the test fails it). */
