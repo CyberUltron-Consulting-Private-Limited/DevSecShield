@@ -410,7 +410,7 @@ def test_a_charge_that_raises_releases_the_claim_only_when_nothing_committed(wor
     assert _balance(world.engine) == pytest.approx(1.0 - COST) and len(_ledger(world)) == 1
 
 
-def test_a_takeover_never_wipes_the_debit_of_a_holder_that_resumes(world):
+def test_a_takeover_never_overwrites_the_debit_of_a_holder_that_resumes(world):
     """Review 5909721853 major (its repro /tmp/rev382/race.py as a test): B reads A's stale claim while it is
     "claimed"; A then resumes, charges and moves on; B's compare-and-set must miss, so the finding is charged once and
     A can still store under its debit."""
