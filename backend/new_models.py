@@ -1170,5 +1170,11 @@ from sqlalchemy import event as _sa_event
 
 _sa_event.listen(SQLModel.metadata, "after_create", _install_estate_summary)
 
+
+# ========================================= F3: code repositories at scale =========================================
+# The F3 tables live in their own module; importing it here registers them on SQLModel.metadata for alembic and
+# for everything that imports new_models (it imports nothing from this file, so the import cannot cycle).
+from backend.utilities.scm.models import *  # noqa: E402,F401,F403
+
 # ========================================= F4 access management: its tables live in backend/access_models.py
 from backend.access_models import *  # noqa: E402,F401,F403  (registers them on SQLModel.metadata with the rest)

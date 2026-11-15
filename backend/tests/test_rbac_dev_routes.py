@@ -1,7 +1,7 @@
 """F4 RBAC revival (PR #42 after merging dev on 2026-11-15): every route dev added since 12 Nov carries a policy.
 
-* ``test_every_route_dev_added_since_12_nov_holds_its_policy``: the 88 routes added to ``dev`` between 3399452 (the
-  base #42 was written on) and 9fdd67c, each pinned to the permission (or machine / marker policy) it is served
+* ``test_every_route_dev_added_since_12_nov_holds_its_policy``: the 114 routes added to ``dev`` between 3399452 (the
+  base #42 was written on) and 326c2df (88 up to 9fdd67c, then F3's 26), each pinned to the permission (or machine / marker policy) it is served
   with.  A route that loses its policy, or whose permission changes, fails here with the route named; a route that
   dev adds later without a policy fails ``test_rbac_route_coverage`` (declaration check and runtime default-deny).
 * Team-scoped CBOM API keys (``zsk_``, #226) pass the route policy exactly where their handler takes them, act as
@@ -121,6 +121,33 @@ DEV_ROUTES_SINCE_12_NOV: dict[tuple[str, str], str] = {
     ("GET", "/cbom/ssh-ca-trust/trusted-keys"): "marker:machine:ssh-ca trust token",
     ("GET", "/cbom/ssh-ca-trust/revoked"): "marker:machine:ssh-ca trust token",
     ("GET", "/cbom/ssh-ca-trust/principals"): "marker:machine:ssh-ca trust token",
+    # F3 repositories at scale (#40, merged on dev as 326c2df): x-zs-permission markers, the webhook is machine
+    ("GET", "/{team_id}/scm/connections"): "marker:repos.read",
+    ("POST", "/{team_id}/scm/connections"): "marker:repos.manage",
+    ("GET", "/{team_id}/scm/connections/{connection_id}"): "marker:repos.read",
+    ("PATCH", "/{team_id}/scm/connections/{connection_id}"): "marker:repos.manage",
+    ("DELETE", "/{team_id}/scm/connections/{connection_id}"): "marker:repos.manage",
+    ("POST", "/{team_id}/scm/connections/{connection_id}/test"): "marker:repos.manage",
+    ("POST", "/{team_id}/scm/connections/{connection_id}/sync"): "marker:repos.manage",
+    ("POST", "/{team_id}/scm/connections/{connection_id}/webhook-secret"): "marker:repos.manage",
+    ("POST", "/{team_id}/scm/connections/{connection_id}/preview"): "marker:repos.read",
+    ("PUT", "/{team_id}/scm/connections/{connection_id}/filters"): "marker:repos.manage",
+    ("GET", "/{team_id}/scm/repositories"): "marker:repos.read",
+    ("POST", "/{team_id}/scm/repositories/bulk"): "marker:repos.manage",
+    ("GET", "/{team_id}/scm/policies"): "marker:repos.read",
+    ("POST", "/{team_id}/scm/policies"): "marker:repos.manage",
+    ("PUT", "/{team_id}/scm/policies/{policy_id}"): "marker:repos.manage",
+    ("DELETE", "/{team_id}/scm/policies/{policy_id}"): "marker:repos.manage",
+    ("POST", "/{team_id}/scm/policies/preview"): "marker:repos.read",
+    ("POST", "/{team_id}/scm/runs/estimate"): "marker:repos.read",
+    ("POST", "/{team_id}/scm/runs"): "marker:repos.manage",
+    ("GET", "/{team_id}/scm/runs"): "marker:repos.read",
+    ("GET", "/{team_id}/scm/runs/{run_id}"): "marker:repos.read",
+    ("POST", "/{team_id}/scm/runs/{run_id}/cancel"): "marker:repos.manage",
+    ("GET", "/{team_id}/scm/findings"): "marker:repos.read",
+    ("GET", "/{team_id}/scm/findings/{finding_id}"): "marker:repos.read",
+    ("GET", "/{team_id}/scm/rollup"): "marker:repos.read",
+    ("POST", "/scm/webhooks/{provider}/{webhook_uid}"): "machine",
 }
 
 
@@ -145,7 +172,7 @@ def _app_routes() -> dict[tuple[str, str], APIRoute]:
 
 def test_every_route_dev_added_since_12_nov_holds_its_policy():
     routes = _app_routes()
-    assert len(DEV_ROUTES_SINCE_12_NOV) == 88
+    assert len(DEV_ROUTES_SINCE_12_NOV) == 114  # 88 up to 9fdd67c, 26 more from F3 (#40) up to 326c2df
     missing = sorted(k for k in DEV_ROUTES_SINCE_12_NOV if k not in routes)
     assert not missing, f"routes no longer served (update this table): {missing}"
     wrong = {k: (_served_with(routes[k]), want) for k, want in DEV_ROUTES_SINCE_12_NOV.items()
@@ -162,8 +189,9 @@ def test_every_team_route_dev_added_is_refused_to_a_viewer_where_it_changes_some
         if method == "GET" or "{team_id}" not in path:
             continue
         name = want.removeprefix("marker:")
-        if name in ("cbom.read", "cbom.fleet.read"):  # read-only POSTs: signature verify, link, preview
-            assert path.endswith(("/signature/verify", "/link", "/policies/preview")), (method, path)
+        if name in ("cbom.read", "cbom.fleet.read", "repos.read"):  # read-only POSTs: verify, link, previews, estimate
+            assert path.endswith(("/signature/verify", "/link", "/policies/preview", "/preview", "/runs/estimate")), (
+                method, path)
             continue
         assert not role_has("viewer", name), (method, path, name)
         assert routes[(method, path)] is not None

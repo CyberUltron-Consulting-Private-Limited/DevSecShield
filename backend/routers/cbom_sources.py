@@ -52,6 +52,7 @@ from backend.utilities.cbom_sources import host_key_resets as HKR  # #150
 from backend.utilities.cbom_sources import jobs as J
 from backend.utilities.cbom_sources import source_cap as SOURCE_CAP
 from backend.utilities.cbom_sources import targets as T
+from backend.utilities.cbom_sources import vault_support as VAULT_SUPPORT  # #364
 from backend.utilities.cbom_sources.aws_validate import validate_aws_role
 from backend.utilities.cbom_sources.common import audit, iso_z, log, new_ref, new_token, sha256_hex, utcnow
 from backend.utilities.cbom_sources.crypto import decrypt_secrets, encrypt_secrets, scrub, warn_if_key_is_weak
@@ -82,6 +83,7 @@ from backend.utilities.cbom_sources import q0register as Q0REG
 from backend.utilities.cbom_sources import qgrade as QGRADE
 from backend.utilities.cbom_sources import qgrade_store as QSTORE
 from backend.utilities.cbom_sources import run_deliverables as RUN_DELIVERABLES
+from backend.utilities.cbom_sources import run_list as RUN_LIST
 from backend.utilities.cbom_sources import run_parity as RUN_PARITY
 from backend.utilities.cbom_sources import run_results as RUN_RESULTS
 from backend.utilities.cbom_sources import run_tickets as RUN_TICKETS
@@ -560,6 +562,13 @@ def _ct_prepare(engine, team_id: int, body: SourceCreate) -> SourceCreate:
     return body.model_copy(update={"name": CT_SOURCE_NAME, "config": config})
 
 
+def _refuse_unavailable_vault(cfg) -> None:
+    """#364: a vault no scan node reads (CyberArk, Azure Key Vault) is listed as "not available yet" and never saved."""
+    problem = VAULT_SUPPORT.config_problem(cfg)
+    if problem:
+        raise HTTPException(status_code=400, detail=problem)
+
+
 def _create_source(engine, team_id: int, user_id: int, body: SourceCreate) -> dict:
     now = utcnow()
     spec = KINDS[body.kind]
@@ -580,6 +589,7 @@ def _create_source(engine, team_id: int, user_id: int, body: SourceCreate) -> di
         AG.check_node_for_kind(node, body.kind)
         _check_refs(session, team_id, body.kind, cfg)
         if getattr(cfg, "credential_type", None) == "vault":
+            _refuse_unavailable_vault(cfg)
             require_admin(session, user_id, team_id, "sources that read their credential from a vault")
         SSHCA_SOURCES.check_create(session, team_id, user_id, cfg)  # F1.4: ssh_ca sources are written by admins
         secrets_ = _merge_secrets(body.kind, cfg, {}, body.secrets, clear=[], reset=True, where_changed=False)
@@ -793,6 +803,7 @@ def _update_source(engine, team_id: int, user_id: int, source_id: int, body: Sou
         # Renaming or disabling never needs these checks, so a source saved before the rules can still be turned off.
         relevant = new_dump != old_dump or bool(provided) or new_node_id != source.node_id
         if relevant and new_dump.get("credential_type") == "vault":
+            _refuse_unavailable_vault(new_dump)
             require_admin(session, user_id, team_id, "sources that read their credential from a vault")
         SSHCA_SOURCES.check_update(session, team_id, user_id, source, old_cfg, cfg, relevant=relevant,  # F1.4
                                    name=body.name, enabled=body.enabled)
@@ -1564,14 +1575,14 @@ def _list_runs(engine, team_id: int, scan_id: int | None) -> dict:
         if scan_id is not None:
             query = query.where(CbomCollectionRun.scan_id == scan_id)
         runs = session.exec(query.order_by(CbomCollectionRun.id.desc()).limit(50)).all()  # type: ignore[union-attr]
+        # issue #159 (Rule P): the asset count the Scans table shows too, from the one function, one query for the page
+        assets = RUN_LIST.asset_counts(session, team_id, [int(run.id) for run in runs])
         out = []
         for run in runs:
             counts: dict[str, int] = {}
             for job in session.exec(select(CbomCollectionJob).where(CbomCollectionJob.run_id == run.id)).all():
                 counts[job.status] = counts.get(job.status, 0) + 1
-            assets = session.exec(select(func.count()).select_from(CbomCollectedAsset)
-                                  .where(CbomCollectedAsset.run_id == run.id)).one()
-            out.append({**public_run(run), "job_counts": counts, "asset_count": int(assets)})
+            out.append({**public_run(run), "job_counts": counts, "asset_count": assets.get(int(run.id), 0)})
         return {"runs": out, "server_time": iso_z(now)}
 
 

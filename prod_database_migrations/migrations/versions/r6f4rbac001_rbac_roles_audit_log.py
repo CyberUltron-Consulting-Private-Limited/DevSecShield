@@ -1,7 +1,7 @@
 """team roles owner / admin / member / viewer, invitation roles, append-only audit log (F4 RBAC)
 
 Revision ID: r6f4rbac001
-Revises: cb352hooks001 (re-chained from rv6p1nodename001 when dev was merged in on 2026-11-15: one head)
+Revises: r6f3repo001 (re-chained from rv6p1nodename001 when dev was merged in on 2026-11-15: one head)
 Create Date: 2026-11-11 14:00:00.000000
 
 Roles: existing memberships keep their role (admin -> admin, member -> member); superusers are unchanged.  Every
@@ -29,7 +29,7 @@ import sqlmodel
 
 
 revision: str = 'r6f4rbac001'
-down_revision: Union[str, Sequence[str], None] = 'cb352hooks001'
+down_revision: Union[str, Sequence[str], None] = 'r6f3repo001'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

@@ -388,14 +388,13 @@ def test_marker_mistakes_are_violations():
 # ------------------------------------------------------------------------------------------------ review 5869394244 / 5869356370
 
 def test_the_matrix_holds_the_names_the_parallel_tracks_use():
-    """F4 owns the matrix (permissions.py:81): F3 (#40) declares scm.*; F1.2 cbom.*; F1.4's node route is machine()."""
+    """F4 owns the matrix (permissions.py:81): F3 (#40, on dev) declares repos.*; F1.2 cbom.*; F1.4 machine markers."""
     from backend.utilities.rbac.permissions import PERMISSIONS, get_permission
-    expected = {"scm.read": "viewer", "scm.connections.write": "admin", "scm.repos.write": "admin",
-                "scm.policies.write": "admin", "scm.scans.run": "admin",
+    expected = {"repos.read": "viewer", "repos.manage": "admin",
                 "cbom.fleet.read": "viewer", "cbom.inventory.write": "admin", "cbom.policies.write": "admin",
                 "cbom.credentials.write": "admin", "cbom.transports.write": "admin", "cbom.sshca.admin": "admin"}
     assert {name: get_permission(name).min_role for name in expected} == expected
-    assert "repos.read" not in PERMISSIONS and "repos.manage" not in PERMISSIONS  # nobody declares them
+    assert not any(name.startswith("scm.") for name in PERMISSIONS)  # the names F3 did not adopt: nobody declares them
 
 
 def test_public_and_machine_markers_need_no_rbac_import():

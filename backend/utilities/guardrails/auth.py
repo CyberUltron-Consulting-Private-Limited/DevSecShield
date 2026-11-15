@@ -89,7 +89,9 @@ def get_user_and_integration_id(request: Request, api_key_header: str = Security
         # the key acts as its creator: still a member of its team, with a role that holds the route's permission
         bind_api_key(request, lambda: get_db(), user_id=user_id, team_id=team_id)
 
-        console.print(f"User ID: {user_id}, Integration ID: {integration_id} has accessed the API with API key ******{api_key[-6:]}", style="bold yellow")
+        # the integration id names the key; no part of the key itself is logged (#88)
+        console.print(f"User ID: {user_id}, Integration ID: {integration_id} has accessed the API with its API key",
+                      style="bold yellow")
         return {
             "user_id": user_id,
             "integration_id": integration_id

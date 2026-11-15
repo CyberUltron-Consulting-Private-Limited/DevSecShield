@@ -41,6 +41,7 @@ from backend.utilities.scan.cancel_scan import CancelRefused, cancel_scan, refun
 from backend.utilities.scan.estimate_scan import estimate_credits
 from backend.utilities.scan import credit_estimate
 from backend.utilities.team.credits import check_if_team_has_enough_credits , deduct_credits_from_team , update_scan_credit_consumed , refund_credits_to_team
+from backend.utilities.log_redaction import safe_repr
 from backend.utilities.db.schemas import * 
 from backend.utilities.celery.celery_connection import get_status_and_update_db
 from backend.utilities.db.encryption import decrypt_if_encrypted
@@ -1045,7 +1046,7 @@ async def estimate_credits_for_scan(
         except ValidationError as ve:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Invalid start scan payload: {ve.errors()}")
 
-        console.print(f"Start scan payload: {start_scan_payload}",style="bold yellow")
+        console.print(f"Start scan payload: {safe_repr(start_scan_payload)}", style="bold yellow", markup=False)
 
 
         # STEP [ 1 ] : =========== Check if user is in team ======================
@@ -1326,50 +1327,29 @@ async def generate_finding_remediation(
             scan_findings_collection.update_one({"_id": finding_oid}, {"$set": {"remediation": remediation_result}})
             return remediation_result
 
-        # STEP [ 2 ] : =========== Check if remediation already exists (cache hit) ======================
+        # STEP [ 2 ] : =========== Cache hit: a completed remediation (stored only after its charge) ==========
         existing_remediation = finding.get("remediation")
         if existing_remediation and existing_remediation.get("status") == "completed":
             console.print(f"Remediation cache hit for finding {finding_id}", style="dim green")
             return existing_remediation
 
-        # STEP [ 3 ] : =========== Credit check (0.05 per remediation) ======================
-        REMEDIATION_CREDIT_COST = 0.05
-        if not check_if_team_has_enough_credits(team_id, REMEDIATION_CREDIT_COST):
+        # STEP [ 3 ] : =========== Claim -> debit -> generate -> store, refund on failure (#87) ==========
+        from backend.utilities.ai import paid_remediation as PAID
+
+        try:
+            return await PAID.remediate(scan_findings_collection, finding_id=finding_oid, scan_id=scan_id,
+                                        team_id=team_id, finding_data=finding.get("finding_data", {}),
+                                        scan_type=type, generate=generate_remediation)
+        except PAID.InsufficientCredits:
             raise HTTPException(
                 status_code=status.HTTP_402_PAYMENT_REQUIRED,
                 detail="Team does not have enough credits for remediation generation",
-            )
-
-        # STEP [ 4 ] : =========== Generate remediation ======================
-        finding_data = finding.get("finding_data", {})
-        remediation_result = generate_remediation(finding_data, type)
-
-        # STEP [ 5 ] : =========== Atomic store + deduct (prevent double-deduction) ======================
-        if remediation_result.get("status") == "completed":
-            # Use MongoDB findOneAndUpdate to atomically set remediation only if not already set
-            update_result = scan_findings_collection.update_one(
-                {"_id": ObjectId(finding_id), "remediation.status": {"$ne": "completed"}},
-                {"$set": {"remediation": remediation_result}},
-            )
-            if update_result.modified_count > 0:
-                # Only deduct credits if we were the one to write the remediation
-                deduct_credits_from_team(team_id, REMEDIATION_CREDIT_COST)
-                console.print(f"Remediation stored and credits deducted for finding {finding_id}", style="bold green")
-            else:
-                console.print(f"Remediation already stored by concurrent request for finding {finding_id}", style="dim yellow")
-                # Return the already-stored remediation
-                updated_finding = scan_findings_collection.find_one({"_id": ObjectId(finding_id)})
-                if updated_finding and updated_finding.get("remediation"):
-                    return updated_finding["remediation"]
-        else:
-            # Non-completed remediation, just store without deducting
-            scan_findings_collection.update_one(
-                {"_id": ObjectId(finding_id)},
-                {"$set": {"remediation": remediation_result}},
-            )
-            console.print(f"Remediation (non-completed) stored for finding {finding_id}", style="bold yellow")
-
-        return remediation_result
+            ) from None
+        except PAID.RemediationBusy:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="AI remediation for this finding is being generated; try again in a moment",
+            ) from None
 
     except HTTPException as e:
         raise e
