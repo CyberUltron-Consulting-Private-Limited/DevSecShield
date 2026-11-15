@@ -15,9 +15,9 @@ export const SECRETS_OF: Record<CbomTransportKind, string[]> = { awx: ["token"],
 
 /** What the customer installs on their side for each kind (GET .../transports/artifacts/{name}). */
 export const ARTIFACTS_OF: Record<CbomTransportKind, string[]> = {
-  awx: ["ansible-collection"],
-  salt: ["salt-state"],
-  ssm: ["ssm-document", "ssm-role-cfn"],
+  awx: ["ansible-collection", "sshca-trust-ansible"],
+  salt: ["salt-state", "sshca-trust-salt"],
+  ssm: ["ssm-document", "ssm-role-cfn", "sshca-trust-ssm"],
 };
 
 /** The files that are made from the active zs-collect release (backend artifacts.NEEDS_RELEASE): they answer 400

@@ -32,9 +32,11 @@ const ssm = (over: Partial<TransportDraft> = {}): TransportDraft => ({
 assert.deepEqual(Object.keys(TRANSPORT_LABEL), ["awx", "salt", "ssm"]);
 assert.match(TRANSPORT_LABEL.awx, /Ansible/);
 assert.deepEqual(SECRETS_OF, { awx: ["token"], salt: ["username", "password"], ssm: [] });
-assert.deepEqual(ARTIFACTS_OF.awx, ["ansible-collection"]);
-assert.deepEqual(ARTIFACTS_OF.salt, ["salt-state"]);
-assert.deepEqual(ARTIFACTS_OF.ssm, ["ssm-document", "ssm-role-cfn"]);
+assert.deepEqual(ARTIFACTS_OF.awx, ["ansible-collection", "sshca-trust-ansible"]);
+assert.deepEqual(ARTIFACTS_OF.salt, ["salt-state", "sshca-trust-salt"]);
+assert.deepEqual(ARTIFACTS_OF.ssm, ["ssm-document", "ssm-role-cfn", "sshca-trust-ssm"]);
+// SSH CA trust installers do not need a zs-collect release (issue #83)
+for (const name of ["sshca-trust-ansible", "sshca-trust-salt", "sshca-trust-ssm"]) assert.equal(NEEDS_RELEASE.has(name), false);
 // backend/utilities/cbom_sources/transports/artifacts.py NEEDS_RELEASE: these 400 while no zs-collect release is active
 assert.deepEqual([...NEEDS_RELEASE].sort(), ["ansible-collection", "salt-state", "ssm-document", "zs-collect-manifest"]);
 
