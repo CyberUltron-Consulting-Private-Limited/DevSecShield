@@ -63,13 +63,14 @@ class IssueError(Exception):
 
 @dataclass(frozen=True)
 class IssuedCert:
-    certificate: str
+    certificate: str  # "" for a node CA (#61): the node signs the grant
     serial: int
     key_id: str
     principals: tuple[str, ...]
     valid_after: _dt.datetime
     valid_before: _dt.datetime
     record_id: int | None = None
+    grant: dict | None = None  # node CA only: what the node may sign, exactly (sshca_node.NodeSigner)
 
 
 class CertificateAuthority(Protocol):
@@ -274,7 +275,51 @@ class VaultCA(_Base):
         return facts
 
 
-PROVIDERS: dict[str, type[_Base]] = {"builtin": BuiltinCA, "vault": VaultCA}
+class NodeCA(BuiltinCA):
+    """#61: the CA private key is the customer's, on its scan node; ZeroShield has only the public key.  ``issue``
+    decides the certificate exactly as the builtin CA would (principals, source-address, TTL with its back-dating,
+    a serial from the same sequence) and records it (``via`` ``node_grant``, so the audit list and the KRL know the
+    serial before the node signs), but returns a grant instead of a signature.  The node signs that grant and reports
+    the certificate, which ``check_node_report`` compares with the record."""
+
+    def issue(self, principal, ttl, *, public_key, key_id, source_addresses=(), node_id=None, job_id=None,
+              source_id: int | None = None, via: str = "claim", now: _dt.datetime | None = None) -> IssuedCert:
+        principals, ttl_s, addresses, subject_blob = self._common(principal, ttl, public_key, source_addresses)
+        now = now or utcnow()
+        valid_after = now - _dt.timedelta(seconds=skew_s(ttl_s))
+        valid_before = valid_after + _dt.timedelta(seconds=ttl_s)
+        serial = self._next_serial()
+        key_id = key_id.replace("{serial}", str(serial))
+        record = self._record(serial=serial, key_id=key_id, principals=principals, addresses=addresses,
+                              valid_after=valid_after, valid_before=valid_before, subject_blob=subject_blob,
+                              node_id=node_id, job_id=job_id, source_id=source_id, via="node_grant", now=now)
+        grant = {"ca_public_key": self.row.public_key, "serial": serial, "key_id": key_id,
+                 "principals": list(principals), "source_addresses": list(addresses),
+                 "valid_after": C._epoch(valid_after), "valid_before": C._epoch(valid_before), "ttl_s": ttl_s}
+        return IssuedCert("", serial, key_id, principals, valid_after, valid_before, record.id, grant)
+
+
+def report_problems(record: CbomSshCertIssued, ca: CbomSshCa, facts: C.CertFacts) -> list[str]:
+    """How a certificate a node reports (#61) differs from what ZeroShield granted (empty: it is the grant)."""
+    problems = []
+    if facts.cert_type != "user":
+        problems.append("it is not a user certificate")
+    if C.blob_sha256_hex(facts.public_key_blob) != record.cert_public_key_sha256:
+        problems.append("it certifies another key than the scan node's")
+    if facts.key_id != record.key_id:
+        problems.append("its key id")
+    if list(facts.principals) != list(record.principals or []):
+        problems.append("its principals")
+    if (facts.valid_after, facts.valid_before) != (C._epoch(record.valid_after), C._epoch(record.valid_before)):
+        problems.append("its validity")
+    if facts.critical_options != {"source-address": ",".join(record.source_addresses or [])}:
+        problems.append("its source-address")
+    if facts.extensions:
+        problems.append("it carries extensions")
+    return problems
+
+
+PROVIDERS: dict[str, type[_Base]] = {"builtin": BuiltinCA, "vault": VaultCA, "node": NodeCA}
 
 
 def authority_for(session: Session, row: CbomSshCa, *, release: Callable[[], None] | None = None) -> BuiltinCA | VaultCA:
