@@ -213,6 +213,7 @@ def test_a_library_that_reached_end_of_life_after_the_run_is_a_finding_in_every_
         row.created_at = dt.datetime(2026, 1, 15)
         then = classify(row.asset_type, row.algorithm, row.key_size, row.protocol, row.facts, row.created_at)
         row.impact, row.finding_codes, row.finding = then["impact"], then["finding_codes"], then["finding"]
+        row.content_digest = None  # a changed stored row: digest unknown (#352)
         s.add(row)
         s.commit()
         run_impact, run_codes = row.impact, list(row.finding_codes or [])

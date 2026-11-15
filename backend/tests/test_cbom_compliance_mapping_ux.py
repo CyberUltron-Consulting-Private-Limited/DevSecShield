@@ -182,6 +182,7 @@ def _seed_clause_run(engine, ids, name):
                       key=lambda r: r.id)
         for row, (asset_name, facts) in zip(rows, CLAUSE_FACTS):
             row.name, row.facts = asset_name, facts
+            row.content_digest = None  # a changed stored row: digest unknown (#352)
             s.add(row)
         s.commit()
         return run_id, {r.name: r.id for r in rows}

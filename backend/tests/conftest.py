@@ -53,3 +53,26 @@ def _no_mongo_client_outlives_its_test():
     before = {mod: getattr(mod, "_mongo_db", None) for mod in _mongo_singletons()}
     yield
     close_mongo_clients_opened_since(before)
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _content_digest_follows_its_columns():
+    """#352: every statement any test runs is checked: an UPDATE of cbomcollectedasset that changes a column
+    ``content_digest`` digests must set ``content_digest`` too (``content_digest_guard``)."""
+    try:
+        import sqlalchemy as sa
+
+        sys.path.insert(0, __file__.rsplit("/", 1)[0])
+        import content_digest_guard as GUARD
+    except ImportError:  # a test that runs without the backend package on the path
+        yield
+        return
+
+    def check(_conn, _cursor, statement, *_a):
+        msg = GUARD.check_statement(statement)
+        if msg:
+            raise AssertionError(msg)
+
+    sa.event.listen(sa.engine.Engine, "before_cursor_execute", check)
+    yield
+    sa.event.remove(sa.engine.Engine, "before_cursor_execute", check)
