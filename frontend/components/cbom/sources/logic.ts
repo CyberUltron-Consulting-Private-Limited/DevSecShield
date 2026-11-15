@@ -806,7 +806,12 @@ export function refusalReason(error: unknown): string | null {
   const response = (error as { response?: { status?: unknown; data?: unknown } } | null | undefined)?.response
   const status = typeof response?.status === "number" ? response.status : 0
   if (status < 400 || status >= 500 || status === 401) return null
-  const detail = (response?.data as { detail?: unknown } | null | undefined)?.detail
+  let data = response?.data
+  if (typeof data === "string") {
+    // a file fetched as text (responseType "text"): a refusal's body is still the server's JSON {"detail": ...}
+    try { data = JSON.parse(data) } catch { data = null }
+  }
+  const detail = (data as { detail?: unknown } | null | undefined)?.detail
   return typeof detail === "string" && detail.trim() ? detail.trim().slice(0, 300) : null
 }
 
