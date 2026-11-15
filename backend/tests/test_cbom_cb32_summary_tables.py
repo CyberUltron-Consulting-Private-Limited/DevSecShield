@@ -25,13 +25,25 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import sqlalchemy as sa  # noqa: E402
-from sqlmodel import Session, SQLModel, create_engine  # noqa: E402
-
-from backend.new_models import CbomEstateAsset, CbomEstateObservation, CbomRiskRegister  # noqa: E402
-from backend.utilities.cbom_sources import cleanup as _cleanup  # noqa: E402,F401  (registers every table it deletes)
-from backend.utilities.cbom_sources import estate_summary_ddl as S  # noqa: E402
-from test_cbom_cb20_estate import NOT_AFTER, NOW, SERIAL, World, cert, endpoint  # noqa: E402
+import sqlalchemy as sa
+from backend.new_models import (
+    CbomEstateAsset,
+    CbomEstateObservation,
+    CbomRiskRegister,
+)
+from backend.utilities.cbom_sources import (
+    cleanup as _cleanup,  # noqa: F401  (registers every table it deletes)
+)
+from backend.utilities.cbom_sources import estate_summary_ddl as S
+from sqlmodel import Session, SQLModel, create_engine
+from test_cbom_cb20_estate import (
+    NOT_AFTER,
+    NOW,
+    SERIAL,
+    World,
+    cert,
+    endpoint,
+)
 
 PG = os.environ.get("CBOM_TEST_PG_URL")
 needs_pg = pytest.mark.skipif(not PG, reason="set CBOM_TEST_PG_URL to run against PostgreSQL")
@@ -222,8 +234,8 @@ def test_one_head():
     revs, downs = set(), set()
     for path in MIGRATION.parent.glob("*.py"):
         text = path.read_text()
-        revs.add(re.search(r"^revision(?::\s*str)?\s*=\s*['\"]([^'\"]+)['\"]", text, re.M).group(1))
-        down = re.search(r"^down_revision(?:[^=]*)=\s*['\"]([^'\"]+)['\"]", text, re.M)
+        revs.add(re.search(r"^revision(?::\s*str)?\s*=\s*['\"]([^'\"]+)['\"]", text, re.MULTILINE).group(1))
+        down = re.search(r"^down_revision(?:[^=]*)=\s*['\"]([^'\"]+)['\"]", text, re.MULTILINE)
         if down:
             downs.add(down.group(1))
     assert len(revs - downs) == 1 and _migration().down_revision in revs

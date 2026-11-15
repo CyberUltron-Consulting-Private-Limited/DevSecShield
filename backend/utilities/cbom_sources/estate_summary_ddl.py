@@ -17,7 +17,8 @@ No backend imports here: ``new_models`` calls ``install`` after ``create_all``.
 """
 from __future__ import annotations
 
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 import sqlalchemy as sa
 

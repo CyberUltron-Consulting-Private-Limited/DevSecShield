@@ -881,7 +881,7 @@ class CbomEstateCount(SQLModel, table=True):
     n: int = Field(default=0)
 
 
-def _install_estate_summary(target, connection, **kw):  # noqa: ARG001
+def _install_estate_summary(target, connection, **kw):
     """Every create_all (tests, local) installs the summary triggers too (CB-32; migrations do it themselves)."""
     from backend.utilities.cbom_sources import estate_summary_ddl
 
@@ -1078,6 +1078,6 @@ class CbomOpsCounter(SQLModel, table=True):
 
 
 # CB-32: the estate summary triggers follow every SQLModel.metadata.create_all
-from sqlalchemy import event as _sa_event  # noqa: E402
+from sqlalchemy import event as _sa_event
 
 _sa_event.listen(SQLModel.metadata, "after_create", _install_estate_summary)

@@ -39,7 +39,7 @@ def tick(engine, now=None) -> dict[str, Any]:
         from backend.utilities.cbom_sources.estate_summary_ddl import check_due
 
         out["estate_summary_check"] = check_due(engine, now)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - one failed check must not stop the tick
         log("estate summary check FAILED", ref=new_ref(), error=type(exc).__name__)
     try:  # CB-23: the register's daily re-judge (day 366 evidence; deleted sources), at most hourly per process
         from backend.utilities.cbom_sources.q0register import tick_due
