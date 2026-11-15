@@ -5,6 +5,10 @@
   rebinding cannot redirect it).  The never-scan list applies to the whole name: if the name, or ANY address it
   resolves to, is on the list, the name is skipped (a dual-stack host listed by its IPv4 address is not scanned
   over IPv6).  An IP literal is checked as itself; CIDR and ``a-b`` ranges are checked address by address.
+* One name is one host for the whole job (#17): every name a job resolves is recorded on its list (``NeverScan.learn``)
+  and, when the name or one of its addresses is listed, ALL its addresses are refused wherever the job meets them
+  (an IP target, a range, a range sweep: ``Tied``).  A range carries no names and the node does no PTR lookups, so an
+  address of a host listed by its other address is recognised only through a name the job resolved (README).
 * The never-scan list can change while a job runs (heartbeat); ``NeverScan.update`` swaps it atomically.
 * Entries: an address, a CIDR, an ``a-b`` range (IPv4 or IPv6) or a host name.  IPv4-mapped entries count as their
   IPv4 addresses.  A host name entry is matched by name AND by every address it resolves to from the node, so a
@@ -31,7 +35,7 @@ import threading
 import weakref
 import time
 from dataclasses import dataclass
-from typing import Iterable, Iterator
+from typing import Iterable, Iterator, Self
 from urllib.parse import urlsplit
 
 from zs_scan_node import idn
@@ -326,6 +330,22 @@ def _no_host(forms) -> bool:
     return _in_nets(forms, _NO_HOST_NETS)
 
 
+def _address(text):
+    """An address (IPv6 in brackets or with a zone too), or None for anything else."""
+    try:
+        return ipaddress.ip_address(str(text).strip().strip("[]"))
+    except ValueError:
+        return None
+
+
+def _forms(ip) -> tuple | None:
+    """What an address reaches (``_reaches``), or None when ``ip`` is not an address literal (no brackets)."""
+    try:
+        return _reaches(ipaddress.ip_address(ip))
+    except ValueError:
+        return None
+
+
 def _usable_answer(name: str) -> tuple[set, str | None]:
     """(every address the name's answer reaches when it has a usable one, loopback included, or empty; what it
     answered when nothing was usable)."""
@@ -384,6 +404,28 @@ class Unresolved(str):
         return self
 
 
+class Tied(str):
+    """What ``match_ip`` answers for an address tied to a never-scan host (#17): a name this job resolved (a target,
+    registry or redirect host, a team SNI hostname) answered it together with a listed address (``address``, matched
+    by ``entry``), or the name itself is listed (``address`` None).  One name is one host, so the whole host is left
+    out wherever else the job meets that address (an IP target, a CIDR or a-b range, a range sweep)."""
+
+    name: str = ""
+    address: str | None = None
+    entry: str | None = None
+
+    def __new__(cls, name: str, address: str | None = None, entry: str | None = None) -> Self:
+        if address is None:
+            text = f"an address of {name}, which is on the never-scan list"
+        else:
+            text = f"an address of {name}, which also resolves to {address}, on the never-scan list"
+            if entry and entry != address:
+                text += f" ({entry})"
+        self = super().__new__(cls, text)
+        self.name, self.address, self.entry = name, address, entry
+        return self
+
+
 class NeverScan:
     """The never-scan list of one job.  ``match_ip`` / ``blocks_ip`` answer for an address, ``blocks_host`` for a name
     exactly as listed.  Host name entries also block every address they resolve to; the node-wide NameResolver looks
@@ -408,6 +450,10 @@ class NeverScan:
         self._why: dict[str, str] = {}  # listed name -> what it answered when that was no usable address
         self._hold_until: dict[str, float] = {}  # listed name -> until when a check waits for that lookup
         self._by_addr: dict = {}  # address -> the listed name it belongs to
+        # #17: every name this job resolved -> its answers (in answer order), and the addresses tied to a never-scan
+        # host through them (address -> Tied).  Kept for the whole job; the ties follow the list (update/_merge).
+        self._learned: dict[str, tuple] = {}
+        self._tied: dict = {}
         self._unresolved: tuple[str, ...] = ()
         self._entry: Unresolved | None = None  # what match_ip answers while there are unresolved names
         self._waiting: tuple[str, ...] = ()  # names still inside their hold without that lookup's answer
@@ -460,7 +506,7 @@ class NeverScan:
                 self._resolver.want_fresh(added, now)
                 self._resolver.look_up_soon(hosts - added)  # a changed list: its other names are looked up again soon
             self._seen = -1
-            self._index()
+            self._index(ties=True)
 
     def close(self) -> None:
         """The job ended: give its names back to the resolver, once (a later update() touches the resolver no more)."""
@@ -502,8 +548,14 @@ class NeverScan:
             self._seen = generation
             self._index()
 
-    def _index(self) -> None:  # with the lock held
-        self._by_addr = {addr: name for name, addrs in sorted(self._name_addrs.items()) for addr in addrs}
+    def _index(self, ties: bool = False) -> None:  # with the lock held
+        by_addr = {addr: name for name, addrs in sorted(self._name_addrs.items()) for addr in addrs}
+        ties = ties or by_addr != self._by_addr  # the ties change only with the entries or the listed names' answers
+        self._by_addr = by_addr
+        if ties:
+            self._tied = {}
+            for name, addrs in self._learned.items():
+                self._add_ties(name, addrs)
         self._unresolved = tuple(sorted(n for n in self._hosts if not self._name_addrs.get(n)))
         self._entry = Unresolved(self._unresolved, {n: self._why[n] for n in self._unresolved if n in self._why}) \
             if self._unresolved else None
@@ -525,30 +577,87 @@ class NeverScan:
 
     def match_ip(self, ip: str) -> str | None:
         """Why ``ip`` must not be scanned: the matching entry (an address, CIDR or range; "an address of <name>" for
-        a listed host name; UNSPECIFIED for 0.0.0.0/8 and ::; ``Unresolved`` while a listed host name has no known
+        a listed host name; UNSPECIFIED for 0.0.0.0/8 and ::; ``Tied`` for an address of a host this job knows is
+        never-scan by another of its addresses or its name; ``Unresolved`` while a listed host name has no known
         address, since ``ip`` may be that host), or None when it may be scanned.  Anything that is not an IP address
         is refused.  May wait up to NAME_LOOKUP_S for the lookups of newly listed names (job threads only)."""
-        try:
-            addr = ipaddress.ip_address(ip)
-        except ValueError:
+        forms = _forms(ip)
+        if forms is None:
             return "not an IP address"
-        forms = _reaches(addr)
-        if any(f.version == n.version and f in n for f in forms for n in _UNSPECIFIED_NETS):
+        if _in_nets(forms, _UNSPECIFIED_NETS):
             return UNSPECIFIED
         self._merge(hold=True)
         with self._lock:
+            label = self._direct(forms)
+            if label is not None:
+                return label
             for f in forms:
-                for net, label in self._nets:
-                    if f.version == net.version and f in net:
-                        return label
-                name = self._by_addr.get(f)
-                if name is not None:
-                    return f"an address of {name}"
+                tie = self._tied.get(f)
+                if tie is not None:
+                    return tie
             self.names_checked = True
             if self._entry is not None:
                 self.held_by.update(self._unresolved)
                 return self._entry
         return None
+
+    def listed_ip(self, ip: str) -> str | None:
+        """``match_ip`` without the ties and the unresolved names (no side effects): the entry that lists ``ip``
+        itself, UNSPECIFIED, or None."""
+        forms = _forms(ip)
+        if forms is None:
+            return "not an IP address"
+        if _in_nets(forms, _UNSPECIFIED_NETS):
+            return UNSPECIFIED
+        self._merge(hold=True)
+        with self._lock:
+            return self._direct(forms)
+
+    def learn(self, name: str, addresses: Iterable[str]) -> None:
+        """Record that ``name`` resolved to ``addresses`` during this job (#17).  If the name is listed, or any of
+        those addresses is (now or after a later update of the list), every one of them is tied to it: refused by
+        ``match_ip`` for the rest of the job, wherever it appears.  No DNS here."""
+        key = host_key(name)
+        got = [f for f in (_address(a) for a in addresses or ()) if f is not None]
+        if not key or not got:
+            return
+        with self._lock:
+            old = self._learned.get(key, ())
+            merged = tuple(dict.fromkeys(old + tuple(got)))  # answers add up during a job, never narrower
+            if merged == old:
+                return
+            self._learned[key] = merged
+            self._add_ties(key, merged)
+
+    def _direct(self, forms) -> str | None:  # with the lock held
+        for f in forms:
+            for net, label in self._nets:
+                if f.version == net.version and f in net:
+                    return label
+            name = self._by_addr.get(f)
+            if name is not None:
+                return f"an address of {name}"
+        return None
+
+    def _listed_name(self, name: str) -> bool:  # with the lock held; ``name`` is a host_key
+        listed = self._hosts | self._loopback_names
+        return name in listed or name in self._idna2003 or idn.idna2003_form(name) in listed
+
+    def _add_ties(self, name: str, addrs: tuple) -> None:  # with the lock held
+        tie = None
+        if self._listed_name(name):
+            tie = Tied(name)
+        else:
+            for addr in addrs:
+                label = self._direct(_reaches(addr))
+                if label is not None:
+                    tie = Tied(name, ip_text(addr), label)
+                    break
+        if tie is None:
+            return
+        for addr in addrs:
+            for f in _reaches(addr):
+                self._tied.setdefault(f, tie)
 
     def held_names(self) -> list[str]:
         """Listed host names that held a target during this job (they had no known address when it was checked)."""
@@ -565,8 +674,7 @@ class NeverScan:
         unresolved listed name holds every target)."""
         name = host_key(name)
         with self._lock:
-            listed = self._hosts | self._loopback_names
-            return name in listed or name in self._idna2003 or idn.idna2003_form(name) in listed
+            return self._listed_name(name)
 
 
 @dataclass
@@ -621,6 +729,8 @@ class Blocked(Exception):
             many = len(entry.names) > 1
             text = (f"{subject} was not scanned: the {entry} {'have' if many else 'has'} not resolved from the scan "
                     f"node, so the node cannot tell which addresses are {'those hosts' if many else 'that host'}")
+        elif isinstance(entry, Tied):
+            text = f"{what} resolves to {address}, {entry}" if address else f"{what} is {entry}"
         elif entry == UNSPECIFIED:
             reaches = ()
             try:
@@ -664,29 +774,44 @@ def checked_ip(ip: str, never: NeverScan) -> str:
 
 
 def _check_name(name: str, addresses, never: NeverScan) -> None:
-    """Raise Blocked if the name or ANY of its addresses is on the never-scan list."""
+    """Raise Blocked if the name or ANY of its addresses is on the never-scan list.  An address listed itself is named
+    first; then one tied to another never-scan name of this job (Tied), or held by an unresolved listed name."""
     if never.blocks_host(name):
         raise Blocked(name)
+    for ip in addresses:
+        entry = never.listed_ip(ip)
+        if entry is not None:
+            raise Blocked(name, ip, entry)
     for ip in addresses:
         entry = never.match_ip(ip)
         if entry is not None:
             raise Blocked(name, ip, entry)
 
 
+def _look_up(name: str, never: NeverScan, timeout: float = 5.0) -> list[str]:
+    """Resolve a host name (an A-label) once, unless it is listed itself (Blocked, no lookup), and record its answer
+    on the job's list (NeverScan.learn), so its other addresses are known to be that host.  Raises Blocked or
+    OSError."""
+    _check_name(name, (), never)  # a listed name is not looked up
+    addresses = resolve(name, timeout)
+    if not addresses:
+        raise socket.gaierror(socket.EAI_NONAME, f"{name} has no address")
+    never.learn(name, addresses)
+    return addresses
+
+
 def resolve_checked(host: str, never: NeverScan, timeout: float = 5.0) -> list[str]:
     """Resolve once and apply never-scan to the whole name: if the name or ANY address it resolves to is on the list,
     the name is refused, so a dual-stack host listed by one address is not scanned over the other, and a client that
     resolves the name again itself (WinRM, a driver) cannot reach a listed address either.  Returns every address
-    (IPv4 first); connect only to one of them.  An IP literal is checked as itself.
+    (IPv4 first); connect only to one of them.  An IP literal is checked as itself (and refused when a name this job
+    resolved ties it to a never-scan host: NeverScan.learn).
     Raises Blocked, or OSError when the name does not resolve (or resolves to no address)."""
     text = str(host or "").strip().strip("[]")
     if is_ip(text):
         return [checked_ip(text, never)]
     name = a_label(text)  # raises BadName (an OSError) for a name IDNA 2008 refuses
-    _check_name(name, (), never)  # a listed name is not looked up
-    addresses = resolve(name, timeout)
-    if not addresses:
-        raise socket.gaierror(socket.EAI_NONAME, f"{name} has no address")
+    addresses = _look_up(name, never, timeout)
     _check_name(name, addresses, never)
     return addresses
 
@@ -878,31 +1003,48 @@ def expand_targets(lines: list[str], never: NeverScan, limit: int = MAX_EXPANDED
     targets: list[Target] = []
     skipped: list[str] = []
     edges = boundary_skips(lines)  # the list is one configuration: network/broadcast only at its outer edges (N3)
-    for line in lines:
-        ips = iter_line_ips(line, edges)
-        if ips is None:
-            try:
-                name = a_label(line)
-            except BadName as exc:
-                targets.append(Target(line.strip(), None, exc.strerror))
+    # #17: every name is resolved before any target is checked, so an address of a never-scan host that one name
+    # reveals is left out of every range and IP line, and out of the host's other names, whatever the line order
+    looked: dict[int, tuple[str, list[str] | Exception]] = {}
+    for i, line in enumerate(lines):
+        if iter_line_ips(line, edges) is not None:
+            continue
+        try:
+            name = a_label(line)
+        except BadName as exc:
+            looked[i] = (line.strip(), exc)
+            continue
+        try:
+            looked[i] = (name, _look_up(name, never))
+        except (Blocked, OSError) as exc:
+            looked[i] = (name, exc)
+    for i, line in enumerate(lines):
+        if i in looked:
+            name, got = looked[i]
+            if isinstance(got, BadName):
+                targets.append(Target(name, None, got.strerror))
                 continue
-            try:
-                addrs = resolve_checked(name, never)
-            except Blocked as exc:
+            if isinstance(got, list):
+                try:
+                    _check_name(name, got, never)
+                except Blocked as exc:
+                    got = exc
+            if isinstance(got, Blocked):
                 skipped.append(name)
                 if reasons is not None:
-                    reasons[name] = str(exc)
+                    reasons[name] = str(got)
                 continue
-            except OSError as exc:
-                targets.append(Target(name, None, f"could not resolve {name}: {exc.__class__.__name__}"))
+            if isinstance(got, OSError):
+                targets.append(Target(name, None, f"could not resolve {name}: {got.__class__.__name__}"))
                 continue
+            addrs = got
             ip = addrs[0]
             if ip in seen:
                 continue
             seen.add(ip)
             targets.append(Target(name, ip, addresses=tuple(addrs)))
             continue
-        for ip in ips:
+        for ip in iter_line_ips(line, edges) or ():
             if len(seen) >= limit:
                 break
             if ip in seen:
