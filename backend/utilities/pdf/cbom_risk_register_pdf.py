@@ -69,6 +69,39 @@ def _summary(reg: dict[str, Any], width: float) -> list[Flowable]:
     return [kpi_strip(cards, width, max_per_row=8)]
 
 
+# Q0 gap reasons as the Quantum risk tab heads them (frontend components/cbom/grade/model.ts q0ReasonHeading)
+_REASON_WORDS = {"evidence_e0": "evidence at E0", "mosca_missing": "Mosca inputs missing",
+                 "unknown_verdict": "PQC class unknown", "coverage_gap": "scope not read"}
+
+
+def heat_cell_text(cell: dict[str, Any]) -> str:
+    """A heat-map cell: its worst known grade, else "Q0 only" when it holds Q0 assets, else "No grade"; then its counts
+    per grade, Q0 and no grade ("—", as on the Quantum risk tab)."""
+    counts = cell.get("counts") or {}
+    text = " ".join(f"{g}:{counts[g]}" for g in (*GRADES, "Q0") if counts.get(g))
+    if counts.get("none"):
+        text = f"{text} —:{counts['none']}".strip()
+    if cell.get("worst"):
+        label = grade_text(cell["worst"])
+    else:
+        label = "Q0 only" if int(cell.get("q0") or counts.get("Q0") or 0) > 0 else "No grade"
+    return f"{label}\n{text}".strip()
+
+
+def reason_line(open_by_reason: dict[str, int]) -> str:
+    return "Open Q0 gaps by reason: " + ", ".join(
+        f"{_REASON_WORDS.get(k, k.replace('_', ' '))} {v}" for k, v in sorted(open_by_reason.items()))
+
+
+def gap_item(gap: dict[str, Any]) -> str:
+    """A Q0 gap's item: the Mosca inputs gap (one item for every asset it leaves ungraded) in words, else its title."""
+    if gap.get("item_kind") == "inputs" and gap.get("item_key") == "inputs:mosca":
+        n = int((gap.get("detail") or {}).get("count") or 0)
+        return (f"Mosca X, Y or Z not set ({n} quantum-vulnerable asset{'' if n == 1 else 's'} left ungraded)"
+                if n > 0 else "Mosca X, Y or Z not set")
+    return gap.get("title") or ""
+
+
 def _heatmap(reg: dict[str, Any], styles: Styles, width: float) -> list[Flowable]:
     hm = reg["heatmap"]
     if not hm.get("cells"):
@@ -84,9 +117,7 @@ def _heatmap(reg: dict[str, Any], styles: Styles, width: float) -> list[Flowable
             if not cell:
                 line.append("")
                 continue
-            counts = cell["counts"]
-            text = " ".join(f"{g}:{counts[g]}" for g in (*GRADES, "Q0") if counts.get(g))
-            line.append(f"{grade_text(cell['worst']) if cell['worst'] else 'Q0 only'}\n{text}".strip())
+            line.append(heat_cell_text(cell))
         rows.append(line)
     first = 110.0
     rest = (width - first) / max(1, len(cols))
@@ -115,9 +146,8 @@ def _q0(reg: dict[str, Any], styles: Styles, width: float) -> list[Flowable]:
     total = sum(int(v) for v in open_by_reason.values())
     if not gaps:
         return [_note("No open Q0 gap.", styles)]
-    out: list[Flowable] = [_note("Open Q0 gaps by reason: " + ", ".join(
-        f"{k.replace('_', ' ')} {v}" for k, v in sorted(open_by_reason.items())), styles), Spacer(1, 4)]
-    rows = [[g["reason"], g.get("sub_reason"), g["item_kind"], g.get("title"), g.get("source_name"),
+    out: list[Flowable] = [_note(reason_line(open_by_reason), styles), Spacer(1, 4)]
+    rows = [[g["reason"], g.get("sub_reason"), g["item_kind"], gap_item(g), g.get("source_name"),
              (g.get("opened_at") or "")[:10], f"{g.get('age_days', 0)} d"] for g in gaps]
     out.append(dense_table(["Reason", "Why", "Kind", "Item", "Source", "Opened", "Age"], rows,
                            [90, 100, 55, width - 90 - 100 - 55 - 110 - 70 - 40, 110, 70, 40]))

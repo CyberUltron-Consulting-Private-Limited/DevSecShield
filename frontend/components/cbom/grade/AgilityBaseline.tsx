@@ -21,7 +21,7 @@ import {
   type AgilitySubject,
   type BaselineSystem,
 } from "./baseline";
-import { FIX_LABEL, FIX_VALUES, fixDistribution, type AgilityModel, type FixValue } from "./model";
+import { FIX_LABEL, FIX_VALUES, fixDistribution, systemHardestClass, type AgilityModel, type FixValue } from "./model";
 import { fixClassTipId } from "./tips";
 import { InfoTip } from "@/components/ui/info-tip";
 
@@ -68,7 +68,7 @@ export function AgilitySystemsTable({ systems, onOpen }: {
                   {s.assets}
                 </button>
               </td>
-              <td className="py-1 pr-3"><FixClassChip item={{ fix_class: s.hardest ?? "none" }} /></td>
+              <td className="py-1 pr-3"><FixClassChip item={{ fix_class: systemHardestClass(s) }} /></td>
               <td className="py-1 pr-3 text-right tabular-nums">{s.self_fixable_pct == null ? "—" : `${s.self_fixable_pct}%`}</td>
               {FIX_VALUES.map((v) => {
                 const n = Number(s.counts[v]) || 0;

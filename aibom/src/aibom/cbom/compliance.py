@@ -35,6 +35,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from aibom.cbom import standards as _std
 from aibom.cbom.strength import canonical_algorithm_family, is_approved_algorithm
 from aibom.cbom.weakness import WEAK_PROTOCOL, weak_finding
 from aibom.compliance.base import (
@@ -115,6 +116,16 @@ def quantum_vulnerable(r: ScanResult) -> list[AIComponent]:
 # code; a protocol is weak iff it returns ``WEAK_PROTOCOL``. The orthogonal
 # key-size / ECB-mode dimensions are queried directly (see ``undersized_keys`` /
 # ``ecb_modes``) because ``weak_finding`` emits only one code per asset.
+def _std_checks(c: AIComponent) -> dict[str, bool | None]:
+    """The shared CNSA 2.0 / FIPS 140-3 requirement predicates on one algorithm asset
+    (``standards.framework_checks``, the module both lanes use, CB-16): its display
+    name and its key size.  A requirement the shared module cannot grade on this asset
+    is None, and the check falls back to this lane's graph facts for it."""
+    raw = (c.properties or {}).get("crypto:keySize")
+    size = int(raw) if raw and str(raw).isdigit() else None
+    return _std.framework_checks("key", c.name or "", size)
+
+
 def _weakness_code(c: AIComponent) -> str | None:
     finding = weak_finding(c)
     return finding[0] if finding else None
@@ -250,6 +261,11 @@ def cnsa_symmetric_hash_noncompliant(r: ScanResult) -> list[AIComponent]:
     """
     out: list[AIComponent] = []
     for c in algorithms(r):
+        shared = _std_checks(c)["CNSA-1"]
+        if shared is not None:  # the shared module graded it (CB-16)
+            if shared:
+                out.append(c)
+            continue
         prim = (c.properties or {}).get("crypto:primitive")
         lvl = _qsl(c)
         if lvl is None:
@@ -274,6 +290,11 @@ def cnsa_underparameterized_quantum_safe(r: ScanResult) -> list[AIComponent]:
     """
     out: list[AIComponent] = []
     for c in quantum_safe_mechanisms(r):
+        shared = _std_checks(c)["CNSA-2"]
+        if shared is not None:  # the shared module graded its parameter set (CB-16)
+            if shared:
+                out.append(c)
+            continue
         fam = canonical_algorithm_family(c)
         if fam in _CNSA_STATEFUL_HASH:
             continue
@@ -796,9 +817,46 @@ register_manual(
 
 
 def non_approved_algorithms(r: ScanResult, framework: str) -> list[AIComponent]:
+    if framework == _FW_FIPS_KEY:  # FIPS-1: the shared module first (CB-16)
+        return [c for c in algorithms(r) if _fips_unapproved(c)]
     return [
         c for c in algorithms(r) if is_approved_algorithm(framework, c) is False
     ]
+
+
+_FW_FIPS_KEY = "fips_140_3"
+
+
+def _fips_unapproved(c: AIComponent) -> bool:
+    shared = _std_checks(c)["FIPS-1"]
+    if shared is not None:
+        return shared
+    return is_approved_algorithm(_FW_FIPS_KEY, c) is False
+
+
+def fips_undersized_keys(r: ScanResult) -> list[AIComponent]:
+    """FIPS-2: RSA / DH / DSA keys below 2048 bits, by the shared module (CB-16),
+    else by :func:`undersized_keys`' graph rule for that asset."""
+    fallback = {id(c) for c in undersized_keys(r, _MIN_ASYMMETRIC_BITS)}
+    out: list[AIComponent] = []
+    for c in algorithms(r):
+        shared = _std_checks(c)["FIPS-2"]
+        if shared if shared is not None else id(c) in fallback:
+            out.append(c)
+    return out
+
+
+def fips_disallowed(r: ScanResult) -> list[AIComponent]:
+    """FIPS-3: SP 800-131A disallowed algorithms by the shared module (CB-16), else
+    this lane's deny-list (:func:`weak_finding`), plus ECB modes (a name never says
+    its mode)."""
+    out: list[AIComponent] = []
+    for c in algorithms(r):
+        shared = _std_checks(c)["FIPS-3"]
+        if shared if shared is not None else _weakness_code(c) is not None:
+            out.append(c)
+    seen = {id(c) for c in out}
+    return out + [c for c in ecb_modes(r) if id(c) not in seen]
 
 
 # --------------------------------------------------------------------------- #
@@ -922,7 +980,7 @@ def _fips1(r: ScanResult, req: Requirement) -> CheckResult:
 
 @register_check(R_FIPS2)
 def _fips2(r: ScanResult, req: Requirement) -> CheckResult:
-    small = undersized_keys(r, _MIN_ASYMMETRIC_BITS)
+    small = fips_undersized_keys(r)
     if small:
         return FAIL(
             f"{len(small)} asymmetric key(s) below the FIPS 2048-bit floor "
@@ -934,7 +992,7 @@ def _fips2(r: ScanResult, req: Requirement) -> CheckResult:
 
 @register_check(R_FIPS3)
 def _fips3(r: ScanResult, req: Requirement) -> CheckResult:
-    bad = weak_algorithms(r) + ecb_modes(r)
+    bad = fips_disallowed(r)
     if bad:
         return FAIL(
             f"{len(bad)} disallowed algorithm/mode in use (deprecated primitive or "
