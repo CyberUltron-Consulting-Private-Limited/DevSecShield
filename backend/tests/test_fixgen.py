@@ -25,6 +25,8 @@ CASES = [
     ("python", "MD5", ["WEAK_ALGORITHM"], "h = hashlib.md5(data).hexdigest()", "h = hashlib.sha256(data).hexdigest()"),
     ("python", "SHA-1", ["WEAK_ALGORITHM"], "d = hashes.Hash(hashes.SHA1())", "d = hashes.Hash(hashes.SHA256())"),
     ("python", "AES-ECB", ["WEAK_CIPHER_MODE"], "c = AES.new(key, AES.MODE_ECB)", "c = AES.new(key, AES.MODE_GCM)"),
+    ("python", "AES-ECB", ["WEAK_CIPHER_MODE"], "cipher = Cipher(algorithms.AES(key), modes.ECB())",
+     "cipher = Cipher(algorithms.AES(key), modes.GCM(os.urandom(12)))"),
     ("python", "RSA-1024", ["WEAK_KEY_SIZE"], "k = rsa.generate_private_key(public_exponent=65537, key_size=1024)",
      "k = rsa.generate_private_key(public_exponent=65537, key_size=3072)"),
     ("python", "tls", ["TLS_VERIFICATION_DISABLED"], "r = requests.get(u, verify=False)", "r = requests.get(u, verify=True)"),
