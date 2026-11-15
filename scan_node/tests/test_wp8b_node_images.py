@@ -34,22 +34,47 @@ def _exe(path: Path, text: str) -> None:
     path.chmod(0o755)
 
 
-def test_ovf_environment_becomes_the_node_env_file(tmp_path):
+def _ovf(tmp_path, xml: str):
     bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    (tmp_path / "ovfenv.xml").write_text(OVF_ENV)
+    bin_dir.mkdir(exist_ok=True)
+    (tmp_path / "ovfenv.xml").write_text(xml)
     _exe(bin_dir / "vmtoolsd", f"#!/bin/sh\ncat {tmp_path / 'ovfenv.xml'}\n")
     env_file = tmp_path / "etc" / "env"
     run = subprocess.run(["python3", str(IMAGES / "files" / "zs-ovf-env")], capture_output=True, text=True,
-                         env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "ZS_NODE_ENV": str(env_file)})
+                         env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "ZS_NODE_ENV": str(env_file),
+                              "ZS_CONSOLE": str(tmp_path / "console")})
+    return run, env_file
+
+
+GOOD_PROXY = OVF_ENV.replace("http://proxy.bank.local:8080 ; rm -rf /", "http://proxy.bank.local:8080")
+
+
+def test_ovf_environment_becomes_the_node_env_file(tmp_path):
+    run, env_file = _ovf(tmp_path, GOOD_PROXY)
     assert run.returncode == 0, run.stderr
-    assert env_file.read_text() == "ZS_API_URL=https://api.zeroshield.ai\nZS_REGISTRATION_TOKEN=zsr_abcdefghijklmnopqrstu\n"
+    assert env_file.read_text() == ("ZS_API_URL=https://api.zeroshield.ai\nZS_REGISTRATION_TOKEN=zsr_abcdefghijklmnopqrstu\n"
+                                    "HTTPS_PROXY=http://proxy.bank.local:8080\n")
     assert stat.S_IMODE(env_file.stat().st_mode) == 0o600
-    assert "zs.https_proxy has characters that are not allowed" in run.stderr  # never written into the env file
-    (tmp_path / "ovfenv.xml").write_text(OVF_ENV.replace("https://api.zeroshield.ai", "https://changed.example"))
-    subprocess.run(["python3", str(IMAGES / "files" / "zs-ovf-env")], check=True, capture_output=True,
-                   env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "ZS_NODE_ENV": str(env_file)})
-    assert "changed" not in env_file.read_text()  # written once, at first boot
+    (tmp_path / "ovfenv.xml").write_text(GOOD_PROXY.replace("https://api.zeroshield.ai", "https://changed.example"))
+    rerun, _ = _ovf(tmp_path, GOOD_PROXY.replace("https://api.zeroshield.ai", "https://changed.example"))
+    assert rerun.returncode == 0 and "changed" not in env_file.read_text()  # written once, at first boot
+
+
+def test_an_invalid_proxy_stops_first_boot_instead_of_starting_without_it(tmp_path):
+    """#201: "http://p 8080" (or worse) is not skipped: nothing is written, the node stays stopped, the reason is on
+    the journal and the console, and the value itself (a proxy may carry a password) is never printed."""
+    for bad in ("http://proxy.bank.local:8080 ; rm -rf /", "http://p 8080", "http://u:&quot;pw&quot;@p:8080"):
+        run, env_file = _ovf(tmp_path, OVF_ENV.replace("http://proxy.bank.local:8080 ; rm -rf /", bad))
+        assert run.returncode == 1 and not env_file.exists(), run.stderr
+        assert "zs.https_proxy has characters that are not allowed" in run.stderr
+        assert "will not start" in run.stderr and "vApp" in run.stderr
+        assert bad.replace("&quot;", '"') not in run.stderr and "pw" not in run.stderr
+        assert "zs.https_proxy" in (tmp_path / "console").read_text()
+    run, env_file = _ovf(tmp_path, "<Environment><Property")  # an OVF environment that is not XML
+    assert run.returncode == 1 and not env_file.exists() and "not readable" in run.stderr
+    # fixed in vSphere, the next boot writes the file
+    run, env_file = _ovf(tmp_path, GOOD_PROXY)
+    assert run.returncode == 0 and "HTTPS_PROXY=http://proxy.bank.local:8080" in env_file.read_text()
 
 
 def _node_run(tmp_path, env_text: str):
