@@ -30,8 +30,8 @@ starts only once that file exists.
 ```sh
 cd deploy/node-images
 packer init ami.pkr.hcl
-# scan-node-1.0.0.tar.gz here (make node-image VERSION=1.0.0 writes it to dist/scan-node/)
-packer build -var region=ap-south-1 -var node_image_archive=scan-node-1.0.0.tar.gz ami.pkr.hcl
+# scan-node-1.0.1.tar.gz here (make node-image VERSION=1.0.1 writes it to dist/scan-node/)
+packer build -var region=ap-south-1 -var node_image_archive=scan-node-1.0.1.tar.gz ami.pkr.hcl
 ```
 
 Launch it in the VPC that reaches your targets and paste the cloud-config from **Add scan node > AWS AMI** as user
@@ -51,8 +51,8 @@ The values are written without quotes (Docker's `--env-file` reads them literall
 ```sh
 cd deploy/node-images
 packer init ova.pkr.hcl
-packer build -var node_image_archive=scan-node-1.0.0.tar.gz -var build_password="$(openssl rand -hex 16)" ova.pkr.hcl
-# -> output-ova/zeroshield-cbom-scan-node-1.0.0.ova   (needs KVM, qemu-img and python3 on the build machine)
+packer build -var node_image_archive=scan-node-1.0.1.tar.gz -var build_password="$(openssl rand -hex 16)" ova.pkr.hcl
+# -> output-ova/zeroshield-cbom-scan-node-1.0.1.ova   (needs KVM, qemu-img and python3 on the build machine)
 ```
 
 Deploy the OVA and fill in the vApp properties the wizard shows: `zs.api_url`, `zs.registration_token`,

@@ -103,6 +103,7 @@ and collects.
 
 Every push deploy is a release of its own version (issue #361, "Public registry"), so the wizard's `docker pull` /
 `helm ... --version`, the downloads and the version nodes are compared with are all the same `1.0.N`.
+A scan node older than the released version should be upgraded.
 
 ### The staging lab nodes are not part of the deploy
 
