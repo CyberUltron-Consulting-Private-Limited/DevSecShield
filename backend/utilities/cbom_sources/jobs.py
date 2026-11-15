@@ -843,6 +843,12 @@ def _test_result_from_job(session: Session, job: CbomCollectionJob, now: _dt.dat
         if notes and not (ok == 0 and silent and source.kind == "network_range"):
             # the first reason, so lists that show only the summary still say why
             summary = f"{summary}: {notes[0]}"[:512]
+        warnings = [str(s["warning"]) for s in samples if isinstance(s, dict) and s.get("warning")
+                    and s.get("status") in ("ready", "ok", "passed")]
+        if warnings and status == "passed":
+            # ready, but with something the customer must know (a KMIP server not verified without its CA, #212):
+            # partial, never a plain pass; it does not block collection the way a failed test does
+            status, summary = "partial", f"{summary}, with a warning: {warnings[0]}"[:512]
     elif job.status == "success" and isinstance(result.get("samples"), list) and job.source_id is not None and (
             source.kind == "network_range" or KINDS[source.kind].group == "servers" or source.kind == "appliance"):
         # a sampled test that sampled nothing proved nothing: never "passed: 0 of 0 samples ready" (N10)

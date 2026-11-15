@@ -240,6 +240,12 @@ def run(ctx: JobContext, config: dict, secrets: dict, test_only: bool = False) -
         client.close()
 
 
+# #212: without a CA the node cannot verify the KMIP server (TLS client authentication never reveals the client key,
+# so this is allowed), but the customer must know that an impostor could answer with a false key inventory.
+UNVERIFIED_WARNING = ("server not verified: no CA certificate is stored, so a server impersonating it could answer; "
+                      "upload the CA that issued the KMIP server's certificate")
+
+
 def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
     started = time.monotonic()
     ctx.login_gate()  # CB-10: one login per job; a refusal marks the credential refused (the server pauses the source)
@@ -250,7 +256,7 @@ def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
         ctx.login_done(status)
     label = target.label if target else str(config.get("host"))
     ctx.outcome(label, status, error, started=started, assets=n)
-    return f"kmip {label}: {status}"
+    return f"kmip {label}: {status}" + (f"; {UNVERIFIED_WARNING}" if status == "ok" and not config.get("ca_pem") else "")
 
 
 def test(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
@@ -261,7 +267,11 @@ def test(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
     finally:
         ctx.login_done(status)
     label = target.label if target else str(config.get("host"))
-    ctx.samples.append({"target": label, "status": "ready" if status == "ok" else status,
-                        "reachable": status not in ("unreachable", "refused", "timeout", "no_route"),
-                        "login": status == "ok", "privilege": None, "note": note or ""})
+    sample = {"target": label, "status": "ready" if status == "ok" else status,
+              "reachable": status not in ("unreachable", "refused", "timeout", "no_route"),
+              "login": status == "ok", "privilege": None, "note": note or "",
+              "server_verified": bool(config.get("ca_pem"))}
+    if status == "ok" and not config.get("ca_pem"):
+        sample["warning"] = UNVERIFIED_WARNING  # ZeroShield shows the test as passed with this warning (partial)
+    ctx.samples.append(sample)
     return note or status

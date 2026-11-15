@@ -7,6 +7,7 @@ new host by someone who cannot see it.
 """
 from __future__ import annotations
 
+import ipaddress
 import re
 import zoneinfo
 from dataclasses import dataclass
@@ -146,6 +147,13 @@ def check_host(value: str) -> str:
     text = value.strip()
     if not _HOST_RE.match(text):
         raise ValueError("enter a host name or IP address")
+    if ":" in text:  # only an IPv6 address has colons; "db.bank.local:5433" is a name and a port (#217)
+        try:
+            is_v6 = ipaddress.ip_address(text).version == 6
+        except ValueError:
+            is_v6 = False
+        if not is_v6:
+            raise ValueError("enter the host name or IP address only; put the port in the Port field")
     return text
 
 
@@ -342,11 +350,12 @@ def credential_target_problem(kind: str, cfg: Any, secrets: dict[str, str]) -> s
     if kind == "linux_servers" and cfg.credential_type == "ssh_cert" and secrets.get("ssh_certificate") \
             and secrets.get("private_key"):
         return ssh_pair_problem(secrets["ssh_certificate"], secrets["private_key"])
-    if kind == "database" and cfg.engine in ("mysql", "redis", "mssql"):
+    if kind == "database" and cfg.engine in PASSWORD_NEEDS_VERIFIED_SERVER:
         uses_password = cfg.credential_type == "vault" or bool(secrets.get("password"))
         if uses_password and not (cfg.require_tls and cfg.ca_pem):
-            # SQL Server's login packet only obfuscates the password (MS-TDS 2.2.6.4)
-            name = {"mysql": "MySQL", "redis": "Redis", "mssql": "SQL Server"}[cfg.engine]
+            # SQL Server's login packet only obfuscates the password (MS-TDS 2.2.6.4); an Oracle O5LOGON exchange
+            # with an impostor can be attacked offline; MongoDB's mechanism is whatever the server offers (#216)
+            name = PASSWORD_NEEDS_VERIFIED_SERVER[cfg.engine]
             return (f"ca_pem: {name} logins need TLS and the CA certificate that signed the server's certificate, so "
                     "the password only goes to the real server")
     if kind == "kubernetes" and cfg.credential_type == "kubeconfig" and cfg.context and secrets.get("kubeconfig"):
@@ -359,7 +368,15 @@ def credential_target_problem(kind: str, cfg: Any, secrets: dict[str, str]) -> s
                     + (f" (blank uses its current-context, {current})" if current else ""))
     if kind == "ca_connector" and cfg.provider == "ejbca" and secrets.get("client_cert") and secrets.get("client_key"):
         return client_pair_problem(secrets["client_cert"], secrets["client_key"])
+    if kind == "key_manager" and cfg.provider == "kmip" and secrets.get("client_cert") and secrets.get("client_key"):
+        return client_pair_problem(secrets["client_cert"], secrets["client_key"])  # #213, as EJBCA's (#190)
     return None
+
+
+# Database engines whose password login is only sent to a server proven by TLS and its CA (credential_target_problem;
+# the scan node applies the same rule at run time, database._login_and_read).  PostgreSQL is held to SCRAM instead.
+PASSWORD_NEEDS_VERIFIED_SERVER = {"mysql": "MySQL", "redis": "Redis", "mssql": "SQL Server", "oracle": "Oracle",
+                                  "mongodb": "MongoDB"}
 
 
 def ssh_pair_problem(cert_text: str, key_text: str) -> str | None:
@@ -1023,6 +1040,11 @@ class KindSpec:
     collectable: Callable[[Any], bool]
     where_fields: tuple[str, ...]
     node_less: bool = False  # collected by the ZeroShield cloud worker, not by a scan node
+    # the optional secrets for one configuration (default: optional_secrets for every configuration)
+    optional_for: Callable[[Any], frozenset[str]] | None = None
+
+    def optional_secret_fields(self, cfg: Any) -> frozenset[str]:
+        return self.optional_for(cfg) if self.optional_for is not None else self.optional_secrets
 
 
 def _always(_cfg: Any) -> bool:
@@ -1077,7 +1099,9 @@ KINDS: dict[str, KindSpec] = {
                               frozenset(), _always, _always, ("cidr",)),
     "key_manager": KindSpec("key_manager", "databases", "HSM or key manager", KeyManagerConfig, _key_manager_secrets,
                             frozenset({"pin"}), _always, _always,
-                            ("provider", "module", "token_label", "host", "port", "ca_pem", "vault")),
+                            ("provider", "module", "token_label", "host", "port", "ca_pem", "vault"),
+                            # a PIN is a PKCS#11 token's; KMIP authenticates the client by its certificate (#213)
+                            optional_for=lambda c: frozenset({"pin"}) if c.provider == "pkcs11" else frozenset()),
 }
 KINDS["appliance"] = KindSpec("appliance", "network", "Network appliance", ApplianceConfig, _appliance_secrets,
                               frozenset(), _always, _always,
