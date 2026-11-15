@@ -2539,12 +2539,12 @@ export const INFO_TIPS = {
     why: "A certificate copied off the node cannot be used from anywhere else.",
     example: "10.20.1.15, or 10.20.1.0/28 when the node sits behind a NAT pool.",
   },
-  // src: frontend/components/cbom/sources/ServersTab.tsx:136-141 — HashiCorp Vault, CyberArk, AWS Secrets Manager, Azure Key Vault
+  // src: frontend/components/cbom/sources/vaultProviders.ts:35-60, scan_node/zs_scan_node/vault.py — #364: what the node reads
   "cbsrc.common.vault_provider": {
     label: "Vault",
-    what: "The secrets manager the scan node reads the credential from when a job runs: HashiCorp Vault, CyberArk, AWS Secrets Manager or Azure Key Vault.",
+    what: "The secrets manager the scan node reads the credential from when a job runs: HashiCorp Vault (KV v2) or AWS Secrets Manager. CyberArk and Azure Key Vault are not available yet: no scan node version reads them. The settings the node's operator sets for the chosen vault are listed under it.",
     why: "The password stays in your vault and is never stored by ZeroShield.",
-    example: "CyberArk, where the svc-zscbom password is already rotated daily.",
+    example: "HashiCorp Vault at secret/data/cbom/linux, on a node with ZS_VAULT_PATH_PREFIX=secret/cbom.",
   },
   // src: frontend/components/cbom/sources/ServersTab.tsx:1373-1381 — only the reference is stored
   "cbsrc.common.vault_path": {
@@ -4649,10 +4649,10 @@ export const INFO_TIPS = {
     why: "A node that cannot reach a segment's hosts makes every source there fail its test.",
     example: "dc-mumbai: mum-01.",
   },
-  // src: backend/utilities/integrations/cmdb.py:403-476, backend/routers/integrations.py:116 — #225: credentials only from a vault
+  // src: backend/utilities/integrations/cmdb.py:403-476, backend/utilities/cbom_sources/vault_support.py:88-110 — #225, #364: credentials only from a vault the node reads
   "cbsrc.cmdb.vault": {
     label: "Vault for credentials",
-    what: "The vault that holds the logins named in a vault_path column (databases, cluster kubeconfigs, HSM PINs) and the Windows login below. Passwords, kubeconfigs and certificates are never read from the file; rows that need one are skipped.",
+    what: "The vault that holds the logins named in a vault_path column (databases, cluster kubeconfigs, HSM PINs) and the Windows login below. Passwords, kubeconfigs and certificates are never read from the file; rows that need one are skipped. Each row is checked against what its scan node reports: vault use on, the vault read, the path inside the node's prefix, and the vault set up.",
     why: "Credentials stay in your vault, read by the scan node at run time.",
     example: "HashiCorp Vault.",
   },
@@ -5159,9 +5159,9 @@ export const INFO_TIPS = {
   // src: frontend/components/integrations/IntegrationsPage.tsx:112, backend/utilities/integrations/servicenow.py:56-60 — #225: optional import column
   "int.sn.cmdb_vault_provider": {
     label: "CMDB vault provider field",
-    what: "The CMDB field naming the vault of a CI's vault path when it is not the one chosen in the import: hashicorp, cyberark, aws_secrets_manager or azure_key_vault.",
+    what: "The CMDB field naming the vault of a CI's vault path when it is not the one chosen in the import: hashicorp or aws_secrets_manager (cyberark and azure_key_vault rows are skipped: not available yet).",
     why: "Lets one import read logins from more than one vault.",
-    example: "u_vault_provider = cyberark.",
+    example: "u_vault_provider = aws_secrets_manager.",
   },
   // src: frontend/components/integrations/IntegrationsPage.tsx:113, backend/utilities/integrations/servicenow.py:56-60 — #225: optional import column
   "int.sn.cmdb_api_url": {
@@ -6601,7 +6601,7 @@ export const INFO_TIPS = {
   // src: frontend/components/cbom/sources/fleet/CredentialsSection.tsx:185-197, backend/utilities/cbom_sources/kinds.py:81-83 — VaultRef provider
   "fleet.cred.vault": {
     label: "Vault",
-    what: "Where the scan node reads the secret at run time: HashiCorp Vault, CyberArk, AWS Secrets Manager or Azure Key Vault. Nothing secret is stored in ZeroShield.",
+    what: "Where the scan node reads the secret at run time: HashiCorp Vault or AWS Secrets Manager (CyberArk and Azure Key Vault: not available yet). Nothing secret is stored in ZeroShield.",
     why: "Keeps the secret in the vault your team already rotates and audits.",
     example: "HashiCorp.",
   },

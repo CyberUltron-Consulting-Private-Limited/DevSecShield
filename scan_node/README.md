@@ -53,10 +53,52 @@ token for its own node token. The public key is shown in ZeroShield: add it to t
 | `HTTPS_PROXY` / `NO_PROXY` | outbound proxy to ZeroShield |
 | `ZS_VAULT_PATH_PREFIX` | allow vault credentials under this path only (vault use is **off** without it) |
 | `VAULT_ADDR`, `VAULT_TOKEN` | HashiCorp Vault (KV v2) for vault credentials |
+| `ZS_VAULT_CA_FILE` | the CA certificate (PEM) of a Vault with a private CA; trusted for the Vault connection only (`VAULT_CACERT` / `VAULT_CAPATH` work too) |
 | AWS role of the host | used for AWS Secrets Manager credentials |
 | `ZS_CLIENT_CERT`, `ZS_CLIENT_KEY` | PEM client certificate and key the node presents to the ZeroShield proxy (mTLS; optional) |
 | `ZS_CA_FILE` | CA bundle trusted for the ZeroShield API instead of the default (private CA, TLS-inspecting proxy) |
 | `ZS_PKCS11_MODULES` | PKCS#11 libraries the node may load, as `name=/path` pairs separated by `;` (for example `luna=/usr/safenet/lunaclient/lib/libCryptoki2_64.so`). An HSM source names a module; the path never comes from ZeroShield. Mount the vendor client read-only into the container. |
+
+### Vault credentials (worked example)
+A source can name a vault secret instead of a stored password. Vault use is **off** until the node's operator sets
+`ZS_VAULT_PATH_PREFIX`: only secrets under that prefix are read, so a ZeroShield user cannot point the node at any
+other secret the node's token can read.
+
+The node reads **HashiCorp Vault** (KV v2) and **AWS Secrets Manager**. CyberArk and Azure Key Vault are shown in
+ZeroShield as "not available yet" and cannot be saved.
+
+HashiCorp Vault, KV v2 mount `secret`, secrets under `secret/cbom/`:
+
+```sh
+# a read-only policy and a token for the node
+vault policy write zs-cbom-node - <<'EOF'
+path "secret/data/cbom/*" { capabilities = ["read"] }
+EOF
+vault token create -policy=zs-cbom-node -period=768h -orphan
+```
+
+```sh
+docker run ... \
+  -e ZS_VAULT_PATH_PREFIX=secret/cbom \
+  -e VAULT_ADDR=https://vault.bank.local:8200 -e VAULT_TOKEN=<the token> \
+  -e ZS_VAULT_CA_FILE=/etc/zs-node/trust/vault-ca.pem -v /etc/pki/vault-ca.pem:/etc/zs-node/trust/vault-ca.pem:ro \
+  ...
+```
+
+* The prefix and the source's path may each be written with or without KV v2's `data` segment:
+  `secret/cbom` and `secret/data/cbom` are the same prefix, and `secret/cbom/pg-lab` and `secret/data/cbom/pg-lab` the
+  same secret.
+* `ZS_VAULT_CA_FILE` is only needed for a Vault with a private CA. It is trusted for the Vault connection only, not
+  the ZeroShield API or the targets. Vault's own `VAULT_CACERT` (a file) and `VAULT_CAPATH` (a hashed directory) work
+  too.
+* The secret holds the fields the source needs (`password`, or `username` and `password`, `token`, `private_key` ...).
+
+AWS Secrets Manager: set `ZS_VAULT_PATH_PREFIX` to the secret-name prefix (for example `cbom/`) and give the host's
+IAM role `secretsmanager:GetSecretValue` on those secrets. Names are read exactly as written; the KV v2 rule does not
+apply.
+
+The node reports in its heartbeat whether vault use is on, the providers it reads, its prefix and whether each
+provider is set up (never a token or a secret). An import from a CMDB checks a row's vault against that report.
 
 ### How the node authenticates
 

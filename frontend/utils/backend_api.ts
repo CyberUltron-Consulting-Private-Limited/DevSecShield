@@ -4298,6 +4298,15 @@ export interface CbomQ0GapEntry extends CbomQ0Gap {
 export type CbomIncludeKey = "servers" | "kubernetes" | "databases" | "cloud" | "network"
 export type CbomInclude = Partial<Record<CbomIncludeKey, boolean>>
 
+export interface CbomNodeVault {
+    enabled: boolean | null
+    providers: string[] | null
+    /** ZS_VAULT_PATH_PREFIX as the node reads it, written without the KV v2 data/ segment */
+    prefix: string | null
+    /** per provider: "ready", or what is missing on the node (never a token) */
+    setup: Record<string, string>
+}
+
 export interface CbomScanNode {
     id: number
     team_id: number
@@ -4324,6 +4333,9 @@ export interface CbomScanNode {
     source_ips: string[]
     ssh_public_key: string | null
     capabilities: Record<string, unknown>
+    /** #364: what the node reported for vault credentials (backend vault_support.node_vault); enabled is null
+     *  until it reports (an older node, or never connected) */
+    vault?: CbomNodeVault
     clock_skew_s: number | null
     clock_in_sync: boolean | null
     last_heartbeat_at: string | null

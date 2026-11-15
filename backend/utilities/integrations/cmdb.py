@@ -44,6 +44,7 @@ from backend.new_models import CbomCollectionSource, CbomScanNode
 from backend.utilities.cbom_sources import agents as AG
 from backend.utilities.cbom_sources import source_cap as SOURCE_CAP
 from backend.utilities.cbom_sources import targets as T
+from backend.utilities.cbom_sources import vault_support as VAULT_SUPPORT
 from backend.utilities.cbom_sources.common import NAME_RE, audit, log, utcnow
 from backend.utilities.cbom_sources.kinds import DB_DEFAULT_PORTS, KINDS, _metadata_text, credential_target_problem
 
@@ -403,12 +404,22 @@ def _row_node(ctx: _Context, row: dict[str, Any], kind: str) -> tuple[CbomScanNo
 def _vault(ctx: _Context, row: dict[str, Any], fallback: dict[str, str] | None = None) -> tuple[dict | None, str | None]:
     path = str(row.get("vault_path") or "").strip()
     if not path:
-        return (dict(fallback), None) if fallback else (None, None)
-    provider = _word(row.get("vault_provider")) or (fallback or {}).get("provider") or ctx.vault_provider
-    if provider not in VAULT_PROVIDERS:
-        return None, ("vault_provider: choose the vault in the import (or a vault_provider column: "
-                      + ", ".join(VAULT_PROVIDERS) + ")")
-    return {"provider": provider, "path": path}, None
+        vault = dict(fallback) if fallback else None
+    else:
+        provider = _word(row.get("vault_provider")) or (fallback or {}).get("provider") or ctx.vault_provider
+        if provider not in VAULT_PROVIDERS:
+            return None, ("vault_provider: choose the vault in the import (or a vault_provider column: "
+                          + ", ".join(VAULT_PROVIDERS) + ")")
+        vault = {"provider": provider, "path": path}
+    problem = VAULT_SUPPORT.config_problem({"vault": vault})  # #364: CyberArk, Azure Key Vault: not available yet
+    return (None, problem) if problem else (vault, None)
+
+
+def _node_vault_problem(ctx: _Context, node: CbomScanNode | None, vault: dict[str, Any] | None) -> str | None:
+    """#364: can the row's scan node (or the import's) read this vault, by what it reported at heartbeat?"""
+    if not vault:
+        return None
+    return VAULT_SUPPORT.node_problem(node or ctx.default_node, str(vault.get("provider")), str(vault.get("path")))
 
 
 def _port(row: dict[str, Any]) -> tuple[int | None, str | None]:
@@ -563,6 +574,10 @@ def build_plan(session: Session, team_id: int, rows: list[dict[str, Any]], *, cr
             plan.skipped.append({"line": line, "label": label or (ids[0] if ids else None), "reason": problem})
             continue
         node_key = node.id if node else None
+        problem = _node_vault_problem(ctx, node, special_cfg.get("vault")) if special_cfg else None
+        if problem:
+            plan.skipped.append({"line": line, "label": label, "reason": problem})
+            continue
         if kind in SPECIAL_KINDS:
             identity = (kind, _special_identity(kind, special_cfg))  # type: ignore[arg-type]
             if identity in specials:
@@ -579,6 +594,10 @@ def build_plan(session: Session, team_id: int, rows: list[dict[str, Any]], *, cr
                 plan.skipped.append({"line": line, "label": label or ids[0], "reason": problem or (
                     "Windows server: a WinRM login is needed; choose the vault secret that holds it in the import "
                     "(or a vault_path column), or add it in the Servers tab")})
+                continue
+            problem = _node_vault_problem(ctx, node, vault)
+            if problem:
+                plan.skipped.append({"line": line, "label": label or ids[0], "reason": problem})
                 continue
             extra = {"credential_type": "vault", "vault": vault}
             login = str(row.get("login") or "").strip()

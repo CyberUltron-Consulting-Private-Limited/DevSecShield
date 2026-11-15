@@ -14,6 +14,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from backend.utilities.cbom_sources.kinds import MAX_SECRET_BYTES, VaultRef, check_known_hosts, check_login
+from backend.utilities.cbom_sources import vault_support as VAULT_SUPPORT
 from backend.utilities.cbom_sources.fleet.models import CbomCredential
 from backend.utilities.cbom_sources.common import iso_z
 
@@ -49,6 +50,8 @@ def check_config(credential_type: str, config: dict[str, Any]) -> dict[str, Any]
     cfg = CredentialConfig.model_validate(config or {})
     if credential_type == "vault" and cfg.vault is None:
         raise ValueError("vault: choose a vault and enter the secret path")
+    if credential_type == "vault" and VAULT_SUPPORT.config_problem(cfg):  # #364: not available yet
+        raise ValueError(VAULT_SUPPORT.config_problem(cfg))
     if credential_type != "vault":
         cfg.vault = None
     if credential_type == "ssh_ca":
