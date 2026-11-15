@@ -75,11 +75,29 @@ def _truthy(value) -> bool:
     return value not in (None, False, "", 0)
 
 
+def _number(value) -> float:
+    """GitHub's number coercion for a comparison of two different types."""
+    if value is None or value is False:
+        return 0.0
+    if value is True:
+        return 1.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip()
+    if text == "":
+        return 0.0
+    try:
+        return float(int(text, 16)) if text.lower().startswith("0x") else float(text)
+    except ValueError:
+        return float("nan")
+
+
 def evaluate(expr: str, ctx: dict):
     """Evaluate a GitHub Actions expression: enough of the language for this workflow's `if:` conditions (&&, ||, !,
     ==, !=, parentheses, '...' strings, context paths, status functions). `ctx` maps flat paths such as
     `needs.build.result` or `cancelled()` to values; an unknown path is null, as in GitHub. Strings compare
-    case-insensitively and null equals '' (GitHub's loose equality)."""
+    case-insensitively; values of different types are compared as numbers (null and '' are 0, a string that is not a
+    number is NaN), as GitHub does: an unset variable != '0' is false."""
     tokens, pos, expr = [], 0, expr.strip()
     while pos < len(expr):
         m = _EXPR_TOKEN.match(expr, pos)
@@ -121,8 +139,10 @@ def evaluate(expr: str, ctx: dict):
         if peek() in (("op", "=="), ("op", "!=")):
             op = take()[1]
             r = unary()
-            a, b = ("" if v is None else v), ("" if r is None else r)
-            eq = a.casefold() == b.casefold() if isinstance(a, str) and isinstance(b, str) else a == b
+            if isinstance(v, str) and isinstance(r, str):
+                eq = v.casefold() == r.casefold()
+            else:  # GitHub coerces both to numbers when the types differ (null and '' are 0, other text NaN)
+                eq = _number(v) == _number(r)
             return eq if op == "==" else not eq
         return v
 
@@ -339,23 +359,52 @@ class Tags(unittest.TestCase):
         path.write_text(text)
         return str(path)
 
-    def test_a_release_gets_the_scan_node_version_tags(self):
-        f = self._version_file('"""x"""\nimport os\n\nVERSION = "1.0.0"\n')
-        rc, out, _ = meta("tags", PREFIX="staging", SHA=SHA, RELEASE="true", NODE_VERSION_FILE=f)
-        self.assertEqual((rc, out["node_version"], out["node_release_tags"]), (0, "1.0.0", "1.0.0 1.0 latest"))
-        f2 = self._version_file('VERSION = "12.40.3"\n')
-        self.assertEqual(meta("tags", PREFIX="staging", SHA=SHA, RELEASE="true", NODE_VERSION_FILE=f2)[1]["node_release_tags"],
-                         "12.40.3 12.40 latest")
-        # a pre-release names only itself: never latest, never the minor line
-        f3 = self._version_file('VERSION = "2.0.0-rc.1"\n')
-        self.assertEqual(meta("tags", PREFIX="staging", SHA=SHA, RELEASE="true", NODE_VERSION_FILE=f3)[1]["node_release_tags"],
-                         "2.0.0-rc.1")
+    def _history(self):
+        """A release branch whose first promotion after the anchor ships node changes (test_node_version.History)."""
+        from test_node_version import History
 
-    def test_the_real_scan_node_version_is_read(self):
-        rc, out, _ = meta("tags", PREFIX="staging", SHA=SHA, RELEASE="true",
-                          NODE_VERSION_FILE=str(ROOT / "scan_node" / "zs_scan_node" / "__init__.py"))
-        self.assertEqual(rc, 0)
-        self.assertRegex(out["node_release_tags"], r"^\d+\.\d+\.\d+ \d+\.\d+ latest$")
+        h = History()
+        self.addCleanup(h.close)
+        anchor = h.git("rev-parse", "HEAD")
+        h.promote({"scan_node/release.json": json.dumps({"after": anchor, "first": "1.0.1"})}, "the rule")
+        return h
+
+    def test_a_release_gets_the_version_the_history_gives_never_the_version_file(self):
+        # issue #361: VERSION stayed "1.0.0" for 63 node changes; the release version is derived instead
+        h = self._history()
+        f = self._version_file('VERSION = "1.0.0"\n')
+        sha = h.git("rev-parse", "HEAD")
+        rc, out, err = meta("tags", PREFIX="staging", SHA=sha, RELEASE="true", NODE_VERSION_FILE=f, NODE_REPO=h.dir)
+        self.assertEqual((rc, out["node_version"], out["node_release_tags"]), (0, "1.0.1", "1.0.1 1.0 latest"), err)
+        h.promote({"docs/x.md": "docs\n"}, "docs")
+        sha2 = h.git("rev-parse", "HEAD")
+        rc, out, _ = meta("tags", PREFIX="staging", SHA=sha2, RELEASE="true", NODE_VERSION_FILE=f, NODE_REPO=h.dir)
+        self.assertEqual((rc, out["node_version"], out["node_release_tags"]), (0, "1.0.1", "1.0.1 1.0 latest"))
+        h.promote({"scan_node/zs_scan_node/agent.py": "fix\n"}, "node fix")
+        sha3 = h.git("rev-parse", "HEAD")
+        rc, out, _ = meta("tags", PREFIX="staging", SHA=sha3, RELEASE="true", NODE_VERSION_FILE=f, NODE_REPO=h.dir)
+        self.assertEqual((rc, out["node_version"], out["node_release_tags"]), (0, "1.0.2", "1.0.2 1.0 latest"))
+        # the same (older) commit again: the same version (a re-run never bumps)
+        self.assertEqual(meta("tags", PREFIX="staging", SHA=sha, RELEASE="true", NODE_VERSION_FILE=f,
+                              NODE_REPO=h.dir)[1]["node_version"], "1.0.1")
+
+    def test_a_release_whose_history_cannot_say_fails(self):
+        f = self._version_file('VERSION = "1.0.0"\n')
+        rc, _out, err = meta("tags", PREFIX="staging", SHA=SHA, RELEASE="true", NODE_VERSION_FILE=f)
+        self.assertEqual(rc, 1)
+        self.assertIn("NODE_REPO", err)
+        h = self._history()
+        rc, _out, err = meta("tags", PREFIX="staging", SHA=SHA, RELEASE="true", NODE_VERSION_FILE=f, NODE_REPO=h.dir)
+        self.assertEqual(rc, 1)  # a commit the checkout does not have
+        self.assertIn("scan-node release version", err)
+
+    def test_release_tags_of_a_version(self):
+        sys.path.insert(0, str(META.parent))
+        import ghcr_meta
+
+        self.assertEqual(ghcr_meta.release_tags("1.0.4"), ["1.0.4", "1.0", "latest"])
+        self.assertEqual(ghcr_meta.release_tags("12.40.3"), ["12.40.3", "12.40", "latest"])
+        self.assertEqual(ghcr_meta.release_tags("2.0.0-rc.1"), ["2.0.0-rc.1"])  # never latest, never the minor line
 
     def test_no_release_tags_without_a_release(self):
         f = self._version_file('VERSION = "1.0.0"\n')
@@ -378,6 +427,10 @@ class Tags(unittest.TestCase):
         self.assertIn("NODE_VERSION_FILE: target/scan_node/zs_scan_node/__init__.py", meta_job)
         self.assertIn("            scan_node/zs_scan_node\n", meta_job)
         self.assertIn("node_release_tags: ${{ steps.tags.outputs.node_release_tags }}", meta_job)
+        # #361: the version comes from the built commit's history (full history, no file content needed)
+        self.assertIn("NODE_REPO: target", meta_job)
+        self.assertIn("          fetch-depth: 0\n          filter: blob:none\n", meta_job)
+        self.assertIn("            scan_node/release.json\n", meta_job)
 
     def test_bad_prefix_or_commit_fails(self):
         for prefix, sha in (("main", SHA), ("pr-0", SHA), ("dev", "HEAD"), ("dev", SHA[:12]), ("", SHA)):
@@ -414,7 +467,8 @@ class Permissions(unittest.TestCase):
         self.assertIn("\npermissions: {}\n", WF)
 
     def test_every_job_declares_its_permissions(self):
-        self.assertEqual(sorted(JOBS), sorted(["meta", "exists", "contexts", "build", "merge", "promote", "release"]))
+        self.assertEqual(sorted(JOBS), sorted(["meta", "exists", "contexts", "build", "merge", "promote", "chart",
+                                               "release"]))
         for name, text in JOBS.items():
             self.assertRegex(text, r"\n    permissions:\n", name)
 
@@ -595,9 +649,11 @@ class JobConditions(unittest.TestCase):
 
     def test_release_runs_only_after_a_fresh_promote_of_a_release(self):
         ok = run_state(needs__meta__outputs__node_release_tags="1.0.0 1.0 latest", needs__promote__result="success",
-                       needs__promote__outputs__fresh="true", needs__meta__outputs__moving="staging")
+                       needs__promote__outputs__fresh="true", needs__meta__outputs__moving="staging",
+                       needs__chart__result="success")
         self.assertTrue(job_runs("release", ok))
         for name, state in {
+            "the chart was not packaged": ok | {"needs.chart.result": "failure"},
             "not a release (dev, PR, manual)": ok | {"needs.meta.outputs.node_release_tags": ""},
             "promote failed": ok | {"needs.promote.result": "failure"},
             "promote skipped": ok | {"needs.promote.result": "skipped"},
@@ -606,6 +662,15 @@ class JobConditions(unittest.TestCase):
             "run cancelled": ok | {"cancelled()": True},
         }.items():
             self.assertFalse(job_runs("release", state), name)
+
+    def test_mixed_types_compare_as_numbers_as_in_github(self):
+        # observed on GitHub (deploy-staging run 43688443051): an unset variable != '0' is false
+        self.assertFalse(evaluate("vars.X != '0'", {}))
+        self.assertTrue(evaluate("vars.X == ''", {}))  # null and '' are both 0
+        self.assertTrue(evaluate("vars.X != 'true'", {}))  # 'true' is NaN: never equal
+        self.assertTrue(evaluate("(vars.X || '1') != '0'", {}))
+        self.assertFalse(evaluate("(vars.X || '1') != '0'", {"vars.X": "0"}))
+        self.assertTrue(evaluate("vars.X != '0'", {"vars.X": ""}))  # two strings compare as strings
 
     def test_the_evaluator_follows_github_semantics(self):
         self.assertTrue(evaluate("!cancelled() && a == 'X'", {"cancelled()": False, "a": "x"}))
@@ -716,10 +781,13 @@ class NamedContextsReachBuildx(unittest.TestCase):
         self.assertEqual(buildx_contexts("a=x\n\n b=y \n"), ["a=x", "b=y"])
 
 
-def _index(arch_digests: dict[str, str]) -> dict:
-    return {"schemaVersion": 2, "mediaType": "application/vnd.oci.image.index.v1+json",
-            "manifests": [{"digest": f"sha256:{d}", "platform": {"os": "linux", "architecture": a}}
-                          for a, d in sorted(arch_digests.items())]}
+def _index(arch_digests: dict[str, str], revision: str | None = None) -> dict:
+    out = {"schemaVersion": 2, "mediaType": "application/vnd.oci.image.index.v1+json",
+           "manifests": [{"digest": f"sha256:{d}", "platform": {"os": "linux", "architecture": a}}
+                         for a, d in sorted(arch_digests.items())]}
+    if revision:  # what merge annotates every index with
+        out["annotations"] = {"org.opencontainers.image.revision": revision}
+    return out
 
 
 class ExistsStep(unittest.TestCase):
@@ -972,38 +1040,77 @@ class PromoteStep(unittest.TestCase):
 
 
 class ReleaseStep(unittest.TestCase):
-    """The version tag (1.0.0) is written once (the wizard pins it); 1.0 and latest follow the version, not the branch."""
+    """The version tag (1.0.1) is written once (the wizard pins it); 1.0 and latest follow the version, not the branch.
+    An existing version is kept only when it was published with the same node (#361: one version, one content)."""
     TAG = "staging-0123456789ab"
     IMG = f"{REG}/devsecshield-scan-node"
 
     def setUp(self):
+        from test_node_version import History
+
         self.reg = Registry()
+        self.h = History()
+        self.old_sha = self.h.promote({"scan_node/zs_scan_node/agent.py": "v1\n"}, "node v1")
+        self.docs_sha = self.h.promote({"docs/x.md": "docs\n"}, "docs only")  # same node as old_sha
+        self.sha = self.h.promote({"scan_node/zs_scan_node/agent.py": "v2\n"}, "node v2")
         self.script = step_script("release", "Point the scan node release tags at this commit's image")
-        self.new = self.reg.put(f"{self.IMG}:{self.TAG}", _index({"amd64": "2" * 64, "arm64": "3" * 64}))
+        self.new = self.reg.put(f"{self.IMG}:{self.TAG}", _index({"amd64": "2" * 64, "arm64": "3" * 64}, self.sha))
 
     def tearDown(self):
         self.reg.close()
+        self.h.close()
 
-    def run_it(self, tags="1.0.0 1.0 latest"):
-        return self.reg.run(self.script, IMAGE=self.IMG, TAG=self.TAG, RELEASE_TAGS=tags)
+    def run_it(self, tags="1.0.1 1.0 latest", sha=None):
+        script = f"cd {self.h.dir}\n" + self.script
+        return self.reg.run(script, IMAGE=self.IMG, TAG=self.TAG, SHA=sha or self.sha, RELEASE_TAGS=tags,
+                            NODE_PATHS="scan_node deploy/helm/cbom-scan-node scripts/release")
 
     def tags(self):
-        return {t: self.reg.tag(f"{self.IMG}:{t}") for t in ("1.0.0", "1.0", "latest")}
+        return {t: self.reg.tag(f"{self.IMG}:{t}") for t in ("1.0.1", "1.0", "latest")}
 
     def test_a_new_version_is_released_from_this_commit(self):
         p = self.run_it()
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
-        self.assertEqual(self.tags(), {"1.0.0": self.new, "1.0": self.new, "latest": self.new})
-        self.assertIn(f"{self.IMG}:1.0.0 = {self.IMG}:{self.TAG}", self.reg.summary.read_text())
+        self.assertEqual(self.tags(), {"1.0.1": self.new, "1.0": self.new, "latest": self.new})
+        self.assertIn(f"{self.IMG}:1.0.1 = {self.IMG}:{self.TAG}", self.reg.summary.read_text())
 
-    def test_an_existing_version_is_never_overwritten_and_the_others_follow_it(self):
-        old = self.reg.put(f"{self.IMG}:1.0.0", _index({"amd64": "1" * 64, "arm64": "0" * 64}))
-        self.reg.put(f"{self.IMG}:latest", _index({"amd64": "9" * 64, "arm64": "8" * 64}))  # somewhere else
+    def test_a_re_run_of_the_same_commit_keeps_its_version(self):
+        self.assertEqual(self.run_it().returncode, 0)
         p = self.run_it()
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
-        self.assertEqual(self.tags(), {"1.0.0": old, "1.0": old, "latest": old})
-        self.assertIn("exists already: kept as it is", p.stdout)
-        self.assertFalse([c for c in self.reg.calls() if f"-t {self.IMG}:1.0.0 " in c + " "])
+        self.assertIn("(this commit, a re-run): kept as it is", p.stdout)
+
+    def test_an_existing_version_with_the_same_node_is_kept_and_the_others_follow_it(self):
+        # the promotion after a docs-only one: the version was published from old_sha, docs_sha has the same node
+        old = self.reg.put(f"{self.IMG}:1.0.1", _index({"amd64": "1" * 64, "arm64": "0" * 64}, self.old_sha))
+        self.reg.put(f"{self.IMG}:latest", _index({"amd64": "9" * 64, "arm64": "8" * 64}))  # somewhere else
+        p = self.run_it(sha=self.docs_sha)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(self.tags(), {"1.0.1": old, "1.0": old, "latest": old})
+        self.assertIn(f"with the same node as {self.docs_sha[:12]}: kept as it is", p.stdout)
+        self.assertFalse([c for c in self.reg.calls() if f"-t {self.IMG}:1.0.1 " in c + " "])
+
+    def test_an_existing_version_with_another_node_is_refused_never_overwritten(self):
+        # issue #361: GHCR 1.0.0 held the 14 Nov node while 63 node changes shipped under the same version
+        old = self.reg.put(f"{self.IMG}:1.0.1", _index({"amd64": "1" * 64, "arm64": "0" * 64}, self.old_sha))
+        p = self.run_it()
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn(f"whose node differs from {self.sha[:12]}'s: refusing", p.stdout)
+        self.assertEqual(self.reg.tag(f"{self.IMG}:1.0.1"), old)
+        self.assertFalse([c for c in self.reg.calls() if "imagetools create" in c])
+
+    def test_an_existing_version_that_names_no_commit_is_refused(self):
+        self.reg.put(f"{self.IMG}:1.0.1", _index({"amd64": "1" * 64, "arm64": "0" * 64}))
+        p = self.run_it()
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("names no commit", p.stdout)
+        self.assertFalse([c for c in self.reg.calls() if "imagetools create" in c])
+
+    def test_a_commit_the_history_does_not_have_is_an_error_not_a_match(self):
+        self.reg.put(f"{self.IMG}:1.0.1", _index({"amd64": "1" * 64, "arm64": "0" * 64}, "f" * 40))
+        p = self.run_it()
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("cannot compare", p.stdout)
 
     def test_a_transient_failure_is_retried_and_a_lasting_one_fails(self):
         self.reg.knob("create-fail.json", {f"{self.IMG}:1.0": 2})
@@ -1019,7 +1126,7 @@ class ReleaseStep(unittest.TestCase):
         self.assertIn(f"::error::{self.IMG}:latest is not confirmed", p.stdout)
 
     def test_a_registry_error_on_the_version_tag_changes_nothing(self):
-        self.reg.knob("inspect-error.json", [f"{self.IMG}:1.0.0"])
+        self.reg.knob("inspect-error.json", [f"{self.IMG}:1.0.1"])
         p = self.run_it()
         self.assertNotEqual(p.returncode, 0)
         self.assertIn("cannot tell whether", p.stdout)
@@ -1032,65 +1139,126 @@ class ReleaseStep(unittest.TestCase):
         self.assertFalse([c for c in self.reg.calls() if "imagetools create" in c])
 
     def test_a_malformed_tag_is_refused_before_anything_is_written(self):
-        p = self.run_it("1.0.0 bad;tag")
+        p = self.run_it("1.0.1 bad;tag")
         self.assertNotEqual(p.returncode, 0)
         self.assertFalse([c for c in self.reg.calls() if "imagetools create" in c])
 
 
 class ChartStep(unittest.TestCase):
+    """The release pushes the chart job's file (node_artifacts.py, the downloads' packer) as it is: one version, one
+    file (#361: the GHCR chart and the downloaded chart, both cbom-scan-node-1.0.0.tgz, were different files)."""
+
     def setUp(self):
         self.reg = Registry()
         self.script = step_script("release", "Push the Helm chart (OCI)")
-        self.work = self.reg.dir / "work"
-        chart = self.work / "deploy" / "helm" / "cbom-scan-node"
-        chart.mkdir(parents=True)
-        src = ROOT / "deploy" / "helm" / "cbom-scan-node"
-        for name in ("Chart.yaml", "values.yaml"):
-            (chart / name).write_text((src / name).read_text())
+        self.chart_dir = self.reg.dir / "chart"
 
     def tearDown(self):
         self.reg.close()
 
-    def run_it(self, version="1.0.0"):
-        script = f"cd {self.work}\n" + self.script
-        return self.reg.run(script, REGISTRY=REG, NODE_VERSION=version, ACTOR="ci-bot", GH_TOKEN="ghs_TESTONLY")
+    def package(self, version="1.0.1", repository=f"{REG}/devsecshield-scan-node") -> bytes:
+        subprocess.run([sys.executable, "-I", str(ROOT / "scripts" / "release" / "node_artifacts.py"), "--chart-only",
+                        "--version", version, "--image-ref", f"{repository}:{version}", "--out", str(self.chart_dir)],
+                       check=True, capture_output=True)
+        return (self.chart_dir / f"cbom-scan-node-{version}.tgz").read_bytes()
 
-    def test_the_chart_is_packaged_for_the_ghcr_image_and_pushed_as_oci(self):
+    def pushed(self, version="1.0.1") -> Path:
+        return self.reg.dir / "oci" / REG.split("/", 1)[0] / REG.split("/", 1)[1] / "charts" / f"cbom-scan-node-{version}.tgz"
+
+    def run_it(self, version="1.0.1"):
+        return self.reg.run(self.script, REGISTRY=REG, NODE_VERSION=version, CHART_DIR=str(self.chart_dir),
+                            ACTOR="ci-bot", GH_TOKEN="ghs_TESTONLY")
+
+    def test_the_chart_jobs_file_is_pushed_byte_for_byte_and_read_back(self):
+        data = self.package()
         p = self.run_it()
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
-        pushed = (self.reg.dir / "oci" / REG.split("/", 1)[0] / REG.split("/", 1)[1] / "charts" / "cbom-scan-node-1.0.0.tgz")
-        text = pushed.read_text()
-        self.assertIn("version=1.0.0\nappVersion=1.0.0\n", text)
-        self.assertIn(f"\n  repository: {REG}/devsecshield-scan-node\n", text)
-        self.assertEqual(text.count("repository: "), (ROOT / "deploy/helm/cbom-scan-node/values.yaml").read_text().count("repository: "))
+        self.assertEqual(self.pushed().read_bytes(), data)
         calls = self.reg.calls()
-        self.assertIn(f"helm push {self.reg.dir}/chart/cbom-scan-node-1.0.0.tgz oci://{REG}/charts", calls)
+        self.assertIn(f"helm push {self.chart_dir}/cbom-scan-node-1.0.1.tgz oci://{REG}/charts", calls)
+        self.assertTrue([c for c in calls if c.startswith(f"helm pull oci://{REG}/charts/cbom-scan-node --version 1.0.1")])
         self.assertIn("helm registry login ghcr.io --username ci-bot --password-stdin <password on stdin>", calls)
         self.assertFalse([c for c in calls if "ghs_TESTONLY" in c], "the token is never on a command line")
-        self.assertIn(f"oci://{REG}/charts/cbom-scan-node --version 1.0.0", self.reg.summary.read_text())
+        self.assertIn(f"chart file sha256:{hashlib.sha256(data).hexdigest()}", self.reg.summary.read_text())
 
-    def test_an_existing_chart_version_is_kept(self):
+    def test_an_existing_version_with_the_same_bytes_is_kept(self):
+        self.package()
         self.assertEqual(self.run_it().returncode, 0)
-        p = self.run_it()  # the same version again (a later push to staging): not pushed again
+        p = self.run_it()  # a later promotion without chart or node changes: the same file again
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
-        self.assertIn("exists already: kept as it is", p.stdout)
+        self.assertIn("exists already with the same bytes", p.stdout)
         self.assertEqual(len([c for c in self.reg.calls() if c.startswith("helm push")]), 1)
 
+    def test_an_existing_version_with_other_bytes_is_refused(self):
+        self.package(repository="localhost/zeroshield/cbom-scan-node")  # like the 14 Nov download: another image
+        self.assertEqual(self.run_it().returncode, 0)
+        self.package()
+        p = self.run_it()
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("exists already with other bytes", p.stdout)
+        self.assertEqual(len([c for c in self.reg.calls() if c.startswith("helm push")]), 1)
+
+    def test_a_registry_that_serves_other_bytes_after_the_push_fails_the_job(self):
+        self.package()
+        (self.reg.dir / "helm-pull-wrong").write_text("")
+        p = self.run_it()
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("serves other bytes", p.stdout)
+
+    def test_a_file_that_is_not_the_one_hashed_is_refused(self):
+        self.package()
+        (self.chart_dir / "cbom-scan-node-1.0.1.tgz").write_bytes(b"swapped")
+        p = self.run_it()
+        self.assertNotEqual(p.returncode, 0)
+        self.assertFalse([c for c in self.reg.calls() if c.startswith("helm push")])
+
     def test_a_registry_error_pushes_nothing(self):
+        self.package()
         (self.reg.dir / "helm-show-error").write_text("")
         p = self.run_it()
         self.assertNotEqual(p.returncode, 0)
         self.assertFalse([c for c in self.reg.calls() if c.startswith("helm push")])
 
     def test_a_failed_push_fails_the_job(self):
+        self.package()
         (self.reg.dir / "helm-push-fail").write_text("")
-        p = self.run_it()
-        self.assertNotEqual(p.returncode, 0)
+        self.assertNotEqual(self.run_it().returncode, 0)
 
-    def test_a_bad_version_is_refused_before_anything_is_packaged(self):
+    def test_a_bad_version_is_refused_before_anything_is_pushed(self):
         p = self.run_it("1.0.0; rm -rf /")
         self.assertNotEqual(p.returncode, 0)
         self.assertFalse([c for c in self.reg.calls() if c.startswith("helm")])
+
+
+class ChartJob(unittest.TestCase):
+    def test_the_chart_job_packages_with_the_downloads_packer_for_the_ghcr_image_and_writes_nothing(self):
+        job = JOBS["chart"]
+        self.assertIn("python3 -I scripts/release/node_artifacts.py --chart-only", job)
+        self.assertIn('--image-ref "$REGISTRY/devsecshield-scan-node:$NODE_VERSION"', job)
+        self.assertNotIn("packages: write", job)
+        self.assertIn("name: scan-node-chart", job)
+        self.assertIn("name: scan-node-chart", JOBS["release"])  # the release downloads exactly that artifact
+        self.assertNotIn("helm package", WF)  # one packer: the downloads' (node_artifacts.package_chart)
+
+    def test_the_release_compares_versions_on_the_paths_the_version_counts(self):
+        sys.path.insert(0, str(ROOT / ".github" / "ci"))
+        import node_version
+
+        self.assertIn(f"NODE_PATHS: {' '.join(node_version.NODE_PATHS)}\n", JOBS["release"])
+        self.assertIn("          fetch-depth: 0\n          filter: blob:none\n", JOBS["release"])
+
+    def test_the_downloaded_chart_and_the_published_chart_are_the_same_bytes(self):
+        """The staging deploy's download (staging.sh node-artifacts: node_artifacts.py with the GHCR image) and the
+        chart job's file, for one version, are byte-identical."""
+        with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:
+            image = f"{REG}/devsecshield-scan-node:1.0.7"
+            Path(b, "scan-node-1.0.7.tar.gz").write_bytes(b"image")  # the full run needs the image file
+            subprocess.run([sys.executable, "-I", str(ROOT / "scripts/release/node_artifacts.py"), "--chart-only",
+                            "--version", "1.0.7", "--image-ref", image, "--out", a], check=True, capture_output=True)
+            subprocess.run([sys.executable, "-I", str(ROOT / "scripts/release/node_artifacts.py"),
+                            "--version", "1.0.7", "--image-ref", image, "--out", b], check=True, capture_output=True)
+            self.assertEqual(Path(a, "cbom-scan-node-1.0.7.tgz").read_bytes(),
+                             Path(b, "cbom-scan-node-1.0.7.tgz").read_bytes())
 
 
 class LocalCompose(unittest.TestCase):

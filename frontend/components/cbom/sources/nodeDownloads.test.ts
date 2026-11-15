@@ -28,14 +28,14 @@ const BANNED = [/registry\.zeroshield\.ai/, /make node-image/, /Build it yoursel
   /deploy\/node-images\//, /oci:\/\//]
 
 const AVAILABLE = {
-  version: "1.0.0",
-  image_ref: "localhost/zeroshield/cbom-scan-node:1.0.0",
+  version: "1.0.4",
+  image_ref: "localhost/zeroshield/cbom-scan-node:1.0.4",
   pull_image_ref: null,
   artifacts: [
-    { kind: "image", label: "Scan node image", available: true, filename: "scan-node-1.0.0.tar.gz", size: 66_270_412, sha256: SHA, message: null },
-    { kind: "helm-chart", label: "Helm chart", available: true, filename: "cbom-scan-node-1.0.0.tgz", size: 9_216, sha256: SHA.replace(/3/g, "4"), message: null },
-    { kind: "ova-kit", label: "OVA build kit", available: true, filename: "cbom-scan-node-ova-kit-1.0.0.zip", size: 14_000, sha256: SHA.replace(/a/g, "b"), message: null },
-    { kind: "ami-kit", label: "AMI build kit", available: true, filename: "cbom-scan-node-ami-kit-1.0.0.zip", size: 9_000, sha256: SHA.replace(/c/g, "d"), message: null },
+    { kind: "image", label: "Scan node image", available: true, filename: "scan-node-1.0.4.tar.gz", size: 66_270_412, sha256: SHA, message: null },
+    { kind: "helm-chart", label: "Helm chart", available: true, filename: "cbom-scan-node-1.0.4.tgz", size: 9_216, sha256: SHA.replace(/3/g, "4"), message: null },
+    { kind: "ova-kit", label: "OVA build kit", available: true, filename: "cbom-scan-node-ova-kit-1.0.4.zip", size: 14_000, sha256: SHA.replace(/a/g, "b"), message: null },
+    { kind: "ami-kit", label: "AMI build kit", available: true, filename: "cbom-scan-node-ami-kit-1.0.4.zip", size: 9_000, sha256: SHA.replace(/c/g, "d"), message: null },
   ],
 }
 const NOT_HERE = (label: string) => `${label} is not available on this server yet. Contact your administrator.`
@@ -146,11 +146,11 @@ async function main() {
   const tab = await mount(AVAILABLE)
   await click(button(tab.host, /Add your first scan node/))
   let text = wizardText(tab.host)
-  assert.ok(text.includes("Downloads (scan node 1.0.0)"), text)
+  assert.ok(text.includes("Downloads (scan node 1.0.4)"), text)
   const image = button(tab.host, /^Download scan node image/)
   assert.equal(image.textContent, "Download scan node image (63.2 MB, sha256 3f9a1c2b7d4e…)")
   assert.equal(image.disabled, false)
-  assert.ok(text.includes(`scan-node-1.0.0.tar.gz · SHA-256 ${SHA}`), "the full hash to check against")
+  assert.ok(text.includes(`scan-node-1.0.4.tar.gz · SHA-256 ${SHA}`), "the full hash to check against")
   assert.ok(button(tab.host, /^\.sha256$/))
   for (const banned of BANNED) assert.ok(!banned.test(text), `Docker: ${banned}`)
 
@@ -201,7 +201,7 @@ async function main() {
 
   // 1b. the command after "Create node": check and load the downloaded file, then run the name it loads as, never
   // pulling it; with a registry the server names (CBOM_NODE_IMAGE_REF), a pull variant as well
-  for (const pullRef of [null, "reg.bank.example/zs/cbom-scan-node:1.0.0"]) {
+  for (const pullRef of [null, "reg.bank.example/zs/cbom-scan-node:1.0.4"]) {
     const t = await mount({ ...AVAILABLE, pull_image_ref: pullRef })
     await click(button(t.host, /Add your first scan node/))
     const name = t.host.querySelector("#node-name") as HTMLInputElement
@@ -212,11 +212,11 @@ async function main() {
     await click(button(t.host, /Create node and show install command/))
     const shown = wizardText(t.host).replace(/\s+/g, " ")
     // #228: the digest the server lists is in the command, and the check gates the load (&&)
-    const check = shown.indexOf(`echo '${SHA} scan-node-1.0.0.tar.gz' | sha256sum -c - && \\`)
-    const loadAt = shown.indexOf("docker load -i scan-node-1.0.0.tar.gz && \\")
+    const check = shown.indexOf(`echo '${SHA} scan-node-1.0.4.tar.gz' | sha256sum -c - && \\`)
+    const loadAt = shown.indexOf("docker load -i scan-node-1.0.4.tar.gz && \\")
     const run = shown.indexOf("docker run -d --pull never --name zs-scan-node-dc-1")
     assert.ok(check >= 0 && loadAt > check && run > loadAt, shown)
-    assert.ok(shown.includes("localhost/zeroshield/cbom-scan-node:1.0.0") && shown.includes("zsr_TESTONLY"), shown)
+    assert.ok(shown.includes("localhost/zeroshield/cbom-scan-node:1.0.4") && shown.includes("zsr_TESTONLY"), shown)
     const pull = t.host.querySelector('[data-testid="node-command-pull"]')
     if (pullRef) {
       assert.ok(pull && pull.textContent!.includes(`docker run -d --name zs-scan-node-dc-1`) && pull.textContent!.includes(pullRef), pull?.textContent ?? "")
@@ -232,17 +232,17 @@ async function main() {
   // download. No pull command unless the server names a public registry image; with one, docker pull / helm oci://.
   const link = (kind: string, filename: string, sha256: string) => ({ kind, filename, size: 10, sha256, url: `/1/cbom/node-artifacts/${kind}?node_ticket=41.SIG` })
   const FILES = {
-    image: link("image", "scan-node-1.0.0.tar.gz", SHA),
-    "helm-chart": link("helm-chart", "cbom-scan-node-1.0.0.tgz", SHA.replace(/3/g, "4")),
-    "ova-kit": link("ova-kit", "cbom-scan-node-ova-kit-1.0.0.zip", SHA.replace(/a/g, "b")),
-    "ami-kit": link("ami-kit", "cbom-scan-node-ami-kit-1.0.0.zip", SHA.replace(/c/g, "d")),
+    image: link("image", "scan-node-1.0.4.tar.gz", SHA),
+    "helm-chart": link("helm-chart", "cbom-scan-node-1.0.4.tgz", SHA.replace(/3/g, "4")),
+    "ova-kit": link("ova-kit", "cbom-scan-node-ova-kit-1.0.4.zip", SHA.replace(/a/g, "b")),
+    "ami-kit": link("ami-kit", "cbom-scan-node-ami-kit-1.0.4.zip", SHA.replace(/c/g, "d")),
   }
-  const GHCR = "ghcr.io/cyberultron-consulting-private-limited/devsecshield-scan-node:1.0.0"  // pinned to the release
+  const GHCR = "ghcr.io/cyberultron-consulting-private-limited/devsecshield-scan-node:1.0.4"  // the release this server ships (#377; 1.0.0 is never offered, #197)
   const CHART = "oci://ghcr.io/cyberultron-consulting-private-limited/charts/cbom-scan-node"
-  const PUBLIC = { ...AVAILABLE, pull_image_ref: GHCR, pull_chart_ref: CHART, pull_chart_version: "1.0.0" }
+  const PUBLIC = { ...AVAILABLE, pull_image_ref: GHCR, pull_chart_ref: CHART, pull_chart_version: "1.0.4" }
   const createWith = async (artifacts: unknown, card: string, method: string, kinds: (keyof typeof FILES)[], node: Record<string, unknown> = {}) => {
     createdNode = { ...NODE, deployment: method, ...node }
-    installLinks = { version: "1.0.0", expires_at: "2026-11-15T10:00:00Z", files: kinds.map((k) => FILES[k]) }
+    installLinks = { version: "1.0.4", expires_at: "2026-11-15T10:00:00Z", files: kinds.map((k) => FILES[k]) }
     const t = await mount(artifacts)
     await click(button(t.host, /Add your first scan node/))
     await choose(t.host, card)
@@ -261,10 +261,10 @@ async function main() {
     `curl -fsSL --proto '=https' '${API}${FILES[kind].url}' -o ${FILES[kind].filename} && echo '${FILES[kind].sha256} ${FILES[kind].filename}' | sha256sum -c -`
   {
     const d = await createWith(AVAILABLE, "Docker container", "docker", ["image"])
-    assert.ok(d.block.includes(`${fetchOf("image")} && \\ docker load -i scan-node-1.0.0.tar.gz && \\ docker run -d --pull never --name zs-scan-node-dc-1`), d.block)
-    assert.ok(d.block.includes("-e ZS_REGISTRATION_TOKEN='zsr_TESTONLY'") && d.block.includes("localhost/zeroshield/cbom-scan-node:1.0.0"), d.block)
+    assert.ok(d.block.includes(`${fetchOf("image")} && \\ docker load -i scan-node-1.0.4.tar.gz && \\ docker run -d --pull never --name zs-scan-node-dc-1`), d.block)
+    assert.ok(d.block.includes("-e ZS_REGISTRATION_TOKEN='zsr_TESTONLY'") && d.block.includes("localhost/zeroshield/cbom-scan-node:1.0.4"), d.block)
     assert.ok(d.block.includes("stay in your shell history"), "the shell-history note")
-    assert.ok(d.wget.includes(`wget -q -O scan-node-1.0.0.tar.gz '${API}${FILES.image.url}'`), d.wget)
+    assert.ok(d.wget.includes(`wget -q -O scan-node-1.0.4.tar.gz '${API}${FILES.image.url}'`), d.wget)
     assert.equal(d.pull, null, "no public registry: no pull command")
     assert.ok(!/docker pull|oci:\/\//.test(wizardText(d.t.host)), "no pull anywhere")
     d.t.root.unmount()
@@ -285,8 +285,8 @@ async function main() {
   {
     const h = await createWith(AVAILABLE, "Helm chart", "helm", ["image", "helm-chart"])
     for (const part of ["REGISTRY=registry.example.internal/zeroshield", fetchOf("image"), fetchOf("helm-chart"),
-      `docker tag localhost/zeroshield/cbom-scan-node:1.0.0 "$REGISTRY/cbom-scan-node:1.0.0"`, `docker push "$REGISTRY/cbom-scan-node:1.0.0"`,
-      "helm upgrade --install zs-scan-node-dc-1 ./cbom-scan-node-1.0.0.tgz"]) {
+      `docker tag localhost/zeroshield/cbom-scan-node:1.0.4 "$REGISTRY/cbom-scan-node:1.0.4"`, `docker push "$REGISTRY/cbom-scan-node:1.0.4"`,
+      "helm upgrade --install zs-scan-node-dc-1 ./cbom-scan-node-1.0.4.tgz"]) {
       assert.ok(h.block.includes(part), `${part}\n---\n${h.block}`)
     }
     assert.equal(h.pull, null)
@@ -295,7 +295,7 @@ async function main() {
   for (const [card, method, kit] of [["OVA appliance", "ova", "ova-kit"], ["AWS AMI", "ami", "ami-kit"]] as const) {
     const k = await createWith(AVAILABLE, card, method, [kit, "image"])
     assert.ok(k.block.includes(fetchOf(kit)) && k.block.includes(fetchOf("image")), k.block)
-    assert.ok(k.block.includes(`unzip -q cbom-scan-node-${method}-kit-1.0.0.zip && mv scan-node-1.0.0.tar.gz cbom-scan-node-${method}-kit-1.0.0/`), k.block)
+    assert.ok(k.block.includes(`unzip -q cbom-scan-node-${method}-kit-1.0.4.zip && mv scan-node-1.0.4.tar.gz cbom-scan-node-${method}-kit-1.0.4/`), k.block)
     assert.ok(k.block.includes(`packer init ${method}.pkr.hcl && packer build`), k.block)
     assert.ok(wizardText(k.t.host).includes(method === "ova" ? "zs.registration_token = zsr_TESTONLY" : "ZS_REGISTRATION_TOKEN=zsr_TESTONLY"),
       "the vApp properties / user data are still shown")
@@ -315,11 +315,11 @@ async function main() {
     assert.ok(d.t.host.querySelector('[data-testid="node-command-pull"]')!.textContent!.includes("public, no login needed"))
     d.t.root.unmount()
     const h = await createWith(PUBLIC, "Helm chart", "helm", ["image", "helm-chart"])
-    assert.ok(h.pull && h.pull.includes(`helm upgrade --install zs-scan-node-dc-1 ${CHART} --version '1.0.0'`), h.pull ?? "")
-    assert.ok(h.pull!.includes("--set image.repository='ghcr.io/cyberultron-consulting-private-limited/devsecshield-scan-node' --set image.tag='1.0.0'"), h.pull!)
+    assert.ok(h.pull && h.pull.includes(`helm upgrade --install zs-scan-node-dc-1 ${CHART} --version '1.0.4'`), h.pull ?? "")
+    assert.ok(h.pull!.includes("--set image.repository='ghcr.io/cyberultron-consulting-private-limited/devsecshield-scan-node' --set image.tag='1.0.4'"), h.pull!)
     // the air-gapped alternative installs the downloaded chart with the image from the file, never the registry's
     const gappedHelm = h.t.host.querySelector('[data-testid="node-air-gapped"]')!.textContent!.replace(/\s+/g, " ")
-    assert.ok(gappedHelm.includes("helm upgrade --install zs-scan-node-dc-1 ./cbom-scan-node-1.0.0.tgz") && !gappedHelm.includes("ghcr.io/"), gappedHelm)
+    assert.ok(gappedHelm.includes("helm upgrade --install zs-scan-node-dc-1 ./cbom-scan-node-1.0.4.tgz") && !gappedHelm.includes("ghcr.io/"), gappedHelm)
     h.t.root.unmount()
   }
   {
@@ -335,7 +335,7 @@ async function main() {
     })
     await click(button(t.host, /Create node and show install command/))
     assert.equal(t.host.querySelector('[data-testid="node-one-paste"]'), null)
-    assert.ok(wizardText(t.host).includes(`echo '${SHA}  scan-node-1.0.0.tar.gz' | sha256sum -c - && \\`))
+    assert.ok(wizardText(t.host).includes(`echo '${SHA}  scan-node-1.0.4.tar.gz' | sha256sum -c - && \\`))
     t.root.unmount()
   }
 

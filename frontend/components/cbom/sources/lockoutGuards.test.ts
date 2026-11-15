@@ -8,6 +8,8 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 
+import { tipTextSource } from "../../../content/infotipSources"
+
 const results = readFileSync(join(__dirname, "RunResults.tsx"), "utf8")
 assert.match(results, /skipped_credential_refused: "Skipped: credential refused"/)
 assert.match(results, /TARGET_TONE[^;]*skipped_credential_refused: "amber"/)
@@ -15,7 +17,7 @@ assert.match(results, /TARGET_TONE[^;]*skipped_credential_refused: "amber"/)
 const hsm = readFileSync(join(__dirname, "ClustersDatabasesTab.tsx"), "utf8")
 assert.doesNotMatch(hsm, /Blank reads every initialised token/)
 assert.match(hsm, /a PIN is only ever tried on the token it belongs to/)
-const tips = readFileSync(join(__dirname, "..", "..", "..", "content", "infotips.ts"), "utf8")
+const tips = tipTextSource()
 assert.doesNotMatch(tips, /Blank reads every initialised token/)
 
 console.log("lockout guard UI tests passed")

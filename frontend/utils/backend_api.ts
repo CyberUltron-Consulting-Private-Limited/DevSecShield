@@ -4298,6 +4298,15 @@ export interface CbomQ0GapEntry extends CbomQ0Gap {
 export type CbomIncludeKey = "servers" | "kubernetes" | "databases" | "cloud" | "network"
 export type CbomInclude = Partial<Record<CbomIncludeKey, boolean>>
 
+export interface CbomNodeVault {
+    enabled: boolean | null
+    providers: string[] | null
+    /** ZS_VAULT_PATH_PREFIX as the node reads it, written without the KV v2 data/ segment */
+    prefix: string | null
+    /** per provider: "ready", or what is missing on the node (never a token) */
+    setup: Record<string, string>
+}
+
 export interface CbomScanNode {
     id: number
     team_id: number
@@ -4324,6 +4333,9 @@ export interface CbomScanNode {
     source_ips: string[]
     ssh_public_key: string | null
     capabilities: Record<string, unknown>
+    /** #364: what the node reported for vault credentials (backend vault_support.node_vault); enabled is null
+     *  until it reports (an older node, or never connected) */
+    vault?: CbomNodeVault
     clock_skew_s: number | null
     clock_in_sync: boolean | null
     last_heartbeat_at: string | null
@@ -4345,13 +4357,15 @@ export interface CbomScanNode {
 }
 
 export interface CbomNodeUpdate {
-    /** update_available: an older version, another commit, or no build id; newer: ahead of the server; unknown: nothing to compare */
+    /** update_available: an older version, or no build id; newer: ahead of the server; unknown: nothing to compare */
     state: "current" | "update_available" | "newer" | "unknown"
     reason: "same_build" | "same_version" | "older_version" | "different_version" | "no_build_id" | "different_build"
         | "newer_version" | "no_server_build" | "not_reported" | "compare_failed" | null
     message: string | null
     /** "<version>+<12-character commit>" of the node build this server ships, or null */
     server_build: string | null
+    /** the release this server ships ("1.0.4"), named by "Update available: 1.0.4" (#361); absent from an older API */
+    server_version?: string | null
 }
 
 export interface CbomNodeWrite {
@@ -4430,6 +4444,8 @@ export interface CbomSource {
     last_test_result: { samples?: CbomTestSample[]; checks?: CbomAwsCheck[]; member_accounts?: number; summary?: string; status?: string; estimate?: CbomOrgEstimate }
     // the newest finished collection of this source (list and get only; null on save responses and before the first)
     last_collect?: { status: "ok" | "partial" | "failed"; at: string | null; summary: string | null; job_id: number; run_id: number | null } | null
+    /** AWS Private CA sources only (#368): what the account's last collection read of ACM PCA, per region */
+    pca_read?: import("@/components/cbom/sources/awsPrivateCaStatus").AwsPcaRead | null
     row_version: number
     created_at: string | null
     last_updated: string | null

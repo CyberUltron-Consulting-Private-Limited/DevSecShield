@@ -1,7 +1,7 @@
 """cbom lean node API (F1.1): per-node replay window, segment jobs, hot-path indexes
 
 Revision ID: r6f11node001
-Revises: cb352hooks001
+Revises: r6f3repo001
 Create Date: 2026-11-11 12:00:00.000000
 
 * ``cbomscannode.replay_hwm`` / ``replay_bits`` (BIGINT, 0): the protocol-2 anti-replay window (highest request
@@ -35,7 +35,7 @@ import sqlmodel
 
 # revision identifiers, used by Alembic.
 revision: str = 'r6f11node001'
-down_revision: Union[str, Sequence[str], None] = 'cb352hooks001'
+down_revision: Union[str, Sequence[str], None] = 'r6f3repo001'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

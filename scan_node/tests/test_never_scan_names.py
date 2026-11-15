@@ -331,8 +331,15 @@ def test_ssh_recheck_covers_every_address_of_a_name(dns, monkeypatch):
         L.open_session(ctx, target, {"port": 22}, {"key": "unused"})
     assert err.value.status == "skipped_never_scan"
     assert connected == []
-    # an address target is only itself: listing another address of its host (not its name) does not skip it
+    # an address target of the same host: this job resolved db.internal to both addresses, so 10.0.0.5 is that host
+    # and listing fd00::5 skips it too (tests/test_never_scan_siblings.py)
     ctx.never_scan.update(["fd00::5"])
+    with pytest.raises(L.TargetFail) as err:
+        L.open_session(ctx, Target("10.0.0.5", "10.0.0.5"), {"port": 22}, {"key": "unused"})
+    assert err.value.status == "skipped_never_scan" and "an address of db.internal" in err.value.error
+    assert connected == []
+    # in a job that resolved no name of that host, an address target is only itself (the documented limit)
+    ctx = _ctx(["fd00::5"])
     with pytest.raises(L.TargetFail) as err:
         L.open_session(ctx, Target("10.0.0.5", "10.0.0.5"), {"port": 22}, {"key": "unused"})
     assert err.value.status == "refused" and connected == ["10.0.0.5"]

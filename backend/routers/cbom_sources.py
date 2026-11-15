@@ -51,6 +51,7 @@ from backend.utilities.cbom_sources import host_key_resets as HKR  # #150
 from backend.utilities.cbom_sources import jobs as J
 from backend.utilities.cbom_sources import source_cap as SOURCE_CAP
 from backend.utilities.cbom_sources import targets as T
+from backend.utilities.cbom_sources import vault_support as VAULT_SUPPORT  # #364
 from backend.utilities.cbom_sources.aws_validate import validate_aws_role
 from backend.utilities.cbom_sources.common import audit, iso_z, log, new_ref, new_token, sha256_hex, utcnow
 from backend.utilities.cbom_sources.crypto import decrypt_secrets, encrypt_secrets, scrub, warn_if_key_is_weak
@@ -81,6 +82,7 @@ from backend.utilities.cbom_sources import q0register as Q0REG
 from backend.utilities.cbom_sources import qgrade as QGRADE
 from backend.utilities.cbom_sources import qgrade_store as QSTORE
 from backend.utilities.cbom_sources import run_deliverables as RUN_DELIVERABLES
+from backend.utilities.cbom_sources import run_list as RUN_LIST
 from backend.utilities.cbom_sources import run_parity as RUN_PARITY
 from backend.utilities.cbom_sources import run_results as RUN_RESULTS
 from backend.utilities.cbom_sources import run_tickets as RUN_TICKETS
@@ -109,6 +111,7 @@ from backend.utilities.cbom_sources.schemas import (
 from backend.utilities.cbom_sources.node_release import server_release
 from backend.utilities.cbom_sources.serialize import (
     last_collects,
+    pca_reads,
     public_area,
     public_job,
     public_node,
@@ -586,6 +589,13 @@ def _ct_prepare(engine, team_id: int, body: SourceCreate) -> SourceCreate:
     return body.model_copy(update={"name": CT_SOURCE_NAME, "config": config})
 
 
+def _refuse_unavailable_vault(cfg) -> None:
+    """#364: a vault no scan node reads (CyberArk, Azure Key Vault) is listed as "not available yet" and never saved."""
+    problem = VAULT_SUPPORT.config_problem(cfg)
+    if problem:
+        raise HTTPException(status_code=400, detail=problem)
+
+
 def _create_source(engine, team_id: int, user_id: int, body: SourceCreate) -> dict:
     now = utcnow()
     spec = KINDS[body.kind]
@@ -606,6 +616,7 @@ def _create_source(engine, team_id: int, user_id: int, body: SourceCreate) -> di
         AG.check_node_for_kind(node, body.kind)
         _check_refs(session, team_id, body.kind, cfg)
         if getattr(cfg, "credential_type", None) == "vault":
+            _refuse_unavailable_vault(cfg)
             require_admin(session, user_id, team_id, "sources that read their credential from a vault")
         SSHCA_SOURCES.check_create(session, team_id, user_id, cfg)  # F1.4: ssh_ca sources are written by admins
         secrets_ = _merge_secrets(body.kind, cfg, {}, body.secrets, clear=[], reset=True, where_changed=False)
@@ -658,6 +669,13 @@ async def create_source(team_id: TeamId, body: SourceCreate, Authorization: Auth
         result["test"] = await _run("test source", team_id, _LIVE_TESTS[body.kind], engine, team_id, user.id, result["source"]["id"])
         result["source"] = (await _run("get source", team_id, _get_source, engine, team_id, result["source"]["id"]))["source"]
     return _ok(result, 201)
+
+
+def _with_pca(item: dict[str, Any], pcas: dict[int, dict[str, Any] | None]) -> dict[str, Any]:
+    """An AWS Private CA source carries ``pca_read`` (None until its account was collected); other sources do not."""
+    if item["id"] in pcas:
+        item["pca_read"] = pcas[item["id"]]
+    return item
 
 
 # #225: server-side search, filters and keyset paging for the source tables
@@ -721,13 +739,15 @@ def _list_sources(engine, team_id: int, kind: str | None, group: str | None, q: 
         nodes = {n.id: n for n in session.exec(select(CbomScanNode).where(
             CbomScanNode.team_id == team_id, CbomScanNode.id.in_(node_ids or [-1]))).all()}  # type: ignore[union-attr]
         collects = last_collects(session, team_id, [r.id for r in rows])
+        pcas = pca_reads(session, team_id, list(rows))  # #368: the account's ACM PCA read, on its Private CA sources
         # the team's network ranges, once: every range of the list is counted with the same skip map and never-scan
         # list (one query, one pass over the ranges, whatever the number of ranges; review of #273)
         ranges = session.exec(select(CbomCollectionSource).where(
             CbomCollectionSource.team_id == team_id, CbomCollectionSource.kind == "network_range")).all()
         ctx = RangeContext.of_sources(list(ranges), settings)
         out = {"server_time": iso_z(now),
-               "sources": [public_source(r, settings, nodes.get(r.node_id), now, collects.get(r.id), ctx) for r in rows],
+               "sources": [_with_pca(public_source(r, settings, nodes.get(r.node_id), now, collects.get(r.id), ctx), pcas)
+                           for r in rows],
                **page, "limits": {"sources": SOURCE_CAP.usage(session, team_id)}}
         if group in (None, "network") and kind in (None, "network_range"):
             out["network_totals"] = network_sweep_totals(list(ranges), settings, ctx)  # N7: unique, enabled ranges
@@ -762,7 +782,8 @@ def _get_source(engine, team_id: int, source_id: int) -> dict:
         settings = get_or_create_settings(session, team_id)
         node = session.get(CbomScanNode, source.node_id) if source.node_id else None
         collect = last_collects(session, team_id, [source.id]).get(source.id)
-        return {"source": public_source(source, settings, node, now, collect), "server_time": iso_z(now)}
+        return {"source": _with_pca(public_source(source, settings, node, now, collect), pca_reads(session, team_id, [source])),
+                "server_time": iso_z(now)}
 
 
 @router.get(BASE + "/items/{source_id}", dependencies=READ, summary="Get a source")
@@ -819,6 +840,7 @@ def _update_source(engine, team_id: int, user_id: int, source_id: int, body: Sou
         # Renaming or disabling never needs these checks, so a source saved before the rules can still be turned off.
         relevant = new_dump != old_dump or bool(provided) or new_node_id != source.node_id
         if relevant and new_dump.get("credential_type") == "vault":
+            _refuse_unavailable_vault(new_dump)
             require_admin(session, user_id, team_id, "sources that read their credential from a vault")
         SSHCA_SOURCES.check_update(session, team_id, user_id, source, old_cfg, cfg, relevant=relevant,  # F1.4
                                    name=body.name, enabled=body.enabled)
@@ -1590,14 +1612,14 @@ def _list_runs(engine, team_id: int, scan_id: int | None) -> dict:
         if scan_id is not None:
             query = query.where(CbomCollectionRun.scan_id == scan_id)
         runs = session.exec(query.order_by(CbomCollectionRun.id.desc()).limit(50)).all()  # type: ignore[union-attr]
+        # issue #159 (Rule P): the asset count the Scans table shows too, from the one function, one query for the page
+        assets = RUN_LIST.asset_counts(session, team_id, [int(run.id) for run in runs])
         out = []
         for run in runs:
             counts: dict[str, int] = {}
             for job in session.exec(select(CbomCollectionJob).where(CbomCollectionJob.run_id == run.id)).all():
                 counts[job.status] = counts.get(job.status, 0) + 1
-            assets = session.exec(select(func.count()).select_from(CbomCollectedAsset)
-                                  .where(CbomCollectedAsset.run_id == run.id)).one()
-            out.append({**public_run(run), "job_counts": counts, "asset_count": int(assets)})
+            out.append({**public_run(run), "job_counts": counts, "asset_count": assets.get(int(run.id), 0)})
         return {"runs": out, "server_time": iso_z(now)}
 
 

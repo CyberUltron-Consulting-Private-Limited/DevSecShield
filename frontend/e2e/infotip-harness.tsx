@@ -7,7 +7,8 @@ import type { CSSProperties } from "react";
 import { createRoot } from "react-dom/client";
 
 import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
-import { INFO_TIPS, type InfoTipId } from "@/content/infotips";
+import { type InfoTipId } from "@/content/infotips";
+import { INFO_TIPS } from "@/content/infotips/all";
 
 const longest = (Object.keys(INFO_TIPS) as InfoTipId[])
   .map((id) => ({ id, length: INFO_TIPS[id].what.length + INFO_TIPS[id].example.length }))

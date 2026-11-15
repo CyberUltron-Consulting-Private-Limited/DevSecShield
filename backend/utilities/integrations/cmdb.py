@@ -44,8 +44,10 @@ from backend.new_models import CbomCollectionSource, CbomScanNode
 from backend.utilities.cbom_sources import agents as AG
 from backend.utilities.cbom_sources import source_cap as SOURCE_CAP
 from backend.utilities.cbom_sources import targets as T
+from backend.utilities.cbom_sources import vault_support as VAULT_SUPPORT
 from backend.utilities.cbom_sources.common import NAME_RE, audit, log, utcnow
-from backend.utilities.cbom_sources.kinds import DB_DEFAULT_PORTS, KINDS, _metadata_text, credential_target_problem
+from backend.utilities.cbom_sources.kinds import (DB_DEFAULT_PORTS, KINDS, PASSWORD_NEEDS_VERIFIED_SERVER, _metadata_text,
+                                                 credential_target_problem)
 
 MAX_ROWS = 5000
 MAX_CSV_BYTES = 2 * 1024 * 1024
@@ -225,6 +227,12 @@ class Plan:
     over_limit: list[dict[str, Any]] = field(default_factory=list)
     limit: dict[str, Any] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
+    # #362: rows that named the same host (CIDR, database, cluster, token) and became one planned source
+    merged: list[dict[str, Any]] = field(default_factory=list)
+    # #367: the existing sources the file matched without changing anything, with their lines; the segments of the
+    # file with the registered nodes that serve each and the one chosen
+    unchanged_items: list[dict[str, Any]] = field(default_factory=list)
+    segments: list[dict[str, Any]] = field(default_factory=list)
     unchanged: int = 0
     rows: int = 0
 
@@ -238,13 +246,15 @@ class Plan:
     def public(self, limit: int = 500) -> dict[str, Any]:
         return {"rows": self.rows, "digest": self.digest(), "unchanged": self.unchanged,
                 "counts": {"create": len(self.creates), "update": len(self.updates), "conflict": len(self.conflicts),
-                           "skipped": len(self.skipped), "over_limit": len(self.over_limit),
+                           "skipped": len(self.skipped), "over_limit": len(self.over_limit), "merged": len(self.merged),
                            "new_targets": sum(len(c.get("targets") or [c.get("cidr")]) for c in self.creates)},
                 "limit": self.limit, "warnings": self.warnings,
                 "creates": self.creates[:limit], "updates": self.updates[:limit], "conflicts": self.conflicts[:limit],
                 "skipped": self.skipped[:limit], "over_limit": self.over_limit[:limit],
+                "merged": self.merged[:limit], "unchanged_items": self.unchanged_items[:limit],
+                "segments": self.segments,
                 "truncated": max(len(self.creates), len(self.updates), len(self.conflicts), len(self.skipped),
-                                 len(self.over_limit)) > limit}
+                                 len(self.over_limit), len(self.merged), len(self.unchanged_items)) > limit}
 
 
 def _identities(row: dict[str, Any]) -> tuple[str, list[str], list[str]]:
@@ -351,14 +361,24 @@ class _Context:
     segment_nodes: dict[str, CbomScanNode] = field(default_factory=dict)
     vault_provider: str | None = None
     windows_vault: dict[str, str] | None = None
+    # #363: engine -> CA PEM ("*": every engine that needs one), given once in the import
+    database_ca: dict[str, str] = field(default_factory=dict)
+    # #367: nodes that rows go to although they never registered (a warning each)
+    waiting: dict[int, CbomScanNode] = field(default_factory=dict)
+
+
+def registered(node: CbomScanNode) -> bool:
+    """A node that enrolled with its registration token (one that never did cannot run a job)."""
+    return node.enrolled_at is not None
 
 
 def _context(session: Session, team_id: int, node_id: int | None, segment_nodes: dict[str, int] | None,
-             vault_provider: str | None, windows_vault: dict[str, str] | None) -> _Context:
+             vault_provider: str | None, windows_vault: dict[str, str] | None,
+             database_ca: dict[str, str] | None = None) -> _Context:
     nodes = list(session.exec(select(CbomScanNode).where(CbomScanNode.team_id == team_id)
                               .order_by(CbomScanNode.id)).all())
     by_id = {n.id: n for n in nodes}
-    ctx = _Context(vault_provider=vault_provider, windows_vault=windows_vault)
+    ctx = _Context(vault_provider=vault_provider, windows_vault=windows_vault, database_ca=dict(database_ca or {}))
     ctx.default_node = by_id.get(node_id) if node_id else None
     for n in nodes:
         ctx.by_name[n.name.lower()] = n
@@ -371,6 +391,9 @@ def _context(session: Session, team_id: int, node_id: int | None, segment_nodes:
         problem = AG.kind_problem(chosen, "linux_servers")
         if problem:
             raise ValueError(f"segment_nodes: {problem}")
+        if not registered(chosen):
+            raise ValueError(f"segment_nodes: scan node {chosen.name} has not registered yet; register it, or choose "
+                             f"a registered node for segment {segment!r}")
         ctx.segment_nodes[segment.strip().lower()] = chosen
     return ctx
 
@@ -394,21 +417,34 @@ def _row_node(ctx: _Context, row: dict[str, Any], kind: str) -> tuple[CbomScanNo
     if not found:
         return None, (f"no scan node in segment {segment!r}: add a scan node with that segment, or choose a node for "
                       "it in the import")
-    if len(found) > 1:
-        names = ", ".join(n.name for n in found[:5])
-        return None, f"segment {segment!r} has {len(found)} scan nodes ({names}): choose one for it in the import"
-    return found[0], None
+    ready = [n for n in found if registered(n)] or found  # #367: a registered node wins over one that never registered
+    if len(ready) > 1:
+        names = ", ".join(n.name for n in ready[:5])
+        return None, f"segment {segment!r} has {len(ready)} scan nodes ({names}): choose one for it in the import"
+    if not registered(ready[0]):
+        ctx.waiting[ready[0].id] = ready[0]  # type: ignore[index]
+    return ready[0], None
 
 
 def _vault(ctx: _Context, row: dict[str, Any], fallback: dict[str, str] | None = None) -> tuple[dict | None, str | None]:
     path = str(row.get("vault_path") or "").strip()
     if not path:
-        return (dict(fallback), None) if fallback else (None, None)
-    provider = _word(row.get("vault_provider")) or (fallback or {}).get("provider") or ctx.vault_provider
-    if provider not in VAULT_PROVIDERS:
-        return None, ("vault_provider: choose the vault in the import (or a vault_provider column: "
-                      + ", ".join(VAULT_PROVIDERS) + ")")
-    return {"provider": provider, "path": path}, None
+        vault = dict(fallback) if fallback else None
+    else:
+        provider = _word(row.get("vault_provider")) or (fallback or {}).get("provider") or ctx.vault_provider
+        if provider not in VAULT_PROVIDERS:
+            return None, ("vault_provider: choose the vault in the import (or a vault_provider column: "
+                          + ", ".join(VAULT_PROVIDERS) + ")")
+        vault = {"provider": provider, "path": path}
+    problem = VAULT_SUPPORT.config_problem({"vault": vault})  # #364: CyberArk, Azure Key Vault: not available yet
+    return (None, problem) if problem else (vault, None)
+
+
+def _node_vault_problem(ctx: _Context, node: CbomScanNode | None, vault: dict[str, Any] | None) -> str | None:
+    """#364: can the row's scan node (or the import's) read this vault, by what it reported at heartbeat?"""
+    if not vault:
+        return None
+    return VAULT_SUPPORT.node_problem(node or ctx.default_node, str(vault.get("provider")), str(vault.get("path")))
 
 
 def _port(row: dict[str, Any]) -> tuple[int | None, str | None]:
@@ -444,6 +480,9 @@ def _special_config(ctx: _Context, kind: str, row: dict[str, Any]) -> tuple[dict
         cfg = {"engine": engine, "host": hosts[0], "port": port, "login": login,
                "database_name": str(row.get("database_name") or "").strip() or None,
                "credential_type": "vault" if vault else "password", "vault": vault}
+        ca = ctx.database_ca.get(engine) or ctx.database_ca.get("*")
+        if ca and engine in PASSWORD_NEEDS_VERIFIED_SERVER:  # #363: the CA given once in the import, TLS required
+            cfg.update(ca_pem=ca, require_tls=True)
     elif kind == "kubernetes":
         api_url = str(row.get("api_url") or "").strip()
         if not api_url:
@@ -469,6 +508,10 @@ def _special_config(ctx: _Context, kind: str, row: dict[str, Any]) -> tuple[dict
     if missing:
         return None, f"needs a stored {', '.join(sorted(missing))}, which is never imported from a file: {_BY_HAND}"
     problem = credential_target_problem(kind, model, {})
+    if problem and kind == "database" and problem.startswith("ca_pem:"):
+        name = PASSWORD_NEEDS_VERIFIED_SERVER.get(model.engine, model.engine)
+        return None, (f"ca_pem: {name} logins need TLS and the CA certificate that signed the server's certificate; "
+                      f"add the {name} CA certificate in the import (Database CA certificates), or {_BY_HAND}")
     if problem:
         return None, f"{problem} ({_BY_HAND})"
     return {k: v for k, v in model.model_dump(mode="json").items() if k not in CONFIG_FIELD.values()
@@ -504,10 +547,11 @@ def _special_name(kind: str, cfg: dict[str, Any]) -> str:
 
 def build_plan(session: Session, team_id: int, rows: list[dict[str, Any]], *, create_missing: bool = True,
                node_id: int | None = None, segment_nodes: dict[str, int] | None = None,
-               vault_provider: str | None = None, windows_vault: dict[str, str] | None = None) -> Plan:
+               vault_provider: str | None = None, windows_vault: dict[str, str] | None = None,
+               database_ca: dict[str, str] | None = None) -> Plan:
     """The preview. Raises ValueError (safe to show) for a bad ``segment_nodes`` choice."""
     plan = Plan(rows=len(rows))
-    ctx = _context(session, team_id, node_id, segment_nodes, vault_provider, windows_vault)
+    ctx = _context(session, team_id, node_id, segment_nodes, vault_provider, windows_vault, database_ca)
     sources = list(session.exec(select(CbomCollectionSource).where(
         CbomCollectionSource.team_id == team_id,
         CbomCollectionSource.kind.in_(SERVER_KINDS + ("network_range",) + SPECIAL_KINDS))  # type: ignore[attr-defined]
@@ -517,6 +561,13 @@ def build_plan(session: Session, team_id: int, rows: list[dict[str, Any]], *, cr
     proposals: dict[int, dict[str, dict[Any, list[int]]]] = {}  # source -> field -> value -> lines
     groups: dict[tuple, dict[str, Any]] = {}
     specials: dict[tuple[str, str], dict[str, Any]] = {}
+    matched_lines: dict[int, list[int]] = {}  # source -> the lines that matched it (#367)
+    # #362: one planned entry per host (kind + canonical host), CIDR or database / cluster / token identity; rows that
+    # name it again (by any of their host columns) are merged into it before grouping
+    pending: dict[tuple, dict[str, Any]] = {}
+    alias: dict[tuple, tuple] = {}
+    segment_rows: dict[str, dict[str, Any]] = {}  # #367: the file's segments
+    seen_existing: dict[tuple[str, str], set[int]] = {}
     for n, row in enumerate(rows, start=1):
         line = row.get("line") or n
         label = row.get("label")
@@ -540,9 +591,18 @@ def build_plan(session: Session, team_id: int, rows: list[dict[str, Any]], *, cr
                                  "reason": problems[0] if problems else "no host, IP address or CIDR"})
             continue
         else:
-            matched = sorted({sid for i in ids for sid in index.get((family, i.lower()), set())})
+            # a row that names an existing source's host by another of its columns (an IP next to the FQDN) matches
+            # that source too, through an earlier row that named both (#362)
+            matched = sorted({sid for i in ids for sid in index.get((family, i.lower()), set())
+                              | seen_existing.get((family, i.lower()), set())})
+            for i in ids:
+                seen_existing.setdefault((family, i.lower()), set()).update(matched)
+        segment = str(row.get("segment") or "").strip()
+        if segment and not str(row.get("scan_node") or "").strip():
+            segment_rows.setdefault(segment.lower(), {"segment": segment, "rows": 0})["rows"] += 1
         if matched:
             for sid in matched:
+                matched_lines.setdefault(sid, []).append(line)
                 slot = proposals.setdefault(sid, {})
                 for name, value in values.items():
                     slot.setdefault(name, {}).setdefault(value, []).append(line)
@@ -562,15 +622,9 @@ def build_plan(session: Session, team_id: int, rows: list[dict[str, Any]], *, cr
         if problem:
             plan.skipped.append({"line": line, "label": label or (ids[0] if ids else None), "reason": problem})
             continue
-        node_key = node.id if node else None
-        if kind in SPECIAL_KINDS:
-            identity = (kind, _special_identity(kind, special_cfg))  # type: ignore[arg-type]
-            if identity in specials:
-                plan.skipped.append({"line": line, "label": label,
-                                     "reason": f"the same {KINDS[kind].label.lower()} as line {specials[identity]['lines'][0]}"})
-                continue
-            specials[identity] = {"kind": kind, "config": special_cfg, "metadata": values, "lines": [line],
-                                  "node": node}
+        problem = _node_vault_problem(ctx, node, special_cfg.get("vault")) if special_cfg else None  # #364
+        if problem:
+            plan.skipped.append({"line": line, "label": label, "reason": problem})
             continue
         extra: dict[str, Any] = {}
         if kind == "windows_servers":
@@ -580,16 +634,76 @@ def build_plan(session: Session, team_id: int, rows: list[dict[str, Any]], *, cr
                     "Windows server: a WinRM login is needed; choose the vault secret that holds it in the import "
                     "(or a vault_path column), or add it in the Servers tab")})
                 continue
+            problem = _node_vault_problem(ctx, node, vault)
+            if problem:
+                plan.skipped.append({"line": line, "label": label or ids[0], "reason": problem})
+                continue
             extra = {"credential_type": "vault", "vault": vault}
             login = str(row.get("login") or "").strip()
             if login:
                 extra["login_user"] = login
-        key = (kind, node_key, ids[0] if kind == "network_range" else "", json.dumps(extra, sort_keys=True),
-               *(values.get(f) for f in FIELDS))
-        group = groups.setdefault(key, {"kind": kind, "targets": [], "metadata": values, "lines": [], "node": node,
-                                        "extra": extra})
-        group["targets"].append(ids[0])
-        group["lines"].append(line)
+        if kind in SPECIAL_KINDS:
+            keys = [(kind, _special_identity(kind, special_cfg))]  # type: ignore[arg-type]
+        elif kind == "network_range":
+            keys = [("network", ids[0].lower())]
+        else:
+            keys = [(kind, i.lower()) for i in ids]
+        known = next((alias[k] for k in keys if k in alias), None)
+        if known is None:
+            pending[keys[0]] = {"kind": kind, "target": ids[0] if ids else None, "config": special_cfg,
+                                "extra": extra, "node": node, "label": label or (ids[0] if ids else None),
+                                "values": {}, "lines": [], "notes": []}
+            known = keys[0]
+        entry = pending[known]
+        for k in keys:
+            alias.setdefault(k, known)
+        if entry["lines"]:
+            if (node.id if node else None) != (entry["node"].id if entry["node"] else None):
+                entry["notes"].append(f"line {line} names another scan node; the first row's is kept")
+            if extra != entry["extra"] or (special_cfg is not None and special_cfg != entry["config"]):
+                entry["notes"].append(f"line {line} has other connection settings; the first row's are kept")
+        entry["lines"].append(line)
+        for name, value in values.items():
+            entry["values"].setdefault(name, {}).setdefault(value, []).append(line)
+    # #362: each planned host once; fields its rows disagree on are conflicts (left blank), the rest kept
+    for key in pending:
+        entry = pending[key]
+        meta: dict[str, str] = {}
+        for name, options in sorted(entry["values"].items()):
+            if len(options) > 1:
+                plan.conflicts.append({"source_id": None, "source": None, "host": entry["label"], "field": name,
+                                       "values": {str(v): lines[:20] for v, lines in options.items()}})
+            else:
+                meta[name] = next(iter(options))
+        if len(entry["lines"]) > 1:
+            plan.merged.append({"label": entry["label"], "kind": entry["kind"], "lines": entry["lines"][:50],
+                                "notes": entry["notes"][:5]})
+        kind, node = entry["kind"], entry["node"]
+        if kind in SPECIAL_KINDS:
+            specials[key] = {"kind": kind, "config": entry["config"], "metadata": meta, "lines": entry["lines"][:50],
+                             "node": node}
+            continue
+        extra = entry["extra"]
+        gkey = (kind, node.id if node else None, entry["target"] if kind == "network_range" else "",
+                json.dumps(extra, sort_keys=True), *(meta.get(f) for f in FIELDS))
+        group = groups.setdefault(gkey, {"kind": kind, "targets": [], "metadata": meta, "lines": [], "node": node,
+                                         "extra": extra})
+        group["targets"].append(entry["target"])
+        group["lines"].extend(entry["lines"])
+    # #367: the file's segments, with the registered agentless nodes that serve each and the one its rows go to
+    for key in sorted(segment_rows):
+        info = segment_rows[key]
+        serving = [n for n in ctx.by_segment.get(key, []) if registered(n)]
+        chosen, _problem = _row_node(ctx, {"segment": info["segment"]}, "linux_servers")
+        plan.segments.append({"segment": info["segment"], "rows": info["rows"],
+                              "nodes": [{"id": n.id, "name": n.name} for n in serving],
+                              "chosen": chosen.id if chosen else None})
+    for waiting in ctx.waiting.values():
+        plan.warnings.append(f"Scan node {waiting.name} has not registered yet: the sources this import puts on it "
+                             "wait until it registers.")
+    if ctx.default_node is not None and not registered(ctx.default_node):
+        plan.warnings.append(f"Scan node {ctx.default_node.name} (the import's node) has not registered yet: its new "
+                             "sources wait until it registers.")
     # updates and conflicts
     for sid in sorted(proposals):
         source = by_id[sid]
@@ -608,6 +722,8 @@ def build_plan(session: Session, team_id: int, rows: list[dict[str, Any]], *, cr
             plan.updates.append({"source_id": sid, "source": source.name, "kind": source.kind, "changes": changes})
         else:
             plan.unchanged += 1
+            plan.unchanged_items.append({"source_id": sid, "source": source.name, "kind": source.kind,
+                                         "lines": matched_lines.get(sid, [])[:50]})
     # creates
     taken = {(s.kind, s.name_lower) for s in session.exec(select(CbomCollectionSource).where(
         CbomCollectionSource.team_id == team_id)).all()}

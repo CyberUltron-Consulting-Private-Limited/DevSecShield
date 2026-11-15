@@ -15,6 +15,11 @@ version's file and image. Every file is reproducible: fixed times, owners and or
 SHA-256.
 
   python3 -I scripts/release/node_artifacts.py --version 1.0.0 --image-ref localhost/zeroshield/cbom-scan-node:1.0.0 --out DIR
+
+``--chart-only`` writes just the chart (and its .sha256): what .github/workflows/publish-ghcr.yml pushes to
+oci://<registry>/charts. The chart is a pure function of (chart directory, version, image repository), so the GHCR
+chart and the downloaded chart of one version are the same bytes when both name the same image (issue #361: two
+different files were both called cbom-scan-node-1.0.0.tgz).
 """
 from __future__ import annotations
 
@@ -121,6 +126,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--version", required=True)
     ap.add_argument("--image-ref", required=True, help="the name the image file loads as (docker load)")
     ap.add_argument("--out", required=True, type=Path)
+    ap.add_argument("--chart-only", action="store_true", help="write only the Helm chart (+ .sha256): the file "
+                    "publish-ghcr.yml pushes to the registry")
     ap.add_argument("--build", default="", help="the 40-character commit the image was built from (its "
                     "org.opencontainers.image.revision label; empty: none). The server compares every node's reported "
                     "<version>+<12-character commit> with it")
@@ -133,6 +140,12 @@ def main(argv: list[str] | None = None) -> int:
     if not IMAGE_RE.fullmatch(args.image_ref) or not args.image_ref.endswith(f":{args.version}"):
         raise SystemExit(f"node_artifacts: --image-ref must be <name>:{args.version}")
     out: Path = args.out
+    if args.chart_only:
+        out.mkdir(parents=True, exist_ok=True)
+        chart = package_chart(out, args.version, args.image_ref)
+        write_sidecar(chart)
+        print(f"{chart.name}\t{chart.stat().st_size}\t{sha256_file(chart)}")
+        return 0
     image = out / f"scan-node-{args.version}.tar.gz"
     if not image.is_file():
         raise SystemExit(f"node_artifacts: {image} is missing (scripts/release/scan_node_image.sh build {args.version})")

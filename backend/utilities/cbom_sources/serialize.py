@@ -22,6 +22,7 @@ from backend.utilities.cbom_sources.kinds import KINDS
 from backend.utilities.cbom_sources.node_release import node_update, parse_reported, server_label, server_release
 from backend.utilities.cbom_sources.planning import RangeContext, node_status, source_targets
 from backend.utilities.cbom_sources.settings import next_window_start
+from backend.utilities.cbom_sources import vault_support as VAULT_SUPPORT
 
 
 _log = logging.getLogger(__name__)
@@ -69,6 +70,9 @@ def public_node(node: CbomScanNode, now: _dt.datetime, *, assigned_targets: int 
         "source_ips": node.source_ips or [],
         "ssh_public_key": node.ssh_public_key,
         "capabilities": node.capabilities or {},
+        # #364: what the node reported for vault credentials: {"enabled": bool|None (not reported), "providers",
+        # "prefix" (without KV v2 data/), "setup": {provider: "ready" or what is missing}}
+        "vault": VAULT_SUPPORT.node_vault(node.capabilities),
         "clock_skew_s": node.clock_skew_s,
         "clock_in_sync": None if node.clock_skew_s is None else abs(node.clock_skew_s) <= 300,
         "last_heartbeat_at": iso_z(node.last_heartbeat_at),
@@ -115,6 +119,81 @@ def last_collects(session: Any, team_id: int, source_ids: list[int]) -> dict[int
         summary = job.error or (str(result.get("summary")) if result.get("summary") else None)
         out[int(job.source_id)] = {"status": status, "at": iso_z(job.finished_at), "job_id": job.id,
                                    "run_id": job.run_id, "summary": summary[:512] if summary else None}
+    return out
+
+
+_PCA_ARN = "arn:aws:acm-pca:"
+
+
+def pca_reads(session: Any, team_id: int, sources: list[CbomCollectionSource],
+              accounts: dict[int, CbomCollectionSource] | None = None) -> dict[int, dict[str, Any] | None]:
+    """#368: what the newest finished collection of each AWS Private CA source's AWS account read of ACM Private CA.
+    The account collector reads acm-pca in every region of the account (aws_collect ``pca``); the Private CA source
+    itself never runs, so without this its card could not say whether the CAs were read.  For each such source:
+    None while its account is missing or was never collected, else ``{"account_source_id", "job_id", "run_id", "at",
+    "status": read|partial|not_read, "cas", "reason", "regions": [{"region", "status", "cas", "error"}]}``: per region
+    the acm-pca service status of the job's target rows (``not_read`` when the region was not reached) and the private
+    CAs found (``arn:aws:acm-pca:`` assets of the job's current attempt; an RDS CA is a ``cloud_ca`` too, not one)."""
+    from sqlmodel import col, select
+
+    from backend.new_models import CbomCollectedAsset, CbomCollectionJob
+
+    pcas = [s for s in sources if s.kind == "ca_connector" and (s.config or {}).get("provider") == "aws_private_ca"]
+    if not pcas:
+        return {}
+    wanted = {int(a) for s in pcas if isinstance(a := (s.config or {}).get("aws_source_id"), int)}
+    known = dict(accounts or {})
+    missing = [i for i in wanted if i not in known]
+    if missing:
+        for row in session.exec(select(CbomCollectionSource).where(CbomCollectionSource.team_id == team_id,
+                                                                   col(CbomCollectionSource.id).in_(missing))).all():
+            known[int(row.id)] = row
+    accounts_ok = {i for i in wanted if i in known and known[i].kind == "aws_account"}
+    collects = last_collects(session, team_id, sorted(accounts_ok))
+    jobs = {j.id: j for j in session.exec(select(CbomCollectionJob).where(
+        col(CbomCollectionJob.id).in_([c["job_id"] for c in collects.values()]))).all()} if collects else {}
+    per_job: dict[int, dict[str, int]] = {}
+    for job in jobs.values():
+        counts: dict[str, int] = {}
+        for loc in session.exec(select(CbomCollectedAsset.location).where(
+                CbomCollectedAsset.job_id == job.id, CbomCollectedAsset.attempt == max(int(job.attempts or 1), 1),
+                CbomCollectedAsset.asset_type == "cloud_ca", col(CbomCollectedAsset.location).startswith(_PCA_ARN))).all():
+            region = str(loc)[len(_PCA_ARN):].split(":", 1)[0]
+            counts[region] = counts.get(region, 0) + 1
+        per_job[job.id] = counts
+    out: dict[int, dict[str, Any] | None] = {}
+    for src in pcas:
+        account_id = (src.config or {}).get("aws_source_id")
+        collect = collects.get(account_id) if account_id in accounts_ok else None
+        job = jobs.get(collect["job_id"]) if collect else None
+        if job is None:
+            out[int(src.id)] = None
+            continue
+        regions: dict[str, dict[str, Any]] = {}
+        result = job.result if isinstance(job.result, dict) else {}
+        for target in result.get("targets") or []:
+            if not isinstance(target, dict):
+                continue
+            region = str(target.get("target") or "").rsplit("/", 1)[-1]
+            if not region or region == "global" or "/" not in str(target.get("target") or ""):
+                continue
+            service = (target.get("services") or {}).get("acm-pca")
+            status = str(service) if service else "not_read"
+            row = regions.setdefault(region, {"region": region, "status": status, "cas": 0, "error": None})
+            if row["status"] == "ok" and status != "ok":  # an organisation: one account's region not read is enough
+                row["status"] = status
+            if status != "ok" and not row["error"] and target.get("error"):
+                row["error"] = str(target["error"])[:256]
+        for region, n in per_job.get(job.id, {}).items():
+            regions.setdefault(region, {"region": region, "status": "ok", "cas": 0, "error": None})["cas"] = n
+        rows = [regions[r] for r in sorted(regions)]
+        read = [r for r in rows if r["status"] in ("ok", "partial")]
+        status = "read" if rows and len(read) == len(rows) and all(r["status"] == "ok" for r in rows) \
+            else "partial" if read else "not_read"
+        reason = None if read else (collect.get("summary") if not rows else None)
+        out[int(src.id)] = {"account_source_id": int(account_id), "job_id": job.id, "run_id": job.run_id,
+                            "at": collect["at"], "status": status, "cas": sum(r["cas"] for r in rows),
+                            "reason": reason, "regions": rows}
     return out
 
 

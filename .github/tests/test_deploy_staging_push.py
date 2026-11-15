@@ -219,7 +219,8 @@ class OnlyStaging(unittest.TestCase):
         self.assertEqual(re.findall(r"\n    environment: (\S+)", WF), ["staging"])
         # The SSH identity, and the optional AWS collector identity + lab switch the host's backend.env gets.
         self.assertEqual(sorted(set(re.findall(r"secrets\.([A-Z_]+)", WF))),
-                         ["CBOM_AWS_ACCESS_KEY_ID", "CBOM_AWS_LAB_SAME_ACCOUNT", "CBOM_AWS_PRINCIPAL_ARN",
+                         ["CBOM_AI_AWS_ACCESS_KEY_ID", "CBOM_AI_AWS_SECRET_ACCESS_KEY",  # the AI assistant's IAM user
+                          "CBOM_AWS_ACCESS_KEY_ID", "CBOM_AWS_LAB_SAME_ACCOUNT", "CBOM_AWS_PRINCIPAL_ARN",
                           "CBOM_AWS_SECRET_ACCESS_KEY", "STAGING_SSH_KEY", "STAGING_SSH_KNOWN_HOSTS", "STAGING_SSH_TARGET"])
         # ... the scan node registry switch (README "Public registry") and the AI remediation provider (README "AI remediation")
         self.assertEqual(sorted(set(re.findall(r"vars\.([A-Z_]+)", WF))),
@@ -227,20 +228,33 @@ class OnlyStaging(unittest.TestCase):
                           "CBOM_AWS_LAB_SAME_ACCOUNT", "CBOM_NODE_REGISTRY_PUBLIC", "STAGING_DIR"])
         # Only the deploy job (the staging environment) sees the AWS ones.
         self.assertNotIn("CBOM_AWS", JOBS["build"])
+        self.assertNotIn("CBOM_AI_AWS", JOBS["build"])
         # What runs (comments and input descriptions are text, not actions).
         code = "\n".join(line for line in WF.splitlines()
                          if not line.lstrip().startswith(("#", "description:")))
         self.assertNotRegex(code, r"(?i)\bprod(uction)?\b|rollback")
         self.assertEqual(re.findall(r"scripts/deploy/staging\.sh ([\w-]+)", code),
-                         ["build", "save", "node-artifacts", "push"])
+                         ["build", "save", "node-artifacts", "wait-node-release", "push"])
 
     def test_the_scan_node_downloads_are_built_and_shipped_with_the_release(self):
         build = JOBS["build"]
-        self.assertIn("run: scripts/deploy/staging.sh node-artifacts", build)
+        self.assertIn("\n          scripts/deploy/staging.sh node-artifacts\n", build)
         # uploaded with the images (same artifact, so the deploy job downloads them next to the archive)
         upload = [p for p in steps("build") if "actions/upload-artifact" in p]
         self.assertEqual(len(upload), 1)
         self.assertIn("deploy/staging/images/node-artifacts/*", upload[0])
+
+    def test_the_release_wait_runs_on_a_push_unless_the_registry_is_switched_off(self):
+        # #361 follow-up: on the first 1.0.1 promotion (run 43688443051) the step was skipped with the variable unset:
+        # GitHub coerces null != '0' to numbers (0 != 0, false). Evaluated with GitHub's coercion rules.
+        from test_publish_ghcr import evaluate
+
+        step = WF.split("      - name: Wait for the scan node release (GHCR)\n", 1)[1].split("\n      - name:", 1)[0]
+        cond = step.split("        if: ", 1)[1].split("\n", 1)[0]
+        for event, var, want in (("push", None, True), ("push", "", True), ("push", "1", True), ("push", "0", False),
+                                 ("workflow_dispatch", None, False), ("workflow_dispatch", "1", False)):
+            got = bool(evaluate(cond, {"github.event_name": event, "vars.CBOM_NODE_REGISTRY_PUBLIC": var}))
+            self.assertEqual(got, want, (event, var, cond))
 
     def test_the_job_set_is_build_and_deploy(self):
         self.assertEqual(sorted(JOBS), ["build", "deploy"])
