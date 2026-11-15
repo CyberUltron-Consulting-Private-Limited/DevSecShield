@@ -8,21 +8,16 @@ import CbomResults from "@/components/CbomResults";
 import { getCBOMScanData } from "@/utils/backend_api";
 import { isScanGone, scanErrorText } from "@/components/cbom/scanQuery";
 import { queryRetry } from "@/utils/query_client";
+import { parseCbomResultsId } from "@/components/cbom/results/resultsHref";
+import RunResultsRoute from "@/components/cbom/results/RunResultsRoute";
 
+// /{team_id}/cbom/<id>/results: a plain number is a code scan's results, `run-<n>` a Sources run's (CB-38).
 export default function CbomResultsPage() {
   const params = useParams();
   const team_id = parseInt((params?.team_id as string) ?? "0", 10);
-  const scan_id = parseInt((params?.scan_id as string) ?? "0", 10);
-  const hasValidIds = !!team_id && !!scan_id;
+  const id = parseCbomResultsId(params?.scan_id);
 
-  const query = useQuery({
-    queryKey: ["cbom-conversation-data", team_id, scan_id],
-    queryFn: getCBOMScanData,
-    enabled: hasValidIds,
-    retry: (failureCount, error) => !isScanGone(error) && queryRetry(failureCount, error),
-  });
-
-  if (!hasValidIds) {
+  if (!team_id || !id) {
     toast.error("Team or scan id not found");
     return (
       <div className="flex h-screen w-full items-center justify-center">
@@ -32,6 +27,16 @@ export default function CbomResultsPage() {
       </div>
     );
   }
+  if (id.kind === "run") return <RunResultsRoute teamId={team_id} runId={id.id} />;
+  return <ScanResults team_id={team_id} scan_id={id.id} />;
+}
+
+function ScanResults({ team_id, scan_id }: { team_id: number; scan_id: number }) {
+  const query = useQuery({
+    queryKey: ["cbom-conversation-data", team_id, scan_id],
+    queryFn: getCBOMScanData,
+    retry: (failureCount, error) => !isScanGone(error) && queryRetry(failureCount, error),
+  });
 
   if (query.isError) {
     return (
