@@ -9,6 +9,9 @@ from aibom.cbom.posture.defaults import PatternSpec, load_registry
 from aibom.cbom.posture.model import BasisEntry, EncryptionFact
 
 _LINE_CAP = 20
+# .NET sources: a ``java.*`` pattern there reads a .NET name
+# (``public void TrustAll()``), not a Java trust manager.
+_DOTNET_SUFFIXES = (".cs", ".vb", ".fs", ".ps1", ".psm1", ".cshtml", ".razor")
 
 
 def _hit(spec: PatternSpec, line: str) -> bool:
@@ -45,32 +48,51 @@ def detect_verification(text: str, path: str) -> tuple[EncryptionFact, ...]:
     # The loader compiles each anchor_window tail, in row order, into ``line_patterns``.
     windowed = [s.id for s in registry.patterns if s.matcher == "anchor_window"]
     tails = dict(zip(windowed, registry.line_patterns, strict=True))
+    dotnet = path.lower().endswith(_DOTNET_SUFFIXES)
     for spec in registry.patterns:
+        if spec.id.startswith("java.") and dotnet:
+            # CB-28: a Java pattern (``TrustAll``) on a C# method name is not a Java
+            # trust manager
+            continue
         if spec.matcher == "anchor_window":
             matched = _window_hits(spec, tails[spec.id], lines) if spec.id in tails else []
         else:
             matched = [number for number, line in enumerate(lines, 1) if _hit(spec, line)]
-        if not matched:
-            continue
-        shown = ",".join(str(number) for number in matched[:_LINE_CAP])
-        facts.append(
-            EncryptionFact(
-                id=make_fact_id("tls_endpoint", "code", spec.id, path, path),
-                kind="tls_endpoint",
-                provider="code",
-                native_type=spec.id,
-                address=spec.id,
-                path=path,
-                line=matched[0],
-                format="code",
-                layers={"transport": "UNKNOWN"},
-                verdict="UNKNOWN",
-                unknown_reason="attribute_not_modeled",
-                basis=(
-                    BasisEntry("signal", "TLS_VERIFICATION_DISABLED"),
-                    BasisEntry("match_lines", shown),
-                    BasisEntry("match_count", str(len(matched))),
-                ),
-            )
-        )
+        if matched:
+            facts.append(_fact(spec.id, path, matched))
+    if path.endswith(".java"):
+        # CB-27: an X509TrustManager whose checkServerTrusted does nothing accepts
+        # every server certificate. A line pattern cannot see an empty method body
+        # (the comment inside it, the brace on the next line), so the Java reader
+        # decides it (aibom.cbom.java_flow.noop_trust_checks).
+        from aibom.cbom.java_flow import noop_trust_checks
+
+        matched = noop_trust_checks(text)
+        if matched:
+            facts.append(_fact(JAVA_NOOP_TRUST_MANAGER, path, matched))
     return tuple(facts)
+
+
+JAVA_NOOP_TRUST_MANAGER = "java.trust_manager_noop"
+
+
+def _fact(pattern_id: str, path: str, matched: list[int]) -> EncryptionFact:
+    shown = ",".join(str(number) for number in matched[:_LINE_CAP])
+    return EncryptionFact(
+        id=make_fact_id("tls_endpoint", "code", pattern_id, path, path),
+        kind="tls_endpoint",
+        provider="code",
+        native_type=pattern_id,
+        address=pattern_id,
+        path=path,
+        line=matched[0],
+        format="code",
+        layers={"transport": "UNKNOWN"},
+        verdict="UNKNOWN",
+        unknown_reason="attribute_not_modeled",
+        basis=(
+            BasisEntry("signal", "TLS_VERIFICATION_DISABLED"),
+            BasisEntry("match_lines", shown),
+            BasisEntry("match_count", str(len(matched))),
+        ),
+    )

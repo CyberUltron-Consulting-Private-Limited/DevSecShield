@@ -5,6 +5,7 @@ import time
 import pytest
 
 from zs_scan_node import commands as C
+from zs_scan_node import netutil
 from zs_scan_node.collectors import ConfigError
 from zs_scan_node.collectors.linux_ssh import _file_cmd
 from zs_scan_node.jobctx import JobContext, _fit
@@ -76,7 +77,10 @@ def test_vault_prefix():
 
 
 # ----------------------------------------------------------------------------- targets
-def test_expand_dedupes_and_respects_never_scan():
+def test_expand_dedupes_and_respects_never_scan(monkeypatch):
+    # a listed host name must resolve from the node, or no address is scanned at all (fail closed: it could be any
+    # of them); here it resolves outside the targets
+    monkeypatch.setattr(netutil, "resolve", lambda name, timeout=5.0: {"skip.example": ["192.0.2.10"]}[name])
     never = NeverScan(["10.0.0.0/30", "skip.example", "10.0.1.5-10.0.1.6"])
     targets, skipped = expand_targets(["10.0.0.1", "10.0.0.0/29", "10.0.0.6", "10.0.1.4-10.0.1.7", "skip.example"], never)
     ips = [t.ip for t in targets]

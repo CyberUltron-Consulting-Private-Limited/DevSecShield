@@ -19,13 +19,17 @@ from __future__ import annotations
 import datetime as _dt
 import json
 import re
+import threading
 import time
 from typing import Any, Callable
 
+from backend.utilities.cbom_sources import algid, algid_tables
 from backend.utilities.cbom_sources.aws_validate import _boto, _code
 from backend.utilities.cbom_sources.common import log, new_ref
 from backend.utilities.cbom_sources.idp_collect import saml_assets_from_xml
 from backend.utilities.cbom_sources.kinds import aws_account_id
+from backend.utilities.cbom_sources.lab_mode import LAB_MODE, own_account_decision
+from backend.utilities.cbom_sources.templates import zeroshield_account_id
 
 PER_SERVICE_CAP = 1000
 GLOBAL_REGION = "us-east-1"
@@ -48,7 +52,42 @@ def _iso(value: Any) -> str | None:
     return None
 
 
+# The AWS enums whose values name a key (algid's captured tables, CB-04 PR-3b): RSA_2048, EC_prime256v1,
+# ECC_NIST_EDWARDS25519, SM2 and the post-quantum signature keys ("-" and "_" are the same, EC-8).
+_KEY_ENUMS = (("kms", "KeySpec"), ("acm-pca", "KeyAlgorithm"), ("acm", "KeyAlgorithm"))
+# ListCertificates returns only RSA-2048 certificates unless Includes.keyTypes names the others: every key type ACM
+# documents (algid's capture of the acm KeyAlgorithm enum).
+ACM_KEY_TYPES = list(algid_tables.AWS["acm.KeyAlgorithm"])
+
+
+def _key_identity(spec: Any) -> algid.Identity | None:
+    return next((i for service, field in _KEY_ENUMS if (i := algid.aws(service, field, spec)) is not None), None)
+
+
+def _key_family(spec: Any) -> str | None:
+    """The algorithm an AWS key enum names, as the collectors store it: RSA, ECDSA, SM2, Ed25519, or algid's
+    post-quantum name; None when algid does not know the value."""
+    ident = _key_identity(spec)
+    if ident is None:
+        return None
+    if ident.family_label == "RSA":
+        return "RSA"
+    if ident.family_label == "EC":
+        return "ECDSA"
+    if ident.family_label == "PQ":
+        return ident.name
+    return ident.family_label if ident.family_label in ("SM2",) else ident.name
+
+
 def _bits(spec: str | None) -> int | None:
+    """Key size of an AWS key enum: algid's (Ed25519 and SM2 are 256; a post-quantum key has no bit size), else the
+    digits or curve in the name (HMAC_256, an enum value newer than the capture)."""
+    ident = _key_identity(spec)
+    if ident is not None:
+        if ident.family_label == "PQ":
+            return None
+        if ident.key_size:
+            return ident.key_size
     match = re.search(r"(\d{3,5})", spec or "")
     if match:
         return int(match.group(1))
@@ -59,34 +98,86 @@ def _bits(spec: str | None) -> int | None:
     return None
 
 
+_CLIENT_LOCK = threading.Lock()  # creating a client is not thread-safe on a shared boto3 Session (the pool's threads)
+
+
+def _assume_role(sts, **kwargs) -> dict[str, Any]:
+    """sts:AssumeRole with the throttling backoff (management role, member checks and every slice assume)."""
+    from backend.utilities.cbom_sources.aws_org import with_backoff
+
+    return with_backoff(lambda: sts.assume_role(**kwargs), what="sts:AssumeRole")
+
+
+def _base_client(base, service: str, **kwargs):
+    with _CLIENT_LOCK:
+        return base.client(service, **kwargs)
+
+
+class _AssumedSession:
+    """Clients for an assumed role, made from ZeroShield's base session with the role's credentials.  One boto3
+    Session per account would load every service model again (tens of MB per account): the pool keeps one per process."""
+
+    def __init__(self, base, creds: dict[str, Any]):
+        self.base, self._creds = base, creds
+
+    def client(self, service: str, **kwargs):
+        return _base_client(self.base, service, aws_access_key_id=self._creds["AccessKeyId"],
+                            aws_secret_access_key=self._creds["SecretAccessKey"],
+                            aws_session_token=self._creds["SessionToken"], **kwargs)
+
+
 class _Account:
-    """Assumed-role session for one account, re-assumed before the 1-hour credentials expire."""
+    """Assumed-role session for one account, re-assumed before the 1-hour credentials expire.  Safe to share between
+    the cloud pool's threads: (re-)assuming and creating a client happen under the account's lock."""
 
     def __init__(self, base, cfg, role_arn: str, external_id: str, team_id: int):
         self.base, self.cfg, self.role_arn, self.external_id, self.team_id = base, cfg, role_arn, external_id, team_id
         self.account = aws_account_id(role_arn)
         self.session = None
         self.expires = 0.0
+        self._lock = threading.RLock()
+        self.lab = False  # lab mode (open_account: a test deployment reading its own account)
 
     def assume(self, region: str) -> None:
-        import boto3
+        with self._lock:
+            sts = _base_client(self.base, "sts", region_name=region, config=self.cfg)
+            out = _assume_role(sts, RoleArn=self.role_arn, RoleSessionName=f"zs-cbom-collect-{self.team_id}"[:64],
+                               ExternalId=self.external_id, DurationSeconds=3600)
+            session = _AssumedSession(self.base, out["Credentials"])
+            who = session.client("sts", region_name=region, config=self.cfg).get_caller_identity()
+            if str(who.get("Account")) != str(self.account):
+                # kept unset: the next region must not read with a session for another account
+                raise AwsCollectError("The assumed role is not in the account named by its ARN")
+            self.session = session
+            self.expires = time.monotonic() + 3300  # re-assume 5 minutes early
 
-        sts = self.base.client("sts", region_name=region, config=self.cfg)
-        out = sts.assume_role(RoleArn=self.role_arn, RoleSessionName=f"zs-cbom-collect-{self.team_id}"[:64],
-                              ExternalId=self.external_id, DurationSeconds=3600)
-        creds = out["Credentials"]
-        self.session = boto3.session.Session(aws_access_key_id=creds["AccessKeyId"],
-                                             aws_secret_access_key=creds["SecretAccessKey"],
-                                             aws_session_token=creds["SessionToken"])
-        self.expires = time.monotonic() + 3300  # re-assume 5 minutes early
-        who = self.session.client("sts", region_name=region, config=self.cfg).get_caller_identity()
+    def check(self, region: str) -> None:
+        """Assume the role and confirm its account, keeping nothing (the organisation walk checks thousands of members
+        in parallel)."""
+        sts = _base_client(self.base, "sts", region_name=region, config=self.cfg)
+        creds = _assume_role(sts, RoleArn=self.role_arn, RoleSessionName=f"zs-cbom-collect-{self.team_id}"[:64],
+                             ExternalId=self.external_id, DurationSeconds=900)["Credentials"]
+        who = _AssumedSession(self.base, creds).client("sts", region_name=region, config=self.cfg).get_caller_identity()
         if str(who.get("Account")) != str(self.account):
             raise AwsCollectError("The assumed role is not in the account named by its ARN")
 
+    def ensure(self, region: str) -> None:
+        """Assume the role now if it is not (or no longer) assumed, so a failure is the role's, not a service's."""
+        with self._lock:
+            if self.session is None or time.monotonic() > self.expires:
+                self.assume(region if region != "global" else GLOBAL_REGION)
+
+    def release(self) -> None:
+        """Drop the assumed session (the next client() assumes again)."""
+        with self._lock:
+            self.session, self.expires = None, 0.0
+
     def client(self, service: str, region: str):
-        if self.session is None or time.monotonic() > self.expires:
-            self.assume(region if region != "global" else GLOBAL_REGION)
-        return self.session.client(service, region_name=GLOBAL_REGION if region == "global" else region, config=self.cfg)
+        with self._lock:
+            if self.session is None or time.monotonic() > self.expires:
+                self.assume(region if region != "global" else GLOBAL_REGION)
+            return self.session.client(service, region_name=GLOBAL_REGION if region == "global" else region,
+                                       config=self.cfg)
 
 
 def _gap(label: str, location: str, check: str, status: str, detail: str | None, scope: list[str] | None = None, *,
@@ -102,15 +193,50 @@ def _gap(label: str, location: str, check: str, status: str, detail: str | None,
     return {"type": "coverage", "target": label, "location": location, "facts": out}
 
 
+def _service_scope(service: str, region: str, account: str) -> list[str] | None:
+    """The location prefixes a regional service's assets use (CB-33 HF-1): a service that fails in one region hides
+    only these from drift, never the rest of the account (the rows' target is the account-wide ``aws:<acct>``).
+    ``tests/test_cbom_aws_cb33_a2.py`` checks each against the locations the service emits.  None for a service not
+    listed: the row then covers the whole target, as before."""
+    def p(svc: str) -> str:
+        return f"arn:aws:{svc}:{region}:{account}:"
+    return {
+        "kms": [p("kms")], "acm": [p("acm")], "acm-pca": [p("acm-pca")], "secretsmanager": [p("secretsmanager")],
+        "ec2": [p("ec2") + "ebs-encryption-by-default", p("ec2") + "volume/"],
+        "ec2-keypairs": [p("ec2") + "key-pair/"], "ec2-userdata": [p("ec2") + "instance/"], "ssm": [p("ssm")],
+        "lambda": [p("lambda")], "ecs": [p("ecs")], "rds": [p("rds")],
+        "elasticloadbalancing": [p("elasticloadbalancing") + "listener/"],
+        "elb-classic": [p("elasticloadbalancing") + "loadbalancer/"],
+        # public domains: /domainnames/<name> (no account); private ones: their domainNameArn (HF-10)
+        "apigateway": [f"arn:aws:apigateway:{region}::/domainnames/", p("apigateway") + "/domainnames/"],
+        "eks": [p("eks")], "glue": [p("glue")],
+    }.get(service)
+
+
 class _GapTally:
-    """Passes every asset on and counts the coverage gaps that make a target partial (not the ``by_choice`` ones)."""
+    """Passes every asset on and counts what the coverage gaps left unread, which makes a target partial: not the
+    ``by_choice`` rows (an option left off) nor the ``not_reported`` ones (a state in which AWS reports nothing, e.g.
+    a key's rotation while it is pending deletion: known and stable, but still hidden from drift).  A row that lists
+    several items counts each (``not_read_count``).  ``codes`` counts them by service and error code for the log."""
 
     def __init__(self, emit: Emit):
         self.emit, self.gaps = emit, 0
+        self.codes: dict[tuple[str, str], int] = {}
 
     def __call__(self, asset: dict[str, Any]) -> None:
-        if asset.get("type") == "coverage" and not (asset.get("facts") or {}).get("by_choice"):
-            self.gaps += 1
+        facts = asset.get("facts") or {}
+        if asset.get("type") == "coverage" and not facts.get("by_choice") and facts.get("status") != "not_reported":
+            count = facts.get("not_read_count")
+            # 0: a row that only follows from others already counted (custom key stores behind unread keys)
+            count = count if isinstance(count, int) and not isinstance(count, bool) and count >= 0 else 1
+            self.gaps += count
+            location = str(asset.get("location") or "")
+            service = location.split(":")[2] if location.startswith("arn:aws:") and location.count(":") >= 2 else "?"
+            codes = facts.get("codes") if isinstance(facts.get("codes"), dict) else {
+                str(facts.get("code") or facts.get("detail") or facts.get("status") or "?")[:64]: count}
+            for code, n in codes.items():
+                if int(n):
+                    self.codes[(service, code)] = self.codes.get((service, code), 0) + int(n)
         self.emit(asset)
 
 
@@ -125,19 +251,200 @@ def _paginate(client, method: str, key: str, cap: int = PER_SERVICE_CAP, **kwarg
     return out, False
 
 
-def _cert_asset(arn: str, label: str, detail: dict[str, Any], kind: str = "certificate") -> dict[str, Any]:
+def _paginate_kept(client, method: str, key: str, cap: int = PER_SERVICE_CAP,
+                   **kwargs) -> tuple[list[Any], bool, str | None]:
+    """``_paginate`` that keeps what was listed when a LATER page fails (CB-33 EC-8): (items, truncated, error code of
+    the failed page).  A failing first page raises, as before: nothing was listed."""
+    out: list[Any] = []
+    pages = iter(client.get_paginator(method).paginate(**kwargs))
+    while True:
+        try:
+            page = next(pages)
+        except StopIteration:
+            return out, False, None
+        except AwsCollectError:
+            raise
+        except Exception as exc:
+            if not out:
+                raise
+            return out, False, _code(exc)
+        out.extend(page.get(key) or [])
+        if len(out) > cap:
+            return out[:cap], True, None
+
+
+# --- per-item reads (CB-33 PR-A) -----------------------------------------------------------------------------------
+# Each item a service lists (a KMS key, an ACM certificate) is read on its own: one item that cannot be read is a
+# coverage row scoped to its exact ARN, never the end of the region nor a silent "nothing found".  Botocore's own list
+# of throttling codes, so the two stay in step.
+try:
+    from botocore.retries.standard import ThrottledRetryableChecker as _Throttled
+
+    _THROTTLE = frozenset(_Throttled._THROTTLED_ERROR_CODES)
+except Exception:  # pragma: no cover - an older botocore
+    _THROTTLE = frozenset({"Throttling", "ThrottlingException", "ThrottledException", "RequestThrottledException",
+                           "TooManyRequestsException", "ProvisionedThroughputExceededException", "RequestLimitExceeded",
+                           "LimitExceededException", "RequestThrottled", "SlowDown"})
+_UNSUPPORTED = ("UnsupportedOperationException",)
+ITEM_ROWS = 50  # coverage rows with one exact ARN each, per operation and service-region; the rest go in chunks
+CHUNK_ARNS = 100  # exact ARNs per chunk row beyond ITEM_ROWS (never a prefix: that would hide real fixes nearby)
+BREAKER_THROTTLES = 10  # consecutive throttles that stop one operation (the rest of its items become rows)
+ROLE_WIDE_DENIALS = 25  # consecutive denials with no success: the role cannot do this at all (one row)
+SERVICE_BUDGET_S = 480  # per service-region; what is left after it becomes rows, so the lease never runs out
+_clock = time.monotonic  # the tests drive a fake clock
+
+
+def _item_class(exc: Exception) -> tuple[str, str]:
+    code = _code(exc)
+    if code in _THROTTLE:
+        return "throttled", code
+    if code in _DENIED:
+        return "denied", code
+    if code in _UNSUPPORTED:
+        return "not_supported", code
+    return "error", code  # NotFound, KMSInvalidState, internal errors, timeouts, connection errors: not read
+
+
+class _Op:
+    def __init__(self) -> None:
+        self.ok = self.throttles = self.denials = 0
+        self.stopped: str | None = None
+        self.role_wide: str | None = None
+        self.failed: list[tuple[str, str, str, str]] = []  # (arn, status, code, detail)
+
+
+class _Items:
+    """Per-item reads of one service in one region (state local to one call of ``kms()`` / ``acm()``, so a retried
+    job starts clean).  ``call`` isolates each read; ``step`` (once per item) calls the worker's ``tick`` (lease
+    renewal, cancel, deadline) and keeps to the service's time budget; ``flush`` emits the coverage rows."""
+
+    def __init__(self, service: str, region: str, account: str, label: str, tick: Callable[[], str | None] | None):
+        self.service, self.region, self.account, self.label, self.tick = service, region, account, label, tick
+        self.ops: dict[str, _Op] = {}
+        self.started = _clock()
+        self.stop: str | None = None
+
+    def step(self) -> None:
+        if self.stop is not None:
+            return
+        reason = self.tick() if self.tick is not None else None
+        if reason:
+            self.stop = f"stopped: {reason}"[:200]
+        elif _clock() - self.started >= SERVICE_BUDGET_S:
+            self.stop = f"time budget of {SERVICE_BUDGET_S} s for {self.service} in {self.region} used up"
+
+    def call(self, op: str, arn: str, fn: Callable[[], Any]) -> tuple[str, Any]:
+        """("ok", value) | ("not_supported", code) | (status, code) with the item recorded as not read."""
+        state = self.ops.setdefault(op, _Op())
+        if self.stop:  # cancelled, past the deadline, or the time budget is used up: not asked
+            state.failed.append((arn, "stopped", "stopped", self.stop))
+            return "stopped", self.stop
+        if state.stopped:  # this operation's breaker tripped: not asked
+            status = "denied" if state.role_wide else "throttled"
+            state.failed.append((arn, status, state.role_wide or "breaker", state.stopped))
+            return status, state.stopped
+        try:
+            value = fn()
+        except AwsCollectError:
+            raise
+        except Exception as exc:
+            status, code = _item_class(exc)
+            if status == "not_supported":
+                state.throttles = state.denials = 0
+                return status, code
+            state.failed.append((arn, status, code, code))
+            state.throttles = state.throttles + 1 if status == "throttled" else 0
+            state.denials = state.denials + 1 if status == "denied" else 0
+            if state.throttles >= BREAKER_THROTTLES:
+                state.stopped = f"throttled; stopped after {BREAKER_THROTTLES} in a row ({code})"
+            elif state.ok == 0 and state.denials >= ROLE_WIDE_DENIALS:
+                state.stopped = state.role_wide = code
+            return status, code
+        state.ok += 1
+        state.throttles = state.denials = 0
+        return "ok", value
+
+    def flush(self, emit: Emit, ops: dict[str, tuple[str, bool]]) -> None:
+        """Coverage rows for what was not read.  ``ops``: operation -> (check text, incomplete): ``incomplete`` when
+        the item is still listed with that fact missing (rotation, key material), plain when it was not emitted."""
+        prefix = f"arn:aws:{self.service}:{self.region}:{self.account}:"
+        for op, (what, incomplete) in ops.items():
+            state = self.ops.get(op)
+            if state is None or not state.failed:
+                continue
+            if state.role_wide is not None:  # the role may not do this at all here: one row, never a row per item
+                emit(_gap(self.label, f"{prefix}{self.service}#{op}-denied", f"{self.service} {what} in {self.region}",
+                          "denied", f"{state.role_wide}: no {what} could be read ({len(state.failed)} not read, "
+                          f"{ROLE_WIDE_DENIALS} denied in a row and none allowed)", [prefix], incomplete=incomplete,
+                          code=state.role_wide, not_read_count=len(state.failed)))
+                continue
+            single, rest = state.failed[:ITEM_ROWS], state.failed[ITEM_ROWS:]
+            for arn, status, code, detail in single:
+                emit(_gap(self.label, f"{arn}#{op}", f"{self.service} {what} of {arn.rsplit('/', 1)[-1]}", status,
+                          detail[:200], [arn], incomplete=incomplete, code=code))
+            for n, start in enumerate(range(0, len(rest), CHUNK_ARNS), 1):
+                chunk = rest[start:start + CHUNK_ARNS]
+                codes: dict[str, int] = {}
+                for _arn, _status, code, _detail in chunk:
+                    codes[code] = codes.get(code, 0) + 1
+                statuses = {status for _a, status, _c, _d in chunk}
+                details = sorted({detail for _a, _s, _c, detail in chunk})
+                emit(_gap(self.label, f"{prefix}{self.service}#{op}-not-read-{n}",
+                          f"{self.service} {what} in {self.region} ({len(chunk)} items)",
+                          statuses.pop() if len(statuses) == 1 else "error", "; ".join(details)[:200],
+                          [arn for arn, _s, _c, _d in chunk], incomplete=incomplete, not_read_count=len(chunk),
+                          codes=codes))
+
+
+# KMS rotation (CB-33 RC-1): automatic rotation exists only for customer-managed SYMMETRIC_DEFAULT keys of AWS_KMS
+# origin; its status is readable in these states.  EXTERNAL Enabled keys are still asked as before CB-33 (the rule
+# that reads their answer changes in PR-B, so this PR changes no verdict); custom-store keys never are (AWS raises).
+_ROTATION_STATES = ("Enabled", "Disabled", "Creating", "Updating")
+_ROTATION_NOT_REPORTED = ("PendingDeletion", "PendingReplicaDeletion")  # AWS answers an artificial "false"
+
+
+def _kms_facts(meta: dict[str, Any]) -> dict[str, Any]:
+    """A KMS key's facts from its DescribeKey metadata (rotation is added by the caller)."""
+    spec = meta.get("KeySpec") or meta.get("CustomerMasterKeySpec")
+    multi = meta.get("MultiRegionConfiguration") or {}
+    return {"key_spec": spec, "key_usage": meta.get("KeyUsage"), "key_manager": meta.get("KeyManager"),
+            "key_state": meta.get("KeyState"), "origin": meta.get("Origin"), "multi_region": meta.get("MultiRegion"),
+            "rotation_enabled": None, "signing_algorithms": meta.get("SigningAlgorithms"), "identity": meta["Arn"],
+            "expiration_model": meta.get("ExpirationModel"), "valid_to": _iso(meta.get("ValidTo")),
+            "custom_key_store_id": meta.get("CustomKeyStoreId"), "cloud_hsm_cluster_id": meta.get("CloudHsmClusterId"),
+            "xks_key_id": (meta.get("XksKeyConfiguration") or {}).get("Id"),
+            "multi_region_type": multi.get("MultiRegionKeyType"),
+            "primary_key_arn": (multi.get("PrimaryKey") or {}).get("Arn"),
+            "current_key_material_id": meta.get("CurrentKeyMaterialId")}
+
+
+ACM_KEY_PAIR_ORIGINS = ["AWS_MANAGED", "CUSTOMER_PROVIDED", "ACME"]
+
+
+def _cert_asset(arn: str, label: str, detail: dict[str, Any], kind: str = "certificate", *,
+                summary: dict[str, Any] | None = None) -> dict[str, Any]:
+    """``summary``: the ACM ListCertificates entry, for the export facts (an exported certificate's key is used
+    outside AWS; ``exported`` is None when ACM does not say)."""
     key_alg = detail.get("KeyAlgorithm") or ""
-    family = "RSA" if key_alg.upper().startswith("RSA") else ("ECDSA" if key_alg.upper().startswith("EC") else key_alg)
+    family = _key_family(key_alg) or (
+        "RSA" if key_alg.upper().startswith("RSA") else ("ECDSA" if key_alg.upper().startswith("EC") else key_alg))
     in_use = detail.get("InUseBy")
     return {"type": kind, "target": label, "location": arn, "name": detail.get("DomainName") or arn.rsplit("/", 1)[-1],
             "algorithm": family or None, "key_size": _bits(key_alg),
             "facts": {"subject": detail.get("Subject"), "issuer": detail.get("Issuer"), "serial": detail.get("Serial"),
                       "not_before": _iso(detail.get("NotBefore")), "not_after": _iso(detail.get("NotAfter")),
-                      "sig_alg": detail.get("SignatureAlgorithm"), "key_alg": family, "key_size": _bits(key_alg),
+                      "sig_alg": detail.get("SignatureAlgorithm"), "key_alg": family, "key_alg_raw": key_alg or None,
+                      "key_size": _bits(key_alg),
                       "san": (detail.get("SubjectAlternativeNames") or [])[:50], "status": detail.get("Status"),
                       "aws_type": detail.get("Type"), "in_use": bool(in_use) if in_use is not None else None,
                       "in_use_by": (in_use or [])[:10], "renewal_eligibility": detail.get("RenewalEligibility"),
-                      "source": "aws", "identity": arn}}
+                      "source": "aws", "identity": arn,
+                      **({"exported": summary.get("Exported"),
+                          "export_option": summary.get("ExportOption") or (detail.get("Options") or {}).get("Export"),
+                          # ACME: the key pair belongs to the customer's ACME client (PR-B keeps it out of CERT_UNUSED)
+                          "key_pair_origin": summary.get("CertificateKeyPairOrigin")
+                          or detail.get("CertificateKeyPairOrigin")}
+                         if summary is not None else {})}}
 
 
 _SECRET_NAME = re.compile(r"(private|secret|passw|pwd|token|api[-_]?key|credential|tls[-_]?key|ssh[-_]?key|"
@@ -372,6 +679,43 @@ def _tls_protocol_names(values: list[str]) -> list[str]:
     return out
 
 
+# The TLS versions of each API Gateway security policy, as AWS lists them ("Supported security policies", the
+# Regional/private and the edge-optimized tables; docs.aws.amazon.com/apigateway/latest/developerguide/
+# apigateway-security-policies-list.html, read 2026-11-14).  A name the page does not list (one only the SDK enum has,
+# or a newer one) has no entry: its protocols stay unread rather than guessed.
+_APIGW_POLICY_PROTOCOLS: dict[str, tuple[str, ...]] = {
+    "TLS_1_0": ("TLSv1.0", "TLSv1.1", "TLSv1.2", "TLSv1.3"),
+    "TLS_1_2": ("TLSv1.2", "TLSv1.3"),
+    "SecurityPolicy_TLS13_1_3_2025_09": ("TLSv1.3",),
+    "SecurityPolicy_TLS13_1_3_FIPS_2025_09": ("TLSv1.3",),
+    "SecurityPolicy_TLS13_1_2_FIPS_PFS_PQ_2025_09": ("TLSv1.2", "TLSv1.3"),
+    "SecurityPolicy_TLS13_1_2_PFS_PQ_2025_09": ("TLSv1.2", "TLSv1.3"),
+    "SecurityPolicy_TLS13_1_2_PQ_2025_09": ("TLSv1.2", "TLSv1.3"),
+    "SecurityPolicy_TLS13_1_2_2021_06": ("TLSv1.2", "TLSv1.3"),
+    "SecurityPolicy_TLS13_2025_EDGE": ("TLSv1.3",),
+    "SecurityPolicy_TLS12_PFS_2025_EDGE": ("TLSv1.2", "TLSv1.3"),
+    "SecurityPolicy_TLS12_2018_EDGE": ("TLSv1.2", "TLSv1.3"),
+}
+
+
+_APIGW_NAMED_MINIMUM = (("SecurityPolicy_TLS13_1_3_", "TLSv1.3"), ("SecurityPolicy_TLS13_1_2_", "TLSv1.2"))
+
+
+def _apigw_tls_facts(policy: str) -> dict[str, Any]:
+    """The TLS facts an API Gateway domain's security policy gives: its documented protocols and lowest version, so
+    the rules judge a classical policy (QUANTUM_VULNERABLE, PROTO_TLS10 ...) instead of leaving it without a verdict.
+    ``min_version_source`` says where the minimum came from (CB-33 B10).  A name AWS's table does not list (the SDK has
+    a few more, e.g. ``..._FIPS_PQ_2025_09``) reads its minimum from the name's ``TLS13_1_3`` / ``TLS13_1_2`` part, with
+    its protocols unread; any other name is unknown (no minimum), never guessed."""
+    protocols = _APIGW_POLICY_PROTOCOLS.get(policy)
+    if protocols is not None:
+        return {"protocols": list(protocols), "min_version": protocols[0], "min_version_source": "AWS security policy table"}
+    for prefix, minimum in _APIGW_NAMED_MINIMUM:
+        if policy.startswith(prefix):
+            return {"min_version": minimum, "min_version_source": "policy name (not in AWS's security policy table)"}
+    return {"min_version": None, "min_version_source": "unknown policy"}
+
+
 def _exposure(internet_facing: bool | None, basis: str) -> dict[str, Any]:
     """Facts the risk score reads: is the resource reachable from the internet, and what AWS setting says so."""
     return {"internet_facing": internet_facing, "exposure_basis": basis[:200]}
@@ -430,9 +774,11 @@ def _glue_connection_facts(conn: dict[str, Any]) -> dict[str, Any]:
 
 
 def _region_services(acct: _Account, region: str, label: str, emit: Emit,
-                     opts: dict[str, Any] | None = None) -> list[tuple[str, str, str | None]]:
+                     opts: dict[str, Any] | None = None,
+                     tick: Callable[[], str | None] | None = None) -> list[tuple[str, str, str | None]]:
     """Read every regional service.  Returns (service, status, detail) rows; status ``partial`` when the service was
-    read but emitted coverage gaps (a cap, an item it could not read)."""
+    read but emitted coverage gaps (a cap, an item it could not read).  ``tick`` is the worker's ``should_stop``
+    (renews the lease, says when the job is cancelled or past its deadline), called inside per-item loops."""
     opts = opts or {}
     rows: list[tuple[str, str, str | None]] = []
     arn_prefix = f"arn:aws:{{svc}}:{region}:{acct.account}"
@@ -458,8 +804,9 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit,
             code = _code(exc)
             status = "denied" if code in _DENIED else ("not_enabled" if code in _NOT_ENABLED else "error")
             rows.append((service, status, code))
-            emit({"type": "coverage", "target": label, "location": f"{arn_prefix.format(svc=service)}:{service}",
-                  "facts": {"check": f"{service} in {region}", "status": status, "detail": code}})
+            # scoped to this service in this region (HF-1); incomplete: what it emitted before failing may lack facts
+            emit(_gap(label, f"{arn_prefix.format(svc=service)}:{service}", f"{service} in {region}", status, code,
+                      _service_scope(service, region, acct.account), incomplete=True))
 
     def reservations() -> tuple[list[Any], bool]:
         """DescribeInstances once per region (raises, so the service that needs it reports the failure itself)."""
@@ -488,38 +835,135 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit,
 
     def kms() -> str | None:
         client = acct.client("kms", region)
-        keys, truncated = _paginate(client, "list_keys", "Keys")
+        prefix = f"arn:aws:kms:{region}:{acct.account}:"
+        keys, truncated, page_error = _paginate_kept(client, "list_keys", "Keys",
+                                                     PaginationConfig={"PageSize": PER_SERVICE_CAP})
+        items = _Items("kms", region, acct.account, label, tick)
+        found: list[dict[str, Any]] = []
         for key in keys:
-            meta = client.describe_key(KeyId=key["KeyId"])["KeyMetadata"]
-            spec = meta.get("KeySpec") or meta.get("CustomerMasterKeySpec")
-            rotation = None
-            if meta.get("KeyManager") == "CUSTOMER" and spec == "SYMMETRIC_DEFAULT" and meta.get("KeyState") == "Enabled":
-                try:
-                    rotation = bool(client.get_key_rotation_status(KeyId=key["KeyId"]).get("KeyRotationEnabled"))
-                except Exception as exc:  # imported key material has no rotation (None); a denial is a gap
-                    rotation = None
-                    if _code(exc) in _DENIED:  # the key is listed, its rotation is unknown, not "fixed"
-                        emit(_gap(label, f"{meta['Arn']}#rotation", f"kms key {meta['KeyId']} rotation status",
-                                  "denied", _code(exc), [meta["Arn"]], incomplete=True))
-            emit({"type": "kms_key", "target": label, "location": meta["Arn"], "name": meta.get("Description") or meta["KeyId"],
-                  "algorithm": spec, "key_size": 256 if spec == "SYMMETRIC_DEFAULT" else _bits(spec),
-                  "facts": {"key_spec": spec, "key_usage": meta.get("KeyUsage"), "key_manager": meta.get("KeyManager"),
-                            "key_state": meta.get("KeyState"), "origin": meta.get("Origin"),
-                            "multi_region": meta.get("MultiRegion"), "rotation_enabled": rotation,
-                            "signing_algorithms": meta.get("SigningAlgorithms"), "identity": meta["Arn"]}})
+            items.step()
+            kid = key["KeyId"]
+            arn = key.get("KeyArn") or f"{prefix}key/{kid}"
+            status, meta = items.call("metadata", arn, lambda: client.describe_key(KeyId=kid)["KeyMetadata"])
+            if status != "ok":
+                continue  # not emitted: its exact-ARN row says it was not read (never "deleted")
+            arn = meta.get("Arn") or arn
+            facts = _kms_facts(meta)
+            spec, origin, state = facts["key_spec"], meta.get("Origin"), meta.get("KeyState")
+            rotation: bool | None = None
+            if meta.get("KeyManager") != "CUSTOMER" or spec != "SYMMETRIC_DEFAULT":
+                facts["rotation_status"] = "not applicable"
+            elif (origin == "AWS_KMS" and state in _ROTATION_STATES) or (origin == "EXTERNAL" and state == "Enabled"):
+                status, out = items.call("rotation", arn, lambda: client.get_key_rotation_status(KeyId=kid))
+                if status == "ok":
+                    rotation = bool(out.get("KeyRotationEnabled"))
+                    facts.update(rotation_status="on" if rotation else "off",
+                                 rotation_period_days=out.get("RotationPeriodInDays"),
+                                 next_rotation=_iso(out.get("NextRotationDate")),
+                                 on_demand_rotation_started=_iso(out.get("OnDemandRotationStartDate")))
+                elif status == "not_supported":
+                    facts["rotation_status"] = "not supported"
+                else:  # listed, its rotation unknown: an unknown is not a fix (its row is incomplete)
+                    facts["rotation_status"] = f"not read: {out}"[:120]
+            elif origin == "AWS_KMS" and state in _ROTATION_NOT_REPORTED:
+                facts["rotation_status"] = f"not reported while {state}"
+                # AWS reports an artificial "false" in these states: not asked, and the key's rotation verdict is
+                # neither resolved nor opened while it lasts (the row keeps the target "ok")
+                emit(_gap(label, f"{arn}#rotation", f"kms key {kid} rotation status", "not_reported",
+                          f"AWS does not report rotation while the key is {state}", [arn], incomplete=True))
+            else:
+                facts["rotation_status"] = "not applicable"  # imported material not Enabled, custom key stores
+            facts["rotation_enabled"] = rotation
+            if origin == "EXTERNAL" and spec == "SYMMETRIC_DEFAULT":
+                status, out = items.call("materials", arn, lambda: _paginate(
+                    client, "list_key_rotations", "Rotations", KeyId=kid, IncludeKeyMaterial="ALL_KEY_MATERIAL")[0])
+                if status == "ok":  # identifiers and dates of each imported material, never the material
+                    facts["key_materials"] = [
+                        {"id": r.get("KeyMaterialId"), "state": r.get("KeyMaterialState"),
+                         "import_state": r.get("ImportState"), "expiration_model": r.get("ExpirationModel"),
+                         "valid_to": _iso(r.get("ValidTo"))} for r in out][:20]
+            found.append({"type": "kms_key", "target": label, "location": arn,
+                          "name": meta.get("Description") or meta["KeyId"], "algorithm": spec,
+                          "key_size": 256 if spec == "SYMMETRIC_DEFAULT" else _bits(spec), "facts": facts})
+        stores = [a for a in found if a["facts"].get("custom_key_store_id")]
+        if stores:
+            key_stores(client, prefix, stores)
+        else:
+            unread = len((items.ops.get("metadata") or _Op()).failed)
+            if unread:  # a key not read may live in a custom key store: the stores are unknown, not gone (#136)
+                emit(_gap(label, f"{prefix}custom-key-store#unread-keys", f"kms custom key stores in {region}",
+                          "not_read", f"not read: {unread} key(s) whose metadata could not be read may use one",
+                          [f"{prefix}custom-key-store/"], incomplete=True, code="UnreadKeys", not_read_count=0))
+            else:  # read only when a key uses one: a store with no key is not inventoried, never "removed"
+                emit(_gap(label, f"{prefix}custom-key-store#no-key", f"kms custom key stores in {region}",
+                          "not_read", "read only when a key in this region uses a custom key store",
+                          [f"{prefix}custom-key-store/"], by_choice=True))
+        for asset in found:
+            emit(asset)
+        items.flush(emit, {"metadata": ("key metadata", False), "rotation": ("key rotation status", True),
+                           "materials": ("imported key material", True)})
+        if page_error:  # what was listed is read; only what the failed page would have listed is not read
+            emit(_gap(label, f"{prefix}key#list", f"kms keys in {region}", "throttled" if page_error in _THROTTLE
+                      else ("denied" if page_error in _DENIED else "error"),
+                      f"{page_error}: the key list stopped after {len(keys)} keys", [f"{prefix}key/"], code=page_error))
         if truncated:
-            capped("kms", "keys", PER_SERVICE_CAP, [f"arn:aws:kms:{region}:{acct.account}:key/"])
+            capped("kms", "keys", PER_SERVICE_CAP, [f"{prefix}key/"])
         return "truncated" if truncated else None
+
+    def key_stores(client, prefix: str, keys: list[dict[str, Any]]) -> None:
+        """The custom key stores the region's keys live in (read only when a key names one): one ``key_store`` asset
+        each, and each key gets its store's connection state.  The trust anchor certificate is never copied."""
+        try:
+            listed, _cut = _paginate(client, "describe_custom_key_stores", "CustomKeyStores")
+        except AwsCollectError:
+            raise
+        except Exception as exc:  # the stores and the joined key fact are unknown, not "fine"
+            code = _code(exc)
+            emit(_gap(label, f"{prefix}custom-key-store#describe", f"kms custom key stores in {region}",
+                      "denied" if code in _DENIED else ("throttled" if code in _THROTTLE else "error"), code,
+                      [f"{prefix}custom-key-store/", *(k["location"] for k in keys)], incomplete=True, code=code))
+            return
+        state = {}
+        for store in listed:
+            sid = store.get("CustomKeyStoreId")
+            state[sid] = store.get("ConnectionState")
+            xks = store.get("XksProxyConfiguration") or {}
+            emit({"type": "key_store", "target": label, "location": f"{prefix}custom-key-store/{sid}",
+                  "name": store.get("CustomKeyStoreName") or sid,
+                  "facts": {"store": "aws_kms_custom", "custom_key_store_type": store.get("CustomKeyStoreType"),
+                            "connection_state": store.get("ConnectionState"),
+                            "connection_error_code": store.get("ConnectionErrorCode"),
+                            "cloud_hsm_cluster_id": store.get("CloudHsmClusterId"),
+                            "xks_connectivity": xks.get("Connectivity"), "creation_date": _iso(store.get("CreationDate")),
+                            "identity": f"{prefix}custom-key-store/{sid}"}})
+        for key in keys:
+            key["facts"]["key_store_connection_state"] = state.get(key["facts"]["custom_key_store_id"])
 
     def acm() -> str | None:
         client = acct.client("acm", region)
-        everything = {"keyTypes": ["RSA_1024", "RSA_2048", "RSA_3072", "RSA_4096", "EC_prime256v1", "EC_secp384r1", "EC_secp521r1"]}
-        summaries, truncated = _paginate(client, "list_certificates", "CertificateSummaryList", Includes=everything)
+        prefix = f"arn:aws:acm:{region}:{acct.account}:"
+        everything = {"keyTypes": ACM_KEY_TYPES}
+        # every key pair origin: by default ListCertificates leaves out ACME-issued certificates (CB-33 EC-3, PR-D;
+        # the parameter needs botocore >= 1.44)
+        summaries, truncated, page_error = _paginate_kept(client, "list_certificates", "CertificateSummaryList",
+                                                          Includes=everything, CertificateKeyPairOrigins=ACM_KEY_PAIR_ORIGINS,
+                                                          PaginationConfig={"PageSize": PER_SERVICE_CAP})
+        items = _Items("acm", region, acct.account, label, tick)
         for summary in summaries:
-            detail = client.describe_certificate(CertificateArn=summary["CertificateArn"])["Certificate"]
-            emit(_cert_asset(summary["CertificateArn"], label, detail))
+            items.step()
+            arn = summary["CertificateArn"]
+            status, detail = items.call("metadata", arn,
+                                        lambda: client.describe_certificate(CertificateArn=arn)["Certificate"])
+            if status == "ok":
+                emit(_cert_asset(arn, label, detail, summary=summary))
+        items.flush(emit, {"metadata": ("certificate", False)})
+        if page_error:
+            emit(_gap(label, f"{prefix}certificate#list", f"acm certificates in {region}",
+                      "throttled" if page_error in _THROTTLE else ("denied" if page_error in _DENIED else "error"),
+                      f"{page_error}: the certificate list stopped after {len(summaries)} certificates",
+                      [f"{prefix}certificate/"], code=page_error))
         if truncated:
-            capped("acm", "certificates", PER_SERVICE_CAP, [f"arn:aws:acm:{region}:{acct.account}:certificate/"])
+            capped("acm", "certificates", PER_SERVICE_CAP, [f"{prefix}certificate/"])
         return "truncated" if truncated else None
 
     def pca() -> str | None:
@@ -532,7 +976,8 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit,
             cfg = ca.get("CertificateAuthorityConfiguration") or {}
             key_alg = cfg.get("KeyAlgorithm") or ""
             emit({"type": "cloud_ca", "target": label, "location": ca["Arn"],
-                  "name": json.dumps(cfg.get("Subject") or {})[:255], "algorithm": "RSA" if key_alg.startswith("RSA") else "ECDSA",
+                  "name": json.dumps(cfg.get("Subject") or {})[:255],
+                  "algorithm": _key_family(key_alg) or ("RSA" if key_alg.startswith("RSA") else "ECDSA"),
                   "key_size": _bits(key_alg),
                   "facts": {"key_alg": key_alg, "sig_alg": cfg.get("SigningAlgorithm"), "status": ca.get("Status"),
                             "ca_type": ca.get("Type"), "not_after": _iso(ca.get("NotAfter")),
@@ -868,16 +1313,26 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit,
         client = acct.client("apigateway", region)
         items, truncated = _paginate(client, "get_domain_names", "items")
         if truncated:
-            capped("apigateway", "custom domain names", PER_SERVICE_CAP, [f"arn:aws:apigateway:{region}::/domainnames/"])
+            capped("apigateway", "custom domain names", PER_SERVICE_CAP,
+                   _service_scope("apigateway", region, acct.account))
         for item in items:
             policy = item.get("securityPolicy") or "TLS_1_0"
+            tls = _apigw_tls_facts(str(policy))
+            if not item.get("securityPolicy"):  # AWS's default; said so, and kept so its findings stay (EC-5)
+                tls["min_version_source"] = "securityPolicy absent (assumed TLS_1_0)"
             types = [str(t) for t in (item.get("endpointConfiguration") or {}).get("types") or []]
             exposure = _exposure(False if types == ["PRIVATE"] else (True if types else None),
                                  f"API Gateway {'/'.join(types) or 'unknown'} endpoint")
-            emit({"type": "api_tls", "target": label, "location": f"arn:aws:apigateway:{region}::/domainnames/{item['domainName']}",
+            # a private domain (it has a domainNameId) may share its name with a public one: its ARN tells them apart
+            # (HF-10); a public domain keeps /domainnames/<name>, the location it was always stored under
+            private_arn = item.get("domainNameArn") if item.get("domainNameId") else None
+            where = private_arn or f"arn:aws:apigateway:{region}::/domainnames/{item['domainName']}"
+            emit({"type": "api_tls", "target": label, "location": where,
                   "name": item["domainName"], "protocol": "TLS",
-                  "facts": {"security_policy": policy, "min_version": "TLSv1.0" if policy == "TLS_1_0" else "TLSv1.2",
-                            "endpoint_types": types, **exposure}})
+                  "facts": {"security_policy": policy, **tls, "endpoint_types": types,
+                            "domain_name_status": item.get("domainNameStatus"),
+                            "endpoint_access_mode": item.get("endpointAccessMode"),
+                            **({"domain_name_id": item["domainNameId"]} if private_arn else {}), **exposure}})
         return "truncated" if truncated else None
 
     def eks() -> str | None:
@@ -1027,8 +1482,24 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit,
     return rows
 
 
-def _global_services(acct: _Account, label: str, emit: Emit) -> list[tuple[str, str, str | None]]:
+# CloudFront's viewer TLS: AWS enabled hybrid post-quantum key exchange on every CloudFront security policy, viewer to
+# edge, with no customer setting (AWS What's New 2025-09-05; CloudFront developer guide "Supported protocols and
+# ciphers between viewers and CloudFront" marks TLS 1.3, which carries the hybrid groups, for every policy).  The
+# groups themselves are named in algid, not here (CB-04 single-source rule), so ``pq_groups`` stays empty.
+_CLOUDFRONT_PQ_SOURCE = ("AWS: hybrid post-quantum key exchange on every CloudFront security policy, viewer to edge "
+                         "(What's New 2025-09-05)")
+
+
+def _global_services(acct: _Account, label: str, emit: Emit, regions: list[str] | None = None,
+                     tick: Callable[[], str | None] | None = None) -> list[tuple[str, str, str | None]]:
+    """IAM, S3 and CloudFront.  ``regions``: the source's regions; when us-east-1 is not one of them, the ACM
+    certificates CloudFront serves (they live in us-east-1) are read here by ARN (CB-33 HF-2).  None (a caller that
+    does not say) reads none of them."""
     rows: list[tuple[str, str, str | None]] = []
+    cf_certs_here = regions is not None and GLOBAL_REGION not in regions
+    acm_east = f"arn:aws:acm:{GLOBAL_REGION}:{acct.account}:certificate/"
+    scopes = {"iam": [f"arn:aws:iam::{acct.account}:"], "s3": ["arn:aws:s3:::"],
+              "cloudfront": [f"arn:aws:cloudfront::{acct.account}:"] + ([acm_east] if cf_certs_here else [])}
     tally = _GapTally(emit)
     emit = tally
 
@@ -1049,8 +1520,8 @@ def _global_services(acct: _Account, label: str, emit: Emit) -> list[tuple[str, 
             code = _code(exc)
             status = "denied" if code in _DENIED else "error"
             rows.append((service, status, code))
-            emit({"type": "coverage", "target": label, "location": f"arn:aws:{service}::{acct.account}:global",
-                  "facts": {"check": f"{service} (global)", "status": status, "detail": code}})
+            emit(_gap(label, f"arn:aws:{service}::{acct.account}:global", f"{service} (global)", status, code,
+                      scopes.get(service), incomplete=True))
 
     def iam() -> str | None:
         client = acct.client("iam", "global")
@@ -1122,15 +1593,32 @@ def _global_services(acct: _Account, label: str, emit: Emit) -> list[tuple[str, 
             if len(items) > PER_SERVICE_CAP:
                 capped("cloudfront", "distributions", PER_SERVICE_CAP, [f"arn:aws:cloudfront::{acct.account}:distribution/"])
                 break
+        certs: list[str] = []
         for dist in items[:PER_SERVICE_CAP]:
             viewer = dist.get("ViewerCertificate") or {}
             minimum = str(viewer.get("MinimumProtocolVersion") or "TLSv1")
             version = minimum.split("_")[0]  # TLSv1.2_2021 -> TLSv1.2, TLSv1_2016 -> TLSv1
+            cert = viewer.get("ACMCertificateArn")
+            if isinstance(cert, str) and cert.startswith(acm_east) and cert not in certs:
+                certs.append(cert)
             emit({"type": "cdn_tls", "target": label, "location": dist["ARN"], "name": dist.get("DomainName"), "protocol": "TLS",
                   "facts": {"min_version": "TLSv1.0" if version == "TLSv1" else version,
                             "minimum_protocol_version": minimum, "default_certificate": bool(viewer.get("CloudFrontDefaultCertificate")),
-                            "acm_certificate_arn": viewer.get("ACMCertificateArn"),
+                            "acm_certificate_arn": cert,
+                            "pq_group_supported": True, "pq_groups": [], "pq_policy_source": _CLOUDFRONT_PQ_SOURCE,
                             **_exposure(True, "CloudFront distribution (served from the public edge)")}})
+        if cf_certs_here and certs:
+            # the certificates the distributions serve, read by ARN in us-east-1: the same asset (target, location,
+            # identity) as the us-east-1 ACM pass gives, so adding us-east-1 to the source later changes no identity
+            acm = acct.client("acm", GLOBAL_REGION)
+            read = _Items("acm", GLOBAL_REGION, acct.account, label, tick)
+            for arn in certs:
+                read.step()
+                status, detail = read.call("metadata", arn, lambda: acm.describe_certificate(CertificateArn=arn)["Certificate"])
+                if status == "ok":
+                    emit(_cert_asset(arn, label, detail, summary={}))
+            read.flush(emit, {"metadata": ("certificate served by CloudFront", False)})
+            return f"{len(certs)} certificates read in {GLOBAL_REGION}"
         return None
 
     for service, fn in (("iam", iam), ("s3", s3), ("cloudfront", cloudfront)):
@@ -1138,12 +1626,18 @@ def _global_services(acct: _Account, label: str, emit: Emit) -> list[tuple[str, 
     return rows
 
 
-def collect_aws(team_id: int, cfg: dict[str, Any], external_id: str, emit: Emit,
-                should_stop: Callable[[], str | None]) -> dict[str, Any]:
-    """Collect one AWS source.  Raises AwsCollectError when nothing may be read (safety checks failed)."""
-    started = time.monotonic()
+def open_account(team_id: int, cfg: dict[str, Any], external_id: str) -> tuple[Any, Any, _Account]:
+    """The safety checks every AWS collection starts with: ZeroShield's own principal, a trust policy that refuses
+    AssumeRole without the external ID, and the role assumed in the account its ARN names.  Returns (base session,
+    botocore config, the assumed account).  Raises AwsCollectError (safe to show) when nothing may be read."""
     role_arn = cfg["role_arn"]
     regions = list(cfg.get("regions") or ["us-east-1"])
+    # The own-account guard again at collection (a source validated before the collector moved accounts must not read
+    # ZeroShield's own inventory); lab mode on a test deployment is the one exception (lab_mode.py).
+    refusal, lab = own_account_decision(aws_account_id(role_arn), zeroshield_account_id(), str(cfg.get("scope") or "account"),
+                                        team_id=team_id, where="collect")
+    if refusal:
+        raise AwsCollectError(refusal)
     try:
         base, boto_cfg = _boto(retries=5, mode="adaptive")
     except Exception as exc:
@@ -1151,80 +1645,126 @@ def collect_aws(team_id: int, cfg: dict[str, Any], external_id: str, emit: Emit,
     first = regions[0]
     sts = base.client("sts", region_name=first, config=boto_cfg)
     try:  # the trust policy must refuse us without the external ID
-        sts.assume_role(RoleArn=role_arn, RoleSessionName=f"zs-cbom-noext-{team_id}"[:64], DurationSeconds=900)
+        _assume_role(sts, RoleArn=role_arn, RoleSessionName=f"zs-cbom-noext-{team_id}"[:64], DurationSeconds=900)
         raise AwsCollectError("The role can be assumed without the external ID; add the sts:ExternalId condition and validate again")
     except AwsCollectError:
         raise
     except Exception as exc:
         if _code(exc) not in _DENIED:
             raise AwsCollectError(f"Could not check the role's trust policy: {_code(exc)}") from exc
-    accounts = [_Account(base, boto_cfg, role_arn, external_id, team_id)]
+    account = _Account(base, boto_cfg, role_arn, external_id, team_id)
+    account.lab = bool(lab)
     try:
-        accounts[0].assume(first)
+        account.assume(first)
     except AwsCollectError:
         raise
     except Exception as exc:
         raise AwsCollectError(f"AssumeRole failed: {_code(exc)}") from exc
+    return base, boto_cfg, account
+
+
+def collect_aws(team_id: int, cfg: dict[str, Any], external_id: str, emit: Emit,
+                should_stop: Callable[[], str | None]) -> dict[str, Any]:
+    """Collect one AWS source serially, in this thread.  Raises AwsCollectError when nothing may be read (safety
+    checks failed).  The cloud worker pool splits the same work into one slice per account x region instead
+    (``aws_org.plan_slices`` + ``read_target``); this path stays for tests and for ``CBOM_AWS_SLICES=0``."""
+    started = time.monotonic()
+    role_arn = cfg["role_arn"]
+    regions = list(cfg.get("regions") or ["us-east-1"])
+    base, boto_cfg, first_account = open_account(team_id, cfg, external_id)
+    accounts = [first_account]
     targets: list[dict[str, Any]] = []
+    walk = None
+    gap_codes: dict[tuple[str, str], int] = {}
     if cfg.get("scope") == "organization":
-        # The member list decides which accounts are read at all: when it fails (or is cut) the accounts that were not
-        # listed are unknown, so this is a failed target of its own (the job is partial and never compared), not a note.
-        org_label = f"aws:{accounts[0].account}"
-        org_where = f"arn:aws:organizations::{accounts[0].account}:accounts"
-        try:
-            org = accounts[0].client("organizations", "global")
-            members, members_cut = _paginate(org, "list_accounts", "Accounts", cap=200)
-            role_name = role_arn.split(":role/", 1)[1]
-            partition = role_arn.split(":")[1]
-            for member in members:
-                if member.get("Status") != "ACTIVE" or member["Id"] == accounts[0].account:
-                    continue
-                accounts.append(_Account(base, boto_cfg, f"arn:{partition}:iam::{member['Id']}:role/{role_name}", external_id, team_id))
-            if members_cut:
-                emit(_gap(org_label, org_where, "organization member accounts", "truncated",
-                          "More than 200 member accounts; the first 200 were read"))
-                targets.append({"target": f"{org_label}/organization", "status": "error", "assets": 0,
-                                "error": "More than 200 member accounts; the first 200 were read"})
-        except Exception as exc:
-            emit(_gap(org_label, org_where, "organization member accounts", "error", _code(exc)))
-            targets.append({"target": f"{org_label}/organization", "status": "error", "assets": 0,
-                            "error": f"organization member accounts not listed: {_code(exc)}"[:256]})
+        from backend.utilities.cbom_sources import aws_org
+
+        # every member account (no cap), each reachable one checked in parallel; see aws_org.member_accounts
+        walk = aws_org.member_accounts(first_account, base, boto_cfg, role_arn, external_id, team_id, regions, emit,
+                                       should_stop)
+        accounts += walk.reachable
+        targets += walk.targets
     for acct in accounts:
-        label = f"aws:{acct.account}"
         for region in ["global", *regions]:
-            reason = should_stop()
-            if reason:
-                targets.append({"target": f"{label}/{region}", "status": "skipped_cancelled", "error": reason[:256], "assets": 0})
-                continue
-            t0 = time.monotonic()
-            tally = _GapTally(emit)
-            try:
-                rows = _global_services(acct, label, tally) if region == "global" else _region_services(acct, region, label, tally, cfg)
-            except AwsCollectError as exc:
-                targets.append({"target": f"{label}/{region}", "status": "error", "error": str(exc)[:256], "assets": 0})
-                continue
-            except Exception as exc:  # AssumeRole in a member account failed
-                targets.append({"target": f"{label}/{region}", "status": "auth_failed", "error": _code(exc)[:256], "assets": 0})
-                continue
-            bad = [f"{svc}: {status} {detail or ''}".strip() for svc, status, detail in rows if status not in ("ok", "partial")]
-            gappy = [f"{svc}: {detail or 'partial'}" for svc, status, detail in rows if status == "partial"]
-            enabled = [r for r in rows if r[1] != "not_enabled"]
-            # partial: every service answered, some of what they hold was not read (each gap is a scoped coverage row)
-            status = ("error" if enabled else "not_supported") if bad else ("partial" if gappy else "ok")
-            targets.append({"target": f"{label}/{region}", "status": status, "error": "; ".join(bad + gappy)[:256] or None,
-                            "duration_ms": int((time.monotonic() - t0) * 1000), "gaps": tally.gaps,
-                            "services": {svc: status_ for svc, status_, _d in rows}})
-    return _summary(targets, team_id, started, accounts=len(accounts))
+            targets.append(read_target(acct, region, cfg, emit, should_stop, codes=gap_codes))
+        if acct is not first_account:
+            acct.release()  # one account's session at a time, not one per member for the whole walk
+    log_gaps = {"gaps": sum(gap_codes.values()),
+                "gap_codes": ",".join(f"{svc}:{code}:{n}" for (svc, code), n in sorted(gap_codes.items()))[:500] or None}
+    return summary(targets, team_id, started, log_extra=log_gaps,
+                   accounts=len(accounts) + (walk.unreachable if walk else 0),
+                   **({"lab_mode": LAB_MODE} if first_account.lab else {}))
 
 
-def _summary(targets: list[dict[str, Any]], team_id: int, started: float, **extra: Any) -> dict[str, Any]:
+class AwsThrottled(Exception):
+    """AWS kept throttling after every retry: the slice is re-queued rather than reported as a coverage gap."""
+
+
+def read_target(acct: _Account, region: str, cfg: dict[str, Any], emit: Emit,
+                should_stop: Callable[[], str | None], *, codes: dict[tuple[str, str], int] | None = None,
+                raise_throttled: bool = False) -> dict[str, Any]:
+    """Read one account x region ("global": IAM, S3, CloudFront) and return its target row.  The unit of work of a
+    cloud-pool slice (``cbom_sources.slices``) and of the serial walk above: both produce the same rows and assets.
+    A throttle that outlasted every retry is an ``error`` row (never ``auth_failed``: the role is fine), or, for a
+    slice (``raise_throttled``), AwsThrottled so the slice is tried again later."""
+    from backend.utilities.cbom_sources.aws_org import THROTTLED
+
+    label = f"aws:{acct.account}"
+    reason = should_stop()
+    if reason:
+        return {"target": f"{label}/{region}", "status": "skipped_cancelled", "error": reason[:256], "assets": 0}
+    t0 = time.monotonic()
+    tally = _GapTally(emit)
+    try:
+        if hasattr(acct, "ensure"):
+            acct.ensure(region)  # AssumeRole first (retried on throttling): its failure is the account's, not a service's
+        rows = (_global_services(acct, label, tally, regions=list(cfg.get("regions") or ["us-east-1"]),
+                                 tick=should_stop) if region == "global"
+                else _region_services(acct, region, label, tally, cfg, tick=should_stop))
+    except AwsCollectError as exc:
+        return {"target": f"{label}/{region}", "status": "error", "error": str(exc)[:256], "assets": 0}
+    except Exception as exc:  # AssumeRole in a member account failed
+        code = _code(exc)
+        if code in THROTTLED:
+            if raise_throttled:
+                raise AwsThrottled(code) from exc
+            return {"target": f"{label}/{region}", "status": "error", "error": f"throttled: {code}"[:256], "assets": 0}
+        return {"target": f"{label}/{region}", "status": "auth_failed", "error": code[:256], "assets": 0}
+    if codes is not None:
+        for code_key, n in tally.codes.items():
+            codes[code_key] = codes.get(code_key, 0) + n
+    return _region_target(label, region, rows, tally.gaps, int((time.monotonic() - t0) * 1000))
+
+
+def _region_target(label: str, region: str, rows: list[tuple[str, str, str | None]], gaps: int,
+                   duration_ms: int) -> dict[str, Any]:
+    """One region's target row from its service rows.  A region whose services all answered ``not_enabled`` (an opt-in
+    region the account has not enabled, CB-33 HF-1) is ``not_supported`` and marked ``not_enabled``: ``summary``
+    counts it partial, not failed, so it never stops drift for the account; its rows are gaps scoped to that region."""
+    bad = [f"{svc}: {status} {detail or ''}".strip() for svc, status, detail in rows if status not in ("ok", "partial")]
+    gappy = [f"{svc}: {detail or 'partial'}" for svc, status, detail in rows if status == "partial"]
+    enabled = [r for r in rows if r[1] != "not_enabled"]
+    # partial: every service answered, some of what they hold was not read (each gap is a scoped coverage row)
+    status = ("error" if enabled else "not_supported") if bad else ("partial" if gappy else "ok")
+    out = {"target": f"{label}/{region}", "status": status, "error": "; ".join(bad + gappy)[:256] or None,
+           "duration_ms": duration_ms, "gaps": gaps, "services": {svc: status_ for svc, status_, _d in rows}}
+    if rows and not enabled:
+        out["not_enabled"] = True
+    return out
+
+
+def summary(targets: list[dict[str, Any]], team_id: int, started: float, *, quiet: bool = False,
+            log_extra: dict[str, Any] | None = None, **extra: Any) -> dict[str, Any]:
+    """Counts of a list of target rows (one shape for a whole source, a slice, and a fanned-out parent)."""
     ok = sum(1 for t in targets if t["status"] == "ok")
-    partial = sum(1 for t in targets if t["status"] == "partial")
+    not_enabled = sum(1 for t in targets if t.get("not_enabled"))
+    partial = sum(1 for t in targets if t["status"] == "partial") + not_enabled
     skipped = sum(1 for t in targets if t["status"].startswith("skipped"))
-    log("aws collected", team=team_id, targets=len(targets), ok=ok, partial=partial, **extra,
-        duration_s=int(time.monotonic() - started))
+    if not quiet:
+        log("aws collected", team=team_id, targets=len(targets), ok=ok, partial=partial,
+            not_enabled=not_enabled or None, **extra, **(log_extra or {}), duration_s=int(time.monotonic() - started))
     return {"targets": targets, **extra,
             "counts": {"total": len(targets), "ok": ok, "partial": partial, "failed": len(targets) - ok - partial - skipped,
-                       "skipped": skipped},
+                       "skipped": skipped, **({"not_enabled": not_enabled} if not_enabled else {})},
             "duration_s": int(time.monotonic() - started)}
 

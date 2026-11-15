@@ -25,9 +25,6 @@ import {
   Bar,
   BarChart,
   Cell,
-  PolarAngleAxis,
-  RadialBar,
-  RadialBarChart,
   XAxis,
   YAxis,
 } from "recharts";
@@ -60,7 +57,6 @@ import {
 import {
   BarChart3,
   ShieldAlert,
-  Atom,
   ShieldCheck,
   Network,
   Layers,
@@ -77,17 +73,25 @@ import { pickBomGraph } from "@/components/bom/layout";
 import type { BomGraph } from "@/components/bom/types";
 import type { CbomFinding, CbomGraph } from "@/utils/backend_api";
 import { filterFindingsByRelatedRefs } from "@/utils/relatedFindingMatch";
-import { quantumCounts, type QuantumFields } from "@/components/cbom/quantumFilter";
+import type { QuantumFields } from "@/components/cbom/quantumFilter";
 import { ComplianceMatrix, type AttestHandler, type Compliance } from "@/components/compliance/ComplianceMatrix";
 import { FRAMEWORK_GROUPS_CBOM_WITH_INDIA } from "@/components/compliance/frameworkLabels";
 import {
+  distinctPqcFixes,
   enrichPqcMigrationFromFindings,
+  fixIndexByGroup,
   groupPqcMigrationRows,
   migrationDescriptor,
   pqcAccordionDefaultCollapsed,
   pqcDescription,
   pqcHowToFix,
+  pqcRoadmapGroups,
 } from "@/components/cbom/pqcMigrationGroup";
+import { nistLevelInfo } from "@/components/cbom/results/readinessExplain";
+import { PQC_GROUP_TRIGGER_ROW, PqcGroupBadges, PqcInstanceLevelBadge } from "@/components/cbom/PqcBadges";
+import { PqcReadinessGauge } from "@/components/cbom/PqcReadinessGauge";
+import type { CbomReadinessBasis } from "@/utils/backend_api";
+import { InfoTip } from "@/components/ui/info-tip";
 
 export type {
   ComplianceVerdict,
@@ -126,7 +130,11 @@ export interface CbomDistributions {
   pqc: {
     quantum_vulnerable: number;
     quantum_safe: number;
-    readiness_pct: number;
+    /** null when there is no percentage: a code scan with nothing judged (shown as 0), or a Sources run whose posture
+     * withholds it (shown as "Withheld" / "n/a" with readiness_basis' reason, never 0) */
+    readiness_pct: number | null;
+    /** a Sources run's posture readiness_basis (why readiness_pct is null) */
+    readiness_basis?: CbomReadinessBasis | null;
     /** hybrid-KEX (classical + PQC) algorithm count (F2) */
     hybrid?: number;
     /** NIST quantum-security-level histogram (0 = vulnerable, 1-5 = safe cat) */
@@ -183,6 +191,13 @@ export interface PqcMigrationRow {
   description?: string | null;
   suggested_fix?: string | null;
   finding_codes?: string[] | null;
+  /** CBOM Sources run rows only (one per asset): what the list groups them by (issue #271) */
+  asset_type?: string | null;
+  type_label?: string | null;
+  algorithm?: string | null;
+  migration_code?: string | null;
+  fix_code?: string | null;
+  finding_title?: string | null;
 }
 
 const PRIMITIVE_LABELS: Record<string, string> = {
@@ -211,6 +226,9 @@ const WEAKNESS_LABELS: Record<string, string> = {
   STATIC_IV: "Static IV",
   REUSED_NONCE: "Reused nonce",
   HARDCODED_KEY: "Hardcoded key",
+  STATIC_SALT: "Static salt",
+  WEAK_KDF_ITERATIONS: "Weak KDF iterations",
+  WEAK_RSA_EXPONENT: "RSA exponent 3",
   WEAK_CERTIFICATE_SIGNATURE: "Weak cert signature",
   WEAK_CERTIFICATE_KEY: "Weak cert key",
   SELF_SIGNED_LEAF: "Self-signed leaf",
@@ -254,17 +272,6 @@ const labelWeakness = (k: string) =>
   WEAKNESS_LABELS[k] ?? k.replace(/_/g, " ").toLowerCase();
 
 // ── PQC readiness (F2) ───────────────────────────────────────────────────────
-// Impact-badge tone matching CbomResults.getImpactBadgeClass (High=orange,
-// Medium=amber, Low=blue), so the quantum-vulnerable list reads identically to
-// the findings table.
-const impactBadgeClass = (impact: string | null): string => {
-  const i = (impact ?? "").toLowerCase();
-  if (i === "critical") return "border-red-500/50 text-red-600 dark:text-red-400";
-  if (i === "high") return "border-orange-500/50 text-orange-600 dark:text-orange-400";
-  if (i === "medium") return "border-amber-500/50 text-amber-600 dark:text-amber-400";
-  return "border-blue-500/50 text-blue-600 dark:text-blue-400";
-};
-
 // CNSA 2.0 National Security System transition milestones (NSA public advisory,
 // 2022 — a clean-room encoding of the published timeline, not tool output). The
 // C7 grader cites the same milestones in each QUANTUM_VULNERABLE finding message.
@@ -306,6 +313,7 @@ function AlgorithmDistribution({ data }: { data: Record<string, number> }) {
         <CardTitle className="text-base flex items-center gap-2">
           <BarChart3 className="w-4 h-4" />
           Algorithm distribution
+        <InfoTip id="cbom.chart.algorithms" />
         </CardTitle>
         <CardDescription>Crypto algorithms by primitive</CardDescription>
       </CardHeader>
@@ -343,6 +351,7 @@ function WeakCryptoFindings({ data }: { data: Record<string, number> }) {
         <CardTitle className="text-base flex items-center gap-2">
           <ShieldAlert className="w-4 h-4 text-red-600 dark:text-red-400" />
           Weak-crypto findings
+        <InfoTip id="cbom.chart.weak" />
         </CardTitle>
         <CardDescription>Weak / deprecated crypto by category (High red · Medium orange)</CardDescription>
       </CardHeader>
@@ -368,79 +377,7 @@ function WeakCryptoFindings({ data }: { data: Record<string, number> }) {
   );
 }
 
-/** 3 — PQC readiness gauge. Counts EVERY cryptographic asset of the scan (findings and clean inventory,
- * quantumFilter.inventoryRows) by the results table's Quantum column ("Quantum-safe" / "Broken today" /
- * "Quantum-vulnerable", quantumFilter.quantumCounts): an algorithm that is broken today is not quantum-ready. Same
- * rows and rule as the PDF and the scan list. Falls back to the stored ``distributions.pqc`` only when the page has
- * no rows. */
-function PqcReadinessGauge({ pqc, rows }: { pqc: CbomDistributions["pqc"]; rows?: QuantumFields[] | null }) {
-  const counts = rows && rows.length > 0 ? quantumCounts(rows) : null;
-  const safe = counts ? counts.safe : pqc?.quantum_safe ?? 0;
-  const vuln = counts ? counts.vulnerable : pqc?.quantum_vulnerable ?? 0;
-  const broken = counts ? counts.broken : 0;
-  const total = safe + vuln + broken;
-  const pct = counts ? counts.readinessPct ?? 0 : pqc?.readiness_pct ?? 0;
-  const gaugeData = [{ name: "readiness", value: pct, fill: C.quantumSafe }];
-  const gaugeConfig = {
-    value: { label: "Readiness", color: C.quantumSafe },
-  } satisfies ChartConfig;
-  return (
-    <Card className="border-zinc-200 dark:border-zinc-800">
-      <CardHeader>
-        <CardTitle className="text-base flex items-center gap-2">
-          <Atom className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-          PQC readiness
-        </CardTitle>
-        <CardDescription>Quantum-safe share of every crypto asset (findings and clean inventory); algorithms broken today are not quantum-ready</CardDescription>
-      </CardHeader>
-      <CardContent>
-        {total === 0 ? (
-          <EmptyChart message="No quantum-relevant algorithms" />
-        ) : (
-          <div className="flex flex-col items-center">
-            <div className="relative">
-              <ChartContainer config={gaugeConfig} className="mx-auto aspect-square h-[200px]">
-                <RadialBarChart
-                  data={gaugeData}
-                  startAngle={90}
-                  endAngle={-270}
-                  innerRadius={72}
-                  outerRadius={100}
-                >
-                  <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
-                  <RadialBar dataKey="value" cornerRadius={8} background fill={C.quantumSafe} />
-                </RadialBarChart>
-              </ChartContainer>
-              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                <p className="text-3xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{pct}%</p>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">quantum-safe</p>
-              </div>
-            </div>
-            <div className="flex flex-wrap justify-center gap-2 mt-3">
-              <Badge variant="outline" className="border-blue-500/50 text-blue-600 dark:text-blue-400">
-                Quantum-safe: {safe}
-              </Badge>
-              {broken > 0 && (
-                <Badge variant="outline" className="border-amber-500/60 text-amber-700 dark:text-amber-400"
-                  title="Already broken without a quantum computer: replace it now">
-                  Broken today: {broken}
-                </Badge>
-              )}
-              <Badge variant="outline" className="border-orange-500/50 text-orange-600 dark:text-orange-400">
-                Quantum-vulnerable: {vuln}
-              </Badge>
-              {(pqc?.hybrid ?? 0) > 0 && (
-                <Badge variant="outline" className="border-emerald-500/50 text-emerald-600 dark:text-emerald-400">
-                  Hybrid: {pqc.hybrid}
-                </Badge>
-              )}
-            </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
+// 3 — PQC readiness gauge: PqcReadinessGauge.tsx (render-tested on its own; worded per page, QA round 4).
 
 /** HoverCard detail for one quantum-vulnerable instance (Shadow AI pattern). */
 function PqcInstanceHover({
@@ -454,8 +391,9 @@ function PqcInstanceHover({
   const description = pqcDescription(row);
   const fix = pqcHowToFix(row);
   const codes = (row.finding_codes ?? []).filter(Boolean);
+  const level = nistLevelInfo(row.nist_quantum_security_level);
   const why = [
-    `Quantum-vulnerable (NIST level ${row.nist_quantum_security_level ?? 0})`,
+    `Quantum-vulnerable (NIST ${level.name})`,
     row.impact ? String(row.impact) : "",
     codes.length ? codes.join(", ") : "",
   ]
@@ -469,16 +407,14 @@ function PqcInstanceHover({
           className="flex items-start justify-between gap-2 rounded-md border border-orange-200/80 bg-orange-50/40 px-2.5 py-2 dark:border-orange-900/40 dark:bg-orange-950/20 cursor-default"
         >
           <div className="min-w-0 flex-1">
-            <p className="truncate font-mono text-xs text-zinc-700 dark:text-zinc-300">
+            <p className="truncate font-mono text-xs text-zinc-700 dark:text-zinc-300" title={location || undefined}>
               {location || "Location not recorded"}
             </p>
             {row.impact && row.impact !== "—" ? (
               <p className="mt-0.5 text-[11px] text-zinc-500">{row.impact}</p>
             ) : null}
           </div>
-          <Badge variant="outline" className={`shrink-0 text-[10px] ${impactBadgeClass(row.impact)}`}>
-            Level {row.nist_quantum_security_level ?? 0}
-          </Badge>
+          <PqcInstanceLevelBadge level={row.nist_quantum_security_level} impact={row.impact} />
         </li>
       </HoverCardTrigger>
       <HoverCardContent
@@ -569,6 +505,10 @@ function QuantumVulnerableList({
   onOpenFinding?: (finding: CbomFinding) => void;
 }) {
   const groups = useMemo(() => groupPqcMigrationRows(migration), [migration]);
+  // each distinct fix once (issue #271): the cards say "Fix N", the list below the cards gives the text
+  const fixes = useMemo(() => distinctPqcFixes(groups), [groups]);
+  const fixOf = useMemo(() => fixIndexByGroup(fixes), [fixes]);
+  const levels = useMemo(() => [...new Set(groups.map((g) => g.nistLevel))].sort().map(nistLevelInfo), [groups]);
   const collapseDefault = pqcAccordionDefaultCollapsed(groups, migration.length);
   // Remount when the group set changes (fixture ↔ legacy scan) so default
   // expanded/collapsed state resets. Uncontrolled Accordion — controlled
@@ -585,6 +525,7 @@ function QuantumVulnerableList({
         <CardTitle className="text-base flex items-center gap-2">
           <ShieldX className="w-4 h-4 text-orange-500" />
           Quantum-vulnerable algorithms
+          <InfoTip id="cbom.chart.qv" />
           {migration.length > 0 && (
             <span className="text-xs font-normal text-zinc-500">
               ({groups.length} group{groups.length === 1 ? "" : "s"} · {migration.length})
@@ -592,9 +533,19 @@ function QuantumVulnerableList({
           )}
         </CardTitle>
         <CardDescription>
-          Public-key assets broken by a cryptographically-relevant quantum computer
-          (NIST level 0)
+          Public-key assets broken by a cryptographically-relevant quantum computer. Near-identical assets (same
+          algorithm, finding and fix) share one card; open it for the list.
         </CardDescription>
+        {levels.length > 0 && (
+          <ul className="space-y-0.5 text-xs text-zinc-600 dark:text-zinc-400" data-testid="pqc-level-legend">
+            {levels.map((l) => (
+              <li key={l.name}>
+                <span className="font-medium text-zinc-800 dark:text-zinc-200">NIST {l.name}.</span> {l.meaning}{" "}
+                {l.next && <span className="text-zinc-500">Next: {l.next}</span>}
+              </li>
+            ))}
+          </ul>
+        )}
       </CardHeader>
       <CardContent>
         {migration.length === 0 ? (
@@ -602,6 +553,7 @@ function QuantumVulnerableList({
             <ShieldCheck className="h-8 w-8 text-emerald-500" />
             <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
               No quantum-vulnerable algorithms
+            <InfoTip id="cbom.chart.qv_none" />
             </p>
             <p className="text-xs text-zinc-500 dark:text-zinc-400">
               Every inventoried algorithm is quantum-resistant at its parameter size.
@@ -622,8 +574,8 @@ function QuantumVulnerableList({
                   data-testid="pqc-vuln-group"
                 >
                   <AccordionTrigger className="py-2.5 hover:no-underline">
-                    <div className="flex min-w-0 flex-1 items-center justify-between gap-2 pr-2">
-                      <div className="min-w-0 text-left">
+                    <div className={PQC_GROUP_TRIGGER_ROW}>
+                      <div className="min-w-0 max-w-full text-left">
                         <p className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
                           {g.name}
                         </p>
@@ -631,24 +583,8 @@ function QuantumVulnerableList({
                           {g.descriptor}
                         </p>
                       </div>
-                      <div className="flex shrink-0 items-center gap-1.5">
-                        <Badge
-                          variant="secondary"
-                          className="tabular-nums"
-                          data-testid="pqc-group-count"
-                        >
-                          {g.instances.length}
-                        </Badge>
-                        <Badge
-                          variant="outline"
-                          className="border-orange-500/50 text-orange-600 dark:text-orange-400"
-                        >
-                          Level {g.nistLevel}
-                        </Badge>
-                        <Badge variant="outline" className={impactBadgeClass(g.maxImpact)}>
-                          {g.maxImpact ?? "—"}
-                        </Badge>
-                      </div>
+                      <PqcGroupBadges count={g.instances.length} fix={fixOf.get(g.key)} nistLevel={g.nistLevel}
+                                      impact={g.maxImpact} />
                     </div>
                   </AccordionTrigger>
                   <AccordionContent>
@@ -667,6 +603,23 @@ function QuantumVulnerableList({
             </Accordion>
           </div>
         )}
+        {fixes.length > 0 && (
+          <div className="mt-3 border-t border-zinc-200 pt-3 dark:border-zinc-800" data-testid="pqc-fix-list">
+            <p className="mb-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+              How to fix ({fixes.length} distinct fix{fixes.length === 1 ? "" : "es"})
+              <InfoTip id="cbom.chart.qv_fixes" />
+            </p>
+            <ol className="space-y-2">
+              {fixes.map((f) => (
+                <li key={f.index} className="text-xs text-zinc-700 dark:text-zinc-300" data-testid="pqc-fix-item">
+                  <span className="font-semibold">Fix {f.index}</span>
+                  <span className="text-zinc-500"> · {f.instances.length} asset{f.instances.length === 1 ? "" : "s"} · {f.names.join(", ")}</span>
+                  <span className="mt-0.5 block whitespace-pre-wrap break-words">{f.fix}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -680,7 +633,8 @@ function MigrationRoadmap({
   migration: PqcMigrationRow[];
   onOpenFinding?: (finding: CbomFinding) => void;
 }) {
-  const groups = useMemo(() => groupPqcMigrationRows(migration), [migration]);
+  // a run's roadmap lists each distinct fix once (issue #271); a code scan's, one target per algorithm and size
+  const groups = useMemo(() => pqcRoadmapGroups(migration), [migration]);
   const collapseDefault = pqcAccordionDefaultCollapsed(groups, migration.length);
   const accordionKey = `roadmap:${groups.map((g) => g.key).join("\n")}`;
   const defaultOpen = collapseDefault
@@ -693,6 +647,7 @@ function MigrationRoadmap({
         <CardTitle className="text-base flex items-center gap-2">
           <Rocket className="w-4 h-4 text-blue-500" />
           PQC migration roadmap
+          <InfoTip id="cbom.chart.roadmap" />
           {migration.length > 0 && (
             <span className="text-xs font-normal text-zinc-500">
               ({groups.length} target{groups.length === 1 ? "" : "s"})
@@ -708,6 +663,7 @@ function MigrationRoadmap({
           <p className="mb-2 flex items-center gap-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">
             <CalendarClock className="h-3.5 w-3.5" />
             CNSA 2.0 transition milestones
+            <InfoTip id="cbom.chart.cnsa" />
           </p>
           <ol className="flex flex-wrap gap-2">
             {CNSA_MILESTONES.map((m) => (
@@ -733,6 +689,7 @@ function MigrationRoadmap({
           <div>
             <p className="mb-2 text-xs font-medium text-zinc-500 dark:text-zinc-400">
               Recommended replacements
+            <InfoTip id="cbom.chart.replacements" />
             </p>
             <div className="max-h-[28rem] overflow-y-auto pr-1">
               <Accordion
@@ -751,7 +708,8 @@ function MigrationRoadmap({
                       <div className="flex min-w-0 flex-1 items-center gap-2 pr-2">
                         <Badge
                           variant="outline"
-                          className="shrink-0 border-orange-500/50 text-orange-600 dark:text-orange-400"
+                          className="max-w-[45%] shrink-0 truncate border-orange-500/50 text-orange-600 dark:text-orange-400"
+                          title={g.name}
                         >
                           {g.name}
                         </Badge>
@@ -936,6 +894,7 @@ function CertificateExpiry({
         <CardTitle className="text-base flex items-center gap-2">
           <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
           Certificate expiry
+        <InfoTip id="cbom.chart.cert_expiry" />
         </CardTitle>
         <CardDescription>
           X.509 validity and related key / keystore material
@@ -1083,6 +1042,7 @@ function ProtocolTls({ data }: { data: Record<string, number> }) {
         <CardTitle className="text-base flex items-center gap-2">
           <Network className="w-4 h-4" />
           Protocol / TLS
+        <InfoTip id="cbom.chart.protocols" />
         </CardTitle>
         <CardDescription>Transport-security protocols in use</CardDescription>
       </CardHeader>
@@ -1130,6 +1090,7 @@ function AssetTypeDistribution({ graph }: { graph: CbomGraph }) {
         <CardTitle className="text-base flex items-center gap-2">
           <Layers className="w-4 h-4 text-indigo-500" />
           Asset types
+        <InfoTip id="cbom.chart.asset_types" />
         </CardTitle>
         <CardDescription>Crypto inventory by CycloneDX asset class</CardDescription>
       </CardHeader>
@@ -1242,6 +1203,8 @@ export function CbomCryptoCharts({
   findings,
   inventory,
   onOpenFinding,
+  showCodeHeatmap = true,
+  readinessScope = "code",
 }: {
   distributions?: CbomDistributions | null;
   graph?: CbomGraph | null;
@@ -1254,6 +1217,10 @@ export function CbomCryptoCharts({
   /** Every row of the scan (findings + clean inventory) for the readiness gauge; the findings when absent. */
   inventory?: QuantumFields[] | null;
   onOpenFinding?: (finding: CbomFinding) => void;
+  /** false on a Sources run page: its heat-map and certificate calendar come from the run API (RunInsights). */
+  showCodeHeatmap?: boolean;
+  /** "run": the readiness card shows posture's figure over the judged assets (QA round 4, C); "code": every asset */
+  readinessScope?: "run" | "code";
 }) {
   if (!distributions) return null;
   const hasGraph =
@@ -1309,7 +1276,7 @@ export function CbomCryptoCharts({
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <AlgorithmDistribution data={distributions.algorithms} />
         <WeakCryptoFindings data={distributions.weakness} />
-        <PqcReadinessGauge pqc={distributions.pqc} rows={inventory ?? findings} />
+        <PqcReadinessGauge pqc={distributions.pqc} rows={inventory ?? findings} scope={readinessScope} />
       </div>
       {hasPqcDetail && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -1327,10 +1294,12 @@ export function CbomCryptoCharts({
         />
         <ProtocolTls data={distributions.protocols} />
       </div>
-      <CodeHeatmapAndCalendar
-        findings={findings ?? []}
-        certificates={resolveCertificates(distributions, graph, findings)}
-      />
+      {showCodeHeatmap && (
+        <CodeHeatmapAndCalendar
+          findings={findings ?? []}
+          certificates={resolveCertificates(distributions, graph, findings)}
+        />
+      )}
       {hasGraph && (
         <div className="grid grid-cols-1 gap-6">
           <CryptoDependencyGraph
@@ -1350,7 +1319,8 @@ export function CbomCryptoCharts({
 }
 
 /** Heat-map (algorithm family x asset type, worst impact) from the scan's rows, and the certificate calendar from
- * ``cbom_distributions.certificates``: the same views a collection run shows, built from data this page has. */
+ * ``cbom_distributions.certificates``: the same views a collection run shows, built from data this page has, stacked
+ * full width like the run's (RunInsights). */
 function CodeHeatmapAndCalendar({ findings, certificates }: { findings: CbomFinding[]; certificates: CertRow[] }) {
   const heat = useMemo(() => codeHeatmap(findings as unknown as CodeHeatRow[]), [findings]);
   const certs = useMemo(
@@ -1359,7 +1329,7 @@ function CodeHeatmapAndCalendar({ findings, certificates }: { findings: CbomFind
   );
   if (heat.rows.length === 0 && certs.length === 0) return null;
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+    <div className="grid grid-cols-1 gap-6">
       {heat.rows.length > 0 && (
         <Card>
           <CardContent className="pt-6">

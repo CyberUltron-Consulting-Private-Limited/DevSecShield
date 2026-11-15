@@ -1,0 +1,17 @@
+2026-11-12T15:23:11.985168213Z 2026-11-12T15:23:11Z info scan node starting version=1.0.0 api=https://api.dss.test state=/var/lib/zs-node openssl=True
+2026-11-12T15:23:12.051453636Z 2026-11-12T15:23:12Z info ZeroShield deployment id adopted deployment=9aa6135c-7785-4613-956a-4324017e8328
+2026-11-12T15:23:12.052159759Z 2026-11-12T15:23:12Z info enrolled node=35 team=52 deployment=9aa6135c-7785-4613-956a-4324017e8328 signing=required
+2026-11-12T15:23:27.255350163Z 2026-11-12T15:23:27Z info job started job=84 run=21 attempt=1 kind=collect source_kind=network_range
+2026-11-12T15:23:27.321924077Z 2026-11-12T15:23:27Z info job started job=85 run=21 attempt=1 kind=collect source_kind=network_range
+2026-11-12T15:23:38.959212409Z 2026-11-12T15:23:38Z info job finished job=85 run=21 attempt=1 status=success assets=1 ok=1 failed=0 skipped=1 duration_s=11
+2026-11-12T15:23:39.204784073Z Exception (client): Incompatible ssh peer (no acceptable kex algorithm)
+2026-11-12T15:23:39.205954370Z Traceback (most recent call last):
+2026-11-12T15:23:39.206034767Z   File "/usr/local/lib/python3.12/site-packages/paramiko/transport.py", line 2236, in run
+2026-11-12T15:23:39.206123358Z     self._handler_table[ptype](m)
+2026-11-12T15:23:39.206183879Z   File "/usr/local/lib/python3.12/site-packages/paramiko/transport.py", line 2356, in _negotiate_keys
+2026-11-12T15:23:39.206213200Z     self._parse_kex_init(m)
+2026-11-12T15:23:39.206305833Z   File "/usr/local/lib/python3.12/site-packages/paramiko/transport.py", line 2585, in _parse_kex_init
+2026-11-12T15:23:39.206385733Z     raise IncompatiblePeer(
+2026-11-12T15:23:39.206424576Z paramiko.ssh_exception.IncompatiblePeer: Incompatible ssh peer (no acceptable kex algorithm)
+2026-11-12T15:23:39.206495671Z 
+2026-11-12T15:23:51.281273014Z 2026-11-12T15:23:51Z info job finished job=84 run=21 attempt=1 status=success assets=24 ok=14 failed=0 skipped=0 duration_s=23

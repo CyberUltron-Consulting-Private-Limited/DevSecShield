@@ -1,6 +1,6 @@
-# Weekly full security scan, report mode: gitleaks over the WHOLE git history of every fetched ref, and every other
-# scanner over the whole tree (SARIF in the artifacts, counts in the run summary). New secrets are blocked earlier, by
-# the diff-mode scan of every pull request and push.
+# Weekly full security scan, report mode: every scanner over the whole tree (SARIF in the artifacts, counts in the run
+# summary). New findings are blocked earlier, by the diff-mode scan of every pull request and push. No secret scanning
+# (removed from CI on 2026-11-12, owner decision).
 # GitHub runs schedules only from the default branch, so this starts firing once it is promoted to `main`; until
 # then run it by hand (Actions -> Security (scheduled) -> Run workflow).
 name: Security (scheduled)
@@ -22,7 +22,6 @@ jobs:
     name: security
     permissions:
       contents: read
-      pull-requests: read # requested by the reusable workflow's secrets job (unused on a schedule)
     uses: ./.github/workflows/reusable-security.yml
     with:
       mode: full
@@ -36,5 +35,3 @@ jobs:
       helm-charts: >-
         deploy/helm/cbom-scan-node --set apiUrl=https://ci.invalid --set registrationToken=ci-placeholder
         --set agent.enabled=true --set agent.poolToken=ci-placeholder
-    secrets:
-      GITGUARDIAN_API_KEY: ${{ secrets.GITGUARDIAN_API_KEY }}

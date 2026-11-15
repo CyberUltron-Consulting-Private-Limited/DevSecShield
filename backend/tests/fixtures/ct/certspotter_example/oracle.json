@@ -1,0 +1,495 @@
+{
+ "kind": "certspotter",
+ "rows": [
+  {
+   "cert_sha256": "4973b48cf244e4981d43ff0485c347d50a22f0b827f9d0c96f9233a9e7646bf5",
+   "curve": null,
+   "dns_names": [
+    "example.com",
+    "example.edu",
+    "example.net",
+    "example.org"
+   ],
+   "id": "12809115180",
+   "issuer": "CN=Sectigo Public Server Authentication CA OV R36,O=Sectigo Limited,C=GB",
+   "issuer_cn": "Sectigo Public Server Authentication CA OV R36",
+   "issuer_friendly_name": "Sectigo",
+   "key_bits": 2048,
+   "not_after": "2026-11-20T23:59:59Z",
+   "not_before": "2025-11-20T00:00:00Z",
+   "precert_poison": false,
+   "provider_dns_names": [
+    "example.com",
+    "example.edu",
+    "example.net",
+    "example.org"
+   ],
+   "pubkey_alg": "rsaEncryption",
+   "revoked": true,
+   "serial": "9de10580fa26441939f38af4afb1cb40",
+   "sha256": "4973b48cf244e4981d43ff0485c347d50a22f0b827f9d0c96f9233a9e7646bf5",
+   "sig_alg": "sha256WithRSAEncryption",
+   "subject": "CN=example.com,O=Internet Corporation For Assigned Names and Numbers,ST=California,C=US",
+   "subject_cn": "example.com",
+   "tbs_sha256": "a7781bc044f9e19ba8009c0299b404f3816642d5185ed73bae6c05e8f7fa9d35"
+  },
+  {
+   "cert_sha256": "04d54ae0d1b89c0477a054e9bf5823ec3fc4876884edd1700137bcc4b0d9da2a",
+   "curve": null,
+   "dns_names": [
+    "example.com",
+    "example.edu",
+    "example.net",
+    "example.org",
+    "www.example.com",
+    "www.example.edu",
+    "www.example.net",
+    "www.example.org"
+   ],
+   "id": "12822827438",
+   "issuer": "CN=Sectigo Public Server Authentication CA OV R36,O=Sectigo Limited,C=GB",
+   "issuer_cn": "Sectigo Public Server Authentication CA OV R36",
+   "issuer_friendly_name": "Sectigo",
+   "key_bits": 2048,
+   "not_after": "2026-11-21T23:59:59Z",
+   "not_before": "2025-11-21T00:00:00Z",
+   "precert_poison": false,
+   "provider_dns_names": [
+    "example.com",
+    "example.edu",
+    "example.net",
+    "example.org",
+    "www.example.com",
+    "www.example.edu",
+    "www.example.net",
+    "www.example.org"
+   ],
+   "pubkey_alg": "rsaEncryption",
+   "revoked": false,
+   "serial": "f8f7abde735d78baa0bd4053f39021c",
+   "sha256": "04d54ae0d1b89c0477a054e9bf5823ec3fc4876884edd1700137bcc4b0d9da2a",
+   "sig_alg": "sha256WithRSAEncryption",
+   "subject": "CN=example.com,O=Internet Corporation For Assigned Names and Numbers,ST=California,C=US",
+   "subject_cn": "example.com",
+   "tbs_sha256": "cc93628df568482176fc494c75cfbea1979a75693520a0c402b94de00cee7157"
+  },
+  {
+   "cert_sha256": "a42a79d123e9de1dfa6cfcb054454dbac0405997ebc05054a4d11a5d7a33952d",
+   "curve": null,
+   "dns_names": [
+    "example.com",
+    "example.edu",
+    "example.net",
+    "example.org",
+    "www.example.com",
+    "www.example.edu",
+    "www.example.net",
+    "www.example.org"
+   ],
+   "id": "12937142056",
+   "issuer": "CN=Sectigo Public Server Authentication CA OV R36,O=Sectigo Limited,C=GB",
+   "issuer_cn": "Sectigo Public Server Authentication CA OV R36",
+   "issuer_friendly_name": "Sectigo",
+   "key_bits": 2048,
+   "not_after": "2026-12-02T23:59:59Z",
+   "not_before": "2025-12-02T00:00:00Z",
+   "precert_poison": false,
+   "provider_dns_names": [
+    "example.com",
+    "example.edu",
+    "example.net",
+    "example.org",
+    "www.example.com",
+    "www.example.edu",
+    "www.example.net",
+    "www.example.org"
+   ],
+   "pubkey_alg": "rsaEncryption",
+   "revoked": false,
+   "serial": "531e16f0f28235b65cc7cd35a5f0710b",
+   "sha256": "a42a79d123e9de1dfa6cfcb054454dbac0405997ebc05054a4d11a5d7a33952d",
+   "sig_alg": "sha256WithRSAEncryption",
+   "subject": "CN=example.com,O=Internet Corporation For Assigned Names and Numbers,ST=California,C=US",
+   "subject_cn": "example.com",
+   "tbs_sha256": "b46167cd8eda2b77f501c846f3acc36f8fbbd484ea518d60ed04d88fba89e7ec"
+  },
+  {
+   "cert_sha256": "4ee441f6946d02e1971d1a40177a1982105f4299046c4338a9bb16f5fa1ce192",
+   "curve": null,
+   "dns_names": [
+    "*.example.com",
+    "example.com"
+   ],
+   "id": "17232708246",
+   "issuer": "CN=Sectigo Public Server Authentication CA DV R36,O=Sectigo Limited,C=GB",
+   "issuer_cn": "Sectigo Public Server Authentication CA DV R36",
+   "issuer_friendly_name": "Sectigo",
+   "key_bits": 2048,
+   "not_after": "2026-12-13T21:47:42Z",
+   "not_before": "2026-09-17T00:00:00Z",
+   "precert_poison": false,
+   "provider_dns_names": [
+    "*.example.com",
+    "example.com"
+   ],
+   "pubkey_alg": "rsaEncryption",
+   "revoked": false,
+   "serial": "418551f6928dc225a6e0deeaa8465b76",
+   "sha256": "4ee441f6946d02e1971d1a40177a1982105f4299046c4338a9bb16f5fa1ce192",
+   "sig_alg": "sha256WithRSAEncryption",
+   "subject": "CN=example.com",
+   "subject_cn": "example.com",
+   "tbs_sha256": "93758dd59e719e7d2223e3e35710933905c0ccd6e982d509277587c67225de33"
+  },
+  {
+   "cert_sha256": "56a7acf53c6fb22f50afb016b1b0fb59a9fe2b3524b1aa869f36d8e7ddb0eaad",
+   "curve": "P-256",
+   "dns_names": [
+    "*.example.com",
+    "example.com"
+   ],
+   "id": "17383412688",
+   "issuer": "CN=Sectigo Public Server Authentication CA DV E36,O=Sectigo Limited,C=GB",
+   "issuer_cn": "Sectigo Public Server Authentication CA DV E36",
+   "issuer_friendly_name": "Sectigo",
+   "key_bits": 256,
+   "not_after": "2026-12-21T09:32:54Z",
+   "not_before": "2026-09-24T00:00:00Z",
+   "precert_poison": false,
+   "provider_dns_names": [
+    "*.example.com",
+    "example.com"
+   ],
+   "pubkey_alg": "id-ecPublicKey",
+   "revoked": false,
+   "serial": "2caeeaf0743459d7e5f82a75123c58f3",
+   "sha256": "56a7acf53c6fb22f50afb016b1b0fb59a9fe2b3524b1aa869f36d8e7ddb0eaad",
+   "sig_alg": "ecdsa-with-SHA256",
+   "subject": "CN=example.com",
+   "subject_cn": "example.com",
+   "tbs_sha256": "b93c1387b02153407254914e0ee4cf75eb9289dbec681d8f3d10dcc2a62ecf9f"
+  },
+  {
+   "cert_sha256": "4ec2d2ad14563fec16af62c6e1959fe7351b6559962d82c87de8eff5dee8d665",
+   "curve": null,
+   "dns_names": [
+    "*.example.com",
+    "example.com"
+   ],
+   "id": "17433287100",
+   "issuer": "CN=Cloudflare TLS Issuing RSA CA 3,O=SSL Corporation,C=US",
+   "issuer_cn": "Cloudflare TLS Issuing RSA CA 3",
+   "issuer_friendly_name": "SSL.com",
+   "key_bits": 2048,
+   "not_after": "2026-12-25T22:43:19Z",
+   "not_before": "2026-09-26T22:34:35Z",
+   "precert_poison": false,
+   "provider_dns_names": [
+    "*.example.com",
+    "example.com"
+   ],
+   "pubkey_alg": "rsaEncryption",
+   "revoked": false,
+   "serial": "66ecfb6e7941a5dfc21f2a1d2cd28210",
+   "sha256": "4ec2d2ad14563fec16af62c6e1959fe7351b6559962d82c87de8eff5dee8d665",
+   "sig_alg": "sha256WithRSAEncryption",
+   "subject": "CN=example.com",
+   "subject_cn": "example.com",
+   "tbs_sha256": "045a5fd4447d634f703e23c849d4378922d9900c1b81c9ab9e7b1bfc591ebbd8"
+  },
+  {
+   "cert_sha256": "70793dedec9999ca2d9604bcc18bad0211f722ef4c5b89c92596d39f41980f24",
+   "curve": "P-256",
+   "dns_names": [
+    "*.example.com",
+    "example.com"
+   ],
+   "id": "17433287993",
+   "issuer": "CN=Cloudflare TLS Issuing ECC CA 3,O=SSL Corporation,C=US",
+   "issuer_cn": "Cloudflare TLS Issuing ECC CA 3",
+   "issuer_friendly_name": "SSL.com",
+   "key_bits": 256,
+   "not_after": "2026-12-25T22:43:20Z",
+   "not_before": "2026-09-26T22:34:50Z",
+   "precert_poison": false,
+   "provider_dns_names": [
+    "*.example.com",
+    "example.com"
+   ],
+   "pubkey_alg": "id-ecPublicKey",
+   "revoked": false,
+   "serial": "5173da68cc3109eb9472ebf41691c876",
+   "sha256": "70793dedec9999ca2d9604bcc18bad0211f722ef4c5b89c92596d39f41980f24",
+   "sig_alg": "ecdsa-with-SHA256",
+   "subject": "CN=example.com",
+   "subject_cn": "example.com",
+   "tbs_sha256": "0f905e37b1a2d01f90318748d4710081ef3e1d4f9a32f5c7194bdee903b36051"
+  },
+  {
+   "cert_sha256": "8355fddfbed74907fff8ad99b4844c3f3a4644261e6f339a12f9f38d56b19502",
+   "curve": null,
+   "dns_names": [
+    "*.example.com",
+    "example.com"
+   ],
+   "id": "17433445379",
+   "issuer": "CN=Cloudflare TLS Issuing RSA CA 3,O=SSL Corporation,C=US",
+   "issuer_cn": "Cloudflare TLS Issuing RSA CA 3",
+   "issuer_friendly_name": "SSL.com",
+   "key_bits": 2048,
+   "not_after": "2026-12-25T22:56:35Z",
+   "not_before": "2026-09-26T22:48:57Z",
+   "precert_poison": false,
+   "provider_dns_names": [
+    "*.example.com",
+    "example.com"
+   ],
+   "pubkey_alg": "rsaEncryption",
+   "revoked": false,
+   "serial": "62036c9f540965765e0ecc173cd1509c",
+   "sha256": "8355fddfbed74907fff8ad99b4844c3f3a4644261e6f339a12f9f38d56b19502",
+   "sig_alg": "sha256WithRSAEncryption",
+   "subject": "CN=example.com",
+   "subject_cn": "example.com",
+   "tbs_sha256": "7246022e2707053067023b506ec25cf0eabab088d96027a40599f6295daa0794"
+  },
+  {
+   "cert_sha256": "85ca6ab068e9bcce88b6c4aa3c47f7d17228134a457f870d3800e6223a0df07a",
+   "curve": "P-256",
+   "dns_names": [
+    "*.example.com",
+    "example.com"
+   ],
+   "id": "17433446883",
+   "issuer": "CN=Cloudflare TLS Issuing ECC CA 3,O=SSL Corporation,C=US",
+   "issuer_cn": "Cloudflare TLS Issuing ECC CA 3",
+   "issuer_friendly_name": "SSL.com",
+   "key_bits": 256,
+   "not_after": "2026-12-25T22:56:35Z",
+   "not_before": "2026-09-26T22:49:11Z",
+   "precert_poison": false,
+   "provider_dns_names": [
+    "*.example.com",
+    "example.com"
+   ],
+   "pubkey_alg": "id-ecPublicKey",
+   "revoked": false,
+   "serial": "1eee6aabb521d5e14fc315fd9985690",
+   "sha256": "85ca6ab068e9bcce88b6c4aa3c47f7d17228134a457f870d3800e6223a0df07a",
+   "sig_alg": "ecdsa-with-SHA256",
+   "subject": "CN=example.com",
+   "subject_cn": "example.com",
+   "tbs_sha256": "6ecee9752dd17d6ab36befdda1a90849a5c9227e6a7806621ac8ef42cd621d9c"
+  },
+  {
+   "cert_sha256": "9bc2d484fa35acdb7b3fe49c18da9fa73b8803601c9fb29f6bc317483840b008",
+   "curve": "P-256",
+   "dns_names": [
+    "emudhra-lab.example.com"
+   ],
+   "id": "17893124858",
+   "issuer": "CN=EM DV TLS CA - G3B,O=eMudhra BV,C=NL",
+   "issuer_cn": "EM DV TLS CA - G3B",
+   "issuer_friendly_name": "emSign",
+   "key_bits": 256,
+   "not_after": "2027-05-03T20:27:24Z",
+   "not_before": "2026-10-20T20:27:24Z",
+   "precert_poison": false,
+   "provider_dns_names": [
+    "emudhra-lab.example.com"
+   ],
+   "pubkey_alg": "id-ecPublicKey",
+   "revoked": null,
+   "serial": "68cc8f6297111e33884ff46efdaef18c0f1dcee8",
+   "sha256": "9bc2d484fa35acdb7b3fe49c18da9fa73b8803601c9fb29f6bc317483840b008",
+   "sig_alg": "ecdsa-with-SHA256",
+   "subject": "CN=emudhra-lab.example.com",
+   "subject_cn": "emudhra-lab.example.com",
+   "tbs_sha256": "b76bbb4f4414254bae37afa482f5d0d9d4d740b1e228492220e36ee027dc991f"
+  },
+  {
+   "cert_sha256": "8d5657322adb3f62fc70b15512ffe4f2263c769d5f23d3d6b27cdb9c7336143e",
+   "curve": "P-256",
+   "dns_names": [
+    "emudhra-lab.example.com"
+   ],
+   "id": "17893446547",
+   "issuer": "CN=EM OV TLS CA - G3C,O=eMudhra Inc,C=US",
+   "issuer_cn": "EM OV TLS CA - G3C",
+   "issuer_friendly_name": "emSign",
+   "key_bits": 256,
+   "not_after": "2027-01-18T19:58:47Z",
+   "not_before": "2026-10-20T19:58:47Z",
+   "precert_poison": false,
+   "provider_dns_names": [
+    "emudhra-lab.example.com"
+   ],
+   "pubkey_alg": "id-ecPublicKey",
+   "revoked": null,
+   "serial": "5c8d7f054c2ce9446da2059d664ed17e5cb47db0",
+   "sha256": "8d5657322adb3f62fc70b15512ffe4f2263c769d5f23d3d6b27cdb9c7336143e",
+   "sig_alg": "ecdsa-with-SHA384",
+   "subject": "CN=emudhra-lab.example.com",
+   "subject_cn": "emudhra-lab.example.com",
+   "tbs_sha256": "91930e37e8492d1fc76ce71df8fa05984449b6e4db3f665b86cc8194c8baaa9e"
+  },
+  {
+   "cert_sha256": "917d6ba636204d17829560dc34acceb6946ad819b7984e38edfe0a9f26dfd8d8",
+   "curve": "P-256",
+   "dns_names": [
+    "emudhra-lab.example.com"
+   ],
+   "id": "17893546019",
+   "issuer": "CN=EM DV TLS CA - G3B,O=eMudhra BV,C=NL",
+   "issuer_cn": "EM DV TLS CA - G3B",
+   "issuer_friendly_name": "emSign",
+   "key_bits": 256,
+   "not_after": "2027-05-03T21:15:44Z",
+   "not_before": "2026-10-20T21:15:44Z",
+   "precert_poison": false,
+   "provider_dns_names": [
+    "emudhra-lab.example.com"
+   ],
+   "pubkey_alg": "id-ecPublicKey",
+   "revoked": null,
+   "serial": "7ba7446b31fd025621a0aca8ee0438c9d5d00106",
+   "sha256": "917d6ba636204d17829560dc34acceb6946ad819b7984e38edfe0a9f26dfd8d8",
+   "sig_alg": "ecdsa-with-SHA384",
+   "subject": "CN=emudhra-lab.example.com",
+   "subject_cn": "emudhra-lab.example.com",
+   "tbs_sha256": "00ebc1d3b4122d5ce4b1a6d43f6ad95c6ac0a6a866cc1c81e3404ddf6decebf5"
+  },
+  {
+   "cert_sha256": "f0b99860e382db7f702cf825f7252e365bba57a6fa62742acf74c59c3a6e2245",
+   "curve": "P-256",
+   "dns_names": [
+    "emudhra-lab.example.com"
+   ],
+   "id": "17893562952",
+   "issuer": "CN=EM DV TLS CA - G3C,O=eMudhra Inc,C=US",
+   "issuer_cn": "EM DV TLS CA - G3C",
+   "issuer_friendly_name": "emSign",
+   "key_bits": 256,
+   "not_after": "2027-05-03T20:53:14Z",
+   "not_before": "2026-10-20T20:53:14Z",
+   "precert_poison": false,
+   "provider_dns_names": [
+    "emudhra-lab.example.com"
+   ],
+   "pubkey_alg": "id-ecPublicKey",
+   "revoked": null,
+   "serial": "151ce1ea47c503943007ec064d4e1d8d72619c5",
+   "sha256": "f0b99860e382db7f702cf825f7252e365bba57a6fa62742acf74c59c3a6e2245",
+   "sig_alg": "ecdsa-with-SHA256",
+   "subject": "CN=emudhra-lab.example.com",
+   "subject_cn": "emudhra-lab.example.com",
+   "tbs_sha256": "dc49b05deb1cc6362fc4fcd88bfd85303dc8cefa04c5726d05ae4f7839565f20"
+  },
+  {
+   "cert_sha256": "adc87ac8b10d4b518284ad534c773b1364139e494cf3265cef273aa8ace2134e",
+   "curve": "P-256",
+   "dns_names": [
+    "emudhra-lab.example.com"
+   ],
+   "id": "17893563094",
+   "issuer": "CN=EM OV TLS CA - G3B,O=eMudhra BV,C=NL",
+   "issuer_cn": "EM OV TLS CA - G3B",
+   "issuer_friendly_name": "emSign",
+   "key_bits": 256,
+   "not_after": "2027-05-03T20:53:15Z",
+   "not_before": "2026-10-20T20:53:15Z",
+   "precert_poison": false,
+   "provider_dns_names": [
+    "emudhra-lab.example.com"
+   ],
+   "pubkey_alg": "id-ecPublicKey",
+   "revoked": null,
+   "serial": "e0f9dbf2847c21210f15060ddc40cba03dbf365",
+   "sha256": "adc87ac8b10d4b518284ad534c773b1364139e494cf3265cef273aa8ace2134e",
+   "sig_alg": "ecdsa-with-SHA256",
+   "subject": "CN=emudhra-lab.example.com",
+   "subject_cn": "emudhra-lab.example.com",
+   "tbs_sha256": "54f1e05e7d0dd7062a6551f7dc5815cca8ecd245e6bc33d01af28f20a9915c44"
+  },
+  {
+   "cert_sha256": "fc7aaa604f88f68aa4ddfeaa51083135f19807b9bce18d96770d2b7492e908b4",
+   "curve": "P-256",
+   "dns_names": [
+    "emudhra-lab.example.com"
+   ],
+   "id": "17893563159",
+   "issuer": "CN=EM EV TLS CA - G3C,O=eMudhra Inc,C=US",
+   "issuer_cn": "EM EV TLS CA - G3C",
+   "issuer_friendly_name": "emSign",
+   "key_bits": 256,
+   "not_after": "2027-05-03T20:53:18Z",
+   "not_before": "2026-10-20T20:53:18Z",
+   "precert_poison": false,
+   "provider_dns_names": [
+    "emudhra-lab.example.com"
+   ],
+   "pubkey_alg": "id-ecPublicKey",
+   "revoked": null,
+   "serial": "46e3bdaf30fd88484469bebd6876949788ee8cdc",
+   "sha256": "fc7aaa604f88f68aa4ddfeaa51083135f19807b9bce18d96770d2b7492e908b4",
+   "sig_alg": "ecdsa-with-SHA256",
+   "subject": "CN=emudhra-lab.example.com",
+   "subject_cn": "emudhra-lab.example.com",
+   "tbs_sha256": "e06483aa305f785fc6ea4ba97e03deb021a05a3e0e80ac42379e4c3bcda67bea"
+  },
+  {
+   "cert_sha256": "78b354e64e15282f66ed89f3aae007110ddb27f24bb8eb434606dec2e7afcbe6",
+   "curve": "P-256",
+   "dns_names": [
+    "emudhra-lab.example.com"
+   ],
+   "id": "17893563374",
+   "issuer": "CN=EM EV TLS CA - G3B,O=eMudhra BV,C=NL",
+   "issuer_cn": "EM EV TLS CA - G3B",
+   "issuer_friendly_name": "emSign",
+   "key_bits": 256,
+   "not_after": "2027-05-03T20:53:17Z",
+   "not_before": "2026-10-20T20:53:17Z",
+   "precert_poison": false,
+   "provider_dns_names": [
+    "emudhra-lab.example.com"
+   ],
+   "pubkey_alg": "id-ecPublicKey",
+   "revoked": null,
+   "serial": "1a41a50a00d48306518d511d5eba16ff7567b592",
+   "sha256": "78b354e64e15282f66ed89f3aae007110ddb27f24bb8eb434606dec2e7afcbe6",
+   "sig_alg": "ecdsa-with-SHA256",
+   "subject": "CN=emudhra-lab.example.com",
+   "subject_cn": "emudhra-lab.example.com",
+   "tbs_sha256": "324c336caf95b46ba381c6fbe1ac6eadc0a8a03d5e80a1fdfbaa282377ec156a"
+  },
+  {
+   "cert_sha256": "05833ce0af5710895e933ca6103461117487b9d736032e30319d4e727c210c62",
+   "curve": "P-256",
+   "dns_names": [
+    "emudhra-lab.example.com"
+   ],
+   "id": "17893609773",
+   "issuer": "CN=EM DV TLS CA - G3B,O=eMudhra BV,C=NL",
+   "issuer_cn": "EM DV TLS CA - G3B",
+   "issuer_friendly_name": "emSign",
+   "key_bits": 256,
+   "not_after": "2027-08-01T21:19:03Z",
+   "not_before": "2026-10-20T21:19:03Z",
+   "precert_poison": false,
+   "provider_dns_names": [
+    "emudhra-lab.example.com"
+   ],
+   "pubkey_alg": "id-ecPublicKey",
+   "revoked": null,
+   "serial": "298e86054c63f6553cb78d46aeb08b0f75658494",
+   "sha256": "05833ce0af5710895e933ca6103461117487b9d736032e30319d4e727c210c62",
+   "sig_alg": "ecdsa-with-SHA256",
+   "subject": "CN=emudhra-lab.example.com",
+   "subject_cn": "emudhra-lab.example.com",
+   "tbs_sha256": "52ca63be7dbfd34cf906fc5b42443f605896877926d9081abcf7ef03139260d0"
+  }
+ ],
+ "source": "certspotter_example",
+ "tool": "openssl x509"
+}

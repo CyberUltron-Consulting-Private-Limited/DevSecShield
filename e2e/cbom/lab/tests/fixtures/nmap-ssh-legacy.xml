@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE nmaprun>
+<?xml-stylesheet href="file:///usr/bin/../share/nmap/nmap.xsl" type="text/xsl"?>
+<!-- Nmap 7.97 scan initiated Thu Nov 12 09:01:29 2026 as: nmap -Pn -n -p 22 -&#45;script ssh2-enum-algos -oX - 10.231.0.23 -->
+<nmaprun scanner="nmap" args="nmap -Pn -n -p 22 -&#45;script ssh2-enum-algos -oX - 10.231.0.23" start="1794474089" startstr="Thu Nov 12 09:01:29 2026" version="7.97" xmloutputversion="1.05">
+<scaninfo type="syn" protocol="tcp" numservices="1" services="22"/>
+<verbose level="0"/>
+<debugging level="0"/>
+<hosthint><status state="up" reason="arp-response" reason_ttl="0"/>
+<address addr="10.231.0.23" addrtype="ipv4"/>
+<address addr="DA:92:F7:F3:85:72" addrtype="mac"/>
+<hostnames>
+</hostnames>
+</hosthint>
+<host starttime="1794474089" endtime="1794474090"><status state="up" reason="arp-response" reason_ttl="0"/>
+<address addr="10.231.0.23" addrtype="ipv4"/>
+<address addr="DA:92:F7:F3:85:72" addrtype="mac"/>
+<hostnames>
+</hostnames>
+<ports><port protocol="tcp" portid="22"><state state="open" reason="syn-ack" reason_ttl="64"/><service name="ssh" method="table" conf="3"/><script id="ssh2-enum-algos" output="&#xa;  kex_algorithms: (6)&#xa;      curve25519-sha256&#xa;      ecdh-sha2-nistp256&#xa;      diffie-hellman-group14-sha256&#xa;      diffie-hellman-group14-sha1&#xa;      ext-info-s&#xa;      kex-strict-s-v00@openssh.com&#xa;  server_host_key_algorithms: (3)&#xa;      rsa-sha2-512&#xa;      rsa-sha2-256&#xa;      ssh-ed25519&#xa;  encryption_algorithms: (2)&#xa;      aes128-ctr&#xa;      aes256-ctr&#xa;  mac_algorithms: (2)&#xa;      hmac-sha1&#xa;      hmac-sha2-256&#xa;  compression_algorithms: (2)&#xa;      none&#xa;      zlib@openssh.com"><table key="kex_algorithms">
+<elem>curve25519-sha256</elem>
+<elem>ecdh-sha2-nistp256</elem>
+<elem>diffie-hellman-group14-sha256</elem>
+<elem>diffie-hellman-group14-sha1</elem>
+<elem>ext-info-s</elem>
+<elem>kex-strict-s-v00@openssh.com</elem>
+</table>
+<table key="server_host_key_algorithms">
+<elem>rsa-sha2-512</elem>
+<elem>rsa-sha2-256</elem>
+<elem>ssh-ed25519</elem>
+</table>
+<table key="encryption_algorithms">
+<elem>aes128-ctr</elem>
+<elem>aes256-ctr</elem>
+</table>
+<table key="mac_algorithms">
+<elem>hmac-sha1</elem>
+<elem>hmac-sha2-256</elem>
+</table>
+<table key="compression_algorithms">
+<elem>none</elem>
+<elem>zlib@openssh.com</elem>
+</table>
+</script></port>
+</ports>
+<times srtt="87" rttvar="3766" to="100000"/>
+</host>
+<runstats><finished time="1794474090" timestr="Thu Nov 12 09:01:30 2026" summary="Nmap done at Thu Nov 12 09:01:30 2026; 1 IP address (1 host up) scanned in 0.27 seconds" elapsed="0.27" exit="success"/><hosts up="1" down="0" total="1"/>
+</runstats>
+</nmaprun>

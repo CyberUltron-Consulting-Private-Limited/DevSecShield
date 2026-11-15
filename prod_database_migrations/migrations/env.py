@@ -8,6 +8,12 @@ from sqlalchemy import text
 from sqlmodel import SQLModel
 from alembic import context
 from backend.new_models import *
+# Table models outside new_models.py (F1.4 SSH CA, F1.3 transports, F1.2 fleet), so autogenerate sees their tables:
+import backend.utilities.cbom_sources.sshca.models  # noqa: F401
+import backend.utilities.cbom_sources.transports.models  # noqa: F401
+import backend.utilities.cbom_sources.fleet.models  # noqa: F401
+import backend.utilities.cbom_sources.billing  # noqa: F401  (cbomcreditentry, CB-14)
+import backend.utilities.cbom_sources.api_keys  # noqa: F401  (cbomapikey, #226)
 from dotenv import load_dotenv
 
 load_dotenv()

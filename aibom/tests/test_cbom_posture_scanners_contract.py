@@ -136,7 +136,8 @@ def test_registration() -> None:
     exported = re.findall(r'"([a-z_]+_scan)"', init.split("__all__", 1)[1])
     assert modules == sorted(modules)
     assert modules == exported
-    assert len(modules) == 20  # 19 detectors (incl. the images / binaries / firmware lane) + the occurrence pass
+    # 20 detectors (incl. the images / binaries / firmware lane and CB-28's lang_misuse) + the occurrence pass
+    assert len(modules) == 21
     for name in NAMES:
         source = (SRC / f"{name}_scan.py").read_text(encoding="utf-8")
         assert registration_problems(source) == []
@@ -145,7 +146,7 @@ def test_registration() -> None:
 
     importlib.import_module("aibom.cbom.scanners")
     found = [scanner.name for scanner in ordered_cbom_scanners()]
-    assert len(found) == 20
+    assert len(found) == 21
     assert set(NAMES) <= set(found)
 
 

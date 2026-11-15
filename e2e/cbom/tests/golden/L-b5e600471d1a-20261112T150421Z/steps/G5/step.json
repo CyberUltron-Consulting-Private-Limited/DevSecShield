@@ -1,0 +1,160 @@
+{
+  "checks": [
+    {
+      "evidence": [],
+      "expected": "10.231.0.16/28",
+      "gate": "G5",
+      "id": "G5/range_saved_10.231.0.16/28",
+      "kind": "flow",
+      "observed": "listed",
+      "reason": "",
+      "subject": {
+        "check": "range_saved_10.231.0.16/28"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [],
+      "expected": "10.231.0.32/30",
+      "gate": "G5",
+      "id": "G5/range_saved_10.231.0.32/30",
+      "kind": "flow",
+      "observed": "listed",
+      "reason": "",
+      "subject": {
+        "check": "range_saved_10.231.0.32/30"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [
+        "steps/G5/never-scan.png"
+      ],
+      "expected": "10.231.0.33 listed under never scan",
+      "gate": "G5",
+      "id": "G5/never_scan_canary",
+      "kind": "flow",
+      "observed": "listed",
+      "reason": "",
+      "subject": {
+        "check": "never_scan_canary"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [],
+      "expected": [
+        "10.231.0.2"
+      ],
+      "gate": "G5",
+      "id": "G5/soc_ip_eq_node",
+      "kind": "flow",
+      "observed": "Scan nodeSource IPse2e-node-110.231.0.2",
+      "reason": "",
+      "subject": {
+        "check": "soc_ip_eq_node"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [],
+      "expected": null,
+      "gate": "G5",
+      "id": "G5/discovery_sweep",
+      "kind": "flow",
+      "observed": null,
+      "reason": "DA G5 'sweep = the self-checked open ports': the flow does not run the discovery sweep yet (CB-05)",
+      "subject": {
+        "check": "discovery_sweep"
+      },
+      "verdict": "NOT-RUN"
+    },
+    {
+      "evidence": [],
+      "expected": "saved",
+      "gate": "G5",
+      "id": "G5/network_scope_saved",
+      "kind": "flow",
+      "observed": "saved",
+      "reason": "",
+      "subject": {
+        "check": "network_scope_saved"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [],
+      "expected": [
+        "10.231.0.16/28",
+        "10.231.0.32/30"
+      ],
+      "gate": "G5",
+      "id": "G5/ranges_eq_db",
+      "kind": "flow",
+      "observed": [
+        "10.231.0.32/30",
+        "10.231.0.16/28"
+      ],
+      "reason": "",
+      "subject": {
+        "check": "ranges_eq_db"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [],
+      "expected": [
+        "sni.lab"
+      ],
+      "gate": "G5",
+      "id": "G5/sni_eq_db",
+      "kind": "flow",
+      "observed": "[\"sni.lab\"]",
+      "reason": "",
+      "subject": {
+        "check": "sni_eq_db"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [],
+      "expected": [
+        "10.231.0.33"
+      ],
+      "gate": "G5",
+      "id": "G5/never_scan_eq_db",
+      "kind": "flow",
+      "observed": "[{\"cidr\": \"10.231.0.33\", \"reason\": \"cbom-e2e canary\"}]",
+      "reason": "",
+      "subject": {
+        "check": "never_scan_eq_db"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [],
+      "expected": {
+        "every_hour": true,
+        "soc_email": "soc@agents.dss.test"
+      },
+      "gate": "G5",
+      "id": "G5/soc_and_window_eq_db",
+      "kind": "flow",
+      "observed": {
+        "every_hour": "t",
+        "soc_email": "soc@agents.dss.test"
+      },
+      "reason": "",
+      "subject": {
+        "check": "soc_and_window_eq_db"
+      },
+      "verdict": "PASS"
+    }
+  ],
+  "ended": "2026-11-12T15:23:23Z",
+  "gate": "G5",
+  "note": "",
+  "seconds": 6,
+  "started": "2026-11-12T15:23:17Z",
+  "status": "ran"
+}

@@ -7,43 +7,22 @@ import { Copy, Check } from "lucide-react";
 import { toast } from "@/utils/toast";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { apiBaseURL } from "@/utils/interceptors";
-import { scanRequestScript, zipCommand } from "@/components/cicd/ciScanScript";
+import { CBOM_GATE_NOTE, bambooScript, isCbom } from "@/components/cicd/ciTemplates";
 
 interface BambooIntegrationGuideProps {
-  apiKey: string;
   scanType?: string;
 }
 
-export function BambooGuide({ apiKey, scanType = "sast" }: BambooIntegrationGuideProps) {
+export function BambooGuide({ scanType = "sast" }: BambooIntegrationGuideProps) {
   const [copied, setCopied] = useState(false);
   const kind = (scanType || "sast").toLowerCase();
   const label = kind.toUpperCase();
   const endpoint = `${apiBaseURL}/cicd/${kind}/scan`;
 
-  // Generate script content based on selections. The key is read from the Bamboo variable, never written into the
-  // script, so the copied and the displayed scripts are the same.
-  const scriptContent = useMemo(() => {
-    // Escape $ to prevent template literal interpolation
-    const dollar = '$';
-    const bambooVar = 'bamboo';
-    const scan = scanRequestScript({
-      zipPath: `${dollar}{zip_file}`,
-      url: endpoint,
-      keyRef: `${dollar}{${bambooVar}.cicd_api_key}`,
-      responseFile: "devsecshield-response.json",
-    });
-    return `# Everything but .git is scanned (vendored code, build output and nested archives included); installed
-# dependency trees stay out. The zip is written outside the working directory. Uploads are capped at 50 MB.
-zip_file="${dollar}(mktemp -d)/project.zip"
-${zipCommand(`${dollar}{zip_file}`)}
-
-# Call the API for ${label} scan
-${scan}
-
-FINDINGS=${dollar}(grep -o '"finding_count":[0-9]*' devsecshield-response.json | grep -o '[0-9]*' || echo "0")
-echo "Findings found during ${label}: ${dollar}FINDINGS"
-cat devsecshield-response.json`;
-  }, [endpoint, label]);
+  // Generate script content based on selections (components/cicd/ciTemplates.ts; a CBOM script ends with the policy
+  // gate). The key is read from the Bamboo variable, never written into the script, so the copied and the displayed
+  // scripts are the same.
+  const scriptContent = useMemo(() => bambooScript({ kind, endpoint }), [endpoint, kind]);
 
   // Displayed script (it holds no key)
   const displayedScriptContent = scriptContent;
@@ -146,7 +125,7 @@ cat devsecshield-response.json`;
                       Variable: <span className="text-blue-600 dark:text-blue-400">cicd_api_key</span>
                     </p>
                     <p className="text-xs font-mono text-zinc-900 dark:text-zinc-100 mt-1">
-                      Value: <span className="text-zinc-500">{apiKey.substring(0, 20)}...</span>
+                      Value: <span className="text-zinc-500">the API key DevSecShield showed once when this integration was created or its key was last rotated (rotate it on this page if you no longer have it)</span>
                     </p>
                     <p className="text-xs font-mono text-zinc-900 dark:text-zinc-100 mt-1">
                       Type: <span className="text-blue-600 dark:text-blue-400">Password</span> (to hide the value)
@@ -161,7 +140,7 @@ cat devsecshield-response.json`;
             <li>
               <strong>Run the Plan</strong>
               <br />
-              <span className="text-zinc-600 dark:text-zinc-400">After completing the configuration, manually run the plan and check the logs in Atlassian Bamboo for details of the found vulnerabilities. Detailed information on the scan will be available in the DevSecShield dashboard.</span>
+              <span className="text-zinc-600 dark:text-zinc-400">After completing the configuration, manually run the plan and check the logs in Atlassian Bamboo for details of the found vulnerabilities. Detailed information on the scan will be available in the DevSecShield dashboard.{isCbom(kind) && <> {CBOM_GATE_NOTE}</>}</span>
             </li>
           </ol>
         </CardContent>

@@ -1,0 +1,14 @@
+{
+ "access-control-allow-origin": "*",
+ "cache-control": "public, max-age=14400, must-revalidate",
+ "connection": "close",
+ "content-type": "application/json",
+ "date": "Thu, 12 Nov 2026 17:46:43 GMT",
+ "link": "<https://api.certspotter.com/issuances?after=17976488467&domain=xn--mnchen-3ya.de&expand=dns_names&expand=issuer&expand=revocation&expand=cert_der&expand=pubkey&include_subdomains=true&match_wildcards=true>; rel=\"next\"",
+ "server": "sslmatehttpd",
+ "transfer-encoding": "chunked",
+ "vary": "Authorization",
+ "x-content-type-options": "nosniff",
+ "x-ratelimit-limit": "10",
+ "x-ratelimit-remaining": "3"
+}

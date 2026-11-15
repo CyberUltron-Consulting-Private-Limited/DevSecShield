@@ -24,6 +24,16 @@ x-logging: &logging
 x-backend-env-files: &backend-env-files
   - path: .env
   - path: backend.env
+# Fleet onboarding (#227): on for staging so it can be QA'd end to end; production keeps the code's default (off).
+# One switch each, set to 0 in .env to turn it off here (README "Fleet onboarding on staging"). The API serves the
+# routes; the cloud worker runs the fleet threads (inventory sync, evaluations, reconciles) while inventory or policies
+# is on. Both read the same values.
+x-fleet-flags: &fleet-flags
+  CBOM_FLEET_INVENTORY: ${CBOM_FLEET_INVENTORY:-1}
+  CBOM_FLEET_POLICIES: ${CBOM_FLEET_POLICIES:-1}
+  CBOM_FLEET_MATERIALIZE: ${CBOM_FLEET_MATERIALIZE:-1}
+  CBOM_FLEET_TRANSPORTS: ${CBOM_FLEET_TRANSPORTS:-1}
+  CBOM_SSH_CA: ${CBOM_SSH_CA:-1}
 x-backend-service: &backend-service
   image: *backend-image
   pull_policy: never
@@ -150,6 +160,20 @@ services:
     environment:
       SKIP_ALEMBIC: "1"
       FORWARDED_ALLOW_IPS: ${DSS_PROXY_IP:-172.30.250.10}
+      # 1 = GET /health and X-ZS-Build name the deployed commit publicly (staging, labs: the gate compares it);
+      # default off (production). Signed-in users read it from GET /version either way. README "Build identity".
+      DSS_EXPOSE_BUILD: ${DSS_EXPOSE_BUILD:-0}
+      # Scan node downloads (Add scan node: image file, Helm chart, OVA/AMI build kits): the files of the running tag,
+      # written by `staging.sh push` (README "Scan node downloads"). Missing: the wizard says they are not available.
+      CBOM_NODE_ARTIFACT_DIR: /node-artifacts
+      # Optional: the node image (and its Helm chart, oci://...:<version>) in a registry customers can pull from; unset =
+      # the wizard offers the files only. staging.sh deploy sets both from CBOM_NODE_REGISTRY_PUBLIC (README "Public
+      # registry"): only while the GHCR packages are public.
+      CBOM_NODE_IMAGE_REF: ${CBOM_NODE_IMAGE_REF:-}
+      CBOM_NODE_CHART_REF: ${CBOM_NODE_CHART_REF:-}
+      # A test deployment: CBOM_AWS_LAB_SAME_ACCOUNT (backend.env) may work here; production refuses it (lab_mode.py).
+      DSS_ENV: staging
+      <<: *fleet-flags
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -166,6 +190,7 @@ services:
     volumes:
       - backend-data:/backend/data
       - ../../compose/aibom-config-overlay:/aibom/config:ro
+      - ./node-artifacts/${DSS_TAG:?set DSS_TAG}:/node-artifacts:ro
     networks: [internal, edge]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=5)"]
@@ -175,11 +200,29 @@ services:
       start_period: 60s
 
   # CBOM sources: AWS accounts and identity-provider metadata (node-less sources); reaps expired jobs.
+  # A pool (F1): CBOM_CLOUD_REPLICAS containers x CBOM_CLOUD_WORKERS claim loops each (default 1 x 1). AWS sources are
+  # collected as one job per account x region even at 1 x 1 (CBOM_AWS_SLICES=0: the serial walk). Set the variables in
+  # this folder's .env (deploy/local/README.md, "Cloud worker pool").
   cbom-cloud-worker:
     <<: *backend-service
     restart: unless-stopped
+    deploy:
+      replicas: ${CBOM_CLOUD_REPLICAS:-1}
+    # SIGTERM: claims stop, running jobs get CBOM_CLOUD_SHUTDOWN_GRACE_S, then give their lease back to the queue
+    stop_grace_period: 60s
     environment:
       SKIP_ALEMBIC: "1"
+      DSS_ENV: staging  # as the backend's (lab mode is decided again at collection)
+      <<: *fleet-flags
+      CBOM_CLOUD_WORKERS: ${CBOM_CLOUD_WORKERS:-1}
+      CBOM_CLOUD_TEAM_MAX_CONCURRENCY: ${CBOM_CLOUD_TEAM_MAX_CONCURRENCY:-8}
+      CBOM_CLOUD_LEASE_S: ${CBOM_CLOUD_LEASE_S:-900}
+      CBOM_CLOUD_SHUTDOWN_GRACE_S: ${CBOM_CLOUD_SHUTDOWN_GRACE_S:-20}
+      CBOM_CLOUD_QUEUE_LOG_S: ${CBOM_CLOUD_QUEUE_LOG_S:-60}
+      CBOM_AWS_SLICES: ${CBOM_AWS_SLICES:-1}
+      CBOM_AWS_ORG_WORKERS: ${CBOM_AWS_ORG_WORKERS:-16}
+      CBOM_AWS_THROTTLE_RETRIES: ${CBOM_AWS_THROTTLE_RETRIES:-6}
+      CBOM_AWS_MAX_ASSETS_PER_SOURCE: ${CBOM_AWS_MAX_ASSETS_PER_SOURCE:-50000}
     depends_on:
       migrate:
         condition: service_completed_successfully

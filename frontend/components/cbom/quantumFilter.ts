@@ -13,10 +13,16 @@ export function isBrokenToday(f: QuantumFields): boolean {
   return f.quantum_safe === true && String(f.crypto_strength ?? "").toLowerCase() === "weak";
 }
 
+/** An algorithm the rule base could not identify (strength "unknown"): not judged, never "Safe", even when an engine
+ * before CB-18 stored it with quantum_safe true (the backend's cbom_metrics.code_row_quantum_vulnerable rule). */
+export function isUnidentified(f: QuantumFields): boolean {
+  return f.quantum_safe === true && String(f.crypto_strength ?? "").toLowerCase() === "unknown";
+}
+
 /** "Quantum-Safe" lists only the rows the column calls Safe; the rows it calls "Broken today" have their own option
  * (they were listed under Quantum-Safe: lab UI run u2, round 5). */
 export function matchesQuantumFilter(f: QuantumFields, filter: string): boolean {
-  if (filter === "safe") return f.quantum_safe === true && !isBrokenToday(f);
+  if (filter === "safe") return f.quantum_safe === true && !isBrokenToday(f) && !isUnidentified(f);
   if (filter === "broken") return isBrokenToday(f);
   if (filter === "vulnerable") return f.quantum_safe === false;
   return true;
@@ -51,6 +57,7 @@ export function quantumCounts(rows: QuantumFields[]): QuantumCounts {
   let vulnerable = 0;
   for (const r of rows) {
     if (isBrokenToday(r)) broken += 1;
+    else if (isUnidentified(r)) continue;
     else if (r.quantum_safe === true) safe += 1;
     else if (r.quantum_safe === false) vulnerable += 1;
   }

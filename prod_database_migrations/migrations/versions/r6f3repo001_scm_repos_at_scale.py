@@ -2,7 +2,7 @@
 the cross-repository finding roll-up
 
 Revision ID: r6f3repo001
-Revises: rv6p1nodename001
+Revises: cb352hooks001
 Create Date: 2026-11-11 13:00:00.000000
 
 Additive only: seven new tables, no change to existing ones. Downgrade drops them (children first).
@@ -15,7 +15,7 @@ import sqlmodel
 
 
 revision: str = 'r6f3repo001'
-down_revision: Union[str, Sequence[str], None] = 'rv6p1nodename001'
+down_revision: Union[str, Sequence[str], None] = 'cb352hooks001'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
