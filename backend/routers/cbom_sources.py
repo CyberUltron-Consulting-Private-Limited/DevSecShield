@@ -50,6 +50,7 @@ from backend.utilities.cbom_sources import host_key_resets as HKR  # #150
 from backend.utilities.cbom_sources import jobs as J
 from backend.utilities.cbom_sources import source_cap as SOURCE_CAP
 from backend.utilities.cbom_sources import targets as T
+from backend.utilities.cbom_sources import vault_support as VAULT_SUPPORT  # #364
 from backend.utilities.cbom_sources.aws_validate import validate_aws_role
 from backend.utilities.cbom_sources.common import audit, iso_z, log, new_ref, new_token, sha256_hex, utcnow
 from backend.utilities.cbom_sources.crypto import decrypt_secrets, encrypt_secrets, scrub, warn_if_key_is_weak
@@ -558,6 +559,13 @@ def _ct_prepare(engine, team_id: int, body: SourceCreate) -> SourceCreate:
     return body.model_copy(update={"name": CT_SOURCE_NAME, "config": config})
 
 
+def _refuse_unavailable_vault(cfg) -> None:
+    """#364: a vault no scan node reads (CyberArk, Azure Key Vault) is listed as "not available yet" and never saved."""
+    problem = VAULT_SUPPORT.config_problem(cfg)
+    if problem:
+        raise HTTPException(status_code=400, detail=problem)
+
+
 def _create_source(engine, team_id: int, user_id: int, body: SourceCreate) -> dict:
     now = utcnow()
     spec = KINDS[body.kind]
@@ -578,6 +586,7 @@ def _create_source(engine, team_id: int, user_id: int, body: SourceCreate) -> di
         AG.check_node_for_kind(node, body.kind)
         _check_refs(session, team_id, body.kind, cfg)
         if getattr(cfg, "credential_type", None) == "vault":
+            _refuse_unavailable_vault(cfg)
             require_admin(session, user_id, team_id, "sources that read their credential from a vault")
         SSHCA_SOURCES.check_create(session, team_id, user_id, cfg)  # F1.4: ssh_ca sources are written by admins
         secrets_ = _merge_secrets(body.kind, cfg, {}, body.secrets, clear=[], reset=True, where_changed=False)
@@ -791,6 +800,7 @@ def _update_source(engine, team_id: int, user_id: int, source_id: int, body: Sou
         # Renaming or disabling never needs these checks, so a source saved before the rules can still be turned off.
         relevant = new_dump != old_dump or bool(provided) or new_node_id != source.node_id
         if relevant and new_dump.get("credential_type") == "vault":
+            _refuse_unavailable_vault(new_dump)
             require_admin(session, user_id, team_id, "sources that read their credential from a vault")
         SSHCA_SOURCES.check_update(session, team_id, user_id, source, old_cfg, cfg, relevant=relevant,  # F1.4
                                    name=body.name, enabled=body.enabled)

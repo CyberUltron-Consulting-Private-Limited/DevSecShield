@@ -225,8 +225,10 @@ def test_low_balance_concurrent_requests_never_get_a_free_remediation(world):
             assert "not have enough credits" in r.json()["detail"]
         else:
             assert doc["remediation"]["status"] == "completed"
-    # a refused finding is still refused at 0 credits (no cached copy exists)
-    assert _post_all([world.ids[5]])[0].status_code == 402 and world.calls["generate"] == 2
+    # a refused finding is still refused at 0 credits (no cached copy exists); which two of the six win is up to the
+    # race, so the one re-asked is one that was refused
+    refused = next(oid for oid, r in zip(world.ids[:6], responses) if r.status_code == 402)
+    assert _post_all([refused])[0].status_code == 402 and world.calls["generate"] == 2
 
 
 @pytest.mark.parametrize("mode, code", [("failed", 200), ("raise", 500)])

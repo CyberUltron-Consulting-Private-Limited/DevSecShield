@@ -69,7 +69,7 @@ const TEXT = {
   },
   // src: frontend/components/cbom/sources/fleet/CredentialsSection.tsx:185-197, backend/utilities/cbom_sources/kinds.py:81-83 — VaultRef provider
   "fleet.cred.vault": {
-    what: "Where the scan node reads the secret at run time: HashiCorp Vault, CyberArk, AWS Secrets Manager or Azure Key Vault. Nothing secret is stored in ZeroShield.",
+    what: "Where the scan node reads the secret at run time: HashiCorp Vault or AWS Secrets Manager (CyberArk and Azure Key Vault: not available yet). Nothing secret is stored in ZeroShield.",
     why: "Keeps the secret in the vault your team already rotates and audits.",
     example: "HashiCorp.",
   },

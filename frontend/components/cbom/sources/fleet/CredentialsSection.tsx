@@ -27,6 +27,8 @@ import {
 
 import { refusalReason } from "../logic";
 import { ConfirmDialog, EmptyState, ErrorBlock, Field, LoadingBlock, SectionCard } from "../shared";
+import { VAULT_PROVIDERS } from "../vaultProviders";
+import { VaultNodeSettings } from "../VaultNodeSettings";
 import { isConflict } from "./fleetLogic";
 import { cbomFleetKeys, refreshFleet } from "./keys";
 import type { FleetSectionProps } from "./sections";
@@ -188,14 +190,14 @@ function CredentialForm({ teamId, editing, onDone, onCloseAutoFocus }: {
                 <Select value={vaultProvider} onValueChange={setVaultProvider}>
                   <SelectTrigger id="cred-vault" className="cursor-pointer"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="hashicorp" className="cursor-pointer">HashiCorp</SelectItem>
-                    <SelectItem value="cyberark" className="cursor-pointer">CyberArk</SelectItem>
-                    <SelectItem value="aws_secrets_manager" className="cursor-pointer">AWS Secrets Manager</SelectItem>
-                    <SelectItem value="azure_key_vault" className="cursor-pointer">Azure Key Vault</SelectItem>
+                    {VAULT_PROVIDERS.map((p) => (
+                      <SelectItem key={p.value} value={p.value} disabled={!p.available} className="cursor-pointer">{p.optionLabel}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </Field>
               <Field infoId="fleet.cred.vault_path" label="Secret path" htmlFor="cred-vault-path"><Input id="cred-vault-path" value={vaultPath} onChange={(e) => setVaultPath(e.target.value)} /></Field>
+              <VaultNodeSettings provider={vaultProvider} path={vaultPath} testId="cred-vault-node-settings" className="col-span-2" />
             </div>
           )}
           {reentry.length > 0 && (

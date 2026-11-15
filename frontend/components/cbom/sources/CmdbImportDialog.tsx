@@ -24,6 +24,8 @@ import {
 } from "@/utils/api/integrations";
 
 import { CA_ENGINES, DIALOG_LAYOUT, createLine, importNodes, leftOutLine, segmentPickers } from "./cmdbLogic";
+import { VAULT_PROVIDERS } from "./vaultProviders";
+import { VaultNodeSettings } from "./VaultNodeSettings";
 
 import { cbomSourcesKeys } from "./keys";
 import { ChoiceCards, Checkbox2, Field, NodeSelect, StatusBadge } from "./shared";
@@ -34,12 +36,6 @@ const SAMPLE = "hostname,ip_address,owner,application,criticality,exposure,data_
   "app-01.bank.local,10.20.0.11,Payments Team,Payments,critical,internet,restricted,production,linux,dc-mumbai\n" +
   "win-01.bank.local,10.20.0.12,Payments Team,Payments,high,internal,restricted,production,windows,dc-chennai\n";
 const NONE = "__none";
-const VAULTS: { value: CmdbVaultProvider; label: string }[] = [
-  { value: "hashicorp", label: "HashiCorp Vault" },
-  { value: "cyberark", label: "CyberArk" },
-  { value: "aws_secrets_manager", label: "AWS Secrets Manager" },
-  { value: "azure_key_vault", label: "Azure Key Vault" },
-];
 
 function fmt(value: unknown): string {
   return value === null || value === undefined || value === "" ? "—" : String(value);
@@ -283,7 +279,9 @@ export default function CmdbImportDialog({ teamId }: { teamId: number }) {
                     <SelectTrigger id="cmdb-vault-provider" className="w-full cursor-pointer"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value={NONE} className="cursor-pointer">No vault</SelectItem>
-                      {VAULTS.map((v) => <SelectItem key={v.value} value={v.value} className="cursor-pointer">{v.label}</SelectItem>)}
+                      {VAULT_PROVIDERS.map((p) => (
+                        <SelectItem key={p.value} value={p.value} disabled={!p.available} className="cursor-pointer">{p.optionLabel}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </Field>
@@ -292,6 +290,9 @@ export default function CmdbImportDialog({ teamId }: { teamId: number }) {
                   <Input id="cmdb-win-path" value={winPath} disabled={!vaultProvider} placeholder="secret/data/cbom/winrm"
                          onChange={(e) => { setWinPath(e.target.value); reset(); }} data-testid="cmdb-win-path" />
                 </Field>
+                {/* #364: what the node's operator sets; the import's node is checked here, every row's node in the preview */}
+                <VaultNodeSettings provider={vaultProvider} path={winPath} testId="cmdb-vault-node-settings"
+                  node={(nodes.data?.nodes ?? []).find((n) => n.id === nodeId) ?? null} className="sm:col-span-2" />
               </div>
             )}
             {createMissing && (
