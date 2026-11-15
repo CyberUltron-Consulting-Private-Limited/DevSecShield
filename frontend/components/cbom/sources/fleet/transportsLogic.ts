@@ -20,6 +20,11 @@ export const ARTIFACTS_OF: Record<CbomTransportKind, string[]> = {
   ssm: ["ssm-document", "ssm-role-cfn"],
 };
 
+/** The files only a verified zs-collect release can make (backend transports/artifacts.py NEEDS_RELEASE): without
+ * one, only the SSM role template and the signing key can be fetched. */
+export const TRANSPORT_FILES_NEED_RELEASE: ReadonlySet<string> =
+  new Set(["ansible-collection", "salt-state", "ssm-document", "zs-collect-manifest"]);
+
 /** The backend's answer to Test for AWX and Salt (POST .../validate is SSM only). */
 export const TEST_ELSEWHERE =
   "Tested through a source that uses it: its control plane is reached from a scan node inside your network, not from ZeroShield.";

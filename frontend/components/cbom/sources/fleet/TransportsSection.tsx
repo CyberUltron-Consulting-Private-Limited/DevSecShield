@@ -35,6 +35,7 @@ import type { FleetSectionProps } from "./sections";
 import {
   ARTIFACTS_OF,
   TEST_ELSEWHERE,
+  TRANSPORT_FILES_NEED_RELEASE,
   TRANSPORT_LABEL,
   canTest,
   emptyTransportDraft,
@@ -314,7 +315,10 @@ export default function TransportsSection({ teamId }: FleetSectionProps) {
           </p>
           <div className="flex flex-wrap gap-2">
             {FILES.map((name) => (
-              <Button key={name} size="sm" variant="outline" className="cursor-pointer" disabled={fetchFile.isPending} onClick={() => fetchFile.mutate(name)}>
+              <Button key={name} size="sm" variant="outline" className="cursor-pointer"
+                disabled={fetchFile.isPending || (!data.release && TRANSPORT_FILES_NEED_RELEASE.has(name))}
+                title={!data.release && TRANSPORT_FILES_NEED_RELEASE.has(name) ? "Needs a verified zs-collect release in this deployment" : undefined}
+                onClick={() => fetchFile.mutate(name)}>
                 <FileText className="h-3.5 w-3.5 mr-1" />{name}
               </Button>
             ))}
