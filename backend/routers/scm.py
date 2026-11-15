@@ -66,7 +66,7 @@ from backend.utilities.scm.models import (
 )
 from backend.utilities.scm.providers import ScmError, provider_for_connection
 
-from backend.utilities.rbac.policy import machine  # noqa: E402  (F4: the webhook's policy)
+from backend.utilities.rbac.policy import machine  # F4: the webhook's policy
 
 router = APIRouter(tags=["scm"], route_class=CbomRoute)
 AuthHeader = Annotated[str | None, Header()]

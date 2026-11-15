@@ -21,12 +21,22 @@ from sqlmodel import Session, select
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from test_cbom_api_keys import USERS, api, audit_rows, make_key, world  # noqa: E402,F401  (fixtures)
-
-from backend.main import app  # noqa: E402
-from backend.new_models import TeamMembership  # noqa: E402
-from backend.utilities.rbac.policy import (  # noqa: E402
-    Machine, Public, TeamPermission, TeamPermissionOrTicket, declared_policies, marker_of,
+from backend.main import app
+from backend.new_models import TeamMembership
+from backend.utilities.rbac.policy import (
+    Machine,
+    Public,
+    TeamPermission,
+    TeamPermissionOrTicket,
+    declared_policies,
+    marker_of,
+)
+from test_cbom_api_keys import (  # noqa: F401  (fixtures)
+    USERS,
+    api,
+    audit_rows,
+    make_key,
+    world,
 )
 
 # (method, path) -> the permission it is served with; "machine" for a non-person credential the handler checks,
@@ -198,7 +208,7 @@ def test_every_team_route_dev_added_is_refused_to_a_viewer_where_it_changes_some
 
 
 # ----------------------------------------------------------------------------- zsk_ keys under the route policy
-def test_a_cbom_api_key_passes_the_policy_as_its_creator_and_is_checked_once(api, world):
+def test_a_cbom_api_key_passes_the_policy_as_its_creator_and_is_checked_once(api, world):  # noqa: F811  (pytest fixtures imported above)
     engine, _ids, _db = world
     _meta, key = make_key(api, ["cbom.read"], name="reader")
     before = [r for r in audit_rows(engine, 1) if r.action == "api_key.use"]
@@ -214,7 +224,7 @@ def test_a_cbom_api_key_passes_the_policy_as_its_creator_and_is_checked_once(api
     assert api("GET", "/team/1", key=key).status_code == 401
 
 
-def test_a_key_stops_at_the_policy_when_its_creator_is_demoted_to_member(api, world):
+def test_a_key_stops_at_the_policy_when_its_creator_is_demoted_to_member(api, world):  # noqa: F811  (pytest fixtures imported above)
     engine, _ids, _db = world
     _meta, key = make_key(api, ["cbom.read"], name="reader")
     assert api("GET", "/1/cbom/sources/runs", key=key).status_code == 200
@@ -228,7 +238,7 @@ def test_a_key_stops_at_the_policy_when_its_creator_is_demoted_to_member(api, wo
     assert refused.status_code == 403 and "no longer a team admin" in refused.json()["detail"]
 
 
-def test_a_key_created_by_an_owner_works(api, world):
+def test_a_key_created_by_an_owner_works(api, world):  # noqa: F811  (pytest fixtures imported above)
     """Owners hold every admin right: a key an owner made acts for them (ADMIN_ROLES includes owner)."""
     engine, _ids, _db = world
     with Session(engine) as s:
@@ -242,7 +252,7 @@ def test_a_key_created_by_an_owner_works(api, world):
 
 
 # ----------------------------------------------------------------------------- signed download links
-def test_the_node_artifact_download_takes_a_ticket_without_a_session_and_nothing_else(api, world):
+def test_the_node_artifact_download_takes_a_ticket_without_a_session_and_nothing_else(api, world):  # noqa: F811  (pytest fixtures imported above)
     anonymous = api("GET", "/1/cbom/node-artifacts/image", None)
     assert anonymous.status_code == 401  # no session, no ticket: the policy refuses before the handler
     forged = api("GET", "/1/cbom/node-artifacts/image?ticket=forged", None)
@@ -255,7 +265,7 @@ def test_the_node_artifact_download_takes_a_ticket_without_a_session_and_nothing
 
 # ----------------------------------------------------------------------------- owners in dev's admin checks
 @pytest.mark.parametrize("role, admin", [("owner", True), ("admin", True), ("member", False), ("viewer", False)])
-def test_owners_count_as_admins_in_the_ssh_ca_approval_list(world, role, admin):
+def test_owners_count_as_admins_in_the_ssh_ca_approval_list(world, role, admin):  # noqa: F811  (pytest fixtures imported above)
     from backend.utilities.cbom_sources.http import is_team_admin as cbom_is_admin
     from backend.utilities.cicd.api_keys import is_team_admin as cicd_is_admin
 

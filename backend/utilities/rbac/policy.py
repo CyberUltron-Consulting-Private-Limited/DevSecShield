@@ -174,7 +174,7 @@ async def _cbom_api_key_principal(request: Request, engine: Engine, team_id: int
         role = await run_in_threadpool(_membership_role, engine, team_id, int(user.id))
     except HTTPException:
         raise
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001  (a database error: a generic 500, never the driver's text)
         log.error("access check failed for an API key (%s)", type(exc).__name__)
         raise HTTPException(status_code=500, detail=ACCESS_CHECK_FAILED) from None
     API_KEYS.mark_active(key_id)
@@ -183,7 +183,7 @@ async def _cbom_api_key_principal(request: Request, engine: Engine, team_id: int
                      role=role, via="api_key")
 
 
-def _membership_role(engine: Engine, team_id: int, user_id: int) -> Optional[str]:
+def _membership_role(engine: Engine, team_id: int, user_id: int) -> str | None:
     with Session(engine) as session:
         return session.exec(select(TeamMembership.role).where(
             TeamMembership.team_id == team_id, TeamMembership.user_id == user_id)).first()
@@ -345,7 +345,7 @@ class TeamPermissionOrTicket(TeamPermission):
         return (f"{super().describe()}; without a session: a {' / '.join(self.ticket_params)} query ticket the "
                 f"handler checks ({self.reason})")
 
-    async def __call__(self, request: Request) -> Optional[Principal]:
+    async def __call__(self, request: Request) -> Principal | None:
         if "authorization" not in request.headers and any(request.query_params.get(p) for p in self.ticket_params):
             self._context(request, engine_getter=self.engine_getter, team_id=team_id_from_path(request))
             return None
