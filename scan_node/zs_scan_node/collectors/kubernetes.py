@@ -1,6 +1,7 @@
 """Kubernetes over the read-only API with a static token or client certificate.
 
-* kubeconfig ``exec``/``auth-provider`` plugins and ``insecure-skip-tls-verify`` are refused; the API server
+* kubeconfig ``exec``/``auth-provider`` plugins, ``insecure-skip-tls-verify``, ``proxy-url`` and a context the
+  kubeconfig does not have are refused; the API server
   certificate is always verified against ``ca_pem`` (if set) or the kubeconfig's certificate-authority-data.
 * Secrets are read only at Tier 2 and only with ``fieldSelector=type=kubernetes.io/tls`` (other secrets' values are
   never fetched).  From each TLS secret only ``tls.crt`` is parsed; ``tls.key`` is dropped unread.
@@ -85,6 +86,10 @@ class Api:
             raise ConfigError("the kubeconfig is not a mapping")
         ctx_name = config.get("context") or kc.get("current-context")
         contexts = {c.get("name"): c.get("context") or {} for c in kc.get("contexts") or [] if isinstance(c, dict)}
+        if config.get("context") and config["context"] not in contexts:
+            # #208: never fall back to another context (another cluster or user) than the one the source names
+            names = ", ".join(str(n) for n in contexts) or "none"
+            raise ConfigError(f"the context {config['context']!r} is not in the kubeconfig; its contexts are {names}")
         context = contexts.get(ctx_name) or (next(iter(contexts.values())) if contexts else {})
         clusters = {c.get("name"): c.get("cluster") or {} for c in kc.get("clusters") or [] if isinstance(c, dict)}
         users = {u.get("name"): u.get("user") or {} for u in kc.get("users") or [] if isinstance(u, dict)}
@@ -92,6 +97,9 @@ class Api:
         user = users.get(context.get("user")) or (next(iter(users.values())) if users else {})
         if cluster.get("insecure-skip-tls-verify"):
             raise ConfigError("the kubeconfig disables certificate checks (insecure-skip-tls-verify); remove it")
+        if cluster.get("proxy-url"):  # #209: the node connects directly (pinned, checked address); never ignore it
+            raise ConfigError("the kubeconfig sets proxy-url, which the scan node does not use (it connects to the API "
+                              "server directly); remove it")
         if "exec" in user or "auth-provider" in user:
             raise ConfigError("the kubeconfig uses an exec or auth-provider plugin; use a service-account token")
         ca_text = config.get("ca_pem")

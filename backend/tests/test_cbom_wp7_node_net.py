@@ -244,7 +244,9 @@ def test_classifier_codes_are_all_in_the_new_kb_list():
 
 
 # ----------------------------------------------------------------------------- source kind, protocols, RBAC
-KNOWN = "10.1.1.1 ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBEm"
+# a whole ecdsa key: known_hosts is parsed at save (#149), and the truncated blob this held was never a usable pin
+KNOWN = ("10.1.1.1 ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBEmKSENjQEezOmxkZMy7opKgwFB9n"
+         "kt5YRrYMjNuG5N87uRgg6CLrbo5wAdT/y6v0mKV0U2w0WZ2YB/++Tpockg=")
 
 
 def test_appliance_kind_validation():

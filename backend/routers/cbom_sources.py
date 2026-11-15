@@ -94,6 +94,7 @@ from backend.utilities.cbom_sources.schemas import (
     EstimateBody,
     NodeCreate,
     NodeUpdate,
+    proxy_inspect_problem,
     RunCreate,
     SettingsUpdate,
     SourceCreate,
@@ -352,6 +353,15 @@ def _update_node(engine, team_id: int, user_id: int, node_id: int, body: NodeUpd
             if key == "name" and not value:
                 continue
             setattr(node, key, value)
+        if {"proxy_url", "proxy_ca_pem", "proxy_tls_inspect"} & set(changes):
+            # #202: a node whose proxy is removed has nothing left to inspect: inspection goes off with it (the edit
+            # dialog has no inspection box); turning inspection on needs the proxy and its CA, as on create
+            if node.proxy_tls_inspect and not (node.proxy_url or "").strip() and not changes.get("proxy_tls_inspect"):
+                node.proxy_tls_inspect = False
+                changes["proxy_tls_inspect"] = False
+            problem = proxy_inspect_problem(node.proxy_tls_inspect, node.proxy_url, node.proxy_ca_pem)
+            if problem:
+                raise HTTPException(status_code=400, detail=problem)
         node.row_version += 1
         node.updated_by_user_id = user_id
         node.last_updated = now
@@ -1124,16 +1134,16 @@ def _update_settings(engine, team_id: int, user_id: int, body: SettingsUpdate) -
                 # keeps every address it answers out of range sweeps, discovery and name targets.  Fail closed: while
                 # the name has no address on the node, the node scans nothing (it cannot tell which one is the host);
                 # the UI says so on the entry, and each job's result names the unresolved name.
-                if parsed.hostnames and T.ADDRESS_TYPO.fullmatch(parsed.hostnames[0]):
-                    raise HTTPException(status_code=400, detail=f"network_exclusions: {item.cidr.strip()} is not a valid "
+                typo = next((h for h in parsed.hostnames if T.ADDRESS_TYPO.fullmatch(h)), None)
+                if typo is not None:
+                    raise HTTPException(status_code=400, detail=f"network_exclusions: {typo} is not a valid "
                                         "IP address or CIDR range (it reads as a mistyped address, not a host name)")
-                if not parsed.normalized:
-                    continue
-                canonical = parsed.normalized[0]
-                if canonical in seen:
-                    continue
-                seen.add(canonical)
-                items.append({"cidr": canonical, "reason": item.reason})
+                # an entry holding several, separated by commas, keeps every one (#148), each with the entry's reason
+                for canonical in parsed.normalized:
+                    if canonical in seen:
+                        continue
+                    seen.add(canonical)
+                    items.append({"cidr": canonical, "reason": item.reason})
             changes["network_exclusions"] = items
         if "risk_model" in changes:
             # merge: a field the request leaves out keeps its value; an explicit null clears it; risk_model: null
