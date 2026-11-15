@@ -43,11 +43,58 @@ export function splitLines(text: string): string[] {
     .filter((line) => line.length > 0)
 }
 
-/** First column of a CSV (header row dropped when it is not an address). */
+/** Header words of a target CSV: the same set as the backend (backend/utilities/cbom_sources/targets.py _HEADER_WORDS,
+ * kept equal by sourceFormChecks.test.ts), so a "hosts" or "targets" header is never imported as a target (#151). */
+export const TARGET_HEADER_WORDS = ["ip", "ips", "host", "hosts", "hostname", "address", "addresses", "target", "targets", "name"] as const
+
+/** First column of a CSV, the file's own header row dropped (before the rows are added to the box, #151). */
 export function csvFirstColumn(text: string): string[] {
   const rows = splitLines(text).map((line) => line.split(/[,;\t]/)[0].trim().replace(/^"|"$/g, ""))
-  if (rows.length && /^(ip|ips|host|hostname|address|target|name)$/i.test(rows[0])) rows.shift()
+  if (rows.length && (TARGET_HEADER_WORDS as readonly string[]).includes(rows[0].toLowerCase())) rows.shift()
   return rows.filter(Boolean)
+}
+
+/** The target box after an import: the box's lines plus the file's, each once; with the line-limit message when the
+ * result is over the per-source limit (the same message the box shows when typed, #151). */
+export function mergeImportedTargets(box: string, rows: string[], maxLines: number): { text: string; error: string | null } {
+  const lines = [...splitLines(box), ...rows].filter((v, i, all) => all.indexOf(v) === i)
+  const error = lines.length > maxLines
+    ? `${lines.length.toLocaleString("en-US")} lines; the limit is ${maxLines.toLocaleString("en-US")} per source`
+    : null
+  return { text: lines.join("\n"), error }
+}
+
+/** Why pasted or uploaded text is not known_hosts lines (#149: the backend's kinds.check_known_hosts, simplified), or
+ * null. A private key is refused before it is ever put in the box. */
+export function knownHostsProblem(text: string): string | null {
+  if (/PRIVATE KEY/.test(text)) {
+    return "This is a private key, not known_hosts lines. Paste the servers' public host keys (ssh-keyscan output)"
+  }
+  let lines = 0
+  const all = text.replace(/\r\n?/g, "\n").split("\n")
+  for (let i = 0; i < all.length; i++) {
+    const line = all[i].trim()
+    if (!line || line.startsWith("#")) continue
+    let fields = line.split(/\s+/)
+    if (fields[0] === "@cert-authority" || fields[0] === "@revoked") fields = fields.slice(1)
+    if (fields.length < 3 || !/^[a-z0-9][a-z0-9@._-]{2,63}$/.test(fields[1]) || !/^[A-Za-z0-9+/]+={0,2}$/.test(fields[2])) {
+      return `Line ${i + 1} is not a known_hosts line: expected host, key type and base64 key (ssh-keyscan output)`
+    }
+    lines++
+  }
+  return lines ? null : "Paste the known_hosts lines to pin, or choose trust on first use"
+}
+
+/** #156: a Windows or Active Directory port that would send the login to a server that is not verified, or null
+ * (the backend's kinds.credential_target_problem: WINRM_HTTP_PORTS and AD_NOT_LDAPS_PORTS). */
+export function windowsPortProblem(kind: string, port: number): string | null {
+  if (kind === "windows_servers" && [80, 5985, 8080].includes(port)) {
+    return `${port} is a plain-HTTP port: WinRM over HTTP cannot prove the server; use HTTPS (5986)`
+  }
+  if (kind === "active_directory" && [389, 3268, 80, 5985, 5986, 8080].includes(port)) {
+    return `${port} is not LDAPS: use 636, or 3269 for the global catalog`
+  }
+  return null
 }
 
 /** Host names from a BIND zone file export (A, AAAA and CNAME owners). */
@@ -280,9 +327,17 @@ export interface NodeTrust {
 }
 /** Where the node reads the trust files: inside the container (Docker, VM kits), and the VM directory zs-node-run mounts. */
 export const TRUST_DIR = "/etc/zs-node/trust"
-export const TRUST_PATHS = { ca: `${TRUST_DIR}/ca.pem`, cert: `${TRUST_DIR}/client.crt`, key: `${TRUST_DIR}/client.key` }
-/** The Helm Secrets the wizard's command creates (chart values trust.caSecret / trust.clientSecret). */
-export const TRUST_SECRETS = { ca: "zs-node-ca", client: "zs-node-client" }
+export const TRUST_PATHS = { ca: `${TRUST_DIR}/ca.pem`, cert: `${TRUST_DIR}/client.crt`, key: `${TRUST_DIR}/client.key`,
+  proxyAuth: `${TRUST_DIR}/proxy-auth` }
+/** The Helm Secrets the wizard's command creates (chart values trust.caSecret / trust.clientSecret / proxyAuthSecret). */
+export const TRUST_SECRETS = { ca: "zs-node-ca", client: "zs-node-client", proxyAuth: "zs-node-proxy-auth" }
+/** #199: the file the install command writes the proxy login to (user:password, 0400 for the node's user): the
+ * password is typed on the host with `read -s`, never in ZeroShield, the command, the shell history or the env. */
+export const PROXY_AUTH_FILE = "zs-proxy-auth"
+/** #196: the node's CA bundle when both a private API CA and the inspecting proxy's CA are given. */
+export const CA_BUNDLE_FILE = "zs-node-ca.pem"
+/** The node container's user (Dockerfile USER 10001): the owner of the 0400 files it reads. */
+const NODE_UID = 10001
 
 function given(v: string | null | undefined): string | null {
   const t = (v ?? "").trim()
@@ -318,13 +373,12 @@ export function trustEnvLines(t: NodeTrust | null | undefined): string[] {
   ]
 }
 
-/** `docker run` options: the env and read-only bind mounts of the files. */
-function trustDockerLines(t: NodeTrust | null | undefined): string[] {
+/** `docker run` options: the env and read-only bind mounts of the files (the API CA from apiCa: #196). */
+function trustDockerLines(t: NodeTrust | null | undefined, ca: string | null = null): string[] {
   const a = activeTrust(t)
-  if (!a) return []
   return [
-    ...(a.caFile ? [`  -e ZS_CA_FILE=${TRUST_PATHS.ca} -v ${a.caFile}:${TRUST_PATHS.ca}:ro \\`] : []),
-    ...(a.clientCert ? [
+    ...(ca ? [`  -e ZS_CA_FILE=${TRUST_PATHS.ca} -v ${ca}:${TRUST_PATHS.ca}:ro \\`] : []),
+    ...(a?.clientCert ? [
       `  -e ZS_CLIENT_CERT=${TRUST_PATHS.cert} -v ${a.clientCert}:${TRUST_PATHS.cert}:ro \\`,
       `  -e ZS_CLIENT_KEY=${TRUST_PATHS.key} -v ${a.clientKey}:${TRUST_PATHS.key}:ro \\`,
     ] : []),
@@ -332,36 +386,78 @@ function trustDockerLines(t: NodeTrust | null | undefined): string[] {
 }
 
 /** Helm: the Secrets made from the files (before the install, each step chained with &&) and the chart values. */
-function trustHelm(t: NodeTrust | null | undefined): { pre: string[]; sets: string[] } {
-  const a = activeTrust(t)
-  if (!a) return { pre: [], sets: [] }
+function trustHelm(opts: NodeCommandOpts): { pre: string[]; sets: string[] } {
+  const a = activeTrust(opts.trust)
+  const ca = apiCa(opts)
+  const auth = !!given(opts.proxyUser)
+  if (!ca.local && !a?.clientCert && !auth) return { pre: [], sets: [] }
   const apply = "--dry-run=client -o yaml | kubectl apply -f - && \\"
   return {
     pre: [
+      ...ca.pre,
       "kubectl create namespace zs-cbom --dry-run=client -o yaml | kubectl apply -f - && \\",
-      ...(a.caFile ? [`kubectl -n zs-cbom create secret generic ${TRUST_SECRETS.ca} --from-file=ca.pem=${a.caFile} ${apply}`] : []),
-      ...(a.clientCert ? [`kubectl -n zs-cbom create secret tls ${TRUST_SECRETS.client} --cert=${a.clientCert} --key=${a.clientKey} ${apply}`] : []),
+      ...(ca.local ? [`kubectl -n zs-cbom create secret generic ${TRUST_SECRETS.ca} --from-file=ca.pem=${ca.local} ${apply}`] : []),
+      ...(a?.clientCert ? [`kubectl -n zs-cbom create secret tls ${TRUST_SECRETS.client} --cert=${a.clientCert} --key=${a.clientKey} ${apply}`] : []),
+      // #199: the login goes into a Secret (mounted 0440 for the node's group) and the file leaves this host
+      ...(auth ? [`kubectl -n zs-cbom create secret generic ${TRUST_SECRETS.proxyAuth} --from-file=auth=${PROXY_AUTH_FILE} ${apply}`,
+        `rm -f ${PROXY_AUTH_FILE} && \\`] : []),
     ],
     sets: [
-      ...(a.caFile ? [`  --set trust.caSecret=${TRUST_SECRETS.ca} \\`] : []),
-      ...(a.clientCert ? [`  --set trust.clientSecret=${TRUST_SECRETS.client} \\`] : []),
+      ...(ca.local ? [`  --set trust.caSecret=${TRUST_SECRETS.ca} \\`] : []),
+      ...(a?.clientCert ? [`  --set trust.clientSecret=${TRUST_SECRETS.client} \\`] : []),
+      ...(auth ? [`  --set proxyAuthSecret=${TRUST_SECRETS.proxyAuth} \\`] : []),
     ],
   }
 }
 
-type NodeCommandOpts = { token: string; apiUrl: string; proxyUrl?: string | null; image: string; name: string; insecureHttp?: boolean; trust?: NodeTrust | null }
+type NodeCommandOpts = {
+  token: string; apiUrl: string; proxyUrl?: string | null; image: string; name: string; insecureHttp?: boolean; trust?: NodeTrust | null
+  /** #196: the TLS-inspecting proxy's CA file name in this directory (only when the proxy inspects TLS and its CA was
+   * given): the node trusts it for the ZeroShield API (ZS_CA_FILE), with the private CA when there is one too */
+  caFile?: string | null
+  /** #199: the proxy's user name when it needs a login (the password is typed on the host: proxyAuthCreate) */
+  proxyUser?: string | null
+}
+
+/** #196: where the node's API CA comes from: the private CA path (CB-15), the proxy's CA file here, or both bundled. */
+function apiCa(opts: NodeCommandOpts): { pre: string[]; host: string | null; local: string | null } {
+  const priv = activeTrust(opts.trust)?.caFile ?? null
+  const proxyCa = given(opts.caFile)
+  if (priv && proxyCa) {
+    return { pre: [`cat ${priv} ./${proxyCa} > ${CA_BUNDLE_FILE} && \\`], host: `"$PWD/${CA_BUNDLE_FILE}"`, local: `./${CA_BUNDLE_FILE}` }
+  }
+  if (proxyCa) return { pre: [], host: `"$PWD/${proxyCa}"`, local: `./${proxyCa}` }
+  return { pre: [], host: priv, local: priv }
+}
+
+/** #199: the lines that make the proxy login file on the host, first in every command (the downloads use it too). */
+export function proxyAuthCreate(user: string | null | undefined): string[] {
+  const u = given(user)
+  if (!u) return []
+  return [
+    `# The proxy password stays on this host: typed here (not shown, not in the shell history), kept in ${PROXY_AUTH_FILE}`,
+    `read -rsp ${shQuote(`Password of proxy user ${u}: `)} ZS_PROXY_PW && echo && \\`,
+    `( umask 077 && printf '%s:%s\\n' ${shQuote(u)} "$ZS_PROXY_PW" > ${PROXY_AUTH_FILE} ) && unset ZS_PROXY_PW && \\`,
+  ]
+}
 
 /** `docker run` of one node (pullNever: the image was just loaded from the file, never one from a registry). */
 function dockerRunLines(opts: NodeCommandOpts, pullNever: boolean): string[] {
   const proxy = opts.proxyUrl ? opts.proxyUrl : ""
   const names = nodeInstallNames(opts.name)
+  const ca = apiCa(opts)
+  const auth = !!given(opts.proxyUser)
   return [
+    ...ca.pre,
+    // #199: the login file (made first: proxyAuthCreate) is handed to the node's user, read-only
+    ...(auth ? [`chmod 0400 ${PROXY_AUTH_FILE} && sudo chown ${NODE_UID} ${PROXY_AUTH_FILE} && \\`] : []),
     `docker run -d${pullNever ? " --pull never" : ""} --name ${names.container} --restart unless-stopped \\`,
     `  -e ZS_API_URL=${shQuote(opts.apiUrl)} \\`,
     `  -e ZS_REGISTRATION_TOKEN=${shQuote(opts.token)} \\`,
     ...(opts.insecureHttp ? ["  -e ZS_ALLOW_INSECURE_HTTP=1 \\"] : []),
     ...(proxy ? [`  -e HTTPS_PROXY=${shQuote(proxy)} \\`] : []),
-    ...trustDockerLines(opts.trust),
+    ...(auth ? [`  -e ZS_PROXY_AUTH_FILE=${TRUST_PATHS.proxyAuth} -v "$PWD/${PROXY_AUTH_FILE}":${TRUST_PATHS.proxyAuth}:ro \\`] : []),
+    ...trustDockerLines(opts.trust, ca.host),
     `  -v ${names.volume}:/var/lib/zs-node \\`,
     `  ${opts.image}`,
   ]
@@ -370,7 +466,7 @@ function dockerRunLines(opts: NodeCommandOpts, pullNever: boolean): string[] {
 /** `helm upgrade --install` of one node from <chart> (a downloaded .tgz or an oci:// reference with its --version). */
 function helmInstallLines(release: string, chart: string, repoArg: string, tag: string, opts: NodeCommandOpts): string[] {
   const proxy = opts.proxyUrl ? opts.proxyUrl : ""
-  const trust = trustHelm(opts.trust)
+  const trust = trustHelm(opts)
   return [
     ...trust.pre,
     `helm upgrade --install ${release} ${chart} \\`,
@@ -386,7 +482,7 @@ function helmInstallLines(release: string, chart: string, repoArg: string, tag: 
 
 export function installCommand(
   method: DeployMethod,
-  opts: { token: string; apiUrl: string; proxyUrl?: string | null; image: string; name: string; insecureHttp?: boolean; pull?: boolean; archive?: string; chart?: string; archiveSha256?: string; chartSha256?: string; trust?: NodeTrust | null },
+  opts: NodeCommandOpts & { pull?: boolean; archive?: string; chart?: string; archiveSha256?: string; chartSha256?: string },
 ): string {
   const proxy = opts.proxyUrl ? opts.proxyUrl : ""
   const names = nodeInstallNames(opts.name)
@@ -395,6 +491,7 @@ export function installCommand(
   if (method === "docker") {
     const { archive } = nodeFiles(img)
     return [
+      ...proxyAuthCreate(opts.proxyUser),
       ...(opts.pull ? [] : [
         "# Check, load and run the image file you downloaded (Download scan node image); nothing is loaded or run if",
         "# the check fails. --pull never: the image just loaded, never one from a registry.",
@@ -406,7 +503,7 @@ export function installCommand(
   }
   if (method === "helm") {
     const src = helmSource(img)
-    return [...src.steps, ...helmInstallLines(names.release, src.chart, src.repoArg, src.tag, opts)].join("\n")
+    return [...proxyAuthCreate(opts.proxyUser), ...src.steps, ...helmInstallLines(names.release, src.chart, src.repoArg, src.tag, opts)].join("\n")
   }
   if (method === "ami") {
     return [
@@ -419,10 +516,10 @@ export function installCommand(
       `      ZS_REGISTRATION_TOKEN=${opts.token}`,
       ...(opts.insecureHttp ? ["      ZS_ALLOW_INSECURE_HTTP=1"] : []),
       ...(proxy ? [`      HTTPS_PROXY=${proxy}`] : []),
-      ...trustEnvLines(opts.trust).map((l) => `      ${l}`),
-      ...(activeTrust(opts.trust) ? [
-        `# Put the trust files in ${TRUST_DIR}/ on the instance before the node starts (the key never in user data):`,
-        ...vmTrustFiles(opts.trust).map((l) => `#   ${l}`),
+      ...vmEnvLines(opts).map((l) => `      ${l}`),
+      ...(vmFiles(opts).length ? [
+        `# Put the trust files in ${TRUST_DIR}/ on the instance before the node starts (the key and the proxy password never in user data):`,
+        ...vmFiles(opts).map((l) => `#   ${l}`),
       ] : []),
     ].join("\n")
   }
@@ -431,13 +528,33 @@ export function installCommand(
     `zs.api_url = ${opts.apiUrl}`,
     `zs.registration_token = ${opts.token}`,
     ...(proxy ? [`zs.https_proxy = ${proxy}`] : []),
-    ...(activeTrust(opts.trust) ? [
+    ...(vmFiles(opts).length ? [
       `# Then on the VM: put the trust files in ${TRUST_DIR}/, add these lines to /etc/zs-node/env and restart the node:`,
-      ...vmTrustFiles(opts.trust).map((l) => `#   ${l}`),
-      ...trustEnvLines(opts.trust).map((l) => `#   ${l}`),
+      ...vmFiles(opts).map((l) => `#   ${l}`),
+      ...vmEnvLines(opts).map((l) => `#   ${l}`),
       "#   sudo systemctl restart zs-scan-node",
     ] : []),
   ].join("\n")
+}
+
+/** AMI / OVA env lines: the CB-15 trust options, the proxy's CA (#196) and the proxy login file (#199). */
+export function vmEnvLines(opts: NodeCommandOpts): string[] {
+  const lines = trustEnvLines(opts.trust)
+  const withCa = given(opts.caFile) && !lines.some((l) => l.startsWith("ZS_CA_FILE=")) ? [`ZS_CA_FILE=${TRUST_PATHS.ca}`] : []
+  return [...withCa, ...lines, ...(given(opts.proxyUser) ? [`ZS_PROXY_AUTH_FILE=${TRUST_PATHS.proxyAuth}`] : [])]
+}
+
+/** AMI / OVA: which file goes where on the VM, the proxy's CA and login included. */
+export function vmFiles(opts: NodeCommandOpts): string[] {
+  const proxyCa = given(opts.caFile)
+  const priv = activeTrust(opts.trust)?.caFile
+  const files = vmTrustFiles(opts.trust).filter((l) => !(proxyCa && l.startsWith(TRUST_PATHS.ca)))
+  const user = given(opts.proxyUser)
+  return [
+    ...(proxyCa ? [`${TRUST_PATHS.ca}: ${priv ? `your CA bundle followed by your proxy's CA (${proxyCa}): cat them into one file` : `your proxy's CA (${proxyCa})`}`] : []),
+    ...files,
+    ...(user ? [`${TRUST_PATHS.proxyAuth}: one line ${user}:<proxy password>, made on the VM (sudo install -m 0400 -o ${NODE_UID} /dev/null ${TRUST_PATHS.proxyAuth}, then write it with read -s and printf, never in user data)`] : []),
+  ]
 }
 
 /** Which file goes where on an AMI / OVA VM (TRUST_DIR, read by the node's user, uid 10001). */
@@ -481,6 +598,9 @@ export interface FetchOpts {
   fetcher?: Fetcher
   /** a plain-HTTP test-lab API (CB-08): curl may not be held to https */
   insecureHttp?: boolean
+  /** #199: the proxy needs a login: read from PROXY_AUTH_FILE (made by proxyAuthCreate) through a config on stdin
+   * (curl -K -) or a process substitution (wget --config), never on the command line */
+  proxyUser?: string | null
 }
 
 /** Download one install file from ZeroShield and check it: `curl ... -o <file> && echo '<sha256>  <file>' | sha256sum -c -`
@@ -488,12 +608,17 @@ export interface FetchOpts {
 export function fetchCommand(file: InstallFile, o: FetchOpts): string {
   const url = shQuote(`${o.apiUrl.trim().replace(/\/+$/, "")}${file.url}`)
   const proxy = o.proxyUrl?.trim() || ""
+  const login = !!proxy && !!given(o.proxyUser)
   const parts = (o.fetcher ?? "curl") === "wget"
-    ? ["wget -q", ...(proxy ? ["-e use_proxy=yes", `-e https_proxy=${shQuote(proxy)}`] : []),
+    ? ["wget -q", ...(login ? [`--config=<(awk -F: '{print "proxy_user = " $1; sub(/^[^:]*:/, ""); print "proxy_password = " $0}' ${PROXY_AUTH_FILE})`] : []),
+      ...(proxy ? ["-e use_proxy=yes", `-e https_proxy=${shQuote(proxy)}`] : []),
       ...(o.caFile ? [`--ca-certificate=${shQuote(o.caFile)}`] : []), `-O ${file.filename}`, url]
-    : ["curl -fsSL", o.insecureHttp ? "--proto '=http,https'" : "--proto '=https'", ...(proxy ? [`--proxy ${shQuote(proxy)}`] : []),
+    : ["curl -fsSL", ...(login ? ["-K -"] : []), o.insecureHttp ? "--proto '=http,https'" : "--proto '=https'", ...(proxy ? [`--proxy ${shQuote(proxy)}`] : []),
       ...(o.caFile ? [`--cacert ${shQuote(o.caFile)}`] : []), url, `-o ${file.filename}`]
-  return `${parts.join(" ")} && echo '${file.sha256}  ${file.filename}' | sha256sum -c -`
+  // curl -K - reads proxy-user "user:password" from stdin (quotes and backslashes escaped), never from argv
+  const feed = login && (o.fetcher ?? "curl") !== "wget"
+    ? `sed 's/[\\\\"]/\\\\&/g; s/^/proxy-user = "/; s/$/"/' ${PROXY_AUTH_FILE} | ` : ""
+  return `${feed}${parts.join(" ")} && echo '${file.sha256}  ${file.filename}' | sha256sum -c -`
 }
 
 /** The one-paste install of a node on a terminal-only host: fetch its files from ZeroShield with its install links,
@@ -512,8 +637,10 @@ export function onePasteInstall(
   const ca = opts.caFile
     ? [`# ${opts.caFile}: your proxy's CA certificate (the file you uploaded), in this directory; ${tool} trusts it for these downloads only`]
     : []
+  const auth = proxyAuthCreate(opts.proxyUser)
   if (method === "docker") {
     return [
+      ...auth,
       ...ca,
       fetch(image),
       `docker load -i ${image.filename} && \\`,
@@ -527,6 +654,7 @@ export function onePasteInstall(
     const base = repo.split("/").pop() || "cbom-scan-node"
     return [
       "REGISTRY=registry.example.internal/zeroshield   # change to the registry your cluster pulls from",
+      ...auth,
       ...ca,
       fetch(image),
       fetch(chart),
@@ -545,6 +673,7 @@ export function onePasteInstall(
     : `packer build -var region="\${AWS_REGION:-ap-south-1}" ${template}   # your region; AWS credentials from the environment`
   return [
     `# Build the ${method === "ova" ? "OVA" : "AMI"} once (needs ${tool}, unzip and Packer; the kit's README.md has the details):`,
+    ...auth,
     ...ca,
     fetch(kit),
     fetch(image),
@@ -564,15 +693,15 @@ export function registryInstall(
   const image = data?.pull_image_ref?.trim()
   if (!image) return null
   if (method === "docker") {
-    return [`docker pull ${image} && \\`, ...dockerRunLines({ ...opts, image }, false)].join("\n")
+    return [...proxyAuthCreate(opts.proxyUser), `docker pull ${image} && \\`, ...dockerRunLines({ ...opts, image }, false)].join("\n")
   }
   if (method === "helm") {
     const chart = data?.pull_chart_ref?.trim()
     const version = data?.pull_chart_version?.trim()
     if (!chart || !version) return null
     const [repo, tag] = splitImage(image)
-    return helmInstallLines(nodeInstallNames(opts.name).release, `${chart} --version ${shQuote(version)}`, shQuote(repo), tag,
-      { ...opts, image }).join("\n")
+    return [...proxyAuthCreate(opts.proxyUser), ...helmInstallLines(nodeInstallNames(opts.name).release,
+      `${chart} --version ${shQuote(version)}`, shQuote(repo), tag, { ...opts, image })].join("\n")
   }
   return null
 }
@@ -608,7 +737,7 @@ export const KIT_NEEDS_INTERNET: Record<"ova" | "ami", string> = {
 
 /** What needs network access, for restricted networks (#230): shown on the Scan nodes tab. */
 export const NETWORK_REQUIREMENTS: string[] = [
-  "A scan node always needs outbound HTTPS to the ZeroShield API (nothing calls in); it reaches your targets directly.",
+  "A scan node always needs outbound HTTPS to the ZeroShield API (nothing calls in) and DNS (port 53) to your resolver; it reaches your targets directly.",
   "Installing it from the image file or the Helm chart (both downloaded from ZeroShield) needs nothing else; pulling the image from a public registry, when the page offers it, needs access to that registry.",
   "Building the OVA or AMI from the build kits needs internet access (Ubuntu image, Packer plugin, Ubuntu packages).",
   "Cloud and identity sources (AWS, Azure, GCP, IdPs) are read from ZeroShield's servers, so those providers' APIs must be reachable from ZeroShield.",
@@ -677,7 +806,12 @@ export function refusalReason(error: unknown): string | null {
   const response = (error as { response?: { status?: unknown; data?: unknown } } | null | undefined)?.response
   const status = typeof response?.status === "number" ? response.status : 0
   if (status < 400 || status >= 500 || status === 401) return null
-  const detail = (response?.data as { detail?: unknown } | null | undefined)?.detail
+  let data = response?.data
+  if (typeof data === "string") {
+    // a file fetched as text (responseType "text"): a refusal's body is still the server's JSON {"detail": ...}
+    try { data = JSON.parse(data) } catch { data = null }
+  }
+  const detail = (data as { detail?: unknown } | null | undefined)?.detail
   return typeof detail === "string" && detail.trim() ? detail.trim().slice(0, 300) : null
 }
 

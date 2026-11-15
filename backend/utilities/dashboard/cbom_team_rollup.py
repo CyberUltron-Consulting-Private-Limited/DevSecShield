@@ -3058,6 +3058,41 @@ def _probed_tls_fact(item: Any, collection: CollectionAgg, asset: AssetAgg) -> d
     }
 
 
+def _pool_sources_compliance(code_frameworks: Sequence[FrameworkPool], code_requirements: Sequence[RequirementAgg],
+                             rows: Sequence[Any], aggs: Mapping[str, Any]
+                             ) -> tuple[tuple[FrameworkPool, ...], tuple[RequirementAgg, ...]]:
+    """Each Sources collection judged against CNSA 2.0 and FIPS 140-3 (``cbom_sources.frameworks``, the predicates
+    the code lane's checks call), as one more source of the pooled verdicts: its counts are added to the framework's,
+    its requirement verdicts sit beside the code scans' (keyed by the collection's source key) and roll up by the
+    same precedence.  The rows counted are those the merge kept (latest observation wins)."""
+    from backend.utilities.cbom_sources.frameworks import collection_compliance
+
+    parts: dict[str, list[Any]] = {key: [] for key in aggs}
+    for item in rows:
+        key = item.collection.key
+        if key in parts:
+            parts[key].append(tuple(getattr(item, "standards_parts", ()) or ()))
+    pools = {p.framework: replace(p) for p in code_frameworks}
+    merged = {(r.framework, r.req_id): replace(r, verdicts=dict(r.verdicts)) for r in code_requirements}
+    for key, assets in parts.items():
+        for framework, block in collection_compliance(assets).items():
+            pool = pools.setdefault(framework, FrameworkPool(framework=framework))
+            pool.passed += int(block["pass"])
+            pool.failed += int(block["fail"])
+            pool.out_of_scope += int(block["out_of_scope"])
+            pool.sources_pooled += 1
+            pool.coverage = _coverage(pool.passed, pool.passed_with_evidence, pool.failed)
+            for req in block["requirements"]:
+                agg = merged.setdefault((framework, req["id"]), RequirementAgg(framework, req["id"]))
+                agg.verdicts[key] = req["verdict"]
+                agg.title = agg.title or req["title"]
+                agg.citation = agg.citation or req["source"]
+                agg.verdict = _rollup_verdict(agg.verdicts.values())
+    unknown_rank = len(_FRAMEWORK_ORDER)
+    ordered = sorted(pools.values(), key=lambda p: (_FRAMEWORK_RANK.get(p.framework, unknown_rank), p.framework))
+    return tuple(ordered), tuple(sorted(merged.values(), key=lambda r: (r.framework, r.req_id)))
+
+
 def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequence[Any]) -> TeamCbomView:
     """Fold each CBOM Sources source's latest completed collection into a code-scan view.  PURE.
 
@@ -3167,7 +3202,10 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
         state = "assessed" if all(ok) else ("mixed" if any(ok) else "not_assessed")
         posture = replace(posture, state=state, sources=tuple(rows_all),
                           facts=tuple(sorted([*posture.facts, *new_facts], key=lambda f: (f.source_key, f.fact_id))))
-    # 5. basis and fingerprint: a collection is a completed CBOM result
+    # 5. compliance: each collection's CNSA 2.0 / FIPS 140-3 verdicts (CB-16), pooled with the code scans'
+    frameworks, requirements = _pool_sources_compliance(view.frameworks, view.requirements, resolution.sources_rows,
+                                                        aggs)
+    # 6. basis and fingerprint: a collection is a completed CBOM result
     count = len(aggs)
     stamps = ",".join(f"{a.job_id}:{a.observed_at.isoformat()}" for a in sorted(aggs.values(), key=lambda a: a.job_id))
     digest = hashlib.sha256(f"{view.fingerprint}|sources|{stamps}".encode("utf-8", "replace")).hexdigest()[:12]
@@ -3178,6 +3216,7 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
         window_start=min([*seen, *([view.window_start] if view.window_start else [])]),
         window_end=max([*seen, *([view.window_end] if view.window_end else [])]),
         fingerprint=digest, sources=tuple(source_rows), assets=tuple(assets), certs=tuple(certs), posture=posture,
+        frameworks=frameworks, requirements=requirements,
         collections=tuple(sorted(aggs.values(), key=lambda a: (a.label.casefold(), a.key))), **_headline(live))
     merged.remediation = view.remediation
     merged.register = view.register

@@ -62,7 +62,9 @@ EVENT_CAP = 5_000  # drift events recorded per run or scan
 EXPIRING_DAYS = 30
 FINISHED = ("done", "partial", "failed", "cancelled")
 _IMPACT_RANK = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
-_FIELDS = ("algorithm", "key_size", "protocol", "impact", "quantum_vulnerable", "fingerprint", "not_after")
+# q_grade (CB-19 PR-3, §2.9): set only by the run diff, which grades both sides with the same model and inputs, so a
+# change here is the estate's; drift events never read it (no new event kind, record_run_drift grades nothing)
+_FIELDS = ("algorithm", "key_size", "protocol", "impact", "quantum_vulnerable", "fingerprint", "not_after", "q_grade")
 EVENT_KINDS = ("opened", "resolved", "new_asset", "removed_asset", "cert_renewed", "cert_expiring",
                "schedule_skipped", "q0_closed", "agility_asset_moved", "agility_system_changed")
 
@@ -86,6 +88,8 @@ class View:
     certificate: bool = False
     asset_id: int | None = None
     extra: dict[str, Any] = field(default_factory=dict)
+    q_grade: str | None = None  # CB-19 PR-3: set by ``_grade_views`` (run diff only)
+    q_reason: str | None = None
     # internals, never in ``public()``: the stored rows (the introduced-fact guard re-judges them and reads which
     # facts they carried), and the fact names a carried view may claim (both levels' facts, when codes were carried)
     rows: tuple[Any, ...] = field(default=(), repr=False, compare=False)  # the stored rows (re-judging needs them)
@@ -101,7 +105,7 @@ class View:
     def public(self) -> dict[str, Any]:
         return {"key": self.key, "label": self.label, "type": self.asset_type, "impact": self.impact,
                 "finding_codes": sorted(self.codes), "quantum_vulnerable": self.quantum_vulnerable,
-                "asset_id": self.asset_id, **self.extra}
+                "asset_id": self.asset_id, "q_grade": self.q_grade, **self.extra}
 
 
 def _worse(a: str | None, b: str | None) -> str | None:
@@ -243,6 +247,7 @@ NODE_CHECK_TYPES: tuple[tuple[re.Pattern[str], tuple[str, ...], bool], ...] = (
     (re.compile(r"^process crypto libraries\b"), ("process_library",), False),
     (re.compile(r"^package list\b"), ("crypto_library",), False),
     (re.compile(r"^sshd configuration\b"), ("ssh_server_config",), True),
+    (re.compile(r"^ssh host keys\b"), ("ssh_host_key",), False),  # #116: a refused or unreadable HostKey / Include
     (re.compile(r"^(postgres|mysql|mssql|oracle|redis|mongodb)\b"), _DB, True),
     (re.compile(r"^AD CS template"), ("ca_template",), True),
     (re.compile(r"^(Certificate stores|TLS secrets|cert-manager certificates)\b"), ("certificate",), False),
@@ -789,10 +794,93 @@ def _after_for_readiness(before: Mapping[str, View], after: Mapping[str, View], 
     return out
 
 
+# ----------------------------------------------------------------------------- quantum risk grades (CB-19 PR-3, §2.9)
+def grade_rules_differ(a: CbomCollectionRun | None, b: CbomCollectionRun | None) -> bool:
+    """Whether the grades the two runs stored can disagree for a reason other than the estate: either run has no grade
+    model version (started before grades were recorded), the two differ, or either is not the current one."""
+    from backend.utilities.cbom_sources.qgrade import GRADE_MODEL_VERSION
+
+    va, vb = (r.grade_model_version if r is not None else None for r in (a, b))
+    return va is None or vb is None or va != vb or va != GRADE_MODEL_VERSION
+
+
+def grade_inputs_differ(digest_a: str | None, digest_b: str | None) -> bool:
+    """Whether two runs were graded with different inputs (team Mosca, each source's X / exposure / segment)."""
+    return digest_a is None or digest_a != digest_b
+
+
+class _OnJob:
+    """A stored row read as if the given job had collected it: the run diff grades the earlier side with the later
+    job's metadata snapshot, so the two sides differ only where the estate does."""
+    __slots__ = ("_row", "job_id")
+
+    def __init__(self, row: Any, job_id: int | None) -> None:
+        self._row, self.job_id = row, job_id
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._row, name)
+
+
+_GRADE_ORDER = {g: i for i, g in enumerate(("Q1", "Q2", "Q3", "Q4", "Q0"))}  # a known grade is never hidden by Q0
+_UNSTORED = ("unstored", None)
+
+
+def _pick(grades: list[tuple[str | None, str | None]]) -> tuple[str | None, str | None]:
+    """One identity's grade from its rows' (grade, reason): the worst known, else Q0, else no grade."""
+    return min(grades, key=lambda g: _GRADE_ORDER.get(g[0] or "", 9), default=(None, None))
+
+
+def _stored_grade(view: View) -> tuple[str | None, str | None]:
+    rows = [r for r in view.rows if getattr(r, "q_reason", None) is not None]
+    if not rows or len(rows) != len(view.rows):
+        return _UNSTORED
+    return _pick([(r.q_grade, r.q_reason) for r in rows])
+
+
+def _grade_views(views: Mapping[str, View], grading: Any, job_id: int | None) -> None:
+    """Grade every view with ``grading`` (the later run's context: current model, its inputs) as if ``job_id``
+    (the later side's job of the same source) had collected it, on the view's own (possibly re-judged) verdict."""
+    for view in views.values():
+        cls = view.extra.get("pqc_class")
+        codes = sorted(view.codes)
+        out = [grading.grade_row(_OnJob(r, job_id), codes, explain=False, cls=cls) for r in view.rows]
+        view.q_grade, view.q_reason = _pick([(o.q_grade, o.q_reason) for o in out])
+
+
+def grade_rule_changes(before: Mapping[str, View], after: Mapping[str, View], *, label: str) -> list[dict[str, Any]]:
+    """Grade changes the stored grades show and the re-graded ones do not (or the other way round): the grade model or
+    the grade inputs changed, the estate did not. Identities whose rows were not all stored with a grade are left out
+    (there is no record to compare)."""
+    out = []
+    for ident in sorted(before.keys() & after.keys()):
+        b, a = before[ident], after[ident]
+        sb, sa = _stored_grade(b), _stored_grade(a)
+        if _UNSTORED in (sb, sa):
+            continue
+        stored = (sb[0], sa[0]) if sb[0] != sa[0] else None
+        current = (b.q_grade, a.q_grade) if b.q_grade != a.q_grade else None
+        if stored == current:
+            continue
+        out.append({"key": a.key, "label": a.label, "field": "q_grade", "label_change": label,
+                    "stored": [sb[0], sa[0]], "current": [b.q_grade, a.q_grade],
+                    "seen_with": "stored grades" if stored else "current grades"})
+    return out
+
+
 def run_diff(session: Session, run: CbomCollectionRun, base: CbomCollectionRun) -> dict[str, Any]:
-    """Compare ``base`` (before) with ``run`` (after), source by source; only sources complete in both are compared."""
+    """Compare ``base`` (before) with ``run`` (after), source by source; only sources complete in both are compared.
+    Quantum risk grades (CB-19 PR-3): both sides are graded with the current model and the later run's inputs before
+    ``compare`` (``changed[].changes.q_grade`` is then the estate's); what the stored grades show beyond that is in
+    ``rule_changes`` with ``field: "q_grade"``."""
+    from backend.utilities.cbom_sources import qgrade as QG
+
     sources = _sources(session, run.team_id)
     reclassify = rules_differ(base, run)
+    grading = replace(QG.load_context(session, team_id=run.team_id, run_id=run.id), elsewhere=None)
+    base_digest = QG.load_context(session, team_id=base.team_id, run_id=base.id).digest
+    grades_model = grade_rules_differ(base, run)
+    grades_inputs = grade_inputs_differ(base_digest, grading.digest)
+    grade_label = "grade model change" if grades_model else "grade inputs change"
     sides: dict[str, dict[str, CbomCollectionJob]] = {"before": {}, "after": {}}
     names: dict[str, str] = {}
     for side, which in (("before", base), ("after", run)):
@@ -828,9 +916,13 @@ def run_diff(session: Session, run: CbomCollectionRun, base: CbomCollectionRun) 
         if carry.rejudged and carry.stored is None:  # only a carried older level was re-judged (rare): walk again
             carry = _carried(session, b_job, ref, sources, _judge(run), stored=True, later=after)
         before = carry.views
+        _grade_views(after, grading, a_job.id)  # one model, one set of inputs on both sides (§2.9)
+        _grade_views(before, grading, a_job.id)
         gaps = _with_policy(job_gaps(a_rows), a_job)
         before_gaps = _with_policy([], b_job)
         diff = compare(before, after, gaps, before_gaps)
+        rule_changes += [{**r, "source_name": names.get(ref)}
+                         for r in grade_rule_changes(before, after, label=grade_label)]
         if reclassify or carry.rejudged:  # also when only a carried older level was re-judged (review #132 nit)
             rejudged_any = rejudged_any or carry.rejudged
             stored = compare(carry.stored or {}, node_views(a_rows, ref, reclassify=False), gaps, before_gaps)
@@ -845,7 +937,14 @@ def run_diff(session: Session, run: CbomCollectionRun, base: CbomCollectionRun) 
                      before_job_id=b_job.id, after_job_id=a_job.id)
         per_source.append(entry)
     out: dict[str, Any] = {"run_id": run.id, "against_run_id": base.id,
-                           "versions": {"before": _versions(base), "after": _versions(run),
+                           "versions": {"before": {**_versions(base), "grade_model_version": base.grade_model_version,
+                                                   "grade_inputs_digest": base_digest},
+                                        "after": {**_versions(run), "grade_model_version": run.grade_model_version,
+                                                  "grade_inputs_digest": grading.digest},
+                                        # CB-19 PR-3: both sides were graded with the current grade model and the
+                                        # later run's inputs; these say whether the stored grades could differ
+                                        "grade_model_changed": grades_model, "grade_inputs_changed": grades_inputs,
+                                        "grades_model_version": QG.GRADE_MODEL_VERSION,
                                         # the runs' own rules differ, and whether both were re-judged with the
                                         # current rules (also when two runs share older rules: ST-1)
                                         "rules_changed": runs_rules_differ(base, run), "reclassified": rejudged_any},

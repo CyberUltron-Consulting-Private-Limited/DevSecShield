@@ -382,3 +382,106 @@ def export_value(row: dict[str, Any]) -> str:
     if row.get("status") == "approved" and row.get("standard"):
         return f"approved ({row['standard']} category {row['category']})"
     return str(row.get("status"))
+
+
+# CB-16: the CNSA 2.0 and FIPS 140-3 requirement predicates, shared by both lanes.  The
+# code lane's framework checks (``aibom.cbom.compliance``) call them per algorithm asset
+# (falling back to their graph facts where these say None); the Sources lane judges each
+# collection's assets with them (``cbom_sources.frameworks``).  True: the part fails the
+# requirement; False: it meets it; None: the requirement does not apply to this part, or
+# the part could not be graded.
+REQUIREMENTS: dict[str, tuple[str, str]] = {
+    "CNSA-1": (
+        "cnsa_2_0",
+        "CNSA 2.0 symmetric + hashing: AES-256 and SHA-384/512 only",
+    ),
+    # the code lane's title also names the parameter sets: post-quantum names
+    # live in algid only
+    "CNSA-2": (
+        "cnsa_2_0",
+        "Quantum-resistant algorithms at the CNSA 2.0 parameter set",
+    ),
+    "FIPS-1": ("fips_140_3", "Only FIPS-approved security functions in use"),
+    "FIPS-2": ("fips_140_3", "Approved key sizes (asymmetric ≥ 2048-bit)"),
+    "FIPS-3": ("fips_140_3", "No disallowed algorithm or ECB mode (SP 800-131A)"),
+}
+_MODULUS_FAMILIES = ("RSA", "DH", "DSA")
+
+
+def _part_kind(role: str, text: str, size: int | None) -> str | None:
+    """What a part is, for the requirement predicates: ``post_quantum``,
+    ``classical`` (a quantum-vulnerable public key), ``symmetric``, ``hash``,
+    ``signature_hash`` (the hash of a signature), or None (not identified)."""
+    if role == "cipher":
+        return "symmetric" if _symmetric(text, size, suite=True) else None
+    ident = algid.resolve(text)
+    if ident is not None and ident.family_label == "PQ":
+        return "post_quantum"
+    if role == "signature":
+        return "signature_hash" if _hash_bits(text) is not None else None
+    if ident is not None and ident.quantum == "vulnerable":
+        return "classical"
+    bits = size if size else (ident.key_size if ident else None)
+    if _symmetric(text, bits, suite=False) is not None:
+        return "symmetric"
+    if _hash_bits(text) is not None:
+        return "hash"
+    return None
+
+
+def framework_checks(
+    role: str, identifier: Any, key_size: Any = None
+) -> dict[str, bool | None]:
+    """Each requirement of ``REQUIREMENTS`` on one part (see the block comment above).
+
+    * CNSA-1: a symmetric cipher or a hash (not a signature's hash) is AES-256 or
+      SHA-384/512;
+    * CNSA-2: a post-quantum algorithm is a CNSA 2.0 parameter set (a name that does not
+      say its parameter set is not graded);
+    * FIPS-1: an approved security function (SP 800-131A not "not approved" nor
+      "disallowed"; a bare SHA-1 is not graded: only a signature's SHA-1 is disallowed);
+    * FIPS-2: an RSA / DH / DSA key of at least 2048 bits (its size read);
+    * FIPS-3: no SP 800-131A "disallowed" algorithm (ECB mode is the caller's: a
+      name does not carry the mode).
+    """
+    out: dict[str, bool | None] = dict.fromkeys(REQUIREMENTS)
+    text = str(identifier or "").strip()
+    verdict = judge(role, identifier, key_size)
+    if not text or verdict is None:
+        return out
+    size = (
+        key_size
+        if isinstance(key_size, int) and not isinstance(key_size, bool)
+        else None
+    )
+    kind = _part_kind(role, text, size)
+    ident = algid.resolve(text)
+    cnsa, sp = verdict["cnsa_2_0"]["status"], verdict["sp800_131a"]["status"]
+    if kind in ("symmetric", "hash") and cnsa in ("compliant", "not_compliant"):
+        out["CNSA-1"] = cnsa == "not_compliant"
+    if kind == "post_quantum":
+        graded = ident is not None and (
+            bool(ident.nist_category) or (ident.stateful and bool(ident.standard))
+        )
+        if not graded:  # a name that does not say its parameter set: not graded here
+            return out
+        out["CNSA-2"] = cnsa == "not_compliant"
+    if kind == "classical":
+        # an approved function whatever its size (the size is FIPS-2's), except DSA
+        family = (ident.family_label if ident else "") or ""
+        bits = size if size else (ident.key_size if ident else None)
+        if sp in ("disallowed", "not_approved", "acceptable"):
+            dsa = family == "DSA" and sp == "disallowed"
+            out["FIPS-1"] = sp == "not_approved" or dsa
+            out["FIPS-3"] = sp == "disallowed"
+        if family in _MODULUS_FAMILIES and bits:
+            out["FIPS-2"] = bits < 2048
+        return out
+    if kind == "hash" and _hash_bits(text) == 1:
+        # SHA-1 on its own: SP 800-131A disallows it for signatures only, so its use
+        # decides, which a bare hash name does not say (the caller's own rule applies)
+        return out
+    if sp in ("disallowed", "not_approved", "acceptable"):
+        out["FIPS-1"] = sp != "acceptable"
+        out["FIPS-3"] = sp == "disallowed"
+    return out

@@ -54,7 +54,9 @@ def test_an_error_on_one_linux_server_fails_that_server_only(monkeypatch, exc, r
     summary = L.test(ctx, PASSWORD, {"password": "pw"}, {"targets": ["192.0.2.1", "192.0.2.2"]})
     got = _by_target(ctx)
     assert got["192.0.2.1"]["status"] == "error" and got["192.0.2.1"]["reachable"] is reachable
-    assert exc.__class__.__name__ in got["192.0.2.1"]["note"] and "other targets are tested" in got["192.0.2.1"]["note"]
+    # #153: a socket error is in words ("this target closed the connection (connection reset)"); others name the class
+    named = "closed the connection" if isinstance(exc, OSError) else exc.__class__.__name__
+    assert named in got["192.0.2.1"]["note"] and "other targets are tested" in got["192.0.2.1"]["note"]
     assert got["192.0.2.2"]["status"] == "ready" and "SHA256:abc" in got["192.0.2.2"]["note"]
     assert summary == "1 of 2 samples ready"
 
@@ -100,7 +102,7 @@ def test_an_error_on_one_windows_server_fails_that_server_only(monkeypatch):
     summary = W.test(ctx, {"credential_type": "password"}, {"password": "pw"}, {"targets": ["192.0.2.1", "192.0.2.2"]})
     got = _by_target(ctx)
     assert got["192.0.2.1"]["status"] == "error" and got["192.0.2.1"]["reachable"] is False
-    assert "TimeoutError: timed out" in got["192.0.2.1"]["note"]
+    assert got["192.0.2.1"]["note"].startswith("no answer from this target")  # #153: words, not "TimeoutError"
     assert got["192.0.2.2"]["status"] == "ready" and "Windows Server 2022" in got["192.0.2.2"]["note"]
     assert summary == "1 of 2 samples ready"
 

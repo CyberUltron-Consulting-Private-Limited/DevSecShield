@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CirclePlay, CircleX, Loader2, OctagonX, Pencil, Plus, Radar, ShieldCheck, Trash2, X } from "lucide-react";
 import { Fragment, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { toast } from "@/utils/toast";
+import { socNodes } from "./nodeNetwork";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -351,6 +352,8 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
   const ranges = rangesQuery.data?.sources.filter((s) => s.kind === "network_range") ?? [];
   const serverNow = rangesQuery.data?.server_time;
   const nodes = nodesQuery.data?.nodes ?? [];
+  // #181: host-agent nodes (agent mode, one per Kubernetes node) never scan networks, so the SOC needs none of them
+  const soc = socNodes(nodes);
   const stopped = settings.stop_all_network;
 
   // Effective values: the unsaved draft over the saved row.
@@ -904,7 +907,7 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
             </Section>
 
             <Section infoId="cbsrc.net.soc" title="Tell your SOC" badge={unsaved("soc")}>
-              {nodes.length === 0 ? (
+              {soc.listed.length === 0 ? (
                 <EmptyState
                   title="No scan nodes yet"
                   body="Each scan node's source IPs appear here once it registers, ready to share with your SOC."
@@ -926,7 +929,7 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {nodes.map((n) => (
+                        {soc.listed.map((n) => (
                           <SocRow key={n.id} node={n} />
                         ))}
                       </TableBody>
@@ -934,6 +937,11 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
                   </div>
                   <ScrollBar orientation="horizontal" />
                 </ScrollArea>
+              )}
+              {soc.agents > 0 && (
+                <p className="text-xs text-zinc-500" data-testid="network-soc-agents">
+                  {pluralize(soc.agents, "host-agent node")} not listed: they collect only their own Kubernetes node and never scan networks.
+                </p>
               )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <Field infoId="cbsrc.net.soc_email" label="SOC email" htmlFor="network-soc-email" error={errorFor("soc_email")}>

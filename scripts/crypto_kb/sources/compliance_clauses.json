@@ -1169,6 +1169,35 @@
    "basis": "no encryption at rest",
    "rules": []
   },
+  "TLS_ANON_CIPHER": {
+   "clauses": [
+    "certin-bom-8.4.2.2",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140"
+   ],
+   "basis": "anonymous suites authenticate no one: strict TLS (CERT-In 8.4.2.2) and a configuration demonstrated insecure (RBI); the cipher itself may be strong (AES), so no SEBI clause",
+   "rules": []
+  },
+  "TLS_EXPORT_CIPHER": {
+   "clauses": [
+    "certin-bom-8.4.2.2",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140",
+    "sebi-annexure-h-5"
+   ],
+   "basis": "EXPORT suites are deliberately weakened (40/56-bit ciphers, 512-bit key exchange): strict TLS (CERT-In 8.4.2.2), deprecated and demonstrated insecure (RBI), not strong encryption (SEBI Annexure-H item 5)",
+   "rules": []
+  },
+  "TLS_NULL_CIPHER": {
+   "clauses": [
+    "certin-bom-8.4.2.2",
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140",
+    "sebi-annexure-h-5"
+   ],
+   "basis": "a NULL suite does not encrypt at all: strict TLS (CERT-In 8.4.2.2), demonstrated insecure (RBI), no strong encryption (SEBI Annexure-H item 5)",
+   "rules": []
+  },
   "TLS_POLICY_OVERRIDE": {
    "clauses": [
     "certin-bom-8.4.2.2",

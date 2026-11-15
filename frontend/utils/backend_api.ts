@@ -4306,6 +4306,8 @@ export interface CbomScanNode {
     proxy_url: string | null
     has_proxy_ca: boolean
     proxy_tls_inspect: boolean
+    /** #199: the proxy's user name when it needs a login (never the password: it stays on the node's host) */
+    proxy_user?: string | null
     status: CbomNodeStatus
     registration_issued_at: string | null
     registration_expires_at: string | null
@@ -4357,6 +4359,7 @@ export interface CbomNodeWrite {
     proxy_url?: string | null
     proxy_ca_pem?: string | null
     proxy_tls_inspect?: boolean
+    proxy_user?: string | null
     expected_version?: number
 }
 
@@ -4367,6 +4370,31 @@ export interface CbomTestSample {
     login?: boolean
     privilege?: boolean
     note?: string
+}
+
+// #150: an admin's decision about a host key a scan node remembered under trust on first use
+export interface CbomHostKeyReset {
+    id: number
+    source_id: number
+    node_id: number
+    job_id: number
+    target: string
+    port: number
+    action: "accept" | "forget"
+    fingerprint: string | null
+    pinned_fingerprint: string | null
+    status: "pending" | "applied" | "superseded"
+    requested_by_user_id: number
+    requested_at: string
+    applied_at: string | null
+    applied_job_id: number | null
+}
+
+export interface CbomHostKeyResetBody {
+    job_id: number
+    target: string
+    action: "accept" | "forget"
+    fingerprint?: string
 }
 
 export interface CbomAwsCheck {
@@ -4523,7 +4551,12 @@ export interface CbomAssetPage {
     page: number
     page_size: number
     items: CbomAsset[]
-    facets: { type: Record<string, number>; impact: Record<string, number>; quantum_vulnerable: number }
+    /** q_grade (CB-19 PR-3): rows per grade stored at ingest ("none": no grade), null when the run was graded at
+     * view; absent from an older server */
+    facets: { type: Record<string, number>; impact: Record<string, number>; quantum_vulnerable: number;
+              q_grade?: Record<string, number> | null }
+    /** CB-19 PR-3: whether the grade filter can serve this run, and why not */
+    grade_filter?: { available: boolean; reason: string | null }
     targets: CbomJobTargets[]
     run?: CbomRun
 }
@@ -5086,6 +5119,23 @@ const testCbomSource = async (team_id: number, source_id: number): Promise<CbomT
     }
 }
 
+const createCbomHostKeyReset = async (team_id: number, source_id: number, body: CbomHostKeyResetBody): Promise<CbomHostKeyReset> => {
+    try {
+        const response = await api.post(`${cbomSourcesBase(team_id)}/items/${source_id}/host-key-resets`, body)
+        const data = response.data as { reset: CbomHostKeyReset; message: string }
+        toast.success(data.message || "Saved: the scan node applies it on its next job for this source")
+        return data.reset
+    } catch (error) {
+        showErrorToast(error, body.action === "accept" ? "Error accepting the host key" : "Error forgetting the host key")
+        throw error
+    }
+}
+
+const listCbomHostKeyResets = async (team_id: number, source_id: number): Promise<CbomHostKeyReset[]> => {
+    const response = await api.get(`${cbomSourcesBase(team_id)}/items/${source_id}/host-key-resets`)
+    return (response.data as { resets: CbomHostKeyReset[] }).resets
+}
+
 const updateCbomSourcesSettings = async (team_id: number, body: CbomSettingsWrite): Promise<CbomSourcesSettings> => {
     try {
         const response = await api.patch(`${cbomSourcesBase(team_id)}/settings`, body)
@@ -5252,6 +5302,8 @@ export interface CbomRunAssetFilters extends CbomAssetFilters {
     code?: string
     /** #270: comma-separated asset ids, at most 500 (a compliance requirement's refs) */
     asset_id?: string
+    /** CB-19 PR-3: a grade key (grade/model.ts GRADE_KEYS) or "none" (409 when the run's grades were not stored) */
+    q_grade?: string
 }
 
 /** Wave status names of PUT /cbom/remediation (same values as utils/api/cbom_ops CbomWaveStatus). */
@@ -5649,6 +5701,8 @@ export {
     updateCbomSource,
     deleteCbomSource,
     testCbomSource,
+    createCbomHostKeyReset,
+    listCbomHostKeyResets,
     updateCbomSourcesSettings,
     setCbomNetworkStop,
     startCbomDiscovery,
@@ -5670,7 +5724,22 @@ export type CbomAiSubject =
     | { kind: "run_asset"; assetId: number }
     | { kind: "scan_finding"; scanId: number; findingId: string }
 
-export type CbomAiMode = "explain" | "plan" | "question"
+export type CbomAiMode = "explain" | "plan" | "question" | "fix"
+
+/** Mode "fix": the model's rewrite of the finding's code window (or a run asset's configuration change), after the
+ * backend's deterministic checks. */
+export interface CbomAiFix {
+    kind: "code" | "config"
+    language: string
+    original_code: string
+    fixed_code: string
+    diff: string
+    path: string | null
+    start_line: number | null
+    explanation: { text: string; cites: string[] }[]
+    notes: string[]
+    new_imports?: string[]
+}
 
 export interface CbomAiStatus {
     available: boolean
@@ -5703,6 +5772,9 @@ export interface CbomAiAnswer {
     prompt_version: string
     items: { id: string; label: string }[]
     cached?: boolean
+    /** mode "fix" only: the checked rewrite (null when withheld) and the checks it passed */
+    fix?: CbomAiFix | null
+    checks?: { name: string; ok: boolean; note: string }[]
 }
 
 /** The UI gives the model 90 s (the backend's own limit is 60 s, CBOM_AI_TIMEOUT_S). */

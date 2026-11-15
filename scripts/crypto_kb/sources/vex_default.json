@@ -1633,6 +1633,33 @@
     "CycloneDX 1.6.2 impactAnalysisState"
    ]
   },
+  "TLS_ANON_CIPHER": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.TLS_ANON_CIPHER.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "TLS_EXPORT_CIPHER": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.TLS_EXPORT_CIPHER.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "TLS_NULL_CIPHER": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.TLS_NULL_CIPHER.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
   "TLS_POLICY_OVERRIDE": {
    "basis": "observed",
    "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",

@@ -28,6 +28,7 @@ from backend.new_models import (
     Team,
 )
 from backend.utilities.cbom_sources import billing as BILLING  # CB-14 credit ledger
+from backend.utilities.cbom_sources import host_key_resets as HKR  # #150
 from backend.utilities.cbom_sources import targets as T
 from backend.utilities.cbom_sources.classify import ASSET_TYPES, CDX_TYPE, classify
 from backend.utilities.cbom_sources.node_facts import normalise_tls
@@ -702,8 +703,12 @@ def claim_next(session: Session, node: CbomScanNode, settings: CbomCollectionSet
                 {**item, "skip_addresses": T.range_skip_addresses(str(item["cidr"]), skips=skips)}
                 if isinstance(item, dict) and item.get("cidr") else item for item in payload["scope"]["ranges"]]
         if source is not None:
+            config = source.config or {}
+            resets = HKR.for_claim(session, source, node.id)  # #150: admins' host key decisions for this node
+            if resets:
+                config = {**config, "host_key_resets": resets}  # a copy: the stored config is never changed
             payload["source"] = {
-                "id": source.id, "kind": source.kind, "name": source.name, "config": source.config or {},
+                "id": source.id, "kind": source.kind, "name": source.name, "config": config,
                 # an agent-mode node is never given a credential, whatever a source holds (WP8b)
                 "secrets": {} if (node.mode or "agentless") == "agent" else decrypt_secrets(source.secret_encrypted),
             }
@@ -843,6 +848,12 @@ def _test_result_from_job(session: Session, job: CbomCollectionJob, now: _dt.dat
         if notes and not (ok == 0 and silent and source.kind == "network_range"):
             # the first reason, so lists that show only the summary still say why
             summary = f"{summary}: {notes[0]}"[:512]
+        warnings = [str(s["warning"]) for s in samples if isinstance(s, dict) and s.get("warning")
+                    and s.get("status") in ("ready", "ok", "passed")]
+        if warnings and status == "passed":
+            # ready, but with something the customer must know (a KMIP server not verified without its CA, #212):
+            # partial, never a plain pass; it does not block collection the way a failed test does
+            status, summary = "partial", f"{summary}, with a warning: {warnings[0]}"[:512]
     elif job.status == "success" and isinstance(result.get("samples"), list) and job.source_id is not None and (
             source.kind == "network_range" or KINDS[source.kind].group == "servers" or source.kind == "appliance"):
         # a sampled test that sampled nothing proved nothing: never "passed: 0 of 0 samples ready" (N10)
@@ -1041,6 +1052,8 @@ def finish_job(
         refunded = refund_policy_excluded(session, job, _run_of(session, job), clean_result)
     _test_result_from_job(session, job, now)
     _credential_refused_from_job(session, job, status, clean_result, now)
+    if node is not None:  # #150: the host key decisions the node applied in this job
+        HKR.applied(session, job, node.id, clean_result if isinstance(clean_result, dict) else None, now)
     recompute_run(session, job.run_id, now)
     audit(session, team_id=job.team_id, actor_type="node" if node else "system", actor_id=node.id if node else None,
           action=f"job.{status}", object_type="job", object_id=job.id)
@@ -1249,6 +1262,9 @@ def store_rows(session: Session, owner: CbomCollectionJob, counter: CbomCollecti
     cap_reached = len(fresh) > take
     dropped = max(len(fresh) - take, 0)
     fresh = fresh[:take]
+    from backend.utilities.cbom_sources import qgrade_store as QSTORE  # CB-19 PR-3: the record grade, at insert
+
+    QSTORE.ingest_grades(session, owner, fresh)
     inserted = _insert_ignore(session, fresh)
     if inserted < len(fresh):  # another request stored some of these keys first
         for job_id in ((counter.id, owner.id) if shared else (counter.id,)):

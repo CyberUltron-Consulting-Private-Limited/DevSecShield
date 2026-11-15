@@ -9,6 +9,7 @@ Environment:
   ZS_VAULT_PATH_PREFIX    allow vault credentials under this path prefix only (vault use is off without it)
   VAULT_ADDR / VAULT_TOKEN  HashiCorp Vault for vault credentials; AWS Secrets Manager uses the node's IAM role
   HTTPS_PROXY / NO_PROXY  outbound proxy to ZeroShield (customer targets are always reached directly)
+  ZS_PROXY_AUTH_FILE      a file with one line user:password when that proxy needs a login (#199; read-only mount)
   ZS_CLIENT_CERT / ZS_CLIENT_KEY  PEM client certificate and key for mTLS to the ZeroShield proxy (optional)
   ZS_CA_FILE              CA bundle that replaces the default trust for the ZeroShield API (optional)
   ZS_MODE                 ``agentless`` (default: reaches other systems with stored credentials) or ``agent``: collect

@@ -11,6 +11,7 @@ from __future__ import annotations
 import ipaddress
 
 import os
+import re
 import shutil
 import ssl
 import tempfile
@@ -23,7 +24,7 @@ from zs_scan_node import tlsenum as E
 from zs_scan_node import tlsprobe as T
 from zs_scan_node.certparse import cert_facts, chain_links, load_certs
 from zs_scan_node.collectors import ConfigError
-from zs_scan_node import netutil
+from zs_scan_node import errtext, netutil
 from zs_scan_node.jobctx import MAX_FACTS_BYTES, JobContext
 from zs_scan_node.netutil import Blocked, Target, checked_ip, checked_target, is_ip, resolve_checked
 
@@ -320,6 +321,36 @@ def _enumerate(send, version: str | None, code: int | None, budget: int, used: l
 
 
 # ----------------------------------------------------------------------------- engines
+_PG_HBA = re.compile(r'no pg_hba\.conf entry for host "([^"]+)", user "([^"]+)"')
+_PG_NO_DB = re.compile(r'database "([^"]+)" does not exist')
+
+
+def _pg_connect_fail(msg: str, kwargs: dict) -> "DbFail":
+    """#214: a failed PostgreSQL connection by its cause: no pg_hba entry for this node (not a wrong password), a
+    database that does not exist (reachable, logged in), a certificate, or the socket cause."""
+    hba = _PG_HBA.search(msg)
+    if hba:
+        return DbFail("auth_failed", f"PostgreSQL has no pg_hba.conf entry for this scan node ({hba.group(1)}, user "
+                      f"{hba.group(2)}): add a hostssl line for it; the password was not checked")
+    if "password authentication failed" in msg:
+        return DbFail("auth_failed", "PostgreSQL refused the login (wrong user name or password)")
+    no_db = _PG_NO_DB.search(msg)
+    if no_db:
+        return DbFail("error", f'PostgreSQL is reachable and the login worked, but the database "{no_db.group(1)}" '
+                      "does not exist: check the database name")
+    if "authentication" in msg:
+        return DbFail("auth_failed", "PostgreSQL refused the login")
+    if "certificate" in msg.lower() or "SSL" in msg:
+        return DbFail("tls_unavailable", "TLS to PostgreSQL failed (certificate not trusted or TLS refused)")
+    if "Connection refused" in msg:
+        return DbFail("refused", f"PostgreSQL port {kwargs.get('port')} refused the connection")
+    if "timeout expired" in msg or "timed out" in msg:
+        return DbFail("timeout", f"PostgreSQL did not answer on port {kwargs.get('port')}")
+    if "No route to host" in msg or "Network is unreachable" in msg:
+        return DbFail("no_route", f"no route to {kwargs.get('hostaddr')}")
+    return DbFail("unreachable", "could not connect to PostgreSQL")
+
+
 def _postgres(ctx, target, config, password, ca: _CaFile) -> int:
     import psycopg
 
@@ -347,11 +378,7 @@ def _postgres(ctx, target, config, password, ca: _CaFile) -> int:
         if "authentication method requirement" in msg or "channel binding" in msg:
             raise DbFail("identity_unverified", "the server asked for a login method that would reveal the password; "
                          "without its CA certificate only SCRAM is allowed, so the password was not sent") from None
-        if "password authentication failed" in msg or "no pg_hba.conf entry" in msg or "authentication" in msg:
-            raise DbFail("auth_failed", "PostgreSQL refused the login") from None
-        if "certificate" in msg.lower() or "SSL" in msg:
-            raise DbFail("tls_unavailable", "TLS to PostgreSQL failed (certificate not trusted or TLS refused)") from None
-        raise DbFail("unreachable", "could not connect to PostgreSQL") from None
+        raise _pg_connect_fail(msg, kwargs) from None
     n = 0
     loc = f"{_where(target)}:{port}"
     try:
@@ -421,6 +448,11 @@ _PG_FUNCTION_SQL = f"SELECT rolname, password_type FROM {PG_HASH_FUNCTION}()"
 # It lists every role, so it is joined with pg_roles (readable by everyone) to keep login roles only.
 _PG_RDS_SQL = ("SELECT t.rolname, t.encryption_type FROM rds_tools.role_password_encryption_type() t "
                "JOIN pg_catalog.pg_roles r ON r.rolname = t.rolname WHERE r.rolcanlogin")
+# Which path to take, from what every login may read (#210): is this login a superuser, and are the published
+# functions there?  pg_authid is queried only by a superuser, so no statement is issued that is expected to fail.
+_PG_HASH_PATH_SQL = ("SELECT r.rolsuper, to_regprocedure('public.zs_role_password_types()') IS NOT NULL, "
+                     "to_regprocedure('rds_tools.role_password_encryption_type()') IS NOT NULL "
+                     "FROM pg_catalog.pg_roles r WHERE r.rolname = current_user")
 _PG_SERVICE_ROLES_SQL = ("SELECT rolname FROM pg_catalog.pg_roles WHERE rolname IN "
                          "('rdsadmin', 'rds_superuser', 'rds_iam', 'cloudsqlsuperuser', 'azure_pg_admin', 'azuresu')")
 _PG_IAM_SQL = ("SELECT m.rolname FROM pg_catalog.pg_roles m JOIN pg_catalog.pg_auth_members am ON am.member = m.oid "
@@ -463,9 +495,11 @@ class PgRoleHashes:
 
 
 def pg_role_hashes(conn, extensions: set[str], login: str, database: str) -> PgRoleHashes:
-    """Password hash TYPES of login roles (never the hashes), trying in order: pg_authid (superuser) -> the
-    DBA-installed SECURITY DEFINER function public.zs_role_password_types() -> rds_tools on Amazon RDS/Aurora -> one
-    coverage gap naming the fix for this kind of server."""
+    """Password hash TYPES of login roles (never the hashes): the DBA-installed SECURITY DEFINER function
+    public.zs_role_password_types() when it is installed -> pg_authid, for a superuser only -> rds_tools on Amazon
+    RDS/Aurora -> one coverage gap naming the fix for this kind of server.  The path is chosen first from what every
+    login may read (#210): a login with the published grants never touches pg_authid (whose permission-denied error
+    a database audit log or SIEM rule on the password-hash table would report on every scan)."""
     out = PgRoleHashes()
     service = {str(r[0]) for r in (_pg_try(conn, _PG_SERVICE_ROLES_SQL)[0] or [])}
     if service & {"rdsadmin", "rds_superuser"}:
@@ -482,17 +516,21 @@ def pg_role_hashes(conn, extensions: set[str], login: str, database: str) -> PgR
         out.source = source
         return out
 
-    rows, state, message = _pg_try(conn, _PG_AUTHID_SQL)
-    if rows is not None:
-        return done(rows, "pg_authid")
-    if state != "42501":
+    path = (_pg_try(conn, _PG_HASH_PATH_SQL)[0] or [None])[0]
+    superuser, has_function = (bool(path[0]), bool(path[1])) if path else (False, True)  # unknown: try the function
+    fn_state = "42883"  # not installed, until a call says otherwise
+    if has_function:
+        rows, fn_state, message = _pg_try(conn, _PG_FUNCTION_SQL)
+        if rows is not None:
+            return done(rows, "zs_role_password_types")
+        if fn_state not in ("42501", "42883", "3F000"):
+            out.gap = ("error", f"{PG_HASH_FUNCTION}() failed ({fn_state}): {message}")
+            return out
+    if superuser:
+        rows, state, message = _pg_try(conn, _PG_AUTHID_SQL)
+        if rows is not None:
+            return done(rows, "pg_authid")
         out.gap = ("error", f"reading pg_authid failed ({state}): {message}")
-        return out
-    rows, fn_state, message = _pg_try(conn, _PG_FUNCTION_SQL)
-    if rows is not None:
-        return done(rows, "zs_role_password_types")
-    if fn_state not in ("42501", "42883", "3F000"):
-        out.gap = ("error", f"{PG_HASH_FUNCTION}() failed ({fn_state}): {message}")
         return out
     rds_state = None
     if "rds_tools" in extensions:
@@ -581,6 +619,14 @@ def _mysql(ctx, target, config, password, ca: _CaFile, tls: bool, seen: dict | N
             raise DbFail("auth_failed", "MySQL refused the login") from None
         if code == 3159:
             raise DbFail("tls_unavailable", "MySQL requires a secure transport") from None
+        verify = errtext.tls_verify_problem(exc)
+        if verify:  # #214: TLS comes before the login in MySQL's handshake, so nothing was sent
+            raise DbFail("identity_unverified", f"the MySQL server's certificate is not signed by the uploaded CA "
+                         f"({verify}); the password was not sent") from None
+        if code == 2003:
+            status, note = errtext.socket_problem(exc, target.ip, port)
+            raise DbFail(status, f"MySQL: {note}" if status != "refused" else f"MySQL port {port} refused the "
+                         "connection") from None
         raise DbFail("unreachable", f"could not connect to MySQL ({code})") from None
     n = 0
     loc = f"{_where(target)}:{port}"
@@ -803,9 +849,10 @@ def _login_and_read(ctx: JobContext, target: Target, config: dict, secrets: dict
     if require_tls and not tls:
         return "tls_unavailable", "the server does not offer TLS; the password was not sent", n
     password = _password(ctx, config, secrets)
-    if password and engine in ("mysql", "redis") and not (tls and config.get("ca_pem")):
-        # MySQL full authentication and Redis AUTH hand the password to whatever answers; only a server proven by
-        # the CA certificate may receive it.  (PostgreSQL is held to SCRAM instead; MongoDB uses SCRAM.)
+    if password and engine in ("mysql", "redis", "oracle", "mongodb") and not (tls and config.get("ca_pem")):
+        # MySQL full authentication and Redis AUTH hand the password to whatever answers, an Oracle O5LOGON exchange
+        # with an impostor can be attacked offline, and MongoDB's mechanism is whatever the server offers (#216):
+        # only a server proven by the CA certificate may receive it.  (PostgreSQL is held to SCRAM instead.)
         return "identity_unverified", ("the server's identity cannot be checked without its CA certificate "
                                        "and TLS; the password was not sent"), n
     ca = _CaFile(config.get("ca_pem"))

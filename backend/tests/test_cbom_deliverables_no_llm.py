@@ -207,6 +207,8 @@ def _policy(path: Path) -> tuple[set[str], tuple[str, ...]]:
     backend += ("backend.utilities.cbom_sources.collections_view",)
     # cross-source asset keys (CB-21): pure, stdlib only, no AI
     backend += ("backend.utilities.cbom_sources.asset_keys",)
+    # CNSA 2.0 / FIPS 140-3 verdicts of a Sources collection (CB-16): pure, the shared standards predicates, no AI
+    backend += ("backend.utilities.cbom_sources.frameworks",)
     if path.parent == _ROUTERS:
         roots |= {"fastapi", "starlette", "sqlmodel", "sqlalchemy", "rich"}
         backend += (

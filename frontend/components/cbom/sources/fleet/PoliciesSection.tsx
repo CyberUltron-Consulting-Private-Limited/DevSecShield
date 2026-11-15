@@ -21,6 +21,7 @@ import {
   deleteCbomPolicy,
   listCbomCredentials,
   listCbomPolicies,
+  listCbomTransports,
   previewCbomPolicy,
   reconcileCbomFleet,
   updateCbomPolicy,
@@ -28,6 +29,7 @@ import {
   type CbomPolicyAction,
   type CbomPolicyPreview,
   type CbomPolicySchedule,
+  type CbomPolicyTransport,
   type CbomPolicyWrite,
   type CbomWriteEvaluation,
 } from "@/utils/api/cbom_fleet";
@@ -48,6 +50,7 @@ import {
 } from "./fleetLogic";
 import { cbomFleetKeys, refreshFleet } from "./keys";
 import type { FleetSectionProps } from "./sections";
+import { TRANSPORT_LABEL, applyText } from "./transportsLogic";
 import { useOpener } from "./useOpener";
 import { InfoTip } from "@/components/ui/info-tip";
 
@@ -71,6 +74,9 @@ interface Draft {
   selector: SelectorDraft | null; // null: edited as JSON
   selectorJson: string;
   neverScan: boolean;
+  /** ssh (a credential, from a scan node), or the kind of the transport transportId names (#318) */
+  transport: CbomPolicyTransport;
+  transportId: number | null;
   credentialId: number | null;
   nodeId: number | null;
   tier: 1 | 2;
@@ -89,6 +95,8 @@ function draftOf(p?: CbomFleetPolicy | null): Draft {
     selector: draftFromSelector(p?.selector ?? {}),
     selectorJson: JSON.stringify(p?.selector ?? {}, null, 2),
     neverScan: !!a.never_scan,
+    transport: a.transport ?? "ssh",
+    transportId: a.transport_id ?? null,
     credentialId: a.credential_id ?? null,
     nodeId: a.node_id ?? null,
     tier: a.tier === 2 ? 2 : 1,
@@ -110,12 +118,14 @@ function bodyOf(d: Draft): CbomPolicyWrite {
       throw new Error("The selector is not valid JSON");
     }
   }
+  // SSH logs in with a credential; a transport needs none, and SSM runs from ZeroShield with no scan node
+  const how: CbomPolicyAction = d.transport === "ssh"
+    ? { transport: "ssh", credential_id: d.credentialId, node_id: d.nodeId }
+    : { transport: d.transport, transport_id: d.transportId, credential_id: null, node_id: d.transport === "ssm" ? null : d.nodeId };
   const action: CbomPolicyAction = d.neverScan
     ? { never_scan: true }
     : {
-        transport: "ssh",
-        credential_id: d.credentialId,
-        node_id: d.nodeId,
+        ...how,
         tier: d.tier,
         batch_size: d.batchSize,
         schedule: d.schedule === "none" ? null : {
@@ -167,8 +177,8 @@ function ConditionRow({ c, onChange, onRemove, index }: { c: Condition; onChange
   );
 }
 
-function PolicyForm({ teamId, editing, onDone, onCloseAutoFocus }: {
-  teamId: number; editing: CbomFleetPolicy | null; onDone: () => void; onCloseAutoFocus: (e: Event) => void;
+function PolicyForm({ teamId, editing, transportsOn, onDone, onCloseAutoFocus }: {
+  teamId: number; editing: CbomFleetPolicy | null; transportsOn: boolean; onDone: () => void; onCloseAutoFocus: (e: Event) => void;
 }) {
   const queryClient = useQueryClient();
   const [base, setBase] = useState<CbomFleetPolicy | null>(editing); // the version being edited (reloaded after a 409)
@@ -179,6 +189,14 @@ function PolicyForm({ teamId, editing, onDone, onCloseAutoFocus }: {
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => { setD((cur) => ({ ...cur, [k]: v })); setPreview(null); };
   const creds = useQuery({ queryKey: cbomFleetKeys.credentials(teamId), queryFn: () => listCbomCredentials(teamId) });
   const nodes = useQuery({ queryKey: cbomSourcesKeys.nodes(teamId), queryFn: () => listCbomScanNodes(teamId) });
+  // the transport routes are 404 while CBOM_FLEET_TRANSPORTS is off: asked only when it is on
+  const transports = useQuery({ queryKey: cbomFleetKeys.transports(teamId), queryFn: () => listCbomTransports(teamId), enabled: transportsOn });
+  const usable = (transports.data?.transports ?? []).filter((t) => t.enabled || t.id === d.transportId);
+  const chooseThrough = (value: string) => {
+    const t = usable.find((x) => String(x.id) === value);
+    setD((cur) => ({ ...cur, transport: t ? t.kind : "ssh", transportId: t ? t.id : null }));
+    setPreview(null);
+  };
   const agentless = (nodes.data?.nodes ?? []).filter((n) => (n.mode ?? "agentless") !== "agent");
   // an incomplete condition is named and blocks Preview and Save; it is never dropped from what is sent
   const problems = d.selector ? conditionProblems(d.selector) : [];
@@ -291,6 +309,18 @@ function PolicyForm({ teamId, editing, onDone, onCloseAutoFocus }: {
             </div>
             {!d.neverScan && (
               <div className="grid sm:grid-cols-2 gap-3">
+                <Field infoId="fleet.pol.transport" label="Collect through" htmlFor="policy-transport" required className="sm:col-span-2"
+                  hint={transportsOn ? "Add a transport in Transports below" : undefined}>
+                  <select id="policy-transport" value={d.transport === "ssh" ? "ssh" : String(d.transportId ?? "")} onChange={(e) => chooseThrough(e.target.value)}
+                    className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-xs cursor-pointer dark:bg-input/30">
+                    <option value="ssh">SSH (a credential, from a scan node)</option>
+                    {usable.map((t) => <option key={t.id} value={String(t.id)}>{t.name} · {TRANSPORT_LABEL[t.kind]}</option>)}
+                    {d.transport !== "ssh" && !usable.some((t) => t.id === d.transportId) && (
+                      <option value={String(d.transportId ?? "")}>{d.transport.toUpperCase()} transport #{d.transportId} (not available)</option>
+                    )}
+                  </select>
+                </Field>
+                {d.transport === "ssh" && (
                 <Field infoId="fleet.pol.credential" label="Credential (SSH)" htmlFor="policy-credential" required hint="Add one in Credentials below">
                   <Select value={d.credentialId ? String(d.credentialId) : ""} onValueChange={(v) => set("credentialId", Number(v))}>
                     <SelectTrigger id="policy-credential" className="cursor-pointer"><SelectValue placeholder="Choose a credential" /></SelectTrigger>
@@ -301,9 +331,12 @@ function PolicyForm({ teamId, editing, onDone, onCloseAutoFocus }: {
                     </SelectContent>
                   </Select>
                 </Field>
+                )}
+                {d.transport !== "ssm" && (
                 <Field infoId="fleet.pol.node" label="Scan node" htmlFor="policy-node" required>
                   <NodeSelect id="policy-node" nodes={agentless} value={d.nodeId} onChange={(v) => set("nodeId", v)} />
                 </Field>
+                )}
                 <Field infoId="fleet.pol.tier" label="Tier" htmlFor="policy-tier">
                   <Select value={String(d.tier)} onValueChange={(v) => set("tier", Number(v) as 1 | 2)}>
                     <SelectTrigger id="policy-tier" className="cursor-pointer"><SelectValue /></SelectTrigger>
@@ -391,7 +424,7 @@ function PolicyForm({ teamId, editing, onDone, onCloseAutoFocus }: {
   );
 }
 
-export default function PoliciesSection({ teamId }: FleetSectionProps) {
+export default function PoliciesSection({ teamId, status }: FleetSectionProps) {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<CbomFleetPolicy | null | "new">(null);
   const [removing, setRemoving] = useState<CbomFleetPolicy | null>(null);
@@ -424,8 +457,8 @@ export default function PoliciesSection({ teamId }: FleetSectionProps) {
     onSuccess: (r) => {
       // managed sources and schedules show on the other tabs too
       queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) });
-      if (!r.materialize) toast.success(`Decisions refreshed (${r.decisions_changed} changed); managed sources are turned off in this deployment`);
-      else toast.success(`Applied: ${r.sources_created} sources added, ${r.sources_updated} updated, ${r.sources_removed} removed, ${r.deferred} waiting for a running job`);
+      // #318: after a save already applied the policies, say what it did instead of "0 sources added"
+      toast.success(applyText(r));
       r.problems.slice(0, 3).forEach((p) => toast.error(p));
     },
     onError: (err) => toast.error(errorText(err, "Could not apply the policies")),
@@ -514,7 +547,7 @@ export default function PoliciesSection({ teamId }: FleetSectionProps) {
         </div>
       )}
       {editing !== null && (
-        <PolicyForm teamId={teamId} editing={editing === "new" ? null : editing} onDone={() => setEditing(null)} onCloseAutoFocus={opener.onCloseAutoFocus} />
+        <PolicyForm teamId={teamId} editing={editing === "new" ? null : editing} transportsOn={!!status?.transports} onDone={() => setEditing(null)} onCloseAutoFocus={opener.onCloseAutoFocus} />
       )}
       <ConfirmDialog
         open={removing !== null}

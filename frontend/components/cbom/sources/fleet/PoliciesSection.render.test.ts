@@ -3,7 +3,7 @@
 import { FakeApi, button, byId, byLabel, click, maybeButton, press, render, run, settle, spyToasts, text, type } from "./testing/harness";
 
 import assert from "node:assert/strict";
-import { createElement } from "react";
+import { act, createElement } from "react";
 
 import PoliciesSection from "./PoliciesSection";
 
@@ -30,7 +30,24 @@ function api(policies: unknown[] = [P, OFF], evaluation: unknown = FRESH): FakeA
   return fake;
 }
 
-const show = () => render(createElement(PoliciesSection, { teamId: TEAM, status: { inventory: true, policies: true, transports: false, ssh_ca: false } }));
+const show = (transports = false) =>
+  render(createElement(PoliciesSection, { teamId: TEAM, status: { inventory: true, policies: true, transports, ssh_ca: false } }));
+const AWX_POLICY = { ...P, id: 43, name: "awx-collect", action: { never_scan: false, transport: "awx", transport_id: 1, credential_id: null, node_id: 7, tier: 1, batch_size: 100, schedule: null } };
+const TRANSPORTS = [
+  { id: 1, kind: "awx", name: "awx-prod", enabled: true, config: {}, secrets_set: ["token"], row_version: 1, last_validated_at: null, last_validation_status: "never", last_validation_summary: null, used_by: [] },
+  { id: 2, kind: "ssm", name: "ssm-prod", enabled: true, config: {}, secrets_set: [], row_version: 1, last_validated_at: null, last_validation_status: "never", last_validation_summary: null, used_by: [] },
+];
+function transportsApi(): FakeApi {
+  return api([P, AWX_POLICY, OFF]).on("get", /\/fleet\/transports$/, { data: { transports: TRANSPORTS, release: null, release_key_fingerprint: null } });
+}
+/** Pick an option of a native select as a person does (React listens to the change event). */
+async function choose(el: HTMLSelectElement, value: string): Promise<void> {
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set?.call(el, value);
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await settle();
+}
 const dialog = () => document.querySelector<HTMLElement>('[role="dialog"]');
 function inDialog(name: string): HTMLButtonElement {
   const hit = [...(dialog()?.querySelectorAll("button") ?? [])].find((b) => (b.getAttribute("aria-label") ?? b.textContent ?? "").trim() === name);
@@ -186,6 +203,53 @@ run(
       assert.equal(inDialog("Save").disabled, false);
       await click(inDialog("Save"));
       assert.equal((fake.calls("patch", /\/fleet\/policies\/41$/).at(-1)?.body as { expected_version: number }).expected_version, 9);
+    }],
+    // #318: Collect through SSH or one of the team's transports (AWX, Salt, SSM)
+    ["Collect through lists SSH and the team's transports; an AWX policy keeps its scan node and needs no credential", async () => {
+      const fake = transportsApi();
+      await show(true);
+      await click(button("Edit awx-collect"));
+      const through = byId<HTMLSelectElement>("policy-transport");
+      assert.deepEqual([...through.options].map((o) => o.textContent), ["SSH (a credential, from a scan node)", "awx-prod · Ansible (AWX / AAP)", "ssm-prod · AWS Systems Manager (SSM)"]);
+      assert.equal(through.value, "1");
+      assert.equal(document.getElementById("policy-credential"), null, "an AWX policy asks for an SSH credential");
+      assert.ok(document.getElementById("policy-node"), "an AWX policy lost its scan node");
+      await click(inDialog("Save"));
+      const { action } = fake.calls("patch", /\/fleet\/policies\/43$/)[0].body as { action: Record<string, unknown> };
+      assert.deepEqual(action, { transport: "awx", transport_id: 1, credential_id: null, node_id: 7, tier: 1, batch_size: 100, schedule: null });
+    }],
+    ["switching a policy to SSM drops the scan node and the credential; back to SSH asks for the credential again", async () => {
+      const fake = transportsApi();
+      await show(true);
+      await click(button("Edit prod-collect"));
+      assert.ok(document.getElementById("policy-credential"), "an SSH policy without its credential");
+      await choose(byId<HTMLSelectElement>("policy-transport"), "2");
+      assert.equal(document.getElementById("policy-node"), null, "SSM runs from ZeroShield: no scan node");
+      assert.equal(document.getElementById("policy-credential"), null);
+      await click(inDialog("Save"));
+      const { action } = fake.calls("patch", /\/fleet\/policies\/41$/)[0].body as { action: Record<string, unknown> };
+      assert.deepEqual(action, { transport: "ssm", transport_id: 2, credential_id: null, node_id: null, tier: 1, batch_size: 100, schedule: null });
+      await click(button("Edit prod-collect"));
+      await choose(byId<HTMLSelectElement>("policy-transport"), "ssh");
+      assert.ok(document.getElementById("policy-credential") && document.getElementById("policy-node"));
+    }],
+    ["with transports off, nothing asks for them and Collect through offers SSH only", async () => {
+      const fake = api();
+      await show();
+      await click(button("Edit prod-collect"));
+      assert.equal(fake.calls("get", /\/fleet\/transports$/).length, 0, "a 404 route was asked");
+      assert.deepEqual([...byId<HTMLSelectElement>("policy-transport").options].map((o) => o.value), ["ssh"]);
+    }],
+    ["Apply after the save already applied says so instead of '0 sources added'", async () => {
+      const fake = transportsApi();
+      const toasts = spyToasts();
+      const zero = { sources_created: 0, sources_updated: 0, sources_removed: 0, deferred: 0, targets_assigned: 0, targets_unassigned: 0,
+        schedules_created: 0, schedules_updated: 0, schedules_removed: 0, decisions_changed: 0, problems: [] };
+      fake.on("post", /\/fleet\/reconcile$/, { data: { ...zero, materialize: true, previous: { ...zero, sources_created: 1, at: "2026-11-14T22:53:49Z", by: "automatic" } } });
+      await show(true);
+      await click(button("Apply policies"));
+      assert.ok(toasts.some((t) => t.kind === "success" && t.message === "Applied when saved (22:53 UTC): 1 source created. Nothing more to change."), JSON.stringify(toasts));
+      assert.ok(!toasts.some((t) => /0 sources added/.test(t.message)));
     }],
     ["closing a Delete confirm gives the focus back to its Delete button", async () => {
       api();

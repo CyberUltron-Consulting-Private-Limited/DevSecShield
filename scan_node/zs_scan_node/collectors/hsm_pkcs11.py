@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import os
+import re
 import time
 from typing import Any
 
@@ -269,7 +270,7 @@ def _read_token(ctx: JobContext, module: str, lib, slot, token, pin: str | None)
         return 1, "auth_failed"
     except PKCS11Error as exc:
         ctx.emit("key_store", label, where, name=label, facts={**info, "logged_in": False})
-        ctx.coverage(label, f"PKCS#11 token {label}", "error", f"could not open a session: {exc.__class__.__name__}")
+        ctx.coverage(label, f"PKCS#11 token {label}", "error", f"could not open a session: {pkcs11_note(exc)[1]}")
         return 1, "error"
     n = 0
     counts: dict[str, int] = {}
@@ -327,6 +328,53 @@ def _open(config: dict):
         raise ConfigError(f"PKCS#11 module {name!r} did not load ({exc.__class__.__name__})") from None
 
 
+_PIN_NOTES = {
+    "PinIncorrect": "the HSM refused the PIN (CKR_PIN_INCORRECT); check the PIN of this token with the HSM administrator",
+    "PinLocked": "the token's PIN is locked (CKR_PIN_LOCKED); the HSM administrator must unlock it",
+    "PinExpired": "the token's PIN has expired (CKR_PIN_EXPIRED); the HSM administrator must set a new one",
+    "UserPinNotInitialized": "the token's user PIN is not set (CKR_USER_PIN_NOT_INITIALIZED); the HSM administrator "
+                             "must initialise it",
+}
+
+
+def _ckr(name: str) -> str:
+    """python-pkcs11's exception class as the PKCS#11 return value the HSM documentation uses (DeviceError ->
+    CKR_DEVICE_ERROR)."""
+    return "CKR_" + re.sub(r"(?<!^)(?=[A-Z])", "_", name).upper()
+
+
+def pkcs11_note(exc: BaseException) -> tuple[str, str]:
+    """#214: (status, note) for a PKCS#11 error opening a token session, in words."""
+    name = exc.__class__.__name__
+    if name in _PIN_NOTES:
+        return "auth_failed", _PIN_NOTES[name]
+    return "error", f"the HSM refused the session ({_ckr(name)})"
+
+
+def no_token_note(want: str, labels: list[str]) -> str:
+    """#214: no token to read: the label matched none of the module's tokens (name them), or there is none."""
+    if want and labels:
+        return f'no token labelled "{want}" on this module (its tokens: {", ".join(labels[:10])}); check the token label'
+    if want:
+        return f'no initialised token is present on this module (looked for the label "{want}")'
+    return "no initialised token is present on this module"
+
+
+def _token_labels(lib) -> list[str]:
+    from pkcs11 import TokenFlag
+
+    out = []
+    for slot in lib.get_slots(token_present=True):
+        try:
+            token = slot.get_token()
+        except Exception:  # noqa: BLE001 - a slot that cannot be read names nothing
+            continue
+        if token.flags is not None and not token.flags & TokenFlag.TOKEN_INITIALIZED:
+            continue
+        out.append(_text(token.label))
+    return sorted(set(out))
+
+
 def _tokens(lib, config: dict) -> list[tuple[Any, Any]]:
     from pkcs11 import TokenFlag
 
@@ -357,9 +405,9 @@ def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
     pin = _pin(ctx, config, secrets)
     tokens = _tokens(lib, config)
     if not tokens:
-        ctx.outcome(f"pkcs11:{name}", "unreachable", "no token is present" + (
-            f" with the label {config.get('token_label')}" if config.get("token_label") else ""), started=started)
-        return f"pkcs11 {name}: no token"
+        note = no_token_note(str(config.get("token_label") or "").strip(), _token_labels(lib))
+        ctx.outcome(f"pkcs11:{name}", "unreachable", note, started=started)
+        return f"pkcs11 {name}: {note}"
     for slot, token in tokens:
         t0 = time.monotonic()
         if ctx.should_stop():
@@ -383,9 +431,10 @@ def test(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
         return str(exc)
     pin = _pin(ctx, config, secrets)
     if not tokens:
+        note = no_token_note(str(config.get("token_label") or "").strip(), _token_labels(lib))
         ctx.samples.append({"target": f"pkcs11:{name}", "status": "unreachable", "reachable": False, "login": False,
-                            "privilege": None, "note": "no token is present"})
-        return "no token is present"
+                            "privilege": None, "note": note})
+        return note
     from pkcs11 import TokenFlag
     from pkcs11.exceptions import PKCS11Error
 
@@ -405,8 +454,9 @@ def test(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
             ctx.samples.append({"target": label, "status": "ready", "reachable": True, "login": bool(pin),
                                 "privilege": None, "note": f"{count} objects visible"})
         except PKCS11Error as exc:
-            ctx.samples.append({"target": label, "status": "auth_failed" if "Pin" in exc.__class__.__name__ else "error",
-                                "reachable": True, "login": False, "privilege": None, "note": exc.__class__.__name__})
+            status, note = pkcs11_note(exc)
+            ctx.samples.append({"target": label, "status": status, "reachable": True, "login": False,
+                                "privilege": None, "note": note})
         except LeaseLost:
             raise
         except Exception as exc:  # noqa: BLE001 - one token's error fails its sample, never the test job

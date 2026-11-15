@@ -396,9 +396,10 @@ def _cert_analysis(facts: Mapping[str, Any]) -> tuple[tuple[LinkKey, ...], dict[
     fields = tuple(facts.get(name) for name in _CERT_FIELDS)
     try:
         a = _cert_analysed(fields)
-        return a.links, a.attrs
+        return a.links, _attr_sets(a.attrs)
     except TypeError:  # an unhashable fact value: no memo
-        return _cert_analysis_of(fields)
+        links, attrs = _cert_analysis_of(fields)
+        return links, _attr_sets(attrs)
 
 
 def _cert_analysis_of(fields: tuple[Any, ...]) -> tuple[tuple[LinkKey, ...], dict[str, frozenset[str]]]:
@@ -430,7 +431,17 @@ def _cert_analysis_of(fields: tuple[Any, ...]) -> tuple[tuple[LinkKey, ...], dic
     # what two observations of one certificate can never disagree on (absent when the observation does not say)
     values = (("serial", serial), ("sha256", sha256), ("sha1", sha1), ("issuer", issuer_dn if issuer_is_dn else ""),
               ("not_before", before))
-    return tuple(out), {name: frozenset((value,)) for name, value in values if value}
+    kept = tuple(value or None for _name, value in values)
+    return tuple(out), (kept if any(kept) else ())
+
+
+_ATTR_NAMES = ("serial", "sha256", "sha1", "issuer", "not_before")  # the order ``_cert_analysis_of`` stores them in
+
+
+def _attr_sets(attrs: tuple[str | None, ...]) -> dict[str, frozenset[str]]:
+    """The conflict attributes as sets (what ``_correlate`` merges); stored as one tuple of values in
+    ``_ATTR_NAMES`` order, None when absent (CB-32: memory)."""
+    return {name: frozenset((value,)) for name, value in zip(_ATTR_NAMES, attrs) if value}
 
 
 def link_keys(obj: Any) -> tuple[LinkKey, ...]:
@@ -525,22 +536,22 @@ class _Analysed:
     """One observation, read once (memoised on the facts that decide its keys; shared: never mutate)."""
 
     links: tuple[LinkKey, ...]
-    attrs: dict[str, frozenset[str]]  # conflict attributes (certificates only)
+    attrs: tuple[str | None, ...]  # conflict attributes (certificates only): values in ``_ATTR_NAMES`` order
     solo: Any  # its asset key when it is correlated with nothing (what ``correlate`` gives a lone observation)
-    solo_names: frozenset[str]  # its aliases then
+    solo_names: tuple[str, ...]  # its aliases then (a tuple: a frozenset per observation cost ~200-700 bytes)
 
 
-def _analysed(links: tuple[LinkKey, ...], attrs: dict[str, frozenset[str]], requires: bool) -> _Analysed:
+def _analysed(links: tuple[LinkKey, ...], attrs: tuple[str | None, ...], requires: bool) -> _Analysed:
     best, names = _solo(links, attrs, requires)
     return _Analysed(links, attrs, best, names)
 
 
-def _solo(links: tuple[LinkKey, ...], attrs: Mapping[str, frozenset[str]], requires: bool) -> tuple[Any, frozenset[str]]:
+def _solo(links: tuple[LinkKey, ...], attrs: tuple[str | None, ...], requires: bool) -> tuple[Any, tuple[str, ...]]:
     if not links:
-        return (NOT_CORRELATED if requires else None), frozenset()
+        return (NOT_CORRELATED if requires else None), ()
     best = min(links, key=lambda k: (_RANK[k.basis], k.key)).key
-    has_before = "not_before" in attrs
-    return best, frozenset(k.key for k in links if not (k.basis == "cn" and has_before))
+    has_before = len(attrs) > 4 and bool(attrs[4])
+    return best, tuple(dict.fromkeys(k.key for k in links if not (k.basis == "cn" and has_before)))
 
 
 @lru_cache(maxsize=65_536)  # the one certificate memo (link keys, attributes, solo answer)
@@ -554,10 +565,10 @@ def _other_analysed(kind: str, location: str, target: str, port: Any, identity: 
                     cloud_resource: bool) -> _Analysed:
     obs = Observation(kind=kind, facts={"port": port, "identity": identity}, location=location, target=target,
                       origin=origin, scope=scope)
-    return _analysed(link_keys(obs), {}, origin == "code" and cloud_resource)
+    return _analysed(link_keys(obs), (), origin == "code" and cloud_resource)
 
 
-_NOTHING = _Analysed((), {}, None, frozenset())  # no link key, no correlation required: a per-source asset
+_NOTHING = _Analysed((), (), None, ())  # no link key, no correlation required: a per-source asset
 _CLOUD_HEADS = ("arn:", "/subscriptions/", "https://", "projects/", "//")
 
 
@@ -582,7 +593,7 @@ def _analyse(obj: Any) -> _Analysed:
                                obs.origin, bool(facts.get("cloud_resource")))
     except TypeError:  # an unhashable fact value: read it without the memo
         links = link_keys(obs)
-        attrs = _cert_analysis(facts)[1] if is_certificate(obs) else {}
+        attrs = _cert_analysis_of(tuple(facts.get(n) for n in _CERT_FIELDS))[1] if is_certificate(obs) else ()
         return _analysed(links, attrs, _requires_correlation(obs))
 
 
@@ -598,7 +609,7 @@ def _correlate(an: Sequence[_Analysed]) -> Correlation:
             else:
                 members.append(i)
     keys: list[Any] = [a.solo for a in an]
-    aliases: list[frozenset[str]] = [a.solo_names for a in an]
+    aliases: list[Any] = [a.solo_names for a in an]  # tuples for solo answers, frozensets for groups
     shared: list[tuple[int, str, str, str, list[int]]] = []
     for key, members in by_key.items():
         if len(members) > 1:
@@ -613,7 +624,7 @@ def _correlate(an: Sequence[_Analysed]) -> Correlation:
         for i in members:
             if i not in parent:
                 parent[i] = i
-                attrs[i] = an[i].attrs
+                attrs[i] = _attr_sets(an[i].attrs)
 
     def find(i: int) -> int:
         while parent[i] != i:
@@ -674,7 +685,16 @@ def correlate_detail(observations: Sequence[Any]) -> Correlation:
     """Correlate a set of observations (PURE, independent of input order, linear): see the module docstring. Each
     distinct observation is read once (memoised on the facts that decide its keys), and only observations that share
     a link key with another one go through the union-find."""
-    return _correlate([_analyse(o) for o in observations])
+    return _public(_correlate([_analyse(o) for o in observations]))
+
+
+def _frozen(names: Any) -> frozenset[str]:
+    return names if isinstance(names, frozenset) else frozenset(names)
+
+
+def _public(corr: Correlation) -> Correlation:
+    """Aliases as frozensets (the stored solo answers are tuples)."""
+    return Correlation(keys=corr.keys, aliases=[_frozen(a) for a in corr.aliases], contested=corr.contested)
 
 
 class CorrelationIndex:
@@ -684,13 +704,16 @@ class CorrelationIndex:
     connected components the change touches (every observation reachable from the changed ones, before or after
     the change, through shared link keys). Components are independent in ``correlate_detail`` (buckets, groups and
     contested keys never span two), so the result always equals ``correlate_detail`` over the current set
-    (``tests/test_cbom_asset_keys_perf.py`` proves it on random update sequences)."""
+    (``tests/test_cbom_asset_keys_perf.py`` proves it on random update sequences).
+
+    Compact (CB-32, a 1.5M-asset estate): a link key held by one observation maps to that id (a set only when
+    several share it), and an observation whose answer is its solo answer (almost all) keeps nothing beyond its
+    analysis; ``_group`` holds the others' (key, aliases)."""
 
     def __init__(self, observations: Mapping[Any, Any] | None = None) -> None:
         self._an: dict[Any, _Analysed] = {}
-        self._by_key: dict[str, set[Any]] = {}
-        self._keys: dict[Any, Any] = {}
-        self._aliases: dict[Any, frozenset[str]] = {}
+        self._by_key: dict[str, Any] = {}  # link key -> an id, or a set of ids when several hold it
+        self._group: dict[Any, tuple[Any, frozenset[str]]] = {}  # id -> (key, aliases) when not its solo answer
         self._contested: set[str] = set()
         if observations:
             self.update(observations)
@@ -699,44 +722,80 @@ class CorrelationIndex:
         return len(self._an)
 
     def key(self, oid: Any) -> Any:
-        return self._keys[oid]
+        found = self._group.get(oid)
+        return found[0] if found is not None else self._an[oid].solo
+
+    def names(self, oid: Any) -> Any:
+        """The aliases as stored (iterate them; a tuple or a frozenset)."""
+        found = self._group.get(oid)
+        return found[1] if found is not None else self._an[oid].solo_names
 
     def aliases(self, oid: Any) -> frozenset[str]:
-        return self._aliases[oid]
+        return _frozen(self.names(oid))
 
     @property
     def contested(self) -> frozenset[str]:
         return frozenset(self._contested)
 
+    def _holders(self, link: str) -> Any:
+        found = self._by_key.get(link)
+        if found is None:
+            return ()
+        return found if type(found) is set else (found,)
+
+    def _hold(self, link: str, oid: Any) -> None:
+        found = self._by_key.get(link)
+        if found is None:
+            self._by_key[link] = oid
+        elif type(found) is set:
+            found.add(oid)
+        elif found != oid:
+            self._by_key[link] = {found, oid}
+
+    def _release(self, link: str, oid: Any) -> None:
+        found = self._by_key.get(link)
+        if type(found) is set:
+            found.discard(oid)
+            if len(found) == 1:
+                self._by_key[link] = next(iter(found))
+        elif found == oid:
+            del self._by_key[link]
+
+    def _answer(self, oid: Any) -> tuple[Any, Any]:
+        found = self._group.get(oid)
+        if found is not None:
+            return found
+        a = self._an.get(oid)
+        return (a.solo, a.solo_names) if a is not None else (_MISSING, None)
+
     def update(self, changes: Mapping[Any, Any]) -> set[Any]:
         """Apply changes; returns the ids whose key or aliases changed (removed ids included)."""
         seeds: set[str] = set()
         removed: set[Any] = set()
+        before: dict[Any, tuple[Any, Any]] = {}
         for oid, obj in changes.items():
-            old = self._an.pop(oid, None)
+            before[oid] = self._answer(oid)  # (_MISSING, None) for an id new to the index
+            old = self._an.get(oid)
             if old is not None:
+                del self._an[oid]
                 for k in old.links:
-                    members = self._by_key[k.key]
-                    members.discard(oid)
-                    if not members:
-                        del self._by_key[k.key]
+                    self._release(k.key, oid)
                     seeds.add(k.key)
             if obj is None:
                 if old is not None:
                     removed.add(oid)
-                    self._keys.pop(oid, None)
-                    self._aliases.pop(oid, None)
+                    self._group.pop(oid, None)
                 continue
             a = _analyse(obj)
             self._an[oid] = a
             for k in a.links:
-                self._by_key.setdefault(k.key, set()).add(oid)
+                self._hold(k.key, oid)
                 seeds.add(k.key)
         component = {oid for oid in changes if oid in self._an}
         visited = set(seeds)
         frontier = list(seeds)
         while frontier:
-            for oid in self._by_key.get(frontier.pop(), ()):
+            for oid in self._holders(frontier.pop()):
                 if oid not in component:
                     component.add(oid)
                     for k in self._an[oid].links:
@@ -744,19 +803,27 @@ class CorrelationIndex:
                             visited.add(k.key)
                             frontier.append(k.key)
         ids = list(component)
+        for oid in ids:
+            if oid not in before:
+                before[oid] = self._answer(oid)
         corr = _correlate([self._an[oid] for oid in ids])
         self._contested -= visited
         self._contested |= corr.contested
         changed = set(removed)
         for oid, key, names in zip(ids, corr.keys, corr.aliases):
-            if self._keys.get(oid, _MISSING) != key or self._aliases.get(oid) != names:
+            a = self._an[oid]
+            if key == a.solo and names is a.solo_names:
+                self._group.pop(oid, None)
+            else:
+                self._group[oid] = (key, names)
+            was = before.get(oid, (_MISSING, None))
+            if was[0] != key or _frozen(was[1] or ()) != _frozen(names) or was[0] is _MISSING:
                 changed.add(oid)
-            self._keys[oid], self._aliases[oid] = key, names
         return changed
 
     def correlation(self, ids: Sequence[Any]) -> Correlation:
         """The current answer for ``ids`` in that order (what ``correlate_detail`` gives over the whole set)."""
-        return Correlation(keys=[self._keys[i] for i in ids], aliases=[self._aliases[i] for i in ids],
+        return Correlation(keys=[self.key(i) for i in ids], aliases=[self.aliases(i) for i in ids],
                            contested=frozenset(self._contested))
 
 

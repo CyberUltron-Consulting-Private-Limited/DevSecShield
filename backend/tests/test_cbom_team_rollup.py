@@ -2228,7 +2228,8 @@ def test_module_level_imports_are_standard_library_only():
 # collections_view: the cross-scope identity and "latest observation wins" rule (stdlib-only at import; its DB loader
 # imports sqlmodel lazily and is called from load_team_cbom_view only); asset_keys: the cross-source asset key (CB-21)
 SHARED_PURE_RULES = {"backend.utilities.cbom_sources.cbom_rows", "backend.utilities.cbom_sources.cbom_metrics",
-                     "backend.utilities.cbom_sources.collections_view", "backend.utilities.cbom_sources.asset_keys"}
+                     "backend.utilities.cbom_sources.collections_view", "backend.utilities.cbom_sources.asset_keys",
+                     "backend.utilities.cbom_sources.frameworks"}  # CB-16: pure, the shared standards predicates
 
 
 def test_only_the_db_loader_imports_non_stdlib_modules_and_only_lazily():
