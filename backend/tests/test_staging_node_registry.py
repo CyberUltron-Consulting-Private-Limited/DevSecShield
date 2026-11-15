@@ -45,8 +45,14 @@ def with_manifest(host: Host, tag: str, version: str = "1.0.0", under: str = "de
 GHCR_CURL = r'''#!/usr/bin/env bash
 out=""; prev=""
 for a in "$@"; do [ "$prev" = -o ] && out=$a; prev=$a; done
+if [ "${FAKE_GHCR_DOWN:-0}" = 1 ]; then  # no route to the registry: every request to it fails to connect
+  for a in "$@"; do case "$a" in https://ghcr.io/*) echo "down $a $*" >> "$(dirname "$0")/ghcr.log"
+    echo "curl: (7) Failed to connect to ghcr.io port 443 after 5001 ms: Couldn't connect to server" >&2
+    case " $* " in *" -w "*) printf '000';; esac; exit 7;; esac; done
+fi
 for a in "$@"; do case "$a" in
-  https://ghcr.io/token*) echo "$a" >> "$(dirname "$0")/ghcr.log"; printf '{"token":"anonTESTONLY"}'; exit 0;;
+  https://ghcr.io/v2/) echo "probe $*" >> "$(dirname "$0")/ghcr.log"; printf '401'; exit 0;;
+  https://ghcr.io/token*) echo "$a $*" >> "$(dirname "$0")/ghcr.log"; printf '{"token":"anonTESTONLY"}'; exit 0;;
   https://ghcr.io/v2/*/charts/*/manifests/*) echo "$a $*" >> "$(dirname "$0")/ghcr.log"
     [ "${FAKE_CHART_PUBLIC:-1}" = 1 ] || { echo "curl: (22) 401" >&2; exit 22; }
     version=${a##*/}
@@ -235,3 +241,26 @@ def test_push_forwards_only_a_0_or_1_and_a_checked_registry_to_the_host():
     push = script.split("cmd_push() {", 1)[1].split("\n}\n", 1)[0]
     assert '[[ "${CBOM_NODE_REGISTRY_PUBLIC}" =~ ^[01]$ ]] || die' in push
     assert """remote_env+=" CBOM_NODE_REGISTRY_PUBLIC='${CBOM_NODE_REGISTRY_PUBLIC}'\"""" in push
+
+
+def test_an_unreachable_registry_is_probed_once_and_offers_no_pull(host):
+    """#197 review: a host with no route to GHCR waited 10 s per request (token, image, chart) and said only "cannot be
+    pulled without a login". One reachability probe (connect timeout 5 s) decides first: unreachable, no per-tag probe
+    runs, nothing is offered, and the WARNING says why."""
+    proc = ok(host.ship(A, env={"CBOM_NODE_REGISTRY_PUBLIC": "1", "FAKE_GHCR_DOWN": "1"}))
+    v = env_values(host)
+    assert v["CBOM_NODE_IMAGE_REF"] == "" and v["CBOM_NODE_CHART_REF"] == ""
+    assert "WARNING: registry ghcr.io cannot be reached from this host" in proc.stdout, proc.stdout
+    assert "Failed to connect" in proc.stdout  # curl's reason, so the operator knows what to fix
+    assert "without a login" not in proc.stdout  # not mistaken for a missing or private package
+    calls = (host.root / "bin/ghcr.log").read_text().splitlines()
+    assert len(calls) == 1 and calls[0].startswith("down https://ghcr.io/v2/"), calls  # one probe, no token, no manifest
+    assert "--connect-timeout 5" in calls[0] and "--max-time 10" in calls[0], calls[0]
+
+
+def test_a_reachable_registry_probes_once_then_every_request_has_a_connect_timeout(host):
+    ok(host.ship(A, env={"CBOM_NODE_REGISTRY_PUBLIC": "1"}))
+    assert env_values(host)["CBOM_NODE_IMAGE_REF"] == f"{GHCR}/devsecshield-scan-node:1.0.0"
+    calls = (host.root / "bin/ghcr.log").read_text().splitlines()
+    assert calls[0].startswith("probe ") and sum(c.startswith("probe ") for c in calls) == 1, calls
+    assert len(calls) > 1 and all("--connect-timeout 5" in c for c in calls), calls

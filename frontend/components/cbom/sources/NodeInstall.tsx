@@ -120,6 +120,7 @@ export function NodeOnePaste({
   caFile,
   proxyUser,
   image,
+  build,
   trust,
 }: {
   apiUrl: string;
@@ -134,10 +135,12 @@ export function NodeOnePaste({
   proxyUser?: string | null;
   /** the name the image file loads as */
   image: string;
+  /** #197: the commit the image file was built from (the Helm push tag carries it) */
+  build?: string | null;
   /** CB-15: a private CA and / or client certificate for the ZeroShield API */
   trust?: NodeTrust | null;
 }) {
-  const opts = { apiUrl, token, name, proxyUrl, caFile, proxyUser, image, insecureHttp: labSwitchHelps(apiUrl), trust };
+  const opts = { apiUrl, token, name, proxyUrl, caFile, proxyUser, image, build, insecureHttp: labSwitchHelps(apiUrl), trust };
   const curl = onePasteInstall(method, links, opts);
   if (!curl) return null;
   const wget = onePasteInstall(method, links, { ...opts, fetcher: "wget" });

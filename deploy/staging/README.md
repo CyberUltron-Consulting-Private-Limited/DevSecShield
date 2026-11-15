@@ -181,6 +181,19 @@ deploy), `CBOM_NODE_CHART_REF=oci://ghcr.io/.../charts/cbom-scan-node:<version>`
 or the downloaded chart with the GHCR image while the chart is not public); the downloads and the one-paste install
 stay below it as the air-gapped alternative.
 
+First `set_node_refs` asks the registry once whether it answers at all (`https://ghcr.io/v2/`, connect timeout 5 s;
+every registry request has one): a host that cannot reach it gets `WARNING: registry ghcr.io cannot be reached from
+this host (<curl's reason>)`, no per-version probe and no pull, instead of a wait per request and a message about a
+missing package.
+
+The API also judges the image it offers against the release its downloads ship (`GET /{team}/cbom/node-artifacts`
+`pull_image_freshness`, `node_release.image_freshness`; cases in `contracts/cbom/node_image_freshness.json`, shared
+with the frontend): the same version is current; an older release, a commit other than the downloads' `build`, or
+`1.0.0` (the version every build reported before release versions; GHCR `:1.0.0` is the 2 Nov build without request
+signing or the `alive` file, issue #197) is not offered: the wizard says why and installs this server's image file.
+The air-gapped Helm commands push the downloaded image as `$REGISTRY/<name>:<version>-<sha12>`, so a cluster that
+already holds another build of the same version (`pullPolicy: IfNotPresent`) cannot keep running it.
+
 The switch is `CBOM_NODE_REGISTRY_PUBLIC` (a variable of the `staging` environment; deploy-staging.yml): unset or `1`
 (default, the image package is public) = on for push deploys; `0` = never offer a pull (clears both refs; set it if
 a package is ever made private again). A manual deploy run always clears them (it may deploy a commit with no release).
@@ -501,6 +514,22 @@ a **multi-Region** key to its replica there: `mrk-<key id>=<region>` entries, co
 every multi-Region key), e.g. `mrk-1234abcd...=ap-south-2`. Keep the primary ARN in `CBOM_SSHCA_KMS_KEY_ARNS`: the
 CA rows store it, and the replica (same key material) decrypts the data keys the primary wrapped. Single-Region keys
 and aliases ignore the override. The backend's KMS permissions must cover the replica ARN in that region.
+
+## Certificate Transparency discovery on staging
+
+Certificate Transparency discovery (Cloud & Identity › Certificates: the team's domains searched in public CT logs,
+`backend/utilities/cbom_sources/ct_collect.py`) runs only while `CBOM_CT_DISCOVERY` is on. The code's default is off,
+and **production and every other deployment keep it off** until a production Cert Spotter key is in place
+(`ct_providers.py`). Staging turns it on (#369) so it can be tested end to end: `docker-compose.yml` sets
+`CBOM_CT_DISCOVERY: ${CBOM_CT_DISCOVERY:-1}` on `backend` (settings answer `ct_discovery_enabled: true`, a
+`ct_logs` source can be added) and `cbom-cloud-worker` (runs the searches). It ships with the deploy bundle.
+
+To turn it off on the host, put `CBOM_CT_DISCOVERY=0` in `deploy/staging/.env` and run
+`docker compose up -d backend cbom-cloud-worker`; a value in `backend.env` is ignored (the compose file's
+`environment:` wins). Without a key Cert Spotter answers unauthenticated, at its free rate; set
+`CBOM_CT_CERTSPOTTER_KEY` in `backend.env` for more. Check: `GET /1/cbom/sources/settings` answers
+`"ct_discovery_enabled": true` with the providers, and the Certificates card shows the Certificate Transparency
+source instead of "Certificate Transparency discovery is off on this ZeroShield deployment".
 
 ## Build identity
 

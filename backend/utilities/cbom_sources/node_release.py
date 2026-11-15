@@ -110,6 +110,78 @@ def node_update(reported: str | None, server_version: str | None, server_build: 
     return out
 
 
+# ------------------------------------------------------------------------------------------- an image the wizard offers
+# Issue #197: the wizard offered devsecshield-scan-node:1.0.0, written once (2 Nov) while every later build also said
+# 1.0.0, so nodes installed from it lacked request signing, ZS_CA_FILE and the alive file. Since #377 (#361) every
+# node-changing promotion is a new release 1.0.N and a published version names one node, so the same version is
+# current (as node_update says). image_freshness judges an image reference from its tag alone (no registry call):
+#   <X.Y.Z>: a release: current when it is the server's version, outdated when older, different when newer; 1.0.0 is
+#            the version every build claimed before release versions existed, never provably current;
+#   <prefix>-<sha12>[-<hash8>] (publish-ghcr.yml: dev-, staging-, pr-<n>-, manual-): one commit: current when it is
+#            the server's build, unverified otherwise (which release it holds cannot be told from the tag);
+#   staging, dev, stable, latest, main, pr-<n>, <X.Y>, <X>, no tag: a moving tag (whatever was published last).
+# The cases are a contract shared with the frontend (logic.imageFreshness): contracts/cbom/node_image_freshness.json.
+STALE_IMAGE_STATES = ("outdated", "different", "unverified")
+LEGACY_VERSION = "1.0.0"  # scan_node/release.json: releases start at 1.0.1; 1.0.0 named many different builds
+_SHA_TAG = re.compile(r"(?:dev|staging|manual|pr-[1-9][0-9]{0,6})-(?P<build>[0-9a-f]{12})(?:-[0-9a-f]{8})?")
+_RELEASE_TAG = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?")
+_MOVING_TAG = re.compile(r"(?:dev|staging|stable|latest|main|pr-[1-9][0-9]{0,6}|[0-9]+\.[0-9]+|[0-9]+)")
+
+
+def image_tag(ref: str) -> str:
+    """The tag of an image reference (``latest`` when it names none; a registry port is not a tag)."""
+    ref = (ref or "").strip().split("@", 1)[0]
+    cut = ref.rfind(":")
+    return ref[cut + 1:] if cut > ref.rfind("/") else "latest"
+
+
+def image_freshness(ref: str | None, server_version: str | None, server_build: str | None) -> dict[str, Any] | None:
+    """{"state", "reason", "message", "server_build", "tag"} of the image ``ref`` against the node release this server
+    ships, or None without a reference (see above).  States: current, outdated, different, unverified (stale: the
+    wizard does not install it), moving (offered, with a note), unknown (nothing to compare, or a tag it does not
+    know)."""
+    if not ref or not ref.strip():
+        return None
+    ref = ref.strip()
+    tag = image_tag(ref)
+    server = server_label(server_version, server_build)
+    out: dict[str, Any] = {"state": "unknown", "reason": None, "message": None, "server_build": server, "tag": tag}
+
+    def say(state: str, reason: str, message: str | None) -> dict[str, Any]:
+        out.update(state=state, reason=reason, message=message)
+        return out
+
+    if not server_version:
+        return say("unknown", "no_server_build", None)
+    if _RELEASE_TAG.fullmatch(tag):
+        order = _compare(tag, server_version)
+        if order is not None and order < 0:
+            return say("outdated", "older_version",
+                       f"{ref} is scan node {tag}, older than this server's node release {server}.")
+        if order is not None and order > 0:
+            return say("different", "newer_version",
+                       f"{ref} is scan node {tag}, newer than this server's node release {server}.")
+        if tag == LEGACY_VERSION:
+            return say("unverified", "legacy_version",
+                       f"{ref} is {tag}, the version every scan node build reported before release versions "
+                       f"existed: it cannot be shown to be this server's node build {server}.")
+        return say("current", "same_version", None)
+    sha = _SHA_TAG.fullmatch(tag)
+    if sha:
+        if not server_build:
+            return say("unknown", "no_server_build_id", None)
+        if server_build.startswith(sha.group("build")):
+            return say("current", "same_build", None)
+        return say("unverified", "other_commit",
+                   f"{ref} was built from commit {sha.group('build')}: it cannot be shown to be this server's node "
+                   f"release {server}.")
+    if _MOVING_TAG.fullmatch(tag):
+        return say("moving", "moving_tag",
+                   f"{ref} is a moving tag: it names whatever was published last, which may not be this server's "
+                   f"node release {server}.")
+    return say("unknown", "unrecognised_tag", None)
+
+
 # ------------------------------------------------------------------------------------------- the server's node build
 _cache_lock = threading.Lock()
 _cache: dict[str, Any] = {"key": None, "value": (None, None)}
