@@ -77,6 +77,7 @@ from backend.utilities.cbom_sources import inventory as INV
 from backend.utilities.cbom_sources import posture as POSTURE
 from backend.utilities.cbom_sources import q0register as Q0REG
 from backend.utilities.cbom_sources import qgrade as QGRADE
+from backend.utilities.cbom_sources import qgrade_store as QSTORE
 from backend.utilities.cbom_sources import run_deliverables as RUN_DELIVERABLES
 from backend.utilities.cbom_sources import run_parity as RUN_PARITY
 from backend.utilities.cbom_sources import run_results as RUN_RESULTS
@@ -1545,11 +1546,17 @@ async def get_run(team_id: TeamId, run_id: ObjectId, Authorization: AuthHeader =
 def _run_assets(engine, team_id: int, run_id: int, params: dict) -> dict:
     view, status, codes = params.pop("view", "all"), params.pop("status", None), params.pop("codes", None)
     asset_ids, pqc_group, clause = params.pop("asset_ids", None), params.pop("pqc_group", None), params.pop("clause", None)
+    q_grade = params.pop("q_grade", None)
     with Session(engine) as session:
         run = _get_owned(session, CbomCollectionRun, run_id, team_id, "Run")
         # CB-38: the inventory page plus the unified results table's fields (view, status, key, wave, risk score)
-        out = RUN_ASSETS.list_run_assets(session, team_id=team_id, run=run, params=params, view=view, status=status,
-                                         codes=codes, asset_ids=asset_ids, pqc_group=pqc_group, clause=clause)
+        try:
+            out = RUN_ASSETS.list_run_assets(session, team_id=team_id, run=run, params=params, view=view,
+                                             status=status, codes=codes, asset_ids=asset_ids, pqc_group=pqc_group,
+                                             clause=clause, q_grade=q_grade)
+        except QSTORE.Unavailable as exc:  # CB-19 PR-3: this run's grades were computed at view, never stored
+            raise HTTPException(status_code=409, detail=f"The grade filter is not available for this run ({exc})") \
+                from None
         RUN_TICKETS.add_ticket_fields(session, team_id, run, out["items"])  # CB-38 PR-4: ticket_key, ticket_url
         out["run"] = public_run(run)
         return out
@@ -1577,6 +1584,7 @@ async def run_assets(team_id: TeamId, run_id: ObjectId,
                      asset_id: str | None = Query(default=None, max_length=5_500),
                      pqc_group: str | None = Query(default=None, max_length=64),
                      clause: str | None = Query(default=None, max_length=300),
+                     q_grade: str | None = Query(default=None, pattern="^(Q0|Q1|Q2|Q3|Q4|none)$"),
                      Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
     try:  # #270: the compliance mapping's "N assets" (a clause's assets, a requirement's assets)
@@ -1586,7 +1594,8 @@ async def run_assets(team_id: TeamId, run_id: ObjectId,
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
     params = {**_asset_params(type, impact, quantum, q, source_id, page, page_size), "view": view, "status": status,
-              "codes": codes, "asset_ids": asset_ids, "pqc_group": group, "clause": clause_filter}
+              "codes": codes, "asset_ids": asset_ids, "pqc_group": group, "clause": clause_filter,
+              "q_grade": q_grade}
     return _ok(await _run("run assets", team_id, _run_assets, engine, team_id, run_id, params))
 
 

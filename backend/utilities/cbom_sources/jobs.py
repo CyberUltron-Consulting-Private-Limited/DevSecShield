@@ -1249,6 +1249,9 @@ def store_rows(session: Session, owner: CbomCollectionJob, counter: CbomCollecti
     cap_reached = len(fresh) > take
     dropped = max(len(fresh) - take, 0)
     fresh = fresh[:take]
+    from backend.utilities.cbom_sources import qgrade_store as QSTORE  # CB-19 PR-3: the record grade, at insert
+
+    QSTORE.ingest_grades(session, owner, fresh)
     inserted = _insert_ignore(session, fresh)
     if inserted < len(fresh):  # another request stored some of these keys first
         for job_id in ((counter.id, owner.id) if shared else (counter.id,)):

@@ -22,6 +22,7 @@ import type {
   CbomWaveStatusName,
 } from "@/utils/backend_api";
 import type { CbomDistributions, PqcMigrationRow } from "@/components/cbom/CbomCryptoCharts";
+import { GRADE_BUCKETS, gradeText, type GradeBucket } from "@/components/cbom/grade/model";
 
 // ---------------------------------------------------------------------------- statuses
 
@@ -412,6 +413,9 @@ export interface RunTableFilters {
   pqc_group?: string;
   /** what the drill-down shows, for the table's filter chip ("NIST · SP 800-131A …") */
   drill_label?: string;
+  /** CB-19 PR-3: the quantum risk grade stored at ingest ("none": no grade); only offered when the run's
+   * `grade_filter.available` is true */
+  q_grade?: GradeBucket;
   page: number;
   page_size: number;
 }
@@ -431,11 +435,12 @@ export function filtersToParams(f: RunTableFilters): Record<string, string | num
   if (f.codes?.length) out.code = f.codes.join(",");
   if (f.asset_ids?.length) out.asset_id = f.asset_ids.join(",");
   if (f.pqc_group) out.pqc_group = f.pqc_group;
+  if (f.q_grade) out.q_grade = f.q_grade;
   return out;
 }
 
 export function hasActiveFilters(f: RunTableFilters): boolean {
-  return !!(f.type || f.impact || f.quantum || f.q || f.source_id != null || f.status || f.clause || f.codes?.length || f.asset_ids?.length || f.pqc_group);
+  return !!(f.type || f.impact || f.quantum || f.q || f.source_id != null || f.status || f.clause || f.codes?.length || f.asset_ids?.length || f.pqc_group || f.q_grade);
 }
 
 /** The server understands `view` / `status` (W1) when it reports `findings_total`; an older server lists every asset. */
@@ -454,6 +459,23 @@ export function viewCounts(page: Pick<CbomRunAssetPage, "findings_total" | "all_
 export function pageCount(page: Pick<CbomRunAssetPage, "total" | "page_size"> | null | undefined): number {
   if (!page) return 1;
   return Math.max(1, Math.ceil(page.total / (page.page_size || 50)));
+}
+
+/** CB-19 PR-3: the grade chips of the run table, from the server's `facets.q_grade` (the whole run's rows by the grade
+ * stored at ingest; never counted from the page). `note` says why there are none when the server could not store this
+ * run's grades (an older run, another grade model); an older server sends neither field and gets neither. */
+export interface GradeChip { grade: GradeBucket; count: number; text: string }
+
+export function gradeChips(page: Pick<CbomRunAssetPage, "facets" | "grade_filter"> | null | undefined): { chips: GradeChip[]; note: string | null } {
+  const facet = page?.facets?.q_grade;
+  if (!facet) {
+    const gf = page?.grade_filter;
+    return { chips: [], note: gf && !gf.available ? gf.reason ?? "this run's grades were computed when viewed" : null };
+  }
+  const chips = GRADE_BUCKETS.filter((g) => (facet[g] ?? 0) > 0).map((g) => ({
+    grade: g, count: facet[g] ?? 0, text: g === "none" ? "No grade" : gradeText(g) ?? g,
+  }));
+  return { chips, note: null };
 }
 
 /** data-* attributes the gate reads per row (PLAN §4.2, §11): values straight from the API item. */
