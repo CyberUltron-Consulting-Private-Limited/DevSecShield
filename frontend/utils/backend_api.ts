@@ -4369,6 +4369,31 @@ export interface CbomTestSample {
     note?: string
 }
 
+// #150: an admin's decision about a host key a scan node remembered under trust on first use
+export interface CbomHostKeyReset {
+    id: number
+    source_id: number
+    node_id: number
+    job_id: number
+    target: string
+    port: number
+    action: "accept" | "forget"
+    fingerprint: string | null
+    pinned_fingerprint: string | null
+    status: "pending" | "applied" | "superseded"
+    requested_by_user_id: number
+    requested_at: string
+    applied_at: string | null
+    applied_job_id: number | null
+}
+
+export interface CbomHostKeyResetBody {
+    job_id: number
+    target: string
+    action: "accept" | "forget"
+    fingerprint?: string
+}
+
 export interface CbomAwsCheck {
     check: string
     status: "pass" | "fail" | "skipped" | "error" | "warning"
@@ -5086,6 +5111,23 @@ const testCbomSource = async (team_id: number, source_id: number): Promise<CbomT
     }
 }
 
+const createCbomHostKeyReset = async (team_id: number, source_id: number, body: CbomHostKeyResetBody): Promise<CbomHostKeyReset> => {
+    try {
+        const response = await api.post(`${cbomSourcesBase(team_id)}/items/${source_id}/host-key-resets`, body)
+        const data = response.data as { reset: CbomHostKeyReset; message: string }
+        toast.success(data.message || "Saved: the scan node applies it on its next job for this source")
+        return data.reset
+    } catch (error) {
+        showErrorToast(error, body.action === "accept" ? "Error accepting the host key" : "Error forgetting the host key")
+        throw error
+    }
+}
+
+const listCbomHostKeyResets = async (team_id: number, source_id: number): Promise<CbomHostKeyReset[]> => {
+    const response = await api.get(`${cbomSourcesBase(team_id)}/items/${source_id}/host-key-resets`)
+    return (response.data as { resets: CbomHostKeyReset[] }).resets
+}
+
 const updateCbomSourcesSettings = async (team_id: number, body: CbomSettingsWrite): Promise<CbomSourcesSettings> => {
     try {
         const response = await api.patch(`${cbomSourcesBase(team_id)}/settings`, body)
@@ -5649,6 +5691,8 @@ export {
     updateCbomSource,
     deleteCbomSource,
     testCbomSource,
+    createCbomHostKeyReset,
+    listCbomHostKeyResets,
     updateCbomSourcesSettings,
     setCbomNetworkStop,
     startCbomDiscovery,

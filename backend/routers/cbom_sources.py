@@ -46,6 +46,7 @@ from backend.utilities.cbom_sources import agility as AGILITY
 from backend.utilities.cbom_sources import agility_rollup as AGILITY_ROLLUP
 from backend.utilities.cbom_sources import agents as AG
 from backend.utilities.cbom_sources import held as HELD
+from backend.utilities.cbom_sources import host_key_resets as HKR  # #150
 from backend.utilities.cbom_sources import jobs as J
 from backend.utilities.cbom_sources import source_cap as SOURCE_CAP
 from backend.utilities.cbom_sources import targets as T
@@ -1028,6 +1029,41 @@ async def test_source(team_id: TeamId, source_id: ObjectId, Authorization: AuthH
     elif result.get("cloud_http"):
         result = await _run("test cloud", team_id, _test_cloud_http, engine, team_id, user.id, source_id)
     return _ok(result)
+
+
+# ---------------------------------------------------------------------------- host key decisions (#150)
+def _host_key_reset(engine, team_id: int, user_id: int, source_id: int, body: Any) -> dict:
+    now = utcnow()
+    with Session(engine) as session:
+        source = _get_owned(session, CbomCollectionSource, source_id, team_id, "Source")
+        require_admin(session, user_id, team_id, "a host key the scan node remembered")
+        row = HKR.request(session, source, user_id, body if isinstance(body, dict) else {}, now)
+        session.commit()
+        return {"reset": HKR.as_dict(row),
+                "warning": HKR.WARNING_ACCEPT if row.action == "accept" else HKR.WARNING_FORGET,
+                "message": "The scan node applies this on its next job for this source. Run the connection test "
+                           "again to apply it now."}
+
+
+@router.post(BASE + "/items/{source_id}/host-key-resets", dependencies=WRITE,
+             summary="Accept a changed host key, or forget the remembered one, on the scan node that reported it (admin)")
+async def create_host_key_reset(team_id: TeamId, source_id: ObjectId, body: dict, Authorization: AuthHeader = None):
+    engine, user = await authorize(team_id, Authorization)
+    return _ok(await _run("host key reset", team_id, _host_key_reset, engine, team_id, user.id, source_id, body),
+               status_code=201)
+
+
+def _host_key_resets(engine, team_id: int, source_id: int) -> dict:
+    with Session(engine) as session:
+        source = _get_owned(session, CbomCollectionSource, source_id, team_id, "Source")
+        return {"resets": HKR.recent(session, source)}
+
+
+@router.get(BASE + "/items/{source_id}/host-key-resets", dependencies=READ,
+            summary="Host key decisions for a source: pending, applied and superseded")
+async def list_host_key_resets(team_id: TeamId, source_id: ObjectId, Authorization: AuthHeader = None):
+    engine, _user = await authorize(team_id, Authorization)
+    return _ok(await _run("host key resets", team_id, _host_key_resets, engine, team_id, source_id))
 
 
 def _count_targets(body: dict) -> dict:
