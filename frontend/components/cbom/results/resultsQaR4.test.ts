@@ -62,8 +62,8 @@ test("A: the instance badge is short on narrow widths, full text in title and in
   const short = html.match(/<span[^>]*class="([^"]*)"[^>]*>L0<\/span>/);
   assert.ok(short, "a short L0 label");
   assert.ok(short![1].split(/\s+/).includes("sm:hidden"), "short label only below sm");
-  const full = html.match(/<span[^>]*class="([^"]*)"[^>]*>NIST Level 0: no quantum resistance<\/span>/);
-  assert.ok(full && full[1].split(/\s+/).includes("hidden") && full[1].split(/\s+/).includes("sm:inline"), "full label from sm up");
+  const fulls = [...html.matchAll(/<span[^>]*class="([^"]*)"[^>]*>NIST Level 0: no quantum resistance<\/span>/g)].map((m) => m[1].split(/\s+/));
+  assert.ok(fulls.some((c) => c.includes("hidden") && c.includes("sm:inline")), "full label from sm up");
   assert.match(renderToStaticMarkup(h(PqcInstanceLevelBadge, { level: 3, impact: null })), />L3</);
 });
 
