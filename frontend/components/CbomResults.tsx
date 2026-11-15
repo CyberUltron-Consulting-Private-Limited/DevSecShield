@@ -412,7 +412,7 @@ export default function CbomResults({
       if (Number.isNaN(tid) || Number.isNaN(sid) || !tid || !sid) {
         throw new Error("Missing or invalid team or scan id");
       }
-      return getCBOMExportResults(tid, sid);
+      return getCBOMExportResults(tid, sid, { toast: false });
     },
     onSuccess: (result) => {
       const blob = result instanceof Blob ? result : new Blob([result]);
