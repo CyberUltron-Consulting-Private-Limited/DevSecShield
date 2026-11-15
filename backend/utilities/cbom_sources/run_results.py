@@ -299,7 +299,7 @@ class _Computed:
 
 _EMPTY_POSTURE: dict[str, Any] = {"assets": 0, "pqc_classes": {c: 0 for c in POSTURE.PQC_CLASSES},
                                   "pqc_readiness_pct": None, "impacts": {k: 0 for k in _IMPACTS}, "top_risks": [],
-                                  "compliance": []}
+                                  "compliance": [], "readiness_basis": POSTURE.readiness({})[1]}
 
 
 def _job_context(session: Session, team_id: int, run_id: int) -> tuple[
@@ -487,6 +487,7 @@ def _assemble(acc: _Acc, posture: dict[str, Any], top_risks: list[dict[str, Any]
     findings = sum(severity.values())
     assets = int(posture["assets"])
     readiness = posture["pqc_readiness_pct"]
+    basis = dict(posture.get("readiness_basis") or {})
     vulnerable = int(classes.get("quantum-vulnerable", 0))
     ready = sum(int(classes.get(c, 0)) for c in _READY)
     dashboard = {
@@ -498,8 +499,10 @@ def _assemble(acc: _Acc, posture: dict[str, Any], top_risks: list[dict[str, Any]
             "total_quantum_vulnerable": vulnerable,
             "total_certificates": acc.certificates,
             "total_keys": acc.keys,
-            "quantum_readiness_score": 0 if readiness is None else readiness,
+            # null when posture withholds it (nothing judged, or more unidentified than judged): never 0 % (Rule P)
+            "quantum_readiness_score": readiness,
             "quantum_readiness_judged": readiness is not None,
+            "quantum_readiness_status": basis.get("status"),
             "average_risk_score": average_risk(severity),
         },
         "severity_distribution": {**severity, INFORMATIONAL: assets - findings},
@@ -527,6 +530,7 @@ def _assemble(acc: _Acc, posture: dict[str, Any], top_risks: list[dict[str, Any]
     calendar = _drain(acc.calendar)
     pqc = {"quantum_vulnerable": vulnerable, "quantum_safe": ready, "hybrid": int(classes.get("hybrid", 0)),
            "grover_weakened": int(classes.get("grover-weakened", 0)), "readiness_pct": readiness,
+           "readiness_basis": basis or None,
            "nist_level_distribution": dict(sorted(levels.items())),
            "migration": migration, "migration_total": vulnerable, "migration_truncated": vulnerable > len(migration),
            "kb": kb}

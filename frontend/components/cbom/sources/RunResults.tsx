@@ -51,6 +51,19 @@ export const ASSET_TYPE_LABEL: Record<string, string> = {
   glue_catalog: "Glue Data Catalog",
   glue_connection: "Glue connection",
   key_vault: "Key vault",
+  // scan-node key, database, CA and network packages (backend run_assets.TYPE_LABEL; test_cbom_results_qa_r4.py)
+  managed_key: "Managed key",
+  key_store: "Key store",
+  db_encryption: "Database encryption",
+  db_login_policy: "Database login policy",
+  db_crypto_policy: "Database transport policy",
+  ca_authority: "CA",
+  ca_template: "CA template",
+  ike_endpoint: "IKE/IPsec endpoint",
+  ot_endpoint: "OT endpoint",
+  appliance_config: "Network appliance config",
+  k8s_mesh_destination: "Mesh destination rule",
+  k8s_mesh_server: "Mesh server policy",
   coverage: "Not collected",
 };
 
