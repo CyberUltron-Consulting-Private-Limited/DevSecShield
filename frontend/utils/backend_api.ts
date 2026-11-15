@@ -2506,14 +2506,20 @@ const renameCBOMScan = async ({
   }
 };
 
-/** Team-scoped: GET /{team_id}/cbom/scan/{scan_id}/export */
-const getCBOMExportResults = async (team_id: number, scan_id: number): Promise<Blob | ArrayBuffer> => {
+/** Team-scoped: GET /{team_id}/cbom/scan/{scan_id}/export.
+ *  `toast: false` leaves the success and error toasts to the caller. CbomResults toasts once;
+ *  the options sidebar does not, so it keeps these. */
+const getCBOMExportResults = async (
+  team_id: number,
+  scan_id: number,
+  opts: { toast?: boolean } = {},
+): Promise<Blob | ArrayBuffer> => {
   try {
     const response = await api.get(`/${team_id}/cbom/scan/${scan_id}/export`, { responseType: "blob" });
-    toast.success("CBOM report downloaded");
+    if (opts.toast !== false) toast.success("CBOM report downloaded");
     return response.data;
   } catch (error) {
-    showErrorToast(error, "Error fetching CBOM export results");
+    if (opts.toast !== false) showErrorToast(error, "Error fetching CBOM export results");
     throw error;
   }
 };
