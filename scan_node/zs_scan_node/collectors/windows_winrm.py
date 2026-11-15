@@ -11,6 +11,7 @@ import concurrent.futures as cf
 import contextlib
 import json
 import os
+import re
 import shutil
 import tempfile
 import time
@@ -18,7 +19,7 @@ from typing import Any
 
 from urllib.parse import urlsplit
 
-from zs_scan_node import algid, netutil
+from zs_scan_node import algid, errtext, netutil
 from zs_scan_node.collectors import ConfigError, skipped_never_scan, target_error
 from zs_scan_node.jobctx import JobContext, LeaseLost
 from zs_scan_node.netutil import Blocked, Target, checked_ip, expand_targets, is_ip, resolve_checked
@@ -528,6 +529,30 @@ def _fault(exc: Exception) -> "_Fail | None":
     return _Fail("error", f"WinRM fault {code if code is not None else exc.fault_code or '?'}: {reason}")
 
 
+_POOL = re.compile(r"host='([^']+)', port=(\d+)")
+
+
+def _transport_fail(exc: BaseException) -> _Fail:
+    """#153: a WinRM connection that failed below PowerShell, in words: an HTTPS server that is not WinRM (an HTTP
+    status from /wsman), a refused port, no route ... never the exception class."""
+    from winrm.exceptions import WinRMTransportError
+
+    if isinstance(exc, WinRMTransportError):
+        code = exc.code if isinstance(exc.code, int) else None
+        if code in (400, 403, 404, 405, 415):
+            return _Fail("not_supported", f"the server answered HTTPS but is not a WinRM endpoint (HTTP {code} on "
+                         "/wsman)")
+        return _Fail("error", f"the WinRM service answered HTTP {code if code is not None else '?'} on /wsman")
+    m = _POOL.search(str(exc))
+    host, port = (m.group(1), int(m.group(2))) if m else (None, None)
+    status, note = errtext.socket_problem(exc, host or "the WinRM server", port)
+    if status == "refused" and host:
+        note = f"WinRM port {port} on {host} refused the connection"
+    elif status == "refused":
+        note = "the WinRM port refused the connection"
+    return _Fail(status, note)
+
+
 def _run(sess, name: str) -> tuple[int, str, str]:
     try:
         r = sess.run_ps(SCRIPTS[name])
@@ -546,7 +571,7 @@ def _run(sess, name: str) -> tuple[int, str, str]:
             raise _Fail("auth_failed", "WinRM refused the login") from None
         if "timed out" in text.lower():
             raise _Fail("timeout", "WinRM did not answer") from None
-        raise _Fail("unreachable", exc.__class__.__name__) from None
+        raise _transport_fail(exc) from None
     return r.status_code, r.std_out.decode("utf-8", "replace"), r.std_err.decode("utf-8", "replace")[:300]
 
 

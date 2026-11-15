@@ -107,6 +107,7 @@ interface WizardState {
   proxyCa: string;
   proxyCaName: string;
   tlsInspect: boolean;
+  proxyUser: string;
   // CB-15: how the node trusts the ZeroShield API (host paths; never sent to the server, they only shape the command)
   privateCa: boolean;
   caPath: string;
@@ -123,6 +124,7 @@ const EMPTY_WIZARD: WizardState = {
   proxyCa: "",
   proxyCaName: "",
   tlsInspect: false,
+  proxyUser: "",
   privateCa: false,
   caPath: "",
   mtls: false,
@@ -218,6 +220,7 @@ export default function ScanNodesTab({
         proxy_url: wizard.proxyUrl.trim() || null,
         proxy_ca_pem: wizard.proxyCa || null,
         proxy_tls_inspect: wizard.tlsInspect,
+        proxy_user: wizard.proxyUser.trim() || null,
       }),
     onSuccess: (data) => setCreated({ nodeId: data.node.id, token: data.registration_token, links: data.install_links ?? null }),
     onSettled: invalidate,
@@ -244,6 +247,7 @@ export default function ScanNodesTab({
         timezone: data.node.timezone,
         deployment: data.node.deployment,
         proxyUrl: data.node.proxy_url ?? "",
+        proxyUser: data.node.proxy_user ?? "",
       });
       setWizardOpen(true);
       scrollToWizard();
@@ -302,13 +306,15 @@ export default function ScanNodesTab({
   const caFile = caGiven ? (/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(wizard.proxyCaName) ? wizard.proxyCaName : DEFAULT_PROXY_CA_FILE) : null;
   const nodeName = createdNode?.name ?? wizard.name;
   const nodeProxy = createdNode?.proxy_url ?? (wizard.proxyUrl.trim() || null);
+  // #199: the proxy's user name; the command asks for the password on the host (logic.proxyAuthCreate)
+  const proxyUser = nodeProxy ? (createdNode?.proxy_user ?? (wizard.proxyUser.trim() || null)) : null;
   const trust = wizardTrust(wizard);
   const trustError = trustProblem(trust);
   // A public registry (the server names its image, and for Helm its chart): docker pull / helm from oci://.
   const registryHost = artifactsQuery.data?.pull_image_ref?.split("/")[0] ?? "";
   const registryCmd = created
     ? registryInstall(method, artifactsQuery.data, { apiUrl, token: created.token, name: nodeName, proxyUrl: nodeProxy,
-        insecureHttp: apiUrl.trim().startsWith("http://"), trust })
+        insecureHttp: apiUrl.trim().startsWith("http://"), trust, caFile, proxyUser })
     : null;
   // The commands from files served by ZeroShield: the one-paste download (curl/wget) and the command for files
   // downloaded in the browser. With a public registry they are the air-gapped alternative (the file's image then).
@@ -316,12 +322,12 @@ export default function ScanNodesTab({
   const fileCommands = created ? (
     <>
       <NodeOnePaste apiUrl={apiUrl} method={method} links={created.links} token={created.token} name={nodeName}
-        proxyUrl={nodeProxy} caFile={caFile} image={images.loaded.image} trust={trust} />
+        proxyUrl={nodeProxy} caFile={caFile} proxyUser={proxyUser} image={images.loaded.image} trust={trust} />
       {created.links && (
         <p className="text-xs text-zinc-600 dark:text-zinc-400">Or, with the files you downloaded in the browser above:</p>
       )}
       <NodeInstallCommand apiUrl={apiUrl} method={method} token={created.token} name={nodeName} proxyUrl={nodeProxy}
-        image={fileImage.image} source={fileImage} trust={trust} />
+        image={fileImage.image} source={fileImage} trust={trust} caFile={caFile} proxyUser={proxyUser} />
     </>
   ) : null;
 
@@ -568,6 +574,8 @@ export default function ScanNodesTab({
                             image={images.pulled.image}
                             source={images.pulled}
                             trust={trust}
+                            caFile={caFile}
+                            proxyUser={proxyUser}
                           />
                         </div>
                       )}
@@ -621,6 +629,11 @@ export default function ScanNodesTab({
                 <Field infoId="cbsrc.nodes.proxy" label="Proxy (optional)" htmlFor="node-proxy" hint="http://proxy.example.local:8080">
                   <Input id="node-proxy" value={wizard.proxyUrl} disabled={!!created} placeholder="http://proxy.bank.local:8080"
                     onChange={(e) => setWizard({ ...wizard, proxyUrl: e.target.value })} />
+                </Field>
+                <Field infoId="cbsrc.nodes.proxy_user" label="Proxy user (optional)" htmlFor="node-proxy-user"
+                  hint="Only if the proxy needs a login: the install command asks for the password on the host">
+                  <Input id="node-proxy-user" value={wizard.proxyUser} disabled={!!created} placeholder="svc-zs" autoComplete="off"
+                    onChange={(e) => setWizard({ ...wizard, proxyUser: e.target.value })} />
                 </Field>
                 <Field infoId="cbsrc.nodes.proxy_ca" label="Proxy CA certificate" htmlFor="node-proxy-ca" hint={wizard.proxyCaName || "PEM file, only if your proxy inspects TLS"}>
                   <Input id="node-proxy-ca" type="file" accept=".pem,.crt,.cer" disabled={!!created} className="cursor-pointer"

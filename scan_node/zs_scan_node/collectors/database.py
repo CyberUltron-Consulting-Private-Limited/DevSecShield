@@ -11,6 +11,7 @@ from __future__ import annotations
 import ipaddress
 
 import os
+import re
 import shutil
 import ssl
 import tempfile
@@ -23,7 +24,7 @@ from zs_scan_node import tlsenum as E
 from zs_scan_node import tlsprobe as T
 from zs_scan_node.certparse import cert_facts, chain_links, load_certs
 from zs_scan_node.collectors import ConfigError
-from zs_scan_node import netutil
+from zs_scan_node import errtext, netutil
 from zs_scan_node.jobctx import MAX_FACTS_BYTES, JobContext
 from zs_scan_node.netutil import Blocked, Target, checked_ip, checked_target, is_ip, resolve_checked
 
@@ -320,6 +321,36 @@ def _enumerate(send, version: str | None, code: int | None, budget: int, used: l
 
 
 # ----------------------------------------------------------------------------- engines
+_PG_HBA = re.compile(r'no pg_hba\.conf entry for host "([^"]+)", user "([^"]+)"')
+_PG_NO_DB = re.compile(r'database "([^"]+)" does not exist')
+
+
+def _pg_connect_fail(msg: str, kwargs: dict) -> "DbFail":
+    """#214: a failed PostgreSQL connection by its cause: no pg_hba entry for this node (not a wrong password), a
+    database that does not exist (reachable, logged in), a certificate, or the socket cause."""
+    hba = _PG_HBA.search(msg)
+    if hba:
+        return DbFail("auth_failed", f"PostgreSQL has no pg_hba.conf entry for this scan node ({hba.group(1)}, user "
+                      f"{hba.group(2)}): add a hostssl line for it; the password was not checked")
+    if "password authentication failed" in msg:
+        return DbFail("auth_failed", "PostgreSQL refused the login (wrong user name or password)")
+    no_db = _PG_NO_DB.search(msg)
+    if no_db:
+        return DbFail("error", f'PostgreSQL is reachable and the login worked, but the database "{no_db.group(1)}" '
+                      "does not exist: check the database name")
+    if "authentication" in msg:
+        return DbFail("auth_failed", "PostgreSQL refused the login")
+    if "certificate" in msg.lower() or "SSL" in msg:
+        return DbFail("tls_unavailable", "TLS to PostgreSQL failed (certificate not trusted or TLS refused)")
+    if "Connection refused" in msg:
+        return DbFail("refused", f"PostgreSQL port {kwargs.get('port')} refused the connection")
+    if "timeout expired" in msg or "timed out" in msg:
+        return DbFail("timeout", f"PostgreSQL did not answer on port {kwargs.get('port')}")
+    if "No route to host" in msg or "Network is unreachable" in msg:
+        return DbFail("no_route", f"no route to {kwargs.get('hostaddr')}")
+    return DbFail("unreachable", "could not connect to PostgreSQL")
+
+
 def _postgres(ctx, target, config, password, ca: _CaFile) -> int:
     import psycopg
 
@@ -347,11 +378,7 @@ def _postgres(ctx, target, config, password, ca: _CaFile) -> int:
         if "authentication method requirement" in msg or "channel binding" in msg:
             raise DbFail("identity_unverified", "the server asked for a login method that would reveal the password; "
                          "without its CA certificate only SCRAM is allowed, so the password was not sent") from None
-        if "password authentication failed" in msg or "no pg_hba.conf entry" in msg or "authentication" in msg:
-            raise DbFail("auth_failed", "PostgreSQL refused the login") from None
-        if "certificate" in msg.lower() or "SSL" in msg:
-            raise DbFail("tls_unavailable", "TLS to PostgreSQL failed (certificate not trusted or TLS refused)") from None
-        raise DbFail("unreachable", "could not connect to PostgreSQL") from None
+        raise _pg_connect_fail(msg, kwargs) from None
     n = 0
     loc = f"{_where(target)}:{port}"
     try:
@@ -592,6 +619,14 @@ def _mysql(ctx, target, config, password, ca: _CaFile, tls: bool, seen: dict | N
             raise DbFail("auth_failed", "MySQL refused the login") from None
         if code == 3159:
             raise DbFail("tls_unavailable", "MySQL requires a secure transport") from None
+        verify = errtext.tls_verify_problem(exc)
+        if verify:  # #214: TLS comes before the login in MySQL's handshake, so nothing was sent
+            raise DbFail("identity_unverified", f"the MySQL server's certificate is not signed by the uploaded CA "
+                         f"({verify}); the password was not sent") from None
+        if code == 2003:
+            status, note = errtext.socket_problem(exc, target.ip, port)
+            raise DbFail(status, f"MySQL: {note}" if status != "refused" else f"MySQL port {port} refused the "
+                         "connection") from None
         raise DbFail("unreachable", f"could not connect to MySQL ({code})") from None
     n = 0
     loc = f"{_where(target)}:{port}"

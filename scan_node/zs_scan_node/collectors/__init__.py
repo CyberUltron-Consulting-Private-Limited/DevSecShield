@@ -54,7 +54,9 @@ def target_error(exc: BaseException, others_tested: bool = True) -> tuple[bool |
     if isinstance(exc, (paramiko.SSHException, EOFError)):
         return True, f"SSH error on this target ({detail}); {tail}"
     if isinstance(exc, (ConnectionError, TimeoutError, socket.gaierror, socket.timeout, OSError)):
-        return False, f"connection error on this target ({detail}); {tail}"
+        from zs_scan_node import errtext  # #153: the socket cause in words, never the exception class
+
+        return False, f"{errtext.socket_problem(exc, 'this target', None)[1]}; {tail}"
     return None, f"error on this target ({detail}); {tail}"
 
 

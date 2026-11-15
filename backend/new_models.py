@@ -296,6 +296,9 @@ class CbomScanNode(SQLModel, table=True):
     proxy_url: str | None = Field(default=None, max_length=512)
     proxy_ca_pem: str | None = Field(default=None, sa_type=Text)
     proxy_tls_inspect: bool = Field(default=False)
+    # #199: the proxy's user name when it needs a login (never the password: that stays on the node's host, in the
+    # file ZS_PROXY_AUTH_FILE names, created by the install command)
+    proxy_user: str | None = Field(default=None, max_length=128)
     registration_token_hash: str | None = Field(default=None, max_length=64, index=True)
     registration_issued_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
     registration_expires_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
