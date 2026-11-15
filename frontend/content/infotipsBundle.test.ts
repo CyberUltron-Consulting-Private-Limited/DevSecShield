@@ -168,7 +168,7 @@ const textFiles = fs.readdirSync(TEXT_DIR).filter((n) => n.endsWith(".ts")).map(
 assert.deepEqual(textImports.map((d) => d.target!).sort(), textFiles, "load.ts imports every area module exactly once");
 
 // 1d. the CBOM results pages: no Fleet or SAST tip text in their static closure, and <InfoTip> is in it
-// one page serves both: a code scan at /cbom/<n>/results, a Sources run at /cbom/run-<n>/results
+// one page serves both: a code scan at /cbom/<n>/results, a Sources run at /cbom/<n>/results?run=1
 const RESULTS_PAGES = ["app/[team_id]/cbom/[scan_id]/results/page.tsx"];
 const infoTip = path.join(frontend, "components", "ui", "info-tip.tsx");
 
