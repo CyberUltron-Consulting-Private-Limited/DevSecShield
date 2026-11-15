@@ -22,6 +22,7 @@ async def start_scan_and_update_db(
     team_id: int,   
     start_scan_payload: StartScanPayload,
     uploaded_file: UploadFile | None = None,
+    task_id: str | None = None,  # a caller-chosen Celery task id (the repository queue stores it before sending)
     ) -> None :
     try:
         
@@ -30,26 +31,27 @@ async def start_scan_and_update_db(
         if simple_app==None:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in getting celery app , please try again later")
         task_result = None
+        sent_as = {"task_id": task_id} if task_id else {}
         scan_kwargs = await format_input_for_scan(
                 scan_type=scan_type, 
                 start_scan_payload=start_scan_payload,
                 uploaded_file=uploaded_file)
         if scan_type == "sast":
-            task_result = simple_app.send_task(name="scan_worker.sast", kwargs=scan_kwargs, queue="scan_worker_queue")
+            task_result = simple_app.send_task(name="scan_worker.sast", kwargs=scan_kwargs, queue="scan_worker_queue", **sent_as)
         elif scan_type == "iac":
-            task_result = simple_app.send_task(name="scan_worker.iac", kwargs=scan_kwargs, queue="scan_worker_queue")
+            task_result = simple_app.send_task(name="scan_worker.iac", kwargs=scan_kwargs, queue="scan_worker_queue", **sent_as)
         elif scan_type == "sbom_sca":
-            task_result = simple_app.send_task(name="scan_worker.sbom_sca", kwargs=scan_kwargs, queue="scan_worker_queue")
+            task_result = simple_app.send_task(name="scan_worker.sbom_sca", kwargs=scan_kwargs, queue="scan_worker_queue", **sent_as)
         elif scan_type == "mcp":
-            task_result = simple_app.send_task(name="scan_worker.mcp_scan", kwargs=scan_kwargs, queue="scan_worker_queue")
+            task_result = simple_app.send_task(name="scan_worker.mcp_scan", kwargs=scan_kwargs, queue="scan_worker_queue", **sent_as)
         elif scan_type == "llm":
-            task_result = simple_app.send_task(name="scan_worker.llm_benchmark_scan", kwargs=scan_kwargs, queue="scan_worker_queue")
+            task_result = simple_app.send_task(name="scan_worker.llm_benchmark_scan", kwargs=scan_kwargs, queue="scan_worker_queue", **sent_as)
         elif scan_type == "dast":
-            task_result = simple_app.send_task(name="dast_worker.dast", kwargs=scan_kwargs, queue="dast_worker_queue")
+            task_result = simple_app.send_task(name="dast_worker.dast", kwargs=scan_kwargs, queue="dast_worker_queue", **sent_as)
         elif scan_type == "cbom":
-            task_result = simple_app.send_task(name="scan_worker.cbom", kwargs=scan_kwargs, queue="scan_worker_queue")
+            task_result = simple_app.send_task(name="scan_worker.cbom", kwargs=scan_kwargs, queue="scan_worker_queue", **sent_as)
         elif scan_type == "ai_bom":
-            task_result = simple_app.send_task(name="scan_worker.ai_bom", kwargs=scan_kwargs, queue="scan_worker_queue")
+            task_result = simple_app.send_task(name="scan_worker.ai_bom", kwargs=scan_kwargs, queue="scan_worker_queue", **sent_as)
         else:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid scan type")
 
