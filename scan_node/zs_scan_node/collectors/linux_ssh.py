@@ -83,6 +83,44 @@ def save_pin(state_dir: str, host_port: str, key_type: str, fingerprint: str) ->
         os.replace(tmp, _pins_path(state_dir))
 
 
+def forget_pins(state_dir: str, host_port: str) -> None:
+    """#150: drop every pin of ``host_port`` (an admin's "forget"); the next connection pins on first use again."""
+    replace_pins(state_dir, host_port, None)
+
+
+def replace_pins(state_dir: str, host_port: str, pins_for_host: dict[str, str] | None) -> None:
+    """#150: set (or with None remove) all pins of ``host_port`` at once, atomically, other hosts unchanged."""
+    with _pin_lock:
+        pins = load_pins(state_dir)
+        if pins_for_host:
+            pins[host_port] = dict(pins_for_host)
+        else:
+            pins.pop(host_port, None)
+        tmp = _pins_path(state_dir) + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(pins, f)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, _pins_path(state_dir))
+
+
+def _resets_for(config: dict, target: Target, port: int) -> list[dict]:
+    """#150: the admin decisions ZeroShield sent with this job for this target (by the name the outcome showed) and
+    port.  Anything malformed is ignored: a decision can only ever loosen a pin as the admin asked."""
+    out = []
+    for r in config.get("host_key_resets") or []:
+        if not isinstance(r, dict) or not isinstance(r.get("id"), int) or r.get("target") != target.label:
+            continue
+        try:
+            if int(r.get("port") or 22) != port:
+                continue
+        except (TypeError, ValueError):
+            continue
+        if r.get("action") == "forget" or (r.get("action") == "accept" and isinstance(r.get("fingerprint"), str)
+                                           and r["fingerprint"].startswith("SHA256:")):
+            out.append(r)
+    return out
+
+
 def _fp(key: paramiko.PKey) -> str:
     import base64
     import hashlib
@@ -363,6 +401,12 @@ def _login(ctx: JobContext, target: Target, config: dict, creds: dict, transport
             raise TargetFail("host_key_changed", "this host is not in the pinned known_hosts")
         pinned_types = list(entry.keys())
     else:
+        resets = _resets_for(config, target, port)
+        for r in resets:
+            if r["action"] == "forget":  # #150: an admin chose to forget this host's remembered keys
+                forget_pins(ctx.state_dir, host_port)
+                ctx.host_key_reset_applied(r["id"])
+                ctx.log("host key pins forgotten", target=target.label, port=port, reset=r["id"])
         pins = load_pins(ctx.state_dir).get(host_port, {})
         pinned_types = list(pins.keys())
     if pinned_types:
@@ -393,12 +437,22 @@ def _login(ctx: JobContext, target: Target, config: dict, creds: dict, transport
             raise TargetFail("host_key_changed", f"host key {fp} does not match the pinned known_hosts")
     else:
         pins = load_pins(ctx.state_dir).get(host_port, {})
+        accepted = [r for r in resets if r["action"] == "accept" and r["fingerprint"] == fp]
         if ktype in pins and pins[ktype] != fp:
-            transport.close()
-            raise TargetFail("host_key_changed", f"host key changed (pinned {pins[ktype]}, now {fp})")
-        if ktype not in pins:
+            if not accepted:  # an accepted fingerprint is the only way past a changed key: any other key still fails
+                transport.close()
+                raise TargetFail("host_key_changed", f"host key changed (pinned {pins[ktype]}, now {fp})")
+            # #150: the admin reviewed exactly this key; it replaces every pin of the host (a rebuilt server
+            # changed them all, and the node offers only pinned key types)
+            replace_pins(ctx.state_dir, host_port, {ktype: fp})
+            host_key["accepted"] = True
+            ctx.log("changed host key accepted", target=target.label, port=port, fingerprint=fp,
+                    reset=accepted[0]["id"])
+        elif ktype not in pins:
             save_pin(ctx.state_dir, host_port, ktype, fp)
             host_key["first_use"] = True
+        for r in accepted:  # also when the key already matched (applied before, or pinned anew): nothing left to do
+            ctx.host_key_reset_applied(r["id"])
     # authenticate once
     try:
         if "cert_source" in creds:  # F1.4: a certificate good for this login (renewed before it runs out)
@@ -1116,7 +1170,8 @@ def _test_target(ctx: JobContext, target: Target, config: dict, creds: dict, tie
                 sample["note"] = ("sudo asks for a password: install the zs-cbom sudoers file with NOPASSWD"
                                   if state == "password" else
                                   "the zs-cbom sudoers file is missing or does not match; this server runs at Tier 1")
-        first = " (host key pinned on first use)" if sess.host_key.get("first_use") else ""
+        first = (" (host key pinned on first use)" if sess.host_key.get("first_use") else
+                 " (new host key accepted by a ZeroShield admin)" if sess.host_key.get("accepted") else "")
         if sample["status"] == "ready":
             sample["note"] = f"{sess.host_key['key_type']} {sess.host_key['fingerprint']}{first}{missing}"
     finally:
