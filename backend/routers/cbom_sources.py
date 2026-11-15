@@ -295,7 +295,7 @@ def _create_node(engine, team_id: int, user_id: int, body: NodeCreate) -> dict:
         node = CbomScanNode(
             team_id=team_id, owner_user_id=user_id, updated_by_user_id=user_id, name=body.name, segment=body.segment,
             timezone=body.timezone, deployment=body.deployment, proxy_url=body.proxy_url,
-            proxy_ca_pem=body.proxy_ca_pem, proxy_tls_inspect=body.proxy_tls_inspect,
+            proxy_ca_pem=body.proxy_ca_pem, proxy_tls_inspect=body.proxy_tls_inspect, proxy_user=body.proxy_user,
             registration_token_hash=sha256_hex(token), registration_issued_at=now,
             registration_expires_at=now + REGISTRATION_TTL, created_at=now, last_updated=now,
         )
