@@ -27,7 +27,7 @@ assert.ok(!review.includes("RunDetailsDialog"), "no RunDetailsDialog left");
 assert.match(review, /href=\{runResultsHref\(teamId, run\.id\)\}/);
 
 // ONE template (owner decision): the run route renders components/CbomResults.tsx with the run adapter
-const route = read("..", "..", "..", "app", "[team_id]", "cbom", "runs", "[run_id]", "results", "page.tsx");
+const route = read("RunResultsRoute.tsx");
 assert.match(route, /import CbomResults from "@\/components\/CbomResults";/);
 assert.match(route, /const source = useSourcesRunSource\(teamId, runId, \{ initialView: view, onViewChange \}\);/);
 assert.match(route, /<CbomResults data=\{undefined\} teamId=\{String\(teamId\)\} source=\{source\} \/>/);

@@ -49,7 +49,7 @@ async function main() {
   const saved: { name: string; blob: Blob | string }[] = [];
   const g = globalThis as Record<string, unknown>;
   const origin = "http://localhost:3000";
-  g.window = { location: { href: `${origin}/7/cbom/runs/12/results`, origin, protocol: "http:", host: "localhost:3000" } };
+  g.window = { location: { href: `${origin}/7/cbom/run-12/results`, origin, protocol: "http:", host: "localhost:3000" } };
   g.localStorage = {
     getItem: (k: string) => store.get(k) ?? null,
     setItem: (k: string, v: string) => store.set(k, String(v)),
