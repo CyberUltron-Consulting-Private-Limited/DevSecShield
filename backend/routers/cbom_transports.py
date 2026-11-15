@@ -405,7 +405,7 @@ def _artifact(engine, team_id: int, name: str) -> tuple[str, Any]:
         session.commit()  # a team's settings row may have been created just now
         release = active_release(session)
         try:
-            return A.render(name, release, external_id)
+            return A.render(name, release, external_id, team_id=int(team_id))
         except KeyError:
             raise HTTPException(status_code=404, detail="No such artifact") from None
         except LookupError as exc:
@@ -414,7 +414,7 @@ def _artifact(engine, team_id: int, name: str) -> tuple[str, Any]:
 
 @router.get(BASE + "/artifacts/{name}", dependencies=READ, openapi_extra=permission("cbom.fleet.read"),
             summary="What to install on your side: ssm-document, ssm-role-cfn, salt-state, ansible-collection, "
-                    "zs-collect-manifest, zs-collect-pubkey")
+                    "zs-collect-manifest, zs-collect-pubkey, sshca-trust-salt, sshca-trust-ansible, sshca-trust-ssm")
 async def get_artifact(team_id: TeamId, ctx: Member, name: str = ArtifactName):
     engine, _user = ctx
     media, body = await _run("artifact", team_id, _artifact, engine, team_id, name)
