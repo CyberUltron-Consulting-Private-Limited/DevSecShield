@@ -350,7 +350,6 @@ export default function TeamSettingsPage() {
                             aria-label={`Select ${member.email}`}
                             checked={selectedEmails.has(member.email)}
                             onCheckedChange={() => toggleMemberSelection(member.email)}
-                            aria-label={`Select ${member.email}`}
                           />
                         )}
                       </TableCell>
@@ -363,6 +362,7 @@ export default function TeamSettingsPage() {
                           onValueChange={(value) => handleRoleChange(member.email, member.role, value as TeamRole)}
                           disabled={roleMutation.isPending}
                         >
+                          {/* infotip-shared: the Team members tip above explains the roles */}
                           <SelectTrigger className="h-8 w-32" aria-label={`Role of ${member.email}`} data-testid={`role-select-${member.email}`}>
                             <SelectValue />
                           </SelectTrigger>
@@ -395,7 +395,7 @@ export default function TeamSettingsPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="invite-role">Role</Label>
+                  <FieldLabel htmlFor="invite-role" infoId="settings.invite.role">Role</FieldLabel>
                   <Select value={inviteRole} onValueChange={(value) => setInviteRole(value as TeamRole)}>
                     <SelectTrigger id="invite-role" className="w-36" data-testid="invite-role">
                       <SelectValue />

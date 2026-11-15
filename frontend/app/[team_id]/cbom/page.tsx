@@ -1207,6 +1207,8 @@ export default function CBOMPage() {
                                       <DropdownMenuItem className="cursor-pointer" onClick={() => handleRename(conversation)}>
                                         <Pencil className="h-4 w-4 mr-2" />Rename scan
                                       </DropdownMenuItem>
+                                      </IfAllowed>
+                                      <IfAllowed permission="scan.update">
                                       <DropdownMenuItem className="cursor-pointer" onClick={() => handleDelete(conversation)} variant="destructive">
                                         <Trash2 className="h-4 w-4 mr-2" />Delete scan
                                       </DropdownMenuItem>

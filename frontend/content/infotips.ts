@@ -1889,12 +1889,12 @@ export const INFO_TIPS = {
   },
 
   // ────────────────────────────────────────────────────────────── Team settings (app/[team_id]/settings/page.tsx)
-  // src: backend/routers/team.py:86, backend/utilities/team/invitations.py:219, backend/routers/team.py:173 — creator is admin, invitees join as member
+  // src: backend/utilities/rbac/permissions.py:1-17 (F4 roles viewer < member < admin < owner), backend/routers/team.py — the creator owns a team
   "settings.members": {
     label: "Team members",
-    what: "Everyone in this team and their role. Admin: the team's creator (and other admins) can edit the team, invite, remove members and delete it. Member: runs scans and works on findings. Tick members to remove them.",
-    why: "Roles decide who can change settings, credentials and team data.",
-    example: "you@acme.com admin, dev@acme.com member.",
+    what: "Everyone in this team and their role. Owner: everything, including admins' roles, SSO and deleting the team. Admin: runs the team (name, integrations, CBOM scope, members and invitations, the audit log). Member: runs scans and works on findings. Viewer: reads everything, changes nothing. Tick members to remove them.",
+    why: "Roles decide who can change settings, credentials and team data; the server refuses what a role does not hold.",
+    example: "you@acme.com owner, dev@acme.com member, auditor@acme.com viewer.",
   },
   // src: backend/utilities/team/invitations.py:1-9, backend/utilities/team/invitations.py:33 — single-use link, 7 days, no password mailed
   "settings.invite": {
@@ -1902,6 +1902,13 @@ export const INFO_TIPS = {
     what: "Mails the address a single-use invitation link, valid for 7 days. No password is sent: a new person chooses one on the invitation page, an existing user signs in and accepts. Nobody joins until they accept.",
     why: "Only invited people can see the team's scans and findings.",
     example: "dev@acme.com joins as a member after clicking the link.",
+  },
+  // src: backend/utilities/rbac/permissions.py:136-151 (invitable_roles: admins give member or viewer, owners also admin; never owner)
+  "settings.invite.role": {
+    label: "Role",
+    what: "The role the invited person joins with. Admins can invite members and viewers; owners can also invite admins. Nobody is invited as owner: an owner promotes someone after they join.",
+    why: "Give each person only the access they need; you can change a role later.",
+    example: "auditor@acme.com invited as viewer.",
   },
   // src: backend/utilities/team/invitations.py:1-9, backend/utilities/team/invitations.py:33, backend/routers/team.py:466-490 — open invitations; resend replaces the link; revoke cancels it
   "settings.invitations": {

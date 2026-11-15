@@ -82,7 +82,7 @@ for (const page of ["sast/[scan_id]", "sbom_sca/[scan_id]", "cbom/[scan_id]", "a
   assert.ok(read(`app/[team_id]/${page}/page.tsx`).includes('<ReadOnlyGate permission="scan.run"'), `${page}: options sidebar gated`)
 }
 const sources = read("app/[team_id]/cbom/sources/page.tsx")
-assert.equal((sources.match(/<ReadOnlyGate permission="cbom.write"/g) ?? []).length, 7, "CBOM Sources tabs gated")
+assert.equal((sources.match(/<ReadOnlyGate permission="cbom.write"/g) ?? []).length, 8, "CBOM Sources tabs gated (incl. the F1 Fleet tab)")
 assert.ok(fs.existsSync(path.join(root, "app/[team_id]/settings/audit/page.tsx")), "audit log page")
 
 console.log("rbac: all assertions passed")
