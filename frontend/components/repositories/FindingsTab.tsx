@@ -11,6 +11,7 @@ import { useState } from "react";
 import { EmptyState, ErrorBlock, LoadingBlock, SectionCard, StatCard, StatusBadge } from "@/components/cbom/sources/shared";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -72,29 +73,38 @@ export default function FindingsTab({ teamId }: { teamId: number }) {
     <div className="space-y-4">
       {rollup.isError ? <ErrorBlock error={rollup.error} onRetry={() => rollup.refetch()} /> : r && totals && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <StatCard label="Repositories scanned" value={`${r.repos_scanned.toLocaleString("en-US")} / ${r.repos_in_scope.toLocaleString("en-US")}`} hint="in scope" />
-          <StatCard label="Distinct open findings" value={totals.open.toLocaleString("en-US")} />
-          <StatCard label="Occurrences across repositories" value={totals.occ.toLocaleString("en-US")} />
-          <StatCard label="De-duplication" value={totals.open ? `${(totals.occ / totals.open).toFixed(1)}×` : "-"} hint="occurrences per distinct finding" />
+          <StatCard infoId="repos.findings.scanned" label="Repositories scanned" value={`${r.repos_scanned.toLocaleString("en-US")} / ${r.repos_in_scope.toLocaleString("en-US")}`} hint="in scope" />
+          <StatCard infoId="repos.findings.open" label="Distinct open findings" value={totals.open.toLocaleString("en-US")} />
+          <StatCard infoId="repos.findings.occurrences" label="Occurrences across repositories" value={totals.occ.toLocaleString("en-US")} />
+          <StatCard infoId="repos.findings.dedup" label="De-duplication" value={totals.open ? `${(totals.occ / totals.open).toFixed(1)}×` : "-"} hint="occurrences per distinct finding" />
         </div>
       )}
-      <SectionCard title="Findings across repositories" description="Most widespread first. A rescan of a repository replaces what it found there; a finding fixed everywhere is resolved.">
+      <SectionCard infoId="repos.findings.section" title="Findings across repositories" description="Most widespread first. A rescan of a repository replaces what it found there; a finding fixed everywhere is resolved.">
         <div className="flex flex-wrap gap-2 mb-4">
-          <Input aria-label="Search findings" placeholder="Search titles" className="w-full sm:w-64" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
-          <Select value={product} onValueChange={(v) => { setProduct(v); setPage(1); }}>
-            <SelectTrigger className="w-full sm:w-44 cursor-pointer" aria-label="Product"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>All products</SelectItem>
-              {PRODUCTS.map((p) => <SelectItem key={p} value={p}>{PRODUCT_LABEL[p]}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Select value={severity} onValueChange={(v) => { setSeverity(v); setPage(1); }}>
-            <SelectTrigger className="w-full sm:w-40 cursor-pointer" aria-label="Severity"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>Any severity</SelectItem>
-              {["critical", "high", "medium", "low", "info"].map((s) => <SelectItem key={s} value={s}>{s[0].toUpperCase() + s.slice(1)}</SelectItem>)}
-            </SelectContent>
-          </Select>
+          <div className="flex items-center gap-1 w-full sm:w-auto">
+            <Input aria-label="Search findings" placeholder="Search titles" className="w-full sm:w-64" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
+            <InfoTip id="repos.findings.search" />
+          </div>
+          <div className="flex items-center gap-1 w-full sm:w-auto">
+            <Select value={product} onValueChange={(v) => { setProduct(v); setPage(1); }}>
+              <SelectTrigger className="w-full sm:w-44 cursor-pointer" aria-label="Product"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>All products</SelectItem>
+                {PRODUCTS.map((p) => <SelectItem key={p} value={p}>{PRODUCT_LABEL[p]}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <InfoTip id="repos.findings.product" />
+          </div>
+          <div className="flex items-center gap-1 w-full sm:w-auto">
+            <Select value={severity} onValueChange={(v) => { setSeverity(v); setPage(1); }}>
+              <SelectTrigger className="w-full sm:w-40 cursor-pointer" aria-label="Severity"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>Any severity</SelectItem>
+                {["critical", "high", "medium", "low", "info"].map((s) => <SelectItem key={s} value={s}>{s[0].toUpperCase() + s.slice(1)}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <InfoTip id="repos.findings.severity" />
+          </div>
         </div>
         {findings.isLoading ? <LoadingBlock /> : findings.isError || !findings.data ? <ErrorBlock error={findings.error} onRetry={() => findings.refetch()} /> : !findings.data.items.length ? (
           <EmptyState title="No findings yet" body="Findings appear here as repository scans finish." />
@@ -103,7 +113,13 @@ export default function FindingsTab({ teamId }: { teamId: number }) {
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
-                  <TableRow><TableHead>Finding</TableHead><TableHead>Product</TableHead><TableHead>Severity</TableHead><TableHead>Repositories</TableHead><TableHead>Places</TableHead></TableRow>
+                  <TableRow>
+                    <TableHead>Finding <InfoTip id="repos.findings.col.finding" /></TableHead>
+                    <TableHead>Product <InfoTip id="repos.findings.col.product" /></TableHead>
+                    <TableHead>Severity <InfoTip id="repos.findings.col.severity" /></TableHead>
+                    <TableHead>Repositories <InfoTip id="repos.findings.col.repositories" /></TableHead>
+                    <TableHead>Places <InfoTip id="repos.findings.col.places" /></TableHead>
+                  </TableRow>
                 </TableHeader>
                 <TableBody>
                   {findings.data.items.map((f) => (

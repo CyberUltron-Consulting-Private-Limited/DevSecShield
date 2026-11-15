@@ -11,6 +11,7 @@ import { useState } from "react";
 import { refusalReason } from "@/components/cbom/sources/logic";
 import { ConfirmDialog, EmptyState, ErrorBlock, LoadingBlock, SectionCard, StatCard, StatusBadge } from "@/components/cbom/sources/shared";
 import { Button } from "@/components/ui/button";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cancelScmRun, getScmRun, listScmRuns, type ScmRun } from "@/utils/api/scm";
 import { toast } from "@/utils/toast";
@@ -38,7 +39,10 @@ function RunRequests({ teamId, run }: { teamId: number; run: ScmRun }) {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Repository</TableHead><TableHead>Product</TableHead><TableHead>Status</TableHead><TableHead>Credits</TableHead>
+            <TableHead>Repository <InfoTip id="repos.runs.col.repository" /></TableHead>
+            <TableHead>Product <InfoTip id="repos.runs.col.product" /></TableHead>
+            <TableHead>Status <InfoTip id="repos.runs.col.status" /></TableHead>
+            <TableHead>Credits <InfoTip id="repos.runs.col.credits" /></TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -84,12 +88,12 @@ export default function RunsTab({ teamId, isAdmin }: { teamId: number; isAdmin: 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard label="Waiting" value={(s.queued ?? 0).toLocaleString("en-US")} hint={Object.entries(queue.queued_by_trigger).map(([t, n]) => `${TRIGGER[t] ?? t} ${n}`).join(" · ") || undefined} />
-        <StatCard label="Running" value={((s.dispatched ?? 0) + (s.dispatching ?? 0)).toLocaleString("en-US")} hint={capsText(queue.max_inflight, queue.team_max_inflight)} />
-        <StatCard label="Done" value={(s.done ?? 0).toLocaleString("en-US")} tone="green" />
-        <StatCard label="Failed or skipped" value={((s.failed ?? 0) + (s.skipped ?? 0)).toLocaleString("en-US")} tone={(s.failed ?? 0) > 0 ? "red" : undefined} />
+        <StatCard infoId="repos.runs.waiting" label="Waiting" value={(s.queued ?? 0).toLocaleString("en-US")} hint={Object.entries(queue.queued_by_trigger).map(([t, n]) => `${TRIGGER[t] ?? t} ${n}`).join(" · ") || undefined} />
+        <StatCard infoId="repos.runs.running" label="Running" value={((s.dispatched ?? 0) + (s.dispatching ?? 0)).toLocaleString("en-US")} hint={capsText(queue.max_inflight, queue.team_max_inflight)} />
+        <StatCard infoId="repos.runs.done" label="Done" value={(s.done ?? 0).toLocaleString("en-US")} tone="green" />
+        <StatCard infoId="repos.runs.failed" label="Failed or skipped" value={((s.failed ?? 0) + (s.skipped ?? 0)).toLocaleString("en-US")} tone={(s.failed ?? 0) > 0 ? "red" : undefined} />
       </div>
-      <SectionCard title="Runs" description="Push scans go first, then scans started by hand, then scheduled ones; teams share the scanners fairly.">
+      <SectionCard infoId="repos.runs.section" title="Runs" description="Push scans go first, then scans started by hand, then scheduled ones; teams share the scanners fairly.">
         {!runs.length ? <EmptyState title="No runs yet" body="Start one from the inventory (Scan now) or a policy (Run now), or let a schedule or a push start it." /> : (
           <ul className="divide-y divide-zinc-200 dark:divide-zinc-800">
             {runs.map((r) => {

@@ -12,6 +12,7 @@ import { refusalReason } from "@/components/cbom/sources/logic";
 import { Checkbox2, ConfirmDialog, EmptyState, ErrorBlock, Field, LoadingBlock, SectionCard, StatusBadge } from "@/components/cbom/sources/shared";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
@@ -97,22 +98,22 @@ function PolicyEditor({ teamId, policy, nextPosition, iacModeList, onClose }: {
         </DialogHeader>
         <div className="space-y-5">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Field label="Name" htmlFor="pol-name" required className="md:col-span-2" error={touched || body.name ? nameProblem : null}>
+            <Field infoId="repos.policy.name" label="Name" htmlFor="pol-name" required className="md:col-span-2" error={touched || body.name ? nameProblem : null}>
               <Input id="pol-name" value={body.name} onChange={(e) => set({ name: e.target.value })} onBlur={() => setTouched(true)} placeholder="PCI repositories nightly" />
             </Field>
-            <Field label="Order" htmlFor="pol-pos" hint="Lower is tried first.">
+            <Field infoId="repos.policy.position" label="Order" htmlFor="pol-pos" hint="Lower is tried first.">
               <Input id="pol-pos" inputMode="numeric" value={String(body.position)} onChange={(e) => set({ position: Math.max(0, Number(e.target.value) || 0) })} />
             </Field>
           </div>
           <div className="space-y-2">
-            <p className="text-sm font-medium">Repositories it covers</p>
+            <p className="text-sm font-medium">Repositories it covers <InfoTip id="repos.policy.selector" /></p>
             <FiltersForm idPrefix="pol-sel" value={body.selector} onChange={(selector) => set({ selector })} />
           </div>
           <div className="space-y-2">
-            <p className="text-sm font-medium">Scan with</p>
+            <p className="text-sm font-medium">Scan with{/* infotip-shared: the product boxes below carry the tip */}</p>
             <div className="flex flex-wrap gap-x-5 gap-y-2">
               {PRODUCTS.map((p) => (
-                <Checkbox2 key={p} id={`pol-product-${p}`} checked={body.products.includes(p)}
+                <Checkbox2 key={p} infoId="repos.policy.products" id={`pol-product-${p}`} checked={body.products.includes(p)}
                            onChange={(on) => set({ products: on ? [...body.products, p] : body.products.filter((x) => x !== p) })}>
                   {PRODUCT_LABEL[p]}
                 </Checkbox2>
@@ -121,7 +122,7 @@ function PolicyEditor({ teamId, policy, nextPosition, iacModeList, onClose }: {
             {body.products.includes("iac") && (
               <div className="flex flex-wrap gap-x-4 gap-y-1 pl-1 pt-1" aria-label="IaC frameworks">
                 {iacModeList.map((m) => (
-                  <Checkbox2 key={m} id={`pol-iac-${m}`} checked={iacModes.includes(m)}
+                  <Checkbox2 key={m} infoId="repos.policy.iac_modes" id={`pol-iac-${m}`} checked={iacModes.includes(m)}
                              onChange={(on) => set({ options: { ...body.options, iac_modes: on ? [...iacModes, m] : iacModes.filter((x) => x !== m) } })}>
                     {m}
                   </Checkbox2>
@@ -130,20 +131,20 @@ function PolicyEditor({ teamId, policy, nextPosition, iacModeList, onClose }: {
             )}
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Field label="Branch" htmlFor="pol-branch" hint="Empty: each repository's default branch.">
+            <Field infoId="repos.policy.branch" label="Branch" htmlFor="pol-branch" hint="Empty: each repository's default branch.">
               <Input id="pol-branch" value={body.branch} onChange={(e) => set({ branch: e.target.value })} placeholder="default branch" />
             </Field>
             <div className="space-y-2 md:pt-7">
-              <Checkbox2 id="pol-push" checked={body.on_push} onChange={(v) => set({ on_push: v })}>
+              <Checkbox2 infoId="repos.policy.on_push" id="pol-push" checked={body.on_push} onChange={(v) => set({ on_push: v })}>
                 Scan on every push to that branch (needs the connection&apos;s webhook)
               </Checkbox2>
-              <Checkbox2 id="pol-enabled" checked={body.enabled} onChange={(v) => set({ enabled: v })}>
+              <Checkbox2 infoId="repos.policy.enabled" id="pol-enabled" checked={body.enabled} onChange={(v) => set({ enabled: v })}>
                 Enabled (a disabled policy covers no repository, never fires and ignores pushes)
               </Checkbox2>
             </div>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <Field label="Schedule" htmlFor="pol-freq">
+            <Field infoId="repos.policy.schedule" label="Schedule" htmlFor="pol-freq">
               <Select value={sched.frequency} onValueChange={(v) => set({ schedule: { ...sched, frequency: v as ScmSchedule["frequency"] } })}>
                 <SelectTrigger id="pol-freq" className="cursor-pointer"><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -156,11 +157,11 @@ function PolicyEditor({ teamId, policy, nextPosition, iacModeList, onClose }: {
             </Field>
             {sched.frequency !== "off" && (
               <>
-                <Field label="Time" htmlFor="pol-time">
+                <Field infoId="repos.policy.time" label="Time" htmlFor="pol-time">
                   <Input id="pol-time" type="time" value={sched.time_of_day} onChange={(e) => set({ schedule: { ...sched, time_of_day: e.target.value } })} />
                 </Field>
                 {sched.frequency === "weekly" && (
-                  <Field label="Day" htmlFor="pol-wday">
+                  <Field infoId="repos.policy.weekday" label="Day" htmlFor="pol-wday">
                     <Select value={String(sched.weekday ?? 6)} onValueChange={(v) => set({ schedule: { ...sched, weekday: Number(v) } })}>
                       <SelectTrigger id="pol-wday" className="cursor-pointer"><SelectValue /></SelectTrigger>
                       <SelectContent>{WEEKDAYS.map((d, i) => <SelectItem key={d} value={String(i)}>{d}</SelectItem>)}</SelectContent>
@@ -168,12 +169,12 @@ function PolicyEditor({ teamId, policy, nextPosition, iacModeList, onClose }: {
                   </Field>
                 )}
                 {sched.frequency === "monthly" && (
-                  <Field label="Day of month" htmlFor="pol-mday" hint="1 to 28">
+                  <Field infoId="repos.policy.monthday" label="Day of month" htmlFor="pol-mday" hint="1 to 28">
                     <Input id="pol-mday" inputMode="numeric" value={String(sched.monthday ?? 1)}
                            onChange={(e) => set({ schedule: { ...sched, monthday: Math.min(28, Math.max(1, Number(e.target.value) || 1)) } })} />
                   </Field>
                 )}
-                <Field label="Time zone" htmlFor="pol-tz" hint="IANA name, e.g. Asia/Kolkata">
+                <Field infoId="repos.policy.timezone" label="Time zone" htmlFor="pol-tz" hint="IANA name, e.g. Asia/Kolkata">
                   <Input id="pol-tz" value={sched.timezone} onChange={(e) => set({ schedule: { ...sched, timezone: e.target.value } })} />
                 </Field>
               </>
@@ -226,6 +227,7 @@ export default function PoliciesTab({ teamId, isAdmin }: { teamId: number; isAdm
   const nextPosition = policies.length ? Math.max(...policies.map((p) => p.position)) + 10 : 100;
   return (
     <SectionCard
+      infoId="repos.policy.section"
       title="Scan policies"
       description="Tried in order: the first policy whose selector matches a repository covers it. Scheduled runs and push scans are charged per run."
       actions={isAdmin && (

@@ -11,6 +11,7 @@ import { useMemo, useState } from "react";
 import { refusalReason } from "@/components/cbom/sources/logic";
 import { EmptyState, ErrorBlock, LoadingBlock, SectionCard, StatusBadge } from "@/components/cbom/sources/shared";
 import { Button } from "@/components/ui/button";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -79,54 +80,73 @@ export default function InventoryTab({ teamId, isAdmin, connections, onImport }:
 
   return (
     <SectionCard
+      infoId="repos.inventory.section"
       title="Repository inventory"
       description={repos.data ? `${repos.data.facets.in_scope.toLocaleString("en-US")} in scope of ${Object.values(repos.data.facets.reasons).reduce((a, b) => a + b, 0).toLocaleString("en-US")} discovered` : undefined}
     >
       <div className="flex flex-wrap gap-2 mb-4">
-        <Input aria-label="Search repositories" placeholder="Search owner/name" className="w-full sm:w-64" value={search}
-               onChange={(e) => { setSearch(e.target.value); setQuery((q) => ({ ...q, page: 1 })); }} />
-        <Select value={String(query.connection_id ?? ALL)} onValueChange={(v) => set({ connection_id: v === ALL ? undefined : Number(v) })}>
-          <SelectTrigger className="w-full sm:w-44 cursor-pointer" aria-label="Connection"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>All connections</SelectItem>
-            {connections.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Select value={query.scope ?? "all"} onValueChange={(v) => set({ scope: v as ScmRepositoryQuery["scope"] })}>
-          <SelectTrigger className="w-full sm:w-40 cursor-pointer" aria-label="Scope"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="in">In scope</SelectItem>
-            <SelectItem value="out">Out of scope</SelectItem>
-            <SelectItem value="all">All visible</SelectItem>
-            <SelectItem value="removed">Removed</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select value={query.language ?? ALL} onValueChange={(v) => set({ language: v === ALL ? undefined : v })}>
-          <SelectTrigger className="w-full sm:w-40 cursor-pointer" aria-label="Language"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>Any language</SelectItem>
-            {Object.entries(repos.data?.facets.languages ?? {}).filter(([l]) => l).sort((a, b) => b[1] - a[1]).map(([l, n]) => (
-              <SelectItem key={l} value={l}>{l} ({n})</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={query.reason ?? ALL} onValueChange={(v) => set({ reason: v === ALL ? undefined : v })}>
-          <SelectTrigger className="w-full sm:w-56 cursor-pointer" aria-label="Reason"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>Any reason</SelectItem>
-            {Object.entries(repos.data?.facets.reasons ?? {}).map(([r, n]) => (
-              <SelectItem key={r} value={r}>{reasonLabel(r)} ({n})</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={query.scanned ?? ALL} onValueChange={(v) => set({ scanned: v === ALL ? undefined : (v as "never" | "yes") })}>
-          <SelectTrigger className="w-full sm:w-40 cursor-pointer" aria-label="Scanned"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>Scanned or not</SelectItem>
-            <SelectItem value="never">Never scanned</SelectItem>
-            <SelectItem value="yes">Scanned</SelectItem>
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-1 w-full sm:w-auto">
+          <Input aria-label="Search repositories" placeholder="Search owner/name" className="w-full sm:w-64" value={search}
+                 onChange={(e) => { setSearch(e.target.value); setQuery((q) => ({ ...q, page: 1 })); }} />
+          <InfoTip id="repos.inventory.search" />
+        </div>
+        <div className="flex items-center gap-1 w-full sm:w-auto">
+          <Select value={String(query.connection_id ?? ALL)} onValueChange={(v) => set({ connection_id: v === ALL ? undefined : Number(v) })}>
+            <SelectTrigger className="w-full sm:w-44 cursor-pointer" aria-label="Connection"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>All connections</SelectItem>
+              {connections.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <InfoTip id="repos.inventory.connection" />
+        </div>
+        <div className="flex items-center gap-1 w-full sm:w-auto">
+          <Select value={query.scope ?? "all"} onValueChange={(v) => set({ scope: v as ScmRepositoryQuery["scope"] })}>
+            <SelectTrigger className="w-full sm:w-40 cursor-pointer" aria-label="Scope"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="in">In scope</SelectItem>
+              <SelectItem value="out">Out of scope</SelectItem>
+              <SelectItem value="all">All visible</SelectItem>
+              <SelectItem value="removed">Removed</SelectItem>
+            </SelectContent>
+          </Select>
+          <InfoTip id="repos.inventory.scope" />
+        </div>
+        <div className="flex items-center gap-1 w-full sm:w-auto">
+          <Select value={query.language ?? ALL} onValueChange={(v) => set({ language: v === ALL ? undefined : v })}>
+            <SelectTrigger className="w-full sm:w-40 cursor-pointer" aria-label="Language"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>Any language</SelectItem>
+              {Object.entries(repos.data?.facets.languages ?? {}).filter(([l]) => l).sort((a, b) => b[1] - a[1]).map(([l, n]) => (
+                <SelectItem key={l} value={l}>{l} ({n})</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <InfoTip id="repos.inventory.language" />
+        </div>
+        <div className="flex items-center gap-1 w-full sm:w-auto">
+          <Select value={query.reason ?? ALL} onValueChange={(v) => set({ reason: v === ALL ? undefined : v })}>
+            <SelectTrigger className="w-full sm:w-56 cursor-pointer" aria-label="Reason"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>Any reason</SelectItem>
+              {Object.entries(repos.data?.facets.reasons ?? {}).map(([r, n]) => (
+                <SelectItem key={r} value={r}>{reasonLabel(r)} ({n})</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <InfoTip id="repos.inventory.reason" />
+        </div>
+        <div className="flex items-center gap-1 w-full sm:w-auto">
+          <Select value={query.scanned ?? ALL} onValueChange={(v) => set({ scanned: v === ALL ? undefined : (v as "never" | "yes") })}>
+            <SelectTrigger className="w-full sm:w-40 cursor-pointer" aria-label="Scanned"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>Scanned or not</SelectItem>
+              <SelectItem value="never">Never scanned</SelectItem>
+              <SelectItem value="yes">Scanned</SelectItem>
+            </SelectContent>
+          </Select>
+          <InfoTip id="repos.inventory.scanned" />
+        </div>
       </div>
 
       {isAdmin && selected.length > 0 && (
@@ -145,6 +165,7 @@ export default function InventoryTab({ teamId, isAdmin, connections, onImport }:
               <SelectItem value="none">No pinned policy</SelectItem>
             </SelectContent>
           </Select>
+          <InfoTip id="repos.inventory.pin" />
           <Button size="sm" variant="ghost" className="cursor-pointer" onClick={() => setSelected([])}>Clear</Button>
         </div>
       )}
@@ -157,17 +178,20 @@ export default function InventoryTab({ teamId, isAdmin, connections, onImport }:
             <TableHeader>
               <TableRow>
                 {isAdmin && (
-                  <TableHead className="w-8">
-                    <input type="checkbox" aria-label="Select every repository on this page" className="h-4 w-4 accent-blue-600 cursor-pointer"
-                           checked={allOnPage} onChange={(e) => setSelected((s) => toggleIds(s, pageIds, e.target.checked))} />
+                  <TableHead className="w-14">
+                    <div className="flex items-center gap-1">
+                      <input type="checkbox" aria-label="Select every repository on this page" className="h-4 w-4 accent-blue-600 cursor-pointer"
+                             checked={allOnPage} onChange={(e) => setSelected((s) => toggleIds(s, pageIds, e.target.checked))} />
+                      <InfoTip id="repos.inventory.select" />
+                    </div>
                   </TableHead>
                 )}
-                <TableHead>Repository</TableHead>
-                <TableHead>Language</TableHead>
-                <TableHead>Size</TableHead>
-                <TableHead>Scope</TableHead>
-                <TableHead>Policy</TableHead>
-                <TableHead>Last scans</TableHead>
+                <TableHead>Repository <InfoTip id="repos.inventory.col.repository" /></TableHead>
+                <TableHead>Language <InfoTip id="repos.inventory.col.language" /></TableHead>
+                <TableHead>Size <InfoTip id="repos.inventory.col.size" /></TableHead>
+                <TableHead>Scope <InfoTip id="repos.inventory.col.scope" /></TableHead>
+                <TableHead>Policy <InfoTip id="repos.inventory.col.policy" /></TableHead>
+                <TableHead>Last scans <InfoTip id="repos.inventory.col.last_scans" /></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -175,6 +199,7 @@ export default function InventoryTab({ teamId, isAdmin, connections, onImport }:
                 <TableRow key={r.id}>
                   {isAdmin && (
                     <TableCell>
+                      {/* infotip-shared: the select-all box in the header explains each row's box */}
                       <input type="checkbox" aria-label={`Select ${r.full_name}`} className="h-4 w-4 accent-blue-600 cursor-pointer"
                              checked={selected.includes(r.id)} onChange={(e) => setSelected((s) => toggleIds(s, [r.id], e.target.checked))} />
                     </TableCell>

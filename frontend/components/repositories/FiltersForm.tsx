@@ -6,19 +6,21 @@
 import { useState } from "react";
 
 import { Checkbox2, Field } from "@/components/cbom/sources/shared";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Input } from "@/components/ui/input";
+import type { InfoTipId } from "@/content/infotips";
 import type { ScmFilters, ScmVisibility } from "@/utils/api/scm";
 
 import { joinList, listError, parseList, parseSizeLimit, sizeLimitError } from "./logic";
 
 type ListKey = "include_names" | "exclude_names" | "topics_any" | "exclude_topics" | "languages";
 
-const LISTS: { key: ListKey; label: string; hint: string; placeholder: string }[] = [
-  { key: "include_names", label: "Only names matching", hint: "Shell globs on owner/name or name; empty: every repository.", placeholder: "payments-*, core/*" },
-  { key: "exclude_names", label: "Exclude names matching", hint: "Exclusions win over inclusions.", placeholder: "*-sandbox, archive-*" },
-  { key: "topics_any", label: "Only repositories with one of these topics", hint: "GitHub and GitLab topics; empty: no topic needed.", placeholder: "pci, production" },
-  { key: "exclude_topics", label: "Exclude repositories with these topics", hint: "For example deprecated or experimental.", placeholder: "deprecated" },
-  { key: "languages", label: "Only these primary languages", hint: "As the provider reports them (GitLab does not report one).", placeholder: "Python, Java, TypeScript" },
+const LISTS: { key: ListKey; label: string; hint: string; placeholder: string; infoId: InfoTipId }[] = [
+  { key: "include_names", label: "Only names matching", hint: "Shell globs on owner/name or name; empty: every repository.", placeholder: "payments-*, core/*", infoId: "repos.filters.include_names" },
+  { key: "exclude_names", label: "Exclude names matching", hint: "Exclusions win over inclusions.", placeholder: "*-sandbox, archive-*", infoId: "repos.filters.exclude_names" },
+  { key: "topics_any", label: "Only repositories with one of these topics", hint: "GitHub and GitLab topics; empty: no topic needed.", placeholder: "pci, production", infoId: "repos.filters.topics_any" },
+  { key: "exclude_topics", label: "Exclude repositories with these topics", hint: "For example deprecated or experimental.", placeholder: "deprecated", infoId: "repos.filters.exclude_topics" },
+  { key: "languages", label: "Only these primary languages", hint: "As the provider reports them (GitLab does not report one).", placeholder: "Python, Java, TypeScript", infoId: "repos.filters.languages" },
 ];
 
 const VIS: ScmVisibility[] = ["private", "internal", "public"];
@@ -38,7 +40,7 @@ export default function FiltersForm({ idPrefix, value, onChange, disabled }: {
       {LISTS.map((l) => {
         const parsed = parseList(text[l.key]);
         return (
-          <Field key={l.key} label={l.label} htmlFor={`${idPrefix}-${l.key}`} hint={l.hint} error={listError(parsed)}>
+          <Field key={l.key} infoId={l.infoId} label={l.label} htmlFor={`${idPrefix}-${l.key}`} hint={l.hint} error={listError(parsed)}>
             <Input
               id={`${idPrefix}-${l.key}`}
               value={text[l.key]}
@@ -51,7 +53,7 @@ export default function FiltersForm({ idPrefix, value, onChange, disabled }: {
           </Field>
         );
       })}
-      <Field label="Skip repositories larger than (MB)" htmlFor={`${idPrefix}-size`}
+      <Field infoId="repos.filters.max_size" label="Skip repositories larger than (MB)" htmlFor={`${idPrefix}-size`}
              hint="Size as the provider reports it (GitHub includes history). Empty: no limit."
              error={sizeLimitError(parseSizeLimit(size))}>
         <Input
@@ -67,16 +69,17 @@ export default function FiltersForm({ idPrefix, value, onChange, disabled }: {
         />
       </Field>
       <div className="space-y-2 md:col-span-2">
-        <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Also include</p>
+        <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Also include{/* infotip-shared: each box below carries its own tip */}</p>
         <div className="flex flex-wrap gap-x-6 gap-y-2">
-          <Checkbox2 id={`${idPrefix}-archived`} checked={value.include_archived}
+          <Checkbox2 infoId="repos.filters.include_archived" id={`${idPrefix}-archived`} checked={value.include_archived}
                      onChange={(v) => onChange({ ...value, include_archived: v })}>Archived repositories</Checkbox2>
-          <Checkbox2 id={`${idPrefix}-forks`} checked={value.include_forks}
+          <Checkbox2 infoId="repos.filters.include_forks" id={`${idPrefix}-forks`} checked={value.include_forks}
                      onChange={(v) => onChange({ ...value, include_forks: v })}>Forks</Checkbox2>
         </div>
-        <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 pt-2">Visibility (none ticked: all)</p>
+        <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 pt-2">Visibility (none ticked: all) <InfoTip id="repos.filters.visibility" /></p>
         <div className="flex flex-wrap gap-x-6 gap-y-2">
           {VIS.map((v) => (
+            // infotip-shared: the Visibility heading above explains every visibility box
             <Checkbox2 key={v} id={`${idPrefix}-vis-${v}`} checked={value.visibility.includes(v)}
                        onChange={(on) => onChange({ ...value, visibility: on ? [...value.visibility, v] : value.visibility.filter((x) => x !== v) })}>
               {v[0].toUpperCase() + v.slice(1)}

@@ -79,6 +79,9 @@ export const COVERED: string[] = [
   // quantum-risk grade and crypto-agility, and the shared run results page (sections, findings, jobs, AI assistant)
   "components/cbom/grade",
   "components/cbom/results",
+  // Repositories (F3): import wizard, inventory, connections, scan policies, runs and queue, findings roll-up
+  "app/[team_id]/repositories/page.tsx",
+  "components/repositories",
 ];
 /** Files under a covered directory that are not covered yet, each with the reason. */
 export const NOT_YET_COVERED = new Map<string, string>([

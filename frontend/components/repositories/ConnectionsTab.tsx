@@ -60,6 +60,7 @@ function ConnectionCard({ teamId, c, isAdmin }: { teamId: number; c: ScmConnecti
   const running = c.sync.status === "running" || c.sync.status === "queued";
   return (
     <SectionCard
+      infoId="repos.connections.card"
       title={<span className="flex flex-wrap items-center gap-2">{c.name}<StatusBadge tone="zinc">{PROVIDER_LABEL[c.provider]}</StatusBadge>{!c.enabled && <StatusBadge tone="amber">Disabled</StatusBadge>}</span>}
       description={`${label}${c.scope_name ? `: ${c.scope_name}` : ""} · ${c.api_base}`}
       actions={isAdmin && (

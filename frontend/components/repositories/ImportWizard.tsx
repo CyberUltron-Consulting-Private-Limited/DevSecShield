@@ -12,6 +12,7 @@ import { refusalReason } from "@/components/cbom/sources/logic";
 import { ChoiceCards, CopyButton, Field, SecretField, StatusBadge } from "@/components/cbom/sources/shared";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -186,8 +187,8 @@ export default function ImportWizard({ teamId, open, onOpenChange, existing }: {
             }}
           >
             <div className="space-y-2">
-              <p className="text-sm font-medium">Provider</p>
-              <ChoiceCards<ScmProvider>
+              <p className="text-sm font-medium">Provider{/* infotip-shared: the provider cards below carry the tip */}</p>
+              <ChoiceCards<ScmProvider> infoId="repos.connect.provider"
                 name="scm-provider"
                 label="Provider"
                 columns={3}
@@ -197,8 +198,8 @@ export default function ImportWizard({ teamId, open, onOpenChange, existing }: {
               />
             </div>
             <div className="space-y-2">
-              <p className="text-sm font-medium">What to connect</p>
-              <ChoiceCards<string>
+              <p className="text-sm font-medium">What to connect{/* infotip-shared: the choice cards below carry the tip */}</p>
+              <ChoiceCards<string> infoId="repos.connect.scope"
                 name="scm-scope"
                 label="What to connect"
                 columns={1}
@@ -211,11 +212,12 @@ export default function ImportWizard({ teamId, open, onOpenChange, existing }: {
               />
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Field label="Name" htmlFor="scm-name" required error={touched ? errors.name : null} hint="How this connection is shown, e.g. Acme GitHub">
+              <Field infoId="repos.connect.name" label="Name" htmlFor="scm-name" required error={touched ? errors.name : null} hint="How this connection is shown, e.g. Acme GitHub">
                 <Input id="scm-name" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="Acme GitHub" />
               </Field>
               {scopeChoice.scope !== "user" && (
                 <Field
+                  infoId="repos.connect.scope_name"
                   label={form.provider === "gitlab" ? "Group path" : form.provider === "bitbucket" ? "Workspace" : scopeChoice.scope === "installation" ? "Organisation (for display)" : "Organisation"}
                   htmlFor="scm-scope-name"
                   required={scopeChoice.scope !== "installation"}
@@ -227,28 +229,28 @@ export default function ImportWizard({ teamId, open, onOpenChange, existing }: {
               )}
               {form.auth_kind === "github_app" && (
                 <>
-                  <Field label="App id" htmlFor="scm-app-id" required error={touched ? errors.app_id : null}>
+                  <Field infoId="repos.connect.app_id" label="App id" htmlFor="scm-app-id" required error={touched ? errors.app_id : null}>
                     <Input id="scm-app-id" inputMode="numeric" value={form.app_id} onChange={(e) => setForm((f) => ({ ...f, app_id: e.target.value }))} />
                   </Field>
-                  <Field label="Installation id" htmlFor="scm-inst-id" required error={touched ? errors.installation_id : null}>
+                  <Field infoId="repos.connect.installation_id" label="Installation id" htmlFor="scm-inst-id" required error={touched ? errors.installation_id : null}>
                     <Input id="scm-inst-id" inputMode="numeric" value={form.installation_id} onChange={(e) => setForm((f) => ({ ...f, installation_id: e.target.value }))} />
                   </Field>
                 </>
               )}
             </div>
             {form.auth_kind === "github_app" ? (
-              <Field label="App private key (.pem)" htmlFor="scm-key" required error={touched ? errors.private_key : null}
+              <Field infoId="repos.connect.private_key" label="App private key (.pem)" htmlFor="scm-key" required error={touched ? errors.private_key : null}
                      hint="Encrypted at rest; used only to mint 1-hour installation tokens. Never shown again.">
                 <Textarea id="scm-key" value={form.private_key} spellCheck={false} autoComplete="off"
                           className="font-mono text-xs min-h-[96px]" placeholder="-----BEGIN RSA PRIVATE KEY-----"
                           onChange={(e) => setForm((f) => ({ ...f, private_key: e.target.value }))} />
               </Field>
             ) : (
-              <SecretField id="scm-token" label="Access token" value={form.token} required
+              <SecretField infoId="repos.connect.token" id="scm-token" label="Access token" value={form.token} required
                            onChange={(v) => setForm((f) => ({ ...f, token: v }))} error={touched ? errors.token : null}
                            hint="Encrypted at rest; used to list repositories and to clone them for scans. Never shown again." />
             )}
-            <Field label="API URL (self-hosted only)" htmlFor="scm-api" error={touched ? errors.api_base : null}
+            <Field infoId="repos.connect.api_base" label="API URL (self-hosted only)" htmlFor="scm-api" error={touched ? errors.api_base : null}
                    hint={`Leave empty for ${PROVIDER_LABEL[form.provider]} in the cloud. A self-hosted server (e.g. https://ghe.example.com/api/v3) must be allowed by the ZeroShield operator in GIT_ALLOWED_HOSTS.`}>
               <Input id="scm-api" value={form.api_base} placeholder="https://" onChange={(e) => setForm((f) => ({ ...f, api_base: e.target.value }))} />
             </Field>
@@ -311,10 +313,11 @@ export default function ImportWizard({ teamId, open, onOpenChange, existing }: {
           <div className="space-y-5">
             <FiltersForm idPrefix="wizard-filter" value={filters} onChange={setFilters} />
             <div className="space-y-2">
-              <p className="text-sm font-medium">Price one scan of the kept repositories with</p>
+              <p className="text-sm font-medium">Price one scan of the kept repositories with <InfoTip id="repos.import.price_products" /></p>
               <div className="flex flex-wrap gap-x-5 gap-y-2">
                 {PRODUCTS.map((p) => (
                   <label key={p} className="flex items-center gap-2 text-sm cursor-pointer">
+                    {/* infotip-shared: the heading above explains the products the preview prices */}
                     <input type="checkbox" className="h-4 w-4 accent-blue-600" checked={products.includes(p)}
                            onChange={(e) => setProducts((cur) => (e.target.checked ? [...cur, p] : cur.filter((x) => x !== p)))} />
                     {PRODUCT_LABEL[p]}
@@ -376,7 +379,7 @@ export default function ImportWizard({ teamId, open, onOpenChange, existing }: {
             </p>
             {webhook && connection && (
               <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-4 space-y-3">
-                <p className="text-sm font-medium">Scan on push: add this webhook (the secret is shown only now)</p>
+                <p className="text-sm font-medium">Scan on push: add this webhook (the secret is shown only now) <InfoTip id="repos.import.webhook" /></p>
                 <p className="text-xs text-zinc-600 dark:text-zinc-400">{webhookHelp(connection.provider)}</p>
                 <div className="flex flex-wrap items-center gap-2">
                   <code className="text-xs break-all bg-zinc-100 dark:bg-zinc-800 rounded px-2 py-1">{hookUrl}</code>

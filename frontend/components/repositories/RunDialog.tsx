@@ -73,10 +73,10 @@ export default function RunDialog({ teamId, open, onOpenChange, target, title, c
         </DialogHeader>
         {chooseProducts && (
           <div className="space-y-2">
-            <p className="text-sm font-medium">Scan with</p>
+            <p className="text-sm font-medium">Scan with{/* infotip-shared: the product boxes below carry the tip */}</p>
             <div className="flex flex-wrap gap-x-5 gap-y-2">
               {PRODUCTS.map((p) => (
-                <Checkbox2 key={p} id={`run-product-${p}`} checked={products.includes(p)}
+                <Checkbox2 key={p} infoId="repos.run.products" id={`run-product-${p}`} checked={products.includes(p)}
                            onChange={(on) => setProducts((cur) => (on ? [...cur, p] : cur.filter((x) => x !== p)))}>
                   {PRODUCT_LABEL[p]}
                 </Checkbox2>
