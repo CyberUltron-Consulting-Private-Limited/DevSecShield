@@ -444,18 +444,20 @@ CHANGED_ROWS_MAX = 5_000  # more changed rows than this in one source's job: com
 def changed_rows(session: Any, team_id: int, new: tuple[int, int], old: tuple[int, int]) -> list[str]:
     """#352: the row keys of job attempt ``new`` whose stored values may differ from the same key's row in job attempt
     ``old`` (``content_digest``, see ``new_models.content_digest``): no row there, or a digest that differs or is not
-    known. Two reads of (row key, digest) by the unique (job_id, attempt, asset_key) index, compared here: a join of
-    the two ranges in SQL was planned as a range scan per row now and then (a second at 5k rows), and a team filter
-    in SQL could turn either read into a scan of the team's rows."""
+    known. ``(key, digest) EXCEPT (key, digest)`` of the two jobs' ranges of the unique (job_id, attempt, asset_key)
+    index: a set operation, which PostgreSQL runs as one hash or sort over both ranges (a LEFT JOIN of the two was
+    now and then planned as a range scan per row, a second at 5k rows), and only the changed keys come back. No team
+    condition in SQL (it could turn either range into a scan of the team's rows): the team is checked on the result."""
     _eo, _es, _ea, row = _tables()
     t = row.__table__
 
-    def read(job: tuple[int, int]) -> dict[str, str | None]:
-        return {k: d for k, d, team in session.execute(sa.select(t.c.asset_key, t.c.content_digest, t.c.team_id).where(
-            t.c.job_id == job[0], t.c.attempt == job[1])).all() if team == team_id}
-
-    before = read(old)
-    return sorted(k for k, d in read(new).items() if d is None or before.get(k) != d)
+    def pairs(job: tuple[int, int]) -> Any:
+        return sa.select(t.c.asset_key, t.c.content_digest, t.c.team_id).where(t.c.job_id == job[0],
+                                                                              t.c.attempt == job[1])
+    unknown = sa.select(t.c.asset_key, t.c.content_digest, t.c.team_id).where(
+        t.c.job_id == new[0], t.c.attempt == new[1], t.c.content_digest.is_(None))
+    found = session.execute(sa.except_(pairs(new), pairs(old))).all() + session.execute(unknown).all()
+    return sorted({k for k, _d, team in found if team == team_id})
 
 
 def changed_condition(session: Any, write: Any, new: tuple[int, int], old: tuple[int, int]) -> Any | None:
