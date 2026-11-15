@@ -124,18 +124,18 @@ def test_database_cluster_and_hsm_rows_use_the_existing_source_kinds(api, world)
     n = node(api, "mum-01", "dc-mumbai")
     plan, result = preview_apply(api, {"csv": DB_K8S_HSM, "vault_provider": "hashicorp"})
     reasons = {s["line"]: s["reason"] for s in plan["skipped"]}
-    assert set(reasons) == {4, 5, 8, 10}, reasons
+    assert set(reasons) == {3, 4, 5, 8, 10}, reasons
     assert "TLS" in reasons[4] and "CA certificate" in reasons[4]  # MySQL logins need the server CA: by hand
+    assert reasons[3].startswith("ca_pem: Oracle logins need TLS")  # and so do Oracle's (#216)
     assert "vault_path" in reasons[5] and "never imported" in reasons[5]
     assert "vault_path" in reasons[8] and "kubeconfig" in reasons[8]
     assert "KMIP" in reasons[10] and "client certificate" in reasons[10]
-    assert result["created"] == 5
+    assert result["created"] == 4
     made = {s.kind: [] for s in sources(engine)}
     for s in sources(engine):
         made[s.kind].append(s)
         assert s.node_id == n and s.secret_encrypted is None and s.config["owner"]
-    ora, pg, redis = sorted(made["database"], key=lambda s: s.config["host"])
-    assert (ora.config["engine"], ora.config["port"], ora.config["database_name"]) == ("oracle", 1522, "ORCLPDB1")
+    pg, redis = sorted(made["database"], key=lambda s: s.config["host"])
     assert (pg.config["port"], pg.config["vault"]) == (5432, {"provider": "hashicorp", "path": "secret/data/db/pg1"})
     assert redis.config["engine"] == "redis" and redis.config["credential_type"] == "password"
     (k8s,) = made["kubernetes"]
@@ -147,7 +147,7 @@ def test_database_cluster_and_hsm_rows_use_the_existing_source_kinds(api, world)
     # importing the same file again matches every source by its identity: nothing new, metadata only
     again = api("POST", PREVIEW, json={"csv": DB_K8S_HSM.replace("DBA", "Data Team"), "vault_provider": "hashicorp"})
     again = again.json()["plan"]
-    assert again["counts"]["create"] == 0 and again["counts"]["update"] == 3, again["counts"]
+    assert again["counts"]["create"] == 0 and again["counts"]["update"] == 2, again["counts"]  # pg1, rd1 (not ora1, #216)
     assert {u["kind"] for u in again["updates"]} == {"database"}
 
 

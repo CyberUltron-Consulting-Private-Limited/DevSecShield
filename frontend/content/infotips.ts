@@ -3554,7 +3554,7 @@ export const INFO_TIPS = {
   // src: frontend/components/cbom/sources/NetworkTab.tsx:876-930 — each node's source IPs and your contacts
   "cbsrc.net.soc": {
     label: "Tell your SOC",
-    what: "The source IP addresses of each scan node, to give your SOC so the scans are recognised, and the contacts they can reach.",
+    what: "The source IP addresses of each scan node that scans networks, to give your SOC so the scans are recognised, and the contacts they can reach. Host-agent nodes are left out: they never scan networks.",
     why: "An unannounced scan looks like an attack and may be blocked mid-run.",
     example: "node-dc1 scans from 10.20.1.15.",
   },
@@ -4013,7 +4013,7 @@ export const INFO_TIPS = {
   // src: frontend/components/cbom/sources/ScanNodesTab.tsx:303-306 — one per segment; outbound only
   "cbsrc.nodes.list": {
     label: "Registered scan nodes",
-    what: "Your scan nodes: small read-only collectors inside your network, one per network segment. Each connects out to ZeroShield on one HTTPS port only and opens no inbound ports.",
+    what: "Your scan nodes: small read-only collectors inside your network, one per network segment. Each connects out to ZeroShield on one HTTPS port, to the targets of its jobs and to your DNS resolver (port 53), and opens no inbound ports.",
     why: "Nodes are how ZeroShield reads systems that are not reachable from the internet.",
     example: "node-dc1 · DC1-core · Online · Docker container.",
   },
@@ -4174,8 +4174,8 @@ export const INFO_TIPS = {
   // src: frontend/components/cbom/sources/ScanNodesTab.tsx:532-534 — trust the proxy CA only for ZeroShield hostnames
   "cbsrc.nodes.tls_inspect": {
     label: "Proxy inspects TLS",
-    what: "Tick if your proxy decrypts TLS. The node then trusts the proxy's CA, and only for ZeroShield's hostnames.",
-    why: "Limiting the extra trust to ZeroShield's hostnames keeps the node's other TLS checks strict.",
+    what: "Tick if your proxy decrypts TLS: it needs the proxy and its CA certificate. The node then trusts that CA only for ZeroShield's hostnames. The proxy can read the node's credential and its jobs, logins included.",
+    why: "A TLS-inspection bypass for the ZeroShield API host keeps credentials out of the proxy; ask for one instead where you can.",
     example: "Tick for a Zscaler or Blue Coat proxy with SSL inspection on.",
   },
   // src: frontend/components/cbom/sources/ScanNodesTab.tsx:632-646 — outbound only, read-only, metadata only
@@ -6509,7 +6509,7 @@ export const INFO_TIPS = {
   // src: frontend/components/cbom/sources/logic.ts:543-549 — outbound HTTPS to the API; registry, build kits and cloud APIs
   "cbsrc.nodes.network_req": {
     label: "Network requirements",
-    what: "What needs network access: the scan node only needs outbound HTTPS to the ZeroShield API and direct reach to your targets. Pulling the image from a public registry needs that registry; building the OVA or AMI kits needs internet; cloud and identity sources are read from ZeroShield's servers.",
+    what: "What needs network access: the scan node needs outbound HTTPS to the ZeroShield API, DNS (port 53) to your resolver and direct reach to your targets. Pulling the image from a public registry needs that registry; building the OVA or AMI kits needs internet; cloud and identity sources are read from ZeroShield's servers.",
     why: "Tells your network team which firewall rules to open, and that nothing calls in.",
     example: "Allow node-dc1 out to the ZeroShield API on 443; no inbound rule.",
   },

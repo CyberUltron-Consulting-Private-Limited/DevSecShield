@@ -448,6 +448,11 @@ _PG_FUNCTION_SQL = f"SELECT rolname, password_type FROM {PG_HASH_FUNCTION}()"
 # It lists every role, so it is joined with pg_roles (readable by everyone) to keep login roles only.
 _PG_RDS_SQL = ("SELECT t.rolname, t.encryption_type FROM rds_tools.role_password_encryption_type() t "
                "JOIN pg_catalog.pg_roles r ON r.rolname = t.rolname WHERE r.rolcanlogin")
+# Which path to take, from what every login may read (#210): is this login a superuser, and are the published
+# functions there?  pg_authid is queried only by a superuser, so no statement is issued that is expected to fail.
+_PG_HASH_PATH_SQL = ("SELECT r.rolsuper, to_regprocedure('public.zs_role_password_types()') IS NOT NULL, "
+                     "to_regprocedure('rds_tools.role_password_encryption_type()') IS NOT NULL "
+                     "FROM pg_catalog.pg_roles r WHERE r.rolname = current_user")
 _PG_SERVICE_ROLES_SQL = ("SELECT rolname FROM pg_catalog.pg_roles WHERE rolname IN "
                          "('rdsadmin', 'rds_superuser', 'rds_iam', 'cloudsqlsuperuser', 'azure_pg_admin', 'azuresu')")
 _PG_IAM_SQL = ("SELECT m.rolname FROM pg_catalog.pg_roles m JOIN pg_catalog.pg_auth_members am ON am.member = m.oid "
@@ -490,9 +495,11 @@ class PgRoleHashes:
 
 
 def pg_role_hashes(conn, extensions: set[str], login: str, database: str) -> PgRoleHashes:
-    """Password hash TYPES of login roles (never the hashes), trying in order: pg_authid (superuser) -> the
-    DBA-installed SECURITY DEFINER function public.zs_role_password_types() -> rds_tools on Amazon RDS/Aurora -> one
-    coverage gap naming the fix for this kind of server."""
+    """Password hash TYPES of login roles (never the hashes): the DBA-installed SECURITY DEFINER function
+    public.zs_role_password_types() when it is installed -> pg_authid, for a superuser only -> rds_tools on Amazon
+    RDS/Aurora -> one coverage gap naming the fix for this kind of server.  The path is chosen first from what every
+    login may read (#210): a login with the published grants never touches pg_authid (whose permission-denied error
+    a database audit log or SIEM rule on the password-hash table would report on every scan)."""
     out = PgRoleHashes()
     service = {str(r[0]) for r in (_pg_try(conn, _PG_SERVICE_ROLES_SQL)[0] or [])}
     if service & {"rdsadmin", "rds_superuser"}:
@@ -509,17 +516,21 @@ def pg_role_hashes(conn, extensions: set[str], login: str, database: str) -> PgR
         out.source = source
         return out
 
-    rows, state, message = _pg_try(conn, _PG_AUTHID_SQL)
-    if rows is not None:
-        return done(rows, "pg_authid")
-    if state != "42501":
+    path = (_pg_try(conn, _PG_HASH_PATH_SQL)[0] or [None])[0]
+    superuser, has_function = (bool(path[0]), bool(path[1])) if path else (False, True)  # unknown: try the function
+    fn_state = "42883"  # not installed, until a call says otherwise
+    if has_function:
+        rows, fn_state, message = _pg_try(conn, _PG_FUNCTION_SQL)
+        if rows is not None:
+            return done(rows, "zs_role_password_types")
+        if fn_state not in ("42501", "42883", "3F000"):
+            out.gap = ("error", f"{PG_HASH_FUNCTION}() failed ({fn_state}): {message}")
+            return out
+    if superuser:
+        rows, state, message = _pg_try(conn, _PG_AUTHID_SQL)
+        if rows is not None:
+            return done(rows, "pg_authid")
         out.gap = ("error", f"reading pg_authid failed ({state}): {message}")
-        return out
-    rows, fn_state, message = _pg_try(conn, _PG_FUNCTION_SQL)
-    if rows is not None:
-        return done(rows, "zs_role_password_types")
-    if fn_state not in ("42501", "42883", "3F000"):
-        out.gap = ("error", f"{PG_HASH_FUNCTION}() failed ({fn_state}): {message}")
         return out
     rds_state = None
     if "rds_tools" in extensions:
@@ -838,9 +849,10 @@ def _login_and_read(ctx: JobContext, target: Target, config: dict, secrets: dict
     if require_tls and not tls:
         return "tls_unavailable", "the server does not offer TLS; the password was not sent", n
     password = _password(ctx, config, secrets)
-    if password and engine in ("mysql", "redis") and not (tls and config.get("ca_pem")):
-        # MySQL full authentication and Redis AUTH hand the password to whatever answers; only a server proven by
-        # the CA certificate may receive it.  (PostgreSQL is held to SCRAM instead; MongoDB uses SCRAM.)
+    if password and engine in ("mysql", "redis", "oracle", "mongodb") and not (tls and config.get("ca_pem")):
+        # MySQL full authentication and Redis AUTH hand the password to whatever answers, an Oracle O5LOGON exchange
+        # with an impostor can be attacked offline, and MongoDB's mechanism is whatever the server offers (#216):
+        # only a server proven by the CA certificate may receive it.  (PostgreSQL is held to SCRAM instead.)
         return "identity_unverified", ("the server's identity cannot be checked without its CA certificate "
                                        "and TLS; the password was not sent"), n
     ca = _CaFile(config.get("ca_pem"))

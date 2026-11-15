@@ -487,7 +487,9 @@ class CbomCollectionJob(SQLModel, table=True):
 class CbomCollectedAsset(SQLModel, table=True):
     """One cryptographic asset a collection job found.  Facts come from the node; impact is ours."""
     __tablename__ = "cbomcollectedasset"
-    __table_args__ = (UniqueConstraint("job_id", "attempt", "asset_key", name="uq_cbomcollectedasset_job_attempt_key"),)
+    __table_args__ = (UniqueConstraint("job_id", "attempt", "asset_key", name="uq_cbomcollectedasset_job_attempt_key"),
+                      # CB-19 PR-3: the run asset list's grade filter and facet (migration cb19grade002)
+                      _SaIndex("ix_cbomcollectedasset_run_qgrade", "run_id", "q_grade"))
     id: int | None = Field(default=None, primary_key=True)
     team_id: int = Field(foreign_key="team.id", index=True)
     run_id: int | None = Field(default=None, foreign_key="cbomcollectionrun.id", index=True)
@@ -509,6 +511,11 @@ class CbomCollectedAsset(SQLModel, table=True):
     finding: str | None = Field(default=None, max_length=512)
     facts: Dict | None = Field(default_factory=dict, sa_column=Column(CbomFactsJSON))
     created_at: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
+    # CB-19 PR-3: the record grade stored at ingest (qgrade.ingest_grades), NULL when it was not stored (a row from
+    # before cb19grade002, a run without a grade-input snapshot, or a run started under another grade model);
+    # q_grade NULL with a q_reason is "no grade" (not_applicable, not_an_item)
+    q_grade: str | None = Field(default=None, max_length=2)
+    q_reason: str | None = Field(default=None, max_length=32)
 
 
 class CbomCollectionSettings(SQLModel, table=True):

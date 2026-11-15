@@ -63,6 +63,9 @@ import {
   ansibleSnippet,
   countHours,
   csvFirstColumn,
+  knownHostsProblem,
+  mergeImportedTargets,
+  windowsPortProblem,
   defaultWindow,
   formatDateTime,
   normalizeGrid,
@@ -842,10 +845,14 @@ function ServerForm({
     if (!form.nodeId) e.nodeId = "Choose the scan node that reaches these servers";
     if (intIn(form.port, 1, 65535) == null) e.port = "Enter a port from 1 to 65535";
     if (!LOGIN_RE.test(form.loginUser.trim())) e.loginUser = "Use up to 64 letters, digits and . _ @ $ \\ -";
-    if (isLinux && form.hostKeyPolicy === "pinned" && !form.knownHosts.trim()) e.knownHosts = "Paste the known_hosts lines to pin, or choose trust on first use";
+    if (isLinux && form.hostKeyPolicy === "pinned") {
+      const problem = knownHostsProblem(form.knownHosts);
+      if (problem) e.knownHosts = problem;
+    }
     if (isLinux && form.credentialType === "password" && form.hostKeyPolicy !== "pinned")
       e.hostKeyPolicy = "Password logins need pinned host keys, so the password only goes to the real servers";
-    if (!isLinux && Number(form.port) === 5985) e.port = "WinRM over HTTP (5985) cannot prove the server; use HTTPS (5986)";
+    const portProblem = isLinux ? null : windowsPortProblem(form.kind, Number(form.port));
+    if (portProblem) e.port = portProblem;
     if (form.credentialType === "vault" && !isAdmin) e.credentialType = "Only a team admin can add or change a vault reference";
     if (form.credentialType === "vault" && !form.vaultPath.trim()) e.vaultPath = "Enter the secret path in your vault";
     if (form.credentialType === "ssh_ca") {
@@ -1044,8 +1051,9 @@ function ServerForm({
                         setErrors((er) => ({ ...er, csv: "No addresses found in the first column of that file" }));
                         return;
                       }
-                      setForm((f) => ({ ...f, targets: [...splitLines(f.targets), ...rows].filter((v, i, all) => all.indexOf(v) === i).join("\n") }));
-                      setErrors((er) => ({ ...er, targets: undefined }));
+                      const merged = mergeImportedTargets(form.targets, rows, MAX_TARGET_LINES);
+                      setForm((f) => ({ ...f, targets: merged.text }));
+                      setErrors((er) => ({ ...er, targets: merged.error ?? undefined }));
                       toast.success(`Imported ${pluralize(rows.length, "line")}`);
                     },
                     "csv",
@@ -1184,7 +1192,16 @@ function ServerForm({
                       data-testid="servers-known-hosts-file"
                       onChange={async (e) => {
                         const input = e.currentTarget;
-                        await readFileInto(input.files?.[0], (text) => set({ knownHosts: text }), "knownHostsFile");
+                        await readFileInto(input.files?.[0], (text) => {
+                          // #149: a private key (or anything that is not known_hosts) is never loaded into the box
+                          const problem = knownHostsProblem(text);
+                          if (problem) {
+                            setErrors((er) => ({ ...er, knownHostsFile: problem }));
+                            return;
+                          }
+                          setErrors((er) => ({ ...er, knownHostsFile: undefined }));
+                          set({ knownHosts: text });
+                        }, "knownHostsFile");
                         input.value = "";
                       }}
                     />

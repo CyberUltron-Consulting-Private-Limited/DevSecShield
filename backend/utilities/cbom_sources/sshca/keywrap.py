@@ -9,6 +9,9 @@
             as associated data.  Only the KMS-encrypted data key, the nonce and the ciphertext are stored.  A team admin
             can only pick a key the deployment listed (no confused deputy over the backend's KMS permissions), and sees
             it only as an opaque label (``kms-<8 hex>``), never the ARN (account id, region, key id).
+            ``CBOM_SSHCA_KMS_REGION_OVERRIDE`` (optional, DR): ``mrk-<id>=<region>`` entries (comma-separated, or
+            ``*=<region>`` for every multi-Region key) send calls for a multi-Region key to its replica in that region;
+            the allow-list and the stored CA rows keep the primary ARN, single-Region keys keep their own region.
 
 KMS client: one per region, ``connect_timeout`` 2 s, ``read_timeout`` 5 s, standard retries, 3 attempts in all.  Errors
 reach the customer as plain text (``WrapError``): a missing grant, a disabled key and the like are configuration
@@ -53,6 +56,9 @@ NEGATIVE_CACHE_S = 10.0  # a failed unwrap is answered from memory this long (no
 FAILURE_KEEP_S = 300.0  # ... and while KMS is asked again within this time, the others get it instead of waiting
 FLIGHT_WAIT_S = 2.0  # the longest a caller waits for another thread's unwrap of the same key
 KMS_ENV = "CBOM_SSHCA_KMS_KEY_ARNS"
+REGION_OVERRIDE_ENV = "CBOM_SSHCA_KMS_REGION_OVERRIDE"
+_REGION = re.compile(r"^[a-z]{2}(-gov|-iso[a-z]?)?-[a-z]+-\d$")
+_MRK = re.compile(r"^mrk-[0-9a-f]{32}$")
 _ARN = re.compile(r"^arn:aws(-cn|-us-gov)?:kms:([a-z]{2}(-gov|-iso[a-z]?)?-[a-z]+-\d):(\d{12}):(key|alias)/[A-Za-z0-9/_+=,.@:-]{1,256}$")
 
 
@@ -103,11 +109,46 @@ def kms_configured() -> bool:
     return bool(allowed_kms_keys())
 
 
-def kms_region(arn: str) -> str:
+def _region_override(key_id: str) -> str | None:
+    """The region ``CBOM_SSHCA_KMS_REGION_OVERRIDE`` names for a multi-Region key id, or None.
+
+    Entries are comma-separated ``mrk-<id>=<region>``; ``*=<region>`` covers every multi-Region key.  A malformed
+    entry is a deployment fault and is refused, so a DR stack never quietly falls back to the primary region."""
+    exact = default = None
+    for part in os.environ.get(REGION_OVERRIDE_ENV, "").split(","):
+        if not part.strip():
+            continue
+        name, sep, region = (x.strip() for x in part.partition("="))
+        if not sep or not _REGION.match(region) or not (name == "*" or _MRK.match(name)):
+            raise WrapError(f"{REGION_OVERRIDE_ENV} must list mrk-<key id>=<region> or *=<region> entries")
+        if name == key_id:
+            exact = region
+        elif name == "*":
+            default = region
+    return exact or default
+
+
+def kms_target(arn: str) -> tuple[str, str]:
+    """(region, KeyId) to call KMS with for a stored key ARN.  A multi-Region key (``key/mrk-...``) named in
+    ``CBOM_SSHCA_KMS_REGION_OVERRIDE`` is called at its replica in that region (same key id, the replica's ARN); any
+    other key, and any alias, keeps its ARN's own region.  The stored ARN, the allow-list and the EncryptionContext
+    stay those of the primary key: replicas share key material, so each decrypts the other's data keys."""
     match = _ARN.match(arn)
     if not match:
         raise WrapError("kms_key_ref is not a KMS key ARN")
-    return match.group(2)
+    region = match.group(2)
+    resource = arn.split(":", 5)[5]
+    kind, _, key_id = resource.partition("/")
+    if kind != "key" or not _MRK.match(key_id):
+        return region, arn
+    replica = _region_override(key_id)
+    if not replica or replica == region:
+        return region, arn
+    return replica, arn.replace(f":kms:{region}:", f":kms:{replica}:", 1)
+
+
+def kms_region(arn: str) -> str:
+    return kms_target(arn)[0]
 
 
 def _context(team_id: int, ca_fingerprint: str) -> dict[str, str]:
@@ -197,8 +238,10 @@ def wrap(private_pem: bytes, *, team_id: int, ca_fingerprint: str, key_wrap: str
             raise WrapError(f"kms_key_ref must be one of the KMS keys this deployment allows ({KMS_ENV})")
         context = _context(team_id, ca_fingerprint)
         try:
-            out = _kms(kms_region(kms_key_ref)).generate_data_key(KeyId=kms_key_ref, KeySpec="AES_256",
-                                                                   EncryptionContext=context)
+            region, key_id = kms_target(kms_key_ref)
+            out = _kms(region).generate_data_key(KeyId=key_id, KeySpec="AES_256", EncryptionContext=context)
+        except WrapError:
+            raise
         except Exception as exc:
             raise _kms_failure(exc, "GenerateDataKey", kms_key_ref) from None
         nonce = secrets.token_bytes(12)
@@ -233,7 +276,8 @@ def unwrap(blob: str, *, team_id: int, ca_fingerprint: str) -> bytes:
             raise WrapError("the wrapped CA key is damaged") from None
         context = _context(team_id, ca_fingerprint)
         try:
-            out = _kms(kms_region(key_ref)).decrypt(CiphertextBlob=edk, KeyId=key_ref, EncryptionContext=context)
+            region, key_id = kms_target(key_ref)
+            out = _kms(region).decrypt(CiphertextBlob=edk, KeyId=key_id, EncryptionContext=context)
         except WrapError:
             raise
         except Exception as exc:
