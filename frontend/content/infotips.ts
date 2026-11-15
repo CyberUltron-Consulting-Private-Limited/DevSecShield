@@ -2472,9 +2472,16 @@ export const INFO_TIPS = {
   // src: frontend/components/cbom/sources/ServersTab.tsx:1115-1132 — trust on first use or pinned known_hosts; a password forces pinning
   "cbsrc.servers.host_key_policy": {
     label: "Host key policy",
-    what: "How the node checks each server's SSH host key before logging in. Trust on first use remembers the key on first contact and refuses and alerts if it changes. Pin fingerprints accepts only the keys you paste. A password credential requires pinned keys.",
+    what: "How the node checks each server's SSH host key before logging in. Trust on first use remembers the key on first contact and refuses and alerts if it changes. Pin fingerprints accepts only the keys you paste. Host certificates accepts a server whose OpenSSH host certificate is signed by a host CA you list. A password credential requires pinned keys or host certificates.",
     why: "The host key check stops a machine impersonating the server from capturing the credential.",
     example: "Pin fingerprints with the output of ssh-keyscan for servers you already trust.",
+  },
+  // src: frontend/components/cbom/sources/ServersTab.tsx:1185-1205, backend/utilities/cbom_sources/kinds.py check_host_ca_keys — host_ca (#59)
+  "cbsrc.servers.host_ca_keys": {
+    label: "Host CA public keys",
+    what: "The public keys of the CAs that sign your servers' OpenSSH host certificates (HostCertificate in sshd_config), one per line as in the CA's .pub file. The node offers only host-certificate key types and accepts a server only with a certificate from one of these CAs that is a host certificate, names the server's host name or address, and is inside its validity period.",
+    why: "One CA key proves every server it certified, without pasting each host key; a spoofed server without such a certificate never receives the login.",
+    example: "One line of the CA's .pub file, such as ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... host-ca@bank.",
   },
   // src: frontend/components/cbom/sources/ServersTab.tsx:1136-1143 — public keys only
   "cbsrc.servers.known_hosts": {

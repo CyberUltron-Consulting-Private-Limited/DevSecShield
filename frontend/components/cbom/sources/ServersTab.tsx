@@ -99,12 +99,15 @@ import {
 } from "./shared";
 import { SOURCE_NEVER_SCAN_HINT } from "./teamNeverScan";
 import { displayHostLines } from "./idnDisplay";
+import { hostCaKeysProblem, hostCaLines } from "./hostCaKeys";
 import { InfoTip } from "@/components/ui/info-tip";
 
 // ---------------------------------------------------------------------------- constants (mirror backend kinds.py / templates.py)
 type ServerKind = "linux_servers" | "windows_servers" | "active_directory";
 type CredType = "node_key" | "ssh_cert" | "vault" | "password" | "ssh_ca";
-type HostKeyPolicy = "tofu" | "pinned";
+type HostKeyPolicy = "tofu" | "pinned" | "host_ca";
+// policies that prove the server before a password goes to it (#59: a host certificate from a listed CA, like a pin)
+const VERIFIED_POLICIES: ReadonlySet<HostKeyPolicy> = new Set(["pinned", "host_ca"]);
 type WindowMode = "network" | "any" | "custom";
 
 interface KindInfo {
@@ -258,6 +261,7 @@ interface FormState {
   loginUser: string;
   hostKeyPolicy: HostKeyPolicy;
   knownHosts: string;
+  hostCaKeys: string;
   caPem: string;
   credentialType: CredType;
   vaultProvider: string;
@@ -291,6 +295,7 @@ function initialForm(source: CbomSource | null, nodes: CbomScanNode[]): FormStat
       loginUser: info.login,
       hostKeyPolicy: "tofu",
       knownHosts: "",
+      hostCaKeys: "",
       caPem: "",
       credentialType: info.defaultCred,
       vaultProvider: "hashicorp",
@@ -320,8 +325,9 @@ function initialForm(source: CbomSource | null, nodes: CbomScanNode[]): FormStat
     nodeId: source.node_id,
     port: String(cfg.port ?? info.port),
     loginUser: String(cfg.login_user ?? info.login),
-    hostKeyPolicy: cfg.host_key_policy === "pinned" ? "pinned" : "tofu",
+    hostKeyPolicy: cfg.host_key_policy === "pinned" || cfg.host_key_policy === "host_ca" ? cfg.host_key_policy : "tofu",
     knownHosts: typeof cfg.known_hosts === "string" ? cfg.known_hosts : "",
+    hostCaKeys: Array.isArray(cfg.host_ca_keys) ? (cfg.host_ca_keys as string[]).join("\n") : "",
     caPem: typeof cfg.ca_pem === "string" ? cfg.ca_pem : "",
     credentialType: cred,
     vaultProvider: cfg.vault?.provider ?? "hashicorp",
@@ -349,6 +355,8 @@ function whereChanged(form: FormState, source: CbomSource | null): boolean {
   const linux = source.kind === "linux_servers";
   const policy = linux ? form.hostKeyPolicy : "tofu";
   const knownHosts = linux && form.hostKeyPolicy === "pinned" ? form.knownHosts.trim() : null;
+  const hostCas = linux && form.hostKeyPolicy === "host_ca" ? hostCaLines(form.hostCaKeys).join("\n") : "";
+  const storedCas = Array.isArray(cfg.host_ca_keys) ? (cfg.host_ca_keys as string[]).join("\n") : "";
   const vault = form.credentialType === "vault" ? `${form.vaultProvider}|${form.vaultPath.trim()}` : null;
   const storedVault = cfg.vault ? `${cfg.vault.provider}|${cfg.vault.path}` : null;
   return (
@@ -359,6 +367,7 @@ function whereChanged(form: FormState, source: CbomSource | null): boolean {
     policy !== (cfg.host_key_policy ?? "tofu") ||
     (!linux && (form.caPem.trim() || null) !== ((typeof cfg.ca_pem === "string" && cfg.ca_pem.trim()) || null)) ||
     (knownHosts || null) !== ((typeof cfg.known_hosts === "string" && cfg.known_hosts.trim()) || null) ||
+    hostCas !== storedCas ||
     vault !== storedVault
   );
 }
@@ -849,8 +858,12 @@ function ServerForm({
       const problem = knownHostsProblem(form.knownHosts);
       if (problem) e.knownHosts = problem;
     }
-    if (isLinux && form.credentialType === "password" && form.hostKeyPolicy !== "pinned")
-      e.hostKeyPolicy = "Password logins need pinned host keys, so the password only goes to the real servers";
+    if (isLinux && form.hostKeyPolicy === "host_ca") {
+      const problem = hostCaKeysProblem(form.hostCaKeys);
+      if (problem) e.hostCaKeys = problem;
+    }
+    if (isLinux && form.credentialType === "password" && !VERIFIED_POLICIES.has(form.hostKeyPolicy))
+      e.hostKeyPolicy = "Password logins need pinned host keys or host certificates, so the password only goes to the real servers";
     const portProblem = isLinux ? null : windowsPortProblem(form.kind, Number(form.port));
     if (portProblem) e.port = portProblem;
     if (form.credentialType === "vault" && !isAdmin) e.credentialType = "Only a team admin can add or change a vault reference";
@@ -907,6 +920,7 @@ function ServerForm({
         login_user: form.loginUser.trim(),
         host_key_policy: isLinux ? form.hostKeyPolicy : "tofu",
         known_hosts: isLinux && form.hostKeyPolicy === "pinned" ? form.knownHosts : null,
+        ...(isLinux && form.hostKeyPolicy === "host_ca" ? { host_ca_keys: hostCaLines(form.hostCaKeys) } : {}),
         ...(isLinux ? {} : { ca_pem: form.caPem.trim() ? form.caPem : null }),
         credential_type: form.credentialType,
         vault: form.credentialType === "vault" ? { provider: form.vaultProvider, path: form.vaultPath.trim() } : null,
@@ -1161,10 +1175,32 @@ function ServerForm({
                         disabled: form.credentialType === "password",
                       },
                       { value: "pinned", title: "Pin fingerprints", description: "Paste or upload a known_hosts file" },
+                      { value: "host_ca", title: "Host certificates", description: "Trust OpenSSH host certificates signed by your host CA" },
                     ]}
                   />
                 </div>
                 {errors.hostKeyPolicy && <p className="text-xs text-red-600 dark:text-red-400">{errors.hostKeyPolicy}</p>}
+                {form.hostKeyPolicy === "host_ca" && (
+                  <Field
+                    infoId="cbsrc.servers.host_ca_keys"
+                    label="Host CA public keys"
+                    htmlFor="servers-host-ca-keys"
+                    required
+                    error={errors.hostCaKeys}
+                    hint="One per line, as in the CA's .pub file. A server is accepted only with a host certificate from one of these CAs that names its host name or address and is in its validity period."
+                  >
+                    <Textarea
+                      id="servers-host-ca-keys"
+                      data-testid="servers-host-ca-keys"
+                      value={form.hostCaKeys}
+                      rows={3}
+                      spellCheck={false}
+                      placeholder="ssh-ed25519 AAAAC3Nza... host-ca@bank"
+                      className="font-mono text-xs min-h-[72px] max-h-48 overflow-y-auto resize-y"
+                      onChange={(e) => set({ hostCaKeys: e.target.value })}
+                    />
+                  </Field>
+                )}
                 {form.hostKeyPolicy === "pinned" && (
                   <Field
                     infoId="cbsrc.servers.known_hosts"
