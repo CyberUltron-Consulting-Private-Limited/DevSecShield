@@ -1,5 +1,5 @@
 // CMDB import dialog logic (#225), kept apart from the dialog so it is tested without a browser.
-import type { CmdbPlanCreate } from "@/utils/api/integrations";
+import type { CmdbPlan, CmdbPlanCreate } from "@/utils/api/integrations";
 import type { CbomScanNode } from "@/utils/backend_api";
 
 /** Segments that more than one agentless scan node serves: the import needs a choice for each (#225). */
@@ -26,3 +26,47 @@ export function createLine(c: CmdbPlanCreate): string {
   const where = c.node_name ? ` on ${c.node_name}${c.segment ? ` (segment ${c.segment})` : ""}` : " on the chosen scan node";
   return what + where;
 }
+
+/** #367: the nodes the import offers: registered agentless nodes only (an agent-mode node collects only its own host;
+ * one that never registered cannot run a job), with how many were left out and why. */
+export function importNodes(nodes: CbomScanNode[]): { usable: CbomScanNode[]; agents: number; waiting: number } {
+  const agentless = nodes.filter((n) => n.mode !== "agent");
+  const usable = agentless.filter((n) => n.status === "online" || n.status === "offline");
+  return { usable, agents: nodes.length - agentless.length, waiting: agentless.length - usable.length };
+}
+
+export function leftOutLine(left: { agents: number; waiting: number }): string | null {
+  const parts = [
+    left.agents ? `${left.agents} host-agent node${left.agents === 1 ? "" : "s"} (they collect only their own host)` : "",
+    left.waiting ? `${left.waiting} node${left.waiting === 1 ? "" : "s"} not registered yet` : "",
+  ].filter(Boolean);
+  return parts.length ? `Not offered: ${parts.join("; ")}.` : null;
+}
+
+/** #367: a picker for each segment the file uses that more than one registered node serves (from the preview). */
+export function segmentPickers(plan: CmdbPlan | null, usable: CbomScanNode[]): { segment: string; rows: number; nodes: CbomScanNode[] }[] {
+  const byId = new Map(usable.map((n) => [n.id, n]));
+  return (plan?.segments ?? [])
+    .filter((s) => s.nodes.length > 1)
+    .map((s) => ({ segment: s.segment, rows: s.rows, nodes: s.nodes.map((n) => byId.get(n.id)).filter((n): n is CbomScanNode => !!n) }))
+    .filter((s) => s.nodes.length > 1);
+}
+
+/** #363: the engines whose logins need the server's CA, and their names. */
+export const CA_ENGINES: { value: string; label: string }[] = [
+  { value: "*", label: "Every engine below without its own" },
+  { value: "mysql", label: "MySQL" },
+  { value: "mssql", label: "SQL Server" },
+  { value: "oracle", label: "Oracle" },
+  { value: "mongodb", label: "MongoDB" },
+  { value: "redis", label: "Redis" },
+];
+
+/** #366: classes that keep the dialog's content inside the dialog at every width. */
+export const DIALOG_LAYOUT = {
+  content: "sm:max-w-3xl max-h-[90vh] overflow-y-auto overflow-x-hidden",
+  body: "space-y-4 min-w-0",
+  // the shared Textarea sizes to its content (field-sizing: content): a long CSV line widened the whole dialog
+  csv: "font-mono text-xs min-h-[140px] max-h-[40vh] [field-sizing:fixed] w-full max-w-full min-w-0 overflow-auto whitespace-pre",
+  text: "min-w-0 break-words [overflow-wrap:anywhere]",
+} as const;

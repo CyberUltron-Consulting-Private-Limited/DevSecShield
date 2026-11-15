@@ -23,7 +23,7 @@ import {
   applyCmdbImport, previewCmdbImport, type CmdbPlan, type CmdbRequest, type CmdbVaultProvider,
 } from "@/utils/api/integrations";
 
-import { createLine, sharedSegments } from "./cmdbLogic";
+import { CA_ENGINES, DIALOG_LAYOUT, createLine, importNodes, leftOutLine, segmentPickers } from "./cmdbLogic";
 
 import { cbomSourcesKeys } from "./keys";
 import { ChoiceCards, Checkbox2, Field, NodeSelect, StatusBadge } from "./shared";
@@ -45,14 +45,15 @@ function fmt(value: unknown): string {
   return value === null || value === undefined || value === "" ? "—" : String(value);
 }
 
-function PlanView({ plan }: { plan: CmdbPlan }) {
+export function PlanView({ plan }: { plan: CmdbPlan }) {
   return (
-    <div className="space-y-3 text-sm" data-testid="cmdb-plan">
+    <div className={`space-y-3 text-sm ${DIALOG_LAYOUT.text}`} data-testid="cmdb-plan">
       <div className="flex flex-wrap gap-2">
         <StatusBadge tone="blue">{plan.rows} rows read</StatusBadge>
         <StatusBadge tone="green">{plan.counts.create} sources to create ({plan.counts.new_targets} targets)</StatusBadge>
         <StatusBadge tone="green">{plan.counts.update} sources to update</StatusBadge>
         <StatusBadge tone="zinc">{plan.unchanged} unchanged</StatusBadge>
+        {(plan.counts.merged ?? 0) > 0 && <StatusBadge tone="blue">{plan.counts.merged} hosts on several rows (merged)</StatusBadge>}
         {plan.counts.conflict > 0 && <StatusBadge tone="amber">{plan.counts.conflict} conflicts</StatusBadge>}
         {plan.counts.skipped > 0 && <StatusBadge tone="red">{plan.counts.skipped} rows skipped</StatusBadge>}
         {(plan.counts.over_limit ?? 0) > 0 && (
@@ -112,8 +113,32 @@ function PlanView({ plan }: { plan: CmdbPlan }) {
           <p className="font-medium mb-1 text-amber-600 dark:text-amber-400">Conflicts (left unchanged) <InfoTip id="cbsrc.cmdb.conflicts" /></p>
           <ul className="space-y-1 text-xs">
             {plan.conflicts.map((c) => (
-              <li key={`${c.source_id}-${c.field}`}>
-                {c.source}: rows disagree on {c.field.replace(/_/g, " ")} ({Object.entries(c.values).map(([v, lines]) => `${v} on line ${lines.join(", ")}`).join("; ")})
+              <li key={`${c.source_id ?? c.host}-${c.field}`}>
+                {c.source ?? `${c.host} (new)`}: rows disagree on {c.field.replace(/_/g, " ")} ({Object.entries(c.values).map(([v, lines]) => `${v} on line ${lines.join(", ")}`).join("; ")})
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {(plan.merged ?? []).length > 0 && (
+        <div data-testid="cmdb-merged">
+          <p className="font-medium mb-1">Rows merged into one source <InfoTip id="cbsrc.cmdb.merged" /></p>
+          <ul className="space-y-1 text-xs max-h-40 overflow-y-auto">
+            {plan.merged!.map((m, i) => (
+              <li key={`${m.label}-${i}`}>
+                <span className="font-medium">{m.label}</span>: lines {m.lines.join(", ")}{m.notes.length ? ` (${m.notes.join("; ")})` : ""}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {(plan.unchanged_items ?? []).length > 0 && (
+        <div data-testid="cmdb-unchanged">
+          <p className="font-medium mb-1">Already up to date <InfoTip id="cbsrc.cmdb.unchanged" /></p>
+          <ul className="space-y-1 text-xs max-h-40 overflow-y-auto">
+            {plan.unchanged_items!.map((u) => (
+              <li key={u.source_id}>
+                <span className="font-medium">{u.source}</span>: {u.lines.length ? `line${u.lines.length === 1 ? "" : "s"} ${u.lines.join(", ")}` : "matched"}, nothing to change
               </li>
             ))}
           </ul>
@@ -144,6 +169,8 @@ export default function CmdbImportDialog({ teamId }: { teamId: number }) {
   const [segmentNodes, setSegmentNodes] = useState<Record<string, number>>({});
   const [vaultProvider, setVaultProvider] = useState<CmdbVaultProvider | null>(null);
   const [winPath, setWinPath] = useState("");
+  const [databaseCa, setDatabaseCa] = useState<Record<string, { pem: string; file: string }>>({});
+  const [caEngine, setCaEngine] = useState("*");
   const [plan, setPlan] = useState<CmdbPlan | null>(null);
   const nodes = useQuery({ queryKey: cbomSourcesKeys.nodes(teamId), queryFn: () => listCbomScanNodes(teamId), enabled: open });
   const request = (digest?: string): CmdbRequest => ({
@@ -151,8 +178,12 @@ export default function CmdbImportDialog({ teamId }: { teamId: number }) {
     segment_nodes: Object.keys(segmentNodes).length ? segmentNodes : undefined,
     vault_provider: vaultProvider,
     windows_vault: vaultProvider && winPath.trim() ? { provider: vaultProvider, path: winPath.trim() } : null,
+    database_ca: Object.keys(databaseCa).length ? Object.fromEntries(Object.entries(databaseCa).map(([k, v]) => [k, v.pem])) : undefined,
   });
-  const shared = sharedSegments(nodes.data?.nodes ?? []);
+  // #367: registered agentless nodes only; segment pickers only for the file's segments that need a choice
+  const offered = importNodes(nodes.data?.nodes ?? []);
+  const leftOut = leftOutLine(offered);
+  const shared = segmentPickers(plan, offered.usable);
   const preview = useMutation({
     mutationFn: () => previewCmdbImport(teamId, request()),
     onSuccess: (r) => setPlan(r.plan),
@@ -180,16 +211,16 @@ export default function CmdbImportDialog({ teamId }: { teamId: number }) {
         Import from CMDB
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className={DIALOG_LAYOUT.content} data-testid="cmdb-dialog">
           <DialogHeader>
-            <DialogTitle>Import sources and metadata from a CMDB <InfoTip id="cbsrc.cmdb.dialog" /></DialogTitle>
-            <DialogDescription>
+            <DialogTitle className={DIALOG_LAYOUT.text}>Import sources and metadata from a CMDB <InfoTip id="cbsrc.cmdb.dialog" /></DialogTitle>
+            <DialogDescription className={DIALOG_LAYOUT.text}>
               Preview first: nothing changes until you confirm. Hosts already in a server source get its owner, application,
               criticality, exposure, data classification and environment updated; running and queued collections are not
               interrupted. A blank cell keeps the stored value. Only team admins can import.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className={DIALOG_LAYOUT.body}>
             <ChoiceCards
               infoId="cbsrc.cmdb.source"
               name="cmdb-source"
@@ -217,7 +248,7 @@ export default function CmdbImportDialog({ teamId }: { teamId: number }) {
                     }} />
                   </label>
                   <Textarea id="cmdb-csv" value={csv} onChange={(e) => { setCsv(e.target.value); reset(); }} placeholder={SAMPLE}
-                            spellCheck={false} className="font-mono text-xs min-h-[140px]" />
+                            spellCheck={false} wrap="off" className={DIALOG_LAYOUT.csv} data-testid="cmdb-csv" />
                 </div>
               </Field>
             )}
@@ -226,13 +257,13 @@ export default function CmdbImportDialog({ teamId }: { teamId: number }) {
             </Checkbox2>
             {createMissing && (
               <Field infoId="cbsrc.cmdb.node" label="Scan node for new sources" htmlFor="cmdb-node"
-                     hint="For rows with no segment or scan_node column. A row's segment picks the scan node of that segment.">
-                <NodeSelect id="cmdb-node" nodes={nodes.data?.nodes ?? []} value={nodeId} onChange={(v) => { setNodeId(v); reset(); }} />
+                     hint={"For rows with no segment or scan_node column. A row's segment picks the scan node of that segment." + (leftOut ? ` ${leftOut}` : "")}>
+                <NodeSelect id="cmdb-node" nodes={offered.usable} value={nodeId} onChange={(v) => { setNodeId(v); reset(); }} />
               </Field>
             )}
-            {createMissing && shared.map(({ segment, nodes: choices }) => (
+            {createMissing && shared.map(({ segment, rows, nodes: choices }) => (
               <Field key={segment} infoId="cbsrc.cmdb.segment_node" label={`Scan node for segment ${segment}`} htmlFor={`cmdb-seg-${segment}`}
-                     hint={`${choices.length} scan nodes serve this segment; rows in it go to the one you choose`}>
+                     hint={`${choices.length} registered scan nodes serve this segment; its ${rows} row${rows === 1 ? "" : "s"} go to the one you choose`}>
                 <NodeSelect id={`cmdb-seg-${segment}`} nodes={choices} value={segmentNodes[segment] ?? null}
                             onChange={(v) => {
                               setSegmentNodes((m) => {
@@ -263,9 +294,50 @@ export default function CmdbImportDialog({ teamId }: { teamId: number }) {
                 </Field>
               </div>
             )}
+            {createMissing && (
+              <div className="space-y-2 min-w-0" data-testid="cmdb-db-ca">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <Field infoId="cbsrc.cmdb.db_ca_engine" label="Database CA certificates" htmlFor="cmdb-ca-engine"
+                         hint="MySQL, SQL Server, Oracle, MongoDB and Redis logins need TLS with the server's CA: give it once here">
+                    <Select value={caEngine} onValueChange={setCaEngine}>
+                      <SelectTrigger id="cmdb-ca-engine" className="w-full cursor-pointer"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {CA_ENGINES.map((e) => <SelectItem key={e.value} value={e.value} className="cursor-pointer">{e.label}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  <Field infoId="cbsrc.cmdb.db_ca_file" label="CA certificate file (PEM)" htmlFor="cmdb-ca-file" hint="A bundle of several CA certificates is fine">
+                    <Input id="cmdb-ca-file" type="file" accept=".pem,.crt,.cer" className="cursor-pointer" data-testid="cmdb-ca-file"
+                           onChange={async (e) => {
+                             const input = e.currentTarget;
+                             const file = input.files?.[0];
+                             if (!file) return;
+                             if (file.size > 64 * 1024) { toast.error("The CA file is larger than 64 KB"); return; }
+                             const pem = await file.text();
+                             setDatabaseCa((m) => ({ ...m, [caEngine]: { pem, file: file.name } }));
+                             input.value = "";
+                             reset();
+                           }} />
+                  </Field>
+                </div>
+                {Object.keys(databaseCa).length > 0 && (
+                  <ul className="text-xs space-y-1" data-testid="cmdb-ca-list">
+                    {Object.entries(databaseCa).map(([engine, v]) => (
+                      <li key={engine} className="flex flex-wrap items-center gap-2 min-w-0">
+                        <span className={DIALOG_LAYOUT.text}>{CA_ENGINES.find((e) => e.value === engine)?.label ?? engine}: {v.file}</span>
+                        <Button type="button" variant="ghost" size="sm" className="cursor-pointer h-6 px-2"
+                                onClick={() => { setDatabaseCa((m) => { const next = { ...m }; delete next[engine]; return next; }); reset(); }}>
+                          Remove
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
             {plan && <PlanView plan={plan} />}
           </div>
-          <DialogFooter className="gap-2">
+          <DialogFooter className="gap-2 flex-wrap">
             <Button variant="outline" className="cursor-pointer" onClick={() => setOpen(false)}>Cancel</Button>
             {!plan ? (
               <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" data-testid="cmdb-preview"

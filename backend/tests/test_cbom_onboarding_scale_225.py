@@ -18,9 +18,16 @@ PREVIEW, APPLY = "/1/cbom/sources/cmdb/preview", "/1/cbom/sources/cmdb/apply"
 WIN_VAULT = {"provider": "hashicorp", "path": "secret/data/cbom/winrm"}
 
 
-def node(api, name: str, segment: str, team: int = 1, who: str = "alice") -> int:  # noqa: F811 (the api fixture, passed in)
+def node(api, name: str, segment: str, team: int = 1, who: str = "alice", enroll: bool = False) -> int:  # noqa: F811
     r = api("POST", f"/{team}/cbom/sources/nodes", who, json={"name": name, "segment": segment})
     assert r.status_code == 201, r.text
+    if enroll:  # a segment can only be mapped to a registered node (#367)
+        import datetime as dt
+
+        e = api("POST", "/cbom/node/enroll", None, json={
+            "registration_token": r.json()["registration_token"], "hostname": name, "version": "1.0",
+            "source_ips": ["10.20.1.15"], "clock": dt.datetime.utcnow().isoformat() + "Z"})
+        assert e.status_code == 200, e.text
     return r.json()["node"]["id"]
 
 
@@ -65,7 +72,7 @@ def test_segment_column_maps_each_row_to_the_scan_node_of_its_segment(api, world
 
 def test_a_segment_with_two_nodes_needs_a_choice_and_scan_node_column_wins(api, world):  # noqa: F811 (pytest fixtures)
     engine, _ = world
-    a, b = node(api, "mum-01", "dc-mumbai"), node(api, "mum-02", "dc-mumbai")
+    a, b = node(api, "mum-01", "dc-mumbai", enroll=True), node(api, "mum-02", "dc-mumbai", enroll=True)
     csv_text = "fqdn,segment,scan_node\nm1.bank.local,dc-mumbai,\nm2.bank.local,dc-mumbai,mum-02\nm3.bank.local,,nope\n"
     plan = api("POST", PREVIEW, json={"csv": csv_text}).json()["plan"]
     reasons = {s["line"]: s["reason"] for s in plan["skipped"]}
