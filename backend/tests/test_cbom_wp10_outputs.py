@@ -160,6 +160,7 @@ def test_a_rule_change_is_re_judged_and_labelled_not_reported_as_drift(api, two_
         lib = s.exec(select(CbomCollectedAsset).where(CbomCollectedAsset.run_id == run1["id"],
                                                       CbomCollectedAsset.asset_type == "crypto_library")).one()
         lib.finding_codes = [*(lib.finding_codes or []), "OLD_RULE"]
+        lib.content_digest = None  # a changed stored row: digest unknown (#352)
         s.add(lib)
         s.commit()
     d = api("GET", f"/1/cbom/sources/runs/{run2['id']}/diff").json()

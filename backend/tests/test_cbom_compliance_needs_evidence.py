@@ -84,6 +84,7 @@ def _seed(engine, ids, name, specs):
                         key=lambda r: r.id)
         for row, (asset_name, _t, _c, facts) in zip(stored, specs):
             row.name, row.facts = asset_name, facts
+            row.content_digest = None  # a changed stored row: digest unknown (#352)
             s.add(row)
         s.commit()
         return run_id, {r.name: r.id for r in stored}
