@@ -20,6 +20,10 @@ export const ARTIFACTS_OF: Record<CbomTransportKind, string[]> = {
   ssm: ["ssm-document", "ssm-role-cfn"],
 };
 
+/** The files that are made from the active zs-collect release (backend artifacts.NEEDS_RELEASE): they answer 400
+ * while none is active, so the UI does not offer them then. */
+export const NEEDS_RELEASE: ReadonlySet<string> = new Set(["ssm-document", "salt-state", "ansible-collection", "zs-collect-manifest"]);
+
 /** The backend's answer to Test for AWX and Salt (POST .../validate is SSM only). */
 export const TEST_ELSEWHERE =
   "Tested through a source that uses it: its control plane is reached from a scan node inside your network, not from ZeroShield.";
