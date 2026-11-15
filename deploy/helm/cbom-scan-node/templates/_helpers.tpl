@@ -60,6 +60,10 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" }}
 - name: ZS_CA_FILE
   value: /etc/zs-node/trust/ca/ca.pem
 {{- end }}
+{{- if .Values.proxyAuthSecret }}
+- name: ZS_PROXY_AUTH_FILE
+  value: /etc/zs-node/trust/proxy/auth
+{{- end }}
 {{- if .Values.trust.clientSecret }}
 - name: ZS_CLIENT_CERT
   value: /etc/zs-node/trust/client/tls.crt
@@ -81,6 +85,11 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" }}
 {{- if .Values.trust.clientSecret }}
 - name: trust-client
   mountPath: /etc/zs-node/trust/client
+  readOnly: true
+{{- end }}
+{{- if .Values.proxyAuthSecret }}
+- name: proxy-auth
+  mountPath: /etc/zs-node/trust/proxy
   readOnly: true
 {{- end }}
 {{- end -}}
@@ -108,6 +117,15 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" }}
         path: tls.crt
       - key: tls.key
         path: tls.key
+{{- end }}
+{{- if .Values.proxyAuthSecret }}
+- name: proxy-auth
+  secret:
+    secretName: {{ .Values.proxyAuthSecret | quote }}
+    defaultMode: 0440
+    items:
+      - key: auth
+        path: auth
 {{- end }}
 {{- end -}}
 

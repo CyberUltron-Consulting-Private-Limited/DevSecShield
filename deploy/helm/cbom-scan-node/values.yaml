@@ -24,6 +24,12 @@ existingSecret: ""
 # Outbound proxy to ZeroShield (targets are always reached directly).
 httpsProxy: ""
 noProxy: ""
+# A proxy that needs a login (#199): a Secret with the key auth holding one line user:password, e.g.
+#   read -rsp 'Proxy password: ' P && printf '%s:%s' svc-zs "$P" > zs-proxy-auth && unset P
+#   kubectl -n zs-cbom create secret generic zs-node-proxy-auth --from-file=auth=zs-proxy-auth && rm -f zs-proxy-auth
+# Mounted read-only for the node's user (ZS_PROXY_AUTH_FILE); the password is never in a value, the env or a log.
+# httpsProxy stays the proxy URL without the login.
+proxyAuthSecret: ""
 
 # Extra environment for the node (for example ZS_VAULT_PATH_PREFIX, VAULT_ADDR, ZS_MAX_JOBS).
 extraEnv: []

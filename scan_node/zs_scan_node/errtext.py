@@ -90,6 +90,9 @@ def api_transport_error(exc: BaseException) -> str:
     verify = tls_verify_problem(exc)
     if verify:
         return f"the ZeroShield API certificate is not trusted ({verify}). {CA_HINT}"
+    if any("407" in str(e) for e in chain(exc)):  # #199: the proxy wants a login
+        return ("the proxy asked for a login (HTTP 407): put user:password in a file and set ZS_PROXY_AUTH_FILE to "
+                "it (the Add scan node wizard's Proxy user)")
     for e in chain(exc):
         if isinstance(e, ssl.SSLError):
             reason = getattr(e, "reason", None) or str(e)
