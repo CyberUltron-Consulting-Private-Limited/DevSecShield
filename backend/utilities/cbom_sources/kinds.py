@@ -223,6 +223,7 @@ class ServersConfig(_Source):
             self.vault = None
         if self.host_key_policy == "pinned" and not (self.known_hosts or "").strip():
             raise ValueError("known_hosts: paste the known_hosts lines to pin, or choose trust on first use")
+        self.known_hosts = check_known_hosts(self.known_hosts)
         if self.window == "custom":
             self.custom_window = check_window_grid(self.custom_window, allow_empty=False)
         else:
@@ -243,9 +244,80 @@ class WindowsServersConfig(ServersConfig):
     def _ca(cls, v: str | None) -> str | None:
         return check_pem_certificates(v)
 
+    @model_validator(mode="after")
+    def _windows_only(self) -> "WindowsServersConfig":
+        """#156: settings of the Linux SSH form that WinRM and LDAPS never use are refused, not stored and ignored."""
+        if self.tier != 1:
+            raise ValueError("tier: Tier 2 is the Linux sudo allowlist; Windows and Active Directory sources are Tier 1")
+        if self.host_key_policy != "tofu":
+            raise ValueError("host_key_policy: SSH host keys do not apply to WinRM or LDAPS; the server is verified by "
+                             "its TLS certificate (ca_pem for an internal CA)")
+        if (self.known_hosts or "").strip():
+            raise ValueError("known_hosts: SSH host keys do not apply to WinRM or LDAPS; leave it empty")
+        self.known_hosts = None
+        return self
+
 
 class ActiveDirectoryConfig(WindowsServersConfig):
     port: int = Field(default=636, ge=1, le=65535)
+
+
+# #156: ports that never carry WinRM over HTTPS (the scan node always speaks HTTPS, so a login sent there would go to a
+# server that is not verified, or nowhere) and ports that are not LDAPS (636, or 3269 for the global catalog)
+WINRM_HTTP_PORTS = frozenset({80, 5985, 8080})
+AD_NOT_LDAPS_PORTS = frozenset({389, 3268, 80, 5985, 5986, 8080})
+
+
+def check_known_hosts(text: str | None) -> str | None:
+    """#149: pinned host keys must be known_hosts lines (as ssh-keyscan prints them): ``[@marker] hosts keytype base64
+    [comment]``, hosts plain (``a,b``, ``[a]:2222``) or hashed (``|1|salt|hash``), the base64 key blob naming the same
+    key type.  Comments and blank lines are kept.  A private key is refused outright (it would be stored in the plain
+    configuration).  Messages give line numbers, never the text."""
+    if text is None or not text.strip():
+        return None
+    import base64
+    import binascii
+    import struct
+
+    if "PRIVATE KEY" in text:
+        raise ValueError("known_hosts: this is a private key, not known_hosts lines; paste the servers' public host keys "
+                         "(ssh-keyscan output) and keep private keys out of ZeroShield")
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    lines = 0
+    for number, raw in enumerate(text.split("\n"), start=1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        fields = line.split()
+        if fields[0] in ("@cert-authority", "@revoked"):
+            fields = fields[1:]
+        problem = None
+        if len(fields) < 3:
+            problem = "expected hosts, key type and key"
+        else:
+            hosts, keytype, blob = fields[0], fields[1], fields[2]
+            if not re.fullmatch(r"[a-z0-9][a-z0-9@._-]{2,63}", keytype):
+                problem = "the key type is not an SSH key type"
+            elif not re.fullmatch(r"[^\s]+", hosts):
+                problem = "the host list is not valid"
+            else:
+                try:
+                    data = base64.b64decode(blob, validate=True)
+                    size = struct.unpack(">I", data[:4])[0]
+                    named = data[4:4 + size].decode("ascii")
+                except (binascii.Error, ValueError, struct.error, UnicodeDecodeError):
+                    named = None
+                if named is None:
+                    problem = "the key is not base64 SSH key data"
+                elif named != keytype:
+                    problem = f"the key is a {named} key but the line says {keytype}"
+        if problem:
+            raise ValueError(f"known_hosts: line {number} is not a known_hosts line ({problem}); paste ssh-keyscan "
+                             "output: host key-type base64-key")
+        lines += 1
+    if not lines:
+        raise ValueError("known_hosts: no host key lines; paste the known_hosts lines to pin")
+    return text
 
 
 def credential_target_problem(kind: str, cfg: Any, secrets: dict[str, str]) -> str | None:
@@ -261,8 +333,15 @@ def credential_target_problem(kind: str, cfg: Any, secrets: dict[str, str]) -> s
             and cfg.host_key_policy != "pinned":
         return ("host_key_policy: appliance passwords need the pinned host key (known_hosts), so the password only "
                 "goes to the real device")
-    if kind == "windows_servers" and cfg.port == 5985:
-        return "port: WinRM over HTTP (5985) would send the login to a server that is not verified; use HTTPS (5986)"
+    if kind == "windows_servers" and cfg.port in WINRM_HTTP_PORTS:
+        return (f"port: {cfg.port} is a plain-HTTP port; WinRM over HTTP would send the login to a server that is not "
+                "verified; use HTTPS (5986)")
+    if kind == "active_directory" and cfg.port in AD_NOT_LDAPS_PORTS:
+        return (f"port: {cfg.port} is not LDAPS; Active Directory is read over LDAPS (636, or 3269 for the global "
+                "catalog) so the login only goes to a verified server")
+    if kind == "linux_servers" and cfg.credential_type == "ssh_cert" and secrets.get("ssh_certificate") \
+            and secrets.get("private_key"):
+        return ssh_pair_problem(secrets["ssh_certificate"], secrets["private_key"])
     if kind == "database" and cfg.engine in ("mysql", "redis", "mssql"):
         uses_password = cfg.credential_type == "vault" or bool(secrets.get("password"))
         if uses_password and not (cfg.require_tls and cfg.ca_pem):
@@ -272,6 +351,48 @@ def credential_target_problem(kind: str, cfg: Any, secrets: dict[str, str]) -> s
                     "the password only goes to the real server")
     if kind == "ca_connector" and cfg.provider == "ejbca" and secrets.get("client_cert") and secrets.get("client_key"):
         return client_pair_problem(secrets["client_cert"], secrets["client_key"])
+    return None
+
+
+def ssh_pair_problem(cert_text: str, key_text: str) -> str | None:
+    """#154: why an OpenSSH user certificate and private key cannot log in together, or None.  The certificate must
+    parse as ``*-cert-v01@openssh.com``, be valid now, and certify the public key of the private key, which must be an
+    unencrypted OpenSSH or PEM private key.  Checked at save; messages never echo the secret text."""
+    import datetime as _dt
+
+    from cryptography.exceptions import UnsupportedAlgorithm
+    from cryptography.hazmat.primitives import serialization
+
+    try:
+        cert = serialization.load_ssh_public_identity(cert_text.strip().encode())
+    except (ValueError, UnsupportedAlgorithm):
+        return ("secrets.ssh_certificate: the certificate could not be read; paste the OpenSSH certificate "
+                "(id_ed25519-cert.pub: ssh-ed25519-cert-v01@openssh.com ...)")
+    if not isinstance(cert, serialization.SSHCertificate):
+        return ("secrets.ssh_certificate: this is a public key, not an SSH certificate; paste the -cert.pub file "
+                "the SSH CA issued")
+    data = key_text.strip().encode()
+    try:
+        key = (serialization.load_ssh_private_key(data, password=None) if b"OPENSSH PRIVATE KEY" in data
+               else serialization.load_pem_private_key(data, password=None))
+    except TypeError:
+        return "secrets.private_key: the private key could not be read: it is encrypted; paste it without a passphrase"
+    except (ValueError, UnsupportedAlgorithm):
+        return "secrets.private_key: the private key could not be read; paste the unencrypted OpenSSH or PEM private key"
+    ssh = serialization.Encoding.OpenSSH, serialization.PublicFormat.OpenSSH
+    try:
+        mine = key.public_key().public_bytes(*ssh)
+        theirs = cert.public_key().public_bytes(*ssh)
+    except (ValueError, UnsupportedAlgorithm, AttributeError):
+        return "secrets.private_key: the key type cannot be used for an SSH login"
+    if mine != theirs:
+        return ("secrets.private_key: the private key does not belong to the SSH certificate; paste the key the "
+                "certificate was issued for")
+    now = int(_dt.datetime.now(_dt.timezone.utc).timestamp())
+    if cert.valid_before <= now:
+        return "secrets.ssh_certificate: the SSH certificate has expired; ask your SSH CA for a new one"
+    if cert.valid_after > now:
+        return "secrets.ssh_certificate: the SSH certificate is not valid yet"
     return None
 
 
@@ -752,6 +873,8 @@ class ApplianceConfig(_Source):
         elif self.host_key_policy == "pinned" and not (self.known_hosts or "").strip():
             raise ValueError("known_hosts: paste the appliance's known_hosts line (ssh-keyscan) so the password only "
                              "goes to the real device")
+        else:
+            self.known_hosts = check_known_hosts(self.known_hosts)
         return self
 
 
