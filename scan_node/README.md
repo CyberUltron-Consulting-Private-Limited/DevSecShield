@@ -287,11 +287,23 @@ sockets or HTTP clients any other way, so new collectors must use it.
   Kubernetes API host) is skipped as `skipped_never_scan` when the name is listed or when ANY address it resolves to
   is listed, so a dual-stack host listed by its IPv4 address is not scanned over IPv6 and the other way round. The
   outcome, and in a connection test the sample, names the address and the entry that matched.
-- *An IP address target* is checked as itself.
-- *CIDR and `a-b` target ranges* are checked address by address: the listed addresses inside a range are skipped
-  (one outcome each) and the rest are scanned. A range carries no names, so when one address of a dual-stack host is
-  listed by address and its other address lies inside a scanned range, that other address is scanned unless it is
-  listed too (listing the host by name covers both).
+- *One name is one host, for the whole job* (#17): every name a job resolves (server targets, registry, token
+  service and redirect hosts, database redirects, and in a network range job the team's SNI hostnames, which are
+  resolved before the first address is swept) ties its addresses together. When the name is listed, or one of its
+  addresses is, all of its addresses are left out wherever else the job meets them: as an IP target, inside a CIDR
+  or `a-b` range, in a range sweep, as another name of the same host. The outcome says why ("fd00::5 is an address
+  of db.internal, which also resolves to 10.0.0.5, on the never-scan list"). Names are resolved before any target
+  is checked, so the order of the lines does not matter, and the ties follow the list while the job runs (an
+  address listed by a heartbeat ties its name's other addresses at once; taken off, it frees them). One hop only:
+  a second name that shares a tied address is skipped itself, but its own other addresses are not tied by that.
+- *An IP address target* is checked as itself, and as an address of any name the job resolved (above).
+- *CIDR and `a-b` target ranges* are checked address by address: the listed addresses inside a range, and the
+  addresses tied to a never-scan host by a name the job resolved, are skipped (one outcome each) and the rest are
+  scanned. The limit: a range carries no names, and the node does no reverse (PTR) lookups (a PTR record is set by
+  whoever owns the address block and proves nothing about which host answers). So when a dual-stack host is listed
+  by one address and no name the job resolves answers both, its other address inside a scanned range cannot be
+  recognised and is scanned. List such a host by name (which covers every address it resolves to, in every job) or
+  list both addresses.
 - *Never scanned, whatever the list says:* `0.0.0.0/8` and `::`, which reach the node itself (DNS sinkholes answer
   `0.0.0.0`), also in their IPv4-mapped and NAT64 forms. A registry that sends the node to one of them (token
   service, redirect) is refused as an error, not reported as a never-scan skip.

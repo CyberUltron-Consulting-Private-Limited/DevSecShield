@@ -25,7 +25,7 @@ export function VaultNodeSettings({
   const unavailable = unavailableProblem(provider);
   if (unavailable) {
     return (
-      <p className={`text-xs text-amber-700 dark:text-amber-400 ${className}`} role="status" data-testid={testId}>
+      <p className={`text-xs text-amber-700 dark:text-amber-400 min-w-0 break-words ${className}`} role="status" data-testid={testId}>
         {unavailable}.
       </p>
     );
@@ -33,7 +33,7 @@ export function VaultNodeSettings({
   const settings = NODE_SETTINGS[provider as keyof typeof NODE_SETTINGS] ?? [];
   const problem = nodeVaultProblem(node, provider, path);
   return (
-    <div className={`text-xs text-zinc-600 dark:text-zinc-400 space-y-1 ${className}`} data-testid={testId}>
+    <div className={`text-xs text-zinc-600 dark:text-zinc-400 space-y-1 min-w-0 break-words ${className}`} data-testid={testId}>
       <p>On the scan node, for {vaultLabel(provider)}, its operator sets:</p>
       <ul className="list-disc pl-5 space-y-0.5">
         {settings.map((s) => (
