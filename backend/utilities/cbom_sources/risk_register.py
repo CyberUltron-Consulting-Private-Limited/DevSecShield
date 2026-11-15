@@ -52,6 +52,7 @@ CSV_COLUMNS = ("item_key", "q_grade", "q_label", "q_reason", "label", "asset_typ
                "source_name", "application", "presence", "sources", "last_run_id", "last_observed_at",
                "model_version", "owners", "data_classification")
 _RT = CbomRiskRegister.__table__
+USE_DIGESTS = True  # #352: narrow a write's keys with the content digests (False: every key, the reference path)
 
 
 # ----------------------------------------------------------------------------- the team's inputs now
@@ -309,16 +310,81 @@ def refresh(session: Session, team_id: int, keys: Iterable[str], now: _dt.dateti
 # ----------------------------------------------------------------------------- the estate hook and the re-grade
 def apply_write(session: Session, write: Any) -> Refresh:
     """The run's keys (present observations of the sources it wrote, assets whose presence changed, keys that moved)
-    graded where their digest changed, rows of keys that left the store deleted."""
+    graded where their digest changed, rows of keys that left the store deleted. Only the keys whose grade inputs
+    may have changed are read (``write_keys``, #352); every other one would compute the digest it has."""
+    inputs = team_inputs(session, write.team_id)
+    keys = write_keys(session, write, inputs)
+    out = refresh(session, write.team_id, keys, write.at, run_id=write.run_id, inputs=inputs)
+    mark_through(session, write)
+    if out.written or out.deleted:
+        log("risk register written", team=write.team_id, run=write.run_id, **out.counts())
+    return out
+
+
+def all_write_keys(session: Session, write: Any) -> set[str]:
+    """Every key ``apply_write`` would grade without the content digests (the path before #352; the tests' reference)."""
     from backend.utilities.cbom_sources import estate as E
 
     keys = set(E.present_keys(session, write.team_id, write.source_refs)) | set(write.changed)
     keys |= {new for _old, new, _ref in write.rekeyed} | {old for old, _new, _ref in write.rekeyed}
-    keys |= set(write.removed_keys)
-    out = refresh(session, write.team_id, keys, write.at, run_id=write.run_id)
-    if out.written or out.deleted:
-        log("risk register written", team=write.team_id, run=write.run_id, **out.counts())
-    return out
+    return keys | set(write.removed_keys)
+
+
+def write_keys(session: Session, write: Any, inputs: TeamInputs) -> set[str]:
+    """The keys of ``all_write_keys`` whose grade digest may have changed (#352). A key is left out only when none of
+    its observations changed: the store did not touch them in this write (``state_run_id``), and each one of a source
+    this write re-read has the same content digest in the new job as in the job the register last graded that source
+    from (``register_through``, which must be the job the source pointed at before this write). Every key is kept
+    (the path before #352) while any register row was graded with another model or other inputs, or a live asset has
+    no register row: the write grades those keys, as it did."""
+    from backend.utilities.cbom_sources import agility_store as AS
+    from backend.utilities.cbom_sources import estate as E
+
+    team_id, run_id = write.team_id, int(write.run_id)
+    model = _grade_model()
+    if not USE_DIGESTS or any(session.execute(sa.select(_RT.c.id).where(cond).limit(1)).first() is not None
+           for cond in _other_model(team_id, model) + _other_inputs(team_id, model, inputs.digest)) \
+            or missing_count(session, team_id) > 0:
+        return all_write_keys(session, write)
+    _EO, _ES = E._EO, E._ES
+    keys = set(write.changed) | {k for _o, new, _r in write.rekeyed for k in (_o, new)} | set(write.removed_keys)
+    refs = list(write.source_refs or ())
+    touched = set(session.execute(sa.select(_EO.c.asset_key).where(
+        _EO.c.team_id == team_id, _EO.c.state_run_id == run_id).distinct()).scalars())
+    for chunk in _chunks(sorted(touched - keys)):  # touched keys among the ones the write grades
+        keys |= set(session.execute(sa.select(_EO.c.asset_key).where(
+            _EO.c.team_id == team_id, _EO.c.asset_key.in_(list(chunk)), _EO.c.presence == "present",
+            _EO.c.source_ref.in_(refs)).distinct()).scalars()) if refs else set()
+    previous = getattr(write, "previous", None) or {}
+    for r in session.execute(sa.select(_ES.c.source_ref, _ES.c.latest_job_id, _ES.c.latest_attempt,
+                                       _ES.c.register_through_job_id, _ES.c.register_through_attempt).where(
+            _ES.c.team_id == team_id, _ES.c.source_ref.in_(refs))).all() if refs else []:
+        latest = (int(r.latest_job_id), int(r.latest_attempt or 1))
+        through = (int(r.register_through_job_id), int(r.register_through_attempt)) \
+            if r.register_through_job_id is not None and r.register_through_attempt is not None else None
+        present = (_EO.c.team_id == team_id, _EO.c.source_ref == r.source_ref, _EO.c.presence == "present")
+        if through is None or through != previous.get(r.source_ref):
+            keys |= set(E.present_keys(session, team_id, [r.source_ref]))  # not known: every key, as before
+        elif through != latest:
+            keys |= set(session.execute(sa.select(_EO.c.asset_key).where(
+                *present, AS.changed_condition(session, write, latest, through))).scalars())
+    return keys
+
+
+def mark_through(session: Session, write: Any) -> None:
+    """The register's grades of the sources ``write`` re-read now follow their latest job (#352)."""
+    from backend.utilities.cbom_sources import estate as E
+
+    if write.source_refs:
+        session.execute(sa.update(E._ES).where(E._ES.c.team_id == write.team_id,
+                                               E._ES.c.source_ref.in_(list(write.source_refs))).values(
+            register_through_job_id=E._ES.c.latest_job_id, register_through_attempt=E._ES.c.latest_attempt))
+
+
+def _grade_model() -> str:
+    from backend.utilities.cbom_sources import qgrade as QG
+
+    return QG.GRADE_MODEL_VERSION
 
 
 def _ordered_keys(session: Session, conds: list[Any], limit: int) -> list[str]:
