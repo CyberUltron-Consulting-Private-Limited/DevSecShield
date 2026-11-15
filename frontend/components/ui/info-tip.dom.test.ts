@@ -3,7 +3,9 @@
  * real Radix tooltip: focus reached with Tab opens and Escape closes, a programmatic focus does not (a dialog that
  * focuses an (i) first opens with the tip closed and closes on the first Esc); the trigger is named "About <label>" and
  * always described (aria-describedby) by the tip's text, open or not; a tap opens, a second tap and a tap outside close; a mouse click
- * keeps an open tip open; the label stays outside the <label>, so it is not part of the input's name.
+ * keeps an open tip open; the label stays outside the <label>, so it is not part of the input's name. The text is
+ * loaded per area (issue #145): the button is named at once, the text follows; a tip opened before its area arrives
+ * shows the label and "Loading…" and then the text, and a failed load is retried on the next open.
  * Layout (no tip clipped at the viewport edges) needs a real browser: e2e/infotip.e2e.mjs.
  * Run: npx --yes tsx components/ui/info-tip.dom.test.ts
  */
@@ -45,7 +47,8 @@ async function main() {
   const { createRoot } = await import("react-dom/client");
   const { InfoTip, FieldLabel } = await import("./info-tip");
   const { Dialog, DialogContent, DialogDescription, DialogTitle } = await import("./dialog");
-  const { INFO_TIPS } = await import("../../content/infotips");
+  const { INFO_TIPS } = await import("../../content/infotips/all");
+  const { setTipAreaLoaderForTests, tipAreaState } = await import("../../content/infotips/load");
 
   const doc = dom.window.document;
   const container = doc.createElement("div");
@@ -68,6 +71,11 @@ async function main() {
       ),
     );
   });
+  // the areas of the rendered tips load on mount (scan, cbsrc-common), not the others
+  await act(async () => new Promise((r) => setTimeout(r, 20)));
+  assert.equal(tipAreaState("scan")?.status, "ready", "the area of a rendered tip is loaded");
+  assert.equal(tipAreaState("cbsrc-common")?.status, "ready");
+  assert.equal(tipAreaState("fleet"), undefined, "an area no rendered tip belongs to is never loaded");
 
   const trigger = () => doc.querySelector(`[data-infotip="${id}"]`) as HTMLButtonElement;
   const tooltip = () => doc.querySelector('[role="tooltip"]');
@@ -242,6 +250,60 @@ async function main() {
   assert.ok(doc.querySelector('[data-infotip="scan.new.title"]'), "the label's tip is rendered beside it");
 
   await act(async () => root.unmount());
+
+  // issue #145: the area's import resolves after the tip opened. The button is named at once, the open tip shows the
+  // label and "Loading…", then the text (and the screen reader's description) when the import resolves.
+  {
+    let release: () => void = () => {};
+    const { default: fleetText } = await import("../../content/infotips/text/fleet");
+    setTipAreaLoaderForTests("fleet", () => new Promise((r) => { release = () => r({ default: fleetText }); }));
+    const slowId = "fleet.pol.col.matches" as const;
+    const slowBox = doc.createElement("div");
+    doc.body.appendChild(slowBox);
+    const slowRoot = createRoot(slowBox);
+    await act(async () => slowRoot.render(React.createElement(InfoTip, { id: slowId })));
+    await settle();
+    const slow = doc.querySelector(`[data-infotip="${slowId}"]`) as HTMLButtonElement;
+    assert.equal(slow.getAttribute("aria-label"), `About ${INFO_TIPS[slowId].label}`, "named before the text arrives");
+    assert.equal(tipAreaState("fleet")?.status, "loading");
+    const slowDesc = () => doc.getElementById(slow.getAttribute("aria-describedby") ?? "");
+    assert.equal(slowDesc()?.textContent, "", "no description text yet");
+    await press(slow, "touch");
+    assert.ok(slow.getAttribute("data-state")?.endsWith("open"), "a tap opens the tip while its text is loading");
+    assert.ok(tooltip()?.textContent?.includes(INFO_TIPS[slowId].label), "the open tip shows the label");
+    assert.ok(tooltip()?.textContent?.includes("Loading…"), "…and Loading");
+    await act(async () => release());
+    await settle();
+    assert.ok(slow.getAttribute("data-state")?.endsWith("open"), "still open when the text arrives");
+    assert.ok(tooltip()?.textContent?.includes(INFO_TIPS[slowId].what), "the open tip now shows the text");
+    assert.ok(!tooltip()?.textContent?.includes("Loading…"), "and no Loading line");
+    assert.ok(slowDesc()?.textContent?.includes(INFO_TIPS[slowId].what), "the description has the text");
+    assert.ok(slowDesc()?.textContent?.includes(`Example: ${INFO_TIPS[slowId].example}`));
+    await key("Escape");
+    assert.equal(tooltip(), null, "Escape closes it");
+    await act(async () => slowRoot.unmount());
+
+    // a failed load (chunk not fetched) says so, and opening the tip again retries
+    let fail = true;
+    let calls = 0;
+    setTipAreaLoaderForTests("fleet", () => {
+      calls++;
+      return fail ? Promise.reject(new Error("ChunkLoadError")) : Promise.resolve({ default: fleetText });
+    });
+    const failRoot = createRoot(slowBox);
+    await act(async () => failRoot.render(React.createElement(InfoTip, { id: slowId })));
+    await settle();
+    assert.equal(tipAreaState("fleet")?.status, "error");
+    const again = doc.querySelector(`[data-infotip="${slowId}"]`) as HTMLButtonElement;
+    fail = false;
+    await press(again, "touch");
+    await settle();
+    assert.equal(calls, 2, "opening the tip loads the area again");
+    assert.ok(tooltip()?.textContent?.includes(INFO_TIPS[slowId].what), "and shows the text once it loads");
+    await key("Escape");
+    await act(async () => failRoot.unmount());
+    setTipAreaLoaderForTests("fleet", null);
+  }
 
   // a Radix Dialog whose first focusable element is an (i) (staging QA: the run finding dialog): it focuses that button
   // when it opens; the tip stays closed and the first Esc closes the dialog, opened by mouse or by keyboard
