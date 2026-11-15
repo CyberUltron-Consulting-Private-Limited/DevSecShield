@@ -15,10 +15,11 @@ import hashlib
 import json
 import os
 import secrets
+import time
 from typing import Any
 
 from fastapi import HTTPException
-from sqlalchemy import and_, case, delete, func, or_, text, update
+from sqlalchemy import Boolean, Integer, and_, bindparam, case, delete, func, or_, text, update
 from sqlalchemy.orm import aliased
 from sqlalchemy.orm.attributes import set_committed_value
 from sqlmodel import Session, select
@@ -113,9 +114,9 @@ def refund_job(session: Session, job: CbomCollectionJob, run: CbomCollectionRun 
     a cancel racing the node's result, or the reaper racing a cancel can each try, but only the transaction whose row
     went in marks the job.  No money moves here (F1.1, DA C2): a job end used to UPDATE the run row and then the team
     row inside its own transaction, so every failed job of a large run queued on those two rows.  The job row records
-    the amount (``refunded_c``) and ``refund_due``; ``settle_refunds`` moves the money in one pass per run right after
-    this transaction commits (``settle_after_commit``; a run row another settler holds is skipped, never waited on),
-    and the reaper settles whatever is left within one pass.  ``refunded`` is set exactly once, by settlement."""
+    the amount (``refunded_c``) and ``refund_due``; ``run_closers`` moves the money right after this transaction
+    commits (``settle_after_commit``), under the run row it takes without waiting, and the reaper settles whatever
+    is left within one pass.  ``refunded`` is set exactly once, by settlement."""
     if job.refunded or job.weight_c <= 0 or job.refund_due:
         return 0
     amount = job.weight_c if amount is None else max(0, min(int(amount), job.weight_c))
@@ -141,17 +142,10 @@ def refund_job(session: Session, job: CbomCollectionJob, run: CbomCollectionRun 
     return amount
 
 
-def _settle_one(session: Session, run_id: int | None, team_id: int | None,
-                skip_locked: bool = False) -> tuple[int, int, int | None]:
+def _settle_one(session: Session, run_id: int | None, team_id: int | None) -> tuple[int, int, int | None]:
     """Settle the refund-due jobs of one run (or, ``run_id`` None, a team's jobs that belong to no run).  Returns
-    (centi-credits, jobs, team to credit or None when nothing is to be credited).  ``skip_locked``: on PostgreSQL,
-    leave a run whose row another transaction holds to the next pass instead of waiting for it."""
+    (centi-credits, jobs, team to credit or None when nothing is to be credited)."""
     J_, R_ = CbomCollectionJob.__table__, CbomCollectionRun.__table__
-    postgres = session.get_bind().dialect.name == "postgresql"
-    if run_id is not None and postgres and skip_locked:
-        if session.exec(select(R_.c.id).where(R_.c.id == run_id)  # type: ignore[call-overload]
-                        .with_for_update(skip_locked=True)).first() is None:
-            return 0, 0, None
     cond = [J_.c.refund_due == True, J_.c.refunded == False]  # noqa: E712
     cond += [J_.c.run_id == run_id] if run_id is not None else [J_.c.run_id.is_(None), J_.c.team_id == team_id]
     rows = [(int(i), int(c or 0)) for i, c in session.exec(  # type: ignore[call-overload]
@@ -177,8 +171,7 @@ def _settle_one(session: Session, run_id: int | None, team_id: int | None,
     return amount, jobs, team
 
 
-def settle_refunds(session: Session, run_ids: Any = None, *, team_ids: Any = None,
-                   skip_locked: bool = False) -> dict[str, int]:
+def settle_refunds(session: Session, run_ids: Any = None, *, team_ids: Any = None) -> dict[str, int]:
     """Move the money for every refund-due job: per run, one UPDATE flags its jobs refunded exactly once and one raises
     the run's ``credits_refunded_c`` by their owed sum (``refunded_c``) under the charged guard; then one UPDATE per
     team.  Lock order: jobs, runs by id, then teams by id.  ``run_ids`` None = every run with a refund due (the partial
@@ -197,7 +190,7 @@ def settle_refunds(session: Session, run_ids: Any = None, *, team_ids: Any = Non
     credit: dict[int, int] = {}
     total_jobs = total = 0
     for run_id in runs:
-        amount, jobs, team = _settle_one(session, run_id, None, skip_locked)
+        amount, jobs, team = _settle_one(session, run_id, None)
         total_jobs += jobs
         if team is not None and amount > 0:
             credit[team] = credit.get(team, 0) + amount
@@ -332,7 +325,7 @@ def _final_status(session: Session, run_id: int) -> str:
     return "partial"
 
 
-def close_run(session: Session, run_id: int | None, now: _dt.datetime) -> str | None:
+def close_run(session: Session, run_id: int | None, now: _dt.datetime, *, locked: bool = False) -> str | None:
     """Close the run when none of its jobs is open: one indexed EXISTS probe, then (only then) the run row taken with
     SKIP LOCKED, the final status and a guarded ``UPDATE ... WHERE status IN ('queued','running')``.  Returns the
     status written, or None (still open, closed or being closed by another closer, or gone).  The caller commits."""
@@ -341,7 +334,7 @@ def close_run(session: Session, run_id: int | None, now: _dt.datetime) -> str | 
     # Several job ends can commit the last open jobs at once and all see none open: the first to take the run row
     # closes it, the others leave it (SKIP LOCKED), so no closer ever waits on another.  A run row held by anything
     # else at that instant (a refund settlement) is closed by the reaper's reconcile_runs within one pass.
-    if session.get_bind().dialect.name == "postgresql":
+    if not locked and session.get_bind().dialect.name == "postgresql":
         free = session.exec(select(CbomCollectionRun.id).where(
             CbomCollectionRun.id == run_id, CbomCollectionRun.status.in_(("queued", "running")))  # type: ignore[attr-defined]
             .with_for_update(skip_locked=True)).first()
@@ -370,9 +363,31 @@ def _emit(lines: list[tuple[str, dict[str, Any]]]) -> None:
         log(message, **fields)
 
 
+RUN_ROW_TRIES = 4  # SKIP LOCKED attempts on a run row another closer or settler holds, 20-60 ms apart
+
+
+def _take_run_row(session: Session, run_id: int) -> bool:
+    """Lock the run row for this transaction without ever waiting on a lock: ``FOR UPDATE SKIP LOCKED``, retried a
+    few times a few tens of ms apart while another closer or settler holds it (their transactions are two short
+    UPDATEs).  False: still held, or the run is gone; the reaper's pass then closes and settles it."""
+    if session.get_bind().dialect.name != "postgresql":
+        return True
+    for attempt in range(RUN_ROW_TRIES):
+        if session.exec(select(CbomCollectionRun.id).where(CbomCollectionRun.id == run_id)
+                        .with_for_update(skip_locked=True)).first() is not None:
+            return True
+        if attempt + 1 < RUN_ROW_TRIES:
+            time.sleep(0.02 * (attempt + 1))
+    return False
+
+
 def run_closers(session: Session, now: _dt.datetime | None = None) -> list[tuple[int, str]]:
-    """After a commit: close the runs this session's job ends touched, settle the runs a user cancel or a node
-    deletion asked for, write the deferred log lines; commits.  Returns [(run id, status)] for the runs closed."""
+    """After a commit: for each run this session's job ends touched, or a refund, user cancel or node deletion asked
+    to settle, take the run row (``_take_run_row``: never a lock wait), close the run when none of its jobs is open,
+    settle its refund-due jobs, and commit, one run at a time.  Closing and settling in the same step under the same
+    row lock means a closer that finds the row held never leaves the run open: the holder settles and closes it, or
+    the closer gets the row a moment later.  Then the run-less refunds of ``settle_teams``, and the deferred log
+    lines.  Returns [(run id, status)] for the runs closed."""
     session.info.pop(_DEFER, None)
     runs = session.info.pop(_RUNS, None) or set()
     settle = set(session.info.pop(_SETTLE, None) or set())
@@ -383,14 +398,19 @@ def run_closers(session: Session, now: _dt.datetime | None = None) -> list[tuple
         return []
     now = now or _dt.datetime.utcnow()
     closed: list[tuple[int, str]] = []
-    for run_id in sorted(runs):
-        status = close_run(session, run_id, now)
+    for run_id in sorted(set(runs) | settle):
+        if run_id not in settle and _run_open(session, run_id):
+            continue  # nothing to close yet and no money to move: the run row is not even read (DA C1)
+        if not _take_run_row(session, run_id):
+            log("run closer skipped: the run row stays held (the reaper closes and settles it)", run=run_id)
+            continue
+        status = close_run(session, run_id, now, locked=True)
         if status is not None:
             closed.append((run_id, status))
-            settle.add(run_id)  # a run that ended is settled at once: its refunds are final now
-    if settle or settle_teams:
-        # a run row another settler or closer holds is left to the reaper's pass (never waited on: DA C2)
-        settle_refunds(session, settle, team_ids=settle_teams, skip_locked=True)
+        settle_refunds(session, [run_id])  # the row is ours: no other settler moves this run's money now
+        session.commit()
+    if settle_teams:
+        settle_refunds(session, [], team_ids=settle_teams)
     session.info.pop(_AFTER, None)
     session.commit()
     _emit(session.info.pop(_AFTER, None) or [])
@@ -992,16 +1012,12 @@ def _local_slot(settings: CbomCollectionSettings, now: _dt.datetime) -> tuple[in
     return local.weekday(), local.hour
 
 
-def _runnable(query, node: CbomScanNode, settings: CbomCollectionSettings, now: _dt.datetime):
-    """The one runnable predicate the claim page query and the heartbeat hint share (DA D1): the job's scan window is
-    open now (a connection test ignores it; a server source may say ``any`` or carry its own grid; everything else
-    follows the team grid, evaluated once here for the team's weekday and hour), network jobs only while network
-    scanning runs, and only kinds whose required capability this node has.  Rows this rules out are never read
-    FOR UPDATE.  ``jobs.window_allows`` / ``_job_window`` are the Python twins (a parity test holds them together)."""
+def _runnable_where(query, *, weekday: int, hour: int, team_open: Any, stop_network: bool, kinds: Any,
+                    credentials: Any):
+    """The runnable predicate's SQL (``_runnable``) for one team grid slot and one node capability set.
+    ``team_open``: the team grid's answer for this slot, a Python bool or a bound parameter."""
     S = CbomCollectionSource
     query = query.outerjoin(S, S.id == CbomCollectionJob.source_id)
-    weekday, hour = _local_slot(settings, now)
-    team_open = window_allows(settings.scan_window, settings.window_timezone, now)
     server = S.kind.in_(_SERVER_KINDS)  # type: ignore[attr-defined]
     win = S.config["window"].as_string()  # type: ignore[index]
     cell = S.config[("custom_window", weekday, hour)].as_boolean()  # type: ignore[index]
@@ -1011,14 +1027,52 @@ def _runnable(query, node: CbomScanNode, settings: CbomCollectionSettings, now: 
         (and_(server, win == "custom"), func.coalesce(cell, True)),
         else_=team_open)
     conds = [window_ok == True]  # noqa: E712
-    if settings.stop_all_network:
+    if stop_network:
         conds += [CbomCollectionJob.kind != "discovery", func.coalesce(S.kind, "") != "network_range"]
-    kinds, credentials = CAPS.excluded_for(node)
     if kinds:
-        conds.append(func.coalesce(S.kind, "").not_in(kinds))
+        conds.append(func.coalesce(S.kind, "").not_in(list(kinds)))
     if credentials:
-        conds.append(func.coalesce(S.config["credential_type"].as_string(), "").not_in(credentials))  # type: ignore[index]
+        conds.append(func.coalesce(S.config["credential_type"].as_string(), "").not_in(list(credentials)))  # type: ignore[index]
     return query.where(*conds)
+
+
+def _runnable(query, node: CbomScanNode, settings: CbomCollectionSettings, now: _dt.datetime):
+    """The one runnable predicate the claim page query and the heartbeat hint share (DA D1): the job's scan window is
+    open now (a connection test ignores it; a server source may say ``any`` or carry its own grid; everything else
+    follows the team grid, evaluated once here for the team's weekday and hour), network jobs only while network
+    scanning runs, and only kinds whose required capability this node has.  Rows this rules out are never read
+    FOR UPDATE.  ``jobs.window_allows`` / ``_job_window`` are the Python twins (a parity test holds them together)."""
+    weekday, hour = _local_slot(settings, now)
+    kinds, credentials = CAPS.excluded_for(node)
+    return _runnable_where(query, weekday=weekday, hour=hour,
+                           team_open=window_allows(settings.scan_window, settings.window_timezone, now),
+                           stop_network=bool(settings.stop_all_network), kinds=kinds, credentials=credentials)
+
+
+_COUNT_STMTS: dict[tuple, Any] = {}
+_COUNT_STMTS_MAX = 2048  # (segment, stop, kinds, credentials, weekday, hour): a few hundred in practice
+
+
+def _count_statement(segment: bool, stop_network: bool, kinds: tuple, credentials: tuple, weekday: int, hour: int):
+    """``claimable_count``'s bounded count for one shape, built ONCE and reused with bound values (``zs_team``,
+    ``zs_node`` / ``zs_segment``, ``zs_open``, ``zs_cap``): building the runnable predicate and its cache key on every
+    heartbeat was over half of an idle heartbeat's CPU (B1 bench profile)."""
+    shape = (segment, stop_network, kinds, credentials, weekday, hour)
+    stmt = _COUNT_STMTS.get(shape)
+    if stmt is not None:
+        return stmt
+    J_ = CbomCollectionJob
+    inner = select(J_.id).where(J_.team_id == bindparam("zs_team"), J_.status == "pending")
+    if segment:
+        inner = inner.where(J_.node_id.is_(None), J_.node_segment == bindparam("zs_segment"))  # type: ignore[union-attr]
+    else:
+        inner = inner.where(J_.node_id == bindparam("zs_node"))
+    inner = _runnable_where(inner, weekday=weekday, hour=hour, team_open=bindparam("zs_open", type_=Boolean),
+                            stop_network=stop_network, kinds=kinds, credentials=credentials)
+    stmt = select(func.count()).select_from(inner.limit(bindparam("zs_cap", type_=Integer)).subquery())
+    if len(_COUNT_STMTS) >= _COUNT_STMTS_MAX:
+        _COUNT_STMTS.clear()
+    return _COUNT_STMTS.setdefault(shape, stmt)
 
 
 def _pending_for_node(session: Session, node: CbomScanNode, settings: CbomCollectionSettings, now: _dt.datetime):
@@ -1050,13 +1104,17 @@ def claimable_count(session: Session, node: CbomScanNode, settings: CbomCollecti
     if settings is None:
         settings = get_or_create_settings(session, node.team_id, commit=False)
     now = now or _dt.datetime.utcnow()
+    weekday, hour = _local_slot(settings, now)
+    kinds, credentials = CAPS.excluded_for(node)
+    params = {"zs_team": node.team_id, "zs_node": node.id, "zs_segment": node.segment,
+              "zs_open": bool(window_allows(settings.scan_window, settings.window_timezone, now))}
     total = 0
     for segment in _segments_of(node):
         if total >= cap:
             break
-        inner = _runnable(_pending_query(node, segment), node, settings, now) \
-            .with_only_columns(CbomCollectionJob.id).limit(cap - total).subquery()
-        total += int(session.exec(select(func.count()).select_from(inner)).one())
+        stmt = _count_statement(segment, bool(settings.stop_all_network), tuple(kinds), tuple(credentials),
+                                weekday, hour)
+        total += int(session.exec(stmt, params={**params, "zs_cap": cap - total}).one())  # type: ignore[call-overload]
     return min(total, cap)
 
 
@@ -1086,6 +1144,7 @@ def node_max_concurrency() -> int:
 
 
 _CAPPED_KINDS = ("collect", "discovery")
+_NODE_CLAIM_LOCK_NS = 0x5A4E  # pg_advisory_xact_lock(namespace, node_id): one claim at a time per node (CB-14 cap)
 
 
 def _node_busy(node_id: int):
@@ -1104,13 +1163,17 @@ def claim_next(session: Session, node: CbomScanNode, settings: CbomCollectionSet
     connection test ignores the window).  A segment job is taken with a guarded UPDATE that also sets ``node_id`` to
     this node, so two nodes of the segment can never both claim it.  A node holding ``node_max_concurrency()``
     collections and discoveries gets only connection tests until one ends (CB-14); two claim requests of one node at
-    once are serialised by a lock on its own row (PostgreSQL; one row per node, so 10,000 nodes never share a lock) and
-    the cap is re-checked inside the claiming UPDATE (exact on SQLite).  Lease expiry of dead nodes' jobs is the
+    once are serialised by an advisory lock on its id (PostgreSQL; one per node, so 10,000 nodes never share a lock, and
+    never the node row a heartbeat writes) and the cap is re-checked inside the claiming UPDATE (exact on SQLite).  Lease expiry of dead nodes' jobs is the
     reaper's; a pending job past its TTL is expired here instead of run.  ``last_claim_at`` is stamped by the caller as
     the claim's last statement (C4)."""
     cap = node_max_concurrency()
     if session.get_bind().dialect.name == "postgresql":
-        session.exec(select(CbomScanNode.id).where(CbomScanNode.id == node.id).with_for_update())
+        # two claims of one node are serialised by a transaction-scoped advisory lock on the node id, not by the node
+        # row: a heartbeat of the same node updates that row (replay window, last seen) and must never wait while a
+        # claim plugin mints a certificate (S-10)
+        session.exec(text("SELECT pg_advisory_xact_lock(:ns, :node)").bindparams(  # type: ignore[call-overload]
+            ns=_NODE_CLAIM_LOCK_NS, node=int(node.id or 0)))
     full = session.exec(select(_node_busy(node.id))).one() >= cap
     for job in _pending_for_node(session, node, settings, now):
         ttl = COLLECT_JOB_TTL if job.kind in CLOUD_KINDS else TEST_JOB_TTL
@@ -1159,8 +1222,10 @@ def claim_next(session: Session, node: CbomScanNode, settings: CbomCollectionSet
             values["node_id"] = node.id
         changed = session.exec(update(CbomCollectionJob).where(*guard).values(**values)).rowcount
         if not changed:
-            if job.kind in _CAPPED_KINDS:
-                full = True  # another claim of this node filled it meanwhile
+            # lost: another claim took this job (SQLite has no SKIP LOCKED), or one of this node filled its slots
+            # meanwhile; only the second ends the search for collections
+            if job.kind in _CAPPED_KINDS and session.exec(select(_node_busy(node.id))).one() >= cap:
+                full = True
             continue
         session.refresh(job)
         _start_attempt(session, job, now)

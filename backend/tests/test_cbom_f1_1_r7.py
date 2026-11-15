@@ -577,8 +577,8 @@ def test_c1_the_last_jobs_ending_together_close_the_run_exactly_once(monkeypatch
     wins: list[int] = []
     wins_lock = threading.Lock()
 
-    def counted(session, run_id, now):
-        out = real(session, run_id, now)
+    def counted(session, run_id, now, **kwargs):
+        out = real(session, run_id, now, **kwargs)
         if out is not None:
             with wins_lock:
                 wins.append(run_id)
@@ -659,8 +659,8 @@ def test_c2_eight_concurrent_settlers_refund_each_job_exactly_once():
     _node_id, run_id, jobs = _pg_fleet(engine, 100, weight=20)
     with Session(engine) as s:
         s.exec(update(CbomCollectionJob).where(CbomCollectionJob.run_id == run_id)
-               .values(status="failure", refund_due=True, lease_id=None))
-        s.commit()
+               .values(status="failure", refund_due=True, refunded_c=CbomCollectionJob.weight_c, lease_id=None))
+        s.commit()  # refund_job records the amount owed in refunded_c (CB-14) with refund_due
         before = s.get(Team, 1).credit_balance
     barrier = threading.Barrier(8)
     errors: list[BaseException] = []

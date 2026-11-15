@@ -66,7 +66,7 @@ from typing import Any
 from urllib.parse import unquote
 
 from fastapi import HTTPException, Request
-from sqlalchemy import BigInteger, Integer, and_, case, cast, delete, literal, or_, update
+from sqlalchemy import BigInteger, Integer, and_, bindparam, case, cast, delete, literal, or_, update
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
@@ -255,16 +255,21 @@ def window_accepts(hwm: int, bits: int, seq: int) -> tuple[bool, int, int]:
     return True, hwm, bits | (1 << k)
 
 
-def _record_seq(session: Session, node_id: int, seq: int, touch: dict[str, Any] | None,
-                key_b64: str | None = None, token_hash: str | None = None) -> bool:
-    """Check and advance the node's anti-replay window in ONE conditional UPDATE (plus ``touch``, e.g. last-seen
-    columns, in the same statement).  True = accepted and COMMITTED (the sequence stays consumed even if the work
-    after it fails); False = refused and ROLLED BACK, so a refused request changes nothing (S2).  The window is bound
-    to the credential: ``key_b64`` / ``token_hash`` must still be the node's (a Reset or a new enrollment in between
-    refuses the request).  The shift amounts are clamped to 0..62 inside the expressions so no branch PostgreSQL
-    evaluates early can overflow."""
+_SEQ_STMTS: dict[tuple, Any] = {}
+_SEQ_STMTS_LOCK = threading.Lock()
+
+
+def _seq_statement(touch: tuple[str, ...], with_key: bool, with_token: bool):
+    """The window UPDATE for one shape of call, built ONCE and reused with bound values: building this expression
+    and its cache key on every request was about a third of a heartbeat's CPU (B1 bench profile).  Values bound:
+    ``zs_seq``, ``zs_node``, ``zs_key``, ``zs_token`` and ``zs_t_<column>`` for each ``touch`` column.  The shift
+    amounts are clamped to 0..62 inside the expressions so no branch PostgreSQL evaluates early can overflow."""
+    shape = (touch, with_key, with_token)
+    stmt = _SEQ_STMTS.get(shape)
+    if stmt is not None:
+        return stmt
     hwm, bits = CbomScanNode.replay_hwm, CbomScanNode.replay_bits
-    s = literal(seq, BigInteger)
+    s = bindparam("zs_seq", type_=BigInteger)
     ahead = s - hwm   # > 0: a new highest sequence
     behind = hwm - s  # >= 0: inside or below the window
 
@@ -278,16 +283,34 @@ def _record_seq(session: Session, node_id: int, seq: int, touch: dict[str, Any] 
         else_=bits.op("|")(one.op("<<")(clamp(behind))),
     )
     fresh = or_(ahead > 0, and_(behind < REPLAY_WINDOW, bits.op("&")(one.op("<<")(clamp(behind))) == 0))
-    bound = [CbomScanNode.id == node_id, fresh]
+    bound = [CbomScanNode.id == bindparam("zs_node"), fresh]
+    if with_key:
+        bound.append(CbomScanNode.signing_public_key == bindparam("zs_key"))
+    if with_token:
+        bound.append(CbomScanNode.node_token_hash == bindparam("zs_token"))
+    values: dict[str, Any] = {"replay_hwm": case((ahead > 0, s), else_=hwm), "replay_bits": new_bits}
+    values.update({name: bindparam(f"zs_t_{name}") for name in touch})
+    stmt = update(CbomScanNode).where(*bound).values(**values).execution_options(synchronize_session=False)
+    with _SEQ_STMTS_LOCK:
+        return _SEQ_STMTS.setdefault(shape, stmt)
+
+
+def _record_seq(session: Session, node_id: int, seq: int, touch: dict[str, Any] | None,
+                key_b64: str | None = None, token_hash: str | None = None) -> bool:
+    """Check and advance the node's anti-replay window in ONE conditional UPDATE (plus ``touch``, e.g. last-seen
+    columns, in the same statement).  True = accepted and COMMITTED (the sequence stays consumed even if the work
+    after it fails); False = refused and ROLLED BACK, so a refused request changes nothing (S2).  The window is bound
+    to the credential: ``key_b64`` / ``token_hash`` must still be the node's (a Reset or a new enrollment in between
+    refuses the request)."""
+    touch = touch or {}
+    names = tuple(sorted(touch))
+    params: dict[str, Any] = {"zs_seq": int(seq), "zs_node": node_id, **{f"zs_t_{k}": touch[k] for k in names}}
     if key_b64 is not None:
-        bound.append(CbomScanNode.signing_public_key == key_b64)
+        params["zs_key"] = key_b64
     if token_hash is not None:
-        bound.append(CbomScanNode.node_token_hash == token_hash)
-    changed = session.exec(  # type: ignore[call-overload]
-        update(CbomScanNode).where(*bound)
-        .values(replay_hwm=case((ahead > 0, s), else_=hwm), replay_bits=new_bits, **(touch or {}))
-        .execution_options(synchronize_session=False)
-    ).rowcount
+        params["zs_token"] = token_hash
+    stmt = _seq_statement(names, key_b64 is not None, token_hash is not None)
+    changed = session.exec(stmt, params=params).rowcount  # type: ignore[call-overload]
     if changed != 1:
         session.rollback()
         return False

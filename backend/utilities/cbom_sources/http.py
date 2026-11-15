@@ -21,6 +21,7 @@ from pydantic import ValidationError
 from sqlalchemy import update
 from sqlalchemy.orm.attributes import set_committed_value
 from sqlmodel import Session, select
+from starlette.requests import ClientDisconnect
 from starlette.responses import JSONResponse, Response
 
 from backend.get_db import get_db
@@ -238,11 +239,17 @@ async def read_capped_body(request: Request, limit: int) -> bytes:
         raise HTTPException(status_code=413, detail=f"Body larger than {limit // 1024} KB")
     total = 0
     chunks: list[bytes] = []
-    async for chunk in request.stream():
-        total += len(chunk)
-        if total > limit:
-            raise HTTPException(status_code=413, detail=f"Body larger than {limit // 1024} KB")
-        chunks.append(chunk)
+    try:
+        async for chunk in request.stream():
+            total += len(chunk)
+            if total > limit:
+                raise HTTPException(status_code=413, detail=f"Body larger than {limit // 1024} KB")
+            chunks.append(chunk)
+    except ClientDisconnect:
+        # the client gave up before its body arrived (an overloaded server: B1 bench, 3,286 of these): nobody reads
+        # the answer, so end the request without the traceback Starlette would log for each one (that logging is
+        # CPU an overloaded worker does not have)
+        raise HTTPException(status_code=400, detail="The client disconnected before its request body arrived") from None
     return b"".join(chunks)
 
 

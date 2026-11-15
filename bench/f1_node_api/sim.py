@@ -596,10 +596,17 @@ class Sim:
         body = {"include": {"servers": True, "kubernetes": False, "databases": False, "cloud": False,
                             "network": False}, "client_request_id": "bench-" + uuid.uuid4().hex[:16], "soc_ack": True}
         t = time.perf_counter()
-        async with self.client.http.post(self.client.api + f"/{team}/cbom/sources/runs", json=body,
-                                         headers={"Authorization": f"Bearer {self.user_tokens[team]}"},
-                                         timeout=aiohttp.ClientTimeout(total=900)) as r:
-            data = await r.json(content_type=None)
+        for attempt in range(5):  # the API may be saturated by the fleet: a connect timeout is retried, not fatal
+            try:
+                async with self.client.http.post(self.client.api + f"/{team}/cbom/sources/runs", json=body,
+                                                 headers={"Authorization": f"Bearer {self.user_tokens[team]}"},
+                                                 timeout=aiohttp.ClientTimeout(total=900)) as r:
+                    data = await r.json(content_type=None)
+                break
+            except (aiohttp.ClientError, asyncio.TimeoutError):
+                if attempt == 4:
+                    raise
+                await asyncio.sleep(5)
         if r.status not in (200, 201):
             raise SystemExit(f"run not created: HTTP {r.status} {json.dumps(data)[:300]}")
         return {"run_id": data["run"]["id"], "team": team, "create_ms": round((time.perf_counter() - t) * 1000, 1),
