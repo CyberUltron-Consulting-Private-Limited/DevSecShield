@@ -76,6 +76,8 @@ class FakeScmState:
     rate_limit: int = 5000
     rate_window_s: float = 3600.0
     secondary_every: int = 0
+    secondary_retry_after: bool = True  # False: a secondary limit answered with no Retry-After (GitHub does this)
+    token_bodies: list[Any] = field(default_factory=list)  # the JSON body of every installation-token request
     fail_requests: set[int] = field(default_factory=set)
     latency_s: float = 0.0
     # observed
@@ -165,18 +167,22 @@ class _Handler(BaseHTTPRequestHandler):
             return None
         if st.secondary_every and number % st.secondary_every == 0:
             status = 403 if flavour == "github" else 429
-            self._send(status, {"message": "You have exceeded a secondary rate limit"}, {**headers, "Retry-After": "1"})
+            extra = {"Retry-After": "1"} if st.secondary_retry_after else {}
+            self._send(status, {"message": "You have exceeded a secondary rate limit"}, {**headers, **extra})
             return None
         return headers
 
     # ------------------------------------------------------------------ routing
     def do_POST(self) -> None:  # noqa: N802
+        length = int(self.headers.get("Content-Length") or 0)
+        raw = self.rfile.read(length) if length else b""  # always read, so a refused request leaves no bytes behind
         parts = urlsplit(self.path)
         segs = [s for s in parts.path.split("/") if s]
         if len(segs) == 4 and segs[0] == "app" and segs[1] == "installations" and segs[3] == "access_tokens":
             headers = self._guard("github")
             if headers is None:
                 return
+            self.state.token_bodies.append(json.loads(raw) if raw else None)
             inst = self.state.github_installations.get(int(segs[2]))
             if not inst or not self._verify_app_jwt(self._token(), str(inst["app_id"])):
                 return self._send(401, {"message": "A JSON web token could not be decoded"}, headers)

@@ -231,6 +231,33 @@ def test_secondary_limits_and_5xx_are_retried(fake):
     assert fake.state.responses[403] >= 1 and fake.state.responses[502] == 1
 
 
+def test_app_installation_tokens_are_asked_for_read_only_contents_and_metadata(fake):
+    pem, public = rsa_keypair()
+    fake.state.github_app_keys["4242"] = public
+    fake.state.github_installations[99] = {"app_id": 4242, "repos": make_repos("bank", 3)}
+    prov = build_provider("github", "github_app", fake.url, "installation", "bank",
+                          {"app_id": "4242", "installation_id": 99}, {"private_key": pem}, max_wait_s=30)
+    prov.clone_token()
+    # least privilege whatever the App was granted: the token travels in every scan message and clone
+    assert fake.state.token_bodies == [{"permissions": {"contents": "read", "metadata": "read"}}]
+
+
+def test_a_secondary_limit_without_retry_after_is_rate_limiting_not_a_refused_credential(fake, monkeypatch):
+    from backend.utilities.scm.providers import base
+
+    fake.state.github_orgs["acme"] = make_repos("acme", 250)
+    fake.state.secondary_every, fake.state.secondary_retry_after = 2, False
+    monkeypatch.setattr(base, "SECONDARY_WAIT_S", 0.05)
+    prov = gh_token(fake)
+    assert len(list(prov.iter_repos())) == 250  # waited and retried
+    assert prov.stats["waits"] >= 1 and fake.state.responses[403] >= 1
+    monkeypatch.setattr(base, "SECONDARY_WAIT_S", 60.0)  # GitHub's one minute, above this sync's wait budget
+    short = build_provider("github", "token", fake.url, "org", "acme", {}, {"token": TOKEN}, max_wait_s=5)
+    with pytest.raises(ScmError) as err:
+        list(short.iter_repos())
+    assert err.value.kind == "rate_limited" and err.value.reset_at is not None  # a partial sync, not "auth"
+
+
 def test_rate_limit_longer_than_the_cap_stops_as_rate_limited(fake):
     fake.state.github_orgs["acme"] = make_repos("acme", 300)
     fake.state.rate_limit, fake.state.rate_window_s = 2, 120

@@ -34,6 +34,7 @@ READ_TIMEOUT = 30.0
 MAX_BODY = 20 * 1024 * 1024
 RETRIES_5XX = 4
 RETRIES_LIMIT = 8
+SECONDARY_WAIT_S = 60.0  # a secondary rate limit without Retry-After (GitHub: wait at least one minute)
 DEFAULT_MAX_WAIT_S = 300.0
 
 
@@ -161,6 +162,10 @@ class HttpClient:
             if self._reset_epoch:
                 return max(1.0, self._reset_epoch - time.time() + 0.25)
             return 60.0
+        # GitHub's secondary (abuse) limit can come without Retry-After and with calls left in the primary budget:
+        # it is a rate limit, not a refused credential. GitHub says to wait at least one minute before retrying.
+        if b"rate limit" in response.content[:2048].lower():
+            return SECONDARY_WAIT_S + random.uniform(0, 1)
         return None
 
     # ---------------------------------------------------------------- requests

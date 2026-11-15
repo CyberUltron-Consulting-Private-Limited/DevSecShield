@@ -73,7 +73,7 @@ class Sim:
         self.tick = 0
         self.sent = 0
 
-    def launcher(self, engine, scan_type, scan_id, team_id, payload):
+    def launcher(self, engine, scan_type, scan_id, team_id, payload, *, task_id=None):
         self.finish_at[scan_id] = self.tick + self.rng.randint(3, 12)
         self.sent += 1
         with Session(engine) as s:
