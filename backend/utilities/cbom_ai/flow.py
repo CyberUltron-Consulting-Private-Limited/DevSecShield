@@ -1306,6 +1306,29 @@ class Flow:
                 return args[d], [args[i] for i in srcs if i < len(args)]
         return None
 
+    def _iv_only_in_mode(self, n: N, ivs: list[N]) -> bool:
+        """The IV values of this call are arguments of an approved mode constructor (``modes.GCM(nonce)``),
+        including when that constructor is nested in ``Cipher(algorithm, mode)``. A nonce passed anywhere else
+        is still a write."""
+        modes = {"GCM", "CCM", "CTR", "OFB", "CFB", "XTS"}
+        name, _, _ = self.callee(n)
+        if name in modes:
+            return True
+        if name != "Cipher" or not ivs:
+            return False
+
+        def under_mode(node: N) -> bool:
+            cur = node
+            while cur is not None and cur is not n:
+                if cur.kind in ("call", "new"):
+                    called, _, _ = self.callee(cur)
+                    if called in modes:
+                        return True
+                cur = cur.parent
+            return False
+
+        return all(under_mode(e) for e in ivs)
+
     def key_writes(self) -> list[str]:
         """The sink-side rule, independent of the alias / view machinery. KEY-class data (key material, key-derived
         values, a cipher that absorbed a key, environment secrets) appears in a write-into operation (a copy,
@@ -1368,7 +1391,9 @@ class Flow:
                 if not self.envelope(n):
                     note(n, "nonce / IV concatenated with something other than AEAD ciphertext")
             elif ivs and (name in _FORMATS or not conversion and len(ops) > 1):
-                note(n, "nonce / IV written into another value")
+                # modes.GCM(nonce) inside Cipher(...) is the nonce's parameter, not a copy into another buffer.
+                if not self._iv_only_in_mode(n, ivs):
+                    note(n, "nonce / IV written into another value")
         for t, v, op, bn in self.binds:  # index / slice stores and in-place operators
             if v is None or t is None:
                 continue
