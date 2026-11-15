@@ -7,6 +7,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 
+import { tipTextSource } from "../../content/infotipSources";
+
 const here = path.dirname(new URL(import.meta.url).pathname);
 const backend = fs.readFileSync(path.join(here, "../../../backend/utilities/integrations/servicenow.py"), "utf8");
 const tuple = /CMDB_EXTRA_FIELDS = \(([^)]*)\)/.exec(backend);
@@ -15,7 +17,7 @@ const extra = Array.from(tuple[1].matchAll(/"([a-z_]+)"/g)).map((m) => m[1]);
 assert.ok(extra.length >= 12);
 
 const page = fs.readFileSync(path.join(here, "IntegrationsPage.tsx"), "utf8");
-const tips = fs.readFileSync(path.join(here, "../../content/infotips.ts"), "utf8");
+const tips = tipTextSource();
 for (const key of extra) {
   assert.match(page, new RegExp(`infoId: "int\\.sn\\.cmdb_${key}", key: "cmdb_mapping\\.${key}"`), `no form field for ${key}`);
   assert.match(tips, new RegExp(`"int\\.sn\\.cmdb_${key}": \\{`), `no (i) tip for ${key}`);

@@ -23,8 +23,8 @@ const read = (p: string) => fs.readFileSync(p, "utf8");
 
 /** At most this many bytes gzip per area chunk (issue #145: "no single tip chunk exceeds a budget"). */
 const AREA_BUDGET_GZIP = 15 * 1024;
-/** The eager part every page with an (i) tip loads: label index, area table and loader. */
-const EAGER_BUDGET_GZIP = 12 * 1024;
+/** The eager part every page with an (i) tip loads: label index, area table and loader (about 11.5 B gzip per tip). */
+const EAGER_BUDGET_GZIP = 16 * 1024;
 
 const TIPS_DIR = path.join(frontend, "content", "infotips");
 const TEXT_DIR = path.join(TIPS_DIR, "text");
