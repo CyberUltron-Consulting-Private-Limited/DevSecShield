@@ -58,7 +58,8 @@ class _Strict(BaseModel):
 
 class CaCreate(_Strict):
     name: str = Field(min_length=1, max_length=64)
-    provider: Literal["builtin", "vault"] = "builtin"
+    provider: Literal["builtin", "vault", "node"] = "builtin"
+    public_key: str | None = Field(default=None, max_length=8192)  # node (#61): the CA key on the scan node
     key_alg: Literal["ed25519", "ecdsa-p256"] = "ed25519"
     key_wrap: Literal["fernet", "aws_kms"] | None = None
     kms_key: str | None = Field(default=None, max_length=2048)  # a label from kms_keys (or, for operators, the ARN)

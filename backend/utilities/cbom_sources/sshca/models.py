@@ -27,7 +27,7 @@ from sqlmodel import JSON, Column, DateTime, Field, SQLModel
 
 from backend.new_models import CbomScanNode, _cbom_utcnow
 
-PROVIDERS = ("builtin", "vault")
+PROVIDERS = ("builtin", "vault", "node")  # node (#61): the key is the customer's, on its scan node
 KEY_ALGS = ("ed25519", "ecdsa-p256")
 KEY_WRAPS = ("fernet", "aws_kms")
 STATES = ("next", "active", "retired", "revoked")
@@ -51,7 +51,7 @@ class CbomSshCa(SQLModel, table=True):
     owner_user_id: int
     updated_by_user_id: int | None = Field(default=None)
     name: str = Field(max_length=64)
-    provider: str = Field(default="builtin", max_length=16)  # builtin | vault
+    provider: str = Field(default="builtin", max_length=16)  # builtin | vault | node (#61: public key only)
     key_alg: str = Field(default="ed25519", max_length=16)  # ed25519 | ecdsa-p256 (vault: what its key is)
     public_key: str = Field(sa_type=Text)  # the CA's OpenSSH public key line (TrustedUserCAKeys)
     fingerprint: str = Field(max_length=64)  # SHA256:<base64> of the public key blob
@@ -101,7 +101,7 @@ class CbomSshCertIssued(SQLModel, table=True):
     node_id: int | None = Field(default=None)
     job_id: int | None = Field(default=None)
     source_id: int | None = Field(default=None)
-    via: str = Field(default="claim", max_length=16)  # claim | refresh
+    via: str = Field(default="claim", max_length=16)  # claim | refresh | node_grant | node_signed (#61)
     issued_at: datetime.datetime = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
     revoked_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
     revoked_reason: str | None = Field(default=None, max_length=512)
