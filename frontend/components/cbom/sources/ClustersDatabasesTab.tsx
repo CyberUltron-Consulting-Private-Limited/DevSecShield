@@ -32,7 +32,6 @@ import ContainerImagesSection from "./ContainerImagesSection";
 import { cbomSourcesKeys, TERMINAL_JOB } from "./keys";
 import { MetadataFields, metadataConfig, metadataFrom, type SourceMetadata } from "./SourceMetadata";
 import { ago, pluralize, readTextFile } from "./logic";
-import { contextProblem, kubeconfigSettingProblem, kubeconfigSummary } from "./kubeconfigSummary";
 import {
   Checkbox2,
   ChoiceCards,
@@ -54,6 +53,7 @@ import {
   usePolledJob,
 } from "./shared";
 import { InfoTip } from "@/components/ui/info-tip";
+import { contextProblem, kubeconfigSettingProblem, kubeconfigSummary } from "./kubeconfigSummary";
 
 // ---------------------------------------------------------------------------- constants (mirror backend kinds.py / templates.py)
 type Engine = "postgres" | "mysql" | "mssql" | "oracle" | "mongodb" | "redis";
