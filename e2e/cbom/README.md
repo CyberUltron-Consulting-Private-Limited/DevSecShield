@@ -38,7 +38,14 @@ python3 -m harness.negative <run>        # the 47 wrong CBOMs on a copy of <run>
 python3 -m harness.ledger pin <run> --write   # re-pin every row's identities from <run> (after a live run only)
 python3 tools/mutants.py                 # mutation score of tests/ (every mutant must be killed)
 node --test flow/command.test.mjs
+python3 -m harness.tier_v plan --root <dir> --sha <40-hex>   # CB-36: an empty Tier V run directory
+python3 -m harness.tier_v judge <run>                        # judge recorded replica evidence; exit 1 on any miss
+python3 -m harness.tier_s plan --root <dir> --sha <40-hex>   # CB-37: an empty Tier S acceptance directory
+python3 -m harness.tier_s accept <run> --date YYYY-MM-DD     # preflight + UF steps; writes the sign-off
 ```
+
+Tier V and Tier S do not launch a sandbox, a browser, or a deploy. They judge evidence a release run has already
+recorded. A missing file is NOT-RUN and does not pass.
 
 ## Verdicts and the ledger
 
