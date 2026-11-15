@@ -25,6 +25,7 @@ GROUPS = ("servers", "kubernetes", "databases", "cloud", "identity", "network")
 
 VaultProvider = Literal["hashicorp", "cyberark", "aws_secrets_manager", "azure_key_vault"]
 _HOST_RE = re.compile(r"^[A-Za-z0-9._:-]{1,253}$")
+MAX_HOST_CAS = 20  # host CAs per Linux source (#59; scan_node hostcert.MAX_HOST_CAS)
 _LOGIN_RE = re.compile(r"^[A-Za-z0-9._@$\\-]{1,64}$")
 _UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 _AWS_ROLE_RE = re.compile(r"^arn:aws(-cn|-us-gov)?:iam::(\d{12}):role/[A-Za-z0-9+=,.@_/-]{1,512}$")
@@ -171,8 +172,11 @@ class ServersConfig(_Source):
     exclusions: list[str] = Field(default_factory=list, max_length=2000)
     port: int = Field(default=22, ge=1, le=65535)
     login_user: str = Field(default="zs-cbom", max_length=64)
-    host_key_policy: Literal["tofu", "pinned"] = "tofu"
+    host_key_policy: Literal["tofu", "pinned", "host_ca"] = "tofu"
     known_hosts: str | None = Field(default=None, max_length=MAX_SECRET_BYTES)
+    # host_key_policy "host_ca" (#59): the public keys of the CAs whose OpenSSH host certificates prove the servers.
+    # Omitted from the dump for every other policy, so existing sources keep their connection version.
+    host_ca_keys: list[str] = Field(default_factory=list, max_length=MAX_HOST_CAS + 1)
     credential_type: Literal["node_key", "ssh_cert", "vault", "password", "ssh_ca"] = "node_key"
     vault: VaultRef | None = None
     tier: Literal[1, 2] = 1
@@ -199,6 +203,8 @@ class ServersConfig(_Source):
         if isinstance(data, dict) and self.credential_type != "ssh_ca":
             for name in ("ssh_ca_id", "ssh_principals", "ssh_source_addresses"):
                 data.pop(name, None)
+        if isinstance(data, dict) and self.host_key_policy != "host_ca":
+            data.pop("host_ca_keys", None)
         return data
 
     @model_validator(mode="after")
@@ -232,6 +238,10 @@ class ServersConfig(_Source):
         if self.host_key_policy == "pinned" and not (self.known_hosts or "").strip():
             raise ValueError("known_hosts: paste the known_hosts lines to pin, or choose trust on first use")
         self.known_hosts = check_known_hosts(self.known_hosts)
+        if self.host_key_policy == "host_ca":
+            self.host_ca_keys = check_host_ca_keys(self.host_ca_keys)
+        else:
+            self.host_ca_keys = []
         if self.window == "custom":
             self.custom_window = check_window_grid(self.custom_window, allow_empty=False)
         else:
@@ -274,6 +284,50 @@ class ActiveDirectoryConfig(WindowsServersConfig):
 # server that is not verified, or nowhere) and ports that are not LDAPS (636, or 3269 for the global catalog)
 WINRM_HTTP_PORTS = frozenset({80, 5985, 8080})
 AD_NOT_LDAPS_PORTS = frozenset({389, 3268, 80, 5985, 5986, 8080})
+
+
+def check_host_ca_keys(lines: list[str]) -> list[str]:
+    """#59: the host CAs' OpenSSH public keys (``ssh-ed25519 AAAA... [comment]``, as the CA's .pub file holds it), one
+    per entry, de-duplicated.  A certificate, a private key, a known_hosts ``@cert-authority`` line (its host patterns
+    would be dropped silently) and an RSA key under 2048 bits are refused.  Messages give line numbers, never keys."""
+    from cryptography.exceptions import UnsupportedAlgorithm
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.hazmat.primitives.serialization import load_ssh_public_key
+
+    out: list[str] = []
+    seen: set[str] = set()
+    for number, raw in enumerate(lines or [], start=1):
+        line = " ".join(str(raw).split())
+        if not line:
+            continue
+        where = f"host_ca_keys: line {number}"
+        if "PRIVATE KEY" in line:
+            raise ValueError(f"{where} is a private key; paste the CA's public key (its .pub file) and keep the private "
+                             "key out of ZeroShield")
+        if line.startswith("@"):
+            raise ValueError(f"{where} is a known_hosts line; paste only the CA's public key (ssh-ed25519 AAAA...), "
+                             "without @cert-authority and host patterns")
+        fields = line.split(" ")
+        if "-cert-v01@openssh.com" in fields[0]:
+            raise ValueError(f"{where} is a certificate; paste the public key of the CA that signs the host "
+                             "certificates")
+        try:
+            key = load_ssh_public_key(" ".join(fields[:2]).encode())
+        except (ValueError, UnsupportedAlgorithm, IndexError):
+            raise ValueError(f"{where} is not an SSH public key (ssh-ed25519, ecdsa-sha2-nistp256/384/521 or "
+                             "ssh-rsa, as in the CA's .pub file)") from None
+        if isinstance(key, rsa.RSAPublicKey) and key.key_size < 2048:
+            raise ValueError(f"{where} is an RSA key under 2048 bits; use a stronger host CA")
+        identity = " ".join(fields[:2])
+        if identity not in seen:
+            seen.add(identity)
+            out.append(line)
+    if not out:
+        raise ValueError("host_ca_keys: paste the public key of at least one host CA (the CA that signs the servers' "
+                         "host certificates)")
+    if len(out) > MAX_HOST_CAS:
+        raise ValueError(f"host_ca_keys: at most {MAX_HOST_CAS} host CAs")
+    return out
 
 
 def check_known_hosts(text: str | None) -> str | None:
@@ -334,9 +388,9 @@ def credential_target_problem(kind: str, cfg: Any, secrets: dict[str, str]) -> s
     read) need TLS with the server's CA.  PostgreSQL without a CA is limited to SCRAM by the node, which never
     reveals the password.  Checked on the new configuration at save; the scan node enforces the same at run time,
     including for vault credentials whose type is only known then."""
-    if kind == "linux_servers" and cfg.credential_type == "password" and cfg.host_key_policy != "pinned":
-        return ("host_key_policy: password logins need pinned host keys, so the password only goes to the real "
-                "servers; paste their known_hosts lines, or use the node key")
+    if kind == "linux_servers" and cfg.credential_type == "password" and cfg.host_key_policy not in ("pinned", "host_ca"):
+        return ("host_key_policy: password logins need pinned host keys or a host CA, so the password only goes to "
+                "the real servers; paste their known_hosts lines or the host CA's public key, or use the node key")
     if kind == "appliance" and cfg.vendor in APPLIANCE_SSH_VENDORS and cfg.credential_type == "password" \
             and cfg.host_key_policy != "pinned":
         return ("host_key_policy: appliance passwords need the pinned host key (known_hosts), so the password only "
@@ -1065,7 +1119,7 @@ def _db_collectable(cfg: Any) -> bool:
 
 # Changing any of these clears the stored secret, so it must be re-entered: where it goes, and how the node checks
 # that it is talking to the right server before sending it (host keys, CA, TLS), must not change behind its back.
-_SERVER_WHERE = ("targets", "port", "login_user", "host_key_policy", "known_hosts", "vault", "ca_pem")
+_SERVER_WHERE = ("targets", "port", "login_user", "host_key_policy", "known_hosts", "host_ca_keys", "vault", "ca_pem")
 
 KINDS: dict[str, KindSpec] = {
     "linux_servers": KindSpec("linux_servers", "servers", "Linux servers", ServersConfig, _server_secrets,
