@@ -3,8 +3,9 @@
 Safety rules:
 * Host keys: ``pinned`` checks the customer's known_hosts; ``tofu`` pins per (address, port, key type) in the
   node's state directory, and once a host is pinned only the pinned key types are offered, so a server (or a
-  man in the middle) cannot dodge the pin by presenting another key type.  A mismatch stops that target before
-  any credential is sent.
+  man in the middle) cannot dodge the pin by presenting another key type; ``host_ca`` (#59) offers only OpenSSH host
+  certificate types and trusts a certificate from one of the source's host CAs (``zs_scan_node.hostcert``).  A
+  mismatch stops that target before any credential is sent.
 * Authentication is tried once.  Keyboard-interactive is answered only for a single password prompt; anything
   else (OTP, Duo, several prompts) is reported as ``mfa_required``.  No agent, no local key files.
 * Every command is from ``zs_scan_node.commands``; file paths come only from the Tier 2 find or sshd's own HostKey
@@ -350,6 +351,12 @@ def _cert_login_key(ctx: JobContext, source: Any) -> paramiko.PKey:
         raise TargetFail("error", f"ZeroShield stopped this job ({detail})") from None
 
 
+def verified_host_policy(policy: str) -> bool:
+    """Host-key policies that prove the server before a password goes to it: pinned known_hosts, or a host
+    certificate from a listed CA (#59).  Trust on first use proves nothing."""
+    return policy in ("pinned", "host_ca")
+
+
 def handshake_budget(ctx: JobContext, config: dict) -> float:
     """#152: the source's "Timeout per server" bounds the SSH connect, banner, key exchange and login too (they
     were fixed at 10, 15 and 20 s), and never outlives the job."""
@@ -369,11 +376,12 @@ def open_session(ctx: JobContext, target: Target, config: dict, creds: dict) -> 
         netutil.checked_target(target, ctx.never_scan)
     except netutil.Blocked as exc:
         raise TargetFail("skipped_never_scan", str(exc)) from None
-    if "password" in creds and "key" not in creds and policy != "pinned":
+    if "password" in creds and "key" not in creds and not verified_host_policy(policy):
         # a first-seen host key proves nothing, so a password could go to an impostor (whole ranges make that
-        # easy): passwords go only to hosts pinned in known_hosts.  Key logins never reveal the key.
-        raise TargetFail("identity_unverified", "password logins need a pinned host key (known_hosts); the password "
-                         "was not sent")
+        # easy): passwords go only to hosts pinned in known_hosts or proven by a host CA.  Key logins never reveal
+        # the key.
+        raise TargetFail("identity_unverified", "password logins need a pinned host key (known_hosts) or a host CA; "
+                         "the password was not sent")
     budget = handshake_budget(ctx, config)
     try:  # the network gate: never-scan at connect time
         sock = netutil.connect(target.ip, port, ctx.never_scan, min(10.0, budget))
@@ -412,7 +420,15 @@ def _login(ctx: JobContext, target: Target, config: dict, creds: dict, transport
     transport.auth_timeout = min(20.0, budget)
     _accept_rfc8731_curve25519(transport)
     pinned_types: list[str] = []
-    if policy == "pinned":
+    if policy == "host_ca":
+        from zs_scan_node import hostcert
+
+        try:  # host certificates only: a plain host key never satisfies host_ca, so it is not negotiated
+            transport.get_security_options().key_types = hostcert.offered_key_types(transport._key_info)
+        except Exception as exc:
+            transport.close()
+            raise TargetFail("error", f"this scan node cannot offer host certificates ({exc.__class__.__name__})") from None
+    elif policy == "pinned":
         hk = _pinned_known_hosts(config.get("known_hosts") or "")
         names = [target.label, target.ip] if port == 22 else [f"[{target.label}]:{port}", f"[{target.ip}]:{port}"]
         entry = None
@@ -447,6 +463,9 @@ def _login(ctx: JobContext, target: Target, config: dict, creds: dict, transport
         if "protocol banner" in str(exc).lower():  # #152: accepted TCP, never spoke SSH within the budget
             raise TargetFail("timeout", f"no SSH banner from {target.ip} within {_secs(transport.banner_timeout)} s "
                              "(not an SSH server, or sshd is hung)") from None
+        if policy == "host_ca" and "key" in str(exc).lower():
+            raise TargetFail("host_key_mismatch", "the server offers no host certificate (host_ca trusts only "
+                             "certificates from the listed host CAs); nothing was sent") from None
         if pinned_types and "key" in str(exc).lower():
             raise TargetFail("host_key_changed", "the server no longer offers the pinned host key type") from None
         if isinstance(exc, paramiko.IncompatiblePeer):
@@ -462,7 +481,19 @@ def _login(ctx: JobContext, target: Target, config: dict, creds: dict, transport
         raise TargetFail("timeout", f"the SSH handshake with {target.ip} did not finish within {_secs(budget)} s") from None
     ktype, fp = key.get_name(), _fp(key)
     host_key = {"key_type": ktype, "bits": key.get_bits(), "fingerprint": fp}
-    if policy == "pinned":
+    if policy == "host_ca":
+        from zs_scan_node import hostcert
+
+        blob = getattr(key, "public_blob", None)
+        try:
+            host_key["certificate"] = hostcert.check_host_certificate(
+                blob.key_type if blob else ktype, blob.key_blob if blob else key.asbytes(), key.asbytes(),
+                list(config.get("host_ca_keys") or []), [target.label, target.ip])
+        except hostcert.HostCertRefused as exc:
+            transport.close()
+            raise TargetFail("host_key_mismatch", f"{exc}; nothing was sent") from None
+        host_key["key_type"] = transport.host_key_type or blob.key_type  # the certificate type negotiated
+    elif policy == "pinned":
         expected = entry.get(ktype) if entry else None
         if expected is None or expected.asbytes() != key.asbytes():
             transport.close()

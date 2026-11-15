@@ -65,6 +65,36 @@ TYPE_LABEL = {
     "api_tls": "API TLS", "cloud_ca": "Certificate authority", "iam_certificate": "IAM certificate",
     "identity_provider": "Identity provider", "signing_key": "Signing key", "open_port": "Open port",
     "glue_catalog": "Glue Data Catalog", "glue_connection": "Glue connection", "key_vault": "Key vault",
+    # scan-node key, database, CA and network packages (classify_ext/node_keys.py, node_net.py)
+    "managed_key": "Managed key", "key_store": "Key store", "db_encryption": "Database encryption",
+    "db_login_policy": "Database login policy", "db_crypto_policy": "Database transport policy",
+    "ca_authority": "CA", "ca_template": "CA template", "ike_endpoint": "IKE/IPsec endpoint",
+    "ot_endpoint": "OT endpoint", "appliance_config": "Network appliance config",
+    "k8s_mesh_destination": "Mesh destination rule", "k8s_mesh_server": "Mesh server policy",
+    "coverage": "Not collected",
+}
+# The same names counted ("Fix 3 CA templates"): one entry per TYPE_LABEL key (test_cbom_results_qa_r4.py keeps the
+# two in step). Mass nouns and acronyms take a word instead of a bare "s" ("Database TLS settings").
+TYPE_LABEL_PLURAL = {
+    "certificate": "Certificates", "private_key": "Private keys", "public_key": "Public keys", "keystore": "Keystores",
+    "ssh_host_key": "SSH host keys", "ssh_server_config": "SSH server configs", "ssh_endpoint": "SSH endpoints",
+    "tls_endpoint": "TLS endpoints", "crypto_library": "Crypto libraries", "process_library": "Process libraries",
+    "disk_encryption": "Disk encryption settings", "os_crypto_policy": "OS crypto policies",
+    "database_tls": "Database TLS settings", "database_config": "Database settings",
+    "database_user_auth": "Database authentication settings",
+    "k8s_cluster": "Kubernetes clusters", "k8s_tls_secret": "Kubernetes TLS secrets",
+    "k8s_certificate": "cert-manager certificates", "k8s_ingress_tls": "Ingress TLS settings",
+    "k8s_mesh_policy": "Mesh mTLS policies", "kms_key": "KMS keys", "cloud_secret": "Cloud secrets",
+    "host_secret": "Secrets in a service or script", "crypto_config": "Crypto configurations",
+    "storage_encryption": "Storage encryption settings", "load_balancer_tls": "Load balancer TLS settings",
+    "cdn_tls": "CDN TLS settings", "api_tls": "API TLS settings", "cloud_ca": "Certificate authorities",
+    "iam_certificate": "IAM certificates", "identity_provider": "Identity providers", "signing_key": "Signing keys",
+    "open_port": "Open ports", "glue_catalog": "Glue Data Catalogs", "glue_connection": "Glue connections",
+    "key_vault": "Key vaults", "managed_key": "Managed keys", "key_store": "Key stores",
+    "db_encryption": "Database encryption settings", "db_login_policy": "Database login policies",
+    "db_crypto_policy": "Database transport policies", "ca_authority": "CAs", "ca_template": "CA templates",
+    "ike_endpoint": "IKE/IPsec endpoints", "ot_endpoint": "OT endpoints", "appliance_config": "Network appliance configs",
+    "k8s_mesh_destination": "Mesh destination rules", "k8s_mesh_server": "Mesh server policies",
     "coverage": "Not collected",
 }
 
@@ -72,6 +102,12 @@ TYPE_LABEL = {
 def type_label(asset_type: str | None) -> str:
     value = str(asset_type or "")
     return TYPE_LABEL.get(value) or (value.replace("_", " ").capitalize() if value else "Other")
+
+
+def type_label_plural(asset_type: str | None) -> str:
+    """``type_label`` counted (more than one); an unknown future type gets the singular plus "s"."""
+    value = str(asset_type or "")
+    return TYPE_LABEL_PLURAL.get(value) or f"{type_label(value)}s"
 
 
 # ----------------------------------------------------------------------------- filters
@@ -442,5 +478,6 @@ def list_run_assets(session: Session, *, team_id: int, run: CbomCollectionRun, p
 
 parse_clause = CE.parse_clause
 
-__all__ = ["FINDING_STATUSES", "TYPE_LABEL", "VIEWS", "enrich_items", "findings_total", "list_run_assets",
-           "parse_clause", "parse_codes", "parse_ids", "parse_pqc_group", "run_asset_keys", "run_item", "type_label"]
+__all__ = ["FINDING_STATUSES", "TYPE_LABEL", "TYPE_LABEL_PLURAL", "VIEWS", "enrich_items", "findings_total",
+           "list_run_assets", "parse_clause", "parse_codes", "parse_ids", "parse_pqc_group", "run_asset_keys", "run_item",
+           "type_label", "type_label_plural"]

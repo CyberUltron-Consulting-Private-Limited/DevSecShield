@@ -51,6 +51,19 @@ export const ASSET_TYPE_LABEL: Record<string, string> = {
   glue_catalog: "Glue Data Catalog",
   glue_connection: "Glue connection",
   key_vault: "Key vault",
+  // scan-node key, database, CA and network packages (backend run_assets.TYPE_LABEL; test_cbom_results_qa_r4.py)
+  managed_key: "Managed key",
+  key_store: "Key store",
+  db_encryption: "Database encryption",
+  db_login_policy: "Database login policy",
+  db_crypto_policy: "Database transport policy",
+  ca_authority: "CA",
+  ca_template: "CA template",
+  ike_endpoint: "IKE/IPsec endpoint",
+  ot_endpoint: "OT endpoint",
+  appliance_config: "Network appliance config",
+  k8s_mesh_destination: "Mesh destination rule",
+  k8s_mesh_server: "Mesh server policy",
   coverage: "Not collected",
 };
 
@@ -59,7 +72,7 @@ const TARGET_TONE: Record<string, Tone> = { ok: "green", partial: "amber", skipp
   skipped_deadline: "amber", skipped_cancelled: "zinc", not_supported: "zinc", skipped_credential_refused: "amber" };
 const TARGET_LABEL: Record<string, string> = {
   ok: "Read", partial: "Partly read", unreachable: "Unreachable", refused: "Connection refused", timeout: "Timed out", no_route: "No route",
-  auth_failed: "Login failed", mfa_required: "MFA required", host_key_changed: "Host key changed", identity_unverified: "Server not verified", kex_unsupported: "Key exchange not supported", sudoers_missing: "Sudoers missing", rbac_denied: "Kubernetes RBAC denied",
+  auth_failed: "Login failed", mfa_required: "MFA required", host_key_changed: "Host key changed", host_key_mismatch: "Host certificate refused", identity_unverified: "Server not verified", kex_unsupported: "Key exchange not supported", sudoers_missing: "Sudoers missing", rbac_denied: "Kubernetes RBAC denied",
   sudo_denied: "Sudo refused", winrm_denied: "WinRM shell refused", tls_unavailable: "No TLS", not_supported: "Not supported", error: "Error",
   skipped_never_scan: "Skipped: never-scan list", skipped_window: "Skipped: scan window closed", skipped_stop: "Skipped: scanning stopped",
   skipped_deadline: "Skipped: time limit", skipped_cancelled: "Skipped: cancelled",

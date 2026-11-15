@@ -2265,7 +2265,10 @@ export interface CbomScanDashboardData {
     total_quantum_vulnerable: number
     total_certificates: number
     total_keys: number
-    quantum_readiness_score: number
+    /** null on a Sources run whose readiness posture withholds (quantum_readiness_status says why): never 0 % */
+    quantum_readiness_score: number | null
+    /** a Sources run's posture readiness_basis.status (absent on code scans) */
+    quantum_readiness_status?: CbomReadinessBasis["status"]
     average_risk_score: number
   }
   remediation_metrics: {
@@ -4658,6 +4661,8 @@ export interface CbomReadinessBasis {
 export interface CbomReadinessAction {
     asset_type: string
     type_label: string
+    /** the type name counted ("CA templates"); older servers send none */
+    type_label_plural?: string
     code: string | null
     title: string
     fix: string | null

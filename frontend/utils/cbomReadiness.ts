@@ -8,6 +8,8 @@
 export interface ReadinessCard {
   quantum_readiness_score?: number | null
   quantum_readiness_judged?: boolean
+  /** a Sources run's posture readiness_basis.status: "not_enough_identified" reads "Withheld" (QA round 4, C) */
+  quantum_readiness_status?: "ok" | "not_enough_identified" | "nothing_judged"
 }
 
 export type ReadinessTone = "good" | "fair" | "poor" | "none"
@@ -17,7 +19,8 @@ export function readinessJudged(card: ReadinessCard): boolean {
 }
 
 export function readinessText(card: ReadinessCard): string {
-  return readinessJudged(card) ? `${card.quantum_readiness_score}%` : "n/a"
+  if (readinessJudged(card)) return `${card.quantum_readiness_score}%`
+  return card.quantum_readiness_status === "not_enough_identified" ? "Withheld" : "n/a"
 }
 
 /** good >= 70 %, fair >= 40 %, poor below; none when nothing was judged. */

@@ -25,9 +25,6 @@ import {
   Bar,
   BarChart,
   Cell,
-  PolarAngleAxis,
-  RadialBar,
-  RadialBarChart,
   XAxis,
   YAxis,
 } from "recharts";
@@ -60,7 +57,6 @@ import {
 import {
   BarChart3,
   ShieldAlert,
-  Atom,
   ShieldCheck,
   Network,
   Layers,
@@ -77,7 +73,7 @@ import { pickBomGraph } from "@/components/bom/layout";
 import type { BomGraph } from "@/components/bom/types";
 import type { CbomFinding, CbomGraph } from "@/utils/backend_api";
 import { filterFindingsByRelatedRefs } from "@/utils/relatedFindingMatch";
-import { quantumCounts, type QuantumFields } from "@/components/cbom/quantumFilter";
+import type { QuantumFields } from "@/components/cbom/quantumFilter";
 import { ComplianceMatrix, type AttestHandler, type Compliance } from "@/components/compliance/ComplianceMatrix";
 import { FRAMEWORK_GROUPS_CBOM_WITH_INDIA } from "@/components/compliance/frameworkLabels";
 import {
@@ -92,6 +88,9 @@ import {
   pqcRoadmapGroups,
 } from "@/components/cbom/pqcMigrationGroup";
 import { nistLevelInfo } from "@/components/cbom/results/readinessExplain";
+import { PQC_GROUP_TRIGGER_ROW, PqcGroupBadges, PqcInstanceLevelBadge } from "@/components/cbom/PqcBadges";
+import { PqcReadinessGauge } from "@/components/cbom/PqcReadinessGauge";
+import type { CbomReadinessBasis } from "@/utils/backend_api";
 import { InfoTip } from "@/components/ui/info-tip";
 
 export type {
@@ -131,8 +130,11 @@ export interface CbomDistributions {
   pqc: {
     quantum_vulnerable: number;
     quantum_safe: number;
-    /** null when no asset has a quantum verdict (a Sources run's posture), shown as 0 by the gauge */
+    /** null when there is no percentage: a code scan with nothing judged (shown as 0), or a Sources run whose posture
+     * withholds it (shown as "Withheld" / "n/a" with readiness_basis' reason, never 0) */
     readiness_pct: number | null;
+    /** a Sources run's posture readiness_basis (why readiness_pct is null) */
+    readiness_basis?: CbomReadinessBasis | null;
     /** hybrid-KEX (classical + PQC) algorithm count (F2) */
     hybrid?: number;
     /** NIST quantum-security-level histogram (0 = vulnerable, 1-5 = safe cat) */
@@ -270,17 +272,6 @@ const labelWeakness = (k: string) =>
   WEAKNESS_LABELS[k] ?? k.replace(/_/g, " ").toLowerCase();
 
 // ── PQC readiness (F2) ───────────────────────────────────────────────────────
-// Impact-badge tone matching CbomResults.getImpactBadgeClass (High=orange,
-// Medium=amber, Low=blue), so the quantum-vulnerable list reads identically to
-// the findings table.
-const impactBadgeClass = (impact: string | null): string => {
-  const i = (impact ?? "").toLowerCase();
-  if (i === "critical") return "border-red-500/50 text-red-600 dark:text-red-400";
-  if (i === "high") return "border-orange-500/50 text-orange-600 dark:text-orange-400";
-  if (i === "medium") return "border-amber-500/50 text-amber-600 dark:text-amber-400";
-  return "border-blue-500/50 text-blue-600 dark:text-blue-400";
-};
-
 // CNSA 2.0 National Security System transition milestones (NSA public advisory,
 // 2022 — a clean-room encoding of the published timeline, not tool output). The
 // C7 grader cites the same milestones in each QUANTUM_VULNERABLE finding message.
@@ -386,80 +377,7 @@ function WeakCryptoFindings({ data }: { data: Record<string, number> }) {
   );
 }
 
-/** 3 — PQC readiness gauge. Counts EVERY cryptographic asset of the scan (findings and clean inventory,
- * quantumFilter.inventoryRows) by the results table's Quantum column ("Quantum-safe" / "Broken today" /
- * "Quantum-vulnerable", quantumFilter.quantumCounts): an algorithm that is broken today is not quantum-ready. Same
- * rows and rule as the PDF and the scan list. Falls back to the stored ``distributions.pqc`` only when the page has
- * no rows. */
-function PqcReadinessGauge({ pqc, rows }: { pqc: CbomDistributions["pqc"]; rows?: QuantumFields[] | null }) {
-  const counts = rows && rows.length > 0 ? quantumCounts(rows) : null;
-  const safe = counts ? counts.safe : pqc?.quantum_safe ?? 0;
-  const vuln = counts ? counts.vulnerable : pqc?.quantum_vulnerable ?? 0;
-  const broken = counts ? counts.broken : 0;
-  const total = safe + vuln + broken;
-  const pct = counts ? counts.readinessPct ?? 0 : pqc?.readiness_pct ?? 0;
-  const gaugeData = [{ name: "readiness", value: pct, fill: C.quantumSafe }];
-  const gaugeConfig = {
-    value: { label: "Readiness", color: C.quantumSafe },
-  } satisfies ChartConfig;
-  return (
-    <Card className="border-zinc-200 dark:border-zinc-800">
-      <CardHeader>
-        <CardTitle className="text-base flex items-center gap-2">
-          <Atom className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-          PQC readiness
-        <InfoTip id="cbom.chart.pqc" />
-        </CardTitle>
-        <CardDescription>Quantum-safe share of every crypto asset (findings and clean inventory); algorithms broken today are not quantum-ready</CardDescription>
-      </CardHeader>
-      <CardContent>
-        {total === 0 ? (
-          <EmptyChart message="No quantum-relevant algorithms" />
-        ) : (
-          <div className="flex flex-col items-center">
-            <div className="relative">
-              <ChartContainer config={gaugeConfig} className="mx-auto aspect-square h-[200px]">
-                <RadialBarChart
-                  data={gaugeData}
-                  startAngle={90}
-                  endAngle={-270}
-                  innerRadius={72}
-                  outerRadius={100}
-                >
-                  <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
-                  <RadialBar dataKey="value" cornerRadius={8} background fill={C.quantumSafe} />
-                </RadialBarChart>
-              </ChartContainer>
-              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                <p className="text-3xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{pct}%</p>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">quantum-safe</p>
-              </div>
-            </div>
-            <div className="flex flex-wrap justify-center gap-2 mt-3">
-              <Badge variant="outline" className="border-blue-500/50 text-blue-600 dark:text-blue-400">
-                Quantum-safe: {safe}
-              </Badge>
-              {broken > 0 && (
-                <Badge variant="outline" className="border-amber-500/60 text-amber-700 dark:text-amber-400"
-                  title="Already broken without a quantum computer: replace it now">
-                  Broken today: {broken}
-                </Badge>
-              )}
-              <Badge variant="outline" className="border-orange-500/50 text-orange-600 dark:text-orange-400">
-                Quantum-vulnerable: {vuln}
-              </Badge>
-              {(pqc?.hybrid ?? 0) > 0 && (
-                <Badge variant="outline" className="border-emerald-500/50 text-emerald-600 dark:text-emerald-400">
-                  Hybrid: {pqc.hybrid}
-                </Badge>
-              )}
-            </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
+// 3 — PQC readiness gauge: PqcReadinessGauge.tsx (render-tested on its own; worded per page, QA round 4).
 
 /** HoverCard detail for one quantum-vulnerable instance (Shadow AI pattern). */
 function PqcInstanceHover({
@@ -489,17 +407,14 @@ function PqcInstanceHover({
           className="flex items-start justify-between gap-2 rounded-md border border-orange-200/80 bg-orange-50/40 px-2.5 py-2 dark:border-orange-900/40 dark:bg-orange-950/20 cursor-default"
         >
           <div className="min-w-0 flex-1">
-            <p className="truncate font-mono text-xs text-zinc-700 dark:text-zinc-300">
+            <p className="truncate font-mono text-xs text-zinc-700 dark:text-zinc-300" title={location || undefined}>
               {location || "Location not recorded"}
             </p>
             {row.impact && row.impact !== "—" ? (
               <p className="mt-0.5 text-[11px] text-zinc-500">{row.impact}</p>
             ) : null}
           </div>
-          <Badge variant="outline" className={`shrink-0 text-[10px] ${impactBadgeClass(row.impact)}`}
-                 title={`${level.name}. ${level.meaning} ${level.next}`}>
-            NIST {level.name}
-          </Badge>
+          <PqcInstanceLevelBadge level={row.nist_quantum_security_level} impact={row.impact} />
         </li>
       </HoverCardTrigger>
       <HoverCardContent
@@ -659,8 +574,8 @@ function QuantumVulnerableList({
                   data-testid="pqc-vuln-group"
                 >
                   <AccordionTrigger className="py-2.5 hover:no-underline">
-                    <div className="flex min-w-0 flex-1 items-center justify-between gap-2 pr-2">
-                      <div className="min-w-0 text-left">
+                    <div className={PQC_GROUP_TRIGGER_ROW}>
+                      <div className="min-w-0 max-w-full text-left">
                         <p className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
                           {g.name}
                         </p>
@@ -668,30 +583,8 @@ function QuantumVulnerableList({
                           {g.descriptor}
                         </p>
                       </div>
-                      <div className="flex shrink-0 items-center gap-1.5">
-                        <Badge
-                          variant="secondary"
-                          className="tabular-nums"
-                          data-testid="pqc-group-count"
-                        >
-                          {g.instances.length}
-                        </Badge>
-                        {fixOf.has(g.key) && (
-                          <Badge variant="outline" className="tabular-nums" data-testid="pqc-group-fix">
-                            Fix {fixOf.get(g.key)}
-                          </Badge>
-                        )}
-                        <Badge
-                          variant="outline"
-                          className="border-orange-500/50 text-orange-600 dark:text-orange-400"
-                          title={`${nistLevelInfo(g.nistLevel).name}. ${nistLevelInfo(g.nistLevel).meaning}`}
-                        >
-                          NIST Level {g.nistLevel}
-                        </Badge>
-                        <Badge variant="outline" className={impactBadgeClass(g.maxImpact)}>
-                          {g.maxImpact ?? "—"}
-                        </Badge>
-                      </div>
+                      <PqcGroupBadges count={g.instances.length} fix={fixOf.get(g.key)} nistLevel={g.nistLevel}
+                                      impact={g.maxImpact} />
                     </div>
                   </AccordionTrigger>
                   <AccordionContent>
@@ -1311,6 +1204,7 @@ export function CbomCryptoCharts({
   inventory,
   onOpenFinding,
   showCodeHeatmap = true,
+  readinessScope = "code",
 }: {
   distributions?: CbomDistributions | null;
   graph?: CbomGraph | null;
@@ -1325,6 +1219,8 @@ export function CbomCryptoCharts({
   onOpenFinding?: (finding: CbomFinding) => void;
   /** false on a Sources run page: its heat-map and certificate calendar come from the run API (RunInsights). */
   showCodeHeatmap?: boolean;
+  /** "run": the readiness card shows posture's figure over the judged assets (QA round 4, C); "code": every asset */
+  readinessScope?: "run" | "code";
 }) {
   if (!distributions) return null;
   const hasGraph =
@@ -1380,7 +1276,7 @@ export function CbomCryptoCharts({
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <AlgorithmDistribution data={distributions.algorithms} />
         <WeakCryptoFindings data={distributions.weakness} />
-        <PqcReadinessGauge pqc={distributions.pqc} rows={inventory ?? findings} />
+        <PqcReadinessGauge pqc={distributions.pqc} rows={inventory ?? findings} scope={readinessScope} />
       </div>
       {hasPqcDetail && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

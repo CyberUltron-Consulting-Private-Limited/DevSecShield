@@ -87,6 +87,7 @@ import { RunFindingDialog } from "@/components/cbom/results/RunFindingDialog";
 import { RunFindingsTable } from "@/components/cbom/results/RunFindingsTable";
 import { ColumnChooser, useColumnPrefs } from "@/components/cbom/results/ColumnChooser";
 import { FINDING_DIALOG_BODY, FINDING_DIALOG_CONTENT, FINDING_DIALOG_FULLSCREEN_SM, rowOpenProps, SCAN_TABLE_COLUMNS, STICKY_ACTIONS } from "@/components/cbom/results/findingTable";
+import { RowOpenButton } from "@/components/cbom/results/RowOpenButton";
 import {
   RunCertificatesSection,
   RunChangesSection,
@@ -919,6 +920,7 @@ export default function CbomResults({
               inventory={run ? [] : allRows}
               onOpenFinding={(f) => setSelectedFinding(f)}
               showCodeHeatmap={!run}
+              readinessScope={run ? "run" : "code"}
             />
           )}
           {run && (
@@ -1162,6 +1164,7 @@ export default function CbomResults({
                             className={`cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50 focus-visible:outline-none focus-visible:bg-blue-50 dark:focus-visible:bg-blue-950/40 ${selectedFindings.has(finding.id) ? "bg-zinc-100 dark:bg-zinc-800/70" : ""}`}
                           >
                             <TableCell data-col="select" onClick={(e) => e.stopPropagation()} className="w-[72px]">
+                              <div className="flex items-center gap-1">
                               {/* infotip-shared: one row of the selection; the Select all tip in the header explains it */}
                               <Checkbox
                                 checked={selectedFindings.has(finding.id)}
@@ -1174,6 +1177,8 @@ export default function CbomResults({
                                 aria-label={`Select ${finding.algorithm_name || finding.title}`}
                                 className="cursor-pointer"
                               />
+                              <RowOpenButton label={`Open details of ${finding.algorithm_name || finding.title}`} onOpen={() => setSelectedFinding(finding)} />
+                              </div>
                             </TableCell>
                             {showCol("algorithm") && (
                             <TableCell data-col="algorithm" className="font-medium">
