@@ -216,7 +216,7 @@ def return_mcp_list_item(scan : Scan) -> dict:
                     total_medium += 1
                 elif vulnerability["impact"].lower() == "low":
                     total_low += 1
-        for prompt in scan.scan_data["results"]["prompts"] and "results" in scan.scan_data and scan.scan_status == "success":
+        for prompt in scan.scan_data["results"]["prompts"]:
             total_prompts += 1
             for vulnerability in prompt["vulnerabilities"]:
                 if vulnerability["impact"].lower() == "critical":
@@ -227,7 +227,7 @@ def return_mcp_list_item(scan : Scan) -> dict:
                     total_medium += 1
                 elif vulnerability["impact"].lower() == "low":
                     total_low += 1
-        for resource in scan.scan_data["results"]["resources"] and "results" in scan.scan_data and scan.scan_status == "success":
+        for resource in scan.scan_data["results"]["resources"]:
             total_resources += 1
             for vulnerability in resource["vulnerabilities"]:
                 if vulnerability["impact"].lower() == "critical":
