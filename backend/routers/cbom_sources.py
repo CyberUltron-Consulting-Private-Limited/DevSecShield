@@ -94,6 +94,7 @@ from backend.utilities.cbom_sources.schemas import (
     EstimateBody,
     NodeCreate,
     NodeUpdate,
+    proxy_inspect_problem,
     RunCreate,
     SettingsUpdate,
     SourceCreate,
@@ -352,6 +353,15 @@ def _update_node(engine, team_id: int, user_id: int, node_id: int, body: NodeUpd
             if key == "name" and not value:
                 continue
             setattr(node, key, value)
+        if {"proxy_url", "proxy_ca_pem", "proxy_tls_inspect"} & set(changes):
+            # #202: a node whose proxy is removed has nothing left to inspect: inspection goes off with it (the edit
+            # dialog has no inspection box); turning inspection on needs the proxy and its CA, as on create
+            if node.proxy_tls_inspect and not (node.proxy_url or "").strip() and not changes.get("proxy_tls_inspect"):
+                node.proxy_tls_inspect = False
+                changes["proxy_tls_inspect"] = False
+            problem = proxy_inspect_problem(node.proxy_tls_inspect, node.proxy_url, node.proxy_ca_pem)
+            if problem:
+                raise HTTPException(status_code=400, detail=problem)
         node.row_version += 1
         node.updated_by_user_id = user_id
         node.last_updated = now

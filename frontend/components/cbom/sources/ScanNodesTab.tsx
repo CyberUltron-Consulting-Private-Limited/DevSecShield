@@ -28,6 +28,7 @@ import { apiBaseURL } from "@/utils/interceptors";
 import { cbomSourcesKeys } from "./keys";
 import { AgentPoolsCard } from "./AgentPoolsCard";
 import { ApiEgressRow, NodeCommandBlock, NodeInstallCommand, NodeOnePaste, apiHost } from "./NodeInstall";
+import { DNS_EGRESS, inspectionWarning, wizardProxyProblem } from "./nodeNetwork";
 import { NodeDownloads } from "./NodeDownloads";
 import {
   DEFAULT_PROXY_CA_FILE,
@@ -166,6 +167,7 @@ export default function ScanNodesTab({
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizard, setWizard] = useState<WizardState>(EMPTY_WIZARD);
   const [wizardError, setWizardError] = useState<string | null>(null);
+  const [proxyError, setProxyError] = useState<string | null>(null);
   // again: a new token for a node that exists (New registration token, Reset), whose old container may still run
   // links: the install links of that token (one-paste install on a terminal-only host; null without server files)
   const [created, setCreated] = useState<{ nodeId: number; token: string; again?: boolean; links?: InstallLinks | null } | null>(null);
@@ -269,6 +271,9 @@ export default function ScanNodesTab({
       setWizardError("Use 1-64 letters, digits, spaces, dots, dashes or underscores, starting with a letter or digit.");
       return;
     }
+    const proxyProblem = wizardProxyProblem(wizard);
+    setProxyError(proxyProblem);
+    if (proxyProblem) return;
     setWizardError(null);
     // One create per click burst: the second click of a double-click arrives before isPending disables the button.
     if (!createGuard.tryStart()) return;
@@ -332,7 +337,7 @@ export default function ScanNodesTab({
       <SectionCard
         infoId="cbsrc.nodes.list"
         title="Registered scan nodes"
-        description={apiPort ? `One node per network segment. Each connects out to ZeroShield on port ${apiPort} only.` : "One node per network segment."}
+        description={apiPort ? `One node per network segment. Each connects out to ZeroShield on port ${apiPort}, to your targets and to DNS; nothing calls in.` : "One node per network segment."}
         actions={
           <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" onClick={startWizard}>
             <Plus className="h-4 w-4 mr-2" />
@@ -367,7 +372,7 @@ export default function ScanNodesTab({
         {nodes.length === 0 ? (
           <EmptyState
             title="No scan nodes yet"
-            body="A scan node is a small appliance you run inside the network segment you want scanned. It reaches your servers, clusters and TLS endpoints and only ever connects out to ZeroShield."
+            body="A scan node is a small appliance you run inside the network segment you want scanned. It reaches your servers, clusters and TLS endpoints, looks names up through your DNS, and never accepts inbound connections."
             action={
               <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" onClick={startWizard}>
                 <Plus className="h-4 w-4 mr-2" />
@@ -608,6 +613,7 @@ export default function ScanNodesTab({
                   <TableBody>
                     <ApiEgressRow apiUrl={apiUrl} />
                     <TableRow><TableCell>Your targets</TableCell><TableCell>22, 5986, 6443, database and TLS ports</TableCell><TableCell className="text-zinc-600 dark:text-zinc-400">Read-only collection</TableCell></TableRow>
+                    <TableRow data-testid="node-egress-dns"><TableCell>{DNS_EGRESS.destination}</TableCell><TableCell>{DNS_EGRESS.port}</TableCell><TableCell className="text-zinc-600 dark:text-zinc-400">{DNS_EGRESS.usedFor}</TableCell></TableRow>
                   </TableBody>
                 </Table>
               </div>
@@ -635,6 +641,14 @@ export default function ScanNodesTab({
                 <Checkbox2 infoId="cbsrc.nodes.tls_inspect" id="node-tls-inspect" checked={wizard.tlsInspect} onChange={(v) => !created && setWizard({ ...wizard, tlsInspect: v })}>
                   My proxy inspects TLS; trust its CA only for ZeroShield hostnames
                 </Checkbox2>
+                {wizard.tlsInspect && (
+                  <p className="mt-2 text-sm text-amber-700 dark:text-amber-400" role="alert" data-testid="node-inspect-warning">
+                    {inspectionWarning(apiHost(apiUrl))}
+                  </p>
+                )}
+                {proxyError && (
+                  <p className="mt-2 text-sm text-red-600 dark:text-red-400" role="alert" data-testid="node-proxy-error">{proxyError}</p>
+                )}
               </div>
               <div className="mt-4 space-y-3 rounded-lg border border-zinc-200 p-3 dark:border-zinc-800" data-testid="node-trust">
                 <p className="text-sm font-medium text-zinc-900 dark:text-white">How the node trusts the ZeroShield API (optional) <InfoTip id="cbsrc.nodes.trust" /></p>
@@ -709,7 +723,7 @@ export default function ScanNodesTab({
 
       <SectionCard infoId="cbsrc.nodes.does" title="What the node does, and never does">
         <ul className="list-disc pl-5 space-y-1.5 text-sm text-zinc-700 dark:text-zinc-300">
-          <li>Opens no inbound ports. It only connects out to {apiHost(apiUrl)}{apiPort ? ` on port ${apiPort}` : ""}.</li>
+          <li>Opens no inbound ports. It only connects out to {apiHost(apiUrl)}{apiPort ? ` on port ${apiPort}` : ""}, to the targets of its jobs, and to your DNS resolver (port 53).</li>
           <li>Secrets you enter are encrypted at rest by ZeroShield and sent only to the scan node that runs the job.</li>
           <li>Uses each credential only on the targets it was entered with; your never-scan list always wins.</li>
           <li>Reads with read-only accounts and the published command list shown on the Servers tab.</li>
