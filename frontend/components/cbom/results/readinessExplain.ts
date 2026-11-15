@@ -78,7 +78,8 @@ export function readinessExplanation(p: ReadinessPostureLike | null | undefined)
     "quantum-vulnerable public-key cryptography after 2030 and disallow it after 2035.";
   const actions = (p?.readiness_actions ?? []).map((a, i) => ({
     key: `${a.asset_type}|${a.code ?? ""}|${i}`,
-    text: `Fix ${pluralLabel(a.assets, a.type_label)}: ${a.title}`,
+    // the server's plural when it sends one ("3 CA templates"); the label rule for an older server
+    text: `Fix ${a.assets !== 1 && a.type_label_plural ? `${a.assets} ${a.type_label_plural}` : pluralLabel(a.assets, a.type_label)}: ${a.title}`,
     fix: a.fix,
     assets: a.assets,
     assetType: a.asset_type,
@@ -110,13 +111,46 @@ export function readinessExplanation(p: ReadinessPostureLike | null | undefined)
   if (excluded.length === 0 && b.unknown + b.not_applicable > 0) {
     excluded.push(`${plural(b.unknown + b.not_applicable, "asset")} left out: ${b.unknown} not identified, ${b.not_applicable} with no public-key algorithm`);
   }
-  if (b.status === "not_enough_identified") {
-    excluded.unshift(`The percentage is withheld: more assets are unidentified (${b.unknown}) than judged (${b.judged}).`);
-  }
-  if (b.status === "nothing_judged") {
-    excluded.unshift("No asset of this run has a quantum verdict, so there is no percentage (not 0%, not 100%).");
-  }
+  const reason = withheldReason(b);
+  if (reason) excluded.unshift(reason);
   return { hasBasis: true, value, formula, judged, counts, excluded, symmetric, target, actions, vulnerable };
+}
+
+/** Why posture gave no percentage (its ``readiness_basis.status``), in words; null when it gave one. */
+export function withheldReason(b: Pick<CbomReadinessBasis, "status" | "judged" | "unknown"> | null | undefined): string | null {
+  if (b?.status === "not_enough_identified") {
+    return `The percentage is withheld: more assets are unidentified (${b.unknown}) than judged (${b.judged}).`;
+  }
+  if (b?.status === "nothing_judged") {
+    return "No asset of this run has a quantum verdict, so there is no percentage (not 0%, not 100%).";
+  }
+  return null;
+}
+
+/** Staging QA round 4 (C): what the PQC readiness card's number is, by page. A code scan's gauge counts every crypto
+ * asset of the scan (findings and clean inventory); a run's gauge shows posture's figure over the judged assets (the
+ * explainer's formula), or "Withheld" with posture's reason, never 0 % (Rule P: the page computes nothing). */
+export interface PqcGaugeCopy {
+  description: string;
+  /** "3.8%", "Withheld" or "n/a" */
+  value: string;
+  /** posture's reason when the run's readiness is withheld; null otherwise */
+  withheld: string | null;
+}
+
+export function pqcGaugeCopy(scope: "run" | "code", readinessPct: number | null | undefined,
+                             basis: CbomReadinessBasis | null | undefined): PqcGaugeCopy {
+  if (scope === "code") {
+    return {
+      description: "Quantum-safe share of every crypto asset (findings and clean inventory); algorithms broken today are not quantum-ready",
+      value: `${readinessPct ?? 0}%`, withheld: null,
+    };
+  }
+  const description = "Quantum-safe share of judged assets (those the run gave a quantum verdict); unidentified and " +
+    "not-applicable assets are left out, as the readiness explainer shows";
+  if (readinessPct != null) return { description, value: `${readinessPct}%`, withheld: null };
+  const reason = withheldReason(basis);
+  return { description, value: basis?.status === "not_enough_identified" ? "Withheld" : "n/a", withheld: reason };
 }
 
 /** The findings-table filter behind "Show these N" (one readiness group: its asset type and quantum finding code) or,
@@ -187,16 +221,22 @@ const WAVE_FALLBACK: Record<string, string> = {
 /** One legend row per wave (1-4, then "No action"), with this run's count from the wave plan and why a wave is empty.
  * The rule text is the backend's (``rules``, the suggested_wave rule set); an older backend gets the same words. */
 export function waveLegend(byWave: Record<string, number> | null | undefined,
-                           rules?: Record<string, string> | null): WaveLegendRow[] {
+                           rules?: Record<string, string> | null, scope: "run" | "code" = "run"): WaveLegendRow[] {
+  const what = scope === "code" ? "scan" : "run";
   return ["1", "2", "3", "4", "none"].map((key) => {
     const count = n(byWave?.[key]);
     const rule = rules?.[key] ?? WAVE_FALLBACK[key];
+    // a code scan (waves.code_items) reads source code: it cannot see whether an asset is exposed or in transit, so
+    // the rules never suggest wave 1 there; an asset gets it only when moved by hand
+    const codeWave1 = scope === "code" && key === "1"
+      ? " A code scan cannot see whether an asset is internet-facing or in transit, so only a hand-moved asset lands here."
+      : "";
     return {
       key, count, rule,
       label: key === "none" ? "No action" : `Wave ${key}`,
       empty: count > 0 ? "" : key === "none"
-        ? "Every asset of this run needs some remediation."
-        : "No asset of this run matches this rule (and none was moved here by hand), so the wave is empty.",
+        ? `Every asset of this ${what} needs some remediation.`
+        : `No asset of this ${what} matches this rule (and none was moved here by hand), so the wave is empty.${codeWave1}`,
     };
   });
 }

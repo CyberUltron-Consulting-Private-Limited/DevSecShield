@@ -44,9 +44,12 @@ console.log("quantumFilter tests passed");
   assert.equal(quantumCounts([library]).readinessPct, null, "nothing judged is n/a, not 0 %");
   assert.equal(quantumCounts([aesGcm, aesGcm, rsa1024]).readinessPct, 66.7);
   const charts = fs.readFileSync(path.join(__dirname, "CbomCryptoCharts.tsx"), "utf8");
-  assert.ok(charts.includes("<PqcReadinessGauge pqc={distributions.pqc} rows={inventory ?? findings} />"),
+  assert.ok(charts.includes("<PqcReadinessGauge pqc={distributions.pqc} rows={inventory ?? findings} scope={readinessScope} />"),
     "gauge counts every row of the scan (findings when the page has no row list)");
-  assert.ok(charts.includes("Broken today: {broken}"), "gauge legend lists Broken today");
+  // the gauge (PqcReadinessGauge.tsx since QA round 4) counts those rows with quantumCounts on a code scan
+  const gauge = fs.readFileSync(path.join(__dirname, "PqcReadinessGauge.tsx"), "utf8");
+  assert.ok(gauge.includes('scope === "code" && rows && rows.length > 0 ? quantumCounts(rows) : null'));
+  assert.ok(gauge.includes("Broken today: {broken}"), "gauge legend lists Broken today");
 }
 console.log("quantumCounts tests passed");
 
