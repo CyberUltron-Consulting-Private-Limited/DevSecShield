@@ -4,6 +4,7 @@
     ec2_driver.py launch --minutes 120          one tagged instance that terminates itself (shutdown -h +N)
     ec2_driver.py wait                          until its SSM agent is Online
     ec2_driver.py upload LOCAL REMOTE           base64 chunks over SendCommand, sha256 checked on the box
+    ec2_driver.py download REMOTE LOCAL         base64 chunks back, sha256 checked before the file is written
     ec2_driver.py run 'shell command' [--timeout S]
     ec2_driver.py terminate                     terminate it and delete the documents this driver created
 Guardrails (ROUND7/TEAM-PROCESS): every resource is tagged Project=DevSecShield, zs-lab=sandbox, zs-owner=f1-3; the
@@ -22,6 +23,12 @@ import json
 import sys
 import time
 from pathlib import Path
+
+_HERE = Path(__file__).resolve().parent
+if str(_HERE) not in sys.path:
+    sys.path.insert(0, str(_HERE))
+from ssm_download import (INLINE_CAP, DownloadError, output_is_at_cap,  # noqa: E402
+                          save_download)
 
 REGION = "ap-south-1"
 SUBNET = "subnet-0dd252df2cad964fe"
@@ -133,17 +140,46 @@ def run_cmd(ssm, iid: str, commands: list[str], timeout: int = 3600) -> dict:
             return inv
 
 
+def _stdout(ssm, iid: str, command: str, timeout: int) -> str:
+    inv = run_cmd(ssm, iid, [command], timeout)
+    if inv.get("Status") != "Success":
+        err = (inv.get("StandardErrorContent") or "")[-300:]
+        raise SystemExit(f"command failed: {inv.get('Status')} {err}")
+    return inv.get("StandardOutputContent") or ""
+
+
 def run(args, path: Path) -> None:
     _ec2, ssm = clients()
     iid = load(path)["instance_id"]
     inv = run_cmd(ssm, iid, [args.command], args.timeout)
-    sys.stdout.write(inv.get("StandardOutputContent") or "")
+    out = inv.get("StandardOutputContent") or ""
+    # A Success at the cap is a cut result that looks complete. A failed command still reports its status.
+    if inv.get("Status") == "Success" and output_is_at_cap(out):
+        raise SystemExit(
+            f"SSM returned {INLINE_CAP} characters of stdout, so this output may be truncated. "
+            "Use download for a file."
+        )
+    sys.stdout.write(out)
     err = inv.get("StandardErrorContent") or ""
     if err.strip():
         sys.stderr.write(err[-3000:])
     print(f"\n[{inv['Status']}]", file=sys.stderr)
     if inv["Status"] != "Success":
         raise SystemExit(1)
+
+
+def download(args, path: Path) -> None:
+    _ec2, ssm = clients()
+    iid = load(path)["instance_id"]
+
+    def run_one(command: str) -> str:
+        return _stdout(ssm, iid, command, args.timeout)
+
+    try:
+        digest = save_download(run_one, args.remote, Path(args.local))
+    except DownloadError as exc:
+        raise SystemExit(f"download refused: {exc}") from exc
+    print(f"{args.remote} -> {args.local}: sha256 {digest}")
 
 
 def upload(args, path: Path) -> None:
@@ -203,6 +239,10 @@ def main() -> int:
     up = sub.add_parser("upload")
     up.add_argument("local")
     up.add_argument("remote")
+    down = sub.add_parser("download")
+    down.add_argument("remote")
+    down.add_argument("local")
+    down.add_argument("--timeout", type=int, default=120)
     ru = sub.add_parser("run")
     ru.add_argument("command")
     ru.add_argument("--timeout", type=int, default=3600)
@@ -211,7 +251,8 @@ def main() -> int:
     if args.cmd == "launch" and not 10 <= args.minutes <= 180:
         raise SystemExit("--minutes must be 10..180 (ROUND7: hard self-destruct at most 180)")
     path = Path(args.state)
-    {"launch": launch, "wait": wait, "upload": upload, "run": run, "terminate": terminate}[args.cmd](args, path)
+    {"launch": launch, "wait": wait, "upload": upload, "download": download, "run": run,
+     "terminate": terminate}[args.cmd](args, path)
     return 0
 
 
