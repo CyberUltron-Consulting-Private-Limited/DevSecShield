@@ -143,47 +143,81 @@ def install(connection: Any, *, only_if_tables: bool = False) -> bool:
     return True
 
 
+# The same groups and conditions as SQLAlchemy Core, for the rebuild and the comparison (no SQL built from strings
+# outside the trigger DDL). The tests compare what the triggers keep with ``rebuild``, so the two forms cannot drift.
+_BLANK = frozenset({"system_key", "fix_class_excl_pq", "fix_reasons", "q_grade", "family"})  # NULL stored as ''
+
+
+def _live(t: Any) -> Any:
+    return t.c.presence != "removed"
+
+
+_GROUP_COND = {"cbomagilitygroup": lambda t: sa.and_(_live(t), t.c.fix_class.isnot(None)),
+               "cbomregistersummary": lambda t: sa.true()}
+_COUNT_COND = {"assets_live": _live,
+               "not_correlated_live": lambda t: sa.and_(_live(t), t.c.key_kind == "not_correlated"),
+               "observations_live": _live}
+
+
+def _table(name: str, *columns: str) -> Any:
+    return sa.table(name, *(sa.column(c) for c in dict.fromkeys(columns)))
+
+
+def _key(t: Any, name: str) -> Any:
+    return sa.func.coalesce(t.c[name], "") if name in _BLANK else t.c[name]
+
+
+def _team(t: Any, team_id: int | None) -> tuple:
+    return () if team_id is None else (t.c.team_id == team_id,)
+
+
+def _shapes():
+    for summary, source, groups, _cond, latest in _GROUPS:
+        names, latest_names = [n for n, _e in groups], [n for n, _e in latest]
+        yield (summary, names, latest_names, _table(source, *names, *latest_names, "presence", "key_kind"),
+               _table(summary, *names, "n", *latest_names))
+
+
 def rebuild(connection: Any, team_id: int | None = None) -> dict[str, int]:
     """Recompute the summaries from the base tables (one team, or all). The caller commits."""
-    where = "" if team_id is None else " AND team_id = :t"
-    params = {} if team_id is None else {"t": team_id}
-    for summary in SUMMARIES:
-        connection.execute(sa.text(f"DELETE FROM {summary} WHERE TRUE{where}"), params)
+    counts = _table("cbomestatecount", "team_id", "kind", "n")
+    for summary, names, latest, _src, dst in _shapes():
+        connection.execute(sa.delete(dst).where(*_team(dst, team_id)))
+    connection.execute(sa.delete(counts).where(*_team(counts, team_id)))
     out = {}
-    for summary, source, groups, cond, latest in _GROUPS:
-        keys = [expr.format(p="") for _n, expr in groups]
-        names = [n for n, _e in groups] + [n for n, _e in latest]
-        extra = "".join(f", max({expr.format(p='')})" for _n, expr in latest)
-        res = connection.execute(sa.text(
-            f"INSERT INTO {summary} ({', '.join(names[:len(groups)])}, n{''.join(', ' + n for n, _e in latest)}) "
-            f"SELECT {', '.join(keys)}, count(*){extra} FROM {source} WHERE {cond.format(p='')}{where} "
-            f"GROUP BY {', '.join(keys)}"), params)
+    for summary, names, latest, src, dst in _shapes():
+        keys = [_key(src, n) for n in names]
+        select = (sa.select(*keys, sa.func.count(), *(sa.func.max(src.c[n]) for n in latest))
+                  .where(_GROUP_COND[summary](src), *_team(src, team_id)).group_by(*keys))
+        res = connection.execute(sa.insert(dst).from_select([*names, "n", *latest], select))
         out[summary] = int(res.rowcount or 0)
-    for kind, (source, cond) in COUNTS.items():
-        connection.execute(sa.text(
-            f"INSERT INTO cbomestatecount (team_id, kind, n) SELECT team_id, '{kind}', count(*) FROM {source} "
-            f"WHERE {cond.format(p='')}{where} GROUP BY team_id"), params)
+    for kind, (source, _cond) in COUNTS.items():
+        src = _table(source, "team_id", "presence", "key_kind")
+        select = (sa.select(src.c.team_id, sa.literal(kind, sa.String), sa.func.count())
+                  .where(_COUNT_COND[kind](src), *_team(src, team_id)).group_by(src.c.team_id))
+        connection.execute(sa.insert(counts).from_select(["team_id", "kind", "n"], select))
     return out
 
 
 def compare(connection: Any, team_id: int) -> list[str]:
     """What differs between the team's summaries and the base tables (empty when they agree)."""
     diffs = []
-    for summary, source, groups, cond, _latest in _GROUPS:
-        keys = [expr.format(p="") for _n, expr in groups]
-        names = [n for n, _e in groups]
-        live = {tuple(r[:-1]): int(r[-1]) for r in connection.execute(sa.text(
-            f"SELECT {', '.join(keys)}, count(*) FROM {source} WHERE {cond.format(p='')} AND team_id = :t "
-            f"GROUP BY {', '.join(keys)}"), {"t": team_id})}
-        kept = {tuple(r[:-1]): int(r[-1]) for r in connection.execute(sa.text(
-            f"SELECT {', '.join(names)}, n FROM {summary} WHERE team_id = :t AND n <> 0"), {"t": team_id})}
+    for summary, names, _latest, src, dst in _shapes():
+        keys = [_key(src, n) for n in names]
+        live = {tuple(r[:-1]): int(r[-1]) for r in connection.execute(
+            sa.select(*keys, sa.func.count()).where(_GROUP_COND[summary](src), src.c.team_id == team_id)
+            .group_by(*keys))}
+        kept = {tuple(r[:-1]): int(r[-1]) for r in connection.execute(
+            sa.select(*(dst.c[n] for n in names), dst.c.n).where(dst.c.team_id == team_id, dst.c.n != 0))}
         if live != kept:
             diffs.append(summary)
-    for kind, (source, cond) in COUNTS.items():
-        live_n = connection.execute(sa.text(f"SELECT count(*) FROM {source} WHERE {cond.format(p='')} AND team_id = :t"),
-                                    {"t": team_id}).scalar()
-        kept_n = connection.execute(sa.text("SELECT coalesce(sum(n), 0) FROM cbomestatecount WHERE team_id = :t AND "
-                                            "kind = :k"), {"t": team_id, "k": kind}).scalar()
+    counts = _table("cbomestatecount", "team_id", "kind", "n")
+    for kind, (source, _cond) in COUNTS.items():
+        src = _table(source, "team_id", "presence", "key_kind")
+        live_n = connection.execute(sa.select(sa.func.count()).select_from(src).where(
+            _COUNT_COND[kind](src), src.c.team_id == team_id)).scalar()
+        kept_n = connection.execute(sa.select(sa.func.coalesce(sa.func.sum(counts.c.n), 0)).where(
+            counts.c.team_id == team_id, counts.c.kind == kind)).scalar()
         if int(live_n) != int(kept_n):
             diffs.append(f"cbomestatecount:{kind}")
     return diffs
@@ -201,15 +235,13 @@ def agility_groups(session: Any, team_id: int) -> list[tuple]:
 def agility_total(session: Any, team_id: int, *, fix_class: str | None = None, excl_pq: bool = False,
                   system: str | None = None) -> int:
     """How many live classed assets match (the agility page's count)."""
-    where, params = ["team_id = :t"], {"t": team_id}
+    t = _table("cbomagilitygroup", "team_id", "fix_class", "fix_class_excl_pq", "system_key", "n")
+    where = [t.c.team_id == team_id]
     if fix_class:
-        where.append(("fix_class_excl_pq" if excl_pq else "fix_class") + " = :c")
-        params["c"] = fix_class
+        where.append((t.c.fix_class_excl_pq if excl_pq else t.c.fix_class) == fix_class)
     if system:
-        where.append("system_key = :s")
-        params["s"] = system
-    return int(session.execute(sa.text(f"SELECT coalesce(sum(n), 0) FROM cbomagilitygroup WHERE {' AND '.join(where)}"),
-                               params).scalar() or 0)
+        where.append(t.c.system_key == system)
+    return int(session.execute(sa.select(sa.func.coalesce(sa.func.sum(t.c.n), 0)).where(*where)).scalar() or 0)
 
 
 def count(session: Any, team_id: int, kind: str) -> int:
