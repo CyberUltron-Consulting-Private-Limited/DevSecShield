@@ -420,7 +420,7 @@ anonymous_pull() { # <host>/<repository> <tag>: 0 when anyone can read the manif
 # downloaded chart exactly when that digest is the download's sha256.
 HELM_CHART_LAYER=application/vnd.cncf.helm.chart.content.v1.tar+gzip
 chart_layer_digest() { # <manifest file>: sha256:<hex> of its chart content layer (empty when it has none)
-  tr '{}' '\n\n' <"$1" | grep -F "${HELM_CHART_LAYER}" | grep -oE 'sha256:[0-9a-f]{64}' | head -n 1 || true
+  tr '{}' '\n' <"$1" | grep -F "${HELM_CHART_LAYER}" | grep -oE 'sha256:[0-9a-f]{64}' | head -n 1 || true
 }
 
 ghcr_chart_matches() { # <registry> <version> <chart file>: 0 = GHCR's chart <version> is that file, byte for byte;
