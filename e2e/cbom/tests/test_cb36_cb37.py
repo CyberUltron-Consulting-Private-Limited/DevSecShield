@@ -31,12 +31,11 @@ def _edit(path: Path, fn) -> None:
     write_json(path, data)
 
 
-def _ssm(chunks) -> dict:
-    if chunks and isinstance(chunks[0], dict):
-        text = "".join(part["text"] for part in sorted(chunks, key=lambda part: part["index"]))
-    else:
-        text = "".join(chunks)
-    return {"sha256": hashlib.sha256(text.encode()).hexdigest(), "chunks": chunks}
+def _save_download(folder: Path, name: str, body: bytes) -> None:
+    """The shape ``ssm_download.save_download`` leaves for the judge: the bytes and a sha256 sidecar."""
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / name).write_bytes(body)
+    (folder / f"{name}.sha256").write_text(hashlib.sha256(body).hexdigest() + "\n", encoding="utf-8")
 
 
 def _ready_v(tmp_path: Path) -> Path:
@@ -59,8 +58,7 @@ def _ready_v(tmp_path: Path) -> Path:
     write_json(run / "tier-v" / "targets" / "fips.json", {
         "oracle": {"name": "Rocky Linux", "version_id": "9.3", "fips_enabled": "1"},
         "observed": {"name": "Rocky Linux", "version_id": "9.3", "fips_enabled": 1}})
-    write_json(run / "tier-v" / "ssm" / "evidence.json", _ssm([
-        {"index": 1, "text": "-evidence"}, {"index": 0, "text": "tier-v"}]))
+    _save_download(run / "tier-v" / "ssm", "evidence.har", b"tier-v-evidence")
     return run
 
 
@@ -116,25 +114,20 @@ def test_a_complete_replica_passes_and_judges_again(tmp_path):
     assert Tv.main(["judge", str(tmp_path / "missing")]) == 2
 
 
-def test_ssm_chunks_reassemble_in_order_under_the_character_cap():
-    body, reason = Tv.reassemble_ssm(_ssm([{"index": 1, "text": "b"}, {"index": 0, "text": "a"}]))
-    assert reason == "" and body == b"ab"
-    exact, reason = Tv.reassemble_ssm(_ssm(["é" * 24000]))
-    assert reason == "" and exact == ("é" * 24000).encode()
-    over, reason = Tv.reassemble_ssm(_ssm(["é" * 24001]))
-    assert over is None and "24001" in reason and "24000" in reason
-    gap, reason = Tv.reassemble_ssm(_ssm([{"index": 0, "text": "a"}, {"index": 2, "text": "c"}]))
-    assert gap is None and "indexes" in reason
-    mixed, reason = Tv.reassemble_ssm({"sha256": "ab" * 32, "chunks": ["a", {"index": 1, "text": "b"}]})
-    assert mixed is None and "mix" in reason
-    bad = _ssm(["evidence"])
-    bad["sha256"] = "0" * 64
-    mismatch, reason = Tv.reassemble_ssm(bad)
-    assert mismatch is None and reason == "sha256 does not match the reassembled download"
-    empty, reason = Tv.reassemble_ssm(_ssm([""]))
-    assert empty is None and "empty" in reason
-    huge, reason = Tv.reassemble_ssm(_ssm(["x"] * (Tv.MAX_SSM_CHUNKS + 1)))
-    assert huge is None and "chunks" in reason
+def test_the_recorded_download_matches_the_driver_cap_and_its_sha256(tmp_path):
+    import sys
+    root = Path(__file__).resolve().parents[3]
+    sys.path.insert(0, str(root))
+    from bench.f1_transports.ssm_download import INLINE_CAP
+
+    assert Tv.SSM_INLINE_CAP == INLINE_CAP == 24000
+    run = _ready_v(tmp_path)
+    assert _check(Tv.judge(run)[1], "V/ssm/evidence.har")["verdict"] == "PASS"
+    (run / "tier-v" / "ssm" / "evidence.har").write_bytes(b"tampered")
+    assert _check(Tv.judge(run)[1], "V/ssm/evidence.har")["reason"] == "sha256"
+    link = run / "tier-v" / "ssm" / "alias.har"
+    link.symlink_to(run / "tier-v" / "ssm" / "evidence.har")
+    assert _check(Tv.judge(run)[1], "V/ssm/alias.har")["reason"] == "symlink"
 
 
 def test_lifetime_boundary_shutdown_tag_and_build(tmp_path):

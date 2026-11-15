@@ -2,8 +2,9 @@
 
 The replica is a self-destructing sandbox (at most 180 minutes, ``Project=DevSecShield``, shutdown
 behavior ``terminate``) plus four rows: Windows, RDS Postgres, an internal ALB, and a FIPS Rocky 9
-host. Headless browser evidence is recorded, not launched. A download over SSM is reassembled from
-chunks because ``StandardOutputContent`` holds 24,000 characters, then checked with sha256.
+host. Headless browser evidence is recorded, not launched. A file brought back by the chunked SSM
+download (``bench/f1_transports/ssm_download.py``) is checked here only as bytes against its
+sha256 sidecar. This judge does not download anything.
 
 This module does not call AWS, a browser, or a deploy. A missing evidence file is NOT-RUN. A row
 with no oracle value is NOT-JUDGED. Neither verdict passes.
@@ -27,9 +28,8 @@ from .preflight import same_sha
 from .rundir import RUN_NAME, create, iso, parse_ts, utc_now, write_json
 
 MAX_LIFETIME_MIN = 180
-SSM_INLINE_CAP = 24000  # characters; SSM GetCommandInvocation StandardOutputContent
-MAX_SSM_CHUNKS = 10000
-MAX_SSM_CHARS = 32 * 1024 * 1024
+# Characters. Same cap as bench/f1_transports/ssm_download.INLINE_CAP and the product SSM transport.
+SSM_INLINE_CAP = 24000
 FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
 TARGETS = ("windows", "rds", "alb", "fips")
 REQUIRED_TEARDOWN = frozenset({"ec2", "rds", "alb"})
@@ -68,52 +68,10 @@ def plan(root: Path, sha: str, when=None) -> Path:
         "evidence": [
             "tier-v/sandbox.json", "tier-v/playwright.json", "tier-v/teardown.json",
             "tier-v/targets/windows.json", "tier-v/targets/rds.json", "tier-v/targets/alb.json",
-            "tier-v/targets/fips.json", "tier-v/ssm/<name>.json",
+            "tier-v/targets/fips.json", "tier-v/ssm/<file>", "tier-v/ssm/<file>.sha256",
         ],
     })
     return run
-
-
-def reassemble_ssm(payload: dict[str, Any]) -> tuple[bytes | None, str]:
-    """Join SSM output chunks in index order and check sha256. ``("", reason)``-style: bytes or None.
-
-    Each chunk is one ``StandardOutputContent`` body. The digest is sha256 of the UTF-8 bytes of the
-    joined text. String chunks are already in order. Object chunks (``index`` + ``text``) may arrive
-    out of order; a gap, a duplicate, or a mix of the two shapes fails.
-    """
-    chunks = payload.get("chunks")
-    digest = str(payload.get("sha256") or "").strip().lower()
-    if not isinstance(chunks, list) or not chunks:
-        return None, "no chunks"
-    if len(chunks) > MAX_SSM_CHUNKS:
-        return None, f"more than {MAX_SSM_CHUNKS} chunks"
-    if not re.fullmatch(r"[0-9a-f]{64}", digest):
-        return None, "sha256 is not 64 hex characters"
-    shaped = [isinstance(c, dict) for c in chunks]
-    if any(shaped) and not all(shaped):
-        return None, "chunks mix strings and index objects"
-    rows: list[tuple[int, str]] = []
-    for position, chunk in enumerate(chunks):
-        if isinstance(chunk, str):
-            index, text = position, chunk
-        elif isinstance(chunk, dict) and isinstance(chunk.get("text"), str) and type(chunk.get("index")) is int:
-            index, text = chunk["index"], chunk["text"]
-        else:
-            return None, f"chunk {position} is not text"
-        if len(text) > SSM_INLINE_CAP:
-            return None, (f"chunk {index} is {len(text)} characters; StandardOutputContent holds "
-                          f"{SSM_INLINE_CAP}")
-        if text == "":
-            return None, f"chunk {index} is empty"
-        rows.append((index, text))
-    if sorted(i for i, _ in rows) != list(range(len(rows))):
-        return None, "chunk indexes are not 0..n-1"
-    if sum(len(text) for _, text in rows) > MAX_SSM_CHARS:
-        return None, f"download is larger than {MAX_SSM_CHARS} characters"
-    body = "".join(text for _, text in sorted(rows)).encode("utf-8")
-    if hashlib.sha256(body).hexdigest() != digest:
-        return None, "sha256 does not match the reassembled download"
-    return body, ""
 
 
 def judge(run: Path) -> tuple[bool, dict[str, Any]]:
@@ -410,25 +368,36 @@ def _fips(checks: Checks, oracle: dict, observed: dict, rel: str) -> None:
 
 
 def _ssm(checks: Checks, run: Path) -> None:
+    """The download itself is ``ssm_download.save_download``. Here, each saved file must match its sidecar."""
     folder = run / "tier-v" / "ssm"
-    files = sorted(p for p in folder.glob("*.json") if p.is_file()) if folder.is_dir() else []
+    files = _ssm_files(folder)
     if not files:
-        checks.not_run("V/ssm", "V", "tier-v", "no chunked SSM download was recorded", {"check": "ssm"},
+        checks.not_run("V/ssm", "V", "tier-v", "no sha256-checked SSM download was recorded", {"check": "ssm"},
                        evidence=["tier-v/ssm/"])
         return
     for path in files:
         rel = path.relative_to(run).as_posix()
-        doc, err = _load(path)
-        cid = f"V/ssm/{path.stem}"
-        if err or doc is None:
-            checks.fail(cid, "V", "tier-v", err or "unreadable", {"check": "ssm", "part": path.stem}, evidence=[rel])
+        cid = f"V/ssm/{path.name}"
+        subject = {"check": "ssm", "part": path.name}
+        if path.is_symlink():
+            checks.fail(cid, "V", "tier-v", "symlink", subject, evidence=[rel])
             continue
-        body, reason = reassemble_ssm(doc)
-        if body is None:
-            checks.fail(cid, "V", "tier-v", reason, {"check": "ssm", "part": path.stem}, evidence=[rel])
-        else:
-            checks.ok(cid, "V", "tier-v", {"check": "ssm", "part": path.stem},
-                      observed={"bytes": len(body), "sha256": doc.get("sha256")}, evidence=[rel])
+        side = Path(str(path) + ".sha256")
+        if side.is_symlink() or not side.is_file():
+            checks.fail(cid, "V", "tier-v", "no sha256", subject, evidence=[rel])
+            continue
+        want = side.read_text(encoding="utf-8").strip().lower().split()[0] if side.stat().st_size < 256 else ""
+        got = hashlib.sha256(path.read_bytes()).hexdigest()
+        ok = re.fullmatch(r"[0-9a-f]{64}", want) is not None and got == want
+        checks.verdict(cid, "V", "tier-v", ok, "sha256", subject, expected=want or "<64 hex>", observed=got,
+                       evidence=[rel, side.relative_to(run).as_posix()])
+
+
+def _ssm_files(folder: Path) -> list[Path]:
+    if not folder.is_dir():
+        return []
+    return sorted(p for p in folder.iterdir()
+                  if not p.name.endswith(".sha256") and (p.is_file() or p.is_symlink()))
 
 
 def main(argv: list[str] | None = None) -> int:
