@@ -26,6 +26,8 @@ workflow runs it from CI.
    cd /opt/devsecshield-staging/deploy/staging
    cp .env.example .env && cp backend.env.example backend.env && chmod 600 .env backend.env
    # set every value (names and meaning are in the two files and in backend/.env.example)
+   # Staging reads only these host files. It does not read backend/.env, backend/utilities/ai/.env,
+   # RabbitMQ/worker/.env, or RabbitMQ/worker/helpers/context/.env.
    mkdir -p certs   # fullchain.pem + privkey.pem for both host names; without them nginx serves plain HTTP
    ```
    Set `ENCRYPTION_KEY` before the first start (see `docs/security/secret-rotation.md`).
