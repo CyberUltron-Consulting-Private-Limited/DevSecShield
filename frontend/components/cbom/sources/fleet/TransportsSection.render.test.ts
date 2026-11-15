@@ -158,6 +158,21 @@ void run([
     assert.equal(fake.calls("get", /\/artifacts\/ansible-collection$/).length, 1);
     assert.match(document.querySelector('[data-testid="fleet-transport-file"]')?.textContent ?? "", /"version": "1\.4\.0"/);
   }],
+  ["without an active zs-collect release, only the files that need none can be loaded (no request that can only fail)", async () => {
+    const fake = new FakeApi().on("get", /\/fleet\/transports$/, { data: { transports: [AWX], release: null, release_key_fingerprint: "SHA256:abc" } });
+    fake.install();
+    await show();
+    const files = document.querySelector('[data-testid="fleet-transport-files"]');
+    const btn = (name: string) => [...(files?.querySelectorAll("button") ?? [])].find((b) => b.textContent?.trim() === name);
+    for (const name of ["ansible-collection", "salt-state", "ssm-document", "zs-collect-manifest"]) {
+      assert.equal(btn(name)?.disabled, true, `${name} can be clicked without a release`);
+      assert.match(btn(name)?.getAttribute("title") ?? "", /zs-collect release/);
+    }
+    for (const name of ["ssm-role-cfn", "zs-collect-pubkey"]) assert.equal(btn(name)?.disabled, false, `${name} is off`);
+    await act(async () => btn("ansible-collection")!.click());
+    await settle();
+    assert.equal(fake.calls("get", /\/artifacts\//).length, 0, "a file that needs a release was asked for");
+  }],
   ["an empty list says what a transport is for", async () => {
     api([]);
     await show();

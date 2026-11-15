@@ -109,6 +109,13 @@ def allowed_line(line: str) -> bool:
         if body.startswith(before) and body.endswith(after) and len(body) > len(before) + len(after):
             if _one_quoted_path(body[len(before):len(body) - len(after)]):
                 return True
+    # #116: a file under /etc/ssh/ named by an sshd_config Include, quoted, or a wildcard there that goes unquoted
+    before, after = C.SSHD_INCLUDE.split("{file}")
+    if body.startswith(before) and body.endswith(after) and len(body) > len(before) + len(after):
+        arg = body[len(before):len(body) - len(after)]
+        if any(c in arg for c in "*?"):
+            return C.include_allowed(arg)
+        return _one_quoted_path(arg) and C.include_allowed(shlex.split(arg)[0])
     return False
 
 
