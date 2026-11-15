@@ -18,9 +18,12 @@ from sqlmodel import Session
 
 from backend.utilities.cbom_sources import estate as ESTATE
 from backend.utilities.cbom_sources import estate_links as LINKS
+from backend.utilities.cbom_sources import http as _cbom_http
+from backend.utilities.rbac.policy import Access
 from backend.utilities.cbom_sources.http import PRIVATE, CbomRoute, TeamId, authorize, read_limiter, server_error
 
 router = APIRouter(tags=["cbom-estate"], route_class=CbomRoute)
+access = Access(lambda: _cbom_http.get_db())  # route policies (utilities/rbac): the same database as authorize()
 AuthHeader = Annotated[str | None, Header()]
 READ = [Depends(read_limiter)]
 KEY_PATTERN = r"^[a-z]{2,8}:[0-9a-f]{40}$"
@@ -61,7 +64,7 @@ def _one(engine, team_id: int, asset_key: str) -> dict:
     return out
 
 
-@router.get("/{team_id}/cbom/estate", dependencies=READ,
+@router.get("/{team_id}/cbom/estate", dependencies=[*READ, access.team("cbom.read")],
             summary="The team's estate: one row per asset key with its presence and latest observation (keyset pages)")
 async def list_estate(team_id: TeamId,
                       after: str | None = Query(default=None, max_length=64, pattern=KEY_PATTERN),
@@ -77,7 +80,7 @@ async def list_estate(team_id: TeamId,
     return JSONResponse(payload, headers=PRIVATE)
 
 
-@router.get("/{team_id}/cbom/estate/{asset_key}", dependencies=READ,
+@router.get("/{team_id}/cbom/estate/{asset_key}", dependencies=[*READ, access.team("cbom.read")],
             summary="One estate asset with its latest observation per source")
 async def get_estate_asset(team_id: TeamId, asset_key: AssetKey, Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)

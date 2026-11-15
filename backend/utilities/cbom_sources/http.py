@@ -127,7 +127,8 @@ async def authorize(team_id: int, authorization: str | None):
     engine = get_db()
     parts = (authorization or "").split(" ")
     if len(parts) == 2 and parts[0].lower() == "bearer" and API_KEYS.looks_like_key(parts[1]):
-        user, key_id = await run_in_threadpool(API_KEYS.authenticate, engine, team_id, parts[1])
+        user, key_id = (API_KEYS.verified_for(team_id, parts[1])
+                        or await run_in_threadpool(API_KEYS.authenticate, engine, team_id, parts[1]))
         API_KEYS.mark_active(key_id)
         return engine, user
     user = await get_user_from_header_or_raise_exception(engine, authorization)

@@ -1064,7 +1064,7 @@ def _host_key_reset(engine, team_id: int, user_id: int, source_id: int, body: An
                            "again to apply it now."}
 
 
-@router.post(BASE + "/items/{source_id}/host-key-resets", dependencies=WRITE,
+@router.post(BASE + "/items/{source_id}/host-key-resets", dependencies=[*WRITE, access.team("cbom.settings")],
              summary="Accept a changed host key, or forget the remembered one, on the scan node that reported it (admin)")
 async def create_host_key_reset(team_id: TeamId, source_id: ObjectId, body: dict, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
@@ -1078,7 +1078,7 @@ def _host_key_resets(engine, team_id: int, source_id: int) -> dict:
         return {"resets": HKR.recent(session, source)}
 
 
-@router.get(BASE + "/items/{source_id}/host-key-resets", dependencies=READ,
+@router.get(BASE + "/items/{source_id}/host-key-resets", dependencies=[*READ, access.team("cbom.read")],
             summary="Host key decisions for a source: pending, applied and superseded")
 async def list_host_key_resets(team_id: TeamId, source_id: ObjectId, Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
@@ -1734,7 +1734,7 @@ def _run_results(engine, team_id: int, run_id: int) -> dict:
                                        run_detail=detail, now=now)
 
 
-@router.get(BASE + "/runs/{run_id}/results", dependencies=READ,
+@router.get(BASE + "/runs/{run_id}/results", dependencies=[*READ, access.team("cbom.read")],
             summary="A run in the code-scan results page's shapes: dashboard, crypto charts, compliance, top risks, "
                     "orphaned and unmanaged certificates, provenance")
 async def run_results(team_id: TeamId, run_id: ObjectId, Authorization: AuthHeader = None):
@@ -1752,7 +1752,7 @@ def _run_parity(engine, team_id: int, run_id: int) -> dict:
         return RUN_PARITY.run_parity(session, run, team_id=team_id, risk_model=settings.risk_model, now=now)
 
 
-@router.get(BASE + "/runs/{run_id}/parity", dependencies=READ,
+@router.get(BASE + "/runs/{run_id}/parity", dependencies=[*READ, access.team("cbom.read")],
             summary="A run's code-page scan_metadata sections: tri-state crypto compliance, RBI CSF and CERT-In "
                     "roll-ups, crypto dependency graph, what the run covered")
 async def run_parity(team_id: TeamId, run_id: ObjectId, Authorization: AuthHeader = None):
@@ -1777,7 +1777,7 @@ def _run_asset_remediation(engine, team_id: int, run_id: int, asset_id: int) -> 
     return remediation(finding, "node")
 
 
-@router.get(BASE + "/runs/{run_id}/assets/{asset_id}/remediation", dependencies=READ,
+@router.get(BASE + "/runs/{run_id}/assets/{asset_id}/remediation", dependencies=[*READ, access.team("cbom.read")],
             summary="The code page's finding remediation (KB fix, steps, exploit demo, standards) for one run asset")
 async def run_asset_remediation(team_id: TeamId, run_id: ObjectId, asset_id: ObjectId, Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
@@ -1831,7 +1831,7 @@ def _asset_detail(engine, team_id: int, asset_id: int) -> dict:
         return {"asset": out}
 
 
-@router.get(BASE + "/grade-model", dependencies=READ,
+@router.get(BASE + "/grade-model", dependencies=[*READ, access.team("cbom.read")],
             summary="The quantum risk grade model (qg-1): signed text, its sha256, grades and reason codes")
 async def grade_model(team_id: TeamId, Authorization: AuthHeader = None):
     await authorize(team_id, Authorization)
@@ -1845,7 +1845,7 @@ async def asset_detail(team_id: TeamId, asset_id: ObjectId, Authorization: AuthH
     return _ok(await _run("asset detail", team_id, _asset_detail, engine, team_id, asset_id))
 
 
-@router.get(BASE + "/agility-model", dependencies=READ,
+@router.get(BASE + "/agility-model", dependencies=[*READ, access.team("cbom.read")],
             summary="Crypto-agility fix classes, their order and text, and the rules that decide them (CB-24)")
 async def agility_model(team_id: TeamId, Authorization: AuthHeader = None):
     await authorize(team_id, Authorization)
@@ -1874,7 +1874,7 @@ def _cursor_or_400(after: str | None) -> None:
         raise bad_request(exc) from None
 
 
-@router.get("/{team_id}/cbom/agility", dependencies=READ,
+@router.get("/{team_id}/cbom/agility", dependencies=[*READ, access.team("cbom.read")],
             summary="Crypto-agility baseline of the team's current estate: enterprise counts per fix class and the "
                     "per-system table (CB-25)")
 async def agility_baseline(team_id: TeamId,
@@ -1889,7 +1889,7 @@ async def agility_baseline(team_id: TeamId,
                           {"after": after, "limit": limit, "fix_class": fix_class, "kind": kind}))
 
 
-@router.get("/{team_id}/cbom/agility/subjects", dependencies=READ,
+@router.get("/{team_id}/cbom/agility/subjects", dependencies=[*READ, access.team("cbom.read")],
             summary="Drill-down of the agility baseline: the assets of one fix class and/or one system, keyset-paged")
 async def agility_subjects(team_id: TeamId,
                            fix_class: str | None = Query(default=None, pattern=FIX_VALUE),
@@ -1905,7 +1905,7 @@ async def agility_subjects(team_id: TeamId,
                            "limit": limit}))
 
 
-@router.get("/{team_id}/cbom/agility/history", dependencies=READ,
+@router.get("/{team_id}/cbom/agility/history", dependencies=[*READ, access.team("cbom.read")],
             summary="The team's crypto-agility baseline written at each run (newest first, CB-25)")
 async def agility_history(team_id: TeamId, limit: int = Query(default=50, ge=1, le=500),
                           Authorization: AuthHeader = None):

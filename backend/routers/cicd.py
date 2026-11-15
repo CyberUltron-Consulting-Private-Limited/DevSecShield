@@ -672,7 +672,7 @@ def _manageable_integration(session: Session, team_id: int, integration_id: int,
 
 
 @router.post("/{team_id}/cicd/integration/{integration_id}/api-key/rotate", summary="Issue a new CI/CD API key",
-             dependencies=[Depends(write_limiter)])
+             dependencies=[Depends(write_limiter), access.team("cicd.manage")])
 async def rotate_cicd_api_key(
     team_id: int,
     integration_id: int,
@@ -708,7 +708,7 @@ async def rotate_cicd_api_key(
 
 
 @router.delete("/{team_id}/cicd/integration/{integration_id}/api-key", summary="Revoke the CI/CD API key",
-               dependencies=[Depends(write_limiter)])
+               dependencies=[Depends(write_limiter), access.team("cicd.manage")])
 async def revoke_cicd_api_key(
     team_id: int,
     integration_id: int,

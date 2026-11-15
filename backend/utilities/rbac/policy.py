@@ -148,6 +148,47 @@ async def resolve_principal(request: Request, engine: Engine, team_id: Optional[
     return principal
 
 
+def _is_cbom_api_key(request: Request) -> bool:
+    """A ``zsk_`` CBOM API key on a route whose handler would check it (``api_keys.checked_by_authorize``).  On any
+    other route the token is not a session and ``resolve_principal`` refuses it (401), as the handler would."""
+    header = request.headers.get("authorization") or ""
+    parts = header.split(" ")
+    if not (len(parts) == 2 and parts[0].lower() == "bearer" and parts[1].startswith("zsk_")):
+        return False
+    from backend.utilities.cbom_sources import api_keys as API_KEYS
+
+    return API_KEYS.checked_by_authorize(request)
+
+
+async def _cbom_api_key_principal(request: Request, engine: Engine, team_id: int) -> Principal:
+    """A team-scoped CBOM API key (``zsk_``, issue #226) on a team route: ``api_keys.authenticate`` refuses it unless
+    the route is one of ``api_keys.ROUTE_SCOPES`` (deny by default), the key is live, belongs to this team, holds the
+    route's scope and its creator is still an admin or owner of the team.  The key then acts as its creator, whose
+    role the caller checks against the route's permission like anybody's.  The handler's ``authorize`` reuses this
+    verification for the same request (one ``api_key.use`` row, not two)."""
+    from backend.utilities.cbom_sources import api_keys as API_KEYS
+
+    token = bearer_token(request)
+    try:
+        user, key_id = await run_in_threadpool(API_KEYS.authenticate, engine, team_id, token)
+        role = await run_in_threadpool(_membership_role, engine, team_id, int(user.id))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log.error("access check failed for an API key (%s)", type(exc).__name__)
+        raise HTTPException(status_code=500, detail=ACCESS_CHECK_FAILED) from None
+    API_KEYS.mark_active(key_id)
+    API_KEYS.remember_verified(request, team_id, token, user, key_id)
+    return Principal(user_id=int(user.id), email=user.email, is_superuser=bool(user.is_superuser), team_id=team_id,
+                     role=role, via="api_key")
+
+
+def _membership_role(engine: Engine, team_id: int, user_id: int) -> Optional[str]:
+    with Session(engine) as session:
+        return session.exec(select(TeamMembership.role).where(
+            TeamMembership.team_id == team_id, TeamMembership.user_id == user_id)).first()
+
+
 class AccessPolicy:
     """Base class: a route's access declaration (a FastAPI dependency)."""
     kind = "abstract"
@@ -266,7 +307,10 @@ class TeamPermission(AccessPolicy):
     async def __call__(self, request: Request) -> Principal:
         team_id = team_id_from_path(request)
         engine = _engine(self.engine_getter)
-        principal = await resolve_principal(request, engine, team_id=team_id)
+        if _is_cbom_api_key(request):
+            principal = await _cbom_api_key_principal(request, engine, team_id)
+        else:
+            principal = await resolve_principal(request, engine, team_id=team_id)
         ctx = self._context(request, engine_getter=self.engine_getter, principal=principal, team_id=team_id)
         if principal.role is None:
             if self.audited:
@@ -280,6 +324,32 @@ class TeamPermission(AccessPolicy):
         if self.audited:
             await _audit_attempt(request, ctx, engine)
         return principal
+
+
+class TeamPermissionOrTicket(TeamPermission):
+    """A team permission for every request that carries an Authorization header (or no credential at all); a
+    request WITHOUT an Authorization header that carries one of ``ticket_params`` in its query string is a signed,
+    short-lived link (a download ticket) which the handler checks itself, like ``machine(...)``.
+
+    So a signed-in caller is held to the role check exactly like ``access.team(permission)``, and an anonymous
+    request with no ticket is refused here (401) before the handler runs."""
+
+    def __init__(self, permission: str, engine_getter: EngineGetter, *, ticket_params: tuple[str, ...], reason: str):
+        super().__init__(permission, engine_getter)
+        if not ticket_params or not (reason or "").strip():
+            raise ValueError("team_or_ticket needs the ticket parameters and a reason")
+        self.ticket_params = tuple(ticket_params)
+        self.reason = reason
+
+    def describe(self) -> str:
+        return (f"{super().describe()}; without a session: a {' / '.join(self.ticket_params)} query ticket the "
+                f"handler checks ({self.reason})")
+
+    async def __call__(self, request: Request) -> Optional[Principal]:
+        if "authorization" not in request.headers and any(request.query_params.get(p) for p in self.ticket_params):
+            self._context(request, engine_getter=self.engine_getter, team_id=team_id_from_path(request))
+            return None
+        return await super().__call__(request)
 
 
 AUDIT_UNAVAILABLE = "The audit log cannot record this change right now, so nothing was changed. Try again shortly."
@@ -331,6 +401,13 @@ class Access:
     def team(self, permission: str):
         from fastapi import Depends
         return Depends(TeamPermission(permission, self.engine_getter))
+
+    def team_or_ticket(self, permission: str, *, ticket_params: tuple[str, ...], reason: str):
+        """``team(permission)``, except that a request with no Authorization header and one of ``ticket_params`` in
+        its query (a signed download link) is left to the handler's ticket check (``TeamPermissionOrTicket``)."""
+        from fastapi import Depends
+        return Depends(TeamPermissionOrTicket(permission, self.engine_getter, ticket_params=ticket_params,
+                                              reason=reason))
 
     def authenticated(self, *, allow_inactive_session: bool = False, audited: bool = False):
         from fastapi import Depends

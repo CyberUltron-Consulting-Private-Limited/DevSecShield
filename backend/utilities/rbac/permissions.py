@@ -70,6 +70,7 @@ _ALL = (
     Permission("cbom.read", "viewer", "view CBOM sources and runs", False),
     Permission("cbom.write", "member", "change CBOM sources, nodes, runs or evidence", True),
     Permission("cbom.settings", "admin", "change the team's CBOM network scope and settings", True),
+    Permission("cbom.api_keys.manage", "admin", "create or revoke the team's CBOM API keys", True),
     # F1 fleet onboarding (round6/f1/CONTRACT.md section 3): inventory, tag policies, transports, SSH CA
     Permission("cbom.fleet.read", "viewer", "view the fleet inventory, policies, transports and SSH CA", False),
     Permission("cbom.inventory.write", "admin", "change the fleet inventory", True),

@@ -38,7 +38,7 @@ from backend.utilities.rbac import coverage  # noqa: E402
 from backend.utilities.rbac.permissions import role_has  # noqa: E402
 from backend.utilities.rbac.policy import (  # noqa: E402
     NOT_IN_TEAM, SESSION_NOT_ACTIVE, SUPERUSER_REQUIRED, Access, AccessPolicy, PermissionMarker, TeamPermission,
-    marker_of, public,
+    marker_of, policy_from_marker, public,
 )
 
 TEAM = 1
@@ -173,7 +173,8 @@ def _policy(route) -> AccessPolicy:
     declared = [d.call for d in route.dependant.dependencies if isinstance(d.call, AccessPolicy)]
     if declared:
         return declared[0]
-    return TeamPermission(marker_of(route), lambda: None)  # an x-zs-permission route (PermissionMarker enforces it)
+    # an x-zs-permission route: what PermissionMarker enforces (a team permission, or public:/machine: markers)
+    return policy_from_marker(marker_of(route), lambda: None)
 
 
 def _call(client, method, url, headers):

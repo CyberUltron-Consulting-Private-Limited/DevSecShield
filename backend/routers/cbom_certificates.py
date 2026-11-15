@@ -12,9 +12,12 @@ from sqlmodel import Session
 
 from backend.utilities.cbom_sources import cert_hygiene as HYG
 from backend.utilities.cbom_sources.common import utcnow
+from backend.utilities.cbom_sources import http as _cbom_http
+from backend.utilities.rbac.policy import Access
 from backend.utilities.cbom_sources.http import PRIVATE, CbomRoute, TeamId, authorize, read_limiter, server_error
 
 router = APIRouter(tags=["cbom-certificates"], route_class=CbomRoute)
+access = Access(lambda: _cbom_http.get_db())  # route policies (utilities/rbac): the same database as authorize()
 AuthHeader = Annotated[str | None, Header()]
 READ = [Depends(read_limiter)]
 FlagQ = Query(default=None, pattern="^(" + "|".join(HYG.FLAGS) + ")$")
@@ -41,7 +44,7 @@ def _page(engine, team_id: int, stale_runs: int, filters: dict[str, Any], after:
     return HYG.page(_view(engine, team_id, stale_runs), **filters, after=after, limit=limit)
 
 
-@router.get("/{team_id}/cbom/certificates/hygiene", dependencies=READ,
+@router.get("/{team_id}/cbom/certificates/hygiene", dependencies=[*READ, access.team("cbom.read")],
             summary="Orphaned and unmanaged certificates of the estate: flags per certificate, keyset pages")
 async def certificate_hygiene(team_id: TeamId, flag: str | None = FlagQ, source: str | None = SourceQ,
                               q: str | None = TextQ, all: bool = False, stale_runs: int = StaleQ,
@@ -58,7 +61,7 @@ async def certificate_hygiene(team_id: TeamId, flag: str | None = FlagQ, source:
                         headers=PRIVATE)
 
 
-@router.get("/{team_id}/cbom/certificates/hygiene.csv", dependencies=READ,
+@router.get("/{team_id}/cbom/certificates/hygiene.csv", dependencies=[*READ, access.team("cbom.read")],
             summary="Orphaned and unmanaged certificates as CSV (filters as the list, every row)")
 async def certificate_hygiene_csv(team_id: TeamId, flag: str | None = FlagQ, source: str | None = SourceQ,
                                   q: str | None = TextQ, all: bool = False, stale_runs: int = StaleQ,

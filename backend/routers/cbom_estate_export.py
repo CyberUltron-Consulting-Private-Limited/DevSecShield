@@ -22,9 +22,12 @@ from sqlmodel import Session
 from backend.utilities.cbom_sources import estate_export as EXPORT
 from backend.utilities.cbom_sources import export_slots as EXPORT_SLOTS
 from backend.utilities.cbom_sources.common import log, utcnow
+from backend.utilities.cbom_sources import http as _cbom_http
+from backend.utilities.rbac.policy import Access
 from backend.utilities.cbom_sources.http import PRIVATE, CbomRoute, TeamId, authorize, server_error, write_limiter
 
 router = APIRouter(tags=["cbom-estate"], route_class=CbomRoute)
+access = Access(lambda: _cbom_http.get_db())  # route policies (utilities/rbac): the same database as authorize()
 AuthHeader = Annotated[str | None, Header()]
 WRITE = [Depends(write_limiter)]
 SPOOL_BYTES = 8 * 1024 * 1024
@@ -75,7 +78,7 @@ def _chunks(out: IO[bytes], size: int = 1024 * 1024) -> Iterator[bytes]:
         out.close()
 
 
-@router.get("/{team_id}/cbom/estate-export", dependencies=WRITE,
+@router.get("/{team_id}/cbom/estate-export", dependencies=[*WRITE, access.team("cbom.read")],
             summary="The team's estate CBOM: one CycloneDX component per asset across sources (unsigned; SHA-256 "
                     "in X-Cbom-Sha256)")
 async def estate_export(team_id: TeamId, format: str = Query(default="json", pattern="^(json|xml)$"),
