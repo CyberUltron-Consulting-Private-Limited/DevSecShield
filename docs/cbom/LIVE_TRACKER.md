@@ -2,8 +2,34 @@
 
 The live sheet the owner reads is GitHub issue
 [#389](https://github.com/CyberUltron-Consulting-Private-Limited/DevSecShield/issues/389).
-Session C updates that issue. This file is a short pointer plus a copy of the
-2026-11-15 17:54 IST sheet. It contains no credentials.
+Session C updates that issue. This file is a short pointer. It contains no
+credentials.
+
+## Staging 3317362d
+
+Staging SHA `3317362d` via
+[PR #402](https://github.com/CyberUltron-Consulting-Private-Limited/DevSecShield/pull/402).
+[Deploy run 43715737356](https://github.com/CyberUltron-Consulting-Private-Limited/DevSecShield/actions/runs/43715737356)
+succeeded. Included #396 (this pointer), #398 (issue #83 SSH CA trust
+installers for Salt/Ansible/SSM; smoke-tested HTTP 200 on team 1; the script
+embeds If-None-Match, `ssh-keygen -Q -l`, and `sshd -t`; no trust token in the
+body), and #400 (CB-36/CB-37 harness: Tier V recorded replica and Tier S
+sign-off; does not launch a sandbox).
+
+Results URL remains `/{team}/cbom/run-{id}/results`. `/1/cbom/2/results` is
+code scan 2. Bedrock AI is ON (provider bedrock, haiku, ap-south-1). The owner
+should still rotate the key that was pasted in chat. C1–C10 and N1–N12 are
+FIXED live. N1/N3/N8/N11 were rechecked on node 3 version
+`1.0.2+96e25631764b` (run 38). The HSM node was left on
+`cbom-lab/scan-node-hsm:1` on purpose. KMIP save-time mismatch (#330) and the
+SAML unreadable cert (#221) were already on dev.
+
+Still waiting on the owner: rotate credentials, `cu-devsecshield-key.pem`,
+start 172.31.35.52, `acm:GetCertificate`, the `excluded_by_policy` code,
+client-cert trust stores, KMS key `59416634`, and a main promotion go-ahead.
+Do not steal: #42 #63 #41 #99 #146 #126 #102.
+
+The 17:54 IST sheet below is the previous promotion (`71a95e3a`).
 
 ## Status (2026-11-15 17:54 IST)
 
