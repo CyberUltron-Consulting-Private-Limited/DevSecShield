@@ -286,8 +286,11 @@ def test_cert_domains_stated_unsupported():
     hint = re.search(r'label="Domains to search in Certificate Transparency logs"\s+htmlFor="cert-domain-input"\s+'
                      r'error=\{error\}\s+hint="([^"]*)"', cloud)
     assert hint, "the certificate domains field has a hint"
-    assert "not read" in hint.group(1) and "certificate collector" not in hint.group(1), hint.group(1)
+    assert "certificate collector" not in hint.group(1), hint.group(1)
     assert "does not query Certificate Transparency" not in hint.group(1), "CT discovery exists; say it is off here"
+    # #369: "not read" is now a visible notice above the list (role status), not only the grey hint under the field
+    form = cloud[cloud.index("function CertDomains("):cloud.index("function CtDiscovery(")]
+    assert 'data-testid="ct-discovery-off"' in form and "the domains below are saved but never searched" in form
     review = (_UI / "ReviewRunTab.tsx").read_text(encoding="utf-8")
     assert '"certificate domain")} (not read yet)' in review, "Review & Run must not count domains as coverage"
 
