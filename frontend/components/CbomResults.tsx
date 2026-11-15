@@ -81,7 +81,7 @@ import { type CertInRollupData } from "@/components/certin/certinShared";
 import { InfoTip } from "@/components/ui/info-tip";
 import { CompareDialog, RunInsights } from "@/components/cbom/sources/ChangesPanel";
 import { RunPostureCard } from "@/components/cbom/sources/RunPosture";
-import { applyPostureToDistributions, complianceRows, endpointsProbed, parityNotes, resolveMigrationRows, RUN_TICKETING_TAB_AVAILABLE, runDurationSeconds, runTitle } from "@/components/cbom/results/model";
+import { applyPostureToDistributions, complianceRows, endpointsProbed, parityNotes, resolveMigrationRows, RUN_TICKETING_TAB_AVAILABLE, runDurationSeconds } from "@/components/cbom/results/model";
 import { ComplianceMappingSection } from "@/components/cbom/results/ComplianceSummary";
 import { buildComplianceSummary, runDrillFilters, type DrillTarget } from "@/components/cbom/results/complianceSummary";
 import { RunFindingDialog } from "@/components/cbom/results/RunFindingDialog";
@@ -630,9 +630,9 @@ export default function CbomResults({
             </Button>
           )}
           <div>
-            <h1 className="text-3xl font-bold text-zinc-900 dark:text-white flex items-center gap-2">
+            <h1 className="text-3xl font-bold text-zinc-900 dark:text-white flex items-center gap-2" data-testid="cbom-results-title">
               <ShieldCheck className="h-7 w-7 text-blue-600 dark:text-blue-400" />
-              {run ? <span data-testid="run-results-title">{runTitle(run.runId)}</span> : "CBOM Scan Results"}
+              CBOM Scan Results
             </h1>
             <div className="flex flex-wrap items-center gap-3 mt-1 text-sm text-zinc-600 dark:text-zinc-400">
               {run && run.run && <RunHeaderMeta teamId={run.teamId} run={run.run} sources={run.sources} />}

@@ -140,12 +140,15 @@ services:
         ipv4_address: 10.231.0.28
         aliases: [sshd-psp.lab]
   host:
-    <<: *target
+    image: ${CB02_UBUNTU_IMAGE:-cb02-lab/ubuntu:dev}
+    restart: "no"
+    mem_limit: 192m
+    pids_limit: 256
+    labels: {com.zeroshield.cbom-lab: cb02}
     container_name: cb02-host
     profiles: [core]
     volumes:
       - "${CB_LAB_DIR:?run gen.py up}/targets/host:/lab:ro"
-      - "${CB_LAB_DIR:?}/forcecommand.log:/var/log/cb02/commands.log"
     networks:
       lab:
         ipv4_address: 10.231.0.40
@@ -288,6 +291,28 @@ services:
       lab:
         ipv4_address: 10.231.0.48
         aliases: [mysql-notls.lab]
+  idp:
+    <<: *target
+    container_name: cb02-idp
+    profiles: [core]
+    volumes:
+      - "${CB_LAB_DIR:?run gen.py up}/targets/idp:/lab:ro"
+    networks:
+      lab:
+        ipv4_address: 10.231.0.42
+        aliases: [idp.lab]
+  receiver:
+    <<: *target
+    entrypoint: ["/bin/sh", "/lab/listen.sh"]
+    container_name: cb02-receiver
+    profiles: [core]
+    volumes:
+      - "${CB_LAB_DIR:?run gen.py up}/targets/receiver:/lab:ro"
+      - "${CB_LAB_DIR:?}/listeners:/logs"
+    networks:
+      lab:
+        ipv4_address: 10.231.0.43
+        aliases: [receiver.lab]
   tools:
     image: ${CB02_TOOLS_IMAGE:-cb02-lab/tools:dev}
     container_name: cb02-tools

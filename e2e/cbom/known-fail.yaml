@@ -11,13 +11,14 @@
 #       cd e2e/cbom && python3 -m harness.ledger pin <run dir> --write     (CI cannot see a run)
 # Pinned to the live gate run named in the PR that last edited this file (bundle sha256 on that PR).
 # Run `cd e2e/cbom && python3 -m harness.gate judge <run>`: report.md lists each row's status and, when it moved, what.
+# Every row names its own issue. #73 was only the tracker for rows that had none; it owns no row.
 
 # ---------------------------------------------------------------------------- build identity (CB-03, PR #72)
 - row: PRE-build-identity
   # owner's fix merged on dev in #72 (fb17c74): stays KNOWN-FAIL until a live gate run on that dev re-pins it
   gate: [G0, G12]
   match: {check: [build_health, build_header, build_frontend_meta, build_node_label, engine_version_eq_build]}
-  issue: "#73"
+  issue: "#72"
   owner: CB-03
   why: "dev has no /health build field, X-ZS-Build header, zs-build meta or node build label, and the export's
     zs:engine_version is a constant (main.py:148, common.py:46)"
@@ -34,7 +35,7 @@
   gate: [G11]
   match: {kind: oracle, target_id: z09, field: [present, protocol_versions, cipher_suites, cipher_suites/complete,
           groups, groups/complete, groups/must_report, algorithm, quantum_vulnerable]}
-  issue: "#73"
+  issue: "#110"
   owner: CB-12
   why: "SNI-only server z09 (ssl_reject_handshake on): 'ok' with no versions, suites, groups or certificates read"
   expect:
@@ -52,7 +53,7 @@
   # owner's fix merged on dev in #110 (0d33012): stays KNOWN-FAIL until a live gate run on that dev re-pins it
   gate: [G11]
   match: {kind: oracle, target_id: control, field: extra, reason: extra}
-  issue: "#73"
+  issue: "#110"
   owner: CB-12
   why: "the non-TLS control listener (.34) is stored as a tls_endpoint asset (DA-P2, R2 L1)"
   expect:
@@ -61,7 +62,7 @@
   # owner's fix merged on dev in #111 (7d036da): stays KNOWN-FAIL until a live gate run on that dev re-pins it
   gate: [G11]
   match: {kind: oracle, target_id: sshd-pq, field: [host_keys, algorithm], reason: wrong-value}
-  issue: "#73"
+  issue: "#111"
   owner: CB-13
   why: "PQ-only OpenSSH (mlkem768x25519-sha256 only): the host key is not read (IncompatiblePeer)"
   expect:
@@ -71,7 +72,7 @@
   # owner's fix merged on dev in #111 (7d036da): stays KNOWN-FAIL until a live gate run on that dev re-pins it
   gate: [G11]
   match: {kind: oracle, target_id: sshd-legacy, field: host_keys, reason: wrong-value}
-  issue: "#73"
+  issue: "#111"
   owner: CB-13
   why: "SSH server with RSA-1024 and Ed25519 host keys: only the negotiated Ed25519 key is read, the weak RSA-1024
     key is invisible (one exchange per host-key family)"
@@ -105,7 +106,7 @@
   # owner's fix merged on dev in #110 (0d33012): stays KNOWN-FAIL until a live gate run on that dev re-pins it
   gate: [G11]
   match: {kind: derived, field: [closed_world_type, closed_world_quantum]}
-  issue: "#73"
+  issue: "#110"
   owner: CB-12
   why: "closed-world counts recomputed from the oracle differ by exactly the KF-4 (z09) and KF-5 (control) assets"
   expect:
@@ -116,7 +117,7 @@
   gate: [G11]
   match: {kind: join, view: export, reason: export-missing,
           field: [key_size, curve, signature_algorithm, groups, pqc_class, provenance, job_id, protocol]}
-  issue: "#73"
+  issue: "#103"
   owner: CB-06
   why: "the run export lacks key size, curve, signature algorithm, groups, pqc_class, provenance and zs:protocol
     (R4 p1; CB-06 v2 §4)"
@@ -268,7 +269,7 @@
   gate: [G11]
   match: {kind: oracle, oracle_id: "z05b/cert[0]", field: [signature_algorithm, quantum_vulnerable],
           reason: disagrees-with-unverified-lab}
-  issue: "#73"
+  issue: "#407"
   owner: CB-04
   why: "ML-DSA-65 certificate: signature algorithm read as 'Unknown OID' and no quantum verdict (null), where the lab
     generated and read ML-DSA-65 / quantum-safe (DA KF-3)"
@@ -357,27 +358,25 @@
     - {"id": "G11/oracle/run1/z16/cert[1]/impact", "verdict": "NOT-RUN", "observed": "Info"}
     - {"id": "G11/oracle/run1/z16/tls/finding_codes", "verdict": "NOT-RUN", "observed": ["CBC_ACCEPTED", "NO_PQ_KEX", "NO_TLS12", "PROTO_TLS10", "STATIC_RSA_KEX"]}
     - {"id": "G11/oracle/run1/z16/tls/impact", "verdict": "NOT-RUN", "observed": "High"}
-- row: LAB-deferred
-  gate: [G4, G7, G13, G15, W-INT, W-HOST]
-  match: {check: deferred, part: [idp, receiver, ubuntu-tier2, k8s]}
-  not_run_ok: "deferred by the lab with a stated reason (INTERFACES v2.1); the row flips when CB-02 builds the part"
-  issue: "#93"
-  owner: CB-02
-  why: "lab parts the CB-02 build does not provide: IdP .42, webhook receiver .43, Ubuntu .40 with Tier-2 sudo, kind"
+- row: LAB-followup-unconfigured
+  # the targets exist (issue #93). CB-05's flow does not configure these sources, so the oracle rows stay NOT-RUN.
+  gate: [G11]
+  match: {kind: oracle, field: not-configured, source: [S-idp, S-receiver]}
+  not_run_ok: "the IdP and the webhook receiver are in the lab; the CB-01 flow does not configure S-idp or S-receiver"
+  issue: "#102"
+  owner: CB-05
+  why: "S-idp (.42) and S-receiver (.43) are not sources in the CB-01 customer flow"
   expect:
-    - {"id": "G13/deferred_receiver", "verdict": "NOT-RUN"}
-    - {"id": "G15/deferred_ubuntu-tier2", "verdict": "NOT-RUN"}
-    - {"id": "G4/deferred_ubuntu-tier2", "verdict": "NOT-RUN"}
-    - {"id": "G7/deferred_idp", "verdict": "NOT-RUN"}
-    - {"id": "W-HOST/deferred_k8s", "verdict": "NOT-RUN"}
-    - {"id": "W-INT/deferred_receiver", "verdict": "NOT-RUN"}
+    - {"id": "G11/oracle/run1/idp/key/ec-p256", "verdict": "NOT-RUN"}
+    - {"id": "G11/oracle/run1/idp/key/rsa-2048", "verdict": "NOT-RUN"}
+    - {"id": "G11/oracle/run1/receiver/*", "verdict": "NOT-RUN"}
 
 # ---------------------------------------------------------------------------- steps and checks CB-05 adds
 - row: KF-7
   gate: [G5b]
   match: {step: G5b}
   not_run_ok: "G5b runs once CB-05 lands its spec; the row then pins the IDNA failure until CB-09"
-  issue: "#73"
+  issue: "#399"
   owner: CB-09
   why: "faß.lab is resolved as fass.lab (IDNA 2003)"
   expect:
@@ -386,7 +385,7 @@
   gate: [G10]
   match: {check: charge_after_runtime_skips}
   not_run_ok: "CB-05 adds the charge check to G10; the row then pins the failure until CB-14"
-  issue: "#73"
+  issue: "#408"
   owner: CB-14
   why: "targets skipped at run time (window, stop, never-scan) are charged in full (R2 billing.json, R3 test_f4)"
   expect:
@@ -395,7 +394,7 @@
   gate: [G11]
   match: {kind: derived, field: posture}
   not_run_ok: "posture numbers are judged once CB-05 writes the posture oracle; then the row pins CB-18/CB-19"
-  issue: "#73"
+  issue: "#409"
   owner: CB-18
   why: "no 'unknown' PQC class (shown as not applicable) and no Q-grade; the posture oracle (OA-10a) is not written"
   expect:
@@ -472,7 +471,7 @@
   gate: [G12]
   match: {check: vex_states}
   not_run_ok: "VEX states are judged once CB-05 adds the G12 VEX check"
-  issue: "#73"
+  issue: "#134"
   owner: CB-22
   why: "every VEX entry is 'exploitable' (R2 M2)"
   expect:
@@ -481,7 +480,7 @@
   gate: [G13b]
   match: {step: G13b}
   not_run_ok: "G13b runs once CB-05 lands the drift steps"
-  issue: "#73"
+  issue: "#410"
   owner: CB-11
   why: "a range with a never-scan entry is never compared (not_compared, collection partial)"
   expect:
@@ -490,7 +489,7 @@
   gate: [G7]
   match: {step: G7}
   not_run_ok: "G7 runs once CB-05 lands its spec"
-  issue: "#73"
+  issue: "#173"
   owner: CB-08
   why: "the Zeek ssl.log option is offered although nothing reads it (R1 X4)"
   expect:
@@ -499,7 +498,7 @@
   gate: [G8]
   match: {step: G8}
   not_run_ok: "G8 runs once CB-05 lands its spec"
-  issue: "#73"
+  issue: "#411"
   owner: CB-18
   why: "evidence older than 365 days shows 'Q0' instead of E0 + a Q0 gap; the run and export carry no gap snapshot"
   expect:
@@ -508,7 +507,7 @@
   gate: [G4, G6, G13]
   match: {step: [G4, G6, G13]}
   not_run_ok: "CB-01 ships the runner and judge; CB-05 adds these customer steps"
-  issue: "#73"
+  issue: "#102"
   owner: CB-05
   why: "Servers (G4), Database (G6) and drift (G13) customer steps are CB-05's Playwright specs"
   expect:
@@ -519,7 +518,7 @@
   gate: [G11]
   match: {kind: oracle, field: not-configured, source: [S-host, S-idn, DB-pg-tls]}
   not_run_ok: "those lab sources are configured by CB-05's G4/G5b/G6 specs, not by the CB-01 flow"
-  issue: "#73"
+  issue: "#102"
   owner: CB-05
   why: "the lab targets behind Servers, IDN and Database sources are not configured in this run"
   expect:
@@ -539,7 +538,7 @@
   match: {check: [discovery_sweep, schema_validation, b_node_claims_no_a_job]}
   not_run_ok: "named spec assertions the CB-01 flow does not perform: the discovery sweep (G5), the schema/XSD/OSCAL
     validators (G12) and a node enrolled in team B (G14); CB-05 adds them"
-  issue: "#73"
+  issue: "#102"
   owner: CB-05
   why: "DA G5 'sweep = self-checked ports', G12 validators, G14 'B's node token claims none of A's jobs'"
   expect:

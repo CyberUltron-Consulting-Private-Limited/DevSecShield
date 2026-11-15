@@ -337,10 +337,6 @@ export function complianceRows(results: CbomRunResults | null | undefined,
 
 // ---------------------------------------------------------------------------- header / metadata
 
-export function runTitle(runId: number): string {
-  return `Sources run #${runId}`;
-}
-
 /** Seconds from start to finish (to `nowMs` while the run is active); null without a start time. */
 export function runDurationSeconds(run: Pick<CbomRun, "created_at" | "finished_at" | "status">, nowMs: number): number | null {
   if (!run.created_at) return null;
