@@ -31,6 +31,7 @@ export const AREA_PREFIXES = {
   "cbsrc-run": ["cbsrc.rr"],
   "cbsrc-ssh-ca": ["cbsrc.sshca"],
   fleet: ["fleet"],
+  repos: ["repos"],
 } as const satisfies Record<string, readonly string[]>;
 
 export type TipArea = keyof typeof AREA_PREFIXES;

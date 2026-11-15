@@ -405,12 +405,24 @@ set_env_line() { # <KEY> <value>: set one line of .env (added when missing); the
 
 DEFAULT_NODE_REGISTRY=ghcr.io/cyberultron-consulting-private-limited
 
+# #197 review: can this host reach the registry at all? One request to <host>/v2/ (any HTTP answer, 401 included, is
+# "reachable"); unreachable, set_node_refs skips every per-tag probe (each would wait for its own timeout) and says
+# why, instead of reporting a missing or private package. REGISTRY_UNREACHABLE holds curl's reason.
+REGISTRY_UNREACHABLE=""
+registry_reachable() { # <host>
+  local code err
+  err="$(mktemp)"
+  code="$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 5 --max-time 10 "https://$1/v2/" 2>"${err}")" || true
+  REGISTRY_UNREACHABLE="$(tr -s '\n' ' ' <"${err}" | cut -c1-200)"
+  rm -f "${err}"
+  [[ "${code}" =~ ^[1-5][0-9][0-9]$ ]]
+}
 registry_manifest() { # <host>/<repository> <tag> <file>: the manifest anyone can read, into <file> (no login)
   local host=${1%%/*} repo=${1#*/} token
-  token="$(curl -fsS --max-time 10 "https://${host}/token?scope=repository:${repo}:pull" 2>/dev/null |
+  token="$(curl -fsS --connect-timeout 5 --max-time 10 "https://${host}/token?scope=repository:${repo}:pull" 2>/dev/null |
     sed -n -E 's/.*"token":"([A-Za-z0-9._~+\/=-]+)".*/\1/p' || true)"
   [[ -n "${token}" ]] || return 1
-  curl -fsS -o "$3" --max-time 10 -H "Authorization: Bearer ${token}" \
+  curl -fsS -o "$3" --connect-timeout 5 --max-time 10 -H "Authorization: Bearer ${token}" \
     -H "Accept: application/vnd.oci.image.manifest.v1+json, application/vnd.oci.image.index.v1+json" \
     "https://${host}/v2/${repo}/manifests/$2" 2>/dev/null
 }
@@ -424,7 +436,7 @@ anonymous_pull() { # <host>/<repository> <tag>: 0 when anyone can read the manif
 # downloaded chart exactly when that digest is the download's sha256.
 HELM_CHART_LAYER=application/vnd.cncf.helm.chart.content.v1.tar+gzip
 chart_layer_digest() { # <manifest file>: sha256:<hex> of its chart content layer (empty when it has none)
-  tr '{}' '\n\n' <"$1" | grep -F "${HELM_CHART_LAYER}" | grep -oE 'sha256:[0-9a-f]{64}' | head -n 1 || true
+  tr '{}' '\n' <"$1" | grep -F "${HELM_CHART_LAYER}" | grep -oE 'sha256:[0-9a-f]{64}' | head -n 1 || true
 }
 
 ghcr_chart_matches() { # <registry> <version> <chart file>: 0 = GHCR's chart <version> is that file, byte for byte;
@@ -466,7 +478,9 @@ set_node_refs() { # <tag>
     [[ "${registry}" =~ ^[a-z0-9.-]+(:[0-9]{1,5})?(/[a-z0-9._-]+)+$ ]] || die "CBOM_NODE_REGISTRY ${registry:0:80} is not <host>/<path> (lower case)"
     version="$(sed -n -E 's/^[[:space:]]*"version": "([0-9][0-9A-Za-z.-]{0,18})".*$/\1/p' \
       "${NODE_ARTIFACTS_DIR}/${tag}/manifest.json" 2>/dev/null | head -n 1 || true)"
-    if [[ -n "${version}" ]]; then
+    if ! registry_reachable "${registry%%/*}"; then
+      log "WARNING: registry ${registry%%/*} cannot be reached from this host (${REGISTRY_UNREACHABLE:-no HTTP answer}): no docker pull or helm oci:// offered; the wizard installs the downloaded files"
+    elif [[ -n "${version}" ]]; then
       # the release the wizard pins: written once by publish-ghcr.yml (job release), never a moving tag; offered only
       # once anyone can pull it (#361: never a docker pull of a version that is not published)
       if anonymous_pull "${registry}/devsecshield-scan-node" "${version}"; then

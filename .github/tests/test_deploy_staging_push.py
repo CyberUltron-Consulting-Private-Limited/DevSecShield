@@ -293,6 +293,18 @@ class OnlyStaging(unittest.TestCase):
         self.assertEqual(len(upload), 1)
         self.assertIn("deploy/staging/images/node-artifacts/*", upload[0])
 
+    def test_the_release_wait_runs_on_a_push_unless_the_registry_is_switched_off(self):
+        # #361 follow-up: on the first 1.0.1 promotion (run 43688443051) the step was skipped with the variable unset:
+        # GitHub coerces null != '0' to numbers (0 != 0, false). Evaluated with GitHub's coercion rules.
+        from test_publish_ghcr import evaluate
+
+        step = WF.split("      - name: Wait for the scan node release (GHCR)\n", 1)[1].split("\n      - name:", 1)[0]
+        cond = step.split("        if: ", 1)[1].split("\n", 1)[0]
+        for event, var, want in (("push", None, True), ("push", "", True), ("push", "1", True), ("push", "0", False),
+                                 ("workflow_dispatch", None, False), ("workflow_dispatch", "1", False)):
+            got = bool(evaluate(cond, {"github.event_name": event, "vars.CBOM_NODE_REGISTRY_PUBLIC": var}))
+            self.assertEqual(got, want, (event, var, cond))
+
     def test_the_job_set_is_build_and_deploy(self):
         self.assertEqual(sorted(JOBS), ["build", "deploy"])
 
