@@ -1,7 +1,7 @@
 """cbom estate store at scale (CB-32): summary tables kept by triggers
 
 Revision ID: cb32summary001
-Revises: cb14credit001
+Revises: cb199proxyuser001
 Create Date: 2026-11-15 16:00:00.000000
 
 * ``cbomagilitygroup``: the agility roll-up's GROUP BY (live classed assets per system, class, class without PQ codes,
@@ -22,7 +22,7 @@ import sqlmodel
 
 
 revision: str = 'cb32summary001'
-down_revision: Union[str, Sequence[str], None] = 'cb14credit001'
+down_revision: Union[str, Sequence[str], None] = 'cb199proxyuser001'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
