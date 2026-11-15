@@ -24,4 +24,12 @@ assert.match(tab, /settings\.ct_discovery_enabled \? \(\s*<CtDiscovery[\s\S]*?\)
 assert.ok(tab.includes("const rate = overview.data?.rates?.ct_domain;"))
 assert.ok(!/0\.2 credits/.test(tab), "no hard-coded CT price in the UI")
 assert.ok(tab.includes('kind: "ct_logs", name: "Certificate Transparency", config, import_saved_domains: true'))
+// 4. #369: while CT discovery is off the card says so plainly, above the list (not only in a grey hint under the field):
+//    the domains are saved but never searched, and whom to ask
+const cert = tab.slice(tab.indexOf("function CertDomains("), tab.indexOf("// ---------------------------------------------------------------------------- certificate transparency"))
+assert.ok(cert.includes('data-testid="ct-discovery-off"') && cert.includes('role="status"'), "no visible CT-off notice")
+assert.ok(cert.includes("Certificate Transparency discovery is off on this ZeroShield deployment"), "the notice does not say it is off")
+assert.ok(cert.includes("saved but never searched"), "the notice does not say what happens to the domains")
+assert.ok(cert.includes("href={`mailto:${AWS_SUPPORT_EMAIL}`}"), "no contact")
+assert.ok(cert.indexOf('data-testid="ct-discovery-off"') < cert.indexOf('data-testid="cloud-cert-domains"'), "the notice is below the list")
 console.log("ctDiscovery.test.ts: ok")
