@@ -191,7 +191,7 @@ def _up_down_up(engine):
         if not sa.inspect(conn).has_table("team"):
             conn.execute(sa.text("CREATE TABLE team (id integer PRIMARY KEY)"))
     try:
-        assert module.down_revision == "cb14credit001"
+        assert module.down_revision == "cb19grade002"
         up = run("upgrade")
         assert up == set(CbomHostKeyReset.__table__.columns.keys())  # the migration builds what the model maps
         assert run("downgrade") is None

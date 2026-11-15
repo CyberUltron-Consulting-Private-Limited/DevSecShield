@@ -1,7 +1,7 @@
 """#150: CbomHostKeyReset, an admin's accept / forget decision for a trust-on-first-use host key pin.
 
 Revision ID: i150hkreset001
-Revises: cb14credit001
+Revises: cb19grade002
 Create Date: 2026-11-15 12:00:00.000000
 
 """
@@ -12,7 +12,7 @@ import sqlmodel
 from alembic import op
 
 revision: str = "i150hkreset001"
-down_revision: str | Sequence[str] | None = "cb14credit001"
+down_revision: str | Sequence[str] | None = "cb19grade002"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
