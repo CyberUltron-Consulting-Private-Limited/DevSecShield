@@ -1,10 +1,11 @@
 "use client";
 
-// Connections: each organisation / group / workspace with its last discovery, test, sync now, filters, a new webhook
-// secret (shown once), disable and delete (queued scans are cancelled and refunded).
+// Connections: each organisation / group / workspace with its last discovery, test, sync now, edit (name, API URL,
+// scope, App ids, a new credential), filters, a new webhook secret (confirmed first, shown once), disable and delete
+// (queued scans are cancelled and refunded).
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { FlaskConical, KeyRound, Loader2, RefreshCcw, SlidersHorizontal, Trash2 } from "lucide-react";
+import { FlaskConical, KeyRound, Loader2, Pencil, RefreshCcw, SlidersHorizontal, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import { refusalReason } from "@/components/cbom/sources/logic";
@@ -23,9 +24,10 @@ import {
 import { apiBaseURL } from "@/utils/interceptors";
 import { toast } from "@/utils/toast";
 
+import EditConnectionDialog from "./EditConnectionDialog";
 import ImportWizard from "./ImportWizard";
 import { scmKeys } from "./keys";
-import { formatCredits, PROVIDER_LABEL, SCOPES, webhookHelp, webhookUrl } from "./logic";
+import { formatCredits, PROVIDER_LABEL, ROTATE_WARNING, SCOPES, webhookHelp, webhookUrl } from "./logic";
 
 const SYNC_TONE: Record<string, "green" | "amber" | "red" | "blue" | "zinc"> = {
   ok: "green", partial: "amber", failed: "red", running: "blue", queued: "blue", never: "zinc",
@@ -39,6 +41,8 @@ function ConnectionCard({ teamId, c, isAdmin }: { teamId: number; c: ScmConnecti
   const qc = useQueryClient();
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [confirmRotate, setConfirmRotate] = useState(false);
   const [secret, setSecret] = useState<ScmWebhookOnce | null>(null);
   const done = () => qc.invalidateQueries({ queryKey: scmKeys.all(teamId) });
   const fail = (what: string) => (err: unknown) => toast.error(refusalReason(err) ?? `Could not ${what}`);
@@ -48,7 +52,7 @@ function ConnectionCard({ teamId, c, isAdmin }: { teamId: number; c: ScmConnecti
     onSuccess: (r) => { (r.ok ? toast.success : toast.error)(r.message); done(); },
     onError: fail("test the connection"),
   });
-  const rotate = useMutation({ mutationFn: () => rotateScmWebhookSecret(teamId, c.id), onSuccess: (r) => { setSecret(r.webhook); done(); }, onError: fail("make a new secret") });
+  const rotate = useMutation({ mutationFn: () => rotateScmWebhookSecret(teamId, c.id), onSuccess: (r) => { setConfirmRotate(false); setSecret(r.webhook); done(); }, onError: fail("make a new secret") });
   const toggle = useMutation({ mutationFn: () => updateScmConnection(teamId, c.id, { enabled: !c.enabled, expected_version: c.row_version }), onSuccess: done, onError: fail("change the connection") });
   const remove = useMutation({
     mutationFn: () => deleteScmConnection(teamId, c.id),
@@ -71,10 +75,13 @@ function ConnectionCard({ teamId, c, isAdmin }: { teamId: number; c: ScmConnecti
           <Button size="sm" variant="outline" className="cursor-pointer" disabled={test.isPending} onClick={() => test.mutate()}>
             <FlaskConical className="h-4 w-4 mr-1.5" />Test
           </Button>
+          <Button size="sm" variant="outline" className="cursor-pointer" onClick={() => setEditOpen(true)}>
+            <Pencil className="h-4 w-4 mr-1.5" />Edit
+          </Button>
           <Button size="sm" variant="outline" className="cursor-pointer" onClick={() => setFiltersOpen(true)}>
             <SlidersHorizontal className="h-4 w-4 mr-1.5" />Filters
           </Button>
-          <Button size="sm" variant="outline" className="cursor-pointer" disabled={rotate.isPending} onClick={() => rotate.mutate()}>
+          <Button size="sm" variant="outline" className="cursor-pointer" disabled={rotate.isPending} onClick={() => setConfirmRotate(true)}>
             <KeyRound className="h-4 w-4 mr-1.5" />New webhook secret
           </Button>
           <Button size="sm" variant="outline" className="cursor-pointer" disabled={toggle.isPending} onClick={() => toggle.mutate()}>
@@ -106,6 +113,7 @@ function ConnectionCard({ teamId, c, isAdmin }: { teamId: number; c: ScmConnecti
       {c.last_test.message && <p className="text-xs text-zinc-500 mt-1">Last test: {c.last_test.message}</p>}
       <p className="text-xs text-zinc-500 mt-2 break-all">Webhook URL: {webhookUrl(apiBaseURL, c.webhook_path)}</p>
 
+      {editOpen && <EditConnectionDialog teamId={teamId} connection={c} open={editOpen} onOpenChange={setEditOpen} />}
       {filtersOpen && <ImportWizard teamId={teamId} open={filtersOpen} onOpenChange={setFiltersOpen} existing={c} />}
       <ConfirmDialog
         open={confirmDelete}
@@ -117,11 +125,24 @@ function ConnectionCard({ teamId, c, isAdmin }: { teamId: number; c: ScmConnecti
         pending={remove.isPending}
         onConfirm={() => remove.mutate()}
       />
+      <ConfirmDialog
+        open={confirmRotate}
+        onOpenChange={setConfirmRotate}
+        title={`New webhook secret for ${c.name}?`}
+        description={ROTATE_WARNING}
+        confirmLabel="Make a new secret"
+        destructive
+        pending={rotate.isPending}
+        onConfirm={() => rotate.mutate()}
+      />
       <Dialog open={Boolean(secret)} onOpenChange={(v) => !v && setSecret(null)}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>New webhook secret</DialogTitle>
-            <DialogDescription>Shown only now. The old secret stops working immediately. {webhookHelp(c.provider)}</DialogDescription>
+            <DialogDescription>
+              Shown only now: copy it before you close this. Pushes are refused until you paste it into the provider&apos;s
+              webhook. {webhookHelp(c.provider)}
+            </DialogDescription>
           </DialogHeader>
           {secret && (
             <div className="space-y-2">

@@ -104,7 +104,7 @@ const TEXT = {
     why: "The key can act as the App on every installation, so it is kept write-only: replacing it means pasting a new one.",
     example: "-----BEGIN RSA PRIVATE KEY----- … from Generate a private key on the App page.",
   },
-  // src: backend/routers/scm.py:199, backend/routers/scm.py:104-114, backend/utilities/scan/format_input.py:13-31 — stored encrypted, never returned, never written to a log
+  // src: backend/routers/scm.py:199, backend/routers/scm.py:104-114, backend/utilities/log_redaction.py:1-20 — stored encrypted, never returned, never written to a log
   "repos.connect.token": {
     what: "A token that can read the repositories: it lists them and clones them for scans. It is stored encrypted, never shown or returned again and never written to a log. Read access is enough.",
     why: "A token with write access would let anyone holding it change your code; a read-only token limits the damage.",
@@ -134,6 +134,24 @@ const TEXT = {
     why: "A failed or partial discovery leaves the inventory out of date; this is where you see it and run it again.",
     example: "Acme GitHub · GitHub App installation: acme · 1,000 found in 10 pages.",
   },
+  // src: backend/routers/scm.py:183, backend/routers/scm.py:193, backend/routers/scm.py:352-354 — 15 to 10,080 minutes, 360 by default
+  "repos.edit.sync_interval": {
+    what: "How often the connection lists its repositories again on its own, in minutes: 15 to 10,080 (one week); 360 (6 hours) by default. Sync now runs it at once. Listing uses API calls only; nothing is scanned or charged.",
+    why: "New repositories enter the inventory, and policies that cover them, only when a discovery sees them.",
+    example: "60 for an organisation that creates repositories every day.",
+  },
+  // src: backend/routers/scm.py:331-339, backend/routers/scm.py:104-114 — write-only; required again when the API URL or scope changes
+  "repos.edit.token": {
+    what: "A token that replaces the saved one. The saved token is never shown; leave this blank to keep it. It is required again when you change the API URL or the scope, so a token can never be pointed at another server or organisation by someone who cannot see it.",
+    why: "Rotating an expiring or leaked token here keeps the connection, its inventory and its webhook as they are.",
+    example: "Paste the new fine-grained token before the old one expires.",
+  },
+  // src: backend/routers/scm.py:331-339, backend/utilities/scm/providers/github.py:96-112 — write-only; required again when the API URL, organisation or App changes
+  "repos.edit.private_key": {
+    what: "A GitHub App private key (.pem) that replaces the saved one; tokens it minted earlier are not reused. The saved key is never shown; leave this blank to keep it. It is required again when the API URL, organisation, App id or installation id changes.",
+    why: "Lets you rotate the App's key on GitHub and here without deleting the connection or changing its webhook.",
+    example: "After Generate a private key on the App page, paste the new .pem and delete the old key on GitHub.",
+  },
   // src: backend/routers/scm.py:554-602, backend/routers/scm.py:607-618 — the discovered repositories, 50 per page, with the reason each is in or out
   "repos.inventory.section": {
     what: "Every repository your connections discovered, with why it is in or out of scope, the policy that covers it and its last scans. Removed repositories (no longer listed by the provider) keep their history and are shown under Scope: Removed.",
@@ -158,9 +176,9 @@ const TEXT = {
     why: "Checking what is out, and why, catches a filter that drops repositories you meant to scan.",
     example: "Out of scope shows the 27 archived repositories and forks.",
   },
-  // src: backend/routers/scm.py:569-570 — the provider's primary language
+  // src: backend/routers/scm.py:569-570, backend/routers/scm.py:595-603 — the provider's primary language; the counts cover the connection's discovered repositories, not the other filters
   "repos.inventory.language": {
-    what: "Shows only repositories with this primary language, as the provider reports it; the number is how many repositories of the current list have it.",
+    what: "Shows only repositories with this primary language, as the provider reports it. The number counts the discovered repositories (not removed) of the chosen connection, or of every connection; search, scope, reason and scanned do not change it.",
     why: "Useful before a SAST run: SAST skips repositories in languages it cannot read.",
     example: "Python (84).",
   },
@@ -344,9 +362,9 @@ const TEXT = {
     why: "A long queue means results will take a while; push scans go first.",
     example: "40 · Scheduled 38 · Push 2.",
   },
-  // src: backend/utilities/scm/queue.py:23-29, backend/utilities/scm/queue.py:74-80 — at most REPO_SCAN_MAX_INFLIGHT (8) at once across teams
+  // src: backend/utilities/scm/queue.py:23-29, backend/utilities/scm/queue.py:74-91 — at most REPO_SCAN_MAX_INFLIGHT (8) across teams, half of them per team by default; lost scans are stopped and refunded
   "repos.runs.running": {
-    what: "This team's repository scans being sent or running now. At most a fixed number run at once across all teams (8 by default), and free slots go to the team with the fewest running, so no team's backlog blocks another.",
+    what: "This team's repository scans being sent or running now. At most 8 run at once across all teams by default, and one team at most half of them; free slots go to the team with the fewest running. A scan no worker picks up within an hour, or that runs over 3 hours, is stopped and refunded.",
     why: "Explains why a big run takes time: scans run a few at a time, fairly shared.",
     example: "4 · up to 8 at once.",
   },

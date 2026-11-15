@@ -281,7 +281,8 @@ export default function ImportWizard({ teamId, open, onOpenChange, existing }: {
                 <StatusBadge tone="red">Discovery failed</StatusBadge>
                 <p className="text-sm text-zinc-700 dark:text-zinc-300 break-words">{synced.sync.error ?? "The provider could not be read."}</p>
                 <p className="text-xs text-zinc-500">
-                  A wrong token, App id or organisation can be corrected with Edit on the Connections tab; then choose Sync now.
+                  A wrong token, App id or organisation can be corrected with Edit on the Connections tab (the
+                  webhook URL and secret stay the same); then choose Sync now.
                 </p>
               </div>
             ) : (

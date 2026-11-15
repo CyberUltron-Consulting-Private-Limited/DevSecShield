@@ -4,6 +4,12 @@ import assert from "node:assert/strict"
 import {
   connectionBody,
   connectionErrors,
+  DEFAULT_API,
+  editErrors,
+  editFormFrom,
+  editMovesCredential,
+  editPatch,
+  filterChange,
   emptyConnectionForm,
   emptyFilters,
   estimateSentence,
@@ -19,8 +25,10 @@ import {
   reasonLabel,
   REASON_LABEL,
   repoCount,
+  ROTATE_WARNING,
   scheduleText,
   SCOPES,
+  selectionText,
   SIZE_RULE,
   sizeLabel,
   sizeLimitError,
@@ -28,6 +36,7 @@ import {
   toggleIds,
   webhookUrl,
 } from "./logic"
+import type { ScmConnection, ScmRepositoryQuery } from "@/utils/api/scm"
 
 // lists: commas or new lines, trimmed, no repeats
 assert.deepEqual(parseList(" payments-*, core/*\n\n payments-* ,legacy-?"), ["payments-*", "core/*", "legacy-?"])
@@ -119,5 +128,64 @@ assert.deepEqual(toggleIds([1, 2, 3], [2, 3], false), [1])
 assert.equal(repoCount(1), "1 repository")
 assert.equal(repoCount(0), "0 repositories")
 assert.equal(repoCount(1234), "1,234 repositories")
+
+// ---- review of #66, major 1: editing a connection (the wizard sends people to Edit on the Connections tab)
+const conn = (over: Partial<ScmConnection> = {}): ScmConnection => ({
+  id: 7, name: "Acme GitHub", provider: "github", auth_kind: "token", api_base: DEFAULT_API.github, scope_kind: "org",
+  scope_name: "acme", config: {}, filters: {}, secrets_set: ["token"], enabled: true, webhook_path: "/scm/webhooks/github/x",
+  webhook_secret_set: true, sync_interval_min: 360, row_version: 4, created_at: null, updated_at: null,
+  sync: { status: "ok", last_at: null, next_at: null, requested_at: null, summary: {}, error: null },
+  last_test: { status: "ok", at: null, message: null }, ...over,
+})
+assert.equal(DEFAULT_API.github, "https://api.github.com")
+assert.equal(DEFAULT_API.gitlab, "https://gitlab.com")
+assert.equal(DEFAULT_API.bitbucket, "https://api.bitbucket.org")
+{
+  const c = conn()
+  const f = editFormFrom(c, DEFAULT_API.github)
+  assert.equal(f.secret, "", "the saved token is never put back in the form")
+  assert.equal(f.api_base, "", "the cloud API shows as empty")
+  assert.deepEqual(editErrors(c, f, DEFAULT_API.github), {}, "an unchanged form is valid without the token")
+  assert.deepEqual(editPatch(c, f, DEFAULT_API.github), { expected_version: 4 }, "nothing changed: only the row version")
+  // a new token alone replaces the saved one, without exposing it
+  assert.deepEqual(editPatch(c, { ...f, secret: " ghp_new " }, DEFAULT_API.github), { expected_version: 4, secrets: { token: "ghp_new" } })
+  // pointing the token at another organisation needs it again (the server refuses otherwise)
+  const moved = { ...f, scope_name: "other-org" }
+  assert.ok(editMovesCredential(c, moved, DEFAULT_API.github))
+  assert.match(editErrors(c, moved, DEFAULT_API.github).secret ?? "", /Enter the access token again/)
+  assert.deepEqual(editPatch(c, { ...moved, secret: "ghp_x" }, DEFAULT_API.github),
+    { expected_version: 4, scope_name: "other-org", secrets: { token: "ghp_x" } })
+  // a rename or a new interval does not need the token
+  assert.deepEqual(editErrors(c, { ...f, name: "Acme GH", sync_interval_min: "60" }, DEFAULT_API.github), {})
+  assert.deepEqual(editPatch(c, { ...f, name: "Acme GH", sync_interval_min: "60" }, DEFAULT_API.github),
+    { expected_version: 4, name: "Acme GH", sync_interval_min: 60 })
+  assert.ok(editErrors(c, { ...f, sync_interval_min: "5" }, DEFAULT_API.github).sync_interval_min)
+}
+{
+  const app = conn({ auth_kind: "github_app", scope_kind: "installation", config: { app_id: "12", installation_id: "34" }, secrets_set: ["private_key"] })
+  const f = editFormFrom(app, DEFAULT_API.github)
+  assert.equal(f.app_id, "12")
+  const other = { ...f, installation_id: "99" }
+  assert.match(editErrors(app, other, DEFAULT_API.github).secret ?? "", /private key again/)
+  assert.deepEqual(editPatch(app, { ...other, secret: "-----BEGIN RSA PRIVATE KEY-----\nx" }, DEFAULT_API.github), {
+    expected_version: 4, config: { app_id: "12", installation_id: "99" }, secrets: { private_key: "-----BEGIN RSA PRIVATE KEY-----\nx" },
+  })
+}
+
+// ---- major 2: the webhook secret is rotated only after a confirmation that says what breaks
+assert.match(ROTATE_WARNING, /stops working at once/)
+assert.match(ROTATE_WARNING, /scan on push stops/)
+assert.match(ROTATE_WARNING, /paste the new secret into the provider's webhook/)
+assert.match(ROTATE_WARNING, /shown only once/)
+
+// ---- minor 5: a filter change empties the selection and goes back to page 1; the text says what is off-page
+{
+  const start: ScmRepositoryQuery = { scope: "in", page: 3, page_size: 50 }
+  const next = filterChange(start, { language: "Python" })
+  assert.deepEqual(next, { query: { scope: "in", page: 1, page_size: 50, language: "Python" }, selected: [] })
+  assert.deepEqual(filterChange({ page: 2 }, {}).selected, [])
+}
+assert.equal(selectionText([1, 2, 3], [1, 2, 3]), "3 selected")
+assert.equal(selectionText([1, 2, 3], [3, 4]), "3 selected (2 not on this page)")
 
 console.log("repositories logic: ok")

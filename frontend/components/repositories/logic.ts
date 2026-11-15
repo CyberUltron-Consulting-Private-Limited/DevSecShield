@@ -234,6 +234,11 @@ export function connectionBody(f: ConnectionForm, filters: ScmFilters): ScmConne
 }
 
 // ---------------------------------------------------------------------------- editing a connection
+/** The provider's cloud API when a connection names no API URL (backend/utilities/scm/hosts.py DEFAULT_API). */
+export const DEFAULT_API: Record<ScmProvider, string> = {
+  github: "https://api.github.com", gitlab: "https://gitlab.com", bitbucket: "https://api.bitbucket.org",
+}
+
 /** The edit form of an existing connection: the credential is write-only, so it starts blank ("keep the saved one"). */
 export interface ConnectionEditForm {
   name: string
@@ -309,9 +314,26 @@ export function editPatch(c: ScmConnection, f: ConnectionEditForm, defaultApi: s
   return body
 }
 
+/** A change to the inventory's filters (search included): back to page 1, and the selection is emptied, so a bulk
+ * Scan now, Exclude or Pin acts only on repositories chosen under the filters on screen. Paging keeps the selection. */
+export function filterChange<Q extends { page?: number }>(query: Q, patch: Partial<Q>): { query: Q; selected: number[] } {
+  return { query: { ...query, ...patch, page: 1 }, selected: [] }
+}
+
+/** "3 selected" or, when some are on other pages, "3 selected (2 not on this page)". */
+export function selectionText(selected: number[], pageIds: number[]): string {
+  const off = selected.filter((id) => !pageIds.includes(id)).length
+  return `${selected.length.toLocaleString("en-US")} selected${off ? ` (${off.toLocaleString("en-US")} not on this page)` : ""}`
+}
+
+/** What rotating the webhook secret does, said before it happens (routers/scm.py _rotate_secret replaces it at once). */
+export const ROTATE_WARNING =
+  "The current secret stops working at once: every push the provider sends is refused, so scan on push stops, until you " +
+  "paste the new secret into the provider's webhook. The new secret is shown only once."
+
 // ---------------------------------------------------------------------------- the queue and runs
-/** How many scans run at once: the global cap always, a per-team limit only when the operator set one (0 = none; each
- * free slot goes to the team with the fewest scans in flight, backend/utilities/scm/queue.py). */
+/** How many scans run at once: the global cap, and the per-team limit (half the cap by default; 0 = none). Each free
+ * slot goes to the team with the fewest scans in flight (backend/utilities/scm/queue.py). */
 export function capsText(maxInflight: number, teamMaxInflight: number): string {
   return teamMaxInflight > 0
     ? `At most ${maxInflight} at once, ${teamMaxInflight} per team`

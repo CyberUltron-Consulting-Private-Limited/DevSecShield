@@ -26,7 +26,8 @@ import {
 import { toast } from "@/utils/toast";
 
 import { scmKeys } from "./keys";
-import { PRODUCT_LABEL, reasonLabel, repoCount, sizeLabel, toggleIds } from "./logic";
+import { useDebouncedValue } from "./debounce";
+import { filterChange, PRODUCT_LABEL, reasonLabel, repoCount, selectionText, sizeLabel, toggleIds } from "./logic";
 import RunDialog from "./RunDialog";
 
 const ALL = "__all__";
@@ -45,7 +46,9 @@ export default function InventoryTab({ teamId, isAdmin, connections, onImport }:
   const [selected, setSelected] = useState<number[]>([]);
   const [runOpen, setRunOpen] = useState(false);
   const [pinTo, setPinTo] = useState<string>("");
-  const effective = useMemo(() => ({ ...query, q: search.trim() || undefined }), [query, search]);
+  // the server is asked once the typing pauses (300 ms), not once per character
+  const settledSearch = useDebouncedValue(search.trim());
+  const effective = useMemo(() => ({ ...query, q: settledSearch || undefined }), [query, settledSearch]);
   const repos = useQuery({
     queryKey: scmKeys.repos(teamId, JSON.stringify(effective)),
     queryFn: () => listScmRepositories(teamId, effective),
@@ -62,7 +65,12 @@ export default function InventoryTab({ teamId, isAdmin, connections, onImport }:
     },
     onError: (err) => toast.error(refusalReason(err) ?? "Could not update the repositories"),
   });
-  const set = (patch: Partial<ScmRepositoryQuery>) => setQuery((q) => ({ ...q, ...patch, page: 1 }));
+  // a filter change empties the selection: bulk actions only ever act on repositories chosen under the filters shown
+  const set = (patch: Partial<ScmRepositoryQuery>) => {
+    const next = filterChange(query, patch);
+    setQuery(next.query);
+    setSelected(next.selected);
+  };
   const items = repos.data?.items ?? [];
   const pageIds = items.map((r) => r.id);
   const allOnPage = pageIds.length > 0 && pageIds.every((id) => selected.includes(id));
@@ -87,7 +95,7 @@ export default function InventoryTab({ teamId, isAdmin, connections, onImport }:
       <div className="flex flex-wrap gap-2 mb-4">
         <div className="flex items-center gap-1 w-full sm:w-auto">
           <Input aria-label="Search repositories" placeholder="Search owner/name" className="w-full sm:w-64" value={search}
-                 onChange={(e) => { setSearch(e.target.value); setQuery((q) => ({ ...q, page: 1 })); }} />
+                 onChange={(e) => { setSearch(e.target.value); set({}); }} />
           <InfoTip id="repos.inventory.search" />
         </div>
         <div className="flex items-center gap-1 w-full sm:w-auto">
@@ -151,7 +159,7 @@ export default function InventoryTab({ teamId, isAdmin, connections, onImport }:
 
       {isAdmin && selected.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 mb-3 rounded-lg border border-blue-500/40 bg-blue-500/5 p-3" role="region" aria-label="Bulk actions">
-          <span className="text-sm font-medium mr-2">{selected.length} selected</span>
+          <span className="text-sm font-medium mr-2">{selectionText(selected, pageIds)}</span>
           <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" onClick={() => setRunOpen(true)}>
             <Play className="h-4 w-4 mr-1.5" />Scan now
           </Button>

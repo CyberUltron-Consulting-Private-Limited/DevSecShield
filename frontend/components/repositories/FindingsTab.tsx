@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { getScmFinding, getScmRollup, listScmFindings, type ScmFinding, type ScmProduct } from "@/utils/api/scm";
 
+import { useDebouncedValue } from "./debounce";
 import { scmKeys } from "./keys";
 import { PRODUCT_LABEL, PRODUCTS } from "./logic";
 
@@ -61,7 +62,8 @@ export default function FindingsTab({ teamId }: { teamId: number }) {
   const [page, setPage] = useState(1);
   const [opened, setOpened] = useState<ScmFinding | null>(null);
   const rollup = useQuery({ queryKey: scmKeys.rollup(teamId), queryFn: () => getScmRollup(teamId), refetchInterval: 30000 });
-  const query = { product: product === ALL ? undefined : (product as ScmProduct), severity: severity === ALL ? undefined : severity, q: search.trim() || undefined, page };
+  const settledSearch = useDebouncedValue(search.trim()); // asked once the typing pauses (300 ms)
+  const query = { product: product === ALL ? undefined : (product as ScmProduct), severity: severity === ALL ? undefined : severity, q: settledSearch || undefined, page };
   const findings = useQuery({
     queryKey: scmKeys.findings(teamId, JSON.stringify(query)),
     queryFn: () => listScmFindings(teamId, query),
