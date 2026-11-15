@@ -278,6 +278,34 @@ class CbomFactsJSON(_SaTypeDecorator):
         return value if value is None or isinstance(value, dict) else {}
 
 
+CONTENT_DIGEST_COLUMNS = ("asset_type", "cdx_type", "target", "location", "algorithm", "key_size", "protocol",
+                          "quantum_vulnerable", "impact", "finding", "finding_codes", "facts")
+_JSON_COLUMNS = ("finding_codes", "facts")
+
+
+def content_digest(values: dict) -> str | None:
+    """#352: SHA-256 of the columns the estate hooks read (agility's carry: type, place, algorithm, key size, protocol,
+    verdict, codes, facts; the register's grade inputs add the target and the quantum flag), serialised the way the
+    JSON columns store them (``json.dumps``, the dialects' default serializer), so equal digests mean equal stored
+    values, JSON text included. None when a value cannot be serialised (the row is then compared column by column)."""
+    import hashlib as _hashlib
+    import json as _json
+
+    # a JSON column left out of an INSERT is SQL NULL, a None in it is JSON null: different stored values
+    doc = [values.get(c) if c in values or c not in _JSON_COLUMNS else {"$absent": True}
+           for c in CONTENT_DIGEST_COLUMNS]
+    try:
+        text = _json.dumps(doc)
+    except (TypeError, ValueError):
+        return None
+    return _hashlib.sha256(text.encode("utf-8", "surrogatepass")).hexdigest()
+
+
+def _content_digest_default(context) -> str | None:
+    params = context.get_current_parameters() if context is not None else {}
+    return content_digest(params)
+
+
 def _cbom_utcnow() -> datetime.datetime:
     return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
 
@@ -542,6 +570,10 @@ class CbomCollectedAsset(SQLModel, table=True):
     # q_grade NULL with a q_reason is "no grade" (not_applicable, not_an_item)
     q_grade: str | None = Field(default=None, max_length=2)
     q_reason: str | None = Field(default=None, max_length=32)
+    # #352: a digest of what the estate hooks read from the row (``content_digest``), computed on every insert (a
+    # Python column default, so the ingest's bulk INSERT, the ORM and the tests all set it). Equal digests mean equal
+    # stored values; a changed or NULL digest (a row from before cb352digest001) is compared column by column.
+    content_digest: str | None = Field(default=None, max_length=64, sa_column_kwargs={"default": _content_digest_default})
 
 
 class CbomCollectionSettings(SQLModel, table=True):
@@ -821,6 +853,14 @@ class CbomEstateSource(SQLModel, table=True):
     latest_status: str = Field(max_length=16)  # the job's status: success | failed | cancelled ...
     latest_comparable: bool = Field(default=False)  # drift.job_comparable: a complete collection
     updated_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    # #352: the latest job each estate hook has brought this source's present observations up to (written by the
+    # hook, never by the store). Agility: every present observation's stored class holds for this job, so a re-read
+    # rewrites only the observations whose row changed. Register: the grades of the source's present observations
+    # were computed from this job's rows. NULL: not known (a new source, a hook that never ran).
+    fix_through_job_id: int | None = Field(default=None)
+    fix_through_attempt: int | None = Field(default=None)
+    register_through_job_id: int | None = Field(default=None)
+    register_through_attempt: int | None = Field(default=None)
 
 
 class CbomAgilityBaseline(SQLModel, table=True):

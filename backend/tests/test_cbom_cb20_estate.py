@@ -720,6 +720,15 @@ def _cb32index():
     return mod
 
 
+def _cb352():
+    """#352's migration: the source markers (and the collected rows' digest; a stand-in table here)."""
+    path = MIGRATION.parent / "cb352hooks001_estate_hook_markers.py"
+    spec = importlib.util.spec_from_file_location("cb352hooks001", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    return mod
+
+
 def _cb25():
     """CB-25's migration adds the fix-class columns to these tables: the models carry them."""
     path = MIGRATION.parent / "cb25agility001_agility_store.py"
@@ -748,6 +757,9 @@ def test_migration_up_down_up_matches_the_models_sqlite(tmp_path):
     _migrate(migrated, "upgrade", "downgrade", "upgrade", module=_cb25())
     _migrate(migrated, "upgrade", "downgrade", "upgrade", module=_cb32())  # its estate-store indexes
     _migrate(migrated, "upgrade", "downgrade", "upgrade", module=_cb32index())  # cbomestateteam.stale_marks
+    with migrated.begin() as conn:  # #352 also adds cbomcollectedasset.content_digest
+        conn.exec_driver_sql("CREATE TABLE cbomcollectedasset (id INTEGER PRIMARY KEY)")
+    _migrate(migrated, "upgrade", "downgrade", "upgrade", module=_cb352())  # cbomestatesource's hook markers
     modelled = create_engine(f"sqlite:///{tmp_path / 'n.db'}")
     with modelled.begin() as conn:
         for t in (Team.__table__, CbomEstateSource.__table__, CbomEstateAsset.__table__,

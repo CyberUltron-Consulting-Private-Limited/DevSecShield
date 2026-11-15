@@ -110,6 +110,9 @@ class EstateWrite:
     rekeyed: list[tuple[str, str, str]] = field(default_factory=list)
     removed_keys: list[str] = field(default_factory=list)
     source_refs: list[str] = field(default_factory=list)
+    # source_ref -> (job, attempt) it pointed at before this write, None for a new source (#352: a hook that brought
+    # the source up to that job compares the new job's rows with it instead of every observation's own row)
+    previous: dict[str, tuple[int, int] | None] = field(default_factory=dict)
 
 
 Hook = Callable[[Session, EstateWrite], None]
@@ -469,6 +472,8 @@ def record_run(session: Session, run: CbomCollectionRun, now: _dt.datetime, *,
             continue
         jobs[ref] = (job, prev)
     write.source_refs = sorted(jobs)
+    write.previous = {ref: (int(prev[0]), int(prev[1] or 1)) if prev is not None else None
+                      for ref, (_job, prev) in jobs.items()}
     marks = {"sources": time.perf_counter()}
 
     # 1. what the run read: rows of its successful collections, keyed across sources

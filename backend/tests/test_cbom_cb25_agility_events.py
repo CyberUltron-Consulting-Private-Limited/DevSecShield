@@ -97,9 +97,12 @@ def test_an_unchanged_re_read_is_carried_and_a_changed_row_is_judged_alone(api, 
     with Session(source["engine"]) as s:
         from backend.new_models import CbomEstateSource
 
-        obs = s.exec(select(CbomEstateObservation)).all()
-        latest = s.exec(select(CbomEstateSource)).one().latest_job_id
-        assert {o.fix_job_id for o in obs} == {latest}  # every pointer moved to the new job
+        import datetime as dt
+
+        src = s.exec(select(CbomEstateSource)).one()
+        assert (src.fix_through_job_id, src.fix_through_attempt) == (src.latest_job_id, src.latest_attempt)
+        assert STORE.stale_ids(s, src.team_id, dt.datetime.utcnow()) == []  # up to date for the new job (#352:
+        # the unchanged observations' own pointers are not rewritten)
     judged.clear()
     _one_run(api, source, [TLS10_NOW_NO_PQ, NO_PQ, AES])
     assert sum(judged) == 1  # only the endpoint whose facts changed
