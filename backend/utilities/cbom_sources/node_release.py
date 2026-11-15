@@ -9,10 +9,11 @@ built from; ``scripts/release/node_artifacts.py``).  ``node_update`` compares th
 
 States:
 
-* ``current``: the node runs the server's node build (same version and commit; or the same version when the server's
-  build is unknown);
-* ``update_available``: an older version, the same version from another commit, or the same version with no build id
-  at all (every image this server ships carries one, so a node without one is not running it);
+* ``current``: the node runs the server's node release: the same version (issue #361: every promotion that ships node
+  changes is a new version, and a published version names one node, so the same version from another commit, e.g. the
+  GHCR image against this server's own build of the downloads, is the same node);
+* ``update_available``: an older version, or the same version with no build id at all (an image built by hand, or
+  from before build ids and release versions existed, which all said "1.0.0");
 * ``newer``: the node reports a later version than the server ships (nothing to update to here);
 * ``unknown``: nothing to compare (the node has not reported, or this server ships no node build).
 
@@ -74,9 +75,11 @@ def server_label(version: str | None, build: str | None) -> str | None:
 
 
 def node_update(reported: str | None, server_version: str | None, server_build: str | None) -> dict[str, Any]:
-    """{"state", "reason", "message", "server_build"} for one node (module docstring)."""
+    """{"state", "reason", "message", "server_build", "server_version"} for one node (module docstring);
+    ``server_version`` is the release the Scan nodes tab names ("Update available: 1.0.4")."""
     server = server_label(server_version, server_build)
-    out: dict[str, Any] = {"state": "unknown", "reason": None, "message": None, "server_build": server}
+    out: dict[str, Any] = {"state": "unknown", "reason": None, "message": None, "server_build": server,
+                           "server_version": server_version or None}
     version, build = parse_reported(reported)
     if not server_version:
         out["reason"] = "no_server_build"
@@ -87,7 +90,7 @@ def node_update(reported: str | None, server_version: str | None, server_build: 
     order = _compare(version, server_version)
     if order is not None and order < 0:
         out.update(state="update_available", reason="older_version",
-                   message=f"Runs {reported}, older than the server's node build {server}.")
+                   message=f"Runs {reported}, older than the current release {server_version} ({server}).")
     elif order is not None and order > 0:
         out.update(state="newer", reason="newer_version",
                    message=f"Runs {reported}, newer than the server's node build {server}.")
@@ -102,9 +105,8 @@ def node_update(reported: str | None, server_version: str | None, server_build: 
                            f"so it is older than the server's node build {server}.")
     elif server_build.startswith(build):
         out.update(state="current", reason="same_build")
-    else:
-        out.update(state="update_available", reason="different_build",
-                   message=f"Runs {reported}, not the server's node build {server}.")
+    else:  # the same release built from another commit with the same node (the GHCR image, the downloaded image)
+        out.update(state="current", reason="same_version")
     return out
 
 

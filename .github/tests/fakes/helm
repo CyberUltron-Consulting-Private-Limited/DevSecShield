@@ -8,7 +8,9 @@ $FAKE_STATE/calls.log (a login's password is read from stdin and recorded only a
                                                                    ($FAKE_STATE/helm-show-error: a registry error)
   helm push <file> oci://<registry>                                stores the file in $FAKE_STATE/oci/<registry>/<name>,
                                                                    prints "Pushed: ..." and "Digest: sha256:<hex>" on stderr
-Knob: $FAKE_STATE/helm-push-fail (exists): push fails."""
+  helm pull oci://<registry>/<name> --version V --destination D    copies the pushed file to D/<name>-V.tgz
+Knobs: $FAKE_STATE/helm-push-fail (exists): push fails; $FAKE_STATE/helm-pull-wrong (exists): pull serves other
+bytes than were pushed."""
 import hashlib
 import os
 import sys
@@ -49,6 +51,17 @@ def main(argv):
             print(f"Error: {ref[len('oci://'):]}:{version}: not found", file=sys.stderr)
             return 1
         print(f"name: {ref.rsplit('/', 1)[1]}\nversion: {version}")
+        return 0
+    if argv[:1] == ["pull"]:
+        ref, version, dest = argv[1], opt(argv, "--version"), Path(opt(argv, "--destination"))
+        path = STATE / "oci" / ref[len("oci://"):].rsplit("/", 1)[0] / f"{ref.rsplit('/', 1)[1]}-{version}.tgz"
+        if not path.exists():
+            print(f"Error: {ref[len('oci://'):]}:{version}: not found", file=sys.stderr)
+            return 1
+        dest.mkdir(parents=True, exist_ok=True)
+        data = path.read_bytes() + (b"tampered" if (STATE / "helm-pull-wrong").exists() else b"")
+        (dest / path.name).write_bytes(data)
+        print(f"Pulled: {ref[len('oci://'):]}:{version}")
         return 0
     if argv[:1] == ["push"]:
         if (STATE / "helm-push-fail").exists():
