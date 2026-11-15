@@ -130,9 +130,9 @@ def test_create_list_update_with_write_only_secrets_and_an_audit_trail(api, worl
 def test_members_cannot_write_and_other_teams_cannot_see(api):
     t = api("POST", BASE, json=AWX).json()["transport"]
     r = api("POST", BASE, "bob", json={**AWX, "name": "x"})
-    assert r.status_code == 400 and "team admin" in r.json()["detail"]
-    assert api("PATCH", f"{BASE}/{t['id']}", "bob", json={"enabled": False}).status_code == 400
-    assert api("DELETE", f"{BASE}/{t['id']}", "bob").status_code == 400
+    assert r.status_code == 403 and "team admin" in r.json()["detail"]  # F4 route policy (was 400)
+    assert api("PATCH", f"{BASE}/{t['id']}", "bob", json={"enabled": False}).status_code == 403
+    assert api("DELETE", f"{BASE}/{t['id']}", "bob").status_code == 403
     assert api("GET", BASE, "carol").status_code == 403  # not a member of team 1: the existing answer
     assert api("GET", BASE, None).status_code == 401
     other = "/2/cbom/sources/fleet/transports"

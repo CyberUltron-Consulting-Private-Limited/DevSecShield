@@ -155,6 +155,8 @@ def test_estimate_never_prints_the_payload_headers(monkeypatch):
 
     monkeypatch.setattr(scans, "get_user_from_header_or_raise_exception", user)
     monkeypatch.setattr(scans, "check_if_user_is_in_team", not_in_team)
+    from backend.tests.support.rbac import stand_in_principal
+    stand_in_principal(monkeypatch, user_id=1, email="u@example.test", role="member")  # F4 route policy
     from backend.utilities import ratelimit
     ratelimit.reset_all()
     payload = {"mcp": {"server_url": "https://mcp.example.test/mcp", "server_mode": "sse",

@@ -497,7 +497,7 @@ def test_a_member_put_is_refused_before_the_rows_are_normalised(api, world, monk
     real = ROUTES._collect
     monkeypatch.setattr(ROUTES, "_collect", lambda *a, **k: seen.append(1) or real(*a, **k))
     r = api("PUT", f"{INV}/targets", "bob", json={"source_name": "api", "targets": [{"address": "10.0.0.1"}]})
-    assert r.status_code == 400 and seen == []
+    assert r.status_code == 403 and seen == []  # F4 route policy, before the handler
 
 
 def test_an_ssm_target_without_an_instance_id_is_not_collected():
