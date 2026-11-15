@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import datetime as _dt
+import json as _json
 from dataclasses import dataclass
 from typing import Any, Iterable, Sequence
 
@@ -63,11 +64,12 @@ def update_many(session: Any, table: Any, key: str, rows: list[dict[str, Any]], 
             session.execute(stmt, list(chunk))
         return
     for chunk in _chunks(rows, 1_000):
-        v = sa.values(sa.column("b_key"), *(sa.column(c) for c in cols), name="v").data(
-            [tuple([r["b_key"], *(r[c] for c in cols)]) for r in chunk])
-        # VALUES columns take the type of their literals (text for an all-NULL column): cast to the column's type
-        session.execute(sa.update(table).where(*where, table.c[key] == sa.cast(v.c.b_key, table.c[key].type)).values(
-            **{c: sa.cast(v.c[c], table.c[c].type) for c in cols}))
+        # the rows travel as one JSON parameter read by json_to_recordset with the columns' types: one statement,
+        # and nothing per row for SQLAlchemy to compile (a VALUES list of 1,000 rows took longer to compile than to run)
+        v = sa.func.json_to_recordset(sa.cast(sa.bindparam("payload", _json.dumps(list(chunk), default=str)), sa.JSON)) \
+            .table_valued(sa.column("b_key", table.c[key].type), *(sa.column(c, table.c[c].type) for c in cols)) \
+            .render_derived(name="v", with_types=True)
+        session.execute(sa.update(table).where(*where, table.c[key] == v.c.b_key).values(**{c: v.c[c] for c in cols}))
 
 
 def _aware(moment: Any) -> _dt.datetime:
