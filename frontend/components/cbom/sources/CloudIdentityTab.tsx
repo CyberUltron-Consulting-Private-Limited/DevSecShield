@@ -1864,9 +1864,17 @@ function CertDomains({ teamId, settings }: { teamId: number; settings: CbomSourc
       label="Domains to search in Certificate Transparency logs"
       htmlFor="cert-domain-input"
       error={error}
-      hint="Saved, but not read: Certificate Transparency discovery is not turned on for this server. When it is, these domains move into the Certificate Transparency source."
+      hint="When discovery is turned on, these domains move into the Certificate Transparency source."
     >
       <div className="space-y-2">
+        {/* #369: say plainly that nothing searches these domains on this deployment, and whom to ask */}
+        <p role="status" data-testid="ct-discovery-off"
+          className="rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50/60 dark:bg-amber-950/20 p-3 text-sm text-amber-900 dark:text-amber-200">
+          Certificate Transparency discovery is off on this ZeroShield deployment: the domains below are saved but never searched.
+          Contact ZeroShield support at{" "}
+          <a href={`mailto:${AWS_SUPPORT_EMAIL}`} className="font-medium underline underline-offset-2">{AWS_SUPPORT_EMAIL}</a>{" "}
+          to have it turned on.
+        </p>
         {settings.cert_domains.length > 0 ? (
           <div className="flex flex-wrap gap-1.5" data-testid="cloud-cert-domains">
             {settings.cert_domains.map((d) => (

@@ -487,6 +487,22 @@ every multi-Region key), e.g. `mrk-1234abcd...=ap-south-2`. Keep the primary ARN
 CA rows store it, and the replica (same key material) decrypts the data keys the primary wrapped. Single-Region keys
 and aliases ignore the override. The backend's KMS permissions must cover the replica ARN in that region.
 
+## Certificate Transparency discovery on staging
+
+Certificate Transparency discovery (Cloud & Identity › Certificates: the team's domains searched in public CT logs,
+`backend/utilities/cbom_sources/ct_collect.py`) runs only while `CBOM_CT_DISCOVERY` is on. The code's default is off,
+and **production and every other deployment keep it off** until a production Cert Spotter key is in place
+(`ct_providers.py`). Staging turns it on (#369) so it can be tested end to end: `docker-compose.yml` sets
+`CBOM_CT_DISCOVERY: ${CBOM_CT_DISCOVERY:-1}` on `backend` (settings answer `ct_discovery_enabled: true`, a
+`ct_logs` source can be added) and `cbom-cloud-worker` (runs the searches). It ships with the deploy bundle.
+
+To turn it off on the host, put `CBOM_CT_DISCOVERY=0` in `deploy/staging/.env` and run
+`docker compose up -d backend cbom-cloud-worker`; a value in `backend.env` is ignored (the compose file's
+`environment:` wins). Without a key Cert Spotter answers unauthenticated, at its free rate; set
+`CBOM_CT_CERTSPOTTER_KEY` in `backend.env` for more. Check: `GET /1/cbom/sources/settings` answers
+`"ct_discovery_enabled": true` with the providers, and the Certificates card shows the Certificate Transparency
+source instead of "Certificate Transparency discovery is off on this ZeroShield deployment".
+
 ## Build identity
 
 Every image carries the commit it was built from (`build_images.sh`; the OCI `revision` label and, in the backend,
