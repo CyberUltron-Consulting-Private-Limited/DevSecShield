@@ -1,8 +1,8 @@
 "use client";
 
-// The older address of a CBOM Sources run's results: /{team_id}/cbom/runs/{run_id}/results. Runs now live at the
-// code scans' address shape, /{team_id}/cbom/run-{run_id}/results (CB-38); this page keeps old links and bookmarks
-// working by replacing the URL with the new one, query string (`?view=all`) included.
+// The older address of a CBOM Sources run's results: /{team_id}/cbom/runs/{run_id}/results. Runs now open on the
+// code-scan results template at /{team_id}/cbom/{run_id}/results?run=1. This page replaces the URL with that one,
+// query string (`?view=all`) included.
 
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect } from "react";

@@ -41,7 +41,7 @@ export default function CBOMScanPage() {
   });
 
   useEffect(() => {
-    if (team_id && runId) router.replace(`${runResultsHref(team_id, runId)}${window.location.search}`);
+    if (team_id && runId) router.replace(runResultsHref(team_id, runId, window.location.search));
   }, [router, runId, team_id]);
 
   useEffect(() => {

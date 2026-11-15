@@ -1,8 +1,8 @@
 "use client";
 
-// Results page of a CBOM Sources run, rendered at /{team_id}/cbom/run-{run_id}/results by the `[scan_id]` results
-// route. Owner decision (CB-38): the SAME results template as a code scan (components/CbomResults.tsx), fed by the run
-// adapter (useSourcesRunSource). `?view=findings|all` keeps the findings table's toggle across reloads.
+// Sources-run data for the one results template (components/CbomResults.tsx), mounted by
+// /{team_id}/cbom/{run_id}/results?run=1. The run adapter is useSourcesRunSource. `?view=findings|all` keeps the
+// findings table's toggle across reloads. The heading is the code scan's ("CBOM Scan Results").
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback } from "react";

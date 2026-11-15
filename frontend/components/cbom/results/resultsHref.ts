@@ -5,9 +5,10 @@
  * partial, failed or cancelled run shows what was collected). A code scan opens its results once it succeeded and
  * its scan page (progress, upload, chat) before that.
  *
- * Runs and code scans share one address shape, `/{team}/cbom/<id>/results`, under the dynamic `[scan_id]` segment:
- * a plain number is a code scan (`/cbom/5/results` is scan #5) and `run-<n>` is a Sources run (`/cbom/run-5/results`
- * is run #5). The older `/cbom/runs/<n>/results` redirects to the `run-<n>` form.
+ * Both open the same results template at `/{team}/cbom/<id>/results`. A code scan is the plain path. A Sources run
+ * is that same path with `?run=1`: scan ids and run ids are separate sequences, so `/cbom/1/results` stays code
+ * scan 1 when both exist (team 2 on staging). `/cbom/run-<id>/results` and `/cbom/runs/<id>/results` only redirect
+ * here.
  */
 
 export interface ResultsHrefRow {
@@ -21,7 +22,7 @@ export type CbomResultsId = { kind: "scan"; id: number } | { kind: "run"; id: nu
 const POSITIVE_INT = /^[1-9]\d*$/;
 const RUN_ID = /^run-([1-9]\d*)$/;
 
-/** The `[scan_id]` route segment as a code scan (`12`) or a Sources run (`run-12`); anything else is null (not found). */
+/** The `[scan_id]` route segment as a number (`12`) or a legacy Sources-run prefix (`run-12`); anything else is null. */
 export function parseCbomResultsId(raw: unknown): CbomResultsId | null {
   const s = typeof raw === "string" ? raw : "";
   if (POSITIVE_INT.test(s)) return { kind: "scan", id: Number(s) };
@@ -29,8 +30,16 @@ export function parseCbomResultsId(raw: unknown): CbomResultsId | null {
   return run ? { kind: "run", id: Number(run[1]) } : null;
 }
 
-export function runResultsHref(teamId: string | number, runId: number): string {
-  return `/${teamId}/cbom/run-${runId}/results`;
+/** True when the results query asks for the Sources run (`?run=1`), not the code scan that may share the id. */
+export function asksForRun(query: string): boolean {
+  return new URLSearchParams(query.replace(/^\?/, "")).get("run") === "1";
+}
+
+/** The one results template for Sources run `runId`. `query` is kept (`view=all`); `run=1` is set. */
+export function runResultsHref(teamId: string | number, runId: number, query = ""): string {
+  const params = new URLSearchParams(query.replace(/^\?/, ""));
+  params.set("run", "1");
+  return `/${teamId}/cbom/${runId}/results?${params.toString()}`;
 }
 
 export function resultsHref(teamId: string | number, row: ResultsHrefRow): string {
@@ -40,13 +49,12 @@ export function resultsHref(teamId: string | number, row: ResultsHrefRow): strin
     : `/${teamId}/cbom/${row.id}`;
 }
 
-/** Where the older `/{team}/cbom/runs/{run}/results?<query>` now lives, query string kept; null when an id is not a
+/** Where `/{team}/cbom/runs/{run}/results` and `/{team}/cbom/run-{run}/results` now live. Null when an id is not a
  * positive integer (the ids the old page accepted, `012` included). */
 export function legacyRunResultsTarget(teamId: unknown, runId: unknown, query: string): string | null {
   const num = (raw: unknown) => (typeof raw === "string" && /^\d+$/.test(raw) && Number(raw) > 0 ? Number(raw) : null);
   const team = num(teamId);
   const run = num(runId);
   if (!team || !run) return null;
-  const qs = query.replace(/^\?/, "");
-  return `${runResultsHref(team, run)}${qs ? `?${qs}` : ""}`;
+  return runResultsHref(team, run, query);
 }

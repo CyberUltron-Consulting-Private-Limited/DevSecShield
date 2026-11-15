@@ -28,11 +28,12 @@ function resolvePage(urlPath: string): string | null {
   return existsSync(page) ? page : null;
 }
 
-test("the run results link resolves to the runs/[run_id]/results page, not to a 404", () => {
+test("the run results link resolves to the one [scan_id]/results page, not to a separate run page", () => {
+  const results = join(appDir, "[team_id]", "cbom", "[scan_id]", "results", "page.tsx");
   for (const href of [runResultsHref(13, 8), runResultsHref("2", 5), resultsHref(2, { kind: "run", id: 5, scan_status: "success" })]) {
-    const page = resolvePage(href);
-    assert.ok(page, `${href} has a page.tsx`);
-    assert.equal(page, join(appDir, "[team_id]", "cbom", "runs", "[run_id]", "results", "page.tsx"), href);
+    const page = resolvePage(href.split("?")[0]);
+    assert.equal(page, results, href);
+    assert.equal(href.includes("?run=1"), true, href);
   }
 });
 
@@ -43,15 +44,20 @@ test("a code scan's results link still resolves to the scan results page (run #5
                join(appDir, "[team_id]", "cbom", "[scan_id]", "page.tsx"));
 });
 
-test("the run results page renders the one results template (CbomResults) with the run adapter (#120 replaced the bridge)", () => {
-  const src = readFileSync(join(appDir, "[team_id]", "cbom", "runs", "[run_id]", "results", "page.tsx"), "utf8");
+test("the one results page renders CbomResults for a run, and the old run URLs only redirect", () => {
+  const src = readFileSync(join(appDir, "[team_id]", "cbom", "[scan_id]", "results", "page.tsx"), "utf8");
   assert.ok(src.startsWith('"use client";'), "a client page (react-query hooks)");
-  assert.ok(src.includes('import CbomResults from "@/components/CbomResults";'));
-  assert.ok(src.includes("useSourcesRunSource(teamId, runId,") && src.includes("<CbomResults data={undefined} teamId={String(teamId)} source={source} />"));
-  assert.ok(src.includes("params?.team_id") && src.includes("params?.run_id"), "ids come from the route's params");
-  assert.ok(src.includes("export default function"), "a default export, so Next.js serves it");
-  assert.ok(!src.includes("delete when #120 merges"), "the bridge is gone");
+  assert.ok(src.includes("asksForRun(search.toString())") && src.includes("<RunResultsRoute teamId={teamId} runId={scanId} />"));
+  assert.ok(src.includes("router.replace(target)") && src.includes("runResultsHref(teamId, runId, search.toString())"), "run-<id> redirects");
+  assert.ok(src.includes("scanErrorText(query.error)"), "a missing or forbidden code scan stays that message");
+  const legacy = readFileSync(join(appDir, "[team_id]", "cbom", "runs", "[run_id]", "results", "page.tsx"), "utf8");
+  assert.ok(legacy.includes("legacyRunResultsTarget") && legacy.includes("router.replace(target)"));
+  assert.ok(!legacy.includes("CbomResults"), "the old /runs/ page is a redirect, not a second template");
+  const route = readFileSync(join(frontend, "components", "cbom", "results", "RunResultsRoute.tsx"), "utf8");
+  assert.ok(route.includes("useSourcesRunSource(teamId, runId,") && route.includes("<CbomResults data={undefined} teamId={String(teamId)} source={source} />"));
   const view = readFileSync(join(frontend, "components", "CbomResults.tsx"), "utf8");
+  assert.ok(view.includes('data-testid="cbom-results-title"') && view.includes("CBOM Scan Results"));
+  assert.ok(!view.includes("run-results-title") && !view.includes("runTitle("), "a Sources run uses the code-scan heading");
   assert.ok(view.includes("<RunPostureCard") && view.includes("<RunFindingDialog"), "posture and the asset detail dialog come along");
   const table = readFileSync(join(frontend, "components", "cbom", "results", "RunFindingsTable.tsx"), "utf8");
   assert.ok(table.includes("<QGradeChip") && table.includes("<FixClassChip"), "#138's Q-grade and fix-class chips come along");
