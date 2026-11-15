@@ -44,7 +44,7 @@ from zs_scan_node import tlsprobe as T
 from zs_scan_node.certparse import cert_facts, chain_links, load_certs
 from zs_scan_node.jobctx import MAX_FACTS_BYTES, JobContext, LeaseLost, register_asset_types
 from zs_scan_node import netutil
-from zs_scan_node.netutil import Blocked, Unresolved, checked_ip, iter_line_ips, node_limiter
+from zs_scan_node.netutil import Blocked, Tied, Unresolved, checked_ip, iter_line_ips, node_limiter
 
 STARTTLS = {"starttls-ldap", "starttls-smtp", "starttls-imap", "starttls-postgres", "starttls-mysql", "starttls-pop3",
             "starttls-ftp", "starttls-xmpp", "starttls-xmpp-server"}
@@ -76,6 +76,7 @@ NON_ESP_MARKER = b"\x00\x00\x00\x00"  # RFC 3948 section 2.2: IKE on port 4500
 SNI_MAX_NAMES = 200  # SNI host names used per job (the settings allow 10,000): the rest are named in a coverage row
 SNI_DNS_BUDGET_S = 20.0  # every name is resolved at once per job, within this time (a black-holed resolver)
 SNI_DNS_WORKERS = 16
+DNS_STOP_POLL_S = 0.25  # how often a running SNI pre-resolution checks the job's stop flags and window
 
 register_asset_types("ike_endpoint", "ot_endpoint")
 
@@ -128,16 +129,25 @@ def _sni_names(scope: dict) -> tuple[list[str], int]:
     return seen[:SNI_MAX_NAMES], max(len(seen) - SNI_MAX_NAMES, 0)
 
 
-def _resolve_all(names: list[str], budget_s: float) -> tuple[dict[str, set[str]], list[str]]:
+def _resolve_all(names: list[str], budget_s: float, stop=None) -> tuple[dict[str, set[str]], list[str]]:
     """Resolve every name at once (only to match them against the addresses scanned; nothing connects to a name).
     Names without an answer within ``budget_s`` are returned as unresolved; their lookups end in the background
-    (getaddrinfo cannot be cancelled), so a black-holed resolver costs the job ``budget_s`` once, not per name."""
+    (getaddrinfo cannot be cancelled), so a black-holed resolver costs the job ``budget_s`` once, not per name.
+    ``stop`` (the job's ``should_stop``) is asked before the lookups start and every DNS_STOP_POLL_S while they run:
+    a cancel, the stop-all switch or the scan window closing (N4) ends the wait at once (#370 review)."""
     out: dict[str, set[str]] = {}
-    if not names:
-        return out, []
+    if not names or (stop is not None and stop()):
+        return out, list(names)
     pool = cf.ThreadPoolExecutor(max_workers=min(SNI_DNS_WORKERS, len(names)), thread_name_prefix="sni-dns")
     futures = {pool.submit(netutil.resolve, name): name for name in names}
-    done, pending = cf.wait(futures, timeout=budget_s)
+    end = time.monotonic() + max(0.0, budget_s)
+    pending = set(futures)
+    while pending:
+        left = end - time.monotonic()
+        if left <= 0 or (stop is not None and stop()):
+            break
+        _done, pending = cf.wait(pending, timeout=min(left, DNS_STOP_POLL_S), return_when=cf.ALL_COMPLETED)
+    done = set(futures) - pending
     for fut in done:
         try:
             out[futures[fut]] = set(fut.result())
@@ -209,15 +219,23 @@ class NetworkScan:
         self._sni_lock = threading.Lock()
         self._sni_order: list[str] | None = None  # the names, in the team's order, resolved once per job
         self._sni_addresses: dict[str, set[str]] = {}
+        self._sni_reported = False  # the "SNI names left out" row was written in this job
         self.sni_left_out = ""  # names never tried anywhere in this job (over the cap, unresolved): one job-wide row
         self.own_rows: set[str] = set()  # endpoints whose read wrote its own coverage row (no generic second row)
 
-    def sni_names_for(self, ip: str) -> list[str]:
-        """The team's SNI names that resolve to ``ip`` and are not on the never-scan list (by name or address)."""
+    def learn_sni_names(self, report: bool = True) -> None:
+        """Resolve the team's SNI names once per job, before any address is scanned, and record every answer on the
+        job's never-scan list (#17): a name with a listed address (or listed itself) ties its other addresses to that
+        host, so a range sweep leaves out the IPv6 address of a host listed by its IPv4 address when an SNI name
+        answers both.  ``report``: write the "SNI names left out" row now (once per job; the TLS read of an endpoint
+        does, so a sweep that finds no TLS endpoint, a discovery sweep and a connection test write none, as before)."""
         with self._sni_lock:
             if self._sni_order is None:
                 names, over = _sni_names(self.scope)
-                self._sni_addresses, unresolved = _resolve_all(names, SNI_DNS_BUDGET_S)
+                # never past the job's own end (time left, which a closing scan window shortens) or a stop (#370 review)
+                budget = max(0.0, min(SNI_DNS_BUDGET_S, self.ctx.time_left()))
+                self._sni_addresses, unresolved = _resolve_all(
+                    names, budget, stop=lambda: self.ctx.should_stop(network=True))
                 for name in unresolved:  # matches no address (and is never looked up again in this job)
                     self._sni_addresses[name] = set()
                 self._sni_order = names
@@ -225,13 +243,21 @@ class NetworkScan:
                 if over:
                     parts.append(f"{over} SNI host names beyond the first {SNI_MAX_NAMES} are not used")
                 if unresolved:
-                    parts.append(f"{len(unresolved)} SNI host names did not resolve within {int(SNI_DNS_BUDGET_S)} s "
+                    parts.append(f"{len(unresolved)} SNI host names did not resolve within {max(1, round(budget))} s "
                                  f"and were not tried ({', '.join(unresolved[:5])}{', ...' if len(unresolved) > 5 else ''})")
                 self.sni_left_out = "; ".join(parts)
+                for name in names:
+                    self.ctx.never_scan.learn(name, self._sni_addresses.get(name) or ())
+            if report and not self._sni_reported:
+                self._sni_reported = True
                 if self.sni_left_out:
                     # job-wide: certificates read with these names before are "not read" on every endpoint, once
                     self.ctx.coverage("", "SNI names left out", "truncated", self.sni_left_out[:900], once=True,
                                       scope=["#sni="], incomplete=False)
+
+    def sni_names_for(self, ip: str) -> list[str]:
+        """The team's SNI names that resolve to ``ip`` and are not on the never-scan list (by name or address)."""
+        self.learn_sni_names()
         # the one rule for names (#32): a name on the never-scan list, or with any address on it, is never sent
         return _sni_for({"sni_hostnames": self._sni_order}, ip, self._sni_addresses, self.ctx.never_scan)
 
@@ -1048,6 +1074,7 @@ def run_network(ctx: JobContext, scope: dict, discovery_only: bool = False) -> s
     ranges = _scope_ranges(scope)
     if not ranges:
         return "no ranges in scope"
+    scan.learn_sni_names(report=False)  # #17: before the first address, so a host an SNI name ties is never touched
     cps = max(1, int((scope.get("rate_limits") or {}).get("connections_per_second") or 20))
     per_server = max(1, int((scope.get("rate_limits") or {}).get("parallel_per_server") or 2))
     # handshakes (openssl, raw probes, SSH, IKE) on open endpoints: as many addresses at once as before
@@ -1103,8 +1130,9 @@ def run_network(ctx: JobContext, scope: dict, discovery_only: bool = False) -> s
             ctx.outcome(ip, stop, started=started)
             return 0
         entry = ctx.never_scan.match_ip(ip)
-        if entry is not None:  # a held address says why (a listed host name the node could not resolve)
-            ctx.outcome(ip, "skipped_never_scan", str(Blocked(ip, entry=entry)) if isinstance(entry, Unresolved) else None,
+        if entry is not None:  # a held or tied address says why (the listed address is not this one)
+            ctx.outcome(ip, "skipped_never_scan",
+                        str(Blocked(ip, entry=entry)) if isinstance(entry, (Unresolved, Tied)) else None,
                         started=started)
             return 0
         skip, states = sweep(ip)
@@ -1245,6 +1273,7 @@ def test_range(ctx: JobContext, scope: dict) -> str:
     ports = [p for p in _ports(scope) if p["protocol"] in TCP_PROTOCOLS][:4] or [{"port": 443, "protocol": "tls", "label": ""}]
     candidates = []
     held = None  # why an address was skipped, when it was a listed host name the node could not resolve
+    scan.learn_sni_names(report=False)  # #17: an address an SNI name ties to a never-scan host is not sampled
     for ip, _mode in _addresses(ctx, _scope_ranges(scope)):
         entry = ctx.never_scan.match_ip(ip)
         if entry is not None:

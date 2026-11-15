@@ -2,6 +2,9 @@
 import os
 import re
 
+# What a node built from source without ZS_NODE_VERSION reports. Released images carry their release version instead
+# (ZS_NODE_VERSION, derived per promotion by .github/ci/node_version.py from scan_node/release.json: issue #361), so
+# this constant is not bumped by hand.
 VERSION = "1.0.0"
 
 _SHA = re.compile(r"[0-9a-f]{40}")

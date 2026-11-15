@@ -47,7 +47,7 @@ type Form = Record<string, string>;
 type FieldDef = {
   key: string;
   label: string;
-  /** Its (i) tip (content/infotips.ts). */
+  /** Its (i) tip (content/infotips). */
   infoId: InfoTipId;
   type?: "text" | "number" | "select" | "textarea";
   options?: [string, string][];

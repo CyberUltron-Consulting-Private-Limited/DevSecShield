@@ -103,6 +103,8 @@ import { SOURCE_NEVER_SCAN_HINT } from "./teamNeverScan";
 import { displayHostLines } from "./idnDisplay";
 import { hostCaKeysProblem, hostCaLines } from "./hostCaKeys";
 import { ACCEPT_WARNING, FORGET_WARNING, decisionsAllowed, hostKeyChange, pendingFor, pendingLabel } from "./hostKeyDecision";
+import { VAULT_PROVIDERS, unavailableProblem } from "./vaultProviders";
+import { VaultNodeSettings } from "./VaultNodeSettings";
 import { InfoTip } from "@/components/ui/info-tip";
 
 // ---------------------------------------------------------------------------- constants (mirror backend kinds.py / templates.py)
@@ -135,16 +137,9 @@ const CRED_TEXT: Record<CredType, { title: string; description: string }> = {
   node_key: { title: "Node-generated SSH key", description: "Recommended. The private key never leaves the node." },
   ssh_cert: { title: "SSH certificate", description: "Short-lived, signed by your SSH CA" },
   ssh_ca: { title: "SSH CA certificate", description: "ZeroShield's SSH CA signs the node's own key for each job (minutes)" },
-  vault: { title: "Vault reference", description: "CyberArk, HashiCorp Vault, AWS Secrets Manager, Azure Key Vault" },
+  vault: { title: "Vault reference", description: "HashiCorp Vault or AWS Secrets Manager, read by the scan node (CyberArk, Azure Key Vault: not available yet)" },
   password: { title: "Password", description: "Encrypted at rest by ZeroShield; sent only to the scan node that runs the job" },
 };
-
-const VAULT_PROVIDERS = [
-  { value: "hashicorp", label: "HashiCorp Vault" },
-  { value: "cyberark", label: "CyberArk" },
-  { value: "aws_secrets_manager", label: "AWS Secrets Manager" },
-  { value: "azure_key_vault", label: "Azure Key Vault" },
-];
 
 // Must equal backend/utilities/cbom_sources/templates.py TIER1_COMMANDS / TIER2_COMMANDS (a backend test checks this).
 const TIER1_COMMANDS = [
@@ -874,6 +869,8 @@ function ServerForm({
     if (portProblem) e.port = portProblem;
     if (form.credentialType === "vault" && !isAdmin) e.credentialType = "Only a team admin can add or change a vault reference";
     if (form.credentialType === "vault" && !form.vaultPath.trim()) e.vaultPath = "Enter the secret path in your vault";
+    const vaultUnavailable = form.credentialType === "vault" ? unavailableProblem(form.vaultProvider) : null; // #364
+    if (vaultUnavailable) e.vaultProvider = vaultUnavailable;
     if (form.credentialType === "ssh_ca") {
       // certificates are issued only for sources a team admin saved (the server enforces it at issue time too)
       if (!isAdmin) e.credentialType = "Only a team admin can save a source that uses the SSH CA";
@@ -1440,15 +1437,15 @@ function ServerForm({
 
             {form.credentialType === "vault" && (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4" data-testid="servers-vault-panel">
-                <Field infoId="cbsrc.common.vault_provider" label="Vault" htmlFor="servers-vault-provider">
+                <Field infoId="cbsrc.common.vault_provider" label="Vault" htmlFor="servers-vault-provider" error={errors.vaultProvider}>
                   <Select value={form.vaultProvider} onValueChange={(v) => set({ vaultProvider: v })}>
                     <SelectTrigger id="servers-vault-provider" className="w-full cursor-pointer" data-testid="servers-vault-provider">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       {VAULT_PROVIDERS.map((p) => (
-                        <SelectItem key={p.value} value={p.value} className="cursor-pointer">
-                          {p.label}
+                        <SelectItem key={p.value} value={p.value} disabled={!p.available} className="cursor-pointer">
+                          {p.optionLabel}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -1473,6 +1470,8 @@ function ServerForm({
                     onChange={(e) => set({ vaultPath: e.target.value })}
                   />
                 </Field>
+                <VaultNodeSettings provider={form.vaultProvider} path={form.vaultPath} node={selectedNode}
+                  testId="servers-vault-node-settings" className="md:col-span-3" />
               </div>
             )}
 

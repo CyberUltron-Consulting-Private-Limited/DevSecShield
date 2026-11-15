@@ -9,6 +9,8 @@ the request that logged it.  The filter never raises: whatever fails, the record
 """
 import logging
 import re
+from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 PATTERNS = [
     (re.compile(r'(mongodb://|amqp://|redis://|postgres://|postgresql://)[^\s]+', re.I), r'\1[REDACTED]'),
@@ -43,3 +45,89 @@ class CredentialRedactionFilter(logging.Filter):
         except Exception:
             record.msg, record.args = UNREDACTABLE, ()
         return True
+
+
+# ------------------------------------------------------------------------------------------------ structured values
+# Issue #88: printing a worker's kwargs (``model_dump()`` of the payload, which includes ``repr=False`` fields) leaked
+# an LLM api_key, MCP request headers and repository PATs. ``safe_repr`` is the one way to print such a value: secret
+# fields by name, every header value, URL credentials and secret query parameters are replaced, then the text
+# patterns above run over the result.
+REDACTED = "[REDACTED]"
+_SECRET_NAME_PARTS = ("password", "passwd", "secret", "token", "apikey", "authorization", "cookie", "credential",
+                      "privatekey", "accesskey", "sessionkey", "signature")
+_SECRET_NAMES = frozenset({"pat", "key", "pwd", "auth_header", "proxy_authorization"})
+_SECRET_QUERY = frozenset({"key", "apikey", "api_key", "token", "access_token", "auth", "sig", "signature", "secret",
+                           "password", "x-amz-signature", "x-amz-credential", "x-amz-security-token", "code"})
+_URL = re.compile(r"\b[a-z][a-z0-9+.-]*://[^\s'\"<>]+", re.I)
+
+
+def _secret_name(name: Any) -> bool:
+    key = re.sub(r"[^a-z0-9]", "", str(name).lower())
+    return key in {re.sub(r"[^a-z0-9]", "", n) for n in _SECRET_NAMES} or any(p in key for p in _SECRET_NAME_PARTS)
+
+
+def _headers_name(name: Any) -> bool:
+    return str(name).lower().replace("-", "_").endswith("headers")
+
+
+def _clean_url(match: "re.Match[str]") -> str:
+    url = match.group(0)
+    try:
+        parts = urlsplit(url)
+        netloc = parts.netloc
+        if "@" in netloc:
+            netloc = REDACTED + "@" + netloc.rsplit("@", 1)[1]
+        query = parts.query
+        if query:
+            pairs = parse_qsl(query, keep_blank_values=True)
+            query = urlencode([(k, REDACTED if k.lower() in _SECRET_QUERY or _secret_name(k) else v)
+                               for k, v in pairs], safe="[]")
+        return urlunsplit((parts.scheme, netloc, parts.path, query, parts.fragment))
+    except ValueError:
+        return REDACTED
+
+
+def _clean_text(text: str) -> str:
+    return _URL.sub(_clean_url, text)
+
+
+def redact_secrets(value: Any, _depth: int = 0) -> Any:
+    """A copy of ``value`` (dicts, lists, tuples, pydantic models) with every secret replaced (see above); the input
+    is never modified. Header containers keep their names and lose every value."""
+    if _depth > 20:
+        return REDACTED
+    if hasattr(value, "model_dump") and callable(value.model_dump):
+        value = value.model_dump()
+    if isinstance(value, dict):
+        out: dict = {}
+        for k, v in value.items():
+            if _secret_name(k):
+                out[k] = REDACTED if v not in (None, "") else v
+            elif _headers_name(k):
+                out[k] = _header_values(v)
+            else:
+                out[k] = redact_secrets(v, _depth + 1)
+        return out
+    if isinstance(value, (list, tuple, set, frozenset)):
+        items = [redact_secrets(v, _depth + 1) for v in value]
+        return type(value)(items) if isinstance(value, (tuple, list)) else items
+    if isinstance(value, str):
+        return _clean_text(value)
+    return value
+
+
+def _header_values(headers: Any) -> Any:
+    if isinstance(headers, dict):
+        return {k: REDACTED for k in headers}
+    if isinstance(headers, (list, tuple)):
+        return [(item[0], REDACTED) if isinstance(item, (list, tuple)) and item else REDACTED for item in headers]
+    return REDACTED if headers not in (None, "") else headers
+
+
+def safe_repr(value: Any) -> str:
+    """The text to print or log for a kwargs dict / payload model: redacted structurally, then by pattern. Never
+    raises (a value that cannot be printed becomes UNREDACTABLE)."""
+    try:
+        return redact(repr(redact_secrets(value)))
+    except Exception:
+        return UNREDACTABLE

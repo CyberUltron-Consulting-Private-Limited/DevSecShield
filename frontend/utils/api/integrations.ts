@@ -149,14 +149,20 @@ export interface CmdbPlan {
   rows: number
   digest: string
   unchanged: number
-  counts: { create: number; update: number; conflict: number; skipped: number; new_targets: number; over_limit?: number }
+  counts: { create: number; update: number; conflict: number; skipped: number; new_targets: number; over_limit?: number; merged?: number }
   // #224: the team's source cap, and the new sources past it (never created), each with its reason
   limit?: { used: number; max: number; remaining: number; setting: string }
   warnings?: string[]
   over_limit?: (CmdbPlanCreate & { reason: string })[]
   creates: CmdbPlanCreate[]
   updates: { source_id: number; source: string; kind: string; changes: Record<string, [unknown, unknown]> }[]
-  conflicts: { source_id: number; source: string; field: string; values: Record<string, number[]> }[]
+  // a conflict on an existing source (source_id, source) or, #362, between rows of the file for one new host (host)
+  conflicts: { source_id: number | null; source: string | null; host?: string | null; field: string; values: Record<string, number[]> }[]
+  // #362: rows naming the same host merged into one planned source
+  merged?: { label: string | null; kind: string; lines: number[]; notes: string[] }[]
+  // #367: existing sources the file matched without a change, with their lines; the segments the file's rows use
+  unchanged_items?: { source_id: number; source: string; kind: string; lines: number[] }[]
+  segments?: { segment: string; rows: number; nodes: { id: number; name: string }[]; chosen: number | null }[]
   skipped: { line?: number; label?: string | null; reason: string; partial?: boolean }[]
   truncated: boolean
 }
@@ -168,6 +174,8 @@ export interface CmdbRequest {
   segment_nodes?: Record<string, number>
   vault_provider?: CmdbVaultProvider | null
   windows_vault?: { provider: CmdbVaultProvider; path: string } | null
+  // #363: engine ("mysql", "mssql", "oracle", "mongodb", "redis", or "*" for all of them) -> CA certificate PEM
+  database_ca?: Record<string, string>
   create_missing?: boolean
   digest?: string
 }

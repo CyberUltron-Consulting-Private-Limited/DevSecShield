@@ -22,6 +22,7 @@ from backend.utilities.cbom_sources.kinds import KINDS
 from backend.utilities.cbom_sources.node_release import node_update, parse_reported, server_label, server_release
 from backend.utilities.cbom_sources.planning import RangeContext, node_status, source_targets
 from backend.utilities.cbom_sources.settings import next_window_start
+from backend.utilities.cbom_sources import vault_support as VAULT_SUPPORT
 
 
 _log = logging.getLogger(__name__)
@@ -69,6 +70,9 @@ def public_node(node: CbomScanNode, now: _dt.datetime, *, assigned_targets: int 
         "source_ips": node.source_ips or [],
         "ssh_public_key": node.ssh_public_key,
         "capabilities": node.capabilities or {},
+        # #364: what the node reported for vault credentials: {"enabled": bool|None (not reported), "providers",
+        # "prefix" (without KV v2 data/), "setup": {provider: "ready" or what is missing}}
+        "vault": VAULT_SUPPORT.node_vault(node.capabilities),
         "clock_skew_s": node.clock_skew_s,
         "clock_in_sync": None if node.clock_skew_s is None else abs(node.clock_skew_s) <= 300,
         "last_heartbeat_at": iso_z(node.last_heartbeat_at),

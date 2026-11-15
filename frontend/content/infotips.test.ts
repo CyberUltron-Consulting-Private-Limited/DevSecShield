@@ -1,5 +1,7 @@
 /**
  * F2 (i) info tips: the registry and its coverage.
+ *  0. The split registry (issue #145): every id of labels.ts has its text in the module of its area (areas.ts), and
+ *     each text module holds only ids of its own area that have a label.
  *  1. Registry integrity: every entry has a label, a "what it is", a "why it matters" and an example of
  *     sensible length, and a
  *     `// src: <file>:<line>` note above it naming the backend (or frontend) code the text was checked against;
@@ -15,7 +17,10 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 
-import { INFO_TIPS } from "./infotips";
+import { INFO_TIPS, AREA_TEXT } from "./infotips/all";
+import { AREA_PREFIXES, TIP_AREAS, areaOf } from "./infotips/areas";
+import { INFO_TIP_LABELS } from "./infotips/labels";
+import { tipTextSources } from "./infotipSources";
 import { findGaps, type Gap } from "./infotipCoverage";
 
 const frontend = path.join(__dirname, "..");
@@ -97,16 +102,36 @@ function expand(entry: string): string[] {
   });
 }
 
+// ---------------------------------------------------------------- 0. the split registry
+const split: string[] = [];
+const labelIds = Object.keys(INFO_TIP_LABELS);
+for (const id of labelIds) {
+  const area = areaOf(id);
+  if (!area) split.push(`${id}: its prefix has no area; add it to AREA_PREFIXES in content/infotips/areas.ts`);
+  else if (!(id in AREA_TEXT[area])) split.push(`${id}: no text in content/infotips/text/${area}.ts`);
+}
+for (const area of TIP_AREAS) {
+  for (const id of Object.keys(AREA_TEXT[area])) {
+    if (!(id in INFO_TIP_LABELS)) split.push(`${id}: text in text/${area}.ts but no label in content/infotips/labels.ts`);
+    if (areaOf(id) !== area) split.push(`${id}: in text/${area}.ts, but its area is ${areaOf(id) ?? "none"}`);
+  }
+}
+const prefixes = TIP_AREAS.flatMap((a) => AREA_PREFIXES[a] as readonly string[]);
+assert.equal(new Set(prefixes).size, prefixes.length, "a prefix is listed under two areas");
+for (const p of prefixes) if (!labelIds.some((id) => id === p || id.startsWith(p + "."))) split.push(`areas.ts: prefix ${p} has no tip`);
+assert.deepEqual(split, [], "split registry problems:\n" + split.join("\n"));
+
 // ---------------------------------------------------------------- 1. registry integrity
-const registrySrc = read(path.join(__dirname, "infotips.ts"));
 const srcNote = new Map<string, string>();
-for (const m of registrySrc.matchAll(/\/\/ src: ([^\n]*)\n(?:[ \t]*\/\/[^\n]*\n)*[ \t]*"([^"]+)":\s*\{/g)) srcNote.set(m[2], m[1]);
+for (const { text } of tipTextSources()) {
+  for (const m of text.matchAll(/\/\/ src: ([^\n]*)\n(?:[ \t]*\/\/[^\n]*\n)*[ \t]*"([^"]+)":\s*\{/g)) srcNote.set(m[2], m[1]);
+}
 
 const ids = Object.keys(INFO_TIPS);
 assert.ok(ids.length > 0, "the registry is empty");
 const problems: string[] = [];
 for (const id of ids) {
-  const tip = INFO_TIPS[id as keyof typeof INFO_TIPS] as Record<string, string | undefined>;
+  const tip = INFO_TIPS[id as keyof typeof INFO_TIPS] as unknown as Record<string, string | undefined>;
   const extra = Object.keys(tip).filter((k) => !["label", "what", "why", "example"].includes(k));
   if (extra.length) problems.push(`${id}: unknown field(s) ${extra.join(", ")} (tooltip content is text only)`);
   if (!/^[a-z0-9]+(\.[a-z0-9_]+)+$/.test(id)) problems.push(`${id}: id must be dotted lower-case (surface.area.item)`);
