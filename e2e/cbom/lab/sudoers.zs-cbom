@@ -1,0 +1,20 @@
+# /etc/sudoers.d/zs-cbom -- ZeroShield CBOM collector, Tier 2 allowlist (exact command lines only)
+# Install: sudo install -m 0440 zs-cbom /etc/sudoers.d/zs-cbom && sudo visudo -cf /etc/sudoers.d/zs-cbom
+Defaults:zs-cbom !lecture, env_reset, !setenv, !requiretty
+
+Cmnd_Alias ZS_CBOM_TIER2 = \
+    /usr/bin/ss -H -tlnp, \
+    /usr/sbin/ss -H -tlnp, \
+    /bin/ss -H -tlnp, \
+    /sbin/ss -H -tlnp, \
+    /usr/bin/find /proc -maxdepth 2 -name maps -exec /usr/bin/grep -HE libssl|libcrypto|libgnutls|libnss3|libgcrypt|libsodium|libwolfssl|libmbedcrypto|libbotan|libnettle {} +, \
+    /usr/bin/find /proc -maxdepth 2 -name maps -exec /bin/grep -HE libssl|libcrypto|libgnutls|libnss3|libgcrypt|libsodium|libwolfssl|libmbedcrypto|libbotan|libnettle {} +, \
+    /usr/bin/find /proc -maxdepth 2 -name exe -printf %h\\\\t%l\\\\n, \
+    /usr/sbin/sshd -T, \
+    /usr/sbin/dmsetup table --target crypt, \
+    /sbin/dmsetup table --target crypt, \
+    /usr/bin/lsblk -o NAME\,TYPE\,FSTYPE\,MOUNTPOINT, \
+    /bin/lsblk -o NAME\,TYPE\,FSTYPE\,MOUNTPOINT, \
+    /usr/bin/find /etc /opt /srv /home /root /usr/local -xdev -type f -size -1024k -regextype posix-extended -regex .+(\\\\.pem|\\\\.crt|\\\\.cer|\\\\.der|\\\\.key|\\\\.p8|\\\\.pk8|\\\\.p12|\\\\.pfx|\\\\.jks|\\\\.jceks|\\\\.bks|\\\\.keystore|\\\\.truststore|/id_rsa|/id_dsa|/id_ecdsa|/id_ed25519|/authorized_keys|/ssh_host_.+_key) -print0
+
+zs-cbom ALL=(root) NOPASSWD: ZS_CBOM_TIER2

@@ -335,6 +335,15 @@ _TRACKER_ROWS = {
 }
 
 
+def test_the_followup_targets_are_unconfigured_not_deferred():
+    """#93 built the IdP and the receiver. The gate no longer emits deferred_<part> for them."""
+    rows = {r["row"]: r for r in ledger.load(gate.DEFAULT_LEDGER)}
+    assert "LAB-deferred" not in rows
+    pins = {p["id"] for p in rows["LAB-followup-unconfigured"]["expect"]}
+    assert pins == {"G11/oracle/run1/idp/key/ec-p256", "G11/oracle/run1/idp/key/rsa-2048",
+                    "G11/oracle/run1/receiver/*"}
+
+
 def test_the_tracker_issue_owns_no_ledger_row():
     """#73 closes when the ledger holds only rows that name their own issue."""
     rows = {r["row"]: str(r["issue"]) for r in ledger.load(gate.DEFAULT_LEDGER)}
