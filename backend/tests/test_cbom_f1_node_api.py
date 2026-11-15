@@ -387,7 +387,7 @@ def test_segment_jobs_go_to_any_agentless_node_of_the_segment_and_back_on_lease_
     assert a.heartbeat({})["claim"] >= 1 and b.heartbeat({})["pending_jobs"] == 2
     pa, pb = a.claim(), b.claim()
     assert pa["job"]["id"] != pb["job"]["id"]
-    assert set(pa) == {"job", "scope", "source", "claim"} and set(pa["job"]) == {
+    assert set(pa) == {"job", "scope", "source", "claim", "claim_ticket"} and set(pa["job"]) == {
         "id", "kind", "lease_id", "lease_seconds", "attempt", "run_id"}
     with Session(engine) as s:
         assert s.get(CbomCollectionJob, pa["job"]["id"]).node_id == a_id
@@ -496,7 +496,11 @@ def test_secret_refs_plugins_extend_the_claim_and_the_version(api, world, monkey
 
 def test_a_missing_plugin_is_skipped_but_a_broken_one_fails(monkeypatch):
     SR.reset_plugins()
-    assert SR.plugins() == []  # none of the three modules exists yet
+    # dev ships the F1.2 fleet and F1.3 transport plugins: both load and declare their secrets.  F1.4's SSH CA plugin
+    # stays out of the claim (dev's nodes take their certificate from the ssh-cert route; secret_refs.PLUGINS)
+    names = sorted(m.__name__ for m in SR.plugins())
+    assert names == sorted(SR.PLUGINS) == ["backend.utilities.cbom_sources.fleet.claim",
+                                           "backend.utilities.cbom_sources.transports.claim"], names
     broken = ModuleNotFoundError("No module named 'paramiko_x'", name="paramiko_x")
     assert not SR._missing(broken, "backend.utilities.cbom_sources.sshca.claim")
     assert SR._missing(ModuleNotFoundError("x", name="backend.utilities.cbom_sources.sshca"),
@@ -557,10 +561,10 @@ def test_limit_defaults_are_sized_for_an_enterprise_fleet(monkeypatch):
                  "CBOM_MAX_POOL_ENROLLMENTS", "CBOM_JOB_LEASE_S"):
         monkeypatch.delenv(name, raising=False)
     assert (LIM.max_agentless_nodes(), LIM.max_sources(), LIM.max_agent_nodes(), LIM.max_pools()) == \
-        (500, 5_000, 20_000, 200)  # F1 contract, section 3 (were 50 / 500 / 1,000 / 50)
+        (500, 10_000, 20_000, 200)  # F1 contract, section 3 (were 50 / 500 / 1,000 / 50); sources: #224 source_cap
     assert LIM.lease_seconds() == 900
     monkeypatch.setenv("CBOM_MAX_SOURCES", "0")
-    assert LIM.max_sources() == 5_000  # out of range: the default
+    assert LIM.max_sources() == 10_000  # out of range: the default (source_cap owns the variable)
 
 
 # ----------------------------------------------------------------------------- old nodes

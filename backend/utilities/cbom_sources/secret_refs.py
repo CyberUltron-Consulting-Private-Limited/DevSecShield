@@ -29,7 +29,10 @@ from backend.utilities.cbom_sources.crypto import decrypt_secrets
 PLUGINS = (
     "backend.utilities.cbom_sources.fleet.claim",       # F1.2: credential_id -> secrets
     "backend.utilities.cbom_sources.transports.claim",  # F1.3: transport_id -> config.transport + secrets
-    "backend.utilities.cbom_sources.sshca.claim",       # F1.4: ssh_ca -> config.ssh_ca + secrets.ssh_certificate
+    # F1.4 (``sshca.claim``, ssh_ca -> config.ssh_ca + secrets.ssh_certificate) is NOT loaded here: on dev a node gets
+    # its SSH certificate from ``POST /cbom/node/jobs/{id}/ssh-cert`` before its first login, and that route refuses a
+    # second certificate while one is valid, so minting at the claim as well would break the flow nodes run today
+    # (the #41 revival keeps every dev behaviour).  Moving issuance into the claim is its own change.
 )
 
 _loaded: list[ModuleType] | None = None

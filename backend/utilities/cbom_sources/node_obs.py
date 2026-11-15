@@ -3,7 +3,7 @@
 Everything here is in memory, per worker process, and never touches the database on the request path:
 
 * ``serve`` (called by ``node_auth.NodeDeploymentHeader`` for every ``/cbom/node/*`` request):
-  ``X-ZS-Deployment``, ``X-ZS-Request-Id`` (echoed when sent, else generated), ``Server-Timing: app;dur=<ASGI entry to
+  ``X-ZS-Deployment``, ``X-ZS-Request-Id`` (build_info's id for the request), ``Server-Timing: app;dur=<ASGI entry to
   response start>, tp;dur=<node threadpool wait>, pool;dur=<connection checkout incl. pre-ping>``, per-kind counters
   (count, status class, fixed latency buckets), in-flight maximum, the slow-request line (``CBOM_NODE_SLOW_MS``), and
   tiered admission: a claim or an enrollment arriving while ``CBOM_NODE_MAX_INFLIGHT`` node requests are in flight on
@@ -169,8 +169,11 @@ def _evict_token(scope) -> None:
 async def serve(app, scope, receive, send, deployment: str | None) -> None:
     _ensure_sampler()
     kind = kind_of(str(scope.get("path") or ""))
-    sent_id = _header(scope, b"x-zs-request-id")
-    rid = sent_id if sent_id and REQUEST_ID_RE.match(sent_id) else uuid.uuid4().hex[:16]
+    # the id the outermost middleware generated for this request (build_info, #CB-31): a caller's own X-ZS-Request-Id
+    # is never adopted (it could reuse another request's id); build_info logs a well-formed one as client_request_id
+    from backend.utilities.build_info import current_request_id
+
+    rid = current_request_id() or uuid.uuid4().hex
     timing = RT.Timing(request_id=rid, kind=kind)
     stamp = [(b"x-zs-deployment", deployment.encode())] if deployment else []
     if kind in ("claim", "enroll") and STATS.inflight >= LIM.node_max_inflight():
@@ -321,7 +324,7 @@ def stats_fields() -> dict[str, Any]:
                  "loop_lag_max_ms", "tp_max_ms", "pool_wait_max_ms"):
         out[name] = int(window.get(name, 0))
     for name in ("undelivered", "shed_429", "claims_committed", "results_committed", "limiter_miss",
-                 "limiter_lookups", "pool_checkouts", "requests"):
+                 "limiter_lookups", "pool_checkouts", "requests", "dispatch_ticket_refused"):
         out[name] = int(window.get(name, 0))
     try:
         from backend.utilities.cbom_sources import dispatch as D

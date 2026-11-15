@@ -374,7 +374,8 @@ def test_a_cloud_test_survives_a_metadata_save_but_not_a_connection_change(api, 
 def test_two_jobs_of_a_run_refunded_at_the_same_time_both_count(api, world):
     """rev2 L4: ``run.credits_refunded_c += amount`` was an ORM read-modify-write; the second refund overwrote the
     first, so the run said less was refunded than the team got back.  F1.1 (DA C2): a job end only marks its refund
-    due on its own row; ``settle_refunds`` moves the money once per run, exactly once per job."""
+    due on its own row; ``settle_refunds`` moves the money right after that commit (and in the reaper's pass),
+    exactly once per job."""
     engine, _ = world
     node_id, _token, _ = enroll_node(api)
     for name, target in (("a", "10.20.0.1"), ("b", "10.20.0.2")):
@@ -390,10 +391,8 @@ def test_two_jobs_of_a_run_refunded_at_the_same_time_both_count(api, world):
         assert J.refund_job(two, jobs_two[1]) == 20
         two.commit()
     with Session(engine) as s:
-        assert s.get(CbomCollectionRun, run_id).credits_refunded_c == 0
-        assert J.settle_refunds(s) == {"runs": 1, "jobs": 2, "centi": 40}
-        s.commit()
-        assert J.settle_refunds(s)["jobs"] == 0  # a second settlement pays nothing
+        assert s.get(CbomCollectionRun, run_id).credits_refunded_c == 40  # each settled right after its commit
+        assert J.settle_refunds(s)["jobs"] == 0  # the reaper's pass then pays nothing more
         s.commit()
     with Session(engine) as s:
         assert s.get(CbomCollectionRun, run_id).credits_refunded_c == 40

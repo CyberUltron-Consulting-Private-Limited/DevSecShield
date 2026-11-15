@@ -86,6 +86,9 @@ def world(tmp_path, monkeypatch):
     for limiter in (cbom_http.read_limiter, cbom_http.write_limiter, cbom_http.node_limiter,
                     cbom_http.enroll_limiter, cbom_http.vendor_limiter):
         limiter.requests.clear()
+    from backend.utilities.cbom_sources import dispatch as _dispatch
+
+    _dispatch.reset(None)  # F1.1: every test starts with a full claim bucket (no permits drained by an earlier test)
     return engine, ids
 
 
