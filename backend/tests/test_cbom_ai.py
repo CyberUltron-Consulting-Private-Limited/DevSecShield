@@ -1108,6 +1108,8 @@ def test_scan_chat_without_aws_is_503_before_any_write(monkeypatch):
     monkeypatch.setattr(scans_router, "check_if_team_has_enough_credits",
                         lambda *a, **k: writes.append("credits") or True)
     monkeypatch.setitem(sys.modules, "backend.utilities.ai.chatbot", None)  # import fails like a box without AWS
+    from backend.tests.support.rbac import stand_in_principal
+    stand_in_principal(monkeypatch, user_id=1, email="u@example.test", role="member")  # the F4 route policy
     r = TestClient(app).post("/1/sast/scan/5/message", json={"user_message": "hi"},
                              headers={"Authorization": "Bearer t"})
     assert r.status_code == 503 and r.json()["detail"] == "AI chat is not configured on this deployment"
