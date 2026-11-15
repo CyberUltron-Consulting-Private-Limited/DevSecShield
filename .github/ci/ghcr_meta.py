@@ -10,8 +10,9 @@
                           manual-<sha12>-<8 hex of its sha256>), node_version and node_release_tags (RELEASE only:
                           "1.0.4 1.0 latest" for a X.Y.Z version, just the version otherwise).
                           node_version on a release is node_version.py's (issue #361: the next 1.0.N for every
-                          promotion that ships node changes, derived from the branch's history); elsewhere (dev, PR,
-                          manual) the VERSION of __init__.py, and no release tags
+                          promotion that ships node changes, derived from the branch's history) so a published tag is
+                          never overwritten; elsewhere (dev, PR, manual) it is VERSION from __init__.py, and there are
+                          no release tags. A release with no derived version yet uses that same constant.
 
 Tag scheme:
     push to dev / staging                 <branch>-<sha12>, moving <branch>
@@ -151,7 +152,8 @@ def tags() -> dict[str, str]:
         raise InputError(f"only a release branch ({', '.join(RELEASE_BRANCHES)}) gets release tags, not {prefix!r}")
     release_version = ""
     if release:
-        # issue #361: the release version is the history's, never a hand-edited constant that nobody bumps
+        # issue #361: the immutable release tag is the history's, so a published version is never overwritten.
+        # VERSION in __init__.py is what dev, PR and manual images report, and the fallback when history names none.
         if not env("NODE_REPO"):
             raise InputError("a release needs NODE_REPO (the checkout of the built commit, with full history)")
         try:

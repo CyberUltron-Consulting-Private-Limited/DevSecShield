@@ -16,6 +16,9 @@
 #                                      version, which release finds published with the same node and keeps (a version
 #                                      that would name other content is refused). deploy/staging/README.md, "Public
 #                                      registry".
+#   dev / pull request / manual       the scan-node image's ZS_NODE_VERSION is VERSION in
+#                                      scan_node/zs_scan_node/__init__.py (ghcr_meta.py reads that file). Those
+#                                      publishes do not write or move the immutable <version> tag.
 #
 # Jobs: meta decides (.github/ci/ghcr_meta.py) -> exists checks which immutable tags are already there (all six: no
 # build at all) -> contexts proves no secret file can enter a build context -> build pushes each image for each

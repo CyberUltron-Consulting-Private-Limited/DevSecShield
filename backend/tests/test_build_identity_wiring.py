@@ -323,7 +323,7 @@ def test_scan_node_release_bakes_the_commit_and_version(tmp_path):
 ])
 def test_scan_node_release_refuses_a_version_the_node_would_not_report(tmp_path, version, ok):
     """PR #72 re-review: the node keeps ZS_NODE_VERSION only when it matches zs_scan_node._VERSION and reports its
-    built-in 1.0.0 otherwise, so `build v1.2` would publish an image that says 1.0.0+<commit>. Refused instead."""
+    built-in 1.0.1 otherwise, so `build v1.2` would publish an image that says 1.0.1+<commit>. Refused instead."""
     repo, head, env = _repo(tmp_path, "scripts/release/scan_node_image.sh")
     proc = subprocess.run([str(repo / "scripts/release/scan_node_image.sh"), "build", version],
                           env={**env, "OUT_DIR": str(tmp_path / "out")}, capture_output=True, text=True, timeout=60)

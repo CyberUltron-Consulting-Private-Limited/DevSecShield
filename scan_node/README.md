@@ -11,13 +11,13 @@ Create a node in ZeroShield (**CBOM Sources → Scan nodes → Add scan node**),
 (**Download scan node image**: `scan-node-<version>.tar.gz` and its `.sha256`), and run the commands it shows:
 
 ```sh
-sha256sum -c scan-node-1.0.0.tar.gz.sha256 && \
-docker load -i scan-node-1.0.0.tar.gz && \
+sha256sum -c scan-node-1.0.1.tar.gz.sha256 && \
+docker load -i scan-node-1.0.1.tar.gz && \
 docker run -d --pull never --name zs-scan-node-dc-mumbai-01 --restart unless-stopped \
   -e ZS_API_URL='<the API URL shown in the Add scan node wizard>' \
   -e ZS_REGISTRATION_TOKEN='zsr_…' \
   -v zs-node-dc-mumbai-01:/var/lib/zs-node \
-  localhost/zeroshield/cbom-scan-node:1.0.0
+  localhost/zeroshield/cbom-scan-node:1.0.1
 ```
 
 The checks gate the next step (`&&`): a file that fails its SHA-256 check is never loaded or run. `--pull never`: Docker runs the image it loaded from the file and never looks for that name in a registry. When the
@@ -35,7 +35,7 @@ The ZeroShield server serves the image file, the Helm chart and the OVA/AMI buil
 the new image (download it again from Add scan node, or `docker pull` the reference it shows), then recreate the
 container with the same name, settings and volume and without `ZS_REGISTRATION_TOKEN`:
 `docker rm -f zs-scan-node-dc-mumbai-01 && docker run -d --pull never --name zs-scan-node-dc-mumbai-01 --restart
-unless-stopped -e ZS_API_URL='...' -v zs-node-dc-mumbai-01:/var/lib/zs-node localhost/zeroshield/cbom-scan-node:1.0.0`.
+unless-stopped -e ZS_API_URL='...' -v zs-node-dc-mumbai-01:/var/lib/zs-node localhost/zeroshield/cbom-scan-node:1.0.1`.
 The volume keeps the node token and keys, so the node is not registered again. Helm: `helm upgrade` the release with
 the new chart (`--reuse-values`).
 
