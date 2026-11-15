@@ -92,16 +92,15 @@ the deploy: see "Public registry".
 A node reports `<version>+<12-character commit>` (`scan_node/zs_scan_node/__init__.py` `reported_version`), or only
 `<version>` when its image was built without a commit (by hand, or before build ids existed). The API compares it
 with the node build this deployment ships (`manifest.json` `version` + `build`; `backend/utilities/cbom_sources/node_release.py`)
-and every node in `GET /{team}/cbom/sources/nodes` carries `update`: `current`, `update_available` (older version,
-another commit, or no build id), `newer`, or `unknown` (no downloads on this server, or the node never reported).
-**Scan nodes** shows "Update available" under the version, what is missing, a banner counting the nodes behind, and
-how to update. Nothing is enforced: a node without a build id still enrols, heartbeats and collects.
+and every node in `GET /{team}/cbom/sources/nodes` carries `update`: `current` (the same release version: a version
+names one node, so the GHCR image and this deploy's own build of the download are both current), `update_available`
+(an older version, or no build id), `newer`, or `unknown` (no downloads on this server, or the node never reported),
+and `server_version`. **Scan nodes** shows "Update available: 1.0.N" under the version, what is missing, a banner
+counting the nodes behind, and how to update. Nothing is enforced: a node without a build id still enrols, heartbeats
+and collects.
 
-The release tag `devsecshield-scan-node:<version>` in GHCR is written once ("Public registry"), so while `VERSION`
-stays `1.0.0` a `docker pull` of it gets the first `1.0.0` build, not this deploy's. To bring a node to this server's
-build, use this deploy's image file (Add scan node > Download scan node image) or the commit's own
-`ghcr.io/cyberultron-consulting-private-limited/devsecshield-scan-node:staging-<sha12>` tag, or bump `VERSION` to
-release a new one.
+Every push deploy is a release of its own version (issue #361, "Public registry"), so the wizard's `docker pull` /
+`helm ... --version`, the downloads and the version nodes are compared with are all the same `1.0.N`.
 
 ### The staging lab nodes are not part of the deploy
 
@@ -153,10 +152,26 @@ history of the host: start the command with a space (bash `HISTCONTROL=ignorespa
 (`ghcr.io/cyberultron-consulting-private-limited/devsecshield-scan-node:<branch>-<sha12>`), and on a push to
 **staging** it also releases (job `release`):
 
-* `devsecshield-scan-node:<version>`: **written once, never overwritten** (`<version>` = `scan_node/zs_scan_node/__init__.py`
-  `VERSION`; bump it to release a new node), and `:<major.minor>` and `:latest` pointing at that version;
+* `devsecshield-scan-node:<version>`: **written once, never overwritten**, and `:<major.minor>` and `:latest` pointing
+  at that version;
 * the Helm chart as an OCI artifact, `ghcr.io/cyberultron-consulting-private-limited/charts/cbom-scan-node:<version>`
   (written once; its default image is the GHCR image above).
+
+`<version>` is derived, never edited (issue #361; `.github/ci/node_version.py`): on staging's first-parent history,
+the first promotion after `scan_node/release.json`'s `after` that changes `scan_node/`, `deploy/helm/cbom-scan-node/`
+or `scripts/release/` is released as its `first` (`1.0.1`), and each later one adds 1 to the patch. A promotion that
+changes none of them keeps the last version: the release job finds it published and keeps it only when it was
+published from a commit with the same node (and the chart only when it is the same bytes); anything else under an
+existing version is refused, so one version always names one content. A minor or major release is an edit of
+`release.json` (`first: 1.1.0`, `after`: the head of staging at the time). `scan_node/zs_scan_node/__init__.py`
+`VERSION` is only what a node built from source without `ZS_NODE_VERSION` reports.
+
+The chart is packaged once per version by `scripts/release/node_artifacts.py` (job `chart`), the same reproducible
+packer the deploy uses for the **Download Helm chart** file, with the same image name (a push deploy builds its node
+image file as `ghcr.io/.../devsecshield-scan-node:<version>`): the GHCR chart and the downloaded chart of a version
+are the same bytes. The deploy waits for its release (`staging.sh wait-node-release`, up to 45 minutes) and checks the
+GHCR chart's content-layer digest against the download's sha256; on the host, `set_node_refs` offers the `docker pull`
+only once the image can be pulled and the `helm oci://` only when that digest matches.
 
 The staging deploy points the Add scan node wizard at them (`staging.sh` `set_node_refs`, `.env` ->
 `docker-compose.yml` -> the backend): `CBOM_NODE_IMAGE_REF=ghcr.io/.../devsecshield-scan-node:<version>` (the release,
