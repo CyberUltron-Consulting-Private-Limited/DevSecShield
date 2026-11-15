@@ -138,7 +138,7 @@ def test_wait_node_release_checks_the_ghcr_chart_is_the_download(host):
 def test_the_push_deploy_waits_for_its_release_and_builds_the_downloads_as_released():
     wf = (ROOT / ".github/workflows/deploy-staging.yml").read_text()
     wait = wf.split("      - name: Wait for the scan node release (GHCR)\n", 1)[1].split("\n      - name:", 1)[0]
-    assert "if: github.event_name == 'push' && vars.CBOM_NODE_REGISTRY_PUBLIC != '0'" in wait
+    assert "if: github.event_name == 'push' && (vars.CBOM_NODE_REGISTRY_PUBLIC || '1') != '0'" in wait
     assert "continue-on-error: true" in wait and "scripts/deploy/staging.sh wait-node-release" in wait
     assert wf.index("name: Wait for the scan node release") < wf.index("name: Copy and deploy")
     downloads = wf.split("      - name: Scan node downloads\n", 1)[1].split("\n      - uses:", 1)[0]

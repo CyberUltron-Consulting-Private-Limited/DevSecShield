@@ -206,8 +206,9 @@ jobs:
       # chart), built in parallel: wait until anyone can pull both, and check the GHCR chart is the downloaded chart
       # byte for byte (#361). A failure here is shown but does not stop the deploy: the host offers a docker pull or
       # helm oci:// only for what it can pull and what matches (staging.sh set_node_refs), the downloads always.
+      # (the `|| '1'`: GitHub compares an unset variable with '0' as numbers, 0 != 0, so without it the wait never ran)
       - name: Wait for the scan node release (GHCR)
-        if: github.event_name == 'push' && vars.CBOM_NODE_REGISTRY_PUBLIC != '0'
+        if: github.event_name == 'push' && (vars.CBOM_NODE_REGISTRY_PUBLIC || '1') != '0'
         continue-on-error: true
         run: scripts/deploy/staging.sh wait-node-release --timeout 2700
 
