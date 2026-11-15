@@ -76,5 +76,10 @@ def delete_cbom_sources_for_team(engine: Engine, team_id: int) -> dict[str, int]
         for model in _ORDER:
             result = session.exec(delete(model).where(model.team_id == team_id))  # type: ignore[attr-defined]
             counts[model.__tablename__] = int(result.rowcount or 0)
+        # CB-32: the triggers kept the summaries in step with the deletes; recompute them from what is left (rows
+        # of tables not listed above, such as the risk register, stay and stay counted)
+        from backend.utilities.cbom_sources import estate_summary_ddl as SUMMARY
+
+        SUMMARY.rebuild(session.connection(), team_id)
         session.commit()
     return counts
