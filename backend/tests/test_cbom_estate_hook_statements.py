@@ -45,7 +45,7 @@ from backend.utilities.cbom_sources import agility_store as AS  # noqa: E402
 from backend.utilities.cbom_sources import estate as E  # noqa: E402
 from backend.utilities.cbom_sources import q0register  # noqa: E402,F401  (registers the risk register's hook)
 from backend.utilities.cbom_sources import risk_register as RR  # noqa: E402
-from test_cbom_cb20_estate import NOW, World, endpoint  # noqa: E402
+from test_cbom_cb20_estate import ISSUER, NOW, SUBJECT, World, cert, endpoint  # noqa: E402
 
 PG = os.environ.get("CBOM_TEST_PG_URL")
 needs_pg = pytest.mark.skipif(not PG, reason="set CBOM_TEST_PG_URL to run against PostgreSQL")
@@ -264,14 +264,68 @@ def _snapshot(engine) -> tuple:
         return obs, assets, register
 
 
-def _history(world, seed: int, monkeypatch) -> list:
+NOT_AFTERS = ("2027-06-30T12:00:00Z", "2026-12-01T00:00:00Z", "2026-11-01T00:00:00Z")  # later, in 30 days, expired
+
+
+class Shared:
+    """Certificates every source reads (one estate asset each, one observation per source, by fingerprint), changing
+    at random: for every source at once or for one of them; dropped by a source and read again; new ones."""
+
+    def __init__(self, rnd: random.Random, sources: list[int], n: int = 6):
+        self.rnd, self.sources = rnd, sources
+        self.facts: dict[tuple[int, int], dict] = {}
+        self.algorithm: dict[tuple[int, int], str] = {}
+        self.held: dict[tuple[int, int], bool] = {}
+        self.count = 0
+        for _ in range(n):
+            self.add()
+
+    def add(self) -> None:
+        c = self.count
+        self.count += 1
+        base = {"serial": f"{c:04X}", "not_after": self.rnd.choice(NOT_AFTERS), "subject": SUBJECT, "issuer": ISSUER,
+                "fingerprint_sha256": hashlib.sha256(f"cert-{c}".encode()).hexdigest()}
+        for sid in self.sources:
+            self.facts[(sid, c)], self.algorithm[(sid, c)], self.held[(sid, c)] = dict(base), "RSA", True
+
+    def change(self) -> None:
+        for c in self.rnd.sample(range(self.count), 2):
+            who = self.sources if self.rnd.random() < 0.5 else [self.rnd.choice(self.sources)]
+            pick = self.rnd.random()
+            value = (self.rnd.choice(NOT_AFTERS) if pick < 0.4 else self.rnd.choice(["RSA", "ECDSA", "DSA"])
+                     if pick < 0.6 else self.rnd.choice([SUBJECT, "CN=pay.example.com,O=Other"]))
+            for sid in who:
+                if pick < 0.4:
+                    self.facts[(sid, c)]["not_after"] = value  # the class reads it (expiry window)
+                elif pick < 0.6:
+                    self.algorithm[(sid, c)] = value
+                elif pick < 0.8:
+                    self.facts[(sid, c)]["subject"] = value  # the register's content only
+                else:
+                    self.held[(sid, c)] = not self.held[(sid, c)]  # dropped by the source, or read again
+        if self.rnd.random() < 0.3:
+            self.add()
+
+    def rows(self, i: int, sid: int) -> list[dict]:
+        out = []
+        for c in range(self.count):
+            if self.held[(sid, c)]:
+                row = cert(f"h{i}-{c}", f"h{i}-{c}:443#chain[0]", **copy.deepcopy(self.facts[(sid, c)]))
+                out.append({**row, "algorithm": self.algorithm[(sid, c)]})
+        return out
+
+
+def _history(world, seed: int, monkeypatch, *, shared: bool = False) -> list:
     rnd = random.Random(seed)
     kinds = ["network", "linux_servers", "windows_servers"]
     sources = [world.source(k, f"s{i}") for i, k in enumerate(kinds)]
     rows = {sid: [endpoint(f"10.{i}.0.{h}") for h in range(1, 13)] for i, sid in enumerate(sources)}
+    certs = Shared(rnd, sources) if shared else None
     snaps: list = []
     for step in range(8):
         jobs = {}
+        if certs is not None and step:
+            certs.change()
         for i, sid in enumerate(sources):
             if rnd.random() < 0.15:
                 continue  # not in this run
@@ -289,7 +343,7 @@ def _history(world, seed: int, monkeypatch) -> list:
                     mine.remove(r)  # gone (removed in a complete collection, not read in an incomplete one)
                 else:
                     mine.append(endpoint(f"10.{i}.1.{step * 10 + len(mine)}"))
-            spec: dict = {"rows": copy.deepcopy(mine)}
+            spec: dict = {"rows": copy.deepcopy(mine) + (certs.rows(i, sid) if certs is not None else [])}
             if rnd.random() < 0.2:
                 spec.update(outcome="partial", counts={"ok": 1, "partial": 1})
             jobs[sid] = spec
@@ -313,16 +367,18 @@ def _history(world, seed: int, monkeypatch) -> list:
     return snaps
 
 
-@pytest.mark.parametrize("seed", [1, 2, 3])
-def test_a_random_history_gives_the_answers_of_the_reference_path(kind, tmp_path, monkeypatch, seed):
+@pytest.mark.parametrize("shared, seed", [(False, 1), (False, 2), (False, 3),
+                                          (True, 11), (True, 12), (True, 13), (True, 14), (True, 15)])
+def test_a_random_history_gives_the_answers_of_the_reference_path(kind, tmp_path, monkeypatch, shared, seed):
+    """``shared``: plus certificates every source reads (one asset, three observations each), changing at random."""
     fast = World(_engine(kind, tmp_path, "fast.db"))
-    got = _history(fast, seed, monkeypatch)
+    got = _history(fast, seed, monkeypatch, shared=shared)
     fast.engine.dispose()
     with monkeypatch.context() as m:
         m.setattr(AS, "USE_DIGESTS", False)
         m.setattr(RR, "USE_DIGESTS", False)
         reference = World(_engine(kind, tmp_path, "ref.db"))
-        want = _history(reference, seed, monkeypatch)
+        want = _history(reference, seed, monkeypatch, shared=shared)
     if kind == "postgresql":
         SQLModel.metadata.drop_all(reference.engine)
     reference.engine.dispose()
@@ -330,6 +386,10 @@ def test_a_random_history_gives_the_answers_of_the_reference_path(kind, tmp_path
     for step, (a, b) in enumerate(zip(got, want)):
         assert a == b, f"run {step} differs"
     assert got[-1][2], "the history graded something"
+    if shared:  # the certificates are shared assets: one estate asset with an observation per source
+        _obs, assets, _register = got[-1]
+        cert_assets = [a for a in assets if a[0].startswith("cert:")]
+        assert cert_assets and max(a[-1] for a in cert_assets) == 3
 
 
 def test_the_migration_marks_the_sources_whose_observations_follow_their_latest_job(world):
