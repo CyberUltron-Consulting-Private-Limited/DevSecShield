@@ -247,9 +247,9 @@ const TEXT = {
     why: "A node that cannot reach a segment's hosts makes every source there fail its test.",
     example: "dc-mumbai: mum-01.",
   },
-  // src: backend/utilities/integrations/cmdb.py:403-476, backend/routers/integrations.py:116 — #225: credentials only from a vault
+  // src: backend/utilities/integrations/cmdb.py:403-476, backend/utilities/cbom_sources/vault_support.py:88-110 — #225, #364: credentials only from a vault the node reads
   "cbsrc.cmdb.vault": {
-    what: "The vault that holds the logins named in a vault_path column (databases, cluster kubeconfigs, HSM PINs) and the Windows login below. Passwords, kubeconfigs and certificates are never read from the file; rows that need one are skipped.",
+    what: "The vault that holds the logins named in a vault_path column (databases, cluster kubeconfigs, HSM PINs) and the Windows login below. Passwords, kubeconfigs and certificates are never read from the file; rows that need one are skipped. Each row is checked against what its scan node reports: vault use on, the vault read, the path inside the node's prefix, and the vault set up.",
     why: "Credentials stay in your vault, read by the scan node at run time.",
     example: "HashiCorp Vault.",
   },

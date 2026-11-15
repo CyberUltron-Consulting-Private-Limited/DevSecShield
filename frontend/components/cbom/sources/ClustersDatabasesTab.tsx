@@ -33,6 +33,8 @@ import { cbomSourcesKeys, TERMINAL_JOB } from "./keys";
 import { MetadataFields, metadataConfig, metadataFrom, type SourceMetadata } from "./SourceMetadata";
 import { ago, pluralize, readTextFile } from "./logic";
 import { dbHostError } from "./dbHost";
+import { VAULT_PROVIDERS, unavailableProblem } from "./vaultProviders";
+import { VaultNodeSettings } from "./VaultNodeSettings";
 import {
   Checkbox2,
   ChoiceCards,
@@ -118,13 +120,6 @@ const DB_READS: Record<Engine, string[]> = {
     "Note: Redis ACLs cannot limit CONFIG GET to tls-* names, so this login could read any setting, including requirepass; the scan node never asks for those",
   ],
 };
-
-const VAULT_PROVIDERS = [
-  { value: "hashicorp", label: "HashiCorp Vault" },
-  { value: "cyberark", label: "CyberArk" },
-  { value: "aws_secrets_manager", label: "AWS Secrets Manager" },
-  { value: "azure_key_vault", label: "Azure Key Vault" },
-];
 
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$/;
 const NAME_ERROR = "Use 1-64 letters, digits, spaces, dots, dashes or underscores, starting with a letter or digit.";
@@ -613,6 +608,8 @@ function VaultFields({
   provider,
   path,
   error,
+  providerError,
+  node,
   onProvider,
   onPath,
   placeholder,
@@ -621,21 +618,24 @@ function VaultFields({
   provider: string;
   path: string;
   error?: string | null;
+  providerError?: string | null;
+  /** the source's scan node: what it reported for vault credentials is checked (#364) */
+  node: CbomScanNode | null;
   onProvider: (v: string) => void;
   onPath: (v: string) => void;
   placeholder: string;
 }) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-      <Field infoId="cbsrc.common.vault_provider" label="Vault" htmlFor={`${idPrefix}-vault-provider`}>
+      <Field infoId="cbsrc.common.vault_provider" label="Vault" htmlFor={`${idPrefix}-vault-provider`} error={providerError}>
         <Select value={provider} onValueChange={onProvider}>
           <SelectTrigger id={`${idPrefix}-vault-provider`} className="w-full cursor-pointer" data-testid={`${idPrefix}-vault-provider`}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             {VAULT_PROVIDERS.map((p) => (
-              <SelectItem key={p.value} value={p.value} className="cursor-pointer">
-                {p.label}
+              <SelectItem key={p.value} value={p.value} disabled={!p.available} className="cursor-pointer">
+                {p.optionLabel}
               </SelectItem>
             ))}
           </SelectContent>
@@ -660,6 +660,8 @@ function VaultFields({
           onChange={(e) => onPath(e.target.value)}
         />
       </Field>
+      <VaultNodeSettings provider={provider} path={path} node={node} testId={`${idPrefix}-vault-node-settings`}
+        className="sm:col-span-3" />
     </div>
   );
 }
@@ -855,6 +857,7 @@ function ClusterForm({
     }
     if (form.credentialType === "vault" && !form.vaultPath.trim()) e.vaultPath = "Enter the secret path in your vault";
     if (form.credentialType === "vault" && !isAdmin) e.vaultPath = "Only a team admin can add or change a vault reference";
+    if (form.credentialType === "vault" && unavailableProblem(form.vaultProvider)) e.vaultProvider = unavailableProblem(form.vaultProvider) ?? undefined; // #364
     if (!form.nodeId) e.nodeId = "Choose the scan node that reaches this cluster";
     return e;
   };
@@ -1109,6 +1112,8 @@ function ClusterForm({
               provider={form.vaultProvider}
               path={form.vaultPath}
               error={errors.vaultPath}
+              providerError={errors.vaultProvider}
+              node={nodes.find((n) => n.id === form.nodeId) ?? null}
               onProvider={(v) => set({ vaultProvider: v })}
               onPath={(v) => set({ vaultPath: v })}
               placeholder="secret/zs-cbom/k8s/prod-payments"
@@ -1398,6 +1403,7 @@ function DatabaseForm({
     if (passwordRequired && !form.password && !passwordStored) e.password = "Enter the password for this login";
     if (form.credentialType === "vault" && !form.vaultPath.trim()) e.vaultPath = "Enter the secret path in your vault";
     if (form.credentialType === "vault" && !isAdmin) e.vaultPath = "Only a team admin can add or change a vault reference";
+    if (form.credentialType === "vault" && unavailableProblem(form.vaultProvider)) e.vaultProvider = unavailableProblem(form.vaultProvider) ?? undefined; // #364
     const pemError = checkPem(form.caPem);
     if (pemError) e.caPem = pemError;
     else if (caRequired && !(form.requireTls && form.caPem.trim()))
@@ -1549,6 +1555,8 @@ function DatabaseForm({
               provider={form.vaultProvider}
               path={form.vaultPath}
               error={errors.vaultPath}
+              providerError={errors.vaultProvider}
+              node={nodes.find((n) => n.id === form.nodeId) ?? null}
               onProvider={(v) => set({ vaultProvider: v })}
               onPath={(v) => set({ vaultPath: v })}
               placeholder="secret/zs-cbom/db/pg-core-01"
@@ -1801,6 +1809,7 @@ function KeyManagerForm({
       if (form.tokenLabel.length > 32) e.tokenLabel = "32 characters at most (a PKCS#11 token label)";
       if (form.credentialType === "vault" && !form.vaultPath.trim()) e.vaultPath = "Enter the secret path of the PIN in your vault";
       if (form.credentialType === "vault" && !isAdmin) e.vaultPath = "Only a team admin can add or change a vault reference";
+      if (form.credentialType === "vault" && unavailableProblem(form.vaultProvider)) e.vaultProvider = unavailableProblem(form.vaultProvider) ?? undefined; // #364
     } else {
       const hostError = dbHostError(form.host, "Enter the KMIP server's host name or IP address");
       if (hostError) e.host = hostError;
@@ -1911,6 +1920,8 @@ function KeyManagerForm({
                   provider={form.vaultProvider}
                   path={form.vaultPath}
                   error={errors.vaultPath}
+                  providerError={errors.vaultProvider}
+                  node={nodes.find((n) => n.id === form.nodeId) ?? null}
                   onProvider={(v) => set({ vaultProvider: v })}
                   onPath={(v) => set({ vaultPath: v })}
                   placeholder="secret/zs-cbom/hsm/payments"
