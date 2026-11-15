@@ -254,6 +254,14 @@ sockets or HTTP clients any other way, so new collectors must use it.
   is checked, so the order of the lines does not matter, and the ties follow the list while the job runs (an
   address listed by a heartbeat ties its name's other addresses at once; taken off, it frees them). One hop only:
   a second name that shares a tied address is skipped itself, but its own other addresses are not tied by that.
+  *Shared addresses:* the tie is by address, so an address that a resolved name shares with a listed host is left
+  out for every host behind it. When a name answers a listed address together with a load balancer, VIP, ingress
+  or reverse-proxy address, that shared address is skipped for the whole job, and so is every other target or SNI
+  name that resolves to it, even though other hosts answer there. List the individual host by an address of its
+  own (or by name) to keep the shared address in scope, or accept that the list wins.
+  The SNI hostnames are resolved within at most 20 s and never past the job's own end: the wait stops at a cancel,
+  the stop-all switch or the scan window closing, and names without an answer by then stay unresolved (they tie
+  nothing and are not sent).
 - *An IP address target* is checked as itself, and as an address of any name the job resolved (above).
 - *CIDR and `a-b` target ranges* are checked address by address: the listed addresses inside a range, and the
   addresses tied to a never-scan host by a name the job resolved, are skipped (one outcome each) and the rest are

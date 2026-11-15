@@ -76,6 +76,7 @@ NON_ESP_MARKER = b"\x00\x00\x00\x00"  # RFC 3948 section 2.2: IKE on port 4500
 SNI_MAX_NAMES = 200  # SNI host names used per job (the settings allow 10,000): the rest are named in a coverage row
 SNI_DNS_BUDGET_S = 20.0  # every name is resolved at once per job, within this time (a black-holed resolver)
 SNI_DNS_WORKERS = 16
+DNS_STOP_POLL_S = 0.25  # how often a running SNI pre-resolution checks the job's stop flags and window
 
 register_asset_types("ike_endpoint", "ot_endpoint")
 
@@ -128,16 +129,25 @@ def _sni_names(scope: dict) -> tuple[list[str], int]:
     return seen[:SNI_MAX_NAMES], max(len(seen) - SNI_MAX_NAMES, 0)
 
 
-def _resolve_all(names: list[str], budget_s: float) -> tuple[dict[str, set[str]], list[str]]:
+def _resolve_all(names: list[str], budget_s: float, stop=None) -> tuple[dict[str, set[str]], list[str]]:
     """Resolve every name at once (only to match them against the addresses scanned; nothing connects to a name).
     Names without an answer within ``budget_s`` are returned as unresolved; their lookups end in the background
-    (getaddrinfo cannot be cancelled), so a black-holed resolver costs the job ``budget_s`` once, not per name."""
+    (getaddrinfo cannot be cancelled), so a black-holed resolver costs the job ``budget_s`` once, not per name.
+    ``stop`` (the job's ``should_stop``) is asked before the lookups start and every DNS_STOP_POLL_S while they run:
+    a cancel, the stop-all switch or the scan window closing (N4) ends the wait at once (#370 review)."""
     out: dict[str, set[str]] = {}
-    if not names:
-        return out, []
+    if not names or (stop is not None and stop()):
+        return out, list(names)
     pool = cf.ThreadPoolExecutor(max_workers=min(SNI_DNS_WORKERS, len(names)), thread_name_prefix="sni-dns")
     futures = {pool.submit(netutil.resolve, name): name for name in names}
-    done, pending = cf.wait(futures, timeout=budget_s)
+    end = time.monotonic() + max(0.0, budget_s)
+    pending = set(futures)
+    while pending:
+        left = end - time.monotonic()
+        if left <= 0 or (stop is not None and stop()):
+            break
+        _done, pending = cf.wait(pending, timeout=min(left, DNS_STOP_POLL_S), return_when=cf.ALL_COMPLETED)
+    done = set(futures) - pending
     for fut in done:
         try:
             out[futures[fut]] = set(fut.result())
@@ -222,7 +232,10 @@ class NetworkScan:
         with self._sni_lock:
             if self._sni_order is None:
                 names, over = _sni_names(self.scope)
-                self._sni_addresses, unresolved = _resolve_all(names, SNI_DNS_BUDGET_S)
+                # never past the job's own end (time left, which a closing scan window shortens) or a stop (#370 review)
+                budget = max(0.0, min(SNI_DNS_BUDGET_S, self.ctx.time_left()))
+                self._sni_addresses, unresolved = _resolve_all(
+                    names, budget, stop=lambda: self.ctx.should_stop(network=True))
                 for name in unresolved:  # matches no address (and is never looked up again in this job)
                     self._sni_addresses[name] = set()
                 self._sni_order = names
@@ -230,7 +243,7 @@ class NetworkScan:
                 if over:
                     parts.append(f"{over} SNI host names beyond the first {SNI_MAX_NAMES} are not used")
                 if unresolved:
-                    parts.append(f"{len(unresolved)} SNI host names did not resolve within {int(SNI_DNS_BUDGET_S)} s "
+                    parts.append(f"{len(unresolved)} SNI host names did not resolve within {max(1, round(budget))} s "
                                  f"and were not tried ({', '.join(unresolved[:5])}{', ...' if len(unresolved) > 5 else ''})")
                 self.sni_left_out = "; ".join(parts)
                 for name in names:
