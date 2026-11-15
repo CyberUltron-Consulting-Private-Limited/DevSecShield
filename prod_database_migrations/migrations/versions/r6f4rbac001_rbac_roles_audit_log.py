@@ -1,7 +1,7 @@
 """team roles owner / admin / member / viewer, invitation roles, append-only audit log (F4 RBAC)
 
 Revision ID: r6f4rbac001
-Revises: rv6p1nodename001
+Revises: cb352hooks001 (re-chained from rv6p1nodename001 when dev was merged in on 2026-11-15: one head)
 Create Date: 2026-11-11 14:00:00.000000
 
 Roles: existing memberships keep their role (admin -> admin, member -> member); superusers are unchanged.  Every
@@ -11,12 +11,15 @@ from a superuser (POST /admin/teams/{id}/owner, audited).  New teams give their 
 another spelling ("Admin", " member") is normalised first, and anything else (none on dev) becomes member, counted
 in the migration output.
 
-Audit log: table ``auditevent`` (see backend/new_models.py AuditEvent) with PostgreSQL triggers that refuse UPDATE,
-DELETE and TRUNCATE.
+Audit log: table ``auditevent`` (see backend/access_models.py AuditEvent) with PostgreSQL triggers that refuse UPDATE,
+DELETE and TRUNCATE.  DELETE and TRUNCATE use the shared ``zs_append_only()`` (the same body as #57's ledger
+migration r6t2ledger001: ``CREATE OR REPLACE`` with an identical body, so whichever lands first creates it and it is
+never dropped); UPDATE keeps its own function, which allows only the personal-data erasure.
 
 Downgrade keeps everybody's access: owner -> admin, viewer -> member (a viewer gains member rights on the old code,
 which has no read-only role); the invitation role column and the CHECK constraint are dropped; the audit table is
-renamed to ``auditevent_archive`` (evidence is never dropped by a downgrade) and renamed back by the next upgrade.
+renamed to ``auditevent_archive`` and KEEPS its triggers (evidence is never dropped by a downgrade, nor made
+writable), and is renamed back by the next upgrade.
 """
 from typing import Sequence, Union
 
@@ -26,7 +29,7 @@ import sqlmodel
 
 
 revision: str = 'r6f4rbac001'
-down_revision: Union[str, Sequence[str], None] = 'rv6p1nodename001'
+down_revision: Union[str, Sequence[str], None] = 'cb352hooks001'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -52,6 +55,21 @@ BEGIN
   RAISE EXCEPTION 'auditevent is append-only: % refused', TG_OP USING ERRCODE = 'insufficient_privilege';
 END $$
 """
+# Shared with #57 (r6t2ledger001): the one append-only trigger function of the schema.  The body must stay
+# byte-identical to #57's so CREATE OR REPLACE is idempotent whichever migration runs first.
+SHARED_APPEND_ONLY_FUNCTION = """
+CREATE OR REPLACE FUNCTION zs_append_only() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN RAISE EXCEPTION USING
+  MESSAGE = TG_TABLE_NAME || ' is append-only: ' || TG_OP || ' refused',
+  ERRCODE = 'insufficient_privilege',
+  HINT = 'Add a compensating row instead.';
+END $$
+"""
+TRIGGERS = (
+    ("auditevent_no_update", "BEFORE UPDATE ON auditevent FOR EACH ROW EXECUTE FUNCTION auditevent_append_only()"),
+    ("auditevent_no_delete", "BEFORE DELETE ON auditevent FOR EACH ROW EXECUTE FUNCTION zs_append_only()"),
+    ("auditevent_no_truncate", "BEFORE TRUNCATE ON auditevent FOR EACH STATEMENT EXECUTE FUNCTION zs_append_only()"),
+)
 # one admin per ownerless team: the one whose default team it is, else the lowest user id; ``why`` names the rule.
 # Two complete SQL literals (no string building, not even of constants).
 OWNER_PICK_COUNTS = """
@@ -160,11 +178,13 @@ def upgrade() -> None:
 
     if _is_postgres(bind):
         bind.execute(sa.text(APPEND_ONLY_FUNCTION))
-        bind.execute(sa.text("CREATE TRIGGER auditevent_no_update_delete BEFORE UPDATE OR DELETE ON auditevent "
-                             "FOR EACH ROW EXECUTE FUNCTION auditevent_append_only()"))
-        bind.execute(sa.text("CREATE TRIGGER auditevent_no_truncate BEFORE TRUNCATE ON auditevent "
-                             "FOR EACH STATEMENT EXECUTE FUNCTION auditevent_append_only()"))
-
+        bind.execute(sa.text(SHARED_APPEND_ONLY_FUNCTION))
+        # an archive restored above keeps the triggers a downgrade left on it (and an archive from an older version
+        # of this revision has the former combined trigger): recreate them all under their current names
+        for name in ("auditevent_no_update_delete", *(n for n, _ in TRIGGERS)):
+            bind.execute(sa.text(f"DROP TRIGGER IF EXISTS {name} ON auditevent"))
+        for name, spec in TRIGGERS:
+            bind.execute(sa.text(f"CREATE TRIGGER {name} {spec}"))
 
     # ---- last: the role CHECK (ACCESS EXCLUSIVE on teammembership, which every request's policy reads, held only
     # to the end of this revision: env.py runs each revision in its own transaction)
@@ -175,10 +195,8 @@ def downgrade() -> None:
     bind = op.get_bind()
     op.drop_index('ix_user_email_lower', table_name='user')
     op.drop_index('ix_user_email', table_name='user')
-    if _is_postgres(bind):
-        bind.execute(sa.text("DROP TRIGGER IF EXISTS auditevent_no_truncate ON auditevent"))
-        bind.execute(sa.text("DROP TRIGGER IF EXISTS auditevent_no_update_delete ON auditevent"))
-        bind.execute(sa.text("DROP FUNCTION IF EXISTS auditevent_append_only()"))
+    # the archive keeps its triggers and both functions stay (zs_append_only is shared with other append-only
+    # tables): a downgrade never makes the evidence writable (one downgrade policy with #57's ledger)
     op.rename_table("auditevent", "auditevent_archive")
 
     op.drop_constraint("ck_teaminvitation_role", "teaminvitation", type_="check")

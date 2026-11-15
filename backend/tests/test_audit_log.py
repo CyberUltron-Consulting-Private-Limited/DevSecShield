@@ -361,6 +361,55 @@ def test_the_migration_keeps_every_role_and_is_reversible_on_postgresql(pg_schem
     assert audit.verify_chain(engine)["ok"] is True
 
 
+# #57's r6t2ledger001 creates the same function with this exact body (PR #42 comment from the #57 fixer)
+LEDGER_APPEND_ONLY = """
+CREATE OR REPLACE FUNCTION zs_append_only() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN RAISE EXCEPTION USING
+  MESSAGE = TG_TABLE_NAME || ' is append-only: ' || TG_OP || ' refused',
+  ERRCODE = 'insufficient_privilege',
+  HINT = 'Add a compensating row instead.';
+END $$
+"""
+
+
+def _triggers(conn, table: str) -> dict:
+    return dict(conn.execute(sa.text(
+        "SELECT t.tgname, p.proname FROM pg_trigger t JOIN pg_proc p ON p.oid = t.tgfoid "
+        "JOIN pg_class c ON c.oid = t.tgrelid WHERE c.relname = :t AND NOT t.tgisinternal"), {"t": table}).all())
+
+
+@needs_pg
+def test_the_archive_keeps_its_triggers_and_the_shared_append_only_function_is_never_dropped(pg_schema):
+    """#57 comment on #42: DELETE / TRUNCATE use the shared zs_append_only() (whichever migration runs first creates
+    it, CREATE OR REPLACE with one body); a downgrade renames the table to auditevent_archive and KEEPS its triggers,
+    so the archived evidence is not writable; the function is never dropped (the ledger uses it too)."""
+    engine, _ = pg_schema
+    _create_pre_rbac_tables(engine)
+    with engine.begin() as conn:
+        conn.execute(sa.text(LEDGER_APPEND_ONLY))  # #57 landed first
+    _migrate(engine, "upgrade")
+    audit.record_now(engine, action="kept", team_id=1)
+    want = {"auditevent_no_update": "auditevent_append_only", "auditevent_no_delete": "zs_append_only",
+            "auditevent_no_truncate": "zs_append_only"}
+    with engine.begin() as conn:
+        assert _triggers(conn, "auditevent") == want
+        body = conn.execute(sa.text("SELECT prosrc FROM pg_proc WHERE proname = 'zs_append_only'")).scalar()
+        assert "Add a compensating row instead." in body  # one function, #57's body
+    _migrate(engine, "downgrade")
+    with engine.begin() as conn:
+        assert _triggers(conn, "auditevent_archive") == want
+    for statement in ("UPDATE auditevent_archive SET action = 'x'", "DELETE FROM auditevent_archive",
+                      "TRUNCATE auditevent_archive"):
+        with pytest.raises(sa.exc.DBAPIError) as refused, engine.begin() as conn:
+            conn.execute(sa.text(statement))
+        assert "append-only" in str(refused.value)
+    _migrate(engine, "upgrade")
+    with engine.begin() as conn:
+        assert _triggers(conn, "auditevent") == want
+        assert conn.execute(sa.text("SELECT count(*) FROM pg_proc WHERE proname = 'zs_append_only'")).scalar() == 1
+    assert rows(engine)[0].action == "kept" and audit.verify_chain(engine)["ok"] is True
+
+
 @needs_pg
 def test_the_migration_gives_every_team_with_an_admin_one_owner_deterministically(pg_schema, capsys):
     """Review 5869394244 (r6f4rbac001:8) / 5869356370 (roles.py:120): no team is left to a first-come claim."""
