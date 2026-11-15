@@ -28,18 +28,21 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+FILL_FIX_THROUGH = (
+    "UPDATE cbomestatesource SET fix_through_job_id = latest_job_id, fix_through_attempt = latest_attempt "
+    "WHERE NOT EXISTS (SELECT 1 FROM cbomestateobservation o WHERE o.team_id = cbomestatesource.team_id "
+    "AND o.source_ref = cbomestatesource.source_ref AND o.presence = 'present' AND o.fix_version IS NOT NULL "
+    "AND (o.fix_job_id IS NULL OR o.fix_job_id <> cbomestatesource.latest_job_id OR o.fix_attempt IS NULL "
+    "OR o.fix_attempt <> cbomestatesource.latest_attempt))")
+
+
 def upgrade() -> None:
     for name in ('fix_through_job_id', 'fix_through_attempt', 'register_through_job_id', 'register_through_attempt'):
         op.add_column('cbomestatesource', sa.Column(name, sa.Integer(), nullable=True))
     # nullable, no server default: a metadata-only change on PostgreSQL, whatever the table's size
     op.add_column('cbomcollectedasset', sa.Column('content_digest', sqlmodel.sql.sqltypes.AutoString(length=64),
                                                   nullable=True))
-    op.execute(
-        "UPDATE cbomestatesource SET fix_through_job_id = latest_job_id, fix_through_attempt = latest_attempt "
-        "WHERE NOT EXISTS (SELECT 1 FROM cbomestateobservation o WHERE o.team_id = cbomestatesource.team_id "
-        "AND o.source_ref = cbomestatesource.source_ref AND o.presence = 'present' AND o.fix_version IS NOT NULL "
-        "AND (o.fix_job_id IS NULL OR o.fix_job_id <> cbomestatesource.latest_job_id OR o.fix_attempt IS NULL "
-        "OR o.fix_attempt <> cbomestatesource.latest_attempt))")
+    op.execute(FILL_FIX_THROUGH)
 
 
 def downgrade() -> None:

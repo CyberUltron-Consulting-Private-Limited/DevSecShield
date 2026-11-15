@@ -330,3 +330,26 @@ def test_a_random_history_gives_the_answers_of_the_reference_path(kind, tmp_path
     for step, (a, b) in enumerate(zip(got, want)):
         assert a == b, f"run {step} differs"
     assert got[-1][2], "the history graded something"
+
+
+def test_the_migration_marks_the_sources_whose_observations_follow_their_latest_job(world):
+    """cb352hooks001's fill: a source is up to date when every judged present observation points at its latest job
+    (the agility hook's state before #352); one that does not is left behind (its observations are judged once)."""
+    import importlib.util
+
+    root = Path(__file__).resolve().parents[2]
+    spec = importlib.util.spec_from_file_location(
+        "cb352hooks001", root / "prod_database_migrations/migrations/versions/cb352hooks001_estate_hook_markers.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    a, b = world.source("network", "a"), world.source("linux_servers", "b")
+    world.finalise(world.run({a: {"rows": [endpoint("10.1.0.1")]}, b: {"rows": [endpoint("10.2.0.1")]}}))
+    with Session(world.engine) as s:
+        refs = {r.source_id: r.source_ref for r in s.exec(select(CbomEstateSource)).all()}
+        s.execute(sa.update(CbomEstateSource.__table__).values(fix_through_job_id=None, fix_through_attempt=None))
+        s.execute(sa.update(CbomEstateObservation.__table__).where(
+            CbomEstateObservation.source_ref == refs[b]).values(fix_job_id=0))  # b's pointer is not its latest job
+        s.execute(sa.text(mod.FILL_FIX_THROUGH))
+        s.commit()
+        marks = {r.source_ref: r.fix_through_job_id == r.latest_job_id for r in s.exec(select(CbomEstateSource)).all()}
+    assert marks == {refs[a]: True, refs[b]: False}
