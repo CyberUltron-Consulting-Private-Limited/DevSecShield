@@ -89,7 +89,12 @@ def team_inputs(session: Session, team_id: int) -> TeamInputs:
 
 
 # ----------------------------------------------------------------------------- grading one key
-def _content(row: CbomCollectedAsset) -> str:
+_CA = CbomCollectedAsset.__table__  # type: ignore[attr-defined]
+_CONTENT = ("asset_type", "algorithm", "key_size", "protocol", "quantum_vulnerable", "target", "location",
+            "finding_codes", "facts")  # the columns _content reads
+
+
+def _content(row: Any) -> str:
     facts = row.facts if isinstance(row.facts, dict) else {}
     doc = [row.asset_type, row.algorithm, row.key_size, row.protocol, row.quantum_vulnerable, row.target,
            row.location, sorted(str(c) for c in (row.finding_codes or [])), facts]
@@ -226,8 +231,10 @@ def refresh(session: Session, team_id: int, keys: Iterable[str], now: _dt.dateti
         stored = {r.item_key: r for r in session.execute(sa.select(
             _RT.c.item_key, _RT.c.q_grade, _RT.c.q_reason, _RT.c.grade_digest).where(
             _RT.c.team_id == team_id, _RT.c.item_key.in_(list(part)))).all()}
-        assets = {a.asset_key: a for a in session.exec(select(CbomEstateAsset).where(
-            CbomEstateAsset.team_id == team_id, CbomEstateAsset.asset_key.in_(list(part)))).all()}  # type: ignore[attr-defined]
+        ea = CbomEstateAsset.__table__  # type: ignore[attr-defined]
+        assets = {a.asset_key: a for a in session.execute(sa.select(  # plain columns: no ORM object per key
+            ea.c.asset_key, ea.c.presence, ea.c.key_kind, ea.c.label, ea.c.asset_type).where(
+            ea.c.team_id == team_id, ea.c.asset_key.in_(list(part)))).all()}
         latest = E.latest_rows(session, team_id, [k for k in part if k in assets])
         chosen: dict[str, list[dict[str, Any]]] = {}
         for key in part:
@@ -240,27 +247,36 @@ def refresh(session: Session, team_id: int, keys: Iterable[str], now: _dt.dateti
             if obs:
                 chosen[key] = obs
         ids = sorted({o["asset_id"] for obs in chosen.values() for o in obs})
-        rows: dict[int, CbomCollectedAsset] = {}
-        for ids_part in _chunks(ids):
-            rows.update({r.id: r for r in session.exec(select(CbomCollectedAsset).where(
-                CbomCollectedAsset.id.in_(list(ids_part)))).all()})  # type: ignore[union-attr]
+        content: dict[int, str] = {}  # the digest's inputs, read as plain columns (#352); ORM rows are loaded only
+        for ids_part in _chunks(ids):  # for the keys whose digest changed, the few a run re-grades
+            content.update({r.id: _content(r) for r in session.execute(sa.select(
+                _CA.c.id, *(_CA.c[c] for c in _CONTENT)).where(_CA.c.id.in_(list(ids_part)))).all()})
         writes: list[dict[str, Any]] = []
         gone: list[str] = []
+        first = len(out.transitions)
+        due: list[tuple[str, list[dict[str, Any]], str]] = []
         for key in part:
             before = stored.get(key)
-            obs = [o for o in chosen.get(key, []) if o["asset_id"] in rows]
+            obs = [o for o in chosen.get(key, []) if o["asset_id"] in content]
             if not obs:
                 if before is not None:
                     gone.append(key)
                     out.transitions.append(Transition(key, (before.q_grade, before.q_reason), None))
                 continue
-            asset = assets[key]
             digest = hashlib.sha256(json.dumps([inputs.digest, model, sorted(
-                [o["source_ref"], o["presence"], _content(rows[o["asset_id"]])] for o in obs)],
+                [o["source_ref"], o["presence"], content[o["asset_id"]]] for o in obs)],
                 separators=(",", ":")).encode()).hexdigest()[:16]
             if before is not None and before.grade_digest == digest and not force:
                 out.skipped += 1
                 continue
+            due.append((key, obs, digest))
+        rows: dict[int, CbomCollectedAsset] = {}
+        for ids_part in _chunks(sorted({o["asset_id"] for _k, obs, _d in due for o in obs})):
+            rows.update({r.id: r for r in session.exec(select(CbomCollectedAsset).where(
+                CbomCollectedAsset.id.in_(list(ids_part)))).all()})  # type: ignore[union-attr]
+        for key, obs, digest in due:
+            before = stored.get(key)
+            asset = assets[key]
             graded = [(o["source_ref"], grader.grade(rows[o["asset_id"]])) for o in obs]
             ref, g = _worst(graded)
             g = not_correlated(g, asset.key_kind)
@@ -280,6 +296,7 @@ def refresh(session: Session, team_id: int, keys: Iterable[str], now: _dt.dateti
                 out.transitions.append(Transition(
                     key, (before.q_grade, before.q_reason) if before is not None else None, (g.q_grade, g.q_reason),
                     label=asset.label, source_ref=ref, source_name=src.get("name"), asset_type=asset.asset_type))
+        out.transitions[first:] = sorted(out.transitions[first:], key=lambda t: t.key)  # key order, as before
         _upsert(session, writes)
         if gone:
             session.execute(sa.delete(_RT).where(_RT.c.team_id == team_id, _RT.c.item_key.in_(gone)))

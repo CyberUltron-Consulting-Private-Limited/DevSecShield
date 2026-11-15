@@ -783,15 +783,20 @@ def latest_rows(session: Session, team_id: int, keys: Sequence[str]) -> dict[str
                 p = (r.seen_job_id, r.seen_attempt, r.seen_run_id, r.seen_at)
             pointers.append((r, p))
         ids: dict[tuple, int] = {}
-        wanted = sorted({(p[0], p[1], r.row_key) for r, p in pointers})
-        for part in _chunks(wanted, 300):
-            for i, job_id, attempt, row_key in session.execute(sa.select(
-                    CbomCollectedAsset.id, CbomCollectedAsset.job_id, CbomCollectedAsset.attempt,
-                    CbomCollectedAsset.asset_key).where(
-                    CbomCollectedAsset.team_id == team_id,
-                    sa.tuple_(CbomCollectedAsset.job_id, CbomCollectedAsset.attempt,
-                              CbomCollectedAsset.asset_key).in_(part))).all():
-                ids[(job_id, attempt, row_key)] = i
+        by_job: dict[tuple, set[str]] = {}
+        for r, p in pointers:
+            if p[0] is not None:
+                by_job.setdefault((p[0], p[1]), set()).add(r.row_key)
+        # one lookup per (job, attempt) through the unique (job_id, attempt, asset_key) index: an OR of 300
+        # (job, attempt, key) triples per query cost more to plan than to run, and with a team_id condition PostgreSQL
+        # could read the team's every row for each (#352). The team is checked on the rows instead.
+        for (job_id, attempt), row_keys in sorted(by_job.items()):
+            for i, team, row_key in session.execute(sa.select(
+                    CbomCollectedAsset.id, CbomCollectedAsset.team_id, CbomCollectedAsset.asset_key).where(
+                    CbomCollectedAsset.job_id == job_id, CbomCollectedAsset.attempt == attempt,
+                    CbomCollectedAsset.asset_key.in_(sorted(row_keys)))).all():  # type: ignore[attr-defined]
+                if team == team_id:
+                    ids[(job_id, attempt, row_key)] = i
         for r, p in pointers:
             entry = {"source_ref": r.source_ref, "presence": r.presence, "asset_id": ids.get((p[0], p[1], r.row_key)),
                      "job_id": p[0], "attempt": p[1], "run_id": p[2], "observed_at": p[3]}
