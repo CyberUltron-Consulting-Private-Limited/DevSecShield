@@ -608,7 +608,7 @@ export const KIT_NEEDS_INTERNET: Record<"ova" | "ami", string> = {
 
 /** What needs network access, for restricted networks (#230): shown on the Scan nodes tab. */
 export const NETWORK_REQUIREMENTS: string[] = [
-  "A scan node always needs outbound HTTPS to the ZeroShield API (nothing calls in); it reaches your targets directly.",
+  "A scan node always needs outbound HTTPS to the ZeroShield API (nothing calls in) and DNS (port 53) to your resolver; it reaches your targets directly.",
   "Installing it from the image file or the Helm chart (both downloaded from ZeroShield) needs nothing else; pulling the image from a public registry, when the page offers it, needs access to that registry.",
   "Building the OVA or AMI from the build kits needs internet access (Ubuntu image, Packer plugin, Ubuntu packages).",
   "Cloud and identity sources (AWS, Azure, GCP, IdPs) are read from ZeroShield's servers, so those providers' APIs must be reachable from ZeroShield.",
