@@ -4,6 +4,8 @@ import { useState } from "react";
 import { Loader2, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { InfoTip } from "@/components/ui/info-tip";
+import type { InfoTipId } from "@/content/infotips";
 
 export interface CbomCiScanSettings {
   scan_binaries: boolean;
@@ -24,12 +26,13 @@ export function CbomCiScanSettingsForm({
   const [includeVendored, setIncludeVendored] = useState(saved?.include_vendored === true);
   const [scanBinaries, setScanBinaries] = useState(saved?.scan_binaries === true);
 
-  const options = [
+  const options: { id: string; checked: boolean; set: (v: boolean) => void; label: string; hint: string; infoId: InfoTipId }[] = [
     {
       id: "cicd-cbom-include-vendored",
       checked: includeVendored,
       set: setIncludeVendored,
       label: "Scan vendored and build directories",
+      infoId: "cbom.cfg.vendored",
       hint: "Also reads vendor/, dist/, build/ and node_modules/ (third-party code and build output). Off by default.",
     },
     {
@@ -37,6 +40,7 @@ export function CbomCiScanSettingsForm({
       checked: scanBinaries,
       set: setScanBinaries,
       label: "Scan binaries",
+      infoId: "cbom.cfg.binaries",
       hint: "Also reads container images, compiled binaries and firmware in the uploaded archive. Off by default.",
     },
   ];
@@ -44,7 +48,8 @@ export function CbomCiScanSettingsForm({
   return (
     <div className="space-y-4 max-w-xl">
       {options.map((option) => (
-        <label key={option.id} htmlFor={option.id} className="flex items-start gap-2 cursor-pointer">
+        <div key={option.id} className="flex items-start gap-1">
+        <label htmlFor={option.id} className="flex items-start gap-2 cursor-pointer">
           <Checkbox
             id={option.id}
             checked={option.checked}
@@ -56,6 +61,8 @@ export function CbomCiScanSettingsForm({
             <span className="block text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">{option.hint}</span>
           </span>
         </label>
+        <InfoTip id={option.infoId} />
+        </div>
       ))}
       <Button
         onClick={() => onSave({ scan_binaries: scanBinaries, include_vendored: includeVendored })}

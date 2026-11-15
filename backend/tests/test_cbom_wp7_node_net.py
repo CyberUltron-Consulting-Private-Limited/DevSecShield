@@ -239,12 +239,14 @@ def test_classifier_codes_are_all_in_the_new_kb_list():
     import re
 
     raised = set(re.findall(r'out\.add\(\s*"([A-Z0-9_]+)"', src)) | {"IKE_WEAK_ENCR", "IKE_WEAK_INTEG", "IKE_WEAK_DH"}
-    reused = {"WEAK_CIPHER"}  # existing code (FortiOS strong-crypto off)
+    reused = {"WEAK_CIPHER", "DH_LT_2048"}  # existing codes (FortiOS strong-crypto off; appliance DH sizes, N11)
     assert raised - reused <= set(NEW_CODES)
 
 
 # ----------------------------------------------------------------------------- source kind, protocols, RBAC
-KNOWN = "10.1.1.1 ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBEm"
+# a whole ecdsa key: known_hosts is parsed at save (#149), and the truncated blob this held was never a usable pin
+KNOWN = ("10.1.1.1 ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBEmKSENjQEezOmxkZMy7opKgwFB9n"
+         "kt5YRrYMjNuG5N87uRgg6CLrbo5wAdT/y6v0mKV0U2w0WZ2YB/++Tpockg=")
 
 
 def test_appliance_kind_validation():

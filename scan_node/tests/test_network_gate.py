@@ -29,9 +29,9 @@ RAW = {"socket.socket", "socket.create_connection", "socket.getaddrinfo", "socke
 RAW_PREFIXES = ("requests.", "urllib3.", "aiohttp.")
 CONNECTORS = {"psycopg.connect", "redis.Redis", "pymongo.MongoClient", "winrm.Session", "paramiko.Transport",
               "paramiko.SSHClient", "_strict_mysql", "T.probe", "T.s_client", "T.python_handshake", "T.open_tls_socket",
-              "T.ssh_kexinit", "T.ssh_host_key"}
+              "T.ssh_kexinit", "T.ssh_host_key", "S.read_server", "sshprobe.read_server"}
 GATES = {"netutil.connect", "netutil.checked_ip", "netutil.resolve_checked", "netutil.http_client", "checked_ip",
-         "resolve_checked", "http_client", "netutil.udp_connect"}
+         "resolve_checked", "http_client", "netutil.udp_connect", "netutil.checked_target", "checked_target"}
 # Reviewed exceptions: (module, function, call) with the reason.
 ALLOWED = {
     ("network.py", "_sni_for", "netutil.resolve"): "matches SNI names against the address being scanned; no connection",
@@ -130,9 +130,9 @@ def test_the_check_accepts_gated_connections():
 def test_resolve_checked_applies_never_scan_to_names_and_addresses(monkeypatch):
     monkeypatch.setattr(netutil, "resolve", lambda name, timeout=5.0: ["10.0.0.5", "10.0.0.6"])
     never = NeverScan(["10.0.0.6/32", "blocked.corp"])
-    assert netutil.resolve_checked("db.corp", never) == ["10.0.0.5"]  # connect only to the allowed address
     with pytest.raises(Blocked):
-        netutil.resolve_checked("db.corp", never, every=True)  # a client that resolves again must not be used
+        netutil.resolve_checked("db.corp", never)  # one listed address refuses the whole name (#17)
+    assert netutil.resolve_checked("db.corp", NeverScan(["10.0.0.7"])) == ["10.0.0.5", "10.0.0.6"]
     with pytest.raises(Blocked):
         netutil.resolve_checked("Blocked.Corp.", never)
     with pytest.raises(Blocked):

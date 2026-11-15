@@ -7,13 +7,14 @@ new host by someone who cannot see it.
 """
 from __future__ import annotations
 
+import ipaddress
 import re
 import zoneinfo
 from dataclasses import dataclass
 from typing import Any, Callable, Literal
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer, model_validator
 
 from backend.utilities.cbom_sources import targets as T
 
@@ -24,6 +25,7 @@ GROUPS = ("servers", "kubernetes", "databases", "cloud", "identity", "network")
 
 VaultProvider = Literal["hashicorp", "cyberark", "aws_secrets_manager", "azure_key_vault"]
 _HOST_RE = re.compile(r"^[A-Za-z0-9._:-]{1,253}$")
+MAX_HOST_CAS = 20  # host CAs per Linux source (#59; scan_node hostcert.MAX_HOST_CAS)
 _LOGIN_RE = re.compile(r"^[A-Za-z0-9._@$\\-]{1,64}$")
 _UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 _AWS_ROLE_RE = re.compile(r"^arn:aws(-cn|-us-gov)?:iam::(\d{12}):role/[A-Za-z0-9+=,.@_/-]{1,512}$")
@@ -56,6 +58,8 @@ class _Source(_Strict):
     * owner, application, data_classification and data_lifetime_years say who answers for the source, which
       application it serves and how sensitive / long-lived its data is (remediation owners, roadmap, Mosca X);
     * environment (production, staging, ... as the CMDB names it) comes from a CMDB import or the form.
+    * operated_by says who runs what the source reaches: ``us`` (the team, the default when unset) or ``vendor`` (a
+      SaaS or managed service); a vendor-operated source's findings are at least vendor-fixed (crypto-agility, CB-24).
 
     Every field declared here is metadata (``METADATA_FIELDS``): editing it never cancels a job or resets the
     connection test, a source form that does not send it keeps the stored value (send null to clear), and a run
@@ -68,6 +72,7 @@ class _Source(_Strict):
     data_classification: DataClassification | None = None
     data_lifetime_years: int | None = Field(default=None, ge=0, le=100)
     environment: str | None = Field(default=None, max_length=32)
+    operated_by: Literal["us", "vendor"] | None = None
 
     @field_validator("owner", "application", "environment")
     @classmethod
@@ -143,6 +148,13 @@ def check_host(value: str) -> str:
     text = value.strip()
     if not _HOST_RE.match(text):
         raise ValueError("enter a host name or IP address")
+    if ":" in text:  # only an IPv6 address has colons; "db.bank.local:5433" is a name and a port (#217)
+        try:
+            is_v6 = ipaddress.ip_address(text).version == 6
+        except ValueError:
+            is_v6 = False
+        if not is_v6:
+            raise ValueError("enter the host name or IP address only; put the port in the Port field")
     return text
 
 
@@ -160,15 +172,24 @@ class ServersConfig(_Source):
     exclusions: list[str] = Field(default_factory=list, max_length=2000)
     port: int = Field(default=22, ge=1, le=65535)
     login_user: str = Field(default="zs-cbom", max_length=64)
-    host_key_policy: Literal["tofu", "pinned"] = "tofu"
+    host_key_policy: Literal["tofu", "pinned", "host_ca"] = "tofu"
     known_hosts: str | None = Field(default=None, max_length=MAX_SECRET_BYTES)
-    credential_type: Literal["node_key", "ssh_cert", "vault", "password"] = "node_key"
+    # host_key_policy "host_ca" (#59): the public keys of the CAs whose OpenSSH host certificates prove the servers.
+    # Omitted from the dump for every other policy, so existing sources keep their connection version.
+    host_ca_keys: list[str] = Field(default_factory=list, max_length=MAX_HOST_CAS + 1)
+    credential_type: Literal["node_key", "ssh_cert", "vault", "password", "ssh_ca"] = "node_key"
     vault: VaultRef | None = None
     tier: Literal[1, 2] = 1
     parallel: int = Field(default=8, ge=1, le=64)
     timeout_s: int = Field(default=300, ge=10, le=3600)
     window: Literal["network", "any", "custom"] = "network"
     custom_window: list[list[bool]] | None = None
+    # credential_type "ssh_ca" (F1.4): the node's own key, certified per job by this team's SSH CA lineage for these
+    # principals (zs-<team>-<group>), bound to these source addresses (else the node's reported addresses).  Omitted
+    # from the dump for every other credential type, so existing sources keep their connection version.
+    ssh_ca_id: int | None = Field(default=None, ge=1, le=2_147_483_647)
+    ssh_principals: list[str] = Field(default_factory=list, max_length=16)
+    ssh_source_addresses: list[str] = Field(default_factory=list, max_length=32)
 
     @field_validator("login_user")
     @classmethod
@@ -176,17 +197,51 @@ class ServersConfig(_Source):
         # An empty login falls back to the kind's own default (zs-cbom on Linux, svc-zscbom on Windows/AD).
         return check_login(v) or cls.model_fields["login_user"].default
 
+    @model_serializer(mode="wrap")
+    def _dump(self, handler):
+        data = handler(self)
+        if isinstance(data, dict) and self.credential_type != "ssh_ca":
+            for name in ("ssh_ca_id", "ssh_principals", "ssh_source_addresses"):
+                data.pop(name, None)
+        if isinstance(data, dict) and self.host_key_policy != "host_ca":
+            data.pop("host_ca_keys", None)
+        return data
+
     @model_validator(mode="after")
     def _check(self) -> "ServersConfig":
         parsed = T.parse_targets(self.targets)
         self.targets = parsed.normalized
         self.exclusions = T.parse_exclusions(self.exclusions).normalized
+        if self.credential_type == "ssh_ca":
+            from backend.utilities.cbom_sources.sshca import certs as _ca_certs
+            from backend.utilities.cbom_sources.sshca import flags as _ca_flags
+
+            if not _ca_flags.enabled():
+                raise ValueError(f"credential_type: {_ca_flags.OFF_MESSAGE}")
+            if self.ssh_ca_id is None:
+                raise ValueError("ssh_ca_id: choose the SSH CA that signs the scan node's certificates")
+            principals = [p.strip() for p in self.ssh_principals if p.strip()]
+            if not principals or any(not _ca_certs.principal_shape_ok(p) for p in principals):
+                raise ValueError("ssh_principals: one or more principals like zs-<team id>-<group> (lowercase "
+                                 "letters, digits and . _ -), as listed in the servers' principals file")
+            self.ssh_principals = list(dict.fromkeys(principals))
+            try:
+                self.ssh_source_addresses = list(_ca_certs.source_address_list(self.ssh_source_addresses))
+            except ValueError as exc:
+                raise ValueError(f"ssh_source_addresses: {exc}") from None
+        else:
+            self.ssh_ca_id, self.ssh_principals, self.ssh_source_addresses = None, [], []
         if self.credential_type == "vault" and self.vault is None:
             raise ValueError("vault: choose a vault and enter the secret path")
         if self.credential_type != "vault":
             self.vault = None
         if self.host_key_policy == "pinned" and not (self.known_hosts or "").strip():
             raise ValueError("known_hosts: paste the known_hosts lines to pin, or choose trust on first use")
+        self.known_hosts = check_known_hosts(self.known_hosts)
+        if self.host_key_policy == "host_ca":
+            self.host_ca_keys = check_host_ca_keys(self.host_ca_keys)
+        else:
+            self.host_ca_keys = []
         if self.window == "custom":
             self.custom_window = check_window_grid(self.custom_window, allow_empty=False)
         else:
@@ -207,9 +262,124 @@ class WindowsServersConfig(ServersConfig):
     def _ca(cls, v: str | None) -> str | None:
         return check_pem_certificates(v)
 
+    @model_validator(mode="after")
+    def _windows_only(self) -> "WindowsServersConfig":
+        """#156: settings of the Linux SSH form that WinRM and LDAPS never use are refused, not stored and ignored."""
+        if self.tier != 1:
+            raise ValueError("tier: Tier 2 is the Linux sudo allowlist; Windows and Active Directory sources are Tier 1")
+        if self.host_key_policy != "tofu":
+            raise ValueError("host_key_policy: SSH host keys do not apply to WinRM or LDAPS; the server is verified by "
+                             "its TLS certificate (ca_pem for an internal CA)")
+        if (self.known_hosts or "").strip():
+            raise ValueError("known_hosts: SSH host keys do not apply to WinRM or LDAPS; leave it empty")
+        self.known_hosts = None
+        return self
+
 
 class ActiveDirectoryConfig(WindowsServersConfig):
     port: int = Field(default=636, ge=1, le=65535)
+
+
+# #156: ports that never carry WinRM over HTTPS (the scan node always speaks HTTPS, so a login sent there would go to a
+# server that is not verified, or nowhere) and ports that are not LDAPS (636, or 3269 for the global catalog)
+WINRM_HTTP_PORTS = frozenset({80, 5985, 8080})
+AD_NOT_LDAPS_PORTS = frozenset({389, 3268, 80, 5985, 5986, 8080})
+
+
+def check_host_ca_keys(lines: list[str]) -> list[str]:
+    """#59: the host CAs' OpenSSH public keys (``ssh-ed25519 AAAA... [comment]``, as the CA's .pub file holds it), one
+    per entry, de-duplicated.  A certificate, a private key, a known_hosts ``@cert-authority`` line (its host patterns
+    would be dropped silently) and an RSA key under 2048 bits are refused.  Messages give line numbers, never keys."""
+    from cryptography.exceptions import UnsupportedAlgorithm
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.hazmat.primitives.serialization import load_ssh_public_key
+
+    out: list[str] = []
+    seen: set[str] = set()
+    for number, raw in enumerate(lines or [], start=1):
+        line = " ".join(str(raw).split())
+        if not line:
+            continue
+        where = f"host_ca_keys: line {number}"
+        if "PRIVATE KEY" in line:
+            raise ValueError(f"{where} is a private key; paste the CA's public key (its .pub file) and keep the private "
+                             "key out of ZeroShield")
+        if line.startswith("@"):
+            raise ValueError(f"{where} is a known_hosts line; paste only the CA's public key (ssh-ed25519 AAAA...), "
+                             "without @cert-authority and host patterns")
+        fields = line.split(" ")
+        if "-cert-v01@openssh.com" in fields[0]:
+            raise ValueError(f"{where} is a certificate; paste the public key of the CA that signs the host "
+                             "certificates")
+        try:
+            key = load_ssh_public_key(" ".join(fields[:2]).encode())
+        except (ValueError, UnsupportedAlgorithm, IndexError):
+            raise ValueError(f"{where} is not an SSH public key (ssh-ed25519, ecdsa-sha2-nistp256/384/521 or "
+                             "ssh-rsa, as in the CA's .pub file)") from None
+        if isinstance(key, rsa.RSAPublicKey) and key.key_size < 2048:
+            raise ValueError(f"{where} is an RSA key under 2048 bits; use a stronger host CA")
+        identity = " ".join(fields[:2])
+        if identity not in seen:
+            seen.add(identity)
+            out.append(line)
+    if not out:
+        raise ValueError("host_ca_keys: paste the public key of at least one host CA (the CA that signs the servers' "
+                         "host certificates)")
+    if len(out) > MAX_HOST_CAS:
+        raise ValueError(f"host_ca_keys: at most {MAX_HOST_CAS} host CAs")
+    return out
+
+
+def check_known_hosts(text: str | None) -> str | None:
+    """#149: pinned host keys must be known_hosts lines (as ssh-keyscan prints them): ``[@marker] hosts keytype base64
+    [comment]``, hosts plain (``a,b``, ``[a]:2222``) or hashed (``|1|salt|hash``), the base64 key blob naming the same
+    key type.  Comments and blank lines are kept.  A private key is refused outright (it would be stored in the plain
+    configuration).  Messages give line numbers, never the text."""
+    if text is None or not text.strip():
+        return None
+    import base64
+    import binascii
+    import struct
+
+    if "PRIVATE KEY" in text:
+        raise ValueError("known_hosts: this is a private key, not known_hosts lines; paste the servers' public host keys "
+                         "(ssh-keyscan output) and keep private keys out of ZeroShield")
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    lines = 0
+    for number, raw in enumerate(text.split("\n"), start=1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        fields = line.split()
+        if fields[0] in ("@cert-authority", "@revoked"):
+            fields = fields[1:]
+        problem = None
+        if len(fields) < 3:
+            problem = "expected hosts, key type and key"
+        else:
+            hosts, keytype, blob = fields[0], fields[1], fields[2]
+            if not re.fullmatch(r"[a-z0-9][a-z0-9@._-]{2,63}", keytype):
+                problem = "the key type is not an SSH key type"
+            elif not re.fullmatch(r"[^\s]+", hosts):
+                problem = "the host list is not valid"
+            else:
+                try:
+                    data = base64.b64decode(blob, validate=True)
+                    size = struct.unpack(">I", data[:4])[0]
+                    named = data[4:4 + size].decode("ascii")
+                except (binascii.Error, ValueError, struct.error, UnicodeDecodeError):
+                    named = None
+                if named is None:
+                    problem = "the key is not base64 SSH key data"
+                elif named != keytype:
+                    problem = f"the key is a {named} key but the line says {keytype}"
+        if problem:
+            raise ValueError(f"known_hosts: line {number} is not a known_hosts line ({problem}); paste ssh-keyscan "
+                             "output: host key-type base64-key")
+        lines += 1
+    if not lines:
+        raise ValueError("known_hosts: no host key lines; paste the known_hosts lines to pin")
+    return text
 
 
 def credential_target_problem(kind: str, cfg: Any, secrets: dict[str, str]) -> str | None:
@@ -218,22 +388,123 @@ def credential_target_problem(kind: str, cfg: Any, secrets: dict[str, str]) -> s
     read) need TLS with the server's CA.  PostgreSQL without a CA is limited to SCRAM by the node, which never
     reveals the password.  Checked on the new configuration at save; the scan node enforces the same at run time,
     including for vault credentials whose type is only known then."""
-    if kind == "linux_servers" and cfg.credential_type == "password" and cfg.host_key_policy != "pinned":
-        return ("host_key_policy: password logins need pinned host keys, so the password only goes to the real "
-                "servers; paste their known_hosts lines, or use the node key")
+    if kind == "linux_servers" and cfg.credential_type == "password" and cfg.host_key_policy not in ("pinned", "host_ca"):
+        return ("host_key_policy: password logins need pinned host keys or a host CA, so the password only goes to "
+                "the real servers; paste their known_hosts lines or the host CA's public key, or use the node key")
     if kind == "appliance" and cfg.vendor in APPLIANCE_SSH_VENDORS and cfg.credential_type == "password" \
             and cfg.host_key_policy != "pinned":
         return ("host_key_policy: appliance passwords need the pinned host key (known_hosts), so the password only "
                 "goes to the real device")
-    if kind == "windows_servers" and cfg.port == 5985:
-        return "port: WinRM over HTTP (5985) would send the login to a server that is not verified; use HTTPS (5986)"
-    if kind == "database" and cfg.engine in ("mysql", "redis", "mssql"):
+    if kind == "windows_servers" and cfg.port in WINRM_HTTP_PORTS:
+        return (f"port: {cfg.port} is a plain-HTTP port; WinRM over HTTP would send the login to a server that is not "
+                "verified; use HTTPS (5986)")
+    if kind == "active_directory" and cfg.port in AD_NOT_LDAPS_PORTS:
+        return (f"port: {cfg.port} is not LDAPS; Active Directory is read over LDAPS (636, or 3269 for the global "
+                "catalog) so the login only goes to a verified server")
+    if kind == "linux_servers" and cfg.credential_type == "ssh_cert" and secrets.get("ssh_certificate") \
+            and secrets.get("private_key"):
+        return ssh_pair_problem(secrets["ssh_certificate"], secrets["private_key"])
+    if kind == "database" and cfg.engine in PASSWORD_NEEDS_VERIFIED_SERVER:
         uses_password = cfg.credential_type == "vault" or bool(secrets.get("password"))
         if uses_password and not (cfg.require_tls and cfg.ca_pem):
-            # SQL Server's login packet only obfuscates the password (MS-TDS 2.2.6.4)
-            name = {"mysql": "MySQL", "redis": "Redis", "mssql": "SQL Server"}[cfg.engine]
+            # SQL Server's login packet only obfuscates the password (MS-TDS 2.2.6.4); an Oracle O5LOGON exchange
+            # with an impostor can be attacked offline; MongoDB's mechanism is whatever the server offers (#216)
+            name = PASSWORD_NEEDS_VERIFIED_SERVER[cfg.engine]
             return (f"ca_pem: {name} logins need TLS and the CA certificate that signed the server's certificate, so "
                     "the password only goes to the real server")
+    if kind == "kubernetes" and cfg.credential_type == "kubeconfig" and cfg.context and secrets.get("kubeconfig"):
+        # #208: a context the kubeconfig does not have would silently fall back to its current-context
+        summary = check_kubeconfig(secrets["kubeconfig"])
+        if cfg.context not in summary["contexts"]:
+            names = ", ".join(summary["contexts"]) or "none"
+            current = summary["current_context"]
+            return (f"context: {cfg.context!r} is not in the kubeconfig; its contexts are {names}"
+                    + (f" (blank uses its current-context, {current})" if current else ""))
+    if kind == "ca_connector" and cfg.provider == "ejbca" and secrets.get("client_cert") and secrets.get("client_key"):
+        return client_pair_problem(secrets["client_cert"], secrets["client_key"])
+    if kind == "key_manager" and cfg.provider == "kmip" and secrets.get("client_cert") and secrets.get("client_key"):
+        return client_pair_problem(secrets["client_cert"], secrets["client_key"])  # #213, as EJBCA's (#190)
+    return None
+
+
+# Database engines whose password login is only sent to a server proven by TLS and its CA (credential_target_problem;
+# the scan node applies the same rule at run time, database._login_and_read).  PostgreSQL is held to SCRAM instead.
+PASSWORD_NEEDS_VERIFIED_SERVER = {"mysql": "MySQL", "redis": "Redis", "mssql": "SQL Server", "oracle": "Oracle",
+                                  "mongodb": "MongoDB"}
+
+
+def ssh_pair_problem(cert_text: str, key_text: str) -> str | None:
+    """#154: why an OpenSSH user certificate and private key cannot log in together, or None.  The certificate must
+    parse as ``*-cert-v01@openssh.com``, be valid now, and certify the public key of the private key, which must be an
+    unencrypted OpenSSH or PEM private key.  Checked at save; messages never echo the secret text."""
+    import datetime as _dt
+
+    from cryptography.exceptions import UnsupportedAlgorithm
+    from cryptography.hazmat.primitives import serialization
+
+    try:
+        cert = serialization.load_ssh_public_identity(cert_text.strip().encode())
+    except (ValueError, UnsupportedAlgorithm):
+        return ("secrets.ssh_certificate: the certificate could not be read; paste the OpenSSH certificate "
+                "(id_ed25519-cert.pub: ssh-ed25519-cert-v01@openssh.com ...)")
+    if not isinstance(cert, serialization.SSHCertificate):
+        return ("secrets.ssh_certificate: this is a public key, not an SSH certificate; paste the -cert.pub file "
+                "the SSH CA issued")
+    data = key_text.strip().encode()
+    try:
+        key = (serialization.load_ssh_private_key(data, password=None) if b"OPENSSH PRIVATE KEY" in data
+               else serialization.load_pem_private_key(data, password=None))
+    except TypeError:
+        return "secrets.private_key: the private key could not be read: it is encrypted; paste it without a passphrase"
+    except (ValueError, UnsupportedAlgorithm):
+        return "secrets.private_key: the private key could not be read; paste the unencrypted OpenSSH or PEM private key"
+    ssh = serialization.Encoding.OpenSSH, serialization.PublicFormat.OpenSSH
+    try:
+        mine = key.public_key().public_bytes(*ssh)
+        theirs = cert.public_key().public_bytes(*ssh)
+    except (ValueError, UnsupportedAlgorithm, AttributeError):
+        return "secrets.private_key: the key type cannot be used for an SSH login"
+    if mine != theirs:
+        return ("secrets.private_key: the private key does not belong to the SSH certificate; paste the key the "
+                "certificate was issued for")
+    now = int(_dt.datetime.now(_dt.timezone.utc).timestamp())
+    if cert.valid_before <= now:
+        return "secrets.ssh_certificate: the SSH certificate has expired; ask your SSH CA for a new one"
+    if cert.valid_after > now:
+        return "secrets.ssh_certificate: the SSH certificate is not valid yet"
+    return None
+
+
+def client_pair_problem(cert_pem: str, key_pem: str) -> str | None:
+    """Why a PEM client certificate and private key cannot sign in together (both must parse and the key must be the
+    certificate's), or None.  Checked at save so a wrong pair is refused there, not first found by a connection test.
+    The first certificate is the client's own (a chain may follow it).  Messages never echo the PEM text."""
+    from cryptography import x509
+    from cryptography.exceptions import UnsupportedAlgorithm
+    from cryptography.hazmat.primitives import serialization
+
+    try:
+        certs = x509.load_pem_x509_certificates(cert_pem.encode())
+    except (ValueError, UnsupportedAlgorithm):
+        certs = []
+    if not certs:
+        return "secrets.client_cert: the certificate could not be read; paste the PEM client certificate"
+    try:
+        key = serialization.load_pem_private_key(key_pem.encode(), password=None)
+    except TypeError:
+        return "secrets.client_key: the private key could not be read: it is encrypted; paste it without a passphrase"
+    except (ValueError, UnsupportedAlgorithm):
+        return ("secrets.client_key: the private key could not be read; paste the unencrypted PEM private key "
+                "(RSA, EC or Ed25519)")
+    spki = serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
+    try:
+        mine = key.public_key().public_bytes(*spki)
+        theirs = certs[0].public_key().public_bytes(*spki)
+    except (ValueError, UnsupportedAlgorithm):
+        return "secrets.client_cert: the certificate's public key could not be read"
+    if mine != theirs:
+        return ("secrets.client_key: the private key does not belong to the client certificate; paste the key that "
+                "was created with this certificate")
     return None
 
 
@@ -242,6 +513,7 @@ def _server_secrets(cfg: ServersConfig) -> set[str]:
         return {"password"}
     if cfg.credential_type == "ssh_cert":
         return {"ssh_certificate", "private_key"}
+    # node_key, vault, and ssh_ca (nothing stored: the certificate is minted per claim for the node's own key)
     return set()
 
 
@@ -296,11 +568,23 @@ def check_kubeconfig(text: str) -> dict[str, Any]:
         for key in ("client-certificate", "client-key", "tokenFile"):
             if key in detail:
                 raise ValueError(f"kubeconfig points at a file ({key}); embed the data instead")
+    servers: dict[str, str] = {}
     for cluster in data.get("clusters") or []:
-        if "certificate-authority" in ((cluster or {}).get("cluster") or {}):
+        detail = (cluster or {}).get("cluster") or {}
+        if "certificate-authority" in detail:
             raise ValueError("kubeconfig points at a CA file; embed certificate-authority-data instead")
-    contexts = [c.get("name") for c in data.get("contexts") or [] if isinstance(c, dict)]
-    return {"contexts": [c for c in contexts if c], "current_context": data.get("current-context")}
+        # #209: refused at save in the words the scan node uses at run time (collectors/kubernetes.py)
+        if detail.get("insecure-skip-tls-verify") is True:
+            raise ValueError("kubeconfig disables certificate checks (insecure-skip-tls-verify); remove it")
+        if detail.get("proxy-url"):
+            raise ValueError("kubeconfig sets proxy-url, which the scan node does not use (it connects to the API "
+                             "server directly); remove it")
+        if isinstance(cluster, dict) and cluster.get("name"):
+            servers[str(cluster["name"])] = str(detail.get("server") or "")
+    contexts = [c for c in data.get("contexts") or [] if isinstance(c, dict) and c.get("name")]
+    return {"contexts": [str(c["name"]) for c in contexts], "current_context": data.get("current-context"),
+            # each context's API server (#208: the form offers the contexts and fills the URL from the chosen one)
+            "servers": {str(c["name"]): servers.get(str((c.get("context") or {}).get("cluster")), "") for c in contexts}}
 
 
 # ----------------------------------------------------------------------------- databases
@@ -501,7 +785,10 @@ def _ca_secrets(cfg: CaConnectorConfig) -> set[str]:
         return {"token"}  # a read-only Vault token (policy template on the source's Privilege section)
     if cfg.provider == "ejbca":
         return {"client_cert", "client_key"}  # the EJBCA REST API authenticates clients by certificate
-    return {"api_key"}
+    # Venafi, Keyfactor, DigiCert, Sectigo and "other" have no collector (not collectable): nothing would read a key,
+    # so none is asked for or stored.  A key stored before is dropped on the source's next save (_merge_secrets keeps
+    # only the fields this returns) and is never sent anywhere meanwhile.
+    return set()
 
 
 def _ca_on_node(cfg: Any) -> bool:
@@ -603,6 +890,9 @@ class IdpConfig(_Source):
         elif p == "keycloak":
             if not self.base_url or not self.realm or not self.client_id:
                 raise ValueError("Keycloak needs the base URL, realm and client id")
+        elif p == "adfs":
+            if not self.base_url:
+                raise ValueError("base_url: enter your ADFS server address, e.g. https://adfs.example.com")
         elif p in ("saml_metadata", "oidc_discovery"):
             if not self.metadata_url:
                 raise ValueError("metadata_url: enter the public metadata URL")
@@ -674,6 +964,8 @@ class ApplianceConfig(_Source):
         elif self.host_key_policy == "pinned" and not (self.known_hosts or "").strip():
             raise ValueError("known_hosts: paste the appliance's known_hosts line (ssh-keyscan) so the password only "
                              "goes to the real device")
+        else:
+            self.known_hosts = check_known_hosts(self.known_hosts)
         return self
 
 
@@ -733,6 +1025,62 @@ class ContainerImagesConfig(_Source):
         return self
 
 
+# ----------------------------------------------------------------------------- certificate transparency
+CT_FLAG = "CBOM_CT_DISCOVERY"
+MAX_CT_ISSUERS = 50
+
+
+def ct_discovery_enabled() -> bool:
+    """Certificate Transparency discovery runs only when the server sets CBOM_CT_DISCOVERY (default off: a production
+    Cert Spotter key is needed first, see ct_providers)."""
+    import os
+
+    return os.environ.get(CT_FLAG, "").strip().lower() in ("1", "true", "yes", "on")
+
+
+class CtLogsConfig(_Source):
+    """The team's domains, searched in public Certificate Transparency logs by ZeroShield's cloud (one source per team).
+    ``domains`` are stored as A-labels; ``expected_issuers`` are the certificate authorities the team uses (each is the
+    issuer's name, organisation or CN, or the words they start with; ct_collect.issuer_matches); any other issuer is
+    flagged."""
+    domains: list[str] = Field(min_length=1)
+    include_subdomains: bool = True
+    expected_issuers: list[str] = Field(default_factory=list, max_length=MAX_CT_ISSUERS)
+
+    @field_validator("domains")
+    @classmethod
+    def _domains(cls, v: list[str]) -> list[str]:
+        from backend.utilities.cbom_sources.ct_domains import DomainError, normalise_list
+
+        try:
+            out = normalise_list(v)
+        except DomainError as exc:
+            raise ValueError(f"domains: {exc}") from None
+        if not out:
+            raise ValueError("domains: add at least one domain")
+        return out
+
+    @field_validator("expected_issuers")
+    @classmethod
+    def _issuers(cls, v: list[str]) -> list[str]:
+        out: list[str] = []
+        for raw in v:
+            text = _metadata_text(str(raw)) or ""
+            if not text:
+                continue
+            if len(text) > 128:
+                raise ValueError("expected_issuers: each name is at most 128 characters")
+            if len(text) < 3:  # "US", "R1": would match the start of unrelated issuer names
+                raise ValueError("expected_issuers: each name is at least 3 characters (a CA's name, e.g. Let's Encrypt)")
+            if text.casefold() not in {o.casefold() for o in out}:
+                out.append(text)
+        return out
+
+
+def _ct_collectable(_cfg: Any) -> bool:
+    return ct_discovery_enabled()
+
+
 # ----------------------------------------------------------------------------- registry
 @dataclass(frozen=True)
 class KindSpec:
@@ -746,6 +1094,11 @@ class KindSpec:
     collectable: Callable[[Any], bool]
     where_fields: tuple[str, ...]
     node_less: bool = False  # collected by the ZeroShield cloud worker, not by a scan node
+    # the optional secrets for one configuration (default: optional_secrets for every configuration)
+    optional_for: Callable[[Any], frozenset[str]] | None = None
+
+    def optional_secret_fields(self, cfg: Any) -> frozenset[str]:
+        return self.optional_for(cfg) if self.optional_for is not None else self.optional_secrets
 
 
 def _always(_cfg: Any) -> bool:
@@ -766,7 +1119,7 @@ def _db_collectable(cfg: Any) -> bool:
 
 # Changing any of these clears the stored secret, so it must be re-entered: where it goes, and how the node checks
 # that it is talking to the right server before sending it (host keys, CA, TLS), must not change behind its back.
-_SERVER_WHERE = ("targets", "port", "login_user", "host_key_policy", "known_hosts", "vault", "ca_pem")
+_SERVER_WHERE = ("targets", "port", "login_user", "host_key_policy", "known_hosts", "host_ca_keys", "vault", "ca_pem")
 
 KINDS: dict[str, KindSpec] = {
     "linux_servers": KindSpec("linux_servers", "servers", "Linux servers", ServersConfig, _server_secrets,
@@ -800,7 +1153,9 @@ KINDS: dict[str, KindSpec] = {
                               frozenset(), _always, _always, ("cidr",)),
     "key_manager": KindSpec("key_manager", "databases", "HSM or key manager", KeyManagerConfig, _key_manager_secrets,
                             frozenset({"pin"}), _always, _always,
-                            ("provider", "module", "token_label", "host", "port", "ca_pem", "vault")),
+                            ("provider", "module", "token_label", "host", "port", "ca_pem", "vault"),
+                            # a PIN is a PKCS#11 token's; KMIP authenticates the client by its certificate (#213)
+                            optional_for=lambda c: frozenset({"pin"}) if c.provider == "pkcs11" else frozenset()),
 }
 KINDS["appliance"] = KindSpec("appliance", "network", "Network appliance", ApplianceConfig, _appliance_secrets,
                               frozenset(), _always, _always,
@@ -813,6 +1168,12 @@ KINDS["container_images"] = KindSpec("container_images", "kubernetes", "Containe
                                      lambda c: set(), frozenset(), _always, _always,
                                      ("images", "credential_type", "vault", "ca_pem"))
 
+# Certificate Transparency: collected by the cloud worker from public CT search providers; no credential.
+KINDS["ct_logs"] = KindSpec("ct_logs", "identity", "Certificate Transparency", CtLogsConfig, lambda c: set(),
+                            frozenset(), _never, _ct_collectable, ("domains", "include_subdomains"), node_less=True)
+
+from backend.utilities.cbom_sources.kinds_fleet import FLEET_KINDS  # noqa: E402  (F1.3: awx/salt/ssm hosts)
+KINDS.update(FLEET_KINDS)
 KIND_NAMES = tuple(KINDS)
 # Config fields that describe the source rather than how it is reached (declared on ``_Source``).
 METADATA_FIELDS: tuple[str, ...] = tuple(_Source.model_fields)

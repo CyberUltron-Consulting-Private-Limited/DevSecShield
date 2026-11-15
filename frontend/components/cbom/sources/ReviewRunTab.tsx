@@ -2,17 +2,16 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ban, Calculator, Eye, GitCompare, Loader2, Play } from "lucide-react";
+import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { toast } from "@/utils/toast";
 
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   cancelCbomRun,
   estimateCbomSources,
-  getCbomRun,
   getCbomSourcesOverview,
   listCbomRuns,
   startCbomRun,
@@ -25,20 +24,22 @@ import {
   type CbomSourcesOverview,
 } from "@/utils/backend_api";
 
-import { CompareDialog, RunChanges } from "./ChangesPanel";
-import { cbomSourcesKeys, TERMINAL_RUN } from "./keys";
-import RunResults from "./RunResults";
+import { CompareDialog } from "./ChangesPanel";
+import GradeInputsCard from "./GradeInputsCard";
+import { runResultsHref } from "@/components/cbom/results/resultsHref";
+import { cbomSourcesKeys, invalidateRunViews, TERMINAL_RUN } from "./keys";
+import { skipText } from "@/components/cbom/results/RunJobsTable";
 import { CriticalityCard } from "./RunPosture";
 import SchedulesCard from "./SchedulesCard";
 import { startRefusal } from "./startRefusal";
 import { SourceMetadataCard } from "./SourceMetadata";
-import { addressProgress, credits, formatDateTime, mixedGroupScope, newRequestId, pluralize, windowLine, windowStartNotice } from "./logic";
+import { SourceBrowser } from "./SourceTableControls";
+import { credits, formatDateTime, mixedGroupScope, newRequestId, pluralize, windowLine, windowStartNotice } from "./logic";
 import {
   Checkbox2,
   ConfirmDialog,
   EmptyState,
   ErrorBlock,
-  JobStatusBadge,
   LoadingBlock,
   RunStatusBadge,
   SectionCard,
@@ -46,6 +47,7 @@ import {
   Truncate,
   type Tone,
 } from "./shared";
+import { InfoTip } from "@/components/ui/info-tip";
 
 type IncludeState = Record<CbomIncludeKey, boolean>;
 
@@ -152,11 +154,6 @@ function skipTab(item: CbomPlanItem): string | null {
   return null;
 }
 
-function skipText(item: CbomPlanItem): string {
-  const reason = item.reason ?? "Skipped";
-  return item.name && !reason.includes(item.name) ? `${item.name}: ${reason}` : reason;
-}
-
 function jobSummary(counts: CbomRun["job_counts"]): string {
   if (!counts) return "—";
   const parts = JOB_ORDER.filter((s) => (counts[s] ?? 0) > 0).map((s) => `${counts[s]} ${JOB_WORD[s]}`);
@@ -177,7 +174,6 @@ function sameInclude(a: IncludeState, b: IncludeState): boolean {
 // ---------------------------------------------------------------------------- tab
 export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; onNavigate: (tab: string) => void }) {
   const queryClient = useQueryClient();
-  const [detailsRunId, setDetailsRunId] = useState<number | null>(null);
   const [compareRunId, setCompareRunId] = useState<number | null>(null);
   const [cancelling, setCancelling] = useState<CbomRun | null>(null);
 
@@ -199,7 +195,8 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
     refetchInterval: (query) => (query.state.data?.runs.some((r) => !TERMINAL_RUN.has(r.status)) ? 6000 : 30000),
   });
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) });
+  // a cancel changes the run's row in the CBOM Scans table too (status, refunded credits)
+  const invalidate = () => invalidateRunViews(queryClient, teamId);
 
   const cancelMutation = useMutation({
     mutationFn: (run: CbomRun) => cancelCbomRun(teamId, run.id),
@@ -277,7 +274,7 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
     "identity",
     "Certificates and identity",
     (s, _u, k) =>
-      `${pluralize(s, "connector")}${k ? ` (${k})` : ""}${overview.settings.cert_domains ? ` · ${pluralize(overview.settings.cert_domains, "certificate domain")}` : ""}`,
+      `${pluralize(s, "connector")}${k ? ` (${k})` : ""}${overview.settings.cert_domains ? ` · ${pluralize(overview.settings.cert_domains, "certificate domain")} (not read yet)` : ""}`,
     true,
   );
   groupRow("network", "Network TLS", (s, u) => (
@@ -299,7 +296,9 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
     </>
   ));
 
-  const gaps = Math.max(0, overview.evidence.areas - overview.evidence.answered);
+  // the server's one gap count (E0 areas and vendors, the vendor roll-up not counted twice): the same number the
+  // skipped list and the Evidence tab show (CB-18 OB-3)
+  const gaps = overview.evidence.q0_gap_count ?? Math.max(0, overview.evidence.areas - overview.evidence.answered);
   rows.push({
     key: "evidence",
     label: "Evidence",
@@ -307,7 +306,7 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
     through: "Questionnaires",
     lastTest: `${overview.evidence.answered} of ${overview.evidence.areas} answered`,
     credits: "No charge",
-    status: gaps ? <StatusBadge tone="amber">{pluralize(gaps, "gap")}</StatusBadge> : <StatusBadge tone="green">Ready</StatusBadge>,
+    status: gaps ? <StatusBadge tone="amber">{pluralize(gaps, "Q0 gap")}</StatusBadge> : <StatusBadge tone="green">Ready</StatusBadge>,
   });
 
   return (
@@ -316,18 +315,18 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
         Everything this scan will cover, what it will skip and why. Nothing is skipped silently.
       </p>
 
-      <SectionCard title="Coverage" description={`${pluralize(totalSources, "source")} configured`}>
+      <SectionCard infoId="cbsrc.rr.coverage" title="Coverage" description={`${pluralize(totalSources, "source")} configured`}>
         <ScrollArea className="w-full border rounded-lg">
           <div className="min-w-max">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Source</TableHead>
-                  <TableHead>In scope</TableHead>
-                  <TableHead>Reached through</TableHead>
-                  <TableHead>Last test</TableHead>
-                  <TableHead>Credits</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>Source <InfoTip id="cbsrc.rr.col.source" /></TableHead>
+                  <TableHead>In scope <InfoTip id="cbsrc.rr.col.in_scope" /></TableHead>
+                  <TableHead>Reached through <InfoTip id="cbsrc.rr.col.through" /></TableHead>
+                  <TableHead>Last test <InfoTip id="cbsrc.col.last_test" /></TableHead>
+                  <TableHead>Credits <InfoTip id="cbsrc.rr.col.credits" /></TableHead>
+                  <TableHead>Status <InfoTip id="cbsrc.rr.col.status" /></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -351,11 +350,13 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
       </SectionCard>
 
       <CriticalityCard teamId={teamId} />
+      <SourceBrowser teamId={teamId} />
       <SourceMetadataCard teamId={teamId} />
+      <GradeInputsCard teamId={teamId} isAdmin={!!overview.viewer?.is_admin} />
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
         <div className="xl:col-span-2 min-w-0">
-          <SectionCard title="Will be skipped unless you fix it" description={pluralize(skipped.length, "item")}>
+          <SectionCard infoId="cbsrc.rr.skipped" title="Will be skipped unless you fix it" description={pluralize(skipped.length, "item")}>
             {skipped.length === 0 ? (
               <EmptyState title="Nothing will be skipped" body="Every configured source can be collected and every evidence area has an answer." />
             ) : (
@@ -391,7 +392,7 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
           </SectionCard>
         </div>
 
-        <SectionCard title="What you get after the scan">
+        <SectionCard infoId="cbsrc.rr.after" title="What you get after the scan">
           <ul className="list-disc pl-5 space-y-2 text-sm text-zinc-700 dark:text-zinc-300">
             <li>Collection jobs queued per source for your scan nodes</li>
             <li>A run record with the credits charged and refunded</li>
@@ -399,14 +400,14 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
               A proof trail: the CBOM Sources audit log, the scan node source IPs to tell your SOC, and the read-only AWS role whose
               calls appear in your CloudTrail
             </li>
-            <li>Evidence gaps listed as Q0, never assumed safe</li>
+            <li>Evidence at E0 listed as Q0 gaps with their reason, never assumed safe</li>
           </ul>
-          <p className="text-xs text-zinc-500 mt-4">Results feed the CBOM report once the collector for each source type ships.</p>
+          <p className="text-xs text-zinc-500 mt-4">Each run&apos;s assets appear in its results and exports, and on the CBOM dashboard.</p>
         </SectionCard>
       </div>
 
       {totalSources === 0 ? (
-        <SectionCard title="Start a scan" id="cbom-review-start">
+        <SectionCard infoId="cbsrc.rr.start" title="Start a scan" id="cbom-review-start">
           <EmptyState
             title="Nothing to scan yet"
             body="Add a scan node inside the network you want covered, then the servers, clusters, databases or ranges it can reach."
@@ -421,7 +422,7 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
         <StartCard key={`start-${teamId}`} teamId={teamId} overview={overview} />
       )}
 
-      <SectionCard title="Runs" description="The 50 most recent collection runs for this team">
+      <SectionCard infoId="cbsrc.rr.runs" title="Runs" description="The 50 most recent collection runs for this team">
         {runsQuery.isLoading ? (
           <LoadingBlock />
         ) : runsQuery.isError && !runsQuery.data ? (
@@ -447,12 +448,12 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Run</TableHead>
-                    <TableHead>Started</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Jobs</TableHead>
-                    <TableHead className="text-right">Assets</TableHead>
-                    <TableHead>Credits</TableHead>
+                    <TableHead>Run <InfoTip id="cbsrc.rr.col.run" /></TableHead>
+                    <TableHead>Started <InfoTip id="cbsrc.rr.col.started" /></TableHead>
+                    <TableHead>Status <InfoTip id="cbsrc.rr.col.run_status" /></TableHead>
+                    <TableHead>Jobs <InfoTip id="cbsrc.rr.col.jobs" /></TableHead>
+                    <TableHead className="text-right">Assets <InfoTip id="cbsrc.rr.col.assets" /></TableHead>
+                    <TableHead>Credits <InfoTip id="cbsrc.rr.col.run_credits" /></TableHead>
                     <TableHead>
                       <span className="sr-only">Actions</span>
                     </TableHead>
@@ -475,15 +476,12 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center justify-end gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="cursor-pointer"
-                            data-testid={`review-run-details-${run.id}`}
-                            onClick={() => setDetailsRunId(run.id)}
-                          >
-                            <Eye className="h-4 w-4 mr-1.5" />
-                            Results
+                          {/* CB-38: the run's results open on the same results page as a code scan */}
+                          <Button asChild size="sm" variant="outline" className="cursor-pointer">
+                            <Link href={runResultsHref(teamId, run.id)} data-testid={`review-run-details-${run.id}`}>
+                              <Eye className="h-4 w-4 mr-1.5" />
+                              Results
+                            </Link>
                           </Button>
                           {TERMINAL_RUN.has(run.status) && runs.length > 1 && (
                             <Button
@@ -522,9 +520,6 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
         )}
       </SectionCard>
 
-      {detailsRunId !== null && (
-        <RunDetailsDialog key={detailsRunId} teamId={teamId} runId={detailsRunId} onClose={() => setDetailsRunId(null)} />
-      )}
       {compareRunId !== null && (
         <CompareDialog key={compareRunId} teamId={teamId} runId={compareRunId} runs={runs} onClose={() => setCompareRunId(null)} />
       )}
@@ -602,7 +597,8 @@ function StartCard({ teamId, overview }: { teamId: number; overview: CbomSources
       if (refusal.clearEstimate) setSnapshot(null);
       setNotice({ tone: refusal.tone, text: refusal.text });
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) }),
+    // a new run is a new row in the CBOM Scans table
+    onSettled: () => invalidateRunViews(queryClient, teamId),
   });
 
   const toggle = (key: CbomIncludeKey, value: boolean) => {
@@ -633,13 +629,13 @@ function StartCard({ teamId, overview }: { teamId: number; overview: CbomSources
   };
 
   return (
-    <SectionCard title="Start a scan" description="Choose what to collect, estimate the credits, then start." id="cbom-review-start">
+    <SectionCard infoId="cbsrc.rr.start" title="Start a scan" description="Choose what to collect, estimate the credits, then start." id="cbom-review-start">
       <div className="space-y-5">
         <div className="flex flex-wrap gap-x-6 gap-y-3" role="group" aria-label="Groups to include" data-testid="review-include">
           {INCLUDE_OPTIONS.map((opt) => {
             const queuedCount = opt.groups.reduce((sum, g) => sum + (planGroups[g]?.queued ?? 0), 0);
             return (
-              <Checkbox2 key={opt.key} id={`review-include-${opt.key}`} checked={include[opt.key]} onChange={(v) => toggle(opt.key, v)}>
+              <Checkbox2 infoId="cbsrc.rr.include" key={opt.key} id={`review-include-${opt.key}`} checked={include[opt.key]} onChange={(v) => toggle(opt.key, v)}>
                 {opt.label} <span className="text-zinc-500">· {queuedCount} ready</span>
               </Checkbox2>
             );
@@ -704,6 +700,7 @@ function StartCard({ teamId, overview }: { teamId: number; overview: CbomSources
 
         <div className="space-y-1.5">
           <Checkbox2
+            infoId="cbsrc.rr.soc_ack"
             id="review-soc-ack"
             checked={socAck}
             onChange={(v) => {
@@ -758,141 +755,5 @@ function StartCard({ teamId, overview }: { teamId: number; overview: CbomSources
         {!anyIncluded && <p className="text-xs text-zinc-500">Choose at least one group to estimate.</p>}
       </div>
     </SectionCard>
-  );
-}
-
-// ---------------------------------------------------------------------------- run details
-function RunDetailsDialog({ teamId, runId, onClose }: { teamId: number; runId: number; onClose: () => void }) {
-  const runQuery = useQuery({
-    queryKey: cbomSourcesKeys.run(teamId, runId),
-    queryFn: () => getCbomRun(teamId, runId),
-    enabled: Number.isFinite(teamId),
-    retry: 1,
-    refetchInterval: (query) => {
-      if (httpStatus(query.state.error) === 404) return false;
-      const status = query.state.data?.status;
-      return !status || isActiveRun(status) ? 6000 : false;
-    },
-  });
-  const run = runQuery.data;
-  const jobs = run?.jobs ?? [];
-  const skippedAtStart = run?.breakdown?.skipped ?? [];
-
-  return (
-    <Dialog open onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-6xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Run #{runId}</DialogTitle>
-          <DialogDescription>
-            {run ? (
-              <>
-                <RunStatusBadge status={run.status} /> · started {formatDateTime(run.created_at)} · {credits(run.credits.charged)} charged,{" "}
-                {credits(run.credits.refunded)} refunded
-              </>
-            ) : (
-              "Loading the run"
-            )}
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-4 min-w-0">
-          {runQuery.isLoading ? (
-            <LoadingBlock />
-          ) : runQuery.isError && !run ? (
-            <ErrorBlock
-              message={httpStatus(runQuery.error) === 404 ? "This run no longer exists." : undefined}
-              error={runQuery.error}
-              onRetry={httpStatus(runQuery.error) === 404 ? undefined : () => runQuery.refetch()}
-            />
-          ) : jobs.length === 0 ? (
-            <EmptyState title="No jobs in this run" />
-          ) : (
-            <ScrollArea className="w-full border rounded-lg">
-              <div className="min-w-max">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Source</TableHead>
-                      <TableHead>Runs on</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Assets</TableHead>
-                      <TableHead className="text-right">Credits</TableHead>
-                      <TableHead className="text-right">Attempts</TableHead>
-                      <TableHead>Error</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {jobs.map((job) => (
-                      <TableRow key={job.id} data-testid={`review-job-${job.id}`}>
-                        <TableCell className="font-medium text-zinc-900 dark:text-white max-w-[220px]">
-                          <Truncate text={job.source_name ?? `Source ${job.source_id ?? "—"}`} />
-                        </TableCell>
-                        <TableCell className="text-zinc-600 dark:text-zinc-400 max-w-[180px]">
-                          <Truncate text={job.runner === "cloud" ? "ZeroShield cloud" : job.node_name ?? "—"} />
-                        </TableCell>
-                        <TableCell className="max-w-[260px]">
-                          <JobStatusBadge status={job.status} title={job.waiting_reason} />
-                          {job.waiting_reason && (
-                            <p className="mt-1 whitespace-normal text-xs text-zinc-500">{job.waiting_reason}</p>
-                          )}
-                          {addressProgress(job) && (
-                            <p className="mt-0.5 whitespace-normal text-xs text-zinc-700 dark:text-zinc-300" data-testid={`review-job-progress-${job.id}`}>
-                              {addressProgress(job)}
-                            </p>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right text-zinc-600 dark:text-zinc-400">{job.asset_count ?? 0}</TableCell>
-                        <TableCell className="text-right text-zinc-600 dark:text-zinc-400 whitespace-nowrap">
-                          {credits(job.credits)}
-                          {job.refunded && <span className="ml-1 text-xs text-green-600 dark:text-green-400">refunded</span>}
-                        </TableCell>
-                        <TableCell className="text-right text-zinc-600 dark:text-zinc-400">{job.attempts}</TableCell>
-                        <TableCell className="max-w-[260px] text-zinc-600 dark:text-zinc-400">
-                          {job.error ? <Truncate text={job.error} className="text-red-600 dark:text-red-400" /> : "—"}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-              <ScrollBar orientation="horizontal" />
-            </ScrollArea>
-          )}
-
-          {skippedAtStart.length > 0 && (
-            <div className="space-y-1.5">
-              <p className="text-sm font-medium text-zinc-900 dark:text-white">Skipped when the run started</p>
-              <ul className="list-disc pl-5 space-y-1 text-sm text-zinc-600 dark:text-zinc-400">
-                {skippedAtStart.map((item, index) => (
-                  <li key={`${item.source_id ?? item.name}-${index}`} className="break-words">
-                    {skipText(item)}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {run && jobs.length > 0 && (
-            <div className="border-t border-zinc-200 dark:border-zinc-800 pt-4 space-y-2">
-              <p className="text-sm font-medium text-zinc-900 dark:text-white">Changes</p>
-              <RunChanges teamId={teamId} runId={runId} finished={TERMINAL_RUN.has(run.status)} />
-            </div>
-          )}
-          {run && jobs.length > 0 && (
-            <div className="border-t border-zinc-200 dark:border-zinc-800 pt-4">
-              <RunResults teamId={teamId} runId={runId} active={isActiveRun(run.status)} />
-            </div>
-          )}
-          {run && isActiveRun(run.status) && (
-            <p className="text-xs text-zinc-500">Updates every few seconds while the run is active.</p>
-          )}
-        </div>
-
-        <DialogFooter>
-          <Button variant="outline" className="cursor-pointer" onClick={onClose}>
-            Close
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }

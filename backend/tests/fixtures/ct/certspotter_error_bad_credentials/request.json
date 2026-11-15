@@ -1,0 +1,7 @@
+{
+ "url": "https://api.certspotter.com/v1/issuances?domain=example.com&expand=dns_names&expand=issuer&expand=revocation&expand=cert_der&expand=pubkey",
+ "method": "GET",
+ "started": "2026-11-12T17:46:45.712215Z",
+ "duration_ms": 225,
+ "authorization": "Bearer <invalid placeholder>"
+}

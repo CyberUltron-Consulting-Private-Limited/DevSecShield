@@ -31,4 +31,11 @@ dependencies = [
     "httpx>=0.28.1",  # Azure / Google Cloud collectors (also via fastapi[standard])
     "jsonschema>=4.20",  # OSCAL assessment-results validated offline before export / push (WP11)
     "regex>=2024.11.6",  # OSCAL schema patterns use \p{L} Unicode classes (already locked via tiktoken)
+    "tree-sitter>=0.25.2",  # AI fix validator: real grammars (bundled wheels, no run-time download)
+    "tree-sitter-javascript>=0.23.1",
+    "tree-sitter-typescript>=0.23.2",
+    "tree-sitter-java>=0.23.5",
+    "tree-sitter-go>=0.23.4",
+    "tree-sitter-c-sharp>=0.23.1",
+    "tree-sitter-kotlin>=1.1.0",
 ]

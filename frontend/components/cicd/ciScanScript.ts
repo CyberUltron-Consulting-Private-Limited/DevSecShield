@@ -1,5 +1,6 @@
-// Shell shared by the CI/CD files the integration guides generate (GitHub Actions, Jenkins, Bamboo). It behaves like
-// the reference templates in cicd_workflow_files/ (scripts verified against a fake API there):
+// Shell shared by the CI/CD files the integration guides generate (ciTemplates.ts: GitHub Actions, Jenkins, Bamboo,
+// GitLab CI). It behaves like the reference templates in cicd_workflow_files/ (ciTemplates.test.ts runs the generated
+// files against a fake API):
 //   * everything but .git is zipped: vendored code, build output and nested archives are handled by DevSecShield;
 //     installed dependency trees (node_modules, virtualenvs) stay out, their manifests and lockfiles are scanned;
 //   * curl --fail-with-body (curl 7.76+): a failed scan fails the pipeline and the reason is printed;
@@ -46,6 +47,35 @@ export function scanRequestScript({ zipPath, url, keyRef, responseFile }: ScanRe
     `  cat ${responseFile} 2>/dev/null || true`,
     "  exit 1",
     "fi",
+  ].join("\n");
+}
+
+// CBOM policy gate (POSIX sh, grep only: no jq on Bamboo / Jenkins agents). POST /cicd/cbom/scan answers
+// "gate_failed":true when the tree has a high crypto finding (the code-scan CLI's codes: weak algorithm or key, ECB,
+// hard-coded key, static IV, reused nonce, weak RNG, weak padding, disabled certificate verification, vulnerable crypto
+// library) and also when no result arrived in time. The answer is compact JSON, and text inside a JSON string has its
+// quotes escaped, so only the top-level key can match. "true" is tested first; an answer with neither value (an older
+// server, a cut-off body) fails the job too.
+export function cbomGateScript(responseFile: string): string {
+  return [
+    "# CBOM policy gate: fail on a high crypto finding, and fail closed when the answer carries no verdict.",
+    `if grep -Eq '"gate_failed"[[:space:]]*:[[:space:]]*true' ${responseFile}; then`,
+    '  echo "DevSecShield CBOM policy gate: FAILED (high crypto findings, or no result in time; see the list above and the CI/CD page)"',
+    "  exit 1",
+    `elif grep -Eq '"gate_failed"[[:space:]]*:[[:space:]]*false' ${responseFile}; then`,
+    '  echo "DevSecShield CBOM policy gate: passed (no high crypto finding)"',
+    "else",
+    '  echo "DevSecShield CBOM policy gate: the answer has no verdict, so the job fails (fail closed)"',
+    "  exit 1",
+    "fi",
+  ].join("\n");
+}
+
+// jq lines printing the gate's reason and its failing findings (GitHub Actions and GitLab CI, where jq is present).
+export function cbomGateDetailsJq(responseFile: string): string {
+  return [
+    `jq -r '.gate.reason // "No CBOM policy verdict in the answer."' ${responseFile}`,
+    `jq -r '.gate.failing[]? | "\\(.impact // "High") \\(.codes | join(",")) \\(.location)\\(if .line then ":\\(.line)" else "" end) \\(.title)"' ${responseFile}`,
   ].join("\n");
 }
 

@@ -6,6 +6,8 @@ import { Loader2 } from "lucide-react";
 import { toast } from "@/utils/toast";
 import CbomResults from "@/components/CbomResults";
 import { getCBOMScanData } from "@/utils/backend_api";
+import { isScanGone, scanErrorText } from "@/components/cbom/scanQuery";
+import { queryRetry } from "@/utils/query_client";
 
 export default function CbomResultsPage() {
   const params = useParams();
@@ -17,6 +19,7 @@ export default function CbomResultsPage() {
     queryKey: ["cbom-conversation-data", team_id, scan_id],
     queryFn: getCBOMScanData,
     enabled: hasValidIds,
+    retry: (failureCount, error) => !isScanGone(error) && queryRetry(failureCount, error),
   });
 
   if (!hasValidIds) {
@@ -33,8 +36,8 @@ export default function CbomResultsPage() {
   if (query.isError) {
     return (
       <div className="flex h-screen w-full items-center justify-center">
-        <p className="text-zinc-600 dark:text-zinc-400 mb-4">
-          Error fetching CBOM results. Please try again later.
+        <p className="text-zinc-600 dark:text-zinc-400 mb-4" data-testid="cbom-scan-error">
+          {scanErrorText(query.error)}
         </p>
       </div>
     );

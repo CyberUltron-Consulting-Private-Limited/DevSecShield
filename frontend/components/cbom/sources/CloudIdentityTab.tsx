@@ -20,6 +20,7 @@ import {
   createCbomSource,
   deleteCbomSource,
   getCbomTemplate,
+  getCbomSourcesOverview,
   getCbomSourcesSettings,
   listCbomScanNodes,
   listCbomSources,
@@ -31,13 +32,17 @@ import {
   type CbomSource,
   type CbomSourcesSettings,
   type CbomSourceSaveResponse,
+  type CbomOrgEstimate,
   type CbomTestResponse,
 } from "@/utils/backend_api";
 
+import { AWS_NOT_CONFIGURED, AWS_SUPPORT_EMAIL, awsPrivateCaStatus, worstAwsPrivateCaStatus } from "./awsPrivateCaStatus";
+import { caCardStatus, worstCardStatus, type CaCardStatus } from "./caCardStatus";
 import { cbomSourcesKeys } from "./keys";
 import { keepLiveValidation } from "./liveValidation";
 import { SourceMetadataDialog } from "./SourceMetadata";
-import { formatDateTime, pluralize, readTextFile, splitLines } from "./logic";
+import { LabModeBanner } from "./LabModeBanner";
+import { ctProviderSentence, ctRunCredits, formatDateTime, orgEstimateLines, orgEstimateStale, pluralize, readTextFile, splitLines } from "./logic";
 import {
   ChoiceCards,
   CodeSnippet,
@@ -58,18 +63,30 @@ import {
   usePolledJob,
   type Tone,
 } from "./shared";
+import { InfoTip } from "@/components/ui/info-tip";
+import type { InfoTipId } from "@/content/infotips";
 
 // ---------------------------------------------------------------------------- constants
 type Provider = "aws" | "azure" | "gcp";
 type AwsScope = "account" | "organization";
 type CaProvider = "adcs" | "aws_private_ca" | "vault" | "venafi" | "keyfactor" | "digicert" | "ejbca" | "sectigo" | "other";
-type IdpProvider = "entra_id" | "okta" | "keycloak";
+type IdpProvider = "entra_id" | "okta" | "keycloak" | "adfs";
 type MetadataProvider = "saml_metadata" | "oidc_discovery";
 
 const PROVIDERS: { value: Provider; label: string; description: string }[] = [
   { value: "aws", label: "AWS", description: "About five minutes; no keys are exchanged." },
-  { value: "azure", label: "Azure", description: "Key Vault metadata through an app registration (client secret or certificate)." },
-  { value: "gcp", label: "Google Cloud", description: "Cloud KMS, CA Service and Secret Manager metadata through a service account." },
+  {
+    value: "azure",
+    label: "Azure",
+    description:
+      "Key Vault keys, certificates and secrets (metadata), plus the TLS and encryption settings of storage accounts, App Service, Application Gateway, Front Door and Azure SQL, through a read-only app registration.",
+  },
+  {
+    value: "gcp",
+    label: "Google Cloud",
+    description:
+      "Cloud KMS keys and versions, CA Service, Secret Manager and Certificate Manager (metadata), plus load-balancer TLS policies and certificates and bucket encryption, through a read-only service account.",
+  },
 ];
 const PROVIDER_LABEL: Record<Provider, string> = { aws: "AWS", azure: "Azure", gcp: "Google Cloud" };
 const PROVIDER_OF_KIND: Record<string, Provider> = { aws_account: "aws", azure_subscription: "azure", gcp_project: "gcp" };
@@ -113,17 +130,23 @@ interface IdpRow {
   defaultName: string;
 }
 const IDP_ROWS: IdpRow[] = [
-  { provider: "entra_id", label: "Microsoft Entra ID", detail: "Application.Read.All, read-only", defaultName: "Entra ID" },
-  { provider: "okta", label: "Okta", defaultName: "Okta" },
-  { provider: "keycloak", label: "Keycloak", defaultName: "Keycloak" },
+  { provider: "entra_id", label: "Microsoft Entra ID", detail: "public metadata; no permission needed", defaultName: "Entra ID" },
+  { provider: "okta", label: "Okta", detail: "public metadata; no permission needed", defaultName: "Okta" },
+  { provider: "keycloak", label: "Keycloak", detail: "public metadata; no permission needed", defaultName: "Keycloak" },
+  { provider: "adfs", label: "ADFS", detail: "public metadata; no permission needed", defaultName: "ADFS" },
 ];
+const IDP_ROW_PROVIDERS: ReadonlySet<string> = new Set(IDP_ROWS.map((r) => r.provider));
 const METADATA_LABEL: Record<MetadataProvider, string> = { saml_metadata: "SAML metadata", oidc_discovery: "OIDC discovery" };
+/** ADFS publishes both documents under its server address (backend idp_collect.discovery_urls). */
+const ADFS_OIDC_PATH = "/adfs/.well-known/openid-configuration";
+const ADFS_METADATA_PATH = "/FederationMetadata/2007-06/FederationMetadata.xml";
 
 const CHECK_BADGE: Record<CbomAwsCheck["status"], [Tone, string]> = {
   pass: ["green", "Pass"],
   fail: ["red", "Fail"],
   skipped: ["zinc", "Skipped"],
   error: ["amber", "Error"],
+  warning: ["amber", "Warning"], // a grant the reader script adds; the run reports the service as a coverage gap
 };
 
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$/;
@@ -137,8 +160,45 @@ const LOGIN_RE = /^[A-Za-z0-9._@$\\-]{1,64}$/;
 const DOMAIN_LABEL_RE = /^[a-z0-9_]([a-z0-9_-]{0,61}[a-z0-9_])?$/;
 const MAX_DOMAINS = 200;
 const CLOUDFORMATION_CONSOLE = "https://console.aws.amazon.com/cloudformation/home";
-const NOT_AVAILABLE = "Validation is not available yet; collection is not available yet.";
-const IDP_HOW = "ZeroShield reads the signing keys from your identity provider's public metadata; no secret is needed for that.";
+// Venafi, Keyfactor, DigiCert, Sectigo and other CAs: no collector (kinds._ca_secrets asks for no key; owner bug C6)
+const CLM_NOT_COLLECTED = "Not collected: ZeroShield has no connector for this product yet. Nothing is read from it, no key is needed and it is never charged; only its name and API address are saved. Certificates it issued are found where other sources see them: network TLS scans, Certificate Transparency and cloud accounts.";
+// Same sentences as the backend's planning.CLOUD_NOT_CONNECTED (the run estimate's skip reason).
+const CLOUD_NOT_CONNECTED: Record<"azure" | "gcp", string> = {
+  azure: "Not available until the Azure tenant is connected: Save and validate must pass first",
+  gcp: "Not available until the Google Cloud project is connected: Save and validate must pass first",
+};
+// The exact read-only grants the reader scripts make (templates.AZURE_READER / GCP_READER); nothing else is needed.
+const AZURE_READ_ACTIONS = [
+  "Microsoft.Resources/subscriptions/read",
+  "Microsoft.KeyVault/vaults/read",
+  "Microsoft.Storage/storageAccounts/read",
+  "Microsoft.Web/sites/read",
+  "Microsoft.Web/sites/config/read",
+  "Microsoft.Web/certificates/read",
+  "Microsoft.Network/applicationGateways/read",
+  "Microsoft.Cdn/profiles/read",
+  "Microsoft.Cdn/profiles/customdomains/read",
+  "Microsoft.Sql/servers/read",
+];
+const AZURE_DATA_ACCESS = [
+  "Key Vault Reader (vaults with Azure RBAC): keys and certificates read, secrets readMetadata",
+  "Access policy (other vaults): keys get/list, certificates get/list, secrets list",
+];
+const GCP_READ_ROLES = ["roles/cloudkms.viewer", "roles/privateca.auditor", "roles/secretmanager.viewer", "roles/certificatemanager.viewer"];
+const GCP_READ_PERMISSIONS = [
+  "compute.sslPolicies.list",
+  "compute.regionSslPolicies.list",
+  "compute.sslCertificates.list",
+  "compute.regionSslCertificates.list",
+  "compute.targetHttpsProxies.list",
+  "compute.regionTargetHttpsProxies.list",
+  "compute.targetSslProxies.list",
+  "compute.forwardingRules.list",
+  "compute.globalForwardingRules.list",
+  "storage.buckets.list",
+];
+// idp_collect reads public OIDC / SAML metadata and sends no credential (backend/tests/test_cbom_cb08_promises.py)
+const IDP_HOW = "ZeroShield reads the signing keys from your identity provider's public metadata only; a secret is not used yet.";
 // Cloud, CLM and IdP secrets never go to a scan node, so the node wording of the default hint would be wrong here.
 const STORED_HINT = "Encrypted at rest by ZeroShield. Never shown again.";
 
@@ -250,6 +310,7 @@ interface ValidationView {
   status: string;
   checks: CbomAwsCheck[];
   memberAccounts: number | null;
+  estimate: CbomOrgEstimate | null;
   at: string | null;
 }
 
@@ -264,6 +325,7 @@ function viewFromTest(source: CbomSource, test: CbomTestResponse): ValidationVie
     status: test.status,
     checks: test.checks ?? [],
     memberAccounts: typeof test.member_accounts === "number" ? test.member_accounts : null,
+    estimate: test.estimate ?? null,
     at: test.validated_at ?? null,
   };
 }
@@ -278,6 +340,7 @@ function viewFromSource(source: CbomSource | null | undefined): ValidationView |
     status: source.last_test_status,
     checks,
     memberAccounts: typeof members === "number" ? members : null,
+    estimate: source.last_test_result.estimate ?? null,
     at: source.last_test_at,
   };
 }
@@ -296,8 +359,21 @@ function useInvalidate(teamId: number) {
 
 // ---------------------------------------------------------------------------- tab
 /** The backend's sentence (templates.AWS_NOT_CONFIGURED): the template could only trust a placeholder account. */
-export const AWS_NOT_CONFIGURED =
-  "This ZeroShield deployment is not set up for AWS collection; contact your administrator";
+export { AWS_NOT_CONFIGURED };
+
+/** AWS_NOT_CONFIGURED with the support address as a link (#223: a SaaS customer has no administrator to ask). */
+function AwsNotEnabled() {
+  const [before, after] = AWS_NOT_CONFIGURED.split(AWS_SUPPORT_EMAIL);
+  return (
+    <>
+      {before}
+      <a href={`mailto:${AWS_SUPPORT_EMAIL}`} className="font-medium underline underline-offset-2">
+        {AWS_SUPPORT_EMAIL}
+      </a>
+      {after}
+    </>
+  );
+}
 
 export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: number; onNavigate: (tab: string) => void }) {
   const invalidate = useInvalidate(teamId);
@@ -338,6 +414,16 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
     retry: 1,
     refetchInterval: 30000,
   });
+  // The planner's own sentence for an AWS Private CA connector: its AWS account source reads it (aws_collect
+  // "acm-pca"), is skipped in this run, or was removed (planning._aws_private_ca). One source of truth with Review & Run.
+  const overviewQuery = useQuery({
+    queryKey: cbomSourcesKeys.overview(teamId),
+    queryFn: () => getCbomSourcesOverview(teamId),
+    enabled,
+    retry: 1,
+    refetchInterval: 30000,
+  });
+  const planReason = (sourceId: number) => overviewQuery.data?.plan.items?.find((i) => i.source_id === sourceId)?.reason ?? null;
 
   const resetForm = (provider?: Provider) =>
     setForm((f) => ({ provider: provider ?? f.provider, source: null, nonce: f.nonce + 1 }));
@@ -406,7 +492,8 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
   const awsSources = cloudSources.filter((s) => s.kind === "aws_account");
   const caSources = identitySources.filter((s) => s.kind === "ca_connector");
   const idpSources = identitySources.filter((s) => s.kind === "idp");
-  const metadataSources = idpSources.filter((s) => s.config?.provider === "saml_metadata" || s.config?.provider === "oidc_discovery");
+  // every IdP source is listed somewhere: on its provider's row, or with the metadata URLs (any provider without a row)
+  const metadataSources = idpSources.filter((s) => !IDP_ROW_PROVIDERS.has(String(s.config?.provider ?? "")));
   const identityNames = idpSources.map((s) => s.name);
 
   // The result this browser just received stays shown while the server still holds it (or while the account, just
@@ -437,17 +524,22 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
 
   const formKey = `${form.provider}-${form.source?.id ?? "new"}-${form.nonce}`;
   // AWS on a deployment without AWS collection: no form, so the side panel must not ask for one (lab UI r1)
-  const awsOff = form.provider === "aws" && settings.aws_collection_configured === false;
+  const awsUnavailable = settings.aws_collection_configured === false;
+  const awsOff = form.provider === "aws" && awsUnavailable;
   const provider = PROVIDERS.find((p) => p.value === form.provider) ?? PROVIDERS[0];
+  // #223 (a): an AWS Private CA has the status of the AWS account that reads it, never a bare "Connected"
+  const awsCaStatus = (s: CbomSource) =>
+    awsPrivateCaStatus(awsSources.find((a) => a.id === cfgNumber(s, "aws_source_id")) ?? null, settings.aws_collection_configured);
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
         <SectionCard
+          infoId="cbsrc.cloud.connect"
           id="cbom-cloud-connect"
           className="xl:col-span-2"
           title="Connect a cloud account"
-          description={provider.description}
+          description={awsOff ? "AWS collection isn't enabled on this deployment" : provider.description}
           actions={
             <div role="group" aria-label="Cloud provider" className="inline-flex flex-wrap gap-1 rounded-lg bg-zinc-100 dark:bg-zinc-800/60 p-1">
               {PROVIDERS.map((p) => {
@@ -474,8 +566,15 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
           {awsOff && (
             <p role="alert" data-testid="aws-not-configured"
               className="rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50/60 dark:bg-amber-950/20 p-3 text-sm text-amber-900 dark:text-amber-200">
-              {AWS_NOT_CONFIGURED}
+              <AwsNotEnabled />
             </p>
+          )}
+          {form.provider === "aws" && !awsOff && settings.aws_lab_same_account === true && (
+            <LabModeBanner
+              testId="aws-lab-mode"
+              className="mb-4"
+              detail="This test deployment accepts AWS roles in its own AWS account. Every other check (external ID, data-plane deny) still applies. Production deployments refuse this."
+            />
           )}
           {form.provider === "aws" && settings.aws_collection_configured !== false && (
             <AwsForm
@@ -497,12 +596,13 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
         </SectionCard>
 
         <SectionCard
+          infoId="cbsrc.cloud.validation"
           title="Validation"
           description={
             shownValidation
               ? `${shownValidation.name}${shownValidation.at ? ` · last run ${formatDateTime(shownValidation.at)}` : ""}`
               : awsOff
-                ? "AWS collection is not set up on this deployment"
+                ? "AWS collection isn't enabled on this deployment"
                 : form.provider === "aws"
                   ? "Results appear after Validate connection"
                   : "Results appear after Save and validate"
@@ -513,10 +613,15 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
       </div>
 
       <SectionCard
+        infoId="cbsrc.cloud.list"
         title="Connected cloud accounts"
         description={`${pluralize(cloudSources.length, "account")} · Accounts that pass validation are scanned read-only from ZeroShield's cloud (4 credits per account per run).`}
       >
-        {cloudSources.length === 0 ? (
+        {cloudSources.length === 0 && awsUnavailable ? (
+          <div data-testid="cloud-accounts-aws-off">
+            <EmptyState title="No cloud accounts yet" body={<AwsNotEnabled />} />
+          </div>
+        ) : cloudSources.length === 0 ? (
           <EmptyState
             title="No cloud accounts yet"
             body="Connect an AWS account: ZeroShield assumes a read-only role in it with your external ID, so no keys are exchanged."
@@ -539,12 +644,12 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
               <Table data-testid="cloud-accounts-table">
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Account</TableHead>
+                    <TableHead>Account <InfoTip id="cbsrc.cloud.col.account" /></TableHead>
                     <TableHead>Name</TableHead>
-                    <TableHead>Scope</TableHead>
-                    <TableHead className="text-right">Regions</TableHead>
-                    <TableHead>Last validated</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead>Scope <InfoTip id="cbsrc.cloud.col.scope" /></TableHead>
+                    <TableHead className="text-right">Regions <InfoTip id="cbsrc.cloud.col.regions" /></TableHead>
+                    <TableHead>Last validated <InfoTip id="cbsrc.cloud.col.validated" /></TableHead>
+                    <TableHead>Status <InfoTip id="cbsrc.cloud.col.status" /></TableHead>
                     <TableHead className="w-12">
                       <span className="sr-only">Actions</span>
                     </TableHead>
@@ -568,6 +673,16 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
                         <TableCell className="text-zinc-600 dark:text-zinc-400">{s.last_test_at ? formatDateTime(s.last_test_at) : "Never"}</TableCell>
                         <TableCell>
                           {busy ? <TestStatusBadge status="pending" /> : <TestStatusBadge status={s.last_test_status} title={s.last_test_summary} />}
+                          {!busy && s.kind !== "aws_account" && s.last_test_status !== "passed" && s.last_test_status !== "failed" && (
+                            <span className="mt-1 block max-w-[220px] text-xs text-zinc-500" data-testid={`cloud-account-not-connected-${s.id}`}>
+                              {CLOUD_NOT_CONNECTED[PROVIDER_OF_KIND[s.kind] === "gcp" ? "gcp" : "azure"]}
+                            </span>
+                          )}
+                          {!busy && orgEstimateStale(s) && (
+                            <span className="mt-1 block max-w-[220px] text-xs text-amber-700 dark:text-amber-300" data-testid={`aws-org-estimate-stale-${s.id}`}>
+                              Re-validate to update the charge estimate: every member account is now read and charged
+                            </span>
+                          )}
                         </TableCell>
                         <TableCell>
                           <DropdownMenu>
@@ -610,11 +725,16 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
       </SectionCard>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
-        <SectionCard title="Certificates" description="Certificate authorities, CLM tools and the domains you own.">
+        <SectionCard infoId="cbsrc.cloud.certificates" title="Certificates" description="Certificate authorities, CLM tools and the domains you own.">
           <div className="space-y-6">
-            <CertDomains teamId={teamId} settings={settings} />
+            {settings.ct_discovery_enabled ? (
+              <CtDiscovery teamId={teamId} settings={settings} source={identitySources.find((s) => s.kind === "ct_logs") ?? null}
+                onDelete={(s) => setDeleting(s)} />
+            ) : (
+              <CertDomains teamId={teamId} settings={settings} />
+            )}
             <div className="space-y-2">
-              <p className="text-sm font-medium text-zinc-900 dark:text-white">Certificate authorities and CLM</p>
+              <p className="text-sm font-medium text-zinc-900 dark:text-white">Certificate authorities and CLM <InfoTip id="cbsrc.cloud.cas" /></p>
               {CA_ROWS.map((row) => {
                 const rowSources = caSources.filter((s) => row.providers.includes(s.config?.provider as CaProvider));
                 const onNode = NODE_CA_PROVIDERS.has(row.providers[0]);
@@ -625,6 +745,7 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
                     label={row.label}
                     detail={row.detail}
                     sources={rowSources}
+                    unavailable={row.key === "aws_private_ca" && awsUnavailable ? AWS_NOT_CONFIGURED : undefined}
                     canTest={onNode}
                     testing={testMutation.isPending ? testMutation.variables?.id ?? null : null}
                     onConnect={() => setCaDialog({ row, source: null, nonce: Date.now() })}
@@ -632,18 +753,33 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
                     onMetadata={setMetadataFor}
                     onTest={(s) => testMutation.mutate(s)}
                     onDelete={(s) => setDeleting(s)}
+                    headerStatus={
+                      onNode ? (
+                        <CaStatusBadge status={worstCardStatus(rowSources.map((s) => caCardStatus(s)))} />
+                      ) : row.key === "aws_private_ca" ? (
+                        <CaStatusBadge status={worstAwsPrivateCaStatus(rowSources.map(awsCaStatus))} />
+                      ) : (
+                        <StatusBadge tone="zinc">Not collected</StatusBadge>
+                      )
+                    }
                     renderDetail={(s) =>
                       onNode ? (
-                        <NodeTestLine teamId={teamId} source={s} />
+                        <NodeTestLine teamId={teamId} source={s} showStatus={rowSources.length > 1} />
                       ) : row.key === "aws_private_ca" ? (
                         <span className="text-xs text-zinc-500">
-                          through {awsSources.find((a) => a.id === cfgNumber(s, "aws_source_id"))?.name ?? "an AWS account that was removed"} ·{" "}
-                          {NOT_AVAILABLE}
+                          through {awsSources.find((a) => a.id === cfgNumber(s, "aws_source_id"))?.name ?? "an AWS account that was removed"}
+                          {planReason(s.id) ? ` · ${planReason(s.id)}` : ""}
+                          {awsCaStatus(s).detail && (
+                            <span className="block break-words" data-testid="cloud-ca-aws-status-detail">
+                              {rowSources.length > 1 ? `${awsCaStatus(s).label} · ` : ""}
+                              {awsCaStatus(s).detail}
+                            </span>
+                          )}
                         </span>
                       ) : (
                         <span className="text-xs text-zinc-500">
                           {row.key === "other" ? `${CA_OTHER_LABEL[cfgString(s, "provider")] ?? "Other"} · ` : ""}
-                          {NOT_AVAILABLE}
+                          {CLM_NOT_COLLECTED}
                         </span>
                       )
                     }
@@ -654,7 +790,7 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
           </div>
         </SectionCard>
 
-        <SectionCard title="Identity providers" description="Signing keys and certificates, read from each provider's public OIDC and SAML metadata by ZeroShield's cloud. Free.">
+        <SectionCard infoId="cbsrc.cloud.idps" title="Identity providers" description="Signing keys and certificates, read from each provider's public OIDC and SAML metadata by ZeroShield's cloud. Free.">
           <div className="space-y-6">
             <div className="space-y-2">
               {IDP_ROWS.map((row) => (
@@ -674,18 +810,6 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
                   renderDetail={(s) => <IdpTestLine source={s} />}
                 />
               ))}
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-zinc-200 dark:border-zinc-800 px-4 py-3">
-                <div className="min-w-0">
-                  <span className="text-sm font-medium text-zinc-900 dark:text-white">ADFS</span>
-                  <span className="ml-1.5 text-xs text-zinc-500">read from the Windows servers you add on the Servers tab</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <StatusBadge tone="zinc">Via servers</StatusBadge>
-                  <Button variant="outline" size="sm" className="cursor-pointer" onClick={() => onNavigate("servers")}>
-                    Servers
-                  </Button>
-                </div>
-              </div>
             </div>
             <MetadataUrls
               teamId={teamId}
@@ -846,7 +970,7 @@ function ValidationPanel({ view, pending, provider, awsNotConfigured = false }: 
     return (
       <div data-testid="cloud-validation" aria-live="polite" className="space-y-3">
         <p className="text-sm text-zinc-600 dark:text-zinc-400" data-testid="cloud-validation-aws-off">
-          Nothing to validate. {AWS_NOT_CONFIGURED}.
+          Nothing to validate. <AwsNotEnabled />
         </p>
       </div>
     );
@@ -866,6 +990,11 @@ function ValidationPanel({ view, pending, provider, awsNotConfigured = false }: 
           {isAws
             ? "Fill in the role ARN and regions, then choose Validate connection. Each check AWS answers is listed here."
             : "Fill in the form, then choose Save and validate. ZeroShield signs in and lists what it would read; each check is listed here."}
+        </p>
+      )}
+      {!isAws && (!view || view.checks.some((c) => c.status === "fail" || c.status === "error")) && (
+        <p className="text-xs text-amber-700 dark:text-amber-300" data-testid="cloud-validation-not-connected">
+          {CLOUD_NOT_CONNECTED[provider as "azure" | "gcp"]}.
         </p>
       )}
       {view && (
@@ -892,6 +1021,21 @@ function ValidationPanel({ view, pending, provider, awsNotConfigured = false }: 
               <span className="text-sm text-zinc-900 dark:text-white">{pluralize(view.memberAccounts, "member account")}</span>
             </li>
           )}
+          {orgEstimateLines(view.estimate) && (
+            <li className="flex items-start gap-2 py-2.5" data-testid="aws-org-estimate">
+              <span className="w-16 shrink-0">
+                <StatusBadge tone={view.estimate?.changed_from ? "amber" : "blue"}>Charge</StatusBadge>
+              </span>
+              <span className="min-w-0">
+                <span className="block text-sm text-zinc-900 dark:text-white">{orgEstimateLines(view.estimate)?.estimate}</span>
+                {orgEstimateLines(view.estimate)?.change && (
+                  <span className="block text-xs text-amber-700 dark:text-amber-300">
+                    {orgEstimateLines(view.estimate)?.change}. Every member account is read and charged; scheduled runs use this estimate.
+                  </span>
+                )}
+              </span>
+            </li>
+          )}
         </ul>
       )}
       <p className="text-xs text-zinc-500">
@@ -901,6 +1045,12 @@ function ValidationPanel({ view, pending, provider, awsNotConfigured = false }: 
             ? "Every call lands in your Azure Activity Log and the vaults' diagnostic logs."
             : "Every call lands in your Cloud Audit Logs (Data Access logs, where enabled)."}
       </p>
+      {!isAws && view?.checks.some((c) => c.status === "warning") && (
+        <p className="text-xs text-amber-700 dark:text-amber-300" data-testid="cloud-validation-rerun-script">
+          Some services are not granted yet: re-run the reader script above to add them. Until then each run reads everything
+          else and lists those services as coverage gaps.
+        </p>
+      )}
     </div>
   );
 }
@@ -995,6 +1145,7 @@ function AwsForm({
           <StepTitle n={1} title="Scope" />
           <div data-testid="cloud-aws-scope">
             <ChoiceCards
+              infoId="cbsrc.aws.scope"
               name="aws-scope"
               label="Scope"
               value={scope}
@@ -1030,9 +1181,10 @@ function AwsForm({
             Then paste the RoleArn output in step 4.
           </p>
           <div className="mb-4 space-y-3 rounded-lg border border-zinc-200 dark:border-zinc-800 p-4" data-testid="cloud-aws-optins">
-            <p className="text-sm font-medium text-zinc-900 dark:text-white">Optional reads (off by default)</p>
+            <p className="text-sm font-medium text-zinc-900 dark:text-white">Optional reads (off by default) <InfoTip id="cbsrc.aws.optional_reads" /></p>
             <OptInSwitch
               id="aws-lambda-cmk"
+              infoId="cbsrc.aws.lambda_cmk"
               checked={lambdaCmk}
               onChange={setLambdaCmk}
               title="Decrypt Lambda environment variables"
@@ -1049,6 +1201,7 @@ function AwsForm({
             />
             <OptInSwitch
               id="aws-glue"
+              infoId="cbsrc.aws.glue"
               checked={glue}
               onChange={setGlue}
               title="Read Glue connections"
@@ -1116,6 +1269,7 @@ function AwsForm({
           <StepTitle n={4} title="Connect the role" />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Field
+              infoId="cbsrc.aws.role_arn"
               className="md:col-span-2"
               label={scope === "organization" ? "Role ARN in the management account" : "Role ARN"}
               htmlFor="aws-role-arn"
@@ -1134,7 +1288,7 @@ function AwsForm({
                 onChange={(e) => setRoleArn(e.target.value)}
               />
             </Field>
-            <Field className="md:col-span-2" label="Regions" htmlFor="aws-region-input" required error={errors.region} hint="The first region is used for the test read.">
+            <Field infoId="cbsrc.aws.regions" className="md:col-span-2" label="Regions" htmlFor="aws-region-input" required error={errors.region} hint="The first region is used for the test read.">
               <div className="space-y-2">
                 {regions.length > 0 && (
                   <div className="flex flex-wrap items-center gap-1.5" data-testid="cloud-aws-regions">
@@ -1169,6 +1323,7 @@ function AwsForm({
               </div>
             </Field>
             <Field
+              infoId="cbsrc.aws.name"
               label="Name"
               htmlFor="aws-name"
               error={errors.name}
@@ -1191,14 +1346,17 @@ function AwsForm({
   );
 }
 
-function OptInSwitch({ id, checked, onChange, title, body }: { id: string; checked: boolean; onChange: (v: boolean) => void; title: string; body: ReactNode }) {
+function OptInSwitch({ id, checked, onChange, title, body, infoId }: { id: string; checked: boolean; onChange: (v: boolean) => void; title: string; body: ReactNode; infoId: InfoTipId }) {
   return (
     <div className="flex items-start gap-3">
       <Switch id={id} data-testid={id} checked={checked} onCheckedChange={onChange} className="mt-0.5" aria-describedby={`${id}-help`} />
       <div className="min-w-0">
-        <label htmlFor={id} className="block text-sm text-zinc-900 dark:text-white cursor-pointer">
-          {title}
-        </label>
+        <div className="flex items-center gap-1">
+          <label htmlFor={id} className="text-sm text-zinc-900 dark:text-white cursor-pointer">
+            {title}
+          </label>
+          <InfoTip id={infoId} />
+        </div>
         <p id={`${id}-help`} className="text-xs text-zinc-500 break-words">
           {body}
         </p>
@@ -1335,13 +1493,14 @@ function AzureForm({
       <ReaderScript
         teamId={teamId}
         provider="azure"
-        text="Run this script in Azure Cloud Shell. It gives the app read-only access to Key Vault metadata: the built-in Key Vault Reader role (no decrypt, unwrap, sign or secret values), a small role that lists vaults, and list-only secret access on vaults that use access policies."
+        text="Run this script in Azure Cloud Shell. It gives the app read-only access: a custom role with read actions only (vault, storage, App Service, Application Gateway, Front Door and SQL settings), the built-in Key Vault Reader role (no decrypt, unwrap, sign or secret values), and list-only secret access on vaults that use access policies."
       />
+      <PermissionsHelp provider="azure" />
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Field label="Name" htmlFor="azure-name" required error={errors.name}>
+        <Field infoId="cbsrc.azure.name" label="Name" htmlFor="azure-name" required error={errors.name}>
           <Input id="azure-name" data-testid="cloud-azure-name" value={name} maxLength={64} placeholder="azure-prod" onChange={(e) => setName(e.target.value)} />
         </Field>
-        <Field label="Directory (tenant) ID" htmlFor="azure-tenant" required error={errors.tenant}>
+        <Field infoId="cbsrc.azure.tenant" label="Directory (tenant) ID" htmlFor="azure-tenant" required error={errors.tenant}>
           <Input
             id="azure-tenant"
             data-testid="cloud-azure-tenant"
@@ -1353,7 +1512,7 @@ function AzureForm({
             onChange={(e) => setTenantId(e.target.value)}
           />
         </Field>
-        <Field label="Application (client) ID" htmlFor="azure-client" required error={errors.client}>
+        <Field infoId="cbsrc.azure.client" label="Application (client) ID" htmlFor="azure-client" required error={errors.client}>
           <Input
             id="azure-client"
             data-testid="cloud-azure-client"
@@ -1367,6 +1526,7 @@ function AzureForm({
         </Field>
         <div className="md:col-span-2" data-testid="cloud-azure-credential">
           <ChoiceCards
+            infoId="cbsrc.azure.credential"
             name="azure-credential"
             label="Credential"
             value={credential}
@@ -1381,6 +1541,7 @@ function AzureForm({
           />
         </div>
         <SecretField
+          infoId="cbsrc.azure.secret"
           id="azure-secret"
           label={credential === "certificate" ? "Certificate and private key (PEM)" : "Client secret"}
           value={secret}
@@ -1392,6 +1553,7 @@ function AzureForm({
           hint={secretSet ? "Saved. Leave blank to keep it; changing the tenant, client ID or credential clears it." : STORED_HINT}
         />
         <Field
+          infoId="cbsrc.azure.subs"
           className="md:col-span-2"
           label="Subscription IDs"
           htmlFor="azure-subs"
@@ -1500,13 +1662,14 @@ function GcpForm({
       <ReaderScript
         teamId={teamId}
         provider="gcp"
-        text="Run this script with gcloud. It grants the service account viewer roles only: Cloud KMS Viewer (no key use), CA Service Auditor and Secret Manager Viewer (metadata, never secret payloads)."
+        text="Run this script with gcloud. It grants the service account viewer roles only: Cloud KMS Viewer (no key use), CA Service Auditor, Secret Manager Viewer (metadata, never secret payloads) and Certificate Manager Viewer, plus a custom role with list permissions for load-balancer TLS and buckets."
       />
+      <PermissionsHelp provider="gcp" />
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Field label="Name" htmlFor="gcp-name" required error={errors.name}>
+        <Field infoId="cbsrc.gcp.name" label="Name" htmlFor="gcp-name" required error={errors.name}>
           <Input id="gcp-name" data-testid="cloud-gcp-name" value={name} maxLength={64} placeholder="gcp-prod" onChange={(e) => setName(e.target.value)} />
         </Field>
-        <Field label="Organization ID" htmlFor="gcp-org" error={errors.org} hint="Numeric. Leave blank to list projects instead.">
+        <Field infoId="cbsrc.gcp.org" label="Organization ID" htmlFor="gcp-org" error={errors.org} hint="Numeric. Leave blank to list projects instead.">
           <Input
             id="gcp-org"
             data-testid="cloud-gcp-org"
@@ -1518,7 +1681,7 @@ function GcpForm({
             onChange={(e) => setOrgId(e.target.value)}
           />
         </Field>
-        <Field className="md:col-span-2" label="Project IDs" htmlFor="gcp-projects" error={errors.projects} hint="One per line. Needed when there is no organization ID.">
+        <Field infoId="cbsrc.gcp.projects" className="md:col-span-2" label="Project IDs" htmlFor="gcp-projects" error={errors.projects} hint="One per line. Needed when there is no organization ID.">
           <Textarea
             id="gcp-projects"
             data-testid="cloud-gcp-projects"
@@ -1529,7 +1692,7 @@ function GcpForm({
             onChange={(e) => setProjects(e.target.value)}
           />
         </Field>
-        <Field className="md:col-span-2" label="Service account" htmlFor="gcp-email" required error={errors.email}>
+        <Field infoId="cbsrc.gcp.email" className="md:col-span-2" label="Service account" htmlFor="gcp-email" required error={errors.email}>
           <Input
             id="gcp-email"
             data-testid="cloud-gcp-email"
@@ -1542,6 +1705,7 @@ function GcpForm({
           />
         </Field>
         <SecretField
+          infoId="cbsrc.gcp.key"
           id="gcp-key"
           label="Service account key (JSON)"
           value={key}
@@ -1555,7 +1719,7 @@ function GcpForm({
           placeholder="Paste the key, or upload the file"
           hint={keyFile ? `Loaded ${keyFile}` : keySet ? "Saved. Leave blank to keep it; changing the service account clears it." : STORED_HINT}
         />
-        <Field label="Upload the key file" htmlFor="gcp-key-file" error={errors.keyFile} hint="The .json file from IAM > Service accounts > Keys">
+        <Field infoId="cbsrc.gcp.key_file" label="Upload the key file" htmlFor="gcp-key-file" error={errors.keyFile} hint="The .json file from IAM > Service accounts > Keys">
           <Input
             id="gcp-key-file"
             data-testid="cloud-gcp-key-file"
@@ -1617,6 +1781,38 @@ function ReaderScript({ teamId, provider, text }: { teamId: number; provider: "a
   );
 }
 
+function PermissionsHelp({ provider }: { provider: "azure" | "gcp" }) {
+  const azure = provider === "azure";
+  return (
+    <details className="rounded-lg border border-zinc-200 dark:border-zinc-800 p-4 text-sm" data-testid={`cloud-${provider}-permissions`}>
+      <summary className="cursor-pointer font-medium text-zinc-900 dark:text-white">Exact permissions ZeroShield needs (read-only)</summary>
+      <div className="mt-3 space-y-3 text-zinc-600 dark:text-zinc-400">
+        <div>
+          <p className="text-xs font-medium text-zinc-500">{azure ? "Control-plane read actions (custom role, per subscription)" : "Predefined roles"}</p>
+          <ul className="mt-1 list-disc pl-5 font-mono text-xs">
+            {(azure ? AZURE_READ_ACTIONS : GCP_READ_ROLES).map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </div>
+        <div>
+          <p className="text-xs font-medium text-zinc-500">{azure ? "Key Vault data plane" : "Custom role, list permissions only"}</p>
+          <ul className={cn("mt-1 list-disc pl-5 text-xs", !azure && "font-mono")}>
+            {(azure ? AZURE_DATA_ACCESS : GCP_READ_PERMISSIONS).map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </div>
+        <p className="text-xs">
+          {azure
+            ? "Metadata only: never secret values, key material, app settings or connection strings (no getSecret, listKeys or config/list). A permission left out shows as a coverage row on the run, naming the action to grant."
+            : "Metadata only: never secret payloads or key use (no secretmanager.versions.access, no cloudkms useTo*). An API a project has not enabled, or a permission left out, shows as a coverage row on the run."}
+        </p>
+      </div>
+    </details>
+  );
+}
+
 function FormFooter({ pending, onSave, testId }: { pending: boolean; onSave: () => void; testId: string }) {
   return (
     <div className="flex flex-wrap items-center justify-end gap-3">
@@ -1664,10 +1860,11 @@ function CertDomains({ teamId, settings }: { teamId: number; settings: CbomSourc
 
   return (
     <Field
+      infoId="cbsrc.cert.domains"
       label="Domains to search in Certificate Transparency logs"
       htmlFor="cert-domain-input"
       error={error}
-      hint="Saved for the certificate collector. ZeroShield does not query Certificate Transparency logs yet."
+      hint="Saved, but not read: Certificate Transparency discovery is not turned on for this server. When it is, these domains move into the Certificate Transparency source."
     >
       <div className="space-y-2">
         {settings.cert_domains.length > 0 ? (
@@ -1711,6 +1908,183 @@ function CertDomains({ teamId, settings }: { teamId: number; settings: CbomSourc
   );
 }
 
+// ---------------------------------------------------------------------------- certificate transparency
+const MAX_CT_DOMAINS = 1000;
+const MAX_CT_ISSUERS = 50;
+/** What the server says about a refused save (400 detail), for the field instead of only a toast. */
+function apiDetail(error: unknown): string | null {
+  const detail = (error as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+  return typeof detail === "string" ? detail : null;
+}
+
+/** Certificate Transparency discovery (the server has CBOM_CT_DISCOVERY on): one ct_logs source per team. */
+function CtDiscovery({ teamId, settings, source, onDelete }: {
+  teamId: number;
+  settings: CbomSourcesSettings;
+  source: CbomSource | null;
+  onDelete: (source: CbomSource) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [domain, setDomain] = useState("");
+  const [issuer, setIssuer] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const overview = useQuery({
+    queryKey: cbomSourcesKeys.overview(teamId),
+    queryFn: () => getCbomSourcesOverview(teamId),
+    enabled: Number.isFinite(teamId),
+    retry: 1,
+  });
+  const rate = overview.data?.rates?.ct_domain;
+  const domains: string[] = cfgList(source, "domains");
+  const issuers: string[] = cfgList(source, "expected_issuers");
+  const subdomains = source ? cfgFlag(source, "include_subdomains") || source.config?.include_subdomains === undefined : true;
+  const saved = settings.cert_domains ?? [];
+
+  const save = useMutation({
+    mutationFn: (config: Record<string, unknown>) =>
+      source
+        ? updateCbomSource(teamId, source.id, { config: { ...source.config, ...config }, expected_version: source.row_version })
+        : createCbomSource(teamId, { kind: "ct_logs", name: "Certificate Transparency", config, import_saved_domains: true }),
+    onSuccess: () => {
+      setError(null);
+      setDomain("");
+      setIssuer("");
+    },
+    onError: (err) => {
+      if (httpStatus(err) === 409) toast.info("The Certificate Transparency source was changed elsewhere and has been reloaded.");
+      setError(apiDetail(err));
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) }),
+  });
+
+  const addDomain = () => {
+    const { value, error: err } = normalizeDomain(domain.replace(/^\*\./, ""));
+    if (err) return setError(err);
+    if (domains.includes(value)) return setError(`${value} is already in the list`);
+    if (domains.length >= MAX_CT_DOMAINS) return setError(`At most ${MAX_CT_DOMAINS} domains`);
+    save.mutate({ domains: [...domains, value], include_subdomains: subdomains, expected_issuers: issuers });
+  };
+  const addIssuer = () => {
+    const value = issuer.trim();
+    if (!value) return;
+    if (issuers.some((i) => i.toLowerCase() === value.toLowerCase())) return setError(`${value} is already in the list`);
+    if (issuers.length >= MAX_CT_ISSUERS) return setError(`At most ${MAX_CT_ISSUERS} certificate authorities`);
+    save.mutate({ expected_issuers: [...issuers, value] });
+  };
+  const perRun = source ? ctRunCredits(rate, source.target_count) : null;
+
+  return (
+    <div className="space-y-3" data-testid="cloud-ct">
+      <div>
+        <p className="text-sm font-medium text-zinc-900 dark:text-white">Certificate Transparency <InfoTip id="cbsrc.ct.discovery" /></p>
+        <p className="text-xs text-zinc-500 mt-1" data-testid="cloud-ct-how">
+          Every run, ZeroShield&apos;s cloud searches public Certificate Transparency logs through {ctProviderSentence(settings.ct_providers)} for
+          the certificates issued for these domains{subdomains ? " and their subdomains" : ""}, including hosts no scan node
+          reaches. Each certificate is listed with its issuer, validity, key and signature; expiring, expired, revoked and
+          weak certificates, and certificates from CAs you have not listed, are flagged.
+          {rate !== undefined ? ` ${rate} credits per domain searched, per run.` : ""}
+        </p>
+      </div>
+      <Field infoId="cbsrc.ct.domains" label="Domains" htmlFor="ct-domain-input" error={error}>
+        <div className="space-y-2">
+          {domains.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5" data-testid="cloud-ct-domains">
+              {domains.map((d) => (
+                <Chip
+                  key={d}
+                  removeLabel={`Remove ${d}`}
+                  onRemove={save.isPending || domains.length === 1 ? undefined : () => save.mutate({ domains: domains.filter((x) => x !== d) })}
+                >
+                  {d}
+                </Chip>
+              ))}
+            </div>
+          ) : saved.length > 0 ? (
+            <p className="text-xs text-zinc-500" data-testid="cloud-ct-saved">
+              Saved earlier and not searched yet: {saved.join(", ")}. Add a domain (or press Turn on) to search them too.
+            </p>
+          ) : (
+            <p className="text-xs text-zinc-500">No domains yet.</p>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <Input
+              id="ct-domain-input"
+              data-testid="cloud-ct-domain-input"
+              className="flex-1 min-w-[180px]"
+              value={domain}
+              maxLength={253}
+              placeholder="Add a domain, e.g. example.com"
+              onChange={(e) => setDomain(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  addDomain();
+                }
+              }}
+            />
+            <Button variant="outline" className="cursor-pointer" disabled={save.isPending} onClick={addDomain} data-testid="cloud-ct-domain-add">
+              {save.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Plus className="h-4 w-4 mr-2" />}
+              {source ? "Add" : "Add and turn on"}
+            </Button>
+            {!source && saved.length > 0 && (
+              <Button className="cursor-pointer" disabled={save.isPending} data-testid="cloud-ct-turn-on"
+                onClick={() => save.mutate({ domains: [], include_subdomains: true, expected_issuers: [] })}>
+                Turn on with {pluralize(saved.length, "saved domain")}
+              </Button>
+            )}
+          </div>
+        </div>
+      </Field>
+      {source && (
+        <>
+          <div className="flex items-center justify-between gap-3">
+            <label htmlFor="ct-subdomains" className="text-sm text-zinc-700 dark:text-zinc-300">Include subdomains</label> <InfoTip id="cbsrc.ct.subdomains" />
+            <Switch id="ct-subdomains" data-testid="cloud-ct-subdomains" checked={subdomains} disabled={save.isPending}
+              onCheckedChange={(v) => save.mutate({ include_subdomains: v })} />
+          </div>
+          <Field infoId="cbsrc.ct.issuers" label="Certificate authorities you use (optional)" htmlFor="ct-issuer-input"
+            hint="A certificate from any other CA is flagged as unexpected. Matched against the CA's name, organisation or CN: the whole value or its first words (at least 3 characters), e.g. Let's Encrypt, DigiCert, Amazon.">
+            <div className="space-y-2">
+              {issuers.length > 0 && (
+                <div className="flex flex-wrap gap-1.5" data-testid="cloud-ct-issuers">
+                  {issuers.map((i) => (
+                    <Chip key={i} removeLabel={`Remove ${i}`} onRemove={save.isPending ? undefined : () => save.mutate({ expected_issuers: issuers.filter((x) => x !== i) })}>
+                      {i}
+                    </Chip>
+                  ))}
+                </div>
+              )}
+              <div className="flex flex-wrap gap-2">
+                <Input id="ct-issuer-input" data-testid="cloud-ct-issuer-input" className="flex-1 min-w-[180px]" value={issuer} maxLength={128}
+                  placeholder="Add a CA, e.g. Let's Encrypt" onChange={(e) => setIssuer(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addIssuer();
+                    }
+                  }} />
+                <Button variant="outline" className="cursor-pointer" disabled={save.isPending} onClick={addIssuer} data-testid="cloud-ct-issuer-add">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add
+                </Button>
+              </div>
+            </div>
+          </Field>
+          <p className="text-xs text-zinc-500" data-testid="cloud-ct-estimate">
+            {pluralize(source.target_count, "domain")} searched per run
+            {perRun !== null ? ` · ${perRun} credits` : ""}
+            {source.target_count < domains.length ? " (subdomains of a listed domain are in its search)" : ""}. Start it from Review &amp; Run.
+          </p>
+          <Button variant="ghost" size="sm" className="cursor-pointer text-red-600 px-0" data-testid="cloud-ct-turn-off"
+            onClick={() => onDelete(source)}>
+            Turn off Certificate Transparency discovery
+          </Button>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------- connector rows
 function ConnectorRow({
   testId,
@@ -1725,6 +2099,8 @@ function ConnectorRow({
   onTest,
   onDelete,
   renderDetail,
+  headerStatus,
+  unavailable,
 }: {
   testId: string;
   label: string;
@@ -1738,6 +2114,10 @@ function ConnectorRow({
   onTest: (s: CbomSource) => void;
   onDelete: (s: CbomSource) => void;
   renderDetail: (s: CbomSource) => ReactNode;
+  /** replaces "Connected" (a CA a scan node reads shows its one derived status; a CA nothing reads says so) */
+  headerStatus?: ReactNode;
+  /** why nothing can be connected here on this deployment (#223: AWS Private CA without AWS collection) */
+  unavailable?: string;
 }) {
   const connected = sources.length > 0;
   return (
@@ -1750,7 +2130,7 @@ function ConnectorRow({
         <div className="flex items-center gap-2">
           {connected ? (
             <>
-              <StatusBadge tone="green">Connected</StatusBadge>
+              {headerStatus ?? <StatusBadge tone="green">Connected</StatusBadge>}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="icon" className="cursor-pointer" aria-label={`Manage ${label}`} data-testid={`${testId}-manage`}>
@@ -1781,7 +2161,7 @@ function ConnectorRow({
                       <DropdownMenuSeparator />
                     </Fragment>
                   ))}
-                  <DropdownMenuItem className="cursor-pointer" onSelect={onConnect}>
+                  <DropdownMenuItem className="cursor-pointer" disabled={!!unavailable} onSelect={onConnect}>
                     <Plus className="h-4 w-4" />
                     Connect another
                   </DropdownMenuItem>
@@ -1789,12 +2169,18 @@ function ConnectorRow({
               </DropdownMenu>
             </>
           ) : (
-            <Button variant="outline" size="sm" className="cursor-pointer" onClick={onConnect} data-testid={`${testId}-connect`}>
+            <Button variant="outline" size="sm" className="cursor-pointer" disabled={!!unavailable} title={unavailable}
+              onClick={onConnect} data-testid={`${testId}-connect`}>
               Connect
             </Button>
           )}
         </div>
       </div>
+      {unavailable && (
+        <p className="mt-2 text-xs text-zinc-500 break-words" data-testid={`${testId}-unavailable`}>
+          {unavailable}
+        </p>
+      )}
       {connected && (
         <ul className="mt-2 space-y-2">
           {sources.map((s) => (
@@ -1811,21 +2197,33 @@ function ConnectorRow({
   );
 }
 
-/** AD CS is tested by its scan node: show the queued job and why it waits, then the result. */
-function NodeTestLine({ teamId, source }: { teamId: number; source: CbomSource }) {
+function CaStatusBadge({ status }: { status: Pick<CaCardStatus, "tone" | "label" | "detail"> & { kind: string } }) {
+  return (
+    <StatusBadge tone={status.tone} title={status.detail ?? undefined}>
+      {status.kind === "testing" && <Loader2 className="animate-spin" />}
+      {status.label}
+    </StatusBadge>
+  );
+}
+
+/** A CA read by a scan node: one status, from the newer of its last test and its last collection (caCardStatus); the
+ *  queued test job and why it waits while a test is pending. The row header shows the same status (the worst one when
+ *  the row has several sources), so this line repeats it only then. */
+function NodeTestLine({ teamId, source, showStatus }: { teamId: number; source: CbomSource; showStatus: boolean }) {
   const pendingJobId = source.last_test_status === "pending" ? source.last_test_job_id : null;
   const job = usePolledJob(teamId, pendingJobId);
-  const samples = source.last_test_result?.samples ?? [];
+  const status = caCardStatus(source);
+  const samples = status.basis === "test" ? source.last_test_result?.samples ?? [] : [];
   return (
     <div className="space-y-1">
       <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
         <span>through {source.node_name ?? "a scan node that was removed"}</span>
-        {pendingJobId && job.data ? <JobStatusBadge status={job.data.status} /> : <TestStatusBadge status={source.last_test_status} title={source.last_test_summary} />}
+        {pendingJobId && job.data ? <JobStatusBadge status={job.data.status} /> : showStatus && <CaStatusBadge status={status} />}
       </div>
       {pendingJobId ? (
         <p className="text-xs text-zinc-500">{job.data?.waiting_reason ?? source.last_test_summary ?? "Waiting for the scan node"}</p>
       ) : (
-        source.last_test_summary && <p className="text-xs text-zinc-500">{source.last_test_summary}</p>
+        status.detail && <p className="text-xs text-zinc-500 break-words" data-testid="cloud-ca-status-detail">{status.detail}</p>
       )}
       {!pendingJobId && samples.length > 0 && (
         <ul className="text-xs text-zinc-600 dark:text-zinc-400">
@@ -1873,7 +2271,6 @@ function CaDialog({
   const [password, setPassword] = useState("");
   const [awsSourceId, setAwsSourceId] = useState<number | null>(cfgNumber(source, "aws_source_id") ?? (awsSources.length === 1 ? awsSources[0].id : null));
   const [apiUrl, setApiUrl] = useState(cfgString(source, "api_url"));
-  const [apiKey, setApiKey] = useState("");
   const [token, setToken] = useState("");
   const [clientCert, setClientCert] = useState("");
   const [clientKey, setClientKey] = useState("");
@@ -1884,7 +2281,6 @@ function CaDialog({
   const isEjbca = provider === "ejbca";
   const onNode = NODE_CA_PROVIDERS.has(provider);
   const passwordSet = !!source?.secrets_set.includes("password");
-  const apiKeySet = !!source?.secrets_set.includes("api_key");
   const tokenSet = !!source?.secrets_set.includes("token");
   const certSet = !!source?.secrets_set.includes("client_cert") && !!source?.secrets_set.includes("client_key");
   const policy = useQuery({
@@ -1913,8 +2309,7 @@ function CaDialog({
         if (isEjbca && clientCert.trim()) secrets.client_cert = clientCert.trim() + "\n";
         if (isEjbca && clientKey.trim()) secrets.client_key = clientKey.trim() + "\n";
       } else {
-        config.api_url = apiUrl.trim();
-        if (apiKey) secrets.api_key = apiKey;
+        config.api_url = apiUrl.trim(); // no collector: no key is asked for or sent (a stored one is dropped on save)
       }
       const body = { name: name.trim(), config, secrets, test_after_save: test, ...(onNode && nodeId ? { node_id: nodeId } : {}) };
       return source
@@ -1956,8 +2351,6 @@ function CaDialog({
         next.clientKey = clientKey.trim()
           ? clientKey.includes("PRIVATE KEY-----") && !clientKey.includes("ENCRYPTED PRIVATE KEY") ? null : "Paste the unencrypted PEM private key"
           : need ? "Paste the PEM private key of the client certificate" : null;
-      } else {
-        next.apiKey = apiKey || (apiKeySet && !whereChanged) ? null : apiKeySet ? "Re-enter the API key: it is cleared when the address changes" : "Enter the API key";
       }
     }
     setErrors(next);
@@ -1982,12 +2375,12 @@ function CaDialog({
                   ? "A scan node reads the CAs and certificate profiles through the EJBCA REST API, signing in with a client certificate."
                   : isAwsCa
                     ? "Read through the read-only role of a connected AWS account. No new credential is needed."
-                    : "ZeroShield keeps the API address and key for the certificate collector."}
+                    : CLM_NOT_COLLECTED}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
           {row.providers.length > 1 && (
-            <Field label="Product" htmlFor="ca-provider">
+            <Field infoId="cbsrc.ca.product" label="Product" htmlFor="ca-provider">
               <Select
                 value={provider}
                 onValueChange={(v) => {
@@ -2009,13 +2402,13 @@ function CaDialog({
               </Select>
             </Field>
           )}
-          <Field label="Name" htmlFor="ca-name" required error={errors.name}>
+          <Field infoId="cbsrc.ca.name" label="Name" htmlFor="ca-name" required error={errors.name}>
             <Input id="ca-name" data-testid="cloud-ca-name" value={name} maxLength={64} onChange={(e) => setName(e.target.value)} />
           </Field>
 
           {onNode && (
             <>
-              <Field label="Scan node" htmlFor="ca-node" required error={errors.node} hint="A node in a segment that reaches the certificate authority">
+              <Field infoId="cbsrc.ca.node" label="Scan node" htmlFor="ca-node" required error={errors.node} hint="A node in a segment that reaches the certificate authority">
                 <NodeSelect id="ca-node" nodes={nodes} value={nodeId} onChange={setNodeId} />
               </Field>
               {nodes.length === 0 && (
@@ -2036,13 +2429,14 @@ function CaDialog({
 
           {isAdcs && (
             <>
-              <Field label="CA server" htmlFor="ca-host" required error={errors.host} hint="Reached over WinRM HTTPS (5986); run the Windows setup script from the Servers tab on it">
+              <Field infoId="cbsrc.ca.host" label="CA server" htmlFor="ca-host" required error={errors.host} hint="Reached over WinRM HTTPS (5986); run the Windows setup script from the Servers tab on it">
                 <Input id="ca-host" data-testid="cloud-ca-host" value={host} maxLength={253} placeholder="ca01.corp.example.com" onChange={(e) => setHost(e.target.value)} />
               </Field>
-              <Field label="Read-only Windows account" htmlFor="ca-login" required error={errors.login}>
+              <Field infoId="cbsrc.ca.login" label="Read-only Windows account" htmlFor="ca-login" required error={errors.login}>
                 <Input id="ca-login" data-testid="cloud-ca-login" value={login} maxLength={64} placeholder="svc-zscbom" autoComplete="off" onChange={(e) => setLogin(e.target.value)} />
               </Field>
               <SecretField
+                infoId="cbsrc.ca.password"
                 id="ca-password"
                 label="Password"
                 value={password}
@@ -2056,7 +2450,7 @@ function CaDialog({
           )}
 
           {isAwsCa && (
-            <Field label="AWS account" htmlFor="ca-aws" required error={errors.aws}>
+            <Field infoId="cbsrc.ca.aws" label="AWS account" htmlFor="ca-aws" required error={errors.aws}>
               {awsSources.length === 0 ? (
                 <p className="text-sm text-zinc-600 dark:text-zinc-400">Connect an AWS account at the top of this tab first.</p>
               ) : (
@@ -2077,7 +2471,7 @@ function CaDialog({
           )}
 
           {!isAdcs && !isAwsCa && (
-            <Field label="API address" htmlFor="ca-api-url" required error={errors.apiUrl}>
+            <Field infoId="cbsrc.ca.api_url" label="API address" htmlFor="ca-api-url" required error={errors.apiUrl}>
               <Input
                 id="ca-api-url"
                 data-testid="cloud-ca-api-url"
@@ -2093,6 +2487,7 @@ function CaDialog({
           {isVault && (
             <>
               <SecretField
+                infoId="cbsrc.ca.vault_token"
                 id="ca-token"
                 label="Vault token (read-only policy)"
                 value={token}
@@ -2103,7 +2498,7 @@ function CaDialog({
                 hint={tokenSet ? "Saved. Leave blank to keep it; changing the address, CA or node clears it." : STORED_HINT}
               />
               <div className="space-y-2">
-                <p className="text-sm font-medium">Policy for the token</p>
+                <p className="text-sm font-medium">Policy for the token <InfoTip id="cbsrc.ca.vault_policy" /></p>
                 {policy.data ? (
                   <div data-testid="cloud-ca-vault-policy">
                     <CodeSnippet code={policy.data} language="hcl" />
@@ -2117,8 +2512,9 @@ function CaDialog({
 
           {isEjbca && (
             <>
-              <SecretField id="ca-client-cert" label="Client certificate (PEM)" multiline value={clientCert} onChange={setClientCert} isSet={certSet} required error={errors.clientCert} />
+              <SecretField infoId="cbsrc.ca.client_cert" id="ca-client-cert" label="Client certificate (PEM)" multiline value={clientCert} onChange={setClientCert} isSet={certSet} required error={errors.clientCert} />
               <SecretField
+                infoId="cbsrc.ca.client_key"
                 id="ca-client-key"
                 label="Client private key (PEM, unencrypted)"
                 multiline
@@ -2134,6 +2530,7 @@ function CaDialog({
 
           {onNode && (
             <Field
+              infoId="cbsrc.ca.ca_pem"
               label={isAdcs ? "CA of the WinRM certificate (optional)" : "CA of the server certificate (optional)"}
               htmlFor="ca-ca-pem"
               error={errors.caPem}
@@ -2143,19 +2540,6 @@ function CaDialog({
             </Field>
           )}
 
-          {!onNode && !isAwsCa && (
-            <SecretField
-              id="ca-api-key"
-              label="API key"
-              value={apiKey}
-              onChange={setApiKey}
-              isSet={apiKeySet}
-              required
-              error={errors.apiKey}
-              hint={apiKeySet ? "Saved. Leave blank to keep it; changing the address clears it." : STORED_HINT}
-            />
-          )}
-          {!onNode && <p className="text-xs text-zinc-500">{NOT_AVAILABLE}</p>}
         </div>
         <DialogFooter>
           <Button variant="outline" className="cursor-pointer" onClick={onClose}>
@@ -2213,6 +2597,7 @@ function IdpDialog({
   const [secret, setSecret] = useState("");
   const [errors, setErrors] = useState<Record<string, string | null>>({});
   const secretName = provider === "okta" ? "api_token" : "client_secret";
+  const asksSecret = provider !== "adfs"; // backend kinds._idp_secrets: ADFS stores none
   const secretLabel = provider === "okta" ? "API token" : "Client secret";
   const secretSet = !!source?.secrets_set.includes(secretName);
 
@@ -2220,9 +2605,9 @@ function IdpDialog({
     mutationFn: () => {
       const config: Record<string, unknown> = { provider };
       if (provider === "entra_id") Object.assign(config, { tenant_id: tenantId.trim().toLowerCase(), client_id: clientId.trim() });
-      if (provider === "okta") Object.assign(config, { base_url: baseUrl.trim() });
+      if (provider === "okta" || provider === "adfs") Object.assign(config, { base_url: baseUrl.trim() });
       if (provider === "keycloak") Object.assign(config, { base_url: baseUrl.trim(), realm: realm.trim(), client_id: clientId.trim() });
-      const body = { name: name.trim(), config, secrets: secret ? { [secretName]: secret } : {} };
+      const body = { name: name.trim(), config, secrets: asksSecret && secret ? { [secretName]: secret } : {} };
       return source
         ? updateCbomSource(teamId, source.id, { ...body, expected_version: source.row_version })
         : createCbomSource(teamId, { kind: "idp", ...body });
@@ -2241,6 +2626,8 @@ function IdpDialog({
       next.client = clientId.trim() ? null : "Enter the application (client) ID";
     } else if (provider === "okta") {
       next.baseUrl = httpsUrlError(baseUrl, "Okta domain");
+    } else if (provider === "adfs") {
+      next.baseUrl = httpsUrlError(baseUrl, "ADFS server address");
     } else {
       next.baseUrl = httpsUrlError(baseUrl, "Keycloak base URL");
       next.realm = realm.trim() ? null : "Enter the realm";
@@ -2260,18 +2647,20 @@ function IdpDialog({
           <DialogTitle>{source ? `Edit ${source.name}` : `Connect ${row.label}`}</DialogTitle>
           <DialogDescription>
             {provider === "entra_id"
-              ? "An app registration with the Application.Read.All application permission (read-only)."
+              ? "ZeroShield reads this tenant's public OpenID and federation metadata: its signing keys and certificates. No permission is needed; the application ID is kept for API reads that are not built yet."
               : provider === "okta"
-                ? "A read-only API token from your Okta admin console."
-                : "A confidential client in the realm with read-only access to clients and keys."}
+                ? "ZeroShield reads your Okta org's public OpenID metadata: its signing keys. No API token is needed or used yet."
+                : provider === "adfs"
+                  ? `ZeroShield reads your ADFS server's public OpenID metadata (${ADFS_OIDC_PATH}) and federation metadata (${ADFS_METADATA_PATH}): its token-signing keys and certificates. No permission is needed. The Windows servers you add are read for their certificate stores and TLS settings, nothing ADFS-specific.`
+                  : "ZeroShield reads the realm's public OpenID and SAML metadata: its signing keys and certificates. The client ID is kept for API reads that are not built yet."}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
-          <Field label="Name" htmlFor="idp-name" required error={errors.name}>
+          <Field infoId="cbsrc.idp.name" label="Name" htmlFor="idp-name" required error={errors.name}>
             <Input id="idp-name" data-testid="cloud-idp-name" value={name} maxLength={64} onChange={(e) => setName(e.target.value)} />
           </Field>
           {provider === "entra_id" && (
-            <Field label="Directory (tenant) ID" htmlFor="idp-tenant" required error={errors.tenant}>
+            <Field infoId="cbsrc.idp.tenant" label="Directory (tenant) ID" htmlFor="idp-tenant" required error={errors.tenant}>
               <Input
                 id="idp-tenant"
                 className="font-mono text-sm"
@@ -2283,29 +2672,36 @@ function IdpDialog({
               />
             </Field>
           )}
-          {(provider === "okta" || provider === "keycloak") && (
-            <Field label={provider === "okta" ? "Okta domain" : "Base URL"} htmlFor="idp-base" required error={errors.baseUrl}>
+          {(provider === "okta" || provider === "keycloak" || provider === "adfs") && (
+            <Field
+              infoId="cbsrc.idp.base_url"
+              label={provider === "okta" ? "Okta domain" : provider === "adfs" ? "ADFS server address" : "Base URL"}
+              htmlFor="idp-base"
+              required
+              error={errors.baseUrl}
+            >
               <Input
                 id="idp-base"
                 value={baseUrl}
                 maxLength={512}
                 spellCheck={false}
-                placeholder={provider === "okta" ? "https://example.okta.com" : "https://sso.example.com"}
+                placeholder={provider === "okta" ? "https://example.okta.com" : provider === "adfs" ? "https://adfs.example.com" : "https://sso.example.com"}
                 onChange={(e) => setBaseUrl(e.target.value)}
               />
             </Field>
           )}
           {provider === "keycloak" && (
-            <Field label="Realm" htmlFor="idp-realm" required error={errors.realm}>
+            <Field infoId="cbsrc.idp.realm" label="Realm" htmlFor="idp-realm" required error={errors.realm}>
               <Input id="idp-realm" value={realm} maxLength={128} placeholder="corp" onChange={(e) => setRealm(e.target.value)} />
             </Field>
           )}
           {(provider === "entra_id" || provider === "keycloak") && (
-            <Field label={provider === "entra_id" ? "Application (client) ID" : "Client ID"} htmlFor="idp-client" required error={errors.client}>
+            <Field infoId="cbsrc.idp.client" label={provider === "entra_id" ? "Application (client) ID" : "Client ID"} htmlFor="idp-client" required error={errors.client}>
               <Input id="idp-client" className="font-mono text-sm" value={clientId} maxLength={128} spellCheck={false} onChange={(e) => setClientId(e.target.value)} />
             </Field>
           )}
-          <SecretField
+          {asksSecret && <SecretField
+            infoId="cbsrc.idp.secret"
             id="idp-secret"
             label={secretLabel}
             value={secret}
@@ -2313,7 +2709,7 @@ function IdpDialog({
             isSet={secretSet}
             error={errors.secret}
             hint={secretSet ? "Saved. Leave blank to keep it; changing the address or IDs clears it." : `Optional. ${IDP_HOW}`}
-          />
+          />}
         </div>
         <DialogFooter>
           <Button variant="outline" className="cursor-pointer" onClick={onClose}>
@@ -2374,7 +2770,7 @@ function MetadataUrls({
   };
 
   const input = (provider: MetadataProvider, label: string, placeholder: string, testId: string) => (
-    <Field label={label} htmlFor={`idp-${provider}`} error={errors[provider]}>
+    <Field infoId={provider === "saml_metadata" ? "cbsrc.idp.saml_url" : "cbsrc.idp.oidc_url"} label={label} htmlFor={`idp-${provider}`} error={errors[provider]}>
       <div className="flex flex-wrap gap-2">
         <Input
           id={`idp-${provider}`}
@@ -2403,8 +2799,8 @@ function MetadataUrls({
   return (
     <div className="space-y-4">
       <p className="text-xs text-zinc-500">
-        No admin access? Public metadata is enough to read signing keys and their rotation. ZeroShield&apos;s cloud reads these URLs when
-        you press Test and during each run; only public https addresses can be read.
+        Public metadata is all ZeroShield reads: signing keys and their rotation. ZeroShield&apos;s cloud reads these URLs when you
+        press Test and during each run; only public https addresses can be read.
       </p>
       {input("saml_metadata", "SAML metadata URL", "https://login.example.com/saml/metadata", "cloud-saml")}
       {input("oidc_discovery", "OIDC discovery URL", "https://login.example.com/.well-known/openid-configuration", "cloud-oidc")}
@@ -2413,8 +2809,11 @@ function MetadataUrls({
           {sources.map((s) => (
             <li key={s.id} className="rounded-md border border-zinc-200 dark:border-zinc-800 px-3 py-2 space-y-1">
               <div className="flex items-center gap-2">
-                <StatusBadge tone="zinc">{METADATA_LABEL[s.config?.provider as MetadataProvider] ?? "Metadata"}</StatusBadge>
-                <Truncate className="flex-1 min-w-0 font-mono text-xs text-zinc-700 dark:text-zinc-300" text={cfgString(s, "metadata_url")} />
+                <StatusBadge tone="zinc">{METADATA_LABEL[s.config?.provider as MetadataProvider] ?? (cfgString(s, "provider") || "Identity provider")}</StatusBadge>
+                <Truncate
+                  className="flex-1 min-w-0 font-mono text-xs text-zinc-700 dark:text-zinc-300"
+                  text={cfgString(s, "metadata_url") || cfgString(s, "base_url") || s.name}
+                />
                 <Button
                   variant="outline"
                   size="sm"

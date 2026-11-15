@@ -1,0 +1,6 @@
+"""kty"" Parameter Value",Key Type Description,JOSE Implementation Requirements,Change Controller,Reference
+EC,Elliptic Curve,Recommended+,[IESG],"[RFC 7518, Section 6.2]"
+RSA,RSA,Required,[IESG],"[RFC 7518, Section 6.3]"
+oct,Octet sequence,Required,[IESG],"[RFC 7518, Section 6.4]"
+OKP,Octet string key pairs,Optional,[IESG],"[RFC 8037, Section 2]"
+AKP,Algorithm Key Pair,Optional,[IETF],[RFC 9964]

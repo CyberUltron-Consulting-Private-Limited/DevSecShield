@@ -19,7 +19,7 @@ from backend.utilities.auth.plans import plans
 from backend.utilities.auth import email as account_mail
 from backend.utilities.auth.email import set_password_link
 import psycopg2
-from backend.get_db import get_db , get_mongo_client_db
+from backend.get_db import get_db
 from backend.utilities.db.admin import delete_team_associated_data
 from rich.console import Console
 console = Console()
@@ -79,7 +79,6 @@ async def check_superuser(Authorization: Annotated[str | None, Header()] = None)
     """
     try:
         engine = get_db()
-        mongo_db = get_mongo_client_db()
 
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
         
@@ -114,7 +113,6 @@ async def get_all_teams(Authorization: Annotated[str | None, Header()] = None):
     try:
         
         engine = get_db()
-        mongo_db = get_mongo_client_db()
 
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
         
@@ -169,7 +167,6 @@ async def get_all_users(Authorization: Annotated[str | None, Header()] = None):
     """
     try:
         engine = get_db()
-        mongo_db = get_mongo_client_db()
 
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
         
@@ -213,7 +210,6 @@ async def create_admin_user(data: CreateAdminUserData, request: Request, Authori
 
     try:
         engine = get_db()
-        mongo_db = get_mongo_client_db()
 
         # Check if user is superuser
         admin_user = await get_user_from_header_or_raise_exception(engine, Authorization)
@@ -312,7 +308,6 @@ async def update_team_credit_balance(
     """
     try:
         engine = get_db()
-        mongo_db = get_mongo_client_db()
 
         # Check if user is superuser
         admin_user = await get_user_from_header_or_raise_exception(engine, Authorization)
@@ -382,7 +377,6 @@ async def toggle_admin_access(
     """
     try:
         engine = get_db()
-        mongo_db = get_mongo_client_db()
 
         # Check if user is superuser
         admin_user = await get_user_from_header_or_raise_exception(engine, Authorization)
@@ -451,7 +445,6 @@ async def delete_user(
     """
     try:
         engine = get_db()
-        mongo_db = get_mongo_client_db()
 
         # Check if user is superuser
         admin_user = await get_user_from_header_or_raise_exception(engine, Authorization)

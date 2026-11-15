@@ -7,9 +7,33 @@
 #            STAGING_SSH_TARGET       user@host
 #   vars     STAGING_DIR              directory on the host (default /opt/devsecshield-staging) holding
 #                                     deploy/staging/.env, backend.env and certs/
+# Optional, for AWS collection (deploy/staging/README.md, "AWS collection on staging"): when set, each deploy writes
+# exactly these keys into the host's backend.env (staging.sh backend-env; over ssh's stdin, never logged; values
+# GitHub masks as secrets). Unset or empty: the host's value is left as it is.
+#   secrets  CBOM_AWS_ACCESS_KEY_ID, CBOM_AWS_SECRET_ACCESS_KEY, CBOM_AWS_PRINCIPAL_ARN
+#   var (or secret) CBOM_AWS_LAB_SAME_ACCOUNT   1 = lab mode (test deployments only), 0 = off
+# AI remediation (CB-38; deploy/staging/README.md "AI remediation"): CBOM_AI_PROVIDER is written only when the
+# environment's variable of that name is set (bedrock / off); unset, the host's backend.env value stands (a hand edit
+# of CBOM_AI_PROVIDER=off on the host is never reset). CBOM_AI_BEDROCK_REGION (default ap-south-1) and
+# CBOM_AI_AWS_CREDENTIALS (default env: the AWS_* of the host's .env) are set from the variables of those names.
+# The scan node from the public registry (deploy/staging/README.md, "Public registry"): the GHCR packages are public,
+# so a push deploy points the Add scan node wizard at ghcr.io/<owner>/devsecshield-scan-node:<version> and the chart
+# (docker pull / helm oci://, no login) by default; a manual run clears them (it may deploy any commit).
+#   var  CBOM_NODE_REGISTRY_PUBLIC   unset or 1: as above. 0: never offer a pull (clears them; set it if the packages
+#                                    are ever made private again).
+#
+# Build identity (CB-03): with expose_build (default on) the frontend names its commit in <meta name="zs-build">, so
+# the merge gate's G0 can compare it with the API's /health build on staging; the API names it there when the host's
+# deploy/staging/.env sets DSS_EXPOSE_BUILD=1 (deploy/staging/README.md, "Build identity").
 name: Deploy staging
 
+# Triggers: every push to `staging` (a promotion from dev merged) builds THAT commit and deploys it, with the frontend
+# built for the staging API and its build exposed. A manual run (GitHub offers it from the default branch only) keeps
+# its inputs and deploys only with `deploy` ticked. Only the staging host is touched: the `staging` environment's
+# secrets and `staging.sh build/save/push`; nothing here knows about production.
 on:
+  push:
+    branches: [staging]
   workflow_dispatch:
     inputs:
       deploy:
@@ -20,11 +44,18 @@ on:
         description: "API URL baked into the frontend bundle"
         type: string
         default: "https://devsec-staging-api.zeroshield.ai"
+      expose_build:
+        description: "Frontend names its commit in a zs-build meta tag (DSS_EXPOSE_BUILD; staging G0). Off: production-like"
+        type: boolean
+        default: true
 
 permissions:
   contents: read
 
 concurrency:
+  # One run at a time, for every ref and event, in the order they arrive: a new push waits for the running build and
+  # deploy, which is never cancelled. GitHub keeps ONE pending run per group, so with three quick pushes the middle
+  # one is dropped and the newest deploys last (staging always ends on the latest push).
   group: deploy-staging
   cancel-in-progress: false
 
@@ -34,10 +65,40 @@ jobs:
     timeout-minutes: 120
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
+      deploy: ${{ steps.settings.outputs.deploy }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Settings
+        id: settings
+        # A push to staging always deploys, for the staging API, with the build exposed; a manual run uses its inputs.
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          INPUT_DEPLOY: ${{ inputs.deploy }}
+          INPUT_API_URL: ${{ inputs.api_url }}
+          INPUT_EXPOSE_BUILD: ${{ inputs.expose_build }}
+        run: |
+          set -euo pipefail
+          case "$EVENT" in
+            push)
+              if [ "$REF" != refs/heads/staging ]; then echo "::error::a push to $REF never deploys"; exit 1; fi
+              deploy=true api_url=https://devsec-staging-api.zeroshield.ai expose=true ;;
+            workflow_dispatch)
+              deploy=$INPUT_DEPLOY api_url=$INPUT_API_URL expose=$INPUT_EXPOSE_BUILD ;;
+            *)
+              echo "::error::event $EVENT does not deploy staging"
+              exit 1 ;;
+          esac
+          if ! [[ "$api_url" =~ ^https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?$ ]]; then
+            echo "::error::api_url '$api_url' is not http(s)://host[:port]"
+            exit 1
+          fi
+          if [ "$deploy" != true ]; then deploy=false; fi
+          if [ "$expose" != true ]; then expose=false; fi
+          printf 'deploy=%s\napi_url=%s\nexpose_build=%s\n' "$deploy" "$api_url" "$expose" | tee -a "$GITHUB_OUTPUT"
       - name: Image tag
         id: tag
         run: echo "tag=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
@@ -48,7 +109,8 @@ jobs:
       - name: Build images
         env:
           DSS_TAG: ${{ steps.tag.outputs.tag }}
-          NEXT_PUBLIC_BACKEND_URL: ${{ inputs.api_url }}
+          NEXT_PUBLIC_BACKEND_URL: ${{ steps.settings.outputs.api_url }}
+          DSS_EXPOSE_BUILD: ${{ steps.settings.outputs.expose_build == 'true' && '1' || '0' }}
         run: scripts/deploy/staging.sh build
 
       - name: Save images
@@ -56,26 +118,63 @@ jobs:
           DSS_TAG: ${{ steps.tag.outputs.tag }}
         run: scripts/deploy/staging.sh save
 
+      # The scan-node downloads the API serves on Add scan node (image file, Helm chart, OVA/AMI build kits): shipped
+      # with the release and mounted into the backend (CBOM_NODE_ARTIFACT_DIR; deploy/staging/README.md).
+      - name: Scan node downloads
+        run: scripts/deploy/staging.sh node-artifacts
+
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: dss-staging-${{ steps.tag.outputs.tag }}
           path: |
             deploy/staging/images/*.tar.gz
             deploy/staging/images/*.sha256
+            deploy/staging/images/*.need
+            deploy/staging/images/node-artifacts/*
           retention-days: 7
           compression-level: 0
           if-no-files-found: error
 
   deploy:
     needs: build
-    if: ${{ inputs.deploy }}
+    if: needs.build.outputs.deploy == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: staging
     steps:
+      # A re-run keeps the original run's commit (GITHUB_SHA) for up to 30 days, so re-running an older push would put
+      # that older commit over a newer one. A push deploys only while its commit is still the tip of `staging`; the
+      # concurrency group keeps a newer push from deploying between this check and the copy below. The ref is read
+      # with the job's token (passed in git's environment config, never on a command line), so a private repo works.
+      - name: Still the tip of staging
+        if: github.event_name == 'push'
+        env:
+          SHA: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
+          GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          export GIT_CONFIG_VALUE_0
+          if ! out=$(git ls-remote "https://github.com/${GITHUB_REPOSITORY}.git" refs/heads/staging); then
+            echo "::error::could not read the tip of staging; not deploying $SHA"
+            exit 1
+          fi
+          tip=${out%%[[:space:]]*}
+          if [ -z "$tip" ]; then
+            echo "::error::staging has no tip; not deploying $SHA"
+            exit 1
+          fi
+          if [ "$tip" != "$SHA" ]; then
+            echo "::error::superseded: staging is at $tip; this run built $SHA and will not deploy it"
+            exit 1
+          fi
+          echo "staging is still at $SHA: deploying it"
+
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
+          ref: ${{ github.sha }}
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: dss-staging-${{ needs.build.outputs.tag }}
@@ -96,7 +195,27 @@ jobs:
           DSS_TAG: ${{ needs.build.outputs.tag }}
           STAGING_SSH_TARGET: ${{ secrets.STAGING_SSH_TARGET }}
           STAGING_DIR: ${{ vars.STAGING_DIR || '/opt/devsecshield-staging' }}
+          STAGING_SET_CBOM_AWS_ACCESS_KEY_ID: ${{ secrets.CBOM_AWS_ACCESS_KEY_ID }}
+          STAGING_SET_CBOM_AWS_SECRET_ACCESS_KEY: ${{ secrets.CBOM_AWS_SECRET_ACCESS_KEY }}
+          STAGING_SET_CBOM_AWS_PRINCIPAL_ARN: ${{ secrets.CBOM_AWS_PRINCIPAL_ARN }}
+          STAGING_SET_CBOM_AWS_LAB_SAME_ACCOUNT: ${{ vars.CBOM_AWS_LAB_SAME_ACCOUNT || secrets.CBOM_AWS_LAB_SAME_ACCOUNT }}
+          # AI remediation on AWS Bedrock (CB-38); the keys are the AWS_* of the host's .env (the SAST chat's). The
+          # provider is written only when the environment variable CBOM_AI_PROVIDER is set (bedrock or off): empty
+          # leaves the host's backend.env value as it is, so a host-side CBOM_AI_PROVIDER=off is not overwritten.
+          STAGING_SET_CBOM_AI_PROVIDER: ${{ vars.CBOM_AI_PROVIDER }}
+          STAGING_SET_CBOM_AI_BEDROCK_REGION: ${{ vars.CBOM_AI_BEDROCK_REGION || 'ap-south-1' }}
+          STAGING_SET_CBOM_AI_AWS_CREDENTIALS: ${{ vars.CBOM_AI_AWS_CREDENTIALS || 'env' }}
+          NODE_REGISTRY_PUBLIC: ${{ vars.CBOM_NODE_REGISTRY_PUBLIC }}
+          EVENT: ${{ github.event_name }}
         run: |
+          # The scan node registry refs (staging.sh set_node_refs): only a push deploys a commit that publish-ghcr.yml
+          # released (devsecshield-scan-node:<version>); a manual run of any other commit gets none.
+          # The packages are public (owner, 14 Nov): on unless the staging environment says 0.
+          case "$NODE_REGISTRY_PUBLIC" in
+            1 | "") if [ "$EVENT" = push ]; then export CBOM_NODE_REGISTRY_PUBLIC=1; else export CBOM_NODE_REGISTRY_PUBLIC=0; fi ;;
+            0) export CBOM_NODE_REGISTRY_PUBLIC=0 ;;
+            *) echo "::error::vars.CBOM_NODE_REGISTRY_PUBLIC must be 0 or 1"; exit 1 ;;
+          esac
           export SSH_OPTS="-i $HOME/.ssh/staging_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts"
           scripts/deploy/staging.sh push "$STAGING_SSH_TARGET" "$STAGING_DIR"
 

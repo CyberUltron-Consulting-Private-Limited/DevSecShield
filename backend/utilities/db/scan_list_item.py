@@ -1,5 +1,10 @@
 from backend.new_models import Scan
 
+
+def owner_full_name(user) -> str | None:
+    """"First Last" of a scan's owner; a missing part is left out ("alice", never "alice None"); None when both are."""
+    return " ".join(p for p in (getattr(user, "first_name", None), getattr(user, "last_name", None)) if p) or None
+
 def return_sast_list_item(scan : Scan) -> dict:
     total_critical , total_high , total_medium , total_low  = 0,0,0,0
     if scan.scan_data and scan.scan_data != {} and "results" in scan.scan_data and scan.scan_status == "success":
@@ -66,7 +71,7 @@ def return_sast_list_item(scan : Scan) -> dict:
 
         "estimated_credits": scan.credit_consumed,
         "owner_user_email": scan.owner_user.email,
-        "owner_user_full_name": f"{scan.owner_user.first_name} {scan.owner_user.last_name}",
+        "owner_user_full_name": owner_full_name(scan.owner_user),
 
 
         "info": scan.info, # sometimes maybe None or sometimes may be { "current" : 20 } where 20 is the progress percentage
@@ -129,7 +134,7 @@ def return_iac_list_item(scan : Scan) -> dict:
 
         "estimated_credits": scan.credit_consumed,
         "owner_user_email": scan.owner_user.email,
-        "owner_user_full_name": f"{scan.owner_user.first_name} {scan.owner_user.last_name}",
+        "owner_user_full_name": owner_full_name(scan.owner_user),
 
 
         "info": scan.info, # sometimes maybe None or sometimes may be { "current" : 20 } where 20 is the progress percentage
@@ -182,7 +187,7 @@ def return_sbom_sca_list_item(scan : Scan) -> dict:
 
         "estimated_credits": scan.credit_consumed,
         "owner_user_email": scan.owner_user.email,
-        "owner_user_full_name": f"{scan.owner_user.first_name} {scan.owner_user.last_name}",
+        "owner_user_full_name": owner_full_name(scan.owner_user),
 
 
         "info": scan.info, # sometimes maybe None or sometimes may be { "current" : 20 } where 20 is the progress percentage
@@ -269,7 +274,7 @@ def return_mcp_list_item(scan : Scan) -> dict:
 
         "estimated_credits": scan.credit_consumed,
         "owner_user_email": scan.owner_user.email,
-        "owner_user_full_name": f"{scan.owner_user.first_name} {scan.owner_user.last_name}",
+        "owner_user_full_name": owner_full_name(scan.owner_user),
 
 
         "info": scan.info, # sometimes maybe None or sometimes may be { "current" : 20 } where 20 is the progress percentage
@@ -358,7 +363,7 @@ def return_llm_list_item(scan : Scan) -> dict:
 
         "estimated_credits": scan.credit_consumed,
         "owner_user_email": scan.owner_user.email,
-        "owner_user_full_name": f"{scan.owner_user.first_name} {scan.owner_user.last_name}",
+        "owner_user_full_name": owner_full_name(scan.owner_user),
 
         "info": scan.info,
         "risk_data": risk_data,
@@ -389,9 +394,15 @@ def return_dast_list_item(scan : Scan) -> dict:
             elif vulnerability["impact"].lower() == "low":
                 total_low += 1
         
-        if "metadata" in scan.scan_data and scan.scan_data["metadata"] != {} and "urls_scanned" in scan.scan_data["metadata"]:
-            urls_scanned = len(scan.scan_data["metadata"]["urls_included"])
-            urls_not_scanned = len(scan.scan_data["metadata"]["urls_excluded"])
+        # The crawler records the URLs it scanned and the ones the include/exclude patterns dropped
+        # (RabbitMQ/dast_worker/helpers/crawler/crawler.py). There is no top-level "urls_scanned" key: testing for one
+        # left both columns at 0 for every scan.
+        crawl = scan.scan_data.get("metadata") or {}
+        if isinstance(crawl, dict):
+            if isinstance(crawl.get("urls_included"), list):
+                urls_scanned = len(crawl["urls_included"])
+            if isinstance(crawl.get("urls_excluded"), list):
+                urls_not_scanned = len(crawl["urls_excluded"])
 
     risk_data = {
         "total_critical": total_critical,
@@ -415,7 +426,7 @@ def return_dast_list_item(scan : Scan) -> dict:
 
         "estimated_credits": scan.credit_consumed,
         "owner_user_email": scan.owner_user.email,
-        "owner_user_full_name": f"{scan.owner_user.first_name} {scan.owner_user.last_name}",
+        "owner_user_full_name": owner_full_name(scan.owner_user),
 
 
         "info": scan.info, # sometimes maybe None or sometimes may be { "current" : 20 } where 20 is the progress percentage
@@ -457,7 +468,7 @@ def return_cbom_list_item(scan : Scan) -> dict:
 
         "estimated_credits": scan.credit_consumed,
         "owner_user_email": scan.owner_user.email,
-        "owner_user_full_name": f"{scan.owner_user.first_name} {scan.owner_user.last_name}",
+        "owner_user_full_name": owner_full_name(scan.owner_user),
 
 
         "info": scan.info,
@@ -527,7 +538,7 @@ def return_ai_bom_list_item(scan : Scan) -> dict:
 
         "estimated_credits": scan.credit_consumed,
         "owner_user_email": scan.owner_user.email,
-        "owner_user_full_name": f"{scan.owner_user.first_name} {scan.owner_user.last_name}",
+        "owner_user_full_name": owner_full_name(scan.owner_user),
 
 
         "info": scan.info,

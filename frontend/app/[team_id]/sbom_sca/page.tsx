@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
 import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Clock, CheckCircle, CalendarPlus, CalendarCheck, Search, X, GitBranch, FileArchive, MinusCircle, Shield, AlertTriangle, Activity, BookOpen, Crosshair, ChevronDown, ArrowUpDown, Check, Filter, DollarSign, TrendingUp, TrendingDown } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { singleFlight } from "@/utils/single_flight";
@@ -220,7 +221,7 @@ function SBOMSCAScanListDashboard({ dashboardData }: { dashboardData: SBOMSCADas
                 <AlertTriangle className="h-4 w-4 text-amber-500" />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Total Vulnerabilities</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Total Vulnerabilities <InfoTip id="sbom.kpi.total" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_vulnerabilities}</p>
               </div>
             </div>
@@ -233,7 +234,7 @@ function SBOMSCAScanListDashboard({ dashboardData }: { dashboardData: SBOMSCADas
                 <AlertTriangle className="h-4 w-4 text-red-500" />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Critical Vulnerabilities</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Critical Vulnerabilities <InfoTip id="sbom.kpi.critical" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_critical_vulnerabilities}</p>
               </div>
             </div>
@@ -246,7 +247,7 @@ function SBOMSCAScanListDashboard({ dashboardData }: { dashboardData: SBOMSCADas
                 <Shield className="h-4 w-4 text-red-500" />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Policy Violations</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Policy Violations <InfoTip id="sbom.kpi.policy" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_policy_violations}</p>
               </div>
             </div>
@@ -259,7 +260,7 @@ function SBOMSCAScanListDashboard({ dashboardData }: { dashboardData: SBOMSCADas
                 <BookOpen className="h-4 w-4 text-amber-500" />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">License Risks</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">License Risks <InfoTip id="sbom.kpi.license_risks" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_license_risks}</p>
               </div>
             </div>
@@ -272,7 +273,7 @@ function SBOMSCAScanListDashboard({ dashboardData }: { dashboardData: SBOMSCADas
                 <BookOpen className="h-4 w-4 text-red-500" />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">High Risk Licenses</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">High Risk Licenses <InfoTip id="sbom.kpi.high_risk_licenses" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_high_risk_licenses}</p>
               </div>
             </div>
@@ -285,7 +286,7 @@ function SBOMSCAScanListDashboard({ dashboardData }: { dashboardData: SBOMSCADas
                 <Activity className={`h-4 w-4 ${card.average_risk_score >= 7 ? "text-red-500" : card.average_risk_score >= 5 ? "text-amber-500" : "text-green-500"}`} />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Avg Risk Score</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Avg Risk Score <InfoTip id="sbom.kpi.avg_risk" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.average_risk_score.toFixed(1)}</p>
               </div>
             </div>
@@ -298,7 +299,7 @@ function SBOMSCAScanListDashboard({ dashboardData }: { dashboardData: SBOMSCADas
                 <Crosshair className="h-4 w-4 text-blue-500" />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Reachable Issues</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Reachable Issues <InfoTip id="sbom.kpi.reachable" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_reachable_issues}</p>
               </div>
             </div>
@@ -309,7 +310,7 @@ function SBOMSCAScanListDashboard({ dashboardData }: { dashboardData: SBOMSCADas
       {/* Section 1: Remediation Actions Required */}
       <Card className="border-zinc-200 dark:border-zinc-800">
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">Remediation Actions Required</CardTitle>
+          <CardTitle className="text-base flex items-center gap-1">Remediation Actions Required <InfoTip id="sbom.chart.remediation" /></CardTitle>
           <CardDescription>Finding status breakdown (total: {remediation.total_findings})</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -348,7 +349,7 @@ function SBOMSCAScanListDashboard({ dashboardData }: { dashboardData: SBOMSCADas
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="items-center pb-2">
-            <CardTitle className="text-base">Severity Distribution</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Severity Distribution <InfoTip id="sbom.chart.severity" /></CardTitle>
             <CardDescription>Critical / High / Medium / Low</CardDescription>
           </CardHeader>
           <CardContent>
@@ -369,7 +370,7 @@ function SBOMSCAScanListDashboard({ dashboardData }: { dashboardData: SBOMSCADas
 
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Reachability Distribution</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Reachability Distribution <InfoTip id="sbom.chart.reachability" /></CardTitle>
             <CardDescription>Issues by reachability status</CardDescription>
           </CardHeader>
           <CardContent>
@@ -395,7 +396,7 @@ function SBOMSCAScanListDashboard({ dashboardData }: { dashboardData: SBOMSCADas
 
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Vulnerability Trends Over Time</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Vulnerability Trends Over Time <InfoTip id="sbom.chart.trends" /></CardTitle>
             <CardDescription>By scan date</CardDescription>
           </CardHeader>
           <CardContent>
@@ -424,7 +425,7 @@ function SBOMSCAScanListDashboard({ dashboardData }: { dashboardData: SBOMSCADas
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Licenses Distribution</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Licenses Distribution <InfoTip id="sbom.chart.licenses" /></CardTitle>
             <CardDescription>By license type</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -445,7 +446,7 @@ function SBOMSCAScanListDashboard({ dashboardData }: { dashboardData: SBOMSCADas
 
         <Card className="border-zinc-200 dark:border-zinc-800 flex flex-col">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Top Vulnerabilities by Risk Score</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Top Vulnerabilities by Risk Score <InfoTip id="sbom.chart.top" /></CardTitle>
             <CardDescription>Sorted by impact</CardDescription>
           </CardHeader>
           <CardContent className="flex-1 min-h-0">
@@ -473,7 +474,7 @@ function SBOMSCAScanListDashboard({ dashboardData }: { dashboardData: SBOMSCADas
 
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="items-center pb-2">
-            <CardTitle className="text-base">Average Risk Score per Reachability</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Average Risk Score per Reachability <InfoTip id="sbom.chart.risk_by_reach" /></CardTitle>
             <CardDescription>Weighted by impact</CardDescription>
           </CardHeader>
           <CardContent>
@@ -520,6 +521,7 @@ function SBOMSCAScanListDashboard({ dashboardData }: { dashboardData: SBOMSCADas
               <Shield className="h-4 w-4 text-violet-600 dark:text-violet-400" />
             </div>
             Policy Compliance Data
+            <InfoTip id="sbom.chart.policy" />
           </CardTitle>
           <CardDescription>Issues by compliance standard</CardDescription>
         </CardHeader>
@@ -778,6 +780,7 @@ export default function SBOMSCAPage() {
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
                       <Input placeholder="Search by title..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9 h-9 cursor-text" />
                     </div>
+                    <InfoTip id="scan.filter.search" className="-ml-2" />
                     <Select value={statusFilter} onValueChange={setStatusFilter}>
                       <SelectTrigger className="h-9 min-w-[150px] cursor-pointer"><SelectValue placeholder="Scan status" /></SelectTrigger>
                       <SelectContent>
@@ -791,6 +794,7 @@ export default function SBOMSCAPage() {
                         <SelectItem value="cancelled">Cancelled</SelectItem>
                       </SelectContent>
                     </Select>
+                    <InfoTip id="scan.status" className="-ml-2" />
 
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -814,6 +818,7 @@ export default function SBOMSCAPage() {
                           <ChevronDown className="h-3 w-3 opacity-70 shrink-0" />
                         </Button>
                       </DropdownMenuTrigger>
+                      <InfoTip id="scan.filter.risk" className="-ml-2" />
                       <DropdownMenuContent align="start" className="min-w-[180px]">
                         <DropdownMenuLabel className="text-xs font-normal text-zinc-500">Filter by risk score</DropdownMenuLabel>
                         <DropdownMenuSeparator />
@@ -856,6 +861,7 @@ export default function SBOMSCAPage() {
                           <ChevronDown className="h-3 w-3 opacity-70 shrink-0" />
                         </Button>
                       </DropdownMenuTrigger>
+                      <InfoTip id="scan.filter.sort" className="-ml-2" />
                       <DropdownMenuContent align="start" className="min-w-[200px]">
                         <DropdownMenuLabel className="text-xs font-normal text-zinc-500">Sort by</DropdownMenuLabel>
                         <DropdownMenuSeparator />
@@ -919,15 +925,15 @@ export default function SBOMSCAPage() {
                         <TableHeader>
                           <TableRow>
                             <TableHead className="w-[160px] min-w-[120px]">Title</TableHead>
-                            <TableHead>Created at</TableHead>
-                            <TableHead>Last updated</TableHead>
-                            <TableHead>Scan status</TableHead>
-                            <TableHead className="w-[180px]">Vulnerabilities</TableHead>
-                            <TableHead className="w-[90px]">Risk score</TableHead>
-                            <TableHead className="w-[160px]">Repo / Source</TableHead>
-                            <TableHead className="w-[100px]">Branch</TableHead>
-                            <TableHead className="w-[90px]">Credits</TableHead>
-                            <TableHead>Owner</TableHead>
+                            <TableHead><span className="inline-flex items-center gap-1">Created at <InfoTip id="scan.table.created" /></span></TableHead>
+                            <TableHead><span className="inline-flex items-center gap-1">Last updated <InfoTip id="scan.table.updated" /></span></TableHead>
+                            <TableHead><span className="inline-flex items-center gap-1">Scan status <InfoTip id="scan.status" /></span></TableHead>
+                            <TableHead className="w-[180px]"><span className="inline-flex items-center gap-1">Vulnerabilities <InfoTip id="sbom.table.vulns" /></span></TableHead>
+                            <TableHead className="w-[90px]"><span className="inline-flex items-center gap-1">Risk score <InfoTip id="sbom.table.risk" /></span></TableHead>
+                            <TableHead className="w-[160px]"><span className="inline-flex items-center gap-1">Repo / Source <InfoTip id="sbom.table.source" /></span></TableHead>
+                            <TableHead className="w-[100px]"><span className="inline-flex items-center gap-1">Branch <InfoTip id="scan.table.branch" /></span></TableHead>
+                            <TableHead className="w-[90px]"><span className="inline-flex items-center gap-1">Credits <InfoTip id="scan.table.credits" /></span></TableHead>
+                            <TableHead><span className="inline-flex items-center gap-1">Owner <InfoTip id="scan.table.owner" /></span></TableHead>
                             <TableHead className="text-right w-[80px]">Actions</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -1080,8 +1086,9 @@ export default function SBOMSCAPage() {
             <DialogTitle>Rename scan</DialogTitle>
             <DialogDescription>Enter a new name for this scan.</DialogDescription>
           </DialogHeader>
-          <div className="py-4">
-            <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Scan name" onKeyDown={(e) => { if (e.key === "Enter") confirmRename(); }} />
+          <div className="py-4 space-y-2">
+            <FieldLabel htmlFor="rename-scan-title" infoId="scan.rename.title">Scan name</FieldLabel>
+            <Input id="rename-scan-title" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Scan name" onKeyDown={(e) => { if (e.key === "Enter") confirmRename(); }} />
           </div>
           <DialogFooter>
             <Button variant="outline" className="cursor-pointer" onClick={() => { setRenameDialogOpen(false); setNewName(""); }}>Cancel</Button>
@@ -1135,8 +1142,9 @@ export default function SBOMSCAPage() {
             <DialogTitle>Create New Scan</DialogTitle>
             <DialogDescription>Enter a title for your new SCA + SBOM scan.</DialogDescription>
           </DialogHeader>
-          <div className="py-4">
-            <Input value={newScanTitle} onChange={(e) => setNewScanTitle(e.target.value)} placeholder="Scan title" onKeyDown={(e) => { if (e.key === "Enter") confirmCreate(); }} />
+          <div className="py-4 space-y-2">
+            <FieldLabel htmlFor="new-scan-title" infoId="scan.new.title">Scan title</FieldLabel>
+            <Input id="new-scan-title" value={newScanTitle} onChange={(e) => setNewScanTitle(e.target.value)} placeholder="Scan title" onKeyDown={(e) => { if (e.key === "Enter") confirmCreate(); }} />
           </div>
           <DialogFooter>
             <Button variant="outline" className="cursor-pointer" onClick={() => { setCreateDialogOpen(false); setNewScanTitle(""); }}>Cancel</Button>

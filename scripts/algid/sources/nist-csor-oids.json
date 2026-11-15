@@ -1,0 +1,433 @@
+{
+ "provenance": [
+  {
+   "raw_file": "nist-csor.html",
+   "url": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration",
+   "retrieved_utc": "2026-11-12T11:27:12Z",
+   "raw_sha256": "bbc400ee861f962b267dea2bde295cb14a85a6aeb9c0458c0d6aa1b8c0611ceb",
+   "raw_bytes": 74449
+  }
+ ],
+ "object_identifier_definitions": [
+  [
+   "nistAlgorithms",
+   "joint-iso-ccitt(2) country(16) us(840) organization(1) gov(101) csor(3) nistAlgorithm(4)"
+  ],
+  [
+   "csorModules",
+   "nistalgorithms modules (0)"
+  ],
+  [
+   "aesModule1",
+   "csorModules aes (1)"
+  ],
+  [
+   "aes",
+   "nistAlgorithms 1"
+  ],
+  [
+   "id-aes128-ECB",
+   "aes 1"
+  ],
+  [
+   "id-aes128-CBC",
+   "aes 2"
+  ],
+  [
+   "id-aes128-OFB",
+   "aes 3"
+  ],
+  [
+   "id-aes128-CFB",
+   "aes 4"
+  ],
+  [
+   "id-aes128-wrap",
+   "aes 5"
+  ],
+  [
+   "id-aes128-GCM",
+   "aes 6"
+  ],
+  [
+   "id-aes128-CCM",
+   "aes 7"
+  ],
+  [
+   "id-aes128-wrap-pad",
+   "aes 8"
+  ],
+  [
+   "id-aes128-GMAC",
+   "aes 9"
+  ],
+  [
+   "id-aes192-ECB",
+   "aes 21"
+  ],
+  [
+   "id-aes192-CBC",
+   "aes 22"
+  ],
+  [
+   "id-aes192-OFB",
+   "aes 23"
+  ],
+  [
+   "id-aes192-CFB",
+   "aes 24"
+  ],
+  [
+   "id-aes192-wrap",
+   "aes 25"
+  ],
+  [
+   "id-aes192-GCM",
+   "aes 26"
+  ],
+  [
+   "id-aes192-CCM",
+   "aes 27"
+  ],
+  [
+   "id-aes192-wrap-pad",
+   "aes 28"
+  ],
+  [
+   "id-aes192-GMAC",
+   "aes 29"
+  ],
+  [
+   "id-aes256-ECB",
+   "aes 41"
+  ],
+  [
+   "id-aes256-CBC",
+   "aes 42"
+  ],
+  [
+   "id-aes256-OFB",
+   "aes 43"
+  ],
+  [
+   "id-aes256-CFB",
+   "aes 44"
+  ],
+  [
+   "id-aes256-wrap",
+   "aes 45"
+  ],
+  [
+   "id-aes256-GCM",
+   "aes 46"
+  ],
+  [
+   "id-aes256-CCM",
+   "aes 47"
+  ],
+  [
+   "id-aes256-wrap-pad",
+   "aes 48"
+  ],
+  [
+   "id-aes256-GMAC",
+   "aes 49"
+  ],
+  [
+   "hashAlgs",
+   "nistAlgorithms 2"
+  ],
+  [
+   "id-sha256",
+   "hashAlgs 1"
+  ],
+  [
+   "id-sha384",
+   "hashAlgs 2"
+  ],
+  [
+   "id-sha512",
+   "hashAlgs 3"
+  ],
+  [
+   "id-sha224",
+   "hashAlgs 4"
+  ],
+  [
+   "id-sha512-224",
+   "hashAlgs 5"
+  ],
+  [
+   "id-sha512-256",
+   "hashAlgs 6"
+  ],
+  [
+   "id-sha3-224",
+   "hashAlgs 7"
+  ],
+  [
+   "id-sha3-256",
+   "hashAlgs 8"
+  ],
+  [
+   "id-sha3-384",
+   "hashAlgs 9"
+  ],
+  [
+   "id-sha3-512",
+   "hashAlgs 10"
+  ],
+  [
+   "id-shake128",
+   "hashAlgs 11"
+  ],
+  [
+   "id-shake256",
+   "hashAlgs 12"
+  ],
+  [
+   "id-shake128-len",
+   "hashAlgs 17"
+  ],
+  [
+   "id-shake256-len",
+   "hashAlgs 18"
+  ],
+  [
+   "id-KMACWithSHAKE128",
+   "hashAlgs 19"
+  ],
+  [
+   "id-KMACWithSHAKE256",
+   "hashAlgs 20"
+  ],
+  [
+   "id-KMAC128",
+   "hashAlgs 21"
+  ],
+  [
+   "id-KMAC256",
+   "hashAlgs 22"
+  ],
+  [
+   "id-hmacWithSHA3-224",
+   "hashAlgs 13"
+  ],
+  [
+   "id-hmacWithSHA3-256",
+   "hashAlgs 14"
+  ],
+  [
+   "id-hmacWithSHA3-384",
+   "hashAlgs 15"
+  ],
+  [
+   "id-hmacWithSHA3-512",
+   "hashAlgs 16"
+  ],
+  [
+   "sigAlgs",
+   "nistAlgorithms 3"
+  ],
+  [
+   "id-dsa-with-sha224",
+   "sigAlgs 1"
+  ],
+  [
+   "id-dsa-with-sha256",
+   "sigAlgs 2"
+  ],
+  [
+   "id-dsa-with-sha384",
+   "sigAlgs 3"
+  ],
+  [
+   "id-dsa-with-sha512",
+   "sigAlgs 4"
+  ],
+  [
+   "id-dsa-with-sha3-224",
+   "sigAlgs 5"
+  ],
+  [
+   "id-dsa-with-sha3-256",
+   "sigAlgs 6"
+  ],
+  [
+   "id-dsa-with-sha3-384",
+   "sigAlgs 7"
+  ],
+  [
+   "id-dsa-with-sha3-512",
+   "sigAlgs 8"
+  ],
+  [
+   "id-ecdsa-with-sha3-224",
+   "sigAlgs 9"
+  ],
+  [
+   "id-ecdsa-with-sha3-256",
+   "sigAlgs 10"
+  ],
+  [
+   "id-ecdsa-with-sha3-384",
+   "sigAlgs 11"
+  ],
+  [
+   "id-ecdsa-with-sha3-512",
+   "sigAlgs 12"
+  ],
+  [
+   "id-ml-dsa-44",
+   "sigAlgs 17"
+  ],
+  [
+   "id-ml-dsa-65",
+   "sigAlgs 18"
+  ],
+  [
+   "id-ml-dsa-87",
+   "sigAlgs 19"
+  ],
+  [
+   "id-hash-ml-dsa-44-with-sha512",
+   "sigAlgs 32"
+  ],
+  [
+   "id-hash-ml-dsa-65-with-sha512",
+   "sigAlgs 33"
+  ],
+  [
+   "id-hash-ml-dsa-87-with-sha512",
+   "sigAlgs 34"
+  ],
+  [
+   "id-rsassa-pkcs1-v1-5-with-sha3-224",
+   "sigAlgs 13"
+  ],
+  [
+   "id-rsassa-pkcs1-v1-5-with-sha3-256",
+   "sigAlgs 14"
+  ],
+  [
+   "id-rsassa-pkcs1-v1-5-with-sha3-384",
+   "sigAlgs 15"
+  ],
+  [
+   "id-rsassa-pkcs1-v1-5-with-sha3-512",
+   "sigAlgs 16"
+  ],
+  [
+   "id-slh-dsa-sha2-128s",
+   "sigAlgs 20"
+  ],
+  [
+   "id-slh-dsa-sha2-128f",
+   "sigAlgs 21"
+  ],
+  [
+   "id-slh-dsa-sha2-192s",
+   "sigAlgs 22"
+  ],
+  [
+   "id-slh-dsa-sha2-192f",
+   "sigAlgs 23"
+  ],
+  [
+   "id-slh-dsa-sha2-256s",
+   "sigAlgs 24"
+  ],
+  [
+   "id-slh-dsa-sha2-256f",
+   "sigAlgs 25"
+  ],
+  [
+   "id-slh-dsa-shake-128s",
+   "sigAlgs 26"
+  ],
+  [
+   "id-slh-dsa-shake-128f",
+   "sigAlgs 27"
+  ],
+  [
+   "id-slh-dsa-shake-192s",
+   "sigAlgs 28"
+  ],
+  [
+   "id-slh-dsa-shake-192f",
+   "sigAlgs 29"
+  ],
+  [
+   "id-slh-dsa-shake-256s",
+   "sigAlgs 30"
+  ],
+  [
+   "id-slh-dsa-shake-256f",
+   "sigAlgs 31"
+  ],
+  [
+   "id-hash-slh-dsa-sha2-128s-with-sha256",
+   "sigAlgs 35"
+  ],
+  [
+   "id-hash-slh-dsa-sha2-128f-with-sha256",
+   "sigAlgs 36"
+  ],
+  [
+   "id-hash-slh-dsa-sha2-192s-with-sha512",
+   "sigAlgs 37"
+  ],
+  [
+   "id-hash-slh-dsa-sha2-192f-with-sha512",
+   "sigAlgs 38"
+  ],
+  [
+   "id-hash-slh-dsa-sha2-256s-with-sha512",
+   "sigAlgs 39"
+  ],
+  [
+   "id-hash-slh-dsa-sha2-256f-with-sha512",
+   "sigAlgs 40"
+  ],
+  [
+   "id-hash-slh-dsa-shake-128s-with-shake128",
+   "sigAlgs 41"
+  ],
+  [
+   "id-hash-slh-dsa-shake-128f-with-shake128",
+   "sigAlgs 42"
+  ],
+  [
+   "id-hash-slh-dsa-shake-192s-with-shake256",
+   "sigAlgs 43"
+  ],
+  [
+   "id-hash-slh-dsa-shake-192f-with-shake256",
+   "sigAlgs 44"
+  ],
+  [
+   "id-hash-slh-dsa-shake-256s-with-shake256",
+   "sigAlgs 45"
+  ],
+  [
+   "id-hash-slh-dsa-shake-256f-with-shake256",
+   "sigAlgs 46"
+  ],
+  [
+   "kems",
+   "nistAlgorithms 4"
+  ],
+  [
+   "id-alg-ml-kem-512",
+   "kems 1"
+  ],
+  [
+   "id-alg-ml-kem-768",
+   "kems 2"
+  ],
+  [
+   "id-alg-ml-kem-1024",
+   "kems 3"
+  ]
+ ]
+}

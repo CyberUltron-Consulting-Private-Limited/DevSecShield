@@ -1,0 +1,123 @@
+{
+ "grade_model": "qg-1",
+ "grades": [
+  {
+   "grade": "Q0",
+   "label": "Unknown"
+  },
+  {
+   "grade": "Q1",
+   "label": "Critical"
+  },
+  {
+   "grade": "Q2",
+   "label": "High"
+  },
+  {
+   "grade": "Q3",
+   "label": "Medium"
+  },
+  {
+   "grade": "Q4",
+   "label": "Low"
+  }
+ ],
+ "reasons": {
+  "coverage_gap": "Q0",
+  "source_not_read": "Q0",
+  "source_truncated": "Q0",
+  "excluded_by_choice": "Q0",
+  "evidence_e0": "Q0",
+  "attested_no_class": null,
+  "unknown_verdict": "Q0",
+  "not_applicable": null,
+  "not_correlated": "Q0",
+  "mosca_missing": "Q0",
+  "qv_exceeds_internet": "Q1",
+  "qv_exceeds_anchor": "Q1",
+  "qv_exceeds_exposure_unknown": "Q2",
+  "qv_exceeds": "Q2",
+  "qv_within": "Q3",
+  "qv_fallback_exceeds_internet": "Q1",
+  "qv_fallback_exceeds_anchor": "Q1",
+  "qv_fallback_exceeds_exposure_unknown": "Q2",
+  "qv_fallback_exceeds": "Q2",
+  "qv_fallback_within": "Q3",
+  "grover_weakened": "Q3",
+  "pq_attested_e1": "Q3",
+  "pq_observed": "Q4",
+  "pq_code": "Q4",
+  "pq_attested": "Q4",
+  "not_an_item": null
+ },
+ "formula_sha256": "e7778cae6c2b3d7468ff7874f532cde57db7d5d98804849623c70c35f17bc901",
+ "formula_text": "ZeroShield quantum risk grade, model qg-1.\nGrades: Q0 Unknown, Q1 Critical, Q2 High, Q3 Medium, Q4 Low. \"No grade\" is not a grade.\nItems: (a) a collected asset; (b) an unread scope: a coverage row for something the product did not read, a target\nthe job did not read (whatever its status, \"not_supported\" included), a source the run did not read (skipped by the\nplanner, in a group left out of the run, collect job not successful or not finished, or cut at the asset limit /\nassets lost); (c) an evidence area or vendor; (d) a code-scan row (team register only).\nNot items: a coverage row or a target saying the target has no such thing (\"not_installed\", or \"not_supported\" with a\ndetail the product lists as absent: a cloud region or project with nothing enabled, no AD CS CA, no package\ndatabase), an address that answered on no probed port.\nInputs per item:\n  class      = the PQC class of the asset (quantum-vulnerable | hybrid | quantum-safe | grover-weakened |\n               unknown | not-applicable), from the product's single class function.\n  fallback   = the asset is an endpoint of class hybrid or quantum-safe that also completes a classical-only key\n               exchange (TLS 1.2 or older, static RSA key transport, a classical TLS 1.3 group it reports, a classical\n               SSH key exchange). The grade uses the weakest configuration the endpoint accepts: rules 8 and 14-18.\n  exposure   = internet | internal | unknown, from the product's single exposure function, except that a\n               collector's internet-facing fact beats an \"internal\" or \"unknown\" set on the source.\n  anchor     = the asset is a CA certificate (basicConstraints CA true) or a CA (cloud CA, AD CS / Vault CA).\n  X          = the asset's source \"data must stay secret for (years)\" if set, else the team's X.\n  Y, Z       = the team's migration years and years until a cryptographically relevant quantum computer.\n  provenance = observed (read by a collector), attested (evidence area or vendor), code (code scan).\n  level      = E0..E3 of an attested item.\nRules, first match wins:\n  1. unread scope                                              -> Q0 \"coverage_gap\" | \"source_not_read\" |\n                                                                   \"source_truncated\" | \"excluded_by_choice\"\n  2. attested item at level E0                                 -> Q0 \"evidence_e0\" (sub-reason: no_answer,\n                                                                   rated_unknown, evidence_expired, vendor_no_response)\n  3. attested item at E1..E3 whose answer carries no class     -> no grade \"attested_no_class\"\n  4. class unknown                                             -> Q0 \"unknown_verdict\"\n  5. class not-applicable                                      -> no grade \"not_applicable\"\n  6. correlation required and absent                           -> Q0 \"not_correlated\"  (not produced by qg-1 runs)\n  7. class quantum-vulnerable and X, Y or Z not set            -> Q0 \"mosca_missing\"\n  8. fallback and X, Y or Z not set                            -> Q0 \"mosca_missing\"\n  9. class quantum-vulnerable and X + Y > Z and exposure internet -> Q1 \"qv_exceeds_internet\"\n 10. class quantum-vulnerable and X + Y > Z and anchor         -> Q1 \"qv_exceeds_anchor\"\n 11. class quantum-vulnerable and X + Y > Z and exposure unknown -> Q2 \"qv_exceeds_exposure_unknown\"\n 12. class quantum-vulnerable and X + Y > Z                    -> Q2 \"qv_exceeds\"\n 13. class quantum-vulnerable and X + Y <= Z                   -> Q3 \"qv_within\"\n 14. fallback and X + Y > Z and exposure internet              -> Q1 \"qv_fallback_exceeds_internet\"\n 15. fallback and X + Y > Z and anchor                         -> Q1 \"qv_fallback_exceeds_anchor\"\n 16. fallback and X + Y > Z and exposure unknown               -> Q2 \"qv_fallback_exceeds_exposure_unknown\"\n 17. fallback and X + Y > Z                                    -> Q2 \"qv_fallback_exceeds\"\n 18. fallback and X + Y <= Z                                   -> Q3 \"qv_fallback_within\"\n 19. class grover-weakened                                     -> Q3 \"grover_weakened\"\n 20. class hybrid or quantum-safe, attested at E1              -> Q3 \"pq_attested_e1\"\n 21. class hybrid or quantum-safe, observed                    -> Q4 \"pq_observed\"\n 22. class hybrid or quantum-safe, code                        -> Q4 \"pq_code\"\n 23. class hybrid or quantum-safe, attested at E2 or E3        -> Q4 \"pq_attested\"\nIntegers only; X, Y, Z in 0..100. A source X of 0 is a value (not \"unset\").\nNetwork sources: unread scope of one source with the same status is one item, with a count and its addresses\n(targets the node folds into one summary row count under their own statuses).\nA missing X, Y or Z is one item (\"inputs:mosca\") with the count of the assets it leaves ungraded.\n",
+ "pqc_classes": [
+  "quantum-vulnerable",
+  "hybrid",
+  "quantum-safe",
+  "grover-weakened",
+  "unknown",
+  "not-applicable"
+ ],
+ "agility_model": "fx-1",
+ "fix_classes": [
+  "configurable",
+  "code-fixed",
+  "vendor-fixed",
+  "hardware-fixed"
+ ],
+ "fix_values": [
+  "configurable",
+  "code-fixed",
+  "vendor-fixed",
+  "hardware-fixed",
+  "unknown",
+  "none"
+ ],
+ "fix_class_text": {
+  "configurable": {
+   "label": "Configurable",
+   "what": "The owner fixes it by changing a setting, policy, key or certificate with the software, hardware and services already deployed. No code change, no new release.",
+   "example": "nginx accepts TLS 1.0: set `ssl_protocols TLSv1.2 TLSv1.3;` and reload. Windows SCHANNEL: set the `TLS 1.0\\Server\\Enabled` registry value to 0."
+  },
+  "code-fixed": {
+   "label": "Code-fixed",
+   "what": "The team's own source code or build must change, then be rebuilt, tested and released (includes a dependency or base-image bump in the team's own build).",
+   "example": "Java code calls `KeyPairGenerator.initialize(1024)`: change it to 3072 (or a post-quantum signature algorithm when the platform has it) and ship a release."
+  },
+  "vendor-fixed": {
+   "label": "Vendor-fixed",
+   "what": "The cryptography lives in a third party's product or service (OS distribution, commercial software, SaaS, cloud service, CA ecosystem). Only the vendor can change it; the owner installs the update when it exists, or asks for it.",
+   "example": "A SaaS provider's API still accepts TLS 1.0; or an OpenSSL 3.0 server cannot offer a post-quantum key exchange until the distribution ships OpenSSL 3.5."
+  },
+  "hardware-fixed": {
+   "label": "Hardware-fixed",
+   "what": "The cryptography is bound to a device: HSM, TPM, smart card, network appliance or OT device. It needs a firmware update or a hardware replacement.",
+   "example": "An HSM whose firmware has no post-quantum signature algorithm keeps RSA root keys until the firmware is upgraded or the HSM replaced."
+  },
+  "unknown": {
+   "label": "Unknown",
+   "what": "A fact that decides the class was not read (key provider of a Windows certificate, type of a PKCS#11 token, a code with no row). Never treated as the easiest class; shows the class it is at least.",
+   "example": "A Windows certificate with a private key, read by a node that does not report the key provider yet."
+  },
+  "none": {
+   "label": "None",
+   "what": "The asset has no finding code: nothing to change today.",
+   "example": "An AES-256-GCM key in Vault."
+  }
+ },
+ "fix_inferred_text": "Likely: no fact the product read decides this class; it is the table's default for a capability code (the platform must implement the algorithm), never easier than the evidence allows.",
+ "self_fixable": [
+  "configurable",
+  "code-fixed"
+ ],
+ "unknown_reasons": {
+  "token_type_not_read": "PKCS#11 token type (hardware or software) not read",
+  "key_provider_not_read": "key provider of a Windows certificate with a private key not read",
+  "key_provider_unlisted": "key provider not in the reviewed list",
+  "no_fix_class": "a finding code without a fix-class row",
+  "fact_unreadable": "a fact that decides the class has a value the rules cannot read (a list or an object)",
+  "vulnerability_not_read": "which named TLS vulnerability the imported scan reported was not read"
+ }
+}

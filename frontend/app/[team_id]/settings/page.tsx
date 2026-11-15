@@ -19,7 +19,7 @@ import {
 import { showErrorToast } from "@/utils/error-handler";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
 import {
   Table,
   TableBody,
@@ -308,6 +308,7 @@ export default function TeamSettingsPage() {
               <Users className="h-5 w-5 stroke-1 text-white" />
             </span>
             Team members
+            <InfoTip id="settings.members" />
           </h2>
           <p className="text-sm text-muted-foreground mb-4 mt-1">
             {is_team_admin
@@ -328,10 +329,10 @@ export default function TeamSettingsPage() {
               <TableHeader>
                 <TableRow>
                   {is_team_admin && (
-                    <TableHead className="w-12">Select</TableHead>
+                    <TableHead className="w-12">Select{/* infotip-shared: the section tip above explains this column */}</TableHead>
                   )}
-                  <TableHead>Email</TableHead>
-                  <TableHead>Role</TableHead>
+                  <TableHead>Email{/* infotip-shared: the section tip above explains this column */}</TableHead>
+                  <TableHead>Role{/* infotip-shared: the section tip above explains this column */}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -344,7 +345,9 @@ export default function TeamSettingsPage() {
                             —
                           </span>
                         ) : (
+                          /* infotip-shared: selects a member to remove; the Team members tip explains it */
                           <Checkbox
+                            aria-label={`Select ${member.email}`}
                             checked={selectedEmails.has(member.email)}
                             onCheckedChange={() => toggleMemberSelection(member.email)}
                             aria-label={`Select ${member.email}`}
@@ -382,7 +385,7 @@ export default function TeamSettingsPage() {
             {is_team_admin && (
               <div className="flex flex-wrap items-end gap-2">
                 <div className="space-y-2 flex-1 min-w-[200px]">
-                  <Label htmlFor="add-email">Invite by email</Label>
+                  <FieldLabel htmlFor="add-email" infoId="settings.invite">Invite by email</FieldLabel>
                   <Input
                     id="add-email"
                     type="email"
@@ -434,7 +437,7 @@ export default function TeamSettingsPage() {
             )}
             {is_team_admin && (
               <div className="space-y-2" data-testid="pending-invitations">
-                <h3 className="text-sm font-medium">Pending invitations</h3>
+                <h3 className="text-sm font-medium flex items-center gap-1">Pending invitations <InfoTip id="settings.invitations" /></h3>
                 {(invitations ?? []).length === 0 ? (
                   <p className="text-sm text-muted-foreground">No open invitations.</p>
                 ) : (
@@ -442,10 +445,10 @@ export default function TeamSettingsPage() {
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Email</TableHead>
-                          <TableHead>Role</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead>Expires</TableHead>
+                          <TableHead>Email{/* infotip-shared: the section tip above explains this column */}</TableHead>
+                          <TableHead>Role{/* infotip-shared: the section tip above explains this column */}</TableHead>
+                          <TableHead>Status{/* infotip-shared: the section tip above explains this column */}</TableHead>
+                          <TableHead>Expires{/* infotip-shared: the section tip above explains this column */}</TableHead>
                           <TableHead className="text-right">Actions</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -484,6 +487,7 @@ export default function TeamSettingsPage() {
               <JiraIcon size={20} className="text-white" />
             </span>
             Jira integration
+            <InfoTip id="settings.jira" />
           </h2>
           <p className="text-sm text-muted-foreground mb-4 mt-1">Configure Jira (and other integrations later) for this team. Use an email that has access to the Jira project.</p>
           {!is_team_admin && (
@@ -491,7 +495,7 @@ export default function TeamSettingsPage() {
           )}
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="jira-email">Email (Jira account with project access)</Label>
+              <FieldLabel htmlFor="jira-email" infoId="settings.jira.email">Email (Jira account with project access)</FieldLabel>
               <Input
                 id="jira-email"
                 type="email"
@@ -502,7 +506,7 @@ export default function TeamSettingsPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="jira-url">Jira URL</Label>
+              <FieldLabel htmlFor="jira-url" infoId="settings.jira.url">Jira URL</FieldLabel>
               <Input
                 id="jira-url"
                 type="url"
@@ -513,7 +517,7 @@ export default function TeamSettingsPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="jira-token">Jira API token</Label>
+              <FieldLabel htmlFor="jira-token" infoId="settings.jira.token">Jira API token</FieldLabel>
               <Input
                 id="jira-token"
                 type="password"
@@ -566,10 +570,21 @@ export default function TeamSettingsPage() {
           </section>
         )}
 
+        {/* CBOM API keys (#226): their own page */}
+        <section className="pb-6 mb-6 border-b border-border">
+          <h2 className="text-lg font-medium">API keys</h2>
+          <p className="text-sm text-muted-foreground mb-4 mt-1">
+            Team-scoped keys for scripts that add CBOM sources, start runs and download CBOMs without signing in.
+          </p>
+          <Link href={`/${team_id}/settings/api-keys`} className="inline-flex items-center rounded-md bg-blue-600 hover:bg-blue-700 px-4 py-2 text-sm text-white" data-testid="settings-api-keys-link">
+            Open API keys
+          </Link>
+        </section>
+
         {/* 4. Delete team (bottom, destructive): owners only */}
         {can(access, "team.delete") && (
           <section className="w-full pb-6">
-            <h2 className="text-lg font-medium text-destructive ">Danger zone</h2>
+            <h2 className="text-lg font-medium text-destructive flex items-center gap-1">Danger zone <InfoTip id="settings.danger" /></h2>
             <p className="text-sm text-muted-foreground mb-4">
               Deleting this team is permanent. All integrations, scans, and data for this team will be removed.
             </p>
@@ -596,7 +611,7 @@ export default function TeamSettingsPage() {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="edit-team-name">Name</Label>
+              <FieldLabel htmlFor="edit-team-name" infoId="settings.team.name">Name</FieldLabel>
               <Input
                 id="edit-team-name"
                 value={name}
@@ -605,7 +620,7 @@ export default function TeamSettingsPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="edit-team-description">Description</Label>
+              <FieldLabel htmlFor="edit-team-description" infoId="settings.team.description">Description</FieldLabel>
               <Input
                 id="edit-team-description"
                 value={description}

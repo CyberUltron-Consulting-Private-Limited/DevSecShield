@@ -338,6 +338,12 @@ class MaterialMisuse:
     weak_rng: str | None = None  # offending non-crypto PRNG token, else None
     derived_with: str | None = None  # the hash a hardcoded key is derived through (``MD5(constant)``)
     defined_at: str | None = None  # ``path:line`` of the configuration entry that holds the key value
+    # CB-27 (Java literal flow): a constant salt reaching a password-based KDF, a
+    # constant iteration count below 1,000, and the API the constant reaches
+    # (``PBEKeySpec``, ``KeyStore.load``)
+    static_salt: bool = False
+    iterations: int | None = None
+    via: str | None = None
 
 
 def _rng_token(rhs: str) -> str | None:
@@ -358,6 +364,30 @@ def _count_cipher_uses(lines: list[str], var: str) -> int:
         if _CIPHER_USE_RE.search(line) and word.search(line):
             n += 1
     return n
+
+
+_FLOW_KIND = {
+    "iv": "initialization-vector", "key": "secret-key", "password": "password",
+    "salt": "salt", "iterations": "other", "seed": "seed",
+}
+
+
+def java_flow_misuse(facts) -> list[MaterialMisuse]:
+    """:class:`aibom.cbom.java_flow.FlowFact` rows of one file as misuse facts."""
+    out = []
+    for f in facts:
+        kind = _FLOW_KIND[f.kind]
+        if f.kind == "iterations":
+            out.append(MaterialMisuse(kind=kind, var=f.var, line=f.line,
+                                      iterations=f.iterations, via=f.api))
+        elif f.kind == "seed":
+            out.append(MaterialMisuse(kind=kind, var=f.var, line=f.line, hardcoded=True,
+                                      weak_rng=f"{f.api}(constant seed)", via=f.api))
+        else:
+            out.append(MaterialMisuse(kind=kind, var=f.var, line=f.line, hardcoded=True,
+                                      static_iv=f.kind == "iv",
+                                      static_salt=f.kind == "salt", via=f.api))
+    return out
 
 
 def detect_material_misuse(

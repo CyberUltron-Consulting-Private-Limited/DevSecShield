@@ -1,0 +1,91 @@
+{
+ "kind": "certspotter",
+ "rows": [
+  {
+   "cert_sha256": "d11a32aa2308bc9b1836875c767dd228be385311ace0c40e84da2aa5102bb11c",
+   "curve": "P-256",
+   "dns_names": [
+    "*.zeroshield.ai",
+    "zeroshield.ai"
+   ],
+   "id": "17325244757",
+   "issuer": "CN=YE1,O=Let's Encrypt,C=US",
+   "issuer_cn": "YE1",
+   "issuer_friendly_name": "Let's Encrypt",
+   "key_bits": 256,
+   "not_after": "2026-12-20T17:44:50Z",
+   "not_before": "2026-09-21T17:44:51Z",
+   "precert_poison": false,
+   "provider_dns_names": [
+    "*.zeroshield.ai",
+    "zeroshield.ai"
+   ],
+   "pubkey_alg": "id-ecPublicKey",
+   "revoked": false,
+   "serial": "54579bf10e4c8d3282b06e6b1caadd0b392",
+   "sha256": "d11a32aa2308bc9b1836875c767dd228be385311ace0c40e84da2aa5102bb11c",
+   "sig_alg": "ecdsa-with-SHA384",
+   "subject": "CN=zeroshield.ai",
+   "subject_cn": "zeroshield.ai",
+   "tbs_sha256": "63ba0cd3c2dfeac7607c6ae44155f722b7ff318da8cfc34a700ef494e7c27ee7"
+  },
+  {
+   "cert_sha256": "226bae9298c6626c19dd1640cd032863c286063315b250b8d8eb7b2872963f3b",
+   "curve": "P-256",
+   "dns_names": [
+    "*.zeroshield.ai",
+    "zeroshield.ai"
+   ],
+   "id": "17464881186",
+   "issuer": "CN=WE1,O=Google Trust Services,C=US",
+   "issuer_cn": "WE1",
+   "issuer_friendly_name": "Google Trust Services",
+   "key_bits": 256,
+   "not_after": "2026-12-27T16:34:21Z",
+   "not_before": "2026-09-28T15:36:35Z",
+   "precert_poison": false,
+   "provider_dns_names": [
+    "*.zeroshield.ai",
+    "zeroshield.ai"
+   ],
+   "pubkey_alg": "id-ecPublicKey",
+   "revoked": false,
+   "serial": "c50473a69c73cc4a0ed6668106558eff",
+   "sha256": "226bae9298c6626c19dd1640cd032863c286063315b250b8d8eb7b2872963f3b",
+   "sig_alg": "ecdsa-with-SHA256",
+   "subject": "CN=zeroshield.ai",
+   "subject_cn": "zeroshield.ai",
+   "tbs_sha256": "4d7276d1dba6bda17acdb53246f402a3f8121687d067a477b456f8df60e3925c"
+  },
+  {
+   "cert_sha256": "620c45c607f5529be20c21eaa7b83c2ecada21162e272ed8c5a63359185d02d9",
+   "curve": null,
+   "dns_names": [
+    "*.zeroshield.ai",
+    "zeroshield.ai"
+   ],
+   "id": "18311411645",
+   "issuer": "CN=Amazon RSA 2048 S21,O=Amazon,C=US",
+   "issuer_cn": "Amazon RSA 2048 S21",
+   "issuer_friendly_name": "Amazon Trust Services",
+   "key_bits": 2048,
+   "not_after": "2027-05-28T13:04:33Z",
+   "not_before": "2026-11-11T12:04:33Z",
+   "precert_poison": true,
+   "provider_dns_names": [
+    "*.zeroshield.ai",
+    "zeroshield.ai"
+   ],
+   "pubkey_alg": "rsaEncryption",
+   "revoked": false,
+   "serial": "416010ac7d616d1ff10332923ce4177d",
+   "sha256": "620c45c607f5529be20c21eaa7b83c2ecada21162e272ed8c5a63359185d02d9",
+   "sig_alg": "sha256WithRSAEncryption",
+   "subject": "CN=zeroshield.ai",
+   "subject_cn": "zeroshield.ai",
+   "tbs_sha256": "423f57ea6b0502eefd1913bdfba1729286618a1ebac53c7804347d351f99ca59"
+  }
+ ],
+ "source": "certspotter_wildcard_host",
+ "tool": "openssl x509"
+}

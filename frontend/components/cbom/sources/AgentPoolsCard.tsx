@@ -18,10 +18,14 @@ import {
   type CbomNodePool,
   type CbomPoolStatus,
 } from "@/utils/api/cbom_agents";
+import { getCbomNodeArtifacts } from "@/utils/backend_api";
 
 import { cbomSourcesKeys } from "./keys";
-import { formatDateTime, helmAgentCommand } from "./logic";
-import { CodeSnippet, ConfirmDialog, Field, SectionCard, StatusBadge, type Tone } from "./shared";
+import { formatDateTime, insecureApiWarning, type NodeImage } from "./logic";
+import { NodeDownloads } from "./NodeDownloads";
+import { PoolHelmCommand } from "./NodeInstall";
+import { ConfirmDialog, Field, SectionCard, StatusBadge, type Tone } from "./shared";
+import { InfoTip } from "@/components/ui/info-tip";
 
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$/;
 const EXPIRY = [
@@ -37,18 +41,28 @@ const POOL_STATUS: Record<CbomPoolStatus, [Tone, string]> = {
   revoked: ["red", "Revoked"],
 };
 
-export function AgentPoolsCard({ teamId, image, apiUrl }: { teamId: number; image: string; apiUrl: string }) {
+export function AgentPoolsCard({ teamId, image, apiUrl }: { teamId: number; image: NodeImage; apiUrl: string }) {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [segment, setSegment] = useState("Kubernetes");
   const [hours, setHours] = useState(24 * 7);
   const [max, setMax] = useState("50");
+  // The Helm command uses this deployment's API URL: say before the customer runs it when a node cannot connect.
+  const apiWarning = insecureApiWarning(apiUrl);
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<{ pool: CbomNodePool; token: string } | null>(null);
   const [revoking, setRevoking] = useState<CbomNodePool | null>(null);
 
   const key = [...cbomSourcesKeys.all(teamId), "node-pools"] as const;
+  // the Helm chart and the image the command installs: downloads from this server (shared with the wizard's query)
+  const artifacts = useQuery({
+    queryKey: cbomSourcesKeys.nodeArtifacts(teamId),
+    queryFn: () => getCbomNodeArtifacts(teamId),
+    enabled: Number.isFinite(teamId),
+    retry: 1,
+    staleTime: 5 * 60_000,
+  });
   const pools = useQuery({
     queryKey: key,
     queryFn: () => listCbomNodePools(teamId),
@@ -88,6 +102,7 @@ export function AgentPoolsCard({ teamId, image, apiUrl }: { teamId: number; imag
   const rows = pools.data?.pools ?? [];
   return (
     <SectionCard
+      infoId="cbsrc.pool.card"
       title="Host agents on Kubernetes (agent pool tokens)"
       description="One token for a Helm DaemonSet: every pod enrolls as its own scan node named after its Kubernetes node, reads only that node's files through a read-only mount, and is never given a credential."
       actions={
@@ -100,15 +115,21 @@ export function AgentPoolsCard({ teamId, image, apiUrl }: { teamId: number; imag
     >
       {open && (
         <div className="mb-6 space-y-4 rounded-lg border border-zinc-200 dark:border-zinc-800 p-4" data-testid="agent-pool-form">
+          {apiWarning && (
+            <p role="alert" className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200"
+              data-testid="pool-api-insecure">
+              {apiWarning}
+            </p>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <Field label="Name" htmlFor="pool-name" required error={error}>
+            <Field infoId="cbsrc.pool.name" label="Name" htmlFor="pool-name" required error={error}>
               <Input id="pool-name" value={name} maxLength={64} disabled={!!created} placeholder="prod-cluster"
                 onChange={(e) => setName(e.target.value)} />
             </Field>
-            <Field label="Network segment" htmlFor="pool-segment">
+            <Field infoId="cbsrc.pool.segment" label="Network segment" htmlFor="pool-segment">
               <Input id="pool-segment" value={segment} maxLength={64} disabled={!!created} onChange={(e) => setSegment(e.target.value)} />
             </Field>
-            <Field label="Token expires in" htmlFor="pool-expiry" hint="Nodes that enrolled keep working after it expires">
+            <Field infoId="cbsrc.pool.expiry" label="Token expires in" htmlFor="pool-expiry" hint="Nodes that enrolled keep working after it expires">
               <Select value={String(hours)} disabled={!!created} onValueChange={(v) => setHours(Number(v))}>
                 <SelectTrigger id="pool-expiry" className="w-full cursor-pointer"><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -116,12 +137,12 @@ export function AgentPoolsCard({ teamId, image, apiUrl }: { teamId: number; imag
                 </SelectContent>
               </Select>
             </Field>
-            <Field label="Nodes that may enroll" htmlFor="pool-max" hint="At least the number of Kubernetes nodes">
+            <Field infoId="cbsrc.pool.max" label="Nodes that may enroll" htmlFor="pool-max" hint="At least the number of Kubernetes nodes">
               <Input id="pool-max" type="number" min={1} max={1000} value={max} disabled={!!created} onChange={(e) => setMax(e.target.value)} />
             </Field>
           </div>
           {!created ? (
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" disabled={create.isPending} onClick={submit}>
                 {create.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <KeyRound className="h-4 w-4 mr-2" />}
                 Create token and show the Helm command
@@ -130,7 +151,8 @@ export function AgentPoolsCard({ teamId, image, apiUrl }: { teamId: number; imag
             </div>
           ) : (
             <div className="space-y-2" data-testid="agent-pool-command">
-              <CodeSnippet code={helmAgentCommand({ poolToken: created.token, apiUrl, image })} language="bash" />
+              <NodeDownloads teamId={teamId} method="helm" artifacts={artifacts.data} loading={artifacts.isLoading} error={artifacts.error} />
+              <PoolHelmCommand apiUrl={apiUrl} poolToken={created.token} image={image.image} source={image} />
               <p className="text-xs text-zinc-500">
                 The token is shown only here. It enrolls at most {created.pool.max_enrollments} nodes until{" "}
                 {formatDateTime(created.pool.expires_at)}. Each pod keeps its node credential on its Kubernetes node
@@ -151,11 +173,11 @@ export function AgentPoolsCard({ teamId, image, apiUrl }: { teamId: number; imag
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Token</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Enrolled</TableHead>
-                <TableHead>Expires</TableHead>
-                <TableHead>Nodes</TableHead>
+                <TableHead>Token <InfoTip id="cbsrc.pool.col.token" /></TableHead>
+                <TableHead>Status <InfoTip id="cbsrc.pool.col.status" /></TableHead>
+                <TableHead>Enrolled <InfoTip id="cbsrc.pool.col.enrolled" /></TableHead>
+                <TableHead>Expires <InfoTip id="cbsrc.pool.col.expires" /></TableHead>
+                <TableHead>Nodes <InfoTip id="cbsrc.pool.col.nodes" /></TableHead>
                 <TableHead className="w-12"><span className="sr-only">Actions</span></TableHead>
               </TableRow>
             </TableHeader>

@@ -1,6 +1,6 @@
 # ZeroShield CBOM scan node.
-#   docker build -t registry.zeroshield.ai/cbom/scan-node:1.0 scan_node/
-#   scripts/release/scan_node_image.sh build 1.0      (also writes the docker-save archive customers load offline)
+#   docker build -t localhost/zeroshield/cbom-scan-node:1.0.0 scan_node/
+#   scripts/release/scan_node_image.sh build 1.0.0    (also writes the docker-save archive customers load offline)
 # Behind a TLS-intercepting proxy, build from a base image that already trusts the proxy CA:
 #   docker build --network host --build-arg BASE_IMAGE=<base with CA> --build-arg HTTPS_PROXY=... scan_node/
 ARG BASE_IMAGE=python:3.12-slim
@@ -40,6 +40,15 @@ PY
 RUN pip install --no-cache-dir --require-hashes --no-deps -r requirements.lock && pip check
 
 COPY zs_scan_node ./zs_scan_node
+
+# Build identity (CB-03): the commit this image was built from and its release version. The node reports
+# <version>+<12-character commit> to ZeroShield (enrolment, heartbeat, results, User-Agent).
+# scripts/release/scan_node_image.sh passes both. Declared after the code layer, so a new commit with the same code
+# reuses every layer above.
+ARG ZS_NODE_BUILD=""
+ARG ZS_NODE_VERSION=""
+ENV ZS_NODE_BUILD=${ZS_NODE_BUILD} \
+    ZS_NODE_VERSION=${ZS_NODE_VERSION}
 
 RUN useradd --system --uid 10001 --home-dir /var/lib/zs-node --shell /usr/sbin/nologin zsnode \
  && mkdir -p /var/lib/zs-node && chown zsnode:zsnode /var/lib/zs-node && chmod 0700 /var/lib/zs-node
