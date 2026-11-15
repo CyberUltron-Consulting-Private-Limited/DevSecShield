@@ -177,7 +177,7 @@ _NOTES = (
 _PLAN_NOTE = (
     "Wave, target date and owner / status come from the team's remediation plan in DevSecShield. "
     "Where no wave was assigned, the suggested wave is printed with \"(suggested)\": 1 = critical or high "
-    "and internet-facing or harvest-now-decrypt-later, 2 = other critical or high, 3 = medium and low, "
+    "and internet-facing or harvest-now-decrypt-later, 2 = other critical or high, 3 = any other weakness, "
     "4 = quantum-vulnerable with no other weakness. Blank cells are for the assessor."
 )
 _NODE_HEADERS = ("#", "Asset", "Type", "Algorithm / key", "Impact", "Where found", "Collected", "Wave",
@@ -482,8 +482,14 @@ def _roadmap(
 
 def _no_rows(view: TeamCbomView, styles: Styles, title_prefix: str) -> list[Flowable]:
     """The explicit replacement for the roadmap table (never an empty table)."""
+    collected = len((view.remediation or {}).get("node_rows") or []) + int(
+        (view.remediation or {}).get("node_rows_omitted") or 0)
     if view.is_empty:
         title, message = _NO_SCANS_TITLE, _NO_SCANS_TEXT
+    elif collected:
+        # the collected infrastructure has quantum-vulnerable assets (next section): "none found" would contradict it
+        title = authored.PQC_NO_VULNERABLE_CODE_TITLE
+        message = authored.PQC_NO_VULNERABLE_CODE_TEXT.format(count=_plural(collected, "quantum-vulnerable asset"))
     else:
         title, message = authored.PQC_NO_VULNERABLE_TITLE, authored.PQC_NO_VULNERABLE_TEXT
     block = KeepTogether(

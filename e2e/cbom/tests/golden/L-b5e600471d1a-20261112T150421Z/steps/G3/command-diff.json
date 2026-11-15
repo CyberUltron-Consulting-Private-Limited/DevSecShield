@@ -1,0 +1,22 @@
+{
+  "added": [
+    "--network",
+    "cbom-e2e-net",
+    "-e",
+    "ZS_CA_FILE=/lab/ca.pem",
+    "-v",
+    "/home/claude/round6/local/ca/ca.pem:/lab/ca.pem:ro"
+  ],
+  "allowed": [
+    "--network",
+    "cbom-e2e-net",
+    "-e",
+    "ZS_CA_FILE=/lab/ca.pem",
+    "-v",
+    "/home/claude/round6/local/ca/ca.pem:/lab/ca.pem:ro"
+  ],
+  "planner": {
+    "extra": []
+  },
+  "removed": []
+}

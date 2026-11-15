@@ -1,0 +1,7 @@
+{
+ "url": "https://crt.sh/?q=%25.zeroshield.ai&output=json&exclude=expired",
+ "method": "GET",
+ "started": "2026-11-12T17:49:05.234489Z",
+ "duration_ms": 559,
+ "user_agent": "zeroshield-ct-capture/1 (+https://zeroshield.ai)"
+}

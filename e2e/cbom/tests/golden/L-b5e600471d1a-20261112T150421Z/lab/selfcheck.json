@@ -1,0 +1,5695 @@
+{
+ "schema": "zs-cbom-selfcheck/1",
+ "checked_at": "2026-11-12T15:22:24Z",
+ "run_id": "lab-20261112T152145Z",
+ "oracle_sha256": "2813c724f337e59c292f0572eb3ed1a42c7a0baf789d7f1bf8f1aad0fea9c07b",
+ "oracle_sha256_recorded": "2813c724f337e59c292f0572eb3ed1a42c7a0baf789d7f1bf8f1aad0fea9c07b",
+ "oracle_sha256_source": "gen.json",
+ "oracle_changes": [],
+ "targets": [
+  {
+   "target_id": "canary",
+   "agree": true,
+   "verified_independently": true,
+   "independent_keys": {},
+   "unverified_keys": {},
+   "unobserved": [],
+   "checks": [
+    {
+     "oracle_id": "canary/listener",
+     "key": "listening (health, read from /proc/net/tcp)",
+     "tool": "docker health",
+     "expected": "healthy",
+     "observed": "healthy",
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "canary/listener",
+     "key": "name cbom-e2e-canary resolves on the lab network",
+     "tool": "getent (docker DNS)",
+     "expected": "10.231.0.33",
+     "observed": "10.231.0.33",
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "canary/listener",
+     "key": "accept logs exist (created at up)",
+     "tool": "the run directory",
+     "expected": [
+      true,
+      true
+     ],
+     "observed": [
+      true,
+      true
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "canary/listener",
+     "key": "the product log holds no lab connection",
+     "tool": "lab/listeners/<name>.jsonl",
+     "expected": 0,
+     "observed": 0,
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "canary/listener",
+     "key": "no connection before the scan",
+     "tool": "lab/listeners/<name>.jsonl",
+     "expected": 0,
+     "observed": 0,
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    }
+   ],
+   "controls": [
+    {
+     "negative": "0 connections at the canary",
+     "control_target": "control,idn-punycode",
+     "satisfied": true,
+     "detail": "control,idn-punycode logs the self-check's connection with the same code"
+    }
+   ]
+  },
+  {
+   "target_id": "control",
+   "agree": true,
+   "verified_independently": true,
+   "independent_keys": {},
+   "unverified_keys": {},
+   "unobserved": [],
+   "checks": [
+    {
+     "oracle_id": "control/listener",
+     "key": "listening (health, read from /proc/net/tcp)",
+     "tool": "docker health",
+     "expected": "healthy",
+     "observed": "healthy",
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "control/listener",
+     "key": "name cbom-e2e-control resolves on the lab network",
+     "tool": "getent (docker DNS)",
+     "expected": "10.231.0.34",
+     "observed": "10.231.0.34",
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "control/listener",
+     "key": "accept logs exist (created at up)",
+     "tool": "the run directory",
+     "expected": [
+      true,
+      true
+     ],
+     "observed": [
+      true,
+      true
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "control/listener",
+     "key": "accept logged with the peer address (lab log)",
+     "tool": "socat + /lab/accept.sh",
+     "expected": true,
+     "observed": true,
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "control/listener",
+     "key": "the product log holds no lab connection",
+     "tool": "lab/listeners/<name>.jsonl",
+     "expected": 0,
+     "observed": 0,
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    }
+   ],
+   "controls": []
+  },
+  {
+   "target_id": "host",
+   "agree": true,
+   "verified_independently": true,
+   "independent_keys": {
+    "host/ssh": [
+     "ciphers",
+     "host_key_algorithms",
+     "host_keys",
+     "kex_algorithms",
+     "macs",
+     "protocol_versions",
+     "quantum_vulnerable"
+    ],
+    "host:/srv/cbom-lab/keys/legacy-rsa1024.key": [
+     "algorithm",
+     "key_size",
+     "path",
+     "quantum_vulnerable"
+    ],
+    "host:/srv/cbom-lab/certs/expired-rsa2048.crt": [
+     "algorithm",
+     "fingerprint_sha256",
+     "issuer",
+     "key_size",
+     "not_after",
+     "not_before",
+     "path",
+     "quantum_vulnerable",
+     "serial",
+     "signature_algorithm",
+     "subject"
+    ],
+    "host:/srv/cbom-lab/certs/selfsigned-sha1.crt": [
+     "algorithm",
+     "fingerprint_sha256",
+     "issuer",
+     "key_size",
+     "not_after",
+     "not_before",
+     "path",
+     "quantum_vulnerable",
+     "serial",
+     "signature_algorithm",
+     "subject"
+    ],
+    "host:/srv/cbom-lab/keystores/app.p12": [
+     "entries",
+     "format",
+     "path"
+    ],
+    "host:/srv/cbom-lab/keystores/legacy.jks": [
+     "entries",
+     "format",
+     "path"
+    ]
+   },
+   "unverified_keys": {},
+   "unobserved": [],
+   "checks": [
+    {
+     "oracle_id": "host/ssh",
+     "key": "kex_algorithms",
+     "tool": "nmap 7.97 ssh2-enum-algos",
+     "expected": [
+      "mlkem768x25519-sha256",
+      "sntrup761x25519-sha512",
+      "curve25519-sha256",
+      "ecdh-sha2-nistp256",
+      "diffie-hellman-group14-sha256"
+     ],
+     "observed": [
+      "mlkem768x25519-sha256",
+      "sntrup761x25519-sha512",
+      "curve25519-sha256",
+      "ecdh-sha2-nistp256",
+      "diffie-hellman-group14-sha256"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "host/ssh",
+       "key": "kex_algorithms"
+      }
+     ]
+    },
+    {
+     "oracle_id": "host/ssh",
+     "key": "host_key_algorithms",
+     "tool": "nmap 7.97 ssh2-enum-algos",
+     "expected": [
+      "ssh-ed25519",
+      "ecdsa-sha2-nistp256",
+      "rsa-sha2-512",
+      "rsa-sha2-256"
+     ],
+     "observed": [
+      "rsa-sha2-512",
+      "rsa-sha2-256",
+      "ecdsa-sha2-nistp256",
+      "ssh-ed25519"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "host/ssh",
+       "key": "host_key_algorithms"
+      }
+     ]
+    },
+    {
+     "oracle_id": "host/ssh",
+     "key": "ciphers",
+     "tool": "nmap 7.97 ssh2-enum-algos",
+     "expected": [
+      "chacha20-poly1305@openssh.com",
+      "aes256-gcm@openssh.com",
+      "aes128-ctr"
+     ],
+     "observed": [
+      "chacha20-poly1305@openssh.com",
+      "aes256-gcm@openssh.com",
+      "aes128-ctr"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "host/ssh",
+       "key": "ciphers"
+      }
+     ]
+    },
+    {
+     "oracle_id": "host/ssh",
+     "key": "macs",
+     "tool": "nmap 7.97 ssh2-enum-algos",
+     "expected": [
+      "hmac-sha2-256-etm@openssh.com",
+      "hmac-sha2-512-etm@openssh.com"
+     ],
+     "observed": [
+      "hmac-sha2-256-etm@openssh.com",
+      "hmac-sha2-512-etm@openssh.com"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "host/ssh",
+       "key": "macs"
+      }
+     ]
+    },
+    {
+     "oracle_id": "host/ssh",
+     "key": "quantum_vulnerable",
+     "tool": "nmap 7.97 ssh2-enum-algos",
+     "expected": false,
+     "observed": false,
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "host/ssh",
+       "key": "quantum_vulnerable"
+      }
+     ],
+     "note": "no accepted key exchange includes a PQ KEM (nmap's KEX list)"
+    },
+    {
+     "oracle_id": "host/ssh",
+     "key": "host key blobs served",
+     "tool": "ssh-keyscan (OpenSSH 10)",
+     "expected": {
+      "ssh-rsa": "AAAAB3NzaC1yc2EAAAADAQABAAABgQCXeNpkNH64GUwz/DLu6Aaxn2F+caOfrZVVtb8E+VRmyfzQDDthon7iAXcdOHcIIIxCYPtGnIOIZZSXHIwymD68O8eFS1XKRiyU5F6GvFxRnefpntW0uqwegeHkMrcY+4SP4FwRgTJiSwPbcL7N5MV+i+5wpKiT+DqKaDJcb/C71eUnXqchg6/l2uUhggxmom7eU6xVSmH8fKGaQphyBSXQ6OD2Kdu8TP8L/iwdkpZHYsC3/IiuJSRDuZFgJIquClGOw04FywofGtgeyUvtT3ihyWtbSYv2Va88RHVWFiQRLNYRhiq0le+OArMcQQt+uo+d7u5wHpzHVPqLqk+bNtdrwwJP72pFlxD+tWmk+EmnB7dBcyCr+FY4QjPSN6BtRLrvBb8StxSxHPZ2h2VWCI+n1wlQgDmKj1cODYHN8PM/sC+kwYpQMYCOGWOHGAnufljSYyeXv3w3i/RBYrOW1IqftrgdjcXWmFLMymn4eNfMjW9lHLk5/Rn7Ks39vxyeK30=",
+      "ecdsa-sha2-nistp256": "AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBINtdLcyySksthUptQzB2ks99+1kr8roPvV3uqa32LkYADAesxsW4z6vUwizSM2kXnBIr+L9Ab7k+mx0r4ih5+c=",
+      "ssh-ed25519": "AAAAC3NzaC1lZDI1NTE5AAAAIL3IuGTJDoN6FhRa/wTqz+H7ioxiom+cRYO+lTFNZFNF"
+     },
+     "observed": {
+      "ssh-rsa": "AAAAB3NzaC1yc2EAAAADAQABAAABgQCXeNpkNH64GUwz/DLu6Aaxn2F+caOfrZVVtb8E+VRmyfzQDDthon7iAXcdOHcIIIxCYPtGnIOIZZSXHIwymD68O8eFS1XKRiyU5F6GvFxRnefpntW0uqwegeHkMrcY+4SP4FwRgTJiSwPbcL7N5MV+i+5wpKiT+DqKaDJcb/C71eUnXqchg6/l2uUhggxmom7eU6xVSmH8fKGaQphyBSXQ6OD2Kdu8TP8L/iwdkpZHYsC3/IiuJSRDuZFgJIquClGOw04FywofGtgeyUvtT3ihyWtbSYv2Va88RHVWFiQRLNYRhiq0le+OArMcQQt+uo+d7u5wHpzHVPqLqk+bNtdrwwJP72pFlxD+tWmk+EmnB7dBcyCr+FY4QjPSN6BtRLrvBb8StxSxHPZ2h2VWCI+n1wlQgDmKj1cODYHN8PM/sC+kwYpQMYCOGWOHGAnufljSYyeXv3w3i/RBYrOW1IqftrgdjcXWmFLMymn4eNfMjW9lHLk5/Rn7Ks39vxyeK30=",
+      "ecdsa-sha2-nistp256": "AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBINtdLcyySksthUptQzB2ks99+1kr8roPvV3uqa32LkYADAesxsW4z6vUwizSM2kXnBIr+L9Ab7k+mx0r4ih5+c=",
+      "ssh-ed25519": "AAAAC3NzaC1lZDI1NTE5AAAAIL3IuGTJDoN6FhRa/wTqz+H7ioxiom+cRYO+lTFNZFNF"
+     },
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "host/ssh",
+     "key": "protocol_versions",
+     "tool": "ssh-keyscan identification strings",
+     "expected": [
+      "SSHv2"
+     ],
+     "observed": [
+      "SSHv2"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "host/ssh",
+       "key": "protocol_versions"
+      }
+     ]
+    },
+    {
+     "oracle_id": "host/ssh",
+     "key": "host_keys",
+     "tool": "ssh-keyscan + labread (RFC 4253 blob)",
+     "expected": [
+      {
+       "bits": 3072,
+       "fingerprint_sha256": "SHA256:Cocw7esf9vxh/+nvm5gO6M5hBYmJq7akBx0sB7Es2Fw",
+       "type": "ssh-rsa"
+      },
+      {
+       "bits": 256,
+       "fingerprint_sha256": "SHA256:jivL14akUWWESCVmovnmPLPU5itlsQy7Adn9gEVxHis",
+       "type": "ecdsa-sha2-nistp256"
+      },
+      {
+       "bits": 256,
+       "fingerprint_sha256": "SHA256:Vp6VGDrBx0vruC897Q78aZ+TkkPEOq1EmaKwK//OQo8",
+       "type": "ssh-ed25519"
+      }
+     ],
+     "observed": [
+      {
+       "type": "ssh-rsa",
+       "bits": 3072,
+       "fingerprint_sha256": "SHA256:Cocw7esf9vxh/+nvm5gO6M5hBYmJq7akBx0sB7Es2Fw"
+      },
+      {
+       "type": "ecdsa-sha2-nistp256",
+       "bits": 256,
+       "fingerprint_sha256": "SHA256:jivL14akUWWESCVmovnmPLPU5itlsQy7Adn9gEVxHis"
+      },
+      {
+       "type": "ssh-ed25519",
+       "bits": 256,
+       "fingerprint_sha256": "SHA256:Vp6VGDrBx0vruC897Q78aZ+TkkPEOq1EmaKwK//OQo8"
+      }
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "host/ssh",
+       "key": "host_keys"
+      }
+     ]
+    },
+    {
+     "oracle_id": "host/ssh",
+     "key": "kex_algorithms (cross-check)",
+     "tool": "ssh-audit 3.3.0",
+     "expected": [
+      "curve25519-sha256",
+      "diffie-hellman-group14-sha256",
+      "ecdh-sha2-nistp256",
+      "mlkem768x25519-sha256",
+      "sntrup761x25519-sha512"
+     ],
+     "observed": [
+      "curve25519-sha256",
+      "diffie-hellman-group14-sha256",
+      "ecdh-sha2-nistp256",
+      "mlkem768x25519-sha256",
+      "sntrup761x25519-sha512"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "host/ssh",
+       "key": "kex_algorithms"
+      }
+     ]
+    },
+    {
+     "oracle_id": "host/ssh",
+     "key": "PerSourcePenaltyExemptList",
+     "tool": "sshd -T (the server's own view)",
+     "expected": "10.231.0.0/24",
+     "observed": "10.231.0.0/24",
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/keys/legacy-rsa1024.key",
+     "key": "sha256 (on the host, over SSH)",
+     "tool": "ssh + sha256sum (busybox)",
+     "expected": "680bad486b718a59a12fe66d193b3da1a6d6ae034c23b035b5347050a8806664",
+     "observed": "680bad486b718a59a12fe66d193b3da1a6d6ae034c23b035b5347050a8806664",
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/keys/legacy-rsa1024.key",
+     "key": "mode",
+     "tool": "ssh + stat",
+     "expected": "0600",
+     "observed": "0600",
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/keys/legacy-rsa1024.key",
+     "key": "path",
+     "tool": "ssh + stat",
+     "expected": "/srv/cbom-lab/keys/legacy-rsa1024.key",
+     "observed": "/srv/cbom-lab/keys/legacy-rsa1024.key",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "host:/srv/cbom-lab/keys/legacy-rsa1024.key",
+       "key": "path"
+      }
+     ]
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/keys/legacy-rsa1024.key",
+     "key": "algorithm",
+     "tool": "labread (DER) on the served bytes",
+     "expected": "RSA",
+     "observed": "RSA",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "host:/srv/cbom-lab/keys/legacy-rsa1024.key",
+       "key": "algorithm"
+      }
+     ]
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/keys/legacy-rsa1024.key",
+     "key": "key_size",
+     "tool": "labread (DER) on the served bytes",
+     "expected": 1024,
+     "observed": 1024,
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "host:/srv/cbom-lab/keys/legacy-rsa1024.key",
+       "key": "key_size"
+      }
+     ]
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/keys/legacy-rsa1024.key",
+     "key": "quantum_vulnerable",
+     "tool": "labread (DER) on the served bytes",
+     "expected": true,
+     "observed": true,
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "host:/srv/cbom-lab/keys/legacy-rsa1024.key",
+       "key": "quantum_vulnerable"
+      }
+     ]
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/certs/expired-rsa2048.crt",
+     "key": "sha256 (on the host, over SSH)",
+     "tool": "ssh + sha256sum (busybox)",
+     "expected": "4b0ba6f7d757994532c4eabe0a08a4532bcd1b6c677de41a07f4497bdbbf5d4e",
+     "observed": "4b0ba6f7d757994532c4eabe0a08a4532bcd1b6c677de41a07f4497bdbbf5d4e",
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/certs/expired-rsa2048.crt",
+     "key": "mode",
+     "tool": "ssh + stat",
+     "expected": "0644",
+     "observed": "0644",
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/certs/expired-rsa2048.crt",
+     "key": "path",
+     "tool": "ssh + stat",
+     "expected": "/srv/cbom-lab/certs/expired-rsa2048.crt",
+     "observed": "/srv/cbom-lab/certs/expired-rsa2048.crt",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "host:/srv/cbom-lab/certs/expired-rsa2048.crt",
+       "key": "path"
+      }
+     ]
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/certs/expired-rsa2048.crt",
+     "key": "algorithm",
+     "tool": "labread (DER) on the served bytes",
+     "expected": "RSA",
+     "observed": "RSA",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "host:/srv/cbom-lab/certs/expired-rsa2048.crt",
+       "key": "algorithm"
+      }
+     ]
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/certs/expired-rsa2048.crt",
+     "key": "key_size",
+     "tool": "labread (DER) on the served bytes",
+     "expected": 2048,
+     "observed": 2048,
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "host:/srv/cbom-lab/certs/expired-rsa2048.crt",
+       "key": "key_size"
+      }
+     ]
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/certs/expired-rsa2048.crt",
+     "key": "signature_algorithm",
+     "tool": "labread (DER) on the served bytes",
+     "expected": "sha256WithRSAEncryption",
+     "observed": "1.2.840.113549.1.1.11",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "host:/srv/cbom-lab/certs/expired-rsa2048.crt",
+       "key": "signature_algorithm"
+      }
+     ]
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/certs/expired-rsa2048.crt",
+     "key": "not_before",
+     "tool": "labread (DER) on the served bytes",
+     "expected": "2024-10-08T15:21:45Z",
+     "observed": "2024-10-08T15:21:45Z",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "host:/srv/cbom-lab/certs/expired-rsa2048.crt",
+       "key": "not_before"
+      }
+     ]
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/certs/expired-rsa2048.crt",
+     "key": "not_after",
+     "tool": "labread (DER) on the served bytes",
+     "expected": "2025-10-08T15:21:45Z",
+     "observed": "2025-10-08T15:21:45Z",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "host:/srv/cbom-lab/certs/expired-rsa2048.crt",
+       "key": "not_after"
+      }
+     ]
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/certs/expired-rsa2048.crt",
+     "key": "subject",
+     "tool": "labread (DER) on the served bytes",
+     "expected": "CN=expired-rsa2048.lab",
+     "observed": "CN=expired-rsa2048.lab",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "host:/srv/cbom-lab/certs/expired-rsa2048.crt",
+       "key": "subject"
+      }
+     ]
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/certs/expired-rsa2048.crt",
+     "key": "issuer",
+     "tool": "labread (DER) on the served bytes",
+     "expected": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+     "observed": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "host:/srv/cbom-lab/certs/expired-rsa2048.crt",
+       "key": "issuer"
+      }
+     ]
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/certs/expired-rsa2048.crt",
+     "key": "serial",
+     "tool": "labread (DER) on the served bytes",
+     "expected": "13e7f8a1bd7f4804",
+     "observed": "13e7f8a1bd7f4804",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "host:/srv/cbom-lab/certs/expired-rsa2048.crt",
+       "key": "serial"
+      }
+     ]
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/certs/expired-rsa2048.crt",
+     "key": "fingerprint_sha256",
+     "tool": "labread (DER) on the served bytes",
+     "expected": "07536c90429ea70aace0c911b632b81aa6be5956362a39f51f9f03c2626cd664",
+     "observed": "07536c90429ea70aace0c911b632b81aa6be5956362a39f51f9f03c2626cd664",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "host:/srv/cbom-lab/certs/expired-rsa2048.crt",
+       "key": "fingerprint_sha256"
+      }
+     ]
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/certs/expired-rsa2048.crt",
+     "key": "quantum_vulnerable",
+     "tool": "labread (DER) on the served bytes",
+     "expected": true,
+     "observed": true,
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "host:/srv/cbom-lab/certs/expired-rsa2048.crt",
+       "key": "quantum_vulnerable"
+      }
+     ]
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/certs/selfsigned-sha1.crt",
+     "key": "sha256 (on the host, over SSH)",
+     "tool": "ssh + sha256sum (busybox)",
+     "expected": "4faf7d5920f6ae761d7e711f6b1e330df0659ca40c716ec54706a80a9803fcbd",
+     "observed": "4faf7d5920f6ae761d7e711f6b1e330df0659ca40c716ec54706a80a9803fcbd",
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/certs/selfsigned-sha1.crt",
+     "key": "mode",
+     "tool": "ssh + stat",
+     "expected": "0644",
+     "observed": "0644",
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/certs/selfsigned-sha1.crt",
+     "key": "path",
+     "tool": "ssh + stat",
+     "expected": "/srv/cbom-lab/certs/selfsigned-sha1.crt",
+     "observed": "/srv/cbom-lab/certs/selfsigned-sha1.crt",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "host:/srv/cbom-lab/certs/selfsigned-sha1.crt",
+       "key": "path"
+      }
+     ]
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/certs/selfsigned-sha1.crt",
+     "key": "algorithm",
+     "tool": "labread (DER) on the served bytes",
+     "expected": "RSA",
+     "observed": "RSA",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "host:/srv/cbom-lab/certs/selfsigned-sha1.crt",
+       "key": "algorithm"
+      }
+     ]
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/certs/selfsigned-sha1.crt",
+     "key": "key_size",
+     "tool": "labread (DER) on the served bytes",
+     "expected": 2048,
+     "observed": 2048,
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "host:/srv/cbom-lab/certs/selfsigned-sha1.crt",
+       "key": "key_size"
+      }
+     ]
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/certs/selfsigned-sha1.crt",
+     "key": "signature_algorithm",
+     "tool": "labread (DER) on the served bytes",
+     "expected": "sha1WithRSAEncryption",
+     "observed": "1.2.840.113549.1.1.5",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "host:/srv/cbom-lab/certs/selfsigned-sha1.crt",
+       "key": "signature_algorithm"
+      }
+     ]
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/certs/selfsigned-sha1.crt",
+     "key": "not_before",
+     "tool": "labread (DER) on the served bytes",
+     "expected": "2026-11-11T15:21:45Z",
+     "observed": "2026-11-11T15:21:45Z",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "host:/srv/cbom-lab/certs/selfsigned-sha1.crt",
+       "key": "not_before"
+      }
+     ]
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/certs/selfsigned-sha1.crt",
+     "key": "not_after",
+     "tool": "labread (DER) on the served bytes",
+     "expected": "2027-12-14T15:21:45Z",
+     "observed": "2027-12-14T15:21:45Z",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "host:/srv/cbom-lab/certs/selfsigned-sha1.crt",
+       "key": "not_after"
+      }
+     ]
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/certs/selfsigned-sha1.crt",
+     "key": "subject",
+     "tool": "labread (DER) on the served bytes",
+     "expected": "CN=selfsigned-sha1.lab",
+     "observed": "CN=selfsigned-sha1.lab",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "host:/srv/cbom-lab/certs/selfsigned-sha1.crt",
+       "key": "subject"
+      }
+     ]
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/certs/selfsigned-sha1.crt",
+     "key": "issuer",
+     "tool": "labread (DER) on the served bytes",
+     "expected": "CN=selfsigned-sha1.lab",
+     "observed": "CN=selfsigned-sha1.lab",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "host:/srv/cbom-lab/certs/selfsigned-sha1.crt",
+       "key": "issuer"
+      }
+     ]
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/certs/selfsigned-sha1.crt",
+     "key": "serial",
+     "tool": "labread (DER) on the served bytes",
+     "expected": "796f98b49849615398e74735567f52fe22d9dbaf",
+     "observed": "796f98b49849615398e74735567f52fe22d9dbaf",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "host:/srv/cbom-lab/certs/selfsigned-sha1.crt",
+       "key": "serial"
+      }
+     ]
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/certs/selfsigned-sha1.crt",
+     "key": "fingerprint_sha256",
+     "tool": "labread (DER) on the served bytes",
+     "expected": "ac9ec2c2eeb7e223cda2b8229172cd0b11dcfe70baee212fe1423bd1ed6781f9",
+     "observed": "ac9ec2c2eeb7e223cda2b8229172cd0b11dcfe70baee212fe1423bd1ed6781f9",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "host:/srv/cbom-lab/certs/selfsigned-sha1.crt",
+       "key": "fingerprint_sha256"
+      }
+     ]
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/certs/selfsigned-sha1.crt",
+     "key": "quantum_vulnerable",
+     "tool": "labread (DER) on the served bytes",
+     "expected": true,
+     "observed": true,
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "host:/srv/cbom-lab/certs/selfsigned-sha1.crt",
+       "key": "quantum_vulnerable"
+      }
+     ]
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/keystores/app.p12",
+     "key": "sha256 (on the host, over SSH)",
+     "tool": "ssh + sha256sum (busybox)",
+     "expected": "5bbbf72b85d4dae23a8efccf059b644a66c0c59fd531a427a12b8dbd6cef5da8",
+     "observed": "5bbbf72b85d4dae23a8efccf059b644a66c0c59fd531a427a12b8dbd6cef5da8",
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/keystores/app.p12",
+     "key": "mode",
+     "tool": "ssh + stat",
+     "expected": "0640",
+     "observed": "0640",
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/keystores/app.p12",
+     "key": "path",
+     "tool": "ssh + stat",
+     "expected": "/srv/cbom-lab/keystores/app.p12",
+     "observed": "/srv/cbom-lab/keystores/app.p12",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "host:/srv/cbom-lab/keystores/app.p12",
+       "key": "path"
+      }
+     ]
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/keystores/legacy.jks",
+     "key": "sha256 (on the host, over SSH)",
+     "tool": "ssh + sha256sum (busybox)",
+     "expected": "2cacbcd05bef727cb65640cede245356e0afff640f800b1d1ced82ba23bfd820",
+     "observed": "2cacbcd05bef727cb65640cede245356e0afff640f800b1d1ced82ba23bfd820",
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/keystores/legacy.jks",
+     "key": "mode",
+     "tool": "ssh + stat",
+     "expected": "0640",
+     "observed": "0640",
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/keystores/legacy.jks",
+     "key": "path",
+     "tool": "ssh + stat",
+     "expected": "/srv/cbom-lab/keystores/legacy.jks",
+     "observed": "/srv/cbom-lab/keystores/legacy.jks",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "host:/srv/cbom-lab/keystores/legacy.jks",
+       "key": "path"
+      }
+     ]
+    },
+    {
+     "oracle_id": "host/login",
+     "key": "ForceCommand logged the self-check's command (container log, authoritative)",
+     "tool": "docker logs cb02-host (cb02-cmd lines)",
+     "expected": true,
+     "observed": true,
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "host/login",
+     "key": "file copy holds every authoritative entry",
+     "tool": "lab/forcecommand.log vs container log",
+     "expected": [],
+     "observed": [],
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/keystores/app.p12",
+     "key": "fetched file sha256",
+     "tool": "ssh + base64 + sha256sum",
+     "expected": "5bbbf72b85d4dae23a8efccf059b644a66c0c59fd531a427a12b8dbd6cef5da8",
+     "observed": "5bbbf72b85d4dae23a8efccf059b644a66c0c59fd531a427a12b8dbd6cef5da8",
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/keystores/app.p12",
+     "key": "format",
+     "tool": "openssl pkcs12 -nokeys (OpenSSL, not Java) + labread DER",
+     "expected": "PKCS12",
+     "observed": "PKCS12",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "host:/srv/cbom-lab/keystores/app.p12",
+       "key": "format"
+      }
+     ]
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/keystores/app.p12",
+     "key": "entries",
+     "tool": "openssl pkcs12 -nokeys (OpenSSL, not Java) + labread DER",
+     "expected": [
+      {
+       "alias": "app",
+       "cert_sha256": "e1f5d20d4f37fb1ca98887401e5c046f216c3989ac4d01f5c659d16d8a330346",
+       "key_algorithm": "RSA",
+       "key_bits": 2048,
+       "signature_algorithm": "SHA256withRSA",
+       "type": "PrivateKeyEntry"
+      }
+     ],
+     "observed": [
+      {
+       "alias": "app",
+       "type": "PrivateKeyEntry",
+       "key_algorithm": "RSA",
+       "key_bits": 2048,
+       "signature_algorithm": "1.2.840.113549.1.1.11",
+       "cert_sha256": "e1f5d20d4f37fb1ca98887401e5c046f216c3989ac4d01f5c659d16d8a330346"
+      }
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "host:/srv/cbom-lab/keystores/app.p12",
+       "key": "entries"
+      }
+     ]
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/keystores/app.p12",
+     "key": "entries vs catalogue (alias, type, key bits, signature algorithm)",
+     "tool": "openssl pkcs12 -nokeys (OpenSSL, not Java) + labread DER",
+     "expected": [
+      {
+       "alias": "app",
+       "type": "PrivateKeyEntry",
+       "key_bits": 2048,
+       "signature_algorithm": "1.2.840.113549.1.1.11"
+      }
+     ],
+     "observed": [
+      {
+       "alias": "app",
+       "type": "PrivateKeyEntry",
+       "key_bits": 2048,
+       "signature_algorithm": "1.2.840.113549.1.1.11"
+      }
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/keystores/legacy.jks",
+     "key": "fetched file sha256",
+     "tool": "ssh + base64 + sha256sum",
+     "expected": "2cacbcd05bef727cb65640cede245356e0afff640f800b1d1ced82ba23bfd820",
+     "observed": "2cacbcd05bef727cb65640cede245356e0afff640f800b1d1ced82ba23bfd820",
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/keystores/legacy.jks",
+     "key": "JKS integrity digest with the store password",
+     "tool": "labread JKS reader + DER",
+     "expected": true,
+     "observed": true,
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/keystores/legacy.jks",
+     "key": "format",
+     "tool": "labread JKS reader + DER",
+     "expected": "JKS",
+     "observed": "JKS",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "host:/srv/cbom-lab/keystores/legacy.jks",
+       "key": "format"
+      }
+     ]
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/keystores/legacy.jks",
+     "key": "entries",
+     "tool": "labread JKS reader + DER",
+     "expected": [
+      {
+       "alias": "app",
+       "cert_sha256": "5caf663cf07e551e8019358eb5d12f235b162fcadbd53173a309bf95a88cf240",
+       "key_algorithm": "RSA",
+       "key_bits": 2048,
+       "signature_algorithm": "SHA256withRSA",
+       "type": "PrivateKeyEntry"
+      },
+      {
+       "alias": "legacy-ca",
+       "cert_sha256": "3de010a3e6f79cf7e9d930c0feaa7bc3f79648a6a5534bcee29885c7d7c6d25a",
+       "key_algorithm": "RSA",
+       "key_bits": 1024,
+       "signature_algorithm": "SHA1withRSA",
+       "type": "trustedCertEntry"
+      }
+     ],
+     "observed": [
+      {
+       "alias": "legacy-ca",
+       "type": "trustedCertEntry",
+       "key_algorithm": "RSA",
+       "key_bits": 1024,
+       "signature_algorithm": "1.2.840.113549.1.1.5",
+       "cert_sha256": "3de010a3e6f79cf7e9d930c0feaa7bc3f79648a6a5534bcee29885c7d7c6d25a"
+      },
+      {
+       "alias": "app",
+       "type": "PrivateKeyEntry",
+       "key_algorithm": "RSA",
+       "key_bits": 2048,
+       "signature_algorithm": "1.2.840.113549.1.1.11",
+       "cert_sha256": "5caf663cf07e551e8019358eb5d12f235b162fcadbd53173a309bf95a88cf240"
+      }
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "host:/srv/cbom-lab/keystores/legacy.jks",
+       "key": "entries"
+      }
+     ]
+    },
+    {
+     "oracle_id": "host:/srv/cbom-lab/keystores/legacy.jks",
+     "key": "entries vs catalogue (alias, type, key bits, signature algorithm)",
+     "tool": "labread JKS reader + DER",
+     "expected": [
+      {
+       "alias": "app",
+       "type": "PrivateKeyEntry",
+       "key_bits": 2048,
+       "signature_algorithm": "1.2.840.113549.1.1.11"
+      },
+      {
+       "alias": "legacy-ca",
+       "type": "trustedCertEntry",
+       "key_bits": 1024,
+       "signature_algorithm": "1.2.840.113549.1.1.5"
+      }
+     ],
+     "observed": [
+      {
+       "alias": "app",
+       "type": "PrivateKeyEntry",
+       "key_bits": 2048,
+       "signature_algorithm": "1.2.840.113549.1.1.11"
+      },
+      {
+       "alias": "legacy-ca",
+       "type": "trustedCertEntry",
+       "key_bits": 1024,
+       "signature_algorithm": "1.2.840.113549.1.1.5"
+      }
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    }
+   ],
+   "controls": [
+    {
+     "negative": "read-only command log (O-8)",
+     "control_target": "host",
+     "satisfied": true,
+     "detail": "the self-check's own command is in the log"
+    }
+   ]
+  },
+  {
+   "target_id": "idn-fass",
+   "agree": true,
+   "verified_independently": true,
+   "independent_keys": {},
+   "unverified_keys": {},
+   "unobserved": [],
+   "checks": [
+    {
+     "oracle_id": "idn-fass/listener",
+     "key": "listening (health, read from /proc/net/tcp)",
+     "tool": "docker health",
+     "expected": "healthy",
+     "observed": "healthy",
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "idn-fass/listener",
+     "key": "name fass.lab resolves on the lab network",
+     "tool": "getent (docker DNS)",
+     "expected": "10.231.0.44",
+     "observed": "10.231.0.44",
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "idn-fass/listener",
+     "key": "accept logs exist (created at up)",
+     "tool": "the run directory",
+     "expected": [
+      true,
+      true
+     ],
+     "observed": [
+      true,
+      true
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "idn-fass/listener",
+     "key": "the product log holds no lab connection",
+     "tool": "lab/listeners/<name>.jsonl",
+     "expected": 0,
+     "observed": 0,
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "idn-fass/listener",
+     "key": "no connection before the scan",
+     "tool": "lab/listeners/<name>.jsonl",
+     "expected": 0,
+     "observed": 0,
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    }
+   ],
+   "controls": [
+    {
+     "negative": "0 connections at the canary",
+     "control_target": "control,idn-punycode",
+     "satisfied": true,
+     "detail": "control,idn-punycode logs the self-check's connection with the same code"
+    }
+   ]
+  },
+  {
+   "target_id": "idn-punycode",
+   "agree": true,
+   "verified_independently": true,
+   "independent_keys": {},
+   "unverified_keys": {},
+   "unobserved": [],
+   "checks": [
+    {
+     "oracle_id": "idn-punycode/listener",
+     "key": "listening (health, read from /proc/net/tcp)",
+     "tool": "docker health",
+     "expected": "healthy",
+     "observed": "healthy",
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "idn-punycode/listener",
+     "key": "name xn--fa-hia.lab resolves on the lab network",
+     "tool": "getent (docker DNS)",
+     "expected": "10.231.0.45",
+     "observed": "10.231.0.45",
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "idn-punycode/listener",
+     "key": "accept logs exist (created at up)",
+     "tool": "the run directory",
+     "expected": [
+      true,
+      true
+     ],
+     "observed": [
+      true,
+      true
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "idn-punycode/listener",
+     "key": "accept logged with the peer address (lab log)",
+     "tool": "socat + /lab/accept.sh",
+     "expected": true,
+     "observed": true,
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "idn-punycode/listener",
+     "key": "the product log holds no lab connection",
+     "tool": "lab/listeners/<name>.jsonl",
+     "expected": 0,
+     "observed": 0,
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    }
+   ],
+   "controls": []
+  },
+  {
+   "target_id": "pg-tls",
+   "agree": true,
+   "verified_independently": true,
+   "independent_keys": {
+    "pg-tls/tls": [
+     "protocol_versions",
+     "tls_enabled"
+    ],
+    "pg-tls/cert[0]": [
+     "algorithm",
+     "fingerprint_sha256",
+     "issuer",
+     "key_size",
+     "not_after",
+     "not_before",
+     "quantum_vulnerable",
+     "serial",
+     "signature_algorithm",
+     "subject"
+    ]
+   },
+   "unverified_keys": {},
+   "unobserved": [],
+   "checks": [
+    {
+     "oracle_id": "pg-tls/tls",
+     "key": "SSLRequest answer",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "S",
+     "observed": "S",
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "pg-tls/tls",
+     "key": "tls_enabled",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": true,
+     "observed": true,
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "pg-tls/tls",
+       "key": "tls_enabled"
+      }
+     ]
+    },
+    {
+     "oracle_id": "pg-tls/tls",
+     "key": "versions (facts)",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": {
+      "TLSv1.0": false,
+      "TLSv1.1": false,
+      "TLSv1.2": true,
+      "TLSv1.3": true
+     },
+     "observed": {
+      "TLSv1.0": false,
+      "TLSv1.1": false,
+      "TLSv1.2": true,
+      "TLSv1.3": true
+     },
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "pg-tls/tls",
+     "key": "protocol_versions",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": [
+      "TLSv1.2",
+      "TLSv1.3"
+     ],
+     "observed": [
+      "TLSv1.2",
+      "TLSv1.3"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "pg-tls/tls",
+       "key": "protocol_versions"
+      }
+     ]
+    },
+    {
+     "oracle_id": "pg-tls/cert",
+     "key": "fingerprint_sha256",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": [
+      "6c16a77a08df990440436eb9c033b5b10e28be26a8f3712da3199591a720e606"
+     ],
+     "observed": [
+      "6c16a77a08df990440436eb9c033b5b10e28be26a8f3712da3199591a720e606"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "pg-tls/cert[0]",
+     "key": "algorithm",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "RSA",
+     "observed": "RSA",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "pg-tls/cert[0]",
+       "key": "algorithm"
+      }
+     ]
+    },
+    {
+     "oracle_id": "pg-tls/cert[0]",
+     "key": "key_size",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": 2048,
+     "observed": 2048,
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "pg-tls/cert[0]",
+       "key": "key_size"
+      }
+     ]
+    },
+    {
+     "oracle_id": "pg-tls/cert[0]",
+     "key": "signature_algorithm",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "sha256WithRSAEncryption",
+     "observed": "1.2.840.113549.1.1.11",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "pg-tls/cert[0]",
+       "key": "signature_algorithm"
+      }
+     ]
+    },
+    {
+     "oracle_id": "pg-tls/cert[0]",
+     "key": "not_before",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "2026-11-11T15:21:45Z",
+     "observed": "2026-11-11T15:21:45Z",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "pg-tls/cert[0]",
+       "key": "not_before"
+      }
+     ]
+    },
+    {
+     "oracle_id": "pg-tls/cert[0]",
+     "key": "not_after",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "2027-12-14T15:21:45Z",
+     "observed": "2027-12-14T15:21:45Z",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "pg-tls/cert[0]",
+       "key": "not_after"
+      }
+     ]
+    },
+    {
+     "oracle_id": "pg-tls/cert[0]",
+     "key": "subject",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "CN=pg-tls.lab",
+     "observed": "CN=pg-tls.lab",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "pg-tls/cert[0]",
+       "key": "subject"
+      }
+     ]
+    },
+    {
+     "oracle_id": "pg-tls/cert[0]",
+     "key": "issuer",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+     "observed": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "pg-tls/cert[0]",
+       "key": "issuer"
+      }
+     ]
+    },
+    {
+     "oracle_id": "pg-tls/cert[0]",
+     "key": "serial",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "56b648ea04e284e7",
+     "observed": "56b648ea04e284e7",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "pg-tls/cert[0]",
+       "key": "serial"
+      }
+     ]
+    },
+    {
+     "oracle_id": "pg-tls/cert[0]",
+     "key": "fingerprint_sha256",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "6c16a77a08df990440436eb9c033b5b10e28be26a8f3712da3199591a720e606",
+     "observed": "6c16a77a08df990440436eb9c033b5b10e28be26a8f3712da3199591a720e606",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "pg-tls/cert[0]",
+       "key": "fingerprint_sha256"
+      }
+     ]
+    },
+    {
+     "oracle_id": "pg-tls/cert[0]",
+     "key": "quantum_vulnerable",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": true,
+     "observed": true,
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "pg-tls/cert[0]",
+       "key": "quantum_vulnerable"
+      }
+     ]
+    },
+    {
+     "oracle_id": "pg-tls/config",
+     "key": "SHOW ssl",
+     "tool": "psql 16 (server's own view)",
+     "expected": "on",
+     "observed": "on",
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "pg-tls/auth",
+     "key": "pg_hba_file_rules",
+     "tool": "psql 16",
+     "expected": "local|all|all||trust;hostssl|all|cbom_md5|0.0.0.0/0.0.0.0|md5;hostssl|all|all|0.0.0.0/0.0.0.0|scram-sha-256;host|all|all|0.0.0.0/0.0.0.0|reject",
+     "observed": "local|all|all||trust;hostssl|all|cbom_md5|0.0.0.0/0.0.0.0|md5;hostssl|all|all|0.0.0.0/0.0.0.0|scram-sha-256;host|all|all|0.0.0.0/0.0.0.0|reject",
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "pg-tls/auth",
+     "key": "stored password types",
+     "tool": "psql 16",
+     "expected": "cbom_md5=md5,cbom_reader=SCR",
+     "observed": "cbom_md5=md5,cbom_reader=SCR",
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "pg-tls/config",
+     "key": "extensions",
+     "tool": "psql 16",
+     "expected": "pgcrypto",
+     "observed": "pgcrypto",
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "pg-tls/config",
+     "key": "log_connections records the self-check login",
+     "tool": "postgres log",
+     "expected": true,
+     "observed": true,
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    }
+   ],
+   "controls": [
+    {
+     "negative": "no login on the no-TLS server (O-8)",
+     "control_target": "pg-tls",
+     "satisfied": true,
+     "detail": "the TLS server logs this login"
+    }
+   ]
+  },
+  {
+   "target_id": "sshd-legacy",
+   "agree": true,
+   "verified_independently": true,
+   "independent_keys": {
+    "sshd-legacy/ssh": [
+     "ciphers",
+     "host_key_algorithms",
+     "host_keys",
+     "kex_algorithms",
+     "macs",
+     "protocol_versions",
+     "quantum_vulnerable"
+    ]
+   },
+   "unverified_keys": {},
+   "unobserved": [],
+   "checks": [
+    {
+     "oracle_id": "sshd-legacy/ssh",
+     "key": "kex_algorithms",
+     "tool": "nmap 7.97 ssh2-enum-algos",
+     "expected": [
+      "curve25519-sha256",
+      "ecdh-sha2-nistp256",
+      "diffie-hellman-group14-sha256",
+      "diffie-hellman-group14-sha1"
+     ],
+     "observed": [
+      "curve25519-sha256",
+      "ecdh-sha2-nistp256",
+      "diffie-hellman-group14-sha256",
+      "diffie-hellman-group14-sha1"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "sshd-legacy/ssh",
+       "key": "kex_algorithms"
+      }
+     ]
+    },
+    {
+     "oracle_id": "sshd-legacy/ssh",
+     "key": "host_key_algorithms",
+     "tool": "nmap 7.97 ssh2-enum-algos",
+     "expected": [
+      "ssh-ed25519",
+      "rsa-sha2-512",
+      "rsa-sha2-256"
+     ],
+     "observed": [
+      "rsa-sha2-512",
+      "rsa-sha2-256",
+      "ssh-ed25519"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "sshd-legacy/ssh",
+       "key": "host_key_algorithms"
+      }
+     ]
+    },
+    {
+     "oracle_id": "sshd-legacy/ssh",
+     "key": "ciphers",
+     "tool": "nmap 7.97 ssh2-enum-algos",
+     "expected": [
+      "aes128-ctr",
+      "aes256-ctr"
+     ],
+     "observed": [
+      "aes128-ctr",
+      "aes256-ctr"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "sshd-legacy/ssh",
+       "key": "ciphers"
+      }
+     ]
+    },
+    {
+     "oracle_id": "sshd-legacy/ssh",
+     "key": "macs",
+     "tool": "nmap 7.97 ssh2-enum-algos",
+     "expected": [
+      "hmac-sha1",
+      "hmac-sha2-256"
+     ],
+     "observed": [
+      "hmac-sha1",
+      "hmac-sha2-256"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "sshd-legacy/ssh",
+       "key": "macs"
+      }
+     ]
+    },
+    {
+     "oracle_id": "sshd-legacy/ssh",
+     "key": "quantum_vulnerable",
+     "tool": "nmap 7.97 ssh2-enum-algos",
+     "expected": true,
+     "observed": true,
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "sshd-legacy/ssh",
+       "key": "quantum_vulnerable"
+      }
+     ],
+     "note": "no accepted key exchange includes a PQ KEM (nmap's KEX list)"
+    },
+    {
+     "oracle_id": "sshd-legacy/ssh",
+     "key": "host key blobs served",
+     "tool": "ssh-keyscan (OpenSSH 10)",
+     "expected": {
+      "ssh-rsa": "AAAAB3NzaC1yc2EAAAADAQABAAAAgQCz7pEVptG0nhGg1s3PzoYdDvg1cpffe305SujVbeZ2DgC83F+c0ld81R84Tl8SS095TrKPig0GRVOAcODjT1iBleKCoYdPKgvxa7Ajve3BcuQ20RspsF7Ar80iVxCces0La+RwISP7Oo9rpxtqhVpqMG04Fuy3Yh9+4k0l2xMqLw==",
+      "ssh-ed25519": "AAAAC3NzaC1lZDI1NTE5AAAAIFBT1f0jY8Pu0fnil2g5TCA38M3hoNLGlSQA2lwQS7it"
+     },
+     "observed": {
+      "ssh-rsa": "AAAAB3NzaC1yc2EAAAADAQABAAAAgQCz7pEVptG0nhGg1s3PzoYdDvg1cpffe305SujVbeZ2DgC83F+c0ld81R84Tl8SS095TrKPig0GRVOAcODjT1iBleKCoYdPKgvxa7Ajve3BcuQ20RspsF7Ar80iVxCces0La+RwISP7Oo9rpxtqhVpqMG04Fuy3Yh9+4k0l2xMqLw==",
+      "ssh-ed25519": "AAAAC3NzaC1lZDI1NTE5AAAAIFBT1f0jY8Pu0fnil2g5TCA38M3hoNLGlSQA2lwQS7it"
+     },
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "sshd-legacy/ssh",
+     "key": "protocol_versions",
+     "tool": "ssh-keyscan identification strings",
+     "expected": [
+      "SSHv2"
+     ],
+     "observed": [
+      "SSHv2"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "sshd-legacy/ssh",
+       "key": "protocol_versions"
+      }
+     ]
+    },
+    {
+     "oracle_id": "sshd-legacy/ssh",
+     "key": "host_keys",
+     "tool": "ssh-keyscan + labread (RFC 4253 blob)",
+     "expected": [
+      {
+       "bits": 1024,
+       "fingerprint_sha256": "SHA256:qILywpW1FV9sHEhY4i6BIp5B5AxxnR2ziezczpERcvw",
+       "type": "ssh-rsa"
+      },
+      {
+       "bits": 256,
+       "fingerprint_sha256": "SHA256:5hRN95qWFbVqi/SFZY1mgVZB2zu8CmBhStJcAsnAaTM",
+       "type": "ssh-ed25519"
+      }
+     ],
+     "observed": [
+      {
+       "type": "ssh-rsa",
+       "bits": 1024,
+       "fingerprint_sha256": "SHA256:qILywpW1FV9sHEhY4i6BIp5B5AxxnR2ziezczpERcvw"
+      },
+      {
+       "type": "ssh-ed25519",
+       "bits": 256,
+       "fingerprint_sha256": "SHA256:5hRN95qWFbVqi/SFZY1mgVZB2zu8CmBhStJcAsnAaTM"
+      }
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "sshd-legacy/ssh",
+       "key": "host_keys"
+      }
+     ]
+    },
+    {
+     "oracle_id": "sshd-legacy/ssh",
+     "key": "kex_algorithms (cross-check)",
+     "tool": "ssh-audit 3.3.0",
+     "expected": [
+      "curve25519-sha256",
+      "diffie-hellman-group14-sha1",
+      "diffie-hellman-group14-sha256",
+      "ecdh-sha2-nistp256"
+     ],
+     "observed": [
+      "curve25519-sha256",
+      "diffie-hellman-group14-sha1",
+      "diffie-hellman-group14-sha256",
+      "ecdh-sha2-nistp256"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "sshd-legacy/ssh",
+       "key": "kex_algorithms"
+      }
+     ]
+    },
+    {
+     "oracle_id": "sshd-legacy/ssh",
+     "key": "PerSourcePenaltyExemptList",
+     "tool": "sshd -T (the server's own view)",
+     "expected": "10.231.0.0/24",
+     "observed": "10.231.0.0/24",
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    }
+   ],
+   "controls": [
+    {
+     "negative": "no PQ key exchange",
+     "control_target": "sshd-pq",
+     "satisfied": true,
+     "detail": "sshd-pq offers PQ KEX to the same tool"
+    }
+   ]
+  },
+  {
+   "target_id": "sshd-pq",
+   "agree": true,
+   "verified_independently": true,
+   "independent_keys": {
+    "sshd-pq/ssh": [
+     "ciphers",
+     "host_key_algorithms",
+     "host_keys",
+     "kex_algorithms",
+     "macs",
+     "protocol_versions",
+     "quantum_vulnerable"
+    ]
+   },
+   "unverified_keys": {},
+   "unobserved": [],
+   "checks": [
+    {
+     "oracle_id": "sshd-pq/ssh",
+     "key": "kex_algorithms",
+     "tool": "nmap 7.97 ssh2-enum-algos",
+     "expected": [
+      "mlkem768x25519-sha256"
+     ],
+     "observed": [
+      "mlkem768x25519-sha256"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "sshd-pq/ssh",
+       "key": "kex_algorithms"
+      }
+     ]
+    },
+    {
+     "oracle_id": "sshd-pq/ssh",
+     "key": "host_key_algorithms",
+     "tool": "nmap 7.97 ssh2-enum-algos",
+     "expected": [
+      "ssh-ed25519"
+     ],
+     "observed": [
+      "ssh-ed25519"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "sshd-pq/ssh",
+       "key": "host_key_algorithms"
+      }
+     ]
+    },
+    {
+     "oracle_id": "sshd-pq/ssh",
+     "key": "ciphers",
+     "tool": "nmap 7.97 ssh2-enum-algos",
+     "expected": [
+      "aes256-gcm@openssh.com",
+      "chacha20-poly1305@openssh.com"
+     ],
+     "observed": [
+      "aes256-gcm@openssh.com",
+      "chacha20-poly1305@openssh.com"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "sshd-pq/ssh",
+       "key": "ciphers"
+      }
+     ]
+    },
+    {
+     "oracle_id": "sshd-pq/ssh",
+     "key": "macs",
+     "tool": "nmap 7.97 ssh2-enum-algos",
+     "expected": [
+      "hmac-sha2-256-etm@openssh.com"
+     ],
+     "observed": [
+      "hmac-sha2-256-etm@openssh.com"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "sshd-pq/ssh",
+       "key": "macs"
+      }
+     ]
+    },
+    {
+     "oracle_id": "sshd-pq/ssh",
+     "key": "quantum_vulnerable",
+     "tool": "nmap 7.97 ssh2-enum-algos",
+     "expected": false,
+     "observed": false,
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "sshd-pq/ssh",
+       "key": "quantum_vulnerable"
+      }
+     ],
+     "note": "no accepted key exchange includes a PQ KEM (nmap's KEX list)"
+    },
+    {
+     "oracle_id": "sshd-pq/ssh",
+     "key": "host key blobs served",
+     "tool": "ssh-keyscan (OpenSSH 10)",
+     "expected": {
+      "ssh-ed25519": "AAAAC3NzaC1lZDI1NTE5AAAAIKlmOv0v/oTmHZbneDBQTNpVu94mnOVEf7EhXGUqPzxP"
+     },
+     "observed": {
+      "ssh-ed25519": "AAAAC3NzaC1lZDI1NTE5AAAAIKlmOv0v/oTmHZbneDBQTNpVu94mnOVEf7EhXGUqPzxP"
+     },
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "sshd-pq/ssh",
+     "key": "protocol_versions",
+     "tool": "ssh-keyscan identification strings",
+     "expected": [
+      "SSHv2"
+     ],
+     "observed": [
+      "SSHv2"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "sshd-pq/ssh",
+       "key": "protocol_versions"
+      }
+     ]
+    },
+    {
+     "oracle_id": "sshd-pq/ssh",
+     "key": "host_keys",
+     "tool": "ssh-keyscan + labread (RFC 4253 blob)",
+     "expected": [
+      {
+       "bits": 256,
+       "fingerprint_sha256": "SHA256:rBj3mPsWmRAsROTwesSCSmFY0+JCUwYjiSzia8JbXxU",
+       "type": "ssh-ed25519"
+      }
+     ],
+     "observed": [
+      {
+       "type": "ssh-ed25519",
+       "bits": 256,
+       "fingerprint_sha256": "SHA256:rBj3mPsWmRAsROTwesSCSmFY0+JCUwYjiSzia8JbXxU"
+      }
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "sshd-pq/ssh",
+       "key": "host_keys"
+      }
+     ]
+    },
+    {
+     "oracle_id": "sshd-pq/ssh",
+     "key": "kex_algorithms (cross-check)",
+     "tool": "ssh-audit 3.3.0",
+     "expected": [
+      "mlkem768x25519-sha256"
+     ],
+     "observed": [
+      "mlkem768x25519-sha256"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "sshd-pq/ssh",
+       "key": "kex_algorithms"
+      }
+     ]
+    },
+    {
+     "oracle_id": "sshd-pq/ssh",
+     "key": "PerSourcePenaltyExemptList",
+     "tool": "sshd -T (the server's own view)",
+     "expected": "10.231.0.0/24",
+     "observed": "10.231.0.0/24",
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    }
+   ],
+   "controls": []
+  },
+  {
+   "target_id": "z01",
+   "agree": true,
+   "verified_independently": true,
+   "independent_keys": {
+    "z01/tls": [
+     "cipher_suites",
+     "groups",
+     "protocol_versions",
+     "quantum_vulnerable"
+    ],
+    "z01/cert[0]": [
+     "algorithm",
+     "curve",
+     "fingerprint_sha256",
+     "issuer",
+     "key_size",
+     "not_after",
+     "not_before",
+     "quantum_vulnerable",
+     "serial",
+     "signature_algorithm",
+     "subject"
+    ],
+    "z01/cert[1]": [
+     "algorithm",
+     "fingerprint_sha256",
+     "issuer",
+     "key_size",
+     "not_after",
+     "not_before",
+     "quantum_vulnerable",
+     "serial",
+     "signature_algorithm",
+     "subject"
+    ]
+   },
+   "unverified_keys": {},
+   "unobserved": [],
+   "checks": [
+    {
+     "oracle_id": "z01/tls",
+     "key": "versions (facts)",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": {
+      "TLSv1.0": false,
+      "TLSv1.1": false,
+      "TLSv1.2": false,
+      "TLSv1.3": true
+     },
+     "observed": {
+      "TLSv1.0": false,
+      "TLSv1.1": false,
+      "TLSv1.2": false,
+      "TLSv1.3": true
+     },
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "z01/tls",
+     "key": "protocol_versions",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": [
+      "TLSv1.3"
+     ],
+     "observed": [
+      "TLSv1.3"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z01/tls",
+       "key": "protocol_versions"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z01/tls",
+     "key": "groups",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": [
+      "X25519",
+      "secp256r1"
+     ],
+     "observed": [
+      "X25519",
+      "secp256r1"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z01/tls",
+       "key": "groups"
+      }
+     ],
+     "note": "TLS 1.3, one group per handshake"
+    },
+    {
+     "oracle_id": "z01/tls",
+     "key": "quantum_vulnerable",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": true,
+     "observed": true,
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z01/tls",
+       "key": "quantum_vulnerable"
+      }
+     ],
+     "note": "no accepted key exchange includes ML-KEM (TLS 1.3 groups as observed)"
+    },
+    {
+     "oracle_id": "z01/cert",
+     "key": "fingerprint_sha256 (served chain)",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": [
+      "7418f4121ab0544d76c378c4d228116e79c6ce19042938925e4111617340b20e",
+      "1723b921c4a5b089958d2053cd0d8d6936f4f39cd7ec99c0b57f1c2cf2d3218a"
+     ],
+     "observed": [
+      "7418f4121ab0544d76c378c4d228116e79c6ce19042938925e4111617340b20e",
+      "1723b921c4a5b089958d2053cd0d8d6936f4f39cd7ec99c0b57f1c2cf2d3218a"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "z01/cert[0]",
+     "key": "algorithm",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "EC",
+     "observed": "EC",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z01/cert[0]",
+       "key": "algorithm"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z01/cert[0]",
+     "key": "key_size",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": 256,
+     "observed": 256,
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z01/cert[0]",
+       "key": "key_size"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z01/cert[0]",
+     "key": "curve",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "P-256",
+     "observed": "P-256",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z01/cert[0]",
+       "key": "curve"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z01/cert[0]",
+     "key": "signature_algorithm",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "sha256WithRSAEncryption",
+     "observed": "1.2.840.113549.1.1.11",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z01/cert[0]",
+       "key": "signature_algorithm"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z01/cert[0]",
+     "key": "not_before",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "2026-11-11T15:21:45Z",
+     "observed": "2026-11-11T15:21:45Z",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z01/cert[0]",
+       "key": "not_before"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z01/cert[0]",
+     "key": "not_after",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "2027-12-14T15:21:45Z",
+     "observed": "2027-12-14T15:21:45Z",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z01/cert[0]",
+       "key": "not_after"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z01/cert[0]",
+     "key": "subject",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "CN=z01.lab",
+     "observed": "CN=z01.lab",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z01/cert[0]",
+       "key": "subject"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z01/cert[0]",
+     "key": "issuer",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+     "observed": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z01/cert[0]",
+       "key": "issuer"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z01/cert[0]",
+     "key": "serial",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "7368b7b81ccc095e",
+     "observed": "7368b7b81ccc095e",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z01/cert[0]",
+       "key": "serial"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z01/cert[0]",
+     "key": "fingerprint_sha256",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "7418f4121ab0544d76c378c4d228116e79c6ce19042938925e4111617340b20e",
+     "observed": "7418f4121ab0544d76c378c4d228116e79c6ce19042938925e4111617340b20e",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z01/cert[0]",
+       "key": "fingerprint_sha256"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z01/cert[0]",
+     "key": "quantum_vulnerable",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": true,
+     "observed": true,
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z01/cert[0]",
+       "key": "quantum_vulnerable"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z01/cert[1]",
+     "key": "algorithm",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "RSA",
+     "observed": "RSA",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z01/cert[1]",
+       "key": "algorithm"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z01/cert[1]",
+     "key": "key_size",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": 2048,
+     "observed": 2048,
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z01/cert[1]",
+       "key": "key_size"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z01/cert[1]",
+     "key": "signature_algorithm",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "sha256WithRSAEncryption",
+     "observed": "1.2.840.113549.1.1.11",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z01/cert[1]",
+       "key": "signature_algorithm"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z01/cert[1]",
+     "key": "not_before",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "2026-11-10T15:21:45Z",
+     "observed": "2026-11-10T15:21:45Z",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z01/cert[1]",
+       "key": "not_before"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z01/cert[1]",
+     "key": "not_after",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "2036-11-09T15:21:45Z",
+     "observed": "2036-11-09T15:21:45Z",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z01/cert[1]",
+       "key": "not_after"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z01/cert[1]",
+     "key": "subject",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+     "observed": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z01/cert[1]",
+       "key": "subject"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z01/cert[1]",
+     "key": "issuer",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+     "observed": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z01/cert[1]",
+       "key": "issuer"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z01/cert[1]",
+     "key": "serial",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "37971095f5d9abc56a18c5d85f42492efd778ab4",
+     "observed": "37971095f5d9abc56a18c5d85f42492efd778ab4",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z01/cert[1]",
+       "key": "serial"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z01/cert[1]",
+     "key": "fingerprint_sha256",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "1723b921c4a5b089958d2053cd0d8d6936f4f39cd7ec99c0b57f1c2cf2d3218a",
+     "observed": "1723b921c4a5b089958d2053cd0d8d6936f4f39cd7ec99c0b57f1c2cf2d3218a",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z01/cert[1]",
+       "key": "fingerprint_sha256"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z01/cert[1]",
+     "key": "quantum_vulnerable",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": true,
+     "observed": true,
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z01/cert[1]",
+       "key": "quantum_vulnerable"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z01/tls",
+     "key": "cipher_suites[TLSv1.3]",
+     "tool": "nmap 7.97 ssl-enum-ciphers",
+     "expected": [
+      "TLS_AES_128_GCM_SHA256",
+      "TLS_AES_256_GCM_SHA384",
+      "TLS_CHACHA20_POLY1305_SHA256"
+     ],
+     "observed": [
+      "TLS_AES_128_GCM_SHA256",
+      "TLS_AES_256_GCM_SHA384",
+      "TLS_CHACHA20_POLY1305_SHA256"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "z01/tls",
+     "key": "cipher_suites",
+     "tool": "nmap 7.97 ssl-enum-ciphers",
+     "expected": [
+      "TLS_AES_128_GCM_SHA256",
+      "TLS_AES_256_GCM_SHA384",
+      "TLS_CHACHA20_POLY1305_SHA256"
+     ],
+     "observed": [
+      "TLS_AES_128_GCM_SHA256",
+      "TLS_AES_256_GCM_SHA384",
+      "TLS_CHACHA20_POLY1305_SHA256"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z01/tls",
+       "key": "cipher_suites"
+      }
+     ]
+    }
+   ],
+   "controls": [
+    {
+     "negative": "TLSv1.0 refused",
+     "control_target": "z16",
+     "satisfied": true,
+     "detail": "z16 accepts TLSv1.0 with the same tool"
+    },
+    {
+     "negative": "TLSv1.1 refused",
+     "control_target": "z02",
+     "satisfied": true,
+     "detail": "z02 accepts TLSv1.1 with the same tool"
+    },
+    {
+     "negative": "TLSv1.2 refused",
+     "control_target": "z04",
+     "satisfied": true,
+     "detail": "z04 accepts TLSv1.2 with the same tool"
+    },
+    {
+     "negative": "group X25519MLKEM768 absent",
+     "control_target": "z05",
+     "satisfied": true,
+     "detail": "z05 negotiates X25519MLKEM768 with the same tool"
+    }
+   ]
+  },
+  {
+   "target_id": "z02",
+   "agree": true,
+   "verified_independently": true,
+   "independent_keys": {
+    "z02/tls": [
+     "cipher_suites",
+     "groups",
+     "must_report",
+     "protocol_versions",
+     "quantum_vulnerable"
+    ],
+    "z02/cert[0]": [
+     "algorithm",
+     "fingerprint_sha256",
+     "issuer",
+     "key_size",
+     "not_after",
+     "not_before",
+     "quantum_vulnerable",
+     "serial",
+     "signature_algorithm",
+     "subject"
+    ]
+   },
+   "unverified_keys": {},
+   "unobserved": [],
+   "checks": [
+    {
+     "oracle_id": "z02/tls",
+     "key": "versions (facts)",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": {
+      "TLSv1.0": true,
+      "TLSv1.1": true,
+      "TLSv1.2": true,
+      "TLSv1.3": false
+     },
+     "observed": {
+      "TLSv1.0": true,
+      "TLSv1.1": true,
+      "TLSv1.2": true,
+      "TLSv1.3": false
+     },
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "z02/tls",
+     "key": "protocol_versions",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": [
+      "TLSv1",
+      "TLSv1.1",
+      "TLSv1.2"
+     ],
+     "observed": [
+      "TLSv1",
+      "TLSv1.1",
+      "TLSv1.2"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z02/tls",
+       "key": "protocol_versions"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z02/tls",
+     "key": "quantum_vulnerable",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": true,
+     "observed": true,
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z02/tls",
+       "key": "quantum_vulnerable"
+      }
+     ],
+     "note": "no accepted key exchange includes ML-KEM (TLS 1.3 groups as observed)"
+    },
+    {
+     "oracle_id": "z02/cert",
+     "key": "fingerprint_sha256 (served chain)",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": [
+      "42ee79413b5a13a7b8d2824ee7d599a7e8d6a7eac15fcd64265483503fe178b2"
+     ],
+     "observed": [
+      "42ee79413b5a13a7b8d2824ee7d599a7e8d6a7eac15fcd64265483503fe178b2"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "z02/cert[0]",
+     "key": "algorithm",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "RSA",
+     "observed": "RSA",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z02/cert[0]",
+       "key": "algorithm"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z02/cert[0]",
+     "key": "key_size",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": 1024,
+     "observed": 1024,
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z02/cert[0]",
+       "key": "key_size"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z02/cert[0]",
+     "key": "signature_algorithm",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "sha1WithRSAEncryption",
+     "observed": "1.2.840.113549.1.1.5",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z02/cert[0]",
+       "key": "signature_algorithm"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z02/cert[0]",
+     "key": "not_before",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "2026-11-11T15:21:45Z",
+     "observed": "2026-11-11T15:21:45Z",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z02/cert[0]",
+       "key": "not_before"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z02/cert[0]",
+     "key": "not_after",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "2027-12-14T15:21:45Z",
+     "observed": "2027-12-14T15:21:45Z",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z02/cert[0]",
+       "key": "not_after"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z02/cert[0]",
+     "key": "subject",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "CN=z02.lab",
+     "observed": "CN=z02.lab",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z02/cert[0]",
+       "key": "subject"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z02/cert[0]",
+     "key": "issuer",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "CN=z02.lab",
+     "observed": "CN=z02.lab",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z02/cert[0]",
+       "key": "issuer"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z02/cert[0]",
+     "key": "serial",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "41d59cd844e46439a67d0cb5559c0cca167708dd",
+     "observed": "41d59cd844e46439a67d0cb5559c0cca167708dd",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z02/cert[0]",
+       "key": "serial"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z02/cert[0]",
+     "key": "fingerprint_sha256",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "42ee79413b5a13a7b8d2824ee7d599a7e8d6a7eac15fcd64265483503fe178b2",
+     "observed": "42ee79413b5a13a7b8d2824ee7d599a7e8d6a7eac15fcd64265483503fe178b2",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z02/cert[0]",
+       "key": "fingerprint_sha256"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z02/cert[0]",
+     "key": "quantum_vulnerable",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": true,
+     "observed": true,
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z02/cert[0]",
+       "key": "quantum_vulnerable"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z02/tls",
+     "key": "cipher_suites[TLSv1.0]",
+     "tool": "nmap 7.97 ssl-enum-ciphers",
+     "expected": [
+      "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA",
+      "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA",
+      "TLS_RSA_WITH_AES_128_CBC_SHA",
+      "TLS_RSA_WITH_AES_256_CBC_SHA"
+     ],
+     "observed": [
+      "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA",
+      "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA",
+      "TLS_RSA_WITH_AES_128_CBC_SHA",
+      "TLS_RSA_WITH_AES_256_CBC_SHA"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "z02/tls",
+     "key": "cipher_suites[TLSv1.1]",
+     "tool": "nmap 7.97 ssl-enum-ciphers",
+     "expected": [
+      "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA",
+      "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA",
+      "TLS_RSA_WITH_AES_128_CBC_SHA",
+      "TLS_RSA_WITH_AES_256_CBC_SHA"
+     ],
+     "observed": [
+      "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA",
+      "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA",
+      "TLS_RSA_WITH_AES_128_CBC_SHA",
+      "TLS_RSA_WITH_AES_256_CBC_SHA"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "z02/tls",
+     "key": "cipher_suites[TLSv1.2]",
+     "tool": "nmap 7.97 ssl-enum-ciphers",
+     "expected": [
+      "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA",
+      "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA",
+      "TLS_RSA_WITH_AES_128_CBC_SHA",
+      "TLS_RSA_WITH_AES_256_CBC_SHA"
+     ],
+     "observed": [
+      "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA",
+      "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA",
+      "TLS_RSA_WITH_AES_128_CBC_SHA",
+      "TLS_RSA_WITH_AES_256_CBC_SHA"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "z02/tls",
+     "key": "cipher_suites",
+     "tool": "nmap 7.97 ssl-enum-ciphers",
+     "expected": [
+      "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA",
+      "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA",
+      "TLS_RSA_WITH_AES_128_CBC_SHA",
+      "TLS_RSA_WITH_AES_256_CBC_SHA"
+     ],
+     "observed": [
+      "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA",
+      "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA",
+      "TLS_RSA_WITH_AES_128_CBC_SHA",
+      "TLS_RSA_WITH_AES_256_CBC_SHA"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z02/tls",
+       "key": "cipher_suites"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z02/tls",
+     "key": "must_report.cipher_suites accepted by the server",
+     "tool": "nmap 7.97 ssl-enum-ciphers",
+     "expected": [
+      "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA",
+      "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA",
+      "TLS_RSA_WITH_AES_128_CBC_SHA",
+      "TLS_RSA_WITH_AES_256_CBC_SHA"
+     ],
+     "observed": [
+      "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA",
+      "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA",
+      "TLS_RSA_WITH_AES_128_CBC_SHA",
+      "TLS_RSA_WITH_AES_256_CBC_SHA"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z02/tls",
+       "key": "must_report"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z02/tls",
+     "key": "groups (TLS <= 1.2, nmap's preferred group, cross-check)",
+     "tool": "nmap 7.97 ssl-enum-ciphers",
+     "expected": [
+      "secp256r1"
+     ],
+     "observed": [
+      "secp256r1"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [],
+     "note": "the server's preferred group per ECDHE suite: must be a non-empty subset of the oracle"
+    },
+    {
+     "oracle_id": "z02/tls",
+     "key": "groups",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": [
+      "secp256r1"
+     ],
+     "observed": [
+      "secp256r1"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z02/tls",
+       "key": "groups"
+      }
+     ],
+     "note": "TLSv1.2, one group per handshake; equality: a group the server accepts beyond the oracle disagrees"
+    },
+    {
+     "oracle_id": "z02/tls",
+     "key": "cipher_suites[TLSv1.0] (Go subset)",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": [],
+     "observed": [],
+     "agree": true,
+     "independent": true,
+     "verifies": [],
+     "note": "suites Go negotiated that the oracle does not list"
+    },
+    {
+     "oracle_id": "z02/tls",
+     "key": "cipher_suites[TLSv1.1] (Go subset)",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": [],
+     "observed": [],
+     "agree": true,
+     "independent": true,
+     "verifies": [],
+     "note": "suites Go negotiated that the oracle does not list"
+    },
+    {
+     "oracle_id": "z02/tls",
+     "key": "cipher_suites[TLSv1.2] (Go subset)",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": [],
+     "observed": [],
+     "agree": true,
+     "independent": true,
+     "verifies": [],
+     "note": "suites Go negotiated that the oracle does not list"
+    }
+   ],
+   "controls": [
+    {
+     "negative": "TLSv1.3 refused",
+     "control_target": "z01",
+     "satisfied": true,
+     "detail": "z01 accepts TLSv1.3 with the same tool"
+    },
+    {
+     "negative": "group x25519 absent at TLS <= 1.2",
+     "control_target": "z04",
+     "satisfied": true,
+     "detail": "z04 accepts x25519 at TLS 1.2 with the same tool"
+    }
+   ]
+  },
+  {
+   "target_id": "z04",
+   "agree": true,
+   "verified_independently": true,
+   "independent_keys": {
+    "z04/tls": [
+     "cipher_suites",
+     "groups",
+     "protocol_versions",
+     "quantum_vulnerable"
+    ],
+    "z04/cert[0]": [
+     "algorithm",
+     "fingerprint_sha256",
+     "issuer",
+     "key_size",
+     "not_after",
+     "not_before",
+     "quantum_vulnerable",
+     "serial",
+     "signature_algorithm",
+     "subject"
+    ],
+    "z04/cert[1]": [
+     "algorithm",
+     "fingerprint_sha256",
+     "issuer",
+     "key_size",
+     "not_after",
+     "not_before",
+     "quantum_vulnerable",
+     "serial",
+     "signature_algorithm",
+     "subject"
+    ]
+   },
+   "unverified_keys": {},
+   "unobserved": [],
+   "checks": [
+    {
+     "oracle_id": "z04/tls",
+     "key": "versions (facts)",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": {
+      "TLSv1.0": false,
+      "TLSv1.1": false,
+      "TLSv1.2": true,
+      "TLSv1.3": true
+     },
+     "observed": {
+      "TLSv1.0": false,
+      "TLSv1.1": false,
+      "TLSv1.2": true,
+      "TLSv1.3": true
+     },
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "z04/tls",
+     "key": "protocol_versions",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": [
+      "TLSv1.2",
+      "TLSv1.3"
+     ],
+     "observed": [
+      "TLSv1.2",
+      "TLSv1.3"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z04/tls",
+       "key": "protocol_versions"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z04/tls",
+     "key": "groups",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": [
+      "X25519",
+      "secp256r1"
+     ],
+     "observed": [
+      "X25519",
+      "secp256r1"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z04/tls",
+       "key": "groups"
+      }
+     ],
+     "note": "TLS 1.3, one group per handshake"
+    },
+    {
+     "oracle_id": "z04/tls",
+     "key": "quantum_vulnerable",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": true,
+     "observed": true,
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z04/tls",
+       "key": "quantum_vulnerable"
+      }
+     ],
+     "note": "no accepted key exchange includes ML-KEM (TLS 1.3 groups as observed)"
+    },
+    {
+     "oracle_id": "z04/cert",
+     "key": "fingerprint_sha256 (served chain)",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": [
+      "0e88643a7dfe1b9a7630d545cde42d6848594f3dbc2b70b1482e89d074fe7528",
+      "1723b921c4a5b089958d2053cd0d8d6936f4f39cd7ec99c0b57f1c2cf2d3218a"
+     ],
+     "observed": [
+      "0e88643a7dfe1b9a7630d545cde42d6848594f3dbc2b70b1482e89d074fe7528",
+      "1723b921c4a5b089958d2053cd0d8d6936f4f39cd7ec99c0b57f1c2cf2d3218a"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "z04/cert[0]",
+     "key": "algorithm",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "RSA",
+     "observed": "RSA",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z04/cert[0]",
+       "key": "algorithm"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z04/cert[0]",
+     "key": "key_size",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": 2048,
+     "observed": 2048,
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z04/cert[0]",
+       "key": "key_size"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z04/cert[0]",
+     "key": "signature_algorithm",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "sha256WithRSAEncryption",
+     "observed": "1.2.840.113549.1.1.11",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z04/cert[0]",
+       "key": "signature_algorithm"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z04/cert[0]",
+     "key": "not_before",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "2024-10-08T15:21:45Z",
+     "observed": "2024-10-08T15:21:45Z",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z04/cert[0]",
+       "key": "not_before"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z04/cert[0]",
+     "key": "not_after",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "2025-10-08T15:21:45Z",
+     "observed": "2025-10-08T15:21:45Z",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z04/cert[0]",
+       "key": "not_after"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z04/cert[0]",
+     "key": "subject",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "CN=z04.lab",
+     "observed": "CN=z04.lab",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z04/cert[0]",
+       "key": "subject"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z04/cert[0]",
+     "key": "issuer",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+     "observed": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z04/cert[0]",
+       "key": "issuer"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z04/cert[0]",
+     "key": "serial",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "72377c7cc8dc61b9",
+     "observed": "72377c7cc8dc61b9",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z04/cert[0]",
+       "key": "serial"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z04/cert[0]",
+     "key": "fingerprint_sha256",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "0e88643a7dfe1b9a7630d545cde42d6848594f3dbc2b70b1482e89d074fe7528",
+     "observed": "0e88643a7dfe1b9a7630d545cde42d6848594f3dbc2b70b1482e89d074fe7528",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z04/cert[0]",
+       "key": "fingerprint_sha256"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z04/cert[0]",
+     "key": "quantum_vulnerable",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": true,
+     "observed": true,
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z04/cert[0]",
+       "key": "quantum_vulnerable"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z04/cert[1]",
+     "key": "algorithm",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "RSA",
+     "observed": "RSA",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z04/cert[1]",
+       "key": "algorithm"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z04/cert[1]",
+     "key": "key_size",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": 2048,
+     "observed": 2048,
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z04/cert[1]",
+       "key": "key_size"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z04/cert[1]",
+     "key": "signature_algorithm",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "sha256WithRSAEncryption",
+     "observed": "1.2.840.113549.1.1.11",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z04/cert[1]",
+       "key": "signature_algorithm"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z04/cert[1]",
+     "key": "not_before",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "2026-11-10T15:21:45Z",
+     "observed": "2026-11-10T15:21:45Z",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z04/cert[1]",
+       "key": "not_before"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z04/cert[1]",
+     "key": "not_after",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "2036-11-09T15:21:45Z",
+     "observed": "2036-11-09T15:21:45Z",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z04/cert[1]",
+       "key": "not_after"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z04/cert[1]",
+     "key": "subject",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+     "observed": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z04/cert[1]",
+       "key": "subject"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z04/cert[1]",
+     "key": "issuer",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+     "observed": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z04/cert[1]",
+       "key": "issuer"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z04/cert[1]",
+     "key": "serial",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "37971095f5d9abc56a18c5d85f42492efd778ab4",
+     "observed": "37971095f5d9abc56a18c5d85f42492efd778ab4",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z04/cert[1]",
+       "key": "serial"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z04/cert[1]",
+     "key": "fingerprint_sha256",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "1723b921c4a5b089958d2053cd0d8d6936f4f39cd7ec99c0b57f1c2cf2d3218a",
+     "observed": "1723b921c4a5b089958d2053cd0d8d6936f4f39cd7ec99c0b57f1c2cf2d3218a",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z04/cert[1]",
+       "key": "fingerprint_sha256"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z04/cert[1]",
+     "key": "quantum_vulnerable",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": true,
+     "observed": true,
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z04/cert[1]",
+       "key": "quantum_vulnerable"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z04/tls",
+     "key": "cipher_suites[TLSv1.2]",
+     "tool": "nmap 7.97 ssl-enum-ciphers",
+     "expected": [
+      "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+      "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"
+     ],
+     "observed": [
+      "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+      "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "z04/tls",
+     "key": "cipher_suites[TLSv1.3]",
+     "tool": "nmap 7.97 ssl-enum-ciphers",
+     "expected": [
+      "TLS_AES_128_GCM_SHA256",
+      "TLS_AES_256_GCM_SHA384",
+      "TLS_CHACHA20_POLY1305_SHA256"
+     ],
+     "observed": [
+      "TLS_AES_128_GCM_SHA256",
+      "TLS_AES_256_GCM_SHA384",
+      "TLS_CHACHA20_POLY1305_SHA256"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "z04/tls",
+     "key": "cipher_suites",
+     "tool": "nmap 7.97 ssl-enum-ciphers",
+     "expected": [
+      "TLS_AES_128_GCM_SHA256",
+      "TLS_AES_256_GCM_SHA384",
+      "TLS_CHACHA20_POLY1305_SHA256",
+      "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+      "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"
+     ],
+     "observed": [
+      "TLS_AES_128_GCM_SHA256",
+      "TLS_AES_256_GCM_SHA384",
+      "TLS_CHACHA20_POLY1305_SHA256",
+      "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+      "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z04/tls",
+       "key": "cipher_suites"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z04/tls",
+     "key": "groups (TLS <= 1.2, nmap's preferred group, cross-check)",
+     "tool": "nmap 7.97 ssl-enum-ciphers",
+     "expected": [
+      "secp256r1",
+      "x25519"
+     ],
+     "observed": [
+      "x25519"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [],
+     "note": "the server's preferred group per ECDHE suite: must be a non-empty subset of the oracle"
+    },
+    {
+     "oracle_id": "z04/tls",
+     "key": "groups (TLSv1.2, classical part)",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": [
+      "secp256r1",
+      "x25519"
+     ],
+     "observed": [
+      "secp256r1",
+      "x25519"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [],
+     "note": "TLSv1.2, one group per handshake; equality: a group the server accepts beyond the oracle disagrees"
+    },
+    {
+     "oracle_id": "z04/tls",
+     "key": "cipher_suites[TLSv1.2] (Go subset)",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": [],
+     "observed": [],
+     "agree": true,
+     "independent": true,
+     "verifies": [],
+     "note": "suites Go negotiated that the oracle does not list"
+    }
+   ],
+   "controls": [
+    {
+     "negative": "TLSv1.0 refused",
+     "control_target": "z16",
+     "satisfied": true,
+     "detail": "z16 accepts TLSv1.0 with the same tool"
+    },
+    {
+     "negative": "TLSv1.1 refused",
+     "control_target": "z02",
+     "satisfied": true,
+     "detail": "z02 accepts TLSv1.1 with the same tool"
+    },
+    {
+     "negative": "group X25519MLKEM768 absent",
+     "control_target": "z05",
+     "satisfied": true,
+     "detail": "z05 negotiates X25519MLKEM768 with the same tool"
+    }
+   ]
+  },
+  {
+   "target_id": "z05",
+   "agree": true,
+   "verified_independently": false,
+   "independent_keys": {
+    "z05/tls": [
+     "groups",
+     "protocol_versions",
+     "quantum_vulnerable"
+    ],
+    "z05/cert[0]": [
+     "algorithm",
+     "fingerprint_sha256",
+     "issuer",
+     "key_size",
+     "not_after",
+     "not_before",
+     "quantum_vulnerable",
+     "serial",
+     "signature_algorithm",
+     "subject"
+    ],
+    "z05/cert[1]": [
+     "algorithm",
+     "fingerprint_sha256",
+     "issuer",
+     "key_size",
+     "not_after",
+     "not_before",
+     "quantum_vulnerable",
+     "serial",
+     "signature_algorithm",
+     "subject"
+    ]
+   },
+   "unverified_keys": {
+    "z05/tls": [
+     "cipher_suites"
+    ]
+   },
+   "unobserved": [
+    {
+     "oracle_id": "z05/tls",
+     "key": "cipher_suites",
+     "tool": "nmap 7.97 ssl-enum-ciphers",
+     "reason": "nmap printed no suite table for TLSv1.3"
+    }
+   ],
+   "checks": [
+    {
+     "oracle_id": "z05/tls",
+     "key": "versions (facts)",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": {
+      "TLSv1.0": false,
+      "TLSv1.1": false,
+      "TLSv1.2": false,
+      "TLSv1.3": true
+     },
+     "observed": {
+      "TLSv1.0": false,
+      "TLSv1.1": false,
+      "TLSv1.2": false,
+      "TLSv1.3": true
+     },
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "z05/tls",
+     "key": "protocol_versions",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": [
+      "TLSv1.3"
+     ],
+     "observed": [
+      "TLSv1.3"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z05/tls",
+       "key": "protocol_versions"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z05/tls",
+     "key": "groups",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": [
+      "X25519MLKEM768"
+     ],
+     "observed": [
+      "X25519MLKEM768"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z05/tls",
+       "key": "groups"
+      }
+     ],
+     "note": "TLS 1.3, one group per handshake"
+    },
+    {
+     "oracle_id": "z05/tls",
+     "key": "quantum_vulnerable",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": false,
+     "observed": false,
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z05/tls",
+       "key": "quantum_vulnerable"
+      }
+     ],
+     "note": "no accepted key exchange includes ML-KEM (TLS 1.3 groups as observed)"
+    },
+    {
+     "oracle_id": "z05/cert",
+     "key": "fingerprint_sha256 (served chain)",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": [
+      "21c1a307f8d822fbb92db4fc0c9ccbade83de1654ac72acc89b63d58d37bc296",
+      "1723b921c4a5b089958d2053cd0d8d6936f4f39cd7ec99c0b57f1c2cf2d3218a"
+     ],
+     "observed": [
+      "21c1a307f8d822fbb92db4fc0c9ccbade83de1654ac72acc89b63d58d37bc296",
+      "1723b921c4a5b089958d2053cd0d8d6936f4f39cd7ec99c0b57f1c2cf2d3218a"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "z05/cert[0]",
+     "key": "algorithm",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "RSA",
+     "observed": "RSA",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z05/cert[0]",
+       "key": "algorithm"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z05/cert[0]",
+     "key": "key_size",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": 2048,
+     "observed": 2048,
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z05/cert[0]",
+       "key": "key_size"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z05/cert[0]",
+     "key": "signature_algorithm",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "sha256WithRSAEncryption",
+     "observed": "1.2.840.113549.1.1.11",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z05/cert[0]",
+       "key": "signature_algorithm"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z05/cert[0]",
+     "key": "not_before",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "2026-11-11T15:21:45Z",
+     "observed": "2026-11-11T15:21:45Z",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z05/cert[0]",
+       "key": "not_before"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z05/cert[0]",
+     "key": "not_after",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "2027-12-14T15:21:45Z",
+     "observed": "2027-12-14T15:21:45Z",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z05/cert[0]",
+       "key": "not_after"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z05/cert[0]",
+     "key": "subject",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "CN=z05.lab",
+     "observed": "CN=z05.lab",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z05/cert[0]",
+       "key": "subject"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z05/cert[0]",
+     "key": "issuer",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+     "observed": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z05/cert[0]",
+       "key": "issuer"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z05/cert[0]",
+     "key": "serial",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "ccb4945e9b488f88",
+     "observed": "ccb4945e9b488f88",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z05/cert[0]",
+       "key": "serial"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z05/cert[0]",
+     "key": "fingerprint_sha256",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "21c1a307f8d822fbb92db4fc0c9ccbade83de1654ac72acc89b63d58d37bc296",
+     "observed": "21c1a307f8d822fbb92db4fc0c9ccbade83de1654ac72acc89b63d58d37bc296",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z05/cert[0]",
+       "key": "fingerprint_sha256"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z05/cert[0]",
+     "key": "quantum_vulnerable",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": true,
+     "observed": true,
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z05/cert[0]",
+       "key": "quantum_vulnerable"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z05/cert[1]",
+     "key": "algorithm",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "RSA",
+     "observed": "RSA",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z05/cert[1]",
+       "key": "algorithm"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z05/cert[1]",
+     "key": "key_size",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": 2048,
+     "observed": 2048,
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z05/cert[1]",
+       "key": "key_size"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z05/cert[1]",
+     "key": "signature_algorithm",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "sha256WithRSAEncryption",
+     "observed": "1.2.840.113549.1.1.11",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z05/cert[1]",
+       "key": "signature_algorithm"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z05/cert[1]",
+     "key": "not_before",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "2026-11-10T15:21:45Z",
+     "observed": "2026-11-10T15:21:45Z",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z05/cert[1]",
+       "key": "not_before"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z05/cert[1]",
+     "key": "not_after",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "2036-11-09T15:21:45Z",
+     "observed": "2036-11-09T15:21:45Z",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z05/cert[1]",
+       "key": "not_after"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z05/cert[1]",
+     "key": "subject",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+     "observed": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z05/cert[1]",
+       "key": "subject"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z05/cert[1]",
+     "key": "issuer",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+     "observed": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z05/cert[1]",
+       "key": "issuer"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z05/cert[1]",
+     "key": "serial",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "37971095f5d9abc56a18c5d85f42492efd778ab4",
+     "observed": "37971095f5d9abc56a18c5d85f42492efd778ab4",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z05/cert[1]",
+       "key": "serial"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z05/cert[1]",
+     "key": "fingerprint_sha256",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "1723b921c4a5b089958d2053cd0d8d6936f4f39cd7ec99c0b57f1c2cf2d3218a",
+     "observed": "1723b921c4a5b089958d2053cd0d8d6936f4f39cd7ec99c0b57f1c2cf2d3218a",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z05/cert[1]",
+       "key": "fingerprint_sha256"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z05/cert[1]",
+     "key": "quantum_vulnerable",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": true,
+     "observed": true,
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z05/cert[1]",
+       "key": "quantum_vulnerable"
+      }
+     ]
+    }
+   ],
+   "controls": [
+    {
+     "negative": "TLSv1.0 refused",
+     "control_target": "z16",
+     "satisfied": true,
+     "detail": "z16 accepts TLSv1.0 with the same tool"
+    },
+    {
+     "negative": "TLSv1.1 refused",
+     "control_target": "z02",
+     "satisfied": true,
+     "detail": "z02 accepts TLSv1.1 with the same tool"
+    },
+    {
+     "negative": "TLSv1.2 refused",
+     "control_target": "z04",
+     "satisfied": true,
+     "detail": "z04 accepts TLSv1.2 with the same tool"
+    },
+    {
+     "negative": "group secp256r1 absent",
+     "control_target": "z01",
+     "satisfied": true,
+     "detail": "z01 negotiates secp256r1 with the same tool"
+    },
+    {
+     "negative": "group x25519 absent",
+     "control_target": "z01",
+     "satisfied": true,
+     "detail": "z01 negotiates x25519 with the same tool"
+    }
+   ]
+  },
+  {
+   "target_id": "z05b",
+   "agree": true,
+   "verified_independently": false,
+   "independent_keys": {},
+   "unverified_keys": {
+    "z05b/tls": [
+     "cipher_suites",
+     "groups",
+     "protocol_versions",
+     "quantum_vulnerable"
+    ],
+    "z05b/cert[0]": [
+     "algorithm",
+     "fingerprint_sha256",
+     "issuer",
+     "key_size",
+     "not_after",
+     "not_before",
+     "quantum_vulnerable",
+     "serial",
+     "signature_algorithm",
+     "subject"
+    ]
+   },
+   "unobserved": [
+    {
+     "oracle_id": "z05b/tls",
+     "key": "cipher_suites",
+     "tool": "openssl s_client 3.5 (tools image; fallback, see module doc)",
+     "reason": "no independent TLS 1.3 client completes a handshake with an ML-DSA server"
+    }
+   ],
+   "checks": [
+    {
+     "oracle_id": "z05b/tls",
+     "key": "classical-only client refused",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": true,
+     "observed": true,
+     "agree": true,
+     "independent": true,
+     "verifies": [],
+     "note": "the server holds only an ML-DSA certificate, so a client without ML-DSA signature schemes fails"
+    },
+    {
+     "oracle_id": "z05b/tls",
+     "key": "versions (facts)",
+     "tool": "openssl s_client 3.5 (tools image; fallback, see module doc)",
+     "expected": {
+      "TLSv1.0": false,
+      "TLSv1.1": false,
+      "TLSv1.2": false,
+      "TLSv1.3": true
+     },
+     "observed": {
+      "TLSv1.0": false,
+      "TLSv1.1": false,
+      "TLSv1.2": false,
+      "TLSv1.3": true
+     },
+     "agree": true,
+     "independent": false,
+     "verifies": [],
+     "not_independent_reason": "OpenSSL s_client, the program the scan node's prober wraps (tools image 3.5.9, node 3.5.7): Go has no ML-DSA signature schemes; a non-OpenSSL ML-DSA client (BoringSSL bssl) is the follow-up"
+    },
+    {
+     "oracle_id": "z05b/tls",
+     "key": "protocol_versions",
+     "tool": "openssl s_client 3.5 (tools image; fallback, see module doc)",
+     "expected": [
+      "TLSv1.3"
+     ],
+     "observed": [
+      "TLSv1.3"
+     ],
+     "agree": true,
+     "independent": false,
+     "verifies": [
+      {
+       "oracle_id": "z05b/tls",
+       "key": "protocol_versions"
+      }
+     ],
+     "not_independent_reason": "OpenSSL s_client, the program the scan node's prober wraps (tools image 3.5.9, node 3.5.7): Go has no ML-DSA signature schemes; a non-OpenSSL ML-DSA client (BoringSSL bssl) is the follow-up"
+    },
+    {
+     "oracle_id": "z05b/tls",
+     "key": "groups",
+     "tool": "openssl s_client 3.5 (tools image; fallback, see module doc)",
+     "expected": [
+      "X25519",
+      "X25519MLKEM768"
+     ],
+     "observed": [
+      "X25519",
+      "X25519MLKEM768"
+     ],
+     "agree": true,
+     "independent": false,
+     "verifies": [
+      {
+       "oracle_id": "z05b/tls",
+       "key": "groups"
+      }
+     ],
+     "not_independent_reason": "OpenSSL s_client, the program the scan node's prober wraps (tools image 3.5.9, node 3.5.7): Go has no ML-DSA signature schemes; a non-OpenSSL ML-DSA client (BoringSSL bssl) is the follow-up"
+    },
+    {
+     "oracle_id": "z05b/tls",
+     "key": "quantum_vulnerable",
+     "tool": "openssl s_client 3.5 (tools image; fallback, see module doc)",
+     "expected": false,
+     "observed": false,
+     "agree": true,
+     "independent": false,
+     "verifies": [
+      {
+       "oracle_id": "z05b/tls",
+       "key": "quantum_vulnerable"
+      }
+     ],
+     "not_independent_reason": "OpenSSL s_client, the program the scan node's prober wraps (tools image 3.5.9, node 3.5.7): Go has no ML-DSA signature schemes; a non-OpenSSL ML-DSA client (BoringSSL bssl) is the follow-up"
+    },
+    {
+     "oracle_id": "z05b/cert",
+     "key": "fingerprint_sha256 (served chain)",
+     "tool": "openssl s_client 3.5 (tools image; fallback, see module doc)",
+     "expected": [
+      "3ef7beba268042a9143f7bc3f9691d6c30f8a6f11f2a57c42ef7beee5ebbe90d"
+     ],
+     "observed": [
+      "3ef7beba268042a9143f7bc3f9691d6c30f8a6f11f2a57c42ef7beee5ebbe90d"
+     ],
+     "agree": true,
+     "independent": false,
+     "verifies": [],
+     "not_independent_reason": "OpenSSL s_client, the program the scan node's prober wraps (tools image 3.5.9, node 3.5.7): Go has no ML-DSA signature schemes; a non-OpenSSL ML-DSA client (BoringSSL bssl) is the follow-up"
+    },
+    {
+     "oracle_id": "z05b/cert[0]",
+     "key": "algorithm",
+     "tool": "openssl s_client 3.5 (tools image; fallback, see module doc) + labread DER reader",
+     "expected": "ML-DSA-65",
+     "observed": "ML-DSA-65",
+     "agree": true,
+     "independent": false,
+     "verifies": [
+      {
+       "oracle_id": "z05b/cert[0]",
+       "key": "algorithm"
+      }
+     ],
+     "not_independent_reason": "OpenSSL s_client, the program the scan node's prober wraps (tools image 3.5.9, node 3.5.7): Go has no ML-DSA signature schemes; a non-OpenSSL ML-DSA client (BoringSSL bssl) is the follow-up"
+    },
+    {
+     "oracle_id": "z05b/cert[0]",
+     "key": "key_size",
+     "tool": "openssl s_client 3.5 (tools image; fallback, see module doc) + labread DER reader",
+     "expected": null,
+     "observed": null,
+     "agree": true,
+     "independent": false,
+     "verifies": [
+      {
+       "oracle_id": "z05b/cert[0]",
+       "key": "key_size"
+      }
+     ],
+     "not_independent_reason": "OpenSSL s_client, the program the scan node's prober wraps (tools image 3.5.9, node 3.5.7): Go has no ML-DSA signature schemes; a non-OpenSSL ML-DSA client (BoringSSL bssl) is the follow-up"
+    },
+    {
+     "oracle_id": "z05b/cert[0]",
+     "key": "signature_algorithm",
+     "tool": "openssl s_client 3.5 (tools image; fallback, see module doc) + labread DER reader",
+     "expected": "ML-DSA-65",
+     "observed": "2.16.840.1.101.3.4.3.18",
+     "agree": true,
+     "independent": false,
+     "verifies": [
+      {
+       "oracle_id": "z05b/cert[0]",
+       "key": "signature_algorithm"
+      }
+     ],
+     "not_independent_reason": "OpenSSL s_client, the program the scan node's prober wraps (tools image 3.5.9, node 3.5.7): Go has no ML-DSA signature schemes; a non-OpenSSL ML-DSA client (BoringSSL bssl) is the follow-up"
+    },
+    {
+     "oracle_id": "z05b/cert[0]",
+     "key": "not_before",
+     "tool": "openssl s_client 3.5 (tools image; fallback, see module doc) + labread DER reader",
+     "expected": "2026-11-11T15:21:45Z",
+     "observed": "2026-11-11T15:21:45Z",
+     "agree": true,
+     "independent": false,
+     "verifies": [
+      {
+       "oracle_id": "z05b/cert[0]",
+       "key": "not_before"
+      }
+     ],
+     "not_independent_reason": "OpenSSL s_client, the program the scan node's prober wraps (tools image 3.5.9, node 3.5.7): Go has no ML-DSA signature schemes; a non-OpenSSL ML-DSA client (BoringSSL bssl) is the follow-up"
+    },
+    {
+     "oracle_id": "z05b/cert[0]",
+     "key": "not_after",
+     "tool": "openssl s_client 3.5 (tools image; fallback, see module doc) + labread DER reader",
+     "expected": "2027-12-14T15:21:45Z",
+     "observed": "2027-12-14T15:21:45Z",
+     "agree": true,
+     "independent": false,
+     "verifies": [
+      {
+       "oracle_id": "z05b/cert[0]",
+       "key": "not_after"
+      }
+     ],
+     "not_independent_reason": "OpenSSL s_client, the program the scan node's prober wraps (tools image 3.5.9, node 3.5.7): Go has no ML-DSA signature schemes; a non-OpenSSL ML-DSA client (BoringSSL bssl) is the follow-up"
+    },
+    {
+     "oracle_id": "z05b/cert[0]",
+     "key": "subject",
+     "tool": "openssl s_client 3.5 (tools image; fallback, see module doc) + labread DER reader",
+     "expected": "CN=z05b.lab",
+     "observed": "CN=z05b.lab",
+     "agree": true,
+     "independent": false,
+     "verifies": [
+      {
+       "oracle_id": "z05b/cert[0]",
+       "key": "subject"
+      }
+     ],
+     "not_independent_reason": "OpenSSL s_client, the program the scan node's prober wraps (tools image 3.5.9, node 3.5.7): Go has no ML-DSA signature schemes; a non-OpenSSL ML-DSA client (BoringSSL bssl) is the follow-up"
+    },
+    {
+     "oracle_id": "z05b/cert[0]",
+     "key": "issuer",
+     "tool": "openssl s_client 3.5 (tools image; fallback, see module doc) + labread DER reader",
+     "expected": "CN=z05b.lab",
+     "observed": "CN=z05b.lab",
+     "agree": true,
+     "independent": false,
+     "verifies": [
+      {
+       "oracle_id": "z05b/cert[0]",
+       "key": "issuer"
+      }
+     ],
+     "not_independent_reason": "OpenSSL s_client, the program the scan node's prober wraps (tools image 3.5.9, node 3.5.7): Go has no ML-DSA signature schemes; a non-OpenSSL ML-DSA client (BoringSSL bssl) is the follow-up"
+    },
+    {
+     "oracle_id": "z05b/cert[0]",
+     "key": "serial",
+     "tool": "openssl s_client 3.5 (tools image; fallback, see module doc) + labread DER reader",
+     "expected": "6d4105b785a88b2517899390df4e197ee9ac41bc",
+     "observed": "6d4105b785a88b2517899390df4e197ee9ac41bc",
+     "agree": true,
+     "independent": false,
+     "verifies": [
+      {
+       "oracle_id": "z05b/cert[0]",
+       "key": "serial"
+      }
+     ],
+     "not_independent_reason": "OpenSSL s_client, the program the scan node's prober wraps (tools image 3.5.9, node 3.5.7): Go has no ML-DSA signature schemes; a non-OpenSSL ML-DSA client (BoringSSL bssl) is the follow-up"
+    },
+    {
+     "oracle_id": "z05b/cert[0]",
+     "key": "fingerprint_sha256",
+     "tool": "openssl s_client 3.5 (tools image; fallback, see module doc) + labread DER reader",
+     "expected": "3ef7beba268042a9143f7bc3f9691d6c30f8a6f11f2a57c42ef7beee5ebbe90d",
+     "observed": "3ef7beba268042a9143f7bc3f9691d6c30f8a6f11f2a57c42ef7beee5ebbe90d",
+     "agree": true,
+     "independent": false,
+     "verifies": [
+      {
+       "oracle_id": "z05b/cert[0]",
+       "key": "fingerprint_sha256"
+      }
+     ],
+     "not_independent_reason": "OpenSSL s_client, the program the scan node's prober wraps (tools image 3.5.9, node 3.5.7): Go has no ML-DSA signature schemes; a non-OpenSSL ML-DSA client (BoringSSL bssl) is the follow-up"
+    },
+    {
+     "oracle_id": "z05b/cert[0]",
+     "key": "quantum_vulnerable",
+     "tool": "openssl s_client 3.5 (tools image; fallback, see module doc) + labread DER reader",
+     "expected": false,
+     "observed": false,
+     "agree": true,
+     "independent": false,
+     "verifies": [
+      {
+       "oracle_id": "z05b/cert[0]",
+       "key": "quantum_vulnerable"
+      }
+     ],
+     "not_independent_reason": "OpenSSL s_client, the program the scan node's prober wraps (tools image 3.5.9, node 3.5.7): Go has no ML-DSA signature schemes; a non-OpenSSL ML-DSA client (BoringSSL bssl) is the follow-up"
+    }
+   ],
+   "controls": [
+    {
+     "negative": "TLSv1.0 refused",
+     "control_target": "z16",
+     "satisfied": true,
+     "detail": "z16 accepts TLSv1.0 with the same tool"
+    },
+    {
+     "negative": "TLSv1.1 refused",
+     "control_target": "z02",
+     "satisfied": true,
+     "detail": "z02 accepts TLSv1.1 with the same tool"
+    },
+    {
+     "negative": "TLSv1.2 refused",
+     "control_target": "z04",
+     "satisfied": true,
+     "detail": "z04 accepts TLSv1.2 with the same tool"
+    },
+    {
+     "negative": "group secp256r1 absent",
+     "control_target": "z01",
+     "satisfied": true,
+     "detail": "z01 negotiates secp256r1 with the same tool"
+    }
+   ]
+  },
+  {
+   "target_id": "z09",
+   "agree": true,
+   "verified_independently": true,
+   "independent_keys": {
+    "z09/tls": [
+     "cipher_suites",
+     "groups",
+     "protocol_versions",
+     "quantum_vulnerable"
+    ],
+    "z09/cert[0]": [
+     "algorithm",
+     "fingerprint_sha256",
+     "issuer",
+     "key_size",
+     "not_after",
+     "not_before",
+     "quantum_vulnerable",
+     "serial",
+     "signature_algorithm",
+     "subject"
+    ],
+    "z09/cert[1]": [
+     "algorithm",
+     "fingerprint_sha256",
+     "issuer",
+     "key_size",
+     "not_after",
+     "not_before",
+     "quantum_vulnerable",
+     "serial",
+     "signature_algorithm",
+     "subject"
+    ]
+   },
+   "unverified_keys": {},
+   "unobserved": [],
+   "checks": [
+    {
+     "oracle_id": "z09/tls",
+     "key": "sni_required",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": true,
+     "observed": true,
+     "agree": true,
+     "independent": true,
+     "verifies": [],
+     "note": "every version refused without SNI: remote error: tls: protocol version not supported; remote error: tls: unrecognized name"
+    },
+    {
+     "oracle_id": "z09/tls",
+     "key": "versions (facts)",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": {
+      "TLSv1.0": false,
+      "TLSv1.1": false,
+      "TLSv1.2": true,
+      "TLSv1.3": true
+     },
+     "observed": {
+      "TLSv1.0": false,
+      "TLSv1.1": false,
+      "TLSv1.2": true,
+      "TLSv1.3": true
+     },
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "z09/tls",
+     "key": "protocol_versions",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": [
+      "TLSv1.2",
+      "TLSv1.3"
+     ],
+     "observed": [
+      "TLSv1.2",
+      "TLSv1.3"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z09/tls",
+       "key": "protocol_versions"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z09/tls",
+     "key": "groups",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": [
+      "X25519",
+      "secp256r1"
+     ],
+     "observed": [
+      "X25519",
+      "secp256r1"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z09/tls",
+       "key": "groups"
+      }
+     ],
+     "note": "TLS 1.3, one group per handshake"
+    },
+    {
+     "oracle_id": "z09/tls",
+     "key": "quantum_vulnerable",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": true,
+     "observed": true,
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z09/tls",
+       "key": "quantum_vulnerable"
+      }
+     ],
+     "note": "no accepted key exchange includes ML-KEM (TLS 1.3 groups as observed)"
+    },
+    {
+     "oracle_id": "z09/cert",
+     "key": "fingerprint_sha256 (served chain)",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": [
+      "d3cd5bc2ce8dca63460cd734b583d856b041cb95fe6c98cd96348f4e155a0f6d",
+      "1723b921c4a5b089958d2053cd0d8d6936f4f39cd7ec99c0b57f1c2cf2d3218a"
+     ],
+     "observed": [
+      "d3cd5bc2ce8dca63460cd734b583d856b041cb95fe6c98cd96348f4e155a0f6d",
+      "1723b921c4a5b089958d2053cd0d8d6936f4f39cd7ec99c0b57f1c2cf2d3218a"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "z09/cert[0]",
+     "key": "algorithm",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "RSA",
+     "observed": "RSA",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z09/cert[0]",
+       "key": "algorithm"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z09/cert[0]",
+     "key": "key_size",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": 2048,
+     "observed": 2048,
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z09/cert[0]",
+       "key": "key_size"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z09/cert[0]",
+     "key": "signature_algorithm",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "sha256WithRSAEncryption",
+     "observed": "1.2.840.113549.1.1.11",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z09/cert[0]",
+       "key": "signature_algorithm"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z09/cert[0]",
+     "key": "not_before",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "2026-11-11T15:21:45Z",
+     "observed": "2026-11-11T15:21:45Z",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z09/cert[0]",
+       "key": "not_before"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z09/cert[0]",
+     "key": "not_after",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "2027-12-14T15:21:45Z",
+     "observed": "2027-12-14T15:21:45Z",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z09/cert[0]",
+       "key": "not_after"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z09/cert[0]",
+     "key": "subject",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "CN=sni.lab",
+     "observed": "CN=sni.lab",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z09/cert[0]",
+       "key": "subject"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z09/cert[0]",
+     "key": "issuer",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+     "observed": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z09/cert[0]",
+       "key": "issuer"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z09/cert[0]",
+     "key": "serial",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "198dab2540466074",
+     "observed": "198dab2540466074",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z09/cert[0]",
+       "key": "serial"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z09/cert[0]",
+     "key": "fingerprint_sha256",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "d3cd5bc2ce8dca63460cd734b583d856b041cb95fe6c98cd96348f4e155a0f6d",
+     "observed": "d3cd5bc2ce8dca63460cd734b583d856b041cb95fe6c98cd96348f4e155a0f6d",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z09/cert[0]",
+       "key": "fingerprint_sha256"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z09/cert[0]",
+     "key": "quantum_vulnerable",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": true,
+     "observed": true,
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z09/cert[0]",
+       "key": "quantum_vulnerable"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z09/cert[1]",
+     "key": "algorithm",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "RSA",
+     "observed": "RSA",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z09/cert[1]",
+       "key": "algorithm"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z09/cert[1]",
+     "key": "key_size",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": 2048,
+     "observed": 2048,
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z09/cert[1]",
+       "key": "key_size"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z09/cert[1]",
+     "key": "signature_algorithm",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "sha256WithRSAEncryption",
+     "observed": "1.2.840.113549.1.1.11",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z09/cert[1]",
+       "key": "signature_algorithm"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z09/cert[1]",
+     "key": "not_before",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "2026-11-10T15:21:45Z",
+     "observed": "2026-11-10T15:21:45Z",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z09/cert[1]",
+       "key": "not_before"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z09/cert[1]",
+     "key": "not_after",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "2036-11-09T15:21:45Z",
+     "observed": "2036-11-09T15:21:45Z",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z09/cert[1]",
+       "key": "not_after"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z09/cert[1]",
+     "key": "subject",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+     "observed": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z09/cert[1]",
+       "key": "subject"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z09/cert[1]",
+     "key": "issuer",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+     "observed": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z09/cert[1]",
+       "key": "issuer"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z09/cert[1]",
+     "key": "serial",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "37971095f5d9abc56a18c5d85f42492efd778ab4",
+     "observed": "37971095f5d9abc56a18c5d85f42492efd778ab4",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z09/cert[1]",
+       "key": "serial"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z09/cert[1]",
+     "key": "fingerprint_sha256",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "1723b921c4a5b089958d2053cd0d8d6936f4f39cd7ec99c0b57f1c2cf2d3218a",
+     "observed": "1723b921c4a5b089958d2053cd0d8d6936f4f39cd7ec99c0b57f1c2cf2d3218a",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z09/cert[1]",
+       "key": "fingerprint_sha256"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z09/cert[1]",
+     "key": "quantum_vulnerable",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": true,
+     "observed": true,
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z09/cert[1]",
+       "key": "quantum_vulnerable"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z09/tls",
+     "key": "cipher_suites[TLSv1.2]",
+     "tool": "nmap 7.97 ssl-enum-ciphers",
+     "expected": [
+      "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"
+     ],
+     "observed": [
+      "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "z09/tls",
+     "key": "cipher_suites[TLSv1.3]",
+     "tool": "nmap 7.97 ssl-enum-ciphers",
+     "expected": [
+      "TLS_AES_128_GCM_SHA256",
+      "TLS_AES_256_GCM_SHA384",
+      "TLS_CHACHA20_POLY1305_SHA256"
+     ],
+     "observed": [
+      "TLS_AES_128_GCM_SHA256",
+      "TLS_AES_256_GCM_SHA384",
+      "TLS_CHACHA20_POLY1305_SHA256"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "z09/tls",
+     "key": "cipher_suites",
+     "tool": "nmap 7.97 ssl-enum-ciphers",
+     "expected": [
+      "TLS_AES_128_GCM_SHA256",
+      "TLS_AES_256_GCM_SHA384",
+      "TLS_CHACHA20_POLY1305_SHA256",
+      "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"
+     ],
+     "observed": [
+      "TLS_AES_128_GCM_SHA256",
+      "TLS_AES_256_GCM_SHA384",
+      "TLS_CHACHA20_POLY1305_SHA256",
+      "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z09/tls",
+       "key": "cipher_suites"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z09/tls",
+     "key": "groups (TLS <= 1.2, nmap's preferred group, cross-check)",
+     "tool": "nmap 7.97 ssl-enum-ciphers",
+     "expected": [
+      "secp256r1",
+      "x25519"
+     ],
+     "observed": [
+      "x25519"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [],
+     "note": "the server's preferred group per ECDHE suite: must be a non-empty subset of the oracle"
+    },
+    {
+     "oracle_id": "z09/tls",
+     "key": "groups (TLSv1.2, classical part)",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": [
+      "secp256r1",
+      "x25519"
+     ],
+     "observed": [
+      "secp256r1",
+      "x25519"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [],
+     "note": "TLSv1.2, one group per handshake; equality: a group the server accepts beyond the oracle disagrees"
+    },
+    {
+     "oracle_id": "z09/tls",
+     "key": "cipher_suites[TLSv1.2] (Go subset)",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": [],
+     "observed": [],
+     "agree": true,
+     "independent": true,
+     "verifies": [],
+     "note": "suites Go negotiated that the oracle does not list"
+    }
+   ],
+   "controls": [
+    {
+     "negative": "handshake refused without SNI",
+     "control_target": "z09",
+     "satisfied": true,
+     "detail": "the same tool completes a handshake with SNI sni.lab"
+    },
+    {
+     "negative": "TLSv1.0 refused",
+     "control_target": "z16",
+     "satisfied": true,
+     "detail": "z16 accepts TLSv1.0 with the same tool"
+    },
+    {
+     "negative": "TLSv1.1 refused",
+     "control_target": "z02",
+     "satisfied": true,
+     "detail": "z02 accepts TLSv1.1 with the same tool"
+    },
+    {
+     "negative": "group X25519MLKEM768 absent",
+     "control_target": "z05",
+     "satisfied": true,
+     "detail": "z05 negotiates X25519MLKEM768 with the same tool"
+    }
+   ]
+  },
+  {
+   "target_id": "z16",
+   "agree": true,
+   "verified_independently": true,
+   "independent_keys": {
+    "z16/tls": [
+     "cipher_suites",
+     "groups",
+     "must_report",
+     "protocol_versions",
+     "quantum_vulnerable"
+    ],
+    "z16/cert[0]": [
+     "algorithm",
+     "fingerprint_sha256",
+     "issuer",
+     "key_size",
+     "not_after",
+     "not_before",
+     "quantum_vulnerable",
+     "serial",
+     "signature_algorithm",
+     "subject"
+    ],
+    "z16/cert[1]": [
+     "algorithm",
+     "fingerprint_sha256",
+     "issuer",
+     "key_size",
+     "not_after",
+     "not_before",
+     "quantum_vulnerable",
+     "serial",
+     "signature_algorithm",
+     "subject"
+    ]
+   },
+   "unverified_keys": {},
+   "unobserved": [],
+   "checks": [
+    {
+     "oracle_id": "z16/tls",
+     "key": "versions (facts)",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": {
+      "TLSv1.0": true,
+      "TLSv1.1": false,
+      "TLSv1.2": false,
+      "TLSv1.3": false
+     },
+     "observed": {
+      "TLSv1.0": true,
+      "TLSv1.1": false,
+      "TLSv1.2": false,
+      "TLSv1.3": false
+     },
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "z16/tls",
+     "key": "protocol_versions",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": [
+      "TLSv1"
+     ],
+     "observed": [
+      "TLSv1"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z16/tls",
+       "key": "protocol_versions"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z16/tls",
+     "key": "quantum_vulnerable",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": true,
+     "observed": true,
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z16/tls",
+       "key": "quantum_vulnerable"
+      }
+     ],
+     "note": "no accepted key exchange includes ML-KEM (TLS 1.3 groups as observed)"
+    },
+    {
+     "oracle_id": "z16/cert",
+     "key": "fingerprint_sha256 (served chain)",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": [
+      "473e278da7672c6b031847fd5686fe9dff67839f3c76633bfdb5fb052abdabbf",
+      "1723b921c4a5b089958d2053cd0d8d6936f4f39cd7ec99c0b57f1c2cf2d3218a"
+     ],
+     "observed": [
+      "473e278da7672c6b031847fd5686fe9dff67839f3c76633bfdb5fb052abdabbf",
+      "1723b921c4a5b089958d2053cd0d8d6936f4f39cd7ec99c0b57f1c2cf2d3218a"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "z16/cert[0]",
+     "key": "algorithm",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "RSA",
+     "observed": "RSA",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z16/cert[0]",
+       "key": "algorithm"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z16/cert[0]",
+     "key": "key_size",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": 2048,
+     "observed": 2048,
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z16/cert[0]",
+       "key": "key_size"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z16/cert[0]",
+     "key": "signature_algorithm",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "sha256WithRSAEncryption",
+     "observed": "1.2.840.113549.1.1.11",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z16/cert[0]",
+       "key": "signature_algorithm"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z16/cert[0]",
+     "key": "not_before",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "2026-11-11T15:21:45Z",
+     "observed": "2026-11-11T15:21:45Z",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z16/cert[0]",
+       "key": "not_before"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z16/cert[0]",
+     "key": "not_after",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "2027-12-14T15:21:45Z",
+     "observed": "2027-12-14T15:21:45Z",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z16/cert[0]",
+       "key": "not_after"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z16/cert[0]",
+     "key": "subject",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "CN=z16.lab",
+     "observed": "CN=z16.lab",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z16/cert[0]",
+       "key": "subject"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z16/cert[0]",
+     "key": "issuer",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+     "observed": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z16/cert[0]",
+       "key": "issuer"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z16/cert[0]",
+     "key": "serial",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "1bdf307c5b1fbc85",
+     "observed": "1bdf307c5b1fbc85",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z16/cert[0]",
+       "key": "serial"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z16/cert[0]",
+     "key": "fingerprint_sha256",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "473e278da7672c6b031847fd5686fe9dff67839f3c76633bfdb5fb052abdabbf",
+     "observed": "473e278da7672c6b031847fd5686fe9dff67839f3c76633bfdb5fb052abdabbf",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z16/cert[0]",
+       "key": "fingerprint_sha256"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z16/cert[0]",
+     "key": "quantum_vulnerable",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": true,
+     "observed": true,
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z16/cert[0]",
+       "key": "quantum_vulnerable"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z16/cert[1]",
+     "key": "algorithm",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "RSA",
+     "observed": "RSA",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z16/cert[1]",
+       "key": "algorithm"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z16/cert[1]",
+     "key": "key_size",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": 2048,
+     "observed": 2048,
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z16/cert[1]",
+       "key": "key_size"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z16/cert[1]",
+     "key": "signature_algorithm",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "sha256WithRSAEncryption",
+     "observed": "1.2.840.113549.1.1.11",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z16/cert[1]",
+       "key": "signature_algorithm"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z16/cert[1]",
+     "key": "not_before",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "2026-11-10T15:21:45Z",
+     "observed": "2026-11-10T15:21:45Z",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z16/cert[1]",
+       "key": "not_before"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z16/cert[1]",
+     "key": "not_after",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "2036-11-09T15:21:45Z",
+     "observed": "2036-11-09T15:21:45Z",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z16/cert[1]",
+       "key": "not_after"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z16/cert[1]",
+     "key": "subject",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+     "observed": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z16/cert[1]",
+       "key": "subject"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z16/cert[1]",
+     "key": "issuer",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+     "observed": "CN=CBOM Lab Targets CA lab-20261112T152145Z,O=ZeroShield CBOM lab",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z16/cert[1]",
+       "key": "issuer"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z16/cert[1]",
+     "key": "serial",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "37971095f5d9abc56a18c5d85f42492efd778ab4",
+     "observed": "37971095f5d9abc56a18c5d85f42492efd778ab4",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z16/cert[1]",
+       "key": "serial"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z16/cert[1]",
+     "key": "fingerprint_sha256",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": "1723b921c4a5b089958d2053cd0d8d6936f4f39cd7ec99c0b57f1c2cf2d3218a",
+     "observed": "1723b921c4a5b089958d2053cd0d8d6936f4f39cd7ec99c0b57f1c2cf2d3218a",
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z16/cert[1]",
+       "key": "fingerprint_sha256"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z16/cert[1]",
+     "key": "quantum_vulnerable",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": true,
+     "observed": true,
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z16/cert[1]",
+       "key": "quantum_vulnerable"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z16/tls",
+     "key": "cipher_suites[TLSv1.0]",
+     "tool": "nmap 7.97 ssl-enum-ciphers",
+     "expected": [
+      "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA",
+      "TLS_RSA_WITH_AES_128_CBC_SHA"
+     ],
+     "observed": [
+      "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA",
+      "TLS_RSA_WITH_AES_128_CBC_SHA"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "z16/tls",
+     "key": "cipher_suites",
+     "tool": "nmap 7.97 ssl-enum-ciphers",
+     "expected": [
+      "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA",
+      "TLS_RSA_WITH_AES_128_CBC_SHA"
+     ],
+     "observed": [
+      "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA",
+      "TLS_RSA_WITH_AES_128_CBC_SHA"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z16/tls",
+       "key": "cipher_suites"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z16/tls",
+     "key": "must_report.cipher_suites accepted by the server",
+     "tool": "nmap 7.97 ssl-enum-ciphers",
+     "expected": [
+      "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA",
+      "TLS_RSA_WITH_AES_128_CBC_SHA"
+     ],
+     "observed": [
+      "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA",
+      "TLS_RSA_WITH_AES_128_CBC_SHA"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z16/tls",
+       "key": "must_report"
+      }
+     ]
+    },
+    {
+     "oracle_id": "z16/tls",
+     "key": "groups (TLS <= 1.2, nmap's preferred group, cross-check)",
+     "tool": "nmap 7.97 ssl-enum-ciphers",
+     "expected": [
+      "secp256r1"
+     ],
+     "observed": [
+      "secp256r1"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [],
+     "note": "the server's preferred group per ECDHE suite: must be a non-empty subset of the oracle"
+    },
+    {
+     "oracle_id": "z16/tls",
+     "key": "groups",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": [
+      "secp256r1"
+     ],
+     "observed": [
+      "secp256r1"
+     ],
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "z16/tls",
+       "key": "groups"
+      }
+     ],
+     "note": "TLSv1.0, one group per handshake; equality: a group the server accepts beyond the oracle disagrees"
+    },
+    {
+     "oracle_id": "z16/tls",
+     "key": "cipher_suites[TLSv1.0] (Go subset)",
+     "tool": "tlscheck (Go go1.25.11 crypto/tls)",
+     "expected": [],
+     "observed": [],
+     "agree": true,
+     "independent": true,
+     "verifies": [],
+     "note": "suites Go negotiated that the oracle does not list"
+    }
+   ],
+   "controls": [
+    {
+     "negative": "TLSv1.1 refused",
+     "control_target": "z02",
+     "satisfied": true,
+     "detail": "z02 accepts TLSv1.1 with the same tool"
+    },
+    {
+     "negative": "TLSv1.2 refused",
+     "control_target": "z04",
+     "satisfied": true,
+     "detail": "z04 accepts TLSv1.2 with the same tool"
+    },
+    {
+     "negative": "TLSv1.3 refused",
+     "control_target": "z01",
+     "satisfied": true,
+     "detail": "z01 accepts TLSv1.3 with the same tool"
+    },
+    {
+     "negative": "group x25519 absent at TLS <= 1.2",
+     "control_target": "z04",
+     "satisfied": true,
+     "detail": "z04 accepts x25519 at TLS 1.2 with the same tool"
+    }
+   ]
+  },
+  {
+   "target_id": "oracle",
+   "agree": true,
+   "verified_independently": true,
+   "independent_keys": {},
+   "unverified_keys": {},
+   "unobserved": [],
+   "checks": [
+    {
+     "oracle_id": "oracle/run1.json",
+     "key": "equals its rebuild from oracle/facts (generated_at ignored)",
+     "tool": "oraclefmt.rebuild_run",
+     "expected": {},
+     "observed": {},
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    }
+   ],
+   "controls": []
+  },
+  {
+   "target_id": "ranges",
+   "agree": true,
+   "verified_independently": true,
+   "independent_keys": {
+    "ranges/10.231.0.16/28": [
+     "empty_addresses"
+    ],
+    "ranges/10.231.0.32/30": [
+     "empty_addresses"
+    ]
+   },
+   "unverified_keys": {},
+   "unobserved": [],
+   "checks": [
+    {
+     "oracle_id": "ranges/10.231.0.16/28",
+     "key": "empty addresses hold no container",
+     "tool": "docker network inspect",
+     "expected": {},
+     "observed": {},
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "ranges/10.231.0.16/28",
+       "key": "empty_addresses"
+      }
+     ]
+    },
+    {
+     "oracle_id": "ranges/10.231.0.16/28",
+     "key": "every host address is a target, empty or never-scan",
+     "tool": "ipaddress",
+     "expected": [],
+     "observed": [],
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "ranges/10.231.0.16/28",
+     "key": "every target address is held by a running container",
+     "tool": "docker network inspect",
+     "expected": [],
+     "observed": [],
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "ranges/10.231.0.32/30",
+     "key": "empty addresses hold no container",
+     "tool": "docker network inspect",
+     "expected": {},
+     "observed": {},
+     "agree": true,
+     "independent": true,
+     "verifies": [
+      {
+       "oracle_id": "ranges/10.231.0.32/30",
+       "key": "empty_addresses"
+      }
+     ]
+    },
+    {
+     "oracle_id": "ranges/10.231.0.32/30",
+     "key": "every host address is a target, empty or never-scan",
+     "tool": "ipaddress",
+     "expected": [],
+     "observed": [],
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    },
+    {
+     "oracle_id": "ranges/10.231.0.32/30",
+     "key": "every target address is held by a running container",
+     "tool": "docker network inspect",
+     "expected": [],
+     "observed": [],
+     "agree": true,
+     "independent": true,
+     "verifies": []
+    }
+   ],
+   "controls": []
+  }
+ ],
+ "step": "run1",
+ "tools": {
+  "nmap": "nmap 7.97",
+  "ssh-keyscan": "OpenSSH_10.0p2",
+  "ssh-audit": "ssh-audit 3.3.0",
+  "tlscheck": "tlscheck (Go go1.25.11 crypto/tls)",
+  "openssl s_client": "openssl s_client 3.5 (tools image; fallback, see module doc)"
+ },
+ "summary": {
+  "targets": 17,
+  "agree": 17,
+  "disagree": [],
+  "checks": 312,
+  "independent_checks": 297,
+  "not_independent_checks": 15,
+  "asserted_keys": 218,
+  "unverified_keys": {
+   "z05": {
+    "z05/tls": [
+     "cipher_suites"
+    ]
+   },
+   "z05b": {
+    "z05b/tls": [
+     "cipher_suites",
+     "groups",
+     "protocol_versions",
+     "quantum_vulnerable"
+    ],
+    "z05b/cert[0]": [
+     "algorithm",
+     "fingerprint_sha256",
+     "issuer",
+     "key_size",
+     "not_after",
+     "not_before",
+     "quantum_vulnerable",
+     "serial",
+     "signature_algorithm",
+     "subject"
+    ]
+   }
+  },
+  "accepted_oracle_changes": 0,
+  "controls": 31
+ },
+ "finished_at": "2026-11-12T15:22:42Z"
+}

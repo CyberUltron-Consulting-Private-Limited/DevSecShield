@@ -23,7 +23,10 @@ _MAX_BYTES = 8_388_608
 
 @dataclass(frozen=True)
 class Advisory:
-    """One published advisory. ``fixed`` is the first version that is not affected."""
+    """One published advisory interval. ``fixed`` is the first version that is not
+    affected; ``last_affected`` the last one that is (OSV, when no fix exists);
+    ``versions`` an enumerated set (OSV ``affected.versions``): a row with only
+    ``versions`` matches exactly those."""
 
     id: str
     ecosystem: str
@@ -32,6 +35,8 @@ class Advisory:
     fixed: str | None
     summary: str
     source: str
+    last_affected: str | None = None
+    versions: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -67,8 +72,31 @@ class AdvisoryHit:
         return f"crypto-advisory-{slug}"[:180]
 
 
-def load_advisories() -> tuple[Advisory, ...]:
-    """The shipped advisory file. No network."""
+def _advisory(raw: dict) -> Advisory | None:
+    name = str(raw.get("name") or "").strip().lower()
+    ecosystem = str(raw.get("ecosystem") or "").strip().lower()
+    ident = str(raw.get("id") or "").strip()
+    if not name or not ecosystem or not ident:
+        return None
+    introduced = raw.get("introduced")
+    fixed = raw.get("fixed")
+    last = raw.get("last_affected")
+    return Advisory(
+        id=ident,
+        ecosystem=ecosystem,
+        name=name,
+        introduced=str(introduced) if introduced else None,
+        fixed=str(fixed) if fixed else None,
+        summary=str(raw.get("summary") or ""),
+        source=str(raw.get("source") or ""),
+        last_affected=str(last) if last else None,
+        versions=tuple(str(v) for v in raw.get("versions") or () if v),
+    )
+
+
+def curated_advisories() -> tuple[Advisory, ...]:
+    """The shipped hand-curated file: rows OSV does not carry (NVD- or RustSec-only
+    ones). No network."""
     blob = (
         files("aibom.cbom")
         .joinpath("data")
@@ -76,29 +104,31 @@ def load_advisories() -> tuple[Advisory, ...]:
         .read_bytes()
     )
     document = json.loads(blob)
-    rows: list[Advisory] = []
-    for raw in document.get("advisories") or []:
-        if not isinstance(raw, dict):
-            continue
-        name = str(raw.get("name") or "").strip().lower()
-        ecosystem = str(raw.get("ecosystem") or "").strip().lower()
-        ident = str(raw.get("id") or "").strip()
-        if not name or not ecosystem or not ident:
-            continue
-        introduced = raw.get("introduced")
-        fixed = raw.get("fixed")
-        rows.append(
-            Advisory(
-                id=ident,
-                ecosystem=ecosystem,
-                name=name,
-                introduced=str(introduced) if introduced else None,
-                fixed=str(fixed) if fixed else None,
-                summary=str(raw.get("summary") or ""),
-                source=str(raw.get("source") or ""),
-            )
-        )
-    return tuple(rows)
+    raws = [r for r in document.get("advisories") or [] if isinstance(r, dict)]
+    return tuple(a for a in (_advisory(r) for r in raws) if a is not None)
+
+
+def snapshot_advisories(rows: Iterable[dict] | None = None) -> tuple[Advisory, ...]:
+    """Rows of the OSV snapshot in force, or ``rows`` (the online fallback's)."""
+    if rows is None:
+        from aibom.cbom.osv_snapshot import load
+
+        rows = load().rows
+    found = (_advisory(raw) for raw in rows if isinstance(raw, dict))
+    return tuple(r for r in found if r is not None)
+
+
+def _merge(*groups: Iterable[Advisory]) -> tuple[Advisory, ...]:
+    seen: dict[Advisory, None] = {}
+    for group in groups:
+        for advisory in group:
+            seen.setdefault(advisory, None)
+    return tuple(seen)
+
+
+def load_advisories() -> tuple[Advisory, ...]:
+    """The OSV snapshot in force plus the curated file. No network."""
+    return _merge(snapshot_advisories(), curated_advisories())
 
 
 def _parts(version: str) -> tuple[list[int], str | None]:
@@ -144,13 +174,38 @@ def compare_versions(left: str, right: str) -> int:
     return -1 if _pre_key(lp) < _pre_key(rp) else 1
 
 
+def _bare(version: str) -> str:
+    return version.strip().lstrip("vV").split("+", 1)[0]
+
+
+def _only_listed(advisory: Advisory) -> bool:
+    bounded = advisory.introduced or advisory.fixed or advisory.last_affected
+    return bool(advisory.versions) and not bounded
+
+
 def _below_fixed(version: str, advisory: Advisory) -> bool:
+    if advisory.versions and _bare(version) in {_bare(v) for v in advisory.versions}:
+        return True
+    if _only_listed(advisory):
+        return False
     too_old = advisory.introduced and compare_versions(version, advisory.introduced) < 0
     fixed = advisory.fixed and compare_versions(version, advisory.fixed) >= 0
-    return not too_old and not fixed
+    last = advisory.last_affected
+    past_last = last and compare_versions(version, last) > 0
+    return not too_old and not fixed and not past_last
+
+
+def _in(version: str, low: str | None, high: str | None) -> bool:
+    above = low is None or compare_versions(version, low) >= 0
+    return above and (high is None or compare_versions(version, high) < 0)
 
 
 def _range_hits(low: str | None, high: str | None, advisory: Advisory) -> bool:
+    if _only_listed(advisory):
+        return any(_in(v, low, high) for v in advisory.versions)
+    last = advisory.last_affected
+    if last is not None and low is not None and compare_versions(low, last) > 0:
+        return False
     starts_after = (
         high is not None
         and advisory.introduced is not None
@@ -258,11 +313,17 @@ def _pin(
 
 
 def _name_matches(pin: Pin, advisory: Advisory) -> bool:
+    """Same ecosystem and name; a Go package inside the advisory's module matches it,
+    a major-version module (``.../v4``) is another module (semantic import
+    versioning)."""
     if pin.ecosystem != advisory.ecosystem:
         return False
     if pin.name == advisory.name:
         return True
-    return pin.ecosystem == "go" and pin.name.startswith(advisory.name + "/")
+    if pin.ecosystem != "go" or not pin.name.startswith(advisory.name + "/"):
+        return False
+    rest = pin.name[len(advisory.name) + 1 :]
+    return re.match(r"v\d+(/|$)", rest) is None
 
 
 def _affected(pin: Pin, advisory: Advisory) -> bool:
@@ -488,6 +549,32 @@ def _gradle_lock(text: str, path: str) -> list[Pin]:
     return pins
 
 
+_PACKAGE_REF = re.compile(r"<PackageReference\b([^>]*)>", re.I)
+_ATTR = re.compile(r'(\w+)\s*=\s*"([^"]*)"')
+_VERSION_CHILD = re.compile(r"<Version>\s*([^<]+?)\s*</Version>", re.I)
+
+
+def _csproj(text: str, path: str) -> list[Pin]:
+    """An SDK-style .NET project's ``<PackageReference Include="X" Version="1.2" />``
+    (attribute or child element). A centrally managed version stays unmatched."""
+    pins: list[Pin] = []
+    for number, raw in enumerate(text.splitlines(), start=1):
+        for match in _PACKAGE_REF.finditer(raw):
+            attrs = {k.lower(): v for k, v in _ATTR.findall(match.group(1))}
+            name = attrs.get("include") or attrs.get("update")
+            version = attrs.get("version")
+            if not version:
+                child = _VERSION_CHILD.search(text, text.find(match.group(0)))
+                version = child.group(1) if child else None
+            if not name or not version or version.startswith("$("):
+                continue
+            declared = version.strip("[]() ")
+            pin = _pin("nuget", name, declared, path, direct=True, line=number)
+            if pin is not None:
+                pins.append(pin)
+    return pins
+
+
 _PARSERS = {
     "requirements.txt": _requirements,
     "package.json": _package_json,
@@ -528,6 +615,8 @@ _PIP_FILES = ("requirements*.txt", "constraints*.txt")
 
 def _parser_for(name: str):
     parser = _PARSERS.get(name)
+    if parser is None and name.endswith((".csproj", ".fsproj", ".vbproj")):
+        return _csproj
     if parser is None and any(fnmatchcase(name, pattern) for pattern in _PIP_FILES):
         return _requirements
     return parser
@@ -565,9 +654,48 @@ def iter_pins(root: Path, walk: FileWalk | None = None) -> Iterator[Pin]:
         yield from _go_sum(text, walk.rel(path), go_direct)
 
 
+_STATUS: dict[str, dict] = {}
+
+
+def advisories_for(pins: Iterable[Pin]) -> tuple[Advisory, ...]:
+    """The advisories to match these pins against (CB-29 fallback rules): the OSV
+    snapshot in force and the curated file. When the snapshot is stale and
+    ``CBOM_OSV_ONLINE=1``, the tracked packages these pins name are asked of OSV live
+    and OSV's rows replace the snapshot's for each package it answered (one it did not
+    answer keeps the snapshot's). ``last_status()`` says which data was used."""
+    from aibom.cbom import osv_snapshot as snap_mod
+
+    snap = snap_mod.load()
+    online = None
+    rows = snap.rows
+    if snap.stale() and snap_mod.online_enabled():
+        listed = snap_mod.package_list().items()
+        tracked = snap.packages() | {(e, n.lower()) for e, ns in listed for n in ns}
+        wanted = {(p.ecosystem, p.name) for p in pins}
+        wanted &= tracked
+        fresh, answered = snap_mod.online_rows(wanted) if wanted else ([], set())
+        kept = [
+            r for r in snap.rows if (r.get("ecosystem"), r.get("name")) not in answered
+        ]
+        rows = (*kept, *fresh)
+        online = {"asked": len(wanted), "answered": len(answered)}
+    _STATUS["last"] = snap_mod.status(snap, online=online)
+    return _merge(snapshot_advisories(rows), curated_advisories())
+
+
+def last_status() -> dict:
+    """The advisory data the last ``find_vulnerable`` in this process used."""
+    if "last" not in _STATUS:
+        from aibom.cbom import osv_snapshot as snap_mod
+
+        return snap_mod.status()
+    return dict(_STATUS["last"])
+
+
 def find_vulnerable(root: Path, walk: FileWalk | None = None) -> tuple[AdvisoryHit, ...]:
     """Advisory hits for one repository tree."""
-    return match_advisories(iter_pins(root, walk), load_advisories())
+    pins = list(iter_pins(root, walk))
+    return match_advisories(pins, advisories_for(pins))
 
 
 @dataclass(frozen=True)

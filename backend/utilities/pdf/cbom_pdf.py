@@ -121,6 +121,21 @@ def scan_notes(raw: Any) -> Optional[tuple[str, str, List[str]]]:
     return "What this scan covered", summary, [str(n.get("text") or "") for n in coverage["notes"]]
 
 
+def advisory_text(raw: Any) -> str | None:
+    """"OSV snapshot 2026.11.14.1, data as of 2026-11-14" (+ stale / refreshed online), from the run's
+    ``advisory_data`` (CB-29); None for scans made before the snapshot existed."""
+    data = raw.get("advisory_data") if isinstance(raw, dict) else None
+    if not isinstance(data, dict) or not data.get("generated_at"):
+        return None
+    text = f"OSV snapshot {data.get('snapshot_version') or '?'}, data as of {data['generated_at']}"
+    if data.get("stale"):
+        text += f" (stale: {data.get('age_days')} days old)"
+    online = data.get("online") if isinstance(data.get("online"), dict) else None
+    if online:
+        text += f"; refreshed online for {online.get('answered', 0)} of {online.get('asked', 0)} package(s)"
+    return text
+
+
 def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = None) -> str:
     """
     Generate a CBOM scan results PDF.
@@ -207,6 +222,9 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         ("Average risk score (0–10)", f"{avg_risk:.1f}"),
         ("Report generated", datetime.now().strftime("%B %d, %Y at %I:%M %p")),
     ]
+    advisory = advisory_text(raw)
+    if advisory:  # CB-29: which crypto-library advisory data the scan matched, and how old it is
+        overview.append(("Library advisory data", advisory))
     append_executive_summary(
         story,
         report_key="cbom",

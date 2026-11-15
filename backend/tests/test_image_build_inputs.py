@@ -25,8 +25,9 @@ def froms(text: str) -> list[str]:
 
 
 def test_worker_images_take_the_base_image_build_arguments():
-    assert re.search(r"^ARG UV_BASE_IMAGE=ghcr\.io/astral-sh/uv:python3\.12-bookworm-slim$", WORKER, re.M)
-    assert re.search(r"^ARG GO_BASE_IMAGE=golang:1\.26-bookworm$", WORKER, re.M)
+    # #69 (#335) pins the scan worker's base images by digest; the defaults stay build arguments a proxy build overrides
+    assert re.search(r"^ARG UV_BASE_IMAGE=ghcr\.io/astral-sh/uv:python3\.12-bookworm-slim@sha256:[0-9a-f]{64}$", WORKER, re.M)
+    assert re.search(r"^ARG GO_BASE_IMAGE=golang:1\.26(\.\d+)?-bookworm@sha256:[0-9a-f]{64}$", WORKER, re.M)
     assert froms(WORKER) == ["${UV_BASE_IMAGE}", "${GO_BASE_IMAGE}", "${UV_BASE_IMAGE}"]
     assert re.search(r"^ARG UV_BASE_IMAGE=ghcr\.io/astral-sh/uv:python3\.12-bookworm-slim$", DAST, re.M)
     assert froms(DAST) == ["${UV_BASE_IMAGE}", "${UV_BASE_IMAGE}"]
@@ -44,3 +45,14 @@ def test_nuclei_is_a_pinned_release_checked_against_its_checksums():
     step = step[:step.index("rm \"/tmp/${zip}\"")]
     assert step.count("curl -fsSL") == 2  # -f: an HTTP error fails the step instead of saving the error page
     assert "nuclei_${NUCLEI_VERSION}_checksums.txt" in step and "sha256sum -c -" in step
+
+
+def test_backend_image_secret_check_covers_every_copied_tree():
+    """Every tree the backend Dockerfile copies in (source, Alembic bundle, the aibom engine of CB-38 run parity) is
+    scanned for secret-bearing files after the build."""
+    backend = (REPO / "backend" / "Dockerfile").read_text()
+    copied = set(re.findall(r"^COPY --from=(?:migrations|aibom) \S+ (/[a-z_]+)(?:/|\s|$)", backend, re.MULTILINE))
+    assert copied == {"/prod_database_migrations", "/opt"}, copied
+    line = re.search(r"^  assert_no_secrets backend (.+)$", BUILD, re.MULTILINE)
+    assert line, "build_images.sh does not check the backend image"
+    assert set(line.group(1).split()) == {"/backend", "/prod_database_migrations", "/opt/aibom"}

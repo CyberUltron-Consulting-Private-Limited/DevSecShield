@@ -1,0 +1,40 @@
+# DevSecShield AI_BOM scan for GitLab CI: add this job to .gitlab-ci.yml and the CI/CD variable CICD_API_KEY
+# (Settings > CI/CD > Variables, masked).
+ai_bom-check:
+  image: alpine:3.22
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "main"
+  before_script:
+    - apk add --no-cache curl jq zip
+  script:
+    - |
+      # Everything but .git is scanned (vendored code, build output and nested archives included); installed
+      # dependency trees stay out. The zip is written to a new directory outside the project. Uploads are capped at 50 MB.
+      zip_file="$(mktemp -d)/project.zip"
+      zip -q -r "${zip_file}" . -x '.git/*' '*/.git/*' 'node_modules/*' '*/node_modules/*' 'venv/*' '.venv/*' '*/.venv/*'
+      set -u
+      # A failed scan fails the pipeline: --fail-with-body (curl 7.76+) exits non-zero on any HTTP error and still
+      # prints the reason. 429 (rate limited): wait Retry-After seconds (30 if absent, 300 at most), up to 5 tries.
+      for attempt in 1 2 3 4 5; do
+        rc=0
+        code=$(curl --fail-with-body -sS --max-time 900 -o devsecshield-response.json -D devsecshield-headers.txt -w '%{http_code}' \
+          -H "cicd-api-key: ${CICD_API_KEY}" -F "zip_file=@${zip_file}" \
+          "https://api.example.test/cicd/ai_bom/scan") || rc=$?
+        if [ "${code}" = "429" ] && [ "${attempt}" -lt 5 ]; then
+          delay=$(awk 'tolower($1) == "retry-after:" {print $2 + 0}' devsecshield-headers.txt | tail -n 1)
+          [ -n "${delay}" ] && [ "${delay}" -gt 0 ] || delay=30
+          [ "${delay}" -le 300 ] || delay=300
+          echo "DevSecShield is rate limiting this key; retrying in ${delay}s (attempt ${attempt} of 5)"
+          sleep "${delay}"
+          continue
+        fi
+        break
+      done
+      if [ "${rc}" -ne 0 ]; then
+        echo "DevSecShield scan failed (curl exit ${rc}, HTTP ${code:-none}):"
+        cat devsecshield-response.json 2>/dev/null || true
+        exit 1
+      fi
+      echo "AI_BOM findings: $(jq '.finding_count // 0' devsecshield-response.json)"
+      jq -r '(.results | if type == "object" then (.results // []) elif type == "array" then . else [] end)[] | (.impact // "unknown") + " " + (.title // .name // "")' devsecshield-response.json

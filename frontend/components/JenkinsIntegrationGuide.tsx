@@ -7,100 +7,25 @@ import { Copy, Check } from "lucide-react";
 import { toast } from "@/utils/toast";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { apiBaseURL } from "@/utils/interceptors";
-import { scanRequestScript, zipCommand } from "@/components/cicd/ciScanScript";
+import { CBOM_GATE_NOTE, isCbom, jenkinsfile } from "@/components/cicd/ciTemplates";
 
 interface JenkinsIntegrationGuideProps {
-  apiKey: string;
   teamId: number;
   scanType?: string;
 }
 
-export function JenkinsGuide({ apiKey, scanType = "sast" }: JenkinsIntegrationGuideProps) {
+export function JenkinsGuide({ scanType = "sast" }: JenkinsIntegrationGuideProps) {
   const [copied, setCopied] = useState(false);
   const kind = (scanType || "sast").toLowerCase();
   const label = kind.toUpperCase();
   const endpoint = `${apiBaseURL}/cicd/${kind}/scan`;
 
-  // Helper function to mask API key (show first 4 and last 4 characters)
-  const maskApiKey = (key: string) => {
-    if (key.length <= 8) {
-      return "•".repeat(key.length);
-    }
-    const start = key.substring(0, 4);
-    const end = key.substring(key.length - 4);
-    return `${start}${"•".repeat(12)}${end}`;
-  };
-
-  // One Jenkinsfile builder: the copied file carries the key, the displayed one a masked key.
-  const buildJenkinsfile = (key: string) => {
-    // Escape $ to prevent template literal interpolation
-    const dollar = '$';
-    const zipPath = `${dollar}{WORKSPACE_TMP:-/tmp}/devsecshield-project.zip`;
-    const scan = scanRequestScript({
-      zipPath,
-      url: `${dollar}{SCAN_API_URL}`,
-      keyRef: `${dollar}{CICD_API_KEY}`,
-      responseFile: "devsecshield-response.json",
-    });
-    return `pipeline {
-    agent any
-
-    environment {
-        CICD_API_KEY = '${key}'
-        SCAN_API_URL = '${endpoint}'
-    }
-
-    stages {
-        stage('Checkout Code') {
-            steps {
-                checkout scm
-            }
-        }
-
-        // Everything but .git is scanned (vendored code, build output and nested archives included); installed
-        // dependency trees stay out. The zip is written outside the workspace. Uploads are capped at 50 MB.
-        stage('Create ZIP File') {
-            steps {
-                sh '''#!/bin/sh
-set -eu
-rm -f "${zipPath}"
-${zipCommand(zipPath)}
-'''
-            }
-        }
-
-        stage('Perform ${label} Scan') {
-            steps {
-                sh '''#!/bin/sh
-${scan}
-'''
-                script {
-                    def jsonResponse = readJSON(file: 'devsecshield-response.json')
-                    def payload = jsonResponse.results
-                    def findings = payload instanceof Map ? payload.results : payload
-
-                    echo "Findings found during ${label}: ${dollar}{jsonResponse.finding_count}"
-                    (findings ?: []).each { echo "${dollar}{it.impact} ${dollar}{it.title}" }
-
-                    env.FINDINGS = jsonResponse.finding_count?.toString()
-                }
-            }
-        }
-
-        // Additional stages (e.g., deploy) can be added here
-    }
-}`;
-  };
-
-  // Generate Jenkinsfile content based on selections (full content for copying)
-  const jenkinsfileContent = useMemo(() => buildJenkinsfile(apiKey), [apiKey, endpoint, label]);
-
-  // Generate masked Jenkinsfile content for display
-  const displayedJenkinsfileContent = useMemo(() => buildJenkinsfile(maskApiKey(apiKey)), [apiKey, endpoint, label]);
+  // The Jenkinsfile (components/cicd/ciTemplates.ts) reads the key from the Jenkins credential CICD_API_KEY; it never
+  // contains the key. A CBOM Jenkinsfile ends with the policy gate stage.
+  const jenkinsfileContent = useMemo(() => jenkinsfile({ kind, endpoint }), [endpoint, kind]);
 
   const copyToClipboard = async () => {
     try {
-      // Copy the full content with unmasked API key
       await navigator.clipboard.writeText(jenkinsfileContent);
       setCopied(true);
       toast.success("Jenkinsfile content copied to clipboard!");
@@ -140,7 +65,7 @@ ${scan}
               Paste the copied Jenkinsfile content into this file.
             </li>
             <li>
-              Note: The API key is included in the Jenkinsfile. For enhanced security, you can use Jenkins credentials instead:
+              Add the CI/CD API key as a Jenkins credential (the Jenkinsfile reads it with <code className="bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded text-xs font-mono">credentials(&apos;CICD_API_KEY&apos;)</code>):
               <ol className="list-decimal list-inside ml-4 mt-2 space-y-2 text-xs">
                 <li>
                   In your Jenkins dashboard, go to <strong>Manage Jenkins</strong> → <strong>Credentials</strong>
@@ -158,18 +83,10 @@ ${scan}
                   Enter <code className="bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded text-xs font-mono">CICD_API_KEY</code> as the ID
                 </li>
                 <li>
-                  Paste your API key in the <strong>Secret</strong> field: <code className="bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded text-xs font-mono">{apiKey.substring(0, 20)}...</code>
+                  Paste in the <strong>Secret</strong> field the API key DevSecShield showed once when this integration was created or its key was last rotated (rotate it on this page if you no longer have it)
                 </li>
                 <li>
                   Click <strong>OK</strong> to save
-                </li>
-                <li>
-                  Update the Jenkinsfile environment section to use credentials:
-                  <div className="mt-2 p-2 bg-zinc-50 dark:bg-zinc-800 rounded border border-zinc-200 dark:border-zinc-700">
-                    <p className="text-xs font-mono text-zinc-900 dark:text-zinc-100 break-all">
-                      <code className="text-xs">CICD_API_KEY = credentials('CICD_API_KEY')</code>
-                    </p>
-                  </div>
                 </li>
               </ol>
             </li>
@@ -201,6 +118,7 @@ ${scan}
             </li>
             <li>
               Run the pipeline. The {label} scan will execute automatically as part of the pipeline.
+              {isCbom(kind) && <> {CBOM_GATE_NOTE}</>}
             </li>
           </ol>
         </CardContent>
@@ -237,7 +155,7 @@ ${scan}
         <CardContent>
           <ScrollArea className="h-[500px] w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 p-4">
             <pre className="text-xs font-mono text-zinc-900 dark:text-zinc-100 whitespace-pre-wrap">
-              {displayedJenkinsfileContent}
+              {jenkinsfileContent}
             </pre>
           </ScrollArea>
         </CardContent>

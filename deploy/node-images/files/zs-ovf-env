@@ -3,7 +3,9 @@
 /etc/zs-node/env for the scan node.  Properties (set when the OVA is deployed, as the "Add scan node" wizard shows):
 zs.api_url, zs.registration_token, zs.https_proxy (optional), zs.mode (optional: agent).
 
-Runs before zs-scan-node.service; does nothing once /etc/zs-node/env exists.  Reads the environment with
+Runs before zs-scan-node.service; does nothing once /etc/zs-node/env exists.  A property with a value that cannot
+be written safely (spaces, quotes, newlines; the optional proxy too) fails first boot: nothing is written, the reason
+goes to the journal and the console, the scan node stays stopped, and the next boot tries again (#201).  Reads the environment with
 `vmtoolsd --cmd "info-get guestinfo.ovfEnv"` (open-vm-tools); the XML is the OVF 1.1 "Environment" document
 (DSP0243 section 11): <Property oe:key="..." oe:value="..."/>.
 """
@@ -20,6 +22,18 @@ KEYS = {"zs.api_url": "ZS_API_URL", "zs.registration_token": "ZS_REGISTRATION_TO
 SAFE = re.compile(r"^[A-Za-z0-9_.:/@%+=,~-]{1,2048}$")  # no spaces, quotes or newlines: docker --env-file is literal
 
 
+def fail(message: str) -> None:
+    """The reason on stderr (the journal) and on the VM console, where an operator deploying the OVA looks."""
+    text = f"zs-ovf-env: {message}"
+    print(text, file=sys.stderr)
+    console = os.environ.get("ZS_CONSOLE", "/dev/console")
+    try:
+        with open(console, "w") as f:
+            f.write(f"\n*** ZeroShield scan node: {message}\n\n")
+    except OSError:
+        pass
+
+
 def main() -> int:
     if os.path.exists(ENV):
         return 0
@@ -30,13 +44,26 @@ def main() -> int:
         print(f"zs-ovf-env: no OVF environment ({exc.__class__.__name__}); write {ENV} by hand", file=sys.stderr)
         return 0
     values = {}
-    for prop in ET.fromstring(xml).iter(f"{OE}Property"):
+    bad = []
+    try:
+        root = ET.fromstring(xml)
+    except ET.ParseError:
+        fail(f"the OVF environment is not readable XML; {ENV} was not written and the scan node will not start")
+        return 1
+    for prop in root.iter(f"{OE}Property"):
         key, value = prop.get(f"{OE}key"), (prop.get(f"{OE}value") or "").strip()
         if key in KEYS and value:
             if not SAFE.match(value):
-                print(f"zs-ovf-env: {key} has characters that are not allowed; skipped", file=sys.stderr)
+                bad.append(key)  # never echoed: a proxy URL may carry a user name and password
                 continue
             values[KEYS[key]] = value
+    if bad:
+        # #201: a value that cannot be used (an optional proxy included) stops first boot: a node that silently
+        # started without its proxy would fail to reach the API in a proxied segment, with no hint why
+        fail(f"{', '.join(sorted(bad))} has characters that are not allowed (spaces, quotes or newlines). "
+             f"{ENV} was not written and the scan node will not start: fix the vApp propert"
+             f"{'ies' if len(bad) > 1 else 'y'} in vSphere (Edit Settings > vApp Options) and reboot.")
+        return 1
     if "ZS_API_URL" not in values:
         print("zs-ovf-env: zs.api_url is not set; the scan node will not start", file=sys.stderr)
         return 0

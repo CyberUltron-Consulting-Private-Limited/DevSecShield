@@ -1,0 +1,1713 @@
+{
+ "_about": "Assets the scan node emitted against the CB-04 lab (round6/cbom/cb-04/evidence: OpenSSL 3.5.7 s_server and OpenSSH 10.0 targets, dev 83b570b node code), plus the :4432 assets as a CB-04 node reports them. Inputs of the T-B3 corpus and T-B4.",
+ "assets": [
+  {
+   "algorithm": "TLS_AES_256_GCM_SHA384",
+   "facts": {
+    "chain_length": 1,
+    "client_auth_requested": false,
+    "handshake_budget": 12,
+    "handshake_tool": "openssl",
+    "handshakes_used": 6,
+    "leaf": {
+     "curve": null,
+     "fingerprint_sha256": "07861cbf72d0bf94a412502842f691427151e2cfd99a916643b483a8107ce79b",
+     "issuer": "CN=rsa.lab",
+     "key_alg": "RSA",
+     "key_size": 2048,
+     "not_after": "2026-12-12T08:28:10Z",
+     "san": [],
+     "self_signed": true,
+     "sig_alg": "sha256WithRSAEncryption",
+     "subject": "CN=rsa.lab"
+    },
+    "mode": "full",
+    "negotiated_cipher": "TLS_AES_256_GCM_SHA384",
+    "negotiated_group": "X25519MLKEM768",
+    "negotiated_version": "TLSv1.3",
+    "peer_signature_type": "rsa_pss_rsae_sha256",
+    "peer_signing_digest": "SHA256",
+    "pq_group": "X25519MLKEM768",
+    "pq_hybrid": true,
+    "protocol_label": "lab",
+    "secure_renegotiation": null,
+    "server_temp_key": null,
+    "service": "tls",
+    "tls": true,
+    "versions": {
+     "SSLv3": false,
+     "TLSv1.0": false,
+     "TLSv1.1": false,
+     "TLSv1.2": false,
+     "TLSv1.3": true
+    }
+   },
+   "key_size": null,
+   "label": "lab :4431 tls_endpoint (dev node)",
+   "protocol": "TLSv1.3",
+   "type": "tls_endpoint"
+  },
+  {
+   "algorithm": "RSA",
+   "facts": {
+    "chain_index": 0,
+    "fingerprint_sha256": "07861cbf72d0bf94a412502842f691427151e2cfd99a916643b483a8107ce79b",
+    "is_ca": true,
+    "issuer": "CN=rsa.lab",
+    "key_alg": "RSA",
+    "key_size": 2048,
+    "not_after": "2026-12-12T08:28:10Z",
+    "not_before": "2026-11-12T08:28:10Z",
+    "san": [],
+    "self_signed": true,
+    "serial": "2dadcbb3175524e6160c861bf32a280964ebda16",
+    "sig_alg": "sha256WithRSAEncryption",
+    "source": "tls",
+    "subject": "CN=rsa.lab"
+   },
+   "key_size": 2048,
+   "label": "lab :4431 certificate (dev node)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "TLS_AES_256_GCM_SHA384",
+   "facts": {
+    "chain_length": 1,
+    "client_auth_requested": false,
+    "handshake_budget": 12,
+    "handshake_tool": "openssl",
+    "handshakes_used": 6,
+    "leaf": {
+     "curve": null,
+     "fingerprint_sha256": "81e96c7c99465c3a3dfb02a43b781a4b7e9f33ac4fb056be0d75e312b653213d",
+     "issuer": "CN=mldsa65.lab",
+     "key_alg": "2.16.840.1.101.3.4.3.18",
+     "key_size": null,
+     "not_after": "2026-12-12T08:28:10Z",
+     "san": [],
+     "self_signed": true,
+     "sig_alg": "Unknown OID",
+     "subject": "CN=mldsa65.lab"
+    },
+    "mode": "full",
+    "negotiated_cipher": "TLS_AES_256_GCM_SHA384",
+    "negotiated_group": "X25519MLKEM768",
+    "negotiated_version": "TLSv1.3",
+    "peer_signature_type": "mldsa65",
+    "peer_signing_digest": null,
+    "pq_group": null,
+    "pq_hybrid": false,
+    "protocol_label": "lab",
+    "secure_renegotiation": null,
+    "server_temp_key": null,
+    "service": "tls",
+    "tls": true,
+    "versions": {
+     "SSLv3": false,
+     "TLSv1.0": false,
+     "TLSv1.1": false,
+     "TLSv1.2": false,
+     "TLSv1.3": true
+    }
+   },
+   "key_size": null,
+   "label": "lab :4432 tls_endpoint (dev node)",
+   "protocol": "TLSv1.3",
+   "type": "tls_endpoint"
+  },
+  {
+   "algorithm": "2.16.840.1.101.3.4.3.18",
+   "facts": {
+    "chain_index": 0,
+    "fingerprint_sha256": "81e96c7c99465c3a3dfb02a43b781a4b7e9f33ac4fb056be0d75e312b653213d",
+    "is_ca": true,
+    "issuer": "CN=mldsa65.lab",
+    "key_alg": "2.16.840.1.101.3.4.3.18",
+    "not_after": "2026-12-12T08:28:10Z",
+    "not_before": "2026-11-12T08:28:10Z",
+    "san": [],
+    "self_signed": true,
+    "serial": "6f764b863197bd076cfe2cda351e6fdfb085dc20",
+    "sig_alg": "Unknown OID",
+    "source": "tls",
+    "subject": "CN=mldsa65.lab"
+   },
+   "key_size": null,
+   "label": "lab :4432 certificate (dev node)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "TLS_AES_256_GCM_SHA384",
+   "facts": {
+    "chain_length": 1,
+    "client_auth_requested": false,
+    "handshake_budget": 12,
+    "handshake_tool": "openssl",
+    "handshakes_used": 6,
+    "leaf": {
+     "curve": null,
+     "fingerprint_sha256": "81e96c7c99465c3a3dfb02a43b781a4b7e9f33ac4fb056be0d75e312b653213d",
+     "issuer": "CN=mldsa65.lab",
+     "key_alg": "2.16.840.1.101.3.4.3.18",
+     "key_size": null,
+     "not_after": "2026-12-12T08:28:10Z",
+     "san": [],
+     "self_signed": true,
+     "sig_alg": "Unknown OID",
+     "subject": "CN=mldsa65.lab"
+    },
+    "mode": "full",
+    "negotiated_cipher": "TLS_AES_256_GCM_SHA384",
+    "negotiated_group": "X25519MLKEM768",
+    "negotiated_version": "TLSv1.3",
+    "peer_signature_type": "mldsa65",
+    "peer_signing_digest": null,
+    "pq_group": "X25519MLKEM768",
+    "pq_hybrid": true,
+    "protocol_label": "lab",
+    "secure_renegotiation": null,
+    "server_temp_key": null,
+    "service": "tls",
+    "tls": true,
+    "versions": {
+     "SSLv3": false,
+     "TLSv1.0": false,
+     "TLSv1.1": false,
+     "TLSv1.2": false,
+     "TLSv1.3": true
+    }
+   },
+   "key_size": null,
+   "label": "lab :4433 tls_endpoint (dev node)",
+   "protocol": "TLSv1.3",
+   "type": "tls_endpoint"
+  },
+  {
+   "algorithm": "2.16.840.1.101.3.4.3.18",
+   "facts": {
+    "chain_index": 0,
+    "fingerprint_sha256": "81e96c7c99465c3a3dfb02a43b781a4b7e9f33ac4fb056be0d75e312b653213d",
+    "is_ca": true,
+    "issuer": "CN=mldsa65.lab",
+    "key_alg": "2.16.840.1.101.3.4.3.18",
+    "not_after": "2026-12-12T08:28:10Z",
+    "not_before": "2026-11-12T08:28:10Z",
+    "san": [],
+    "self_signed": true,
+    "serial": "6f764b863197bd076cfe2cda351e6fdfb085dc20",
+    "sig_alg": "Unknown OID",
+    "source": "tls",
+    "subject": "CN=mldsa65.lab"
+   },
+   "key_size": null,
+   "label": "lab :4433 certificate (dev node)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": null,
+   "facts": {
+    "chain_length": 0,
+    "client_auth_requested": false,
+    "detail": "no TLS version accepted",
+    "handshake_tool": "openssl",
+    "mode": "full",
+    "negotiated_cipher": null,
+    "negotiated_group": "<NULL>",
+    "negotiated_version": null,
+    "peer_signature_type": null,
+    "peer_signing_digest": null,
+    "protocol_label": "lab",
+    "secure_renegotiation": null,
+    "server_temp_key": null,
+    "service": "tls",
+    "tls": null,
+    "versions": {
+     "SSLv3": false,
+     "TLSv1.0": false,
+     "TLSv1.1": false,
+     "TLSv1.2": false,
+     "TLSv1.3": false
+    }
+   },
+   "key_size": null,
+   "label": "lab :4435 tls_endpoint (dev node)",
+   "protocol": "tls",
+   "type": "tls_endpoint"
+  },
+  {
+   "algorithm": null,
+   "facts": {
+    "chain_length": 0,
+    "client_auth_requested": false,
+    "detail": "no TLS version accepted",
+    "handshake_tool": "openssl",
+    "mode": "full",
+    "negotiated_cipher": null,
+    "negotiated_group": "<NULL>",
+    "negotiated_version": null,
+    "peer_signature_type": null,
+    "peer_signing_digest": null,
+    "protocol_label": "lab",
+    "secure_renegotiation": null,
+    "server_temp_key": null,
+    "service": "tls",
+    "tls": null,
+    "versions": {
+     "SSLv3": false,
+     "TLSv1.0": false,
+     "TLSv1.1": false,
+     "TLSv1.2": false,
+     "TLSv1.3": false
+    }
+   },
+   "key_size": null,
+   "label": "lab :4436 tls_endpoint (dev node)",
+   "protocol": "tls",
+   "type": "tls_endpoint"
+  },
+  {
+   "algorithm": null,
+   "facts": {
+    "chain_length": 0,
+    "client_auth_requested": false,
+    "detail": "no TLS version accepted",
+    "handshake_tool": "openssl",
+    "mode": "full",
+    "negotiated_cipher": null,
+    "negotiated_group": "<NULL>",
+    "negotiated_version": null,
+    "peer_signature_type": null,
+    "peer_signing_digest": null,
+    "protocol_label": "lab",
+    "secure_renegotiation": null,
+    "server_temp_key": null,
+    "service": "tls",
+    "tls": null,
+    "versions": {
+     "SSLv3": false,
+     "TLSv1.0": false,
+     "TLSv1.1": false,
+     "TLSv1.2": false,
+     "TLSv1.3": false
+    }
+   },
+   "key_size": null,
+   "label": "lab :4437 tls_endpoint (dev node)",
+   "protocol": "tls",
+   "type": "tls_endpoint"
+  },
+  {
+   "algorithm": null,
+   "facts": {
+    "chain_length": 0,
+    "client_auth_requested": false,
+    "detail": "no TLS version accepted",
+    "handshake_tool": "openssl",
+    "mode": "full",
+    "negotiated_cipher": null,
+    "negotiated_group": "<NULL>",
+    "negotiated_version": null,
+    "peer_signature_type": null,
+    "peer_signing_digest": null,
+    "protocol_label": "lab",
+    "secure_renegotiation": null,
+    "server_temp_key": null,
+    "service": "tls",
+    "tls": null,
+    "versions": {
+     "SSLv3": false,
+     "TLSv1.0": false,
+     "TLSv1.1": false,
+     "TLSv1.2": false,
+     "TLSv1.3": false
+    }
+   },
+   "key_size": null,
+   "label": "lab :4438 tls_endpoint (dev node)",
+   "protocol": "tls",
+   "type": "tls_endpoint"
+  },
+  {
+   "algorithm": null,
+   "facts": {
+    "chain_length": 0,
+    "client_auth_requested": false,
+    "detail": "no TLS version accepted",
+    "handshake_tool": "openssl",
+    "mode": "full",
+    "negotiated_cipher": null,
+    "negotiated_group": "<NULL>",
+    "negotiated_version": null,
+    "peer_signature_type": null,
+    "peer_signing_digest": null,
+    "protocol_label": "lab",
+    "secure_renegotiation": null,
+    "server_temp_key": null,
+    "service": "tls",
+    "tls": null,
+    "versions": {
+     "SSLv3": false,
+     "TLSv1.0": false,
+     "TLSv1.1": false,
+     "TLSv1.2": false,
+     "TLSv1.3": false
+    }
+   },
+   "key_size": null,
+   "label": "lab :4439 tls_endpoint (dev node)",
+   "protocol": "tls",
+   "type": "tls_endpoint"
+  },
+  {
+   "algorithm": "TLS_AES_256_GCM_SHA384",
+   "facts": {
+    "chain_length": 1,
+    "client_auth_requested": false,
+    "handshake_budget": 12,
+    "handshake_tool": "openssl",
+    "handshakes_used": 6,
+    "leaf": {
+     "curve": null,
+     "fingerprint_sha256": "07861cbf72d0bf94a412502842f691427151e2cfd99a916643b483a8107ce79b",
+     "issuer": "CN=rsa.lab",
+     "key_alg": "RSA",
+     "key_size": 2048,
+     "not_after": "2026-12-12T08:28:10Z",
+     "san": [],
+     "self_signed": true,
+     "sig_alg": "sha256WithRSAEncryption",
+     "subject": "CN=rsa.lab"
+    },
+    "mode": "full",
+    "negotiated_cipher": "TLS_AES_256_GCM_SHA384",
+    "negotiated_group": "X25519",
+    "negotiated_version": "TLSv1.3",
+    "peer_signature_type": "rsa_pss_rsae_sha256",
+    "peer_signing_digest": "SHA256",
+    "pq_group": null,
+    "pq_hybrid": false,
+    "protocol_label": "lab",
+    "secure_renegotiation": null,
+    "server_temp_key": "X25519, 253 bits",
+    "service": "tls",
+    "tls": true,
+    "versions": {
+     "SSLv3": false,
+     "TLSv1.0": false,
+     "TLSv1.1": false,
+     "TLSv1.2": false,
+     "TLSv1.3": true
+    }
+   },
+   "key_size": null,
+   "label": "lab :4440 tls_endpoint (dev node)",
+   "protocol": "TLSv1.3",
+   "type": "tls_endpoint"
+  },
+  {
+   "algorithm": "RSA",
+   "facts": {
+    "chain_index": 0,
+    "fingerprint_sha256": "07861cbf72d0bf94a412502842f691427151e2cfd99a916643b483a8107ce79b",
+    "is_ca": true,
+    "issuer": "CN=rsa.lab",
+    "key_alg": "RSA",
+    "key_size": 2048,
+    "not_after": "2026-12-12T08:28:10Z",
+    "not_before": "2026-11-12T08:28:10Z",
+    "san": [],
+    "self_signed": true,
+    "serial": "2dadcbb3175524e6160c861bf32a280964ebda16",
+    "sig_alg": "sha256WithRSAEncryption",
+    "source": "tls",
+    "subject": "CN=rsa.lab"
+   },
+   "key_size": 2048,
+   "label": "lab :4440 certificate (dev node)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "TLS_AES_256_GCM_SHA384",
+   "facts": {
+    "chain_length": 1,
+    "client_auth_requested": false,
+    "handshake_budget": 12,
+    "handshake_tool": "openssl",
+    "handshakes_used": 6,
+    "leaf": {
+     "curve": null,
+     "fingerprint_sha256": "8f70c5ed8aae649cb42ffcbaae593791f8f083518bba478347795ed5a18b8c03",
+     "issuer": "CN=mldsa87.lab",
+     "key_alg": "2.16.840.1.101.3.4.3.19",
+     "key_size": null,
+     "not_after": "2026-12-12T08:28:10Z",
+     "san": [],
+     "self_signed": true,
+     "sig_alg": "Unknown OID",
+     "subject": "CN=mldsa87.lab"
+    },
+    "mode": "full",
+    "negotiated_cipher": "TLS_AES_256_GCM_SHA384",
+    "negotiated_group": "X25519",
+    "negotiated_version": "TLSv1.3",
+    "peer_signature_type": "mldsa87",
+    "peer_signing_digest": null,
+    "pq_group": null,
+    "pq_hybrid": false,
+    "protocol_label": "lab",
+    "secure_renegotiation": null,
+    "server_temp_key": "X25519, 253 bits",
+    "service": "tls",
+    "tls": true,
+    "versions": {
+     "SSLv3": false,
+     "TLSv1.0": false,
+     "TLSv1.1": false,
+     "TLSv1.2": false,
+     "TLSv1.3": true
+    }
+   },
+   "key_size": null,
+   "label": "lab :4441 tls_endpoint (dev node)",
+   "protocol": "TLSv1.3",
+   "type": "tls_endpoint"
+  },
+  {
+   "algorithm": "2.16.840.1.101.3.4.3.19",
+   "facts": {
+    "chain_index": 0,
+    "fingerprint_sha256": "8f70c5ed8aae649cb42ffcbaae593791f8f083518bba478347795ed5a18b8c03",
+    "is_ca": true,
+    "issuer": "CN=mldsa87.lab",
+    "key_alg": "2.16.840.1.101.3.4.3.19",
+    "not_after": "2026-12-12T08:28:10Z",
+    "not_before": "2026-11-12T08:28:10Z",
+    "san": [],
+    "self_signed": true,
+    "serial": "28d7f02917087ac4657f5c4d02bfffc601fe2c85",
+    "sig_alg": "Unknown OID",
+    "source": "tls",
+    "subject": "CN=mldsa87.lab"
+   },
+   "key_size": null,
+   "label": "lab :4441 certificate (dev node)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "ECDHE-ECDSA-AES256-GCM-SHA384",
+   "facts": {
+    "chain_length": 1,
+    "client_auth_requested": false,
+    "handshake_budget": 12,
+    "handshake_tool": "openssl",
+    "handshakes_used": 9,
+    "leaf": {
+     "curve": "secp256r1",
+     "fingerprint_sha256": "6312fadf14fe8888ff3e425d866f0d7941376caef13499ab8951484135f51ac5",
+     "issuer": "CN=ec.lab",
+     "key_alg": "EC",
+     "key_size": 256,
+     "not_after": "2026-12-12T08:28:10Z",
+     "san": [],
+     "self_signed": true,
+     "sig_alg": "ecdsa-with-SHA256",
+     "subject": "CN=ec.lab"
+    },
+    "mode": "full",
+    "negotiated_cipher": "ECDHE-ECDSA-AES256-GCM-SHA384",
+    "negotiated_group": "X25519",
+    "negotiated_version": "TLSv1.2",
+    "peer_signature_type": "ecdsa_secp256r1_sha256",
+    "peer_signing_digest": "SHA256",
+    "pq_hybrid": false,
+    "protocol_label": "lab",
+    "secure_renegotiation": true,
+    "server_temp_key": "X25519, 253 bits",
+    "service": "tls",
+    "tls": true,
+    "versions": {
+     "SSLv3": false,
+     "TLSv1.0": false,
+     "TLSv1.1": false,
+     "TLSv1.2": true,
+     "TLSv1.3": false
+    },
+    "weak_cipher_probe_version": "TLSv1.2",
+    "weak_ciphers_accepted": {
+     "cbc": [
+      "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256"
+     ]
+    }
+   },
+   "key_size": null,
+   "label": "lab :4442 tls_endpoint (dev node)",
+   "protocol": "TLSv1.2",
+   "type": "tls_endpoint"
+  },
+  {
+   "algorithm": "EC",
+   "facts": {
+    "chain_index": 0,
+    "curve": "secp256r1",
+    "fingerprint_sha256": "6312fadf14fe8888ff3e425d866f0d7941376caef13499ab8951484135f51ac5",
+    "is_ca": true,
+    "issuer": "CN=ec.lab",
+    "key_alg": "EC",
+    "key_size": 256,
+    "not_after": "2026-12-12T08:28:10Z",
+    "not_before": "2026-11-12T08:28:10Z",
+    "san": [],
+    "self_signed": true,
+    "serial": "1ec743d7403b4abd31fdac0620a4ff76e5ea2db0",
+    "sig_alg": "ecdsa-with-SHA256",
+    "source": "tls",
+    "subject": "CN=ec.lab"
+   },
+   "key_size": 256,
+   "label": "lab :4442 certificate (dev node)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": null,
+   "facts": {
+    "banner": "SSH-2.0-OpenSSH_10.0p2 Debian-7+deb13u4",
+    "ciphers_c2s": [
+     "chacha20-poly1305@openssh.com",
+     "aes128-gcm@openssh.com",
+     "aes256-gcm@openssh.com",
+     "aes128-ctr",
+     "aes192-ctr",
+     "aes256-ctr"
+    ],
+    "ciphers_s2c": [
+     "chacha20-poly1305@openssh.com",
+     "aes128-gcm@openssh.com",
+     "aes256-gcm@openssh.com",
+     "aes128-ctr",
+     "aes192-ctr",
+     "aes256-ctr"
+    ],
+    "compression_c2s": [
+     "none",
+     "zlib@openssh.com"
+    ],
+    "compression_s2c": [
+     "none",
+     "zlib@openssh.com"
+    ],
+    "host_key": {
+     "error": "IncompatiblePeer"
+    },
+    "host_key_algs": [
+     "ssh-ed25519"
+    ],
+    "kex": [
+     "mlkem768x25519-sha256",
+     "ext-info-s",
+     "kex-strict-s-v00@openssh.com"
+    ],
+    "macs_c2s": [
+     "umac-64-etm@openssh.com",
+     "umac-128-etm@openssh.com",
+     "hmac-sha2-256-etm@openssh.com",
+     "hmac-sha2-512-etm@openssh.com",
+     "hmac-sha1-etm@openssh.com",
+     "umac-64@openssh.com",
+     "umac-128@openssh.com",
+     "hmac-sha2-256",
+     "hmac-sha2-512",
+     "hmac-sha1"
+    ],
+    "macs_s2c": [
+     "umac-64-etm@openssh.com",
+     "umac-128-etm@openssh.com",
+     "hmac-sha2-256-etm@openssh.com",
+     "hmac-sha2-512-etm@openssh.com",
+     "hmac-sha1-etm@openssh.com",
+     "umac-64@openssh.com",
+     "umac-128@openssh.com",
+     "hmac-sha2-256",
+     "hmac-sha2-512",
+     "hmac-sha1"
+    ]
+   },
+   "key_size": null,
+   "label": "lab :2201 ssh_endpoint (dev node)",
+   "protocol": "ssh",
+   "type": "ssh_endpoint"
+  },
+  {
+   "algorithm": null,
+   "facts": {
+    "banner": "SSH-2.0-OpenSSH_10.0p2 Debian-7+deb13u4",
+    "ciphers_c2s": [
+     "chacha20-poly1305@openssh.com",
+     "aes128-gcm@openssh.com",
+     "aes256-gcm@openssh.com",
+     "aes128-ctr",
+     "aes192-ctr",
+     "aes256-ctr"
+    ],
+    "ciphers_s2c": [
+     "chacha20-poly1305@openssh.com",
+     "aes128-gcm@openssh.com",
+     "aes256-gcm@openssh.com",
+     "aes128-ctr",
+     "aes192-ctr",
+     "aes256-ctr"
+    ],
+    "compression_c2s": [
+     "none",
+     "zlib@openssh.com"
+    ],
+    "compression_s2c": [
+     "none",
+     "zlib@openssh.com"
+    ],
+    "host_key": {
+     "error": "IncompatiblePeer"
+    },
+    "host_key_algs": [
+     "ssh-ed25519"
+    ],
+    "kex": [
+     "sntrup761x25519-sha512",
+     "sntrup761x25519-sha512@openssh.com",
+     "ext-info-s",
+     "kex-strict-s-v00@openssh.com"
+    ],
+    "macs_c2s": [
+     "umac-64-etm@openssh.com",
+     "umac-128-etm@openssh.com",
+     "hmac-sha2-256-etm@openssh.com",
+     "hmac-sha2-512-etm@openssh.com",
+     "hmac-sha1-etm@openssh.com",
+     "umac-64@openssh.com",
+     "umac-128@openssh.com",
+     "hmac-sha2-256",
+     "hmac-sha2-512",
+     "hmac-sha1"
+    ],
+    "macs_s2c": [
+     "umac-64-etm@openssh.com",
+     "umac-128-etm@openssh.com",
+     "hmac-sha2-256-etm@openssh.com",
+     "hmac-sha2-512-etm@openssh.com",
+     "hmac-sha1-etm@openssh.com",
+     "umac-64@openssh.com",
+     "umac-128@openssh.com",
+     "hmac-sha2-256",
+     "hmac-sha2-512",
+     "hmac-sha1"
+    ]
+   },
+   "key_size": null,
+   "label": "lab :2202 ssh_endpoint (dev node)",
+   "protocol": "ssh",
+   "type": "ssh_endpoint"
+  },
+  {
+   "algorithm": "ssh-ed25519",
+   "facts": {
+    "banner": "SSH-2.0-OpenSSH_10.0p2 Debian-7+deb13u4",
+    "ciphers_c2s": [
+     "chacha20-poly1305@openssh.com",
+     "aes128-gcm@openssh.com",
+     "aes256-gcm@openssh.com",
+     "aes128-ctr",
+     "aes192-ctr",
+     "aes256-ctr"
+    ],
+    "ciphers_s2c": [
+     "chacha20-poly1305@openssh.com",
+     "aes128-gcm@openssh.com",
+     "aes256-gcm@openssh.com",
+     "aes128-ctr",
+     "aes192-ctr",
+     "aes256-ctr"
+    ],
+    "compression_c2s": [
+     "none",
+     "zlib@openssh.com"
+    ],
+    "compression_s2c": [
+     "none",
+     "zlib@openssh.com"
+    ],
+    "host_key": {
+     "bits": 256,
+     "fingerprint_sha256": "1d20528184279cd6b372ac7437da25769cda040f1d47d2adb3f94e8e6315c6e0",
+     "key_type": "ssh-ed25519"
+    },
+    "host_key_algs": [
+     "ssh-ed25519"
+    ],
+    "kex": [
+     "curve25519-sha256",
+     "ecdh-sha2-nistp256",
+     "ext-info-s",
+     "kex-strict-s-v00@openssh.com"
+    ],
+    "macs_c2s": [
+     "umac-64-etm@openssh.com",
+     "umac-128-etm@openssh.com",
+     "hmac-sha2-256-etm@openssh.com",
+     "hmac-sha2-512-etm@openssh.com",
+     "hmac-sha1-etm@openssh.com",
+     "umac-64@openssh.com",
+     "umac-128@openssh.com",
+     "hmac-sha2-256",
+     "hmac-sha2-512",
+     "hmac-sha1"
+    ],
+    "macs_s2c": [
+     "umac-64-etm@openssh.com",
+     "umac-128-etm@openssh.com",
+     "hmac-sha2-256-etm@openssh.com",
+     "hmac-sha2-512-etm@openssh.com",
+     "hmac-sha1-etm@openssh.com",
+     "umac-64@openssh.com",
+     "umac-128@openssh.com",
+     "hmac-sha2-256",
+     "hmac-sha2-512",
+     "hmac-sha1"
+    ]
+   },
+   "key_size": 256,
+   "label": "lab :2203 ssh_endpoint (dev node)",
+   "protocol": "ssh",
+   "type": "ssh_endpoint"
+  },
+  {
+   "algorithm": "ssh-ed25519",
+   "facts": {
+    "banner": "SSH-2.0-OpenSSH_10.0p2 Debian-7+deb13u4",
+    "ciphers_c2s": [
+     "chacha20-poly1305@openssh.com",
+     "aes128-gcm@openssh.com",
+     "aes256-gcm@openssh.com",
+     "aes128-ctr",
+     "aes192-ctr",
+     "aes256-ctr"
+    ],
+    "ciphers_s2c": [
+     "chacha20-poly1305@openssh.com",
+     "aes128-gcm@openssh.com",
+     "aes256-gcm@openssh.com",
+     "aes128-ctr",
+     "aes192-ctr",
+     "aes256-ctr"
+    ],
+    "compression_c2s": [
+     "none",
+     "zlib@openssh.com"
+    ],
+    "compression_s2c": [
+     "none",
+     "zlib@openssh.com"
+    ],
+    "host_key": {
+     "bits": 256,
+     "fingerprint_sha256": "1d20528184279cd6b372ac7437da25769cda040f1d47d2adb3f94e8e6315c6e0",
+     "key_type": "ssh-ed25519"
+    },
+    "host_key_algs": [
+     "ssh-ed25519"
+    ],
+    "kex": [
+     "mlkem768x25519-sha256",
+     "sntrup761x25519-sha512",
+     "sntrup761x25519-sha512@openssh.com",
+     "curve25519-sha256",
+     "curve25519-sha256@libssh.org",
+     "ecdh-sha2-nistp256",
+     "ecdh-sha2-nistp384",
+     "ecdh-sha2-nistp521",
+     "ext-info-s",
+     "kex-strict-s-v00@openssh.com"
+    ],
+    "macs_c2s": [
+     "umac-64-etm@openssh.com",
+     "umac-128-etm@openssh.com",
+     "hmac-sha2-256-etm@openssh.com",
+     "hmac-sha2-512-etm@openssh.com",
+     "hmac-sha1-etm@openssh.com",
+     "umac-64@openssh.com",
+     "umac-128@openssh.com",
+     "hmac-sha2-256",
+     "hmac-sha2-512",
+     "hmac-sha1"
+    ],
+    "macs_s2c": [
+     "umac-64-etm@openssh.com",
+     "umac-128-etm@openssh.com",
+     "hmac-sha2-256-etm@openssh.com",
+     "hmac-sha2-512-etm@openssh.com",
+     "hmac-sha1-etm@openssh.com",
+     "umac-64@openssh.com",
+     "umac-128@openssh.com",
+     "hmac-sha2-256",
+     "hmac-sha2-512",
+     "hmac-sha1"
+    ]
+   },
+   "key_size": 256,
+   "label": "lab :2204 ssh_endpoint (dev node)",
+   "protocol": "ssh",
+   "type": "ssh_endpoint"
+  },
+  {
+   "algorithm": "EC",
+   "facts": {
+    "curve": "secp256r1",
+    "fingerprint_sha256": "6312fadf14fe8888ff3e425d866f0d7941376caef13499ab8951484135f51ac5",
+    "is_ca": true,
+    "issuer": "CN=ec.lab",
+    "key_alg": "EC",
+    "key_size": 256,
+    "not_after": "2026-12-12T08:28:10Z",
+    "not_before": "2026-11-12T08:28:10Z",
+    "san": [],
+    "self_signed": true,
+    "serial": "1ec743d7403b4abd31fdac0620a4ff76e5ea2db0",
+    "sig_alg": "ecdsa-with-SHA256",
+    "source": "file",
+    "subject": "CN=ec.lab"
+   },
+   "key_size": 256,
+   "label": "certparse:ec (dev parser)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "EC",
+   "facts": {
+    "curve": "prime256v1",
+    "is_ca": true,
+    "issuer": "CN=ec.lab",
+    "key_alg": "EC",
+    "key_size": 256,
+    "not_after": "2026-12-12T08:28:10Z",
+    "not_before": "2026-11-12T08:28:10Z",
+    "self_signed": true,
+    "serial": "1ec743d7403b4abd31fdac0620a4ff76e5ea2db0",
+    "sig_alg": "ecdsa-with-SHA256",
+    "source": "file",
+    "subject": "CN=ec.lab"
+   },
+   "key_size": 256,
+   "label": "storeutl[openssl-3.5.7]:ec (dev parser)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "EC",
+   "facts": {
+    "curve": "prime256v1",
+    "is_ca": true,
+    "issuer": "CN = ec.lab",
+    "key_alg": "EC",
+    "key_size": 256,
+    "not_after": "2026-12-12T08:28:10Z",
+    "not_before": "2026-11-12T08:28:10Z",
+    "self_signed": true,
+    "serial": "1ec743d7403b4abd31fdac0620a4ff76e5ea2db0",
+    "sig_alg": "ecdsa-with-SHA256",
+    "source": "file",
+    "subject": "CN = ec.lab"
+   },
+   "key_size": 256,
+   "label": "storeutl[openssl-3.0.13]:ec (dev parser)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "2.16.840.1.101.3.4.3.17",
+   "facts": {
+    "fingerprint_sha256": "276ddfcea8e083a15f856db8976a34cc36c3db6058c6b92aeb05afc4d5e3ac26",
+    "is_ca": true,
+    "issuer": "CN=mldsa44.lab",
+    "key_alg": "2.16.840.1.101.3.4.3.17",
+    "not_after": "2026-12-12T08:28:10Z",
+    "not_before": "2026-11-12T08:28:10Z",
+    "san": [],
+    "self_signed": true,
+    "serial": "4b00b30544aa75eb30c06a9a5ab6d40bc36ea8a5",
+    "sig_alg": "Unknown OID",
+    "source": "file",
+    "subject": "CN=mldsa44.lab"
+   },
+   "key_size": null,
+   "label": "certparse:mldsa44 (dev parser)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "ML-DSA-44",
+   "facts": {
+    "is_ca": true,
+    "issuer": "CN=mldsa44.lab",
+    "key_alg": "ML-DSA-44",
+    "not_after": "2026-12-12T08:28:10Z",
+    "not_before": "2026-11-12T08:28:10Z",
+    "self_signed": true,
+    "serial": "4b00b30544aa75eb30c06a9a5ab6d40bc36ea8a5",
+    "sig_alg": "ML-DSA-44",
+    "source": "file",
+    "subject": "CN=mldsa44.lab"
+   },
+   "key_size": null,
+   "label": "storeutl[openssl-3.5.7]:mldsa44 (dev parser)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "2.16.840.1.101.3.4.3.17",
+   "facts": {
+    "is_ca": true,
+    "issuer": "CN = mldsa44.lab",
+    "key_alg": "2.16.840.1.101.3.4.3.17",
+    "not_after": "2026-12-12T08:28:10Z",
+    "not_before": "2026-11-12T08:28:10Z",
+    "self_signed": true,
+    "serial": "4b00b30544aa75eb30c06a9a5ab6d40bc36ea8a5",
+    "sig_alg": "2.16.840.1.101.3.4.3.17",
+    "source": "file",
+    "subject": "CN = mldsa44.lab"
+   },
+   "key_size": null,
+   "label": "storeutl[openssl-3.0.13]:mldsa44 (dev parser)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "2.16.840.1.101.3.4.3.18",
+   "facts": {
+    "fingerprint_sha256": "81e96c7c99465c3a3dfb02a43b781a4b7e9f33ac4fb056be0d75e312b653213d",
+    "is_ca": true,
+    "issuer": "CN=mldsa65.lab",
+    "key_alg": "2.16.840.1.101.3.4.3.18",
+    "not_after": "2026-12-12T08:28:10Z",
+    "not_before": "2026-11-12T08:28:10Z",
+    "san": [],
+    "self_signed": true,
+    "serial": "6f764b863197bd076cfe2cda351e6fdfb085dc20",
+    "sig_alg": "Unknown OID",
+    "source": "file",
+    "subject": "CN=mldsa65.lab"
+   },
+   "key_size": null,
+   "label": "certparse:mldsa65 (dev parser)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "ML-DSA-65",
+   "facts": {
+    "is_ca": true,
+    "issuer": "CN=mldsa65.lab",
+    "key_alg": "ML-DSA-65",
+    "not_after": "2026-12-12T08:28:10Z",
+    "not_before": "2026-11-12T08:28:10Z",
+    "self_signed": true,
+    "serial": "6f764b863197bd076cfe2cda351e6fdfb085dc20",
+    "sig_alg": "ML-DSA-65",
+    "source": "file",
+    "subject": "CN=mldsa65.lab"
+   },
+   "key_size": null,
+   "label": "storeutl[openssl-3.5.7]:mldsa65 (dev parser)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "2.16.840.1.101.3.4.3.18",
+   "facts": {
+    "is_ca": true,
+    "issuer": "CN = mldsa65.lab",
+    "key_alg": "2.16.840.1.101.3.4.3.18",
+    "not_after": "2026-12-12T08:28:10Z",
+    "not_before": "2026-11-12T08:28:10Z",
+    "self_signed": true,
+    "serial": "6f764b863197bd076cfe2cda351e6fdfb085dc20",
+    "sig_alg": "2.16.840.1.101.3.4.3.18",
+    "source": "file",
+    "subject": "CN = mldsa65.lab"
+   },
+   "key_size": null,
+   "label": "storeutl[openssl-3.0.13]:mldsa65 (dev parser)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "2.16.840.1.101.3.4.3.19",
+   "facts": {
+    "fingerprint_sha256": "8f70c5ed8aae649cb42ffcbaae593791f8f083518bba478347795ed5a18b8c03",
+    "is_ca": true,
+    "issuer": "CN=mldsa87.lab",
+    "key_alg": "2.16.840.1.101.3.4.3.19",
+    "not_after": "2026-12-12T08:28:10Z",
+    "not_before": "2026-11-12T08:28:10Z",
+    "san": [],
+    "self_signed": true,
+    "serial": "28d7f02917087ac4657f5c4d02bfffc601fe2c85",
+    "sig_alg": "Unknown OID",
+    "source": "file",
+    "subject": "CN=mldsa87.lab"
+   },
+   "key_size": null,
+   "label": "certparse:mldsa87 (dev parser)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "ML-DSA-87",
+   "facts": {
+    "is_ca": true,
+    "issuer": "CN=mldsa87.lab",
+    "key_alg": "ML-DSA-87",
+    "not_after": "2026-12-12T08:28:10Z",
+    "not_before": "2026-11-12T08:28:10Z",
+    "self_signed": true,
+    "serial": "28d7f02917087ac4657f5c4d02bfffc601fe2c85",
+    "sig_alg": "ML-DSA-87",
+    "source": "file",
+    "subject": "CN=mldsa87.lab"
+   },
+   "key_size": null,
+   "label": "storeutl[openssl-3.5.7]:mldsa87 (dev parser)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "2.16.840.1.101.3.4.3.19",
+   "facts": {
+    "is_ca": true,
+    "issuer": "CN = mldsa87.lab",
+    "key_alg": "2.16.840.1.101.3.4.3.19",
+    "not_after": "2026-12-12T08:28:10Z",
+    "not_before": "2026-11-12T08:28:10Z",
+    "self_signed": true,
+    "serial": "28d7f02917087ac4657f5c4d02bfffc601fe2c85",
+    "sig_alg": "2.16.840.1.101.3.4.3.19",
+    "source": "file",
+    "subject": "CN = mldsa87.lab"
+   },
+   "key_size": null,
+   "label": "storeutl[openssl-3.0.13]:mldsa87 (dev parser)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "2.16.840.1.101.3.4.4.2",
+   "facts": {
+    "fingerprint_sha256": "5c32e0f3039b8d7d217ac881a4607957299b199dfe39f274a4e1a63cf0f85d82",
+    "is_ca": false,
+    "issuer": "CN=mlkem768.lab",
+    "key_alg": "2.16.840.1.101.3.4.4.2",
+    "not_after": "2026-12-12T08:28:11Z",
+    "not_before": "2026-11-12T08:28:11Z",
+    "san": [],
+    "self_signed": true,
+    "serial": "2e52b9b5e4833bdaf5b5adc9df1001a61960cf47",
+    "sig_alg": "sha256WithRSAEncryption",
+    "source": "file",
+    "subject": "CN=mlkem768.lab"
+   },
+   "key_size": null,
+   "label": "certparse:mlkem768 (dev parser)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "ML-KEM-768",
+   "facts": {
+    "is_ca": false,
+    "issuer": "CN=mlkem768.lab",
+    "key_alg": "ML-KEM-768",
+    "not_after": "2026-12-12T08:28:11Z",
+    "not_before": "2026-11-12T08:28:11Z",
+    "self_signed": true,
+    "serial": "2e52b9b5e4833bdaf5b5adc9df1001a61960cf47",
+    "sig_alg": "sha256WithRSAEncryption",
+    "source": "file",
+    "subject": "CN=mlkem768.lab"
+   },
+   "key_size": null,
+   "label": "storeutl[openssl-3.5.7]:mlkem768 (dev parser)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "2.16.840.1.101.3.4.4.2",
+   "facts": {
+    "is_ca": false,
+    "issuer": "CN = mlkem768.lab",
+    "key_alg": "2.16.840.1.101.3.4.4.2",
+    "not_after": "2026-12-12T08:28:11Z",
+    "not_before": "2026-11-12T08:28:11Z",
+    "self_signed": true,
+    "serial": "2e52b9b5e4833bdaf5b5adc9df1001a61960cf47",
+    "sig_alg": "sha256WithRSAEncryption",
+    "source": "file",
+    "subject": "CN = mlkem768.lab"
+   },
+   "key_size": null,
+   "label": "storeutl[openssl-3.0.13]:mlkem768 (dev parser)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "RSA",
+   "facts": {
+    "fingerprint_sha256": "07861cbf72d0bf94a412502842f691427151e2cfd99a916643b483a8107ce79b",
+    "is_ca": true,
+    "issuer": "CN=rsa.lab",
+    "key_alg": "RSA",
+    "key_size": 2048,
+    "not_after": "2026-12-12T08:28:10Z",
+    "not_before": "2026-11-12T08:28:10Z",
+    "san": [],
+    "self_signed": true,
+    "serial": "2dadcbb3175524e6160c861bf32a280964ebda16",
+    "sig_alg": "sha256WithRSAEncryption",
+    "source": "file",
+    "subject": "CN=rsa.lab"
+   },
+   "key_size": 2048,
+   "label": "certparse:rsa (dev parser)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "RSA",
+   "facts": {
+    "is_ca": true,
+    "issuer": "CN=rsa.lab",
+    "key_alg": "RSA",
+    "key_size": 2048,
+    "not_after": "2026-12-12T08:28:10Z",
+    "not_before": "2026-11-12T08:28:10Z",
+    "self_signed": true,
+    "serial": "2dadcbb3175524e6160c861bf32a280964ebda16",
+    "sig_alg": "sha256WithRSAEncryption",
+    "source": "file",
+    "subject": "CN=rsa.lab"
+   },
+   "key_size": 2048,
+   "label": "storeutl[openssl-3.5.7]:rsa (dev parser)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "RSA",
+   "facts": {
+    "is_ca": true,
+    "issuer": "CN = rsa.lab",
+    "key_alg": "RSA",
+    "key_size": 2048,
+    "not_after": "2026-12-12T08:28:10Z",
+    "not_before": "2026-11-12T08:28:10Z",
+    "self_signed": true,
+    "serial": "2dadcbb3175524e6160c861bf32a280964ebda16",
+    "sig_alg": "sha256WithRSAEncryption",
+    "source": "file",
+    "subject": "CN = rsa.lab"
+   },
+   "key_size": 2048,
+   "label": "storeutl[openssl-3.0.13]:rsa (dev parser)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "2.16.840.1.101.3.4.3.20",
+   "facts": {
+    "fingerprint_sha256": "e3fe54db9612302f4d70ba00f58cccf01ecefe03dc5e9158041a9e2c595779cf",
+    "is_ca": true,
+    "issuer": "CN=slh128s.lab",
+    "key_alg": "2.16.840.1.101.3.4.3.20",
+    "not_after": "2026-12-12T08:28:11Z",
+    "not_before": "2026-11-12T08:28:11Z",
+    "san": [],
+    "self_signed": true,
+    "serial": "6e36653eefb65145293e991766d6c509b7b59eb2",
+    "sig_alg": "Unknown OID",
+    "source": "file",
+    "subject": "CN=slh128s.lab"
+   },
+   "key_size": null,
+   "label": "certparse:slh128s (dev parser)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "SLH-DSA-SHA2-128s",
+   "facts": {
+    "is_ca": true,
+    "issuer": "CN=slh128s.lab",
+    "key_alg": "SLH-DSA-SHA2-128s",
+    "not_after": "2026-12-12T08:28:11Z",
+    "not_before": "2026-11-12T08:28:11Z",
+    "self_signed": true,
+    "serial": "6e36653eefb65145293e991766d6c509b7b59eb2",
+    "sig_alg": "SLH-DSA-SHA2-128s",
+    "source": "file",
+    "subject": "CN=slh128s.lab"
+   },
+   "key_size": null,
+   "label": "storeutl[openssl-3.5.7]:slh128s (dev parser)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "2.16.840.1.101.3.4.3.20",
+   "facts": {
+    "is_ca": true,
+    "issuer": "CN = slh128s.lab",
+    "key_alg": "2.16.840.1.101.3.4.3.20",
+    "not_after": "2026-12-12T08:28:11Z",
+    "not_before": "2026-11-12T08:28:11Z",
+    "self_signed": true,
+    "serial": "6e36653eefb65145293e991766d6c509b7b59eb2",
+    "sig_alg": "2.16.840.1.101.3.4.3.20",
+    "source": "file",
+    "subject": "CN = slh128s.lab"
+   },
+   "key_size": null,
+   "label": "storeutl[openssl-3.0.13]:slh128s (dev parser)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "2.16.840.1.101.3.4.3.31",
+   "facts": {
+    "fingerprint_sha256": "0c1fa33ab6b505a3eb37945a86308bbeb4358972e5afc0dafd885bb35f70ee43",
+    "is_ca": true,
+    "issuer": "CN=slhshake256f.lab",
+    "key_alg": "2.16.840.1.101.3.4.3.31",
+    "not_after": "2026-12-12T08:28:11Z",
+    "not_before": "2026-11-12T08:28:11Z",
+    "san": [],
+    "self_signed": true,
+    "serial": "52bd035ec2ed160a77cc4921c1cc214e8aa1e5bf",
+    "sig_alg": "Unknown OID",
+    "source": "file",
+    "subject": "CN=slhshake256f.lab"
+   },
+   "key_size": null,
+   "label": "certparse:slhshake256f (dev parser)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "SLH-DSA-SHAKE-256f",
+   "facts": {
+    "is_ca": true,
+    "issuer": "CN=slhshake256f.lab",
+    "key_alg": "SLH-DSA-SHAKE-256f",
+    "not_after": "2026-12-12T08:28:11Z",
+    "not_before": "2026-11-12T08:28:11Z",
+    "self_signed": true,
+    "serial": "52bd035ec2ed160a77cc4921c1cc214e8aa1e5bf",
+    "sig_alg": "SLH-DSA-SHAKE-256f",
+    "source": "file",
+    "subject": "CN=slhshake256f.lab"
+   },
+   "key_size": null,
+   "label": "storeutl[openssl-3.5.7]:slhshake256f (dev parser)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "2.16.840.1.101.3.4.3.31",
+   "facts": {
+    "is_ca": true,
+    "issuer": "CN = slhshake256f.lab",
+    "key_alg": "2.16.840.1.101.3.4.3.31",
+    "not_after": "2026-12-12T08:28:11Z",
+    "not_before": "2026-11-12T08:28:11Z",
+    "self_signed": true,
+    "serial": "52bd035ec2ed160a77cc4921c1cc214e8aa1e5bf",
+    "sig_alg": "2.16.840.1.101.3.4.3.31",
+    "source": "file",
+    "subject": "CN = slhshake256f.lab"
+   },
+   "key_size": null,
+   "label": "storeutl[openssl-3.0.13]:slhshake256f (dev parser)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "1.3.6.1.5.5.7.6.41",
+   "facts": {
+    "fingerprint_sha256": "1cd25a758ad651039386c2f9105194212c812ada251e53b277bdd2d0026b09fd",
+    "is_ca": true,
+    "issuer": "CN=rsa.lab",
+    "key_alg": "1.3.6.1.5.5.7.6.41",
+    "not_after": "2026-12-12T08:28:10Z",
+    "not_before": "2026-11-12T08:28:10Z",
+    "san": [],
+    "self_signed": false,
+    "serial": "2dadcbb3175524e6160c861bf32a280964ebda16",
+    "sig_alg": "Unknown OID",
+    "source": "file",
+    "subject": "CN=composite_mldsa65_rsa.lab"
+   },
+   "key_size": null,
+   "label": "certparse:composite_mldsa65_rsa (dev parser)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "1.3.6.1.5.5.7.6.41",
+   "facts": {
+    "is_ca": true,
+    "issuer": "CN=rsa.lab",
+    "key_alg": "1.3.6.1.5.5.7.6.41",
+    "not_after": "2026-12-12T08:28:10Z",
+    "not_before": "2026-11-12T08:28:10Z",
+    "self_signed": false,
+    "serial": "2dadcbb3175524e6160c861bf32a280964ebda16",
+    "sig_alg": "1.3.6.1.5.5.7.6.41",
+    "source": "file",
+    "subject": "CN=composite_mldsa65_rsa.lab"
+   },
+   "key_size": null,
+   "label": "storeutl[openssl-3.5.7]:composite_mldsa65_rsa (dev parser)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "1.3.6.1.5.5.7.6.41",
+   "facts": {
+    "is_ca": true,
+    "issuer": "CN = rsa.lab",
+    "key_alg": "1.3.6.1.5.5.7.6.41",
+    "not_after": "2026-12-12T08:28:10Z",
+    "not_before": "2026-11-12T08:28:10Z",
+    "self_signed": false,
+    "serial": "2dadcbb3175524e6160c861bf32a280964ebda16",
+    "sig_alg": "1.3.6.1.5.5.7.6.41",
+    "source": "file",
+    "subject": "CN = composite_mldsa65_rsa.lab"
+   },
+   "key_size": null,
+   "label": "storeutl[openssl-3.0.13]:composite_mldsa65_rsa (dev parser)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "1.3.6.1.5.5.7.6.58",
+   "facts": {
+    "fingerprint_sha256": "c4913bab3477a0274e56d1675bd2c995dbcf84e437062b0c7e8b2d726fb3ca8a",
+    "is_ca": true,
+    "issuer": "CN=rsa.lab",
+    "key_alg": "1.3.6.1.5.5.7.6.58",
+    "not_after": "2026-12-12T08:28:10Z",
+    "not_before": "2026-11-12T08:28:10Z",
+    "san": [],
+    "self_signed": false,
+    "serial": "2dadcbb3175524e6160c861bf32a280964ebda16",
+    "sig_alg": "sha256WithRSAEncryption",
+    "source": "file",
+    "subject": "CN=composite_mlkem768_x25519.lab"
+   },
+   "key_size": null,
+   "label": "certparse:composite_mlkem768_x25519 (dev parser)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "1.3.6.1.5.5.7.6.58",
+   "facts": {
+    "is_ca": true,
+    "issuer": "CN=rsa.lab",
+    "key_alg": "1.3.6.1.5.5.7.6.58",
+    "not_after": "2026-12-12T08:28:10Z",
+    "not_before": "2026-11-12T08:28:10Z",
+    "self_signed": false,
+    "serial": "2dadcbb3175524e6160c861bf32a280964ebda16",
+    "sig_alg": "sha256WithRSAEncryption",
+    "source": "file",
+    "subject": "CN=composite_mlkem768_x25519.lab"
+   },
+   "key_size": null,
+   "label": "storeutl[openssl-3.5.7]:composite_mlkem768_x25519 (dev parser)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "1.3.6.1.5.5.7.6.58",
+   "facts": {
+    "is_ca": true,
+    "issuer": "CN = rsa.lab",
+    "key_alg": "1.3.6.1.5.5.7.6.58",
+    "not_after": "2026-12-12T08:28:10Z",
+    "not_before": "2026-11-12T08:28:10Z",
+    "self_signed": false,
+    "serial": "2dadcbb3175524e6160c861bf32a280964ebda16",
+    "sig_alg": "sha256WithRSAEncryption",
+    "source": "file",
+    "subject": "CN = composite_mlkem768_x25519.lab"
+   },
+   "key_size": null,
+   "label": "storeutl[openssl-3.0.13]:composite_mlkem768_x25519 (dev parser)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "1.2.643.7.1.1.1.1",
+   "facts": {
+    "fingerprint_sha256": "92f84ed351f5487b74c042613150076ec8247a837c0b5150907b5ac25e3e83d8",
+    "is_ca": true,
+    "issuer": "CN=rsa.lab",
+    "key_alg": "1.2.643.7.1.1.1.1",
+    "not_after": "2026-12-12T08:28:10Z",
+    "not_before": "2026-11-12T08:28:10Z",
+    "san": [],
+    "self_signed": false,
+    "serial": "2dadcbb3175524e6160c861bf32a280964ebda16",
+    "sig_alg": "GOST R 34.10-2012 with GOST R 34.11-2012 (256 bit)",
+    "source": "file",
+    "subject": "CN=gost2012.lab"
+   },
+   "key_size": null,
+   "label": "certparse:gost2012 (dev parser)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "GOST",
+   "facts": {
+    "is_ca": true,
+    "issuer": "CN=rsa.lab",
+    "key_alg": "GOST",
+    "not_after": "2026-12-12T08:28:10Z",
+    "not_before": "2026-11-12T08:28:10Z",
+    "self_signed": false,
+    "serial": "2dadcbb3175524e6160c861bf32a280964ebda16",
+    "sig_alg": "GOST",
+    "source": "file",
+    "subject": "CN=gost2012.lab"
+   },
+   "key_size": null,
+   "label": "storeutl[openssl-3.5.7]:gost2012 (dev parser)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "GOST",
+   "facts": {
+    "is_ca": true,
+    "issuer": "CN = rsa.lab",
+    "key_alg": "GOST",
+    "not_after": "2026-12-12T08:28:10Z",
+    "not_before": "2026-11-12T08:28:10Z",
+    "self_signed": false,
+    "serial": "2dadcbb3175524e6160c861bf32a280964ebda16",
+    "sig_alg": "GOST",
+    "source": "file",
+    "subject": "CN = gost2012.lab"
+   },
+   "key_size": null,
+   "label": "storeutl[openssl-3.0.13]:gost2012 (dev parser)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "2.16.840.1.101.3.4.3.18",
+   "facts": {
+    "fingerprint_sha256": "d6882008278eb0a499fbdb94f08e14decff8200ab1b62b7f8c29c519cd481f66",
+    "is_ca": true,
+    "issuer": "CN=rsa.lab",
+    "key_alg": "2.16.840.1.101.3.4.3.18",
+    "not_after": "2026-12-12T08:28:10Z",
+    "not_before": "2026-11-12T08:28:10Z",
+    "san": [],
+    "self_signed": false,
+    "serial": "2dadcbb3175524e6160c861bf32a280964ebda16",
+    "sig_alg": "Unknown OID",
+    "source": "file",
+    "subject": "CN=hashmldsa65.lab"
+   },
+   "key_size": null,
+   "label": "certparse:hashmldsa65 (dev parser)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "ML-DSA-65",
+   "facts": {
+    "is_ca": true,
+    "issuer": "CN=rsa.lab",
+    "key_alg": "ML-DSA-65",
+    "not_after": "2026-12-12T08:28:10Z",
+    "not_before": "2026-11-12T08:28:10Z",
+    "self_signed": false,
+    "serial": "2dadcbb3175524e6160c861bf32a280964ebda16",
+    "sig_alg": "HASH-ML-DSA-65-WITH-SHA512",
+    "source": "file",
+    "subject": "CN=hashmldsa65.lab"
+   },
+   "key_size": null,
+   "label": "storeutl[openssl-3.5.7]:hashmldsa65 (dev parser)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "2.16.840.1.101.3.4.3.18",
+   "facts": {
+    "is_ca": true,
+    "issuer": "CN = rsa.lab",
+    "key_alg": "2.16.840.1.101.3.4.3.18",
+    "not_after": "2026-12-12T08:28:10Z",
+    "not_before": "2026-11-12T08:28:10Z",
+    "self_signed": false,
+    "serial": "2dadcbb3175524e6160c861bf32a280964ebda16",
+    "sig_alg": "2.16.840.1.101.3.4.3.33",
+    "source": "file",
+    "subject": "CN = hashmldsa65.lab"
+   },
+   "key_size": null,
+   "label": "storeutl[openssl-3.0.13]:hashmldsa65 (dev parser)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "2.16.840.1.101.3.4.3.18",
+   "facts": {
+    "fingerprint_sha256": "81e96c7c99465c3a3dfb02a43b781a4b7e9f33ac4fb056be0d75e312b653213d",
+    "is_ca": true,
+    "issuer": "CN=mldsa65.lab",
+    "key_alg": "2.16.840.1.101.3.4.3.18",
+    "not_after": "2026-12-12T08:28:10Z",
+    "not_before": "2026-11-12T08:28:10Z",
+    "san": [],
+    "self_signed": true,
+    "serial": "6f764b863197bd076cfe2cda351e6fdfb085dc20",
+    "sig_alg": "Unknown OID",
+    "source": "file",
+    "subject": "CN=mldsa65.lab"
+   },
+   "key_size": null,
+   "label": "certparse:mldsa65 (dev parser)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "ML-DSA-65",
+   "facts": {
+    "is_ca": true,
+    "issuer": "CN=mldsa65.lab",
+    "key_alg": "ML-DSA-65",
+    "not_after": "2026-12-12T08:28:10Z",
+    "not_before": "2026-11-12T08:28:10Z",
+    "self_signed": true,
+    "serial": "6f764b863197bd076cfe2cda351e6fdfb085dc20",
+    "sig_alg": "ML-DSA-65",
+    "source": "file",
+    "subject": "CN=mldsa65.lab"
+   },
+   "key_size": null,
+   "label": "storeutl[openssl-3.5.7]:mldsa65 (dev parser)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "2.16.840.1.101.3.4.3.18",
+   "facts": {
+    "is_ca": true,
+    "issuer": "CN = mldsa65.lab",
+    "key_alg": "2.16.840.1.101.3.4.3.18",
+    "not_after": "2026-12-12T08:28:10Z",
+    "not_before": "2026-11-12T08:28:10Z",
+    "self_signed": true,
+    "serial": "6f764b863197bd076cfe2cda351e6fdfb085dc20",
+    "sig_alg": "2.16.840.1.101.3.4.3.18",
+    "source": "file",
+    "subject": "CN = mldsa65.lab"
+   },
+   "key_size": null,
+   "label": "storeutl[openssl-3.0.13]:mldsa65 (dev parser)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "ML-DSA-65",
+   "facts": {
+    "chain_index": 0,
+    "fingerprint_sha256": "81e96c7c99465c3a3dfb02a43b781a4b7e9f33ac4fb056be0d75e312b653213d",
+    "is_ca": true,
+    "issuer": "CN=mldsa65.lab",
+    "key_alg": "ML-DSA-65",
+    "key_alg_oid": "2.16.840.1.101.3.4.3.18",
+    "not_after": "2026-12-12T08:28:10Z",
+    "not_before": "2026-11-12T08:28:10Z",
+    "parameter_set": "ML-DSA-65",
+    "san": [],
+    "self_signed": true,
+    "serial": "6f764b863197bd076cfe2cda351e6fdfb085dc20",
+    "sig_alg": "ML-DSA-65",
+    "sig_alg_oid": "2.16.840.1.101.3.4.3.18",
+    "source": "tls",
+    "subject": "CN=mldsa65.lab"
+   },
+   "key_size": null,
+   "label": "lab :4432 certificate (CB-04 node)",
+   "protocol": null,
+   "type": "certificate"
+  },
+  {
+   "algorithm": "TLS_AES_256_GCM_SHA384",
+   "facts": {
+    "chain_length": 1,
+    "client_auth_requested": false,
+    "handshake_budget": 12,
+    "handshake_tool": "openssl",
+    "handshakes_used": 6,
+    "leaf": {
+     "curve": null,
+     "fingerprint_sha256": "81e96c7c99465c3a3dfb02a43b781a4b7e9f33ac4fb056be0d75e312b653213d",
+     "issuer": "CN=mldsa65.lab",
+     "key_alg": "2.16.840.1.101.3.4.3.18",
+     "key_size": null,
+     "not_after": "2026-12-12T08:28:10Z",
+     "san": [],
+     "self_signed": true,
+     "sig_alg": "Unknown OID",
+     "subject": "CN=mldsa65.lab"
+    },
+    "mode": "full",
+    "negotiated_cipher": "TLS_AES_256_GCM_SHA384",
+    "negotiated_group": "X25519MLKEM768",
+    "negotiated_version": "TLSv1.3",
+    "peer_signature_type": "mldsa65",
+    "peer_signing_digest": null,
+    "pq_group": "X25519MLKEM768",
+    "pq_hybrid": true,
+    "protocol_label": "lab",
+    "secure_renegotiation": null,
+    "server_temp_key": null,
+    "service": "tls",
+    "tls": true,
+    "versions": {
+     "SSLv3": false,
+     "TLSv1.0": false,
+     "TLSv1.1": false,
+     "TLSv1.2": false,
+     "TLSv1.3": true
+    }
+   },
+   "key_size": null,
+   "label": "lab :4432 tls_endpoint (CB-04 node)",
+   "protocol": "TLSv1.3",
+   "type": "tls_endpoint"
+  }
+ ]
+}

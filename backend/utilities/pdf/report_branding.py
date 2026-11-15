@@ -215,6 +215,20 @@ REPORT_META: Dict[str, Dict[str, str]] = {
             "evidence in the cells marked (assessor)."
         ),
     },
+    "cbom_risk_register": {
+        "title": "Quantum Risk Register",
+        "subtitle": "Cryptographic Bill of Materials · Quantum risk grade per asset (Q1-Q4, Q0 kept visible)",
+        "footer_label": "CBOM Quantum Risk Register",
+        "kicker": "Regulatory Deliverable",
+        "intro": (
+            "Every asset of the team's estate once, with its current quantum risk grade, "
+            "every Q0 Unknown gap and its reason, and the gaps closed week by week."
+        ),
+        "how_to_read": (
+            "Q1 Critical to Q4 Low rank quantum risk under the team's Mosca inputs; Q0 Unknown "
+            "means the product could not grade the item, never that it is safe."
+        ),
+    },
     "cbom_pqc_roadmap": {
         "title": "PQC Migration Roadmap",
         "subtitle": "Cryptographic Bill of Materials · Post-quantum migration planning",
@@ -1241,6 +1255,7 @@ def build_kpi_grid(
     risk_score: Optional[int] = None,
     risk_grade: Optional[str] = None,
     risk_band: Optional[str] = None,
+    time_hint: str = "Completed successfully",
 ) -> Table:
     gap = 6
     # Risk + 4 metrics — compress slightly when risk present
@@ -1333,7 +1348,7 @@ def build_kpi_grid(
             _kpi_card("Total Issues", str(total_issues), total_hint, KPI_ACCENT_TOTAL, styles, card_widths[1]),
             _kpi_card("Critical", str(critical), "Immediate remediation", KPI_ACCENT_CRITICAL, styles, card_widths[2]),
             _kpi_card("High", str(high), "Current sprint priority", KPI_ACCENT_HIGH, styles, card_widths[3]),
-            _kpi_card("Scan Time", scan_time or "—", "Completed successfully", KPI_ACCENT_TIME, styles, card_widths[4]),
+            _kpi_card("Scan Time", scan_time or "—", time_hint, KPI_ACCENT_TIME, styles, card_widths[4]),
         ]
         widths = card_widths
     else:
@@ -1342,7 +1357,7 @@ def build_kpi_grid(
             _kpi_card("Total Issues", str(total_issues), total_hint, KPI_ACCENT_TOTAL, styles, card_w),
             _kpi_card("Critical", str(critical), "Immediate remediation required", KPI_ACCENT_CRITICAL, styles, card_w),
             _kpi_card("High", str(high), "Prioritize in current sprint", KPI_ACCENT_HIGH, styles, card_w),
-            _kpi_card("Scan Time", scan_time or "—", "Completed successfully", KPI_ACCENT_TIME, styles, card_w),
+            _kpi_card("Scan Time", scan_time or "—", time_hint, KPI_ACCENT_TIME, styles, card_w),
         ]
         widths = [card_w] * 4
 
@@ -1655,6 +1670,7 @@ def append_executive_summary(
     project_name: Optional[str] = None,
     scan_time: Optional[str] = None,
     meta_chips: Optional[Sequence[Tuple[str, str]]] = None,
+    scan_time_hint: str = "Completed successfully",
 ) -> None:
     styles = styles or get_report_styles()
     meta = REPORT_META.get(report_key, REPORT_META["sast"])
@@ -1724,6 +1740,7 @@ def append_executive_summary(
             risk_score=risk_score,
             risk_grade=risk_grade,
             risk_band=risk_band,
+            time_hint=scan_time_hint,
         )
     )
     story.append(Spacer(1, 0.06 * inch))
@@ -1805,6 +1822,7 @@ def append_findings_catalog(
     styles: Optional[Dict[str, ParagraphStyle]] = None,
     col_widths: Optional[List[float]] = None,
     panel_title: str = "Findings Catalog",
+    chunk_size: int = 18,
 ) -> None:
     styles = styles or get_report_styles()
     if not catalog_rows:
@@ -1829,7 +1847,7 @@ def append_findings_catalog(
 
     # Chunk so a single catalog panel never exceeds one page height
     # (ReportLab LayoutError when a wrapped table is taller than the frame).
-    chunk_size = 18
+    # (rows per panel: callers with tall rows pass fewer, e.g. the Sources run PDF)
     widths = col_widths or [0.35 * inch, 0.85 * inch, 3.55 * inch, 2.25 * inch]
     for offset in range(0, len(normalized), chunk_size):
         chunk = normalized[offset : offset + chunk_size]

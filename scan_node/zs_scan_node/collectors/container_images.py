@@ -43,7 +43,7 @@ from typing import Any, Callable, Iterator
 from urllib.parse import urlencode, urljoin, urlsplit
 
 from zs_scan_node import linux_parsers as P
-from zs_scan_node import netutil, pkgdb
+from zs_scan_node import errtext, netutil, pkgdb
 from zs_scan_node.collectors import ConfigError
 from zs_scan_node.jobctx import JobContext
 from zs_scan_node.scrub import printable
@@ -88,6 +88,7 @@ TOKEN_SERVICES = {
     "registry.gitlab.com": "gitlab.com",  # GitLab.com
 }
 _AWS_V6_METADATA = ipaddress.ip_network("fd00:ec2::/32")
+_THIS_NETWORK = ipaddress.ip_network("0.0.0.0/8")  # reaches the node itself, like 0.0.0.0
 
 
 class ImageError(Exception):
@@ -102,6 +103,9 @@ class ImageRef:
     registry: str  # host[:port] as written (docker.io for Docker Hub)
     repository: str
     reference: str  # tag or sha256 digest
+    # #215: the tag written next to a digest (repo:tag@sha256:...). Docker reads the digest; the tag is resolved and
+    # compared with it, never silently dropped. Not part of the identity (label, equality): assets keep their target.
+    tag: str | None = field(default=None, compare=False)
 
     @property
     def api_host(self) -> str:
@@ -138,7 +142,7 @@ def parse_ref(text: str) -> ImageRef:
         path = f"library/{path}"
     if not _REPO.match(path) or not _HOST.match(registry):
         raise ConfigError(f"invalid image reference {text[:80]!r}")
-    return ImageRef(registry, path, digest or tag or "latest")
+    return ImageRef(registry, path, digest or tag or "latest", tag if digest else None)
 
 
 # ----------------------------------------------------------------------------- HTTP through the gate
@@ -172,24 +176,35 @@ class Registry:
         if origin[0] != "https":
             raise ImageError("tls_unavailable", f"{origin[1]} is not HTTPS; the node does not use plain HTTP")
         if origin not in self.clients:
-            try:
+            try:  # the registry, its token service and every redirect: one listed address skips the whole name
                 ip = netutil.resolve_checked(origin[1], self.ctx.never_scan)[0]
-            except netutil.Blocked:
-                raise ImageError("skipped_never_scan", f"{origin[1]} is on the never-scan list") from None
+            except netutil.Blocked as exc:
+                if origin != self.origin and exc.entry == netutil.UNSPECIFIED:
+                    # the gate refuses 0.0.0.0/8 and :: (also mapped and NAT64) whatever the list says; when the
+                    # REGISTRY named that host it is the registry steering the node to itself: always report it as
+                    # such, not as a never-scan skip
+                    where = exc.address or exc.what
+                    self._refuse_internal(origin[1], _internal_address(where, self.registry_ip)
+                                          or f"an address that reaches the node itself ({where})")
+                raise ImageError("skipped_never_scan", str(exc)) from None
             except OSError:
                 raise ImageError("unreachable", f"{origin[1]} does not resolve") from None
             if origin == self.origin:
                 self.registry_ip = ip
             else:
-                problem = _internal_address(ip, self.registry_ip)
-                if problem:
-                    self.ctx.log("registry pointed at an internal address; refused", registry=self.ref.registry,
-                                 host=origin[1], level="warn")
-                    raise ImageError("error", f"the registry sent the node to {origin[1]}, {problem}; refused")
+                self._refuse_internal(origin[1], _internal_address(ip, self.registry_ip))
             verify = self.registry_tls if origin == self.origin else self.public_tls
             self.clients[origin] = netutil.http_client(f"https://{origin[1]}:{origin[2]}", ip, self.ctx.never_scan,
                                                        verify=verify, timeout=TIMEOUT)
         return self.clients[origin]
+
+    def _refuse_internal(self, host: str, problem: str | None) -> None:
+        """Refuse a host the registry named (token service, redirect) that is one of the node's own or cloud-internal
+        addresses (``problem`` from _internal_address; None: nothing to refuse)."""
+        if problem:
+            self.ctx.log("registry pointed at an internal address; refused", registry=self.ref.registry, host=host,
+                         level="warn")
+            raise ImageError("error", f"the registry sent the node to {host}, {problem}; refused")
 
     def _send(self, method: str, url: str, headers: dict[str, str], stream: bool = False):
         """Send through the gate, following redirects by hand; Authorization goes to the registry origin only."""
@@ -206,10 +221,10 @@ class Registry:
             try:
                 request = client.build_request(method, path, headers=hdrs)
                 response = client.send(request, stream=stream)
-            except httpx.HTTPError as exc:
-                raise ImageError(_http_status(exc), f"{parts.hostname}: {exc.__class__.__name__}") from None
-            except ssl.SSLError as exc:
-                raise ImageError("tls_unavailable", f"{parts.hostname}: TLS failed ({exc.__class__.__name__})") from None
+            except netutil.Blocked as exc:  # the address was listed while the pull ran
+                raise ImageError("skipped_never_scan", str(exc)) from None
+            except (httpx.HTTPError, ssl.SSLError) as exc:  # #214: the cause in words, never the class name
+                raise ImageError(*registry_error(exc, parts.hostname or "")) from None
             if response.status_code in (301, 302, 303, 307, 308) and response.headers.get("location"):
                 response.close()
                 url = urljoin(url, response.headers["location"])
@@ -265,8 +280,11 @@ class Registry:
         parts = urlsplit(url)
         try:
             r = client.get(parts.path + "?" + parts.query, headers=headers)
+        except netutil.Blocked as exc:
+            raise ImageError("skipped_never_scan", str(exc)) from None
         except Exception as exc:  # httpx.HTTPError, ssl errors
-            raise ImageError("unreachable", f"token service: {exc.__class__.__name__}") from None
+            status, note = registry_error(exc, parts.hostname or "")
+            raise ImageError(status, f"token service {note}") from None
         if r.status_code != 200:
             raise ImageError("auth_failed", f"the token service refused the request ({r.status_code})")
         try:
@@ -297,12 +315,15 @@ def _tls(ca_pem: str | None, public: bool = True) -> ssl.SSLContext:
 
 def _internal_address(ip: str, registry_ip: str | None) -> str | None:
     """Why the node must not connect to ``ip`` for a host a registry named (its token service or a redirect), or None:
-    link-local (cloud metadata at 169.254.169.254, fe80::/10), unspecified, multicast and AWS's IPv6 metadata range
-    always; loopback unless the registry itself is on loopback (the node's own host, by the operator's choice)."""
+    0.0.0.0/8 and :: (they reach the node itself), link-local (cloud metadata at 169.254.169.254, fe80::/10), multicast
+    and AWS's IPv6 metadata range always; loopback unless the registry itself is on loopback (the node's own host, by
+    the operator's choice)."""
     addr = ipaddress.ip_address(ip)
     if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped is not None:
         addr = addr.ipv4_mapped
-    if addr.is_link_local or addr.is_unspecified or addr.is_multicast or addr in _AWS_V6_METADATA:
+    if addr.is_unspecified or (addr.version == 4 and addr in _THIS_NETWORK):
+        return f"an address that reaches the node itself ({ip})"
+    if addr.is_link_local or addr.is_multicast or addr in _AWS_V6_METADATA:
         return f"a link-local or metadata address ({ip})"
     if addr.is_loopback:
         own = ipaddress.ip_address(registry_ip) if registry_ip else None
@@ -311,6 +332,18 @@ def _internal_address(ip: str, registry_ip: str | None) -> str | None:
         if own is None or not own.is_loopback:
             return f"a loopback address ({ip})"
     return None
+
+
+def registry_error(exc: BaseException, host: str) -> tuple[str, str]:
+    """(status, note) for a registry call that failed below HTTP: a certificate the node does not trust (upload its
+    CA), another TLS failure, or the socket cause."""
+    verify = errtext.tls_verify_problem(exc)
+    if verify:
+        return "tls_unavailable", f"{host}: the registry certificate is not trusted ({verify}); upload the CA that issued it"
+    for e in errtext.chain(exc):
+        if isinstance(e, ssl.SSLError):
+            return "tls_unavailable", f"{host}: TLS failed ({str(getattr(e, 'reason', None) or e)[:120]})"
+    return errtext.socket_problem(exc, host, None)
 
 
 def _http_status(exc: Exception) -> str:
@@ -670,9 +703,13 @@ def inventory(merged: dict[str, bytes | None]) -> tuple[str | None, list[dict[st
     return None, [], os_info, notes
 
 
-def pull(reg: Registry, max_image_bytes: int) -> tuple[str, dict[str, bytes | None], dict[str, int]]:
-    """(manifest digest, merged inventory files, coverage counts) of one image."""
-    manifest, digest = fetch_manifest(reg)
+def _mb(n: int) -> str:
+    return f"{n / 1048576:.1f}" if n < 10 * 1048576 else str(n // 1048576)
+
+
+def checked_layers(manifest: dict[str, Any], max_image_bytes: int) -> list[dict[str, Any]]:
+    """The manifest's layer descriptors, refused before any download when there are too many, one is malformed, or
+    their compressed total is over the cap.  The connection test runs the same check (#215)."""
     layers = [d for d in manifest["layers"] if isinstance(d, dict)]
     if len(layers) > MAX_LAYERS:
         raise ImageError("not_supported", f"the image has {len(layers)} layers (cap {MAX_LAYERS})")
@@ -683,8 +720,34 @@ def pull(reg: Registry, max_image_bytes: int) -> tuple[str, dict[str, bytes | No
             raise ImageError("not_supported", "a layer descriptor has an unsupported digest or size")
     total = sum(d["size"] for d in layers)
     if total > max_image_bytes:
-        raise ImageError("not_supported", f"the image is {total // 1048576} MB compressed (cap "
+        raise ImageError("not_supported", f"the image is {_mb(total)} MB compressed (cap "
                                           f"{max_image_bytes // 1048576} MB); raise max_image_mb to read it")
+    return layers
+
+
+def tag_mismatch(reg: Registry) -> str | None:
+    """#215: for ``repo:tag@digest``, None when the tag points at the digest (the image itself, or an index that
+    lists it), else what it points at.  Only the tag's manifest is read (no layer)."""
+    ref = reg.ref
+    if not ref.tag:
+        return None
+    response = reg.get(f"/v2/{ref.repository}/manifests/{ref.tag}", accept=ACCEPT, stream=True)
+    if response.status_code != 200:
+        response.close()
+        return f"the tag {ref.tag} was not found (HTTP {response.status_code}); the image is read by its digest"
+    doc, raw = _json(response, "manifest")
+    top = "sha256:" + hashlib.sha256(raw).hexdigest()
+    listed = {str(m.get("digest")) for m in doc.get("manifests") or [] if isinstance(m, dict)}
+    if ref.reference == top or ref.reference in listed:
+        return None
+    return (f"the tag {ref.tag} points to {top[:19]}…, not to the digest given ({ref.reference[:19]}…); the image is "
+            "read by its digest")
+
+
+def pull(reg: Registry, max_image_bytes: int) -> tuple[str, dict[str, bytes | None], dict[str, int]]:
+    """(manifest digest, merged inventory files, coverage counts) of one image."""
+    manifest, digest = fetch_manifest(reg)
+    layers = checked_layers(manifest, max_image_bytes)
     merged: dict[str, bytes | None] = {}
     coverage: dict[str, int] = {}
     for desc in layers:
@@ -755,8 +818,11 @@ def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
         reg = Registry(ctx, ref, creds, config.get("ca_pem"))
         try:
             digest, merged, coverage = pull(reg, max_bytes)
-            n = _emit(ctx, ref, digest, merged, coverage)
-            ctx.outcome(ref.label, "ok", started=started, assets=n)
+            mismatch = tag_mismatch(reg)
+            n = _emit(ctx, ref, digest, merged, coverage, mismatch)
+            ctx.outcome(ref.label, "ok", mismatch, started=started, assets=n)
+            if mismatch:
+                ctx.log("image tag does not match its digest", image=ref.label, tag=ref.tag, level="warn")
             ctx.log("image read", image=ref.label, digest=digest, assets=n)
         except ImageError as exc:
             ctx.outcome(ref.label, exc.status, exc.detail, started=started)
@@ -769,7 +835,8 @@ def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
     return None
 
 
-def _emit(ctx: JobContext, ref: ImageRef, digest: str, merged: dict[str, bytes | None], coverage: dict[str, int]) -> int:
+def _emit(ctx: JobContext, ref: ImageRef, digest: str, merged: dict[str, bytes | None], coverage: dict[str, int],
+          mismatch: str | None = None) -> int:
     manager, packages, os_info, notes = inventory(merged)
     distro = {"id": os_info.get("id", ""), "version_id": os_info.get("version_id", "")} if os_info.get("id") else None
     n = 0
@@ -780,6 +847,7 @@ def _emit(ctx: JobContext, ref: ImageRef, digest: str, merged: dict[str, bytes |
         ctx.emit("crypto_library", ref.label, f"package:{name}", name=name,
                  facts={"name": name, "version": version, "arch": pkg.get("arch", ""), "source": "container_image",
                         "package_manager": manager, "image": ref.label, "image_digest": digest,
+                        **({"image_tag": ref.tag, "tag_matches_digest": mismatch is None} if ref.tag else {}),
                         "os": {k: printable(v, 120) for k, v in os_info.items() if k in ("id", "version_id", "pretty_name")},
                         "purl": pkgdb.purl(manager or "", name, version, distro, pkg.get("arch", ""))})
         n += 1
@@ -799,6 +867,7 @@ def _emit(ctx: JobContext, ref: ImageRef, digest: str, merged: dict[str, bytes |
 
 
 def test(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
+    max_bytes = max(1, min(int(config.get("max_image_mb") or DEFAULT_IMAGE_MB), 8192)) * 1024 * 1024
     try:
         images = _images(config)
         creds = _creds(ctx, config, secrets)
@@ -811,7 +880,12 @@ def test(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
         reg = Registry(ctx, ref, creds, config.get("ca_pem"))
         try:
             manifest, digest = fetch_manifest(reg)
-            sample["note"] = f"{len(manifest.get('layers') or [])} layers, {digest[:19]}"
+            layers = checked_layers(manifest, max_bytes)  # #215: over the cap fails here, not at the collection
+            mismatch = tag_mismatch(reg)
+            if mismatch:
+                sample.update(status="error", note=mismatch)
+            else:
+                sample["note"] = f"{len(layers)} layers, {_mb(sum(d['size'] for d in layers))} MB, {digest[:19]}"
         except ImageError as exc:
             sample.update(status=exc.status, note=exc.detail,
                           reachable=exc.status not in ("unreachable", "timeout", "skipped_never_scan"),

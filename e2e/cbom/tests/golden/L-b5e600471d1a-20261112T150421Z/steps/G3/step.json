@@ -1,0 +1,149 @@
+{
+  "checks": [
+    {
+      "evidence": [],
+      "expected": "no command or token after a reload",
+      "gate": "G3",
+      "id": "G3/token_shown_once",
+      "kind": "flow",
+      "observed": {
+        "command_blocks": 0,
+        "token_in_page": false
+      },
+      "reason": "",
+      "subject": {
+        "check": "token_shown_once"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [],
+      "expected": {
+        "added": [
+          "--network",
+          "cbom-e2e-net",
+          "-e",
+          "ZS_CA_FILE=/lab/ca.pem",
+          "-v",
+          "/home/claude/round6/local/ca/ca.pem:/lab/ca.pem:ro"
+        ],
+        "removed": []
+      },
+      "gate": "G3",
+      "id": "G3/allowed_diff",
+      "kind": "flow",
+      "observed": {
+        "added": [
+          "--network",
+          "cbom-e2e-net",
+          "-e",
+          "ZS_CA_FILE=/lab/ca.pem",
+          "-v",
+          "/home/claude/round6/local/ca/ca.pem:/lab/ca.pem:ro"
+        ],
+        "removed": []
+      },
+      "reason": "",
+      "subject": {
+        "check": "allowed_diff"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [],
+      "expected": "the image the UI prints exists on this stack",
+      "gate": "G3",
+      "id": "G3/node_image_served",
+      "kind": "flow",
+      "observed": "dss-staging/scan-node:k-918389c68ef0 present",
+      "reason": "",
+      "subject": {
+        "check": "node_image_served"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [],
+      "expected": "docker run exit 0",
+      "gate": "G3",
+      "id": "G3/node_started",
+      "kind": "flow",
+      "observed": "f3c23e56e333d9c38b31eee86c88437921d6b0ebdd9a05a3ce44e1ab47b4b6e0\n",
+      "reason": "",
+      "subject": {
+        "check": "node_started"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [],
+      "expected": "heartbeat <= 60 s after start",
+      "gate": "G3",
+      "id": "G3/node_online_60s",
+      "kind": "flow",
+      "observed": {
+        "online": true,
+        "seconds": 3
+      },
+      "reason": "",
+      "subject": {
+        "check": "node_online_60s"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [],
+      "expected": {
+        "container": [
+          "10.231.0.2"
+        ]
+      },
+      "gate": "G3",
+      "id": "G3/node_ip_eq_db",
+      "kind": "flow",
+      "observed": {
+        "last_seen_ip": "10.231.0.2",
+        "source_ips": "[\"10.231.0.2\"]"
+      },
+      "reason": "",
+      "subject": {
+        "check": "node_ip_eq_db"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [
+        "steps/G3/nodes.png"
+      ],
+      "expected": "Online",
+      "gate": "G3",
+      "id": "G3/ui_shows_online",
+      "kind": "flow",
+      "observed": "e2e-node-1labOnlineDocker1.0.0Signed3 s ago0",
+      "reason": "",
+      "subject": {
+        "check": "ui_shows_online"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [],
+      "expected": "1.0.0",
+      "gate": "G3",
+      "id": "G3/ui_version_eq_db",
+      "kind": "flow",
+      "observed": "e2e-node-1labOnlineDocker1.0.0Signed3 s ago0",
+      "reason": "",
+      "subject": {
+        "check": "ui_version_eq_db"
+      },
+      "verdict": "PASS"
+    }
+  ],
+  "ended": "2026-11-12T15:23:17Z",
+  "gate": "G3",
+  "note": "",
+  "seconds": 10.5,
+  "started": "2026-11-12T15:23:06Z",
+  "status": "ran"
+}

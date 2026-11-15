@@ -10,18 +10,23 @@ own rates, in hundredths of a credit:
     cbom       1 credit per 0.5 MB, at least 1 credit (helpers/tools/cbom_agent; decision D3)
     ai_bom     1 credit per 0.5 MB  + 0.04 / 0.836   (helpers/tools/ai_bom_agent)
 
-Every scan costs at least 0.01. GitHub's repository size includes the git history, so for most repositories this is
+Every scan costs at least 0.01, and the minimum charge of a scan type is the one ``/start`` applies
+(``utilities/scan/credit_estimate.py``: ``priced`` / ``minimum_credits``, decision D3), read from there so the two can
+never disagree. GitHub's repository size includes the git history, so for most repositories this is
 an upper bound of what a clone-measured estimate of the same branch would say; GitLab reports the repository size and
 Bitbucket the repository size in bytes. The customer sees this price per repository and in total before a run starts.
 """
 from __future__ import annotations
+
+from backend.utilities.scan import credit_estimate
 
 FORMULA = "scm-size-v1"
 PRODUCTS = ("sast", "iac", "sbom_sca", "cbom", "ai_bom")
 _LLM_CONSTANT = 0.04 / 0.836
 _SBOM_FLAT = 0.01 / 0.836
 _MB_PER_CREDIT = 0.5
-_CBOM_MIN = 1.0
+# every repository scan is a code scan of a repository (never an uploaded CBOM file): /start's minimum for that input
+_REPO_SECTION = {"repo_context": {}}
 
 
 def credits(product: str, size_kb: int) -> float:
@@ -33,10 +38,15 @@ def credits(product: str, size_kb: int) -> float:
     elif product == "sbom_sca":
         value = _SBOM_FLAT
     elif product == "cbom":
-        value = max(_CBOM_MIN, mb / _MB_PER_CREDIT)
+        value = mb / _MB_PER_CREDIT
     else:
         raise ValueError(f"{product} cannot scan a repository")
-    return max(0.01, round(value, 2))
+    return max(0.01, credit_estimate.priced(product, _REPO_SECTION, value))
+
+
+def minimum(product: str) -> float:
+    """The least /start charges for a repository scan of this product (0.01 when there is no minimum)."""
+    return max(0.01, credit_estimate.minimum_credits(product, _REPO_SECTION))
 
 
 def price_c(product: str, size_kb: int) -> int:
@@ -48,4 +58,4 @@ def as_credits(cents: int) -> float:
     return round(int(cents) / 100, 2)
 
 
-__all__ = ["FORMULA", "PRODUCTS", "as_credits", "credits", "price_c"]
+__all__ = ["FORMULA", "PRODUCTS", "as_credits", "credits", "minimum", "price_c"]

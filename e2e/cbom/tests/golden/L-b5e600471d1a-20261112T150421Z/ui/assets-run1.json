@@ -1,0 +1,256 @@
+{
+  "rows": [
+    {
+      "algorithm": "ECDHE-RSA-AES128-SHA",
+      "finding": "Endpoint accepts TLS 1.0; Endpoint accepts TLS 1.1; Endpoint accepts RSA key exchange without forward secrecy; Endpoint still accepts CBC-mode cipher suites; Endpoint has no post-quantum key exchange",
+      "id": 446,
+      "impact": "High",
+      "location": "10.231.0.18:443",
+      "quantum": "Vulnerable",
+      "target": "10.231.0.18",
+      "type": "TLS endpoint"
+    },
+    {
+      "algorithm": "RSA 1024",
+      "finding": "Certificate key uses RSA-1024; the minimum is 2048 bits; Self-signed certificate; its sha1WithRSAEncryption self-signature is not checked by clients (they trust the certificate itself), so it is deliberately not reported as a weak SHA-1 signature (SIG_SHA1); re-issue it with SHA-256 so policies and scanners stop flagging it; Uses public-key cryptography that a quantum computer can break",
+      "id": 447,
+      "impact": "High",
+      "location": "10.231.0.18:443#chain[0]",
+      "quantum": "Vulnerable",
+      "target": "10.231.0.18",
+      "type": "Certificate"
+    },
+    {
+      "algorithm": "ECDHE-RSA-AES128-SHA",
+      "finding": "Endpoint accepts TLS 1.0; Endpoint supports neither TLS 1.2 nor TLS 1.3; Endpoint accepts RSA key exchange without forward secrecy; Endpoint still accepts CBC-mode cipher suites; Endpoint has no post-quantum key exchange",
+      "id": 448,
+      "impact": "High",
+      "location": "10.231.0.26:443",
+      "quantum": "Vulnerable",
+      "target": "10.231.0.26",
+      "type": "TLS endpoint"
+    },
+    {
+      "algorithm": "RSA 2048",
+      "finding": "Certificate expired on 2025-10-08; Uses public-key cryptography that a quantum computer can break",
+      "id": 452,
+      "impact": "High",
+      "location": "10.231.0.19:443#chain[0]",
+      "quantum": "Vulnerable",
+      "target": "10.231.0.19",
+      "type": "Certificate"
+    },
+    {
+      "algorithm": "ssh-ed25519 256",
+      "finding": "SSH server offers SHA-1 key exchange (diffie-hellman-group14-sha1); SSH server offers HMAC-SHA1 (hmac-sha1); SSH server has no post-quantum key exchange",
+      "id": 439,
+      "impact": "Medium",
+      "location": "10.231.0.23:22",
+      "quantum": "Vulnerable",
+      "target": "10.231.0.23",
+      "type": "SSH endpoint"
+    },
+    {
+      "algorithm": "TLS_AES_128_GCM_SHA256",
+      "finding": "Endpoint has no post-quantum key exchange",
+      "id": 441,
+      "impact": "Low",
+      "location": "10.231.0.17:443",
+      "quantum": "Vulnerable",
+      "target": "10.231.0.17",
+      "type": "TLS endpoint"
+    },
+    {
+      "algorithm": "TLS_AES_256_GCM_SHA384",
+      "finding": "Endpoint has no post-quantum key exchange",
+      "id": 444,
+      "impact": "Low",
+      "location": "10.231.0.21:443",
+      "quantum": "Safe",
+      "target": "10.231.0.21",
+      "type": "TLS endpoint"
+    },
+    {
+      "algorithm": "2.16.840.1.101.3.4.3.18",
+      "finding": "Self-signed certificate",
+      "id": 445,
+      "impact": "Low",
+      "location": "10.231.0.21:443#chain[0]",
+      "quantum": "\u2014",
+      "target": "10.231.0.21",
+      "type": "Certificate"
+    },
+    {
+      "algorithm": "TLS_AES_128_GCM_SHA256",
+      "finding": "Endpoint has no post-quantum key exchange",
+      "id": 451,
+      "impact": "Low",
+      "location": "10.231.0.19:443",
+      "quantum": "Vulnerable",
+      "target": "10.231.0.19",
+      "type": "TLS endpoint"
+    },
+    {
+      "algorithm": "tls",
+      "finding": "\u2014",
+      "id": 434,
+      "impact": "Info",
+      "location": "10.231.0.34:443",
+      "quantum": "\u2014",
+      "target": "10.231.0.34",
+      "type": "TLS endpoint"
+    },
+    {
+      "algorithm": "TLS_AES_256_GCM_SHA384",
+      "finding": "\u2014",
+      "id": 435,
+      "impact": "Info",
+      "location": "10.231.0.20:443",
+      "quantum": "Safe",
+      "target": "10.231.0.20",
+      "type": "TLS endpoint"
+    },
+    {
+      "algorithm": "RSA 2048",
+      "finding": "Uses public-key cryptography that a quantum computer can break",
+      "id": 436,
+      "impact": "Info",
+      "location": "10.231.0.20:443#chain[0]",
+      "quantum": "Vulnerable",
+      "target": "10.231.0.20",
+      "type": "Certificate"
+    },
+    {
+      "algorithm": "RSA 2048",
+      "finding": "Uses public-key cryptography that a quantum computer can break",
+      "id": 437,
+      "impact": "Info",
+      "location": "10.231.0.20:443#chain[1]",
+      "quantum": "Vulnerable",
+      "target": "10.231.0.20",
+      "type": "Certificate"
+    },
+    {
+      "algorithm": "tls",
+      "finding": "\u2014",
+      "id": 438,
+      "impact": "Info",
+      "location": "10.231.0.22:443",
+      "quantum": "\u2014",
+      "target": "10.231.0.22",
+      "type": "TLS endpoint"
+    },
+    {
+      "algorithm": "ssh",
+      "finding": "\u2014",
+      "id": 440,
+      "impact": "Info",
+      "location": "10.231.0.24:22",
+      "quantum": "Safe",
+      "target": "10.231.0.24",
+      "type": "SSH endpoint"
+    },
+    {
+      "algorithm": "EC 256",
+      "finding": "Uses public-key cryptography that a quantum computer can break",
+      "id": 442,
+      "impact": "Info",
+      "location": "10.231.0.17:443#chain[0]",
+      "quantum": "Vulnerable",
+      "target": "10.231.0.17",
+      "type": "Certificate"
+    },
+    {
+      "algorithm": "RSA 2048",
+      "finding": "Uses public-key cryptography that a quantum computer can break",
+      "id": 443,
+      "impact": "Info",
+      "location": "10.231.0.17:443#chain[1]",
+      "quantum": "Vulnerable",
+      "target": "10.231.0.17",
+      "type": "Certificate"
+    },
+    {
+      "algorithm": "RSA 2048",
+      "finding": "Uses public-key cryptography that a quantum computer can break",
+      "id": 449,
+      "impact": "Info",
+      "location": "10.231.0.26:443#chain[0]",
+      "quantum": "Vulnerable",
+      "target": "10.231.0.26",
+      "type": "Certificate"
+    },
+    {
+      "algorithm": "RSA 2048",
+      "finding": "Uses public-key cryptography that a quantum computer can break",
+      "id": 450,
+      "impact": "Info",
+      "location": "10.231.0.26:443#chain[1]",
+      "quantum": "Vulnerable",
+      "target": "10.231.0.26",
+      "type": "Certificate"
+    },
+    {
+      "algorithm": "RSA 2048",
+      "finding": "Uses public-key cryptography that a quantum computer can break",
+      "id": 453,
+      "impact": "Info",
+      "location": "10.231.0.19:443#chain[1]",
+      "quantum": "Vulnerable",
+      "target": "10.231.0.19",
+      "type": "Certificate"
+    },
+    {
+      "algorithm": "\u2014",
+      "finding": "Not collected: 10.231.0.25 did not answer on any listed port (443, 8443, 636, 389, 25, 587, 465, 993, 995, 5432, 3306, 1433, 22, 3389, 9093, 8883, 500, 4500); filtered, down or no host at this address",
+      "id": 454,
+      "impact": "Info",
+      "location": "10.231.0.25#no answer",
+      "quantum": "\u2014",
+      "target": "10.231.0.25",
+      "type": "Not collected"
+    },
+    {
+      "algorithm": "\u2014",
+      "finding": "Not collected: 10.231.0.27 did not answer on any listed port (443, 8443, 636, 389, 25, 587, 465, 993, 995, 5432, 3306, 1433, 22, 3389, 9093, 8883, 500, 4500); filtered, down or no host at this address",
+      "id": 455,
+      "impact": "Info",
+      "location": "10.231.0.27#no answer",
+      "quantum": "\u2014",
+      "target": "10.231.0.27",
+      "type": "Not collected"
+    },
+    {
+      "algorithm": "\u2014",
+      "finding": "Not collected: 10.231.0.28 did not answer on any listed port (443, 8443, 636, 389, 25, 587, 465, 993, 995, 5432, 3306, 1433, 22, 3389, 9093, 8883, 500, 4500); filtered, down or no host at this address",
+      "id": 456,
+      "impact": "Info",
+      "location": "10.231.0.28#no answer",
+      "quantum": "\u2014",
+      "target": "10.231.0.28",
+      "type": "Not collected"
+    },
+    {
+      "algorithm": "\u2014",
+      "finding": "Not collected: 10.231.0.29 did not answer on any listed port (443, 8443, 636, 389, 25, 587, 465, 993, 995, 5432, 3306, 1433, 22, 3389, 9093, 8883, 500, 4500); filtered, down or no host at this address",
+      "id": 457,
+      "impact": "Info",
+      "location": "10.231.0.29#no answer",
+      "quantum": "\u2014",
+      "target": "10.231.0.29",
+      "type": "Not collected"
+    },
+    {
+      "algorithm": "\u2014",
+      "finding": "Not collected: 10.231.0.30 did not answer on any listed port (443, 8443, 636, 389, 25, 587, 465, 993, 995, 5432, 3306, 1433, 22, 3389, 9093, 8883, 500, 4500); filtered, down or no host at this address",
+      "id": 458,
+      "impact": "Info",
+      "location": "10.231.0.30#no answer",
+      "quantum": "\u2014",
+      "target": "10.231.0.30",
+      "type": "Not collected"
+    }
+  ],
+  "run_id": 21,
+  "total_text": "25 assets found"
+}
