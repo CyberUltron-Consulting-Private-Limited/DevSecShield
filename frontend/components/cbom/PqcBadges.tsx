@@ -52,9 +52,11 @@ export function PqcInstanceLevelBadge({ level, impact }: { level: number | null 
   const full = `NIST ${info.name}`;
   return (
     <Badge variant="outline" className={`shrink-0 text-[10px] ${pqcImpactBadgeClass(impact)}`}
-           title={`${info.name}. ${info.meaning} ${info.next}`.trim()} aria-label={full}
+           title={`${info.name}. ${info.meaning} ${info.next}`.trim()}
            data-testid="pqc-instance-level">
       <span className="sm:hidden" aria-hidden>{info.name.split(":")[0].replace("Level ", "L")}</span>
+      {/* screen readers hear the full name at every width (an aria-label on a role-less span is not read) */}
+      <span className="sr-only sm:hidden">{full}</span>
       <span className="hidden sm:inline">{full}</span>
     </Badge>
   );

@@ -54,9 +54,10 @@ test("A: the group badge row wraps under the title on narrow widths and never cl
   assert.match(bare, /—/);
 });
 
-test("A: the instance badge is short on narrow widths, full text in title and aria-label", () => {
+test("A: the instance badge is short on narrow widths, full text in title and in screen-reader text", () => {
   const html = renderToStaticMarkup(h(PqcInstanceLevelBadge, { level: 0, impact: "High" }));
-  assert.match(html, /aria-label="NIST Level 0: no quantum resistance"/);
+  assert.match(html, /<span class="sr-only sm:hidden">NIST Level 0: no quantum resistance<\/span>/);
+  assert.doesNotMatch(html, /aria-label=/);  // an aria-label on a role-less span is not read
   assert.match(html, /title="Level 0: no quantum resistance\./);
   const short = html.match(/<span[^>]*class="([^"]*)"[^>]*>L0<\/span>/);
   assert.ok(short, "a short L0 label");

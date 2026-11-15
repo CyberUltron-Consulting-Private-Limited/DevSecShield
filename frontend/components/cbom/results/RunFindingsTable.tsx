@@ -363,7 +363,7 @@ export function RunFindingsTable({
               <TableHeader>
                 <TableRow>
                   <TableHead data-col="select" className={`${SELECT_COL} ${STICKY_SELECT}`}>
-                    {/* infotip-shared: the select column stays 48 px (the sticky name column sits at left-12); the
+                    {/* infotip-shared: the select column is 76 px below md (it holds the open chevron) and the sticky name column sits right after it; the
                         Cryptographic findings title's tip explains selecting rows */}
                     <Checkbox checked={allSelected} aria-label="Select all rows" className="cursor-pointer" disabled={selectable.length === 0}
                               onCheckedChange={() => {
