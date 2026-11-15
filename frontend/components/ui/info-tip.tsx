@@ -1,11 +1,19 @@
 "use client";
 
 import { Info } from "lucide-react";
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 
 import { Label } from "@/components/ui/label";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { INFO_TIPS, type InfoTipEntry, type InfoTipId } from "@/content/infotips";
+import {
+  INFO_TIP_LABELS,
+  areaOf,
+  loadTipArea,
+  subscribeTipAreas,
+  tipAreaState,
+  type InfoTipId,
+  type InfoTipText,
+} from "@/content/infotips";
 import { cn } from "@/lib/utils";
 
 import { acceptRadixClose, focusOpensTip, openAfterClick, pressPointer, type PressPointer } from "./info-tip-logic";
@@ -25,9 +33,34 @@ function listenForTab() {
   document.addEventListener("pointerdown", () => { lastKeyWasTab = false; }, true);
 }
 
+/** Asks for the text of a tip's area (once per session; a failed load is tried again on the next call). */
+function requestText(id: InfoTipId) {
+  const area = areaOf(id);
+  if (area) loadTipArea(area).catch(() => {});
+}
+
+/**
+ * The text of a tip, or why there is none yet. The label is eager (INFO_TIP_LABELS); the text arrives with its area
+ * (content/infotips/load.ts, issue #145). The server and the first client render have no text, so hydration matches.
+ */
+function useTipText(id: InfoTipId): { text?: InfoTipText; failed: boolean } {
+  const area = areaOf(id);
+  const state = useSyncExternalStore(
+    subscribeTipAreas,
+    () => (area ? tipAreaState(area) : undefined),
+    () => undefined,
+  );
+  // the area loads when its first tip renders, so the text (and the screen reader's description) is usually there
+  // before anyone hovers, focuses or taps; those ask again in case this load failed
+  useEffect(() => requestText(id), [id]);
+  return { text: state?.status === "ready" ? state.text[id] : undefined, failed: !area || state?.status === "error" };
+}
+
 /**
  * A small (i) button that explains the field, metric or setting next to it: what it is and an example.
- * Text comes from the registry (content/infotips.ts) by a stable id: what it is, optionally why it matters, an example; the id is typed, so an unknown id fails tsc.
+ * Text comes from the registry (content/infotips) by a stable id: what it is, why it matters, an example; the id is
+ * typed, so an unknown id fails tsc. The label is there at once; the text is loaded with its area when the first tip
+ * of that area renders (a tip opened before it arrives shows its label and "Loading…").
  *
  * Hover (mouse), focus reached with Tab, and tap (touch) open it (a programmatic focus, such as a dialog focusing its
  * first button, does not); Esc, blur, a tap outside and a second tap close it. The button is named "About <label>"
@@ -36,14 +69,18 @@ function listenForTab() {
  * controlled here.
  */
 export function InfoTip({ id, side = "top", className }: { id: InfoTipId; side?: "top" | "right" | "bottom" | "left"; className?: string }) {
-  const tip = INFO_TIPS[id];
+  const label = INFO_TIP_LABELS[id];
+  const { text, failed } = useTipText(id);
   const descriptionId = useId();
   const [open, setOpenState] = useState(false);
   const press = useRef<{ wasOpen: boolean; pointer: PressPointer } | null>(null);
   const closeThis = useRef(() => setOpenState(false));
   const setOpen = (next: boolean) => {
     if (next && closeOpenTip && closeOpenTip !== closeThis.current) closeOpenTip();
-    if (next) closeOpenTip = closeThis.current;
+    if (next) {
+      closeOpenTip = closeThis.current;
+      requestText(id);
+    }
     else if (closeOpenTip === closeThis.current) closeOpenTip = null;
     setOpenState(next);
   };
@@ -71,7 +108,7 @@ export function InfoTip({ id, side = "top", className }: { id: InfoTipId; side?:
       <TooltipTrigger asChild>
         <button
           type="button"
-          aria-label={`About ${tip.label}`}
+          aria-label={`About ${label}`}
           // always described by the hidden copy below (the child's prop wins over Radix's open-only one)
           aria-describedby={descriptionId}
           data-infotip={id}
@@ -81,11 +118,13 @@ export function InfoTip({ id, side = "top", className }: { id: InfoTipId; side?:
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
             className,
           )}
+          onPointerEnter={() => requestText(id)}
           onPointerDown={(e) => {
             pointerPressing.current = true;
             press.current = { wasOpen: open, pointer: pressPointer(e.pointerType) };
           }}
           onFocus={() => {
+            requestText(id);
             // a pointer press focuses the button too: that is not keyboard focus, and the click decides
             keyboardFocus.current = !pointerPressing.current && focusOpensTip(lastKeyWasTab);
             focusing.current = !pointerPressing.current;
@@ -122,21 +161,34 @@ export function InfoTip({ id, side = "top", className }: { id: InfoTipId; side?:
         }}
         className="w-auto max-w-[min(20rem,calc(100vw-2rem))] text-left text-pretty px-3 py-2 leading-relaxed"
       >
-        <InfoTipBody id={id} />
+        <InfoTipBody label={label} text={text} failed={failed} />
       </TooltipContent>
     </Tooltip>
     {/* the description screen readers read on the button; `hidden` keeps it off screen and out of the reading order */}
     <span id={descriptionId} hidden>
-      {tip.what}
-      {tip.why ? ` Why it matters: ${tip.why}` : ""} Example: {tip.example}
+      {text && (
+        <>
+          {text.what}
+          {text.why ? ` Why it matters: ${text.why}` : ""} Example: {text.example}
+        </>
+      )}
     </span>
     </>
   );
 }
 
 /** Text only: tooltip content cannot take focus (WAI-ARIA tooltip pattern), so it never holds a link or a button. */
-function InfoTipBody({ id }: { id: InfoTipId }) {
-  const tip: InfoTipEntry = INFO_TIPS[id];
+function InfoTipBody({ label, text: tip, failed }: { label: string; text?: InfoTipText; failed: boolean }) {
+  if (!tip) {
+    return (
+      <span className="block space-y-1.5">
+        <span className="block font-semibold">{label}</span>
+        <span className="block opacity-80" data-infotip-loading={failed ? undefined : ""}>
+          {failed ? "This tip could not be loaded. Close it and open it again to retry." : "Loading…"}
+        </span>
+      </span>
+    );
+  }
   return (
     <span className="block space-y-1.5">
       <span className="block">{tip.what}</span>

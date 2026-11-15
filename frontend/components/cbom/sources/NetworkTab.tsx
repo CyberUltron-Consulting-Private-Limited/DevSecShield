@@ -724,7 +724,10 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
               <p className="text-xs text-zinc-500">
                 This list always wins. The node refuses these addresses even if a job asks for them, in every job of
                 this team: a server, database, registry or Kubernetes API whose name resolves to a listed address is
-                skipped as a whole, and ranges are checked one address at a time. This list takes addresses, ranges
+                skipped as a whole, with every address it resolves to, also inside ranges. Ranges are checked one
+                address at a time: an IPv6 address of a host listed only by its IPv4 address is skipped only when a
+                target or SNI hostname of the job answers both, so list such a host by name or by both addresses.
+                This list takes addresses, ranges
                 and hostnames. A listed hostname covers every address it resolves to from the scan node, in range
                 sweeps too; until it resolves there, the node scans nothing for this team (localhost and the other
                 loopback names cover only 127.0.0.0/8 and ::1 and are never looked up).
