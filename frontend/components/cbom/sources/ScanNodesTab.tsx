@@ -50,6 +50,7 @@ import {
   type DeployMethod,
   type InstallLinks,
   type NodeTrust,
+  type RegistryImage,
 } from "./logic";
 import { NODE_UPDATE_STEPS, nodeUpdateBadge, nodesNeedingUpdate } from "./nodeUpdate";
 import { revealById } from "./reveal";
@@ -312,7 +313,8 @@ export default function ScanNodesTab({
   const trustError = trustProblem(trust);
   // A public registry (the server names its image, and for Helm its chart): docker pull / helm from oci://.
   const registryHost = artifactsQuery.data?.pull_image_ref?.split("/")[0] ?? "";
-  const registryCmd = created
+  // #197: never a registry image that is not this server's node build (images.pulled is null then; logic.nodeImages)
+  const registryCmd = created && images.pulled && artifactsQuery.data?.pull_image_ref
     ? registryInstall(method, artifactsQuery.data, { apiUrl, token: created.token, name: nodeName, proxyUrl: nodeProxy,
         insecureHttp: apiUrl.trim().startsWith("http://"), trust, caFile, proxyUser })
     : null;
@@ -322,7 +324,7 @@ export default function ScanNodesTab({
   const fileCommands = created ? (
     <>
       <NodeOnePaste apiUrl={apiUrl} method={method} links={created.links} token={created.token} name={nodeName}
-        proxyUrl={nodeProxy} caFile={caFile} proxyUser={proxyUser} image={images.loaded.image} trust={trust} />
+        proxyUrl={nodeProxy} caFile={caFile} proxyUser={proxyUser} image={images.loaded.image} build={images.loaded.build} trust={trust} />
       {created.links && (
         <p className="text-xs text-zinc-600 dark:text-zinc-400">Or, with the files you downloaded in the browser above:</p>
       )}
@@ -537,11 +539,12 @@ export default function ScanNodesTab({
                 options={DEPLOY_OPTIONS.map((o) => ({ ...o, disabled: !!created && o.value !== wizard.deployment }))} />
               <NodeDownloads teamId={teamId} method={method} artifacts={artifactsQuery.data}
                 loading={artifactsQuery.isLoading} error={artifactsQuery.error} />
+              <RegistryImageNotice registry={images.registry} nodeBuild={artifactsQuery.data?.node_build ?? artifactsQuery.data?.version ?? null} />
               {created && (
                 <div className="mt-4 space-y-2">
                   {registryCmd ? (
                     <>
-                      {/* A public registry (staging: GHCR): the main command pulls the pinned release, no login. */}
+                      {/* A public registry (staging: GHCR): the main command pulls this server's node build (#197), no login. */}
                       <div className="space-y-1" data-testid="node-command-pull">
                         <p className="text-sm font-medium text-zinc-900 dark:text-white">
                           Install with one command: the image comes from{" "}
@@ -1039,4 +1042,35 @@ function NodeVersion({ node }: { node: CbomScanNode }) {
       {badge && <span className="text-xs text-zinc-500">{badge.short}</span>}
     </span>
   );
+}
+
+/** #197: the registry image the wizard would install, when it is not this server's node build. A stale one (older,
+ * another commit, or a release tag written once) is not installed: the commands use this server's image file. A
+ * moving tag (:staging) is installed, with a note that it is not pinned. */
+function RegistryImageNotice({ registry, nodeBuild }: { registry: RegistryImage | null; nodeBuild: string | null }) {
+  const f = registry?.freshness;
+  if (!registry || !f?.message) return null;
+  if (registry.stale) {
+    return (
+      <div role="alert" data-testid="node-image-stale"
+        className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
+        <p className="font-medium">
+          The registry image is not this server&apos;s scan node release, so it is not offered. <InfoTip id="cbsrc.nodes.registry_stale" />
+        </p>
+        <p className="mt-1">{f.message}</p>
+        <p className="mt-1">
+          The commands below install this server&apos;s image file instead{nodeBuild ? <> (scan node <span className="font-mono">{nodeBuild}</span>)</> : null}:
+          it signs every request, reads ZS_CA_FILE and passes the Helm readiness probe.
+        </p>
+      </div>
+    );
+  }
+  if (f.state === "moving") {
+    return (
+      <p className="mt-3 text-xs text-zinc-600 dark:text-zinc-400" data-testid="node-image-moving">
+        {f.message} After installing, Scan nodes shows whether the node runs{nodeBuild ? <> <span className="font-mono">{nodeBuild}</span></> : " this server's build"}.
+      </p>
+    );
+  }
+  return null;
 }
