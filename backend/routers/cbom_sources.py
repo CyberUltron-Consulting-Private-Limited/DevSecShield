@@ -497,7 +497,7 @@ def _merge_secrets(kind: str, cfg: Any, current: dict[str, str], provided: dict[
                    clear: list[str], reset: bool, where_changed: bool) -> dict[str, str]:
     spec = KINDS[kind]
     required = spec.secret_fields(cfg)
-    allowed = required | set(spec.optional_secrets)
+    allowed = required | set(spec.optional_secret_fields(cfg))
     result = {} if reset else {k: v for k, v in current.items() if k in allowed}
     for name in clear:
         result.pop(name, None)

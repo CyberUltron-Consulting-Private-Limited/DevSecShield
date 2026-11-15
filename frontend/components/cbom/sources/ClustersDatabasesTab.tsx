@@ -32,6 +32,7 @@ import ContainerImagesSection from "./ContainerImagesSection";
 import { cbomSourcesKeys, TERMINAL_JOB } from "./keys";
 import { MetadataFields, metadataConfig, metadataFrom, type SourceMetadata } from "./SourceMetadata";
 import { ago, pluralize, readTextFile } from "./logic";
+import { dbHostError } from "./dbHost";
 import {
   Checkbox2,
   ChoiceCards,
@@ -75,7 +76,7 @@ const DB_DEFAULT_PORTS: Record<Engine, number> = { postgres: 5432, mysql: 3306, 
 const DB_DEFAULT_LOGIN: Record<Engine, string> = { postgres: "zs_cbom", mysql: "zs_cbom", mssql: "svc_zscbom", oracle: "zs_cbom", mongodb: "zs_cbom", redis: "zs_cbom" };
 const LOGIN_OPTIONAL: ReadonlySet<Engine> = new Set(["mongodb", "redis"]);
 // kinds.credential_target_problem: logins a fake server could read need TLS with the server's CA
-const CA_REQUIRED_ENGINES: ReadonlySet<Engine> = new Set(["mysql", "redis", "mssql"]);
+const CA_REQUIRED_ENGINES: ReadonlySet<Engine> = new Set(["mysql", "redis", "mssql", "oracle", "mongodb"]); // #216
 const GRANT_LANGUAGE: Record<Engine, string> = { postgres: "sql", mysql: "sql", mssql: "sql", oracle: "sql", mongodb: "javascript", redis: "bash" };
 
 // templates.py DB_READS (kept equal by test_command_lists_shown_to_customers_match_the_server_and_sudoers)
@@ -127,7 +128,6 @@ const VAULT_PROVIDERS = [
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$/;
 const NAME_ERROR = "Use 1-64 letters, digits, spaces, dots, dashes or underscores, starting with a letter or digit.";
 const LOGIN_RE = /^[A-Za-z0-9._@$\\-]{1,64}$/;
-const HOST_RE = /^[A-Za-z0-9._:-]{1,253}$/;
 const MAX_PEM = 64 * 1024;
 const CLOUD_KINDS = new Set(["aws_account", "azure_subscription", "gcp_project"]);
 
@@ -1319,7 +1319,8 @@ function DatabaseForm({
   const validate = (): DbErrors => {
     const e: DbErrors = {};
     if (!NAME_RE.test(form.name.trim())) e.name = NAME_ERROR;
-    if (!HOST_RE.test(form.host.trim())) e.host = "Enter a host name or IP address";
+    const hostError = dbHostError(form.host);
+    if (hostError) e.host = hostError;
     if (form.port.trim()) {
       const port = Number(form.port.trim());
       if (!/^\d{1,5}$/.test(form.port.trim()) || port < 1 || port > 65535) e.port = "1 to 65535";
@@ -1738,7 +1739,8 @@ function KeyManagerForm({
       if (form.credentialType === "vault" && !form.vaultPath.trim()) e.vaultPath = "Enter the secret path of the PIN in your vault";
       if (form.credentialType === "vault" && !isAdmin) e.vaultPath = "Only a team admin can add or change a vault reference";
     } else {
-      if (!HOST_RE.test(form.host.trim())) e.host = "Enter the KMIP server's host name or IP address";
+      const hostError = dbHostError(form.host, "Enter the KMIP server's host name or IP address");
+      if (hostError) e.host = hostError;
       const port = Number(form.port.trim() || 5696);
       if (!/^\d{0,5}$/.test(form.port.trim()) || port < 1 || port > 65535) e.port = "1 to 65535";
       const pemError = checkPem(form.caPem);
