@@ -1,15 +1,16 @@
 /**
  * Staging QA 15 Nov (689fdfb), CBOM Sources -> Fleet -> Transports -> Files to install: with no verified zs-collect
  * release, the page says only the role template and the signing key can be made, yet ansible-collection, salt-state,
- * ssm-document and zs-collect-manifest stayed clickable, and each click answered 400 and showed "Could not load the
- * file": the files are fetched as text, so the server's JSON {"detail": ...} reached refusalReason as a string.
+ * ssm-document and zs-collect-manifest stayed clickable (dev d4dcf180 now disables them), and each click answered 400
+ * and showed "Could not load the file": the files are fetched as text, so the server's JSON {"detail": ...} reached
+ * refusalReason as a string.
  * Run: npx --yes tsx components/cbom/sources/fleet/transportFiles.test.ts
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { refusalReason } from "../logic";
-import { TRANSPORT_FILES_NEED_RELEASE } from "./transportsLogic";
+import { NEEDS_RELEASE } from "./transportsLogic";
 
 // a refusal fetched with responseType "text": the body is still the server's JSON
 const textRefusal = { response: { status: 400, data: '{"detail":"No verified zs-collect release is active in this deployment"}' } };
@@ -24,10 +25,10 @@ const backend = readFileSync(join(__dirname, "../../../../../backend/utilities/c
 const m = backend.match(/^NEEDS_RELEASE\s*=\s*\{([^}]*)\}/m);
 assert.ok(m, "NEEDS_RELEASE not found in artifacts.py");
 const needs = [...m[1].matchAll(/"([^"]+)"/g)].map((x) => x[1]).sort();
-assert.deepEqual([...TRANSPORT_FILES_NEED_RELEASE].sort(), needs);
+assert.deepEqual([...NEEDS_RELEASE].sort(), needs);
 
-// the section disables them while no release is active
+// the section disables them while no release is active (dev's d4dcf180 did this part; checked here too)
 const section = readFileSync(join(__dirname, "TransportsSection.tsx"), "utf8");
-assert.ok(section.includes("disabled={fetchFile.isPending || (!data.release && TRANSPORT_FILES_NEED_RELEASE.has(name))}"),
+assert.ok(section.includes("const waiting = !data.release && NEEDS_RELEASE.has(name);") && section.includes("disabled={fetchFile.isPending || waiting}"),
   "the release-only files are not disabled without a release");
 console.log("transportFiles.test.ts: ok");
