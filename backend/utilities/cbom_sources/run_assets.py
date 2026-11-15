@@ -32,6 +32,7 @@ from backend.new_models import CbomCollectedAsset, CbomCollectionJob, CbomCollec
 from backend.utilities.cbom_sources import clause_evidence as CE
 from backend.utilities.cbom_sources import identity as ID
 from backend.utilities.cbom_sources import inventory as INV
+from backend.utilities.cbom_sources import qgrade_store as QSTORE
 from backend.utilities.cbom_sources import waves as WAVES
 from backend.utilities.cbom_sources.collections_view import Collection, node_row
 from backend.utilities.cbom_sources.run_list import finding_status, log_line
@@ -393,11 +394,18 @@ def add_code_page_fields(item: dict[str, Any]) -> None:
 def list_run_assets(session: Session, *, team_id: int, run: CbomCollectionRun, params: dict[str, Any],
                     view: str = "all", status: str | None = None, codes: list[str] | None = None,
                     asset_ids: list[int] | None = None, pqc_group: str | None = None,
-                    clause: tuple[str, str | None] | None = None) -> dict[str, Any]:
+                    clause: tuple[str, str | None] | None = None, q_grade: str | None = None) -> dict[str, Any]:
+    """The run's asset page. ``q_grade`` (CB-19 PR-3: "Q0".."Q4" or "none") filters on the grade stored at ingest;
+    it raises ``qgrade_store.Unavailable`` when the run's grades were not stored (``grade_filter.reason`` says why)."""
     if view not in VIEWS:
         raise ValueError(f"view: {view}")
     if status is not None and status not in FINDING_STATUSES:
         raise ValueError(f"status: {status}")
+    if q_grade is not None and q_grade not in QSTORE.GRADE_FILTERS:
+        raise ValueError(f"q_grade: {q_grade}")
+    grades = QSTORE.status(session, team_id, run)
+    if q_grade is not None and not grades["available"]:
+        raise QSTORE.Unavailable(grades["reason"])
     seen: dict[str, Any] = {}
 
     def refine(query, changed: dict[int, dict[str, Any]]):
@@ -415,6 +423,8 @@ def list_run_assets(session: Session, *, team_id: int, run: CbomCollectionRun, p
         if pqc_group:
             query = query.where(_pqc_group_clause(session, team_id, int(run.id or 0), pqc_group,
                                                   params.get("asset_type"), changed))
+        if q_grade is not None:
+            query = query.where(QSTORE.grade_clause(q_grade))
         return query
 
     out = INV.list_assets(session, team_id=team_id, run_id=run.id, refine=refine, **params)
@@ -425,6 +435,7 @@ def list_run_assets(session: Session, *, team_id: int, run: CbomCollectionRun, p
     out["asset_id_filter"] = len(asset_ids) if asset_ids else None
     out["pqc_group_filter"] = pqc_group
     out["clause_filter"] = ":".join(p for p in clause if p) if clause else None
+    out["q_grade_filter"] = q_grade  # CB-19 PR-3 (facets.q_grade and grade_filter come from inventory.list_assets)
     enrich_items(session, team_id, run, out["items"])
     return out
 

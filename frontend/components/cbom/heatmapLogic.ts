@@ -10,6 +10,9 @@ export interface HeatCell {
   count: number;
   worst: HeatImpact;
   by_impact: Record<string, number>;
+  /** run heat-map with metric=grade (CB-19 PR-3): assets per quantum risk grade and the worst known grade */
+  by_grade?: Record<string, number>;
+  worst_grade?: string | null;
 }
 
 export interface HeatData {
