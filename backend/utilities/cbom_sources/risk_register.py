@@ -363,11 +363,14 @@ def write_keys(session: Session, write: Any, inputs: TeamInputs) -> set[str]:
         through = (int(r.register_through_job_id), int(r.register_through_attempt)) \
             if r.register_through_job_id is not None and r.register_through_attempt is not None else None
         present = (_EO.c.team_id == team_id, _EO.c.source_ref == r.source_ref, _EO.c.presence == "present")
-        if through is None or through != previous.get(r.source_ref):
-            keys |= set(E.present_keys(session, team_id, [r.source_ref]))  # not known: every key, as before
-        elif through != latest:
-            keys |= set(session.execute(sa.select(_EO.c.asset_key).where(
-                *present, AS.changed_condition(session, write, latest, through))).scalars())
+        if through == latest:
+            continue
+        changed = AS.changed_condition(session, write, latest, through) \
+            if through is not None and through == previous.get(r.source_ref) else None
+        if changed is None:  # not known (or most of the job changed): every key, as before
+            keys |= set(E.present_keys(session, team_id, [r.source_ref]))
+        else:
+            keys |= set(session.execute(sa.select(_EO.c.asset_key).where(*present, changed)).scalars())
     return keys
 
 

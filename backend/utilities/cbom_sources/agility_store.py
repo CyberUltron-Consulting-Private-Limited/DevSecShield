@@ -438,30 +438,36 @@ def carry_unchanged(session: Any, team_id: int, refs: Sequence[str], *, only: An
     return carried, len(pairs)
 
 
-def changed_rows(session: Any, team_id: int, new: tuple[int, int], old: tuple[int, int]) -> Any:
-    """#352: a subquery of the row keys of job attempt ``new`` whose stored values may differ from the same key's row
-    in job attempt ``old`` (``content_digest``, see ``new_models.content_digest``): no row there, or a digest that
-    differs or is not known. Two index ranges of one table, compared by key: no observation is read."""
+CHANGED_ROWS_MAX = 5_000  # more changed rows than this in one source's job: compare every observation (the old path)
+
+
+def changed_rows(session: Any, team_id: int, new: tuple[int, int], old: tuple[int, int]) -> list[str]:
+    """#352: the row keys of job attempt ``new`` whose stored values may differ from the same key's row in job attempt
+    ``old`` (``content_digest``, see ``new_models.content_digest``): no row there, or a digest that differs or is not
+    known. Two reads of (row key, digest) by the unique (job_id, attempt, asset_key) index, compared here: a join of
+    the two ranges in SQL was planned as a range scan per row now and then (a second at 5k rows), and a team filter
+    in SQL could turn either read into a scan of the team's rows."""
     _eo, _es, _ea, row = _tables()
-    n = row.__table__.alias("dn")
-    o = row.__table__.alias("do")
-    return sa.select(n.c.asset_key).select_from(n.outerjoin(o, sa.and_(
-        o.c.job_id == old[0], o.c.attempt == old[1], o.c.asset_key == n.c.asset_key))).where(
-        n.c.job_id == new[0], n.c.attempt == new[1], n.c.team_id == team_id,
-        sa.or_(o.c.id.is_(None), o.c.team_id != team_id, n.c.content_digest.is_(None), o.c.content_digest.is_(None),
-               n.c.content_digest != o.c.content_digest))
+    t = row.__table__
+
+    def read(job: tuple[int, int]) -> dict[str, str | None]:
+        return {k: d for k, d, team in session.execute(sa.select(t.c.asset_key, t.c.content_digest, t.c.team_id).where(
+            t.c.job_id == job[0], t.c.attempt == job[1])).all() if team == team_id}
+
+    before = read(old)
+    return sorted(k for k, d in read(new).items() if d is None or before.get(k) != d)
 
 
-def changed_condition(session: Any, write: Any, new: tuple[int, int], old: tuple[int, int]) -> Any:
+def changed_condition(session: Any, write: Any, new: tuple[int, int], old: tuple[int, int]) -> Any | None:
     """``cbomestateobservation.row_key`` among ``changed_rows(new, old)``, read once per write (the agility and the
-    register hooks usually compare the same two jobs): a list while it is short, else the subquery."""
+    register hooks usually compare the same two jobs); None when more than ``CHANGED_ROWS_MAX`` rows changed (a first
+    write after cb352hooks001, whose rows have no digest: the caller then compares every observation)."""
     eo, _es, _ea, _row = _tables()
     cache = write.__dict__.setdefault("_changed_rows", {})
     if (new, old) not in cache:
-        cache[(new, old)] = list(session.execute(changed_rows(session, write.team_id, new, old)).scalars())
+        cache[(new, old)] = changed_rows(session, write.team_id, new, old)
     keys = cache[(new, old)]
-    return eo.c.row_key.in_(keys) if len(keys) <= 5_000 else \
-        eo.c.row_key.in_(changed_rows(session, write.team_id, new, old))
+    return eo.c.row_key.in_(keys) if len(keys) <= CHANGED_ROWS_MAX else None
 
 
 def _systems(session: Any, team_id: int, ref: str, version: str) -> set[tuple[str, str, str]]:
@@ -524,8 +530,8 @@ def advance(session: Any, write: Any, now: _dt.datetime) -> set[str]:
         fast = USE_DIGESTS and through is not None and through == previous.get(r.source_ref) and \
             contexts.of(through[0], r.source_ref, name)[0] == contexts.of(latest[0], r.source_ref, name)[0] and \
             _systems(session, team_id, r.source_ref, version) <= {contexts.of(latest[0], r.source_ref, name)[1]}
-        only = sa.or_(eo.c.state_run_id == run_id, changed_condition(session, write, latest, through)) \
-            if fast and through is not None else None
+        changed = changed_condition(session, write, latest, through) if fast and through is not None else None
+        only = sa.or_(eo.c.state_run_id == run_id, changed) if changed is not None else None
         carry_unchanged(session, team_id, [r.source_ref], only=only)
         stale = (eo.c.source_ref == r.source_ref, eo.c.presence == "present", eo.c.fix_version == version,
                  sa.or_(eo.c.fix_job_id != latest[0], eo.c.fix_attempt != latest[1]),
