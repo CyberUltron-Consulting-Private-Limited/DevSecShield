@@ -77,6 +77,7 @@ from backend.utilities.cbom_sources import inventory as INV
 from backend.utilities.cbom_sources import posture as POSTURE
 from backend.utilities.cbom_sources import q0register as Q0REG
 from backend.utilities.cbom_sources import qgrade as QGRADE
+from backend.utilities.cbom_sources import qgrade_store as QSTORE
 from backend.utilities.cbom_sources import run_deliverables as RUN_DELIVERABLES
 from backend.utilities.cbom_sources import run_parity as RUN_PARITY
 from backend.utilities.cbom_sources import run_results as RUN_RESULTS
@@ -94,6 +95,7 @@ from backend.utilities.cbom_sources.schemas import (
     EstimateBody,
     NodeCreate,
     NodeUpdate,
+    proxy_inspect_problem,
     RunCreate,
     SettingsUpdate,
     SourceCreate,
@@ -352,6 +354,15 @@ def _update_node(engine, team_id: int, user_id: int, node_id: int, body: NodeUpd
             if key == "name" and not value:
                 continue
             setattr(node, key, value)
+        if {"proxy_url", "proxy_ca_pem", "proxy_tls_inspect"} & set(changes):
+            # #202: a node whose proxy is removed has nothing left to inspect: inspection goes off with it (the edit
+            # dialog has no inspection box); turning inspection on needs the proxy and its CA, as on create
+            if node.proxy_tls_inspect and not (node.proxy_url or "").strip() and not changes.get("proxy_tls_inspect"):
+                node.proxy_tls_inspect = False
+                changes["proxy_tls_inspect"] = False
+            problem = proxy_inspect_problem(node.proxy_tls_inspect, node.proxy_url, node.proxy_ca_pem)
+            if problem:
+                raise HTTPException(status_code=400, detail=problem)
         node.row_version += 1
         node.updated_by_user_id = user_id
         node.last_updated = now
@@ -497,7 +508,7 @@ def _merge_secrets(kind: str, cfg: Any, current: dict[str, str], provided: dict[
                    clear: list[str], reset: bool, where_changed: bool) -> dict[str, str]:
     spec = KINDS[kind]
     required = spec.secret_fields(cfg)
-    allowed = required | set(spec.optional_secrets)
+    allowed = required | set(spec.optional_secret_fields(cfg))
     result = {} if reset else {k: v for k, v in current.items() if k in allowed}
     for name in clear:
         result.pop(name, None)
@@ -1124,16 +1135,16 @@ def _update_settings(engine, team_id: int, user_id: int, body: SettingsUpdate) -
                 # keeps every address it answers out of range sweeps, discovery and name targets.  Fail closed: while
                 # the name has no address on the node, the node scans nothing (it cannot tell which one is the host);
                 # the UI says so on the entry, and each job's result names the unresolved name.
-                if parsed.hostnames and T.ADDRESS_TYPO.fullmatch(parsed.hostnames[0]):
-                    raise HTTPException(status_code=400, detail=f"network_exclusions: {item.cidr.strip()} is not a valid "
+                typo = next((h for h in parsed.hostnames if T.ADDRESS_TYPO.fullmatch(h)), None)
+                if typo is not None:
+                    raise HTTPException(status_code=400, detail=f"network_exclusions: {typo} is not a valid "
                                         "IP address or CIDR range (it reads as a mistyped address, not a host name)")
-                if not parsed.normalized:
-                    continue
-                canonical = parsed.normalized[0]
-                if canonical in seen:
-                    continue
-                seen.add(canonical)
-                items.append({"cidr": canonical, "reason": item.reason})
+                # an entry holding several, separated by commas, keeps every one (#148), each with the entry's reason
+                for canonical in parsed.normalized:
+                    if canonical in seen:
+                        continue
+                    seen.add(canonical)
+                    items.append({"cidr": canonical, "reason": item.reason})
             changes["network_exclusions"] = items
         if "risk_model" in changes:
             # merge: a field the request leaves out keeps its value; an explicit null clears it; risk_model: null
@@ -1545,11 +1556,17 @@ async def get_run(team_id: TeamId, run_id: ObjectId, Authorization: AuthHeader =
 def _run_assets(engine, team_id: int, run_id: int, params: dict) -> dict:
     view, status, codes = params.pop("view", "all"), params.pop("status", None), params.pop("codes", None)
     asset_ids, pqc_group, clause = params.pop("asset_ids", None), params.pop("pqc_group", None), params.pop("clause", None)
+    q_grade = params.pop("q_grade", None)
     with Session(engine) as session:
         run = _get_owned(session, CbomCollectionRun, run_id, team_id, "Run")
         # CB-38: the inventory page plus the unified results table's fields (view, status, key, wave, risk score)
-        out = RUN_ASSETS.list_run_assets(session, team_id=team_id, run=run, params=params, view=view, status=status,
-                                         codes=codes, asset_ids=asset_ids, pqc_group=pqc_group, clause=clause)
+        try:
+            out = RUN_ASSETS.list_run_assets(session, team_id=team_id, run=run, params=params, view=view,
+                                             status=status, codes=codes, asset_ids=asset_ids, pqc_group=pqc_group,
+                                             clause=clause, q_grade=q_grade)
+        except QSTORE.Unavailable as exc:  # CB-19 PR-3: this run's grades were computed at view, never stored
+            raise HTTPException(status_code=409, detail=f"The grade filter is not available for this run ({exc})") \
+                from None
         RUN_TICKETS.add_ticket_fields(session, team_id, run, out["items"])  # CB-38 PR-4: ticket_key, ticket_url
         out["run"] = public_run(run)
         return out
@@ -1577,6 +1594,7 @@ async def run_assets(team_id: TeamId, run_id: ObjectId,
                      asset_id: str | None = Query(default=None, max_length=5_500),
                      pqc_group: str | None = Query(default=None, max_length=64),
                      clause: str | None = Query(default=None, max_length=300),
+                     q_grade: str | None = Query(default=None, pattern="^(Q0|Q1|Q2|Q3|Q4|none)$"),
                      Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
     try:  # #270: the compliance mapping's "N assets" (a clause's assets, a requirement's assets)
@@ -1586,7 +1604,8 @@ async def run_assets(team_id: TeamId, run_id: ObjectId,
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
     params = {**_asset_params(type, impact, quantum, q, source_id, page, page_size), "view": view, "status": status,
-              "codes": codes, "asset_ids": asset_ids, "pqc_group": group, "clause": clause_filter}
+              "codes": codes, "asset_ids": asset_ids, "pqc_group": group, "clause": clause_filter,
+              "q_grade": q_grade}
     return _ok(await _run("run assets", team_id, _run_assets, engine, team_id, run_id, params))
 
 

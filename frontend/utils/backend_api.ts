@@ -4523,7 +4523,12 @@ export interface CbomAssetPage {
     page: number
     page_size: number
     items: CbomAsset[]
-    facets: { type: Record<string, number>; impact: Record<string, number>; quantum_vulnerable: number }
+    /** q_grade (CB-19 PR-3): rows per grade stored at ingest ("none": no grade), null when the run was graded at
+     * view; absent from an older server */
+    facets: { type: Record<string, number>; impact: Record<string, number>; quantum_vulnerable: number;
+              q_grade?: Record<string, number> | null }
+    /** CB-19 PR-3: whether the grade filter can serve this run, and why not */
+    grade_filter?: { available: boolean; reason: string | null }
     targets: CbomJobTargets[]
     run?: CbomRun
 }
@@ -5252,6 +5257,8 @@ export interface CbomRunAssetFilters extends CbomAssetFilters {
     code?: string
     /** #270: comma-separated asset ids, at most 500 (a compliance requirement's refs) */
     asset_id?: string
+    /** CB-19 PR-3: a grade key (grade/model.ts GRADE_KEYS) or "none" (409 when the run's grades were not stored) */
+    q_grade?: string
 }
 
 /** Wave status names of PUT /cbom/remediation (same values as utils/api/cbom_ops CbomWaveStatus). */

@@ -57,6 +57,25 @@ class NodeCreate(_Body):
     def _ca(cls, v: str | None) -> str | None:
         return check_pem_certificates(v)
 
+    @model_validator(mode="after")
+    def _inspect(self) -> "NodeCreate":
+        problem = proxy_inspect_problem(self.proxy_tls_inspect, self.proxy_url, self.proxy_ca_pem)
+        if problem:
+            raise ValueError(problem)
+        return self
+
+
+def proxy_inspect_problem(inspect: bool, proxy_url: str | None, proxy_ca_pem: str | None) -> str | None:
+    """#202: "My proxy inspects TLS" only means something with a proxy, and the node can only trust that proxy with
+    its CA certificate."""
+    if not inspect:
+        return None
+    if not (proxy_url or "").strip():
+        return "proxy_url: enter the proxy that inspects TLS, or untick \"My proxy inspects TLS\""
+    if not (proxy_ca_pem or "").strip():
+        return "proxy_ca_pem: upload the CA certificate your proxy signs with, so the node can trust only that proxy"
+    return None
+
 
 class NodeUpdate(_Body):
     name: str | None = Field(default=None, max_length=64)

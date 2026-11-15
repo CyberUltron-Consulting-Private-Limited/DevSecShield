@@ -32,6 +32,7 @@ import ContainerImagesSection from "./ContainerImagesSection";
 import { cbomSourcesKeys, TERMINAL_JOB } from "./keys";
 import { MetadataFields, metadataConfig, metadataFrom, type SourceMetadata } from "./SourceMetadata";
 import { ago, pluralize, readTextFile } from "./logic";
+import { dbHostError } from "./dbHost";
 import {
   Checkbox2,
   ChoiceCards,
@@ -53,6 +54,7 @@ import {
   usePolledJob,
 } from "./shared";
 import { InfoTip } from "@/components/ui/info-tip";
+import { contextProblem, kubeconfigSettingProblem, kubeconfigSummary } from "./kubeconfigSummary";
 
 // ---------------------------------------------------------------------------- constants (mirror backend kinds.py / templates.py)
 type Engine = "postgres" | "mysql" | "mssql" | "oracle" | "mongodb" | "redis";
@@ -75,7 +77,7 @@ const DB_DEFAULT_PORTS: Record<Engine, number> = { postgres: 5432, mysql: 3306, 
 const DB_DEFAULT_LOGIN: Record<Engine, string> = { postgres: "zs_cbom", mysql: "zs_cbom", mssql: "svc_zscbom", oracle: "zs_cbom", mongodb: "zs_cbom", redis: "zs_cbom" };
 const LOGIN_OPTIONAL: ReadonlySet<Engine> = new Set(["mongodb", "redis"]);
 // kinds.credential_target_problem: logins a fake server could read need TLS with the server's CA
-const CA_REQUIRED_ENGINES: ReadonlySet<Engine> = new Set(["mysql", "redis", "mssql"]);
+const CA_REQUIRED_ENGINES: ReadonlySet<Engine> = new Set(["mysql", "redis", "mssql", "oracle", "mongodb"]); // #216
 const GRANT_LANGUAGE: Record<Engine, string> = { postgres: "sql", mysql: "sql", mssql: "sql", oracle: "sql", mongodb: "javascript", redis: "bash" };
 
 // templates.py DB_READS (kept equal by test_command_lists_shown_to_customers_match_the_server_and_sudoers)
@@ -127,7 +129,6 @@ const VAULT_PROVIDERS = [
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$/;
 const NAME_ERROR = "Use 1-64 letters, digits, spaces, dots, dashes or underscores, starting with a letter or digit.";
 const LOGIN_RE = /^[A-Za-z0-9._@$\\-]{1,64}$/;
-const HOST_RE = /^[A-Za-z0-9._:-]{1,253}$/;
 const MAX_PEM = 64 * 1024;
 const CLOUD_KINDS = new Set(["aws_account", "azure_subscription", "gcp_project"]);
 
@@ -194,7 +195,7 @@ function kubeconfigProblem(text: string): string | null {
     if (key(name).test(text)) return `This kubeconfig points at a file (${name}); embed the data instead`;
   }
   if (key("certificate-authority").test(text)) return "This kubeconfig points at a CA file; embed certificate-authority-data instead";
-  return null;
+  return kubeconfigSettingProblem(text); // #209
 }
 
 function endpointOf(source: CbomSource): string {
@@ -797,6 +798,14 @@ function ClusterForm({
       (form.credentialType === "vault" ? `${form.vaultProvider}|${form.vaultPath.trim()}` : null) !==
         (cfg.vault ? `${cfg.vault.provider}|${cfg.vault.path}` : null));
   const templateName = form.tier === 2 ? "k8s-tier2" : "k8s-tier1";
+  const kubeSummary = useMemo(() => kubeconfigSummary(form.kubeconfig), [form.kubeconfig]); // #208
+  const stepsQuery = useQuery({ // #207: the kubeconfig from the template's long-lived token Secret
+    queryKey: cbomSourcesKeys.template(teamId, "k8s-kubeconfig"),
+    queryFn: () => getCbomTemplate(teamId, "k8s-kubeconfig"),
+    enabled: Number.isFinite(teamId),
+    retry: 1,
+    staleTime: Infinity,
+  });
   const roleQuery = useQuery({
     queryKey: cbomSourcesKeys.template(teamId, templateName),
     queryFn: () => getCbomTemplate(teamId, templateName),
@@ -840,6 +849,10 @@ function ClusterForm({
       }
     }
     if (form.context.trim().length > 128) e.context = "128 characters at most";
+    else if (form.credentialType === "kubeconfig" && form.kubeconfig) {
+      const problem = contextProblem(form.context, kubeSummary); // #208: the save refuses it too
+      if (problem) e.context = problem;
+    }
     if (form.credentialType === "vault" && !form.vaultPath.trim()) e.vaultPath = "Enter the secret path in your vault";
     if (form.credentialType === "vault" && !isAdmin) e.vaultPath = "Only a team admin can add or change a vault reference";
     if (!form.nodeId) e.nodeId = "Choose the scan node that reaches this cluster";
@@ -1031,7 +1044,17 @@ function ClusterForm({
                         setErrors((er) => ({ ...er, kubeconfig: problem }));
                         return;
                       }
-                      set({ kubeconfig: text, kubeconfigName: file.name });
+                      // #208: offer the file's contexts; name the current one when there are several, and fill the
+                      // API server URL from the chosen context's cluster when it is still empty
+                      const summary = kubeconfigSummary(text);
+                      const chosen = form.context.trim() || (summary.contexts.length > 1 ? summary.current ?? "" : "");
+                      const server = summary.servers[chosen || summary.current || summary.contexts[0] || ""] ?? "";
+                      set({
+                        kubeconfig: text,
+                        kubeconfigName: file.name,
+                        context: chosen,
+                        apiUrl: form.apiUrl.trim() ? form.apiUrl : summary.servers[chosen] || server || form.apiUrl,
+                      });
                     } catch (err) {
                       setErrors((er) => ({ ...er, kubeconfig: (err as Error).message }));
                     }
@@ -1049,8 +1072,35 @@ function ClusterForm({
                   )}
                 </div>
               </Field>
-              <Field infoId="cbsrc.k8s.context" label="Context" htmlFor="k8s-context" error={errors.context} hint="Optional. Blank uses current-context." className="sm:col-span-2">
-                <Input id="k8s-context" data-testid="k8s-context" value={form.context} maxLength={128} onChange={(e) => set({ context: e.target.value })} />
+              <Field
+                infoId="cbsrc.k8s.context"
+                label="Context"
+                htmlFor="k8s-context"
+                error={errors.context}
+                hint={
+                  kubeSummary.contexts.length
+                    ? `In this kubeconfig: ${kubeSummary.contexts.join(", ")}. Blank uses current-context${kubeSummary.current ? ` (${kubeSummary.current})` : ""}.`
+                    : "Optional. Blank uses current-context."
+                }
+                className="sm:col-span-2"
+              >
+                <Input
+                  id="k8s-context"
+                  data-testid="k8s-context"
+                  list="k8s-contexts"
+                  value={form.context}
+                  maxLength={128}
+                  onChange={(e) => {
+                    const context = e.target.value;
+                    const server = kubeSummary.servers[context.trim()];
+                    set(server && !form.apiUrl.trim() ? { context, apiUrl: server } : { context });
+                  }}
+                />
+                <datalist id="k8s-contexts" data-testid="k8s-contexts">
+                  {kubeSummary.contexts.map((name) => (
+                    <option key={name} value={name} />
+                  ))}
+                </datalist>
               </Field>
             </div>
           ) : (
@@ -1105,7 +1155,7 @@ function ClusterForm({
           <div className="space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-xs font-medium text-zinc-500">
-                Apply this ClusterRole and binding for the service account zs-cbom (Tier {form.tier})
+                Apply this file: the zs-cbom namespace, service account and token Secret, and the ClusterRole and binding (Tier {form.tier})
               </p>
               <Button type="button" variant="outline" size="sm" className="cursor-pointer" onClick={downloadRole} data-testid="k8s-download-role">
                 <Download className="h-4 w-4 mr-1.5" />
@@ -1129,6 +1179,19 @@ function ClusterForm({
                 <CodeSnippet code={roleQuery.data} language="yaml" />
               </div>
             )}
+            <div className="space-y-1.5" data-testid="k8s-kubeconfig-steps">
+              <p className="text-xs font-medium text-zinc-500">
+                Then build the kubeconfig to upload, from the service account&apos;s long-lived token. Tokens from{" "}
+                <code className="font-mono">kubectl create token</code> expire (1 hour by default) and scheduled scans would then fail.
+              </p>
+              {stepsQuery.data ? (
+                <div className="max-h-72 overflow-y-auto rounded-md">
+                  <CodeSnippet code={stepsQuery.data} language="bash" />
+                </div>
+              ) : stepsQuery.isError ? (
+                <p className="text-xs text-zinc-500">Could not load the kubeconfig steps.</p>
+              ) : null}
+            </div>
           </div>
         </div>
 
@@ -1319,7 +1382,8 @@ function DatabaseForm({
   const validate = (): DbErrors => {
     const e: DbErrors = {};
     if (!NAME_RE.test(form.name.trim())) e.name = NAME_ERROR;
-    if (!HOST_RE.test(form.host.trim())) e.host = "Enter a host name or IP address";
+    const hostError = dbHostError(form.host);
+    if (hostError) e.host = hostError;
     if (form.port.trim()) {
       const port = Number(form.port.trim());
       if (!/^\d{1,5}$/.test(form.port.trim()) || port < 1 || port > 65535) e.port = "1 to 65535";
@@ -1738,7 +1802,8 @@ function KeyManagerForm({
       if (form.credentialType === "vault" && !form.vaultPath.trim()) e.vaultPath = "Enter the secret path of the PIN in your vault";
       if (form.credentialType === "vault" && !isAdmin) e.vaultPath = "Only a team admin can add or change a vault reference";
     } else {
-      if (!HOST_RE.test(form.host.trim())) e.host = "Enter the KMIP server's host name or IP address";
+      const hostError = dbHostError(form.host, "Enter the KMIP server's host name or IP address");
+      if (hostError) e.host = hostError;
       const port = Number(form.port.trim() || 5696);
       if (!/^\d{0,5}$/.test(form.port.trim()) || port < 1 || port > 65535) e.port = "1 to 65535";
       const pemError = checkPem(form.caPem);

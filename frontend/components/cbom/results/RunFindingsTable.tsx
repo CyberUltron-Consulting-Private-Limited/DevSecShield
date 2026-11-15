@@ -24,6 +24,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import FindingSelectionMenu from "@/components/finding-selection-menu";
 import { FixClassChip, QGradeChip, type FixClassFields, type QGradeFields } from "@/components/cbom/grade";
+import { gradeChipClass } from "@/components/cbom/grade/model";
 import type { CbomFindingStatus, CbomImpact, CbomRunAssetItem, CbomRunAssetPage } from "@/utils/backend_api";
 import type { CbomRemediationItem } from "@/utils/api/cbom_ops";
 
@@ -38,6 +39,7 @@ import {
   FINDING_STATUS_LABEL,
   FINDING_STATUSES,
   findingStatusOf,
+  gradeChips,
   hasActiveFilters,
   optionalColumns,
   pageCount,
@@ -150,6 +152,7 @@ export function RunFindingsTable({
   const pages = pageCount(page);
   const cols = optionalColumns(items);
   const types = Object.entries(page?.facets.type ?? {}).sort((a, b) => b[1] - a[1]);
+  const grades = gradeChips(page);
   const keyOf = (item: CbomRunAssetItem): string | null => item.asset_key ?? waveOf(item)?.asset_key ?? null;
   const selectable = items.filter((i) => !!keyOf(i));
   const allSelected = selectable.length > 0 && selectable.every((i) => selection.has(i.id));
@@ -211,7 +214,24 @@ export function RunFindingsTable({
               </StatusBadge>
             </button>
           )}
+          {grades.chips.length > 0 && (
+            // CB-19 PR-3: quantum risk grade chips (the grade stored at ingest); text always next to the colour
+            <span className="inline-flex flex-wrap items-center gap-1" role="group" aria-label="Quantum risk grade" data-testid="run-results-grades">
+              {grades.chips.map((c) => (
+                <button key={c.grade} type="button" aria-pressed={filters.q_grade === c.grade} data-testid={`run-results-grade-${c.grade}`}
+                        onClick={() => onFilters({ q_grade: filters.q_grade === c.grade ? undefined : c.grade, page: 1 })}
+                        className={`cursor-pointer rounded border px-1.5 py-0.5 text-xs ${gradeChipClass(c.grade)} ${filters.q_grade === c.grade ? "ring-2 ring-blue-500" : ""}`}>
+                  {c.text} {c.count}
+                </button>
+              ))}
+            </span>
+          )}
         </div>
+        {grades.note && (
+          <p className="text-xs text-zinc-500" data-testid="run-results-grade-note">
+            Quantum risk grades are shown on each row; filtering by grade is not available for this run ({grades.note}).
+          </p>
+        )}
         {page && !supportsView && (
           <p className="text-xs text-zinc-500" data-testid="run-results-view-note">
             This server lists every asset of the run (the Findings view and the status filter come with the backend update).
@@ -283,6 +303,7 @@ export function RunFindingsTable({
               if (typing.current) clearTimeout(typing.current);
               setSearch("");
               onFilters({ type: undefined, impact: undefined, quantum: undefined, q: undefined, source_id: undefined, status: undefined,
+                          q_grade: undefined,
                           pqc_group: undefined, clause: undefined, codes: undefined, asset_ids: undefined, drill_label: undefined, page: 1 });
             }}>
               Clear filters

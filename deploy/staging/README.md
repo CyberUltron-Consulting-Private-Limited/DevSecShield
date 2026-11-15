@@ -478,6 +478,15 @@ Check: as a team member, `GET /1/cbom/sources/fleet/status` (with the team's id)
 `{"inventory": true, "policies": true, "transports": true, "ssh_ca": true}` and the Sources page shows the Fleet tab;
 `docker exec dss-staging-backend-1 env | grep -E 'CBOM_(FLEET|SSH_CA)'` lists the five with `1`.
 
+### SSH CA keys in AWS KMS
+
+`CBOM_SSHCA_KMS_KEY_ARNS` (in `backend.env`) lists the KMS keys a team may wrap its SSH CA keys with; the first is the
+default for new CAs. For a disaster-recovery stack in another region, `CBOM_SSHCA_KMS_REGION_OVERRIDE` sends calls for
+a **multi-Region** key to its replica there: `mrk-<key id>=<region>` entries, comma-separated (`*=<region>` covers
+every multi-Region key), e.g. `mrk-1234abcd...=ap-south-2`. Keep the primary ARN in `CBOM_SSHCA_KMS_KEY_ARNS`: the
+CA rows store it, and the replica (same key material) decrypts the data keys the primary wrapped. Single-Region keys
+and aliases ignore the override. The backend's KMS permissions must cover the replica ARN in that region.
+
 ## Build identity
 
 Every image carries the commit it was built from (`build_images.sh`; the OCI `revision` label and, in the backend,
