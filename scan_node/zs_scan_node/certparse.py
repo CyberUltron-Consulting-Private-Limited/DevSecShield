@@ -12,6 +12,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import dsa, ec, ed448, ed25519, rsa, x448, x25519
 from cryptography.x509.oid import AuthorityInformationAccessOID, ExtensionOID, NameOID
 
+from zs_scan_node import algid
 from zs_scan_node.scrub import printable
 
 MAX_SAN = 50
@@ -59,6 +60,24 @@ def _common_name(value: x509.Name) -> str:
         return ""
 
 
+def _signature_algorithm(oid: Any) -> str:
+    """The signature algorithm a certificate fact should carry.
+
+    cryptography names the algorithms it knows. An OID it does not know is the sentinel
+    ``Unknown OID`` (ML-DSA-65 is one): that is not a name, so the fact uses algid's name,
+    or the dotted OID when algid does not know it either. A known name is left as
+    cryptography spelled it.
+    """
+    name = getattr(oid, "_name", None)
+    if isinstance(name, str) and name and not algid.is_sentinel(name):
+        return name
+    dotted = str(getattr(oid, "dotted_string", "") or "")
+    found = algid.resolve(dotted) if dotted else None
+    if found is not None and found.name:
+        return found.name
+    return dotted or "unknown"
+
+
 def cert_facts(cert: x509.Certificate, source: str) -> dict[str, Any]:
     facts: dict[str, Any] = {"source": source}
     facts["subject"] = _name(cert.subject)
@@ -67,8 +86,7 @@ def cert_facts(cert: x509.Certificate, source: str) -> dict[str, Any]:
     facts["not_before"] = _iso(getattr(cert, "not_valid_before_utc", None) or cert.not_valid_before)
     facts["not_after"] = _iso(getattr(cert, "not_valid_after_utc", None) or cert.not_valid_after)
     try:
-        oid = cert.signature_algorithm_oid
-        facts["sig_alg"] = getattr(oid, "_name", None) or oid.dotted_string
+        facts["sig_alg"] = _signature_algorithm(cert.signature_algorithm_oid)
     except Exception:
         facts["sig_alg"] = "unknown"
     try:
