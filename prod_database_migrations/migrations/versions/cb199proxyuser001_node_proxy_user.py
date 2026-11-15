@@ -1,7 +1,7 @@
 """scan node proxy user (#199): the user name of a proxy that needs a login
 
 Revision ID: cb199proxyuser001
-Revises: cb14credit001
+Revises: cb19grade002
 Create Date: 2026-11-15 09:00:00.000000
 
 * ``cbomscannode.proxy_user`` (nullable, 128): the proxy's user name, shown in the node's install command. The
@@ -18,7 +18,7 @@ import sqlmodel
 
 # revision identifiers, used by Alembic.
 revision: str = 'cb199proxyuser001'
-down_revision: Union[str, Sequence[str], None] = 'cb14credit001'
+down_revision: Union[str, Sequence[str], None] = 'cb19grade002'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
