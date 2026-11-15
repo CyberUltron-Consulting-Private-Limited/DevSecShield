@@ -73,6 +73,10 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ github.sha }}
+          # the scan node release version is derived from staging's history (.github/ci/node_version.py, #361):
+          # every commit and tree, no old file contents
+          fetch-depth: 0
+          filter: blob:none
       - name: Settings
         id: settings
         # A push to staging always deploys, for the staging API, with the build exposed; a manual run uses its inputs.
@@ -122,8 +126,23 @@ jobs:
 
       # The scan-node downloads the API serves on Add scan node (image file, Helm chart, OVA/AMI build kits): shipped
       # with the release and mounted into the backend (CBOM_NODE_ARTIFACT_DIR; deploy/staging/README.md).
+      # A push to staging is a release (#361): the downloads carry the version publish-ghcr.yml gives the same commit
+      # (node_version.py on the same history: 1.0.N, never the frozen VERSION constant) and the GHCR image name, so
+      # the downloaded chart is the GHCR chart byte for byte and the image file loads as the image the chart names.
       - name: Scan node downloads
-        run: scripts/deploy/staging.sh node-artifacts
+        env:
+          EVENT: ${{ github.event_name }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = push ]; then
+            CBOM_NODE_VERSION=$(python3 -I .github/ci/node_version.py --rev HEAD)
+            [[ "$CBOM_NODE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::no scan node release version for this commit ($CBOM_NODE_VERSION)"; exit 1; }
+            export CBOM_NODE_VERSION
+            export SCAN_NODE_IMAGE="ghcr.io/${OWNER,,}/devsecshield-scan-node"
+            echo "scan node release $CBOM_NODE_VERSION ($SCAN_NODE_IMAGE:$CBOM_NODE_VERSION)" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+          scripts/deploy/staging.sh node-artifacts
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -141,7 +160,8 @@ jobs:
     needs: build
     if: needs.build.outputs.deploy == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # up to 45 minutes waiting for publish-ghcr.yml's scan node release (below), then the copy and deploy
+    timeout-minutes: 100
     environment: staging
     steps:
       # A re-run keeps the original run's commit (GITHUB_SHA) for up to 30 days, so re-running an older push would put
@@ -181,6 +201,15 @@ jobs:
         with:
           name: dss-staging-${{ needs.build.outputs.tag }}
           path: deploy/staging/images
+
+      # The wizard pins the release publish-ghcr.yml writes for this commit (devsecshield-scan-node:<version> and its
+      # chart), built in parallel: wait until anyone can pull both, and check the GHCR chart is the downloaded chart
+      # byte for byte (#361). A failure here is shown but does not stop the deploy: the host offers a docker pull or
+      # helm oci:// only for what it can pull and what matches (staging.sh set_node_refs), the downloads always.
+      - name: Wait for the scan node release (GHCR)
+        if: github.event_name == 'push' && vars.CBOM_NODE_REGISTRY_PUBLIC != '0'
+        continue-on-error: true
+        run: scripts/deploy/staging.sh wait-node-release --timeout 2700
 
       - name: SSH identity
         env:

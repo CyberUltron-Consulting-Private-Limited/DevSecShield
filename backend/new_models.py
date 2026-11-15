@@ -1157,3 +1157,9 @@ class CbomOpsCounter(SQLModel, table=True):
 from sqlalchemy import event as _sa_event
 
 _sa_event.listen(SQLModel.metadata, "after_create", _install_estate_summary)
+
+
+# ========================================= F3: code repositories at scale =========================================
+# The F3 tables live in their own module; importing it here registers them on SQLModel.metadata for alembic and
+# for everything that imports new_models (it imports nothing from this file, so the import cannot cycle).
+from backend.utilities.scm.models import *  # noqa: E402,F401,F403

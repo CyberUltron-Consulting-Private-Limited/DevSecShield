@@ -727,6 +727,8 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
                 skipped as a whole, with every address it resolves to, also inside ranges. Ranges are checked one
                 address at a time: an IPv6 address of a host listed only by its IPv4 address is skipped only when a
                 target or SNI hostname of the job answers both, so list such a host by name or by both addresses.
+                The other addresses of a skipped name are left out for the whole job, so a shared load-balancer or
+                VIP address that the name also resolves to is skipped for every host behind it.
                 This list takes addresses, ranges
                 and hostnames. A listed hostname covers every address it resolves to from the scan node, in range
                 sweeps too; until it resolves there, the node scans nothing for this team (localhost and the other
