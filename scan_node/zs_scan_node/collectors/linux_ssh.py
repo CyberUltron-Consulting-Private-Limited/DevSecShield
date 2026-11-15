@@ -7,8 +7,9 @@ Safety rules:
   any credential is sent.
 * Authentication is tried once.  Keyboard-interactive is answered only for a single password prompt; anything
   else (OTP, Duo, several prompts) is reported as ``mfa_required``.  No agent, no local key files.
-* Every command is from ``zs_scan_node.commands``; file paths come only from the Tier 2 find, must be absolute
-  without control characters, and are shell-quoted.  Commands run without a PTY, with stdin closed, a timeout and
+* Every command is from ``zs_scan_node.commands``; file paths come only from the Tier 2 find or sshd's own HostKey
+  and Include lines (#116), must be absolute without control characters, and are shell-quoted (an Include wildcard
+  under /etc/ssh goes unquoted only within ``commands.include_allowed``).  Commands run without a PTY, with stdin closed, a timeout and
   an output cap.
 * Private key material never leaves the host: only ``openssl pkey -pubout`` (public half) and
   ``ssh-keygen -l`` (fingerprint) are run on key files.
@@ -19,6 +20,7 @@ import concurrent.futures as cf
 import io
 import json
 import os
+import re
 import shlex
 import socket
 import threading
@@ -534,13 +536,6 @@ def collect_on_session(ctx: JobContext, sess: Any, label: str, config: dict,
         facts["openssl"] = P.openssl_version(text) if status == 0 else None
         for pkg in pkgs:
             emit("crypto_library", loc, f"package:{pkg['name']}", name=pkg["name"], facts={**pkg, "source": "package"})
-        # SSH host keys
-        for ktype in C.HOST_KEY_TYPES:
-            path = f"/etc/ssh/ssh_host_{ktype}_key.pub"
-            status, text, _ = _t1(sess, C.SSH_KEY_FINGERPRINT.format(file=path))
-            for k in P.ssh_keygen_l(text) if status == 0 else []:
-                emit("ssh_host_key", loc, path, name=f"{k['type']} host key", algorithm=k["type"], key_size=k["bits"],
-                     facts=k)
         processes: dict[int, str] = {}
         status, text, _ = _t1(sess, C.PROCESSES)
         if status == 0:
@@ -563,14 +558,18 @@ def collect_on_session(ctx: JobContext, sess: Any, label: str, config: dict,
                                  detail or state)
         # sshd
         state, out, _ = tier2.get("sshd_effective_config", ("skip", "", ""))
+        host_key_values: list[str] | None = None  # HostKey values of sshd's configuration (None: it was not read)
         if state == "ok" and out.strip():
             emit("ssh_server_config", loc, "sshd -T", name="sshd effective configuration",
                  facts=P.sshd_config(out, effective=True))
+            host_key_values = [v for _k, v in P.sshd_directives(out, ("hostkey",))]  # sshd -T resolved the Includes
         else:
             status, text, _ = _t1(sess, C.SSHD_CONFIG)
             if status == 0 and text.strip():
                 emit("ssh_server_config", loc, "/etc/ssh/sshd_config", name="sshd configuration (file)",
                      facts=P.sshd_config(text, effective=False))
+                host_key_values = _file_host_key_values(ctx, sess, loc, text, 0, set())
+        _host_keys(ctx, sess, loc, host_key_values, emit)
         # processes -> crypto libraries
         maps = P.proc_maps(tier2.get("process_crypto_libraries", ("", "", ""))[1] or "")
         exes = P.proc_exe(tier2.get("process_executables", ("", "", ""))[1] or "")
@@ -649,6 +648,121 @@ def collect_on_session(ctx: JobContext, sess: Any, label: str, config: dict,
         return "ok", None, emitted
     finally:
         sess.close()
+
+
+# ----------------------------------------------------------------------------- SSH host keys (#116)
+SSHD_DIR = "/etc/ssh/"  # sshd resolves a relative Include against this directory
+MAX_HOST_KEY_PATHS = 10
+MAX_INCLUDES = 10  # Include files (or patterns) read per server
+MAX_INCLUDE_DEPTH = 3
+_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _refusal(value: str) -> str | None:
+    """Why a path from sshd's configuration must not be used in a command (None: it may, shell-quoted)."""
+    if _CONTROL_CHARS.search(value):
+        return "contains control characters"
+    if not value.startswith("/"):
+        return "is not an absolute path"
+    if not P.safe_path(value):
+        return "is not a usable path"
+    return None
+
+
+def _include_patterns(value: str) -> list[str]:
+    """The paths/patterns of one Include line (several may be given, double-quoted when they hold spaces)."""
+    try:
+        return shlex.split(value, comments=False, posix=True)
+    except ValueError:  # an unbalanced quote: split on blanks, each part is still validated before use
+        return value.split()
+
+
+def _file_host_key_values(ctx: JobContext, sess: Any, loc: str, text: str, depth: int, seen: set[str]) -> list[str]:
+    """Tier 1: the HostKey values of an sshd_config text in sshd's order, with the files its Include lines name read
+    in place (nested Includes followed up to MAX_INCLUDE_DEPTH, at most MAX_INCLUDES files or patterns per server).
+    A refused or unreadable Include is a coverage note; one that matches nothing is ignored, as sshd does."""
+    out: list[str] = []
+    for keyword, value in P.sshd_directives(text, ("hostkey", "include")):
+        if keyword == "hostkey":
+            out.append(value[1:-1] if len(value) >= 2 and value[0] == value[-1] == '"' else value)
+            continue
+        for pattern in _include_patterns(value):
+            if not _CONTROL_CHARS.search(pattern) and not pattern.startswith("/"):
+                pattern = SSHD_DIR + pattern
+            if pattern in seen:
+                continue
+            seen.add(pattern)
+            shown = P.printable(pattern, 200)
+            why = _refusal(pattern)
+            wildcard = any(c in pattern for c in "*?[")
+            if why is None and not C.include_allowed(pattern):
+                why = ("is outside /etc/ssh (Tier 2 reads it with sshd -T)" if not pattern.startswith(SSHD_DIR)
+                       or ".." in pattern.split("/") else
+                       "is a wildcard pattern with characters other than letters, digits and ._/*?+-")
+            if why:
+                ctx.coverage(loc, f"ssh host keys: Include {shown}", "refused",
+                             f"sshd_config Include {shown} {why}; it was not read")
+                continue
+            if depth >= MAX_INCLUDE_DEPTH or len(seen) > MAX_INCLUDES:
+                ctx.coverage(loc, "ssh host keys: Include", "truncated",
+                             f"sshd_config Include {shown} was not read (at most {MAX_INCLUDES} Include files, "
+                             f"nested {MAX_INCLUDE_DEPTH} deep, are read)")
+                continue
+            status, included, err = _t1(sess, C.SSHD_INCLUDE.format(file=pattern if wildcard else shlex.quote(pattern)))
+            if status == 0:
+                out.extend(_file_host_key_values(ctx, sess, loc, included, depth + 1, seen))
+            elif "permission denied" in (err or "").lower():
+                ctx.coverage(loc, f"ssh host keys: Include {shown}", "denied",
+                             f"sshd_config Include {shown} is not readable by the login user; HostKey lines in it "
+                             "were not read (Tier 2 reads them with sshd -T)")
+    return out
+
+
+def _host_keys(ctx: JobContext, sess: Any, loc: str, configured: list[str] | None, emit) -> None:
+    """One ``ssh_host_key`` per key sshd's configuration names (``configured: true``, the ``.pub`` beside each
+    HostKey path), then the default /etc/ssh paths it does not name (``configured: false`` when the configuration
+    has HostKey lines; no flag when it has none or was not read, since sshd then uses the defaults)."""
+    named: list[str] = []
+    for value in configured or []:
+        why = _refusal(value)
+        if why:
+            shown = P.printable(value, 200)
+            ctx.coverage(loc, f"ssh host keys: HostKey {shown}", "refused",
+                         f"HostKey {shown} {why}; it was not read")
+        elif value not in named:
+            named.append(value)
+    if len(named) > MAX_HOST_KEY_PATHS:
+        ctx.coverage(loc, "ssh host keys", "truncated",
+                     f"sshd's configuration names {len(named)} HostKey paths; the first {MAX_HOST_KEY_PATHS} were "
+                     f"read, {len(named) - MAX_HOST_KEY_PATHS} more were not")
+        named = named[:MAX_HOST_KEY_PATHS]
+    defaults = {f"/etc/ssh/ssh_host_{t}_key" for t in C.HOST_KEY_TYPES}
+    for path in named:
+        pub = path + ".pub"
+        status, text, err, _t = sess.run(_file_cmd(C.SSH_KEY_FINGERPRINT, pub), FILE_CMD_TIMEOUT)
+        keys = P.ssh_keygen_l(text) if status == 0 else []
+        shown = P.printable(P.display_path(pub), 200)
+        for k in keys[:1]:
+            emit("ssh_host_key", loc, P.display_path(pub), name=f"{k['type']} host key", algorithm=k["type"],
+                 key_size=k["bits"], facts={**k, "configured": True})
+        low = (err or "").lower()
+        if keys:
+            continue
+        if "permission denied" in low:
+            ctx.coverage(loc, f"ssh host keys: {shown}", "denied",
+                         f"{shown} (beside HostKey {P.printable(path, 200)}) is not readable by the login user")
+        elif path not in defaults or "no such file" not in low:  # sshd -T lists every default path, present or not
+            ctx.coverage(loc, f"ssh host keys: {shown}", "error",
+                         f"{shown} (beside HostKey {P.printable(path, 200)}) could not be read: "
+                         f"{P.printable(err or 'no key in the file', 160).strip()}")
+    for ktype in C.HOST_KEY_TYPES:
+        path = f"/etc/ssh/ssh_host_{ktype}_key"
+        if path in named:
+            continue
+        status, text, _ = _t1(sess, C.SSH_KEY_FINGERPRINT.format(file=path + ".pub"))
+        for k in P.ssh_keygen_l(text) if status == 0 else []:
+            emit("ssh_host_key", loc, path + ".pub", name=f"{k['type']} host key", algorithm=k["type"],
+                 key_size=k["bits"], facts={**k, "configured": False} if configured else k)
 
 
 def _inspect_file(ctx: JobContext, sess: Session, loc: str, real_path: str) -> int:

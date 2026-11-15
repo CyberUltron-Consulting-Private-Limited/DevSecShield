@@ -243,6 +243,7 @@ NODE_CHECK_TYPES: tuple[tuple[re.Pattern[str], tuple[str, ...], bool], ...] = (
     (re.compile(r"^process crypto libraries\b"), ("process_library",), False),
     (re.compile(r"^package list\b"), ("crypto_library",), False),
     (re.compile(r"^sshd configuration\b"), ("ssh_server_config",), True),
+    (re.compile(r"^ssh host keys\b"), ("ssh_host_key",), False),  # #116: a refused or unreadable HostKey / Include
     (re.compile(r"^(postgres|mysql|mssql|oracle|redis|mongodb)\b"), _DB, True),
     (re.compile(r"^AD CS template"), ("ca_template",), True),
     (re.compile(r"^(Certificate stores|TLS secrets|cert-manager certificates)\b"), ("certificate",), False),
