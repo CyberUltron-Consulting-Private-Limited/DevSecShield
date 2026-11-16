@@ -196,17 +196,20 @@ export function rowOpenProps(open: () => void, label: string, selectedText: () =
 
 /**
  * A card that opens more detail (results redesign follow-up: the owner asked that the whole card be clickable and
- * that it look clickable). Hover or keyboard focus inside it: a blue border, a slight lift with a shadow, a pointer
- * cursor, and the card's "›" arrow (CARD_ARROW) slides right. Reduced motion keeps the border and drops the movement.
+ * that it look clickable). On hover, or while KEYBOARD focus is inside it: a blue border, a slight lift with a
+ * shadow, a pointer cursor, and the card's "›" arrow (CARD_ARROW) slides right. Keyboard focus only
+ * (`:focus-visible`): with plain focus-within the cue stayed on after a mouse click and the card read as selected.
+ * Reduced motion keeps the border and drops all movement (card and arrow).
  */
 export const CLICKABLE_CARD =
   "group cursor-pointer transition-[border-color,box-shadow,transform] duration-150 ease-out " +
   "hover:-translate-y-0.5 hover:border-blue-500/70 hover:shadow-lg hover:shadow-blue-500/10 " +
-  "focus-within:border-blue-500/70 dark:hover:border-blue-400/70 dark:focus-within:border-blue-400/70 " +
+  "has-[:focus-visible]:border-blue-500/70 dark:hover:border-blue-400/70 dark:has-[:focus-visible]:border-blue-400/70 " +
   "motion-reduce:transition-none motion-reduce:hover:translate-y-0";
-/** The "›" of a CLICKABLE_CARD: it slides right while the card is hovered or holds focus. */
+/** The "›" of a CLICKABLE_CARD: it slides right while the card is hovered or holds keyboard focus. */
 export const CARD_ARROW =
-  "transition-transform duration-150 group-hover:translate-x-1 group-focus-within:translate-x-1 motion-reduce:transition-none";
+  "transition-transform duration-150 group-hover:translate-x-1 group-has-[:focus-visible]:translate-x-1 " +
+  "motion-reduce:transition-none motion-reduce:group-hover:translate-x-0 motion-reduce:group-has-[:focus-visible]:translate-x-0";
 
 /**
  * Props for a CLICKABLE_CARD: a click anywhere on the card opens it, except on a control inside it (the ⓘ, a

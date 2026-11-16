@@ -78,7 +78,7 @@ export function TopRisksSummary({ posture, onOpenAsset }: { posture: CbomPosture
             </div>
             <PriorityBar score={r.score} max={max} />
             <div className="text-xs text-zinc-500">Asset <InfoTip id="cbom.run.col.asset" /></div>
-            <button type="button" className="text-left text-blue-600 dark:text-blue-400 hover:underline cursor-pointer font-medium break-all rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            <button type="button" className="self-start text-left text-blue-600 dark:text-blue-400 hover:underline cursor-pointer font-medium break-all rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                     title={r.location} onClick={() => onOpenAsset(r.id)}>
               {r.name}
             </button>

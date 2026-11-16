@@ -202,7 +202,7 @@ export function ComplianceScorecards({ compliance, groups, enableFailingOnly = t
                 <li key={f.key} className="min-w-0" hidden={isHidden(f.key)}>
                   <button type="button" aria-expanded={on} aria-controls={detailId} onClick={() => { revealDetail.current = !on; setActive(on ? null : f.key); }}
                           data-testid={`compliance-card-${f.key}`} data-verdict={s.verdict} data-passed={s.passed} data-total={s.total}
-                          className={`flex h-full w-full flex-col gap-2 rounded-xl border p-3 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${CLICKABLE_CARD} ${
+                          className={`flex h-full w-full flex-col gap-2 rounded-xl border p-3 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:border-blue-500/70 dark:focus-visible:border-blue-400/70 ${CLICKABLE_CARD} ${
                             on ? "border-blue-500 bg-blue-50/60 dark:bg-blue-950/30" : "border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900"}`}>
                     <span className="flex items-start justify-between gap-2">
                       <span className="text-sm font-semibold text-zinc-900 dark:text-white break-words xl:min-h-[2.5rem]">{labelFramework(f.key)}</span>
@@ -223,7 +223,7 @@ export function ComplianceScorecards({ compliance, groups, enableFailingOnly = t
                     </span>
                     {/* the cue that the card opens its clauses (the card itself is the button) */}
                     <span aria-hidden="true" className="mt-auto inline-flex items-center gap-0.5 pt-1 text-xs font-medium text-blue-600 dark:text-blue-400 group-hover:underline">
-                      {on ? "Hide clauses" : "View clauses"} <ChevronRight className={`h-3.5 w-3.5 ${on ? "rotate-90" : CARD_ARROW}`} />
+                      {on ? "Hide clauses" : "View clauses"} <ChevronRight className={`h-3.5 w-3.5 ${on ? "rotate-90" : `${CARD_ARROW} group-focus-visible:translate-x-1 motion-reduce:group-focus-visible:translate-x-0`}`} />
                     </span>
                   </button>
                 </li>

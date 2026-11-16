@@ -159,10 +159,14 @@ assert.ok(cls(STICKY_ACTIONS).has("bg-white"), "opaque, so scrolled cells do not
   sel = "RSA 1024";
   p.onClick({ target: text, currentTarget: card });
   assert.equal(opens, 1, "a click that ends a text selection does not open the card");
-  for (const c of ["group", "cursor-pointer", "hover:border-blue-500/70", "hover:-translate-y-0.5", "hover:shadow-lg", "focus-within:border-blue-500/70", "motion-reduce:hover:translate-y-0"]) {
+  for (const c of ["group", "cursor-pointer", "hover:border-blue-500/70", "hover:-translate-y-0.5", "hover:shadow-lg", "has-[:focus-visible]:border-blue-500/70", "motion-reduce:hover:translate-y-0"]) {
     assert.ok(cls(CLICKABLE_CARD).has(c), `clickable card has ${c}`);
   }
-  assert.ok(cls(CARD_ARROW).has("group-hover:translate-x-1") && cls(CARD_ARROW).has("group-focus-within:translate-x-1"), "the arrow slides on hover and focus");
+  assert.ok(cls(CARD_ARROW).has("group-hover:translate-x-1") && cls(CARD_ARROW).has("group-has-[:focus-visible]:translate-x-1"), "the arrow slides on hover and keyboard focus");
+  // R-cards 1: mouse focus must not keep the cue on (it read as selected after a click)
+  assert.ok(![...cls(CLICKABLE_CARD), ...cls(CARD_ARROW)].some((c) => c.includes("focus-within")), "no focus-within: keyboard focus only");
+  // R-cards 2: reduced motion drops the arrow's movement too, not only its transition
+  assert.ok(cls(CARD_ARROW).has("motion-reduce:group-hover:translate-x-0"), "reduced motion: the arrow stays put");
 }
 
 console.log("findingTable tests passed");
