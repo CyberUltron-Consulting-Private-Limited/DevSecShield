@@ -656,12 +656,13 @@ export default function CbomResults({
             </div>
           </div>
         </div>
-        {run && run.run && (
+        {/* A Sources run is this same [scan_id] route with ?run=1, so params.scan_id is set.
+            One toolbar: the run row, or the code-scan row. */}
+        {run && run.run ? (
           <RunHeaderActions teamId={run.teamId} run={run.run} assetTotal={run.page?.all_total ?? null}
                             canCompare={run.canCompare} onCompare={() => run.setCompareOpen(true)} />
-        )}
-        {team_id && scan_id != null && (
-          <div className="flex items-center gap-2 flex-wrap lg:justify-end">
+        ) : team_id && scan_id != null ? (
+          <div className="flex items-center gap-2 flex-wrap lg:justify-end" data-testid="cbom-scan-header-actions">
             <Button
               variant="outline"
               className="cursor-pointer"
@@ -734,7 +735,7 @@ export default function CbomResults({
               Scan settings
             </Button>
           </div>
-        )}
+        ) : null}
       </div>
 
       {importReport && importReportHasNews(importReport) && (
