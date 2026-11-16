@@ -15,6 +15,9 @@ import {
   loadColumns,
   normalizeColumns,
   rowOpenProps,
+  cardOpenProps,
+  CLICKABLE_CARD,
+  CARD_ARROW,
   RUN_TABLE_COLUMNS,
   saveColumns,
   SCAN_TABLE_COLUMNS,
@@ -134,5 +137,36 @@ assert.equal(opened, 4, "Enter on the Action button inside the row is the button
 // ------------------------------------------------------------------ sticky actions
 assert.ok(cls(STICKY_ACTIONS).has("md:sticky") && cls(STICKY_ACTIONS).has("md:right-0"), "actions pinned right");
 assert.ok(cls(STICKY_ACTIONS).has("bg-white"), "opaque, so scrolled cells do not show through");
+
+
+// ------------------------------------------------------------------ clickable cards (owner: whole card clickable, looks clickable)
+{
+  let opens = 0;
+  let sel = "";
+  const inside = new Set<unknown>();
+  const card = { contains: (n: unknown) => inside.has(n), closest: () => card };
+  const text = { closest: () => null };                        // plain text in the card
+  const infoTip = { closest: () => ({ tagName: "BUTTON" }) };  // the ⓘ / the Open button / a link
+  const portalText = { closest: () => null };                  // a tooltip's text, rendered in a portal
+  inside.add(text); inside.add(infoTip);
+  const p = cardOpenProps(() => { opens += 1; }, () => sel);
+  p.onClick({ target: text, currentTarget: card });
+  assert.equal(opens, 1, "a click on the card body opens it");
+  p.onClick({ target: infoTip, currentTarget: card });
+  assert.equal(opens, 1, "a click on a control inside the card (the ⓘ, a link) is left to that control");
+  p.onClick({ target: portalText, currentTarget: card });
+  assert.equal(opens, 1, "a click that bubbles in from a portal (tooltip text) does not open the card");
+  sel = "RSA 1024";
+  p.onClick({ target: text, currentTarget: card });
+  assert.equal(opens, 1, "a click that ends a text selection does not open the card");
+  for (const c of ["group", "cursor-pointer", "hover:border-blue-500/70", "hover:-translate-y-0.5", "hover:shadow-lg", "has-[:focus-visible]:border-blue-500/70", "motion-reduce:hover:translate-y-0"]) {
+    assert.ok(cls(CLICKABLE_CARD).has(c), `clickable card has ${c}`);
+  }
+  assert.ok(cls(CARD_ARROW).has("group-hover:translate-x-1") && cls(CARD_ARROW).has("group-has-[:focus-visible]:translate-x-1"), "the arrow slides on hover and keyboard focus");
+  // R-cards 1: mouse focus must not keep the cue on (it read as selected after a click)
+  assert.ok(![...cls(CLICKABLE_CARD), ...cls(CARD_ARROW)].some((c) => c.includes("focus-within")), "no focus-within: keyboard focus only");
+  // R-cards 2: reduced motion drops the arrow's movement too, not only its transition
+  assert.ok(cls(CARD_ARROW).has("motion-reduce:group-hover:translate-x-0"), "reduced motion: the arrow stays put");
+}
 
 console.log("findingTable tests passed");
