@@ -172,10 +172,10 @@ function getReachabilityBoxClass(reachability: string | null | undefined): strin
 }
 
 function getRiskScoreBoxClass(score: number | null | undefined): string {
-  const s = score ?? 0;
-  if (s >= 4) return "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200";
-  if (s >= 3) return "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200";
-  if (s >= 2) return "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200";
+  const s = score ?? 0; // the Risk score filter tiers, 0-10 (#35)
+  if (s >= 9) return "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200";
+  if (s >= 7) return "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200";
+  if (s >= 5) return "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200";
   return "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200";
 }
 
@@ -315,7 +315,7 @@ function SbomDashboardCharts({ dashboard }: { dashboard: SbomScanDashboardData }
             </div>
             <div className="min-w-0">
               <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 flex items-center gap-1">Avg risk score <InfoTip id="sbom.res.kpi.avg_risk" /></p>
-              <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 tabular-nums">{Number(card.average_risk_score ?? 0).toFixed(1)}</p>
+              <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 tabular-nums" title={card.average_risk_score == null ? "No known vulnerabilities" : undefined}>{card.average_risk_score == null ? "—" : Number(card.average_risk_score).toFixed(1)}</p>
             </div>
           </CardContent>
         </Card>
@@ -1752,7 +1752,7 @@ export default function SbomResults({ data, conversationId, teamId, dashboard, f
     );
   }
 
-  const vulnerabilities = (Array.isArray(data) ? data : []) as SbomAgentVulnerability[];
+  const vulnerabilities = (Array.isArray(data) ? data : []).filter((row) => !(row as { inventory_only?: unknown } | null)?.inventory_only) as SbomAgentVulnerability[]; // packages with no known vulnerability are the bill of materials, not findings (#46)
 
   return (
     <SbomResultsView
