@@ -278,7 +278,7 @@ if __name__=="__main__":
         model_type="custom",
         model_name="gpt-4o",
         headers={
-                "Authorization": "Bearer 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",
+                "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY', '')}",
                 "Content-Type": "application/json"
                 },
         request_template={
