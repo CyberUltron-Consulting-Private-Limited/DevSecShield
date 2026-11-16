@@ -49,10 +49,27 @@ assert.ok(template.indexOf('activeTab === "ticketing" && hasTicketingTab && run'
 const sections = read("RunSections.tsx");
 const hdr = sections.slice(sections.indexOf("export function RunHeaderActions"), sections.indexOf("export function RunVerifyButton"));
 const order2 = ['id: "run-results-download"', 'id: "run-results-download-xml"', 'id: "run-results-download-oscal"', "<RunDeliverablesMenu teamId={teamId} runId={run.id} active={active} />",
-  "<RunVerifyButton teamId={teamId} runId={run.id} />", 'data-testid="run-results-open-sources"'];
+  "<RunVerifyButton teamId={teamId} runId={run.id} />", 'data-testid="run-results-compare"', 'data-testid="run-results-open-sources"'];
 const pos = order2.map((s) => hdr.indexOf(s));
 assert.ok(pos.every((p, n) => p > 0 && (n === 0 || p > pos[n - 1])), `header buttons in the code page's order: ${JSON.stringify(pos)}`);
 assert.match(sections, /verifyCbomRunSignature\(teamId, runId, file\)/);
+
+// One toolbar. A Sources run is /{team}/cbom/{id}/results?run=1, so the route param is still scan_id and
+// `team_id && scan_id != null` is true. The code-scan download row is the else of the run row, not a sibling
+// (that painted CycloneDX JSON / XML / OSCAL / VEX / Signature / Evidence pack / PDF Report twice).
+const headerStart = template.indexOf('data-testid="cbom-results-title"');
+const headerEnd = template.indexOf("{importReport && importReportHasNews");
+assert.ok(headerStart > 0 && headerEnd > headerStart, "results header is bounded");
+const header = template.slice(headerStart, headerEnd);
+assert.match(header, /\{run && run\.run \? \(/);
+assert.match(header, /\) : team_id && scan_id != null \? \(/);
+assert.ok(header.includes("<RunHeaderActions"), "a Sources run keeps RunHeaderActions");
+assert.ok(header.includes('data-testid="cbom-scan-header-actions"'), "a code scan keeps its download row");
+assert.ok(header.includes("Scan settings"), "a code scan keeps Scan settings");
+assert.equal((header.match(/CycloneDX JSON/g) ?? []).length, 1, "the scan row's CycloneDX JSON label is not copied");
+assert.ok(!header.includes("Open in CBOM Sources"), "Open in CBOM Sources stays on RunHeaderActions");
+assert.ok(!/\{run && run\.run && \(\s*<RunHeaderActions/.test(header), "the run row is not a sibling of the scan row");
+assert.ok(!/\{team_id && scan_id != null && \(/.test(header), "the scan row is not an independent sibling");
 
 // /parity (W2b): a run's scan_metadata (compliance readiness, RBI / CERT-In roll-ups, graph, coverage banner) is read by
 // the template exactly where a code scan's is
