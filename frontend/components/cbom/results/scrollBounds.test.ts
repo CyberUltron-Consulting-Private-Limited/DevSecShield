@@ -10,7 +10,11 @@ import fs from "node:fs";
 import path from "node:path";
 
 const dir = __dirname;
-const files = fs.readdirSync(dir).filter((f) => /^Run\w*\.tsx$/.test(f));  // the run page's components
+// the run page's components, and its views (results redesign: summary and detail views, views/**)
+const viewFiles = (sub: string): string[] => fs.readdirSync(path.join(dir, sub), { withFileTypes: true }).flatMap((e) =>
+  e.isDirectory() ? viewFiles(path.join(sub, e.name)) : e.name.endsWith(".tsx") ? [path.join(sub, e.name)] : []);
+const files = [...fs.readdirSync(dir).filter((f) => /^Run\w*\.tsx$/.test(f)), ...viewFiles("views")];
+assert.ok(files.includes(path.join("views", "TopRisksSummary.tsx")), "the views are checked too");
 let checked = 0;
 for (const file of files) {
   const src = fs.readFileSync(path.join(dir, file), "utf8");

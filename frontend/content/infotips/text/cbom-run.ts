@@ -13,6 +13,18 @@ const TEXT = {
     why: "A finding list is only as complete as what was read; this shows what the run could and could not read.",
     example: "9 jobs: 8 done, 1 expired on node-dr1; dc-mumbai-windows skipped (node offline).",
   },
+  // src: frontend/components/cbom/results/views/SummaryKpis.tsx:38-46,76-99 — posture readiness, the seven KPI tiles, RunMetaCards
+  "cbom.run.summary": {
+    what: "The run's headline figures: PQC readiness from the run posture (ready judged assets over judged assets), the seven counts of the run results (crypto assets, weak, quantum vulnerable, certificates, keys, quantum ready, average risk score), then the run's sources, scan nodes, endpoints probed and duration.",
+    why: "Says how ready and how exposed the scanned estate is before you open any detail.",
+    example: "16.7% ready · 44 crypto assets · 21 weak · 25 quantum vulnerable · 6 sources · 1 scan node · 12 min.",
+  },
+  // src: frontend/components/cbom/results/views/DrillTiles.tsx:15-49, frontend/components/cbom/results/views/selectors.ts:80-132 — one tile per view, figures from the view's own data
+  "cbom.run.drill": {
+    what: "One tile per detail view of this run: collection jobs and targets, quantum grades and fix effort, inventory and certificates, the PQC migration plan, compliance, and remediation waves and changes. Each shows the figure its view starts with, or a dash and the reason; Open shows the view and Back to summary returns here.",
+    why: "Keeps the summary short while every chart, list and table stays one click away.",
+    example: "Quantum grades & fix effort: Q0 Unknown 25 · Q4 Low 5 · No grade 14 · self-fixable 24.2%.",
+  },
   // src: frontend/components/cbom/results/RunSections.tsx:217-231 — per source: kind, runner, outcome, assets, endpoints, duration, credits
   "cbom.run.provenance": {
     what: "For each source of the run: its kind, where it ran (a scan node or ZeroShield's cloud), its outcome, the assets collected (not counting the Not collected rows), endpoints probed, duration and credits.",
@@ -60,6 +72,12 @@ const TEXT = {
     what: "Within this run's scope: orphaned certificates are stored somewhere but presented by no endpoint the run read; unmanaged ones are held by no managing system the run saw (ACM, cert-manager, AD CS, Key Vault and similar).",
     why: "Orphaned certificates are clutter that can be stolen; unmanaged ones expire without anyone being told.",
     example: "3 orphaned (old keystore copies), 5 unmanaged (hand-installed on web servers).",
+  },
+  // src: frontend/components/cbom/results/views/CertificatesCard.tsx:1-12 — expiry list, calendar, orphaned and unmanaged, as tabs
+  "cbom.run.certificates": {
+    what: "The run's certificates and key material in three tabs: the expiry list (X.509 certificates with their validity, then keys and keystores, which have no expiry), the expiry calendar by month, and the orphaned and unmanaged certificates within this run's scope.",
+    why: "One place to see what expires when and which certificates nobody manages before an outage or an audit finds them.",
+    example: "Expiry list: 3 certificates, 1 expired; Calendar: 2 expire in December; Orphaned and unmanaged: 1 unmanaged.",
   },
   // src: frontend/components/cbom/results/RunSections.tsx:358 — stored, presented by no endpoint read
   "cbom.run.certs.orphaned": {
@@ -127,13 +145,19 @@ const TEXT = {
     why: "Turns the findings into an ordered plan with owners and dates.",
     example: "Wave 1: 4 · Wave 2: 11 · Wave 3: 30 · Wave 4: 52.",
   },
+  // src: frontend/components/cbom/results/ComplianceScorecards.tsx:1-7, backend/utilities/cbom_sources/frameworks.py:36-66 — verdict counts and failing assets per requirement
+  "cbom.run.compliance_readiness": {
+    what: "Per framework the run is judged against (CNSA 2.0, FIPS 140-3 and others the run's checks evidence): requirements passed out of all its requirements, a verdict (Pass, Partial, Fail or Not assessed), the failing requirements and how many assets the worst one fails. Click a card for every requirement with its verdict and evidence.",
+    why: "Shows at a glance which standard the crypto estate meets and which requirement keeps it from passing.",
+    example: "CNSA 2.0 · Partial · 1/2 passed · 1 requirement failing · 12 assets fail the worst one.",
+  },
   // src: frontend/components/cbom/results/RunSections.tsx:446-475 — CERT-In, RBI, SEBI CSCRF, NIST, CNSA 2.0
   "cbom.run.compliance": {
     what: "Per framework (CERT-In, RBI, SEBI CSCRF, NIST, CNSA 2.0): a verdict (Pass, Fail, Partial or Not assessed) from the compliance checks' requirement results, the clauses the findings touch and the assets affected; then each failing clause with its findings, how to fix them and the regulation's text behind Show text. Click an asset count to filter the findings table. Knowledge base and checks, no AI.",
     why: "Shows auditors what fails, where, and what to change, without reading every clause.",
     example: "NIST · Partial · 3/6 requirements pass · 1 clause · 3 assets: SHA-1 based SSH key exchange. How to fix: use curve25519-sha256.",
   },
-  // src: frontend/components/cbom/results/RunSections.tsx:476-500, backend/utilities/cbom_sources/posture.py:43-47 — impact x criticality x exposure
+  // src: frontend/components/cbom/results/views/TopRisksSummary.tsx:50-120, backend/utilities/cbom_sources/posture.py:43-47 — impact x criticality x exposure
   "cbom.run.top_risks": {
     what: "The run's riskiest assets, ranked by priority = impact weight x the source's business criticality x its internet exposure, from the run posture.",
     why: "Puts the fixes that cut the most risk first.",
@@ -145,7 +169,7 @@ const TEXT = {
     why: "Ranks the same weakness higher on critical, exposed systems.",
     example: "7 x 2 x 1.5 = 21.",
   },
-  // src: frontend/components/cbom/results/RunSections.tsx:488 — the asset
+  // src: frontend/components/cbom/results/views/TopRisksSummary.tsx:92 — the asset
   "cbom.run.col.asset": {
     what: "The cryptographic asset: an endpoint, key, certificate or library, with where it is.",
     why: "Names exactly what to change.",
@@ -253,7 +277,7 @@ const TEXT = {
     why: "Ranks post-quantum migration by how soon the data is at risk.",
     example: "Q1 Critical: quantum-vulnerable, internet-facing, X + Y > Z.",
   },
-  // src: frontend/components/cbom/results/RunSections.tsx:492-496 — the rows of the current table page
+  // src: frontend/components/cbom/results/RunSections.tsx:456-472 — the rows of the current table page
   "cbom.run.risk_scores": {
     what: "The risk score (0 to 10) of the rows on the findings table's current page and filter, highest first, at most 24. It never counts the whole run.",
     why: "Shows whether this page's risk is concentrated in a few rows.",

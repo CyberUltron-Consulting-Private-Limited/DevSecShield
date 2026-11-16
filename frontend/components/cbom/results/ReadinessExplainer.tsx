@@ -9,21 +9,26 @@ import { InfoTip } from "@/components/ui/info-tip";
 
 import { readinessExplanation, type ReadinessAction, type ReadinessPostureLike } from "./readinessExplain";
 
-export function ReadinessExplainer({ posture, onShowAssets }: {
+export function ReadinessExplainer({ posture, onShowAssets, layout = "stack", id }: {
   posture: ReadinessPostureLike | null | undefined;
   /** filter the findings table below to one readiness group's assets, or (no action) every quantum-vulnerable asset:
    * readinessDrillFilters(action) is the filter */
   onShowAssets?: (action?: ReadinessAction) => void;
+  /** "columns" (the run summary's explain panel, results redesign 37-B): the same text in three columns from 1024 px
+   * (formula and counts · symmetric and target · what would raise it), stacked below; "stack": one column (default) */
+  layout?: "stack" | "columns";
+  id?: string;
 }) {
   if (!posture) return null;
   const e = readinessExplanation(posture);
   const link = "cursor-pointer text-blue-600 hover:underline dark:text-blue-400";
-  return (
-    <div className="space-y-2 rounded-lg border border-zinc-200 p-4 text-xs text-zinc-700 dark:border-zinc-800 dark:text-zinc-300"
-         data-testid="pqc-readiness-explained">
-      <p className="text-sm font-medium text-zinc-900 dark:text-white">
-        What PQC readiness {e.value} means <InfoTip id="cbom.run.readiness" />
-      </p>
+  const heading = (
+    <p className="text-sm font-medium text-zinc-900 dark:text-white">
+      What PQC readiness {e.value} means <InfoTip id="cbom.run.readiness" />
+    </p>
+  );
+  const basis = (
+    <>
       <p data-testid="pqc-readiness-formula"><span className="font-semibold">Formula:</span> {e.formula}</p>
       {e.judged && <p data-testid="pqc-readiness-judged">{e.judged}</p>}
       {e.counts.length > 0 && (
@@ -36,8 +41,16 @@ export function ReadinessExplainer({ posture, onShowAssets }: {
           {e.excluded.map((c) => <li key={c}>{c}</li>)}
         </ul>
       )}
+    </>
+  );
+  const context = (
+    <>
       <p className="text-zinc-600 dark:text-zinc-400" data-testid="pqc-readiness-symmetric">{e.symmetric}</p>
       <p className="text-zinc-600 dark:text-zinc-400">{e.target}</p>
+    </>
+  );
+  const raise = (
+    <>
       {e.actions.length > 0 && (
         <div data-testid="pqc-readiness-actions">
           <p className="font-medium text-zinc-900 dark:text-white">
@@ -65,6 +78,28 @@ export function ReadinessExplainer({ posture, onShowAssets }: {
           Show the {e.vulnerable} quantum-vulnerable assets in the findings table
         </button>
       )}
+    </>
+  );
+  if (layout === "columns") {
+    return (
+      <div className="space-y-3 rounded-lg border border-zinc-200 p-4 text-xs text-zinc-700 dark:border-zinc-800 dark:text-zinc-300"
+           data-testid="pqc-readiness-explained" data-layout="columns" id={id}>
+        {heading}
+        <div className="grid grid-cols-1 gap-x-6 gap-y-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,1.1fr)]">
+          <div className="min-w-0 space-y-2">{basis}</div>
+          <div className="min-w-0 space-y-2">{context}</div>
+          <div className="min-w-0 space-y-2">{raise}</div>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-2 rounded-lg border border-zinc-200 p-4 text-xs text-zinc-700 dark:border-zinc-800 dark:text-zinc-300"
+         data-testid="pqc-readiness-explained" id={id}>
+      {heading}
+      {basis}
+      {context}
+      {raise}
     </div>
   );
 }

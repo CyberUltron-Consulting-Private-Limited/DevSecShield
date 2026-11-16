@@ -86,10 +86,17 @@ assert.deepEqual(gauge.migration, [], "migration rows pass through");
 // --- grep: the run sections import no row-counting helper for totals (F7)
 const dir = __dirname;
 // the run page's own files (other lanes' modules in this folder, e.g. the scans list, are not the run page)
-const sources = fs.readdirSync(dir)
-  .filter((f) => /^(Run\w*\.tsx|model\.ts|source\.ts|CbomDashboardCharts\.tsx|badgeClasses\.ts)$/.test(f))
-  .map((f) => [f, fs.readFileSync(path.join(dir, f), "utf8")] as const);
-assert.ok(sources.some(([f]) => f === "source.ts") && sources.length >= 8, `run page sources found (${sources.length})`);
+const sources = [
+  ...fs.readdirSync(dir)
+    .filter((f) => /^(Run\w*\.tsx|model\.ts|source\.ts|CbomDashboardCharts\.tsx|badgeClasses\.ts)$/.test(f))
+    .map((f) => [f, fs.readFileSync(path.join(dir, f), "utf8")] as const),
+  // the run's views (results redesign); test helpers live in __tests__/
+  ...fs.readdirSync(path.join(dir, "views"))
+    .filter((f) => /\.tsx?$/.test(f) && !/\.test\.ts$/.test(f))
+    .map((f) => [`views/${f}`, fs.readFileSync(path.join(dir, "views", f), "utf8")] as const),
+];
+assert.ok(sources.some(([f]) => f === "source.ts") && sources.some(([f]) => f === "views/SummaryKpis.tsx") && sources.length >= 20,
+          `run page sources found (${sources.length})`);
 const FORBIDDEN = [/quantumFilter/, /\binventoryRows\b/, /\bmatchesQuantumFilter\b/, /\bquantumCounts\b/, /\bcodeHeatmap\b/, /\bisBrokenToday\b/];
 for (const [file, text] of sources) {
   for (const re of FORBIDDEN) assert.ok(!re.test(text), `${file} must not use ${re} (Rule P: no recount of rows)`);
@@ -102,11 +109,19 @@ for (const [file, text] of sources) {
 // posture overlay and no rows, so the gauge cannot recount them (the code-scan rows stay the code page's)
 const template = fs.readFileSync(path.join(dir, "..", "..", "CbomResults.tsx"), "utf8");
 assert.match(template, /return dist \? applyPostureToDistributions\(resolveMigrationRows\(dist\), run\.posture\) : null;/);
-assert.match(template, /findings=\{run \? \[\] : findingsList \?\? \[\]\}/);
-assert.match(template, /inventory=\{run \? \[\] : allRows\}/);
+// the template's CbomCryptoCharts is the code scan's (rows of the scan); every run view passes none
+assert.match(template, /findings=\{findingsList \?\? \[\]\}\n\s*inventory=\{allRows\}/);
+assert.match(template, /readinessScope="code"/);
+for (const [file, text] of sources.filter(([f]) => f.startsWith("views/"))) {
+  if (!text.includes("<CbomCryptoCharts")) continue;
+  assert.match(text, /findings=\{\[\]\}\n\s*inventory=\{\[\]\}/, `${file}: no rows`);
+  assert.match(text, /readinessScope="run"/, `${file}: the run's readiness`);
+}
 // the run dashboard is built by runDashboardModel (posture overlay) in the run adapter, nowhere else
 const adapter = fs.readFileSync(path.join(dir, "source.ts"), "utf8");
 assert.match(adapter, /runDashboardModel\(results\?\.dashboard, posture\)/);
-assert.match(template, /model=\{run\.dashboardModel\}/);
+// the summary's KPI tiles and the inventory view's charts both read it
+assert.match(fs.readFileSync(path.join(dir, "views", "SummaryView.tsx"), "utf8"), /model=\{run\.dashboardModel\}/);
+assert.match(fs.readFileSync(path.join(dir, "views", "InventoryView.tsx"), "utf8"), /model=\{run\.dashboardModel\}/);
 
 console.log("rule P (run page reads posture, never recounts rows) tests passed");
