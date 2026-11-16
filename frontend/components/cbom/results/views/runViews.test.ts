@@ -335,3 +335,25 @@ test("R-ux review: dialog height, focus return, AI beside the dialog, scorecard 
   // 5: the section heading takes focus after Open
   assert.match(read("SectionView.tsx"), /tabIndex=\{-1\} data-testid="results-section-title"/);
 });
+
+test("clickable cards: drill tiles, top-risk cards and compliance scorecards open on a click anywhere and show it", () => {
+  const html = renderRunMode();
+  const tile = html.match(/<li class="([^"]*)" data-testid="results-tile-quantum"/);
+  assert.ok(tile, "the quantum tile renders");
+  for (const c of ["group", "cursor-pointer", "hover:border-blue-500/70", "hover:-translate-y-0.5"]) assert.ok(tile[1].split(" ").includes(c), `tile has ${c}`);
+  // the tile's Open button stays the one keyboard stop (no tabindex on the card itself)
+  assert.doesNotMatch(html, /data-testid="results-tile-quantum"[^>]*tabindex/);
+  assert.match(html, /data-testid="results-tile-quantum-open"[\s\S]{0,400}group-hover:translate-x-1/);
+  // top-risk cards: the whole card opens the finding popup and says so
+  const risk = html.match(/<li class="([^"]*)" data-testid="run-top-risk-(\d+)"/);
+  assert.ok(risk, "a top-risk card renders");
+  assert.ok(risk[1].split(" ").includes("cursor-pointer") && risk[1].split(" ").includes("hover:border-blue-500/70"));
+  assert.match(html, new RegExp(`data-testid="run-top-risk-open-${risk[2]}"[^>]*>View details`));
+  // the source wires a click on the card (not only on the asset name) to onOpenAsset, and on the tile to onOpen
+  assert.match(read("TopRisksSummary.tsx"), /\{\.\.\.cardOpenProps\(\(\) => onOpenAsset\(r\.id\)\)\}/);
+  assert.match(read("DrillTiles.tsx"), /\{\.\.\.cardOpenProps\(onOpen\)\}/);
+  // compliance scorecards: the card is the button; it shows the same cue and says what a click does
+  const cards = read("..", "ComplianceScorecards.tsx");
+  assert.match(cards, /\$\{CLICKABLE_CARD\}/);
+  assert.match(cards, /\{on \? "Hide clauses" : "View clauses"\}/);
+});

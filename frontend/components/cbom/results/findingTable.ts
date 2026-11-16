@@ -194,6 +194,38 @@ export function rowOpenProps(open: () => void, label: string, selectedText: () =
   };
 }
 
+/**
+ * A card that opens more detail (results redesign follow-up: the owner asked that the whole card be clickable and
+ * that it look clickable). Hover or keyboard focus inside it: a blue border, a slight lift with a shadow, a pointer
+ * cursor, and the card's "›" arrow (CARD_ARROW) slides right. Reduced motion keeps the border and drops the movement.
+ */
+export const CLICKABLE_CARD =
+  "group cursor-pointer transition-[border-color,box-shadow,transform] duration-150 ease-out " +
+  "hover:-translate-y-0.5 hover:border-blue-500/70 hover:shadow-lg hover:shadow-blue-500/10 " +
+  "focus-within:border-blue-500/70 dark:hover:border-blue-400/70 dark:focus-within:border-blue-400/70 " +
+  "motion-reduce:transition-none motion-reduce:hover:translate-y-0";
+/** The "›" of a CLICKABLE_CARD: it slides right while the card is hovered or holds focus. */
+export const CARD_ARROW =
+  "transition-transform duration-150 group-hover:translate-x-1 group-focus-within:translate-x-1 motion-reduce:transition-none";
+
+/**
+ * Props for a CLICKABLE_CARD: a click anywhere on the card opens it, except on a control inside it (the ⓘ, a
+ * link, a menu) or when the click ended a text selection. Clicks that bubble in from a portal (a tooltip's text) are
+ * ignored too, as they are not inside the card's own DOM. The card keeps one real button for the keyboard (its
+ * "Open" / asset name); the card itself is not a tab stop, so it adds no extra focus stop or nested button.
+ */
+export function cardOpenProps(open: () => void, selectedText: () => string = windowSelectionText) {
+  return {
+    onClick: (e: { target: unknown; currentTarget: unknown }) => {
+      const card = e.currentTarget as { contains?: (n: unknown) => boolean } | null;
+      if (card && typeof card.contains === "function" && !card.contains(e.target)) return;  // from a portal
+      if (insideControl(e.target, e.currentTarget)) return;
+      if (selectedText()) return;
+      open();
+    },
+  };
+}
+
 /** Pinned to the right edge at 768 px and up, so Action and Details stay on screen while the table scrolls sideways
  * (below 768 px the select and name columns are the sticky ones and a tap on the row opens the details). */
 export const STICKY_ACTIONS =

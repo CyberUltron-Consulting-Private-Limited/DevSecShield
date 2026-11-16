@@ -13,7 +13,10 @@ import { EXPOSURE_LABEL, type CbomPostureWithExposure, type CbomTopRisk } from "
 import { EXPOSURE_TONE } from "@/components/cbom/sources/RunPosture";
 import { StatusBadge } from "@/components/cbom/sources/shared";
 
+import { ChevronRight } from "lucide-react";
+
 import { getImpactBadgeClass } from "../badgeClasses";
+import { CARD_ARROW, CLICKABLE_CARD, cardOpenProps } from "../findingTable";
 import { PostureClauses, ZNote } from "./PostureSummary";
 
 /** The issues behind a risk: the stored finding text is one sentence per issue, joined with "; " by the classifier. */
@@ -62,7 +65,9 @@ export function TopRisksSummary({ posture, onOpenAsset }: { posture: CbomPosture
       </div>
       <ol className="grid grid-cols-1 md:grid-cols-3 gap-3" data-testid="run-top-risk-cards">
         {cards.map((r) => (
-          <li key={r.id} className="rounded-xl border border-zinc-200 dark:border-zinc-800 p-4 min-w-0 space-y-2" data-testid={`run-top-risk-${r.id}`}>
+          // the whole card opens the asset's finding popup (the asset name stays the keyboard stop)
+          <li key={r.id} className={`flex flex-col rounded-xl border border-zinc-200 dark:border-zinc-800 p-4 min-w-0 space-y-2 ${CLICKABLE_CARD}`}
+              data-testid={`run-top-risk-${r.id}`} {...cardOpenProps(() => onOpenAsset(r.id))}>
             <div className="flex items-center justify-between gap-2" data-testid={`top-risk-${r.id}`}>
               <span className="text-xs text-zinc-500">Priority <InfoTip id="cbom.run.col.priority" /></span>
               <span className="text-xs text-zinc-500">Impact <InfoTip id="results.table.impact" /></span>
@@ -73,7 +78,7 @@ export function TopRisksSummary({ posture, onOpenAsset }: { posture: CbomPosture
             </div>
             <PriorityBar score={r.score} max={max} />
             <div className="text-xs text-zinc-500">Asset <InfoTip id="cbom.run.col.asset" /></div>
-            <button type="button" className="text-left text-blue-600 dark:text-blue-400 hover:underline cursor-pointer font-medium break-all"
+            <button type="button" className="text-left text-blue-600 dark:text-blue-400 hover:underline cursor-pointer font-medium break-all rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                     title={r.location} onClick={() => onOpenAsset(r.id)}>
               {r.name}
             </button>
@@ -92,6 +97,11 @@ export function TopRisksSummary({ posture, onOpenAsset }: { posture: CbomPosture
                 {riskIssues(r.finding).map((t) => <li key={t}>{t}</li>)}
               </ul>
             )}
+            {/* the cue that the card opens more (the asset name above is the real control) */}
+            <span aria-hidden="true" className="mt-auto inline-flex items-center gap-0.5 pt-1 text-xs font-medium text-blue-600 dark:text-blue-400 group-hover:underline"
+                  data-testid={`run-top-risk-open-${r.id}`}>
+              View details <ChevronRight className={`h-3.5 w-3.5 ${CARD_ARROW}`} />
+            </span>
           </li>
         ))}
       </ol>
