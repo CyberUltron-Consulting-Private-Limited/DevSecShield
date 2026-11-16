@@ -207,6 +207,31 @@ def test_digicert_lists_orders_and_downloads_the_certificate(local_dns):
         httpd.shutdown()
 
 
+def test_digicert_account_with_no_orders_is_an_empty_estate(local_dns):
+    # Recorded from CertCentral for an account with no issued orders: no "orders" key at all, only "page".
+    def listing(handler, _raw):
+        handler._send(200, json.dumps({"page": {"total": 0, "limit": 100, "offset": 0}}))
+    httpd = _serve(_routes({("GET", "/services/v2/order/certificate"): listing}))
+    try:
+        ctx, _text = _ran({"provider": "digicert", "api_url": f"http://dc.test:{httpd.server_port}/services/v2"},
+                          {"api_key": "dc-key"})
+        assert [o.status for o in ctx.outcomes] == ["ok"] and ctx.collected == []
+    finally:
+        httpd.shutdown()
+
+
+def test_digicert_answer_without_orders_but_with_a_total_is_still_an_error(local_dns):
+    def listing(handler, _raw):
+        handler._send(200, json.dumps({"page": {"total": 3, "limit": 100, "offset": 0}}))
+    httpd = _serve(_routes({("GET", "/services/v2/order/certificate"): listing}))
+    try:
+        ctx, _text = _ran({"provider": "digicert", "api_url": f"http://dc.test:{httpd.server_port}/services/v2"},
+                          {"api_key": "dc-key"})
+        assert ctx.outcomes[0].status == "error" and "not a certificate list" in (ctx.outcomes[0].error or "")
+    finally:
+        httpd.shutdown()
+
+
 def test_digicert_auth_failure_is_the_target(local_dns):
     def listing(handler, _raw):
         handler._send(403, b"<html>denied</html>", "text/html")

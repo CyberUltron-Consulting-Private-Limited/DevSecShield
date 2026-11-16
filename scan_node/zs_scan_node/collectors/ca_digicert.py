@@ -39,6 +39,11 @@ def collect_digicert(ctx: Any, config: dict, api_key: str) -> tuple[Any, int]:
             if status != 200:
                 raise CaFail("error", f"DigiCert answered {status} to order/certificate")
             orders = parsed.get("orders") if isinstance(parsed, dict) else None
+            page = parsed.get("page") if isinstance(parsed, dict) else None
+            if orders is None and isinstance(page, dict) and page.get("total") == 0:
+                # An account with no matching orders: CertCentral leaves "orders" out and sends only
+                # {"page": {"total": 0, ...}} (recorded live). That is an empty estate, not an error.
+                break
             if not isinstance(orders, list):
                 raise CaFail("error", "DigiCert answered with something that is not a certificate list")
             if not orders:
