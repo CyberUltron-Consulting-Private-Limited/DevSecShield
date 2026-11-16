@@ -2,25 +2,23 @@
 
 // Sources-run data for the one results template (components/CbomResults.tsx), mounted by
 // /{team_id}/cbom/{run_id}/results?run=1. The run adapter is useSourcesRunSource. `?view=findings|all` keeps the
-// findings table's toggle across reloads. The heading is the code scan's ("CBOM Scan Results").
+// findings table's toggle across reloads and `?section=` the view (views/url.ts). The heading is the code scan's
+// ("CBOM Scan Results").
 
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Suspense, useCallback } from "react";
 import { Loader2 } from "lucide-react";
 
 import CbomResults from "@/components/CbomResults";
 import { RunNotFound } from "@/components/cbom/results/RunSections";
 import { useSourcesRunSource } from "@/components/cbom/results/source";
+import { useResultsUrl } from "@/components/cbom/results/views/url";
 
 function RunResults({ teamId, runId, view }: { teamId: number; runId: number; view: "findings" | "all" }) {
-  const search = useSearchParams();
-  const router = useRouter();
-  const pathname = usePathname();
-  const onViewChange = useCallback((next: "findings" | "all") => {
-    const qs = new URLSearchParams(search.toString());
-    qs.set("view", next);
-    router.replace(`${pathname}?${qs.toString()}`, { scroll: false });
-  }, [pathname, router, search]);
+  // the table toggle goes through the page's one URL writer (views/url.ts), which the section switch uses too: it
+  // merges into the URL as it is, so a drill that changes both in one tick keeps both
+  const { patch } = useResultsUrl();
+  const onViewChange = useCallback((next: "findings" | "all") => patch({ view: next }), [patch]);
   const source = useSourcesRunSource(teamId, runId, { initialView: view, onViewChange });
 
   if (source.state === "not_found") return <RunNotFound teamId={teamId} />;

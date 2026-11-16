@@ -655,16 +655,19 @@ function dialogFields(src: DialogFields | null | undefined) {
   };
 }
 
-/** The findings-table row a run finding dialog renders: the row it was opened from, else (Top risks, the Certificates
- * table, a Q0 Unknown item: an asset not on the findings page) the asset detail's copy of that row. GET /sources/assets/{id}
- * carries every field of the run's /assets item (staging QA B7); null while it loads, on an error, for another asset or
- * from an older backend whose detail has no row fields (the dialog then shows only the asset explanation). */
+/** The findings-table row a run finding dialog renders, resolved live (no stale snapshot): the asset's row on the
+ * current table page when it is there, else (Top risks, the Certificates table, a Q0 Unknown item, a row that left the
+ * page) the asset detail's copy of that row. GET /sources/assets/{id} carries every field of the run's /assets item
+ * (staging QA B7); null while it loads, on an error, for another asset or from an older backend whose detail has no
+ * row fields (the dialog then shows only the asset explanation). */
 export function dialogItem(
-  subject: { item: CbomRunAssetItem } | { assetId: number; label?: string } | null,
+  subject: { assetId: number; label?: string } | null,
   detail: unknown,
+  pageItems?: readonly CbomRunAssetItem[] | null,
 ): CbomRunAssetItem | null {
   if (!subject) return null;
-  if ("item" in subject) return subject.item;
+  const onPage = pageItems?.find((i) => i.id === subject.assetId);
+  if (onPage) return onPage;
   const d = detail as Partial<CbomRunAssetItem> | null | undefined;
   const isRow = !!d && d.id === subject.assetId && typeof d.type === "string" && typeof d.location === "string"
     && typeof d.job_id === "number" && Array.isArray(d.finding_codes);

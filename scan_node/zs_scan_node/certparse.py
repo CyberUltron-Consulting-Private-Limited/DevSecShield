@@ -96,8 +96,9 @@ def cert_facts(cert: x509.Certificate, source: str) -> dict[str, Any]:
     try:
         oid = cert.signature_algorithm_oid
         # cryptography sets ObjectIdentifier._name to "Unknown OID" for an OID it does not list. That
-        # placeholder is truthy, so it used to hide ML-DSA-65 (2.16.840.1.101.3.4.3.18). A name it does
-        # list stays as printed; a placeholder is resolved through algid, else kept as the dotted OID.
+        # placeholder is truthy, so it used to hide post-quantum signature OIDs (scan_node/tests/test_certparse_*
+        # has the case). A name it does list stays as printed; a placeholder is resolved through algid, else kept
+        # as the dotted OID. Algorithm names and OIDs live in algid only (test_algid_single_source).
         label = getattr(oid, "_name", None)
         if isinstance(label, str) and label and not algid.is_sentinel(label):
             facts["sig_alg"] = label
@@ -108,7 +109,8 @@ def cert_facts(cert: x509.Certificate, source: str) -> dict[str, Any]:
     try:
         facts.update(key_facts(cert.public_key()))
     except Exception:
-        # ML-DSA and other keys cryptography cannot load: name them the way the IdP reader does (CB-04).
+        # Keys cryptography cannot load (post-quantum signature keys among them): name them through algid, the
+        # way the IdP reader does (CB-04).
         dotted = _public_key_oid(cert)
         facts["key_alg"] = _named_oid(dotted) or "unknown"
         found = algid.resolve(dotted) if dotted else None

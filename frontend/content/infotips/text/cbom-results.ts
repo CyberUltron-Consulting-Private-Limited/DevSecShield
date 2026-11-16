@@ -139,13 +139,13 @@ const TEXT = {
     why: "Shows whether fixes keep pace with what the scans find.",
     example: "Mark a finding Fixed in the table below and these numbers update.",
   },
-  // src: frontend/components/CbomResults.tsx:699 — the CycloneDX import report
+  // src: frontend/components/cbom/results/views/ScanNotes.tsx:14-37 — the CycloneDX import report (code scans and runs)
   "cbom.res.import_notes": {
     what: "What happened when your uploaded CycloneDX CBOM was read: how many cryptographic assets were imported, and which components were skipped as not crypto, unreadable, duplicate or past the limit.",
     why: "Skipped components are missing from the results, so check them.",
     example: "40 of 42 cryptographic assets imported · CycloneDX 1.6 · 2 unreadable.",
   },
-  // src: frontend/components/CbomResults.tsx:724 — coverage notes of the scan
+  // src: frontend/components/cbom/results/views/ScanNotes.tsx:40-65 — coverage notes of the scan (code scans and runs)
   "cbom.res.coverage": {
     what: "Which files and languages the scan read and what it skipped, with the reason.",
     why: "Skipped files are not in the inventory, so a clean result may be incomplete.",

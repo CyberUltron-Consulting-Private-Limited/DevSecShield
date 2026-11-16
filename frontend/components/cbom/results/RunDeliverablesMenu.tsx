@@ -15,6 +15,8 @@ export interface RunDeliverablesMenuProps {
   teamId: number;
   runId: number;
   active: boolean;
+  /** its (i) tip after the buttons (false where the caller shows it, e.g. beside the run page's Export menu) */
+  tip?: boolean;
 }
 
 export const RUN_DELIVERABLE_ITEMS: { kind: CbomRunDeliverable; label: string; title: string; done: string }[] = [
@@ -46,7 +48,7 @@ export const RUN_DELIVERABLE_ITEMS: { kind: CbomRunDeliverable; label: string; t
 
 const AS_OF = " The run is still collecting: the file holds what has been collected so far.";
 
-export default function RunDeliverablesMenu({ teamId, runId, active }: RunDeliverablesMenuProps) {
+export default function RunDeliverablesMenu({ teamId, runId, active, tip = true }: RunDeliverablesMenuProps) {
   const [busy, setBusy] = useState<CbomRunDeliverable | null>(null);
 
   const download = async (kind: CbomRunDeliverable, done: string) => {
@@ -80,7 +82,7 @@ export default function RunDeliverablesMenu({ teamId, runId, active }: RunDelive
           </Button>
         );
       })}
-      <InfoTip id="cbom.run.deliverables" />
+      {tip && <InfoTip id="cbom.run.deliverables" />}
     </>
   );
 }

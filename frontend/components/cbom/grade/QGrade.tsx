@@ -104,6 +104,36 @@ export function QDistributionBar({ posture }: { posture: QPosture }) {
   );
 }
 
+/** 05-C (run results redesign): the same six counts as vertical bars, Q0 Unknown to Q4 Low then No grade, each with its
+ * count and share under the bar's label. Same hooks as the bar (`posture-q-distribution`, `posture-q-<bucket>`). */
+export function QDistributionColumns({ posture }: { posture: QPosture }) {
+  const { segments, total, consistent } = qDistribution(posture);
+  const max = Math.max(1, ...segments.map((s) => s.count));
+  return (
+    <div className="space-y-2 min-w-0" data-testid="posture-q-distribution" data-total={total} data-layout="columns">
+      <ul className="grid grid-cols-6 gap-2 sm:gap-3 items-end" aria-label="Assets per quantum risk grade">
+        {segments.map((s) => (
+          <li key={s.bucket} className="flex min-w-0 flex-col items-center gap-1 text-center"
+              data-testid={`posture-q-${s.bucket}`} data-count={s.count}>
+            <span className="text-sm font-semibold tabular-nums text-zinc-900 dark:text-white">{s.count}</span>
+            <div className="flex h-32 w-full max-w-14 items-end rounded-md bg-zinc-100 dark:bg-zinc-800/70" aria-hidden="true">
+              <div className={`w-full rounded-md ${s.bar}`}
+                   style={{ height: s.count > 0 ? `max(4px, ${(100 * s.count) / max}%)` : "0" }} />
+            </div>
+            <span className="text-[11px] leading-tight text-zinc-700 dark:text-zinc-300 break-words">{s.text}</span>
+            {total > 0 && <span className="text-[11px] text-zinc-500 dark:text-zinc-400 tabular-nums">({s.pct}%)</span>}
+          </li>
+        ))}
+      </ul>
+      {!consistent && (
+        <p className="text-xs text-red-600 dark:text-red-400" role="alert" data-testid="posture-q-mismatch">
+          The grade counts ({total}) do not add up to the run&apos;s {posture.assets} assets: please report this.
+        </p>
+      )}
+    </div>
+  );
+}
+
 /** The run's Q0 Unknown items (unread scope, assets the product could not grade, a missing Mosca input). Hooks:
  * `data-testid="q0-item-<key>"` with `data-reason`. `onOpenAsset` makes asset items open the asset. */
 export function Q0ItemList({ items, total, reasons, onOpenAsset, limit }: {
@@ -226,12 +256,15 @@ export function QGradeModelDialog({ teamId, open, onOpenChange, model }: {
 const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
 
 /** The posture card "Quantum risk": distribution, Q0 Unknown reasons with counts, the Q0 Unknown item list and the model dialog.
- * Renders nothing when the posture has no grades (an older backend). */
-export function QDistributionCard({ teamId, posture, onOpenAsset, model }: {
+ * Renders nothing when the posture has no grades (an older backend). `variant="run"` (the run results page's quantum
+ * view, 05-C): the counts as vertical bars beside the Q0 Unknown reasons, the same content and hooks; without it the card
+ * renders exactly as before the redesign (the posture card and the team baseline use it so). */
+export function QDistributionCard({ teamId, posture, onOpenAsset, model, variant }: {
   teamId?: number;
   posture: QPosture;
   onOpenAsset?: (assetId: number) => void;
   model?: GradeModel | null;
+  variant?: "run";
 }) {
   const [showItems, setShowItems] = useState(false);
   const [dialog, setDialog] = useState(false);
@@ -243,6 +276,101 @@ export function QDistributionCard({ teamId, posture, onOpenAsset, model }: {
   const total = q0.total;
   const counts = posture.q0_counts;
   const inputs = posture.grade_inputs;
+  const run = variant === "run";
+  const reasonsBlock = (q0.assets.length > 0 || q0.scope.length > 0) && (
+    <div className="space-y-1" data-testid="posture-q0-reasons" data-basis={q0.basis}>
+      {q0.assets.length > 0 && (
+        <>
+          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Q0 Unknown: why</p>
+          <ul className="space-y-0.5">
+            {q0.assets.map((r) => (
+              <li key={r.code} className="text-xs text-zinc-700 dark:text-zinc-300 flex gap-2" data-testid={`posture-q0-reason-${r.code}`}
+                  data-count={r.count}>
+                <span className="font-semibold tabular-nums w-8 shrink-0 text-right">{r.count}</span>
+                <span className="min-w-0">{reasons.get(r.code) ?? humanize(r.code)}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {q0.scope.length > 0 && (
+        <>
+          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 pt-1"
+             data-testid="posture-q0-scope">
+            Not read in this run (places and sources, not assets)
+          </p>
+          <ul className="space-y-0.5">
+            {q0.scope.map((r) => (
+              <li key={r.code} className="text-xs text-zinc-700 dark:text-zinc-300 flex gap-2" data-testid={`posture-q0-scope-${r.code}`}
+                  data-count={r.count}>
+                <span className="font-semibold tabular-nums w-8 shrink-0 text-right">{r.count}</span>
+                <span className="min-w-0">{reasons.get(r.code) ?? humanize(r.code)}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {counts && (
+        <p className="text-xs text-zinc-500 dark:text-zinc-400" data-testid="posture-q0-counts">
+          {q0.basis === "assets"
+            ? <>
+                {plural(counts.assets, "asset")} graded Q0 Unknown, by reason above. Places and sources not read (not assets, so
+                not in that count): {plural(counts.scope_items, "item")}, {plural(counts.scope_rows, "row")}.
+              </>
+            : <>
+                {counts.assets} asset{counts.assets === 1 ? "" : "s"} graded Q0 Unknown; {counts.scope_items} unread scope
+                item{counts.scope_items === 1 ? "" : "s"} ({counts.scope_rows} row{counts.scope_rows === 1 ? "" : "s"}). Counts are items: a
+                missing Mosca setting is one item for every asset it leaves ungraded.
+              </>}
+        </p>
+      )}
+    </div>
+  );
+  const itemsBlock = total > 0 && (
+    <div>
+      <button type="button" className="inline-flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400 cursor-pointer"
+              onClick={() => setShowItems(!showItems)} aria-expanded={showItems} data-testid="posture-q0-items-toggle">
+        {showItems ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+        {showItems ? "Hide" : "Show"} the {total} Q0 Unknown item{total === 1 ? "" : "s"}
+        {q0.byChoice > 0 ? ` (${q0.toClose} to close, ${q0.byChoice} left out by the team's choice)` : ""}
+      </button>
+      {showItems && <div className="mt-2"><Q0ItemList items={items} total={total} reasons={reasons} onOpenAsset={onOpenAsset} limit={25} /></div>}
+    </div>
+  );
+  const modelLine = (
+    <p className="text-xs text-zinc-500 dark:text-zinc-400 break-all" data-testid="posture-q-inputs">
+      Graded with model {posture.grade_model_version ?? posture.grade_model ?? "—"}
+      {inputs ? ` · Mosca X ${inputs.mosca.x ?? "not set"}, Y ${inputs.mosca.y ?? "not set"}, Z ${inputs.mosca.z ?? "not set"}` : ""}
+      {inputsSourceText(inputs?.source)}
+    </p>
+  );
+  if (run) {
+    return (
+      <div className="space-y-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 sm:p-5 min-w-0"
+           data-testid="posture-q" data-variant="run" data-model-version={posture.grade_model_version} data-inputs-digest={inputs?.digest}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-base font-semibold text-zinc-900 dark:text-white">Quantum risk <InfoTip id="cbom.qgrade.distribution" /></p>
+          <button type="button" className="text-xs text-blue-600 dark:text-blue-400 cursor-pointer hover:underline" onClick={() => setDialog(true)}
+                  data-testid="grade-model-open">
+            How grades are computed
+          </button>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-5 items-start">
+          <QDistributionColumns posture={posture} />
+          <div className="space-y-3 min-w-0 rounded-lg bg-zinc-50 dark:bg-zinc-950/60 border border-zinc-200 dark:border-zinc-800 p-3"
+               data-testid="posture-q0-panel">
+            {reasonsBlock || (
+              <p className="text-xs text-zinc-500 dark:text-zinc-400" data-testid="posture-q0-none">No asset is graded Q0 Unknown in this run.</p>
+            )}
+            {itemsBlock}
+          </div>
+        </div>
+        <GradeInputsBanner posture={posture} />
+        {modelLine}
+        <QGradeModelDialog teamId={teamId} open={dialog} onOpenChange={setDialog} model={m ?? undefined} />
+      </div>
+    );
+  }
   return (
     <div className="space-y-3 rounded-lg border border-zinc-200 dark:border-zinc-800 p-3 min-w-0" data-testid="posture-q"
          data-model-version={posture.grade_model_version} data-inputs-digest={inputs?.digest}>
@@ -255,71 +383,9 @@ export function QDistributionCard({ teamId, posture, onOpenAsset, model }: {
       </div>
       <QDistributionBar posture={posture} />
       <GradeInputsBanner posture={posture} />
-      {(q0.assets.length > 0 || q0.scope.length > 0) && (
-        <div className="space-y-1" data-testid="posture-q0-reasons" data-basis={q0.basis}>
-          {q0.assets.length > 0 && (
-            <>
-              <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Q0 Unknown: why</p>
-              <ul className="space-y-0.5">
-                {q0.assets.map((r) => (
-                  <li key={r.code} className="text-xs text-zinc-700 dark:text-zinc-300 flex gap-2" data-testid={`posture-q0-reason-${r.code}`}
-                      data-count={r.count}>
-                    <span className="font-semibold tabular-nums w-8 shrink-0 text-right">{r.count}</span>
-                    <span className="min-w-0">{reasons.get(r.code) ?? humanize(r.code)}</span>
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-          {q0.scope.length > 0 && (
-            <>
-              <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 pt-1"
-                 data-testid="posture-q0-scope">
-                Not read in this run (places and sources, not assets)
-              </p>
-              <ul className="space-y-0.5">
-                {q0.scope.map((r) => (
-                  <li key={r.code} className="text-xs text-zinc-700 dark:text-zinc-300 flex gap-2" data-testid={`posture-q0-scope-${r.code}`}
-                      data-count={r.count}>
-                    <span className="font-semibold tabular-nums w-8 shrink-0 text-right">{r.count}</span>
-                    <span className="min-w-0">{reasons.get(r.code) ?? humanize(r.code)}</span>
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-          {counts && (
-            <p className="text-xs text-zinc-500 dark:text-zinc-400" data-testid="posture-q0-counts">
-              {q0.basis === "assets"
-                ? <>
-                    {plural(counts.assets, "asset")} graded Q0 Unknown, by reason above. Places and sources not read (not assets, so
-                    not in that count): {plural(counts.scope_items, "item")}, {plural(counts.scope_rows, "row")}.
-                  </>
-                : <>
-                    {counts.assets} asset{counts.assets === 1 ? "" : "s"} graded Q0 Unknown; {counts.scope_items} unread scope
-                    item{counts.scope_items === 1 ? "" : "s"} ({counts.scope_rows} row{counts.scope_rows === 1 ? "" : "s"}). Counts are items: a
-                    missing Mosca setting is one item for every asset it leaves ungraded.
-                  </>}
-            </p>
-          )}
-        </div>
-      )}
-      {total > 0 && (
-        <div>
-          <button type="button" className="inline-flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400 cursor-pointer"
-                  onClick={() => setShowItems(!showItems)} aria-expanded={showItems} data-testid="posture-q0-items-toggle">
-            {showItems ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-            {showItems ? "Hide" : "Show"} the {total} Q0 Unknown item{total === 1 ? "" : "s"}
-            {q0.byChoice > 0 ? ` (${q0.toClose} to close, ${q0.byChoice} left out by the team's choice)` : ""}
-          </button>
-          {showItems && <div className="mt-2"><Q0ItemList items={items} total={total} reasons={reasons} onOpenAsset={onOpenAsset} limit={25} /></div>}
-        </div>
-      )}
-      <p className="text-xs text-zinc-500 dark:text-zinc-400 break-all" data-testid="posture-q-inputs">
-        Graded with model {posture.grade_model_version ?? posture.grade_model ?? "—"}
-        {inputs ? ` · Mosca X ${inputs.mosca.x ?? "not set"}, Y ${inputs.mosca.y ?? "not set"}, Z ${inputs.mosca.z ?? "not set"}` : ""}
-        {inputsSourceText(inputs?.source)}
-      </p>
+      {reasonsBlock}
+      {itemsBlock}
+      {modelLine}
       <QGradeModelDialog teamId={teamId} open={dialog} onOpenChange={setDialog} model={m ?? undefined} />
     </div>
   );

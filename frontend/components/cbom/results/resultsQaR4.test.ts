@@ -154,7 +154,11 @@ test("C: the code-scan gauge keeps its wording; CbomResults passes the scope", (
   assert.match(text(html), /50%/);
   const charts = read("../CbomCryptoCharts.tsx");
   assert.match(charts, /<PqcReadinessGauge[^>]*scope=\{readinessScope\}/);
-  assert.match(read("../../CbomResults.tsx"), /readinessScope=\{run \? "run" : "code"\}/);
+  // the template's charts are the code scan's; a run's charts are in its views (results redesign), each with "run"
+  assert.match(read("../../CbomResults.tsx"), /readinessScope="code"/);
+  for (const view of ["InventoryView", "MigrationView", "ComplianceView"]) {
+    assert.match(read(`views/${view}.tsx`), /readinessScope="run"/, view);
+  }
 });
 
 // ------------------------------------------------------------------------------------------------------- D
