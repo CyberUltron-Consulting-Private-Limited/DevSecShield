@@ -7,21 +7,21 @@ import type { TipAreaText } from "../types";
 
 const TEXT = {
   // ────────────────────────────────────────────────────────────── SAST: scan configuration (components/sast-options-sidebar.tsx)
-  // src: RabbitMQ/worker/helpers/tools/sast_agent/main.py:51-92, RabbitMQ/worker/helpers/context/codebase_context.py:114-141 — today's behaviour: built-in exclusions and your patterns go through the same matcher on the file's full path (#37, #45)
+  // src: RabbitMQ/worker/helpers/tools/sast_agent/main.py:51-92, RabbitMQ/worker/helpers/context/codebase_context.py:119-170 — built-in exclusions and your patterns go through the same matcher, on the file's path inside the repository (#37, #45)
   "sast.cfg.scope": {
-    what: "Which files are analysed: the files of the chosen language, minus the language's built-in exclusions (such as node_modules, dist and build for JavaScript) and minus the patterns you add below. Exclusions are matched against each file's full path.",
+    what: "Which files are analysed: the files of the chosen language, minus the language's built-in exclusions (such as node_modules, dist and build for JavaScript) and minus the patterns you add below. Exclusions are matched against each file's path inside the repository.",
     why: "Files outside the scope are neither analysed nor charged, so it decides both coverage and cost.",
     example: "Add \"tests\" to leave the tests folders out of a Python scan.",
   },
-  // src: RabbitMQ/worker/helpers/context/codebase_context.py:114-141, RabbitMQ/worker/helpers/tools/sast_agent/main.py:91-92 — today's behaviour of file_path_matches_pattern: one name matches a path segment starting with it; two names one after the other; a third and later name is dropped; names are regular expressions (#37)
+  // src: RabbitMQ/worker/helpers/context/codebase_context.py:119-170, RabbitMQ/worker/helpers/tools/sast_agent/main.py:91-92 — file_path_matches_pattern: the path inside the repository; every name counts, as whole names one after the other at any depth; literal apart from * and a ** name; one name starting with a dot matches the names ending with it (#37, #45)
   "sast.cfg.exclude": {
-    what: "Each pattern is one or two folder or file names, one per box. One name skips every file whose path has a folder or file name starting with it; two names skip paths where they appear one after the other (a third name is ignored). Names are read as regular expressions, so a dot matches any character. Skipped files are not analysed and not charged.",
+    what: "Each pattern is one or more folder or file names, one per box. A file is skipped when its path inside the repository has these whole names one after the other, at any depth. * stands for any characters within a name and a box holding ** for any number of folders; other characters are literal. One name starting with a dot matches the names ending with it. Skipped files are not analysed and not charged.",
     why: "Leaving out vendored or generated code cuts noise and credits; leaving out real code hides findings.",
-    example: "\"vendor\" skips vendor/ and vendors/; \"src\" / \"legacy\" skips src/legacy.",
+    example: "\"vendor\" skips every vendor folder but not vendors; \"src\" / \"legacy\" skips src/legacy; \".min.js\" skips minified files.",
   },
-  // src: RabbitMQ/worker/helpers/tools/sast_agent/main.py:51-83 — one file extension per language; Ruby's built-in "tmp" exclusion matches the /tmp clone path, so Ruby scans analyse no file until #45 is fixed
+  // src: RabbitMQ/worker/helpers/tools/sast_agent/main.py:51-83 — one file extension per language
   "sast.cfg.language": {
-    what: "Only files with this language's extension are analysed: Python .py, JavaScript .js, Java .java, PHP .php, C .c, Ruby .rb, Rust .rs, Swift .swift, C# .cs, Kotlin .kt. Other files are ignored. Ruby scans currently analyse no files: Ruby's built-in tmp exclusion matches the folder the repository is cloned into.",
+    what: "Only files with this language's extension are analysed: Python .py, JavaScript .js, Java .java, PHP .php, C .c, Ruby .rb, Rust .rs, Swift .swift, C# .cs, Kotlin .kt. Other files are ignored.",
     why: "Only files of the chosen language are read, so the wrong choice analyses nothing useful.",
     example: "For a Node service choose JavaScript; note that .ts and .jsx files are not analysed.",
   },
@@ -213,7 +213,7 @@ const TEXT = {
     why: "Tells you which code the findings belong to.",
     example: "payments-api for https://github.com/acme/payments-api.",
   },
-  // src: backend/utilities/db/scan_list_item.py:24-31, RabbitMQ/worker/helpers/context/codebase_context.py:210-213 — included / (included + excluded) files with the language's extension
+  // src: backend/utilities/db/scan_list_item.py:24-31, RabbitMQ/worker/helpers/context/codebase_context.py:227-230 — included / (included + excluded) files with the language's extension
   "sast.table.coverage": {
     what: "Share of the language's source files that were analysed: analysed files divided by analysed plus excluded files. Exclusions are the language defaults and your patterns.",
     why: "Low coverage means much of the code was not analysed, so a clean result proves less.",
@@ -305,7 +305,7 @@ const TEXT = {
     why: "Shows whether fixes keep up.",
     example: "5 fixed and 1 ignored since last Wednesday: 6/week.",
   },
-  // src: backend/utilities/dashboard/scan_metadata.py:79-99, RabbitMQ/worker/helpers/context/codebase_context.py:210-213 — included / (included + excluded) documents of the language
+  // src: backend/utilities/dashboard/scan_metadata.py:79-99, RabbitMQ/worker/helpers/context/codebase_context.py:227-230 — included / (included + excluded) documents of the language
   "sast.res.coverage": {
     what: "Share of the chosen language's source files that were analysed: analysed files divided by analysed plus excluded files. Exclusions are the language's built-in ones and your patterns.",
     why: "Low coverage means much of the code was not analysed, so a clean result proves less.",
