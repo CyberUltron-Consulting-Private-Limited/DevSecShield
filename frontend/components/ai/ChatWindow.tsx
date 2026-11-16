@@ -143,6 +143,7 @@ const ChatWindow = ({
       toast.error('Invalid conversation type');
   }
 
+  const queryClient = useQueryClient();
   const handleSubmit: FormEventHandler<HTMLFormElement> = useCallback( async (event) => {
     event.preventDefault();
 
@@ -203,7 +204,6 @@ const ChatWindow = ({
 
   }, [inputValue, isTyping]);
 
-  const queryClient = useQueryClient();
   const refreshQuery = useCallback(() => {
     if (type === 'sast') {
       queryClient.invalidateQueries({ queryKey: ['sast-conversation-data', team_id, scan_id] });
