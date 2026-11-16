@@ -87,17 +87,17 @@ export function CertificatesCard({ teamId, runId, active, distributions, graph, 
               <TabsTrigger value="orphaned" className={trigger} data-testid="run-certificates-tab-orphaned">Orphaned and unmanaged</TabsTrigger>
             </TabsList>
           </div>
-          <TabsContent value="expiry" className="mt-4">
+          <TabsContent value="expiry" forceMount className="mt-4 data-[state=inactive]:hidden">
             {!chartsView.show ? <LoadingBlock /> : distributions ? (
               <div className={FLAT}><CbomCertificateExpiry distributions={distributions} graph={graph} findings={[]} /></div>
             ) : (
               <SectionNote testId="run-certificates-expiry-note">{chartsView.note ?? "This run's results carry no certificate data."}</SectionNote>
             )}
           </TabsContent>
-          <TabsContent value="calendar" className="mt-4">
+          <TabsContent value="calendar" forceMount className="mt-4 data-[state=inactive]:hidden">
             <RunCertCalendar teamId={teamId} runId={runId} active={active} />
           </TabsContent>
-          <TabsContent value="orphaned" className="mt-4">
+          <TabsContent value="orphaned" forceMount className="mt-4 data-[state=inactive]:hidden">
             {certificatesView.show
               ? <RunCertificatesSection bare view={certificatesView} results={results} onOpenAsset={onOpenAsset} />
               : <LoadingBlock />}
