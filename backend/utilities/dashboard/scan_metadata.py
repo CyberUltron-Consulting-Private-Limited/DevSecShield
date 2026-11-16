@@ -172,6 +172,7 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
         server_url = _meta.get("server_url") if _meta.get("server_url") else None
         server_mode = _meta.get("server_mode") if _meta.get("server_mode") else None
 
+        # an allow-list: the stored headers (names, masked values, encrypted values: #44) are never returned
         return {
             "server_url": server_url,
             "server_mode": server_mode,
