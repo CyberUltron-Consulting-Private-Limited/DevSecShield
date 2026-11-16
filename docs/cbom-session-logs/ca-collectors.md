@@ -8,7 +8,13 @@ Checked against commit `e1b30ea9` (the gap note) and built on `origin/dev` at `f
 
 PR: https://github.com/CyberUltron-Consulting-Private-Limited/DevSecShield/pull/427
 
-Head: `708e316790a62fa4eecaff3e175ba381b5122a7c`
+Merge SHA: `84f62c6705325cbf1d532fe159dd4ad9949e6a4b` (into `dev`, not `main`)
+
+Collectors: `708e316790a62fa4eecaff3e175ba381b5122a7c`
+
+Session log: `0123492e59b07cd01e5e7f04b3913507b6f91598`
+
+No staging deploy was started. Deploy staging runs were already completed, and a merge to `dev` does not run that workflow.
 
 All four are collected by the scan node. They share the `ca_connector` registry (`kinds.CA_NODE_PROVIDERS` and `collectors/ca.py`), so this is one pull request. "Other" is still not collectable: the form saves the name and API address and does not ask for a key. No cloud-worker CA collector was added. AWS Private CA is unchanged.
 
