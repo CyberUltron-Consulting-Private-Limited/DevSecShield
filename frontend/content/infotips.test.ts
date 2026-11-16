@@ -92,7 +92,11 @@ export const COVERED: string[] = [
 export const NOT_YET_COVERED = new Map<string, string>([
 ]);
 /** Dashboards: their h2/h3 chart titles need a tip as well. */
-export const DASHBOARDS = new Set<string>(["app/[team_id]/page.tsx"]);
+export const DASHBOARDS = new Set<string>([
+  "app/[team_id]/page.tsx",
+  // the run finding dialog (results redesign): every tab's h3 heading carries its (i)
+  "components/cbom/results/RunFindingDialog.tsx",
+]);
 
 function expand(entry: string): string[] {
   const abs = path.join(frontend, entry);
@@ -392,6 +396,14 @@ const PROBES: { name: string; file: string; anchor: string; insert: string; wher
     insert: `<Card><CardHeader><CardTitle>Key sizes</CardTitle></CardHeader></Card>`,
     where: "after",
     gaps: ["heading"],
+  },
+  {
+    name: "Run finding dialog: a tab heading without a tip",
+    file: "components/cbom/results/RunFindingDialog.tsx",
+    anchor: `{/* ------------------------------------------------------------------ Quantum & effort */}`,
+    insert: `<h3 className="text-sm">Probe heading</h3>`,
+    where: "after",
+    gaps: ["h2"],
   },
 ];
 for (const p of PROBES) {

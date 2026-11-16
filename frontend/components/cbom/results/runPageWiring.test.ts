@@ -15,10 +15,16 @@ const read = (...p: string[]) => readFileSync(join(__dirname, ...p), "utf8");
 const dialog = read("RunFindingDialog.tsx");
 const review = read("..", "sources", "ReviewRunTab.tsx");
 
-// S14: the AI assistant under the knowledge-base explanation, for this run asset
-const kb = dialog.indexOf("<AssetDetailPanel");
-const ai = dialog.indexOf('<AiRemediationPanel teamId={teamId} subject={{ kind: "run_asset", assetId }} />');
-assert.ok(kb > 0 && ai > kb, "AI panel mounted below AssetDetailPanel (KB fix and verify commands)");
+// S14 / results redesign: the AI assistant is an addition to the knowledge-base explanation (Issues tab: KB fix and
+// verify commands), for THIS run asset: its panel (opened from the AI tab) is keyed by the asset and its subject is
+// the dialog's current asset
+const kb = dialog.indexOf('<KbFindingDetails details={a.details} variant="steps" />');
+const ai = dialog.indexOf('<AiRemediationPanel key={`ai-${assetId}`} teamId={teamId} subject={{ kind: "run_asset", assetId }} />');
+assert.ok(kb > 0 && ai > kb, "AI panel mounted after the KB details (KB fix and verify commands)");
+assert.match(dialog, /const assetId = subject \? subject\.assetId : null;/, "the AI subject is the dialog's current asset");
+assert.match(dialog, /<aside id="run-finding-ai-sheet" hidden=\{!aiOpen\}/, "the AI panel is inside the dialog and stays mounted while closed");
+assert.match(dialog, /aria-controls="run-finding-ai-sheet"/, "Open AI assistant controls the panel");
+assert.ok(dialog.indexOf("<CollectedFacts item={item} />", ai) > ai, "the AI panel lists the collected facts it is given");
 assert.match(dialog, /import AiRemediationPanel from "\.\/AiRemediationPanel";/);
 assert.equal(RUN_CAPABILITIES.ai, true);
 
@@ -81,12 +87,14 @@ assert.match(adapter, /queryFn: \(\) => getCbomRunParity\(teamId, runId\)/);
 // KB details and the AI panel; the panel's existing props are unchanged (run mode is one optional prop)
 const rd = read("RunFindingDialog.tsx");
 const remAt = rd.indexOf("<RemediationPanel key={`rem-${assetId}`} teamId={String(teamId)} scanType=\"cbom\" scanId={0} findingId={String(assetId)}");
-assert.ok(remAt > rd.indexOf("<AssetDetailPanel") && remAt < rd.indexOf("<AiRemediationPanel"), "RemediationPanel between the KB details and the AI panel");
+assert.ok(remAt > rd.indexOf("<KbFindingDetails") && remAt < rd.indexOf("<AiRemediationPanel"), "RemediationPanel (Fix & demo tab) between the KB details and the AI panel");
 assert.match(rd, /runAsset=\{\{ runId, assetId \}\}/);
+assert.match(rd, /layout="cards"/, "Fix & demo: status cards");
+assert.match(rd, /missingNote=\{<p [^>]*data-testid="run-finding-fix-missing">/, "older backend: a one-line note instead of an empty tab");
 const panel = read("..", "..", "RemediationPanel.tsx");
 assert.match(panel, /runAsset\?: \{ runId: number; assetId: number \} \| null;/);
 assert.match(panel, /\? getCbomRunAssetRemediation\(parseInt\(teamId, 10\), runAsset\.runId, runAsset\.assetId\)\n\s*: generateFindingRemediation\(/);
-assert.match(panel, /if \(runAsset && load\.isError && remediationRouteMissing\(load\.error\) && !data\) return null;/, "older backend: hidden");
+assert.match(panel, /if \(runAsset && load\.isError && remediationRouteMissing\(load\.error\) && !data\) return <>\{missingNote \?\? null\}<\/>;/, "older backend: hidden (or the caller's one-line note)");
 for (const prop of ["teamId: string;", "scanType:", "scanId: number;", "findingId: string;", "existingRemediation?:", "onRemediationGenerated?:", "snippetStart?:", "line?:"]) {
   assert.ok(panel.includes(prop), `RemediationPanel keeps ${prop}`);
 }
