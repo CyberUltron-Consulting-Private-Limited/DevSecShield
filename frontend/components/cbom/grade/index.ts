@@ -19,8 +19,8 @@
 //   anywhere             -> <Q0ItemList items={posture.q0_items} total={posture.q0_items_total} />,
 //                           <QGradeModelDialog teamId={t} open onOpenChange />, <AgilityDistribution posture={posture} />
 //
-// RunPosture.tsx mounts the two posture cards inside RunPostureCard and the two drawer sections inside
-// AssetDetailPanel, so any page that already mounts those two gets them with no change.
+// The run results page mounts the two posture cards in its Quantum grades view (results/views/QuantumView.tsx);
+// RunPosture.tsx mounts the two drawer sections inside AssetDetailPanel, so any page that mounts it gets them.
 export { GradeInputsBanner, QDistributionBar, QDistributionCard, QGradeChip, QGradeDrawerSection, QGradeModelBody, QGradeModelDialog, Q0ItemList } from "./QGrade";
 export { AgilityDistribution, AgilityDrawerSection, AgilityPostureCard, EvidenceFixClass, FixClassChip } from "./Agility";
 export { AgilityBaselineSection, AgilityBaselineView, AgilityHistoryTable, AgilitySubjectsTable, AgilitySystemsTable, type DrillDown } from "./AgilityBaseline";

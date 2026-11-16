@@ -14,7 +14,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { downloadCbomRunCbom, verifyCbomRunSignature, type CbomCertRef, type CbomJobTargets, type CbomRun, type CbomRunResults } from "@/utils/backend_api";
-import { downloadCbomRunBom, EXPOSURE_LABEL, type CbomPostureWithExposure } from "@/utils/api/cbom_outputs";
+import { downloadCbomRunBom } from "@/utils/api/cbom_outputs";
 import { downloadOscal } from "@/utils/api/integrations";
 
 import { DiffView, RunChanges } from "@/components/cbom/sources/ChangesPanel";
@@ -27,7 +27,6 @@ import { TargetsBlock } from "@/components/cbom/sources/RunResults";
 import { EmptyState, RunStatusBadge, StatusBadge, Truncate, type Tone } from "@/components/cbom/sources/shared";
 
 import { CbomDashboardCharts } from "./CbomDashboardCharts";
-import { getImpactBadgeClass } from "./badgeClasses";
 import { WaveLegend } from "./WaveLegend";
 import {
   certCountText,
@@ -454,19 +453,21 @@ export { WaveLegend };
 // S10 compliance mapping: ComplianceSummary.tsx (#270), on code scans and runs alike
 
 // ---------------------------------------------------------------------------- S11 dashboard charts
-export function RunDashboardSection({ view, model, riskRows, pageRows, results }: {
+export function RunDashboardSection({ view, model, riskRows, pageRows, results, parts }: {
   view: SectionView;
   model: RunDashboardModel;
   riskRows: Parameters<typeof CbomDashboardCharts>[0]["findingsList"];
   /** rows on the findings table's current page (the per-finding chart plots those, and says so) */
   pageRows: number;
   results: CbomRunResults | null;
+  /** CbomDashboardCharts' cards to render (default: all); the inventory view leaves out the KPI tiles (on the summary) */
+  parts?: string[];
 }) {
   if (!view.show) return null;
   return (
     <div className="space-y-3" data-testid="run-section-dashboard">
       {model.dashboard && (
-        <CbomDashboardCharts dashboard={model.dashboard} findingsList={riskRows}
+        <CbomDashboardCharts dashboard={model.dashboard} findingsList={riskRows} parts={parts}
                              riskScoresTitle={`Risk scores on this table page (${pageRows} rows)`} riskScoresTip="cbom.run.risk_scores" quantumTip="cbom.run.quantum"
                              riskScoresDescription="Risk score (0-10) of the rows on the findings table's current page and filter, top 24, descending" />
       )}
@@ -481,53 +482,4 @@ export function RunDashboardSection({ view, model, riskRows, pageRows, results }
   );
 }
 
-// ---------------------------------------------------------------------------- S13 top risks
-export function RunTopRisks({ posture, onOpenAsset }: { posture: CbomPostureWithExposure; onOpenAsset: (id: number) => void }) {
-  const risks = posture.top_risks ?? [];
-  if (risks.length === 0) return null;
-  return (
-    <Card className="border-zinc-200 dark:border-zinc-800" data-testid="run-top-risks">
-      <CardHeader>
-        <CardTitle className="text-base">Top cryptographic risks <InfoTip id="cbom.run.top_risks" /></CardTitle>
-        <CardDescription>Priority = impact × business criticality × internet exposure, from the run posture</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <ScrollArea className="h-[320px] w-full rounded-md border border-zinc-200 dark:border-zinc-800">
-          <Table className="min-w-max">
-            <TableHeader>
-              <TableRow>
-                <TableHead className="min-w-[80px]">Priority <InfoTip id="cbom.run.col.priority" /></TableHead>
-                <TableHead className="min-w-[200px]">Asset <InfoTip id="cbom.run.col.asset" /></TableHead>
-                <TableHead className="min-w-[90px]">Impact <InfoTip id="results.table.impact" /></TableHead>
-                <TableHead className="min-w-[140px]">Source <InfoTip id="cbom.run.col.source" /></TableHead>
-                <TableHead className="min-w-[100px]">Criticality <InfoTip id="cbom.run.col.criticality" /></TableHead>
-                <TableHead className="min-w-[130px]">Exposure <InfoTip id="cbom.run.col.exposure" /></TableHead>
-                <TableHead className="min-w-[70px]">HNDL <InfoTip id="cbom.run.col.hndl" /></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {risks.map((r) => (
-                <TableRow key={r.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50" data-testid={`run-top-risk-${r.id}`}>
-                  <TableCell className="font-mono tabular-nums">{r.score}</TableCell>
-                  <TableCell className="max-w-[320px]">
-                    <button type="button" className="text-left text-blue-600 dark:text-blue-400 hover:underline cursor-pointer max-w-[300px] truncate block font-mono text-xs"
-                            title={r.location} onClick={() => onOpenAsset(r.id)}>
-                      {r.name}
-                    </button>
-                    {r.finding && <span className="block text-xs text-zinc-500 max-w-[300px] truncate" title={r.finding}>{r.finding}</span>}
-                  </TableCell>
-                  <TableCell><Badge variant="outline" className={getImpactBadgeClass(r.impact)}>{r.impact}</Badge></TableCell>
-                  <TableCell className="text-sm text-zinc-600 dark:text-zinc-400">{r.source_name ?? "—"}</TableCell>
-                  <TableCell className="text-sm text-zinc-600 dark:text-zinc-400 capitalize">{r.criticality}</TableCell>
-                  <TableCell className="text-sm text-zinc-600 dark:text-zinc-400" title={r.exposure_basis}>{r.exposure ? EXPOSURE_LABEL[r.exposure] : "—"}</TableCell>
-                  <TableCell className="text-sm">{r.hndl ? <StatusBadge tone="red">HNDL</StatusBadge> : "—"}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-          <ScrollBar orientation="horizontal" />
-        </ScrollArea>
-      </CardContent>
-    </Card>
-  );
-}
+// S13 top risks: views/TopRisksSummary.tsx (results redesign: the posture's ranked risks once, cards then a table)

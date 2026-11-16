@@ -181,9 +181,15 @@ assert.equal(rows.rows[0].assets, 5);
 // ---------------------------------------------------------------- one template: the section for code scans and runs
 const template = readFileSync(path.join(__dirname, "..", "..", "CbomResults.tsx"), "utf8");
 assert.ok(!template.includes("RunComplianceSection"), "the run-only text wall is gone");
-assert.match(template, /\{\(!run \|\| run\.plan\.compliance\.show\) && \(\n\s*<ComplianceMappingSection frameworks=\{complianceMapping\.frameworks\} onDrill=\{handleComplianceDrill\}/);
+// a code scan renders the section in the template; a run in its Compliance view (results redesign), with the same figures
+assert.match(template, /<ComplianceMappingSection frameworks=\{complianceMapping\.frameworks\} onDrill=\{handleComplianceDrill\} scope="scan"/);
+const complianceView = readFileSync(path.join(__dirname, "views", "ComplianceView.tsx"), "utf8");
+assert.match(complianceView, /\{run\.plan\.compliance\.show && \(\n\s*<ComplianceMappingSection frameworks=\{ctx\.complianceMapping\.frameworks\} onDrill=\{ctx\.onComplianceDrill\} scope="run"/);
+assert.match(template, /complianceMapping, coverageReport/, "the view gets the template's complianceMapping");
+assert.match(template, /onComplianceDrill: handleComplianceDrill,/);
 assert.match(template, /engine: cryptoCompliance,/, "the verdicts come from the same tri-state report on both");
-assert.match(template, /const \{ patch, truncated \} = runDrillFilters\(target\);\n\s*run\.onFilters\(patch\);/, "run: server-side table filter");
+assert.match(template, /const \{ patch, truncated \} = runDrillFilters\(target\);\n\s*drillToFindings\(patch\);/, "run: server-side table filter");
+assert.match(template, /createDrill\(\{ onFilters: run\.onFilters,/, "drillToFindings applies it with the run's onFilters");
 assert.match(template, /\} else if \(target\.kind === "refs"\) \{\n\s*handleViewRelatedFindings\(target\.refs\);/, "code scan: the existing related-assets filter");
 const table = readFileSync(path.join(__dirname, "RunFindingsTable.tsx"), "utf8");
 assert.match(table, /codes: undefined, asset_ids: undefined, drill_label: undefined, page: 1 \}\);/, "Clear filters clears the drill-down");

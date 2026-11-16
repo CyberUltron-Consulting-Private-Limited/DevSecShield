@@ -103,6 +103,9 @@ export function CbomDashboardCharts({
   riskScoresTip?: InfoTipId;
   /** The (i) tip of the Quantum readiness card: a run's bars come from its posture classes, with no Broken today bar. */
   quantumTip?: InfoTipId;
+  /** results redesign: the cards to render (default: all). Keys: kpis, progress, owasp, risk, controls, algoTypes,
+   * strength, quantum, riskScores, metrics. Declared here by the page-shell builder (B1); B2 implements it. */
+  parts?: string[];
 }) {
   const cardData = dashboard.card_data;
   const remediation = dashboard.remediation_actions_required;

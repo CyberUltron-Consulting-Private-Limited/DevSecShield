@@ -6,17 +6,11 @@
 import { CorrelationSection } from "@/components/cbom/estate/Correlation";
 import type { Correlation } from "@/components/cbom/estate/correlation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ExternalLink, Info } from "lucide-react";
 import { Fragment, useState } from "react";
 
 import KbFindingDetails from "@/components/cbom/KbFindingDetails";
 import { StandardsDrawerSection } from "@/components/cbom/standards/Standards";
-import {
-  AgilityDrawerSection,
-  AgilityPostureCard,
-  QDistributionCard,
-  QGradeDrawerSection,
-} from "@/components/cbom/grade";
+import { AgilityDrawerSection, QGradeDrawerSection } from "@/components/cbom/grade";
 import { cbomOpsKeys, getCbomAssetSbom } from "@/utils/api/cbom_ops";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,7 +42,7 @@ import { EXPOSURE_CHOICES, pluralize } from "./logic";
 import { ErrorBlock, LoadingBlock, SectionCard, StatusBadge, Truncate, type Tone } from "./shared";
 import { InfoTip } from "@/components/ui/info-tip";
 
-const CLASS_LABEL: Record<CbomPqcClass, [string, Tone, string]> = {
+export const CLASS_LABEL: Record<CbomPqcClass, [string, Tone, string]> = {
   "quantum-vulnerable": ["Quantum-vulnerable", "red", "RSA, elliptic-curve or Diffie-Hellman: a large quantum computer breaks it"],
   hybrid: ["Hybrid PQC", "green", "An identified post-quantum component (such as ML-KEM) next to classical public-key cryptography, inside one construction or offered beside it"],
   "quantum-safe": ["Quantum-safe", "green", "Symmetric, hash or post-quantum cryptography"],
@@ -58,7 +52,7 @@ const CLASS_LABEL: Record<CbomPqcClass, [string, Tone, string]> = {
 };
 
 /** The readiness headline (CB-18): withheld when more assets are unknown than judged, and always "of N judged". */
-function readinessText(p: { pqc_readiness_pct: number | null; readiness_basis?: CbomReadinessBasis }):
+export function readinessText(p: { pqc_readiness_pct: number | null; readiness_basis?: CbomReadinessBasis }):
   { value: string; hint: string } {
   const b = p.readiness_basis;
   const unknown = b && b.unknown ? `; ${b.unknown} unknown not included` : "";
@@ -69,10 +63,10 @@ function readinessText(p: { pqc_readiness_pct: number | null; readiness_basis?: 
   return { value: `${p.pqc_readiness_pct}%`, hint: `Of ${b ? b.judged : "the"} judged assets, the share not quantum-vulnerable${unknown}` };
 }
 
-const EXPOSURE_TONE: Record<CbomExposure, Tone> = { internet: "red", internal: "zinc", unknown: "zinc" };
+export const EXPOSURE_TONE: Record<CbomExposure, Tone> = { internet: "red", internal: "zinc", unknown: "zinc" };
 
 /** Team admins may change team settings (the API enforces it); others do not see the controls. */
-function useIsTeamAdmin(teamId: number): boolean {
+export function useIsTeamAdmin(teamId: number): boolean {
   const q = useQuery({
     queryKey: cbomSourcesKeys.overview(teamId),
     queryFn: () => getCbomSourcesOverview(teamId),
@@ -83,7 +77,7 @@ function useIsTeamAdmin(teamId: number): boolean {
   return !!q.data?.viewer?.is_admin;
 }
 
-function Stat({ label, value, hint, testId }: { label: string; value: string; hint?: string; testId?: string }) {
+export function Stat({ label, value, hint, testId }: { label: string; value: string; hint?: string; testId?: string }) {
   return (
     <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 p-3 min-w-0" data-testid={testId}>
       <p className="text-xs text-zinc-500">{label}</p>
@@ -160,141 +154,21 @@ export function MoscaEditor({ teamId, onDone }: { teamId: number; onDone: () => 
   );
 }
 
-/** `onOpenAsset`: what a Q0 Unknown asset item in the quantum-risk card opens (optional; without it the item is text). */
-export function RunPostureCard({ teamId, runId, active, onOpenAsset }: {
-  teamId: number; runId: number; active: boolean; onOpenAsset?: (assetId: number) => void;
-}) {
-  const [showCompliance, setShowCompliance] = useState(false);
-  const [editMosca, setEditMosca] = useState(false);
-  const isAdmin = useIsTeamAdmin(teamId);
-  const query = useQuery({
+/** GET /runs/{id}/posture: one cache entry for the run page (the adapter's posture, the posture summary and the quantum
+ * view read the same key and fetcher); polled every 15 s while the run collects. */
+export function useRunPostureQuery(teamId: number, runId: number, active: boolean) {
+  return useQuery({
     queryKey: cbomSourcesKeys.runPosture(teamId, runId),
     queryFn: async () => (await getCbomRunPosture(teamId, runId)) as unknown as CbomPostureWithExposure,
     enabled: Number.isFinite(teamId),
     retry: 1,
     refetchInterval: active ? 15000 : false,
   });
-  if (query.isLoading) return <LoadingBlock />;
-  if (query.isError || !query.data) return <ErrorBlock error={query.error} onRetry={() => query.refetch()} />;
-  const p = query.data;
-  // a run that read no asset can still have Q0 Unknown items (sources or targets not read): show only those
-  if (p.assets === 0) {
-    return (p.q0_items_total ?? 0) > 0 ? <QDistributionCard teamId={teamId} posture={p} onOpenAsset={onOpenAsset} /> : null;
-  }
-  const m = p.mosca; // the Mosca this run recorded at Start (the team's now: mosca_now, and the editor)
-  return (
-    <div className="space-y-3 rounded-lg border border-zinc-200 dark:border-zinc-800 p-4" data-testid="run-posture">
-      <div className="flex flex-wrap items-center gap-2">
-        <p className="text-sm font-medium text-zinc-900 dark:text-white">Post-quantum and risk posture <InfoTip id="cbom.run.posture" /></p>
-        <span className="text-xs text-zinc-500">Knowledge base {p.kb_version} · no AI</span>
-      </div>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Stat label="PQC readiness" value={readinessText(p).value} hint={readinessText(p).hint} testId="posture-readiness" />
-        <Stat label="Harvest now, decrypt later" value={String(p.hndl_assets)}
-              hint="Endpoints whose key exchange a quantum computer breaks later" testId="posture-hndl" />
-        <Stat label="Critical / High" value={`${p.impacts.Critical ?? 0} / ${p.impacts.High ?? 0}`} hint={`${p.impacts.Medium ?? 0} medium, ${p.impacts.Low ?? 0} low`} />
-        <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 p-3 min-w-0" data-testid="posture-mosca">
-          <p className="text-xs text-zinc-500">Mosca (X + Y &gt; Z)</p>
-          {m.configured ? (
-            <>
-              <p className={`text-xl font-semibold ${m.at_risk ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"}`}>
-                {m.at_risk ? "At risk" : "Inside window"}
-              </p>
-              <p className="text-xs text-zinc-500 mt-0.5">X {m.x} + Y {m.y} vs Z {m.z} years</p>
-            </>
-          ) : (
-            <p className="text-xs text-zinc-500 mt-1">Not set</p>
-          )}
-          {p.mosca_now && (
-            <p className="text-xs text-zinc-500 mt-0.5" data-testid="posture-mosca-now">
-              Team now: {p.mosca_now.configured ? `X ${p.mosca_now.x} + Y ${p.mosca_now.y} vs Z ${p.mosca_now.z}` : "not set"} (applies to new runs)
-            </p>
-          )}
-          {isAdmin ? (
-            <button type="button" className="text-xs text-blue-600 dark:text-blue-400 cursor-pointer mt-1" data-testid="mosca-edit"
-                    title="Team setting: new runs record it at Start; this run keeps the values it started with"
-                    onClick={() => setEditMosca(!editMosca)}>
-              {m.configured || p.mosca_now ? "Change X, Y, Z" : "Set X, Y, Z"}
-            </button>
-          ) : (
-            <p className="text-xs text-zinc-500 mt-1" data-testid="mosca-admin-only">A team admin sets X, Y and Z</p>
-          )}
-        </div>
-      </div>
-      {editMosca && isAdmin && <MoscaEditor teamId={teamId} onDone={() => setEditMosca(false)} />}
-      {!m.configured && !editMosca && m.note && <p className="text-xs text-zinc-500">{m.note}</p>}
-      <div className="flex flex-wrap gap-2">
-        {(Object.keys(CLASS_LABEL) as CbomPqcClass[]).map((c) =>
-          p.pqc_classes[c] ? (
-            <span key={c} title={CLASS_LABEL[c][2]} data-testid={`posture-class-${c}`} data-count={p.pqc_classes[c]}>
-              <StatusBadge tone={CLASS_LABEL[c][1]}>{CLASS_LABEL[c][0]} {p.pqc_classes[c]}</StatusBadge>
-            </span>
-          ) : null,
-        )}
-      </div>
-      {m.configured && m.verdict && <p className="text-xs text-zinc-600 dark:text-zinc-400">{m.verdict}</p>}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 items-start">
-        <QDistributionCard teamId={teamId} posture={p} onOpenAsset={onOpenAsset} />
-        <AgilityPostureCard teamId={teamId} posture={p} />
-      </div>
-      {p.top_risks.length > 0 && (
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 mb-1">
-            Highest risk (impact × business criticality × internet exposure)
-          </p>
-          <ul className="space-y-1">
-            {p.top_risks.slice(0, 5).map((r) => (
-              <li key={r.id} className="text-xs text-zinc-700 dark:text-zinc-300 flex flex-wrap gap-2" data-testid={`top-risk-${r.id}`}>
-                <span className="font-mono">{r.score}</span>
-                <span className="font-mono break-all">{r.name}</span>
-                <span className="text-zinc-500">{r.source_name ?? ""} · {r.criticality}{r.hndl ? " · HNDL" : ""}</span>
-                {r.exposure && (
-                  <span title={r.exposure_basis}>
-                    <StatusBadge tone={EXPOSURE_TONE[r.exposure]}>
-                      {EXPOSURE_LABEL[r.exposure]}{p.exposure_factors && r.exposure === "internet" ? ` ×${p.exposure_factors.internet}` : ""}
-                    </StatusBadge>
-                  </span>
-                )}
-              </li>
-            ))}
-          </ul>
-          <p className="text-xs text-zinc-500 mt-1">Scored with the criticality and exposure the sources had when this run started.</p>
-        </div>
-      )}
-      {p.compliance.length > 0 && (
-        <div>
-          <button type="button" className="text-xs text-blue-600 dark:text-blue-400 cursor-pointer" onClick={() => setShowCompliance(!showCompliance)}
-                  data-testid="posture-compliance-toggle">
-            {showCompliance ? "Hide" : "Show"} regulatory clauses these findings touch ({p.compliance.map((f) => f.framework).join(", ")})
-          </button>
-          {showCompliance && (
-            <div className="mt-2 space-y-2" data-testid="posture-compliance">
-              {p.compliance.map((fw) => (
-                <div key={fw.framework}>
-                  <p className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">{fw.framework}</p>
-                  <ul className="space-y-1">
-                    {fw.clauses.map((c) => (
-                      <li key={c.id} className="text-xs text-zinc-600 dark:text-zinc-400">
-                        <a href={c.source} target="_blank" rel="noreferrer noopener" className="text-blue-600 dark:text-blue-400 inline-flex items-center gap-1">
-                          {c.id} <ExternalLink className="h-3 w-3" />
-                        </a>{" "}
-                        · {pluralize(c.assets, "asset")} · {c.codes.join(", ")}
-                        {c.note && <span className="block italic text-zinc-500">{c.note}</span>}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-      {p.pqc_context?.z_note && (
-        <p className="text-xs text-zinc-500 flex gap-1"><Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />{p.pqc_context.z_note}</p>
-      )}
-    </div>
-  );
 }
+
+// The run's posture card is split by the results redesign: its summary (stats, Mosca, classes, the highest risks and
+// the regulatory clauses) is components/cbom/results/views/PostureSummary.tsx; the quantum-risk distribution and the
+// crypto-agility card are in the Quantum grades view (views/QuantumView.tsx).
 
 export function AssetDetailPanel({ teamId, assetId, mergedStandards = false }: { teamId: number; assetId: number; mergedStandards?: boolean }) {
   const query = useQuery({

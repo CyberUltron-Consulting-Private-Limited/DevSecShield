@@ -225,7 +225,8 @@ export function useSourcesRunSource(teamId: number, runId: number, { initialView
     refetchIntervalInBackground: false,
   });
 
-  // /posture: the same query (key and fetcher) RunPostureCard uses, so both read one cache entry
+  // /posture: the same query (key and fetcher) as useRunPostureQuery (the posture summary and the quantum view), so all
+  // read one cache entry
   const postureQ = useQuery({
     queryKey: cbomSourcesKeys.runPosture(teamId, runId),
     queryFn: async () => (await getCbomRunPosture(teamId, runId)) as unknown as CbomPostureWithExposure,

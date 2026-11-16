@@ -832,6 +832,8 @@ export const INFO_TIP_LABELS = {
   "cbom.ai.question": "Your question",
   "cbom.agility.section": "How hard is this to fix?",
   "cbom.run.covered": "Collection jobs and targets",
+  "cbom.run.summary": "Run summary",
+  "cbom.run.drill": "Drill down",
   "cbom.run.provenance": "Provenance per source",
   "cbom.run.col.kind": "Kind",
   "cbom.run.col.outcome": "Outcome",

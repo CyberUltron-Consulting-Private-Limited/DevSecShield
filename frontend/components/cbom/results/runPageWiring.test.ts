@@ -36,13 +36,48 @@ assert.ok(!existsSync(join(__dirname, "RunResultsView.tsx")) && !existsSync(join
 // S2: the code page's Results / Ticketing integrations tabs; on a run the Ticketing tab is RunTicketingTab (PR-4)
 const template = read("..", "..", "CbomResults.tsx");
 assert.match(template, /const hasTicketingTab = run \? RUN_TICKETING_TAB_AVAILABLE : showTabs && onIntegrationSettingsUpdated != null;/);
-assert.match(template, /activeTab === "ticketing" && hasTicketingTab && run \? \(\n\s*<RunTicketingTab teamId=\{run\.teamId\} runId=\{run\.runId\} \/>/);
-// the run sections sit in the template's Results tab, in the code page's order
-const order = ["<RunMetaCards", "<RunPostureCard", "<CbomCryptoCharts", "<RunInsights", "<RunCertificatesSection", "<RunChangesSection",
-  "<RunWavesSection", "<RbiCsfRollup", "<CertInLanePosture", "<ComplianceMappingSection", "<RunDashboardSection", "<RunFindingsTable", "<RunTopRisks"];
-const at = order.map((tag) => template.indexOf(tag));
-assert.ok(at.every((i, n) => i > 0 && (n === 0 || i > at[n - 1])), `sections in order: ${JSON.stringify(order.map((t, n) => [t, at[n]]))}`);
-assert.ok(template.indexOf('activeTab === "ticketing" && hasTicketingTab && run') < at[0], "after the tabs");
+// results redesign: on a run the hero header, then the tabs, then Ticketing, or the summary, or one detail view (?section=)
+assert.match(template, /<ResultsHero [^]*?\{hasTicketingTab && tabBar\}\n\s*\{activeTab === "ticketing" && hasTicketingTab \? \(\n\s*<RunTicketingTab teamId=\{run\.teamId\} runId=\{run\.runId\} \/>\n\s*\) : section === "" \? \(\n\s*<SummaryView ctx=\{viewCtx\} \/>\n\s*\) : \(\n\s*detailView\(section, viewCtx\)/);
+assert.match(template, /const section: ResultsSection = run \? resultsUrl\.section : "";/, "the section is read from the URL every render; ignored on a code scan");
+// the run sections sit in the views, each component in exactly one view (the findings table: the summary and, under the
+// waves whose copy says "Select findings in the table below", the remediation view); none in the template itself
+const viewSrc = (f: string) => read("views", f);
+const VIEWS: Record<string, string> = {
+  summary: viewSrc("SummaryView.tsx"), collection: viewSrc("CollectionView.tsx"), quantum: viewSrc("QuantumView.tsx"),
+  inventory: viewSrc("InventoryView.tsx"), migration: viewSrc("MigrationView.tsx"), compliance: viewSrc("ComplianceView.tsx"),
+  remediation: viewSrc("RemediationView.tsx"),
+};
+const MOUNTED_IN: Record<string, string[]> = {
+  "<RunStatusBanner": ["summary"], "<SummaryKpis": ["summary"], "<RunMetaCards": ["summary"], "<PostureSummary": ["summary"],
+  "<ExplainPanel": ["summary"], "<TopRisksSummary": ["summary"], "<DrillTiles": ["summary"],
+  "<RunCoverageSection": ["collection"], "<QDistributionCard": ["quantum"], "<AgilityPostureCard": ["quantum"],
+  "<RunDashboardSection": ["inventory"], "<RunCertificatesSection": ["inventory"], "<RunInsights": ["inventory"],
+  "<RbiCsfRollup": ["compliance"], "<CertInLanePosture": ["compliance"], "<ComplianceMappingSection": ["compliance"],
+  "<RunWavesSection": ["remediation"], "<RunChangesSection": ["remediation"],
+  "<RunFindingsTableMount": ["summary", "remediation"], "<CbomCryptoCharts": ["inventory", "migration", "compliance"],
+};
+for (const [tag, want] of Object.entries(MOUNTED_IN)) {
+  const got = Object.entries(VIEWS).filter(([, src]) => src.includes(`${tag} `) || src.includes(`${tag}\n`)).map(([v]) => v);
+  assert.deepEqual(got, want, `${tag} is mounted in ${want.join(", ")}`);
+}
+for (const tag of ["<RunMetaCards", "<RunPostureCard", "<PostureSummary", "<RunInsights", "<RunCertificatesSection", "<RunChangesSection",
+  "<RunWavesSection", "<RunDashboardSection", "<RunFindingsTable", "<RunTopRisks", "<ReadinessExplainer", "<RunCoverageSection"]) {
+  assert.ok(!template.includes(tag), `${tag} is a view's, not the template's`);
+}
+// the CbomCryptoCharts cards are split between the three views without overlap, and every card is somewhere
+const PARTS = ["algorithms", "weak", "readiness", "qv", "roadmap", "assetTypes", "certExpiry", "protocols", "graph", "compliance"];
+const partsOf = (src: string, name: string) => JSON.parse((src.match(new RegExp(`export const ${name} = (\\[[^\\]]*\\])`)) ?? [])[1] ?? "null") as string[];
+const split = [partsOf(VIEWS.inventory, "INVENTORY_CHART_PARTS"), partsOf(VIEWS.migration, "MIGRATION_CHART_PARTS"), partsOf(VIEWS.compliance, "COMPLIANCE_CHART_PARTS")];
+assert.deepEqual(split.flat().sort(), [...PARTS].sort(), "each chart card in exactly one view");
+assert.deepEqual(partsOf(VIEWS.inventory, "INVENTORY_DASHBOARD_PARTS").sort(),
+  ["progress", "owasp", "risk", "controls", "algoTypes", "strength", "quantum", "riskScores", "metrics"].sort(), "the dashboard's KPI tiles are the summary's");
+// each view's component is mounted by the template's switch, once
+for (const v of ["CollectionView", "QuantumView", "InventoryView", "MigrationView", "ComplianceView", "RemediationView"]) {
+  assert.equal(template.split(`<${v} ctx={ctx} />`).length - 1, 1, v);
+}
+// the dialogs are mounted outside the section switch (after it), so a view change never unmounts them
+const switchEnd = template.indexOf("detailView(section, viewCtx)");
+assert.ok(template.indexOf("<RunFindingDialog") > switchEnd && template.indexOf("<CompareDialog") > switchEnd, "dialogs outside the switch");
 
 // header: the code page's download row for a run: CycloneDX JSON / XML / OSCAL, then VEX / Signature / Evidence pack /
 // PDF Report (RunDeliverablesMenu, PR-8) and a signature check
@@ -55,21 +90,27 @@ assert.ok(pos.every((p, n) => p > 0 && (n === 0 || p > pos[n - 1])), `header but
 assert.match(sections, /verifyCbomRunSignature\(teamId, runId, file\)/);
 
 // One toolbar. A Sources run is /{team}/cbom/{id}/results?run=1, so the route param is still scan_id and
-// `team_id && scan_id != null` is true. The code-scan download row is the else of the run row, not a sibling
-// (that painted CycloneDX JSON / XML / OSCAL / VEX / Signature / Evidence pack / PDF Report twice).
+// `team_id && scan_id != null` is true. A run renders ResultsHero (RunHeaderActions) and the code-scan header is the
+// else of that branch, not a sibling (a sibling painted CycloneDX JSON / XML / OSCAL / VEX / Signature / Evidence pack /
+// PDF Report twice).
+const hero = read("views", "ResultsHero.tsx");
+assert.ok(hero.includes("<RunHeaderActions teamId={teamId} run={run}"), "a Sources run keeps RunHeaderActions (in its hero)");
+assert.ok(hero.includes("<RunHeaderMeta teamId={teamId} run={run} sources={sources} />"), "and its status line");
+assert.match(template, /\{run && run\.run && viewCtx \? \(\n\s*<>\n[^]*?<ResultsHero [^]*?\n\s*\) : \(\n\s*<>\n\s*\{\/\* Header: the export buttons/,
+             "the code header is the else of the run branch");
 const headerStart = template.indexOf('data-testid="cbom-results-title"');
-const headerEnd = template.indexOf("{importReport && importReportHasNews");
-assert.ok(headerStart > 0 && headerEnd > headerStart, "results header is bounded");
+const headerEnd = template.indexOf("<ImportNotesCard report={importReport} />");
+assert.ok(headerStart > template.indexOf("<ResultsHero") && headerEnd > headerStart, "results header is bounded");
 const header = template.slice(headerStart, headerEnd);
-assert.match(header, /\{run && run\.run \? \(/);
-assert.match(header, /\) : team_id && scan_id != null \? \(/);
-assert.ok(header.includes("<RunHeaderActions"), "a Sources run keeps RunHeaderActions");
+assert.match(header, /\{team_id && scan_id != null \? \(/);
+assert.ok(!header.includes("<RunHeaderActions"), "the run row is not in the code header");
 assert.ok(header.includes('data-testid="cbom-scan-header-actions"'), "a code scan keeps its download row");
 assert.ok(header.includes("Scan settings"), "a code scan keeps Scan settings");
 assert.equal((header.match(/CycloneDX JSON/g) ?? []).length, 1, "the scan row's CycloneDX JSON label is not copied");
 assert.ok(!header.includes("Open in CBOM Sources"), "Open in CBOM Sources stays on RunHeaderActions");
-assert.ok(!/\{run && run\.run && \(\s*<RunHeaderActions/.test(header), "the run row is not a sibling of the scan row");
 assert.ok(!/\{team_id && scan_id != null && \(/.test(header), "the scan row is not an independent sibling");
+assert.equal((template.match(/<ResultsHero /g) ?? []).length, 1, "one run header, on every view (outside the section switch)");
+assert.ok(template.indexOf("<ResultsHero") < template.indexOf('section === "" ? ('), "the hero is above the switch");
 
 // /parity (W2b): a run's scan_metadata (compliance readiness, RBI / CERT-In roll-ups, graph, coverage banner) is read by
 // the template exactly where a code scan's is
@@ -99,8 +140,13 @@ assert.match(sections, /<RunDiffBlock teamId=\{teamId\} runId=\{run\.id\} \/>\n\
 assert.match(rd, /const chips = findingChips\(item, detailQ\.data\?\.details, detailQ\.data\);/);
 // /parity notes: graph / compliance readiness under the charts, RBI CSF and CERT-In next to their roll-ups
 assert.match(template, /const runParityNotes = run \? parityNotes\(run\.parityState, run\.parity\) : null;/);
-for (const id of ["run-graph-note", "run-compliance-readiness-note", "run-rbi-note", "run-certin-note"]) assert.ok(template.includes(`testId="${id}"`), id);
-assert.ok(!template.includes("chartsCodeOnly"), "no 'shown on code scans only' note: under PARITY a run has the graph and compliance");
+// (results redesign: the graph note in the Inventory view, the others in the Compliance view, from the template's notes)
+assert.match(template, /parityNotes: runParityNotes,/);
+assert.ok(VIEWS.inventory.includes('testId="run-graph-note"'), "run-graph-note");
+for (const id of ["run-compliance-readiness-note", "run-rbi-note", "run-certin-note"]) assert.ok(VIEWS.compliance.includes(`testId="${id}"`), id);
+for (const src of [template, ...Object.values(VIEWS)]) {
+  assert.ok(!src.includes("chartsCodeOnly"), "no 'shown on code scans only' note: under PARITY a run has the graph and compliance");
+}
 
 // the Ticketing tab is on exactly when lane W6's component is in the tree
 assert.equal(RUN_TICKETING_TAB_AVAILABLE, existsSync(join(__dirname, "RunTicketingTab.tsx")), "Ticketing tab <=> RunTicketingTab.tsx");

@@ -92,7 +92,12 @@ export const COVERED: string[] = [
 export const NOT_YET_COVERED = new Map<string, string>([
 ]);
 /** Dashboards: their h2/h3 chart titles need a tip as well. */
-export const DASHBOARDS = new Set<string>(["app/[team_id]/page.tsx"]);
+export const DASHBOARDS = new Set<string>([
+  "app/[team_id]/page.tsx",
+  // the Sources run results views (results redesign): their h2 / h3 section and tile titles need a tip too
+  ...fs.readdirSync(path.join(frontend, "components/cbom/results/views")).filter((f) => f.endsWith(".tsx"))
+    .map((f) => `components/cbom/results/views/${f}`),
+]);
 
 function expand(entry: string): string[] {
   const abs = path.join(frontend, entry);
@@ -391,6 +396,31 @@ const PROBES: { name: string; file: string; anchor: string; insert: string; wher
     anchor: `{/* Top Cryptographic Risks */}`,
     insert: `<Card><CardHeader><CardTitle>Key sizes</CardTitle></CardHeader></Card>`,
     where: "after",
+    gaps: ["heading"],
+  },
+  // the run results views (results redesign): a section heading, a KPI tile and a drill tile each need their own tip
+  {
+    name: "CBOM run summary: a section heading without a tip",
+    file: "components/cbom/results/views/SummaryView.tsx",
+    anchor: `<DrillTiles figures={figures}`,
+    insert: `<h2 className="text-base font-semibold">Exposure</h2>`,
+    where: "before",
+    gaps: ["h2"],
+  },
+  {
+    name: "CBOM run summary: a KPI tile without an infoId",
+    file: "components/cbom/results/views/SummaryKpis.tsx",
+    anchor: `{kpiTiles(model).map((t) => (`,
+    insert: `<KpiTile label="Expired" value="3" icon={Lock} box="" testId="run-kpi-expired" />`,
+    where: "before",
+    gaps: ["heading"],
+  },
+  {
+    name: "CBOM run summary: a drill tile without an infoId",
+    file: "components/cbom/results/views/DrillTiles.tsx",
+    anchor: `{DETAIL_SECTIONS.map((s) => (`,
+    insert: `<DrillTile section="quantum" title="Keys" holds="" figure={figures.quantum} onOpen={() => undefined} />`,
+    where: "before",
     gaps: ["heading"],
   },
 ];

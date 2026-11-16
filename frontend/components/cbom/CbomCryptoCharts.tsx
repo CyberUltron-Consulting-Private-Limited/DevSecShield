@@ -188,6 +188,8 @@ export interface PqcMigrationRow {
   location?: string | null;
   /** Inventory bom-ref for View-finding join */
   bom_ref?: string | null;
+  /** CBOM Sources run rows: the run asset (the run's finding dialog opens it; run_results.py sends it) */
+  asset_id?: number | null;
   description?: string | null;
   suggested_fix?: string | null;
   finding_codes?: string[] | null;
@@ -1221,6 +1223,9 @@ export function CbomCryptoCharts({
   showCodeHeatmap?: boolean;
   /** "run": the readiness card shows posture's figure over the judged assets (QA round 4, C); "code": every asset */
   readinessScope?: "run" | "code";
+  /** results redesign: the cards to render (default: all). Keys: algorithms, weak, readiness, qv, roadmap, assetTypes,
+   * certExpiry, protocols, graph, compliance. Declared here by the page-shell builder (B1); B2 implements it. */
+  parts?: string[];
 }) {
   if (!distributions) return null;
   const hasGraph =
