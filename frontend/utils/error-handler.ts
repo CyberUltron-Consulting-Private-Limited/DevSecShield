@@ -1,6 +1,7 @@
 
 import api, { retryAfterSeconds } from "@/utils/interceptors";
 import { AxiosError } from "axios";
+import { logFailedRequest } from "@/utils/safeRequestLog";
 import { toast } from "@/utils/toast";
 
 export interface ApiError {
@@ -24,7 +25,7 @@ export const handleLogout = async () => {
     }else{
       throw new Error(response.data.detail)
     }
-  }catch(error:any){
+  }catch{
     // On logout failure, just clear and redirect
     localStorage.clear()
     window.location.href = "/login";
@@ -61,9 +62,11 @@ function waitText(seconds: number): string {
   return `${minutes} minute${minutes === 1 ? "" : "s"}`;
 }
 
+/** What to tell the user about a failed request. The console gets one line (method, path, status) and never the
+ * error itself: an AxiosError carries the request body and the bearer token (#31, utils/safeRequestLog.ts). */
 export const handleApiError = (error: unknown): ApiError => {
   if (error instanceof AxiosError) {
-    console.log(error);
+    logFailedRequest(error);
     const status = error.response?.status;
     const message = error.response?.data?.message || error.response?.data?.detail || error.message;
 
