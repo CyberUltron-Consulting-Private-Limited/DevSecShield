@@ -17,7 +17,6 @@ from backend.get_db import get_db, get_mongo_client_db
 from backend.mongo_models import ActiveContextLog, MessageLog
 from backend.new_models import Scan
 from backend.utilities.dashboard.scan_metadata import get_scan_metadata
-from backend.utilities.team.credits import deduct_credits_from_team_for_message
 from backend.utilities.auth.auth_utils import get_user_from_header_or_raise_exception
 # from backend.utilities.celery.celery_connection import get_status_and_update_db
 from backend.utilities.db.functions import get_messages_from_scan, return_scan_list_for_type, update_status_of_scan_in_main_db 
@@ -211,7 +210,10 @@ async def send_message_to_scan(
             console.print(f"AI chat unavailable: {exc.__class__.__name__}", style="bold red")
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                                 detail="AI chat is not configured on this deployment")
-        if not check_if_team_has_enough_credits(team_id, 0.006):
+        from backend.utilities.ai import paid_chat as CHAT
+
+        # An early refusal only: the conditional debit in STEP [ 3b ] decides (#86).
+        if not check_if_team_has_enough_credits(team_id, CHAT.COST):
             return { "content" : "Team does not have enough credits to send a message" }
 
 
@@ -253,51 +255,56 @@ async def send_message_to_scan(
         messages_count = message_collection.count_documents({"scan_id": SCAN.id})
         if messages_count > MAX_MESSAGE_LIMIT:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Max message limit reached")
-        
-        message_instance = MessageLog(
-            scan_id=SCAN.id,
-            content=data.user_message,
-            type="message",
-            sender="user",
-            created_at=datetime.now(timezone.utc),
-        )
-        result = message_collection.insert_one(message_instance)
-        user_message_id = str(result.inserted_id)
-        console.print(f"User message added to mongo db" ,style="dim green")
-    
-        
-        
-        
-        # STEP [ 4 ] : =========== Add user message to the active context log ====================== ⭐
-        active_context_collection = mongo_db["active_context"]
-        active_context_instance = ActiveContextLog(
-            scan_id=SCAN.id,
-            content=data.user_message,
-            type="message",
-            sender="user",
-            created_at=datetime.now(timezone.utc),
-        )
-        result = active_context_collection.insert_one(active_context_instance)
-        active_context_message_id = str(result.inserted_id)
-        console.print(f"User message added to active context log with id: {active_context_message_id}" ,style="dim green")
+
+        # STEP [ 3b ] : =========== Charge the message before anything is stored or the model is called (#86) ===== ⭐
+        # One conditional debit and its credit ledger row, in one transaction (utilities/ai/paid_chat.py): however
+        # many messages arrive at once, the model answers only as many as the balance pays for. Every failure before
+        # the answer comes back (including a cancelled request) refunds the message once.
+        message_oid = ObjectId()  # the message's id in message_log and in its ledger rows
+        try:
+            CHAT.charge(engine, team_id, str(message_oid))
+            message_instance = MessageLog(
+                _id=message_oid,
+                scan_id=SCAN.id,
+                content=data.user_message,
+                type="message",
+                sender="user",
+                created_at=datetime.now(timezone.utc),
+            )
+            result = message_collection.insert_one(message_instance)
+            user_message_id = str(result.inserted_id)
+            console.print(f"User message added to mongo db" ,style="dim green")
 
 
-        
-        
-        
-        # STEP [ 5 ] : =========== Get the response from the model ======================
-        AI_RESPONSE = await create_response(
-            mongo_db=mongo_db,
-            scan_id=SCAN.id,
-            scan_type=type,
-            scan_results=json.dumps(SCAN_DATA, default=str),
-            content=data.user_message,
-            role="human", # doesnt get saved to any db , jsut for functional clarity 
-        )
+            # STEP [ 4 ] : =========== Add user message to the active context log ====================== ⭐
+            active_context_collection = mongo_db["active_context"]
+            active_context_instance = ActiveContextLog(
+                scan_id=SCAN.id,
+                content=data.user_message,
+                type="message",
+                sender="user",
+                created_at=datetime.now(timezone.utc),
+            )
+            result = active_context_collection.insert_one(active_context_instance)
+            active_context_message_id = str(result.inserted_id)
+            console.print(f"User message added to active context log with id: {active_context_message_id}" ,style="dim green")
 
 
-        # STEP [ 6 ] : =========== Deduct credits for message for team  ====================== ⭐
-        deduct_credits_from_team_for_message(team_id)
+            # STEP [ 5 ] : =========== Get the response from the model (already paid for) ======================
+            AI_RESPONSE = await create_response(
+                mongo_db=mongo_db,
+                scan_id=SCAN.id,
+                scan_type=type,
+                scan_results=json.dumps(SCAN_DATA, default=str),
+                content=data.user_message,
+                role="human", # doesnt get saved to any db , jsut for functional clarity 
+            )
+        except CHAT.InsufficientCredits:  # the debit was refused: nothing was charged, stored or sent to the model
+            return { "content" : "Team does not have enough credits to send a message" }
+        except BaseException as failure:
+            # once, and only for a charge that committed (a charge that raised may or may not have: the ledger knows)
+            CHAT.refund_unanswered(engine, team_id, str(message_oid), failure)
+            raise
 
 
         return AI_RESPONSE
