@@ -41,6 +41,7 @@ import { toast } from "@/utils/toast";
 import { useRouter } from "next/navigation";
 import { handleApiError } from "@/utils/error-handler";
 import { scanFailureMessage } from "@/utils/scanFailure";
+import { refreshCredits } from "@/utils/creditRefresh";
 import { stateAfterError } from "@/utils/scanErrorRecovery";
 import { DAST_RERUN_NOTE, readDastRerun } from "@/utils/dastRerun";
 import { DastRunAgainButton } from "@/components/scan-run-again";
@@ -239,6 +240,10 @@ export function DASTOptionsSidebar({
       setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("ready");
     },
+    // the dispatch charged the team, or refunded a failed dispatch (utilities/dast/dispatch.py): the header follows (#13)
+    onSettled: () => {
+      refreshCredits(queryClient);
+    },
   });
 
   /** Reset estimation when key scan inputs change so user must re-run estimate for new config. */
@@ -282,6 +287,10 @@ export function DASTOptionsSidebar({
       setErrorMessage(null);
     }
   }, [query.data?.scan_status]);
+  // the status check that saw the scan fail refunded its credits (#28): show the balance it gave back
+  useEffect(() => {
+    if (query.data?.scan_status === "failure") refreshCredits(queryClient);
+  }, [query.data?.scan_status, queryClient]);
 
   const exportMutation = useMutation({
     mutationFn: ([tid, sid]: [number, number]) => getDASTExportResults(tid, sid),
@@ -324,6 +333,9 @@ export function DASTOptionsSidebar({
     onError: (err) => {
       setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("error");
+    },
+    onSettled: () => {
+      refreshCredits(queryClient);
     },
   });
 

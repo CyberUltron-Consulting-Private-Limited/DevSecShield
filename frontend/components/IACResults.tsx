@@ -1524,7 +1524,8 @@ export default function IACResults({ data, conversationId, dashboard, findings, 
     mutationFn: () => {
       const tid = teamId ? parseInt(teamId, 10) : NaN;
       if (conversationId == null || Number.isNaN(tid)) throw new Error("Missing team or scan");
-      return getIACExportResults(tid, conversationId);
+      // this page says the outcome, once (#27): the helper's own toasts are off
+      return getIACExportResults(tid, conversationId, { toast: false });
     },
     onSuccess: (blob) => {
       const url = URL.createObjectURL(new Blob([blob], { type: "application/pdf" }));
@@ -1533,6 +1534,7 @@ export default function IACResults({ data, conversationId, dashboard, findings, 
       a.download = `iac_scan_${conversationId}_report.pdf`;
       a.click();
       URL.revokeObjectURL(url);
+      toast.success("IAC report downloaded");
     },
     onError: (err) => {
       showErrorToast(err, "Failed to download scan report");

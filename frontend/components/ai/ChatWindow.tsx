@@ -38,6 +38,7 @@ import { toast } from "@/utils/toast";
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { DASTConversationResponse, DASTScanResponse, getSastConversationMessages, IACConversationResponse, LLMConversationResponse, SCASBOMConversationResponse, CBOMConversationResponse, AIBOMConversationResponse, sendMessageToScan } from '@/utils/backend_api';
 import { showErrorToast } from '@/utils/error-handler';
+import { refreshCredits } from '@/utils/creditRefresh';
 import ScanStatusIndicator from '@/components/ai/ScanStatusIndicator';
 import { SastConversationResponse } from '@/utils/backend_api';
 import { UseQueryResult } from '@tanstack/react-query';
@@ -189,6 +190,9 @@ const ChatWindow = ({
       );
     } catch (error) { 
       showErrorToast(error);
+    } finally {
+      // a chat message is charged (POST .../message, backend routers/scans.py): the header shows the balance (#28)
+      refreshCredits(queryClient);
     }
 
     // Start streaming response from the chatbot ( removed )
