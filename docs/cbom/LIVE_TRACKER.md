@@ -5,6 +5,26 @@ The live sheet the owner reads is GitHub issue
 Session C updates that issue. This file is a short pointer. It contains no
 credentials.
 
+## Staging b73861db (results redesign)
+
+Staging SHA `b73861db` via
+[PR #430](https://github.com/CyberUltron-Consulting-Private-Limited/DevSecShield/pull/430), which promotes
+[#426](https://github.com/CyberUltron-Consulting-Private-Limited/DevSecShield/pull/426): the Sources run results
+page and finding popup, built to the owner-approved mockups Final1–10.
+[Deploy run 43852749073](https://github.com/CyberUltron-Consulting-Private-Limited/DevSecShield/actions/runs/43852749073)
+succeeded. API health is 200, and `87ab1a40c6a4` is kept as the rollback target.
+
+Checked live on 16 Nov in Chrome (staging, run 40, `/1/cbom/40/results?run=1`):
+- `zs-build` names `b73861db`.
+- The summary and all 6 `?section=` views render with 0 px horizontal overflow.
+- Every page ⓘ id in the pre-redesign baseline is present (85 of 85).
+- Every popup ⓘ id is present across 7 rows (19 of 19).
+- The popup keeps a 52/832 px frame on all 6 tabs, and Esc returns focus to the row.
+
+The promotion went in with `ci-gate` red on 3 backend tests that were already red on dev. That breaks the owner's
+rule that every check is green before a merge. The fix PR that carries this note turns them green, and #430 was
+reviewed after the fact.
+
 ## Staging 3317362d
 
 Staging SHA `3317362d` via

@@ -320,6 +320,12 @@ jobs:
         AWS_DEFAULT_REGION=us-east-1
         RABBIT_ADMIN_USERNAME=ci
         RABBIT_ADMIN_PASSWORD=ci-only-dummy
+        PG_USER=ci
+        PG_USER_PASS=ci-only-dummy
+        PG_DB=ci
+      # PG_*: get_db() reads these names (os.environ[...]) before any route can refuse a request; the tests swap in
+      # their own SQLite / PG_URL_* engines, so these only have to exist. They came from the tracked backend/.env
+      # until #392 untracked it, which turned test_cbom_api_keys and test_cbom_fleet_scaffold red.
       test-command: >-
         CANCEL_RACE_PG_URL="$PG_URL_C1" AUTH_TEST_PG_URL="$PG_URL_AUTH" CBOM_TEST_PG_URL="$PG_URL_CBOM"
         P1_PG_URL="$PG_URL_P1"
