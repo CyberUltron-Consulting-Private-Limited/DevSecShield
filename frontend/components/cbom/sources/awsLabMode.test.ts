@@ -28,4 +28,9 @@ assert.ok(run.includes("{targets?.some((job) => job.lab_mode) && (\n        <Lab
   "a run with a lab-mode job shows the banner")
 assert.ok(run.indexOf('testId="run-lab-mode"') < run.indexOf("<TargetsBlock"), "above the run's jobs and targets")
 assert.ok(targets.includes("{job.lab_mode && ("), "and the job is marked")
+// results redesign: the run's hero header carries the same banner on every view but Collection (its jobs card has it)
+const hero = read("../results/views/ResultsHero.tsx")
+assert.ok(hero.includes("{showLabBanner && targets?.some((job) => job.lab_mode) && (\n        <LabModeBanner testId=\"run-lab-mode\""),
+  "the hero shows the banner for a run with a lab-mode job")
+assert.ok(read("../../CbomResults.tsx").includes('showLabBanner={section !== "collection"}'), "not twice on the Collection view")
 console.log("aws lab mode tests passed")

@@ -4,8 +4,8 @@
  *   Actions column with Details, and rows that open the finding dialog (tab stop, aria-haspopup=dialog);
  * - the code-scan table in CbomResults.tsx has the same row handlers, chooser and sticky actions;
  * - both finding dialogs scroll their body (no Radix ScrollArea with h-full inside a max-height-only flexbox);
- * - "Standards and regulations" shows once in the run dialog: merged KB details (each clause once) and no
- *   remediation Standards tab; every other KbFindingDetails caller (code-scan Standards tab, Sources asset drawer)
+ * - "Standards and regulations" shows once in the run dialog: its Standards tab (each clause once, regulator tabs),
+ *   no per-code standards in its Issues tab and no remediation Standards tab; every other KbFindingDetails caller (code-scan Standards tab, Sources asset drawer)
  *   keeps one block per finding code, as before (#282 review);
  * - every cell carries data-col and every run row data-type-label: the gate reads rows by attribute, not position.
  * Run (frontend/): npx --yes tsx@4.23.15 components/cbom/results/findingDialogTable.test.ts
@@ -17,7 +17,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-import KbFindingDetails from "@/components/cbom/KbFindingDetails";
+import KbFindingDetails, { StandardsTabs } from "@/components/cbom/KbFindingDetails";
 import type { CbomRunAssetItem, CbomRunAssetPage, KbFindingDetail } from "@/utils/backend_api";
 
 import { RunFindingsTable } from "./RunFindingsTable";
@@ -110,9 +110,26 @@ for (const [name, src, testId] of [["run", dialog, "run-finding-scroll"], ["code
   assert.match(src, /<DialogContent\s+className=\{`\$\{FINDING_DIALOG_CONTENT\}/, `${name} dialog: shared dialog layout`);
 }
 assert.match(dialog, /tabIndex=\{0\}/, "run dialog body is focusable for keyboard scrolling");
-// the run dialog's KB details come from AssetDetailPanel; the remediation panel's Standards tab would repeat them
+// the run dialog's KB details are split into tabs (results redesign): the Issues tab's steps carry no standards, the
+// Standards tab shows the merged section ONCE (StandardsTabs = mergeStandards), and the remediation panel's Standards
+// tab would repeat them
 assert.match(dialog, /<RemediationPanel[^>]*standardsTab=\{false\}/, "no second Standards in the run dialog");
-assert.match(dialog, /<AssetDetailPanel teamId=\{teamId\} assetId=\{assetId\} mergedStandards \/>/, "the run dialog merges");
+assert.match(dialog, /<KbFindingDetails details=\{a\.details\} variant="steps" \/>/, "Issues tab: steps, no per-code standards");
+assert.equal(count(dialog, "<StandardsTabs "), 1, "the run dialog renders the merged standards once");
+assert.match(dialog, /<StandardsTabs details=\{a\.details\} \/>/);
+assert.ok(!dialog.includes("<AssetDetailPanel") && !/mergedStandards/.test(dialog), "no second KB block (AssetDetailPanel / merged cards) in the dialog");
+const stepsHtml = render(h(KbFindingDetails, { details: twoCodes, variant: "steps" }));
+assert.equal(count(stepsHtml, "Standards and regulations"), 0, "the steps variant has no Standards section of its own");
+const tabsHtml = render(h(StandardsTabs, { details: twoCodes }));
+assert.equal(count(tabsHtml, "Standards and regulations"), 1, "one Standards and regulations heading for two codes");
+assert.equal(count(tabsHtml, rbi.text), 1, "the RBI clause once");
+assert.equal(count(tabsHtml, ">NIST SP 800-52r2<"), 1, "each standard once");
+assert.ok(tabsHtml.includes("CNSA 2.0"), "standards of every code kept");
+assert.equal(count(render(h(StandardsTabs, { details: [kb("X", { standards: [], compliance: [] })] })), "Standards and regulations"), 0, "no empty section");
+// every tab is mounted and hidden when inactive (forceMount), so the remediation request, AI answers and Diff survive
+for (const t of ["overview", "issues", "quantum", "standards", "fix", "ai"]) {
+  assert.match(dialog, new RegExp(`<TabsContent value="${t}" forceMount className="[^"]*data-\\[state=inactive\\]:hidden`), `tab ${t} stays mounted`);
+}
 const posture = read("..", "sources", "RunPosture.tsx");
 assert.match(posture, /mergedStandards = false/, "the Sources drawer keeps per-code blocks");
 assert.match(posture, /<KbFindingDetails details=\{a\.details\} mergedStandards=\{mergedStandards\} \/>/);

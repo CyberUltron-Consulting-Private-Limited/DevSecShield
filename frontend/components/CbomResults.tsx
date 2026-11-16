@@ -15,7 +15,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  AlertTriangle,
   ArrowLeft,
   SlidersHorizontal,
   Download,
@@ -54,7 +53,6 @@ import { showErrorToast } from "@/utils/error-handler";
 import { downloadCbomScanBom, INFORMATIONAL_LABEL, type CbomCoverageReport, type CbomImportReport } from "@/utils/api/cbom_outputs";
 import { downloadOscal } from "@/utils/api/integrations";
 import { inventoryRows, isBrokenToday, isUnidentified, matchesQuantumFilter } from "@/components/cbom/quantumFilter";
-import { importNoteLines, importReportHasNews } from "@/components/cbom/importNotes";
 import {
   buildRefAliasMap,
   findingMatchesRelatedRefs,
@@ -79,31 +77,32 @@ import { CbomDashboardCharts } from "@/components/cbom/results/CbomDashboardChar
 import { getFindingStatusBadgeClass, getImpactBadgeClass, getRiskScoreBoxClass, getStrengthBadgeClass } from "@/components/cbom/results/badgeClasses";
 import { type CertInRollupData } from "@/components/certin/certinShared";
 import { InfoTip } from "@/components/ui/info-tip";
-import { CompareDialog, RunInsights } from "@/components/cbom/sources/ChangesPanel";
-import { RunPostureCard } from "@/components/cbom/sources/RunPosture";
-import { applyPostureToDistributions, complianceRows, endpointsProbed, parityNotes, resolveMigrationRows, RUN_TICKETING_TAB_AVAILABLE, runDurationSeconds } from "@/components/cbom/results/model";
+import { CompareDialog } from "@/components/cbom/sources/ChangesPanel";
+import { applyPostureToDistributions, complianceRows, hasActiveFilters, parityNotes, resolveMigrationRows, RUN_TICKETING_TAB_AVAILABLE, tableTotal } from "@/components/cbom/results/model";
+import { useDialogNav } from "@/components/cbom/results/useDialogNav";
+import { InfoTipDrawerProvider } from "@/components/ui/info-tip-drawer";
 import { ComplianceMappingSection } from "@/components/cbom/results/ComplianceSummary";
 import { buildComplianceSummary, runDrillFilters, type DrillTarget } from "@/components/cbom/results/complianceSummary";
 import { RunFindingDialog } from "@/components/cbom/results/RunFindingDialog";
-import { RunFindingsTable } from "@/components/cbom/results/RunFindingsTable";
 import { ColumnChooser, useColumnPrefs } from "@/components/cbom/results/ColumnChooser";
 import { FINDING_DIALOG_BODY, FINDING_DIALOG_CONTENT, FINDING_DIALOG_FULLSCREEN_SM, rowOpenProps, SCAN_TABLE_COLUMNS, STICKY_ACTIONS } from "@/components/cbom/results/findingTable";
 import { RowOpenButton } from "@/components/cbom/results/RowOpenButton";
-import {
-  RunCertificatesSection,
-  RunChangesSection,
-  RunCoverageSection,
-  RunDashboardSection,
-  RunHeaderActions,
-  RunHeaderMeta,
-  RunMetaCards,
-  RunTopRisks,
-  RunWavesSection,
-  SectionNote,
-} from "@/components/cbom/results/RunSections";
-import { ReadinessExplainer } from "@/components/cbom/results/ReadinessExplainer";
-import { readinessDrillFilters } from "@/components/cbom/results/readinessExplain";
 import RunTicketingTab from "@/components/cbom/results/RunTicketingTab";
+// the Sources run views (results redesign): summary, detail views, URL and drill-downs
+import { CollectionView } from "@/components/cbom/results/views/CollectionView";
+import { ComplianceView } from "@/components/cbom/results/views/ComplianceView";
+import { createDrill, pqcRunAssetId, runRefsDrill, useResultsScroll } from "@/components/cbom/results/views/drill";
+import { InventoryView } from "@/components/cbom/results/views/InventoryView";
+import { MigrationView } from "@/components/cbom/results/views/MigrationView";
+import { QuantumView } from "@/components/cbom/results/views/QuantumView";
+import { RemediationView } from "@/components/cbom/results/views/RemediationView";
+import { ResultsHero } from "@/components/cbom/results/views/ResultsHero";
+import { CoverageNotesCard, ImportNotesCard } from "@/components/cbom/results/views/ScanNotes";
+import { SectionView } from "@/components/cbom/results/views/SectionView";
+import { SummaryView } from "@/components/cbom/results/views/SummaryView";
+import type { RunViewCtx } from "@/components/cbom/results/views/types";
+import { useResultsUrl, type DetailSection, type ResultsSection } from "@/components/cbom/results/views/url";
+import { useSectionNav } from "@/components/cbom/results/views/sectionNav";
 import type { ResultsSource } from "@/components/cbom/results/source";
 import { advisoryLine, readAdvisoryData, staleNote } from "@/components/cbom/advisoryData";
 
@@ -203,8 +202,33 @@ export default function CbomResults({
   const team_id = teamId ?? params?.team_id;
   const scan_id = conversationId ?? params?.scan_id;
   const queryClient = useQueryClient();
+  const goBack = () => {
+    const backRoute = backHref
+      ? backHref
+      : origin === "chat" && team_id && scan_id != null
+        ? `/${team_id}/cbom/${scan_id}`
+        : team_id
+          ? `/${team_id}/cbom`
+          : "/cbom";
+    router.push(backRoute);
+  };
 
   const [activeTab, setActiveTab] = useState<"results" | "ticketing">("results");
+  // A run's view (?section=…): read from the URL every render, ignored on a code scan
+  const resultsUrl = useResultsUrl();
+  const section: ResultsSection = run ? resultsUrl.section : "";
+  const requestFindingsScroll = useResultsScroll(section, !!run && activeTab === "results");
+  // the run finding dialog's Previous / Next over the findings table (B3); inert on a code scan (nulls)
+  const { nav: dialogNav, openFromTable } = useDialogNav({
+    assetId: run?.dialog?.assetId ?? null,
+    open: (id) => run?.setDialog({ assetId: id }),
+    items: run?.page?.items,
+    page: run?.filters.page ?? 1,
+    pageSize: run?.filters.page_size ?? 50,
+    total: run?.page ? tableTotal(run.page, run.filters.view, hasActiveFilters(run.filters)) : 0,
+    placeholder: run?.pagePlaceholder ?? false,
+    goToPage: (p) => run?.onFilters({ page: p }),
+  });
   const [searchQuery, setSearchQuery] = useState("");
   const [relatedFindingRefs, setRelatedFindingRefs] = useState<string[]>([]);
   const [strengthFilter, setStrengthFilter] = useState("all");
@@ -576,12 +600,38 @@ export default function CbomResults({
     };
   }, [run, cryptoCompliance, findingsList, relatedRefAliases]);
 
+  // A run's views: a tile's Open pushes a history entry; every drill-down filters the findings table,
+  // returns to a view that has it and scrolls there once it is mounted (drillToFindings)
+  const { patch: patchResultsUrl } = resultsUrl;
+  // a tile's Open pushes; "Back to summary" goes back when the summary is behind; focus follows the view (sectionNav.ts)
+  const { goSection, backToSummary } = useSectionNav(section, patchResultsUrl);
+  const drillToFindings = (patch: Parameters<NonNullable<typeof run>["onFilters"]>[0]) => {
+    if (!run) return;
+    createDrill({ onFilters: run.onFilters, section, goSection, requestScroll: requestFindingsScroll })(patch);
+  };
+  // RBI CSF / CERT-In "view findings" on a run: their refs name run assets; a requirement with none says so
+  const handleViewRunRefs = (refs: string[]) => {
+    const d = runRefsDrill(refs, "Assets of this requirement");
+    if (!d) {
+      toast.info("This requirement names no asset of this run");
+      return;
+    }
+    drillToFindings(d.patch);
+    if (d.truncated) toast.warning("The findings table shows the first assets of this requirement only (one request carries up to 500)");
+  };
+  // a PQC list item on a run opens the run's finding dialog for its asset (never the code scan's dialog)
+  const openRunPqcFinding = (f: CbomFinding) => {
+    if (!run) return;
+    const id = pqcRunAssetId(f as CbomFinding & { asset_id?: number | null });
+    if (id != null) run.openAsset(id, f.algorithm_name || f.title || undefined);
+    else toast.info("This item names no asset of this run");
+  };
+
   const handleComplianceDrill = (target: DrillTarget) => {
     if (run) {
       const { patch, truncated } = runDrillFilters(target);
-      run.onFilters(patch);
+      drillToFindings(patch);
       if (truncated) toast.warning("The findings table shows the first assets of this requirement only (one request carries up to 500)");
-      requestAnimationFrame(() => document.getElementById("bom-findings")?.scrollIntoView({ behavior: "smooth", block: "start" }));
     } else if (target.kind === "refs") {
       handleViewRelatedFindings(target.refs);
     } else {
@@ -604,8 +654,81 @@ export default function CbomResults({
     typeFilter !== "all" ||
     quantumFilter !== "all";
 
+  // the Sources run's views: what they share (built from the figures above), and the one rendered for ?section=
+  const viewCtx: RunViewCtx | null = run ? {
+    run, meta, parityNotes: runParityNotes, distributions: cryptoDistributions, graph: cryptoGraph, graphCompact: cryptoGraphCompact,
+    graphExpanded: cryptoGraphExpanded, compliance: cryptoCompliance, complianceMapping, coverageReport, importReport,
+    onComplianceDrill: handleComplianceDrill, onViewRefs: handleViewRunRefs, onOpenPqcFinding: openRunPqcFinding,
+    drill: drillToFindings, openFromTable, section, goSection,
+  } : null;
+  const detailView = (s: DetailSection, ctx: RunViewCtx) => {
+    const r = ctx.run;
+    const resultsPending = r.resultsState.kind === "loading";
+    const back = backToSummary;
+    switch (s) {
+      case "collection": return <SectionView section={s} onBack={back}><CollectionView ctx={ctx} /></SectionView>;
+      case "quantum": return <SectionView section={s} onBack={back}><QuantumView ctx={ctx} /></SectionView>;
+      case "inventory": return <SectionView section={s} onBack={back} loading={resultsPending}><InventoryView ctx={ctx} /></SectionView>;
+      case "migration": return <SectionView section={s} onBack={back} loading={resultsPending}><MigrationView ctx={ctx} /></SectionView>;
+      case "compliance":
+        return <SectionView section={s} onBack={back} loading={resultsPending || r.parityState === "loading"}><ComplianceView ctx={ctx} /></SectionView>;
+      case "remediation": return <SectionView section={s} onBack={back}><RemediationView ctx={ctx} /></SectionView>;
+    }
+  };
+
+  const tabBar = (
+        <div className="flex gap-2 mb-6 border-b border-zinc-200 dark:border-zinc-800">
+          <button
+            type="button"
+            onClick={() => setActiveTab("results")}
+            className={`px-4 py-2 font-medium text-sm transition-colors border-b-2 cursor-pointer ${
+              activeTab === "results"
+                ? "border-blue-600 text-blue-600 dark:text-blue-400"
+                : "border-transparent text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <BarChart3 className="w-4 h-4" />
+              Results
+            </div>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("ticketing")}
+            className={`px-4 py-2 font-medium text-sm transition-colors border-b-2 cursor-pointer ${
+              activeTab === "ticketing"
+                ? "border-blue-600 text-blue-600 dark:text-blue-400"
+                : "border-transparent text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Ticket className="w-4 h-4" />
+              Ticketing integrations
+            </div>
+          </button>
+        </div>
+  );
+
   return (
     <div className="container mx-auto p-6 space-y-6">
+      {run && run.run && viewCtx ? (
+        // the Explanations drawer lists the tips of the view on screen (B3's manifest: run.summary, run.<section>)
+        <InfoTipDrawerProvider view={`run.${section || "summary"}`}>
+          {/* results redesign: the hero header on every view, the Results / Ticketing tabs, then the summary or one view */}
+          <ResultsHero teamId={run.teamId} run={run.run} sources={run.sources} posture={run.posture} assetTotal={run.page?.all_total ?? null}
+                       canCompare={run.canCompare} onCompare={() => run.setCompareOpen(true)} onBack={scan_id != null || team_id ? goBack : null}
+                       targets={run.page?.targets ?? null} showLabBanner={section !== "collection"} />
+          {hasTicketingTab && tabBar}
+          {activeTab === "ticketing" && hasTicketingTab ? (
+            <RunTicketingTab teamId={run.teamId} runId={run.runId} />
+          ) : section === "" ? (
+            <SummaryView ctx={viewCtx} />
+          ) : (
+            detailView(section, viewCtx)
+          )}
+        </InfoTipDrawerProvider>
+      ) : (
+        <>
       {/* Header: the export buttons wrap under the title on a narrow screen (they ran off a phone's right edge) */}
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex items-center gap-4">
@@ -614,16 +737,7 @@ export default function CbomResults({
               variant="outline"
               size="icon"
                 aria-label="Back"
-              onClick={() => {
-                const backRoute = backHref
-                  ? backHref
-                  : origin === "chat" && team_id && scan_id != null
-                    ? `/${team_id}/cbom/${scan_id}`
-                    : team_id
-                      ? `/${team_id}/cbom`
-                      : "/cbom";
-                router.push(backRoute);
-              }}
+              onClick={goBack}
               className="cursor-pointer"
             >
               <ArrowLeft className="h-4 w-4" />
@@ -635,7 +749,6 @@ export default function CbomResults({
               CBOM Scan Results
             </h1>
             <div className="flex flex-wrap items-center gap-3 mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-              {run && run.run && <RunHeaderMeta teamId={run.teamId} run={run.run} sources={run.sources} />}
               {meta?.repo_url && (
                 <span className="flex items-center gap-1"><GitBranch className="h-3.5 w-3.5" /> {meta.repo_url}</span>
               )}
@@ -656,12 +769,9 @@ export default function CbomResults({
             </div>
           </div>
         </div>
-        {/* A Sources run is this same [scan_id] route with ?run=1, so params.scan_id is set.
-            One toolbar: the run row, or the code-scan row. */}
-        {run && run.run ? (
-          <RunHeaderActions teamId={run.teamId} run={run.run} assetTotal={run.page?.all_total ?? null}
-                            canCompare={run.canCompare} onCompare={() => run.setCompareOpen(true)} />
-        ) : team_id && scan_id != null ? (
+        {/* A Sources run is this same [scan_id] route with ?run=1, so params.scan_id is set: its header is ResultsHero
+            (RunHeaderActions), rendered instead of this one. One toolbar: the run row, or this code-scan row. */}
+        {team_id && scan_id != null ? (
           <div className="flex items-center gap-2 flex-wrap lg:justify-end" data-testid="cbom-scan-header-actions">
             <Button
               variant="outline"
@@ -738,55 +848,9 @@ export default function CbomResults({
         ) : null}
       </div>
 
-      {importReport && importReportHasNews(importReport) && (
-        <Card className="mb-6 border-amber-300 dark:border-amber-700 bg-amber-50/60 dark:bg-amber-950/20" role="alert" data-testid="cbom-import-notes">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2 text-amber-800 dark:text-amber-300">
-              <AlertTriangle className="h-4 w-4 shrink-0" /> About the uploaded CBOM file
-            <InfoTip id="cbom.res.import_notes" />
-            </CardTitle>
-            <CardDescription className="text-amber-900/80 dark:text-amber-200/80">
-              {importReport.imported ?? 0} of {importReport.crypto_assets ?? 0} cryptographic assets imported
-              {importReport.spec_version ? ` · CycloneDX ${importReport.spec_version}` : ""}
-              {importReport.skipped_not_crypto ? ` · ${importReport.skipped_not_crypto} non-crypto components skipped` : ""}
-              {importReport.skipped_invalid ? ` · ${importReport.skipped_invalid} unreadable` : ""}
-              {importReport.duplicates ? ` · ${importReport.duplicates} duplicates` : ""}
-              {importReport.truncated ? " · truncated" : ""}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ul className="list-disc pl-5 space-y-1 text-sm text-amber-900 dark:text-amber-200 break-words">
-              {importNoteLines(importReport).map((note, i) => <li key={i}>{note}</li>)}
-            </ul>
-          </CardContent>
-        </Card>
-      )}
+      <ImportNotesCard report={importReport} />
 
-      {coverageReport && coverageReport.notes.length > 0 && (
-        <Card className={`mb-6 ${coverageReport.skipped > 0 ? "border-amber-300 dark:border-amber-700 bg-amber-50/60 dark:bg-amber-950/20" : "border-zinc-200 dark:border-zinc-800"}`}
-          role={coverageReport.skipped > 0 ? "alert" : undefined} data-testid="cbom-coverage-notes">
-          <CardHeader className="pb-2">
-            <CardTitle className={`text-sm flex items-center gap-2 ${coverageReport.skipped > 0 ? "text-amber-800 dark:text-amber-300" : "text-zinc-800 dark:text-zinc-200"}`}>
-              <AlertTriangle className="h-4 w-4 shrink-0" /> What this scan covered
-            <InfoTip id="cbom.res.coverage" />
-            </CardTitle>
-            <CardDescription className={coverageReport.skipped > 0 ? "text-amber-900/80 dark:text-amber-200/80" : undefined}>
-              {coverageReport.skipped > 0
-                ? `${coverageReport.skipped} kind(s) of input were skipped or only partly read; the CycloneDX file lists the same counts (crypto:coverage:*).`
-                : "Nothing was skipped; these notes say what was read and are also in the CycloneDX file (crypto:coverage:*)."}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ul className="list-disc pl-5 space-y-1 text-sm break-words">
-              {coverageReport.notes.map((note) => (
-                <li key={note.key} className={note.kind === "skipped" ? "text-amber-900 dark:text-amber-200" : "text-zinc-700 dark:text-zinc-300"}>
-                  {note.text}
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
-      )}
+      <CoverageNotesCard report={coverageReport} />
 
       {advisoryData && (
         <p className={`mb-6 text-xs ${advisoryData.stale ? "text-amber-800 dark:text-amber-300" : "text-zinc-500 dark:text-zinc-400"}`}
@@ -796,44 +860,9 @@ export default function CbomResults({
         </p>
       )}
 
-      {run && run.run && <RunCoverageSection run={run.run} targets={run.page?.targets ?? null} provenance={run.results?.provenance} />}
+      {hasTicketingTab && tabBar}
 
-      {hasTicketingTab && (
-        <div className="flex gap-2 mb-6 border-b border-zinc-200 dark:border-zinc-800">
-          <button
-            type="button"
-            onClick={() => setActiveTab("results")}
-            className={`px-4 py-2 font-medium text-sm transition-colors border-b-2 cursor-pointer ${
-              activeTab === "results"
-                ? "border-blue-600 text-blue-600 dark:text-blue-400"
-                : "border-transparent text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <BarChart3 className="w-4 h-4" />
-              Results
-            </div>
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab("ticketing")}
-            className={`px-4 py-2 font-medium text-sm transition-colors border-b-2 cursor-pointer ${
-              activeTab === "ticketing"
-                ? "border-blue-600 text-blue-600 dark:text-blue-400"
-                : "border-transparent text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <Ticket className="w-4 h-4" />
-              Ticketing integrations
-            </div>
-          </button>
-        </div>
-      )}
-
-      {activeTab === "ticketing" && hasTicketingTab && run ? (
-        <RunTicketingTab teamId={run.teamId} runId={run.runId} />
-      ) : activeTab === "ticketing" && hasTicketingTab ? (
+      {activeTab === "ticketing" && hasTicketingTab ? (
         <TicketingIntegrationsSettings
           jiraProjectId={jiraProjectId}
           onJiraProjectIdChange={setJiraProjectId}
@@ -851,19 +880,6 @@ export default function CbomResults({
         />
       ) : (
         <>
-          {run && run.run && (
-            <>
-              <RunMetaCards sources={run.sources.length} nodes={run.nodes} endpoints={endpointsProbed(run.results)} duration={runDurationSeconds(run.run, run.now)} />
-              {/* Post-quantum and risk posture (ids run-posture, posture-*, mosca-*), with the Q-grade distribution and
-                  the crypto-agility card; a code scan has no posture payload, so it is not shown there */}
-              <RunPostureCard teamId={run.teamId} runId={run.runId} active={run.active} />
-              {/* PQC readiness in plain words and what raises it (issue #271); "show" filters the findings table */}
-              <ReadinessExplainer posture={run.posture} onShowAssets={(action) => {
-                run.onFilters(readinessDrillFilters(action));
-                document.getElementById("bom-findings")?.scrollIntoView({ behavior: "smooth", block: "start" });
-              }} />
-            </>
-          )}
           {/* Scan metadata cards */}
           {meta && typeof meta === "object" && (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -911,7 +927,7 @@ export default function CbomResults({
 
           {/* Code scans have no Sources posture payload. The same heading still introduces the PQC charts
               this page already renders, so a code scan and a Sources run share the section name. */}
-          {!run && cryptoDistributions && (
+          {cryptoDistributions && (
             <h2 className="text-base font-semibold text-zinc-900 dark:text-white" data-testid="code-posture-heading">
               Post-quantum and risk posture
             </h2>
@@ -924,94 +940,51 @@ export default function CbomResults({
               graphCompact={cryptoGraphCompact}
               graphExpanded={cryptoGraphExpanded}
               compliance={cryptoCompliance}
-              onAttest={run ? undefined : handleCertInAttest}
-              findings={run ? [] : findingsList ?? []}
-              inventory={run ? [] : allRows}
+              onAttest={handleCertInAttest}
+              findings={findingsList ?? []}
+              inventory={allRows}
               onOpenFinding={(f) => setSelectedFinding(f)}
-              showCodeHeatmap={!run}
-              readinessScope={run ? "run" : "code"}
+              showCodeHeatmap
+              readinessScope="code"
             />
           )}
-          {run && (
-            <>
-              {/* one line where the run has no data for a chart: distributions from /results, the dependency graph and
-                  compliance readiness from /parity (each note says why) */}
-              {run.plan.cryptoCharts.note && <SectionNote testId="run-crypto-charts-note">{run.plan.cryptoCharts.note}</SectionNote>}
-              {runParityNotes?.graph && <SectionNote testId="run-graph-note">{runParityNotes.graph}</SectionNote>}
-              {runParityNotes?.compliance && <SectionNote testId="run-compliance-readiness-note">{runParityNotes.compliance}</SectionNote>}
-              {/* Algorithm family x source (or asset type) and the certificate calendar, from the run API */}
-              <RunInsights teamId={run.teamId} runId={run.runId} active={run.active} />
-              <RunCertificatesSection view={run.plan.certificates} results={run.results} onOpenAsset={(id) => run.openAsset(id)} />
-              {run.run && <RunChangesSection teamId={run.teamId} run={run.run} canCompare={run.canCompare} onCompare={() => run.setCompareOpen(true)} />}
-              <RunWavesSection byWave={run.waves.data?.by_wave} labels={run.waves.data?.labels} rules={run.waves.data?.rules} loading={run.waves.loading}
-                               deferred={!run.waves.wanted && run.active} selected={run.selection.size} />
-            </>
-          )}
-          {cryptoDistributions && Number.isFinite(tid) && tid > 0 && Number.isFinite(sid) && sid > 0 && (
+          {/* the code scan's changes and waves: never on a run (they read and write code scan #<id>, and a run's id is not one) */}
+          {!run && cryptoDistributions && Number.isFinite(tid) && tid > 0 && Number.isFinite(sid) && sid > 0 && (
             <>
               <CodeChanges teamId={tid} scanId={sid} />
               <CodeWavesPanel teamId={tid} scanId={sid} />
             </>
           )}
-          {!run && Number.isFinite(tid) && tid > 0 && (
+          {Number.isFinite(tid) && tid > 0 && (
             <div className="mt-6" data-testid="code-cert-hygiene">
               <CertHygieneSection teamId={tid} />
             </div>
           )}
           <RbiCsfRollup
             rollup={meta?.rbi_csf_rollup as RbiCsfRollupData | undefined}
-            onAttest={run ? undefined : handleCertInAttest}
+            onAttest={handleCertInAttest}
             onViewFindings={handleViewRelatedFindings}
             findings={findingsList ?? []}
             refAliases={relatedRefAliases}
           />
-          {runParityNotes?.rbi && <SectionNote testId="run-rbi-note">{runParityNotes.rbi}</SectionNote>}
-          {runParityNotes?.certin && <SectionNote testId="run-certin-note">{runParityNotes.certin}</SectionNote>}
           <CertInLanePosture
             lane="cbom"
             rollup={meta?.certin_posture as CertInRollupData | undefined}
-            onAttest={run ? undefined : handleCertInAttest}
+            onAttest={handleCertInAttest}
             onViewFindings={handleViewRelatedFindings}
             findings={findingsList ?? []}
             refAliases={relatedRefAliases}
           />
 
-          {(!run || run.plan.compliance.show) && (
-            <ComplianceMappingSection frameworks={complianceMapping.frameworks} onDrill={handleComplianceDrill} scope={run ? "run" : "scan"}
-                                      note={run?.plan.compliance.note ?? null}
-                                      footnote={complianceMapping.basis === "posture" ? "From the run posture (this server does not send the run results summary yet)." : null} />
-          )}
+          <ComplianceMappingSection frameworks={complianceMapping.frameworks} onDrill={handleComplianceDrill} scope="scan"
+                                    note={null} footnote={null} />
 
           {/* Dashboard */}
-          {run && (
-            <RunDashboardSection view={run.plan.dashboard} model={run.dashboardModel} riskRows={run.riskRows}
-                                 pageRows={run.page?.items.length ?? 0} results={run.results} />
-          )}
           {dashboard && cardData && (
             <CbomDashboardCharts dashboard={dashboard} findingsList={findingsList ?? []} />
           )}
 
           {/* Findings */}
-          {run ? (
-            <RunFindingsTable
-              teamId={run.teamId}
-              runId={run.runId}
-              active={run.active}
-              page={run.page}
-              isLoading={run.pageLoading}
-              error={run.pageError}
-              onRetry={run.refetchPage}
-              filters={run.filters}
-              onFilters={run.onFilters}
-              sources={run.sources}
-              waveOf={run.waveOf}
-              selection={run.selection}
-              onSelection={run.setSelection}
-              onOpenDetails={(item) => run.setDialog({ item })}
-              onSetStatus={run.setStatus}
-              statusPending={run.statusPending}
-            />
-          ) : (
           <Card id="bom-findings">
             <CardHeader>
               <CardTitle>Cryptographic findings <InfoTip id="cbom.res.findings" /></CardTitle>
@@ -1296,10 +1269,8 @@ export default function CbomResults({
               </ScrollArea>
             </CardContent>
           </Card>
-          )}
 
           {/* Top Cryptographic Risks */}
-          {run && run.plan.topRisks.show && run.posture && <RunTopRisks posture={run.posture} onOpenAsset={(id) => run.openAsset(id)} />}
           {dashboard?.top_risks && dashboard.top_risks.length > 0 && (
             <Card className="border-zinc-200 dark:border-zinc-800">
               <CardHeader>
@@ -1343,15 +1314,20 @@ export default function CbomResults({
         </>
       )}
 
+        </>
+      )}
+
       {run && (
-        <RunFindingDialog teamId={run.teamId} runId={run.runId} subject={run.dialog} jobs={run.run?.jobs ?? []} waveOf={run.waveOf} onClose={() => run.setDialog(null)} />
+        <RunFindingDialog teamId={run.teamId} runId={run.runId} subject={run.dialog} jobs={run.run?.jobs ?? []} waveOf={run.waveOf} onClose={() => run.setDialog(null)}
+                          pageItems={run.page?.items} nav={dialogNav} onSetStatus={run.setStatus} statusPending={run.statusPending}
+                          priorityOf={(id) => run.posture?.top_risks?.find((r) => r.id === id)?.score} />
       )}
       {run && run.compareOpen && (
         <CompareDialog teamId={run.teamId} runId={run.runId} runs={run.compareRuns} onClose={() => run.setCompareOpen(false)} />
       )}
 
-      {/* Finding Detail Dialog */}
-      <Dialog open={!!selectedFinding} onOpenChange={(open) => !open && setSelectedFinding(null)}>
+      {/* Finding Detail Dialog (code scans; a run opens RunFindingDialog) */}
+      <Dialog open={!run && !!selectedFinding} onOpenChange={(open) => !open && setSelectedFinding(null)}>
         <DialogContent className={`${FINDING_DIALOG_CONTENT} ${FINDING_DIALOG_FULLSCREEN_SM}`}>
           <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
             <DialogTitle className="pr-8">{selectedFinding?.algorithm_name || selectedFinding?.title || "Finding details"}</DialogTitle>

@@ -56,9 +56,15 @@ test("the one results page renders CbomResults for a run, and the old run URLs o
   const route = readFileSync(join(frontend, "components", "cbom", "results", "RunResultsRoute.tsx"), "utf8");
   assert.ok(route.includes("useSourcesRunSource(teamId, runId,") && route.includes("<CbomResults data={undefined} teamId={String(teamId)} source={source} />"));
   const view = readFileSync(join(frontend, "components", "CbomResults.tsx"), "utf8");
-  assert.ok(view.includes('data-testid="cbom-results-title"') && view.includes("CBOM Scan Results"));
-  assert.ok(!view.includes("run-results-title") && !view.includes("runTitle("), "a Sources run uses the code-scan heading");
-  assert.ok(view.includes("<RunPostureCard") && view.includes("<RunFindingDialog"), "posture and the asset detail dialog come along");
+  const views = (f: string) => readFileSync(join(frontend, "components", "cbom", "results", "views", f), "utf8");
+  // results redesign: a run's header is ResultsHero, with the code scan's heading and test id
+  const hero = views("ResultsHero.tsx");
+  for (const src of [view, hero]) {
+    assert.ok(src.includes('data-testid="cbom-results-title"') && src.includes("CBOM Scan Results"));
+    assert.ok(!src.includes("run-results-title") && !src.includes("runTitle("), "a Sources run uses the code-scan heading");
+  }
+  assert.ok(view.includes("<ResultsHero"), "the template renders the hero for a run");
+  assert.ok(views("SummaryView.tsx").includes("<PostureSummary") && view.includes("<RunFindingDialog"), "posture and the asset detail dialog come along");
   const table = readFileSync(join(frontend, "components", "cbom", "results", "RunFindingsTable.tsx"), "utf8");
   assert.ok(table.includes("<QGradeChip") && table.includes("<FixClassChip"), "#138's Q-grade and fix-class chips come along");
 });

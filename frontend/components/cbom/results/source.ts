@@ -122,6 +122,8 @@ export interface SourcesRunSource {
   page: CbomRunAssetPage | undefined;
   pageLoading: boolean;
   pageError: unknown;
+  /** true while the table still shows the previous page's rows (keepPreviousData): the dialog's page-edge move waits */
+  pagePlaceholder: boolean;
   refetchPage: () => void;
   filters: RunTableFilters;
   onFilters: (patch: Partial<RunTableFilters>) => void;
@@ -225,12 +227,15 @@ export function useSourcesRunSource(teamId: number, runId: number, { initialView
     refetchIntervalInBackground: false,
   });
 
-  // /posture: the same query (key and fetcher) RunPostureCard uses, so both read one cache entry
+  // /posture: the same query (key and fetcher) as useRunPostureQuery (the posture summary and the quantum view), so all
+  // read one cache entry
   const postureQ = useQuery({
     queryKey: cbomSourcesKeys.runPosture(teamId, runId),
     queryFn: async () => (await getCbomRunPosture(teamId, runId)) as unknown as CbomPostureWithExposure,
     enabled: !!run,
     retry: 1,
+    // a finished run's posture does not change: no refetch on each view switch (invalidations still refetch)
+    staleTime: active ? 0 : Infinity,
     refetchInterval: active ? 15000 : false,
     refetchIntervalInBackground: false,
   });
@@ -305,6 +310,7 @@ export function useSourcesRunSource(teamId: number, runId: number, { initialView
     page,
     pageLoading: assetsQ.isLoading,
     pageError: assetsQ.error,
+    pagePlaceholder: assetsQ.isPlaceholderData,
     refetchPage: () => void assetsQ.refetch(),
     filters,
     onFilters,
@@ -316,10 +322,8 @@ export function useSourcesRunSource(teamId: number, runId: number, { initialView
     waveOf,
     dialog,
     setDialog,
-    openAsset: (assetId, label) => {
-      const item = page?.items.find((i) => i.id === assetId);
-      setDialog(item ? { item } : { assetId, label });
-    },
+    // the dialog resolves the row itself (the live table page, else the asset detail): only the id is kept
+    openAsset: (assetId, label) => setDialog({ assetId, label }),
     compareOpen,
     setCompareOpen,
     compareRuns: (runsQ.data?.runs ?? []).map((r) => ({ id: r.id, created_at: r.created_at })),

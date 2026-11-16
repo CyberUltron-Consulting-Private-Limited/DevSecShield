@@ -32,7 +32,7 @@ const gradeLabel = (g: GradeBucket): string => (g === "none" ? "No grade" : grad
 const cellGrade = (cell: HeatCell): GradeBucket => (isGrade(cell.worst_grade) ? cell.worst_grade : "none");
 
 export default function CryptoHeatmap({ data, title = "Algorithm families", columnLabel, testId = "crypto-heatmap",
-  metric = "impact", onSelect }: {
+  metric = "impact", onSelect, layout }: {
   data: HeatData;
   title?: string;
   columnLabel?: (column: string) => string;
@@ -41,13 +41,19 @@ export default function CryptoHeatmap({ data, title = "Algorithm families", colu
   metric?: "impact" | "grade";
   /** the selected cell (null when none), e.g. to list its assets below the map */
   onSelect?: (cell: HeatCell | null) => void;
+  /** "run" (11-A, the run results page): column names wrap instead of being cut, each family shows its total, a Total
+   * row closes the grid and the legend names what the colour means; default: the code page's compact map */
+  layout?: "run";
 }) {
+  const run = layout === "run";
   const byGrade = metric === "grade";
   const byKey = useMemo(() => new Map(data.cells.map((c) => [`${c.row}\u0000${c.column}`, c])), [data.cells]);
   const [active, setActive] = useState<[number, number]>([0, 0]);
   const [selected, setSelected] = useState<[number, number] | null>(null);
   const refs = useRef<Map<string, HTMLButtonElement | null>>(new Map());
   const label = (c: string) => (columnLabel ? columnLabel(c) : c);
+  const rowTotal = (r: string) => data.cells.reduce((n, c) => n + (c.row === r ? c.count : 0), 0);
+  const colTotal = (col: string) => data.cells.reduce((n, c) => n + (c.column === col ? c.count : 0), 0);
 
   if (data.rows.length === 0 || data.columns.length === 0) {
     return <p className="text-xs text-zinc-500" data-testid={`${testId}-empty`}>No assets to map.</p>;
@@ -82,7 +88,7 @@ export default function CryptoHeatmap({ data, title = "Algorithm families", colu
           role="grid"
           aria-label={`${title}: algorithm family by ${data.columns.length} columns, coloured by worst impact`}
           className="grid gap-px bg-zinc-200 dark:bg-zinc-800"
-          style={{ gridTemplateColumns: `minmax(8.5rem, max-content) repeat(${data.columns.length}, minmax(4.75rem, 11rem))` }}
+          style={{ gridTemplateColumns: `minmax(8.5rem, max-content) repeat(${data.columns.length}, minmax(${run ? "5.5rem" : "4.75rem"}, 11rem))` }}
         >
           <div role="row" className="contents">
             <div role="columnheader" className="bg-white dark:bg-zinc-950 px-2 py-1.5 text-xs font-medium text-zinc-500 sticky left-0 z-10">
@@ -90,7 +96,9 @@ export default function CryptoHeatmap({ data, title = "Algorithm families", colu
             </div>
             {data.columns.map((col) => (
               <div key={col} role="columnheader" title={label(col)}
-                   className="bg-white dark:bg-zinc-950 px-2 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 truncate min-w-0">
+                   className={run
+                     ? "bg-white dark:bg-zinc-950 px-2 py-1.5 text-xs font-medium text-zinc-700 dark:text-zinc-300 min-w-0 break-words line-clamp-2 self-stretch"
+                     : "bg-white dark:bg-zinc-950 px-2 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 truncate min-w-0"}>
                 {label(col)}
               </div>
             ))}
@@ -99,6 +107,7 @@ export default function CryptoHeatmap({ data, title = "Algorithm families", colu
             <div key={row} role="row" className="contents">
               <div role="rowheader" className="bg-white dark:bg-zinc-950 px-2 py-1.5 text-xs text-zinc-800 dark:text-zinc-200 sticky left-0 z-10 whitespace-nowrap">
                 {row}
+                {run && <span className="ml-1.5 tabular-nums text-zinc-500 dark:text-zinc-400" data-testid={`${testId}-row-total-${row}`}>{rowTotal(row)}</span>}
               </div>
               {data.columns.map((col, c) => {
                 const cell = byKey.get(`${row}\u0000${col}`);
@@ -120,7 +129,7 @@ export default function CryptoHeatmap({ data, title = "Algorithm families", colu
                         setSelected(isSelected ? null : [r, c]);
                         onSelect?.(isSelected || !cell ? null : cell);
                       }}
-                      className={`h-9 w-full text-xs font-semibold cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset ${
+                      className={`${run ? "h-10" : "h-9"} w-full text-xs font-semibold cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset ${
                         cell ? (byGrade ? GRADE_TONE[cellGrade(cell)] : TONE[cell.worst]) : "text-zinc-300 dark:text-zinc-700"} ${isSelected ? "ring-2 ring-inset ring-zinc-900 dark:ring-white" : ""}`}
                     >
                       {cell ? cell.count : "·"}
@@ -130,9 +139,22 @@ export default function CryptoHeatmap({ data, title = "Algorithm families", colu
               })}
             </div>
           ))}
+          {run && (
+            <div role="row" className="contents" data-testid={`${testId}-totals`}>
+              <div role="rowheader" className="bg-zinc-50 dark:bg-zinc-900 px-2 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 sticky left-0 z-10">
+                Total
+              </div>
+              {data.columns.map((col) => (
+                <div key={col} role="gridcell" className="bg-zinc-50 dark:bg-zinc-900 px-2 py-1.5 text-center text-xs tabular-nums text-zinc-600 dark:text-zinc-300">
+                  {colTotal(col)}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
       <div className="flex flex-wrap gap-2 text-xs text-zinc-600 dark:text-zinc-400" aria-hidden="true">
+        {run && <span className="font-medium text-zinc-700 dark:text-zinc-300">Colour: worst {byGrade ? "quantum risk grade" : "impact"} in the cell</span>}
         {byGrade
           ? GRADE_BUCKETS.map((g) => (
             <span key={g} className="inline-flex items-center gap-1"><span className={`h-3 w-3 rounded-sm ${GRADE_TONE[g].split(" ")[0]}`} />{gradeLabel(g)}</span>
