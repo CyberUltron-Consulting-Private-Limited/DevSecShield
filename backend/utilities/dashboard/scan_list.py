@@ -14,7 +14,6 @@ from backend.utilities.dashboard.sbom_license import (
     resolve_sbom_reachability,
 )
 from backend.utilities.dashboard.sbom_rows import vulnerability_findings, vulnerability_rows
-
 console = Console()
 
 
@@ -954,10 +953,8 @@ def generate_sbom_sca_dashboard_data(scans: list[Scan]) -> dict:
     
     """
     sbom_scans = [s for s in scans if s.scan_type == "sbom_sca"]
-    all_results: list[dict] = []
-    all_findings: list = []
-    # Every metric below is over the known vulnerabilities: the inventoried packages stored next to them
-    # (inventory_only rows and their stored findings) are the SBOM, not Low vulnerabilities (#46).
+    all_results: list[dict] = []  # known vulnerabilities only: the inventoried packages are the SBOM (#46)
+    all_findings: list = []  # their stored findings, without the inventory rows' findings (#46)
     for scan in sbom_scans:
         if scan.scan_status == "success":
             all_results.extend(vulnerability_rows(_sbom_results(scan)))

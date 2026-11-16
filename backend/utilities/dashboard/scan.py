@@ -25,7 +25,6 @@ from backend.utilities.dashboard.bom_risk_score import (
     aibom_finding_risk_score,
     cbom_finding_risk_score,
 )
-
 risk_score_for_impact = {
     "critical" : 10.0,
     "high" : 7.5,
@@ -824,9 +823,7 @@ def generate_scan_dashboard(
                     "unknown" : average_risk_score_unknown,
                 }
             """
-            # the known vulnerabilities only: the inventoried packages (inventory_only rows and their stored
-            # findings) are the SBOM, not Low vulnerabilities (#46); the findings table and BOM download list them
-            results_list = vulnerability_rows(results if isinstance(results, list) else [])
+            results_list = vulnerability_rows(results if isinstance(results, list) else [])  # no inventory rows (#46)
             severity_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
             reachability_counts: dict[str, int] = defaultdict(int)
             license_counts: dict[str, int] = defaultdict(int)

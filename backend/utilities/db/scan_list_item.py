@@ -1,22 +1,9 @@
 from backend.new_models import Scan
 from backend.utilities.dashboard.sbom_rows import vulnerability_rows
 
-
 def owner_full_name(user) -> str | None:
     """"First Last" of a scan's owner; a missing part is left out ("alice", never "alice None"); None when both are."""
     return " ".join(p for p in (getattr(user, "first_name", None), getattr(user, "last_name", None)) if p) or None
-
-
-def average_risk_0_10(total_critical: int, total_high: int, total_medium: int, total_low: int) -> float | None:
-    """A scan's Risk score on the app's one 0-10 scale (#35): each finding counts Critical 10, High 7.5, Medium 5,
-    Low 2.5 (its weight 4/3/2/1 divided by 4, times 10), averaged and rounded to one decimal like the dashboards, so
-    the list pages' Risk score tiers (Critical 9 or more, High 7-9, Medium 5-7, Low under 5) can match. None without
-    findings."""
-    total = total_critical + total_high + total_medium + total_low
-    if total <= 0:
-        return None
-    weighted = (total_critical * 4 + total_high * 3 + total_medium * 2 + total_low * 1) / total
-    return round(min(10.0, max(0.0, (weighted / 4) * 10)), 1)
 
 def return_sast_list_item(scan : Scan) -> dict:
     total_critical , total_high , total_medium , total_low  = 0,0,0,0
@@ -563,3 +550,16 @@ def return_ai_bom_list_item(scan : Scan) -> dict:
         "average_risk_score" : average_risk_score,
         "scan_binaries": scan.scan_metadata.get("scan_binaries", False) if scan.scan_metadata else False,
     }
+
+
+# Kept at the end of the file so the functions above keep their line numbers (the (i) tips cite them).
+def average_risk_0_10(total_critical: int, total_high: int, total_medium: int, total_low: int) -> float | None:
+    """A scan's Risk score on the app's one 0-10 scale (#35): each finding counts Critical 10, High 7.5, Medium 5,
+    Low 2.5 (its weight 4/3/2/1 divided by 4, times 10), averaged and rounded to one decimal like the dashboards, so
+    the list pages' Risk score tiers (Critical 9 or more, High 7-9, Medium 5-7, Low under 5) can match. None without
+    findings."""
+    total = total_critical + total_high + total_medium + total_low
+    if total <= 0:
+        return None
+    weighted = (total_critical * 4 + total_high * 3 + total_medium * 2 + total_low * 1) / total
+    return round(min(10.0, max(0.0, (weighted / 4) * 10)), 1)

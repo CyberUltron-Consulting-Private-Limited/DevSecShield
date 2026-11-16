@@ -105,13 +105,13 @@ const TEXT = {
     why: "Findings apply to this branch only.",
     example: "main.",
   },
-  // src: backend/utilities/db/scan_list_item.py:10-18, backend/utilities/db/scan_list_item.py:128-130, backend/utilities/db/scan_list_item.py:428-430, frontend/app/[team_id]/iac/page.tsx:123-126,959, frontend/app/[team_id]/dast/page.tsx:115-118,870 — IaC and DAST: weights 4/3/2/1 averaged over findings, /4*10, one decimal (the dashboards' 0-10 scale, #35); 0 without findings
+  // src: backend/utilities/db/scan_list_item.py:95-117, backend/utilities/db/scan_list_item.py:384-417, backend/utilities/db/scan_list_item.py:556-565, frontend/app/[team_id]/iac/page.tsx:123-126,959, frontend/app/[team_id]/dast/page.tsx:115-118,870 — IaC and DAST: weights 4/3/2/1 averaged over findings, /4*10, one decimal (the dashboards' 0-10 scale, #35); 0 without findings
   "scan.table.risk": {
     what: "This scan's severity-weighted average, 0 to 10, on the same scale as the dashboard and the Risk score filter: Critical 10, High 7.5, Medium 5, Low 2.5, averaged over its findings and rounded to one decimal. 0 when it found nothing or did not succeed.",
     why: "Lets you compare scans by overall severity.",
     example: "1 High and 1 Low finding: (7.5 + 2.5) / 2 = 5.",
   },
-  // src: frontend/app/[team_id]/sbom_sca/page.tsx:118-125,818, frontend/app/[team_id]/iac/page.tsx:128-135,838, frontend/app/[team_id]/dast/page.tsx:120-127,766, frontend/app/[team_id]/ai_bom/page.tsx:114-121,719, frontend/app/[team_id]/llm/page.tsx:123-130,760, frontend/app/[team_id]/cbom/page.tsx:120-127,928, backend/utilities/db/scan_list_item.py:10-18 — tiers on the Risk score column, which is 0-10 on every list (#35); a null score matches no tier
+  // src: frontend/app/[team_id]/sbom_sca/page.tsx:118-125,818, frontend/app/[team_id]/iac/page.tsx:128-135,838, frontend/app/[team_id]/dast/page.tsx:120-127,766, frontend/app/[team_id]/ai_bom/page.tsx:114-121,719, frontend/app/[team_id]/llm/page.tsx:123-130,760, frontend/app/[team_id]/cbom/page.tsx:120-127,928, backend/utilities/db/scan_list_item.py:556-565 — tiers on the Risk score column, which is 0-10 on every list (#35); a null score matches no tier
   "scan.filter.risk": {
     what: "Shows only scans whose Risk score (0 to 10) is in a tier: Critical 9 or more, High 7 to 9, Medium 5 to 7, Low under 5. A scan without a score (shown as a dash) is hidden by any tier.",
     why: "Focuses the list on the riskiest scans.",
