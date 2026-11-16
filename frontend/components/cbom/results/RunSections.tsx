@@ -6,7 +6,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { BadgeCheck, ChevronDown, ChevronRight, Download, GitCompare, Info, Loader2, Network, Server, SlidersHorizontal, Timer, Waypoints } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -137,16 +137,18 @@ export function RunHeaderActions({ teamId, run, assetTotal, canCompare, onCompar
   ];
   return (
     <div className="flex items-center gap-2 flex-wrap lg:justify-end" data-testid="run-results-header-actions">
-      {downloads.map((d) => (
-        <Button key={d.id} variant="outline" className="cursor-pointer" title={d.title} disabled={d.disabled || busy === d.id}
-                data-testid={d.id} onClick={() => void d.run()}>
-          {busy === d.id ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
-          {d.label}
-        </Button>
-      ))}
-      <InfoTip id="cbom.run.downloads" />
-      {/* VEX, Signature, Evidence pack, PDF Report (CB-38 PR-8), as on the code page's header */}
-      <RunDeliverablesMenu teamId={teamId} runId={run.id} active={active} />
+      {/* mockup F1: one "Export" menu holds the seven downloads (each keeps its own hover text); both tips stay beside it */}
+      <ExportMenu tips={<><InfoTip id="cbom.run.downloads" /><InfoTip id="cbom.run.deliverables" /></>}>
+        {downloads.map((d) => (
+          <Button key={d.id} variant="outline" className="cursor-pointer" title={d.title} disabled={d.disabled || busy === d.id}
+                  data-testid={d.id} onClick={() => void d.run()}>
+            {busy === d.id ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+            {d.label}
+          </Button>
+        ))}
+        {/* VEX, Signature, Evidence pack, PDF Report (CB-38 PR-8), as on the code page's header */}
+        <RunDeliverablesMenu teamId={teamId} runId={run.id} active={active} tip={false} />
+      </ExportMenu>
       <RunVerifyButton teamId={teamId} runId={run.id} />
       {children}
       {canCompare && (
@@ -159,6 +161,42 @@ export function RunHeaderActions({ teamId, run, assetTotal, canCompare, onCompar
         <SlidersHorizontal className="h-4 w-4 mr-2" /> Open in CBOM Sources
       </Button>
     </div>
+  );
+}
+
+/** "Export ▾": a disclosure (not a Radix menu) so the download buttons stay mounted and keep their test ids, titles and
+ * order; it closes on Escape, an outside click and after a download is started. */
+function ExportMenu({ children, tips }: { children: ReactNode; tips: ReactNode }) {
+  const ref = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    const close = (e: Event) => {
+      const el = ref.current;
+      if (!el?.open) return;
+      if (e instanceof KeyboardEvent ? e.key === "Escape" : !el.contains(e.target as Node)) {
+        el.open = false;
+        if (e instanceof KeyboardEvent) el.querySelector("summary")?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", close);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", close);
+    };
+  }, []);
+  return (
+    <span className="inline-flex items-center gap-1">
+      <details ref={ref} className="relative group" data-testid="run-results-export">
+        <summary className="list-none [&::-webkit-details-marker]:hidden inline-flex h-9 items-center gap-2 rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-4 text-sm font-medium cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+          <Download className="h-4 w-4" aria-hidden /> Export <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" aria-hidden />
+        </summary>
+        <div className="absolute left-0 z-40 mt-1 flex w-64 flex-col gap-1 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-1.5 shadow-lg [&>button]:w-full [&>button]:justify-start [&>button]:border-0 [&>button]:shadow-none"
+             onClick={(e) => { if ((e.target as HTMLElement).closest("button")) ref.current?.removeAttribute("open"); }}>
+          {children}
+        </div>
+      </details>
+      {tips}
+    </span>
   );
 }
 
@@ -218,7 +256,7 @@ export function RunCoverageSection({ run, targets, provenance }: {
   const [tables, setTables] = useState(false);
   const tablesId = useId();
   return (
-    <SectionShell infoId="cbom.run.covered" title="Collection jobs and targets" testId="run-section-coverage"
+    <SectionShell infoId="cbom.run.covered" title="Jobs by source" testId="run-section-coverage"
                   description="Every job of the run with where it ran and how it ended, the sources skipped at the start, and each target's outcome">
       {/* lab mode (test deployments): the run-level note, the same component as the AWS form's; each job keeps its badge */}
       {targets?.some((job) => job.lab_mode) && (

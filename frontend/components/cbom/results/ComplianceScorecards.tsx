@@ -6,7 +6,7 @@
 // that framework's requirements inline (every requirement with its verdict, evidence, source and failing assets; the
 // same "Failures only" filter and attestation upload as the matrix). The framework groups are the matrix's.
 
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Scale } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +37,13 @@ export interface FrameworkScore {
 }
 
 /** A framework's scorecard figures, from its verdict counts as the server sent them (nothing recounted from rows). */
+/** The five regulator frameworks shown first under "All" (mockup F6), in this order. */
+const LEAD_FRAMEWORKS = ["cert_in_cbom", "rbi_free_ai_protection", "sebi_cscrf_cbom", "nist_1800_38b", "cnsa_2_0"];
+function leadFirst<T extends { key: string }>(fws: T[]): T[] {
+  const rank = (k: string) => { const i = LEAD_FRAMEWORKS.indexOf(k); return i < 0 ? LEAD_FRAMEWORKS.length : i; };
+  return fws.map((f, i) => [f, i] as const).sort((a, b) => rank(a[0].key) - rank(b[0].key) || a[1] - b[1]).map(([f]) => f);
+}
+
 export function frameworkScore(key: string, f: FrameworkCoverage): FrameworkScore {
   const passed = (f.pass ?? 0) + (f.pass_with_evidence ?? 0);
   const failing = f.fail ?? 0;
@@ -83,10 +90,33 @@ export function ComplianceScorecards({ compliance, groups, enableFailingOnly = t
   const [failingOnly, setFailingOnly] = useState(false);
   const [pending, setPending] = useState<Record<string, string>>({});
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [moreOpen, setMoreOpen] = useState(false);
   const detailId = useId();
+  // the clause detail renders after every card (13 frameworks: 1,400+ px below a card at 1440): a click scrolls it into
+  // view and moves focus to its heading, so the click never looks dead (only after a click, never on first render)
+  const detailRef = useRef<HTMLDivElement>(null);
+  const revealDetail = useRef(false);
+  useEffect(() => {
+    if (!active || !revealDetail.current) return;
+    revealDetail.current = false;
+    const el = detailRef.current;
+    if (!el) return;
+    const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    el.scrollIntoView?.({ block: "start", behavior: reduce ? "auto" : "smooth" });
+    el.querySelector<HTMLElement>("[data-detail-heading]")?.focus({ preventScroll: true });
+  }, [active]);
   if (frameworks.length === 0) return null;
   const keys = groups?.find((g) => g.id === group)?.keys ?? [];
-  const shown = keys.length === 0 ? frameworks : frameworks.filter((f) => keys.includes(f.key));
+  const inGroup = keys.length === 0 ? frameworks : frameworks.filter((f) => keys.includes(f.key));
+  // "All" (mockup F6): the five regulator cards first, every other framework behind "Show N more frameworks" (nothing
+  // dropped: the toggle shows them all; a group chip shows its own frameworks in full)
+  const ordered = keys.length === 0 ? leadFirst(inGroup) : inGroup;
+  const lead = keys.length === 0 ? ordered.filter((f) => LEAD_FRAMEWORKS.includes(f.key)) : [];
+  const capped = keys.length === 0 && lead.length > 0 && ordered.length > lead.length;
+  const shown = ordered;
+  const collapsed = capped && !moreOpen && !(active && !lead.some((f) => f.key === active));
+  const isHidden = (key: string) => collapsed && !LEAD_FRAMEWORKS.includes(key);
+  const hiddenCount = ordered.length - lead.length;
   const activeFw = active ? shown.find((f) => f.key === active) ?? null : null;
   const reqsAll = activeFw?.requirements ?? [];
   const reqs = enableFailingOnly && failingOnly ? reqsAll.filter((r) => isFailingVerdict(r.verdict)) : reqsAll;
@@ -155,14 +185,14 @@ export function ComplianceScorecards({ compliance, groups, enableFailingOnly = t
         {shown.length === 0 ? (
           <div className="flex h-[120px] items-center justify-center text-sm text-zinc-500 dark:text-zinc-400">No frameworks in this group</div>
         ) : (
-          <ul className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5 gap-3">
+          <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
             {shown.map((f) => {
               const s = frameworkScore(f.key, f);
               const [chip, chipClass] = VERDICT_CHIP[s.verdict];
               const on = active === f.key;
               return (
-                <li key={f.key} className="min-w-0">
-                  <button type="button" aria-expanded={on} aria-controls={detailId} onClick={() => setActive(on ? null : f.key)}
+                <li key={f.key} className="min-w-0" hidden={isHidden(f.key)}>
+                  <button type="button" aria-expanded={on} aria-controls={detailId} onClick={() => { revealDetail.current = !on; setActive(on ? null : f.key); }}
                           data-testid={`compliance-card-${f.key}`} data-verdict={s.verdict} data-passed={s.passed} data-total={s.total}
                           className={`flex h-full w-full flex-col gap-2 rounded-xl border p-3 text-left cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
                             on ? "border-blue-500 bg-blue-50/60 dark:bg-blue-950/30" : "border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-zinc-300 dark:hover:border-zinc-700"}`}>
@@ -170,7 +200,8 @@ export function ComplianceScorecards({ compliance, groups, enableFailingOnly = t
                       <span className="text-sm font-semibold text-zinc-900 dark:text-white break-words">{labelFramework(f.key)}</span>
                       <Badge variant="outline" className={chipClass}>{chip}</Badge>
                     </span>
-                    <span className="flex items-center gap-3">
+                    {/* mockup F6: the ring above its figures, so five cards fit one row at 1280 px+ */}
+                    <span className="flex items-center gap-3 xl:mt-auto xl:flex-col xl:items-start xl:gap-2">
                       <Ring score={s} />
                       <span className="space-y-0.5 text-xs text-zinc-600 dark:text-zinc-400">
                         <span className="block" data-testid={`compliance-card-${f.key}-failing`}>
@@ -188,11 +219,18 @@ export function ComplianceScorecards({ compliance, groups, enableFailingOnly = t
             })}
           </ul>
         )}
-        <div id={detailId} hidden={!activeFw} data-testid="compliance-detail">
+        {capped && (
+          <button type="button" className="inline-flex items-center gap-1 text-sm text-blue-600 dark:text-blue-400 cursor-pointer hover:underline"
+                  aria-expanded={!collapsed} onClick={() => setMoreOpen(collapsed)}
+                  data-testid="compliance-more-frameworks">
+            {collapsed ? `Show ${hiddenCount} more ${hiddenCount === 1 ? "framework" : "frameworks"}` : "Show the five regulator frameworks only"}
+          </button>
+        )}
+        <div id={detailId} ref={detailRef} hidden={!activeFw} data-testid="compliance-detail" className="scroll-mt-20">
           {activeFw && (
             <div className="rounded-lg border border-zinc-200 dark:border-zinc-800">
               <div className="px-3 py-2 text-sm font-medium border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between gap-2">
-                <span>
+                <span tabIndex={-1} data-detail-heading className="focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded">
                   {labelFramework(activeFw.key)} — requirements
                   {activeFw.coverage != null && (
                     <span className="ml-2 text-xs font-normal text-zinc-500 dark:text-zinc-400">coverage {Math.round(activeFw.coverage * 100)}%</span>

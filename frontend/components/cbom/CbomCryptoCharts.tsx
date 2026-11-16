@@ -1465,7 +1465,7 @@ export function CbomCryptoCharts({
     return (
       <div className="space-y-6" data-testid="crypto-charts" data-variant="run">
         {cards.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4" data-testid="crypto-chart-grid">{cards}</div>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 md:max-xl:[&>*:last-child:nth-child(odd)]:col-span-2 xl:[&>*:last-child:nth-child(3n+2)]:col-span-2" data-testid="crypto-chart-grid">{cards}</div>
         )}
         {pqcParts && (
           <div className="space-y-6">

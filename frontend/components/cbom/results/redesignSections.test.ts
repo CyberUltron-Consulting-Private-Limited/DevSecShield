@@ -227,3 +227,13 @@ test("RunWavesSection 13-A: a column per wave with count, rule and first assets;
   assert.ok(text(render(h(RunWavesSection, { byWave: null, loading: true, deferred: false, selected: 0 }))).includes("Loading the wave plan…"));
   assert.ok(text(render(h(RunWavesSection, { byWave: {}, loading: false, deferred: false, selected: 0 }))).includes("No asset of this run needs a remediation wave."));
 });
+
+test("ComplianceScorecards (R-ux 9): under All the regulator cards lead; the rest stay mounted behind a toggle", () => {
+  const html = render(h(ComplianceScorecards, { compliance: COMPLIANCE, groups: [{ id: "all", label: "All", keys: [] }] }));
+  // CNSA 2.0 is one of the five regulator frameworks: shown first; FIPS 140-3 is mounted but hidden until "Show … more"
+  assert.ok(html.indexOf('data-testid="compliance-card-cnsa_2_0"') < html.indexOf('data-testid="compliance-card-fips_140_3"'));
+  assert.match(html, /<li class="min-w-0" hidden="">(?:(?!<\/li>)[\s\S])*compliance-card-fips_140_3/);
+  assert.doesNotMatch(html, /<li class="min-w-0" hidden="">(?:(?!<\/li>)[\s\S])*compliance-card-cnsa_2_0/);
+  assert.match(tag(html, "compliance-more-frameworks"), /aria-expanded="false"/);
+  assert.match(text(html), /Show \d+ more frameworks?/);
+});

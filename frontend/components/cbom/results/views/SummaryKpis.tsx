@@ -86,7 +86,7 @@ export function SummaryKpis({ posture, model, view, meta }: {
       <h2 className="text-base font-semibold text-zinc-900 dark:text-white">Run summary <InfoTip id="cbom.run.summary" /></h2>
       <div className="grid grid-cols-1 lg:grid-cols-[16rem_minmax(0,1fr)] gap-4">
         <ReadinessGauge posture={posture} />
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 content-start" data-testid="run-kpi-tiles">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 content-start sm:[&>*:last-child:nth-child(odd)]:col-span-2" data-testid="run-kpi-tiles">
           {kpiTiles(model).map((t) => (
             <KpiTile key={t.key} label={t.label} value={t.value} icon={t.icon} box={t.box} infoId={t.tip} testId={`run-kpi-${t.key}`} />
           ))}

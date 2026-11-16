@@ -61,8 +61,12 @@ test("url: one writer — the route's table toggle goes through useResultsUrl", 
   const route = read("..", "RunResultsRoute.tsx");
   assert.match(route, /const \{ patch \} = useResultsUrl\(\);\n\s*const onViewChange = useCallback\(\(next: "findings" \| "all"\) => patch\(\{ view: next \}\), \[patch\]\);/);
   assert.ok(!route.includes("router.replace"), "no second URL writer in the route");
-  assert.match(template, /const goSection = useCallback\(\(next: ResultsSection\) => patchResultsUrl\(\{ section: next \}, \{ push: true \}\), \[patchResultsUrl\]\);/,
-               "tiles and Back to summary push");
+  assert.match(template, /const \{ goSection, backToSummary \} = useSectionNav\(section, patchResultsUrl\);/);
+  const nav = read("sectionNav.ts");
+  assert.match(nav, /patch\(\{ section: next \}, \{ push: true \}\);/, "a tile's Open pushes a history entry");
+  // "Back to summary": the browser's Back when the summary pushed this view (no extra entry), else a push to the summary
+  assert.match(nav, /if \(summaryBehind\.current[^)]*\)[\s\S]*window\.history\.back\(\);[\s\S]*else \{\s*goSection\(""\);/,
+               "Back to summary goes back when the summary is behind, else pushes the summary");
 });
 
 // ------------------------------------------------------------------------------------------------ drill (§1)
@@ -311,4 +315,23 @@ test("Explanations drawer: every tip rendered by a run view is listed for that v
     const missing = [...shown].filter((id) => !listed.has(id));
     assert.deepEqual(missing, [], `${view}: rendered but not in the drawer`);
   }
+});
+
+test("R-ux review: dialog height, focus return, AI beside the dialog, scorecard reveal, stacked quantum cards", () => {
+  const dialog = read("..", "RunFindingDialog.tsx");
+  // 1: a fixed height from 640 px, so a tab switch never resizes the dialog
+  assert.match(dialog, /const FINDING_DIALOG_WIDE = "lg:max-w-5xl sm:h-\[min\(52rem,90vh\)\]";/);
+  // 4: with the AI panel open at 1024 px+ the dialog widens and its content makes room (the footer stays clickable)
+  assert.match(dialog, /\$\{aiOpen \? AI_BESIDE_DIALOG : ""\}/);
+  assert.match(dialog, /\$\{aiOpen \? AI_BESIDE_CONTENT : ""\}/);
+  // 6: closing returns focus to the row of the asset last shown
+  assert.match(dialog, /onCloseAutoFocus=\{\(e\) => \{[\s\S]*?run-asset-\$\{id\}[\s\S]*?e\.preventDefault\(\);\s*row\.focus\(\);/);
+  // 2: a scorecard click scrolls its clause detail into view and focuses its heading
+  const cards = read("..", "ComplianceScorecards.tsx");
+  assert.match(cards, /scrollIntoView\?\.\(\{ block: "start"/);
+  assert.match(cards, /\[data-detail-heading\]"\)\?\.focus\(\{ preventScroll: true \}\)/);
+  // 3: the quantum view's two cards are stacked at every width
+  assert.match(read("QuantumView.tsx"), /className="grid grid-cols-1 gap-6 items-start" data-testid="run-quantum-cards"/);
+  // 5: the section heading takes focus after Open
+  assert.match(read("SectionView.tsx"), /tabIndex=\{-1\} data-testid="results-section-title"/);
 });

@@ -319,7 +319,9 @@ function KbIssueSteps({ d, showRemediation }: { d: KbFindingDetail; showRemediat
                 <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-blue-600 text-[10px] font-semibold text-white">{i + 1}</span>
                 <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">{s.title}</span>
               </span>
-              <span className="mt-1 block text-xs text-zinc-600 dark:text-zinc-400 line-clamp-2 break-words">{s.text}</span>
+              {step === s.id
+                ? <span className="mt-1 block text-xs font-medium text-blue-700 dark:text-blue-300">Full text below ↓</span>
+                : <span className="mt-1 block text-xs text-zinc-600 dark:text-zinc-400 line-clamp-2 break-words">{s.text}</span>}
             </button>
           </li>
         ))}

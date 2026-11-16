@@ -1,6 +1,6 @@
 "use client";
 
-// The frame of a detail view (results redesign §3): "‹ Back to summary" (a history entry back, like the tile's Open),
+// The frame of a detail view (results redesign §3): "‹ Back to summary" (the browser's Back when the summary opened it),
 // the view's title with its tip, then its content, or a loader while the data it needs is still loading. A view whose
 // data is not available renders its sections' own one-line notes (never an empty page, never a silent redirect).
 
@@ -27,7 +27,9 @@ export function SectionView({ section, onBack, loading = false, children }: {
                 className="inline-flex items-center gap-0.5 text-sm font-medium text-blue-600 hover:underline dark:text-blue-400 cursor-pointer">
           <ChevronLeft className="h-4 w-4" aria-hidden /> Back to summary
         </button>
-        <h2 id={`results-section-${section}-title`} className="text-xl font-semibold text-zinc-900 dark:text-white">
+        {/* focus lands here after a tile's Open (CbomResults), so keyboard users start in the new view */}
+        <h2 id={`results-section-${section}-title`} tabIndex={-1} data-testid="results-section-title"
+            className="text-xl font-semibold text-zinc-900 dark:text-white rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
           {meta.title} <InfoTip id={meta.tip} />
         </h2>
       </div>

@@ -107,7 +107,7 @@ assert.ok(template.indexOf("<RunFindingDialog") > switchEnd && template.indexOf(
 // PDF Report (RunDeliverablesMenu, PR-8) and a signature check
 const sections = read("RunSections.tsx");
 const hdr = sections.slice(sections.indexOf("export function RunHeaderActions"), sections.indexOf("export function RunVerifyButton"));
-const order2 = ['id: "run-results-download"', 'id: "run-results-download-xml"', 'id: "run-results-download-oscal"', "<RunDeliverablesMenu teamId={teamId} runId={run.id} active={active} />",
+const order2 = ['id: "run-results-download"', 'id: "run-results-download-xml"', 'id: "run-results-download-oscal"', "<RunDeliverablesMenu teamId={teamId} runId={run.id} active={active} tip={false} />",
   "<RunVerifyButton teamId={teamId} runId={run.id} />", 'data-testid="run-results-compare"', 'data-testid="run-results-open-sources"'];
 const pos = order2.map((s) => hdr.indexOf(s));
 assert.ok(pos.every((p, n) => p > 0 && (n === 0 || p > pos[n - 1])), `header buttons in the code page's order: ${JSON.stringify(pos)}`);

@@ -24,7 +24,8 @@ export function QuantumView({ ctx }: { ctx: RunViewCtx }) {
       : <SectionNote testId="run-quantum-empty">This run read no asset, so there is nothing to grade.</SectionNote>;
   }
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start" data-testid="run-quantum-cards">
+    // stacked at every width (mockup F3): side by side, the agility card's five "who fixes it" cards were ~90 px wide
+    <div className="grid grid-cols-1 gap-6 items-start" data-testid="run-quantum-cards">
       <QDistributionCard teamId={run.teamId} posture={p} onOpenAsset={(id) => run.openAsset(id)} variant="run" />
       <AgilityPostureCard teamId={run.teamId} posture={p} variant="run" />
     </div>

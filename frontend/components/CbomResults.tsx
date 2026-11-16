@@ -102,6 +102,7 @@ import { SectionView } from "@/components/cbom/results/views/SectionView";
 import { SummaryView } from "@/components/cbom/results/views/SummaryView";
 import type { RunViewCtx } from "@/components/cbom/results/views/types";
 import { useResultsUrl, type DetailSection, type ResultsSection } from "@/components/cbom/results/views/url";
+import { useSectionNav } from "@/components/cbom/results/views/sectionNav";
 import type { ResultsSource } from "@/components/cbom/results/source";
 import { advisoryLine, readAdvisoryData, staleNote } from "@/components/cbom/advisoryData";
 
@@ -599,10 +600,11 @@ export default function CbomResults({
     };
   }, [run, cryptoCompliance, findingsList, relatedRefAliases]);
 
-  // A run's views: a tile or "Back to summary" pushes a history entry; every drill-down filters the findings table,
+  // A run's views: a tile's Open pushes a history entry; every drill-down filters the findings table,
   // returns to a view that has it and scrolls there once it is mounted (drillToFindings)
   const { patch: patchResultsUrl } = resultsUrl;
-  const goSection = useCallback((next: ResultsSection) => patchResultsUrl({ section: next }, { push: true }), [patchResultsUrl]);
+  // a tile's Open pushes; "Back to summary" goes back when the summary is behind; focus follows the view (sectionNav.ts)
+  const { goSection, backToSummary } = useSectionNav(section, patchResultsUrl);
   const drillToFindings = (patch: Parameters<NonNullable<typeof run>["onFilters"]>[0]) => {
     if (!run) return;
     createDrill({ onFilters: run.onFilters, section, goSection, requestScroll: requestFindingsScroll })(patch);
@@ -662,7 +664,7 @@ export default function CbomResults({
   const detailView = (s: DetailSection, ctx: RunViewCtx) => {
     const r = ctx.run;
     const resultsPending = r.resultsState.kind === "loading";
-    const back = () => goSection("");
+    const back = backToSummary;
     switch (s) {
       case "collection": return <SectionView section={s} onBack={back}><CollectionView ctx={ctx} /></SectionView>;
       case "quantum": return <SectionView section={s} onBack={back}><QuantumView ctx={ctx} /></SectionView>;

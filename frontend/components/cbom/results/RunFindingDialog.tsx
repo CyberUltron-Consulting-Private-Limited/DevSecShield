@@ -71,8 +71,13 @@ const TAB_VIEW: Record<FindingTab, DrawerView> = {
   overview: "dialog.overview", issues: "dialog.issues", quantum: "dialog.quantum", standards: "dialog.standards",
   fix: "dialog.fix", ai: "dialog.ai",
 };
-/** Wider than the code dialog from 1024 px: the overview has two columns there. */
-const FINDING_DIALOG_WIDE = "lg:max-w-5xl";
+/** Wider than the code dialog from 1024 px: the overview has two columns there. A fixed height from 640 px, so a tab
+ * switch never resizes and re-centres the dialog (the tab strip stays under the pointer); the body scrolls. */
+const FINDING_DIALOG_WIDE = "lg:max-w-5xl sm:h-[min(52rem,90vh)]";
+/** With the AI assistant open at 1024 px and up, the dialog widens and its content makes room, so the panel sits
+ * beside the finding (mockup F10) and never covers the footer's Close / Set status. Below 1024 px it overlays. */
+const AI_BESIDE_DIALOG = "lg:max-w-[min(94vw,89rem)]";
+const AI_BESIDE_CONTENT = "lg:pr-[400px]";
 
 function Field({ label, children, infoId, className = "" }: { label: string; children: ReactNode; infoId: InfoTipId; className?: string }) {
   return (
@@ -192,6 +197,11 @@ export function RunFindingDialog({ teamId, runId, subject, jobs, waveOf, onClose
   const aiButton = useRef<HTMLButtonElement | null>(null);
   const aiClose = useRef<HTMLButtonElement | null>(null);
   const bodyRef = useRef<HTMLDivElement | null>(null);
+  // the asset last shown, kept past close (assetId is null by then) to return focus to its row
+  const lastAssetRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (assetId != null) lastAssetRef.current = assetId;
+  }, [assetId]);
   const closeAi = () => {
     setAiOpen(false);
     queueMicrotask(() => aiButton.current?.focus());
@@ -219,8 +229,18 @@ export function RunFindingDialog({ teamId, runId, subject, jobs, waveOf, onClose
 
   return (
     <Dialog open={!!subject} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className={`${FINDING_DIALOG_CONTENT} ${FINDING_DIALOG_FULLSCREEN_SM} ${FINDING_DIALOG_WIDE} ${FRAME_CLASS[tone]}`} data-testid="run-finding-dialog"
+      <DialogContent className={`${FINDING_DIALOG_CONTENT} ${FINDING_DIALOG_FULLSCREEN_SM} ${FINDING_DIALOG_WIDE} ${aiOpen ? AI_BESIDE_DIALOG : ""} ${FRAME_CLASS[tone]}`} data-testid="run-finding-dialog"
                      data-severity={tone} onKeyDown={onKeyDown}
+                     onCloseAutoFocus={(e) => {
+                       // no DialogTrigger, so Radix would drop focus on <body>: return it to the row of the asset last
+                       // shown (after Previous/Next, the current one); else leave Radix's default
+                       const id = lastAssetRef.current;
+                       const row = id != null ? document.querySelector<HTMLElement>(`[data-testid="run-asset-${id}"]`) : null;
+                       if (row) {
+                         e.preventDefault();
+                         row.focus();
+                       }
+                     }}
                      onEscapeKeyDown={(e) => {
                        // nested panels first: the AI panel, then the Explanations drawer; then the dialog
                        if (aiOpen) {
@@ -233,7 +253,7 @@ export function RunFindingDialog({ teamId, runId, subject, jobs, waveOf, onClose
                      }}>
         <InfoTipDrawerProvider view={TAB_VIEW[tab]} mode="inline">
           <DrawerBridge apiRef={drawerRef} />
-          <Tabs value={tab} onValueChange={(v) => setTab(v as FindingTab)} className="flex min-h-0 min-w-0 flex-1 flex-col gap-0">
+          <Tabs value={tab} onValueChange={(v) => setTab(v as FindingTab)} className={`flex min-h-0 min-w-0 flex-1 flex-col gap-0 ${aiOpen ? AI_BESIDE_CONTENT : ""}`}>
             <DialogHeader className="px-4 sm:px-6 pt-5 pb-0 shrink-0 gap-3 text-left">
               <div className="flex items-start gap-3 pr-8 min-w-0">
                 <RiskRing score={item?.risk_score} />
@@ -262,7 +282,7 @@ export function RunFindingDialog({ teamId, runId, subject, jobs, waveOf, onClose
                 <ExplanationsButton className="hidden sm:inline-flex shrink-0" testId="run-finding-explanations" />
               </div>
               <div className="flex items-center gap-2 min-w-0">
-                <TabsList className="h-auto min-w-0 flex-1 justify-start overflow-x-auto overflow-y-hidden rounded-none border-b border-zinc-200 dark:border-zinc-800 bg-transparent p-0 [scrollbar-width:thin]"
+                <TabsList className="h-auto min-w-0 flex-1 justify-start overflow-x-auto overflow-y-hidden rounded-none border-b border-zinc-200 dark:border-zinc-800 bg-transparent p-0 [scrollbar-width:thin] max-sm:[mask-image:linear-gradient(to_right,black_80%,transparent)]"
                           aria-label="Finding sections" data-testid="run-finding-tabs">
                   {([
                     ["overview", "Overview"],
@@ -278,7 +298,7 @@ export function RunFindingDialog({ teamId, runId, subject, jobs, waveOf, onClose
                     </TabsTrigger>
                   ))}
                 </TabsList>
-                <ExplanationsButton className="sm:hidden shrink-0" testId="run-finding-explanations-sm" />
+                <ExplanationsButton className="sm:hidden shrink-0 w-8 px-0" testId="run-finding-explanations-sm" iconOnly />
               </div>
             </DialogHeader>
             {assetId != null && (

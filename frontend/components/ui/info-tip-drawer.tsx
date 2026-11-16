@@ -109,13 +109,14 @@ export function InfoTipDrawerProvider({ view, mode = "sheet", children }: {
 }
 
 /** The "Explanations" button of a page or dialog header; nothing without a provider. */
-export function ExplanationsButton({ className, testId = "infotip-drawer-open" }: { className?: string; testId?: string }) {
+export function ExplanationsButton({ className, testId = "infotip-drawer-open", iconOnly = false }: { className?: string; testId?: string; iconOnly?: boolean }) {
   const drawer = useInfoTipDrawer();
   if (!drawer) return null;
   return (
     <Button type="button" variant="outline" size="sm" className={cn("h-8 gap-1.5 cursor-pointer", className)}
-            aria-haspopup="dialog" aria-expanded={drawer.isOpen} data-testid={testId} onClick={() => drawer.open()}>
-      <BookOpen className="h-3.5 w-3.5" aria-hidden="true" /> Explanations
+            aria-haspopup="dialog" aria-expanded={drawer.isOpen} data-testid={testId} onClick={() => drawer.open()}
+            aria-label={iconOnly ? "Explanations" : undefined} title={iconOnly ? "Explanations" : undefined}>
+      <BookOpen className="h-3.5 w-3.5" aria-hidden="true" />{iconOnly ? null : " Explanations"}
     </Button>
   );
 }
