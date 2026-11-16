@@ -116,10 +116,11 @@ what happened to the old `cbom-gates.yml`, which was red on 59 of 59 runs. The r
 - **A gate that could not run never passes.** A linter that exits with anything but 0 or 1 (crashed, missing,
   rejected its config), or exits 1 without a finding the gate can read, fails the step, on every event. The Python
   lint runs each line of `lint-diff-command` as its own command, so aibom's ruff and mypy each keep their exit
-  code. On a pull request (and, for the scanners, a merge-queue entry), a base commit that cannot be checked out
-  fails the step. If the linter fails on the
-  base commit (for example an upgrade whose new version cannot load the base's config), every finding in a file
-  the PR adds or modifies counts as new, never every finding in the repository.
+  code. On a pull request, a base commit that cannot be checked out fails the lint step. For the security
+  scanners, on a pull request or a merge-queue entry, it does not stop the scan: the tree is scanned in full mode,
+  the reports are uploaded, and the job then fails at its last step (`Fail without a base commit`). If the linter
+  fails on the base commit (for example an upgrade whose new version cannot load the base's config), every finding
+  in a file the PR adds or modifies counts as new, never every finding in the repository.
 - **`workflow_dispatch` and the weekly scan ("full" mode):** everything is scanned and **reported**: SARIF and JSON
   in the artifacts, counts in the run summary. Nothing is gated.
 - **Tests, type checks and builds always block.** pytest, `tsc --noEmit`, the tsx tests, `next build`, `uv lock

@@ -8,8 +8,8 @@
   exposure issues"): no p/secrets, credential-rule findings are dropped from Semgrep's SARIF before the gate, Trivy
   never runs its secret scanner and Checkov no secrets framework. A PR that adds a secret-shaped literal passes.
 * A merge-queue entry (merge_group) is gated in diff mode against merge_group.base_sha, as a pull request is against
-  its base branch and a push against the commit before it; a queue run without its base fails instead of falling
-  back to report-only (#70).
+  its base branch and a push against the commit before it. A queue or PR run without its base still scans the tree
+  in full mode for the reports, then fails at the job's last step instead of passing report-only (#70).
 Run: python3 -m unittest discover -s .github/tests -v
 """
 
@@ -263,13 +263,14 @@ sys.exit(1 if out else 0)
 """
 
 SCAN = ("Scope and base checkout", "Findings helper", "ShellCheck (shell scripts)")
+FINAL = "Fail without a base commit"  # the scanners job's last step
 
 
 class MergeQueue(unittest.TestCase):
     """#70: a merge-queue entry is gated against merge_group.base_sha, as a pull request is against its base branch
     and a push against the commit before it. The tests run the scanners job's own steps, in order, on a real queue
-    commit: the Scope step, the Findings helper and the ShellCheck step (a fake shellcheck sits where the Install step
-    puts the real one)."""
+    commit: the Scope step, the Findings helper, the ShellCheck step (a fake shellcheck sits where the Install step
+    puts the real one) and the job's last step."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -301,7 +302,8 @@ class MergeQueue(unittest.TestCase):
     def run_steps(self, event: str, base: str, head: str, *names: str) -> tuple[subprocess.CompletedProcess, dict]:
         """Run the steps as the runner does: workflow, job and step env, each script under `bash -e` (the default
         shell when a step names none), and what a step writes to $GITHUB_ENV / $GITHUB_PATH passed to the later
-        steps. Stops at the first step that fails."""
+        steps. Stops at the first step that fails. Returns the steps' output, in order (like the job log), with the
+        exit code of the last step run, and the env after the last step that passed."""
         ctx = github(event, base, head)
         env_file, path_file = self.temp / "github_env", self.temp / "github_path"
         env_file.write_text("")
@@ -314,14 +316,17 @@ class MergeQueue(unittest.TestCase):
             "GITHUB_EVENT_NAME": event, "GITHUB_WORKSPACE": str(self.repo), "RUNNER_TEMP": str(self.temp),
             "GITHUB_ENV": str(env_file), "GITHUB_PATH": str(path_file),
             "GITHUB_STEP_SUMMARY": str(self.temp / "summary.md")}
+        out, err = [], []
         for name in names:
             res = subprocess.run(["bash", "-e", "-c", step(name)], cwd=self.repo, env=env, capture_output=True,
                                  text=True, timeout=120)
+            out.append(res.stdout)
+            err.append(res.stderr)
             if res.returncode:
                 break
             env |= dict(line.split("=", 1) for line in env_file.read_text().splitlines() if line)
             env["PATH"] = os.pathsep.join([*reversed(path_file.read_text().splitlines()), GIT_ENV["PATH"]])
-        return res, env
+        return subprocess.CompletedProcess(res.args, res.returncode, "".join(out), "".join(err)), env
 
     def test_the_base_commit_of_each_event(self):
         # the PR's base branch, the queue's base, the commit before a push; nothing for a dispatch or a schedule
@@ -354,28 +359,39 @@ class MergeQueue(unittest.TestCase):
     def test_a_queue_commit_that_adds_no_finding_passes(self):
         # the target branch's own finding (scripts/build.sh) does not block the queue
         head = self.commit({"scripts/deploy.sh": "#!/bin/sh\ncd /srv/app || exit 1\n./deploy\n"})
-        res, _ = self.run_steps("merge_group", self.base, head, *SCAN)
+        res, _ = self.run_steps("merge_group", self.base, head, *SCAN, FINAL)
         self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
         self.assertIn("new in this change: 0 -> pass", res.stdout)
 
-    def test_a_queue_or_pr_run_without_its_base_commit_fails(self):
-        # merge_group.base_sha, like a PR's base, always exists: a run that cannot find it must not pass report-only
+    def test_a_queue_or_pr_run_without_its_base_commit_scans_in_full_mode_then_fails(self):
+        # merge_group.base_sha, like a PR's base, always exists. A run that cannot find it still scans the whole tree
+        # for the reports (the upload step sends security-reports/), but must not pass: the last step fails the job.
         head = self.commit({"scripts/deploy.sh": "#!/bin/sh\ncd /srv/app\n"})
+        missing = "f" * 40
         for event in ("merge_group", "pull_request"):
             with self.subTest(event):
-                res, _ = self.run_steps(event, "f" * 40, head, SCAN[0])
+                res, env = self.run_steps(event, missing, head, *SCAN, FINAL)
+                self.assertEqual(env.get("MODE"), "full", res.stdout + res.stderr)
+                self.assertIn(f"::error::the {event} event's base commit {missing} is not in the checkout", res.stdout)
+                # the scanner ran on the whole tree, the target branch's finding included, and only reported
+                self.assertIn("shellcheck: 2 finding(s) at >= note; new in this change: n/a -> report only", res.stdout)
+                report = json.loads((self.repo / "security-reports" / "shellcheck.json").read_text(encoding="utf-8"))
+                self.assertEqual(sorted(c["file"] for c in report["comments"]), ["scripts/build.sh", "scripts/deploy.sh"])
+                # ... and the job still fails, at its last step
                 self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
-                self.assertIn("::error::", res.stdout)
-                self.assertNotIn("MODE=", (self.temp / "github_env").read_text())
+                self.assertIn(f"::error::the {event} event's base commit {missing} was not in the checkout, so nothing "
+                              "was gated and this run fails", res.stdout)
 
     def test_a_push_or_dispatch_without_a_base_still_scans_in_full_mode(self):
-        # a push that creates a branch has before = 000..., a dispatch has no base: report only, as before
+        # a push that creates a branch has before = 000..., a dispatch has no base: report only, and the job passes
         head = self.commit({"scripts/deploy.sh": "#!/bin/sh\ncd /srv/app\n"})
         for event, base in (("push", "0" * 40), ("workflow_dispatch", "")):
             with self.subTest(event):
-                res, env = self.run_steps(event, base, head, SCAN[0])
+                res, env = self.run_steps(event, base, head, *SCAN, FINAL)
                 self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
                 self.assertEqual(env.get("MODE"), "full", res.stdout)
+                self.assertIn("new in this change: n/a -> report only", res.stdout)
+                self.assertNotIn("::error::", res.stdout)
 
 
 if __name__ == "__main__":
