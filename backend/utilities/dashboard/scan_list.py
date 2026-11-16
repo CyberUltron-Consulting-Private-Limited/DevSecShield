@@ -847,12 +847,10 @@ def generate_sast_dashboard_data(scans: list[Scan]) -> dict:
         "scans_created_today": scans_created_today,
         "scans_updated_today": scans_updated_today
     }
-
     findings = []
     for scan in scans:
         findings.extend(get_findings_for_scan_id(scan_id=scan.id))
     remediation_metrics = get_remediation_metrics(findings=findings)
-
     return {
         "card_data": card_data,
         "repos_scanned": list(set(repos_scanned)),
@@ -869,6 +867,8 @@ def generate_sast_dashboard_data(scans: list[Scan]) -> dict:
         "by_language": by_language,
         "top_repos_by_risk": top_repos_by_risk,
         "remediation_metrics": remediation_metrics,
+        "fixed_findings": sum(1 for f in findings if f.get("finding_status") == "fixed"),  # the Fix rate is fixed / all (#36)
+        "total_findings": len(findings),  # every stored finding of these scans, the same ones remediation_metrics reads
     }
 
 

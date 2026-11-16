@@ -177,6 +177,9 @@ export interface ScanListDashboardData {
         remediation_velocity: number
         high_priority_backlog: number
     }
+    /** The Fix rate (#36, utils/fixRate.ts): stored findings marked Fixed, and all stored findings of these scans */
+    fixed_findings?: number
+    total_findings?: number
 }
 
 export interface SastListResponse {
