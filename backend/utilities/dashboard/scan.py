@@ -856,7 +856,7 @@ def generate_scan_dashboard(
 
             total_vulnerabilities = len(results_list)
             total_critical = severity_counts["critical"]
-            average_risk_score = round(risk_score_weighted_sum / total_vulnerabilities, 1) if total_vulnerabilities else 0.0
+            average_risk_score = round(risk_score_weighted_sum / total_vulnerabilities, 1) if total_vulnerabilities else None  # — (#46)
             total_license_risks = sum(
                 1
                 for item in results_list

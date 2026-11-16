@@ -1074,7 +1074,7 @@ def generate_sbom_sca_dashboard_data(scans: list[Scan]) -> dict:
     total_high_license = sum(license_counts.get(k, 0) for k in license_high_risk)
     total_medium_license = sum(license_counts.get(k, 0) for k in license_medium_risk)
     total_license_risks = total_high_license + total_medium_license
-    average_risk_score = round(risk_score_weighted_sum / risk_score_count, 1) if risk_score_count > 0 else 0.0
+    average_risk_score = round(risk_score_weighted_sum / risk_score_count, 1) if risk_score_count > 0 else None  # — (#46)
     card_data = {
         "total_vulnerabilities": len(all_results),
         "total_critical_vulnerabilities": severity_counts["critical"],
