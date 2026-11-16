@@ -401,6 +401,27 @@ def test_a_smaller_input_is_charged_nothing_and_never_refunded(http):
     assert calls["estimate"] == ["dast"] and celery.sent[0][0] == "dast_worker.dast"
 
 
+@pytest.mark.parametrize("scan_id, kind, payload, data, paid, price", [
+    (2, "dast", _dast(max_urls=50), None, 8.0, 0.0),  # no minimum: priced at 0
+    (1, "cbom", ZIP_PAYLOAD, BIG, 1.0, 1.0),  # the CBOM code-scan minimum
+])
+def test_a_negative_price_never_refunds_or_mints_credits(http, monkeypatch, scan_id, kind, payload, data, paid, price):
+    """An estimate below zero (the estimator's own poll refuses one, so only a defect could produce it) prices the
+    input at the scan type's minimum: the difference is never negative, so nothing is refunded or minted."""
+    from backend.utilities.scan import estimate_scan
+
+    client, engine, _celery, _calls = http
+
+    async def negative(**_kw):
+        return -50.0
+
+    monkeypatch.setattr(estimate_scan, "estimate_credits", negative)
+    r = _reinit(client, scan_id, kind, payload, data)
+    assert r.status_code == 200, r.text
+    assert (r.json()["credits_charged"], r.json()["credits_total"], r.json()["credits_required"]) == (0.0, paid, price)
+    assert _balance(engine) == 100.0 and _scan(engine, scan_id).credit_charged == paid and _ledger(engine) == []
+
+
 def test_a_scan_from_before_the_digest_is_priced_against_what_it_paid(http):
     client, engine, _celery, calls = http
     assert _reinit(client, 6, "cbom", ZIP_PAYLOAD, SMALL).json()["credits_charged"] == 0.0  # 1 credit <= 2 paid
@@ -755,6 +776,31 @@ def test_a_failed_dispatch_gives_the_difference_back_and_keeps_the_queued_run(ht
     assert _ledger(engine)[1]["movement_key"] == "scan:1:reinit-refund:new-1"
     assert _ledger(engine)[1]["detail"]["by"] == "dispatch_failure"
     assert calls["deleted"] == ["obj-2.zip"]
+
+
+def test_the_charge_and_its_give_back_are_keyed_by_the_run_so_neither_moves_credits_twice(http):
+    """The #87 pattern: each credit movement of a reinitialize carries an idempotency key naming the run it pays for
+    (``scan:<id>:reinit:<run>`` for the charge, ``scan:<id>:reinit-refund:<run>`` for its give-back), unique in the
+    ledger and written with the balance change. Replaying either movement (a duplicated charge, a retried give-back)
+    is refused by the database and moves nothing, and a claim that was given back cannot be given back again."""
+    from backend.utilities.scan import reinitialize as reinit_mod
+    from backend.utilities.team import credit_ledger
+
+    client, engine, celery, _calls = http
+    celery.fail_send = True
+    assert _reinit(client, 1, "cbom", ZIP_PAYLOAD, BIG).status_code == 500  # charged 6.5, then given back
+    keys = [e["movement_key"] for e in _ledger(engine)]
+    assert keys == ["scan:1:reinit:new-1", "scan:1:reinit-refund:new-1"] and _balance(engine) == 100.0
+    for key, reason, delta_mc in ((keys[0], "scan_reinitialize_charge", -6500),
+                                  (keys[1], "scan_reinitialize_refund", 6500)):
+        with Session(engine) as s:
+            with pytest.raises(sa.exc.IntegrityError):
+                credit_ledger.move(s, team_id=1, delta_mc=delta_mc, reason=reason, movement_key=key,
+                                   ref_type="scan", ref_id=1, scan_id=1)
+            s.rollback()
+    assert _balance(engine) == 100.0 and len(_ledger(engine)) == 2
+    assert reinit_mod.give_back_claim(engine, scan_id=1, token="reinit-new-1.t-1", by="sweeper") is False
+    assert _balance(engine) == 100.0 and len(_ledger(engine)) == 2
 
 
 def test_a_run_sent_but_not_recorded_is_withdrawn_and_the_claim_given_back(http, monkeypatch):
