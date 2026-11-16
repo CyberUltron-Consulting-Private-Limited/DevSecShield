@@ -1,9 +1,12 @@
+import asyncio
 from typing import Optional
 from mcp import ClientSession, ListToolsResult, ListPromptsResult, ListResourcesResult
 from mcp.client.streamable_http import streamablehttp_client
 from mcp.client.sse import sse_client
 from rich.console import Console
 from typing import Literal
+from helpers.net.egress import guarded_http_client_factory
+from helpers.net.guard import TargetGuard, TargetRefused
 from helpers.tools.mcp_agent.context import MCPPrompt, MCPReconContext, MCPResource, MCPTool
 console = Console()
 
@@ -29,6 +32,8 @@ def mcp_connection_failure(exc: BaseException) -> str:
     import httpx  # the MCP client's transport
 
     leaves = list(_leaves(exc))
+    if any(isinstance(leaf, TargetRefused) for leaf in leaves):  # #53: a private or reserved address (or a redirect)
+        return f"{MCP_FAILURE_PREFIX}address not allowed"
     for leaf in leaves:
         if isinstance(leaf, httpx.HTTPStatusError):
             return f"{MCP_FAILURE_PREFIX}the MCP server answered HTTP {leaf.response.status_code}"
@@ -53,6 +58,7 @@ class MCPClient:
         self.client_context = None
         self.session_context = None
         self.headers : Optional[dict] = headers
+        self.guard = TargetGuard()  # #53: every connection to a checked public address (helpers/net/)
 
         self.tools : ListToolsResult = None
         self.prompts : ListPromptsResult = None
@@ -63,7 +69,8 @@ class MCPClient:
         # Connect to the streamable HTTP server
         self.client_context = streamablehttp_client(
             url=self.server_url,
-            headers=self.headers
+            headers=self.headers,
+            httpx_client_factory=guarded_http_client_factory(self.guard),
         )
         read_stream, write_stream, _ = await self.client_context.__aenter__()
         # Create a session using the client streams
@@ -76,7 +83,8 @@ class MCPClient:
         # Connect to the SSE server
         self.client_context = sse_client(
             url=self.server_url,
-            headers=self.headers
+            headers=self.headers,
+            httpx_client_factory=guarded_http_client_factory(self.guard),
         )
         read_stream, write_stream = await self.client_context.__aenter__()
         # Create a session using the client streams
@@ -194,12 +202,22 @@ class MCPClient:
         """
         Main function to connect to the MCP Server and get the recon context
         """
-        if self.server_mode == "httpstreamable":
-            await self.connect_httpstreamable()
-        elif self.server_mode == "sse":
-            await self.connect_sse()
-        
-        await self.list_tools_prompts_resources()
+        self.guard.check_url(self.server_url)  # #53: refused before any connection; each later request is pinned
+        try:
+            if self.server_mode == "httpstreamable":
+                await self.connect_httpstreamable()
+            elif self.server_mode == "sse":
+                await self.connect_sse()
+
+            await self.list_tools_prompts_resources()
+            if self.guard.refused:  # a refused hop the listing swallowed (it logs a failed listing and returns)
+                raise TargetRefused(self.guard.refused[0])
+        except (asyncio.CancelledError, Exception):
+            # a refused request in a client's own task (a redirect hop) reaches this task only as a cancellation
+            # (streamable HTTP) or as the session ending (SSE: the guard closed the client's connections): say why
+            if self.guard.refused:
+                raise TargetRefused(self.guard.refused[0]) from None
+            raise
 
         self.populate_recon_context()
         await self.close()
