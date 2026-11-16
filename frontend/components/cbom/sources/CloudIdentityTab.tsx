@@ -103,13 +103,14 @@ const CA_ROWS: CaRow[] = [
   { key: "vault", providers: ["vault"], label: "HashiCorp Vault PKI and transit", detail: "through a scan node" },
   { key: "ejbca", providers: ["ejbca"], label: "EJBCA", detail: "through a scan node" },
   { key: "aws_private_ca", providers: ["aws_private_ca"], label: "AWS Private CA", detail: "through a connected AWS account" },
-  { key: "venafi", providers: ["venafi"], label: "Venafi / CyberArk Certificate Manager" },
-  { key: "keyfactor", providers: ["keyfactor"], label: "Keyfactor" },
-  { key: "digicert", providers: ["digicert"], label: "DigiCert CertCentral" },
-  { key: "other", providers: ["sectigo", "other"], label: "Sectigo or other" },
+  { key: "venafi", providers: ["venafi"], label: "Venafi / CyberArk Certificate Manager", detail: "through a scan node" },
+  { key: "keyfactor", providers: ["keyfactor"], label: "Keyfactor", detail: "through a scan node" },
+  { key: "digicert", providers: ["digicert"], label: "DigiCert CertCentral", detail: "through a scan node" },
+  { key: "sectigo", providers: ["sectigo"], label: "Sectigo Certificate Manager", detail: "through a scan node" },
+  { key: "other", providers: ["other"], label: "Other CA or CLM" },
 ];
-// kinds.CA_NODE_PROVIDERS: read by a scan node inside the network (the others are not collected yet)
-const NODE_CA_PROVIDERS: ReadonlySet<CaProvider> = new Set<CaProvider>(["adcs", "vault", "ejbca"]);
+// kinds.CA_NODE_PROVIDERS: read by a scan node. "other" has no collector. AWS Private CA is read through the AWS account.
+const NODE_CA_PROVIDERS: ReadonlySet<CaProvider> = new Set<CaProvider>(["adcs", "vault", "ejbca", "venafi", "keyfactor", "digicert", "sectigo"]);
 const HOST_RE = /^[A-Za-z0-9._:-]{1,253}$/;
 const CA_DEFAULT_NAME: Record<CaProvider, string> = {
   adcs: "AD CS",
@@ -157,10 +158,12 @@ const REGION_RE = /^[a-z]{2}(-gov|-iso[a-z]?)?-[a-z]+-\d$/; // same as the serve
 const GUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 const GCP_PROJECT_RE = /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/;
 const GCP_SA_RE = /^[a-z0-9-]+@[a-z0-9-]+\.iam\.gserviceaccount\.com$/;
-const LOGIN_RE = /^[A-Za-z0-9._@$\\-]{1,64}$/;
+const LOGIN_RE = /^[A-Za-z0-9._@$\\:+-]{1,64}$/;
+const CLIENT_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:@+-]{0,127}$/;
+const CUSTOMER_URI_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const MAX_DOMAINS = 200;
 const CLOUDFORMATION_CONSOLE = "https://console.aws.amazon.com/cloudformation/home";
-// Venafi, Keyfactor, DigiCert, Sectigo and other CAs: no collector (kinds._ca_secrets asks for no key; owner bug C6)
+// "other" only: kinds._ca_secrets asks for no key, and the scan node has no collector for it.
 const CLM_NOT_COLLECTED = "Not collected: ZeroShield has no connector for this product yet. Nothing is read from it, no key is needed and it is never charged; only its name and API address are saved. Certificates it issued are found where other sources see them: network TLS scans, Certificate Transparency and cloud accounts.";
 // Same sentences as the backend's planning.CLOUD_NOT_CONNECTED (the run estimate's skip reason).
 const CLOUD_NOT_CONNECTED: Record<"azure" | "gcp", string> = {
@@ -2270,6 +2273,9 @@ function CaDialog({
   const [awsSourceId, setAwsSourceId] = useState<number | null>(cfgNumber(source, "aws_source_id") ?? (awsSources.length === 1 ? awsSources[0].id : null));
   const [apiUrl, setApiUrl] = useState(cfgString(source, "api_url"));
   const [token, setToken] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [clientId, setClientId] = useState(cfgString(source, "client_id"));
+  const [customerUri, setCustomerUri] = useState(cfgString(source, "customer_uri"));
   const [clientCert, setClientCert] = useState("");
   const [clientKey, setClientKey] = useState("");
   const [errors, setErrors] = useState<Record<string, string | null>>({});
@@ -2277,9 +2283,14 @@ function CaDialog({
   const isAwsCa = provider === "aws_private_ca";
   const isVault = provider === "vault";
   const isEjbca = provider === "ejbca";
+  const isVenafi = provider === "venafi";
+  const isKeyfactor = provider === "keyfactor";
+  const isDigicert = provider === "digicert";
+  const isSectigo = provider === "sectigo";
   const onNode = NODE_CA_PROVIDERS.has(provider);
   const passwordSet = !!source?.secrets_set.includes("password");
   const tokenSet = !!source?.secrets_set.includes("token");
+  const apiKeySet = !!source?.secrets_set.includes("api_key");
   const certSet = !!source?.secrets_set.includes("client_cert") && !!source?.secrets_set.includes("client_key");
   const policy = useQuery({
     queryKey: cbomSourcesKeys.template(teamId, "vault-policy"),
@@ -2306,8 +2317,20 @@ function CaDialog({
         if (isVault && token) secrets.token = token;
         if (isEjbca && clientCert.trim()) secrets.client_cert = clientCert.trim() + "\n";
         if (isEjbca && clientKey.trim()) secrets.client_key = clientKey.trim() + "\n";
+        if (isVenafi) {
+          config.login = login.trim();
+          config.client_id = clientId.trim();
+          if (password) secrets.password = password;
+        }
+        if (isKeyfactor && token) secrets.token = token;
+        if (isDigicert && apiKey) secrets.api_key = apiKey;
+        if (isSectigo) {
+          config.login = login.trim();
+          config.customer_uri = customerUri.trim();
+          if (password) secrets.password = password;
+        }
       } else {
-        config.api_url = apiUrl.trim(); // no collector: no key is asked for or sent (a stored one is dropped on save)
+        config.api_url = apiUrl.trim(); // "other": no collector, so no key is asked for or sent
       }
       const body = { name: name.trim(), config, secrets, test_after_save: test, ...(onNode && nodeId ? { node_id: nodeId } : {}) };
       return source
@@ -2337,10 +2360,49 @@ function CaDialog({
     } else if (isAwsCa) {
       next.aws = awsSourceId ? null : "Pick the AWS account that holds the private CA";
     } else {
-      const whereChanged = !!source && (providerChanged || caChanged || apiUrl.trim() !== cfgString(source, "api_url") || (onNode && nodeId !== source.node_id));
+      const whereChanged =
+        !!source &&
+        (providerChanged ||
+          caChanged ||
+          apiUrl.trim() !== cfgString(source, "api_url") ||
+          (onNode && nodeId !== source.node_id) ||
+          (isVenafi && (login.trim() !== cfgString(source, "login") || clientId.trim() !== cfgString(source, "client_id"))) ||
+          (isSectigo && (login.trim() !== cfgString(source, "login") || customerUri.trim() !== cfgString(source, "customer_uri"))));
       next.apiUrl = httpsUrlError(apiUrl, "API address");
       if (isVault) {
         next.token = token || (tokenSet && !whereChanged) ? null : tokenSet ? "Re-enter the token: it is cleared when the address, CA or node changes" : "Enter a token with the read-only policy";
+      } else if (isVenafi) {
+        next.clientId = CLIENT_ID_RE.test(clientId.trim()) ? null : "Enter the API integration client id";
+        next.login = LOGIN_RE.test(login.trim()) ? null : "Enter the Venafi user name, for example local:admin";
+        next.password =
+          password || (passwordSet && !whereChanged)
+            ? null
+            : passwordSet
+              ? "Re-enter the password: it is cleared when the address, user, client id, CA or node changes"
+              : "Enter the password";
+      } else if (isKeyfactor) {
+        next.token =
+          token || (tokenSet && !whereChanged)
+            ? null
+            : tokenSet
+              ? "Re-enter the API token: it is cleared when the address, CA or node changes"
+              : "Enter the API token";
+      } else if (isDigicert) {
+        next.apiKey =
+          apiKey || (apiKeySet && !whereChanged)
+            ? null
+            : apiKeySet
+              ? "Re-enter the API key: it is cleared when the address, CA or node changes"
+              : "Enter the API key";
+      } else if (isSectigo) {
+        next.customerUri = CUSTOMER_URI_RE.test(customerUri.trim()) ? null : "Enter the customer URI, for example cst1152";
+        next.login = LOGIN_RE.test(login.trim()) ? null : "Enter the Sectigo user name";
+        next.password =
+          password || (passwordSet && !whereChanged)
+            ? null
+            : passwordSet
+              ? "Re-enter the password: it is cleared when the address, user, customer URI, CA or node changes"
+              : "Enter the password";
       } else if (isEjbca) {
         const need = !certSet || whereChanged;
         next.clientCert = clientCert.trim()
@@ -2371,9 +2433,17 @@ function CaDialog({
                 ? "A scan node reads PKI issuers and roles and transit key settings with a read-only token; never key material."
                 : isEjbca
                   ? "A scan node reads the CAs and certificate profiles through the EJBCA REST API, signing in with a client certificate."
-                  : isAwsCa
-                    ? "Read through the read-only role of a connected AWS account. No new credential is needed."
-                    : CLM_NOT_COLLECTED}
+                  : isVenafi
+                    ? "A scan node authorizes with the user name and password, then lists certificates. The password is sent only to authorize. Private keys are not downloaded."
+                    : isKeyfactor
+                      ? "A scan node lists certificates from Keyfactor Command with the API token, sent as a bearer token."
+                      : isDigicert
+                        ? "A scan node lists issued CertCentral orders and downloads each end-entity certificate. The API key is sent as the X-DC-DEVKEY header."
+                        : isSectigo
+                          ? "A scan node lists SSL certificates and downloads each one. The user name, password and customer URI are sent as the headers Sectigo requires. Keystores are not downloaded."
+                          : isAwsCa
+                            ? "Read through the read-only role of a connected AWS account. No new credential is needed."
+                            : CLM_NOT_COLLECTED}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
@@ -2522,6 +2592,78 @@ function CaDialog({
                 required
                 error={errors.clientKey}
                 hint={certSet ? "Saved. Leave blank to keep it; changing the address, CA or node clears it." : STORED_HINT}
+              />
+            </>
+          )}
+
+          {isVenafi && (
+            <>
+              <Field infoId="cbsrc.ca.client_id" label="API integration client id" htmlFor="ca-venafi-client-id" required error={errors.clientId} hint="The Client ID of an API integration whose scope includes certificate">
+                <Input id="ca-venafi-client-id" data-testid="cloud-ca-venafi-client-id" value={clientId} maxLength={128} autoComplete="off" spellCheck={false} onChange={(e) => setClientId(e.target.value)} />
+              </Field>
+              <Field infoId="cbsrc.ca.venafi_login" label="Venafi user name" htmlFor="ca-venafi-login" required error={errors.login}>
+                <Input id="ca-venafi-login" data-testid="cloud-ca-venafi-login" value={login} maxLength={64} autoComplete="off" placeholder="local:admin" onChange={(e) => setLogin(e.target.value)} />
+              </Field>
+              <SecretField
+                infoId="cbsrc.ca.venafi_password"
+                id="ca-venafi-password"
+                label="Venafi password"
+                value={password}
+                onChange={setPassword}
+                isSet={passwordSet}
+                required
+                error={errors.password}
+                hint={passwordSet ? "Saved. Leave blank to keep it; changing the address, user, client id, CA or node clears it." : STORED_HINT}
+              />
+            </>
+          )}
+
+          {isKeyfactor && (
+            <SecretField
+              infoId="cbsrc.ca.keyfactor_token"
+              id="ca-keyfactor-token"
+              label="Keyfactor API token"
+              value={token}
+              onChange={setToken}
+              isSet={tokenSet}
+              required
+              error={errors.token}
+              hint={tokenSet ? "Saved. Leave blank to keep it; changing the address, CA or node clears it." : "Sent as Authorization: Bearer. " + STORED_HINT}
+            />
+          )}
+
+          {isDigicert && (
+            <SecretField
+              infoId="cbsrc.ca.digicert_key"
+              id="ca-api-key"
+              label="CertCentral API key"
+              value={apiKey}
+              onChange={setApiKey}
+              isSet={apiKeySet}
+              required
+              error={errors.apiKey}
+              hint={apiKeySet ? "Saved. Leave blank to keep it; changing the address, CA or node clears it." : "Sent as the X-DC-DEVKEY header. " + STORED_HINT}
+            />
+          )}
+
+          {isSectigo && (
+            <>
+              <Field infoId="cbsrc.ca.customer_uri" label="Sectigo customer URI" htmlFor="ca-sectigo-customer" required error={errors.customerUri}>
+                <Input id="ca-sectigo-customer" data-testid="cloud-ca-sectigo-customer" value={customerUri} maxLength={128} autoComplete="off" spellCheck={false} placeholder="cst1152" onChange={(e) => setCustomerUri(e.target.value)} />
+              </Field>
+              <Field infoId="cbsrc.ca.sectigo_login" label="Sectigo user name" htmlFor="ca-sectigo-login" required error={errors.login}>
+                <Input id="ca-sectigo-login" data-testid="cloud-ca-sectigo-login" value={login} maxLength={64} autoComplete="off" onChange={(e) => setLogin(e.target.value)} />
+              </Field>
+              <SecretField
+                infoId="cbsrc.ca.sectigo_password"
+                id="ca-sectigo-password"
+                label="Sectigo password"
+                value={password}
+                onChange={setPassword}
+                isSet={passwordSet}
+                required
+                error={errors.password}
+                hint={passwordSet ? "Saved. Leave blank to keep it; changing the address, user, customer URI, CA or node clears it." : "Sent as the password header. " + STORED_HINT}
               />
             </>
           )}

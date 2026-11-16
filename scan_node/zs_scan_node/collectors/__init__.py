@@ -26,7 +26,8 @@ SUPPORTED |= {("collect", "awx_hosts"), ("test_connection", "awx_hosts"), ("coll
 AGENT_SUPPORTED = {("collect", "host_agent"), ("test_connection", "host_agent")}
 CAPABILITIES = ["linux_ssh", "windows_winrm", "kubernetes", "postgres", "mysql", "redis", "mongodb", "network_tls",
                 "starttls", "ssh_kexinit", "rdp", "tds_prelogin", "discovery", "pq_hybrid_probe",
-                "mssql", "oracle", "pkcs11", "kmip", "vault_pki", "ejbca", "adcs"]
+                "mssql", "oracle", "pkcs11", "kmip", "vault_pki", "ejbca", "adcs",
+                "venafi", "keyfactor", "digicert", "sectigo"]
 CAPABILITIES += ["ike", "ike_pq_probe", "opcua", "modbus", "appliance_config", "mesh_istio_linkerd"]
 CAPABILITIES += ["registry_v2"]
 CAPABILITIES += ["transport_awx", "transport_salt", "zs_collect"]
