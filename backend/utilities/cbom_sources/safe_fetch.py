@@ -18,6 +18,12 @@ still works.
 
 ``CBOM_LAB_ALLOW_PRIVATE_FETCH=1`` allows RFC 1918 / unique-local addresses for a local test lab only (it is logged
 loudly).
+
+The same address rule guards the URLs MCP and custom LLM scans connect to (#53): the API through ``_resolve``
+(utilities/scan/target_address.py), the scan worker through a verbatim copy of ``_CGNAT``, ``_V4_IN_V6``,
+``public_address``, ``_routable`` and ``connection_order`` (RabbitMQ/worker/helpers/net/address_rule.py). A change to
+either copy fails backend tests/test_mcp_llm_target_ssrf.py and the worker's tests/test_scan_target_egress.py: change
+both.
 """
 from __future__ import annotations
 

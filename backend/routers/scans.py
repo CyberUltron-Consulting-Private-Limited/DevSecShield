@@ -41,6 +41,7 @@ from backend.utilities.scan.estimate_scan import estimate_credits
 from backend.utilities.scan import credit_estimate
 from backend.utilities.team.credits import check_if_team_has_enough_credits , deduct_credits_from_team , update_scan_credit_consumed , refund_credits_to_team
 from backend.utilities.log_redaction import redact, safe_repr
+from backend.utilities.scan.format_input import require_public_targets
 from backend.utilities.db.schemas import * 
 from backend.utilities.celery.celery_connection import get_status_and_update_db
 from backend.utilities.db.encryption import decrypt_if_encrypted
@@ -628,6 +629,9 @@ async def start_scan(
         # scan is re-estimated here, before any credit moves. D3: CBOM code scans cost at least 1 credit.
         section = _payload_section(start_scan_payload, type)
         try:
+            # #53: an MCP server URL / custom model URI must resolve to public addresses before any credit moves (a
+            # stored estimate for this input is charged below without being re-run; the name may resolve elsewhere now)
+            await require_public_targets(type, start_scan_payload)
             measured = credit_estimate.input_digest(type, section, await _read_upload(uploaded_file))
             if credit_estimate.needs_reestimate(stored_estimate, measured):
                 console.print(f"Scan {scan_id}: input or formula changed since the estimate; re-estimating", style="bold yellow")

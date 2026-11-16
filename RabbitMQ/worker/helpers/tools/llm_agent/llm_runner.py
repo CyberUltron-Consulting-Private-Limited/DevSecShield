@@ -6,6 +6,8 @@ import tempfile
 from typing import Optional, Dict, Any, List, Literal
 import uuid
 from dotenv import load_dotenv
+from helpers.net.address_rule import TargetGuard
+from helpers.net.egress import GuardedSocksProxy
 
 
 def run_garak_scan(
@@ -66,6 +68,12 @@ def run_garak_scan(
     print(new_json_string)
     config = json.loads(new_json_string)
 
+    # #53: garak connects to checked public addresses only (helpers/net/). The endpoint garak will call is checked now,
+    # whatever the model type, before anything runs; while garak runs, its REST generator reaches the network only
+    # through the scan's guarded proxy (STEP 6), which checks every connection, redirect hops included.
+    guard = TargetGuard()
+    guard.check_url(config["rest"]["RestGenerator"]["uri"])
+
     # -------------------------STEP [3] : Construct a job_id and results directory-----------------------------------------------------------------------
     job_id = str(uuid.uuid4())
     results_dir = Path(os.path.realpath(__file__)).parent / "results"
@@ -74,14 +82,11 @@ def run_garak_scan(
 
     # -------------------------STEP [4] : Create a new temporary config file with the updated values-----------------------------------------------------------------------
     """
-    This step writes the updated config for both custom and non-custom models into a temporary config file.
-    which will be used by Garak to run the scan.
+    This step creates the temporary config file which will be used by Garak to run the scan. The updated config for
+    both custom and non-custom models is written into it in STEP 6, once the scan's egress proxy (part of it) is up.
     """
     
     temp_json = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
-    #create a new temporary config file with the updated values
-    with open(temp_json.name, "w+", encoding="utf-8") as f:
-        json.dump(config, f)
 
     
 
@@ -127,7 +132,12 @@ def run_garak_scan(
 
     # -------------------------STEP [6] : Run Garak-----------------------------------------------------------------------
     print("⭐ GARAK CMD ==> ",cmd)
-    subprocess.run(cmd, check=True)
+    with GuardedSocksProxy(guard) as egress:  # stopped as soon as garak has finished
+        config["rest"]["RestGenerator"]["proxies"] = {"http": egress.url, "https": egress.url}
+        #create a new temporary config file with the updated values
+        with open(temp_json.name, "w+", encoding="utf-8") as f:
+            json.dump(config, f)
+        subprocess.run(cmd, check=True)
 
     # -------------------------STEP [7] : Delete the temporary config file-----------------------------------------------------------------------
     temp_json.close()
