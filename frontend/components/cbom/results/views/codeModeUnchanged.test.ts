@@ -9,10 +9,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 
-import { renderCodeMode } from "./codeModeRender";
+import { renderCodeMode } from "../__tests__/codeModeRender";
 
 test("code mode renders the same markup as on the base commit", () => {
-  const want = fs.readFileSync(path.join(__dirname, "codeModeSnapshot.html"), "utf8").trimEnd();
+  const want = fs.readFileSync(path.join(__dirname, "..", "__tests__", "codeModeSnapshot.html"), "utf8").trimEnd();
   const got = renderCodeMode();
   assert.equal(renderCodeMode(), got, "the render is deterministic");
   if (got !== want) {

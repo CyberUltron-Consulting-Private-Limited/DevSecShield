@@ -90,9 +90,9 @@ const sources = [
   ...fs.readdirSync(dir)
     .filter((f) => /^(Run\w*\.tsx|model\.ts|source\.ts|CbomDashboardCharts\.tsx|badgeClasses\.ts)$/.test(f))
     .map((f) => [f, fs.readFileSync(path.join(dir, f), "utf8")] as const),
-  // the run's views (results redesign); the code-mode render fixture is not the run page
+  // the run's views (results redesign); test helpers live in __tests__/
   ...fs.readdirSync(path.join(dir, "views"))
-    .filter((f) => /\.tsx?$/.test(f) && !/\.test\.ts$|^codeMode|^testCssStub/.test(f))
+    .filter((f) => /\.tsx?$/.test(f) && !/\.test\.ts$/.test(f))
     .map((f) => [`views/${f}`, fs.readFileSync(path.join(dir, "views", f), "utf8")] as const),
 ];
 assert.ok(sources.some(([f]) => f === "source.ts") && sources.some(([f]) => f === "views/SummaryKpis.tsx") && sources.length >= 20,

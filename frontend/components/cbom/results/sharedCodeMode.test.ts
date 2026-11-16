@@ -77,7 +77,7 @@ const cases: Record<string, () => string> = {
   infoTip: () => render(h(InfoTip, { id: "cbom.run.f.type" })),
 };
 
-const snapFile = join(__dirname, "__snapshots__", "sharedCodeMode.base.json");
+const snapFile = join(__dirname, "__tests__", "sharedCodeMode.base.json");
 const now = Object.fromEntries(Object.entries(cases).map(([k, f]) => [k, f()]));
 if (process.env.UPDATE_SNAPSHOT === "1") {
   writeFileSync(snapFile, JSON.stringify(now, null, 1) + "\n");

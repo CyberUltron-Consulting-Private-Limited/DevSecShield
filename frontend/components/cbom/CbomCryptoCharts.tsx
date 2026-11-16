@@ -1371,7 +1371,7 @@ export function CbomCryptoCharts({
   /** "run": the readiness card shows posture's figure over the judged assets (QA round 4, C); "code": every asset */
   readinessScope?: "run" | "code";
   /** the charts to render (CRYPTO_CHART_PARTS keys); default all */
-  parts?: readonly string[];
+  parts?: readonly CryptoChartPart[];
   /** "run": the run results page's layout (see above); default: the code page's */
   variant?: "run";
 }) {

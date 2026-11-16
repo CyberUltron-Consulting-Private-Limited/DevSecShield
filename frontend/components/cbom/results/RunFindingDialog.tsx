@@ -27,7 +27,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { InfoTip } from "@/components/ui/info-tip";
 import { ExplanationsButton, InfoTipDrawerProvider, useInfoTipDrawer, type InfoTipDrawerApi } from "@/components/ui/info-tip-drawer";
 import { COMPLIANCE_KEY_TO_LABEL, OWASP_KEY_TO_LABEL } from "@/lib/owasp-compliance-labels";
-import { getCbomAiStatus, getCbomAssetDetail, type CbomFindingStatus, type CbomJob, type CbomRunAssetItem } from "@/utils/backend_api";
+import { getCbomAiStatus, type CbomFindingStatus, type CbomJob, type CbomRunAssetItem } from "@/utils/backend_api";
 import type { CbomRemediationItem } from "@/utils/api/cbom_ops";
 import type { CbomAssetDetailWithExposure } from "@/utils/api/cbom_outputs";
 import type { InfoTipId } from "@/content/infotips";
@@ -35,10 +35,9 @@ import type { DrawerView } from "@/content/infotips/drawerManifest";
 
 import KbFindingDetails, { StandardsTabs } from "@/components/cbom/KbFindingDetails";
 import RemediationPanel from "@/components/RemediationPanel";
-import { AssetClassChips, AssetQuantumParts } from "@/components/cbom/sources/RunPosture";
+import { AssetClassChips, AssetQuantumParts, useAssetDetail } from "@/components/cbom/sources/RunPosture";
 import { ASSET_TYPE_LABEL } from "@/components/cbom/sources/RunResults";
 import { ErrorBlock, LoadingBlock } from "@/components/cbom/sources/shared";
-import { cbomSourcesKeys } from "@/components/cbom/sources/keys";
 
 import AiRemediationPanel from "./AiRemediationPanel";
 import { aiPanelVisible } from "./aiPanelLogic";
@@ -154,13 +153,7 @@ export function RunFindingDialog({ teamId, runId, subject, jobs, waveOf, onClose
   const assetId = subject ? subject.assetId : null;
   // the asset detail (the same query the Quantum / Issues / Standards parts read, so one request): its KB entries are
   // the chips' fallback, and for an asset not on the table page its copy of the table row
-  const detailQ = useQuery({
-    queryKey: cbomSourcesKeys.asset(teamId, assetId ?? 0),
-    queryFn: async () => (await getCbomAssetDetail(teamId, assetId as number)) as unknown as CbomAssetDetailWithExposure,
-    enabled: assetId != null,
-    retry: 1,
-    staleTime: 60_000,
-  });
+  const detailQ = useAssetDetail(teamId, assetId);
   const aiStatus = useQuery({
     queryKey: ["cbom-ai-status", teamId],
     queryFn: () => getCbomAiStatus(teamId),

@@ -36,7 +36,7 @@ export const DRAWER_MANIFEST = {
     "cbom.res.kpi.keys", "cbom.res.kpi.ready", "cbom.res.kpi.avg_risk", "cbom.run.col.endpoints", "cbom.run.col.duration",
     "cbom.run.posture", "cbom.run.mosca", "cbom.run.readiness", "cbom.run.readiness_actions", "cbom.run.top_risks",
     "cbom.run.col.priority", "cbom.run.col.asset", "cbom.run.col.criticality",
-    "cbom.run.col.exposure", "cbom.run.col.hndl",
+    "cbom.run.col.exposure", "cbom.run.col.hndl", "cbom.run.summary", "cbom.run.drill",
     ...FINDINGS_TABLE,
   ],
   "run.collection": [
@@ -54,13 +54,13 @@ export const DRAWER_MANIFEST = {
     "cbom.chart.cert_expiry", "cbom.res.remediation", "cbom.res.owasp", "cbom.res.severity", "cbom.res.compliance",
     "cbom.res.algo_types", "cbom.res.strength", "cbom.res.quantum", "cbom.run.risk_scores", "cbom.res.remed.section",
     "cbom.run.certs", "cbom.run.cert.subject", "cbom.run.cert.issuer", "cbom.run.cert.expires", "cbom.run.cert.location",
-    "cbom.run.cert.source", "cbom.cal.expiry", "cbom.run.certs.orphaned", "cbom.run.certs.unmanaged",
+    "cbom.run.cert.source", "cbom.cal.expiry", "cbom.run.certs.orphaned", "cbom.run.certs.unmanaged", "cbom.run.certificates",
   ],
   "run.migration": [
     "cbom.chart.qv", "cbom.chart.qv_fixes", "cbom.chart.qv_none", "cbom.chart.roadmap", "cbom.chart.cnsa",
     "cbom.chart.replacements",
   ],
-  "run.compliance": ["cbom.run.compliance", "cbom.res.compliance", "cbom.res.owasp"],
+  "run.compliance": ["cbom.run.compliance", "cbom.res.compliance", "cbom.res.owasp", "cbom.run.compliance_readiness"],
   "run.remediation": [
     "cbom.run.waves", "cbom.run.changes", "cbom.res.remediation", "cbom.res.remed.section", "sast.res.remed.backlog",
     "sast.res.remed.critical_fixed", "sast.res.remed.mttr", "sast.res.remed.velocity",

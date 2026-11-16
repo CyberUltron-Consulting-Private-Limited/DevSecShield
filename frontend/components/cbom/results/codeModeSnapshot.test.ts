@@ -6,7 +6,7 @@
  * regenerated on a later commit.
  * Run (frontend/): npx --yes tsx@4.23.15 components/cbom/results/codeModeSnapshot.test.ts
  */
-import "./cssStub";
+import "./__tests__/cssStub";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
@@ -19,7 +19,7 @@ import { CbomCryptoCharts } from "../CbomCryptoCharts";
 import CryptoHeatmap from "../CryptoHeatmap";
 import { AgilityPostureCard, QDistributionCard } from "../grade";
 import { CbomDashboardCharts } from "./CbomDashboardCharts";
-import { AGILITY, COMPLIANCE, DASHBOARD, DISTRIBUTIONS, FINDINGS, GRAPH, HEAT, Q_POSTURE } from "./codeModeFixtures";
+import { AGILITY, COMPLIANCE, DASHBOARD, DISTRIBUTIONS, FINDINGS, GRAPH, HEAT, Q_POSTURE } from "./__tests__/codeModeFixtures";
 
 // the certificate calendar opens on the current month and the expiry badges count from today: freeze both
 process.env.TZ = "UTC";
@@ -64,7 +64,7 @@ const CASES: Record<string, () => React.ReactElement> = {
   "agility-posture-card": () => h(AgilityPostureCard, { posture: AGILITY, model: null }),
 };
 
-const basePath = path.join(__dirname, "codeModeSnapshot.base.json");
+const basePath = path.join(__dirname, "__tests__", "codeModeSnapshot.base.json");
 const out: Record<string, { sha256: string; html: string }> = {};
 for (const [name, el] of Object.entries(CASES)) {
   const html = render(el());

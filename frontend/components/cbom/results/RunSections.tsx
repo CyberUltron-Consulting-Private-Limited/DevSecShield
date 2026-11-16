@@ -26,7 +26,7 @@ import { LabModeBanner } from "@/components/cbom/sources/LabModeBanner";
 import { TargetsBlock } from "@/components/cbom/sources/RunResults";
 import { EmptyState, RunStatusBadge, StatusBadge, Truncate, type Tone } from "@/components/cbom/sources/shared";
 
-import { CbomDashboardCharts } from "./CbomDashboardCharts";
+import { CbomDashboardCharts, type DashboardChartPart } from "./CbomDashboardCharts";
 import { WaveLegend } from "./WaveLegend";
 import { waveLegend } from "./readinessExplain";
 import {
@@ -569,7 +569,7 @@ export function RunDashboardSection({ view, model, riskRows, pageRows, results, 
   pageRows: number;
   results: CbomRunResults | null;
   /** passed to CbomDashboardCharts: the cards to render (default all) and the run layout (08-A uniform grid) */
-  parts?: readonly string[];
+  parts?: readonly DashboardChartPart[];
   variant?: "run";
 }) {
   if (!view.show) return null;

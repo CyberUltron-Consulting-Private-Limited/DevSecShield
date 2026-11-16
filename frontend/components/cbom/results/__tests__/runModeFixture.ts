@@ -1,6 +1,6 @@
 // Tests only: a Sources run adapter (SourcesRunSource) with the payloads every run view reads, built with the real
 // plan and dashboard model functions, and a render of CbomResults in run mode at a given URL (?section=…).
-import "./testCssStub";
+import "./cssStub";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient } from "@tanstack/react-query";

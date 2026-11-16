@@ -13,7 +13,7 @@ const TEXT = {
     why: "A finding list is only as complete as what was read; this shows what the run could and could not read.",
     example: "9 jobs: 8 done, 1 expired on node-dr1; dc-mumbai-windows skipped (node offline).",
   },
-  // src: frontend/components/cbom/results/views/SummaryKpis.tsx:42-53,82-104 — posture readiness, the seven KPI tiles, RunMetaCards
+  // src: frontend/components/cbom/results/views/SummaryKpis.tsx:38-46,76-99 — posture readiness, the seven KPI tiles, RunMetaCards
   "cbom.run.summary": {
     what: "The run's headline figures: PQC readiness from the run posture (ready judged assets over judged assets), the seven counts of the run results (crypto assets, weak, quantum vulnerable, certificates, keys, quantum ready, average risk score), then the run's sources, scan nodes, endpoints probed and duration.",
     why: "Says how ready and how exposed the scanned estate is before you open any detail.",

@@ -1,7 +1,7 @@
 // Tests only: renders CbomResults in code mode (no `source`) with the code-mode fixture, inside the providers the App
 // Router gives a page (router, search params, path params) and a react-query client. React's generated ids (useId) are
 // replaced by a placeholder: they follow the tree's shape, not what the page shows.
-import "./testCssStub";
+import "./cssStub";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";

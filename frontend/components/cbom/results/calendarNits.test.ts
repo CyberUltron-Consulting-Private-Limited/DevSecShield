@@ -16,7 +16,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-import { fakeRunSource, renderRunMode, TARGETS } from "./views/runModeFixture";
+import { fakeRunSource, renderRunMode, TARGETS } from "./__tests__/runModeFixture";
 import CertCalendar from "../CertCalendar";
 import { RunCoverageSection, RunJobsStatusLine } from "./RunSections";
 import { SOURCE_CARD_FIELDS, sourceCardModels } from "./RunSourceCards";

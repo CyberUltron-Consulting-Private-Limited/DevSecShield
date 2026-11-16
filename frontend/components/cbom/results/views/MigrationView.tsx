@@ -4,12 +4,12 @@
 // the migration roadmap against CNSA 2.0 and the recommended replacements (CbomCryptoCharts' "qv" and "roadmap"
 // parts); an item opens the run's finding dialog for its asset.
 
-import { CbomCryptoCharts } from "@/components/cbom/CbomCryptoCharts";
+import { CbomCryptoCharts, type CryptoChartPart } from "@/components/cbom/CbomCryptoCharts";
 
 import { SectionNote } from "../RunSections";
 import type { RunViewCtx } from "./types";
 
-export const MIGRATION_CHART_PARTS = ["qv", "roadmap"];
+export const MIGRATION_CHART_PARTS = ["qv", "roadmap"] as const satisfies readonly CryptoChartPart[];
 
 export function MigrationView({ ctx }: { ctx: RunViewCtx }) {
   const { run } = ctx;

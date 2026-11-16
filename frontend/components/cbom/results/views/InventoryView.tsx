@@ -6,7 +6,8 @@
 // keystores, calendar, orphaned and unmanaged), the algorithm family × source heat-map, and each section's one-line
 // note when the run has no data.
 
-import { CbomCryptoCharts } from "@/components/cbom/CbomCryptoCharts";
+import { CbomCryptoCharts, type CryptoChartPart } from "@/components/cbom/CbomCryptoCharts";
+import type { DashboardChartPart } from "../CbomDashboardCharts";
 import { RunInsights } from "@/components/cbom/sources/ChangesPanel";
 
 import { RunDashboardSection, SectionNote } from "../RunSections";
@@ -15,9 +16,9 @@ import type { RunViewCtx } from "./types";
 
 /** CbomCryptoCharts parts of this view (the quantum-vulnerable list and roadmap are the migration view's, the
  * compliance matrix the compliance view's, the certificate expiry list CertificatesCard's). */
-export const INVENTORY_CHART_PARTS = ["algorithms", "weak", "readiness", "assetTypes", "protocols", "graph"];
+export const INVENTORY_CHART_PARTS = ["algorithms", "weak", "readiness", "assetTypes", "protocols", "graph"] as const satisfies readonly CryptoChartPart[];
 /** CbomDashboardCharts parts of this view: all but the KPI tiles (SummaryKpis). */
-export const INVENTORY_DASHBOARD_PARTS = ["progress", "owasp", "risk", "controls", "algoTypes", "strength", "quantum", "riskScores", "metrics"];
+export const INVENTORY_DASHBOARD_PARTS = ["progress", "owasp", "risk", "controls", "algoTypes", "strength", "quantum", "riskScores", "metrics"] as const satisfies readonly DashboardChartPart[];
 
 export function InventoryView({ ctx }: { ctx: RunViewCtx }) {
   const { run } = ctx;

@@ -234,6 +234,8 @@ export function useSourcesRunSource(teamId: number, runId: number, { initialView
     queryFn: async () => (await getCbomRunPosture(teamId, runId)) as unknown as CbomPostureWithExposure,
     enabled: !!run,
     retry: 1,
+    // a finished run's posture does not change: no refetch on each view switch (invalidations still refetch)
+    staleTime: active ? 0 : Infinity,
     refetchInterval: active ? 15000 : false,
     refetchIntervalInBackground: false,
   });

@@ -11,7 +11,7 @@
  * Code mode without the new props is pinned byte for byte by codeModeSnapshot.test.ts.
  * Run (frontend/): npx --yes tsx@4.23.15 components/cbom/results/redesignSections.test.ts
  */
-import "./cssStub";
+import "./__tests__/cssStub";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import React from "react";
@@ -22,7 +22,7 @@ import { CRYPTO_CHART_PARTS, CbomCryptoCharts } from "../CbomCryptoCharts";
 import { cbomOpsKeys, type CbomRemediationItem, type CbomRunHeatmap } from "@/utils/api/cbom_ops";
 import type { CbomRunResults } from "@/utils/backend_api";
 import { CbomDashboardCharts, DASHBOARD_CHART_PARTS } from "./CbomDashboardCharts";
-import { COMPLIANCE, DASHBOARD, DISTRIBUTIONS, GRAPH } from "./codeModeFixtures";
+import { COMPLIANCE, DASHBOARD, DISTRIBUTIONS, GRAPH } from "./__tests__/codeModeFixtures";
 import { ComplianceScorecards, frameworkScore } from "./ComplianceScorecards";
 import { RunWavesSection } from "./RunSections";
 import { CertificatesCard, RunCertCalendar } from "./views/CertificatesCard";

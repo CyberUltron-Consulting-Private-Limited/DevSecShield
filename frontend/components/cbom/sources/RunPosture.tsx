@@ -162,6 +162,8 @@ export function useRunPostureQuery(teamId: number, runId: number, active: boolea
     queryFn: async () => (await getCbomRunPosture(teamId, runId)) as unknown as CbomPostureWithExposure,
     enabled: Number.isFinite(teamId),
     retry: 1,
+    // a finished run's posture does not change: no refetch on each view switch (invalidations still refetch)
+    staleTime: active ? 0 : Infinity,
     refetchInterval: active ? 15000 : false,
   });
 }
@@ -170,11 +172,13 @@ export function useRunPostureQuery(teamId: number, runId: number, active: boolea
 // the regulatory clauses) is components/cbom/results/views/PostureSummary.tsx; the quantum-risk distribution and the
 // crypto-agility card are in the Quantum grades view (views/QuantumView.tsx).
 
-/** GET /sources/assets/{id}: the one asset-detail query (the run finding dialog runs the same key, so one request). */
-export function useAssetDetail(teamId: number, assetId: number) {
+/** GET /sources/assets/{id}: the one asset-detail query (the run finding dialog and AssetDetailPanel both use it, so one
+ * definition and one request). */
+export function useAssetDetail(teamId: number, assetId: number | null, enabled = true) {
   return useQuery({
-    queryKey: cbomSourcesKeys.asset(teamId, assetId),
-    queryFn: async () => (await getCbomAssetDetail(teamId, assetId)) as unknown as CbomAssetDetailWithExposure,
+    queryKey: cbomSourcesKeys.asset(teamId, assetId ?? 0),
+    queryFn: async () => (await getCbomAssetDetail(teamId, assetId as number)) as unknown as CbomAssetDetailWithExposure,
+    enabled: enabled && assetId != null,
     retry: 1,
     staleTime: 60_000,
   });

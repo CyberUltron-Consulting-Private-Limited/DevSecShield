@@ -5,16 +5,16 @@
  * table), the summary's figures, and a render of every view of a run.
  * Run (frontend/): npx --yes tsx@4.23.15 components/cbom/results/views/runViews.test.ts
  */
-import "./testCssStub";
+import "../__tests__/cssStub";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 
-import { renderCodeMode } from "./codeModeRender";
+import { renderCodeMode } from "../__tests__/codeModeRender";
 import { createDrill, drillTarget, pqcRunAssetId, runRefsDrill, scrollToFindings } from "./drill";
 import { explainLabel } from "./ExplainPanel";
-import { fakeRunSource, POSTURE, renderRunMode, RUN, TARGETS } from "./runModeFixture";
+import { fakeRunSource, POSTURE, renderRunMode, RUN, TARGETS } from "../__tests__/runModeFixture";
 import { runProblem, tileFigures, jobsLine } from "./selectors";
 import { riskIssues, splitTopRisks } from "./TopRisksSummary";
 import { createUrlWriter, DETAIL_SECTIONS, mergeResultsSearch, parseSection, PENDING_MS } from "./url";
@@ -213,6 +213,18 @@ test("summary: hero, status area with the jobs line, KPIs, posture, explain, top
   assert.ok(!html.includes('data-testid="run-section-dashboard"') && !html.includes('data-testid="run-section-coverage"'));
 });
 
+test("a run with 1–3 top risks still shows every column tip (cards carry the labelled fields)", () => {
+  const COLS = ["cbom.run.top_risks", "cbom.run.col.priority", "cbom.run.col.asset", "results.table.impact", "cbom.run.col.source",
+    "cbom.run.col.criticality", "cbom.run.col.exposure", "cbom.run.col.hndl"];
+  for (const n of [1, 2, 3]) {
+    const p = { ...POSTURE, top_risks: POSTURE.top_risks.slice(0, n) };
+    const html = renderRunMode("", fakeRunSource({ posture: p, plan: runSectionPlan({ results: { kind: "ok", data: fakeRunSource().results! }, posture: p }) }), p);
+    const sec = html.slice(html.indexOf('data-testid="run-top-risks"'), html.indexOf('data-testid="results-drill"'));
+    for (const id of COLS) assert.ok(sec.includes(`data-infotip="${id}"`), `${n} risk(s): ${id}`);
+    assert.ok(!sec.includes('data-testid="run-top-risk-table"'), `${n} risk(s): no table`);
+  }
+});
+
 test("a run with no top risk keeps the clauses toggle and the Z note in the posture card", () => {
   const p = { ...POSTURE, top_risks: [] };
   const html = renderRunMode("", fakeRunSource({ posture: p, plan: runSectionPlan({ results: { kind: "ok", data: fakeRunSource().results! }, posture: p }) }), p);
@@ -260,4 +272,43 @@ test("a code scan ignores ?section=", () => {
   // codeModeUnchanged.test.ts pins the default render; with a section in the URL it is the same page
   assert.equal(renderCodeMode("section=quantum"), renderCodeMode());
   assert.match(template, /const section: ResultsSection = run \? resultsUrl\.section : "";/);
+});
+
+test("(c) the run's compliance view lets RBI CSF / CERT-In requirements show 'View related findings'", async () => {
+  // the drilldown hides the button when given a findings list with no related rows; a run's findings are server-paged,
+  // so the run view must pass none (unknown count) rather than an empty list
+  const view = read("ComplianceView.tsx");
+  assert.ok(!/<RbiCsfRollup [^>]*findings=/.test(view) && !/<CertInLanePosture [^>]*findings=/.test(view), "no findings list on a run");
+  const { RbiCsfRequirementDrilldown } = await import("@/components/rbi/RbiCsfRequirementDrilldown");
+  const { renderToStaticMarkup } = await import("react-dom/server");
+  const React = await import("react");
+  const rollup = JSON.parse(read("..", "__tests__", "complianceRollupFixture.json")).rbi_csf_rollup;
+  const pillar = (rollup.rbi_csf_rollup ?? rollup).identification;
+  const render = (findings?: []) => renderToStaticMarkup(React.createElement(RbiCsfRequirementDrilldown,
+    { pillarKey: "identification", requirements: pillar.requirements, onViewFindings: () => {}, findings }));
+  assert.ok(render().includes("View related findings"), "without a findings list (run): the drill is offered");
+  assert.ok(!render([]).includes("View related findings"), "with an empty list (the bug): no button");
+});
+
+test("inventory: all three certificate tabs stay mounted (their tips and state are kept)", () => {
+  const html = renderRunMode("section=inventory");
+  for (const t of ["expiry", "calendar", "orphaned"]) assert.ok(html.includes(`data-testid="run-certificates-tab-${t}"`), t);
+  assert.ok(html.includes('data-infotip="cbom.run.certificates"'));
+  // the expiry tab is the default; the orphaned / unmanaged section (its tip and testid) lives in an inactive tab and must
+  // still be in the page (hidden, not unmounted)
+  assert.ok(html.includes('data-testid="run-section-certificates"') && html.includes('data-infotip="cbom.run.certs"'),
+    "the inactive Orphaned and unmanaged panel is rendered");
+});
+
+test("Explanations drawer: every tip rendered by a run view is listed for that view", async () => {
+  const { drawerIds } = await import("../../../../content/infotips/drawerManifest");
+  const views: Array<[string, string]> = [["", "run.summary"], ["section=collection", "run.collection"], ["section=quantum", "run.quantum"],
+    ["section=inventory", "run.inventory"], ["section=migration", "run.migration"], ["section=compliance", "run.compliance"], ["section=remediation", "run.remediation"]];
+  for (const [search, view] of views) {
+    const html = renderRunMode(search);
+    const shown = new Set([...html.matchAll(/data-infotip="([^"]+)"/g)].map((m) => m[1]));
+    const listed = new Set<string>(drawerIds(view as Parameters<typeof drawerIds>[0]));
+    const missing = [...shown].filter((id) => !listed.has(id));
+    assert.deepEqual(missing, [], `${view}: rendered but not in the drawer`);
+  }
 });

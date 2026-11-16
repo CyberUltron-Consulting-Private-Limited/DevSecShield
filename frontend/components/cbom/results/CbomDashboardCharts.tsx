@@ -48,7 +48,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { PieChart, BarChart3, TrendingUp } from "lucide-react";
+import { PieChart, BarChart3, TrendingUp, type LucideIcon } from "lucide-react";
 import { criticalFixedPct } from "@/components/cbom/remediationKpis";
 import { InfoTip } from "@/components/ui/info-tip";
 import type { InfoTipId } from "@/content/infotips";
@@ -87,6 +87,20 @@ const riskScoreAreaChartConfig = {
 } satisfies ChartConfig;
 
 /** The parts of CbomDashboardCharts a caller can ask for (`parts`); all of them when `parts` is left out. */
+type KpiCardData = CbomScanDashboardData["card_data"];
+/** The seven KPI tiles (label, icon, colours, tip, raw value): one definition for the code scan's dashboard and the
+ * Sources run summary (views/SummaryKpis.tsx), so the two cannot drift. */
+export const KPI_TILES: ReadonlyArray<{ key: string; label: string; icon: LucideIcon; box: string; tip: InfoTipId;
+  value: (c: KpiCardData) => number | string }> = [
+  { key: "assets", label: "Crypto assets", value: (c) => c.total_crypto_assets, icon: Lock, box: "bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400", tip: "cbom.res.kpi.assets" },
+  { key: "weak", label: "Weak", value: (c) => c.total_weak_algorithms, icon: ShieldAlert, box: "bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400", tip: "cbom.res.kpi.weak" },
+  { key: "qv", label: "Quantum vulnerable", value: (c) => c.total_quantum_vulnerable, icon: AlertTriangle, box: "bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400", tip: "cbom.res.kpi.qv" },
+  { key: "certs", label: "Certificates", value: (c) => c.total_certificates, icon: ShieldCheck, box: "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400", tip: "cbom.res.kpi.certs" },
+  { key: "keys", label: "Keys", value: (c) => c.total_keys, icon: Key, box: "bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400", tip: "cbom.res.kpi.keys" },
+  { key: "ready", label: "Quantum ready", value: (cardData) => readinessText(cardData), icon: Shield, box: "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400", tip: "cbom.res.kpi.ready" },
+  { key: "avg_risk", label: "Avg risk score", value: (c) => c.average_risk_score?.toFixed(1) ?? "N/A", icon: Activity, box: "bg-teal-100 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400", tip: "cbom.res.kpi.avg_risk" },
+];
+
 export const DASHBOARD_CHART_PARTS = [
   "kpis", "progress", "owasp", "risk", "controls", "algoTypes", "strength", "quantum", "riskScores", "metrics",
 ] as const;
@@ -112,7 +126,7 @@ export function CbomDashboardCharts({
   /** The (i) tip of the Quantum readiness card: a run's bars come from its posture classes, with no Broken today bar. */
   quantumTip?: InfoTipId;
   /** the cards to render (DASHBOARD_CHART_PARTS keys); default all, exactly as before the redesign */
-  parts?: readonly string[];
+  parts?: readonly DashboardChartPart[];
   /** "run" (run results redesign, 08-A): every chart card the same size in one grid; default: the code page's rows */
   variant?: "run";
 }) {
@@ -218,15 +232,7 @@ export function CbomDashboardCharts({
 
   const kpiCards = (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4">
-      {[
-        { label: "Crypto assets", value: cardData.total_crypto_assets, icon: Lock, box: "bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400", tip: "cbom.res.kpi.assets" as InfoTipId },
-        { label: "Weak", value: cardData.total_weak_algorithms, icon: ShieldAlert, box: "bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400", tip: "cbom.res.kpi.weak" as InfoTipId },
-        { label: "Quantum vulnerable", value: cardData.total_quantum_vulnerable, icon: AlertTriangle, box: "bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400", tip: "cbom.res.kpi.qv" as InfoTipId },
-        { label: "Certificates", value: cardData.total_certificates, icon: ShieldCheck, box: "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400", tip: "cbom.res.kpi.certs" as InfoTipId },
-        { label: "Keys", value: cardData.total_keys, icon: Key, box: "bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400", tip: "cbom.res.kpi.keys" as InfoTipId },
-        { label: "Quantum ready", value: readinessText(cardData), icon: Shield, box: "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400", tip: "cbom.res.kpi.ready" as InfoTipId },
-        { label: "Avg risk score", value: cardData.average_risk_score?.toFixed(1) ?? "N/A", icon: Activity, box: "bg-teal-100 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400", tip: "cbom.res.kpi.avg_risk" as InfoTipId },
-      ].map(({ label, tip, value, icon: Icon, box }) => (
+      {KPI_TILES.map((t) => ({ ...t, value: t.value(cardData) })).map(({ label, tip, value, icon: Icon, box }) => (
         <Card key={label} className="border-zinc-200 dark:border-zinc-800">
           <CardContent className="pt-4 pb-4 flex items-center gap-3">
             <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${box}`}>

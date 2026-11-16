@@ -4,13 +4,13 @@
 // the dashboard showed on top of its charts (same labels, values and tips: CbomDashboardCharts' "kpis" part, so the
 // inventory view's charts leave them out) and the run's four metadata cards (sources, scan nodes, endpoints, duration).
 
-import { Activity, AlertTriangle, Key, Lock, Shield, ShieldAlert, ShieldCheck, type LucideIcon } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { InfoTip } from "@/components/ui/info-tip";
 import type { InfoTipId } from "@/content/infotips";
 import type { CbomPostureWithExposure } from "@/utils/api/cbom_outputs";
-import { readinessText } from "@/utils/cbomReadiness";
+import { KPI_TILES } from "../CbomDashboardCharts";
 
 import { pqcGaugeCopy } from "../readinessExplain";
 import type { RunDashboardModel, SectionView } from "../model";
@@ -37,18 +37,12 @@ export function KpiTile({ label, value, icon: Icon, box, infoId, testId }: {
 
 /** The seven tiles, with CbomDashboardCharts' labels, tips and values ("—" until the run's dashboard is there). */
 export function kpiTiles(model: RunDashboardModel): { label: string; value: string; icon: LucideIcon; box: string; tip: InfoTipId; key: string }[] {
-  const cardData = model.dashboard?.card_data;
-  const c = cardData;
-  const n = (v: number | null | undefined) => (c && typeof v === "number" ? v.toLocaleString() : "—");
-  return [
-    { key: "assets", label: "Crypto assets", value: n(c?.total_crypto_assets), icon: Lock, box: "bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400", tip: "cbom.res.kpi.assets" },
-    { key: "weak", label: "Weak", value: n(c?.total_weak_algorithms), icon: ShieldAlert, box: "bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400", tip: "cbom.res.kpi.weak" },
-    { key: "qv", label: "Quantum vulnerable", value: n(c?.total_quantum_vulnerable), icon: AlertTriangle, box: "bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400", tip: "cbom.res.kpi.qv" },
-    { key: "certs", label: "Certificates", value: n(c?.total_certificates), icon: ShieldCheck, box: "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400", tip: "cbom.res.kpi.certs" },
-    { key: "keys", label: "Keys", value: n(c?.total_keys), icon: Key, box: "bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400", tip: "cbom.res.kpi.keys" },
-    { key: "ready", label: "Quantum ready", value: cardData ? readinessText(cardData) : "—", icon: Shield, box: "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400", tip: "cbom.res.kpi.ready" },
-    { key: "avg_risk", label: "Avg risk score", value: c ? c.average_risk_score?.toFixed(1) ?? "N/A" : "—", icon: Activity, box: "bg-teal-100 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400", tip: "cbom.res.kpi.avg_risk" },
-  ];
+  const c = model.dashboard?.card_data;
+  return KPI_TILES.map((t) => {
+    const v = c ? t.value(c) : null;
+    return { key: t.key, label: t.label, icon: t.icon, box: t.box, tip: t.tip,
+             value: v == null ? "—" : typeof v === "number" ? v.toLocaleString() : v };
+  });
 }
 
 /** Semicircle gauge of the posture's readiness; a withheld or missing figure draws an empty arc, never 0 %. */

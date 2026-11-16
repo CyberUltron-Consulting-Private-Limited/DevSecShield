@@ -64,17 +64,29 @@ export function TopRisksSummary({ posture, onOpenAsset }: { posture: CbomPosture
         {cards.map((r) => (
           <li key={r.id} className="rounded-xl border border-zinc-200 dark:border-zinc-800 p-4 min-w-0 space-y-2" data-testid={`run-top-risk-${r.id}`}>
             <div className="flex items-center justify-between gap-2" data-testid={`top-risk-${r.id}`}>
-              <span className="font-mono text-2xl font-bold tabular-nums text-zinc-900 dark:text-white" title="Priority">{r.score}</span>
+              <span className="text-xs text-zinc-500">Priority <InfoTip id="cbom.run.col.priority" /></span>
+              <span className="text-xs text-zinc-500">Impact <InfoTip id="results.table.impact" /></span>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-mono text-2xl font-bold tabular-nums text-zinc-900 dark:text-white">{r.score}</span>
               <Badge variant="outline" className={getImpactBadgeClass(r.impact)}>{r.impact}</Badge>
             </div>
+            <PriorityBar score={r.score} max={max} />
+            <div className="text-xs text-zinc-500">Asset <InfoTip id="cbom.run.col.asset" /></div>
             <button type="button" className="text-left text-blue-600 dark:text-blue-400 hover:underline cursor-pointer font-medium break-all"
                     title={r.location} onClick={() => onOpenAsset(r.id)}>
               {r.name}
             </button>
-            <p className="text-xs text-zinc-500">
-              {r.source_name ?? "—"} · criticality <span className="capitalize">{r.criticality}</span>{r.hndl ? " · HNDL" : ""}
-            </p>
-            <Exposure r={r} factors={posture.exposure_factors} />
+            <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs" data-testid={`run-top-risk-fields-${r.id}`}>
+              <dt className="text-zinc-500">Source <InfoTip id="cbom.run.col.source" /></dt>
+              <dd className="text-zinc-700 dark:text-zinc-300 min-w-0 break-words">{r.source_name ?? "—"}</dd>
+              <dt className="text-zinc-500">Criticality <InfoTip id="cbom.run.col.criticality" /></dt>
+              <dd className="text-zinc-700 dark:text-zinc-300 capitalize">{r.criticality}</dd>
+              <dt className="text-zinc-500">Exposure <InfoTip id="cbom.run.col.exposure" /></dt>
+              <dd><Exposure r={r} factors={posture.exposure_factors} /></dd>
+              <dt className="text-zinc-500">HNDL <InfoTip id="cbom.run.col.hndl" /></dt>
+              <dd className="text-zinc-700 dark:text-zinc-300">{r.hndl ? <StatusBadge tone="red">HNDL</StatusBadge> : "—"}</dd>
+            </dl>
             {riskIssues(r.finding).length > 0 && (
               <ul className="list-disc pl-5 space-y-0.5 text-xs text-zinc-700 dark:text-zinc-300 [overflow-wrap:anywhere]">
                 {riskIssues(r.finding).map((t) => <li key={t}>{t}</li>)}

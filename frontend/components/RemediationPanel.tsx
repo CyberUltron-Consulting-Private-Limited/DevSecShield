@@ -51,7 +51,7 @@ interface RemediationPanelProps {
   /** CBOM Sources run asset (CB-38): load from GET /runs/{runId}/assets/{assetId}/remediation instead of the scan route.
    * The panel then hides itself when the server has no such route (older backend). */
   runAsset?: { runId: number; assetId: number } | null;
-  /** CBOM: false where the dialog already shows the knowledge-base details (the run dialog's AssetDetailPanel), so
+  /** CBOM: false where the dialog already shows the knowledge-base details (the run dialog's Issues and Standards tabs), so
    * "Standards and regulations" is not shown twice (#266). */
   standardsTab?: boolean;
   /** CBOM run dialog (results redesign 34-B): "cards" shows Fix code / Diff / Exploit demo as status cards, each
