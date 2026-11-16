@@ -307,6 +307,14 @@ to 3 times; only its last try reports the throttle, as an `error` row. Each clai
 Other scans: SAST, IaC and the SCA + SBOM chat need Amazon Bedrock and a Qdrant store (`QDRANT_*`, `LLM_MODEL`); without
 them they end as "failed". CBOM and AI-BOM code scans need neither.
 
+MCP and LLM scans connect from the scan worker to the MCP server URL or model URI the scan names, and only to public
+addresses (#53, the CBOM SSRF guard's rule): a host that resolves to a private (RFC 1918, unique-local), loopback,
+link-local (169.254.169.254), CGNAT or other reserved address is refused when the scan is estimated or started, and
+again for every connection the worker makes, redirects included. No setting opens a private address to these scans.
+The worker connects directly: `HTTP(S)_PROXY` and `ALL_PROXY` are not used for these connections (a proxy would resolve
+the name again, after the check), so the scan worker needs direct egress to the MCP servers and model endpoints it
+scans.
+
 ## 8. Stop, reset, update
 
 ```sh

@@ -142,5 +142,8 @@ COPY --from=cbomkit-builder /usr/local/bin/cbomkit-theia /usr/local/bin/cbomkit-
 # Copy the entire app + venv from builder (includes compiled wheels)
 COPY --from=builder /build/RabbitMQ/worker /build/RabbitMQ/worker
 COPY --from=builder /build/aibom /build/aibom
+# The CBOM SSRF guard's address rule (#53): MCP and LLM scans check every address they connect to with the file the API
+# runs. Standard library only; helpers/net/guard.py loads it from this path (the same path as in a checkout).
+COPY backend/utilities/cbom_sources/address_rule.py /build/backend/utilities/cbom_sources/address_rule.py
 
 CMD ["uv", "run", "celery", "-A", "scan_worker", "worker", "-P", "threads", "--loglevel=info"]

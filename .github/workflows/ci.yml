@@ -145,6 +145,7 @@ jobs:
               - '.github/ci/pytest-deselect-worker.txt'
               - 'RabbitMQ/worker/**'
               - 'aibom/src/**'         # the sca_sbom_agent tests import aibom from source
+              - 'backend/utilities/cbom_sources/address_rule.py'  # MCP/LLM egress runs this file (helpers/net/guard.py)
             dast-worker:
               - *pipeline
               - '.github/ci/pytest-deselect-dast-worker.txt'
@@ -182,6 +183,7 @@ jobs:
               - 'scan_node/**'
             img-scan-worker:
               - 'RabbitMQ/worker/**'
+              - 'backend/utilities/cbom_sources/address_rule.py'  # copied into the image
               # a change to how images are built is proven on the largest image (#50: it filled the runner disk)
               - '.github/workflows/reusable-image-build.yml'
             img-scan-worker-aibom:
