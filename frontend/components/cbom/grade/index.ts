@@ -21,8 +21,8 @@
 //
 // RunPosture.tsx mounts the two posture cards inside RunPostureCard and the two drawer sections inside
 // AssetDetailPanel, so any page that already mounts those two gets them with no change.
-export { GradeInputsBanner, QDistributionBar, QDistributionCard, QGradeChip, QGradeDrawerSection, QGradeModelBody, QGradeModelDialog, Q0ItemList } from "./QGrade";
-export { AgilityDistribution, AgilityDrawerSection, AgilityPostureCard, EvidenceFixClass, FixClassChip } from "./Agility";
+export { GradeInputsBanner, QDistributionBar, QDistributionCard, QDistributionColumns, QGradeChip, QGradeDrawerSection, QGradeModelBody, QGradeModelDialog, Q0ItemList } from "./QGrade";
+export { AgilityDistribution, AgilityDrawerSection, AgilityWhoFixes, AgilityPostureCard, EvidenceFixClass, FixClassChip } from "./Agility";
 export { AgilityBaselineSection, AgilityBaselineView, AgilityHistoryTable, AgilitySubjectsTable, AgilitySystemsTable, type DrillDown } from "./AgilityBaseline";
 export * from "./baseline";
 //   team page            -> <Q0GapRegister teamId={t} />  (Quantum risk -> Q0 gaps, CB-23; fetches GET /{team}/cbom/register/q0)

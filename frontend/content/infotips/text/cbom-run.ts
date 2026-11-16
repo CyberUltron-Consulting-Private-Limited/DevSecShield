@@ -61,6 +61,12 @@ const TEXT = {
     why: "Orphaned certificates are clutter that can be stolen; unmanaged ones expire without anyone being told.",
     example: "3 orphaned (old keystore copies), 5 unmanaged (hand-installed on web servers).",
   },
+  // src: frontend/components/cbom/results/views/CertificatesCard.tsx:1-12 — expiry list, calendar, orphaned and unmanaged, as tabs
+  "cbom.run.certificates": {
+    what: "The run's certificates and key material in three tabs: the expiry list (X.509 certificates with their validity, then keys and keystores, which have no expiry), the expiry calendar by month, and the orphaned and unmanaged certificates within this run's scope.",
+    why: "One place to see what expires when and which certificates nobody manages before an outage or an audit finds them.",
+    example: "Expiry list: 3 certificates, 1 expired; Calendar: 2 expire in December; Orphaned and unmanaged: 1 unmanaged.",
+  },
   // src: frontend/components/cbom/results/RunSections.tsx:358 — stored, presented by no endpoint read
   "cbom.run.certs.orphaned": {
     what: "Certificates found in files, keystores or secrets that no endpoint read by this run presents.",
@@ -126,6 +132,12 @@ const TEXT = {
     what: "This run's assets per remediation wave; first matching rule wins. Wave 1: Critical or High weakness on an internet-facing or in-transit asset, or any quantum-vulnerable key exchange in transit (HNDL). Wave 2: other Critical or High. Wave 3: any other weakness, whatever its impact. Wave 4: quantum-vulnerable, no other weakness. Select findings below to set wave, owner, date or status.",
     why: "Turns the findings into an ordered plan with owners and dates.",
     example: "Wave 1: 4 · Wave 2: 11 · Wave 3: 30 · Wave 4: 52.",
+  },
+  // src: frontend/components/cbom/results/ComplianceScorecards.tsx:1-7, backend/utilities/cbom_sources/frameworks.py:36-66 — verdict counts and failing assets per requirement
+  "cbom.run.compliance_readiness": {
+    what: "Per framework the run is judged against (CNSA 2.0, FIPS 140-3 and others the run's checks evidence): requirements passed out of all its requirements, a verdict (Pass, Partial, Fail or Not assessed), the failing requirements and how many assets the worst one fails. Click a card for every requirement with its verdict and evidence.",
+    why: "Shows at a glance which standard the crypto estate meets and which requirement keeps it from passing.",
+    example: "CNSA 2.0 · Partial · 1/2 passed · 1 requirement failing · 12 assets fail the worst one.",
   },
   // src: frontend/components/cbom/results/RunSections.tsx:446-475 — CERT-In, RBI, SEBI CSCRF, NIST, CNSA 2.0
   "cbom.run.compliance": {

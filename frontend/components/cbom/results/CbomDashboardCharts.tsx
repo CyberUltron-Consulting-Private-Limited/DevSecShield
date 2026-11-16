@@ -86,6 +86,12 @@ const riskScoreAreaChartConfig = {
   score: { label: "Risk score", color: "hsl(217 91% 60%)" },
 } satisfies ChartConfig;
 
+/** The parts of CbomDashboardCharts a caller can ask for (`parts`); all of them when `parts` is left out. */
+export const DASHBOARD_CHART_PARTS = [
+  "kpis", "progress", "owasp", "risk", "controls", "algoTypes", "strength", "quantum", "riskScores", "metrics",
+] as const;
+export type DashboardChartPart = (typeof DASHBOARD_CHART_PARTS)[number];
+
 export function CbomDashboardCharts({
   dashboard,
   findingsList,
@@ -93,6 +99,8 @@ export function CbomDashboardCharts({
   riskScoresDescription = "Risk score by finding (top 24, descending)",
   riskScoresTip = "cbom.res.risk_scores",
   quantumTip = "cbom.res.quantum",
+  parts,
+  variant,
 }: {
   dashboard: CbomScanDashboardData;
   findingsList: CbomFinding[];
@@ -103,7 +111,12 @@ export function CbomDashboardCharts({
   riskScoresTip?: InfoTipId;
   /** The (i) tip of the Quantum readiness card: a run's bars come from its posture classes, with no Broken today bar. */
   quantumTip?: InfoTipId;
+  /** the cards to render (DASHBOARD_CHART_PARTS keys); default all, exactly as before the redesign */
+  parts?: readonly string[];
+  /** "run" (run results redesign, 08-A): every chart card the same size in one grid; default: the code page's rows */
+  variant?: "run";
 }) {
+  const show = (k: DashboardChartPart) => !parts || parts.includes(k);
   const cardData = dashboard.card_data;
   const remediation = dashboard.remediation_actions_required;
   const remediationKpis = dashboard.remediation_metrics;
@@ -203,439 +216,480 @@ export function CbomDashboardCharts({
   const notStartedPct = totalAll > 0 ? Math.round(((remediation?.total_not_started ?? 0) / totalAll) * 100) : 0;
   const ignoredPct = totalAll > 0 ? Math.round(((remediation?.total_ignored ?? 0) / totalAll) * 100) : 0;
 
+  const kpiCards = (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4">
+      {[
+        { label: "Crypto assets", value: cardData.total_crypto_assets, icon: Lock, box: "bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400", tip: "cbom.res.kpi.assets" as InfoTipId },
+        { label: "Weak", value: cardData.total_weak_algorithms, icon: ShieldAlert, box: "bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400", tip: "cbom.res.kpi.weak" as InfoTipId },
+        { label: "Quantum vulnerable", value: cardData.total_quantum_vulnerable, icon: AlertTriangle, box: "bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400", tip: "cbom.res.kpi.qv" as InfoTipId },
+        { label: "Certificates", value: cardData.total_certificates, icon: ShieldCheck, box: "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400", tip: "cbom.res.kpi.certs" as InfoTipId },
+        { label: "Keys", value: cardData.total_keys, icon: Key, box: "bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400", tip: "cbom.res.kpi.keys" as InfoTipId },
+        { label: "Quantum ready", value: readinessText(cardData), icon: Shield, box: "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400", tip: "cbom.res.kpi.ready" as InfoTipId },
+        { label: "Avg risk score", value: cardData.average_risk_score?.toFixed(1) ?? "N/A", icon: Activity, box: "bg-teal-100 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400", tip: "cbom.res.kpi.avg_risk" as InfoTipId },
+      ].map(({ label, tip, value, icon: Icon, box }) => (
+        <Card key={label} className="border-zinc-200 dark:border-zinc-800">
+          <CardContent className="pt-4 pb-4 flex items-center gap-3">
+            <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${box}`}>
+              <Icon className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 flex items-center gap-0.5">
+                {label}
+                <InfoTip id={tip} />
+              </p>
+              <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 tabular-nums">{value}</p>
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+  const progressCard = remediation && (
+    <Card className="border-zinc-200 dark:border-zinc-800">
+      <CardHeader>
+        <CardTitle className="text-base">Remediation progress <InfoTip id="cbom.res.remediation" /></CardTitle>
+        <CardDescription>Finding status breakdown</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-4">
+          {[
+            { label: "Fixed", value: remediation.total_fixed ?? 0, pct: fixedPct, icon: CheckCircle, color: "text-emerald-600 dark:text-emerald-400" },
+            { label: "In progress", value: remediation.total_in_progress ?? 0, pct: inProgressPct, icon: Loader2, color: "text-blue-600 dark:text-blue-400" },
+            { label: "Not started", value: remediation.total_not_started ?? 0, pct: notStartedPct, icon: Circle, color: "text-slate-600 dark:text-slate-400" },
+            { label: "Ignored", value: remediation.total_ignored ?? 0, pct: ignoredPct, icon: EyeOff, color: "text-zinc-600 dark:text-zinc-400" },
+          ].map(({ label, value, pct, icon: Icon, color }) => (
+            <div key={label} className="flex items-center gap-3">
+              <Icon className={`h-5 w-5 shrink-0 ${color}`} />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-zinc-900 dark:text-white">{label}</p>
+                <p className="text-xs text-zinc-500">{value} · {pct}%</p>
+                <Progress value={pct} className="h-2 mt-1" />
+              </div>
+            </div>
+          ))}
+          <div className="flex justify-between items-center pt-2 border-t border-zinc-200 dark:border-zinc-700">
+            <span className="text-sm text-zinc-600 dark:text-zinc-400">Findings resolved</span>
+            <span className="text-lg font-bold text-zinc-900 dark:text-white tabular-nums">{remediation.total_fixed}/{totalFindings}</span>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+  const owaspCard = (
+    <Card className="border-zinc-200 dark:border-zinc-800">
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <PieChart className="w-4 h-4" />
+          OWASP Top 10 issues
+          <InfoTip id="cbom.res.owasp" />
+        </CardTitle>
+        <CardDescription>Distribution by OWASP category</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {!hasOwaspData ? (
+          <div className="flex items-center justify-center min-h-[280px] text-zinc-500 dark:text-zinc-400 text-sm">No OWASP data available</div>
+        ) : (
+          <>
+            <ChartContainer config={owaspRadialChartConfig} className="mx-auto aspect-square max-h-[280px] cursor-pointer">
+              <RadialBarChart data={owaspRadialData} innerRadius={40} outerRadius={100} startAngle={90} endAngle={-270}>
+                <ChartTooltip
+                  cursor={false}
+                  content={
+                    <ChartTooltipContent
+                      nameKey="displayValue"
+                      labelFormatter={(_, payload) => (payload?.[0]?.payload as { displayValue?: string } | undefined)?.displayValue ?? "—"}
+                      formatter={(_, __, ___, ____, payload) => {
+                        const count = (payload as { actualCount?: number } | undefined)?.actualCount ?? 0;
+                        return <>Count: <span className="font-mono font-semibold tabular-nums">{count}</span></>;
+                      }}
+                    />
+                  }
+                />
+                <RadialBar dataKey="count" background className="cursor-pointer" />
+              </RadialBarChart>
+            </ChartContainer>
+            <div className="mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-700 flex flex-wrap gap-x-4 gap-y-1.5 justify-center">
+              {owaspEntries.map(({ key, displayValue, fill }) => (
+                <div key={key} className="flex items-center gap-1.5 text-xs">
+                  <span className="shrink-0 w-3 h-3 rounded-full" style={{ backgroundColor: fill }} aria-hidden />
+                  <span className="text-zinc-600 dark:text-zinc-400">{displayValue}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+  const riskCard = (
+    <Card className="border-zinc-200 dark:border-zinc-800">
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4" />
+          Risk metrics
+          <InfoTip id="cbom.res.severity" />
+        </CardTitle>
+        <CardDescription>Findings by impact severity</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {!hasRiskData ? (
+          <div className="flex items-center justify-center min-h-[280px] text-zinc-500 dark:text-zinc-400 text-sm">No data to display</div>
+        ) : (
+          <ChartContainer config={radarConfig} className="mx-auto aspect-square max-h-[280px] cursor-pointer">
+            <RadarChart data={severityRadarData} margin={{ top: 8, right: 24, bottom: 8, left: 24 }}>
+              <ChartTooltip cursor={false} content={<ChartTooltipContent nameKey="subject" formatter={(value) => [value, "Count"]} />} />
+              <PolarAngleAxis dataKey="subject" />
+              <PolarGrid />
+              <Radar dataKey="count" fill="hsl(220 70% 50%)" fillOpacity={0.4} stroke="hsl(220 70% 50%)" strokeWidth={2} dot={{ r: 4, fillOpacity: 1 }} />
+            </RadarChart>
+          </ChartContainer>
+        )}
+        <p className="mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-700 text-xs text-zinc-500 dark:text-zinc-400 text-center">
+          Findings for each impact level (Critical, High, Medium, Low)
+        </p>
+      </CardContent>
+    </Card>
+  );
+  const controlsCard = (
+    <Card className="border-zinc-200 dark:border-zinc-800">
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <BarChart3 className="w-4 h-4" />
+          Compliance controls
+          <InfoTip id="cbom.res.compliance" />
+        </CardTitle>
+        <CardDescription>Findings mapped to compliance frameworks</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {!hasComplianceData ? (
+          <div className="flex items-center justify-center min-h-[280px] text-zinc-500 dark:text-zinc-400 text-sm">No compliance data available</div>
+        ) : (
+          <ChartContainer
+            config={complianceBarChartConfig}
+            className="aspect-auto w-full cursor-pointer"
+            style={{ height: complianceChartHeight }}
+          >
+            <BarChart
+              data={complianceChartRows}
+              layout="vertical"
+              margin={{ top: 4, right: 12, bottom: 4, left: 4 }}
+              barCategoryGap={10}
+            >
+              <CartesianGrid horizontal={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
+              <XAxis type="number" hide />
+              <YAxis
+                dataKey="name"
+                type="category"
+                width={168}
+                interval={0}
+                tickLine={false}
+                axisLine={false}
+                tick={{ fontSize: 11 }}
+                className="text-xs"
+              />
+              <ChartTooltip
+                content={
+                  <ChartTooltipContent
+                    labelFormatter={(_, payload) =>
+                      String(
+                        (payload?.[0]?.payload as { fullName?: string } | undefined)
+                          ?.fullName ?? "",
+                      )
+                    }
+                  />
+                }
+              />
+              <Bar dataKey="count" fill="hsl(217 91% 60%)" radius={[0, 4, 4, 0]} />
+            </BarChart>
+          </ChartContainer>
+        )}
+      </CardContent>
+    </Card>
+  );
+  const algoTypesCard = (
+    <Card className="border-zinc-200 dark:border-zinc-800">
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <BarChart3 className="w-4 h-4" />
+          Algorithm types
+          <InfoTip id="cbom.res.algo_types" />
+        </CardTitle>
+        <CardDescription>Distribution by algorithm category</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {!hasAlgorithmTypeData ? (
+          <div className="flex items-center justify-center min-h-[280px] text-zinc-500 dark:text-zinc-400 text-sm">No data to display</div>
+        ) : (
+          <ChartContainer config={barConfig} className="aspect-auto h-[280px] w-full">
+            <BarChart data={algorithmTypeData} layout="vertical" margin={{ top: 0, right: 8, bottom: 0, left: 0 }}>
+              <CartesianGrid horizontal={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
+              <XAxis type="number" tickLine={false} axisLine={false} className="text-xs" />
+              <YAxis dataKey="name" type="category" width={120} tickLine={false} axisLine={false} className="text-xs" />
+              <ChartTooltip content={<ChartTooltipContent />} />
+              <Bar dataKey="count" fill="hsl(220 70% 50%)" radius={[0, 4, 4, 0]} />
+            </BarChart>
+          </ChartContainer>
+        )}
+      </CardContent>
+    </Card>
+  );
+  const strengthCard = (
+    <Card className="border-zinc-200 dark:border-zinc-800">
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <ShieldCheck className="w-4 h-4" />
+          Crypto strength
+          <InfoTip id="cbom.res.strength" />
+        </CardTitle>
+        <CardDescription>Distribution by cryptographic strength</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {!hasStrengthData ? (
+          <div className="flex items-center justify-center min-h-[280px] text-zinc-500 dark:text-zinc-400 text-sm">No data to display</div>
+        ) : (
+          <ChartContainer config={barConfig} className="aspect-auto h-[280px] w-full">
+            <BarChart data={strengthData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+              <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
+              <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} className="text-xs" />
+              <YAxis tickLine={false} axisLine={false} className="text-xs" />
+              <ChartTooltip content={<ChartTooltipContent />} />
+              <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                {strengthData.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={entry.fill} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ChartContainer>
+        )}
+      </CardContent>
+    </Card>
+  );
+  const quantumCard = (
+    <Card className="border-zinc-200 dark:border-zinc-800">
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <Shield className="w-4 h-4" />
+          Quantum readiness
+          <InfoTip id={quantumTip} />
+        </CardTitle>
+        <CardDescription>Safe vs vulnerable cryptographic assets</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {!hasQuantumData ? (
+          <div className="flex items-center justify-center min-h-[280px] text-zinc-500 dark:text-zinc-400 text-sm">No data to display</div>
+        ) : (
+          <ChartContainer config={barConfig} className="aspect-auto h-[280px] w-full">
+            <BarChart data={quantumData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+              <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
+              <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} className="text-xs" />
+              <YAxis tickLine={false} axisLine={false} className="text-xs" />
+              <ChartTooltip content={<ChartTooltipContent />} />
+              <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                {quantumData.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={entry.fill} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ChartContainer>
+        )}
+      </CardContent>
+    </Card>
+  );
+  const riskScoresCard = (
+    <Card className="border-zinc-200 dark:border-zinc-800">
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <TrendingUp className="w-4 h-4" />
+          {riskScoresTitle}
+          <InfoTip id={riskScoresTip} />
+        </CardTitle>
+        <CardDescription>{riskScoresDescription}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {!hasRiskScoresData ? (
+          <div className="flex items-center justify-center min-h-[280px] text-zinc-500 dark:text-zinc-400 text-sm">No risk score data to display</div>
+        ) : (
+          <ChartContainer config={riskScoreAreaChartConfig} className="aspect-auto h-[280px] w-full cursor-pointer">
+            <AreaChart data={riskScoresAreaData} margin={{ top: 8, right: 8, bottom: 28, left: 0 }}>
+              <defs>
+                <linearGradient id="fillCbomRiskScore" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="hsl(217 91% 60%)" stopOpacity={0.8} />
+                  <stop offset="95%" stopColor="hsl(217 91% 60%)" stopOpacity={0.1} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
+              <XAxis dataKey="finding" tickLine={false} axisLine={false} tickMargin={8} minTickGap={16} height={40} interval={0} />
+              <YAxis hide domain={[0, 10]} />
+              <ChartTooltip
+                cursor={false}
+                content={
+                  <ChartTooltipContent
+                    className="gap-2 py-2.5 px-3 min-w-48"
+                    hideIndicator
+                    formatter={(value) => ["Risk score  :  ", value]}
+                    labelFormatter={(_, payload) => {
+                      const fullName = (payload?.[0]?.payload as { fullName?: string } | undefined)?.fullName;
+                      return fullName ? <span className="block font-medium text-zinc-900 dark:text-zinc-100">{fullName}</span> : "—";
+                    }}
+                  />
+                }
+              />
+              <Area type="monotone" dataKey="score" fill="url(#fillCbomRiskScore)" stroke="hsl(217 91% 60%)" strokeWidth={2} />
+            </AreaChart>
+          </ChartContainer>
+        )}
+      </CardContent>
+    </Card>
+  );
+  const metricsCard = remediationKpis && (
+    <Card className="border-zinc-200 dark:border-zinc-800 shadow-sm">
+      <CardHeader>
+        <CardTitle className="text-base">Remediation metrics <InfoTip id="cbom.res.remed.section" /></CardTitle>
+        <CardDescription>Performance and efficiency tracking</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          {(() => {
+            const [days, hours, minutes] = remediationKpis.mean_time_to_remediate;
+            const totalDays = days + hours / 24 + minutes / (60 * 24);
+            const targetDays = 3;
+            const progress = totalDays <= 0 ? 100 : Math.min(100, (targetDays / totalDays) * 100);
+            const delta = totalDays > 0 && targetDays > 0 ? `${Math.round(((totalDays - targetDays) / targetDays) * 100)}%` : "—";
+            return (
+              <div className="space-y-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-500/15 dark:bg-teal-500/10">
+                  <Clock className="h-5 w-5 text-teal-600 dark:text-teal-400" />
+                </div>
+                <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Mean time to remediate <InfoTip id="sast.res.remed.mttr" /></p>
+                <p className="text-2xl font-bold text-zinc-900 dark:text-white">
+                  {totalDays < 0.1 && totalDays >= 0 ? "<0.1 days" : `${totalDays.toFixed(1)} days`}
+                </p>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">Target: {targetDays} days</p>
+                <div className="flex items-center gap-2">
+                  <Progress value={progress} className="h-2 flex-1" />
+                  <span className="text-xs text-zinc-500 tabular-nums shrink-0">{delta}</span>
+                </div>
+              </div>
+            );
+          })()}
+          {(() => {
+            const fixed = remediationKpis.critical_issues_fixed;
+            // the severity distribution counts every Critical finding, fixed ones included: fixed / all Critical
+            const pct = criticalFixedPct(fixed, criticalCount);
+            const targetPct = 95;
+            const progress = Math.min(100, (pct / targetPct) * 100);
+            const delta = pct >= targetPct ? "+0%" : `+${targetPct - pct}%`;
+            return (
+              <div className="space-y-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-500/15 dark:bg-teal-500/10">
+                  <CheckCircle className="h-5 w-5 text-teal-600 dark:text-teal-400" />
+                </div>
+                <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Critical issues fixed <InfoTip id="sast.res.remed.critical_fixed" /></p>
+                <p className="text-2xl font-bold text-zinc-900 dark:text-white">{pct}%</p>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">Target: {targetPct}%</p>
+                <div className="flex items-center gap-2">
+                  <Progress value={progress} className="h-2 flex-1" />
+                  <span className="text-xs text-zinc-500 tabular-nums shrink-0">{delta}</span>
+                </div>
+              </div>
+            );
+          })()}
+          {(() => {
+            const backlog = remediationKpis.high_priority_backlog;
+            const target = 10;
+            const progress = target <= 0 ? 100 : Math.max(0, Math.min(100, (1 - (backlog - target) / Math.max(target, backlog)) * 100));
+            const delta = backlog > target ? `-${backlog - target}` : backlog < target ? `+${target - backlog}` : "0";
+            return (
+              <div className="space-y-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-500/15 dark:bg-teal-500/10">
+                  <Crosshair className="h-5 w-5 text-teal-600 dark:text-teal-400" />
+                </div>
+                <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">High priority backlog <InfoTip id="sast.res.remed.backlog" /></p>
+                <p className="text-2xl font-bold text-zinc-900 dark:text-white">{backlog}</p>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">Target: {target}</p>
+                <div className="flex items-center gap-2">
+                  <Progress value={backlog <= target ? 100 : Math.max(0, (target / backlog) * 100)} className="h-2 flex-1 [&>div]:bg-orange-500" />
+                  <span className="text-xs text-zinc-500 tabular-nums shrink-0">{delta}</span>
+                </div>
+              </div>
+            );
+          })()}
+          {(() => {
+            const velocity = remediationKpis.remediation_velocity;
+            const target = 20;
+            const progress = Math.min(100, (velocity / target) * 100);
+            const delta = velocity >= target ? "+0" : `+${target - velocity}`;
+            return (
+              <div className="space-y-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-500/15 dark:bg-teal-500/10">
+                  <Activity className="h-5 w-5 text-teal-600 dark:text-teal-400" />
+                </div>
+                <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Remediation velocity <InfoTip id="sast.res.remed.velocity" /></p>
+                <p className="text-2xl font-bold text-zinc-900 dark:text-white">{velocity}/week</p>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">Target: {target}/week</p>
+                <div className="flex items-center gap-2">
+                  <Progress value={progress} className="h-2 flex-1" />
+                  <span className="text-xs text-zinc-500 tabular-nums shrink-0">{delta}</span>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      </CardContent>
+    </Card>
+  );
+
+  if (variant === "run") {
+    // one uniform grid of chart cards (each as tall as its row), the KPI cards above, the remediation metrics below
+    const cell = "min-w-0 [&>[data-slot=card]]:h-full";
+    const cards = [
+      show("progress") && remediation && <div key="progress" className={cell}>{progressCard}</div>,
+      show("owasp") && <div key="owasp" className={cell}>{owaspCard}</div>,
+      show("risk") && <div key="risk" className={cell}>{riskCard}</div>,
+      show("controls") && <div key="controls" className={cell}>{controlsCard}</div>,
+      show("algoTypes") && <div key="algoTypes" className={cell}>{algoTypesCard}</div>,
+      show("strength") && <div key="strength" className={cell}>{strengthCard}</div>,
+      show("quantum") && <div key="quantum" className={cell}>{quantumCard}</div>,
+      show("riskScores") && <div key="riskScores" className={cell}>{riskScoresCard}</div>,
+    ].filter(Boolean);
+    return (
+      <div className="space-y-6" data-testid="dashboard-charts" data-variant="run">
+        {show("kpis") && kpiCards}
+        {cards.length > 0 && <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4" data-testid="dashboard-chart-grid">{cards}</div>}
+        {show("metrics") && remediationKpis && metricsCard}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Summary cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4">
-        {[
-          { label: "Crypto assets", value: cardData.total_crypto_assets, icon: Lock, box: "bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400", tip: "cbom.res.kpi.assets" as InfoTipId },
-          { label: "Weak", value: cardData.total_weak_algorithms, icon: ShieldAlert, box: "bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400", tip: "cbom.res.kpi.weak" as InfoTipId },
-          { label: "Quantum vulnerable", value: cardData.total_quantum_vulnerable, icon: AlertTriangle, box: "bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400", tip: "cbom.res.kpi.qv" as InfoTipId },
-          { label: "Certificates", value: cardData.total_certificates, icon: ShieldCheck, box: "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400", tip: "cbom.res.kpi.certs" as InfoTipId },
-          { label: "Keys", value: cardData.total_keys, icon: Key, box: "bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400", tip: "cbom.res.kpi.keys" as InfoTipId },
-          { label: "Quantum ready", value: readinessText(cardData), icon: Shield, box: "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400", tip: "cbom.res.kpi.ready" as InfoTipId },
-          { label: "Avg risk score", value: cardData.average_risk_score?.toFixed(1) ?? "N/A", icon: Activity, box: "bg-teal-100 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400", tip: "cbom.res.kpi.avg_risk" as InfoTipId },
-        ].map(({ label, tip, value, icon: Icon, box }) => (
-          <Card key={label} className="border-zinc-200 dark:border-zinc-800">
-            <CardContent className="pt-4 pb-4 flex items-center gap-3">
-              <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${box}`}>
-                <Icon className="h-5 w-5" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 flex items-center gap-0.5">
-                  {label}
-                  <InfoTip id={tip} />
-                </p>
-                <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 tabular-nums">{value}</p>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      {show("kpis") && kpiCards}
 
       {/* Remediation actions */}
-      {remediation && (
-        <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardHeader>
-            <CardTitle className="text-base">Remediation progress <InfoTip id="cbom.res.remediation" /></CardTitle>
-            <CardDescription>Finding status breakdown</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {[
-                { label: "Fixed", value: remediation.total_fixed ?? 0, pct: fixedPct, icon: CheckCircle, color: "text-emerald-600 dark:text-emerald-400" },
-                { label: "In progress", value: remediation.total_in_progress ?? 0, pct: inProgressPct, icon: Loader2, color: "text-blue-600 dark:text-blue-400" },
-                { label: "Not started", value: remediation.total_not_started ?? 0, pct: notStartedPct, icon: Circle, color: "text-slate-600 dark:text-slate-400" },
-                { label: "Ignored", value: remediation.total_ignored ?? 0, pct: ignoredPct, icon: EyeOff, color: "text-zinc-600 dark:text-zinc-400" },
-              ].map(({ label, value, pct, icon: Icon, color }) => (
-                <div key={label} className="flex items-center gap-3">
-                  <Icon className={`h-5 w-5 shrink-0 ${color}`} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-zinc-900 dark:text-white">{label}</p>
-                    <p className="text-xs text-zinc-500">{value} · {pct}%</p>
-                    <Progress value={pct} className="h-2 mt-1" />
-                  </div>
-                </div>
-              ))}
-              <div className="flex justify-between items-center pt-2 border-t border-zinc-200 dark:border-zinc-700">
-                <span className="text-sm text-zinc-600 dark:text-zinc-400">Findings resolved</span>
-                <span className="text-lg font-bold text-zinc-900 dark:text-white tabular-nums">{remediation.total_fixed}/{totalFindings}</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {show("progress") && remediation && progressCard}
 
       {/* Row 1: OWASP + Risk Radar + Compliance */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* OWASP Top 10 */}
-        <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <PieChart className="w-4 h-4" />
-              OWASP Top 10 issues
-              <InfoTip id="cbom.res.owasp" />
-            </CardTitle>
-            <CardDescription>Distribution by OWASP category</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {!hasOwaspData ? (
-              <div className="flex items-center justify-center min-h-[280px] text-zinc-500 dark:text-zinc-400 text-sm">No OWASP data available</div>
-            ) : (
-              <>
-                <ChartContainer config={owaspRadialChartConfig} className="mx-auto aspect-square max-h-[280px] cursor-pointer">
-                  <RadialBarChart data={owaspRadialData} innerRadius={40} outerRadius={100} startAngle={90} endAngle={-270}>
-                    <ChartTooltip
-                      cursor={false}
-                      content={
-                        <ChartTooltipContent
-                          nameKey="displayValue"
-                          labelFormatter={(_, payload) => (payload?.[0]?.payload as { displayValue?: string } | undefined)?.displayValue ?? "—"}
-                          formatter={(_, __, ___, ____, payload) => {
-                            const count = (payload as { actualCount?: number } | undefined)?.actualCount ?? 0;
-                            return <>Count: <span className="font-mono font-semibold tabular-nums">{count}</span></>;
-                          }}
-                        />
-                      }
-                    />
-                    <RadialBar dataKey="count" background className="cursor-pointer" />
-                  </RadialBarChart>
-                </ChartContainer>
-                <div className="mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-700 flex flex-wrap gap-x-4 gap-y-1.5 justify-center">
-                  {owaspEntries.map(({ key, displayValue, fill }) => (
-                    <div key={key} className="flex items-center gap-1.5 text-xs">
-                      <span className="shrink-0 w-3 h-3 rounded-full" style={{ backgroundColor: fill }} aria-hidden />
-                      <span className="text-zinc-600 dark:text-zinc-400">{displayValue}</span>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Severity Radar */}
-        <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4" />
-              Risk metrics
-              <InfoTip id="cbom.res.severity" />
-            </CardTitle>
-            <CardDescription>Findings by impact severity</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {!hasRiskData ? (
-              <div className="flex items-center justify-center min-h-[280px] text-zinc-500 dark:text-zinc-400 text-sm">No data to display</div>
-            ) : (
-              <ChartContainer config={radarConfig} className="mx-auto aspect-square max-h-[280px] cursor-pointer">
-                <RadarChart data={severityRadarData} margin={{ top: 8, right: 24, bottom: 8, left: 24 }}>
-                  <ChartTooltip cursor={false} content={<ChartTooltipContent nameKey="subject" formatter={(value) => [value, "Count"]} />} />
-                  <PolarAngleAxis dataKey="subject" />
-                  <PolarGrid />
-                  <Radar dataKey="count" fill="hsl(220 70% 50%)" fillOpacity={0.4} stroke="hsl(220 70% 50%)" strokeWidth={2} dot={{ r: 4, fillOpacity: 1 }} />
-                </RadarChart>
-              </ChartContainer>
-            )}
-            <p className="mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-700 text-xs text-zinc-500 dark:text-zinc-400 text-center">
-              Findings for each impact level (Critical, High, Medium, Low)
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Compliance Controls */}
-        <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <BarChart3 className="w-4 h-4" />
-              Compliance controls
-              <InfoTip id="cbom.res.compliance" />
-            </CardTitle>
-            <CardDescription>Findings mapped to compliance frameworks</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {!hasComplianceData ? (
-              <div className="flex items-center justify-center min-h-[280px] text-zinc-500 dark:text-zinc-400 text-sm">No compliance data available</div>
-            ) : (
-              <ChartContainer
-                config={complianceBarChartConfig}
-                className="aspect-auto w-full cursor-pointer"
-                style={{ height: complianceChartHeight }}
-              >
-                <BarChart
-                  data={complianceChartRows}
-                  layout="vertical"
-                  margin={{ top: 4, right: 12, bottom: 4, left: 4 }}
-                  barCategoryGap={10}
-                >
-                  <CartesianGrid horizontal={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
-                  <XAxis type="number" hide />
-                  <YAxis
-                    dataKey="name"
-                    type="category"
-                    width={168}
-                    interval={0}
-                    tickLine={false}
-                    axisLine={false}
-                    tick={{ fontSize: 11 }}
-                    className="text-xs"
-                  />
-                  <ChartTooltip
-                    content={
-                      <ChartTooltipContent
-                        labelFormatter={(_, payload) =>
-                          String(
-                            (payload?.[0]?.payload as { fullName?: string } | undefined)
-                              ?.fullName ?? "",
-                          )
-                        }
-                      />
-                    }
-                  />
-                  <Bar dataKey="count" fill="hsl(217 91% 60%)" radius={[0, 4, 4, 0]} />
-                </BarChart>
-              </ChartContainer>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+      {(show("owasp") || show("risk") || show("controls")) && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {show("owasp") && owaspCard}
+          {show("risk") && riskCard}
+          {show("controls") && controlsCard}
+        </div>
+      )}
 
       {/* Row 2: CBOM-specific charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Algorithm Types */}
-        <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <BarChart3 className="w-4 h-4" />
-              Algorithm types
-              <InfoTip id="cbom.res.algo_types" />
-            </CardTitle>
-            <CardDescription>Distribution by algorithm category</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {!hasAlgorithmTypeData ? (
-              <div className="flex items-center justify-center min-h-[280px] text-zinc-500 dark:text-zinc-400 text-sm">No data to display</div>
-            ) : (
-              <ChartContainer config={barConfig} className="aspect-auto h-[280px] w-full">
-                <BarChart data={algorithmTypeData} layout="vertical" margin={{ top: 0, right: 8, bottom: 0, left: 0 }}>
-                  <CartesianGrid horizontal={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
-                  <XAxis type="number" tickLine={false} axisLine={false} className="text-xs" />
-                  <YAxis dataKey="name" type="category" width={120} tickLine={false} axisLine={false} className="text-xs" />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Bar dataKey="count" fill="hsl(220 70% 50%)" radius={[0, 4, 4, 0]} />
-                </BarChart>
-              </ChartContainer>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Strength */}
-        <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4" />
-              Crypto strength
-              <InfoTip id="cbom.res.strength" />
-            </CardTitle>
-            <CardDescription>Distribution by cryptographic strength</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {!hasStrengthData ? (
-              <div className="flex items-center justify-center min-h-[280px] text-zinc-500 dark:text-zinc-400 text-sm">No data to display</div>
-            ) : (
-              <ChartContainer config={barConfig} className="aspect-auto h-[280px] w-full">
-                <BarChart data={strengthData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-                  <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
-                  <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} className="text-xs" />
-                  <YAxis tickLine={false} axisLine={false} className="text-xs" />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Bar dataKey="count" radius={[4, 4, 0, 0]}>
-                    {strengthData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.fill} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ChartContainer>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Quantum Readiness */}
-        <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Shield className="w-4 h-4" />
-              Quantum readiness
-              <InfoTip id={quantumTip} />
-            </CardTitle>
-            <CardDescription>Safe vs vulnerable cryptographic assets</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {!hasQuantumData ? (
-              <div className="flex items-center justify-center min-h-[280px] text-zinc-500 dark:text-zinc-400 text-sm">No data to display</div>
-            ) : (
-              <ChartContainer config={barConfig} className="aspect-auto h-[280px] w-full">
-                <BarChart data={quantumData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-                  <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
-                  <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} className="text-xs" />
-                  <YAxis tickLine={false} axisLine={false} className="text-xs" />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Bar dataKey="count" radius={[4, 4, 0, 0]}>
-                    {quantumData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.fill} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ChartContainer>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Risk Scores per Finding */}
-        <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <TrendingUp className="w-4 h-4" />
-              {riskScoresTitle}
-              <InfoTip id={riskScoresTip} />
-            </CardTitle>
-            <CardDescription>{riskScoresDescription}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {!hasRiskScoresData ? (
-              <div className="flex items-center justify-center min-h-[280px] text-zinc-500 dark:text-zinc-400 text-sm">No risk score data to display</div>
-            ) : (
-              <ChartContainer config={riskScoreAreaChartConfig} className="aspect-auto h-[280px] w-full cursor-pointer">
-                <AreaChart data={riskScoresAreaData} margin={{ top: 8, right: 8, bottom: 28, left: 0 }}>
-                  <defs>
-                    <linearGradient id="fillCbomRiskScore" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="hsl(217 91% 60%)" stopOpacity={0.8} />
-                      <stop offset="95%" stopColor="hsl(217 91% 60%)" stopOpacity={0.1} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
-                  <XAxis dataKey="finding" tickLine={false} axisLine={false} tickMargin={8} minTickGap={16} height={40} interval={0} />
-                  <YAxis hide domain={[0, 10]} />
-                  <ChartTooltip
-                    cursor={false}
-                    content={
-                      <ChartTooltipContent
-                        className="gap-2 py-2.5 px-3 min-w-48"
-                        hideIndicator
-                        formatter={(value) => ["Risk score  :  ", value]}
-                        labelFormatter={(_, payload) => {
-                          const fullName = (payload?.[0]?.payload as { fullName?: string } | undefined)?.fullName;
-                          return fullName ? <span className="block font-medium text-zinc-900 dark:text-zinc-100">{fullName}</span> : "—";
-                        }}
-                      />
-                    }
-                  />
-                  <Area type="monotone" dataKey="score" fill="url(#fillCbomRiskScore)" stroke="hsl(217 91% 60%)" strokeWidth={2} />
-                </AreaChart>
-              </ChartContainer>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+      {(show("algoTypes") || show("strength") || show("quantum") || show("riskScores")) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {show("algoTypes") && algoTypesCard}
+          {show("strength") && strengthCard}
+          {show("quantum") && quantumCard}
+          {show("riskScores") && riskScoresCard}
+        </div>
+      )}
 
       {/* Remediation KPIs */}
-      {remediationKpis && (
-        <Card className="border-zinc-200 dark:border-zinc-800 shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-base">Remediation metrics <InfoTip id="cbom.res.remed.section" /></CardTitle>
-            <CardDescription>Performance and efficiency tracking</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              {(() => {
-                const [days, hours, minutes] = remediationKpis.mean_time_to_remediate;
-                const totalDays = days + hours / 24 + minutes / (60 * 24);
-                const targetDays = 3;
-                const progress = totalDays <= 0 ? 100 : Math.min(100, (targetDays / totalDays) * 100);
-                const delta = totalDays > 0 && targetDays > 0 ? `${Math.round(((totalDays - targetDays) / targetDays) * 100)}%` : "—";
-                return (
-                  <div className="space-y-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-500/15 dark:bg-teal-500/10">
-                      <Clock className="h-5 w-5 text-teal-600 dark:text-teal-400" />
-                    </div>
-                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Mean time to remediate <InfoTip id="sast.res.remed.mttr" /></p>
-                    <p className="text-2xl font-bold text-zinc-900 dark:text-white">
-                      {totalDays < 0.1 && totalDays >= 0 ? "<0.1 days" : `${totalDays.toFixed(1)} days`}
-                    </p>
-                    <p className="text-xs text-zinc-500 dark:text-zinc-400">Target: {targetDays} days</p>
-                    <div className="flex items-center gap-2">
-                      <Progress value={progress} className="h-2 flex-1" />
-                      <span className="text-xs text-zinc-500 tabular-nums shrink-0">{delta}</span>
-                    </div>
-                  </div>
-                );
-              })()}
-              {(() => {
-                const fixed = remediationKpis.critical_issues_fixed;
-                // the severity distribution counts every Critical finding, fixed ones included: fixed / all Critical
-                const pct = criticalFixedPct(fixed, criticalCount);
-                const targetPct = 95;
-                const progress = Math.min(100, (pct / targetPct) * 100);
-                const delta = pct >= targetPct ? "+0%" : `+${targetPct - pct}%`;
-                return (
-                  <div className="space-y-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-500/15 dark:bg-teal-500/10">
-                      <CheckCircle className="h-5 w-5 text-teal-600 dark:text-teal-400" />
-                    </div>
-                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Critical issues fixed <InfoTip id="sast.res.remed.critical_fixed" /></p>
-                    <p className="text-2xl font-bold text-zinc-900 dark:text-white">{pct}%</p>
-                    <p className="text-xs text-zinc-500 dark:text-zinc-400">Target: {targetPct}%</p>
-                    <div className="flex items-center gap-2">
-                      <Progress value={progress} className="h-2 flex-1" />
-                      <span className="text-xs text-zinc-500 tabular-nums shrink-0">{delta}</span>
-                    </div>
-                  </div>
-                );
-              })()}
-              {(() => {
-                const backlog = remediationKpis.high_priority_backlog;
-                const target = 10;
-                const progress = target <= 0 ? 100 : Math.max(0, Math.min(100, (1 - (backlog - target) / Math.max(target, backlog)) * 100));
-                const delta = backlog > target ? `-${backlog - target}` : backlog < target ? `+${target - backlog}` : "0";
-                return (
-                  <div className="space-y-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-500/15 dark:bg-teal-500/10">
-                      <Crosshair className="h-5 w-5 text-teal-600 dark:text-teal-400" />
-                    </div>
-                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">High priority backlog <InfoTip id="sast.res.remed.backlog" /></p>
-                    <p className="text-2xl font-bold text-zinc-900 dark:text-white">{backlog}</p>
-                    <p className="text-xs text-zinc-500 dark:text-zinc-400">Target: {target}</p>
-                    <div className="flex items-center gap-2">
-                      <Progress value={backlog <= target ? 100 : Math.max(0, (target / backlog) * 100)} className="h-2 flex-1 [&>div]:bg-orange-500" />
-                      <span className="text-xs text-zinc-500 tabular-nums shrink-0">{delta}</span>
-                    </div>
-                  </div>
-                );
-              })()}
-              {(() => {
-                const velocity = remediationKpis.remediation_velocity;
-                const target = 20;
-                const progress = Math.min(100, (velocity / target) * 100);
-                const delta = velocity >= target ? "+0" : `+${target - velocity}`;
-                return (
-                  <div className="space-y-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-500/15 dark:bg-teal-500/10">
-                      <Activity className="h-5 w-5 text-teal-600 dark:text-teal-400" />
-                    </div>
-                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Remediation velocity <InfoTip id="sast.res.remed.velocity" /></p>
-                    <p className="text-2xl font-bold text-zinc-900 dark:text-white">{velocity}/week</p>
-                    <p className="text-xs text-zinc-500 dark:text-zinc-400">Target: {target}/week</p>
-                    <div className="flex items-center gap-2">
-                      <Progress value={progress} className="h-2 flex-1" />
-                      <span className="text-xs text-zinc-500 tabular-nums shrink-0">{delta}</span>
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {show("metrics") && remediationKpis && metricsCard}
     </div>
   );
 }
