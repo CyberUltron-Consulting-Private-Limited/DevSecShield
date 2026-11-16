@@ -13,6 +13,7 @@ from backend.utilities.dashboard.sbom_license import (
     resolve_sbom_license_category,
     resolve_sbom_reachability,
 )
+from backend.utilities.dashboard.sbom_rows import vulnerability_findings, vulnerability_rows
 
 console = Console()
 
@@ -955,10 +956,12 @@ def generate_sbom_sca_dashboard_data(scans: list[Scan]) -> dict:
     sbom_scans = [s for s in scans if s.scan_type == "sbom_sca"]
     all_results: list[dict] = []
     all_findings: list = []
+    # Every metric below is over the known vulnerabilities: the inventoried packages stored next to them
+    # (inventory_only rows and their stored findings) are the SBOM, not Low vulnerabilities (#46).
     for scan in sbom_scans:
         if scan.scan_status == "success":
-            all_results.extend(_sbom_results(scan))
-        all_findings.extend(get_findings_for_scan_id(scan.id))
+            all_results.extend(vulnerability_rows(_sbom_results(scan)))
+        all_findings.extend(vulnerability_findings(get_findings_for_scan_id(scan.id)))
 
     severity_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
     reachability_counts: dict[str, int] = defaultdict(int)
@@ -980,7 +983,7 @@ def generate_sbom_sca_dashboard_data(scans: list[Scan]) -> dict:
     for scan in sbom_scans:
         if scan.scan_status != "success":
             continue
-        results = _sbom_results(scan)
+        results = vulnerability_rows(_sbom_results(scan))
         if not results:
             continue
         date_key = str(scan.created_at.date()) if scan.created_at else ""

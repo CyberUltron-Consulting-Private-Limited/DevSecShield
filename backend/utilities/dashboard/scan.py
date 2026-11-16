@@ -20,6 +20,7 @@ from backend.utilities.dashboard.sbom_license import (
     resolve_sbom_license_category,
     resolve_sbom_reachability,
 )
+from backend.utilities.dashboard.sbom_rows import vulnerability_findings, vulnerability_rows
 from backend.utilities.dashboard.bom_risk_score import (
     aibom_finding_risk_score,
     cbom_finding_risk_score,
@@ -823,7 +824,9 @@ def generate_scan_dashboard(
                     "unknown" : average_risk_score_unknown,
                 }
             """
-            results_list = results if isinstance(results, list) else []
+            # the known vulnerabilities only: the inventoried packages (inventory_only rows and their stored
+            # findings) are the SBOM, not Low vulnerabilities (#46); the findings table and BOM download list them
+            results_list = vulnerability_rows(results if isinstance(results, list) else [])
             severity_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
             reachability_counts: dict[str, int] = defaultdict(int)
             license_counts: dict[str, int] = defaultdict(int)
@@ -868,7 +871,7 @@ def generate_scan_dashboard(
                 if resolve_sbom_license_category(item) in LICENSE_HIGH_RISK
             )
 
-            findings = get_findings_for_scan_id(scan_id)
+            findings = vulnerability_findings(get_findings_for_scan_id(scan_id))
             status_metrics = get_issue_status_metrics(findings) if findings else {"fixed": 0, "in_progress": 0, "not_started": 0, "ignored": 0}
             remediation_actions_required = {
                 "total_findings": len(findings),

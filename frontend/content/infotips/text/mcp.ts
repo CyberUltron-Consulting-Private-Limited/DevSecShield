@@ -159,11 +159,11 @@ const TEXT = {
     why: "Tells you which server the findings belong to.",
     example: "example for https://mcp.example.com.",
   },
-  // src: backend/utilities/db/scan_list_item.py:205-266, frontend/app/[team_id]/mcp/page.tsx:1007-1011,949 — today's scale: weights 4/3/2/1 averaged over findings, 0 without findings (#35)
+  // src: backend/utilities/db/scan_list_item.py:10-18, backend/utilities/db/scan_list_item.py:276-278, frontend/app/[team_id]/mcp/page.tsx:1007-1011,949 — weights 4/3/2/1 averaged over findings, /4*10, one decimal (the dashboard's 0-10 scale, #35); 0 without findings
   "mcp.table.risk": {
-    what: "This scan's severity-weighted average on a 1 to 4 scale: Critical 4, High 3, Medium 2, Low 1, averaged over its findings. 0 when it found nothing or did not succeed.",
+    what: "This scan's severity-weighted average, 0 to 10, on the same scale as the dashboard: Critical 10, High 7.5, Medium 5, Low 2.5, averaged over its findings and rounded to one decimal. 0 when it found nothing or did not succeed.",
     why: "Lets you compare scans by overall severity.",
-    example: "1 High and 1 Low finding: (3 + 1) / 2 = 2.",
+    example: "1 High and 1 Low finding: (7.5 + 2.5) / 2 = 5.0.",
   },
   // src: backend/utilities/db/scan_list_item.py:204-215, backend/utilities/db/scan_list_item.py:284-289 — tools, prompts and resources the server exposed
   "mcp.table.discovery": {

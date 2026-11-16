@@ -27,109 +27,109 @@ const TEXT = {
   },
 
   // ────────────────────────────────────────────────────────────── SCA + SBOM: list page (app/[team_id]/sbom_sca/page.tsx)
-  // src: backend/utilities/dashboard/scan_list.py:958-960, backend/utilities/dashboard/scan_list.py:1079, RabbitMQ/worker/helpers/tools/sca_sbom_agent/merge_inventory.py:109-122 — len of all result rows of successful scans; each package with no known vulnerability is stored as a Low row (inventory_only) until #46 is fixed
+  // src: backend/utilities/dashboard/scan_list.py:959-964, backend/utilities/dashboard/scan_list.py:1082, backend/utilities/dashboard/sbom_rows.py:20-22, RabbitMQ/worker/helpers/tools/sca_sbom_agent/merge_inventory.py:109-122 — the vulnerability rows of successful scans; the inventory_only rows (packages with no known vulnerability) are left out (#46)
   "sbom.kpi.total": {
-    what: "All result rows of this team's successful SCA + SBOM scans, added up: each known vulnerability, plus each package found with no known vulnerability (stored as a Low row).",
+    what: "The known vulnerabilities in the dependencies of this team's successful SCA + SBOM scans, added up. Packages found with no known vulnerability are part of the SBOM but are not counted here.",
     why: "Dependencies are a common way in for attackers; this sizes the problem.",
-    example: "1 vulnerable package and 3 packages with no known vulnerability: 4.",
+    example: "1 vulnerable package and 3 packages with no known vulnerability: 1.",
   },
-  // src: backend/utilities/dashboard/scan_list.py:989-998, backend/utilities/dashboard/scan_list.py:1080 — impact critical
+  // src: backend/utilities/dashboard/scan_list.py:992-1001, backend/utilities/dashboard/scan_list.py:1083 — impact critical
   "sbom.kpi.critical": {
     what: "Of those, the findings rated Critical.",
     why: "Critical vulnerabilities in dependencies are often exploited soon after disclosure.",
     example: "A remote-code-execution CVE in a direct dependency.",
   },
-  // src: backend/utilities/dashboard/scan_list.py:1005-1018, backend/utilities/dashboard/scan_list.py:1081 — number of compliance control references of all findings
+  // src: backend/utilities/dashboard/scan_list.py:1008-1021, backend/utilities/dashboard/scan_list.py:1084 — number of compliance control references of all findings
   "sbom.kpi.policy": {
     what: "How many compliance-control references (PCI DSS, ISO 27001 and others) the findings map to, added up over all findings.",
     why: "Shows how many audit requirements the dependency findings touch.",
     example: "One finding mapped to 2 controls and one to 3: 5.",
   },
-  // src: backend/utilities/dashboard/scan_list.py:975-976, backend/utilities/dashboard/scan_list.py:1074-1082 — medium + high risk license categories over all result rows, packages with no known vulnerability included (#46)
+  // src: backend/utilities/dashboard/scan_list.py:978-979, backend/utilities/dashboard/scan_list.py:1077-1085 — medium + high risk license categories over the vulnerability rows of successful scans; packages with no known vulnerability are left out (#46)
   "sbom.kpi.license_risks": {
-    what: "Result rows of successful scans, vulnerable packages or not, whose license is medium-risk (weak copyleft such as LGPL or MPL, Creative Commons, commercial) or high-risk (strong copyleft such as GPL, network copyleft such as AGPL, source-available such as SSPL or BUSL).",
+    what: "Known vulnerabilities whose package's license is medium-risk (weak copyleft such as LGPL or MPL, Creative Commons, commercial) or high-risk (strong copyleft such as GPL, network copyleft such as AGPL, source-available such as SSPL or BUSL). Packages with no known vulnerability are not counted.",
     why: "Some licenses impose obligations on how you distribute your software.",
-    example: "A package under LGPL-3.0 counts here even with no known vulnerability.",
+    example: "A vulnerable package under LGPL-3.0 counts here; a GPL-3.0 package with no known vulnerability does not.",
   },
-  // src: backend/utilities/dashboard/scan_list.py:975, backend/utilities/dashboard/scan_list.py:1074, backend/utilities/dashboard/sbom_license.py:233-258 — strong copyleft, network copyleft, source-available
+  // src: backend/utilities/dashboard/scan_list.py:978, backend/utilities/dashboard/scan_list.py:1077, backend/utilities/dashboard/sbom_license.py:233-258 — strong copyleft, network copyleft, source-available, over the vulnerability rows (#46)
   "sbom.kpi.high_risk_licenses": {
-    what: "Findings whose package is under a strong copyleft (GPL), network copyleft (AGPL) or source-available (SSPL, BUSL) license.",
+    what: "Known vulnerabilities whose package is under a strong copyleft (GPL), network copyleft (AGPL) or source-available (SSPL, BUSL) license.",
     why: "Strong copyleft or source-available licenses can force you to publish code or change your product.",
-    example: "A package licensed AGPL-3.0.",
+    example: "A vulnerable package licensed AGPL-3.0.",
   },
-  // src: backend/utilities/dashboard/scan_list.py:1019-1021, backend/utilities/dashboard/scan_list.py:1077 — each row scores weight/4*10, averaged, Python round(x, 1); packages with no known vulnerability are Low rows (#46)
+  // src: backend/utilities/dashboard/scan_list.py:1022-1024, backend/utilities/dashboard/scan_list.py:1080 — each vulnerability row scores weight/4*10, averaged, Python round(x, 1); 0 without vulnerabilities; inventory rows left out (#46)
   "sbom.kpi.avg_risk": {
-    what: "Average over all result rows of successful scans, 0 to 10: Critical counts 10, High 7.5, Medium 5, Low 2.5. Packages with no known vulnerability are Low rows, so many of them pull the average towards 2.5. Rounded to one decimal.",
+    what: "Average over the known vulnerabilities of successful scans, 0 to 10: Critical counts 10, High 7.5, Medium 5, Low 2.5. Packages with no known vulnerability are not counted; 0 when there is no vulnerability. Rounded to one decimal.",
     why: "One number to compare dependency risk over time.",
-    example: "1 Critical and 3 packages with no known vulnerability: (10 + 3 × 2.5) / 4 = 4.4.",
+    example: "1 Critical and 3 Low vulnerabilities: (10 + 3 × 2.5) / 4 = 4.4.",
   },
-  // src: backend/utilities/dashboard/scan_list.py:999-1002, backend/utilities/dashboard/sbom_license.py:382-392, RabbitMQ/worker/helpers/context/schema.py:34, RabbitMQ/worker/helpers/tools/sca_sbom_agent/main.py:137-158, RabbitMQ/worker/helpers/tools/sca_sbom_agent/parser.py:128-155 — reachability is a label the AI model sets from the Grype match text (id, severity, description, package, fix, locations); no source file is in its context
+  // src: backend/utilities/dashboard/scan_list.py:1002-1005, backend/utilities/dashboard/sbom_license.py:382-392, RabbitMQ/worker/helpers/context/schema.py:34, RabbitMQ/worker/helpers/tools/sca_sbom_agent/main.py:137-158, RabbitMQ/worker/helpers/tools/sca_sbom_agent/parser.py:128-155 — reachability is a label the AI model sets from the Grype match text (id, severity, description, package, fix, locations); no source file is in its context
   "sbom.kpi.reachable": {
     what: "Vulnerabilities the AI model labelled Reachable. It judges from the vulnerability and package data (description, severity, where the package was found); it does not read your code, so treat the label as a hint.",
     why: "A vulnerability your code actually reaches is far more urgent than one it never calls.",
     example: "A CVE in a web framework's request parser may be labelled Reachable although your code never uses that parser.",
   },
-  // src: backend/utilities/dashboard/scan_list.py:1030-1037, backend/utilities/dashboard/finding_metrics.py:18-40 — stored findings by status
+  // src: backend/utilities/dashboard/scan_list.py:964, backend/utilities/dashboard/scan_list.py:1033-1040, backend/utilities/dashboard/finding_metrics.py:18-40 — stored findings by status; the stored findings of inventory rows are left out (#46)
   "sbom.chart.remediation": {
-    what: "All stored findings of SCA + SBOM scans by the status your team set: Fixed, In progress, Not started, Ignored.",
+    what: "The stored vulnerability findings of SCA + SBOM scans by the status your team set: Fixed, In progress, Not started, Ignored. Packages with no known vulnerability are not counted.",
     why: "Shows how far the team has got with fixing dependency findings.",
     example: "40 findings: 10 Fixed, 5 In progress, 22 Not started, 3 Ignored.",
   },
-  // src: backend/utilities/dashboard/scan_list.py:988-998, backend/utilities/dashboard/scan_list.py:1038-1043 — totals per impact over all result rows; Low includes packages with no known vulnerability (#46)
+  // src: backend/utilities/dashboard/scan_list.py:986-1001, backend/utilities/dashboard/scan_list.py:1041-1046 — totals per impact over the vulnerability rows; inventory rows left out (#46)
   "sbom.chart.severity": {
-    what: "Result rows of successful scans by severity: Critical, High, Medium and Low. Low also counts every package found with no known vulnerability.",
-    why: "Critical and High rows are the ones to look at first.",
-    example: "Critical 2, High 9, Medium 15, Low 310 in a repository with about 300 packages.",
+    what: "Known vulnerabilities of successful scans by severity: Critical, High, Medium and Low. Packages with no known vulnerability are not counted.",
+    why: "Critical and High vulnerabilities are the ones to look at first.",
+    example: "Critical 2, High 9, Medium 15, Low 4 in a repository with about 300 packages.",
   },
-  // src: backend/utilities/dashboard/scan_list.py:1044-1056, backend/utilities/dashboard/sbom_license.py:382-392, RabbitMQ/worker/helpers/context/schema.py:34 — the AI model's label (no code in its context); missing counts as Not assessed; packages with no known vulnerability are stored Not reachable (#46)
+  // src: backend/utilities/dashboard/scan_list.py:1002-1003, backend/utilities/dashboard/scan_list.py:1047-1059, backend/utilities/dashboard/sbom_license.py:382-392, RabbitMQ/worker/helpers/context/schema.py:34 — the AI model's label (no code in its context); missing counts as Not assessed; inventory rows left out (#46)
   "sbom.chart.reachability": {
-    what: "Result rows by the reachability label the AI model gave each one from the vulnerability and package data (it does not read your code): Reachable, Potentially reachable, Not reachable, or Not assessed. Not reachable also counts packages with no known vulnerability.",
+    what: "Known vulnerabilities by the reachability label the AI model gave each one from the vulnerability and package data (it does not read your code): Reachable, Potentially reachable, Not reachable, or Not assessed. Packages with no known vulnerability are not counted.",
     why: "Helps you prioritise reachable vulnerabilities over unreachable ones.",
     example: "A CVE in a package found only in a test lock file is often labelled Not reachable.",
   },
-  // src: backend/utilities/dashboard/scan_list.py:986, backend/utilities/dashboard/scan_list.py:1024-1028 — per creation date (UTC) of each successful scan; Low includes packages with no known vulnerability (#46)
+  // src: backend/utilities/dashboard/scan_list.py:989, backend/utilities/dashboard/scan_list.py:1027-1031 — per creation date (UTC) of each successful scan; inventory rows left out (#46)
   "sbom.chart.trends": {
-    what: "Result rows of successful scans by severity, on the day (UTC) each scan was created. Low also counts packages with no known vulnerability.",
+    what: "Known vulnerabilities of successful scans by severity, on the day (UTC) each scan was created. Packages with no known vulnerability are not counted.",
     why: "Shows whether dependency risk is growing or shrinking.",
     example: "Scans created on 5 Nov found 3 High in total: High shows 3 on 5 Nov.",
   },
-  // src: backend/utilities/dashboard/scan_list.py:1003-1004, backend/utilities/dashboard/scan_list.py:1058, backend/utilities/dashboard/sbom_license.py:20-30 — license family of each finding's package
+  // src: backend/utilities/dashboard/scan_list.py:1006-1007, backend/utilities/dashboard/scan_list.py:1061, backend/utilities/dashboard/sbom_license.py:20-30 — license family of each vulnerability's package; inventory rows left out (#46)
   "sbom.chart.licenses": {
-    what: "Findings grouped by the license family of their package: permissive, public domain, weak copyleft, Creative Commons, commercial, strong copyleft, network copyleft, source-available, or not declared.",
-    why: "Shows whether license obligations are concentrated in a few families.",
+    what: "Known vulnerabilities grouped by the license family of their package: permissive, public domain, weak copyleft, Creative Commons, commercial, strong copyleft, network copyleft, source-available, or not declared.",
+    why: "Shows which license obligations come with the vulnerable packages.",
     example: "MIT and Apache-2.0 are permissive; GPL-3.0 is strong copyleft.",
   },
-  // src: backend/utilities/dashboard/scan_list.py:1060-1072, frontend/app/[team_id]/sbom_sca/page.tsx:448 — sorted by impact, first 20 shown
+  // src: backend/utilities/dashboard/scan_list.py:1063-1075, frontend/app/[team_id]/sbom_sca/page.tsx:448 — sorted by impact, first 20 shown; inventory rows left out (#46)
   "sbom.chart.top": {
-    what: "The 20 most severe findings (Critical first), each with its reachability, direct or transitive dependency type, and license family.",
+    what: "The 20 most severe known vulnerabilities (Critical first), each with its reachability, direct or transitive dependency type, and license family.",
     why: "These are the dependency issues to fix first.",
     example: "lodash 4.17.15, reachable, direct, permissive, Critical.",
   },
-  // src: backend/utilities/dashboard/scan_list.py:1022-1023, backend/utilities/dashboard/scan_list.py:1087-1097 — per level: average of weight/4*10
+  // src: backend/utilities/dashboard/scan_list.py:1025-1026, backend/utilities/dashboard/scan_list.py:1090-1100 — per level: average of weight/4*10
   "sbom.chart.risk_by_reach": {
-    what: "The average risk score (0 to 10: Critical 10, High 7.5, Medium 5, Low 2.5) of the findings at each reachability level.",
+    what: "The average risk score (0 to 10: Critical 10, High 7.5, Medium 5, Low 2.5) of the known vulnerabilities at each reachability level.",
     why: "Shows whether your riskiest vulnerabilities are also reachable.",
-    example: "Reachable 8.8 means the reachable findings are mostly Critical or High.",
+    example: "Reachable 8.8 means the reachable vulnerabilities are mostly Critical or High.",
   },
-  // src: backend/utilities/dashboard/scan_list.py:1005-1018, backend/utilities/dashboard/scan_list.py:1099-1105 — references per standard: PCI DSS, ISO 27001-27004
+  // src: backend/utilities/dashboard/scan_list.py:1008-1021, backend/utilities/dashboard/scan_list.py:1102-1108 — references per standard: PCI DSS, ISO 27001-27004
   "sbom.chart.policy": {
     what: "How many compliance-control references the findings have per standard (PCI DSS, ISO 27001, 27002, 27003, 27004), and each standard's share of them.",
     why: "Shows which standards your dependency findings affect most.",
     example: "PCI DSS 12 of 20 references: 60%.",
   },
-  // src: backend/utilities/db/scan_list_item.py:157-166 — counts per impact of a successful scan's result rows; packages with no known vulnerability are Low rows (#46)
+  // src: backend/utilities/db/scan_list_item.py:168-188 — counts per impact of a successful scan's vulnerability rows; inventory rows left out (#46)
   "sbom.table.vulns": {
-    what: "This scan's result rows by severity once it succeeded: Critical (red), High (orange), Medium (amber), Low (blue). Blue also counts every package found with no known vulnerability.",
+    what: "This scan's known vulnerabilities by severity once it succeeded: Critical (red), High (orange), Medium (amber), Low (blue). Packages with no known vulnerability are not counted.",
     why: "Shows at a glance how serious this scan's results are.",
-    example: "0 red, 3 orange, 6 amber, 280 blue for a repository with about 280 packages.",
+    example: "0 red, 3 orange, 6 amber, 2 blue for a repository with about 280 packages.",
   },
-  // src: backend/utilities/db/scan_list_item.py:176-178, frontend/app/[team_id]/sbom_sca/page.tsx:113-116,927 — today's scale: weights 4/3/2/1 averaged over result rows, 0 without rows (#35, #46)
+  // src: backend/utilities/db/scan_list_item.py:10-18, backend/utilities/db/scan_list_item.py:190-191, frontend/app/[team_id]/sbom_sca/page.tsx:113-116,927 — 0-10: weights 4/3/2/1 averaged over the vulnerability rows, /4*10, one decimal; None (shown —) without a vulnerability (#35, #46)
   "sbom.table.risk": {
-    what: "This scan's severity-weighted average on a 1 to 4 scale: Critical 4, High 3, Medium 2, Low 1, averaged over its result rows (packages with no known vulnerability count as Low). 0 when the scan has no rows or did not succeed.",
+    what: "This scan's severity-weighted average, 0 to 10, on the same scale as the dashboard and the Risk score filter: Critical 10, High 7.5, Medium 5, Low 2.5, averaged over its known vulnerabilities and rounded to one decimal. Empty (—) when the scan found no vulnerability or did not succeed.",
     why: "Lets you compare scans by overall severity.",
-    example: "1 High and 1 Low: (3 + 1) / 2 = 2.",
+    example: "1 High and 1 Low: (7.5 + 2.5) / 2 = 5.",
   },
-  // src: backend/utilities/db/scan_list_item.py:184-186 — repo_url, or zip upload, or SBOM file
+  // src: backend/utilities/db/scan_list_item.py:208-210 — repo_url, or zip upload, or SBOM file
   "sbom.table.source": {
     what: "The repository that was scanned (hover for the full URL), or Zip file for an uploaded archive. Empty for an uploaded SBOM file.",
     why: "Tells you which code or file the results belong to.",
@@ -137,85 +137,85 @@ const TEXT = {
   },
 
   // ────────────────────────────────────────────────────────────── SCA + SBOM: results view (components/SbomResults.tsx)
-  // src: backend/utilities/dashboard/scan.py:857-858, RabbitMQ/worker/helpers/tools/sca_sbom_agent/merge_inventory.py:109-122 — len(results) of this scan; packages with no known vulnerability are Low rows (#46)
+  // src: backend/utilities/dashboard/scan.py:827-829, backend/utilities/dashboard/scan.py:860, backend/utilities/dashboard/sbom_rows.py:20-22, RabbitMQ/worker/helpers/tools/sca_sbom_agent/merge_inventory.py:109-122 — the vulnerability rows of this scan; inventory_only rows left out (#46)
   "sbom.res.kpi.total": {
-    what: "This scan's result rows: each known vulnerability in your dependencies, plus each package found with no known vulnerability (stored as a Low row).",
+    what: "This scan's known vulnerabilities in your dependencies. Packages found with no known vulnerability are in the bill of materials but are not counted here.",
     why: "Sizes this scan's dependency risk.",
-    example: "1 vulnerable package and 3 packages with no known vulnerability: 4.",
+    example: "1 vulnerable package and 3 packages with no known vulnerability: 1.",
   },
-  // src: backend/utilities/dashboard/scan.py:840-842, backend/utilities/dashboard/scan.py:858 — impact critical
+  // src: backend/utilities/dashboard/scan.py:841-843, backend/utilities/dashboard/scan.py:861 — impact critical
   "sbom.res.kpi.critical": {
     what: "Of those, the vulnerabilities rated Critical.",
     why: "Critical dependency vulnerabilities are often exploited soon after disclosure.",
     example: "A remote-code-execution CVE in a direct dependency.",
   },
-  // src: backend/utilities/dashboard/scan.py:849-853 — number of compliance-control entries over all results
+  // src: backend/utilities/dashboard/scan.py:850-854 — number of compliance-control entries over all vulnerabilities
   "sbom.res.kpi.policy": {
     what: "How many compliance-control references (PCI DSS, ISO 27001 and others) this scan's vulnerabilities map to, added up.",
     why: "Shows how many audit requirements this scan's findings touch.",
     example: "One vulnerability mapped to 2 controls and one to 3: 5.",
   },
-  // src: backend/utilities/dashboard/scan.py:860-864, backend/utilities/dashboard/scan.py:95-97 — medium + high risk license categories over all result rows (#46)
+  // src: backend/utilities/dashboard/scan.py:863-867, backend/utilities/dashboard/scan.py:97-98 — medium + high risk license categories over the vulnerability rows; inventory rows left out (#46)
   "sbom.res.kpi.license_risks": {
-    what: "This scan's result rows, vulnerable packages or not, whose license is medium-risk (weak copyleft such as LGPL or MPL, Creative Commons, commercial) or high-risk (strong copyleft such as GPL, network copyleft such as AGPL, source-available such as SSPL or BUSL).",
+    what: "This scan's known vulnerabilities whose package's license is medium-risk (weak copyleft such as LGPL or MPL, Creative Commons, commercial) or high-risk (strong copyleft such as GPL, network copyleft such as AGPL, source-available such as SSPL or BUSL). Packages with no known vulnerability are not counted.",
     why: "Some licenses impose obligations on how you distribute your software.",
-    example: "A package under LGPL-3.0 counts here even with no known vulnerability.",
+    example: "A vulnerable package under LGPL-3.0 counts here; a GPL-3.0 package with no known vulnerability does not.",
   },
-  // src: backend/utilities/dashboard/scan.py:865-869, backend/utilities/dashboard/scan.py:96 — strong copyleft, network copyleft, source-available
+  // src: backend/utilities/dashboard/scan.py:868-872, backend/utilities/dashboard/scan.py:97 — strong copyleft, network copyleft, source-available
   "sbom.res.kpi.high_risk_licenses": {
     what: "Vulnerabilities whose package is under a strong copyleft (GPL), network copyleft (AGPL) or source-available (SSPL, BUSL) license.",
     why: "Strong copyleft or source-available licenses can force code publication or product changes.",
     example: "A vulnerable package licensed AGPL-3.0.",
   },
-  // src: backend/utilities/dashboard/scan.py:28-33, backend/utilities/dashboard/scan.py:853-859 — mean of 10/7.5/5/2.5 per result row, Python round(x, 1); packages with no known vulnerability are Low rows (#46)
+  // src: backend/utilities/dashboard/scan.py:29-34, backend/utilities/dashboard/scan.py:855-862 — mean of 10/7.5/5/2.5 per vulnerability row, Python round(x, 1); 0 without vulnerabilities; inventory rows left out (#46)
   "sbom.res.kpi.avg_risk": {
-    what: "Average over this scan's result rows, 0 to 10: Critical counts 10, High 7.5, Medium 5, Low 2.5. Packages with no known vulnerability are Low rows. Rounded to one decimal.",
+    what: "Average over this scan's known vulnerabilities, 0 to 10: Critical counts 10, High 7.5, Medium 5, Low 2.5. Packages with no known vulnerability are not counted; 0 when there is no vulnerability. Rounded to one decimal.",
     why: "One number to compare this scan with others.",
-    example: "1 Critical and 3 packages with no known vulnerability: (10 + 3 × 2.5) / 4 = 4.4.",
+    example: "1 Critical and 3 Low vulnerabilities: (10 + 3 × 2.5) / 4 = 4.4.",
   },
-  // src: backend/utilities/dashboard/scan.py:843-846, RabbitMQ/worker/helpers/context/schema.py:34, RabbitMQ/worker/helpers/tools/sca_sbom_agent/main.py:137-158 — the AI model's label; no source file in its context
+  // src: backend/utilities/dashboard/scan.py:844-847, RabbitMQ/worker/helpers/context/schema.py:34, RabbitMQ/worker/helpers/tools/sca_sbom_agent/main.py:137-158 — the AI model's label; no source file in its context
   "sbom.res.kpi.reachable": {
     what: "Vulnerabilities the AI model labelled Reachable. It judges from the vulnerability and package data (description, severity, where the package was found); it does not read your code, so treat the label as a hint.",
     why: "A vulnerability your code reaches is far more urgent than one it never calls.",
     example: "A CVE in a web framework's request parser may be labelled Reachable although your code never uses that parser.",
   },
-  // src: backend/utilities/dashboard/scan.py:871-879, backend/utilities/dashboard/finding_metrics.py:18-40, frontend/components/SbomResults.tsx:246-250,338 — stored result rows of the scan by status, share of all; packages with no known vulnerability included (#46)
+  // src: backend/utilities/dashboard/scan.py:874-882, backend/utilities/dashboard/finding_metrics.py:18-40, frontend/components/SbomResults.tsx:246-250,338 — the scan's stored vulnerability findings by status, share of all; the stored findings of inventory rows are left out (#46)
   "sbom.res.remediation": {
-    what: "This scan's result rows by the status your team set (Fixed, In progress, Not started, Ignored), each as a count and a share of all its rows.",
+    what: "This scan's stored vulnerability findings by the status your team set (Fixed, In progress, Not started, Ignored), each as a count and a share of all of them. Packages with no known vulnerability are not counted.",
     why: "Shows how far fixing has got for this scan.",
-    example: "10 rows: 2 Fixed (20%), 1 In progress, 7 Not started.",
+    example: "10 vulnerabilities: 2 Fixed (20%), 1 In progress, 7 Not started.",
   },
-  // src: backend/utilities/dashboard/scan.py:837-839, backend/utilities/dashboard/scan.py:953 — count per impact; Low includes packages with no known vulnerability (#46)
+  // src: backend/utilities/dashboard/scan.py:840-843, backend/utilities/dashboard/scan.py:955 — count per impact over the vulnerability rows; inventory rows left out (#46)
   "sbom.res.severity": {
-    what: "How many of this scan's result rows have each impact: Critical, High, Medium and Low. Low also counts packages with no known vulnerability.",
-    why: "Critical and High rows are the ones to look at first.",
+    what: "How many of this scan's known vulnerabilities have each impact: Critical, High, Medium and Low. Packages with no known vulnerability are not counted.",
+    why: "Critical and High vulnerabilities are the ones to look at first.",
     example: "Critical 1, High 3, Medium 6, Low 2.",
   },
-  // src: backend/utilities/dashboard/scan.py:843-844, backend/utilities/dashboard/scan.py:881-896, RabbitMQ/worker/helpers/context/schema.py:34 — the AI model's label; missing counts as Not assessed; packages with no known vulnerability are stored Not reachable (#46)
+  // src: backend/utilities/dashboard/scan.py:844-845, backend/utilities/dashboard/scan.py:884-898, RabbitMQ/worker/helpers/context/schema.py:34 — the AI model's label; missing counts as Not assessed; inventory rows left out (#46)
   "sbom.res.reachability": {
-    what: "This scan's result rows by the reachability label the AI model gave each one from the vulnerability and package data (it does not read your code): Reachable, Potentially reachable, Not reachable, or Not assessed. Not reachable also counts packages with no known vulnerability.",
+    what: "This scan's known vulnerabilities by the reachability label the AI model gave each one from the vulnerability and package data (it does not read your code): Reachable, Potentially reachable, Not reachable, or Not assessed. Packages with no known vulnerability are not counted.",
     why: "Helps you prioritise reachable vulnerabilities.",
     example: "A CVE in a package found only in a test lock file is often labelled Not reachable.",
   },
-  // src: backend/utilities/dashboard/scan.py:898-912, backend/utilities/celery/create_findings.py:68-84 — findings by impact on their created_at date (UTC); a scan's findings are all recorded when it finishes
+  // src: backend/utilities/dashboard/scan.py:874, backend/utilities/dashboard/scan.py:900-915, backend/utilities/celery/create_findings.py:68-84 — vulnerability findings by impact on their created_at date (UTC); a scan's findings are all recorded when it finishes; inventory rows left out (#46)
   "sbom.res.trends": {
-    what: "This scan's findings by severity, on the date (UTC) each was recorded. A scan records all its findings when it finishes, so this usually shows a single day.",
+    what: "This scan's vulnerability findings by severity, on the date (UTC) each was recorded. A scan records all its findings when it finishes, so this usually shows a single day. Packages with no known vulnerability are not counted.",
     why: "Shows when the findings were recorded.",
     example: "12 findings recorded on 11 Nov: one point with Critical 1, High 3, Medium 6, Low 2.",
   },
-  // src: backend/utilities/dashboard/scan.py:847-848, backend/utilities/dashboard/scan.py:914, backend/utilities/dashboard/sbom_license.py:330-375 — license family per result (SPDX from the inventory, else the model's category, else a curated package map, else not declared)
+  // src: backend/utilities/dashboard/scan.py:848-849, backend/utilities/dashboard/scan.py:917, backend/utilities/dashboard/sbom_license.py:330-375 — license family per vulnerability (SPDX from the inventory, else the model's category, else a curated package map, else not declared); inventory rows left out (#46)
   "sbom.res.licenses": {
     what: "This scan's vulnerabilities by the license family of their package. The license comes from the SBOM when it records one, else from the AI model's category, else from a built-in list of well-known packages; otherwise Not declared.",
     why: "Shows which license obligations come with the vulnerable packages.",
     example: "MIT and Apache-2.0 are permissive; GPL-3.0 is strong copyleft.",
   },
-  // src: backend/utilities/dashboard/scan.py:853-856, backend/utilities/dashboard/scan.py:931-939 — per reachability label: mean of 10/7.5/5/2.5, 0 when none
+  // src: backend/utilities/dashboard/scan.py:855-858, backend/utilities/dashboard/scan.py:934-942 — per reachability label: mean of 10/7.5/5/2.5, 0 when none
   "sbom.res.risk_by_reach": {
     what: "For each reachability label, the average risk (0 to 10: Critical 10, High 7.5, Medium 5, Low 2.5) of this scan's vulnerabilities with that label; 0 when there are none.",
     why: "Shows whether the riskiest vulnerabilities are also reachable.",
     example: "Reachable 8.8: the vulnerabilities labelled Reachable are mostly Critical or High.",
   },
-  // src: backend/utilities/dashboard/scan.py:916-929, frontend/components/SbomResults.tsx:529-534,516 — sorted by impact, first 20
+  // src: backend/utilities/dashboard/scan.py:919-932, frontend/components/SbomResults.tsx:529-534,516 — sorted by impact, first 20; inventory rows left out (#46)
   "sbom.res.top": {
     what: "This scan's vulnerabilities, Critical first, the first 20, each with its reachability label, direct or transitive dependency, and license family.",
     why: "These are the dependency issues to fix first.",
