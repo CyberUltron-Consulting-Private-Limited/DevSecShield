@@ -36,19 +36,20 @@ async def start_scan_and_update_db(
     team_id: int,   
     start_scan_payload: StartScanPayload,
     uploaded_file: UploadFile | None = None,
+    task_id: str | None = None,
     *,
     scan_kwargs: dict | None = None,
     expected_task_id: str | None = None,
-    task_id: str | None = None,
     ) -> str :
     """Send the scan's run to its worker and record the task on the scan; returns the task id.
 
+    ``task_id``: the Celery task id to send the run with, chosen by the caller before it sends: the repository queue
+    stores it first, and a reinitialize chooses it before its claim, so the run can be withdrawn even if this process
+    dies after sending it.
     ``scan_kwargs``: the worker input already formatted (and its file uploaded) by the caller, which then ran the
     target checks before charging (reinitialize); otherwise it is formatted here.
     ``expected_task_id``: record the task only while the scan is still ``pending`` with this task id (the claim a
     reinitialize holds); a scan cancelled, finished or claimed by another request meanwhile keeps its state.
-    ``task_id``: the Celery task id to send the run with (a reinitialize chooses it before its claim, so the run can be
-    withdrawn even if this process dies after sending it).
     A run that was sent but could not be recorded is withdrawn (it would otherwise run unpaid and unseen)."""
     try:
         

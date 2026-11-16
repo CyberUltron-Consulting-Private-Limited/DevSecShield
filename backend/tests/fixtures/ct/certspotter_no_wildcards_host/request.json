@@ -1,0 +1,7 @@
+{
+ "url": "https://api.certspotter.com/v1/issuances?domain=ct-proof-host.zeroshield.ai&expand=dns_names&expand=issuer&expand=revocation&expand=cert_der&expand=pubkey",
+ "method": "GET",
+ "started": "2026-11-12T17:46:44.845528Z",
+ "duration_ms": 217,
+ "user_agent": "zeroshield-ct-capture/1 (+https://zeroshield.ai)"
+}

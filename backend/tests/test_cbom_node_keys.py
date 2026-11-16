@@ -45,7 +45,8 @@ def _codes(asset_type, facts, algorithm=None, key_size=None):
     ("kmip", "AES", 256, {"key_class": "secret", "state": "Compromised"}, {"KEY_COMPROMISED"}),
     ("kmip", "3DES", 168, {"key_class": "secret", "state": "Active"}, {"KEY_WEAK_SYMMETRIC"}),
     ("kmip", "RC4", 128, {"key_class": "secret"}, {"KEY_WEAK_SYMMETRIC"}),
-    ("vault_transit", "AES", 256, {"key_class": "secret", "auto_rotate_period_s": 0}, {"KEY_NO_ROTATION"}),
+    # the same finding as a cloud KMS key without rotation (C9)
+    ("vault_transit", "AES", 256, {"key_class": "secret", "auto_rotate_period_s": 0}, {"KMS_NO_ROTATION"}),
     ("vault_transit", "RSA", 2048, {"key_class": "private", "exportable": True, "auto_rotate_period_s": 2592000},
      {"KEY_PLAINTEXT_EXPORT", "QUANTUM_VULNERABLE"}),
     ("vault_transit", "ChaCha20", 256, {"key_class": "secret", "allow_plaintext_backup": True,
@@ -244,7 +245,11 @@ def test_database_engines_and_sql_server_password_rule():
     with pytest.raises(ValueError, match="service name"):
         spec.model.model_validate({"engine": "oracle", "host": "ora.corp", "login": "zs_cbom"})
     ora = spec.model.model_validate({"engine": "oracle", "host": "ora.corp", "login": "zs_cbom", "database_name": "ORCLPDB1"})
-    assert ora.port == 1521 and kinds.credential_target_problem("database", ora, {"password": "x"}) is None
+    # #216: an Oracle password goes only to a server proven by TLS and its CA, like SQL Server's
+    assert ora.port == 1521 and "Oracle" in kinds.credential_target_problem("database", ora, {"password": "x"})
+    ora = spec.model.model_validate({"engine": "oracle", "host": "ora.corp", "login": "zs_cbom", "database_name": "ORCLPDB1",
+                                     "ca_pem": cert})
+    assert kinds.credential_target_problem("database", ora, {"password": "x"}) is None
 
 
 def _ca_cert() -> str:
@@ -295,9 +300,18 @@ def test_ca_connector_providers():
         spec.model.model_validate({"provider": "adcs", "login": "svc"})
     with pytest.raises(ValueError, match="5986"):
         spec.model.model_validate({"provider": "adcs", "login": "svc", "host": "ca01", "port": 5985})
-    for provider in ("venafi", "keyfactor", "digicert", "sectigo", "other"):
-        cfg = spec.model.model_validate({"provider": provider, "api_url": "https://clm.example.com"})
-        assert not spec.collectable(cfg) and not spec.needs_node(cfg)  # honest: not collected yet
+    venafi = spec.model.model_validate({"provider": "venafi", "api_url": "https://tpp.example/vedsdk",
+                                        "login": "local:admin", "client_id": "MyApp"})
+    assert spec.collectable(venafi) and spec.needs_node(venafi) and spec.secret_fields(venafi) == {"password"}
+    keyfactor = spec.model.model_validate({"provider": "keyfactor", "api_url": "https://kf.example/KeyfactorAPI"})
+    assert spec.collectable(keyfactor) and spec.secret_fields(keyfactor) == {"token"}
+    digicert = spec.model.model_validate({"provider": "digicert", "api_url": "https://www.digicert.com/services/v2"})
+    assert spec.collectable(digicert) and spec.secret_fields(digicert) == {"api_key"}
+    sectigo = spec.model.model_validate({"provider": "sectigo", "api_url": "https://cert-manager.com/api",
+                                         "login": "reader", "customer_uri": "cst1152"})
+    assert spec.collectable(sectigo) and spec.secret_fields(sectigo) == {"password"}
+    other = spec.model.model_validate({"provider": "other", "api_url": "https://clm.example.com", "login": "nobody"})
+    assert other.login is None and not spec.collectable(other) and not spec.needs_node(other)
 
 
 # ----------------------------------------------------------------------------- templates
@@ -330,12 +344,10 @@ def test_postgres_grant_tells_rds_to_skip_the_hba_grants():
 # ----------------------------------------------------------------------------- API: saved source -> node job
 def test_key_manager_and_vault_sources_reach_the_node(api, world):
     node_id, token, _ = enroll_node(api)
-    cert = _ca_cert()
-    from cryptography.hazmat.primitives import serialization
-    from cryptography.hazmat.primitives.asymmetric import ec
+    from test_cbom_ca_connectors_b3 import _pair
 
-    key = ec.generate_private_key(ec.SECP256R1()).private_bytes(  # made here; no key material in the repository
-        serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()).decode()
+    # a matching client certificate and key, made here (#213 checks the pair at save; no key material in the repo)
+    cert, key = _pair("kms-reader", curve=True)
     kmip = {"kind": "key_manager", "name": "kms-1", "node_id": node_id, "test_after_save": True,
             "config": {"provider": "kmip", "host": "kms.corp", "ca_pem": cert},
             "secrets": {"client_cert": cert, "client_key": key}}

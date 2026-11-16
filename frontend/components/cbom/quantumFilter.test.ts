@@ -5,7 +5,8 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { inventoryRows, isBrokenToday, matchesQuantumFilter, quantumCounts, round1 } from "./quantumFilter";
+import { inventoryRows, isBrokenToday, isUnidentified, matchesQuantumFilter, quantumCounts, round1 } from "./quantumFilter";
+import { quantumReadinessBars } from "../../utils/cbomReadiness";
 
 // rows as the lab scan returned them (u2-zip-full-opts)
 const md5 = { quantum_safe: true, crypto_strength: "weak" };
@@ -26,6 +27,13 @@ assert.equal(matchesQuantumFilter(rsa1024, "vulnerable"), true);
 assert.equal(matchesQuantumFilter(library, "safe"), false);
 assert.equal(matchesQuantumFilter(library, "vulnerable"), false);
 for (const f of [md5, aesGcm, rsa1024, library]) assert.equal(matchesQuantumFilter(f, "all"), true);
+
+// CB-18 HF-1: an algorithm the rule base could not identify, as an engine before CB-18 stored it, is never "Safe"
+const unidentified = { quantum_safe: true, crypto_strength: "unknown" };
+assert.equal(isUnidentified(unidentified), true);
+assert.equal(isUnidentified(aesGcm), false);
+assert.equal(matchesQuantumFilter(unidentified, "safe"), false);
+assert.deepEqual(quantumCounts([unidentified, rsa1024]), { safe: 0, broken: 0, vulnerable: 1, judged: 1, readinessPct: 0 });
 console.log("quantumFilter tests passed");
 
 // PQC readiness gauge (a lab scan showed 77 % with MD5 and DES counted as quantum-safe): broken today is not ready
@@ -36,9 +44,12 @@ console.log("quantumFilter tests passed");
   assert.equal(quantumCounts([library]).readinessPct, null, "nothing judged is n/a, not 0 %");
   assert.equal(quantumCounts([aesGcm, aesGcm, rsa1024]).readinessPct, 66.7);
   const charts = fs.readFileSync(path.join(__dirname, "CbomCryptoCharts.tsx"), "utf8");
-  assert.ok(charts.includes("<PqcReadinessGauge pqc={distributions.pqc} rows={inventory ?? findings} />"),
+  assert.ok(charts.includes("<PqcReadinessGauge pqc={distributions.pqc} rows={inventory ?? findings} scope={readinessScope} />"),
     "gauge counts every row of the scan (findings when the page has no row list)");
-  assert.ok(charts.includes("Broken today: {broken}"), "gauge legend lists Broken today");
+  // the gauge (PqcReadinessGauge.tsx since QA round 4) counts those rows with quantumCounts on a code scan
+  const gauge = fs.readFileSync(path.join(__dirname, "PqcReadinessGauge.tsx"), "utf8");
+  assert.ok(gauge.includes('scope === "code" && rows && rows.length > 0 ? quantumCounts(rows) : null'));
+  assert.ok(gauge.includes("Broken today: {broken}"), "gauge legend lists Broken today");
 }
 console.log("quantumCounts tests passed");
 
@@ -68,6 +79,24 @@ console.log("quantumCounts tests passed");
     [6.2, 93.8, 12.5, 66.7, 0.1, 10]);
   const results = fs.readFileSync(path.join(__dirname, "..", "CbomResults.tsx"), "utf8");
   assert.ok(results.includes("const allRows = useMemo(() => inventoryRows(data, findingsList ?? []), [data, findingsList]);"));
+  // CB-38: one template for code scans and Sources runs; a code scan still hands every row to the gauge (a run passes
+  // none: its gauge reads the run posture, Rule P). Since the results redesign the run's charts are in its views.
   assert.ok(results.includes("inventory={allRows}"), "the results page hands every row to the gauge");
+  const views = path.join(__dirname, "results", "views");
+  for (const f of fs.readdirSync(views).filter((n) => n.endsWith(".tsx"))) {
+    const src = fs.readFileSync(path.join(views, f), "utf8");
+    if (src.includes("<CbomCryptoCharts")) assert.ok(src.includes("inventory={[]}") && src.includes("findings={[]}"), `${f}: a run hands no rows to the gauge`);
+  }
+}
+// review M1 (#135): the Quantum readiness charts draw every verdict the backend sends, Broken today included
+{
+  assert.deepEqual(quantumReadinessBars({ quantum_safe: 30, quantum_vulnerable: 9, broken_today: 3 }).map((b) => [b.name, b.count]),
+    [["Safe", 30], ["Vulnerable", 9], ["Broken today", 3]]);
+  assert.deepEqual(quantumReadinessBars({ quantum_safe: 2, quantum_vulnerable: 0 }).map((b) => b.name), ["Safe"], "empty bars are left out");
+  assert.deepEqual(quantumReadinessBars(null), []);
+  for (const file of [path.join(__dirname, "results", "CbomDashboardCharts.tsx"), path.join(__dirname, "..", "..", "app", "[team_id]", "cbom", "page.tsx")]) {
+    const text = fs.readFileSync(file, "utf8");
+    assert.ok(text.includes("quantumReadinessBars("), `${path.basename(file)} builds its Quantum readiness chart with quantumReadinessBars`);
+  }
 }
 console.log("readiness parity tests passed");

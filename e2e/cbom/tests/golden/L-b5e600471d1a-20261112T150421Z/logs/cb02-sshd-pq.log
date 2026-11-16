@@ -1,0 +1,19 @@
+2026-11-12T15:21:53.766402032Z cb02-entry: target=sshd-pq role=sshd port=22
+2026-11-12T15:21:53.782977698Z Server listening on 0.0.0.0 port 22.
+2026-11-12T15:22:33.700400119Z Connection from 10.231.0.11 port 41816 on 10.231.0.24 port 22 rdomain ""
+2026-11-12T15:22:33.704767165Z Unable to negotiate with 10.231.0.11 port 41816: no matching key exchange method found. Their offer: diffie-hellman-group1-sha1 [preauth]
+2026-11-12T15:22:33.871335588Z Connection from 10.231.0.11 port 41838 on 10.231.0.24 port 22 rdomain ""
+2026-11-12T15:22:33.872499645Z Connection from 10.231.0.11 port 41836 on 10.231.0.24 port 22 rdomain ""
+2026-11-12T15:22:33.885420863Z Connection from 10.231.0.11 port 41826 on 10.231.0.24 port 22 rdomain ""
+2026-11-12T15:22:33.888650019Z Connection closed by 10.231.0.11 port 41838 [preauth]
+2026-11-12T15:22:33.893226619Z Unable to negotiate with 10.231.0.11 port 41826: no matching host key type found. Their offer: rsa-sha2-512,rsa-sha2-256,ssh-rsa [preauth]
+2026-11-12T15:22:33.899141609Z Unable to negotiate with 10.231.0.11 port 41836: no matching host key type found. Their offer: ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521 [preauth]
+2026-11-12T15:22:34.066810151Z Connection from 10.231.0.11 port 41852 on 10.231.0.24 port 22 rdomain ""
+2026-11-12T15:22:34.073234459Z Unable to negotiate with 10.231.0.11 port 41852: no matching key exchange method found. Their offer: curve25519-sha256,curve25519-sha256@libssh.org,ecdh-sha2-nistp256,ecdh-sha2-nistp384,ecdh-sha2-nistp521,diffie-hellman-group-exchange-sha256,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512,diffie-hellman-group14-sha256 [preauth]
+2026-11-12T15:23:34.599973704Z Connection from 10.231.0.2 port 45486 on 10.231.0.24 port 22 rdomain ""
+2026-11-12T15:23:34.599991524Z kex_exchange_identification: Connection closed by remote host
+2026-11-12T15:23:34.600003775Z Connection closed by 10.231.0.2 port 45486
+2026-11-12T15:23:38.749826573Z Connection from 10.231.0.2 port 45490 on 10.231.0.24 port 22 rdomain ""
+2026-11-12T15:23:38.754021393Z Connection closed by 10.231.0.2 port 45490 [preauth]
+2026-11-12T15:23:39.199704075Z Connection from 10.231.0.2 port 45506 on 10.231.0.24 port 22 rdomain ""
+2026-11-12T15:23:39.207647052Z Unable to negotiate with 10.231.0.2 port 45506: no matching key exchange method found. Their offer: curve25519-sha256@libssh.org,ecdh-sha2-nistp256,ecdh-sha2-nistp384,ecdh-sha2-nistp521,diffie-hellman-group16-sha512,diffie-hellman-group-exchange-sha256,diffie-hellman-group14-sha256,diffie-hellman-group-exchange-sha1,diffie-hellman-group14-sha1,diffie-hellman-group1-sha1,ext-info-c,kex-strict-c-v00@openssh.com [preauth]

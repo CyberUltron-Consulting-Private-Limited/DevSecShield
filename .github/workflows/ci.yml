@@ -6,17 +6,18 @@
 # was skipped although its paths changed.
 #
 #   changes      what changed -> which suites run, and the image list
-#   pr-checks    branch-flow (staging <- dev, main <- staging | hotfix/*), review-labels (drop outdated review labels),
-#                pr-hygiene (title, acceptance criteria, no secret files, gate changes and suppressions need a label)
+#   pr-checks    branch-flow (staging <- dev, main <- staging | hotfix/*), pr-hygiene (title, acceptance criteria)
 #   backend      backend/ pytest on Python 3.12 with PostgreSQL 15, ruff "no new findings"
 #   aibom        aibom/ pytest (AI-BOM + CBOM gates), ruff + mypy "no new findings", representative-repo gates
 #   cbom-action  .github/actions/cbom-scan: a clean tree passes, a vulnerable tree is blocked (exit 1, not 127)
+#   cbom-d1      CBOM code-lane accuracy on CryptoAPI-Bench, OWASP Benchmark and a labelled corpus (bench/cbom/d1)
 #   scan-node    scan_node/ pytest from the hash-pinned lock
 #   worker       RabbitMQ/worker pytest (tests/, helpers/tests/test_*, the sca_sbom_agent tests)
 #   dast-worker  RabbitMQ/dast_worker pytest (helpers/tests/test_*)
 #   worker-locks uv lock --check for the guardrail worker
 #   frontend     npm ci, tsc, eslint "no new errors", *.test.ts with tsx, next build
-#   security     gitleaks, ggshield, Semgrep, OSV-Scanner, Trivy fs, Checkov, Hadolint, ShellCheck, actionlint
+#   security     Semgrep, OSV-Scanner, Trivy fs, Checkov, Hadolint, ShellCheck, actionlint (no secret scanning since
+#                2026-11-12, owner decision)
 #   codeql       python + javascript-typescript (only where CodeQL is licensed; see reusable-codeql.yml)
 #   images       docker build (no push) + Trivy image scan for each changed image
 #   ci-gate      summary of all of the above; the required status check
@@ -59,6 +60,7 @@ jobs:
       backend: ${{ steps.decide.outputs.backend }}
       aibom: ${{ steps.decide.outputs.aibom }}
       cbom-action: ${{ steps.decide.outputs.cbom-action }}
+      cbom-d1: ${{ steps.decide.outputs.cbom-d1 }}
       scan-node: ${{ steps.decide.outputs.scan-node }}
       worker: ${{ steps.decide.outputs.worker }}
       dast-worker: ${{ steps.decide.outputs.dast-worker }}
@@ -120,6 +122,16 @@ jobs:
               - 'aibom/tests/fixtures/code-supply/**'
               - 'aibom/pyproject.toml'
               - 'aibom/uv.lock'
+            cbom-d1:
+              - *pipeline
+              - 'bench/cbom/d1/**'
+              - 'e2e/fixtures/cbom-d1-corpus/**'
+              # the engine loads more than aibom/cbom: model, scan, emit, compliance, score and aibom/config
+              - 'aibom/src/**'
+              - 'aibom/config/**'
+              - 'aibom/pyproject.toml'
+              - 'aibom/uv.lock'
+              - 'RabbitMQ/worker/helpers/tools/cbom_agent/**'
             scan-node:
               - *pipeline
               - 'scan_node/**'
@@ -144,6 +156,7 @@ jobs:
             frontend:
               - *pipeline
               - 'frontend/**'
+              - 'contracts/**'         # backend<->UI contract files (gradeContract.test.ts reads cbom/grade_keys.json)
             code:
               - *pipeline
               - '**/*.py'
@@ -224,7 +237,7 @@ jobs:
           if [ "$EVENT" = push ] && [ "$REF" != dev ]; then suites=false; fi
           [ "$BROAD" = true ] && F=$(jq -c '.backend = "true"' <<< "$F")
           f() { [ "$all" = true ] || [ "$(jq -r --arg k "$1" '.[$k] // "false"' <<< "$F")" = true ]; }
-          for s in backend aibom cbom-action scan-node worker dast-worker worker-locks frontend code; do
+          for s in backend aibom cbom-action cbom-d1 scan-node worker dast-worker worker-locks frontend code; do
             if [ "$suites" = true ] && f "$s"; then v=true; else v=false; fi
             echo "$s=$v" >> "$GITHUB_OUTPUT"; echo "$s=$v"
           done
@@ -232,8 +245,9 @@ jobs:
           images='[]'
           add() { images=$(jq -c --argjson i "$1" '. + [$i]' <<< "$images"); }
           # Same contexts and build arguments as scripts/deploy/build_images.sh and scripts/release/scan_node_image.sh.
+          # build-contexts: one name=path per line ("\n"); build-push-action never splits them on commas.
           if f img-all || f img-backend; then
-            add '{"name":"backend","context":"backend","dockerfile":"backend/Dockerfile","build-contexts":"migrations=prod_database_migrations"}'
+            add '{"name":"backend","context":"backend","dockerfile":"backend/Dockerfile","build-contexts":"migrations=prod_database_migrations\naibom=aibom"}'
           fi
           if f img-all || f img-frontend; then
             add '{"name":"frontend","context":"frontend","dockerfile":"frontend/Dockerfile","build-args":"NEXT_PUBLIC_BACKEND_URL=http://localhost:8000"}'
@@ -270,7 +284,7 @@ jobs:
     if: github.event_name == 'pull_request'
     permissions:
       contents: read
-      pull-requests: write # review-labels removes review labels that new commits outdate; it checks out nothing
+      pull-requests: read # pr-hygiene reads the PR's title and body
     uses: ./.github/workflows/reusable-pr-checks.yml
 
   backend:
@@ -306,6 +320,12 @@ jobs:
         AWS_DEFAULT_REGION=us-east-1
         RABBIT_ADMIN_USERNAME=ci
         RABBIT_ADMIN_PASSWORD=ci-only-dummy
+        PG_USER=ci
+        PG_USER_PASS=ci-only-dummy
+        PG_DB=ci
+      # PG_*: get_db() reads these names (os.environ[...]) before any route can refuse a request; the tests swap in
+      # their own SQLite / PG_URL_* engines, so these only have to exist. They came from the tracked backend/.env
+      # until #392 untracked it, which turned test_cbom_api_keys and test_cbom_fleet_scaffold red.
       test-command: >-
         CANCEL_RACE_PG_URL="$PG_URL_C1" AUTH_TEST_PG_URL="$PG_URL_AUTH" CBOM_TEST_PG_URL="$PG_URL_CBOM"
         P1_PG_URL="$PG_URL_P1"
@@ -376,6 +396,27 @@ jobs:
           if [ "$CODE" != 1 ]; then echo "::error::expected the scan to block with exit 1, got '${CODE:-none}'"; exit 1; fi
           echo "blocked the vulnerable tree (exit 1)"
 
+
+  # CB-07: accuracy of the CBOM code lane against ground truth that never comes from the product (the public
+  # benchmarks' own labels, an independently labelled corpus, OSV at test time). Fails on a regression below the
+  # non-regression floors or when a track's target floor starts passing (bench/cbom/d1/README.md).
+  cbom-d1:
+    name: cbom-d1
+    needs: changes
+    if: needs.changes.outputs.cbom-d1 == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/reusable-python-tests.yml
+    with:
+      suite-name: cbom-d1
+      working-directory: aibom
+      python-version: "3.12"
+      install-command: uv sync --frozen --all-extras --dev
+      test-command: bash ../bench/cbom/d1/ci.sh
+      # 2: the merge commit and its first parent (the base branch), for `d1.py check-floors --base HEAD^1`
+      fetch-depth: 2
+      artifact-paths: test-reports/
+      timeout-minutes: 15
   scan-node:
     name: scan-node
     needs: changes
@@ -480,11 +521,10 @@ jobs:
     name: security
     permissions:
       contents: read
-      pull-requests: read # gitleaks reads the PR's secret-fixtures-reviewed label
     uses: ./.github/workflows/reusable-security.yml
     with:
       # Deliberately vulnerable detector fixtures and benchmark clones, anchored to their real roots (a future
-      # product directory named "fixtures" or "examples" elsewhere is still scanned). gitleaks ignores this list.
+      # product directory named "fixtures" or "examples" elsewhere is still scanned).
       exclude-regex: >-
         ^(aibom/tests/fixtures|scan_node/tests/fixtures|backend/tests/fixtures|e2e/fixtures|bench/repos|aibom/bench/repos|aibom/examples)/|(^|/)(node_modules|\.venv|venv|\.next|dist)/
       semgrep-exclude: >-
@@ -494,11 +534,10 @@ jobs:
         aibom/tests/fixtures,scan_node/tests/fixtures,backend/tests/fixtures,e2e/fixtures,bench/repos,aibom/bench/repos,aibom/examples,**/node_modules,**/.venv
       # The customer-side scan-node chart, rendered with CI placeholder values (apiUrl is `required`) and with the
       # host-agent DaemonSet switched on, so Checkov sees every manifest the chart can produce.
-      helm-charts: >-
-        deploy/helm/cbom-scan-node --set apiUrl=https://ci.invalid --set registrationToken=ci-placeholder
-        --set agent.enabled=true --set agent.poolToken=ci-placeholder
-    secrets:
-      GITGUARDIAN_API_KEY: ${{ secrets.GITGUARDIAN_API_KEY }}
+      # one chart per line; the second renders the CB-15 trust Secrets (private CA, mTLS client certificate)
+      helm-charts: |-
+        deploy/helm/cbom-scan-node --set apiUrl=https://ci.invalid --set registrationToken=ci-placeholder --set image.repository=registry.ci.invalid/zeroshield/cbom-scan-node --set agent.enabled=true --set agent.poolToken=ci-placeholder
+        deploy/helm/cbom-scan-node --set apiUrl=https://ci.invalid --set registrationToken=ci-placeholder --set image.repository=registry.ci.invalid/zeroshield/cbom-scan-node --set agent.enabled=true --set agent.poolToken=ci-placeholder --set trust.caSecret=zs-node-ca --set trust.clientSecret=zs-node-client
 
   codeql:
     name: codeql
@@ -530,7 +569,7 @@ jobs:
   ci-gate:
     name: ci-gate
     if: always()
-    needs: [changes, ci-selftest, pr-checks, backend, aibom, cbom-action, scan-node, worker, dast-worker, worker-locks,
+    needs: [changes, ci-selftest, pr-checks, backend, aibom, cbom-action, cbom-d1, scan-node, worker, dast-worker, worker-locks,
             frontend, security, codeql, images]
     runs-on: ubuntu-latest
     timeout-minutes: 5

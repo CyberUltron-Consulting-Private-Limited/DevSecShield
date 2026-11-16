@@ -8,7 +8,7 @@ import { showErrorToast } from "@/utils/error-handler"
 export type IntegrationKind = "servicenow" | "syslog" | "splunk_hec" | "webhook" | "oscal"
 export type IntegrationEventKind =
   | "opened" | "resolved" | "new_asset" | "removed_asset" | "cert_renewed" | "cert_expiring" | "schedule_skipped"
-  | "scan_finished"
+  | "scan_finished" | "q0_closed" | "agility_asset_moved" | "agility_system_changed"
 
 export interface Integration {
   kind: IntegrationKind
@@ -128,23 +128,41 @@ export async function downloadOscal(teamId: number | string, what: { runId?: num
 }
 
 // ----------------------------------------------------------------------------- CMDB import
+export type CmdbVaultProvider = "hashicorp" | "cyberark" | "aws_secrets_manager" | "azure_key_vault"
+
 export interface CmdbPlanCreate {
-  kind: "linux_servers" | "network_range"
+  kind: "linux_servers" | "windows_servers" | "network_range" | "database" | "kubernetes" | "key_manager"
   name: string
   targets?: string[]
   cidr?: string
+  // #225: connection settings of Windows, database, cluster and HSM sources (never a secret)
+  config?: Record<string, unknown>
   metadata: Record<string, string>
   lines: number[]
+  // #225: the row's scan node (null: the import's node, named in node_name when chosen) and its segment
+  node_id?: number | null
+  node_name?: string | null
+  segment?: string | null
 }
 
 export interface CmdbPlan {
   rows: number
   digest: string
   unchanged: number
-  counts: { create: number; update: number; conflict: number; skipped: number; new_targets: number }
+  counts: { create: number; update: number; conflict: number; skipped: number; new_targets: number; over_limit?: number; merged?: number }
+  // #224: the team's source cap, and the new sources past it (never created), each with its reason
+  limit?: { used: number; max: number; remaining: number; setting: string }
+  warnings?: string[]
+  over_limit?: (CmdbPlanCreate & { reason: string })[]
   creates: CmdbPlanCreate[]
   updates: { source_id: number; source: string; kind: string; changes: Record<string, [unknown, unknown]> }[]
-  conflicts: { source_id: number; source: string; field: string; values: Record<string, number[]> }[]
+  // a conflict on an existing source (source_id, source) or, #362, between rows of the file for one new host (host)
+  conflicts: { source_id: number | null; source: string | null; host?: string | null; field: string; values: Record<string, number[]> }[]
+  // #362: rows naming the same host merged into one planned source
+  merged?: { label: string | null; kind: string; lines: number[]; notes: string[] }[]
+  // #367: existing sources the file matched without a change, with their lines; the segments the file's rows use
+  unchanged_items?: { source_id: number; source: string; kind: string; lines: number[] }[]
+  segments?: { segment: string; rows: number; nodes: { id: number; name: string }[]; chosen: number | null }[]
   skipped: { line?: number; label?: string | null; reason: string; partial?: boolean }[]
   truncated: boolean
 }
@@ -153,6 +171,11 @@ export interface CmdbRequest {
   source: "csv" | "servicenow"
   csv?: string
   node_id?: number | null
+  segment_nodes?: Record<string, number>
+  vault_provider?: CmdbVaultProvider | null
+  windows_vault?: { provider: CmdbVaultProvider; path: string } | null
+  // #363: engine ("mysql", "mssql", "oracle", "mongodb", "redis", or "*" for all of them) -> CA certificate PEM
+  database_ca?: Record<string, string>
   create_missing?: boolean
   digest?: string
 }
@@ -163,6 +186,6 @@ export async function previewCmdbImport(teamId: number, body: CmdbRequest):
 }
 
 export async function applyCmdbImport(teamId: number, body: CmdbRequest):
-  Promise<{ result: { created: number; updated: number; conflicts: number; skipped: number }; plan: CmdbPlan }> {
+  Promise<{ result: { created: number; updated: number; conflicts: number; skipped: number; over_limit?: number }; plan: CmdbPlan }> {
   return (await api.post(`/${teamId}/cbom/sources/cmdb/apply`, body)).data
 }

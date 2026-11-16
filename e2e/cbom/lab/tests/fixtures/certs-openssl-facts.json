@@ -1,0 +1,42 @@
+{
+ "z01": [
+  {
+   "curve": "P-256",
+   "issuer": "CN=CBOM Lab Targets CA lab-20261112T115334Z,O=ZeroShield CBOM lab",
+   "key_algorithm": "EC",
+   "key_bits": 256,
+   "not_after": "2027-12-14T11:53:34Z",
+   "not_before": "2026-11-11T11:53:34Z",
+   "serial": "5ffc6422a1ead4bb",
+   "sha256": "8bfb52a5f156758d112771afb8acb2889cc3ebb68219e4f5f559b20c01cc284b",
+   "signature_algorithm": "sha256WithRSAEncryption",
+   "subject": "CN=z01.lab"
+  },
+  {
+   "curve": null,
+   "issuer": "CN=CBOM Lab Targets CA lab-20261112T115334Z,O=ZeroShield CBOM lab",
+   "key_algorithm": "RSA",
+   "key_bits": 2048,
+   "not_after": "2036-11-09T11:53:34Z",
+   "not_before": "2026-11-10T11:53:34Z",
+   "serial": "223646e3869dc96f71159d0f9cfc987accd6801c",
+   "sha256": "6c34c51fa80d64d80957aa626983cde9abb9902bc125108e965b419e47cc4d66",
+   "signature_algorithm": "sha256WithRSAEncryption",
+   "subject": "CN=CBOM Lab Targets CA lab-20261112T115334Z,O=ZeroShield CBOM lab"
+  }
+ ],
+ "z05b": [
+  {
+   "curve": null,
+   "issuer": "CN=z05b.lab",
+   "key_algorithm": "ML-DSA-65",
+   "key_bits": null,
+   "not_after": "2027-12-14T11:53:34Z",
+   "not_before": "2026-11-11T11:53:34Z",
+   "serial": "17cacef0c7f893fed2f43473e51662347d1a2131",
+   "sha256": "fcbbf30797288b33889ff026bd77019c896f7159fceb9c73065309d12333e2e4",
+   "signature_algorithm": "ML-DSA-65",
+   "subject": "CN=z05b.lab"
+  }
+ ]
+}

@@ -6,7 +6,7 @@ from typing import Annotated
 from bson import ObjectId
 from bson.errors import InvalidId
 from fastapi import APIRouter, Form, UploadFile
-from fastapi import BackgroundTasks, Depends, HTTPException, Header, Request, status
+from fastapi import BackgroundTasks, Depends, HTTPException, Header, Query, Request, status
 from fastapi.responses import FileResponse, JSONResponse
 from backend.utilities.ratelimit import RateLimiter
 from pydantic import ValidationError
@@ -24,7 +24,6 @@ from backend.utilities.db.functions import get_messages_from_scan, return_scan_l
 from backend.utilities.db.metadata import get_scan_metadata_for_type
 from backend.utilities.db.findings import get_findings_for_scan_type, is_ticketable_finding
 from backend.utilities.pdf import UnsupportedPdfExport, prepare_pdf_export_payload, write_scan_pdf
-from backend.utilities.ai.chatbot import create_response
 from backend.utilities.team import (
     check_if_user_is_in_team,
 )
@@ -42,6 +41,7 @@ from backend.utilities.scan.reinitialize import ReinitializeRefused, reinitializ
 from backend.utilities.scan.estimate_scan import estimate_credits
 from backend.utilities.scan import credit_estimate
 from backend.utilities.team.credits import check_if_team_has_enough_credits , deduct_credits_from_team , update_scan_credit_consumed , refund_credits_to_team
+from backend.utilities.log_redaction import redact, safe_repr
 from backend.utilities.db.schemas import * 
 from backend.utilities.celery.celery_connection import get_status_and_update_db
 from backend.utilities.db.encryption import decrypt_if_encrypted
@@ -71,9 +71,10 @@ async def list_scans(
     type: scan_types, 
     background_tasks: BackgroundTasks, 
     Authorization: Annotated[str | None, Header()] = None ,
+    runs_before: Annotated[int | None, Query(ge=1, le=2_147_483_647)] = None,
     ):
     """
-    List all scans for a team.
+    List all scans for a team.  CBOM: also the team's Sources runs (``runs_list_data``, newest 200, ``runs_before``).
     """
     try:
         # STEP [ 0 ] : =========== Get the engine and user ======================
@@ -114,13 +115,19 @@ async def list_scans(
                      "finished_at": c.observed_at.strftime("%Y-%m-%dT%H:%M:%SZ"), "asset_count": c.asset_count,
                      "endpoints_probed": c.endpoints_probed}
                     for c in sources.collections
-                ]
+                ]  # deprecated (CB-38): runs_list_data lists every run
+                from fastapi.concurrency import run_in_threadpool
+
+                from backend.utilities.cbom_sources.run_list import runs_for_scan_list
+
+                # its own session in a worker thread: the runs build never blocks the event loop
+                body.update(await run_in_threadpool(runs_for_scan_list, engine, team_id, runs_before))
             return body
 
     except HTTPException as e:
         raise e
     except Exception as e:
-        console.print(f"Error in listing {type} scans for team {team_id}: {e}",style="bold red")
+        console.print(f"Error in listing {type} scans for team {team_id}: {redact(str(e))}",style="bold red", markup=False)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in listing scans , please try again later")
 
     
@@ -164,7 +171,7 @@ async def create_scan(
     except HTTPException as e:
         raise e
     except Exception as e:
-        console.print(f"Error in creating {type} scan for team {team_id}: {e}",style="bold red")
+        console.print(f"Error in creating {type} scan for team {team_id}: {redact(str(e))}",style="bold red", markup=False)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in creating scan , please try again later")
 
 
@@ -197,6 +204,14 @@ async def send_message_to_scan(
             return {"content": "Chat is turned off for CBOM scans: CBOM runs without any AI model. Every finding "
                                "has its explanation, CVE / CWE / OWASP mapping, remediation steps and proof "
                                "commands on the results page."}
+        # The chatbot needs AWS credentials at import, so it is imported here (not at module level: an air-gapped
+        # install without AWS must still start the backend, CB-38 PLAN §0), before anything is written or charged.
+        try:
+            from backend.utilities.ai.chatbot import create_response
+        except Exception as exc:
+            console.print(f"AI chat unavailable: {exc.__class__.__name__}", style="bold red")
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                                detail="AI chat is not configured on this deployment")
         if not check_if_team_has_enough_credits(team_id, 0.006):
             return { "content" : "Team does not have enough credits to send a message" }
 
@@ -213,12 +228,11 @@ async def send_message_to_scan(
             if not scan:
                 console.print(f"Scan with id: {scan_id} and team_id: {team_id} not found in main database" ,style="bold red")
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found ")
-            
-            scan.last_updated = datetime.now(timezone.utc) # updating last_updated field
+            # A chat message is not a change to the scan, so last_updated is not written.
+            # Commit still runs so the loaded row stays usable after this block, as before.
             session.add(scan)
             session.commit()
             session.refresh(scan)
-            
             SCAN = scan
             SCAN_STATUS = scan.scan_status
             SCAN_DATA = scan.scan_data
@@ -291,7 +305,7 @@ async def send_message_to_scan(
 
         
     except Exception as e:
-        console.print(f"Error in send_message_to_{type}_scan_conversation: {e}",style="bold red")
+        console.print(f"Error in send_message_to_{type}_scan_conversation: {redact(str(e))}",style="bold red", markup=False)
         if isinstance(e,HTTPException):
             raise e
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in sending message , please try again later")
@@ -437,7 +451,7 @@ async def get_scan(
     except HTTPException as e:
         raise e
     except Exception as e:
-        console.print(f"Error in get_scan: {e}",style="bold red")
+        console.print(f"Error in get_scan: {redact(str(e))}",style="bold red", markup=False)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in getting scan , please try again later")
 
 
@@ -509,7 +523,7 @@ def _release_scan_claim(engine, scan_id: int, team_id: int) -> None:
             )
             session.commit()
     except Exception as e:
-        console.print(f"Failed to release scan claim for scan {scan_id}: {e}", style="bold red")
+        console.print(f"Failed to release scan claim for scan {scan_id}: {redact(str(e))}", style="bold red", markup=False)
 
 
 # revamped ✅
@@ -535,7 +549,7 @@ async def start_scan(
         try:
             start_scan_payload = StartScanPayload.model_validate_json(start_scan_payload_string)
         except ValidationError as ve:
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Invalid start scan payload: {ve.errors()}")
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Invalid start scan payload: {ve.errors(include_input=False, include_url=False)}")
         
 
 
@@ -686,7 +700,7 @@ async def start_scan(
             "message": "Scan started successfully",
         }
     except Exception as e:
-        console.print(f"Error in starting {type} scan: {e}",style="bold red")
+        console.print(f"Error in starting {type} scan: {redact(str(e))}",style="bold red", markup=False)
         if isinstance(e,HTTPException):
             raise e
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in starting scan , please try again later")
@@ -717,7 +731,7 @@ async def cancel_scan_route(
     except HTTPException as e:
         raise e
     except Exception as e:
-        console.print(f"Error in cancelling {type} scan {scan_id}: {e}", style="bold red")
+        console.print(f"Error in cancelling {type} scan {scan_id}: {redact(str(e))}", style="bold red", markup=False)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in cancelling the scan, please try again later")
 
 
@@ -789,7 +803,7 @@ async def delete_scan(
     except HTTPException as e:
         raise e
     except Exception as e:
-        console.print(f"Error in deleting scan with id: {scan_id} for team: {team_id}: {e}",style="bold red")
+        console.print(f"Error in deleting scan with id: {scan_id} for team: {team_id}: {redact(str(e))}",style="bold red", markup=False)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in deleting scan , please try again later")
 
     
@@ -868,7 +882,7 @@ async def update_scan(
     except HTTPException as e:
         raise e
     except Exception as e:
-        console.print(f"Error in updating scan with id: {scan_id} for team: {team_id}: {e}",style="bold red")
+        console.print(f"Error in updating scan with id: {scan_id} for team: {team_id}: {redact(str(e))}",style="bold red", markup=False)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in updating scan , please try again later")
 
 
@@ -933,7 +947,7 @@ async def export_scan(
     except HTTPException as e:
         raise e
     except Exception as e:
-        console.print(f"Error in exporting scan with id: {scan_id} for team: {team_id}: {e}",style="bold red")
+        console.print(f"Error in exporting scan with id: {scan_id} for team: {team_id}: {redact(str(e))}",style="bold red", markup=False)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in exporting scan , please try again later")
 
 
@@ -976,7 +990,7 @@ async def reinitialize_scan(
         try:
             start_scan_payload = StartScanPayload.model_validate_json(start_scan_payload_string)
         except ValidationError as ve:
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Invalid start scan payload: {ve.errors()}")
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Invalid start scan payload: {ve.errors(include_input=False, include_url=False)}")
 
         # STEP [ 1 ] : =========== Check if user is in team ======================
         check_if_user_is_in_team(user.id, team_id, engine)
@@ -994,7 +1008,7 @@ async def reinitialize_scan(
     except ReinitializeRefused as refused:
         return JSONResponse(status_code=refused.status_code, content=refused.body())
     except Exception as e:
-        console.print(f"Error in reinitializing {type} scan: {e}",style="bold red")
+        console.print(f"Error in reinitializing {type} scan: {redact(str(e))}",style="bold red", markup=False)
         if isinstance(e,HTTPException):
             raise e
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in reinitializing scan , please try again later")
@@ -1025,9 +1039,9 @@ async def estimate_credits_for_scan(
         try:
             start_scan_payload = StartScanPayload.model_validate_json(start_scan_payload_string)
         except ValidationError as ve:
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Invalid start scan payload: {ve.errors()}")
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Invalid start scan payload: {ve.errors(include_input=False, include_url=False)}")
 
-        console.print(f"Start scan payload: {start_scan_payload}",style="bold yellow")
+        console.print(f"Start scan payload: {safe_repr(start_scan_payload)}", style="bold yellow", markup=False)
 
 
         # STEP [ 1 ] : =========== Check if user is in team ======================
@@ -1072,7 +1086,7 @@ async def estimate_credits_for_scan(
             "minimum_credits": minimum,
         }
     except Exception as e:
-        console.print(f"Error in estimating credits for {type} scan: {e}",style="bold red")
+        console.print(f"Error in estimating credits for {type} scan: {redact(str(e))}",style="bold red", markup=False)
         if isinstance(e,HTTPException):
             raise e
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in estimating credits for scan , please try again later")
@@ -1180,7 +1194,7 @@ async def create_ticket(
     except HTTPException as e:
         raise e
     except Exception as e:
-        console.print(f"Error in creating ticket for {type} scan: {e}",style="bold red")
+        console.print(f"Error in creating ticket for {type} scan: {redact(str(e))}",style="bold red", markup=False)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in creating ticket for scan , please try again later")
 
 
@@ -1245,7 +1259,7 @@ async def toggle_finding_state(
     except HTTPException as e:
         raise e
     except Exception as e:
-        console.print(f"Error in toggling finding state for {type} scan: {e}",style="bold red")
+        console.print(f"Error in toggling finding state for {type} scan: {redact(str(e))}",style="bold red", markup=False)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in toggling finding state for scan , please try again later")
 
 
@@ -1308,55 +1322,34 @@ async def generate_finding_remediation(
             scan_findings_collection.update_one({"_id": finding_oid}, {"$set": {"remediation": remediation_result}})
             return remediation_result
 
-        # STEP [ 2 ] : =========== Check if remediation already exists (cache hit) ======================
+        # STEP [ 2 ] : =========== Cache hit: a completed remediation (stored only after its charge) ==========
         existing_remediation = finding.get("remediation")
         if existing_remediation and existing_remediation.get("status") == "completed":
             console.print(f"Remediation cache hit for finding {finding_id}", style="dim green")
             return existing_remediation
 
-        # STEP [ 3 ] : =========== Credit check (0.05 per remediation) ======================
-        REMEDIATION_CREDIT_COST = 0.05
-        if not check_if_team_has_enough_credits(team_id, REMEDIATION_CREDIT_COST):
+        # STEP [ 3 ] : =========== Claim -> debit -> generate -> store, refund on failure (#87) ==========
+        from backend.utilities.ai import paid_remediation as PAID
+
+        try:
+            return await PAID.remediate(scan_findings_collection, finding_id=finding_oid, scan_id=scan_id,
+                                        team_id=team_id, finding_data=finding.get("finding_data", {}),
+                                        scan_type=type, generate=generate_remediation)
+        except PAID.InsufficientCredits:
             raise HTTPException(
                 status_code=status.HTTP_402_PAYMENT_REQUIRED,
                 detail="Team does not have enough credits for remediation generation",
-            )
-
-        # STEP [ 4 ] : =========== Generate remediation ======================
-        finding_data = finding.get("finding_data", {})
-        remediation_result = generate_remediation(finding_data, type)
-
-        # STEP [ 5 ] : =========== Atomic store + deduct (prevent double-deduction) ======================
-        if remediation_result.get("status") == "completed":
-            # Use MongoDB findOneAndUpdate to atomically set remediation only if not already set
-            update_result = scan_findings_collection.update_one(
-                {"_id": ObjectId(finding_id), "remediation.status": {"$ne": "completed"}},
-                {"$set": {"remediation": remediation_result}},
-            )
-            if update_result.modified_count > 0:
-                # Only deduct credits if we were the one to write the remediation
-                deduct_credits_from_team(team_id, REMEDIATION_CREDIT_COST)
-                console.print(f"Remediation stored and credits deducted for finding {finding_id}", style="bold green")
-            else:
-                console.print(f"Remediation already stored by concurrent request for finding {finding_id}", style="dim yellow")
-                # Return the already-stored remediation
-                updated_finding = scan_findings_collection.find_one({"_id": ObjectId(finding_id)})
-                if updated_finding and updated_finding.get("remediation"):
-                    return updated_finding["remediation"]
-        else:
-            # Non-completed remediation, just store without deducting
-            scan_findings_collection.update_one(
-                {"_id": ObjectId(finding_id)},
-                {"$set": {"remediation": remediation_result}},
-            )
-            console.print(f"Remediation (non-completed) stored for finding {finding_id}", style="bold yellow")
-
-        return remediation_result
+            ) from None
+        except PAID.RemediationBusy:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="AI remediation for this finding is being generated; try again in a moment",
+            ) from None
 
     except HTTPException as e:
         raise e
     except Exception as e:
-        console.print(f"Error generating remediation for finding {finding_id}: {e}", style="bold red")
+        console.print(f"Error generating remediation for finding {finding_id}: {redact(str(e))}", style="bold red", markup=False)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error generating remediation, please try again later",

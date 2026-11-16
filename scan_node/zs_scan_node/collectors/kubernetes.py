@@ -1,6 +1,7 @@
 """Kubernetes over the read-only API with a static token or client certificate.
 
-* kubeconfig ``exec``/``auth-provider`` plugins and ``insecure-skip-tls-verify`` are refused; the API server
+* kubeconfig ``exec``/``auth-provider`` plugins, ``insecure-skip-tls-verify``, ``proxy-url`` and a context the
+  kubeconfig does not have are refused; the API server
   certificate is always verified against ``ca_pem`` (if set) or the kubeconfig's certificate-authority-data.
 * Secrets are read only at Tier 2 and only with ``fieldSelector=type=kubernetes.io/tls`` (other secrets' values are
   never fetched).  From each TLS secret only ``tls.crt`` is parsed; ``tls.key`` is dropped unread.
@@ -9,7 +10,6 @@
 from __future__ import annotations
 
 import base64
-import ipaddress
 import json
 import os
 import re
@@ -24,10 +24,11 @@ import httpx
 import yaml
 
 from zs_scan_node import tlsprobe as T
-from zs_scan_node.certparse import cert_facts, key_facts, load_certs
+from zs_scan_node.certparse import (cert_facts, chain_links, facts_anchors, key_facts, load_certs, merge_anchors,
+                                    node_anchors)
 from zs_scan_node.collectors import ConfigError
 from zs_scan_node.jobctx import JobContext, register_asset_types
-from zs_scan_node.netutil import Blocked, http_client, resolve_checked
+from zs_scan_node.netutil import Blocked, host_port, http_client, is_ip, resolve_checked
 
 PAGE = 200
 MAX_ITEMS = 5000
@@ -85,6 +86,10 @@ class Api:
             raise ConfigError("the kubeconfig is not a mapping")
         ctx_name = config.get("context") or kc.get("current-context")
         contexts = {c.get("name"): c.get("context") or {} for c in kc.get("contexts") or [] if isinstance(c, dict)}
+        if config.get("context") and config["context"] not in contexts:
+            # #208: never fall back to another context (another cluster or user) than the one the source names
+            names = ", ".join(str(n) for n in contexts) or "none"
+            raise ConfigError(f"the context {config['context']!r} is not in the kubeconfig; its contexts are {names}")
         context = contexts.get(ctx_name) or (next(iter(contexts.values())) if contexts else {})
         clusters = {c.get("name"): c.get("cluster") or {} for c in kc.get("clusters") or [] if isinstance(c, dict)}
         users = {u.get("name"): u.get("user") or {} for u in kc.get("users") or [] if isinstance(u, dict)}
@@ -92,6 +97,9 @@ class Api:
         user = users.get(context.get("user")) or (next(iter(users.values())) if users else {})
         if cluster.get("insecure-skip-tls-verify"):
             raise ConfigError("the kubeconfig disables certificate checks (insecure-skip-tls-verify); remove it")
+        if cluster.get("proxy-url"):  # #209: the node connects directly (pinned, checked address); never ignore it
+            raise ConfigError("the kubeconfig sets proxy-url, which the scan node does not use (it connects to the API "
+                              "server directly); remove it")
         if "exec" in user or "auth-provider" in user:
             raise ConfigError("the kubeconfig uses an exec or auth-provider plugin; use a service-account token")
         ca_text = config.get("ca_pem")
@@ -129,8 +137,8 @@ class Api:
         certificate is still checked against the name in api_url)."""
         try:
             ip = resolve_checked(self.host, self.ctx.never_scan)[0]
-        except Blocked:
-            raise _Skip("skipped_never_scan") from None
+        except Blocked as exc:
+            raise _Skip("skipped_never_scan", str(exc)) from None
         except OSError:
             raise ConfigError(f"could not resolve {self.host}") from None
         if self.client is not None:
@@ -153,6 +161,8 @@ class Api:
                     if stop:
                         raise _Skip(stop)
                     raw += chunk
+        except Blocked as exc:  # the API server's address was listed while the job ran
+            raise _Skip("skipped_never_scan", str(exc)) from None
         except httpx.ConnectError as exc:
             msg = str(exc)
             if "CERTIFICATE_VERIFY_FAILED" in msg or "certificate" in msg.lower():
@@ -175,6 +185,8 @@ class Api:
         try:
             r = self.client.post(path, json=body)
             return r.status_code, r.json()
+        except Blocked as exc:
+            raise _Skip("skipped_never_scan", str(exc)) from None
         except (httpx.HTTPError, ValueError) as exc:
             return 0, {"error": exc.__class__.__name__}
 
@@ -240,17 +252,9 @@ class _TooLarge(_Fail):
 
 
 class _Skip(Exception):
-    def __init__(self, status: str) -> None:
-        super().__init__(status)
-        self.status = status
-
-
-def _is_ip(text: str) -> bool:
-    try:
-        ipaddress.ip_address(text)
-        return True
-    except ValueError:
-        return False
+    def __init__(self, status: str, detail: str | None = None) -> None:
+        super().__init__(detail or status)
+        self.status, self.detail = status, detail
 
 
 _PEM_KEY = re.compile(r"-----BEGIN ((?:RSA |EC |DSA |ENCRYPTED |OPENSSH )?PRIVATE KEY)-----.*?-----END \1-----", re.S)
@@ -520,8 +524,8 @@ def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
         try:
             ip = api.check_scope()
         except _Skip as skip:
-            ctx.outcome(loc, skip.status, started=started)
-            return "API server is on the never-scan list"
+            ctx.outcome(loc, skip.status, skip.detail, started=started)
+            return skip.detail or "API server is on the never-scan list"
         status, version = api.get("/version")
         if status == 401:
             raise _Fail("auth_failed", "the API server refused the credential")
@@ -540,7 +544,7 @@ def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
         cluster["nodes"] = nodes[:200]
         cluster["node_count"] = len(nodes)
         # API server TLS (one full handshake + legacy version probes)
-        fh = T.s_client(ip, api.port, "tls", api.host if not _is_ip(api.host) else None) if T.have_openssl() else None
+        fh = T.s_client(ip, api.port, "tls", api.host if not is_ip(api.host) else None) if T.have_openssl() else None
         if fh is not None and fh.ok:
             versions = {}
             for v in (T.TLS10, T.TLS11):
@@ -550,18 +554,18 @@ def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
                 except (T.ProbeError, T.StarttlsUnavailable):
                     versions[T.VERSION_NAMES[v]] = None
             versions[fh.version or "?"] = True
-            ctx.emit("tls_endpoint", loc, f"{ip}:{api.port}", name="Kubernetes API server", algorithm=fh.cipher,
+            ctx.emit("tls_endpoint", loc, host_port(ip, api.port), name="Kubernetes API server", algorithm=fh.cipher,
                      protocol=fh.version, facts={"service": "kubernetes-api", "negotiated_version": fh.version,
                                                  "negotiated_cipher": fh.cipher, "negotiated_group": fh.group,
                                                  "peer_signature_type": fh.peer_sig_type, "versions": versions})
             n += 1
-            for i, der in enumerate(fh.certs_der[:10]):
-                for cert in load_certs(der):
-                    f = cert_facts(cert, "tls")
-                    ctx.emit("certificate", loc, f"{ip}:{api.port}#chain[{i}]", name=f.get("subject", ""),
-                             algorithm=f.get("key_alg"), key_size=f.get("key_size"), facts={**f, "chain_index": i,
-                                                                                          "role": "kubernetes-api"})
-                    n += 1
+            served = [(i, cert_facts(cert, "tls")) for i, der in enumerate(fh.certs_der[:10]) for cert in load_certs(der)]
+            chain_links([f for _i, f in served])
+            for i, f in served:
+                ctx.emit("certificate", loc, f"{host_port(ip, api.port)}#chain[{i}]", name=f.get("subject", ""),
+                         algorithm=f.get("key_alg"), key_size=f.get("key_size"), facts={**f, "chain_index": i,
+                                                                                      "role": "kubernetes-api"})
+                n += 1
         ctx.emit("k8s_cluster", loc, loc, name=str(cluster.get("version") or "cluster"), facts=cluster)
         n += 1
         # ingress TLS
@@ -637,23 +641,13 @@ def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
                 ns, name = _meta(item)
                 data = item.get("data") or {}
                 data.pop("tls.key", None)  # never parsed, never kept
-                crt = data.get("tls.crt")
-                certs = []
-                if isinstance(crt, str):
-                    try:
-                        certs = load_certs(base64.b64decode(crt))
-                    except Exception:
-                        certs = []
+                certs, cas = _secret_certs(data.get("tls.crt")), _secret_certs(data.get("ca.crt"))
                 if not certs:
                     ctx.emit("k8s_tls_secret", loc, f"{ns}/secret/{name}", name=f"{ns}/{name}",
                              facts={"namespace": ns, "name": name, "parsed": False})
                     n += 1
                     continue
-                f = cert_facts(certs[0], "k8s")
-                ctx.emit("k8s_tls_secret", loc, f"{ns}/secret/{name}", name=f"{ns}/{name}", algorithm=f.get("key_alg"),
-                         key_size=f.get("key_size"), facts={**f, "namespace": ns, "secret": name,
-                                                            "chain_length": len(certs)})
-                n += 1
+                n += _tls_secret_rows(ctx, loc, ns, name, certs, cas)
         else:
             ctx.coverage(loc, "TLS secrets", "not_supported", "Tier 1 does not read Secrets; use Tier 2", once=True)
         ctx.outcome(loc, "ok", started=started, assets=n)
@@ -661,11 +655,50 @@ def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
     except _Fail as fail:
         ctx.outcome(loc, fail.status, fail.error, started=started, assets=n)
         return fail.error
-    except _Skip as skip:  # cancelled, window closed or deadline reached between pages
-        ctx.outcome(loc, skip.status, started=started, assets=n)
+    except _Skip as skip:  # cancelled, window closed or deadline reached between pages, or the address was listed
+        ctx.outcome(loc, skip.status, skip.detail, started=started, assets=n)
         return f"stopped ({skip.status}) after {n} assets"
     finally:
         api.close()
+
+
+def _secret_certs(value: Any) -> list[dict[str, Any]]:
+    """Facts of every certificate in a base64 secret value (``tls.crt`` or ``ca.crt``), in the order stored."""
+    if not isinstance(value, str):
+        return []
+    try:
+        return [cert_facts(c, "k8s") for c in load_certs(base64.b64decode(value))[:20]]
+    except Exception:
+        return []
+
+
+def _tls_secret_rows(ctx: JobContext, loc: str, ns: str, name: str, certs: list[dict[str, Any]],
+                     cas: list[dict[str, Any]]) -> int:
+    """A kubernetes.io/tls secret (CB-17): the leaf (the first end-entity certificate of ``tls.crt``, so a mis-ordered
+    bundle does not make an intermediate the "leaf") is the ``k8s_tls_secret`` row; every other certificate of
+    ``tls.crt`` and of ``ca.crt`` is a certificate row of its own, so an expired intermediate or CA is judged too."""
+    lead = next((i for i, c in enumerate(certs) if not c.get("is_ca")), 0)
+    served = [certs[lead]] + [c for i, c in enumerate(certs) if i != lead]
+    # ca.crt is what clients are told to trust, not what the server sends: its roots count as trusted, never as sent
+    anchors = merge_anchors(node_anchors(), facts_anchors(cas))
+    chain_links(served, anchors)
+    chain_links(cas, anchors)
+    f = certs[lead]
+    ctx.emit("k8s_tls_secret", loc, f"{ns}/secret/{name}", name=f"{ns}/{name}", algorithm=f.get("key_alg"),
+             key_size=f.get("key_size"), facts={**f, "namespace": ns, "secret": name, "chain_length": len(certs),
+                                                "chain_index": 0})
+    n = 1
+    for key, group in (("tls.crt", certs), ("ca.crt", cas)):
+        for i, c in enumerate(group):
+            if key == "tls.crt" and i == lead:
+                continue
+            index = served.index(c) if key == "tls.crt" else None
+            ctx.emit("certificate", loc, f"{ns}/secret/{name}#{key}[{i}]", name=c.get("subject") or None,
+                     algorithm=c.get("key_alg"), key_size=c.get("key_size"),
+                     facts={**c, "namespace": ns, "secret": name, "secret_key": key,
+                            **({"chain_index": index} if index is not None else {})})
+            n += 1
+    return n
 
 
 def test(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
@@ -703,8 +736,8 @@ def test(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
     except ConfigError as exc:
         sample.update(status="error", note=str(exc))
     except _Skip as skip:
-        sample.update(status=skip.status, note="the API server address is on the never-scan list"
-                      if skip.status == "skipped_never_scan" else "the test was stopped")
+        sample.update(status=skip.status, note=skip.detail or ("the API server address is on the never-scan list"
+                      if skip.status == "skipped_never_scan" else "the test was stopped"))
     except _Fail as fail:
         sample.update(status=fail.status, note=fail.error)
     finally:

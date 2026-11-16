@@ -9,57 +9,21 @@ import { Copy, Check } from "lucide-react";
 import { toast } from "@/utils/toast";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { apiBaseURL } from "@/utils/interceptors";
-import { indent, scanRequestScript, zipCommand } from "@/components/cicd/ciScanScript";
+import { CBOM_GATE_NOTE, githubActionsWorkflow, isCbom } from "@/components/cicd/ciTemplates";
 
 interface GitHubActionsIntegrationGuideProps {
-  apiKey: string;
   scanType?: string;
 }
 
-export function GitHubActionsGuide({ apiKey, scanType = "sast" }: GitHubActionsIntegrationGuideProps) {
+export function GitHubActionsGuide({ scanType = "sast" }: GitHubActionsIntegrationGuideProps) {
   const kind = (scanType || "sast").toLowerCase();
   const label = kind.toUpperCase();
   const endpoint = `${apiBaseURL}/cicd/${kind}/scan`;
   const [branch, setBranch] = useState<string>("main");
   const [copied, setCopied] = useState(false);
 
-  // Generate YAML content based on selections
-  const yamlContent = useMemo(() => {
-    // Use string concatenation to avoid parsing ${{ }} as template literal syntax
-    const githubActionsSecret = '${{ secrets.CICD_API_KEY }}';
-    const scan = scanRequestScript({
-      zipPath: "$RUNNER_TEMP/project.zip",
-      url: endpoint,
-      keyRef: "$CICD_API_KEY",
-      responseFile: "response.json",
-    });
-    return `name: ${label} Check
-on:
-  push:
-    branches: [ ${branch} ]  # Adjust this to your master branch name
-  pull_request:
-    branches: [ ${branch} ]  # Optionally run on PRs
-jobs:
-  ${kind}-check:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      # Everything but .git is scanned (vendored code, build output and nested archives included); installed
-      # dependency trees stay out. The zip is written outside the workspace. Uploads are capped at 50 MB.
-      - name: Create project zip
-        run: |
-          ${zipCommand("$RUNNER_TEMP/project.zip")}
-
-      - name: Perform ${label} Scan
-        id: ${kind}
-        env:
-          CICD_API_KEY: ${githubActionsSecret}
-        run: |
-${indent(scan, 10)}
-          echo "${label} findings: $(jq '.finding_count // 0' response.json)"
-          jq -r '(.results | if type == "object" then (.results // []) elif type == "array" then . else [] end)[] | (.impact // "unknown") + " " + (.title // .name // "")' response.json`;
-  }, [branch, endpoint, kind, label]);
+  // Generate YAML content based on selections (components/cicd/ciTemplates.ts; a CBOM workflow ends with the policy gate)
+  const yamlContent = useMemo(() => githubActionsWorkflow({ kind, endpoint, branch }), [branch, endpoint, kind]);
 
   const copyToClipboard = async () => {
     try {
@@ -150,7 +114,7 @@ ${indent(scan, 10)}
                       Name: <span className="text-blue-600 dark:text-blue-400">CICD_API_KEY</span>
                     </p>
                     <p className="text-xs font-mono text-zinc-900 dark:text-zinc-100 break-all mt-1">
-                      Secret: <span className="text-zinc-500">{apiKey.substring(0, 20)}...</span>
+                      Secret: <span className="text-zinc-500">the API key DevSecShield showed once when this integration was created or its key was last rotated (rotate it on this page if you no longer have it)</span>
                     </p>
                   </div>
                 </li>
@@ -164,6 +128,7 @@ ${indent(scan, 10)}
             </li>
             <li>
               The {label} scan will run automatically on every push and pull request to the selected branch.
+              {isCbom(kind) && <> {CBOM_GATE_NOTE}</>}
             </li>
           </ol>
         </CardContent>

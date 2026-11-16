@@ -35,7 +35,12 @@ from backend.utilities.cbom_sources.fleet.http import FLEET, Member, permission,
 from backend.utilities.cbom_sources.http import CbomRoute, TeamId, node_limiter, read_limiter
 from backend.utilities.ratelimit import RateLimiter
 
-NODE = "/cbom/node/"  # the one path outside FLEET a fleet part may add: F1.4's scan-node route
+# The paths outside FLEET a fleet part may add: F1.4's machine routes, whose caller is not a person with a team role
+# (the scan node's certificate route; the servers' trust-bundle fetch).  They declare "machine:<credential>" (F4's
+# marker form, rbac/policy.py) or a cbom.* permission.
+NODE = "/cbom/node/"
+MACHINE_PATHS = (NODE, "/cbom/ssh-ca-trust/")
+MACHINE_MARKER = "machine:"
 FLAG_ENV =("CBOM_FLEET_INVENTORY", "CBOM_FLEET_POLICIES", "CBOM_FLEET_MATERIALIZE", "CBOM_FLEET_TRANSPORTS",
             "CBOM_SSH_CA")
 STATUS = "/1/cbom/sources/fleet/status"
@@ -158,8 +163,9 @@ def test_the_aggregator_is_registered_and_every_fleet_route_declares_its_permiss
     assert any(r.path == FLEET + "/status" for r in routes)
     assert {_key(r) for r in cbom_fleet.router.routes} <= {_key(r) for r in app.routes}  # main.app serves them all
     for route in routes:
-        extra = getattr(route, "openapi_extra", None) or {}
-        assert str(extra.get("x-zs-permission", "")).startswith("cbom."), route.path
+        marker = str((getattr(route, "openapi_extra", None) or {}).get("x-zs-permission", ""))
+        machine = marker.startswith(MACHINE_MARKER) and route.path.startswith(MACHINE_PATHS)
+        assert marker.startswith("cbom.") or machine, route.path
 
 
 def route_problems(routes) -> list[str]:
@@ -170,14 +176,17 @@ def route_problems(routes) -> list[str]:
             problems.append(f"{getattr(route, 'path', route)}: not an APIRoute")
             continue
         name = f"{sorted(route.methods)} {route.path}"
-        if not (_in_fleet(route.path) or route.path.startswith(NODE)):  # M9: team routes live under FLEET
-            problems.append(f"{name}: outside {FLEET} and not a scan-node route ({NODE}...)")
+        machine_path = route.path.startswith(MACHINE_PATHS)
+        if not (_in_fleet(route.path) or machine_path):  # M9: team routes live under FLEET
+            problems.append(f"{name}: outside {FLEET} and not a machine route ({', '.join(MACHINE_PATHS)}...)")
         if not isinstance(route, CbomRoute):
             problems.append(f"{name}: not a CbomRoute (a bad body would be a 422 that echoes the input)")
         if not (route.path.endswith("/fleet/status") or str(getattr(route, "flag_env", "")).startswith("CBOM_")):
             problems.append(f"{name}: not behind a flag (flagged_route)")
-        if not str((route.openapi_extra or {}).get("x-zs-permission", "")).startswith("cbom."):
-            problems.append(f"{name}: no x-zs-permission")
+        marker = str((route.openapi_extra or {}).get("x-zs-permission", ""))
+        machine_marker = marker.startswith(MACHINE_MARKER) and bool(marker[len(MACHINE_MARKER):].strip())
+        if not (marker.startswith("cbom.") or (machine_marker and machine_path)):
+            problems.append(f"{name}: no x-zs-permission" + (" (machine: only on machine routes)" if machine_marker else ""))
         calls = [d.call for d in route.dependant.dependencies]
         limiters = [i for i, call in enumerate(calls) if isinstance(call, RateLimiter)]
         if not limiters:
@@ -267,6 +276,16 @@ def test_the_route_guard_reports_each_mistake():
     async def node_route(job_id: int):  # pragma: no cover - positive control: node routes sign in with their token
         return {}
 
+    @flagged.post(NODE + "jobs/{job_id}/machine-marked", dependencies=[Depends(node_limiter)],
+                  openapi_extra={"x-zs-permission": "machine:scan-node token"})
+    async def machine_marked(job_id: int):  # pragma: no cover - positive control: F4's machine marker
+        return {}
+
+    @flagged.get(FLEET + "/machine-on-team-route", dependencies=limit,
+                 openapi_extra={"x-zs-permission": "machine:anything"})
+    async def machine_on_team(team_id: TeamId, ctx: Member):  # pragma: no cover - a machine marker on a team route
+        return {}
+
     async def raw(request):  # pragma: no cover - never called
         return JSONResponse({})
 
@@ -284,8 +303,9 @@ def test_the_route_guard_reports_each_mistake():
     assert "/body-before-limiter: read_body runs before authentication" in problems
     assert "/{team_id}/cbom/ssh-ca: outside " + FLEET in problems
     assert "/fleet/raw: not an APIRoute" in problems
-    assert "ssh-cert" not in problems
-    assert len(problems.splitlines()) == 10, problems
+    assert "ssh-cert" not in problems and "machine-marked" not in problems
+    assert "/machine-on-team-route: no x-zs-permission (machine: only on machine routes)" in problems
+    assert len(problems.splitlines()) == 11, problems
 
 
 def test_the_guard_checks_fleet_paths_whichever_router_registers_them():
@@ -330,6 +350,9 @@ def test_requests_over_the_limit_never_reach_authentication(api, monkeypatch):
 
     monkeypatch.setattr(fleet_http, "authorize", counting)
     monkeypatch.setattr(cbom_http.read_limiter, "times", 2)
+    # Pin the 60 s fixed window: a window boundary between the requests would reset the count (flake, #98).
+    now = cbom_http.read_limiter.clock()
+    monkeypatch.setattr(cbom_http.read_limiter, "clock", lambda: now)
     codes = [api("GET", STATUS, "bob").status_code for _ in range(4)]
     assert codes == [200, 200, 429, 429] and len(calls) == 2
 

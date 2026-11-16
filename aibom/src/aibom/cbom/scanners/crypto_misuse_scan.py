@@ -25,8 +25,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from aibom.cbom import java_flow
 from aibom.cbom.files import FileWalk, file_walk
-from aibom.cbom.misuse import detect_material_misuse
+from aibom.cbom.misuse import detect_material_misuse, java_flow_misuse
 from aibom.cbom.project import project_index
 from aibom.cbom.registry import cbom_register
 from aibom.cbom.rules import source_language
@@ -56,9 +57,19 @@ class CryptoMisuseScanner(Scanner):
     def scan(self, ctx: ScanContext) -> None:
         walk = file_walk(ctx)
         project = project_index(ctx)
-        for path in _iter_source_files(walk):
+        paths = _iter_source_files(walk)
+        # CB-27: Java literal flow over the whole project (constants passed between
+        # methods, fields and files); only the Java sources are held in memory
+        java: dict[str, str] = {}
+        for path in paths:
+            if source_language(path) == "java":
+                text = walk.read_text(path)
+                if text is not None:
+                    java[walk.rel(path)] = text
+        flow = java_flow.analyze(java)
+        for path in paths:
             rel = walk.rel(path)
-            text = walk.read_text(path)
+            text = java.get(rel) or walk.read_text(path)
             if text is None:
                 continue
             lang = source_language(path)
@@ -67,7 +78,11 @@ class CryptoMisuseScanner(Scanner):
             def lookup(key: str, file_name: str | None, _rel: str = rel):
                 return project.config_value(key, near=_rel, file_name=file_name)
 
-            for fact in detect_material_misuse(text, lang, lookup):
+            facts = detect_material_misuse(text, lang, lookup)
+            covered = {(f.line, f.kind) for f in facts}
+            facts += [f for f in java_flow_misuse(flow.get(rel, ()))
+                      if (f.line, f.kind) not in covered]
+            for fact in facts:
                 ref = self._emit(ctx, fact, rel, cipher_refs)
                 if fact.derived_with:
                     self._mark_derived(ctx, rel, text, lang, fact, ref)
@@ -130,6 +145,13 @@ class CryptoMisuseScanner(Scanner):
             props["crypto:staticIv"] = "true"
         if fact.reused:
             props["crypto:reused"] = "true"
+        if getattr(fact, "static_salt", False):
+            props["crypto:staticSalt"] = "true"
+        if getattr(fact, "iterations", None) is not None:
+            props["crypto:iterations"] = str(fact.iterations)
+            props["crypto:weakIterations"] = "true"
+        if getattr(fact, "via", None):
+            props["crypto:usedBy"] = fact.via
         if getattr(fact, "derived_with", None):
             props["crypto:derivedWith"] = fact.derived_with
         if getattr(fact, "defined_at", None):

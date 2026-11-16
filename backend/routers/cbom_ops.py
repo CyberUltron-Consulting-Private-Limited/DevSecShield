@@ -94,7 +94,10 @@ def _run_diff(engine, team_id: int, run_id: int, against: int | None) -> dict:
         if base.id == run.id:
             raise HTTPException(status_code=400, detail="against: choose another run")
         older, newer = (base, run) if base.id < run.id else (run, base)
-        return DRIFT.run_diff(session, newer, older)
+        out = DRIFT.run_diff(session, newer, older)
+        # the code page's diff carries the newer side's drift events too (code_diff); same here (CB-38 W2b parity)
+        out["events"] = _events(session, team_id, run_id=newer.id, limit=200)
+        return out
 
 
 @router.get(SRC + "/runs/{run_id}/diff", dependencies=READ,
@@ -135,12 +138,15 @@ def _run_changes(engine, team_id: int, run_id: int, limit: int) -> dict:
             DRIFT.record_run_drift(session, run, now)  # the scheduler may not have reached it yet
             session.commit()
             session.refresh(run)
-        # not read again under a coverage gap: no event (neither removed nor resolved), listed apart with the reason
-        not_read = DRIFT.run_not_read(session, run) if run.status in DRIFT.FINISHED else []
+        # not read again under a coverage gap: no event (neither removed nor resolved), listed apart with the reason;
+        # left out by the never-scan list (CB-11): "excluded" by policy, apart from both
+        unread = DRIFT.run_unread(session, run) if run.status in DRIFT.FINISHED else {"not_read": [], "excluded": []}
+        not_read, excluded = unread["not_read"], unread["excluded"]
         return {"run_id": run.id, "status": run.status, "recorded": run.drift_at is not None,
                 "recorded_at": iso_z(run.drift_at), "counts": _counts(session, team_id, run_id=run.id),
                 "events": _events(session, team_id, run_id=run.id, limit=limit),
-                "not_read": not_read[:limit], "not_read_count": len(not_read)}
+                "not_read": not_read[:limit], "not_read_count": len(not_read),
+                "excluded": excluded[:limit], "excluded_count": len(excluded)}
 
 
 @router.get(SRC + "/runs/{run_id}/changes", dependencies=READ,
@@ -192,18 +198,41 @@ async def code_diff(team_id: TeamId, scan_id: ObjectId, against: int | None = Qu
 
 
 # ============================================================================ heat-map and certificates
-def _heatmap(engine, team_id: int, run_id: int, by: str) -> dict:
+def _heatmap(engine, team_id: int, run_id: int, by: str, metric: str = "impact") -> dict:
     with Session(engine) as session:
         run = _owned_run(session, team_id, run_id)
-        return {"run_id": run.id, **HEAT.run_heatmap(session, team_id, run.id, by=by)}
+        return {"run_id": run.id, **HEAT.run_heatmap(session, team_id, run.id, by=by, metric=metric)}
 
 
 @router.get(SRC + "/runs/{run_id}/heatmap", dependencies=READ,
-            summary="Algorithm family x source (or asset type) by worst impact, and the certificates with expiry dates")
+            summary="Algorithm family x source (or asset type) by worst impact or quantum risk grade, and the "
+                    "certificates with expiry dates")
 async def run_heatmap(team_id: TeamId, run_id: ObjectId, by: str = Query(default="source", pattern="^(source|type)$"),
+                      metric: str = Query(default="impact", pattern="^(impact|grade)$"),
                       Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
-    return _ok(await _run("heatmap", team_id, _heatmap, engine, team_id, run_id, by))
+    return _ok(await _run("heatmap", team_id, _heatmap, engine, team_id, run_id, by, metric))
+
+
+def _heatmap_cell(engine, team_id: int, run_id: int, query: dict) -> dict:
+    with Session(engine) as session:
+        run = _owned_run(session, team_id, run_id)
+        return {"run_id": run.id, **HEAT.heatmap_cell(session, team_id, run.id, **query)}
+
+
+@router.get(SRC + "/runs/{run_id}/heatmap/cell", dependencies=READ,
+            summary="The assets of one heat-map cell (algorithm family x source or asset type), worst first")
+async def run_heatmap_cell(team_id: TeamId, run_id: ObjectId,
+                           row: str = Query(min_length=1, max_length=64),
+                           column: str = Query(min_length=1, max_length=255),
+                           by: str = Query(default="source", pattern="^(source|type)$"),
+                           metric: str = Query(default="impact", pattern="^(impact|grade)$"),
+                           page: int = Query(default=1, ge=1, le=10_000),
+                           page_size: int = Query(default=50, ge=1, le=HEAT.CELL_PAGE_MAX),
+                           Authorization: AuthHeader = None):
+    engine, _user = await authorize(team_id, Authorization)
+    query = {"by": by, "row": row, "column": column, "metric": metric, "page": page, "page_size": page_size}
+    return _ok(await _run("heatmap cell", team_id, _heatmap_cell, engine, team_id, run_id, query))
 
 
 # ============================================================================ schedules
@@ -314,7 +343,8 @@ def _create_schedule(engine, team_id: int, user_id: int, body: ScheduleCreate) -
     now = utcnow()
     with Session(engine) as session:
         total = session.exec(select(func.count()).select_from(CbomCollectionSchedule)
-                             .where(CbomCollectionSchedule.team_id == team_id)).one()
+                             .where(CbomCollectionSchedule.team_id == team_id,
+                                    CbomCollectionSchedule.policy_id.is_(None))).one()  # F1.2: managed ones do not count
         if total >= SCHED.MAX_SCHEDULES:
             raise HTTPException(status_code=400, detail=f"A team can have at most {SCHED.MAX_SCHEDULES} schedules")
         s = CbomCollectionSchedule(team_id=team_id, owner_user_id=user_id, updated_by_user_id=user_id, name=body.name,
@@ -396,7 +426,8 @@ def _waves_summary(items: list[dict]) -> dict:
     by_wave: dict[str, int] = {}
     for item in items:
         by_wave[str(item["wave"] or "none")] = by_wave.get(str(item["wave"] or "none"), 0) + 1
-    return {"by_wave": by_wave, "labels": {str(k): v for k, v in WAVES.WAVE_LABEL.items()}}
+    return {"by_wave": by_wave, "labels": {str(k): v for k, v in WAVES.WAVE_LABEL.items()},
+            "rules": {str(k): v for k, v in WAVES.WAVE_RULE.items()}}
 
 
 def _run_remediation(engine, team_id: int, run_id: int) -> dict:
@@ -486,3 +517,53 @@ def _code_sbom(engine, team_id: int, scan_id: int) -> dict:
 async def code_sbom(team_id: TeamId, scan_id: ObjectId, Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
     return _ok(await _run("code sbom", team_id, _code_sbom, engine, team_id, scan_id))
+
+
+# ============================================================================ operational metrics (CB-31, X1)
+METRICS_TOKEN_MIN = 32  # CBOM_METRICS_TOKEN: a scrape token shorter than this is not accepted
+
+
+def _scrape_token_ok(authorization: str | None) -> bool:
+    """A Prometheus scraper's ``Authorization: Bearer <CBOM_METRICS_TOKEN>`` (constant-time compare; only when the
+    deployment set a token of at least METRICS_TOKEN_MIN characters)."""
+    import hmac
+    import os
+
+    token = os.getenv("CBOM_METRICS_TOKEN") or ""
+    parts = (authorization or "").split(" ", 1)
+    if len(token) < METRICS_TOKEN_MIN or len(parts) != 2 or parts[0].lower() != "bearer":
+        return False
+    return hmac.compare_digest(parts[1].strip().encode(), token.encode())
+
+
+def _metrics(engine) -> str:
+    from backend.utilities.cbom_sources import ops_metrics as OPS
+
+    with Session(engine) as session:
+        return OPS.render(session, utcnow())
+
+
+@router.get("/cbom/ops/metrics", dependencies=READ,
+            summary="Operational metrics (Prometheus text format; platform administrators only)")
+async def ops_metrics(Authorization: Annotated[str | None, Header()] = None):
+    """Queue depth per job kind, oldest pending age, lease expiries, ingest rejects, node heartbeat age and the
+    integration backlog, platform-wide and aggregated (``ops_metrics``).  A platform administrator's session, or the
+    deployment's scrape token (``CBOM_METRICS_TOKEN``); a team administrator is not enough."""
+    from fastapi.responses import PlainTextResponse
+
+    from backend.utilities.auth.auth_utils import get_user_from_header_or_raise_exception
+    from backend.utilities.cbom_sources import http as cbom_http
+    from backend.utilities.cbom_sources import ops_metrics as OPS
+
+    engine = cbom_http.get_db()
+    if not _scrape_token_ok(Authorization):
+        if not Authorization:
+            raise HTTPException(status_code=401, detail="Sign in as a platform administrator")
+        user = await get_user_from_header_or_raise_exception(engine, Authorization)
+        if not user.is_superuser:
+            raise HTTPException(status_code=403, detail="Platform administrators only")
+    try:
+        text = await run_in_threadpool(_metrics, engine)
+    except Exception as exc:
+        raise server_error("cbom ops metrics", exc) from None
+    return PlainTextResponse(text, media_type=OPS.CONTENT_TYPE, headers=PRIVATE)

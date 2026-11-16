@@ -1,0 +1,6 @@
+### show running-config ssl
+ssl dh-group group2
+### show running-config ssh
+### show running-config crypto ikev1
+### show running-config crypto ikev2
+### show crypto key mypubkey rsa

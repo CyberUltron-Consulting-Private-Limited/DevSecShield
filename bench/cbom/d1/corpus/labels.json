@@ -1,0 +1,596 @@
+{
+ "schema": "zs-cbom-d1-corpus-labels/1",
+ "source": {
+  "corpus": "e2e/fixtures/cbom-d1-corpus",
+  "origin": "round6/cbom/cx2/corpus, written 2026-11-12 by contradiction reviewer 2 (not a product author); byte-identical copy",
+  "items": "id, file, line and label are the corpus's own item comments (checked by lane.labels.corpus_cases on every run); category and the NFP1 negative are the CB-07 transcription; O-9 review in REVIEW.md",
+  "libraries": "package and version as written in the manifests; whether each is vulnerable is the OSV.dev answer at test time, never this file"
+ },
+ "match": {
+  "line_tolerance": 1,
+  "line_field": "the product row's primary `line` (its `occurrences` are lexical mentions, not where the weakness is)"
+ },
+ "items": [
+  {
+   "id": "C1",
+   "file": "c/tls_client.c",
+   "line": 9,
+   "label": "TLS 1.0",
+   "language": "c",
+   "category": "weak_tls_version",
+   "vulnerable": true
+  },
+  {
+   "id": "C2",
+   "file": "c/tls_client.c",
+   "line": 10,
+   "label": "no verification",
+   "language": "c",
+   "category": "cert_validation_off",
+   "vulnerable": true
+  },
+  {
+   "id": "C3",
+   "file": "c/tls_client.c",
+   "line": 11,
+   "label": "weak suites",
+   "language": "c",
+   "category": "weak_cipher_suite",
+   "vulnerable": true
+  },
+  {
+   "id": "C4",
+   "file": "c/tls_client.c",
+   "line": 12,
+   "label": "e=3",
+   "language": "c",
+   "category": "weak_rsa_exponent",
+   "vulnerable": true
+  },
+  {
+   "id": "C5",
+   "file": "c/tls_client.c",
+   "line": 13,
+   "label": "RSA-1024",
+   "language": "c",
+   "category": "weak_key_size",
+   "vulnerable": true
+  },
+  {
+   "id": "C6",
+   "file": "c/tls_client.c",
+   "line": 14,
+   "label": "MD5",
+   "language": "c",
+   "category": "broken_hash",
+   "vulnerable": true
+  },
+  {
+   "id": "C7",
+   "file": "c/tls_client.c",
+   "line": 16,
+   "label": "hard-coded key",
+   "language": "c",
+   "category": "hardcoded_key",
+   "vulnerable": true
+  },
+  {
+   "id": "C8",
+   "file": "c/tls_client.c",
+   "line": 17,
+   "label": "AES-ECB",
+   "language": "c",
+   "category": "ecb_mode",
+   "vulnerable": true
+  },
+  {
+   "id": "C9",
+   "file": "c/tls_client.c",
+   "line": 18,
+   "label": "3DES",
+   "language": "c",
+   "category": "broken_cipher",
+   "vulnerable": true
+  },
+  {
+   "id": "C10",
+   "file": "c/tls_client.c",
+   "line": 19,
+   "label": "rand()",
+   "language": "c",
+   "category": "weak_rng",
+   "vulnerable": true
+  },
+  {
+   "id": "N1",
+   "file": "dotnet/Crypto.cs",
+   "line": 10,
+   "label": "MD5",
+   "language": "csharp",
+   "category": "broken_hash",
+   "vulnerable": true
+  },
+  {
+   "id": "N2",
+   "file": "dotnet/Crypto.cs",
+   "line": 11,
+   "label": "SHA-1",
+   "language": "csharp",
+   "category": "broken_hash",
+   "vulnerable": true
+  },
+  {
+   "id": "N3",
+   "file": "dotnet/Crypto.cs",
+   "line": 12,
+   "label": "DES ECB",
+   "language": "csharp",
+   "category": "broken_cipher",
+   "vulnerable": true
+  },
+  {
+   "id": "N4",
+   "file": "dotnet/Crypto.cs",
+   "line": 13,
+   "label": "3DES",
+   "language": "csharp",
+   "category": "broken_cipher",
+   "vulnerable": true
+  },
+  {
+   "id": "N5",
+   "file": "dotnet/Crypto.cs",
+   "line": 14,
+   "label": "RSA-1024",
+   "language": "csharp",
+   "category": "weak_key_size",
+   "vulnerable": true
+  },
+  {
+   "id": "N6",
+   "file": "dotnet/Crypto.cs",
+   "line": 15,
+   "label": "PKCS#1 v1.5",
+   "language": "csharp",
+   "category": "weak_padding",
+   "vulnerable": true
+  },
+  {
+   "id": "N7",
+   "file": "dotnet/Crypto.cs",
+   "line": 17,
+   "label": "validation off",
+   "language": "csharp",
+   "category": "cert_validation_off",
+   "vulnerable": true
+  },
+  {
+   "id": "N8",
+   "file": "dotnet/Crypto.cs",
+   "line": 18,
+   "label": "TLS 1.0",
+   "language": "csharp",
+   "category": "weak_tls_version",
+   "vulnerable": true
+  },
+  {
+   "id": "N9",
+   "file": "dotnet/Crypto.cs",
+   "line": 20,
+   "label": "System.Random",
+   "language": "csharp",
+   "category": "weak_rng",
+   "vulnerable": true
+  },
+  {
+   "id": "N10",
+   "file": "dotnet/Crypto.cs",
+   "line": 21,
+   "label": "hard-coded key",
+   "language": "csharp",
+   "category": "hardcoded_key",
+   "vulnerable": true
+  },
+  {
+   "id": "N11",
+   "file": "dotnet/Crypto.cs",
+   "line": 22,
+   "label": "zero IV",
+   "language": "csharp",
+   "category": "static_iv",
+   "vulnerable": true
+  },
+  {
+   "id": "N12",
+   "file": "dotnet/Crypto.cs",
+   "line": 23,
+   "label": "PBKDF2-SHA1 1000 iters",
+   "language": "csharp",
+   "category": "weak_kdf_iterations",
+   "vulnerable": true
+  },
+  {
+   "id": "G1",
+   "file": "go/main.go",
+   "line": 17,
+   "label": "RSA-1024",
+   "language": "go",
+   "category": "weak_key_size",
+   "vulnerable": true
+  },
+  {
+   "id": "G2",
+   "file": "go/main.go",
+   "line": 19,
+   "label": "3DES",
+   "language": "go",
+   "category": "broken_cipher",
+   "vulnerable": true
+  },
+  {
+   "id": "G3",
+   "file": "go/main.go",
+   "line": 19,
+   "label": "hard-coded key",
+   "language": "go",
+   "category": "hardcoded_key",
+   "vulnerable": true
+  },
+  {
+   "id": "G4",
+   "file": "go/main.go",
+   "line": 21,
+   "label": "MD5",
+   "language": "go",
+   "category": "broken_hash",
+   "vulnerable": true
+  },
+  {
+   "id": "G5",
+   "file": "go/main.go",
+   "line": 22,
+   "label": "SHA-1",
+   "language": "go",
+   "category": "broken_hash",
+   "vulnerable": true
+  },
+  {
+   "id": "G6",
+   "file": "go/main.go",
+   "line": 23,
+   "label": "RC4",
+   "language": "go",
+   "category": "broken_cipher",
+   "vulnerable": true
+  },
+  {
+   "id": "G7",
+   "file": "go/main.go",
+   "line": 24,
+   "label": "math/rand",
+   "language": "go",
+   "category": "weak_rng",
+   "vulnerable": true
+  },
+  {
+   "id": "G8",
+   "file": "go/main.go",
+   "line": 26,
+   "label": "verification off",
+   "language": "go",
+   "category": "cert_validation_off",
+   "vulnerable": true
+  },
+  {
+   "id": "G9",
+   "file": "go/main.go",
+   "line": 27,
+   "label": "TLS 1.0",
+   "language": "go",
+   "category": "weak_tls_version",
+   "vulnerable": true
+  },
+  {
+   "id": "G10",
+   "file": "go/main.go",
+   "line": 28,
+   "label": "weak suites",
+   "language": "go",
+   "category": "weak_cipher_suite",
+   "vulnerable": true
+  },
+  {
+   "id": "F1",
+   "file": "iac/cfn/template.yaml",
+   "line": 6,
+   "label": "no BucketEncryption",
+   "language": "cloudformation",
+   "category": "unencrypted_at_rest",
+   "vulnerable": true,
+   "lines": [
+    3,
+    6
+   ]
+  },
+  {
+   "id": "F2",
+   "file": "iac/cfn/template.yaml",
+   "line": 12,
+   "label": "TLS 1.0 policy",
+   "language": "cloudformation",
+   "category": "weak_tls_version",
+   "vulnerable": true
+  },
+  {
+   "id": "F3",
+   "file": "iac/cfn/template.yaml",
+   "line": 18,
+   "label": "rotation off",
+   "language": "cloudformation",
+   "category": "kms_rotation_off",
+   "vulnerable": true
+  },
+  {
+   "id": "K1",
+   "file": "iac/k8s/ingress.yaml",
+   "line": 6,
+   "label": "legacy TLS in ingress-nginx",
+   "language": "kubernetes",
+   "category": "weak_tls_version",
+   "vulnerable": true
+  },
+  {
+   "id": "K2",
+   "file": "iac/k8s/ingress.yaml",
+   "line": 7,
+   "label": "weak ciphers",
+   "language": "kubernetes",
+   "category": "weak_cipher_suite",
+   "vulnerable": true
+  },
+  {
+   "id": "T1",
+   "file": "iac/terraform/main.tf",
+   "line": 5,
+   "label": "allows TLS 1.0",
+   "language": "terraform",
+   "category": "weak_tls_version",
+   "vulnerable": true
+  },
+  {
+   "id": "T2",
+   "file": "iac/terraform/main.tf",
+   "line": 11,
+   "label": "rotation off",
+   "language": "terraform",
+   "category": "kms_rotation_off",
+   "vulnerable": true
+  },
+  {
+   "id": "T3",
+   "file": "iac/terraform/main.tf",
+   "line": 16,
+   "label": "RDS unencrypted",
+   "language": "terraform",
+   "category": "unencrypted_at_rest",
+   "vulnerable": true
+  },
+  {
+   "id": "T4",
+   "file": "iac/terraform/main.tf",
+   "line": 21,
+   "label": "EBS unencrypted",
+   "language": "terraform",
+   "category": "unencrypted_at_rest",
+   "vulnerable": true
+  },
+  {
+   "id": "T5",
+   "file": "iac/terraform/main.tf",
+   "line": 25,
+   "label": "RSA-1024",
+   "language": "terraform",
+   "category": "weak_key_size",
+   "vulnerable": true
+  },
+  {
+   "id": "T6",
+   "file": "iac/terraform/main.tf",
+   "line": 31,
+   "label": "TLS 1.0 at the edge",
+   "language": "terraform",
+   "category": "weak_tls_version",
+   "vulnerable": true
+  },
+  {
+   "id": "T7",
+   "file": "iac/terraform/main.tf",
+   "line": 37,
+   "label": "Azure storage TLS 1.0",
+   "language": "terraform",
+   "category": "weak_tls_version",
+   "vulnerable": true
+  },
+  {
+   "id": "J1",
+   "file": "java/src/main/java/com/bank/Crypto.java",
+   "line": 17,
+   "label": "DES ECB via constant",
+   "language": "java",
+   "category": "broken_cipher",
+   "vulnerable": true
+  },
+  {
+   "id": "J2",
+   "file": "java/src/main/java/com/bank/Crypto.java",
+   "line": 23,
+   "label": "3DES CBC",
+   "language": "java",
+   "category": "broken_cipher",
+   "vulnerable": true
+  },
+  {
+   "id": "J3",
+   "file": "java/src/main/java/com/bank/Crypto.java",
+   "line": 24,
+   "label": "static zero IV",
+   "language": "java",
+   "category": "static_iv",
+   "vulnerable": true
+  },
+  {
+   "id": "J4",
+   "file": "java/src/main/java/com/bank/Crypto.java",
+   "line": 30,
+   "label": "AES default = ECB",
+   "language": "java",
+   "category": "ecb_mode",
+   "vulnerable": true
+  },
+  {
+   "id": "J5",
+   "file": "java/src/main/java/com/bank/Crypto.java",
+   "line": 36,
+   "label": "RSA-1024",
+   "language": "java",
+   "category": "weak_key_size",
+   "vulnerable": true
+  },
+  {
+   "id": "J6",
+   "file": "java/src/main/java/com/bank/Crypto.java",
+   "line": 42,
+   "label": "MD5",
+   "language": "java",
+   "category": "broken_hash",
+   "vulnerable": true
+  },
+  {
+   "id": "J7",
+   "file": "java/src/main/java/com/bank/Crypto.java",
+   "line": 46,
+   "label": "SHA1withRSA",
+   "language": "java",
+   "category": "broken_hash",
+   "vulnerable": true
+  },
+  {
+   "id": "J8",
+   "file": "java/src/main/java/com/bank/Crypto.java",
+   "line": 53,
+   "label": "insecure RNG for token",
+   "language": "java",
+   "category": "weak_rng",
+   "vulnerable": true
+  },
+  {
+   "id": "J9",
+   "file": "java/src/main/java/com/bank/Crypto.java",
+   "line": 57,
+   "label": "trust-all TrustManager",
+   "language": "java",
+   "category": "cert_validation_off",
+   "vulnerable": true,
+   "lines": [
+    57,
+    59
+   ]
+  },
+  {
+   "id": "J10",
+   "file": "java/src/main/java/com/bank/Crypto.java",
+   "line": 62,
+   "label": "TLS 1.0",
+   "language": "java",
+   "category": "weak_tls_version",
+   "vulnerable": true
+  },
+  {
+   "id": "J11",
+   "file": "java/src/main/java/com/bank/Crypto.java",
+   "line": 64,
+   "label": "hostname verifier off",
+   "language": "java",
+   "category": "hostname_verification_off",
+   "vulnerable": true
+  },
+  {
+   "id": "J12",
+   "file": "java/src/main/java/com/bank/Crypto.java",
+   "line": 68,
+   "label": "hard-coded key",
+   "language": "java",
+   "category": "hardcoded_key",
+   "vulnerable": true
+  },
+  {
+   "id": "J13",
+   "file": "java/src/main/java/com/bank/Crypto.java",
+   "line": 72,
+   "label": "RC4",
+   "language": "java",
+   "category": "broken_cipher",
+   "vulnerable": true
+  },
+  {
+   "id": "NFP1",
+   "file": "dotnet/Crypto.cs",
+   "line": 16,
+   "label": "C# method name TrustAll(): no certificate-validation finding belongs on this line (the validation callback is N7, line 17)",
+   "language": "csharp",
+   "category": "cert_validation_off",
+   "vulnerable": false,
+   "source": "round6/cbom/contradiction-2-hidden-failure.md H2 (the engine's java.trustall pattern fired on this C# method name)"
+  }
+ ],
+ "libraries": [
+  {
+   "id": "L1",
+   "file": "java/pom.xml",
+   "line": 3,
+   "ecosystem": "Maven",
+   "name": "org.bouncycastle:bcprov-jdk15on",
+   "version": "1.60"
+  },
+  {
+   "id": "L2",
+   "file": "java/pom.xml",
+   "line": 4,
+   "ecosystem": "Maven",
+   "name": "commons-codec:commons-codec",
+   "version": "1.10"
+  },
+  {
+   "id": "L3",
+   "file": "dotnet/Bank.csproj",
+   "line": 2,
+   "ecosystem": "NuGet",
+   "name": "BouncyCastle",
+   "version": "1.8.1"
+  },
+  {
+   "id": "L4",
+   "file": "dotnet/Bank.csproj",
+   "line": 2,
+   "ecosystem": "NuGet",
+   "name": "System.IdentityModel.Tokens.Jwt",
+   "version": "5.1.4"
+  },
+  {
+   "id": "L5",
+   "file": "go/go.mod",
+   "line": 6,
+   "ecosystem": "Go",
+   "name": "golang.org/x/crypto",
+   "version": "0.0.0-20200622213623-75b288015ac9"
+  },
+  {
+   "id": "L6",
+   "file": "go/go.mod",
+   "line": 7,
+   "ecosystem": "Go",
+   "name": "github.com/dgrijalva/jwt-go",
+   "version": "3.2.0+incompatible"
+  }
+ ]
+}

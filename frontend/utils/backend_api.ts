@@ -1,5 +1,7 @@
 import api from "@/utils/interceptors"
 import type { CbomResultOrigin, CbomSourcesRun } from "@/components/cbom/resultOrigin"
+import type { InstallLinks, NodeArtifacts } from "@/components/cbom/sources/logic"
+import type { CbomSourceUsage } from "@/components/cbom/sources/sourceLimit"
 import { showErrorToast } from "./error-handler"
 import { toast } from "@/utils/toast";
 
@@ -2263,7 +2265,10 @@ export interface CbomScanDashboardData {
     total_quantum_vulnerable: number
     total_certificates: number
     total_keys: number
-    quantum_readiness_score: number
+    /** null on a Sources run whose readiness posture withholds (quantum_readiness_status says why): never 0 % */
+    quantum_readiness_score: number | null
+    /** a Sources run's posture readiness_basis.status (absent on code scans) */
+    quantum_readiness_status?: CbomReadinessBasis["status"]
     average_risk_score: number
   }
   remediation_metrics: {
@@ -2378,6 +2383,50 @@ export interface CBOMListResponse {
   dashboard_data: CBOMDashboardData
   /** each CBOM Sources source's latest completed collection (one entry per source) */
   sources_runs?: CbomSourcesRun[]
+  /** CB-38: the team's newest CBOM Sources runs (at most 200, newest first), one row per run; absent on older backends */
+  runs_list_data?: RunListRow[]
+  /** CB-38: how many runs the team has in total (more than runs_list_data.length when older runs were not loaded) */
+  runs_total?: number
+  /** CB-38: true when the backend could not list the runs (runs_list_data is then empty; sources_runs is still sent) */
+  runs_list_error?: boolean
+}
+
+/** CB-38: one CBOM Sources run as a row of the CBOM Scans table (GET /{team_id}/cbom/scans `runs_list_data`). */
+export interface RunListRow {
+  kind: "run"
+  id: number
+  /** "Sources run #<id> · <source names joined ', '>" */
+  title: string
+  created_at: string
+  last_updated: string | null
+  finished_at: string | null
+  /** the run status mapped to the scan statuses (contracts/cbom/status_buckets.json `run_to_unified`) */
+  scan_status: "not_started" | "pending" | "started" | "success" | "partial" | "failure" | "cancelled"
+  run_status: "queued" | "running" | "done" | "partial" | "failed" | "cancelled"
+  risk_data: {
+    total_critical: number
+    total_high: number
+    total_medium: number
+    total_low: number
+    total_informational: number
+    total_quantum_vulnerable: number
+  } | null
+  average_risk_score: number | null
+  sources: { id: number; name: string; kind: string }[]
+  repo_url: null
+  branch: null
+  /** credits charged for the run */
+  estimated_credits: number | null
+  credits_refunded: number | null
+  owner_user_email: string | null
+  owner_user_full_name: string | null
+  asset_count: number
+  endpoints_probed: number
+  jobs_total: number
+  jobs_done: number
+  linked_scan_id: number | null
+  /** the severity counts are those judged when the run collected the assets */
+  counts_basis: "as_collected"
 }
 
 export interface CBOMConversationResponse {
@@ -2393,13 +2442,13 @@ export interface CBOMConversationResponse {
   info?: ScanInfoField | null
 }
 
-/** Team-scoped: GET /{team_id}/cbom/scans */
-const getCBOMScans = async (team_id: number): Promise<CBOMListResponse> => {
+/** Team-scoped: GET /{team_id}/cbom/scans. `toast: false` leaves the error toast to the caller (once per outage). */
+const getCBOMScans = async (team_id: number, opts: { toast?: boolean } = {}): Promise<CBOMListResponse> => {
   try {
     const response = await api.get(`/${team_id}/cbom/scans`);
     return response.data as CBOMListResponse;
   } catch (error) {
-    showErrorToast(error, "Error fetching CBOM scans");
+    if (opts.toast !== false) showErrorToast(error, "Error fetching CBOM scans");
     throw error;
   }
 };
@@ -2457,14 +2506,20 @@ const renameCBOMScan = async ({
   }
 };
 
-/** Team-scoped: GET /{team_id}/cbom/scan/{scan_id}/export */
-const getCBOMExportResults = async (team_id: number, scan_id: number): Promise<Blob | ArrayBuffer> => {
+/** Team-scoped: GET /{team_id}/cbom/scan/{scan_id}/export.
+ *  `toast: false` leaves the success and error toasts to the caller. CbomResults toasts once;
+ *  the options sidebar does not, so it keeps these. */
+const getCBOMExportResults = async (
+  team_id: number,
+  scan_id: number,
+  opts: { toast?: boolean } = {},
+): Promise<Blob | ArrayBuffer> => {
   try {
     const response = await api.get(`/${team_id}/cbom/scan/${scan_id}/export`, { responseType: "blob" });
-    toast.success("CBOM report downloaded");
+    if (opts.toast !== false) toast.success("CBOM report downloaded");
     return response.data;
   } catch (error) {
-    showErrorToast(error, "Error fetching CBOM export results");
+    if (opts.toast !== false) showErrorToast(error, "Error fetching CBOM export results");
     throw error;
   }
 };
@@ -2558,6 +2613,7 @@ const reinitializeCBOMScanWithPayload = async (
  */
 export const CBOM_DELIVERABLES = [
   { slug: "scope-baseline-register", number: 1, title: "Scope Baseline & Asset Population Register" },
+  { slug: "quantum-risk-register", number: 2, title: "Quantum Risk Register" },
   { slug: "methodology-evidence-plan", number: 3, title: "Cryptographic Discovery Methodology & Evidence Plan" },
   { slug: "infrastructure-cloud-encryption-posture", number: 5, title: "Infrastructure & Cloud Encryption Posture" },
   { slug: "network-tls-protocol-assessment", number: 6, title: "Network, TLS & Crypto Protocol Assessment" },
@@ -3996,7 +4052,14 @@ export interface CicdIntegration {
     created_at: string
     last_updated: string
     scan_type: "sast" | "dast" | "cbom" | "llm" | "mcp" | "iac" | "leakage" | "sbom_sca" | "agent_discovery"
+    /** A label ("cicd12-…1a2b"), never the key: the key is shown once, at create or rotate (issue #99) */
     api_key: string
+    api_key_state?: "active" | "revoked"
+    api_key_hint?: string | null
+    api_key_issued_at?: string | null
+    api_key_issued_by?: string | null
+    /** The caller owns the integration or is a team admin: may rotate and revoke its key */
+    can_manage_api_key?: boolean
 }
 
 /** Vulns-over-time chart data: date string -> counts by severity (from get_cicd_list_dashboard_data) */
@@ -4023,15 +4086,57 @@ export interface CreateCicdIntegrationData {
     scan_type: "sast" | "dast" | "cbom"
 }
 
-const createCicdIntegration = async (team_id: number, data: CreateCicdIntegrationData) => {
+/** Answer of create and rotate: the only place the plaintext key appears (show it once, never store it) */
+export interface CicdIssuedApiKey {
+    integration_id: number
+    api_key: string
+    warning?: string
+    api_key_state?: "active" | "revoked"
+    api_key_hint?: string
+}
+
+const createCicdIntegration = async (team_id: number, data: CreateCicdIntegrationData): Promise<CicdIssuedApiKey> => {
     try {
         const response = await api.post(`/${team_id}/cicd/integration`, data)
         toast.success("CI/CD integration created")
-        return response.data
+        return response.data as CicdIssuedApiKey
     } catch (error) {
         showErrorToast(error,"Error creating CI/CD integration")
         throw error
     }
+}
+
+/** Issue a new key (owner or team admin); the old key stops working at once */
+const rotateCicdApiKey = async (team_id: number, integration_id: number): Promise<CicdIssuedApiKey> => {
+    try {
+        const response = await api.post(`/${team_id}/cicd/integration/${integration_id}/api-key/rotate`)
+        return response.data as CicdIssuedApiKey
+    } catch (error) {
+        showErrorToast(error,"Error issuing a new CI/CD API key")
+        throw error
+    }
+}
+
+/** Revoke the key (owner or team admin): pipelines get 401 until a new key is issued */
+const revokeCicdApiKey = async (team_id: number, integration_id: number): Promise<{ integration_id: number; api_key_state: "revoked"; message: string }> => {
+    try {
+        const response = await api.delete(`/${team_id}/cicd/integration/${integration_id}/api-key`)
+        return response.data
+    } catch (error) {
+        showErrorToast(error,"Error revoking the CI/CD API key")
+        throw error
+    }
+}
+
+/** CBOM policy gate of the hosted CI path (backend utilities/cicd/cbom_gate.py) */
+export interface CicdCbomGate {
+    policy: string
+    verdict: "pass" | "fail" | "no_result"
+    fail_codes: string[]
+    failing_count: number
+    failing: { codes: string[]; title: string; location: string; line: number | null; impact: string | null }[]
+    truncated: boolean
+    reason: string
 }
 
 export interface CicdLog {
@@ -4050,6 +4155,8 @@ export interface CicdLog {
     profile_id?: number | null
     trigger?: string | null
     scan_kind?: string | null
+    /** CBOM policy gate verdict the pipeline received (POST /cicd/cbom/scan); null for logs made before the gate */
+    gate?: CicdCbomGate | null
     cbom_page?: {
         data?: unknown
         dashboard?: CbomScanDashboardData | null
@@ -4067,7 +4174,13 @@ export interface CicdIntegrationDashboard {
     created_at: string
     last_updated: string
     scan_type: "sast" | "dast" | "cbom" | "llm" | "mcp" | "iac" | "leakage" | "sbom_sca" | "agent_discovery"
+    /** A label, never the key (see CicdIntegration.api_key) */
     api_key: string
+    api_key_state?: "active" | "revoked"
+    api_key_hint?: string | null
+    api_key_issued_at?: string | null
+    api_key_issued_by?: string | null
+    can_manage_api_key?: boolean
     integration_active?: boolean
     integration_settings?: Record<string, { jira_project_id?: string | null; auto_create_tickets?: boolean | null } | null> | null
     scan_settings?: Record<string, { app_lang?: SastAppLang; exclude_path_arrays?: string[][] | null; scan_binaries?: boolean; include_vendored?: boolean } | null> | null
@@ -4140,6 +4253,8 @@ const renameCicdIntegration = async ({ team_id, integration_id, title }: { team_
 export { 
     getCicdIntegrations,
     createCicdIntegration,
+    rotateCicdApiKey,
+    revokeCicdApiKey,
     getCicdIntegrationDashboard,
     deleteCicdIntegration,
     updateCicdIntegration,
@@ -4154,15 +4269,49 @@ export {
 export type CbomSourceKind =
     | "linux_servers" | "windows_servers" | "active_directory" | "kubernetes" | "database"
     | "aws_account" | "azure_subscription" | "gcp_project" | "ca_connector" | "idp" | "network_range"
-    | "appliance" | "key_manager" | "host_agent" | "container_images"
+    | "appliance" | "key_manager" | "host_agent" | "container_images" | "ct_logs"
 export type CbomSourceGroup = "servers" | "kubernetes" | "databases" | "cloud" | "identity" | "network"
 export type CbomNodeStatus = "pending_registration" | "registration_expired" | "online" | "offline"
-export type CbomTestStatus = "never" | "pending" | "passed" | "partial" | "failed" | "not_available" | "error"
+/** A team never-scan host name that a scan node's latest job could not resolve (backend held.never_scan_held). */
+export interface CbomNeverScanHeld {
+    name: string
+    node_id: number
+    node_name: string
+    /** when the node first reported it in this unbroken run of jobs (ISO, UTC) */
+    since: string | null
+    last_seen: string | null
+    job_id: number
+}
+
+export type CbomTestStatus = "never" | "pending" | "passed" | "partial" | "failed" | "not_available" | "error" | "skipped"
 export type CbomJobStatus = "pending" | "claimed" | "success" | "failure" | "cancelled" | "expired"
 export type CbomRunStatus = "queued" | "running" | "done" | "partial" | "failed" | "cancelled"
-export type CbomConfidence = "Q0" | "Q1" | "Q2" | "Q3"
+/** Evidence confidence (CB-18): E0 Unknown, E1 Self-attested, E2 Documented, E3 Verified. Not the quantum risk grade. */
+export type CbomConfidence = "E0" | "E1" | "E2" | "E3"
+/** Why an evidence area or vendor counts at E0: the "Q0 gap" it creates in the risk register. */
+export type CbomQ0GapReason = "no_answer" | "rated_unknown" | "evidence_expired" | "vendor_not_asked" | "vendor_no_response"
+    | "vendor_link_expired" | "vendors_missing"
+export interface CbomQ0Gap { reason: CbomQ0GapReason; text: string; detail: string | null }
+export interface CbomQ0GapEntry extends CbomQ0Gap {
+    id: string
+    kind: "area" | "area_rollup" | "vendor"
+    area_key: string | null
+    vendor_id: number | null
+    title: string
+    counted: boolean
+    as_of: string
+}
 export type CbomIncludeKey = "servers" | "kubernetes" | "databases" | "cloud" | "network"
 export type CbomInclude = Partial<Record<CbomIncludeKey, boolean>>
+
+export interface CbomNodeVault {
+    enabled: boolean | null
+    providers: string[] | null
+    /** ZS_VAULT_PATH_PREFIX as the node reads it, written without the KV v2 data/ segment */
+    prefix: string | null
+    /** per provider: "ready", or what is missing on the node (never a token) */
+    setup: Record<string, string>
+}
 
 export interface CbomScanNode {
     id: number
@@ -4175,15 +4324,24 @@ export interface CbomScanNode {
     proxy_url: string | null
     has_proxy_ca: boolean
     proxy_tls_inspect: boolean
+    /** #199: the proxy's user name when it needs a login (never the password: it stays on the node's host) */
+    proxy_user?: string | null
     status: CbomNodeStatus
     registration_issued_at: string | null
     registration_expires_at: string | null
     enrolled_at: string | null
     hostname: string | null
     node_version: string | null
+    /** the commit the node's image was built from (12 characters), null when it reports none (staging QA B6-1) */
+    node_build?: string | null
+    /** does it run this server's node build? (backend node_release.node_update) */
+    update?: CbomNodeUpdate
     source_ips: string[]
     ssh_public_key: string | null
     capabilities: Record<string, unknown>
+    /** #364: what the node reported for vault credentials (backend vault_support.node_vault); enabled is null
+     *  until it reports (an older node, or never connected) */
+    vault?: CbomNodeVault
     clock_skew_s: number | null
     clock_in_sync: boolean | null
     last_heartbeat_at: string | null
@@ -4204,6 +4362,18 @@ export interface CbomScanNode {
     last_updated: string | null
 }
 
+export interface CbomNodeUpdate {
+    /** update_available: an older version, or no build id; newer: ahead of the server; unknown: nothing to compare */
+    state: "current" | "update_available" | "newer" | "unknown"
+    reason: "same_build" | "same_version" | "older_version" | "different_version" | "no_build_id" | "different_build"
+        | "newer_version" | "no_server_build" | "not_reported" | "compare_failed" | null
+    message: string | null
+    /** "<version>+<12-character commit>" of the node build this server ships, or null */
+    server_build: string | null
+    /** the release this server ships ("1.0.4"), named by "Update available: 1.0.4" (#361); absent from an older API */
+    server_version?: string | null
+}
+
 export interface CbomNodeWrite {
     name?: string
     segment?: string
@@ -4212,6 +4382,7 @@ export interface CbomNodeWrite {
     proxy_url?: string | null
     proxy_ca_pem?: string | null
     proxy_tls_inspect?: boolean
+    proxy_user?: string | null
     expected_version?: number
 }
 
@@ -4224,9 +4395,34 @@ export interface CbomTestSample {
     note?: string
 }
 
+// #150: an admin's decision about a host key a scan node remembered under trust on first use
+export interface CbomHostKeyReset {
+    id: number
+    source_id: number
+    node_id: number
+    job_id: number
+    target: string
+    port: number
+    action: "accept" | "forget"
+    fingerprint: string | null
+    pinned_fingerprint: string | null
+    status: "pending" | "applied" | "superseded"
+    requested_by_user_id: number
+    requested_at: string
+    applied_at: string | null
+    applied_job_id: number | null
+}
+
+export interface CbomHostKeyResetBody {
+    job_id: number
+    target: string
+    action: "accept" | "forget"
+    fingerprint?: string
+}
+
 export interface CbomAwsCheck {
     check: string
-    status: "pass" | "fail" | "skipped" | "error"
+    status: "pass" | "fail" | "skipped" | "error" | "warning"
     detail: string
 }
 
@@ -4240,6 +4436,7 @@ export interface CbomSource {
     name: string
     node_id: number | null
     node_name: string | null
+    node_segment?: string | null  // #225: the segment of the source's scan node
     node_status: CbomNodeStatus | "missing" | null
     enabled: boolean
     config: Record<string, any>
@@ -4250,10 +4447,16 @@ export interface CbomSource {
     last_test_at: string | null
     last_test_summary: string | null
     last_test_job_id: number | null
-    last_test_result: { samples?: CbomTestSample[]; checks?: CbomAwsCheck[]; member_accounts?: number; summary?: string; status?: string }
+    last_test_result: { samples?: CbomTestSample[]; checks?: CbomAwsCheck[]; member_accounts?: number; summary?: string; status?: string; estimate?: CbomOrgEstimate }
+    // the newest finished collection of this source (list and get only; null on save responses and before the first)
+    last_collect?: { status: "ok" | "partial" | "failed"; at: string | null; summary: string | null; job_id: number; run_id: number | null } | null
+    /** AWS Private CA sources only (#368): what the account's last collection read of ACM PCA, per region */
+    pca_read?: import("@/components/cbom/sources/awsPrivateCaStatus").AwsPcaRead | null
     row_version: number
     created_at: string | null
     last_updated: string | null
+    managed_by_policy_id?: number | null  // F1.2 fleet: a policy manages this source (edit the policy, not the source)
+    credential_id?: number | null
 }
 
 export interface CbomSourceWrite {
@@ -4267,6 +4470,8 @@ export interface CbomSourceWrite {
     clear_secrets?: string[]
     expected_version?: number
     test_after_save?: boolean
+    /** ct_logs only, on create: add the saved certificate domains (settings.cert_domains) and empty that list */
+    import_saved_domains?: boolean
 }
 
 export interface CbomJob {
@@ -4282,6 +4487,9 @@ export interface CbomJob {
     attempts: number
     credits: number
     refunded: boolean
+    /** credits given back (CB-14): all of ``credits`` for a failed or cancelled job, the share of targets skipped at
+     * runtime for a partly read one */
+    credits_refunded?: number
     created_at: string | null
     claimed_at: string | null
     finished_at: string | null
@@ -4355,6 +4563,11 @@ export interface CbomJobTargets {
     error: string | null
     targets: CbomTargetResult[]
     duration_s: number | null
+    /** "same_account": an AWS source read from the deployment's own account in lab mode (test deployments only) */
+    lab_mode?: string | null
+    /** assets this job read (coverage rows excluded) and places not fully read (C4: the status label) */
+    assets_read?: number | null
+    gaps?: number | null
 }
 
 export interface CbomAssetPage {
@@ -4363,7 +4576,12 @@ export interface CbomAssetPage {
     page: number
     page_size: number
     items: CbomAsset[]
-    facets: { type: Record<string, number>; impact: Record<string, number>; quantum_vulnerable: number }
+    /** q_grade (CB-19 PR-3): rows per grade stored at ingest ("none": no grade), null when the run was graded at
+     * view; absent from an older server */
+    facets: { type: Record<string, number>; impact: Record<string, number>; quantum_vulnerable: number;
+              q_grade?: Record<string, number> | null }
+    /** CB-19 PR-3: whether the grade filter can serve this run, and why not */
+    grade_filter?: { available: boolean; reason: string | null }
     targets: CbomJobTargets[]
     run?: CbomRun
 }
@@ -4377,6 +4595,15 @@ export interface CbomAssetFilters {
     page_size?: number
 }
 
+/** What one run of an AWS organisation source is charged (recorded at each validation), with its last change. */
+export interface CbomOrgEstimate {
+    accounts: number
+    credits_per_account: number
+    credits_per_run: number
+    changed_from?: { accounts: number; credits_per_run: number }
+    changed_at?: string | null
+}
+
 export interface CbomTestResponse {
     status: "queued" | "not_available" | "passed" | "partial" | "failed" | "error"
     job?: CbomJob
@@ -4385,6 +4612,8 @@ export interface CbomTestResponse {
     checks?: CbomAwsCheck[]
     member_accounts?: number | null
     validated_at?: string
+    lab_mode?: string
+    estimate?: CbomOrgEstimate
 }
 
 export interface CbomSourceSaveResponse {
@@ -4399,8 +4628,17 @@ export interface CbomSourcesSettings {
     aws_external_id: string
     /** false: the deployment has no CBOM_AWS_PRINCIPAL_ARN, so AWS accounts cannot be connected */
     aws_collection_configured?: boolean
+    /** true: lab mode (CBOM_AWS_LAB_SAME_ACCOUNT on a test deployment) accepts roles in the deployment's own account */
+    aws_lab_same_account?: boolean
+    /** Domains saved before Certificate Transparency discovery existed; nothing reads them (a ct_logs source does). */
     cert_domains: string[]
+    /** true: the server runs Certificate Transparency discovery (CBOM_CT_DISCOVERY); a ct_logs source can be added */
+    ct_discovery_enabled?: boolean
+    /** CT providers in the order they are asked, e.g. ["certspotter", "crtsh"] */
+    ct_providers?: string[]
     network_exclusions: CbomExclusionItem[]
+    /** Never-scan host names a scan node cannot resolve: that node holds every job of the team (from job results) */
+    never_scan_held?: CbomNeverScanHeld[]
     sni_hostnames: string[]
     ports: CbomPortItem[]
     zeek_span: boolean
@@ -4430,18 +4668,60 @@ export interface CbomRiskModel {
     threat_years: number | null
 }
 
-export type CbomPqcClass = "quantum-vulnerable" | "hybrid" | "quantum-safe" | "grover-weakened" | "not-applicable"
+export type CbomPqcClass = "quantum-vulnerable" | "hybrid" | "quantum-safe" | "grover-weakened" | "unknown" | "not-applicable"
+/** What a PQC readiness percentage rests on (CB-18): it is withheld when more assets are unknown than judged. */
+export interface CbomReadinessBasis {
+    judged: number
+    ready: number
+    unknown: number
+    not_applicable: number
+    status: "ok" | "not_enough_identified" | "nothing_judged"
+}
+
+/** One group of quantum-vulnerable assets and the readiness the run would have with it fixed (posture's own
+ * readiness function: the page never computes a readiness). */
+export interface CbomReadinessAction {
+    asset_type: string
+    type_label: string
+    /** the type name counted ("CA templates"); older servers send none */
+    type_label_plural?: string
+    code: string | null
+    title: string
+    fix: string | null
+    assets: number
+    readiness_after: number | null
+}
+
+export interface CbomReadinessExcluded {
+    class: "unknown" | "not-applicable"
+    basis: string
+    assets: number
+    text: string
+}
 
 export interface CbomRunPosture {
     assets: number
     pqc_classes: Record<CbomPqcClass, number>
+    pqc_class_bases?: Record<string, number>
+    pqc_class_basis_text?: Record<string, string>
+    pqc_class_model?: string
     pqc_readiness_pct: number | null
+    readiness_basis?: CbomReadinessBasis
+    /** issue #271: the quantum-vulnerable assets per (asset type, quantum finding), largest first; top 3 */
+    readiness_actions?: CbomReadinessAction[]
+    /** every such group (each quantum-vulnerable asset is in exactly one) */
+    readiness_actions_all?: CbomReadinessAction[]
+    /** the assets outside the readiness denominator (classes unknown and not-applicable), per reason */
+    readiness_excluded?: CbomReadinessExcluded[]
     hndl_assets: number
     impacts: Record<CbomImpact, number>
     top_codes: { code: string; count: number; title: string }[]
     mosca: { configured: boolean; x: number | null; y: number | null; z: number | null; at_risk?: boolean; years_over?: number; verdict?: string; note?: string }
+    // CB-19 PR-2: the team's Mosca now, when it differs from what the run recorded at Start (null otherwise)
+    mosca_now?: { configured: boolean; x: number | null; y: number | null; z: number | null; at_risk?: boolean; years_over?: number } | null
     top_risks: { id: number; type: string; name: string; location: string; impact: CbomImpact; criticality: string; source_name: string | null; score: number; hndl: boolean; finding: string | null }[]
-    compliance: { framework: string; clauses: { id: string; text: string; source: string; note?: string | null; assets: number; codes: string[] }[] }[]
+    // #289: unrecorded = assets cited for review only (the algorithm was not recorded); verdict fail | needs_evidence
+    compliance: { framework: string; clauses: { id: string; text: string; source: string; note?: string | null; assets: number; codes: string[]; unrecorded?: number; verdict?: "fail" | "needs_evidence" }[]; assets?: number; unrecorded?: number; verdict?: "fail" | "needs_evidence" | null }[]
     kb_version: string
     pqc_context: {
         mosca?: { inequality: string; definitions: Record<string, string>; source: string; paper: string }
@@ -4453,6 +4733,11 @@ export interface CbomRunPosture {
 
 export interface CbomAssetDetail {
     id: number
+    /** the code page's finding dialog fields, as on the run's /assets items (CB-38 W2b) */
+    bom_ref?: string
+    owasp_top_10?: Record<string, string>
+    compliance_controls?: Record<string, string>
+    suggested_fix?: string | null
     type: string
     name: string | null
     location: string
@@ -4466,6 +4751,9 @@ export interface CbomAssetDetail {
     protocol: string | null
     quantum_vulnerable: boolean | null
     pqc_class: CbomPqcClass
+    pqc_class_basis?: string
+    pqc_class_basis_text?: string
+    pqc_class_read_elsewhere?: number | null
     hndl: boolean
     source_name: string | null
     criticality: string
@@ -4493,7 +4781,8 @@ export interface CbomPlanItem {
     units?: number
     unit?: string
     credits?: number
-    status: "queued" | "skipped" | "waiting" | "gap"
+    /** covered: read by another source of the plan (an AWS Private CA connector, by its AWS account) */
+    status: "queued" | "skipped" | "covered" | "waiting" | "gap"
     reason: string | null
     waiting_for_node?: boolean
     /** a scan-node job waits for its scan window (team or server's own) */
@@ -4522,14 +4811,16 @@ export interface CbomSourcesOverview {
     nodes: { total: number; online: number; offline: number; pending: number }
     groups: Partial<Record<CbomSourceGroup, { sources: number; units: number; by_kind: Record<string, number>; failed_tests: number }>>
     plan: CbomEstimate
-    evidence: { areas: number; answered: number; by_confidence: Record<CbomConfidence, number>; vendors: number }
+    evidence: { areas: number; answered: number; by_confidence: Record<CbomConfidence, number>; vendors: number; q0_gap_count?: number }
     code: { cbom_scans: number }
+    limits?: { sources: CbomSourceUsage }  // #224: usage against the team's source cap
     settings: {
         stop_all_network: boolean
         next_window_start: string | null
         in_window_now: boolean
         window_timezone: string
         aws_external_id: string
+        ct_discovery_enabled?: boolean
         network_exclusions: number
         ports: number
         sni_hostnames: number
@@ -4556,6 +4847,16 @@ export interface CbomRun {
     jobs?: CbomJob[]
     job_counts?: Partial<Record<CbomJobStatus, number>>
     asset_count?: number
+    // CB-19 PR-2: the grade model and inputs recorded at Start; inputs_changed when the team's Mosca differs now
+    grades?: {
+        model_version: string | null
+        inputs: Record<string, unknown> | null
+        inputs_digest: string | null
+        inputs_source: "snapshot" | "current"
+        inputs_changed: boolean | null
+        model_changed: boolean
+        mosca_now: { x: number | null; y: number | null; z: number | null } | null
+    }
 }
 
 export interface CbomEvidenceQuestion { id: string; prompt: string; type: "text" | "choice" }
@@ -4571,6 +4872,8 @@ export interface CbomEvidenceArea {
     effective_confidence: CbomConfidence
     confidence_label: string
     confidence_set_by: number | null
+    q0_gap: CbomQ0Gap | null
+    q0_gap_rollup: boolean
     answers: Record<string, string>
     evidence_title: string | null
     evidence_url: string | null
@@ -4597,12 +4900,16 @@ export interface CbomVendor {
     name: string
     contact_email: string | null
     area_key: string
-    status: "not_sent" | "link_created" | "overdue" | "answered" | "expired"
+    status: "not_sent" | "link_created" | "overdue" | "answered" | "refresh_pending" | "expired"
     link_created_at: string | null
     link_expires_at: string | null
     answered_at: string | null
     answers: Record<string, string>
+    /** The level a user set or the answer gave; it counts only once the vendor answered (effective_confidence). */
     confidence: CbomConfidence
+    effective_confidence: CbomConfidence
+    confidence_label: string
+    q0_gap: CbomQ0Gap | null
     evidence_url: string | null
     row_version: number
     created_at: string | null
@@ -4614,6 +4921,8 @@ export interface CbomEvidenceResponse {
     vendors: CbomVendor[]
     by_confidence: Record<CbomConfidence, number>
     answered: number
+    q0_gaps: CbomQ0GapEntry[]
+    q0_gap_count: number
 }
 
 export interface CbomTargetCount {
@@ -4622,6 +4931,7 @@ export interface CbomTargetCount {
     count: number | null
     lines?: number
     samples?: string[]
+    notes?: string[] // CB-09: names IDNA 2003 software reads as another host (faß.lab -> fass.lab), shown before saving
 }
 
 export interface CbomAuditEvent {
@@ -4648,8 +4958,34 @@ const listCbomScanNodes = async (team_id: number): Promise<{ nodes: CbomScanNode
     return response.data
 }
 
-const listCbomSources = async (team_id: number, group?: CbomSourceGroup): Promise<{ sources: CbomSource[]; server_time: string }> => {
+/** The scan node downloads this server offers (image file, Helm chart, OVA/AMI build kits): backend
+ * routers/cbom_node_artifacts.py. Shape: components/cbom/sources/logic.ts NodeArtifacts. */
+const getCbomNodeArtifacts = async (team_id: number): Promise<NodeArtifacts> => {
+    const response = await api.get(`/${team_id}/cbom/node-artifacts`)
+    return response.data as NodeArtifacts
+}
+
+/** A short-lived download link for one scan node file (the browser then downloads it straight to disk); throws the
+ * server's 404 ("... is not available on this server yet. Contact your administrator.") for a file it does not hold. */
+const getCbomNodeArtifactLink = async (team_id: number, kind: string): Promise<{ url: string; expires_in: number }> => {
+    const response = await api.post(`/${team_id}/cbom/node-artifacts/${encodeURIComponent(kind)}/link`)
+    return response.data
+}
+
+// network_totals (N7): unique addresses the team's ENABLED network ranges sweep after the never-scan list; present on
+// unfiltered and network lists
+const listCbomSources = async (team_id: number, group?: CbomSourceGroup): Promise<{
+    sources: CbomSource[]; server_time: string;
+    network_totals?: { addresses: number; ranges_enabled: number; ranges_disabled: number }
+}> => {
     const response = await api.get(`${cbomSourcesBase(team_id)}/items`, { params: group ? { group } : {} })
+    return response.data
+}
+
+/** #225: one page of sources, searched and filtered on the server (keyset paging: pass the previous next_after). */
+const listCbomSourcesPage = async (team_id: number, params: Record<string, string | number>):
+    Promise<{ sources: CbomSource[]; server_time: string; total: number; next_after: number | null; limit: number }> => {
+    const response = await api.get(`${cbomSourcesBase(team_id)}/items`, { params })
     return response.data
 }
 
@@ -4711,7 +5047,8 @@ const getCbomAudit = async (team_id: number, limit = 100): Promise<{ events: Cbo
 }
 
 // ---------- writes (toast on success; errors toast through showErrorToast and are rethrown)
-const createCbomScanNode = async (team_id: number, body: CbomNodeWrite): Promise<{ node: CbomScanNode; registration_token: string }> => {
+// install_links: the one-paste install command's download links (null: no files on this server)
+const createCbomScanNode = async (team_id: number, body: CbomNodeWrite): Promise<{ node: CbomScanNode; registration_token: string; install_links?: InstallLinks | null }> => {
     try {
         const response = await api.post(`${cbomSourcesBase(team_id)}/nodes`, body)
         toast.success("Scan node added")
@@ -4745,7 +5082,7 @@ const deleteCbomScanNode = async (team_id: number, node_id: number): Promise<voi
 
 /** reset=false: new token for a node that never registered; reset=true: revoke and register again.  An agent pool
  * node gets no token (null): its pod enrolls again by itself with the pool token. */
-const newCbomNodeRegistration = async (team_id: number, node_id: number, reset: boolean): Promise<{ node: CbomScanNode; registration_token: string | null }> => {
+const newCbomNodeRegistration = async (team_id: number, node_id: number, reset: boolean): Promise<{ node: CbomScanNode; registration_token: string | null; install_links?: InstallLinks | null }> => {
     try {
         const path = reset ? "reset" : "registration-token"
         const response = await api.post(`${cbomSourcesBase(team_id)}/nodes/${node_id}/${path}`)
@@ -4807,6 +5144,23 @@ const testCbomSource = async (team_id: number, source_id: number): Promise<CbomT
         showErrorToast(error, "Error testing the source")
         throw error
     }
+}
+
+const createCbomHostKeyReset = async (team_id: number, source_id: number, body: CbomHostKeyResetBody): Promise<CbomHostKeyReset> => {
+    try {
+        const response = await api.post(`${cbomSourcesBase(team_id)}/items/${source_id}/host-key-resets`, body)
+        const data = response.data as { reset: CbomHostKeyReset; message: string }
+        toast.success(data.message || "Saved: the scan node applies it on its next job for this source")
+        return data.reset
+    } catch (error) {
+        showErrorToast(error, body.action === "accept" ? "Error accepting the host key" : "Error forgetting the host key")
+        throw error
+    }
+}
+
+const listCbomHostKeyResets = async (team_id: number, source_id: number): Promise<CbomHostKeyReset[]> => {
+    const response = await api.get(`${cbomSourcesBase(team_id)}/items/${source_id}/host-key-resets`)
+    return (response.data as { resets: CbomHostKeyReset[] }).resets
 }
 
 const updateCbomSourcesSettings = async (team_id: number, body: CbomSettingsWrite): Promise<CbomSourcesSettings> => {
@@ -4926,6 +5280,180 @@ const getCbomAssetDetail = async (team_id: number, asset_id: number): Promise<Cb
     return (response.data as { asset: CbomAssetDetail }).asset
 }
 
+// ---------------------------------------------------------------------------- CB-38: Sources run results page
+// Additive contract (BRIEF §B, §C). Every field the run page reads from these is optional: an older backend sends
+// none of them and the page says so in one line instead of failing.
+
+/** The code lane's finding status, the unified status of a run asset (assignment open/in_progress/done/accepted_risk). */
+export type CbomFindingStatus = "not_started" | "in_progress" | "fixed" | "ignored"
+
+/** One item of GET /runs/{id}/assets with the CB-38 additions (W1) and the CB-19 / CB-24 / CB-38 PR-4 passthroughs. */
+export interface CbomRunAssetItem extends CbomAsset {
+    asset_key?: string | null
+    status?: CbomFindingStatus | null
+    assignment_status?: CbomWaveStatusName | null
+    wave?: CbomRemediationItemRef | null
+    risk_score?: number | null
+    algorithm_name?: string | null
+    algorithm_type?: string | null
+    crypto_strength?: string | null
+    quantum_safe?: boolean | null
+    description?: string | null
+    type_label?: string | null
+    q_grade?: string | null
+    q_label?: string | null
+    fix_class?: string | null
+    fix_class_floor?: string | null
+    ticket_key?: string | null
+    ticket_url?: string | null
+    /** W2b (PARITY.md S13): the code page's finding fields for a run asset */
+    bom_ref?: string | null
+    title?: string | null
+    owasp_top_10?: Record<string, string> | null
+    compliance_controls?: Record<string, string> | null
+    suggested_fix?: string | null
+}
+
+export interface CbomRunAssetPage extends Omit<CbomAssetPage, "items"> {
+    items: CbomRunAssetItem[]
+    findings_total?: number
+}
+
+export type CbomRunAssetView = "findings" | "all"
+
+export interface CbomRunAssetFilters extends CbomAssetFilters {
+    view?: CbomRunAssetView
+    status?: CbomFindingStatus
+    source_id?: number
+    /** #270: comma-separated finding codes (a compliance clause's assets) */
+    code?: string
+    /** #270: comma-separated asset ids, at most 500 (a compliance requirement's refs) */
+    asset_id?: string
+    /** CB-19 PR-3: a grade key (grade/model.ts GRADE_KEYS) or "none" (409 when the run's grades were not stored) */
+    q_grade?: string
+}
+
+/** Wave status names of PUT /cbom/remediation (same values as utils/api/cbom_ops CbomWaveStatus). */
+export type CbomWaveStatusName = "open" | "in_progress" | "done" | "accepted_risk"
+
+/** The wave entry of a run asset (the `node_items` entry; same shape as utils/api/cbom_ops CbomRemediationItem). */
+export type CbomRemediationItemRef = import("@/utils/api/cbom_ops").CbomRemediationItem
+
+export interface CbomCertRef {
+    asset_id: number
+    subject: string | null
+    issuer: string | null
+    not_after: string | null
+    location: string | null
+    source: string | null
+}
+
+export interface CbomRunProvenance {
+    source_id: number | null
+    source: string | null
+    kind: string | null
+    node: string | null
+    runner: string | null
+    outcome: string | null
+    assets: number
+    endpoints_probed: number
+    duration_s: number | null
+    credits: number | null
+}
+
+/** A finding code behind a clause: its knowledge-base title and remediation summary (#270). */
+export interface CbomClauseFinding { code: string; title: string; fix: string | null }
+
+export interface CbomRunComplianceFramework {
+    framework: string
+    /** unrecorded: assets cited for review only, the algorithm the clause depends on was not recorded (#289) */
+    clauses: { clause: string; title: string; assets: number; codes: string[]; source?: string | null; note?: string | null; findings?: CbomClauseFinding[]; unrecorded?: number; verdict?: "fail" | "needs_evidence" }[]
+    /** distinct assets behind any clause (#270; the clause counts overlap); null when it cannot be known */
+    assets?: number | null
+    /** distinct assets behind its clauses only for review (#289); null when it cannot be known */
+    unrecorded?: number | null
+    verdict?: "fail" | "needs_evidence" | null
+}
+
+/** The run's dashboard: the code page's CbomScanDashboardData; `metrics_available: false` until assignments carry done_at. */
+export type CbomRunDashboard = CbomScanDashboardData & {
+    metrics_available?: boolean
+    remediation_metrics: CbomScanDashboardData["remediation_metrics"] & { metrics_available?: boolean }
+}
+
+export interface CbomRunResults {
+    run: CbomRun
+    dashboard?: CbomRunDashboard | null
+    distributions?: import("@/components/cbom/CbomCryptoCharts").CbomDistributions | null
+    compliance?: { frameworks: CbomRunComplianceFramework[] } | null
+    certificates_orphaned?: CbomCertRef[] | null
+    certificates_unmanaged?: CbomCertRef[] | null
+    /** list lengths are capped (2,000); these are the full counts */
+    certificates_orphaned_total?: number
+    certificates_unmanaged_total?: number
+    certificates_orphaned_truncated?: boolean
+    certificates_unmanaged_truncated?: boolean
+    /** "no_endpoints_probed": the run probed no endpoint, so nothing can be called orphaned */
+    certificates_basis?: "endpoints_probed" | "no_endpoints_probed" | string
+    certificates_labels?: { orphaned?: string; unmanaged?: string }
+    certificates_scope?: string
+    kb_version?: string
+    provenance?: CbomRunProvenance[] | null
+    top_risks?: CbomRunPosture["top_risks"] | null
+    judged_on?: string
+    computed_at?: string
+    inputs_digest?: string
+    state?: "ready" | "live" | "computing"
+    stale?: boolean
+}
+
+/** GET /{team}/cbom/sources/runs/{run}/parity (W2b, PARITY.md): a run's code-page data in the code scan's own
+ * ``scan_metadata`` keys (compliance readiness, RBI CSF and CERT-In roll-ups, dependency graph, coverage notes), so the
+ * one results template reads it exactly as it reads a code scan's metadata. 404 from an older backend. */
+export interface CbomRunParity {
+    run_id: number
+    scan_metadata: CbomScanMetadata & {
+        cbom_coverage?: Record<string, unknown> | null
+        cbom_input?: null
+    }
+    engine?: { compliance: "available" | "unavailable"; reason?: string }
+    kb_version?: string
+    judged_on?: string
+    computed_at?: string | null
+    inputs_digest?: string
+    state?: "ready" | "live"
+    stale?: boolean
+}
+
+export async function getCbomRunParity(team_id: number, run_id: number): Promise<CbomRunParity> {
+    const response = await api.get(`${cbomSourcesBase(team_id)}/runs/${run_id}/parity`)
+    return response.data as CbomRunParity
+}
+
+/** GET /{team}/cbom/sources/runs/{run}/assets/{asset}/remediation (W2b, PARITY.md S15): the code page's "Remediation,
+ * fix code and exploit demo" data for a run asset, from the same knowledge-base builder (404 on an older backend). */
+export async function getCbomRunAssetRemediation(team_id: number, run_id: number, asset_id: number): Promise<RemediationData> {
+    const response = await api.get(`${cbomSourcesBase(team_id)}/runs/${run_id}/assets/${asset_id}/remediation`)
+    const body = response.data as RemediationData | { remediation: RemediationData }
+    return "remediation" in body && body.remediation && typeof body.remediation === "object" ? body.remediation : body as RemediationData
+}
+
+/** GET /{team}/cbom/sources/runs/{run}/results (W2). 404 from an older backend is the caller's to handle. */
+export async function getCbomRunResults(team_id: number, run_id: number): Promise<CbomRunResults> {
+    const response = await api.get(`${cbomSourcesBase(team_id)}/runs/${run_id}/results`)
+    return response.data as CbomRunResults
+}
+
+/** GET /runs/{id}/assets with the CB-38 filters (view, status, source_id); same endpoint as getCbomRunAssets. */
+export async function getCbomRunAssetPage(team_id: number, run_id: number, filters: CbomRunAssetFilters = {}): Promise<CbomRunAssetPage> {
+    const params: Record<string, string | number | boolean> = {}
+    for (const [key, value] of Object.entries(filters)) {
+        if (value !== undefined && value !== null && value !== "") params[key] = value as string | number | boolean
+    }
+    const response = await api.get(`${cbomSourcesBase(team_id)}/runs/${run_id}/assets`, { params })
+    return response.data as CbomRunAssetPage
+}
+
 const getCbomJobAssets = async (team_id: number, job_id: number, page = 1): Promise<CbomAssetPage> => {
     const response = await api.get(`${cbomSourcesBase(team_id)}/jobs/${job_id}/assets`, { params: { page, page_size: 200 } })
     return response.data as CbomAssetPage
@@ -4949,6 +5477,208 @@ const downloadCbomRunCbom = async (team_id: number, run_id: number): Promise<voi
     }
 }
 
+// ---------- CB-38 PR-4: Jira tickets for Sources run findings (team Jira credentials, team-level project)
+
+/** A run asset as the Ticketing tab lists it: the asset list item plus its ticket (one per stable key, across runs). */
+export type CbomRunTicketAsset = CbomAsset & {
+    asset_key?: string
+    ticket_key?: string | null
+    ticket_url?: string | null
+}
+
+export interface CbomRunTicketAssetPage extends Omit<CbomAssetPage, "items"> {
+    items: CbomRunTicketAsset[]
+    /** The run's findings (judged today); with ``view=findings`` ``total`` is the same count. */
+    findings_total: number
+}
+
+/** The team's Jira for CBOM Sources: never a credential, only whether one is connected. */
+export interface CbomSourcesTicketing {
+    connected: boolean
+    jira_project_key: string | null
+    jira_issue_type: string
+    issue_type_default: string
+    is_admin: boolean
+    row_version: number
+}
+
+export interface CbomRunTicketRef {
+    asset_id: number
+    asset_key: string
+    ticket_key: string
+    ticket_url: string
+}
+
+export interface CbomRunTicketsResult {
+    created: CbomRunTicketRef[]
+    existing: CbomRunTicketRef[]
+    failed: { asset_id: number; asset_key?: string | null; error: string }[]
+    /** Clean inventory and coverage notes: not findings, never ticketed. */
+    skipped?: { asset_id: number; asset_key?: string | null; reason: string }[]
+    /** Not attempted: another request is creating the ticket, or the request's time budget ran out. Retry. */
+    deferred?: { asset_id: number; asset_key?: string | null; reason: string }[]
+}
+
+/** Findings of a run with their tickets (``view=findings``: not coverage rows, with an impact). */
+export const getCbomRunTicketAssets = async (team_id: number, run_id: number, page = 1, page_size = 100): Promise<CbomRunTicketAssetPage> => {
+    const response = await api.get(`${cbomSourcesBase(team_id)}/runs/${run_id}/assets`, { params: { view: "findings", page, page_size } })
+    return response.data as CbomRunTicketAssetPage
+}
+
+export const getCbomSourcesTicketing = async (team_id: number): Promise<CbomSourcesTicketing> => {
+    const response = await api.get(`${cbomSourcesBase(team_id)}/ticketing`)
+    return (response.data as { ticketing: CbomSourcesTicketing }).ticketing
+}
+
+export const updateCbomSourcesTicketing = async (
+    team_id: number,
+    body: { jira_project_key: string | null; jira_issue_type: string | null; expected_version?: number },
+): Promise<CbomSourcesTicketing> => {
+    try {
+        const response = await api.put(`${cbomSourcesBase(team_id)}/ticketing`, body)
+        toast.success("Jira project saved")
+        return (response.data as { ticketing: CbomSourcesTicketing }).ticketing
+    } catch (error) {
+        showErrorToast(error, "Error saving the Jira project")
+        throw error
+    }
+}
+
+/** One Jira issue per selected finding; assets that already have one are reported in ``existing``. No toast: the
+ * Ticketing tab shows the outcome of every asset, including a batch that failed as a whole. */
+export const createCbomRunTickets = async (team_id: number, run_id: number, asset_ids: number[]): Promise<CbomRunTicketsResult> => {
+    const response = await api.post(`${cbomSourcesBase(team_id)}/runs/${run_id}/tickets`, { asset_ids, ticket_type: "jira" })
+    return response.data as CbomRunTicketsResult
+}
+
+/** The code page's remaining downloads for a Sources run (CB-38 PR-8): VEX, signature, PDF report, evidence pack. */
+export type CbomRunDeliverable = "vex" | "signature" | "report.pdf" | "evidence-pack"
+
+export type CbomVexState = "exploitable" | "in_triage" | "resolved" | "resolved_with_pedigree" | "false_positive" | "not_affected"
+
+/** One CycloneDX 1.6 VEX entry of a run: one finding code (or CVE) and the assets that share one analysis. */
+export interface CbomRunVexEntry {
+    "bom-ref": string
+    id: string
+    source?: { name?: string; url?: string }
+    ratings?: { severity?: string; score?: number; method?: string; vector?: string }[]
+    description?: string
+    recommendation?: string
+    analysis: { state: CbomVexState; detail: string; response?: ("will_not_fix" | "update")[] }
+    /** BOM-Links into the run CBOM: urn:cdx:<serial>/1#zs-asset-<id> */
+    affects: { ref: string }[]
+}
+
+export interface CbomRunVex {
+    bomFormat: "CycloneDX"
+    specVersion: "1.6"
+    serialNumber: string
+    metadata: { timestamp: string | null; properties: { name: string; value: string }[] }
+    vulnerabilities: CbomRunVexEntry[]
+}
+
+/** HMAC-SHA256 over the exact bytes of GET /runs/{id}/cbom (format=json), with the code lane's bom_signature key and
+ * fields. The key stays on the server: verify with verifyCbomRunSignature, or compare sha256(file) with ``digest``. */
+export interface CbomRunSignature {
+    alg: "HMAC-SHA256"
+    key_id: string
+    digest: string
+    signature_b64: string
+    signed_at: string
+    covers: string
+    scope: string
+    canonicalization: string
+    serialNumber: string
+    document_timestamp: string | null
+    bytes: number
+    run_id: number
+    run_status: string
+    /** present while the run is still collecting */
+    as_of?: string
+}
+
+const CBOM_RUN_DELIVERABLE_FILE: Record<CbomRunDeliverable, (run_id: number) => string> = {
+    vex: (id) => `cbom-sources-run-${id}.vex.json`,
+    signature: (id) => `cbom-sources-run-${id}-signature.json`,
+    "report.pdf": (id) => `cbom-sources-run-${id}-report.pdf`,
+    "evidence-pack": (id) => `cbom-sources-run-${id}-evidence-pack.zip`,
+}
+
+const cbomRunDeliverablePath = (team_id: number, run_id: number, kind: CbomRunDeliverable): string =>
+    `${cbomSourcesBase(team_id)}/runs/${run_id}/${kind}`
+
+const cbomRunDeliverableFilename = (run_id: number, kind: CbomRunDeliverable): string =>
+    CBOM_RUN_DELIVERABLE_FILE[kind](run_id)
+
+const getCbomRunVex = async (team_id: number, run_id: number): Promise<CbomRunVex> => {
+    const response = await api.get(cbomRunDeliverablePath(team_id, run_id, "vex"))
+    return response.data as CbomRunVex
+}
+
+const getCbomRunSignature = async (team_id: number, run_id: number): Promise<CbomRunSignature> => {
+    const response = await api.get(cbomRunDeliverablePath(team_id, run_id, "signature"))
+    return response.data as CbomRunSignature
+}
+
+/** Saves one run deliverable as served, byte for byte (never parsed and re-serialised), through the authenticated
+ * client. Toasts and rethrows on failure. */
+const downloadCbomRunDeliverable = async (team_id: number, run_id: number, kind: CbomRunDeliverable): Promise<void> => {
+    try {
+        const response = await api.get(cbomRunDeliverablePath(team_id, run_id, kind), { responseType: "blob" })
+        const url = URL.createObjectURL(response.data as Blob)
+        const link = document.createElement("a")
+        link.href = url
+        link.download = cbomRunDeliverableFilename(run_id, kind)
+        document.body.appendChild(link)
+        link.click()
+        link.remove()
+        setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } catch (error) {
+        await readBlobErrorDetail(error)
+        showErrorToast(error, `Error downloading the run ${kind === "report.pdf" ? "PDF report" : kind.replace("-", " ")}`)
+        throw error
+    }
+}
+
+/** A blob request's error body arrives as a Blob, so the server's ``detail`` ("retry in 30 s") would be lost: read it
+ * back into ``error.response.data`` before the toast. */
+const readBlobErrorDetail = async (error: unknown): Promise<void> => {
+    const response = (error as { response?: { data?: unknown } } | null)?.response
+    const data = response?.data
+    if (!response || typeof Blob === "undefined" || !(data instanceof Blob)) return
+    try {
+        response.data = JSON.parse(await data.text())
+    } catch {
+        // not JSON: keep the generic message
+    }
+}
+
+/** The answer of POST /runs/{id}/signature/verify for a downloaded run CycloneDX JSON. */
+export interface CbomRunSignatureVerification {
+    valid: boolean
+    signature_match: boolean
+    /** the file equals the run's current CBOM JSON (null only when nothing was compared) */
+    digest_match: boolean | null
+    digest: string
+    current_digest: string
+    bytes: number
+    key_id: string
+    alg: "HMAC-SHA256"
+    compared_with: string
+    run_id: number
+    run_status: string
+}
+
+/** Sends a downloaded run CycloneDX JSON, as downloaded, for verification against the signature it came with
+ * (``signatureB64``), else against the run's current CBOM. The HMAC key stays on the server. */
+const verifyCbomRunSignature = async (team_id: number, run_id: number, file: Blob,
+                                      signatureB64?: string): Promise<CbomRunSignatureVerification> => {
+    const response = await api.post(`${cbomRunDeliverablePath(team_id, run_id, "signature")}/verify`, file, {
+        headers: { "Content-Type": "application/octet-stream", ...(signatureB64 ? { "X-ZS-Signature-B64": signatureB64 } : {}) },
+    })
+    return response.data as CbomRunSignatureVerification
+}
+
 const cancelCbomRun = async (team_id: number, run_id: number): Promise<{ run: CbomRun; refunded: number }> => {
     try {
         const response = await api.post(`${cbomSourcesBase(team_id)}/runs/${run_id}/cancel`)
@@ -4964,7 +5694,10 @@ const cancelCbomRun = async (team_id: number, run_id: number): Promise<{ run: Cb
 export {
     getCbomSourcesOverview,
     listCbomScanNodes,
+    getCbomNodeArtifacts,
+    getCbomNodeArtifactLink,
     listCbomSources,
+    listCbomSourcesPage,
     getCbomSource,
     getCbomJob,
     getCbomSourcesSettings,
@@ -4976,6 +5709,12 @@ export {
     getCbomAssetDetail,
     getCbomJobAssets,
     downloadCbomRunCbom,
+    cbomRunDeliverablePath,
+    cbomRunDeliverableFilename,
+    getCbomRunVex,
+    getCbomRunSignature,
+    verifyCbomRunSignature,
+    downloadCbomRunDeliverable,
     estimateCbomSources,
     countCbomTargets,
     getCbomTemplate,
@@ -4989,6 +5728,8 @@ export {
     updateCbomSource,
     deleteCbomSource,
     testCbomSource,
+    createCbomHostKeyReset,
+    listCbomHostKeyResets,
     updateCbomSourcesSettings,
     setCbomNetworkStop,
     startCbomDiscovery,
@@ -4999,4 +5740,91 @@ export {
     createCbomVendorLink,
     startCbomRun,
     cancelCbomRun,
+}
+
+// -------------------------------------------------------------- CBOM AI remediation assistant (CB-38 PR-6) --------------------------------------------------------------
+// Optional, configured per deployment (AWS Bedrock, or a model on a private address); GET status says whether it
+// exists and which hosts it contacts. Text only: every field is
+// rendered as plain text (React-escaped), never as HTML or markdown.
+
+export type CbomAiSubject =
+    | { kind: "run_asset"; assetId: number }
+    | { kind: "scan_finding"; scanId: number; findingId: string }
+
+export type CbomAiMode = "explain" | "plan" | "question" | "fix"
+
+/** Mode "fix": the model's rewrite of the finding's code window (or a run asset's configuration change), after the
+ * backend's deterministic checks. */
+export interface CbomAiFix {
+    kind: "code" | "config"
+    language: string
+    original_code: string
+    fixed_code: string
+    diff: string
+    path: string | null
+    start_line: number | null
+    explanation: { text: string; cites: string[] }[]
+    notes: string[]
+    new_imports?: string[]
+}
+
+export interface CbomAiStatus {
+    available: boolean
+    /** "bedrock" (AWS Bedrock, the product's only outbound call) or "openai_compat" (a model on a private address) */
+    provider?: "bedrock" | "openai_compat"
+    model?: string
+    region?: string | null
+    kb_version?: string
+    /** every host the assistant will contact (Bedrock runtime plus the configured credential endpoint, if any) */
+    egress?: { host: string; port: number; purpose: string }[]
+    /** openai_compat: the endpoint may be outside the private ranges (CBOM_AI_ALLOW_NONPRIVATE=1) */
+    allow_nonprivate?: boolean
+}
+
+export interface CbomAiAnswer {
+    /** busy: no free slot within ~2 s, nothing was sent to the model */
+    status: "ok" | "withheld" | "timeout" | "error" | "busy"
+    summary: string
+    steps: { text: string; cites: string[] }[]
+    commands: { command: string; cite: string }[]
+    caveats: string[]
+    withheld_reason?: string
+    /** true when the steps and commands are the knowledge-base baseline (the model's answer was withheld) */
+    baseline?: boolean
+    dropped_commands: number
+    provider?: "bedrock" | "openai_compat"
+    region?: string | null
+    model: string
+    kb_version: string
+    prompt_version: string
+    items: { id: string; label: string }[]
+    cached?: boolean
+    /** mode "fix" only: the checked rewrite (null when withheld) and the checks it passed */
+    fix?: CbomAiFix | null
+    checks?: { name: string; ok: boolean; note: string }[]
+}
+
+/** The UI gives the model 90 s (the backend's own limit is 60 s, CBOM_AI_TIMEOUT_S). */
+export const CBOM_AI_UI_TIMEOUT_MS = 90_000
+
+export const getCbomAiStatus = async (team_id: number): Promise<CbomAiStatus> => {
+    const response = await api.get<CbomAiStatus>(`/${team_id}/cbom/ai/status`)
+    return response.data
+}
+
+export const askCbomAi = async ({ team_id, subject, mode, question }: {
+    team_id: number
+    subject: CbomAiSubject
+    mode: CbomAiMode
+    question?: string
+}): Promise<CbomAiAnswer> => {
+    const wire = subject.kind === "run_asset"
+        ? { kind: "run_asset", asset_id: subject.assetId }
+        : { kind: "scan_finding", scan_id: subject.scanId, finding_id: subject.findingId }
+    const response = await api.post<CbomAiAnswer>(
+        `/${team_id}/cbom/ai/assist`,
+        { subject: wire, mode, ...(mode === "question" ? { question } : {}) },
+        { timeout: CBOM_AI_UI_TIMEOUT_MS },
+    )
+    return response.data
 }

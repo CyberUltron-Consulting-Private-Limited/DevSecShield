@@ -326,6 +326,14 @@ class AssetAgg:
     latest_scan_id: int | None = None
     # the results table's "Broken today" (cbom_metrics.code_row_broken_today): not quantum-vulnerable, not ready
     broken_today: bool = False
+    # CBOM Sources rows only: every code the collector's classification gave, including the informational ones
+    # (QUANTUM_VULNERABLE on a host key) that ``finding_codes`` leaves out (collections_view.node_row). The run API
+    # maps all of them to compliance clauses, so the deliverables' clause counts read them too.
+    collector_codes: tuple[str, ...] = ()
+    # CBOM Sources rows only: code -> the algorithms its compliance clause rules read (the ciphers, transforms or hashes
+    # the classifier flagged; collections_view.SourcesRow.clause_evidence), so the deliverables cite as the run API
+    # does and never on the asset's title or sentence (#289); None or a missing code: not recorded
+    clause_evidence: Mapping[str, Any] | None = field(default=None, compare=False, repr=False)
 
 
 @dataclass
@@ -717,6 +725,9 @@ class TeamCbomView:
     # quantum-vulnerable assets of each collection source's latest complete run); None = not loaded (hand-made views)
     # Not part of the fold: excluded from equality and repr (a DB-loaded view equals the in-memory fold of its scans).
     remediation: dict[str, Any] | None = field(default=None, compare=False, repr=False)
+    # the team's quantum risk register (``cbom_sources.risk_register.report``: summary, heat-map, top Q1 items, open
+    # Q0 gaps) for deliverable #2; None = not loaded. Not part of the fold, like ``remediation``.
+    register: dict[str, Any] | None = field(default=None, compare=False, repr=False)
 
     @property
     def is_empty(self) -> bool:
@@ -1097,6 +1108,7 @@ def _asset_from_row(row: Mapping[str, Any], facts: ScanFacts) -> AssetAgg:
         location=location,
         impact=INFO if severity is None else severity.capitalize(),
         finding_codes=_codes_of(row.get("finding_codes")),
+        collector_codes=_codes_of(row.get("collector_codes")),
         bom_ref=bom_ref,
         description=_text(row.get("description")) or "",
         primitive=primitive,
@@ -3046,6 +3058,41 @@ def _probed_tls_fact(item: Any, collection: CollectionAgg, asset: AssetAgg) -> d
     }
 
 
+def _pool_sources_compliance(code_frameworks: Sequence[FrameworkPool], code_requirements: Sequence[RequirementAgg],
+                             rows: Sequence[Any], aggs: Mapping[str, Any]
+                             ) -> tuple[tuple[FrameworkPool, ...], tuple[RequirementAgg, ...]]:
+    """Each Sources collection judged against CNSA 2.0 and FIPS 140-3 (``cbom_sources.frameworks``, the predicates
+    the code lane's checks call), as one more source of the pooled verdicts: its counts are added to the framework's,
+    its requirement verdicts sit beside the code scans' (keyed by the collection's source key) and roll up by the
+    same precedence.  The rows counted are those the merge kept (latest observation wins)."""
+    from backend.utilities.cbom_sources.frameworks import collection_compliance
+
+    parts: dict[str, list[Any]] = {key: [] for key in aggs}
+    for item in rows:
+        key = item.collection.key
+        if key in parts:
+            parts[key].append(tuple(getattr(item, "standards_parts", ()) or ()))
+    pools = {p.framework: replace(p) for p in code_frameworks}
+    merged = {(r.framework, r.req_id): replace(r, verdicts=dict(r.verdicts)) for r in code_requirements}
+    for key, assets in parts.items():
+        for framework, block in collection_compliance(assets).items():
+            pool = pools.setdefault(framework, FrameworkPool(framework=framework))
+            pool.passed += int(block["pass"])
+            pool.failed += int(block["fail"])
+            pool.out_of_scope += int(block["out_of_scope"])
+            pool.sources_pooled += 1
+            pool.coverage = _coverage(pool.passed, pool.passed_with_evidence, pool.failed)
+            for req in block["requirements"]:
+                agg = merged.setdefault((framework, req["id"]), RequirementAgg(framework, req["id"]))
+                agg.verdicts[key] = req["verdict"]
+                agg.title = agg.title or req["title"]
+                agg.citation = agg.citation or req["source"]
+                agg.verdict = _rollup_verdict(agg.verdicts.values())
+    unknown_rank = len(_FRAMEWORK_ORDER)
+    ordered = sorted(pools.values(), key=lambda p: (_FRAMEWORK_RANK.get(p.framework, unknown_rank), p.framework))
+    return tuple(ordered), tuple(sorted(merged.values(), key=lambda r: (r.framework, r.req_id)))
+
+
 def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequence[Any]) -> TeamCbomView:
     """Fold each CBOM Sources source's latest completed collection into a code-scan view.  PURE.
 
@@ -3056,7 +3103,8 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
     ("sources:<uid>", labelled "Sources run #<run> · <name>").  Headline counts are recomputed by ``_headline`` over
     the merged current assets, so every document agrees with the CBOM dashboard.  TLS endpoints a scan node probed
     become posture facts with evidence ``probed:CBOM Sources`` (the Network TLS document lists them)."""
-    from backend.utilities.cbom_sources.collections_view import cert_identity, resolve
+    from backend.utilities.cbom_sources.asset_keys import code_certificate_key
+    from backend.utilities.cbom_sources.collections_view import resolve
 
     if not collections:
         return view
@@ -3067,7 +3115,7 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
     # 1. code certificates with a cross-scope identity; latest observation wins
     code_ident: dict[str, str] = {}
     for cert in view.certs:
-        ident = cert_identity(cert.subject_cn, cert.issuer_cn, cert.not_before, cert.not_after)
+        ident = code_certificate_key(cert.subject_cn, cert.issuer_cn, cert.not_before, cert.not_after)
         if cert.current and ident:
             code_ident[cert.key] = ident
     by_key = {cert.key: cert for cert in view.certs}
@@ -3093,15 +3141,15 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
                           last_updated=agg.observed_at, source_key=agg.key, source_label=agg.label,
                           source_kind=SOURCE_SOURCES, tier=TIER_A, fidelity=FIDELITY_FULL)
         asset = replace(_asset_from_row(item.row, shell), current=True, tier=TIER_A, latest_scan_id=None,
-                        scan_ids=())
+                        scan_ids=(), clause_evidence=getattr(item, "clause_evidence", None) or None)
         assets.append(asset)
         if asset.asset_type == ASSET_CERTIFICATE:
             f = item.facts if isinstance(item.facts, Mapping) else {}
-            earlier = [c for c in dropped_certs if code_ident.get(c.key) == item.identity]
+            earlier = [c for c in dropped_certs if resolution.canonical(code_ident.get(c.key)) == item.identity]
             places = [(agg.label, asset.location)] + [p for c in earlier for p in c.locations]
             certs.append(CertAgg(
                 key="src:" + hashlib.sha256(item.identity.encode("utf-8", "replace")).hexdigest()[:16],
-                identity_strong=item.identity.startswith("cert|"), name=_text(f.get("subject")) or asset.title,
+                identity_strong=item.identity.startswith("cert:"), name=_text(f.get("subject")) or asset.title,
                 file_names=tuple(dict.fromkeys([asset.location] + [n for c in earlier for n in c.file_names])),
                 subject_cn=_text(f.get("subject")), issuer_cn=_text(f.get("issuer")),
                 not_before=_text(f.get("not_before")), not_after=_text(f.get("not_after")),
@@ -3154,7 +3202,10 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
         state = "assessed" if all(ok) else ("mixed" if any(ok) else "not_assessed")
         posture = replace(posture, state=state, sources=tuple(rows_all),
                           facts=tuple(sorted([*posture.facts, *new_facts], key=lambda f: (f.source_key, f.fact_id))))
-    # 5. basis and fingerprint: a collection is a completed CBOM result
+    # 5. compliance: each collection's CNSA 2.0 / FIPS 140-3 verdicts (CB-16), pooled with the code scans'
+    frameworks, requirements = _pool_sources_compliance(view.frameworks, view.requirements, resolution.sources_rows,
+                                                        aggs)
+    # 6. basis and fingerprint: a collection is a completed CBOM result
     count = len(aggs)
     stamps = ",".join(f"{a.job_id}:{a.observed_at.isoformat()}" for a in sorted(aggs.values(), key=lambda a: a.job_id))
     digest = hashlib.sha256(f"{view.fingerprint}|sources|{stamps}".encode("utf-8", "replace")).hexdigest()[:12]
@@ -3165,8 +3216,10 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
         window_start=min([*seen, *([view.window_start] if view.window_start else [])]),
         window_end=max([*seen, *([view.window_end] if view.window_end else [])]),
         fingerprint=digest, sources=tuple(source_rows), assets=tuple(assets), certs=tuple(certs), posture=posture,
+        frameworks=frameworks, requirements=requirements,
         collections=tuple(sorted(aggs.values(), key=lambda a: (a.label.casefold(), a.key))), **_headline(live))
     merged.remediation = view.remediation
+    merged.register = view.register
     return merged
 
 
@@ -3236,6 +3289,13 @@ def load_team_cbom_view(engine: Any, team_id: int, *, now: datetime | None = Non
         except Exception as exc:  # pragma: no cover - defensive
             view.remediation = None
             view.warnings = (*view.warnings, f"remediation plan not loaded: {type(exc).__name__}")
+        try:  # the quantum risk register (CB-23) for its PDF; a failure prints the register as not loaded
+            from backend.utilities.cbom_sources.risk_register import report as register_report
+
+            view.register = register_report(session, team_id, moment.replace(tzinfo=None))
+        except Exception as exc:  # pragma: no cover - defensive
+            view.register = None
+            view.warnings = (*view.warnings, f"quantum risk register not loaded: {type(exc).__name__}")
         return view
 
 
