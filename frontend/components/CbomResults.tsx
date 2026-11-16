@@ -1007,7 +1007,7 @@ export default function CbomResults({
               waveOf={run.waveOf}
               selection={run.selection}
               onSelection={run.setSelection}
-              onOpenDetails={(item) => run.setDialog({ item })}
+              onOpenDetails={(item) => run.setDialog({ assetId: item.id })}
               onSetStatus={run.setStatus}
               statusPending={run.statusPending}
             />
@@ -1344,7 +1344,8 @@ export default function CbomResults({
       )}
 
       {run && (
-        <RunFindingDialog teamId={run.teamId} runId={run.runId} subject={run.dialog} jobs={run.run?.jobs ?? []} waveOf={run.waveOf} onClose={() => run.setDialog(null)} />
+        <RunFindingDialog teamId={run.teamId} runId={run.runId} subject={run.dialog} jobs={run.run?.jobs ?? []} waveOf={run.waveOf} onClose={() => run.setDialog(null)}
+                          pageItems={run.page?.items} />
       )}
       {run && run.compareOpen && (
         <CompareDialog teamId={run.teamId} runId={run.runId} runs={run.compareRuns} onClose={() => run.setCompareOpen(false)} />
