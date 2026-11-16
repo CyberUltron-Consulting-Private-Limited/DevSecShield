@@ -7,6 +7,9 @@
 * No credential-detection rules in the scanners job either (coordinator, same day: "no security, no credential
   exposure issues"): no p/secrets, credential-rule findings are dropped from Semgrep's SARIF before the gate, Trivy
   never runs its secret scanner and Checkov no secrets framework. A PR that adds a secret-shaped literal passes.
+* A merge-queue entry (merge_group) is gated in diff mode against merge_group.base_sha, as a pull request is against
+  its base branch and a push against the commit before it; a queue run without its base fails instead of falling
+  back to report-only (#70).
 Run: python3 -m unittest discover -s .github/tests -v
 """
 
@@ -150,6 +153,229 @@ class SecretShapedLiteralPassesScanners(unittest.TestCase):
     def test_checkov_runs_no_secrets_framework(self):
         self.assertNotIn("secrets", input_default("checkov-frameworks").split())
         self.assertRegex(TEXT, r"checkov -d \. --framework \$FRAMEWORKS")
+
+
+# ----------------------------------------------------------------------------------------------------------------
+# #70: the merge queue
+
+
+def expression(env: str) -> str:
+    """The `${{ }}` expression of a workflow-level env variable."""
+    m = re.search(rf"^  {re.escape(env)}: \$\{{\{{ (.*) \}}\}}$", TEXT, re.M)
+    assert m, env
+    return m.group(1)
+
+
+def evaluate(expr: str, context: dict) -> str:
+    """Evaluate a `${{ }}` expression made of context paths, 'strings', ==, &&, || and parentheses as the runner does:
+    `a && b` is b when a is truthy, else a; `a || b` is a when a is truthy, else b; null, '' and false are falsy;
+    strings compare case-insensitively; the result becomes a string (null -> ''). Anything else fails the test."""
+    tokens = re.findall(r"\(|\)|==|&&|\|\||'[^']*'|[A-Za-z_][\w.-]*|\S", expr)
+    pos = 0
+
+    def at(op: str) -> bool:
+        return pos < len(tokens) and tokens[pos] == op
+
+    def take() -> str:
+        nonlocal pos
+        pos += 1
+        return tokens[pos - 1]
+
+    def primary():
+        t = take()
+        if t == "(":
+            v = either()
+            assert take() == ")", expr
+            return v
+        if t.startswith("'"):
+            return t[1:-1]
+        assert re.fullmatch(r"[A-Za-z_][\w.-]*", t), f"unsupported {t!r} in {expr}"
+        v = context
+        for part in t.split("."):
+            v = v.get(part) if isinstance(v, dict) else None
+        return v
+
+    def equal():
+        v = primary()
+        while at("=="):
+            take()
+            r = primary()
+            v = v.lower() == r.lower() if isinstance(v, str) and isinstance(r, str) else v == r
+        return v
+
+    def both():
+        v = equal()
+        while at("&&"):
+            take()
+            r = equal()
+            v = r if v else v
+        return v
+
+    def either():
+        v = both()
+        while at("||"):
+            take()
+            r = both()
+            v = v if v else r
+        return v
+
+    value = either()
+    assert pos == len(tokens), expr
+    return "" if value is None else str(value).lower() if isinstance(value, bool) else str(value)
+
+
+def github(event: str, base: str, head: str) -> dict:
+    """The caller's `github` context for `event` (a called workflow sees its caller's), the parts these tests read."""
+    payload = {"pull_request": {"pull_request": {"base": {"sha": base}, "head": {"sha": head}}},
+               "merge_group": {"merge_group": {"base_sha": base, "head_sha": head, "base_ref": "refs/heads/dev",
+                                               "head_ref": f"refs/heads/gh-readonly-queue/dev/pr-70-{head}"}},
+               "push": {"before": base, "after": head}}.get(event, {})
+    return {"github": {"event_name": event, "event": payload, "sha": head}}
+
+
+def step(name: str) -> str:
+    """The `run: |` script of the scanners job's step `name`."""
+    m = re.search(rf"\n      - name: {re.escape(name)}\n(?:        (?!run:).*\n)*        run: \|\n((?:(?: {{10}}.*)?\n)+)",
+                  TEXT)
+    assert m, name
+    return textwrap.dedent(m.group(1))
+
+
+GIT_ENV = {k: v for k, v in os.environ.items() if k in ("PATH", "HOME", "LANG")} | {
+    "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.invalid", "GIT_COMMITTER_NAME": "t",
+    "GIT_COMMITTER_EMAIL": "t@example.invalid", "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+
+# `shellcheck -f json1 -S <severity> <file>...`: SC2164 (a warning) on each bare `cd <dir>` line; exit 1 if it reports
+FAKE_SHELLCHECK = r"""#!/usr/bin/env python3
+import json, re, sys
+args, files = sys.argv[1:], []
+while args:
+    a = args.pop(0)
+    if a in ("-f", "-S"):
+        args.pop(0)
+    else:
+        files.append(a)
+out = [{"file": f, "line": n, "column": 1, "level": "warning", "code": 2164,
+        "message": "Use 'cd ... || exit' or 'cd ... || return' in case cd fails."}
+       for f in files for n, line in enumerate(open(f, encoding="utf-8"), 1) if re.fullmatch(r"cd [^|;&]+", line.strip())]
+print(json.dumps({"comments": out}))
+sys.exit(1 if out else 0)
+"""
+
+SCAN = ("Scope and base checkout", "Findings helper", "ShellCheck (shell scripts)")
+
+
+class MergeQueue(unittest.TestCase):
+    """#70: a merge-queue entry is gated against merge_group.base_sha, as a pull request is against its base branch
+    and a push against the commit before it. The tests run the scanners job's own steps, in order, on a real queue
+    commit: the Scope step, the Findings helper and the ShellCheck step (a fake shellcheck sits where the Install step
+    puts the real one)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        root = Path(self.tmp.name)
+        self.repo, self.temp = root / "work" / "repo" / "repo", root / "_temp"  # $GITHUB_WORKSPACE, $RUNNER_TEMP
+        self.repo.mkdir(parents=True)
+        (self.temp / "bin").mkdir(parents=True)
+        (self.temp / "bin" / "shellcheck").write_text(FAKE_SHELLCHECK, encoding="utf-8")
+        (self.temp / "bin" / "shellcheck").chmod(0o755)
+        self.git("init", "-q")
+        # the target branch already has a finding; it is debt, not something the queue commit adds
+        self.base = self.commit({"scripts/build.sh": "#!/bin/sh\ncd /tmp\nmake\n"})
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def git(self, *args: str) -> str:
+        return subprocess.run(["git", *args], cwd=self.repo, env=GIT_ENV, check=True, capture_output=True,
+                              text=True).stdout.strip()
+
+    def commit(self, files: dict[str, str]) -> str:
+        for name, body in files.items():
+            (self.repo / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.repo / name).write_text(body, encoding="utf-8")
+        self.git("add", "--", *files)
+        self.git("commit", "-q", "-m", "change")
+        return self.git("rev-parse", "HEAD")
+
+    def run_steps(self, event: str, base: str, head: str, *names: str) -> tuple[subprocess.CompletedProcess, dict]:
+        """Run the steps as the runner does: workflow, job and step env, each script under `bash -e` (the default
+        shell when a step names none), and what a step writes to $GITHUB_ENV / $GITHUB_PATH passed to the later
+        steps. Stops at the first step that fails."""
+        ctx = github(event, base, head)
+        env_file, path_file = self.temp / "github_env", self.temp / "github_path"
+        env_file.write_text("")
+        path_file.write_text("")
+        env = GIT_ENV | {
+            "BASE_SHA": evaluate(expression("BASE_SHA"), ctx), "HEAD_SHA": evaluate(expression("HEAD_SHA"), ctx),
+            "REQUESTED_MODE": input_default("mode"),
+            "EXCLUDE_RE": input_default("exclude-regex"), "R": "security-reports",
+            "SEVERITY": input_default("shellcheck-severity"),
+            "GITHUB_EVENT_NAME": event, "GITHUB_WORKSPACE": str(self.repo), "RUNNER_TEMP": str(self.temp),
+            "GITHUB_ENV": str(env_file), "GITHUB_PATH": str(path_file),
+            "GITHUB_STEP_SUMMARY": str(self.temp / "summary.md")}
+        for name in names:
+            res = subprocess.run(["bash", "-e", "-c", step(name)], cwd=self.repo, env=env, capture_output=True,
+                                 text=True, timeout=120)
+            if res.returncode:
+                break
+            env |= dict(line.split("=", 1) for line in env_file.read_text().splitlines() if line)
+            env["PATH"] = os.pathsep.join([*reversed(path_file.read_text().splitlines()), GIT_ENV["PATH"]])
+        return res, env
+
+    def test_the_base_commit_of_each_event(self):
+        # the PR's base branch, the queue's base, the commit before a push; nothing for a dispatch or a schedule
+        base, head = "b" * 40, "c" * 40
+        for event, want in {"pull_request": base, "merge_group": base, "push": base,
+                            "workflow_dispatch": "", "schedule": ""}.items():
+            with self.subTest(event):
+                self.assertEqual(evaluate(expression("BASE_SHA"), github(event, base, head)), want)
+                self.assertEqual(evaluate(expression("HEAD_SHA"), github(event, base, head)), head)
+
+    def test_a_queue_commit_is_scanned_in_diff_mode_against_the_queue_base(self):
+        head = self.commit({"scripts/deploy.sh": "#!/bin/sh\necho deploy\n"})
+        res, env = self.run_steps("merge_group", self.base, head, SCAN[0])
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertEqual(env.get("MODE"), "diff", res.stdout)
+        self.assertIn(f"mode=diff base={self.base} head={head}", res.stdout)
+        # the base checkout is the queue's base commit, and the diff runs from there to the queue commit
+        self.assertTrue((Path(env["BASE_DIR"]) / "scripts" / "build.sh").is_file())
+        self.assertFalse((Path(env["BASE_DIR"]) / "scripts" / "deploy.sh").exists())
+        self.assertIn("+++ b/scripts/deploy.sh", (self.temp / "diff.txt").read_text())
+
+    def test_a_finding_the_queue_commit_adds_fails(self):
+        head = self.commit({"scripts/deploy.sh": "#!/bin/sh\ncd /srv/app\n./deploy\n"})
+        res, _ = self.run_steps("merge_group", self.base, head, *SCAN)
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+        self.assertIn("::error file=scripts/deploy.sh,line=2::shellcheck SC2164", res.stdout)
+        self.assertIn("new in this change: 1 -> FAIL", res.stdout)
+        self.assertNotIn("scripts/build.sh", res.stdout)
+
+    def test_a_queue_commit_that_adds_no_finding_passes(self):
+        # the target branch's own finding (scripts/build.sh) does not block the queue
+        head = self.commit({"scripts/deploy.sh": "#!/bin/sh\ncd /srv/app || exit 1\n./deploy\n"})
+        res, _ = self.run_steps("merge_group", self.base, head, *SCAN)
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertIn("new in this change: 0 -> pass", res.stdout)
+
+    def test_a_queue_or_pr_run_without_its_base_commit_fails(self):
+        # merge_group.base_sha, like a PR's base, always exists: a run that cannot find it must not pass report-only
+        head = self.commit({"scripts/deploy.sh": "#!/bin/sh\ncd /srv/app\n"})
+        for event in ("merge_group", "pull_request"):
+            with self.subTest(event):
+                res, _ = self.run_steps(event, "f" * 40, head, SCAN[0])
+                self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+                self.assertIn("::error::", res.stdout)
+                self.assertNotIn("MODE=", (self.temp / "github_env").read_text())
+
+    def test_a_push_or_dispatch_without_a_base_still_scans_in_full_mode(self):
+        # a push that creates a branch has before = 000..., a dispatch has no base: report only, as before
+        head = self.commit({"scripts/deploy.sh": "#!/bin/sh\ncd /srv/app\n"})
+        for event, base in (("push", "0" * 40), ("workflow_dispatch", "")):
+            with self.subTest(event):
+                res, env = self.run_steps(event, base, head, SCAN[0])
+                self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+                self.assertEqual(env.get("MODE"), "full", res.stdout)
 
 
 if __name__ == "__main__":
