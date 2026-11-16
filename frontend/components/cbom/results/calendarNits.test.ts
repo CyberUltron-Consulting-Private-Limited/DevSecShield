@@ -2,7 +2,8 @@
  * Follow-ups from the #285 review:
  * - the calendar's day badge and its aria-label count certificates after dedupeCerts, like the day's list;
  * - the run results template (RunCoverageSection, both the findings and all-assets views) carries the lab-mode note
- *   when any job of the run was read in lab mode, with the shared LabModeBanner;
+ *   when any job of the run was read in lab mode, with the shared LabModeBanner; since the results redesign the hero
+ *   carries it on every view but Collection (whose jobs card has it);
  * - the old Sources run page component (RunResults default export, with its own lab banner) is gone: it was rendered
  *   nowhere; the helpers other modules import from that file stay.
  * Run (frontend/): npx --yes tsx@4.23.15 components/cbom/results/calendarNits.test.ts
@@ -15,6 +16,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
+import { fakeRunSource, renderRunMode, TARGETS } from "./views/runModeFixture";
 import CertCalendar from "../CertCalendar";
 import { RunCoverageSection } from "./RunSections";
 import type { CbomJobTargets, CbomRun } from "@/utils/backend_api";
@@ -50,6 +52,20 @@ test("run results template shows the lab-mode note when a job ran in lab mode", 
   assert.ok(html.indexOf('data-testid="run-lab-mode"') < html.indexOf('data-testid="run-results-job-1"'), "above the jobs' targets");
   assert.ok(!coverage([job(null)]).includes("run-lab-mode"), "no note without lab mode");
   assert.ok(!coverage(null).includes("run-lab-mode"), "no note before the targets load");
+});
+
+test("results redesign: every run view shows the lab-mode note once, above the jobs (hero; Collection: its jobs card)", () => {
+  const job = (id: number, lab: string | null) => ({ ...TARGETS[0], job_id: id, lab_mode: lab });
+  const lab = fakeRunSource({ page: { ...fakeRunSource().page!, targets: [job(1, "same_account"), job(2, null)] } });
+  const summary = renderRunMode("", lab);
+  assert.equal(summary.split('data-testid="run-lab-mode"').length - 1, 1);
+  assert.match(summary, /role="note"[^>]*data-testid="run-lab-mode"|data-testid="run-lab-mode"[^>]*role="note"/);
+  assert.ok(summary.indexOf('data-testid="run-lab-mode"') < summary.indexOf('data-testid="run-results-job-1"'), "above the jobs line");
+  const collection = renderRunMode("section=collection", lab);
+  assert.equal(collection.split('data-testid="run-lab-mode"').length - 1, 1, "the jobs card's note only");
+  assert.ok(collection.indexOf('data-testid="run-lab-mode"') > collection.indexOf('data-testid="results-section-collection"'));
+  const none = fakeRunSource({ page: { ...fakeRunSource().page!, targets: [job(1, null)] } });
+  assert.ok(!renderRunMode("", none).includes("run-lab-mode"), "no note without lab mode");
 });
 
 test("the old Sources run page component is removed; its shared helpers stay", () => {

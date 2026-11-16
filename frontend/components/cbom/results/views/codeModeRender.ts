@@ -14,8 +14,9 @@ import { CODE_DASHBOARD, CODE_DATA, CODE_FINDINGS, CODE_METADATA } from "./codeM
 const h = React.createElement;
 const router = { push() {}, replace() {}, refresh() {}, back() {}, forward() {}, prefetch() {} };
 
-export function withAppRouter(node: React.ReactNode, search = "", params: Record<string, string> = { team_id: "2", scan_id: "5" }): React.ReactElement {
-  return h(QueryClientProvider, { client: new QueryClient() },
+export function withAppRouter(node: React.ReactNode, search = "", params: Record<string, string> = { team_id: "2", scan_id: "5" },
+                              client: QueryClient = new QueryClient()): React.ReactElement {
+  return h(QueryClientProvider, { client },
     h(AppRouterContext.Provider, { value: router as never },
       h(SearchParamsContext.Provider, { value: new URLSearchParams(search) as never },
         h(PathnameContext.Provider, { value: "/2/cbom/5/results" },
@@ -24,9 +25,9 @@ export function withAppRouter(node: React.ReactNode, search = "", params: Record
 
 export const normaliseIds = (html: string) => html.replace(/_R_[0-9a-zA-Z_]*?_(?=[^0-9a-zA-Z_]|$)/g, "_ID_").replace(/«[^»]*»/g, "«ID»");
 
-export function renderCodeMode(): string {
+export function renderCodeMode(search = ""): string {
   return normaliseIds(renderToStaticMarkup(withAppRouter(h(CbomResults, {
     data: CODE_DATA, conversationId: 5, teamId: "2", dashboard: CODE_DASHBOARD, findings: CODE_FINDINGS,
     scanMetadata: CODE_METADATA, integrationSettings: {}, onIntegrationSettingsUpdated: () => undefined, onFindingsUpdated: () => undefined,
-  }))));
+  }), search)));
 }
