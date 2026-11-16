@@ -16,6 +16,7 @@ import {
 } from "@/content/infotips";
 import { cn } from "@/lib/utils";
 
+import { useInfoTipDrawer } from "./info-tip-drawer-context";
 import { acceptRadixClose, focusOpensTip, openAfterClick, pressPointer, type PressPointer } from "./info-tip-logic";
 
 /** One tip open at a time: each shadcn Tooltip has its own provider, so focusing one tip and hovering another would
@@ -71,6 +72,8 @@ function useTipText(id: InfoTipId): { text?: InfoTipText; failed: boolean } {
 export function InfoTip({ id, side = "top", className }: { id: InfoTipId; side?: "top" | "right" | "bottom" | "left"; className?: string }) {
   const label = INFO_TIP_LABELS[id];
   const { text, failed } = useTipText(id);
+  // below an <InfoTipDrawerProvider> only: the tip gains "More in Explanations ›" (no provider: unchanged)
+  const drawer = useInfoTipDrawer();
   const descriptionId = useId();
   const [open, setOpenState] = useState(false);
   const press = useRef<{ wasOpen: boolean; pointer: PressPointer } | null>(null);
@@ -162,6 +165,20 @@ export function InfoTip({ id, side = "top", className }: { id: InfoTipId; side?:
         className="w-auto max-w-[min(20rem,calc(100vw-2rem))] text-left text-pretty px-3 py-2 leading-relaxed"
       >
         <InfoTipBody label={label} text={text} failed={failed} />
+        {drawer && (
+          // a pointer shortcut (tooltip content takes no focus, WAI-ARIA tooltip pattern); keyboard users reach the
+          // same drawer with the page's or dialog's "Explanations" button
+          <button type="button" tabIndex={-1} data-testid="infotip-more"
+                  className="mt-1.5 block cursor-pointer text-left font-semibold underline-offset-2 hover:underline"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setOpen(false);
+                    drawer.open(id);
+                  }}>
+            More in Explanations ›
+          </button>
+        )}
       </TooltipContent>
     </Tooltip>
     {/* the description screen readers read on the button; `hidden` keeps it off screen and out of the reading order */}
@@ -177,7 +194,8 @@ export function InfoTip({ id, side = "top", className }: { id: InfoTipId; side?:
   );
 }
 
-/** Text only: tooltip content cannot take focus (WAI-ARIA tooltip pattern), so it never holds a link or a button. */
+/** Text only: tooltip content cannot take focus (WAI-ARIA tooltip pattern). The one exception, below a drawer
+ * provider, is the pointer-only "More in Explanations ›" shortcut next to this body (the drawer has its own button). */
 function InfoTipBody({ label, text: tip, failed }: { label: string; text?: InfoTipText; failed: boolean }) {
   if (!tip) {
     return (
