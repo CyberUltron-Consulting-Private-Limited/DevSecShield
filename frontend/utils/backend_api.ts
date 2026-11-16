@@ -344,7 +344,7 @@ export interface SbomScanDashboardData {
     total_policy_violations: number
     total_license_risks: number
     total_high_risk_licenses: number
-    average_risk_score: number
+    average_risk_score: number | null
     total_reachable_issues: number
   }
   remediation_actions_required: {
@@ -1838,7 +1838,7 @@ export interface SBOMSCADashboardData {
         total_policy_violations: number
         total_license_risks: number
         total_high_risk_licenses: number
-        average_risk_score: number
+        average_risk_score: number | null
         total_reachable_issues: number
     }
     average_risk_score_per_reachability_level: Record<string, number>
