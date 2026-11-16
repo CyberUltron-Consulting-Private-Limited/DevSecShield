@@ -4,7 +4,9 @@
 import type { CbomFinding, CbomGraph, CbomScanDashboardData } from "@/utils/backend_api";
 import type { CbomCompliance, CbomDistributions } from "@/components/cbom/CbomCryptoCharts";
 import type { HeatData } from "@/components/cbom/heatmapLogic";
-import type { AgilityPosture, QPosture } from "@/components/cbom/grade";
+import { GRADE_KEYS, type AgilityPosture, type QPosture } from "@/components/cbom/grade";
+
+const [G0, G1, G2, G3, G4] = GRADE_KEYS;
 
 export const DISTRIBUTIONS: CbomDistributions = {
   algorithms: { pke: 4, "block-cipher": 3, hash: 2, signature: 1, kem: 0 },
@@ -104,11 +106,11 @@ export const HEAT: HeatData = {
 
 export const Q_POSTURE: QPosture = {
   assets: 20,
-  q_grades: { Q0: 3, Q1: 2, Q2: 4, Q3: 1, Q4: 0, none: 10 },
+  q_grades: { [G0]: 3, [G1]: 2, [G2]: 4, [G3]: 1, [G4]: 0, none: 10 },
   q0_reasons: { coverage_gap: 1, mosca_missing: 1, unknown_verdict: 1 },
   q0_items: [
-    { key: "inputs:mosca", kind: "inputs", reason: "mosca_missing", q_grade: "Q0", source_id: null, source_name: null, count: 2, missing: ["z"] },
-    { key: "asset:node:abc", kind: "asset", reason: "unknown_verdict", q_grade: "Q0", source_id: 1, source_name: "DMZ range",
+    { key: "inputs:mosca", kind: "inputs", reason: "mosca_missing", q_grade: G0, source_id: null, source_name: null, count: 2, missing: ["z"] },
+    { key: "asset:node:abc", kind: "asset", reason: "unknown_verdict", q_grade: G0, source_id: 1, source_name: "DMZ range",
       count: 1, asset_id: 77, location: "10.0.0.9:443" },
   ],
   q0_items_total: 2,
