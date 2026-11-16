@@ -300,9 +300,18 @@ def test_ca_connector_providers():
         spec.model.model_validate({"provider": "adcs", "login": "svc"})
     with pytest.raises(ValueError, match="5986"):
         spec.model.model_validate({"provider": "adcs", "login": "svc", "host": "ca01", "port": 5985})
-    for provider in ("venafi", "keyfactor", "digicert", "sectigo", "other"):
-        cfg = spec.model.model_validate({"provider": provider, "api_url": "https://clm.example.com"})
-        assert not spec.collectable(cfg) and not spec.needs_node(cfg)  # honest: not collected yet
+    venafi = spec.model.model_validate({"provider": "venafi", "api_url": "https://tpp.example/vedsdk",
+                                        "login": "local:admin", "client_id": "MyApp"})
+    assert spec.collectable(venafi) and spec.needs_node(venafi) and spec.secret_fields(venafi) == {"password"}
+    keyfactor = spec.model.model_validate({"provider": "keyfactor", "api_url": "https://kf.example/KeyfactorAPI"})
+    assert spec.collectable(keyfactor) and spec.secret_fields(keyfactor) == {"token"}
+    digicert = spec.model.model_validate({"provider": "digicert", "api_url": "https://www.digicert.com/services/v2"})
+    assert spec.collectable(digicert) and spec.secret_fields(digicert) == {"api_key"}
+    sectigo = spec.model.model_validate({"provider": "sectigo", "api_url": "https://cert-manager.com/api",
+                                         "login": "reader", "customer_uri": "cst1152"})
+    assert spec.collectable(sectigo) and spec.secret_fields(sectigo) == {"password"}
+    other = spec.model.model_validate({"provider": "other", "api_url": "https://clm.example.com", "login": "nobody"})
+    assert other.login is None and not spec.collectable(other) and not spec.needs_node(other)
 
 
 # ----------------------------------------------------------------------------- templates

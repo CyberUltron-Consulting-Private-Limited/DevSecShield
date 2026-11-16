@@ -261,9 +261,57 @@ const TEXT = {
   },
   // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2433-2443 — HTTPS, up to 512 characters
   "cbsrc.ca.api_url": {
-    what: "The HTTPS address of the CA or CLM API, up to 512 characters. For Venafi, Keyfactor, DigiCert, Sectigo and others only this address and the name are saved: nothing is read from them.",
-    why: "The scan node or the certificate collector calls only this address.",
-    example: "https://vault.corp.example.com:8200 for Vault PKI.",
+    what: "The HTTPS address of this product's API, up to 512 characters. The placeholder shows that product's usual path. The scan node calls only this address.",
+    why: "The address is checked when the source is saved, and a stored credential is cleared if the address changes.",
+    example: "https://tpp.example.com/vedsdk for Venafi, or https://www.digicert.com/services/v2 for DigiCert.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2580
+  "cbsrc.ca.client_id": {
+    what: "The Client ID of the API integration in Trust Protection Platform. It is sent with the user name and password when the scan node authorizes.",
+    why: "Venafi issues a bearer token for listing certificates only to a registered integration. The password is the stored secret.",
+    example: "MyApp, the Client ID shown on the API integration.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2584
+  "cbsrc.ca.venafi_login": {
+    what: "The Trust Protection Platform user that may read certificates. The scan node sends it as the username when it authorizes.",
+    why: "Use an account that can read certificates. The collector requests the certificate scope and does not download private keys.",
+    example: "local:admin, or svc-cbom@corp.example.com.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2588
+  "cbsrc.ca.venafi_password": {
+    what: "The password of that user. Encrypted at rest and sent only to the scan node, which uses it once to authorize.",
+    why: "Changing the address, user, client id, CA or node clears it, so it is not sent to a different server.",
+    example: "The password of the Venafi user.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2600
+  "cbsrc.ca.keyfactor_token": {
+    what: "A bearer token for Keyfactor Command. The scan node sends it as Authorization: Bearer, with the header x-keyfactor-requested-with: APIClient.",
+    why: "The token is the only credential. It is encrypted at rest and cleared if the address, CA or node changes.",
+    example: "The access token from the Keyfactor token endpoint.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2611
+  "cbsrc.ca.digicert_key": {
+    what: "The CertCentral API key. The scan node sends it as the X-DC-DEVKEY header and does not put it in the address.",
+    why: "That header is how CertCentral authenticates a read of orders and a download of the certificate.",
+    example: "The key from CertCentral, under Account, API keys.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2622
+  "cbsrc.ca.customer_uri": {
+    what: "The customer URI Sectigo assigns to the account. The scan node sends it as the customerUri header on every request.",
+    why: "Sectigo requires it with the user name and password. It names the account.",
+    example: "cst1152.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2626
+  "cbsrc.ca.sectigo_login": {
+    what: "The Certificate Manager user name. The scan node sends it as the login header, with the password and customer URI.",
+    why: "Give the user permission to list and download certificates. The collector does not call the keystore download.",
+    example: "admin_customer1152.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2630
+  "cbsrc.ca.sectigo_password": {
+    what: "The password of that user. Encrypted at rest and sent only to the scan node, as the password header Sectigo requires.",
+    why: "Changing the address, user, customer URI, CA or node clears it, so it is not sent to a different account.",
+    example: "The password of the Certificate Manager user.",
   },
   // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2448-2457 — read-only policy; encrypted at rest
   "cbsrc.ca.vault_token": {

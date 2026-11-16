@@ -6,6 +6,8 @@
   material: the export and backup endpoints are not called).  Read-only token; the policy is a source template.
 * EJBCA REST (``/ejbca/ejbca-rest-api/v1/ca``, the CA certificates, and ``v2/certificate/profile/<name>`` for the
   built-in profile names when that endpoint exists), authenticated with a client certificate.
+* Venafi, Keyfactor, DigiCert and Sectigo (``ca_venafi``, ``ca_keyfactor``, ``ca_digicert``, ``ca_sectigo``): each product's
+  public read API, through the same pinned HTTP client. "other" is not collected.
 * Microsoft AD CS over WinRM HTTPS (``windows_winrm``'s session, same network gate and certificate rules): the CA's
   registry configuration (CNGHashAlgorithm, validity, CRL periods, EditFlags), its certificate (public) and the
   published templates (``certutil -catemplates``) with their settings from the local template cache.  Everything
@@ -621,6 +623,22 @@ def _run(ctx: JobContext, config: dict, secrets: dict) -> tuple[str, str, str | 
             target, n = collect_ejbca(ctx, config, secrets)
         elif provider == "adcs":
             target, n = collect_adcs(ctx, config, _secret(ctx, secrets, "password", "password"))
+        elif provider == "venafi":
+            from zs_scan_node.collectors.ca_venafi import collect_venafi
+
+            target, n = collect_venafi(ctx, config, _secret(ctx, secrets, "password", "password"))
+        elif provider == "keyfactor":
+            from zs_scan_node.collectors.ca_keyfactor import collect_keyfactor
+
+            target, n = collect_keyfactor(ctx, config, _secret(ctx, secrets, "token", "API token"))
+        elif provider == "digicert":
+            from zs_scan_node.collectors.ca_digicert import collect_digicert
+
+            target, n = collect_digicert(ctx, config, _secret(ctx, secrets, "api_key", "API key"))
+        elif provider == "sectigo":
+            from zs_scan_node.collectors.ca_sectigo import collect_sectigo
+
+            target, n = collect_sectigo(ctx, config, _secret(ctx, secrets, "password", "password"))
         else:
             raise ConfigError(f"{provider} is not collected by this scan node version")
         return target.label, "ok", None, n
