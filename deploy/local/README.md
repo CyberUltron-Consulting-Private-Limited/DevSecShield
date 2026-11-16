@@ -255,7 +255,13 @@ there are no retries.
 | `CBOM_AI_API_KEY`, `CBOM_AI_CA_FILE` | Bearer key if the server wants one; PEM bundle for a private CA (https). |
 | `CBOM_AI_ALLOW_NONPRIVATE` | The host must resolve only to loopback / RFC 1918 / ULA addresses unless this is `1`; link-local (cloud metadata) is refused always. The resolved address is pinned for the request. |
 
-Both: `CBOM_AI_TIMEOUT_S` (60), `CBOM_AI_MAX_TOKENS` (700), `CBOM_AI_CONCURRENCY` (2 requests at a time). 20 requests
+Both: `CBOM_AI_DEADLINE_S` (50, at most 85: the whole request, slot wait, model call and at most one retry, answers
+within it, so a proxy with nginx's 60 s default read timeout never cuts it; slower, the panel says "took too long, try
+again"), `CBOM_AI_TIMEOUT_S` (60, one model call; the deadline caps it), `CBOM_AI_MAX_TOKENS` (unset: each mode's own
+output budget, explain 1,500, plan and question 2,400, fix 2,000, doubled once when an answer is cut off; set it only
+for a model with a small output or context limit, for example about 1,000 for a 4 k-token context),
+`CBOM_AI_CONCURRENCY` (2 requests at a time). The backend's `cbom_ai audit` line names the stop reason and output
+budget of each attempt (`stop=max_tokens,end_turn max_tokens=2400,4096`). 20 requests
 per minute per user. The rate limit, the concurrency limit and the answer cache are per backend process: with N
 workers or replicas the deployment allows N times as many. Example, Ollama on the compose network: `docker run -d --name ollama --network <compose network>
 -v ollama:/root/.ollama ollama/ollama`, `docker exec ollama ollama pull qwen3:8b`, then
