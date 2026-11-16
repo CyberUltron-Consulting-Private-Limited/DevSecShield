@@ -86,7 +86,6 @@ const riskScoreAreaChartConfig = {
   score: { label: "Risk score", color: "hsl(217 91% 60%)" },
 } satisfies ChartConfig;
 
-/** The parts of CbomDashboardCharts a caller can ask for (`parts`); all of them when `parts` is left out. */
 type KpiCardData = CbomScanDashboardData["card_data"];
 /** The seven KPI tiles (label, icon, colours, tip, raw value): one definition for the code scan's dashboard and the
  * Sources run summary (views/SummaryKpis.tsx), so the two cannot drift. */
@@ -101,6 +100,7 @@ export const KPI_TILES: ReadonlyArray<{ key: string; label: string; icon: Lucide
   { key: "avg_risk", label: "Avg risk score", value: (c) => c.average_risk_score?.toFixed(1) ?? "N/A", icon: Activity, box: "bg-teal-100 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400", tip: "cbom.res.kpi.avg_risk" },
 ];
 
+/** The parts of CbomDashboardCharts a caller can ask for (`parts`); all of them when `parts` is left out. */
 export const DASHBOARD_CHART_PARTS = [
   "kpis", "progress", "owasp", "risk", "controls", "algoTypes", "strength", "quantum", "riskScores", "metrics",
 ] as const;

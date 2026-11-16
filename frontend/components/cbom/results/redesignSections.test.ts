@@ -23,7 +23,7 @@ import { cbomOpsKeys, type CbomRemediationItem, type CbomRunHeatmap } from "@/ut
 import type { CbomRunResults } from "@/utils/backend_api";
 import { CbomDashboardCharts, DASHBOARD_CHART_PARTS } from "./CbomDashboardCharts";
 import { COMPLIANCE, DASHBOARD, DISTRIBUTIONS, GRAPH } from "./__tests__/codeModeFixtures";
-import { ComplianceScorecards, frameworkScore } from "./ComplianceScorecards";
+import { ComplianceScorecards, frameworkScore, toggleMoreFrameworks } from "./ComplianceScorecards";
 import { RunWavesSection } from "./RunSections";
 import { CertificatesCard, RunCertCalendar } from "./views/CertificatesCard";
 
@@ -236,4 +236,10 @@ test("ComplianceScorecards (R-ux 9): under All the regulator cards lead; the res
   assert.doesNotMatch(html, /<li class="min-w-0" hidden="">(?:(?!<\/li>)[\s\S])*compliance-card-cnsa_2_0/);
   assert.match(tag(html, "compliance-more-frameworks"), /aria-expanded="false"/);
   assert.match(text(html), /Show \d+ more frameworks?/);
+});
+
+test("ComplianceScorecards (R-final 1): collapsing to the regulator cards closes an open non-regulator card", () => {
+  assert.deepEqual(toggleMoreFrameworks(true, null), { moreOpen: true, active: null });
+  assert.deepEqual(toggleMoreFrameworks(false, "pci_dss_4"), { moreOpen: false, active: null });   // was a dead click
+  assert.deepEqual(toggleMoreFrameworks(false, "cnsa_2_0"), { moreOpen: false, active: "cnsa_2_0" });  // a lead card stays open
 });

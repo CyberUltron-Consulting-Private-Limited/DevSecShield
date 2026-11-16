@@ -199,6 +199,19 @@ export function RunFindingDialog({ teamId, runId, subject, jobs, waveOf, onClose
   const bodyRef = useRef<HTMLDivElement | null>(null);
   // the asset last shown, kept past close (assetId is null by then) to return focus to its row
   const lastAssetRef = useRef<number | null>(null);
+  // the tab list fades at its right edge while it scrolls sideways (390 px, or 1024 px with the AI panel open)
+  const tabsRef = useRef<HTMLDivElement | null>(null);
+  const [tabsOverflow, setTabsOverflow] = useState(false);
+  useEffect(() => {
+    const el = tabsRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const check = () => setTabsOverflow(el.scrollWidth > el.clientWidth + 1 && el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    el.addEventListener("scroll", check, { passive: true });
+    return () => { ro.disconnect(); el.removeEventListener("scroll", check); };
+  }, [assetId, aiOpen]);
   useEffect(() => {
     if (assetId != null) lastAssetRef.current = assetId;
   }, [assetId]);
@@ -282,7 +295,8 @@ export function RunFindingDialog({ teamId, runId, subject, jobs, waveOf, onClose
                 <ExplanationsButton className="hidden sm:inline-flex shrink-0" testId="run-finding-explanations" />
               </div>
               <div className="flex items-center gap-2 min-w-0">
-                <TabsList className="h-auto min-w-0 flex-1 justify-start overflow-x-auto overflow-y-hidden rounded-none border-b border-zinc-200 dark:border-zinc-800 bg-transparent p-0 [scrollbar-width:thin] max-sm:[mask-image:linear-gradient(to_right,black_80%,transparent)]"
+                <TabsList className="h-auto min-w-0 flex-1 justify-start overflow-x-auto overflow-y-hidden rounded-none border-b border-zinc-200 dark:border-zinc-800 bg-transparent p-0 [scrollbar-width:thin] data-[overflow=true]:[mask-image:linear-gradient(to_right,black_85%,transparent)]"
+                          ref={tabsRef} data-overflow={tabsOverflow || undefined}
                           aria-label="Finding sections" data-testid="run-finding-tabs">
                   {([
                     ["overview", "Overview"],

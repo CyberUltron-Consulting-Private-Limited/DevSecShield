@@ -36,14 +36,20 @@ export interface FrameworkScore {
   coverage: number | null;
 }
 
-/** A framework's scorecard figures, from its verdict counts as the server sent them (nothing recounted from rows). */
 /** The five regulator frameworks shown first under "All" (mockup F6), in this order. */
 const LEAD_FRAMEWORKS = ["cert_in_cbom", "rbi_free_ai_protection", "sebi_cscrf_cbom", "nist_1800_38b", "cnsa_2_0"];
+/** "Show N more" / "Show the five regulator frameworks only": collapsing closes an open non-regulator card (its card
+ * is hidden again), so the toggle never becomes a dead click. */
+export function toggleMoreFrameworks(collapsed: boolean, active: string | null): { moreOpen: boolean; active: string | null } {
+  if (collapsed) return { moreOpen: true, active };
+  return { moreOpen: false, active: active && !LEAD_FRAMEWORKS.includes(active) ? null : active };
+}
 function leadFirst<T extends { key: string }>(fws: T[]): T[] {
   const rank = (k: string) => { const i = LEAD_FRAMEWORKS.indexOf(k); return i < 0 ? LEAD_FRAMEWORKS.length : i; };
   return fws.map((f, i) => [f, i] as const).sort((a, b) => rank(a[0].key) - rank(b[0].key) || a[1] - b[1]).map(([f]) => f);
 }
 
+/** A framework's scorecard figures, from its verdict counts as the server sent them (nothing recounted from rows). */
 export function frameworkScore(key: string, f: FrameworkCoverage): FrameworkScore {
   const passed = (f.pass ?? 0) + (f.pass_with_evidence ?? 0);
   const failing = f.fail ?? 0;
@@ -221,7 +227,11 @@ export function ComplianceScorecards({ compliance, groups, enableFailingOnly = t
         )}
         {capped && (
           <button type="button" className="inline-flex items-center gap-1 text-sm text-blue-600 dark:text-blue-400 cursor-pointer hover:underline"
-                  aria-expanded={!collapsed} onClick={() => setMoreOpen(collapsed)}
+                  aria-expanded={!collapsed} onClick={() => {
+                    const next = toggleMoreFrameworks(collapsed, active);
+                    setMoreOpen(next.moreOpen);
+                    if (next.active !== active) setActive(next.active);
+                  }}
                   data-testid="compliance-more-frameworks">
             {collapsed ? `Show ${hiddenCount} more ${hiddenCount === 1 ? "framework" : "frameworks"}` : "Show the five regulator frameworks only"}
           </button>
