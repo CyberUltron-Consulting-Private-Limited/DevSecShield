@@ -355,15 +355,15 @@ def test_aws_private_ca_connector_is_read_by_its_aws_account():
     def build(session, source):
         aws = source(session, "aws_account", "prod", ROLE, last_test_status="passed")
         source(session, "ca_connector", "pca", {"provider": "aws_private_ca", "aws_source_id": aws.id})
-        source(session, "ca_connector", "venafi", {"provider": "venafi", "api_url": "https://venafi.example"})
+        source(session, "ca_connector", "other-clm", {"provider": "other", "api_url": "https://clm.example"})
 
     items, plan = _plan_for(build)
     assert items["prod"].status == "queued"
     assert items["pca"].reason == READ_BY_AWS and items["pca"].status == "covered" and items["pca"].credits_c == 0
     public = plan.public()
     assert "pca" not in [i["name"] for i in public["skipped"]], "a covered connector is not an issue to fix"
-    assert public["groups"]["identity"]["skipped"] == 1  # Venafi only
-    assert items["venafi"].reason == "Collection for this connector is not available yet" and items["venafi"].credits_c == 0
+    assert public["groups"]["identity"]["skipped"] == 1  # the uncollected "other" connector only
+    assert items["other-clm"].reason == "Collection for this connector is not available yet" and items["other-clm"].credits_c == 0
 
 
 def test_aws_private_ca_connector_whose_account_is_skipped_or_removed():
