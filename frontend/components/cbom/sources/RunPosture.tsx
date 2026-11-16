@@ -296,20 +296,22 @@ export function RunPostureCard({ teamId, runId, active, onOpenAsset }: {
   );
 }
 
-export function AssetDetailPanel({ teamId, assetId, mergedStandards = false }: { teamId: number; assetId: number; mergedStandards?: boolean }) {
-  const query = useQuery({
+/** GET /sources/assets/{id}: the one asset-detail query (the run finding dialog runs the same key, so one request). */
+export function useAssetDetail(teamId: number, assetId: number) {
+  return useQuery({
     queryKey: cbomSourcesKeys.asset(teamId, assetId),
     queryFn: async () => (await getCbomAssetDetail(teamId, assetId)) as unknown as CbomAssetDetailWithExposure,
     retry: 1,
     staleTime: 60_000,
   });
-  if (query.isLoading) return <LoadingBlock />;
-  if (query.isError || !query.data) return <ErrorBlock error={query.error} onRetry={() => query.refetch()} />;
-  const a = query.data;
+}
+
+/** PQC class, HNDL, business criticality and internet exposure chips of an asset, then the class basis line. */
+export function AssetClassChips({ a }: { a: CbomAssetDetailWithExposure }) {
   // a class this bundle does not know (a newer backend) reads as Unknown, never as "Not applicable" or a crash
   const cls = CLASS_LABEL[a.pqc_class] ?? CLASS_LABEL.unknown;
   return (
-    <div className="space-y-3" data-testid={`asset-detail-${a.id}`}>
+    <>
       <div className="flex flex-wrap gap-2 items-center">
         <span title={a.pqc_class_basis_text ?? cls[2]} data-testid="asset-pqc-class" data-class={a.pqc_class}
               data-basis={a.pqc_class_basis}>
@@ -332,11 +334,14 @@ export function AssetDetailPanel({ teamId, assetId, mergedStandards = false }: {
           {a.pqc_class_read_elsewhere ? ` (asset #${a.pqc_class_read_elsewhere})` : ""}
         </p>
       )}
-      <QGradeDrawerSection teamId={teamId} asset={a} />
-      <AgilityDrawerSection teamId={teamId} agility={a.agility} />
-      <StandardsDrawerSection standards={a.standards} />
-      <CorrelationSection teamId={teamId} correlation={(a as { correlation?: Correlation | null }).correlation} />
-      {a.library && (
+    </>
+  );
+}
+
+/** The library an asset belongs to: package and upstream versions, end of life as of the run and today, CVEs. */
+export function AssetLibraryBlock({ a }: { a: CbomAssetDetailWithExposure }) {
+  if (!a.library) return null;
+  return (
         <div className="rounded-md border border-zinc-200 dark:border-zinc-700 p-3 space-y-1" data-testid="asset-library">
           <p className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
             {a.library.package} {a.library.package_version} (upstream {a.library.library} {a.library.upstream_version})
@@ -367,15 +372,43 @@ export function AssetDetailPanel({ teamId, assetId, mergedStandards = false }: {
             </p>
           )}
         </div>
-      )}
+  );
+}
+
+/** The asset's quantum and effort explanation: Q grade, crypto agility, standards, correlation, library, SBOM links.
+ * AssetDetailPanel renders it between the class chips and the KB details; the run finding dialog in its Quantum &
+ * effort tab. */
+export function AssetQuantumParts({ teamId, a }: { teamId: number; a: CbomAssetDetailWithExposure }) {
+  return (
+    <>
+      <QGradeDrawerSection teamId={teamId} asset={a} />
+      <AgilityDrawerSection teamId={teamId} agility={a.agility} />
+      <StandardsDrawerSection standards={a.standards} />
+      <CorrelationSection teamId={teamId} correlation={(a as { correlation?: Correlation | null }).correlation} />
+      <AssetLibraryBlock a={a} />
       {(a.type === "crypto_library" || a.type === "process_library") && <SbomLinks teamId={teamId} assetId={a.id} />}
+    </>
+  );
+}
+
+/** The asset explanation (Sources asset drawer and anywhere else): one column, every part. The run finding dialog
+ * places the same parts (AssetClassChips, AssetQuantumParts, KbFindingDetails) into its tabs instead. */
+export function AssetDetailPanel({ teamId, assetId, mergedStandards = false }: { teamId: number; assetId: number; mergedStandards?: boolean }) {
+  const query = useAssetDetail(teamId, assetId);
+  if (query.isLoading) return <LoadingBlock />;
+  if (query.isError || !query.data) return <ErrorBlock error={query.error} onRetry={() => query.refetch()} />;
+  const a = query.data;
+  return (
+    <div className="space-y-3" data-testid={`asset-detail-${a.id}`}>
+      <AssetClassChips a={a} />
+      <AssetQuantumParts teamId={teamId} a={a} />
       <KbFindingDetails details={a.details} mergedStandards={mergedStandards} />
     </div>
   );
 }
 
 /** "Also in SBOM scan X (component Y)": the team's SBOM scans that list this library (purl, else name and version). */
-function SbomLinks({ teamId, assetId }: { teamId: number; assetId: number }) {
+export function SbomLinks({ teamId, assetId }: { teamId: number; assetId: number }) {
   const q = useQuery({ queryKey: cbomOpsKeys.assetSbom(teamId, assetId), queryFn: () => getCbomAssetSbom(teamId, assetId),
                        retry: 1, staleTime: 60_000 });
   if (!q.data) return null;
