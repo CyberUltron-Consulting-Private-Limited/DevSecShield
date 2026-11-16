@@ -11,34 +11,10 @@ import { AlertTriangle, ChevronRight } from "lucide-react";
 import { InfoTip } from "@/components/ui/info-tip";
 import type { CbomCoverageReport, CbomImportReport } from "@/utils/api/cbom_outputs";
 import type { CbomJobTargets, CbomRun } from "@/utils/backend_api";
-import { jobReadLabel } from "@/components/cbom/sources/jobReadLabel";
-import { StatusBadge, type Tone } from "@/components/cbom/sources/shared";
 
+import { RunJobsStatusLine } from "../RunSourceCards";
 import { CoverageNotesCard, ImportNotesCard } from "./ScanNotes";
 import { runProblem } from "./selectors";
-
-const JOB_STATUS_WORD: Record<string, string> = { failure: "failure", expired: "expired", cancelled: "cancelled" };
-
-export function RunJobsLine({ targets }: { targets: CbomJobTargets[] | null }) {
-  if (!targets || targets.length === 0) return null;
-  return (
-    <ul className="flex flex-wrap gap-2" data-testid="run-jobs-line" aria-label="Collection jobs">
-      {targets.map((job) => {
-        const [tone, label] = jobReadLabel(job);
-        return (
-          <li key={job.job_id} data-testid={`run-results-job-${job.job_id}`}
-              className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-zinc-200 px-2.5 py-1 text-xs dark:border-zinc-800">
-            <span className="truncate max-w-[14rem] font-medium text-zinc-800 dark:text-zinc-200" title={job.source_name ?? undefined}>
-              {job.source_name ?? `Source ${job.source_id ?? "—"}`}
-            </span>
-            <StatusBadge tone={tone as Tone}>{label}</StatusBadge>
-            {JOB_STATUS_WORD[job.status] && <span className="text-zinc-500">({JOB_STATUS_WORD[job.status]})</span>}
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
 
 export function RunStatusBanner({ run, assets, targets, coverageReport, importReport, onOpenCollection }: {
   run: CbomRun;
@@ -72,7 +48,7 @@ export function RunStatusBanner({ run, assets, targets, coverageReport, importRe
       )}
       <CoverageNotesCard report={coverageReport} />
       <ImportNotesCard report={importReport} />
-      <RunJobsLine targets={targets} />
+      <RunJobsStatusLine targets={targets} onOpen={onOpenCollection} />
     </section>
   );
 }

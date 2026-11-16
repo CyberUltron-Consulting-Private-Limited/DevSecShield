@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   askCbomAi,
@@ -54,6 +54,11 @@ interface RemediationPanelProps {
   /** CBOM: false where the dialog already shows the knowledge-base details (the run dialog's AssetDetailPanel), so
    * "Standards and regulations" is not shown twice (#266). */
   standardsTab?: boolean;
+  /** CBOM run dialog (results redesign 34-B): "cards" shows Fix code / Diff / Exploit demo as status cards, each
+   * saying what it holds (a disabled Diff says why). Default "tabs": the panel as every other caller has it. */
+  layout?: "tabs" | "cards";
+  /** CBOM run asset on an older backend (no remediation route): rendered instead of nothing (default: nothing). */
+  missingNote?: ReactNode;
 }
 
 function CopyButton({ text }: { text: string }) {
@@ -148,7 +153,8 @@ function CodeWithLines({ code, start, highlight, tone }: { code: string; start?:
  * rebuild; a stored result is shown first only when it already has the current shape (engine stamp), and a failed
  * rebuild is reported even when an older result is on screen. Views without a scan (the CI page) show what they
  * were given. */
-function CbomKnowledgePanel({ teamId, scanId, findingId, existingRemediation, snippetStart, line, runAsset, standardsTab = true }: RemediationPanelProps) {
+function CbomKnowledgePanel({ teamId, scanId, findingId, existingRemediation, snippetStart, line, runAsset, standardsTab = true,
+  layout = "tabs", missingNote }: RemediationPanelProps) {
   const stored = existingRemediation?.source === "knowledge_base" && existingRemediation.status === "completed"
     && !!existingRemediation.engine;
   const canLoad = runAsset ? runAsset.runId > 0 && runAsset.assetId > 0 : Number.isInteger(scanId) && scanId > 0 && !!findingId;
@@ -216,7 +222,8 @@ function CbomKnowledgePanel({ teamId, scanId, findingId, existingRemediation, sn
   const defaultTab = fix?.available || aiAvailable ? "fix" : demo ? "exploit" : standardsTab ? "details" : "fix";
   // an older backend has no run-asset route: say nothing rather than an error (the dialog keeps its KB details);
   // after every hook, so the hook count never changes between renders (rules of hooks)
-  if (runAsset && load.isError && remediationRouteMissing(load.error) && !data) return null;
+  if (runAsset && load.isError && remediationRouteMissing(load.error) && !data) return <>{missingNote ?? null}</>;
+  const cards = layout === "cards";
   return (
     <div className="space-y-3 pt-2" data-testid="cbom-kb-panel">
       <div className="flex items-center gap-2">
@@ -247,6 +254,33 @@ function CbomKnowledgePanel({ teamId, scanId, findingId, existingRemediation, sn
       )}
       {data && (
         <Tabs defaultValue={defaultTab} key={defaultTab} className="w-full">
+          {cards ? (
+            <TabsList className="h-auto w-full grid grid-cols-1 sm:grid-cols-3 gap-2 bg-transparent p-0" data-testid="cbom-status-cards">
+              <TabsTrigger value="fix" className={STATUS_CARD} data-testid="cbom-tab-fix">
+                <span className="flex items-center gap-1 text-xs font-semibold"><Shield className="h-3 w-3" />Fix code</span>
+                <span className="text-[11px] font-normal text-zinc-500 dark:text-zinc-400 whitespace-normal">
+                  {fix?.available ? `Code change available (rule ${fix.rules.join(", ")})` : aiDiff ? "AI-written change available" : "No automatic code change: a setting, certificate or key"}
+                </span>
+              </TabsTrigger>
+              <TabsTrigger value="diff" className={STATUS_CARD} data-testid="cbom-tab-diff" disabled={!data.diff && !aiDiff}>
+                <span className="text-xs font-semibold">Diff</span>
+                <span className="text-[11px] font-normal text-zinc-500 dark:text-zinc-400 whitespace-normal" data-testid="cbom-diff-status">
+                  {data.diff || aiDiff ? "The change as a diff" : "Not available: there is no code change to show"}
+                </span>
+              </TabsTrigger>
+              <TabsTrigger value="exploit" className={STATUS_CARD} data-testid="cbom-tab-exploit" disabled={!demo}>
+                <span className="flex items-center gap-1 text-xs font-semibold"><Zap className="h-3 w-3" />Exploit demo</span>
+                <span className="text-[11px] font-normal text-zinc-500 dark:text-zinc-400 whitespace-normal">
+                  {!demo ? "Not available for this weakness" : demo.poc ? `Local proof of concept (${demo.poc.language})` : "Read-only; no local script applies to this weakness"}
+                </span>
+              </TabsTrigger>
+              {standardsTab && (
+                <TabsTrigger value="details" className={STATUS_CARD} data-testid="cbom-tab-details">
+                  <span className="text-xs font-semibold">Standards</span>
+                </TabsTrigger>
+              )}
+            </TabsList>
+          ) : (
           <TabsList className={`w-full grid ${standardsTab ? "grid-cols-4" : "grid-cols-3"}`}>
             <TabsTrigger value="fix" className="text-xs gap-1" data-testid="cbom-tab-fix"><Shield className="h-3 w-3" />Fix code</TabsTrigger>
             <TabsTrigger value="diff" className="text-xs gap-1" data-testid="cbom-tab-diff" disabled={!data.diff && !aiDiff}>Diff</TabsTrigger>
@@ -255,6 +289,7 @@ function CbomKnowledgePanel({ teamId, scanId, findingId, existingRemediation, sn
               <TabsTrigger value="details" className="text-xs gap-1" data-testid="cbom-tab-details">Standards</TabsTrigger>
             )}
           </TabsList>
+          )}
 
           <TabsContent value="fix" className="mt-3 space-y-3" data-testid="cbom-fix">
             {(showMiss || !!fix?.available) && (
@@ -302,7 +337,7 @@ function CbomKnowledgePanel({ teamId, scanId, findingId, existingRemediation, sn
             {!fix?.available && showMiss && (
               <p className="text-xs text-zinc-500">
                 {runAsset
-                  ? `No automatic code change for this asset (a setting, certificate or key, not source code): follow the fix steps and verify commands ${standardsTab ? "under Standards" : "in the details above"}.`
+                  ? `No automatic code change for this asset (a setting, certificate or key, not source code): follow the fix steps and verify commands ${standardsTab ? "under Standards" : cards ? "in the Issues tab" : "in the details above"}.`
                   : "No automatic code change for this finding: follow the steps under Standards."}
               </p>
             )}
@@ -436,6 +471,9 @@ function CbomKnowledgePanel({ teamId, scanId, findingId, existingRemediation, sn
     </div>
   );
 }
+
+/** A status card of the run dialog's Fix & demo tab (a tab trigger: arrow keys, Enter and Space work as for tabs). */
+const STATUS_CARD = "h-auto min-h-16 flex flex-col items-start justify-start gap-1 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/60 px-3 py-2 text-left cursor-pointer data-[state=active]:border-blue-500 data-[state=active]:bg-blue-50 dark:data-[state=active]:bg-blue-950/40 data-[state=active]:shadow-none disabled:opacity-60";
 
 /** 404 / 405 from the run-asset remediation route: the server predates it. */
 function remediationRouteMissing(err: unknown): boolean {

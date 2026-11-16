@@ -18,8 +18,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { fakeRunSource, renderRunMode, TARGETS } from "./views/runModeFixture";
 import CertCalendar from "../CertCalendar";
-import { RunCoverageSection } from "./RunSections";
-import type { CbomJobTargets, CbomRun } from "@/utils/backend_api";
+import { RunCoverageSection, RunJobsStatusLine } from "./RunSections";
+import { SOURCE_CARD_FIELDS, sourceCardModels } from "./RunSourceCards";
+import type { CbomJob, CbomJobTargets, CbomRun, CbomRunProvenance } from "@/utils/backend_api";
 
 const h = React.createElement;
 const read = (p: string) => readFileSync(path.join(__dirname, p), "utf8");
@@ -66,6 +67,67 @@ test("results redesign: every run view shows the lab-mode note once, above the j
   assert.ok(collection.indexOf('data-testid="run-lab-mode"') > collection.indexOf('data-testid="results-section-collection"'));
   const none = fakeRunSource({ page: { ...fakeRunSource().page!, targets: [job(1, null)] } });
   assert.ok(!renderRunMode("", none).includes("run-lab-mode"), "no note without lab mode");
+});
+
+// 03-B (run results redesign): one card per source; the full jobs and provenance tables stay one click away
+const jobRow = (id: number, extra: Partial<CbomJob> = {}) => ({ id, run_id: 12, source_id: id + 100, source_name: `src-${id}`, node_id: 1,
+  node_name: "node-dr1", kind: "collect", status: "success", waiting_reason: null, attempts: 1, credits: 2, refunded: false,
+  created_at: null, claimed_at: null, finished_at: null, result: {}, error: null, outcome: "ok", asset_count: 9, runner: "node",
+  samples: [], server_time: "", ...extra }) as CbomJob;
+const prov = (sourceId: number, extra: Partial<CbomRunProvenance> = {}) => ({ source_id: sourceId, source: `src-${sourceId - 100}`, kind: "Appliance",
+  node: "node-dr1", runner: "node", outcome: "ok", assets: 7, endpoints_probed: 3, duration_s: 0.3, credits: 2, ...extra }) as CbomRunProvenance;
+
+test("source cards: a job with its source's provenance and targets; every field named once with its tip", () => {
+  const runWithJobs = { ...run, jobs: [jobRow(1), jobRow(2, { status: "failure", error: "connection refused", attempts: 3, refunded: true,
+    credits_refunded: 2, outcome: "failed" })] } as unknown as CbomRun;
+  const targets = [{ ...job(null), job_id: 1, counts: { total: 1, ok: 1, failed: 0, skipped: 0 } }] as CbomJobTargets[];
+  const html = renderToStaticMarkup(h(QueryClientProvider, { client: new QueryClient() },
+    h(RunCoverageSection, { run: runWithJobs, targets, provenance: [prov(101), prov(999, { source: "orphan source" })] })));
+  assert.match(html, /data-testid="run-source-cards"/);
+  for (const id of ["1", "2"]) assert.match(html, new RegExp(`data-testid="run-source-card-${id}"`));
+  const card1 = html.slice(html.indexOf('data-testid="run-source-card-1"'), html.indexOf('data-testid="run-source-card-2"')).replace(/<[^>]+>/g, " ");
+  for (const t of ["src-1", "Appliance", "node-dr1", "Done", "Assets 9", "Assets (excl. not collected) 7", "Endpoints probed 3", "Duration",
+    "Credits", "Attempts 1", "Outcome ok", "Targets: 1 fully read"]) assert.ok(card1.replace(/\s+/g, " ").includes(t), `${t}: ${card1}`);
+  assert.match(html, /data-testid="run-source-card-error-2"/);
+  // a provenance row no job names keeps its own card
+  assert.ok(html.includes("orphan source"));
+  // one key line, every field with the tip of the table column it comes from
+  for (const f of SOURCE_CARD_FIELDS) assert.match(html, new RegExp(`data-infotip="${f.tip.replace(/\./g, "\\.")}"`), f.key);
+  // the targets list (gate hooks run-results-job-<id>) is still on the view
+  assert.match(html, /data-testid="run-results-job-1"/);
+  // the full tables: a collapsed disclosure that names the region it opens
+  const toggle = html.match(/<button[^>]*data-testid="run-coverage-tables-toggle"[^>]*>/)?.[0] ?? "";
+  assert.match(toggle, /aria-expanded="false"/);
+  const controls = toggle.match(/aria-controls="([^"]+)"/)?.[1];
+  assert.ok(controls && html.includes(`id="${controls}"`), "aria-controls names the tables region");
+  assert.ok(html.replace(/<[^>]+>/g, "").includes("Show the full jobs and provenance tables"));
+  // the lab-mode note stays above the cards and the targets
+  const lab = renderToStaticMarkup(h(QueryClientProvider, { client: new QueryClient() },
+    h(RunCoverageSection, { run: runWithJobs, targets: [{ ...targets[0], lab_mode: "same_account" }], provenance: [] })));
+  assert.ok(lab.indexOf('data-testid="run-lab-mode"') < lab.indexOf('data-testid="run-source-cards"'));
+  // no job: the empty state, no cards
+  assert.ok(coverage(null).includes("No jobs in this run"));
+  assert.ok(!coverage(null).includes("run-source-cards"));
+});
+
+test("sourceCardModels pairs each job with its source's provenance once, keeps unmatched provenance rows", () => {
+  const m = sourceCardModels([jobRow(1), jobRow(2)], [prov(102), prov(101), prov(101, { assets: 1 })], null);
+  assert.deepEqual(m.map((x) => [x.job?.id ?? null, x.provenance?.source_id ?? null]), [[1, 101], [2, 102], [null, 101]]);
+  assert.deepEqual(sourceCardModels([], null, null), []);
+});
+
+test("RunJobsStatusLine: one gate hook per job with the targets list's label", () => {
+  const html = renderToStaticMarkup(h(RunJobsStatusLine, { targets: [{ ...job(null), counts: { total: 1, ok: 1 } },
+    { ...job("same_account"), job_id: 2, status: "failure", outcome: "failed" }] as CbomJobTargets[], onOpen: () => undefined }));
+  const t = (id: number) => (html.match(new RegExp(`<li[^>]*data-testid="run-results-job-${id}"[^>]*>(.*?)</li>`))?.[1] ?? "").replace(/<[^>]+>/g, " ");
+  assert.match(t(1), /aws-lab/);
+  assert.match(t(1), /All targets read/);
+  assert.match(t(2), /Nothing read/);
+  assert.match(t(2), /Failed/, "a job that did not finish says its status");
+  assert.match(t(2), /Lab mode/);
+  assert.match(html, /data-testid="run-jobs-status-open"/);
+  assert.equal(renderToStaticMarkup(h(RunJobsStatusLine, { targets: null })), "");
+  assert.equal(renderToStaticMarkup(h(RunJobsStatusLine, { targets: [] })), "");
 });
 
 test("the old Sources run page component is removed; its shared helpers stay", () => {

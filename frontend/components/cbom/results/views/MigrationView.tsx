@@ -18,6 +18,7 @@ export function MigrationView({ ctx }: { ctx: RunViewCtx }) {
       {ctx.distributions && (
         <CbomCryptoCharts
           parts={MIGRATION_CHART_PARTS}
+          variant="run"
           distributions={ctx.distributions}
           findings={[]}
           inventory={[]}

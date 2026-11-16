@@ -20,7 +20,7 @@
  * payload is present (legacy worker scans carry none).
  */
 
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -86,12 +86,15 @@ import {
   pqcDescription,
   pqcHowToFix,
   pqcRoadmapGroups,
+  type PqcFixGroup,
+  type PqcMigrationGroup,
 } from "@/components/cbom/pqcMigrationGroup";
 import { nistLevelInfo } from "@/components/cbom/results/readinessExplain";
 import { PQC_GROUP_TRIGGER_ROW, PqcGroupBadges, PqcInstanceLevelBadge } from "@/components/cbom/PqcBadges";
 import { PqcReadinessGauge } from "@/components/cbom/PqcReadinessGauge";
 import type { CbomReadinessBasis } from "@/utils/backend_api";
 import { InfoTip } from "@/components/ui/info-tip";
+import { ComplianceScorecards } from "@/components/cbom/results/ComplianceScorecards";
 
 export type {
   ComplianceVerdict,
@@ -498,13 +501,127 @@ function PqcInstanceHover({
   );
 }
 
+/** 09-A (run results redesign): each distinct fix as a numbered card (fix text, assets, worst impact, the groups it
+ * covers with their counts) that opens its groups and their assets (the same instance rows as the accordion). Groups
+ * with no recorded fix share one last card. Hooks: `pqc-fix-list`, `pqc-fix-item`, `pqc-vuln-group`. */
+function PqcFixCards({
+  groups,
+  fixes,
+  onOpenFinding,
+}: {
+  groups: PqcMigrationGroup<PqcMigrationRow>[];
+  fixes: PqcFixGroup<PqcMigrationRow>[];
+  onOpenFinding?: (finding: CbomFinding) => void;
+}) {
+  const fixOf = fixIndexByGroup(fixes);
+  const unfixed = groups.filter((g) => !fixOf.has(g.key));
+  const cards = [
+    ...fixes.map((f) => ({ key: `fix-${f.index}`, index: f.index as number | null, fix: f.fix as string | null,
+                           groups: groups.filter((g) => fixOf.get(g.key) === f.index), assets: f.instances.length })),
+    ...(unfixed.length
+      ? [{ key: "no-fix", index: null, fix: null, groups: unfixed, assets: unfixed.reduce((n, g) => n + g.instances.length, 0) }]
+      : []),
+  ];
+  return (
+    <div className="space-y-3" data-testid="pqc-fix-list" data-variant="run">
+      <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+        How to fix ({fixes.length} distinct fix{fixes.length === 1 ? "" : "es"})
+        <InfoTip id="cbom.chart.qv_fixes" />
+      </p>
+      <ol className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+        {cards.map((c) => (
+          <PqcFixCard key={c.key} index={c.index} fix={c.fix} groups={c.groups} assets={c.assets} fixOf={fixOf} onOpenFinding={onOpenFinding} />
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+const IMPACT_RANK: Record<string, number> = { Critical: 4, High: 3, Medium: 2, Low: 1 };
+const IMPACT_PILL: Record<string, string> = {
+  Critical: "border-red-500/50 bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300",
+  High: "border-orange-500/50 bg-orange-50 text-orange-700 dark:bg-orange-950/40 dark:text-orange-300",
+  Medium: "border-amber-500/50 bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300",
+  Low: "border-sky-500/50 bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300",
+};
+
+function PqcFixCard({
+  index,
+  fix,
+  groups,
+  assets,
+  fixOf,
+  onOpenFinding,
+}: {
+  index: number | null;
+  fix: string | null;
+  groups: PqcMigrationGroup<PqcMigrationRow>[];
+  assets: number;
+  fixOf: Map<string, number>;
+  onOpenFinding?: (finding: CbomFinding) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const bodyId = useId();
+  const worst = groups.map((g) => g.maxImpact).filter((i): i is string => !!i && i in IMPACT_RANK)
+    .sort((a, b) => IMPACT_RANK[b] - IMPACT_RANK[a])[0] ?? null;
+  return (
+    <li className="flex flex-col gap-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/60 dark:bg-zinc-950/40 p-3 min-w-0"
+        data-testid="pqc-fix-item" data-fix={index ?? "none"}>
+      <div className="flex items-start gap-3 min-w-0">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white" aria-hidden>
+          {index ?? "–"}
+        </span>
+        <div className="min-w-0 flex-1 space-y-1">
+          <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 whitespace-pre-wrap break-words">
+            {index != null ? <span className="sr-only">Fix {index}: </span> : null}
+            {fix ?? "No fix recorded for these assets"}
+          </p>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Badge variant="outline" className="tabular-nums">{assets} asset{assets === 1 ? "" : "s"}</Badge>
+            {worst && <Badge variant="outline" className={IMPACT_PILL[worst]}>{worst}</Badge>}
+          </div>
+          <p className="text-xs text-zinc-600 dark:text-zinc-400 break-words">
+            {groups.map((g) => `${g.name} (${g.instances.length})`).join(" · ")}
+          </p>
+        </div>
+      </div>
+      <button type="button" className="self-start text-xs text-blue-600 dark:text-blue-400 cursor-pointer hover:underline"
+              aria-expanded={open} aria-controls={bodyId} onClick={() => setOpen(!open)} data-testid="pqc-fix-toggle">
+        {open ? "Hide" : "Show"} the {groups.length} group{groups.length === 1 ? "" : "s"} and {assets} asset{assets === 1 ? "" : "s"}
+      </button>
+      <div id={bodyId} hidden={!open} className="space-y-2">
+        {groups.map((g) => (
+          <div key={g.key} className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-2 space-y-1.5"
+               data-testid="pqc-vuln-group">
+            <div className={PQC_GROUP_TRIGGER_ROW}>
+              <div className="min-w-0 max-w-full text-left">
+                <p className="break-words text-sm font-medium text-zinc-900 dark:text-zinc-100">{g.name}</p>
+                <p className="break-words text-xs text-zinc-500 dark:text-zinc-400">{g.descriptor}</p>
+              </div>
+              <PqcGroupBadges count={g.instances.length} fix={fixOf.get(g.key)} nistLevel={g.nistLevel} impact={g.maxImpact} />
+            </div>
+            <ul className="space-y-1.5">
+              {g.instances.map((r, i) => (
+                <PqcInstanceHover key={r.bom_ref || `${r.name}-${r.location}-${i}`} row={r} onOpenFinding={onOpenFinding} />
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </li>
+  );
+}
+
 /** F2a — Quantum-vulnerable list: Accordion groups + instance HoverCards. */
 function QuantumVulnerableList({
   migration,
   onOpenFinding,
+  variant,
 }: {
   migration: PqcMigrationRow[];
   onOpenFinding?: (finding: CbomFinding) => void;
+  /** "run" (09-A): the groups as numbered fix cards, each opening its groups and assets; default: the accordion */
+  variant?: "run";
 }) {
   const groups = useMemo(() => groupPqcMigrationRows(migration), [migration]);
   // each distinct fix once (issue #271): the cards say "Fix N", the list below the cards gives the text
@@ -520,6 +637,18 @@ function QuantumVulnerableList({
   const defaultOpen = collapseDefault
     ? []
     : groups.map((_, gi) => `vuln-${gi}`);
+  const noneState = (
+    <div className="flex h-[220px] flex-col items-center justify-center gap-2 text-center">
+      <ShieldCheck className="h-8 w-8 text-emerald-500" />
+      <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+        No quantum-vulnerable algorithms
+      <InfoTip id="cbom.chart.qv_none" />
+      </p>
+      <p className="text-xs text-zinc-500 dark:text-zinc-400">
+        Every inventoried algorithm is quantum-resistant at its parameter size.
+      </p>
+    </div>
+  );
 
   return (
     <Card className="border-zinc-200 dark:border-zinc-800" data-testid="pqc-vulnerable-list">
@@ -550,17 +679,14 @@ function QuantumVulnerableList({
         )}
       </CardHeader>
       <CardContent>
+        {variant === "run" ? (
+          migration.length === 0 ? noneState : (
+            <PqcFixCards groups={groups} fixes={fixes} onOpenFinding={onOpenFinding} />
+          )
+        ) : (
+          <>
         {migration.length === 0 ? (
-          <div className="flex h-[220px] flex-col items-center justify-center gap-2 text-center">
-            <ShieldCheck className="h-8 w-8 text-emerald-500" />
-            <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              No quantum-vulnerable algorithms
-            <InfoTip id="cbom.chart.qv_none" />
-            </p>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">
-              Every inventoried algorithm is quantum-resistant at its parameter size.
-            </p>
-          </div>
+          noneState
         ) : (
           <div className="max-h-[28rem] overflow-y-auto pr-1">
             <Accordion
@@ -621,6 +747,8 @@ function QuantumVulnerableList({
               ))}
             </ol>
           </div>
+        )}
+          </>
         )}
       </CardContent>
     </Card>
@@ -1168,10 +1296,16 @@ function CryptoDependencyGraph({
 function CbomComplianceMatrix({
   compliance,
   onAttest,
+  variant,
 }: {
   compliance: CbomCompliance;
   onAttest?: AttestHandler;
+  /** "run" (12-A): one scorecard per framework, a click opens its requirements inline */
+  variant?: "run";
 }) {
+  if (variant === "run") {
+    return <ComplianceScorecards compliance={compliance} groups={FRAMEWORK_GROUPS_CBOM_WITH_INDIA} onAttest={onAttest} />;
+  }
   return (
     <ComplianceMatrix
       compliance={compliance}
@@ -1187,6 +1321,12 @@ function CbomComplianceMatrix({
   );
 }
 
+/** The parts of CbomCryptoCharts a caller can ask for (`parts`); all of them when `parts` is left out. */
+export const CRYPTO_CHART_PARTS = [
+  "algorithms", "weak", "readiness", "qv", "roadmap", "assetTypes", "certExpiry", "protocols", "graph", "compliance",
+] as const;
+export type CryptoChartPart = (typeof CRYPTO_CHART_PARTS)[number];
+
 /**
  * Composes the CBOM crypto charts. Renders nothing when the run-object carries
  * no `cbom_distributions` (e.g. a legacy worker CBOM scan) so the existing
@@ -1194,6 +1334,11 @@ function CbomComplianceMatrix({
  * visualizations (asset-type breakdown + crypto dependency graph, F1) render
  * only when the I1 `cbom_graph` projection is present; the compliance tri-state
  * matrix (F3) renders only when `cbom_compliance` carries ≥1 framework.
+ *
+ * Run results redesign: `parts` renders only the named charts (default: all, exactly as before); `variant="run"`
+ * lays the charts out as one uniform card grid, the quantum-vulnerable list as fix cards (09-A) and the compliance
+ * readiness as framework scorecards (12-A), and renders the graph and compliance parts from their own data when the
+ * run has no distributions. Without `variant` the output is unchanged (code scans: codeModeSnapshot.test.ts).
  */
 export function CbomCryptoCharts({
   distributions,
@@ -1207,6 +1352,8 @@ export function CbomCryptoCharts({
   onOpenFinding,
   showCodeHeatmap = true,
   readinessScope = "code",
+  parts,
+  variant,
 }: {
   distributions?: CbomDistributions | null;
   graph?: CbomGraph | null;
@@ -1223,11 +1370,12 @@ export function CbomCryptoCharts({
   showCodeHeatmap?: boolean;
   /** "run": the readiness card shows posture's figure over the judged assets (QA round 4, C); "code": every asset */
   readinessScope?: "run" | "code";
-  /** results redesign: the cards to render (default: all). Keys: algorithms, weak, readiness, qv, roadmap, assetTypes,
-   * certExpiry, protocols, graph, compliance. Declared here by the page-shell builder (B1); B2 implements it. */
-  parts?: string[];
+  /** the charts to render (CRYPTO_CHART_PARTS keys); default all */
+  parts?: readonly string[];
+  /** "run": the run results page's layout (see above); default: the code page's */
+  variant?: "run";
 }) {
-  if (!distributions) return null;
+  const has = (k: CryptoChartPart) => !parts || parts.includes(k);
   const hasGraph =
     (!!graph && (graph.nodes?.length ?? 0) > 0) ||
     (!!graphCompact && (graphCompact.nodes?.length ?? 0) > 0);
@@ -1236,6 +1384,19 @@ export function CbomCryptoCharts({
     Object.entries(compliance).some(
       ([k, v]) => k !== "disclaimer" && typeof v === "object" && v !== null
     );
+  if (!distributions) {
+    // a run's dependency graph and compliance readiness come from /parity, not from the distributions: they still render
+    if (variant !== "run") return null;
+    const graphPart = has("graph") && hasGraph;
+    const compliancePart = has("compliance") && hasCompliance;
+    if (!graphPart && !compliancePart) return null;
+    return (
+      <div className="space-y-6" data-testid="crypto-charts" data-variant="run">
+        {graphPart && <CryptoDependencyGraph graph={graph} graphCompact={graphCompact} graphExpanded={graphExpanded} />}
+        {compliancePart && <CbomComplianceMatrix compliance={compliance!} onAttest={onAttest} variant="run" />}
+      </div>
+    );
+  }
   const pqc = distributions.pqc;
   // Legacy scans: migration[] lacks location/bom_ref — join from findings so
   // Accordion instances show real paths without requiring a rescan.
@@ -1276,36 +1437,96 @@ export function CbomCryptoCharts({
     onOpenFinding(partial);
   };
 
+  if (variant === "run") {
+    // 08-A: every chart card the same size in one grid; the PQC detail (09-A), the graph and compliance full width
+    const cell = "min-w-0 [&>[data-slot=card]]:h-full";
+    const cards = [
+      has("algorithms") && <div key="algorithms" className={cell}><AlgorithmDistribution data={distributions.algorithms} /></div>,
+      has("weak") && <div key="weak" className={cell}><WeakCryptoFindings data={distributions.weakness} /></div>,
+      has("readiness") && (
+        <div key="readiness" className={cell}>
+          <PqcReadinessGauge pqc={distributions.pqc} rows={inventory ?? findings} scope={readinessScope} />
+        </div>
+      ),
+      has("assetTypes") && graph && (graph.nodes?.length ?? 0) > 0 && (
+        <div key="assetTypes" className={cell}><AssetTypeDistribution graph={graph} /></div>
+      ),
+      has("certExpiry") && (
+        <div key="certExpiry" className={cell}>
+          <CertificateExpiry
+            certificates={resolveCertificates(distributions, graph, findings)}
+            keyMaterial={resolveKeyMaterial(distributions, graph, findings)}
+          />
+        </div>
+      ),
+      has("protocols") && <div key="protocols" className={cell}><ProtocolTls data={distributions.protocols} /></div>,
+    ].filter(Boolean);
+    const pqcParts = hasPqcDetail && (has("qv") || has("roadmap"));
+    return (
+      <div className="space-y-6" data-testid="crypto-charts" data-variant="run">
+        {cards.length > 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4" data-testid="crypto-chart-grid">{cards}</div>
+        )}
+        {pqcParts && (
+          <div className="space-y-6">
+            {has("qv") && <QuantumVulnerableList migration={migration} onOpenFinding={openPqcFinding} variant="run" />}
+            {has("roadmap") && <MigrationRoadmap migration={migration} onOpenFinding={openPqcFinding} />}
+          </div>
+        )}
+        {showCodeHeatmap && (
+          <CodeHeatmapAndCalendar
+            findings={findings ?? []}
+            certificates={resolveCertificates(distributions, graph, findings)}
+          />
+        )}
+        {has("graph") && hasGraph && (
+          <CryptoDependencyGraph graph={graph} graphCompact={graphCompact} graphExpanded={graphExpanded} />
+        )}
+        {has("compliance") && hasCompliance && (
+          <CbomComplianceMatrix compliance={compliance!} onAttest={onAttest} variant="run" />
+        )}
+      </div>
+    );
+  }
+
+  const row1 = has("algorithms") || has("weak") || has("readiness");
+  const row3 = (has("assetTypes") && !!graph && (graph.nodes?.length ?? 0) > 0) || has("certExpiry") || has("protocols");
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <AlgorithmDistribution data={distributions.algorithms} />
-        <WeakCryptoFindings data={distributions.weakness} />
-        <PqcReadinessGauge pqc={distributions.pqc} rows={inventory ?? findings} scope={readinessScope} />
-      </div>
-      {hasPqcDetail && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <QuantumVulnerableList migration={migration} onOpenFinding={openPqcFinding} />
-          <MigrationRoadmap migration={migration} onOpenFinding={openPqcFinding} />
+      {row1 && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {has("algorithms") && <AlgorithmDistribution data={distributions.algorithms} />}
+          {has("weak") && <WeakCryptoFindings data={distributions.weakness} />}
+          {has("readiness") && <PqcReadinessGauge pqc={distributions.pqc} rows={inventory ?? findings} scope={readinessScope} />}
         </div>
       )}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {graph && (graph.nodes?.length ?? 0) > 0 && (
-          <AssetTypeDistribution graph={graph} />
-        )}
-        <CertificateExpiry
-          certificates={resolveCertificates(distributions, graph, findings)}
-          keyMaterial={resolveKeyMaterial(distributions, graph, findings)}
-        />
-        <ProtocolTls data={distributions.protocols} />
-      </div>
+      {hasPqcDetail && (has("qv") || has("roadmap")) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {has("qv") && <QuantumVulnerableList migration={migration} onOpenFinding={openPqcFinding} />}
+          {has("roadmap") && <MigrationRoadmap migration={migration} onOpenFinding={openPqcFinding} />}
+        </div>
+      )}
+      {row3 && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {has("assetTypes") && graph && (graph.nodes?.length ?? 0) > 0 && (
+            <AssetTypeDistribution graph={graph} />
+          )}
+          {has("certExpiry") && (
+            <CertificateExpiry
+              certificates={resolveCertificates(distributions, graph, findings)}
+              keyMaterial={resolveKeyMaterial(distributions, graph, findings)}
+            />
+          )}
+          {has("protocols") && <ProtocolTls data={distributions.protocols} />}
+        </div>
+      )}
       {showCodeHeatmap && (
         <CodeHeatmapAndCalendar
           findings={findings ?? []}
           certificates={resolveCertificates(distributions, graph, findings)}
         />
       )}
-      {hasGraph && (
+      {has("graph") && hasGraph && (
         <div className="grid grid-cols-1 gap-6">
           <CryptoDependencyGraph
             graph={graph}
@@ -1314,12 +1535,27 @@ export function CbomCryptoCharts({
           />
         </div>
       )}
-      {hasCompliance && (
+      {has("compliance") && hasCompliance && (
         <div className="grid grid-cols-1 gap-6">
           <CbomComplianceMatrix compliance={compliance!} onAttest={onAttest} />
         </div>
       )}
     </div>
+  );
+}
+
+/** Certificate expiry + key / keystore material of a distributions payload (with the code page's graph / findings
+ * fallbacks): the "Certificate expiry" card, for callers outside the chart grid (the run page's CertificatesCard). */
+export function CbomCertificateExpiry({ distributions, graph, findings }: {
+  distributions: CbomDistributions | null | undefined;
+  graph?: CbomGraph | null;
+  findings?: CbomFinding[] | null;
+}) {
+  return (
+    <CertificateExpiry
+      certificates={resolveCertificates(distributions, graph, findings)}
+      keyMaterial={resolveKeyMaterial(distributions, graph, findings)}
+    />
   );
 }
 

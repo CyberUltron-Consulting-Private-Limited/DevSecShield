@@ -20,18 +20,18 @@ export function ComplianceView({ ctx }: { ctx: RunViewCtx }) {
   const { run, meta } = ctx;
   return (
     <div className="space-y-6 min-w-0">
-      {ctx.distributions && (
-        <CbomCryptoCharts
-          parts={COMPLIANCE_CHART_PARTS}
-          distributions={ctx.distributions}
-          graph={ctx.graph}
-          compliance={ctx.compliance}
-          findings={[]}
-          inventory={[]}
-          showCodeHeatmap={false}
-          readinessScope="run"
-        />
-      )}
+      {/* variant "run" renders the compliance readiness from its own data when /results has no distributions */}
+      <CbomCryptoCharts
+        parts={COMPLIANCE_CHART_PARTS}
+        variant="run"
+        distributions={ctx.distributions}
+        graph={ctx.graph}
+        compliance={ctx.compliance}
+        findings={[]}
+        inventory={[]}
+        showCodeHeatmap={false}
+        readinessScope="run"
+      />
       {ctx.parityNotes?.compliance && <SectionNote testId="run-compliance-readiness-note">{ctx.parityNotes.compliance}</SectionNote>}
       <RbiCsfRollup rollup={meta?.rbi_csf_rollup as RbiCsfRollupData | undefined} onViewFindings={ctx.onViewRefs} findings={[]} />
       {ctx.parityNotes?.rbi && <SectionNote testId="run-rbi-note">{ctx.parityNotes.rbi}</SectionNote>}

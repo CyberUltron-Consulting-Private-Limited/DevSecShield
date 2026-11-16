@@ -19,7 +19,7 @@ import { TopRisksSummary } from "./TopRisksSummary";
 import type { RunViewCtx } from "./types";
 
 /** The run's findings table (#bom-findings): on the summary, and under the remediation waves. */
-export function RunFindingsTableMount({ run }: { run: SourcesRunSource }) {
+export function RunFindingsTableMount({ run, onOpenDetails }: { run: SourcesRunSource; onOpenDetails: (assetId: number) => void }) {
   return (
     <RunFindingsTable
       teamId={run.teamId}
@@ -35,7 +35,7 @@ export function RunFindingsTableMount({ run }: { run: SourcesRunSource }) {
       waveOf={run.waveOf}
       selection={run.selection}
       onSelection={run.setSelection}
-      onOpenDetails={(item) => run.setDialog({ item })}
+      onOpenDetails={(item) => onOpenDetails(item.id)}
       onSetStatus={run.setStatus}
       statusPending={run.statusPending}
     />
@@ -72,7 +72,7 @@ export function SummaryView({ ctx }: { ctx: RunViewCtx }) {
       {/* Top Cryptographic Risks: the posture's ranked risks, once */}
       {run.plan.topRisks.show && run.posture && <TopRisksSummary posture={run.posture} onOpenAsset={(id) => run.openAsset(id)} />}
       <DrillTiles figures={figures} onOpen={(s) => ctx.goSection(s)} />
-      <RunFindingsTableMount run={run} />
+      <RunFindingsTableMount run={run} onOpenDetails={ctx.openFromTable} />
     </div>
   );
 }

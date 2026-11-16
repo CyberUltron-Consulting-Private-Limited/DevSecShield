@@ -368,9 +368,12 @@ if (fs.existsSync(runResultsPy)) {
     facts: {}, type_label: "Certificate", crypto_strength: "Moderate", risk_score: 6.5, status: "not_started",
     q_grade: "Q0", fix_class: "configurable", bom_ref: "zs-asset-3527",
   } as unknown as CbomRunAssetItem;
-  // opened from the table: the table's row wins (no wait for the detail)
-  assert.equal(dialogItem({ item: row }, undefined), row);
-  assert.equal(dialogItem({ item: row }, { ...row, risk_score: 1 }), row);
+  // on the table page: the page's row wins (no wait for the detail), read live from the page items
+  assert.equal(dialogItem({ assetId: 3527 }, undefined, [row]), row);
+  assert.equal(dialogItem({ assetId: 3527 }, { ...row, risk_score: 1 }, [row]), row);
+  const refreshed = { ...row, status: "in_progress" } as CbomRunAssetItem;
+  assert.equal(dialogItem({ assetId: 3527 }, undefined, [refreshed]), refreshed, "a refreshed page row, not a snapshot");
+  assert.equal(dialogItem({ assetId: 3527 }, undefined, [{ ...row, id: 1 } as CbomRunAssetItem]), null, "another row of the page is not it");
   // opened by id: the detail's copy of the row once it is there, the same fields the table row has
   const detail = { ...row, pqc_class: "vulnerable", details: [], agility: {}, q_explain: {} };
   const fromDetail = dialogItem({ assetId: 3527 }, detail);
@@ -387,8 +390,9 @@ if (fs.existsSync(runResultsPy)) {
   assert.equal(dialogItem(null, detail), null);
   // the dialog renders every row block from the resolved row, not only from a table subject
   const dialogSrc = fs.readFileSync(path.join(__dirname, "RunFindingDialog.tsx"), "utf8");
-  assert.match(dialogSrc, /const item = dialogItem\(subject, detailQ\.data\)/);
+  assert.match(dialogSrc, /const item = dialogItem\(subject, detailQ\.data, pageItems\)/);
   assert.doesNotMatch(dialogSrc, /subject && "item" in subject \? subject\.item/);
+  assert.match(dialogSrc, /export type DialogSubject = \{ assetId: number; label\?: string \};/, "the subject is an id, never a row snapshot");
 }
 
 console.log("run results model tests passed");

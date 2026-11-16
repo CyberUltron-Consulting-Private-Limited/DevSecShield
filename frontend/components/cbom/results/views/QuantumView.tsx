@@ -20,13 +20,13 @@ export function QuantumView({ ctx }: { ctx: RunViewCtx }) {
   const p = query.data;
   if (p.assets === 0) {
     return (p.q0_items_total ?? 0) > 0
-      ? <QDistributionCard teamId={run.teamId} posture={p} onOpenAsset={(id) => run.openAsset(id)} />
+      ? <QDistributionCard teamId={run.teamId} posture={p} onOpenAsset={(id) => run.openAsset(id)} variant="run" />
       : <SectionNote testId="run-quantum-empty">This run read no asset, so there is nothing to grade.</SectionNote>;
   }
   return (
     <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start" data-testid="run-quantum-cards">
-      <QDistributionCard teamId={run.teamId} posture={p} onOpenAsset={(id) => run.openAsset(id)} />
-      <AgilityPostureCard teamId={run.teamId} posture={p} />
+      <QDistributionCard teamId={run.teamId} posture={p} onOpenAsset={(id) => run.openAsset(id)} variant="run" />
+      <AgilityPostureCard teamId={run.teamId} posture={p} variant="run" />
     </div>
   );
 }

@@ -93,7 +93,7 @@ export function fakeRunSource(over: Partial<SourcesRunSource> = {}, calls: RunCa
       items: [{ id: 101, type: "certificate", cdx_type: "cryptographic-asset", job_id: 7, source_id: 3, source_name: "EJBCA lab", target: "ejbca.lab",
         location: "ejbca.lab/1", name: "Risk asset 1", algorithm: "RSA", key_size: 1024, protocol: null, quantum_vulnerable: true, impact: "Critical",
         finding: "RSA-1024 key", finding_codes: ["RSA_QV"], facts: {} }] } as unknown as SourcesRunSource["page"],
-    pageLoading: false, pageError: null, refetchPage: () => undefined,
+    pageLoading: false, pagePlaceholder: false, pageError: null, refetchPage: () => undefined,
     filters: { ...DEFAULT_FILTERS },
     onFilters: (patch) => { calls.filters.push(patch); },
     selection: new Map(), setSelection: () => undefined, setStatus: () => undefined, statusPending: false,

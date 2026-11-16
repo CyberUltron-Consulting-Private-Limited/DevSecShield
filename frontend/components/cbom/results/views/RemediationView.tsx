@@ -14,9 +14,10 @@ export function RemediationView({ ctx }: { ctx: RunViewCtx }) {
   return (
     <div className="space-y-6 min-w-0">
       <RunWavesSection byWave={run.waves.data?.by_wave} labels={run.waves.data?.labels} rules={run.waves.data?.rules} loading={run.waves.loading}
-                       deferred={!run.waves.wanted && run.active} selected={run.selection.size} />
+                       deferred={!run.waves.wanted && run.active} selected={run.selection.size}
+                       items={run.waves.data?.items} onOpenAsset={(id) => run.openAsset(id)} />
       {run.run && <RunChangesSection teamId={run.teamId} run={run.run} canCompare={run.canCompare} onCompare={() => run.setCompareOpen(true)} />}
-      <RunFindingsTableMount run={run} />
+      <RunFindingsTableMount run={run} onOpenDetails={ctx.openFromTable} />
     </div>
   );
 }

@@ -97,6 +97,8 @@ export const DASHBOARDS = new Set<string>([
   // the Sources run results views (results redesign): their h2 / h3 section and tile titles need a tip too
   ...fs.readdirSync(path.join(frontend, "components/cbom/results/views")).filter((f) => f.endsWith(".tsx"))
     .map((f) => `components/cbom/results/views/${f}`),
+  // the run finding dialog (results redesign): every tab's h3 heading carries its (i)
+  "components/cbom/results/RunFindingDialog.tsx",
 ]);
 
 function expand(entry: string): string[] {
@@ -422,6 +424,14 @@ const PROBES: { name: string; file: string; anchor: string; insert: string; wher
     insert: `<DrillTile section="quantum" title="Keys" holds="" figure={figures.quantum} onOpen={() => undefined} />`,
     where: "before",
     gaps: ["heading"],
+  },
+  {
+    name: "Run finding dialog: a tab heading without a tip",
+    file: "components/cbom/results/RunFindingDialog.tsx",
+    anchor: `{/* ------------------------------------------------------------------ Quantum & effort */}`,
+    insert: `<h3 className="text-sm">Probe heading</h3>`,
+    where: "after",
+    gaps: ["h2"],
   },
 ];
 for (const p of PROBES) {

@@ -32,6 +32,8 @@ export interface RunViewCtx {
   /** a PQC list item: the run's finding dialog for its asset */
   onOpenPqcFinding: (f: CbomFinding) => void;
   drill: DrillToFindings;
+  /** a findings-table row: opens the run's finding dialog with Previous / Next over the table (useDialogNav) */
+  openFromTable: (assetId: number) => void;
   section: ResultsSection;
   /** a tile or "Back to summary": a new history entry */
   goSection: (section: ResultsSection) => void;

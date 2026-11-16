@@ -78,7 +78,9 @@ import { getFindingStatusBadgeClass, getImpactBadgeClass, getRiskScoreBoxClass, 
 import { type CertInRollupData } from "@/components/certin/certinShared";
 import { InfoTip } from "@/components/ui/info-tip";
 import { CompareDialog } from "@/components/cbom/sources/ChangesPanel";
-import { applyPostureToDistributions, complianceRows, parityNotes, resolveMigrationRows, RUN_TICKETING_TAB_AVAILABLE } from "@/components/cbom/results/model";
+import { applyPostureToDistributions, complianceRows, hasActiveFilters, parityNotes, resolveMigrationRows, RUN_TICKETING_TAB_AVAILABLE, tableTotal } from "@/components/cbom/results/model";
+import { useDialogNav } from "@/components/cbom/results/useDialogNav";
+import { InfoTipDrawerProvider } from "@/components/ui/info-tip-drawer";
 import { ComplianceMappingSection } from "@/components/cbom/results/ComplianceSummary";
 import { buildComplianceSummary, runDrillFilters, type DrillTarget } from "@/components/cbom/results/complianceSummary";
 import { RunFindingDialog } from "@/components/cbom/results/RunFindingDialog";
@@ -215,6 +217,17 @@ export default function CbomResults({
   const resultsUrl = useResultsUrl();
   const section: ResultsSection = run ? resultsUrl.section : "";
   const requestFindingsScroll = useResultsScroll(section, !!run && activeTab === "results");
+  // the run finding dialog's Previous / Next over the findings table (B3); inert on a code scan (nulls)
+  const { nav: dialogNav, openFromTable } = useDialogNav({
+    assetId: run?.dialog?.assetId ?? null,
+    open: (id) => run?.setDialog({ assetId: id }),
+    items: run?.page?.items,
+    page: run?.filters.page ?? 1,
+    pageSize: run?.filters.page_size ?? 50,
+    total: run?.page ? tableTotal(run.page, run.filters.view, hasActiveFilters(run.filters)) : 0,
+    placeholder: run?.pagePlaceholder ?? false,
+    goToPage: (p) => run?.onFilters({ page: p }),
+  });
   const [searchQuery, setSearchQuery] = useState("");
   const [relatedFindingRefs, setRelatedFindingRefs] = useState<string[]>([]);
   const [strengthFilter, setStrengthFilter] = useState("all");
@@ -644,7 +657,7 @@ export default function CbomResults({
     run, meta, parityNotes: runParityNotes, distributions: cryptoDistributions, graph: cryptoGraph, graphCompact: cryptoGraphCompact,
     graphExpanded: cryptoGraphExpanded, compliance: cryptoCompliance, complianceMapping, coverageReport, importReport,
     onComplianceDrill: handleComplianceDrill, onViewRefs: handleViewRunRefs, onOpenPqcFinding: openRunPqcFinding,
-    drill: drillToFindings, section, goSection,
+    drill: drillToFindings, openFromTable, section, goSection,
   } : null;
   const detailView = (s: DetailSection, ctx: RunViewCtx) => {
     const r = ctx.run;
@@ -697,7 +710,8 @@ export default function CbomResults({
   return (
     <div className="container mx-auto p-6 space-y-6">
       {run && run.run && viewCtx ? (
-        <>
+        // the Explanations drawer lists the tips of the view on screen (B3's manifest: run.summary, run.<section>)
+        <InfoTipDrawerProvider view={`run.${section || "summary"}`}>
           {/* results redesign: the hero header on every view, the Results / Ticketing tabs, then the summary or one view */}
           <ResultsHero teamId={run.teamId} run={run.run} sources={run.sources} posture={run.posture} assetTotal={run.page?.all_total ?? null}
                        canCompare={run.canCompare} onCompare={() => run.setCompareOpen(true)} onBack={scan_id != null || team_id ? goBack : null}
@@ -710,7 +724,7 @@ export default function CbomResults({
           ) : (
             detailView(section, viewCtx)
           )}
-        </>
+        </InfoTipDrawerProvider>
       ) : (
         <>
       {/* Header: the export buttons wrap under the title on a narrow screen (they ran off a phone's right edge) */}
@@ -1302,7 +1316,9 @@ export default function CbomResults({
       )}
 
       {run && (
-        <RunFindingDialog teamId={run.teamId} runId={run.runId} subject={run.dialog} jobs={run.run?.jobs ?? []} waveOf={run.waveOf} onClose={() => run.setDialog(null)} />
+        <RunFindingDialog teamId={run.teamId} runId={run.runId} subject={run.dialog} jobs={run.run?.jobs ?? []} waveOf={run.waveOf} onClose={() => run.setDialog(null)}
+                          pageItems={run.page?.items} nav={dialogNav} onSetStatus={run.setStatus} statusPending={run.statusPending}
+                          priorityOf={(id) => run.posture?.top_risks?.find((r) => r.id === id)?.score} />
       )}
       {run && run.compareOpen && (
         <CompareDialog teamId={run.teamId} runId={run.runId} runs={run.compareRuns} onClose={() => run.setCompareOpen(false)} />

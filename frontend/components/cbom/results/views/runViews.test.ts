@@ -225,7 +225,7 @@ test("every detail view: the hero on top, Back to summary, its title, its sectio
   const expect: Record<string, string[]> = {
     collection: ['data-testid="run-section-coverage"', 'data-testid="run-results-targets"'],
     quantum: ['data-testid="run-quantum-cards"'],
-    inventory: ['data-testid="run-section-dashboard"', 'data-testid="run-section-certificates"'],
+    inventory: ['data-testid="run-section-dashboard"', 'data-testid="run-certificates-card"'],
     migration: [],
     compliance: ['data-testid="run-section-compliance"'],
     remediation: ['data-testid="run-section-waves"', 'data-testid="run-section-changes"', 'id="bom-findings"'],

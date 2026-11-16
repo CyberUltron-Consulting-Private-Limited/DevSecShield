@@ -3,7 +3,8 @@
 // The run results header (results redesign 01-B), on every view: Back, the code scan's title ("CBOM Scan Results",
 // test id cbom-results-title), the run's status line (RunHeaderMeta: status, start / finish, credits, linked scan,
 // sources, the live-run note), three headline figures from the run posture, every header action (RunHeaderActions:
-// CycloneDX JSON / XML / OSCAL, the deliverables, Verify file…, Compare…, Open in CBOM Sources) and, on every view but
+// CycloneDX JSON / XML / OSCAL, the deliverables, Verify file…, Compare…, Open in CBOM Sources), the Explanations
+// drawer button and, on every view but
 // Collection (whose jobs card carries it), the lab-mode note.
 
 import { ArrowLeft, ShieldCheck } from "lucide-react";
@@ -14,6 +15,7 @@ import type { InfoTipId } from "@/content/infotips";
 import type { CbomJobTargets, CbomRun } from "@/utils/backend_api";
 import type { CbomPostureWithExposure } from "@/utils/api/cbom_outputs";
 import { LabModeBanner } from "@/components/cbom/sources/LabModeBanner";
+import { ExplanationsButton } from "@/components/ui/info-tip-drawer";
 
 import { pqcGaugeCopy } from "../readinessExplain";
 import { RunHeaderActions, RunHeaderMeta } from "../RunSections";
@@ -73,7 +75,11 @@ export function ResultsHero({ teamId, run, sources, posture, assetTotal, canComp
           ))}
         </dl>
       </div>
-      <RunHeaderActions teamId={teamId} run={run} assetTotal={assetTotal} canCompare={canCompare} onCompare={onCompare} />
+      <div className="flex flex-wrap items-center gap-2">
+        <RunHeaderActions teamId={teamId} run={run} assetTotal={assetTotal} canCompare={canCompare} onCompare={onCompare} />
+        {/* the page's Explanations drawer (every tip of this view); nothing without its provider */}
+        <ExplanationsButton className="h-9" />
+      </div>
       {showLabBanner && targets?.some((job) => job.lab_mode) && (
         <LabModeBanner testId="run-lab-mode" detail="An AWS source in this run was read from the deployment's own AWS account." />
       )}

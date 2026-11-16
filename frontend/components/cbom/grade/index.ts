@@ -21,8 +21,8 @@
 //
 // The run results page mounts the two posture cards in its Quantum grades view (results/views/QuantumView.tsx);
 // RunPosture.tsx mounts the two drawer sections inside AssetDetailPanel, so any page that mounts it gets them.
-export { GradeInputsBanner, QDistributionBar, QDistributionCard, QGradeChip, QGradeDrawerSection, QGradeModelBody, QGradeModelDialog, Q0ItemList } from "./QGrade";
-export { AgilityDistribution, AgilityDrawerSection, AgilityPostureCard, EvidenceFixClass, FixClassChip } from "./Agility";
+export { GradeInputsBanner, QDistributionBar, QDistributionCard, QDistributionColumns, QGradeChip, QGradeDrawerSection, QGradeModelBody, QGradeModelDialog, Q0ItemList } from "./QGrade";
+export { AgilityDistribution, AgilityDrawerSection, AgilityWhoFixes, AgilityPostureCard, EvidenceFixClass, FixClassChip } from "./Agility";
 export { AgilityBaselineSection, AgilityBaselineView, AgilityHistoryTable, AgilitySubjectsTable, AgilitySystemsTable, type DrillDown } from "./AgilityBaseline";
 export * from "./baseline";
 //   team page            -> <Q0GapRegister teamId={t} />  (Quantum risk -> Q0 gaps, CB-23; fetches GET /{team}/cbom/register/q0)
