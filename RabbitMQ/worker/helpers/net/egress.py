@@ -1,9 +1,10 @@
 """Connect-time egress control for MCP and LLM scans (issue #53).
 
-Every connection an MCP or LLM scan makes goes to an address its ``TargetGuard`` checked (address_rule.py: the CBOM
-SSRF guard's rule): every address of a host's DNS answer must be public before the answer is used, and the connection
-is pinned to a checked address, redirect hops included. A proxy from the environment is never used: it would resolve
-the name itself, after the check.
+Every connection an MCP or LLM scan makes goes to an address its ``TargetGuard`` checked (guard.py, running the CBOM
+SSRF guard's own address rule file): every address of a host's DNS answer must be public before the answer is used,
+and the connection is pinned to a checked address, redirect hops included. A proxy from the environment is never used:
+it would resolve the name itself, after the check. The scan worker therefore needs direct egress to the MCP servers and
+model endpoints it scans (deploy/local/README.md).
 
 * MCP (the ``mcp`` client library, over httpx): ``guarded_http_client_factory`` is the client's
   ``httpx_client_factory``, with mcp's own defaults (``create_mcp_http_client``: redirects followed, 30 s) and
@@ -12,8 +13,8 @@ the name itself, after the check.
 * LLM (garak, a subprocess using ``requests``): garak's REST generator reaches the network only through
   ``GuardedSocksProxy``, a local SOCKS5 proxy owned by the scan (the generator's ``proxies`` option, ``socks5h``: the
   proxy gets the host name and resolves it). Each CONNECT goes to a checked address, or is refused (reply 0x02).
-  ``requests`` speaks SOCKS through PySocks (``requests[socks]``, in the worker lock); without it every request of the
-  scan fails (closed), and tests/test_scan_target_egress.py fails.
+  ``requests`` speaks SOCKS through PySocks (``requests[socks]``, a direct dependency of the worker); without it every
+  request of the scan fails (closed), and tests/test_scan_target_egress.py fails.
 """
 from __future__ import annotations
 
@@ -28,7 +29,7 @@ import anyio
 import httpx
 from rich.console import Console
 
-from helpers.net.address_rule import TargetGuard, TargetRefused
+from helpers.net.guard import TargetGuard, TargetRefused
 
 console = Console(markup=False)
 
@@ -57,7 +58,13 @@ class PinnedTransport(httpx.AsyncBaseTransport):
         url = request.url
         host = url.raw_host.decode("ascii")
         port = url.port or (443 if url.scheme == "https" else 80)
-        addresses = await anyio.to_thread.run_sync(self._guard.addresses, host, port)  # TargetRefused / OSError
+        try:
+            addresses = await anyio.to_thread.run_sync(self._guard.addresses, host, port)  # OSError: does not resolve
+        except TargetRefused:
+            # a refused hop ends every connection of this client: mcp's SSE client only logs a failed POST, and its
+            # session would otherwise wait on the open event stream for an answer that never comes
+            await self.aclose()
+            raise
         transport = self._transports.get(host)
         if transport is None:
             transport = self._transports[host] = _inner_transport()
@@ -74,7 +81,8 @@ class PinnedTransport(httpx.AsyncBaseTransport):
         raise last if last is not None else httpx.ConnectError(f"could not connect to {host[:100]}", request=request)
 
     async def aclose(self) -> None:
-        for transport in self._transports.values():
+        transports, self._transports = list(self._transports.values()), {}
+        for transport in transports:
             await transport.aclose()
 
 

@@ -4,8 +4,9 @@ Found by the T2 builder (#33 audit): ``format_input_for_scan`` copied ``mcp.serv
 worker's kwargs with no address check, so an estimate or start with ``http://169.254.169.254/latest/meta-data/`` or a
 compose service name (``http://backend:8000/``) made the scan worker connect there. The API now refuses with 400 before
 it sends an estimate or scan task (estimate, start and reinitialize all assemble the kwargs there), using
-``cbom_sources/safe_fetch.py``'s rule: every address the host resolves to must be public. The worker checks again when it
-connects (RabbitMQ/worker/tests/test_scan_target_egress.py); its copy of the rule must stay safe_fetch's code.
+the CBOM SSRF guard's rule (``cbom_sources/address_rule.py``, which ``safe_fetch.py`` runs): every address the host
+resolves to must be public. The worker checks again when it connects, with the same file
+(RabbitMQ/worker/tests/test_scan_target_egress.py).
 
 Run (repo root): backend/.venv/bin/python -m pytest backend/tests/test_mcp_llm_target_ssrf.py -q -p no:cacheprovider
 """
@@ -13,7 +14,6 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
-import inspect
 import ipaddress
 import socket
 import sys
@@ -31,7 +31,7 @@ from backend.utilities.db.schemas import StartScanPayload  # noqa: E402
 from backend.utilities.scan import estimate_scan, start_scan  # noqa: E402
 from backend.utilities.scan.format_input import format_input_for_scan  # noqa: E402
 
-WORKER_RULE = REPO / "RabbitMQ" / "worker" / "helpers" / "net" / "address_rule.py"
+WORKER_GUARD = REPO / "RabbitMQ" / "worker" / "helpers" / "net" / "guard.py"
 PUBLIC = "93.184.216.34"
 DNS = {
     "mcp.example.com": [PUBLIC],
@@ -290,17 +290,21 @@ def test_the_workers_connect_time_refusal_is_a_400_that_says_why():
     assert "private or reserved address" in exc.detail and "public addresses" in exc.detail
 
 
-def _worker_rule():
-    spec = importlib.util.spec_from_file_location("_worker_address_rule", WORKER_RULE)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+def test_safe_fetch_the_scan_api_and_the_worker_run_one_address_rule(monkeypatch):
+    """#53 review: the worker had a copy of safe_fetch's rule. There is one file now, cbom_sources/address_rule.py:
+    safe_fetch re-exports its functions (the same objects), the scan API calls it, and the worker loads this file."""
+    from backend.utilities.cbom_sources import address_rule
+    from backend.utilities.scan.target_address import check_scan_target
 
-
-def test_the_worker_applies_safe_fetchs_rule_verbatim():
-    """The worker image cannot import the backend: its address rule is safe_fetch's code, copied. Change both."""
-    worker = _worker_rule()
-    for name in ("public_address", "_routable", "connection_order"):
-        assert inspect.getsource(getattr(worker, name)) == inspect.getsource(getattr(safe_fetch, name)), (
-            f"RabbitMQ/worker/helpers/net/address_rule.py {name} drifted from cbom_sources/safe_fetch.py; copy it over")
-    assert worker._CGNAT == safe_fetch._CGNAT and worker._V4_IN_V6 == safe_fetch._V4_IN_V6
+    for name in ("public_address", "connection_order", "connect_first", "_CGNAT", "_V4_IN_V6"):
+        assert getattr(safe_fetch, name) is getattr(address_rule, name), name
+    assert not hasattr(safe_fetch, "_routable")  # patch address_rule._routable: a patch here would change nothing
+    spec = importlib.util.spec_from_file_location("_worker_net_guard", WORKER_GUARD)
+    worker_guard = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(worker_guard)
+    assert Path(worker_guard.RULE.__file__).resolve() == Path(address_rule.__file__).resolve()
+    assert not (WORKER_GUARD.parent / "address_rule.py").exists()  # no copy left in the worker
+    # safe_fetch and the scan API decide through the shared module: change it, and both answers change
+    monkeypatch.setattr(address_rule, "public_address", lambda text: True)
+    assert safe_fetch._resolve("169.254.169.254", 443, False) == ["169.254.169.254"]
+    assert check_scan_target("http://169.254.169.254/latest/meta-data/", "MCP server URL") == ["169.254.169.254"]

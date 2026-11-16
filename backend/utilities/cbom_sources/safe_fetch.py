@@ -19,11 +19,10 @@ still works.
 ``CBOM_LAB_ALLOW_PRIVATE_FETCH=1`` allows RFC 1918 / unique-local addresses for a local test lab only (it is logged
 loudly).
 
-The same address rule guards the URLs MCP and custom LLM scans connect to (#53): the API through ``_resolve``
-(utilities/scan/target_address.py), the scan worker through a verbatim copy of ``_CGNAT``, ``_V4_IN_V6``,
-``public_address``, ``_routable`` and ``connection_order`` (RabbitMQ/worker/helpers/net/address_rule.py). A change to
-either copy fails backend tests/test_mcp_llm_target_ssrf.py and the worker's tests/test_scan_target_egress.py: change
-both.
+The address rule itself (which addresses are public, resolution, connection order) is ``address_rule.py``, one file
+that this module, the scan API (utilities/scan/target_address.py: MCP server URLs and custom model URIs, #53) and the
+scan worker (RabbitMQ/worker/helpers/net/guard.py, when an MCP or LLM scan connects) all run. Its names are re-exported
+here for the callers that import them from this module.
 """
 from __future__ import annotations
 
@@ -39,16 +38,15 @@ import time
 from dataclasses import dataclass, field
 from urllib.parse import urljoin, urlsplit
 
+from backend.utilities.cbom_sources import address_rule as AR
+from backend.utilities.cbom_sources.address_rule import _CGNAT, _V4_IN_V6, connect_first
+from backend.utilities.cbom_sources.address_rule import connection_order, public_address  # noqa: F401 - re-exported
 from backend.utilities.cbom_sources.common import log
 
 MAX_BYTES = 1024 * 1024
 TIMEOUT = 10.0  # per connect / read
 TOTAL_TIMEOUT = 30.0  # the whole fetch, redirects included: a server dripping bytes cannot hold the worker
 MAX_REDIRECTS = 3
-_CGNAT = ipaddress.ip_network("100.64.0.0/10")
-# IPv6 prefixes that carry an IPv4 address to a translator or relay (NAT64, local NAT64, 6to4)
-_V4_IN_V6 = (ipaddress.ip_network("64:ff9b::/96"), ipaddress.ip_network("64:ff9b:1::/48"), ipaddress.ip_network("2002::/16"),
-             ipaddress.ip_network("::ffff:0:0:0/96"), ipaddress.ip_network("::/96"))  # + IPv4-translated, -compatible
 
 
 class FetchError(Exception):
@@ -73,20 +71,6 @@ def _lab_private_allowed() -> bool:
     if allowed:
         log("WARNING lab_mode private_fetch=allowed (never set CBOM_LAB_ALLOW_PRIVATE_FETCH in production)")
     return allowed
-
-
-def public_address(text: str) -> bool:
-    ip = ipaddress.ip_address(text)
-    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
-        ip = ip.ipv4_mapped
-    if isinstance(ip, ipaddress.IPv4Address) and ip in _CGNAT:
-        return False
-    if isinstance(ip, ipaddress.IPv6Address) and any(ip in net for net in _V4_IN_V6):
-        return False
-    if isinstance(ip, ipaddress.IPv6Address) and ip.is_site_local:
-        # fec0::/10, deprecated site-local (RFC 3879): an internal network like RFC 1918, though Python calls it global
-        return False
-    return bool(ip.is_global) and not ip.is_multicast
 
 
 def lab_address(text: str) -> bool:
@@ -167,63 +151,27 @@ def idp_private_allowlist() -> PrivateAllowlist:
     return parse_private_allowlist(os.environ.get("CBOM_IDP_ALLOWED_PRIVATE"), "CBOM_IDP_ALLOWED_PRIVATE")
 
 
-def _routable(address: str, port: int) -> bool:
-    """Whether this host has a route to ``address``. A UDP ``connect`` sends nothing; it only picks a route, and fails
-    at once for a family the host cannot reach (IPv6 in an IPv4-only container)."""
-    family = socket.AF_INET6 if ipaddress.ip_address(address).version == 6 else socket.AF_INET
-    try:
-        with socket.socket(family, socket.SOCK_DGRAM) as probe:
-            probe.connect((address, port or 9))
-        return True
-    except OSError:
-        return False
-
-
-def connection_order(addresses: list[str], port: int) -> list[str]:
-    """Checked addresses in the order to try them: the resolver's order (RFC 6724 where the resolver applies it),
-    addresses this host can route first. Every one of them was checked; each attempt stays pinned to its address."""
-    unique = list(dict.fromkeys(addresses))
-    if len(unique) < 2:
-        return unique
-    return sorted(unique, key=lambda address: not _routable(address, port))  # stable: resolver order otherwise
-
-
-def connect_first(addresses: list[str], port: int, timeout: float, deadline: float | None = None) -> socket.socket:
-    """A TCP connection to the first of the (checked) ``addresses`` that accepts one, tried in turn: a dual-stack name
-    whose IPv6 address this host cannot reach falls back to its IPv4 address. Raises the last connect error."""
-    last: OSError | None = None
-    for address in addresses:
-        wait = timeout if deadline is None else min(timeout, deadline - time.monotonic())
-        if wait <= 0:
-            break
-        try:
-            return socket.create_connection((address, port), wait)
-        except OSError as exc:
-            last = exc
-    raise last if last is not None else TimeoutError("no time left to connect")
-
-
 def _resolve(host: str, port: int, allow_private: bool, allowlist: PrivateAllowlist | None = None) -> list[str]:
-    """Every address ``host`` resolves to, each checked (one refused address refuses the host: DNS may hand it out
-    later), in ``connection_order``."""
-    try:
-        infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
-    except socket.gaierror as exc:
-        raise FetchError(f"{host} does not resolve") from exc
-    addresses = list(dict.fromkeys(info[4][0] for info in infos))
-    if not addresses:
-        raise FetchError(f"{host} does not resolve")
-    for address in addresses:
-        if public_address(address) or (allow_private and lab_address(address)):
-            continue
+    """Every address ``host`` resolves to, each checked by the address rule (one refused address refuses the host:
+    DNS may hand it out later), in ``connection_order``. Lab mode and ``allowlist`` open private addresses."""
+    def permit(address: str) -> bool:
+        if allow_private and lab_address(address):
+            return True
         rule = allowlist.permits(host, address) if allowlist else None
         if rule is None:
-            hint = f" (private IdP addresses can be allowed in {allowlist.source})" if allowlist and allowlist.source \
-                and not always_blocked(address) else ""
-            raise FetchError(f"{host} resolves to a private or reserved address; only public metadata URLs can be "
-                             f"read{hint}")
+            return False
         log("private fetch allowed", source=allowlist.source, host=host, address=address, rule=rule)
-    return connection_order(addresses, port)
+        return True
+
+    try:
+        return AR.checked_addresses(host, port, permit)
+    except AR.Unresolvable as exc:
+        raise FetchError(f"{host} does not resolve") from exc
+    except AR.AddressRefused as exc:
+        hint = f" (private IdP addresses can be allowed in {allowlist.source})" if allowlist and allowlist.source \
+            and not always_blocked(exc.address) else ""
+        raise FetchError(f"{host} resolves to a private or reserved address; only public metadata URLs can be "
+                         f"read{hint}") from None
 
 
 _ca_warned: set[tuple[str, str]] = set()

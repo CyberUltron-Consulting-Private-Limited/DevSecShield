@@ -2,24 +2,26 @@
 
 The API checks an MCP server URL and a custom model URI before it queues a scan (backend tests
 test_mcp_llm_target_ssrf.py), but DNS can answer differently when the worker connects (DNS rebinding) and a server can
-redirect. So the worker applies the same rule (helpers/net/address_rule.py, the CBOM SSRF guard's code) at connect time:
-every address of a host's DNS answer must be public before the answer is used, and every connection of the scan goes to
-a checked address. MCP: every request of the MCP client (helpers/net/egress.py PinnedTransport). LLM: every connection
-garak's REST generator makes goes through a local SOCKS5 proxy that applies the rule (GuardedSocksProxy).
+redirect. So the worker applies the same rule at connect time: helpers/net/guard.py runs the CBOM SSRF guard's own file
+(backend/utilities/cbom_sources/address_rule.py, which safe_fetch.py runs), so every address of a host's DNS answer
+must be public before the answer is used, and every connection of the scan goes to a checked address. MCP: every
+request of the MCP client (helpers/net/egress.py PinnedTransport). LLM: every connection garak's REST generator makes
+goes through a local SOCKS5 proxy that applies the rule (GuardedSocksProxy).
 
 Run: cd RabbitMQ/worker && uv run --frozen --with pytest==9.2.0 python -m pytest -q tests/test_scan_target_egress.py
 """
 from __future__ import annotations
 
-import ast
 import asyncio
 import http.server
 import ipaddress
 import json
 import os
 import socket
+import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 
 import httpx
@@ -30,12 +32,12 @@ WORKER = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if WORKER not in sys.path:
     sys.path.insert(0, WORKER)
 
-from helpers.net import address_rule, egress  # noqa: E402
-from helpers.net.address_rule import TargetGuard, TargetRefused  # noqa: E402
+from helpers.net import egress, guard  # noqa: E402
+from helpers.net.guard import TargetGuard, TargetRefused  # noqa: E402
 from helpers.tools.llm_agent import llm_runner  # noqa: E402
 from helpers.tools.mcp_agent import main as mcp_main  # noqa: E402
 from helpers.tools.mcp_agent.context import MCPContext  # noqa: E402
-from helpers.tools.mcp_agent.mcp_client import mcp_connection_failure  # noqa: E402
+from helpers.tools.mcp_agent.mcp_client import MCPClient, mcp_connection_failure  # noqa: E402
 
 PUBLIC = "93.184.216.34"
 DNS = {
@@ -97,50 +99,60 @@ def test_a_name_that_does_not_resolve_is_unreachable_not_refused(fake_dns):
     assert mcp_connection_failure(err.value) == "MCP connection failed: unreachable"
 
 
-def test_a_checked_answer_is_pinned_and_every_new_answer_is_checked():
+def test_a_checked_answer_is_pinned_and_every_new_answer_is_checked(monkeypatch):
     """DNS rebinding: the checked (public) answer is used for its pin window, never a second (private) one unchecked;
     once the window ends the host is resolved again and that answer is checked before any use."""
     answers = iter([[PUBLIC], ["169.254.169.254"]])
     calls, now = [], [100.0]
 
-    def resolve(host, port):
+    def getaddrinfo(host, port, *args, **kwargs):
         calls.append(host)
-        return next(answers)
-    guard = TargetGuard(resolve=resolve, clock=lambda: now[0])
-    assert guard.check_url("https://mcp.example.com/mcp") == (PUBLIC,)
-    now[0] += address_rule.PIN_SECONDS - 1
-    assert guard.addresses("mcp.example.com", 443) == (PUBLIC,)
-    assert guard.addresses("MCP.Example.com", 8443) == (PUBLIC,)
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (a, port)) for a in next(answers)]
+    monkeypatch.setattr(socket, "getaddrinfo", getaddrinfo)
+    target = TargetGuard(clock=lambda: now[0])
+    assert target.check_url("https://mcp.example.com/mcp") == (PUBLIC,)
+    now[0] += guard.PIN_SECONDS - 1
+    assert target.addresses("mcp.example.com", 443) == (PUBLIC,)
+    assert target.addresses("MCP.Example.com", 8443) == (PUBLIC,)
     assert calls == ["mcp.example.com"]
     now[0] += 1
     with pytest.raises(TargetRefused, match="private or reserved address"):
-        guard.addresses("mcp.example.com", 443)
+        target.addresses("mcp.example.com", 443)
     assert calls == ["mcp.example.com", "mcp.example.com"]
+    assert target.refused == [
+        "mcp.example.com resolves to a private or reserved address; only public addresses can be scanned"]
 
 
-SAFE_FETCH = Path(WORKER).parents[1] / "backend" / "utilities" / "cbom_sources" / "safe_fetch.py"
-RULE_NAMES = {"_CGNAT", "_V4_IN_V6", "public_address", "_routable", "connection_order"}
+SHARED_RULE = Path(WORKER).parents[1] / "backend" / "utilities" / "cbom_sources" / "address_rule.py"
 
 
-def _definitions(path: Path) -> dict[str, str]:
-    """The source of the module-level functions and assignments named in RULE_NAMES (read, not imported)."""
-    source = path.read_text(encoding="utf-8")
-    found = {}
-    for node in ast.parse(source).body:
-        if isinstance(node, ast.FunctionDef) and node.name in RULE_NAMES:
-            found[node.name] = ast.get_source_segment(source, node)
-        elif isinstance(node, ast.Assign) and len(node.targets) == 1 and getattr(node.targets[0], "id", "") in RULE_NAMES:
-            found[node.targets[0].id] = ast.get_source_segment(source, node)
-    return found
+def test_the_guard_runs_the_cbom_ssrf_guards_own_rule_file(fake_dns, monkeypatch):
+    """The worker holds no copy of the rule: guard.RULE is the file safe_fetch.py runs (the worker image carries it at
+    the same path), and every answer of the guard is that module's: change the rule and the worker's answer changes."""
+    assert Path(guard.RULE.__file__).resolve() == SHARED_RULE.resolve()
+    assert not (Path(WORKER) / "helpers" / "net" / "address_rule.py").exists()
+    with pytest.raises(TargetRefused):
+        TargetGuard().check_url("http://169.254.169.254/latest/meta-data/")
+    monkeypatch.setattr(guard.RULE, "public_address", lambda text: True)  # the shared rule, changed for this test
+    assert TargetGuard().check_url("http://169.254.169.254/latest/meta-data/") == ("169.254.169.254",)
+    monkeypatch.setattr(guard.RULE, "scan_target", lambda url: ("mcp.example.com", 443))
+    assert TargetGuard().check_url("gopher://anything/") == (PUBLIC,)
+    made = []
+    monkeypatch.setattr(guard.RULE, "connect_first", lambda addresses, port, timeout: made.append((addresses, port)))
+    TargetGuard().connect("mcp.example.com", 443)
+    assert made == [([PUBLIC], 443)]
 
 
-@pytest.mark.skipif(not SAFE_FETCH.is_file(), reason="the backend is not in this checkout")
-def test_the_rule_is_the_cbom_ssrf_guards_code():
-    """The worker cannot import the backend: its rule is safe_fetch's code, copied. A change to either copy fails here
-    (worker suite) and in backend tests/test_mcp_llm_target_ssrf.py (backend suite): change both."""
-    ours = _definitions(Path(address_rule.__file__))
-    assert set(ours) == RULE_NAMES
-    assert ours == _definitions(SAFE_FETCH)
+def test_the_worker_image_carries_the_rule_where_the_guard_loads_it():
+    """guard.py loads the rule from backend/ next to RabbitMQ/worker in a checkout; the image keeps the worker at
+    /build/RabbitMQ/worker, so its Dockerfile copies the rule to /build/backend/... and its ignore file lets it in."""
+    worker = Path(WORKER).resolve()
+    rule = guard.RULE_FILE.relative_to(worker.parents[1]).as_posix()
+    assert rule == "backend/utilities/cbom_sources/address_rule.py"
+    dockerfile = (worker / "Dockerfile").read_text(encoding="utf-8").splitlines()
+    assert "COPY --from=builder /build/RabbitMQ/worker /build/RabbitMQ/worker" in dockerfile
+    assert f"COPY {rule} /build/{rule}" in dockerfile
+    assert f"!{rule}" in (worker / "Dockerfile.dockerignore").read_text(encoding="utf-8").splitlines()
 
 
 def test_a_refused_redirect_says_address_not_allowed():
@@ -376,3 +388,104 @@ def test_a_vendor_model_is_checked_the_same_way(fake_dns, monkeypatch):
             _run_garak(monkeypatch, model_type="openai", model_name="gpt-4o", api_key="sk-test")
     finally:
         DNS["api.openai.com"] = ["162.159.140.245"]
+
+
+CUSTOM = {"model_type": "custom", "model_name": "m", "model_uri": "https://llm.example.com/v1",
+          "headers": {"Content-Type": "application/json"}, "request_template": {"input": "$INPUT"},
+          "response_json_field": "$.text"}
+
+
+def test_a_connection_refused_while_garak_runs_is_reported_as_the_refusal(fake_dns, monkeypatch):
+    """garak exits 1 when the proxy refuses a connection during the run (a redirect hop, a changed DNS answer): the
+    scan reports the refusal, not garak's command line."""
+    def run(cmd, check):
+        config_path = cmd[cmd.index("-G") + 1]
+        with open(config_path, encoding="utf-8") as f:
+            proxies = json.load(f)["rest"]["RestGenerator"]["proxies"]
+        os.unlink(config_path)
+        with pytest.raises(requests.exceptions.ConnectionError):  # what garak's REST generator meets
+            requests.post("http://169.254.169.254/latest/meta-data/", data=b"{}", timeout=10, proxies=proxies)
+        raise subprocess.CalledProcessError(1, cmd)
+    monkeypatch.setattr(llm_runner.subprocess, "run", run)
+    with pytest.raises(TargetRefused, match="^169.254.169.254 resolves to a private or reserved address; only public"):
+        llm_runner.run_garak_scan(probes="dan.Dan_11_0", **CUSTOM)
+
+
+def test_garak_failing_for_another_reason_still_reports_garaks_error(fake_dns, monkeypatch):
+    def run(cmd, check):
+        os.unlink(cmd[cmd.index("-G") + 1])
+        raise subprocess.CalledProcessError(2, cmd)
+    monkeypatch.setattr(llm_runner.subprocess, "run", run)
+    with pytest.raises(subprocess.CalledProcessError):
+        llm_runner.run_garak_scan(probes="dan.Dan_11_0", **CUSTOM)
+
+
+class _SseEndpoint(http.server.BaseHTTPRequestHandler):
+    """An MCP server over SSE whose message endpoint redirects every POST to the metadata service. Its event stream
+    stays open (a ping every 0.2 s, for up to 2 minutes) until the client goes."""
+    posts: list[str] = []
+
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.end_headers()
+        try:
+            self.wfile.write(b"event: endpoint\ndata: /messages/?session_id=1\n\n")
+            self.wfile.flush()
+            for _ in range(600):
+                time.sleep(0.2)
+                self.wfile.write(b": ping\n\n")
+                self.wfile.flush()
+        except OSError:  # the client went
+            pass
+
+    def do_POST(self):
+        type(self).posts.append(self.path)
+        self.rfile.read(int(self.headers.get("Content-Length") or 0))
+        self.send_response(307)
+        self.send_header("Location", "http://169.254.169.254/latest/meta-data/")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def log_message(self, *args):
+        pass
+
+
+def test_a_refusal_the_listing_swallowed_fails_the_recon(fake_dns, monkeypatch):
+    """The listing logs a failed request and returns; when the guard refused one of its hops, the recon fails and says
+    why instead of estimating from a partial listing."""
+    client = MCPClient(server_url="https://mcp.example.com/mcp", server_mode="httpstreamable")
+    refusal = "169.254.169.254 resolves to a private or reserved address; only public addresses can be scanned"
+
+    async def connect():
+        pass
+
+    async def listing():
+        client.guard.refused.append(refusal)
+    monkeypatch.setattr(client, "connect_httpstreamable", connect)
+    monkeypatch.setattr(client, "list_tools_prompts_resources", listing)
+    with pytest.raises(TargetRefused) as err:
+        asyncio.run(client.connect_and_get_recon_context())
+    assert str(err.value) == refusal
+
+
+def test_an_sse_server_that_redirects_its_post_endpoint_fails_at_once(fake_dns):
+    """mcp's SSE client only logs a failed POST, so the session waited on the open event stream (a pinging server held
+    it for ever). The refused hop closes the client's connections: the listing fails at once and says why."""
+    _SseEndpoint.posts = []
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _SseEndpoint)
+    server.daemon_threads = True
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    client = MCPClient(server_url=f"http://public.example:{server.server_address[1]}/sse", server_mode="sse")
+    client.guard = _LabGuard()
+    try:
+        started = time.monotonic()
+        with pytest.raises(TargetRefused, match="^169.254.169.254 resolves to a private or reserved address"):
+            asyncio.run(asyncio.wait_for(client.connect_and_get_recon_context(), 30))
+        assert time.monotonic() - started < 20
+        assert _SseEndpoint.posts == ["/messages/?session_id=1"]  # the endpoint answered; the redirect's target never
+        assert mcp_connection_failure(TargetRefused(client.guard.refused[0])) == (
+            "MCP connection failed: address not allowed")
+    finally:
+        server.shutdown()
+        server.server_close()

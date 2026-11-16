@@ -6,8 +6,8 @@ import tempfile
 from typing import Optional, Dict, Any, List, Literal
 import uuid
 from dotenv import load_dotenv
-from helpers.net.address_rule import TargetGuard
 from helpers.net.egress import GuardedSocksProxy
+from helpers.net.guard import TargetGuard, TargetRefused
 
 
 def run_garak_scan(
@@ -137,7 +137,12 @@ def run_garak_scan(
         #create a new temporary config file with the updated values
         with open(temp_json.name, "w+", encoding="utf-8") as f:
             json.dump(config, f)
-        subprocess.run(cmd, check=True)
+        try:
+            subprocess.run(cmd, check=True)
+        except subprocess.CalledProcessError:
+            if guard.refused:  # the proxy refused a connection during the run (a redirect hop, a changed DNS answer)
+                raise TargetRefused(guard.refused[0]) from None
+            raise
 
     # -------------------------STEP [7] : Delete the temporary config file-----------------------------------------------------------------------
     temp_json.close()

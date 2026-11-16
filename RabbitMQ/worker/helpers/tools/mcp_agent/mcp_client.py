@@ -5,8 +5,8 @@ from mcp.client.streamable_http import streamablehttp_client
 from mcp.client.sse import sse_client
 from rich.console import Console
 from typing import Literal
-from helpers.net.address_rule import TargetGuard, TargetRefused
 from helpers.net.egress import guarded_http_client_factory
+from helpers.net.guard import TargetGuard, TargetRefused
 from helpers.tools.mcp_agent.context import MCPPrompt, MCPReconContext, MCPResource, MCPTool
 console = Console()
 
@@ -210,9 +210,11 @@ class MCPClient:
                 await self.connect_sse()
 
             await self.list_tools_prompts_resources()
-        except asyncio.CancelledError:
-            # a refused request in the streamable HTTP client's own task group (a redirect hop) reaches this task only
-            # as a cancellation: say why
+            if self.guard.refused:  # a refused hop the listing swallowed (it logs a failed listing and returns)
+                raise TargetRefused(self.guard.refused[0])
+        except (asyncio.CancelledError, Exception):
+            # a refused request in a client's own task (a redirect hop) reaches this task only as a cancellation
+            # (streamable HTTP) or as the session ending (SSE: the guard closed the client's connections): say why
             if self.guard.refused:
                 raise TargetRefused(self.guard.refused[0]) from None
             raise
