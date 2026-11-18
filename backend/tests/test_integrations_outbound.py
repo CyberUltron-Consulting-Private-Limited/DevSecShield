@@ -116,7 +116,7 @@ def _ipv4_only_host(monkeypatch, port_for_v4: int) -> list[tuple[str, int]]:
     the IPv4 address lands on a local test server. Returns the connect attempts."""
     import errno
 
-    from backend.utilities.cbom_sources import safe_fetch
+    from backend.utilities.cbom_sources import address_rule  # connection_order (safe_fetch, outbound) lives there
 
     attempts: list[tuple[str, int]] = []
 
@@ -130,19 +130,19 @@ def _ipv4_only_host(monkeypatch, port_for_v4: int) -> list[tuple[str, int]]:
         return sock
 
     monkeypatch.setattr(socket, "create_connection", create_connection)
-    monkeypatch.setattr(safe_fetch, "_routable", lambda address, port: ":" not in address)
+    monkeypatch.setattr(address_rule, "_routable", lambda address, port: ":" not in address)
     return attempts
 
 
 def test_a_dual_stack_destination_is_reached_over_the_family_this_host_can_route(tmp_path, monkeypatch):
     """rev5 #6: the pin was the lexically first checked address, so a dual-stack name always got its IPv6 address and
     failed in an IPv4-only container. Every address is still checked; they are tried in turn, routable first."""
-    from backend.utilities.cbom_sources import safe_fetch
+    from backend.utilities.cbom_sources import address_rule  # connection_order (safe_fetch, outbound) lives there
 
     _fake_dns(monkeypatch, {"hec.example.com": DUAL_STACK})
-    monkeypatch.setattr(safe_fetch, "_routable", lambda address, port: True)
+    monkeypatch.setattr(address_rule, "_routable", lambda address, port: True)
     assert outbound.resolve("hec.example.com", 443) == DUAL_STACK  # all routable: the resolver's order
-    monkeypatch.setattr(safe_fetch, "_routable", lambda address, port: ":" not in address)
+    monkeypatch.setattr(address_rule, "_routable", lambda address, port: ":" not in address)
     assert outbound.resolve("hec.example.com", 443) == ["52.10.1.1", "2600:1f18:1234::1"]
     _fake_dns(monkeypatch, {"hec.example.com": [*DUAL_STACK, "10.0.0.9"]})
     with pytest.raises(outbound.Refused):  # each address is checked: one private address refuses the host
@@ -157,7 +157,7 @@ def test_a_dual_stack_destination_is_reached_over_the_family_this_host_can_route
                                 ca_pem=pki["ca_pem"])
         assert resp.status == 200 and attempts == [("52.10.1.1", port)]
         # even when the resolver's order puts the unreachable family first, the connection falls back to the next
-        monkeypatch.setattr(safe_fetch, "_routable", lambda address, port: True)
+        monkeypatch.setattr(address_rule, "_routable", lambda address, port: True)
         attempts.clear()
         assert outbound.request("GET", f"https://hec.example.com:{port}/", ca_pem=pki["ca_pem"]).status == 200
         assert attempts == [("2600:1f18:1234::1", port), ("52.10.1.1", port)]

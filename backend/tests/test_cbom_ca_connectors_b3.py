@@ -27,7 +27,7 @@ from backend.utilities.cbom_sources.classify import classify
 from backend.utilities.cbom_sources.common import utcnow
 from backend.utilities.cbom_sources.crypto import encrypt_secrets
 
-NOT_COLLECTED = ("venafi", "keyfactor", "digicert", "sectigo", "other")
+NOT_COLLECTED = ("other",)
 
 
 # ----------------------------------------------------------------------------- helpers
@@ -66,22 +66,22 @@ def test_ca_kinds_without_a_collector_ask_for_no_key(provider):
 
 
 def test_a_ca_without_a_collector_saves_without_a_key_and_refuses_one(api, world):  # noqa: F811  (the API fixtures)
-    body = {"kind": "ca_connector", "name": "kf", "config": {"provider": "keyfactor", "api_url": "https://kf.corp"}}
+    body = {"kind": "ca_connector", "name": "other-ca", "config": {"provider": "other", "api_url": "https://clm.example"}}
     r = api("POST", "/1/cbom/sources/items", json={**body, "secrets": {}})
     assert r.status_code == 201, r.text
     src = r.json()["source"]
     assert src["secrets_set"] == [] and src["last_test_status"] == "not_available"
-    r = api("POST", "/1/cbom/sources/items", json={**body, "name": "kf-2", "secrets": {"api_key": "kf-key-123"}})
+    r = api("POST", "/1/cbom/sources/items", json={**body, "name": "other-2", "secrets": {"api_key": "unused-key-123"}})
     assert r.status_code == 400 and "not used" in r.json()["detail"]
-    assert "kf-key-123" not in r.text
+    assert "unused-key-123" not in r.text
 
 
 def test_a_key_stored_before_the_fix_is_never_served_and_cleared_on_the_next_save(api, world):  # noqa: F811  (the API fixtures)
     engine, ids = world
     now = utcnow()
     with Session(engine) as s:
-        row = CbomCollectionSource(team_id=1, owner_user_id=ids["alice"], kind="ca_connector", name="Venafi",
-                                   name_lower="venafi", config={"provider": "venafi", "api_url": "https://tpp.corp/vedsdk"},
+        row = CbomCollectionSource(team_id=1, owner_user_id=ids["alice"], kind="ca_connector", name="Other CA",
+                                   name_lower="other ca", config={"provider": "other", "api_url": "https://clm.example/api"},
                                    secret_encrypted=encrypt_secrets({"api_key": "legacy-key-9"}), secret_fields=["api_key"],
                                    created_at=now, last_updated=now, last_test_status="not_available")
         s.add(row)
@@ -90,12 +90,37 @@ def test_a_key_stored_before_the_fix_is_never_served_and_cleared_on_the_next_sav
         source_id, version = row.id, row.row_version
     got = api("GET", f"/1/cbom/sources/items/{source_id}").json()["source"]
     assert "legacy-key-9" not in str(got)
-    r = api("PATCH", f"/1/cbom/sources/items/{source_id}", json={"name": "Venafi TPP", "expected_version": version})
+    r = api("PATCH", f"/1/cbom/sources/items/{source_id}", json={"name": "Other CLM", "expected_version": version})
     assert r.status_code == 200, r.text
     assert r.json()["source"]["secrets_set"] == []
     with Session(engine) as s:
         row = s.get(CbomCollectionSource, source_id)
         assert row.secret_fields == [] and "legacy-key-9" not in str(row.secret_encrypted)
+
+
+def test_each_clm_collector_saves_only_the_secret_it_sends(api, world):  # noqa: F811  (the API fixtures)
+    node_id, _token, _ = enroll_node(api)
+    cases = (
+        ("venafi", {"provider": "venafi", "api_url": "https://tpp.example/vedsdk", "login": "local:admin",
+                    "client_id": "MyApp"}, {"password": "venafi-pass-1"}, ["password"]),
+        ("keyfactor", {"provider": "keyfactor", "api_url": "https://kf.example/KeyfactorAPI"},
+         {"token": "kf-token-1"}, ["token"]),
+        ("digicert", {"provider": "digicert", "api_url": "https://www.digicert.com/services/v2"},
+         {"api_key": "dc-key-1"}, ["api_key"]),
+        ("sectigo", {"provider": "sectigo", "api_url": "https://cert-manager.com/api", "login": "reader",
+                     "customer_uri": "cst1152"}, {"password": "sectigo-pass-1"}, ["password"]),
+    )
+    for name, config, secrets, fields in cases:
+        secret = next(iter(secrets.values()))
+        missing = api("POST", "/1/cbom/sources/items", json={"kind": "ca_connector", "name": f"{name}-bare",
+                                                            "node_id": node_id, "config": config, "secrets": {}})
+        assert missing.status_code == 400 and "required" in missing.json()["detail"], missing.text
+        assert secret not in missing.text
+        saved = api("POST", "/1/cbom/sources/items", json={"kind": "ca_connector", "name": name, "node_id": node_id,
+                                                          "config": config, "secrets": secrets})
+        assert saved.status_code == 201, saved.text
+        assert saved.json()["source"]["secrets_set"] == fields
+        assert secret not in saved.text
 
 
 # ----------------------------------------------------------------------------- C7: EJBCA key checked at save

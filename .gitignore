@@ -29,9 +29,12 @@ agentdb.rvf*
 .claude/*
 .agents/*
 
-# Secrets: no NEW env file or private key may be added. Files already tracked stay tracked (an ignore rule does not
-# untrack them); their values are in git history and are rotated (docs/security/secret-rotation.md). Names of the
-# variables go in .env.example files.
+# Secrets: no env file or private key may be added. .env is ignored in every directory, so the four files
+# untracked for #18 (backend/.env, backend/utilities/ai/.env, RabbitMQ/worker/.env,
+# RabbitMQ/worker/helpers/context/.env) stay out of the index. Other env files that are already tracked
+# stay tracked until their own change; an ignore rule does not untrack them. Values already committed
+# remain in git history and must be rotated (docs/security/secret-rotation.md). Variable names go in
+# .env.example files (placeholders only).
 .env
 .env.*
 !.env.example

@@ -2,10 +2,11 @@
 import os
 import re
 
-# What a node built from source without ZS_NODE_VERSION reports. Released images carry their release version instead
-# (ZS_NODE_VERSION, derived per promotion by .github/ci/node_version.py from scan_node/release.json: issue #361), so
-# this constant is not bumped by hand.
-VERSION = "1.0.0"
+# What a node built from source without ZS_NODE_VERSION reports. publish-ghcr.yml reads this constant for dev,
+# pull-request and manual images (ZS_NODE_VERSION). A staging release still stamps its immutable GHCR tag from
+# .github/ci/node_version.py (issue #361): a published version is never overwritten. 1.0.0 stays the frozen tag
+# from before release versions existed.
+VERSION = "1.0.1"
 
 _SHA = re.compile(r"[0-9a-f]{40}")
 # a release version that keeps "<version>+<12-character commit>" within 32 characters

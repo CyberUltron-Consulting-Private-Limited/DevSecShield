@@ -1,3 +1,4 @@
+import fnmatch
 import json
 import os
 from typing import Iterable, Literal
@@ -20,10 +21,12 @@ console = Console()
 def get_documents_after_exclusion(
     document_iterator: Iterable[Document], 
     exclude_path_arrays: list[list[str]],
+    root: str | Path,
     verbose: bool = False,
     metadata: dict | None = None)->Iterable[Document]:
     """
     Responsible for getting the documents with exclusion
+    root: the folder the repository was cloned or unzipped into ( patterns match the path inside it )
     """
     try:
         
@@ -37,7 +40,7 @@ def get_documents_after_exclusion(
                 continue # skip the document if it has a parsing error
             
             for exclude_path_array in exclude_path_arrays:
-                if file_path_matches_pattern(document.metadata['source'] , exclude_path_array ):
+                if file_path_matches_pattern(document.metadata['source'] , exclude_path_array , root=root ):
                     if verbose:
                         console.print(f"Skipping document with exclusion: {document.metadata['source']} due to match with exclusion path matching: {exclude_path_array}",style="dim red")
                     matches_count += 1
@@ -56,10 +59,12 @@ def get_documents_after_exclusion(
 def get_documents_after_inclusion(
     document_iterator: Iterable[Document], 
     include_path_arrays: list[list[str]],
+    root: str | Path,
     verbose: bool = False,
     metadata: dict | None = None)->Iterable[Document]:
     """
     Responsible for getting the documents with inclusion
+    root: the folder the repository was cloned or unzipped into ( patterns match the path inside it )
     """
     try:
         console.print("Getting documents with inclusion .... ✔️",style="bold yellow ")
@@ -71,7 +76,7 @@ def get_documents_after_inclusion(
                 continue # skip the document if it has a parsing error
             
             for include_path_array in include_path_arrays:
-                if file_path_matches_pattern(document.metadata['source'] , include_path_array ):
+                if file_path_matches_pattern(document.metadata['source'] , include_path_array , root=root ):
                     if verbose:
                         console.print(f"Accepting document with inclusion: {document.metadata['source']} with inclusion path matching: {include_path_array}",style="dim green")
                     matches_count += 1
@@ -111,44 +116,56 @@ def get_documents(
         raise ValueError(f"Error in getting documents with inclusion: {e}")
 
 
-def file_path_matches_pattern(file_path:str, path_array: list[str])->bool:
+def path_pattern_names(path_array: list[str]) -> list[str]:
+    """
+    The names of a path pattern : one per box , a box holding "a/b" is two names , empty names are dropped.
+    One name starting with a dot ( ".min.js" , ".tf" , ".egg-info" ) stands for the names ending with it ( "*.min.js" ).
+    """
+    names = [name for segment in path_array for name in segment.split("/") if name]
+    if len(names) == 1 and names[0].startswith("."):
+        names = ["*" + names[0]]
+    return names
+
+
+def name_matches(glob: str, name: str) -> bool:
+    """
+    Whether one folder or file name matches one name of a pattern : literal apart from "*" ( any characters ).
+    fnmatch also reads "?" and "[...]" , so they are wrapped as "[?]" and "[[]" ( literal ).
+    """
+    return fnmatch.fnmatchcase(name, re.sub(r"([?\[])", r"[\1]", glob))
+
+
+def file_path_matches_pattern(file_path:str, path_array: list[str], root: str | Path | None = None)->bool:
         """
-        Responsible for accepting or rejecting a file based on the file path
+        Responsible for accepting or rejecting a file based on the file path ( SAST exclude and IaC include patterns,
+        the built-in ones included )
+        - The pattern is matched against the path inside the repository : file_path relative to root , the folder the
+          repository was cloned or unzipped into ( when root is None , file_path is already that path ). The clone's
+          own folder ( /tmp/repo_* ) is never part of it ( #45 ).
+        - Every name counts , and names match whole folder or file names , one after the other , at any depth :
+          ["src", "legacy"] matches src/legacy/x.py and lib/src/legacy/x.py , not src/legacy_v1/x.py ( #37 ).
+        - Names are literal apart from "*" ( any characters within a name ) and a "**" name ( any number of folders ).
+        - One name starting with a dot matches the names ending with it : [".min.js"] matches app.min.js.
+        - A pattern without a name matches nothing.
         """
         try:
-            matches_count = 0
-
-            # STEP [ 1 ] ------------------------------- Build Regex string ------------------------------------
-            regex = path_array[0]
-            if len(path_array) > 2:
-                for i in range(1,len(path_array)-1):
-                    child = path_array[i]
-                    # new parent
-                    regex= rf"{regex}" + r"[\\/]" + rf"{child}" 
-            elif len(path_array) == 2:
-                regex= rf"{path_array[0]}" + r"[\\/]" + rf"{path_array[1]}" 
-            else:
-                regex = r"[\\/]" + rf"{path_array[0]}" 
-            
-
-            # if path array is simply an extension , then use the extension as the regex
-            if len(path_array) == 1 and path_array[0].startswith("."):
-                regex = rf"{path_array[0]}"
-                
-
-
-            # STEP [ 2 ] ---------------------- Search for regex in file path ------------------------------------
-            if re.search(regex, file_path):
-                matches_count += 1       
-
-
-            
-            # STEP [ 3 ] ----------------------- Return True if regex is found in file path ------------------------------------
-            if matches_count > 0:
-                return True
-            else:
+            names = path_pattern_names(path_array)
+            if not names:
                 return False
-            
+            path = os.path.relpath(file_path, root) if root is not None else str(file_path)
+            parts = [part for part in Path(path).as_posix().split("/") if part]
+
+            # The names match consecutive whole names of the path , starting at any depth and followed by anything :
+            # the pattern "**" + names + "**" must match the whole path. reach[j] : the pattern so far matches parts[:j].
+            # One pass per name ( no backtracking regex ) , so no pattern can make a scan hang.
+            reach = [True] + [False] * len(parts)
+            for glob in ["**", *names, "**"]:
+                if glob == "**": # any number of folders , none included
+                    for j in range(1, len(parts) + 1):
+                        reach[j] = reach[j] or reach[j - 1]
+                else:
+                    reach = [False] + [reach[j] and name_matches(glob, parts[j]) for j in range(len(parts))]
+            return reach[-1]
         except Exception as e:
             raise ValueError(f"Error in file_path_matches_pattern: {e}")
 
@@ -228,9 +245,9 @@ class CodebaseContext(BaseContextManager):
             if not self.exclude_path_arrays and not self.include_path_arrays:
                 iterator = get_documents(document_loader_object,metadata=self.metadata,verbose=True)
             elif self.exclude_path_arrays and not self.include_path_arrays:
-                iterator = get_documents_after_exclusion(document_loader_object, self.exclude_path_arrays, metadata=self.metadata,verbose=True)
+                iterator = get_documents_after_exclusion(document_loader_object, self.exclude_path_arrays, root=self.directory, metadata=self.metadata,verbose=True)
             elif self.include_path_arrays and not self.exclude_path_arrays:
-                iterator = get_documents_after_inclusion(document_loader_object, self.include_path_arrays, metadata=self.metadata,verbose=True)
+                iterator = get_documents_after_inclusion(document_loader_object, self.include_path_arrays, root=self.directory, metadata=self.metadata,verbose=True)
             else:
                 raise ValueError(f"Only one of exclude_path_arrays or include_path_arrays can be provided")
             

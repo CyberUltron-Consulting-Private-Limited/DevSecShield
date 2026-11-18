@@ -9,7 +9,7 @@ import path from "node:path";
 import { test } from "node:test";
 import {
   aiFixButtonLabel, aiFixLabel, aiPanelVisible, answerBadge, canAsk, citationLabel, egressLines, egressNote, outcomeNote,
-  remediationBadge,
+  remediationBadge, shouldAutoRequestAiFix, showInhouseMissSummary,
 } from "./aiPanelLogic";
 
 test("unavailable, unknown or failed status renders nothing", () => {
@@ -111,4 +111,20 @@ test("AI fix: button, label and the remediation badge stop saying 'no AI' once a
   const src = fs.readFileSync(path.join(__dirname, "../../RemediationPanel.tsx"), "utf8");
   assert.ok(src.includes("remediationBadge(") && src.includes("aiFixButtonLabel(") && src.includes("aiFixLabel("));
   assert.ok(src.includes('mode: "fix"'), "the panel asks for mode fix");
+  assert.ok(src.includes("shouldAutoRequestAiFix("), "Bedrock is called when no in-house rewrite matches");
+  assert.ok(src.includes("showInhouseMissSummary("));
+});
+
+test("the knowledge-base miss is hidden while Bedrock can still write a rewrite", () => {
+  assert.equal(shouldAutoRequestAiFix({ aiAvailable: true, hasDeterministicFix: false, phase: "idle" }), true);
+  assert.equal(shouldAutoRequestAiFix({ aiAvailable: true, hasDeterministicFix: true, phase: "idle" }), false);
+  assert.equal(shouldAutoRequestAiFix({ aiAvailable: false, hasDeterministicFix: false, phase: "idle" }), false);
+  assert.equal(shouldAutoRequestAiFix({ aiAvailable: true, hasDeterministicFix: false, phase: "pending" }), false);
+  assert.equal(showInhouseMissSummary({ hasDeterministicFix: false, aiStatus: "on", phase: "idle" }), false);
+  assert.equal(showInhouseMissSummary({ hasDeterministicFix: false, aiStatus: "on", phase: "pending" }), false);
+  assert.equal(showInhouseMissSummary({ hasDeterministicFix: false, aiStatus: "on", phase: "ok" }), false);
+  assert.equal(showInhouseMissSummary({ hasDeterministicFix: false, aiStatus: "on", phase: "miss" }), true);
+  assert.equal(showInhouseMissSummary({ hasDeterministicFix: false, aiStatus: "off", phase: "idle" }), true);
+  assert.equal(showInhouseMissSummary({ hasDeterministicFix: false, aiStatus: "loading", phase: "idle" }), false);
+  assert.equal(showInhouseMissSummary({ hasDeterministicFix: true, aiStatus: "on", phase: "idle" }), true);
 });

@@ -37,6 +37,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import labspec as S  # noqa: E402  (sibling modules; the lab has no package)
+import labfollow  # noqa: E402
 import oraclefmt  # noqa: E402
 
 GEN_VERSION = "cb02-gen/1"
@@ -45,6 +46,7 @@ VARIANTS = {
     "z02-3des": "z02 also asks for TLS_RSA_WITH_3DES_EDE_CBC_SHA, which Alpine's OpenSSL 3.5 does not build",
     "z01-unpinned": "z01 leaves the group list at OpenSSL 3.5's default, which includes X25519MLKEM768",
     "z02-extra-group": "z02's server also accepts X25519 after prime256v1 while the oracle keeps [secp256r1] (E2)",
+    "idp-drop-ec": "the IdP serves a JWKS without the EC P-256 key while the oracle still lists it",
 }
 
 
@@ -332,7 +334,9 @@ class Gen:
         # Lab sshd targets exempt the whole lab network, so gate runs cannot flake on it; one target (wave psp)
         # keeps the default to show what the product does against it (cbom/FINDINGS-LOG.md).
         exempt = [f"PerSourcePenaltyExemptList {t['penalty_exempt']}"] if t.get("penalty_exempt") else []
-        lines = ["Port 22", "ListenAddress 0.0.0.0", "PidFile none", "StrictModes yes", *exempt,
+        # Ubuntu 9.6 rejects `PidFile none`. Alpine OpenSSH 10 accepts it, so only the Ubuntu host uses a path.
+        pid = "/run/cb02/sshd.pid" if t.get("os") == "ubuntu" else "none"
+        lines = ["Port 22", "ListenAddress 0.0.0.0", f"PidFile {pid}", "StrictModes yes", *exempt,
                  "PasswordAuthentication no", "KbdInteractiveAuthentication no", "PubkeyAuthentication yes",
                  "AuthorizedKeysFile .ssh/authorized_keys", "AllowUsers zs-cbom", "LogLevel VERBOSE",
                  "Subsystem sftp internal-sftp", "PermitUserEnvironment no", "X11Forwarding no",
@@ -342,6 +346,8 @@ class Gen:
                  f"Ciphers {','.join(t['ciphers'])}", f"MACs {','.join(t['macs'])}"]
         if t.get("force_command"):
             lines.append("ForceCommand /usr/local/bin/cb02-forcecommand")
+        if t.get("os") == "ubuntu":
+            lines.append("UsePAM no")
         self.write(d / "sshd_config", "\n".join(lines) + "\n")
         self.write(d / "role.env", f"TARGET={t['id']}\nROLE=sshd\nPORT={t['port']}\n")
 
@@ -394,7 +400,15 @@ class Gen:
         self.write(d / "plant.modes", "\n".join(modes) + "\n")
         oracle["expect"]["files"] = files
         oracle["expect"]["login"] = {"user": "zs-cbom", "force_command_logger": True,
-                                     "command_log": "/var/log/cb02/commands.log (and the container log, prefix cb02-cmd)"}
+                                     "command_log": "container log prefix cb02-cmd (the file copy is not writable "
+                                                    "by the login user)"}
+        sudoers = Path(__file__).resolve().parent / "sudoers.zs-cbom"
+        sudoers_text = sudoers.read_text(encoding="utf-8")
+        self.write(d / "sudoers", sudoers_text, 0o440)
+        oracle["expect"]["os"] = "ubuntu"
+        oracle["expect"]["plant_owner"] = "root"
+        oracle["expect"]["command_log_writable_by_login"] = False
+        oracle["expect"]["tier2_sudoers_sha256"] = hashlib.sha256(sudoers_text.encode()).hexdigest()
         oracle["provenance"]["files"] = self.provenance("openssl", ["see certificate/keystore sections"])
         return self.save_oracle(oracle)
 
@@ -626,6 +640,105 @@ class Gen:
                                                  "version": t["commit"], "url": t["repo"],
                                                  "generated_at": self.iso(self.now)}})
 
+    def _pub_der(self, key: Path) -> bytes:
+        res = subprocess.run(["openssl", "pkey", "-in", str(key), "-pubout", "-outform", "DER"],
+                             capture_output=True, check=False)
+        if res.returncode != 0:
+            raise SystemExit(f"gen: openssl pkey failed: {res.stderr.decode(errors='replace')[-400:]}")
+        return res.stdout
+
+    def idp_target(self, t: dict) -> dict:
+        """nginx serves OIDC discovery and a JWKS. The oracle records each key as labread decoded the SPKI, not as
+        the JWK encoder wrote it, so a bad encoder disagrees with the served document."""
+        d = self.tdir(t["id"])
+        leaf, crt = d / "tls.key", d / "cert.pem"
+        cmds = self.genkey("rsa:2048", leaf) + self.cert(
+            {"key": "rsa:2048", "sig": "sha256", "issuer": "ca", **S.VALID}, "idp.lab", ["idp.lab"], leaf, crt)
+        keys, jwks = [], []
+        for spec in t["keys"]:
+            path = d / f"{spec['kid']}.pem"
+            cmds += self.genkey(spec["key"], path)
+            numbers = labfollow.public_numbers(self._pub_der(path))
+            if spec.get("crv") and numbers.get("crv") != spec["crv"]:
+                raise SystemExit(f"gen: {spec['kid']} curve {numbers.get('crv')} != {spec['crv']}")
+            keys.append({"kid": spec["kid"], "kty": spec["kty"], "alg": spec["alg"], "bits": numbers["bits"],
+                         "crv": numbers.get("crv")})
+            jwks.append(labfollow.jwk_from(spec["kid"], spec["alg"], spec["use"], numbers))
+        served = [k for k in jwks if not (self.variant == "idp-drop-ec" and k["kid"] == "ec-p256")]
+        www = d / "www"
+        issuer = t["issuer"]
+        discovery = {"issuer": issuer, "jwks_uri": issuer + "/jwks",
+                     "id_token_signing_alg_values_supported": [k["alg"] for k in t["keys"]],
+                     "response_types_supported": ["id_token"], "subject_types_supported": ["public"]}
+        self.write(www / ".well-known" / "openid-configuration", json.dumps(discovery) + "\n")
+        self.write(www / "jwks", json.dumps({"keys": served}) + "\n")
+        conf = [
+            "worker_processes 1;", "pid /tmp/nginx.pid;", "error_log stderr notice;",
+            "events { worker_connections 64; }", "http {",
+            "  access_log /dev/stdout;", "  client_body_temp_path /tmp/nginx-body;",
+            "  proxy_temp_path /tmp/nginx-proxy;", "  fastcgi_temp_path /tmp/nginx-fastcgi;",
+            "  uwsgi_temp_path /tmp/nginx-uwsgi;", "  scgi_temp_path /tmp/nginx-scgi;",
+            "  server {", "    listen 443 ssl default_server;", "    server_name idp.lab;",
+            "    ssl_certificate /lab/cert.pem;", "    ssl_certificate_key /lab/tls.key;",
+            "    ssl_protocols TLSv1.2 TLSv1.3;", "    root /lab/www;",
+            "    location = /.well-known/openid-configuration { default_type application/json; }",
+            "    location = /jwks { default_type application/json; }", "  }", "}",
+        ]
+        self.write(d / "nginx.conf", "\n".join(conf) + "\n")
+        self.write(d / "role.env", f"TARGET={t['id']}\nROLE=nginx\nPORT={t['port']}\n")
+        expect = {"issuer": issuer, "jwks_uri": issuer + "/jwks", "keys": keys}
+        return self.oracle(t, expect, {"keys": self.provenance("openssl", cmds)}, aliases=["idp.lab"])
+
+    def receiver_target(self, t: dict) -> dict:
+        d = self.tdir(t["id"])
+        self.write(d / "role.env", f"TARGET={t['id']}\nROLE=receiver\nPORT={t['port']}\n")
+        self.write(d / "listen.sh", "#!/bin/sh\n# generated by gen.py\nset -eu\n"
+                   f"exec socat -d -d TCP-LISTEN:{t['port']},fork,reuseaddr 'EXEC:/bin/sh /lab/receive.sh'\n", 0o755)
+        self.write(d / "receive.sh",
+                   "#!/bin/sh\n# one JSON line per POST, keyed by the X-Cb02-Delivery header\n"
+                   "id=\n"
+                   "while IFS= read -r line; do\n"
+                   "  line=${line%$'\\r'}\n"
+                   "  case \"$line\" in\n"
+                   "    \"\") break ;;\n"
+                   "    [Xx]-[Cc]b02-[Dd]elivery:*) id=${line#*: } ;;\n"
+                   "  esac\n"
+                   "done\n"
+                   "printf '{\"id\":\"%s\",\"peer\":\"%s\"}\\n' \"$id\" \"${SOCAT_PEERADDR:-}\" >> /logs/receiver.jsonl\n"
+                   "printf 'HTTP/1.1 204 No Content\\r\\nConnection: close\\r\\n\\r\\n'\n", 0o755)
+        expect = {"log": "lab/listeners/receiver.jsonl", "header": "X-Cb02-Delivery"}
+        return self.oracle(t, expect, {"receiver": self.provenance(
+            "socat", [f"socat TCP-LISTEN:{t['port']} EXEC:/lab/receive.sh"])})
+
+    def k8s_target(self, t: dict) -> dict:
+        import labk8s
+        d = self.tdir(t["id"])
+        crt, key = {}, {}
+        secrets = []
+        for spec in t["secrets"]:
+            stem = d / spec["name"]
+            kpath, cpath = Path(str(stem) + ".key"), Path(str(stem) + ".crt")
+            self.genkey(spec["key"], kpath)
+            self.cert(spec, spec["name"] + ".lab", [], kpath, cpath)
+            pem = cpath.read_text(encoding="utf-8")
+            crt[spec["name"]] = pem
+            key[spec["name"]] = kpath.read_text(encoding="utf-8")
+            facts = self.cert_facts(cpath)
+            secrets.append({"name": spec["name"], "sha256": hashlib.sha256(pem.encode()).hexdigest(),
+                            "fingerprint_sha256": facts["sha256"], "algorithm": facts["key_algorithm"],
+                            "key_bits": facts["key_bits"], "not_after": facts["not_after"]})
+        ck = d / "configmap.key"
+        self.genkey("rsa:2048", ck)
+        config_pem = ck.read_text(encoding="utf-8")
+        expect = {"namespace": t["namespace"], "secrets": secrets,
+                  "configmap": {"name": t["configmap"],
+                                "sha256": hashlib.sha256(config_pem.encode()).hexdigest()},
+                  "ingress_secret": t["ingress_secret"], "service_accounts": list(t["service_accounts"])}
+        doc = labk8s.manifests(expect, crt, key, config_pem)
+        self.write(d / "manifests.json", json.dumps(doc, indent=1) + "\n")
+        return self.oracle(t, expect, {"secrets": self.provenance(
+            "openssl", ["kubernetes.io/tls secrets and the ConfigMap key"])})
+
     # ---------------------------------------------------------------- oracle files
     def oracle(self, t: dict, expect: dict, provenance: dict, aliases: list[str] | None = None) -> dict:
         o = {"schema": S.SCHEMA_ORACLE, "run_id": self.run_id, "target": t["id"], "kind": t["kind"],
@@ -735,6 +848,10 @@ def touch_listener_logs(out: Path, facts: list[dict]) -> None:
                 log = out / name
                 log.touch()
                 log.chmod(0o666)
+        elif o["kind"] == "receiver":
+            log = out / o["expect"]["log"]
+            log.touch()
+            log.chmod(0o666)
 
 
 def parse_keytool(listing: str) -> list[dict]:
@@ -917,7 +1034,7 @@ def main(argv: list[str] | None = None) -> int:
     only = set(a.only.split(",")) if a.only else None
     makers = {"tls": g.tls_target, "ssh": g.ssh_target, "host": g.host_target, "listener": g.listener_target,
               "postgres": g.postgres_target, "mysql": g.mysql_target, "softhsm": g.softhsm_target,
-              "code": g.code_target}
+              "code": g.code_target, "idp": g.idp_target, "receiver": g.receiver_target, "k8s": g.k8s_target}
     facts, index = [], []
     try:
         for t in S.TARGETS:

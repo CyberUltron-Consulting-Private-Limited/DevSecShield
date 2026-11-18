@@ -1,7 +1,7 @@
 """cbom lean node API (F1.1): per-node replay window, segment jobs, hot-path indexes
 
 Revision ID: r6f11node001
-Revises: r6f3repo001
+Revises: r6t2ledger001
 Create Date: 2026-11-11 12:00:00.000000
 
 * ``cbomscannode.replay_hwm`` / ``replay_bits`` (BIGINT, 0): the protocol-2 anti-replay window (highest request
@@ -21,8 +21,9 @@ Create Date: 2026-11-11 12:00:00.000000
   below 2^63, at most 30 days of microseconds ahead of the migration's clock, the bound ``node_auth`` enforces); any
   other row is ignored.  Release rule: replace every backend replica at once (no mixed versions).
 
-At merge time this revision's ``down_revision`` is re-chained to the head ``alembic heads`` shows on dev (F1 contract,
-section 2); ``backend/tests/test_alembic_single_head.py`` fails on two heads.
+At merge time this revision's ``down_revision`` is re-chained to the head on dev (F1 contract, section 2). Dev had
+two heads, ``d44mcphdr001`` and ``r6t2ledger001``, both revising ``r6f3repo001``. ``r6t2ledger001`` now revises
+``d44mcphdr001`` and this revision revises ``r6t2ledger001``, so ``alembic upgrade head`` has one head.
 """
 import re
 import time
@@ -35,7 +36,7 @@ import sqlmodel
 
 # revision identifiers, used by Alembic.
 revision: str = 'r6f11node001'
-down_revision: Union[str, Sequence[str], None] = 'r6f3repo001'
+down_revision: Union[str, Sequence[str], None] = 'r6t2ledger001'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

@@ -1,5 +1,5 @@
 from backend.new_models import Scan
-
+from backend.utilities.dashboard import risk_scale, sbom_rows
 
 def owner_full_name(user) -> str | None:
     """"First Last" of a scan's owner; a missing part is left out ("alice", never "alice None"); None when both are."""
@@ -112,9 +112,9 @@ def return_iac_list_item(scan : Scan) -> dict:
     }
 
 
-    # calculating average risk score
+    # calculating average risk score (0-10, #35); 0 without findings
     if sum([total_critical, total_high, total_medium, total_low]) > 0:
-        average_risk_score = (total_critical * 4 + total_high * 3 + total_medium * 2 + total_low * 1) / (total_critical + total_high + total_medium + total_low)
+        average_risk_score = average_risk_0_10(total_critical, total_high, total_medium, total_low)
         
     # calculating coverage % 
     scan_run_metadata = scan.scan_metadata.get("metadata",None)
@@ -153,9 +153,10 @@ def return_iac_list_item(scan : Scan) -> dict:
 
 
 def return_sbom_sca_list_item(scan : Scan) -> dict:
-    total_critical , total_high , total_medium , total_low , average_risk_score  = 0,0,0,0,0
+    total_critical , total_high , total_medium , total_low  = 0,0,0,0
     if scan.scan_data and scan.scan_data != {} and "results" in scan.scan_data and scan.scan_status == "success":
-        for vulnerability in scan.scan_data["results"]:
+        # the known vulnerabilities only: the inventoried packages are the SBOM, not Low vulnerabilities (#46)
+        for vulnerability in sbom_rows.vulnerability_rows(scan.scan_data["results"]):
             if vulnerability["impact"].lower() == "critical":
                 total_critical += 1
             elif vulnerability["impact"].lower() == "high":
@@ -173,9 +174,8 @@ def return_sbom_sca_list_item(scan : Scan) -> dict:
     }
 
 
-    # calculating average risk score
-    if sum([total_critical, total_high, total_medium, total_low]) > 0:
-        average_risk_score = (total_critical * 4 + total_high * 3 + total_medium * 2 + total_low * 1) / (total_critical + total_high + total_medium + total_low)
+    # calculating average risk score (0-10, #35); None (shown "—") without a known vulnerability (#46)
+    average_risk_score = average_risk_0_10(total_critical, total_high, total_medium, total_low)
         
  
     return {
@@ -216,7 +216,7 @@ def return_mcp_list_item(scan : Scan) -> dict:
                     total_medium += 1
                 elif vulnerability["impact"].lower() == "low":
                     total_low += 1
-        for prompt in scan.scan_data["results"]["prompts"] and "results" in scan.scan_data and scan.scan_status == "success":
+        for prompt in scan.scan_data["results"]["prompts"]:
             total_prompts += 1
             for vulnerability in prompt["vulnerabilities"]:
                 if vulnerability["impact"].lower() == "critical":
@@ -227,7 +227,7 @@ def return_mcp_list_item(scan : Scan) -> dict:
                     total_medium += 1
                 elif vulnerability["impact"].lower() == "low":
                     total_low += 1
-        for resource in scan.scan_data["results"]["resources"] and "results" in scan.scan_data and scan.scan_status == "success":
+        for resource in scan.scan_data["results"]["resources"]:
             total_resources += 1
             for vulnerability in resource["vulnerabilities"]:
                 if vulnerability["impact"].lower() == "critical":
@@ -260,9 +260,9 @@ def return_mcp_list_item(scan : Scan) -> dict:
                 risky_resources += 1
 
 
-    # calculating average risk score
+    # calculating average risk score (0-10, #35); 0 without findings
     if sum([total_critical, total_high, total_medium, total_low]) > 0:
-        average_risk_score = (total_critical * 4 + total_high * 3 + total_medium * 2 + total_low * 1) / (total_critical + total_high + total_medium + total_low)
+        average_risk_score = average_risk_0_10(total_critical, total_high, total_medium, total_low)
         
  
     return {
@@ -412,9 +412,9 @@ def return_dast_list_item(scan : Scan) -> dict:
     }
 
 
-    # calculating average risk score
+    # calculating average risk score (0-10, #35); 0 without findings
     if sum([total_critical, total_high, total_medium, total_low]) > 0:
-        average_risk_score = (total_critical * 4 + total_high * 3 + total_medium * 2 + total_low * 1) / (total_critical + total_high + total_medium + total_low)
+        average_risk_score = average_risk_0_10(total_critical, total_high, total_medium, total_low)
         
  
     return {
@@ -550,3 +550,10 @@ def return_ai_bom_list_item(scan : Scan) -> dict:
         "average_risk_score" : average_risk_score,
         "scan_binaries": scan.scan_metadata.get("scan_binaries", False) if scan.scan_metadata else False,
     }
+
+
+# Kept at the end of the file so the functions above keep their line numbers (the (i) tips cite them).
+def average_risk_0_10(total_critical: int, total_high: int, total_medium: int, total_low: int) -> float | None:
+    """A scan's Risk score on the app's one 0-10 scale (``risk_scale``, #35); None without findings."""
+    return risk_scale.average_risk({"critical": total_critical, "high": total_high, "medium": total_medium,
+                                    "low": total_low})

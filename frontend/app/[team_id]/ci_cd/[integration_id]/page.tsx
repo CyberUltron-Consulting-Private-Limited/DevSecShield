@@ -122,8 +122,9 @@ export default function CicdIntegrationDashboardPage() {
       queryClient.invalidateQueries({ queryKey: ['cicd-integration-dashboard', team_id, integration_id, LOGS_PAGE_SIZE, logsOffset] });
       toast.success("Integration updated");
     },
+    // the one error toast: updateCicdIntegration only throws a refusal (#27)
     onError: (error) => {
-      showErrorToast(error);
+      showErrorToast(error, "Error updating CI/CD integration");
     },
   });
 

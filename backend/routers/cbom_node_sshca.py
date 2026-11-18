@@ -94,6 +94,7 @@ def _denied(session: Session, node: CbomScanNode, job_id: int, code: str, status
 
 def _issue(token: str | None, job_id: int, req: NA.NodeRequest, raw: bytes) -> dict:
     now = utcnow()
+    NODE.require_node_token(token)  # 401 before get_db(): no usable token needs no database to refuse
     with Session(get_db()) as session:
         node = authenticate_node(session, token, req, raw, now)  # before anything: no node, nothing to attribute
         try:
@@ -152,6 +153,7 @@ def _report(token: str | None, job_id: int, req: NA.NodeRequest, raw: bytes) -> 
     from backend.utilities.cbom_sources.sshca.models import CbomSshCa, CbomSshCertIssued
 
     now = utcnow()
+    NODE.require_node_token(token)  # 401 before get_db(): no usable token needs no database to refuse
     with Session(get_db()) as session:
         node = authenticate_node(session, token, req, raw, now)
         try:

@@ -15,7 +15,10 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 PATTERNS = [
     (re.compile(r'(mongodb://|amqp://|redis://|postgres://|postgresql://)[^\s]+', re.I), r'\1[REDACTED]'),
     (re.compile(r'(api[_-]?key.*?[:=]\s*["\']?)([a-zA-Z0-9]{16,})', re.I), r'\1[REDACTED]'),
-    (re.compile(r'(Bearer\s+)([a-zA-Z0-9._-]+)', re.I), r'\1[REDACTED]'),
+    (re.compile(r'(Bearer\s+)([a-zA-Z0-9._~+/=-]+)', re.I), r'\1[REDACTED]'),
+    (re.compile(r'(Basic\s+)([A-Za-z0-9+/=]{6,})', re.I), r'\1[REDACTED]'),
+    # str(pydantic.ValidationError): "[type=..., input_value={'PAT': ...}, input_type=dict]"
+    (re.compile(r'(input_value=).*?(, input_type=)', re.S), r'\1[REDACTED]\2'),
     (re.compile(r'(password.*?[:=]\s*["\']?)([^\s"\']+)', re.I), r'\1[REDACTED]'),
     (re.compile(r'eyJ[a-zA-Z0-9_-]*\.eyJ[a-zA-Z0-9_-]*\.[a-zA-Z0-9_-]*'), '[JWT_REDACTED]'),
     (re.compile(r'(secret.*?[:=]\s*["\']?)([^\s"\']{8,})', re.I), r'\1[REDACTED]'),
@@ -54,16 +57,23 @@ class CredentialRedactionFilter(logging.Filter):
 # patterns above run over the result.
 REDACTED = "[REDACTED]"
 _SECRET_NAME_PARTS = ("password", "passwd", "secret", "token", "apikey", "authorization", "cookie", "credential",
-                      "privatekey", "accesskey", "sessionkey", "signature")
+                      "privatekey", "accesskey", "sessionkey", "signature", "bearer", "passphrase")
 _SECRET_NAMES = frozenset({"pat", "key", "pwd", "auth_header", "proxy_authorization"})
+# a name whose last word is one of these (ssh_key, github_pat, sshKey, api-key) is a secret too
+_SECRET_LAST_WORDS = frozenset({"pat", "key", "pwd", "pem", "jwt"})
 _SECRET_QUERY = frozenset({"key", "apikey", "api_key", "token", "access_token", "auth", "sig", "signature", "secret",
-                           "password", "x-amz-signature", "x-amz-credential", "x-amz-security-token", "code"})
+                           "password", "x-amz-signature", "x-amz-credential", "x-amz-security-token", "code",
+                           "session", "sessionid", "sid", "jwt", "pat"})
 _URL = re.compile(r"\b[a-z][a-z0-9+.-]*://[^\s'\"<>]+", re.I)
 
 
 def _secret_name(name: Any) -> bool:
-    key = re.sub(r"[^a-z0-9]", "", str(name).lower())
-    return key in {re.sub(r"[^a-z0-9]", "", n) for n in _SECRET_NAMES} or any(p in key for p in _SECRET_NAME_PARTS)
+    text = str(name)
+    key = re.sub(r"[^a-z0-9]", "", text.lower())
+    if key in {re.sub(r"[^a-z0-9]", "", n) for n in _SECRET_NAMES} or any(p in key for p in _SECRET_NAME_PARTS):
+        return True
+    words = re.findall(r"[A-Z]?[a-z0-9]+|[A-Z]+(?![a-z])", text)
+    return bool(words) and words[-1].lower() in _SECRET_LAST_WORDS
 
 
 def _headers_name(name: Any) -> bool:
@@ -77,14 +87,19 @@ def _clean_url(match: "re.Match[str]") -> str:
         netloc = parts.netloc
         if "@" in netloc:
             netloc = REDACTED + "@" + netloc.rsplit("@", 1)[1]
-        query = parts.query
-        if query:
-            pairs = parse_qsl(query, keep_blank_values=True)
-            query = urlencode([(k, REDACTED if k.lower() in _SECRET_QUERY or _secret_name(k) else v)
-                               for k, v in pairs], safe="[]")
-        return urlunsplit((parts.scheme, netloc, parts.path, query, parts.fragment))
+        return urlunsplit((parts.scheme, netloc, parts.path, _clean_pairs(parts.query),
+                           _clean_pairs(parts.fragment)))
     except ValueError:
         return REDACTED
+
+
+def _clean_pairs(text: str) -> str:
+    """A query string or fragment (``#access_token=...``): secret parameters' values replaced."""
+    if "=" not in text:
+        return text
+    pairs = parse_qsl(text, keep_blank_values=True)
+    return urlencode([(k, REDACTED if k.lower() in _SECRET_QUERY or _secret_name(k) else v) for k, v in pairs],
+                     safe="[]")
 
 
 def _clean_text(text: str) -> str:
@@ -113,6 +128,8 @@ def redact_secrets(value: Any, _depth: int = 0) -> Any:
         return type(value)(items) if isinstance(value, (tuple, list)) else items
     if isinstance(value, str):
         return _clean_text(value)
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return REDACTED  # raw bytes (a key file, an uploaded body): never printed
     return value
 
 

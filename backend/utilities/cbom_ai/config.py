@@ -23,7 +23,14 @@ from dataclasses import dataclass, field
 from urllib.parse import urlsplit
 
 DEFAULT_TIMEOUT_S = 60.0
-DEFAULT_MAX_TOKENS = 700
+# 0: no deployment-wide cap, each mode has its own output budget (service.MODE_MAX_TOKENS); CBOM_AI_MAX_TOKENS sets a
+# cap for a model with a small output or context limit
+DEFAULT_MAX_TOKENS = 0
+# the whole request (slot wait, model call, at most one retry) answers within this, so a proxy with nginx's 60 s
+# default read timeout never cuts it; the UI waits 90 s (CBOM_AI_UI_TIMEOUT_MS), longer than the largest deadline
+DEFAULT_DEADLINE_S = 50.0
+MIN_DEADLINE_S = 10.0
+MAX_DEADLINE_S = 85.0
 DEFAULT_CONCURRENCY = 2
 # the model the SAST lane already uses on Bedrock (backend/utilities/ai/llm.py get_llm default) and its region default
 DEFAULT_BEDROCK_MODEL = "openai.gpt-oss-120b-1:0"
@@ -75,8 +82,8 @@ class AiConfig:
     model: str
     api_key: str | None
     ca_file: str | None
-    timeout_s: float
-    max_tokens: int
+    timeout_s: float       # one model call (capped by deadline_s)
+    max_tokens: int        # the operator's output cap, 0 when unset (each mode's own budget)
     concurrency: int
     redact_hosts: bool
     allow_nonprivate: bool
@@ -92,6 +99,7 @@ class AiConfig:
     allow_loopback: bool = False       # bedrock: CBOM_AI_BEDROCK_ENDPOINT_URL may be a loopback forwarder
     # bedrock, source static: CBOM_AI_AWS_* (both halves, or None: then the source is refused, never a fall-back)
     aws_static: StaticKeys | None = field(default=None, repr=False)
+    deadline_s: float = DEFAULT_DEADLINE_S  # the whole request: slot wait + model call + at most one retry
 
     def aws(self, key: str) -> str:
         return dict(self.aws_settings).get(key, "")
@@ -123,7 +131,20 @@ def _number(name: str, default: float, low: float, high: float) -> float:
         value = float(raw) if raw else default
     except ValueError:
         value = default
+    if value != value:  # "nan" would pass both bounds
+        value = default
     return min(max(value, low), high)
+
+
+def _max_tokens() -> int:
+    """CBOM_AI_MAX_TOKENS, clamped to 64 - 8192; DEFAULT_MAX_TOKENS (each mode's own budget) when unset or not a
+    number."""
+    raw = (os.environ.get("CBOM_AI_MAX_TOKENS") or "").strip()
+    try:
+        value = int(float(raw)) if raw else 0
+    except (ValueError, OverflowError):  # "abc", "nan", "inf"
+        value = 0
+    return min(max(value, 64), 8192) if value > 0 else DEFAULT_MAX_TOKENS
 
 
 def _url_ok(url: str, schemes: tuple[str, ...]) -> bool:
@@ -155,7 +176,8 @@ def load() -> AiConfig | None:
         api_key=(os.environ.get("CBOM_AI_API_KEY") or "").strip() or None,
         ca_file=(os.environ.get("CBOM_AI_CA_FILE") or "").strip() or None,
         timeout_s=_number("CBOM_AI_TIMEOUT_S", DEFAULT_TIMEOUT_S, 1, 600),
-        max_tokens=int(_number("CBOM_AI_MAX_TOKENS", DEFAULT_MAX_TOKENS, 64, 8192)),
+        max_tokens=_max_tokens(),
+        deadline_s=_number("CBOM_AI_DEADLINE_S", DEFAULT_DEADLINE_S, MIN_DEADLINE_S, MAX_DEADLINE_S),
         concurrency=int(_number("CBOM_AI_CONCURRENCY", DEFAULT_CONCURRENCY, 1, 64)),
         allow_nonprivate=_flag("CBOM_AI_ALLOW_NONPRIVATE"),
         honor_proxy=_flag("CBOM_AI_HONOR_PROXY"),

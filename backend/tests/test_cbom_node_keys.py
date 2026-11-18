@@ -300,9 +300,18 @@ def test_ca_connector_providers():
         spec.model.model_validate({"provider": "adcs", "login": "svc"})
     with pytest.raises(ValueError, match="5986"):
         spec.model.model_validate({"provider": "adcs", "login": "svc", "host": "ca01", "port": 5985})
-    for provider in ("venafi", "keyfactor", "digicert", "sectigo", "other"):
-        cfg = spec.model.model_validate({"provider": provider, "api_url": "https://clm.example.com"})
-        assert not spec.collectable(cfg) and not spec.needs_node(cfg)  # honest: not collected yet
+    venafi = spec.model.model_validate({"provider": "venafi", "api_url": "https://tpp.example/vedsdk",
+                                        "login": "local:admin", "client_id": "MyApp"})
+    assert spec.collectable(venafi) and spec.needs_node(venafi) and spec.secret_fields(venafi) == {"password"}
+    keyfactor = spec.model.model_validate({"provider": "keyfactor", "api_url": "https://kf.example/KeyfactorAPI"})
+    assert spec.collectable(keyfactor) and spec.secret_fields(keyfactor) == {"token"}
+    digicert = spec.model.model_validate({"provider": "digicert", "api_url": "https://www.digicert.com/services/v2"})
+    assert spec.collectable(digicert) and spec.secret_fields(digicert) == {"api_key"}
+    sectigo = spec.model.model_validate({"provider": "sectigo", "api_url": "https://cert-manager.com/api",
+                                         "login": "reader", "customer_uri": "cst1152"})
+    assert spec.collectable(sectigo) and spec.secret_fields(sectigo) == {"password"}
+    other = spec.model.model_validate({"provider": "other", "api_url": "https://clm.example.com", "login": "nobody"})
+    assert other.login is None and not spec.collectable(other) and not spec.needs_node(other)
 
 
 # ----------------------------------------------------------------------------- templates
@@ -320,6 +329,19 @@ def test_grants_cover_exactly_what_the_node_reads():
     assert 'path "sys/mounts" { capabilities = ["read"] }' in policy
     assert "export" not in re.sub(r"#.*", "", policy) and "backup" not in re.sub(r"#.*", "", policy)
     assert templates.TEMPLATE_NAMES["vault-policy"][1] == "zs-cbom-vault-policy.hcl"
+
+
+def test_redis_grant_allows_every_command_the_node_sends():
+    """Lab test: `-@all` also removes PING, which the collector sends first, so a user made with the template got
+    "Redis refused PING" (Redis answers NOPERM)."""
+    node = (ROOT / "scan_node/zs_scan_node/collectors/database.py").read_text()
+    sent = {"client.ping()": "+ping", 'client.info("server")': "+info", "client.config_get(": "+config|get",
+            'execute_command("ACL", "WHOAMI")': "+acl|whoami"}
+    grant = templates.DB_GRANTS["redis"].split()
+    for call, rule in sent.items():
+        assert call in node, call
+        assert rule in grant, rule
+    assert grant.index("-@all") < min(grant.index(rule) for rule in sent.values())
 
 
 def test_postgres_grant_tells_rds_to_skip_the_hba_grants():

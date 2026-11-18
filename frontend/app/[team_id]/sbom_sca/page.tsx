@@ -281,12 +281,12 @@ function SBOMSCAScanListDashboard({ dashboardData }: { dashboardData: SBOMSCADas
         <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
           <CardContent className="p-0">
             <div className="flex flex-col items-start gap-2">
-              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${card.average_risk_score >= 7 ? "bg-red-500/15 dark:bg-red-500/10" : card.average_risk_score >= 5 ? "bg-amber-500/15 dark:bg-amber-500/10" : "bg-green-500/15 dark:bg-green-500/10"}`}>
-                <Activity className={`h-4 w-4 ${card.average_risk_score >= 7 ? "text-red-500" : card.average_risk_score >= 5 ? "text-amber-500" : "text-green-500"}`} />
+              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${(card.average_risk_score ?? 0) >= 7 ? "bg-red-500/15 dark:bg-red-500/10" : (card.average_risk_score ?? 0) >= 5 ? "bg-amber-500/15 dark:bg-amber-500/10" : "bg-green-500/15 dark:bg-green-500/10"}`}>
+                <Activity className={`h-4 w-4 ${(card.average_risk_score ?? 0) >= 7 ? "text-red-500" : (card.average_risk_score ?? 0) >= 5 ? "text-amber-500" : "text-green-500"}`} />
               </div>
               <div>
                 <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Avg Risk Score <InfoTip id="sbom.kpi.avg_risk" /></p>
-                <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.average_risk_score.toFixed(1)}</p>
+                <p className="text-xl font-bold text-zinc-900 dark:text-white" title={card.average_risk_score == null ? "No known vulnerabilities" : undefined}>{card.average_risk_score == null ? "—" : card.average_risk_score.toFixed(1)}</p>
               </div>
             </div>
           </CardContent>

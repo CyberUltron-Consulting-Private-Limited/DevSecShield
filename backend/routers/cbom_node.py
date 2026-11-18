@@ -105,9 +105,17 @@ def _ips(values: list[str]) -> list[str]:
     return out
 
 
-def _node_for(token: str | None, session: Session) -> CbomScanNode:
+def require_node_token(token: str | None) -> str:
+    """The node token when one arrived intact, else 401 ``node_token_missing`` (never a revocation).  Needs no
+    database: every node route calls it before get_db(), so a request without a usable token gets this 401 even
+    when the database is not configured or down (#433)."""
     if not token or not token.startswith("zsn_") or len(token) > 128:
-        raise _TOKEN_MISSING  # no node token arrived intact: never a revocation
+        raise _TOKEN_MISSING
+    return token
+
+
+def _node_for(token: str | None, session: Session) -> CbomScanNode:
+    token = require_node_token(token)
     node = session.exec(select(CbomScanNode).where(CbomScanNode.node_token_hash == sha256_hex(token))).first()
     if node is None:
         raise _UNAUTHORIZED
@@ -379,6 +387,7 @@ def _heartbeat(token: str | None, req: NA.NodeRequest, raw: bytes, ip: str) -> d
     the jobs it could run now (the runnable predicate), and a read-only commit.  No nonce row, no nonce sweep (the
     reaper's), no reap of the whole queue."""
     now = utcnow()
+    require_node_token(token)  # 401 before get_db(): a missing token needs no database (#433)
     seen = {"last_heartbeat_at": now, "last_seen_ip": ip}
     with NA.node_session(get_db()) as session:
         node, stamped = _authenticate(session, token, req, raw, now, touch=seen)
@@ -486,6 +495,7 @@ def _claim(token: str | None, req: NA.NodeRequest, raw: bytes, ip: str) -> tuple
     claim's LAST statement (last seen for protocol 1, ``last_claim_at``), so a claim plugin that mints material never
     holds it (C4).  Returns (payload or None, node id)."""
     now = utcnow()
+    require_node_token(token)  # 401 before get_db(): a missing token needs no database (#433)
     seen = {"last_heartbeat_at": now, "last_seen_ip": ip}
     with NA.node_session(get_db()) as session:
         node, stamped = _authenticate(session, token, req, raw, now, touch=seen)
@@ -547,6 +557,7 @@ async def claim(request: Request, token: Annotated[str | None, Security(node_tok
 # ----------------------------------------------------------------------------- assets
 def _assets(token: str | None, job_id: int, req: NA.NodeRequest, raw: bytes) -> dict:
     now = utcnow()
+    require_node_token(token)  # 401 before get_db(): a missing token needs no database (#433)
     RT.note(job_id=job_id)
     with NA.node_session(get_db()) as session:
         node = authenticate_node(session, token, req, raw, now)
@@ -582,6 +593,7 @@ def _result(token: str | None, job_id: int, req: NA.NodeRequest, raw: bytes) -> 
     """A job's end.  No run or team row is locked or written here (the run closer and refund settlement run after
     the commit, ``jobs``); the answer grants the node its next claims."""
     now = utcnow()
+    require_node_token(token)  # 401 before get_db(): a missing token needs no database (#433)
     RT.note(job_id=job_id)
     with NA.node_session(get_db()) as session:
         node = authenticate_node(session, token, req, raw, now)

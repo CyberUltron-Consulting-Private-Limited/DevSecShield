@@ -38,7 +38,7 @@
 #   staging.sh backend-env               read KEY=VALUE lines on stdin and set exactly those keys in backend.env (only
 #                                        the BACKEND_ENV_KEYS below; empty values are skipped; never prints a value).
 #                                        `push` runs it just before `deploy` when STAGING_SET_<KEY> is set (CI: the
-#                                        staging environment's CBOM_AWS_* / CBOM_AI_AWS_* secrets; README "AWS")
+#                                        staging environment's CBOM_AWS_* / CBOM_AI_* / CBOM_CT_DISCOVERY; README)
 #   staging.sh rollback [--allow-downgrade]
 #                                        back to the previously deployed tag and its own deploy files (compose file,
 #                                        nginx, this script). When that tag's migrations do not contain the database's
@@ -105,12 +105,13 @@ DSS_REPOS=(devsecshield-backend devsecshield-frontend scan-worker dast-worker)
 # classic-store builder holds uncompressed layer tars and needs about 4x: set STAGING_DISK_FACTOR=4 for one.
 DEFAULT_DISK_FACTOR=3.3
 DEFAULT_DISK_RESERVE_MB=1024  # left free on every filesystem after the copy and the load (the host is shared)
-# The only backend.env keys a deploy may set (push -> backend-env): the AWS collector identity, the lab switch, and
+# The only backend.env keys a deploy may set (push -> backend-env): the AWS collector identity, the lab switch,
 # the AI remediation settings (CB-38: AWS Bedrock; the provider, region and credential source are not secrets, the
-# assistant's own IAM user keys are, and travel like the collector's: stdin only, never printed).
+# assistant's own IAM user keys are, and travel like the collector's: stdin only, never printed), and
+# CBOM_CT_DISCOVERY (not a secret: 1 or 0; README "Certificate Transparency discovery on staging").
 BACKEND_ENV_KEYS=(CBOM_AWS_ACCESS_KEY_ID CBOM_AWS_SECRET_ACCESS_KEY CBOM_AWS_PRINCIPAL_ARN CBOM_AWS_LAB_SAME_ACCOUNT
   CBOM_AI_PROVIDER CBOM_AI_BEDROCK_REGION CBOM_AI_AWS_CREDENTIALS CBOM_AI_AWS_ACCESS_KEY_ID
-  CBOM_AI_AWS_SECRET_ACCESS_KEY)
+  CBOM_AI_AWS_SECRET_ACCESS_KEY CBOM_CT_DISCOVERY)
 
 log() { printf '[staging %s] %s\n' "$(date -u +%H:%M:%S)" "$*"; }
 die() { printf '[staging] ERROR: %s\n' "$*" >&2; exit 1; }
@@ -355,7 +356,11 @@ cmd_backend_env() { # stdin: KEY=VALUE lines; sets exactly those keys in backend
     [[ "${line}" == *=* ]] || die "backend-env: a line without KEY=VALUE"
     known=0
     for k in "${BACKEND_ENV_KEYS[@]}"; do [[ "${k}" == "${key}" ]] && known=1; done
-    ((known)) || die "backend-env: ${key:0:64} is not one of: ${BACKEND_ENV_KEYS[*]}"
+    # name a refused key only when it looks like one: a multi-line secret's next line must not show up here, in part
+    if ! ((known)); then
+      [[ "${key}" =~ ^[A-Z0-9_]{1,64}$ ]] || die "backend-env: an unknown key is not one of: ${BACKEND_ENV_KEYS[*]}"
+      die "backend-env: ${key} is not one of: ${BACKEND_ENV_KEYS[*]}"
+    fi
     [[ -n "${value}" ]] || continue # not provided: leave the host's value
     # AWS key ids, secret keys and ARNs, or 0/1: nothing that could break the env file or a shell
     [[ "${value}" =~ ^[A-Za-z0-9/+=:@._,-]{1,512}$ ]] || die "backend-env: the value of ${key} has characters an env file cannot hold"

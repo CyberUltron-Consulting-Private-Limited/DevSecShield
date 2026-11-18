@@ -6,7 +6,7 @@ import re
 
 from backend.utilities.cbom_ai.grounding import Grounding
 
-PROMPT_VERSION = "cbom-ai-p1"
+PROMPT_VERSION = "cbom-ai-p2"  # p2: COMPACT / COMPACT_FIX for the one retry after an answer cut at the token cap
 
 SYSTEM = """You are the remediation assistant of a cryptography inventory (CBOM) product, running on the customer's own
 server. You help an engineer fix ONE finding on ONE asset.
@@ -32,9 +32,17 @@ the <...> text itself):
 TEMPLATE_PHRASES = ("two or three sentences", "one action for this asset", "one action with", "a command copied exactly",
                     "a short warning", "item id>", "<item", "replace every")
 
-# item text sent to the model (about 2,500-3,000 tokens with the system prompt and a 700-token answer this fits a
-# 4 k-token context; the offline proof overflowed 4 k at 14,000)
+# item text sent to the model (about 2,500-3,000 tokens with the system prompt; the offline proof overflowed 4 k at
+# 14,000). The answer budget is per mode (service.MODE_MAX_TOKENS, up to 2,400 tokens): a model with a 4 k-token
+# context needs CBOM_AI_MAX_TOKENS of about 1,000.
 MAX_PROMPT_CHARS = 10_000
+
+# Added to the user turn of the one retry after an answer was cut at the output-token cap (service.assist).
+COMPACT = ("Keep this answer short (an earlier answer was too long and was cut off): a summary of one or two "
+           "sentences, at most 5 steps of one sentence each, at most 3 commands and at most 2 caveats. "
+           "Reply with the JSON object only.")
+COMPACT_FIX = ("Keep this answer short (an earlier answer was too long and was cut off): the whole rewritten "
+               "window, at most 2 short explanation items and at most 1 note. Reply with the JSON object only.")
 
 TASKS = {
     "explain": "Explain what is wrong with this asset, how an attacker would use it and why it matters here. "

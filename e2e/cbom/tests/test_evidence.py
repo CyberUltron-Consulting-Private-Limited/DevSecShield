@@ -326,6 +326,31 @@ def test_the_repository_ledger_is_valid():
         assert str(row["owner"]).startswith(("CB-", "#")), row["row"]
 
 
+# Rows that #73 used to own, and the issue that owns each one now. The pins are unchanged; only the issue moved.
+_TRACKER_ROWS = {
+    "PRE-build-identity": "#72", "KF-4": "#110", "KF-5": "#110", "KF-6": "#111", "KF-17": "#111",
+    "KF-4-5-derived": "#110", "KF-9": "#103", "KF-3": "#407", "KF-7": "#399", "KF-8": "#408",
+    "KF-10": "#409", "KF-11": "#134", "KF-12": "#410", "KF-13": "#173", "KF-14": "#411",
+    "CB05-steps": "#102", "CB05-sources": "#102", "CB05-named": "#102",
+}
+
+
+def test_the_followup_targets_are_unconfigured_not_deferred():
+    """#93 built the IdP and the receiver. The gate no longer emits deferred_<part> for them."""
+    rows = {r["row"]: r for r in ledger.load(gate.DEFAULT_LEDGER)}
+    assert "LAB-deferred" not in rows
+    pins = {p["id"] for p in rows["LAB-followup-unconfigured"]["expect"]}
+    assert pins == {"G11/oracle/run1/idp/key/ec-p256", "G11/oracle/run1/idp/key/rsa-2048",
+                    "G11/oracle/run1/receiver/*"}
+
+
+def test_the_tracker_issue_owns_no_ledger_row():
+    """#73 closes when the ledger holds only rows that name their own issue."""
+    rows = {r["row"]: str(r["issue"]) for r in ledger.load(gate.DEFAULT_LEDGER)}
+    assert "#73" not in rows.values()
+    assert {name: rows[name] for name in _TRACKER_ROWS} == _TRACKER_ROWS
+
+
 # ------------------------------------------------------------------------------------------ manifest and redaction
 def test_sums_verify_and_detect_tampering(tmp_path):
     run = FakeRun(tmp_path).write()
