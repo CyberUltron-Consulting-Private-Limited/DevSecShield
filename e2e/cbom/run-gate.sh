@@ -60,9 +60,22 @@ SECRETS=$(mktemp /tmp/cbom-e2e-secrets.XXXXXX)
 chmod 600 "$SECRETS"
 log "run directory $RUN"
 
+# exit S (CB-05): the stack.lock hold and memory, recorded in steps/lock.json and steps/memory.json
+stamp() { python3 - "$RUN/steps/$1.json" "$2" "$3" <<'PY'
+import json, sys, pathlib
+p = pathlib.Path(sys.argv[1]); p.parent.mkdir(parents=True, exist_ok=True)
+d = json.loads(p.read_text()) if p.exists() else {}
+d[sys.argv[2]] = sys.argv[3]
+p.write_text(json.dumps(d, indent=1, sort_keys=True) + "\n")
+PY
+}
+mem() { stamp memory "$1" "$(avail_mb)"; }
+
 gate() {
   set -euo pipefail
+  stamp lock acquired "$(date -u +%FT%TZ)"
   restack_if_needed
+  stamp lock gate_started "$(date -u +%FT%TZ)"
   local started; started=$(date -u +%FT%TZ)
   # the node image the stack built for this SHA (CB-03's restack), else the one given with --node-image
   local pre_image=$NODE_IMAGE
@@ -73,6 +86,12 @@ gate() {
   exec 9> "$LOCKS/cbom-lab.lock"
   flock 9
   mkdir -p "$RUN/steps/lab"
+  # §4.1 memory rule: >= 1.5 GB available before and after the lab starts, otherwise wait. The core lab needs about
+  # 0.45 GB, so wait (up to 15 min of the hold) for 2 GB before bringing it up.
+  local waited=0
+  while [ "$(avail_mb)" -lt 2000 ] && [ "$waited" -lt 900 ]; do sleep 30; waited=$((waited + 30)); done
+  stamp memory waited_s "$waited"
+  mem before_lab_mb
   if [ -f "$gen" ]; then
     log "lab up ($gen)"
     python3 "$gen" up --run-dir "$RUN" > "$RUN/steps/lab/gen-up.log" 2>&1 || log "lab up failed (exit $?); see steps/lab/gen-up.log"
@@ -80,15 +99,18 @@ gate() {
   else
     log "no lab at $gen: lab rows will be NOT-RUN"
   fi
+  mem after_lab_mb
   python3 -m harness.gate freeze-oracle "$RUN" > /dev/null
   python3 -m harness.bundle manifest "$RUN" --sha "$SHA" --ref "$REF" --started "$started" ${NODE_IMAGE:+--node-image "$NODE_IMAGE"}
   log "G0 pre-flight"
   python3 -m harness.preflight "$RUN" --sha "$SHA" --repo "$REPO" ${pre_image:+--node-image "$pre_image"}
   log "customer flow (Chromium)"
   ( cd "$R6/local/pw" && env -u HTTPS_PROXY -u https_proxy -u HTTP_PROXY -u http_proxy \
+      CBOM_E2E_HTTPS_PROXY="${HTTPS_PROXY:-${https_proxy:-}}" CBOM_E2E_HTTP_PROXY="${HTTP_PROXY:-${http_proxy:-}}" \
       PLAYWRIGHT_BROWSERS_PATH="$R6/local/pw/browsers" node "$HERE/flow/gate.mjs" --run-dir "$RUN" --sha "$SHA" \
-      --secrets-file "$SECRETS" ${NODE_IMAGE:+--node-image "$NODE_IMAGE"} ${STEPS:+--steps "$STEPS"} ) \
+      --lab-dir "$LAB_DIR" --secrets-file "$SECRETS" ${NODE_IMAGE:+--node-image "$NODE_IMAGE"} ${STEPS:+--steps "$STEPS"} ) \
       2>&1 | tee "$RUN/steps/flow.log" || log "flow exited non-zero"
+  mem after_flow_mb
   local teams runs
   teams=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(','.join(str(v) for v in (d.get('teams') or {}).values()))" "$RUN/flow-state.json" 2>/dev/null || true)
   runs=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(','.join(str(v) for v in d.get('runs') or []))" "$RUN/flow-state.json" 2>/dev/null || true)
@@ -106,6 +128,7 @@ gate() {
   [ -n "$vol" ] && docker volume rm "$vol" > /dev/null 2>&1 || true
   [ -f "$gen" ] && { python3 "$gen" down --run-dir "$RUN" > "$RUN/steps/lab/gen-down.log" 2>&1 || log "lab down failed"; }
   flock -u 9
+  stamp lock gate_finished "$(date -u +%FT%TZ)"
   python3 -m harness.bundle seal "$RUN" --secrets-file "$SECRETS" --started "$started"
   log "judge"
   local rc=0
@@ -113,15 +136,17 @@ gate() {
   echo "harness_seconds=$(( $(date +%s) - t_harness ))" >> "$RUN/steps/flow.log"
   return "$rc"
 }
-export -f gate log restack_if_needed
+export -f gate log restack_if_needed stamp mem avail_mb
 export HERE RUN SHA REF REPO LAB_DIR NODE_IMAGE STEPS SECRETS R6 LOCKS SKIP_RESTACK
 rc=0
+stamp lock waiting_since "$(date -u +%FT%TZ)"
 if [ "${CBOM_STACK_LOCK_HELD:-}" = 1 ]; then
   # a CB-35 wave runs this inside its own stack.lock hold (harness/waves.py): taking the lock again would wait forever
   bash -c gate || rc=$?
 else
   flock "$LOCKS/stack.lock" bash -c gate || rc=$?
 fi
+stamp lock released "$(date -u +%FT%TZ)"
 rm -f "$SECRETS"
 
 # 3. the stack back on dev (its own hold; nothing to do when <ref> is dev), then the checksums

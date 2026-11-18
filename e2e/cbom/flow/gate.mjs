@@ -19,6 +19,7 @@ import { allowedDiff, allowedTokens, cellsHaveIp, engineMatchesBuild, ipTokens, 
 import { inCidr, plannedCharge } from "./rates.mjs";
 import { collectRunRows, runRowFromDom } from "./rows.mjs";
 import { createConnection } from "node:net";
+import * as cb05 from "./cb05.mjs";
 
 const R6 = process.env.R6 || "/home/claude/round6";
 const { chromium } = createRequire(process.env.CBOM_E2E_PW || `${R6}/local/pw/`)("playwright");
@@ -41,6 +42,8 @@ const TERMINAL = ["success", "failure", "failed", "cancelled", "expired"];
 const ALL = ["G1", "G2", "G3", "G4", "G5", "G5b", "G6", "G7", "G8", "G9", "G10", "G11", "G12", "G13", "G13b", "G14"];
 const STEPS = new Set(args.steps ? args.steps.split(",") : ALL);
 const SECRETS_FILE = args["secrets-file"] || `/tmp/cbom-e2e-secrets-${process.pid}.json`;
+const HERE = dirname(fileURLToPath(import.meta.url));
+const LAB_DIR = args["lab-dir"] || join(HERE, "..", "..", "..");
 const lab = readJson(join(RUN, "lab", "lab.json"));
 const stateFile = join(RUN, "flow-state.json");
 const state = readJson(stateFile) || { started: iso() };
@@ -218,17 +221,25 @@ async function probeListener(l, port) {
 
 // G17: both customers sign out through the UI (user menu > Sign out); proven by the login page and a 401 afterwards
 async function signOut(who) {
-  try {
-    const { page } = who;
-    await page.goto(`${UI}/${who.team}/cbom/sources`, { waitUntil: "networkidle" });
-    await page.getByRole("button", { name: new RegExp(who.email.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")) }).first().click();
-    await page.getByRole("menuitem", { name: /sign out/i }).first().click();
-    await page.waitForURL(/\/login/, { timeout: 20000 });
-    const after = await apiGet(who, `/${who.team}/cbom/sources/runs`);
-    return after.status === 401 || after.status === 403;
-  } catch {
-    return false;
+  // the proof is the API refusing the customer's token afterwards; the UI path is tried twice with generous timeouts
+  // (a loaded shared machine made the 20 s wait miss a logout that had happened), and its error is kept
+  const { page } = who;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      for (let i = 0; i < 3 && (await page.getByRole("dialog").count()); i++) await page.keyboard.press("Escape");
+      await page.goto(`${UI}/${who.team}/cbom/sources`, { waitUntil: "networkidle", timeout: 90000 });
+      if (/\/login/.test(page.url())) break;
+      await page.getByRole("button", { name: new RegExp(who.email.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")) }).first().click({ timeout: 60000 });
+      await page.getByRole("menuitem", { name: /sign out/i }).first().click({ timeout: 60000 });
+      await page.waitForURL(/\/login/, { timeout: 60000 });
+      break;
+    } catch (e) {
+      who.logoutError = String(e.message || e).split("\n")[0].slice(0, 200);
+    }
   }
+  const after = await apiGet(who, `/${who.team}/cbom/sources/runs`).catch(() => ({ status: null }));
+  if (!(after.status === 401 || after.status === 403)) state.logout_errors = { ...(state.logout_errors || {}), [who.name]: who.logoutError || `API ${after.status}` };
+  return after.status === 401 || after.status === 403;
 }
 
 async function overflow(page) {
@@ -365,11 +376,11 @@ try {
     writeFileSync(join(s.dir, "node.log"), ((logs.stdout || "") + (logs.stderr || "")).split(token || "\u0000").join("<token>"));
   });
 
-  // G4 servers, G5b IDNA, G6 database, G7 cloud & identity, G8 evidence: CB-05 writes these specs
-  for (const [g, why] of [["G4", "Servers sources (S-ubuntu, S-canary) are CB-05's spec"], ["G5b", "IDNA source is CB-05's spec (KF-7)"],
-    ["G6", "Database source is CB-05's spec"], ["G7", "Cloud & identity is CB-05's spec"], ["G8", "Evidence + vendor link is CB-05's spec"]]) {
-    if (STEPS.has(g)) notRun(g, why);
-  }
+  // CB-05 steps (cb05.mjs; INTERFACES.md v5): one context object for them
+  const ctx = { RUN, R6, UI, API, SHA, HERE, LAB_DIR, TERMINAL, lab, state, browser, node, get A() { return A; }, get B() { return B; },
+    step: (g, c, fn) => (STEPS.has(g) ? step(g, c, fn) : undefined), db, apiGet, sourcesTab, remember, inCidr, sleep, iso, writeJson, readJson, sha256 };
+  // G4 servers (CB-05)
+  await cb05.g4(ctx);
 
   // G5 network ----------------------------------------------------------------------------------------------
   await step("G5", A.ctx, async (s) => {
@@ -439,6 +450,12 @@ try {
     }
   });
 
+  // G5b IDNA, G6 database, G7 cloud & identity, G8 evidence (CB-05)
+  await cb05.g5b(ctx);
+  await cb05.g6(ctx);
+  await cb05.g7(ctx);
+  await cb05.g8(ctx);
+
   // G9 review & run -----------------------------------------------------------------------------------------
   await step("G9", A.ctx, async (s) => {
     const { page } = A;
@@ -456,6 +473,8 @@ try {
     state.expected_charge_c = plan.total_c;
     s.check("estimate_eq_rates", !plan.unknown.length && Math.round(estimate * 100) === plan.total_c, { expected: plan.total_c / 100, observed: estimate,
       reason: plan.unknown.length ? "rate-unknown" : "estimate-vs-rates", subject: { check: "estimate_eq_rates" } });
+    // the Review page names exactly the sources whose test the customer saw fail (CB-05)
+    await cb05.g9Skipped(ctx, s, plan);
     const ack = page.locator("#review-soc-ack");
     if (await ack.count()) await ack.check();
     await s.shot(page, "review");
@@ -492,7 +511,8 @@ try {
     const { page } = A;
     await page.reload({ waitUntil: "networkidle" });
     await s.shot(page, "watch");
-    s.notRun("charge_after_runtime_skips", "the final charge after runtime skips follows OA-10b; CB-05 adds the check (KF-8)");
+    // charge after runtime skips (OA-10b; CB-05)
+    await cb05.g10Charge(ctx, s);
     // never-scan (O-8): only connections FROM THE NODE after "Start scan" count; the control proves the node scanned
     // the range, and a probe from this host proves the canary's log path (INTERFACES v7 §A.4)
     const listeners = lab?.listeners || [];
@@ -537,9 +557,12 @@ try {
     const runId = state.runs?.[0];
     if (!runId) { s.check("run_exists", false, { expected: "a run", observed: null }); return; }
     const { page } = A;
-    await page.goto(`${UI}/${A.team}/cbom/sources?tab=review`, { waitUntil: "networkidle" });
-    await page.getByTestId(`review-run-details-${runId}`).click();
-    await page.getByTestId("run-results").waitFor({ timeout: 30000 });
+    // CB-38: the run's row in CBOM Scans -> Table, as the customer sees it (G11u list counts below)
+    const listRow = await cb05.readListRow(ctx, runId);
+    // the Results button opens /{team}/cbom/runs/{run}/results; so do the list's title link and the URL itself
+    await cb05.openRunResults(ctx, s, runId, { via: "direct" });
+    await cb05.openRunResults(ctx, s, runId, { via: "list" });
+    const resultsPath = await cb05.openRunResults(ctx, s, runId, { via: "review" });
     // every page of the API with the customer's own token
     // raw pages: an id the product serves twice stays twice (the judge fails duplicates, m1)
     const items = []; let first = null;
@@ -559,14 +582,18 @@ try {
     // raw DOM rows, page by page (no de-duplication: a repeated id is judged, m1); stop at the last page, or when a
     // "next" click did not move (the same ids again), which is recorded as a paging failure
     const rows = [];
+    const attrRows = [];
     let prevIds = null, stuck = false;
     for (let p = 1; p < 200; p++) {
-      // each row from its data-* attributes (rows.mjs), not by column position: columns are hidden per user (#267)
+      // judged rows stay the rendered form rows.mjs records (hidden columns, #267). G11u also reads the raw
+      // data-* attributes (reader data-attributes) so q-grade and fix class compare to the API item.
       const got = (await page.$$eval('[data-testid^="run-asset-"]', collectRunRows)).map(runRowFromDom);
+      const attr = await page.$$eval('[data-testid^="run-asset-"]', cb05.readRunRows, { attrsOnly: cb05.isResultsPage(resultsPath) });
       const ids = got.map((r) => r.id).join(",");
       if (prevIds !== null && ids === prevIds) { stuck = true; break; }
       prevIds = ids;
       rows.push(...got);
+      attrRows.push(...attr);
       if (!got.length) break;
       // the pagination exists only when there is more than one page ("Page n of m"); its button is named exactly
       // "Next" (the certificate calendar's "Next month" button sits in the same panel: run 5's paging_stuck)
@@ -577,6 +604,23 @@ try {
     }
     const totalText = (await page.getByTestId("run-results-total").textContent().catch(() => "")) || "";
     writeJson(join(RUN, "ui", "assets-run1.json"), { run_id: runId, total_text: totalText.trim(), rows });
+    // G11u (Rule P): the page prints /posture's readiness, classes and Critical/High, and each row the item's grade
+    // innerText keeps the line breaks between the card's values ("2 / 3" then "1 medium, 1 low"); textContent glues them
+    const textOf = async (tid) => ((await page.getByTestId(tid).count()) ? ((await page.getByTestId(tid).first().innerText()) || "") : null);
+    const qCounts = (await page.getByTestId("posture-q-distribution").count())
+      ? await page.$$eval('[data-testid="posture-q-distribution"] [data-count]', (els) => Object.fromEntries(els.map((e) => [e.dataset.testid.replace(/^posture-q-/, ""), Number(e.dataset.count)])))
+      : null;
+    const classChips = await page.$$eval('[data-testid="run-posture"] [data-testid^="posture-class-"]',
+      (els) => els.map((e) => ({ cls: e.dataset.testid.slice("posture-class-".length), count: e.dataset.count, text: e.innerText })));
+    cb05.g11uRuleP(s, "1", posture.body, { posture: await textOf("run-posture"), readiness: await textOf("posture-readiness"),
+      dashboard: await textOf("run-section-dashboard"), classChips, qCounts }, attrRows, items);
+    // G11u, the list: Risks cell == runs_list_data row == the DB (non-coverage assets by impact; every asset counted)
+    const scans = await apiGet(A, `/${A.team}/cbom/scans`);
+    const listApi = (scans.body?.runs_list_data || []).find((r) => r.id === runId) || null;
+    writeJson(join(RUN, "api", "scans-list-run1.json"), { status: scans.status, runs_total: scans.body?.runs_total ?? null, row: listApi });
+    const listDb = { rows: db(`SELECT coalesce(impact, ''), coalesce(quantum_vulnerable::text, ''), count(*) FROM cbomcollectedasset WHERE team_id = ${Number(A.team)} AND run_id = ${Number(runId)} AND asset_type <> 'coverage' GROUP BY 1, 2`),
+      total: Number((db(`SELECT count(*) FROM cbomcollectedasset WHERE team_id = ${Number(A.team)} AND run_id = ${Number(runId)}`)[0] || [])[0]) };
+    cb05.g11uListRow(s, "1", `/${A.team}/cbom/runs/${runId}/results`, listRow, listApi, listDb);
     // per job: the results page's label = the DB (status, outcome) (G10's mapping, read where the customer sees it)
     const label = { ok: "All targets read", partial: "Partly read", failed: "Nothing read" };
     for (const j of state.jobs || []) {
@@ -595,6 +639,8 @@ try {
       await page.keyboard.press("Escape").catch(() => {});
       await page.getByTestId("run-finding-dialog").waitFor({ state: "hidden", timeout: 10000 }).catch(() => {});
     }
+    // posture: Mosca X/Y/Z, Q-grade, calendar and heat-map against the oracle (CB-05)
+    await cb05.g11Posture(ctx, s, "1");
   });
 
   await step("G12", A.ctx, async (s) => {
@@ -635,13 +681,12 @@ try {
       writeFileSync(`${p}.sha256`, `${sha256(file)}  ${name}\n`);
     }
     page.off("response", onResp);
-    s.notRun("schema_validation", "JSON schema + cyclonedx-python-lib strict, XML against the vendored XSD and the OSCAL validator are CB-05's G12 spec");
-    s.notRun("vex_states", "VEX states per OA-10c are judged once CB-22 defines them (KF-11)");
+    // schema validation, engine version, VEX states (OA-10c) and G8's gap snapshot (CB-05)
+    cb05.g12Validate(ctx, s, "1");
   });
 
-  for (const [g, why] of [["G13", "drift (lab mutate + Run again) is CB-05's spec"], ["G13b", "drift with a never-scan in range is CB-05's spec (KF-12)"]]) {
-    if (STEPS.has(g)) notRun(g, why);
-  }
+  // G13 drift and G13b drift with a never-scan entry in range (CB-05)
+  await cb05.g13(ctx);
 
   // G14 tenancy ---------------------------------------------------------------------------------------------
   await step("G14", null, async (s) => {
@@ -653,6 +698,7 @@ try {
     // B asks for A's objects under B's own team: 404, nothing about A (no existence oracle by id)
     const own = [["run", ids.run && `/${B.team}/cbom/sources/runs/${ids.run}`],
       ["run_assets", ids.run && `/${B.team}/cbom/sources/runs/${ids.run}/assets`],
+      ["run_results", ids.run && `/${B.team}/cbom/sources/runs/${ids.run}/results`],
       ["run_cbom", ids.run && `/${B.team}/cbom/sources/runs/${ids.run}/cbom`],
       ["node", ids.node && `/${B.team}/cbom/sources/nodes/${ids.node}`],
       ["asset", assets[0] && `/${B.team}/cbom/sources/assets/${assets[0].id}`]];
@@ -665,7 +711,8 @@ try {
     const foreign = [["run", ids.run && `/${A.team}/cbom/sources/runs/${ids.run}`, `/${A.team}/cbom/sources/runs/2147483000`],
       ["node", ids.node && `/${A.team}/cbom/sources/nodes/${ids.node}`, `/${A.team}/cbom/sources/nodes/2147483000`],
       ["asset", assets[0] && `/${A.team}/cbom/sources/assets/${assets[0].id}`, `/${A.team}/cbom/sources/assets/2147483000`],
-      ["run_cbom", ids.run && `/${A.team}/cbom/sources/runs/${ids.run}/cbom`, `/${A.team}/cbom/sources/runs/2147483000/cbom`]];
+      ["run_cbom", ids.run && `/${A.team}/cbom/sources/runs/${ids.run}/cbom`, `/${A.team}/cbom/sources/runs/2147483000/cbom`],
+      ["run_results", ids.run && `/${A.team}/cbom/sources/runs/${ids.run}/results`, `/${A.team}/cbom/sources/runs/2147483000/results`]];
     const leakTerms = [A.email, ...assets.slice(0, 5).map((a) => a.location)].filter(Boolean);
     for (const [name, path, missing] of foreign) {
       if (!path) continue;
@@ -681,6 +728,24 @@ try {
     const dom = await B.page.content();
     const aMarks = [A.email, ...assets.slice(0, 10).map((a) => a.location), state.runs?.[0] && `review-run-${state.runs[0]}`].filter(Boolean);
     s.check("b_ui_shows_no_a_data", !aMarks.some((m) => dom.includes(m)), { expected: "none of A's email, asset locations or run ids in B's page", observed: aMarks.filter((m) => dom.includes(m)), evidence: [await s.shot(B.page, "b-ui-on-a-url")] });
+    // CB-38: the run results page URL, under A's team and under B's own: "Run not found", none of A's data
+    if (ids.run) {
+      for (const [name, team] of [["a_team_url", A.team], ["b_team_url", B.team]]) {
+        await B.page.goto(`${UI}/${team}/cbom/runs/${ids.run}/results`, { waitUntil: "networkidle" });
+        await B.page.getByTestId("run-results-not-found").waitFor({ timeout: 15000 }).catch(() => {});
+        const notFound = (await B.page.getByTestId("run-results-not-found").count()) > 0;
+        const html = await B.page.content();
+        const leaked = aMarks.filter((m) => html.includes(m));
+        s.check(`b_results_page_not_found_${name}`, notFound && (await B.page.getByTestId("run-results").count()) === 0 && leaked.length === 0,
+          { expected: "Run not found, no results table, none of A's data", observed: { not_found: notFound, leaked }, subject: { probe: `results_page_${name}` },
+            evidence: [await s.shot(B.page, `b-results-${name}`)] });
+      }
+      // the merged scans list (runs_list_data) of B lists none of A's runs
+      const list = await apiGet(B, `/${B.team}/cbom/scans`);
+      const runIds = (list.body?.runs_list_data || []).map((r) => r.id);
+      s.check("b_runs_list_has_no_a_run", list.status === 200 && !runIds.includes(ids.run),
+        { expected: `no run #${ids.run} in team ${B.team}'s list`, observed: { status: list.status, runs: runIds.slice(0, 20) }, subject: { probe: "runs_list_data" } });
+    }
     s.notRun("b_node_claims_no_a_job", "DA G14 'B's node token claims none of A's jobs' needs a node enrolled in team B (CB-05)");
     const still = await apiGet(B, `/${B.team}/cbom/sources/runs`);
     s.check("b_not_logged_out", still.status === 200 && !/\/login/.test(B.page.url()), { expected: "B still signed in", observed: { status: still.status, url: new URL(B.page.url()).pathname }, evidence: [await s.shot(B.page, "b-on-a-url")] });
