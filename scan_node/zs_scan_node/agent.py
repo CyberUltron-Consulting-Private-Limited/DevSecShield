@@ -20,6 +20,11 @@ Environment:
   ZS_NODE_NAME            agent mode: the name to enroll under (the Helm DaemonSet passes the Kubernetes node name)
   ZS_HOST_ROOT / ZS_HOST_PROC  agent mode: where the host's / is mounted read-only (default /host), and its /proc
 
+Protocol 2 (F1.1, against a server that supports it): the heartbeat interval is the server's (60 s with jitter when
+idle), and the node claims only when a heartbeat answer says ``claim: true`` (then keeps claiming until nothing is
+left, and again whenever a job slot frees), instead of polling every 5 s; against an older server, whose answers carry
+no ``claim``, it polls every 5 s as before.  Request nonces are sequence numbers (api.py).
+
 Every request is signed with a per-enrollment Ed25519 key (api.py).  The node clears its token only when the
 ZeroShield deployment it enrolled with (X-ZS-Deployment) says explicitly that the token is revoked (401 with
 X-ZS-Refused: node_token_revoked); any other 401, or a 403 from another server, is a wrong server or proxy: the token
@@ -49,7 +54,9 @@ from zs_scan_node.state import NodeState
 from zs_scan_node.tlsprobe import have_openssl
 from zs_scan_node.vault import capabilities as vault_capabilities
 
-POLL_SECONDS = 5
+POLL_SECONDS = 5  # claim polling against a server without claim hints (protocol 1)
+PROTOCOL = 2
+MAX_HEARTBEAT_SECONDS = 600  # the server sets the interval; never wait longer than this between heartbeats
 CLAIM_GRACE = 0  # the heartbeat reports running jobs immediately after claim
 POOL_PREFIX = "zsp_"  # agent pool tokens: one token for every pod of a DaemonSet, usable again after a reset
 ALIVE_FILE = "alive"  # touched by every heartbeat-loop pass; the Docker HEALTHCHECK checks its age
@@ -114,6 +121,14 @@ class Agent:
         self.stop_sent = 0.0
         self.never_sent = 0.0
         self.heartbeat_interval = 30
+        # protocol 2: set once a successful answer carried "claim" (the server grants claims); None until the first
+        # successful heartbeat says which kind of server this is (no claim before that: a node whose heartbeats fail
+        # does not fall back to polling a server that may be recovering)
+        self.server_hints: bool | None = None
+        self.grants = 0  # claims the last answer granted (protocol 2)
+        self.grant_ticket: str | None = None  # that answer's ``claim_ticket``: sent with the claims it pays for
+        self.grant_sent = 0.0  # when the request whose answer set ``grants`` was sent (monotonic)
+        self.claim_wanted = threading.Event()
         self.last_error: str | None = None
         self.server_skew_s = 0.0
         reg = os.environ.get("ZS_REGISTRATION_TOKEN", "")
@@ -195,6 +210,8 @@ class Agent:
             global_scrubber().add(self.state.node_token)
             self.api.token = self.state.node_token
             self.heartbeat_interval = int(data.get("heartbeat_interval_s") or 30)
+            # the enrollment answer says which server this is: protocol 2 grants claims; an older one is polled
+            self.server_hints = "protocol" in data if self.server_hints is None else self.server_hints
             log("enrolled", node=self.state.node_id, team=self.state.team_id, deployment=self.state.deployment_id,
                 signing=data.get("signing") or "legacy")
 
@@ -210,20 +227,24 @@ class Agent:
         return {"collectors": AGENT_CAPABILITIES if self.agent_mode else CAPABILITIES, "openssl": have_openssl(),
                 "ipv6": has_ipv6(), "max_jobs": self.max_jobs,
                 **vault_capabilities(self.vault_prefix),  # #364: vault (bool), providers, prefix, per-provider setup
-                "mode": "agent" if self.agent_mode else "agentless"}
+                "mode": "agent" if self.agent_mode else "agentless", "protocol": PROTOCOL}
 
     # ------------------------------------------------------------------ heartbeat
     def heartbeat_once(self) -> None:
         with self.lock:
             running = [{"job_id": r.job_id, "lease_id": r.lease_id} for r in self.running.values()]
+            ticket = self.grant_ticket if self.grants > 0 else None
         body = {"hostname": socket.gethostname()[:255], "version": reported_version(), "source_ips": local_ips(),
                 "capabilities": self.capabilities(), "clock": _now_iso(), "running": running}
+        if ticket:
+            body["claim_ticket"] = ticket  # its unused claims count towards this answer's grant (never paid twice)
         if self.last_error:
             body["last_error"] = global_scrubber().text(self.last_error)[:1900]
         sent = time.monotonic()
         data = self.api.heartbeat(body)
         self.last_error = None
         self.heartbeat_interval = int(data.get("heartbeat_interval_s") or self.heartbeat_interval)
+        self.take_grant(data, heartbeat=True, sent=sent)
         self.apply_control(data, sent)
         cancel = set(int(i) for i in data.get("cancel_job_ids") or [] if str(i).isdigit())
         with self.lock:
@@ -233,6 +254,36 @@ class Agent:
                     r.ctx.cancel_reason = "Stopped by ZeroShield (job cancelled, source changed or network stop)"
                     r.ctx.cancel.set()
                     log("cancel requested", job=job_id)
+
+    def take_grant(self, data: dict | None, heartbeat: bool = False, sent: float | None = None) -> None:
+        """Read ``claim`` from a heartbeat, claim or result answer: protocol 2 grants this many claims now (an older
+        protocol-2 server sends true/false: one).  An answer to a request sent before the one that set the current
+        grant is older news and is ignored (a slow heartbeat answer computed while every slot was busy must not cancel
+        the grant a later result answer gave).  A successful heartbeat answer without ``protocol`` is an older
+        server: the node polls every 5 s as it always did."""
+        if not isinstance(data, dict):
+            return
+        if heartbeat and self.server_hints is None and "claim" not in data and "protocol" not in data:
+            self.server_hints = False
+        if "claim" not in data:
+            return
+        self.server_hints = True
+        value = data.get("claim")
+        try:
+            n = 1 if value is True else int(value or 0)
+        except (TypeError, ValueError):
+            n = 0
+        sent = time.monotonic() if sent is None else sent
+        with self.lock:
+            if sent < self.grant_sent:
+                return
+            self.grant_sent = sent
+            self.grants = max(0, min(n, 8))
+            ticket = data.get("claim_ticket")
+            # any backend worker honours it (a grant is not remembered by the worker that gave it, F1.1)
+            self.grant_ticket = ticket if self.grants and isinstance(ticket, str) and len(ticket) <= 80 else None
+        if self.grants:
+            self.claim_wanted.set()
 
     def apply_control(self, data: dict, sent: float) -> None:
         """Cache the team's stop-all flag and never-scan list from a heartbeat answer, unless a claim sent after
@@ -288,7 +339,13 @@ class Agent:
             except Exception as exc:  # keep the heartbeat alive whatever happens
                 log("heartbeat error", error=exc.__class__.__name__, level="error")
             self.mark_alive()
-            self.shutdown.wait(max(5, min(self.heartbeat_interval, 60)))
+            # the server drives the cadence (and adds jitter); the alive file is touched at least every 60 s while
+            # waiting, so the image HEALTHCHECK (stale after 180 s) holds for any interval the server sets
+            end = time.monotonic() + max(5, min(self.heartbeat_interval, MAX_HEARTBEAT_SECONDS))
+            while not self.shutdown.is_set() and (left := end - time.monotonic()) > 0:
+                if self.shutdown.wait(min(left, 60)):
+                    break
+                self.mark_alive()
 
     def mark_alive(self) -> None:
         """Touch <state dir>/alive once per heartbeat-loop pass (at most every 60 s). The image HEALTHCHECK reads its
@@ -323,14 +380,36 @@ class Agent:
                 continue
             with self.lock:
                 busy = len(self.running) >= self.max_jobs
+                granted = self.grants
             if busy:
-                self.shutdown.wait(2)
+                # every slot is taken: wait for one to free (``_done`` wakes this), re-checking at least every 2 s
+                self.claim_wanted.clear()
+                self.claim_wanted.wait(2)
                 continue
+            if self.server_hints is None:
+                # no successful heartbeat yet: do not claim from (or poll) a server we know nothing about
+                self.claim_wanted.wait(POLL_SECONDS)
+                self.claim_wanted.clear()
+                continue
+            if self.server_hints and granted <= 0:
+                # protocol 2: wait for an answer (heartbeat, claim or result) that grants a claim
+                self.claim_wanted.wait(POLL_SECONDS)
+                self.claim_wanted.clear()
+                continue
+            self.claim_wanted.clear()
+            ticket = None
+            if self.server_hints:
+                with self.lock:
+                    self.grants = max(0, self.grants - 1)
+                    ticket = self.grant_ticket
             sent = time.monotonic()
             try:
                 # the mode goes with every claim: a node restarted in agent mode is never handed a secret, even
                 # before its first heartbeat reaches ZeroShield
-                payload = self.api.claim({"mode": "agent" if self.agent_mode else "agentless"})
+                body: dict = {"mode": "agent" if self.agent_mode else "agentless"}
+                if ticket:
+                    body["claim_ticket"] = ticket  # the grant that pays for this claim, whichever worker answers
+                payload = self.api.claim(body)
             except Unauthorized:
                 self.on_unauthorized()
                 continue
@@ -344,8 +423,14 @@ class Agent:
                 self.shutdown.wait(POLL_SECONDS * 3)
                 continue
             if not payload:
-                self.shutdown.wait(POLL_SECONDS)
+                if self.server_hints:
+                    with self.lock:
+                        self.grants = 0  # nothing (or no permit) now: wait for the next grant
+                        self.grant_ticket = None
+                else:
+                    self.shutdown.wait(POLL_SECONDS)
                 continue
+            self.take_grant(payload, sent=sent)  # the claim answer grants the next claims (drain while granted)
             job = payload.get("job") or {}
             job_id = int(job.get("id") or 0)
             with self.lock:
@@ -440,7 +525,14 @@ class Agent:
         body = {"lease_id": running.lease_id, "status": status, "result": result,
                 "error": ctx.scrubber.text(error)[:3900] if error else None}
         try:
-            self.api.result(running.job_id, ctx.attempt, ctx.scrubber.obj(body))
+            body = ctx.scrubber.obj(body)
+            with self.lock:
+                ticket = self.grant_ticket if self.grants > 0 else None
+            if ticket:
+                body["claim_ticket"] = ticket  # its unused claims count towards the answer's grant
+            sent = time.monotonic()
+            answer = self.api.result(running.job_id, ctx.attempt, body)
+            self.take_grant(answer, sent=sent)  # the result answer grants the next claims
             ctx.log("job finished", status=status, assets=ctx.accepted, ok=result["counts"]["ok"],
                     failed=result["counts"]["failed"], skipped=result["counts"]["skipped"],
                     duration_s=result["duration_s"])
@@ -507,9 +599,13 @@ class Agent:
             self.running.pop(running.job_id, None)
             # a window end that arrived after the watcher's last tick is dropped with its job (review of #250)
             getattr(self, "job_window_ends", {}).pop(running.job_id, None)
+            wake = getattr(self, "grants", 0) > 0 or not getattr(self, "server_hints", None)
         close = getattr(running.ctx.never_scan, "close", None)
         if close is not None:
             close()  # the resolver stops looking up names no running job lists
+        wanted = getattr(self, "claim_wanted", None)
+        if wake and wanted is not None:
+            wanted.set()  # a slot is free and a claim is granted (or an older server: poll)
 
     # ------------------------------------------------------------------ main
     def run(self) -> None:

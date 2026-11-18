@@ -125,5 +125,6 @@ def test_the_charts_readiness_probe_reads_the_file_the_agent_writes():
         body = (ROOT / "deploy/helm/cbom-scan-node/templates" / template).read_text()
         assert 'include "cbom-scan-node.readiness"' in body and "mountPath: /var/lib/zs-node" in body, template
         assert "ZS_STATE_DIR" not in body, f"{template} moves the state directory away from the probe's"
-    # the heartbeat loop touches it on every pass, at most 60 s apart (< 180 s)
-    assert "self.mark_alive()" in agent and "min(self.heartbeat_interval, 60)" in agent
+    # the heartbeat loop touches it on every pass, and again at most every 60 s while it waits out a longer
+    # server interval (protocol 2, up to MAX_HEARTBEAT_SECONDS). The image HEALTHCHECK fails after 180 s.
+    assert "self.mark_alive()" in agent and "min(left, 60)" in agent and "MAX_HEARTBEAT_SECONDS" in agent
