@@ -468,11 +468,11 @@ def test_the_migration_is_the_one_head():
     for path in VERSIONS.glob("*.py"):
         text = path.read_text()
         rev = re.search(r"^revision(?::\s*str)?\s*=\s*['\"]([^'\"]+)['\"]", text, re.M)
-        down = re.search(r"^down_revision[^=]*=\s*['\"]([^'\"]+)['\"]", text, re.M)
+        down_line = re.search(r"^down_revision\b.*", text, re.M)
         if rev:
             revisions.add(rev.group(1))
-        if down:
-            parents.add(down.group(1))
+        if down_line:
+            parents.update(re.findall(r"['\"]([^'\"]+)['\"]", down_line.group(0)))
     assert mod.down_revision in revisions
     assert len(revisions - parents) == 1 and ("cb14credit001" in parents or revisions - parents == {"cb14credit001"})
 

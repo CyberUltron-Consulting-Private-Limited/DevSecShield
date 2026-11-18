@@ -41,17 +41,33 @@ def _pat() -> str:
 
 @pytest.fixture()
 def scans_app(monkeypatch):
-    """The real app; authentication passes, the database is never reached (validation fails first)."""
+    """Real access token against SQLite.
+    Validation still fails before a scan row is read."""
     from fastapi.testclient import TestClient
     from rich.console import Console
+    from sqlalchemy.pool import StaticPool
+    from sqlmodel import Session, SQLModel, create_engine
 
     from backend.main import app
+    from backend.new_models import Team, TeamMembership, User
     from backend.routers import scans
     from backend.utilities import ratelimit
+    from backend.utilities.auth.auth_utils import create_access_token
+
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as s:
+        s.add(Team(id=1, name="t"))
+        s.add(User(
+            id=1, email="u@example.test", password="x", first_name="u", last_name="t",
+            profile_photo=None, default_team_id=1, session_active=True))
+        s.add(TeamMembership(team_id=1, user_id=1, role="member"))  # scan.run
+        s.commit()
 
     out = io.StringIO()
     monkeypatch.setattr(scans, "console", Console(file=out, width=400, color_system=None))
-    monkeypatch.setattr(scans, "get_db", lambda: None)
+    monkeypatch.setattr(scans, "get_db", lambda: engine)
     monkeypatch.setattr(scans, "get_mongo_client_db", lambda: {})
 
     async def user(*_a, **_k):
@@ -59,18 +75,20 @@ def scans_app(monkeypatch):
 
     monkeypatch.setattr(scans, "get_user_from_header_or_raise_exception", user)
     ratelimit.reset_all()
-    yield TestClient(app), out
+    token = create_access_token("u@example.test", version=0)
+    headers = {"Authorization": f"Bearer {token}"}
+    yield TestClient(app), out, headers
     ratelimit.reset_all()
 
 
 @pytest.mark.parametrize("action", ["start", "reinitialize", "estimate_credits"])
 def test_a_refused_repo_url_never_returns_or_prints_the_pat(scans_app, action):
-    client, out = scans_app
+    client, out, headers = scans_app
     pat = _pat()
     payload = {"sast": {"app_lang": "python",
                         "repo_context": {"mode": "github", "repo_url": "https://evil.example/x/y", "PAT": pat}}}
     r = client.post(f"/1/sast/scan/5/{action}", data={"start_scan_payload_string": json.dumps(payload)},
-                    headers={"Authorization": "Bearer t"})
+                    headers=headers)
     assert r.status_code == 422, r.text
     assert "repo_url host must be" in r.text  # the reason is still given
     assert pat not in r.text

@@ -423,11 +423,11 @@ def test_the_migration_is_the_one_head_and_round_trips(tmp_path):
     for path in versions.glob("*.py"):
         text = path.read_text()
         rev = re.search(r"^revision(?::\s*str)?\s*=\s*['\"]([^'\"]+)['\"]", text, re.M)
-        down = re.search(r"^down_revision[^=]*=\s*['\"]([^'\"]+)['\"]", text, re.M)
+        down_line = re.search(r"^down_revision\b.*", text, re.M)
         if rev:
             revisions.add(rev.group(1))
-        if down:
-            parents.add(down.group(1))
+        if down_line:
+            parents.update(re.findall(r"['\"]([^'\"]+)['\"]", down_line.group(0)))
     assert len(revisions - parents) == 1 and ("cb226apikey001" in parents or revisions - parents == {"cb226apikey001"})
     spec = importlib.util.spec_from_file_location("m226", versions / "cb226apikey001_cbom_api_keys.py")
     mod = importlib.util.module_from_spec(spec)
