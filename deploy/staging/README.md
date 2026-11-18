@@ -707,3 +707,20 @@ In these two cases nothing is removed after the deploy: retention runs only afte
 the previous release's images are there for the rollback.
 For the last two, go back with `make rollback-staging HOST=user@host` (or `scripts/deploy/staging.sh rollback` on
 the host; it asks before a database downgrade), or push a fix to `staging`.
+
+## Self-hosted runners
+
+Every workflow runs on the repository's self-hosted runners (label `dss-vm`; `.github/actionlint.yaml`), six
+of them on the staging host itself: 24 CPUs, one rootless Docker whose BuildKit layer cache outlives the job.
+A fork's pull request runs on `ubuntu-latest` instead (the `runs-on` expression in each workflow), and the arm64
+image builds stay on `ubuntu-24.04-arm`. The Certificate Transparency live proof (`.github/workflows/cbom-ct-live.yml`)
+also stays on `ubuntu-latest`: Cert Spotter's free quota is ten full-domain queries an hour per source address, these
+six runners share this host's one address, and one of that workflow's jobs spends the quota on purpose. Deploy staging
+builds the four images side by side on `dss-vm`
+(`DSS_BUILD_JOBS=4`) and `staging.sh save` compresses with `pigz` when it is installed.
+
+On the host the runners are user `ghrunner` (no sudo, not in the docker group; its own rootless Docker), one home
+per runner, behind an nftables fence (`/etc/ghrunner-guard.nft`) that keeps its jobs off this host's other
+services, the VPC and the instance metadata. So a job on `dss-vm` cannot `sudo`: a step that needs it runs only
+`if: runner.environment == 'github-hosted'`, and a system package a suite needs (`apt-packages`) is installed on the
+host instead. The publish workflow's amd64 builds share one long-lived builder, `dss-vm-builder`.

@@ -50,7 +50,7 @@ jobs:
   notice:
     name: codeql (disabled)
     if: ${{ !inputs.enabled }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.pull_request && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'dss-vm' }}
     timeout-minutes: 5
     permissions: {}
     steps:
@@ -63,7 +63,7 @@ jobs:
   analyze:
     name: codeql (${{ matrix.language }})
     if: ${{ inputs.enabled }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.pull_request && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'dss-vm' }}
     timeout-minutes: 45
     strategy:
       fail-fast: false

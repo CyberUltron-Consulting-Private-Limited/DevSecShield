@@ -22,7 +22,7 @@ permissions:
 jobs:
   nightly-cbom-benchmark:
     name: Full live CBOM benchmark vs IBM cbomkit-theia
-    runs-on: ubuntu-latest
+    runs-on: dss-vm
     timeout-minutes: 60
     defaults:
       run:

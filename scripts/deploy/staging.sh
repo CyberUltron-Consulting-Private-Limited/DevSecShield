@@ -171,8 +171,11 @@ cmd_save() {
   for c in "${images[@]}"; do docker image inspect "${c}" >/dev/null 2>&1 || die "image ${c} not found (run build)"; done
   mkdir -p "${IMAGES_DIR}"
   out="$(archive_of "${tag}")"
-  log "saving ${#images[@]} images to ${out}"
-  docker save "${images[@]}" | gzip -1 >"${out}.part"
+  # pigz writes the same gzip format on every core; gzip alone took minutes on a 5 GB archive.
+  local -a gz=(gzip)
+  command -v pigz >/dev/null 2>&1 && gz=(pigz)
+  log "saving ${#images[@]} images to ${out} (${gz[0]})"
+  docker save "${images[@]}" | "${gz[@]}" -1 >"${out}.part"
   mv "${out}.part" "${out}"
   (cd "${IMAGES_DIR}" && sha256sum "$(basename "${out}")" >"$(basename "${out}").sha256")
   log "saved $(du -h "${out}" | cut -f1): $(cat "${out}.sha256")"
@@ -180,7 +183,7 @@ cmd_save() {
   # host's disk check uses it instead of STAGING_DISK_FACTOR, whatever store the builder had.
   rm -f "${out}.need"
   if command -v python3 >/dev/null 2>&1 &&
-    gzip -dc "${out}" | python3 -I "${REPO_ROOT}/scripts/deploy/archive_need.py" >"${out}.need.part"; then
+    "${gz[@]}" -dc "${out}" | python3 -I "${REPO_ROOT}/scripts/deploy/archive_need.py" >"${out}.need.part"; then
     mv "${out}.need.part" "${out}.need"
     log "loading it needs $(kib_h "$(need_kib "$(cat "${out}.need")")") where the host stores images (${out}.need)"
   else
