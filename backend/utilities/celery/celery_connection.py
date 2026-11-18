@@ -12,6 +12,7 @@ import datetime
 from datetime import timezone
 
 from backend.new_models import Scan
+import backend.utilities.celery.task_reprs  # noqa: F401  (redacts every sent task's argsrepr / kwargsrepr, #44)
 from backend.utilities.celery.create_findings import create_findings_in_mongo_db
 from backend.get_db import get_mongo_client_db
 from backend.utilities.team.credits import refund_credits_to_team
