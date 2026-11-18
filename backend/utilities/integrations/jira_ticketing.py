@@ -159,8 +159,8 @@ def create_jira_issue_for_finding(
 
 
 def jira_candidates(scan_type: str, finding_docs: list[dict]) -> list[dict]:
-    """The stored findings that may become tickets: for CBOM, finding rows only (clean inventory rows such as an
-    AES-GCM are listed in the CBOM but are not findings; ``cbom_rows.is_finding``)."""
+    """The stored findings that may become tickets: no clean inventory row (a CBOM's AES-GCM, an SBOM's package with
+    no known vulnerability, #46) is a finding; ``is_ticketable_finding``."""
     from backend.utilities.db.findings import is_ticketable_finding
 
     return [doc for doc in finding_docs

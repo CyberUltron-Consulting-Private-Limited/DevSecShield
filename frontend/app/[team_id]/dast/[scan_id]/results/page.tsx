@@ -15,7 +15,8 @@ export default function DASTResultsPage() {
   const scan_id = parseInt((params?.scan_id as string) ?? "0", 10);
 
   const exportMutation = useMutation({
-    mutationFn: () => getDASTExportResults(team_id, scan_id),
+    // this page says the outcome, once (#27): the helper's own toasts are off
+    mutationFn: () => getDASTExportResults(team_id, scan_id, { toast: false }),
     onSuccess: (data) => {
       const blob = new Blob([data], { type: "application/pdf" });
       const url = URL.createObjectURL(blob);

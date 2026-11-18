@@ -161,7 +161,7 @@ def test_reader_sparse_sbom_never_raises(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setattr(
         findings_mod,
         "get_findings_for_scan_id",
-        lambda scan_id: sparse_docs,
+        lambda scan_id, scan_type=None: sparse_docs,
     )
     rows = findings_mod.get_findings_for_scan_type("sbom_sca", 3)
     assert len(rows) == 1

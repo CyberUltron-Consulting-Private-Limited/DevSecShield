@@ -36,6 +36,7 @@ import {
 import { handleApiError } from "@/utils/error-handler";
 import { parseMcpHeaders } from "@/utils/mcpHeaders";
 import { scanFailureMessage } from "@/utils/scanFailure";
+import { refreshCredits } from "@/utils/creditRefresh";
 import { stateAfterError } from "@/utils/scanErrorRecovery";
 import { ScanRequestError } from "@/components/scan-request-error";
 import { NewScanRunAgainButton } from "@/components/scan-run-again";
@@ -163,6 +164,10 @@ export function MCPOptionsSidebar({
       setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("ready");
     },
+    // the start charged the team (or a refused one moved nothing): the header shows the server's balance (#13)
+    onSettled: () => {
+      refreshCredits(queryClient);
+    },
   });
 
   const handleRunEstimate = () => {
@@ -262,7 +267,15 @@ export function MCPOptionsSidebar({
       setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("error");
     },
+    onSettled: () => {
+      refreshCredits(queryClient);
+    },
   });
+
+  // the status check that saw the scan fail refunded its credits (#28): show the balance it gave back
+  useEffect(() => {
+    if (query.data?.scan_status === "failure") refreshCredits(queryClient);
+  }, [query.data?.scan_status, queryClient]);
 
   const exportMutation = useMutation({
     mutationFn: () => getMCPExportResults(team_id, scan_id),

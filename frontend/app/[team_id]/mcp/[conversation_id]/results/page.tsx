@@ -33,7 +33,8 @@ export default function MCPResultsPage() {
   });
 
   const exportMutation = useMutation({
-    mutationFn: () => getMCPExportResults(team_id, conversation_id),
+    // this page says the outcome, once (#27): the helper's own toasts are off
+    mutationFn: () => getMCPExportResults(team_id, conversation_id, { toast: false }),
     onSuccess: (blob) => {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -41,6 +42,7 @@ export default function MCPResultsPage() {
       a.download = `mcp_scan_${conversation_id}_report.pdf`;
       a.click();
       URL.revokeObjectURL(url);
+      toast.success("MCP report downloaded");
     },
     onError: (err) => showErrorToast(err, "Failed to download scan report"),
   });

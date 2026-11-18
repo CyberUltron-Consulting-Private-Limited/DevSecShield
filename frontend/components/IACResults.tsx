@@ -1223,9 +1223,9 @@ function IACResultsAgentView({
                         <TableCell className="text-center">
                           <span
                             className={`inline-flex items-center justify-center min-w-9 px-2 py-1 rounded-md text-xs font-semibold tabular-nums ${
-                              riskScoreNum >= 4 ? "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200" :
-                              riskScoreNum >= 3 ? "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200" :
-                              riskScoreNum >= 2 ? "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200" :
+                              riskScoreNum >= 9 ? "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200" :
+                              riskScoreNum >= 7 ? "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200" :
+                              riskScoreNum >= 5 ? "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200" :
                               "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"
                             }`}
                             title="Risk score"
@@ -1524,7 +1524,8 @@ export default function IACResults({ data, conversationId, dashboard, findings, 
     mutationFn: () => {
       const tid = teamId ? parseInt(teamId, 10) : NaN;
       if (conversationId == null || Number.isNaN(tid)) throw new Error("Missing team or scan");
-      return getIACExportResults(tid, conversationId);
+      // this page says the outcome, once (#27): the helper's own toasts are off
+      return getIACExportResults(tid, conversationId, { toast: false });
     },
     onSuccess: (blob) => {
       const url = URL.createObjectURL(new Blob([blob], { type: "application/pdf" }));
@@ -1533,6 +1534,7 @@ export default function IACResults({ data, conversationId, dashboard, findings, 
       a.download = `iac_scan_${conversationId}_report.pdf`;
       a.click();
       URL.revokeObjectURL(url);
+      toast.success("IAC report downloaded");
     },
     onError: (err) => {
       showErrorToast(err, "Failed to download scan report");

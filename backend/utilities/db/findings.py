@@ -12,17 +12,17 @@ from backend.utilities.dashboard.bom_risk_score import (
     cbom_finding_risk_score,
     sbom_finding_risk_score,
 )
-
-
+from backend.utilities.dashboard.risk_scale import impact_risk
+from backend.utilities.dashboard.sbom_rows import is_inventory_row
 
 def is_ticketable_finding(scan_type: str | None, finding_data: dict | None) -> bool:
-    """Whether a stored row is a FINDING (counted, listed, ticketed). Only CBOM stores clean inventory rows next to its
-    findings (a CBOM must list AES-GCM too); those are filtered when read, by the one rule in ``cbom_rows.is_finding``,
-    so scans stored before and after that rule behave the same. Every other scan type stores findings only."""
+    """Whether a stored row is a FINDING (counted, listed, ticketed): not a clean inventory row, which CBOM (an AES-GCM)
+    and SCA + SBOM (a package with no known vulnerability, #46) store next to their findings. A read-time rule."""
+    if scan_type == "sbom_sca":
+        return not is_inventory_row(finding_data)
     if scan_type != "cbom":
         return True
     from backend.utilities.cbom_sources.cbom_rows import is_finding
-
     return is_finding(finding_data if isinstance(finding_data, dict) else {})
 
 
@@ -113,7 +113,7 @@ def get_findings_for_scan_type(scan_type: scan_types , scan_id: int) -> list[dic
                 "title": finding["finding_data"]["title"],
                 "description": finding["finding_data"]["description"],
                 "impact": finding["finding_data"]["impact"],
-                "risk_score": risk_score_map[finding["finding_data"]["impact"].lower()],
+                "risk_score": impact_risk(finding["finding_data"]["impact"]),  # 0-10 like the filter tiers (#35)
                 "status": finding["finding_status"],
                 "compliance_controls": finding["finding_data"]["compliance_controls"],
                 "owasp_top_10": finding["finding_data"]["owasp_top_10"],
@@ -127,7 +127,7 @@ def get_findings_for_scan_type(scan_type: scan_types , scan_id: int) -> list[dic
             })
     
     elif scan_type == "sbom_sca":
-        findings_fetched = get_findings_for_scan_id(scan_id=scan_id)
+        findings_fetched = get_findings_for_scan_id(scan_id=scan_id, scan_type="sbom_sca")  # no inventory rows (#46)
         for finding in findings_fetched:
             fd = finding.get("finding_data") or {}
             impact = (fd.get("impact") or "low")
@@ -161,7 +161,7 @@ def get_findings_for_scan_type(scan_type: scan_types , scan_id: int) -> list[dic
                 "title": finding["finding_data"]["title"],
                 "description": finding["finding_data"]["description"],
                 "impact": finding["finding_data"]["impact"],
-                "risk_score": risk_score_map[finding["finding_data"]["impact"].lower()],
+                "risk_score": impact_risk(finding["finding_data"]["impact"]),  # 0-10 like the filter tiers (#35)
                 "status": finding["finding_status"],
                 "owasp_top_10": finding["finding_data"]["owasp_top_10"],
                 "owasp_top_10_llm": finding["finding_data"]["owasp_top_10_llm"],
@@ -198,7 +198,7 @@ def get_findings_for_scan_type(scan_type: scan_types , scan_id: int) -> list[dic
                 "url": finding["finding_data"].get("url","-"),
                 "description": finding["finding_data"]["description"],
                 "impact": finding["finding_data"]["impact"],
-                "risk_score": risk_score_map[finding["finding_data"]["impact"].lower()],
+                "risk_score": impact_risk(finding["finding_data"]["impact"]),  # 0-10 like the filter tiers (#35)
                 "status": finding["finding_status"],
                 "compliance_controls": finding["finding_data"]["compliance_controls"],
                 "owasp_top_10": finding["finding_data"]["owasp_top_10"],

@@ -168,6 +168,7 @@ class PathFilters(unittest.TestCase):
         "RabbitMQ/worker/scan_worker.py": {"backend", "worker", "aibom"},
         "RabbitMQ/worker/Dockerfile": {"backend", "worker"},                 # test_image_build_inputs
         "RabbitMQ/dast_worker/helpers/net/address_rule.py": {"backend", "dast-worker", "aibom"},
+        "backend/utilities/cbom_sources/address_rule.py": {"backend", "worker", "aibom"},  # the worker runs it (#53)
         "compose/worker-compose/docker-compose.yml": {"backend", "dast-worker"},
         "frontend/components/cbom/sources/ServersTab.tsx": {"frontend", "backend"},   # test_cbom_sources_api
         "frontend/components/cbom/sources/logic.ts": {"frontend", "backend", "scan-node"},

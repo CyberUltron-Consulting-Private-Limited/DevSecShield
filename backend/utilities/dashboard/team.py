@@ -105,7 +105,7 @@ def generate_team_dashboard_data(team_id: int, engine: Engine) -> dict:
         ## STEP [ 1.4 ] : ==================== Get all Scan Findings records for this team =================================
         findings_list = [] # use this to calculate the additonal metrics mentioned above 
         for scan in scans:
-            # CBOM: clean inventory rows are not findings (read-time rule, cbom_rows.is_finding)
+            # CBOM and SCA + SBOM: clean inventory rows are not findings (read-time rule, is_ticketable_finding, #46)
             findings = get_findings_for_scan_id(scan.id, scan_type=scan.scan_type)
             findings_list.extend(findings)
         console.print(f"{len(findings_list)} findings found")

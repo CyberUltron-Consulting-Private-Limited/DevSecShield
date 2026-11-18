@@ -11,6 +11,12 @@ without passing here.
    a sentence of prose carrying any other command (an executable, a pipe, &&, $( ), redirection) is dropped.
 4. Links (with or without a scheme, //host, bare domains) other than the subject's KB references and item text are
    removed; every field is length-capped. Output is plain text.
+
+An answer cut at the output-token cap (``validate_truncated``) goes through the same checks on its complete part only
+(the id check reads all of it); nothing complete -> withheld as too long, never as a format error.
+
+Every withheld reason says why and what to do next, and does not end with a period: the panels add the sentence that
+points at the knowledge-base steps they show instead.
 """
 from __future__ import annotations
 
@@ -22,9 +28,17 @@ from typing import Any
 from backend.utilities.cbom_ai.grounding import URL_RE, Grounding, command_forms, norm_command
 from backend.utilities.cbom_ai.prompt import TEMPLATE_PHRASES
 
-WITHHELD_UNKNOWN_ID = "AI answer withheld: it named an identifier not in the knowledge base"
-WITHHELD_FORMAT = "AI answer withheld: it was not in the required format"
-WITHHELD_UNCITED = "AI answer withheld: none of its statements cited the knowledge base"
+WITHHELD_UNKNOWN_ID = ("AI answer withheld: it named an identifier not in the knowledge base (a CVE or CWE id the "
+                       "product cannot check); ask again without asking for other CVE or CWE ids")
+WITHHELD_FORMAT = "AI answer withheld: it was not in the required format, so it could not be checked; ask again"
+WITHHELD_UNCITED = ("AI answer withheld: none of its statements cited the knowledge base, so none could be checked; "
+                    "ask again, or ask about one step")
+WITHHELD_TRUNCATED = ("AI answer withheld: it was too long and was cut off before a usable part of it was complete; "
+                      "ask about one platform or one step at a time")
+# the first caveat of an answer of which only the complete part is shown
+TRUNCATED_NOTE = ("This answer was too long and was cut off: only its complete part is shown, so later steps may be "
+                  "missing. Ask about one platform or one step for the rest; the knowledge-base remediation above is "
+                  "complete.")
 NOT_IN_KB = "not in the knowledge base"
 
 MAX_SUMMARY = 600
@@ -272,6 +286,63 @@ def baseline(grounding: Grounding) -> dict[str, Any]:
 def withheld(grounding: Grounding, reason: str) -> dict[str, Any]:
     return {"status": "withheld", **baseline(grounding), "withheld_reason": reason, "baseline": True,
             "dropped_commands": 0, "dropped_links": 0, "dropped_steps": 0, "unknown_ids": []}
+
+
+def repair_truncated(raw: str) -> str | None:
+    """The complete part of an answer cut off at the output-token cap, as JSON text: everything up to the last value
+    that was complete (just after a closing bracket, or just before a comma), with the objects and arrays still open
+    closed. None when nothing complete was written. Nothing is added but closing brackets."""
+    text = raw.strip()
+    fence = re.match(r"```(?:json)?\s*", text)
+    if fence:
+        text = text[fence.end():]
+    start = text.find("{")
+    if start < 0:
+        return None
+    closers: list[str] = []
+    in_string = escaped = False
+    cut: tuple[int, str] | None = None
+    for i in range(start, len(text)):
+        ch = text[i]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch in "{[":
+            closers.append("}" if ch == "{" else "]")
+        elif ch in "}]":
+            if not closers or closers.pop() != ch:
+                return None  # not JSON
+            if not closers:
+                return text[start:i + 1]  # it closed after all
+            cut = (i + 1, "".join(reversed(closers)))
+        elif ch == ",":
+            cut = (i, "".join(reversed(closers)))
+    return text[start:cut[0]] + cut[1] if cut else None
+
+
+def validate_truncated(raw: str, grounding: Grounding, *, need_steps: bool = False) -> dict[str, Any]:
+    """An answer cut at the output-token cap: its complete part, checked like any answer (rules 1-4), with
+    TRUNCATED_NOTE as its first caveat and ``truncated`` set. The id check also reads the cut-off rest. Nothing
+    complete that passes (for a plan: not one step) -> withheld as too long."""
+    unknown = unknown_identifiers(raw, grounding)
+    if unknown:
+        return {**withheld(grounding, WITHHELD_UNKNOWN_ID), "unknown_ids": unknown, "truncated": True}
+    repaired = repair_truncated(raw)
+    out = validate(repaired, grounding) if repaired else None
+    if out is not None and out["status"] == "withheld" and out["withheld_reason"] == WITHHELD_UNKNOWN_ID:
+        return {**out, "truncated": True}
+    if out is None or out["status"] != "ok" or (need_steps and not out["steps"]):
+        return {**withheld(grounding, WITHHELD_TRUNCATED), "truncated": True,
+                "dropped_commands": (out or {}).get("dropped_commands", 0),
+                "dropped_links": (out or {}).get("dropped_links", 0)}
+    return {**out, "caveats": [TRUNCATED_NOTE] + out["caveats"], "truncated": True}
 
 
 def validate(raw: str, grounding: Grounding) -> dict[str, Any]:
