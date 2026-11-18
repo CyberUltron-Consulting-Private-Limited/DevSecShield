@@ -24,6 +24,7 @@ from sqlmodel import Session, select
 
 from backend.new_models import CbomNodePool, CbomScanNode
 from backend.utilities.cbom_sources import agents as AG
+from backend.utilities.cbom_sources import limits as LIM
 from backend.utilities.cbom_sources.common import audit, iso_z, log, new_token, sha256_hex, utcnow
 from backend.utilities.cbom_sources.http import (
     PRIVATE,
@@ -85,8 +86,11 @@ def _create(engine, team_id: int, user_id: int, body: PoolCreate) -> dict:
         AG.lock_team(session, team_id)  # held to the commit: two creations count one after the other
         live = [p for p in session.exec(select(CbomNodePool).where(CbomNodePool.team_id == team_id)).all()
                 if AG.pool_status(p, now) == "active"]
-        if len(live) >= AG.MAX_POOLS:
-            raise HTTPException(status_code=400, detail=f"A team can have at most {AG.MAX_POOLS} active agent pool "
+        if body.max_enrollments > LIM.max_pool_enrollments():
+            raise HTTPException(status_code=400, detail=f"max_enrollments: at most {LIM.max_pool_enrollments()} per "
+                                                        "agent pool token (CBOM_MAX_POOL_ENROLLMENTS)")
+        if len(live) >= LIM.max_pools():
+            raise HTTPException(status_code=400, detail=f"A team can have at most {LIM.max_pools()} active agent pool "
                                                         "tokens; revoke one first")
         pool = CbomNodePool(team_id=team_id, owner_user_id=user_id, name=body.name, segment=body.segment,
                             token_hash=sha256_hex(token), expires_at=now + _dt.timedelta(hours=body.expires_in_hours),

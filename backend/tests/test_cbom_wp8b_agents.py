@@ -28,7 +28,7 @@ from backend.new_models import (  # noqa: E402
     CbomScanNode,
 )
 from backend.utilities.cbom_sources import agents as AG  # noqa: E402
-from backend.utilities.cbom_sources import jobs as J  # noqa: E402
+from backend.utilities.cbom_sources import secret_refs as SR  # noqa: E402
 from backend.utilities.dashboard.cbom_coverage import coverage_report  # noqa: E402
 from zs_scan_node import api as node_api  # noqa: E402
 
@@ -169,7 +169,7 @@ def test_a_claim_never_gives_an_agent_node_another_job_or_a_secret(api, world, m
     # ... re-enrolls in agent mode: it gets its own host source, and the password job is cancelled, never decrypted
     assert data["mode"] == "agent"
     calls = []
-    monkeypatch.setattr(J, "decrypt_secrets", lambda blob: calls.append(blob) or {"password": PASSWORD})
+    monkeypatch.setattr(SR, "decrypt_secrets", lambda blob: calls.append(blob) or {"password": PASSWORD})
     payload = client.claim()
     assert payload is None  # the only job was the password test: cancelled, nothing handed out
     with Session(engine) as s:
@@ -256,9 +256,7 @@ def test_deleting_an_agent_node_removes_its_host_source(api, world):
 
 
 def test_agent_nodes_do_not_count_against_the_agentless_node_cap(api, world, monkeypatch):
-    from backend.routers import cbom_sources
-
-    monkeypatch.setattr(cbom_sources, "MAX_NODES", 1)
+    monkeypatch.setenv("CBOM_MAX_AGENTLESS_NODES", "1")
     _pool_row, token = _pool(api)
     _enroll_agent(api, token, "k3s-1")
     _enroll_agent(api, token, "k3s-2")
@@ -347,7 +345,9 @@ def test_migration_matches_the_models():
     for column in CbomNodePool.model_fields:
         assert f"'{column}'" in text, column
     assert "'mode'" in text and "'pool_id'" in text and "server_default='agentless'" in text
-    assert set(AG.__dict__).issuperset({"MAX_AGENT_NODES", "POOL_PREFIX"})
+    from backend.utilities.cbom_sources import limits
+
+    assert "POOL_PREFIX" in AG.__dict__ and "CBOM_MAX_AGENT_NODES" in limits._SPEC  # caps moved to limits.py (F1.1)
 
 
 def test_every_coverage_key_the_engine_writes_has_a_label():
