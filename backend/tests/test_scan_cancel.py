@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session, SQLModel, create_engine, select
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
@@ -102,8 +102,13 @@ def http(monkeypatch):
     monkeypatch.setattr(scans_router, "get_user_from_header_or_raise_exception", fake_user)
     monkeypatch.setattr(scans_router, "check_if_user_is_in_team", validation.check_if_user_is_in_team)
     monkeypatch.setattr(cc, "get_celery_app", lambda: celery)
-    refunds = []
-    monkeypatch.setattr(cc, "refund_credits_to_team", lambda team, credits: refunds.append((team, credits)))
+
+    def refunds():  # the failure refunds the poller wrote (credits ledger, in the transaction of the failure)
+        from backend.new_models import CreditLedgerEntry
+
+        with Session(engine) as s:
+            return [(r.team_id, r.delta) for r in s.exec(
+                select(CreditLedgerEntry).where(CreditLedgerEntry.reason == "scan_failure_refund")).all()]
     from backend.main import app
 
     return TestClient(app), engine, celery, refunds
@@ -128,6 +133,12 @@ def test_queued_scan_is_cancelled_refunded_and_withdrawn_from_the_queue(http):
     assert status == "cancelled" and info["refunded_credits"] == 2.0 and info["cancelled_by"] == 1
     assert balance == 12.0
     assert celery.revoked == [("t-1", {})]  # revoke WITHOUT terminate: the worker stops itself
+    from backend.new_models import CreditLedgerEntry
+
+    with Session(engine) as s:  # the refund's credits-ledger line, committed with the compare-and-set
+        (line,) = s.exec(select(CreditLedgerEntry)).all()
+        assert (line.reason, line.delta, line.balance_after, line.movement_key) == (
+            "scan_cancel_refund", 2.0, 12.0, "scan:1:cancel")
     assert "t-1" in celery.marks.docs  # the mark a worker checks when it picks the task up (survives restarts)
 
 
@@ -201,7 +212,7 @@ def test_after_a_cancel_the_poller_never_stores_a_result_or_refunds_again(http, 
         celery.states["t-2"] = _Result(state, {"results": [1]} if state == "SUCCESS" else RuntimeError("killed"))
         status, data, _scan = cc.get_status_and_update_db(2, "t-2", Scan, engine)
         assert status == "cancelled" and data == {}
-    assert stored == [] and refunds == []
+    assert stored == [] and refunds() == []
     status, info, balance = _row(engine, 2)
     assert status == "cancelled" and info["refunded_credits"] == 3.5 and balance == 13.5
     # the scan page shows the cancelled scan without asking the worker again
