@@ -6,6 +6,7 @@ import hashlib
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -100,13 +101,13 @@ def test_catalogue_addresses_stay_unique() -> None:
 
 @pytest.mark.skipif(shutil.which("openssl") is None, reason="openssl is not installed")
 def test_jwks_bit_length_matches_the_spki() -> None:
-    work = Path("/tmp/cb02-followup-spki")
-    work.mkdir(exist_ok=True)
-    key = work / "rsa.pem"
-    subprocess.run(["openssl", "genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048",
-                    "-out", str(key)], check=True, capture_output=True)
-    der = subprocess.run(["openssl", "pkey", "-in", str(key), "-pubout", "-outform", "DER"],
-                         check=True, capture_output=True).stdout
+    # A private directory: the self-hosted runners share /tmp, so a fixed path collides.
+    with tempfile.TemporaryDirectory(prefix="cb02-followup-spki-") as workdir:
+        key = Path(workdir) / "rsa.pem"
+        subprocess.run(["openssl", "genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048",
+                        "-out", str(key)], check=True, capture_output=True)
+        der = subprocess.run(["openssl", "pkey", "-in", str(key), "-pubout", "-outform", "DER"],
+                             check=True, capture_output=True).stdout
     numbers = labfollow.public_numbers(der)
     jwk = labfollow.jwk_from("rsa-2048", "RS256", "sig", numbers)
     assert numbers["bits"] == 2048
