@@ -93,3 +93,12 @@ frozen `ci_baseline/<repo>.<oracle>.cdx.json` snapshot + a `run.sh` step. Triage
 every new miss in `fp-exclusions.json` (oracle FP, grep-verified reason) or fix
 the scanner (real miss). A repo with no snapshot for an oracle just skips that
 oracle (e.g. cdxgen resolved 0 deps for `01-pyjwt`, so it has no cdxgen baseline).
+
+## What this harness does not measure: code-lane accuracy (see `bench/cbom/d1/`)
+
+This harness compares the engine's crypto **inventory** with other tools' output. It has no ground truth: the
+oracles are tools (cbomkit-theia reads certificates and keys on disk, not code), the triage table is ours, the oracle
+image is `:latest` and the repositories are cloned at HEAD. On 2026-11-12 cbomkit-theia
+(`sha256:46a72ead...`, the image the weekly job pulled) found 0 components in CryptoAPI-Bench and 0 in the labelled
+code corpus. Misuse-detection accuracy (recall and precision against published labels) is measured by the separate
+D1 lane in `bench/cbom/d1/` (CI job `cbom-d1`), which uses nothing from this harness.

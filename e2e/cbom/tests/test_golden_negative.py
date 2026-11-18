@@ -1,7 +1,8 @@
 """The golden negative-control suite (review 5874859738): a trimmed, sanitised snapshot of a real Tier-L run
 (tests/golden/<run>/, made by tools/golden.py) is judged as captured, where it must PASS against its frozen ledger
-snapshot (tests/golden/known-fail.yaml), and then once per deliberately wrong CBOM (harness/negative.py: the reviewer's
-27 cases), where each must FAIL. The fixture carries no lab secret: the canary is generated here, at test time.
+snapshot (tests/golden/known-fail.yaml), and then once per deliberately wrong CBOM (harness/negative.py: the 47 cases
+of reviews 5874859738 and 5878413538), where each must FAIL through the check it is aimed at (``negative.INTENDED``),
+never through an incidental one. The fixture carries no lab secret: the canary is generated here, at test time.
 """
 from __future__ import annotations
 
@@ -45,8 +46,8 @@ def table(golden, tmp_path_factory):
                                                      work=tmp_path_factory.mktemp("neg"))}
 
 
-def test_there_are_27_wrong_cboms():
-    assert len(negative.WRONG) == 27
+def test_there_are_47_wrong_cboms_each_with_its_intended_check():
+    assert len(negative.WRONG) == 47 and set(negative.INTENDED) == set(negative.WRONG)
 
 
 def test_the_golden_run_passes_as_captured(table):
@@ -57,7 +58,8 @@ def test_the_golden_run_passes_as_captured(table):
 def test_every_wrong_cbom_fails(table, case):
     row = table[case]
     assert row["gate"] == "FAIL", f"{case} ({row['doc']}) passed the gate"
-    assert row["blocking"] or row["ledger_rows_moved"], row
+    # review 5878413538: the case must be caught by the check it is aimed at (blocking, or a moved ledger identity)
+    assert row["caught_by"], f"{case} failed, but not through {row['intended']}: {row['blocking']} {row['ledger_rows_moved']}"
 
 
 def test_the_fixture_is_complete():

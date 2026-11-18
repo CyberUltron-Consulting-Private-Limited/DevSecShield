@@ -6,7 +6,8 @@ keys the known-fail ledger matches on), a verdict and the evidence paths a revie
 Verdicts:
   PASS            every view and the oracle agree
   FAIL            a disagreement; ``reason`` names it (``export-missing``, ``mismatch``, ``missing``, ``extra`` ...)
-  NOT-JUDGED      the lab's own self-check disagreed with the oracle (O-3): a lab bug, never a product pass
+  NOT-JUDGED      no independent oracle: the lab's self-check disagreed (O-3, a lab bug), or the key is unverified and
+                  the product equals the lab's value (its value is recorded); never a product pass
   NOT-RUN         the step did not run (no data); the ledger decides whether that is allowed
 The ledger (ledger.py) turns a listed FAIL into KNOWN-FAIL; nothing else changes a verdict.
 """
@@ -64,8 +65,10 @@ class Checks:
             return self.ok(id, gate, kind, subject, **kw)
         return self.fail(id, gate, kind, reason or "mismatch", subject, **kw)
 
-    def not_run(self, id: str, gate: str, kind: str, reason: str, subject: dict[str, Any] | None = None) -> Check:
-        return self.add(Check(id=id, gate=gate, kind=kind, verdict=NOT_RUN, reason=reason, subject=subject or {}))
+    def not_run(self, id: str, gate: str, kind: str, reason: str, subject: dict[str, Any] | None = None,
+                **kw: Any) -> Check:
+        return self.add(Check(id=id, gate=gate, kind=kind, verdict=NOT_RUN, reason=reason, subject=subject or {},
+                              **kw))
 
     def not_judged(self, id: str, gate: str, kind: str, reason: str, subject: dict[str, Any] | None = None,
                    **kw: Any) -> Check:

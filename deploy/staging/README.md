@@ -11,7 +11,7 @@ workflow runs it from CI.
 | frontend | `<prefix>/devsecshield-frontend:<tag>` | the API URL is baked in at build time |
 | migrate | backend image | one-shot `alembic upgrade head` under a Postgres advisory lock; everything that uses the database waits for it |
 | backend | backend image | gunicorn, `BACKEND_WORKERS` workers; port not published; trusts `X-Forwarded-For` only from nginx (`FORWARDED_ALLOW_IPS` = `DSS_PROXY_IP`) |
-| cbom-cloud-worker, dast-scheduler | backend image | |
+| cbom-cloud-worker, dast-scheduler | backend image | the cloud worker scales: `CBOM_CLOUD_REPLICAS` x `CBOM_CLOUD_WORKERS` (in `.env`; see deploy/local/README.md, "Cloud worker pool") |
 | scan-worker, cicd-worker | `<prefix>/scan-worker:<tag>` | queues `scan_worker_queue`, `cicd_worker_queue` |
 | dast-worker | `<prefix>/dast-worker:<tag>` | |
 | postgres, mongo (auth on), rabbitmq | stock images | volumes `pgdata`, `mongodata`, `rabbitmq` |
@@ -26,6 +26,8 @@ workflow runs it from CI.
    cd /opt/devsecshield-staging/deploy/staging
    cp .env.example .env && cp backend.env.example backend.env && chmod 600 .env backend.env
    # set every value (names and meaning are in the two files and in backend/.env.example)
+   # Staging reads only these host files. It does not read backend/.env, backend/utilities/ai/.env,
+   # RabbitMQ/worker/.env, or RabbitMQ/worker/helpers/context/.env.
    mkdir -p certs   # fullchain.pem + privkey.pem for both host names; without them nginx serves plain HTTP
    ```
    Set `ENCRYPTION_KEY` before the first start (see `docs/security/secret-rotation.md`).
@@ -42,13 +44,17 @@ workflow runs it from CI.
 scripts/deploy/staging.sh release deploy@staging-host /opt/devsecshield-staging
 ```
 = `build` (all images, tag = short commit; the frontend gets `NEXT_PUBLIC_BACKEND_URL=https://<API_HOST>`),
-`save` (`deploy/staging/images/dss-staging-<tag>.tar.gz` + `.sha256`), `push` (scp of the bundle and the archive,
-then `staging.sh deploy <tag>` on the host over ssh). On the host, `deploy` verifies the checksum, `docker load`s
-the archive, writes `DSS_TAG` into `.env`, runs `docker compose up -d --wait`, then the checks below; a failed
-`compose up` fails the deploy (recorded as `FAILED` in `deploy-history`). The previous tag's images are kept and
-recorded in `deploy-history`; each tag's deploy files (compose file, nginx config, rollup overlay, `staging.sh`) and
-the head of its migrations are kept in `releases/<tag>/` for a rollback. `deploy` refuses a tag whose migrations do
-not contain the database's revision (an older tag than the one that migrated it): that is what `rollback` is for.
+`save` (`deploy/staging/images/dss-staging-<tag>.tar.gz` + `.sha256` + `.need`, what loading it needs), `push` (scp
+of the bundle, `staging.sh disk-check <tag>` on the host, scp of the archive and of the scan node downloads when
+`staging.sh node-artifacts` made them (see "Scan node downloads"), then `staging.sh deploy <tag>` on the host over
+ssh). On the host,
+`deploy` verifies the checksum, checks the disk (below), `docker load`s the archive, writes `DSS_TAG` into `.env`,
+runs `docker compose up -d --wait`, then the checks below; a failed `compose up` fails the deploy (recorded as
+`FAILED` in `deploy-history`). After a successful deploy the images of the new tag, the previous tag (recorded in
+`deploy-history`) and the last release that passed its checks are kept, and the new tag's archive only; this
+deployment's other images and archives are removed (see "Disk space"); each tag's deploy files (compose file, nginx config, rollup overlay, `staging.sh`) and the head of its
+migrations are kept in `releases/<tag>/` for a rollback. `deploy` refuses a tag whose migrations do not contain the
+database's revision (an older tag than the one that migrated it): that is what `rollback` is for.
 
 Without registry access on the host, add `STAGING_INCLUDE_INFRA=1` to ship the postgres, mongo, rabbitmq and nginx (and, with the minio profile, MinIO)
 images in the same archive. Behind a TLS-intercepting proxy, build with `UV_BASE_IMAGE` (backend, scan worker, DAST
@@ -56,6 +62,208 @@ worker), `NODE_BASE_IMAGE` (frontend) and `GO_BASE_IMAGE` (the scan worker's cbo
 that trust the proxy CA: the system bundle (`/etc/ssl/certs/ca-certificates.crt`, which apt, apk, curl, git and
 Python read) must contain it, and `SSL_CERT_FILE` / `UV_NATIVE_TLS=1` / `NODE_EXTRA_CA_CERTS` set so uv and npm do. Plain-HTTP staging (no certificates): build with
 `NEXT_PUBLIC_BACKEND_URL=http://<API_HOST>` and set `CORS_ORIGINS=http://<FRONTEND_HOST>`.
+
+## Scan node downloads
+
+Customers have no repository access and no ZeroShield registry, so **CBOM > Sources > Scan nodes > Add scan node**
+offers the scan node as downloads served by the API to members of the team (`GET /{team}/cbom/node-artifacts`, and a
+short-lived link per file; `backend/routers/cbom_node_artifacts.py`):
+
+| File | Made by |
+|---|---|
+| `scan-node-<version>.tar.gz` + `.sha256` | `scripts/release/scan_node_image.sh build <version>`: `docker save` of `localhost/zeroshield/cbom-scan-node:<version>`, the name the wizard's `docker run --pull never` uses |
+| `cbom-scan-node-<version>.tgz` + `.sha256` | `scripts/release/node_artifacts.py`: `deploy/helm/cbom-scan-node`, version and appVersion = `<version>` |
+| `cbom-scan-node-ova-kit-<version>.zip`, `cbom-scan-node-ami-kit-<version>.zip` + `.sha256` | `node_artifacts.py`: the Packer kit from `deploy/node-images` with a customer README (`deploy/node-images/kit/`), building from the image file |
+| `manifest.json` | `node_artifacts.py`: version, `build` (the commit the image was built from: `staging.sh node-artifacts` reads the image's `org.opencontainers.image.revision` label and passes `--build`), `image_ref`, the file names; the API lists only what it names |
+
+`<version>` is `scan_node/zs_scan_node/__init__.py` `VERSION` (or `CBOM_NODE_VERSION`). `staging.sh node-artifacts`
+(the workflow's "Scan node downloads" step) builds them into `deploy/staging/images/node-artifacts/` (the chart and
+the kits are about 25 KB together; the size is the image file's, which the deploy log prints); `push` counts their size in the host's disk check (`--node-artifacts-bytes`) and
+copies them to `deploy/staging/node-artifacts/<tag>.part/`; `deploy` checks every file against its `.sha256` and
+moves them to `deploy/staging/node-artifacts/<tag>/`, which `docker-compose.yml` mounts read-only into the backend at
+`/node-artifacts` (`CBOM_NODE_ARTIFACT_DIR`). They are kept and removed with their tag's images (retention, the disk
+preflight), so a rollback serves the downloads of the tag it went back to. A tag deployed without them gets an empty
+directory: the wizard then says each download is "not available on this server yet. Contact your administrator."
+
+**What the host must provide:** nothing new beyond disk space (the downloads count in the disk check) and `sha256sum`
+(coreutils). `CBOM_NODE_IMAGE_REF` / `CBOM_NODE_CHART_REF` in `.env` (a registry customers can pull from) are set by
+the deploy: see "Public registry".
+
+### Which nodes are out of date ("Update available")
+
+A node reports `<version>+<12-character commit>` (`scan_node/zs_scan_node/__init__.py` `reported_version`), or only
+`<version>` when its image was built without a commit (by hand, or before build ids existed). The API compares it
+with the node build this deployment ships (`manifest.json` `version` + `build`; `backend/utilities/cbom_sources/node_release.py`)
+and every node in `GET /{team}/cbom/sources/nodes` carries `update`: `current` (the same release version: a version
+names one node, so the GHCR image and this deploy's own build of the download are both current), `update_available`
+(an older version, or no build id), `newer`, or `unknown` (no downloads on this server, or the node never reported),
+and `server_version`. **Scan nodes** shows "Update available: 1.0.N" under the version, what is missing, a banner
+counting the nodes behind, and how to update. Nothing is enforced: a node without a build id still enrols, heartbeats
+and collects.
+
+Every push deploy is a release of its own version (issue #361, "Public registry"), so the wizard's `docker pull` /
+`helm ... --version`, the downloads and the version nodes are compared with are all the same `1.0.N`.
+A scan node older than the released version should be upgraded.
+
+### The staging lab nodes are not part of the deploy
+
+`staging-lab-node`, `staging-hsm-node` (Docker) and the `cbom-lab-2-*` host agents (Helm, kind) run the scan node
+image they were started with. They are not services of `deploy/staging/docker-compose.yml`, and the deploy never
+touches containers it did not create (their names, networks, lab mounts and state volumes are not in this repository),
+so **a deploy does not update them**: their node-side fixes stay invisible until someone recreates them. After a
+deploy, Scan nodes says which ones are behind. To update a Docker lab node on its host, keeping its registration (the
+node token and keys live in its state volume):
+
+```sh
+# 1. this deploy's node image (either one)
+docker pull ghcr.io/cyberultron-consulting-private-limited/devsecshield-scan-node:staging-<sha12>
+#    or: sha256sum -c scan-node-1.0.0.tar.gz.sha256 && docker load -i scan-node-1.0.0.tar.gz   (from Add scan node)
+# 2. note how the container runs now: name, restart policy, state volume, networks (printed without its environment)
+docker inspect staging-lab-node --format '{{.Name}} restart={{.HostConfig.RestartPolicy.Name}} {{range .Mounts}}{{.Type}}:{{if .Name}}{{.Name}}{{else}}{{.Source}}{{end}}->{{.Destination}} {{end}}{{range $net, $_ := .NetworkSettings.Networks}}network:{{$net}} {{end}}'
+#    Its env file stays where the node was set up; read it there and never paste the env (docker inspect's .Config.Env,
+#    `docker exec env`) into tickets, chat or logs: it holds the node's settings and the registration token it enrolled with.
+# 3. recreate it from the new image with the same name, env, state volume and networks
+docker rm -f staging-lab-node
+docker run -d --name staging-lab-node --restart unless-stopped --env-file <its env, no registration token> \
+  -v <its state volume>:/var/lib/zs-node --network <its lab network> <the image from step 1>
+#    (docker network connect <each further network> staging-lab-node, as step 2 listed)
+```
+
+Within a minute Scan nodes shows the node's version as `1.0.0+<sha12>` with no "Update available". Helm host agents:
+`kind load docker-image <the new image> --name cbom-lab-2`, then `helm upgrade <release> <the new chart> --reuse-values
+--set image.repository=<repo> --set image.tag=<tag>`.
+
+### Terminal-only hosts: the one-paste install
+
+"Create node and show install command" (and New registration token, Reset) also returns `install_links`: one link per
+file the node's way of running needs (Docker: the image; Helm: the image and the chart; OVA/AMI: the kit and the
+image), each with its SHA-256. The wizard turns them into ONE copy-paste block per method that downloads with `curl`
+(or `wget`, shown below it), checks `sha256sum -c`, then `docker load` + `docker run --pull never`, or pushes the image
+to `$REGISTRY` and `helm upgrade --install` the downloaded chart, or unzips the kit and runs Packer. The proxy the
+wizard collected is passed to the download (`--proxy`), and its CA (`--cacert`, a file next to the command) only when
+the proxy inspects TLS: curl uses it for that download from ZeroShield only, nothing is installed system-wide.
+
+A link (`?node_ticket=<node>.<HMAC>`) is bound to the team, the node, the file kind and the node's current
+registration token: it works exactly as long as that token does and stops when the node registers, when the token is
+regenerated or the node reset, or after 24 h. It never contains the token (only an HMAC over its hash). Every use is an
+audit event (`node_artifact.download`, actor the node). Like the registration token, the links end up in the shell
+history of the host: start the command with a space (bash `HISTCONTROL=ignorespace`) or clear the history afterwards.
+
+## Public registry (GHCR)
+
+`publish-ghcr.yml` pushes the scan node to GitHub Container Registry on every push to dev/staging
+(`ghcr.io/cyberultron-consulting-private-limited/devsecshield-scan-node:<branch>-<sha12>`), and on a push to
+**staging** it also releases (job `release`):
+
+* `devsecshield-scan-node:<version>`: **written once, never overwritten**, and `:<major.minor>` and `:latest` pointing
+  at that version;
+* the Helm chart as an OCI artifact, `ghcr.io/cyberultron-consulting-private-limited/charts/cbom-scan-node:<version>`
+  (written once; its default image is the GHCR image above).
+
+`<version>` is derived, never edited (issue #361; `.github/ci/node_version.py`): on staging's first-parent history,
+the first promotion after `scan_node/release.json`'s `after` that changes `scan_node/`, `deploy/helm/cbom-scan-node/`
+or `scripts/release/` is released as its `first` (`1.0.1`), and each later one adds 1 to the patch. A promotion that
+changes none of them keeps the last version: the release job finds it published and keeps it only when it was
+published from a commit with the same node (and the chart only when it is the same bytes); anything else under an
+existing version is refused, so one version always names one content. A minor or major release is an edit of
+`release.json` (`first: 1.1.0`, `after`: the head of staging at the time). `scan_node/zs_scan_node/__init__.py`
+`VERSION` is only what a node built from source without `ZS_NODE_VERSION` reports.
+
+The chart is packaged once per version by `scripts/release/node_artifacts.py` (job `chart`), the same reproducible
+packer the deploy uses for the **Download Helm chart** file, with the same image name (a push deploy builds its node
+image file as `ghcr.io/.../devsecshield-scan-node:<version>`): the GHCR chart and the downloaded chart of a version
+are the same bytes. The deploy waits for its release (`staging.sh wait-node-release`, up to 45 minutes) and checks the
+GHCR chart's content-layer digest against the download's sha256; on the host, `set_node_refs` offers the `docker pull`
+only once the image can be pulled and the `helm oci://` only when that digest matches.
+
+The staging deploy points the Add scan node wizard at them (`staging.sh` `set_node_refs`, `.env` ->
+`docker-compose.yml` -> the backend): `CBOM_NODE_IMAGE_REF=ghcr.io/.../devsecshield-scan-node:<version>` (the release,
+never a moving tag) and, only once anyone can pull it without a login (checked with GHCR's anonymous token API at
+deploy), `CBOM_NODE_CHART_REF=oci://ghcr.io/.../charts/cbom-scan-node:<version>`. The wizard's main command is then
+`docker pull ghcr.io/...:<version> && docker run ...` (Helm: `helm upgrade --install ... oci://... --version <version>`,
+or the downloaded chart with the GHCR image while the chart is not public); the downloads and the one-paste install
+stay below it as the air-gapped alternative.
+
+First `set_node_refs` asks the registry once whether it answers at all (`https://ghcr.io/v2/`, connect timeout 5 s;
+every registry request has one): a host that cannot reach it gets `WARNING: registry ghcr.io cannot be reached from
+this host (<curl's reason>)`, no per-version probe and no pull, instead of a wait per request and a message about a
+missing package.
+
+The API also judges the image it offers against the release its downloads ship (`GET /{team}/cbom/node-artifacts`
+`pull_image_freshness`, `node_release.image_freshness`; cases in `contracts/cbom/node_image_freshness.json`, shared
+with the frontend): the same version is current; an older release, a commit other than the downloads' `build`, or
+`1.0.0` (the version every build reported before release versions; GHCR `:1.0.0` is the 2 Nov build without request
+signing or the `alive` file, issue #197) is not offered: the wizard says why and installs this server's image file.
+The air-gapped Helm commands push the downloaded image as `$REGISTRY/<name>:<version>-<sha12>`, so a cluster that
+already holds another build of the same version (`pullPolicy: IfNotPresent`) cannot keep running it.
+
+The switch is `CBOM_NODE_REGISTRY_PUBLIC` (a variable of the `staging` environment; deploy-staging.yml): unset or `1`
+(default, the image package is public) = on for push deploys; `0` = never offer a pull (clears both refs; set it if
+a package is ever made private again). A manual deploy run always clears them (it may deploy a commit with no release).
+
+**Owner step (one click per package, GitHub UI):** a package pushed by the workflow is private at first. The image
+package `devsecshield-scan-node` is public already (14 Nov). After the first push to staging with this release job,
+make the chart public too: GitHub -> the organisation -> **Packages** -> `charts/cbom-scan-node` -> **Package
+settings** -> **Danger Zone** -> **Change visibility** -> **Public** -> type the package name -> confirm. The next
+deploy then offers `helm ... oci://` (until then the wizard installs the downloaded chart with the GHCR image).
+
+## Disk space
+
+The staging host is shared with other sites. A release archive is about 5.5 GB and `docker load` needs about three
+times that again where Docker stores images (Deploy staging run 43572299641 ran the host out of disk part way through
+the load). So, before the archive is copied (`push` runs `staging.sh disk-check <tag> --archive-bytes <size>
+--need-bytes <need>` on the host) and again before it is loaded (`deploy`), `staging.sh` checks the filesystems that
+receive it, identified by device (`stat -c %d`), so a bind mount of the same disk counts once and the needs add up:
+* the one holding `deploy/staging/images/`: room for the part of the archive not copied yet;
+* the one holding the image store: what loading the archive needs. The image store is containerd's root with the
+  containerd image store (Docker 29's default; `docker info` says `driver-type io.containerd.snapshotter.v1`;
+  `/var/lib/containerd` unless the containerd config says otherwise, or `STAGING_CONTAINERD_ROOT`), else Docker's
+  root (`docker info` `DockerRootDir`).
+  * **Measured** (`<archive>.need`, written by `save` with `scripts/deploy/archive_need.py`, copied with the archive and
+    uploaded with the workflow's artifact): every layer as stored in the archive (the containerd store keeps it in its
+    content store; the classic store extracts it to a temporary directory) plus every layer unpacked, + 10% for
+    filesystem overhead. This holds whatever store the builder had.
+  * Otherwise `STAGING_DISK_FACTOR` (default **3.3**) x the archive's size. Measured on run 43572299641's archive
+    (5,484,863,244 bytes, from a containerd-store builder, as the CI runner is): its layers are stored
+    gzip-compressed (1.00x the archive) and unpack to 2.04x (scan-worker alone 4.72 GB stored, 9.02 GB unpacked), so
+    3.04x, and 3.3 adds about 10%. **An archive saved by a classic-store builder** holds uncompressed layer tars and
+    needs about 4x: without its `.need`, set `STAGING_DISK_FACTOR=4`. Layers a release shares with one already
+    loaded need no new space, so both err on the safe side;
+plus `STAGING_DISK_RESERVE_MB` (default 1024) left free on each, for the other sites. An invalid
+`STAGING_DISK_FACTOR` or `STAGING_DISK_RESERVE_MB` (`3,3`, `1G`) refuses the deploy before anything is changed.
+
+When a filesystem is short, `staging.sh` removes **this deployment's** images of every tag except the running tag,
+its rollback target (the tag `rollback` would go back to), the last release that passed its checks
+(`releases/passed`) and the tag being deployed, and its archives except the new tag's (`rollback` uses images, never
+archives), then checks again; still short, it stops before anything is copied, loaded or switched and prints what it
+needs and what is free. After a deploy whose checks passed it keeps the images of the new tag, its rollback target and
+the last other release that passed its checks (the rollback target, unless the deploy before failed), and the new
+tag's archive only. Only `<DSS_IMAGE_PREFIX>/{devsecshield-backend,devsecshield-frontend,scan-worker,dast-worker}:<tag>`
+images and `deploy/staging/images/<prefix>-<tag>.tar.gz` (with `.sha256`, `.part` and `.need`) are ever removed, and an
+archive only when `<tag>` is a release this host knows (its images, `deploy-history`, `releases/`): another
+deployment's `dss-staging-eu-<tag>.tar.gz` never matches. Removal is one by one: never another site's images or
+files, never `docker image prune` or `docker system prune`, never by force (docker refuses an image a container was
+created from; `staging.sh` says so and keeps it). The settings can also be set in `.env` (`STAGING_DISK_FACTOR`,
+`STAGING_DISK_RESERVE_MB`, `STAGING_CONTAINERD_ROOT`) or passed to `push` from the build machine (the first two).
+`staging.sh` runs with `LC_ALL=C`, so numbers read the same under any locale an ssh session forwards.
+
+A `docker load` that still runs out of space (the containerd store tags the images, prints "Error unpacking image
+...: no space left on device" and exits 0; the classic store exits non-zero) fails the deploy before anything is
+switched, and the images of the new tag it loaded are removed (never the running tag's, its rollback target's or the
+last passed release's).
+
+Runbook, on the host (`cd /opt/devsecshield-staging`):
+```sh
+scripts/deploy/staging.sh disk-plan <tag>                          # archive (and its .need) already copied
+scripts/deploy/staging.sh disk-plan <tag> --archive-bytes <size> [--need-bytes <need>]   # before the copy
+df -h deploy/staging/images /var/lib/containerd /var/lib/docker     # where the space went
+docker system df                                                    # every site's images, containers, volumes
+```
+`<size>` is `wc -c` of the archive and `<need>` the number in its `.need` (both on the build machine or in the
+workflow's artifact). `disk-plan` prints each filesystem's need and free space, what the preflight would remove and
+what retention would remove after the deploy; it removes nothing. When even then the host is short, the space is
+someone else's: ask the owners of the other sites, or grow the disk; then push again (or re-run the newest Deploy
+staging run).
 
 ## Checks
 
@@ -122,15 +330,236 @@ and Application Gateway do); the backend side (`FORWARDED_ALLOW_IPS` = nginx) is
 
 `.env` (shared, also read by compose): `DSS_IMAGE_PREFIX`, `DSS_TAG`, `FRONTEND_HOST`, `API_HOST`, `HTTP_PORT`,
 `HTTPS_PORT`, `HTTP_BIND`, `TLS_CERT_DIR`, `DSS_EDGE_SUBNET`, `DSS_PROXY_IP`, `DSS_REAL_IP_FROM`, `BACKEND_WORKERS`, `DAST_MEM_LIMIT`,
+`DSS_EXPOSE_BUILD` (see "Build identity"),
 `IS_DOCKER_CONTAINER`, `PG_HOST`, `PG_PORT`, `PG_USER`, `PG_USER_PASS`, `PG_DB`, `MONGO_HOST`, `MONGO_PORT`,
 `MONGO_INITDB_ROOT_USERNAME`, `MONGO_INITDB_ROOT_PASSWORD`, `RABBITMQ_HOST`, `RABBITMQ_PORT`,
 `RABBIT_ADMIN_USERNAME`, `RABBIT_ADMIN_PASSWORD`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
-`AWS_DEFAULT_REGION`, `AWS_ENDPOINT_URL_S3`, `GIT_ALLOWED_HOSTS`, optional `MINIO_IMAGE`.
+`AWS_DEFAULT_REGION`, `AWS_ENDPOINT_URL_S3`, `GIT_ALLOWED_HOSTS`, optional `MINIO_IMAGE`; read only by
+`staging.sh` (optional, see "Disk space"): `STAGING_DISK_FACTOR`, `STAGING_DISK_RESERVE_MB`, `STAGING_CONTAINERD_ROOT`;
+optional for the backend: `CBOM_NODE_IMAGE_REF` (see "Scan node downloads").
 
 `backend.env` (backend-image containers only): `JWT_SECRET_KEY`, `JWT_REFRESH_SECRET_KEY`, `ENCRYPTION_KEY`,
 `CERTIN_HMAC_SECRET`, `CORS_ORIGINS`, `CBOM_PUBLIC_APP_URL`, mail (`SMTP_*`, `MAIL_FROM` or `TENANT_ID`,
-`CLIENT_ID`, `CLIENT_SECRET`, `EMAIL_SENDER`), `CBOM_AWS_*`, `CBOM_IDP_ALLOWED_PRIVATE`, `CBOM_EXTRA_CA_FILE`;
+`CLIENT_ID`, `CLIENT_SECRET`, `EMAIL_SENDER`), `CBOM_AWS_*`, `CBOM_AI_*` (see "AI remediation"), `CBOM_CT_DISCOVERY`
+(see "Certificate Transparency discovery on staging"; not a secret), `CBOM_IDP_ALLOWED_PRIVATE`, `CBOM_EXTRA_CA_FILE`;
 the full list is `backend/.env.example`.
+
+## AWS collection on staging (lab mode)
+
+Without `CBOM_AWS_PRINCIPAL_ARN` the AWS form says "AWS collection isn't enabled on this ZeroShield deployment.
+Contact ZeroShield support at support@zeroshield.ai to have it turned on." (and the AWS Private CA card says "Not available"). Staging's only AWS account is the sandbox **935951870001**, which is also the account of the
+collector identity, and a customer role in the deployment's own account is refused ("This role is in ZeroShield's own
+AWS account") unless **lab mode** is on. Lab mode (`CBOM_AWS_LAB_SAME_ACCOUNT=1`, `backend/utilities/cbom_sources/lab_mode.py`)
+accepts such a role for a single-account source, on a deployment whose `DSS_ENV` names a test deployment
+(`docker-compose.yml` sets `DSS_ENV: staging` for `backend` and `cbom-cloud-worker`); `DSS_ENV=production`, any other
+value or none refuses it. Every other check still runs and must pass: AssumeRole with the external ID, refusal
+without it, SecurityAudit, the data-plane deny, the denied secret read. The AWS form and every run of such a source
+show "Lab mode: same-account collection — not for production"; each use is logged (`lab_mode same_account USED`) and
+audited (`source.validate.lab_same_account`, `job.lab_same_account`).
+
+### 1. Set four values (once)
+
+GitHub > repository Settings > Environments > `staging`:
+
+| Where | Name | Value |
+|---|---|---|
+| Environment secret | `CBOM_AWS_PRINCIPAL_ARN` | `arn:aws:iam::935951870001:user/devsecshield/devsecshield-developer` |
+| Environment secret | `CBOM_AWS_ACCESS_KEY_ID` | that user's access key id (`<ACCESS_KEY_ID>`; never in the repo, an issue or a PR) |
+| Environment secret | `CBOM_AWS_SECRET_ACCESS_KEY` | that key's secret (`<SECRET_ACCESS_KEY>`) |
+| Environment variable (or secret) | `CBOM_AWS_LAB_SAME_ACCOUNT` | `1` |
+
+The next Deploy staging run (a push to `staging`, or re-run the latest one) writes exactly these keys into the host's
+`backend.env` (`staging.sh push` sends them over ssh's stdin to `staging.sh backend-env`; they are never on a command
+line or in the log, and GitHub masks the secrets) and recreates the backend containers with them. An unset or empty
+secret leaves the host's value as it is; to turn lab mode off set the variable to `0`. Without GitHub, the same on the
+host: `cd /opt/devsecshield-staging && printf 'CBOM_AWS_LAB_SAME_ACCOUNT=1\n' | scripts/deploy/staging.sh backend-env`
+(one `KEY=VALUE` line per key; type secrets into the pipe from a file you delete, not into shell history), then
+`docker compose --project-directory deploy/staging -f deploy/staging/docker-compose.yml up -d backend cbom-cloud-worker`.
+
+Check: Sources > Cloud & Identity > AWS shows the lab-mode banner and the form (no "not set up" message), and the
+backend log has `cbom sources` lines naming `lab_mode` once you validate.
+
+### 2. The customer role in the sandbox
+
+The existing `arn:aws:iam::935951870001:role/DevSecShieldScannerReadOnlyRole` will NOT pass validation as it is
+(CB-A1 run R1, `V2-validate`): its trust policy has no `sts:ExternalId` condition ("The role can be assumed without the
+external ID") and it has no data-plane deny ("The deny statement is missing: kms:Decrypt, ..."). Use one of these
+(an account administrator does it; the developer user cannot create IAM roles):
+
+**A. Recommended: the product's own reader template.** In Sources > Cloud & Identity > AWS, choose "Single account",
+download the CloudFormation template (it trusts account 935951870001 and carries this team's external ID) and deploy
+it as a stack in the sandbox (CloudFormation console, any region, e.g. ap-south-1; acknowledge IAM resources). It
+creates `arn:aws:iam::935951870001:role/ZeroShieldCBOMReader` with the `sts:ExternalId` condition, SecurityAudit and
+the deny. Its trust policy names the account (`arn:aws:iam::935951870001:root`), so in the SAME account the collector
+user also needs an identity policy allowing the role (AWS evaluates both in that case); unless the user already has
+one, attach this inline policy to `devsecshield-developer`:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "sts:AssumeRole",
+      "Resource": "arn:aws:iam::935951870001:role/ZeroShieldCBOMReader"
+    }
+  ]
+}
+```
+
+Then add the source with role ARN `arn:aws:iam::935951870001:role/ZeroShieldCBOMReader` and **Validate connection**.
+
+**B. Or fix the existing role** `DevSecShieldScannerReadOnlyRole` (IAM console > Roles > the role):
+1. Trust relationships > Edit: replace the WHOLE trust policy with the one below, putting this team's external ID
+   (shown on the AWS form, `zs-ext-XXXX-XXXX-XXXX-XXXX`) in place of `<EXTERNAL_ID>`. Any other statement that lets
+   the user or the account assume the role without the condition makes "Role refused without external ID" fail.
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": { "AWS": "arn:aws:iam::935951870001:user/devsecshield/devsecshield-developer" },
+      "Action": "sts:AssumeRole",
+      "Condition": { "StringEquals": { "sts:ExternalId": "<EXTERNAL_ID>" } }
+    }
+  ]
+}
+```
+
+2. Permissions > Add permissions > Create inline policy (JSON), name `ZeroShieldCBOMReaderDeny`; keep the AWS managed
+   `SecurityAudit` attached:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyKeyUseAndDataPlaneReads",
+      "Effect": "Deny",
+      "Action": [
+        "kms:Decrypt",
+        "kms:Encrypt",
+        "kms:GenerateDataKey",
+        "kms:GenerateDataKeyPair",
+        "kms:GenerateDataKeyPairWithoutPlaintext",
+        "kms:GenerateDataKeyWithoutPlaintext",
+        "kms:GenerateMac",
+        "kms:VerifyMac",
+        "kms:ReEncryptFrom",
+        "kms:ReEncryptTo",
+        "kms:Sign",
+        "kms:Verify",
+        "kms:DeriveSharedSecret",
+        "kms:GenerateRandom",
+        "secretsmanager:GetSecretValue",
+        "secretsmanager:BatchGetSecretValue",
+        "ssm:GetParameter",
+        "ssm:GetParameters",
+        "ssm:GetParametersByPath",
+        "ssm:GetParameterHistory",
+        "s3:GetObject",
+        "s3:GetObjectVersion",
+        "acm:ExportCertificate",
+        "dynamodb:GetItem",
+        "dynamodb:BatchGetItem",
+        "dynamodb:Query",
+        "dynamodb:Scan",
+        "rds-data:*",
+        "lambda:GetFunction",
+        "lambda:InvokeFunction",
+        "ec2:GetPasswordData",
+        "ecr:BatchGetImage",
+        "ecr:GetDownloadUrlForLayer",
+        "codecommit:GitPull"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+Then add the source with role ARN `arn:aws:iam::935951870001:role/DevSecShieldScannerReadOnlyRole` and validate.
+Every check must pass before a run collects; the run shows the lab-mode banner.
+
+## Fleet onboarding on staging
+
+Fleet onboarding (Sources › Fleet: inventory, policies and the managed sources they create, transports such as
+Ansible, Salt and SSM, SSH CA trust) is behind five flags, each off by default in the code
+(`backend/utilities/cbom_sources/fleet/flags.py`, `transports/flags.py`, `sshca/flags.py`). Staging turns all five on
+(#227) so the features can be QA'd end to end; **production and every other deployment keep them off** (the code's
+default; `deploy/local/.env.example` leaves them empty).
+
+| Flag | On staging | What it turns on |
+|---|---|---|
+| `CBOM_FLEET_INVENTORY` | `1` | Fleet inventory (hosts imported or synced from AWS inventory sources); the inventory sync threads |
+| `CBOM_FLEET_POLICIES` | `1` | Fleet policies, fleet credentials and reconcile; the evaluation thread |
+| `CBOM_FLEET_MATERIALIZE` | `1` | Policies may write the managed sources, batches and schedules (off: they evaluate and preview only) |
+| `CBOM_FLEET_TRANSPORTS` | `1` | Transports (Ansible, Salt, SSM, ...) and the fleet source kinds that use them |
+| `CBOM_SSH_CA` | `1` | The SSH certificate authority: trust a CA on servers instead of installing a node key on each |
+
+Where: `docker-compose.yml` (`x-fleet-flags`) sets them for `backend` (the routes) and `cbom-cloud-worker` (the fleet
+threads, started while inventory or policies is on), as `${CBOM_FLEET_INVENTORY:-1}` and so on: on unless
+`deploy/staging/.env` says otherwise. To turn one off on the host, put e.g. `CBOM_SSH_CA=0` in `deploy/staging/.env`
+and run `docker compose up -d backend cbom-cloud-worker` (or deploy). A value in `backend.env` is ignored: the compose
+file's `environment:` wins over env files. The flags ship with the deploy bundle (`staging.sh push`), so no host step is
+needed to turn them on.
+
+Check: as a team member, `GET /1/cbom/sources/fleet/status` (with the team's id) answers
+`{"inventory": true, "policies": true, "transports": true, "ssh_ca": true}` and the Sources page shows the Fleet tab;
+`docker exec dss-staging-backend-1 env | grep -E 'CBOM_(FLEET|SSH_CA)'` lists the five with `1`.
+
+### SSH CA keys in AWS KMS
+
+`CBOM_SSHCA_KMS_KEY_ARNS` (in `backend.env`) lists the KMS keys a team may wrap its SSH CA keys with; the first is the
+default for new CAs. For a disaster-recovery stack in another region, `CBOM_SSHCA_KMS_REGION_OVERRIDE` sends calls for
+a **multi-Region** key to its replica there: `mrk-<key id>=<region>` entries, comma-separated (`*=<region>` covers
+every multi-Region key), e.g. `mrk-1234abcd...=ap-south-2`. Keep the primary ARN in `CBOM_SSHCA_KMS_KEY_ARNS`: the
+CA rows store it, and the replica (same key material) decrypts the data keys the primary wrapped. Single-Region keys
+and aliases ignore the override. The backend's KMS permissions must cover the replica ARN in that region.
+
+## Certificate Transparency discovery on staging
+
+Certificate Transparency discovery (Cloud & Identity › Certificates: the team's domains searched in public CT logs,
+`backend/utilities/cbom_sources/ct_collect.py`) runs only while `CBOM_CT_DISCOVERY` is on (`1`, `true`, `yes`, or
+`on`). The code's default is off. **Production stays off:** no production env file sets the flag, and it is not a
+secret (do not put a key or token in this variable).
+
+Staging turns it on with the same path as `CBOM_AI_PROVIDER` (see "AI remediation" below), not a compose default.
+`scripts/deploy/staging.sh` lists `CBOM_CT_DISCOVERY` in `BACKEND_ENV_KEYS`. The Deploy staging workflow
+(`.github/workflows/deploy-staging.yml`) passes `STAGING_SET_CBOM_CT_DISCOVERY` into `staging.sh push`, which writes
+that one key into the host's `backend.env` over ssh's stdin (`staging.sh backend-env` prints the key name only).
+The value is the `staging` environment's variable `CBOM_CT_DISCOVERY` when that variable is set, and `1` when it is
+unset, so a staging deploy leaves discovery on. Set that variable to `CBOM_CT_DISCOVERY=0` to turn it off on the next
+deploy.
+
+`backend` and `cbom-cloud-worker` both read `backend.env` (the API answers `ct_discovery_enabled` and accepts a
+`ct_logs` source; the worker runs the searches). Compose does **not** set `CBOM_CT_DISCOVERY` under `environment:`:
+that entry would hide `backend.env`, and a value in `deploy/staging/.env` would not be what the deploy wrote.
+A hand edit of `backend.env` lasts until the next deploy, which writes the variable again.
+
+Without a key, Cert Spotter answers unauthenticated, at its free rate; set `CBOM_CT_CERTSPOTTER_KEY` in `backend.env`
+by hand if you need a higher rate (that key is a secret and is not one of `BACKEND_ENV_KEYS`, so a deploy never
+writes or prints it). Check: `docker exec dss-staging-backend-1 printenv CBOM_CT_DISCOVERY` prints `1`, and
+`GET /1/cbom/sources/settings` answers `"ct_discovery_enabled": true` with the providers. The Certificates card then
+shows the Certificate Transparency source instead of "Certificate Transparency discovery is off on this ZeroShield
+deployment".
+
+## Build identity
+
+Every image carries the commit it was built from (`build_images.sh`; the OCI `revision` label and, in the backend,
+`DSS_BUILD_SHA` / `DSS_BUILD_VERSION`). A tree with uncommitted or untracked changes claims no commit ("unknown")
+and its version ends in `-dirty`, whoever chose the tag.
+Signed-in users and operators always read it from `GET /version`; collection runs and CBOM exports record it.
+`DSS_EXPOSE_BUILD=1` in `.env` also names it publicly: `GET /health` adds `build` / `version`, every response
+carries `X-ZS-Build`, and `staging.sh build` puts it into the frontend's `<meta name="zs-build">` (which makes every
+commit rebuild the frontend). For the meta, `staging.sh build` takes `DSS_EXPOSE_BUILD` from its environment first
+and `.env` second: the **Deploy staging** workflow builds on a runner without `.env` and sets it from its
+`expose_build` input (on by default). The API side is always the host's `.env`, so a staging host deployed by the
+workflow needs `DSS_EXPOSE_BUILD=1` there too. Set it on staging and test stacks, where the gate compares the
+deployed commit without an account; leave it unset (0) in production, where it would fingerprint the exact build
+(ASVS V14.3.3).
 
 Scan-node mTLS (optional): put the CA that issues scan-node client certificates at
 `$TLS_CERT_DIR/node-client-ca.pem`; nginx then asks the API host's clients for a certificate
@@ -143,6 +572,73 @@ node reset). Browsers are asked for a certificate only if they hold one from tha
 `ZS_CLIENT_KEY` and, for a private server CA, `ZS_CA_FILE`. Refusals are 403 with `X-ZS-Refused`; every node
 answer carries `X-ZS-Deployment` (one id per deployment, created by migration `wp5a0node001`; a migration
 downgrade and upgrade makes a new one, which nodes adopt from their next successful request).
+
+AI remediation (CBOM findings; CB-38): the finding dialog's "AI assistant" panel and the "Generate fix with AI (AWS
+Bedrock)" button call AWS Bedrock Converse with `openai.gpt-oss-120b-1:0` in `ap-south-1`, signed with the
+assistant's **own IAM user** (credential source `static`: `CBOM_AI_AWS_ACCESS_KEY_ID` / `CBOM_AI_AWS_SECRET_ACCESS_KEY`
+in `backend.env`), not the `AWS_*` of `.env` that the SAST chat (and, on some hosts, MinIO) uses.
+
+### AI remediation: turn it on (owner, once)
+
+1. **AWS IAM**: create (or reuse) the dedicated IAM user, attach only this inline policy, and create one access key for
+   it. Converse is authorised by `bedrock:InvokeModel` (AWS has no separate `bedrock:Converse` IAM action; the
+   Converse API reference says it "requires permission for the bedrock:InvokeModel action"):
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [
+       {
+         "Sid": "CbomAiAssistantConverse",
+         "Effect": "Allow",
+         "Action": "bedrock:InvokeModel",
+         "Resource": "arn:aws:bedrock:ap-south-1::foundation-model/openai.gpt-oss-120b-1:0"
+       }
+     ]
+   }
+   ```
+   Nothing else: no `bedrock:*`, no other model, no other region, no streaming (`InvokeModelWithResponseStream`), no
+   other service. If Bedrock answers `AccessDeniedException` for a policy like this one, enable access to the model
+   for the account in the Bedrock console (Model access, `ap-south-1`).
+2. **GitHub**: repository Settings > Environments > `staging`:
+
+   | Where | Name | Value |
+   |---|---|---|
+   | Environment secret | `CBOM_AI_AWS_ACCESS_KEY_ID` | that user's access key id (never in the repo, an issue, a PR or chat) |
+   | Environment secret | `CBOM_AI_AWS_SECRET_ACCESS_KEY` | that key's secret |
+   | Environment variable | `CBOM_AI_PROVIDER` | `bedrock` |
+   | Environment variable (optional) | `CBOM_AI_BEDROCK_REGION` | leave unset: `ap-south-1` |
+
+3. **Deploy**: the next Deploy staging run (a push to `staging`, or re-run the latest one) writes
+   `CBOM_AI_PROVIDER=bedrock`, `CBOM_AI_BEDROCK_REGION=ap-south-1`, `CBOM_AI_AWS_CREDENTIALS=static` and the two keys
+   into the host's `backend.env` (`staging.sh push` sends them over ssh's stdin to `staging.sh backend-env`, which
+   prints key names only; GitHub masks the secrets; they are never on a command line or in the log) and recreates the
+   backend containers. With neither secret set, no key and no credential source is written (the host's values stay
+   as they are); with only one of the two the deploy fails ("set both ... or neither"), without printing it. The
+   environment variable `CBOM_AI_AWS_CREDENTIALS` (`static`, `env`, `instance`, ...) overrides the choice. On the
+   host, half a key pair is refused (the assistant is then unavailable), never replaced by the `.env` keys. To
+   rotate: create the new key, update both secrets, deploy, then delete the old key in IAM.
+4. **Verify**: signed in as a member of a team, `GET https://<API_HOST>/{team_id}/cbom/ai/status` (or open a CBOM
+   finding: the panel appears only when this says available) answers
+   `{"available": true, "provider": "bedrock", "model": "openai.gpt-oss-120b-1:0", "region": "ap-south-1",
+   "egress": [{"host": "bedrock-runtime.ap-south-1.amazonaws.com", "port": 443, ...}], ...}`; `{"available": false}`
+   means off or misconfigured (the backend log says why, without values: `cbom_ai endpoint not usable: ...`). Then
+   ask the panel to explain a finding: the backend log has a `cbom_ai audit outcome=ok ... provider=bedrock` line
+   (`outcome=endpoint_error` with an AWS error code, e.g. `AccessDeniedException`, means the key or policy is wrong;
+   `stop=` names Bedrock's stop reason of each attempt, `max_tokens` an answer cut at its output budget).
+   Neither the status route, an error nor any log line ever contains a key value.
+
+Every AI request answers within `CBOM_AI_DEADLINE_S` (50 s by default), below the host proxy's 60 s read timeout, so
+the browser gets the app's own "took too long, try again" (with CORS headers) rather than the proxy's 504. A
+`CBOM_AI_TIMEOUT_S` above the deadline (the host had 180) has no effect.
+
+Turn it off with the environment variable `CBOM_AI_PROVIDER=off`, or, when that variable is unset,
+`CBOM_AI_PROVIDER=off` in the host's `backend.env` (a deploy writes `CBOM_AI_PROVIDER` only when the variable is set,
+so a hand-set `off` is kept across deploys). Egress: HTTPS to `bedrock-runtime.ap-south-1.amazonaws.com:443` only
+(`GET /{team}/cbom/ai/status` lists it under `egress`; the panel shows the same); the static source contacts no
+credential endpoint. Other credential sources (`instance`, `profile` with `CBOM_AI_AWS_PROFILE`, ...) are described in
+deploy/local/README.md. With `CBOM_AI_REDACT_HOSTS` on (the Bedrock default) host names, addresses, e-mail addresses
+and account ids in the code window are replaced by tokens before the request and put back in the shown fix. No
+content (question, prompt or answer) is logged.
 
 AI analysis: SAST, IaC and the SCA + SBOM chat call Amazon Bedrock with the `AWS_*` of `.env` and need a Qdrant
 vector store (`QDRANT_HOST`, `QDRANT_PORT`, `QDRANT_API_KEY`; not part of this compose file). Without them those
@@ -178,7 +674,36 @@ dead-lettered, and admins retry them from the delivery log.
 
 ## GitHub workflow
 
-**Deploy staging** (manual): builds, checks the image contexts, saves the archive as an artifact; with `deploy`
-ticked it also pushes to the host. Configure in the repository's `staging` environment: secrets
+**Deploy staging** (`.github/workflows/deploy-staging.yml`) runs on **every push to `staging`** (a promotion from
+`dev` merged): it builds that commit (frontend for `https://devsec-staging-api.zeroshield.ai`, build exposed), checks
+the image contexts, saves the archive as an artifact and deploys it to the host. Runs go one at a time in the order
+they arrive; a running deploy is never cancelled, and of several waiting pushes the newest deploys. A push run
+deploys only while its commit is still the tip of `staging` (step "Still the tip of staging"): GitHub re-runs keep
+the original commit, so re-running an older run fails with "superseded" instead of putting that commit back over a
+newer one; re-running the newest run is fine. A manual run
+(GitHub offers it from the default branch only) builds and saves; with `deploy` ticked it also pushes to the host.
+Nothing in it touches production. Configure in the repository's `staging` environment: secrets
 `STAGING_SSH_KEY`, `STAGING_SSH_KNOWN_HOSTS`, `STAGING_SSH_TARGET`; variable `STAGING_DIR`. Nothing of that is in
 the repository.
+
+**What a red Deploy staging run leaves behind** (there is no automatic rollback; `staging.sh push`/`deploy` above):
+* The build (or the superseded check) failed: nothing on the host changed.
+* "not enough disk space to load <tag>" (`disk-check` before the copy, or `deploy` before the load; "Disk space"
+  above), or "STAGING_DISK_FACTOR=... is not a number": the containers still run the previous tag; the host's deploy
+  files are the new bundle's and `releases/files-tag` is cleared; this deployment's images of tags other than the
+  running one, its rollback target, the last that passed and the new one, and its archives but the new one's, may
+  have been removed (the log names each). Before the copy the archive was not
+  copied at all. Run `staging.sh disk-plan <tag>` on the host, free space, then push again (or re-run the newest run).
+* "docker load of ... failed": the load ran out of space part way. The images of the new tag it loaded were removed;
+  the rest is as in the next case. Free space (`disk-plan`) and push again.
+* `deploy` refused before switching tags (archive checksum, an image not loaded, or a database at a revision the
+  new tag's migrations do not contain): the containers still run the previous tag, but the host's deploy files
+  (compose file, nginx, `staging.sh`) are already the new bundle's and `releases/files-tag` is cleared. Fix the
+  cause and push again (or re-run the newest run). Do not use `rollback` here (nor in the two cases above): `DSS_TAG`
+  is still the running release, so `rollback` would go to the release before it.
+* `compose up` failed: the host is on the new tag, partly started, and `deploy-history` says `FAILED`.
+* The post-deploy `staging.sh check` failed: the new tag is live and the run is red.
+In these two cases nothing is removed after the deploy: retention runs only after a deploy whose checks passed, so
+the previous release's images are there for the rollback.
+For the last two, go back with `make rollback-staging HOST=user@host` (or `scripts/deploy/staging.sh rollback` on
+the host; it asks before a database downgrade), or push a fix to `staging`.

@@ -1,0 +1,19 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Resources:
+  Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: pay-data                                 # F1 no BucketEncryption
+  Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      Protocol: HTTPS
+      Port: 443
+      SslPolicy: ELBSecurityPolicy-TLS-1-0-2015-04         # F2 TLS 1.0 policy
+      LoadBalancerArn: arn:aws:elasticloadbalancing:ap-south-1:111122223333:loadbalancer/app/x/y
+      DefaultActions: [{Type: fixed-response, FixedResponseConfig: {StatusCode: "200"}}]
+  Key:
+    Type: AWS::KMS::Key
+    Properties:
+      EnableKeyRotation: false                             # F3 rotation off
+      KeyPolicy: {}

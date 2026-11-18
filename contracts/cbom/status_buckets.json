@@ -1,0 +1,2 @@
+{"run_to_unified": {"queued":"pending","running":"started","done":"success","partial":"partial","failed":"failure","cancelled":"cancelled"},
+  "assignment_to_finding": {"open":"not_started","in_progress":"in_progress","done":"fixed","accepted_risk":"ignored"}}

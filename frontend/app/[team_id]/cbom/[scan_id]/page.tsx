@@ -8,7 +8,10 @@ import ChatWindow from "@/components/ai/ChatWindow";
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getCBOMScanData } from "@/utils/backend_api";
-import { useParams } from "next/navigation";
+import { isScanGone, scanErrorText } from "@/components/cbom/scanQuery";
+import { queryRetry } from "@/utils/query_client";
+import { useParams, useRouter } from "next/navigation";
+import { parseCbomResultsId, runResultsHref } from "@/components/cbom/results/resultsHref";
 import { toast } from "@/utils/toast";
 import { Mode } from "@/app/[team_id]/sast/[scan_id]/page";
 
@@ -23,14 +26,23 @@ export default function CBOMScanPage() {
 
   const params = useParams();
   const team_id = parseInt((params?.team_id as string) ?? "0", 10);
-  const scan_id = parseInt((params?.scan_id as string) ?? "0", 10);
+  const id = parseCbomResultsId(params?.scan_id);
+  // `run-<n>` is a Sources run: it has no scan page, only its results (CB-38).
+  const runId = id?.kind === "run" ? id.id : null;
+  const scan_id = id?.kind === "scan" ? id.id : 0;
   const hasValidIds = !!team_id && !!scan_id;
+  const router = useRouter();
   const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: ["cbom-conversation-data", team_id, scan_id],
     queryFn: getCBOMScanData,
     enabled: hasValidIds,
+    retry: (failureCount, error) => !isScanGone(error) && queryRetry(failureCount, error),
   });
+
+  useEffect(() => {
+    if (team_id && runId) router.replace(runResultsHref(team_id, runId, window.location.search));
+  }, [router, runId, team_id]);
 
   useEffect(() => {
     if (query.data?.scan_status === "pending" || query.data?.scan_status === "started") {
@@ -50,6 +62,12 @@ export default function CBOMScanPage() {
     }
   }, [query.data]);
 
+  if (team_id && runId) {
+    return <div className="flex h-screen w-full items-center justify-center">
+      <Loader2 className="size-10 animate-spin text-blue-600" />
+    </div>;
+  }
+
   if (!hasValidIds) {
     toast.error("Team or scan id not found");
     return (
@@ -63,8 +81,8 @@ export default function CBOMScanPage() {
 
   if (query.isError) {
     return <div className="flex h-screen w-full items-center justify-center">
-      <p className="text-zinc-600 dark:text-zinc-400 mb-4">
-        Error in fetching scan data, please try again later
+      <p className="text-zinc-600 dark:text-zinc-400 mb-4" data-testid="cbom-scan-error">
+        {scanErrorText(query.error)}
       </p>
     </div>
   }

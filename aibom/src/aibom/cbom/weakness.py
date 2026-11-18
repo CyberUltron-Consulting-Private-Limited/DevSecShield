@@ -62,6 +62,16 @@ WEAK_RNG = "WEAK_RNG"
 STATIC_IV = "STATIC_IV"
 REUSED_NONCE = "REUSED_NONCE"
 HARDCODED_KEY = "HARDCODED_KEY"
+# CB-27 (Java literal flow): a password-based key derivation fed a constant salt
+# (CWE-760: one precomputed table serves every password) or a constant iteration count
+# below 1,000 (CWE-916; NIST SP 800-132 section 5.2 sets 1,000 as the minimum).
+# Medium: they make an offline guess cheaper, they do not hand over the key.
+STATIC_SALT = "STATIC_SALT"
+WEAK_KDF_ITERATIONS = "WEAK_KDF_ITERATIONS"
+# CB-28: an RSA key generated with public exponent 3 (FIPS 186-5 requires
+# 2^16 < e < 2^256; e = 3 enables Bleichenbacher's 2006 signature forgery on lax
+# PKCS#1 v1.5 verifiers and cube-root recovery of small unpadded messages).
+WEAK_RSA_EXPONENT = "WEAK_RSA_EXPONENT"
 # C13 cipher-suite / SSH-algo / IKE-transform negotiation weakness. Distinct from
 # WEAK_PROTOCOL (which flags the *version*: TLS < 1.2 / SSH-1.x / IKEv1) — this
 # flags the negotiated *primitives* a protocol carries in its
@@ -80,7 +90,7 @@ WEAK_CRYPTO_CODES = frozenset(
     {
         WEAK_ALGORITHM, WEAK_CIPHER_MODE, WEAK_KEY_SIZE, WEAK_PROTOCOL,
         WEAK_RNG, STATIC_IV, REUSED_NONCE, HARDCODED_KEY, WEAK_CIPHER_SUITE,
-        WEAK_PADDING,
+        WEAK_PADDING, STATIC_SALT, WEAK_KDF_ITERATIONS, WEAK_RSA_EXPONENT,
     }
 )
 
@@ -394,6 +404,57 @@ def material_misuse_findings(component: AIComponent) -> list[tuple[str, str, str
                 f"Static IV/nonce {name}: a constant, predictable {kind} reaches "
                 f"a cipher (CWE-329); it defeats CBC/CTR semantic security. Use a "
                 f"fresh random IV per message.",
+            )
+        )
+    via = props.get("crypto:usedBy")
+    exponent = props.get("crypto:publicExponent")
+    if exponent and exponent.isdigit() and int(exponent) <= 65536:
+        findings.append(
+            (
+                WEAK_RSA_EXPONENT,
+                _SEV,
+                f"Weak RSA public exponent {name}: e = {exponent}. FIPS 186-5 "
+                f"requires 2^16 < e < 2^256; e = 3 lets an attacker forge PKCS#1 "
+                f"v1.5 signatures on lax verifiers (Bleichenbacher 2006) and take "
+                f"the cube root of small unpadded messages. Generate keys with "
+                f"e = 65537 (RSA_F4).",
+            )
+        )
+    if props.get("crypto:staticSalt") == "true":
+        findings.append(
+            (
+                STATIC_SALT,
+                _SEV_MED,
+                f"Static salt {name}: a constant salt reaches "
+                f"{via or 'a password-based KDF'} (CWE-760), so one precomputed table "
+                f"or one guessing run serves every password it protects. Use a fresh "
+                f"random salt of at least 16 bytes per password (SecureRandom) and "
+                f"store it with the result.",
+            )
+        )
+    if props.get("crypto:weakIterations") == "true":
+        count = props.get("crypto:iterations", "a constant below 1000")
+        findings.append(
+            (
+                WEAK_KDF_ITERATIONS,
+                _SEV_MED,
+                f"Weak KDF iteration count {name}: {count} iterations for "
+                f"{via or 'a password-based KDF'} (CWE-916), below the 1,000 minimum "
+                f"of NIST SP 800-132; each password guess costs almost nothing. Use "
+                f"PBKDF2 with at least 600,000 iterations for HMAC-SHA256 (OWASP) or a "
+                f"memory-hard KDF (Argon2id, scrypt).",
+            )
+        )
+    if props.get("crypto:hardcoded") == "true" and kind == "password":
+        findings.append(
+            (
+                HARDCODED_KEY,
+                _SEV,
+                f"Hardcoded password {name}: a constant password reaches "
+                f"{via or 'a crypto API'} (CWE-259 / CWE-321); anyone with the code "
+                f"can derive the key or open the keystore. Read it from a secret "
+                f"manager or the environment at run time and rotate the one in the "
+                f"code.",
             )
         )
     if props.get("crypto:hardcoded") == "true" and kind in (
@@ -863,6 +924,9 @@ __all__ = [
     "STATIC_IV",
     "REUSED_NONCE",
     "HARDCODED_KEY",
+    "STATIC_SALT",
+    "WEAK_KDF_ITERATIONS",
+    "WEAK_RSA_EXPONENT",
     "WEAK_CIPHER_SUITE",
     "WEAK_PADDING",
     "WEAK_CRYPTO_CODES",

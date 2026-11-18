@@ -34,9 +34,9 @@ PROJECT = "cb02-lab"
 DB_IMAGES = {"postgres": "postgres:16-alpine@sha256:aa6cb33cf4c19c765cefcf48d96176258800870a9a1e930ad126200f9d825139",
              "mysql": "mysql:8.4@sha256:a81d043930e51745522bd5c430961cf8286f0a23f0a9a2a6e0108f7ea71b0902"}
 COMPOSE = HERE / "compose.yml"
-IMAGES = {"target": "cb02-lab/target:dev", "tools": "cb02-lab/tools:dev"}
+IMAGES = {"target": "cb02-lab/target:dev", "tools": "cb02-lab/tools:dev", "ubuntu": "cb02-lab/ubuntu:dev"}
 MEM_FLOOR_MB = 1536          # keep >= 1.5 GB available (TEAM-PROCESS, DA §4.1)
-WAVE_MEM_MB = {"core": 400, "db": 700, "run2": 20, "psp": 10, "hsm": 0, "code": 0, "k8s": 900, "tools": 150}
+WAVE_MEM_MB = {"core": 700, "db": 700, "run2": 20, "psp": 10, "hsm": 0, "code": 0, "k8s": 900, "tools": 150}
 LOCK_DIR = Path(os.environ.get("CB_LAB_LOCKS", "/home/claude/round6/locks"))
 CACHE = Path(os.environ.get("CB_LAB_CACHE", str(HERE / ".work" / "cache")))
 BENCH = S.by_id("code-cryptoapi-bench")
@@ -108,12 +108,18 @@ def compose_text() -> str:
             out += ["    healthcheck:", f"      test: [\"CMD-SHELL\", \"{hc}\"]",
                     "      interval: 3s", "      timeout: 3s", "      retries: 60"]
         else:
-            out.append("    <<: *target")
-            if t["kind"] == "listener":
+            if t.get("os") == "ubuntu":
+                # sudo is setuid. The shared target anchor drops every capability and sets no-new-privileges,
+                # which stops sudo, so this container does not use that anchor. The command log is created
+                # inside the container as root; a bind mount would be owned by the lab user.
+                out += [f"    image: ${{CB02_UBUNTU_IMAGE:-{IMAGES['ubuntu']}}}",
+                        "    restart: \"no\"", "    mem_limit: 192m", "    pids_limit: 256",
+                        "    labels: {com.zeroshield.cbom-lab: cb02}"]
+            else:
+                out.append("    <<: *target")
+            if t["kind"] in ("listener", "receiver"):
                 vols.append("${CB_LAB_DIR:?}/listeners:/logs")
                 out.append("    entrypoint: [\"/bin/sh\", \"/lab/listen.sh\"]")
-            if t["kind"] == "host":
-                vols.append("${CB_LAB_DIR:?}/forcecommand.log:/var/log/cb02/commands.log")
         out += [f"    container_name: cb02-{tid}", f"    profiles: [{t['profile']}]",
                 "    volumes:", *[f"      - \"{v}\"" for v in vols],
                 "    networks:", "      lab:", f"        ipv4_address: {t['ip']}",
@@ -174,22 +180,26 @@ def locked(lock: str, cmd: list[str]) -> list[str]:
     return ["flock", str(path), *cmd] if LOCK_DIR.is_dir() and shutil.which("flock") else cmd
 
 
-INPUTS_LABEL = "com.zeroshield.cbom-lab.inputs"
+# Each image is labelled with the sha256 of its own build inputs: its Dockerfile, its .dockerignore and the files that
+# .dockerignore lets into the context. An entrypoint edit rebuilds the 23 MB target image, never the 500 MB tools
+# image (review 5878784465 nit; disk on the shared machine). The key differs from the earlier combined label
+# (com.zeroshield.cbom-lab.inputs), so checkouts that still compare that one keep working against their own images.
+INPUTS_LABEL = "com.zeroshield.cbom-lab.image-inputs"
+IMAGE_CONTEXT = {"target": ("entrypoints",), "tools": ("tlscheck",), "ubuntu": ("entrypoints",)}
 
 
-def image_inputs_hash(lab: Path = HERE) -> str:
-    """sha256 over every build input of the two lab images (Dockerfiles, entrypoints, the Go observer)."""
+def image_inputs_hash(kind: str, lab: Path = HERE) -> str:
+    """sha256 over the build inputs of one lab image (Dockerfile, .dockerignore, the context it copies)."""
     h = hashlib.sha256()
-    for sub in ("images", "entrypoints", "tlscheck"):
-        for p in sorted((lab / sub).rglob("*")):
-            if p.is_file():
-                h.update(str(p.relative_to(lab)).encode() + b"\0" + p.read_bytes() + b"\0")
+    files = [lab / "images" / f"{kind}.Dockerfile", lab / "images" / f"{kind}.Dockerfile.dockerignore"]
+    files += [p for sub in IMAGE_CONTEXT[kind] for p in sorted((lab / sub).rglob("*")) if p.is_file()]
+    for p in files:
+        h.update(str(p.relative_to(lab)).encode() + b"\0" + p.read_bytes() + b"\0")
     return h.hexdigest()
 
 
-def image_label(ref: str) -> str | None:
-    res = run(["docker", "image", "inspect", "-f", "{{ index .Config.Labels \"" + INPUTS_LABEL + "\" }}", ref],
-              check=False)
+def image_label(ref: str, key: str = INPUTS_LABEL) -> str | None:
+    res = run(["docker", "image", "inspect", "-f", "{{ index .Config.Labels \"" + key + "\" }}", ref], check=False)
     return res.stdout.strip() if res.returncode == 0 else None
 
 
@@ -211,8 +221,8 @@ def compose_image(kind: str) -> str:
 def cmd_build(a: argparse.Namespace) -> int:
     ca = os.environ.get("CB_LAB_BUILD_CA", "")  # a TLS-intercepting build proxy's CA, if the builder needs one
     proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
-    inputs = image_inputs_hash()
     for name, ref in IMAGES.items():
+        inputs = image_inputs_hash(name)
         if image_label(ref) == inputs and not getattr(a, "force", False):
             continue  # built from exactly these inputs; a tag alone is never trusted
         cmd = ["docker", "build", "-f", str(HERE / "images" / f"{name}.Dockerfile"), "-t", ref,
@@ -370,12 +380,13 @@ def wave_services(run_dir: Path, waves: list[str]) -> list[str]:
 def cmd_up(a: argparse.Namespace) -> int:
     run_dir = Path(a.run_dir).resolve()
     waves = waves_of(a)
-    if "k8s" in waves:
-        raise LabError("the k8s wave is not part of this lab build (see README: deferred, disk)")
     check_memory(waves, "before")
     cmd_build(argparse.Namespace(force=False))
     ensure_network()
     generate(run_dir, waves, a.variant, a.only)
+    if "k8s" in waves:
+        import labk8s
+        labk8s.up(run_dir)
     services = wave_services(run_dir, waves)
     if services:
         log(f"starting {len(services)} targets + cb02-tools ({','.join(waves)})")
@@ -400,8 +411,8 @@ def lab_containers() -> list[str]:
 
 
 def export_command_log(run_dir: Path) -> int:
-    """The tamper-proof copy of the ForceCommand record: sshd's stderr in the container log (the login user can write
-    the file copy, never the container log). Written to lab/forcecommand.authoritative.jsonl."""
+    """The tamper-proof copy of the ForceCommand record: lines the entrypoint's reader prints to the container log.
+    The login user cannot write /var/log/cb02/commands.log. Written to lab/forcecommand.authoritative.jsonl."""
     rows = []
     res = run(["docker", "logs", "cb02-host"], check=False)
     for line in (res.stdout + res.stderr).splitlines():
@@ -416,6 +427,8 @@ def export_command_log(run_dir: Path) -> int:
 
 
 def cmd_down(a: argparse.Namespace) -> int:
+    import labk8s
+    labk8s.down()
     if getattr(a, "run_dir", None):
         export_command_log(Path(a.run_dir).resolve())
     names = lab_containers()

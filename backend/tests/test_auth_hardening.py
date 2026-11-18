@@ -746,6 +746,16 @@ def test_admin_created_users_follow_the_new_password_rules(client, world, monkey
         mails.append(email)
 
     monkeypatch.setattr(admin_router.account_mail, "send_account_created_email", fake_send)
+
+    def no_mongo():
+        raise AssertionError("creating a user stores nothing in Mongo: it must not open a Mongo client")
+
+    # #126: an unused call opened the process-wide MongoClient, whose monitor thread then connected to
+    # 127.0.0.1:27017 every 10 s during later tests (and broke the socket audits of test_cbom_ai.py)
+    import backend.get_db as get_db_module
+
+    monkeypatch.setattr(get_db_module, "get_mongo_client_db", no_mongo)
+    monkeypatch.setattr(admin_router, "get_mongo_client_db", no_mongo, raising=False)
     token = auth_utils.create_access_token("root@example.test")
     headers = {"Authorization": f"Bearer {token}"}
     body = {"email": " Ops@Example.test ", "first_name": "O", "last_name": "P"}

@@ -6,6 +6,7 @@ Uses the same SQLite + real-router harness as test_cbom_sources_api.py.
 from __future__ import annotations
 
 import datetime as dt
+import json
 import sys
 from pathlib import Path
 
@@ -122,14 +123,17 @@ def test_internet_exposure_raises_the_risk_and_the_run_keeps_its_snapshot(api, w
 
 def test_a_job_without_a_snapshot_reads_the_current_source():
     class _Src:
-        config = {"business_criticality": "high", "exposure": "internet"}
+        config = {"business_criticality": "high", "exposure": "internet", "data_lifetime_years": 7}
 
     class _Node:
         segment = "DMZ"
 
-    assert P.job_metadata({}, _Src(), _Node()) == {"criticality": "high", "exposure": "internet", "segment": "DMZ"}
-    snap = {"metadata": {"business_criticality": "low", "exposure": None, "node_segment": "Core"}}
-    assert P.job_metadata(snap, _Src(), _Node()) == {"criticality": "low", "exposure": None, "segment": "Core"}
+    assert P.job_metadata({}, _Src(), _Node()) == {"criticality": "high", "exposure": "internet", "segment": "DMZ",
+                                                   "data_lifetime_years": 7}
+    snap = {"metadata": {"business_criticality": "low", "exposure": None, "node_segment": "Core",
+                         "data_lifetime_years": 0}}
+    assert P.job_metadata(snap, _Src(), _Node()) == {"criticality": "low", "exposure": None, "segment": "Core",
+                                                     "data_lifetime_years": 0}  # CB-19: the source's Mosca X
 
 
 # ------------------------------------------------------------------------------------------- Mosca merge
@@ -193,6 +197,7 @@ def test_a_library_that_reached_end_of_life_after_the_run_is_a_finding_in_every_
     from backend.new_models import CbomCollectedAsset
     from backend.utilities.cbom_sources import crypto_kb
     from backend.utilities.cbom_sources.inventory import export_serial
+    from backend.utilities.cbom_sources.posture import PQC_CLASS_MODEL
 
     engine, _ = world
     _src, run, claim, hdr = _collect_job(api, engine)
@@ -208,6 +213,7 @@ def test_a_library_that_reached_end_of_life_after_the_run_is_a_finding_in_every_
         row.created_at = dt.datetime(2026, 1, 15)
         then = classify(row.asset_type, row.algorithm, row.key_size, row.protocol, row.facts, row.created_at)
         row.impact, row.finding_codes, row.finding = then["impact"], then["finding_codes"], then["finding"]
+        row.content_digest = None  # a changed stored row: digest unknown (#352)
         s.add(row)
         s.commit()
         run_impact, run_codes = row.impact, list(row.finding_codes or [])
@@ -243,7 +249,8 @@ def test_a_library_that_reached_end_of_life_after_the_run_is_a_finding_in_every_
     assert ("zs:finding_code", "LIB_EOL") in props and ("zs:impact", "Medium") in props
     assert ("zs:run_impact", run_impact or "Info") in props and ("zs:judged_on", item["as_of_run"]["judged_on"]) in props
     assert "ZS-CBOM-LIB_EOL" in {v["id"] for v in bom["vulnerabilities"]}
-    assert bom["serialNumber"] != export_serial(run["id"], crypto_kb.version())  # not the run's own record
+    assert bom["serialNumber"] != export_serial(run["id"], crypto_kb.version(),  # not the run's own record
+                                                class_model=PQC_CLASS_MODEL)
     xml = api("GET", f"{base}/cbom?format=xml")
     assert xml.status_code == 200 and "LIB_EOL" in xml.text
 
@@ -282,6 +289,7 @@ def test_run_records_versions_and_the_export_serial_is_deterministic(api, world)
     from backend.utilities.cbom_sources import crypto_kb
     from backend.utilities.cbom_sources.classify import CLASSIFIER_VERSION
     from backend.utilities.cbom_sources.inventory import export_serial
+    from backend.utilities.cbom_sources.posture import PQC_CLASS_MODEL
 
     engine, _ = world
     _src, run, claim, hdr = _collect_job(api, engine)
@@ -292,9 +300,15 @@ def test_run_records_versions_and_the_export_serial_is_deterministic(api, world)
     assert detail["versions"]["engine"]
     first = api("GET", f"/1/cbom/sources/runs/{run['id']}/cbom").json()
     second = api("GET", f"/1/cbom/sources/runs/{run['id']}/cbom").json()
-    assert first["serialNumber"] == second["serialNumber"] == export_serial(run["id"], crypto_kb.version())
-    assert export_serial(run["id"], "2099.1.1.1") != first["serialNumber"]  # a new KB re-judges: new serial
     props = {p["name"]: p["value"] for p in first["metadata"]["properties"]}
+    # CB-18 ST-A: the class model is part of the serial (a release that changes the classes gives a new BOM); the grade
+    # model, its inputs and the agility version are in the key too (CB-19 cx3 ST-A, CB-24 §11)
+    graded = {"class_model": PQC_CLASS_MODEL, "grade_model_version": props["zs:grade_model_version"],
+              "agility_version": props["zs:agility_version"],
+              "grade_inputs_digest": json.loads(props["zs:grade_inputs"])["digest"]}
+    assert first["serialNumber"] == second["serialNumber"] == export_serial(run["id"], crypto_kb.version(), **graded)
+    assert export_serial(run["id"], "2099.1.1.1", **graded) != first["serialNumber"]  # new KB
+    assert export_serial(run["id"], crypto_kb.version(), **{**graded, "class_model": "pc-1"}) != first["serialNumber"]
     assert props["zs:run_kb_version"] == crypto_kb.version() and props["zs:classifier_version"] == CLASSIFIER_VERSION
 
 
@@ -311,7 +325,7 @@ def test_run_export_as_xml_is_valid_and_matches_the_json(api, world):
     as_json = api("GET", f"/1/cbom/sources/runs/{run['id']}/cbom").json()
     r = api("GET", f"/1/cbom/sources/runs/{run['id']}/cbom?format=xml")
     assert r.status_code == 200 and r.headers["content-type"].startswith("application/vnd.cyclonedx+xml")
-    assert r.headers["x-zs-signature-scope"] == "json"
+    assert "x-zs-signature-scope" not in r.headers  # a run's CBOM is not signed (CB-06); code-scan BOMs keep it
     assert r.headers["content-disposition"].endswith('.cdx.xml"')
     assert validate_xml(r.content) == []
     doc = etree.fromstring(r.content)

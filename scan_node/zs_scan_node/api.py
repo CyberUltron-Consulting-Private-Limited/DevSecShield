@@ -34,7 +34,8 @@ from typing import Any, Callable
 
 import httpx
 
-from zs_scan_node import VERSION
+from zs_scan_node import errtext
+from zs_scan_node import reported_version
 from zs_scan_node.jobctx import LeaseLost
 from zs_scan_node.log import log
 
@@ -54,9 +55,12 @@ class Unauthorized(Exception):
 
 
 class ApiError(Exception):
-    def __init__(self, status: int, detail: str, refused: str | None = None) -> None:
+    """``retry_after``: the server's ``Retry-After`` (seconds) on a final 429 or 5xx, for a caller that backs off on
+    its own (the SSH certificate renewal)."""
+
+    def __init__(self, status: int, detail: str, refused: str | None = None, retry_after: float | None = None) -> None:
         super().__init__(f"HTTP {status}: {detail}")
-        self.status, self.detail, self.refused = status, detail, refused
+        self.status, self.detail, self.refused, self.retry_after = status, detail, refused, retry_after
 
 
 class WrongServer(ApiError):
@@ -98,6 +102,34 @@ def tls_context() -> ssl.SSLContext | None:
     return ctx
 
 
+PROXY_ENV = ("HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy")
+
+
+def proxy_with_login() -> httpx.Proxy | None:
+    """#199: the proxy to ZeroShield with the login from ``ZS_PROXY_AUTH_FILE`` (one line ``user:password``, a file
+    mounted read-only), or None when no such file is set (httpx then reads HTTPS_PROXY / NO_PROXY itself).  The
+    password is never in the proxy URL, the environment, ``docker inspect`` or a log line; a bad file stops the
+    node with a message that names the variable, never the file's content."""
+    path = os.environ.get("ZS_PROXY_AUTH_FILE", "").strip()
+    if not path:
+        return None
+    url = next((os.environ[n].strip() for n in PROXY_ENV if os.environ.get(n, "").strip()), "")
+    if not url:
+        raise SystemExit("ZS_PROXY_AUTH_FILE is set but no proxy is: set HTTPS_PROXY to the proxy's URL (without "
+                         "the login)")
+    try:
+        with open(path, encoding="utf-8") as f:
+            text = f.read(4096).strip("\r\n")
+    except OSError as exc:
+        raise SystemExit(f"ZS_PROXY_AUTH_FILE cannot be read ({exc.strerror or 'error'}); it must hold one line "
+                         "user:password") from None
+    user, sep, password = text.partition(":")
+    if not sep or not user or "\n" in text:
+        raise SystemExit("ZS_PROXY_AUTH_FILE must hold one line user:password (the user name, a colon, the password)")
+    log("proxy login from ZS_PROXY_AUTH_FILE", proxy=httpx.URL(url).copy_with(username=None, password=None))
+    return httpx.Proxy(url, auth=(user, password))
+
+
 class Api:
     def __init__(self, base_url: str, token: str | None = None, timeout: float = 30.0, signing_key=None,
                  deployment_id: str | None = None, on_deployment: Callable[[str], None] | None = None,
@@ -113,7 +145,10 @@ class Api:
         tls = tls_context()
         # trust_env=True: HTTPS_PROXY / NO_PROXY and SSL_CERT_FILE from the customer's environment apply
         kwargs: dict[str, Any] = {"verify": tls} if tls is not None else {}
-        self.client = httpx.Client(base_url=self.base, timeout=timeout, headers={"User-Agent": f"zs-scan-node/{VERSION}"},
+        proxy = proxy_with_login()
+        if proxy is not None:  # an explicit proxy: httpx then ignores the *_PROXY variables (only the API goes there)
+            kwargs["proxy"] = proxy
+        self.client = httpx.Client(base_url=self.base, timeout=timeout, headers={"User-Agent": f"zs-scan-node/{reported_version()}"},
                                    follow_redirects=False, **kwargs)
 
     def _headers(self, job: str | None = None) -> dict[str, str]:
@@ -164,7 +199,8 @@ class Api:
                                                    allow_nan=False).encode("utf-8")
         delay = 2.0
         skew_retried = False
-        for attempt in range(retries + 1):
+        attempt = 0  # a repeat after a clock-skew refusal is not an attempt: retries=0 still repeats once
+        while attempt <= retries:
             headers = self._headers(job)
             headers.update(self._sign(method, path, data))
             if body is not None:
@@ -172,11 +208,14 @@ class Api:
             try:
                 r = self.client.request(method, path, content=data, headers=headers)
             except httpx.HTTPError as exc:
+                cause = errtext.api_transport_error(exc)  # #198: an untrusted certificate says so, with the hint
                 if attempt >= retries:
-                    raise ApiError(0, exc.__class__.__name__) from None
-                log("api unreachable, retrying", path=path, error=exc.__class__.__name__, wait_s=int(delay), job=job)
+                    raise ApiError(0, cause) from None
+                log("api unreachable, retrying", path=path, error=exc.__class__.__name__, cause=cause,
+                    wait_s=int(delay), job=job)
                 self._wait(delay + random.random())
                 delay = min(delay * 2, MAX_BACKOFF)
+                attempt += 1
                 continue
             deployment = r.headers.get(DEPLOYMENT_HEADER) or None
             refused = r.headers.get(REFUSED_HEADER) or None
@@ -192,6 +231,7 @@ class Api:
                     wait_s=int(delay), level="warn")
                 self._wait(delay + random.random())
                 delay = min(delay * 2, MAX_BACKOFF)
+                attempt += 1
                 continue
             if r.status_code == 403 and refused == "clock_skew" and not skew_retried:
                 skew_retried = True
@@ -201,17 +241,14 @@ class Api:
                 raise LeaseLost(_detail(r))
             if r.status_code == 429 or r.status_code >= 500:
                 ref = _ref(r)
+                retry_after = _retry_after(r)
                 if attempt >= retries:
-                    raise ApiError(r.status_code, _detail(r))
-                wait = delay
-                if r.status_code == 429:
-                    try:
-                        wait = max(wait, float(r.headers.get("Retry-After") or 0))
-                    except ValueError:
-                        pass
+                    raise ApiError(r.status_code, _detail(r), retry_after=retry_after)
+                wait = max(delay, retry_after or 0.0)
                 log("api busy, retrying", path=path, status=r.status_code, ref=ref, wait_s=int(wait), job=job)
                 self._wait(min(wait, MAX_BACKOFF) + random.random())
                 delay = min(delay * 2, MAX_BACKOFF)
+                attempt += 1
                 continue
             if r.status_code < 400:
                 self._seen(deployment)
@@ -259,6 +296,44 @@ class Api:
     def result(self, job_id: int, attempt: int, body: dict) -> dict:
         return self.call("POST", f"/cbom/node/jobs/{job_id}/result", body, job=f"{job_id}/{attempt}",
                          lease_sensitive=True)[1] or {}
+
+    def ssh_cert(self, job_id: int, attempt: int, lease_id: str) -> dict:
+        """A fresh SSH CA certificate for this node's own key, for a job it holds (F1.4).  One call, no retry here:
+        the renewal (``sshca.CertSource``) backs off on its own, at least as long as the 503's ``Retry-After``."""
+        return self.call("POST", f"/cbom/node/jobs/{job_id}/ssh-cert", {"lease_id": lease_id}, job=f"{job_id}/{attempt}",
+                         retries=0, lease_sensitive=True)[1] or {}
+
+
+    def ssh_cert_report(self, job_id: int, attempt: int, lease_id: str, certificate: str) -> dict:
+        """#61: the certificate this node signed with the customer's CA key, for ZeroShield's audit row (checked
+        against what ZeroShield granted).  One call, no retry: a certificate that was not recorded is not used."""
+        return self.call("POST", f"/cbom/node/jobs/{job_id}/ssh-cert/report",
+                         {"lease_id": lease_id, "certificate": certificate}, job=f"{job_id}/{attempt}", retries=0,
+                         lease_sensitive=True)[1] or {}
+
+
+def _retry_after(r: httpx.Response) -> float | None:
+    """``Retry-After`` in seconds (delta-seconds or an HTTP date), capped at an hour; None when absent or unreadable."""
+    raw = (r.headers.get("Retry-After") or "").strip()
+    if not raw:
+        return None
+    try:
+        seconds = float(raw)
+    except ValueError:
+        import email.utils
+
+        try:
+            when = email.utils.parsedate_to_datetime(raw)
+        except (TypeError, ValueError):
+            return None
+        if when is None:
+            return None
+        import datetime as _dt
+
+        seconds = (when - _dt.datetime.now(when.tzinfo or _dt.timezone.utc)).total_seconds()
+    if seconds != seconds:  # NaN
+        return None
+    return max(0.0, min(seconds, 3600.0))
 
 
 def _detail(r: httpx.Response) -> str:

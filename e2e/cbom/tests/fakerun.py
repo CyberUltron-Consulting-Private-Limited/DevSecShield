@@ -31,32 +31,33 @@ ASSETS: list[dict[str, Any]] = [
      "facts": {"key_alg": "EC", "curve": "secp256r1", "sig_alg": "ecdsa-with-SHA256", "subject": "CN=z01.lab",
                "issuer": "CN=cbom-e2e lab CA", "not_before": "2026-11-12T08:00:00Z",
                "not_after": "2027-11-12T08:00:00Z", "serial": "1a"},
-     "pqc": "vulnerable",
+     "pqc": "vulnerable", "q": ("Q1", "Critical", "qv_exceeds_internet"), "fix": ("vendor-fixed", None, "inferred"),
      "oracle": {"target": "z01", "expect": {"algorithm": "EC", "key_size": 256, "curve": "P-256",
                                             "signature_algorithm": "ecdsa-with-SHA256", "subject": "CN=z01.lab",
                                             "not_after": "2027-11-12T08:00:00Z", "quantum_vulnerable": True,
                                             "pqc_class": "vulnerable"},
-                "codes_include": ["QUANTUM_VULNERABLE"], "codes_exclude": ["CERT_EXPIRED"], "impact_max": "Medium"}},
+                "codes_include": ["QUANTUM_VULNERABLE"], "codes_exclude": ["CERT_EXPIRED"], "impact_min": "Low",
+                "impact_max": "Medium"}},
     {"id": 102, "type": "tls_endpoint", "cdx": "protocol", "target": "10.231.0.17", "location": "10.231.0.17:443",
      "name": "https 10.231.0.17:443", "algorithm": "TLS_AES_256_GCM_SHA384", "key_size": None, "protocol": "https",
      "qv": True, "impact": "Low", "codes": ["NO_PQ_KEX"], "finding": "No post-quantum key exchange",
      "facts": {"protocols": ["TLSv1.3"], "negotiated_version": "TLSv1.3", "negotiated_group": "x25519",
                "groups": ["x25519", "secp256r1"], "ciphers": ["TLS_AES_256_GCM_SHA384"]},
-     "pqc": "vulnerable",
+     "pqc": "vulnerable", "q": ("Q2", "High", "qv_exceeds"), "fix": ("configurable", None, "observed"),
      "oracle": {"target": "z01", "expect": {"protocol_versions": ["TLSv1.3"], "groups": ["X25519", "P-256"],
                                             "cipher_suites": ["TLS_AES_256_GCM_SHA384"], "quantum_vulnerable": True},
-                "codes_include": ["NO_PQ_KEX"], "codes_exclude": ["PROTO_TLS10"]}},
+                "codes_include": ["NO_PQ_KEX"], "codes_exclude": ["PROTO_TLS10"], "impact_min": "Low"}},
     {"id": 103, "type": "certificate", "cdx": "certificate", "target": "10.231.0.18", "location": "10.231.0.18:443",
      "name": "CN=z02.lab", "algorithm": "RSA", "key_size": 3072, "protocol": None, "qv": True, "impact": "High",
      "codes": ["CERT_SELF_SIGNED", "QUANTUM_VULNERABLE"], "finding": "Self-signed certificate",
      "facts": {"key_alg": "RSA", "sig_alg": "sha256WithRSAEncryption", "subject": "CN=z02.lab",
                "issuer": "CN=z02.lab", "not_before": "2026-11-12T08:00:00Z", "not_after": "2027-11-12T08:00:00Z",
                "serial": "2b"},
-     "pqc": "vulnerable",
+     "pqc": "vulnerable", "q": ("Q2", "High", "qv_exceeds"), "fix": ("vendor-fixed", None, "inferred"),
      "oracle": {"target": "z02", "expect": {"algorithm": "RSA", "key_size": 3072,
                                             "signature_algorithm": "sha256WithRSAEncryption",
                                             "quantum_vulnerable": True},
-                "codes_include": ["CERT_SELF_SIGNED"]}},
+                "codes_include": ["CERT_SELF_SIGNED"], "impact_min": "High"}},
 ]
 
 
@@ -77,7 +78,10 @@ class FakeRun:
                 "source_name": "S-zoo", "target": a["target"], "location": a["location"], "name": a["name"],
                 "algorithm": a["algorithm"], "key_size": a["key_size"], "protocol": a["protocol"],
                 "quantum_vulnerable": a["qv"], "impact": a["impact"], "finding": a["finding"],
-                "finding_codes": list(a["codes"]), "as_of_run": None, "facts": dict(a["facts"])}
+                "finding_codes": list(a["codes"]), "as_of_run": None, "facts": dict(a["facts"]),
+                # the run API's view fields since #114 (CB-19 qg-1) and #113 (CB-24)
+                "q_grade": a["q"][0], "q_label": a["q"][1], "q_reason": a["q"][2], "q_item_key": None,
+                "fix_class": a["fix"][0], "fix_class_floor": a["fix"][1], "fix_class_confidence": a["fix"][2]}
 
     def db_row(self, a: dict[str, Any]) -> dict[str, Any]:
         return {"id": a["id"], "team_id": self.team, "run_id": self.run_id, "job_id": 900, "source_id": 31,
@@ -110,6 +114,8 @@ class FakeRun:
                 "type": "tls", "version": ",".join(f["protocols"]),
                 "cipherSuites": [{"name": c} for c in f["ciphers"]]}}
         if not self.legacy_export:
+            if a["protocol"]:  # CB-06 v2 §4: the stored protocol column
+                props.append({"name": "zs:protocol", "value": a["protocol"]})
             if a["key_size"]:
                 props.append({"name": "zs:key_size", "value": str(a["key_size"])})
             if f.get("curve"):
@@ -156,6 +162,7 @@ class FakeRun:
                                 "codes_include": o.get("codes_include", []),
                                 "codes_exclude": o.get("codes_exclude", []),
                                 **({"impact_max": o["impact_max"]} if o.get("impact_max") else {}),
+                                **({"impact_min": o["impact_min"]} if o.get("impact_min") else {}),
                                 "provenance": {"source": "gen.py", "detail": "fake", "captured_at": "2026-11-12T08:59:00Z"}})
         targets["z01"]["must_not_appear"] = [{"asset_type": "tls_endpoint", "location": "10.231.0.33:443"}]
         return {"schema": "zs-cbom-oracle/1", "run_step": "run1", "generated_at": "2026-11-12T08:59:00Z",
@@ -182,7 +189,7 @@ class FakeRun:
             w.writeheader()
             w.writerows(rows)
         self._json("exports/run1.cdx.json", {"bomFormat": "CycloneDX", "specVersion": "1.6",
-                                             "serialNumber": "urn:uuid:00000000-0000-0000-0000-000000000000",
+                                             "serialNumber": "urn:uuid:3f6c2a1e-8b4d-4c7a-9e21-5d0b7a6c4f13",
                                              "version": 1, "metadata": {"timestamp": "2026-11-12T09:01:00Z",
                                                                         "properties": []},
                                              "components": [self.component(a) for a in self.assets],
@@ -190,10 +197,22 @@ class FakeRun:
         self._json("ui/assets-run1.json", {"run_id": self.run_id, "total_text": f"{len(self.assets)} assets",
                                            "rows": [self.ui_row(a) for a in self.assets]})
         with open(d / "db" / "jobs.csv", "w", newline="", encoding="utf-8") as fh:
-            w = csv.DictWriter(fh, fieldnames=["id", "team_id", "run_id", "kind", "status", "outcome", "asset_count"])
+            w = csv.DictWriter(fh, fieldnames=["id", "team_id", "run_id", "kind", "status", "outcome", "asset_count",
+                                               "created_at", "claimed_at", "finished_at"])
             w.writeheader()
             w.writerow({"id": 900, "team_id": self.team, "run_id": self.run_id, "kind": "collect", "status": "success",
-                        "outcome": "ok", "asset_count": len(self.assets)})
+                        "outcome": "ok", "asset_count": len(self.assets), "created_at": "2026-11-12 08:59:10.000000",
+                        "claimed_at": "2026-11-12 08:59:11.000000", "finished_at": "2026-11-12 09:00:20.000000"})
+        with open(d / "db" / "runs.csv", "w", newline="", encoding="utf-8") as fh:
+            w = csv.DictWriter(fh, fieldnames=["id", "team_id", "status", "created_at", "finished_at"])
+            w.writeheader()
+            w.writerow({"id": self.run_id, "team_id": self.team, "status": "success",
+                        "created_at": "2026-11-12 08:59:10.000000", "finished_at": "2026-11-12 09:00:20.000000"})
+        self._json(f"api/run-{self.run_id}.json", {"run": {"id": self.run_id, "status": "success",
+                                                            "created_at": "2026-11-12T08:59:10Z",
+                                                            "finished_at": "2026-11-12T09:00:20Z",
+                                                            "jobs": [{"id": 900, "created_at": "2026-11-12T08:59:10Z",
+                                                                      "finished_at": "2026-11-12T09:00:20Z"}]}})
         self._json("oracle/run1.json", self.oracle())
         self._json("oracle/canaries.json", {"schema": "zs-cbom-canaries/1", "canaries": [
             {"id": "ssh-pass", "kind": "string", "value": self.canary_value, "allowed": ["oracle/canaries.json"],
@@ -226,6 +245,17 @@ class FakeRun:
         path = self.dir / rel
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(data, indent=1), encoding="utf-8")
+
+    def edit_csv(self, rel: str, fn) -> None:
+        path = self.dir / rel
+        with open(path, encoding="utf-8", newline="") as fh:
+            reader = csv.DictReader(fh)
+            fields, rows = reader.fieldnames, list(reader)
+        fn(rows)
+        with open(path, "w", encoding="utf-8", newline="") as fh:
+            w = csv.DictWriter(fh, fieldnames=fields)
+            w.writeheader()
+            w.writerows(rows)
 
     def edit_json(self, rel: str, fn) -> None:
         path = self.dir / rel

@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { randomBytes } from "node:crypto";
-import { allowedDiff, allowedTokens, sameTokens, splitCommand, tokenDiff } from "./command.mjs";
+import { allowedDiff, allowedTokens, cellsHaveIp, engineMatchesBuild, ipTokens, sameTokens, splitCommand, tokenDiff } from "./command.mjs";
 
 // a registration token made at test time, so no token-shaped literal sits in the repository
 const TOKEN = `zsr_${randomBytes(18).toString("base64url")}`;
@@ -62,4 +62,28 @@ test("the live G3 check: the executed argv differs from the UI command by exactl
   // and so is a dropped UI token
   const dropped = good.argv.filter((t) => t !== "unless-stopped");
   assert.deepEqual(tokenDiff(ui, dropped).removed, ["unless-stopped"]);
+});
+
+test("ipTokens and cellsHaveIp compare whole addresses, never substrings (review 5878413538)", () => {
+  assert.deepEqual(ipTokens("{10.231.0.2,10.231.0.25}"), ["10.231.0.2", "10.231.0.25"]);
+  assert.deepEqual(ipTokens('["10.231.0.25"]'), ["10.231.0.25"]);
+  // the SOC table's joined text glues the node name to the address: only per-cell reads are exact
+  assert.deepEqual(ipTokens("Scan nodeSource IPse2e-node-110.231.0.2"), []);
+  assert.equal(cellsHaveIp(["e2e-node-1", "10.231.0.25"], ["10.231.0.2"]), false);
+  assert.equal(cellsHaveIp(["e2e-node-1", "10.231.0.2"], ["10.231.0.2"]), true);
+  assert.equal(cellsHaveIp(["e2e-node-1", "10.231.0.2, 10.231.0.9"], ["10.231.0.2"]), true);
+  assert.equal(cellsHaveIp(["10.231.0.2"], []), false);
+});
+
+test("engineMatchesBuild needs 7+ hex characters of the SHA (review 5878413538)", () => {
+  const sha = "b5e600471d1a6a81fe6eb19c8d5b3cc46428546a";
+  assert.equal(engineMatchesBuild("b", sha), false);
+  assert.equal(engineMatchesBuild("b5e600", sha), false);
+  assert.equal(engineMatchesBuild("b5e6004", sha), true);
+  assert.equal(engineMatchesBuild(sha, sha), true);
+  assert.equal(engineMatchesBuild("b5e6005", sha), false);
+  assert.equal(engineMatchesBuild("unknown", sha), false);
+  assert.equal(engineMatchesBuild("dev-b5e600471d1a", sha), true);
+  assert.equal(engineMatchesBuild("dev-b5e600471d1b", sha), false);
+  assert.equal(engineMatchesBuild("b5e6004", "not-a-sha"), false);
 });

@@ -6,6 +6,9 @@ Inputs:
   sources/nvd_cves.json      NVD API 2.0 records (description, CVSS, CWE, CPE ranges), fetched by nvd_fetch.py
   sources/cna_<CVE>.json     CVE records from cveawg.mitre.org for CVEs NVD has not analysed (CNA ranges)
   sources/cwe_names.json     MITRE CWE names (cwe-api.mitre.org)
+  sources/fix_class.json     crypto-agility fix class per code (CB-24): hand table, a basis and sources per row
+  sources/vex_default.json   VEX default per code and inherent flag per mapped CVE (CB-22): reviewed hand table
+  sources/compliance_clauses.json  regulatory clauses each code breaks (#269): reviewed hand table, a basis per row
   sources/compliance.json    OWASP 2021/2025 categories with mapped CWEs, NIST, CNSA 2.0, CERT-In, SEBI, RBI quotes
 
 The output is deterministic (sorted keys, no timestamps besides the version you pass) so the file can be diffed and
@@ -70,7 +73,7 @@ KEY_WORLD_READABLE KEY_READABLE KEY_IN_DOCUMENT KEY_IN_CONFIGMAP KEYSTORE_JKS SS
 SSH_UMAC64 SSH_DH_GROUP1 SSH_DH_SHA1 SSH_DSS SSH_RSA_SHA1 SSH_HMAC_SHA1 SSH_NO_PQ_KEX DB_TRUST DB_NO_AUTH DB_WEAK_HASH
 DB_MD5_DEFAULT DB_CLEARTEXT_PW DB_NATIVE_PW DB_OLD_PASSWORD DB_NO_TDE DB_NO_TLS DB_TLS_OPTIONAL DB_TLS_MODE
 DISK_UNENCRYPTED DISK_CBC DISK_XTS_128 LUKS1 DISK_PROTECTION_OFF LIB_EOL LIB_DELETED_IN_USE LIB_STATIC LIB_KNOWN_CVE
-POLICY_LEGACY DOTNET_WEAK_TLS SECRET_IN_CONFIG TLS_POLICY_OVERRIDE OPENSSL_ENC_WEAK_KDF KMS_NO_ROTATION KMS_PENDING_DELETION SECRET_NO_ROTATION SECRET_PLAINTEXT_PARAM STORAGE_UNENCRYPTED STORAGE_NO_TLS_ONLY
+POLICY_LEGACY DOTNET_WEAK_TLS SECRET_IN_CONFIG TLS_POLICY_OVERRIDE OPENSSL_ENC_WEAK_KDF KMS_NO_ROTATION KMS_PENDING_DELETION KMS_KEY_MATERIAL_EXPIRES KMS_KEY_NO_MATERIAL SECRET_NO_ROTATION SECRET_PLAINTEXT_PARAM STORAGE_UNENCRYPTED STORAGE_NO_TLS_ONLY
 EBS_DEFAULT_OFF SAML_METADATA_UNSIGNED MESH_MTLS_OFF MESH_MTLS_PERMISSIVE QUANTUM_VULNERABLE RDP_NO_TLS RDP_NO_NLA""".split()
 # Codes the code-scan engine (aibom) emits, including the posture catalog.
 CODE_CODES = """WEAK_ALGORITHM WEAK_KEY_SIZE WEAK_CIPHER_MODE WEAK_PADDING WEAK_RNG STATIC_IV REUSED_NONCE HARDCODED_KEY
@@ -242,11 +245,16 @@ def build(version: str) -> dict:
 
     node = {code: finish(code, entries[code]) for code in sorted(NODE_CODES)}
     code_ns = {code: finish(code, entries[code], CODE_OVERRIDES.get(code)) for code in sorted(CODE_CODES)}
+    attach_fix_class({"node": node, "code": code_ns}, load_fix_class())
+    vex_table = load_vex_default()
+    attach_vex_default({"node": node, "code": code_ns}, vex_table)
 
     if not research:
         fail("research/compliance.json is required (OWASP mapped CWEs and regulatory references)")
     owasp_tables = kb_compliance.owasp_tables(research)
     compliance = kb_compliance.refs(research)
+    clause_catalog = compliance.pop("_clauses")
+    attach_clauses({"node": node, "code": code_ns}, load_compliance_clauses(), clause_catalog)
     for section in (node, code_ns):
         for code, e in section.items():
             e["owasp_2021"] = _owasp(e, owasp_tables["2021"], kb_compliance.TAG_2021)
@@ -270,12 +278,190 @@ def build(version: str) -> dict:
         "owasp": owasp,
         "legacy_controls": LEGACY_CONTROLS,
         "cwe": {c: CWE[c] for c in sorted(used_cwes)},
-        "cves": {c: cve_record(c) for c in sorted(used_cves | lib_cves())},
+        "cves": with_vex_inherent({c: cve_record(c) for c in sorted(used_cves | lib_cves())}, used_cves, vex_table),
         "findings": {"node": node, "code": code_ns},
         "libraries": library_rules(),
         "compliance": compliance,
+        "clauses": clause_catalog,
         "pqc_context": kb_compliance.pqc_context(research),
     }
+
+
+def load_compliance_clauses() -> dict:
+    """The reviewed per-code clause table (#269): sources/compliance_clauses.json, one row per code."""
+    return json.load(open(os.path.join(SRC, "compliance_clauses.json"), encoding="utf-8"))
+
+
+# the classifier the clause rules read their algorithm lists from (``match_from``: "classify_ext/node_net.py:WEAK_ENCR")
+CLASSIFIER_DIR = os.path.join(HERE, "..", "..", "backend", "utilities", "cbom_sources")
+
+
+def _runtime_kb():
+    """The API's crypto_kb module (standard library only), loaded from its file: the build checks each rule's example
+    with the very matcher the API and the code-scan engine run (crypto_kb.rule_matches)."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("_crypto_kb_runtime", os.path.join(CLASSIFIER_DIR, "crypto_kb.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def classifier_pattern(ref: str) -> str:
+    """The pattern of a classifier list, read from its source without importing it (``path:NAME``): a
+    ``re.compile("...")`` literal as written, or a set of names (literals, other sets of the module, unions) as one
+    anchored alternation. The rule then follows the classifier: a name added there is cited here on the next build."""
+    import ast
+
+    path, _, name = ref.partition(":")
+    full = os.path.normpath(os.path.join(CLASSIFIER_DIR, path))
+    if not name or not os.path.isfile(full):
+        fail(f"match_from {ref!r}: expected <file under backend/utilities/cbom_sources>:<NAME>")
+    assigned = {t.id: node.value for node in ast.parse(open(full, encoding="utf-8").read()).body
+                if isinstance(node, ast.Assign) for t in node.targets if isinstance(t, ast.Name)}
+
+    def names_of(value) -> set:
+        if isinstance(value, ast.Set):
+            return {v.value for v in value.elts if isinstance(v, ast.Constant) and isinstance(v.value, str)}
+        if isinstance(value, ast.Name) and value.id in assigned:
+            return names_of(assigned[value.id])
+        if isinstance(value, ast.BinOp) and isinstance(value.op, ast.BitOr):
+            return names_of(value.left) | names_of(value.right)
+        fail(f"match_from {ref!r}: not a set of names or a re.compile literal")
+        return set()
+
+    value = assigned.get(name)
+    if value is None:
+        fail(f"match_from {ref!r}: {name} is not assigned in {path}")
+    if isinstance(value, ast.Call) and getattr(value.func, "attr", "") == "compile" and value.args and \
+            isinstance(value.args[0], ast.Constant) and isinstance(value.args[0].value, str):
+        return value.args[0].value
+    return "^(?:" + "|".join(re.escape(n) for n in sorted(names_of(value))) + ")$"
+
+
+def attach_clauses(findings: dict, table: dict, catalog: dict) -> None:
+    """Copy each code's reviewed clauses into its entry as ``clauses`` (always cited), ``clause_rules`` (cited when
+    the asset's algorithm evidence matches; ``match_from`` resolved from the classifier source) and ``clause_notes``.
+    Fails on a code without a row, a row for a code the KB lacks, an unknown clause key, a row without a basis, or a
+    rule whose pattern is invalid or does not match its own example (with the API's own matcher)."""
+    runtime = _runtime_kb()
+    for ns, section in findings.items():
+        rows = table.get(ns) or {}
+        missing, extra = sorted(set(section) - set(rows)), sorted(set(rows) - set(section))
+        if missing:
+            fail(f"compliance_clauses.json has no row for {ns}:{', '.join(missing)}")
+        if extra:
+            fail(f"compliance_clauses.json has a row for {ns}:{', '.join(extra)}, which the KB does not have")
+        for code, entry in section.items():
+            row = rows[code]
+            if not str(row.get("basis") or "").strip():
+                fail(f"compliance_clauses {ns}:{code}: needs a basis")
+            rules = []
+            for rule in row.get("rules") or []:
+                built = {"match": classifier_pattern(rule["match_from"]) if rule.get("match_from") else rule.get("match")}
+                if rule.get("unless"):
+                    built["unless"] = rule["unless"]
+                built["clauses"] = list(rule.get("clauses") or [])
+                try:
+                    for key in ("match", "unless"):
+                        if key in built:
+                            re.compile(built[key], re.IGNORECASE)
+                except (re.error, TypeError) as exc:
+                    fail(f"compliance_clauses {ns}:{code}: bad rule pattern ({exc})")
+                if not built["clauses"] or not runtime.rule_matches(built, [str(rule.get("example") or "")]):
+                    fail(f"compliance_clauses {ns}:{code}: rule {built['match']!r} needs clauses and an example "
+                         "it matches")
+                rules.append(built)
+            notes = dict(row.get("notes") or {})
+            for key in list(row.get("clauses") or []) + [k for r in rules for k in r["clauses"]] + list(notes):
+                if key not in catalog:
+                    fail(f"compliance_clauses {ns}:{code}: unknown clause key {key}")
+            entry["clauses"] = list(row.get("clauses") or [])
+            entry["clause_rules"] = rules
+            if notes:
+                entry["clause_notes"] = notes
+
+
+FIX_CLASSES = ("configurable", "code-fixed", "vendor-fixed", "hardware-fixed")
+
+
+def load_fix_class() -> dict:
+    """The reviewed crypto-agility fix-class table (CB-24): sources/fix_class.json, one row per code."""
+    return json.load(open(os.path.join(SRC, "fix_class.json"), encoding="utf-8"))
+
+
+def attach_fix_class(findings: dict, table: dict) -> None:
+    """Copy each code's reviewed row (class, capability, basis) into its entry as ``fix_class``. Fails on a code
+    without a row, a row for a code the KB lacks, a class outside the four, or a row without basis or sources."""
+    for ns, section in findings.items():
+        rows = table.get(ns) or {}
+        missing, extra = sorted(set(section) - set(rows)), sorted(set(rows) - set(section))
+        if missing:
+            fail(f"fix_class.json has no row for {ns}:{', '.join(missing)}")
+        if extra:
+            fail(f"fix_class.json has a row for {ns}:{', '.join(extra)}, which the KB does not have")
+        for code, entry in section.items():
+            row = rows[code]
+            if row.get("class") not in FIX_CLASSES:
+                fail(f"fix_class {ns}:{code}: class {row.get('class')!r} is not one of {', '.join(FIX_CLASSES)}")
+            if not isinstance(row.get("capability"), bool):
+                fail(f"fix_class {ns}:{code}: capability must be true or false")
+            if not str(row.get("basis") or "").strip() or not [s for s in row.get("sources") or [] if str(s).strip()]:
+                fail(f"fix_class {ns}:{code}: needs a basis and at least one source")
+            entry["fix_class"] = {"class": row["class"], "capability": row["capability"], "basis": row["basis"]}
+
+
+VEX_BASES = ("observed", "posture", "quantum_only", "inferred", "static")
+
+
+def load_vex_default() -> dict:
+    """The reviewed VEX default table (CB-22): sources/vex_default.json, one row per code and per mapped CVE."""
+    return json.load(open(os.path.join(SRC, "vex_default.json"), encoding="utf-8"))
+
+
+def attach_vex_default(findings: dict, table: dict) -> None:
+    """Copy each code's reviewed row (basis, reason) into its entry as ``vex_default``. Fails on a missing or extra
+    row, an unknown basis, a row without reason or sources, a quantum-only entry (category pqc or grover-weakened)
+    not marked quantum_only, a quantum_only row on a classical entry, or ``observed`` in the code namespace (a code
+    scan does not observe the running system)."""
+    for ns, section in findings.items():
+        rows = table.get(ns) or {}
+        missing, extra = sorted(set(section) - set(rows)), sorted(set(rows) - set(section))
+        if missing:
+            fail(f"vex_default.json has no row for {ns}:{', '.join(missing)}")
+        if extra:
+            fail(f"vex_default.json has a row for {ns}:{', '.join(extra)}, which the KB does not have")
+        for code, entry in section.items():
+            row = rows[code]
+            basis = row.get("basis")
+            if basis not in VEX_BASES:
+                fail(f"vex_default {ns}:{code}: basis {basis!r} is not one of {', '.join(VEX_BASES)}")
+            if not str(row.get("reason") or "").strip() or not [s for s in row.get("sources") or [] if str(s).strip()]:
+                fail(f"vex_default {ns}:{code}: needs a reason and at least one source")
+            quantum = entry.get("category") == "pqc" or entry.get("pqc") == "grover-weakened"
+            if quantum != (basis == "quantum_only"):
+                fail(f"vex_default {ns}:{code}: quantum_only must match the entry's pqc category ({basis})")
+            if ns == "code" and basis == "observed":
+                fail(f"vex_default code:{code}: a code-scan finding cannot be observed")
+            entry["vex_default"] = {"basis": basis, "reason": row["reason"]}
+
+
+def with_vex_inherent(cves: dict, mapped: set, table: dict) -> dict:
+    """Mark each CVE a finding code maps to with ``vex_inherent`` (a flaw of the algorithm or protocol itself, so a
+    match from an observed code is exploitable) from the reviewed table; fails on a mapped CVE without a row or a row
+    for a CVE no code maps to. Library-range CVEs carry no flag (always in triage)."""
+    rows = table.get("cves") or {}
+    missing, extra = sorted(mapped - set(rows)), sorted(set(rows) - mapped)
+    if missing:
+        fail(f"vex_default.json has no CVE row for {', '.join(missing)}")
+    if extra:
+        fail(f"vex_default.json has a CVE row for {', '.join(extra)}, which no finding code maps to")
+    for cid in mapped:
+        row = rows[cid]
+        if not isinstance(row.get("inherent"), bool) or not str(row.get("reason") or "").strip():
+            fail(f"vex_default {cid}: needs inherent true/false and a reason")
+        cves[cid] = {**cves[cid], "vex_inherent": row["inherent"]}
+    return cves
 
 
 def _owasp(entry: dict, table: dict, tag_ids: dict) -> list[dict]:

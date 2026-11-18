@@ -65,9 +65,11 @@ def load_views(run: Path, k: str) -> dict[str, dict[int, dict[str, Any]] | None]
 
 
 def ui_header_total(run: Path, k: str) -> int | None:
+    """The asset count the Results header shows. It must hold exactly one number: "25 of 26 assets found" claims a
+    26th asset the table does not show, so a header with two numbers is no total (None, and ui_total fails)."""
     doc = read_json(Path(run) / "ui" / f"assets-run{k}.json") or {}
-    m = re.search(r"(\d[\d,]*)", str(doc.get("total_text") or ""))
-    return int(m.group(1).replace(",", "")) if m else None
+    numbers = re.findall(r"\d[\d,]*", str(doc.get("total_text") or ""))
+    return int(numbers[0].replace(",", "")) if len(numbers) == 1 else None
 
 
 def _is_empty(value: Any) -> bool:
@@ -153,10 +155,7 @@ def join(run: Path, k: str, checks: Checks) -> list[dict[str, Any]]:
                     if view == "export" and not _is_empty(a):
                         checks.fail(cid, GATE, "join", "export-missing", subject, expected=a, observed="<absent>")
                     continue
-                if field == "protocol" and view == "export":
-                    a_cmp, o_cmp = F.protocol_family(a), (None if _is_empty(o) else str(o))
-                else:
-                    a_cmp, o_cmp = F.view_eq(field, a), F.view_eq(field, o)
+                a_cmp, o_cmp = F.view_eq(field, a), F.view_eq(field, o)
                 checks.verdict(cid, GATE, "join", a_cmp == o_cmp, "mismatch", subject, expected=a, observed=o)
         comp = (views["export"] or {}).get(aid)
         if comp is not None and "zs_coverage_gap" not in comp:

@@ -139,6 +139,86 @@ def entry(namespace: str, code: str) -> dict[str, Any] | None:
     return (load().get("findings") or {}).get(namespace, {}).get(code)
 
 
+NOT_RECORDED = (
+    "Cited for review: this clause applies to specific algorithms, and the algorithm "
+    "behind the finding was not recorded for this asset: verify which one it uses."
+)
+_NAME_SPLIT = re.compile(r"[\s,;/()]+")
+
+
+def evidence_names(evidence: Any) -> list[str]:
+    """The algorithm names a clause rule reads: a string is one name (or, for a
+    code-scan finding, the scanner's own sentence about its algorithm), a list holds
+    one name each; None or nothing is "not recorded" ([])."""
+    if evidence is None:
+        return []
+    items = [evidence] if isinstance(evidence, str) else list(evidence)
+    return [str(i).strip() for i in items if i is not None and str(i).strip()]
+
+
+def rule_matches(rule: dict[str, Any], names: Any) -> bool:
+    """Whether a ``clause_rules`` rule matches one of the names. The pattern is
+    searched in each name and in each part of it ("3DES (IKEv1)", "PFS MODP-1024",
+    "one of DES/3DES" are read part by part, so a pattern anchored on one algorithm
+    name, such as the classifier's own lists, matches too); a part that matches
+    ``unless`` never counts."""
+    pattern = re.compile(rule["match"], re.IGNORECASE)
+    unless = re.compile(rule["unless"], re.IGNORECASE) if rule.get("unless") else None
+    for name in evidence_names(names):
+        for part in dict.fromkeys([name, *_NAME_SPLIT.split(name)]):
+            if part and pattern.search(part) and not (unless and unless.search(part)):
+                return True
+    return False
+
+
+def has_clause_rules(namespace: str, code: str) -> bool:
+    return bool((entry(namespace, code) or {}).get("clause_rules"))
+
+
+def clauses_for(
+    namespace: str, code: str, evidence: Any = None
+) -> list[dict[str, Any]]:
+    """The regulatory clauses one finding breaks (or whose obligation it triggers),
+    as {key, framework, id, text, source, note?, evidence?}: the entry's own
+    ``clauses``, plus those of every ``clause_rules`` rule the evidence matches,
+    e.g. NIST TDEA only when the evidence names Triple DES.
+
+    ``evidence`` is algorithm names only (#289): for a collected asset, the
+    algorithms the classifier flagged for the code; never the asset's name,
+    location or finding sentence (a host called "des3-gw" is no Triple DES). When
+    no algorithm was recorded (None, "" or []) the rules cannot decide: their
+    clauses are cited with ``evidence: "not_recorded"`` and a note, never dropped.
+
+    Never a whole compliance area: an area groups clauses for the NIST SP 800-53
+    control families, and a finding does not inherit the other clauses of its area
+    (#269: an SSH CBC cipher is not "PKCS#1 v1.5 padding disallowed")."""
+    e = entry(namespace, code)
+    if not e:
+        return []
+    catalog = load().get("clauses") or {}
+    names = evidence_names(evidence)
+    keys = list(e.get("clauses") or [])
+    unrecorded: list[str] = []
+    for rule in e.get("clause_rules") or []:
+        if not names:
+            unrecorded += [k for k in rule["clauses"] if k not in keys]
+        elif rule_matches(rule, names):
+            keys += rule["clauses"]
+    notes = e.get("clause_notes") or {}
+    out = []
+    for key in dict.fromkeys(keys + unrecorded):
+        if key not in catalog:
+            continue
+        ref = {**catalog[key], "key": key}
+        if notes.get(key):
+            ref["note"] = notes[key]
+        if key in unrecorded and key not in keys:
+            ref["evidence"] = "not_recorded"
+            ref["note"] = NOT_RECORDED + (" " + ref["note"] if ref.get("note") else "")
+        out.append(ref)
+    return out
+
+
 # ------------------------------------------------------------------------------------------------ CVEs and mapping
 def cve(cve_id: str) -> dict[str, Any] | None:
     return (load().get("cves") or {}).get(cve_id)
@@ -206,9 +286,17 @@ def _safe_value(kind: str, value: Any) -> str | None:
         return text if text.isdigit() and len(text) <= 6 else None
     if kind == "host":
         if not text.isascii():
+            # IDNA 2008 (UTS #46, non-transitional), the same rule as stored host names. Python's codec
+            # is IDNA 2003 and would turn faß.lab into fass.lab in a command the customer pastes.
+            import unicodedata
+
+            import idna
+            folded = unicodedata.normalize("NFC", text.strip().rstrip("."))
+            if "\u200c" in folded or "\u200d" in folded:
+                return None
             try:
-                text = ".".join(p.encode("idna").decode("ascii") if p else p for p in text.split("."))
-            except UnicodeError:
+                text = idna.encode(folded, uts46=True, transitional=False).decode("ascii")
+            except (idna.IDNAError, UnicodeError):
                 return None
         allowed = r"[A-Za-z0-9.\-:\[\]]+"
     elif kind in ("name", "resource"):
@@ -241,17 +329,27 @@ def _remediation_for(e: dict[str, Any], title: str) -> dict[str, Any]:
     return e["remediation"]
 
 
+def _clause_names(code: str, given: dict[str, Any] | None, fields: tuple) -> Any:
+    if given is not None:
+        return given.get(code)
+    return [p for p in fields if p]
+
+
 def render(namespace: str, codes: list[str], *, context: dict[str, Any] | None = None, evidence: str = "",
-           texts: dict[str, str] | None = None, title: str = "") -> list[dict[str, Any]]:
+           texts: dict[str, str] | None = None, title: str = "",
+           clause_evidence: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """Full explanation for each finding code on one asset, with commands filled in from the asset's context.
 
     context: host / port / path / name / location / resource / line of the asset. texts: the asset-specific sentence
     the classifier wrote for each code. title: the finding's title (algorithm name), which picks the specific fix.
+    clause_evidence: code -> the algorithm names its compliance clauses are decided
+    on (``clauses_for``). A collected asset passes it: its name and sentences never
+    decide a clause (#289). Without it, the code-scan finding's title, evidence and
+    texts are used.
     Unknown codes are skipped (coverage notes are not findings).
     """
     context = context or {}
     kb = load()
-    compliance = kb.get("compliance") or {}
     cwe_names = kb.get("cwe") or {}
     out = []
     for code in codes:
@@ -273,7 +371,8 @@ def render(namespace: str, codes: list[str], *, context: dict[str, Any] | None =
             "owasp_2025": e.get("owasp_2025") or [],
             "cves": cves_for(namespace, code, evidence),
             "standards": e.get("standards") or [],
-            "compliance": [ref for key in e.get("compliance") or [] for ref in compliance.get(key) or []],
+            "compliance": clauses_for(namespace, code, _clause_names(
+                code, clause_evidence, (title, evidence, (texts or {}).get(code)))),
             "remediation": _remediation_for(e, title),
             "verify": [{"label": v["label"], "command": _fill(v["command"], context)} for v in e.get("verify") or []],
             "references": e.get("references") or [],
@@ -302,6 +401,10 @@ def upstream_version(package_version: str) -> str:
     return v
 
 
+# Cached: a pure function returning an immutable tuple. Every library row compares its
+# version with every CVE range bound of its library, so one 50k-asset export parsed the
+# same few hundred strings millions of times (CB-06 bench: most of its CPU before this).
+@lru_cache(maxsize=8192)
 def _key(version: str) -> tuple:
     """Comparable key: numbers, then an OpenSSL letter suffix ('1.1.1w'), then an OpenSSH portable patch level
     ('9.3p2' > '9.3p1' > '9.3'; the patch release is often the fix, e.g. 9.3p2 for CVE-2023-38408)."""
@@ -333,36 +436,87 @@ def _in_range(version: str, rng: dict[str, str]) -> bool:
     return True
 
 
-def library_for(package: str) -> str | None:
+def _library_in(kb: dict[str, Any], package: str) -> str | None:
     name = str(package or "").lower()
-    for lib, rules in (load().get("libraries") or {}).items():
+    for lib, rules in (kb.get("libraries") or {}).items():
         if name in rules.get("packages") or []:
             return lib
     return None
 
 
-def library_status(package: str, package_version: str, *, today: _dt.date | None = None) -> dict[str, Any] | None:
-    """CVE ranges and upstream end-of-life for a crypto library package; None when the package is not tracked."""
-    lib = library_for(package)
+def library_for(package: str) -> str | None:
+    return _library_in(load(), package)
+
+
+# (library, upstream version, CVE ids, end-of-life branch, its date, its sources)
+LibraryFacts = tuple[str, str, tuple[str, ...], str | None, str | None, tuple[Any, ...]]
+
+
+def _library_facts(kb: dict[str, Any], package: str,
+                   package_version: str) -> LibraryFacts | None:
+    """The date-free part of ``library_status`` for one knowledge base; None when
+    the package is not tracked."""
+    lib = _library_in(kb, package)
     if not lib or not package_version:
         return None
-    rules = load()["libraries"][lib]
+    rules = kb["libraries"][lib]
     version = upstream_version(package_version)
     if not _key(version)[0]:
         return None
-    hits = sorted({r["cve"] for r in rules.get("ranges") or [] if _in_range(version, r)})
-    eol = None
+    ranges = rules.get("ranges") or []
+    hits = tuple(sorted({r["cve"] for r in ranges if _in_range(version, r)}))
+    branch: str | None = None
+    date: str | None = None
     table = rules.get("eol") or {}
     if table:
         nums = _key(version)[0]
         branch = f"{nums[0]}.{nums[1]}" if nums[0] >= 3 else f"{nums[0]}.{nums[1]}.{nums[2]}"
         date = table.get(branch)
-        if date:
-            today = today or _dt.date.today()
-            eol = {"branch": branch, "date": date, "passed": _dt.date.fromisoformat(date) < today,
-                   "sources": rules.get("eol_sources") or []}
+    return lib, version, hits, branch, date, tuple(rules.get("eol_sources") or [])
+
+
+# F-1: every view judges a library row's end of life on two dates (classify.shown ->
+# _date_may_matter), so a 50k-asset run compared the same few package versions with
+# every CVE range of their library on every row, twice. The date-free part is
+# memoised per (package, version) for ONE knowledge-base object: the memo is a
+# (knowledge base, entries) pair, replaced as a whole when load() returns another
+# object (a signed bundle, load.cache_clear(), a test's patched KB). An entry never
+# outlives the KB it came from, even when two KBs carry the same kb_version; holding
+# the KB keeps its id from being reused, and a thread still on the old KB writes
+# into the old pair only. The memo is process-wide, shared by every team's runs, and
+# also holds untracked packages (as None). Bounded at 4,096 entries: a full memo is
+# cleared and refilled, which costs what an unmemoised lookup costs, never a wrong
+# answer.
+_LIBRARY_MEMO_MAX = 4096
+_library_memo: tuple[Any, dict[tuple[str, str], LibraryFacts | None]] = (None, {})
+_MISS: Any = object()
+
+
+def library_status(package: str, package_version: str, *, today: _dt.date | None = None) -> dict[str, Any] | None:
+    """CVE ranges and upstream end-of-life for a crypto library package; None when the package is not tracked."""
+    global _library_memo
+    kb = load()
+    memo = _library_memo
+    if memo[0] is not kb:
+        memo = _library_memo = (kb, {})
+    entries = memo[1]
+    key = (package, package_version)
+    facts = entries.get(key, _MISS)  # one lookup: another thread may clear the dict
+    if facts is _MISS:
+        facts = _library_facts(kb, package, package_version)
+        if len(entries) >= _LIBRARY_MEMO_MAX:
+            entries.clear()
+        entries[key] = facts
+    if facts is None:
+        return None
+    lib, version, hits, branch, date, sources = facts
+    eol = None
+    if date:
+        today = today or _dt.date.today()
+        eol = {"branch": branch, "date": date, "passed": _dt.date.fromisoformat(date) < today,
+               "sources": list(sources)}
     return {"library": lib, "package": package, "package_version": package_version, "upstream_version": version,
-            "cves": hits, "eol": eol}
+            "cves": list(hits), "eol": eol}
 
 
 def pqc_context() -> dict[str, Any]:

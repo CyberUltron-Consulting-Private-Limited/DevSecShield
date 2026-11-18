@@ -19,6 +19,8 @@ The same file ships in two places and a test keeps them identical:
 | OWASP categories and mapped CWEs, NIST, CNSA 2.0, CERT-In, SEBI, RBI, Mosca | `sources/compliance.json` | quotes with clause numbers and URLs |
 | OpenSSL end-of-life dates | `build_kb.py` (`OPENSSL_EOL`) | openssl-library.org release strategy, endoflife.date |
 | Descriptions, attack scenarios, remediation, verify commands | `kb_text.py` | written for this product |
+| Crypto-agility fix class per code (`fix_class`: class, capability, basis) | `sources/fix_class.json` | reviewed hand table (CB-24), a basis and sources per row; `build_kb.py` fails on a missing or extra row |
+| VEX default per code (`vex_default`: basis, reason) and per mapped CVE (`vex_inherent`) | `sources/vex_default.json` | reviewed hand table (CB-22), a reason and sources per row; `build_kb.py` fails on a missing or extra row, a quantum-only entry not marked `quantum_only`, or `observed` on a code-scan code |
 
 OWASP categories come from OWASP's own "List of Mapped CWEs" for each category; a finding also gets the category it
 obviously belongs to, marked `basis: category of the finding`. Library CVE matches are reported as *in triage*:
@@ -27,7 +29,7 @@ distributions back-port fixes without changing the upstream version, so a versio
 ## Rebuild
 
 ```bash
-python scripts/crypto_kb/build_kb.py 2026.11.15.1 /tmp/crypto_kb.json   # version must sort after the shipped one
+python scripts/crypto_kb/build_kb.py 2026.11.15.3 /tmp/crypto_kb.json   # version must sort after the shipped one
 cp /tmp/crypto_kb.json aibom/src/aibom/cbom/data/crypto_kb.json
 cp /tmp/crypto_kb.json backend/utilities/cbom_sources/data/crypto_kb.json
 ```

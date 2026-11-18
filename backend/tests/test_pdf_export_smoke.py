@@ -269,14 +269,15 @@ def test_sbom_inventory_and_cve_fields_from_scan_data(tmp_path):
     _assert_valid_pdf(str(out))
     haystack = _pdf_haystack(str(out))
     assert "2m 14s" in haystack
-    assert "core-js==3.6.5" in haystack
     assert "lodash-es==4.17.15" in haystack
     assert "Upgrade lodash-es" in haystack
     assert "A03:2021" in haystack
-    assert "No CVE recorded for this component" in haystack
     assert "inventory row" not in haystack.lower()
-    # Catalog Location for both rows is the package, not an empty em-dash.
-    assert haystack.count("core-js==3.6.5") >= 1
+    # #46: the inventory row is not a finding; it is listed, name and version, among the other packages
+    assert "No CVE recorded for this component" not in haystack
+    assert "Packages with no known vulnerability" in haystack
+    assert "core-js" in haystack and "3.6.5" in haystack
+    # Catalog Location for the finding is the package, not an empty em-dash.
     assert haystack.count("lodash-es==4.17.15") >= 1
 
 
@@ -423,7 +424,7 @@ def _worker_persist_payload(scan_type: str) -> dict:
 
 _WORKER_EXPECT = {
     "sast": ("2m 14s", "Exposed Database URL in logs", "backup.py:12", "Redact DATABASE_URL in logs", "A05:2021"),
-    "sbom_sca": ("2m 14s", "core-js==3.6.5", "Upgrade lodash-es", "A03:2021", "No CVE recorded for this component"),
+    "sbom_sca": ("2m 14s", "core-js", "3.6.5", "Upgrade lodash-es", "A03:2021", "Packages with no known vulnerability"),
     "dast": ("2m 14s", "Reflected XSS", "https://example.test/search", "Encode output", "A03:2021", "URLs included"),
     "iac": ("2m 14s", "Public S3 bucket", "terraform/main.tf", "Set ACL to private", "A05:2021"),
     "mcp": ("2m 14s", "Tool exposes secrets", "read_wiki_structure", "Redact secrets"),

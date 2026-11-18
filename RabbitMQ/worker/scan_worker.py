@@ -42,7 +42,8 @@ def delete_uploads(kwargs: dict) -> None:
             console.print(f"Could not delete the upload of a cancelled scan: {type(err).__name__}", style="bold red")
 
 
-# Code scans the customer can cancel (backend utilities/scan/cancel_scan.py CANCELLABLE_TYPES).
+# Code scans the customer can cancel (backend utilities/scan/cancel_scan.py CANCELLABLE_TYPES), and every scan run
+# the backend can withdraw (a reinitialize replacing a queued run: MCP and LLM too).
 cancellable = _cancellable(on_skip=delete_uploads)
 CANCELLABLE_TASKS = {"scan_worker.sast", "scan_worker.sbom_sca", "scan_worker.iac", "scan_worker.cbom", "scan_worker.ai_bom"}
 
@@ -383,7 +384,11 @@ try:
 
 
 
+    # MCP and LLM runs honour the backend's withdrawal mark too: a reinitialize withdraws the queued run it replaces
+    # (backend utilities/scan/reinitialize.py), and a revoke alone is lost when no worker is up, on a restart and
+    # after 3 h. A marked run is never started; a running one stops at its next progress write.
     @app.task(track_started=True, bind=True , soft_time_limit=1200 , time_limit=1800)
+    @cancellable
     def mcp_scan(
         self:Task,
         mcp_dict_context: dict,
@@ -410,6 +415,7 @@ try:
             raise e
     
     @app.task(track_started=True, bind=True)
+    @cancellable
     def llm_benchmark_scan(
         self:Task,
         llm_benchmark_dict_context: dict,

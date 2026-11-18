@@ -1,11 +1,11 @@
+import logging
 import os
 from pymongo import MongoClient
 from sqlmodel import create_engine
 from dotenv import load_dotenv
 from fastapi import HTTPException, status
-from rich.console import Console
 
-_console = Console()
+log = logging.getLogger("backend.db")
 load_dotenv()
 
 _is_docker = os.getenv("IS_DOCKER_CONTAINER", "False") == "True"
@@ -15,6 +15,8 @@ PG_HOST = os.getenv("PG_HOST", "devsecshield-postgres" if _is_docker else "local
 PG_PORT = os.getenv("PG_PORT", "5432" if _is_docker else "4433")
 MONGO_HOST = os.getenv("MONGO_HOST", "devsecshield-mongodb" if _is_docker else "localhost")
 MONGO_PORT = os.getenv("MONGO_PORT", "27017")
+# The settings get_db() reads by name; a missing one is logged by its NAME only, never a value.
+PG_SETTINGS = ("PG_USER", "PG_USER_PASS", "PG_DB")
 
 # Singleton instances for connection pooling
 _pg_engine = None
@@ -24,7 +26,6 @@ _mongo_db = None
 def get_db():
 
     global _pg_engine
-    console = _console
     try:
         if _pg_engine is not None:
             return _pg_engine
@@ -38,7 +39,13 @@ def get_db():
         return _pg_engine
 
     except Exception as e:
-        console.print(f"Error getting database: connection to {PG_HOST}:{PG_PORT} failed", style="bold red")
+        # Nothing has connected yet (create_engine connects on first use): the error class and, for a missing setting,
+        # the NAMES of the unset variables. Never str(e) or a value: the URL above carries the password.
+        if isinstance(e, KeyError) and e.args and e.args[0] in PG_SETTINGS:
+            unset = ", ".join(name for name in PG_SETTINGS if name not in os.environ)
+            log.error("Error getting database: %s (%s not set)", type(e).__name__, unset)
+        else:
+            log.error("Error getting database: %s", type(e).__name__)
         raise e 
 
 def get_mongo_client_db():

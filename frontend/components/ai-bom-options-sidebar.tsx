@@ -4,7 +4,7 @@ import { Dispatch, SetStateAction, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { Label } from "@/components/ui/label";
+import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
 import { Input } from "@/components/ui/input";
 import {
   ScanIcon,
@@ -38,6 +38,7 @@ import { handleApiError } from "@/utils/error-handler";
 import { stateAfterError } from "@/utils/scanErrorRecovery";
 import { ScanRequestError } from "@/components/scan-request-error";
 import { scanFailureMessage } from "@/utils/scanFailure";
+import { refreshCredits } from "@/utils/creditRefresh";
 import { RerunNotice, RunAgainButton, useRerunPrefill } from "@/components/scan-run-again";
 import { CancelledScanPanel, CancelScanButton } from "@/components/scan-cancel";
 
@@ -158,6 +159,10 @@ export function AiBomOptionsSidebar({
       setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("ready");
     },
+    // the start charged the team (or a refused one moved nothing): the header shows the server's balance (#13)
+    onSettled: () => {
+      refreshCredits(queryClient);
+    },
   });
 
   const handleRunScan = () => {
@@ -215,6 +220,11 @@ export function AiBomOptionsSidebar({
     }
   }, [query.data?.scan_status, query.data?.scan_metadata, failureMessage]);
 
+  // the status check that saw the scan fail refunded its credits (#28): show the balance it gave back
+  useEffect(() => {
+    if (query.data?.scan_status === "failure") refreshCredits(queryClient);
+  }, [query.data?.scan_status, queryClient]);
+
   const exportMutation = useMutation({
     mutationFn: () => getAIBOMExportResults(team_id, scan_id),
     onSuccess: (data) => {
@@ -248,6 +258,9 @@ export function AiBomOptionsSidebar({
     onError: (err) => {
       setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("error");
+    },
+    onSettled: () => {
+      refreshCredits(queryClient);
     },
   });
 
@@ -305,6 +318,10 @@ export function AiBomOptionsSidebar({
                   </div>
                 </AccordionTrigger>
                 <AccordionContent className="pb-5 pt-0">
+                  <p className="text-xs text-zinc-500 mb-3 flex items-center gap-1">
+                    Finds the models, datasets, AI libraries and AI providers in your code.
+                    <InfoTip id="aibom.cfg.repository" />
+                  </p>
                   <RepositoryCard
                     uploadedFile={uploaded_file}
                     setUploadedFile={onZipChange}
@@ -333,8 +350,9 @@ export function AiBomOptionsSidebar({
                   <p className="text-xs text-zinc-500 mb-3">
                     Upload an existing AI BOM JSON file. This will clear any repository or zip selection.
                   </p>
-                  <Label className="text-zinc-300 text-sm">AI BOM file</Label>
+                  <FieldLabel htmlFor="aibom-file-upload" infoId="aibom.cfg.file" labelClassName="text-zinc-300 text-sm">AI BOM file</FieldLabel>
                   <Input
+                    id="aibom-file-upload"
                     type="file"
                     accept=".json,application/json"
                     className="bg-zinc-800 h-fit p-2 border-zinc-700 text-white file:mr-2 file:rounded file:border-0 file:bg-blue-600 file:cursor-pointer file:px-3 file:py-1 file:text-sm file:text-white mt-1"
@@ -351,7 +369,7 @@ export function AiBomOptionsSidebar({
           <Separator className="bg-zinc-800" />
 
           <div className="p-6">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-2">Estimate scan credits</h3>
+            <h3 className="text-sm font-semibold text-zinc-200 mb-2 flex items-center gap-1">Estimate scan credits <InfoTip id="aibom.cfg.estimate" /></h3>
             <Button
               variant="ghost"
               size="sm"
@@ -383,7 +401,7 @@ export function AiBomOptionsSidebar({
           <Separator className="bg-zinc-800" />
 
           <div className="p-6">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-2">Run scan</h3>
+            <h3 className="text-sm font-semibold text-zinc-200 mb-2 flex items-center gap-1">Run scan <InfoTip id="scan.cfg.run" /></h3>
             {canRunScan ? (
               <div className="space-y-2">
                 <Button

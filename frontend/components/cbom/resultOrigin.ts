@@ -2,8 +2,8 @@
  * Where a CBOM result came from: a code scan, or a CBOM Sources run (M1x, X1 Nov 11).
  *
  * The CBOM landing page counts each Sources source's latest completed collection next to the code scans
- * (backend collections_view). Every row says where it came from, and the Table tab is empty only when there is
- * neither a code scan nor a completed Sources run.
+ * (backend collections_view) and every top-risk row says where it came from. The Table tab lists code scans and
+ * Sources runs in one table (CB-38, components/cbom/results/resultRows.ts).
  */
 
 export type CbomResultOrigin =
@@ -32,33 +32,4 @@ export function originLabel(origin: CbomResultOrigin | null | undefined): string
 /** The CBOM Sources page's Review & Run tab, which lists the runs and opens each run's results. */
 export function sourcesRunsHref(teamId: string | number): string {
   return `/${teamId}/cbom/sources?tab=review`;
-}
-
-/** The Table tab's empty state: no code scan AND no completed Sources run. */
-export function hasCbomResults(scans: readonly unknown[] | null | undefined,
-                               runs: readonly CbomSourcesRun[] | null | undefined): boolean {
-  return (scans?.length ?? 0) > 0 || (runs?.length ?? 0) > 0;
-}
-
-/** Runs are listed once per run (a run can collect several sources): sources joined, assets and probes summed. */
-export function groupSourcesRuns(runs: readonly CbomSourcesRun[] | null | undefined): Array<{
-  run_id: number; sources: string[]; finished_at: string; asset_count: number; endpoints_probed: number;
-}> {
-  const byRun = new Map<number, { run_id: number; sources: string[]; finished_at: string; asset_count: number;
-                                  endpoints_probed: number }>();
-  for (const r of runs ?? []) {
-    const held = byRun.get(r.run_id);
-    if (!held) {
-      byRun.set(r.run_id, { run_id: r.run_id, sources: [r.source_name], finished_at: r.finished_at,
-                            asset_count: r.asset_count, endpoints_probed: r.endpoints_probed });
-      continue;
-    }
-    if (!held.sources.includes(r.source_name)) held.sources.push(r.source_name);
-    held.asset_count += r.asset_count;
-    held.endpoints_probed += r.endpoints_probed;
-    if (r.finished_at > held.finished_at) held.finished_at = r.finished_at;
-  }
-  return [...byRun.values()]
-    .map((g) => ({ ...g, sources: [...g.sources].sort((a, b) => a.localeCompare(b)) }))
-    .sort((a, b) => (b.finished_at.localeCompare(a.finished_at)) || b.run_id - a.run_id);
 }

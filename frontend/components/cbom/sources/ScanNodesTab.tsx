@@ -14,6 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import {
   createCbomScanNode,
   deleteCbomScanNode,
+  getCbomNodeArtifacts,
   getCbomSourcesOverview,
   getCbomSourcesSettings,
   listCbomScanNodes,
@@ -26,23 +27,36 @@ import { apiBaseURL } from "@/utils/interceptors";
 
 import { cbomSourcesKeys } from "./keys";
 import { AgentPoolsCard } from "./AgentPoolsCard";
+import { ApiEgressRow, NodeCommandBlock, NodeInstallCommand, NodeOnePaste, apiHost } from "./NodeInstall";
+import { DNS_EGRESS, inspectionWarning, wizardProxyProblem } from "./nodeNetwork";
+import { NodeDownloads } from "./NodeDownloads";
 import {
+  DEFAULT_PROXY_CA_FILE,
   DEPLOY_SUPPORT,
+  NETWORK_REQUIREMENTS,
   ago,
-  installCommand,
+  insecureApiWarning,
+  nodeApiPort,
+  nodeImages,
   nodeInstallNames,
   offersRegistrationToken,
-  offlineImageSteps,
+  pluralize,
   readTextFile,
   registrationOutcome,
+  registryInstall,
   singleFlight,
+  trustProblem,
+  TRUST_DIR,
   type DeployMethod,
+  type InstallLinks,
+  type NodeTrust,
+  type RegistryImage,
 } from "./logic";
+import { NODE_UPDATE_STEPS, nodeUpdateBadge, nodesNeedingUpdate } from "./nodeUpdate";
 import { revealById } from "./reveal";
 import {
   Checkbox2,
   ChoiceCards,
-  CodeSnippet,
   ConfirmDialog,
   CopyButton,
   EmptyState,
@@ -56,8 +70,11 @@ import {
   Truncate,
   useMenuReveal,
 } from "./shared";
+import { InfoTip } from "@/components/ui/info-tip";
 
-const NODE_IMAGE = process.env.NEXT_PUBLIC_CBOM_NODE_IMAGE || "registry.zeroshield.ai/cbom/scan-node:1.0";
+// A build may name a registry customers can pull the node image from; otherwise (and unless the server names one,
+// CBOM_NODE_IMAGE_REF) the wizard offers the image file this server serves, and no pull.
+const BUILD_PULL_IMAGE = process.env.NEXT_PUBLIC_CBOM_NODE_IMAGE || null;
 const SEGMENTS = ["Data centre", "DMZ", "Branch office", "OT / plant", "Cloud VPC"];
 const TIMEZONES = ["Asia/Kolkata", "UTC", "Asia/Dubai", "Asia/Singapore", "Europe/London", "America/New_York"];
 const DEPLOY_OPTIONS: { value: DeployMethod; title: string; description: ReactNode }[] = (
@@ -74,7 +91,7 @@ const DEPLOY_OPTIONS: { value: DeployMethod; title: string; description: ReactNo
       {o.description}
       <span className={`block mt-1 font-medium ${DEPLOY_SUPPORT[o.value].proven ? "text-green-700 dark:text-green-400" : "text-amber-700 dark:text-amber-400"}`}
         data-testid={`deploy-support-${o.value}`}>
-        {DEPLOY_SUPPORT[o.value].proven ? (o.value === "helm" ? "Proven on k3s (Deployment and agent DaemonSet)" : "Proven") : "Build it yourself (template provided)"}
+        {DEPLOY_SUPPORT[o.value].proven ? (o.value === "helm" ? "Proven on k3s (Deployment and agent DaemonSet)" : "Proven") : "Packer build kit (download below)"}
       </span>
     </>
   ),
@@ -91,6 +108,13 @@ interface WizardState {
   proxyCa: string;
   proxyCaName: string;
   tlsInspect: boolean;
+  proxyUser: string;
+  // CB-15: how the node trusts the ZeroShield API (host paths; never sent to the server, they only shape the command)
+  privateCa: boolean;
+  caPath: string;
+  mtls: boolean;
+  certPath: string;
+  keyPath: string;
 }
 const EMPTY_WIZARD: WizardState = {
   name: "",
@@ -101,7 +125,19 @@ const EMPTY_WIZARD: WizardState = {
   proxyCa: "",
   proxyCaName: "",
   tlsInspect: false,
+  proxyUser: "",
+  privateCa: false,
+  caPath: "",
+  mtls: false,
+  certPath: "",
+  keyPath: "",
 };
+
+/** The wizard's trust options as the command builders take them (only the ticked ones). */
+function wizardTrust(w: WizardState): NodeTrust | null {
+  if (!w.privateCa && !w.mtls) return null;
+  return { caFile: w.privateCa ? w.caPath : null, clientCert: w.mtls ? w.certPath : null, clientKey: w.mtls ? w.keyPath : null };
+}
 
 const WIZARD_ID = "scan-node-wizard";
 
@@ -109,23 +145,6 @@ const WIZARD_ID = "scan-node-wizard";
  * list and the other cards. */
 function scrollToWizard() {
   window.setTimeout(() => revealById(WIZARD_ID), 0);
-}
-
-function apiHost(): string {
-  try {
-    return new URL(apiBaseURL).hostname;
-  } catch {
-    return apiBaseURL;
-  }
-}
-
-function apiPort(): string {
-  try {
-    const url = new URL(apiBaseURL);
-    return url.port || (url.protocol === "http:" ? "80" : "443");
-  } catch {
-    return "443";
-  }
 }
 
 function expiresIn(iso: string | null, serverNow: string | null | undefined): string {
@@ -137,16 +156,29 @@ function expiresIn(iso: string | null, serverNow: string | null | undefined): st
   return `${h} h ${m} min`;
 }
 
-export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; onNavigate: (tab: string) => void }) {
+export default function ScanNodesTab({
+  teamId,
+  onNavigate,
+  apiUrl = apiBaseURL,
+}: {
+  teamId: number;
+  onNavigate: (tab: string) => void;
+  /** the ZeroShield API address scan nodes connect to (this build's; a prop so a test can render both variants) */
+  apiUrl?: string;
+}) {
   const queryClient = useQueryClient();
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizard, setWizard] = useState<WizardState>(EMPTY_WIZARD);
   const [wizardError, setWizardError] = useState<string | null>(null);
+  const [proxyError, setProxyError] = useState<string | null>(null);
   // again: a new token for a node that exists (New registration token, Reset), whose old container may still run
-  const [created, setCreated] = useState<{ nodeId: number; token: string; again?: boolean } | null>(null);
+  // links: the install links of that token (one-paste install on a terminal-only host; null without server files)
+  const [created, setCreated] = useState<{ nodeId: number; token: string; again?: boolean; links?: InstallLinks | null } | null>(null);
   const [editing, setEditing] = useState<CbomScanNode | null>(null);
   const [deleting, setDeleting] = useState<CbomScanNode | null>(null);
   const [resetting, setResetting] = useState<CbomScanNode | null>(null);
+  // CB-15: the reset is an upgrade of a legacy (unsigned) node to a signing one: the dialog says so
+  const [upgrading, setUpgrading] = useState(false);
   // A pool node was reset: no token to copy, its pod enrolls again by itself (r1 N1)
   const [reenrolling, setReenrolling] = useState<{ name: string; note: string } | null>(null);
   const rowMenu = useMenuReveal();
@@ -164,6 +196,15 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
     },
   });
   const nodes = useMemo(() => nodesQuery.data?.nodes ?? [], [nodesQuery.data]);
+  // The scan node downloads this server offers, and the image names the commands use (logic.nodeImages).
+  const artifactsQuery = useQuery({
+    queryKey: cbomSourcesKeys.nodeArtifacts(teamId),
+    queryFn: () => getCbomNodeArtifacts(teamId),
+    enabled: Number.isFinite(teamId),
+    retry: 1,
+    staleTime: 5 * 60_000,
+  });
+  const images = nodeImages(artifactsQuery.data, BUILD_PULL_IMAGE);
   const serverNow = nodesQuery.data?.server_time;
   const createdNode = created ? nodes.find((n) => n.id === created.nodeId) ?? null : null;
 
@@ -180,8 +221,9 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
         proxy_url: wizard.proxyUrl.trim() || null,
         proxy_ca_pem: wizard.proxyCa || null,
         proxy_tls_inspect: wizard.tlsInspect,
+        proxy_user: wizard.proxyUser.trim() || null,
       }),
-    onSuccess: (data) => setCreated({ nodeId: data.node.id, token: data.registration_token }),
+    onSuccess: (data) => setCreated({ nodeId: data.node.id, token: data.registration_token, links: data.install_links ?? null }),
     onSettled: invalidate,
   });
 
@@ -189,6 +231,7 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
     mutationFn: ({ node, reset }: { node: CbomScanNode; reset: boolean }) => newCbomNodeRegistration(teamId, node.id, reset),
     onSuccess: (data) => {
       setResetting(null);
+      setUpgrading(false);
       const outcome = registrationOutcome(data);
       if (!outcome.wizard) {
         // An agent pool node: the server issued no registration token, so there is no install command to show.
@@ -196,7 +239,7 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
         return;
       }
       setReenrolling(null);
-      setCreated({ nodeId: data.node.id, token: outcome.token, again: true });
+      setCreated({ nodeId: data.node.id, token: outcome.token, again: true, links: data.install_links ?? null });
       // The (read-only) wizard shows the node this token is for, not the last values typed into it.
       setWizard({
         ...EMPTY_WIZARD,
@@ -205,6 +248,7 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
         timezone: data.node.timezone,
         deployment: data.node.deployment,
         proxyUrl: data.node.proxy_url ?? "",
+        proxyUser: data.node.proxy_user ?? "",
       });
       setWizardOpen(true);
       scrollToWizard();
@@ -232,6 +276,9 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
       setWizardError("Use 1-64 letters, digits, spaces, dots, dashes or underscores, starting with a letter or digit.");
       return;
     }
+    const proxyProblem = wizardProxyProblem(wizard);
+    setProxyError(proxyProblem);
+    if (proxyProblem) return;
     setWizardError(null);
     // One create per click burst: the second click of a double-click arrives before isPending disables the button.
     if (!createGuard.tryStart()) return;
@@ -240,34 +287,65 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
 
   const online = nodes.filter((n) => n.status === "online").length;
   const offline = nodes.filter((n) => n.status === "offline").length;
+  const stale = nodesNeedingUpdate(nodes);
+  const serverBuild = nodes.find((n) => n.update?.server_build)?.update?.server_build ?? null;
   const assigned = nodes.reduce((sum, n) => sum + (n.assigned_targets || 0), 0);
 
   if (nodesQuery.isLoading) return <LoadingBlock />;
   if (nodesQuery.isError && !nodesQuery.data) return <ErrorBlock error={nodesQuery.error} onRetry={() => nodesQuery.refetch()} />;
 
-  const command = created
-    ? installCommand(createdNode?.deployment ?? wizard.deployment, {
-        token: created.token,
-        apiUrl: apiBaseURL,
-        proxyUrl: createdNode?.proxy_url ?? (wizard.proxyUrl.trim() || null),
-        image: NODE_IMAGE,
-        name: createdNode?.name ?? wizard.name,
-      })
-    : "";
-  const offlineSteps = created ? offlineImageSteps(createdNode?.deployment ?? wizard.deployment, NODE_IMAGE) : null;
+  // A node takes a plain-HTTP API only with the lab switch: no port advice then, and a test-lab command (CB-08).
+  const apiPort = nodeApiPort(apiUrl);
+  const method = createdNode?.deployment ?? wizard.deployment;
+  // Helm with a registry image: one command (no push); Docker always loads the file, and shows a pull variant too.
+  const mainImage = method === "helm" && images.pulled ? images.pulled : images.loaded;
+  // The install command uses this deployment's API URL: say before the customer runs it when a node cannot connect.
+  const apiWarning = insecureApiWarning(apiUrl);
+  // The one-paste download trusts the proxy's CA (a file on the host) only when the proxy inspects TLS and a CA was
+  // given ("trust its CA only for ZeroShield hostnames"): curl/wget use it for the download from ZeroShield only.
+  const caGiven = (createdNode?.proxy_tls_inspect ?? wizard.tlsInspect) && (createdNode?.has_proxy_ca ?? !!wizard.proxyCa);
+  const caFile = caGiven ? (/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(wizard.proxyCaName) ? wizard.proxyCaName : DEFAULT_PROXY_CA_FILE) : null;
+  const nodeName = createdNode?.name ?? wizard.name;
+  const nodeProxy = createdNode?.proxy_url ?? (wizard.proxyUrl.trim() || null);
+  // #199: the proxy's user name; the command asks for the password on the host (logic.proxyAuthCreate)
+  const proxyUser = nodeProxy ? (createdNode?.proxy_user ?? (wizard.proxyUser.trim() || null)) : null;
+  const trust = wizardTrust(wizard);
+  const trustError = trustProblem(trust);
+  // A public registry (the server names its image, and for Helm its chart): docker pull / helm from oci://.
+  const registryHost = artifactsQuery.data?.pull_image_ref?.split("/")[0] ?? "";
+  // #197: never a registry image that is not this server's node build (images.pulled is null then; logic.nodeImages)
+  const registryCmd = created && images.pulled && artifactsQuery.data?.pull_image_ref
+    ? registryInstall(method, artifactsQuery.data, { apiUrl, token: created.token, name: nodeName, proxyUrl: nodeProxy,
+        insecureHttp: apiUrl.trim().startsWith("http://"), trust, caFile, proxyUser })
+    : null;
+  // The commands from files served by ZeroShield: the one-paste download (curl/wget) and the command for files
+  // downloaded in the browser. With a public registry they are the air-gapped alternative (the file's image then).
+  const fileImage = registryCmd ? images.loaded : mainImage;
+  const fileCommands = created ? (
+    <>
+      <NodeOnePaste apiUrl={apiUrl} method={method} links={created.links} token={created.token} name={nodeName}
+        proxyUrl={nodeProxy} caFile={caFile} proxyUser={proxyUser} image={images.loaded.image} build={images.loaded.build} trust={trust} />
+      {created.links && (
+        <p className="text-xs text-zinc-600 dark:text-zinc-400">Or, with the files you downloaded in the browser above:</p>
+      )}
+      <NodeInstallCommand apiUrl={apiUrl} method={method} token={created.token} name={nodeName} proxyUrl={nodeProxy}
+        image={fileImage.image} source={fileImage} trust={trust} caFile={caFile} proxyUser={proxyUser} />
+    </>
+  ) : null;
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Scan nodes" value={nodes.length} />
-        <StatCard label="Online" value={online} tone={online ? "green" : undefined} />
-        <StatCard label="Offline" value={offline} tone={offline ? "red" : undefined} />
-        <StatCard label="Targets assigned" value={assigned.toLocaleString()} hint="Servers and addresses routed through these nodes" />
+        <StatCard infoId="cbsrc.nodes.count" label="Scan nodes" value={nodes.length} />
+        <StatCard infoId="cbsrc.nodes.online" label="Online" value={online} tone={online ? "green" : undefined} />
+        <StatCard infoId="cbsrc.nodes.offline" label="Offline" value={offline} tone={offline ? "red" : undefined} />
+        <StatCard infoId="cbsrc.nodes.assigned" label="Targets assigned" value={assigned.toLocaleString()} hint="Servers and addresses routed through these nodes" />
       </div>
 
       <SectionCard
+        infoId="cbsrc.nodes.list"
         title="Registered scan nodes"
-        description={`One node per network segment. Each connects out to ZeroShield on port ${apiPort()} only.`}
+        description={apiPort ? `One node per network segment. Each connects out to ZeroShield on port ${apiPort}, to your targets and to DNS; nothing calls in.` : "One node per network segment."}
         actions={
           <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" onClick={startWizard}>
             <Plus className="h-4 w-4 mr-2" />
@@ -289,10 +367,20 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
             </button>
           </div>
         )}
+        {stale > 0 && (
+          <div
+            role="status"
+            className="mb-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200"
+            data-testid="nodes-update-available"
+          >
+            {`${pluralize(stale, "scan node")} ${stale === 1 ? "is" : "are"} not running this server's node build${serverBuild ? ` ${serverBuild}` : ""}, so fixes made on the node since then are not in ${stale === 1 ? "its" : "their"} results. `}
+            {NODE_UPDATE_STEPS}
+          </div>
+        )}
         {nodes.length === 0 ? (
           <EmptyState
             title="No scan nodes yet"
-            body="A scan node is a small appliance you run inside the network segment you want scanned. It reaches your servers, clusters and TLS endpoints and only ever connects out to ZeroShield."
+            body="A scan node is a small appliance you run inside the network segment you want scanned. It reaches your servers, clusters and TLS endpoints, looks names up through your DNS, and never accepts inbound connections."
             action={
               <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" onClick={startWizard}>
                 <Plus className="h-4 w-4 mr-2" />
@@ -306,14 +394,14 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Node</TableHead>
-                    <TableHead>Segment</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Runs as</TableHead>
-                    <TableHead>Version</TableHead>
-                    <TableHead>Requests</TableHead>
-                    <TableHead>Last seen</TableHead>
-                    <TableHead className="text-right">Targets</TableHead>
+                    <TableHead>Node <InfoTip id="cbsrc.nodes.col.node" /></TableHead>
+                    <TableHead>Segment <InfoTip id="cbsrc.nodes.col.segment" /></TableHead>
+                    <TableHead>Status <InfoTip id="cbsrc.nodes.col.status" /></TableHead>
+                    <TableHead>Runs as <InfoTip id="cbsrc.nodes.col.runs_as" /></TableHead>
+                    <TableHead>Version <InfoTip id="cbsrc.nodes.col.version" /></TableHead>
+                    <TableHead>Requests <InfoTip id="cbsrc.nodes.col.requests" /></TableHead>
+                    <TableHead>Last seen <InfoTip id="cbsrc.nodes.col.last_seen" /></TableHead>
+                    <TableHead className="text-right">Targets <InfoTip id="cbsrc.nodes.col.targets" /></TableHead>
                     <TableHead className="w-12">
                       <span className="sr-only">Actions</span>
                     </TableHead>
@@ -341,7 +429,9 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
                           )}
                         </span>
                       </TableCell>
-                      <TableCell className="text-zinc-600 dark:text-zinc-400">{node.node_version ?? "—"}</TableCell>
+                      <TableCell className="text-zinc-600 dark:text-zinc-400">
+                        <NodeVersion node={node} />
+                      </TableCell>
                       <TableCell>{node.enrolled_at ? <SigningBadge node={node} /> : <span className="text-zinc-500">—</span>}</TableCell>
                       <TableCell className="text-zinc-600 dark:text-zinc-400">{ago(node.last_heartbeat_at, serverNow)}</TableCell>
                       <TableCell className="text-right text-zinc-600 dark:text-zinc-400">{node.assigned_targets.toLocaleString()}</TableCell>
@@ -394,12 +484,14 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
         )}
       </SectionCard>
 
-      <AgentPoolsCard teamId={teamId} image={NODE_IMAGE} apiUrl={apiBaseURL} />
+      <AgentPoolsCard teamId={teamId} image={images.pulled ?? images.loaded} apiUrl={apiUrl} />
 
-      <RequestSigningCard teamId={teamId} nodes={nodes} />
+      <RequestSigningCard teamId={teamId} nodes={nodes}
+        onUpgrade={(node) => { setUpgrading(true); setResetting(node); }} />
 
       {wizardOpen && (
         <SectionCard
+          infoId="cbsrc.nodes.add"
           id={WIZARD_ID}
           className="scroll-mt-4"
           title={created?.again ? `Register ${wizard.name || "this scan node"} again` : "Add a scan node"}
@@ -410,20 +502,26 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
             </Button>
           }
         >
+          {apiWarning && (
+            <p role="alert" className="mb-6 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200"
+              data-testid="node-api-insecure">
+              {apiWarning}
+            </p>
+          )}
           <ol className="space-y-8">
             <li>
               <StepTitle n={1} title="Name and segment" />
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <Field label="Node name" htmlFor="node-name" required error={wizardError}>
+                <Field infoId="cbsrc.nodes.name" label="Node name" htmlFor="node-name" required error={wizardError}>
                   <Input id="node-name" value={wizard.name} disabled={!!created} maxLength={64} placeholder="dc-mumbai-01"
                     onChange={(e) => setWizard({ ...wizard, name: e.target.value })} />
                 </Field>
-                <Field label="Network segment" htmlFor="node-segment" hint="Pick one or type your own">
+                <Field infoId="cbsrc.nodes.segment" label="Network segment" htmlFor="node-segment" hint="Pick one or type your own">
                   <Input id="node-segment" list="cbom-segments" value={wizard.segment} disabled={!!created} maxLength={64}
                     onChange={(e) => setWizard({ ...wizard, segment: e.target.value })} />
                   <datalist id="cbom-segments">{SEGMENTS.map((s) => <option key={s} value={s} />)}</datalist>
                 </Field>
-                <Field label="Time zone" htmlFor="node-tz">
+                <Field infoId="cbsrc.nodes.tz" label="Time zone" htmlFor="node-tz">
                   <Select value={wizard.timezone} disabled={!!created} onValueChange={(v) => setWizard({ ...wizard, timezone: v })}>
                     <SelectTrigger id="node-tz" className="w-full cursor-pointer"><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -436,30 +534,61 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
 
             <li>
               <StepTitle n={2} title="Choose how to run it" />
-              <ChoiceCards name="node-deploy" label="Deployment" columns={4} value={wizard.deployment}
+              <ChoiceCards infoId="cbsrc.nodes.deploy" name="node-deploy" label="Deployment" columns={4} value={wizard.deployment}
                 onChange={(v) => setWizard({ ...wizard, deployment: v })}
                 options={DEPLOY_OPTIONS.map((o) => ({ ...o, disabled: !!created && o.value !== wizard.deployment }))} />
+              <NodeDownloads teamId={teamId} method={method} artifacts={artifactsQuery.data}
+                loading={artifactsQuery.isLoading} error={artifactsQuery.error} />
+              <RegistryImageNotice registry={images.registry} nodeBuild={artifactsQuery.data?.node_build ?? artifactsQuery.data?.version ?? null} />
               {created && (
                 <div className="mt-4 space-y-2">
-                  <CodeSnippet code={command} language={wizard.deployment === "ami" ? "yaml" : "bash"} />
-                  {offlineSteps && (
-                    <details className="text-xs text-zinc-600 dark:text-zinc-400" data-testid="node-image-offline">
-                      <summary className="cursor-pointer">
-                        Cannot pull <span className="font-mono">{NODE_IMAGE}</span>? Load the image from a file instead
-                      </summary>
-                      <p className="mt-2">
-                        Use this on a host without access to the image registry (air-gapped sites, or before the image is
-                        published there). The file and its SHA-256 checksum come from{" "}
-                        <span className="font-mono">make node-image</span>; check the checksum before you load it.
-                      </p>
-                      <div className="mt-2"><CodeSnippet code={offlineSteps} language="bash" /></div>
-                    </details>
+                  {registryCmd ? (
+                    <>
+                      {/* A public registry (staging: GHCR): the main command pulls this server's node build (#197), no login. */}
+                      <div className="space-y-1" data-testid="node-command-pull">
+                        <p className="text-sm font-medium text-zinc-900 dark:text-white">
+                          Install with one command: the image comes from{" "}
+                          <span className="font-mono">{registryHost}</span> (public, no login needed) <InfoTip id="cbsrc.nodes.registry_pull" />
+                        </p>
+                        <NodeCommandBlock apiUrl={apiUrl} code={registryCmd} />
+                      </div>
+                      <div className="space-y-2 pt-2" data-testid="node-air-gapped">
+                        <p className="text-sm font-medium text-zinc-900 dark:text-white">
+                          Air-gapped host, or no access to <span className="font-mono">{registryHost}</span>? Use the files from ZeroShield: <InfoTip id="cbsrc.nodes.files_install" />
+                        </p>
+                        {fileCommands}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      {fileCommands}
+                      {method === "docker" && images.pulled && (
+                        <div className="space-y-1" data-testid="node-command-pull">
+                          <p className="text-xs text-zinc-600 dark:text-zinc-400">
+                            Or, on a host that can reach <span className="font-mono">{images.pulled.image.split("/")[0]}</span>,
+                            pull the image instead of loading the file:
+                          </p>
+                          <NodeInstallCommand
+                            apiUrl={apiUrl}
+                            method="docker"
+                            token={created.token}
+                            name={createdNode?.name ?? wizard.name}
+                            proxyUrl={createdNode?.proxy_url ?? (wizard.proxyUrl.trim() || null)}
+                            image={images.pulled.image}
+                            source={images.pulled}
+                            trust={trust}
+                            caFile={caFile}
+                            proxyUser={proxyUser}
+                          />
+                        </div>
+                      )}
+                    </>
                   )}
-                  {!DEPLOY_SUPPORT[createdNode?.deployment ?? wizard.deployment].proven && (
-                    <p className="text-xs text-amber-700 dark:text-amber-400" data-testid="deploy-build-yourself">
-                      Build it yourself: ZeroShield does not publish this image yet. The Packer template and the steps are in
-                      {" "}<span className="font-mono">deploy/node-images/</span> (README); the node reads the values above from
-                      {" "}<span className="font-mono">/etc/zs-node/env</span>. Docker and Helm are the proven ways to run a node.
+                  {(method === "ova" || method === "ami") && (
+                    <p className="text-xs text-zinc-600 dark:text-zinc-400" data-testid="deploy-build-kit">
+                      Build the {method === "ova" ? "OVA" : "AMI"} with the build kit above (once; it holds no settings),
+                      then give each node these values: the node reads them from{" "}
+                      <span className="font-mono">/etc/zs-node/env</span>. Docker and Helm are the proven ways to run a node.
                     </p>
                   )}
                   {created.again && (createdNode?.deployment ?? wizard.deployment) === "docker" && (
@@ -490,20 +619,26 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
               <div className="border rounded-lg overflow-x-auto">
                 <Table>
                   <TableHeader>
-                    <TableRow><TableHead>Destination</TableHead><TableHead>Port</TableHead><TableHead>Used for</TableHead></TableRow>
+                    <TableRow><TableHead>Destination <InfoTip id="cbsrc.nodes.col.destination" /></TableHead><TableHead>Port <InfoTip id="cbsrc.nodes.col.port" /></TableHead><TableHead>Used for <InfoTip id="cbsrc.nodes.col.used_for" /></TableHead></TableRow>
                   </TableHeader>
                   <TableBody>
-                    <TableRow><TableCell className="font-mono text-xs">{apiHost()}</TableCell><TableCell>{apiPort()}</TableCell><TableCell className="text-zinc-600 dark:text-zinc-400">Jobs in, results out (HTTPS)</TableCell></TableRow>
+                    <ApiEgressRow apiUrl={apiUrl} />
                     <TableRow><TableCell>Your targets</TableCell><TableCell>22, 5986, 6443, database and TLS ports</TableCell><TableCell className="text-zinc-600 dark:text-zinc-400">Read-only collection</TableCell></TableRow>
+                    <TableRow data-testid="node-egress-dns"><TableCell>{DNS_EGRESS.destination}</TableCell><TableCell>{DNS_EGRESS.port}</TableCell><TableCell className="text-zinc-600 dark:text-zinc-400">{DNS_EGRESS.usedFor}</TableCell></TableRow>
                   </TableBody>
                 </Table>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                <Field label="Proxy (optional)" htmlFor="node-proxy" hint="http://proxy.example.local:8080">
+                <Field infoId="cbsrc.nodes.proxy" label="Proxy (optional)" htmlFor="node-proxy" hint="http://proxy.example.local:8080">
                   <Input id="node-proxy" value={wizard.proxyUrl} disabled={!!created} placeholder="http://proxy.bank.local:8080"
                     onChange={(e) => setWizard({ ...wizard, proxyUrl: e.target.value })} />
                 </Field>
-                <Field label="Proxy CA certificate" htmlFor="node-proxy-ca" hint={wizard.proxyCaName || "PEM file, only if your proxy inspects TLS"}>
+                <Field infoId="cbsrc.nodes.proxy_user" label="Proxy user (optional)" htmlFor="node-proxy-user"
+                  hint="Only if the proxy needs a login: the install command asks for the password on the host">
+                  <Input id="node-proxy-user" value={wizard.proxyUser} disabled={!!created} placeholder="svc-zs" autoComplete="off"
+                    onChange={(e) => setWizard({ ...wizard, proxyUser: e.target.value })} />
+                </Field>
+                <Field infoId="cbsrc.nodes.proxy_ca" label="Proxy CA certificate" htmlFor="node-proxy-ca" hint={wizard.proxyCaName || "PEM file, only if your proxy inspects TLS"}>
                   <Input id="node-proxy-ca" type="file" accept=".pem,.crt,.cer" disabled={!!created} className="cursor-pointer"
                     onChange={async (e) => {
                       const file = e.target.files?.[0];
@@ -519,9 +654,52 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
                 </Field>
               </div>
               <div className="mt-3">
-                <Checkbox2 id="node-tls-inspect" checked={wizard.tlsInspect} onChange={(v) => !created && setWizard({ ...wizard, tlsInspect: v })}>
+                <Checkbox2 infoId="cbsrc.nodes.tls_inspect" id="node-tls-inspect" checked={wizard.tlsInspect} onChange={(v) => !created && setWizard({ ...wizard, tlsInspect: v })}>
                   My proxy inspects TLS; trust its CA only for ZeroShield hostnames
                 </Checkbox2>
+                {wizard.tlsInspect && (
+                  <p className="mt-2 text-sm text-amber-700 dark:text-amber-400" role="alert" data-testid="node-inspect-warning">
+                    {inspectionWarning(apiHost(apiUrl))}
+                  </p>
+                )}
+                {proxyError && (
+                  <p className="mt-2 text-sm text-red-600 dark:text-red-400" role="alert" data-testid="node-proxy-error">{proxyError}</p>
+                )}
+              </div>
+              <div className="mt-4 space-y-3 rounded-lg border border-zinc-200 p-3 dark:border-zinc-800" data-testid="node-trust">
+                <p className="text-sm font-medium text-zinc-900 dark:text-white">How the node trusts the ZeroShield API (optional) <InfoTip id="cbsrc.nodes.trust" /></p>
+                <p className="text-xs text-zinc-600 dark:text-zinc-400">
+                  For an on-prem ZeroShield or a gateway with its own CA or mTLS. The files stay on the host: the command
+                  mounts them read-only (AMI and OVA read them from {TRUST_DIR}/ on the VM). Nothing here is sent to ZeroShield.
+                </p>
+                <Checkbox2 infoId="cbsrc.nodes.private_ca" id="node-private-ca" checked={wizard.privateCa}
+                  onChange={(v) => setWizard({ ...wizard, privateCa: v })}>
+                  The ZeroShield API uses a private CA
+                </Checkbox2>
+                {wizard.privateCa && (
+                  <Field infoId="cbsrc.nodes.private_ca" label="CA bundle (PEM) path on the host" htmlFor="node-ca-path">
+                    <Input id="node-ca-path" value={wizard.caPath} placeholder="/etc/pki/zeroshield-ca.pem" data-testid="node-ca-path"
+                      onChange={(e) => setWizard({ ...wizard, caPath: e.target.value })} />
+                  </Field>
+                )}
+                <Checkbox2 infoId="cbsrc.nodes.mtls" id="node-mtls" checked={wizard.mtls}
+                  onChange={(v) => setWizard({ ...wizard, mtls: v })}>
+                  The ZeroShield API requires a client certificate (mTLS)
+                </Checkbox2>
+                {wizard.mtls && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Field infoId="cbsrc.nodes.mtls" label="Client certificate (PEM) path" htmlFor="node-cert-path">
+                      <Input id="node-cert-path" value={wizard.certPath} placeholder="/etc/pki/zs-node.crt" data-testid="node-cert-path"
+                        onChange={(e) => setWizard({ ...wizard, certPath: e.target.value })} />
+                    </Field>
+                    <Field infoId="cbsrc.nodes.mtls" label="Client key (PEM) path" htmlFor="node-key-path"
+                      hint="Readable by uid 10001, the node's user (chown 10001, chmod 0400)">
+                      <Input id="node-key-path" value={wizard.keyPath} placeholder="/etc/pki/zs-node.key" data-testid="node-key-path"
+                        onChange={(e) => setWizard({ ...wizard, keyPath: e.target.value })} />
+                    </Field>
+                  </div>
+                )}
+                {trustError && <p role="alert" className="text-xs text-red-600" data-testid="node-trust-error">{trustError}</p>}
               </div>
               {!created && (
                 <div className="mt-6">
@@ -559,17 +737,20 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
         </SectionCard>
       )}
 
-      <SectionCard title="What the node does, and never does">
+      <SectionCard infoId="cbsrc.nodes.does" title="What the node does, and never does">
         <ul className="list-disc pl-5 space-y-1.5 text-sm text-zinc-700 dark:text-zinc-300">
-          <li>Opens no inbound ports. It only connects out to {apiHost()} on port {apiPort()}.</li>
+          <li>Opens no inbound ports. It only connects out to {apiHost(apiUrl)}{apiPort ? ` on port ${apiPort}` : ""}, to the targets of its jobs, and to your DNS resolver (port 53).</li>
           <li>Secrets you enter are encrypted at rest by ZeroShield and sent only to the scan node that runs the job.</li>
           <li>Uses each credential only on the targets it was entered with; your never-scan list always wins.</li>
           <li>Reads with read-only accounts and the published command list shown on the Servers tab.</li>
           <li>Sends metadata only: algorithms, key sizes, versions and locations. For private keys, only the public half is read.</li>
         </ul>
-        <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-4">
-          Fully air-gapped network? Use the on-prem edition: the whole platform runs inside your data centre.
-        </p>
+        <div className="mt-4" data-testid="node-network-requirements">
+          <p className="text-sm font-medium text-zinc-900 dark:text-white">Network requirements <InfoTip id="cbsrc.nodes.network_req" /></p>
+          <ul className="list-disc pl-5 space-y-1 mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+            {NETWORK_REQUIREMENTS.map((line) => <li key={line}>{line}</li>)}
+          </ul>
+        </div>
       </SectionCard>
 
       {editing && (
@@ -588,16 +769,18 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
       />
       <ConfirmDialog
         open={!!resetting}
-        onOpenChange={(v) => !v && setResetting(null)}
-        title="Reset this scan node?"
+        onOpenChange={(v) => { if (!v) { setResetting(null); setUpgrading(false); } }}
+        title={upgrading ? "Upgrade this scan node to signed requests?" : "Reset this scan node?"}
         description={resetting
-          ? resetting.pool_id != null
+          ? upgrading
+            ? upgradeText(resetting)
+            : resetting.pool_id != null
             // a pool node's pod enrolls again by itself with its pool token (same pool, same node), unless the pool
             // token was revoked or has expired (review fix F)
             ? `${resetting.name} loses its credential immediately. Its pod enrolls again by itself with the agent pool token, as long as that token is not revoked or expired; rotate the pool token instead if it may have leaked.`
             : `${resetting.name} loses its credential immediately and stops receiving jobs until you register it again with a new token. Use this if the node was reinstalled or its credential may have leaked.`
           : ""}
-        confirmLabel="Reset node"
+        confirmLabel={upgrading ? "Reset and show the command" : "Reset node"}
         destructive
         pending={tokenMutation.isPending}
         onConfirm={() => resetting && tokenMutation.mutate({ node: resetting, reset: true })}
@@ -679,6 +862,9 @@ function NodeDialog({
             <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
               <Detail label="Host name" value={node.hostname} />
               <Detail label="Version" value={node.node_version} />
+              {nodeUpdateBadge(node.update) && (
+                <Detail label="Update" value={`${nodeUpdateBadge(node.update)!.message}${node.update?.state === "update_available" ? ` ${NODE_UPDATE_STEPS}` : ""}`} wide />
+              )}
               <Detail label="Source IPs (tell your SOC)" value={node.source_ips.join(", ") || null} />
               <Detail label="Registered" value={node.enrolled_at ? ago(node.enrolled_at, serverNow) : "Not yet"} />
               <Detail label="Clock" value={node.clock_skew_s == null ? null : `${node.clock_skew_s > 0 ? "+" : ""}${node.clock_skew_s} s vs ZeroShield`} />
@@ -691,7 +877,7 @@ function NodeDialog({
             </dl>
             {node.ssh_public_key && (
               <div className="space-y-2">
-                <p className="text-sm font-medium">Node SSH public key</p>
+                <p className="text-sm font-medium">Node SSH public key <InfoTip id="cbsrc.nodes.ssh_key" /></p>
                 <div className="flex items-start gap-2">
                   <code className="flex-1 min-w-0 break-all rounded-md border bg-zinc-50 dark:bg-zinc-950 p-2 text-xs">{node.ssh_public_key}</code>
                   <CopyButton text={node.ssh_public_key} />
@@ -699,13 +885,13 @@ function NodeDialog({
               </div>
             )}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label="Node name" htmlFor="edit-node-name" required error={error}>
+              <Field infoId="cbsrc.nodes.name" label="Node name" htmlFor="edit-node-name" required error={error}>
                 <Input id="edit-node-name" value={name} maxLength={64} onChange={(e) => setName(e.target.value)} />
               </Field>
-              <Field label="Network segment" htmlFor="edit-node-segment">
+              <Field infoId="cbsrc.nodes.segment" label="Network segment" htmlFor="edit-node-segment">
                 <Input id="edit-node-segment" value={segment} maxLength={64} list="cbom-segments" onChange={(e) => setSegment(e.target.value)} />
               </Field>
-              <Field label="Time zone" htmlFor="edit-node-tz">
+              <Field infoId="cbsrc.nodes.tz" label="Time zone" htmlFor="edit-node-tz">
                 <Select value={timezone} onValueChange={setTimezone}>
                   <SelectTrigger id="edit-node-tz" className="w-full cursor-pointer"><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -713,7 +899,7 @@ function NodeDialog({
                   </SelectContent>
                 </Select>
               </Field>
-              <Field label="Proxy" htmlFor="edit-node-proxy">
+              <Field infoId="cbsrc.nodes.proxy" label="Proxy" htmlFor="edit-node-proxy">
                 <Input id="edit-node-proxy" value={proxy} onChange={(e) => setProxy(e.target.value)} placeholder="http://proxy:8080" />
               </Field>
             </div>
@@ -750,7 +936,19 @@ function SigningBadge({ node }: { node: CbomScanNode }) {
 }
 
 /** Team setting: refuse nodes that do not sign their requests.  Admins change it; everyone sees it. */
-function RequestSigningCard({ teamId, nodes }: { teamId: number; nodes: CbomScanNode[] }) {
+/** CB-15: what upgrading a legacy node does (the reset dialog's text when it is an upgrade). */
+export function upgradeText(node: Pick<CbomScanNode, "name" | "pool_id">): string {
+  return node.pool_id != null
+    ? `${node.name} loses its credential now. Update the agent DaemonSet to the current scan node image (Helm upgrade with the new image tag): each pod then enrolls again by itself with the agent pool token, and signs every request.`
+    : `${node.name} loses its credential now and stops receiving jobs. Run the install command shown next with the current scan node image: it enrolls again with a new token and signs every request (scan node 1.1 or later). The node keeps its name, segment and sources.`;
+}
+
+function RequestSigningCard({ teamId, nodes, onUpgrade }: {
+  teamId: number;
+  nodes: CbomScanNode[];
+  /** CB-15: reset a legacy node and show its install command, to enroll it again as a signing node */
+  onUpgrade?: (node: CbomScanNode) => void;
+}) {
   const queryClient = useQueryClient();
   const settingsQuery = useQuery({
     queryKey: cbomSourcesKeys.settings(teamId),
@@ -777,12 +975,13 @@ function RequestSigningCard({ teamId, nodes }: { teamId: number; nodes: CbomScan
   const legacy = nodes.filter((n) => n.enrolled_at && n.signing === "legacy");
   return (
     <SectionCard
+      infoId="cbsrc.nodes.signing"
       title="Request signing"
       description="Scan nodes sign every request with a key made at enrollment, so a copied node token alone is not enough to act as the node."
     >
       <div className="space-y-2" data-testid="require-signed-nodes">
         {isAdmin ? (
-          <Checkbox2 id="require-signed-nodes" checked={settings.require_signed_nodes}
+          <Checkbox2 infoId="cbsrc.nodes.require_signed" id="require-signed-nodes" checked={settings.require_signed_nodes}
             onChange={(on) => { if (!save.isPending) save.mutate(on); }}>
             Require signed scan nodes (refuse nodes that do not sign their requests)
           </Checkbox2>
@@ -798,6 +997,22 @@ function RequestSigningCard({ teamId, nodes }: { teamId: number; nodes: CbomScan
             {settings.require_signed_nodes ? "They are refused until reset and registered again." : "Reset and register them again before you require signing."}
           </p>
         )}
+        {legacy.length > 0 && onUpgrade && (
+          <ul className="space-y-1" data-testid="legacy-nodes">
+            {legacy.slice(0, 20).map((n) => (
+              <li key={n.id} className="flex flex-wrap items-center gap-2 text-sm" data-testid={`legacy-node-${n.id}`}>
+                <span className="font-medium">{n.name}</span>
+                <SigningBadge node={n} />
+                {n.node_version && <span className="text-xs text-zinc-500">node {n.node_version}</span>}
+                <Button variant="outline" size="sm" className="cursor-pointer" data-testid={`upgrade-node-${n.id}`}
+                  onClick={() => onUpgrade(n)}>
+                  Upgrade to signed
+                </Button>
+              </li>
+            ))}
+            {legacy.length > 20 && <li className="text-xs text-zinc-500">and {legacy.length - 20} more</li>}
+          </ul>
+        )}
         {save.isError && <p className="text-sm text-red-600">The setting was not saved: {(save.error as Error)?.message || "try again"}</p>}
       </div>
     </SectionCard>
@@ -811,4 +1026,51 @@ function Detail({ label, value, wide }: { label: string; value: string | null | 
       <dd className="text-zinc-900 dark:text-white break-words">{value || "—"}</dd>
     </div>
   );
+}
+
+/** The reported version, and "Update available" when the node is not running this server's node build (B6-1). */
+function NodeVersion({ node }: { node: CbomScanNode }) {
+  const badge = nodeUpdateBadge(node.update);
+  return (
+    <span className="inline-flex flex-col items-start gap-1" data-testid={`node-version-${node.id}`}>
+      <span>{node.node_version ?? "—"}</span>
+      {badge && (
+        <StatusBadge tone={badge.tone} title={badge.message}>
+          {badge.label}
+        </StatusBadge>
+      )}
+      {badge && <span className="text-xs text-zinc-500">{badge.short}</span>}
+    </span>
+  );
+}
+
+/** #197: the registry image the wizard would install, when it is not this server's node build. A stale one (older,
+ * another commit, or a release tag written once) is not installed: the commands use this server's image file. A
+ * moving tag (:staging) is installed, with a note that it is not pinned. */
+function RegistryImageNotice({ registry, nodeBuild }: { registry: RegistryImage | null; nodeBuild: string | null }) {
+  const f = registry?.freshness;
+  if (!registry || !f?.message) return null;
+  if (registry.stale) {
+    return (
+      <div role="alert" data-testid="node-image-stale"
+        className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
+        <p className="font-medium">
+          The registry image is not this server&apos;s scan node release, so it is not offered. <InfoTip id="cbsrc.nodes.registry_stale" />
+        </p>
+        <p className="mt-1">{f.message}</p>
+        <p className="mt-1">
+          The commands below install this server&apos;s image file instead{nodeBuild ? <> (scan node <span className="font-mono">{nodeBuild}</span>)</> : null}:
+          it signs every request, reads ZS_CA_FILE and passes the Helm readiness probe.
+        </p>
+      </div>
+    );
+  }
+  if (f.state === "moving") {
+    return (
+      <p className="mt-3 text-xs text-zinc-600 dark:text-zinc-400" data-testid="node-image-moving">
+        {f.message} After installing, Scan nodes shows whether the node runs{nodeBuild ? <> <span className="font-mono">{nodeBuild}</span></> : " this server's build"}.
+      </p>
+    );
+  }
+  return null;
 }

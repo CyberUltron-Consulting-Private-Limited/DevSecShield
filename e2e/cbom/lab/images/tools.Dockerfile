@@ -29,7 +29,7 @@ RUN --mount=type=secret,id=build_ca,required=false \
       softhsm=2.6.1-r6 \
       opensc=0.26.0-r0 \
       gnutls-utils=3.8.13-r0 \
-      postgresql16-client=16.15-r0 \
+      postgresql16-client=16.16-r0 \
       kubectl=1.33.1-r5 \
  && addgroup -g 10001 cblab \
  && adduser -D -u 10001 -G cblab -h /home/cblab cblab

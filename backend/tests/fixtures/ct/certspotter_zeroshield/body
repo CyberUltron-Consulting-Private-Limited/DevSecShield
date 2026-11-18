@@ -1,0 +1,694 @@
+[
+	{
+		"id": "16738190599",
+		"tbs_sha256": "cc2ddcc03e483cbc806820376ab51251428dc5b759f3cf227e82d0fcb1469662",
+		"cert_sha256": "ca5369cf9a5b90c323e6127193f277f3f15f94a54d0ea2421c05766b12999e02",
+		"dns_names": [
+			"devsecshield.zeroshield.ai",
+			"devsecshieldapi.zeroshield.ai"
+		],
+		"pubkey_sha256": "b16cad5e53924f0a92b7856b6648c61fa2756119f537380db8284ebcb05731cf",
+		"pubkey": {
+			"type": "ecdsa",
+			"curve": "P-256"
+		},
+		"issuer": {
+			"friendly_name": "Let's Encrypt",
+			"pubkey_sha256": "b3fb5d00e994cddf2cc9a4eea9f806bc5727e83cc0e4299bf956f2d524fe5376",
+			"name": "C=US, O=Let's Encrypt, CN=YE2"
+		},
+		"not_before": "2026-08-24T09:54:10Z",
+		"not_after": "2026-11-22T09:54:09Z",
+		"revoked": false,
+		"revocation": {
+			"time": null,
+			"reason": null,
+			"checked_at": "2026-11-12T14:49:12Z"
+		},
+		"cert_der": "MIIDwTCCA0egAwIBAgISBrh09f87ZGZ462tHppUrOVukMAoGCCqGSM49BAMDMDMxCzAJBgNVBAYTAlVTMRYwFAYDVQQKEw1MZXQncyBFbmNyeXB0MQwwCgYDVQQDEwNZRTIwHhcNMjYwODI0MDk1NDEwWhcNMjYxMTIyMDk1NDA5WjAlMSMwIQYDVQQDExpkZXZzZWNzaGllbGQuemVyb3NoaWVsZC5haTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABA2P19mp7fw/kgNqqtoicYoUEEZCOWwa3a5CQ7Xse84Ie4A/1ZkJlg8Wsg0FH9BWLP9D0eq8RN4OzR0+P2R4qPijggJHMIICQzAOBgNVHQ8BAf8EBAMCB4AwEwYDVR0lBAwwCgYIKwYBBQUHAwEwDAYDVR0TAQH/BAIwADAdBgNVHQ4EFgQUU7bLWZgVg9KF+OSfSi5OKVtRBG8wHwYDVR0jBBgwFoAUuVnyjs8i8IbTN0j/dhQYuoLYVYcwMwYIKwYBBQUHAQEEJzAlMCMGCCsGAQUFBzAChhdodHRwOi8veWUyLmkubGVuY3Iub3JnLzBEBgNVHREEPTA7ghpkZXZzZWNzaGllbGQuemVyb3NoaWVsZC5haYIdZGV2c2Vjc2hpZWxkYXBpLnplcm9zaGllbGQuYWkwEwYDVR0gBAwwCjAIBgZngQwBAgEwLgYDVR0fBCcwJTAjoCGgH4YdaHR0cDovL3llMi5jLmxlbmNyLm9yZy8zNy5jcmwwggEMBgorBgEEAdZ5AgQCBIH9BIH6APgAdgDLOPcViXyEoURfW8Hd+8lu8ppZzUcKaQWFsMsUwxRY5wAAAaAzZqY7AAAEAwBHMEUCIQDmz/OBt8O/hEI+SteNmxz/zmndYF7t4tWxZ0SwbTX/TQIgQfeth7xcp3f58MSj3jIOXyb1I9Gt1PcYR2n8aOqIYioAfgAai51rD/6/gbR5OcbSMQqG1tEC1PBG4hgsneNfXiYl7wAAAaAzZqobAAgAAAUAODMKLQQDAEcwRQIgbEpgw0iwCkIRDVB/h1410iOTVy/e2F0vklLH7NXqqPgCIQCRp1MamRh8SA0hxgx2vty9Ju80gIdSdhGTOW0N8sd1ijAKBggqhkjOPQQDAwNoADBlAjBMvrQXiaG7w2Euc49v2QV7FJFxGF454YolMlXHE9K0347ldgvqQCjwIMbnQhjLavACMQCv1+8PTSe5lvu0Cy13NmBf6dMGnJwdmNMThRjW66IIyOTxMrewCIWqfLzewe5K3Vo="
+	},
+	{
+		"id": "16771658307",
+		"tbs_sha256": "c51d1f3730280b5984de24ade4809d90d7bb24f1e3b582cbe1fb40b7f0441b56",
+		"cert_sha256": "604cbdbe678e30970854e79466b0e16785db1dea1cc8bbe79facf7a8409e6186",
+		"dns_names": [
+			"aimeshbackend.zeroshield.ai",
+			"aimeshfirewall.zeroshield.ai",
+			"aimeshgateway.zeroshield.ai"
+		],
+		"pubkey_sha256": "fda16a52b82fe8a3edd76424e9651f299485fac46132e8d8cc030b1475f220e9",
+		"pubkey": {
+			"type": "rsa",
+			"bit_length": 2048
+		},
+		"issuer": {
+			"friendly_name": "Google Trust Services",
+			"pubkey_sha256": "39d4a59900fd356261e046dc387071921ca03f0352c00f50f757a8ba77db7281",
+			"name": "C=US, O=Google Trust Services, CN=WR3"
+		},
+		"not_before": "2026-08-25T15:22:41Z",
+		"not_after": "2026-11-23T16:16:55Z",
+		"revoked": false,
+		"revocation": {
+			"time": null,
+			"reason": null,
+			"checked_at": "2026-11-12T14:47:42Z"
+		},
+		"cert_der": "MIIFVDCCBDygAwIBAgIQIp9D1khhv94KgpCIP1/OHDANBgkqhkiG9w0BAQsFADA7MQswCQYDVQQGEwJVUzEeMBwGA1UEChMVR29vZ2xlIFRydXN0IFNlcnZpY2VzMQwwCgYDVQQDEwNXUjMwHhcNMjYwODI1MTUyMjQxWhcNMjYxMTIzMTYxNjU1WjAnMSUwIwYDVQQDExxhaW1lc2hmaXJld2FsbC56ZXJvc2hpZWxkLmFpMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAgiyO4ibH0y/hHPjSi668G/XlwDB7eDE22RFCyZwDxzFRAMlM5bMXBA5XBCNwWsodV4rhkgOXUA0CtBZI2Aaq+gLxbvYDTxtK/FsbIawNA37CGItCZ7xkUu2hygTbvecBSwdcKPkdq7buEbnD5OxdVPGtYrbhwxNlmbCVfDhQK8MbK727adkgGzRcmPlfKCSio95RWBYkvxXVqoAuYLiXIEYi2jEgVOYiuLZkGnEOi7ccylCkAlnE7JLMYPwmVU2rQ0i8vag7QWuIKtrqTPcaJPuMVhsARY3w/WicwWJLalKTrHvEk/cT3jNqAG+PlTTgE14SL1ObW91aS5STTAmfCQIDAQABo4ICZjCCAmIwDgYDVR0PAQH/BAQDAgWgMBMGA1UdJQQMMAoGCCsGAQUFBwMBMAwGA1UdEwEB/wQCMAAwHQYDVR0OBBYEFDAD+XpQDxdXuNuP5tzuTNscKRKtMB8GA1UdIwQYMBaAFMeB9f2OiNkAPE1jolAxJKDOI/4jMDUGCCsGAQUFBwEBBCkwJzAlBggrBgEFBQcwAoYZaHR0cDovL2kucGtpLmdvb2cvd3IzLmNydDBhBgNVHREEWjBYghxhaW1lc2hmaXJld2FsbC56ZXJvc2hpZWxkLmFpghthaW1lc2hiYWNrZW5kLnplcm9zaGllbGQuYWmCG2FpbWVzaGdhdGV3YXkuemVyb3NoaWVsZC5haTATBgNVHSAEDDAKMAgGBmeBDAECATA2BgNVHR8ELzAtMCugKaAnhiVodHRwOi8vYy5wa2kuZ29vZy93cjMvZDJaRmswN1VULXMuY3JsMIIBBAYKKwYBBAHWeQIEAgSB9QSB8gDwAHUAwjF+V0UZo0XufzjespBB68fCIVoiv3/Vta12mtkOUs0AAAGgObsqUgAABAMARjBEAiAkkAYTwTyxPgstB/NBI2cIn2btmGuax9p/Taym1u8SXQIgaKvuheeGRX8pvn3/S+DrC8egR84OodMX8x37AuwINxEAdwDXbX0Q0af1d8LH6V/XAL/5gskzWmXh0LMBcxfAyMVpdwAAAaA5uyrxAAAEAwBIMEYCIQCclzwxZ302+LJm3QCCh0Ed67c9ShMxbfItMLp9A770QgIhAJRhGE7BbbbJzNSJQy3iex8z5owqxUCML5YsG8ogEL2yMA0GCSqGSIb3DQEBCwUAA4IBAQBsVF12zIux99f3zV5xOiyaC/mMkfYatlxSkYNfRxtbfzz0DDp0Mfxz/H5XoFMb5PLMJJcIlzwbcbC1ul6+IYtNUJwSDHq7ipzSmSO1p0FAvhDp0xLdtAgFAXtPboNWcZg2tORN7/S7aljeDPwYmhb+xknyQuw14pbjDftmyG8OkAe3NJkx8vi0DyENtHB0F7YNNHOJC9wAr6Tj2olWF8t++CJZMxI8k7itpUcGIom95wVCTP4P4U2rlfzDCrXO05C+iOYKlQIIZIDZUzd2WP0Gj/Xz38qRXqm/0ZobEUQ48djJhQ0OZozsrQUEvEF6/OdqAfTCew5J03Yzo3ou7Rja"
+	},
+	{
+		"id": "16894468682",
+		"tbs_sha256": "e9896193e65eb7e8b18569fb67f12bf94a50ff47f719a03a1f1bb7bc77b16937",
+		"cert_sha256": "344f3a9793ed85bd4a8ca4048344135c10984a54de02c52acecf05657979eb8d",
+		"dns_names": [
+			"dpdplawshield.zeroshield.ai"
+		],
+		"pubkey_sha256": "bbdd71febbfd8af32b5ced1dbba37600123a0628957c3d13f7d0d3133a2a4afe",
+		"pubkey": {
+			"type": "rsa",
+			"bit_length": 2048
+		},
+		"issuer": {
+			"friendly_name": "Let's Encrypt",
+			"pubkey_sha256": "2e8307068b6db620e4a39d068b5dee5d6ef5788cbb2c0b6d23ead84fcc17178c",
+			"name": "C=US, O=Let's Encrypt, CN=YR1"
+		},
+		"not_before": "2026-08-30T22:55:46Z",
+		"not_after": "2026-11-28T22:55:45Z",
+		"revoked": false,
+		"revocation": {
+			"time": null,
+			"reason": null,
+			"checked_at": "2026-11-12T14:49:14Z"
+		},
+		"cert_der": "MIIFDzCCA/egAwIBAgISBkSzATsTvGkuLRBEXHLEY0lTMA0GCSqGSIb3DQEBCwUAMDMxCzAJBgNVBAYTAlVTMRYwFAYDVQQKEw1MZXQncyBFbmNyeXB0MQwwCgYDVQQDEwNZUjEwHhcNMjYwODMwMjI1NTQ2WhcNMjYxMTI4MjI1NTQ1WjAmMSQwIgYDVQQDExtkcGRwbGF3c2hpZWxkLnplcm9zaGllbGQuYWkwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCsfMluTWj22EIM+fwQHA8PFGBtg7bvK1lpmvjxipEFdcUrMGHvGiTW4Z+s4+Ivhb1kBKwx95yhbwFwpEvrs0W+pGbFZ5BxqYcf5KQs+6L+UqmfbYAmAAVj+usVoyMj0XXhbsrbiwXEbHf17BzBSivUR2jvTVOpS4ZwVevDzkgqwMifPdcRpsqR9Ek9kbKstCIiR6PpJVjBDwH0zUE684TebtxjuA0I4nAmbHBbZvttT/jdasnYNG5tJAvK2QbvX16wfingCNWJr45mISDClhGwRCKejG/c2IWFjWir4NTYFMmNJ4zpplhC9W8hf/lP211qum1gM1uJBSjJOtPbbCGvAgMBAAGjggIoMIICJDAOBgNVHQ8BAf8EBAMCBaAwEwYDVR0lBAwwCgYIKwYBBQUHAwEwDAYDVR0TAQH/BAIwADAdBgNVHQ4EFgQUMxtM92W1g0bovz0vwEY6MSOMUmYwHwYDVR0jBBgwFoAUHy81vkYUgs1Asa55LFV4+vfUaPswMwYIKwYBBQUHAQEEJzAlMCMGCCsGAQUFBzAChhdodHRwOi8veXIxLmkubGVuY3Iub3JnLzAmBgNVHREEHzAdghtkcGRwbGF3c2hpZWxkLnplcm9zaGllbGQuYWkwEwYDVR0gBAwwCjAIBgZngQwBAgEwLgYDVR0fBCcwJTAjoCGgH4YdaHR0cDovL3lyMS5jLmxlbmNyLm9yZy84NC5jcmwwggELBgorBgEEAdZ5AgQCBIH8BIH5APcAdQDYCVU7lE96/8gWGW+UT4WrsPj8XodVJg8V0S5yu0VLFAAAAaBVGGIPAAAEAwBGMEQCIDJMoGQUPICGOLgt+YVbhYc7TUtF+31hy5FqWbHScw8AAiBVG2dFxveeJ+ylE9bRgvlhYCXE+v3U8bJCWC1zeUBa4wB+AGz+UBlDqF6pFrxS0TPk3Mke8UEcfSWEINFzgJ4YGOs6AAABoFUYZEgACAAABQAqjzLhBAMARzBFAiAq3yQKOBZ8NLJJvd2CKqJ2Aqcz0qfILOq2D+yI87zc/wIhAJVVdzyuOCsj2IUYdSR0mYsDNu/dWC3cpKr6C00OcVZkMA0GCSqGSIb3DQEBCwUAA4IBAQCBn+4fk8uTvI9FUEhyODNsgrRG4QWRhoXqpwGa9NCbjKeoLwOTgdNC4GSSKbjx8FHeho0ZS3XOFfb3wOv9GVGMNzt5/01ywGyuUusMLN1VLv8vni1jrs4NG/WXDJi3lpbSKlV6UH46HyqrbO95fUEp/XXr53LytWeJ2kaEE55E8fTZczmxkCqOF8BPgxYZ0j7Hii5UibFbNebQh+1Ok/G5QDrClDnGrd61c0D7DEpw/OrgLHlvSoJKpM5HNxnfWDc1HIpxzimff9gzgEXV9ksAcHjzQ2enMEV49Q8VJflvzWsi0wB+y6VkqdluHfc1RYBI5Czm5ASD4aju7HVPR451"
+	},
+	{
+		"id": "16987606040",
+		"tbs_sha256": "d03a99df541096e7ffb852f115f22b3ffeeafdb52d536b54bf7405126391e91f",
+		"cert_sha256": "006c5e8a6016124b0a4b5fd8345281912841cdc86e86a91c927d0a092be83949",
+		"dns_names": [
+			"aisecshield.zeroshield.ai",
+			"aisecshieldbackend.zeroshield.ai",
+			"aisecshieldgateway.zeroshield.ai"
+		],
+		"pubkey_sha256": "1f37cf5fc1f35c8abefcb14fd6b0a47155b20b7f41ffe16897e6b389108a71b5",
+		"pubkey": {
+			"type": "rsa",
+			"bit_length": 2048
+		},
+		"issuer": {
+			"friendly_name": "Google Trust Services",
+			"pubkey_sha256": "39d4a59900fd356261e046dc387071921ca03f0352c00f50f757a8ba77db7281",
+			"name": "C=US, O=Google Trust Services, CN=WR3"
+		},
+		"not_before": "2026-09-04T17:20:01Z",
+		"not_after": "2026-12-03T18:02:08Z",
+		"revoked": false,
+		"revocation": {
+			"time": null,
+			"reason": null,
+			"checked_at": "2026-11-12T14:47:42Z"
+		},
+		"cert_der": "MIIEZTCCA02gAwIBAgIQEjjlLXhJ2ocSobrD/UEjbDANBgkqhkiG9w0BAQsFADA7MQswCQYDVQQGEwJVUzEeMBwGA1UEChMVR29vZ2xlIFRydXN0IFNlcnZpY2VzMQwwCgYDVQQDEwNXUjMwHhcNMjYwOTA0MTcyMDAxWhcNMjYxMjAzMTgwMjA4WjAkMSIwIAYDVQQDExlhaXNlY3NoaWVsZC56ZXJvc2hpZWxkLmFpMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtLzJ/EskBc79AmqPJaMdnZSuIULdWynayy3apfSbWgGFirwqlZMRghrbKuc+SiE7Qix6LFE2Y8XAc80aPPC3F4dQ9hkAnJJzLYhDgNnPkbliGMaCIFW3aHmy954b6pU70CZsv3r/YAu3NkjuzGU2iYWUbK0g3M8wXvlWEYIFz0fum4OtgZAPL8u5zds9MZkyP6BtYSR94tKjREV4p2Xw+1zzcCgITaHTjWaP835UlWQ1E2KEaXCZyAOA10ATziqO8utwGdVe9QGSboa3MVMivZtSyd1LmA3VWd5zUhOemn9Wj2xOs15pNGPg+jd6yLBbFjTbnu/IxXo7RNM3ZS50zwIDAQABo4IBejCCAXYwDgYDVR0PAQH/BAQDAgWgMBMGA1UdJQQMMAoGCCsGAQUFBwMBMAwGA1UdEwEB/wQCMAAwHQYDVR0OBBYEFNZ5q1LUDHYbwRrrMbKM7vcUso7sMB8GA1UdIwQYMBaAFMeB9f2OiNkAPE1jolAxJKDOI/4jMDUGCCsGAQUFBwEBBCkwJzAlBggrBgEFBQcwAoYZaHR0cDovL2kucGtpLmdvb2cvd3IzLmNydDBoBgNVHREEYTBfghlhaXNlY3NoaWVsZC56ZXJvc2hpZWxkLmFpgiBhaXNlY3NoaWVsZGJhY2tlbmQuemVyb3NoaWVsZC5haYIgYWlzZWNzaGllbGRnYXRld2F5Lnplcm9zaGllbGQuYWkwEwYDVR0gBAwwCjAIBgZngQwBAgEwNgYDVR0fBC8wLTAroCmgJ4YlaHR0cDovL2MucGtpLmdvb2cvd3IzL1Q5dkYzbGdxVHdBLmNybDATBgorBgEEAdZ5AgQDAQH/BAIFADANBgkqhkiG9w0BAQsFAAOCAQEAekk9MxwBdBrMMDbiheMFZMgUsbe1HUxJwi3+1tdyk41zrq0kVMl21Dmkaw77bhWCD4axBpNSDQPU76K/Ou7gGG5/moh0bFGhxrn4PiGNqDokl158HumF5iPXmB7NpmE6S+M30c3vfGmY6IWgGOe3nP1THylin64efoKLKZXi+maSwD8iD63kpOVJyFL3CUgifVpG8GXWmlTQxNU1tfkmDLhKh+Si1z6szHuOx/XQDtEi3e19x31/Q/kWx5BqZ/LrSrCh4Xr0adr62PZ3SAG5Vlwgf0K3V6ULaIwN9ophKomrEPASKsiSWG6Z4jnX/hS6iCCTMYMqQdWtVh+uFfv6xQ=="
+	},
+	{
+		"id": "17120310860",
+		"tbs_sha256": "753dc56f25c0da187afb734f604f0b9af619c8abd1dba92f5bfe4e4eb6d65694",
+		"cert_sha256": "0533592d4a1bd16176235446b1505a61f22d9cb7ccead18db926f1661d6a7749",
+		"dns_names": [
+			"threatshieldbackend.zeroshield.ai"
+		],
+		"pubkey_sha256": "267da76f90f5f43ade83febc6c85d8561e0c0cc55566d2db2c1c5ab3d741512e",
+		"pubkey": {
+			"type": "ecdsa",
+			"curve": "P-256"
+		},
+		"issuer": {
+			"friendly_name": "Let's Encrypt",
+			"pubkey_sha256": "6ebcefb4210b088654a38b03fea3d7d1c711b4fb1ddc363a45f9b1a4e53da01e",
+			"name": "C=US, O=Let's Encrypt, CN=YE1"
+		},
+		"not_before": "2026-09-11T12:32:01Z",
+		"not_after": "2026-12-10T12:32:00Z",
+		"revoked": false,
+		"revocation": {
+			"time": null,
+			"reason": null,
+			"checked_at": "2026-11-12T14:49:23Z"
+		},
+		"cert_der": "MIIDrjCCAzWgAwIBAgISBnFSSE4YmHAfWTFqO0yDKFw1MAoGCCqGSM49BAMDMDMxCzAJBgNVBAYTAlVTMRYwFAYDVQQKEw1MZXQncyBFbmNyeXB0MQwwCgYDVQQDEwNZRTEwHhcNMjYwOTExMTIzMjAxWhcNMjYxMjEwMTIzMjAwWjAsMSowKAYDVQQDEyF0aHJlYXRzaGllbGRiYWNrZW5kLnplcm9zaGllbGQuYWkwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAQzuOBPtrTGv2ASzoGrrzMLYBCBHnNrVLUbotbdlXT8kVucO8ICxVrguuvqOWbNdOWwlIDyw1KEXEhh0G7Nrcqho4ICLjCCAiowDgYDVR0PAQH/BAQDAgeAMBMGA1UdJQQMMAoGCCsGAQUFBwMBMAwGA1UdEwEB/wQCMAAwHQYDVR0OBBYEFDcfnG2m18yTIqyv+bH9J7TMICKxMB8GA1UdIwQYMBaAFLsgykcL/tflnPmPCSqjjDdFsbzYMDMGCCsGAQUFBwEBBCcwJTAjBggrBgEFBQcwAoYXaHR0cDovL3llMS5pLmxlbmNyLm9yZy8wLAYDVR0RBCUwI4IhdGhyZWF0c2hpZWxkYmFja2VuZC56ZXJvc2hpZWxkLmFpMBMGA1UdIAQMMAowCAYGZ4EMAQIBMC4GA1UdHwQnMCUwI6AhoB+GHWh0dHA6Ly95ZTEuYy5sZW5jci5vcmcvNTQuY3JsMIIBCwYKKwYBBAHWeQIEAgSB/ASB+QD3AHYAlE5Dh/rswe+B8xkkJqgYZQHH0184AgE/cmd9VTcuGdgAAAGgkKmjhQAABAMARzBFAiAwH9e8CajMCQAcM9/tiWTEiLfQ0PTRL8Yx/NvtyRAytQIhAKXT+bnMG9fd41Jqenw1A/BgaF8qkEaPr8kX6ZNfg6ZTAH0ARq+GPTs+5Z+ld96oJF02sNntIqIj9GF3QSKUUu6VUF8AAAGgkKmjyAAIAAAFACtZ4+oEAwBGMEQCIDDsi7LXXfMloNBwltMufbdn1tr2rrZudkTi5y95JnxEAiAPL5G3E+OjELPUfoXAvwRicU+yyzxth0w7/BDbfg8rEDAKBggqhkjOPQQDAwNnADBkAjBVhJ3bzIfwuiGL/sOeCJgo8rH/+tzHNMzOuKHhIcl+q2jBEjugv/I/Igkkf4ik8MoCMC8XtuHiL9L4b86rn0qUPuS9+YT4Ipoy5OSj0hPUESV8AjCKkVbLVpsAECGokEaCWg=="
+	},
+	{
+		"id": "17120323737",
+		"tbs_sha256": "4ec0b1fe2f4ca561dc6150cb2c4529c122a5154eb1dee67bb8cfe2047ea21fe9",
+		"cert_sha256": "bf1d9ae5105d2722d46861f613065ac677de51fc0567faa2f11d1e1a94d8e480",
+		"dns_names": [
+			"threatshield.zeroshield.ai"
+		],
+		"pubkey_sha256": "44fe8d3f9863909a23f94eb2bda5258efcc2addc590620fb3d32b933919c7caa",
+		"pubkey": {
+			"type": "ecdsa",
+			"curve": "P-256"
+		},
+		"issuer": {
+			"friendly_name": "Let's Encrypt",
+			"pubkey_sha256": "b3fb5d00e994cddf2cc9a4eea9f806bc5727e83cc0e4299bf956f2d524fe5376",
+			"name": "C=US, O=Let's Encrypt, CN=YE2"
+		},
+		"not_before": "2026-09-11T12:32:01Z",
+		"not_after": "2026-12-10T12:32:00Z",
+		"revoked": false,
+		"revocation": {
+			"time": null,
+			"reason": null,
+			"checked_at": "2026-11-12T14:49:12Z"
+		},
+		"cert_der": "MIIDoTCCAyegAwIBAgISBtDd5wXFYjriw/MymnO1J0meMAoGCCqGSM49BAMDMDMxCzAJBgNVBAYTAlVTMRYwFAYDVQQKEw1MZXQncyBFbmNyeXB0MQwwCgYDVQQDEwNZRTIwHhcNMjYwOTExMTIzMjAxWhcNMjYxMjEwMTIzMjAwWjAlMSMwIQYDVQQDExp0aHJlYXRzaGllbGQuemVyb3NoaWVsZC5haTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABCXqOqWlE0/fjW49mM3vFh3VJTEOKm+RkaQBDU/Sv9MdZqNps8UqEL500jT9QAIonVS8QV0GuiBoifLHIJlcY7qjggInMIICIzAOBgNVHQ8BAf8EBAMCB4AwEwYDVR0lBAwwCgYIKwYBBQUHAwEwDAYDVR0TAQH/BAIwADAdBgNVHQ4EFgQUkyF16uyg7Xq/3rH/j7MzdpPzX3EwHwYDVR0jBBgwFoAUuVnyjs8i8IbTN0j/dhQYuoLYVYcwMwYIKwYBBQUHAQEEJzAlMCMGCCsGAQUFBzAChhdodHRwOi8veWUyLmkubGVuY3Iub3JnLzAlBgNVHREEHjAcghp0aHJlYXRzaGllbGQuemVyb3NoaWVsZC5haTATBgNVHSAEDDAKMAgGBmeBDAECATAuBgNVHR8EJzAlMCOgIaAfhh1odHRwOi8veWUyLmMubGVuY3Iub3JnLzMxLmNybDCCAQsGCisGAQQB1nkCBAIEgfwEgfkA9wB1AMs49xWJfIShRF9bwd37yW7ymlnNRwppBYWwyxTDFFjnAAABoJCppOoAAAQDAEYwRAIgWqfa5+7rdHjclwkYeYC1Xa5oPc7g2A/N5+RRxej3CMUCIHoDNcLQTYJgxTj9t/v+kyX54lTwyBSzRIAI1bwL870RAH4AbP5QGUOoXqkWvFLRM+TcyR7xQRx9JYQg0XOAnhgY6zoAAAGgkKmmqwAIAAAFADLbQkMEAwBHMEUCIQD5iOI53+shkfOG+Zvjgtkw+vdWjENsuM01SwmMEk0iMwIgNqr9dBFSC+BsfJvrr2P+PA2vaU3ZLhJ2u9H2rO6i/SMwCgYIKoZIzj0EAwMDaAAwZQIxAKSZ9S2h+XKrdCvbFnO2RMDx/eC7O4EwOut4+O0dGf5sJbAZMORUGr14svJgfXqf7QIwfWAmWaCOrmXHRF6xvccBpDmiKRi21WNnyRmX+6TrcaMRE9ww4wGWrythr6HAJWYb"
+	},
+	{
+		"id": "17253617342",
+		"tbs_sha256": "28bc64cc112183ed1c5e38030fa8f872d44a59b1536346ffd194f4ddd2b4571d",
+		"cert_sha256": "15f2b48c3e0c8f5e8797b5e656c037fcac260e512a03fa3c83a38d2da3e59e18",
+		"dns_names": [
+			"docs.zeroshield.ai"
+		],
+		"pubkey_sha256": "6759cebc40bec9327def75006ecb94768b5a3cc2deb621a5c8ab4debcd1e0a95",
+		"pubkey": {
+			"type": "rsa",
+			"bit_length": 2048
+		},
+		"issuer": {
+			"friendly_name": "Google Trust Services",
+			"pubkey_sha256": "c83bbda20db9e4d3791847fe0706bdad3aea150d04c9d674af514287d4dd016e",
+			"name": "C=US, O=Google Trust Services, CN=WR1"
+		},
+		"not_before": "2026-09-18T09:21:36Z",
+		"not_after": "2026-12-17T10:20:25Z",
+		"revoked": false,
+		"revocation": {
+			"time": null,
+			"reason": null,
+			"checked_at": "2026-11-12T14:47:43Z"
+		},
+		"cert_der": "MIIEFDCCAvygAwIBAgIRAM6L75xxoiHAE31QHy/ISOAwDQYJKoZIhvcNAQELBQAwOzELMAkGA1UEBhMCVVMxHjAcBgNVBAoTFUdvb2dsZSBUcnVzdCBTZXJ2aWNlczEMMAoGA1UEAxMDV1IxMB4XDTI2MDkxODA5MjEzNloXDTI2MTIxNzEwMjAyNVowHTEbMBkGA1UEAxMSZG9jcy56ZXJvc2hpZWxkLmFpMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0boUcw1YkBmJqj3fga+kl9fe0Fvuzt9RxQ5JlP/h66ig+Mx1XDSQmco6gXTrrwb589lk+JBI9h9VG/9uIhN6VpxholKcNfdjC3fuBYwqsm5dG3buIbhHnoD2/N57Wsasia91T11trbZpQn11dApXixde/3pziRNg1BLjk1KD5RC0Nfzfwf4GFBaVDB9meOcun7GBCdT3aEQFPDNnodOiVrs+WoyqVmNzBVAL3LD3fUZNObgHpLbNfH/INtFNHqBKgYHWBLXpcxJEKn41lQJ+dWRmoJ4q0FYfQNvFYNIY91nd5wv/jKiC1haRtS4r4z6zyM10Vu4jOXgqD5p7kQIHwQIDAQABo4IBLzCCASswDgYDVR0PAQH/BAQDAgWgMBMGA1UdJQQMMAoGCCsGAQUFBwMBMAwGA1UdEwEB/wQCMAAwHQYDVR0OBBYEFP7aC2xA5NSuwQoIUISrW1ppM7F0MB8GA1UdIwQYMBaAFGZpSdTeKpyRA8+JDiS4DjADboguMDUGCCsGAQUFBwEBBCkwJzAlBggrBgEFBQcwAoYZaHR0cDovL2kucGtpLmdvb2cvd3IxLmNydDAdBgNVHREEFjAUghJkb2NzLnplcm9zaGllbGQuYWkwEwYDVR0gBAwwCjAIBgZngQwBAgEwNgYDVR0fBC8wLTAroCmgJ4YlaHR0cDovL2MucGtpLmdvb2cvd3IxL2xuOFVDQW9aNG9rLmNybDATBgorBgEEAdZ5AgQDAQH/BAIFADANBgkqhkiG9w0BAQsFAAOCAQEARF4YnMKo9SH0P8jGncMJ0/7fWBe/gQroTH1zTy1UZJAgnSjmfHDaM15bbmFmG+NN4z/9US90XP8ckB/rPmor04zVGrH3adrZ+K1+i57H1BOt+vl8ottUHzGw759cz56Q4UDSuCpdNCVxw+AiKg2cyJjyFNs+P2Fvula19HOEOjrzWRstv2p8gFQ8hhIek/8VVLc3lreXby+o3Or55yHn0EBxXjmZQtF6JYTl3Lf2jaDs0IZ/vkznMDvFA8iGDAGWChtoIub4rMticE2VD4f51QcU3GvDBCLPNWX/OubdrsRz7SNtgdW9aaLJQkyrBserqWyZomVJweXWQ5Zu+xVfsw=="
+	},
+	{
+		"id": "17253619324",
+		"tbs_sha256": "fb462417534df4a47677a776a7d36bc3afb36d4d565f34dabb6d4821694a047f",
+		"cert_sha256": "be42d4e635cdcdca57bad123351ca2ce56b4832b80226dd5fbf73ee811ccd3b6",
+		"dns_names": [
+			"docs.zeroshield.ai"
+		],
+		"pubkey_sha256": "a3bbb7ce34dc07190a440e98e2506959bf793e64811beaaa134c9fef48f58898",
+		"pubkey": {
+			"type": "ecdsa",
+			"curve": "P-256"
+		},
+		"issuer": {
+			"friendly_name": "Google Trust Services",
+			"pubkey_sha256": "908769e8d34477cc2cba0632c88605b22d7294c0840f78596d247c645b1afc0e",
+			"name": "C=US, O=Google Trust Services, CN=WE1"
+		},
+		"not_before": "2026-09-18T09:21:47Z",
+		"not_after": "2026-12-17T10:21:42Z",
+		"revoked": false,
+		"revocation": {
+			"time": null,
+			"reason": null,
+			"checked_at": "2026-11-12T14:47:42Z"
+		},
+		"cert_der": "MIIChzCCAi2gAwIBAgIQV+WpfgY5AtQOdHHF5fXvMzAKBggqhkjOPQQDAjA7MQswCQYDVQQGEwJVUzEeMBwGA1UEChMVR29vZ2xlIFRydXN0IFNlcnZpY2VzMQwwCgYDVQQDEwNXRTEwHhcNMjYwOTE4MDkyMTQ3WhcNMjYxMjE3MTAyMTQyWjAdMRswGQYDVQQDExJkb2NzLnplcm9zaGllbGQuYWkwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAT9og9Om3hENVWzDSq3fXAr3oQjNz/lMrHYYWMO4gosI35e6ya944Tpdf+lWlqo7CYsN5eaTi94UAYs94C+ZyKno4IBLzCCASswDgYDVR0PAQH/BAQDAgeAMBMGA1UdJQQMMAoGCCsGAQUFBwMBMAwGA1UdEwEB/wQCMAAwHQYDVR0OBBYEFPLdoFPFbixpSk+lSdu3bJuZQDcyMB8GA1UdIwQYMBaAFJB3kjVnxP+ozKnme9mAeXvMk/k4MDUGCCsGAQUFBwEBBCkwJzAlBggrBgEFBQcwAoYZaHR0cDovL2kucGtpLmdvb2cvd2UxLmNydDAdBgNVHREEFjAUghJkb2NzLnplcm9zaGllbGQuYWkwEwYDVR0gBAwwCjAIBgZngQwBAgEwNgYDVR0fBC8wLTAroCmgJ4YlaHR0cDovL2MucGtpLmdvb2cvd2UxL3FQUmNVN0RUWDNFLmNybDATBgorBgEEAdZ5AgQDAQH/BAIFADAKBggqhkjOPQQDAgNIADBFAiEAuuEnqXv8Phpev3fioM7WRTaTQiEW0dNP+HkyLIrAuJYCIGpGbQv1UnURrPkrO0QeIcXoxyLzX4Js/XivNyjWhlFL"
+	},
+	{
+		"id": "17253822306",
+		"tbs_sha256": "40650e525938462599bed84731f83555840ab0ef28e62964e5608bcdc38fb7a1",
+		"cert_sha256": "4e014fc46e31d4d3f5c35cea61bb8d595782ca6d6d3a35bef662752a33a221be",
+		"dns_names": [
+			"docs.zeroshield.ai"
+		],
+		"pubkey_sha256": "dda466fa97ac41ed30fe56c1f76c51892e9066da5b9be128e44390667a07d0fe",
+		"pubkey": {
+			"type": "rsa",
+			"bit_length": 2048
+		},
+		"issuer": {
+			"friendly_name": "Google Trust Services",
+			"pubkey_sha256": "c83bbda20db9e4d3791847fe0706bdad3aea150d04c9d674af514287d4dd016e",
+			"name": "C=US, O=Google Trust Services, CN=WR1"
+		},
+		"not_before": "2026-09-18T09:37:08Z",
+		"not_after": "2026-12-17T10:37:02Z",
+		"revoked": false,
+		"revocation": {
+			"time": null,
+			"reason": null,
+			"checked_at": "2026-11-12T14:47:43Z"
+		},
+		"cert_der": "MIIEEzCCAvugAwIBAgIQBV8udUi4L5cTo1xrqIkv/zANBgkqhkiG9w0BAQsFADA7MQswCQYDVQQGEwJVUzEeMBwGA1UEChMVR29vZ2xlIFRydXN0IFNlcnZpY2VzMQwwCgYDVQQDEwNXUjEwHhcNMjYwOTE4MDkzNzA4WhcNMjYxMjE3MTAzNzAyWjAdMRswGQYDVQQDExJkb2NzLnplcm9zaGllbGQuYWkwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCz9aRnuQsMtjMllW2jNfSGDzKgQ69nrdKnr6abMkK5qwlbHOySHMO4qVHr2OWnd8N9Q6crxwlBWoCZzbv1gvn0a4EHyxpZ905sBPXuVCiV8GSLPET/iXYFCVa5w6jTuqipayLkCGtdMLAMs1IRgQYpcXTld4b/wASTxRbzmElqteECnTt9JSu3HLhLSVxtvOPlZcuyJ45nWJwkvyKXyTMFgSXd7PMgVdDydTPZny5C6NizRET8UQ1QALRxRwjLWVn9alUux2WoPy+iUg9pWE+iZwZJC2uCEe8qYMxH7Z9AOJrOH3t1eAjtqszj87X1BOG2vPZZv2B8jOJTf7P/lSlhAgMBAAGjggEvMIIBKzAOBgNVHQ8BAf8EBAMCBaAwEwYDVR0lBAwwCgYIKwYBBQUHAwEwDAYDVR0TAQH/BAIwADAdBgNVHQ4EFgQUnDi4EgRuBsDkv3DjSSN3t7LNQKYwHwYDVR0jBBgwFoAUZmlJ1N4qnJEDz4kOJLgOMANuiC4wNQYIKwYBBQUHAQEEKTAnMCUGCCsGAQUFBzAChhlodHRwOi8vaS5wa2kuZ29vZy93cjEuY3J0MB0GA1UdEQQWMBSCEmRvY3MuemVyb3NoaWVsZC5haTATBgNVHSAEDDAKMAgGBmeBDAECATA2BgNVHR8ELzAtMCugKaAnhiVodHRwOi8vYy5wa2kuZ29vZy93cjEvZ1F5MUtVU3FBaWsuY3JsMBMGCisGAQQB1nkCBAMBAf8EAgUAMA0GCSqGSIb3DQEBCwUAA4IBAQBsaTCpW3j8ZCXQ3XmOmbQqxzIW92izrkR3yAz+HwDYw/e9Vv7rAUgDEWO/GxtfP5Dq4jNbraVNCKymyjWzlTRlIZ9HTxN7PCCVO17kk9T6tLauil4AvdPuQfglK59Pzb/QCP2R5pz8Op6Br9t21RlMNwxsvkgFrbnAUtVuEq6t0PDZVHeB4qW4lDKK46d+RxC70PhdiqH7BI0kLWUx/ok3aLi3T5irBc/APra12wZiaToHWr3Le5wQwZ6+ov6LDi84mguXNtJacD8W+7b4Pv0HLBI9OCPk8BMyhnBs4j7uP+2mCvgRq6r1d5mILMyo8sKdb7nbV7yYGvDuPeOAxBvi"
+	},
+	{
+		"id": "17253822805",
+		"tbs_sha256": "304e87efdcd3d653f00e7c6920e57e8f924e17c0890ecc62bca42fa3a96c982e",
+		"cert_sha256": "a7f371a8fe27c1f5925dcafeff4249a1df5f553afd043c34b9974f06a627f499",
+		"dns_names": [
+			"docs.zeroshield.ai"
+		],
+		"pubkey_sha256": "36dc8b274747657d6ce77d8c51033883b7bb16d64b53e04fec2764b416d6df9c",
+		"pubkey": {
+			"type": "ecdsa",
+			"curve": "P-256"
+		},
+		"issuer": {
+			"friendly_name": "Google Trust Services",
+			"pubkey_sha256": "908769e8d34477cc2cba0632c88605b22d7294c0840f78596d247c645b1afc0e",
+			"name": "C=US, O=Google Trust Services, CN=WE1"
+		},
+		"not_before": "2026-09-18T09:37:19Z",
+		"not_after": "2026-12-17T10:37:14Z",
+		"revoked": false,
+		"revocation": {
+			"time": null,
+			"reason": null,
+			"checked_at": "2026-11-12T14:47:42Z"
+		},
+		"cert_der": "MIIDezCCAyCgAwIBAgIRAP7EWRRGq1ATDi09cyhT0UQwCgYIKoZIzj0EAwIwOzELMAkGA1UEBhMCVVMxHjAcBgNVBAoTFUdvb2dsZSBUcnVzdCBTZXJ2aWNlczEMMAoGA1UEAxMDV0UxMB4XDTI2MDkxODA5MzcxOVoXDTI2MTIxNzEwMzcxNFowHTEbMBkGA1UEAxMSZG9jcy56ZXJvc2hpZWxkLmFpMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEfVZBlctX7QA66og3FF9ySRt10E6ZNLlY+5Rec28FtRjhy6EmIDNrk+DVMs3GX9ZTa/4CfV2hJEbijxW7gkCAOqOCAiEwggIdMA4GA1UdDwEB/wQEAwIHgDATBgNVHSUEDDAKBggrBgEFBQcDATAMBgNVHRMBAf8EAjAAMB0GA1UdDgQWBBTERh2UfHNW6HQTJNoln29AOzSwHjAfBgNVHSMEGDAWgBSQd5I1Z8T/qMyp5nvZgHl7zJP5ODA1BggrBgEFBQcBAQQpMCcwJQYIKwYBBQUHMAKGGWh0dHA6Ly9pLnBraS5nb29nL3dlMS5jcnQwHQYDVR0RBBYwFIISZG9jcy56ZXJvc2hpZWxkLmFpMBMGA1UdIAQMMAowCAYGZ4EMAQIBMDYGA1UdHwQvMC0wK6ApoCeGJWh0dHA6Ly9jLnBraS5nb29nL3dlMS92UEVod3RwU004ay5jcmwwggEDBgorBgEEAdZ5AgQCBIH0BIHxAO8AdgDYCVU7lE96/8gWGW+UT4WrsPj8XodVJg8V0S5yu0VLFAAAAaC0F5etAAAEAwBHMEUCIB/LzJuL0WSKyYOdvVfa7qKFJTTz+IsZaAfZB72HhWp+AiEA42cJ9aKqf5TwUWP94zaIBmV9m4D/kuAjDU6aWxU0hYQAdQB0251Y99R+nf14ehYqmRwYz2mNp8cpkYyaGLBFDbpEvAAAAaC0F5vqAAAEAwBGMEQCIGNijr0U8tRl+zBeRcYGderY0rSNbLSjA4T81WG4SiswAiB3nHWqB5K9bf/WxDc6rldieZLMjTnBlIhxiV0CKbgSzjAKBggqhkjOPQQDAgNJADBGAiEA2BAlygUWMotLnIKBx8ibmBP/45iRAOyBQR4s07A1sRwCIQDs6tpNiR9BsiDvESH5wohaxjXGAqS4PTVALk+dnXCUkw=="
+	},
+	{
+		"id": "17325244757",
+		"tbs_sha256": "63ba0cd3c2dfeac7607c6ae44155f722b7ff318da8cfc34a700ef494e7c27ee7",
+		"cert_sha256": "d11a32aa2308bc9b1836875c767dd228be385311ace0c40e84da2aa5102bb11c",
+		"dns_names": [
+			"*.zeroshield.ai",
+			"zeroshield.ai"
+		],
+		"pubkey_sha256": "3dbc1184783a16951cbc94703b1aafdb22180e8e7fc06961fbed038463580404",
+		"pubkey": {
+			"type": "ecdsa",
+			"curve": "P-256"
+		},
+		"issuer": {
+			"friendly_name": "Let's Encrypt",
+			"pubkey_sha256": "6ebcefb4210b088654a38b03fea3d7d1c711b4fb1ddc363a45f9b1a4e53da01e",
+			"name": "C=US, O=Let's Encrypt, CN=YE1"
+		},
+		"not_before": "2026-09-21T17:44:51Z",
+		"not_after": "2026-12-20T17:44:50Z",
+		"revoked": false,
+		"revocation": {
+			"time": null,
+			"reason": null,
+			"checked_at": "2026-11-12T14:49:23Z"
+		},
+		"cert_der": "MIIDmjCCAx+gAwIBAgISBUV5vxDkyNMoKwbmscqt0LOSMAoGCCqGSM49BAMDMDMxCzAJBgNVBAYTAlVTMRYwFAYDVQQKEw1MZXQncyBFbmNyeXB0MQwwCgYDVQQDEwNZRTEwHhcNMjYwOTIxMTc0NDUxWhcNMjYxMjIwMTc0NDUwWjAYMRYwFAYDVQQDEw16ZXJvc2hpZWxkLmFpMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEhpqhNcWUFOGbHcoL+XbLNogoZ1kcgCqVwgd0/YQYD168BsDi1BcxaWvN1eVrKYMKBo4BydurVUcTRhIaPBcA76OCAiwwggIoMA4GA1UdDwEB/wQEAwIHgDATBgNVHSUEDDAKBggrBgEFBQcDATAMBgNVHRMBAf8EAjAAMB0GA1UdDgQWBBTKH4l5ENqjFFWmf9uX7yGb8I83fTAfBgNVHSMEGDAWgBS7IMpHC/7X5Zz5jwkqo4w3RbG82DAzBggrBgEFBQcBAQQnMCUwIwYIKwYBBQUHMAKGF2h0dHA6Ly95ZTEuaS5sZW5jci5vcmcvMCkGA1UdEQQiMCCCDyouemVyb3NoaWVsZC5haYINemVyb3NoaWVsZC5haTATBgNVHSAEDDAKMAgGBmeBDAECATAuBgNVHR8EJzAlMCOgIaAfhh1odHRwOi8veWUxLmMubGVuY3Iub3JnLzE5LmNybDCCAQwGCisGAQQB1nkCBAIEgf0EgfoA+AB2AMs49xWJfIShRF9bwd37yW7ymlnNRwppBYWwyxTDFFjnAAABoMVHpHgAAAQDAEcwRQIhAPSgF6m4yP7F1VI5QMh7h1YBqmm4ul9RcK7RNd7XlvVEAiBLkTAr3zPBNrMUXQrknBkGrP4chFwD0tCFRoS5DtTB7wB+AEavhj07PuWfpXfeqCRdNrDZ7SKiI/Rhd0EilFLulVBfAAABoMVHpM8ACAAABQAzSYeGBAMARzBFAiEAt9shYv5jw6KtjLl7G/45tY6LC/XQisoCOZKrifub5l4CIDG8fRZ2iTICNV3MEJbQk4tHlfHNW2aq0p1+yAw+23fDMAoGCCqGSM49BAMDA2kAMGYCMQC6l4sCWBqzAxeJWjaylPNUjusrJajkb8n1tDI4dnXB1kry4DxXZKwAETm+Q3fpnZICMQDOHjXyzpdBScX45f2VAlGgL4ZiGy4aVwn3jv3hPtKbPseImTEcfyauaNpXc/cm5Lk="
+	},
+	{
+		"id": "17464881186",
+		"tbs_sha256": "4d7276d1dba6bda17acdb53246f402a3f8121687d067a477b456f8df60e3925c",
+		"cert_sha256": "226bae9298c6626c19dd1640cd032863c286063315b250b8d8eb7b2872963f3b",
+		"dns_names": [
+			"*.zeroshield.ai",
+			"zeroshield.ai"
+		],
+		"pubkey_sha256": "c04fdb72b27fa8a342fdef273435a7d03e3b9472bf38e1f516fed7a18b92308e",
+		"pubkey": {
+			"type": "ecdsa",
+			"curve": "P-256"
+		},
+		"issuer": {
+			"friendly_name": "Google Trust Services",
+			"pubkey_sha256": "908769e8d34477cc2cba0632c88605b22d7294c0840f78596d247c645b1afc0e",
+			"name": "C=US, O=Google Trust Services, CN=WE1"
+		},
+		"not_before": "2026-09-28T15:36:35Z",
+		"not_after": "2026-12-27T16:34:21Z",
+		"revoked": false,
+		"revocation": {
+			"time": null,
+			"reason": null,
+			"checked_at": "2026-11-12T14:47:42Z"
+		},
+		"cert_der": "MIIDfzCCAyagAwIBAgIRAMUEc6acc8xKDtZmgQZVjv8wCgYIKoZIzj0EAwIwOzELMAkGA1UEBhMCVVMxHjAcBgNVBAoTFUdvb2dsZSBUcnVzdCBTZXJ2aWNlczEMMAoGA1UEAxMDV0UxMB4XDTI2MDkyODE1MzYzNVoXDTI2MTIyNzE2MzQyMVowGDEWMBQGA1UEAxMNemVyb3NoaWVsZC5haTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABODRXulbIOrHqoao8yCsPf7wcN5Qf7S8ciuaxonVmbfh4lPDexJZfcPkZiSUe5XT6QG+uPKSBVZmruK4vXLU6PGjggIsMIICKDAOBgNVHQ8BAf8EBAMCB4AwEwYDVR0lBAwwCgYIKwYBBQUHAwEwDAYDVR0TAQH/BAIwADAdBgNVHQ4EFgQUGtXnp3Uzm6wd972RGdLkrXAr5KowHwYDVR0jBBgwFoAUkHeSNWfE/6jMqeZ72YB5e8yT+TgwNQYIKwYBBQUHAQEEKTAnMCUGCCsGAQUFBzAChhlodHRwOi8vaS5wa2kuZ29vZy93ZTEuY3J0MCkGA1UdEQQiMCCCDXplcm9zaGllbGQuYWmCDyouemVyb3NoaWVsZC5haTATBgNVHSAEDDAKMAgGBmeBDAECATA2BgNVHR8ELzAtMCugKaAnhiVodHRwOi8vYy5wa2kuZ29vZy93ZTEvTVZGSmlHMXJDaVEuY3JsMIIBAgYKKwYBBAHWeQIEAgSB8wSB8ADuAHUA2AlVO5RPev/IFhlvlE+Fq7D4/F6HVSYPFdEucrtFSxQAAAGg6OAYtAAABAMARjBEAiANdo2WhaijsEEEOEFDx+Vt6/vQCipqPlQmleq8HJtYCAIgbdp215hkV7fIwNomWZNxSZ70jyl8zCR+MiavdtdbRy4AdQDCMX5XRRmjRe5/ON6ykEHrx8IhWiK/f9W1rXaa2Q5SzQAAAaDo4BiSAAAEAwBGMEQCICJlP0spjzzU33jK2//klzhizLInrD3DdFk3E4WjpGPuAiBGMA6xSYzdGEEoMnduF/OKpBtP/wSe2YvIQYoLckqapTAKBggqhkjOPQQDAgNHADBEAiA4PfPXm5mBD72PSRtdnP8xMPIP9YNUB9R6NQ2NCAjCSgIgQHaUwQ2+7hGT9icpVoFtmaZ++Eapo+g39g1HInar0nU="
+	},
+	{
+		"id": "17493332537",
+		"tbs_sha256": "64897adae549cf72d1266e415b4493ff87588da0a401a4eff4ce74c69aeee946",
+		"cert_sha256": "25ff6cf7016e61ff35106d7cf279bd58deade23362dc43b87a52cc567fd24205",
+		"dns_names": [
+			"aidspm.zeroshield.ai"
+		],
+		"pubkey_sha256": "37b4ee701edbf47274b6f61a0397e8218a87836029789eaac960ce2b359d2173",
+		"pubkey": {
+			"type": "rsa",
+			"bit_length": 2048
+		},
+		"issuer": {
+			"friendly_name": "Google Trust Services",
+			"pubkey_sha256": "c83bbda20db9e4d3791847fe0706bdad3aea150d04c9d674af514287d4dd016e",
+			"name": "C=US, O=Google Trust Services, CN=WR1"
+		},
+		"not_before": "2026-09-30T03:39:40Z",
+		"not_after": "2026-12-29T04:38:22Z",
+		"revoked": false,
+		"revocation": {
+			"time": null,
+			"reason": null,
+			"checked_at": "2026-11-12T14:47:43Z"
+		},
+		"cert_der": "MIIEFzCCAv+gAwIBAgIQZuUR6DSBnSUT2LRlWvAJGDANBgkqhkiG9w0BAQsFADA7MQswCQYDVQQGEwJVUzEeMBwGA1UEChMVR29vZ2xlIFRydXN0IFNlcnZpY2VzMQwwCgYDVQQDEwNXUjEwHhcNMjYwOTMwMDMzOTQwWhcNMjYxMjI5MDQzODIyWjAfMR0wGwYDVQQDExRhaWRzcG0uemVyb3NoaWVsZC5haTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAKC9x3cInEgkau5mQwU30qsUSJTh8CwyEg4lLP3APxIbZ5ppPO+jcZvHWBsxGSEGbwU+cinkgTuhTAizR4EBWvUOToxdy2QLyWlfCgHf3ZUa0sZhZtyk9gMeCxv3vID4KhT8zoEQ99PyLKnFJ1nFTkKvrNck0ZcfTuYR1WJSJOnPtcbf005HdbULDR5Fes1y72pXMnnCC11RQw7kCPMW1VGltffg2+DTUa3Bm3h9x90A5WwaHb6yEzcFHa7w3EdexGk6tlmw9SSLaYHMwiY9z543f9eWGG52wN1+WFfX+LLJOKT/KtzaabBpKejlQ06zOtRV5Hubr5scWxGMQIPh0tkCAwEAAaOCATEwggEtMA4GA1UdDwEB/wQEAwIFoDATBgNVHSUEDDAKBggrBgEFBQcDATAMBgNVHRMBAf8EAjAAMB0GA1UdDgQWBBTPC9Sy5zbuKyTz5i1h9mz4soeYpTAfBgNVHSMEGDAWgBRmaUnU3iqckQPPiQ4kuA4wA26ILjA1BggrBgEFBQcBAQQpMCcwJQYIKwYBBQUHMAKGGWh0dHA6Ly9pLnBraS5nb29nL3dyMS5jcnQwHwYDVR0RBBgwFoIUYWlkc3BtLnplcm9zaGllbGQuYWkwEwYDVR0gBAwwCjAIBgZngQwBAgEwNgYDVR0fBC8wLTAroCmgJ4YlaHR0cDovL2MucGtpLmdvb2cvd3IxL1Z5UmpIc2s0TjAwLmNybDATBgorBgEEAdZ5AgQDAQH/BAIFADANBgkqhkiG9w0BAQsFAAOCAQEAhrasyn7++Ni/9pDqRsdjOLyCOOYZ33wirV5c9vePWw4RTI7yQPm1lh8klrGW4WYAuRZYhs6re4K2VdJpt+Fbfp04WKdAyNfUQLE/j49YaIkj6MFGCkdPzV++meAsdkOJA1IGDhyCXFsNH/0eEwVJv/lojdJlCuIT2lH8I0Eg+uT5eL5b1g0Ct7q/z/yjScAdKD6GbqwBvplDiEPN/A4VdZr4pqiHWwHAImYuJ/W5Ekgh+GQn75kr5U3YehoP0XbvzvDKfcgvTR5JCLla+OzVjuRSw7suMrrxwaNs7iCf/R1AQfR/nO6HeTm+Sjd/Ro+bE5/e5tKG9HKJLlJzExnFsg=="
+	},
+	{
+		"id": "17493336211",
+		"tbs_sha256": "274347ef1b5b780af01b6f4469fe0e7e884742eab34ba1d48a941348b52a3c91",
+		"cert_sha256": "aea28d2a29fea5bace91d1d1951ef41356dd106f3668f087ce7d364da0cb061f",
+		"dns_names": [
+			"aidspm.zeroshield.ai"
+		],
+		"pubkey_sha256": "86a3f099e3618f7056a8f033dfe0dd5539b972c33284c86cedc7e76f897fc9b3",
+		"pubkey": {
+			"type": "ecdsa",
+			"curve": "P-256"
+		},
+		"issuer": {
+			"friendly_name": "Google Trust Services",
+			"pubkey_sha256": "908769e8d34477cc2cba0632c88605b22d7294c0840f78596d247c645b1afc0e",
+			"name": "C=US, O=Google Trust Services, CN=WE1"
+		},
+		"not_before": "2026-09-30T03:39:50Z",
+		"not_after": "2026-12-29T04:39:46Z",
+		"revoked": false,
+		"revocation": {
+			"time": null,
+			"reason": null,
+			"checked_at": "2026-11-12T14:47:42Z"
+		},
+		"cert_der": "MIICjDCCAjKgAwIBAgIRALWrx7XZ/Y0tExDOt7Y/9cIwCgYIKoZIzj0EAwIwOzELMAkGA1UEBhMCVVMxHjAcBgNVBAoTFUdvb2dsZSBUcnVzdCBTZXJ2aWNlczEMMAoGA1UEAxMDV0UxMB4XDTI2MDkzMDAzMzk1MFoXDTI2MTIyOTA0Mzk0NlowHzEdMBsGA1UEAxMUYWlkc3BtLnplcm9zaGllbGQuYWkwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAQAgBo+vZuiWX6qi0KzWC7xtzuXn5sCbKZ8+GsHlDtcln7vDnkPBaBp4jHWhJWfjjmsiE8zQ9MDhGAJREVPyb00o4IBMTCCAS0wDgYDVR0PAQH/BAQDAgeAMBMGA1UdJQQMMAoGCCsGAQUFBwMBMAwGA1UdEwEB/wQCMAAwHQYDVR0OBBYEFP6auF843GgaGeG1Vrr0TGbc01DDMB8GA1UdIwQYMBaAFJB3kjVnxP+ozKnme9mAeXvMk/k4MDUGCCsGAQUFBwEBBCkwJzAlBggrBgEFBQcwAoYZaHR0cDovL2kucGtpLmdvb2cvd2UxLmNydDAfBgNVHREEGDAWghRhaWRzcG0uemVyb3NoaWVsZC5haTATBgNVHSAEDDAKMAgGBmeBDAECATA2BgNVHR8ELzAtMCugKaAnhiVodHRwOi8vYy5wa2kuZ29vZy93ZTEvSk40NEp1dGFRNXcuY3JsMBMGCisGAQQB1nkCBAMBAf8EAgUAMAoGCCqGSM49BAMCA0gAMEUCIQDT5PB5i1FkFKVuMLJjrrsttz0KAaQVesHSnpcT4aKDbwIgD/tcXJTfDiucPCfBugXRFNtkBbOLCgTrvlLxuPxTejI="
+	},
+	{
+		"id": "17503093305",
+		"tbs_sha256": "6a27de430a63cd05b33e6823033269cfa6864aa4c58eae96c03ec82211413f32",
+		"cert_sha256": "3906de96bbbc00c9b8db2b841a1e555aa514546afd2e996f1776d32142684009",
+		"dns_names": [
+			"devsecshield.zeroshield.ai",
+			"devsecshieldapi.zeroshield.ai"
+		],
+		"pubkey_sha256": "5d34ff8dfedc0d377347f431f9ea18e42548beee037b3889aa5b9ae04ac5125d",
+		"pubkey": {
+			"type": "ecdsa",
+			"curve": "P-256"
+		},
+		"issuer": {
+			"friendly_name": "Let's Encrypt",
+			"pubkey_sha256": "b3fb5d00e994cddf2cc9a4eea9f806bc5727e83cc0e4299bf956f2d524fe5376",
+			"name": "C=US, O=Let's Encrypt, CN=YE2"
+		},
+		"not_before": "2026-09-30T15:15:29Z",
+		"not_after": "2026-12-29T15:15:28Z",
+		"revoked": false,
+		"revocation": {
+			"time": null,
+			"reason": null,
+			"checked_at": "2026-11-12T14:49:12Z"
+		},
+		"cert_der": "MIIDwTCCA0igAwIBAgISBfx0PAKaBRf1ot2eRHy4MaavMAoGCCqGSM49BAMDMDMxCzAJBgNVBAYTAlVTMRYwFAYDVQQKEw1MZXQncyBFbmNyeXB0MQwwCgYDVQQDEwNZRTIwHhcNMjYwOTMwMTUxNTI5WhcNMjYxMjI5MTUxNTI4WjAlMSMwIQYDVQQDExpkZXZzZWNzaGllbGQuemVyb3NoaWVsZC5haTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABBHrOKBc7g8rZxCCvOp8FxwdzTcLOE6QzF69bt4lHaWLRIW0o+8bnzmWwO5UxO7zpx7KiDAdQdFuO8YVQ342DL6jggJIMIICRDAOBgNVHQ8BAf8EBAMCB4AwEwYDVR0lBAwwCgYIKwYBBQUHAwEwDAYDVR0TAQH/BAIwADAdBgNVHQ4EFgQUhW0xTMUoZuaXTSCKfUz7rx0tHWUwHwYDVR0jBBgwFoAUuVnyjs8i8IbTN0j/dhQYuoLYVYcwMwYIKwYBBQUHAQEEJzAlMCMGCCsGAQUFBzAChhdodHRwOi8veWUyLmkubGVuY3Iub3JnLzBEBgNVHREEPTA7ghpkZXZzZWNzaGllbGQuemVyb3NoaWVsZC5haYIdZGV2c2Vjc2hpZWxkYXBpLnplcm9zaGllbGQuYWkwEwYDVR0gBAwwCjAIBgZngQwBAgEwLgYDVR0fBCcwJTAjoCGgH4YdaHR0cDovL3llMi5jLmxlbmNyLm9yZy80OC5jcmwwggENBgorBgEEAdZ5AgQCBIH+BIH7APkAdwDCMX5XRRmjRe5/ON6ykEHrx8IhWiK/f9W1rXaa2Q5SzQAAAaDzGB6OAAAEAwBIMEYCIQCGBU/tVWlztlK+G30+3WguuhnIU6GMLT/caQ4bz7oZsgIhAPZzsYg/BiLbvXsXlVineKVH7QCq37MTDD6EApxYD1M+AH4AGoudaw/+v4G0eTnG0jEKhtbRAtTwRuIYLJ3jX14mJe8AAAGg8xgfpAAIAAAFAEbZFhQEAwBHMEUCIQDsjhJnEieZcGh+jhzS8lsSjaHu4ONRExfO3RiWaxSSrAIgWh96uuztoQ+U7FGQrWqzzzqsn5i1WKfzMLiFF/PYTYgwCgYIKoZIzj0EAwMDZwAwZAIwZ8VNL9U3gYVbQaC9BEdzTkbvabb52AyB9te9HP+ogTpPHLKZDIsF3m9MszRpJHQNAjAF3tIgU90RV65BP29z3QG1AziCkMaaoJVNHXxGJ6NCmsI3Wbu2dZp9yVGgK40NfaQ="
+	},
+	{
+		"id": "17556894825",
+		"tbs_sha256": "304cfb8c5b2565d5353074c2bd445ace160faaa81d516e07503c7efc07abc0de",
+		"cert_sha256": "04e8328ee8d93b7d4e8b8080a581091ddfd534573809aef53cc504bf24ee7021",
+		"dns_names": [
+			"www.zeroshield.ai",
+			"zeroshield.ai"
+		],
+		"pubkey_sha256": "478dd758036ae3ab8a291804dfa6ef9c4adb794dc79f51df3d46971553c0f8a8",
+		"pubkey": {
+			"type": "ecdsa",
+			"curve": "P-256"
+		},
+		"issuer": {
+			"friendly_name": "Let's Encrypt",
+			"pubkey_sha256": "6ebcefb4210b088654a38b03fea3d7d1c711b4fb1ddc363a45f9b1a4e53da01e",
+			"name": "C=US, O=Let's Encrypt, CN=YE1"
+		},
+		"not_before": "2026-10-03T07:01:16Z",
+		"not_after": "2027-01-01T07:01:15Z",
+		"revoked": false,
+		"revocation": {
+			"time": null,
+			"reason": null,
+			"checked_at": "2026-11-12T14:49:23Z"
+		},
+		"cert_der": "MIIDnjCCAyOgAwIBAgISBX4WVV7/aRlKSXQEU/mI0ghwMAoGCCqGSM49BAMDMDMxCzAJBgNVBAYTAlVTMRYwFAYDVQQKEw1MZXQncyBFbmNyeXB0MQwwCgYDVQQDEwNZRTEwHhcNMjYxMDAzMDcwMTE2WhcNMjcwMTAxMDcwMTE1WjAYMRYwFAYDVQQDEw16ZXJvc2hpZWxkLmFpMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEl/f+7lxfjQxK/+0CJ+iA2CcWjCgwipWthwEfrZ9INF6/LQNHQB/fa/TqVYvCrA0v+mbGUZrIiX/VvLsYs1po5aOCAjAwggIsMA4GA1UdDwEB/wQEAwIHgDATBgNVHSUEDDAKBggrBgEFBQcDATAMBgNVHRMBAf8EAjAAMB0GA1UdDgQWBBQuz0uCGkHnMAKbCFylESqB7PFD/zAfBgNVHSMEGDAWgBS7IMpHC/7X5Zz5jwkqo4w3RbG82DAzBggrBgEFBQcBAQQnMCUwIwYIKwYBBQUHMAKGF2h0dHA6Ly95ZTEuaS5sZW5jci5vcmcvMCsGA1UdEQQkMCKCEXd3dy56ZXJvc2hpZWxkLmFpgg16ZXJvc2hpZWxkLmFpMBMGA1UdIAQMMAowCAYGZ4EMAQIBMC8GA1UdHwQoMCYwJKAioCCGHmh0dHA6Ly95ZTEuYy5sZW5jci5vcmcvMTEzLmNybDCCAQ0GCisGAQQB1nkCBAIEgf4EgfsA+QB3AAAaXRocLZN1tkhVePgvcaGubu85fSl8iuMVe8re4aAeAAABoQDGu7IAAAQDAEgwRgIhAPp2+O/MFltE9yE6/KRS8c9W1p1Vq0wh9qHOE6A4lBF/AiEA1v/0Fg+o98K2lAfK9gqshbj87ruW2vESPyDSzjPzq3MAfgCigQAYc04Xbh1H4JVA84G6VGaXzWOoQ1BxbrgJTtrxDQAAAaEAxrveAAgAAAUAGwUNHwQDAEcwRQIhALstnLANSM7N4O+/ugmatHD4rjlPA+mfrG4ZgT1cFA5dAiBNLicXOYuC6SpJsG/vVVl4X6F9+mxDfrG4UXYGogoLBjAKBggqhkjOPQQDAwNpADBmAjEA8t35Glxm/hhvvCR2g3ojvWim0xuCN0vhr5+HhSsqxbdv7l4TnmoLbCVj5y/tCkfvAjEA2U2c621PkDGuj/XvRfrK9kTw+E24IEdwDGTzIZuO2iAvHjV5V8gLTJbIH73r1jgZ"
+	},
+	{
+		"id": "17560240357",
+		"tbs_sha256": "8d24b372d50d84908c55ef157ab0b0b50469b943ef23ecf8c8451fafcc2b7771",
+		"cert_sha256": "d39e47298915e0e8cf5baf66cdf38a7e96fb442c861b6deac6cc00b7797c56a4",
+		"dns_names": [
+			"apisecurity.zeroshield.ai",
+			"apisecuritybackend.zeroshield.ai"
+		],
+		"pubkey_sha256": "bea93b35ad47c253c58e9552d212611f4ae38d711750000f88c58a9062f7ebb5",
+		"pubkey": {
+			"type": "ecdsa",
+			"curve": "P-256"
+		},
+		"issuer": {
+			"friendly_name": "Let's Encrypt",
+			"pubkey_sha256": "b3fb5d00e994cddf2cc9a4eea9f806bc5727e83cc0e4299bf956f2d524fe5376",
+			"name": "C=US, O=Let's Encrypt, CN=YE2"
+		},
+		"not_before": "2026-10-03T11:22:07Z",
+		"not_after": "2027-01-01T11:22:06Z",
+		"revoked": false,
+		"revocation": {
+			"time": null,
+			"reason": null,
+			"checked_at": "2026-11-12T14:49:12Z"
+		},
+		"cert_der": "MIIDwjCCA0igAwIBAgISBr9vY+gM0rhdqR03ZcrxMoDRMAoGCCqGSM49BAMDMDMxCzAJBgNVBAYTAlVTMRYwFAYDVQQKEw1MZXQncyBFbmNyeXB0MQwwCgYDVQQDEwNZRTIwHhcNMjYxMDAzMTEyMjA3WhcNMjcwMTAxMTEyMjA2WjAkMSIwIAYDVQQDExlhcGlzZWN1cml0eS56ZXJvc2hpZWxkLmFpMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEhr85HFqq6odVFfEAL8ogC2fZBEqBQHrS1XIz3lmTU3xwK/zav4shHg7+D+W1JhjwTtCAyNJ0Ds+CuMI7s/Q95qOCAkkwggJFMA4GA1UdDwEB/wQEAwIHgDATBgNVHSUEDDAKBggrBgEFBQcDATAMBgNVHRMBAf8EAjAAMB0GA1UdDgQWBBRwEhGGFUHo+nmvP+/OKdr+sakNhjAfBgNVHSMEGDAWgBS5WfKOzyLwhtM3SP92FBi6gthVhzAzBggrBgEFBQcBAQQnMCUwIwYIKwYBBQUHMAKGF2h0dHA6Ly95ZTIuaS5sZW5jci5vcmcvMEYGA1UdEQQ/MD2CGWFwaXNlY3VyaXR5Lnplcm9zaGllbGQuYWmCIGFwaXNlY3VyaXR5YmFja2VuZC56ZXJvc2hpZWxkLmFpMBMGA1UdIAQMMAowCAYGZ4EMAQIBMC4GA1UdHwQnMCUwI6AhoB+GHWh0dHA6Ly95ZTIuYy5sZW5jci5vcmcvODIuY3JsMIIBDAYKKwYBBAHWeQIEAgSB/QSB+gD4AHYAHJ9oLOn68EVpUPgbloqH3dsyENhM5siy44JSSsTPWZ8AAAGhAbWONAAABAMARzBFAiBO/WifiPS4a2Na1L08eQqG2CCLPV/R99mY5BSBUsGQ3wIhAPMt88sHStQb483jS5uO2ymWipklmuDtjja8ZZYonaF4AH4AROgi/CurDpLu0On61pZkYCd20Bdg4IkFCckjobA/w38AAAGhAbWDogAIAAAFAAY5t30EAwBHMEUCIBe/YFdg/cEBAi0CHc0B1fBB04lZqMqkHC39UIgQ7itOAiEArQ41eixvAMjJUSjQ4LJT0/py8xjm640ahcY+zM8dAFwwCgYIKoZIzj0EAwMDaAAwZQIwMRQCHk/Q4bWKh1WgpN+mKCGgxjRBzMWTP580qhKgBT7DeCpbT2zkJA7JmtpywzFwAjEAnYp2rwl+Vw3HrNL3AD7IAqqOu5RSUeyQm5VI8265okYmHdafGsUZb9rVo0kQXJCl"
+	},
+	{
+		"id": "17838949845",
+		"tbs_sha256": "18453b5e0fe5411ed19b3aca62734df723c1eadba9d55398fef4c121c9e8bf00",
+		"cert_sha256": "4ad88e92899eacd1d70ac38abaf3a488c1dac7be2c723ad64f8119e96a01a193",
+		"dns_names": [
+			"aimeshbackend.zeroshield.ai",
+			"aimeshfirewall.zeroshield.ai",
+			"aimeshgateway.zeroshield.ai"
+		],
+		"pubkey_sha256": "047f152bd3039b662d2099775e1f220990279ce0fe1a4848e4c8be014a6bbcc3",
+		"pubkey": {
+			"type": "rsa",
+			"bit_length": 2048
+		},
+		"issuer": {
+			"friendly_name": "Google Trust Services",
+			"pubkey_sha256": "39d4a59900fd356261e046dc387071921ca03f0352c00f50f757a8ba77db7281",
+			"name": "C=US, O=Google Trust Services, CN=WR3"
+		},
+		"not_before": "2026-10-17T16:47:06Z",
+		"not_after": "2027-01-15T17:39:59Z",
+		"revoked": false,
+		"revocation": {
+			"time": null,
+			"reason": null,
+			"checked_at": "2026-11-12T14:47:42Z"
+		},
+		"cert_der": "MIIEYjCCA0qgAwIBAgIRAP3URLws09OKEG2PaRXBQ6IwDQYJKoZIhvcNAQELBQAwOzELMAkGA1UEBhMCVVMxHjAcBgNVBAoTFUdvb2dsZSBUcnVzdCBTZXJ2aWNlczEMMAoGA1UEAxMDV1IzMB4XDTI2MTAxNzE2NDcwNloXDTI3MDExNTE3Mzk1OVowJzElMCMGA1UEAxMcYWltZXNoZmlyZXdhbGwuemVyb3NoaWVsZC5haTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAJRC0h3r5EI5xpJmbF1LClgJDg73knwKw+DUsAR+r0xXHnbj2NIR41JNRxaCJeMvj378aaFDEAY9WfxazGhlJNgu/17rh8lPnC/RjUQ1qMSa9zM6fIyIVD4J7nwGDHrlguIqClBpZlDP/Va4nhSinm5S+e9wRVQcr8MjTCCneiL2R08RqVbGFigXv+qJ2yUwZb0UVNT4ISj7mCQBh5fxkK0PpSKpwQUPf8ft/VrJE2LfH3kM/QzIf21rfnbeES0zNMuI7b9P86R6AAm9ZE4Jb70aO/aF5nVbV0zhb+aPkByFbGm8QWMqR+04eXqkGIR19s/n47HQayRKIqVUY92q/K8CAwEAAaOCAXMwggFvMA4GA1UdDwEB/wQEAwIFoDATBgNVHSUEDDAKBggrBgEFBQcDATAMBgNVHRMBAf8EAjAAMB0GA1UdDgQWBBRaXYn86xgNxZsxcDXwUk0jdTxKzTAfBgNVHSMEGDAWgBTHgfX9jojZADxNY6JQMSSgziP+IzA1BggrBgEFBQcBAQQpMCcwJQYIKwYBBQUHMAKGGWh0dHA6Ly9pLnBraS5nb29nL3dyMy5jcnQwYQYDVR0RBFowWIIcYWltZXNoZmlyZXdhbGwuemVyb3NoaWVsZC5haYIbYWltZXNoYmFja2VuZC56ZXJvc2hpZWxkLmFpghthaW1lc2hnYXRld2F5Lnplcm9zaGllbGQuYWkwEwYDVR0gBAwwCjAIBgZngQwBAgEwNgYDVR0fBC8wLTAroCmgJ4YlaHR0cDovL2MucGtpLmdvb2cvd3IzLzJhdVJ6X1RMZEt3LmNybDATBgorBgEEAdZ5AgQDAQH/BAIFADANBgkqhkiG9w0BAQsFAAOCAQEAOt0K2eYOzR5792NOYQ55Sl0f/rHkjK8SSy3+GK7GENGhQnbIFJGzj8COxPvlQHuFOqxSyukPqKJC+zhi9zeyLwX49qSy7GF9sqRvs+57EK1N+mkXi7gGjLtGCwVVvMtYCwKzy2uiO2M+kRfhMxy1qK+z8iKmSJWh0+K5VUcQXKHlm2er0KnD5cR40TXcvBiKCkY/c53aWhXcXS5n73CDTdsOmAhHonMo1PIxvRWBlMTwpcq0BIx8VWzC1NzaV6x3J/moLaNYvm/4u2iFta42JRo9dX5a7IBUJBirrKcQ5Y3JVVy5L0eqDeGdwNtRtqnl3eVijvWDVDkomc3ngU3Ecg=="
+	},
+	{
+		"id": "17864953648",
+		"tbs_sha256": "13b7b4a9d1794c65f1591caba9833689f49a1beea1a0cafc9141b125078122d5",
+		"cert_sha256": "12801d303302f757cad62b40295d1fb2dc1bcfafe28c011dceedec0f3f68c8af",
+		"dns_names": [
+			"extremeaiguardx.zeroshield.ai",
+			"extremeaiguardxbackend.zeroshield.ai"
+		],
+		"pubkey_sha256": "b7c5969415fcf29b2d7da3fb47a81769ed94b2d8dc272dfa2d0ddc13b2074f1a",
+		"pubkey": {
+			"type": "ecdsa",
+			"curve": "P-256"
+		},
+		"issuer": {
+			"friendly_name": "Let's Encrypt",
+			"pubkey_sha256": "6ebcefb4210b088654a38b03fea3d7d1c711b4fb1ddc363a45f9b1a4e53da01e",
+			"name": "C=US, O=Let's Encrypt, CN=YE1"
+		},
+		"not_before": "2026-10-19T07:31:33Z",
+		"not_after": "2027-01-17T07:31:32Z",
+		"revoked": false,
+		"revocation": {
+			"time": null,
+			"reason": null,
+			"checked_at": "2026-11-12T14:49:23Z"
+		},
+		"cert_der": "MIIDzzCCA1agAwIBAgISBai5qzuXTaADw5JGRM5v9Q5mMAoGCCqGSM49BAMDMDMxCzAJBgNVBAYTAlVTMRYwFAYDVQQKEw1MZXQncyBFbmNyeXB0MQwwCgYDVQQDEwNZRTEwHhcNMjYxMDE5MDczMTMzWhcNMjcwMTE3MDczMTMyWjAoMSYwJAYDVQQDEx1leHRyZW1lYWlndWFyZHguemVyb3NoaWVsZC5haTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABBkO4/oUAaQP7sZATFy+gD7uOOmPqaonP3IXnJysamvFDyJ7ZlW0Goj67lH4mfGNZI5ZdppRUXpLHgM9uY6pUGujggJTMIICTzAOBgNVHQ8BAf8EBAMCB4AwEwYDVR0lBAwwCgYIKwYBBQUHAwEwDAYDVR0TAQH/BAIwADAdBgNVHQ4EFgQUneIIofNPFKJ8RwTN9GTejCoQfMgwHwYDVR0jBBgwFoAUuyDKRwv+1+Wc+Y8JKqOMN0WxvNgwMwYIKwYBBQUHAQEEJzAlMCMGCCsGAQUFBzAChhdodHRwOi8veWUxLmkubGVuY3Iub3JnLzBOBgNVHREERzBFgh1leHRyZW1lYWlndWFyZHguemVyb3NoaWVsZC5haYIkZXh0cmVtZWFpZ3VhcmR4YmFja2VuZC56ZXJvc2hpZWxkLmFpMBMGA1UdIAQMMAowCAYGZ4EMAQIBMC8GA1UdHwQoMCYwJKAioCCGHmh0dHA6Ly95ZTEuYy5sZW5jci5vcmcvMTAzLmNybDCCAQ0GCisGAQQB1nkCBAIEgf4EgfsA+QB3AETCvQzpFA5kpclKAZMKWqG7NZcOAO4RFoloKhxE17VmAAABoVNINN0AAAQDAEgwRgIhAJKsXMrfuF1LnGzn8C+o60K32yXqnkiwB2vIc7DVrd6jAiEA/qmj8VfwE37MN+JRYYw6aySGQTi+O91kV6jRJ63dwJAAfgCOykcLrN5q86IGsKR6hLdG/h/Gv5U+JeabTuQCSPPG6AAAAaFTSDXMAAgAAAUAKBQlzwQDAEcwRQIgScLY9irlvOE3TJ8vt+GQNJGwaM0Y9VeY3+DX1ypIu8ECIQDfmVp9NCVa84lW4Bi11jkIQMrwOJNxl+XAh3s83/zIZjAKBggqhkjOPQQDAwNnADBkAjAztOHBbWKli0+2Kgbpmry1zm2NvCCnV874fnjI7MkVCmpvrq/XLVOIGrYLGQ/lco4CMEchtCHiG6zEzY+SgGhHFfIKY+GpqAvrHXiGeh7ge+3E9xBf573Z9EO2Ih/HrzDG4g=="
+	},
+	{
+		"id": "17919453082",
+		"tbs_sha256": "59baec45a85904878f1c9f625c15606c2b5d198f63f5205117768b739ba83e5c",
+		"cert_sha256": "7c76f22aecf1a3730628aeacd96ec5060825f500940d6d2c24adf745e780cf4f",
+		"dns_names": [
+			"threatshield.zeroshield.ai",
+			"threatshieldbackend.zeroshield.ai"
+		],
+		"pubkey_sha256": "6ac0b69371f6ec17de4aeac7c32e58287462bd1e21ab137fbb679e4d2dd976cd",
+		"pubkey": {
+			"type": "ecdsa",
+			"curve": "P-256"
+		},
+		"issuer": {
+			"friendly_name": "Let's Encrypt",
+			"pubkey_sha256": "6ebcefb4210b088654a38b03fea3d7d1c711b4fb1ddc363a45f9b1a4e53da01e",
+			"name": "C=US, O=Let's Encrypt, CN=YE1"
+		},
+		"not_before": "2026-10-22T06:43:51Z",
+		"not_after": "2027-01-20T06:43:50Z",
+		"revoked": false,
+		"revocation": {
+			"time": null,
+			"reason": null,
+			"checked_at": "2026-11-12T14:49:23Z"
+		},
+		"cert_der": "MIIDxTCCA0ugAwIBAgISBVZwh2QiM9drKHkZKOblmq2MMAoGCCqGSM49BAMDMDMxCzAJBgNVBAYTAlVTMRYwFAYDVQQKEw1MZXQncyBFbmNyeXB0MQwwCgYDVQQDEwNZRTEwHhcNMjYxMDIyMDY0MzUxWhcNMjcwMTIwMDY0MzUwWjAlMSMwIQYDVQQDExp0aHJlYXRzaGllbGQuemVyb3NoaWVsZC5haTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABOOo8FNL593b+kRJzrBTYPtsPLwz3jvM5TMB9QDqwJGyl8M5nIcQ2Z6ScoSyx03tE6iCc3mWBpvir3Mvgyr+AFKjggJLMIICRzAOBgNVHQ8BAf8EBAMCB4AwEwYDVR0lBAwwCgYIKwYBBQUHAwEwDAYDVR0TAQH/BAIwADAdBgNVHQ4EFgQUbGRYNR19E3rj1/MpnK4aHN4Gjo8wHwYDVR0jBBgwFoAUuyDKRwv+1+Wc+Y8JKqOMN0WxvNgwMwYIKwYBBQUHAQEEJzAlMCMGCCsGAQUFBzAChhdodHRwOi8veWUxLmkubGVuY3Iub3JnLzBIBgNVHREEQTA/ghp0aHJlYXRzaGllbGQuemVyb3NoaWVsZC5haYIhdGhyZWF0c2hpZWxkYmFja2VuZC56ZXJvc2hpZWxkLmFpMBMGA1UdIAQMMAowCAYGZ4EMAQIBMC4GA1UdHwQnMCUwI6AhoB+GHWh0dHA6Ly95ZTEuYy5sZW5jci5vcmcvMTMuY3JsMIIBDAYKKwYBBAHWeQIEAgSB/QSB+gD4AHUATGPcmOWcHauI9h6KPd6uj6tEozd7X5uUw/uhnPzBviYAAAGhYo+doAAABAMARjBEAiBI3j5K+XpYaHquZO3BKRjt4uZhs5/U/2NsZ1mXMua5YAIgNtXYglm/T54gO2JePGGSBYrO96bGYlnjKcyqTpMKaikAfwCOykcLrN5q86IGsKR6hLdG/h/Gv5U+JeabTuQCSPPG6AAAAaFij58VAAgAAAUAKwjxwwQDAEgwRgIhAKqjVNUcbFoorZkByCW3MRnQqFatGykeHxX5VmmUea8XAiEAjboSefJ0Igdy6oX22Vd3yTeoYzKVuqjyNSIWsCsCfbkwCgYIKoZIzj0EAwMDaAAwZQIxAObqgYIMti2R/Pv9En7AMfCH6i2VcBLt9GwaoBepppdu0+nesuFt5LggGbWv0l4Z8AIwErRBlijykFtZJj0TFvth7+6O3UvDVE1apaL5cOijQw3AAC4IGPgZHtZw2zaod+VD"
+	},
+	{
+		"id": "18037816390",
+		"tbs_sha256": "9af1560d1b5affc1046ca75d6b12059668a42fbe1b8cc0ed4a400e9a7c2b9ddb",
+		"cert_sha256": "e2c12290af364407e1327eca8a8190d176b14bc0d0a67510b067b16e8618f5f8",
+		"dns_names": [
+			"dpdplawshield.zeroshield.ai"
+		],
+		"pubkey_sha256": "bbdd71febbfd8af32b5ced1dbba37600123a0628957c3d13f7d0d3133a2a4afe",
+		"pubkey": {
+			"type": "rsa",
+			"bit_length": 2048
+		},
+		"issuer": {
+			"friendly_name": "Let's Encrypt",
+			"pubkey_sha256": "9d637b3d27a9e570d07607b9ccadb80a70915c7af72afce12841b1b1da825fd1",
+			"name": "C=US, O=Let's Encrypt, CN=YR2"
+		},
+		"not_before": "2026-10-28T17:14:33Z",
+		"not_after": "2027-01-26T17:14:32Z",
+		"revoked": false,
+		"revocation": {
+			"time": null,
+			"reason": null,
+			"checked_at": "2026-11-12T14:49:15Z"
+		},
+		"cert_der": "MIIFEDCCA/igAwIBAgISBU8uqtJP6ifjlUYpSN2Fzw9CMA0GCSqGSIb3DQEBCwUAMDMxCzAJBgNVBAYTAlVTMRYwFAYDVQQKEw1MZXQncyBFbmNyeXB0MQwwCgYDVQQDEwNZUjIwHhcNMjYxMDI4MTcxNDMzWhcNMjcwMTI2MTcxNDMyWjAmMSQwIgYDVQQDExtkcGRwbGF3c2hpZWxkLnplcm9zaGllbGQuYWkwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCsfMluTWj22EIM+fwQHA8PFGBtg7bvK1lpmvjxipEFdcUrMGHvGiTW4Z+s4+Ivhb1kBKwx95yhbwFwpEvrs0W+pGbFZ5BxqYcf5KQs+6L+UqmfbYAmAAVj+usVoyMj0XXhbsrbiwXEbHf17BzBSivUR2jvTVOpS4ZwVevDzkgqwMifPdcRpsqR9Ek9kbKstCIiR6PpJVjBDwH0zUE684TebtxjuA0I4nAmbHBbZvttT/jdasnYNG5tJAvK2QbvX16wfingCNWJr45mISDClhGwRCKejG/c2IWFjWir4NTYFMmNJ4zpplhC9W8hf/lP211qum1gM1uJBSjJOtPbbCGvAgMBAAGjggIpMIICJTAOBgNVHQ8BAf8EBAMCBaAwEwYDVR0lBAwwCgYIKwYBBQUHAwEwDAYDVR0TAQH/BAIwADAdBgNVHQ4EFgQUMxtM92W1g0bovz0vwEY6MSOMUmYwHwYDVR0jBBgwFoAUQBUtJnntMiCe35pyHdYyH4EMgQwwMwYIKwYBBQUHAQEEJzAlMCMGCCsGAQUFBzAChhdodHRwOi8veXIyLmkubGVuY3Iub3JnLzAmBgNVHREEHzAdghtkcGRwbGF3c2hpZWxkLnplcm9zaGllbGQuYWkwEwYDVR0gBAwwCjAIBgZngQwBAgEwLgYDVR0fBCcwJTAjoCGgH4YdaHR0cDovL3lyMi5jLmxlbmNyLm9yZy82Ny5jcmwwggEMBgorBgEEAdZ5AgQCBIH9BIH6APgAdgAcn2gs6frwRWlQ+BuWiofd2zIQ2EzmyLLjglJKxM9ZnwAAAaGDtzEfAAAEAwBHMEUCIA12s2TdB+yuwA8cE0lFg7yWj342quA1sKGXSYVmKG5/AiEAtm4EwwmpaFJJeVAJM+uQ0xpw4Q8SfrfIsEzBSPIqd10AfgBZbmwzhpSyWXKiVsig6N2QSnboCD3ahzsBCDgoFDzuWQAAAaGDtzGIAAgAAAUAFvUYHQQDAEcwRQIgBV3aXyAj48bDeeil5/1hEffDlzEnB/RxS4KfB4SdncICIQDj+yEvjzVV63d+xATCnDWW1ckBISck28k0PtcMiI9GKjANBgkqhkiG9w0BAQsFAAOCAQEAJ0E7xZSUXTWp2M7et3aymZz2RDHcyuI9jKs94JItDLA0uzm1NVNgCK/Blh1OtHFzDizVTfoQ6x6d82CDLdrIMl62UiMfIn4i1n3ffphF8sJnLgRNufN3j57CRCoWsBrqygF0UsaLhvYz4cOsRH4rVwHCnVvej+qFQj91d4uF10XtJfDn0rkXp0dsNzwboHEnsz6cyZIk7H0TqG91w4qzOgnhU7TFEiwDllR4LSUGaHjg9rhN7oLHk7/zCrChDybigMBWVgu/mVakIViOqSfLNhsnfq3YpVss8GakBs82Ly7uDCSDH1/A3/xzRo9POPjRJtxEUHWJGNdubLyGb3C/kA=="
+	},
+	{
+		"id": "18068474745",
+		"tbs_sha256": "6e9a4e45b476c9c925a23f30f3189ee550f134cf20f6586956c82caa307de6e0",
+		"cert_sha256": "d509e15a6181eac8215b08de92c238c8876b31bac4a1f2137ffd6ea26022f63e",
+		"dns_names": [
+			"aiguardx.zeroshield.ai",
+			"aiguardxbackend.zeroshield.ai"
+		],
+		"pubkey_sha256": "d1083d047712ba6f42603af33234ac4642198bfecba3c614e20ccbf99daa22c5",
+		"pubkey": {
+			"type": "ecdsa",
+			"curve": "P-256"
+		},
+		"issuer": {
+			"friendly_name": "Let's Encrypt",
+			"pubkey_sha256": "b3fb5d00e994cddf2cc9a4eea9f806bc5727e83cc0e4299bf956f2d524fe5376",
+			"name": "C=US, O=Let's Encrypt, CN=YE2"
+		},
+		"not_before": "2026-10-30T08:47:28Z",
+		"not_after": "2027-01-28T08:47:27Z",
+		"revoked": false,
+		"revocation": {
+			"time": null,
+			"reason": null,
+			"checked_at": "2026-11-12T14:49:12Z"
+		},
+		"cert_der": "MIIDvDCCA0KgAwIBAgISBWixdvNOUmq/9lWiXztH+Rf6MAoGCCqGSM49BAMDMDMxCzAJBgNVBAYTAlVTMRYwFAYDVQQKEw1MZXQncyBFbmNyeXB0MQwwCgYDVQQDEwNZRTIwHhcNMjYxMDMwMDg0NzI4WhcNMjcwMTI4MDg0NzI3WjAhMR8wHQYDVQQDExZhaWd1YXJkeC56ZXJvc2hpZWxkLmFpMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE9p6uZy+0M94hVphZMvu5g4gCyFJ9M03UXFzXP8k/tgk7FIQ2MvqnBFBUgddUZlhtTCAZE5y7sHwRsOCE2jwUz6OCAkYwggJCMA4GA1UdDwEB/wQEAwIHgDATBgNVHSUEDDAKBggrBgEFBQcDATAMBgNVHRMBAf8EAjAAMB0GA1UdDgQWBBRYNoZj+k6wzT66QlxwPvZFiAu6UDAfBgNVHSMEGDAWgBS5WfKOzyLwhtM3SP92FBi6gthVhzAzBggrBgEFBQcBAQQnMCUwIwYIKwYBBQUHMAKGF2h0dHA6Ly95ZTIuaS5sZW5jci5vcmcvMEAGA1UdEQQ5MDeCFmFpZ3VhcmR4Lnplcm9zaGllbGQuYWmCHWFpZ3VhcmR4YmFja2VuZC56ZXJvc2hpZWxkLmFpMBMGA1UdIAQMMAowCAYGZ4EMAQIBMC8GA1UdHwQoMCYwJKAioCCGHmh0dHA6Ly95ZTIuYy5sZW5jci5vcmcvMTIzLmNybDCCAQ4GCisGAQQB1nkCBAIEgf8EgfwA+gB3AByfaCzp+vBFaVD4G5aKh93bMhDYTObIsuOCUkrEz1mfAAABoYwzqzsAAAQDAEgwRgIhAIRx7Yf+92PN6auSSwRsze9RAF07Qr7cUOx6ooUnLQGUAiEAmUteEmBT6OcVChliJKIh1D3PguSNeYMACm69ZUEvSSwAfwAai51rjdeR0c0FSe22A1XWBrZPrTDbcf54jw/HyPvEsQAAAaGMM7KkAAgAAAUAEAlxIAQDAEgwRgIhAIwJLiWcdHX4zqAP4ib1l5e2mNASOox4O7Z/Po+GCyRcAiEAza87AG8r9prFd1eQ/dALuXW7AuXgPjlrsag38XqwoCUwCgYIKoZIzj0EAwMDaAAwZQIwNtqPsZey5di6V9SgPzN6MP/EA1J9sO6veLAjeZR8u7yI+SUtGHnKxQFeP3a/FFflAjEArpvtKtdFqwtZ4lP0JPOOD7a/HZgeIhnekrM/k3VSvcGMgkG8kQKJeHD75tc4xPYh"
+	},
+	{
+		"id": "18142881202",
+		"tbs_sha256": "a4a1e823dc6a129c8ee031b3b8b4475588e3dc39deae996335ca4e44d5e6e4ba",
+		"cert_sha256": "18b49702e34b2acfa1ee62481507962f3bc0ba699b0a91343bcc0a8e1582dc7c",
+		"dns_names": [
+			"dlp.zeroshield.ai"
+		],
+		"pubkey_sha256": "bf365a78e9e49e1b7bd8baf5dfc04dab11322d29a81c601a77ad13a36adf9609",
+		"pubkey": {
+			"type": "ecdsa",
+			"curve": "P-256"
+		},
+		"issuer": {
+			"friendly_name": "Let's Encrypt",
+			"pubkey_sha256": "b3fb5d00e994cddf2cc9a4eea9f806bc5727e83cc0e4299bf956f2d524fe5376",
+			"name": "C=US, O=Let's Encrypt, CN=YE2"
+		},
+		"not_before": "2026-11-03T05:30:18Z",
+		"not_after": "2027-02-01T05:30:17Z",
+		"revoked": false,
+		"revocation": {
+			"time": null,
+			"reason": null,
+			"checked_at": "2026-11-12T14:49:12Z"
+		},
+		"cert_der": "MIIDkTCCAxagAwIBAgISBU0UKuVHt3YB7f0Ftw5R0A2OMAoGCCqGSM49BAMDMDMxCzAJBgNVBAYTAlVTMRYwFAYDVQQKEw1MZXQncyBFbmNyeXB0MQwwCgYDVQQDEwNZRTIwHhcNMjYxMTAzMDUzMDE4WhcNMjcwMjAxMDUzMDE3WjAcMRowGAYDVQQDExFkbHAuemVyb3NoaWVsZC5haTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABKhEgnr+ahNK6VziSq47qJ008/XnSWmt5GSM4SdjqcYuSWXJXriohvP8eezox0pxB8v/2tf3/K7ngWTuNHcoE3WjggIfMIICGzAOBgNVHQ8BAf8EBAMCB4AwEwYDVR0lBAwwCgYIKwYBBQUHAwEwDAYDVR0TAQH/BAIwADAdBgNVHQ4EFgQU9muMQLcZg69BgYWzi47154r0so8wHwYDVR0jBBgwFoAUuVnyjs8i8IbTN0j/dhQYuoLYVYcwMwYIKwYBBQUHAQEEJzAlMCMGCCsGAQUFBzAChhdodHRwOi8veWUyLmkubGVuY3Iub3JnLzAcBgNVHREEFTATghFkbHAuemVyb3NoaWVsZC5haTATBgNVHSAEDDAKMAgGBmeBDAECATAuBgNVHR8EJzAlMCOgIaAfhh1odHRwOi8veWUyLmMubGVuY3Iub3JnLzE1LmNybDCCAQwGCisGAQQB1nkCBAIEgf0EgfoA+AB2AGBMmq96f3dfAdQG/JINyJnrCxx9+MlSG/r6F3c7l4vJAAABoaAYmBkAAAQDAEcwRQIgDQSLzL8kfw9ZTWL0vHtLKWkvXoyT/SSCydB8hPCQC0ACIQCCufnE8cOIvzsS3/QwH7yEO0zBQNcj3SnBxBE9DMd9HwB+AI7KRwus3mrzogawpHqEt0b+H8a/lT4l5ptO5AJI88boAAABoaAYmXwACAAABQA2oUvzBAMARzBFAiBy5tMO6G0XAwUb1l5eJz3t16+W9QTM5/XbR0cfTnfRBgIhALojrbK0pNHuK542MBPSBJHZXnCDbDf9ZvYtkA9A7GOCMAoGCCqGSM49BAMDA2kAMGYCMQCWEEDPr0lqY5RqoMg24XBwm5ARNnurBrufASfyIsaYVaNqAdCXTRxx5rmb0ErVvzMCMQCGYqCOe2Or44BeyEiSvxsrVjjQRLjV5QPedsFfsd9Zo58z9qL0c72cxo1vxi2pKbA="
+	},
+	{
+		"id": "18311411645",
+		"tbs_sha256": "423f57ea6b0502eefd1913bdfba1729286618a1ebac53c7804347d351f99ca59",
+		"cert_sha256": "620c45c607f5529be20c21eaa7b83c2ecada21162e272ed8c5a63359185d02d9",
+		"dns_names": [
+			"*.zeroshield.ai",
+			"zeroshield.ai"
+		],
+		"pubkey_sha256": "45b57d20c03e2b2b47c657ef379aa87b7789873d0c659626458759711ec774f3",
+		"pubkey": {
+			"type": "rsa",
+			"bit_length": 2048
+		},
+		"issuer": {
+			"friendly_name": "Amazon Trust Services",
+			"pubkey_sha256": "d8f6a944107ca0af2f5941add85e4ebc39185ce097394e1a1d38873625896dcb",
+			"name": "C=US, O=Amazon, CN=Amazon RSA 2048 S21"
+		},
+		"not_before": "2026-11-11T12:04:33Z",
+		"not_after": "2027-05-28T13:04:33Z",
+		"revoked": false,
+		"revocation": {
+			"time": null,
+			"reason": null,
+			"checked_at": "2026-11-12T14:49:45Z"
+		},
+		"cert_der": "MIIEYDCCA0igAwIBAgIQQWAQrH1hbR/xAzKSPOQXfTANBgkqhkiG9w0BAQsFADA8MQswCQYDVQQGEwJVUzEPMA0GA1UEChMGQW1hem9uMRwwGgYDVQQDExNBbWF6b24gUlNBIDIwNDggUzIxMB4XDTI2MTExMTEyMDQzM1oXDTI3MDUyODEzMDQzM1owGDEWMBQGA1UEAwwNemVyb3NoaWVsZC5haTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAMHVXpJhIOT5PbAgwrObhd0qRSg7BDwxsFI+t9j8JIgnBW1vb9wx0eTYdECtzKQwPUe/gZdb56/i7oAesqKqH5aQ2PLaq7NEDFyKLH4btACkS2eN/MfyIIENP9U979c+TzTbzAC00lOZObJaB1TSbPKNXe8perjj8xB38VOiURae7E4qyAfnFXWx6wx4TJGZImgw/37pt/5DyWPFAYhJUnMCj8xGil84xTuF76sF8qv6pbxLoS8bLLrtWKsouZkLes5jwqPs1ZnPraFbsBVB7U5aT1J/hH/XpPx2x/JKQgf2BgtMzDar3qzGJIiMnODAcI6CDEgio8rjP9DsJ3afk2cCAwEAAaOCAYAwggF8MB8GA1UdIwQYMBaAFA5Ts3Psxcrx3yZdYzx6JxgurNDcMB0GA1UdDgQWBBTDuB3jkl+gTDA7lyozosdTR9LS9TApBgNVHREEIjAggg16ZXJvc2hpZWxkLmFpgg8qLnplcm9zaGllbGQuYWkwDgYDVR0PAQH/BAQDAgWgMBMGA1UdJQQMMAoGCCsGAQUFBwMBMDsGA1UdHwQ0MDIwMKAuoCyGKmh0dHA6Ly9jcmwucjJzMjEuYW1hem9udHJ1c3QuY29tL0x1a1ZtLmNybDATBgNVHSAEDDAKMAgGBmeBDAECATB1BggrBgEFBQcBAQRpMGcwLQYIKwYBBQUHMAGGIWh0dHA6Ly9vY3NwLnIyczIxLmFtYXpvbnRydXN0LmNvbTA2BggrBgEFBQcwAoYqaHR0cDovL2NydC5yMnMyMS5hbWF6b250cnVzdC5jb20vcjJzMjEuY2VyMAwGA1UdEwEB/wQCMAAwEwYKKwYBBAHWeQIEAwEB/wQCBQAwDQYJKoZIhvcNAQELBQADggEBAK4i7OcJIcTeFwADliL7S877VwMmqb3VHIYG2RU1iPk48dN1N2Y9dNcrYRCxpGdexbxMtg5zK7v0U/kTmgPovTvjhkDTnstYGQ4i8sbrs0q4AUExwyY19z6wyO1vF8ba+GW7yo7MSwaS1LcfnKNcJpqCZqKQw3O/BKLk48BUdtMDA3SNcl9yOT+u2aViGn1+7dKTqqTJB5JvThHjBWDhMDM/gSxPTlRBW6IwANtuU0yqoA8z6qbKzBHZ5mOdRgc3wKm9cI5ingVpIjvTO+AkWy70ooe8wsuvjBvGg216kTnHzgEdk3FSiqjNfdDYGjHc/8Y4Yh+8GPqRe034NGv5J58="
+	},
+	{
+		"id": "18327491097",
+		"tbs_sha256": "86566ff356560fd0b3053073d913224643c85a40c4b2f6b12ddd764df79bfbc9",
+		"cert_sha256": "2d54e66315e8d1a3203f890734b4d7bf29d28798c22c0151c464ff952a21cb9f",
+		"dns_names": [
+			"devsec-staging-api.zeroshield.ai",
+			"devsec-staging.zeroshield.ai"
+		],
+		"pubkey_sha256": "baaf582b3fbaba057110d6b8740ed1f8aee7ec33f92b41e64ed59c52b4aaed30",
+		"pubkey": {
+			"type": "ecdsa",
+			"curve": "P-256"
+		},
+		"issuer": {
+			"friendly_name": "Let's Encrypt",
+			"pubkey_sha256": "b3fb5d00e994cddf2cc9a4eea9f806bc5727e83cc0e4299bf956f2d524fe5376",
+			"name": "C=US, O=Let's Encrypt, CN=YE2"
+		},
+		"not_before": "2026-11-12T07:14:37Z",
+		"not_after": "2027-02-10T07:14:36Z",
+		"revoked": false,
+		"revocation": {
+			"time": null,
+			"reason": null,
+			"checked_at": "2026-11-12T14:49:12Z"
+		},
+		"cert_der": "MIIDyTCCA0+gAwIBAgISBjRFd6gI7FM5YJkaguiABVVbMAoGCCqGSM49BAMDMDMxCzAJBgNVBAYTAlVTMRYwFAYDVQQKEw1MZXQncyBFbmNyeXB0MQwwCgYDVQQDEwNZRTIwHhcNMjYxMTEyMDcxNDM3WhcNMjcwMjEwMDcxNDM2WjAnMSUwIwYDVQQDExxkZXZzZWMtc3RhZ2luZy56ZXJvc2hpZWxkLmFpMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEMOewkKJmq/ycFvTMWeifDGII0oklT/22mvyDVxO6j9fYK4jFTJ+PNMSOxXk4o19SB1/5zFuni+OIr6gMMLriMqOCAk0wggJJMA4GA1UdDwEB/wQEAwIHgDATBgNVHSUEDDAKBggrBgEFBQcDATAMBgNVHRMBAf8EAjAAMB0GA1UdDgQWBBR1+HUi/FOqNLGZQRbUY3UvdXAfyDAfBgNVHSMEGDAWgBS5WfKOzyLwhtM3SP92FBi6gthVhzAzBggrBgEFBQcBAQQnMCUwIwYIKwYBBQUHMAKGF2h0dHA6Ly95ZTIuaS5sZW5jci5vcmcvMEkGA1UdEQRCMECCIGRldnNlYy1zdGFnaW5nLWFwaS56ZXJvc2hpZWxkLmFpghxkZXZzZWMtc3RhZ2luZy56ZXJvc2hpZWxkLmFpMBMGA1UdIAQMMAowCAYGZ4EMAQIBMC4GA1UdHwQnMCUwI6AhoB+GHWh0dHA6Ly95ZTIuYy5sZW5jci5vcmcvOTIuY3JsMIIBDQYKKwYBBAHWeQIEAgSB/gSB+wD5AHYAABpdGhwtk3W2SFV4+C9xoa5u7zl9KXyK4xV7yt7hoB4AAAGhztFVsgAABAMARzBFAiEA0f3vaJYJK1Jd0m7EuN2YN8qdzT5e0QvNU7zj3D8c/nkCIEQsf1f2oslN1Tb2f5DQ5ypftcl828wYtEp6QnhmSfmUAH8AjspHC6zeavOiBrCkeoS3Rv4fxr+VPiXmm07kAkjzxugAAAGhztFZYAAIAAAFAEUu298EAwBIMEYCIQCWcehCB2Fnpxda55wbquVEwyFMRDFYxbsGpDHP7m9KZwIhALct971yFkO4I5shxAX+YDkrOio7FGiRnO03W9rTd2xJMAoGCCqGSM49BAMDA2gAMGUCMHAoaA/sXvdMi//TXvLOpU55o3x5uuCzoIi7Rkm1mpiiS7Zr+/RAIEMn546aWuhlFAIxALQHF01OyVSy2CE3/57N9aOHtxCYz3DKvQxzXQPaver2PGf7Px5flVMeq5oRq1VeOA=="
+	}
+]

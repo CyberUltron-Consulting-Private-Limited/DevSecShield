@@ -3,14 +3,23 @@
 * closed world: exact, one-to-one. Every product asset at the target's address must consume exactly one oracle asset;
   an oracle asset nothing consumed is ``missing``; a product asset that consumed nothing is ``extra``.
 * open world: superset. Every oracle asset must be found; extras are listed and must stay within ``extras_ceiling``.
-* a target whose independent self-check disagreed (lab/selfcheck.json) is NOT-JUDGED(lab), never a pass; a key whose
-  self-check rows are all ``independent: false`` is NOT-JUDGED(lab-not-independent) (O-3; INTERFACES v2.1 #3).
+* a target whose independent self-check disagreed (lab/selfcheck.json) is NOT-JUDGED(lab), never a pass;
+* a key the lab could not verify independently (self-check rows all ``independent: false``, or listed in
+  ``unverified_keys``; O-3, INTERFACES v2.1 #3, v7.1 #5) is compared first: the product equal to the lab's value is
+  NOT-JUDGED(lab-not-independent) with the product's value in ``observed`` (the ledger pins it, so a change moves the
+  row); a product that disagrees is FAIL(disagrees-with-unverified-lab): two readers that disagree mean a defect in one
+  of them, never a pass (review 5878413538). Derived keys follow the key they are made from, and a verified constraint
+  still applies (a TLS 1.3-only endpoint negotiates one of RFC 8446's suites);
 * every product asset must be claimed: by a target's address, or as the single ``coverage`` row of an address the lab
   declares empty (``ranges[].empty_addresses``). Anything else is FAIL(unattributed) (O-1: no row passes without an
   oracle; INTERFACES v7 §A.1).
 * fields a customer sees (quantum verdict, algorithm, key size) that the oracle does not state are derived from the
   oracle's own facts where a cited table makes that unambiguous (standards.py), otherwise NOT-RUN(no-expectation), so
-  the ledger has to name what is not judged (v7 §A.2).
+  the ledger has to name what is not judged (v7 §A.2);
+* the verdicts a customer acts on (finding codes, impact) are judged where the lab states them (``codes_include``,
+  ``codes_exclude``, ``impact_min``, ``impact_max``: the weaknesses the spec plants by name, INTERFACES v7.3); where it
+  does not, each matched asset carries NOT-RUN(no-expectation) with the product's value in ``observed``, so the ledger
+  pins what the customer was shown and any change moves the row (review 5878413538);
 * sampled lists (suites, groups) are judged three ways: reported ⊆ accepted, reported ⊇ must-report, and exactly
   (``/complete``) (v7 §A.3).
 * product correctness is judged on the API value (O-7); the export's completeness is the join's business.
@@ -31,6 +40,8 @@ ORACLE_SCHEMA = "zs-cbom-oracle/1"
 
 
 VISIBLE_FIELDS = ("quantum_vulnerable", "algorithm", "key_size")
+# customer-visible verdicts judged only against what the lab states (never derived): codes, impact
+VERDICT_FIELDS = ("finding_codes", "impact")
 ENDPOINT_TYPES = ("tls_endpoint", "database_tls", "ssh_endpoint")
 
 
@@ -151,10 +162,10 @@ def derive(asset: dict[str, Any], key: str, item: dict[str, Any]) -> tuple[Any, 
     expect = asset.get("expect") or {}
     atype = asset.get("asset_type")
     if key == "quantum_vulnerable" and atype in ("tls_endpoint", "database_tls") and expect.get("groups"):
-        qv = STD.kex_quantum_vulnerable(F.norm_groups(expect["groups"]) or [], STD.PQ_TLS_GROUPS)
+        qv = STD.kex_quantum_vulnerable(F.norm_groups(expect["groups"]) or [], "tls")
         return None if qv is None else (qv, "derived: accepted TLS groups vs IANA ML-KEM groups")
     if key == "quantum_vulnerable" and atype == "ssh_endpoint" and expect.get("kex_algorithms"):
-        qv = STD.kex_quantum_vulnerable(F.norm_ssh_list(expect["kex_algorithms"]) or [], STD.PQ_SSH_KEX)
+        qv = STD.kex_quantum_vulnerable(F.norm_ssh_list(expect["kex_algorithms"]) or [], "ssh")
         return None if qv is None else (qv, "derived: accepted SSH KEX vs PQ KEX table")
     if key == "algorithm" and atype in ("tls_endpoint", "database_tls") and expect.get("cipher_suites"):
         return ("one of " + ",".join(F.norm_suites(expect["cipher_suites"]) or []), "derived: negotiated suite is accepted")
@@ -188,6 +199,56 @@ def _derived_ok(key: str, want: Any, item: dict[str, Any], asset: dict[str, Any]
     if key == "quantum_vulnerable":
         return F.norm_bool(got) is want
     return F.norm_int(got) == want
+
+
+def _unverified(checks: Checks, cid: str, subject: dict[str, Any], same: bool, expected: Any, observed: Any) -> None:
+    """A key the lab could not verify independently: NOT-JUDGED only when the product agrees with the lab's value
+    (the product's value is recorded, so the ledger pins it); a disagreement is FAIL."""
+    if same:
+        checks.not_judged(cid, GATE, "oracle", "lab-not-independent", subject, expected=expected, observed=observed)
+    else:
+        checks.fail(cid, GATE, "oracle", "disagrees-with-unverified-lab", subject, expected=expected,
+                    observed=observed)
+
+
+def _tls13_only(asset: dict[str, Any], oid: str, weak_keys: set[tuple[str, str]]) -> bool:
+    """The lab states, and verified independently, that the endpoint speaks TLS 1.3 and nothing else."""
+    if asset.get("asset_type") not in ("tls_endpoint", "database_tls"):
+        return False
+    versions = (asset.get("expect") or {}).get("protocol_versions")
+    return F.norm_versions(versions) == ["TLSv1.3"] and (oid.split("[", 1)[0], "protocol_versions") not in weak_keys
+
+
+def _verdicts(checks: Checks, prefix: str, oid: str, subject: dict[str, Any], asset: dict[str, Any],
+              item: dict[str, Any]) -> None:
+    """Finding codes and impact (review 5878413538 major 2): judged where the lab states them; NOT-RUN(no-expectation)
+    with the product's value otherwise, so the ledger names the gap and pins what the customer was shown."""
+    codes = set(F.norm_codes(item.get("finding_codes")))
+    for code in asset.get("codes_include") or []:
+        checks.verdict(f"{prefix}/{oid}/code/{code}", GATE, "oracle", code in codes, "code-missing",
+                       {**subject, "field": "finding_codes", "code": code},
+                       expected=f"includes {code}", observed=sorted(codes))
+    for code in asset.get("codes_exclude") or []:
+        checks.verdict(f"{prefix}/{oid}/no-code/{code}", GATE, "oracle", code not in codes, "code-unexpected",
+                       {**subject, "field": "finding_codes", "code": code},
+                       expected=f"excludes {code}", observed=sorted(codes))
+    if not asset.get("codes_include"):
+        checks.not_run(f"{prefix}/{oid}/finding_codes", GATE, "oracle", "no-expectation",
+                       {**subject, "field": "finding_codes", "reason_detail": "the lab states no codes_include"},
+                       observed=sorted(codes))
+    got = item.get("impact") or "Info"
+    if asset.get("impact_min"):
+        checks.verdict(f"{prefix}/{oid}/impact_min", GATE, "oracle",
+                       F.IMPACT_RANK.get(got, 4) <= F.IMPACT_RANK.get(asset["impact_min"], 4), "impact-too-low",
+                       {**subject, "field": "impact"}, expected=f">= {asset['impact_min']}", observed=got)
+    if asset.get("impact_max"):
+        checks.verdict(f"{prefix}/{oid}/impact_max", GATE, "oracle",
+                       F.IMPACT_RANK.get(got, 4) >= F.IMPACT_RANK.get(asset["impact_max"], 4), "impact-too-high",
+                       {**subject, "field": "impact"}, expected=f"<= {asset['impact_max']}", observed=got)
+    if not asset.get("impact_min") and not asset.get("impact_max"):
+        checks.not_run(f"{prefix}/{oid}/impact", GATE, "oracle", "no-expectation",
+                       {**subject, "field": "impact", "reason_detail": "the lab states no impact_min / impact_max"},
+                       observed=got)
 
 
 def selfcheck_disagreements(run: Path) -> dict[str, list[str]]:
@@ -275,14 +336,21 @@ def match(run: Path, k: str, checks: Checks, api_items: dict[int, dict[str, Any]
                 if norm is None:
                     checks.fail(cid, GATE, "oracle", "unknown-expect-key", ksubject, expected=want_raw)
                     continue
-                if (oid.split("[", 1)[0], key) in weak_keys:
-                    checks.not_judged(cid, GATE, "oracle", "lab-not-independent", ksubject, expected=want_raw,
-                                      observed="the lab's only self-check of this key shares code with the prober")
-                    continue
                 got_raw = product_value(key, item, comp)
                 want = norm(want_raw)
                 got = None if got_raw is F.MISSING else norm(got_raw)
                 shown = "<absent>" if got_raw is F.MISSING else got_raw
+                if (oid.split("[", 1)[0], key) in weak_keys:
+                    # O-3 compare first: the lab's value is not independent, so equality proves nothing (NOT-JUDGED,
+                    # the product's value recorded for the ledger), but a disagreement is a defect in one reader
+                    if key in F.SAMPLED:
+                        same = got_raw is not F.MISSING and bool(got) and set(got) <= set(want or [])
+                    else:
+                        same = got_raw is not F.MISSING and got == want
+                    _unverified(checks, cid, {**ksubject, "expectation": "unverified"}, same, want_raw, shown)
+                    rows.append({"oracle_id": oid, "asset_id": aid, "key": key, "expected": want_raw, "product": shown,
+                                 "verdict": "NOT-JUDGED" if same else "FAIL"})
+                    continue
                 if key in F.SAMPLED:
                     _sampled(checks, cid, ksubject, key, want, got, got_raw, asset, rows, oid, aid)
                     continue
@@ -307,36 +375,31 @@ def match(run: Path, k: str, checks: Checks, api_items: dict[int, dict[str, Any]
                 ksubject = {**subject, "asset_id": aid, "field": key}
                 derived = derive(asset, key, item)
                 source = derived_from(asset, key)
-                if derived is not None and (oid.split("[", 1)[0], source) in weak_keys:
-                    # a derivation is only as independent as the oracle fact it is made from (O-3)
-                    checks.not_judged(cid, GATE, "oracle", "lab-not-independent",
-                                      {**ksubject, "expectation": "derived"}, expected=f"{derived[0]} ({derived[1]})",
-                                      observed=f"derived from {source}, which the lab did not verify independently")
-                    continue
                 if derived is not None:
                     want, how = derived
                     ok = _derived_ok(key, want, item, asset)
-                    checks.verdict(cid, GATE, "oracle", ok, "wrong-value", {**ksubject, "expectation": "derived"},
-                                   expected=f"{want} ({how})", observed=item.get(key))
+                    if (oid.split("[", 1)[0], source) in weak_keys:
+                        # a derivation is only as independent as the oracle fact it is made from (O-3): compare first
+                        _unverified(checks, cid, {**ksubject, "expectation": "derived-unverified"}, ok,
+                                    f"{want} ({how}, from the unverified {source})", item.get(key))
+                    else:
+                        checks.verdict(cid, GATE, "oracle", ok, "wrong-value", {**ksubject, "expectation": "derived"},
+                                       expected=f"{want} ({how})", observed=item.get(key))
                     rows.append({"oracle_id": oid, "asset_id": aid, "key": key, "expected": f"{want} ({how})",
                                  "product": item.get(key), "verdict": "PASS" if ok else "FAIL"})
                 elif item.get(key) not in (None, ""):
-                    checks.not_run(cid, GATE, "oracle", "no-expectation", {**ksubject, "reason_detail": "oracle silent"})
-            codes = set(F.norm_codes(item.get("finding_codes")))
-            for code in asset.get("codes_include") or []:
-                checks.verdict(f"{prefix}/{oid}/code/{code}", GATE, "oracle", code in codes, "code-missing",
-                               {**subject, "asset_id": aid, "field": "finding_codes", "code": code},
-                               expected=f"includes {code}", observed=sorted(codes))
-            for code in asset.get("codes_exclude") or []:
-                checks.verdict(f"{prefix}/{oid}/no-code/{code}", GATE, "oracle", code not in codes, "code-unexpected",
-                               {**subject, "asset_id": aid, "field": "finding_codes", "code": code},
-                               expected=f"excludes {code}", observed=sorted(codes))
-            if asset.get("impact_max"):
-                got = item.get("impact") or "Info"
-                checks.verdict(f"{prefix}/{oid}/impact_max", GATE, "oracle",
-                               F.IMPACT_RANK.get(got, 4) >= F.IMPACT_RANK.get(asset["impact_max"], 4), "impact-too-high",
-                               {**subject, "asset_id": aid, "field": "impact"},
-                               expected=f"<= {asset['impact_max']}", observed=got)
+                    checks.not_run(cid, GATE, "oracle", "no-expectation", {**ksubject, "reason_detail": "oracle silent"},
+                                   observed=item.get(key))
+                tls13 = _tls13_only(asset, oid, weak_keys)
+                if key == "algorithm" and tls13 and (oid.split("[", 1)[0], "cipher_suites") in weak_keys:
+                    # the suite list is unverified, but the endpoint's TLS 1.3-only versions are (RFC 8446 B.4)
+                    got = item.get(key)
+                    checks.verdict(f"{cid}/tls13_suite", GATE, "oracle",
+                                   bool(got) and (F.norm_suites([got]) or [""])[0] in STD.TLS13_SUITES, "wrong-value",
+                                   {**ksubject, "field": "algorithm/tls13_suite", "expectation": "rfc8446"},
+                                   expected=f"one of {','.join(sorted(STD.TLS13_SUITES))} (RFC 8446 B.4; verified "
+                                            "protocol_versions = TLSv1.3 only)", observed=got)
+            _verdicts(checks, prefix, oid, {**subject, "asset_id": aid}, asset, item)
         extras = sorted(aid for aid in mine if aid not in consumed)
         if world == "closed":
             for aid in extras:

@@ -40,7 +40,8 @@ from backend.new_models import (  # noqa: E402
     TeamMembership,
     User,
 )
-from backend.routers import cbom_node, cbom_sources, cbom_vendor_public  # noqa: E402
+from backend.routers import auth as auth_router  # noqa: E402
+from backend.routers import cbom_node, cbom_node_sshca, cbom_sources, cbom_vendor_public  # noqa: E402
 from backend.utilities.auth import auth_utils  # noqa: E402
 from backend.utilities.cbom_sources import http as cbom_http  # noqa: E402
 from backend.utilities.cbom_sources import jobs as J  # noqa: E402
@@ -81,7 +82,8 @@ def world(tmp_path, monkeypatch):
         s.add(Scan(id=77, team_id=1, owner_user_id=ids["alice"], scan_type="cbom", title="code", scan_status="NOT_STARTED"))
         s.add(Scan(id=78, team_id=1, owner_user_id=ids["alice"], scan_type="sast", title="sast", scan_status="NOT_STARTED"))
         s.commit()
-    for module in (cbom_http, cbom_node, cbom_vendor_public, node_auth):
+    # every module the shared fixtures reach get_db() through, so no test depends on the process env (#433)
+    for module in (cbom_http, cbom_node, cbom_node_sshca, cbom_vendor_public, node_auth, auth_router):
         monkeypatch.setattr(module, "get_db", lambda: engine)
     for limiter in (cbom_http.read_limiter, cbom_http.write_limiter, cbom_http.node_limiter,
                     cbom_http.enroll_limiter, cbom_http.vendor_limiter):
@@ -114,7 +116,8 @@ KNOWN_HOSTS = "10.20.0.1 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIE0Bq1hQ0j7lC1n6x3o
 def linux_body(name="linux-dc", node_id=None, targets=None, **cfg):
     # password logins need pinned host keys (verified identity only, 2026-10-31)
     return {"kind": "linux_servers", "name": name, "node_id": node_id,
-            "config": {"targets": targets or ["10.20.0.0/29", "app-01.bank.local"], "credential_type": "password",
+            # six addresses written as a range (a /29 is now scanned whole, all 8: N3 of 14 Nov 2026)
+            "config": {"targets": targets or ["10.20.0.1-10.20.0.6", "app-01.bank.local"], "credential_type": "password",
                        "login_user": "zs-cbom", "host_key_policy": "pinned", "known_hosts": KNOWN_HOSTS, **cfg},
             "secrets": {"password": PASSWORD}}
 
@@ -133,10 +136,12 @@ def enroll_node(api, team=1, who="alice", name="dc-mumbai-01"):
 def test_target_counting_rules():
     p = T.parse_targets(["ip", "10.0.0.0/24", "10.0.0.128/25", "10.0.1.1-10.0.1.10", "Host.Example.COM.", "host.example.com",
                          "::ffff:10.0.2.1", "# comment", ""])
-    assert T.size(p.intervals) == 256 + 10 + 1
+    # what the scan node scans: the /24's 254 host addresses (not the network and broadcast addresses at the edges of
+    # the block the lines form; the /25 is inside it), the 10 of the range, and the mapped address as its IPv4 address
+    assert T.size(p.intervals) == 254 + 10 + 1
     assert p.hostnames == ["host.example.com"]
     excl = T.parse_exclusions(["10.0.0.0/26", "host.example.com"])
-    assert T.count_in_scope(p, excl) == 256 + 10 + 1 - 64
+    assert T.count_in_scope(p, excl) == 254 + 10 + 1 - 63
     assert T.count_blocks([(4, 0x0A000080, 0x0A0000FF), (4, 0x0A000100, 0x0A00017F)]) == 2
     assert T.parse_targets(["10.0.0.0/31"]).intervals[0][2] - T.parse_targets(["10.0.0.0/31"]).intervals[0][1] == 1
     with pytest.raises(T.TargetError, match="did you mean 10.0.0.0/24"):
@@ -204,7 +209,7 @@ def test_secrets_are_write_only_and_encrypted(api, world):
     r = api("POST", "/1/cbom/sources/items", json=linux_body(node_id=node_id))
     assert r.status_code == 201, r.text
     src = r.json()["source"]
-    assert src["secrets_set"] == ["password"] and src["target_count"] == 9
+    assert src["secrets_set"] == ["password"] and src["target_count"] == 7  # the /29's 6 hosts + 1 name
     api("GET", "/1/cbom/sources/items")
     api("GET", f"/1/cbom/sources/items/{src['id']}")
     api("GET", "/1/cbom/sources/overview")
@@ -363,23 +368,23 @@ def test_run_charges_once_refunds_on_cancel(api, world):
     node_id, _t, _ = enroll_node(api)
     src = api("POST", "/1/cbom/sources/items", json=linux_body(node_id=node_id)).json()["source"]
     est = api("POST", "/1/cbom/sources/estimate", json={"include": {"servers": True}}).json()
-    assert est["total_credits"] == 1.8  # 9 targets x 0.2
+    assert est["total_credits"] == 1.4  # 7 targets x 0.2 (the /29's 6 host addresses + 1 name: what the node scans)
     body = {"include": {"servers": True}, "client_request_id": "run-req-000001", "expected_credits": 1.0, "scan_id": 77}
     assert api("POST", "/1/cbom/sources/runs", json=body).status_code == 409
-    body["expected_credits"] = 1.8
+    body["expected_credits"] = 1.4
     first = api("POST", "/1/cbom/sources/runs", json=body)
     assert first.status_code == 201, first.text
     replay = api("POST", "/1/cbom/sources/runs", json=body)
     assert replay.status_code == 200 and replay.json()["replayed"] is True
     with Session(engine) as s:
-        assert round(s.get(Team, 1).credit_balance, 2) == 98.2
+        assert round(s.get(Team, 1).credit_balance, 2) == 98.6
     again = api("POST", "/1/cbom/sources/runs", json={**body, "client_request_id": "run-req-000002"})
     assert again.status_code == 409
     run_id = first.json()["run"]["id"]
     assert api("POST", f"/1/cbom/sources/runs/{run_id}/cancel", "bob").status_code == 400
     c1 = api("POST", f"/1/cbom/sources/runs/{run_id}/cancel").json()
     c2 = api("POST", f"/1/cbom/sources/runs/{run_id}/cancel").json()
-    assert c1["refunded"] == 1.8 and c2["refunded"] == 0 and c1["run"]["status"] == "cancelled"
+    assert c1["refunded"] == 1.4 and c2["refunded"] == 0 and c1["run"]["status"] == "cancelled"
     with Session(engine) as s:
         assert round(s.get(Team, 1).credit_balance, 2) == 100.0
     assert src["id"]
@@ -391,7 +396,7 @@ def test_insufficient_credits_creates_nothing(api, world):
     node_id, _t, _ = enroll_node(api, team=2, who="carol")
     api("POST", "/2/cbom/sources/items", "carol", json=linux_body(node_id=node_id))
     r = api("POST", "/2/cbom/sources/runs", "carol", json={"include": {"servers": True}, "client_request_id": "poor-team-001"})
-    assert r.status_code == 400 and "needs 1.8" in r.json()["detail"]
+    assert r.status_code == 400 and "needs 1.4" in r.json()["detail"]
     with Session(engine) as s:
         assert s.exec(select(CbomCollectionRun)).all() == []
         assert s.get(Team, 2).credit_balance == 0.5
@@ -464,6 +469,72 @@ def test_settings_permissions_and_stop_all(api, world):
     assert api("POST", "/1/cbom/sources/settings/stop-all", json={"on": False}).json()["settings"]["stop_all_network"] is False
 
 
+def test_the_team_never_scan_list_takes_addresses_ranges_and_host_names(api, world):
+    """N2 (14 Nov 2026): a host name on the team list must protect the host in every job, range sweeps included, so
+    the API stores it (normalized) next to the addresses and ranges; the node resolves it and keeps its addresses out
+    (scan_node tests: test_network_owner_bugs.py).  Malformed entries are still refused, and nothing of a refused
+    request is stored."""
+    r = api("PATCH", "/1/cbom/sources/settings", json={"network_exclusions": [
+        {"cidr": "10.20.99.0/24", "reason": "OT plant"}, {"cidr": " Web-01.Corp. ", "reason": "web"},
+        {"cidr": "printer", "reason": "printer"}, {"cidr": "localhost", "reason": "loopback"},
+        {"cidr": "bücher.corp", "reason": "idn"}]})
+    assert r.status_code == 200, r.text
+    assert [e["cidr"] for e in r.json()["settings"]["network_exclusions"]] == [
+        "10.20.99.0/24", "web-01.corp", "printer", "localhost", "xn--bcher-kva.corp"]
+    bad = api("PATCH", "/1/cbom/sources/settings", json={"network_exclusions": [
+        {"cidr": "10.20.98.0/24", "reason": "x"}, {"cidr": "10.0.0.5/24", "reason": "typo"}]})
+    assert bad.status_code == 400 and "did you mean 10.0.0.0/24" in bad.json()["detail"]
+    got = api("GET", "/1/cbom/sources/settings").json()["settings"]
+    assert "10.20.98.0/24" not in [e["cidr"] for e in got["network_exclusions"]]  # nothing of the refused request
+    ok = api("PATCH", "/1/cbom/sources/settings", json={"network_exclusions": [
+        {"cidr": "10.20.99.0/24", "reason": "OT plant"}, {"cidr": "fd00::1-fd00::5", "reason": "v6"},
+        {"cidr": "fe80::1%br-ab12", "reason": "bridge"}]})
+    assert ok.status_code == 200, ok.text
+    assert len(ok.json()["settings"]["network_exclusions"]) == 3
+
+
+def test_a_loopback_name_in_a_source_never_scan_list_is_kept_and_counted_as_loopback_only(api, world):
+    """Re-review 5879769432 (netutil.py:53): a server source may list localhost (or another name that is loopback by
+    definition).  The API keeps it, and the count, the credits and the connection-test samples leave out exactly
+    what the node leaves out for it: the loopback addresses, and nothing else (the node never holds on it)."""
+    node_id, _t, _ = enroll_node(api)
+    body = linux_body(node_id=node_id, targets=["127.0.0.0/29", "10.20.0.0/30", "::1", "localhost", "app-01.bank.local"],
+                      exclusions=["LOCALHOST.", "10.20.0.2", "db.localhost"])
+    r = api("POST", "/1/cbom/sources/items", json=body)
+    assert r.status_code == 201, r.text
+    src = r.json()["source"]
+    assert src["config"]["exclusions"] == ["localhost", "10.20.0.2", "db.localhost"]
+    assert src["target_count"] == 2  # 10.20.0.1 and app-01.bank.local: loopback (and the name localhost) left out
+    count = api("POST", "/1/cbom/sources/targets/count", json={
+        "targets": ["127.0.0.0/29", "10.20.0.0/30", "64:ff9b::7f00:1", "::ffff:127.0.0.9"], "exclusions": ["localhost"]}).json()
+    assert (count["valid"], count["count"], count["samples"]) == (True, 2, ["10.20.0.1", "10.20.0.2"])
+    other = api("POST", "/1/cbom/sources/targets/count", json={
+        "targets": ["127.0.0.0/29"], "exclusions": ["localhost.corp.internal"]}).json()
+    assert other["count"] == 6  # any other name: matched by the node only, by what it resolves to there
+
+
+@pytest.mark.parametrize("cidr, team, units", [
+    ("10.0.0.0/29", [], 6),  # a /29 on its own: the 6 host addresses, not its network and broadcast addresses
+    ("10.0.0.0/29", ["10.0.0.1"], 5),
+    ("10.0.0.0/24", [], 254),
+    ("10.0.0.0/25", [], 126),  # on its own a /25 is a subnet; split from a /24 its inner edges are hosts (N3)
+    ("10.0.0.0/31", [], 2),
+    ("0.0.0.0/29", [], 0),  # 0.0.0.0/8 reaches the node itself: never swept
+    ("fd00::/125", ["fd00::1-fd00::5"], 3),
+])
+def test_network_range_units_are_the_addresses_the_node_sweeps(api, world, cidr, team, units):
+    node_id, _t, _ = enroll_node(api)
+    r = api("POST", "/1/cbom/sources/items", json={"kind": "network_range", "name": "range", "node_id": node_id,
+                                                  "config": {"cidr": cidr, "mode": "full"}})
+    assert r.status_code == 201, r.text
+    if team:
+        assert api("PATCH", "/1/cbom/sources/settings", json={"network_exclusions": [
+            {"cidr": c, "reason": "x"} for c in team]}).status_code == 200
+    plan = api("POST", "/1/cbom/sources/estimate", json={"include": {"network": True}}).json()
+    item = next(i for i in plan["items"] if i["kind"] == "network_range")
+    assert (item["units"], item["unit"]) == (units, "addresses")
+
+
 def test_network_run_needs_soc_ack_and_respects_stop(api, world):
     node_id, _t, _ = enroll_node(api)
     r = api("POST", "/1/cbom/sources/items", json={"kind": "network_range", "name": "dc-range", "node_id": node_id,
@@ -481,16 +552,17 @@ def test_network_run_needs_soc_ack_and_respects_stop(api, world):
 
 # ----------------------------------------------------------------------------- evidence and vendors
 def test_evidence_confidence_rules(api):
-    r = api("PATCH", "/1/cbom/sources/evidence/hsm_firmware", json={"confidence": "Q2"})
+    r = api("PATCH", "/1/cbom/sources/evidence/hsm_firmware", json={"confidence": "E2"})
     assert r.status_code == 400 and "evidence" in r.json()["detail"]
     today = dt.date.today().isoformat()
     r = api("PATCH", "/1/cbom/sources/evidence/hsm_firmware", json={
-        "confidence": "Q3", "evidence_title": "FIPS cert", "evidence_url": "https://csrc.nist.gov/x", "evidence_date": today,
+        "confidence": "E3", "evidence_title": "FIPS cert", "evidence_url": "https://csrc.nist.gov/x", "evidence_date": today,
         "answers": {"model": "<script>alert(1)</script>", "process": "yes"}})
-    assert r.status_code == 200 and r.json()["area"]["effective_confidence"] == "Q3"
+    assert r.status_code == 200 and r.json()["area"]["effective_confidence"] == "E3"
     old = (dt.date.today() - dt.timedelta(days=400)).isoformat()
     r = api("PATCH", "/1/cbom/sources/evidence/hsm_firmware", json={"evidence_date": old})
-    assert r.json()["area"]["effective_confidence"] == "Q0"
+    assert r.json()["area"]["effective_confidence"] == "E0"
+    assert r.json()["area"]["q0_gap"]["reason"] == "evidence_expired"
     assert api("PATCH", "/1/cbom/sources/evidence/hsm_firmware", json={"answers": {"process": "maybe"}}).status_code == 400
     assert api("PATCH", "/1/cbom/sources/evidence/nope", json={}).status_code == 404
 
@@ -505,11 +577,12 @@ def test_vendor_link_is_single_use_and_replaceable(api):
     assert shown.status_code == 200 and shown.json()["team_name"] == "Bank One"
     assert shown.headers["referrer-policy"] == "no-referrer"
     ans = api("POST", f"/cbom/vendor-questionnaire/{t2}", None, json={"answers": {"tls": "TLS 1.2+", "junk": "x"}})
-    assert ans.status_code == 200 and ans.json()["confidence"] == "Q1"
+    assert ans.status_code == 200 and ans.json() == {"received": True}  # the level is not disclosed (EC-12)
     assert api("POST", f"/cbom/vendor-questionnaire/{t2}", None, json={"answers": {"tls": "again"}}).status_code == 404
     assert api("GET", f"/cbom/vendor-questionnaire/{t2}", None).status_code == 404
     ev = api("GET", "/1/cbom/sources/evidence").json()
     assert ev["vendors"][0]["status"] == "answered" and ev["vendors"][0]["answers"] == {"tls": "TLS 1.2+"}
+    assert ev["vendors"][0]["effective_confidence"] == "E1"
     big = api("POST", f"/cbom/vendor-questionnaire/{t2}", None, content=b"x" * (40 * 1024),
               headers={"content-type": "application/json"})
     assert big.status_code == 413
@@ -609,7 +682,11 @@ def test_assets_are_stored_classified_deduplicated_and_scrubbed(api, world):
     cdx = api("GET", f"/1/cbom/sources/runs/{run['id']}/cbom")
     assert cdx.status_code == 200 and "attachment" in cdx.headers["content-disposition"]
     bom = cdx.json()
-    assert bom["specVersion"] == "1.6" and len(bom["components"]) == listed["all_total"]
+    # one zs-asset-<id> component per asset; certificate parts (CB-06: shared by bom-ref, zs:part_of) are not assets
+    assets = [c for c in bom["components"] if c["bom-ref"].startswith("zs-asset-")]
+    parts = [c for c in bom["components"] if not c["bom-ref"].startswith("zs-asset-")]
+    assert bom["specVersion"] == "1.6" and len(assets) == listed["all_total"]
+    assert all({"name": "zs:part_of", "value": "certificate"} in c["properties"] for c in parts)
     kinds = {c.get("cryptoProperties", {}).get("assetType") for c in bom["components"]}
     assert {"certificate", "protocol"} <= kinds
     assert any(p["name"] == "zs:gap" and "auth_failed" in p["value"] for p in bom["metadata"]["properties"])

@@ -13,6 +13,8 @@
                       and the SoftHSM object store (secret keys) must disagree on key_size.
   D2 keytool-bits     (review 5874442142) the generator's keytool parser reports key_bits + 1: the JKS / PKCS#12
                       readers must disagree on the keystore entries.
+  hsm-parser-drop     (review 5878784465) the generator's pkcs11-tool parser drops aes-128-wrap, so the oracle omits it:
+                      the token's objects as p11tool lists them must disagree with the run file's managed keys.
   B z02-groups-accepted   z02's facts edited to x25519 and accepted with a reason: nmap's kex_info and the rebuild
                       of run1.json from the facts must disagree, and the report must carry the accepted change.
   B run1-groups-accepted  (review 5874442142, the original form) oracle/run1.json, the file CB-01 judges, edited to
@@ -51,6 +53,11 @@ PARSER_MUTATIONS = {
     "hsm-parser-bits": {"wave": "hsm", "target": "softhsm", "key": "key_size", "file": "labgen.py",
                         "old": "        objs.append(o)\n",
                         "new": '        o["bits"] = o["bits"] * 2 if o["bits"] else o["bits"]  # D1\n        objs.append(o)\n'},
+    "hsm-parser-drop": {"wave": "hsm", "target": "softhsm",
+                        "key": "non-public objects on the token == the run file's managed_key rows (both ways)",
+                        "file": "labgen.py", "old": "        objs.append(o)\n",
+                        "new": '        if o["label"] != "aes-128-wrap":  # hsm-parser-drop (review 5878784465)\n'
+                               '            objs.append(o)\n'},
     "keytool-bits": {"wave": "core", "only": "host", "target": "host", "key": "entries", "file": "labgen.py",
                      "old": 'e["key_bits"], e["key_algorithm"] = (int(m.group(1)), m.group(2)) if m else (None, "")',
                      "new": 'e["key_bits"], e["key_algorithm"] = (int(m.group(1)) + 1, m.group(2)) if m else (None, "")'},

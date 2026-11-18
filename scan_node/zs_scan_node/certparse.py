@@ -10,10 +10,12 @@ from typing import Any
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import dsa, ec, ed448, ed25519, rsa, x448, x25519
-from cryptography.x509.oid import ExtensionOID
+from cryptography.x509.oid import AuthorityInformationAccessOID, ExtensionOID, NameOID
 
+from zs_scan_node import algid
 from zs_scan_node.scrub import printable
 
+MAX_SAN = 50
 PEM_CERT_RE = re.compile(rb"-----BEGIN CERTIFICATE-----\s+[A-Za-z0-9+/=\s]+?-----END CERTIFICATE-----")
 
 
@@ -50,6 +52,40 @@ def _name(value: x509.Name) -> str:
         return "<unparseable name>"
 
 
+def _common_name(value: x509.Name) -> str:
+    try:
+        attrs = value.get_attributes_for_oid(NameOID.COMMON_NAME)
+        return str(attrs[0].value) if attrs else ""
+    except Exception:
+        return ""
+
+
+def _named_oid(dotted: str | None) -> str | None:
+    """algid's name for an algorithm OID, or the dotted OID when algid does not know it."""
+    if not dotted:
+        return None
+    found = algid.resolve(dotted)
+    if found is not None and found.name:
+        return found.name
+    return dotted
+
+
+def _public_key_oid(cert: x509.Certificate) -> str | None:
+    """The SubjectPublicKeyInfo algorithm OID. cryptography names it on recent releases; older ones still
+    expose the TBS certificate, which algid reads without loading the key."""
+    try:
+        dotted = cert.public_key_algorithm_oid.dotted_string  # type: ignore[attr-defined]
+        if isinstance(dotted, str) and dotted:
+            return dotted
+    except Exception:
+        pass
+    try:
+        found = algid.tbs_spki_alg(cert.tbs_certificate_bytes)
+    except Exception:
+        return None
+    return found[0] if found else None
+
+
 def cert_facts(cert: x509.Certificate, source: str) -> dict[str, Any]:
     facts: dict[str, Any] = {"source": source}
     facts["subject"] = _name(cert.subject)
@@ -59,16 +95,29 @@ def cert_facts(cert: x509.Certificate, source: str) -> dict[str, Any]:
     facts["not_after"] = _iso(getattr(cert, "not_valid_after_utc", None) or cert.not_valid_after)
     try:
         oid = cert.signature_algorithm_oid
-        facts["sig_alg"] = getattr(oid, "_name", None) or oid.dotted_string
+        # cryptography sets ObjectIdentifier._name to "Unknown OID" for an OID it does not list. That
+        # placeholder is truthy, so it used to hide post-quantum signature OIDs (scan_node/tests/test_certparse_*
+        # has the case). A name it does list stays as printed; a placeholder is resolved through algid, else kept
+        # as the dotted OID. Algorithm names and OIDs live in algid only (test_algid_single_source).
+        label = getattr(oid, "_name", None)
+        if isinstance(label, str) and label and not algid.is_sentinel(label):
+            facts["sig_alg"] = label
+        else:
+            facts["sig_alg"] = _named_oid(oid.dotted_string) or "unknown"
     except Exception:
         facts["sig_alg"] = "unknown"
     try:
         facts.update(key_facts(cert.public_key()))
     except Exception:
-        try:  # e.g. ML-DSA / unsupported algorithms: keep the OID
-            facts["key_alg"] = cert.public_key_algorithm_oid.dotted_string  # type: ignore[attr-defined]
-        except Exception:
-            facts["key_alg"] = "unknown"
+        # Keys cryptography cannot load (post-quantum signature keys among them): name them through algid, the
+        # way the IdP reader does (CB-04).
+        dotted = _public_key_oid(cert)
+        facts["key_alg"] = _named_oid(dotted) or "unknown"
+        found = algid.resolve(dotted) if dotted else None
+        if found is not None and found.key_size is not None:
+            facts["key_size"] = found.key_size
+        if dotted:
+            facts["key_alg_oid"] = dotted
     san: list[str] = []
     try:
         ext = cert.extensions.get_extension_for_oid(ExtensionOID.SUBJECT_ALTERNATIVE_NAME).value
@@ -76,7 +125,23 @@ def cert_facts(cert: x509.Certificate, source: str) -> dict[str, Any]:
         san += [str(v) for v in ext.get_values_for_type(x509.IPAddress)]
     except Exception:
         pass
-    facts["san"] = san[:50]
+    # CB-17: the list stays capped at 50 names, with the real count beside it (never cut silently)
+    facts["san"] = san[:MAX_SAN]
+    facts["san_count"] = len(san)
+    facts["san_truncated"] = len(san) > MAX_SAN
+    cn = _common_name(cert.subject)
+    facts["wildcard"] = any(n.startswith("*.") for n in san) or cn.startswith("*.")
+    try:  # the issuer's certificate is published for download (an intermediate a server should send)
+        aia = cert.extensions.get_extension_for_oid(ExtensionOID.AUTHORITY_INFORMATION_ACCESS).value
+        facts["aia_ca_issuers"] = any(d.access_method == AuthorityInformationAccessOID.CA_ISSUERS for d in aia)
+    except Exception:
+        facts["aia_ca_issuers"] = False
+    try:
+        spki = cert.public_key().public_bytes(serialization.Encoding.DER,
+                                              serialization.PublicFormat.SubjectPublicKeyInfo)
+        facts["spki_sha256"] = hashlib.sha256(spki).hexdigest()
+    except Exception:
+        pass
     try:
         bc = cert.extensions.get_extension_for_oid(ExtensionOID.BASIC_CONSTRAINTS).value
         facts["is_ca"] = bool(bc.ca)
@@ -85,6 +150,92 @@ def cert_facts(cert: x509.Certificate, source: str) -> dict[str, Any]:
     facts["self_signed"] = cert.issuer == cert.subject
     facts["fingerprint_sha256"] = cert.fingerprint(hashes.SHA256()).hex()
     return facts
+
+
+# ----------------------------------------------------------------------------- served chains (CB-17)
+_ANCHORS: dict[str, set[str]] | None = None
+
+
+def anchor_index(certs: list[x509.Certificate]) -> dict[str, set[str]]:
+    """Self-signed certificates as {subject: {SPKI sha256}}: the roots a chain may end at."""
+    out: dict[str, set[str]] = {}
+    for cert in certs:
+        try:
+            if cert.issuer != cert.subject:
+                continue
+            spki = cert.public_key().public_bytes(serialization.Encoding.DER,
+                                                  serialization.PublicFormat.SubjectPublicKeyInfo)
+            out.setdefault(_name(cert.subject), set()).add(hashlib.sha256(spki).hexdigest())
+        except Exception:
+            continue
+    return out
+
+
+def facts_anchors(certs: list[dict[str, Any]]) -> dict[str, set[str]]:
+    """The same index from certificate facts (``cert_facts`` output): the self-signed ones."""
+    out: dict[str, set[str]] = {}
+    for c in certs:
+        if c.get("self_signed") and c.get("spki_sha256"):
+            out.setdefault(str(c.get("subject")), set()).add(str(c["spki_sha256"]))
+    return out
+
+
+def merge_anchors(*indexes: dict[str, set[str]]) -> dict[str, set[str]]:
+    out: dict[str, set[str]] = {}
+    for index in indexes:
+        for subject, keys in index.items():
+            out.setdefault(subject, set()).update(keys)
+    return out
+
+
+def node_anchors() -> dict[str, set[str]]:
+    """The roots of the node's own trust store (the system CA bundle), read once.  Empty when there is none: then no
+    issuer is "trusted" and a top-of-chain issuer is only ever "missing" (which the server judges with care)."""
+    global _ANCHORS
+    if _ANCHORS is None:
+        import os
+        import ssl
+
+        paths = ssl.get_default_verify_paths()
+        found: dict[str, set[str]] = {}
+        for path in (paths.cafile, paths.openssl_cafile):
+            if path and os.path.isfile(path):
+                try:
+                    with open(path, "rb") as fh:
+                        found = anchor_index(load_certs(fh.read(4_000_000), 1000))
+                except OSError:
+                    found = {}
+                if found:
+                    break
+        _ANCHORS = found
+    return _ANCHORS
+
+
+def chain_links(chain: list[dict[str, Any]], anchors: dict[str, set[str]] | None = None) -> list[dict[str, Any]]:
+    """Annotate the certificate facts of one served chain (in the order served) in place, for the server's chain rules:
+
+    * ``chain_top``: the last certificate the server sent;
+    * ``chain_issuer``: how this certificate's issuer is reached: ``self`` (self-signed), ``sent`` (another served
+      certificate has the issuer's name), ``trusted`` (a root of the node's trust store has it) or ``missing``;
+    * ``chain_extra``: a CA certificate above the leaf whose subject and key are also a root (served, or in the node's
+      trust store), i.e. a cross-sign clients that trust that root never need (the 2021 DST Root CA X3 case)."""
+    anchors = node_anchors() if anchors is None else anchors
+    served_roots = facts_anchors(chain)
+    for i, c in enumerate(chain):
+        c["chain_top"] = i == len(chain) - 1
+        issuer = str(c.get("issuer"))
+        if c.get("self_signed"):
+            c["chain_issuer"] = "self"
+        elif any(j != i and str(o.get("subject")) == issuer for j, o in enumerate(chain)):
+            c["chain_issuer"] = "sent"
+        elif issuer in anchors:
+            c["chain_issuer"] = "trusted"
+        else:
+            c["chain_issuer"] = "missing"
+        spki, subject = c.get("spki_sha256"), str(c.get("subject"))
+        c["chain_extra"] = bool(i > 0 and c.get("is_ca") and not c.get("self_signed") and spki and (
+            spki in served_roots.get(subject, set()) or spki in anchors.get(subject, set())))
+    return chain
 
 
 def load_certs(data: bytes, limit: int = 100) -> list[x509.Certificate]:

@@ -1,0 +1,147 @@
+{
+ "kind": "certspotter",
+ "rows": [
+  {
+   "cert_sha256": "00d5ef720fde49bfcce87cad5ddf35d1be24540058f5bcb16b002a41ea61e167",
+   "curve": "P-256",
+   "dns_names": [
+    "*.xn--bcher-kva.de",
+    "xn--bcher-kva.de"
+   ],
+   "id": "16825678880",
+   "issuer": "CN=Sectigo Public Server Authentication CA DV E36,O=Sectigo Limited,C=GB",
+   "issuer_cn": "Sectigo Public Server Authentication CA DV E36",
+   "issuer_friendly_name": "Sectigo",
+   "key_bits": 256,
+   "not_after": "2026-11-20T22:41:40Z",
+   "not_before": "2026-08-27T00:00:00Z",
+   "precert_poison": false,
+   "provider_dns_names": [
+    "*.xn--bcher-kva.de",
+    "xn--bcher-kva.de"
+   ],
+   "pubkey_alg": "id-ecPublicKey",
+   "revoked": false,
+   "serial": "c86500eb513a10741738d225dea10810",
+   "sha256": "00d5ef720fde49bfcce87cad5ddf35d1be24540058f5bcb16b002a41ea61e167",
+   "sig_alg": "ecdsa-with-SHA256",
+   "subject": "CN=xn--bcher-kva.de",
+   "subject_cn": "xn--bcher-kva.de",
+   "tbs_sha256": "a819ed6badd8fe0d18d9c0d4543de9659efe5155df507be38d261639b14c146d"
+  },
+  {
+   "cert_sha256": "d488f91dab747b75c23ad82ddae71927ebe09685adab600b669f2066e3d8bc5d",
+   "curve": "P-256",
+   "dns_names": [
+    "*.xn--bcher-kva.de",
+    "xn--bcher-kva.de"
+   ],
+   "id": "17201364018",
+   "issuer": "CN=YE2,O=Let's Encrypt,C=US",
+   "issuer_cn": "YE2",
+   "issuer_friendly_name": "Let's Encrypt",
+   "key_bits": 256,
+   "not_after": "2026-12-14T23:14:42Z",
+   "not_before": "2026-09-15T23:14:43Z",
+   "precert_poison": false,
+   "provider_dns_names": [
+    "*.xn--bcher-kva.de",
+    "xn--bcher-kva.de"
+   ],
+   "pubkey_alg": "id-ecPublicKey",
+   "revoked": false,
+   "serial": "64c45a3bd93905a9c1590787ba11f8cd161",
+   "sha256": "d488f91dab747b75c23ad82ddae71927ebe09685adab600b669f2066e3d8bc5d",
+   "sig_alg": "ecdsa-with-SHA384",
+   "subject": "CN=xn--bcher-kva.de",
+   "subject_cn": "xn--bcher-kva.de",
+   "tbs_sha256": "5200bba4f281c1b554a6fcc380540f821c749e3e92729c8449b196076504922b"
+  },
+  {
+   "cert_sha256": "c7aead5680916142dd2da423132e72754aa92b78a8bb095b3ba77098d5cf620f",
+   "curve": "P-256",
+   "dns_names": [
+    "*.xn--bcher-kva.de",
+    "xn--bcher-kva.de"
+   ],
+   "id": "17204446733",
+   "issuer": "CN=YE1,O=Let's Encrypt,C=US",
+   "issuer_cn": "YE1",
+   "issuer_friendly_name": "Let's Encrypt",
+   "key_bits": 256,
+   "not_after": "2026-12-15T03:02:57Z",
+   "not_before": "2026-09-16T03:02:58Z",
+   "precert_poison": false,
+   "provider_dns_names": [
+    "*.xn--bcher-kva.de",
+    "xn--bcher-kva.de"
+   ],
+   "pubkey_alg": "id-ecPublicKey",
+   "revoked": false,
+   "serial": "5d199f82cb1f3593610192fe311770ca37b",
+   "sha256": "c7aead5680916142dd2da423132e72754aa92b78a8bb095b3ba77098d5cf620f",
+   "sig_alg": "ecdsa-with-SHA384",
+   "subject": "CN=xn--bcher-kva.de",
+   "subject_cn": "xn--bcher-kva.de",
+   "tbs_sha256": "4dd4e3296bf2fc7ffffbe94cecf0870a07eecf6ff2fb79a2126cfcf0eb28d776"
+  },
+  {
+   "cert_sha256": "01ea009b10ac8b6043e3e6cfa850cd4656e6a3cfc49923e4c6f63564ac25dde2",
+   "curve": null,
+   "dns_names": [
+    "*.xn--bcher-kva.de",
+    "xn--bcher-kva.de"
+   ],
+   "id": "17338884409",
+   "issuer": "CN=ZeroSSL RSA DV SSL CA 2,O=ZeroSSL GmbH,C=AT",
+   "issuer_cn": "ZeroSSL RSA DV SSL CA 2",
+   "issuer_friendly_name": "Sectigo",
+   "key_bits": 4096,
+   "not_after": "2026-12-21T23:59:59Z",
+   "not_before": "2026-09-22T00:00:00Z",
+   "precert_poison": false,
+   "provider_dns_names": [
+    "*.xn--bcher-kva.de",
+    "xn--bcher-kva.de"
+   ],
+   "pubkey_alg": "rsaEncryption",
+   "revoked": false,
+   "serial": "6baef28b42619a0c82cc93626dbbf268",
+   "sha256": "01ea009b10ac8b6043e3e6cfa850cd4656e6a3cfc49923e4c6f63564ac25dde2",
+   "sig_alg": "sha256WithRSAEncryption",
+   "subject": "CN=*.xn--bcher-kva.de",
+   "subject_cn": "*.xn--bcher-kva.de",
+   "tbs_sha256": "f404b25380f2487eb51b3344c250bdd14dd568e3fb7d957240e0521fca4bfe2a"
+  },
+  {
+   "cert_sha256": "52f37d3c9dcd29f14e909a3bc21448cd7a1fd4e96d878f7c0c1782961b12648e",
+   "curve": "P-256",
+   "dns_names": [
+    "*.xn--bcher-kva.de",
+    "xn--bcher-kva.de"
+   ],
+   "id": "18101917038",
+   "issuer": "CN=Sectigo Public Server Authentication CA DV E36,O=Sectigo Limited,C=GB",
+   "issuer_cn": "Sectigo Public Server Authentication CA DV E36",
+   "issuer_friendly_name": "Sectigo",
+   "key_bits": 256,
+   "not_after": "2027-01-19T05:08:58Z",
+   "not_before": "2026-11-01T00:00:00Z",
+   "precert_poison": false,
+   "provider_dns_names": [
+    "*.xn--bcher-kva.de",
+    "xn--bcher-kva.de"
+   ],
+   "pubkey_alg": "id-ecPublicKey",
+   "revoked": false,
+   "serial": "2bbc18d78b45d9e40433ca0b2dac4279",
+   "sha256": "52f37d3c9dcd29f14e909a3bc21448cd7a1fd4e96d878f7c0c1782961b12648e",
+   "sig_alg": "ecdsa-with-SHA256",
+   "subject": "CN=xn--bcher-kva.de",
+   "subject_cn": "xn--bcher-kva.de",
+   "tbs_sha256": "e1cbd4edfd7499d6a5891ccbd367f3b4c3f10ee37f93d87b3779f86eb45f9483"
+  }
+ ],
+ "source": "certspotter_idn_buecher",
+ "tool": "openssl x509"
+}

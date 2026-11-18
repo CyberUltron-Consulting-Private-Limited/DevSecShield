@@ -27,7 +27,7 @@ trap cleanup EXIT
 TARGETS=(
   "backend|backend/Dockerfile|backend|main.py pyproject.toml uv.lock docker-entrypoint.sh new_models.py"
   "frontend|frontend/Dockerfile|frontend|package.json package-lock.json next.config.ts app/layout.tsx"
-  "scan-worker|RabbitMQ/worker/Dockerfile|.|aibom/pyproject.toml aibom/README.md aibom/src/aibom/__init__.py aibom/config RabbitMQ/worker/pyproject.toml RabbitMQ/worker/uv.lock RabbitMQ/worker/scan_worker.py"
+  "scan-worker|RabbitMQ/worker/Dockerfile|.|aibom/pyproject.toml aibom/README.md aibom/src/aibom/__init__.py aibom/config RabbitMQ/worker/pyproject.toml RabbitMQ/worker/uv.lock RabbitMQ/worker/scan_worker.py backend/utilities/cbom_sources/address_rule.py"
   "dast-worker|RabbitMQ/dast_worker/Dockerfile|RabbitMQ/dast_worker|pyproject.toml uv.lock dast_worker.py"
   "guardrail-worker|RabbitMQ/guardrail_worker/Dockerfile|RabbitMQ/guardrail_worker|pyproject.toml uv.lock guardrail_worker.py"
   "scan-node|scan_node/Dockerfile|scan_node|requirements.txt requirements.lock zs_scan_node/__main__.py"

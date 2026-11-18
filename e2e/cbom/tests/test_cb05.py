@@ -51,39 +51,59 @@ def _flow(cid: str, gate_: str, verdict: str, **subject) -> Check:
     return Check(id=cid, gate=gate_, kind="flow", verdict=verdict, subject=subject, reason="", expected=None, observed=None, evidence=[])
 
 
-def test_tightened_rows_do_not_swallow_other_failures_of_the_same_step():
-    """KF-13 covers the Zeek option only: an unrelated G7 failure stays blocking (the old {step: G7} match took all)."""
-    rows = ledger.load(gate.DEFAULT_LEDGER)
+def _row(**fields):
+    """A ledger row in the shape ``ledger.load`` returns (v3 identity pins)."""
+    row = {"issue": "#1", "owner": "CB-05", "why": "test", "expect_failing": 0, "expect_not_run": 0, **fields}
+    n_run = sum(1 for p in row["expect"] if p["verdict"] == NOT_RUN)
+    row["expect_failing"] = len(row["expect"]) - n_run
+    row["expect_not_run"] = n_run
+    return row
+
+
+def test_a_narrow_match_does_not_swallow_other_failures_of_the_same_step():
+    """A row that names the Zeek check does not hide an unrelated G7 failure (a whole-step match would)."""
+    row = _row(row="KF-13", gate=["G7"], match={"check": "zeek_option_absent"},
+               expect=[{"id": "G7/zeek_option_absent", "verdict": FAIL, "expected": None, "observed": None}])
     checks = Checks()
     checks.add(_flow("G7/zeek_option_absent", "G7", FAIL, check="zeek_option_absent"))
     checks.add(_flow("G7/aws_banner_eq_staging", "G7", FAIL, check="aws_banner_eq_staging"))
-    _, blocking = ledger.apply(rows, checks)
+    _, blocking = ledger.apply([row], checks)
     assert [c.id for c in blocking] == ["G7/aws_banner_eq_staging"]
 
 
 def test_deferred_parts_are_covered_only_as_not_run():
-    rows = [dict(r) for r in ledger.load(gate.DEFAULT_LEDGER) if r["row"] == "LAB-deferred"]
-    assert len(rows) == 1
-    rows[0]["expect_not_run"] = 4
+    """#93 removed the LAB-deferred row (those targets are built). A deferred check is covered only as NOT-RUN."""
+    assert not any(r["row"] == "LAB-deferred" for r in ledger.load(gate.DEFAULT_LEDGER))
+    row = _row(row="LAB-deferred", gate=["G7", "G4", "G15", "G13"],
+               match={"check": "deferred", "part": ["idp", "ubuntu-tier2", "receiver"]},
+               not_run_ok="deferred by the lab with a stated reason",
+               expect=[{"id": "G7/deferred_idp", "verdict": NOT_RUN},
+                       {"id": "G4/deferred_ubuntu-tier2", "verdict": NOT_RUN},
+                       {"id": "G15/deferred_ubuntu-tier2", "verdict": NOT_RUN},
+                       {"id": "G13/deferred_receiver", "verdict": NOT_RUN}])
     checks = Checks()
     checks.add(_flow("G7/deferred_idp", "G7", NOT_RUN, check="deferred", part="idp"))
     checks.add(_flow("G4/deferred_ubuntu-tier2", "G4", NOT_RUN, check="deferred", part="ubuntu-tier2", what="sudoers"))
     checks.add(_flow("G15/deferred_ubuntu-tier2", "G15", NOT_RUN, check="deferred", part="ubuntu-tier2", what="forcecommand_allowlist"))
     checks.add(_flow("G13/deferred_receiver", "G13", NOT_RUN, check="deferred", part="receiver"))
-    results, blocking = ledger.apply(rows, checks)
+    results, blocking = ledger.apply([row], checks)
     assert blocking == [] and {r.status for r in results} == {"not-run-ok"}
-    # a deferred part whose check FAILS is never hidden as not-run: the row's counts move and the gate fails
+    # a deferred part whose check FAILS is never hidden as not-run: the identities move and the gate fails
     checks2 = Checks()
     checks2.add(_flow("G7/deferred_idp", "G7", FAIL, check="deferred", part="idp"))
-    results2, _ = ledger.apply(rows, checks2)
+    results2, blocking2 = ledger.apply([row], checks2)
     assert {r.row: r.status for r in results2}["LAB-deferred"] not in ("not-run-ok", "holds")
-    assert not ledger.verdict(results2, [])
+    assert not ledger.verdict(results2, blocking2)
 
 
-def test_the_cb05_rows_name_checks_not_whole_steps():
-    for row in ledger.load(gate.DEFAULT_LEDGER):
-        assert "step" not in row["match"], f"{row['row']} matches a whole step"
-        assert not str(row.get("not_run_ok", "")).startswith(("CB-05", "G5b runs", "G7 runs", "G8 runs", "G13b runs")), row["row"]
+def test_cb05_placeholder_rows_are_identity_pins():
+    """The steps CB-05 adds are still NOT-RUN identity pins on dev (v3), not v2 whole-ledger counts."""
+    rows = {r["row"]: r for r in ledger.load(gate.DEFAULT_LEDGER)}
+    for name in ("CB05-steps", "CB05-sources", "CB05-named", "KF-7", "KF-8", "KF-11", "KF-12", "KF-13", "KF-14"):
+        row = rows[name]
+        assert row["expect"], name
+        assert all(p["verdict"] == NOT_RUN for p in row["expect"]), name
+        assert row.get("not_run_ok"), name
 
 
 def test_trace_zips_are_redacted(tmp_path):

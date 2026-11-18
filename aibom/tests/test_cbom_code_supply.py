@@ -30,11 +30,12 @@ def test_caret_above_the_fix_is_not_vulnerable() -> None:
 def test_vulnerable_tree_matches_direct_and_transitive_advisories() -> None:
     hits = find_vulnerable(_VULN)
     by_name = {hit.pin.name: hit for hit in hits}
+    ids = {(hit.pin.name, hit.advisory.id) for hit in hits}
     assert by_name["pyjwt"].pin.direct is True
-    assert by_name["pyjwt"].advisory.id == "CVE-2022-29217"
+    assert ("pyjwt", "CVE-2022-29217") in ids
     forge = by_name["node-forge"]
     assert forge.pin.direct is False
-    assert forge.advisory.id == "CVE-2022-24771"
+    assert ("node-forge", "CVE-2022-24771") in ids
     assert "golang.org/x/crypto" in by_name
     assert by_name["golang.org/x/crypto"].pin.direct is False
     assert "org.bouncycastle:bcprov-jdk15on" in by_name

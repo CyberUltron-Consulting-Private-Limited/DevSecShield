@@ -7,7 +7,7 @@ Returns ``(status, error)`` where status is the job status posted to the server:
 """
 from __future__ import annotations
 
-from zs_scan_node.jobctx import JobContext
+from zs_scan_node.jobctx import JobContext, LeaseLost
 
 SUPPORTED = {
     ("collect", "linux_servers"), ("collect", "windows_servers"), ("collect", "kubernetes"), ("collect", "database"),
@@ -19,18 +19,57 @@ SUPPORTED = {
 }
 SUPPORTED |= {("collect", "appliance"), ("test_connection", "appliance")}
 SUPPORTED |= {("collect", "container_images"), ("test_connection", "container_images")}
+# F1.3: agentless fleets through the customer's AWX/AAP or salt-api (collectors/fleet.py)
+SUPPORTED |= {("collect", "awx_hosts"), ("test_connection", "awx_hosts"), ("collect", "salt_hosts"),
+              ("test_connection", "salt_hosts")}
 # Agent mode (ZS_MODE=agent) runs only these: the node's own host, read from read-only mounts, no credentials.
 AGENT_SUPPORTED = {("collect", "host_agent"), ("test_connection", "host_agent")}
 CAPABILITIES = ["linux_ssh", "windows_winrm", "kubernetes", "postgres", "mysql", "redis", "mongodb", "network_tls",
                 "starttls", "ssh_kexinit", "rdp", "tds_prelogin", "discovery", "pq_hybrid_probe",
-                "mssql", "oracle", "pkcs11", "kmip", "vault_pki", "ejbca", "adcs"]
+                "mssql", "oracle", "pkcs11", "kmip", "vault_pki", "ejbca", "adcs",
+                "venafi", "keyfactor", "digicert", "sectigo"]
 CAPABILITIES += ["ike", "ike_pq_probe", "opcua", "modbus", "appliance_config", "mesh_istio_linkerd"]
 CAPABILITIES += ["registry_v2"]
+CAPABILITIES += ["transport_awx", "transport_salt", "zs_collect"]
+CAPABILITIES += ["ssh_ca"]  # F1.4: credential_type ssh_ca (node key + short-lived certificate from the SSH CA)
 AGENT_CAPABILITIES = ["host_agent"]
 
 
 class ConfigError(Exception):
     """The job cannot run as configured (safe to show)."""
+
+
+def target_error(exc: BaseException, others_tested: bool = True) -> tuple[bool | None, str]:
+    """(reachable, note) for an unexpected error on ONE target of a connection test: that target's sample fails with
+    the error named, the job and the other targets go on (#250 N6 for appliances; every collector since).  Reachable
+    only when the target spoke the protocol (an SSH-level error, a close mid-session); a socket error before that says
+    it was not reached; anything else does not tell."""
+    import socket
+
+    import paramiko
+
+    text = " ".join(str(exc).split())[:200]
+    detail = f"{exc.__class__.__name__}{': ' + text if text else ''}"
+    # ``others_tested`` False: the collector itself stopped (the dispatcher's fallback), so nothing after it ran
+    tail = "the other targets are tested" if others_tested else "the test stopped here"
+    if isinstance(exc, (paramiko.SSHException, EOFError)):
+        return True, f"SSH error on this target ({detail}); {tail}"
+    if isinstance(exc, (ConnectionError, TimeoutError, socket.gaierror, socket.timeout, OSError)):
+        from zs_scan_node import errtext  # #153: the socket cause in words, never the exception class
+
+        return False, f"{errtext.socket_problem(exc, 'this target', None)[1]}; {tail}"
+    return None, f"error on this target ({detail}); {tail}"
+
+
+def skipped_never_scan(ctx: JobContext, skipped: list[str], reasons: dict[str, str], samples: bool = False) -> None:
+    """Record each target the never-scan list skipped (netutil.expand_targets): an outcome with the reason, and in a
+    connection test also a sample, so a skipped target does not silently vanish from the test."""
+    for label in skipped:
+        why = reasons.get(label) or f"{label} is on the never-scan list"
+        ctx.outcome(label, "skipped_never_scan", why)
+        if samples:
+            ctx.samples.append({"target": label, "status": "skipped_never_scan", "reachable": None, "login": None,
+                                "privilege": None, "note": why})
 
 
 def run_job(ctx: JobContext, job: dict, scope: dict, source: dict | None) -> tuple[str, str | None, str | None]:
@@ -102,8 +141,30 @@ def run_job(ctx: JobContext, job: dict, scope: dict, source: dict | None) -> tup
                 summary = network.test_range(ctx, scope)
             else:
                 summary = network.run_network(ctx, scope)
+        elif source_kind in ("awx_hosts", "salt_hosts"):
+            from zs_scan_node.collectors import fleet
+
+            summary = (fleet.test if kind == "test_connection" else fleet.collect)(ctx, config, secrets, scope)
     except ConfigError as exc:
         return "failure", str(exc), None
+    except LeaseLost:
+        raise
+    except Exception as exc:  # re-raised below unless it is a connection test
+        if kind != "test_connection":
+            raise  # a collection isolates its targets itself; the agent reports anything else as the job's error
+        # a connection test never ends as "scan node error": the target being tested gets the error as its sample
+        # (collectors with several targets catch per target; this is for the one-target ones).  The error sample is
+        # always added, so a test whose collector crashed can never read "passed" from the samples taken before it.
+        ctx.log("test collector error", error=exc.__class__.__name__, level="warn")
+        reachable, note = target_error(exc, others_tested=False)
+        label = (next((str(t) for t in scope.get("targets") or [] if t), None) or
+                 str(config.get("host") or config.get("url") or (source or {}).get("name") or "-"))
+        tested = {str(s.get("target")) for s in ctx.samples if isinstance(s, dict)}
+        if label in tested:  # a multi-target collector sampled it already: the error belongs to the test as a whole
+            label, reachable = f"{label} (test stopped)", None
+        ctx.samples.append({"target": label, "status": "error", "reachable": reachable, "login": False,
+                            "privilege": None, "note": ctx.scrubber.text(note)})
+        summary = f"{sum(1 for s in ctx.samples if s.get('status') == 'ready')} of {len(ctx.samples)} samples ready"
     if ctx.cancel.is_set():
         return "cancelled", ctx.cancel_reason or "Stopped by ZeroShield", summary
     if kind != "test_connection":

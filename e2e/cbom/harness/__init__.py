@@ -7,3 +7,5 @@ or frontend/; backend/tests/test_cbom_e2e_harness.py enforces that. Standard lib
 
 SCHEMA_REPORT = "zs-cbom-gate-report/1"
 SCHEMA_MANIFEST = "zs-cbom-gate-manifest/1"
+SCHEMA_TIER_V = "zs-cbom-tier-v/1"
+SCHEMA_TIER_S = "zs-cbom-tier-s/1"

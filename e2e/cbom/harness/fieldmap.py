@@ -89,12 +89,23 @@ OPENSSL_SUITES = {
 }
 
 
+# What OpenSSL and the collectors print when nothing was negotiated (s_client "group: <NULL>", "Cipher is (NONE)"):
+# never a suite or group name (INTERFACES CB-06 v2 §3; CB-12 v1 §2 writes none, the export drops them).
+SENTINELS = {"<null>", "(null)", "null", "none", "(none)", "undef", "n/a", "-"}
+
+
+def is_sentinel(value: Any) -> bool:
+    return str(value).strip().lower() in SENTINELS
+
+
 def norm_suites(values: Any) -> list[str] | None:
+    """Suites by their IANA registry name, each once (an OpenSSL spelling and its IANA name are one suite; the export
+    lists IANA names since CB-06 v2 §2, the API keeps what the collector stored)."""
     if values in (None, ""):
         return None
     if not isinstance(values, list):
         values = [values]
-    return sorted({OPENSSL_SUITES.get(str(v).strip(), str(v).strip()) for v in values if v})
+    return sorted({OPENSSL_SUITES.get(str(v).strip(), str(v).strip()) for v in values if v and not is_sentinel(v)})
 
 
 # Keys where the product reports a SAMPLE (the negotiated choice plus its probes), not an enumeration: the oracle
@@ -153,7 +164,7 @@ def norm_groups(values: Any) -> list[str] | None:
         return None
     if isinstance(values, str):
         values = [v for v in re.split(r"[,:\s]+", values) if v]
-    return sorted({g for g in (norm_group(v) for v in values) if g})
+    return sorted({g for g in (norm_group(v) for v in values) if g and not is_sentinel(g)})
 
 
 def norm_time(value: Any) -> str | None:
@@ -265,6 +276,12 @@ ORACLE_NORMALISERS: dict[str, Callable[[Any], Any]] = {
     "format": lambda v: None if v in (None, "") else str(v).strip().lower(), "path": lambda v: v,
     "kex_algorithms": norm_ssh_list, "host_key_algorithms": norm_ssh_list, "ciphers": norm_ssh_list,
     "macs": norm_ssh_list, "host_keys": norm_host_keys, "entries": norm_entries, "tls_enabled": norm_bool,
+    "q_grade": lambda v: None if v in (None, "", "none") else str(v).strip().upper(),
+    "q_reason": lambda v: None if v in (None, "") else str(v).strip(),
+    "fix_class": lambda v: None if v in (None, "") else str(v).strip().lower(),
+    "status": lambda v: None if v in (None, "") else str(v).strip().lower(),
+    "scope": lambda v: None if v in (None, "", []) else sorted(str(x).strip().lower() for x in (
+        v if isinstance(v, list) else [v])),
 }
 
 # ------------------------------------------------------------------------------------------------- view readers
@@ -331,26 +348,6 @@ def _export_ciphers(component: dict[str, Any]) -> Any:
     return [c.get("name") for c in proto["cipherSuites"]]
 
 
-def _export_protocol_type(component: dict[str, Any]) -> Any:
-    proto = _crypto(component).get("protocolProperties")
-    if proto is None or "type" not in proto:
-        return MISSING
-    return proto["type"]
-
-
-def protocol_family(value: Any) -> str | None:
-    """How the export is allowed to carry the product's protocol (CycloneDX protocolProperties.type)."""
-    if value in (None, ""):
-        return None
-    low = str(value).lower()
-    if low.startswith("ssh"):
-        return "ssh"
-    if "tls" in low or "ssl" in low or low in ("https", "ldaps", "imaps", "pop3s", "smtps", "ftps", "rdp", "tds",
-                                                "starttls", "postgres", "mysql"):
-        return "tls"
-    return "other"
-
-
 def _versions_of(facts: dict[str, Any], item: dict[str, Any]) -> Any:
     for key in ("protocols", "accepted_versions", "versions"):
         value = facts.get(key)
@@ -367,10 +364,15 @@ def _versions_of(facts: dict[str, Any], item: dict[str, Any]) -> Any:
 
 
 def _groups_of(facts: dict[str, Any]) -> Any:
+    """The groups the product saw, sentinels dropped (an s_client "<NULL>" is no group, CB-06 v2 §3)."""
     for key in ("groups", "supported_groups", "accepted_groups"):
         if facts.get(key):
-            return facts[key]
-    return [facts["negotiated_group"]] if facts.get("negotiated_group") else None
+            value = facts[key]
+            if isinstance(value, list):
+                return [g for g in value if not is_sentinel(g)]
+            return value
+    neg = facts.get("negotiated_group")
+    return [neg] if neg and not is_sentinel(neg) else None
 
 
 def _ciphers_of(facts: dict[str, Any]) -> Any:
@@ -382,7 +384,15 @@ def _ciphers_of(facts: dict[str, Any]) -> Any:
     weak = facts.get("weak_ciphers_accepted")
     if isinstance(weak, dict):
         out += [c for v in weak.values() if isinstance(v, list) for c in v]
-    return sorted(set(out)) or None
+    # the database lanes' own connection and the live connections they saw (pg_stat_ssl {version, cipher}; MySQL
+    # {Ssl_cipher} / {variable, value}): CB-06 v2 §2 exports them as the endpoint's suites
+    own = facts.get("own_connection")
+    if isinstance(own, dict):
+        out += [own.get("cipher"), own.get("Ssl_cipher")]
+    for conn in facts.get("live_connections") if isinstance(facts.get("live_connections"), list) else []:
+        if isinstance(conn, dict):
+            out += [conn.get("cipher"), conn.get("value") if conn.get("variable") == "Ssl_cipher" else None]
+    return sorted({str(c) for c in out if c and not is_sentinel(c)}) or None
 
 
 def run_verdict(item: dict[str, Any], key: str) -> Any:
@@ -405,7 +415,7 @@ FIELDS: dict[str, dict[str, Callable[[dict[str, Any]], Any]]] = {
                   "export": _prop("zs:algorithm")},
     "key_size": {"api": lambda a: a.get("key_size"), "db": lambda r: r.get("key_size"), "export": _export_key_size},
     "protocol": {"api": lambda a: a.get("protocol"), "db": lambda r: r.get("protocol"),
-                 "export": _export_protocol_type},
+                 "export": _prop("zs:protocol")},
     "quantum_vulnerable": {"api": lambda a: a.get("quantum_vulnerable"), "db": lambda r: r.get("quantum_vulnerable"),
                            "export": _prop("zs:quantum_vulnerable")},
     "impact": {"api": lambda a: a.get("impact"), "db": lambda r: r.get("impact"), "export": _prop("zs:impact")},
@@ -457,6 +467,12 @@ ORACLE_ONLY: dict[str, Callable[[dict[str, Any]], Any]] = {
     "host_keys": lambda a: _facts(a).get("host_keys") or _facts(a).get("host_key"),
     "entries": lambda a: _facts(a).get("entries"),
     "tls_enabled": lambda a: next((_facts(a)[k] for k in ("tls", "ssl", "tls_enabled") if k in _facts(a)), None),
+    # run API view fields (CB-19 #114, CB-24 #113): judged against an oracle that states them (riskfields.py doc)
+    "q_grade": lambda a: a.get("q_grade", MISSING), "q_reason": lambda a: a.get("q_reason", MISSING),
+    "fix_class": lambda a: a.get("fix_class", MISSING),
+    # a coverage row's reading (scan node jobctx.coverage: facts {check, status, detail, scope, incomplete}): the lab's
+    # control listeners expect status not_tls with the port as scope since CB-12 (#110; CB-02 INTERFACES CB-12 v1 §5a)
+    "status": lambda a: _facts(a).get("status", MISSING), "scope": lambda a: _facts(a).get("scope", MISSING),
 }
 # carried by the export for every component whatever the API says (O-7; CB-06 adds them): judged for presence in the
 # join, and for value against the oracle (pqc_class)
@@ -475,8 +491,7 @@ VIEW_EQ: dict[str, Callable[[Any], Any]] = {
     "key_size": norm_int, "job_id": norm_int, "quantum_vulnerable": norm_bool, "finding_codes": norm_codes,
     "protocol_versions": lambda v: None if v in (None, "", []) else sorted(str(x) for x in (
         v if isinstance(v, list) else str(v).split(","))),
-    "cipher_suites": lambda v: None if v in (None, "", []) else sorted(str(x) for x in (
-        v if isinstance(v, list) else [v])),
+    "cipher_suites": lambda v: None if v in (None, "", []) else norm_suites(v),
     "groups": lambda v: None if v in (None, "", []) else sorted(str(x) for x in (
         v if isinstance(v, list) else re.split(r"[,\s]+", str(v)))),
     "impact": lambda v: None if v in (None, "", "Info", "none") else str(v),

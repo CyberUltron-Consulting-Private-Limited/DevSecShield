@@ -19,6 +19,9 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" }}
 {{- end -}}
 
 {{- define "cbom-scan-node.image" -}}
+{{- if and (hasPrefix "localhost/" (toString .Values.image.repository)) (ne (toString .Values.image.pullPolicy) "Never") -}}
+{{- fail (printf "image.repository is %s, the name the downloaded scan node image file loads as, which no cluster can pull. Push the image to a registry your cluster pulls from and set image.repository (and image.tag) to it, or load it on every node and set image.pullPolicy=Never." .Values.image.repository) -}}
+{{- end -}}
 {{- printf "%s:%s" .Values.image.repository (default .Chart.AppVersion (toString .Values.image.tag)) -}}
 {{- end -}}
 
@@ -53,8 +56,76 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" }}
 - name: NO_PROXY
   value: {{ . | quote }}
 {{- end }}
+{{- if .Values.trust.caSecret }}
+- name: ZS_CA_FILE
+  value: /etc/zs-node/trust/ca/ca.pem
+{{- end }}
+{{- if .Values.proxyAuthSecret }}
+- name: ZS_PROXY_AUTH_FILE
+  value: /etc/zs-node/trust/proxy/auth
+{{- end }}
+{{- if .Values.trust.clientSecret }}
+- name: ZS_CLIENT_CERT
+  value: /etc/zs-node/trust/client/tls.crt
+- name: ZS_CLIENT_KEY
+  value: /etc/zs-node/trust/client/tls.key
+{{- end }}
 {{- with .Values.extraEnv }}
 {{ toYaml . }}
+{{- end }}
+{{- end -}}
+
+{{/* CB-15: the Secrets that hold the ZeroShield API's CA and the node's client certificate, mounted read-only. */}}
+{{- define "cbom-scan-node.trustMounts" -}}
+{{- if .Values.trust.caSecret }}
+- name: trust-ca
+  mountPath: /etc/zs-node/trust/ca
+  readOnly: true
+{{- end }}
+{{- if .Values.trust.clientSecret }}
+- name: trust-client
+  mountPath: /etc/zs-node/trust/client
+  readOnly: true
+{{- end }}
+{{- if .Values.proxyAuthSecret }}
+- name: proxy-auth
+  mountPath: /etc/zs-node/trust/proxy
+  readOnly: true
+{{- end }}
+{{- end -}}
+
+{{/* The volumes of trustMounts. Secret volume files are root-owned and group-owned by the pod's fsGroup: the CA is
+     0444 (public), the client certificate and key 0440, readable through the fsGroup (Deployment: 10001; DaemonSet:
+     the agent's uid, set as fsGroup when trust.clientSecret is given). */}}
+{{- define "cbom-scan-node.trustVolumes" -}}
+{{- if .Values.trust.caSecret }}
+- name: trust-ca
+  secret:
+    secretName: {{ .Values.trust.caSecret | quote }}
+    defaultMode: 0444
+    items:
+      - key: ca.pem
+        path: ca.pem
+{{- end }}
+{{- if .Values.trust.clientSecret }}
+- name: trust-client
+  secret:
+    secretName: {{ .Values.trust.clientSecret | quote }}
+    defaultMode: 0440
+    items:
+      - key: tls.crt
+        path: tls.crt
+      - key: tls.key
+        path: tls.key
+{{- end }}
+{{- if .Values.proxyAuthSecret }}
+- name: proxy-auth
+  secret:
+    secretName: {{ .Values.proxyAuthSecret | quote }}
+    defaultMode: 0440
+    items:
+      - key: auth
+        path: auth
 {{- end }}
 {{- end -}}
 

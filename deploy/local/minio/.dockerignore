@@ -1,0 +1,2 @@
+# Nothing from this directory enters the image (the Dockerfile copies nothing from its context).
+*

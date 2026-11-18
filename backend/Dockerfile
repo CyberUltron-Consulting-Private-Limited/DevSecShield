@@ -13,6 +13,13 @@ ARG UV_BASE_IMAGE=ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 FROM scratch AS migrations
 COPY _migrations /
 
+# The aibom package's src/ and config/ (the crypto compliance engine and dependency-graph views that a CBOM Sources
+# run's results page reuses from the code lane: backend/utilities/cbom_sources/run_parity.py, CB-38 W2b). The named
+# context "aibom" (the repository's aibom/ folder) replaces this stage; without it the stage is empty and
+# GET /runs/{id}/parity reports the compliance engine unavailable. Pure Python; its dependencies are in uv.lock.
+FROM ${UV_BASE_IMAGE} AS aibom
+RUN mkdir -p /src /config
+
 # ============================================================
 # Stage 1: deps — the virtualenv, from pyproject.toml + uv.lock only (never the source), bytecode compiled
 # ============================================================
@@ -56,7 +63,17 @@ COPY . /backend
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 COPY --from=migrations /alembic.ini /prod_database_migrations/alembic.ini
 COPY --from=migrations /migrations /prod_database_migrations/migrations
+COPY --from=aibom /src /opt/aibom/src
+COPY --from=aibom /config /opt/aibom/config
 RUN chmod +x /docker-entrypoint.sh
+
+# Build identity (CB-03): the commit this image was built from and its version string, reported by GET /health, the
+# X-ZS-Build header and the CBOM exports (backend/utilities/build_info.py). scripts/deploy/build_images.sh passes both.
+# Declared last, so a new commit with the same source reuses every layer above.
+ARG DSS_BUILD_SHA=""
+ARG DSS_BUILD_VERSION=""
+ENV DSS_BUILD_SHA=${DSS_BUILD_SHA} \
+    DSS_BUILD_VERSION=${DSS_BUILD_VERSION}
 
 EXPOSE 8080
 

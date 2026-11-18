@@ -78,8 +78,13 @@ assert.match(panel, /<DialogDescription>\{cancelConfirmText\(scan\)\}<\/DialogDe
 // the scan lists show the status (a missing badge entry crashed the list) and can filter by it
 for (const type of ["sast", "iac", "sbom_sca", "cbom", "ai_bom"]) {
   const src = fs.readFileSync(path.join(root, "app", "[team_id]", type, "page.tsx"), "utf8");
-  assert.match(src, /cancelled: \{ variant: "outline" as const/, type);
-  assert.match(src, /cancelled: "Cancelled" \}/, type);
+  if (type === "cbom") {
+    // CBOM keeps one badge table for scans and Sources runs (CB-38): variant and label in the same entry
+    assert.match(src, /cancelled: \{ variant: "outline", className: "[^"]*", label: "Cancelled" \}/, type);
+  } else {
+    assert.match(src, /cancelled: \{ variant: "outline" as const/, type);
+    assert.match(src, /cancelled: "Cancelled" \}/, type);
+  }
   assert.match(src, /<SelectItem value="cancelled">Cancelled<\/SelectItem>/, type);
 }
 

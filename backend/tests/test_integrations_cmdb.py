@@ -157,7 +157,9 @@ def test_network_rows_and_create_switch(api, world):
     plan = api("POST", "/1/cbom/sources/cmdb/preview", json={"csv": csv_text, "node_id": node_id}).json()["plan"]
     (net,) = plan["creates"]
     assert net == {"kind": "network_range", "name": "CMDB net 10.30.0.0-24", "cidr": "10.30.0.0/24",
-                   "metadata": {"environment": "prod", "owner": "Network Team"}, "lines": [2]}
+                   "metadata": {"environment": "prod", "owner": "Network Team"}, "lines": [2],
+                   # #225: where it will run (no segment column: the import's node)
+                   "node_id": None, "node_name": "dc-mumbai-01", "segment": None}
     assert any("larger than" in s["reason"] for s in plan["skipped"])
     r = api("POST", "/1/cbom/sources/cmdb/apply", json={"csv": csv_text, "node_id": node_id, "digest": plan["digest"]})
     assert r.status_code == 200 and r.json()["result"]["created"] == 1

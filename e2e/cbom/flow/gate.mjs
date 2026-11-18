@@ -15,8 +15,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync, rmSync }
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { allowedDiff, allowedTokens, sameTokens, splitCommand, tokenDiff } from "./command.mjs";
+import { allowedDiff, allowedTokens, cellsHaveIp, engineMatchesBuild, ipTokens, sameTokens, splitCommand, tokenDiff } from "./command.mjs";
 import { inCidr, plannedCharge } from "./rates.mjs";
+import { collectRunRows, runRowFromDom } from "./rows.mjs";
 import { createConnection } from "node:net";
 import * as cb05 from "./cb05.mjs";
 
@@ -363,7 +364,8 @@ try {
     // the node's source address: the container's address = what the API saw (DB last_seen_ip / source_ips)
     const addrs = nodeAddresses(plan.container);
     state.node.addresses = addrs;
-    s.check("node_ip_eq_db", !!row && addrs.includes(row[5]) && (row[3] || "").includes(row[5]), { expected: { container: addrs },
+    // exact addresses (review 5878413538): the DB's last_seen_ip is one of the container's, and source_ips holds it
+    s.check("node_ip_eq_db", !!row && addrs.includes(row[5]) && ipTokens(row[3]).includes(row[5]), { expected: { container: addrs },
       observed: row ? { last_seen_ip: row[5], source_ips: row[3] } : null, reason: "node-ip" });
     await page.reload({ waitUntil: "networkidle" });
     const uiRow = page.getByRole("row", { name: /e2e-node-1/ }).first();
@@ -417,9 +419,10 @@ try {
       s.check(`never_scan_${l.name}`, listed > 0, { expected: `${l.address} listed under never scan`, observed: listed ? "listed" : "refused or absent", evidence: [await s.shot(page, "never-scan")] });
     }
     state.never_scan_g5 = canaries.map((l) => l.address);
-    const socText = ((await page.getByTestId("network-soc-table").textContent().catch(() => "")) || "");
+    // the SOC table's cells one by one (its joined text glues "e2e-node-1" to the address), compared as whole addresses
+    const socCells = await page.getByTestId("network-soc-table").locator("td").allTextContents().catch(() => []);
     const nodeIps = state.node?.addresses || [];
-    s.check("soc_ip_eq_node", nodeIps.length > 0 && nodeIps.some((ip) => socText.includes(ip)), { expected: nodeIps, observed: socText.replace(/\s+/g, " ").slice(0, 200), reason: "soc-ip" });
+    s.check("soc_ip_eq_node", cellsHaveIp(socCells, nodeIps), { expected: nodeIps, observed: socCells.map((c) => c.trim()).slice(0, 20), reason: "soc-ip" });
     s.notRun("discovery_sweep", "DA G5 'sweep = the self-checked open ports': the flow does not run the discovery sweep yet (CB-05)");
     await page.getByRole("button", { name: /^every hour$/i }).first().click();
     await page.getByTestId("network-soc-email").fill("soc@agents.dss.test");
@@ -579,14 +582,18 @@ try {
     // raw DOM rows, page by page (no de-duplication: a repeated id is judged, m1); stop at the last page, or when a
     // "next" click did not move (the same ids again), which is recorded as a paging failure
     const rows = [];
+    const attrRows = [];
     let prevIds = null, stuck = false;
     for (let p = 1; p < 200; p++) {
-      // rows by their data-* attributes on the unified page (cell positions only for the old run dialog)
-      const got = await page.$$eval('[data-testid^="run-asset-"]', cb05.readRunRows, { attrsOnly: cb05.isResultsPage(resultsPath) });
+      // judged rows stay the rendered form rows.mjs records (hidden columns, #267). G11u also reads the raw
+      // data-* attributes (reader data-attributes) so q-grade and fix class compare to the API item.
+      const got = (await page.$$eval('[data-testid^="run-asset-"]', collectRunRows)).map(runRowFromDom);
+      const attr = await page.$$eval('[data-testid^="run-asset-"]', cb05.readRunRows, { attrsOnly: cb05.isResultsPage(resultsPath) });
       const ids = got.map((r) => r.id).join(",");
       if (prevIds !== null && ids === prevIds) { stuck = true; break; }
       prevIds = ids;
       rows.push(...got);
+      attrRows.push(...attr);
       if (!got.length) break;
       // the pagination exists only when there is more than one page ("Page n of m"); its button is named exactly
       // "Next" (the certificate calendar's "Next month" button sits in the same panel: run 5's paging_stuck)
@@ -606,7 +613,7 @@ try {
     const classChips = await page.$$eval('[data-testid="run-posture"] [data-testid^="posture-class-"]',
       (els) => els.map((e) => ({ cls: e.dataset.testid.slice("posture-class-".length), count: e.dataset.count, text: e.innerText })));
     cb05.g11uRuleP(s, "1", posture.body, { posture: await textOf("run-posture"), readiness: await textOf("posture-readiness"),
-      dashboard: await textOf("run-section-dashboard"), classChips, qCounts }, rows, items);
+      dashboard: await textOf("run-section-dashboard"), classChips, qCounts }, attrRows, items);
     // G11u, the list: Risks cell == runs_list_data row == the DB (non-coverage assets by impact; every asset counted)
     const scans = await apiGet(A, `/${A.team}/cbom/scans`);
     const listApi = (scans.body?.runs_list_data || []).find((r) => r.id === runId) || null;
@@ -623,11 +630,14 @@ try {
     }
     s.check("dom_rows_eq_api", rows.length === items.length && !stuck, { expected: items.length, observed: { rows: rows.length, paging_stuck: stuck } });
     await s.shot(page, "results");
-    // drill-down of the first row (detail panel opens)
+    // drill-down of the first row: a row click opens the finding dialog (#267); close it again (Escape), or its modal
+    // overlay blocks G12's download buttons on this same page
     if (rows[0]) {
       await page.getByTestId(`run-asset-${rows[0].id}`).click().catch(() => {});
       await page.waitForTimeout(1000);
       await s.shot(page, "drilldown");
+      await page.keyboard.press("Escape").catch(() => {});
+      await page.getByTestId("run-finding-dialog").waitFor({ state: "hidden", timeout: 10000 }).catch(() => {});
     }
     // posture: Mosca X/Y/Z, Q-grade, calendar and heat-map against the oracle (CB-05)
     await cb05.g11Posture(ctx, s, "1");
@@ -662,7 +672,7 @@ try {
           s.check("cdx_spec", doc.bomFormat === "CycloneDX" && doc.specVersion === "1.6", { expected: "CycloneDX 1.6", observed: `${doc.bomFormat} ${doc.specVersion}` });
           // DA G12: the export names the build it was judged by (CB-03 sets engine_version = build)
           const engine = ((doc.metadata?.properties) || []).find((x) => x.name === "zs:engine_version")?.value || null;
-          s.check("engine_version_eq_build", !!engine && !!SHA && (SHA.startsWith(engine) || engine.includes(SHA.slice(0, 12))), { expected: SHA.slice(0, 12), observed: engine, reason: "engine-version" });
+          s.check("engine_version_eq_build", engineMatchesBuild(engine, SHA), { expected: SHA.slice(0, 12), observed: engine, reason: "engine-version" });
         }
       } else {
         const xml = file.toString("utf8");

@@ -12,7 +12,8 @@ Runs on the host (stdlib only) and drives the tools through `docker exec cb02-to
   keystores                                           labread's JKS reader; openssl pkcs12 (OpenSSL, not Java)
   SoftHSM objects                                     p11tool (GnuTLS); labread's SoftHSM object-store reader
   planted files                                       ssh login + sha256sum/stat (ForceCommand-logged)
-  ML-DSA certificate endpoints (Go has no ML-DSA)     openssl s_client from the tools image, recorded as the fallback
+  ML-DSA certificate endpoints (Go has no ML-DSA)     openssl s_client from the tools image, recorded as the fallback;
+                                                      certificates: labread DER on served bytes == the generated file
 Every key that `oracle/run<k>.json` asserts is compared with such an observation (rows carry `verifies`); per target,
 `independent_keys` lists what an independent row confirmed and `unverified_keys` what nothing independent did (the
 gate judges those NOT-JUDGED, INTERFACES v7.1). The run file itself is rebuilt from the facts and must be identical.
@@ -35,6 +36,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+import labfollow  # noqa: E402
 import labgen  # noqa: E402  (the generator's pkcs11-tool parser, used only by the identity row)
 import labread as R  # noqa: E402  (independent readers: DER, JKS, SoftHSM object store, SSH blobs)
 import labspec as S  # noqa: E402
@@ -260,6 +262,34 @@ def parse_p11tool(text: str) -> list[dict]:
     return sorted(out, key=lambda o: o["label"])
 
 
+P11_CLASSES = {"Private key": "Private Key", "Public key": "Public Key", "Secret key": "Secret Key"}
+TOKEN_SET_KEY = "non-public objects on the token == the run file's managed_key rows (both ways)"
+
+
+def p11tool_objects(text: str) -> list[tuple[str, str]]:
+    """Every object block `p11tool --list-all` prints, as (label, class); nothing is skipped: a type that is not a key
+    (certificate, data) keeps the printed type as its class, an unreadable block becomes ("", "unknown")."""
+    out = []
+    for block in re.split(r"\n(?=Object \d+:)", text.strip()):
+        if not re.match(r"Object \d+:", block):
+            continue
+        typ = re.search(r"Type:\s*([^\n(]+)", block)
+        label = re.search(r"Label:\s*(.*)", block)
+        kind = typ.group(1).strip() if typ else "unknown"
+        out.append((label.group(1).strip() if label else "", P11_CLASSES.get(kind, kind)))
+    return sorted(out)
+
+
+def token_set_row(t: Target, token: str, objects: list[tuple[str, str]], tool: str) -> bool:
+    """Closed world in both directions (review 5878784465): the token's non-public objects, as the independent
+    reader lists them, are exactly the run file's managed_key rows of that token. A generator parser that drops an
+    object (the oracle omits it) disagrees here, as does one that invents one."""
+    prefix = f"softhsm/{token}/"
+    asserted = sorted(oid.removeprefix(prefix) for oid in t.assets if oid.startswith(prefix))
+    observed = sorted(f"{label}/{cls}" for label, cls in objects if cls != "Public Key")
+    return t.check(f"softhsm/{token}", TOKEN_SET_KEY, tool, asserted, observed)
+
+
 def hsm_mismatches(requested: list[dict], observed: list[dict]) -> list[str]:
     """Compare the catalogue's requested objects (labspec, the designer's intent) with an independent observation."""
     problems = []
@@ -439,8 +469,8 @@ def check_tls(ctx: Ctx, o: dict) -> Target:
     if e["versions"].get("TLSv1.3"):
         obs["groups"] = groups13
         t.expect(oid, "groups", tool, oracle_groups(groups13), note="TLS 1.3, one group per handshake")
-    t.expect(oid, "quantum_vulnerable", tool, oraclefmt.tls_endpoint_qv(obs["versions"], groups13),
-             note="no accepted key exchange includes ML-KEM (TLS 1.3 groups as observed)")
+    t.expect(oid, "quantum_vulnerable", tool, oraclefmt.derive_tls_qv(obs["versions"], groups13),
+             note="no accepted key exchange includes ML-KEM (TLS 1.3 groups as observed; unknown group: not derived)")
     ctx.observed[o["target"]] = obs
     # certificates served (leaf first): every asserted field, from Go's crypto/x509
     chain = m.get("chain") or []
@@ -472,10 +502,7 @@ def check_tls(ctx: Ctx, o: dict) -> Target:
         t.unobserved(oid, "cipher_suites", ntool, f"nmap printed no suite table for {', '.join(missing)}")
     else:
         t.expect(oid, "cipher_suites", ntool, seen)
-    must = ((t.assets.get(oid) or {}).get("must_report") or {}).get("cipher_suites")
-    if must:
-        t.check(oid, "must_report.cipher_suites accepted by the server", ntool, sorted(must),
-                sorted(set(must) & set(seen)), verifies=[(oid, "must_report")])
+    must_report_row(t, oid, seen, ntool)
     if legacy:
         ecdhe = any("ECDHE" in s_ for v in legacy for s_ in e["suites"].get(v, []))
         if e.get("groups") is not None and ecdhe:
@@ -499,7 +526,7 @@ def check_tls(ctx: Ctx, o: dict) -> Target:
             if "TLSv1.3" not in enabled:
                 t.expect(oid, "groups", tool, oracle_groups(accepted), note=note)
             else:  # the TLS 1.3 row proves the list; the classical part must hold at TLS <= 1.2 as well
-                want = sorted(g for g in e["groups"] if not oraclefmt.TLS_GROUP_PQ.get(g))
+                want = classical_groups(e["groups"])
                 t.check(oid, f"groups ({top}, classical part)", tool, want, accepted, note=note)
         elif e.get("groups") is not None and "TLSv1.3" not in enabled:
             t.unobserved(oid, "groups", "tlscheck hello", "no ECDHE suite, so no group to observe at TLS <= 1.2")
@@ -509,6 +536,38 @@ def check_tls(ctx: Ctx, o: dict) -> Target:
             t.check(oid, f"cipher_suites[{v}] (Go subset)", tool, [], extra,
                     note="suites Go negotiated that the oracle does not list")
     return t
+
+
+def must_report_row(t: Target, oid: str, seen: list[str], tool: str) -> None:
+    """Every suite the run file says the product must report is one the server accepts (as observed)."""
+    must = ((t.assets.get(oid) or {}).get("must_report") or {}).get("cipher_suites")
+    if must:
+        t.check(oid, "must_report.cipher_suites accepted by the server", tool, sorted(must),
+                sorted(set(must) & set(seen)), verifies=[(oid, "must_report")])
+
+
+def classical_groups(groups: list[str]) -> list[str]:
+    """The groups without a PQ KEM (closed table: an unknown name raises, it is never read as classical)."""
+    return sorted(g for g in groups if not oraclefmt.tls_group_pq(g))
+
+
+def ssh_pq_kex(kex: list[str]) -> list[str]:
+    """Key exchanges known to include a PQ KEM (positive evidence only: an unknown name is not counted as PQ, and
+    the kex_algorithms row reports it as a disagreement)."""
+    return [k for k in kex if oraclefmt.SSH_KEX_PQ.get(k) is True]
+
+
+def generated_certificates(run: Path, target: str) -> dict[str, str]:
+    """sha256 -> file of every certificate the generator wrote for a target's server (read from the run directory on
+    the host, not through any TLS client)."""
+    out: dict[str, str] = {}
+    d = run / "lab" / "targets" / target
+    for name in ("cert.pem", "_ca.pem", "chain.pem"):
+        p = d / name
+        if p.is_file():
+            for der in R.pem_blocks(p.read_text()):
+                out.setdefault(hashlib.sha256(der).hexdigest(), f"lab/targets/{target}/{name}")
+    return out
 
 
 def check_tls_mldsa(ctx: Ctx, o: dict, t: Target) -> Target:
@@ -542,14 +601,26 @@ def check_tls_mldsa(ctx: Ctx, o: dict, t: Target) -> Target:
     t.check(oid, "versions (facts)", tool, e["versions"], versions, independent=False, reason=why)
     t.expect(oid, "protocol_versions", tool, proto_list(versions), independent=False, reason=why)
     t.expect(oid, "groups", tool, oracle_groups(groups), independent=False, reason=why)
-    t.expect(oid, "quantum_vulnerable", tool, oraclefmt.tls_endpoint_qv(versions, groups), independent=False,
+    t.expect(oid, "quantum_vulnerable", tool, oraclefmt.derive_tls_qv(versions, groups), independent=False,
              reason=why)
     t.unobserved(oid, "cipher_suites", tool, "no independent TLS 1.3 client completes a handshake with an ML-DSA server")
-    t.check(f"{o['target']}/cert", "fingerprint_sha256 (served chain)", tool, [c["sha256"] for c in e["certificates"]],
-            certs, independent=False, reason=why)
-    for i in range(len(e["certificates"])):
+    # The certificate keys need no TLS library: when the served DER is byte-identical (sha256) to the file the
+    # generator wrote, read from the run directory on the host, s_client only transported bytes and labread's DER
+    # reader (no OpenSSL) parses them, so those rows count as independent (#75 review 5878413538, CB-02 part).
+    files = generated_certificates(ctx.run, o["target"])
+    identical = [i < len(ders) and hashlib.sha256(ders[i]).hexdigest() in files for i in range(len(e["certificates"]))]
+    btool = "sha256 of the served DER vs the generated file (host)"
+    t.check(f"{o['target']}/cert", "fingerprint_sha256 (served chain)", btool if all(identical) else tool,
+            [c["sha256"] for c in e["certificates"]], certs, independent=all(identical), reason="" if all(identical) else why)
+    for i, c in enumerate(e["certificates"]):
+        served = hashlib.sha256(ders[i]).hexdigest() if i < len(ders) else None
+        t.check(f"{o['target']}/cert[{i}]", "served DER byte-identical to the generated file", btool,
+                c["sha256"], served, agree=identical[i] and served == c["sha256"],
+                note=files.get(served or "", "no generated file holds these bytes"))
         cert_rows(t, f"{o['target']}/cert[{i}]", R.x509_facts(ders[i]) if i < len(ders) else None,
-                  tool + " + labread DER reader", independent=False, reason=why)
+                  ("labread DER reader on the served bytes (identical to " + files[served] + ")") if identical[i]
+                  else tool + " + labread DER reader",
+                  independent=identical[i], reason="" if identical[i] else why)
     ctx.observed[o["target"]] = {"versions": versions, "groups": sorted(groups)}
     return t
 
@@ -579,8 +650,8 @@ def check_ssh(ctx: Ctx, o: dict) -> Target:
     t.expect(oid, "host_key_algorithms", tool, algs.get("server_host_key_algorithms", []), norm=lambda v: sorted(v or []))
     t.expect(oid, "ciphers", tool, algs.get("encryption_algorithms", []))
     t.expect(oid, "macs", tool, algs.get("mac_algorithms", []))
-    t.expect(oid, "quantum_vulnerable", tool, oraclefmt.ssh_endpoint_qv(kex) if kex else None,
-             note="no accepted key exchange includes a PQ KEM (nmap's KEX list)")
+    t.expect(oid, "quantum_vulnerable", tool, oraclefmt.derive_ssh_qv(kex),
+             note="no accepted key exchange includes a PQ KEM (nmap's KEX list; unknown name: not derived)")
     types = ",".join(sorted({k["type"].replace("ssh-", "").replace("ecdsa-sha2-nistp256", "ecdsa") for k in e["host_keys"]}
                             | {"rsa", "ecdsa", "ed25519"}))
     ks = ctx.exec("ssh-keyscan", "-T", "5", "-t", types, "-p", str(o["port"]), o["address"])
@@ -603,41 +674,72 @@ def check_ssh(ctx: Ctx, o: dict) -> Target:
     t.check(oid, "kex_algorithms (cross-check)", "ssh-audit 3.3.0", sorted(e["kex"]), sorted(akex),
             verifies=[(oid, "kex_algorithms")] if sorted(akex) == sorted(kex) else [])
     ctx.tool_versions.update({"nmap": "nmap 7.97", "ssh-keyscan": "OpenSSH_10.0p2", "ssh-audit": "ssh-audit 3.3.0"})
-    pq = [k for k in kex if k.startswith(("mlkem", "sntrup"))]
+    pq = ssh_pq_kex(kex)
     ctx.observed[o["target"]] = {"pq_kex": pq}
     check_penalties(ctx, o, t)
     return t
 
 
 BURST = """import json, socket
-banner = dropped = 0
+counts = {{"banner": 0, "eof": 0, "refused": 0, "error": 0, "other": 0}}
+samples = []
 for i in range(40):
     try:
         s = socket.create_connection(("{addr}", {port}), 3)
+    except OSError:
+        counts["error"] += 1          # refused, unreachable, timed out: never reached sshd
+        continue
+    try:
         s.settimeout(3)
         data = s.recv(64)
-        s.close()
     except OSError:
-        data = b""
-    if data.startswith(b"SSH-"):
-        banner += 1
+        data = None                   # reset or timeout after the connect
+    s.close()
+    if data is None:
+        counts["error"] += 1
+    elif data.startswith(b"SSH-"):
+        counts["banner"] += 1
+    elif data == b"":
+        counts["eof"] += 1            # connected, then closed with no banner
+    elif data.startswith(b"Not allowed at this time"):
+        counts["refused"] += 1        # sshd's own refusal of a penalised source (OpenSSH >= 9.8, sshd.c drop_connection)
     else:
-        dropped += 1
-print(json.dumps({{"banner": banner, "dropped": dropped}}))
+        counts["other"] += 1
+        if len(samples) < 3:
+            samples.append(repr(data[:40]))
+if samples:
+    counts["other_samples"] = samples
+print(json.dumps(counts))
 """
 
 
-def burst_verdict(counts: dict, sshd_log: str, exempt_served: bool, source: str = S.BURST_IP) -> tuple[bool, str]:
-    """Did sshd penalise the burst source? Either it logged a penalty for that source during this burst, or the source
-    is still penalised from an earlier burst (OpenSSH rate-limits that logging): every connection from it dropped while
-    the exempt self-check source is served in the same capture. sshd has no other per-source refusal configured."""
-    dropped, banner = counts.get("dropped", 0), counts.get("banner", 0)
-    logged = any("penalty" in ln and source in ln for ln in sshd_log.splitlines())
-    if dropped and logged:
-        return True, f"sshd logged a penalty for {source}; {banner} banners, {dropped} dropped"
-    if dropped and banner == 0 and exempt_served:
-        return True, f"{source} still penalised: all {dropped} dropped, no banner, while the exempt source is served"
-    return False, f"{banner} banners, {dropped} dropped, penalty logged: {logged}, exempt source served: {exempt_served}"
+def penalty_logged(sshd_log: str, source: str) -> bool:
+    """An OpenSSH PerSourcePenalties line for exactly `source` (10.231.0.12 never matches 10.231.0.120)."""
+    ip = re.compile(r"(?<![\d.])" + re.escape(source) + r"(?![\d])")
+    return any("penalty" in ln and ip.search(ln) for ln in sshd_log.splitlines())
+
+
+def burst_verdict(counts: dict, log_burst: str, log_all: str, exempt_served: bool,
+                  source: str = S.BURST_IP) -> tuple[bool, str]:
+    """Did sshd penalise the burst source? A penalised connection reaches sshd and gets no banner: OpenSSH >= 9.8
+    writes "Not allowed at this time" and closes (``refused``; live at OpenSSH 10.0, 2026-11-14), and a close with no
+    bytes (``eof``) counts the same. A refused or timed-out connection never reached sshd and proves nothing (review
+    5878784465), nor does any other payload. Either sshd logged a penalty for that source during this burst and
+    dropped connections, or the source is still penalised from an earlier burst (OpenSSH rate-limits the logging,
+    but always logs the first activation): every connection was dropped, none failed, a penalty for that source is in
+    the container's full log, and the exempt self-check source is served in the same capture. sshd has no other
+    per-source refusal configured."""
+    banner, eof, refused = counts.get("banner", 0), counts.get("eof", 0), counts.get("refused", 0)
+    error, other = counts.get("error", 0), counts.get("other", 0)
+    dropped = eof + refused
+    total = banner + dropped + error + other
+    seen = f"{banner} banners, {refused} refused by sshd, {eof} EOF, {error} errors, {other} other"
+    now, ever = penalty_logged(log_burst, source), penalty_logged(log_all, source)
+    if dropped and now and not error and not other:
+        return True, f"sshd logged a penalty for {source} during the burst; {seen}"
+    if total and dropped == total and ever and exempt_served:
+        return True, f"{source} still penalised: {seen}; a penalty for it is in the full sshd log; the exempt source is served"
+    return False, f"{seen}; penalty logged during the burst: {now}, ever: {ever}; exempt source served: {exempt_served}"
 
 
 def check_penalties(ctx: Ctx, o: dict, t: Target) -> None:
@@ -669,21 +771,162 @@ def check_penalties(ctx: Ctx, o: dict, t: Target) -> None:
     try:
         counts = json.loads(burst.stdout.strip().splitlines()[-1])
     except (IndexError, json.JSONDecodeError):
-        counts = {"banner": 0, "dropped": 0, "error": (burst.stderr or burst.stdout)[-300:]}
+        counts = {"banner": 0, "eof": 0, "refused": 0, "error": 0, "other": 0,
+                  "burst_failed": (burst.stderr or burst.stdout)[-300:]}
+    ctx.save(f"{o['target']}.burst.json", json.dumps(counts))
     time.sleep(1)
-    logs = subprocess.run(["docker", "logs", "--since", since, o["container"]], capture_output=True, text=True)
+    during = subprocess.run(["docker", "logs", "--since", since, o["container"]], capture_output=True, text=True,
+                            check=False)
+    full = subprocess.run(["docker", "logs", o["container"]], capture_output=True, text=True, check=False)
+    ctx.save(f"{o['target']}.sshd.log", full.stdout + full.stderr)
     after = ctx.exec("python3", "-c", f"import socket; s=socket.create_connection(('{o['address']}', {o['port']}), 3); "
                      "s.settimeout(3); print(s.recv(64)[:8])")
     served = "SSH-" in after.stdout
-    penalised, how = burst_verdict(counts, logs.stdout + logs.stderr, served)
+    penalised, how = burst_verdict(counts, during.stdout + during.stderr, full.stdout + full.stderr, served)
     t.check(oid, "unauthenticated burst from the throwaway source is penalised", "python3 socket burst (.12) + sshd log",
             True, penalised, note=how)
     t.check(oid, "the exempt self-check source is served right after the burst", "python3 socket (.11)", True, served)
     t.control("penalty active (O-8)", o["target"], penalised, how)
 
 
+def check_idp(ctx: Ctx, o: dict) -> Target:
+    """The served JWKS, decoded as base64url integers, against the SPKI sizes the oracle recorded."""
+    t = ctx.target(o["target"])
+    fetch = ("import json,ssl,urllib.request\n"
+             "ctx=ssl.create_default_context(cafile='/run-lab/lab/ca.pem')\n"
+             "def get(url):\n"
+             "    return urllib.request.urlopen(url, context=ctx, timeout=10).read().decode()\n"
+             "disc=json.loads(get('https://idp.lab/.well-known/openid-configuration'))\n"
+             "jwks=json.loads(get(disc['jwks_uri']))\n"
+             "print(json.dumps({'issuer': disc.get('issuer'), 'jwks_uri': disc.get('jwks_uri'), 'jwks': jwks}))\n")
+    res = ctx.exec("python3", "-c", fetch)
+    ctx.save("idp.json", res.stdout + res.stderr)
+    try:
+        doc = json.loads(res.stdout)
+    except json.JSONDecodeError:
+        t.check("idp/jwks", "discovery and JWKS fetched", "python urllib", "json", res.stderr[-300:])
+        return t
+    e = o["expect"]
+    t.check("idp/issuer", "issuer", "python urllib", e["issuer"], doc.get("issuer"))
+    problems = labfollow.idp_mismatches(e["keys"], doc.get("jwks") or {})
+    t.check("idp/keys", "kids, types and sizes", "JWKS base64url integers", [], problems)
+    both = {k["kid"] for k in e["keys"]} <= {k.get("kid") for k in (doc.get("jwks") or {}).get("keys") or []}
+    t.control("both signing keys are served (O-8)", o["target"], both, "rsa-2048 and ec-p256")
+    return t
+
+
+def check_receiver(ctx: Ctx, o: dict) -> Target:
+    """Post two deliveries. Both must appear in the receiver log. A log that drops one is a lab bug."""
+    t = ctx.target(o["target"])
+    import secrets as _secrets
+    posted = ["cb02-" + _secrets.token_hex(8) for _ in range(2)]
+    script = ("import json,urllib.request\n"
+              f"ids={posted!r}\n"
+              f"url='http://{o['address']}:{o['port']}/hook'\n"
+              "for i in ids:\n"
+              "    req=urllib.request.Request(url, data=b'{}', method='POST', headers={'X-Cb02-Delivery': i})\n"
+              "    urllib.request.urlopen(req, timeout=10).read()\n"
+              "print(json.dumps(ids))\n")
+    res = ctx.exec("python3", "-c", script)
+    ctx.save("receiver-post.txt", res.stdout + res.stderr)
+    log = ctx.run / "lab" / "listeners" / "receiver.jsonl"
+    rows = jsonl(log) if log.is_file() else []
+    missing = labfollow.receiver_missing(posted, rows)
+    t.check("receiver/log", "posted deliveries are in the receiver log", "python urllib + the receiver log", [], missing)
+    t.control("a delivery is recorded (O-8)", o["target"], len(posted) - len(missing) >= 1, "at least one id")
+    return t
+
+
+def check_k8s(ctx: Ctx, o: dict) -> Target:
+    """kubectl JSON plus the PEM sha256. openssl x509 on one valid and one expired cert is the positive control."""
+    import labk8s
+    t = ctx.target(o["target"])
+    ns = o["expect"]["namespace"]
+    try:
+        secrets = labk8s.kubectl_json("get", "secret", "-n", ns)
+        configmaps = labk8s.kubectl_json("get", "configmap", "-n", ns)
+        ingresses = labk8s.kubectl_json("get", "ingress", "-n", ns)
+        accounts = labk8s.kubectl_json("get", "serviceaccount", "-n", ns)
+    except SystemExit as exc:
+        t.check("k8s/kubectl", "cluster objects", "kubectl", "json", str(exc))
+        return t
+    problems = labfollow.k8s_mismatches(o["expect"], secrets, configmaps, ingresses, accounts)
+    t.check("k8s/objects", "secrets, configmap, ingress, service accounts", "kubectl get -o json", [], problems)
+    by_name = {i["metadata"]["name"]: i for i in secrets.get("items") or []}
+    seen_expired = seen_valid = False
+    for name in ("rsa-2048-valid", "rsa-2048-expired"):
+        item = by_name.get(name)
+        if not item:
+            continue
+        pem = base64.b64decode(item["data"]["tls.crt"]).decode()
+        text = ctx.exec("openssl", "x509", "-noout", "-checkend", "0", input_=pem)
+        expired = text.returncode != 0
+        seen_expired = seen_expired or (name.endswith("expired") and expired)
+        seen_valid = seen_valid or (name.endswith("valid") and not expired)
+    t.control("openssl x509 sees a valid cert and an expired cert (O-8)", o["target"], seen_valid and seen_expired,
+              f"valid={seen_valid} expired={seen_expired}")
+    return t
+
+
+def _check_host_ubuntu(ctx: Ctx, o: dict, t: Target) -> Target:
+    """Root can hash the planted files. The login user cannot read them, can sudo an allow-listed command, and
+    cannot sudo an arbitrary cat. The container log records the login; the file copy does not."""
+    e = o["expect"]
+    paths = [f["path"] for f in e["files"]]
+    hashed = ctx.exec("sha256sum", *paths, container=o["container"])
+    ctx.save("host.root-sha256.txt", hashed.stdout + hashed.stderr)
+    sums = {line.split()[1]: line.split()[0] for line in hashed.stdout.splitlines() if len(line.split()) == 2}
+    for f in e["files"]:
+        t.check(f"host:{f['path']}", "sha256 (root, in the container)", "sha256sum", f["sha256"], sums.get(f["path"]))
+        denied = labfollow.login_cannot_read(f["mode"], e.get("plant_owner", "root"))
+        t.check(f"host:{f['path']}", "login cannot read", "mode and owner", True, denied)
+    key = "/run-lab/lab/secrets/operator_ed25519"
+    ctx.exec("sh", "-c", "cat > /tmp/kh-host", input_=known_hosts(o))
+    remote = ("sha256sum /etc/os-release >/tmp/os.sum; echo OS:$?; "
+              "sha256sum /srv/cbom-lab/keys/legacy-rsa1024.key; echo KEY:$?; "
+              "sudo -n /usr/sbin/sshd -T >/tmp/sshd-t.txt; echo SUDO:$?; "
+              "sudo -n /bin/cat /srv/cbom-lab/keys/legacy-rsa1024.key; echo CAT:$?")
+    ssh = ctx.exec("ssh", "-i", key, "-o", "UserKnownHostsFile=/tmp/kh-host", "-o", "StrictHostKeyChecking=yes",
+                   "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "-p", str(o["port"]), f"zs-cbom@{o['address']}",
+                   remote)
+    ctx.save("host.ssh-tier2.txt", ssh.stdout + ssh.stderr)
+    marks = {}
+    for line in ssh.stdout.splitlines():
+        for prefix in ("OS:", "KEY:", "SUDO:", "CAT:"):
+            if line.startswith(prefix):
+                marks[prefix[:-1]] = line.split(":", 1)[1].strip()
+    t.check("host/login", "world-readable file is readable (positive control)", "ssh sha256sum /etc/os-release",
+            "0", marks.get("OS"))
+    t.check("host/login", "planted key is not readable", "ssh sha256sum", "nonzero", marks.get("KEY"),
+            agree=marks.get("KEY") not in (None, "0"))
+    t.check("host/login", "allow-listed sudo sshd -T", "ssh sudo -n /usr/sbin/sshd -T", "0", marks.get("SUDO"))
+    t.check("host/login", "sudo cat of the key is refused", "ssh sudo -n /bin/cat", "nonzero", marks.get("CAT"),
+            agree=marks.get("CAT") not in (None, "0"))
+    sudoers = ctx.exec("sha256sum", "/etc/sudoers.d/zs-cbom", container=o["container"])
+    got = sudoers.stdout.split()[0] if sudoers.stdout.split() else ""
+    t.check("host/sudoers", "sha256", "sha256sum /etc/sudoers.d/zs-cbom", e["tier2_sudoers_sha256"], got)
+    time.sleep(1)
+    file_rows = []
+    file_text = ctx.exec("cat", "/var/log/cb02/commands.log", container=o["container"])
+    for line in file_text.stdout.splitlines():
+        try:
+            file_rows.append(json.loads(line))
+        except json.JSONDecodeError:
+            pass
+    container_rows = container_command_log(o["container"])
+    logged = [r for r in container_rows if "sha256sum /etc/os-release" in str(r.get("command"))]
+    leaked = [r for r in file_rows if "sha256sum /etc/os-release" in str(r.get("command"))]
+    t.check("host/login", "container log has the login", "docker logs", True, bool(logged))
+    t.check("host/login", "file copy does not gain the login", "cat /var/log/cb02/commands.log", [], leaked)
+    t.control("Tier-2 allow-list works and is not a blanket sudo (O-8)", o["target"],
+              marks.get("SUDO") == "0" and marks.get("CAT") != "0", "sshd -T allowed, cat refused")
+    return t
+
+
 def check_host(ctx: Ctx, o: dict) -> Target:
     t = check_ssh(ctx, o)
+    if o["expect"].get("os") == "ubuntu":
+        return _check_host_ubuntu(ctx, o, t)
     e = o["expect"]
     ctx.exec("sh", "-c", "cat > /tmp/kh-host", input_=known_hosts(o))
     files = [f["path"] for f in e["files"]]
@@ -799,6 +1042,20 @@ def check_listener(ctx: Ctx, o: dict, health: dict[str, str]) -> Target:
         t.check(oid, "accept logged with the peer address (lab log)", "socat + /lab/accept.sh", True,
                 bool(rows) and res.returncode == 0)
         ctx.observed[o["target"]] = {"accept_logged": bool(rows)}
+        # not TLS (CB-12 v1 §5a): Go crypto/tls completes TCP on every version and no handshake
+        addr = f"{o['address']}:{o['port']}"
+        m = ctx.tlscheck("matrix", "-addr", addr)
+        ctx.save(f"{o['target']}.tlscheck.json", json.dumps(m, indent=1))
+        tool = m.get("tool", "tlscheck")
+        versions = m.get("versions") or {}
+        errors = m.get("version_errors") or {}
+        accepted_tcp = bool(versions) and not any(str(x).startswith("dial:") for x in errors.values())
+        not_tls = accepted_tcp and not any(versions.values())
+        t.check(f"{o['target']}/not_tls", "TCP accepted, no TLS handshake on any version", tool,
+                {v: False for v in S.VERSIONS}, {v: versions.get(v) for v in S.VERSIONS},
+                agree=not_tls, note="; ".join(f"{k}: {v}" for k, v in sorted(errors.items()))[:300])
+        t.expect(f"{o['target']}/not_tls", "status", tool, "not_tls" if not_tls else None)
+        t.expect(f"{o['target']}/not_tls", "scope", tool, [addr] if accepted_tcp else None)
     t.check(oid, "the product log holds no lab connection", "lab/listeners/<name>.jsonl", 0,
             sum(1 for r in jsonl(log) if str(r.get("peer", "")).startswith(lab_peers)))
     if e["role"] == "canary" and ctx.step == "run1":
@@ -938,6 +1195,7 @@ def check_softhsm(ctx: Ctx, o: dict) -> Target:
             if x["class"] == "Secret Key" and x["label"] in secrets_:
                 t.check(aid, "extractable (object store)", "labread SoftHSM2 object store", x["extractable"],
                         secrets_[x["label"]]["extractable"])
+        token_set_row(t, tok["label"], p11tool_objects(p11.stdout), "p11tool (GnuTLS 3.8), every object block")
         seen_ids = {f"softhsm/{tok['label']}/{x['label']}/{x['class']}" for x in observed}
         for aid in sorted(t.asserted()):
             if aid.startswith(f"softhsm/{tok['label']}/") and aid not in seen_ids:
@@ -1027,7 +1285,7 @@ def apply_controls(results: dict[str, Target], facts: dict[str, dict], ctx: Ctx)
                     seen = g in (ctx.observed.get(ctl) or {}).get("groups", [])
                     tgt.control(f"group {g} absent", ctl, seen, f"{ctl} negotiates {g} with the same tool")
         if o["kind"] == "tls" and "groups_legacy" in (ctx.observed.get(tid) or {}):
-            want = {g for g in e.get("groups") or [] if not oraclefmt.TLS_GROUP_PQ.get(g)}
+            want = set(classical_groups(e.get("groups") or []))
             for g in sorted(set(LEGACY_PROBE_GROUPS) - want):
                 ctl = S.CONTROLS.get(f"tls12_group_absent:{g}")
                 if ctl is None:
@@ -1150,7 +1408,8 @@ def main(run_dir: Path, only: str | None = None, expect_sha: str | None = None) 
             results[tid] = t
             continue
         fn = {"tls": check_tls, "ssh": check_ssh, "host": check_host, "postgres": check_postgres,
-              "mysql": check_mysql, "softhsm": check_softhsm, "code": check_code}.get(o["kind"])
+              "mysql": check_mysql, "softhsm": check_softhsm, "code": check_code, "idp": check_idp,
+              "receiver": check_receiver, "k8s": check_k8s}.get(o["kind"])
         try:
             results[tid] = check_listener(ctx, o, health) if o["kind"] == "listener" else fn(ctx, o)
         except Exception as exc:  # a crashed check is a lab problem, reported, never a pass
