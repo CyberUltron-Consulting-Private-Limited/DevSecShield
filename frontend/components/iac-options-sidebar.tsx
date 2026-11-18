@@ -280,11 +280,6 @@ export function IACOptionsSidebar({
     }
   }, [query.data?.scan_status, query.data?.scan_metadata, failureMessage]);
 
-  // the status check that saw the scan fail refunded its credits (#28): show the balance it gave back
-  useEffect(() => {
-    if (query.data?.scan_status === "failure") refreshCredits(queryClient);
-  }, [query.data?.scan_status, queryClient]);
-
   const exportMutation = useMutation({
     mutationFn: () => getIACExportResults(team_id, scan_id),
     onSuccess: (data) => {

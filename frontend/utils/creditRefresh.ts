@@ -1,8 +1,9 @@
 /**
  * The credit balance in the team sidebar (#13, #28). TeamSwitcher (app/[team_id]/layout.tsx) shows each team's balance
- * from GET /teams, cached under ["teams"]. Every action that moves credits calls refreshCredits when it settles: a scan
- * start or re-run (charged), a cancel (refunded), a failed scan (refunded by the status check that saw it fail), a
- * saved DAST profile run and a scan chat message (charged). utils/creditRefresh.test.ts lists them.
+ * from GET /teams, cached under ["teams"]. A scan start or re-run (charged), a cancel (refunded), a saved DAST
+ * profile run and a scan chat message (charged) call refreshCredits when they settle. A failed scan's refund is the
+ * query-cache watcher (creditBalanceWatcher): a status effect that also refreshes sends GET /teams a second time.
+ * utils/creditRefresh.test.ts lists the call sites.
  */
 import type { Query, QueryClient } from "@tanstack/react-query";
 

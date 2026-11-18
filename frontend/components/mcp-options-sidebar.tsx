@@ -276,11 +276,6 @@ export function MCPOptionsSidebar({
     },
   });
 
-  // the status check that saw the scan fail refunded its credits (#28): show the balance it gave back
-  useEffect(() => {
-    if (query.data?.scan_status === "failure") refreshCredits(queryClient);
-  }, [query.data?.scan_status, queryClient]);
-
   const exportMutation = useMutation({
     mutationFn: () => getMCPExportResults(team_id, scan_id),
     onSuccess: (data) => {

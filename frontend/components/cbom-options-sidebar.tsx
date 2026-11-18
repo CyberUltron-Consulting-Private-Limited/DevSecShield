@@ -329,14 +329,6 @@ export function CBOMOptionsSidebar({
     }
   }, [query.data?.scan_status, query.data?.scan_metadata, failureMessage]);
 
-  // A finished scan settles its credits (a failed one is refunded). This is the same GET /teams as
-  // refreshCreditBalance, so the query-cache watcher and this effect send one request (#28).
-  useEffect(() => {
-    if (query.data?.scan_status === "success" || query.data?.scan_status === "failure") {
-      refreshCredits(queryClient);
-    }
-  }, [query.data?.scan_status, queryClient]);
-
   const exportMutation = useMutation({
     mutationFn: () => getCBOMExportResults(team_id, scan_id),
     onSuccess: (data) => {

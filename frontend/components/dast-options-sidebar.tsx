@@ -289,10 +289,6 @@ export function DASTOptionsSidebar({
       setErrorMessage(null);
     }
   }, [query.data?.scan_status]);
-  // the status check that saw the scan fail refunded its credits (#28): show the balance it gave back
-  useEffect(() => {
-    if (query.data?.scan_status === "failure") refreshCredits(queryClient);
-  }, [query.data?.scan_status, queryClient]);
 
   const exportMutation = useMutation({
     mutationFn: ([tid, sid]: [number, number]) => getDASTExportResults(tid, sid),

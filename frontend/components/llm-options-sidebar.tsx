@@ -321,10 +321,6 @@ export function LLMOptionsSidebar({
       setErrorMessage(null);
     }
   }, [query.data?.scan_status, query.data?.scan_metadata]);
-  // the status check that saw the scan fail refunded its credits (#28): show the balance it gave back
-  useEffect(() => {
-    if (query.data?.scan_status === "failure") refreshCredits(queryClient);
-  }, [query.data?.scan_status, queryClient]);
 
   return (
     <ScrollArea className="w-full md:w-96 shrink-0 md:h-screen bg-neutral-900/70 border-t md:border-t-0 md:border-l border-zinc-800">
