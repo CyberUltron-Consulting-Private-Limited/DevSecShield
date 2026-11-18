@@ -1,6 +1,7 @@
-import { QueryClient } from "@tanstack/react-query";
+import { QueryCache, QueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
 import { retryAfterSeconds } from "@/utils/interceptors";
+import { creditBalanceWatcher } from "@/utils/creditBalance";
 
 // A 429 means "not now", not "failed": queries wait for Retry-After and try again, so the 6-second status
 // polling of the scan pages (it re-arms on every successful fetch) keeps going instead of stopping on an
@@ -25,9 +26,13 @@ export function queryRetryDelay(attempt: number, error: unknown): number {
 }
 
 export function makeQueryClient(): QueryClient {
-  return new QueryClient({
+  // every response passes the credit watcher: a refund the server made on its own (a failed scan, a CBOM sources run's
+  // jobs) refreshes the sidebar's balance (#28; utils/creditBalance.ts)
+  const client: QueryClient = new QueryClient({
+    queryCache: new QueryCache({ onSuccess: creditBalanceWatcher(() => client) }),
     defaultOptions: {
       queries: { retry: queryRetry, retryDelay: queryRetryDelay },
     },
   });
+  return client;
 }

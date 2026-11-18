@@ -40,6 +40,7 @@ import {
 import { toast } from "@/utils/toast";
 import { useRouter } from "next/navigation";
 import { handleApiError } from "@/utils/error-handler";
+import { refreshCreditBalance } from "@/utils/creditBalance";
 import { scanFailureMessage } from "@/utils/scanFailure";
 import { refreshCredits } from "@/utils/creditRefresh";
 import { stateAfterError } from "@/utils/scanErrorRecovery";
@@ -243,6 +244,7 @@ export function DASTOptionsSidebar({
     // the dispatch charged the team, or refunded a failed dispatch (utilities/dast/dispatch.py): the header follows (#13)
     onSettled: () => {
       refreshCredits(queryClient);
+      return refreshCreditBalance(queryClient);
     },
   });
 
@@ -287,10 +289,6 @@ export function DASTOptionsSidebar({
       setErrorMessage(null);
     }
   }, [query.data?.scan_status]);
-  // the status check that saw the scan fail refunded its credits (#28): show the balance it gave back
-  useEffect(() => {
-    if (query.data?.scan_status === "failure") refreshCredits(queryClient);
-  }, [query.data?.scan_status, queryClient]);
 
   const exportMutation = useMutation({
     mutationFn: ([tid, sid]: [number, number]) => getDASTExportResults(tid, sid),
@@ -334,8 +332,10 @@ export function DASTOptionsSidebar({
       setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("error");
     },
+    // a re-run can move credits (PR #57 charges the price difference): the balance shows what the server did
     onSettled: () => {
       refreshCredits(queryClient);
+      return refreshCreditBalance(queryClient);
     },
   });
 

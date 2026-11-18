@@ -70,6 +70,7 @@ import {
   Truncate,
   useMenuReveal,
 } from "./shared";
+import { refreshCreditBalance } from "@/utils/creditBalance";
 import { InfoTip } from "@/components/ui/info-tip";
 
 // A build may name a registry customers can pull the node image from; otherwise (and unless the server names one,
@@ -259,7 +260,10 @@ export default function ScanNodesTab({
   const deleteMutation = useMutation({
     mutationFn: (node: CbomScanNode) => deleteCbomScanNode(teamId, node.id),
     onSuccess: () => setDeleting(null),
-    onSettled: invalidate,
+    onSettled: () => {
+      invalidate();
+      refreshCreditBalance(queryClient); // deleting a node refunds its open collect jobs
+    },
   });
 
   const startWizard = () => {

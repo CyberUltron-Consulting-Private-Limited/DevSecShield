@@ -67,6 +67,8 @@ test("Review & Run Results opens the run results page; run changes refresh the l
   assert.match(review, /<Link href=\{runResultsHref\(teamId, run\.id\)\} data-testid=\{`review-run-details-\$\{run\.id\}`\}>/);
   assert.ok(!review.includes("setDetailsRunId"), "the dialog is no longer opened from the Runs table");
   assert.ok(review.includes("const invalidate = () => invalidateRunViews(queryClient, teamId);"), "cancel");
-  assert.ok(review.includes("onSettled: () => invalidateRunViews(queryClient, teamId),"), "start");
+  const start = review.slice(review.indexOf("const startMutation"), review.indexOf("const toggle"));
+  assert.ok(start.includes("invalidateRunViews(queryClient, teamId)"), "start refreshes the scans list");
+  assert.ok(start.includes("refreshCreditBalance(queryClient)"), "start refreshes the balance after the charge");
   assert.ok(waves.includes("invalidateRunViews(queryClient, teamId);"), "status / wave changes");
 });

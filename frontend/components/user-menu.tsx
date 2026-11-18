@@ -1,7 +1,7 @@
 "use client";
 
-// The user menu at the foot of the app sidebar: Account and Sign out (#14: the /home menu said "Logout" and had no
-// Account entry). The team layout's menu (app/[team_id]/layout.tsx) has the same entries; /home renders this one.
+// The user menu at the foot of the app sidebar: Account and Sign out. A team's pages and /home render this one menu
+// (#14: /home had its own, which said "Logout" and had no Account entry).
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, Loader2, LogOut, UserCog } from "lucide-react";

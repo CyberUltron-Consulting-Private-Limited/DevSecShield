@@ -428,6 +428,10 @@ def test_cache_rate_limit_and_question(api, world, stub, monkeypatch):
     asset = items["10.20.0.1:443"]["id"]
     s = stub(lambda body: (200, {}, {"summary": "Accepts TLS 1.0 [K1]", "steps": [], "commands": []}))
     configure(monkeypatch, f"http://127.0.0.1:{s.port}/v1")
+    # The assist budget is one fixed window of the wall clock (now // 60). Pin it:
+    # a burst that crosses a minute boundary gets a fresh budget and stays under 20.
+    monkeypatch.setattr(R.assist_limiter, "clock", lambda: 1_700_000_100.0)
+    R.assist_limiter.reset()
     first = _assist(api, asset).json()
     second = _assist(api, asset).json()
     assert first["cached"] is False and second["cached"] is True and len(s.requests) == 1

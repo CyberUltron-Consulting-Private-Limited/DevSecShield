@@ -114,7 +114,8 @@ export default function TeamSettingsPage() {
         saveFromEditDialogRef.current = false;
       }
     },
-    onError: (error) => showErrorToast(error),
+    // the one error toast of these three actions: the API helpers only throw (#12)
+    onError: (error) => showErrorToast(error, "Error updating team"),
   });
 
   const membersMutation = useMutation({
@@ -129,7 +130,7 @@ export default function TeamSettingsPage() {
       setAddMemberEmail("");
       setRemoveDialogOpen(false);
     },
-    onError: (error) => showErrorToast(error),
+    onError: (error, data) => showErrorToast(error, data.intent === "add" ? "Error sending the invitation" : "Error removing members"),
     onSettled: () => setPendingMemberAction(null),
   });
 
@@ -167,7 +168,7 @@ export default function TeamSettingsPage() {
       queryClient.invalidateQueries({ queryKey: ["teams"] });
       router.push("/home");
     },
-    onError: (error) => showErrorToast(error),
+    onError: (error) => showErrorToast(error, "Error deleting team"),
   });
 
   const handleSaveNameDescription = (fromEditDialog?: boolean) => {

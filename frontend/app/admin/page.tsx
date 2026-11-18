@@ -15,6 +15,7 @@ import {
   type AdminTeam,
 } from "@/utils/backend_api";
 import { showErrorToast } from "@/utils/error-handler";
+import { formatCreditBalance, MAX_CREDIT_BALANCE, parseCreditBalance } from "@/utils/adminCredits";
 import { newPasswordProblem, NEW_PASSWORD_HINT } from "@/utils/password_rules";
 import {
   Card,
@@ -118,7 +119,7 @@ function CreateAdminUserDialog({
             />
           </div>
           <div className="space-y-2">
-            <FieldLabel htmlFor="admin-password" infoId="admin.password" labelClassName="text-zinc-300">Password</FieldLabel>
+            <FieldLabel htmlFor="admin-password" infoId="admin.password" labelClassName="text-zinc-300">Temporary password</FieldLabel>
             <Input
               id="admin-password"
               type="password"
@@ -390,13 +391,16 @@ function TeamsTable() {
 
   const handleStartEdit = (team: AdminTeam) => {
     setEditingTeamId(team.team_id);
-    setCreditInput(String(team.team_credit_balance));
+    setCreditInput(formatCreditBalance(team.team_credit_balance));
   };
 
   const handleSave = (team_id: number) => {
-    const val = parseInt(creditInput, 10);
-    if (isNaN(val) || val < 0) {
-      showErrorToast(new Error("Please enter a valid non-negative number"), "Invalid credit balance");
+    const val = parseCreditBalance(creditInput);
+    if (val === null) {
+      showErrorToast(
+        new Error(`Enter a credit balance from 0 to ${MAX_CREDIT_BALANCE.toLocaleString("en-US")}, for example 4984.79`),
+        "Invalid credit balance",
+      );
       return;
     }
     updateMutation.mutate({ team_id, credit_balance: val });
@@ -458,11 +462,14 @@ function TeamsTable() {
                   {/* infotip-shared: the Teams tip explains the balance edit */}
                   <Input
                     type="number"
-                    aria-label="Credit balance"
                     min={0}
+                    max={MAX_CREDIT_BALANCE}
+                    step="any"
+                    inputMode="decimal"
+                    aria-label={`Credit balance of ${team.team_name}`}
                     value={creditInput}
                     onChange={(e) => setCreditInput(e.target.value)}
-                    className="h-8 w-24 bg-zinc-900 border-zinc-700 text-zinc-200"
+                    className="h-8 w-32 bg-zinc-900 border-zinc-700 text-zinc-200"
                   />
                   <Button
                     size="sm"
@@ -477,7 +484,7 @@ function TeamsTable() {
                   </Button>
                 </div>
               ) : (
-                <span className="text-zinc-300">{team.team_credit_balance}</span>
+                <span className="text-zinc-300">{formatCreditBalance(team.team_credit_balance)}</span>
               )}
             </TableCell>
             <TableCell className="text-zinc-400">

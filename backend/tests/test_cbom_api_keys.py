@@ -170,7 +170,7 @@ def test_key_creation_is_validated_and_admin_only(api, world):
     assert api("POST", "/1/cbom/api-keys", json={"name": "x", "scopes": ["cbom.read"],
                                                   "expires_in_days": 10_000}).status_code == 400
     member = api("POST", "/1/cbom/api-keys", "bob", json={"name": "x", "scopes": ["cbom.read"]})
-    assert member.status_code == 400 and "admin" in member.json()["detail"]
+    assert member.status_code == 403 and "cannot create or revoke" in member.json()["detail"]
     assert api("POST", "/1/cbom/api-keys", "carol", json={"name": "x", "scopes": ["cbom.read"]}).status_code == 403
     assert api("GET", "/1/cbom/api-keys", "carol").status_code == 403
     listed = api("GET", "/1/cbom/api-keys", "bob")  # members see the keys (never a secret) but cannot manage them
@@ -261,7 +261,7 @@ def test_revoked_and_expired_keys_are_refused(api, world):
     engine, _ids, _db = world
     meta, key = make_key(api, ["cbom.read"], name="revoke-me")
     assert api("GET", "/1/cbom/sources/items", key=key).status_code == 200
-    assert api("POST", f"/1/cbom/api-keys/{meta['id']}/revoke", "bob").status_code == 400  # members cannot
+    assert api("POST", f"/1/cbom/api-keys/{meta['id']}/revoke", "bob").status_code == 403  # members cannot
     assert api("POST", f"/1/cbom/api-keys/{meta['id']}/revoke", "carol").status_code == 403  # other team
     r = api("POST", f"/1/cbom/api-keys/{meta['id']}/revoke")
     assert r.status_code == 200 and r.json()["api_key"]["status"] == "revoked"
