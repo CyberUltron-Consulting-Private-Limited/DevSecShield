@@ -155,7 +155,7 @@ def http(monkeypatch):
         s.add(Team(id=2, name="two", credit_balance=100.0))
         for uid, team in ((1, 1), (2, 2), (3, 1)):
             s.add(User(id=uid, email=f"u{uid}@example.test", password="x", first_name="u", last_name=str(uid),
-                       default_team_id=team))
+                       default_team_id=team, session_active=True))
         s.add(TeamMembership(team_id=1, user_id=1, role="admin"))
         s.add(TeamMembership(team_id=1, user_id=3, role="member"))  # a member who did not start the scans
         s.add(TeamMembership(team_id=2, user_id=2, role="admin"))
@@ -195,7 +195,15 @@ def http(monkeypatch):
         return {"bucket": "test-bucket", "object_name": f"obj-{len(calls['uploads'])}{extension}"}
 
     async def fake_user(_engine, authorization):
-        return types.SimpleNamespace(id=int((authorization or "Bearer 1").split()[-1]))
+        from backend.utilities.auth.auth_utils import access_token_claims
+
+        raw = (authorization or "").split()[-1]
+        if raw.isdigit():  # a direct handler call that names the user id
+            return types.SimpleNamespace(id=int(raw))
+        local = str((access_token_claims(raw) or {}).get("sub", "")).split("@", 1)[0]
+        if local.startswith("u") and local[1:].isdigit():
+            return types.SimpleNamespace(id=int(local[1:]))
+        raise HTTPException(status_code=401, detail="Could not validate credentials")
 
     def resolve(host):
         if host not in DNS:
@@ -230,10 +238,17 @@ def http(monkeypatch):
     return TestClient(app), engine, celery, calls
 
 
+def _authorization(user: int = 1) -> str:
+    """Real access token. The route policy checks it before the handler patch."""
+    from backend.utilities.auth.auth_utils import create_access_token
+
+    return f"Bearer {create_access_token(f'u{user}@example.test', version=0)}"
+
+
 def _reinit(client, scan_id, kind, payload, data=None, user=1, team=1):
     files = {"uploaded_file": ("code.zip", data, "application/zip")} if data is not None else None
     return client.post(f"/{team}/{kind}/scan/{scan_id}/reinitialize", data={"start_scan_payload_string": payload},
-                       files=files, headers={"Authorization": f"Bearer {user}"})
+                       files=files, headers={"Authorization": _authorization(user)})
 
 
 async def _reinit_direct(scan_id, kind, payload, data=None, user=1, team=1):
@@ -244,7 +259,7 @@ async def _reinit_direct(scan_id, kind, payload, data=None, user=1, team=1):
     try:
         out = await scans_router.reinitialize_scan(type=kind, scan_id=scan_id, team_id=team,
                                                     start_scan_payload_string=payload, uploaded_file=upload,
-                                                    Authorization=f"Bearer {user}")
+                                                    Authorization=_authorization(user))
     except HTTPException as exc:
         return exc.status_code, {"detail": exc.detail}
     if hasattr(out, "status_code"):
@@ -664,9 +679,11 @@ def test_cancel_after_a_top_up_refunds_everything_once(http):
     client, engine, _celery, _calls = http
     assert _reinit(client, 1, "cbom", ZIP_PAYLOAD, BIG).status_code == 200
     assert _balance(engine) == 93.5
-    r = client.post("/1/cbom/scan/1/cancel", headers={"Authorization": "Bearer 1"})
+    r = client.post(
+        "/1/cbom/scan/1/cancel", headers={"Authorization": _authorization(1)})
     assert r.status_code == 200 and r.json()["refunded_credits"] == 7.5  # the 1 credit of /start and the 6.5 top-up
-    again = client.post("/1/cbom/scan/1/cancel", headers={"Authorization": "Bearer 1"})
+    again = client.post(
+        "/1/cbom/scan/1/cancel", headers={"Authorization": _authorization(1)})
     assert again.status_code == 409 and again.json()["code"] == "already_cancelled"
     assert _balance(engine) == 101.0 and _scan(engine, 1).scan_status == "cancelled"  # 93.5 + 7.5, once
     # every movement of this scan has its line, so the ledger tells the same story as the balance (+1.0 overall)
@@ -753,7 +770,8 @@ def test_a_cancel_whose_run_is_replaced_under_it_cancels_the_new_run_and_refunds
         return amount
 
     monkeypatch.setattr(cancel_mod, "refunded_credits", refunded_then_replaced)
-    r = client.post("/1/cbom/scan/1/cancel", headers={"Authorization": "Bearer 1"})
+    r = client.post(
+        "/1/cbom/scan/1/cancel", headers={"Authorization": _authorization(1)})
     assert inner["r"][0] == 200 and inner["r"][1]["credits_charged"] == 6.5
     assert r.status_code == 200, r.text
     assert r.json()["refunded_credits"] == 7.5
@@ -984,7 +1002,8 @@ def test_a_reinitialize_waits_for_a_fresh_claim_and_gives_a_stale_one_back_first
 def test_a_cancel_of_a_scan_left_on_a_claim_withdraws_both_runs_and_refunds_everything(http, monkeypatch):
     client, engine, celery, _calls = http
     _strand_a_claim(http, monkeypatch)
-    r = client.post("/1/cbom/scan/1/cancel", headers={"Authorization": "Bearer 1"})
+    r = client.post(
+        "/1/cbom/scan/1/cancel", headers={"Authorization": _authorization(1)})
     assert r.status_code == 200 and r.json()["refunded_credits"] == 7.5, r.text
     assert _balance(engine) == 101.0 and _scan(engine, 1).scan_status == "cancelled"
     assert set(celery.revoked) == {"new-1", "t-1"} and set(celery.marks.docs) == {"new-1", "t-1"}
@@ -994,7 +1013,7 @@ def test_a_cancel_of_a_scan_left_on_a_claim_withdraws_both_runs_and_refunds_ever
 # ===================================================================================== "Run again" is a new scan, charged at start
 def test_a_failed_scan_is_never_rerun_for_free_and_run_again_is_charged_at_start(http):
     client, engine, celery, calls = http
-    hdr = {"Authorization": "Bearer 1"}
+    hdr = {"Authorization": _authorization(1)}
     failed = _reinit(client, 5, "cbom", ZIP_PAYLOAD, BIG)  # failed: not waiting in the queue
     assert failed.status_code == 409 and failed.json()["code"] == "not_pending", failed.text
     start_failed = client.post("/1/cbom/scan/5/start", data={"start_scan_payload_string": ZIP_PAYLOAD},

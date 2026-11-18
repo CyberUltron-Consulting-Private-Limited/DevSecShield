@@ -126,6 +126,11 @@ def test_the_published_task_message_has_redacted_reprs_and_the_worker_still_gets
     from celery import Celery
     from celery.signals import after_task_publish
 
+    # #53: the MCP server and model hosts must resolve to public addresses; .test names never resolve (RFC 6761)
+    import socket
+    monkeypatch.setattr(socket, "getaddrinfo", lambda host, port, *a, **k: [
+        (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port))])
+
     import backend.utilities.celery.celery_connection  # noqa: F401  (every backend publisher imports it)
     from backend.utilities.scan.format_input import format_input_for_scan
 
@@ -179,11 +184,11 @@ def test_the_migration_chains_onto_the_one_head():
     for path in VERSIONS.glob("*.py"):
         text = path.read_text()
         rev = re.search(r"^revision(?::\s*str)?\s*=\s*['\"]([^'\"]+)['\"]", text, re.M)
-        down = re.search(r"^down_revision[^=]*=\s*['\"]([^'\"]+)['\"]", text, re.M)
+        down = re.search(r"^down_revision[^=]*=\s*(.+)$", text, re.M)
         if rev:
             revisions.add(rev.group(1))
         if down:
-            parents.add(down.group(1))
+            parents.update(re.findall(r"""['"]([^'"]+)['"]""", down.group(1)))
     assert mod.down_revision in revisions
     assert len(revisions - parents) == 1 and (revisions - parents == {"d44mcphdr001"} or "d44mcphdr001" in parents)
 

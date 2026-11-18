@@ -491,7 +491,8 @@ def test_project_setting_is_admin_only_and_versioned(api, runs):
     assert got["connected"] is True and got["jira_project_key"] is None and got["is_admin"] is False
     assert got["jira_issue_type"] == "Task"
     r = api("PUT", "/1/cbom/sources/ticketing", "bob", json={"jira_project_key": "SEC"})
-    assert r.status_code == 400 and "team admin" in r.json()["detail"]
+    # F4 RBAC: the route policy refuses a member (403, "Ask a team admin") before the handler's own admin check
+    assert r.status_code == 403 and "team admin" in r.json()["detail"]
     r = _set_project(api, jira_issue_type="Story", expected_version=got["row_version"])
     assert r.status_code == 200, r.text
     saved = r.json()["ticketing"]

@@ -15,6 +15,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getSastConversationMessages } from "@/utils/backend_api";
 import { useParams } from "next/navigation";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ReadOnlyGate } from "@/components/rbac/team-access";
 
 const dashboardCards = [
   {
@@ -128,7 +129,9 @@ export default function SASTPage() {
       </div>
 
       {/* Right Sidebar - SAST Options */}
+      <ReadOnlyGate permission="scan.run" className="contents">
       <SASTOptionsSidebar query={query} app_lang={app_lang} setAppLang={setAppLang} mode={mode} setMode={setMode} repo_url={repo_url} setRepoUrl={setRepoUrl} PAT={PAT} setPAT={setPAT} branch={branch} setBranch={setBranch} />
+      </ReadOnlyGate>
     </div>
   );
 }

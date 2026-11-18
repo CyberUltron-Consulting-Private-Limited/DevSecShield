@@ -40,7 +40,7 @@ PREFIX = "zsk_"
 SECRET_RE = re.compile(r"^zsk_[A-Za-z0-9_-]{43}$")
 MAX_ACTIVE_KEYS = 25
 MAX_EXPIRY_DAYS = 730
-ADMIN_ROLES = ("admin", "owner")  # "owner" arrives with PR #42
+ADMIN_ROLES = ("admin", "owner")  # owners hold every admin right (PR #42, utilities/rbac)
 
 READ = "cbom.read"
 SOURCES_WRITE = "cbom.sources:write"
@@ -88,6 +88,22 @@ ROUTE_SCOPES: dict[tuple[str, str], str] = {
     ("GET", _S + "/runs/{run_id}/changes"): READ,
     ("GET", _S + "/runs/{run_id}/heatmap"): READ,
 }
+
+# Key management answers a key as "not a session" (401), like every route outside the CBOM routers: a key never
+# lists, creates or revokes keys.
+SESSION_ONLY_PREFIXES: tuple[str, ...] = ("/{team_id}/cbom/api-keys",)
+
+
+def checked_by_authorize(request: Request) -> bool:
+    """Would this route's handler hand a ``zsk_`` key to ``authorize`` (which answers 200 or an audited 403)?  True for
+    a ``CbomRoute`` route outside ``SESSION_ONLY_PREFIXES``; every other route treats the key as a bad session token
+    (401).  The F4 route policy (utilities/rbac/policy.py) uses this to answer exactly as the handler would."""
+    from backend.utilities.cbom_sources.http import CbomRoute  # http imports this module
+
+    route = request.scope.get("route")
+    path = getattr(route, "path", "") or ""
+    return isinstance(route, CbomRoute) and not path.startswith(SESSION_ONLY_PREFIXES)
+
 
 # The request being served by a ``CbomRoute`` (set by its route handler) and the key it was authenticated with.
 _REQUEST: contextvars.ContextVar[Request | None] = contextvars.ContextVar("cbom_api_key_request", default=None)
@@ -192,6 +208,21 @@ def _refuse(session: Session, row: CbomApiKey, reason: str, route: tuple[str, st
     log("api key refused", team=row.team_id, key=row.id, reason=reason,
         route=f"{route[0]} {route[1]}" if route else None)
     return HTTPException(status_code=status, detail=detail)
+
+
+def remember_verified(request: Request, team_id: int, token: str, user: User, key_id: int) -> None:
+    """The route's access policy (utilities/rbac/policy.py) verified this key for this request: ``authorize`` then
+    reuses the result instead of checking (and auditing) the key a second time."""
+    request.state.cbom_api_key = (team_id, sha256_hex(token), user, key_id)
+
+
+def verified_for(team_id: int, token: str) -> tuple[User, int] | None:
+    """(user, key id) when the access policy already verified exactly this key for this team in this request."""
+    request = _REQUEST.get()
+    held = getattr(getattr(request, "state", None), "cbom_api_key", None) if request is not None else None
+    if held and held[0] == team_id and held[1] == sha256_hex(token):
+        return held[2], held[3]
+    return None
 
 
 def mark_active(key_id: int) -> None:

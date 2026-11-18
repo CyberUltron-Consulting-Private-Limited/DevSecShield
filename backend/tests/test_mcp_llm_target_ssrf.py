@@ -226,7 +226,8 @@ def start_route(monkeypatch):
     payloads = {1: _mcp("http://backend:8000/mcp"), 2: _mcp("https://mcp.example.com/mcp")}
     with Session(engine) as s:
         s.add(Team(id=1, name="t", credit_balance=100.0))
-        s.add(User(id=1, email="u@example.test", password="x", first_name="u", last_name="t", default_team_id=1))
+        s.add(User(id=1, email="u@example.test", password="x", first_name="u", last_name="t", default_team_id=1,
+                   session_active=True))
         s.add(TeamMembership(team_id=1, user_id=1, role="admin"))
         for scan_id, payload in payloads.items():
             measured = credit_estimate.input_digest("mcp", scans._payload_section(payload, "mcp"), None)
@@ -258,9 +259,13 @@ def start_route(monkeypatch):
     monkeypatch.setattr(scans, "estimate_credits", estimate)
     monkeypatch.setattr(credits, "get_db", lambda: engine)
     from backend.main import app
+    from backend.utilities.auth.auth_utils import create_access_token
+
+    token = create_access_token("u@example.test", version=0)
+    headers = {"Authorization": f"Bearer {token}"}
 
     def start(scan_id: int):
-        return TestClient(app).post(f"/1/mcp/scan/{scan_id}/start", headers={"Authorization": "Bearer t"},
+        return TestClient(app).post(f"/1/mcp/scan/{scan_id}/start", headers=headers,
                                     data={"start_scan_payload_string": payloads[scan_id].model_dump_json()})
 
     def row(scan_id: int):

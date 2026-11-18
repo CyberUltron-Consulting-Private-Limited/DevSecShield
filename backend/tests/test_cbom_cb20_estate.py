@@ -672,10 +672,10 @@ def test_the_migration_is_the_one_head():
     for path in versions.glob("*.py"):
         text = path.read_text()
         rev = re.search(r"^revision(?::\s*str)?\s*=\s*['\"]([^'\"]+)['\"]", text, re.M)
-        down = re.search(r"^down_revision(?:[^=]*)=\s*['\"]([^'\"]+)['\"]", text, re.M)
+        down = re.search(r"^down_revision[^=]*=\s*(.+)$", text, re.M)
         revs.add(rev.group(1))
         if down:
-            downs.add(down.group(1))
+            downs.update(re.findall(r"""['"]([^'"]+)['"]""", down.group(1)))
     # one head; later revisions (CB-23 cb23q0gap001) chain after this one
     assert len(revs - downs) == 1 and ("cb20estate001" in downs or revs - downs == {"cb20estate001"})
     assert _migration().down_revision in revs

@@ -9,6 +9,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, usePathname } from "next/navigation";
 import { toast } from "@/utils/toast";
 import { getMCPConversationMessages } from "@/utils/backend_api";
+import { ReadOnlyGate } from "@/components/rbac/team-access";
 
 export default function MCPPage() {
   const params = useParams();
@@ -82,7 +83,9 @@ export default function MCPPage() {
       </div>
 
       {/* Right Sidebar - MCP Options */}
+      <ReadOnlyGate permission="scan.run" className="contents">
       <MCPOptionsSidebar query={query} team_id={team_id} scan_id={conversation_id} />
+      </ReadOnlyGate>
     </div>
   );
 }

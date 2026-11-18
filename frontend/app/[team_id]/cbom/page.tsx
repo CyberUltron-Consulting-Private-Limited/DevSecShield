@@ -111,6 +111,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { IfAllowed } from "@/components/rbac/team-access";
 import { quantumReadinessBars } from "@/utils/cbomReadiness";
 
 type ScanStatus = "pending" | "started" | "retry" | "failure" | "success" | "partial" | "not_started" | "cancelled";
@@ -775,9 +776,11 @@ export default function CBOMPage() {
                   <Network className="h-4 w-4 mr-2" />CBOM Sources
                 </Link>
               </Button>
+              <IfAllowed permission="scan.create">
               <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" onClick={() => setCreateDialogOpen(true)}>
                 <Plus className="h-4 w-4 mr-2" />New Scan
               </Button>
+              </IfAllowed>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" data-testid="cbom-deliverables-trigger">
@@ -1031,9 +1034,11 @@ export default function CBOMPage() {
                     <p className="text-zinc-900 dark:text-white font-medium mb-1">No scans or runs yet <InfoTip id="cbom.list.empty" /></p>
                     <p className="text-zinc-600 dark:text-zinc-400 mb-4">Create a CBOM scan for your code, or start a CBOM Sources run to collect the cryptography of your systems.</p>
                     <div className="flex flex-wrap items-center justify-center gap-2">
+                      <IfAllowed permission="scan.create">
                       <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" onClick={() => setCreateDialogOpen(true)}>
                         <Plus className="h-4 w-4 mr-2" />Create New Scan
                       </Button>
+                      </IfAllowed>
                       <Button asChild variant="outline" className="cursor-pointer">
                         <Link href={sourcesRunsHref(team_id)}><Network className="h-4 w-4 mr-2" />Open CBOM Sources</Link>
                       </Button>
@@ -1198,12 +1203,16 @@ export default function CBOMPage() {
                                       <DropdownMenuItem className="cursor-pointer" onClick={(e) => { e.stopPropagation(); setMetadataScan(conversation); setMetadataDialogOpen(true); }}>
                                         <Eye className="h-4 w-4 mr-2" />View metadata
                                       </DropdownMenuItem>
+                                      <IfAllowed permission="scan.update">
                                       <DropdownMenuItem className="cursor-pointer" onClick={() => handleRename(conversation)}>
                                         <Pencil className="h-4 w-4 mr-2" />Rename scan
                                       </DropdownMenuItem>
+                                      </IfAllowed>
+                                      <IfAllowed permission="scan.update">
                                       <DropdownMenuItem className="cursor-pointer" onClick={() => handleDelete(conversation)} variant="destructive">
                                         <Trash2 className="h-4 w-4 mr-2" />Delete scan
                                       </DropdownMenuItem>
+                                      </IfAllowed>
                                     </DropdownMenuContent>
                                   ) : null}
                                 </DropdownMenu>

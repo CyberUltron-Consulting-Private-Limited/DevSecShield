@@ -129,6 +129,11 @@ def access_token_subject(token: str) -> Optional[str]:
     return claims["sub"] if claims else None
 
 
+def access_token_claims(token: str) -> Optional[dict]:
+    """The claims of a validly signed, unexpired access token, or None (the RBAC dependency, utilities/rbac)."""
+    return _verified_claims(token, JWT_SECRET_KEY, "access")
+
+
 def _unauthorized() -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,

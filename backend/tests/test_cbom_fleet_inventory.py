@@ -190,7 +190,7 @@ def test_json_import_and_the_api_source(api, world):
 
 
 def test_permissions_and_tenancy(api, world):
-    assert _import(api, _csv(2), who="bob").status_code == 400  # a member reads, an admin writes
+    assert _import(api, _csv(2), who="bob").status_code == 403  # a member reads, an admin writes (F4: 403)
     assert "team admin" in _import(api, _csv(2), who="bob").json()["detail"]
     assert _import(api, _csv(2)).status_code == 200
     assert api("GET", f"{INV}/targets", "bob").json()["total"] == 2
@@ -198,7 +198,7 @@ def test_permissions_and_tenancy(api, world):
     assert api("GET", f"/2/cbom/sources/fleet/inventory/targets/{tid}", "carol").status_code == 404
     assert api("GET", f"{INV}/targets/{tid}", "carol").status_code == 403  # not a member of team 1
     assert api("GET", "/2/cbom/sources/fleet/inventory/targets", "carol").json()["total"] == 0
-    assert api("DELETE", f"{INV}/targets/{tid}", "bob").status_code == 400
+    assert api("DELETE", f"{INV}/targets/{tid}", "bob").status_code == 403  # F4 route policy
     gone = api("DELETE", f"{INV}/targets/{tid}")
     assert gone.status_code == 200
     detail = api("GET", f"{INV}/targets/{tid}").json()["target"]
@@ -216,8 +216,8 @@ def test_a_member_import_is_refused_before_the_file_is_parsed(api, monkeypatch):
     monkeypatch.setattr(ROUTES, "parse_csv", lambda *a, **k: parsed.append("csv") or real_csv(*a, **k))
     monkeypatch.setattr(ROUTES, "parse_json", lambda *a, **k: parsed.append("json") or real_json(*a, **k))
     refused = _import(api, _csv(500), who="bob")
-    assert refused.status_code == 400 and "team admin" in refused.json()["detail"]
-    assert _import(api, json.dumps([{"external_id": "a", "address": "10.0.0.1"}]), "json", who="bob").status_code == 400
+    assert refused.status_code == 403 and "team admin" in refused.json()["detail"]  # F4 route policy
+    assert _import(api, json.dumps([{"external_id": "a", "address": "10.0.0.1"}]), "json", who="bob").status_code == 403
     assert parsed == []
     assert _import(api, _csv(2)).status_code == 200 and parsed == ["csv"]
 

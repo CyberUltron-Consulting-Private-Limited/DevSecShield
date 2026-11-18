@@ -46,7 +46,7 @@ from sqlmodel import Session, SQLModel, create_engine, select  # noqa: E402
 
 import backend.utilities.cbom_sources.billing  # noqa: E402,F401  (the ledger table, in create_all)
 
-from backend.new_models import Scan, Team, User  # noqa: E402
+from backend.new_models import Scan, Team, TeamMembership, User  # noqa: E402
 
 COST = 0.006
 REFUSED = {"content": "Team does not have enough credits to send a message"}
@@ -134,7 +134,10 @@ def world(request, monkeypatch, tmp_path, model):
     with Session(engine) as s:
         s.add(Team(id=1, name="t", credit_balance=1.0))
         s.commit()
-        s.add(User(id=1, email="u@example.test", password="x", first_name=None, last_name=None, profile_photo=None))
+        s.add(User(id=1, email="u@example.test", password="x", first_name=None, last_name=None, profile_photo=None,
+                   session_active=True))
+        s.commit()
+        s.add(TeamMembership(team_id=1, user_id=1, role="member"))  # scan.update
         s.commit()
         s.add(Scan(id=7, team_id=1, owner_user_id=1, scan_type="sast", scan_status="success",
                    scan_data={"results": [{"title": "SQL injection in login()"}]}))
@@ -178,6 +181,12 @@ def _ledger(engine) -> list[tuple]:
                       for r in s.exec(select(CbomCreditEntry)).all())
 
 
+def _authorization() -> str:
+    from backend.utilities.auth.auth_utils import create_access_token
+
+    return f"Bearer {create_access_token('u@example.test', version=0)}"
+
+
 def _send_all(texts: list[str]) -> list:
     """Every message in flight at once, each on its own thread and event loop (BACKEND_WORKERS): a blocking call in
     one request does not hold the others back."""
@@ -194,7 +203,7 @@ def _send_all(texts: list[str]) -> list:
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as client:
                 start.wait()
                 return await client.post("/1/sast/scan/7/message", json={"user_message": text},
-                                         headers={"Authorization": "Bearer t"})
+                                         headers={"Authorization": _authorization()})
 
         return asyncio.run(go())
 
@@ -296,7 +305,7 @@ def test_a_cancelled_model_call_is_refunded(world):
     async def go():
         task = asyncio.ensure_future(scans.send_message_to_scan(
             team_id=1, type="sast", data=SendMessageToScanData(user_message="q"), scan_id=7,
-            Authorization="Bearer t"))
+            Authorization=_authorization()))
         while world.model["calls"] == 0:
             await asyncio.sleep(0.01)
         task.cancel()
