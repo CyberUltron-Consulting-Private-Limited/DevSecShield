@@ -9,10 +9,14 @@ Every route lists exactly one policy in ``dependencies=[...]`` (after its rate l
 * ``public(reason)``               no account: sign-in, sign-up, codes, links that carry their own credential
 * ``machine(credential, reason)``  a non-person credential the handler checks: scan-node token, API key
 
-A team check is: Bearer token -> signature, type, expiry, token version -> account (session active) -> membership
-of ``team_id`` -> role >= the permission's lowest role.  It reads only (no ``last_active`` write): the handler
-still authenticates as before (defence in depth).  The roles are read from the database on every request (never
-from the token), so a role change or removal applies to the next request.
+A team check is: Bearer token, then signature, type and expiry. That step
+does not open the database. A missing or malformed bearer is the same 401
+the route returns. A verified token then reads the database: token version,
+the account (session active) and membership of ``team_id``, then role >=
+the permission's lowest role. It reads only (no ``last_active`` write): the
+handler still authenticates as before (defence in depth). Roles are read on
+every request (never from the token), so a role change or removal applies
+to the next request.
 
 Answers: 401 no or bad token; 403 "Session not active" (the frontend signs out on that one only); 403 "User is
 not in team" (unchanged); 403 "Your role (viewer) cannot ..." for a role that is too low.  A refused team write is
@@ -126,13 +130,34 @@ def _engine(getter: EngineGetter) -> Engine:
         raise HTTPException(status_code=500, detail=ACCESS_CHECK_FAILED) from None
 
 
-async def resolve_principal(request: Request, engine: Engine, team_id: Optional[int] = None,
-                            allow_inactive: bool = False) -> Principal:
+def _request_engine(request: Request, getter: EngineGetter) -> Engine:
+    """This request's engine, opened once, after a session bearer verifies."""
+    engine = getattr(request.state, "rbac_engine", None)
+    if engine is None:
+        engine = _engine(getter)
+        request.state.rbac_engine = engine
+    return engine
+
+
+async def resolve_principal(
+    request: Request,
+    engine_getter: EngineGetter,
+    team_id: Optional[int] = None,
+    allow_inactive: bool = False,
+) -> Principal:
+    """The account behind a verified access token.
+
+    A missing or unverified bearer raises the route's 401 here, and
+    ``get_db`` is not called. A verified token then loads the account,
+    its token version, whether the session is active and, when
+    ``team_id`` is set, ``TeamMembership.role``.
+    """
     from backend.utilities.auth import auth_utils  # at call time: tests may stand a stub module in for it
 
     claims = auth_utils.access_token_claims(bearer_token(request))
     if claims is None:
         raise _unauthorized()
+    engine = _request_engine(request, engine_getter)
     try:
         principal, problem = await run_in_threadpool(_load_principal, engine, claims, team_id, allow_inactive)
     except HTTPException:
@@ -261,11 +286,12 @@ class Authenticated(AccessPolicy):
         return "any signed-in account" + (" (also a closed session)" if self.allow_inactive_session else "")
 
     async def __call__(self, request: Request) -> Principal:
-        engine = _engine(self.engine_getter)
-        principal = await resolve_principal(request, engine, allow_inactive=self.allow_inactive_session)
+        principal = await resolve_principal(
+            request, self.engine_getter, allow_inactive=self.allow_inactive_session)
         ctx = self._context(request, engine_getter=self.engine_getter, principal=principal)
         if self.audited:
-            await _audit_attempt(request, ctx, engine)
+            await _audit_attempt(
+                request, ctx, _request_engine(request, self.engine_getter))
         return principal
 
 
@@ -280,16 +306,18 @@ class PlatformAdmin(AccessPolicy):
         return "superuser (admin console)"
 
     async def __call__(self, request: Request) -> Principal:
-        engine = _engine(self.engine_getter)
-        principal = await resolve_principal(request, engine)
+        principal = await resolve_principal(request, self.engine_getter)
         ctx = self._context(request, engine_getter=self.engine_getter, principal=principal)
         if not principal.is_superuser:
             if self.audited:
-                await _audit_denial(request, ctx, engine, action=f"platform.{request.method.lower()}",
-                                    reason="not a superuser")
+                await _audit_denial(
+                    request, ctx, _request_engine(request, self.engine_getter),
+                    action=f"platform.{request.method.lower()}",
+                    reason="not a superuser")
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=SUPERUSER_REQUIRED)
         if self.audited:
-            await _audit_attempt(request, ctx, engine)
+            await _audit_attempt(
+                request, ctx, _request_engine(request, self.engine_getter))
         return principal
 
 
@@ -306,23 +334,32 @@ class TeamPermission(AccessPolicy):
 
     async def __call__(self, request: Request) -> Principal:
         team_id = team_id_from_path(request)
-        engine = _engine(self.engine_getter)
         if _is_cbom_api_key(request):
+            engine = _request_engine(request, self.engine_getter)
             principal = await _cbom_api_key_principal(request, engine, team_id)
         else:
-            principal = await resolve_principal(request, engine, team_id=team_id)
-        ctx = self._context(request, engine_getter=self.engine_getter, principal=principal, team_id=team_id)
+            principal = await resolve_principal(
+                request, self.engine_getter, team_id=team_id)
+        ctx = self._context(
+            request, engine_getter=self.engine_getter, principal=principal,
+            team_id=team_id)
         if principal.role is None:
             if self.audited:
-                await _audit_denial(request, ctx, engine, action=self.permission.name, reason="not a member")
+                await _audit_denial(
+                    request, ctx, _request_engine(request, self.engine_getter),
+                    action=self.permission.name, reason="not a member")
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=NOT_IN_TEAM)
         if not role_has(principal.role, self.permission.name):
-            await _audit_denial(request, ctx, engine, action=self.permission.name,
-                                reason=f"role {principal.role} below {self.permission.min_role}")
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
-                                detail=role_denied_detail(principal.role, self.permission))
+            await _audit_denial(
+                request, ctx, _request_engine(request, self.engine_getter),
+                action=self.permission.name,
+                reason=f"role {principal.role} below {self.permission.min_role}")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=role_denied_detail(principal.role, self.permission))
         if self.audited:
-            await _audit_attempt(request, ctx, engine)
+            await _audit_attempt(
+                request, ctx, _request_engine(request, self.engine_getter))
         return principal
 
 
