@@ -17,7 +17,6 @@ from backend.get_db import get_db, get_mongo_client_db
 from backend.mongo_models import ActiveContextLog, MessageLog
 from backend.new_models import Scan
 from backend.utilities.dashboard.scan_metadata import get_scan_metadata
-from backend.utilities.team.credits import deduct_credits_from_team_for_message
 from backend.utilities.auth.auth_utils import get_user_from_header_or_raise_exception
 # from backend.utilities.celery.celery_connection import get_status_and_update_db
 from backend.utilities.db.functions import get_messages_from_scan, return_scan_list_for_type, update_status_of_scan_in_main_db 
@@ -37,9 +36,12 @@ from backend.utilities.dashboard.sbom_license import (
 )
 from backend.utilities.scan.start_scan import start_scan_and_update_db
 from backend.utilities.scan.cancel_scan import CancelRefused, cancel_scan, refunded_credits
+from backend.utilities.scan.reinitialize import ReinitializeRefused, reinitialize_scan as reinitialize_with_payload
 from backend.utilities.scan.estimate_scan import estimate_credits
 from backend.utilities.scan import credit_estimate
 from backend.utilities.team.credits import check_if_team_has_enough_credits , deduct_credits_from_team , update_scan_credit_consumed , refund_credits_to_team
+from backend.utilities.log_redaction import redact, safe_repr
+from backend.utilities.scan.format_input import require_public_targets
 from backend.utilities.db.schemas import * 
 from backend.utilities.celery.celery_connection import get_status_and_update_db
 from backend.utilities.db.encryption import decrypt_if_encrypted
@@ -125,7 +127,7 @@ async def list_scans(
     except HTTPException as e:
         raise e
     except Exception as e:
-        console.print(f"Error in listing {type} scans for team {team_id}: {e}",style="bold red")
+        console.print(f"Error in listing {type} scans for team {team_id}: {redact(str(e))}",style="bold red", markup=False)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in listing scans , please try again later")
 
     
@@ -169,7 +171,7 @@ async def create_scan(
     except HTTPException as e:
         raise e
     except Exception as e:
-        console.print(f"Error in creating {type} scan for team {team_id}: {e}",style="bold red")
+        console.print(f"Error in creating {type} scan for team {team_id}: {redact(str(e))}",style="bold red", markup=False)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in creating scan , please try again later")
 
 
@@ -210,7 +212,10 @@ async def send_message_to_scan(
             console.print(f"AI chat unavailable: {exc.__class__.__name__}", style="bold red")
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                                 detail="AI chat is not configured on this deployment")
-        if not check_if_team_has_enough_credits(team_id, 0.006):
+        from backend.utilities.ai import paid_chat as CHAT
+
+        # An early refusal only: the conditional debit in STEP [ 3b ] decides (#86).
+        if not check_if_team_has_enough_credits(team_id, CHAT.COST):
             return { "content" : "Team does not have enough credits to send a message" }
 
 
@@ -226,12 +231,11 @@ async def send_message_to_scan(
             if not scan:
                 console.print(f"Scan with id: {scan_id} and team_id: {team_id} not found in main database" ,style="bold red")
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found ")
-            
-            scan.last_updated = datetime.now(timezone.utc) # updating last_updated field
+            # A chat message is not a change to the scan, so last_updated is not written.
+            # Commit still runs so the loaded row stays usable after this block, as before.
             session.add(scan)
             session.commit()
             session.refresh(scan)
-            
             SCAN = scan
             SCAN_STATUS = scan.scan_status
             SCAN_DATA = scan.scan_data
@@ -253,58 +257,63 @@ async def send_message_to_scan(
         messages_count = message_collection.count_documents({"scan_id": SCAN.id})
         if messages_count > MAX_MESSAGE_LIMIT:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Max message limit reached")
-        
-        message_instance = MessageLog(
-            scan_id=SCAN.id,
-            content=data.user_message,
-            type="message",
-            sender="user",
-            created_at=datetime.now(timezone.utc),
-        )
-        result = message_collection.insert_one(message_instance)
-        user_message_id = str(result.inserted_id)
-        console.print(f"User message added to mongo db" ,style="dim green")
-    
-        
-        
-        
-        # STEP [ 4 ] : =========== Add user message to the active context log ====================== ⭐
-        active_context_collection = mongo_db["active_context"]
-        active_context_instance = ActiveContextLog(
-            scan_id=SCAN.id,
-            content=data.user_message,
-            type="message",
-            sender="user",
-            created_at=datetime.now(timezone.utc),
-        )
-        result = active_context_collection.insert_one(active_context_instance)
-        active_context_message_id = str(result.inserted_id)
-        console.print(f"User message added to active context log with id: {active_context_message_id}" ,style="dim green")
+
+        # STEP [ 3b ] : =========== Charge the message before anything is stored or the model is called (#86) ===== ⭐
+        # One conditional debit and its credit ledger row, in one transaction (utilities/ai/paid_chat.py): however
+        # many messages arrive at once, the model answers only as many as the balance pays for. Every failure before
+        # the answer comes back (including a cancelled request) refunds the message once.
+        message_oid = ObjectId()  # the message's id in message_log and in its ledger rows
+        try:
+            CHAT.charge(engine, team_id, str(message_oid))
+            message_instance = MessageLog(
+                _id=message_oid,
+                scan_id=SCAN.id,
+                content=data.user_message,
+                type="message",
+                sender="user",
+                created_at=datetime.now(timezone.utc),
+            )
+            result = message_collection.insert_one(message_instance)
+            user_message_id = str(result.inserted_id)
+            console.print(f"User message added to mongo db" ,style="dim green")
 
 
-        
-        
-        
-        # STEP [ 5 ] : =========== Get the response from the model ======================
-        AI_RESPONSE = await create_response(
-            mongo_db=mongo_db,
-            scan_id=SCAN.id,
-            scan_type=type,
-            scan_results=json.dumps(SCAN_DATA, default=str),
-            content=data.user_message,
-            role="human", # doesnt get saved to any db , jsut for functional clarity 
-        )
+            # STEP [ 4 ] : =========== Add user message to the active context log ====================== ⭐
+            active_context_collection = mongo_db["active_context"]
+            active_context_instance = ActiveContextLog(
+                scan_id=SCAN.id,
+                content=data.user_message,
+                type="message",
+                sender="user",
+                created_at=datetime.now(timezone.utc),
+            )
+            result = active_context_collection.insert_one(active_context_instance)
+            active_context_message_id = str(result.inserted_id)
+            console.print(f"User message added to active context log with id: {active_context_message_id}" ,style="dim green")
 
 
-        # STEP [ 6 ] : =========== Deduct credits for message for team  ====================== ⭐
-        deduct_credits_from_team_for_message(team_id)
+            # STEP [ 5 ] : =========== Get the response from the model (already paid for) ======================
+            AI_RESPONSE = await create_response(
+                mongo_db=mongo_db,
+                scan_id=SCAN.id,
+                scan_type=type,
+                scan_results=json.dumps(SCAN_DATA, default=str),
+                content=data.user_message,
+                role="human", # doesnt get saved to any db , jsut for functional clarity 
+            )
+        except CHAT.InsufficientCredits:  # the debit was refused: nothing was charged, stored or sent to the model
+            return { "content" : "Team does not have enough credits to send a message" }
+        except BaseException as failure:
+            # once, and only for a charge that committed (a charge that raised may or may not have: the ledger knows)
+            CHAT.refund_unanswered(engine, team_id, str(message_oid), failure)
+            raise
 
 
         return AI_RESPONSE
 
         
     except Exception as e:
-        console.print(f"Error in send_message_to_{type}_scan_conversation: {e}",style="bold red")
+        console.print(f"Error in send_message_to_{type}_scan_conversation: {redact(str(e))}",style="bold red", markup=False)
         if isinstance(e,HTTPException):
             raise e
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in sending message , please try again later")
@@ -450,7 +459,7 @@ async def get_scan(
     except HTTPException as e:
         raise e
     except Exception as e:
-        console.print(f"Error in get_scan: {e}",style="bold red")
+        console.print(f"Error in get_scan: {redact(str(e))}",style="bold red", markup=False)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in getting scan , please try again later")
 
 
@@ -459,8 +468,7 @@ async def get_scan(
 
 
 def _payload_section(start_scan_payload: StartScanPayload, scan_type: str) -> dict:
-    section = getattr(start_scan_payload, scan_type, None)
-    return section.model_dump(mode="json") if section is not None and hasattr(section, "model_dump") else {}
+    return credit_estimate.payload_section(start_scan_payload, scan_type)
 
 
 async def _read_upload(uploaded_file: UploadFile | None) -> bytes | None:
@@ -523,7 +531,7 @@ def _release_scan_claim(engine, scan_id: int, team_id: int) -> None:
             )
             session.commit()
     except Exception as e:
-        console.print(f"Failed to release scan claim for scan {scan_id}: {e}", style="bold red")
+        console.print(f"Failed to release scan claim for scan {scan_id}: {redact(str(e))}", style="bold red", markup=False)
 
 
 # revamped ✅
@@ -549,7 +557,7 @@ async def start_scan(
         try:
             start_scan_payload = StartScanPayload.model_validate_json(start_scan_payload_string)
         except ValidationError as ve:
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Invalid start scan payload: {ve.errors()}")
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Invalid start scan payload: {ve.errors(include_input=False, include_url=False)}")
         
 
 
@@ -628,6 +636,9 @@ async def start_scan(
         # scan is re-estimated here, before any credit moves. D3: CBOM code scans cost at least 1 credit.
         section = _payload_section(start_scan_payload, type)
         try:
+            # #53: an MCP server URL / custom model URI must resolve to public addresses before any credit moves (a
+            # stored estimate for this input is charged below without being re-run; the name may resolve elsewhere now)
+            await require_public_targets(type, start_scan_payload)
             measured = credit_estimate.input_digest(type, section, await _read_upload(uploaded_file))
             if credit_estimate.needs_reestimate(stored_estimate, measured):
                 console.print(f"Scan {scan_id}: input or formula changed since the estimate; re-estimating", style="bold yellow")
@@ -700,7 +711,7 @@ async def start_scan(
             "message": "Scan started successfully",
         }
     except Exception as e:
-        console.print(f"Error in starting {type} scan: {e}",style="bold red")
+        console.print(f"Error in starting {type} scan: {redact(str(e))}",style="bold red", markup=False)
         if isinstance(e,HTTPException):
             raise e
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in starting scan , please try again later")
@@ -731,7 +742,7 @@ async def cancel_scan_route(
     except HTTPException as e:
         raise e
     except Exception as e:
-        console.print(f"Error in cancelling {type} scan {scan_id}: {e}", style="bold red")
+        console.print(f"Error in cancelling {type} scan {scan_id}: {redact(str(e))}", style="bold red", markup=False)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in cancelling the scan, please try again later")
 
 
@@ -803,7 +814,7 @@ async def delete_scan(
     except HTTPException as e:
         raise e
     except Exception as e:
-        console.print(f"Error in deleting scan with id: {scan_id} for team: {team_id}: {e}",style="bold red")
+        console.print(f"Error in deleting scan with id: {scan_id} for team: {team_id}: {redact(str(e))}",style="bold red", markup=False)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in deleting scan , please try again later")
 
     
@@ -882,7 +893,7 @@ async def update_scan(
     except HTTPException as e:
         raise e
     except Exception as e:
-        console.print(f"Error in updating scan with id: {scan_id} for team: {team_id}: {e}",style="bold red")
+        console.print(f"Error in updating scan with id: {scan_id} for team: {team_id}: {redact(str(e))}",style="bold red", markup=False)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in updating scan , please try again later")
 
 
@@ -947,7 +958,7 @@ async def export_scan(
     except HTTPException as e:
         raise e
     except Exception as e:
-        console.print(f"Error in exporting scan with id: {scan_id} for team: {team_id}: {e}",style="bold red")
+        console.print(f"Error in exporting scan with id: {scan_id} for team: {team_id}: {redact(str(e))}",style="bold red", markup=False)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in exporting scan , please try again later")
 
 
@@ -964,53 +975,51 @@ async def reinitialize_scan(
     uploaded_file: UploadFile | None = None,
     Authorization: Annotated[str | None, Header()] = None ):
     """
-    Reinitialize a scan.
+    Replace the queued run of a dispatched scan the worker has not picked up yet with a run of this input (#33).
+
+    The input is priced like a new scan's and the scan pays the positive difference against what it has already paid
+    (never a refund for a cheaper input), recorded in the credits ledger; the same input costs nothing. The target
+    checks of a new scan run before any credit moves. Refusals, each with a stable ``code``:
+
+    * 402 ``insufficient_credits``: the balance does not cover the difference (nothing charged or sent);
+    * 409 ``not_pending``: the scan is not waiting in the queue (not started yet, picked up by the worker, finished,
+      failed or cancelled), whenever that is seen (nothing charged or sent);
+    * 409 ``starting``: /start or another reinitialize is still sending this scan's run; try again (nothing charged);
+    * 409 ``reinitialize_conflict``: the scan changed while this request priced it (nothing charged or sent);
+    * 409 ``superseded``: the scan was cancelled, or this request's claim was rolled back as stale, while its run was
+      being sent (the run is withdrawn; a cancel refunds everything, a rollback refunds this request's charge);
+    * 400 (wrong owner, a type that cannot be reinitialized) / 404, and 400/413/422 for the input, as for a new scan.
+
+    Rules and races: utilities/scan/reinitialize.py.
     """
     try:
         # STEP [ 0 ] : =========== Get the engine and user ======================
         engine = get_db()
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
-        # user = User(id=1) # for testing purposes
 
-        # -----------------> get start scan payload from the json formatted string in start_scan_payload_string -----------------
+        # -----------------> the payload; its validators are the git host allow-list -----------------
         try:
             start_scan_payload = StartScanPayload.model_validate_json(start_scan_payload_string)
         except ValidationError as ve:
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Invalid start scan payload: {ve.errors()}")
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Invalid start scan payload: {ve.errors(include_input=False, include_url=False)}")
 
         # STEP [ 1 ] : =========== Check if user is in team ======================
         check_if_user_is_in_team(user.id, team_id, engine)
-        
 
-        
-        
-        # STEP [ 2 ] : =========== Validate getting the conversation from the main db ======================
-        with Session(engine) as session:
-            scan = None
-            scan = session.exec(select(Scan).where(Scan.id == scan_id).where(Scan.team_id == team_id).where(Scan.scan_type == type)).first()
-            if scan==None:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found or User not allowed to start this scan")
-            if scan.scan_status != "pending" : 
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan is not pending, cannot reinitialize")
-            if scan.owner_user_id != user.id: # only the user who created the scan can reinitialize the scan ⭐
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You do not have permission to reinitialize this scan")
-            
-        
-        # STEP [ 3 ] : =========== Reinitialize the scan and update the main db ======================
-        await start_scan_and_update_db(
-            scan_id=scan_id,
-            start_scan_payload=start_scan_payload,
-            team_id=team_id,
-            engine=engine,
+        # STEP [ 2 ] : =========== price, check, claim + charge, send (one place: utilities/scan/reinitialize.py) =====
+        return await reinitialize_with_payload(
+            engine,
             scan_type=type,
+            scan_id=scan_id,
+            team_id=team_id,
+            user_id=user.id,
+            start_scan_payload=start_scan_payload,
             uploaded_file=uploaded_file,
         )
-
-        return {
-            "message": "Scan reinitialized successfully",
-        }
+    except ReinitializeRefused as refused:
+        return JSONResponse(status_code=refused.status_code, content=refused.body())
     except Exception as e:
-        console.print(f"Error in reinitializing {type} scan: {e}",style="bold red")
+        console.print(f"Error in reinitializing {type} scan: {redact(str(e))}",style="bold red", markup=False)
         if isinstance(e,HTTPException):
             raise e
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in reinitializing scan , please try again later")
@@ -1041,9 +1050,9 @@ async def estimate_credits_for_scan(
         try:
             start_scan_payload = StartScanPayload.model_validate_json(start_scan_payload_string)
         except ValidationError as ve:
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Invalid start scan payload: {ve.errors()}")
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Invalid start scan payload: {ve.errors(include_input=False, include_url=False)}")
 
-        console.print(f"Start scan payload: {start_scan_payload}",style="bold yellow")
+        console.print(f"Start scan payload: {safe_repr(start_scan_payload)}", style="bold yellow", markup=False)
 
 
         # STEP [ 1 ] : =========== Check if user is in team ======================
@@ -1088,7 +1097,7 @@ async def estimate_credits_for_scan(
             "minimum_credits": minimum,
         }
     except Exception as e:
-        console.print(f"Error in estimating credits for {type} scan: {e}",style="bold red")
+        console.print(f"Error in estimating credits for {type} scan: {redact(str(e))}",style="bold red", markup=False)
         if isinstance(e,HTTPException):
             raise e
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in estimating credits for scan , please try again later")
@@ -1196,7 +1205,7 @@ async def create_ticket(
     except HTTPException as e:
         raise e
     except Exception as e:
-        console.print(f"Error in creating ticket for {type} scan: {e}",style="bold red")
+        console.print(f"Error in creating ticket for {type} scan: {redact(str(e))}",style="bold red", markup=False)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in creating ticket for scan , please try again later")
 
 
@@ -1261,7 +1270,7 @@ async def toggle_finding_state(
     except HTTPException as e:
         raise e
     except Exception as e:
-        console.print(f"Error in toggling finding state for {type} scan: {e}",style="bold red")
+        console.print(f"Error in toggling finding state for {type} scan: {redact(str(e))}",style="bold red", markup=False)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in toggling finding state for scan , please try again later")
 
 
@@ -1324,55 +1333,34 @@ async def generate_finding_remediation(
             scan_findings_collection.update_one({"_id": finding_oid}, {"$set": {"remediation": remediation_result}})
             return remediation_result
 
-        # STEP [ 2 ] : =========== Check if remediation already exists (cache hit) ======================
+        # STEP [ 2 ] : =========== Cache hit: a completed remediation (stored only after its charge) ==========
         existing_remediation = finding.get("remediation")
         if existing_remediation and existing_remediation.get("status") == "completed":
             console.print(f"Remediation cache hit for finding {finding_id}", style="dim green")
             return existing_remediation
 
-        # STEP [ 3 ] : =========== Credit check (0.05 per remediation) ======================
-        REMEDIATION_CREDIT_COST = 0.05
-        if not check_if_team_has_enough_credits(team_id, REMEDIATION_CREDIT_COST):
+        # STEP [ 3 ] : =========== Claim -> debit -> generate -> store, refund on failure (#87) ==========
+        from backend.utilities.ai import paid_remediation as PAID
+
+        try:
+            return await PAID.remediate(scan_findings_collection, finding_id=finding_oid, scan_id=scan_id,
+                                        team_id=team_id, finding_data=finding.get("finding_data", {}),
+                                        scan_type=type, generate=generate_remediation)
+        except PAID.InsufficientCredits:
             raise HTTPException(
                 status_code=status.HTTP_402_PAYMENT_REQUIRED,
                 detail="Team does not have enough credits for remediation generation",
-            )
-
-        # STEP [ 4 ] : =========== Generate remediation ======================
-        finding_data = finding.get("finding_data", {})
-        remediation_result = generate_remediation(finding_data, type)
-
-        # STEP [ 5 ] : =========== Atomic store + deduct (prevent double-deduction) ======================
-        if remediation_result.get("status") == "completed":
-            # Use MongoDB findOneAndUpdate to atomically set remediation only if not already set
-            update_result = scan_findings_collection.update_one(
-                {"_id": ObjectId(finding_id), "remediation.status": {"$ne": "completed"}},
-                {"$set": {"remediation": remediation_result}},
-            )
-            if update_result.modified_count > 0:
-                # Only deduct credits if we were the one to write the remediation
-                deduct_credits_from_team(team_id, REMEDIATION_CREDIT_COST)
-                console.print(f"Remediation stored and credits deducted for finding {finding_id}", style="bold green")
-            else:
-                console.print(f"Remediation already stored by concurrent request for finding {finding_id}", style="dim yellow")
-                # Return the already-stored remediation
-                updated_finding = scan_findings_collection.find_one({"_id": ObjectId(finding_id)})
-                if updated_finding and updated_finding.get("remediation"):
-                    return updated_finding["remediation"]
-        else:
-            # Non-completed remediation, just store without deducting
-            scan_findings_collection.update_one(
-                {"_id": ObjectId(finding_id)},
-                {"$set": {"remediation": remediation_result}},
-            )
-            console.print(f"Remediation (non-completed) stored for finding {finding_id}", style="bold yellow")
-
-        return remediation_result
+            ) from None
+        except PAID.RemediationBusy:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="AI remediation for this finding is being generated; try again in a moment",
+            ) from None
 
     except HTTPException as e:
         raise e
     except Exception as e:
-        console.print(f"Error generating remediation for finding {finding_id}: {e}", style="bold red")
+        console.print(f"Error generating remediation for finding {finding_id}: {redact(str(e))}", style="bold red", markup=False)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error generating remediation, please try again later",

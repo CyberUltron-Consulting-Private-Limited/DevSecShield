@@ -85,6 +85,8 @@ ALLOWED = {
     "aibom/src/aibom/cbom/compliance.py": 55,
     "aibom/src/aibom/cbom/data/crypto_kb.json": 71,
     "aibom/src/aibom/cbom/data/named_groups.json": 10,
+    # third-party OSV advisory text (CB-29 offline snapshot), quoted verbatim: not an algorithm table
+    "aibom/src/aibom/cbom/data/osv_snapshot.json": 8,
     "aibom/src/aibom/cbom/detect.py": 60,
     "aibom/src/aibom/cbom/ingest.py": 29,
     "aibom/src/aibom/cbom/normalize.py": 4,
@@ -115,7 +117,6 @@ ALLOWED = {
     "frontend/components/cbom/sources/RunPosture.tsx": 1,
     "scan_node/Dockerfile": 1,
     "scan_node/README.md": 2,
-    "scan_node/zs_scan_node/certparse.py": 1,
     "scan_node/zs_scan_node/collectors/network.py": 1,
     "scan_node/zs_scan_node/ikeprobe.py": 5,
     "scan_node/zs_scan_node/kmip_ttlv.py": 5,

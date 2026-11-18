@@ -1,0 +1,91 @@
+name: CBOM nightly waves (hermetic part)
+
+# CB-35 (DEVILS-ADVOCATE.md §4.5): every verification wave of e2e/cbom/waves.yaml on dev, nightly. A GitHub-hosted
+# runner has no Tier-L stack, lab or Chromium, so this runs the hermetic steps (the product suites each wave names,
+# SQLite, SoftHSM) and reports the live steps as NOT-RUN; the live steps run on the Tier-L host from cron
+# (e2e/cbom/run-waves.sh, two stack.lock holds). The report and the issue drafts are the run's artifact; nothing is
+# filed automatically.
+on:
+  schedule:
+    - cron: "40 21 * * *"   # 21:40 UTC (03:10 IST), after the day's PR traffic
+  workflow_dispatch:
+    inputs:
+      waves:
+        description: "comma-separated waves (blank: all)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cbom-waves-nightly
+  cancel-in-progress: false
+
+jobs:
+  waves:
+    name: CBOM waves (hermetic)
+    # A schedule, never a pull request. ghrunner has no sudo: softhsm2 and poppler-utils are installed on the host.
+    runs-on: dss-vm
+    timeout-minutes: 150
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+      JWT_SECRET_KEY: ci-only-not-a-secret
+      JWT_REFRESH_SECRET_KEY: ci-only-not-a-secret
+      AWS_ACCESS_KEY_ID: ci-only-dummy
+      AWS_SECRET_ACCESS_KEY: ci-only-dummy
+      AWS_DEFAULT_REGION: us-east-1
+      RABBIT_ADMIN_USERNAME: ci
+      RABBIT_ADMIN_PASSWORD: ci-only-dummy
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: dev
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: "3.12"
+      - name: System packages
+        if: runner.environment == 'github-hosted'
+        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends softhsm2 poppler-utils
+
+      - name: System packages are on the self-hosted host
+        if: runner.environment == 'self-hosted'
+        run: |
+          set -euo pipefail
+          missing=""
+          for p in softhsm2 poppler-utils; do
+            dpkg-query -W -f='${Status}' "$p" 2>/dev/null | grep -q 'install ok installed' || missing="$missing $p"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::not installed on the self-hosted runners' host:$missing (the job has no sudo; install them there)"
+            exit 1
+          fi
+
+      - name: Install the backend, aibom and scan node environments
+        run: |
+          (cd backend && uv sync --frozen)
+          (cd aibom && uv sync --frozen --all-extras --dev)
+          (cd scan_node && uv venv --python 3.12 .venv && \
+            uv pip install --python .venv --require-hashes --no-deps -r requirements.lock && \
+            uv pip install --python .venv pytest==8.3.5)
+      - name: Run the waves (live steps NOT-RUN here)
+        env:
+          WAVES: ${{ inputs.waves }}
+        run: |
+          export CBOM_WAVES_BACKEND_PYTEST="cd backend && uv run --frozen --with pytest==9.2.0 --with moto==5.2.5 python -m pytest -q -p no:cacheprovider -o addopts="
+          export CBOM_WAVES_PYTHON="$GITHUB_WORKSPACE/backend/.venv/bin/python"
+          export CBOM_WAVES_NODE_PYTEST="cd scan_node && .venv/bin/python -m pytest -q -p no:cacheprovider -o addopts="
+          set +e
+          e2e/cbom/run-waves.sh --hermetic --ref dev --root "$RUNNER_TEMP/nightly" ${WAVES:+--waves "$WAVES"}
+          rc=$?
+          cat "$RUNNER_TEMP"/nightly/*/report.md >> "$GITHUB_STEP_SUMMARY" || true
+          exit "$rc"
+      - name: Upload the nightly report, logs and issue drafts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cbom-waves-nightly
+          path: ${{ runner.temp }}/nightly/
+          retention-days: 14

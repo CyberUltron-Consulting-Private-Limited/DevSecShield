@@ -321,7 +321,9 @@ def reconcile(session: Session, team_id: int, now: _dt.datetime, *, actor_id: in
         out.sources_removed += 1
     _schedules(session, team_id, now, by_policy, managed, settings.window_timezone, out, actor_id)
     row = state(session, team_id, now)
-    row.last_reconcile = {**out.public(), "at": now.isoformat(timespec="seconds") + "Z"}
+    # who ran it (#318): the fleet worker after a write (or its daily pass), or a person's Apply
+    row.last_reconcile = {**out.public(), "at": now.isoformat(timespec="seconds") + "Z",
+                          "by": "automatic" if actor_id is None else "user"}
     session.add(row)
     # the request this reconcile saw is answered; after a deferral the fleet worker retries until every deferred
     # change is applied.  Compare-and-set: a write made during this reconcile keeps its own (sooner) request

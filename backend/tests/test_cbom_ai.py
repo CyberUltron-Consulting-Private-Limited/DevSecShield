@@ -35,7 +35,9 @@ from backend.utilities.cbom_ai import validator as V  # noqa: E402
 ROOT = Path(__file__).resolve().parents[2]
 ENV_KEYS = ("CBOM_AI_PROVIDER", "CBOM_AI_AWS_CREDENTIALS", "CBOM_AI_BEDROCK_ALLOW_LOOPBACK", "CBOM_AI_AWS_PROFILE", "CBOM_AI_BEDROCK_REGION", "CBOM_AI_BEDROCK_ENDPOINT_URL", "CBOM_AI_HONOR_PROXY",
             "CBOM_AI_BASE_URL", "CBOM_AI_MODEL", "CBOM_AI_API_KEY", "CBOM_AI_CA_FILE", "CBOM_AI_TIMEOUT_S",
-            "CBOM_AI_MAX_TOKENS", "CBOM_AI_CONCURRENCY", "CBOM_AI_REDACT_HOSTS", "CBOM_AI_ALLOW_NONPRIVATE")
+            "CBOM_AI_MAX_TOKENS", "CBOM_AI_DEADLINE_S", "CBOM_AI_CONCURRENCY", "CBOM_AI_REDACT_HOSTS",
+            "CBOM_AI_ALLOW_NONPRIVATE",
+            "CBOM_AI_AWS_ACCESS_KEY_ID", "CBOM_AI_AWS_SECRET_ACCESS_KEY", "CBOM_AI_AWS_SESSION_TOKEN")
 
 
 # ------------------------------------------------------------------------------------------------ stub endpoint
@@ -182,7 +184,7 @@ def test_cbom_ai_imports_no_cloud_sdk():
     no boto3."""
     code = (
         "import os, sys, json\n"
-        # backend/.env is tracked in the repo and holds AWS_* keys; an air-gapped install has none, so dotenv is off
+        # backend/.env is gitignored (cp .env.example .env). An air-gapped install has no AWS_* keys, so dotenv is off
         "import dotenv\n"
         "dotenv.load_dotenv = lambda *a, **k: False\n"
         "import backend.utilities.cbom_ai, backend.utilities.cbom_ai.service, backend.utilities.cbom_ai.transport\n"
@@ -530,7 +532,8 @@ def test_no_env_reads_outside_config():
         assert key in text, key
     for path in (ROOT / "backend" / "utilities" / "cbom_ai").glob("*.py"):
         if path.name != "config.py":
-            assert "os.environ" not in path.read_text() and "getenv" not in path.read_text(), path.name
+            # reads, not names: fix.py lists "getenv" among the os attributes a generated fix may use
+            assert not re.search(r"\bos\.environ\b|\bgetenv\s*\(", path.read_text()), path.name
     assert os.environ.get("CBOM_AI_BASE_URL") is None
 
 
@@ -622,7 +625,8 @@ def test_bedrock_only_contacts_the_regional_runtime_host(api, world, bedrock):
     auth = auth.decode() if isinstance(auth, bytes) else auth
     assert "/ap-south-1/bedrock/aws4_request" in auth  # SigV4 for Bedrock in the region
     body = json.loads(sent["body"])
-    assert body["inferenceConfig"] == {"maxTokens": 700, "temperature": 0}
+    # a plan's own output budget (#448: the old single 700-token cap cut every TLS plan)
+    assert body["inferenceConfig"] == {"maxTokens": S.MODE_MAX_TOKENS["plan"], "temperature": 0}
     # the prompt leaves the network: host names are redacted by default for Bedrock
     assert "10.20.0.1" not in sent["body"].decode() if isinstance(sent["body"], bytes) else "10.20.0.1" not in sent["body"]
     assert bedrock["connects"] == []  # nothing else was contacted (the proxy variables were ignored)
@@ -1149,8 +1153,8 @@ def test_withheld_baseline_commands_are_unique(api, world):
 
 
 def test_aws_keys_alone_never_turn_the_assistant_on(api, world, monkeypatch):
-    """The tracked backend/.env gives load_dotenv() AWS keys: without CBOM_AI_PROVIDER (or CBOM_AI_BASE_URL) the
-    assistant stays off."""
+    """AWS keys in the environment, without CBOM_AI_PROVIDER (or CBOM_AI_BASE_URL), leave the assistant off.
+    A local backend/.env, if present, must not set CBOM_AI_."""
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", "AKIAEXAMPLEEXAMPLE00")
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "x")
     monkeypatch.setenv("AWS_DEFAULT_REGION", "ap-south-1")
@@ -1159,3 +1163,143 @@ def test_aws_keys_alone_never_turn_the_assistant_on(api, world, monkeypatch):
     env_file = ROOT / "backend" / ".env"
     if env_file.exists():
         assert "CBOM_AI_" not in env_file.read_text()
+
+
+# ------------------------------------------------------------------------------------------------ dedicated Bedrock keys
+# Fabricated at run time (never a real key): the dedicated IAM user's keys must sign the call, and must never appear
+# in a log line, the status body, an error or the configuration's repr.
+def _dedicated_keys() -> tuple[str, str, str]:
+    import secrets as _secrets
+
+    return ("AKIADEDICATED" + _secrets.token_hex(4).upper(), "dedicated/" + _secrets.token_urlsafe(24),
+            "FwoDedicatedSession" + _secrets.token_urlsafe(16))
+
+
+@pytest.fixture()
+def captured(monkeypatch):
+    """Every line the assistant logs (its own logger does not propagate) plus the app's server_error log."""
+    import logging
+
+    lines: list[str] = []
+
+    class Keep(logging.Handler):
+        def emit(self, record):
+            lines.append(self.format(record))
+
+    handler = Keep()
+    S.log.addHandler(handler)
+    root = logging.getLogger()
+    root.addHandler(handler)
+    from backend.utilities.cbom_sources import http as H
+    real = H.log
+
+    def spy(*a, **k):
+        lines.append(repr((a, k)))
+        return real(*a, **k)
+
+    monkeypatch.setattr(H, "log", spy)
+    yield lines
+    S.log.removeHandler(handler)
+    root.removeHandler(handler)
+
+
+def _auth_of(sent) -> str:
+    auth = sent["headers"]["Authorization"]
+    return auth.decode() if isinstance(auth, bytes) else auth
+
+
+def test_static_credentials_are_the_default_when_the_dedicated_keys_are_set(api, world, bedrock, monkeypatch):
+    """The host's AWS_* (shared with the SAST chat / MinIO) stay set; CBOM_AI_AWS_* sign the Bedrock call."""
+    key_id, secret, token = _dedicated_keys()
+    monkeypatch.setenv("CBOM_AI_AWS_ACCESS_KEY_ID", key_id)
+    monkeypatch.setenv("CBOM_AI_AWS_SECRET_ACCESS_KEY", secret)
+    cfg = C.load()
+    assert cfg.aws_credentials == "static"
+    assert key_id not in repr(cfg) and secret not in repr(cfg)
+    engine, _ = world
+    items = _assets(api, engine)
+    status = api("GET", "/1/cbom/ai/status")
+    assert status.json()["available"] is True
+    assert status.json()["egress"] == [{"host": BEDROCK_HOST, "port": 443,
+                                        "purpose": f"AWS Bedrock Converse (ap-south-1, {C.DEFAULT_BEDROCK_MODEL})"}]
+    assert key_id not in status.text and secret not in status.text
+    out = _assist(api, items["10.20.0.1:443"]["id"])
+    assert out.status_code == 200 and out.json()["status"] == "ok", out.text
+    assert key_id not in out.text and secret not in out.text
+    auth = _auth_of(bedrock["sent"][0])
+    assert f"Credential={key_id}/" in auth and "AKIAEXAMPLEEXAMPLE00" not in auth  # not the host's keys
+    assert "X-Amz-Security-Token" not in bedrock["sent"][0]["headers"]
+    assert bedrock["connects"] == []
+    # an optional session token is sent with them
+    monkeypatch.setenv("CBOM_AI_AWS_SESSION_TOKEN", token)
+    S.reset()
+    R._address_ok.clear()
+    _assist(api, items["10.20.0.1:443"]["id"], mode="explain")
+    sent = bedrock["sent"][-1]
+    tok = sent["headers"]["X-Amz-Security-Token"]
+    assert (tok.decode() if isinstance(tok, bytes) else tok) == token and f"Credential={key_id}/" in _auth_of(sent)
+    assert token not in repr(C.load())
+
+
+def test_static_credentials_never_fall_back_to_the_host_keys(api, world, bedrock, monkeypatch):
+    """Half a key pair is a misconfiguration: unavailable, not the shared AWS_* keys."""
+    key_id, secret, _ = _dedicated_keys()
+    monkeypatch.setenv("CBOM_AI_AWS_ACCESS_KEY_ID", key_id)
+    cfg = C.load()
+    assert cfg.aws_credentials == "static"
+    with pytest.raises(T.EndpointRefused) as refused:
+        T.credential_plan(cfg)
+    assert key_id not in str(refused.value)
+    assert api("GET", "/1/cbom/ai/status").json() == {"available": False}
+    engine, _ = world
+    items = _assets(api, engine)
+    assert _assist(api, items["10.20.0.1:443"]["id"]).status_code == 404
+    assert bedrock["sent"] == [] and bedrock["connects"] == []
+    # the explicit choice still wins: CBOM_AI_AWS_CREDENTIALS=env uses the host's keys
+    monkeypatch.setenv("CBOM_AI_AWS_SECRET_ACCESS_KEY", secret)
+    monkeypatch.setenv("CBOM_AI_AWS_CREDENTIALS", "env")
+    assert C.load().aws_credentials == "env"
+    monkeypatch.setenv("CBOM_AI_AWS_CREDENTIALS", "static")
+    monkeypatch.delenv("CBOM_AI_AWS_ACCESS_KEY_ID")
+    assert C.load().aws_credentials == "static"
+    with pytest.raises(T.EndpointRefused):
+        T.credential_plan(C.load())
+
+
+@pytest.mark.parametrize("failure", ["client_error", "exception"])
+def test_static_keys_are_never_logged_returned_or_in_errors(api, world, bedrock, monkeypatch, captured, capfd,
+                                                            failure):
+    key_id, secret, token = _dedicated_keys()
+    monkeypatch.setenv("CBOM_AI_AWS_ACCESS_KEY_ID", key_id)
+    monkeypatch.setenv("CBOM_AI_AWS_SECRET_ACCESS_KEY", secret)
+    monkeypatch.setenv("CBOM_AI_AWS_SESSION_TOKEN", token)
+    engine, _ = world
+    items = _assets(api, engine)
+    if failure == "client_error":
+        # AWS names the key id in some error messages: the message is never passed on
+        bedrock["reply"] = lambda request: (403, {"__type": "UnrecognizedClientException",
+                                                  "message": f"The security token {token} for {key_id} is invalid"})
+    else:
+        def boom(request):
+            raise RuntimeError(f"signing failed for {key_id} {secret} {token}")
+        bedrock["reply"] = boom
+    status = api("GET", "/1/cbom/ai/status")
+    out = _assist(api, items["10.20.0.1:443"]["id"])
+    assert out.status_code in (200, 500)
+    if failure == "client_error":
+        assert out.json()["status"] == "error"
+    printed = capfd.readouterr()
+    everything = "\n".join(captured) + status.text + out.text + printed.out + printed.err
+    assert captured, "the assist wrote its audit / error line"
+    for value in (key_id, secret, token):
+        assert value not in everything
+
+
+def test_static_credential_source_contacts_no_credential_endpoint(monkeypatch):
+    monkeypatch.setenv("CBOM_AI_PROVIDER", "bedrock")
+    monkeypatch.setenv("CBOM_AI_BEDROCK_REGION", "ap-south-1")
+    monkeypatch.setenv("CBOM_AI_AWS_CREDENTIALS", "static")
+    monkeypatch.setenv("CBOM_AI_AWS_ACCESS_KEY_ID", "AKIAEXAMPLESTATIC001")
+    monkeypatch.setenv("CBOM_AI_AWS_SECRET_ACCESS_KEY", "x")
+    assert [(e["host"], e["port"]) for e in T.bedrock_egress(C.load())] == [(BEDROCK_HOST, 443)]
+    assert "static" in C.CREDENTIAL_SOURCES

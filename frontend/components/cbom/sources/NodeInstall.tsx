@@ -20,6 +20,7 @@ import {
   type DeployMethod,
   type InstallLinks,
   type NodeImage,
+  type NodeTrust,
 } from "./logic";
 import { CodeSnippet } from "./shared";
 import { InfoTip } from "@/components/ui/info-tip";
@@ -54,6 +55,9 @@ export function NodeInstallCommand({
   proxyUrl,
   image,
   source,
+  trust,
+  caFile,
+  proxyUser,
 }: {
   apiUrl: string;
   method: DeployMethod;
@@ -63,10 +67,17 @@ export function NodeInstallCommand({
   /** the image to run: the name the downloaded file loads as (default), or a registry image with source.pull */
   image: string;
   source?: Omit<NodeImage, "image">;
+  /** CB-15: a private CA and / or client certificate for the ZeroShield API */
+  trust?: NodeTrust | null;
+  /** #196: the TLS-inspecting proxy's CA file name on the host (only when the proxy inspects TLS) */
+  caFile?: string | null;
+  /** #199: the proxy's user name when it needs a login */
+  proxyUser?: string | null;
 }) {
   const lab = labSwitchHelps(apiUrl);
   const language = method === "ami" ? "yaml" : "bash";
-  const code = installCommand(method, { token, apiUrl, proxyUrl, image, name, insecureHttp: lab && method !== "ova", ...source });
+  const code = installCommand(method, { token, apiUrl, proxyUrl, image, name, insecureHttp: lab && method !== "ova", trust, caFile,
+    proxyUser, ...source });
   if (!lab) return <CodeSnippet code={code} language={language} />;
   if (method === "ova") {
     return (
@@ -107,7 +118,10 @@ export function NodeOnePaste({
   name,
   proxyUrl,
   caFile,
+  proxyUser,
   image,
+  build,
+  trust,
 }: {
   apiUrl: string;
   method: DeployMethod;
@@ -117,10 +131,16 @@ export function NodeOnePaste({
   proxyUrl?: string | null;
   /** the proxy CA's file name on the host, only when the proxy inspects TLS */
   caFile?: string | null;
+  /** #199: the proxy's user name when it needs a login */
+  proxyUser?: string | null;
   /** the name the image file loads as */
   image: string;
+  /** #197: the commit the image file was built from (the Helm push tag carries it) */
+  build?: string | null;
+  /** CB-15: a private CA and / or client certificate for the ZeroShield API */
+  trust?: NodeTrust | null;
 }) {
-  const opts = { apiUrl, token, name, proxyUrl, caFile, image, insecureHttp: labSwitchHelps(apiUrl) };
+  const opts = { apiUrl, token, name, proxyUrl, caFile, proxyUser, image, build, insecureHttp: labSwitchHelps(apiUrl), trust };
   const curl = onePasteInstall(method, links, opts);
   if (!curl) return null;
   const wget = onePasteInstall(method, links, { ...opts, fetcher: "wget" });

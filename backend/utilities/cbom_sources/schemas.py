@@ -32,6 +32,7 @@ class NodeCreate(_Body):
     proxy_url: str | None = Field(default=None, max_length=512)
     proxy_ca_pem: str | None = Field(default=None, max_length=64 * 1024)
     proxy_tls_inspect: bool = False
+    proxy_user: str | None = Field(default=None, max_length=128)
 
     _n = field_validator("name")(classmethod(lambda cls, v: _name(v)))
 
@@ -50,12 +51,36 @@ class NodeCreate(_Body):
     @field_validator("proxy_url")
     @classmethod
     def _proxy(cls, v: str | None) -> str | None:
-        return check_http_url(v)
+        return check_proxy_url(v)
+
+    @field_validator("proxy_user")
+    @classmethod
+    def _proxy_user(cls, v: str | None) -> str | None:
+        return check_proxy_user(v)
 
     @field_validator("proxy_ca_pem")
     @classmethod
     def _ca(cls, v: str | None) -> str | None:
         return check_pem_certificates(v)
+
+    @model_validator(mode="after")
+    def _inspect(self) -> "NodeCreate":
+        problem = proxy_inspect_problem(self.proxy_tls_inspect, self.proxy_url, self.proxy_ca_pem)
+        if problem:
+            raise ValueError(problem)
+        return self
+
+
+def proxy_inspect_problem(inspect: bool, proxy_url: str | None, proxy_ca_pem: str | None) -> str | None:
+    """#202: "My proxy inspects TLS" only means something with a proxy, and the node can only trust that proxy with
+    its CA certificate."""
+    if not inspect:
+        return None
+    if not (proxy_url or "").strip():
+        return "proxy_url: enter the proxy that inspects TLS, or untick \"My proxy inspects TLS\""
+    if not (proxy_ca_pem or "").strip():
+        return "proxy_ca_pem: upload the CA certificate your proxy signs with, so the node can trust only that proxy"
+    return None
 
 
 class NodeUpdate(_Body):
@@ -66,6 +91,7 @@ class NodeUpdate(_Body):
     proxy_url: str | None = Field(default=None, max_length=512)
     proxy_ca_pem: str | None = Field(default=None, max_length=64 * 1024)
     proxy_tls_inspect: bool | None = None
+    proxy_user: str | None = Field(default=None, max_length=128)
     expected_version: int | None = None
 
     @field_validator("name")
@@ -88,12 +114,42 @@ class NodeUpdate(_Body):
     @field_validator("proxy_url")
     @classmethod
     def _proxy(cls, v: str | None) -> str | None:
-        return check_http_url(v)
+        return check_proxy_url(v)
+
+    @field_validator("proxy_user")
+    @classmethod
+    def _proxy_user(cls, v: str | None) -> str | None:
+        return check_proxy_user(v)
 
     @field_validator("proxy_ca_pem")
     @classmethod
     def _ca(cls, v: str | None) -> str | None:
         return check_pem_certificates(v)
+
+
+# #199: a proxy user name goes into the node's login file as "user:password" and into the install command in single
+# quotes: no colon, quote, space, $ or control character. A Windows domain user (CORP\\svc-zs) and user@realm are fine.
+_PROXY_USER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._@\\-]{0,127}$")
+PROXY_LOGIN_HELP = ("enter the user name in Proxy user and the URL without it; the password stays on the scan node "
+                    "host (the install command asks for it there) and is never sent to ZeroShield")
+
+
+def check_proxy_url(v: str | None) -> str | None:
+    try:
+        return check_http_url(v)
+    except ValueError as exc:
+        if "user name or password" in str(exc):
+            raise ValueError(PROXY_LOGIN_HELP) from None
+        raise
+
+
+def check_proxy_user(v: str | None) -> str | None:
+    if v is None:
+        return None
+    if not _PROXY_USER.match(v):
+        raise ValueError("use letters, digits, dots, dashes, underscores, @ or a backslash (DOMAIN\\user), at most "
+                         "128 characters; the password is never entered here")
+    return v
 
 
 # ----------------------------------------------------------------------------- sources
@@ -145,7 +201,8 @@ class ExclusionItem(_Body):
 class PortItem(_Body):
     port: int = Field(ge=1, le=65535)
     protocol: Literal["tls", "starttls-ldap", "starttls-smtp", "starttls-imap", "starttls-postgres",
-                      "starttls-mysql", "tds", "ssh", "rdp", "ike",
+                      "starttls-mysql", "starttls-pop3", "starttls-ftp", "starttls-xmpp", "starttls-xmpp-server",
+                      "tds", "ssh", "rdp", "ike",
                       "opcua", "modbus", "modbus-tls"] = "tls"
     label: str = Field(default="", max_length=40)
 

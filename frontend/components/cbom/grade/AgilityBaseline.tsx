@@ -4,22 +4,24 @@
 // fix class"): the enterprise distribution (the run posture's AgilityPostureCard, fed the team baseline), the systems
 // table and a drill-down to the assets of one class and/or one system. Data: GET /{team}/cbom/agility and
 // /{team}/cbom/agility/subjects (keyset pages, "Load more").
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { AgilityPostureCard, FixClassChip } from "./Agility";
-import { getCbomAgilityBaseline, getCbomAgilitySubjects } from "./api";
+import { getCbomAgilityBaseline, getCbomAgilityHistory, getCbomAgilitySubjects } from "./api";
 import {
   baselineKeys,
   baselinePosture,
   dedupeText,
+  historyDeltas,
   systemsAddUp,
   SYSTEM_KIND_LABEL,
   type AgilityBaseline,
+  type AgilityHistoryItem,
   type AgilitySubject,
   type BaselineSystem,
 } from "./baseline";
-import { FIX_LABEL, FIX_VALUES, type AgilityModel, type FixValue } from "./model";
+import { FIX_LABEL, FIX_VALUES, fixDistribution, systemHardestClass, type AgilityModel, type FixValue } from "./model";
 import { fixClassTipId } from "./tips";
 import { InfoTip } from "@/components/ui/info-tip";
 
@@ -66,7 +68,7 @@ export function AgilitySystemsTable({ systems, onOpen }: {
                   {s.assets}
                 </button>
               </td>
-              <td className="py-1 pr-3"><FixClassChip item={{ fix_class: s.hardest ?? "none" }} /></td>
+              <td className="py-1 pr-3"><FixClassChip item={{ fix_class: systemHardestClass(s) }} /></td>
               <td className="py-1 pr-3 text-right tabular-nums">{s.self_fixable_pct == null ? "—" : `${s.self_fixable_pct}%`}</td>
               {FIX_VALUES.map((v) => {
                 const n = Number(s.counts[v]) || 0;
@@ -191,6 +193,89 @@ export function AgilityBaselineView({ teamId, baseline, systems, model, onOpen, 
   );
 }
 
+/** The baseline written at each run, newest first: self-fixable share (with its change against the run before, when
+ * the model version is the same), a stacked bar of the six classes, and the assets. */
+export function AgilityHistoryTable({ items }: { items: AgilityHistoryItem[] }) {
+  if (items.length === 0) {
+    return <p className="text-xs text-zinc-500 dark:text-zinc-400" data-testid="agility-history-empty">No run has written a baseline yet.</p>;
+  }
+  const deltas = historyDeltas(items);
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-xs" data-testid="agility-history">
+        <thead>
+          <tr className="text-left text-zinc-500 dark:text-zinc-400">
+            <th className="py-1 pr-3 font-normal">Run</th>
+            <th className="py-1 pr-3 font-normal">When</th>
+            <th className="py-1 pr-3 font-normal text-right">Self-fixable</th>
+            <th className="py-1 pr-3 font-normal min-w-[8rem]">Fix classes</th>
+            <th className="py-1 font-normal text-right">Assets</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((it, i) => {
+            const d = fixDistribution(it.counts, it.assets);
+            const delta = deltas[i];
+            return (
+              <tr key={it.run_id} className="border-t border-zinc-100 dark:border-zinc-800" data-testid={`agility-history-${it.run_id}`}
+                  data-pct={it.self_fixable_pct ?? ""} data-delta={delta ?? ""}>
+                <td className="py-1 pr-3 tabular-nums">#{it.run_id}</td>
+                <td className="py-1 pr-3 whitespace-nowrap text-zinc-600 dark:text-zinc-400">{it.at ? it.at.replace("T", " ").replace("Z", " UTC") : "—"}</td>
+                <td className="py-1 pr-3 text-right tabular-nums whitespace-nowrap">
+                  {it.self_fixable_pct == null ? "—" : `${it.self_fixable_pct}%`}
+                  {delta != null && delta !== 0 && (
+                    <span className={delta > 0 ? "ml-1 text-green-700 dark:text-green-400" : "ml-1 text-red-600 dark:text-red-400"}>
+                      {delta > 0 ? `+${delta}` : delta}
+                    </span>
+                  )}
+                </td>
+                <td className="py-1 pr-3">
+                  <div className="flex h-2.5 w-full min-w-[8rem] overflow-hidden rounded bg-zinc-100 dark:bg-zinc-800"
+                       title={FIX_VALUES.map((v) => `${FIX_LABEL[v]} ${it.counts[v] ?? 0}`).join(" · ")}>
+                    {d.segments.filter((sg) => sg.count > 0).map((sg) => (
+                      <div key={sg.value} className={sg.bar} style={{ width: `${(100 * sg.count) / (d.total || 1)}%` }} />
+                    ))}
+                  </div>
+                </td>
+                <td className="py-1 text-right tabular-nums">{it.assets}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function AgilityHistory({ teamId }: { teamId: number }) {
+  const [open, setOpen] = useState(false);
+  const q = useQuery({
+    queryKey: baselineKeys.history(teamId),
+    queryFn: () => getCbomAgilityHistory(teamId, 20),
+    enabled: open && Number.isFinite(teamId),
+    staleTime: 60_000,
+  });
+  return (
+    <div>
+      <button type="button" className="text-xs text-blue-600 dark:text-blue-400 cursor-pointer" aria-expanded={open}
+              onClick={() => setOpen(!open)} data-testid="agility-history-toggle">
+        {open ? "Hide" : "Show"} history by run
+      </button>
+      {open && (
+        <div className="mt-2">
+          {q.isError ? (
+            <p className="text-xs text-red-600 dark:text-red-400" role="alert">Couldn&apos;t load the history.</p>
+          ) : q.isPending ? (
+            <p className="text-xs text-zinc-500">Loading…</p>
+          ) : (
+            <AgilityHistoryTable items={q.data ?? []} />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DrillDownPanel({ teamId, drill, onChange, onClose }: {
   teamId: number;
   drill: DrillDown;
@@ -278,6 +363,7 @@ export function AgilityBaselineSection({ teamId }: { teamId: number }) {
                              loadingMore={query.isFetchingNextPage} />
       )}
       {drill && <DrillDownPanel teamId={teamId} drill={drill} onChange={setDrill} onClose={() => setDrill(null)} />}
+      {first && first.assets > 0 && <AgilityHistory teamId={teamId} />}
     </section>
   );
 }

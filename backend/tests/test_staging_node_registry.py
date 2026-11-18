@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import shutil
+from pathlib import Path
 
 import pytest
 from test_deploy_staging_script import BASH, ROOT, Host, failed, ok
@@ -27,20 +28,47 @@ def env_values(host: Host) -> dict[str, str]:
     return out
 
 
-def with_manifest(host: Host, tag: str, version: str = "1.0.0") -> None:
-    d = host.root / "deploy/staging/node-artifacts" / tag
+def with_manifest(host: Host, tag: str, version: str = "1.0.0", under: str = "deploy/staging/node-artifacts") -> Path:
+    d = host.root / under / tag if tag else host.root / under
     d.mkdir(parents=True, exist_ok=True)
     (d / "manifest.json").write_text(json.dumps({"files": {}, "image_ref": f"localhost/zeroshield/cbom-scan-node:{version}",
                                                  "version": version}, indent=2, sort_keys=True) + "\n")
+    chart = d / f"cbom-scan-node-{version}.tgz"  # the downloaded chart (node_artifacts.py)
+    chart.write_bytes(f"chart {version} of {tag}".encode())
+    return chart
 
 
-# curl on the host: GHCR's anonymous token API and manifests (the chart is public when $FAKE_CHART_PUBLIC=1), the
-# rest to the harness's own stub (health checks)
+# curl on the host: GHCR's anonymous token API and manifests, the rest to the harness's own stub (health checks).
+# Images are public unless $FAKE_IMAGE_PUBLIC=0, charts unless $FAKE_CHART_PUBLIC=0. A chart's manifest names, as its
+# chart content layer, the sha256 of the downloaded chart of that version ($FAKE_CHART_SHA instead, when set): what
+# GHCR serves when the GHCR chart is the downloaded file (#361).
 GHCR_CURL = r'''#!/usr/bin/env bash
+out=""; prev=""
+for a in "$@"; do [ "$prev" = -o ] && out=$a; prev=$a; done
+if [ "${FAKE_GHCR_DOWN:-0}" = 1 ]; then  # no route to the registry: every request to it fails to connect
+  for a in "$@"; do case "$a" in https://ghcr.io/*) echo "down $a $*" >> "$(dirname "$0")/ghcr.log"
+    echo "curl: (7) Failed to connect to ghcr.io port 443 after 5001 ms: Couldn't connect to server" >&2
+    case " $* " in *" -w "*) printf '000';; esac; exit 7;; esac; done
+fi
 for a in "$@"; do case "$a" in
-  https://ghcr.io/token*) echo "$a" >> "$(dirname "$0")/ghcr.log"; printf '{"token":"anonTESTONLY"}'; exit 0;;
+  https://ghcr.io/v2/) echo "probe $*" >> "$(dirname "$0")/ghcr.log"; printf '401'; exit 0;;
+  https://ghcr.io/token*) echo "$a $*" >> "$(dirname "$0")/ghcr.log"; printf '{"token":"anonTESTONLY"}'; exit 0;;
+  https://ghcr.io/v2/*/charts/*/manifests/*) echo "$a $*" >> "$(dirname "$0")/ghcr.log"
+    [ "${FAKE_CHART_PUBLIC:-1}" = 1 ] || { echo "curl: (22) 401" >&2; exit 22; }
+    version=${a##*/}
+    sha=${FAKE_CHART_SHA:-}
+    if [ -z "$sha" ]; then
+      f=$(ls "$(dirname "$0")"/../deploy/staging/node-artifacts/*/cbom-scan-node-"$version".tgz \
+             "$(dirname "$0")"/../deploy/staging/images/node-artifacts/cbom-scan-node-"$version".tgz 2>/dev/null | head -n 1)
+      [ -n "$f" ] && sha=$(sha256sum "$f" | cut -d' ' -f1)
+    fi
+    body='{"schemaVersion":2,"config":{"mediaType":"application/vnd.cncf.helm.config.v1+json","digest":"sha256:'$(printf 'c%.0s' $(seq 64))'","size":1},"layers":[{"mediaType":"application/vnd.cncf.helm.chart.content.v1.tar+gzip","digest":"sha256:'${sha:-none}'","size":9}]}'
+    if [ -n "$out" ] && [ "$out" != /dev/null ]; then printf '%s' "$body" > "$out"; fi
+    exit 0;;
   https://ghcr.io/v2/*/manifests/*) echo "$a $*" >> "$(dirname "$0")/ghcr.log"
-    if [ "${FAKE_CHART_PUBLIC:-1}" = 1 ]; then exit 0; else echo "curl: (22) 401" >&2; exit 22; fi;;
+    [ "${FAKE_IMAGE_PUBLIC:-1}" = 1 ] || { echo "curl: (22) 401" >&2; exit 22; }
+    if [ -n "$out" ] && [ "$out" != /dev/null ]; then printf '{}' > "$out"; fi
+    exit 0;;
 esac; done
 exec "$(dirname "$0")/curl.harness" "$@"
 '''
@@ -80,6 +108,50 @@ def test_a_chart_nobody_can_pull_yet_is_not_offered_but_the_image_is(host):
     assert f"https://ghcr.io/v2/{GHCR.split('/', 1)[1]}/charts/cbom-scan-node/manifests/1.0.0" in log
     assert "Bearer anonTESTONLY" in log  # the anonymous token, no credential of ours
     assert "anonTESTONLY" not in proc.stdout + proc.stderr
+
+
+def test_an_image_not_released_yet_is_never_offered(host):
+    # #361: a docker pull of a version publish-ghcr.yml has not written (or a private package) is not offered
+    proc = ok(host.ship(A, env={"CBOM_NODE_REGISTRY_PUBLIC": "1", "FAKE_IMAGE_PUBLIC": "0"}))
+    v = env_values(host)
+    assert v["CBOM_NODE_IMAGE_REF"] == "" and v["CBOM_NODE_CHART_REF"] == ""
+    assert f"{GHCR}/devsecshield-scan-node:1.0.0 cannot be pulled without a login" in proc.stdout
+
+
+def test_a_ghcr_chart_that_is_not_the_downloaded_chart_is_never_offered(host):
+    # #361: the GHCR chart 1.0.0 (README with api.zeroshield.ai) and the downloaded cbom-scan-node-1.0.0.tgz were two
+    # different files; the wizard then installs the downloaded chart with the GHCR image instead
+    proc = ok(host.ship(A, env={"CBOM_NODE_REGISTRY_PUBLIC": "1", "FAKE_CHART_SHA": "0" * 64}))
+    v = env_values(host)
+    assert v["CBOM_NODE_IMAGE_REF"] == f"{GHCR}/devsecshield-scan-node:1.0.0" and v["CBOM_NODE_CHART_REF"] == ""
+    assert "is not the downloaded chart cbom-scan-node-1.0.0.tgz" in proc.stdout
+    assert "one version must name one file" in proc.stdout
+
+
+def test_wait_node_release_checks_the_ghcr_chart_is_the_download(host):
+    chart = with_manifest(host, "", "1.0.4", under="deploy/staging/images/node-artifacts")
+    proc = ok(host.staging("wait-node-release", "--timeout", "0"))
+    assert "scan node 1.0.4 is released" in proc.stdout and "the downloaded chart byte for byte" in proc.stdout
+    assert __import__("hashlib").sha256(chart.read_bytes()).hexdigest() in proc.stdout
+    proc = host.staging("wait-node-release", "--timeout", "0", env={"FAKE_CHART_SHA": "1" * 64})
+    assert proc.returncode == 1 and "one version must name one file" in proc.stdout
+    proc = host.staging("wait-node-release", "--timeout", "0", env={"FAKE_IMAGE_PUBLIC": "0"})
+    assert proc.returncode == 3 and "is not pullable" in proc.stdout
+    proc = host.staging("wait-node-release", "--timeout", "1", env={"FAKE_CHART_PUBLIC": "0", "STAGING_WAIT_STEP": "1"})
+    assert proc.returncode == 3  # the chart never became pullable: waited, then gave up
+
+
+def test_the_push_deploy_waits_for_its_release_and_builds_the_downloads_as_released():
+    wf = (ROOT / ".github/workflows/deploy-staging.yml").read_text()
+    wait = wf.split("      - name: Wait for the scan node release (GHCR)\n", 1)[1].split("\n      - name:", 1)[0]
+    assert "if: github.event_name == 'push' && (vars.CBOM_NODE_REGISTRY_PUBLIC || '1') != '0'" in wait
+    assert "continue-on-error: true" in wait and "scripts/deploy/staging.sh wait-node-release" in wait
+    assert wf.index("name: Wait for the scan node release") < wf.index("name: Copy and deploy")
+    downloads = wf.split("      - name: Scan node downloads\n", 1)[1].split("\n      - uses:", 1)[0]
+    assert "CBOM_NODE_VERSION=$(python3 -I .github/ci/node_version.py --rev HEAD)" in downloads
+    assert 'export SCAN_NODE_IMAGE="ghcr.io/${OWNER,,}/devsecshield-scan-node"' in downloads
+    build = wf.split("  build:\n", 1)[1].split("\n  deploy:\n", 1)[0]
+    assert "          fetch-depth: 0\n          filter: blob:none\n" in build
 
 
 def test_not_public_clears_both_so_no_pull_is_ever_offered(host):
@@ -169,3 +241,26 @@ def test_push_forwards_only_a_0_or_1_and_a_checked_registry_to_the_host():
     push = script.split("cmd_push() {", 1)[1].split("\n}\n", 1)[0]
     assert '[[ "${CBOM_NODE_REGISTRY_PUBLIC}" =~ ^[01]$ ]] || die' in push
     assert """remote_env+=" CBOM_NODE_REGISTRY_PUBLIC='${CBOM_NODE_REGISTRY_PUBLIC}'\"""" in push
+
+
+def test_an_unreachable_registry_is_probed_once_and_offers_no_pull(host):
+    """#197 review: a host with no route to GHCR waited 10 s per request (token, image, chart) and said only "cannot be
+    pulled without a login". One reachability probe (connect timeout 5 s) decides first: unreachable, no per-tag probe
+    runs, nothing is offered, and the WARNING says why."""
+    proc = ok(host.ship(A, env={"CBOM_NODE_REGISTRY_PUBLIC": "1", "FAKE_GHCR_DOWN": "1"}))
+    v = env_values(host)
+    assert v["CBOM_NODE_IMAGE_REF"] == "" and v["CBOM_NODE_CHART_REF"] == ""
+    assert "WARNING: registry ghcr.io cannot be reached from this host" in proc.stdout, proc.stdout
+    assert "Failed to connect" in proc.stdout  # curl's reason, so the operator knows what to fix
+    assert "without a login" not in proc.stdout  # not mistaken for a missing or private package
+    calls = (host.root / "bin/ghcr.log").read_text().splitlines()
+    assert len(calls) == 1 and calls[0].startswith("down https://ghcr.io/v2/"), calls  # one probe, no token, no manifest
+    assert "--connect-timeout 5" in calls[0] and "--max-time 10" in calls[0], calls[0]
+
+
+def test_a_reachable_registry_probes_once_then_every_request_has_a_connect_timeout(host):
+    ok(host.ship(A, env={"CBOM_NODE_REGISTRY_PUBLIC": "1"}))
+    assert env_values(host)["CBOM_NODE_IMAGE_REF"] == f"{GHCR}/devsecshield-scan-node:1.0.0"
+    calls = (host.root / "bin/ghcr.log").read_text().splitlines()
+    assert calls[0].startswith("probe ") and sum(c.startswith("probe ") for c in calls) == 1, calls
+    assert len(calls) > 1 and all("--connect-timeout 5" in c for c in calls), calls

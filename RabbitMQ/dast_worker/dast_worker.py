@@ -10,6 +10,7 @@ from helpers.progress_writer import StateUpdateWriter
 from helpers.agent.main import DASTAgent
 from helpers.agent.context import StartDASTScanData
 from helpers.checks.nuclei.run_nuclei import reap_orphan_browsers
+from helpers.cancel_mark import skip_if_withdrawn
 
 console = Console(markup=False)
 
@@ -71,7 +72,10 @@ try:
 
 
     
+    # A run the backend withdrew while it was queued (a reinitialize replaced it) is never started: a revoke alone is
+    # lost when no worker is up, on a restart and after 3 h (helpers/cancel_mark.py).
     @app.task(track_started=True , bind=True)
+    @skip_if_withdrawn
     def dast(
         self,
         dast_dict_context: dict,

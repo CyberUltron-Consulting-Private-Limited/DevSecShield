@@ -1,8 +1,11 @@
 /**
  * F2 (i) info tips: the registry and its coverage.
+ *  0. The split registry (issue #145): every id of labels.ts has its text in the module of its area (areas.ts), and
+ *     each text module holds only ids of its own area that have a label.
  *  1. Registry integrity: every entry has a label, a "what it is", a "why it matters" and an example of
  *     sensible length, and a
  *     `// src: <file>:<line>` note above it naming the backend (or frontend) code the text was checked against;
+ *     every frontend component it cites must show the tip's id or label (the line numbers are best-effort notes);
  *     each named file exists and has that line.
  *  2. Every id used in the app exists, and every entry is used (no orphan text).
  *  3. Coverage: in every covered page, each field, filter, setting, metric and column header has a tip of its own
@@ -14,7 +17,10 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 
-import { INFO_TIPS } from "./infotips";
+import { INFO_TIPS, AREA_TEXT } from "./infotips/all";
+import { AREA_PREFIXES, TIP_AREAS, areaOf } from "./infotips/areas";
+import { INFO_TIP_LABELS } from "./infotips/labels";
+import { tipTextSources } from "./infotipSources";
 import { findGaps, type Gap } from "./infotipCoverage";
 
 const frontend = path.join(__dirname, "..");
@@ -78,17 +84,22 @@ export const COVERED: string[] = [
   // quantum-risk grade and crypto-agility, and the shared run results page (sections, findings, jobs, AI assistant)
   "components/cbom/grade",
   "components/cbom/results",
+  // Repositories (F3): import wizard, inventory, connections, scan policies, runs and queue, findings roll-up
+  "app/[team_id]/repositories/page.tsx",
+  "components/repositories",
 ];
 /** Files under a covered directory that are not covered yet, each with the reason. */
 export const NOT_YET_COVERED = new Map<string, string>([
-  // The Fleet tab's Inventory, Policies and Credentials sections (F1.2 UI, PR #81) reached dev while this PR was open;
-  // their tips follow in their own PR so this one does not grow further.
-  ["components/cbom/sources/fleet/CredentialsSection.tsx", "Fleet credentials (F1.2 UI, PR #81): tips in a follow-up PR"],
-  ["components/cbom/sources/fleet/InventorySection.tsx", "Fleet inventory (F1.2 UI, PR #81): tips in a follow-up PR"],
-  ["components/cbom/sources/fleet/PoliciesSection.tsx", "Fleet policies (F1.2 UI, PR #81): tips in a follow-up PR"],
 ]);
 /** Dashboards: their h2/h3 chart titles need a tip as well. */
-export const DASHBOARDS = new Set<string>(["app/[team_id]/page.tsx"]);
+export const DASHBOARDS = new Set<string>([
+  "app/[team_id]/page.tsx",
+  // the Sources run results views (results redesign): their h2 / h3 section and tile titles need a tip too
+  ...fs.readdirSync(path.join(frontend, "components/cbom/results/views")).filter((f) => f.endsWith(".tsx"))
+    .map((f) => `components/cbom/results/views/${f}`),
+  // the run finding dialog (results redesign): every tab's h3 heading carries its (i)
+  "components/cbom/results/RunFindingDialog.tsx",
+]);
 
 function expand(entry: string): string[] {
   const abs = path.join(frontend, entry);
@@ -101,16 +112,36 @@ function expand(entry: string): string[] {
   });
 }
 
+// ---------------------------------------------------------------- 0. the split registry
+const split: string[] = [];
+const labelIds = Object.keys(INFO_TIP_LABELS);
+for (const id of labelIds) {
+  const area = areaOf(id);
+  if (!area) split.push(`${id}: its prefix has no area; add it to AREA_PREFIXES in content/infotips/areas.ts`);
+  else if (!(id in AREA_TEXT[area])) split.push(`${id}: no text in content/infotips/text/${area}.ts`);
+}
+for (const area of TIP_AREAS) {
+  for (const id of Object.keys(AREA_TEXT[area])) {
+    if (!(id in INFO_TIP_LABELS)) split.push(`${id}: text in text/${area}.ts but no label in content/infotips/labels.ts`);
+    if (areaOf(id) !== area) split.push(`${id}: in text/${area}.ts, but its area is ${areaOf(id) ?? "none"}`);
+  }
+}
+const prefixes = TIP_AREAS.flatMap((a) => AREA_PREFIXES[a] as readonly string[]);
+assert.equal(new Set(prefixes).size, prefixes.length, "a prefix is listed under two areas");
+for (const p of prefixes) if (!labelIds.some((id) => id === p || id.startsWith(p + "."))) split.push(`areas.ts: prefix ${p} has no tip`);
+assert.deepEqual(split, [], "split registry problems:\n" + split.join("\n"));
+
 // ---------------------------------------------------------------- 1. registry integrity
-const registrySrc = read(path.join(__dirname, "infotips.ts"));
 const srcNote = new Map<string, string>();
-for (const m of registrySrc.matchAll(/\/\/ src: ([^\n]*)\n(?:[ \t]*\/\/[^\n]*\n)*[ \t]*"([^"]+)":\s*\{/g)) srcNote.set(m[2], m[1]);
+for (const { text } of tipTextSources()) {
+  for (const m of text.matchAll(/\/\/ src: ([^\n]*)\n(?:[ \t]*\/\/[^\n]*\n)*[ \t]*"([^"]+)":\s*\{/g)) srcNote.set(m[2], m[1]);
+}
 
 const ids = Object.keys(INFO_TIPS);
 assert.ok(ids.length > 0, "the registry is empty");
 const problems: string[] = [];
 for (const id of ids) {
-  const tip = INFO_TIPS[id as keyof typeof INFO_TIPS] as Record<string, string | undefined>;
+  const tip = INFO_TIPS[id as keyof typeof INFO_TIPS] as unknown as Record<string, string | undefined>;
   const extra = Object.keys(tip).filter((k) => !["label", "what", "why", "example"].includes(k));
   if (extra.length) problems.push(`${id}: unknown field(s) ${extra.join(", ")} (tooltip content is text only)`);
   if (!/^[a-z0-9]+(\.[a-z0-9_]+)+$/.test(id)) problems.push(`${id}: id must be dotted lower-case (surface.area.item)`);
@@ -127,17 +158,32 @@ for (const id of ids) {
     problems.push(`${id}: no "// src: <file>:<line>" comment directly above the entry`);
     continue;
   }
-  const refs = [...note.matchAll(/([A-Za-z0-9_.\[\]/-]+\.[a-z]{1,5}):(\d+)(?:-(\d+))?/g)];
+  // <file>:<line>, <file>:<a>-<b>, or a list of them for one file: <file>:<a>-<b>,<c>
+  const refs = [...note.matchAll(/([A-Za-z0-9_.\[\]/-]+\.[a-z]{1,5}):(\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*)/g)];
   if (refs.length === 0) problems.push(`${id}: src note names no <file>:<line>`);
+  const cited = new Map<string, (readonly [number, number])[]>(); // file -> every span the note cites in it
   for (const r of refs) {
     const file = path.join(repo, r[1]);
     if (!fs.existsSync(file)) {
       problems.push(`${id}: src file not found: ${r[1]}`);
       continue;
     }
-    const lines = read(file).split("\n").length;
-    const last = Number(r[3] ?? r[2]);
-    if (Number(r[2]) < 1 || last > lines) problems.push(`${id}: ${r[1]} has ${lines} lines, the note cites ${r[2]}${r[3] ? "-" + r[3] : ""}`);
+    const text = read(file).split("\n");
+    const spans = r[2].split(",").map((p) => p.split("-").map(Number)).map(([a, b]) => [a, b ?? a] as const);
+    for (const [a, b] of spans) {
+      if (a < 1 || b < a || b > text.length) problems.push(`${id}: ${r[1]} has ${text.length} lines, the note cites ${a}${b !== a ? "-" + b : ""}`);
+    }
+    cited.set(r[1], [...(cited.get(r[1]) ?? []), ...spans]);
+  }
+  // every frontend component the note cites shows this tip: its id or its label appears somewhere in that file, so a
+  // note cannot name a page the tip is not on. The line numbers themselves are best-effort notes (other PRs move them).
+  for (const rel of cited.keys()) {
+    if (!/^frontend\/.*\.tsx$/.test(rel)) continue;
+    const text = read(path.join(repo, rel));
+    const label = (tip.label ?? "").toLowerCase();
+    if (!text.includes(`"${id}"`) && !(label !== "" && text.toLowerCase().includes(label))) {
+      problems.push(`${id}: the note cites ${rel}, which shows neither the tip's id nor its label`);
+    }
   }
 }
 assert.deepEqual(problems, [], "registry problems:\n" + problems.join("\n"));
@@ -353,6 +399,39 @@ const PROBES: { name: string; file: string; anchor: string; insert: string; wher
     insert: `<Card><CardHeader><CardTitle>Key sizes</CardTitle></CardHeader></Card>`,
     where: "after",
     gaps: ["heading"],
+  },
+  // the run results views (results redesign): a section heading, a KPI tile and a drill tile each need their own tip
+  {
+    name: "CBOM run summary: a section heading without a tip",
+    file: "components/cbom/results/views/SummaryView.tsx",
+    anchor: `<DrillTiles figures={figures}`,
+    insert: `<h2 className="text-base font-semibold">Exposure</h2>`,
+    where: "before",
+    gaps: ["h2"],
+  },
+  {
+    name: "CBOM run summary: a KPI tile without an infoId",
+    file: "components/cbom/results/views/SummaryKpis.tsx",
+    anchor: `{kpiTiles(model).map((t) => (`,
+    insert: `<KpiTile label="Expired" value="3" icon={Lock} box="" testId="run-kpi-expired" />`,
+    where: "before",
+    gaps: ["heading"],
+  },
+  {
+    name: "CBOM run summary: a drill tile without an infoId",
+    file: "components/cbom/results/views/DrillTiles.tsx",
+    anchor: `{DETAIL_SECTIONS.map((s) => (`,
+    insert: `<DrillTile section="quantum" title="Keys" holds="" figure={figures.quantum} onOpen={() => undefined} />`,
+    where: "before",
+    gaps: ["heading"],
+  },
+  {
+    name: "Run finding dialog: a tab heading without a tip",
+    file: "components/cbom/results/RunFindingDialog.tsx",
+    anchor: `{/* ------------------------------------------------------------------ Quantum & effort */}`,
+    insert: `<h3 className="text-sm">Probe heading</h3>`,
+    where: "after",
+    gaps: ["h2"],
   },
 ];
 for (const p of PROBES) {

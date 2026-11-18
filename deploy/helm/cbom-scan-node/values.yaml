@@ -24,9 +24,27 @@ existingSecret: ""
 # Outbound proxy to ZeroShield (targets are always reached directly).
 httpsProxy: ""
 noProxy: ""
+# A proxy that needs a login (#199): a Secret with the key auth holding one line user:password, e.g.
+#   read -rsp 'Proxy password: ' P && printf '%s:%s' svc-zs "$P" > zs-proxy-auth && unset P
+#   kubectl -n zs-cbom create secret generic zs-node-proxy-auth --from-file=auth=zs-proxy-auth && rm -f zs-proxy-auth
+# Mounted read-only for the node's user (ZS_PROXY_AUTH_FILE); the password is never in a value, the env or a log.
+# httpsProxy stays the proxy URL without the login.
+proxyAuthSecret: ""
 
-# Extra environment for the node (for example ZS_VAULT_PATH_PREFIX, VAULT_ADDR, ZS_MAX_JOBS, ZS_CA_FILE).
+# Extra environment for the node (for example ZS_VAULT_PATH_PREFIX, VAULT_ADDR, ZS_MAX_JOBS).
 extraEnv: []
+
+# How the node trusts the ZeroShield API (CB-15). Both are Secrets you create in the release namespace; their files are
+# mounted read-only under /etc/zs-node/trust and never leave the cluster.
+trust:
+  # A private CA (or a TLS-inspecting proxy's CA) for the ZeroShield API: a Secret with the key ca.pem, e.g.
+  #   kubectl -n zs-cbom create secret generic zs-node-ca --from-file=ca.pem=./zeroshield-ca.pem
+  # It replaces the default trust store for the ZeroShield API only (ZS_CA_FILE); your targets are not affected.
+  caSecret: ""
+  # A client certificate when the ZeroShield API requires mTLS: a kubernetes.io/tls Secret, e.g.
+  #   kubectl -n zs-cbom create secret tls zs-node-client --cert=./node.crt --key=./node.key
+  # (ZS_CLIENT_CERT / ZS_CLIENT_KEY). The key is readable by the node's user only.
+  clientSecret: ""
 
 # The agentless node: reaches your servers, clusters, databases and networks with the credentials you store.
 deployment:

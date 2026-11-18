@@ -10,19 +10,27 @@ import path from "node:path"
 const read = (p: string) => fs.readFileSync(path.join(__dirname, p), "utf8")
 const banner = read("LabModeBanner.tsx")
 const tab = read("CloudIdentityTab.tsx")
-const run = read("RunResults.tsx")
+const run = read("../results/RunSections.tsx") // the shared results template's run sections
+const targets = read("RunResults.tsx") // TargetsBlock: one row per job
 const backend = read("../../../../backend/utilities/cbom_sources/lab_mode.py")
 const sentence = "Lab mode: same-account collection — not for production"
 assert.ok(banner.includes(`export const AWS_LAB_BANNER = "${sentence}";`), "the banner carries the sentence")
 assert.ok(backend.includes(`LAB_BANNER = "${sentence}"`), "the backend says the same sentence")
-assert.ok(banner.includes('role="alert"') && !/onClose|onDismiss|setOpen|useState|<button/.test(banner), "it cannot be dismissed")
+// a permanent informational note (#272): role="note", never an alert announced on every render
+assert.ok(banner.includes('role="note"') && !banner.includes('role="alert"'), "it is a note, not an alert")
+assert.ok(!/onClose|onDismiss|setOpen|useState|<button/.test(banner), "it cannot be dismissed")
 // the form: shown whenever the AWS form is (settings say lab mode), above it
 assert.ok(tab.includes('{form.provider === "aws" && !awsOff && settings.aws_lab_same_account === true && (\n            <LabModeBanner'),
   "the AWS form shows the banner when the deployment is in lab mode")
 assert.ok(tab.indexOf('testId="aws-lab-mode"') < tab.indexOf("<AwsForm"), "above the form")
 // every run of such a source: a banner on the run and a badge on the source's job
-assert.ok(run.includes("{data.targets.some((job) => job.lab_mode) && (\n        <LabModeBanner testId=\"run-results-lab-mode\""),
+assert.ok(run.includes("{targets?.some((job) => job.lab_mode) && (\n        <LabModeBanner testId=\"run-lab-mode\""),
   "a run with a lab-mode job shows the banner")
-assert.ok(run.indexOf('testId="run-results-lab-mode"') < run.indexOf("<TargetsBlock"), "at the top of the run")
-assert.ok(run.includes("{job.lab_mode && ("), "and the job is marked")
+assert.ok(run.indexOf('testId="run-lab-mode"') < run.indexOf("<TargetsBlock"), "above the run's jobs and targets")
+assert.ok(targets.includes("{job.lab_mode && ("), "and the job is marked")
+// results redesign: the run's hero header carries the same banner on every view but Collection (its jobs card has it)
+const hero = read("../results/views/ResultsHero.tsx")
+assert.ok(hero.includes("{showLabBanner && targets?.some((job) => job.lab_mode) && (\n        <LabModeBanner testId=\"run-lab-mode\""),
+  "the hero shows the banner for a run with a lab-mode job")
+assert.ok(read("../../CbomResults.tsx").includes('showLabBanner={section !== "collection"}'), "not twice on the Collection view")
 console.log("aws lab mode tests passed")

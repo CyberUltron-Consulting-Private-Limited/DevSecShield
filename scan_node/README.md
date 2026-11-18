@@ -11,13 +11,13 @@ Create a node in ZeroShield (**CBOM Sources → Scan nodes → Add scan node**),
 (**Download scan node image**: `scan-node-<version>.tar.gz` and its `.sha256`), and run the commands it shows:
 
 ```sh
-sha256sum -c scan-node-1.0.0.tar.gz.sha256 && \
-docker load -i scan-node-1.0.0.tar.gz && \
+sha256sum -c scan-node-1.0.1.tar.gz.sha256 && \
+docker load -i scan-node-1.0.1.tar.gz && \
 docker run -d --pull never --name zs-scan-node-dc-mumbai-01 --restart unless-stopped \
   -e ZS_API_URL='<the API URL shown in the Add scan node wizard>' \
   -e ZS_REGISTRATION_TOKEN='zsr_…' \
   -v zs-node-dc-mumbai-01:/var/lib/zs-node \
-  localhost/zeroshield/cbom-scan-node:1.0.0
+  localhost/zeroshield/cbom-scan-node:1.0.1
 ```
 
 The checks gate the next step (`&&`): a file that fails its SHA-256 check is never loaded or run. `--pull never`: Docker runs the image it loaded from the file and never looks for that name in a registry. When the
@@ -30,6 +30,14 @@ would run as that node.
 
 The ZeroShield server serves the image file, the Helm chart and the OVA/AMI build kits to members of the team
 (`backend/routers/cbom_node_artifacts.py`); how they are made: [Without registry access](#without-registry-access).
+
+**Update a node** (Scan nodes shows "Update available" when a node is not running the server's node build): load
+the new image (download it again from Add scan node, or `docker pull` the reference it shows), then recreate the
+container with the same name, settings and volume and without `ZS_REGISTRATION_TOKEN`:
+`docker rm -f zs-scan-node-dc-mumbai-01 && docker run -d --pull never --name zs-scan-node-dc-mumbai-01 --restart
+unless-stopped -e ZS_API_URL='...' -v zs-node-dc-mumbai-01:/var/lib/zs-node localhost/zeroshield/cbom-scan-node:1.0.1`.
+The volume keeps the node token and keys, so the node is not registered again. Helm: `helm upgrade` the release with
+the new chart (`--reuse-values`).
 
 On first start the node creates an ed25519 SSH key in the volume and exchanges the single-use registration
 token for its own node token. The public key is shown in ZeroShield: add it to the `zs-cbom` user's
@@ -45,10 +53,52 @@ token for its own node token. The public key is shown in ZeroShield: add it to t
 | `HTTPS_PROXY` / `NO_PROXY` | outbound proxy to ZeroShield |
 | `ZS_VAULT_PATH_PREFIX` | allow vault credentials under this path only (vault use is **off** without it) |
 | `VAULT_ADDR`, `VAULT_TOKEN` | HashiCorp Vault (KV v2) for vault credentials |
+| `ZS_VAULT_CA_FILE` | the CA certificate (PEM) of a Vault with a private CA; trusted for the Vault connection only (`VAULT_CACERT` / `VAULT_CAPATH` work too) |
 | AWS role of the host | used for AWS Secrets Manager credentials |
 | `ZS_CLIENT_CERT`, `ZS_CLIENT_KEY` | PEM client certificate and key the node presents to the ZeroShield proxy (mTLS; optional) |
 | `ZS_CA_FILE` | CA bundle trusted for the ZeroShield API instead of the default (private CA, TLS-inspecting proxy) |
 | `ZS_PKCS11_MODULES` | PKCS#11 libraries the node may load, as `name=/path` pairs separated by `;` (for example `luna=/usr/safenet/lunaclient/lib/libCryptoki2_64.so`). An HSM source names a module; the path never comes from ZeroShield. Mount the vendor client read-only into the container. |
+
+### Vault credentials (worked example)
+A source can name a vault secret instead of a stored password. Vault use is **off** until the node's operator sets
+`ZS_VAULT_PATH_PREFIX`: only secrets under that prefix are read, so a ZeroShield user cannot point the node at any
+other secret the node's token can read.
+
+The node reads **HashiCorp Vault** (KV v2) and **AWS Secrets Manager**. CyberArk and Azure Key Vault are shown in
+ZeroShield as "not available yet" and cannot be saved.
+
+HashiCorp Vault, KV v2 mount `secret`, secrets under `secret/cbom/`:
+
+```sh
+# a read-only policy and a token for the node
+vault policy write zs-cbom-node - <<'EOF'
+path "secret/data/cbom/*" { capabilities = ["read"] }
+EOF
+vault token create -policy=zs-cbom-node -period=768h -orphan
+```
+
+```sh
+docker run ... \
+  -e ZS_VAULT_PATH_PREFIX=secret/cbom \
+  -e VAULT_ADDR=https://vault.bank.local:8200 -e VAULT_TOKEN=<the token> \
+  -e ZS_VAULT_CA_FILE=/etc/zs-node/trust/vault-ca.pem -v /etc/pki/vault-ca.pem:/etc/zs-node/trust/vault-ca.pem:ro \
+  ...
+```
+
+* The prefix and the source's path may each be written with or without KV v2's `data` segment:
+  `secret/cbom` and `secret/data/cbom` are the same prefix, and `secret/cbom/pg-lab` and `secret/data/cbom/pg-lab` the
+  same secret.
+* `ZS_VAULT_CA_FILE` is only needed for a Vault with a private CA. It is trusted for the Vault connection only, not
+  the ZeroShield API or the targets. Vault's own `VAULT_CACERT` (a file) and `VAULT_CAPATH` (a hashed directory) work
+  too.
+* The secret holds the fields the source needs (`password`, or `username` and `password`, `token`, `private_key` ...).
+
+AWS Secrets Manager: set `ZS_VAULT_PATH_PREFIX` to the secret-name prefix (for example `cbom/`) and give the host's
+IAM role `secretsmanager:GetSecretValue` on those secrets. Names are read exactly as written; the KV v2 rule does not
+apply.
+
+The node reports in its heartbeat whether vault use is on, the providers it reads, its prefix and whether each
+provider is set up (never a token or a secret). An import from a CMDB checks a row's vault against that report.
 
 ### How the node authenticates
 
@@ -237,11 +287,31 @@ sockets or HTTP clients any other way, so new collectors must use it.
   Kubernetes API host) is skipped as `skipped_never_scan` when the name is listed or when ANY address it resolves to
   is listed, so a dual-stack host listed by its IPv4 address is not scanned over IPv6 and the other way round. The
   outcome, and in a connection test the sample, names the address and the entry that matched.
-- *An IP address target* is checked as itself.
-- *CIDR and `a-b` target ranges* are checked address by address: the listed addresses inside a range are skipped
-  (one outcome each) and the rest are scanned. A range carries no names, so when one address of a dual-stack host is
-  listed by address and its other address lies inside a scanned range, that other address is scanned unless it is
-  listed too (listing the host by name covers both).
+- *One name is one host, for the whole job* (#17): every name a job resolves (server targets, registry, token
+  service and redirect hosts, database redirects, and in a network range job the team's SNI hostnames, which are
+  resolved before the first address is swept) ties its addresses together. When the name is listed, or one of its
+  addresses is, all of its addresses are left out wherever else the job meets them: as an IP target, inside a CIDR
+  or `a-b` range, in a range sweep, as another name of the same host. The outcome says why ("fd00::5 is an address
+  of db.internal, which also resolves to 10.0.0.5, on the never-scan list"). Names are resolved before any target
+  is checked, so the order of the lines does not matter, and the ties follow the list while the job runs (an
+  address listed by a heartbeat ties its name's other addresses at once; taken off, it frees them). One hop only:
+  a second name that shares a tied address is skipped itself, but its own other addresses are not tied by that.
+  *Shared addresses:* the tie is by address, so an address that a resolved name shares with a listed host is left
+  out for every host behind it. When a name answers a listed address together with a load balancer, VIP, ingress
+  or reverse-proxy address, that shared address is skipped for the whole job, and so is every other target or SNI
+  name that resolves to it, even though other hosts answer there. List the individual host by an address of its
+  own (or by name) to keep the shared address in scope, or accept that the list wins.
+  The SNI hostnames are resolved within at most 20 s and never past the job's own end: the wait stops at a cancel,
+  the stop-all switch or the scan window closing, and names without an answer by then stay unresolved (they tie
+  nothing and are not sent).
+- *An IP address target* is checked as itself, and as an address of any name the job resolved (above).
+- *CIDR and `a-b` target ranges* are checked address by address: the listed addresses inside a range, and the
+  addresses tied to a never-scan host by a name the job resolved, are skipped (one outcome each) and the rest are
+  scanned. The limit: a range carries no names, and the node does no reverse (PTR) lookups (a PTR record is set by
+  whoever owns the address block and proves nothing about which host answers). So when a dual-stack host is listed
+  by one address and no name the job resolves answers both, its other address inside a scanned range cannot be
+  recognised and is scanned. List such a host by name (which covers every address it resolves to, in every job) or
+  list both addresses.
 - *Never scanned, whatever the list says:* `0.0.0.0/8` and `::`, which reach the node itself (DNS sinkholes answer
   `0.0.0.0`), also in their IPv4-mapped and NAT64 forms. A registry that sends the node to one of them (token
   service, redirect) is refused as an error, not reported as a never-scan skip.

@@ -31,13 +31,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import {
   countCbomTargets,
+  createCbomHostKeyReset,
   createCbomSource,
   deleteCbomSource,
   getCbomSourcesOverview,
   getCbomSourcesSettings,
   getCbomTemplate,
+  listCbomHostKeyResets,
   listCbomScanNodes,
-  listCbomSources,
   testCbomSource,
   updateCbomSource,
   type CbomJob,
@@ -56,12 +57,17 @@ import { useFleetStatus } from "./fleet/useFleetStatus";
 import { sshCaListEnabled } from "./fleet/fleetLogic";
 import { principalOk } from "./fleet/sshCaLogic";
 import { MetadataFields, metadataConfig, metadataFrom, type SourceMetadata } from "./SourceMetadata";
+import { LoadMoreFooter, SourceFilterBar, usePagedSources } from "./SourceTableControls";
+import { EMPTY_FILTERS, filtersActive, type SourceFilters } from "./sourceQuery";
 import {
   ago,
   blankSecretError,
   ansibleSnippet,
   countHours,
   csvFirstColumn,
+  knownHostsProblem,
+  mergeImportedTargets,
+  windowsPortProblem,
   defaultWindow,
   formatDateTime,
   normalizeGrid,
@@ -94,12 +100,19 @@ import {
   type Tone,
 } from "./shared";
 import { SOURCE_NEVER_SCAN_HINT } from "./teamNeverScan";
+import { displayHostLines } from "./idnDisplay";
+import { hostCaKeysProblem, hostCaLines } from "./hostCaKeys";
+import { ACCEPT_WARNING, FORGET_WARNING, decisionsAllowed, hostKeyChange, pendingFor, pendingLabel } from "./hostKeyDecision";
+import { VAULT_PROVIDERS, unavailableProblem } from "./vaultProviders";
+import { VaultNodeSettings } from "./VaultNodeSettings";
 import { InfoTip } from "@/components/ui/info-tip";
 
 // ---------------------------------------------------------------------------- constants (mirror backend kinds.py / templates.py)
 type ServerKind = "linux_servers" | "windows_servers" | "active_directory";
 type CredType = "node_key" | "ssh_cert" | "vault" | "password" | "ssh_ca";
-type HostKeyPolicy = "tofu" | "pinned";
+type HostKeyPolicy = "tofu" | "pinned" | "host_ca";
+// policies that prove the server before a password goes to it (#59: a host certificate from a listed CA, like a pin)
+const VERIFIED_POLICIES: ReadonlySet<HostKeyPolicy> = new Set(["pinned", "host_ca"]);
 type WindowMode = "network" | "any" | "custom";
 
 interface KindInfo {
@@ -124,16 +137,9 @@ const CRED_TEXT: Record<CredType, { title: string; description: string }> = {
   node_key: { title: "Node-generated SSH key", description: "Recommended. The private key never leaves the node." },
   ssh_cert: { title: "SSH certificate", description: "Short-lived, signed by your SSH CA" },
   ssh_ca: { title: "SSH CA certificate", description: "ZeroShield's SSH CA signs the node's own key for each job (minutes)" },
-  vault: { title: "Vault reference", description: "CyberArk, HashiCorp Vault, AWS Secrets Manager, Azure Key Vault" },
+  vault: { title: "Vault reference", description: "HashiCorp Vault or AWS Secrets Manager, read by the scan node (CyberArk, Azure Key Vault: not available yet)" },
   password: { title: "Password", description: "Encrypted at rest by ZeroShield; sent only to the scan node that runs the job" },
 };
-
-const VAULT_PROVIDERS = [
-  { value: "hashicorp", label: "HashiCorp Vault" },
-  { value: "cyberark", label: "CyberArk" },
-  { value: "aws_secrets_manager", label: "AWS Secrets Manager" },
-  { value: "azure_key_vault", label: "Azure Key Vault" },
-];
 
 // Must equal backend/utilities/cbom_sources/templates.py TIER1_COMMANDS / TIER2_COMMANDS (a backend test checks this).
 const TIER1_COMMANDS = [
@@ -144,7 +150,9 @@ const TIER1_COMMANDS = [
   "cat /proc/sys/crypto/fips_enabled",
   "openssl version -a",
   "cat /etc/ssh/sshd_config",
+  "cat <file named by an sshd_config Include line>",
   "ssh-keygen -l -f /etc/ssh/ssh_host_<type>_key.pub",
+  "ssh-keygen -l -f <path named by a HostKey line>.pub",
   "ps -eo pid=,comm=",
   "openssl storeutl -noout -text -certs <file>",
   "openssl pkey -pubout -passin pass: -in <file>",
@@ -253,6 +261,7 @@ interface FormState {
   loginUser: string;
   hostKeyPolicy: HostKeyPolicy;
   knownHosts: string;
+  hostCaKeys: string;
   caPem: string;
   credentialType: CredType;
   vaultProvider: string;
@@ -286,6 +295,7 @@ function initialForm(source: CbomSource | null, nodes: CbomScanNode[]): FormStat
       loginUser: info.login,
       hostKeyPolicy: "tofu",
       knownHosts: "",
+      hostCaKeys: "",
       caPem: "",
       credentialType: info.defaultCred,
       vaultProvider: "hashicorp",
@@ -310,13 +320,14 @@ function initialForm(source: CbomSource | null, nodes: CbomScanNode[]): FormStat
   return {
     kind,
     name: source.name,
-    targets: Array.isArray(cfg.targets) ? cfg.targets.join("\n") : "",
-    exclusions: Array.isArray(cfg.exclusions) ? cfg.exclusions.join("\n") : "",
+    targets: displayHostLines(cfg.targets),
+    exclusions: displayHostLines(cfg.exclusions),
     nodeId: source.node_id,
     port: String(cfg.port ?? info.port),
     loginUser: String(cfg.login_user ?? info.login),
-    hostKeyPolicy: cfg.host_key_policy === "pinned" ? "pinned" : "tofu",
+    hostKeyPolicy: cfg.host_key_policy === "pinned" || cfg.host_key_policy === "host_ca" ? cfg.host_key_policy : "tofu",
     knownHosts: typeof cfg.known_hosts === "string" ? cfg.known_hosts : "",
+    hostCaKeys: Array.isArray(cfg.host_ca_keys) ? (cfg.host_ca_keys as string[]).join("\n") : "",
     caPem: typeof cfg.ca_pem === "string" ? cfg.ca_pem : "",
     credentialType: cred,
     vaultProvider: cfg.vault?.provider ?? "hashicorp",
@@ -339,11 +350,13 @@ function initialForm(source: CbomSource | null, nodes: CbomScanNode[]): FormStat
 function whereChanged(form: FormState, source: CbomSource | null): boolean {
   if (!source) return false;
   const cfg = source.config ?? {};
-  const stored = Array.isArray(cfg.targets) ? (cfg.targets as string[]).join("\n") : "";
+  const stored = displayHostLines(cfg.targets);
   // How the node checks the server's identity also counts: a weaker check must not reuse a stored password.
   const linux = source.kind === "linux_servers";
   const policy = linux ? form.hostKeyPolicy : "tofu";
   const knownHosts = linux && form.hostKeyPolicy === "pinned" ? form.knownHosts.trim() : null;
+  const hostCas = linux && form.hostKeyPolicy === "host_ca" ? hostCaLines(form.hostCaKeys).join("\n") : "";
+  const storedCas = Array.isArray(cfg.host_ca_keys) ? (cfg.host_ca_keys as string[]).join("\n") : "";
   const vault = form.credentialType === "vault" ? `${form.vaultProvider}|${form.vaultPath.trim()}` : null;
   const storedVault = cfg.vault ? `${cfg.vault.provider}|${cfg.vault.path}` : null;
   return (
@@ -354,9 +367,20 @@ function whereChanged(form: FormState, source: CbomSource | null): boolean {
     policy !== (cfg.host_key_policy ?? "tofu") ||
     (!linux && (form.caPem.trim() || null) !== ((typeof cfg.ca_pem === "string" && cfg.ca_pem.trim()) || null)) ||
     (knownHosts || null) !== ((typeof cfg.known_hosts === "string" && cfg.known_hosts.trim()) || null) ||
+    hostCas !== storedCas ||
     vault !== storedVault
   );
 }
+
+// The kinds the Servers table lists (the servers group without host agents, which the Scan nodes tab lists).
+export const SERVER_TABLE_KINDS = [
+  { value: "linux_servers", label: "Linux servers" },
+  { value: "windows_servers", label: "Windows servers" },
+  { value: "active_directory", label: "Active Directory" },
+  { value: "awx_hosts", label: "Hosts through AWX/AAP" },
+  { value: "salt_hosts", label: "Hosts through Salt" },
+  { value: "ssm_hosts", label: "Hosts through AWS SSM" },
+];
 
 // ---------------------------------------------------------------------------- tab
 export default function ServersTab({ teamId, onNavigate }: { teamId: number; onNavigate: (tab: string) => void }) {
@@ -374,14 +398,12 @@ export default function ServersTab({ teamId, onNavigate }: { teamId: number; onN
     retry: 1,
     refetchInterval: 30000,
   });
-  const sourcesQuery = useQuery({
-    queryKey: cbomSourcesKeys.sources(teamId, "servers"),
-    queryFn: () => listCbomSources(teamId, "servers"),
-    enabled: Number.isFinite(teamId),
-    retry: 1,
-    // Faster while a connection test is waiting, so the badge and samples update on their own.
-    refetchInterval: (query) => (query.state.data?.sources.some((s) => s.last_test_status === "pending") ? 6000 : 30000),
-  });
+  // #225: searched, filtered and paged on the server (host agents are listed on the Scan nodes tab, not here).
+  // Faster while a connection test is waiting, so the badge and samples update on their own.
+  const [filters, setFilters] = useState<SourceFilters>(EMPTY_FILTERS);
+  const paged = usePagedSources(teamId, "servers", SERVER_TABLE_KINDS.map((k) => k.value), filters,
+                                (rows) => (rows.some((s) => s.last_test_status === "pending") ? 6000 : 30000));
+  const sourcesQuery = paged.query;
   const settingsQuery = useQuery({
     queryKey: cbomSourcesKeys.settings(teamId),
     queryFn: () => getCbomSourcesSettings(teamId),
@@ -389,9 +411,8 @@ export default function ServersTab({ teamId, onNavigate }: { teamId: number; onN
     retry: 1,
   });
   const nodes = useMemo(() => nodesQuery.data?.nodes ?? [], [nodesQuery.data]);
-  // host agents (agent-mode nodes, one source each) are listed on the Scan nodes tab, not here
-  const sources = useMemo(() => (sourcesQuery.data?.sources ?? []).filter((s) => s.kind !== "host_agent"), [sourcesQuery.data]);
-  const serverNow = sourcesQuery.data?.server_time;
+  const sources = paged.sources;
+  const serverNow = paged.serverTime;
   const jobQuery = usePolledJob(teamId, testView?.jobId ?? null);
   const testedSource = testView ? sources.find((s) => s.id === testView.sourceId) ?? null : null;
 
@@ -501,6 +522,7 @@ export default function ServersTab({ teamId, onNavigate }: { teamId: number; onN
 
       {testView && testedSource && (
         <TestResultsCard
+          teamId={teamId}
           source={testedSource}
           job={jobQuery.data && jobQuery.data.id === testView.jobId ? jobQuery.data : undefined}
           jobLoading={!!testView.jobId && jobQuery.isLoading}
@@ -515,9 +537,14 @@ export default function ServersTab({ teamId, onNavigate }: { teamId: number; onN
 
         infoId="cbsrc.servers.list"
         title="Configured server sources"
-        description={sources.length ? `${pluralize(sources.length, "source")}, ${pluralize(sources.reduce((sum, s) => sum + s.target_count, 0), "target")} after exclusions` : "Server sources you add appear here."}
+        description={paged.total ? `${pluralize(paged.total, "source")}${filtersActive(filters) ? " match" : ""}; targets are counted after exclusions` : "Server sources you add appear here."}
       >
-        {sources.length === 0 ? (
+        {(sources.length > 0 || filtersActive(filters)) && (
+          <SourceFilterBar teamId={teamId} filters={filters} onChange={setFilters} kinds={SERVER_TABLE_KINDS} idPrefix="servers" />
+        )}
+        {sources.length === 0 && filtersActive(filters) ? (
+          <EmptyState title="No server source matches" body="Change the search or clear the filters." />
+        ) : sources.length === 0 ? (
           <EmptyState
             title="No servers added yet"
             body="Add Linux servers, Windows servers or Active Directory with the form above. Each source is one list of targets reached through one scan node."
@@ -655,6 +682,10 @@ export default function ServersTab({ teamId, onNavigate }: { teamId: number; onN
             </div>
             <ScrollBar orientation="horizontal" />
           </ScrollArea>
+        )}
+        {sources.length > 0 && (
+          <LoadMoreFooter shown={sources.length} total={paged.total} filters={filters} hasMore={!!sourcesQuery.hasNextPage}
+                          loading={sourcesQuery.isFetchingNextPage} onMore={() => sourcesQuery.fetchNextPage()} idPrefix="servers" />
         )}
       </SectionCard>
 
@@ -824,12 +855,22 @@ function ServerForm({
     if (!form.nodeId) e.nodeId = "Choose the scan node that reaches these servers";
     if (intIn(form.port, 1, 65535) == null) e.port = "Enter a port from 1 to 65535";
     if (!LOGIN_RE.test(form.loginUser.trim())) e.loginUser = "Use up to 64 letters, digits and . _ @ $ \\ -";
-    if (isLinux && form.hostKeyPolicy === "pinned" && !form.knownHosts.trim()) e.knownHosts = "Paste the known_hosts lines to pin, or choose trust on first use";
-    if (isLinux && form.credentialType === "password" && form.hostKeyPolicy !== "pinned")
-      e.hostKeyPolicy = "Password logins need pinned host keys, so the password only goes to the real servers";
-    if (!isLinux && Number(form.port) === 5985) e.port = "WinRM over HTTP (5985) cannot prove the server; use HTTPS (5986)";
+    if (isLinux && form.hostKeyPolicy === "pinned") {
+      const problem = knownHostsProblem(form.knownHosts);
+      if (problem) e.knownHosts = problem;
+    }
+    if (isLinux && form.hostKeyPolicy === "host_ca") {
+      const problem = hostCaKeysProblem(form.hostCaKeys);
+      if (problem) e.hostCaKeys = problem;
+    }
+    if (isLinux && form.credentialType === "password" && !VERIFIED_POLICIES.has(form.hostKeyPolicy))
+      e.hostKeyPolicy = "Password logins need pinned host keys or host certificates, so the password only goes to the real servers";
+    const portProblem = isLinux ? null : windowsPortProblem(form.kind, Number(form.port));
+    if (portProblem) e.port = portProblem;
     if (form.credentialType === "vault" && !isAdmin) e.credentialType = "Only a team admin can add or change a vault reference";
     if (form.credentialType === "vault" && !form.vaultPath.trim()) e.vaultPath = "Enter the secret path in your vault";
+    const vaultUnavailable = form.credentialType === "vault" ? unavailableProblem(form.vaultProvider) : null; // #364
+    if (vaultUnavailable) e.vaultProvider = vaultUnavailable;
     if (form.credentialType === "ssh_ca") {
       // certificates are issued only for sources a team admin saved (the server enforces it at issue time too)
       if (!isAdmin) e.credentialType = "Only a team admin can save a source that uses the SSH CA";
@@ -882,6 +923,7 @@ function ServerForm({
         login_user: form.loginUser.trim(),
         host_key_policy: isLinux ? form.hostKeyPolicy : "tofu",
         known_hosts: isLinux && form.hostKeyPolicy === "pinned" ? form.knownHosts : null,
+        ...(isLinux && form.hostKeyPolicy === "host_ca" ? { host_ca_keys: hostCaLines(form.hostCaKeys) } : {}),
         ...(isLinux ? {} : { ca_pem: form.caPem.trim() ? form.caPem : null }),
         credential_type: form.credentialType,
         vault: form.credentialType === "vault" ? { provider: form.vaultProvider, path: form.vaultPath.trim() } : null,
@@ -1026,8 +1068,9 @@ function ServerForm({
                         setErrors((er) => ({ ...er, csv: "No addresses found in the first column of that file" }));
                         return;
                       }
-                      setForm((f) => ({ ...f, targets: [...splitLines(f.targets), ...rows].filter((v, i, all) => all.indexOf(v) === i).join("\n") }));
-                      setErrors((er) => ({ ...er, targets: undefined }));
+                      const merged = mergeImportedTargets(form.targets, rows, MAX_TARGET_LINES);
+                      setForm((f) => ({ ...f, targets: merged.text }));
+                      setErrors((er) => ({ ...er, targets: merged.error ?? undefined }));
                       toast.success(`Imported ${pluralize(rows.length, "line")}`);
                     },
                     "csv",
@@ -1050,6 +1093,13 @@ function ServerForm({
                 </StatusBadge>
               </span>
             </div>
+            {count?.valid && (count.notes?.length ?? 0) > 0 && (
+              <ul className="text-xs text-amber-700 dark:text-amber-400 -mt-2 list-disc pl-4" data-testid="servers-idn-notes">
+                {count.notes!.map((note) => (
+                  <li key={note}>{note}</li>
+                ))}
+              </ul>
+            )}
             {teamExclusions.length > 0 && (
               <p className="text-xs text-zinc-500 -mt-2">
                 The count also removes the team never-scan list ({pluralize(teamExclusions.length, "entry", "entries")}) from the Network tab.
@@ -1128,10 +1178,32 @@ function ServerForm({
                         disabled: form.credentialType === "password",
                       },
                       { value: "pinned", title: "Pin fingerprints", description: "Paste or upload a known_hosts file" },
+                      { value: "host_ca", title: "Host certificates", description: "Trust OpenSSH host certificates signed by your host CA" },
                     ]}
                   />
                 </div>
                 {errors.hostKeyPolicy && <p className="text-xs text-red-600 dark:text-red-400">{errors.hostKeyPolicy}</p>}
+                {form.hostKeyPolicy === "host_ca" && (
+                  <Field
+                    infoId="cbsrc.servers.host_ca_keys"
+                    label="Host CA public keys"
+                    htmlFor="servers-host-ca-keys"
+                    required
+                    error={errors.hostCaKeys}
+                    hint="One per line, as in the CA's .pub file. A server is accepted only with a host certificate from one of these CAs that names its host name or address and is in its validity period."
+                  >
+                    <Textarea
+                      id="servers-host-ca-keys"
+                      data-testid="servers-host-ca-keys"
+                      value={form.hostCaKeys}
+                      rows={3}
+                      spellCheck={false}
+                      placeholder="ssh-ed25519 AAAAC3Nza... host-ca@bank"
+                      className="font-mono text-xs min-h-[72px] max-h-48 overflow-y-auto resize-y"
+                      onChange={(e) => set({ hostCaKeys: e.target.value })}
+                    />
+                  </Field>
+                )}
                 {form.hostKeyPolicy === "pinned" && (
                   <Field
                     infoId="cbsrc.servers.known_hosts"
@@ -1159,7 +1231,16 @@ function ServerForm({
                       data-testid="servers-known-hosts-file"
                       onChange={async (e) => {
                         const input = e.currentTarget;
-                        await readFileInto(input.files?.[0], (text) => set({ knownHosts: text }), "knownHostsFile");
+                        await readFileInto(input.files?.[0], (text) => {
+                          // #149: a private key (or anything that is not known_hosts) is never loaded into the box
+                          const problem = knownHostsProblem(text);
+                          if (problem) {
+                            setErrors((er) => ({ ...er, knownHostsFile: problem }));
+                            return;
+                          }
+                          setErrors((er) => ({ ...er, knownHostsFile: undefined }));
+                          set({ knownHosts: text });
+                        }, "knownHostsFile");
                         input.value = "";
                       }}
                     />
@@ -1356,15 +1437,15 @@ function ServerForm({
 
             {form.credentialType === "vault" && (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4" data-testid="servers-vault-panel">
-                <Field infoId="cbsrc.common.vault_provider" label="Vault" htmlFor="servers-vault-provider">
+                <Field infoId="cbsrc.common.vault_provider" label="Vault" htmlFor="servers-vault-provider" error={errors.vaultProvider}>
                   <Select value={form.vaultProvider} onValueChange={(v) => set({ vaultProvider: v })}>
                     <SelectTrigger id="servers-vault-provider" className="w-full cursor-pointer" data-testid="servers-vault-provider">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       {VAULT_PROVIDERS.map((p) => (
-                        <SelectItem key={p.value} value={p.value} className="cursor-pointer">
-                          {p.label}
+                        <SelectItem key={p.value} value={p.value} disabled={!p.available} className="cursor-pointer">
+                          {p.optionLabel}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -1389,6 +1470,8 @@ function ServerForm({
                     onChange={(e) => set({ vaultPath: e.target.value })}
                   />
                 </Field>
+                <VaultNodeSettings provider={form.vaultProvider} path={form.vaultPath} node={selectedNode}
+                  testId="servers-vault-node-settings" className="md:col-span-3" />
               </div>
             )}
 
@@ -1696,6 +1779,7 @@ function WhatRuns({ kind, login, tier }: { kind: ServerKind; login: string; tier
 
 // ---------------------------------------------------------------------------- test results
 function TestResultsCard({
+  teamId,
   source,
   job,
   jobLoading,
@@ -1711,6 +1795,7 @@ function TestResultsCard({
   retesting: boolean;
   onRetest: () => void;
   onClose: () => void;
+  teamId: number;
 }) {
   // A polled job is the freshest view while it runs; once the source has a newer test, the source wins.
   const jobIsCurrent = !!job && (source.last_test_job_id == null || source.last_test_job_id === job.id);
@@ -1730,6 +1815,10 @@ function TestResultsCard({
         : sourceSamples;
   const isLinux = source.kind === "linux_servers";
   const tier1 = isLinux && source.config?.tier !== 2;
+  // #150: the job whose result these rows are (the evidence a host key decision is bound to)
+  const evidenceJobId = jobSamples && jobSamples.length && job ? job.id : source.last_test_job_id ?? null;
+  const canDecide = decisionsAllowed(source.config?.host_key_policy) && evidenceJobId != null && !open;
+  const anyChanged = canDecide && rows.some((r) => r.status === "host_key_changed");
 
   return (
     <SectionCard
@@ -1809,6 +1898,9 @@ function TestResultsCard({
                             {sampleLabel(sample.status)}
                           </StatusBadge>
                           {sample.note && <p className="text-xs text-zinc-500 mt-1 whitespace-normal break-words">{sample.note}</p>}
+                          {anyChanged && evidenceJobId != null && (
+                            <HostKeyDecisionActions teamId={teamId} sourceId={source.id} jobId={evidenceJobId} sample={sample} />
+                          )}
                         </TableCell>
                       </TableRow>
                     );
@@ -1821,5 +1913,88 @@ function TestResultsCard({
         )}
       </div>
     </SectionCard>
+  );
+}
+
+// ---------------------------------------------------------------------------- host key decisions (#150)
+function HostKeyDecisionActions({
+  teamId,
+  sourceId,
+  jobId,
+  sample,
+}: {
+  teamId: number;
+  sourceId: number;
+  jobId: number;
+  sample: CbomTestSample;
+}) {
+  const queryClient = useQueryClient();
+  const change = hostKeyChange(sample.status, sample.note);
+  const [asking, setAsking] = useState<"accept" | "forget" | null>(null);
+  const resetsQuery = useQuery({
+    queryKey: cbomSourcesKeys.hostKeyResets(teamId, sourceId),
+    queryFn: () => listCbomHostKeyResets(teamId, sourceId),
+    enabled: !!change,
+  });
+  const decide = useMutation({
+    mutationFn: (action: "accept" | "forget") =>
+      createCbomHostKeyReset(teamId, sourceId, {
+        job_id: jobId,
+        target: sample.target,
+        action,
+        ...(action === "accept" && change?.presented ? { fingerprint: change.presented } : {}),
+      }),
+    onSuccess: () => {
+      setAsking(null);
+      queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.hostKeyResets(teamId, sourceId) });
+    },
+  });
+  if (!change) return null;
+  const pending = pendingFor(resetsQuery.data, sample.target);
+  return (
+    <div className="mt-2 space-y-1" data-testid="host-key-decision">
+      {pending ? (
+        <p className="text-xs text-amber-700 dark:text-amber-400 whitespace-normal break-words" data-testid="host-key-decision-pending">
+          {pendingLabel(pending)}
+        </p>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {change.presented && (
+            <Button size="sm" variant="outline" className="cursor-pointer" onClick={() => setAsking("accept")}
+                    data-testid="host-key-accept">
+              Accept new host key
+            </Button>
+          )}
+          <Button size="sm" variant="ghost" className="cursor-pointer" onClick={() => setAsking("forget")}
+                  data-testid="host-key-forget">
+            Forget remembered key
+          </Button>
+        </div>
+      )}
+      <ConfirmDialog
+        open={asking !== null}
+        onOpenChange={(v) => !v && setAsking(null)}
+        title={asking === "accept" ? `Accept the new host key of ${sample.target}?` : `Forget the remembered host key of ${sample.target}?`}
+        description={
+          <span className="block space-y-2">
+            <span className="block font-medium text-red-700 dark:text-red-400">
+              {asking === "accept" ? ACCEPT_WARNING : FORGET_WARNING}
+            </span>
+            {change.pinned && <span className="block font-mono text-xs break-all">Remembered: {change.pinned}</span>}
+            {asking === "accept" && change.presented && (
+              <span className="block font-mono text-xs break-all">New: {change.presented}</span>
+            )}
+            <span className="block text-xs">
+              Compare the new key with the server itself (ssh-keygen -l -f /etc/ssh/ssh_host_*_key.pub). Your decision
+              is recorded in the audit log with your name.
+            </span>
+          </span>
+        }
+        confirmLabel={asking === "accept" ? "Accept this key" : "Forget the key"}
+        destructive
+        pending={decide.isPending}
+        onConfirm={() => asking && decide.mutate(asking)}
+      />
+    </div>
   );
 }

@@ -32,6 +32,7 @@ gates true-miss=0 across the full set (`bench/diff.py`). Needs the OSS tools on 
 ```
 uv tool install ai-bom                                      # Trusera
 uv tool install --python 3.13 "cisco-aibom[agentic,llm-aws]"  # Cisco
+cp RabbitMQ/worker/.env.example RabbitMQ/worker/.env   # fill in AWS values; never commit .env
 set -a; source RabbitMQ/worker/.env; set +a                 # AWS creds for Bedrock
 MAXJ=3 bash bench/run_all.sh                                 # all 3 tools × 11 repos
 python3 bench/diff.py                                        # report.md + gate (exit 1 on true-miss)

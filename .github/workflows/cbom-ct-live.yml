@@ -2,7 +2,13 @@ name: CBOM CT discovery live proof
 
 # Certificate Transparency discovery reads public CT search providers over the internet. The development box has no
 # outbound internet, so the provider responses used as test fixtures, and the live proof that the collector stores
-# exactly what the provider returned, are recorded here, on a GitHub runner.
+# exactly what the provider returned, are recorded here, on a GitHub-hosted runner.
+#
+# These jobs stay on ubuntu-latest even for a pull request from this repository. Cert Spotter's free quota is 10
+# full-domain queries an hour per source address, and the comment below counts on one fresh address per job. The
+# dss-vm runners share this host's one address, and the quota job spends it, so the row-by-row jobs answer 429 there
+# (run 43621427760: "the provider answered 429; the oracle cannot judge this run"). A fork is ubuntu-latest either
+# way; this file does not use the fork expression.
 #
 # Not part of ci-gate (a separate workflow; nothing requires it): a provider outage or rate limit must not block a
 # merge. It runs only when the CT files change, or by hand once this file is on the default branch.
@@ -34,7 +40,7 @@ jobs:
   capture:
     name: record provider responses
     if: github.event_name == 'workflow_dispatch'
-    runs-on: ${{ github.event.pull_request && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'dss-vm' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 25
     continue-on-error: true
     steps:
@@ -71,7 +77,7 @@ jobs:
   # (each job is a fresh runner): before + product + after = 3 x 2 queries for a one-page domain.
   live-proof:
     name: collector vs provider, row by row (${{ matrix.domain }})
-    runs-on: ${{ github.event.pull_request && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'dss-vm' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     continue-on-error: true
     strategy:
@@ -147,7 +153,7 @@ jobs:
   # side.
   live-paging:
     name: paging live (www.google.com)
-    runs-on: ${{ github.event.pull_request && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'dss-vm' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     continue-on-error: true
     env:
@@ -208,7 +214,7 @@ jobs:
   # answers 502 often, so up to three runs).
   live-quota-fallback:
     name: 429 and fallback live
-    runs-on: ${{ github.event.pull_request && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'dss-vm' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     continue-on-error: true
     env:

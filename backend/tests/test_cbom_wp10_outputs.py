@@ -44,6 +44,11 @@ WEAK_TLS = {"type": "tls_endpoint", "target": "10.20.0.1", "location": "10.20.0.
 FIXED_TLS = {**WEAK_TLS, "facts": {"protocols": ["TLSv1.2", "TLSv1.3"], "group": "x25519"}}
 GONE = {"type": "ssh_host_key", "target": "10.20.0.1", "location": "/etc/ssh/ssh_host_dsa_key.pub", "name": "DSA host key",
         "algorithm": "ssh-dss", "key_size": 1024, "facts": {"type": "ssh-dss", "bits": 1024}}
+# A host key of a type algid does not know: no finding, no quantum verdict (class unknown, a Q0 gap). GONE is a DSA
+# key since #126 taught algid the SSH DSA names, so the scenarios that need an unknown key use this one.
+UNKNOWN_KEY = {"type": "ssh_host_key", "target": "10.20.0.1", "location": "/etc/ssh/ssh_host_vendor_key.pub",
+               "name": "Vendor host key", "algorithm": "ssh-vendorkey@example.com", "key_size": 1024,
+               "facts": {"type": "ssh-vendorkey@example.com", "bits": 1024}}
 ADDED = {"type": "ssh_host_key", "target": "10.20.0.1", "location": "/etc/ssh/ssh_host_ed25519_key.pub",
          "name": "ED25519 host key", "algorithm": "ssh-ed25519", "key_size": 256, "facts": {"type": "ssh-ed25519", "bits": 256}}
 OPENSSL = {"type": "crypto_library", "target": "10.20.0.1", "location": "package:openssl", "name": "openssl",
@@ -80,6 +85,11 @@ def _collect(api, hdr, claim: dict, assets: list[dict], *, ok=1, failed=0) -> No
 def two_runs(api, world):
     """Sources A (complete twice) and B (complete, then partial). Between the runs: A's certificate was renewed, its
     TLS endpoint fixed, the DSA host key removed and an Ed25519 key added."""
+    return make_two_runs(api, world)
+
+
+def make_two_runs(api, world, gone=GONE):
+    """two_runs, with ``gone`` as the host key run 1 has and run 2 no longer has."""
     engine, _ = world
     node_id, token, _ = enroll_node(api)
     hdr = {"X-ZS-Node-Token": token}
@@ -88,7 +98,7 @@ def two_runs(api, world):
     b = api("POST", "/1/cbom/sources/items", json=linux_body("src-b", node_id=node_id, targets=["10.20.0.2"],
                                                             window="any")).json()["source"]
     run1 = _run(api, "wp10-run-0001")
-    _collect(api, hdr, _claim(api, hdr), [OLD_CERT, WEAK_TLS, GONE, OPENSSL])
+    _collect(api, hdr, _claim(api, hdr), [OLD_CERT, WEAK_TLS, gone, OPENSSL])
     _collect(api, hdr, _claim(api, hdr), [{**WEAK_TLS, "target": "10.20.0.2", "location": "10.20.0.2:443"}])
     run2 = _run(api, "wp10-run-0002")
     _collect(api, hdr, _claim(api, hdr), [NEW_CERT, FIXED_TLS, ADDED, OPENSSL])
@@ -150,6 +160,7 @@ def test_a_rule_change_is_re_judged_and_labelled_not_reported_as_drift(api, two_
         lib = s.exec(select(CbomCollectedAsset).where(CbomCollectedAsset.run_id == run1["id"],
                                                       CbomCollectedAsset.asset_type == "crypto_library")).one()
         lib.finding_codes = [*(lib.finding_codes or []), "OLD_RULE"]
+        lib.content_digest = None  # a changed stored row: digest unknown (#352)
         s.add(lib)
         s.commit()
     d = api("GET", f"/1/cbom/sources/runs/{run2['id']}/diff").json()

@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CirclePlay, CircleX, Loader2, OctagonX, Pencil, Plus, Radar, ShieldCheck, Trash2, X } from "lucide-react";
 import { Fragment, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { toast } from "@/utils/toast";
+import { socNodes } from "./nodeNetwork";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -36,7 +37,7 @@ import {
 import AppliancesSection from "./AppliancesSection";
 import { cbomSourcesKeys } from "./keys";
 import { MetadataFields, metadataConfig, metadataFrom, type SourceMetadata } from "./SourceMetadata";
-import { exclusionSaveError, hostnameError, RANGE_HINT, rangeError, storedExclusionIssue, teamExclusionError } from "./teamNeverScan";
+import { exclusionSaveError, heldFor, heldNote, hostnameError, RANGE_HINT, rangeError, storedExclusionIssue, teamExclusionError } from "./teamNeverScan";
 import { sampleDetail, sweepTotals, totalsLine } from "./networkEstimate";
 import {
   addressProgress,
@@ -80,6 +81,11 @@ const PROTOCOLS: { value: string; label: string }[] = [
   { value: "starttls-ldap", label: "LDAP StartTLS" },
   { value: "starttls-smtp", label: "SMTP StartTLS" },
   { value: "starttls-imap", label: "IMAP StartTLS" },
+  { value: "starttls-pop3", label: "POP3 STLS" },
+  { value: "starttls-ftp", label: "FTP AUTH TLS" },
+  // XMPP needs the server's XMPP domain: the node uses the first SNI host name that resolves to the address
+  { value: "starttls-xmpp", label: "XMPP StartTLS (client, 5222)" },
+  { value: "starttls-xmpp-server", label: "XMPP StartTLS (server-to-server, 5269)" },
   { value: "starttls-postgres", label: "PostgreSQL TLS" },
   { value: "starttls-mysql", label: "MySQL TLS" },
   { value: "tds", label: "SQL Server (TDS)" },
@@ -346,6 +352,8 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
   const ranges = rangesQuery.data?.sources.filter((s) => s.kind === "network_range") ?? [];
   const serverNow = rangesQuery.data?.server_time;
   const nodes = nodesQuery.data?.nodes ?? [];
+  // #181: host-agent nodes (agent mode, one per Kubernetes node) never scan networks, so the SOC needs none of them
+  const soc = socNodes(nodes);
   const stopped = settings.stop_all_network;
 
   // Effective values: the unsaved draft over the saved row.
@@ -495,16 +503,27 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
                 />
               ) : (
                 ranges.length > 0 && (
+                  // Staging QA B6-3: the table used to be min-w-max (695 px) inside a 496/576 px card at 1440/1920 px, so
+                  // the last-test badge was cut and Actions sat off-screen. It now fits the card: fixed column shares,
+                  // the mode under the range (no column of its own), node names and the badge wrap, and Actions stays
+                  // pinned on the right when a phone-width card still has to scroll.
                   <ScrollArea className="w-full border rounded-lg">
-                    <div className="min-w-max">
-                      <Table data-testid="network-ranges-table">
+                    <div className="min-w-[420px]">
+                      <Table className="table-fixed" data-testid="network-ranges-table">
+                        <colgroup>
+                          <col className="w-[31%]" />
+                          <col className="w-[23%]" />
+                          <col />
+                          <col className="w-[84px]" />
+                        </colgroup>
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Range <InfoTip id="cbsrc.net.col.range" /></TableHead>
-                            <TableHead>Scan node <InfoTip id="cbsrc.col.node" /></TableHead>
-                            <TableHead>Mode <InfoTip id="cbsrc.net.col.mode" /></TableHead>
-                            <TableHead>Last test <InfoTip id="cbsrc.col.last_test" /></TableHead>
-                            <TableHead className="w-24">
+                            <TableHead className="whitespace-normal">
+                              Range <InfoTip id="cbsrc.net.col.range" /> · Mode <InfoTip id="cbsrc.net.col.mode" />
+                            </TableHead>
+                            <TableHead className="whitespace-normal">Scan node <InfoTip id="cbsrc.col.node" /></TableHead>
+                            <TableHead className="whitespace-normal">Last test <InfoTip id="cbsrc.col.last_test" /></TableHead>
+                            <TableHead className="sticky right-0 bg-white dark:bg-zinc-900">
                               <span className="sr-only">Actions</span>
                             </TableHead>
                           </TableRow>
@@ -520,8 +539,8 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
                                 data-testid="network-range-row"
                                 data-disabled={r.enabled ? undefined : "true"}
                               >
-                                <TableCell>
-                                  <span className={cn("font-mono text-xs", r.enabled ? "text-zinc-900 dark:text-white" : "text-zinc-500 line-through")}>{cidr}</span>
+                                <TableCell className="whitespace-normal align-top">
+                                  <span className={cn("font-mono text-xs break-all", r.enabled ? "text-zinc-900 dark:text-white" : "text-zinc-500 line-through")}>{cidr}</span>
                                   {!r.enabled && (
                                     <span className="ml-2 align-middle">
                                       <StatusBadge tone="zinc" title="Disabled ranges are not swept and not counted in Before the first run">Disabled</StatusBadge>
@@ -531,18 +550,24 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
                                     {pluralize(r.target_count, "address", "addresses")}
                                     {!r.enabled && " · not swept"}
                                   </span>
+                                  <span className="block text-xs text-zinc-600 dark:text-zinc-400" data-testid="network-range-mode">
+                                    {r.config?.mode === "fragile" ? (
+                                      <StatusBadge tone="amber" className="whitespace-normal text-left h-auto">Fragile: version check only</StatusBadge>
+                                    ) : (
+                                      "Full mode"
+                                    )}
+                                  </span>
                                 </TableCell>
-                                <TableCell className="max-w-[180px]">
-                                  <Truncate className="text-zinc-700 dark:text-zinc-300" text={r.node_name ?? "No node"} />
+                                <TableCell className="whitespace-normal align-top">
+                                  <span className="block text-zinc-700 dark:text-zinc-300 [overflow-wrap:anywhere]" title={r.node_name ?? undefined}>
+                                    {r.node_name ?? "No node"}
+                                  </span>
                                   {r.node_status && r.node_status !== "online" && <NodeStatusBadge status={r.node_status} />}
                                 </TableCell>
-                                <TableCell className="text-zinc-600 dark:text-zinc-400">
-                                  {r.config?.mode === "fragile" ? <StatusBadge tone="amber">Fragile: version check only</StatusBadge> : "Full"}
-                                </TableCell>
-                                <TableCell className="whitespace-normal max-w-[220px]">
+                                <TableCell className="whitespace-normal align-top [overflow-wrap:anywhere]">
                                   <RangeTestCell teamId={teamId} source={r} serverNow={serverNow} />
                                 </TableCell>
-                                <TableCell>
+                                <TableCell className="sticky right-0 bg-white dark:bg-zinc-900 align-top">
                                   <div className="flex items-center justify-end gap-1">
                                     <Button
                                       variant="ghost"
@@ -639,6 +664,14 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
                                   <div id={noteId} className="space-y-1">
                                     <StatusBadge tone="amber" title={issue}>Host name: resolved on the scan node</StatusBadge>
                                     <p className="text-xs text-zinc-600 dark:text-zinc-400">{issue}</p>
+                                    {heldFor(e.cidr, settings.never_scan_held).map((h) => (
+                                      <div key={h.node_id} className="space-y-1" data-testid="network-exclusion-held">
+                                        <StatusBadge tone="red">Held on {h.node_name}</StatusBadge>
+                                        <p className="text-xs text-red-600 dark:text-red-400">
+                                          {heldNote(h.node_name, formatDateTime(h.since))}
+                                        </p>
+                                      </div>
+                                    ))}
                                   </div>
                                 </TableCell>
                               </TableRow>
@@ -691,7 +724,12 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
               <p className="text-xs text-zinc-500">
                 This list always wins. The node refuses these addresses even if a job asks for them, in every job of
                 this team: a server, database, registry or Kubernetes API whose name resolves to a listed address is
-                skipped as a whole, and ranges are checked one address at a time. This list takes addresses, ranges
+                skipped as a whole, with every address it resolves to, also inside ranges. Ranges are checked one
+                address at a time: an IPv6 address of a host listed only by its IPv4 address is skipped only when a
+                target or SNI hostname of the job answers both, so list such a host by name or by both addresses.
+                The other addresses of a skipped name are left out for the whole job, so a shared load-balancer or
+                VIP address that the name also resolves to is skipped for every host behind it.
+                This list takes addresses, ranges
                 and hostnames. A listed hostname covers every address it resolves to from the scan node, in range
                 sweeps too; until it resolves there, the node scans nothing for this team (localhost and the other
                 loopback names cover only 127.0.0.0/8 and ::1 and are never looked up).
@@ -874,7 +912,7 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
             </Section>
 
             <Section infoId="cbsrc.net.soc" title="Tell your SOC" badge={unsaved("soc")}>
-              {nodes.length === 0 ? (
+              {soc.listed.length === 0 ? (
                 <EmptyState
                   title="No scan nodes yet"
                   body="Each scan node's source IPs appear here once it registers, ready to share with your SOC."
@@ -896,7 +934,7 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {nodes.map((n) => (
+                        {soc.listed.map((n) => (
                           <SocRow key={n.id} node={n} />
                         ))}
                       </TableBody>
@@ -904,6 +942,11 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
                   </div>
                   <ScrollBar orientation="horizontal" />
                 </ScrollArea>
+              )}
+              {soc.agents > 0 && (
+                <p className="text-xs text-zinc-500" data-testid="network-soc-agents">
+                  {pluralize(soc.agents, "host-agent node")} not listed: they collect only their own Kubernetes node and never scan networks.
+                </p>
               )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <Field infoId="cbsrc.net.soc_email" label="SOC email" htmlFor="network-soc-email" error={errorFor("soc_email")}>
@@ -1075,6 +1118,7 @@ function RangeTestCell({ teamId, source, serverNow }: { teamId: number; source: 
           status={source.last_test_status}
           title={source.last_test_summary}
           detail={sampleDetail(source.last_test_status, source.last_test_result)}
+          className="whitespace-normal text-left h-auto"
         />
       )}
       {detail && <span className="block text-xs text-zinc-500">{detail}</span>}

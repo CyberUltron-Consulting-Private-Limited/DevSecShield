@@ -84,8 +84,7 @@ def test_expand_dedupes_and_respects_never_scan(monkeypatch):
     never = NeverScan(["10.0.0.0/30", "skip.example", "10.0.1.5-10.0.1.6"])
     targets, skipped = expand_targets(["10.0.0.1", "10.0.0.0/29", "10.0.0.6", "10.0.1.4-10.0.1.7", "skip.example"], never)
     ips = [t.ip for t in targets]
-    # a /29 is scanned whole (N3: only a /24 or larger leaves out its network and broadcast address)
-    assert ips == ["10.0.0.4", "10.0.0.5", "10.0.0.6", "10.0.0.7", "10.0.1.4", "10.0.1.7"]
+    assert ips == ["10.0.0.4", "10.0.0.5", "10.0.0.6", "10.0.1.4", "10.0.1.7"]
     assert "skip.example" in skipped and "10.0.0.1" in skipped
 
 
@@ -320,7 +319,12 @@ def test_winrm_name_must_not_resolve_to_a_never_scan_address(monkeypatch):
     with pytest.raises(W._Fail) as err:
         W.check_name(ctx, Target("winhost.corp", "10.0.0.5"))
     assert err.value.status == "skipped_never_scan"
-    W.check_name(ctx, Target("10.0.0.5", "10.0.0.5"))  # an IP target is the address that was checked
+    # #17: this job resolved winhost.corp to both addresses, so 10.0.0.5 is that never-scan host as an IP target too
+    with pytest.raises(W._Fail, match="an address of winhost.corp"):
+        W.check_name(ctx, Target("10.0.0.5", "10.0.0.5"))
+    ctx = _ctx()
+    ctx.never_scan = NeverScan(["10.0.0.6/32"])
+    W.check_name(ctx, Target("10.0.0.5", "10.0.0.5"))  # in a job that resolved no name of it: only the address itself
     ctx.never_scan.update(["10.0.0.6/32", "10.0.0.5/32"])  # added after the job started
     with pytest.raises(W._Fail) as err:
         W.check_name(ctx, Target("10.0.0.5", "10.0.0.5"))

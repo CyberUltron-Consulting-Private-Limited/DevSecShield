@@ -9,6 +9,8 @@ import assert from "node:assert/strict"
 
 import {
   ADDRESS_TYPO,
+  heldFor,
+  heldNote,
   exclusionSaveError,
   isLoopbackName,
   LOOPBACK_NAMES,
@@ -64,9 +66,16 @@ assert.equal(exclusionSaveError(refused(422, [{ loc: ["body"], msg: "x" }])), nu
 assert.equal(exclusionSaveError(new Error("network down")), null)
 assert.equal(exclusionSaveError(null), null)
 
+// Minor 2: a held name, per node, matched to its stored entry (case and a trailing dot aside)
+const held = [{ name: "shop.lab", node_id: 1, node_name: "dc-1" }, { name: "shop.lab", node_id: 2, node_name: "dc-2" }, { name: "pay.lab", node_id: 1, node_name: "dc-1" }]
+assert.deepEqual(heldFor("Shop.Lab.", held).map((h) => h.node_name), ["dc-1", "dc-2"])
+assert.deepEqual(heldFor("10.0.0.0/24", held), [])
+assert.deepEqual(heldFor("shop.lab", undefined), [])
+assert.equal(heldNote("dc-1", "14 Nov, 08:30"), "dc-1 cannot resolve this name (since 14 Nov, 08:30), so it scans no network address for this team: every job of the team on dc-1 that connects to an address (servers, appliances, databases, registries, range sweeps) holds all its targets until the name resolves there or is removed from this list. Jobs that reach no address, such as a PKCS#11 token on the node, still run.")
+
 // N3: the range form says which addresses a range scans (the node and the backend count the same)
-assert.ok(RANGE_HINT.includes("A /24 or larger skips its network and broadcast addresses"))
-assert.ok(RANGE_HINT.includes("a /25 or smaller (half of a split /24, say) is scanned whole"))
+assert.ok(RANGE_HINT.includes("skipped only at the edges of the network your ranges form together, disabled ranges included"))
+assert.ok(RANGE_HINT.includes("a /24 split into two /25s still scans .127 and .128; a subnet on its own skips its own"))
 
 // names that are loopback by definition: the node blocks only 127.0.0.0/8 and ::1 for them and holds nothing
 for (const name of ["localhost", "LOCALHOST.", " db.localhost ", "a.b.localhost", "ip6-localhost", "ip6-loopback", "localhost.localdomain",
@@ -85,6 +94,11 @@ assert.equal(storedExclusionIssue("ip6-localhost"), loopbackIssue)
 assert.ok(storedExclusionIssue("printer")!.includes("every job of this team waits"))
 // the hint of a server source's own list says it too (rendered by ServersTab: neverScanRender.test.ts)
 assert.ok(SOURCE_NEVER_SCAN_HINT.includes("are not looked up: they cover only 127.0.0.0/8 and ::1"))
+// #17: a name is skipped with every address it resolves to; the range limit is stated, with what covers it
+assert.ok(SOURCE_NEVER_SCAN_HINT.includes("skipped, with every address it resolves to"))
+assert.ok(SOURCE_NEVER_SCAN_HINT.includes("list such a host by name or by both addresses"))
+// #370 review: the shared-address effect is stated where the customer types the list
+assert.ok(SOURCE_NEVER_SCAN_HINT.includes("shared load-balancer or VIP address"))
 
 // the Network tab and the Servers tab are tested rendered, as a customer uses them: neverScanRender.test.ts
 console.log("team never-scan tests passed")

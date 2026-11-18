@@ -22,6 +22,7 @@ import {
   type AgilityModel,
   type AgilityPosture,
   type FixClassFields,
+  type FixValue,
 } from "./model";
 import { InfoTip } from "@/components/ui/info-tip";
 import { fixClassTipId } from "./tips";
@@ -139,18 +140,186 @@ export function AgilityDistribution({ posture }: { posture: AgilityPosture }) {
   );
 }
 
+/** 06-B "who fixes it" groups: the six values (every one listed, 0 included) under the party that does the fix. */
+const WHO_FIXES: { key: string; title: string; values: FixValue[] }[] = [
+  { key: "team", title: "Your team", values: ["configurable", "code-fixed"] },
+  { key: "vendor", title: "The vendor", values: ["vendor-fixed"] },
+  { key: "hardware", title: "Hardware refresh", values: ["hardware-fixed"] },
+  { key: "unknown", title: "Unknown", values: ["unknown"] },
+  { key: "none", title: "Nothing to change", values: ["none"] },
+];
+
+/** 06-B (run results redesign): the self-fixable headline, the "All findings / Excluding post-quantum" switch and one
+ * card per party that fixes (your team, the vendor, a hardware refresh, unknown, nothing to change) with each
+ * class's count and share and its tip. The same counts and hooks as AgilityDistribution (`posture-fix-distribution`,
+ * `posture-fix-<value>`, `posture-fix-self-fixable`, `posture-fix-view-*`). */
+export function AgilityWhoFixes({ posture }: { posture: AgilityPosture }) {
+  const [exclPq, setExclPq] = useState(false);
+  const counts = exclPq ? posture.fix_classes_excl_pq : posture.fix_classes;
+  const d = fixDistribution(counts, posture.assets);
+  const pct = exclPq ? selfFixablePct(counts ?? {}) : posture.fix_class_self_fixable_pct ?? selfFixablePct(counts ?? {});
+  const byValue = new Map(d.segments.map((s) => [s.value, s]));
+  const seg = "rounded-md px-2.5 py-1 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50";
+  return (
+    <div className="space-y-3" data-testid="posture-fix-distribution" data-view={exclPq ? "excl_pq" : "all"} data-total={d.total}
+         data-layout="who-fixes">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 min-w-0">
+          <span className="text-3xl font-bold tabular-nums text-zinc-900 dark:text-white" data-testid="posture-fix-self-fixable" data-pct={pct ?? ""}>
+            {pct == null ? "—" : `${pct}%`}
+          </span>
+          <span className="text-xs text-zinc-600 dark:text-zinc-400">
+            {pct == null
+              ? "self-fixable: no asset has one of the four fix classes"
+              : `self-fixable: ${d.selfFixable} of ${d.classified} assets with a fix class are configurable or code-fixed`}
+          </span>
+          <InfoTip id="cbom.agility.self_fixable" />
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <div className="inline-flex rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 p-0.5"
+               role="group" aria-label="Codes counted">
+            <button type="button" aria-pressed={!exclPq} onClick={() => setExclPq(false)} data-testid="posture-fix-view-all"
+                    className={`${seg} ${!exclPq ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-white" : "text-zinc-600 dark:text-zinc-400"}`}>
+              All findings
+            </button>
+            <button type="button" aria-pressed={exclPq} onClick={() => setExclPq(true)} data-testid="posture-fix-view-excl-pq"
+                    disabled={!posture.fix_classes_excl_pq}
+                    className={`${seg} ${exclPq ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-white" : "text-zinc-600 dark:text-zinc-400"}`}>
+              Excluding post-quantum
+            </button>
+          </div>
+          <InfoTip id="cbom.agility.excl_pq" />
+        </div>
+      </div>
+      <ul className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
+        {WHO_FIXES.map((g) => {
+          const n = g.values.reduce((sum, v) => sum + (byValue.get(v)?.count ?? 0), 0);
+          const share = d.total ? Math.round((1000 * n) / d.total) / 10 : 0;
+          return (
+            <li key={g.key} className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50/60 dark:bg-zinc-950/40 p-3 min-w-0 space-y-2"
+                data-testid={`posture-fix-who-${g.key}`} data-count={n}>
+              <div className="flex items-center gap-2">
+                <span className={`inline-block h-2.5 w-2.5 rounded-sm ${byValue.get(g.values[0])?.bar ?? ""}`} aria-hidden="true" />
+                <span className="text-sm font-semibold text-zinc-900 dark:text-white">{g.title}</span>
+              </div>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-2xl font-bold tabular-nums text-zinc-900 dark:text-white">{n}</span>
+                {d.total > 0 && <span className="text-xs text-zinc-500 dark:text-zinc-400 tabular-nums">({share}%)</span>}
+              </div>
+              <ul className="space-y-1">
+                {g.values.map((v) => {
+                  const s = byValue.get(v)!;
+                  const tip = v === "unknown" ? "cbom.agility.unknown" : fixClassTipId(v);
+                  return (
+                    <li key={v} className="flex flex-wrap items-center gap-1.5 text-xs text-zinc-700 dark:text-zinc-300"
+                        data-testid={`posture-fix-${v}`} data-count={s.count}>
+                      <span className={`inline-block h-2 w-2 rounded-sm ${s.bar}`} aria-hidden="true" />
+                      <span>{s.text}</span>
+                      <span className="font-semibold tabular-nums">{s.count}</span>
+                      {d.total > 0 && <span className="text-zinc-500 dark:text-zinc-400 tabular-nums">({s.pct}%)</span>}
+                      {tip && <InfoTip id={tip} />}
+                    </li>
+                  );
+                })}
+              </ul>
+            </li>
+          );
+        })}
+      </ul>
+      {!d.consistent && (
+        <p className="text-xs text-red-600 dark:text-red-400" role="alert" data-testid="posture-fix-mismatch">
+          The fix-class counts ({d.total}) do not add up to the run&apos;s {posture.assets} assets: please report this.
+        </p>
+      )}
+    </div>
+  );
+}
+
 /** The run posture card "How hard is this to fix?": self-fixable headline, six counts (all / excluding post-quantum),
- * unknown reasons and the per-system table. Renders nothing when the posture has no fix classes (an older backend). */
-export function AgilityPostureCard({ teamId, posture, model }: {
+ * unknown reasons and the per-system table. Renders nothing when the posture has no fix classes (an older backend).
+ * `variant="run"` (the run results page's quantum view, 06-B): the counts as "who fixes it" cards (AgilityWhoFixes), the
+ * same tips, lists and hooks; without it the card renders exactly as before the redesign (also the team baseline). */
+export function AgilityPostureCard({ teamId, posture, model, variant }: {
   teamId?: number;
   posture: AgilityPosture;
   model?: AgilityModel | null;
+  variant?: "run";
 }) {
   const m = useModel(teamId, model);
   const [showSystems, setShowSystems] = useState(false);
   if (!posture.fix_classes) return null;
   const unknown = Object.entries(posture.unknown_reasons ?? {}).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
   const systems = posture.fix_class_systems ?? [];
+  const unknownBlock = unknown.length > 0 && (
+    <div data-testid="posture-fix-unknown-reasons">
+      <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Unknown: what was not read</p>
+      <ul className="space-y-0.5">
+        {unknown.map(([code, n]) => (
+          <li key={code} className="text-xs text-zinc-700 dark:text-zinc-300 flex gap-2" data-testid={`posture-fix-unknown-${code}`} data-count={n}>
+            <span className="font-semibold tabular-nums w-8 shrink-0 text-right">{n}</span>
+            <span className="min-w-0">{m?.unknown_reasons?.[code] ?? humanize(code)}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+  const systemsBlock = systems.length > 0 && (
+    <div>
+      <button type="button" className="text-xs text-blue-600 dark:text-blue-400 cursor-pointer" aria-expanded={showSystems}
+              onClick={() => setShowSystems(!showSystems)} data-testid="posture-fix-systems-toggle">
+        {showSystems ? "Hide" : "Show"} per system ({systems.length}{posture.fix_class_systems_truncated ? "+" : ""})
+      </button>
+      {showSystems && (
+        <div className="mt-2 overflow-x-auto">
+          <table className="w-full text-xs" data-testid="posture-fix-systems">
+            <thead>
+              <tr className="text-left text-zinc-500 dark:text-zinc-400">
+                <th className="py-1 pr-3 font-normal">System</th>
+                <th className="py-1 pr-3 font-normal text-right">Assets</th>
+                <th className="py-1 pr-3 font-normal">Hardest</th>
+                <th className="py-1 pr-3 font-normal text-right">Self-fixable</th>
+                <th className="py-1 font-normal text-right">Unknown</th>
+              </tr>
+            </thead>
+            <tbody>
+              {systems.map((s) => (
+                <tr key={s.key} className="border-t border-zinc-100 dark:border-zinc-800" data-testid={`posture-fix-system-${s.key}`}>
+                  <td className="py-1 pr-3 text-zinc-800 dark:text-zinc-200 break-all">
+                    {s.label} <span className="text-zinc-500 dark:text-zinc-400">({s.kind === "application" ? "application" : "source"})</span>
+                  </td>
+                  <td className="py-1 pr-3 text-right tabular-nums">{s.assets}</td>
+                  <td className="py-1 pr-3"><FixClassChip item={{ fix_class: s.hardest ?? "none" }} /></td>
+                  <td className="py-1 pr-3 text-right tabular-nums">{s.self_fixable_pct == null ? "—" : `${s.self_fixable_pct}%`}</td>
+                  <td className="py-1 text-right tabular-nums">{s.counts.unknown ?? 0}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {posture.fix_class_systems_truncated && (
+            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">The largest {systems.length} systems are listed.</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+  if (variant === "run") {
+    return (
+      <div className="space-y-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 sm:p-5 min-w-0"
+           data-testid="posture-fix" data-variant="run" data-agility-version={posture.agility_version}>
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-base font-semibold text-zinc-900 dark:text-white">How hard is this to fix? <InfoTip id="cbom.agility.section" /></p>
+          <span className="text-xs text-zinc-500 dark:text-zinc-400">Crypto-agility: the hardest fix class of each asset</span>
+        </div>
+        <AgilityWhoFixes posture={posture} />
+        <p className="flex flex-wrap items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400" data-testid="posture-fix-likely">
+          <span>&quot;Likely&quot;: no fact the product read decides that class; it is the table&apos;s default.</span>
+          <InfoTip id="cbom.agility.inferred" />
+        </p>
+        {unknownBlock}
+        {systemsBlock}
+      </div>
+    );
+  }
   return (
     <div className="space-y-3 rounded-lg border border-zinc-200 dark:border-zinc-800 p-3 min-w-0" data-testid="posture-fix"
          data-agility-version={posture.agility_version}>
@@ -167,58 +336,8 @@ export function AgilityPostureCard({ teamId, posture, model }: {
         <span className="inline-flex flex-wrap items-center gap-1">Unknown <InfoTip id="cbom.agility.unknown" /></span>
         <span className="inline-flex flex-wrap items-center gap-1">Likely <InfoTip id="cbom.agility.inferred" /></span>
       </div>
-      {unknown.length > 0 && (
-        <div data-testid="posture-fix-unknown-reasons">
-          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Unknown: what was not read</p>
-          <ul className="space-y-0.5">
-            {unknown.map(([code, n]) => (
-              <li key={code} className="text-xs text-zinc-700 dark:text-zinc-300 flex gap-2" data-testid={`posture-fix-unknown-${code}`} data-count={n}>
-                <span className="font-semibold tabular-nums w-8 shrink-0 text-right">{n}</span>
-                <span className="min-w-0">{m?.unknown_reasons?.[code] ?? humanize(code)}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-      {systems.length > 0 && (
-        <div>
-          <button type="button" className="text-xs text-blue-600 dark:text-blue-400 cursor-pointer" aria-expanded={showSystems}
-                  onClick={() => setShowSystems(!showSystems)} data-testid="posture-fix-systems-toggle">
-            {showSystems ? "Hide" : "Show"} per system ({systems.length}{posture.fix_class_systems_truncated ? "+" : ""})
-          </button>
-          {showSystems && (
-            <div className="mt-2 overflow-x-auto">
-              <table className="w-full text-xs" data-testid="posture-fix-systems">
-                <thead>
-                  <tr className="text-left text-zinc-500 dark:text-zinc-400">
-                    <th className="py-1 pr-3 font-normal">System</th>
-                    <th className="py-1 pr-3 font-normal text-right">Assets</th>
-                    <th className="py-1 pr-3 font-normal">Hardest</th>
-                    <th className="py-1 pr-3 font-normal text-right">Self-fixable</th>
-                    <th className="py-1 font-normal text-right">Unknown</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {systems.map((s) => (
-                    <tr key={s.key} className="border-t border-zinc-100 dark:border-zinc-800" data-testid={`posture-fix-system-${s.key}`}>
-                      <td className="py-1 pr-3 text-zinc-800 dark:text-zinc-200 break-all">
-                        {s.label} <span className="text-zinc-500 dark:text-zinc-400">({s.kind === "application" ? "application" : "source"})</span>
-                      </td>
-                      <td className="py-1 pr-3 text-right tabular-nums">{s.assets}</td>
-                      <td className="py-1 pr-3"><FixClassChip item={{ fix_class: s.hardest ?? "none" }} /></td>
-                      <td className="py-1 pr-3 text-right tabular-nums">{s.self_fixable_pct == null ? "—" : `${s.self_fixable_pct}%`}</td>
-                      <td className="py-1 text-right tabular-nums">{s.counts.unknown ?? 0}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {posture.fix_class_systems_truncated && (
-                <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">The largest {systems.length} systems are listed.</p>
-              )}
-            </div>
-          )}
-        </div>
-      )}
+      {unknownBlock}
+      {systemsBlock}
     </div>
   );
 }

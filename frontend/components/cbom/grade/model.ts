@@ -102,6 +102,10 @@ export interface QPosture {
   assets?: number;
   q_grades?: Partial<Record<string, number>>;
   q0_reasons?: Record<string, number>;
+  /** the run's assets graded Q0 Unknown per reason (sums to the Q0 Unknown bucket of q_grades); absent on an older backend */
+  q0_reason_assets?: Record<string, number>;
+  /** the unread scope per reason, in items (sums to q0_counts.scope_items); absent on an older backend */
+  q0_scope_reasons?: Record<string, number>;
   q0_items?: Q0Item[];
   q0_items_total?: number;
   q0_counts?: { assets: number; scope_items: number; scope_rows: number };
@@ -134,6 +138,17 @@ export function gradeText(grade: string | null | undefined): string | null {
   return isGrade(grade) ? `${grade} ${GRADE_WORD[grade]}` : `${grade} (unrecognised grade)`;
 }
 
+/** A family x source heat-map cell's label and the grade its colour follows: its worst known grade; with none, the
+ * Unknown grade's label ("... only") when the cell holds Unknown assets, else "No grade" (libraries, broken-today
+ * symmetric ciphers: nothing to grade). */
+export function heatCellLabel(cell: { worst: string | null; q0?: number | null; counts?: Record<string, number> | null }):
+    { text: string; grade: string | null } {
+  if (cell.worst) return { text: gradeText(cell.worst) ?? cell.worst, grade: cell.worst };
+  const unknownKey = GRADE_KEYS[0];
+  const unknown = Number(cell.q0 ?? cell.counts?.[unknownKey]) || 0;
+  return unknown > 0 ? { text: `${gradeText(unknownKey)} only`, grade: unknownKey } : { text: "No grade", grade: null };
+}
+
 export function gradeChipClass(grade: string | null | undefined): string {
   return isGrade(grade) ? GRADE_STYLE[grade].chip : NONE_STYLE.chip;
 }
@@ -157,6 +172,37 @@ export function gradeTitle(item: QGradeFields, reasons?: Map<string, string>): s
 export function humanize(code: string): string {
   const s = code.replace(/[_-]+/g, " ").trim();
   return s ? s[0].toUpperCase() + s.slice(1) : code;
+}
+
+/** Q0 gap group headings (reason codes of GET /cbom/register/q0); an unknown code is humanized. */
+const Q0_REASON_HEADING: Record<string, string> = {
+  evidence_e0: "Evidence at E0",
+  mosca_missing: "Mosca inputs missing",
+  unknown_verdict: "PQC class unknown",
+  coverage_gap: "Scope not read",
+};
+
+export function q0ReasonHeading(code: string): string {
+  return Q0_REASON_HEADING[code] ?? humanize(code);
+}
+
+/** A Q0 gap's item as words: the Mosca inputs gap (one item for every asset it leaves ungraded) has the raw key
+ * "inputs:mosca" as its server title; every other gap keeps the server's title. */
+export function q0GapTitle(gap: { item_kind: string; item_key: string; title: string; detail?: Record<string, unknown> | null }): string {
+  if (gap.item_kind === "inputs" && gap.item_key === "inputs:mosca") {
+    const n = Number(gap.detail?.count);
+    return Number.isFinite(n) && n > 0
+      ? `Mosca X, Y or Z not set (${n} quantum-vulnerable asset${n === 1 ? "" : "s"} left ungraded)`
+      : "Mosca X, Y or Z not set";
+  }
+  return gap.title;
+}
+
+/** A system's chip in the agility baseline: the API's hardest of the four classes; with none of them, Unknown when
+ * some asset could not be classed, else None ("nothing to change today"). */
+export function systemHardestClass(s: { hardest?: string | null; counts?: Partial<Record<string, number>> | null }): string {
+  if (s.hardest) return s.hardest;
+  return (Number(s.counts?.unknown) || 0) > 0 ? "unknown" : "none";
 }
 
 /** reason code -> served sentence. */
@@ -201,6 +247,46 @@ export function q0Reasons(p: QPosture): { code: string; count: number }[] {
   return Object.entries(p.q0_reasons ?? {})
     .map(([code, count]) => ({ code, count: Number(count) || 0 }))
     .sort((a, b) => b.count - a.count || a.code.localeCompare(b.code));
+}
+
+function reasonList(counts: Record<string, number> | undefined): { code: string; count: number }[] {
+  return Object.entries(counts ?? {})
+    .map(([code, count]) => ({ code, count: Number(count) || 0 }))
+    .filter((r) => r.count > 0)
+    .sort((a, b) => b.count - a.count || a.code.localeCompare(b.code));
+}
+
+/** The posture card's "Q0 Unknown: why" (staging QA B7): per reason, the run's assets it leaves Q0 Unknown (summing to
+ * the Q0 Unknown bar), and apart from them the unread scope per reason (items: places and sources not read, not assets). The item
+ * list's total split as CB-19 OQ-5 says: items to close, and the team's by-choice exclusions as their own group. An
+ * older backend sends only q0_reasons (items): basis "items", every reason in one list, said as items. */
+export interface Q0Breakdown {
+  basis: "assets" | "items";
+  assets: { code: string; count: number }[];
+  assetsTotal: number;
+  scope: { code: string; count: number }[];
+  scopeTotal: number;
+  byChoice: number;
+  toClose: number;
+  total: number;
+}
+
+export function q0Breakdown(p: QPosture): Q0Breakdown {
+  const total = Number(p.q0_items_total ?? p.q0_items?.length ?? 0) || 0;
+  const byChoice = Math.min(total, Number(p.q0_reasons?.excluded_by_choice) || 0);
+  const byAssets = !!p.q0_reason_assets && !!p.q0_scope_reasons;
+  const assets = byAssets ? reasonList(p.q0_reason_assets) : q0Reasons(p);
+  const scope = byAssets ? reasonList(p.q0_scope_reasons) : [];
+  return {
+    basis: byAssets ? "assets" : "items",
+    assets,
+    assetsTotal: assets.reduce((n, r) => n + r.count, 0),
+    scope,
+    scopeTotal: scope.reduce((n, r) => n + r.count, 0),
+    byChoice,
+    toClose: total - byChoice,
+    total,
+  };
 }
 
 /** One line per Q0 Unknown item: what is unread or ungraded, where, and how many rows it stands for. */

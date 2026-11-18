@@ -11,6 +11,7 @@ import concurrent.futures as cf
 import contextlib
 import json
 import os
+import re
 import shutil
 import tempfile
 import time
@@ -18,9 +19,9 @@ from typing import Any
 
 from urllib.parse import urlsplit
 
-from zs_scan_node import algid, netutil
-from zs_scan_node.collectors import ConfigError, skipped_never_scan
-from zs_scan_node.jobctx import JobContext
+from zs_scan_node import algid, errtext, netutil
+from zs_scan_node.collectors import ConfigError, skipped_never_scan, target_error
+from zs_scan_node.jobctx import JobContext, LeaseLost
 from zs_scan_node.netutil import Blocked, Target, checked_ip, expand_targets, is_ip, resolve_checked
 from zs_scan_node.scrub import printable
 
@@ -528,6 +529,30 @@ def _fault(exc: Exception) -> "_Fail | None":
     return _Fail("error", f"WinRM fault {code if code is not None else exc.fault_code or '?'}: {reason}")
 
 
+_POOL = re.compile(r"host='([^']+)', port=(\d+)")
+
+
+def _transport_fail(exc: BaseException) -> _Fail:
+    """#153: a WinRM connection that failed below PowerShell, in words: an HTTPS server that is not WinRM (an HTTP
+    status from /wsman), a refused port, no route ... never the exception class."""
+    from winrm.exceptions import WinRMTransportError
+
+    if isinstance(exc, WinRMTransportError):
+        code = exc.code if isinstance(exc.code, int) else None
+        if code in (400, 403, 404, 405, 415):
+            return _Fail("not_supported", f"the server answered HTTPS but is not a WinRM endpoint (HTTP {code} on "
+                         "/wsman)")
+        return _Fail("error", f"the WinRM service answered HTTP {code if code is not None else '?'} on /wsman")
+    m = _POOL.search(str(exc))
+    host, port = (m.group(1), int(m.group(2))) if m else (None, None)
+    status, note = errtext.socket_problem(exc, host or "the WinRM server", port)
+    if status == "refused" and host:
+        note = f"WinRM port {port} on {host} refused the connection"
+    elif status == "refused":
+        note = "the WinRM port refused the connection"
+    return _Fail(status, note)
+
+
 def _run(sess, name: str) -> tuple[int, str, str]:
     try:
         r = sess.run_ps(SCRIPTS[name])
@@ -546,7 +571,7 @@ def _run(sess, name: str) -> tuple[int, str, str]:
             raise _Fail("auth_failed", "WinRM refused the login") from None
         if "timed out" in text.lower():
             raise _Fail("timeout", "WinRM did not answer") from None
-        raise _Fail("unreachable", exc.__class__.__name__) from None
+        raise _transport_fail(exc) from None
     return r.status_code, r.std_out.decode("utf-8", "replace"), r.std_err.decode("utf-8", "replace")[:300]
 
 
@@ -634,13 +659,22 @@ def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str | 
         if target.ip is None:
             ctx.outcome(target.label, "unreachable", target.error, started=started)
             return
+        skip = ctx.login_gate()  # CB-10: WinRM logs in with the account's password
+        if skip:
+            ctx.outcome(target.label, skip, ctx.credential_skip_note(skip), started=started)
+            return
+        status = "error"
         try:
             n = collect_target(ctx, target, config, password, ca_path)
+            status = "ok"
             ctx.outcome(target.label, "ok", started=started, assets=n)
         except _Fail as fail:
+            status = fail.status
             ctx.outcome(target.label, fail.status, fail.error, started=started)
         except Exception as exc:
             ctx.outcome(target.label, "error", exc.__class__.__name__, started=started)
+        finally:
+            ctx.login_done(status)
 
     with _ca_file(config) as ca_path, \
             cf.ThreadPoolExecutor(max_workers=max(1, min(int(config.get("parallel") or 8), 32))) as pool:
@@ -660,16 +694,28 @@ def test(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
     skipped_never_scan(ctx, skipped, reasons, samples=True)
     with _ca_file(config) as ca_path:
         for target in targets[:5]:
-            _test_one(ctx, target, config, password, ca_path)
+            try:
+                _test_one(ctx, target, config, password, ca_path)
+            except LeaseLost:
+                raise
+            except Exception as exc:  # noqa: BLE001 - one server's error fails its sample, never the test job
+                ctx.log("test target error", target=target.label, error=exc.__class__.__name__, level="warn")
+                reachable, note = target_error(exc)
+                ctx.samples.append({"target": target.label, "status": "error", "reachable": reachable, "login": False,
+                                    "privilege": None, "note": ctx.scrubber.text(note)})
     return f"{sum(1 for s in ctx.samples if s['status'] == 'ready')} of {len(ctx.samples)} samples ready"
 
 
 def _test_one(ctx: JobContext, target: Target, config: dict, password: str, ca_path: str | None) -> None:
     sample = {"target": target.label, "status": "ready", "reachable": False, "login": False, "privilege": None,
               "note": ""}
+    skip = ctx.login_gate() if target.ip is not None else None  # CB-10
     if target.ip is None:
         sample.update(status="unreachable", note=target.error or "")
+    elif skip:
+        sample.update(status=skip, reachable=None, note=ctx.credential_skip_note(skip) or skip)
     else:
+        status = "error"
         try:
             code, out, err = _run(_session(ctx, target, config, password, ca_path), "os")
             # Any answer from the shell means the login worked; a failing read is a privilege note, not a login failure.
@@ -677,7 +723,11 @@ def _test_one(ctx: JobContext, target: Target, config: dict, password: str, ca_p
             note = (f"{info.get('Caption') or 'Windows'} {info.get('Version') or ''}".strip() if code == 0
                     else f"logged in; reading the Windows version failed: {_stderr(err) or 'exit ' + str(code)}")
             sample.update(reachable=True, login=True, note=printable(note, 160))
+            status = "ok"
         except _Fail as fail:
+            status = fail.status
             sample.update(status=fail.status, reachable=fail.status not in ("unreachable", "timeout"),
                           login=fail.status == "winrm_denied", note=fail.error)
+        finally:
+            ctx.login_done(status)
     ctx.samples.append(sample)

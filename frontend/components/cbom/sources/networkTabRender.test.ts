@@ -132,6 +132,29 @@ async function main() {
   // N9: the readiness label carries the sample size
   assert.ok(active[0].textContent!.includes("Partly ready · 18 of 25 sampled"), active[0].textContent!)
 
+  // Staging QA B6-3: the table fits its card (496 px at 1440, 576 px at 1920) instead of a 695 px min-w-max table
+  // whose badge was cut and whose Actions were off-screen. jsdom has no layout, so the contract is checked: fixed
+  // column shares that add up below the card, no min-w-max wrapper, a badge that wraps, Actions pinned right, the mode
+  // under the range (no fifth column).
+  const table = host.querySelector('[data-testid="network-ranges-table"]') as HTMLTableElement
+  assert.ok(table.className.includes("table-fixed"), table.className)
+  assert.equal(table.closest(".min-w-max"), null, "no min-w-max wrapper forces the table wider than its card")
+  const minWidth = /min-w-\[(\d+)px\]/.exec(table.parentElement!.parentElement!.className + " " + table.closest('[class*="min-w-["]')?.className)
+  assert.ok(minWidth && Number(minWidth[1]) <= 496, `the table may shrink to the 1440 px card (min ${minWidth?.[1]})`)
+  const heads = [...table.querySelectorAll("thead th")].map((th) => th.textContent!.trim())
+  assert.equal(heads.length, 4, heads.join(" | "))
+  assert.ok(heads[0].startsWith("Range") && heads[0].includes("Mode"), heads[0])
+  const cols = [...table.querySelectorAll("colgroup col")].map((c) => c.className)
+  assert.deepEqual(cols, ["w-[31%]", "w-[23%]", "", "w-[84px]"])
+  // at 496 px: 84 px of actions, 154 + 114 px of range and node, so the last-test column keeps 144 px for its badge
+  assert.ok(496 - 84 - Math.round(496 * 0.31) - Math.round(496 * 0.23) >= 140)
+  const badge = [...active[0].querySelectorAll('[data-slot="badge"], span')].find((el) => el.textContent?.startsWith("Partly ready")) as HTMLElement
+  assert.ok(badge && badge.className.includes("whitespace-normal"), `the readiness badge wraps: ${badge?.className}`)
+  const actions = active[0].querySelector("td:last-child") as HTMLElement
+  assert.ok(actions.className.includes("sticky") && actions.className.includes("right-0"), actions.className)
+  assert.ok(actions.querySelector('[aria-label^="Test "]') && actions.querySelector('[aria-label^="Delete "]'))
+  assert.equal(active[0].querySelector('[data-testid="network-range-mode"]')?.textContent, "Full mode")
+
   await act(async () => { root.unmount() })
   console.log("networkTabRender.test.ts: ok")
 }

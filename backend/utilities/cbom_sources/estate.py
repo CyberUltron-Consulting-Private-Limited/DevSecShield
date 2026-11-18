@@ -52,7 +52,10 @@ from __future__ import annotations
 import argparse
 import datetime as _dt
 import logging
+import os
+import threading
 import time
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
@@ -107,6 +110,9 @@ class EstateWrite:
     rekeyed: list[tuple[str, str, str]] = field(default_factory=list)
     removed_keys: list[str] = field(default_factory=list)
     source_refs: list[str] = field(default_factory=list)
+    # source_ref -> (job, attempt) it pointed at before this write, None for a new source (#352: a hook that brought
+    # the source up to that job compares the new job's rows with it instead of every observation's own row)
+    previous: dict[str, tuple[int, int] | None] = field(default_factory=dict)
 
 
 Hook = Callable[[Session, EstateWrite], None]
@@ -213,6 +219,212 @@ def _view(asset_type: str, target: str | None, location: str | None) -> D.View:
                   extra={"target": target or "", "location": location or ""})
 
 
+# ----------------------------------------------------------------------------- keys, incrementally (CB-21 #205)
+# Memory (CB-32, measured with bench/cb32_store_scale/index_memory.py): only observations that can correlate
+# (certificates, endpoints, cloud resources) are kept; a key, library or setting has no link key, its asset key is
+# per source by construction, and its observation key is recomputed each run. Kept per observation: CB-21's index
+# entry, a 64-bit token hash, a 128-bit row id and a 20-byte observation key.
+INDEX_BUDGET_MB = int(os.environ.get("CBOM_ESTATE_INDEX_MB", "512") or 512)  # per process, over all teams
+BYTES_PER_INDEXED = 2_000  # RSS per correlating observation kept (index_memory.py: 1,893; tracemalloc ~1,450)
+
+
+def index_capacity() -> int:
+    """Correlating observations this process keeps indexed, over all teams (LRU by team)."""
+    return max(0, INDEX_BUDGET_MB) * 2**20 // BYTES_PER_INDEXED
+
+
+@dataclass
+class _TeamIndex:
+    """One team's correlation as of the last run this process keyed: CB-21's incremental ``CorrelationIndex`` over
+    that run's correlating observations (id = (source_ref, 128-bit row id)), a hash of what decided each one's keys
+    (``_token``), and its observation key (20 bytes)."""
+    index: Any = field(default_factory=lambda: AK.CorrelationIndex())
+    tokens: dict[tuple[str, Any], int] = field(default_factory=dict)
+    okeys: dict[tuple[str, Any], bytes] = field(default_factory=dict)
+    lock: threading.Lock = field(default_factory=threading.Lock)
+
+
+@dataclass
+class _Keyed:
+    keys: list[Any]  # asset key per row (str, None or NOT_CORRELATED)
+    okeys: list[str]  # observation key per row
+    alias_to_key: dict[str, str]  # every link key of a group -> the group's key (a stored key that moved)
+    changed: int  # correlating rows whose key or aliases changed since the previous run (all of them when cold)
+    mode: str = "index"  # index | full (no index kept: cold in a request, or over the memory budget)
+
+
+_INDEXES: OrderedDict[int, _TeamIndex] = OrderedDict()
+_INDEXES_LOCK = threading.Lock()
+
+
+def _team_index(team_id: int, linked: int) -> _TeamIndex | None:
+    """The team's index, made room for (``linked`` observations), or None when the team alone exceeds the budget
+    (then it is keyed with a full correlation each run and nothing is kept)."""
+    cap = index_capacity()
+    with _INDEXES_LOCK:
+        if linked > cap:
+            _INDEXES.pop(team_id, None)
+            return None
+        entry = _INDEXES.pop(team_id, None) or _TeamIndex()
+        total = sum(len(e.tokens) for e in _INDEXES.values()) + max(linked, len(entry.tokens))
+        while _INDEXES and total > cap:
+            _team, old = _INDEXES.popitem(last=False)
+            total -= len(old.tokens)
+        _INDEXES[team_id] = entry
+        return entry
+
+
+def _drop_index(team_id: int) -> None:
+    with _INDEXES_LOCK:
+        _INDEXES.pop(team_id, None)
+
+
+def index_stats() -> dict[str, int]:
+    with _INDEXES_LOCK:
+        return {"teams": len(_INDEXES), "observations": sum(len(e.tokens) for e in _INDEXES.values()),
+                "capacity": index_capacity()}
+
+
+def _token(row: Any) -> int:
+    """A hash of what decides a stored row's asset keys: exactly the inputs ``asset_keys._analyse`` reads (a
+    certificate's ``_CERT_FIELDS``; otherwise kind, location, target, port, identity, cloud_resource; the scope is the
+    source, part of the row's id). 64 bits: a collision would only delay re-keying that row to its next change."""
+    facts = row.facts if isinstance(row.facts, dict) else {}
+    kind = row.asset_type or ""
+    if kind in AK.CERT_TYPES or row.cdx_type == "certificate":
+        values: tuple = (0, *map(facts.get, AK._CERT_FIELDS))
+    else:
+        values = (1, kind, row.location or "", row.target or "", facts.get("port"), facts.get("identity"),
+                  bool(facts.get("cloud_resource")))
+    try:
+        return hash(values)
+    except TypeError:  # an unhashable fact value: its text decides
+        return hash(repr(values))
+
+
+def _linkless(row: Any) -> bool:
+    """True when the row can never correlate: ``asset_keys._analyse`` answers ``_NOTHING`` for it (not a
+    certificate, not an endpoint, no cloud id in its identity or location). Such a row's asset key is None (a
+    per-source asset); ``test_cbom_cb32_index_memory`` pins this to ``_analyse``."""
+    kind = row.asset_type or ""
+    if kind in AK.CERT_TYPES or kind in AK.ENDPOINT_TYPES or row.cdx_type == "certificate":
+        return False
+    facts = row.facts if isinstance(row.facts, dict) else {}
+    return not (AK._maybe_cloud(facts.get("identity")) or AK._maybe_cloud(row.location))
+
+
+def _rid(row_key: str) -> Any:
+    """128 bits of the row's per-job key (a sha256 hex): what identifies it within its source in the index."""
+    try:
+        return int(row_key[:32], 16) if len(row_key) >= 32 else row_key
+    except ValueError:
+        return row_key
+
+
+def _in_request() -> bool:
+    try:
+        from backend.utilities.build_info import current_request_id
+    except ImportError:  # pragma: no cover
+        return False
+    return current_request_id() is not None
+
+
+def _warm(team_id: int) -> bool:
+    with _INDEXES_LOCK:
+        entry = _INDEXES.get(team_id)
+        return entry is not None and bool(entry.tokens)
+
+
+def _full(linked: Sequence[tuple[Any, str]]) -> tuple[list[Any], dict[str, str]]:
+    corr = AK.correlate_detail([_observation(row, ref) for row, ref in linked])
+    alias_to_key: dict[str, str] = {}
+    for key, aliases in zip(corr.keys, corr.aliases):
+        for alias in aliases:
+            alias_to_key[alias] = key
+    return list(corr.keys), alias_to_key
+
+
+def _keys_for_run(team_id: int, seen_rows: Sequence[tuple[Any, str]]) -> _Keyed:
+    """The asset key and observation key of each row of the run, equal to ``correlate_detail`` over the run's
+    observations.
+
+    * A row that can never correlate (``_linkless``) is keyed per source; its observation key is computed once per
+      run (``observation_keys``) and nothing about it is kept.
+    * Correlating rows go through the team's ``CorrelationIndex`` (CB-21): only rows whose key inputs changed since
+      the team's previous run in this process are re-read, and only their components re-correlated; their
+      observation keys are reused.
+    * A cold index (a restarted process, an evicted team) is built in place; a large run is never keyed cold inside
+      an HTTP request (``record_run_safely`` defers it to the scheduler). A team over the memory budget is keyed
+      with ``correlate_detail`` every run and nothing is kept."""
+    n = len(seen_rows)
+    keys: list[Any] = [None] * n
+    okeys: list[str] = [""] * n
+    linked: list[int] = []
+    plain: dict[str, list[int]] = {}
+    for i, (row, ref) in enumerate(seen_rows):
+        if _linkless(row):
+            plain.setdefault(ref, []).append(i)
+        else:
+            linked.append(i)
+    for ref, idx in plain.items():
+        for i, okey in zip(idx, AK.observation_keys([seen_rows[i][0] for i in idx], ref)):
+            okeys[i] = okey
+    rows = [seen_rows[i] for i in linked]
+    entry = _team_index(team_id, len(rows))
+    if entry is None:
+        full, alias_to_key = _full(rows)
+        by_ref: dict[str, list[int]] = {}
+        for j, i in enumerate(linked):
+            keys[i] = full[j]
+            by_ref.setdefault(seen_rows[i][1], []).append(i)
+        for ref, idx in by_ref.items():
+            for i, okey in zip(idx, AK.observation_keys([seen_rows[i][0] for i in idx], ref)):
+                okeys[i] = okey
+        return _Keyed(keys=keys, okeys=okeys, alias_to_key=alias_to_key, changed=len(rows), mode="full")
+    with entry.lock:
+        try:
+            ids: list[tuple[str, Any]] = []
+            changes: dict[tuple[str, Any], Any] = {}
+            fresh: dict[str, list[tuple[tuple[str, Any], Any]]] = {}
+            tokens, cached = entry.tokens, entry.okeys
+            for row, ref in rows:
+                oid = (ref, _rid(row.asset_key))
+                ids.append(oid)
+                token = _token(row)
+                if tokens.get(oid) != token:
+                    changes[oid] = _observation(row, ref)
+                    tokens[oid] = token
+                    fresh.setdefault(ref, []).append((oid, row))
+                elif oid not in cached:
+                    fresh.setdefault(ref, []).append((oid, row))
+            current = set(ids)
+            if len(current) != len(tokens):
+                for oid in [o for o in tokens if o not in current]:
+                    changes[oid] = None
+                    del tokens[oid]
+                    cached.pop(oid, None)
+            changed = entry.index.update(changes) if changes else set()
+            for ref, items in fresh.items():
+                for (oid, _row), okey in zip(items, AK.observation_keys([r for _o, r in items], ref)):
+                    cached[oid] = bytes.fromhex(okey)
+            index = entry.index
+            alias_to_key = {}
+            groups: set[int] = set()
+            for i, oid in zip(linked, ids):
+                key = index.key(oid)
+                keys[i] = key
+                okeys[i] = cached[oid].hex()
+                aliases = index.names(oid)  # as stored: iterated, never kept
+                if aliases and id(aliases) not in groups:
+                    groups.add(id(aliases))
+                    for alias in aliases:
+                        alias_to_key[alias] = key
+            return _Keyed(keys=keys, okeys=okeys, alias_to_key=alias_to_key, changed=len(changed & current))
+        except Exception:
+            _drop_index(team_id)  # never reuse a half-updated index
+            raise
+
+
 @dataclass
 class _Seen:
     row: Any  # the representative row (lowest per-job row key: stable from run to run)
@@ -260,11 +472,12 @@ def record_run(session: Session, run: CbomCollectionRun, now: _dt.datetime, *,
             continue
         jobs[ref] = (job, prev)
     write.source_refs = sorted(jobs)
+    write.previous = {ref: (int(prev[0]), int(prev[1] or 1)) if prev is not None else None
+                      for ref, (_job, prev) in jobs.items()}
     marks = {"sources": time.perf_counter()}
 
     # 1. what the run read: rows of its successful collections, keyed across sources
     job_rows: dict[str, list[Any]] = {}
-    observed: list[Any] = []
     seen_rows: list[tuple[Any, str]] = []
     for ref, (job, _prev) in jobs.items():
         if job.status != "success":
@@ -274,22 +487,15 @@ def record_run(session: Session, run: CbomCollectionRun, now: _dt.datetime, *,
         job_rows[ref] = rows
         for row in rows:
             if row.asset_type != "coverage":
-                observed.append(_observation(row, ref))
                 seen_rows.append((row, ref))
     marks["read"] = time.perf_counter()
-    corr = AK.correlate_detail(observed)
-    alias_to_key: dict[str, str] = {}
-    groups_done: set[int] = set()
+    keyed = _keys_for_run(team_id, seen_rows)
+    alias_to_key = keyed.alias_to_key
     seen: dict[tuple[str, str], _Seen] = {}
     for i, (row, ref) in enumerate(seen_rows):
-        aliases = corr.aliases[i]
-        if aliases and id(aliases) not in groups_done:
-            groups_done.add(id(aliases))
-            for alias in aliases:
-                alias_to_key[alias] = corr.keys[i]
-        key, kind, basis = _key_of(corr.keys[i])
+        key, kind, basis = _key_of(keyed.keys[i])
         if key is None:
-            key = "obs:" + ID.stable_key("node", ref, ID.node_identity(row))
+            key = "obs:" + keyed.okeys[i]
         s = seen.get((key, ref))
         if s is None:
             seen[(key, ref)] = _Seen(row, kind, basis)
@@ -309,6 +515,7 @@ def record_run(session: Session, run: CbomCollectionRun, now: _dt.datetime, *,
     by_source: dict[str, dict[str, _Seen]] = {}
     for (key, ref), s in seen.items():
         by_source.setdefault(ref, {})[key] = s
+    okey_of = {id(row): keyed.okeys[i] for i, (row, _ref) in enumerate(seen_rows)}
     for ref, (job, prev) in jobs.items():
         stored = {r[1]: r for r in sql.query(
             "SELECT id, asset_key, row_key, occurrences, presence, presence_reason, asset_type, target, location "
@@ -318,12 +525,12 @@ def record_run(session: Session, run: CbomCollectionRun, now: _dt.datetime, *,
         for key, s in mine.items():
             row, old = s.row, stored.get(key)
             if old is None:
-                inserts.append((team_id, key, ref, ID.stable_key("node", ref, ID.node_identity(row)), row.asset_key,
+                inserts.append((team_id, key, ref, okey_of[id(row)], row.asset_key,
                                 row.asset_type, row.target or None, (row.location or "")[:512], s.occurrences,
                                 "present", None, job.id, row.attempt, run_id, when, run_id, run_id, stamp))
                 touched[key] = "present"
             elif (old[2], old[3], old[4]) != (row.asset_key, s.occurrences, "present"):
-                updates.append((ID.stable_key("node", ref, ID.node_identity(row)), row.asset_key, row.asset_type,
+                updates.append((okey_of[id(row)], row.asset_key, row.asset_type,
                                 row.target or None, (row.location or "")[:512], s.occurrences, job.id, row.attempt,
                                 run_id, when, run_id, stamp, old[0]))
                 if old[4] != "present":
@@ -426,7 +633,8 @@ def record_run(session: Session, run: CbomCollectionRun, now: _dt.datetime, *,
     _settle(session, sql, write, sorted(k for k, v in touched.items() if v is None and k not in seen_keys), now)
     marks["assets"] = time.perf_counter()
 
-    write.counts = {"sources": len(jobs), "deleted_sources": len(deleted_refs), "seen": len(seen), "inserted": len(inserts), "updated": len(updates),
+    write.counts = {"sources": len(jobs), "deleted_sources": len(deleted_refs), "seen": len(seen),
+                    "rekeyed_rows": keyed.changed, "inserted": len(inserts), "updated": len(updates),
                     "moved": len(moved_ids), "assets_changed": len(write.changed),
                     "not_read": sum(1 for p in write.changed.values() if p == "not_read"),
                     "removed": sum(1 for p in write.changed.values() if p == "removed"),
@@ -458,10 +666,30 @@ def _run_hooks(session: Session, write: EstateWrite) -> None:
     write.counts["hook_errors"] = failed
 
 
+DEFER_MIN_ROWS = int(os.environ.get("CBOM_ESTATE_DEFER_ROWS", "5000") or 5000)
+DEFERRED = "deferred to the scheduler"
+
+
+def _defer(session: Session, run: CbomCollectionRun, loaded: Mapping[int, list[Any]] | None) -> bool:
+    """A run of at least ``DEFER_MIN_ROWS`` rows recorded inside an HTTP request (``/changes`` records drift lazily)
+    while this process has no key index for the team (a restarted API process): keying it cold re-reads every row
+    (CB-21 analysis, ~2-4 s per 50k rows), so it is left to the scheduler, whose index is warm (CB-32)."""
+    if not _in_request() or _warm(run.team_id):
+        return False
+    counted = sum(int(j.asset_count or 0) for j in D._run_jobs(session, run))
+    return max(counted, sum(len(rows) for rows in (loaded or {}).values())) >= DEFER_MIN_ROWS
+
+
 def record_run_safely(session: Session, run: CbomCollectionRun, now: _dt.datetime, *,
                       loaded: Mapping[int, list[Any]] | None = None) -> EstateWrite | None:
     """``record_run`` inside a savepoint: on any error the store's write (and the hooks') is rolled back, logged at
-    ERROR, the team's store is marked stale, and None is returned; the caller's own work (drift) stands."""
+    ERROR, the team's store is marked stale, and None is returned; the caller's own work (drift) stands. A large run
+    recorded in a request by a process with a cold key index is deferred: the store is marked stale ("deferred to the
+    scheduler") and the scheduler's ``repair_due`` writes it, hooks included, within a tick."""
+    if _defer(session, run, loaded):
+        log("estate write deferred", team=run.team_id, run=run.id, reason="cold key index in a request")
+        mark_stale(session, run.team_id, int(run.id or 0), f"run #{run.id} {DEFERRED}", now)
+        return None
     try:
         with session.begin_nested():
             return record_run(session, run, now, loaded=loaded)
@@ -474,13 +702,18 @@ def record_run_safely(session: Session, run: CbomCollectionRun, now: _dt.datetim
 
 
 def mark_stale(session: Session, team_id: int, run_id: int, reason: str, now: _dt.datetime) -> None:
-    """Flag the team's store as having missed a run's write (keeps the FIRST missed run)."""
+    """Flag the team's store as having missed a run's write (keeps the FIRST missed run). Every call bumps
+    ``stale_marks``, so a repair that started before a later miss does not clear it (CB-32)."""
     row = session.exec(select(CbomEstateTeam).where(CbomEstateTeam.team_id == team_id)).first()
     if row is None:
         session.add(CbomEstateTeam(team_id=team_id, stale=True, stale_run_id=run_id, stale_reason=reason[:300],
-                                   stale_at=now, updated_at=now))
+                                   stale_at=now, updated_at=now, stale_marks=1))
     elif not row.stale:
         row.stale, row.stale_run_id, row.stale_reason, row.stale_at, row.updated_at = True, run_id, reason[:300], now, now
+        row.stale_marks = (row.stale_marks or 0) + 1
+    else:
+        row.stale_run_id = min(row.stale_run_id or run_id, run_id)
+        row.updated_at, row.stale_marks = now, (row.stale_marks or 0) + 1
     session.flush()
 
 
@@ -555,15 +788,20 @@ def latest_rows(session: Session, team_id: int, keys: Sequence[str]) -> dict[str
                 p = (r.seen_job_id, r.seen_attempt, r.seen_run_id, r.seen_at)
             pointers.append((r, p))
         ids: dict[tuple, int] = {}
-        wanted = sorted({(p[0], p[1], r.row_key) for r, p in pointers})
-        for part in _chunks(wanted, 300):
-            for i, job_id, attempt, row_key in session.execute(sa.select(
-                    CbomCollectedAsset.id, CbomCollectedAsset.job_id, CbomCollectedAsset.attempt,
-                    CbomCollectedAsset.asset_key).where(
-                    CbomCollectedAsset.team_id == team_id,
-                    sa.tuple_(CbomCollectedAsset.job_id, CbomCollectedAsset.attempt,
-                              CbomCollectedAsset.asset_key).in_(part))).all():
-                ids[(job_id, attempt, row_key)] = i
+        by_job: dict[tuple, set[str]] = {}
+        for r, p in pointers:
+            if p[0] is not None:
+                by_job.setdefault((p[0], p[1]), set()).add(r.row_key)
+        # one lookup per (job, attempt) through the unique (job_id, attempt, asset_key) index: an OR of 300
+        # (job, attempt, key) triples per query cost more to plan than to run, and with a team_id condition PostgreSQL
+        # could read the team's every row for each (#352). The team is checked on the rows instead.
+        for (job_id, attempt), row_keys in sorted(by_job.items()):
+            for i, team, row_key in session.execute(sa.select(
+                    CbomCollectedAsset.id, CbomCollectedAsset.team_id, CbomCollectedAsset.asset_key).where(
+                    CbomCollectedAsset.job_id == job_id, CbomCollectedAsset.attempt == attempt,
+                    CbomCollectedAsset.asset_key.in_(sorted(row_keys)))).all():  # type: ignore[attr-defined]
+                if team == team_id:
+                    ids[(job_id, attempt, row_key)] = i
         for r, p in pointers:
             entry = {"source_ref": r.source_ref, "presence": r.presence, "asset_id": ids.get((p[0], p[1], r.row_key)),
                      "job_id": p[0], "attempt": p[1], "run_id": p[2], "observed_at": p[3]}
@@ -577,15 +815,19 @@ def latest_rows(session: Session, team_id: int, keys: Sequence[str]) -> dict[str
 
 
 # ----------------------------------------------------------------------------- backfill
-def backfill(engine, now: _dt.datetime, *, team_id: int | None = None, hooks: bool = False) -> dict[str, int]:
-    """Write every run whose drift is recorded, oldest first, each in its own transaction. Idempotent: a source whose
-    job is already written is skipped, so it can be re-run or interrupted."""
+def backfill(engine, now: _dt.datetime, *, team_id: int | None = None, hooks: bool = False,
+             since_run_id: int | None = None) -> dict[str, int]:
+    """Write every run whose drift is recorded (from ``since_run_id`` on), oldest first, each in its own transaction.
+    Idempotent: a source whose job is already written is skipped, so it can be re-run or interrupted."""
     with Session(engine) as session:
         query = select(CbomCollectionRun.id).where(CbomCollectionRun.drift_at.is_not(None))  # type: ignore[union-attr]
         if team_id is not None:
             query = query.where(CbomCollectionRun.team_id == team_id)
+        if since_run_id is not None:
+            query = query.where(CbomCollectionRun.id >= since_run_id)
         ids = list(session.exec(query.order_by(CbomCollectionRun.id)).all())
-        stale_before = {t for t, in session.execute(sa.select(_ET.c.team_id).where(_ET.c.stale.is_(True))).all()}
+        stale_before = dict(session.execute(sa.select(_ET.c.team_id, _ET.c.stale_marks).where(
+            _ET.c.stale.is_(True))).all())
     out = {"runs": 0, "sources": 0, "inserted": 0, "repaired_teams": 0}
     for run_id in ids:
         with Session(engine) as session:
@@ -597,14 +839,30 @@ def backfill(engine, now: _dt.datetime, *, team_id: int | None = None, hooks: bo
         out["runs"] += 1
         out["sources"] += write.counts.get("sources", 0)
         out["inserted"] += write.counts.get("inserted", 0)
-    with Session(engine) as session:  # every run of these teams is written: the stores are whole again
-        query = sa.update(_ET).where(_ET.c.stale.is_(True), _ET.c.team_id.in_(stale_before))
-        if team_id is not None:
-            query = query.where(_ET.c.team_id == team_id)
-        out["repaired_teams"] = int(session.execute(query.values(stale=False, repaired_at=now, updated_at=now))
-                                    .rowcount or 0)
+    with Session(engine) as session:  # every run of these teams is written: the stores are whole again, unless a
+        # write was missed again meanwhile (its mark count moved on: the next repair replays it)
+        for team, marks in stale_before.items():
+            if team_id is not None and team != team_id:
+                continue
+            out["repaired_teams"] += int(session.execute(sa.update(_ET).where(
+                _ET.c.team_id == team, _ET.c.stale.is_(True), _ET.c.stale_marks == marks).values(
+                stale=False, repaired_at=now, updated_at=now)).rowcount or 0)
         session.commit()
     log("estate backfill", team=team_id, **out)
+    return out
+
+
+def repair_due(engine, now: _dt.datetime, *, teams: int = 1) -> dict[str, int]:
+    """Scheduler tick: write the runs a stale team's store missed (a deferred or failed write), hooks included, from
+    its first missed run on; the oldest stale team first, ``teams`` per tick."""
+    with Session(engine) as session:
+        stale = session.execute(sa.select(_ET.c.team_id, _ET.c.stale_run_id).where(_ET.c.stale.is_(True))
+                                .order_by(_ET.c.stale_at, _ET.c.team_id).limit(teams)).all()
+    out = {"teams": 0, "runs": 0}
+    for team_id, since in stale:
+        done = backfill(engine, now, team_id=team_id, hooks=True, since_run_id=since)
+        out["teams"] += done["repaired_teams"]
+        out["runs"] += done["runs"]
     return out
 
 
@@ -695,10 +953,13 @@ def list_estate(session: Session, team_id: int, *, after: str | None = None, lim
         query = query.where(CbomEstateAsset.asset_type == asset_type)
     if presence:
         query = query.where(CbomEstateAsset.presence == presence)
-    if source:
-        query = query.where(CbomEstateAsset.asset_key.in_(  # type: ignore[attr-defined]
-            select(CbomEstateObservation.asset_key).where(CbomEstateObservation.team_id == team_id,
-                                                          CbomEstateObservation.source_ref == source)))
+    if source:  # a join walked in key order on (team_id, source_ref, asset_key), not a semi-join of the source (CB-32)
+        query = query.join(CbomEstateObservation, sa.and_(
+            CbomEstateObservation.team_id == CbomEstateAsset.team_id,
+            CbomEstateObservation.asset_key == CbomEstateAsset.asset_key,
+            CbomEstateObservation.source_ref == source))
+        if after:
+            query = query.where(CbomEstateObservation.asset_key > after)
     rows = list(session.exec(query.order_by(CbomEstateAsset.asset_key).limit(limit + 1)).all())
     more = len(rows) > limit
     rows = rows[:limit]

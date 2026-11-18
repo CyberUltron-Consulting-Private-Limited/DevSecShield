@@ -30,8 +30,8 @@ starts only once that file exists.
 ```sh
 cd deploy/node-images
 packer init ami.pkr.hcl
-# scan-node-1.0.0.tar.gz here (make node-image VERSION=1.0.0 writes it to dist/scan-node/)
-packer build -var region=ap-south-1 -var node_image_archive=scan-node-1.0.0.tar.gz ami.pkr.hcl
+# scan-node-1.0.1.tar.gz here (make node-image VERSION=1.0.1 writes it to dist/scan-node/)
+packer build -var region=ap-south-1 -var node_image_archive=scan-node-1.0.1.tar.gz ami.pkr.hcl
 ```
 
 Launch it in the VPC that reaches your targets and paste the cloud-config from **Add scan node > AWS AMI** as user
@@ -51,8 +51,8 @@ The values are written without quotes (Docker's `--env-file` reads them literall
 ```sh
 cd deploy/node-images
 packer init ova.pkr.hcl
-packer build -var node_image_archive=scan-node-1.0.0.tar.gz -var build_password="$(openssl rand -hex 16)" ova.pkr.hcl
-# -> output-ova/zeroshield-cbom-scan-node-1.0.0.ova   (needs KVM, qemu-img and python3 on the build machine)
+packer build -var node_image_archive=scan-node-1.0.1.tar.gz -var build_password="$(openssl rand -hex 16)" ova.pkr.hcl
+# -> output-ova/zeroshield-cbom-scan-node-1.0.1.ova   (needs KVM, qemu-img and python3 on the build machine)
 ```
 
 Deploy the OVA and fill in the vApp properties the wizard shows: `zs.api_url`, `zs.registration_token`,
@@ -60,6 +60,14 @@ optionally `zs.https_proxy` and `zs.mode` (`agent`). `zs-ovf-env` writes them to
 first boot; values with spaces, quotes or newlines are refused. The build user's password is removed before the
 image is sealed. Hyper-V does not read OVAs: convert the disk (`qemu-img convert -O vhdx`) and write
 `/etc/zs-node/env` with cloud-init (NoCloud) or by hand.
+
+## A private CA or an mTLS gateway in front of ZeroShield (AMI and OVA)
+
+Put the files in `/etc/zs-node/trust/` on the VM (`ca.pem`; `client.crt` and `client.key`, the key owned by uid 10001
+and mode 0400) and add the matching lines to `/etc/zs-node/env` (`ZS_CA_FILE=/etc/zs-node/trust/ca.pem`,
+`ZS_CLIENT_CERT=/etc/zs-node/trust/client.crt`, `ZS_CLIENT_KEY=/etc/zs-node/trust/client.key`). `zs-node-run`
+mounts `/etc/zs-node/trust` read-only when it exists. On the AMI the CA may come in the user data; the key never
+should (anyone on the instance can read user data). The wizard shows these lines when you tick its trust options.
 
 ## What was tested
 

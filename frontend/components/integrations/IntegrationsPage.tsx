@@ -47,7 +47,7 @@ type Form = Record<string, string>;
 type FieldDef = {
   key: string;
   label: string;
-  /** Its (i) tip (content/infotips.ts). */
+  /** Its (i) tip (content/infotips). */
   infoId: InfoTipId;
   type?: "text" | "number" | "select" | "textarea";
   options?: [string, string][];
@@ -67,6 +67,8 @@ const EVENT_LABEL: Record<IntegrationEventKind, string> = {
   schedule_skipped: "Scheduled run skipped",
   scan_finished: "Run or code scan finished",
   q0_closed: "Quantum risk Q0 gap closed",
+  agility_asset_moved: "Crypto-agility: an asset's fix class changed",
+  agility_system_changed: "Crypto-agility: a system's fix-class mix changed",
 };
 
 const CA_FIELD: FieldDef = {
@@ -99,6 +101,19 @@ const FIELDS: Record<IntegrationKind, FieldDef[]> = {
     { infoId: "int.sn.cmdb_criticality", key: "cmdb_mapping.criticality", label: "CMDB criticality field (optional)" },
     { infoId: "int.sn.cmdb_exposure", key: "cmdb_mapping.exposure", label: "CMDB exposure field (optional)" },
     { infoId: "int.sn.cmdb_classification", key: "cmdb_mapping.data_classification", label: "CMDB data classification field (optional)" },
+    { infoId: "int.sn.cmdb_segment", key: "cmdb_mapping.segment", label: "CMDB segment field (optional)", placeholder: "u_segment" },
+    { infoId: "int.sn.cmdb_scan_node", key: "cmdb_mapping.scan_node", label: "CMDB scan node field (optional)", placeholder: "u_scan_node" },
+    { infoId: "int.sn.cmdb_kind", key: "cmdb_mapping.kind", label: "CMDB source kind field (optional)", placeholder: "u_cbom_kind" },
+    { infoId: "int.sn.cmdb_engine", key: "cmdb_mapping.engine", label: "CMDB database engine field (optional)", placeholder: "u_db_engine" },
+    { infoId: "int.sn.cmdb_port", key: "cmdb_mapping.port", label: "CMDB port field (optional)", placeholder: "tcp_port" },
+    { infoId: "int.sn.cmdb_login", key: "cmdb_mapping.login", label: "CMDB login field (optional)", placeholder: "u_db_login" },
+    { infoId: "int.sn.cmdb_database_name", key: "cmdb_mapping.database_name", label: "CMDB database name field (optional)", placeholder: "u_db_name" },
+    { infoId: "int.sn.cmdb_vault_path", key: "cmdb_mapping.vault_path", label: "CMDB vault path field (optional)", placeholder: "u_vault_path" },
+    { infoId: "int.sn.cmdb_vault_provider", key: "cmdb_mapping.vault_provider", label: "CMDB vault provider field (optional)", placeholder: "u_vault_provider" },
+    { infoId: "int.sn.cmdb_api_url", key: "cmdb_mapping.api_url", label: "CMDB API URL field (optional)", placeholder: "u_api_url" },
+    { infoId: "int.sn.cmdb_context", key: "cmdb_mapping.context", label: "CMDB kube context field (optional)", placeholder: "u_kube_context" },
+    { infoId: "int.sn.cmdb_module", key: "cmdb_mapping.module", label: "CMDB PKCS#11 module field (optional)", placeholder: "u_pkcs11_module" },
+    { infoId: "int.sn.cmdb_token_label", key: "cmdb_mapping.token_label", label: "CMDB token label field (optional)", placeholder: "u_token_label" },
     CA_FIELD,
   ],
   syslog: [
@@ -116,6 +131,8 @@ const FIELDS: Record<IntegrationKind, FieldDef[]> = {
     { infoId: "int.hec.index", key: "index", label: "Index (optional)" },
     { infoId: "int.hec.sourcetype", key: "sourcetype", label: "Sourcetype", placeholder: "zeroshield:cbom" },
     { infoId: "int.hec.source", key: "source", label: "Source", placeholder: "zeroshield" },
+    { infoId: "int.hec.channel", key: "channel", label: "Data channel GUID (optional)", placeholder: "0aeeac95-ac74-4aa9-b30d-6c4c0ac581ba",
+      hint: "Needed only when the HEC token has indexer acknowledgement on (Splunk answers \"Data channel is missing\" without it)" },
     CA_FIELD,
   ],
   webhook: [

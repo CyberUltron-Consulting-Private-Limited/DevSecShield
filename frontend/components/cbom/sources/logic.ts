@@ -43,11 +43,58 @@ export function splitLines(text: string): string[] {
     .filter((line) => line.length > 0)
 }
 
-/** First column of a CSV (header row dropped when it is not an address). */
+/** Header words of a target CSV: the same set as the backend (backend/utilities/cbom_sources/targets.py _HEADER_WORDS,
+ * kept equal by sourceFormChecks.test.ts), so a "hosts" or "targets" header is never imported as a target (#151). */
+export const TARGET_HEADER_WORDS = ["ip", "ips", "host", "hosts", "hostname", "address", "addresses", "target", "targets", "name"] as const
+
+/** First column of a CSV, the file's own header row dropped (before the rows are added to the box, #151). */
 export function csvFirstColumn(text: string): string[] {
   const rows = splitLines(text).map((line) => line.split(/[,;\t]/)[0].trim().replace(/^"|"$/g, ""))
-  if (rows.length && /^(ip|ips|host|hostname|address|target|name)$/i.test(rows[0])) rows.shift()
+  if (rows.length && (TARGET_HEADER_WORDS as readonly string[]).includes(rows[0].toLowerCase())) rows.shift()
   return rows.filter(Boolean)
+}
+
+/** The target box after an import: the box's lines plus the file's, each once; with the line-limit message when the
+ * result is over the per-source limit (the same message the box shows when typed, #151). */
+export function mergeImportedTargets(box: string, rows: string[], maxLines: number): { text: string; error: string | null } {
+  const lines = [...splitLines(box), ...rows].filter((v, i, all) => all.indexOf(v) === i)
+  const error = lines.length > maxLines
+    ? `${lines.length.toLocaleString("en-US")} lines; the limit is ${maxLines.toLocaleString("en-US")} per source`
+    : null
+  return { text: lines.join("\n"), error }
+}
+
+/** Why pasted or uploaded text is not known_hosts lines (#149: the backend's kinds.check_known_hosts, simplified), or
+ * null. A private key is refused before it is ever put in the box. */
+export function knownHostsProblem(text: string): string | null {
+  if (/PRIVATE KEY/.test(text)) {
+    return "This is a private key, not known_hosts lines. Paste the servers' public host keys (ssh-keyscan output)"
+  }
+  let lines = 0
+  const all = text.replace(/\r\n?/g, "\n").split("\n")
+  for (let i = 0; i < all.length; i++) {
+    const line = all[i].trim()
+    if (!line || line.startsWith("#")) continue
+    let fields = line.split(/\s+/)
+    if (fields[0] === "@cert-authority" || fields[0] === "@revoked") fields = fields.slice(1)
+    if (fields.length < 3 || !/^[a-z0-9][a-z0-9@._-]{2,63}$/.test(fields[1]) || !/^[A-Za-z0-9+/]+={0,2}$/.test(fields[2])) {
+      return `Line ${i + 1} is not a known_hosts line: expected host, key type and base64 key (ssh-keyscan output)`
+    }
+    lines++
+  }
+  return lines ? null : "Paste the known_hosts lines to pin, or choose trust on first use"
+}
+
+/** #156: a Windows or Active Directory port that would send the login to a server that is not verified, or null
+ * (the backend's kinds.credential_target_problem: WINRM_HTTP_PORTS and AD_NOT_LDAPS_PORTS). */
+export function windowsPortProblem(kind: string, port: number): string | null {
+  if (kind === "windows_servers" && [80, 5985, 8080].includes(port)) {
+    return `${port} is a plain-HTTP port: WinRM over HTTP cannot prove the server; use HTTPS (5986)`
+  }
+  if (kind === "active_directory" && [389, 3268, 80, 5985, 5986, 8080].includes(port)) {
+    return `${port} is not LDAPS: use 636, or 3269 for the global catalog`
+  }
+  return null
 }
 
 /** Host names from a BIND zone file export (A, AAAA and CNAME owners). */
@@ -175,11 +222,15 @@ export interface NodeImage {
    * by a missing .sha256 file (#228) */
   archiveSha256?: string
   chartSha256?: string
+  /** #197: the 40-character commit the image file was built from (manifest build): the tag the Helm commands push it
+   * under to the customer's registry carries it (<version>-<sha12>), so a cluster that already holds an older image of
+   * the same version (pullPolicy IfNotPresent) never keeps running it */
+  build?: string
 }
 
 /** The name scripts/release/scan_node_image.sh saves the image under (SCAN_NODE_IMAGE's default) for the scan node's
  * VERSION: what the wizard runs until the server says what its image file holds. */
-export const DEFAULT_NODE_IMAGE = "localhost/zeroshield/cbom-scan-node:1.0.0"
+export const DEFAULT_NODE_IMAGE = "localhost/zeroshield/cbom-scan-node:1.0.1"
 
 /** What the server offers (GET /{team}/cbom/node-artifacts). */
 export interface NodeArtifact {
@@ -193,27 +244,140 @@ export interface NodeArtifact {
 }
 export interface NodeArtifacts {
   version: string | null
+  /** the 40-character commit the shipped node image was built from, and "<version>+<12 characters>" (staging QA B6-1) */
+  build?: string | null
+  node_build?: string | null
   image_ref: string | null
   pull_image_ref: string | null
+  /** #197: is pull_image_ref this server's node build (backend node_release.image_freshness) */
+  pull_image_freshness?: ImageFreshness | null
   /** the Helm chart in the same registry (CBOM_NODE_CHART_REF): oci://... and its version; only with pull_image_ref */
   pull_chart_ref?: string | null
   pull_chart_version?: string | null
   artifacts: NodeArtifact[]
 }
 
-/** The image the commands load and run, and the registry image when one is configured. */
-export function nodeImages(data: NodeArtifacts | undefined | null, buildPullRef?: string | null): { loaded: NodeImage; pulled: NodeImage | null } {
+/** #197: is a registry image this server's node release? The same rules as the backend's
+ * node_release.image_freshness (one table of cases for both: contracts/cbom/node_image_freshness.json), from the tag
+ * alone. Since #377 every node-changing promotion is a new release 1.0.N, so the same version is current; 1.0.0 (the
+ * version every build claimed before release versions) never is; <prefix>-<sha12> names one commit; staging / dev /
+ * stable / latest / pr-<n> / X.Y / no tag are moving tags. */
+export type ImageFreshnessState = "current" | "outdated" | "different" | "unverified" | "moving" | "unknown"
+export interface ImageFreshness {
+  state: ImageFreshnessState
+  reason: string | null
+  message: string | null
+  server_build?: string | null
+  tag?: string | null
+}
+/** The states in which the wizard does not install the registry image: it says why and uses this server's file. */
+export const STALE_IMAGE_STATES: readonly ImageFreshnessState[] = ["outdated", "different", "unverified"]
+/** scan_node/release.json: releases start at 1.0.1; 1.0.0 named many different builds (node_release.LEGACY_VERSION). */
+const LEGACY_NODE_VERSION = "1.0.0"
+
+const SHA_TAG = /^(?:dev|staging|manual|pr-[1-9][0-9]{0,6})-([0-9a-f]{12})(?:-[0-9a-f]{8})?$/
+const RELEASE_TAG = /^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$/
+const MOVING_TAG = /^(?:dev|staging|stable|latest|main|pr-[1-9][0-9]{0,6}|[0-9]+\.[0-9]+|[0-9]+)$/
+
+/** -1 / 0 / 1 for two semver-like versions (a pre-release before its release), null when either is not one. */
+export function compareNodeVersions(a: string, b: string): number | null {
+  if (a === b) return 0
+  const parse = (v: string) => {
+    const m = /^([0-9]+(?:\.[0-9]+)*)(?:-([0-9A-Za-z.-]+))?$/.exec(v)
+    return m ? { core: m[1].split(".").map(Number), pre: m[2] ?? null } : null
+  }
+  const x = parse(a), y = parse(b)
+  if (!x || !y) return null
+  const width = Math.max(x.core.length, y.core.length, 3)
+  for (let i = 0; i < width; i++) {
+    const d = (x.core[i] ?? 0) - (y.core[i] ?? 0)
+    if (d) return d < 0 ? -1 : 1
+  }
+  if (x.pre === y.pre) return 0
+  if (x.pre === null) return 1
+  if (y.pre === null) return -1
+  const xp = x.pre.split("."), yp = y.pre.split(".")
+  for (let i = 0; i < Math.max(xp.length, yp.length); i++) {
+    if (xp[i] === undefined) return -1
+    if (yp[i] === undefined) return 1
+    if (xp[i] === yp[i]) continue
+    const xn = /^[0-9]+$/.test(xp[i]), yn = /^[0-9]+$/.test(yp[i])
+    if (xn && yn) return Number(xp[i]) < Number(yp[i]) ? -1 : 1
+    if (xn !== yn) return xn ? -1 : 1
+    return xp[i] < yp[i] ? -1 : 1
+  }
+  return 0
+}
+
+export function imageFreshness(ref: string | null | undefined, serverVersion: string | null | undefined,
+  serverBuild: string | null | undefined): ImageFreshness | null {
+  const image = (ref ?? "").trim()
+  if (!image) return null
+  const [, tag] = splitImage(image.split("@")[0])
+  const build = serverBuild && /^[0-9a-f]{40}$/.test(serverBuild) ? serverBuild : null
+  const server = serverVersion ? (build ? `${serverVersion}+${build.slice(0, 12)}` : serverVersion) : null
+  const say = (state: ImageFreshnessState, reason: string, message: string | null): ImageFreshness =>
+    ({ state, reason, message, server_build: server, tag })
+  if (!serverVersion) return say("unknown", "no_server_build", null)
+  if (RELEASE_TAG.test(tag)) {
+    const order = compareNodeVersions(tag, serverVersion)
+    if (order !== null && order < 0) return say("outdated", "older_version", `${image} is scan node ${tag}, older than this server's node release ${server}.`)
+    if (order !== null && order > 0) return say("different", "newer_version", `${image} is scan node ${tag}, newer than this server's node release ${server}.`)
+    if (tag === LEGACY_NODE_VERSION) {
+      return say("unverified", "legacy_version", `${image} is ${tag}, the version every scan node build reported before release versions existed: it cannot be shown to be this server's node build ${server}.`)
+    }
+    return say("current", "same_version", null)
+  }
+  const sha = SHA_TAG.exec(tag)
+  if (sha) {
+    if (!build) return say("unknown", "no_server_build_id", null)
+    if (build.startsWith(sha[1])) return say("current", "same_build", null)
+    return say("unverified", "other_commit", `${image} was built from commit ${sha[1]}: it cannot be shown to be this server's node release ${server}.`)
+  }
+  if (MOVING_TAG.test(tag)) {
+    return say("moving", "moving_tag", `${image} is a moving tag: it names whatever was published last, which may not be this server's node release ${server}.`)
+  }
+  return say("unknown", "unrecognised_tag", null)
+}
+
+/** The registry image the wizard would install and what it is against the server's node build. */
+export interface RegistryImage { image: string; freshness: ImageFreshness | null; stale: boolean }
+
+/** The image the commands load and run, and the registry image when one is configured. #197: a registry image that
+ * is not this server's node build (STALE_IMAGE_STATES) is never offered (`pulled` null): `registry` says what it is,
+ * and the commands use this server's image file, which is its node build by definition. */
+export function nodeImages(data: NodeArtifacts | undefined | null, buildPullRef?: string | null):
+  { loaded: NodeImage; pulled: NodeImage | null; registry: RegistryImage | null } {
   const found = (kind: NodeArtifact["kind"]) => data?.artifacts.find((a) => a.kind === kind && a.available) ?? null
   const sha = (kind: NodeArtifact["kind"]) => {
     const value = found(kind)?.sha256
     return value && /^[0-9a-f]{64}$/.test(value) ? value : undefined
   }
+  const build = data?.build && /^[0-9a-f]{40}$/.test(data.build) ? data.build : undefined
   const loaded: NodeImage = {
     image: data?.image_ref || DEFAULT_NODE_IMAGE, pull: false, archive: found("image")?.filename ?? undefined,
-    chart: found("helm-chart")?.filename ?? undefined, archiveSha256: sha("image"), chartSha256: sha("helm-chart"),
+    chart: found("helm-chart")?.filename ?? undefined, archiveSha256: sha("image"), chartSha256: sha("helm-chart"), build,
   }
-  const ref = (data?.pull_image_ref || buildPullRef || "").trim()
-  return { loaded, pulled: ref ? { image: ref, pull: true, chart: loaded.chart, chartSha256: loaded.chartSha256 } : null }
+  const serverRef = (data?.pull_image_ref || "").trim()
+  const ref = (serverRef || buildPullRef || "").trim()
+  if (!ref) return { loaded, pulled: null, registry: null }
+  // the server's own verdict on its registry image; the build's image (NEXT_PUBLIC_CBOM_NODE_IMAGE) is judged here
+  const freshness = serverRef && data?.pull_image_freshness !== undefined
+    ? data.pull_image_freshness
+    : imageFreshness(ref, data?.version, build)
+  const stale = !!freshness && STALE_IMAGE_STATES.includes(freshness.state)
+  return {
+    loaded,
+    pulled: stale ? null : { image: ref, pull: true, chart: loaded.chart, chartSha256: loaded.chartSha256 },
+    registry: { image: ref, freshness, stale },
+  }
+}
+
+/** The tag a downloaded image is pushed under to the customer's registry: <tag>-<sha12> when the server names the
+ * commit it was built from (#197), so a new build never reuses the tag of an older one of the same version. */
+export function pushTag(img: NodeImage): string {
+  const [, tag] = splitImage(img.image)
+  return !img.pull && img.build && /^[0-9a-f]{40}$/.test(img.build) ? `${tag}-${img.build.slice(0, 12)}` : tag
 }
 
 function splitImage(image: string): [string, string] {
@@ -240,7 +404,7 @@ export function checkFile(file: string, sha256?: string): string {
  * step is chained with && from the checks on (#228): a file that fails its SHA-256 check is never loaded, pushed or
  * installed. */
 function helmSource(img: NodeImage): { steps: string[]; chart: string; repoArg: string; tag: string } {
-  const { archive, chart, tag } = nodeFiles(img)
+  const { archive, chart } = nodeFiles(img)
   const chartCheck = `${checkFile(chart, img.chartSha256)} && \\`
   if (img.pull) {
     const [repo, ptag] = splitImage(img.image)
@@ -250,6 +414,7 @@ function helmSource(img: NodeImage): { steps: string[]; chart: string; repoArg: 
     }
   }
   const base = splitImage(img.image)[0].split("/").pop() || "cbom-scan-node"
+  const pushed = pushTag(img)
   return {
     steps: [
       "# The image file and the chart you downloaded (Download scan node image, Download Helm chart): the image is pushed",
@@ -258,27 +423,158 @@ function helmSource(img: NodeImage): { steps: string[]; chart: string; repoArg: 
       `${checkFile(archive, img.archiveSha256)} && \\`,
       chartCheck,
       `docker load -i ${archive} && \\`,
-      `docker tag ${img.image} "$REGISTRY/${base}:${tag}" && \\`,
-      `docker push "$REGISTRY/${base}:${tag}" && \\`,
+      `docker tag ${img.image} "$REGISTRY/${base}:${pushed}" && \\`,
+      `docker push "$REGISTRY/${base}:${pushed}" && \\`,
     ],
     chart: `./${chart}`,
     repoArg: `"$REGISTRY/${base}"`,
-    tag,
+    tag: pushed,
   }
 }
 
-type NodeCommandOpts = { token: string; apiUrl: string; proxyUrl?: string | null; image: string; name: string; insecureHttp?: boolean }
+/** How the node trusts the ZeroShield API (CB-15): a private CA bundle (ZS_CA_FILE) and/or a client certificate when
+ * the API requires mTLS (ZS_CLIENT_CERT / ZS_CLIENT_KEY). Docker and Helm read the files from the paths given here
+ * (absolute host paths); the AMI and OVA read them from TRUST_DIR on the VM. The files never leave the host. */
+export interface NodeTrust {
+  caFile?: string | null
+  clientCert?: string | null
+  clientKey?: string | null
+}
+/** Where the node reads the trust files: inside the container (Docker, VM kits), and the VM directory zs-node-run mounts. */
+export const TRUST_DIR = "/etc/zs-node/trust"
+export const TRUST_PATHS = { ca: `${TRUST_DIR}/ca.pem`, cert: `${TRUST_DIR}/client.crt`, key: `${TRUST_DIR}/client.key`,
+  proxyAuth: `${TRUST_DIR}/proxy-auth` }
+/** The Helm Secrets the wizard's command creates (chart values trust.caSecret / trust.clientSecret / proxyAuthSecret). */
+export const TRUST_SECRETS = { ca: "zs-node-ca", client: "zs-node-client", proxyAuth: "zs-node-proxy-auth" }
+/** #199: the file the install command writes the proxy login to (user:password, 0400 for the node's user): the
+ * password is typed on the host with `read -s`, never in ZeroShield, the command, the shell history or the env. */
+export const PROXY_AUTH_FILE = "zs-proxy-auth"
+/** #196: the node's CA bundle when both a private API CA and the inspecting proxy's CA are given. */
+export const CA_BUNDLE_FILE = "zs-node-ca.pem"
+/** The node container's user (Dockerfile USER 10001): the owner of the 0400 files it reads. */
+const NODE_UID = 10001
+
+function given(v: string | null | undefined): string | null {
+  const t = (v ?? "").trim()
+  return t ? t : null
+}
+
+/** What is wrong with the trust options, or null: absolute paths only (a Docker bind mount needs one), and a client
+ * certificate always with its key. */
+export function trustProblem(t: NodeTrust | null | undefined): string | null {
+  if (!t) return null
+  const ca = given(t.caFile), cert = given(t.clientCert), key = given(t.clientKey)
+  if (!!cert !== !!key) return "Give both the client certificate and its key, or neither."
+  for (const [label, v] of [["CA bundle", ca], ["Client certificate", cert], ["Client key", key]] as const) {
+    if (v && (!v.startsWith("/") || /[\s'"$`\\]/.test(v))) return `${label}: an absolute path on the host, without spaces or quotes.`
+  }
+  return null
+}
+
+/** The trust options in use (empty paths dropped), or null when none is set or they are invalid. */
+export function activeTrust(t: NodeTrust | null | undefined): Required<NodeTrust> | null {
+  if (!t || trustProblem(t)) return null
+  const out = { caFile: given(t.caFile), clientCert: given(t.clientCert), clientKey: given(t.clientKey) }
+  return out.caFile || out.clientCert ? out : null
+}
+
+/** KEY=value lines of the trust options for an env file (AMI cloud-config, OVA): the files sit in TRUST_DIR on the VM. */
+export function trustEnvLines(t: NodeTrust | null | undefined): string[] {
+  const a = activeTrust(t)
+  if (!a) return []
+  return [
+    ...(a.caFile ? [`ZS_CA_FILE=${TRUST_PATHS.ca}`] : []),
+    ...(a.clientCert ? [`ZS_CLIENT_CERT=${TRUST_PATHS.cert}`, `ZS_CLIENT_KEY=${TRUST_PATHS.key}`] : []),
+  ]
+}
+
+/** `docker run` options: the env and read-only bind mounts of the files (the API CA from apiCa: #196). */
+function trustDockerLines(t: NodeTrust | null | undefined, ca: string | null = null): string[] {
+  const a = activeTrust(t)
+  return [
+    ...(ca ? [`  -e ZS_CA_FILE=${TRUST_PATHS.ca} -v ${ca}:${TRUST_PATHS.ca}:ro \\`] : []),
+    ...(a?.clientCert ? [
+      `  -e ZS_CLIENT_CERT=${TRUST_PATHS.cert} -v ${a.clientCert}:${TRUST_PATHS.cert}:ro \\`,
+      `  -e ZS_CLIENT_KEY=${TRUST_PATHS.key} -v ${a.clientKey}:${TRUST_PATHS.key}:ro \\`,
+    ] : []),
+  ]
+}
+
+/** Helm: the Secrets made from the files (before the install, each step chained with &&) and the chart values. */
+function trustHelm(opts: NodeCommandOpts): { pre: string[]; sets: string[] } {
+  const a = activeTrust(opts.trust)
+  const ca = apiCa(opts)
+  const auth = !!given(opts.proxyUser)
+  if (!ca.local && !a?.clientCert && !auth) return { pre: [], sets: [] }
+  const apply = "--dry-run=client -o yaml | kubectl apply -f - && \\"
+  return {
+    pre: [
+      ...ca.pre,
+      "kubectl create namespace zs-cbom --dry-run=client -o yaml | kubectl apply -f - && \\",
+      ...(ca.local ? [`kubectl -n zs-cbom create secret generic ${TRUST_SECRETS.ca} --from-file=ca.pem=${ca.local} ${apply}`] : []),
+      ...(a?.clientCert ? [`kubectl -n zs-cbom create secret tls ${TRUST_SECRETS.client} --cert=${a.clientCert} --key=${a.clientKey} ${apply}`] : []),
+      // #199: the login goes into a Secret (mounted 0440 for the node's group) and the file leaves this host
+      ...(auth ? [`kubectl -n zs-cbom create secret generic ${TRUST_SECRETS.proxyAuth} --from-file=auth=${PROXY_AUTH_FILE} ${apply}`,
+        `rm -f ${PROXY_AUTH_FILE} && \\`] : []),
+    ],
+    sets: [
+      ...(ca.local ? [`  --set trust.caSecret=${TRUST_SECRETS.ca} \\`] : []),
+      ...(a?.clientCert ? [`  --set trust.clientSecret=${TRUST_SECRETS.client} \\`] : []),
+      ...(auth ? [`  --set proxyAuthSecret=${TRUST_SECRETS.proxyAuth} \\`] : []),
+    ],
+  }
+}
+
+type NodeCommandOpts = {
+  token: string; apiUrl: string; proxyUrl?: string | null; image: string; name: string; insecureHttp?: boolean; trust?: NodeTrust | null
+  /** #196: the TLS-inspecting proxy's CA file name in this directory (only when the proxy inspects TLS and its CA was
+   * given): the node trusts it for the ZeroShield API (ZS_CA_FILE), with the private CA when there is one too */
+  caFile?: string | null
+  /** #199: the proxy's user name when it needs a login (the password is typed on the host: proxyAuthCreate) */
+  proxyUser?: string | null
+  /** #197: the commit the downloaded image file was built from (NodeImage.build): the Helm push tag carries it */
+  build?: string | null
+}
+
+/** #196: where the node's API CA comes from: the private CA path (CB-15), the proxy's CA file here, or both bundled. */
+function apiCa(opts: NodeCommandOpts): { pre: string[]; host: string | null; local: string | null } {
+  const priv = activeTrust(opts.trust)?.caFile ?? null
+  const proxyCa = given(opts.caFile)
+  if (priv && proxyCa) {
+    return { pre: [`cat ${priv} ./${proxyCa} > ${CA_BUNDLE_FILE} && \\`], host: `"$PWD/${CA_BUNDLE_FILE}"`, local: `./${CA_BUNDLE_FILE}` }
+  }
+  if (proxyCa) return { pre: [], host: `"$PWD/${proxyCa}"`, local: `./${proxyCa}` }
+  return { pre: [], host: priv, local: priv }
+}
+
+/** #199: the lines that make the proxy login file on the host, first in every command (the downloads use it too). */
+export function proxyAuthCreate(user: string | null | undefined): string[] {
+  const u = given(user)
+  if (!u) return []
+  return [
+    `# The proxy password stays on this host: typed here (not shown, not in the shell history), kept in ${PROXY_AUTH_FILE}`,
+    `read -rsp ${shQuote(`Password of proxy user ${u}: `)} ZS_PROXY_PW && echo && \\`,
+    `( umask 077 && printf '%s:%s\\n' ${shQuote(u)} "$ZS_PROXY_PW" > ${PROXY_AUTH_FILE} ) && unset ZS_PROXY_PW && \\`,
+  ]
+}
 
 /** `docker run` of one node (pullNever: the image was just loaded from the file, never one from a registry). */
 function dockerRunLines(opts: NodeCommandOpts, pullNever: boolean): string[] {
   const proxy = opts.proxyUrl ? opts.proxyUrl : ""
   const names = nodeInstallNames(opts.name)
+  const ca = apiCa(opts)
+  const auth = !!given(opts.proxyUser)
   return [
+    ...ca.pre,
+    // #199: the login file (made first: proxyAuthCreate) is handed to the node's user, read-only
+    ...(auth ? [`chmod 0400 ${PROXY_AUTH_FILE} && sudo chown ${NODE_UID} ${PROXY_AUTH_FILE} && \\`] : []),
     `docker run -d${pullNever ? " --pull never" : ""} --name ${names.container} --restart unless-stopped \\`,
     `  -e ZS_API_URL=${shQuote(opts.apiUrl)} \\`,
     `  -e ZS_REGISTRATION_TOKEN=${shQuote(opts.token)} \\`,
     ...(opts.insecureHttp ? ["  -e ZS_ALLOW_INSECURE_HTTP=1 \\"] : []),
     ...(proxy ? [`  -e HTTPS_PROXY=${shQuote(proxy)} \\`] : []),
+    ...(auth ? [`  -e ZS_PROXY_AUTH_FILE=${TRUST_PATHS.proxyAuth} -v "$PWD/${PROXY_AUTH_FILE}":${TRUST_PATHS.proxyAuth}:ro \\`] : []),
+    ...trustDockerLines(opts.trust, ca.host),
     `  -v ${names.volume}:/var/lib/zs-node \\`,
     `  ${opts.image}`,
   ]
@@ -287,12 +583,15 @@ function dockerRunLines(opts: NodeCommandOpts, pullNever: boolean): string[] {
 /** `helm upgrade --install` of one node from <chart> (a downloaded .tgz or an oci:// reference with its --version). */
 function helmInstallLines(release: string, chart: string, repoArg: string, tag: string, opts: NodeCommandOpts): string[] {
   const proxy = opts.proxyUrl ? opts.proxyUrl : ""
+  const trust = trustHelm(opts)
   return [
+    ...trust.pre,
     `helm upgrade --install ${release} ${chart} \\`,
     "  --namespace zs-cbom --create-namespace \\",
     `  --set image.repository=${repoArg} --set image.tag=${shQuote(tag)} \\`,
     `  --set apiUrl=${shQuote(opts.apiUrl)} \\`,
     ...(opts.insecureHttp ? ["  --set allowInsecureHttp=true \\"] : []),
+    ...trust.sets,
     `  --set registrationToken=${shQuote(opts.token)}${proxy ? " \\" : ""}`,
     ...(proxy ? [`  --set httpsProxy=${shQuote(proxy)}`] : []),
   ]
@@ -300,15 +599,16 @@ function helmInstallLines(release: string, chart: string, repoArg: string, tag: 
 
 export function installCommand(
   method: DeployMethod,
-  opts: { token: string; apiUrl: string; proxyUrl?: string | null; image: string; name: string; insecureHttp?: boolean; pull?: boolean; archive?: string; chart?: string; archiveSha256?: string; chartSha256?: string },
+  opts: NodeCommandOpts & { pull?: boolean; archive?: string; chart?: string; archiveSha256?: string; chartSha256?: string },
 ): string {
   const proxy = opts.proxyUrl ? opts.proxyUrl : ""
   const names = nodeInstallNames(opts.name)
   const img: NodeImage = { image: opts.image, pull: opts.pull, archive: opts.archive, chart: opts.chart,
-    archiveSha256: opts.archiveSha256, chartSha256: opts.chartSha256 }
+    archiveSha256: opts.archiveSha256, chartSha256: opts.chartSha256, build: opts.build ?? undefined }
   if (method === "docker") {
     const { archive } = nodeFiles(img)
     return [
+      ...proxyAuthCreate(opts.proxyUser),
       ...(opts.pull ? [] : [
         "# Check, load and run the image file you downloaded (Download scan node image); nothing is loaded or run if",
         "# the check fails. --pull never: the image just loaded, never one from a registry.",
@@ -320,7 +620,7 @@ export function installCommand(
   }
   if (method === "helm") {
     const src = helmSource(img)
-    return [...src.steps, ...helmInstallLines(names.release, src.chart, src.repoArg, src.tag, opts)].join("\n")
+    return [...proxyAuthCreate(opts.proxyUser), ...src.steps, ...helmInstallLines(names.release, src.chart, src.repoArg, src.tag, opts)].join("\n")
   }
   if (method === "ami") {
     return [
@@ -333,6 +633,11 @@ export function installCommand(
       `      ZS_REGISTRATION_TOKEN=${opts.token}`,
       ...(opts.insecureHttp ? ["      ZS_ALLOW_INSECURE_HTTP=1"] : []),
       ...(proxy ? [`      HTTPS_PROXY=${proxy}`] : []),
+      ...vmEnvLines(opts).map((l) => `      ${l}`),
+      ...(vmFiles(opts).length ? [
+        `# Put the trust files in ${TRUST_DIR}/ on the instance before the node starts (the key and the proxy password never in user data):`,
+        ...vmFiles(opts).map((l) => `#   ${l}`),
+      ] : []),
     ].join("\n")
   }
   return [
@@ -340,7 +645,43 @@ export function installCommand(
     `zs.api_url = ${opts.apiUrl}`,
     `zs.registration_token = ${opts.token}`,
     ...(proxy ? [`zs.https_proxy = ${proxy}`] : []),
+    ...(vmFiles(opts).length ? [
+      `# Then on the VM: put the trust files in ${TRUST_DIR}/, add these lines to /etc/zs-node/env and restart the node:`,
+      ...vmFiles(opts).map((l) => `#   ${l}`),
+      ...vmEnvLines(opts).map((l) => `#   ${l}`),
+      "#   sudo systemctl restart zs-scan-node",
+    ] : []),
   ].join("\n")
+}
+
+/** AMI / OVA env lines: the CB-15 trust options, the proxy's CA (#196) and the proxy login file (#199). */
+export function vmEnvLines(opts: NodeCommandOpts): string[] {
+  const lines = trustEnvLines(opts.trust)
+  const withCa = given(opts.caFile) && !lines.some((l) => l.startsWith("ZS_CA_FILE=")) ? [`ZS_CA_FILE=${TRUST_PATHS.ca}`] : []
+  return [...withCa, ...lines, ...(given(opts.proxyUser) ? [`ZS_PROXY_AUTH_FILE=${TRUST_PATHS.proxyAuth}`] : [])]
+}
+
+/** AMI / OVA: which file goes where on the VM, the proxy's CA and login included. */
+export function vmFiles(opts: NodeCommandOpts): string[] {
+  const proxyCa = given(opts.caFile)
+  const priv = activeTrust(opts.trust)?.caFile
+  const files = vmTrustFiles(opts.trust).filter((l) => !(proxyCa && l.startsWith(TRUST_PATHS.ca)))
+  const user = given(opts.proxyUser)
+  return [
+    ...(proxyCa ? [`${TRUST_PATHS.ca}: ${priv ? `your CA bundle followed by your proxy's CA (${proxyCa}): cat them into one file` : `your proxy's CA (${proxyCa})`}`] : []),
+    ...files,
+    ...(user ? [`${TRUST_PATHS.proxyAuth}: one line ${user}:<proxy password>, made on the VM (sudo install -m 0400 -o ${NODE_UID} /dev/null ${TRUST_PATHS.proxyAuth}, then write it with read -s and printf, never in user data)`] : []),
+  ]
+}
+
+/** Which file goes where on an AMI / OVA VM (TRUST_DIR, read by the node's user, uid 10001). */
+export function vmTrustFiles(t: NodeTrust | null | undefined): string[] {
+  const a = activeTrust(t)
+  if (!a) return []
+  return [
+    ...(a.caFile ? [`${TRUST_PATHS.ca} (your CA bundle)`] : []),
+    ...(a.clientCert ? [`${TRUST_PATHS.cert} and ${TRUST_PATHS.key} (chown 10001 and chmod 0400 the key)`] : []),
+  ]
 }
 
 /** One file of a node's install links (POST /nodes, /registration-token, /reset: install_links; backend
@@ -374,6 +715,9 @@ export interface FetchOpts {
   fetcher?: Fetcher
   /** a plain-HTTP test-lab API (CB-08): curl may not be held to https */
   insecureHttp?: boolean
+  /** #199: the proxy needs a login: read from PROXY_AUTH_FILE (made by proxyAuthCreate) through a config on stdin
+   * (curl -K -) or a process substitution (wget --config), never on the command line */
+  proxyUser?: string | null
 }
 
 /** Download one install file from ZeroShield and check it: `curl ... -o <file> && echo '<sha256>  <file>' | sha256sum -c -`
@@ -381,12 +725,17 @@ export interface FetchOpts {
 export function fetchCommand(file: InstallFile, o: FetchOpts): string {
   const url = shQuote(`${o.apiUrl.trim().replace(/\/+$/, "")}${file.url}`)
   const proxy = o.proxyUrl?.trim() || ""
+  const login = !!proxy && !!given(o.proxyUser)
   const parts = (o.fetcher ?? "curl") === "wget"
-    ? ["wget -q", ...(proxy ? ["-e use_proxy=yes", `-e https_proxy=${shQuote(proxy)}`] : []),
+    ? ["wget -q", ...(login ? [`--config=<(awk -F: '{print "proxy_user = " $1; sub(/^[^:]*:/, ""); print "proxy_password = " $0}' ${PROXY_AUTH_FILE})`] : []),
+      ...(proxy ? ["-e use_proxy=yes", `-e https_proxy=${shQuote(proxy)}`] : []),
       ...(o.caFile ? [`--ca-certificate=${shQuote(o.caFile)}`] : []), `-O ${file.filename}`, url]
-    : ["curl -fsSL", o.insecureHttp ? "--proto '=http,https'" : "--proto '=https'", ...(proxy ? [`--proxy ${shQuote(proxy)}`] : []),
+    : ["curl -fsSL", ...(login ? ["-K -"] : []), o.insecureHttp ? "--proto '=http,https'" : "--proto '=https'", ...(proxy ? [`--proxy ${shQuote(proxy)}`] : []),
       ...(o.caFile ? [`--cacert ${shQuote(o.caFile)}`] : []), url, `-o ${file.filename}`]
-  return `${parts.join(" ")} && echo '${file.sha256}  ${file.filename}' | sha256sum -c -`
+  // curl -K - reads proxy-user "user:password" from stdin (quotes and backslashes escaped), never from argv
+  const feed = login && (o.fetcher ?? "curl") !== "wget"
+    ? `sed 's/[\\\\"]/\\\\&/g; s/^/proxy-user = "/; s/$/"/' ${PROXY_AUTH_FILE} | ` : ""
+  return `${feed}${parts.join(" ")} && echo '${file.sha256}  ${file.filename}' | sha256sum -c -`
 }
 
 /** The one-paste install of a node on a terminal-only host: fetch its files from ZeroShield with its install links,
@@ -405,8 +754,10 @@ export function onePasteInstall(
   const ca = opts.caFile
     ? [`# ${opts.caFile}: your proxy's CA certificate (the file you uploaded), in this directory; ${tool} trusts it for these downloads only`]
     : []
+  const auth = proxyAuthCreate(opts.proxyUser)
   if (method === "docker") {
     return [
+      ...auth,
       ...ca,
       fetch(image),
       `docker load -i ${image.filename} && \\`,
@@ -416,10 +767,12 @@ export function onePasteInstall(
   if (method === "helm") {
     const chart = file("helm-chart")
     if (!chart) return null
-    const [repo, tag] = splitImage(opts.image)
+    const [repo] = splitImage(opts.image)
     const base = repo.split("/").pop() || "cbom-scan-node"
+    const tag = pushTag({ image: opts.image, build: opts.build ?? undefined })
     return [
       "REGISTRY=registry.example.internal/zeroshield   # change to the registry your cluster pulls from",
+      ...auth,
       ...ca,
       fetch(image),
       fetch(chart),
@@ -438,6 +791,7 @@ export function onePasteInstall(
     : `packer build -var region="\${AWS_REGION:-ap-south-1}" ${template}   # your region; AWS credentials from the environment`
   return [
     `# Build the ${method === "ova" ? "OVA" : "AMI"} once (needs ${tool}, unzip and Packer; the kit's README.md has the details):`,
+    ...auth,
     ...ca,
     fetch(kit),
     fetch(image),
@@ -457,15 +811,15 @@ export function registryInstall(
   const image = data?.pull_image_ref?.trim()
   if (!image) return null
   if (method === "docker") {
-    return [`docker pull ${image} && \\`, ...dockerRunLines({ ...opts, image }, false)].join("\n")
+    return [...proxyAuthCreate(opts.proxyUser), `docker pull ${image} && \\`, ...dockerRunLines({ ...opts, image }, false)].join("\n")
   }
   if (method === "helm") {
     const chart = data?.pull_chart_ref?.trim()
     const version = data?.pull_chart_version?.trim()
     if (!chart || !version) return null
     const [repo, tag] = splitImage(image)
-    return helmInstallLines(nodeInstallNames(opts.name).release, `${chart} --version ${shQuote(version)}`, shQuote(repo), tag,
-      { ...opts, image }).join("\n")
+    return [...proxyAuthCreate(opts.proxyUser), ...helmInstallLines(nodeInstallNames(opts.name).release,
+      `${chart} --version ${shQuote(version)}`, shQuote(repo), tag, { ...opts, image })].join("\n")
   }
   return null
 }
@@ -501,7 +855,7 @@ export const KIT_NEEDS_INTERNET: Record<"ova" | "ami", string> = {
 
 /** What needs network access, for restricted networks (#230): shown on the Scan nodes tab. */
 export const NETWORK_REQUIREMENTS: string[] = [
-  "A scan node always needs outbound HTTPS to the ZeroShield API (nothing calls in); it reaches your targets directly.",
+  "A scan node always needs outbound HTTPS to the ZeroShield API (nothing calls in) and DNS (port 53) to your resolver; it reaches your targets directly.",
   "Installing it from the image file or the Helm chart (both downloaded from ZeroShield) needs nothing else; pulling the image from a public registry, when the page offers it, needs access to that registry.",
   "Building the OVA or AMI from the build kits needs internet access (Ubuntu image, Packer plugin, Ubuntu packages).",
   "Cloud and identity sources (AWS, Azure, GCP, IdPs) are read from ZeroShield's servers, so those providers' APIs must be reachable from ZeroShield.",
@@ -545,10 +899,10 @@ export function notAvailable(kind: NodeArtifact["kind"], artifact?: NodeArtifact
 
 /** The Helm command for agent mode: a DaemonSet whose pods each enroll with the agent pool token as their own node
  * (named after the Kubernetes node) and read only that node, from a read-only mount of its file system. */
-export function helmAgentCommand(opts: { poolToken: string; apiUrl: string; proxyUrl?: string | null; image: string; insecureHttp?: boolean; pull?: boolean; archive?: string; chart?: string; archiveSha256?: string; chartSha256?: string }): string {
+export function helmAgentCommand(opts: { poolToken: string; apiUrl: string; proxyUrl?: string | null; image: string; insecureHttp?: boolean; pull?: boolean; archive?: string; chart?: string; archiveSha256?: string; chartSha256?: string; build?: string }): string {
   const proxy = opts.proxyUrl ? opts.proxyUrl : ""
   const src = helmSource({ image: opts.image, pull: opts.pull, archive: opts.archive, chart: opts.chart,
-    archiveSha256: opts.archiveSha256, chartSha256: opts.chartSha256 })
+    archiveSha256: opts.archiveSha256, chartSha256: opts.chartSha256, build: opts.build })
   return [
     ...src.steps,
     `helm upgrade --install zs-host-agents ${src.chart} \\`,
@@ -570,7 +924,12 @@ export function refusalReason(error: unknown): string | null {
   const response = (error as { response?: { status?: unknown; data?: unknown } } | null | undefined)?.response
   const status = typeof response?.status === "number" ? response.status : 0
   if (status < 400 || status >= 500 || status === 401) return null
-  const detail = (response?.data as { detail?: unknown } | null | undefined)?.detail
+  let data = response?.data
+  if (typeof data === "string") {
+    // a file fetched as text (responseType "text"): a refusal's body is still the server's JSON {"detail": ...}
+    try { data = JSON.parse(data) } catch { data = null }
+  }
+  const detail = (data as { detail?: unknown } | null | undefined)?.detail
   return typeof detail === "string" && detail.trim() ? detail.trim().slice(0, 300) : null
 }
 

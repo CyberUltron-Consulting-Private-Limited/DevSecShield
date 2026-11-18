@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import datetime as _dt
+import logging
 from typing import Any
 
 from backend.new_models import (
@@ -18,12 +19,31 @@ from backend.utilities.cbom_sources.common import iso_z
 from backend.utilities.cbom_sources.evidence import AREAS, CONFIDENCE_LABEL, area_level, level, vendor_level, vendor_status
 from backend.utilities.cbom_sources.jobs import job_waiting_reason, run_credit_summary
 from backend.utilities.cbom_sources.kinds import KINDS
-from backend.utilities.cbom_sources.planning import node_status, source_targets
+from backend.utilities.cbom_sources.node_release import node_update, parse_reported, server_label, server_release
+from backend.utilities.cbom_sources.planning import RangeContext, node_status, source_targets
 from backend.utilities.cbom_sources.settings import next_window_start
+from backend.utilities.cbom_sources import vault_support as VAULT_SUPPORT
 
 
-def public_node(node: CbomScanNode, now: _dt.datetime, *, assigned_targets: int = 0, sources: int = 0) -> dict[str, Any]:
+_log = logging.getLogger(__name__)
+
+
+def node_update_or_unknown(reported: str | None, server: tuple[str | None, str | None]) -> dict[str, Any]:
+    """``node_update`` for one node, never raising: ``node_version`` is node-controlled text, and one node the comparison
+    cannot handle must not 500 the whole Scan nodes list (review of PR #286); that node says "unknown" instead."""
+    try:
+        return node_update(reported, *server)
+    except Exception:  # noqa: BLE001 - report "unknown" for this node, keep the rest of the list
+        _log.warning("cbom node update check failed for reported version %r", (reported or "")[:64], exc_info=True)
+        return {"state": "unknown", "reason": "compare_failed", "message": None,
+                "server_build": server_label(*server)}
+
+
+def public_node(node: CbomScanNode, now: _dt.datetime, *, assigned_targets: int = 0, sources: int = 0,
+                server: tuple[str | None, str | None] | None = None) -> dict[str, Any]:
+    """``server``: ``server_release()`` read once by a caller serialising many nodes; read here when not given."""
     status = node_status(node, now)
+    _version, build = parse_reported(node.node_version)
     return {
         "id": node.id,
         "team_id": node.team_id,
@@ -35,15 +55,24 @@ def public_node(node: CbomScanNode, now: _dt.datetime, *, assigned_targets: int 
         "proxy_url": node.proxy_url,
         "has_proxy_ca": bool(node.proxy_ca_pem),
         "proxy_tls_inspect": node.proxy_tls_inspect,
+        "proxy_user": node.proxy_user,
         "status": status,
         "registration_issued_at": iso_z(node.registration_issued_at),
         "registration_expires_at": iso_z(node.registration_expires_at),
         "enrolled_at": iso_z(node.enrolled_at),
         "hostname": node.hostname,
         "node_version": node.node_version,
+        # the commit the node's image was built from (12 characters), None when it reports none (staging QA B6-1)
+        "node_build": build,
+        # does it run this server's node build? {"state": current|update_available|newer|unknown, "reason", "message",
+        # "server_build"} (node_release.node_update)
+        "update": node_update_or_unknown(node.node_version, server if server is not None else server_release()),
         "source_ips": node.source_ips or [],
         "ssh_public_key": node.ssh_public_key,
         "capabilities": node.capabilities or {},
+        # #364: what the node reported for vault credentials: {"enabled": bool|None (not reported), "providers",
+        # "prefix" (without KV v2 data/), "setup": {provider: "ready" or what is missing}}
+        "vault": VAULT_SUPPORT.node_vault(node.capabilities),
         "clock_skew_s": node.clock_skew_s,
         "clock_in_sync": None if node.clock_skew_s is None else abs(node.clock_skew_s) <= 300,
         "last_heartbeat_at": iso_z(node.last_heartbeat_at),
@@ -93,10 +122,87 @@ def last_collects(session: Any, team_id: int, source_ids: list[int]) -> dict[int
     return out
 
 
+_PCA_ARN = "arn:aws:acm-pca:"
+
+
+def pca_reads(session: Any, team_id: int, sources: list[CbomCollectionSource],
+              accounts: dict[int, CbomCollectionSource] | None = None) -> dict[int, dict[str, Any] | None]:
+    """#368: what the newest finished collection of each AWS Private CA source's AWS account read of ACM Private CA.
+    The account collector reads acm-pca in every region of the account (aws_collect ``pca``); the Private CA source
+    itself never runs, so without this its card could not say whether the CAs were read.  For each such source:
+    None while its account is missing or was never collected, else ``{"account_source_id", "job_id", "run_id", "at",
+    "status": read|partial|not_read, "cas", "reason", "regions": [{"region", "status", "cas", "error"}]}``: per region
+    the acm-pca service status of the job's target rows (``not_read`` when the region was not reached) and the private
+    CAs found (``arn:aws:acm-pca:`` assets of the job's current attempt; an RDS CA is a ``cloud_ca`` too, not one)."""
+    from sqlmodel import col, select
+
+    from backend.new_models import CbomCollectedAsset, CbomCollectionJob
+
+    pcas = [s for s in sources if s.kind == "ca_connector" and (s.config or {}).get("provider") == "aws_private_ca"]
+    if not pcas:
+        return {}
+    wanted = {int(a) for s in pcas if isinstance(a := (s.config or {}).get("aws_source_id"), int)}
+    known = dict(accounts or {})
+    missing = [i for i in wanted if i not in known]
+    if missing:
+        for row in session.exec(select(CbomCollectionSource).where(CbomCollectionSource.team_id == team_id,
+                                                                   col(CbomCollectionSource.id).in_(missing))).all():
+            known[int(row.id)] = row
+    accounts_ok = {i for i in wanted if i in known and known[i].kind == "aws_account"}
+    collects = last_collects(session, team_id, sorted(accounts_ok))
+    jobs = {j.id: j for j in session.exec(select(CbomCollectionJob).where(
+        col(CbomCollectionJob.id).in_([c["job_id"] for c in collects.values()]))).all()} if collects else {}
+    per_job: dict[int, dict[str, int]] = {}
+    for job in jobs.values():
+        counts: dict[str, int] = {}
+        for loc in session.exec(select(CbomCollectedAsset.location).where(
+                CbomCollectedAsset.job_id == job.id, CbomCollectedAsset.attempt == max(int(job.attempts or 1), 1),
+                CbomCollectedAsset.asset_type == "cloud_ca", col(CbomCollectedAsset.location).startswith(_PCA_ARN))).all():
+            region = str(loc)[len(_PCA_ARN):].split(":", 1)[0]
+            counts[region] = counts.get(region, 0) + 1
+        per_job[job.id] = counts
+    out: dict[int, dict[str, Any] | None] = {}
+    for src in pcas:
+        account_id = (src.config or {}).get("aws_source_id")
+        collect = collects.get(account_id) if account_id in accounts_ok else None
+        job = jobs.get(collect["job_id"]) if collect else None
+        if job is None:
+            out[int(src.id)] = None
+            continue
+        regions: dict[str, dict[str, Any]] = {}
+        result = job.result if isinstance(job.result, dict) else {}
+        for target in result.get("targets") or []:
+            if not isinstance(target, dict):
+                continue
+            region = str(target.get("target") or "").rsplit("/", 1)[-1]
+            if not region or region == "global" or "/" not in str(target.get("target") or ""):
+                continue
+            service = (target.get("services") or {}).get("acm-pca")
+            status = str(service) if service else "not_read"
+            row = regions.setdefault(region, {"region": region, "status": status, "cas": 0, "error": None})
+            if row["status"] == "ok" and status != "ok":  # an organisation: one account's region not read is enough
+                row["status"] = status
+            if status != "ok" and not row["error"] and target.get("error"):
+                row["error"] = str(target["error"])[:256]
+        for region, n in per_job.get(job.id, {}).items():
+            regions.setdefault(region, {"region": region, "status": "ok", "cas": 0, "error": None})["cas"] = n
+        rows = [regions[r] for r in sorted(regions)]
+        read = [r for r in rows if r["status"] in ("ok", "partial")]
+        status = "read" if rows and len(read) == len(rows) and all(r["status"] == "ok" for r in rows) \
+            else "partial" if read else "not_read"
+        reason = None if read else (collect.get("summary") if not rows else None)
+        out[int(src.id)] = {"account_source_id": int(account_id), "job_id": job.id, "run_id": job.run_id,
+                            "at": collect["at"], "status": status, "cas": sum(r["cas"] for r in rows),
+                            "reason": reason, "regions": rows}
+    return out
+
+
 def public_source(source: CbomCollectionSource, settings: CbomCollectionSettings, node: CbomScanNode | None,
-                  now: _dt.datetime, last_collect: dict[str, Any] | None = None) -> dict[str, Any]:
+                  now: _dt.datetime, last_collect: dict[str, Any] | None = None,
+                  ranges: RangeContext | None = None) -> dict[str, Any]:
+    """``ranges``: the request's planning.RangeContext when it lists several sources (built once per request)."""
     spec = KINDS.get(source.kind)
-    info = source_targets(source, settings)
+    info = source_targets(source, settings, ranges)
     config = dict(source.config or {})
     return {
         "id": source.id,
@@ -108,6 +214,7 @@ def public_source(source: CbomCollectionSource, settings: CbomCollectionSettings
         "name": source.name,
         "node_id": source.node_id,
         "node_name": node.name if node else None,
+        "node_segment": (node.segment or None) if node else None,  # #225: the segment filter of the source tables
         "node_status": node_status(node, now) if source.node_id else None,
         "enabled": source.enabled,
         "config": config,
@@ -155,6 +262,8 @@ def public_job(job: CbomCollectionJob, node: CbomScanNode | None, settings: Cbom
         "attempts": job.attempts,
         "credits": round(job.weight_c / 100, 2),
         "refunded": job.refunded,
+        # what was given back (CB-14): all of "credits" for a failed or cancelled job, the runtime-skip share otherwise
+        "credits_refunded": round((job.refunded_c or 0) / 100, 2),
         "created_at": iso_z(job.created_at),
         "claimed_at": iso_z(job.claimed_at),
         "finished_at": iso_z(job.finished_at),

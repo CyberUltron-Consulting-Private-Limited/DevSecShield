@@ -4,11 +4,15 @@
     ghcr_meta.py decide   reads the event from the environment, writes key=value lines (for $GITHUB_OUTPUT):
                           publish (true/false), reason, ref (what to check out), prefix, moving, api_url, release
                           (true on a release branch: staging, main), owner, registry, source
-    ghcr_meta.py tags     reads PREFIX, SHA (the commit actually checked out), API_URL, RELEASE and NODE_VERSION_FILE
-                          (the checked-out scan_node/zs_scan_node/__init__.py), writes sha,
-                          tag=<prefix>-<sha12> (manual runs with another api_url: manual-<sha12>-<8 hex of its sha256>),
-                          node_version (the scan node's VERSION) and node_release_tags (RELEASE only: "1.0.0 1.0 latest"
-                          for a X.Y.Z version, just the version otherwise)
+    ghcr_meta.py tags     reads PREFIX, SHA (the commit actually checked out), API_URL, RELEASE, NODE_VERSION_FILE
+                          (the checked-out scan_node/zs_scan_node/__init__.py) and NODE_REPO (RELEASE: the checkout,
+                          with full history), writes sha, tag=<prefix>-<sha12> (manual runs with another api_url:
+                          manual-<sha12>-<8 hex of its sha256>), node_version and node_release_tags (RELEASE only:
+                          "1.0.4 1.0 latest" for a X.Y.Z version, just the version otherwise).
+                          node_version on a release is node_version.py's (issue #361: the next 1.0.N for every
+                          promotion that ships node changes, derived from the branch's history) so a published tag is
+                          never overwritten; elsewhere (dev, PR, manual) it is VERSION from __init__.py, and there are
+                          no release tags. A release with no derived version yet uses that same constant.
 
 Tag scheme:
     push to dev / staging                 <branch>-<sha12>, moving <branch>
@@ -35,6 +39,9 @@ import json
 import os
 import re
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import node_version as NV  # noqa: E402  (stdlib only, next to this file)
 
 PREVIEW_LABEL = "publish-preview"
 BRANCHES = ("dev", "staging")
@@ -143,10 +150,23 @@ def tags() -> dict[str, str]:
     release = env("RELEASE") == "true"
     if release and prefix not in RELEASE_BRANCHES:
         raise InputError(f"only a release branch ({', '.join(RELEASE_BRANCHES)}) gets release tags, not {prefix!r}")
-    if release and not node_version:
-        raise InputError(f"no scan-node VERSION in {env('NODE_VERSION_FILE') or 'NODE_VERSION_FILE (unset)'}")
-    return {"sha": sha, "tag": tag, "node_version": node_version,
-            "node_release_tags": " ".join(release_tags(node_version)) if release else ""}
+    release_version = ""
+    if release:
+        # issue #361: the immutable release tag is the history's, so a published version is never overwritten.
+        # VERSION in __init__.py is what dev, PR and manual images report, and the fallback when history names none.
+        if not env("NODE_REPO"):
+            raise InputError("a release needs NODE_REPO (the checkout of the built commit, with full history)")
+        try:
+            release_version = NV.derive(env("NODE_REPO"), sha)["version"]
+        except NV.VersionError as exc:
+            raise InputError(f"scan-node release version: {exc}") from None
+        if release_version and not NODE_VERSION_RE.match(release_version):
+            raise InputError(f"derived scan-node version {release_version!r} is not a release version")
+        if not release_version and not node_version:
+            raise InputError(f"no scan-node VERSION in {env('NODE_VERSION_FILE') or 'NODE_VERSION_FILE (unset)'}")
+    # no promotion has shipped node changes since the anchor: this commit's node is the last release's, nothing new
+    return {"sha": sha, "tag": tag, "node_version": release_version or node_version,
+            "node_release_tags": " ".join(release_tags(release_version)) if release_version else ""}
 
 
 def read_node_version(path: str) -> str:

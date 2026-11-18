@@ -57,6 +57,14 @@
     "kb:findings.node.CBC_ONLY.remediation"
    ]
   },
+  "CERT_CHAIN_EXTRA_EXPIRED": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "remove the expired cross-sign from the chain file the server is configured with",
+   "sources": [
+    "kb:findings.node.CERT_CHAIN_EXTRA_EXPIRED.remediation (CB-17)"
+   ]
+  },
   "CERT_EXPIRED": {
    "class": "configurable",
    "capability": false,
@@ -71,6 +79,14 @@
    "basis": "re-issue or renew the certificate with the CA and deployment already in use",
    "sources": [
     "kb:findings.node.CERT_EXPIRES_30D.remediation"
+   ]
+  },
+  "CERT_NOT_YET_VALID": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "stop serving it before its start date, or re-issue it with the CA already in use",
+   "sources": [
+    "kb:findings.node.CERT_NOT_YET_VALID.remediation (CB-17)"
    ]
   },
   "CERT_REVOKED": {
@@ -120,6 +136,14 @@
    "basis": "issue per-host certificates with the CA and ACME tooling already in use, and revoke the unused wildcards",
    "sources": [
     "kb:findings.node.CERT_WILDCARD_SPRAWL.remediation (checked 2026-11-14 against #112 head c0019017)"
+   ]
+  },
+  "CHAIN_INCOMPLETE": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "configure the server with the full chain file (leaf and intermediates) the CA already issued",
+   "sources": [
+    "kb:findings.node.CHAIN_INCOMPLETE.remediation (CB-17)"
    ]
   },
   "DB_10G_VERIFIER": {
@@ -1017,6 +1041,30 @@
     "kb:findings.node.STORAGE_UNENCRYPTED.remediation"
    ]
   },
+  "TLS_ANON_CIPHER": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "cipher setting of the TLS server (its cipher string or suite list)",
+   "sources": [
+    "kb:findings.node.TLS_ANON_CIPHER.remediation"
+   ]
+  },
+  "TLS_EXPORT_CIPHER": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "cipher setting of the TLS server (its cipher string or suite list)",
+   "sources": [
+    "kb:findings.node.TLS_EXPORT_CIPHER.remediation"
+   ]
+  },
+  "TLS_NULL_CIPHER": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "cipher setting of the TLS server (its cipher string or suite list)",
+   "sources": [
+    "kb:findings.node.TLS_NULL_CIPHER.remediation"
+   ]
+  },
   "TLS_POLICY_OVERRIDE": {
    "class": "configurable",
    "capability": false,
@@ -1197,6 +1245,14 @@
     "kb:findings.code.STATIC_IV.remediation"
    ]
   },
+  "STATIC_SALT": {
+   "class": "code-fixed",
+   "capability": false,
+   "basis": "the salt or iteration count is fixed in the team's own source code: the code changes, then a rebuild and release",
+   "sources": [
+    "kb:findings.code.STATIC_SALT.remediation"
+   ]
+  },
   "TLS_VERIFICATION_DISABLED": {
    "class": "code-fixed",
    "capability": false,
@@ -1271,6 +1327,14 @@
     "aibom/src/aibom/cbom/weakness.py cipher_suite_findings (suites of protocol components built from source)"
    ]
   },
+  "WEAK_KDF_ITERATIONS": {
+   "class": "code-fixed",
+   "capability": false,
+   "basis": "the salt or iteration count is fixed in the team's own source code: the code changes, then a rebuild and release",
+   "sources": [
+    "kb:findings.code.WEAK_KDF_ITERATIONS.remediation"
+   ]
+  },
   "WEAK_KEY_SIZE": {
    "class": "code-fixed",
    "capability": false,
@@ -1302,6 +1366,14 @@
    "basis": "the team's own source code changes, then a rebuild and release",
    "sources": [
     "kb:findings.code.WEAK_RNG.remediation"
+   ]
+  },
+  "WEAK_RSA_EXPONENT": {
+   "class": "code-fixed",
+   "capability": false,
+   "basis": "the exponent is chosen in the team's own key-generation code: the code changes and the keys are re-issued",
+   "sources": [
+    "kb:findings.code.WEAK_RSA_EXPONENT.remediation"
    ]
   }
  }

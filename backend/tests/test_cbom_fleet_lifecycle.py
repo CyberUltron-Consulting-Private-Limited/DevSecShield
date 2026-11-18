@@ -952,3 +952,30 @@ def test_the_inline_threshold_is_inclusive_and_two_claims_do_not_both_win(api, w
     with Session(engine) as s:
         assert not EVAL._claim(s, 1, now)
     assert EVAL.run_team(engine, 1, now)["status"] == "busy"
+
+
+# ----------------------------------------------------------------------------- #318: Apply after an automatic apply
+def test_apply_after_the_save_already_applied_says_what_the_save_did(api, world):
+    """Saving a policy asks the fleet worker to reconcile; it creates the managed source within seconds. An Apply after
+    that changes nothing, and said "0 sources added" (staging QA, #227). The reconcile answer now carries the previous
+    reconcile (``previous``: its counts, when, and ``by`` automatic or a person) so the UI can say "Applied when
+    saved: 1 source created"; every stored reconcile says who ran it."""
+    engine, _ = world
+    _targets(api, 2)
+    _collect_all(api)
+    cbom_inventory_sync.fleet_tick(engine, now=dt.datetime.now(dt.timezone.utc).replace(tzinfo=None))
+    stored = api("GET", f"{FLEET}/policies").json()["evaluation"]["last_reconcile"]
+    assert stored["sources_created"] == 1 and stored["by"] == "automatic" and stored["at"]
+    out = api("POST", f"{FLEET}/reconcile").json()
+    assert out["sources_created"] == 0 and out["materialize"] is True
+    prev = out["previous"]
+    assert prev["by"] == "automatic" and prev["sources_created"] == 1 and prev["at"] == stored["at"]
+    # this Apply is now the last one, run by a person; the next Apply reports it as previous
+    again = api("POST", f"{FLEET}/reconcile").json()
+    assert again["previous"]["by"] == "user" and again["previous"]["sources_created"] == 0
+    assert api("GET", f"{FLEET}/policies").json()["evaluation"]["last_reconcile"]["by"] == "user"
+
+
+def test_apply_on_a_team_never_reconciled_has_no_previous(api, world):
+    out = api("POST", f"{FLEET}/reconcile").json()
+    assert out["previous"] is None

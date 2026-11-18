@@ -21,7 +21,7 @@
  *               `<p>` whose className has `font-medium` and whose content is literal text (KPI and metric labels)
  *               contains an `<InfoTip>`, or an `infotip-shared: <reason>` comment when the field right below it carries
  *               the tip.
- *               Every SectionCard, StatCard, Field and SecretField (NEEDS_INFO_ID) passes an `infoId`.
+ *               Every SectionCard, StatCard, Field, SecretField, KpiTile and DrillTile (NEEDS_INFO_ID) passes an `infoId`.
  *  - "h2":      in dashboard files, every `<h2>`/`<h3>` with visible text contains an `<InfoTip>`.
  */
 import ts from "typescript";
@@ -54,7 +54,9 @@ export const CONTROL_TAGS = new Set([
 ]);
 
 /** Components that render their own (i) from an `infoId` prop: in a covered file each use must pass one. */
-export const NEEDS_INFO_ID = new Set(["SectionCard", "StatCard", "Field", "SecretField"]);
+export const NEEDS_INFO_ID = new Set(["SectionCard", "StatCard", "Field", "SecretField",
+  // the run results summary's tiles (components/cbom/results/views: SummaryKpis, DrillTiles)
+  "KpiTile", "DrillTile"]);
 
 /** Elements whose (i) explains their own text; a tip directly inside one never serves a control. */
 export const TEXT_TIP_PARENTS = new Set([

@@ -214,32 +214,97 @@ class SupersededPush(unittest.TestCase):
         self.assertIn("::error::staging has no tip", log)
 
 
+def copy_and_deploy(**env: str) -> tuple[int, str, bool]:
+    """Run the deploy job's "Copy and deploy" script with a stub scripts/deploy/staging.sh (records that it ran)."""
+    found = [p for p in steps("deploy") if p.startswith("name: Copy and deploy\n")]
+    assert len(found) == 1, "no Copy and deploy step"
+    with tempfile.TemporaryDirectory() as d:
+        stub = Path(d) / "scripts" / "deploy" / "staging.sh"
+        stub.parent.mkdir(parents=True)
+        stub.write_text("#!/bin/sh\ntouch \"$STUB_DIR/ran\"\n")
+        stub.chmod(0o755)
+        full = {"PATH": os.environ["PATH"], "HOME": d, "STUB_DIR": d, "EVENT": "push", "NODE_REGISTRY_PUBLIC": "",
+                "STAGING_SSH_TARGET": "deploy@stage", "STAGING_DIR": "/opt/x", **env}
+        p = subprocess.run(["bash", "-e", "-c", run_block(found[0])], cwd=d, env=full, capture_output=True,
+                           text=True, timeout=30)
+        return p.returncode, p.stdout + p.stderr, (Path(d) / "ran").exists()
+
+
+class AiAssistantKeys(unittest.TestCase):
+    """The AI assistant's own IAM user (review 5909551771): both halves of the pair or neither, and the credential
+    source is written only when the pair is (or the environment variable says so); never a fall-back to env."""
+
+    KEY_ID = "AKIATESTONLY" + secrets.token_hex(4).upper()
+    SECRET = "testOnly/" + secrets.token_urlsafe(24)
+
+    def test_half_a_pair_fails_the_deploy_without_printing_it(self):
+        for env in ({"STAGING_SET_CBOM_AI_AWS_ACCESS_KEY_ID": self.KEY_ID},
+                    {"STAGING_SET_CBOM_AI_AWS_SECRET_ACCESS_KEY": self.SECRET}):
+            rc, out, ran = copy_and_deploy(**env)
+            self.assertEqual(rc, 1, out)
+            self.assertFalse(ran)
+            self.assertIn("::error::set both", out)
+            self.assertNotIn(self.KEY_ID, out)
+            self.assertNotIn(self.SECRET, out)
+
+    def test_both_or_neither_deploys(self):
+        rc, out, ran = copy_and_deploy()
+        self.assertEqual((rc, ran), (0, True), out)
+        rc, out, ran = copy_and_deploy(STAGING_SET_CBOM_AI_AWS_ACCESS_KEY_ID=self.KEY_ID,
+                                       STAGING_SET_CBOM_AI_AWS_SECRET_ACCESS_KEY=self.SECRET)
+        self.assertEqual((rc, ran), (0, True), out)
+        self.assertNotIn(self.SECRET, out)
+
+    def test_the_source_is_static_with_the_pair_and_unwritten_without_it(self):
+        step = [p for p in steps("deploy") if p.startswith("name: Copy and deploy\n")][0]
+        line = re.search(r"STAGING_SET_CBOM_AI_AWS_CREDENTIALS: (.*)", step).group(1)
+        self.assertEqual(line, "${{ vars.CBOM_AI_AWS_CREDENTIALS || (secrets.CBOM_AI_AWS_ACCESS_KEY_ID != '' && "
+                               "secrets.CBOM_AI_AWS_SECRET_ACCESS_KEY != '' && 'static') || '' }}")
+        self.assertNotIn("'env'", line)  # no forced fall-back to the host's AWS_*
+
+
 class OnlyStaging(unittest.TestCase):
     def test_nothing_but_the_staging_environment_and_its_secrets(self):
         self.assertEqual(re.findall(r"\n    environment: (\S+)", WF), ["staging"])
         # The SSH identity, and the optional AWS collector identity + lab switch the host's backend.env gets.
         self.assertEqual(sorted(set(re.findall(r"secrets\.([A-Z_]+)", WF))),
-                         ["CBOM_AWS_ACCESS_KEY_ID", "CBOM_AWS_LAB_SAME_ACCOUNT", "CBOM_AWS_PRINCIPAL_ARN",
+                         ["CBOM_AI_AWS_ACCESS_KEY_ID", "CBOM_AI_AWS_SECRET_ACCESS_KEY",  # the AI assistant's IAM user
+                          "CBOM_AWS_ACCESS_KEY_ID", "CBOM_AWS_LAB_SAME_ACCOUNT", "CBOM_AWS_PRINCIPAL_ARN",
                           "CBOM_AWS_SECRET_ACCESS_KEY", "STAGING_SSH_KEY", "STAGING_SSH_KNOWN_HOSTS", "STAGING_SSH_TARGET"])
-        # ... and the scan node registry switch (README "Public registry")
+        # ... the scan node registry switch (README "Public registry") and the AI remediation provider (README "AI remediation")
         self.assertEqual(sorted(set(re.findall(r"vars\.([A-Z_]+)", WF))),
-                         ["CBOM_AWS_LAB_SAME_ACCOUNT", "CBOM_NODE_REGISTRY_PUBLIC", "STAGING_DIR"])
+                         ["CBOM_AI_AWS_CREDENTIALS", "CBOM_AI_BEDROCK_REGION", "CBOM_AI_PROVIDER",
+                          "CBOM_AWS_LAB_SAME_ACCOUNT", "CBOM_CT_DISCOVERY", "CBOM_NODE_REGISTRY_PUBLIC",
+                          "STAGING_DIR"])
         # Only the deploy job (the staging environment) sees the AWS ones.
         self.assertNotIn("CBOM_AWS", JOBS["build"])
+        self.assertNotIn("CBOM_AI_AWS", JOBS["build"])
         # What runs (comments and input descriptions are text, not actions).
         code = "\n".join(line for line in WF.splitlines()
                          if not line.lstrip().startswith(("#", "description:")))
         self.assertNotRegex(code, r"(?i)\bprod(uction)?\b|rollback")
         self.assertEqual(re.findall(r"scripts/deploy/staging\.sh ([\w-]+)", code),
-                         ["build", "save", "node-artifacts", "push"])
+                         ["build", "save", "node-artifacts", "wait-node-release", "push"])
 
     def test_the_scan_node_downloads_are_built_and_shipped_with_the_release(self):
         build = JOBS["build"]
-        self.assertIn("run: scripts/deploy/staging.sh node-artifacts", build)
+        self.assertIn("\n          scripts/deploy/staging.sh node-artifacts\n", build)
         # uploaded with the images (same artifact, so the deploy job downloads them next to the archive)
         upload = [p for p in steps("build") if "actions/upload-artifact" in p]
         self.assertEqual(len(upload), 1)
         self.assertIn("deploy/staging/images/node-artifacts/*", upload[0])
+
+    def test_the_release_wait_runs_on_a_push_unless_the_registry_is_switched_off(self):
+        # #361 follow-up: on the first 1.0.1 promotion (run 43688443051) the step was skipped with the variable unset:
+        # GitHub coerces null != '0' to numbers (0 != 0, false). Evaluated with GitHub's coercion rules.
+        from test_publish_ghcr import evaluate
+
+        step = WF.split("      - name: Wait for the scan node release (GHCR)\n", 1)[1].split("\n      - name:", 1)[0]
+        cond = step.split("        if: ", 1)[1].split("\n", 1)[0]
+        for event, var, want in (("push", None, True), ("push", "", True), ("push", "1", True), ("push", "0", False),
+                                 ("workflow_dispatch", None, False), ("workflow_dispatch", "1", False)):
+            got = bool(evaluate(cond, {"github.event_name": event, "vars.CBOM_NODE_REGISTRY_PUBLIC": var}))
+            self.assertEqual(got, want, (event, var, cond))
 
     def test_the_job_set_is_build_and_deploy(self):
         self.assertEqual(sorted(JOBS), ["build", "deploy"])

@@ -58,7 +58,7 @@ export interface CbomDiff {
 
 export type CbomDriftKind =
   | "opened" | "resolved" | "new_asset" | "removed_asset" | "cert_renewed" | "cert_expiring" | "schedule_skipped"
-  | "q0_closed"
+  | "q0_closed" | "agility_asset_moved" | "agility_system_changed"
 
 export interface CbomDriftEvent {
   id: number
@@ -92,6 +92,39 @@ export interface CbomHeatCell {
   count: number
   worst: CbomImpactLevel | "none"
   by_impact: Record<string, number>
+  /** metric=grade (CB-19 PR-3): assets per quantum risk grade ("none": no grade) and the worst known grade (Q0 only
+   * when the cell has no known grade) */
+  by_grade?: Record<string, number>
+  worst_grade?: string | null
+}
+
+export type CbomHeatMetric = "impact" | "grade"
+
+/** One heat-map cell's assets (GET …/runs/{id}/heatmap/cell), worst first, from the same loop as the map. */
+export interface CbomHeatCellAssets {
+  by: "source" | "type"
+  metric: CbomHeatMetric
+  row: string
+  column: string
+  total: number
+  page: number
+  page_size: number
+  items: {
+    id: number
+    type: string
+    target: string | null
+    location: string
+    name: string | null
+    algorithm: string | null
+    key_size: number | null
+    impact: CbomImpactLevel | null
+    pqc_class: string
+    source_name: string | null
+    q_grade?: string | null
+    q_label?: string | null
+    q_reason?: string | null
+    q_item_key?: string | null
+  }[]
 }
 
 export interface CbomCalendarCert {
@@ -107,6 +140,7 @@ export interface CbomCalendarCert {
 
 export interface CbomRunHeatmap {
   by: "source" | "type"
+  metric?: CbomHeatMetric
   rows: string[]
   columns: string[]
   cells: CbomHeatCell[]
@@ -166,6 +200,8 @@ export interface CbomRemediation {
   items: CbomRemediationItem[]
   by_wave: Record<string, number>
   labels: Record<string, string>
+  /** what puts an asset in each wave ("1".."4" and "none"), from the backend's suggested_wave rules (issue #271) */
+  rules?: Record<string, string>
 }
 
 export interface CbomAssignmentPatch {
@@ -189,8 +225,14 @@ export async function getCbomRunChanges(teamId: number, runId: number): Promise<
   return (await api.get(`${src(teamId)}/runs/${runId}/changes`)).data
 }
 
-export async function getCbomRunHeatmap(teamId: number, runId: number, by: "source" | "type" = "source"): Promise<CbomRunHeatmap> {
-  return (await api.get(`${src(teamId)}/runs/${runId}/heatmap`, { params: { by } })).data
+export async function getCbomRunHeatmap(teamId: number, runId: number, by: "source" | "type" = "source",
+                                        metric: CbomHeatMetric = "impact"): Promise<CbomRunHeatmap> {
+  return (await api.get(`${src(teamId)}/runs/${runId}/heatmap`, { params: metric === "impact" ? { by } : { by, metric } })).data
+}
+
+export async function getCbomRunHeatmapCell(teamId: number, runId: number, cell: { by: "source" | "type"; row: string;
+  column: string; metric: CbomHeatMetric; page?: number; page_size?: number }): Promise<CbomHeatCellAssets> {
+  return (await api.get(`${src(teamId)}/runs/${runId}/heatmap/cell`, { params: cell })).data
 }
 
 export async function getCbomCodeDiff(teamId: number, scanId: number, against?: number): Promise<CbomDiff> {
@@ -241,7 +283,10 @@ export async function getCbomCodeSbomLinks(teamId: number, scanId: number): Prom
 export const cbomOpsKeys = {
   diff: (teamId: number, runId: number, against?: number) => ["cbom-sources", teamId, "run", runId, "diff", against ?? "prev"] as const,
   changes: (teamId: number, runId: number) => ["cbom-sources", teamId, "run", runId, "changes"] as const,
-  heatmap: (teamId: number, runId: number, by: string) => ["cbom-sources", teamId, "run", runId, "heatmap", by] as const,
+  heatmap: (teamId: number, runId: number, by: string, metric: string = "impact") =>
+    (metric === "impact" ? ["cbom-sources", teamId, "run", runId, "heatmap", by] : ["cbom-sources", teamId, "run", runId, "heatmap", by, metric]) as readonly (string | number)[],
+  heatmapCell: (teamId: number, runId: number, by: string, metric: string, row: string, column: string, page: number) =>
+    ["cbom-sources", teamId, "run", runId, "heatmap-cell", by, metric, row, column, page] as const,
   schedules: (teamId: number) => ["cbom-sources", teamId, "schedules"] as const,
   runRemediation: (teamId: number, runId: number) => ["cbom-sources", teamId, "run", runId, "remediation"] as const,
   codeRemediation: (teamId: number, scanId: number) => ["cbom-sources", teamId, "code", scanId, "remediation"] as const,

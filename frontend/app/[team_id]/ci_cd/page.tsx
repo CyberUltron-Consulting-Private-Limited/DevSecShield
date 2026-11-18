@@ -121,8 +121,9 @@ export default function CicdPage() {
         router.push(`/${team_id}/ci_cd/${data.integration_id}`);
       }
     },
+    // the one error toast of create, delete and rename: the API helpers only throw a refusal (#27)
     onError: (error) => {
-      showErrorToast(error);
+      showErrorToast(error, "Error creating CI/CD integration");
     }
   });
 
@@ -152,7 +153,7 @@ export default function CicdPage() {
       setSelectedIntegration(null);
     },
     onError: (error) => {
-      showErrorToast(error);
+      showErrorToast(error, "Error deleting CI/CD integration");
     }
   });
 
@@ -167,7 +168,7 @@ export default function CicdPage() {
       setNewName("");
     },
     onError: (error) => {
-      showErrorToast(error);
+      showErrorToast(error, "Error updating CI/CD integration");
     }
   });
 

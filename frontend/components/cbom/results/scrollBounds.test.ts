@@ -10,7 +10,11 @@ import fs from "node:fs";
 import path from "node:path";
 
 const dir = __dirname;
-const files = fs.readdirSync(dir).filter((f) => /^Run\w*\.tsx$/.test(f));  // the run page's components
+// the run page's components, and its views (results redesign: summary and detail views, views/**)
+const viewFiles = (sub: string): string[] => fs.readdirSync(path.join(dir, sub), { withFileTypes: true }).flatMap((e) =>
+  e.isDirectory() ? viewFiles(path.join(sub, e.name)) : e.name.endsWith(".tsx") ? [path.join(sub, e.name)] : []);
+const files = [...fs.readdirSync(dir).filter((f) => /^Run\w*\.tsx$/.test(f)), ...viewFiles("views")];
+assert.ok(files.includes(path.join("views", "TopRisksSummary.tsx")), "the views are checked too");
 let checked = 0;
 for (const file of files) {
   const src = fs.readFileSync(path.join(dir, file), "utf8");
@@ -38,10 +42,11 @@ const ui = fs.readFileSync(path.join(dir, "..", "..", "ui", "scroll-area.tsx"), 
 assert.ok(ui.includes('data-slot="scroll-area-viewport"'));
 
 // mobile: the page does not clip sideways overflow (it must not have any); select + name stay sticky below 768 px
-const page = fs.readFileSync(path.join(dir, "..", "..", "..", "app", "[team_id]", "cbom", "runs", "[run_id]", "results", "page.tsx"), "utf8");
+const page = fs.readFileSync(path.join(dir, "RunResultsRoute.tsx"), "utf8");
 assert.ok(!page.includes("overflow-x-hidden"), "no overflow clipping on the page wrapper");
 assert.match(table, /const STICKY_SELECT = "max-md:sticky max-md:left-0/);
-assert.match(table, /const STICKY_NAME = "max-md:sticky max-md:left-12/);
+// the select column holds the row's Open chevron below md (QA round 4 E): the name column starts after its 76 px
+assert.match(table, /const STICKY_NAME = "max-md:sticky max-md:left-\[76px\]/);
 // the Table's own overflow-auto wrapper must not be the sticky cells' scroll container (R-qa re-QA, PR #120)
 assert.match(table, /TABLE_WRAPPER_VISIBLE = "\[&_div:has\(>table\[data-slot=table\]\)\]:overflow-visible"/);
 assert.match(table, /<ScrollArea className=\{`[^`]*\$\{VIEWPORT_MAX_H_TABLE\} \$\{TABLE_WRAPPER_VISIBLE\}`\} data-testid="run-results-scroll">/);

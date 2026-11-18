@@ -4,6 +4,7 @@ import type { InstallLinks, NodeArtifacts } from "@/components/cbom/sources/logi
 import type { CbomSourceUsage } from "@/components/cbom/sources/sourceLimit"
 import { showErrorToast } from "./error-handler"
 import { toast } from "@/utils/toast";
+import type { HelperToastOptions } from "@/utils/toastPolicy";
 
 
 // -------------------------------------------------------------- Start scan payload types (matches backend schemas) --------------------------------------------------------------
@@ -176,6 +177,9 @@ export interface ScanListDashboardData {
         remediation_velocity: number
         high_priority_backlog: number
     }
+    /** The Fix rate (#36, utils/fixRate.ts): stored findings marked Fixed, and all stored findings of these scans */
+    fixed_findings?: number
+    total_findings?: number
 }
 
 export interface SastListResponse {
@@ -344,7 +348,7 @@ export interface SbomScanDashboardData {
     total_policy_violations: number
     total_license_risks: number
     total_high_risk_licenses: number
-    average_risk_score: number
+    average_risk_score: number | null
     total_reachable_issues: number
   }
   remediation_actions_required: {
@@ -441,13 +445,14 @@ const startSastScan = async (params: {
 
 
 
-const getExportResults = async (team_id: number, scan_id: number): Promise<any> => {
+/** The scan's PDF report. Toasts its outcome unless the caller shows its own (opts.toast false: utils/toastPolicy.ts). */
+const getExportResults = async (team_id: number, scan_id: number, opts: HelperToastOptions = {}): Promise<any> => {
     try {
         const response = await api.get(`/${team_id}/sast/scan/${scan_id}/export`, { responseType: "blob" })
-        toast.success("SAST report downloaded")
+        if (opts.toast !== false) toast.success("SAST report downloaded")
         return response.data
     } catch (error) {
-        showErrorToast(error,"Error fetching sast export results")
+        if (opts.toast !== false) showErrorToast(error,"Error fetching sast export results")
         throw error
     }
 }
@@ -778,13 +783,14 @@ const startLLMScan = async (
     }
 }
 
-const getLLMExportResults = async (team_id: number, scan_id: number): Promise<Blob> => {
+/** The scan's PDF report. Toasts its outcome unless the caller shows its own (opts.toast false: utils/toastPolicy.ts). */
+const getLLMExportResults = async (team_id: number, scan_id: number, opts: HelperToastOptions = {}): Promise<Blob> => {
     try {
         const response = await api.get(`/${team_id}/llm/scan/${scan_id}/export`, { responseType: "blob" })
-        toast.success("LLM report downloaded")
+        if (opts.toast !== false) toast.success("LLM report downloaded")
         return response.data
     } catch (error) {
-        showErrorToast(error, "Error fetching LLM export results")
+        if (opts.toast !== false) showErrorToast(error, "Error fetching LLM export results")
         throw error
     }
 }
@@ -1083,13 +1089,14 @@ const startMCPScan = async (
     }
 }
 
-const getMCPExportResults = async (team_id: number, scan_id: number): Promise<Blob> => {
+/** The scan's PDF report. Toasts its outcome unless the caller shows its own (opts.toast false: utils/toastPolicy.ts). */
+const getMCPExportResults = async (team_id: number, scan_id: number, opts: HelperToastOptions = {}): Promise<Blob> => {
     try {
         const response = await api.get(`/${team_id}/mcp/scan/${scan_id}/export`, { responseType: "blob" })
-        toast.success("MCP report downloaded")
+        if (opts.toast !== false) toast.success("MCP report downloaded")
         return response.data
     } catch (error) {
-        showErrorToast(error, "Error fetching MCP export results")
+        if (opts.toast !== false) showErrorToast(error, "Error fetching MCP export results")
         throw error
     }
 }
@@ -1359,15 +1366,12 @@ const getTeams = async (): Promise<TeamListItem[]> => {
     }
 }
 
+// A refused create, update, member change or delete is only thrown: the caller's onError shows the one error toast
+// (utils/toastPolicy.ts; both used to, #12 #27). The success toast stays here.
 const createTeam = async (data: CreateTeamData) => {
-    try {
-        const response = await api.post("/team", data)
-        toast.success("Team created")
-        return response.data as { team_id: number; team_name: string; team_description: string | null; team_members: string[] }
-    } catch (error) {
-        showErrorToast(error, "Error creating team")
-        throw error
-    }
+    const response = await api.post("/team", data)
+    toast.success("Team created")
+    return response.data as { team_id: number; team_name: string; team_description: string | null; team_members: string[] }
 }
 
 const getTeam = async (team_id: number): Promise<TeamDetails> => {
@@ -1381,28 +1385,18 @@ const getTeam = async (team_id: number): Promise<TeamDetails> => {
 }
 
 const updateTeam = async (team_id: number, data: UpdateTeamData) => {
-    try {
-        const response = await api.put(`/team/${team_id}`, data)
-        toast.success("Team updated")
-        return response.data
-    } catch (error) {
-        showErrorToast(error, "Error updating team")
-        throw error
-    }
+    const response = await api.put(`/team/${team_id}`, data)
+    toast.success("Team updated")
+    return response.data
 }
 
 const removeOrAddTeamMembers = async (team_id: number, data: RemoveOrAddMembersToTeamData) => {
-    try {
-        const response = await api.patch(`/team/${team_id}`, data)
-        // "add" invites: nobody joins until they accept the mailed link
-        toast.success(data.intent === "add"
-            ? (response.data?.message ?? "Invitation sent")
-            : "Members removed successfully")
-        return response.data
-    } catch (error) {
-        showErrorToast(error, data.intent === "add" ? "Error sending the invitation" : "Error removing members")
-        throw error
-    }
+    const response = await api.patch(`/team/${team_id}`, data)
+    // "add" invites: nobody joins until they accept the mailed link
+    toast.success(data.intent === "add"
+        ? (response.data?.message ?? "Invitation sent")
+        : "Members removed successfully")
+    return response.data
 }
 
 /** An open invitation to the team, as its admins see it (backend utilities/team/invitations.py). */
@@ -1444,13 +1438,8 @@ const revokeTeamInvitation = async (team_id: number, invitation_id: number) => {
 }
 
 const deleteTeam = async (team_id: number) => {
-    try {
-        await api.delete(`/team/${team_id}`)
-        toast.success("Team deleted")
-    } catch (error) {
-        showErrorToast(error, "Error deleting team")
-        throw error
-    }
+    await api.delete(`/team/${team_id}`)
+    toast.success("Team deleted")
 }
 
 export {
@@ -1715,13 +1704,14 @@ const startIACScan = async (
 };
 
 /** Team-scoped: GET /{team_id}/iac/scan/{scan_id}/export */
-const getIACExportResults = async (team_id: number, scan_id: number): Promise<Blob | ArrayBuffer> => {
+/** The scan's PDF report. Toasts its outcome unless the caller shows its own (opts.toast false: utils/toastPolicy.ts). */
+const getIACExportResults = async (team_id: number, scan_id: number, opts: HelperToastOptions = {}): Promise<Blob | ArrayBuffer> => {
     try {
         const response = await api.get(`/${team_id}/iac/scan/${scan_id}/export`, { responseType: "blob" });
-        toast.success("IAC report downloaded");
+        if (opts.toast !== false) toast.success("IAC report downloaded");
         return response.data;
     } catch (error) {
-        showErrorToast(error, "Error fetching iac export results");
+        if (opts.toast !== false) showErrorToast(error, "Error fetching iac export results");
         throw error;
     }
 };
@@ -1838,7 +1828,7 @@ export interface SBOMSCADashboardData {
         total_policy_violations: number
         total_license_risks: number
         total_high_risk_licenses: number
-        average_risk_score: number
+        average_risk_score: number | null
         total_reachable_issues: number
     }
     average_risk_score_per_reachability_level: Record<string, number>
@@ -2081,13 +2071,14 @@ const getSCASBOMExportResults = async (conversation_id: number): Promise<any> =>
 }
 
 /** Team-scoped: GET /{team_id}/sbom_sca/scan/{scan_id}/export */
-const getSBOMExportResults = async (team_id: number, scan_id: number): Promise<Blob | ArrayBuffer> => {
+/** The scan's PDF report. Toasts its outcome unless the caller shows its own (opts.toast false: utils/toastPolicy.ts). */
+const getSBOMExportResults = async (team_id: number, scan_id: number, opts: HelperToastOptions = {}): Promise<Blob | ArrayBuffer> => {
     try {
         const response = await api.get(`/${team_id}/sbom_sca/scan/${scan_id}/export`, { responseType: "blob" });
-        toast.success("SCA + SBOM report downloaded");
+        if (opts.toast !== false) toast.success("SCA + SBOM report downloaded");
         return response.data;
     } catch (error) {
-        showErrorToast(error, "Error fetching sbom_sca export results");
+        if (opts.toast !== false) showErrorToast(error, "Error fetching sbom_sca export results");
         throw error;
     }
 };
@@ -2265,7 +2256,10 @@ export interface CbomScanDashboardData {
     total_quantum_vulnerable: number
     total_certificates: number
     total_keys: number
-    quantum_readiness_score: number
+    /** null on a Sources run whose readiness posture withholds (quantum_readiness_status says why): never 0 % */
+    quantum_readiness_score: number | null
+    /** a Sources run's posture readiness_basis.status (absent on code scans) */
+    quantum_readiness_status?: CbomReadinessBasis["status"]
     average_risk_score: number
   }
   remediation_metrics: {
@@ -2503,14 +2497,20 @@ const renameCBOMScan = async ({
   }
 };
 
-/** Team-scoped: GET /{team_id}/cbom/scan/{scan_id}/export */
-const getCBOMExportResults = async (team_id: number, scan_id: number): Promise<Blob | ArrayBuffer> => {
+/** Team-scoped: GET /{team_id}/cbom/scan/{scan_id}/export.
+ *  `toast: false` leaves the success and error toasts to the caller. CbomResults toasts once;
+ *  the options sidebar does not, so it keeps these. */
+const getCBOMExportResults = async (
+  team_id: number,
+  scan_id: number,
+  opts: { toast?: boolean } = {},
+): Promise<Blob | ArrayBuffer> => {
   try {
     const response = await api.get(`/${team_id}/cbom/scan/${scan_id}/export`, { responseType: "blob" });
-    toast.success("CBOM report downloaded");
+    if (opts.toast !== false) toast.success("CBOM report downloaded");
     return response.data;
   } catch (error) {
-    showErrorToast(error, "Error fetching CBOM export results");
+    if (opts.toast !== false) showErrorToast(error, "Error fetching CBOM export results");
     throw error;
   }
 };
@@ -2879,13 +2879,14 @@ const renameAIBOMScan = async ({
 };
 
 /** Team-scoped: GET /{team_id}/ai_bom/scan/{scan_id}/export */
-const getAIBOMExportResults = async (team_id: number, scan_id: number): Promise<Blob | ArrayBuffer> => {
+/** The scan's PDF report. Toasts its outcome unless the caller shows its own (opts.toast false: utils/toastPolicy.ts). */
+const getAIBOMExportResults = async (team_id: number, scan_id: number, opts: HelperToastOptions = {}): Promise<Blob | ArrayBuffer> => {
   try {
     const response = await api.get(`/${team_id}/ai_bom/scan/${scan_id}/export`, { responseType: "blob" });
-    toast.success("AI BOM report downloaded");
+    if (opts.toast !== false) toast.success("AI BOM report downloaded");
     return response.data;
   } catch (error) {
-    showErrorToast(error, "Error fetching AI BOM export results");
+    if (opts.toast !== false) showErrorToast(error, "Error fetching AI BOM export results");
     throw error;
   }
 };
@@ -3113,68 +3114,13 @@ const getDiscoveryConversationMessages = async ({queryKey}: {queryKey: ['discove
     }
 }
 
-const startDiscoveryScan = async (
-    {
-        conversation_id,
-        repo_url, 
-        PAT, 
-        mode
-    }: {
-        conversation_id: number,
-        repo_url: string, 
-        PAT: string, 
-        mode: "github" | "gitlab" | "bitbucket"
-    }) => {
-    try {
-        const response = await api.post(`/agent_discovery/conversation/${conversation_id}/scan`, { agent_discovery_data: { repo_url: repo_url, PAT: PAT, mode: mode } })
-        toast.success("Discovery scan started")
-        return response.data
-    } catch (error) {
-        throw error
-    }
-}
-
-const getDiscoveryExportResults = async (conversation_id: number): Promise<any> => {
-    try {   
-        const response = await api.get(`/agent_discovery/conversation/${conversation_id}/export`)
-        toast.success("Discovery report downloaded")
-        return response.data
-    } catch (error) {
-        showErrorToast(error,"Error fetching discovery export results")
-        throw error
-    }
-}
-
-const reinitializeDiscoveryScan = async (
-    {
-        conversation_id,
-        repo_url, 
-        PAT, 
-        mode
-    }: {
-        conversation_id: number,
-        repo_url: string, 
-        PAT: string, 
-        mode: "github" | "gitlab" | "bitbucket"
-    }) => {
-    try {
-        const response = await api.post(`/agent_discovery/conversation/${conversation_id}/reinitialize`, { agent_discovery_data: { repo_url: repo_url, PAT: PAT, mode: mode } })
-        toast.success("Discovery scan restarted")
-        return response.data
-    } catch (error) {
-        throw error
-    }
-}
-
+// The scan, export and re-run helpers went with the unused discovery sidebar (#29): the backend has none of their routes.
 export { 
     getDiscoveryConversations, 
     deleteDiscoveryConversation, 
     renameDiscoveryConversation, 
     createDiscoveryConversation,
     getDiscoveryConversationMessages,
-    startDiscoveryScan,
-    getDiscoveryExportResults,
-    reinitializeDiscoveryScan
 }
 
 // -------------------------------------------------------------- Leakage API Routes --------------------------------------------------------------
@@ -3254,68 +3200,13 @@ const getLeakageConversationMessages = async ({queryKey}: {queryKey: ['leakage-c
     }
 }
 
-const startLeakageScan = async (
-    {
-        conversation_id,
-        repo_url, 
-        PAT, 
-        mode
-    }: {
-        conversation_id: number,
-        repo_url: string, 
-        PAT: string, 
-        mode: "github" | "gitlab" | "bitbucket"
-    }) => {
-    try {
-        const response = await api.post(`/leakage/conversation/${conversation_id}/scan`, { leakage_data: { repo_url: repo_url, PAT: PAT, mode: mode } })
-        toast.success("Leakage scan started")
-        return response.data
-    } catch (error) {
-        throw error
-    }
-}
-
-const getLeakageExportResults = async (conversation_id: number): Promise<any> => {
-    try {   
-        const response = await api.get(`/leakage/conversation/${conversation_id}/export`)
-        toast.success("Leakage report downloaded")
-        return response.data
-    } catch (error) {
-        showErrorToast(error,"Error fetching leakage export results")
-        throw error
-    }
-}
-
-const reinitializeLeakageScan = async (
-    {
-        conversation_id,
-        repo_url, 
-        PAT, 
-        mode
-    }: {
-        conversation_id: number,
-        repo_url: string, 
-        PAT: string, 
-        mode: "github" | "gitlab" | "bitbucket"
-    }) => {
-    try {
-        const response = await api.post(`/leakage/conversation/${conversation_id}/reinitialize`, { leakage_data: { repo_url: repo_url, PAT: PAT, mode: mode } })
-        toast.success("Leakage scan restarted")
-        return response.data
-    } catch (error) {
-        throw error
-    }
-}
-
+// The scan, export and re-run helpers went with the unused leakage sidebar (#29): the backend has none of their routes.
 export { 
     getLeakageConversations, 
     deleteLeakageConversation, 
     renameLeakageConversation, 
     createLeakageConversation,
     getLeakageConversationMessages,
-    startLeakageScan,
-    getLeakageExportResults,
-    reinitializeLeakageScan
 }
 
 // -------------------------------------------------------------- Guardrails API Routes (DEPRECATED) --------------------------------------------------------------
@@ -3849,15 +3740,16 @@ const startDASTScan = async (
 }
 
 /** Export DAST scan results via GET /{team_id}/dast/scan/{scan_id}/export */
-const getDASTExportResults = async (team_id: number, scan_id: number): Promise<Blob> => {
+/** The scan's PDF report. Toasts its outcome unless the caller shows its own (opts.toast false: utils/toastPolicy.ts). */
+const getDASTExportResults = async (team_id: number, scan_id: number, opts: HelperToastOptions = {}): Promise<Blob> => {
     try {
         const response = await api.get(`/${team_id}/dast/scan/${scan_id}/export`, {
             responseType: "blob",
         })
-        toast.success("DAST report downloaded")
+        if (opts.toast !== false) toast.success("DAST report downloaded")
         return response.data
     } catch (error) {
-        showErrorToast(error, "Error fetching DAST export results")
+        if (opts.toast !== false) showErrorToast(error, "Error fetching DAST export results")
         throw error
     }
 }
@@ -4086,15 +3978,12 @@ export interface CicdIssuedApiKey {
     api_key_hint?: string
 }
 
+// A refused create, delete or update is only thrown: the CI/CD pages' onError shows the one error toast, and the pages
+// say a delete or an update succeeded themselves (utils/toastPolicy.ts; both used to, #27).
 const createCicdIntegration = async (team_id: number, data: CreateCicdIntegrationData): Promise<CicdIssuedApiKey> => {
-    try {
-        const response = await api.post(`/${team_id}/cicd/integration`, data)
-        toast.success("CI/CD integration created")
-        return response.data as CicdIssuedApiKey
-    } catch (error) {
-        showErrorToast(error,"Error creating CI/CD integration")
-        throw error
-    }
+    const response = await api.post(`/${team_id}/cicd/integration`, data)
+    toast.success("CI/CD integration created")
+    return response.data as CicdIssuedApiKey
 }
 
 /** Issue a new key (owner or team admin); the old key stops working at once */
@@ -4194,14 +4083,8 @@ const getCicdIntegrationDashboard = async ({queryKey}: {queryKey: ['cicd-integra
 }
 
 const deleteCicdIntegration = async (team_id: number, integration_id: number) => {
-    try {
-        const response = await api.delete(`/${team_id}/cicd/integration/${integration_id}`)
-        toast.success("CI/CD integration deleted")
-        return response.data
-    } catch (error) {
-        showErrorToast(error,"Error deleting CI/CD integration")
-        throw error
-    }
+    const response = await api.delete(`/${team_id}/cicd/integration/${integration_id}`)
+    return response.data
 }
 
 export interface CicdIntegrationSettingsData {
@@ -4226,14 +4109,8 @@ export interface UpdateCicdIntegrationData {
 }
 
 const updateCicdIntegration = async ({ team_id, integration_id, data }: { team_id: number; integration_id: number; data: UpdateCicdIntegrationData }) => {
-    try {
-        const response = await api.put(`/${team_id}/cicd/integration/${integration_id}`, data)
-        toast.success("CI/CD integration updated")
-        return response.data
-    } catch (error) {
-        showErrorToast(error,"Error updating CI/CD integration")
-        throw error
-    }
+    const response = await api.put(`/${team_id}/cicd/integration/${integration_id}`, data)
+    return response.data
 }
 
 /** @deprecated Use updateCicdIntegration with { team_id, integration_id, data: { title } } */
@@ -4263,6 +4140,17 @@ export type CbomSourceKind =
     | "appliance" | "key_manager" | "host_agent" | "container_images" | "ct_logs"
 export type CbomSourceGroup = "servers" | "kubernetes" | "databases" | "cloud" | "identity" | "network"
 export type CbomNodeStatus = "pending_registration" | "registration_expired" | "online" | "offline"
+/** A team never-scan host name that a scan node's latest job could not resolve (backend held.never_scan_held). */
+export interface CbomNeverScanHeld {
+    name: string
+    node_id: number
+    node_name: string
+    /** when the node first reported it in this unbroken run of jobs (ISO, UTC) */
+    since: string | null
+    last_seen: string | null
+    job_id: number
+}
+
 export type CbomTestStatus = "never" | "pending" | "passed" | "partial" | "failed" | "not_available" | "error" | "skipped"
 export type CbomJobStatus = "pending" | "claimed" | "success" | "failure" | "cancelled" | "expired"
 export type CbomRunStatus = "queued" | "running" | "done" | "partial" | "failed" | "cancelled"
@@ -4284,6 +4172,15 @@ export interface CbomQ0GapEntry extends CbomQ0Gap {
 export type CbomIncludeKey = "servers" | "kubernetes" | "databases" | "cloud" | "network"
 export type CbomInclude = Partial<Record<CbomIncludeKey, boolean>>
 
+export interface CbomNodeVault {
+    enabled: boolean | null
+    providers: string[] | null
+    /** ZS_VAULT_PATH_PREFIX as the node reads it, written without the KV v2 data/ segment */
+    prefix: string | null
+    /** per provider: "ready", or what is missing on the node (never a token) */
+    setup: Record<string, string>
+}
+
 export interface CbomScanNode {
     id: number
     team_id: number
@@ -4295,15 +4192,24 @@ export interface CbomScanNode {
     proxy_url: string | null
     has_proxy_ca: boolean
     proxy_tls_inspect: boolean
+    /** #199: the proxy's user name when it needs a login (never the password: it stays on the node's host) */
+    proxy_user?: string | null
     status: CbomNodeStatus
     registration_issued_at: string | null
     registration_expires_at: string | null
     enrolled_at: string | null
     hostname: string | null
     node_version: string | null
+    /** the commit the node's image was built from (12 characters), null when it reports none (staging QA B6-1) */
+    node_build?: string | null
+    /** does it run this server's node build? (backend node_release.node_update) */
+    update?: CbomNodeUpdate
     source_ips: string[]
     ssh_public_key: string | null
     capabilities: Record<string, unknown>
+    /** #364: what the node reported for vault credentials (backend vault_support.node_vault); enabled is null
+     *  until it reports (an older node, or never connected) */
+    vault?: CbomNodeVault
     clock_skew_s: number | null
     clock_in_sync: boolean | null
     last_heartbeat_at: string | null
@@ -4324,6 +4230,18 @@ export interface CbomScanNode {
     last_updated: string | null
 }
 
+export interface CbomNodeUpdate {
+    /** update_available: an older version, or no build id; newer: ahead of the server; unknown: nothing to compare */
+    state: "current" | "update_available" | "newer" | "unknown"
+    reason: "same_build" | "same_version" | "older_version" | "different_version" | "no_build_id" | "different_build"
+        | "newer_version" | "no_server_build" | "not_reported" | "compare_failed" | null
+    message: string | null
+    /** "<version>+<12-character commit>" of the node build this server ships, or null */
+    server_build: string | null
+    /** the release this server ships ("1.0.4"), named by "Update available: 1.0.4" (#361); absent from an older API */
+    server_version?: string | null
+}
+
 export interface CbomNodeWrite {
     name?: string
     segment?: string
@@ -4332,6 +4250,7 @@ export interface CbomNodeWrite {
     proxy_url?: string | null
     proxy_ca_pem?: string | null
     proxy_tls_inspect?: boolean
+    proxy_user?: string | null
     expected_version?: number
 }
 
@@ -4342,6 +4261,31 @@ export interface CbomTestSample {
     login?: boolean
     privilege?: boolean
     note?: string
+}
+
+// #150: an admin's decision about a host key a scan node remembered under trust on first use
+export interface CbomHostKeyReset {
+    id: number
+    source_id: number
+    node_id: number
+    job_id: number
+    target: string
+    port: number
+    action: "accept" | "forget"
+    fingerprint: string | null
+    pinned_fingerprint: string | null
+    status: "pending" | "applied" | "superseded"
+    requested_by_user_id: number
+    requested_at: string
+    applied_at: string | null
+    applied_job_id: number | null
+}
+
+export interface CbomHostKeyResetBody {
+    job_id: number
+    target: string
+    action: "accept" | "forget"
+    fingerprint?: string
 }
 
 export interface CbomAwsCheck {
@@ -4360,6 +4304,7 @@ export interface CbomSource {
     name: string
     node_id: number | null
     node_name: string | null
+    node_segment?: string | null  // #225: the segment of the source's scan node
     node_status: CbomNodeStatus | "missing" | null
     enabled: boolean
     config: Record<string, any>
@@ -4373,6 +4318,8 @@ export interface CbomSource {
     last_test_result: { samples?: CbomTestSample[]; checks?: CbomAwsCheck[]; member_accounts?: number; summary?: string; status?: string; estimate?: CbomOrgEstimate }
     // the newest finished collection of this source (list and get only; null on save responses and before the first)
     last_collect?: { status: "ok" | "partial" | "failed"; at: string | null; summary: string | null; job_id: number; run_id: number | null } | null
+    /** AWS Private CA sources only (#368): what the account's last collection read of ACM PCA, per region */
+    pca_read?: import("@/components/cbom/sources/awsPrivateCaStatus").AwsPcaRead | null
     row_version: number
     created_at: string | null
     last_updated: string | null
@@ -4408,6 +4355,9 @@ export interface CbomJob {
     attempts: number
     credits: number
     refunded: boolean
+    /** credits given back (CB-14): all of ``credits`` for a failed or cancelled job, the share of targets skipped at
+     * runtime for a partly read one */
+    credits_refunded?: number
     created_at: string | null
     claimed_at: string | null
     finished_at: string | null
@@ -4494,7 +4444,12 @@ export interface CbomAssetPage {
     page: number
     page_size: number
     items: CbomAsset[]
-    facets: { type: Record<string, number>; impact: Record<string, number>; quantum_vulnerable: number }
+    /** q_grade (CB-19 PR-3): rows per grade stored at ingest ("none": no grade), null when the run was graded at
+     * view; absent from an older server */
+    facets: { type: Record<string, number>; impact: Record<string, number>; quantum_vulnerable: number;
+              q_grade?: Record<string, number> | null }
+    /** CB-19 PR-3: whether the grade filter can serve this run, and why not */
+    grade_filter?: { available: boolean; reason: string | null }
     targets: CbomJobTargets[]
     run?: CbomRun
 }
@@ -4550,6 +4505,8 @@ export interface CbomSourcesSettings {
     /** CT providers in the order they are asked, e.g. ["certspotter", "crtsh"] */
     ct_providers?: string[]
     network_exclusions: CbomExclusionItem[]
+    /** Never-scan host names a scan node cannot resolve: that node holds every job of the team (from job results) */
+    never_scan_held?: CbomNeverScanHeld[]
     sni_hostnames: string[]
     ports: CbomPortItem[]
     zeek_span: boolean
@@ -4589,6 +4546,27 @@ export interface CbomReadinessBasis {
     status: "ok" | "not_enough_identified" | "nothing_judged"
 }
 
+/** One group of quantum-vulnerable assets and the readiness the run would have with it fixed (posture's own
+ * readiness function: the page never computes a readiness). */
+export interface CbomReadinessAction {
+    asset_type: string
+    type_label: string
+    /** the type name counted ("CA templates"); older servers send none */
+    type_label_plural?: string
+    code: string | null
+    title: string
+    fix: string | null
+    assets: number
+    readiness_after: number | null
+}
+
+export interface CbomReadinessExcluded {
+    class: "unknown" | "not-applicable"
+    basis: string
+    assets: number
+    text: string
+}
+
 export interface CbomRunPosture {
     assets: number
     pqc_classes: Record<CbomPqcClass, number>
@@ -4597,6 +4575,12 @@ export interface CbomRunPosture {
     pqc_class_model?: string
     pqc_readiness_pct: number | null
     readiness_basis?: CbomReadinessBasis
+    /** issue #271: the quantum-vulnerable assets per (asset type, quantum finding), largest first; top 3 */
+    readiness_actions?: CbomReadinessAction[]
+    /** every such group (each quantum-vulnerable asset is in exactly one) */
+    readiness_actions_all?: CbomReadinessAction[]
+    /** the assets outside the readiness denominator (classes unknown and not-applicable), per reason */
+    readiness_excluded?: CbomReadinessExcluded[]
     hndl_assets: number
     impacts: Record<CbomImpact, number>
     top_codes: { code: string; count: number; title: string }[]
@@ -4604,7 +4588,8 @@ export interface CbomRunPosture {
     // CB-19 PR-2: the team's Mosca now, when it differs from what the run recorded at Start (null otherwise)
     mosca_now?: { configured: boolean; x: number | null; y: number | null; z: number | null; at_risk?: boolean; years_over?: number } | null
     top_risks: { id: number; type: string; name: string; location: string; impact: CbomImpact; criticality: string; source_name: string | null; score: number; hndl: boolean; finding: string | null }[]
-    compliance: { framework: string; clauses: { id: string; text: string; source: string; note?: string | null; assets: number; codes: string[] }[] }[]
+    // #289: unrecorded = assets cited for review only (the algorithm was not recorded); verdict fail | needs_evidence
+    compliance: { framework: string; clauses: { id: string; text: string; source: string; note?: string | null; assets: number; codes: string[]; unrecorded?: number; verdict?: "fail" | "needs_evidence" }[]; assets?: number; unrecorded?: number; verdict?: "fail" | "needs_evidence" | null }[]
     kb_version: string
     pqc_context: {
         mosca?: { inequality: string; definitions: Record<string, string>; source: string; paper: string }
@@ -4814,6 +4799,7 @@ export interface CbomTargetCount {
     count: number | null
     lines?: number
     samples?: string[]
+    notes?: string[] // CB-09: names IDNA 2003 software reads as another host (faß.lab -> fass.lab), shown before saving
 }
 
 export interface CbomAuditEvent {
@@ -4861,6 +4847,13 @@ const listCbomSources = async (team_id: number, group?: CbomSourceGroup): Promis
     network_totals?: { addresses: number; ranges_enabled: number; ranges_disabled: number }
 }> => {
     const response = await api.get(`${cbomSourcesBase(team_id)}/items`, { params: group ? { group } : {} })
+    return response.data
+}
+
+/** #225: one page of sources, searched and filtered on the server (keyset paging: pass the previous next_after). */
+const listCbomSourcesPage = async (team_id: number, params: Record<string, string | number>):
+    Promise<{ sources: CbomSource[]; server_time: string; total: number; next_after: number | null; limit: number }> => {
+    const response = await api.get(`${cbomSourcesBase(team_id)}/items`, { params })
     return response.data
 }
 
@@ -5019,6 +5012,23 @@ const testCbomSource = async (team_id: number, source_id: number): Promise<CbomT
         showErrorToast(error, "Error testing the source")
         throw error
     }
+}
+
+const createCbomHostKeyReset = async (team_id: number, source_id: number, body: CbomHostKeyResetBody): Promise<CbomHostKeyReset> => {
+    try {
+        const response = await api.post(`${cbomSourcesBase(team_id)}/items/${source_id}/host-key-resets`, body)
+        const data = response.data as { reset: CbomHostKeyReset; message: string }
+        toast.success(data.message || "Saved: the scan node applies it on its next job for this source")
+        return data.reset
+    } catch (error) {
+        showErrorToast(error, body.action === "accept" ? "Error accepting the host key" : "Error forgetting the host key")
+        throw error
+    }
+}
+
+const listCbomHostKeyResets = async (team_id: number, source_id: number): Promise<CbomHostKeyReset[]> => {
+    const response = await api.get(`${cbomSourcesBase(team_id)}/items/${source_id}/host-key-resets`)
+    return (response.data as { resets: CbomHostKeyReset[] }).resets
 }
 
 const updateCbomSourcesSettings = async (team_id: number, body: CbomSettingsWrite): Promise<CbomSourcesSettings> => {
@@ -5183,6 +5193,12 @@ export interface CbomRunAssetFilters extends CbomAssetFilters {
     view?: CbomRunAssetView
     status?: CbomFindingStatus
     source_id?: number
+    /** #270: comma-separated finding codes (a compliance clause's assets) */
+    code?: string
+    /** #270: comma-separated asset ids, at most 500 (a compliance requirement's refs) */
+    asset_id?: string
+    /** CB-19 PR-3: a grade key (grade/model.ts GRADE_KEYS) or "none" (409 when the run's grades were not stored) */
+    q_grade?: string
 }
 
 /** Wave status names of PUT /cbom/remediation (same values as utils/api/cbom_ops CbomWaveStatus). */
@@ -5213,9 +5229,18 @@ export interface CbomRunProvenance {
     credits: number | null
 }
 
+/** A finding code behind a clause: its knowledge-base title and remediation summary (#270). */
+export interface CbomClauseFinding { code: string; title: string; fix: string | null }
+
 export interface CbomRunComplianceFramework {
     framework: string
-    clauses: { clause: string; title: string; assets: number; codes: string[] }[]
+    /** unrecorded: assets cited for review only, the algorithm the clause depends on was not recorded (#289) */
+    clauses: { clause: string; title: string; assets: number; codes: string[]; source?: string | null; note?: string | null; findings?: CbomClauseFinding[]; unrecorded?: number; verdict?: "fail" | "needs_evidence" }[]
+    /** distinct assets behind any clause (#270; the clause counts overlap); null when it cannot be known */
+    assets?: number | null
+    /** distinct assets behind its clauses only for review (#289); null when it cannot be known */
+    unrecorded?: number | null
+    verdict?: "fail" | "needs_evidence" | null
 }
 
 /** The run's dashboard: the code page's CbomScanDashboardData; `metrics_available: false` until assignments carry done_at. */
@@ -5540,6 +5565,7 @@ export {
     getCbomNodeArtifacts,
     getCbomNodeArtifactLink,
     listCbomSources,
+    listCbomSourcesPage,
     getCbomSource,
     getCbomJob,
     getCbomSourcesSettings,
@@ -5570,6 +5596,8 @@ export {
     updateCbomSource,
     deleteCbomSource,
     testCbomSource,
+    createCbomHostKeyReset,
+    listCbomHostKeyResets,
     updateCbomSourcesSettings,
     setCbomNetworkStop,
     startCbomDiscovery,
@@ -5591,7 +5619,22 @@ export type CbomAiSubject =
     | { kind: "run_asset"; assetId: number }
     | { kind: "scan_finding"; scanId: number; findingId: string }
 
-export type CbomAiMode = "explain" | "plan" | "question"
+export type CbomAiMode = "explain" | "plan" | "question" | "fix"
+
+/** Mode "fix": the model's rewrite of the finding's code window (or a run asset's configuration change), after the
+ * backend's deterministic checks. */
+export interface CbomAiFix {
+    kind: "code" | "config"
+    language: string
+    original_code: string
+    fixed_code: string
+    diff: string
+    path: string | null
+    start_line: number | null
+    explanation: { text: string; cites: string[] }[]
+    notes: string[]
+    new_imports?: string[]
+}
 
 export interface CbomAiStatus {
     available: boolean
@@ -5616,6 +5659,9 @@ export interface CbomAiAnswer {
     withheld_reason?: string
     /** true when the steps and commands are the knowledge-base baseline (the model's answer was withheld) */
     baseline?: boolean
+    /** the model's answer was cut off at its output limit: status "ok" shows only its complete part (the first
+     * caveat says so), status "withheld" means nothing usable was complete */
+    truncated?: boolean
     dropped_commands: number
     provider?: "bedrock" | "openai_compat"
     region?: string | null
@@ -5624,9 +5670,13 @@ export interface CbomAiAnswer {
     prompt_version: string
     items: { id: string; label: string }[]
     cached?: boolean
+    /** mode "fix" only: the checked rewrite (null when withheld) and the checks it passed */
+    fix?: CbomAiFix | null
+    checks?: { name: string; ok: boolean; note: string }[]
 }
 
-/** The UI gives the model 90 s (the backend's own limit is 60 s, CBOM_AI_TIMEOUT_S). */
+/** The UI waits 90 s, longer than the backend's own deadline for the whole request (CBOM_AI_DEADLINE_S: 50 s by
+ * default, at most 85 s), so the app's "took too long, try again" answer arrives before this gives up. */
 export const CBOM_AI_UI_TIMEOUT_MS = 90_000
 
 export const getCbomAiStatus = async (team_id: number): Promise<CbomAiStatus> => {

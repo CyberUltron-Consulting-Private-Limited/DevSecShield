@@ -9,8 +9,8 @@
   none < configurable < code-fixed < vendor-fixed < unknown < hardware-fixed this is exactly the asset rule over the
   union of their codes (an observation is unknown only when it has an unknown code and no hardware-fixed one), so
   the asset class is a MAX over stored values, never a re-read. Its system is its latest observation's.
-* **Roll-up**: ``GROUP BY system_key, fix_class, fix_class_excl_pq, fix_reasons`` over the team's assets (index
-  ``(team_id, system_key, fix_class)``), plus the code scans and evidence items (``agility_rollup``).
+* **Roll-up**: ``GROUP BY system_key, fix_class, fix_class_excl_pq, fix_reasons`` over the team's assets (the
+  covering partial index ``ix_cbomestateasset_agility_groups``, an index-only scan; CB-32), plus the code scans and evidence items (``agility_rollup``).
 * **Written** by an estate hook (``on_estate_write``) in each run's estate write: the observations of the sources the
   run wrote are re-judged, their assets re-aggregated, and the run's baseline row is written. **Healed** when read
   (``heal``): an observation whose row moved on, whose class was never computed, computed by another model version,
@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import datetime as _dt
+import json as _json
 from dataclasses import dataclass
 from typing import Any, Iterable, Sequence
 
@@ -32,6 +33,7 @@ BATCH = 500
 ORDER = ("none", "configurable", "code-fixed", "vendor-fixed", "unknown", "hardware-fixed")
 _ORD = {v: i for i, v in enumerate(ORDER)}
 BASELINE_SYSTEMS_CAP = 2_000
+USE_DIGESTS = True  # #352: compare the collected rows' content digests first (False: row by row, the reference path)
 DAILY = _dt.timedelta(days=1)
 
 
@@ -45,6 +47,29 @@ def _tables():
 def _chunks(items: Sequence[Any], size: int = BATCH) -> Iterable[Sequence[Any]]:
     for start in range(0, len(items), size):
         yield items[start:start + size]
+
+
+def update_many(session: Any, table: Any, key: str, rows: list[dict[str, Any]], *where: Any) -> None:
+    """``UPDATE table SET ... WHERE table.<key> = b_key`` for each of ``rows`` (dicts of ``b_key`` and the columns to
+    set, all with the same keys). PostgreSQL: one statement per 1,000 rows, ``UPDATE ... FROM (VALUES ...)`` (#352:
+    CB-32's statement-level summary triggers then fire once per statement, not once per row, which cost more than the
+    updates); SQLite: an executemany (its triggers are per row either way)."""
+    if not rows:
+        return
+    cols = [c for c in rows[0] if c != "b_key"]
+    if session.get_bind().dialect.name != "postgresql":
+        stmt = sa.update(table).where(*where, table.c[key] == sa.bindparam("b_key")).values(
+            **{c: sa.bindparam(c) for c in cols})
+        for chunk in _chunks(rows, 1_000):
+            session.execute(stmt, list(chunk))
+        return
+    for chunk in _chunks(rows, 1_000):
+        # the rows travel as one JSON parameter read by json_to_recordset with the columns' types: one statement,
+        # and nothing per row for SQLAlchemy to compile (a VALUES list of 1,000 rows took longer to compile than to run)
+        v = sa.func.json_to_recordset(sa.cast(sa.bindparam("payload", _json.dumps(list(chunk), default=str)), sa.JSON)) \
+            .table_valued(sa.column("b_key", table.c[key].type), *(sa.column(c, table.c[c].type) for c in cols)) \
+            .render_derived(name="v", with_types=True)
+        session.execute(sa.update(table).where(*where, table.c[key] == v.c.b_key).values(**{c: v.c[c] for c in cols}))
 
 
 def _aware(moment: Any) -> _dt.datetime:
@@ -215,98 +240,337 @@ def judge_observations(session: Any, team_id: int, now: _dt.datetime, where: Any
                             "fix_attempt": attempt, "fix_recheck_on": recheck, "fix_at": _naive(_aware(at)),
                             "system_key": system[0], "system_label": system[1], "system_kind": system[2],
                             "cert_cnb_key": cnb, "cert_cn_key": cn})
-    stmt = sa.update(eo).where(eo.c.id == sa.bindparam("b_id")).values(
-        **{k: sa.bindparam(k) for k in updates[0] if k != "b_id"})
-    for chunk in _chunks(updates, 1_000):
-        session.execute(stmt, list(chunk))
+    update_many(session, eo, "id", [{"b_key": u.pop("b_id"), **u} for u in updates])
     return {o.asset_key for o in found}
 
 
 # ---------------------------------------------------------------------------------------------- assets
-def aggregate_assets(session: Any, team_id: int, keys: Iterable[str]) -> int:
-    """Re-aggregate the assets ``keys`` from their observations' stored classes; returns the assets written."""
-    eo, _es, ea, _row = _tables()
+def aggregate_assets(session: Any, team_id: int, keys: Iterable[str], moves: list[dict[str, Any]] | None = None
+                     ) -> int:
+    """Re-aggregate the assets ``keys`` from their observations' stored classes; returns the assets whose stored
+    answer changed (only those are written). ``moves``: gets one entry per asset whose class changed under the same
+    model version (a new asset, or a class recomputed by another model version, is not a move)."""
+    eo, es, ea, _row = _tables()
     version = AG.version()
     keys = sorted(set(keys))
+    fields = ("fix_class", "fix_class_excl_pq", "fix_floor", "fix_reasons", "fix_codes", "fix_version", "fix_at",
+              "system_key", "system_label", "system_kind", "fix_observations")
     updates: list[dict[str, Any]] = []
     for chunk in _chunks(keys):
         by_key: dict[str, list[Part]] = {}
+        # a present observation's class holds for its source's latest job (#352: its own pointer may be an older job
+        # whose row is the same), which orders it among the asset's observations as before
+        job = sa.case((sa.and_(eo.c.presence == "present", es.c.latest_job_id.is_not(None)), es.c.latest_job_id),
+                      else_=eo.c.fix_job_id).label("fix_job_id")
         for o in session.execute(sa.select(
                 eo.c.asset_key, eo.c.fix_class, eo.c.fix_class_excl_pq, eo.c.fix_floor, eo.c.fix_reasons,
-                eo.c.fix_codes, eo.c.fix_at, eo.c.fix_job_id, eo.c.system_key, eo.c.system_label, eo.c.system_kind)
+                eo.c.fix_codes, eo.c.fix_at, job, eo.c.system_key, eo.c.system_label, eo.c.system_kind)
+                .select_from(eo.outerjoin(es, sa.and_(es.c.team_id == eo.c.team_id, es.c.source_ref == eo.c.source_ref)))
                 .where(eo.c.team_id == team_id, eo.c.asset_key.in_(chunk), eo.c.presence != "removed",
                        eo.c.fix_class.is_not(None))).all():
             by_key.setdefault(o.asset_key, []).append(Part(
                 o.fix_class, o.fix_class_excl_pq or "none", o.fix_floor, _split(o.fix_reasons), _split(o.fix_codes),
                 (_aware(o.fix_at), o.fix_job_id or 0), (o.system_key or "", o.system_label or "", o.system_kind or "")))
+        old = {r.asset_key: r for r in session.execute(sa.select(ea.c.asset_key, ea.c.label, *(ea.c[f] for f in fields))
+                                                       .where(ea.c.team_id == team_id, ea.c.asset_key.in_(chunk))).all()}
         for key in chunk:
+            if key not in old:
+                continue  # the asset row is gone (every observation moved to a stronger key)
             parts = by_key.get(key)
             if not parts:  # every observation removed (or none judged): no class
-                updates.append({"b_key": key, "fix_class": None, "fix_class_excl_pq": None, "fix_floor": None,
-                                "fix_reasons": None, "fix_codes": None, "fix_version": version, "fix_at": None,
-                                "system_key": None, "system_label": None, "system_kind": None,
-                                "fix_observations": 0})
-                continue
-            p = combine(parts)
-            updates.append({"b_key": key, "fix_class": p.fix_class, "fix_class_excl_pq": p.excl_pq,
-                            "fix_floor": p.floor, "fix_reasons": _join(p.reasons, 200),
-                            "fix_codes": _join(p.codes, 300), "fix_version": version,
-                            "fix_at": _naive(p.at[0]), "system_key": p.system[0], "system_label": p.system[1],
-                            "system_kind": p.system[2], "fix_observations": len(parts)})
-    if updates:
-        stmt = sa.update(ea).where(ea.c.team_id == team_id, ea.c.asset_key == sa.bindparam("b_key")).values(
-            **{k: sa.bindparam(k) for k in updates[0] if k != "b_key"})
-        for chunk in _chunks(updates, 1_000):
-            session.execute(stmt, list(chunk))
+                new = {"fix_class": None, "fix_class_excl_pq": None, "fix_floor": None, "fix_reasons": None,
+                       "fix_codes": None, "fix_version": version, "fix_at": None, "system_key": None,
+                       "system_label": None, "system_kind": None, "fix_observations": 0}
+            else:
+                p = combine(parts)
+                new = {"fix_class": p.fix_class, "fix_class_excl_pq": p.excl_pq, "fix_floor": p.floor,
+                       "fix_reasons": _join(p.reasons, 200), "fix_codes": _join(p.codes, 300), "fix_version": version,
+                       "fix_at": _naive(p.at[0]), "system_key": p.system[0], "system_label": p.system[1],
+                       "system_kind": p.system[2], "fix_observations": len(parts)}
+            was = old[key]
+            if all(getattr(was, f) == new[f] for f in fields if f != "fix_at") and \
+                    (was.fix_at is None) == (new["fix_at"] is None):
+                continue  # nothing the roll-up reads changed (fix_at only orders the observations)
+            if moves is not None and was.fix_class and new["fix_class"] and was.fix_class != new["fix_class"] \
+                    and was.fix_version == version:
+                moves.append({"key": key, "label": was.label, "old_class": was.fix_class, "new_class": new["fix_class"],
+                              "system": (new["system_key"], new["system_label"], new["system_kind"])})
+            updates.append({"b_key": key, **new})
+    update_many(session, ea, "asset_key", updates, ea.c.team_id == team_id)
     return len(updates)
 
 
+def _source_behind() -> Any:
+    """#352: the source's present observations are not known to be up to date for its latest job."""
+    _eo, es, _ea, _row = _tables()
+    return sa.or_(es.c.fix_through_job_id.is_(None), es.c.fix_through_attempt.is_(None),
+                  es.c.fix_through_job_id != es.c.latest_job_id, es.c.fix_through_attempt != es.c.latest_attempt)
+
+
 def _stale_condition(now: _dt.datetime) -> Any:
+    """A present observation is stale while its source is behind (``fix_through``, kept by ``advance`` and ``heal``;
+    its own pointer may be an older job whose row is the same); another one while its pointer is not its last reading
+    job."""
     eo, es, _ea, _row = _tables()
-    pointer_job = sa.case((eo.c.presence == "present", es.c.latest_job_id), else_=eo.c.seen_job_id)
-    pointer_attempt = sa.case((eo.c.presence == "present", es.c.latest_attempt), else_=eo.c.seen_attempt)
     return sa.or_(eo.c.fix_version.is_(None), eo.c.fix_version != AG.version(),
                   eo.c.fix_recheck_on <= _naive(now).date(),
-                  eo.c.fix_job_id != pointer_job, eo.c.fix_attempt != pointer_attempt)
+                  sa.and_(eo.c.presence == "present", _source_behind()),
+                  sa.and_(eo.c.presence != "present", sa.or_(eo.c.fix_job_id != eo.c.seen_job_id,
+                                                             eo.c.fix_attempt != eo.c.seen_attempt)))
 
 
-def heal(session: Any, team_id: int, now: _dt.datetime) -> int:
+STALE_IDS_MAX = 50_000  # more stale observations than this (a new model version): one scan instead of id lists
+
+
+def _other_than(column: Any, value: Any) -> list[Any]:
+    """``column IS NULL OR column <> value`` as three conditions, each an index range (run one statement each: an
+    OR of ranges is read as a filter over the whole team)."""
+    return [column.is_(None), column < value, column > value]
+
+
+def behind_sources(session: Any, team_id: int) -> list[str]:
+    _eo, es, _ea, _row = _tables()
+    return list(session.execute(sa.select(es.c.source_ref).where(es.c.team_id == team_id, _source_behind())
+                                .order_by(es.c.source_ref)).scalars())
+
+
+def stale_ids(session: Any, team_id: int, now: _dt.datetime) -> list[int] | None:
+    """The ids of the observations ``_stale_condition`` selects, found through indexes (CB-32: the condition joins
+    every observation of the team to its source, 1.5M rows on each roll-up). None when there are more than
+    ``STALE_IDS_MAX`` (heal then scans with ``_stale_condition``)."""
+    eo, es, _ea, _row = _tables()
+    live = (eo.c.team_id == team_id, eo.c.presence != "removed")
+    probes = [sa.select(eo.c.id).where(*live, cond) for cond in _other_than(eo.c.fix_version, AG.version())]
+    probes.append(sa.select(eo.c.id).where(*live, eo.c.fix_recheck_on.is_not(None),
+                                           eo.c.fix_recheck_on <= _naive(now).date()))
+    # not read any more: its pointer is its own last reading job (ix_cbomestateobs_unread_fix_moved)
+    probes.append(sa.select(eo.c.id).where(eo.c.team_id == team_id, eo.c.presence == "not_read", sa.or_(
+        eo.c.fix_job_id != eo.c.seen_job_id, eo.c.fix_attempt != eo.c.seen_attempt)))
+    for ref in behind_sources(session, team_id):
+        # present, of a source not up to date for its latest job: all of them (ix_cbomestateobs_present_fix)
+        probes.append(sa.select(eo.c.id).where(eo.c.team_id == team_id, eo.c.presence == "present",
+                                               eo.c.source_ref == ref))
+    ids: set[int] = set()
+    for probe in probes:
+        ids.update(session.execute(probe.limit(STALE_IDS_MAX + 1 - len(ids))).scalars())
+        if len(ids) > STALE_IDS_MAX:
+            return None
+    return sorted(ids)
+
+
+def heal(session: Any, team_id: int, now: _dt.datetime, *, extra_keys: Iterable[str] = (),
+         moves: list[dict[str, Any]] | None = None) -> int:
     """Re-judge every stale observation of the team (see the module docstring) and re-aggregate its assets, plus any
-    asset never aggregated or aggregated by another version. Returns the assets re-aggregated (0 in steady state).
-    The caller commits."""
-    _eo, _es, ea, _row = _tables()
-    keys = judge_observations(session, team_id, now, _stale_condition(now))
-    keys |= {k for k, in session.execute(sa.select(ea.c.asset_key).where(
-        ea.c.team_id == team_id, ea.c.presence != "removed",
-        sa.or_(ea.c.fix_version.is_(None), ea.c.fix_version != AG.version()))).all()}
-    return aggregate_assets(session, team_id, keys) if keys else 0
+    asset never aggregated or aggregated by another version, plus ``extra_keys``. Returns the assets whose stored
+    answer changed (0 in steady state). Steady state costs a few index probes (``stale_ids``, CB-32), not a scan of
+    the team. The caller commits."""
+    eo, es, ea, _row = _tables()
+    behind = behind_sources(session, team_id)
+    ids = stale_ids(session, team_id, now)
+    if ids is None:
+        keys = judge_observations(session, team_id, now, _stale_condition(now))
+    else:
+        keys = set()
+        for chunk in _chunks(ids, 5_000):
+            keys |= judge_observations(session, team_id, now, eo.c.id.in_(chunk))
+    if behind:  # every present observation of these sources was judged now: they are up to date (#352)
+        for chunk in _chunks(behind):
+            session.execute(sa.update(es).where(es.c.team_id == team_id, es.c.source_ref.in_(list(chunk))).values(
+                fix_through_job_id=es.c.latest_job_id, fix_through_attempt=es.c.latest_attempt))
+    keys |= set(extra_keys)
+    for cond in _other_than(ea.c.fix_version, AG.version()):
+        keys |= set(session.execute(sa.select(ea.c.asset_key).where(
+            ea.c.team_id == team_id, ea.c.presence != "removed", cond)).scalars())
+    return aggregate_assets(session, team_id, keys, moves) if keys else 0
+
+
+def carry_unchanged(session: Any, team_id: int, refs: Sequence[str], *, only: Any = None) -> tuple[int, int]:
+    """The incremental part of a run's write. A source re-read in a new job points its present observations at the
+    new job's rows; an observation whose new row is the row it was judged from in everything the class reads (type,
+    place, algorithm, key size, protocol, verdict, codes, facts as stored), under the same job context and system,
+    keeps its class: only its ``fix_job_id``/``fix_attempt`` move forward, nothing is loaded or judged. The stored
+    codes are compared too, so a date-based code the new ingest recorded is a change; the calendar after that is
+    ``fix_recheck_on``'s (same facts, same recheck day). Returns (observations carried, (source, old job) pairs
+    looked at). ``only``: a further condition on the observations (``advance``: the ones whose row may have
+    changed)."""
+    eo, es, _ea, row = _tables()
+    version = AG.version()
+    moved = sa.or_(eo.c.fix_job_id != es.c.latest_job_id, eo.c.fix_attempt != es.c.latest_attempt)
+    base = (eo.c.team_id == team_id, eo.c.source_ref.in_(list(refs)), eo.c.presence == "present",
+            eo.c.fix_version == version, moved, *(() if only is None else (only,)))
+    joined = eo.join(es, sa.and_(es.c.team_id == eo.c.team_id, es.c.source_ref == eo.c.source_ref))
+    pairs = session.execute(sa.select(
+        eo.c.source_ref, eo.c.fix_job_id, eo.c.system_key, eo.c.system_label, eo.c.system_kind, es.c.latest_job_id,
+        es.c.latest_attempt, es.c.source_name).select_from(joined).where(*base).distinct()).all()
+    if not pairs:
+        return 0, 0
+    contexts = Contexts(session, team_id, {p.fix_job_id for p in pairs} | {p.latest_job_id for p in pairs})
+    same: set[tuple[str, int]] = set()
+    for p in pairs:
+        name = p.source_name or p.source_ref
+        old_ctx, _old_system = contexts.of(p.fix_job_id, p.source_ref, name)
+        new_ctx, new_system = contexts.of(p.latest_job_id, p.source_ref, name)
+        if old_ctx == new_ctx and new_system == (p.system_key, p.system_label, p.system_kind):
+            same.add((p.source_ref, p.fix_job_id))
+    if not same:
+        return 0, len(pairs)
+    n = row.__table__.alias("n")
+    o = row.__table__.alias("o")
+    text = lambda c: sa.cast(c, sa.Text)  # noqa: E731 - JSON compared as stored (PostgreSQL json keeps its text)
+    same_row = sa.and_(*(sa.not_(n.c[c].is_distinct_from(o.c[c])) for c in (
+        "asset_type", "cdx_type", "location", "algorithm", "key_size", "protocol", "impact", "finding")),
+        sa.not_(text(n.c.finding_codes).is_distinct_from(text(o.c.finding_codes))),
+        sa.not_(text(n.c.facts).is_distinct_from(text(o.c.facts))))
+    # One statement for the whole run, all in SQL (#352). The observations of the (source, old job) pairs whose
+    # context did not change, each with its source's latest job, are taken first (a MATERIALIZED CTE: one relation
+    # that holds both halves of each row's keys), then each is looked up in its new and its old job through the
+    # unique (job, attempt, asset_key) index. Written as one join, or as one correlated statement per pair (before),
+    # PostgreSQL could scan a whole job's rows for every observation (3M rows read at 5k assets, minutes at 50k).
+    c = sa.select(eo.c.id, eo.c.row_key, eo.c.fix_job_id, eo.c.fix_attempt, es.c.latest_job_id.label("new_job"),
+                  es.c.latest_attempt.label("new_attempt")).select_from(joined).where(
+        eo.c.team_id == team_id, sa.tuple_(eo.c.source_ref, eo.c.fix_job_id).in_(sorted(same)),
+        eo.c.presence == "present", eo.c.fix_version == version, *(() if only is None else (only,)),
+    ).cte("carry").prefix_with("MATERIALIZED")
+    carried = int(session.execute(sa.update(eo).where(
+        eo.c.id == c.c.id,
+        n.c.job_id == c.c.new_job, n.c.attempt == c.c.new_attempt, n.c.asset_key == c.c.row_key, n.c.team_id == team_id,
+        o.c.job_id == c.c.fix_job_id, o.c.attempt == c.c.fix_attempt, o.c.asset_key == c.c.row_key,
+        o.c.team_id == team_id, same_row,
+    ).values(fix_job_id=c.c.new_job, fix_attempt=c.c.new_attempt).add_cte(c)).rowcount or 0)
+    return carried, len(pairs)
+
+
+CHANGED_ROWS_MAX = 5_000  # more changed rows than this in one source's job: compare every observation (the old path)
+
+
+def changed_rows(session: Any, team_id: int, new: tuple[int, int], old: tuple[int, int]) -> list[str]:
+    """#352: the row keys of job attempt ``new`` whose stored values may differ from the same key's row in job attempt
+    ``old`` (``content_digest``, see ``new_models.content_digest``): no row there, or a digest that differs or is not
+    known. ``(key, digest) EXCEPT (key, digest)`` of the two jobs' ranges of the unique (job_id, attempt, asset_key)
+    index: a set operation, which PostgreSQL runs as one hash or sort over both ranges (a LEFT JOIN of the two was
+    now and then planned as a range scan per row, a second at 5k rows), and only the changed keys come back. No team
+    condition in SQL (it could turn either range into a scan of the team's rows): the team is checked on the result."""
+    _eo, _es, _ea, row = _tables()
+    t = row.__table__
+
+    def pairs(job: tuple[int, int]) -> Any:
+        return sa.select(t.c.asset_key, t.c.content_digest, t.c.team_id).where(t.c.job_id == job[0],
+                                                                              t.c.attempt == job[1])
+    unknown = sa.select(t.c.asset_key, t.c.content_digest, t.c.team_id).where(
+        t.c.job_id == new[0], t.c.attempt == new[1], t.c.content_digest.is_(None))
+    found = session.execute(sa.except_(pairs(new), pairs(old))).all() + session.execute(unknown).all()
+    return sorted({k for k, _d, team in found if team == team_id})
+
+
+def changed_condition(session: Any, write: Any, new: tuple[int, int], old: tuple[int, int]) -> Any | None:
+    """``cbomestateobservation.row_key`` among ``changed_rows(new, old)``, read once per write (the agility and the
+    register hooks usually compare the same two jobs); None when more than ``CHANGED_ROWS_MAX`` rows changed (a first
+    write after cb352hooks001, whose rows have no digest: the caller then compares every observation)."""
+    eo, _es, _ea, _row = _tables()
+    cache = write.__dict__.setdefault("_changed_rows", {})
+    if (new, old) not in cache:
+        cache[(new, old)] = changed_rows(session, write.team_id, new, old)
+    keys = cache[(new, old)]
+    return eo.c.row_key.in_(keys) if len(keys) <= CHANGED_ROWS_MAX else None
+
+
+def _systems(session: Any, team_id: int, ref: str, version: str) -> set[tuple[str, str, str]]:
+    """The systems the source's judged present observations are stored under (at most two: one that differs from the
+    new job's is enough to compare row by row, as a changed system re-judges them)."""
+    eo, _es, _ea, _row = _tables()
+    return {(r.system_key, r.system_label, r.system_kind) for r in session.execute(sa.select(
+        eo.c.system_key, eo.c.system_label, eo.c.system_kind).where(
+        eo.c.team_id == team_id, eo.c.source_ref == ref, eo.c.presence == "present",
+        eo.c.fix_version == version).distinct().limit(2)).all()}
+
+
+def _through(r: Any) -> tuple[int, int] | None:
+    return (int(r.fix_through_job_id), int(r.fix_through_attempt)) \
+        if r.fix_through_job_id is not None and r.fix_through_attempt is not None else None
+
+
+def advance(session: Any, write: Any, now: _dt.datetime) -> set[str]:
+    """Bring the present observations of the sources ``write`` re-read up to their new job, writing only what changed
+    (#352). A source whose observations were all up to date for the job it pointed at before this write
+    (``fix_through`` = ``write.previous``) under the same job context and system: an observation the store did not
+    touch whose row has the same content digest in both jobs keeps its class and is not written at all; only the
+    others are compared row by row (``carry_unchanged``, which moves their pointer) and the rest is judged. Any other
+    source: every present observation is compared and judged that way (the path before #352). Then the source is
+    marked up to date (``fix_through``). Before that, an observation that left "present" in this write while up to
+    date gets its pointer (its last reading job, as ``_stale_condition`` reads it). Returns the judged assets' keys."""
+    eo, es, _ea, _row = _tables()
+    team_id, run_id = write.team_id, int(write.run_id)
+    version = AG.version()
+    left = sa.select(eo.c.id, es.c.fix_through_job_id, es.c.fix_through_attempt, eo.c.seen_job_id,
+                     eo.c.seen_attempt).select_from(eo.join(es, sa.and_(
+                         es.c.team_id == eo.c.team_id, es.c.source_ref == eo.c.source_ref))).where(
+        eo.c.team_id == team_id, eo.c.state_run_id == run_id, eo.c.presence == "not_read",
+        eo.c.fix_version == version,
+        sa.or_(eo.c.fix_job_id.is_distinct_from(eo.c.seen_job_id), eo.c.fix_attempt.is_distinct_from(eo.c.seen_attempt)))
+    pin = [{"b_id": r.id, "job": r.seen_job_id, "attempt": r.seen_attempt} for r in session.execute(left).all()
+           if (r.fix_through_job_id, r.fix_through_attempt) == (r.seen_job_id, r.seen_attempt)]
+    if pin:
+        stmt = sa.update(eo).where(eo.c.id == sa.bindparam("b_id")).values(
+            fix_job_id=sa.bindparam("job"), fix_attempt=sa.bindparam("attempt"))
+        for chunk in _chunks(pin, 1_000):
+            session.execute(stmt, list(chunk))
+    refs = list(write.source_refs or ())
+    if not refs:
+        return set()
+    sources = session.execute(sa.select(
+        es.c.source_ref, es.c.source_name, es.c.latest_job_id, es.c.latest_attempt, es.c.fix_through_job_id,
+        es.c.fix_through_attempt).where(es.c.team_id == team_id, es.c.source_ref.in_(refs))).all()
+    previous = getattr(write, "previous", None) or {}
+    contexts = Contexts(session, team_id, {r.latest_job_id for r in sources} | {
+        r.fix_through_job_id for r in sources if r.fix_through_job_id is not None})
+    judged: set[str] = set()
+    done: list[str] = []
+    for r in sources:
+        latest = (int(r.latest_job_id), int(r.latest_attempt or 1))
+        through = _through(r)
+        if through == latest:
+            continue
+        name = r.source_name or r.source_ref
+        fast = USE_DIGESTS and through is not None and through == previous.get(r.source_ref) and \
+            contexts.of(through[0], r.source_ref, name)[0] == contexts.of(latest[0], r.source_ref, name)[0] and \
+            _systems(session, team_id, r.source_ref, version) <= {contexts.of(latest[0], r.source_ref, name)[1]}
+        changed = changed_condition(session, write, latest, through) if fast and through is not None else None
+        only = sa.or_(eo.c.state_run_id == run_id, changed) if changed is not None else None
+        carry_unchanged(session, team_id, [r.source_ref], only=only)
+        stale = (eo.c.source_ref == r.source_ref, eo.c.presence == "present", eo.c.fix_version == version,
+                 sa.or_(eo.c.fix_job_id != latest[0], eo.c.fix_attempt != latest[1]),
+                 *(() if only is None else (only,)))
+        judged |= judge_observations(session, team_id, now, sa.and_(*stale))
+        done.append(r.source_ref)
+    if done:
+        session.execute(sa.update(es).where(es.c.team_id == team_id, es.c.source_ref.in_(done)).values(
+            fix_through_job_id=es.c.latest_job_id, fix_through_attempt=es.c.latest_attempt))
+    return judged
 
 
 # ---------------------------------------------------------------------------------------------- the estate hook
 def on_estate_write(session: Any, write: Any) -> None:
-    """After a run's estate write (same transaction, its own savepoint): re-judge the observations of the sources the
-    run wrote and those whose asset changed or moved, re-aggregate their assets, heal anything else stale, then write
-    the run's baseline."""
+    """After a run's estate write (same transaction, its own savepoint), incrementally: carry the observations whose
+    re-read row is unchanged (``carry_unchanged``), re-judge only the rest that is stale, re-aggregate those assets
+    and the ones whose observations' presence or key changed in this run, write the run's baseline, and record the
+    agility events (an asset that moved class, a system whose class mix changed)."""
     eo, _es, _ea, _row = _tables()
     now = _aware(getattr(write, "at", None) or _dt.datetime.now(UTC))
-    keys: set[str] = set(write.changed) | {new for _old, new, _ref in write.rekeyed} | {
-        old for old, _new, _ref in write.rekeyed}
-    conds = []
-    if write.source_refs:
-        conds.append(eo.c.source_ref.in_(list(write.source_refs)))
-    touched = set()
-    if conds:
-        touched |= judge_observations(session, write.team_id, now, sa.or_(*conds))
-    for chunk in _chunks(sorted(keys)):
-        touched |= judge_observations(session, write.team_id, now, sa.and_(
-            eo.c.asset_key.in_(list(chunk)), eo.c.fix_version.is_(None)))
-    aggregate_assets(session, write.team_id, touched | keys)
-    heal(session, write.team_id, now)
-    write_baseline(session, write.team_id, int(write.run_id), now)
+    team_id, run_id = write.team_id, int(write.run_id)
+    keys: set[str] = advance(session, write, now)
+    keys |= set(write.changed) | {k for old, new, _ref in write.rekeyed for k in (old, new)}
+    keys |= {k for k, in session.execute(sa.select(eo.c.asset_key).where(
+        eo.c.team_id == team_id, eo.c.state_run_id == run_id)).all()}  # observations this run changed
+    moves: list[dict[str, Any]] = []
+    heal(session, team_id, now, extra_keys=keys, moves=moves)
+    previous, current = write_baseline(session, team_id, run_id, now)
+    if current is not None:
+        record_events(session, team_id, run_id, now, moves, previous, current)
 
 
-def write_baseline(session: Any, team_id: int, run_id: int, now: _dt.datetime) -> None:
-    """The run's baseline row (once: a replay of the same run by the backfill keeps the first)."""
+def write_baseline(session: Any, team_id: int, run_id: int, now: _dt.datetime) -> tuple[Any, Any]:
+    """The run's baseline row (once: a replay of the same run by the backfill keeps the first). Returns (the
+    previous run's baseline or None, the row written now or None when it already existed)."""
     from sqlmodel import select
 
     from backend.new_models import CbomAgilityBaseline
@@ -314,17 +578,85 @@ def write_baseline(session: Any, team_id: int, run_id: int, now: _dt.datetime) -
 
     if session.exec(select(CbomAgilityBaseline.id).where(CbomAgilityBaseline.team_id == team_id,
                                                          CbomAgilityBaseline.run_id == run_id)).first():
-        return
+        return None, None
+    previous = session.exec(select(CbomAgilityBaseline).where(
+        CbomAgilityBaseline.team_id == team_id, CbomAgilityBaseline.run_id < run_id)
+        .order_by(CbomAgilityBaseline.run_id.desc()).limit(1)).first()  # type: ignore[attr-defined]
     summary = ROLLUP.build_store(session, team_id, now=now, healed=True).summary(limit=BASELINE_SYSTEMS_CAP)
     systems = summary["systems"]["items"]
-    session.add(CbomAgilityBaseline(
+    row = CbomAgilityBaseline(
         team_id=team_id, run_id=run_id, scope="enterprise", agility_version=summary["agility_version"],
         assets=summary["assets"], self_fixable_pct=summary["self_fixable_pct"], counts=summary["counts"],
         counts_excl_pq=summary["counts_excl_pq"], unknown_reasons=summary["unknown_reasons"],
         systems=[{k: s[k] for k in ("key", "label", "kind", "assets", "hardest", "counts", "self_fixable_pct")}
                  for s in systems],
-        systems_truncated=summary["systems_total"] > len(systems), created_at=_naive(now)))
+        systems_truncated=summary["systems_total"] > len(systems), created_at=_naive(now))
+    session.add(row)
     session.flush()
+    return previous, row
+
+
+# ---------------------------------------------------------------------------------------------- events
+EVENT_SCOPE = "agility"
+ASSET_MOVED = "agility_asset_moved"
+SYSTEM_CHANGED = "agility_system_changed"
+
+
+def system_changes(previous: Any, current: Any) -> list[dict[str, Any]]:
+    """Systems whose class mix differs between two consecutive baselines (a system that appeared or left counts as
+    a change from or to nothing). None when either baseline was computed by another model version, or truncated its
+    systems (then a missing system proves nothing)."""
+    if previous is None or previous.agility_version != current.agility_version or \
+            previous.systems_truncated or current.systems_truncated:
+        return []
+    before = {s["key"]: s for s in previous.systems or []}
+    after = {s["key"]: s for s in current.systems or []}
+    out = []
+    for key in sorted(set(before) | set(after)):
+        old, new = before.get(key), after.get(key)
+        if old and new and old.get("counts") == new.get("counts"):
+            continue
+        ref = new or old
+        out.append({"key": key, "label": ref.get("label"), "kind": ref.get("kind"),
+                    "old_counts": old.get("counts") if old else None, "new_counts": new.get("counts") if new else None,
+                    "old_hardest": old.get("hardest") if old else None, "new_hardest": new.get("hardest") if new else None,
+                    "old_self_fixable_pct": old.get("self_fixable_pct") if old else None,
+                    "new_self_fixable_pct": new.get("self_fixable_pct") if new else None})
+    return out
+
+
+def _event(team_id: int, now: _dt.datetime, kind: str, *, asset_key: str | None, label: str | None,
+           detail: dict[str, Any], dedupe_parts: tuple) -> dict[str, Any]:
+    from backend.utilities.cbom_sources.drift import dedupe
+
+    # the run is in detail.run_id (CB-23's rule): a run's own events stay its estate drift (drift tests, run Changes)
+    return {"team_id": team_id, "at": _naive(now), "scope": EVENT_SCOPE, "kind": kind, "run_id": None,
+            "baseline_run_id": None, "scan_id": None, "baseline_scan_id": None, "source_ref": "", "source_name": None,
+            "asset_key": asset_key[:64] if asset_key else None, "asset_label": (label or "")[:255] or None,
+            "code": None, "severity": "Info", "detail": detail, "dedupe_key": dedupe("agility", team_id, *dedupe_parts),
+            "forwarded_at": None}
+
+
+def record_events(session: Any, team_id: int, run_id: int, now: _dt.datetime, moves: list[dict[str, Any]],
+                  previous: Any, current: Any) -> int:
+    """One ``agility_asset_moved`` per asset that changed class in this run (at most ``drift.EVENT_CAP``) and one
+    ``agility_system_changed`` per system whose class mix changed since the previous baseline; forwarded by the
+    integrations dispatcher like every drift event. Nothing on a team's first baseline or across a model change."""
+    from backend.utilities.cbom_sources.drift import EVENT_CAP, insert_events
+
+    events = []
+    if previous is not None:
+        for m in sorted(moves, key=lambda m: m["key"])[:EVENT_CAP]:
+            events.append(_event(team_id, now, ASSET_MOVED, asset_key=m["key"], label=m["label"], detail={
+                "old_class": m["old_class"], "new_class": m["new_class"], "system_key": m["system"][0],
+                "system_label": m["system"][1], "run_id": run_id}, dedupe_parts=("asset", m["key"], run_id)))
+    for c in system_changes(previous, current):
+        events.append(_event(team_id, now, SYSTEM_CHANGED, asset_key=None, label=c["label"], detail={
+            "system_key": c["key"], "system_label": c["label"], "system_kind": c["kind"], "old_counts": c["old_counts"],
+            "new_counts": c["new_counts"], "old_hardest": c["old_hardest"], "new_hardest": c["new_hardest"],
+            "old_self_fixable_pct": c["old_self_fixable_pct"], "new_self_fixable_pct": c["new_self_fixable_pct"],
+            "baseline_run_id": previous.run_id, "run_id": run_id}, dedupe_parts=("system", c["key"], run_id)))
+    return insert_events(session, events) if events else 0
 
 
 def history(session: Any, team_id: int, limit: int = 50) -> list[dict[str, Any]]:
@@ -376,8 +708,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 0
 
 
-__all__ = ["Contexts", "ORDER", "Part", "aggregate_assets", "combine", "evaluate_node", "heal", "history",
-           "judge_observations", "on_estate_write", "recheck_on", "register", "write_baseline"]
+__all__ = ["ASSET_MOVED", "Contexts", "ORDER", "Part", "SYSTEM_CHANGED", "aggregate_assets", "carry_unchanged",
+           "combine", "evaluate_node", "heal", "history", "judge_observations", "on_estate_write", "recheck_on",
+           "record_events", "register", "system_changes", "write_baseline"]
 
 
 if __name__ == "__main__":  # pragma: no cover

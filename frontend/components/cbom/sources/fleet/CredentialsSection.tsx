@@ -27,10 +27,13 @@ import {
 
 import { refusalReason } from "../logic";
 import { ConfirmDialog, EmptyState, ErrorBlock, Field, LoadingBlock, SectionCard } from "../shared";
+import { VAULT_PROVIDERS } from "../vaultProviders";
+import { VaultNodeSettings } from "../VaultNodeSettings";
 import { isConflict } from "./fleetLogic";
 import { cbomFleetKeys, refreshFleet } from "./keys";
 import type { FleetSectionProps } from "./sections";
 import { useOpener } from "./useOpener";
+import { InfoTip } from "@/components/ui/info-tip";
 
 const TYPES: { value: CbomCredentialType; label: string }[] = [
   { value: "node_key", label: "Scan node key (no stored secret)" },
@@ -137,10 +140,10 @@ function CredentialForm({ teamId, editing, onDone, onCloseAutoFocus }: {
           <DialogDescription>Policies use it to log in to the hosts they collect. Secrets are encrypted and never shown again.</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
-          <Field label="Name" htmlFor="cred-name" required>
+          <Field infoId="fleet.cred.name" label="Name" htmlFor="cred-name" required>
             <Input id="cred-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="linux-fleet" />
           </Field>
-          <Field label="Type" htmlFor="cred-type">
+          <Field infoId="fleet.cred.type" label="Type" htmlFor="cred-type">
             <Select value={type} onValueChange={(v) => setType(v as CbomCredentialType)} disabled={!!base}>
               <SelectTrigger id="cred-type" className="cursor-pointer" title={base ? "The type of a credential cannot change: add another one" : undefined}><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -149,49 +152,52 @@ function CredentialForm({ teamId, editing, onDone, onCloseAutoFocus }: {
             </Select>
           </Field>
           <div className="grid grid-cols-[1fr_100px] gap-3">
-            <Field label="Login" htmlFor="cred-login"><Input id="cred-login" value={login} onChange={(e) => setLogin(e.target.value)} /></Field>
-            <Field label="Port" htmlFor="cred-port"><Input id="cred-port" type="number" value={port} onChange={(e) => setPort(Number(e.target.value))} /></Field>
+            <Field infoId="fleet.cred.login" label="Login" htmlFor="cred-login"><Input id="cred-login" value={login} onChange={(e) => setLogin(e.target.value)} /></Field>
+            <Field infoId="fleet.cred.port" label="Port" htmlFor="cred-port"><Input id="cred-port" type="number" value={port} onChange={(e) => setPort(Number(e.target.value))} /></Field>
           </div>
           {type !== "password" && (
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input type="checkbox" checked={pinned} onChange={(e) => setPinned(e.target.checked)} />
-              Pin host keys (otherwise trust on first use)
-            </label>
+            <div className="flex items-center gap-1">
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input type="checkbox" checked={pinned} onChange={(e) => setPinned(e.target.checked)} />
+                Pin host keys (otherwise trust on first use)
+              </label>
+              <InfoTip id="fleet.cred.pinned" />
+            </div>
           )}
           {(pinned || type === "password") && (
-            <Field label="known_hosts lines" htmlFor="cred-known-hosts" required>
+            <Field infoId="fleet.cred.known_hosts" label="known_hosts lines" htmlFor="cred-known-hosts" required>
               <Textarea id="cred-known-hosts" rows={4} className="font-mono text-xs" value={knownHosts} onChange={(e) => setKnownHosts(e.target.value)} />
             </Field>
           )}
           {type === "password" && (
-            <Field label="Password" htmlFor="cred-password" required>
+            <Field infoId="fleet.cred.password" label="Password" htmlFor="cred-password" required>
               <Input id="cred-password" type="password" autoComplete="new-password" value={password} placeholder={keepHint("password")} onChange={(e) => setPassword(e.target.value)} />
             </Field>
           )}
           {type === "ssh_cert" && (
             <>
-              <Field label="SSH certificate" htmlFor="cred-cert" required>
+              <Field infoId="fleet.cred.cert" label="SSH certificate" htmlFor="cred-cert" required>
                 <Textarea id="cred-cert" rows={3} className="font-mono text-xs" value={cert} placeholder={keepHint("ssh_certificate")} onChange={(e) => setCert(e.target.value)} />
               </Field>
-              <Field label="Private key" htmlFor="cred-key" required>
+              <Field infoId="fleet.cred.key" label="Private key" htmlFor="cred-key" required>
                 <Textarea id="cred-key" rows={4} className="font-mono text-xs" value={key} placeholder={keepHint("private_key")} onChange={(e) => setKey(e.target.value)} />
               </Field>
             </>
           )}
           {type === "vault" && (
             <div className="grid grid-cols-[160px_1fr] gap-3">
-              <Field label="Vault" htmlFor="cred-vault">
+              <Field infoId="fleet.cred.vault" label="Vault" htmlFor="cred-vault">
                 <Select value={vaultProvider} onValueChange={setVaultProvider}>
                   <SelectTrigger id="cred-vault" className="cursor-pointer"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="hashicorp" className="cursor-pointer">HashiCorp</SelectItem>
-                    <SelectItem value="cyberark" className="cursor-pointer">CyberArk</SelectItem>
-                    <SelectItem value="aws_secrets_manager" className="cursor-pointer">AWS Secrets Manager</SelectItem>
-                    <SelectItem value="azure_key_vault" className="cursor-pointer">Azure Key Vault</SelectItem>
+                    {VAULT_PROVIDERS.map((p) => (
+                      <SelectItem key={p.value} value={p.value} disabled={!p.available} className="cursor-pointer">{p.optionLabel}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </Field>
-              <Field label="Secret path" htmlFor="cred-vault-path"><Input id="cred-vault-path" value={vaultPath} onChange={(e) => setVaultPath(e.target.value)} /></Field>
+              <Field infoId="fleet.cred.vault_path" label="Secret path" htmlFor="cred-vault-path"><Input id="cred-vault-path" value={vaultPath} onChange={(e) => setVaultPath(e.target.value)} /></Field>
+              <VaultNodeSettings provider={vaultProvider} path={vaultPath} testId="cred-vault-node-settings" className="col-span-2" />
             </div>
           )}
           {reentry.length > 0 && (
@@ -234,6 +240,7 @@ export default function CredentialsSection({ teamId }: FleetSectionProps) {
   });
   return (
     <SectionCard
+      infoId="fleet.cred.section"
       id="fleet-credentials"
       title="Credentials"
       description="Logins that policies give to the sources they manage. Secrets are write-only."
@@ -254,10 +261,10 @@ export default function CredentialsSection({ teamId }: FleetSectionProps) {
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
-                <TableHead className="hidden @2xl:table-cell">Type</TableHead>
-                <TableHead className="hidden @2xl:table-cell">Login</TableHead>
-                <TableHead className="hidden @2xl:table-cell">Secrets stored</TableHead>
-                <TableHead className="text-right hidden @2xl:table-cell">Managed sources</TableHead>
+                <TableHead className="hidden @2xl:table-cell">Type <InfoTip id="fleet.cred.col.type" /></TableHead>
+                <TableHead className="hidden @2xl:table-cell">Login <InfoTip id="fleet.cred.col.login" /></TableHead>
+                <TableHead className="hidden @2xl:table-cell">Secrets stored <InfoTip id="fleet.cred.col.secrets" /></TableHead>
+                <TableHead className="text-right hidden @2xl:table-cell">Managed sources <InfoTip id="fleet.cred.col.managed" /></TableHead>
                 <TableHead><span className="sr-only">Actions</span></TableHead>
               </TableRow>
             </TableHeader>

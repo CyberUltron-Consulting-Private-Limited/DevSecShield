@@ -3,6 +3,7 @@
 // Quantum risk -> Register (CB-23 PR-B, the CISO view): the team's distribution (one row per asset across sources),
 // what is still to re-grade, closures per week, and the register table worst first, filtered, keyset-paged, with a
 // CSV of the filtered rows. Fed only by the register API. Hooks: register-row-<key> (data-q), register-total.
+import { CLASSIFICATION_LABEL } from "@/components/cbom/estate/correlation";
 import { useMemo, useState, type ChangeEvent } from "react";
 
 import { formatDateTime } from "@/components/cbom/sources/logic";
@@ -23,7 +24,7 @@ import {
   type RegisterSummary,
 } from "./register";
 import { InfoTip } from "@/components/ui/info-tip";
-import { GRADE_KEYS, GRADE_TEXT, gradeChipClass, gradeText, humanize } from "./model";
+import { GRADE_TEXT, gradeChipClass, heatCellLabel, humanize } from "./model";
 
 const GRADE_OPTIONS = [...GRADE_TEXT.map((t) => ({ value: t.split(" ")[0], label: t })), { value: "none", label: "No grade" }];
 
@@ -92,6 +93,13 @@ export function RegisterTable({ rows }: { rows: RegisterRow[] }) {
               <td className="py-1.5 pr-3 text-xs">
                 {r.source_name ?? "—"}{r.sources > 1 ? ` (+${r.sources - 1} more)` : ""}
                 {r.application ? <div className="text-zinc-500">{r.application}</div> : null}
+                {r.owners?.length || r.data_classification ? (
+                  <div className="text-zinc-500" data-testid={`register-owner-${r.item_key}`}>
+                    {[r.owners?.length ? `Owner ${r.owners.join(", ")}` : null,
+                      r.data_classification ? `${CLASSIFICATION_LABEL[r.data_classification] ?? r.data_classification} data` : null]
+                      .filter(Boolean).join(" · ")}
+                  </div>
+                ) : null}
               </td>
               <td className="py-1.5 whitespace-nowrap text-xs">{formatDateTime(r.last_observed_at)}</td>
             </tr>
@@ -130,10 +138,10 @@ export function RegisterHeatmap({ heatmap, onDrill }: {
               {heatmap.columns.map((c) => {
                 const cell = heatmapCell(heatmap, r.other ? null : r.family, c.other ? null : c.source_ref);
                 if (!cell) return <td key={c.source_ref ?? "other"} className="px-1 py-1" />;
-                const label = cell.worst ? gradeText(cell.worst) : "Q0 Unknown only";
+                const label = heatCellLabel(cell);
                 const body = (
-                  <span className={`inline-flex flex-col rounded border px-1.5 py-0.5 text-left ${cell.worst ? gradeChipClass(cell.worst) : gradeChipClass(GRADE_KEYS[0])}`}>
-                    <span className="font-medium">{label}</span>
+                  <span className={`inline-flex flex-col rounded border px-1.5 py-0.5 text-left ${gradeChipClass(label.grade)}`}>
+                    <span className="font-medium">{label.text}</span>
                     <span className="tabular-nums">{cellCountsText(cell.counts)}</span>
                   </span>
                 );

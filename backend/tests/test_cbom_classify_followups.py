@@ -297,7 +297,7 @@ def test_api_an_asset_whose_stored_facts_are_no_object_is_shown_as_unread(api, w
          "facts": {"protocols": ["TLSv1.0", "TLSv1.2"], "group": "x25519"}},
     ])
     with engine.begin() as conn:
-        conn.execute(text("UPDATE cbomcollectedasset SET facts = :f WHERE id IN (:a, :b)"),
+        conn.execute(text("UPDATE cbomcollectedasset SET facts = :f, content_digest = NULL WHERE id IN (:a, :b)"),
                      {"f": stored, "a": items["10.20.0.1:22"]["id"], "b": items["10.20.0.2:443"]["id"]})
     for location in ("10.20.0.1:22", "10.20.0.2:443"):
         r = api("GET", f"/1/cbom/sources/assets/{items[location]['id']}")

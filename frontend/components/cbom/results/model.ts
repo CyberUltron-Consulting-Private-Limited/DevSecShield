@@ -8,6 +8,7 @@
 // props; none of them looks at a row.
 
 import type {
+  CbomClauseFinding,
   CbomFindingStatus,
   CbomRunParity,
   KbFindingDetail,
@@ -21,6 +22,7 @@ import type {
   CbomWaveStatusName,
 } from "@/utils/backend_api";
 import type { CbomDistributions, PqcMigrationRow } from "@/components/cbom/CbomCryptoCharts";
+import { GRADE_BUCKETS, gradeText, type GradeBucket } from "@/components/cbom/grade/model";
 
 // ---------------------------------------------------------------------------- statuses
 
@@ -99,7 +101,7 @@ export function statusRequestBodies(runId: number, keys: (string | null | undefi
 /** Posture classes that count as "ready" in posture's own readiness (posture.py: judged minus quantum-vulnerable). */
 export const READY_CLASSES = ["hybrid", "quantum-safe", "grover-weakened"] as const;
 
-type PostureLike = Pick<CbomRunPosture, "pqc_readiness_pct" | "pqc_classes" | "impacts">;
+type PostureLike = Pick<CbomRunPosture, "pqc_readiness_pct" | "pqc_classes" | "impacts"> & Partial<Pick<CbomRunPosture, "readiness_basis">>;
 
 /** Overlay the posture figures onto the run dashboard, 1:1 (Rule P). The /results dashboard already carries the same
  * values (W2 maps them from run_posture); the page still takes them from /posture so the card, the readiness chart and
@@ -114,8 +116,10 @@ export function applyPostureToDashboard(dashboard: CbomScanDashboardData, postur
     ...dashboard,
     card_data: {
       ...dashboard.card_data,
-      quantum_readiness_score: posture.pqc_readiness_pct ?? 0,
+      // a withheld readiness stays null with posture's status (QA round 4, C): the card says why, never 0 %
+      quantum_readiness_score: posture.pqc_readiness_pct ?? null,
       quantum_readiness_judged: posture.pqc_readiness_pct != null,
+      quantum_readiness_status: posture.readiness_basis?.status ?? dashboard.card_data.quantum_readiness_status,
       total_quantum_vulnerable: vulnerable,
     },
     severity_distribution: {
@@ -137,7 +141,8 @@ export function applyPostureToDistributions(dist: CbomDistributions, posture: Po
     ...dist,
     pqc: {
       ...dist.pqc,
-      readiness_pct: posture.pqc_readiness_pct ?? 0,
+      readiness_pct: posture.pqc_readiness_pct ?? null,
+      readiness_basis: posture.readiness_basis ?? dist.pqc?.readiness_basis ?? null,
       quantum_vulnerable: classes["quantum-vulnerable"] ?? 0,
       quantum_safe: READY_CLASSES.reduce((n, c) => n + (classes[c] ?? 0), 0),
       hybrid: classes.hybrid ?? 0,
@@ -285,7 +290,19 @@ export function runSectionPlan(input: {
 }
 
 /** S10 frameworks: /results.compliance when present, else the posture's clauses (the same KB mapping). */
-export interface ComplianceRow { framework: string; clauses: { clause: string; title: string; assets: number; codes: string[]; source?: string }[] }
+export interface ComplianceRow {
+  framework: string;
+  clauses: {
+    clause: string; title: string; assets: number; codes: string[]; source?: string | null; note?: string | null; findings?: CbomClauseFinding[];
+    /** assets cited for review only: the algorithm the clause depends on was not recorded (#289) */
+    unrecorded?: number;
+    verdict?: "fail" | "needs_evidence";
+  }[];
+  /** distinct assets behind any clause (#270); null / absent on an older backend */
+  assets?: number | null;
+  /** distinct assets behind its clauses only for review (#289); null when it cannot be known, absent on an older backend */
+  unrecorded?: number | null;
+}
 
 export const FRAMEWORK_ORDER = ["CERT-In", "RBI", "SEBI CSCRF", "NIST", "CNSA 2.0"];
 
@@ -295,13 +312,22 @@ export function complianceRows(results: CbomRunResults | null | undefined,
   const sort = (rows: ComplianceRow[]) => [...rows].sort((a, b) => order(a.framework) - order(b.framework) || a.framework.localeCompare(b.framework));
   // /results always lists the five frameworks, empty ones included: only frameworks with a clause are shown
   const fromResults = (results?.compliance?.frameworks ?? []).filter((f) => (f.clauses ?? []).length > 0);
-  if (fromResults.length) return { rows: sort(fromResults.map((f) => ({ framework: f.framework, clauses: f.clauses }))), basis: "results" };
+  if (fromResults.length) {
+    return {
+      rows: sort(fromResults.map((f) => ({ framework: f.framework, clauses: f.clauses, ...(f.assets !== undefined ? { assets: f.assets } : {}),
+                                           ...(f.unrecorded !== undefined ? { unrecorded: f.unrecorded } : {}) }))),
+      basis: "results",
+    };
+  }
   const fromPosture = (posture?.compliance ?? []).filter((f) => (f.clauses ?? []).length > 0);
   if (fromPosture.length) {
     return {
       rows: sort(fromPosture.map((f) => ({
         framework: f.framework,
-        clauses: f.clauses.map((c) => ({ clause: c.id, title: c.text, assets: c.assets, codes: c.codes, source: c.source })),
+        clauses: f.clauses.map((c) => ({ clause: c.id, title: c.text, assets: c.assets, codes: c.codes, source: c.source, ...(c.note ? { note: c.note } : {}),
+                                         ...(typeof c.unrecorded === "number" ? { unrecorded: c.unrecorded } : {}), ...(c.verdict ? { verdict: c.verdict } : {}) })),
+        ...(typeof f.assets === "number" ? { assets: f.assets } : {}),
+        ...(typeof f.unrecorded === "number" ? { unrecorded: f.unrecorded } : {}),
       }))),
       basis: "posture",
     };
@@ -310,10 +336,6 @@ export function complianceRows(results: CbomRunResults | null | undefined,
 }
 
 // ---------------------------------------------------------------------------- header / metadata
-
-export function runTitle(runId: number): string {
-  return `Sources run #${runId}`;
-}
 
 /** Seconds from start to finish (to `nowMs` while the run is active); null without a start time. */
 export function runDurationSeconds(run: Pick<CbomRun, "created_at" | "finished_at" | "status">, nowMs: number): number | null {
@@ -380,6 +402,19 @@ export interface RunTableFilters {
   q?: string;
   source_id?: number;
   status?: CbomFindingStatus;
+  /** #270 compliance drill-down: the assets behind a KB clause (`<framework>:<clause id>`, or `<framework>` for every
+   * clause of it; #289), assets with any of these finding codes, or these asset ids (a requirement) */
+  clause?: string;
+  codes?: string[];
+  asset_ids?: number[];
+  /** #271 the PQC readiness card's "Show these N": one readiness group (its quantum finding code, "none" without one)
+   * or "any" quantum-vulnerable asset, judged by the server with posture's own functions */
+  pqc_group?: string;
+  /** what the drill-down shows, for the table's filter chip ("NIST · SP 800-131A …") */
+  drill_label?: string;
+  /** CB-19 PR-3: the quantum risk grade stored at ingest ("none": no grade); only offered when the run's
+   * `grade_filter.available` is true */
+  q_grade?: GradeBucket;
   page: number;
   page_size: number;
 }
@@ -395,11 +430,16 @@ export function filtersToParams(f: RunTableFilters): Record<string, string | num
   if (f.q) out.q = f.q;
   if (f.source_id != null) out.source_id = f.source_id;
   if (f.status) out.status = f.status;
+  if (f.clause) out.clause = f.clause;
+  if (f.codes?.length) out.code = f.codes.join(",");
+  if (f.asset_ids?.length) out.asset_id = f.asset_ids.join(",");
+  if (f.pqc_group) out.pqc_group = f.pqc_group;
+  if (f.q_grade) out.q_grade = f.q_grade;
   return out;
 }
 
 export function hasActiveFilters(f: RunTableFilters): boolean {
-  return !!(f.type || f.impact || f.quantum || f.q || f.source_id != null || f.status);
+  return !!(f.type || f.impact || f.quantum || f.q || f.source_id != null || f.status || f.clause || f.codes?.length || f.asset_ids?.length || f.pqc_group || f.q_grade);
 }
 
 /** The server understands `view` / `status` (W1) when it reports `findings_total`; an older server lists every asset. */
@@ -418,6 +458,23 @@ export function viewCounts(page: Pick<CbomRunAssetPage, "findings_total" | "all_
 export function pageCount(page: Pick<CbomRunAssetPage, "total" | "page_size"> | null | undefined): number {
   if (!page) return 1;
   return Math.max(1, Math.ceil(page.total / (page.page_size || 50)));
+}
+
+/** CB-19 PR-3: the grade chips of the run table, from the server's `facets.q_grade` (the whole run's rows by the grade
+ * stored at ingest; never counted from the page). `note` says why there are none when the server could not store this
+ * run's grades (an older run, another grade model); an older server sends neither field and gets neither. */
+export interface GradeChip { grade: GradeBucket; count: number; text: string }
+
+export function gradeChips(page: Pick<CbomRunAssetPage, "facets" | "grade_filter"> | null | undefined): { chips: GradeChip[]; note: string | null } {
+  const facet = page?.facets?.q_grade;
+  if (!facet) {
+    const gf = page?.grade_filter;
+    return { chips: [], note: gf && !gf.available ? gf.reason ?? "this run's grades were computed when viewed" : null };
+  }
+  const chips = GRADE_BUCKETS.filter((g) => (facet[g] ?? 0) > 0).map((g) => ({
+    grade: g, count: facet[g] ?? 0, text: g === "none" ? "No grade" : gradeText(g) ?? g,
+  }));
+  return { chips, note: null };
 }
 
 /** data-* attributes the gate reads per row (PLAN §4.2, §11): values straight from the API item. */
@@ -536,6 +593,8 @@ export function resolveMigrationRows(dist: CbomDistributions): CbomDistributions
     ...r,
     migration_roadmap: r.migration_roadmap ?? text(r.migration_code) ?? text(r.fix_code),
     suggested_fix: r.suggested_fix ?? text(r.fix_code) ?? text(r.migration_code),
+    // the quantum finding's title names the group card of near-identical rows (issue #271)
+    finding_title: r.finding_title ?? (r.migration_code ? kb[r.migration_code]?.title ?? null : null),
   }));
   return { ...dist, pqc: { ...pqc, migration } };
 }
@@ -594,6 +653,25 @@ function dialogFields(src: DialogFields | null | undefined) {
     controls: Object.entries(src?.compliance_controls ?? {}).filter(([, v]) => !!v) as [string, string][],
     suggestedFix: src?.suggested_fix?.trim() || null,
   };
+}
+
+/** The findings-table row a run finding dialog renders, resolved live (no stale snapshot): the asset's row on the
+ * current table page when it is there, else (Top risks, the Certificates table, a Q0 Unknown item, a row that left the
+ * page) the asset detail's copy of that row. GET /sources/assets/{id} carries every field of the run's /assets item
+ * (staging QA B7); null while it loads, on an error, for another asset or from an older backend whose detail has no
+ * row fields (the dialog then shows only the asset explanation). */
+export function dialogItem(
+  subject: { assetId: number; label?: string } | null,
+  detail: unknown,
+  pageItems?: readonly CbomRunAssetItem[] | null,
+): CbomRunAssetItem | null {
+  if (!subject) return null;
+  const onPage = pageItems?.find((i) => i.id === subject.assetId);
+  if (onPage) return onPage;
+  const d = detail as Partial<CbomRunAssetItem> | null | undefined;
+  const isRow = !!d && d.id === subject.assetId && typeof d.type === "string" && typeof d.location === "string"
+    && typeof d.job_id === "number" && Array.isArray(d.finding_codes);
+  return isRow ? (d as CbomRunAssetItem) : null;
 }
 
 /** The code dialog's OWASP Top 10 / Compliance controls / Suggested fix for a run asset, the same from every entry point:

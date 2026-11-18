@@ -58,8 +58,11 @@ CI runs it as the `cbom-d1` job (`ci.sh`): `report.md` in the job summary, the w
 
 A PR that makes a target pass must, in the same PR, turn it into a `non-regression` row (and raise the ratio floors to
 its new numbers): that is how the floors rise with the product. A floor that cannot be computed is NOT-RUN and fails,
-unless it carries `not_run_ok` (only the OSV-backed library rows do). Today: 29 non-regression floors pass, 22
-targets are expected-fail, for example the basic (BB) cases of static IV 0/1, static salts 0/1, seeds 0/2.
+unless it carries `not_run_ok` (only the OSV-backed library rows do). Today: 44 non-regression floors pass, 7
+targets are expected-fail. CB-27 (Java literal flow) turned 10 of its targets into non-regression floors: the basic
+(BB) cases of static IV, static salts and seeds went from 0/1, 0/1, 0/2 to 1/1, 1/1, 2/2, and CryptoAPI-Bench
+recall from 39/135 to 95/135. CB-28 (.NET, C and IaC detectors) turned its 4 corpus targets into floors: corpus
+recall 40/57 to 54/57 and the C# `TrustAll()` false positive (NFP1) gone.
 
 **The floors only rise.** `d1.py check-floors --base REF` compares floors.json with the base's copy (ci.sh: `HEAD^1`
 of the job's merge-commit checkout, i.e. the PR's base; locally `origin/dev`; `D1_FLOORS_BASE` overrides), and so does
@@ -77,9 +80,10 @@ The non-regression floors must also equal the numbers of `baseline/observed-*.js
 Product finding codes, read in the benchmarks' vocabulary: for each lane category, the codes (and for shared codes
 such as `WEAK_ALGORITHM`, the algorithm the row names) that count as reporting that weakness. It translates output;
 it states no expected value. Every code the product emits must be accepted somewhere or listed under `ignored`
-(today only `QUANTUM_VULNERABLE`, a PQC posture), or the lane stops with exit 2. Categories with no product code yet
-(`static_salt`, `weak_kdf_iterations`, `weak_rsa_exponent`) score 0 until the PR that adds the code adds its row; the
-reviewers check that row (O-9). `TLS_VERIFICATION_DISABLED` is split on the pattern id its row names
+(today only `QUANTUM_VULNERABLE`, a PQC posture), or the lane stops with exit 2. A category with no product code yet
+scores 0 until the PR that adds the code adds its row; the reviewers check that row (O-9). CB-27 added `STATIC_SALT`
+(`static_salt`) and `WEAK_KDF_ITERATIONS` (`weak_kdf_iterations`); CB-28 added `WEAK_RSA_EXPONENT`
+(`weak_rsa_exponent`). `TLS_VERIFICATION_DISABLED` is split on the pattern id its row names
 (`tls_endpoint:<id>`): the hostname-verifier patterns count for `hostname_verification_off`, every other one (including
 those that switch all verification off, such as `InsecureSkipVerify`) for `cert_validation_off`. A `WEAK_ALGORITHM` row
 whose algorithm ends in `-ECB` (the product's `DES-ECB`) counts as ECB.

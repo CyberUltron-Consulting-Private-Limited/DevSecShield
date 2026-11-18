@@ -47,7 +47,7 @@ import type { CBOMConversation } from "@/utils/backend_api";
 import type { CBOMDashboardData } from "@/utils/backend_api";
 import type { CbomDeliverableSlug } from "@/utils/backend_api";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 import { showErrorToast } from "@/utils/error-handler";
 import { formatDateIst as formatDate } from "@/utils/datetime";
 import { readinessText, readinessTone, type ReadinessTone } from "@/utils/cbomReadiness";
@@ -75,6 +75,7 @@ import {
 import { resultsHref } from "@/components/cbom/results/resultsHref";
 import { Q0GapRegister } from "@/components/cbom/grade/Q0Gaps";
 import { RiskRegister } from "@/components/cbom/grade/RiskRegister";
+import { EstateCbomDownload } from "@/components/cbom/estate/EstateCbomDownload";
 import { isActiveStatus } from "@/components/cbom/results/statusBuckets";
 import { createOutageGate, listView } from "@/components/cbom/results/listErrors";
 import { cbomResultsListKey, cbomSourcesKeys } from "@/components/cbom/sources/keys";
@@ -856,6 +857,15 @@ export default function CBOMPage() {
                   </CardHeader>
                   <CardContent>
                     {Number.isFinite(teamIdNumber) && <Q0GapRegister teamId={teamIdNumber} />}
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Estate CBOM <InfoTip id="cbom.estate.export" /></CardTitle>
+                    <CardDescription>The whole estate as one CycloneDX 1.6 file: every asset once, however many sources see it, with its current quantum risk grade and VEX. The file is unsigned; its SHA-256 is shown after the download.</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {Number.isFinite(teamIdNumber) && <EstateCbomDownload teamId={teamIdNumber} />}
                   </CardContent>
                 </Card>
               </TabsContent>

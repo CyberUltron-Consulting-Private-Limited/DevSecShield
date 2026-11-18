@@ -42,6 +42,7 @@ from backend.utilities.cbom_sources.http import (
     server_error,
     write_limiter,
 )
+from backend.utilities.cbom_sources.kinds import check_pem_certificates
 from backend.utilities.integrations import cmdb as CMDB
 from backend.utilities.integrations import oscal as OSCAL
 from backend.utilities.integrations import outbound
@@ -100,10 +101,28 @@ class RetryBody(_Body):
     all_dead: bool = False
 
 
+CMDB_CA_ENGINES = ("mysql", "mssql", "oracle", "mongodb", "redis", "*")
+
+
+class CmdbVaultRef(_Body):
+    provider: Literal["hashicorp", "cyberark", "aws_secrets_manager", "azure_key_vault"]
+    path: str = Field(min_length=1, max_length=512)
+
+
 class CmdbBody(_Body):
     source: Literal["csv", "servicenow"] = "csv"
     csv: str | None = Field(default=None, max_length=CMDB.MAX_CSV_BYTES)
+    # the scan node for rows that name no segment or node (#225: a segment / scan_node column picks per row)
     node_id: int | None = Field(default=None, ge=1, le=2_147_483_647)
+    # #225: segment -> scan node, for segments with several nodes (or to override the team's only one)
+    segment_nodes: dict[str, Annotated[int, Field(ge=1, le=2_147_483_647)]] | None = Field(default=None, max_length=500)
+    # #225: the vault of rows that give a vault_path (databases, clusters, HSM PINs), and the WinRM login of Windows rows
+    vault_provider: Literal["hashicorp", "cyberark", "aws_secrets_manager", "azure_key_vault"] | None = None
+    windows_vault: CmdbVaultRef | None = None
+    # #363: the CA certificate (PEM, a bundle allowed) of database engines whose logins need a verified server, given
+    # once for the whole file; "*" applies to every such engine without its own
+    database_ca: dict[Annotated[str, Field(max_length=16)], Annotated[str, Field(max_length=64 * 1024)]] | None = \
+        Field(default=None, max_length=6)
     create_missing: bool = True
     digest: str | None = Field(default=None, max_length=64)
 
@@ -459,12 +478,33 @@ def _cmdb_rows(engine, team_id: int, body: CmdbBody) -> tuple[list[dict[str, Any
         raise HTTPException(status_code=400, detail=f"ServiceNow CMDB: {str(exc)[:240]}") from None
 
 
+def _cmdb_plan(session: Session, team_id: int, rows: list[dict[str, Any]], body: CmdbBody) -> CMDB.Plan:
+    database_ca: dict[str, str] = {}
+    for engine_, pem in (body.database_ca or {}).items():
+        if engine_ not in CMDB_CA_ENGINES:
+            raise HTTPException(status_code=400, detail=f"database_ca: {engine_[:16]!r} is not an engine whose logins "
+                                                        "need a CA (" + ", ".join(CMDB_CA_ENGINES) + ")")
+        try:
+            checked = check_pem_certificates(pem)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=f"database_ca.{engine_}: {exc}") from None
+        if checked:
+            database_ca[engine_] = checked
+    try:
+        return CMDB.build_plan(session, team_id, rows, create_missing=body.create_missing, node_id=body.node_id,
+                               segment_nodes=body.segment_nodes, vault_provider=body.vault_provider,
+                               windows_vault=body.windows_vault.model_dump() if body.windows_vault else None,
+                               database_ca=database_ca)
+    except ValueError as exc:
+        raise bad_request(exc) from None
+
+
 def _cmdb_preview(engine, team_id: int, user_id: int, body: CmdbBody) -> dict:
     with Session(engine) as session:
         require_admin(session, user_id, team_id, "sources from a CMDB")
     rows, truncated = _cmdb_rows(engine, team_id, body)
     with Session(engine) as session:
-        plan = CMDB.build_plan(session, team_id, rows, create_missing=body.create_missing)
+        plan = _cmdb_plan(session, team_id, rows, body)
     return {"source": body.source, "source_truncated": truncated, "plan": plan.public()}
 
 
@@ -482,7 +522,7 @@ def _cmdb_apply(engine, team_id: int, user_id: int, body: CmdbBody) -> dict:
         require_admin(session, user_id, team_id, "sources from a CMDB")
     rows, _truncated = _cmdb_rows(engine, team_id, body)
     with Session(engine) as session:
-        plan = CMDB.build_plan(session, team_id, rows, create_missing=body.create_missing)
+        plan = _cmdb_plan(session, team_id, rows, body)
         if plan.digest() != body.digest:
             raise HTTPException(status_code=409, detail="The sources or the CMDB changed since the preview. Preview again.")
         try:

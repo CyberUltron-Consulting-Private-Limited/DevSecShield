@@ -20,16 +20,19 @@ Fields other features add to the items (``q_grade``, ``q_label``, ``fix_class`` 
 from __future__ import annotations
 
 import datetime as _dt
+import re
 import time
 from types import SimpleNamespace
 from typing import Any
 
-from sqlalchemy import and_, false, func, or_
+from sqlalchemy import String, and_, cast, false, func, or_, true
 from sqlmodel import Session, select
 
 from backend.new_models import CbomCollectedAsset, CbomCollectionJob, CbomCollectionRun, CbomCollectionSource
+from backend.utilities.cbom_sources import clause_evidence as CE
 from backend.utilities.cbom_sources import identity as ID
 from backend.utilities.cbom_sources import inventory as INV
+from backend.utilities.cbom_sources import qgrade_store as QSTORE
 from backend.utilities.cbom_sources import waves as WAVES
 from backend.utilities.cbom_sources.collections_view import Collection, node_row
 from backend.utilities.cbom_sources.run_list import finding_status, log_line
@@ -39,6 +42,13 @@ FINDING_STATUSES = ("not_started", "in_progress", "fixed", "ignored")
 IMPACTS = ("Critical", "High", "Medium", "Low")
 COVERAGE = "coverage"
 _UTC = _dt.timezone.utc
+# #270: the compliance mapping's drill-down filters the table by finding codes (a clause's codes)
+CODE_RE = re.compile(r"^[A-Z0-9_]{1,64}$")
+MAX_CODES = 50
+MAX_IDS = 500  # a compliance requirement's assets (its refs, zs-asset-<id>) passed as ``asset_id=1,2,3``
+# #271 review: the readiness card's "Show these N": one readiness group (posture.readiness_actions[].code), "none" for
+# the group with no quantum finding code, "any" for every quantum-vulnerable asset (posture's class count)
+PQC_GROUP_RE = re.compile(r"^(any|none|[A-Z0-9_]{1,64})$")
 
 # The run table's type names (frontend RunResults.tsx ASSET_TYPE_LABEL), so both lanes' tables print one column.
 TYPE_LABEL = {
@@ -55,6 +65,36 @@ TYPE_LABEL = {
     "api_tls": "API TLS", "cloud_ca": "Certificate authority", "iam_certificate": "IAM certificate",
     "identity_provider": "Identity provider", "signing_key": "Signing key", "open_port": "Open port",
     "glue_catalog": "Glue Data Catalog", "glue_connection": "Glue connection", "key_vault": "Key vault",
+    # scan-node key, database, CA and network packages (classify_ext/node_keys.py, node_net.py)
+    "managed_key": "Managed key", "key_store": "Key store", "db_encryption": "Database encryption",
+    "db_login_policy": "Database login policy", "db_crypto_policy": "Database transport policy",
+    "ca_authority": "CA", "ca_template": "CA template", "ike_endpoint": "IKE/IPsec endpoint",
+    "ot_endpoint": "OT endpoint", "appliance_config": "Network appliance config",
+    "k8s_mesh_destination": "Mesh destination rule", "k8s_mesh_server": "Mesh server policy",
+    "coverage": "Not collected",
+}
+# The same names counted ("Fix 3 CA templates"): one entry per TYPE_LABEL key (test_cbom_results_qa_r4.py keeps the
+# two in step). Mass nouns and acronyms take a word instead of a bare "s" ("Database TLS settings").
+TYPE_LABEL_PLURAL = {
+    "certificate": "Certificates", "private_key": "Private keys", "public_key": "Public keys", "keystore": "Keystores",
+    "ssh_host_key": "SSH host keys", "ssh_server_config": "SSH server configs", "ssh_endpoint": "SSH endpoints",
+    "tls_endpoint": "TLS endpoints", "crypto_library": "Crypto libraries", "process_library": "Process libraries",
+    "disk_encryption": "Disk encryption settings", "os_crypto_policy": "OS crypto policies",
+    "database_tls": "Database TLS settings", "database_config": "Database settings",
+    "database_user_auth": "Database authentication settings",
+    "k8s_cluster": "Kubernetes clusters", "k8s_tls_secret": "Kubernetes TLS secrets",
+    "k8s_certificate": "cert-manager certificates", "k8s_ingress_tls": "Ingress TLS settings",
+    "k8s_mesh_policy": "Mesh mTLS policies", "kms_key": "KMS keys", "cloud_secret": "Cloud secrets",
+    "host_secret": "Secrets in a service or script", "crypto_config": "Crypto configurations",
+    "storage_encryption": "Storage encryption settings", "load_balancer_tls": "Load balancer TLS settings",
+    "cdn_tls": "CDN TLS settings", "api_tls": "API TLS settings", "cloud_ca": "Certificate authorities",
+    "iam_certificate": "IAM certificates", "identity_provider": "Identity providers", "signing_key": "Signing keys",
+    "open_port": "Open ports", "glue_catalog": "Glue Data Catalogs", "glue_connection": "Glue connections",
+    "key_vault": "Key vaults", "managed_key": "Managed keys", "key_store": "Key stores",
+    "db_encryption": "Database encryption settings", "db_login_policy": "Database login policies",
+    "db_crypto_policy": "Database transport policies", "ca_authority": "CAs", "ca_template": "CA templates",
+    "ike_endpoint": "IKE/IPsec endpoints", "ot_endpoint": "OT endpoints", "appliance_config": "Network appliance configs",
+    "k8s_mesh_destination": "Mesh destination rules", "k8s_mesh_server": "Mesh server policies",
     "coverage": "Not collected",
 }
 
@@ -62,6 +102,12 @@ TYPE_LABEL = {
 def type_label(asset_type: str | None) -> str:
     value = str(asset_type or "")
     return TYPE_LABEL.get(value) or (value.replace("_", " ").capitalize() if value else "Other")
+
+
+def type_label_plural(asset_type: str | None) -> str:
+    """``type_label`` counted (more than one); an unknown future type gets the singular plus "s"."""
+    value = str(asset_type or "")
+    return TYPE_LABEL_PLURAL.get(value) or f"{type_label(value)}s"
 
 
 # ----------------------------------------------------------------------------- filters
@@ -74,6 +120,154 @@ def _findings_clause(changed: dict[int, dict[str, Any]]):
         if today:
             stored = or_(stored, CbomCollectedAsset.id.in_(today))  # type: ignore[union-attr]
     return and_(CbomCollectedAsset.asset_type != COVERAGE, stored)
+
+
+def parse_codes(value: str | None) -> list[str] | None:
+    """``code=A,B`` -> ["A", "B"]; None when absent. ValueError on an empty list, a malformed code or more than
+    MAX_CODES (the route answers 400 without echoing the value)."""
+    if value is None:
+        return None
+    codes = list(dict.fromkeys(part.strip() for part in value.split(",")))
+    if not codes or len(codes) > MAX_CODES or not all(CODE_RE.match(c) for c in codes):
+        raise ValueError("code: a comma-separated list of up to 50 finding codes")
+    return codes
+
+
+def parse_ids(value: str | None) -> list[int] | None:
+    """``asset_id=1,2`` -> [1, 2]; None when absent. ValueError on an empty list, a non-integer or more than MAX_IDS."""
+    if value is None:
+        return None
+    parts = [part.strip() for part in value.split(",")]
+    if not parts or len(parts) > MAX_IDS or not all(p.isdigit() and 0 < len(p) <= 10 for p in parts):
+        raise ValueError("asset_id: a comma-separated list of up to 500 asset ids")
+    ids = list(dict.fromkeys(int(p) for p in parts))
+    if any(i < 1 or i > 2_147_483_647 for i in ids):
+        raise ValueError("asset_id: a comma-separated list of up to 500 asset ids")
+    return ids
+
+
+def parse_pqc_group(value: str | None) -> str | None:
+    """``pqc_group=NO_PQ_KEX`` / ``none`` / ``any``; None when absent. ValueError on anything else (400, value not echoed)."""
+    if value is None:
+        return None
+    if not PQC_GROUP_RE.match(value):
+        raise ValueError("pqc_group: any, none or one finding code")
+    return value
+
+
+def _pqc_group_clause(session: Session, team_id: int, run_id: int, group: str, asset_type: str | None,
+                      changed: dict[int, dict[str, Any]]):
+    """The run's assets in one PQC readiness group, judged by posture's own functions on today's codes
+    (``classify_pqc`` for the class, ``quantum_code`` for the group), so the table lists exactly the N assets the
+    readiness card counts. An any-of ``code=`` filter cannot: an ECDHE endpoint that also accepts static RSA suites
+    carries STATIC_RSA_KEX and NO_PQ_KEX and belongs to the first group only. Only stored quantum-vulnerable rows can
+    be in a group (``classify_pqc``: class quantum-vulnerable needs ``quantum_vulnerable`` true), so only they are read;
+    the clause names the smaller side (members, or the vulnerable rows that are not members)."""
+    from backend.utilities.cbom_sources.posture import classify_pqc, quantum_code
+
+    vulnerable = and_(CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run_id,
+                      CbomCollectedAsset.quantum_vulnerable.is_(True),  # type: ignore[union-attr]
+                      CbomCollectedAsset.asset_type != COVERAGE)
+    if asset_type:
+        vulnerable = and_(vulnerable, CbomCollectedAsset.asset_type == asset_type)
+    inside: list[int] = []
+    outside: list[int] = []
+    for row in session.exec(select(CbomCollectedAsset).where(vulnerable)).all():
+        view = changed.get(int(row.id or 0))
+        codes = [c for c in (view.get("finding_codes") if view else row.finding_codes) or []
+                 if isinstance(c, str) and not c.startswith("COVERAGE_")]
+        member = classify_pqc(row, codes)[0] == "quantum-vulnerable" and (
+            group == "any" or (quantum_code(codes) or "none") == group)
+        (inside if member else outside).append(int(row.id or 0))
+    if not inside:
+        return false()
+    if len(inside) <= len(outside):
+        return CbomCollectedAsset.id.in_(inside)  # type: ignore[union-attr]
+    return and_(vulnerable, CbomCollectedAsset.id.notin_(outside)) if outside else vulnerable  # type: ignore[union-attr]
+
+
+def _codes_clause(codes: list[str], changed: dict[int, dict[str, Any]]):
+    """Collected assets whose finding codes (today's, for a row a date-based rule changed) include any of ``codes``:
+    the assets a compliance clause counts (posture.run_posture: non-coverage rows, today's codes)."""
+    text = cast(CbomCollectedAsset.finding_codes, String)
+    # the stored JSON array holds each code as "CODE"; "_" is escaped so it is not a LIKE wildcard
+    stored = or_(*[text.like('%"' + code.replace("_", "\\_") + '"%', escape="\\") for code in codes])
+    if changed:
+        stored = and_(stored, CbomCollectedAsset.id.notin_(list(changed)))  # type: ignore[union-attr]
+        wanted = set(codes)
+        today = [aid for aid, view in changed.items() if wanted & set(view.get("finding_codes") or [])]
+        if today:
+            stored = or_(stored, CbomCollectedAsset.id.in_(today))  # type: ignore[union-attr]
+    return and_(CbomCollectedAsset.asset_type != COVERAGE, stored)
+
+
+def _clause_clause(session: Session, team_id: int, run_id: int, clause: tuple[str, str | None],
+                   changed: dict[int, dict[str, Any]]):
+    """Collected assets behind a compliance clause (``clause=<framework>[:<clause id>]``), decided per asset by the
+    function the run posture counts with (clause_evidence.matches: the asset's non-coverage codes judged today, the
+    algorithms the classifier flagged for them). A clause's evidence-gated rules make "has the code" too wide (#291 x
+    #289), so the "N assets" of a clause and this filter's total are the same set of assets.
+
+    #289 review (performance): a code whose own clauses name the clause puts every asset that has it behind the clause,
+    so that part is a SQL predicate on the recorded codes. Only the assets whose citing codes are all rule-gated are
+    judged in memory (their classifier columns only, the evidence cached per process), and the outcome goes to SQL as
+    id ranges of the smaller side (behind / not behind), so no id list of the whole candidate set is built."""
+    keys = CE.clause_keys(*clause)
+    always, by_rule = CE.codes_citing_split(keys)
+    if not always and not by_rule:
+        return false()
+    parts = []
+    if always:
+        parts.append(_codes_clause(always, changed))
+    if by_rule:
+        gated = _codes_clause(by_rule, changed)
+        cols = (CbomCollectedAsset.id, CbomCollectedAsset.asset_type, CbomCollectedAsset.algorithm,
+                CbomCollectedAsset.key_size, CbomCollectedAsset.protocol, CbomCollectedAsset.facts,
+                CbomCollectedAsset.created_at, CbomCollectedAsset.finding_codes)
+        query = select(*cols).where(CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run_id, gated)
+        if always:  # an asset with an always-citing code is behind the clause already (the SQL part above)
+            query = query.where(~func.coalesce(_codes_clause(always, changed), false()))
+        behind, not_behind = [], []
+        for values in session.exec(query.order_by(CbomCollectedAsset.id)).all():
+            row = SimpleNamespace(**dict(zip(("id", "asset_type", "algorithm", "key_size", "protocol", "facts",
+                                              "created_at", "finding_codes"), values)))
+            codes = (changed[row.id].get("finding_codes") if row.id in changed else row.finding_codes) or []
+            (behind if CE.matches(row, codes, keys) else not_behind).append(int(row.id))
+        if behind:
+            parts.append(and_(gated, _id_ranges(behind, not_behind)))
+    return or_(*parts) if parts else false()
+
+
+def _id_ranges(wanted: list[int], other: list[int]):
+    """``id`` in ``wanted``, for a SQL query already narrowed to ``wanted + other`` (both ascending): the side with
+    fewer runs of consecutive members, as ``BETWEEN`` ranges (a single id in one ``IN``), negated for ``other``. Ids in
+    a range that belong to neither side are outside the narrowed query, so the range never widens it."""
+    def runs(mine: list[int], theirs: list[int]) -> list[tuple[int, int]]:
+        merged = sorted([(i, True) for i in mine] + [(i, False) for i in theirs])
+        out: list[tuple[int, int]] = []
+        start = prev = None
+        for ident, is_mine in merged:
+            if is_mine:
+                start = ident if start is None else start
+                prev = ident
+            elif start is not None:
+                out.append((start, prev))
+                start = None
+        if start is not None:
+            out.append((start, prev))
+        return out
+
+    def predicate(spans: list[tuple[int, int]]):
+        singles = [a for a, b in spans if a == b]
+        clauses = [CbomCollectedAsset.id.between(a, b) for a, b in spans if a != b]  # type: ignore[union-attr]
+        clauses += [CbomCollectedAsset.id.in_(singles[i:i + 500])  # type: ignore[union-attr]
+                    for i in range(0, len(singles), 500)]
+        return or_(*clauses)
+
+    if not other:
+        return true()
+    keep, drop = runs(wanted, other), runs(other, wanted)
+    return predicate(keep) if len(keep) <= len(drop) else ~predicate(drop)
 
 
 def _job_refs(session: Session, team_id: int, run: CbomCollectionRun) -> dict[int, str]:
@@ -199,6 +393,23 @@ def enrich_items(session: Session, team_id: int, run: CbomCollectionRun, items: 
         add_code_page_fields(item)
 
 
+def run_item(session: Session, team_id: int, run: CbomCollectionRun, row: CbomCollectedAsset, *,
+             grade: dict[str, Any] | None = None, pqc: tuple[str, str] | None = None) -> dict[str, Any]:
+    """One asset exactly as the run's ``/assets`` list shows it (the same functions over one row): the asset detail
+    carries it, so a dialog opened from top risks or a certificate (an asset not on the findings page) shows the
+    findings table's row. ``grade`` / ``pqc``: the caller's (the detail grades the row once)."""
+    from backend.utilities.cbom_sources import agility as AGILITY
+
+    job = session.get(CbomCollectionJob, row.job_id) if row.job_id is not None else None
+    jobs = [job] if job is not None and job.team_id == team_id else []
+    names = INV._source_names(session, team_id, jobs)  # a deleted source: the job's snapshot name (as the list)
+    job_names = {j.id: names.get(j.source_id or 0) or (j.params or {}).get("source_name") for j in jobs}
+    item = INV.public_asset(row, names, job_names, None, grade, pqc)
+    AGILITY.annotate_assets(session, team_id, jobs, [item])
+    enrich_items(session, team_id, run, [item])
+    return item
+
+
 def add_code_page_fields(item: dict[str, Any]) -> None:
     """The code page's ``CbomFinding`` fields a run item lacks (CB-38 W2b parity): ``bom_ref`` (``zs-asset-<id>``: the
     ref the run's distributions, dependency graph and compliance requirement refs use), ``title``, and from the
@@ -217,11 +428,20 @@ def add_code_page_fields(item: dict[str, Any]) -> None:
 
 # ----------------------------------------------------------------------------- the page
 def list_run_assets(session: Session, *, team_id: int, run: CbomCollectionRun, params: dict[str, Any],
-                    view: str = "all", status: str | None = None) -> dict[str, Any]:
+                    view: str = "all", status: str | None = None, codes: list[str] | None = None,
+                    asset_ids: list[int] | None = None, pqc_group: str | None = None,
+                    clause: tuple[str, str | None] | None = None, q_grade: str | None = None) -> dict[str, Any]:
+    """The run's asset page. ``q_grade`` (CB-19 PR-3: "Q0".."Q4" or "none") filters on the grade stored at ingest;
+    it raises ``qgrade_store.Unavailable`` when the run's grades were not stored (``grade_filter.reason`` says why)."""
     if view not in VIEWS:
         raise ValueError(f"view: {view}")
     if status is not None and status not in FINDING_STATUSES:
         raise ValueError(f"status: {status}")
+    if q_grade is not None and q_grade not in QSTORE.GRADE_FILTERS:
+        raise ValueError(f"q_grade: {q_grade}")
+    grades = QSTORE.status(session, team_id, run)
+    if q_grade is not None and not grades["available"]:
+        raise QSTORE.Unavailable(grades["reason"])
     seen: dict[str, Any] = {}
 
     def refine(query, changed: dict[int, dict[str, Any]]):
@@ -230,15 +450,34 @@ def list_run_assets(session: Session, *, team_id: int, run: CbomCollectionRun, p
             query = query.where(_findings_clause(changed))
         if status is not None:
             query = query.where(_status_clause(session, team_id, run, status))
+        if codes:
+            query = query.where(_codes_clause(codes, changed))
+        if clause:
+            query = query.where(_clause_clause(session, team_id, int(run.id), clause, changed))
+        if asset_ids:  # the run's own rows only: the base query is already this team's run
+            query = query.where(CbomCollectedAsset.id.in_(asset_ids))  # type: ignore[union-attr]
+        if pqc_group:
+            query = query.where(_pqc_group_clause(session, team_id, int(run.id or 0), pqc_group,
+                                                  params.get("asset_type"), changed))
+        if q_grade is not None:
+            query = query.where(QSTORE.grade_clause(q_grade))
         return query
 
     out = INV.list_assets(session, team_id=team_id, run_id=run.id, refine=refine, **params)
     out["findings_total"] = findings_total(session, team_id, int(run.id), seen.get("changed") or {})
     out["view"] = view
     out["status_filter"] = status
+    out["code_filter"] = codes
+    out["asset_id_filter"] = len(asset_ids) if asset_ids else None
+    out["pqc_group_filter"] = pqc_group
+    out["clause_filter"] = ":".join(p for p in clause if p) if clause else None
+    out["q_grade_filter"] = q_grade  # CB-19 PR-3 (facets.q_grade and grade_filter come from inventory.list_assets)
     enrich_items(session, team_id, run, out["items"])
     return out
 
 
-__all__ = ["FINDING_STATUSES", "TYPE_LABEL", "VIEWS", "enrich_items", "findings_total", "list_run_assets",
-           "run_asset_keys", "type_label"]
+parse_clause = CE.parse_clause
+
+__all__ = ["FINDING_STATUSES", "TYPE_LABEL", "TYPE_LABEL_PLURAL", "VIEWS", "enrich_items", "findings_total",
+           "list_run_assets", "parse_clause", "parse_codes", "parse_ids", "parse_pqc_group", "run_asset_keys", "run_item",
+           "type_label", "type_label_plural"]

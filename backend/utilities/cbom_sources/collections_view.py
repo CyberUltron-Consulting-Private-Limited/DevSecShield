@@ -89,6 +89,12 @@ class SourcesRow:
     facts: dict[str, Any] = field(default_factory=dict)
     asset_key: str = ""  # identity.stable_key("node", ...): the key remediation assignments use
     aliases: frozenset[str] = frozenset()  # the group's uncontested certificate link keys (asset_keys.correlate_detail)
+    # code -> the algorithms its compliance clause rules read (clause_evidence; None: not recorded), for the codes that
+    # have such rules: the deliverables' clause mapping decides as the run posture does (#289)
+    clause_evidence: dict[str, Any] = field(default_factory=dict, compare=False, repr=False)
+    # the parts its standards statuses are judged on (classify.standards_parts): the team roll-up judges each
+    # collection's CNSA 2.0 / FIPS 140-3 requirements on them (cbom_sources.frameworks, CB-16)
+    standards_parts: tuple[tuple[str, Any, Any], ...] = field(default=(), compare=False, repr=False)
 
 
 # remediation status of a Sources finding (waves) -> the dashboard's finding status buckets
@@ -224,6 +230,8 @@ def load_sources_result(session: Any, team_id: int, now: _dt.datetime | None = N
     from sqlmodel import select
 
     from backend.new_models import CbomCollectedAsset, CbomCollectionSource, CbomRemediationAssignment
+    from backend.utilities.cbom_sources import clause_evidence as CE
+    from backend.utilities.cbom_sources import crypto_kb
     from backend.utilities.cbom_sources import identity as ID
     from backend.utilities.cbom_sources.classify import shown
 
@@ -246,10 +254,14 @@ def load_sources_result(session: Any, team_id: int, now: _dt.datetime | None = N
         for asset in assets:
             # its identity in its own source; link_certificates gives certificates their cross-source asset key
             own = ID.node_identity(asset)
-            out.rows.append(SourcesRow(row=node_row(asset, collection, shown(asset, today)), collection=collection,
+            view = shown(asset, today)
+            rule_codes = [c for c in view["finding_codes"] or [] if crypto_kb.has_clause_rules("node", c)]
+            out.rows.append(SourcesRow(row=node_row(asset, collection, view), collection=collection,
                                        identity=f"node|{collection.source_ref}|{own}", node_type=asset.asset_type,
                                        target=asset.target, facts=dict(asset.facts or {}),
-                                       asset_key=ID.stable_key("node", collection.source_ref, own)))
+                                       asset_key=ID.stable_key("node", collection.source_ref, own),
+                                       clause_evidence=CE.evidence_by_code(asset, rule_codes) if rule_codes else {},
+                                       standards_parts=_parts(asset)))
     # the remediation status a finding has on the Sources pages (waves): open / in_progress / done / accepted_risk
     keys = list(dict.fromkeys(item.asset_key for item in out.rows))
     status: dict[str, str] = {}
@@ -263,6 +275,15 @@ def load_sources_result(session: Any, team_id: int, now: _dt.datetime | None = N
     link_certificates(out.rows)
     out.collections.sort(key=lambda c: (c.source_name.casefold(), c.source_ref))
     return out
+
+
+def _parts(asset: Any) -> tuple[tuple[str, Any, Any], ...]:
+    from backend.utilities.cbom_sources.classify import fact_obj, standards_parts
+
+    try:
+        return tuple(standards_parts(asset.asset_type, asset.algorithm, asset.key_size, fact_obj(asset.facts)))
+    except Exception:  # standards never cost an asset its place in the view
+        return ()
 
 
 # ----------------------------------------------------------------------------- certificate correlation (CB-21)

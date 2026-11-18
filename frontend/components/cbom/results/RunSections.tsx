@@ -6,31 +6,32 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useRef, useState, type ReactNode } from "react";
-import { BadgeCheck, Download, ExternalLink, GitCompare, Info, Loader2, Network, Server, SlidersHorizontal, Timer, Waypoints } from "lucide-react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { BadgeCheck, ChevronDown, ChevronRight, Download, GitCompare, Info, Loader2, Network, Server, SlidersHorizontal, Timer, Waypoints } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { downloadCbomRunCbom, verifyCbomRunSignature, type CbomCertRef, type CbomJobTargets, type CbomRun, type CbomRunResults } from "@/utils/backend_api";
-import { downloadCbomRunBom, EXPOSURE_LABEL, type CbomPostureWithExposure } from "@/utils/api/cbom_outputs";
+import { downloadCbomRunBom } from "@/utils/api/cbom_outputs";
 import { downloadOscal } from "@/utils/api/integrations";
 
 import { DiffView, RunChanges } from "@/components/cbom/sources/ChangesPanel";
-import { cbomOpsKeys, getCbomRunDiff } from "@/utils/api/cbom_ops";
+import { cbomOpsKeys, getCbomRunDiff, type CbomRemediationItem } from "@/utils/api/cbom_ops";
 import { useQuery } from "@tanstack/react-query";
 import { TERMINAL_RUN } from "@/components/cbom/sources/keys";
 import { credits, formatDateTime, formatDay, pluralize } from "@/components/cbom/sources/logic";
+import { LabModeBanner } from "@/components/cbom/sources/LabModeBanner";
 import { TargetsBlock } from "@/components/cbom/sources/RunResults";
 import { EmptyState, RunStatusBadge, StatusBadge, Truncate, type Tone } from "@/components/cbom/sources/shared";
 
-import { CbomDashboardCharts } from "./CbomDashboardCharts";
-import { getImpactBadgeClass } from "./badgeClasses";
+import { CbomDashboardCharts, type DashboardChartPart } from "./CbomDashboardCharts";
+import { WaveLegend } from "./WaveLegend";
+import { waveLegend } from "./readinessExplain";
 import {
   certCountText,
   certListView,
-  complianceRows,
   formatDuration,
   isActiveRunStatus,
   verifyResultText,
@@ -40,6 +41,7 @@ import {
 } from "./model";
 import RunDeliverablesMenu from "./RunDeliverablesMenu";
 import { RunJobsTable, SkippedAtStart } from "./RunJobsTable";
+import { RunSourceCards } from "./RunSourceCards";
 import { toast } from "@/utils/toast";
 import { showErrorToast } from "@/utils/error-handler";
 import { Badge } from "@/components/ui/badge";
@@ -135,16 +137,18 @@ export function RunHeaderActions({ teamId, run, assetTotal, canCompare, onCompar
   ];
   return (
     <div className="flex items-center gap-2 flex-wrap lg:justify-end" data-testid="run-results-header-actions">
-      {downloads.map((d) => (
-        <Button key={d.id} variant="outline" className="cursor-pointer" title={d.title} disabled={d.disabled || busy === d.id}
-                data-testid={d.id} onClick={() => void d.run()}>
-          {busy === d.id ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
-          {d.label}
-        </Button>
-      ))}
-      <InfoTip id="cbom.run.downloads" />
-      {/* VEX, Signature, Evidence pack, PDF Report (CB-38 PR-8), as on the code page's header */}
-      <RunDeliverablesMenu teamId={teamId} runId={run.id} active={active} />
+      {/* mockup F1: one "Export" menu holds the seven downloads (each keeps its own hover text); both tips stay beside it */}
+      <ExportMenu tips={<><InfoTip id="cbom.run.downloads" /><InfoTip id="cbom.run.deliverables" /></>}>
+        {downloads.map((d) => (
+          <Button key={d.id} variant="outline" className="cursor-pointer" title={d.title} disabled={d.disabled || busy === d.id}
+                  data-testid={d.id} onClick={() => void d.run()}>
+            {busy === d.id ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+            {d.label}
+          </Button>
+        ))}
+        {/* VEX, Signature, Evidence pack, PDF Report (CB-38 PR-8), as on the code page's header */}
+        <RunDeliverablesMenu teamId={teamId} runId={run.id} active={active} tip={false} />
+      </ExportMenu>
       <RunVerifyButton teamId={teamId} runId={run.id} />
       {children}
       {canCompare && (
@@ -157,6 +161,42 @@ export function RunHeaderActions({ teamId, run, assetTotal, canCompare, onCompar
         <SlidersHorizontal className="h-4 w-4 mr-2" /> Open in CBOM Sources
       </Button>
     </div>
+  );
+}
+
+/** "Export ▾": a disclosure (not a Radix menu) so the download buttons stay mounted and keep their test ids, titles and
+ * order; it closes on Escape, an outside click and after a download is started. */
+function ExportMenu({ children, tips }: { children: ReactNode; tips: ReactNode }) {
+  const ref = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    const close = (e: Event) => {
+      const el = ref.current;
+      if (!el?.open) return;
+      if (e instanceof KeyboardEvent ? e.key === "Escape" : !el.contains(e.target as Node)) {
+        el.open = false;
+        if (e instanceof KeyboardEvent) el.querySelector("summary")?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", close);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", close);
+    };
+  }, []);
+  return (
+    <span className="inline-flex items-center gap-1">
+      <details ref={ref} className="relative group" data-testid="run-results-export">
+        <summary className="list-none [&::-webkit-details-marker]:hidden inline-flex h-9 items-center gap-2 rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-4 text-sm font-medium cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+          <Download className="h-4 w-4" aria-hidden /> Export <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" aria-hidden />
+        </summary>
+        <div className="absolute left-0 z-40 mt-1 flex w-64 flex-col gap-1 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-1.5 shadow-lg [&>button]:w-full [&>button]:justify-start [&>button]:border-0 [&>button]:shadow-none"
+             onClick={(e) => { if ((e.target as HTMLElement).closest("button")) ref.current?.removeAttribute("open"); }}>
+          {children}
+        </div>
+      </details>
+      {tips}
+    </span>
   );
 }
 
@@ -204,6 +244,8 @@ export function RunNotFound({ teamId }: { teamId: number }) {
 }
 
 // ---------------------------------------------------------------------------- S1 what was covered
+/** 03-B: one card per source (RunSourceCards), the sources skipped at the start and each target's outcome; the full
+ * jobs and provenance tables (every column and tip as before) behind "Show the full jobs and provenance tables". */
 export function RunCoverageSection({ run, targets, provenance }: {
   run: CbomRun;
   targets: CbomJobTargets[] | null;
@@ -211,52 +253,74 @@ export function RunCoverageSection({ run, targets, provenance }: {
 }) {
   const jobs = run.jobs ?? [];
   const skipped = run.breakdown?.skipped ?? [];
+  const [tables, setTables] = useState(false);
+  const tablesId = useId();
   return (
-    <SectionShell infoId="cbom.run.covered" title="Collection jobs and targets" testId="run-section-coverage"
+    <SectionShell infoId="cbom.run.covered" title="Jobs by source" testId="run-section-coverage"
                   description="Every job of the run with where it ran and how it ended, the sources skipped at the start, and each target's outcome">
-      {jobs.length === 0 ? <EmptyState title="No jobs in this run" /> : <RunJobsTable jobs={jobs} testIdPrefix="run-job" />}
+      {/* lab mode (test deployments): the run-level note, the same component as the AWS form's; each job keeps its badge */}
+      {targets?.some((job) => job.lab_mode) && (
+        <LabModeBanner testId="run-lab-mode" detail="An AWS source in this run was read from the deployment's own AWS account." />
+      )}
+      {jobs.length === 0 ? <EmptyState title="No jobs in this run" /> : <RunSourceCards jobs={jobs} provenance={provenance} targets={targets} />}
       <SkippedAtStart items={skipped} />
-      {provenance && provenance.length > 0 && (
-        <div className="space-y-1.5" data-testid="run-provenance">
-          <p className="text-sm font-medium text-zinc-900 dark:text-white">Provenance per source <InfoTip id="cbom.run.provenance" /></p>
-          <ScrollArea className="w-full border rounded-lg">
-            <div className="min-w-max">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Source <InfoTip id="cbsrc.rr.job.source" /></TableHead>
-                    <TableHead>Kind <InfoTip id="cbom.run.col.kind" /></TableHead>
-                    <TableHead>Runs on <InfoTip id="cbsrc.rr.job.runs_on" /></TableHead>
-                    <TableHead>Outcome <InfoTip id="cbom.run.col.outcome" /></TableHead>
-                    <TableHead className="text-right" title="Collected assets; the jobs table above also counts the Not collected rows">Assets (excl. not collected) <InfoTip id="cbom.run.col.assets_collected" /></TableHead>
-                    <TableHead className="text-right">Endpoints probed <InfoTip id="cbom.run.col.endpoints" /></TableHead>
-                    <TableHead className="text-right">Duration <InfoTip id="cbom.run.col.duration" /></TableHead>
-                    <TableHead className="text-right">Credits <InfoTip id="cbom.run.col.credits" /></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {provenance.map((p, i) => (
-                    <TableRow key={`${p.source_id ?? "x"}-${i}`} data-testid={`run-provenance-${p.source_id ?? i}`}>
-                      <TableCell className="max-w-[220px]"><Truncate text={p.source ?? (p.source_id != null ? `Source ${p.source_id}` : "—")} /></TableCell>
-                      <TableCell className="text-zinc-600 dark:text-zinc-400">{p.kind ?? "—"}</TableCell>
-                      <TableCell className="text-zinc-600 dark:text-zinc-400 max-w-[180px]">
-                        <Truncate text={p.runner === "cloud" ? "ZeroShield cloud" : p.node ?? "—"} />
-                      </TableCell>
-                      <TableCell className="text-zinc-600 dark:text-zinc-400">{p.outcome ?? "—"}</TableCell>
-                      <TableCell className="text-right tabular-nums">{p.assets}</TableCell>
-                      <TableCell className="text-right tabular-nums">{p.endpoints_probed}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatDuration(p.duration_s)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{p.credits ?? "—"}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-            <ScrollBar orientation="horizontal" />
-          </ScrollArea>
+      {targets ? <TargetsBlock jobs={targets} /> : null}
+      {(jobs.length > 0 || (provenance && provenance.length > 0)) && (
+        <div className="space-y-3">
+          <button type="button" className="inline-flex items-center gap-1 text-sm text-blue-600 dark:text-blue-400 cursor-pointer hover:underline"
+                  aria-expanded={tables} aria-controls={tablesId} onClick={() => setTables(!tables)} data-testid="run-coverage-tables-toggle">
+            {tables ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+            {tables ? "Hide" : "Show"} the full jobs and provenance tables
+          </button>
+          <div id={tablesId} className="space-y-4" hidden={!tables} data-testid="run-coverage-tables">
+            {tables && (
+              <>
+                {jobs.length > 0 && <RunJobsTable jobs={jobs} testIdPrefix="run-job" />}
+                {provenance && provenance.length > 0 && (
+                  <div className="space-y-1.5" data-testid="run-provenance">
+                    <p className="text-sm font-medium text-zinc-900 dark:text-white">Provenance per source <InfoTip id="cbom.run.provenance" /></p>
+                    <ScrollArea className="w-full border rounded-lg">
+                      <div className="min-w-max">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Source <InfoTip id="cbsrc.rr.job.source" /></TableHead>
+                              <TableHead>Kind <InfoTip id="cbom.run.col.kind" /></TableHead>
+                              <TableHead>Runs on <InfoTip id="cbsrc.rr.job.runs_on" /></TableHead>
+                              <TableHead>Outcome <InfoTip id="cbom.run.col.outcome" /></TableHead>
+                              <TableHead className="text-right" title="Collected assets; the jobs table above also counts the Not collected rows">Assets (excl. not collected) <InfoTip id="cbom.run.col.assets_collected" /></TableHead>
+                              <TableHead className="text-right">Endpoints probed <InfoTip id="cbom.run.col.endpoints" /></TableHead>
+                              <TableHead className="text-right">Duration <InfoTip id="cbom.run.col.duration" /></TableHead>
+                              <TableHead className="text-right">Credits <InfoTip id="cbom.run.col.credits" /></TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {provenance.map((p, i) => (
+                              <TableRow key={`${p.source_id ?? "x"}-${i}`} data-testid={`run-provenance-${p.source_id ?? i}`}>
+                                <TableCell className="max-w-[220px]"><Truncate text={p.source ?? (p.source_id != null ? `Source ${p.source_id}` : "—")} /></TableCell>
+                                <TableCell className="text-zinc-600 dark:text-zinc-400">{p.kind ?? "—"}</TableCell>
+                                <TableCell className="text-zinc-600 dark:text-zinc-400 max-w-[180px]">
+                                  <Truncate text={p.runner === "cloud" ? "ZeroShield cloud" : p.node ?? "—"} />
+                                </TableCell>
+                                <TableCell className="text-zinc-600 dark:text-zinc-400">{p.outcome ?? "—"}</TableCell>
+                                <TableCell className="text-right tabular-nums">{p.assets}</TableCell>
+                                <TableCell className="text-right tabular-nums">{p.endpoints_probed}</TableCell>
+                                <TableCell className="text-right tabular-nums">{formatDuration(p.duration_s)}</TableCell>
+                                <TableCell className="text-right tabular-nums">{p.credits ?? "—"}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                      <ScrollBar orientation="horizontal" />
+                    </ScrollArea>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
         </div>
       )}
-      {targets ? <TargetsBlock jobs={targets} /> : null}
     </SectionShell>
   );
 }
@@ -341,17 +405,20 @@ function CertTable({ title, label, count, certs, testId, onOpenAsset, infoId }: 
   );
 }
 
-export function RunCertificatesSection({ view, results, onOpenAsset }: {
-  view: SectionView; results: CbomRunResults | null; onOpenAsset: (id: number) => void;
+const CERTS_DESCRIPTION = "Within this run's scope: orphaned = stored but presented by no endpoint the run read; unmanaged = held by no managing system the run saw (ACM, cert-manager, AD CS, Key Vault, Certificate Manager)";
+
+/** `bare`: without its own card (the run page's CertificatesCard tab): the title with its tip, the description and the
+ * same lists, notes and hooks. */
+export function RunCertificatesSection({ view, results, onOpenAsset, bare }: {
+  view: SectionView; results: CbomRunResults | null; onOpenAsset: (id: number) => void; bare?: boolean;
 }) {
   if (!view.show) return null;
   const orphaned = results?.certificates_orphaned ?? null;
   const unmanaged = results?.certificates_unmanaged ?? null;
   const o = certListView(results, "orphaned");
   const u = certListView(results, "unmanaged");
-  return (
-    <SectionShell infoId="cbom.run.certs" title="Orphaned and unmanaged certificates" testId="run-section-certificates"
-                  description="Within this run's scope: orphaned = stored but presented by no endpoint the run read; unmanaged = held by no managing system the run saw (ACM, cert-manager, AD CS, Key Vault, Certificate Manager)">
+  const body = (
+    <>
       {view.note && <SectionNote testId="run-certificates-note">{view.note}</SectionNote>}
       {(orphaned?.length || unmanaged?.length) ? (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
@@ -359,6 +426,23 @@ export function RunCertificatesSection({ view, results, onOpenAsset }: {
           <CertTable infoId="cbom.run.certs.unmanaged" title="Unmanaged certificates" label={u.label} count={certCountText(u)} certs={unmanaged ?? []} testId="run-certs-unmanaged" onOpenAsset={onOpenAsset} />
         </div>
       ) : null}
+    </>
+  );
+  if (bare) {
+    return (
+      <div className="space-y-4 min-w-0" data-testid="run-section-certificates" data-bare="true">
+        <div className="space-y-1">
+          <p className="text-sm font-semibold text-zinc-900 dark:text-white">Orphaned and unmanaged certificates <InfoTip id="cbom.run.certs" /></p>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">{CERTS_DESCRIPTION}</p>
+        </div>
+        {body}
+      </div>
+    );
+  }
+  return (
+    <SectionShell infoId="cbom.run.certs" title="Orphaned and unmanaged certificates" testId="run-section-certificates"
+                  description={CERTS_DESCRIPTION}>
+      {body}
     </SectionShell>
   );
 }
@@ -408,12 +492,84 @@ export function RunDiffBlock({ teamId, runId }: { teamId: number; runId: number 
 
 // ---------------------------------------------------------------------------- S9 remediation waves
 const WAVE_TONE: Record<number, Tone> = { 1: "red", 2: "amber", 3: "blue", 4: "zinc" };
+const WAVE_BAR: Record<string, string> = {
+  "1": "bg-red-500", "2": "bg-amber-500", "3": "bg-blue-500", "4": "bg-zinc-400", none: "bg-emerald-500",
+};
+const WAVE_ITEMS_SHOWN = 3;
 
-export function RunWavesSection({ byWave, labels, loading, deferred, selected }: {
+/** 13-A: one column per wave (Wave 1 to 4 and No action, in the legend's order, then any other wave the plan names)
+ * with its count from the wave plan (by_wave, never recounted), its rule and, when the plan's items are given, the first
+ * few assets in it. */
+function WaveBoard({ byWave, labels, rules, items, onOpenAsset }: {
+  byWave: Record<string, number>; labels?: Record<string, string>; rules?: Record<string, string>;
+  items?: CbomRemediationItem[] | null; onOpenAsset?: (id: number) => void;
+}) {
+  const legend = waveLegend(byWave, rules, "run");
+  const chips = waveChips(byWave);
+  const columns = [
+    ...legend.map((r) => ({ key: r.key, label: r.label, count: r.count, rule: r.rule as string | null, empty: r.empty,
+                            wave: r.key === "none" ? null : Number(r.key) })),
+    ...chips.filter((c) => !legend.some((r) => r.key === c.key))
+      .map((c) => ({ key: c.key, label: c.label, count: c.count, rule: null, empty: "", wave: c.wave })),
+  ];
+  return (
+    <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5 gap-3" data-testid="run-wave-board">
+      {columns.map((c) => {
+        const inWave = (items ?? []).filter((it) => (c.wave == null ? it.wave == null : it.wave === c.wave));
+        const shown = inWave.slice(0, WAVE_ITEMS_SHOWN);
+        const more = Math.max(0, c.count - shown.length);
+        return (
+          <li key={c.key} className="flex flex-col gap-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-3 min-w-0"
+              data-testid={`run-wave-column-${c.key}`} data-count={c.count}>
+            <span className={`h-1 rounded-full ${WAVE_BAR[c.key] ?? "bg-zinc-300"}`} aria-hidden="true" />
+            <div className="flex items-center justify-between gap-2" title={c.wave != null ? labels?.[String(c.wave)] : undefined}
+                 data-testid={`run-wave-chip-${c.key}`}>
+              <StatusBadge tone={c.wave != null ? WAVE_TONE[c.wave] ?? "zinc" : "zinc"} className="text-sm">{c.label}: {c.count}</StatusBadge>
+            </div>
+            {c.rule && <p className="text-xs text-zinc-600 dark:text-zinc-400">{c.rule}.</p>}
+            {c.count === 0 ? (
+              c.empty ? <p className="text-xs text-zinc-500 dark:text-zinc-400">{c.empty}</p> : null
+            ) : shown.length > 0 ? (
+              <ul className="space-y-1.5">
+                {shown.map((it) => (
+                  <li key={it.asset_key} className="rounded-md border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/60 px-2 py-1.5 text-xs min-w-0"
+                      data-testid={`run-wave-item-${it.asset_id ?? it.asset_key}`}>
+                    {it.asset_id != null && onOpenAsset ? (
+                      <button type="button" className="text-left text-blue-600 dark:text-blue-400 hover:underline cursor-pointer break-all"
+                              onClick={() => onOpenAsset(it.asset_id as number)}>
+                        {it.label}
+                      </button>
+                    ) : (
+                      <span className="text-zinc-800 dark:text-zinc-200 break-all">{it.label}</span>
+                    )}
+                    {it.impact && <span className="text-zinc-500 dark:text-zinc-400"> · {it.impact}</span>}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {c.count > 0 && more > 0 && (
+              <p className="text-xs text-zinc-500 dark:text-zinc-400" data-testid={`run-wave-more-${c.key}`}>
+                {shown.length > 0 ? `+${more.toLocaleString()} more` : pluralize(c.count, "asset")}
+              </p>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+export function RunWavesSection({ byWave, labels, rules, loading, deferred, selected, items, onOpenAsset }: {
   byWave: Record<string, number> | null | undefined; labels?: Record<string, string>; loading: boolean;
+  /** what puts an asset in each wave (the backend's suggested_wave rules; issue #271) */
+  rules?: Record<string, string>;
   /** an active run on a newer backend: the whole-run plan is not polled; each row shows its own wave */
   deferred: boolean;
   selected: number;
+  /** the wave plan's items (GET …/remediation `items`): the board lists the first few assets of each wave */
+  items?: CbomRemediationItem[] | null;
+  /** opens an asset of the board in the finding dialog */
+  onOpenAsset?: (id: number) => void;
 }) {
   const chips = waveChips(byWave);
   return (
@@ -423,14 +579,9 @@ export function RunWavesSection({ byWave, labels, loading, deferred, selected }:
         : loading ? <p className="text-xs text-zinc-500">Loading the wave plan…</p> : chips.length === 0 ? (
         <SectionNote>No asset of this run needs a remediation wave.</SectionNote>
       ) : (
-        <div className="flex flex-wrap gap-2" data-testid="run-wave-chips">
-          {chips.map((c) => (
-            <span key={c.key} title={c.wave != null ? labels?.[String(c.wave)] : undefined} data-testid={`run-wave-chip-${c.key}`}>
-              <StatusBadge tone={c.wave != null ? WAVE_TONE[c.wave] ?? "zinc" : "zinc"}>{c.label}: {c.count}</StatusBadge>
-            </span>
-          ))}
-        </div>
+        <WaveBoard byWave={byWave ?? {}} labels={labels} rules={rules} items={items} onOpenAsset={onOpenAsset} />
       )}
+      <WaveLegend byWave={deferred || loading ? null : byWave} rules={rules} />
       <p className="text-xs text-zinc-500">
         {selected > 0
           ? `${pluralize(selected, "finding")} selected in the table below: set wave, owner, target date or status there.`
@@ -440,61 +591,30 @@ export function RunWavesSection({ byWave, labels, loading, deferred, selected }:
   );
 }
 
-// ---------------------------------------------------------------------------- S10 compliance mapping
-export function RunComplianceSection({ view, results, posture }: {
-  view: SectionView; results: CbomRunResults | null; posture: CbomPostureWithExposure | null | undefined;
-}) {
-  if (!view.show) return null;
-  const { rows, basis } = complianceRows(results, posture);
-  return (
-    <SectionShell infoId="cbom.run.compliance" title="Compliance mapping" testId="run-section-compliance"
-                  description="Regulatory clauses the run's findings touch: CERT-In, RBI, SEBI CSCRF, NIST and CNSA 2.0 (knowledge-base mapping, no AI)">
-      {view.note && <SectionNote>{view.note}</SectionNote>}
-      {rows.length > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {rows.map((fw) => (
-            <div key={fw.framework} className="rounded-lg border border-zinc-200 dark:border-zinc-800 p-3 min-w-0" data-testid={`run-compliance-${fw.framework.replace(/\s+/g, "-")}`}>
-              <p className="text-sm font-semibold text-zinc-900 dark:text-white mb-2">
-                {fw.framework} <span className="text-xs font-normal text-zinc-500">· {pluralize(fw.clauses.length, "clause")}</span>
-              </p>
-              <ul className="space-y-1.5">
-                {fw.clauses.map((c) => (
-                  <li key={c.clause} className="text-xs text-zinc-600 dark:text-zinc-400 [overflow-wrap:anywhere]">
-                    {c.source ? (
-                      <a href={c.source} target="_blank" rel="noreferrer noopener" className="font-medium text-blue-600 dark:text-blue-400 inline-flex items-center gap-1">
-                        {c.clause} <ExternalLink className="h-3 w-3" />
-                      </a>
-                    ) : (
-                      <span className="font-medium text-zinc-800 dark:text-zinc-200">{c.clause}</span>
-                    )}
-                    {c.title ? <span> · {c.title}</span> : null}
-                    <span className="block text-zinc-500">{pluralize(c.assets, "asset")}{c.codes.length ? ` · ${c.codes.join(", ")}` : ""}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
-      )}
-      {basis === "posture" && <p className="text-xs text-zinc-500">From the run posture (this server does not send the run results summary yet).</p>}
-    </SectionShell>
-  );
-}
+// WaveLegend lives in WaveLegend.tsx (shared with the code scan's waves panel); re-exported for older imports
+export { WaveLegend };
+// the summary view's compact jobs line (gate hooks run-results-job-<id>) lives beside the source cards
+export { RunJobsStatusLine } from "./RunSourceCards";
+
+// S10 compliance mapping: ComplianceSummary.tsx (#270), on code scans and runs alike
 
 // ---------------------------------------------------------------------------- S11 dashboard charts
-export function RunDashboardSection({ view, model, riskRows, pageRows, results }: {
+export function RunDashboardSection({ view, model, riskRows, pageRows, results, parts, variant }: {
   view: SectionView;
   model: RunDashboardModel;
   riskRows: Parameters<typeof CbomDashboardCharts>[0]["findingsList"];
   /** rows on the findings table's current page (the per-finding chart plots those, and says so) */
   pageRows: number;
   results: CbomRunResults | null;
+  /** passed to CbomDashboardCharts: the cards to render (default all) and the run layout (08-A uniform grid) */
+  parts?: readonly DashboardChartPart[];
+  variant?: "run";
 }) {
   if (!view.show) return null;
   return (
     <div className="space-y-3" data-testid="run-section-dashboard">
       {model.dashboard && (
-        <CbomDashboardCharts dashboard={model.dashboard} findingsList={riskRows}
+        <CbomDashboardCharts dashboard={model.dashboard} findingsList={riskRows} parts={parts} variant={variant}
                              riskScoresTitle={`Risk scores on this table page (${pageRows} rows)`} riskScoresTip="cbom.run.risk_scores" quantumTip="cbom.run.quantum"
                              riskScoresDescription="Risk score (0-10) of the rows on the findings table's current page and filter, top 24, descending" />
       )}
@@ -509,53 +629,4 @@ export function RunDashboardSection({ view, model, riskRows, pageRows, results }
   );
 }
 
-// ---------------------------------------------------------------------------- S13 top risks
-export function RunTopRisks({ posture, onOpenAsset }: { posture: CbomPostureWithExposure; onOpenAsset: (id: number) => void }) {
-  const risks = posture.top_risks ?? [];
-  if (risks.length === 0) return null;
-  return (
-    <Card className="border-zinc-200 dark:border-zinc-800" data-testid="run-top-risks">
-      <CardHeader>
-        <CardTitle className="text-base">Top cryptographic risks <InfoTip id="cbom.run.top_risks" /></CardTitle>
-        <CardDescription>Priority = impact × business criticality × internet exposure, from the run posture</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <ScrollArea className="h-[320px] w-full rounded-md border border-zinc-200 dark:border-zinc-800">
-          <Table className="min-w-max">
-            <TableHeader>
-              <TableRow>
-                <TableHead className="min-w-[80px]">Priority <InfoTip id="cbom.run.col.priority" /></TableHead>
-                <TableHead className="min-w-[200px]">Asset <InfoTip id="cbom.run.col.asset" /></TableHead>
-                <TableHead className="min-w-[90px]">Impact <InfoTip id="results.table.impact" /></TableHead>
-                <TableHead className="min-w-[140px]">Source <InfoTip id="cbom.run.col.source" /></TableHead>
-                <TableHead className="min-w-[100px]">Criticality <InfoTip id="cbom.run.col.criticality" /></TableHead>
-                <TableHead className="min-w-[130px]">Exposure <InfoTip id="cbom.run.col.exposure" /></TableHead>
-                <TableHead className="min-w-[70px]">HNDL <InfoTip id="cbom.run.col.hndl" /></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {risks.map((r) => (
-                <TableRow key={r.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50" data-testid={`run-top-risk-${r.id}`}>
-                  <TableCell className="font-mono tabular-nums">{r.score}</TableCell>
-                  <TableCell className="max-w-[320px]">
-                    <button type="button" className="text-left text-blue-600 dark:text-blue-400 hover:underline cursor-pointer max-w-[300px] truncate block font-mono text-xs"
-                            title={r.location} onClick={() => onOpenAsset(r.id)}>
-                      {r.name}
-                    </button>
-                    {r.finding && <span className="block text-xs text-zinc-500 max-w-[300px] truncate" title={r.finding}>{r.finding}</span>}
-                  </TableCell>
-                  <TableCell><Badge variant="outline" className={getImpactBadgeClass(r.impact)}>{r.impact}</Badge></TableCell>
-                  <TableCell className="text-sm text-zinc-600 dark:text-zinc-400">{r.source_name ?? "—"}</TableCell>
-                  <TableCell className="text-sm text-zinc-600 dark:text-zinc-400 capitalize">{r.criticality}</TableCell>
-                  <TableCell className="text-sm text-zinc-600 dark:text-zinc-400" title={r.exposure_basis}>{r.exposure ? EXPOSURE_LABEL[r.exposure] : "—"}</TableCell>
-                  <TableCell className="text-sm">{r.hndl ? <StatusBadge tone="red">HNDL</StatusBadge> : "—"}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-          <ScrollBar orientation="horizontal" />
-        </ScrollArea>
-      </CardContent>
-    </Card>
-  );
-}
+// S13 top risks: views/TopRisksSummary.tsx (results redesign: the posture's ranked risks once, cards then a table)

@@ -24,6 +24,7 @@ import {
 import { invalidateRunViews } from "./keys";
 import { ErrorBlock, LoadingBlock, SectionCard, StatusBadge, Truncate, type Tone } from "./shared";
 import { InfoTip } from "@/components/ui/info-tip";
+import { WaveLegend } from "@/components/cbom/results/WaveLegend";
 
 const WAVE_TONE: Record<number, Tone> = { 1: "red", 2: "amber", 3: "blue", 4: "zinc" };
 const STATUS_LABEL: Record<CbomWaveStatus, string> = { open: "Open", in_progress: "In progress", done: "Done", accepted_risk: "Risk accepted" };
@@ -153,6 +154,8 @@ export function CodeWavesPanel({ teamId, scanId }: { teamId: number; scanId: num
           </label>
           <InfoTip id="cbsrc.waves.only_planned" />
         </div>
+        {/* the same legend as a run's waves: the code-scan plan uses the same suggested_wave rules (waves.WAVE_RULES) */}
+        <WaveLegend byWave={q.data.by_wave} rules={q.data.rules} scope="code" />
         <BulkAssignBar teamId={teamId} target={{ scan_id: scanId }} keys={[...selected]} onDone={() => setSelected(new Set())} />
         <div className="overflow-x-auto max-h-96 border rounded-md">
           <table className="w-full text-xs">

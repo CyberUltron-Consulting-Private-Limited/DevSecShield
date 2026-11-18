@@ -12,7 +12,7 @@ import re
 import threading
 from typing import Any
 
-from backend.utilities.cbom_sources import algid, crypto_kb
+from backend.utilities.cbom_sources import algid, crypto_kb, standards as _standards
 from backend.utilities.cbom_sources.common import log
 
 IMPACTS = ("Critical", "High", "Medium", "Low")
@@ -243,8 +243,15 @@ class _Out:
         self.by_code: dict[str, str] = {}
         self.impacts: dict[str, str | None] = {}
         self.impact: str | None = None
+        # the algorithms behind a code, as the rule flagged them (offered ciphers, transforms, hashes): the evidence
+        # the compliance clause rules read (crypto_kb.clauses_for), never the asset's name or the sentence (#289)
+        self.algorithms: dict[str, list[str]] = {}
 
-    def add(self, code: str, impact: str | None, text: str) -> None:
+    def add(self, code: str, impact: str | None, text: str, algs: Any = None) -> None:
+        if algs:
+            names = [str(a) for a in (algs if isinstance(algs, (list, tuple, set, frozenset)) else [algs]) if a]
+            kept = self.algorithms.setdefault(code, [])
+            kept += [n for n in names if n not in kept]
         if code in self.codes:
             return
         self.codes.append(code)
@@ -381,18 +388,61 @@ def _cert_unused_applies(facts: dict[str, Any]) -> bool:
             and facts.get("exported") is not True and facts.get("key_pair_origin") != "ACME")
 
 
+# A start date less than a day ahead is not a finding: an issuer or node clock that is hours off, and keytool dates
+# printed in the server's own time zone (read as UTC, linux_parsers._java_date), must not flag a fresh certificate.
+_NOT_YET_GRACE = _dt.timedelta(days=1)
+
+
+def _chain_extra(facts: dict[str, Any]) -> bool:
+    """A cross-sign above the leaf that clients trusting its subject as a root never need (node fact, CB-17)."""
+    index = facts.get("chain_index")
+    return facts.get("chain_extra") is True and isinstance(index, int) and not isinstance(index, bool) and index > 0
+
+
 def _expiry_rules(out: _Out, facts: dict[str, Any], now: _dt.datetime, what: str = "Certificate") -> None:
     not_after = _parse_time(facts.get("not_after"))
+    not_before = _parse_time(facts.get("not_before"))
+    if not_before is not None and not_before - now > _NOT_YET_GRACE:
+        out.add("CERT_NOT_YET_VALID", "Medium", f"{what} is not valid until {not_before.date().isoformat()}; clients "
+                                                "refuse it until then")
     if not_after is not None:
         days = (not_after - now).total_seconds() / 86400
-        if days < 0:
+        # CB-17: warn in the last third of a short certificate's life (6-day ACME, 47-day SC-081), at most 30 days out
+        lifetime = (not_after - not_before).total_seconds() / 86400 if not_before is not None else None
+        window = min(30.0, lifetime / 3) if lifetime and lifetime > 0 else 30.0
+        if _chain_extra(facts):
+            if days < 0:
+                out.add("CERT_CHAIN_EXTRA_EXPIRED", "Low",
+                        f"Expired extra certificate in the served chain (expired on {not_after.date().isoformat()}): "
+                        f"a cross-sign of {str(facts.get('subject') or 'a root')[:120]}, which clients that trust it "
+                        "as a root do not need; remove it from the chain the server sends")
+        elif days < 0:
             out.add("CERT_EXPIRED", "High", f"{what} expired on {not_after.date().isoformat()}")
-        elif days <= 30:
-            out.add("CERT_EXPIRES_30D", "Medium", f"{what} expires in {int(days)} days")
+        elif days <= window:
+            out.add("CERT_EXPIRES_30D", "Medium", f"{what} expires in {int(days)} days" + (
+                f" (the last third of its {round(lifetime)}-day lifetime)" if window < 30 and lifetime else ""))
+
+
+def _chain_rules(out: _Out, facts: dict[str, Any]) -> None:
+    """CHAIN_INCOMPLETE (CB-17) from the node's chain facts: the issuer of a served certificate is neither served nor
+    a root the node trusts, and either a served certificate sits above it (a gap in the chain) or it is an end-entity
+    certificate served alone whose CA publishes its issuer for download (AIA caIssuers: an intermediate). A CA
+    certificate at the top is never flagged (roots are not sent), nor a lone leaf without AIA (a private root may
+    have issued it directly)."""
+    if facts.get("chain_issuer") != "missing":
+        return
+    gap = facts.get("chain_top") is False
+    lone_leaf = facts.get("chain_top") is True and not facts.get("is_ca") and facts.get("aia_ca_issuers") is True
+    if gap or lone_leaf:
+        issuer = str(facts.get("issuer") or "its issuer")[:120]
+        out.add("CHAIN_INCOMPLETE", "Medium",
+                f"The server does not send the certificate of {issuer}, which issued this certificate: clients that do "
+                "not already hold it cannot build a chain to a trusted root")
 
 
 def _cert_rules(out: _Out, facts: dict[str, Any], algorithm: Any, size: Any, now: _dt.datetime) -> None:
     _expiry_rules(out, facts, now)
+    _chain_rules(out, facts)
     sig = _upper(facts.get("sig_alg"))
     sha1 = "SHA1" in sig.replace("-", "")
     if "MD5" in sig or "MD2" in sig:
@@ -429,6 +479,17 @@ def _cert_rules(out: _Out, facts: dict[str, Any], algorithm: Any, size: Any, now
     _key_rules(out, algorithm or facts.get("key_alg"), size or facts.get("key_size"), "Certificate key")
 
 
+# CB-34: IANA (TLS_RSA_EXPORT_WITH_..., TLS_RSA_WITH_NULL_SHA, TLS_DH_anon_...) and OpenSSL (EXP-RC4-MD5, NULL-SHA,
+# ADH-AES128-SHA, AECDH-...) spellings of the EXPORT, NULL-encryption and anonymous suites
+_LEGACY_CLASSES = (
+    ("TLS_EXPORT_CIPHER", "Critical", "EXPORT-grade suites",
+     re.compile(r"_EXPORT(?:1024)?_|^EXP1024-|^EXP-", re.I)),
+    ("TLS_NULL_CIPHER", "Critical", "NULL-encryption suites",
+     re.compile(r"_WITH_NULL_|^(?:[A-Z0-9]+-)*NULL-(?:MD5|SHA\d*)$|^eNULL$", re.I)),
+    ("TLS_ANON_CIPHER", "High", "anonymous suites (no server authentication)",
+     re.compile(r"_anon_|^ADH-|^AECDH-|^aNULL$", re.I)),
+)
+
 _TLS_OLD = {"SSLV2": ("Critical", "SSLv2"), "SSLV3": ("Critical", "SSLv3"), "TLSV1.0": ("High", "TLS 1.0"),
             "TLSV1": ("High", "TLS 1.0"), "TLSV1.1": ("High", "TLS 1.1")}
 
@@ -448,7 +509,12 @@ def _tls_rules(out: _Out, facts: dict[str, Any], what: str) -> None:
     weak = [c for c in fact_list(facts.get("weak_ciphers")) if isinstance(c, str)]
     weak += [c for c in fact_list(facts.get("ciphers")) if isinstance(c, str) and _WEAK_CIPHER_RE.search(c)]
     if weak:
-        out.add("WEAK_CIPHER", "High", f"{what} accepts weak ciphers ({', '.join(sorted(set(weak))[:4])})")
+        out.add("WEAK_CIPHER", "High", f"{what} accepts weak ciphers ({', '.join(sorted(set(weak))[:4])})", weak)
+        # CB-34: the classes whose impact is worse than "weak" get their own finding next to WEAK_CIPHER
+        for code, impact, label, pattern in _LEGACY_CLASSES:
+            hit = sorted({c for c in weak if pattern.search(c)})
+            if hit:
+                out.add(code, impact, f"{what} accepts {label} ({', '.join(hit[:4])})", hit)
     if facts.get("static_rsa_kex"):
         out.add("STATIC_RSA_KEX", "Medium", f"{what} accepts RSA key exchange without forward secrecy")
     if facts.get("cbc_only"):
@@ -509,7 +575,7 @@ def _ssh_rules(out: _Out, facts: dict[str, Any], what: str) -> bool | None:
         names = by_list[only] if only else [n for names in by_list.values() for n in names]
         hits = sorted({n for n in names if pattern.search(n)})
         if hits:
-            out.add(code, impact, f"{what} offers {label} ({', '.join(hits[:3])})")
+            out.add(code, impact, f"{what} offers {label} ({', '.join(hits[:3])})", hits)
     kex = ssh_names(facts.get("kex")) or ssh_names(facts.get("kexalgorithms"))  # a malformed list is unread
     if not kex:
         return None
@@ -615,7 +681,8 @@ def _windows_rules(out: _Out, facts: dict[str, Any]) -> None:
     suites = [str(c) for c in raw_suites if isinstance(c, str)] if isinstance(raw_suites, list) else []
     weak = [c for c in suites if _WEAK_CIPHER_RE.search(c)]
     if weak:
-        out.add("WEAK_CIPHER", "High", f"Windows enables weak cipher suites ({', '.join(sorted(set(weak))[:4])})")
+        out.add("WEAK_CIPHER", "High", f"Windows enables weak cipher suites ({', '.join(sorted(set(weak))[:4])})",
+                weak)
     if any(c.upper().startswith("TLS_RSA_WITH_") for c in suites):
         out.add("STATIC_RSA_KEX", "Medium", "Windows enables RSA key exchange suites without forward secrecy")
     aead = any(("_GCM_" in c.upper() or "CHACHA20" in c.upper() or "_CCM" in c.upper()) for c in suites)
@@ -630,9 +697,10 @@ def _windows_rules(out: _Out, facts: dict[str, Any]) -> None:
         weak_ciphers = sorted({str(v.get("name")) for v in on if v.get("kind") == "Ciphers"
                                and re.search(r"\b(RC4|RC2|DES|NULL)\b", str(v.get("name")), re.I)})
         if weak_ciphers:
-            out.add("WEAK_CIPHER", "High", f"SCHANNEL explicitly enables {', '.join(weak_ciphers[:4])} (registry)")
+            out.add("WEAK_CIPHER", "High", f"SCHANNEL explicitly enables {', '.join(weak_ciphers[:4])} (registry)",
+                    weak_ciphers)
         if any(v.get("kind") == "Hashes" and str(v.get("name")).upper() == "MD5" for v in on):
-            out.add("WEAK_CIPHER", "High", "SCHANNEL explicitly enables the MD5 hash for TLS (registry)")
+            out.add("WEAK_CIPHER", "High", "SCHANNEL explicitly enables the MD5 hash for TLS (registry)", "MD5")
         for v in (v for v in algos.values() if isinstance(v, dict)):
             bits = v.get("server_min_key_bits")
             if v.get("kind") == "KeyExchangeAlgorithms" and isinstance(bits, int) and 0 < bits < 2048 \
@@ -706,11 +774,12 @@ def _config_rules(out: _Out, facts: dict[str, Any]) -> None:
             out.add(code, "High", text)
         ciphers = str(facts.get("ciphers") or "")
         if ciphers and _WEAK_CIPHER_STRING.search(ciphers):
-            out.add("WEAK_CIPHER", "High", f"{kind} cipher list allows weak suites ({ciphers[:60]})")
+            out.add("WEAK_CIPHER", "High", f"{kind} cipher list allows weak suites ({ciphers[:60]})",
+                    [t for t in re.split(r"[\s:,]+", ciphers) if _WEAK_CIPHER_STRING.search(t)])
     elif kind == "openssl_cli":
         cipher = str(facts.get("cipher") or "")
         if cipher and _BAD_ENC.search(cipher):
-            out.add("WEAK_CIPHER", "High", f"openssl {cipher} in {facts.get('file')}:{facts.get('line')}")
+            out.add("WEAK_CIPHER", "High", f"openssl {cipher} in {facts.get('file')}:{facts.get('line')}", cipher)
         if not facts.get("pbkdf2") and facts.get("decrypt") is not True:
             md = facts.get("md") if isinstance(facts.get("md"), str) else None
             out.add("OPENSSL_ENC_WEAK_KDF", "Medium", "openssl enc derives the key with EVP_BytesToKey"
@@ -1002,7 +1071,54 @@ def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, fact
     if qv and not any("NO_PQ" in code for code in out.codes) and asset_type != "coverage":  # NO_PQ_KEX, SSH_/IKE_NO_PQ
         out.add("QUANTUM_VULNERABLE", None, "Uses public-key cryptography that a quantum computer can break")
     return {"impact": out.impact, "quantum_vulnerable": qv, "finding_codes": out.codes, "finding": out.finding(),
-            "cdx_type": CDX_TYPE.get(asset_type, "other"), "texts": out.by_code, "impacts": out.impacts}
+            "cdx_type": CDX_TYPE.get(asset_type, "other"), "texts": out.by_code, "impacts": out.impacts,
+            "algorithms": {c: list(out.algorithms[c]) for c in out.codes if out.algorithms.get(c)},
+            "standards": standards_of(asset_type, algorithm, key_size, facts)}
+
+
+# ----------------------------------------------------------------------------- standards status (CB-16)
+_STD_CERT_TYPES = frozenset({"certificate", "k8s_tls_secret", "iam_certificate", "cloud_ca", "k8s_certificate"})
+_STD_KEY_TYPES = frozenset({"private_key", "public_key", "ssh_host_key", "signing_key", "keystore"})
+_STD_TLS_TYPES = frozenset({"tls_endpoint", "database_tls", "load_balancer_tls", "cdn_tls", "api_tls",
+                            "k8s_ingress_tls"})
+
+
+def standards_parts(asset_type: str, algorithm: Any, key_size: Any, facts: dict[str, Any]) -> list[tuple[str, Any, Any]]:
+    """The parts of an asset the standards are judged on (``standards.grade``): a certificate's key and signature
+    hash, a key's algorithm and size, a TLS endpoint's cipher and key-exchange groups. Other assets have none."""
+    facts = facts if isinstance(facts, dict) else {}
+    leaf = facts.get("leaf") if isinstance(facts.get("leaf"), dict) else {}
+    size = key_size or facts.get("key_size")
+    if asset_type in _STD_CERT_TYPES:
+        if facts.get("trust_store"):
+            return []  # a CA bundle summary row
+        return [("key", cert_identity_input(algorithm, facts), size), ("signature", facts.get("sig_alg"), None)]
+    if asset_type in _STD_KEY_TYPES:
+        return [("key", algorithm or facts.get("key_alg"), size), ("signature", facts.get("signature_alg"), None)]
+    if asset_type == "kms_key":
+        spec = facts.get("key_spec")
+        if spec == "SYMMETRIC_DEFAULT":
+            return [("cipher", "AES-256-GCM", 256)]
+        return [("key", algorithm or spec, size)]
+    if asset_type in _STD_TLS_TYPES:
+        groups = [facts.get("negotiated_group") or facts.get("group")] + [facts.get("pq_group")]
+        parts: list[tuple[str, Any, Any]] = [("cipher", facts.get("negotiated_cipher") or facts.get("cipher")
+                                              or algorithm, None)]
+        parts += [("group", g, None) for g in groups if isinstance(g, str) and g and g != "<NULL>"]
+        if leaf:
+            parts.append(("key", leaf.get("key_alg"), leaf.get("key_size")))
+        return parts
+    return []
+
+
+def standards_of(asset_type: str, algorithm: Any, key_size: Any, facts: dict[str, Any] | None
+                 ) -> dict[str, dict[str, Any]] | None:
+    """FIPS 203/204/205, CNSA 2.0 and SP 800-131A statuses of one asset (``standards.grade``), or None when the asset
+    names no algorithm (a coverage row, a database setting, ...)."""
+    try:
+        return _standards.grade(standards_parts(asset_type, algorithm, key_size, fact_obj(facts)))
+    except Exception:  # standards never cost an asset its verdict
+        return None
 
 
 # Import extension modules last (they call register()).
@@ -1016,8 +1132,8 @@ for _m in sorted(m.name for m in _pkgutil.iter_modules(_classify_ext.__path__)):
 
 
 def _rules_files() -> list[str]:
-    """Every file whose content decides a verdict: this module, each classify_ext module, and every ``algid*.py``
-    beside algid (the resolver and the generated tables it reads, algid_tables.py). Matching by name rather than
+    """Every file whose content decides a verdict: this module, each classify_ext module, standards.py (CB-16), and
+    every ``algid*.py`` beside algid (the resolver and the generated tables it reads, algid_tables.py). Matching by name rather than
     listing the tables file means a later split of the tables cannot fall out of the digest; a test fails if algid
     ever imports a sibling module outside the pattern."""
     import os
@@ -1028,6 +1144,7 @@ def _rules_files() -> list[str]:
     here = os.path.dirname(algid.__file__)
     paths += [os.path.join(here, name) for name in sorted(os.listdir(here))
               if name.startswith("algid") and name.endswith(".py")]
+    paths.append(_standards.__file__)  # CB-16: the standards statuses are part of every verdict
     return paths
 
 
@@ -1052,7 +1169,8 @@ CLASSIFIER_VERSION = _rules_version()
 
 
 # ----------------------------------------------------------------------------- date-based rules, judged today
-# Two rules read the calendar: a certificate's expiry (CERT_EXPIRED, CERT_EXPIRES_30D) and a library's upstream end
+# Two rules read the calendar: a certificate's validity (CERT_EXPIRED, CERT_EXPIRES_30D, CERT_NOT_YET_VALID,
+# CERT_CHAIN_EXTRA_EXPIRED) and a library's upstream end
 # of life from the knowledge base (LIB_EOL). A run stores its verdict as of its collection date, and that record is
 # kept (drift and the OSCAL assessment compare runs by it). Every view of a run's findings (the asset list and its
 # counts, the posture totals, the heat map, the migration waves, the asset panel and the CycloneDX export) shows the
@@ -1078,6 +1196,9 @@ def _date_may_matter(asset_type: str, facts: dict[str, Any], then: _dt.datetime,
         return bool(before.get("passed")) != bool(after.get("passed"))
     if asset_type in CERT_DATED_TYPES:
         not_after = _parse_time(facts.get("not_after"))
+        not_before = _parse_time(facts.get("not_before"))
+        if not_before is not None and not_before - min(then, now) > _NOT_YET_GRACE:
+            return True  # CERT_NOT_YET_VALID on one of the two dates
         return not_after is not None and (not_after - then <= _EXPIRY_WINDOW or not_after - now <= _EXPIRY_WINDOW)
     if asset_type in KEY_DATED_TYPES and facts.get("origin") == "EXTERNAL":
         dates = [_parse_time(m.get("valid_to")) for m in _kms_materials(facts)]
@@ -1087,7 +1208,8 @@ def _date_may_matter(asset_type: str, facts: dict[str, Any], then: _dt.datetime,
 
 
 # The codes a date-based rule adds or removes; everything else in a stored verdict is the run's.
-DATE_CODES = frozenset({"CERT_EXPIRED", "CERT_EXPIRES_30D", "LIB_EOL", "KMS_KEY_MATERIAL_EXPIRES"})
+DATE_CODES = frozenset({"CERT_EXPIRED", "CERT_EXPIRES_30D", "CERT_NOT_YET_VALID", "CERT_CHAIN_EXTRA_EXPIRED", "LIB_EOL",
+                        "KMS_KEY_MATERIAL_EXPIRES"})
 
 
 def _then_and_now(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, facts: dict[str, Any] | None,

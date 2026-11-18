@@ -25,8 +25,9 @@ def froms(text: str) -> list[str]:
 
 
 def test_worker_images_take_the_base_image_build_arguments():
-    assert re.search(r"^ARG UV_BASE_IMAGE=ghcr\.io/astral-sh/uv:python3\.12-bookworm-slim$", WORKER, re.M)
-    assert re.search(r"^ARG GO_BASE_IMAGE=golang:1\.26-bookworm$", WORKER, re.M)
+    # #69 (#335) pins the scan worker's base images by digest; the defaults stay build arguments a proxy build overrides
+    assert re.search(r"^ARG UV_BASE_IMAGE=ghcr\.io/astral-sh/uv:python3\.12-bookworm-slim@sha256:[0-9a-f]{64}$", WORKER, re.M)
+    assert re.search(r"^ARG GO_BASE_IMAGE=golang:1\.26(\.\d+)?-bookworm@sha256:[0-9a-f]{64}$", WORKER, re.M)
     assert froms(WORKER) == ["${UV_BASE_IMAGE}", "${GO_BASE_IMAGE}", "${UV_BASE_IMAGE}"]
     assert re.search(r"^ARG UV_BASE_IMAGE=ghcr\.io/astral-sh/uv:python3\.12-bookworm-slim$", DAST, re.M)
     assert froms(DAST) == ["${UV_BASE_IMAGE}", "${UV_BASE_IMAGE}"]

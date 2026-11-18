@@ -2,9 +2,9 @@ import datetime
 import uuid
 from typing import Dict, Literal
 from sqlmodel import JSON, Column, DateTime, Field, SQLModel, String, Relationship
-from sqlalchemy import Text, UniqueConstraint
+from sqlalchemy import BigInteger, Integer, Text, UniqueConstraint
 from sqlalchemy.types import TypeDecorator as _SaTypeDecorator
-from sqlalchemy import Index as _SaIndex, func as _sa_func, text as _sa_text
+from sqlalchemy import BigInteger as _SaBigInteger, Index as _SaIndex, func as _sa_func, text as _sa_text
 scan_types = Literal["sast", "llm", "mcp" , "iac" , "leakage" , "sbom_sca" , "agent_discovery", "dast", "cbom", "ai_bom"]
 
 
@@ -146,6 +146,53 @@ class Scan(SQLModel,table=True):
         arbitrary_types_allowed = True
 
 
+class CreditLedgerEntry(SQLModel, table=True):
+    """One movement of a team's credits and why (#33, #52): written by backend/utilities/team/credit_ledger.py, in the
+    same statement (PostgreSQL) or transaction as the balance change it records.
+
+    Integer milli-credits: ``delta_mc`` is negative when credits are taken from the team and positive when they are
+    given back; ``balance_after_mc`` is the team's balance right after it (NULL for an insert-only line settled later).
+    ``movement_key`` is unique: a movement can never be written twice. ``ref_type`` + ``ref_id`` name what it belongs
+    to (``scan`` / scan id, a CBOM run...); ``scan_id`` is set for scan lines. No foreign keys: a line outlives a deleted
+    scan or team. ``detail`` holds numbers and digests, never an input, a URL or a secret. The table refuses UPDATE,
+    DELETE and TRUNCATE by a trigger (migration r6t2ledger001); that is not a control against the database role itself.
+    Written today: reinitialize charges and refunds, cancel refunds, failure refunds; the other paths are #52."""
+    __tablename__ = "creditledger"
+    __table_args__ = (UniqueConstraint("movement_key", name="uq_creditledger_movement_key"),)
+    id: int | None = Field(default=None, sa_column=Column(
+        BigInteger().with_variant(Integer(), "sqlite"), primary_key=True, autoincrement=True))  # never pruned: int8
+    movement_key: str = Field(max_length=96)
+    team_id: int
+    ref_type: str = Field(max_length=32)
+    ref_id: str = Field(max_length=64)
+    scan_id: int | None = Field(default=None)
+    user_id: int | None = Field(default=None)  # who caused it
+    delta_mc: int = Field(sa_type=BigInteger)
+    balance_after_mc: int | None = Field(default=None, sa_type=BigInteger)
+    reason: str = Field(max_length=48)
+    detail: Dict | None = Field(default=None, sa_column=Column(JSON))
+    created_at: datetime.datetime = Field(
+        default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None), sa_type=DateTime)
+
+    @property
+    def delta(self) -> float:
+        """The movement in credits."""
+        return self.delta_mc / 1000
+
+    @property
+    def balance_after(self) -> float | None:
+        return None if self.balance_after_mc is None else self.balance_after_mc / 1000
+
+
+# reconciliation and statements read (team_id, id) ranges without touching the heap; scan and per-run lookups
+_SaIndex("ix_creditledger_team_id_id", CreditLedgerEntry.team_id, CreditLedgerEntry.id,
+         postgresql_include=["delta_mc", "created_at"])
+_SaIndex("ix_creditledger_scan_id", CreditLedgerEntry.scan_id,
+         postgresql_where=CreditLedgerEntry.scan_id.isnot(None), sqlite_where=CreditLedgerEntry.scan_id.isnot(None))
+_SaIndex("ix_creditledger_ref", CreditLedgerEntry.ref_type, CreditLedgerEntry.ref_id,
+         postgresql_where=CreditLedgerEntry.ref_type != "scan", sqlite_where=CreditLedgerEntry.ref_type != "scan")
+
+
 class DastScanProfile(SQLModel, table=True):
     """Saved DAST target + encrypted login for scheduled and Jenkins runs."""
     __tablename__ = "dastscanprofile"
@@ -278,6 +325,34 @@ class CbomFactsJSON(_SaTypeDecorator):
         return value if value is None or isinstance(value, dict) else {}
 
 
+CONTENT_DIGEST_COLUMNS = ("asset_type", "cdx_type", "target", "location", "algorithm", "key_size", "protocol",
+                          "quantum_vulnerable", "impact", "finding", "finding_codes", "facts")
+_JSON_COLUMNS = ("finding_codes", "facts")
+
+
+def content_digest(values: dict) -> str | None:
+    """#352: SHA-256 of the columns the estate hooks read (agility's carry: type, place, algorithm, key size, protocol,
+    verdict, codes, facts; the register's grade inputs add the target and the quantum flag), serialised the way the
+    JSON columns store them (``json.dumps``, the dialects' default serializer), so equal digests mean equal stored
+    values, JSON text included. None when a value cannot be serialised (the row is then compared column by column)."""
+    import hashlib as _hashlib
+    import json as _json
+
+    # a JSON column left out of an INSERT is SQL NULL, a None in it is JSON null: different stored values
+    doc = [values.get(c) if c in values or c not in _JSON_COLUMNS else {"$absent": True}
+           for c in CONTENT_DIGEST_COLUMNS]
+    try:
+        text = _json.dumps(doc)
+    except (TypeError, ValueError):
+        return None
+    return _hashlib.sha256(text.encode("utf-8", "surrogatepass")).hexdigest()
+
+
+def _content_digest_default(context) -> str | None:
+    params = context.get_current_parameters() if context is not None else {}
+    return content_digest(params)
+
+
 def _cbom_utcnow() -> datetime.datetime:
     return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
 
@@ -296,6 +371,9 @@ class CbomScanNode(SQLModel, table=True):
     proxy_url: str | None = Field(default=None, max_length=512)
     proxy_ca_pem: str | None = Field(default=None, sa_type=Text)
     proxy_tls_inspect: bool = Field(default=False)
+    # #199: the proxy's user name when it needs a login (never the password: that stays on the node's host, in the
+    # file ZS_PROXY_AUTH_FILE names, created by the install command)
+    proxy_user: str | None = Field(default=None, max_length=128)
     registration_token_hash: str | None = Field(default=None, max_length=64, index=True)
     registration_issued_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
     registration_expires_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
@@ -441,6 +519,11 @@ class CbomCollectionRun(SQLModel, table=True):
 class CbomCollectionJob(SQLModel, table=True):
     """A unit of work for one scan node: test a connection, collect a source, or run a discovery sweep."""
     __tablename__ = "cbomcollectionjob"
+    # CB-14: at most one open collection per source; a Start that races another for the same source gets 409
+    # (runs.queue_run) and is charged nothing (migration cb14credit001)
+    __table_args__ = (_SaIndex("uq_cbomcollectionjob_open_collect", "source_id", unique=True,
+                               postgresql_where=_sa_text("kind = 'collect' AND status IN ('pending', 'claimed')"),
+                               sqlite_where=_sa_text("kind = 'collect' AND status IN ('pending', 'claimed')")),)
     id: int | None = Field(default=None, primary_key=True)
     team_id: int = Field(foreign_key="team.id", index=True)
     run_id: int | None = Field(default=None, foreign_key="cbomcollectionrun.id", index=True)
@@ -452,6 +535,9 @@ class CbomCollectionJob(SQLModel, table=True):
     source_version: int | None = Field(default=None)
     weight_c: int = Field(default=0)
     refunded: bool = Field(default=False)
+    # centi-credits given back (CB-14): weight_c for a failed / cancelled / nothing-read job, the runtime-skip share of
+    # it for a partly read one; its ledger row is cbomcreditentry "job:<id>:refund" (billing.py)
+    refunded_c: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
     attempts: int = Field(default=0)
     lease_id: str | None = Field(default=None, max_length=32)
     lease_expires_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
@@ -473,10 +559,38 @@ class CbomCollectionJob(SQLModel, table=True):
     parent_job_id: int | None = Field(default=None, foreign_key="cbomcollectionjob.id", index=True, ondelete="CASCADE")
 
 
+class CbomHostKeyReset(SQLModel, table=True):
+    """#150: a team admin's decision about a host key a scan node remembered under trust on first use.
+
+    ``accept``: the node replaces its pin for ``target``:``port`` with exactly ``fingerprint`` (the key the admin
+    reviewed on a ``host_key_changed`` result), and any other key still fails.  ``forget``: the node drops its pins
+    for that address, and the next connection pins on first use again.  The node that reported the change applies it
+    on its next job for the source and acknowledges it in that job's result (``applied``).  This row is the record of
+    who decided what and when; plain ints (no foreign keys), so it outlives the source, node and job it names."""
+    __tablename__ = "cbomhostkeyreset"
+    id: int | None = Field(default=None, primary_key=True)
+    team_id: int = Field(foreign_key="team.id", index=True)
+    source_id: int = Field(index=True)
+    node_id: int
+    job_id: int  # the job whose result showed the changed key (the evidence the admin reviewed)
+    target: str = Field(max_length=255)
+    port: int = Field(default=22)
+    action: str = Field(max_length=8)  # accept | forget
+    fingerprint: str | None = Field(default=None, max_length=64)  # accept: the key the node may now trust
+    pinned_fingerprint: str | None = Field(default=None, max_length=64)  # the key it remembered until then
+    status: str = Field(default="pending", max_length=12)  # pending | applied | superseded
+    requested_by_user_id: int
+    requested_at: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
+    applied_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    applied_job_id: int | None = Field(default=None)
+
+
 class CbomCollectedAsset(SQLModel, table=True):
     """One cryptographic asset a collection job found.  Facts come from the node; impact is ours."""
     __tablename__ = "cbomcollectedasset"
-    __table_args__ = (UniqueConstraint("job_id", "attempt", "asset_key", name="uq_cbomcollectedasset_job_attempt_key"),)
+    __table_args__ = (UniqueConstraint("job_id", "attempt", "asset_key", name="uq_cbomcollectedasset_job_attempt_key"),
+                      # CB-19 PR-3: the run asset list's grade filter and facet (migration cb19grade002)
+                      _SaIndex("ix_cbomcollectedasset_run_qgrade", "run_id", "q_grade"))
     id: int | None = Field(default=None, primary_key=True)
     team_id: int = Field(foreign_key="team.id", index=True)
     run_id: int | None = Field(default=None, foreign_key="cbomcollectionrun.id", index=True)
@@ -498,6 +612,15 @@ class CbomCollectedAsset(SQLModel, table=True):
     finding: str | None = Field(default=None, max_length=512)
     facts: Dict | None = Field(default_factory=dict, sa_column=Column(CbomFactsJSON))
     created_at: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
+    # CB-19 PR-3: the record grade stored at ingest (qgrade.ingest_grades), NULL when it was not stored (a row from
+    # before cb19grade002, a run without a grade-input snapshot, or a run started under another grade model);
+    # q_grade NULL with a q_reason is "no grade" (not_applicable, not_an_item)
+    q_grade: str | None = Field(default=None, max_length=2)
+    q_reason: str | None = Field(default=None, max_length=32)
+    # #352: a digest of what the estate hooks read from the row (``content_digest``), computed on every insert (a
+    # Python column default, so the ingest's bulk INSERT, the ORM and the tests all set it). Equal digests mean equal
+    # stored values; a changed or NULL digest (a row from before cb352digest001) is compared column by column.
+    content_digest: str | None = Field(default=None, max_length=64, sa_column_kwargs={"default": _content_digest_default})
 
 
 class CbomCollectionSettings(SQLModel, table=True):
@@ -711,6 +834,20 @@ class CbomRiskRegister(SQLModel, table=True):
     __table_args__ = (UniqueConstraint("team_id", "item_key", name="uq_cbomriskregister_team_key"),
                       _SaIndex("ix_cbomriskregister_team_rank_key", "team_id", "q_rank", "item_key"),
                       _SaIndex("ix_cbomriskregister_team_reason", "team_id", "q_reason"),
+                      # CB-32 (1.5M rows): a filtered list walks its filter's index in list order; the summary is one
+                      # index-only GROUP BY
+                      _SaIndex("ix_cbomriskregister_team_source_rank", "team_id", "source_ref", "q_rank", "item_key"),
+                      _SaIndex("ix_cbomriskregister_team_app_rank", "team_id", "application", "q_rank", "item_key"),
+                      _SaIndex("ix_cbomriskregister_team_reason_rank", "team_id", "q_reason", "q_rank", "item_key"),
+                      _SaIndex("ix_cbomriskregister_team_unpresent_rank", "team_id", "presence", "q_rank", "item_key",
+                               postgresql_where=_sa_text("presence <> 'present'"),
+                               sqlite_where=_sa_text("presence <> 'present'")),
+                      _SaIndex("ix_cbomriskregister_team_summary", "team_id", "q_grade", "q_reason", "family",
+                               "presence"),
+                      _SaIndex("ix_cbomriskregister_team_model_inputs", "team_id", "model_version", "inputs_digest"),
+                      _SaIndex("ix_cbomriskregister_team_live", "team_id",
+                               postgresql_where=_sa_text("presence <> 'removed'"),
+                               sqlite_where=_sa_text("presence <> 'removed'")),
                       _SaIndex("ix_cbomriskregister_team_family_source_grade", "team_id", "family", "source_ref",
                                "q_grade"))
     id: int | None = Field(default=None, primary_key=True)
@@ -738,6 +875,12 @@ class CbomRiskRegister(SQLModel, table=True):
 
 
 # ========================================= estate store (CB-20) =========================================
+# CB-32 partial-index predicates (the queries in estate / agility_store / agility_rollup repeat them verbatim, so the
+# planner matches them)
+_AGILITY_LIVE = "presence <> 'removed' AND fix_class IS NOT NULL"
+_NOT_CORRELATED_LIVE = "key_kind = 'not_correlated' AND presence <> 'removed'"
+_RECHECK = "presence <> 'removed' AND fix_recheck_on IS NOT NULL"
+_UNREAD_MOVED = ("presence = 'not_read' AND (fix_job_id <> seen_job_id OR fix_attempt <> seen_attempt)")
 class CbomEstateSource(SQLModel, table=True):
     """Per team and source (``source_ref`` = the source uid): the newest collect job the estate store has written.
     A PRESENT observation of the source was read in this job (its row: ``(latest_job_id, latest_attempt,
@@ -757,6 +900,14 @@ class CbomEstateSource(SQLModel, table=True):
     latest_status: str = Field(max_length=16)  # the job's status: success | failed | cancelled ...
     latest_comparable: bool = Field(default=False)  # drift.job_comparable: a complete collection
     updated_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    # #352: the latest job each estate hook has brought this source's present observations up to (written by the
+    # hook, never by the store). Agility: every present observation's stored class holds for this job, so a re-read
+    # rewrites only the observations whose row changed. Register: the grades of the source's present observations
+    # were computed from this job's rows. NULL: not known (a new source, a hook that never ran).
+    fix_through_job_id: int | None = Field(default=None)
+    fix_through_attempt: int | None = Field(default=None)
+    register_through_job_id: int | None = Field(default=None)
+    register_through_attempt: int | None = Field(default=None)
 
 
 class CbomAgilityBaseline(SQLModel, table=True):
@@ -779,6 +930,87 @@ class CbomAgilityBaseline(SQLModel, table=True):
     created_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
 
 
+class CbomEstateLink(SQLModel, table=True):
+    """Engine step 3 (correlate): an estate asset linked to a component of a code or SBOM scan that uses it
+    (``estate_links``): a library the store holds that an SBOM scan or a CBOM code scan lists, or a certificate a
+    code scan holds (CB-21 certificate link keys). Rebuilt when the team's scans or estate change (fingerprint in
+    ``CbomEstateLinkState``), never per request."""
+    __tablename__ = "cbomestatelink"
+    __table_args__ = (_SaIndex("ix_cbomestatelink_team_key", "team_id", "asset_key"),)
+    id: int | None = Field(default=None, primary_key=True)
+    team_id: int = Field(foreign_key="team.id")
+    asset_key: str = Field(max_length=64)
+    kind: str = Field(max_length=8)  # sbom | code
+    scan_id: int = Field()
+    scan_title: str | None = Field(default=None, max_length=255)
+    component: str = Field(max_length=255)
+    purl: str | None = Field(default=None, max_length=512)
+    match: str = Field(max_length=16)  # purl | name_version | name | cert_key
+
+
+class CbomEstateLinkState(SQLModel, table=True):
+    """Per team: the inputs the stored links were built from (a digest of the latest scans and the estate)."""
+    __tablename__ = "cbomestatelinkstate"
+    __table_args__ = (UniqueConstraint("team_id", name="uq_cbomestatelinkstate_team"),)
+    id: int | None = Field(default=None, primary_key=True)
+    team_id: int = Field(foreign_key="team.id")
+    fingerprint: str = Field(max_length=64)
+    links: int = Field(default=0)
+    refreshed_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+
+
+class CbomAgilityGroup(SQLModel, table=True):
+    """CB-32 summary: the live classed estate assets of a team per (system, fix class, class without PQ codes,
+    unknown reasons), the agility roll-up's GROUP BY kept current by database triggers on ``cbomestateasset`` in the
+    writing transaction (``estate_summary``). NULL parts are stored as ''. ``system_label``/``system_kind``: the
+    latest written."""
+    __tablename__ = "cbomagilitygroup"
+    __table_args__ = (UniqueConstraint("team_id", "system_key", "fix_class", "fix_class_excl_pq", "fix_reasons",
+                                       name="uq_cbomagilitygroup_team_group"),)
+    id: int | None = Field(default=None, primary_key=True)
+    team_id: int = Field(foreign_key="team.id")
+    system_key: str = Field(default="", max_length=300)
+    fix_class: str = Field(max_length=16)
+    fix_class_excl_pq: str = Field(default="", max_length=16)
+    fix_reasons: str = Field(default="", max_length=200)
+    n: int = Field(default=0)
+    system_label: str | None = Field(default=None, max_length=255)
+    system_kind: str | None = Field(default=None, max_length=16)
+
+
+class CbomRegisterSummary(SQLModel, table=True):
+    """CB-32 summary: the team's risk register rows per (grade, reason, family, presence), the register summary's
+    GROUP BY kept current by triggers on ``cbomriskregister`` (``estate_summary``). NULL grade / family stored as ''."""
+    __tablename__ = "cbomregistersummary"
+    __table_args__ = (UniqueConstraint("team_id", "q_grade", "q_reason", "family", "presence",
+                                       name="uq_cbomregistersummary_team_group"),)
+    id: int | None = Field(default=None, primary_key=True)
+    team_id: int = Field(foreign_key="team.id")
+    q_grade: str = Field(default="", max_length=2)
+    q_reason: str = Field(max_length=32)
+    family: str = Field(default="", max_length=32)
+    presence: str = Field(max_length=16)
+    n: int = Field(default=0)
+
+
+class CbomEstateCount(SQLModel, table=True):
+    """CB-32 summary: team counters kept by triggers (``estate_summary.COUNTS``): live assets, live not-correlated
+    assets, live observations."""
+    __tablename__ = "cbomestatecount"
+    __table_args__ = (UniqueConstraint("team_id", "kind", name="uq_cbomestatecount_team_kind"),)
+    id: int | None = Field(default=None, primary_key=True)
+    team_id: int = Field(foreign_key="team.id")
+    kind: str = Field(max_length=32)
+    n: int = Field(default=0)
+
+
+def _install_estate_summary(target, connection, **kw):
+    """Every create_all (tests, local) installs the summary triggers too (CB-32; migrations do it themselves)."""
+    from backend.utilities.cbom_sources import estate_summary_ddl
+
+    estate_summary_ddl.install(connection, only_if_tables=True)
+
+
 class CbomEstateTeam(SQLModel, table=True):
     """Per team: whether the estate store missed a run's write (it failed and was rolled back to its savepoint while
     drift committed). ``stale`` stays set until ``estate.backfill`` has replayed the team's runs."""
@@ -792,6 +1024,7 @@ class CbomEstateTeam(SQLModel, table=True):
     stale_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
     repaired_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
     updated_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    stale_marks: int = Field(default=0, sa_column_kwargs={"server_default": "0"})  # missed writes so far (CB-32): a repair clears only what it saw
 
 
 class CbomEstateAsset(SQLModel, table=True):
@@ -804,7 +1037,23 @@ class CbomEstateAsset(SQLModel, table=True):
                       _SaIndex("ix_cbomestateasset_team_type_key", "team_id", "asset_type", "asset_key"),
                       _SaIndex("ix_cbomestateasset_team_presence_key", "team_id", "presence", "asset_key"),
                       _SaIndex("ix_cbomestateasset_team_updated", "team_id", "updated_run_id"),
-                      _SaIndex("ix_cbomestateasset_team_system_fix", "team_id", "system_key", "fix_class"))
+                      # CB-32: the agility roll-up is one index-only GROUP BY over the live classed assets; its pages
+                      # walk a class index in key order; heal finds stale versions and counts not-correlated ones
+                      _SaIndex("ix_cbomestateasset_agility_groups", "team_id", "system_key", "fix_class",
+                               "fix_class_excl_pq", "fix_reasons", postgresql_include=["system_label", "system_kind"],
+                               postgresql_where=_sa_text(_AGILITY_LIVE), sqlite_where=_sa_text(_AGILITY_LIVE)),
+                      _SaIndex("ix_cbomestateasset_agility_class", "team_id", "fix_class", "asset_key",
+                               postgresql_where=_sa_text(_AGILITY_LIVE), sqlite_where=_sa_text(_AGILITY_LIVE)),
+                      _SaIndex("ix_cbomestateasset_agility_class_excl", "team_id", "fix_class_excl_pq", "asset_key",
+                               postgresql_where=_sa_text(_AGILITY_LIVE), sqlite_where=_sa_text(_AGILITY_LIVE)),
+                      _SaIndex("ix_cbomestateasset_team_fix_version", "team_id", "fix_version",
+                               postgresql_where=_sa_text("presence <> 'removed'"),
+                               sqlite_where=_sa_text("presence <> 'removed'")),
+                      _SaIndex("ix_cbomestateasset_team_live", "team_id", postgresql_where=_sa_text("presence <> 'removed'"),
+                               sqlite_where=_sa_text("presence <> 'removed'")),
+                      _SaIndex("ix_cbomestateasset_team_not_correlated", "team_id",
+                               postgresql_where=_sa_text(_NOT_CORRELATED_LIVE),
+                               sqlite_where=_sa_text(_NOT_CORRELATED_LIVE)))
     id: int | None = Field(default=None, primary_key=True)
     team_id: int = Field(foreign_key="team.id")
     asset_key: str = Field(max_length=64)
@@ -838,7 +1087,21 @@ class CbomEstateObservation(SQLModel, table=True):
     is not present any more (a present one was read in the source's latest job, ``CbomEstateSource``)."""
     __tablename__ = "cbomestateobservation"
     __table_args__ = (UniqueConstraint("team_id", "asset_key", "source_ref", name="uq_cbomestateobs_team_key_source"),
-                      _SaIndex("ix_cbomestateobs_team_source", "team_id", "source_ref"))
+                      # CB-32: a source's observations in key order (present_keys, the source filter of the estate
+                      # list); the live count; heal's stale probes (version, recheck day, pointer moved)
+                      _SaIndex("ix_cbomestateobs_team_source_key", "team_id", "source_ref", "asset_key"),
+                      _SaIndex("ix_cbomestateobs_team_live", "team_id", postgresql_where=_sa_text("presence <> 'removed'"),
+                               sqlite_where=_sa_text("presence <> 'removed'")),
+                      _SaIndex("ix_cbomestateobs_team_fix_version", "team_id", "fix_version",
+                               postgresql_where=_sa_text("presence <> 'removed'"),
+                               sqlite_where=_sa_text("presence <> 'removed'")),
+                      _SaIndex("ix_cbomestateobs_team_recheck", "team_id", "fix_recheck_on",
+                               postgresql_where=_sa_text(_RECHECK), sqlite_where=_sa_text(_RECHECK)),
+                      _SaIndex("ix_cbomestateobs_present_fix", "team_id", "source_ref", "fix_job_id", "fix_attempt",
+                               postgresql_where=_sa_text("presence = 'present'"),
+                               sqlite_where=_sa_text("presence = 'present'")),
+                      _SaIndex("ix_cbomestateobs_unread_fix_moved", "team_id", postgresql_where=_sa_text(_UNREAD_MOVED),
+                               sqlite_where=_sa_text(_UNREAD_MOVED)))
     id: int | None = Field(default=None, primary_key=True)
     team_id: int = Field(foreign_key="team.id")
     asset_key: str = Field(max_length=64)
@@ -924,3 +1187,26 @@ class IntegrationDelivery(SQLModel, table=True):
     last_result: str | None = Field(default=None, max_length=255)  # status code and a short reason, never a body
     external_ref: str | None = Field(default=None, max_length=64)  # e.g. the ServiceNow record number
     created_at: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime, index=True)
+
+
+class CbomOpsCounter(SQLModel, table=True):
+    """CB-31 (GAP-MATRIX X1): platform-wide operational counters, served as Prometheus counters by the admin-only
+    ``GET /cbom/ops/metrics`` (``ops_metrics``). Each is incremented in the transaction of the event it counts (a
+    lease the reaper expired, assets the ingest refused), so every API and worker process adds to the same number
+    and a rolled-back event counts nothing. Monotonic: never reset, never pruned."""
+    __tablename__ = "cbomopscounter"
+    name: str = Field(primary_key=True, max_length=64)
+    value: int = Field(default=0, sa_column=Column(_SaBigInteger, nullable=False, server_default="0"))
+    updated_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+
+
+# CB-32: the estate summary triggers follow every SQLModel.metadata.create_all
+from sqlalchemy import event as _sa_event
+
+_sa_event.listen(SQLModel.metadata, "after_create", _install_estate_summary)
+
+
+# ========================================= F3: code repositories at scale =========================================
+# The F3 tables live in their own module; importing it here registers them on SQLModel.metadata for alembic and
+# for everything that imports new_models (it imports nothing from this file, so the import cannot cycle).
+from backend.utilities.scm.models import *  # noqa: E402,F401,F403

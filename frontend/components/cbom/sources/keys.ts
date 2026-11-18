@@ -10,6 +10,7 @@ export const cbomSourcesKeys = {
   nodeArtifacts: (teamId: number) => ["cbom-sources", teamId, "node-artifacts"] as const,
   sources: (teamId: number, group?: string) => ["cbom-sources", teamId, "items", group ?? "all"] as const,
   job: (teamId: number, jobId: number) => ["cbom-sources", teamId, "job", jobId] as const,
+  hostKeyResets: (teamId: number, sourceId: number) => ["cbom-sources", teamId, "host-key-resets", sourceId] as const,
   settings: (teamId: number) => ["cbom-sources", teamId, "settings"] as const,
   evidence: (teamId: number) => ["cbom-sources", teamId, "evidence"] as const,
   runs: (teamId: number, scanId?: number) => ["cbom-sources", teamId, "runs", scanId ?? "all"] as const,

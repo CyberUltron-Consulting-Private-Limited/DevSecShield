@@ -13,6 +13,10 @@
 #                                        host's disk there (disk-check, the node downloads included), scp the archive
 #                                        and the node downloads, then run `staging.sh deploy <tag>` there over ssh
 #   staging.sh release <user@host> [dir] build + save + push
+#   staging.sh wait-node-release [--timeout S]
+#                                        wait (default 2700 s) until anyone can pull the scan node release of the
+#                                        node-artifacts manifest's version from GHCR (image and chart), then check the
+#                                        GHCR chart is the downloaded chart, byte for byte (#361); 1 = it is not
 # On the staging host (inside <dir>, which holds deploy/staging/.env, backend.env and certs/):
 #   staging.sh deploy [tag]              check + docker load the archive (after the disk check), check and put the
 #                                        tag's node downloads in deploy/staging/node-artifacts/<tag>/ (the backend's
@@ -34,7 +38,7 @@
 #   staging.sh backend-env               read KEY=VALUE lines on stdin and set exactly those keys in backend.env (only
 #                                        the BACKEND_ENV_KEYS below; empty values are skipped; never prints a value).
 #                                        `push` runs it just before `deploy` when STAGING_SET_<KEY> is set (CI: the
-#                                        staging environment's CBOM_AWS_* secrets; deploy/staging/README.md "AWS")
+#                                        staging environment's CBOM_AWS_* / CBOM_AI_* / CBOM_CT_DISCOVERY; README)
 #   staging.sh rollback [--allow-downgrade]
 #                                        back to the previously deployed tag and its own deploy files (compose file,
 #                                        nginx, this script). When that tag's migrations do not contain the database's
@@ -101,8 +105,13 @@ DSS_REPOS=(devsecshield-backend devsecshield-frontend scan-worker dast-worker)
 # classic-store builder holds uncompressed layer tars and needs about 4x: set STAGING_DISK_FACTOR=4 for one.
 DEFAULT_DISK_FACTOR=3.3
 DEFAULT_DISK_RESERVE_MB=1024  # left free on every filesystem after the copy and the load (the host is shared)
-# The only backend.env keys a deploy may set (push -> backend-env): the AWS collector identity and the lab switch.
-BACKEND_ENV_KEYS=(CBOM_AWS_ACCESS_KEY_ID CBOM_AWS_SECRET_ACCESS_KEY CBOM_AWS_PRINCIPAL_ARN CBOM_AWS_LAB_SAME_ACCOUNT)
+# The only backend.env keys a deploy may set (push -> backend-env): the AWS collector identity, the lab switch,
+# the AI remediation settings (CB-38: AWS Bedrock; the provider, region and credential source are not secrets, the
+# assistant's own IAM user keys are, and travel like the collector's: stdin only, never printed), and
+# CBOM_CT_DISCOVERY (not a secret: 1 or 0; README "Certificate Transparency discovery on staging").
+BACKEND_ENV_KEYS=(CBOM_AWS_ACCESS_KEY_ID CBOM_AWS_SECRET_ACCESS_KEY CBOM_AWS_PRINCIPAL_ARN CBOM_AWS_LAB_SAME_ACCOUNT
+  CBOM_AI_PROVIDER CBOM_AI_BEDROCK_REGION CBOM_AI_AWS_CREDENTIALS CBOM_AI_AWS_ACCESS_KEY_ID
+  CBOM_AI_AWS_SECRET_ACCESS_KEY CBOM_CT_DISCOVERY)
 
 log() { printf '[staging %s] %s\n' "$(date -u +%H:%M:%S)" "$*"; }
 die() { printf '[staging] ERROR: %s\n' "$*" >&2; exit 1; }
@@ -195,7 +204,7 @@ cmd_save() {
 # The scan-node downloads of this checkout: the image file (built and checked by scan_node_image.sh), then the chart,
 # the kits and manifest.json (node_artifacts.py). The node image is removed from the builder's Docker afterwards.
 cmd_node_artifacts() {
-  local version image
+  local version image build
   version="${CBOM_NODE_VERSION:-$(sed -n -E 's/^VERSION = "([^"]+)"$/\1/p' "${REPO_ROOT}/scan_node/zs_scan_node/__init__.py")}"
   [[ -n "${version}" ]] || die "cannot read the scan-node VERSION from scan_node/zs_scan_node/__init__.py"
   image="${SCAN_NODE_IMAGE:-localhost/zeroshield/cbom-scan-node}"
@@ -203,10 +212,49 @@ cmd_node_artifacts() {
   mkdir -p "${NODE_BUILD_DIR}"
   log "scan-node downloads ${version} (${image}:${version}) in ${NODE_BUILD_DIR}"
   SCAN_NODE_IMAGE="${image}" OUT_DIR="${NODE_BUILD_DIR}" "${REPO_ROOT}/scripts/release/scan_node_image.sh" build "${version}"
+  # The commit the image reports (scan_node_image.sh labels it; "unknown" for a dirty tree): the manifest's build, which
+  # the server compares every node's reported <version>+<commit> with ("Update available" on Scan nodes).
+  build="$(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "${image}:${version}" 2>/dev/null || true)"
+  [[ "${build}" =~ ^[0-9a-f]{40}$ ]] || { log "WARNING: the node image carries no commit: the server cannot tell which nodes are out of date"; build=""; }
   python3 -I "${REPO_ROOT}/scripts/release/node_artifacts.py" --version "${version}" --image-ref "${image}:${version}" \
-    --out "${NODE_BUILD_DIR}"
+    --out "${NODE_BUILD_DIR}" --build "${build}"
   docker image rm "${image}:${version}" >/dev/null 2>&1 || true
   log "scan-node downloads: $(du -sh "${NODE_BUILD_DIR}" | cut -f1)"
+}
+
+# The push deploy's wait for its own scan node release (deploy-staging.yml): publish-ghcr.yml builds and releases
+# devsecshield-scan-node:<version> and charts/cbom-scan-node:<version> for the same commit in parallel. Waits until
+# anyone can pull both, then checks the GHCR chart is the downloaded one (node-artifacts/, the same packer and image
+# name: #361). 0 = released and identical; 1 = the chart differs; 3 = not released within the timeout.
+cmd_wait_node_release() {
+  local timeout=2700 version registry chart deadline rc
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --timeout) [[ "${2:-}" =~ ^[0-9]{1,5}$ ]] || die "--timeout takes seconds"; timeout=$2; shift 2 ;;
+      *) die "usage: staging.sh wait-node-release [--timeout S]" ;;
+    esac
+  done
+  version="$(sed -n -E 's/^[[:space:]]*"version": "([0-9][0-9A-Za-z.-]{0,18})".*$/\1/p' "${NODE_BUILD_DIR}/manifest.json" 2>/dev/null | head -n 1 || true)"
+  [[ -n "${version}" ]] || die "no scan-node version in ${NODE_BUILD_DIR}/manifest.json (staging.sh node-artifacts)"
+  registry="${CBOM_NODE_REGISTRY:-${DEFAULT_NODE_REGISTRY}}"
+  chart="${NODE_BUILD_DIR}/cbom-scan-node-${version}.tgz"
+  [[ -f "${chart}" ]] || die "no ${chart##*/} in ${NODE_BUILD_DIR}"
+  deadline=$((SECONDS + timeout))
+  while :; do
+    if anonymous_pull "${registry}/devsecshield-scan-node" "${version}"; then
+      ghcr_chart_matches "${registry}" "${version}" "${chart}" && rc=0 || rc=$?
+      if [[ "${rc}" == 0 ]]; then
+        log "scan node ${version} is released: ${registry}/devsecshield-scan-node:${version} and its chart, the downloaded chart byte for byte (sha256:$(sha256sum "${chart}" | cut -d' ' -f1))"
+        return 0
+      fi
+      [[ "${rc}" == 1 ]] && return 1
+    fi
+    if ((SECONDS >= deadline)); then
+      log "WARNING: scan node ${version} is not pullable from ${registry} after ${timeout} s: the deploy offers no docker pull or helm oci:// for it"
+      return 3
+    fi
+    sleep "${STAGING_WAIT_STEP:-30}"
+  done
 }
 
 node_files() { # the files of the scan-node downloads on the build machine (none when node-artifacts was not run)
@@ -311,7 +359,11 @@ cmd_backend_env() { # stdin: KEY=VALUE lines; sets exactly those keys in backend
     [[ "${line}" == *=* ]] || die "backend-env: a line without KEY=VALUE"
     known=0
     for k in "${BACKEND_ENV_KEYS[@]}"; do [[ "${k}" == "${key}" ]] && known=1; done
-    ((known)) || die "backend-env: ${key:0:64} is not one of: ${BACKEND_ENV_KEYS[*]}"
+    # name a refused key only when it looks like one: a multi-line secret's next line must not show up here, in part
+    if ! ((known)); then
+      [[ "${key}" =~ ^[A-Z0-9_]{1,64}$ ]] || die "backend-env: an unknown key is not one of: ${BACKEND_ENV_KEYS[*]}"
+      die "backend-env: ${key} is not one of: ${BACKEND_ENV_KEYS[*]}"
+    fi
     [[ -n "${value}" ]] || continue # not provided: leave the host's value
     # AWS key ids, secret keys and ARNs, or 0/1: nothing that could break the env file or a shell
     [[ "${value}" =~ ^[A-Za-z0-9/+=:@._,-]{1,512}$ ]] || die "backend-env: the value of ${key} has characters an env file cannot hold"
@@ -357,14 +409,56 @@ set_env_line() { # <KEY> <value>: set one line of .env (added when missing); the
 
 DEFAULT_NODE_REGISTRY=ghcr.io/cyberultron-consulting-private-limited
 
-anonymous_pull() { # <host>/<repository> <tag>: 0 when anyone can read the manifest (registry token API, no login)
+# #197 review: can this host reach the registry at all? One request to <host>/v2/ (any HTTP answer, 401 included, is
+# "reachable"); unreachable, set_node_refs skips every per-tag probe (each would wait for its own timeout) and says
+# why, instead of reporting a missing or private package. REGISTRY_UNREACHABLE holds curl's reason.
+REGISTRY_UNREACHABLE=""
+registry_reachable() { # <host>
+  local code err
+  err="$(mktemp)"
+  code="$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 5 --max-time 10 "https://$1/v2/" 2>"${err}")" || true
+  REGISTRY_UNREACHABLE="$(tr -s '\n' ' ' <"${err}" | cut -c1-200)"
+  rm -f "${err}"
+  [[ "${code}" =~ ^[1-5][0-9][0-9]$ ]]
+}
+registry_manifest() { # <host>/<repository> <tag> <file>: the manifest anyone can read, into <file> (no login)
   local host=${1%%/*} repo=${1#*/} token
-  token="$(curl -fsS --max-time 10 "https://${host}/token?scope=repository:${repo}:pull" 2>/dev/null |
+  token="$(curl -fsS --connect-timeout 5 --max-time 10 "https://${host}/token?scope=repository:${repo}:pull" 2>/dev/null |
     sed -n -E 's/.*"token":"([A-Za-z0-9._~+\/=-]+)".*/\1/p' || true)"
   [[ -n "${token}" ]] || return 1
-  curl -fsS -o /dev/null --max-time 10 -H "Authorization: Bearer ${token}" \
+  curl -fsS -o "$3" --connect-timeout 5 --max-time 10 -H "Authorization: Bearer ${token}" \
     -H "Accept: application/vnd.oci.image.manifest.v1+json, application/vnd.oci.image.index.v1+json" \
     "https://${host}/v2/${repo}/manifests/$2" 2>/dev/null
+}
+
+anonymous_pull() { # <host>/<repository> <tag>: 0 when anyone can read the manifest (registry token API, no login)
+  registry_manifest "$1" "$2" /dev/null
+}
+
+# A Helm chart in an OCI registry is one layer of this media type, whose digest is the sha256 of the chart file
+# itself (helm push uploads the .tgz as it is; helm pull writes it back): so the GHCR chart of a version is the
+# downloaded chart exactly when that digest is the download's sha256.
+HELM_CHART_LAYER=application/vnd.cncf.helm.chart.content.v1.tar+gzip
+chart_layer_digest() { # <manifest file>: sha256:<hex> of its chart content layer (empty when it has none)
+  tr '{}' '\n' <"$1" | grep -F "${HELM_CHART_LAYER}" | grep -oE 'sha256:[0-9a-f]{64}' | head -n 1 || true
+}
+
+ghcr_chart_matches() { # <registry> <version> <chart file>: 0 = GHCR's chart <version> is that file, byte for byte;
+  # 1 = it is another file (logged), 2 = it cannot be read without a login (not released yet, or private)
+  local registry=$1 version=$2 file=$3 tmp remote local_sha
+  tmp="$(mktemp)"
+  if ! registry_manifest "${registry}/charts/cbom-scan-node" "${version}" "${tmp}"; then
+    rm -f "${tmp}"
+    return 2
+  fi
+  remote="$(chart_layer_digest "${tmp}")"
+  rm -f "${tmp}"
+  local_sha="$( [[ -f "${file}" ]] && sha256sum "${file}" | cut -d' ' -f1 || true)"
+  if [[ -n "${local_sha}" && "${remote}" == "sha256:${local_sha}" ]]; then
+    return 0
+  fi
+  log "ERROR: GHCR chart ${version} (${remote:-no chart layer}) is not the downloaded chart ${file##*/} (sha256:${local_sha:-missing}): one version must name one file (#361)"
+  return 1
 }
 # CBOM_NODE_IMAGE_REF / CBOM_NODE_CHART_REF in .env for <tag> (docker-compose.yml passes them to the backend): the
 # scan node in the public registry, so the Add scan node wizard offers `docker pull` and `helm ... oci://` beside the
@@ -388,15 +482,28 @@ set_node_refs() { # <tag>
     [[ "${registry}" =~ ^[a-z0-9.-]+(:[0-9]{1,5})?(/[a-z0-9._-]+)+$ ]] || die "CBOM_NODE_REGISTRY ${registry:0:80} is not <host>/<path> (lower case)"
     version="$(sed -n -E 's/^[[:space:]]*"version": "([0-9][0-9A-Za-z.-]{0,18})".*$/\1/p' \
       "${NODE_ARTIFACTS_DIR}/${tag}/manifest.json" 2>/dev/null | head -n 1 || true)"
-    if [[ -n "${version}" ]]; then
-      # the release the wizard pins: written once by publish-ghcr.yml (job release), never a moving tag
-      image="${registry}/devsecshield-scan-node:${version}"
-      # The chart is its own GHCR package, private when first pushed: offered only once anyone can pull it (else the
-      # wizard installs the downloaded chart with this image).
-      if anonymous_pull "${registry}/charts/cbom-scan-node" "${version}"; then
-        chart="oci://${registry}/charts/cbom-scan-node:${version}"
+    if ! registry_reachable "${registry%%/*}"; then
+      log "WARNING: registry ${registry%%/*} cannot be reached from this host (${REGISTRY_UNREACHABLE:-no HTTP answer}): no docker pull or helm oci:// offered; the wizard installs the downloaded files"
+    elif [[ -n "${version}" ]]; then
+      # the release the wizard pins: written once by publish-ghcr.yml (job release), never a moving tag; offered only
+      # once anyone can pull it (#361: never a docker pull of a version that is not published)
+      if anonymous_pull "${registry}/devsecshield-scan-node" "${version}"; then
+        image="${registry}/devsecshield-scan-node:${version}"
       else
+        log "WARNING: scan node image ${registry}/devsecshield-scan-node:${version} cannot be pulled without a login (not released yet, or the package is private): no docker pull offered"
+      fi
+      # The chart is its own GHCR package, private when first pushed: offered only once anyone can pull it and it is
+      # the downloaded chart byte for byte (else the wizard installs the downloaded chart with this image).
+      local matched=2
+      if [[ -n "${image}" ]]; then
+        ghcr_chart_matches "${registry}" "${version}" "${NODE_ARTIFACTS_DIR}/${tag}/cbom-scan-node-${version}.tgz" && matched=0 || matched=$?
+      fi
+      if [[ "${matched}" == 0 ]]; then
+        chart="oci://${registry}/charts/cbom-scan-node:${version}"
+      elif [[ "${matched}" == 2 ]]; then
         log "scan node chart ${registry}/charts/cbom-scan-node:${version} cannot be pulled without a login (not pushed yet, or the package is private): no helm oci:// offered"
+      else
+        log "scan node chart ${registry}/charts/cbom-scan-node:${version} is not this release's downloaded chart: no helm oci:// offered"
       fi
     elif [[ "${tag}" =~ ^[0-9a-f]{12}$ ]]; then
       image="${registry}/devsecshield-scan-node:staging-${tag}" # no downloads manifest: this commit's immutable tag
@@ -1273,7 +1380,8 @@ main() {
     disk-plan) cmd_disk plan "$@" ;;
     node-artifacts) cmd_node_artifacts ;;
     backend-env) cmd_backend_env ;;
-    -h | --help | help | "") sed -n '2,63p' "${BASH_SOURCE[0]}" ;;
+    wait-node-release) cmd_wait_node_release "$@" ;;
+    -h | --help | help | "") sed -n '2,67p' "${BASH_SOURCE[0]}" ;;
     *) die "unknown command ${cmd} (see --help)" ;;
   esac
 }

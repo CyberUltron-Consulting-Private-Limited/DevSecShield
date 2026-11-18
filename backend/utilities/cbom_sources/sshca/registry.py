@@ -130,9 +130,50 @@ def _check_ttl(value: int | None) -> int:
     return ttl
 
 
+def _node_public_key(text: str | None) -> tuple[str, str]:
+    """#61: the public key of the CA key the customer installed on its scan node: (``type base64``, key_alg)."""
+    from cryptography.hazmat.primitives.asymmetric import ec, ed25519
+    from cryptography.hazmat.primitives.serialization import load_ssh_public_key
+
+    raw = (text or "").strip()
+    if not raw:
+        raise HTTPException(status_code=400, detail="public_key: paste the public key of the CA key installed on the "
+                                                    "scan node (the ssh-ed25519 AAAA... line of its .pub file)")
+    if "PRIVATE KEY" in raw:
+        raise HTTPException(status_code=400, detail="public_key: this is a private key; the CA private key stays on "
+                                                    "the scan node: paste its public key (.pub file)")
+    try:
+        line = C.public_line_of(raw)
+        key = load_ssh_public_key(line.encode())
+    except (C.CertError, ValueError, TypeError) as exc:
+        del exc
+        raise HTTPException(status_code=400, detail="public_key: paste the CA's public key (ssh-ed25519 AAAA... or "
+                                                    "ecdsa-sha2-nistp256 AAAA..., from its .pub file), not a "
+                                                    "certificate") from None
+    if isinstance(key, ed25519.Ed25519PublicKey):
+        return line, "ed25519"
+    if isinstance(key, ec.EllipticCurvePublicKey) and key.curve.name == "secp256r1":
+        return line, "ecdsa-p256"
+    raise HTTPException(status_code=400, detail="public_key: the scan node signs with Ed25519 or ECDSA P-256 CA keys "
+                                                "only")
+
+
 def _new_key_material(team_id: int, provider: str, key_alg: str, key_wrap: str | None, kms_key_ref: str | None,
-                      vault_config: dict | None, secrets: dict | None) -> dict[str, Any]:
-    """Columns of a new CA key: a builtin key generated and wrapped, or a Vault mount's public key."""
+                      vault_config: dict | None, secrets: dict | None, public_key: str | None = None) -> dict[str, Any]:
+    """Columns of a new CA key: a builtin key generated and wrapped, a Vault mount's public key, or (node, #61) the
+    public key of the customer's key on its scan node."""
+    if provider == "node":
+        if key_wrap or kms_key_ref:
+            raise HTTPException(status_code=400, detail="key_wrap: the key stays on the scan node for provider node")
+        if vault_config or secrets:
+            raise HTTPException(status_code=400, detail="vault_config: only for provider vault")
+        line, alg = _node_public_key(public_key)
+        return {"key_alg": alg, "public_key": line, "fingerprint": C.fingerprint(line), "private_key_encrypted": None,
+                "key_wrap": None, "kms_key_ref": None, "vault_config": {}, "secret_encrypted": None,
+                "secret_fields": []}
+    if public_key:
+        raise HTTPException(status_code=400, detail="public_key: only for provider node (ZeroShield makes the key of a "
+                                                    "builtin CA, and Vault's comes from its mount)")
     if provider == "builtin":
         if vault_config or secrets:
             raise HTTPException(status_code=400, detail="vault_config: only for provider vault")
@@ -181,7 +222,7 @@ def _new_key_material(team_id: int, provider: str, key_alg: str, key_wrap: str |
         return {"key_alg": alg, "public_key": public, "fingerprint": C.fingerprint(public),
                 "private_key_encrypted": None, "key_wrap": None, "kms_key_ref": None, "vault_config": cfg,
                 "secret_encrypted": encrypt_secrets(checked), "secret_fields": sorted(checked)}
-    raise HTTPException(status_code=400, detail="provider: builtin or vault")
+    raise HTTPException(status_code=400, detail="provider: builtin, vault or node")
 
 
 def create_ca(session: Session, team_id: int, user_id: int, body: Any, now: _dt.datetime) -> CbomSshCa:
@@ -189,7 +230,7 @@ def create_ca(session: Session, team_id: int, user_id: int, body: Any, now: _dt.
     if count >= MAX_CAS_PER_TEAM:
         raise HTTPException(status_code=400, detail=f"A team can have at most {MAX_CAS_PER_TEAM} SSH CA keys")
     material = _new_key_material(team_id, body.provider, body.key_alg, body.key_wrap, body.kms_key_ref,
-                                 body.vault_config, body.secrets)
+                                 body.vault_config, body.secrets, getattr(body, "public_key", None))
     row = CbomSshCa(team_id=team_id, owner_user_id=user_id, updated_by_user_id=user_id, name=body.name,
                     provider=body.provider, state="active", default_ttl_s=_check_ttl(body.default_ttl_s),
                     created_at=now, last_updated=now, **material)
@@ -227,6 +268,10 @@ def rotate(session: Session, row: CbomSshCa, user_id: int, now: _dt.datetime, se
         raise HTTPException(status_code=409, detail="This CA already has a rotation waiting; promote or revoke it first")
     if row.state != "active":
         raise HTTPException(status_code=400, detail="Rotate the lineage's active CA")
+    if row.provider == "node":  # #61, narrowest version: no key ZeroShield could make or fetch for the node
+        raise HTTPException(status_code=400, detail="A node CA's key is on the scan node: to rotate it, install the new "
+                                                    "key on the scan node, add it as a new node CA, distribute "
+                                                    "trusted-keys and point the sources at it")
     if row.provider == "vault":
         # the next key lives in another issuer (issuer_ref) or mount, with a role that signs with it; the active row
         # keeps signing through its own mount and role until promote (no gap)

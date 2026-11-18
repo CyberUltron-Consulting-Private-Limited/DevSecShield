@@ -85,8 +85,9 @@ exit code; readiness is a bounded poll on a condition (container health, HTTP 20
 * `.env.e2e` holds random `openssl rand` values for the JWT/HMAC secrets, DB password and OTP, and
   **format-only dummy** `AWS_*` values (`backend/utilities/ai/chatbot.py` raises at import when they
   are unset). Nothing is ever copied from any repo `.env`, and the file is git-ignored with mode 600.
-  `backend/.env` and `backend/utilities/ai/.env` ARE tracked in this repo and hold real AWS key ids;
-  the E2E dockerignores keep them out of the images and `build.sh` asserts it.
+  `backend/.env` and `backend/utilities/ai/.env` are gitignored. Create them with `cp .env.example .env`
+  in each directory and fill in values outside git. The E2E dockerignores keep every `.env` out of the
+  images and `build.sh` asserts it.
 
 ## Docker safety rules (binding for everything in `e2e/`)
 

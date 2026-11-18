@@ -91,7 +91,7 @@ export function teamExclusionError(raw: string): string | null {
 
 /** The hint under a server source's own Never scan field (ServersTab): what a listed name does on the scan node. */
 export const SOURCE_NEVER_SCAN_HINT =
-  "IP addresses, ranges or hostnames, one per line or separated by commas. A listed hostname also covers every address it resolves to from the scan node; until it resolves there (an answer of only 0.0.0.0 or a loopback address does not count), none of these targets is scanned. localhost, names under .localhost and the other standard loopback names (ip6-localhost, localhost4, localhost.localdomain ...) are not looked up: they cover only 127.0.0.0/8 and ::1. A target name is skipped if any address it resolves to is listed; ranges are checked one address at a time. Never-scan always wins.";
+  "IP addresses, ranges or hostnames, one per line or separated by commas. A listed hostname also covers every address it resolves to from the scan node; until it resolves there (an answer of only 0.0.0.0 or a loopback address does not count), none of these targets is scanned. localhost, names under .localhost and the other standard loopback names (ip6-localhost, localhost4, localhost.localdomain ...) are not looked up: they cover only 127.0.0.0/8 and ::1. A target name is skipped, with every address it resolves to, if the name or any of those addresses is listed. Ranges are checked one address at a time: an IPv6 address of a host listed only by its IPv4 address is skipped only when a name the job resolves answers both, so list such a host by name or by both addresses. A shared load-balancer or VIP address that a skipped name also resolves to is skipped for every host behind it in that job. Never-scan always wins.";
 
 /** What a host name in the team list does on the scan node (shown on its row), or null for an address or range. */
 export function storedExclusionIssue(cidr: string): string | null {
@@ -113,9 +113,25 @@ export function exclusionSaveError(error: unknown): string | null {
 }
 
 /**
- * What the node sweeps for a range (N3, 14 Nov 2026; scan_node netutil.HOST_ONLY_MAX_PREFIX, backend
- * targets.scanned_interval): a /24 or larger leaves out its own network and broadcast address, a /25 or smaller is
- * scanned whole, so a /24 split into two /25s still scans .127 and .128.
+ * What the node sweeps for a range (N3, 14 Nov 2026, and the review of #250; scan_node netutil.boundary_skips, backend
+ * targets.boundary_skips): network and broadcast addresses are skipped only at the outer edges of the network your
+ * ranges form together (every range of the team counts, a disabled one too, so a disabled half still marks the edge), so a /23 entered as two /24s still scans x.x.0.255 and x.x.1.0, and a subnet entered on its
+ * own skips its own network and broadcast addresses.
  */
 export const RANGE_HINT =
-  "A /16 or smaller, one IP, or a-b. A /24 or larger skips its network and broadcast addresses; a /25 or smaller (half of a split /24, say) is scanned whole.";
+  "A /16 or smaller, one IP, or a-b. Network and broadcast addresses are skipped only at the edges of the network your ranges form together, disabled ranges included: a /24 split into two /25s still scans .127 and .128; a subnet on its own skips its own.";
+
+/**
+ * What a held never-scan host name means for one scan node (Minor 2 of the #250 review): the node could not resolve
+ * the name in its latest job that checked an address, so it cannot tell which address is that host and scans no
+ * address for this team until the name resolves there or is removed from the list. ``since`` is already formatted.
+ */
+export function heldNote(nodeName: string, since: string): string {
+  return `${nodeName} cannot resolve this name (since ${since}), so it scans no network address for this team: every job of the team on ${nodeName} that connects to an address (servers, appliances, databases, registries, range sweeps) holds all its targets until the name resolves there or is removed from this list. Jobs that reach no address, such as a PKCS#11 token on the node, still run.`;
+}
+
+/** The held entries for one stored entry (same name, case and a trailing dot aside). */
+export function heldFor<T extends { name: string }>(entry: string, held: readonly T[] | null | undefined): T[] {
+  const name = entry.trim().toLowerCase().replace(/\.$/, "");
+  return (held ?? []).filter((h) => h.name === name);
+}

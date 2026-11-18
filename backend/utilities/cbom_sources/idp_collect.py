@@ -19,6 +19,7 @@ import re
 import xml.etree.ElementTree as ET
 from typing import Any
 
+from backend.utilities.cbom_sources import algid
 from backend.utilities.cbom_sources.safe_fetch import FetchError, FetchTimeout, fetch, idp_private_allowlist
 
 _NS = {"md": "urn:oasis:names:tc:SAML:2.0:metadata", "ds": "http://www.w3.org/2000/09/xmldsig#"}
@@ -86,7 +87,15 @@ def cert_facts(der: bytes, source: str) -> tuple[str | None, int | None, dict[st
     from cryptography.hazmat.primitives.asymmetric import dsa, ec, ed448, ed25519, rsa
 
     cert = x509.load_der_x509_certificate(der)
-    key = cert.public_key()
+    key_oid = None
+    try:
+        key = cert.public_key()
+    except Exception:  # a key type cryptography cannot load (post-quantum, composites): named by its OID via algid (CB-04)
+        key = None
+        try:
+            key_oid = cert.public_key_algorithm_oid.dotted_string
+        except Exception:
+            key_oid = None
     if isinstance(key, rsa.RSAPublicKey):
         alg, bits, curve = "RSA", key.key_size, None
     elif isinstance(key, ec.EllipticCurvePublicKey):
@@ -97,10 +106,18 @@ def cert_facts(der: bytes, source: str) -> tuple[str | None, int | None, dict[st
         alg, bits, curve = "Ed448", 456, None
     elif isinstance(key, dsa.DSAPublicKey):
         alg, bits, curve = "DSA", key.key_size, None
-    else:
+    elif key is not None:
         alg, bits, curve = type(key).__name__, None, None
+    else:
+        ident = algid.resolve(key_oid) if key_oid else None
+        alg, bits, curve = (ident.name if ident is not None and ident.name else key_oid or "unknown"), (
+            ident.key_size if ident is not None else None), None
+    # the signature algorithm by its OID through algid (never cryptography's private _name, which an unknown
+    # algorithm leaves unset); the dotted OID when algid does not know it
     try:
-        sig = cert.signature_algorithm_oid._name  # e.g. sha256WithRSAEncryption
+        sig_oid = cert.signature_algorithm_oid.dotted_string
+        sig_ident = algid.resolve(sig_oid)
+        sig = sig_ident.name if sig_ident is not None and sig_ident.name else sig_oid
     except Exception:
         sig = None
     try:
@@ -120,6 +137,8 @@ def cert_facts(der: bytes, source: str) -> tuple[str | None, int | None, dict[st
         "self_signed": cert.subject == cert.issuer, "fingerprint_sha256": hashlib.sha256(der).hexdigest(),
         "source": source,
     }
+    if key_oid:
+        facts["key_alg_oid"] = key_oid
     return alg, bits, facts
 
 
@@ -164,7 +183,11 @@ def _oidc(url: str, label: str) -> tuple[list[dict[str, Any]], list[dict[str, An
             continue
         kty = str(key.get("kty") or "")
         bits = _b64url_int_bits(key["n"]) if kty == "RSA" and isinstance(key.get("n"), str) else _CRV_BITS.get(str(key.get("crv")))
-        algorithm = {"RSA": "RSA", "EC": "ECDSA", "OKP": str(key.get("crv") or "EdDSA")}.get(kty, kty or None)
+        algorithm = {"RSA": "RSA", "EC": "ECDSA", "OKP": str(key.get("crv") or "EdDSA")}.get(kty)
+        if algorithm is None:  # AKP (RFC 9964: a post-quantum key named by alg) and any other registered key type
+            ident = algid.jose(kty, key.get("alg"), key.get("crv"))
+            algorithm = ident.name if ident is not None and ident.name else (kty or None)
+            bits = ident.key_size if ident is not None else bits
         kid = str(key.get("kid") or "")[:128]
         key_where = f"{meta['jwks_uri'][:400]}#{kid}"
         signing = {"type": "signing_key", "target": label, "location": key_where,
@@ -293,12 +316,28 @@ def idp_test_verdict(out: dict[str, Any]) -> tuple[str, str]:
     return ("failed" if partial and not keys else "partial"), summary[:400]
 
 
+def _count_after_merge(targets: list[dict[str, Any]], origin: dict[int, dict[str, Any]],
+                       merged: list[dict[str, Any]]) -> None:
+    """Each document's ``assets`` = the rows it adds to what is stored (after ``merge_publications``), so the documents'
+    counts add up to the job's rows; the copies of rows an earlier document already published are its
+    ``already_found`` (staging QA B6-4: the ADFS test said 6 + 6 for 3 keys and 3 certificates)."""
+    kept = {id(a) for a in merged}
+    for target in targets:
+        target["assets"] = 0
+    for key, target in origin.items():
+        if key in kept:
+            target["assets"] += 1
+        else:
+            target["already_found"] += 1
+
+
 def collect_idp(cfg: dict[str, Any], label: str) -> dict[str, Any]:
     """Assets plus per-document target rows for one IdP source.  Never raises for a bad document.  A document read
     with certificates that could not be parsed is a ``partial`` target naming the parser's error."""
     started = _dt.datetime.utcnow()
     assets: list[dict[str, Any]] = []
     targets: list[dict[str, Any]] = []
+    origin: dict[int, dict[str, Any]] = {}  # id(asset) -> the target row of the document that published it
     for kind, url in discovery_urls(cfg):
         t0 = _dt.datetime.utcnow()
         try:
@@ -308,19 +347,22 @@ def collect_idp(cfg: dict[str, Any], label: str) -> dict[str, Any]:
             targets.append({"target": url, "status": "partial" if errors else "ok",
                             "error": (f"{len(errors)} certificate(s) {errors[0].removeprefix('certificate ')}"[:256]
                                       if errors else None),
-                            "assets": len(found),
+                            "assets": len(found), "already_found": 0,
                             "duration_ms": int((_dt.datetime.utcnow() - t0).total_seconds() * 1000)})
+            origin.update((id(a), targets[-1]) for a in found)
         except FetchError as exc:
             # A provider without one of the two documents (e.g. Okta has no tenant SAML metadata) is not a failure
             # of the whole source; it is listed, never silent.
             status = "timeout" if isinstance(exc, FetchTimeout) else "error"  # a timeout is never "not JSON" (C10a)
-            targets.append({"target": url, "status": status, "error": str(exc)[:256], "assets": 0,
+            targets.append({"target": url, "status": status, "error": str(exc)[:256], "assets": 0, "already_found": 0,
                             "duration_ms": int((_dt.datetime.utcnow() - t0).total_seconds() * 1000)})
             assets.append({"type": "coverage", "target": label, "location": url,
                            "facts": {"check": f"{kind.upper()} metadata", "status": status, "detail": str(exc)[:200]}})
+    merged = merge_publications(assets)
+    _count_after_merge(targets, origin, merged)
     ok = sum(1 for t in targets if t["status"] == "ok")
     partial = sum(1 for t in targets if t["status"] == "partial")
-    return {"assets": merge_publications(assets), "targets": targets,
+    return {"assets": merged, "targets": targets,
             "counts": {"total": len(targets), "ok": ok, "partial": partial, "failed": len(targets) - ok - partial,
                        "skipped": 0},
             "duration_s": int((_dt.datetime.utcnow() - started).total_seconds())}

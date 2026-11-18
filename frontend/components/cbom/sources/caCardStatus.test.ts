@@ -3,8 +3,8 @@
  * C8: the AD CS card said "Passed" for two days after its server was gone, then "Connected" next to "Failed".
  *     One status now comes from the newer of the last test and the last collection (backend `last_collect`,
  *     tests/test_cbom_ca_connectors_b3.py), and a result older than CA_STATUS_STALE_HOURS says "Not checked since ...".
- * C6: Keyfactor, DigiCert, Sectigo, Venafi and "other" have no collector: no API key is asked for, and the card says
- *     plainly that nothing is read from them.
+ * C6: "other" still has no collector: no key is asked for, and the card says nothing is read from it.
+ *     Venafi, Keyfactor, DigiCert and Sectigo ask only for the credential their collector sends.
  * Run: npx --yes tsx components/cbom/sources/caCardStatus.test.ts
  */
 import assert from "node:assert/strict"
@@ -75,9 +75,13 @@ assert.ok(/onNode\s*\?\s*\(\s*<CaStatusBadge status=\{worstCardStatus\(rowSource
 assert.ok(!/<TestStatusBadge status=\{source\.last_test_status\}/.test(cloud.slice(cloud.indexOf("function NodeTestLine"), cloud.indexOf("function CaDialog"))),
   "the node line no longer shows the raw last test next to a header status")
 
-// ---- C6: no key for a CA ZeroShield does not read
+// ---- "other" still has no collector. DigiCert asks for the API key the collector sends as X-DC-DEVKEY.
 const dialog = cloud.slice(cloud.indexOf("function CaDialog"), cloud.indexOf("function IdpDialog"))
-assert.ok(!dialog.includes("api_key") && !dialog.includes('id="ca-api-key"') && !dialog.includes("apiKey"), "no API key field, state or secret")
+assert.ok(dialog.includes('id="ca-api-key"') && dialog.includes("secrets.api_key = apiKey"), "DigiCert sends the API key")
+assert.ok(dialog.includes("secrets.password = password") && dialog.includes("config.client_id = clientId.trim()"), "Venafi sends the password and client id")
+assert.ok(dialog.includes("secrets.token = token") && dialog.includes('id="ca-keyfactor-token"'), "Keyfactor sends the bearer token")
+assert.ok(dialog.includes("config.customer_uri = customerUri.trim()"), "Sectigo sends the customer URI")
+assert.ok(dialog.includes('"other": no collector, so no key is asked for or sent'), "other still stores no key")
 assert.ok(cloud.includes(
   'const CLM_NOT_COLLECTED = "Not collected: ZeroShield has no connector for this product yet. Nothing is read from it, no key is needed and it is never charged; only its name and API address are saved. Certificates it issued are found where other sources see them: network TLS scans, Certificate Transparency and cloud accounts.";'))
 assert.ok(cloud.includes('<StatusBadge tone="zinc">Not collected</StatusBadge>'), "the row says it is not collected, not Connected")

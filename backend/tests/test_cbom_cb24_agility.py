@@ -54,10 +54,11 @@ def test_every_kb_code_has_a_fix_class_and_the_table_justifies_every_row():
 def test_reviewed_counts_and_capability_codes_match_the_plan():
     table = json.loads(TABLE.read_text())
     count = {ns: {c: sum(1 for r in table[ns].values() if r["class"] == c) for c in AG.CLASSES} for ns in ("node", "code")}
-    assert count["node"] == {"configurable": 117, "code-fixed": 0, "vendor-fixed": 9, "hardware-fixed": 1}  # +3 CT (#112), +2 KMS material (CB-33)
+    assert count["node"] == {"configurable": 123, "code-fixed": 0, "vendor-fixed": 9, "hardware-fixed": 1}  # +3 CT (#112), +2 KMS material (CB-33), +3 cert validity (CB-17), +3 legacy suites (CB-34)
     # review B (PR #113): code WEAK_PROTOCOL / WEAK_CIPHER_SUITE -> code-fixed (CL-3 for config files),
     # KNOWN_TLS_VULNERABILITY -> configurable capability (CL-4 for Heartbleed)
-    assert count["code"] == {"configurable": 16, "code-fixed": 17, "vendor-fixed": 0, "hardware-fixed": 0}
+    # +2 code-fixed: STATIC_SALT, WEAK_KDF_ITERATIONS (CB-27); +1: WEAK_RSA_EXPONENT (CB-28)
+    assert count["code"] == {"configurable": 16, "code-fixed": 20, "vendor-fixed": 0, "hardware-fixed": 0}
     caps = {(ns, c) for ns in table if ns in ("node", "code") for c, r in table[ns].items() if r["capability"]}
     assert caps == {("node", c) for c in ("IKE_NO_PQ", "NO_PQ_KEX", "NO_TLS12", "QUANTUM_VULNERABLE",
                                           "SSH_NO_PQ_KEX")} | {("code", "QUANTUM_VULNERABLE"),

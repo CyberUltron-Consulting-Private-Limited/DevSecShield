@@ -10,6 +10,9 @@ export interface HeatCell {
   count: number;
   worst: HeatImpact;
   by_impact: Record<string, number>;
+  /** run heat-map with metric=grade (CB-19 PR-3): assets per quantum risk grade and the worst known grade */
+  by_grade?: Record<string, number>;
+  worst_grade?: string | null;
 }
 
 export interface HeatData {
@@ -82,10 +85,19 @@ export interface CodeHeatRow {
   algorithm_name?: string | null;
   asset_type?: string | null;
   algorithm_type?: string | null;
+  /** Repository path of a code-scan row. The "source" column of the heat-map. */
+  location?: string | null;
   impact?: string | null;
   finding_codes?: string[] | null;
   weak?: boolean | null;
   quantum_vulnerable?: boolean | null;
+}
+
+/** File path of a code-scan row, without a trailing :line, used as the heat-map source column. */
+export function codeSourceColumn(row: CodeHeatRow): string {
+  const raw = String(row.location || "").trim();
+  const file = raw.replace(/:\d+(?::\d+)?$/, "");
+  return file || "repository";
 }
 
 /** Mirrors cbom_rows.is_finding: legacy rows (no finding_codes) are findings; clean inventory is not. */
@@ -95,13 +107,15 @@ export function isFindingRow(row: CodeHeatRow): boolean {
   return row.weak === true || row.quantum_vulnerable === true;
 }
 
-/** Algorithm family x asset type for a code scan, counted by worst impact (inventory counts as "none"). */
-export function codeHeatmap(rows: CodeHeatRow[]): HeatData {
+/** Algorithm family × source file (or asset type) for a code scan, counted by worst impact.
+ * Inventory counts as "none". `by` defaults to asset type so existing callers stay stable. */
+export function codeHeatmap(rows: CodeHeatRow[], by: "source" | "type" = "type"): HeatData {
   const cells = new Map<string, HeatCell>();
   const colCount = new Map<string, number>();
   for (const row of rows) {
-    const column = String(row.asset_type || row.algorithm_type || "other");
-    const family = algorithmFamily([row.algorithm_name, row.title], column);
+    const assetType = String(row.asset_type || row.algorithm_type || "other");
+    const column = by === "source" ? codeSourceColumn(row) : assetType;
+    const family = algorithmFamily([row.algorithm_name, row.title], assetType);
     const impact = (isFindingRow(row) ? (IMPACT_ORDER.includes(row.impact as HeatImpact) ? row.impact : "Low") : "none") as HeatImpact;
     const key = `${family}\u0000${column}`;
     const cell = cells.get(key) ?? { row: family, column, count: 0, worst: "none" as HeatImpact,
@@ -157,6 +171,39 @@ export function monthGrid(year: number, month: number): (Date | null)[][] {
   const weeks: (Date | null)[][] = [];
   for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
   return weeks;
+}
+
+export interface CertPlace {
+  target?: string | null;
+  location?: string | null;
+}
+
+// "host:port" or "[v6]:port", optionally followed by "#chain[i]" (scan node network/database/kmip collectors emit
+// target = the IP, location = "<ip>:<port>#chain[<i>]").
+const ENDPOINT = /^((?:\[[^\]\s]+\]|[^\s/:#[\]]+):\d{1,5})(?:#.*)?$/;
+
+/** Where a certificate was seen, as the expiry list shows it: host:port for a certificate read from an endpoint (so
+ * one certificate on 443 and 8443 reads as two places), otherwise the source label (target) or its location. */
+export function certWhere(c: CertPlace): string | null {
+  const endpoint = ENDPOINT.exec(String(c.location ?? "").trim());
+  if (endpoint) return endpoint[1];
+  return c.target || c.location || null;
+}
+
+/** Identity of one expiry-list entry: the same certificate (subject, issuer, expiry) at the same place. */
+export function certDedupeKey(c: CertPlace & { subject?: string | null; name?: string | null; issuer?: string | null; not_after: string | null }): string {
+  return [c.subject || c.name || "", c.issuer || "", parseExpiry(c.not_after)?.toISOString() ?? "", certWhere(c) ?? ""].join("\u0000");
+}
+
+/** Drops only true duplicates (same key), keeping the first and the original order. */
+export function dedupeCerts<T extends CertPlace & { subject?: string | null; name?: string | null; issuer?: string | null; not_after: string | null }>(certs: T[]): T[] {
+  const seen = new Set<string>();
+  return certs.filter((c) => {
+    const key = certDedupeKey(c);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 export function groupByDay<T extends { not_after: string | null }>(certs: T[]): Map<string, T[]> {

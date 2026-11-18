@@ -370,7 +370,9 @@ def test_empty_run_and_coverage_only_run(api, world):
     _src, run, _c, _h = _run_with(api, engine, [PROBE[-1]])
     out = _results(api, run["id"])
     card = out["dashboard"]["card_data"]
-    assert card["total_crypto_assets"] == 0 and card["quantum_readiness_score"] == 0
+    # nothing judged: no percentage (null, not 0 %), with posture's reason (staging QA round 4, finding C)
+    assert card["total_crypto_assets"] == 0 and card["quantum_readiness_score"] is None
+    assert card["quantum_readiness_status"] == "nothing_judged"
     assert card["quantum_readiness_judged"] is False and out["distributions"]["pqc"]["readiness_pct"] is None
     assert out["dashboard"]["severity_distribution"] == {"critical": 0, "high": 0, "medium": 0, "low": 0,
                                                          "informational": 0}

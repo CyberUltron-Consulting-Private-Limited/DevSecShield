@@ -40,6 +40,7 @@ from backend.utilities.cbom_sources.sshca import keywrap as KW
 from backend.utilities.cbom_sources.sshca import registry as R
 from backend.utilities.cbom_sources.sshca import sources as SRC
 from backend.utilities.cbom_sources.sshca import trust as T
+from backend.utilities.cbom_sources.sshca.fetch_script import trust_fetch_script
 from backend.utilities.cbom_sources.sshca.models import CbomSshCa, CbomSshCertIssued
 
 router = APIRouter(tags=["cbom-ssh-ca"], route_class=flags.route_class())
@@ -58,7 +59,8 @@ class _Strict(BaseModel):
 
 class CaCreate(_Strict):
     name: str = Field(min_length=1, max_length=64)
-    provider: Literal["builtin", "vault"] = "builtin"
+    provider: Literal["builtin", "vault", "node"] = "builtin"
+    public_key: str | None = Field(default=None, max_length=8192)  # node (#61): the CA key on the scan node
     key_alg: Literal["ed25519", "ecdsa-p256"] = "ed25519"
     key_wrap: Literal["fernet", "aws_kms"] | None = None
     kms_key: str | None = Field(default=None, max_length=2048)  # a label from kms_keys (or, for operators, the ARN)
@@ -210,7 +212,8 @@ SSHD_TEMPLATE = """# ZeroShield CBOM: scan sessions with short-lived SSH certifi
 # "Fetch script"), run as root from a systemd timer every few minutes with a trust token of this team. It asks
 # ZeroShield only for what changed (ETag), writes each file atomically, never installs an empty or unreadable
 # revocation list (it keeps the old file instead), then checks `sshd -t` and reloads sshd. Rotation, promotion and
-# revocation reach the server on its next run. Salt, Ansible and SSM installers: GitHub issue #{installer_issue}.
+# revocation reach the server on its next run. Salt, Ansible and SSM install this script from the fleet
+# artifacts sshca-trust-salt, sshca-trust-ansible and sshca-trust-ssm, and run it every 5 minutes with jitter.
 #
 #   /etc/ssh/zs-cbom/trusted_user_ca_keys   TrustedUserCAKeys (next, active and recently retired CA keys)
 #   /etc/ssh/zs-cbom/revoked.krl            RevokedKeys (OpenSSH KRL); sshd refuses EVERY key for zs-cbom while it is
@@ -232,62 +235,6 @@ Match User zs-cbom
     X11Forwarding no
     PermitTunnel no
     PermitUserRC no
-"""
-INSTALLER_ISSUE = 83  # F1.3 track: Salt state, Ansible role and SSM document that install these files
-
-TRUST_FETCH_TEMPLATE = r"""#!/bin/sh
-# ZeroShield CBOM: keep this server's SSH CA trust current (team {team_id}). Run as root from a timer, e.g. every 5
-# minutes with a random delay (systemd: OnUnitActiveSec=5min, RandomizedDelaySec=120). POSIX sh + curl + ssh-keygen.
-#   ZS_TRUST_TOKEN  a trust token of this team (CBOM Sources > Fleet > SSH CA > Trust tokens); keep it in a 0600 file
-#   ZS_URL          ZeroShield's API address (the one the scan nodes use, e.g. https://api.<your ZeroShield domain>)
-#   ZS_GROUPS       this server's group(s), space separated (principals zs-{team_id}-<group>)
-#   ZS_DIR          default /etc/ssh/zs-cbom;  ZS_RELOAD  default "systemctl reload ssh || systemctl reload sshd"
-# It never installs an empty or unreadable file: on any failure it keeps the old one and exits non-zero.
-set -u
-umask 022
-: "${{ZS_TRUST_TOKEN:?set ZS_TRUST_TOKEN}}"
-URL="${{ZS_URL:?set ZS_URL to ZeroShield's API address}}"
-DIR="${{ZS_DIR:-/etc/ssh/zs-cbom}}"
-GROUPS_Q=""
-for g in ${{ZS_GROUPS:-}}; do GROUPS_Q="${{GROUPS_Q}}${{GROUPS_Q:+&}}group=${{g}}"; done
-NAME="$(hostname -f 2>/dev/null || hostname)"
-mkdir -p "$DIR/principals" "$DIR/.etag" || exit 1
-changed=0
-fail=0
-
-# fetch <path> <file> <check>: conditional GET (If-None-Match), atomic replace after <check> accepted the new file
-fetch() {{
-  path="$1"; dest="$2"; check="$3"; tag="$DIR/.etag/$(basename "$dest")"
-  tmp="$(mktemp "$dest.new.XXXXXX")" || return 1
-  hdr="$(mktemp "$dest.hdr.XXXXXX")" || {{ rm -f "$tmp"; return 1; }}
-  set -- -sS --fail --max-time 30 -D "$hdr" -o "$tmp" -H "X-ZS-Trust-Token: $ZS_TRUST_TOKEN" -H "X-ZS-Fetcher: $NAME"
-  if [ -s "$dest" ] && [ -s "$tag" ]; then set -- "$@" -H "If-None-Match: $(cat "$tag")"; fi
-  code="$(curl "$@" -w '%{{http_code}}' "$URL/cbom/ssh-ca-trust$path")"  # with --fail: 4xx/5xx exit non-zero
-  [ -n "$code" ] || code=000
-  if [ "$code" = 304 ]; then rm -f "$tmp" "$hdr"; return 0; fi
-  if [ "$code" != 200 ] || [ ! -s "$tmp" ] || ! $check "$tmp"; then
-    echo "zs-trust-fetch: $path: HTTP $code or an unusable file; keeping $dest" >&2
-    rm -f "$tmp" "$hdr"; return 1
-  fi
-  chmod 0644 "$tmp" && mv -f "$tmp" "$dest" || {{ rm -f "$tmp" "$hdr"; return 1; }}
-  sed -n 's/^[Ee][Tt][Aa][Gg]: *//p' "$hdr" | tr -d '\r' > "$tag"
-  rm -f "$hdr"; changed=1
-}}
-keys_ok() {{ grep -Eq '^(ssh-|ecdsa-|sk-)' "$1" || ! grep -qv '^#' "$1"; }}  # keys, or only comments (no CA)
-krl_ok() {{ ssh-keygen -Q -l -f "$1" >/dev/null 2>&1; }}
-text_ok() {{ head -c 1 "$1" >/dev/null; }}
-
-fetch /trusted-keys "$DIR/trusted_user_ca_keys" keys_ok || fail=1
-fetch /revoked "$DIR/revoked.krl" krl_ok || fail=1
-fetch "/principals${{GROUPS_Q:+?}}$GROUPS_Q" "$DIR/principals/zs-cbom" text_ok || fail=1
-if [ "$changed" = 1 ]; then
-  if sshd -t; then
-    sh -c "${{ZS_RELOAD:-systemctl reload ssh || systemctl reload sshd}}" || fail=1
-  else
-    echo "zs-trust-fetch: sshd -t failed; sshd was not reloaded" >&2; fail=1
-  fi
-fi
-exit "$fail"
 """
 
 
@@ -315,9 +262,9 @@ async def template(team_id: TeamId, name: Literal["sshd-config", "principals", "
     if group is not None and not _GROUP.match(group):
         raise HTTPException(status_code=400, detail="group: lowercase letters, digits and . _ -")
     if name == "sshd-config":
-        return Response(SSHD_TEMPLATE.format(team_id=team_id, installer_issue=INSTALLER_ISSUE), headers=TEXT)
+        return Response(SSHD_TEMPLATE.format(team_id=team_id), headers=TEXT)
     if name == "trust-fetch":  # no request data in the script (the API address is the server's ZS_URL)
-        return Response(TRUST_FETCH_TEMPLATE.format(team_id=int(team_id)), headers=TEXT)
+        return Response(trust_fetch_script(int(team_id)), headers=TEXT)
     return Response(await _run("template", team_id, _principals_template, engine, team_id, group), headers=TEXT)
 
 

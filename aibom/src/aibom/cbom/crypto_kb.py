@@ -139,6 +139,86 @@ def entry(namespace: str, code: str) -> dict[str, Any] | None:
     return (load().get("findings") or {}).get(namespace, {}).get(code)
 
 
+NOT_RECORDED = (
+    "Cited for review: this clause applies to specific algorithms, and the algorithm "
+    "behind the finding was not recorded for this asset: verify which one it uses."
+)
+_NAME_SPLIT = re.compile(r"[\s,;/()]+")
+
+
+def evidence_names(evidence: Any) -> list[str]:
+    """The algorithm names a clause rule reads: a string is one name (or, for a
+    code-scan finding, the scanner's own sentence about its algorithm), a list holds
+    one name each; None or nothing is "not recorded" ([])."""
+    if evidence is None:
+        return []
+    items = [evidence] if isinstance(evidence, str) else list(evidence)
+    return [str(i).strip() for i in items if i is not None and str(i).strip()]
+
+
+def rule_matches(rule: dict[str, Any], names: Any) -> bool:
+    """Whether a ``clause_rules`` rule matches one of the names. The pattern is
+    searched in each name and in each part of it ("3DES (IKEv1)", "PFS MODP-1024",
+    "one of DES/3DES" are read part by part, so a pattern anchored on one algorithm
+    name, such as the classifier's own lists, matches too); a part that matches
+    ``unless`` never counts."""
+    pattern = re.compile(rule["match"], re.IGNORECASE)
+    unless = re.compile(rule["unless"], re.IGNORECASE) if rule.get("unless") else None
+    for name in evidence_names(names):
+        for part in dict.fromkeys([name, *_NAME_SPLIT.split(name)]):
+            if part and pattern.search(part) and not (unless and unless.search(part)):
+                return True
+    return False
+
+
+def has_clause_rules(namespace: str, code: str) -> bool:
+    return bool((entry(namespace, code) or {}).get("clause_rules"))
+
+
+def clauses_for(
+    namespace: str, code: str, evidence: Any = None
+) -> list[dict[str, Any]]:
+    """The regulatory clauses one finding breaks (or whose obligation it triggers),
+    as {key, framework, id, text, source, note?, evidence?}: the entry's own
+    ``clauses``, plus those of every ``clause_rules`` rule the evidence matches,
+    e.g. NIST TDEA only when the evidence names Triple DES.
+
+    ``evidence`` is algorithm names only (#289): for a collected asset, the
+    algorithms the classifier flagged for the code; never the asset's name,
+    location or finding sentence (a host called "des3-gw" is no Triple DES). When
+    no algorithm was recorded (None, "" or []) the rules cannot decide: their
+    clauses are cited with ``evidence: "not_recorded"`` and a note, never dropped.
+
+    Never a whole compliance area: an area groups clauses for the NIST SP 800-53
+    control families, and a finding does not inherit the other clauses of its area
+    (#269: an SSH CBC cipher is not "PKCS#1 v1.5 padding disallowed")."""
+    e = entry(namespace, code)
+    if not e:
+        return []
+    catalog = load().get("clauses") or {}
+    names = evidence_names(evidence)
+    keys = list(e.get("clauses") or [])
+    unrecorded: list[str] = []
+    for rule in e.get("clause_rules") or []:
+        if not names:
+            unrecorded += [k for k in rule["clauses"] if k not in keys]
+        elif rule_matches(rule, names):
+            keys += rule["clauses"]
+    notes = e.get("clause_notes") or {}
+    out = []
+    for key in dict.fromkeys(keys + unrecorded):
+        if key not in catalog:
+            continue
+        ref = {**catalog[key], "key": key}
+        if notes.get(key):
+            ref["note"] = notes[key]
+        if key in unrecorded and key not in keys:
+            ref["evidence"] = "not_recorded"
+            ref["note"] = NOT_RECORDED + (" " + ref["note"] if ref.get("note") else "")
+        out.append(ref)
+    return out
+
+
 # ------------------------------------------------------------------------------------------------ CVEs and mapping
 def cve(cve_id: str) -> dict[str, Any] | None:
     return (load().get("cves") or {}).get(cve_id)
@@ -206,9 +286,17 @@ def _safe_value(kind: str, value: Any) -> str | None:
         return text if text.isdigit() and len(text) <= 6 else None
     if kind == "host":
         if not text.isascii():
+            # IDNA 2008 (UTS #46, non-transitional), the same rule as stored host names. Python's codec
+            # is IDNA 2003 and would turn faß.lab into fass.lab in a command the customer pastes.
+            import unicodedata
+
+            import idna
+            folded = unicodedata.normalize("NFC", text.strip().rstrip("."))
+            if "\u200c" in folded or "\u200d" in folded:
+                return None
             try:
-                text = ".".join(p.encode("idna").decode("ascii") if p else p for p in text.split("."))
-            except UnicodeError:
+                text = idna.encode(folded, uts46=True, transitional=False).decode("ascii")
+            except (idna.IDNAError, UnicodeError):
                 return None
         allowed = r"[A-Za-z0-9.\-:\[\]]+"
     elif kind in ("name", "resource"):
@@ -241,17 +329,27 @@ def _remediation_for(e: dict[str, Any], title: str) -> dict[str, Any]:
     return e["remediation"]
 
 
+def _clause_names(code: str, given: dict[str, Any] | None, fields: tuple) -> Any:
+    if given is not None:
+        return given.get(code)
+    return [p for p in fields if p]
+
+
 def render(namespace: str, codes: list[str], *, context: dict[str, Any] | None = None, evidence: str = "",
-           texts: dict[str, str] | None = None, title: str = "") -> list[dict[str, Any]]:
+           texts: dict[str, str] | None = None, title: str = "",
+           clause_evidence: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """Full explanation for each finding code on one asset, with commands filled in from the asset's context.
 
     context: host / port / path / name / location / resource / line of the asset. texts: the asset-specific sentence
     the classifier wrote for each code. title: the finding's title (algorithm name), which picks the specific fix.
+    clause_evidence: code -> the algorithm names its compliance clauses are decided
+    on (``clauses_for``). A collected asset passes it: its name and sentences never
+    decide a clause (#289). Without it, the code-scan finding's title, evidence and
+    texts are used.
     Unknown codes are skipped (coverage notes are not findings).
     """
     context = context or {}
     kb = load()
-    compliance = kb.get("compliance") or {}
     cwe_names = kb.get("cwe") or {}
     out = []
     for code in codes:
@@ -273,7 +371,8 @@ def render(namespace: str, codes: list[str], *, context: dict[str, Any] | None =
             "owasp_2025": e.get("owasp_2025") or [],
             "cves": cves_for(namespace, code, evidence),
             "standards": e.get("standards") or [],
-            "compliance": [ref for key in e.get("compliance") or [] for ref in compliance.get(key) or []],
+            "compliance": clauses_for(namespace, code, _clause_names(
+                code, clause_evidence, (title, evidence, (texts or {}).get(code)))),
             "remediation": _remediation_for(e, title),
             "verify": [{"label": v["label"], "command": _fill(v["command"], context)} for v in e.get("verify") or []],
             "references": e.get("references") or [],

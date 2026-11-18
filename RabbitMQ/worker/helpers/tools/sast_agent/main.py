@@ -64,7 +64,7 @@ class SASTAgent(BaseAgent):
                     default_exclude_path_arrays = [["vendor"], ["node_modules"], [".composer"]]
                 case "c":
                     include_files_extensions = [".c"]
-                    default_exclude_path_arrays = [["build"], ["bin"], ["obj"], ["cmake-build-"]]
+                    default_exclude_path_arrays = [["build"], ["bin"], ["obj"], ["cmake-build-*"]] # patterns match whole names: cmake-build-debug, cmake-build-release
                 case "ruby":
                     include_files_extensions = [".rb"]
                     default_exclude_path_arrays = [["vendor"], ["tmp"], [".bundle"], ["node_modules"]]

@@ -4,12 +4,14 @@ This module is the single source of truth: the backend shows customers the same 
 login user without sudo, Tier 2 runs through ``sudo -n`` and must match the ``zs-cbom`` sudoers file line for
 line).  A test in the backend compares these strings with the sudoers template and the UI list.
 
-``<file>`` is only ever a path printed by the Tier 2 key/certificate ``find``.  It must be absolute, contain no
+``<file>`` is only ever a path printed by the Tier 2 key/certificate ``find``, or one named by sshd's HostKey or
+Include lines (#116).  It must be absolute, contain no
 control characters, and is passed through ``shlex.quote``.  Tier 1 commands run with a fixed ``PATH`` and
 ``LC_ALL=C`` (so a writable ``/usr/local/bin`` cannot hijack them) and with stdin closed.
 """
 from __future__ import annotations
 
+import re
 import shlex
 
 # Prefix for every Tier 1 command: fixed PATH, C locale, stdin closed (passphrase prompts get EOF, never hang).
@@ -24,6 +26,22 @@ CRYPTO_POLICY = "cat /etc/crypto-policies/config"
 FIPS = "cat /proc/sys/crypto/fips_enabled"
 OPENSSL_VERSION = "openssl version -a"
 SSHD_CONFIG = "cat /etc/ssh/sshd_config"
+# A file (or wildcard pattern) named by an Include line of sshd_config (#116), resolved against /etc/ssh like sshd
+# does.  Only files under /etc/ssh/ are read (``include_allowed``), so this never becomes a general "cat": an Include
+# elsewhere is left to Tier 2 (sshd -T).  A plain path is shlex-quoted; a pattern with * or ? is passed unquoted so
+# the shell expands it, and only when it is made of [A-Za-z0-9._/*?+-] (nothing the shell would run or substitute).
+SSHD_INCLUDE = "cat {file}"
+INCLUDE_PATTERN = re.compile(r"/[A-Za-z0-9._/*?+-]+")  # fullmatch: a wildcard Include that may go unquoted
+
+
+def include_allowed(path: str) -> bool:
+    """``path`` (a file or wildcard pattern, unquoted) is one SSHD_INCLUDE may read: under /etc/ssh/, no ``..``
+    component, no control characters, and a wildcard only within INCLUDE_PATTERN."""
+    if not path.startswith("/etc/ssh/") or ".." in path.split("/") or re.search(r"[\x00-\x1f\x7f]", path):
+        return False
+    return not any(c in path for c in "*?[") or bool(INCLUDE_PATTERN.fullmatch(path))
+
+
 PROCESSES = "ps -eo pid=,comm="
 HOST_KEY_TYPES = ("rsa", "ecdsa", "ed25519", "dsa")
 # Per-file commands; {file} is a shlex-quoted absolute path from the Tier 2 find.
@@ -62,7 +80,9 @@ TIER1_DISPLAY = [
     FIPS,
     OPENSSL_VERSION,
     SSHD_CONFIG,
+    SSHD_INCLUDE.format(file="<file named by an sshd_config Include line>"),
     "ssh-keygen -l -f /etc/ssh/ssh_host_<type>_key.pub",
+    SSH_KEY_FINGERPRINT.format(file="<path named by a HostKey line>.pub"),
     PROCESSES,
     CERTS_IN_FILE.format(file="<file>"),
     PUBLIC_HALF_OF_KEY.format(file="<file>"),

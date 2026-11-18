@@ -44,9 +44,12 @@ console.log("quantumFilter tests passed");
   assert.equal(quantumCounts([library]).readinessPct, null, "nothing judged is n/a, not 0 %");
   assert.equal(quantumCounts([aesGcm, aesGcm, rsa1024]).readinessPct, 66.7);
   const charts = fs.readFileSync(path.join(__dirname, "CbomCryptoCharts.tsx"), "utf8");
-  assert.ok(charts.includes("<PqcReadinessGauge pqc={distributions.pqc} rows={inventory ?? findings} />"),
+  assert.ok(charts.includes("<PqcReadinessGauge pqc={distributions.pqc} rows={inventory ?? findings} scope={readinessScope} />"),
     "gauge counts every row of the scan (findings when the page has no row list)");
-  assert.ok(charts.includes("Broken today: {broken}"), "gauge legend lists Broken today");
+  // the gauge (PqcReadinessGauge.tsx since QA round 4) counts those rows with quantumCounts on a code scan
+  const gauge = fs.readFileSync(path.join(__dirname, "PqcReadinessGauge.tsx"), "utf8");
+  assert.ok(gauge.includes('scope === "code" && rows && rows.length > 0 ? quantumCounts(rows) : null'));
+  assert.ok(gauge.includes("Broken today: {broken}"), "gauge legend lists Broken today");
 }
 console.log("quantumCounts tests passed");
 
@@ -77,8 +80,13 @@ console.log("quantumCounts tests passed");
   const results = fs.readFileSync(path.join(__dirname, "..", "CbomResults.tsx"), "utf8");
   assert.ok(results.includes("const allRows = useMemo(() => inventoryRows(data, findingsList ?? []), [data, findingsList]);"));
   // CB-38: one template for code scans and Sources runs; a code scan still hands every row to the gauge (a run passes
-  // none: its gauge reads the run posture, Rule P)
-  assert.ok(results.includes("inventory={run ? [] : allRows}"), "the results page hands every row to the gauge");
+  // none: its gauge reads the run posture, Rule P). Since the results redesign the run's charts are in its views.
+  assert.ok(results.includes("inventory={allRows}"), "the results page hands every row to the gauge");
+  const views = path.join(__dirname, "results", "views");
+  for (const f of fs.readdirSync(views).filter((n) => n.endsWith(".tsx"))) {
+    const src = fs.readFileSync(path.join(views, f), "utf8");
+    if (src.includes("<CbomCryptoCharts")) assert.ok(src.includes("inventory={[]}") && src.includes("findings={[]}"), `${f}: a run hands no rows to the gauge`);
+  }
 }
 // review M1 (#135): the Quantum readiness charts draw every verdict the backend sends, Broken today included
 {

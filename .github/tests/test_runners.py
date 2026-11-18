@@ -1,5 +1,6 @@
 """Every job runs on the self-hosted runners (label dss-vm) except a fork's pull request, which gets GitHub's
-ubuntu-latest, and the arm64 image builds (deploy/staging/README.md, "Self-hosted runners").
+ubuntu-latest, the arm64 image builds, and the Certificate Transparency live proof (deploy/staging/README.md,
+"Self-hosted runners").
 Run: python3 -m unittest discover -s .github/tests -v
 """
 
@@ -34,7 +35,17 @@ class Runners(unittest.TestCase):
         found = runs_on()
         self.assertGreater(len(found), 20)
         for name, n, value in found:
+            if name == "cbom-ct-live.yml":
+                self.assertEqual(value, "ubuntu-latest", f"{name}:{n} runs-on: {value}")
+                continue
             self.assertIn(value, ALLOWED, f"{name}:{n} runs-on: {value}")
+
+    def test_ct_live_stays_off_the_shared_runner_address(self):
+        # Cert Spotter counts queries per source address. dss-vm is one address for every job, and the quota job
+        # spends it, so a same-repo pull request on dss-vm cannot compare collector rows with the provider.
+        text = (WORKFLOWS / "cbom-ct-live.yml").read_text(encoding="utf-8")
+        runs = [line.strip() for line in text.splitlines() if line.startswith("    runs-on:")]
+        self.assertEqual(runs, ["runs-on: ubuntu-latest"] * 4)
 
     def test_only_the_arm64_builds_name_a_github_runner(self):
         text = (WORKFLOWS / "publish-ghcr.yml").read_text(encoding="utf-8")

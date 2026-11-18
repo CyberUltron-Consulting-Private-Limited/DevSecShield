@@ -288,7 +288,7 @@ def test_floors_file_is_valid_and_every_target_has_an_owner():
     doc = floors.load(D1 / "floors.json")
     assert doc["version"] >= 1
     targets = [f for f in doc["floors"] if f["kind"] == "target"]
-    assert targets and {f["owner"] for f in targets} == {"CB-27", "CB-28", "CB-29"}
+    assert targets and {f["owner"] for f in targets} == {"CB-27"}  # CB-28 and CB-29 met: floors now
     assert {f["bench"] for f in doc["floors"]} <= {"cryptoapi-bench", "owasp-benchmark", "corpus", "libraries"}
 
 
@@ -315,10 +315,11 @@ def test_score_is_deterministic(tmp_path):
 
 
 def test_an_unmapped_product_code_stops_the_lane(tmp_path):
-    work = mini_work(tmp_path, extra_cab_rows=[row("G.java", 3, ["STATIC_SALT"], "salt")])
+    # (STATIC_SALT was the example until CB-27 gave it a codemap row)
+    work = mini_work(tmp_path, extra_cab_rows=[row("G.java", 3, ["NOT_A_MAPPED_CODE"], "salt")])
     fpath = tmp_path / "floors.json"
     fpath.write_text(json.dumps(floors_doc([])))
-    with pytest.raises(LaneError, match="not in codemap.json.*STATIC_SALT"):
+    with pytest.raises(LaneError, match="not in codemap.json.*NOT_A_MAPPED_CODE"):
         cli.score(work, fpath, D1 / "codemap.json", "x")
 
 
@@ -353,23 +354,27 @@ def corpus_floors() -> dict:
     return doc
 
 
-def test_corpus_targets_fail_on_todays_product_and_floors_hold():
-    """Failing-first (CB-07): on dev's code-lane output (baseline/observed-corpus.json, dev 3df26fd) every CB-28 and
-    CB-29 target fails and every non-regression floor holds."""
+def test_corpus_floors_hold_on_todays_product():
+    """On the baseline product (baseline/observed-corpus.json, the CB-28 build) every corpus and library floor holds.
+    CB-28 met its four corpus targets (N6, N8, N10-N12, C3, C4, C7, T5, T7, K1, K2 hit; NFP1 no longer a false
+    positive) and they are non-regression floors now; CB-29's library row was the first."""
     rows = observed.load(D1 / "baseline" / "observed-corpus.json", "corpus")["rows"]
     res, extras = corpus_results(rows, OSV_TODAY)
     ev = {e["id"]: e for e in floors.evaluate(corpus_floors(), res, extras)}
-    targets = [e for e in ev.values() if e["kind"] == "target"]
-    assert len(targets) == 5 and all(e["status"] == "expected-fail" for e in targets)
+    assert not [e for e in ev.values() if e["kind"] == "target"]
     assert all(e["status"] == "pass" for e in ev.values() if e["kind"] == "non-regression")
-    assert ev["T28-dotnet-trustall-fp"]["observed"] == 0.0 and ev["T29-libraries"]["observed"] == 0.0
+    assert ev["T28-dotnet-trustall-fp"]["observed"] == 1.0 and ev["T29-libraries"]["observed"] == 1.0
 
 
 def test_a_met_target_fails_the_lane_until_it_becomes_a_floor():
+    """A target the product meets is UNEXPECTED-PASS and fails the lane: CB-28's NFP1 row, put back as a target."""
     rows = observed.load(D1 / "baseline" / "observed-corpus.json", "corpus")["rows"]
-    rows = [r for r in rows if not (r["location"] == "dotnet/Crypto.cs" and r["line"] == 16)]  # CB-28 removes the FP
     res, extras = corpus_results(rows, OSV_TODAY)
-    ev = {e["id"]: e for e in floors.evaluate(corpus_floors(), res, extras)}
+    doc = corpus_floors()
+    for f in doc["floors"]:
+        if f["id"] == "T28-dotnet-trustall-fp":
+            f["kind"], f["owner"] = "target", "CB-28"
+    ev = {e["id"]: e for e in floors.evaluate(doc, res, extras)}
     assert ev["T28-dotnet-trustall-fp"]["status"] == "unexpected-pass"
     assert floors.verdict(list(ev.values())) == "fail"
 
@@ -386,8 +391,9 @@ def test_a_lost_detection_or_a_new_false_positive_fails_a_floor():
 
 @pytest.mark.skipif(not os.environ.get("D1_WORK"), reason="needs the fetched benchmarks: D1_WORK=<d1.py prepare --work>")
 def test_benchmark_targets_fail_on_todays_product():
-    """Failing-first on the public benchmarks: with dev's code-lane output (baseline/, dev 3df26fd) every CB-27 target
-    fails, e.g. the BB cases of static IV 0/1, static salts 0/1, seeds 0/2, and every non-regression floor holds."""
+    """On the baseline product (baseline/, the CB-27 build) every target still open fails and every non-regression
+    floor holds. CB-27 met the BB targets for static IV, static salts and seeds: 1/1, 1/1, 2/2 here (0/1, 0/1, 0/2 on
+    dev 3df26fd, when they were targets)."""
     work = Path(os.environ["D1_WORK"])
     res = {}
     for bench in ("cryptoapi-bench", "owasp-benchmark"):
@@ -401,7 +407,7 @@ def test_benchmark_targets_fail_on_todays_product():
     assert all(e["status"] == "pass" for e in ev.values() if e["kind"] == "non-regression")
     bb = {c: judge.metrics(judge.select(res["cryptoapi-bench"], {"complexity": "basis-benchmark", "category": c}),
                            "matched") for c in ("staticinitializationvector", "staticsalts", "predictableseeds")}
-    assert [(m["tp"], m["vulnerable"]) for m in bb.values()] == [(0, 1), (0, 1), (0, 2)]
+    assert [(m["tp"], m["vulnerable"]) for m in bb.values()] == [(1, 1), (1, 1), (2, 2)]
 
 
 # ------------------------------------------------------------------------------------------------ review 5878689101
@@ -513,8 +519,9 @@ def test_a_detector_on_the_empty_check_server_trusted_counts_for_j9():
     its trust-manager cases by that method); the comment and the anonymous class are on line 57. A correct CB-27
     detector reporting line 59 is a hit, not a new extra."""
     rows = observed.load(D1 / "baseline" / "observed-corpus.json", "corpus")["rows"]
-    rows = rows + [row("java/src/main/java/com/bank/Crypto.java", 59, ["TLS_VERIFICATION_DISABLED"],
-                       "tls_endpoint:java.empty_check_server_trusted")]
+    # CB-27's detector is that detector: the baseline product reports line 59 itself
+    assert [r["algorithm"] for r in rows if r["location"].endswith("com/bank/Crypto.java") and r["line"] == 59] == [
+        "tls_endpoint:java.trust_manager_noop"]
     res, extras = corpus_results(rows, OSV_TODAY)
     j9 = next(r for r in res["corpus"] if r["case_id"] == "J9")
     assert j9["lines"] == [57, 59] and j9["status"] == "hit"

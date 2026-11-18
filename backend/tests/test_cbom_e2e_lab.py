@@ -10,11 +10,11 @@ import importlib.util
 import sys
 from pathlib import Path
 
-_LAB_TESTS = Path(__file__).resolve().parents[2] / "e2e" / "cbom" / "lab" / "tests" / "test_lab.py"
-_spec = importlib.util.spec_from_file_location("cb02_lab_tests", _LAB_TESTS)
-assert _spec and _spec.loader, _LAB_TESTS
-_mod = importlib.util.module_from_spec(_spec)
-sys.modules["cb02_lab_tests"] = _mod
-_spec.loader.exec_module(_mod)
-
-globals().update({name: obj for name, obj in vars(_mod).items() if name.startswith("test_") and callable(obj)})
+_LAB_DIR = Path(__file__).resolve().parents[2] / "e2e" / "cbom" / "lab" / "tests"
+for _path in (_LAB_DIR / "test_lab.py", _LAB_DIR / "test_followup.py"):
+    _spec = importlib.util.spec_from_file_location(_path.stem, _path)
+    assert _spec and _spec.loader, _path
+    _mod = importlib.util.module_from_spec(_spec)
+    sys.modules[_path.stem] = _mod
+    _spec.loader.exec_module(_mod)
+    globals().update({name: obj for name, obj in vars(_mod).items() if name.startswith("test_") and callable(obj)})

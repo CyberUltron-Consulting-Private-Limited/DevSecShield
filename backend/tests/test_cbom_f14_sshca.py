@@ -168,7 +168,7 @@ def test_flag_off_every_route_is_a_404_and_nothing_is_issued(api, ca_world, monk
     engine, _ = ca_world
     s = setup_job(api)
     routes = [r for m in (cbom_sshca, cbom_node_sshca, cbom_sshca_trust) for r in m.router.routes]
-    assert len(routes) == 18  # 12 + trust tokens (3) + the servers' trust-bundle fetch (3), review round 7
+    assert len(routes) == 19  # 12 + trust tokens (3) + the servers' trust-bundle fetch (3), review round 7, + #61's report
     for value in ("0", "", "off", "false"):
         monkeypatch.setenv("CBOM_SSH_CA", value)
         for route in routes:
@@ -792,7 +792,7 @@ def test_every_route_is_mounted_flagged_rate_limited_authenticated_and_declares_
                 r = api(method, _concrete(route.path), None, json={})
                 assert r.status_code == 401, (method, route.path, r.status_code)
                 seen += 1
-    assert seen == 18
+    assert seen == 19  # + POST /cbom/node/jobs/{id}/ssh-cert/report (#61)
 
 
 # ----------------------------------------------------------------------------- round 7: the F1.4 criteria, one by one

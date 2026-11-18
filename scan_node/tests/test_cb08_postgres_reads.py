@@ -64,6 +64,8 @@ class _Cursor:
             self.rows = SERVER["hba"]
         elif "FROM pg_extension" in sql:
             self.rows = SERVER["extensions"]
+        elif "to_regprocedure" in sql:  # #210: the path check; this fake login is a superuser without the function
+            self.rows = [(True, False, False)]
         elif "pg_authid" in sql:
             self.rows = SERVER["roles"]
         else:

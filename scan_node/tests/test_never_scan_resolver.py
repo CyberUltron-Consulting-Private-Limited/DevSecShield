@@ -77,8 +77,7 @@ def test_a_listed_host_behind_hanging_lookups_is_never_scanned(slow_dns, monkeyp
         if time.monotonic() > deadline:
             break
         time.sleep(0.2)
-    assert targets == [] and skipped == [f"10.1.2.{i}" for i in range(0, 8)]  # held, each with the reason (a /29 is
-    # scanned whole: only a /24 or larger leaves out its network and broadcast address, N3)
+    assert targets == [] and skipped == [f"10.1.2.{i}" for i in range(1, 7)]  # held, each with the reason
     assert UNRESOLVED in reasons["10.1.2.4"] and "old-00.dead.example" in reasons["10.1.2.4"]
 
     for name in stale:  # the dead zone comes back: every name answers
@@ -88,8 +87,7 @@ def test_a_listed_host_behind_hanging_lookups_is_never_scanned(slow_dns, monkeyp
     while time.monotonic() < end and never.match_ip("10.1.2.4") is not None:
         time.sleep(0.05)
     targets, skipped = expand_targets(["10.1.2.0/29"], never)
-    assert [t.ip for t in targets] == ["10.1.2.0", "10.1.2.1", "10.1.2.2", "10.1.2.4", "10.1.2.5", "10.1.2.6",
-                                       "10.1.2.7"]
+    assert [t.ip for t in targets] == ["10.1.2.1", "10.1.2.2", "10.1.2.4", "10.1.2.5", "10.1.2.6"]
     assert skipped == ["10.1.2.3"] and never.match_ip("10.1.2.3") == "an address of prod-db.corp.internal"
 
 
@@ -249,6 +247,22 @@ def test_a_listed_name_that_does_not_resolve_is_named_in_the_job_result(slow_dns
     result = ctx.result()
     assert result["never_scan_unresolved"] == ["gone.corp.internal"]
     assert "gone.corp.internal" in result["summary"] and "did not resolve from the scan node" in result["summary"]
+    assert result["never_scan_checked"] is True
+
+
+def test_the_job_result_says_whether_any_address_was_checked_against_the_listed_names(slow_dns):
+    """#298 review: the server ends a "held" badge only on a job that checked an address against the listed names; a
+    job that checked none (a PKCS#11 token, a job stopped before its first target) must say so."""
+    slow_dns.table["db.corp.internal"] = ["10.0.0.5"]
+    idle = _ctx(NeverScan(["db.corp.internal"]))
+    assert idle.result()["never_scan_checked"] is False
+    in_cidr = _ctx(NeverScan(["db.corp.internal", "10.9.0.0/16"]))
+    assert in_cidr.never_scan.blocks_ip("10.9.0.1")  # a listed CIDR answers before the names are looked at
+    assert in_cidr.result()["never_scan_checked"] is False
+    checked = _ctx(NeverScan(["db.corp.internal"]))
+    assert not checked.never_scan.blocks_ip("10.0.0.6")
+    result = checked.result()
+    assert result["never_scan_checked"] is True and "never_scan_unresolved" not in result
 
 
 def test_a_connection_test_says_why_every_address_was_held(slow_dns, monkeypatch):
@@ -301,8 +315,8 @@ def test_a_mixed_answer_keeps_its_real_addresses(slow_dns):
     slow_dns.table["prod-db.corp.internal"] = ["0.0.0.0", "10.1.2.3", "::"]
     never = NeverScan(["prod-db.corp.internal"])
     targets, skipped = expand_targets(["10.1.2.0/29"], never)
-    assert skipped == ["10.1.2.3"] and [t.ip for t in targets] == ["10.1.2.0", "10.1.2.1", "10.1.2.2", "10.1.2.4",
-                                                                   "10.1.2.5", "10.1.2.6", "10.1.2.7"]
+    assert skipped == ["10.1.2.3"] and [t.ip for t in targets] == ["10.1.2.1", "10.1.2.2", "10.1.2.4", "10.1.2.5",
+                                                                   "10.1.2.6"]
     assert never.match_ip("10.1.2.3") == "an address of prod-db.corp.internal" and never.unresolved == []
 
 
@@ -414,9 +428,8 @@ def test_a_loopback_name_keeps_only_the_loopback_out_and_holds_nothing(slow_dns,
     reasons: dict[str, str] = {}
     targets, skipped = expand_targets(["10.1.2.0/29"] + LOOPBACK_TARGETS, never, reasons=reasons)
     assert time.monotonic() - started < 1.0 and slow_dns.looked_up == []
-    assert [t.ip for t in targets] == ["10.1.2.0", "10.1.2.1", "10.1.2.2", "10.1.2.3", "10.1.2.4", "10.1.2.6", "10.1.2.7"]
-    loopback = ["127.0.0.0", "127.0.0.1", "127.0.0.2", "127.0.0.3", "127.255.255.254", "::1", "::ffff:127.0.0.9",
-                "64:ff9b::7f00:1"]
+    assert [t.ip for t in targets] == ["10.1.2.1", "10.1.2.2", "10.1.2.3", "10.1.2.4", "10.1.2.6"]
+    loopback = ["127.0.0.1", "127.0.0.2", "127.255.255.254", "::1", "::ffff:127.0.0.9", "64:ff9b::7f00:1"]
     assert skipped == ["10.1.2.5"] + loopback
     name = entry.lower().rstrip(".")
     for address in loopback:
@@ -494,10 +507,10 @@ def test_resolve_writes_the_answers_in_the_same_form(monkeypatch):
 
 def test_localhost_with_the_systems_own_resolver_is_the_reviewers_probe():
     """probe-edges.txt: real getaddrinfo (/etc/hosts: 127.0.0.1 localhost), a sweep of 10.1.2.0/29.  397a0f0 scanned
-    nothing (held by localhost); now the /29's eight addresses are scanned and only loopback stays out."""
+    nothing (held by localhost); now the six hosts are scanned and only loopback stays out."""
     never = NeverScan(["localhost"])
     targets, skipped = expand_targets(["10.1.2.0/29", "127.0.0.1"], never)
-    assert [t.ip for t in targets] == [f"10.1.2.{i}" for i in range(0, 8)] and skipped == ["127.0.0.1"]
+    assert [t.ip for t in targets] == [f"10.1.2.{i}" for i in range(1, 7)] and skipped == ["127.0.0.1"]
     assert never.unresolved == [] and never.match_ip("127.0.0.1") == "an address of localhost"
 
 

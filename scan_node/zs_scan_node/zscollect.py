@@ -109,6 +109,13 @@ def allowed_line(line: str) -> bool:
         if body.startswith(before) and body.endswith(after) and len(body) > len(before) + len(after):
             if _one_quoted_path(body[len(before):len(body) - len(after)]):
                 return True
+    # #116: a file under /etc/ssh/ named by an sshd_config Include, quoted, or a wildcard there that goes unquoted
+    before, after = C.SSHD_INCLUDE.split("{file}")
+    if body.startswith(before) and body.endswith(after) and len(body) > len(before) + len(after):
+        arg = body[len(before):len(body) - len(after)]
+        if any(c in arg for c in "*?"):
+            return C.include_allowed(arg)
+        return _one_quoted_path(arg) and C.include_allowed(shlex.split(arg)[0])
     return False
 
 
@@ -260,6 +267,7 @@ def _preload() -> None:
     import base64 as _b  # noqa: F401  (linux_ssh imports these inside functions)
     import concurrent.futures  # noqa: F401
     import encodings.idna  # noqa: F401
+    import idna.uts46data  # noqa: F401  (idn.to_a_label; idna imports its UTS #46 table on first use)
     import hashlib as _h  # noqa: F401
 
     from cryptography import x509  # noqa: F401

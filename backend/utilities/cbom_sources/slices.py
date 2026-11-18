@@ -166,6 +166,7 @@ def add_assets(session: Session, job: CbomCollectionJob, lease_id: str, assets: 
     known = list(decrypt_secrets(source.secret_encrypted).values()) if source is not None else []
     known += [s for s in (known_secrets or []) if isinstance(s, str)]
     rows, rejected, in_batch_dups = J.asset_rows(parent, assets, known, now)
+    J.OPS.bump(session, J.OPS.INGEST_REJECTED, rejected, now)  # cbom_ingest_rejected_assets_total (CB-31)
     inserted, existing, dropped, cap_reached = J.store_rows(session, parent, job, lease_id, rows,
                                                             owner_cap=source_asset_cap())
     if cap_reached:
@@ -240,10 +241,12 @@ def finalize(session: Session, parent: CbomCollectionJob, now: _dt.datetime, *, 
     pre = list((parent.result or {}).get("targets") or [])
     targets = pre + rows
     ok = sum(1 for t in targets if t.get("status") == "ok")
-    part = sum(1 for t in targets if t.get("status") == "partial")
+    # an opt-in region the account has not enabled is partial, never failed (CB-33 HF-1, aws_collect._region_target)
+    not_enabled = sum(1 for t in targets if t.get("not_enabled"))
+    part = sum(1 for t in targets if t.get("status") == "partial") + not_enabled
     skipped = sum(1 for t in targets if str(t.get("status", "")).startswith("skipped"))
     counts = {"total": len(targets), "ok": ok, "partial": part, "failed": len(targets) - ok - part - skipped,
-              "skipped": skipped}
+              "skipped": skipped, **({"not_enabled": not_enabled} if not_enabled else {})}
     by_status: dict[str, int] = {}
     for j in slices:
         by_status[j.status] = by_status.get(j.status, 0) + 1

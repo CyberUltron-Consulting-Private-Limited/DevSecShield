@@ -133,6 +133,22 @@ assert.ok(text(card).includes("Unknown verdict"));
 assert.ok(text(card).includes("3 assets graded Q0 Unknown; 1 unread scope item (7 rows)"));
 assert.ok(text(card).includes("Show the 3 Q0 Unknown items"));
 assert.ok(text(card).includes("Mosca X 10, Y 5, Z not set (the team's settings now, not when the run started)"));
+// staging QA B7 bug 4 (run 12): each reason says how many assets it leaves Q0 Unknown (46, the Q0 Unknown bar), the unread scope is its
+// own list, and the item toggle says what its total is made of
+const run12: QPosture = {
+  ...posture, assets: 46, q_grades: { [G0]: 46, [G1]: 0, [G2]: 0, [G3]: 0, [G4]: 0, none: 0 },
+  q0_reasons: { coverage_gap: 18, excluded_by_choice: 47, mosca_missing: 1 },
+  q0_reason_assets: { mosca_missing: 46 }, q0_scope_reasons: { coverage_gap: 18, excluded_by_choice: 47 },
+  q0_items_total: 66, q0_counts: { assets: 46, scope_items: 65, scope_rows: 65 },
+};
+const card12 = render(h(QDistributionCard, { posture: run12, model: MODEL }));
+assert.equal(attr(card12, "posture-q0-reason-mosca_missing", "data-count"), "46");
+assert.equal(attr(card12, "posture-q0-scope-excluded_by_choice", "data-count"), "47");
+assert.equal(attr(card12, "posture-q0-scope-coverage_gap", "data-count"), "18");
+assert.doesNotMatch(card12, /posture-q0-reason-excluded_by_choice/);
+assert.ok(text(card12).includes("46 assets graded Q0 Unknown, by reason above"), text(card12));
+assert.ok(!text(card12).includes("Counts are items"));
+assert.ok(text(card12).includes("Show the 66 Q0 Unknown items (19 to close, 47 left out by the team's choice)"), text(card12));
 // counts that do not add up are said, not hidden
 assert.match(render(h(QDistributionCard, { posture: { ...posture, assets: 19 }, model: MODEL })), /posture-q-mismatch/);
 // an older backend: no grades, no card
@@ -253,6 +269,66 @@ const tipButton = /<button[^>]*aria-label="About Self-fixable share"[^>]*>/.exec
 assert.match(tipButton, /class="[^"]*\btext-zinc-500\b[^"]*\bdark:text-zinc-400\b/);
 assert.doesNotMatch(tipButton, /title=/);
 
+// ---- run results redesign (05-C, 06-B): variant="run" keeps every count, list, control, tip and hook of the cards
+const runCard = render(h(QDistributionCard, { posture, model: MODEL, variant: "run" }));
+assert.equal(attr(runCard, "posture-q", "data-variant"), "run");
+assert.equal(attr(runCard, "posture-q", "data-model-version"), "qg-1+abcdef012345");
+assert.equal(attr(runCard, "posture-q-distribution", "data-layout"), "columns");
+assert.equal(attr(runCard, "posture-q-distribution", "data-total"), "20");
+for (const [bucket, count] of Object.entries(expected)) assert.equal(attr(runCard, `posture-q-${bucket}`, "data-count"), count, bucket);
+for (const t of GRADE_TEXT) assert.ok(text(runCard).includes(t), t);
+assert.ok(text(runCard).includes("10No grade(50%)"), "count above the bar, label and share below");
+assert.match(runCard, /data-infotip="cbom.qgrade.distribution"/);
+assert.match(runCard, /data-testid="grade-model-open"/);
+assert.ok(text(runCard).includes("How grades are computed"));
+// the Q0 Unknown "why" sits beside the bars, with the same reasons, counts and item toggle
+assert.ok(runCard.indexOf('data-testid="posture-q-distribution"') < runCard.indexOf('data-testid="posture-q0-panel"'));
+assert.equal(attr(runCard, "posture-q0-reason-mosca_missing", "data-count"), "1");
+assert.ok(text(runCard).includes("Quantum-vulnerable, and the team's Mosca X, Y or Z is not set"));
+assert.ok(text(runCard).includes("3 assets graded Q0 Unknown; 1 unread scope item (7 rows)"));
+assert.equal(attr(runCard, "posture-q0-items-toggle", "aria-expanded"), "false");
+assert.ok(text(runCard).includes("Show the 3 Q0 Unknown items"));
+assert.ok(text(runCard).includes("Mosca X 10, Y 5, Z not set (the team's settings now, not when the run started)"));
+const runCard12 = render(h(QDistributionCard, { posture: run12, model: MODEL, variant: "run" }));
+assert.equal(attr(runCard12, "posture-q0-scope-excluded_by_choice", "data-count"), "47");
+assert.ok(text(runCard12).includes("Show the 66 Q0 Unknown items (19 to close, 47 left out by the team's choice)"));
+assert.match(render(h(QDistributionCard, { posture: { ...posture, assets: 19 }, model: MODEL, variant: "run" })), /posture-q-mismatch/);
+assert.equal(render(h(QDistributionCard, { posture: { assets: 5 }, model: MODEL, variant: "run" })), "");
+// no Q0 Unknown asset or scope: the panel says so instead of standing empty
+const noQ0 = render(h(QDistributionCard, { posture: { ...posture, q0_reasons: {}, q0_items: [], q0_items_total: 0, q0_counts: undefined }, model: MODEL, variant: "run" }));
+assert.match(noQ0, /data-testid="posture-q0-none"/);
+
+const runAg = render(h(AgilityPostureCard, { posture: agility, model: AG_MODEL, variant: "run" }));
+assert.equal(attr(runAg, "posture-fix", "data-variant"), "run");
+assert.equal(attr(runAg, "posture-fix-distribution", "data-layout"), "who-fixes");
+for (const [v, n] of Object.entries(agExpected)) assert.equal(attr(runAg, `posture-fix-${v}`, "data-count"), n, v);
+assert.equal(attr(runAg, "posture-fix-distribution", "data-total"), "150");
+assert.equal(attr(runAg, "posture-fix-distribution", "data-view"), "all");
+// who fixes it: your team = configurable + code-fixed; every class stays listed with its own count
+const who: Record<string, string> = { team: "40", vendor: "50", hardware: "10", unknown: "7", none: "43" };
+for (const [g, n] of Object.entries(who)) assert.equal(attr(runAg, `posture-fix-who-${g}`, "data-count"), n, g);
+assert.ok(text(runAg).includes("Your team40(26.7%)"), text(runAg));
+assert.equal(attr(runAg, "posture-fix-self-fixable", "data-pct"), "40");
+assert.ok(text(runAg).includes("self-fixable: 40 of 100 assets with a fix class are configurable or code-fixed"));
+assert.match(runAg, /data-testid="posture-fix-view-all"/);
+assert.match(runAg, /data-testid="posture-fix-view-excl-pq"/);
+assert.equal(attr(runAg, "posture-fix-view-all", "aria-pressed"), "true");
+assert.equal(attr(runAg, "posture-fix-view-excl-pq", "aria-pressed"), "false");
+for (const id of ["section", "configurable", "code_fixed", "vendor_fixed", "hardware_fixed", "unknown", "inferred", "self_fixable", "excl_pq"]) {
+  assert.match(runAg, new RegExp(`data-infotip="cbom.agility.${id}"`), id);
+}
+assert.ok(text(runAg).includes("\"Likely\": no fact the product read decides that class; it is the table's default."));
+assert.equal(attr(runAg, "posture-fix-unknown-key_provider_not_read", "data-count"), "5");
+assert.ok(text(runAg).includes("Show per system (1)"));
+assert.equal(attr(runAg, "posture-fix-systems-toggle", "aria-expanded"), "false");
+assert.doesNotMatch(runAg, /posture-fix-mismatch/);
+assert.match(render(h(AgilityPostureCard, { posture: { ...agility, assets: 151 }, model: AG_MODEL, variant: "run" })), /posture-fix-mismatch/);
+assert.equal(render(h(AgilityPostureCard, { posture: { assets: 3 }, model: AG_MODEL, variant: "run" })), "");
+// the excluding post-quantum view is disabled when the server sends no such counts
+assert.match(render(h(AgilityPostureCard, { posture: { ...agility, fix_classes_excl_pq: undefined }, model: AG_MODEL, variant: "run" })),
+  /disabled=""[^>]*data-testid="posture-fix-view-excl-pq"|data-testid="posture-fix-view-excl-pq"[^>]*disabled=""/);
+for (const html of [runCard, runAg]) assert.doesNotMatch(html, /text-zinc-500(?![^"]*dark:text-zinc-400)/);
+
 // evidence items (GET …/sources/evidence): answered HSM firmware / third-party area and vendors carry a class; an
 // unanswered one says "not assessed"; the process areas show nothing
 const ev = (item: { fix_class?: string | null; not_assessed?: boolean }) => render(h(EvidenceFixClass, { item, testId: "ev" }));
@@ -265,8 +341,9 @@ assert.equal(ev({}), "");
 
 // mounted where CB-24 PLAN §10 PR-1u says: run results (both columns), code-scan results, Evidence tab
 const src = (p: string) => readFileSync(path.join(__dirname, "..", "..", p), "utf8");
-assert.match(src("cbom/sources/RunResults.tsx"), /<QGradeChip item=\{asset as QGradeFields\} assetId=\{asset.id\} \/>/);
-assert.match(src("cbom/sources/RunResults.tsx"), /<FixClassChip item=\{asset as FixClassFields\} assetId=\{asset.id\} \/>/);
+// run results: the shared template's findings table (the older sources/RunResults page component was removed)
+assert.match(src("cbom/results/RunFindingsTable.tsx"), /<QGradeChip item=\{item as QGradeFields\} assetId=\{item.id\} \/>/);
+assert.match(src("cbom/results/RunFindingsTable.tsx"), /<FixClassChip item=\{item as FixClassFields\} assetId=\{item.id\} \/>/);
 assert.match(src("CbomResults.tsx"), /<FixClassChip item=\{finding as FixClassFields\} testId=\{`cbom-finding-fixclass-\$\{finding.id\}`\} \/>/);
 assert.match(src("cbom/sources/EvidenceTab.tsx"), /<EvidenceFixClass item=\{area as [^\n]*testId=\{`evidence-fixclass-\$\{area.area_key\}`\} \/>/);
 assert.match(src("cbom/sources/EvidenceTab.tsx"), /<EvidenceFixClass item=\{vendor as [^\n]*testId=\{`vendor-fixclass-\$\{vendor.id\}`\} \/>/);

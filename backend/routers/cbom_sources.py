@@ -23,7 +23,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import ValidationError
-from sqlalchemy import func, update
+from sqlalchemy import String, cast, func, or_, update
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
@@ -45,9 +45,12 @@ from backend.routers import cbom_node_artifacts as NODE_ARTIFACTS  # install lin
 from backend.utilities.cbom_sources import agility as AGILITY
 from backend.utilities.cbom_sources import agility_rollup as AGILITY_ROLLUP
 from backend.utilities.cbom_sources import agents as AG
+from backend.utilities.cbom_sources import held as HELD
+from backend.utilities.cbom_sources import host_key_resets as HKR  # #150
 from backend.utilities.cbom_sources import jobs as J
 from backend.utilities.cbom_sources import source_cap as SOURCE_CAP
 from backend.utilities.cbom_sources import targets as T
+from backend.utilities.cbom_sources import vault_support as VAULT_SUPPORT  # #364
 from backend.utilities.cbom_sources.aws_validate import validate_aws_role
 from backend.utilities.cbom_sources.common import audit, iso_z, log, new_ref, new_token, sha256_hex, utcnow
 from backend.utilities.cbom_sources.crypto import decrypt_secrets, encrypt_secrets, scrub, warn_if_key_is_weak
@@ -76,7 +79,9 @@ from backend.utilities.cbom_sources import inventory as INV
 from backend.utilities.cbom_sources import posture as POSTURE
 from backend.utilities.cbom_sources import q0register as Q0REG
 from backend.utilities.cbom_sources import qgrade as QGRADE
+from backend.utilities.cbom_sources import qgrade_store as QSTORE
 from backend.utilities.cbom_sources import run_deliverables as RUN_DELIVERABLES
+from backend.utilities.cbom_sources import run_list as RUN_LIST
 from backend.utilities.cbom_sources import run_parity as RUN_PARITY
 from backend.utilities.cbom_sources import run_results as RUN_RESULTS
 from backend.utilities.cbom_sources import run_tickets as RUN_TICKETS
@@ -86,13 +91,14 @@ from backend.utilities.cbom_sources import schedules as SCHED
 from backend.utilities.cbom_sources.classify import ASSET_TYPES
 from backend.utilities.cbom_sources.kinds import (KINDS, METADATA_FIELDS, credential_target_problem, ct_discovery_enabled,
                                                 validate_secret_value)
-from backend.utilities.cbom_sources.planning import RATES_C, credits, network_sweep_totals, node_status, plan_run, \
-    source_targets
+from backend.utilities.cbom_sources.planning import RATES_C, RangeContext, credits, network_sweep_totals, node_status, \
+    plan_run, source_targets
 from backend.utilities.cbom_sources.schemas import (
     AreaUpdate,
     EstimateBody,
     NodeCreate,
     NodeUpdate,
+    proxy_inspect_problem,
     RunCreate,
     SettingsUpdate,
     SourceCreate,
@@ -101,8 +107,10 @@ from backend.utilities.cbom_sources.schemas import (
     VendorCreate,
     VendorUpdate,
 )
+from backend.utilities.cbom_sources.node_release import server_release
 from backend.utilities.cbom_sources.serialize import (
     last_collects,
+    pca_reads,
     public_area,
     public_job,
     public_node,
@@ -165,12 +173,14 @@ def _team_node(session: Session, team_id: int, node_id: int | None) -> CbomScanN
 
 def _node_counts(session: Session, team_id: int, settings: CbomCollectionSettings) -> dict[int, dict[str, int]]:
     counts: dict[int, dict[str, int]] = {}
-    for source in session.exec(select(CbomCollectionSource).where(CbomCollectionSource.team_id == team_id)).all():
+    sources = session.exec(select(CbomCollectionSource).where(CbomCollectionSource.team_id == team_id)).all()
+    ctx = RangeContext.of_sources(list(sources), settings)  # once for every range (review of #273)
+    for source in sources:
         if source.node_id is None:
             continue
         c = counts.setdefault(source.node_id, {"targets": 0, "sources": 0})
         c["sources"] += 1
-        info = source_targets(source, settings)
+        info = source_targets(source, settings, ctx)
         if KINDS.get(source.kind) and KINDS[source.kind].group in ("servers", "network"):
             c["targets"] += int(info["units"])
         else:
@@ -187,6 +197,7 @@ def _overview(engine, team_id: int, user_id: int) -> dict:
         nodes = session.exec(select(CbomScanNode).where(CbomScanNode.team_id == team_id)).all()
         statuses = [node_status(n, now) for n in nodes]
         sources = session.exec(select(CbomCollectionSource).where(CbomCollectionSource.team_id == team_id)).all()
+        ctx = RangeContext.of_sources(list(sources), settings)  # once for every range (review of #273)
         groups: dict[str, dict[str, Any]] = {}
         for source in sources:
             spec = KINDS.get(source.kind)
@@ -194,7 +205,7 @@ def _overview(engine, team_id: int, user_id: int) -> dict:
                 continue
             g = groups.setdefault(spec.group, {"sources": 0, "units": 0, "by_kind": {}, "failed_tests": 0})
             g["sources"] += 1
-            g["units"] += int(source_targets(source, settings)["units"])
+            g["units"] += int(source_targets(source, settings, ctx)["units"])
             g["by_kind"][source.kind] = g["by_kind"].get(source.kind, 0) + 1
             if source.last_test_status == "failed":
                 g["failed_tests"] += 1
@@ -259,9 +270,10 @@ def _list_nodes(engine, team_id: int) -> dict:
         settings = get_or_create_settings(session, team_id)
         counts = _node_counts(session, team_id, settings)
         rows = session.exec(select(CbomScanNode).where(CbomScanNode.team_id == team_id).order_by(CbomScanNode.id)).all()
+        server = server_release()  # the shipped node build, read once per list (not per node)
         return {"server_time": iso_z(now), "nodes": [
             public_node(n, now, assigned_targets=counts.get(n.id, {}).get("targets", 0),
-                        sources=counts.get(n.id, {}).get("sources", 0)) for n in rows]}
+                        sources=counts.get(n.id, {}).get("sources", 0), server=server) for n in rows]}
 
 
 @router.get(BASE + "/nodes", dependencies=READ, summary="List scan nodes")
@@ -289,7 +301,7 @@ def _create_node(engine, team_id: int, user_id: int, body: NodeCreate) -> dict:
         node = CbomScanNode(
             team_id=team_id, owner_user_id=user_id, updated_by_user_id=user_id, name=body.name, segment=body.segment,
             timezone=body.timezone, deployment=body.deployment, proxy_url=body.proxy_url,
-            proxy_ca_pem=body.proxy_ca_pem, proxy_tls_inspect=body.proxy_tls_inspect,
+            proxy_ca_pem=body.proxy_ca_pem, proxy_tls_inspect=body.proxy_tls_inspect, proxy_user=body.proxy_user,
             registration_token_hash=sha256_hex(token), registration_issued_at=now,
             registration_expires_at=now + REGISTRATION_TTL, created_at=now, last_updated=now,
         )
@@ -346,6 +358,15 @@ def _update_node(engine, team_id: int, user_id: int, node_id: int, body: NodeUpd
             if key == "name" and not value:
                 continue
             setattr(node, key, value)
+        if {"proxy_url", "proxy_ca_pem", "proxy_tls_inspect"} & set(changes):
+            # #202: a node whose proxy is removed has nothing left to inspect: inspection goes off with it (the edit
+            # dialog has no inspection box); turning inspection on needs the proxy and its CA, as on create
+            if node.proxy_tls_inspect and not (node.proxy_url or "").strip() and not changes.get("proxy_tls_inspect"):
+                node.proxy_tls_inspect = False
+                changes["proxy_tls_inspect"] = False
+            problem = proxy_inspect_problem(node.proxy_tls_inspect, node.proxy_url, node.proxy_ca_pem)
+            if problem:
+                raise HTTPException(status_code=400, detail=problem)
         node.row_version += 1
         node.updated_by_user_id = user_id
         node.last_updated = now
@@ -491,7 +512,7 @@ def _merge_secrets(kind: str, cfg: Any, current: dict[str, str], provided: dict[
                    clear: list[str], reset: bool, where_changed: bool) -> dict[str, str]:
     spec = KINDS[kind]
     required = spec.secret_fields(cfg)
-    allowed = required | set(spec.optional_secrets)
+    allowed = required | set(spec.optional_secret_fields(cfg))
     result = {} if reset else {k: v for k, v in current.items() if k in allowed}
     for name in clear:
         result.pop(name, None)
@@ -539,6 +560,13 @@ def _ct_prepare(engine, team_id: int, body: SourceCreate) -> SourceCreate:
     return body.model_copy(update={"name": CT_SOURCE_NAME, "config": config})
 
 
+def _refuse_unavailable_vault(cfg) -> None:
+    """#364: a vault no scan node reads (CyberArk, Azure Key Vault) is listed as "not available yet" and never saved."""
+    problem = VAULT_SUPPORT.config_problem(cfg)
+    if problem:
+        raise HTTPException(status_code=400, detail=problem)
+
+
 def _create_source(engine, team_id: int, user_id: int, body: SourceCreate) -> dict:
     now = utcnow()
     spec = KINDS[body.kind]
@@ -559,6 +587,7 @@ def _create_source(engine, team_id: int, user_id: int, body: SourceCreate) -> di
         AG.check_node_for_kind(node, body.kind)
         _check_refs(session, team_id, body.kind, cfg)
         if getattr(cfg, "credential_type", None) == "vault":
+            _refuse_unavailable_vault(cfg)
             require_admin(session, user_id, team_id, "sources that read their credential from a vault")
         SSHCA_SOURCES.check_create(session, team_id, user_id, cfg)  # F1.4: ssh_ca sources are written by admins
         secrets_ = _merge_secrets(body.kind, cfg, {}, body.secrets, clear=[], reset=True, where_changed=False)
@@ -571,6 +600,8 @@ def _create_source(engine, team_id: int, user_id: int, body: SourceCreate) -> di
             config=cfg.model_dump(mode="json"), secret_encrypted=encrypt_secrets(secrets_),
             secret_fields=sorted(secrets_), created_at=now, last_updated=now,
             last_test_status="never" if spec.collectable(cfg) or body.kind == "aws_account" else "not_available",
+            # #153: say why there is no test (the Last test column showed "None")
+            last_test_summary=None if spec.collectable(cfg) or body.kind == "aws_account" else NOT_AVAILABLE,
         )
         session.add(source)
         try:
@@ -611,35 +642,108 @@ async def create_source(team_id: TeamId, body: SourceCreate, Authorization: Auth
     return _ok(result, 201)
 
 
-def _list_sources(engine, team_id: int, kind: str | None, group: str | None) -> dict:
+def _with_pca(item: dict[str, Any], pcas: dict[int, dict[str, Any] | None]) -> dict[str, Any]:
+    """An AWS Private CA source carries ``pca_read`` (None until its account was collected); other sources do not."""
+    if item["id"] in pcas:
+        item["pca_read"] = pcas[item["id"]]
+    return item
+
+
+# #225: server-side search, filters and keyset paging for the source tables
+NOT_AVAILABLE = "Validation for this source is not available yet"
+SOURCE_STATUSES = ("enabled", "disabled", "never", "pending", "passed", "partial", "failed", "error", "not_available")
+MAX_PAGE = 500
+
+
+def _like(text: str) -> str:
+    """A LIKE pattern that matches ``text`` literally (``%`` and ``_`` are not wildcards), lower-cased."""
+    return "%" + text.lower().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+
+
+def _source_filters(query, team_id: int, kind: str | None, group: str | None, q: str | None, segment: str | None,
+                    status: str | None, node_id: int | None):
+    query = query.where(CbomCollectionSource.team_id == team_id)
+    if kind:  # one kind, or several separated by commas (the Servers tab: every server kind but host agents)
+        query = query.where(CbomCollectionSource.kind.in_(kind.split(",")))  # type: ignore[attr-defined]
+    if group:
+        query = query.where(CbomCollectionSource.kind.in_(  # type: ignore[attr-defined]
+            [k for k, spec in KINDS.items() if spec.group == group] or ["-"]))
+    if node_id is not None:
+        query = query.where(CbomCollectionSource.node_id == node_id)
+    if segment:
+        in_segment = select(CbomScanNode.id).where(CbomScanNode.team_id == team_id,
+                                                   func.lower(CbomScanNode.segment) == segment.strip().lower())
+        query = query.where(CbomCollectionSource.node_id.in_(in_segment))  # type: ignore[union-attr]
+    if status in ("enabled", "disabled"):
+        query = query.where(CbomCollectionSource.enabled == (status == "enabled"))
+    elif status:
+        query = query.where(CbomCollectionSource.last_test_status == status)
+    if q and q.strip():
+        pattern = _like(q.strip())
+        # the name, or anything in the config: targets, host, API URL, owner, application ... (never a secret: secrets
+        # are encrypted in their own column)
+        query = query.where(or_(CbomCollectionSource.name_lower.like(pattern, escape="\\"),  # type: ignore[union-attr]
+                                func.lower(cast(CbomCollectionSource.config, String)).like(pattern, escape="\\")))
+    return query
+
+
+def _list_sources(engine, team_id: int, kind: str | None, group: str | None, q: str | None = None,
+                  segment: str | None = None, status: str | None = None, node_id: int | None = None,
+                  limit: int | None = None, after: int | None = None) -> dict:
     now = utcnow()
     with Session(engine) as session:
         settings = get_or_create_settings(session, team_id)
-        query = select(CbomCollectionSource).where(CbomCollectionSource.team_id == team_id)
-        if kind:
-            query = query.where(CbomCollectionSource.kind == kind)
-        rows = session.exec(query.order_by(CbomCollectionSource.id)).all()
-        if group:
-            rows = [r for r in rows if KINDS.get(r.kind) and KINDS[r.kind].group == group]
-        nodes = {n.id: n for n in session.exec(select(CbomScanNode).where(CbomScanNode.team_id == team_id)).all()}
+        query = _source_filters(select(CbomCollectionSource), team_id, kind, group, q, segment, status, node_id)
+        page: dict[str, Any] = {}
+        if limit is not None:  # keyset paging on the id: stable while sources are added or deleted
+            total = session.exec(_source_filters(select(func.count()).select_from(CbomCollectionSource), team_id, kind,
+                                                 group, q, segment, status, node_id)).one()
+            if after is not None:
+                query = query.where(CbomCollectionSource.id > after)  # type: ignore[operator]
+            rows = list(session.exec(query.order_by(CbomCollectionSource.id).limit(limit + 1)).all())
+            more = len(rows) > limit
+            rows = rows[:limit]
+            page = {"total": int(total or 0), "next_after": rows[-1].id if more and rows else None, "limit": limit}
+        else:
+            rows = list(session.exec(query.order_by(CbomCollectionSource.id)).all())
+        node_ids = {r.node_id for r in rows if r.node_id}
+        nodes = {n.id: n for n in session.exec(select(CbomScanNode).where(
+            CbomScanNode.team_id == team_id, CbomScanNode.id.in_(node_ids or [-1]))).all()}  # type: ignore[union-attr]
         collects = last_collects(session, team_id, [r.id for r in rows])
+        pcas = pca_reads(session, team_id, list(rows))  # #368: the account's ACM PCA read, on its Private CA sources
+        # the team's network ranges, once: every range of the list is counted with the same skip map and never-scan
+        # list (one query, one pass over the ranges, whatever the number of ranges; review of #273)
+        ranges = session.exec(select(CbomCollectionSource).where(
+            CbomCollectionSource.team_id == team_id, CbomCollectionSource.kind == "network_range")).all()
+        ctx = RangeContext.of_sources(list(ranges), settings)
         out = {"server_time": iso_z(now),
-               "sources": [public_source(r, settings, nodes.get(r.node_id), now, collects.get(r.id)) for r in rows],
-               "limits": {"sources": SOURCE_CAP.usage(session, team_id)}}
+               "sources": [_with_pca(public_source(r, settings, nodes.get(r.node_id), now, collects.get(r.id), ctx), pcas)
+                           for r in rows],
+               **page, "limits": {"sources": SOURCE_CAP.usage(session, team_id)}}
         if group in (None, "network") and kind in (None, "network_range"):
-            ranges = session.exec(select(CbomCollectionSource).where(
-                CbomCollectionSource.team_id == team_id, CbomCollectionSource.kind == "network_range")).all()
-            out["network_totals"] = network_sweep_totals(list(ranges), settings)  # N7: unique, enabled ranges only
+            out["network_totals"] = network_sweep_totals(list(ranges), settings, ctx)  # N7: unique, enabled ranges
         return out
 
 
-@router.get(BASE + "/items", dependencies=READ, summary="List sources")
-async def list_sources(team_id: TeamId, kind: str | None = Query(default=None, max_length=32),
-                       group: str | None = Query(default=None, max_length=32), Authorization: AuthHeader = None):
+@router.get(BASE + "/items", dependencies=READ,
+            summary="List sources: optional search (q), filters (kind, group, segment, status, node_id) and keyset "
+                    "paging (limit, after = the previous page's next_after)")
+async def list_sources(team_id: TeamId, kind: str | None = Query(default=None, max_length=256),
+                       group: str | None = Query(default=None, max_length=32),
+                       q: str | None = Query(default=None, max_length=128),
+                       segment: str | None = Query(default=None, max_length=64),
+                       status: str | None = Query(default=None, max_length=16),
+                       node_id: int | None = Query(default=None, ge=1, le=2_147_483_647),
+                       limit: int | None = Query(default=None, ge=1, le=MAX_PAGE),
+                       after: int | None = Query(default=None, ge=0, le=2_147_483_647),
+                       Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
-    if kind is not None and kind not in KINDS:
+    if kind is not None and (not kind or any(k not in KINDS for k in kind.split(","))):
         raise HTTPException(status_code=400, detail="kind: unknown source kind")
-    return _ok(await _run("list sources", team_id, _list_sources, engine, team_id, kind, group))
+    if status is not None and status not in SOURCE_STATUSES:
+        raise HTTPException(status_code=400, detail="status: one of " + ", ".join(SOURCE_STATUSES))
+    return _ok(await _run("list sources", team_id, _list_sources, engine, team_id, kind, group, q, segment, status,
+                          node_id, limit, after))
 
 
 def _get_source(engine, team_id: int, source_id: int) -> dict:
@@ -649,7 +753,8 @@ def _get_source(engine, team_id: int, source_id: int) -> dict:
         settings = get_or_create_settings(session, team_id)
         node = session.get(CbomScanNode, source.node_id) if source.node_id else None
         collect = last_collects(session, team_id, [source.id]).get(source.id)
-        return {"source": public_source(source, settings, node, now, collect), "server_time": iso_z(now)}
+        return {"source": _with_pca(public_source(source, settings, node, now, collect), pca_reads(session, team_id, [source])),
+                "server_time": iso_z(now)}
 
 
 @router.get(BASE + "/items/{source_id}", dependencies=READ, summary="Get a source")
@@ -706,6 +811,7 @@ def _update_source(engine, team_id: int, user_id: int, source_id: int, body: Sou
         # Renaming or disabling never needs these checks, so a source saved before the rules can still be turned off.
         relevant = new_dump != old_dump or bool(provided) or new_node_id != source.node_id
         if relevant and new_dump.get("credential_type") == "vault":
+            _refuse_unavailable_vault(new_dump)
             require_admin(session, user_id, team_id, "sources that read their credential from a vault")
         SSHCA_SOURCES.check_update(session, team_id, user_id, source, old_cfg, cfg, relevant=relevant,  # F1.4
                                    name=body.name, enabled=body.enabled)
@@ -742,6 +848,8 @@ def _update_source(engine, team_id: int, user_id: int, source_id: int, body: Sou
                 J.cancel_open_jobs(session, source, now, reason="Source changed")
                 source.last_test_status = "never" if spec.collectable(cfg) or source.kind == "aws_account" else "not_available"
                 source.last_test_summary, source.last_test_at, source.last_test_job_id = None, None, None
+                if source.last_test_status == "not_available":
+                    source.last_test_summary = NOT_AVAILABLE  # #153: never "None" in the Last test column
                 source.last_test_result = {}
             session.add(source)
             try:
@@ -816,7 +924,7 @@ def _test_source(engine, team_id: int, user_id: int, source_id: int) -> dict:
             return {"cloud_http": True}
         if not (spec.needs_node(cfg) and spec.collectable(cfg)):
             source.last_test_status = "not_available"
-            source.last_test_summary = "Validation for this source is not available yet"
+            source.last_test_summary = NOT_AVAILABLE
             source.last_test_at = now
             session.add(source)
             session.commit()
@@ -961,6 +1069,41 @@ async def test_source(team_id: TeamId, source_id: ObjectId, Authorization: AuthH
     return _ok(result)
 
 
+# ---------------------------------------------------------------------------- host key decisions (#150)
+def _host_key_reset(engine, team_id: int, user_id: int, source_id: int, body: Any) -> dict:
+    now = utcnow()
+    with Session(engine) as session:
+        source = _get_owned(session, CbomCollectionSource, source_id, team_id, "Source")
+        require_admin(session, user_id, team_id, "a host key the scan node remembered")
+        row = HKR.request(session, source, user_id, body if isinstance(body, dict) else {}, now)
+        session.commit()
+        return {"reset": HKR.as_dict(row),
+                "warning": HKR.WARNING_ACCEPT if row.action == "accept" else HKR.WARNING_FORGET,
+                "message": "The scan node applies this on its next job for this source. Run the connection test "
+                           "again to apply it now."}
+
+
+@router.post(BASE + "/items/{source_id}/host-key-resets", dependencies=WRITE,
+             summary="Accept a changed host key, or forget the remembered one, on the scan node that reported it (admin)")
+async def create_host_key_reset(team_id: TeamId, source_id: ObjectId, body: dict, Authorization: AuthHeader = None):
+    engine, user = await authorize(team_id, Authorization)
+    return _ok(await _run("host key reset", team_id, _host_key_reset, engine, team_id, user.id, source_id, body),
+               status_code=201)
+
+
+def _host_key_resets(engine, team_id: int, source_id: int) -> dict:
+    with Session(engine) as session:
+        source = _get_owned(session, CbomCollectionSource, source_id, team_id, "Source")
+        return {"resets": HKR.recent(session, source)}
+
+
+@router.get(BASE + "/items/{source_id}/host-key-resets", dependencies=READ,
+            summary="Host key decisions for a source: pending, applied and superseded")
+async def list_host_key_resets(team_id: TeamId, source_id: ObjectId, Authorization: AuthHeader = None):
+    engine, _user = await authorize(team_id, Authorization)
+    return _ok(await _run("host key resets", team_id, _host_key_resets, engine, team_id, source_id))
+
+
 def _count_targets(body: dict) -> dict:
     try:
         parsed = T.parse_targets(body.get("targets") or [], allow_empty=True)
@@ -968,7 +1111,7 @@ def _count_targets(body: dict) -> dict:
     except T.TargetError as exc:
         return {"valid": False, "error": str(exc), "count": None}
     return {"valid": True, "error": None, "count": T.count_in_scope(parsed, excl), "lines": len(parsed.normalized),
-            "samples": T.sample_targets(parsed, excl, 5)}
+            "samples": T.sample_targets(parsed, excl, 5), "notes": parsed.notes + excl.notes}
 
 
 @router.post(BASE + "/targets/count", dependencies=READ, summary="Count targets after exclusions (no side effects)")
@@ -999,10 +1142,15 @@ async def get_job(team_id: TeamId, job_id: ObjectId, Authorization: AuthHeader =
 
 
 # ============================================================================ settings
+def _settings_body(session: Session, row: CbomCollectionSettings, now) -> dict:
+    """The settings, with the never-scan host names a scan node cannot resolve (held there; held.never_scan_held)."""
+    return {**public_settings(row, now), "never_scan_held": HELD.never_scan_held(session, row.team_id, row)}
+
+
 def _get_settings(engine, team_id: int) -> dict:
     now = utcnow()
     with Session(engine) as session:
-        return {"settings": public_settings(get_or_create_settings(session, team_id), now)}
+        return {"settings": _settings_body(session, get_or_create_settings(session, team_id), now)}
 
 
 @router.get(BASE + "/settings", dependencies=READ, summary="Network scope, safety, certificate domains, AWS external ID")
@@ -1050,16 +1198,16 @@ def _update_settings(engine, team_id: int, user_id: int, body: SettingsUpdate) -
                 # keeps every address it answers out of range sweeps, discovery and name targets.  Fail closed: while
                 # the name has no address on the node, the node scans nothing (it cannot tell which one is the host);
                 # the UI says so on the entry, and each job's result names the unresolved name.
-                if parsed.hostnames and T.ADDRESS_TYPO.fullmatch(parsed.hostnames[0]):
-                    raise HTTPException(status_code=400, detail=f"network_exclusions: {item.cidr.strip()} is not a valid "
+                typo = next((h for h in parsed.hostnames if T.ADDRESS_TYPO.fullmatch(h)), None)
+                if typo is not None:
+                    raise HTTPException(status_code=400, detail=f"network_exclusions: {typo} is not a valid "
                                         "IP address or CIDR range (it reads as a mistyped address, not a host name)")
-                if not parsed.normalized:
-                    continue
-                canonical = parsed.normalized[0]
-                if canonical in seen:
-                    continue
-                seen.add(canonical)
-                items.append({"cidr": canonical, "reason": item.reason})
+                # an entry holding several, separated by commas, keeps every one (#148), each with the entry's reason
+                for canonical in parsed.normalized:
+                    if canonical in seen:
+                        continue
+                    seen.add(canonical)
+                    items.append({"cidr": canonical, "reason": item.reason})
             changes["network_exclusions"] = items
         if "risk_model" in changes:
             # merge: a field the request leaves out keeps its value; an explicit null clears it; risk_model: null
@@ -1100,7 +1248,7 @@ def _update_settings(engine, team_id: int, user_id: int, body: SettingsUpdate) -
             if "require_signed_nodes" in changes:
                 log("signed scan nodes " + ("required" if changes["require_signed_nodes"] else "not required"),
                     team=team_id, by=user_id)
-        return {"settings": public_settings(row, now)}
+        return {"settings": _settings_body(session, row, now)}
 
 
 @router.patch(BASE + "/settings", dependencies=WRITE, summary="Update team settings (admin; send only changed sections)")
@@ -1127,7 +1275,7 @@ def _stop_all(engine, team_id: int, user_id: int, on: bool) -> dict:
             session.commit()
             session.refresh(row)
             log("network stop" if on else "network resume", team=team_id, by=user_id)
-        return {"settings": public_settings(row, now)}
+        return {"settings": _settings_body(session, row, now)}
 
 
 @router.post(BASE + "/settings/stop-all", dependencies=WRITE,
@@ -1435,14 +1583,14 @@ def _list_runs(engine, team_id: int, scan_id: int | None) -> dict:
         if scan_id is not None:
             query = query.where(CbomCollectionRun.scan_id == scan_id)
         runs = session.exec(query.order_by(CbomCollectionRun.id.desc()).limit(50)).all()  # type: ignore[union-attr]
+        # issue #159 (Rule P): the asset count the Scans table shows too, from the one function, one query for the page
+        assets = RUN_LIST.asset_counts(session, team_id, [int(run.id) for run in runs])
         out = []
         for run in runs:
             counts: dict[str, int] = {}
             for job in session.exec(select(CbomCollectionJob).where(CbomCollectionJob.run_id == run.id)).all():
                 counts[job.status] = counts.get(job.status, 0) + 1
-            assets = session.exec(select(func.count()).select_from(CbomCollectedAsset)
-                                  .where(CbomCollectedAsset.run_id == run.id)).one()
-            out.append({**public_run(run), "job_counts": counts, "asset_count": int(assets)})
+            out.append({**public_run(run), "job_counts": counts, "asset_count": assets.get(int(run.id), 0)})
         return {"runs": out, "server_time": iso_z(now)}
 
 
@@ -1469,11 +1617,19 @@ async def get_run(team_id: TeamId, run_id: ObjectId, Authorization: AuthHeader =
 
 
 def _run_assets(engine, team_id: int, run_id: int, params: dict) -> dict:
-    view, status = params.pop("view", "all"), params.pop("status", None)
+    view, status, codes = params.pop("view", "all"), params.pop("status", None), params.pop("codes", None)
+    asset_ids, pqc_group, clause = params.pop("asset_ids", None), params.pop("pqc_group", None), params.pop("clause", None)
+    q_grade = params.pop("q_grade", None)
     with Session(engine) as session:
         run = _get_owned(session, CbomCollectionRun, run_id, team_id, "Run")
         # CB-38: the inventory page plus the unified results table's fields (view, status, key, wave, risk score)
-        out = RUN_ASSETS.list_run_assets(session, team_id=team_id, run=run, params=params, view=view, status=status)
+        try:
+            out = RUN_ASSETS.list_run_assets(session, team_id=team_id, run=run, params=params, view=view,
+                                             status=status, codes=codes, asset_ids=asset_ids, pqc_group=pqc_group,
+                                             clause=clause, q_grade=q_grade)
+        except QSTORE.Unavailable as exc:  # CB-19 PR-3: this run's grades were computed at view, never stored
+            raise HTTPException(status_code=409, detail=f"The grade filter is not available for this run ({exc})") \
+                from None
         RUN_TICKETS.add_ticket_fields(session, team_id, run, out["items"])  # CB-38 PR-4: ticket_key, ticket_url
         out["run"] = public_run(run)
         return out
@@ -1497,9 +1653,22 @@ async def run_assets(team_id: TeamId, run_id: ObjectId,
                      page: int = Query(default=1, ge=1, le=10_000), page_size: int = Query(default=50, ge=1, le=200),
                      view: str = Query(default="all", pattern="^(all|findings)$"),
                      status: str | None = Query(default=None, pattern="^(not_started|in_progress|fixed|ignored)$"),
+                     code: str | None = Query(default=None, max_length=3_300),
+                     asset_id: str | None = Query(default=None, max_length=5_500),
+                     pqc_group: str | None = Query(default=None, max_length=64),
+                     clause: str | None = Query(default=None, max_length=300),
+                     q_grade: str | None = Query(default=None, pattern="^(Q0|Q1|Q2|Q3|Q4|none)$"),
                      Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
-    params = {**_asset_params(type, impact, quantum, q, source_id, page, page_size), "view": view, "status": status}
+    try:  # #270: the compliance mapping's "N assets" (a clause's assets, a requirement's assets)
+        codes, asset_ids = RUN_ASSETS.parse_codes(code), RUN_ASSETS.parse_ids(asset_id)
+        group = RUN_ASSETS.parse_pqc_group(pqc_group)  # #271: the readiness card's "Show these N"
+        clause_filter = RUN_ASSETS.parse_clause(clause)  # #289: the assets a clause counts, by the posture's rule
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    params = {**_asset_params(type, impact, quantum, q, source_id, page, page_size), "view": view, "status": status,
+              "codes": codes, "asset_ids": asset_ids, "pqc_group": group, "clause": clause_filter,
+              "q_grade": q_grade}
     return _ok(await _run("run assets", team_id, _run_assets, engine, team_id, run_id, params))
 
 
@@ -1658,10 +1827,26 @@ def _asset_detail(engine, team_id: int, asset_id: int) -> dict:
             now_grade = grading.with_inputs(current).grade_row(row, asset["finding_codes"], explain=False,
                                                                cls=asset["pqc_class"])
             q_now = {"q_grade": now_grade.q_grade, "q_label": now_grade.q_label, "q_reason": now_grade.q_reason}
-        out = {**asset, **graded.fields(), "q_explain": graded.explain, "q_now": q_now}
+        # the run's findings-table row of this asset (type label, strength, risk score, status, wave, fix class,
+        # ticket, job ...), from the same functions as GET /runs/{id}/assets: a dialog opened from top risks or a
+        # certificate (an asset not on the table's page) renders the table's row, not a bare id (staging QA B7)
+        row_item: dict = {}
+        run = session.get(CbomCollectionRun, row.run_id) if row.run_id is not None else None
+        if run is not None and run.team_id == team_id:
+            row_item = RUN_ASSETS.run_item(session, team_id, run, row, grade=graded.fields(),
+                                           pqc=(asset["pqc_class"], asset["pqc_class_basis"]))
+            RUN_TICKETS.add_ticket_fields(session, team_id, run, [row_item])
+        out = {**row_item, **asset, **graded.fields(), "q_explain": graded.explain, "q_now": q_now}
         # the code page's dialog fields, from the same function as the run's /assets items (CB-38 W2b): a dialog
         # opened from top risks or a certificate shows the same OWASP / controls / fix as one opened from the table
         RUN_ASSETS.add_code_page_fields(out)
+        # engine step 3: the estate asset this row is, its owners / applications / data classification and the code
+        # and SBOM components that use it (None until the estate store has written the row's run)
+        from backend.utilities.cbom_sources import estate_links as LINKS
+
+        key = LINKS.estate_key_of_row(session, team_id, row)
+        out["correlation"] = ({"estate_key": key, **LINKS.correlation(session, team_id, [key])[key]}
+                              if key else None)
         return {"asset": out}
 
 

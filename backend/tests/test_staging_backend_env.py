@@ -27,6 +27,13 @@ KEY_ID = "AKIATESTONLYNOTAKEY01"
 SECRET = "testOnly/NotASecret+0123456789abcdefghijKL"
 ARN = "arn:aws:iam::935951870001:user/devsecshield/devsecshield-developer"
 KEYS = ("CBOM_AWS_ACCESS_KEY_ID", "CBOM_AWS_SECRET_ACCESS_KEY", "CBOM_AWS_PRINCIPAL_ARN", "CBOM_AWS_LAB_SAME_ACCOUNT")
+AI_KEYS = ("CBOM_AI_PROVIDER", "CBOM_AI_BEDROCK_REGION", "CBOM_AI_AWS_CREDENTIALS", "CBOM_AI_AWS_ACCESS_KEY_ID",
+           "CBOM_AI_AWS_SECRET_ACCESS_KEY")
+# #369: not a secret. Staging deploys write 1; the example file stays empty.
+CT_KEYS = ("CBOM_CT_DISCOVERY",)
+# the AI assistant's own IAM user (Bedrock invoke only): fixed test strings in AWS's shapes, never real keys
+AI_KEY_ID = "AKIATESTONLYBEDROCK01"
+AI_SECRET = "testOnly+Bedrock/NotASecret0123456789abcd"
 
 
 def env_of(path: Path) -> list[str]:
@@ -144,7 +151,121 @@ def test_staging_compose_says_staging_to_the_containers_that_decide_lab_mode():
 
 def test_backend_env_keys_are_the_documented_ones():
     script = (ROOT / "scripts/deploy/staging.sh").read_text()
-    assert f"BACKEND_ENV_KEYS=({' '.join(KEYS)})" in script
+    listed = re.search(r"BACKEND_ENV_KEYS=\(([^)]*)\)", script).group(1).split()
+    assert listed == list(KEYS + AI_KEYS + CT_KEYS)
     example = (ROOT / "deploy/staging/backend.env.example").read_text()
-    for key in KEYS:
+    for key in KEYS + AI_KEYS + CT_KEYS:
         assert re.search(rf"(?m)^{key}=$", example), key
+
+
+def test_the_workflow_sets_bedrock_ai_remediation_for_staging_with_no_secret():
+    """CB-38: a staging deploy writes the AI provider only when the `staging` environment's variable is set (so a
+    host-side CBOM_AI_PROVIDER=off in backend.env is never reset; PR 249 review), and Bedrock's region and credential
+    source with defaults; none of these is a secret."""
+    wf = (ROOT / ".github/workflows/deploy-staging.yml").read_text()
+    step = wf.split("- name: Copy and deploy", 1)[1].split("\n      - name:", 1)[0]
+    assert "STAGING_SET_CBOM_AI_PROVIDER: ${{ vars.CBOM_AI_PROVIDER }}" in step
+    assert not re.search(r"CBOM_AI_PROVIDER \|\|", wf)  # no forced default over the host's value
+    assert "STAGING_SET_CBOM_AI_BEDROCK_REGION: ${{ vars.CBOM_AI_BEDROCK_REGION || 'ap-south-1' }}" in step
+    # static (the assistant's own keys) when the environment has them, else env; the variable still wins
+    # without the pair the host's value stays (never a forced env: review 5909551771)
+    assert ("STAGING_SET_CBOM_AI_AWS_CREDENTIALS: ${{ vars.CBOM_AI_AWS_CREDENTIALS || "
+            "(secrets.CBOM_AI_AWS_ACCESS_KEY_ID != '' && secrets.CBOM_AI_AWS_SECRET_ACCESS_KEY != '' && 'static') "
+            "|| '' }}") in step
+    # the only AI secrets are the dedicated key pair, passed to push like CBOM_AWS_* and nowhere else
+    assert sorted(set(re.findall(r"secrets\.(CBOM_AI_[A-Z_]+)", wf))) == ["CBOM_AI_AWS_ACCESS_KEY_ID",
+                                                                        "CBOM_AI_AWS_SECRET_ACCESS_KEY"]
+    assert "STAGING_SET_CBOM_AI_AWS_ACCESS_KEY_ID: ${{ secrets.CBOM_AI_AWS_ACCESS_KEY_ID }}" in step
+    assert "STAGING_SET_CBOM_AI_AWS_SECRET_ACCESS_KEY: ${{ secrets.CBOM_AI_AWS_SECRET_ACCESS_KEY }}" in step
+    build = wf.split("\n  deploy:", 1)[0]
+    assert "CBOM_AI_AWS" not in build.split("\n  build:", 1)[-1]  # the build job never sees them
+
+
+def test_backend_env_accepts_ct_discovery_and_does_not_print_it_as_a_secret(host):
+    """#369: 1 and 0 are ordinary flag values. An empty value leaves the host's line alone."""
+    path = host.root / "deploy/staging/backend.env"
+    proc = ok(set_env(host, "CBOM_CT_DISCOVERY=1\n"))
+    assert "CBOM_CT_DISCOVERY=1" in env_of(path)
+    assert "set in backend.env" in proc.stdout and "CBOM_CT_DISCOVERY" in proc.stdout
+    ok(set_env(host, "CBOM_CT_DISCOVERY=0\n"))
+    assert "CBOM_CT_DISCOVERY=0" in env_of(path)
+    ok(set_env(host, "CBOM_CT_DISCOVERY=\n"))
+    assert "CBOM_CT_DISCOVERY=0" in env_of(path)  # empty = not provided
+
+
+def test_backend_env_accepts_the_ai_keys(host):
+    path = host.root / "deploy/staging/backend.env"
+    ok(set_env(host, "CBOM_AI_PROVIDER=bedrock\nCBOM_AI_BEDROCK_REGION=ap-south-1\nCBOM_AI_AWS_CREDENTIALS=env\n"))
+    lines = env_of(path)
+    assert {"CBOM_AI_PROVIDER=bedrock", "CBOM_AI_BEDROCK_REGION=ap-south-1", "CBOM_AI_AWS_CREDENTIALS=env"} <= set(lines)
+    # a hand-set off on the host survives a deploy whose CBOM_AI_PROVIDER variable is unset (sent empty)
+    ok(set_env(host, "CBOM_AI_PROVIDER=off\n"))
+    ok(set_env(host, "CBOM_AI_PROVIDER=\nCBOM_AI_BEDROCK_REGION=ap-south-1\nCBOM_AI_AWS_CREDENTIALS=env\n"))
+    assert "CBOM_AI_PROVIDER=off" in env_of(path)
+
+
+def test_backend_env_sets_the_dedicated_bedrock_keys_and_never_prints_them(host):
+    path = host.root / "deploy/staging/backend.env"
+    proc = ok(set_env(host, f"CBOM_AI_AWS_CREDENTIALS=static\nCBOM_AI_AWS_ACCESS_KEY_ID={AI_KEY_ID}\n"
+                            f"CBOM_AI_AWS_SECRET_ACCESS_KEY={AI_SECRET}\n"))
+    lines = env_of(path)
+    assert {"CBOM_AI_AWS_CREDENTIALS=static", f"CBOM_AI_AWS_ACCESS_KEY_ID={AI_KEY_ID}",
+            f"CBOM_AI_AWS_SECRET_ACCESS_KEY={AI_SECRET}"} <= set(lines)
+    out = proc.stdout + proc.stderr
+    assert AI_KEY_ID not in out and AI_SECRET not in out and "CBOM_AI_AWS_SECRET_ACCESS_KEY" in out
+    # an empty secret (not set in the environment) leaves the host's keys in place
+    ok(set_env(host, "CBOM_AI_AWS_ACCESS_KEY_ID=\nCBOM_AI_AWS_SECRET_ACCESS_KEY=\n"))
+    assert f"CBOM_AI_AWS_SECRET_ACCESS_KEY={AI_SECRET}" in env_of(path)
+    proc = failed(set_env(host, "CBOM_AI_AWS_SECRET_ACCESS_KEY=a b$(id)\n"))
+    assert "characters an env file cannot hold" in proc.stderr and "$(id)" not in proc.stderr
+
+
+def test_push_forwards_ct_discovery_over_stdin_and_never_logs_the_value(tmp_path):
+    """#369: the flag rides the same STAGING_SET_ path as CBOM_AI_PROVIDER. 1 is not a secret, and is still not logged."""
+    h = ShortHost(tmp_path, free=NEED + IMG)
+    build = build_machine(tmp_path, h)
+    env = {"PATH": f"{h.root / 'bin'}:{os.environ['PATH']}", "HOME": str(h.root), "TMPDIR": str(h.root),
+           "LANG": "C", "FAKE_DOCKER_STATE": str(h.state_file), "STAGING_CONTAINERD_ROOT": str(h.store),
+           "FAKE_SSH_LOG": str(h.root / "ssh.log"), "DSS_TAG": "t3", "SSH_OPTS": "-o BatchMode=yes",
+           "STAGING_SET_CBOM_CT_DISCOVERY": "1"}
+    proc = ok(subprocess.run([BASH, str(build / "scripts/deploy/staging.sh"), "push", "deploy@stage", str(h.root)],
+                             cwd=build, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=180))
+    assert "CBOM_CT_DISCOVERY=1" in env_of(h.root / "deploy/staging/backend.env")
+    calls = (h.root / "ssh.log").read_text()
+    assert "CBOM_CT_DISCOVERY=1" not in (proc.stdout + proc.stderr + calls)
+    assert "staging.sh backend-env && " in calls
+
+
+def test_push_forwards_the_dedicated_bedrock_keys_over_stdin_only(tmp_path):
+    h = ShortHost(tmp_path, free=NEED + IMG)
+    build = build_machine(tmp_path, h)
+    env = {"PATH": f"{h.root / 'bin'}:{os.environ['PATH']}", "HOME": str(h.root), "TMPDIR": str(h.root),
+           "LANG": "C", "FAKE_DOCKER_STATE": str(h.state_file), "STAGING_CONTAINERD_ROOT": str(h.store),
+           "FAKE_SSH_LOG": str(h.root / "ssh.log"), "DSS_TAG": "t3", "SSH_OPTS": "-o BatchMode=yes",
+           "STAGING_SET_CBOM_AI_PROVIDER": "bedrock", "STAGING_SET_CBOM_AI_AWS_CREDENTIALS": "static",
+           "STAGING_SET_CBOM_AI_AWS_ACCESS_KEY_ID": AI_KEY_ID, "STAGING_SET_CBOM_AI_AWS_SECRET_ACCESS_KEY": AI_SECRET}
+    proc = ok(subprocess.run([BASH, str(build / "scripts/deploy/staging.sh"), "push", "deploy@stage", str(h.root)],
+                             cwd=build, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=180))
+    lines = env_of(h.root / "deploy/staging/backend.env")
+    assert f"CBOM_AI_AWS_ACCESS_KEY_ID={AI_KEY_ID}" in lines and f"CBOM_AI_AWS_SECRET_ACCESS_KEY={AI_SECRET}" in lines
+    assert "CBOM_AI_AWS_CREDENTIALS=static" in lines and "CBOM_AI_PROVIDER=bedrock" in lines
+    calls = (h.root / "ssh.log").read_text()
+    out = proc.stdout + proc.stderr + calls
+    assert AI_KEY_ID not in out and AI_SECRET not in out  # not in the log, not on any command line
+
+
+@pytest.mark.parametrize("line", [
+    "CBOM_AI_AWS_SECRET_ACCESS_KEY=x\nsecretPart0123456789/abc=def\n",   # a multi-line secret's second line
+    "Wjalr XUtnFEMI/K7MDENG=bPxRfiCY\n",
+])
+def test_an_unknown_key_is_never_printed_even_in_part(host, line):
+    """staging.sh printed ${key:0:64} of a refused key: a multi-line secret's next line would show up to 64 of its
+    characters (review 5909551771, nit)."""
+    proc = failed(set_env(host, line))
+    assert "an unknown key" in proc.stderr
+    assert "secretPart" not in proc.stderr and "Wjalr" not in proc.stderr
+
+
+def test_a_well_formed_unknown_key_name_is_still_named(host):
+    proc = failed(set_env(host, "JWT_SECRET_KEY=evil\n"))
+    assert "JWT_SECRET_KEY is not one of" in proc.stderr

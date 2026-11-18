@@ -100,11 +100,11 @@ async function main() {
   assert.ok(!/port 80\b/.test(httpTab) && !httpTab.includes("on port 80"), "no port 80 advice")
   assert.match(httpTab, /One node per network segment\. /)
   assert.ok(!/connects out to ZeroShield on port/.test(httpTab), "no port for a plain-HTTP API")
-  assert.match(httpTab, /It only connects out to devsec-staging-api\.zeroshield\.ai\./)
+  assert.match(httpTab, /It only connects out to devsec-staging-api\.zeroshield\.ai, to the targets of its jobs, and to your DNS resolver \(port 53\)\./)
   assert.match(httpTab, /Add your first scan node/)
   const httpsTab = tab(HTTPS)
-  assert.match(httpsTab, /Each connects out to ZeroShield on port 443 only\./)
-  assert.match(httpsTab, /It only connects out to devsecshieldapi\.zeroshield\.ai on port 443\./)
+  assert.match(httpsTab, /Each connects out to ZeroShield on port 443, to your targets and to DNS; nothing calls in\./)
+  assert.match(httpsTab, /It only connects out to devsecshieldapi\.zeroshield\.ai on port 443, to the targets of its jobs, and to your DNS resolver \(port 53\)\./)
   console.log("http deployment tests passed")
 }
 

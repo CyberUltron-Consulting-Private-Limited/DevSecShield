@@ -9,6 +9,8 @@ import { useState } from "react";
 
 import CertCalendar from "@/components/cbom/CertCalendar";
 import CryptoHeatmap from "@/components/cbom/CryptoHeatmap";
+import { QGradeChip } from "@/components/cbom/grade";
+import type { HeatCell } from "@/components/cbom/heatmapLogic";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -18,7 +20,9 @@ import {
   getCbomRunChanges,
   getCbomRunDiff,
   getCbomRunHeatmap,
+  getCbomRunHeatmapCell,
   type CbomDiff,
+  type CbomHeatMetric,
   type CbomDiffAsset,
   type CbomDriftKind,
 } from "@/utils/api/cbom_ops";
@@ -37,6 +41,8 @@ export const DRIFT_LABEL: Record<CbomDriftKind, [string, Tone]> = {
   cert_expiring: ["Certificate expiring", "amber"],
   schedule_skipped: ["Scheduled run skipped", "amber"],
   q0_closed: ["Q0 gap closed", "green"],
+  agility_asset_moved: ["Fix class changed", "amber"],
+  agility_system_changed: ["System fix-class mix changed", "amber"],
 };
 
 export function RunChanges({ teamId, runId, finished }: { teamId: number; runId: number; finished: boolean }) {
@@ -74,6 +80,14 @@ export function RunChanges({ teamId, runId, finished }: { teamId: number; runId:
               <span className="text-zinc-800 dark:text-zinc-200 break-all">{e.asset_label}</span>
               <span className="text-zinc-500">{e.source_name}</span>
               {typeof e.detail?.cause === "string" && <span className="text-amber-700 dark:text-amber-400">({e.detail.cause})</span>}
+              {typeof e.detail?.old_class === "string" && typeof e.detail?.new_class === "string" && (
+                <span className="text-amber-700 dark:text-amber-400">({e.detail.old_class} → {e.detail.new_class})</span>
+              )}
+              {typeof e.detail?.old_hardest !== "undefined" && e.kind === "agility_system_changed" && (
+                <span className="text-amber-700 dark:text-amber-400">
+                  (hardest {String(e.detail.old_hardest ?? "—")} → {String(e.detail.new_hardest ?? "—")})
+                </span>
+              )}
             </li>
           ))}
         </ul>
@@ -274,7 +288,7 @@ export function CodeChanges({ teamId, scanId }: { teamId: number; scanId: number
     <details className="rounded-lg border border-zinc-200 dark:border-zinc-800 p-4" data-testid="code-changes"
              onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
       <summary className="cursor-pointer text-sm font-medium text-zinc-900 dark:text-white">
-        Changes since the previous scan of this repository and branch
+        Drift since the previous scan of this repository and branch
       </summary>
       <div className="mt-3">
         {!open ? null : q.isLoading ? <LoadingBlock /> : q.isError || !q.data ? <ErrorBlock error={q.error} onRetry={() => q.refetch()} /> : (
@@ -288,42 +302,124 @@ export function CodeChanges({ teamId, scanId }: { teamId: number; scanId: number
   );
 }
 
-/** Heat-map (family x source, or x asset type) and the certificate calendar of one run. */
-export function RunInsights({ teamId, runId, active }: { teamId: number; runId: number; active: boolean }) {
-  const [by, setBy] = useState<"source" | "type">("source");
+const CELL_PAGE = 25;
+
+/** The assets of one heat-map cell (GET …/heatmap/cell), worst first, paged; the grade is the run list's. */
+function HeatCellAssets({ teamId, runId, by, metric, cell, columnLabel }: {
+  teamId: number; runId: number; by: "source" | "type"; metric: CbomHeatMetric; cell: HeatCell;
+  columnLabel: (c: string) => string;
+}) {
+  const [page, setPage] = useState(1);
   const q = useQuery({
-    queryKey: cbomOpsKeys.heatmap(teamId, runId, by),
-    queryFn: () => getCbomRunHeatmap(teamId, runId, by),
+    queryKey: cbomOpsKeys.heatmapCell(teamId, runId, by, metric, cell.row, cell.column, page),
+    queryFn: () => getCbomRunHeatmapCell(teamId, runId, { by, metric, row: cell.row, column: cell.column, page,
+                                                          page_size: CELL_PAGE }),
+    retry: 1,
+  });
+  if (q.isLoading) return <LoadingBlock />;
+  if (q.isError || !q.data) return <ErrorBlock error={q.error} onRetry={() => q.refetch()} />;
+  const pages = Math.max(1, Math.ceil(q.data.total / CELL_PAGE));
+  return (
+    <div className="space-y-2" data-testid="run-heatmap-cell-assets">
+      <p className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+        {cell.row} in {columnLabel(cell.column)}: {pluralize(q.data.total, "asset")}, worst first
+      </p>
+      <ul className="divide-y divide-zinc-200 dark:divide-zinc-800 rounded-md border border-zinc-200 dark:border-zinc-800">
+        {q.data.items.map((a) => (
+          <li key={a.id} className="flex flex-wrap items-center gap-2 px-2 py-1.5 text-xs" data-testid={`run-heatmap-cell-asset-${a.id}`}>
+            {metric === "grade"
+              ? <QGradeChip item={a} assetId={a.id} testId={`run-heatmap-cell-q-${a.id}`} />
+              : <StatusBadge tone={a.impact === "Critical" || a.impact === "High" ? "red" : a.impact ? "amber" : "zinc"}>{a.impact ?? "No finding"}</StatusBadge>}
+            <span className="font-mono break-all text-zinc-800 dark:text-zinc-200">{a.location}</span>
+            <span className="text-zinc-500">{ASSET_TYPE_LABEL[a.type] ?? a.type}{a.algorithm ? ` · ${a.algorithm}` : ""}</span>
+            {a.source_name && <span className="text-zinc-500">· {a.source_name}</span>}
+          </li>
+        ))}
+      </ul>
+      {pages > 1 && (
+        <div className="flex items-center gap-2 text-xs">
+          <Button variant="outline" size="sm" className="cursor-pointer" disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</Button>
+          <span>Page {page} of {pages}</span>
+          <Button variant="outline" size="sm" className="cursor-pointer" disabled={page >= pages} onClick={() => setPage(page + 1)}>Next</Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Heat-map (family x source, or x asset type) and the certificate calendar of one run, stacked: each gets the full
+ * width (side by side the heat-map got half a row and scrolled sideways at 1366 px, #268). The map is coloured by
+ * worst impact or (CB-19 PR-3) worst quantum risk grade; a selected cell lists its assets below it.
+ * 11-A (run results redesign): one card with the map's title, the "Columns" and "Colour" switches beside it, the map
+ * with readable column names, family and column totals and a named legend (CryptoHeatmap layout="run"), the selected
+ * cell's assets with paging, and the calendar below. `calendar={false}`: no calendar (the inventory view shows it in
+ * the Certificates card's Calendar tab). */
+export function RunInsights({ teamId, runId, active, calendar = true }: { teamId: number; runId: number; active: boolean; calendar?: boolean }) {
+  const [by, setBy] = useState<"source" | "type">("source");
+  const [metric, setMetric] = useState<CbomHeatMetric>("impact");
+  const [cell, setCell] = useState<HeatCell | null>(null);
+  const q = useQuery({
+    queryKey: cbomOpsKeys.heatmap(teamId, runId, by, metric),
+    queryFn: () => getCbomRunHeatmap(teamId, runId, by, metric),
     retry: 1,
     refetchInterval: active ? 20000 : false,
   });
   if (q.isLoading) return <LoadingBlock />;
   if (q.isError || !q.data) return <ErrorBlock error={q.error} onRetry={() => q.refetch()} />;
   if (q.data.rows.length === 0) return null;
+  const columnLabel = (c: string) => (by === "type" ? ASSET_TYPE_LABEL[c] ?? c : c);
+  // an older server ignores metric=grade: colour by grade only when the cells carry grades
+  const graded = metric === "grade" && q.data.cells.some((c) => c.by_grade);
+  const seg = "rounded-md px-2.5 py-1 cursor-pointer";
+  const on = "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-white";
+  const off = "text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white";
+  const group = "inline-flex rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 p-0.5";
+  const title = `Algorithm family × ${by === "source" ? "source" : "asset type"}`;
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 rounded-lg border border-zinc-200 dark:border-zinc-800 p-4" data-testid="run-insights">
-      <div className="space-y-2 min-w-0">
-        <div className="flex gap-2 text-xs" role="group" aria-label="Heat-map columns">
-          {(["source", "type"] as const).map((v) => (
-            <button key={v} type="button" aria-pressed={by === v} onClick={() => setBy(v)}
-                    className={`rounded px-2 py-0.5 cursor-pointer border ${by === v ? "bg-zinc-900 text-white dark:bg-white dark:text-zinc-900" : "border-zinc-300 dark:border-zinc-700"}`}>
-              By {v === "source" ? "source" : "asset type"}
-            </button>
-          ))}
+    <div className="space-y-6 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 sm:p-5" data-testid="run-insights">
+      <div className="space-y-3 min-w-0">
+        <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="text-zinc-500 dark:text-zinc-400">Columns</span>
+            <div className={group} role="group" aria-label="Heat-map columns">
+              {(["source", "type"] as const).map((v) => (
+                <button key={v} type="button" aria-pressed={by === v} onClick={() => { setBy(v); setCell(null); }}
+                        className={`${seg} ${by === v ? on : off}`}>
+                  By {v === "source" ? "source" : "asset type"}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-zinc-500 dark:text-zinc-400">Colour</span>
+            <div className={group} role="group" aria-label="Heat-map colour" data-testid="run-heatmap-metric">
+              {(["impact", "grade"] as const).map((v) => (
+                <button key={v} type="button" aria-pressed={metric === v} data-testid={`run-heatmap-metric-${v}`}
+                        onClick={() => { setMetric(v); setCell(null); }} className={`${seg} ${metric === v ? on : off}`}>
+                  {v === "impact" ? "Impact" : "Quantum risk"}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
-        <CryptoHeatmap data={q.data} title={`Algorithm family × ${by === "source" ? "source" : "asset type"}`}
-                       columnLabel={by === "type" ? (c) => ASSET_TYPE_LABEL[c] ?? c : undefined} testId="run-heatmap" />
+        <CryptoHeatmap key={`${by}:${metric}`} data={q.data} metric={graded ? "grade" : "impact"} onSelect={setCell}
+                       title={title} layout="run"
+                       columnLabel={by === "type" ? columnLabel : undefined} testId="run-heatmap" />
+        {cell && <HeatCellAssets key={`${by}:${metric}:${cell.row}:${cell.column}`} teamId={teamId} runId={runId}
+                                 by={by} metric={graded ? "grade" : "impact"} cell={cell} columnLabel={columnLabel} />}
       </div>
-      <div className="min-w-0">
-        {q.data.certificates.length > 0 ? (
-          <CertCalendar certs={q.data.certificates} testId="run-cert-calendar" />
-        ) : (
-          <p className="text-xs text-zinc-500">No certificates with an expiry date in this run.</p>
-        )}
-        {q.data.certificates.length > 0 && (
-          <p className="text-xs text-zinc-500 mt-1">{pluralize(q.data.certificates.length, "certificate")} with an expiry date.</p>
-        )}
-      </div>
+      {calendar && (
+        <div className="min-w-0 border-t border-zinc-200 dark:border-zinc-800 pt-5">
+          {q.data.certificates.length > 0 ? (
+            <CertCalendar certs={q.data.certificates} testId="run-cert-calendar" />
+          ) : (
+            <p className="text-xs text-zinc-500">No certificates with an expiry date in this run.</p>
+          )}
+          {q.data.certificates.length > 0 && (
+            <p className="text-xs text-zinc-500 mt-1">{pluralize(q.data.certificates.length, "certificate")} with an expiry date.</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

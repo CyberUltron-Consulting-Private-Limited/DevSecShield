@@ -19,11 +19,11 @@
 //   anywhere             -> <Q0ItemList items={posture.q0_items} total={posture.q0_items_total} />,
 //                           <QGradeModelDialog teamId={t} open onOpenChange />, <AgilityDistribution posture={posture} />
 //
-// RunPosture.tsx mounts the two posture cards inside RunPostureCard and the two drawer sections inside
-// AssetDetailPanel, so any page that already mounts those two gets them with no change.
-export { GradeInputsBanner, QDistributionBar, QDistributionCard, QGradeChip, QGradeDrawerSection, QGradeModelBody, QGradeModelDialog, Q0ItemList } from "./QGrade";
-export { AgilityDistribution, AgilityDrawerSection, AgilityPostureCard, EvidenceFixClass, FixClassChip } from "./Agility";
-export { AgilityBaselineSection, AgilityBaselineView, AgilitySubjectsTable, AgilitySystemsTable, type DrillDown } from "./AgilityBaseline";
+// The run results page mounts the two posture cards in its Quantum grades view (results/views/QuantumView.tsx);
+// RunPosture.tsx mounts the two drawer sections inside AssetDetailPanel, so any page that mounts it gets them.
+export { GradeInputsBanner, QDistributionBar, QDistributionCard, QDistributionColumns, QGradeChip, QGradeDrawerSection, QGradeModelBody, QGradeModelDialog, Q0ItemList } from "./QGrade";
+export { AgilityDistribution, AgilityDrawerSection, AgilityWhoFixes, AgilityPostureCard, EvidenceFixClass, FixClassChip } from "./Agility";
+export { AgilityBaselineSection, AgilityBaselineView, AgilityHistoryTable, AgilitySubjectsTable, AgilitySystemsTable, type DrillDown } from "./AgilityBaseline";
 export * from "./baseline";
 //   team page            -> <Q0GapRegister teamId={t} />  (Quantum risk -> Q0 gaps, CB-23; fetches GET /{team}/cbom/register/q0)
 //                           hooks q0-gap-<id> (data-reason, data-status), q0-gap-group-<reason> (data-count)
@@ -34,7 +34,7 @@ export * from "./q0gaps";
 //                           register-heatmap, heatmap-cell-<family>-<source> (data-worst, data-total; click drills down)
 export { RegisterHeatmap, RegisterSummaryCard, RegisterTable, RiskRegister } from "./RiskRegister";
 export * from "./register";
-export { GRADE_TIPS, fixClassTipId, type GradeTipId, type TipEntry } from "./tips";
-export { gradeKeys, getCbomAgilityBaseline, getCbomAgilityModel, getCbomAgilitySubjects, getCbomGradeModel, useAgilityModel, useGradeModel } from "./api";
+export { GRADE_TIP_IDS, fixClassTipId, type GradeTipId, type TipEntry } from "./tips";
+export { gradeKeys, getCbomAgilityBaseline, getCbomAgilityHistory, getCbomAgilityModel, getCbomAgilitySubjects, getCbomGradeModel, useAgilityModel, useGradeModel } from "./api";
 export * from "./model";
 export * from "./inputs";

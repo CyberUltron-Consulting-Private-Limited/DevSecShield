@@ -266,6 +266,80 @@ def test_assets_without_a_cross_source_identity_get_a_per_source_key(world):
     assert all(re.fullmatch(r"(obs|ep):[0-9a-f]{40}", k) for k in world.assets())
 
 
+# ----------------------------------------------------------------------------- incremental keys (CB-21 #205)
+def _cert_world(world, rounds):
+    """Sources seeing overlapping certificates; each round changes a few (renewal, a Windows row joining)."""
+    p, w, lin = world.source("network", "prober"), world.source("windows_servers", "win"), world.source("linux_servers", "l")
+    base = {"not_after": NOT_AFTER, "subject": SUBJECT, "issuer": ISSUER}
+    for r in range(rounds):
+        serials = [f"4fa19c00127b3e5590abcdef01{i:02x}{r if i == 3 else 0:02x}" for i in range(6)]
+        jobs = {p: {"rows": [cert("10.0.0.5", f"10.0.0.5:44{i}#chain[0]", serial=s, fingerprint_sha1=f"{i:02x}" * 20,
+                                  **base) for i, s in enumerate(serials)] + [endpoint("10.0.0.5")]},
+                lin: {"rows": [cert("app", f"/etc/ssl/{i}.pem", serial=s, **base) for i, s in enumerate(serials[:4])]}}
+        if r % 2:
+            jobs[w] = {"rows": [cert("win", "LocalMachine\\My", thumbprint=("01" * 20).upper(), **base)]}
+        world.finalise(world.run(jobs))
+
+
+def test_incremental_keys_equal_a_full_correlation_every_run(tmp_path):
+    warm, cold = World(_sqlite(tmp_path / "w.db")), World(_sqlite(tmp_path / "c.db"))
+    E._INDEXES.clear()
+    _cert_world(warm, 5)
+    real = D.record_estate
+
+    def cold_write(*a, **k):
+        E._INDEXES.clear()  # every run of this world starts from an empty index: correlate_detail over the run
+        real(*a, **k)
+
+    D.record_estate = cold_write
+    try:
+        _cert_world(cold, 5)
+    finally:
+        D.record_estate = real
+    assert warm.dump() == cold.dump()
+    assert len({o.asset_key for o in warm.observations()}) >= 6
+
+
+def test_the_change_token_covers_every_input_of_the_keys():
+    """``estate._token`` must change whenever ``asset_keys`` could key a row differently (the incremental index
+    re-reads only rows whose token changed): every certificate field it reads, and an endpoint's place and port."""
+    from types import SimpleNamespace
+
+    def row(kind, facts, location="10.0.0.5:443", cdx="cryptographic-asset"):
+        return SimpleNamespace(asset_type=kind, cdx_type=cdx, facts=facts, location=location, target="10.0.0.5")
+
+    full = {f: f"v-{f}" for f in E.AK._CERT_FIELDS}
+    base = E._token(row("certificate", full))
+    for f in E.AK._CERT_FIELDS:
+        assert E._token(row("certificate", {**full, f: "other"})) != base, f
+    assert E._token(row("certificate", {**full, "protocols": ["TLSv1.3"]})) == base  # not a key input
+    assert E._token(row("x", full, cdx="certificate")) != E._token(row("x", full))
+    ep = E._token(row("tls_endpoint", {"port": 443}))
+    assert E._token(row("tls_endpoint", {"port": 8443})) != ep
+    assert E._token(row("tls_endpoint", {"port": 443}, location="10.0.0.6:443")) != ep
+    assert E._token(row("kms_key", {"identity": "arn:aws:kms:eu-west-1:1:key/a"})) != E._token(
+        row("kms_key", {"identity": "arn:aws:kms:eu-west-1:1:key/b"}))
+
+
+def test_an_unchanged_rerun_reuses_keys_and_observation_keys(world, monkeypatch):
+    E._INDEXES.clear()
+    net = world.source("network", "lab")
+    rows = [endpoint(f"10.0.0.{i}") for i in range(1, 30)] + [cert("10.0.0.1", "10.0.0.1:443#chain[0]",
+                                                                   serial=SERIAL, not_after=NOT_AFTER)]
+    world.finalise(world.run({net: {"rows": rows}}))
+    counted: list[int] = []
+    real = E.AK.observation_keys
+    monkeypatch.setattr(E.AK, "observation_keys", lambda rs, ref: counted.append(len(rs)) or real(rs, ref))
+    writes = []
+    E.register_hook(hook := (lambda _s, w: writes.append(w.counts)))
+    try:
+        world.finalise(world.run({net: {"rows": rows + [endpoint("10.0.0.99")]}}))
+    finally:
+        E.unregister_hook(hook)
+    assert counted == [1]  # only the new row's observation key is computed
+    assert writes[0]["rekeyed_rows"] == 1 and writes[0]["inserted"] == 1 and writes[0]["updated"] == 0
+
+
 # ----------------------------------------------------------------------------- presence transitions
 def test_presence_present_then_not_read_under_a_gap_then_removed_then_present_again(world):
     net = world.source("network", "lab")
@@ -628,6 +702,33 @@ def _migrate(engine, *steps: str, module=None) -> None:
                 getattr(module or _migration(), step)()
 
 
+def _cb32():
+    """CB-32's index migration, limited to the estate tables (this test has no register table)."""
+    path = MIGRATION.parent / "cb32scale001_estate_hot_query_indexes.py"
+    spec = importlib.util.spec_from_file_location("cb32scale001", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    mod.INDEXES = tuple(i for i in mod.INDEXES if i[1] != "cbomriskregister")
+    return mod
+
+
+def _cb32index():
+    path = MIGRATION.parent / "cb32index001_estate_stale_marks.py"
+    spec = importlib.util.spec_from_file_location("cb32index001", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    return mod
+
+
+def _cb352():
+    """#352's migration: the source markers (and the collected rows' digest; a stand-in table here)."""
+    path = MIGRATION.parent / "cb352hooks001_estate_hook_markers.py"
+    spec = importlib.util.spec_from_file_location("cb352hooks001", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    return mod
+
+
 def _cb25():
     """CB-25's migration adds the fix-class columns to these tables: the models carry them."""
     path = MIGRATION.parent / "cb25agility001_agility_store.py"
@@ -654,6 +755,11 @@ def test_migration_up_down_up_matches_the_models_sqlite(tmp_path):
     migrated = create_engine(f"sqlite:///{tmp_path / 'm.db'}")
     _up_down_up(migrated)
     _migrate(migrated, "upgrade", "downgrade", "upgrade", module=_cb25())
+    _migrate(migrated, "upgrade", "downgrade", "upgrade", module=_cb32())  # its estate-store indexes
+    _migrate(migrated, "upgrade", "downgrade", "upgrade", module=_cb32index())  # cbomestateteam.stale_marks
+    with migrated.begin() as conn:  # #352 also adds cbomcollectedasset.content_digest
+        conn.exec_driver_sql("CREATE TABLE cbomcollectedasset (id INTEGER PRIMARY KEY)")
+    _migrate(migrated, "upgrade", "downgrade", "upgrade", module=_cb352())  # cbomestatesource's hook markers
     modelled = create_engine(f"sqlite:///{tmp_path / 'n.db'}")
     with modelled.begin() as conn:
         for t in (Team.__table__, CbomEstateSource.__table__, CbomEstateAsset.__table__,

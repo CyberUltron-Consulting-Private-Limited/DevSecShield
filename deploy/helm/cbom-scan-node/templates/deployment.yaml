@@ -67,6 +67,7 @@ spec:
               mountPath: /var/lib/zs-node
             - name: tmp
               mountPath: /tmp
+            {{- include "cbom-scan-node.trustMounts" . | nindent 12 }}
       volumes:
         - name: state
           persistentVolumeClaim:
@@ -74,6 +75,7 @@ spec:
         - name: tmp
           emptyDir:
             sizeLimit: 256Mi
+        {{- include "cbom-scan-node.trustVolumes" . | nindent 8 }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

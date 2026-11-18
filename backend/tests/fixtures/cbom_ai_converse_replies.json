@@ -1,0 +1,108 @@
+{
+  "_about": "Bedrock Converse response bodies in the shape bedrock-runtime returns them (output.message.content, stopReason, usage, metrics), for the TLS endpoint 10.20.0.1:443 of test_cbom_posture.ASSETS (KB items K1 PROTO_TLS10, K2 WEAK_CIPHER, K3 NO_PQ_KEX). max_tokens is a plan cut off at the output-token cap inside its fourth step, as on staging (issue #448: every TLS / SSH / appliance Plan withheld as 'not in the required format'). Used by test_cbom_ai_bounded.py.",
+  "end_turn_plan": {
+    "output": {
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "text": "{\"summary\": \"This endpoint still accepts TLS 1.0 and the weak suites DES-CBC3-SHA and RC4-SHA [K1] [K2] [F16] [F18].\", \"steps\": [{\"text\": \"On nginx allow only TLS 1.2 and 1.3 in the server or http block [K1.s1]\", \"cites\": [\"K1.s1\"]}, {\"text\": \"On Apache httpd set SSLProtocol to TLS 1.2 and 1.3 only [K1.s2]\", \"cites\": [\"K1.s2\"]}, {\"text\": \"On HAProxy set ssl-min-ver TLSv1.2 in the global section [K1.s3]\", \"cites\": [\"K1.s3\"]}, {\"text\": \"On Windows / IIS turn TLS 1.0 off in SCHANNEL [K1.s4]\", \"cites\": [\"K1.s4\"]}, {\"text\": \"On nginx offer only ECDHE key exchange with AEAD ciphers [K2.s1]\", \"cites\": [\"K2.s1\"]}, {\"text\": \"Offer the hybrid ML-KEM group first where the TLS stack supports it [K3.fix]\", \"cites\": [\"K3.fix\"]}], \"commands\": [], \"caveats\": [\"Check old clients before turning TLS 1.0 off [K1.fix]\"]}"
+          }
+        ]
+      }
+    },
+    "stopReason": "end_turn",
+    "usage": {
+      "inputTokens": 2961,
+      "outputTokens": 412,
+      "totalTokens": 3373
+    },
+    "metrics": {
+      "latencyMs": 4120
+    }
+  },
+  "end_turn_compact": {
+    "output": {
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "text": "{\"summary\": \"This endpoint accepts TLS 1.0 and weak suites [K1] [K2].\", \"steps\": [{\"text\": \"Allow TLS 1.2 and 1.3 only [K1.fix]\", \"cites\": [\"K1.fix\"]}, {\"text\": \"Offer only ECDHE key exchange with AEAD ciphers [K2.fix]\", \"cites\": [\"K2.fix\"]}], \"commands\": [], \"caveats\": [\"Check old clients first [K1.fix]\"]}"
+          }
+        ]
+      }
+    },
+    "stopReason": "end_turn",
+    "usage": {
+      "inputTokens": 2961,
+      "outputTokens": 118,
+      "totalTokens": 3079
+    },
+    "metrics": {
+      "latencyMs": 1730
+    }
+  },
+  "max_tokens_plan": {
+    "output": {
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "text": "{\"summary\": \"This endpoint still accepts TLS 1.0 and the weak suites DES-CBC3-SHA and RC4-SHA [K1] [K2] [F16] [F18].\", \"steps\": [{\"text\": \"On nginx allow only TLS 1.2 and 1.3 in the server or http block [K1.s1]\", \"cites\": [\"K1.s1\"]}, {\"text\": \"On Apache httpd set SSLProtocol to TLS 1.2 and 1.3 only [K1.s2]\", \"cites\": [\"K1.s2\"]}, {\"text\": \"On HAProxy set ssl-min-ver TLSv1.2 in the global section [K1.s3]\", \"cites\": [\"K1.s3\"]}, {\"text\": \"On Windows / I"
+          }
+        ]
+      }
+    },
+    "stopReason": "max_tokens",
+    "usage": {
+      "inputTokens": 2961,
+      "outputTokens": 700,
+      "totalTokens": 3661
+    },
+    "metrics": {
+      "latencyMs": 4310
+    }
+  },
+  "max_tokens_nothing_complete": {
+    "output": {
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "text": "{\"summary\": \"This endpoint still accepts TLS 1.0 and the wea"
+          }
+        ]
+      }
+    },
+    "stopReason": "max_tokens",
+    "usage": {
+      "inputTokens": 2961,
+      "outputTokens": 700,
+      "totalTokens": 3661
+    },
+    "metrics": {
+      "latencyMs": 4050
+    }
+  },
+  "end_turn_malformed": {
+    "output": {
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "text": "Here is the plan for this endpoint: first turn TLS 1.0 off [K1.s1], then remove the RC4 suites [K2.s1]."
+          }
+        ]
+      }
+    },
+    "stopReason": "end_turn",
+    "usage": {
+      "inputTokens": 2961,
+      "outputTokens": 31,
+      "totalTokens": 2992
+    },
+    "metrics": {
+      "latencyMs": 980
+    }
+  }
+}

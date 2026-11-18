@@ -13,6 +13,8 @@ backend never serves a binary: the customer mirrors the signed release themselve
 * ``ansible-collection`` the playbook + ``files/zs-collect-run.sh`` for an AWX/AAP project
 * ``zs-collect-manifest`` the signed manifest and its signature
 * ``zs-collect-pubkey``  the release public key and its fingerprint
+* ``sshca-trust-salt`` / ``sshca-trust-ansible`` / ``sshca-trust-ssm``  SSH CA trust installers (issue #83).
+  They do not need a zs-collect release. The trust token stays in the transport's secret store.
 """
 from __future__ import annotations
 
@@ -20,11 +22,12 @@ import re
 from typing import Any
 
 from backend.utilities.cbom_sources.templates import zeroshield_account_id
-from backend.utilities.cbom_sources.transports import wrappers
+from backend.utilities.cbom_sources.transports import sshca_trust, wrappers
 from backend.utilities.cbom_sources.transports.models import CbomZsCollectRelease
 from backend.utilities.cbom_sources.transports.registry import key_fingerprint, public_key_pem
 
-NAMES = ("ssm-document", "ssm-role-cfn", "salt-state", "ansible-collection", "zs-collect-manifest", "zs-collect-pubkey")
+NAMES = ("ssm-document", "ssm-role-cfn", "salt-state", "ansible-collection", "zs-collect-manifest",
+         "zs-collect-pubkey") + sshca_trust.NAMES
 NEEDS_RELEASE = {"ssm-document", "salt-state", "ansible-collection", "zs-collect-manifest"}
 
 
@@ -129,10 +132,15 @@ Outputs:
 """
 
 
-def render(name: str, release: CbomZsCollectRelease | None, external_id: str) -> tuple[str, Any]:
+def render(name: str, release: CbomZsCollectRelease | None, external_id: str, *,
+           team_id: int | None = None) -> tuple[str, Any]:
     """(media type, body) of one artifact.  Raises LookupError when it needs a release and none is active."""
     if name not in NAMES:
         raise KeyError(name)
+    if name in sshca_trust.NAMES:
+        if team_id is None:
+            raise ValueError("team_id")
+        return sshca_trust.render(name, team_id)
     if name in NEEDS_RELEASE and release is None:
         raise LookupError("No verified zs-collect release is active in this deployment")
     if name == "zs-collect-pubkey":

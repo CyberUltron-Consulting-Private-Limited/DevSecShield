@@ -24,7 +24,7 @@ from backend.get_db import get_db
 from backend.new_models import CbomScanNode, TeamMembership
 from backend.utilities.auth.auth_utils import get_user_from_header_or_raise_exception
 from backend.utilities.cbom_sources import api_keys as API_KEYS
-from backend.utilities.cbom_sources.common import log, new_ref, sha256_hex
+from backend.utilities.cbom_sources.common import frames, log, new_ref, sha256_hex
 from backend.utilities.ratelimit import Key, RateLimiter, ip_key, user_key
 from backend.utilities.team import check_if_user_is_in_team
 
@@ -37,7 +37,7 @@ PRIVATE = {"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"}
 # What the forms call a field, for the few names a plain "word word" spelling would get wrong.
 _FIELD_LABELS = {
     "url": "URL", "uri": "URI", "ip": "IP address", "ips": "IP addresses", "cidr": "Network range",
-    "cidrs": "Network ranges", "ca_pem": "CA certificate", "proxy_url": "Proxy URL", "proxy_ca_pem": "Proxy CA certificate",
+    "cidrs": "Network ranges", "ca_pem": "CA certificate", "proxy_url": "Proxy URL", "proxy_ca_pem": "Proxy CA certificate", "proxy_user": "Proxy user",
     "api_key": "API key", "hec_token": "HEC token", "sni": "SNI", "tls": "TLS", "aws_source_id": "AWS account",
     "cloud_source_id": "Cloud account", "node_id": "Scan node", "kubeconfig": "Kubeconfig",
     "monthday": "Day of month", "time_of_day": "Time of day", "source_ids": "Sources",
@@ -210,5 +210,6 @@ async def read_capped_json(request: Request, limit: int) -> Any:
 
 def server_error(what: str, exc: BaseException, **fields: Any) -> HTTPException:
     ref = new_ref()
-    log(f"{what} FAILED", ref=ref, error=type(exc).__name__, **fields)
+    # the traceback frames next to the ref (X3): where it failed, never the message or the locals
+    log(f"{what} FAILED", ref=ref, error=type(exc).__name__, frames=frames(exc), **fields)
     return HTTPException(status_code=500, detail=f"Something went wrong; please try again (ref {ref})")

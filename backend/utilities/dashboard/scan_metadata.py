@@ -172,6 +172,7 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
         server_url = _meta.get("server_url") if _meta.get("server_url") else None
         server_mode = _meta.get("server_mode") if _meta.get("server_mode") else None
 
+        # an allow-list: the stored headers (names, masked values, encrypted values: #44) are never returned
         return {
             "server_url": server_url,
             "server_mode": server_mode,
@@ -315,6 +316,8 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
             **rerun_options("cbom", _meta),
             # a code scan: what it left out (archives, images, binaries, firmware ...) from crypto:coverage:* (WP8b)
             "cbom_coverage": None if cbom_file_used else coverage_report(cbom_json),
+            # CB-29: the crypto-library advisory data the scan matched (OSV snapshot version, date, stale)
+            "advisory_data": (scan.scan_data or {}).get("advisory_data") if isinstance(scan.scan_data, dict) else None,
             # an uploaded CBOM file: what was read, skipped or truncated, and the notes to show the user
             "cbom_input": cbom_input,
             "scan_binaries": scan_binaries,

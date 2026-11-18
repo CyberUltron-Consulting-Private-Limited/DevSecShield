@@ -94,8 +94,12 @@ function CreateAdminUserDialog({
       <DialogContent className="bg-zinc-900 border-zinc-800 sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="text-zinc-100 flex items-center gap-1">Create admin user <InfoTip id="admin.create_user" /></DialogTitle>
+          {/* what POST /admin/create_admin_user does (backend routers/admin.py): it mails a single-use link to choose a
+              password, never the password, and the account must replace this one at its first sign-in (#15) */}
           <DialogDescription className="text-zinc-400">
-            Create a new user with superuser privileges. They will receive an email with their credentials.
+            Create a new user with superuser privileges. We email them a single-use link to choose their own password;
+            the email never contains a password. The password you set here is temporary: if they sign in with it, they
+            must choose a new one first.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 py-2">

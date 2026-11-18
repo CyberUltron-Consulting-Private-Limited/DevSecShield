@@ -299,7 +299,7 @@ class _Computed:
 
 _EMPTY_POSTURE: dict[str, Any] = {"assets": 0, "pqc_classes": {c: 0 for c in POSTURE.PQC_CLASSES},
                                   "pqc_readiness_pct": None, "impacts": {k: 0 for k in _IMPACTS}, "top_risks": [],
-                                  "compliance": []}
+                                  "compliance": [], "readiness_basis": POSTURE.readiness({})[1]}
 
 
 def _job_context(session: Session, team_id: int, run_id: int) -> tuple[
@@ -366,12 +366,18 @@ def _add(acc: _Acc, memo: _Memo, row: CbomCollectedAsset, view: dict[str, Any], 
     if klass == "quantum-vulnerable":
         broken = [c for c in codes if (crypto_kb.entry("node", c) or {}).get("pqc") == "quantum-broken"]
         acc.kb_codes.update(codes)
+        # the quantum-vulnerable component names the row's algorithm (a TLS endpoint's key exchange, not its AES
+        # bulk cipher): the results page groups near-identical rows by it (issue #271)
+        weak_id = next((i for i in idents if i.quantum == "vulnerable" and i.name), None)
         entry = {"name": row.name or row.algorithm or row.location, "primitive": idents[0].primitive if idents else None,
+                 "asset_type": row.asset_type, "type_label": POSTURE.type_label(row.asset_type),
+                 "algorithm": weak_id.name if weak_id else (idents[0].name if idents and idents[0].name else row.algorithm),
                  "key_size": None if row.key_size is None else str(row.key_size),
                  "curve": facts.get("curve") or facts.get("group"), "nist_quantum_security_level": 0,
                  # KB text is sent once in pqc.kb, keyed by code: migration_code / fix_code point there
                  "migration_target": None, "migration_roadmap": None, "suggested_fix": None,
                  "migration_code": broken[0] if broken else None, "fix_code": codes[0] if codes else None,
+                 "finding_title": (crypto_kb.entry("node", broken[0]) or {}).get("title") if broken else None,
                  "impact": impact, "location": row.location, "bom_ref": f"zs-asset-{row.id}", "asset_id": row.id,
                  "description": view["finding"] or "", "finding_codes": list(codes)}
         _bounded_push(acc.migration, EMBED_CAP, (_IMPACT_RANK.get(impact or "", 9), int(row.id or 0)), entry)
@@ -481,6 +487,7 @@ def _assemble(acc: _Acc, posture: dict[str, Any], top_risks: list[dict[str, Any]
     findings = sum(severity.values())
     assets = int(posture["assets"])
     readiness = posture["pqc_readiness_pct"]
+    basis = dict(posture.get("readiness_basis") or {})
     vulnerable = int(classes.get("quantum-vulnerable", 0))
     ready = sum(int(classes.get(c, 0)) for c in _READY)
     dashboard = {
@@ -492,8 +499,10 @@ def _assemble(acc: _Acc, posture: dict[str, Any], top_risks: list[dict[str, Any]
             "total_quantum_vulnerable": vulnerable,
             "total_certificates": acc.certificates,
             "total_keys": acc.keys,
-            "quantum_readiness_score": 0 if readiness is None else readiness,
+            # null when posture withholds it (nothing judged, or more unidentified than judged): never 0 % (Rule P)
+            "quantum_readiness_score": readiness,
             "quantum_readiness_judged": readiness is not None,
+            "quantum_readiness_status": basis.get("status"),
             "average_risk_score": average_risk(severity),
         },
         "severity_distribution": {**severity, INFORMATIONAL: assets - findings},
@@ -521,6 +530,7 @@ def _assemble(acc: _Acc, posture: dict[str, Any], top_risks: list[dict[str, Any]
     calendar = _drain(acc.calendar)
     pqc = {"quantum_vulnerable": vulnerable, "quantum_safe": ready, "hybrid": int(classes.get("hybrid", 0)),
            "grover_weakened": int(classes.get("grover-weakened", 0)), "readiness_pct": readiness,
+           "readiness_basis": basis or None,
            "nist_level_distribution": dict(sorted(levels.items())),
            "migration": migration, "migration_total": vulnerable, "migration_truncated": vulnerable > len(migration),
            "kb": kb}
@@ -624,17 +634,45 @@ def _dashboard_top_risks(session: Session, team_id: int, risks: list[dict[str, A
 
 def _compliance(clauses_by_framework: list[dict[str, Any]]) -> dict[str, Any]:
     """Posture's KB clause mapping grouped as the results page shows it: CERT-In, RBI, SEBI CSCRF, NIST, CNSA 2.0
-    (always listed, in that order), then any other framework a newer KB adds."""
+    (always listed, in that order), then any other framework a newer KB adds.
+
+    #289: each clause keeps the posture's ``unrecorded`` count (assets cited for review: the algorithm the clause
+    depends on was not recorded) and its ``verdict`` (``fail``, or ``needs_evidence`` when every asset behind it is
+    unrecorded); each framework its ``unrecorded`` assets and ``verdict`` (``fail`` / ``needs_evidence`` / None)."""
     grouped: dict[str, list[dict[str, Any]]] = {name: [] for name in FRAMEWORKS}
+    # distinct assets behind any clause of the framework (posture's count; None when two KB names share one group,
+    # because their asset sets cannot be united here)
+    assets: dict[str, int | None] = {name: 0 for name in FRAMEWORKS}
+    unrecorded_assets: dict[str, int | None] = {name: 0 for name in FRAMEWORKS}
+    seen: set[str] = set()
     for block in clauses_by_framework:
         name = _framework(str(block.get("framework") or ""))
+        count, unrecorded = block.get("assets"), block.get("unrecorded")
+        shared = name in seen
+        assets[name] = None if shared or count is None else int(count)
+        unrecorded_assets[name] = None if shared or count is None else int(unrecorded or 0)
+        seen.add(name)
         for clause in block.get("clauses") or []:
+            codes = list(clause.get("codes") or [])
+            n, gap = int(clause.get("assets") or 0), int(clause.get("unrecorded") or 0)
+            verdict = clause.get("verdict")
             grouped.setdefault(name, []).append({
-                "clause": clause.get("id"), "title": clause.get("text"), "assets": int(clause.get("assets") or 0),
-                "codes": list(clause.get("codes") or []), "source": clause.get("source"), "note": clause.get("note")})
+                "clause": clause.get("id"), "title": clause.get("text"), "assets": n,
+                "codes": codes, "source": clause.get("source"), "note": clause.get("note"),
+                "unrecorded": gap, "verdict": verdict if verdict in ("fail", "needs_evidence") else POSTURE.clause_verdict(n, gap),
+                "findings": [_finding_fix(code) for code in codes]})  # #270: labels and "How to fix" per code
     order = list(FRAMEWORKS) + sorted(n for n in grouped if n not in FRAMEWORKS)
-    return {"frameworks": [{"framework": name, "clauses": grouped[name]} for name in order],
+    return {"frameworks": [{"framework": name, "clauses": grouped[name], "assets": assets.get(name),
+                            "unrecorded": unrecorded_assets.get(name), "verdict": POSTURE.framework_verdict(grouped[name])}
+                           for name in order],
             "scope": "Knowledge-base clauses this run's findings touch (asset counts per clause)"}
+
+
+def _finding_fix(code: str) -> dict[str, Any]:
+    """A finding code's knowledge-base title and remediation summary (the clause row's label and "How to fix")."""
+    entry = crypto_kb.entry("node", code) or {}
+    return {"code": code, "title": entry.get("title") or code,
+            "fix": (entry.get("remediation") or {}).get("summary") or None}
 
 
 # ----------------------------------------------------------------------------- live remediation join

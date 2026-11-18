@@ -36,6 +36,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+import labfollow  # noqa: E402
 import labgen  # noqa: E402  (the generator's pkcs11-tool parser, used only by the identity row)
 import labread as R  # noqa: E402  (independent readers: DER, JKS, SoftHSM object store, SSH blobs)
 import labspec as S  # noqa: E402
@@ -788,8 +789,144 @@ def check_penalties(ctx: Ctx, o: dict, t: Target) -> None:
     t.control("penalty active (O-8)", o["target"], penalised, how)
 
 
+def check_idp(ctx: Ctx, o: dict) -> Target:
+    """The served JWKS, decoded as base64url integers, against the SPKI sizes the oracle recorded."""
+    t = ctx.target(o["target"])
+    fetch = ("import json,ssl,urllib.request\n"
+             "ctx=ssl.create_default_context(cafile='/run-lab/lab/ca.pem')\n"
+             "def get(url):\n"
+             "    return urllib.request.urlopen(url, context=ctx, timeout=10).read().decode()\n"
+             "disc=json.loads(get('https://idp.lab/.well-known/openid-configuration'))\n"
+             "jwks=json.loads(get(disc['jwks_uri']))\n"
+             "print(json.dumps({'issuer': disc.get('issuer'), 'jwks_uri': disc.get('jwks_uri'), 'jwks': jwks}))\n")
+    res = ctx.exec("python3", "-c", fetch)
+    ctx.save("idp.json", res.stdout + res.stderr)
+    try:
+        doc = json.loads(res.stdout)
+    except json.JSONDecodeError:
+        t.check("idp/jwks", "discovery and JWKS fetched", "python urllib", "json", res.stderr[-300:])
+        return t
+    e = o["expect"]
+    t.check("idp/issuer", "issuer", "python urllib", e["issuer"], doc.get("issuer"))
+    problems = labfollow.idp_mismatches(e["keys"], doc.get("jwks") or {})
+    t.check("idp/keys", "kids, types and sizes", "JWKS base64url integers", [], problems)
+    both = {k["kid"] for k in e["keys"]} <= {k.get("kid") for k in (doc.get("jwks") or {}).get("keys") or []}
+    t.control("both signing keys are served (O-8)", o["target"], both, "rsa-2048 and ec-p256")
+    return t
+
+
+def check_receiver(ctx: Ctx, o: dict) -> Target:
+    """Post two deliveries. Both must appear in the receiver log. A log that drops one is a lab bug."""
+    t = ctx.target(o["target"])
+    import secrets as _secrets
+    posted = ["cb02-" + _secrets.token_hex(8) for _ in range(2)]
+    script = ("import json,urllib.request\n"
+              f"ids={posted!r}\n"
+              f"url='http://{o['address']}:{o['port']}/hook'\n"
+              "for i in ids:\n"
+              "    req=urllib.request.Request(url, data=b'{}', method='POST', headers={'X-Cb02-Delivery': i})\n"
+              "    urllib.request.urlopen(req, timeout=10).read()\n"
+              "print(json.dumps(ids))\n")
+    res = ctx.exec("python3", "-c", script)
+    ctx.save("receiver-post.txt", res.stdout + res.stderr)
+    log = ctx.run / "lab" / "listeners" / "receiver.jsonl"
+    rows = jsonl(log) if log.is_file() else []
+    missing = labfollow.receiver_missing(posted, rows)
+    t.check("receiver/log", "posted deliveries are in the receiver log", "python urllib + the receiver log", [], missing)
+    t.control("a delivery is recorded (O-8)", o["target"], len(posted) - len(missing) >= 1, "at least one id")
+    return t
+
+
+def check_k8s(ctx: Ctx, o: dict) -> Target:
+    """kubectl JSON plus the PEM sha256. openssl x509 on one valid and one expired cert is the positive control."""
+    import labk8s
+    t = ctx.target(o["target"])
+    ns = o["expect"]["namespace"]
+    try:
+        secrets = labk8s.kubectl_json("get", "secret", "-n", ns)
+        configmaps = labk8s.kubectl_json("get", "configmap", "-n", ns)
+        ingresses = labk8s.kubectl_json("get", "ingress", "-n", ns)
+        accounts = labk8s.kubectl_json("get", "serviceaccount", "-n", ns)
+    except SystemExit as exc:
+        t.check("k8s/kubectl", "cluster objects", "kubectl", "json", str(exc))
+        return t
+    problems = labfollow.k8s_mismatches(o["expect"], secrets, configmaps, ingresses, accounts)
+    t.check("k8s/objects", "secrets, configmap, ingress, service accounts", "kubectl get -o json", [], problems)
+    by_name = {i["metadata"]["name"]: i for i in secrets.get("items") or []}
+    seen_expired = seen_valid = False
+    for name in ("rsa-2048-valid", "rsa-2048-expired"):
+        item = by_name.get(name)
+        if not item:
+            continue
+        pem = base64.b64decode(item["data"]["tls.crt"]).decode()
+        text = ctx.exec("openssl", "x509", "-noout", "-checkend", "0", input_=pem)
+        expired = text.returncode != 0
+        seen_expired = seen_expired or (name.endswith("expired") and expired)
+        seen_valid = seen_valid or (name.endswith("valid") and not expired)
+    t.control("openssl x509 sees a valid cert and an expired cert (O-8)", o["target"], seen_valid and seen_expired,
+              f"valid={seen_valid} expired={seen_expired}")
+    return t
+
+
+def _check_host_ubuntu(ctx: Ctx, o: dict, t: Target) -> Target:
+    """Root can hash the planted files. The login user cannot read them, can sudo an allow-listed command, and
+    cannot sudo an arbitrary cat. The container log records the login; the file copy does not."""
+    e = o["expect"]
+    paths = [f["path"] for f in e["files"]]
+    hashed = ctx.exec("sha256sum", *paths, container=o["container"])
+    ctx.save("host.root-sha256.txt", hashed.stdout + hashed.stderr)
+    sums = {line.split()[1]: line.split()[0] for line in hashed.stdout.splitlines() if len(line.split()) == 2}
+    for f in e["files"]:
+        t.check(f"host:{f['path']}", "sha256 (root, in the container)", "sha256sum", f["sha256"], sums.get(f["path"]))
+        denied = labfollow.login_cannot_read(f["mode"], e.get("plant_owner", "root"))
+        t.check(f"host:{f['path']}", "login cannot read", "mode and owner", True, denied)
+    key = "/run-lab/lab/secrets/operator_ed25519"
+    ctx.exec("sh", "-c", "cat > /tmp/kh-host", input_=known_hosts(o))
+    remote = ("sha256sum /etc/os-release >/tmp/os.sum; echo OS:$?; "
+              "sha256sum /srv/cbom-lab/keys/legacy-rsa1024.key; echo KEY:$?; "
+              "sudo -n /usr/sbin/sshd -T >/tmp/sshd-t.txt; echo SUDO:$?; "
+              "sudo -n /bin/cat /srv/cbom-lab/keys/legacy-rsa1024.key; echo CAT:$?")
+    ssh = ctx.exec("ssh", "-i", key, "-o", "UserKnownHostsFile=/tmp/kh-host", "-o", "StrictHostKeyChecking=yes",
+                   "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "-p", str(o["port"]), f"zs-cbom@{o['address']}",
+                   remote)
+    ctx.save("host.ssh-tier2.txt", ssh.stdout + ssh.stderr)
+    marks = {}
+    for line in ssh.stdout.splitlines():
+        for prefix in ("OS:", "KEY:", "SUDO:", "CAT:"):
+            if line.startswith(prefix):
+                marks[prefix[:-1]] = line.split(":", 1)[1].strip()
+    t.check("host/login", "world-readable file is readable (positive control)", "ssh sha256sum /etc/os-release",
+            "0", marks.get("OS"))
+    t.check("host/login", "planted key is not readable", "ssh sha256sum", "nonzero", marks.get("KEY"),
+            agree=marks.get("KEY") not in (None, "0"))
+    t.check("host/login", "allow-listed sudo sshd -T", "ssh sudo -n /usr/sbin/sshd -T", "0", marks.get("SUDO"))
+    t.check("host/login", "sudo cat of the key is refused", "ssh sudo -n /bin/cat", "nonzero", marks.get("CAT"),
+            agree=marks.get("CAT") not in (None, "0"))
+    sudoers = ctx.exec("sha256sum", "/etc/sudoers.d/zs-cbom", container=o["container"])
+    got = sudoers.stdout.split()[0] if sudoers.stdout.split() else ""
+    t.check("host/sudoers", "sha256", "sha256sum /etc/sudoers.d/zs-cbom", e["tier2_sudoers_sha256"], got)
+    time.sleep(1)
+    file_rows = []
+    file_text = ctx.exec("cat", "/var/log/cb02/commands.log", container=o["container"])
+    for line in file_text.stdout.splitlines():
+        try:
+            file_rows.append(json.loads(line))
+        except json.JSONDecodeError:
+            pass
+    container_rows = container_command_log(o["container"])
+    logged = [r for r in container_rows if "sha256sum /etc/os-release" in str(r.get("command"))]
+    leaked = [r for r in file_rows if "sha256sum /etc/os-release" in str(r.get("command"))]
+    t.check("host/login", "container log has the login", "docker logs", True, bool(logged))
+    t.check("host/login", "file copy does not gain the login", "cat /var/log/cb02/commands.log", [], leaked)
+    t.control("Tier-2 allow-list works and is not a blanket sudo (O-8)", o["target"],
+              marks.get("SUDO") == "0" and marks.get("CAT") != "0", "sshd -T allowed, cat refused")
+    return t
+
+
 def check_host(ctx: Ctx, o: dict) -> Target:
     t = check_ssh(ctx, o)
+    if o["expect"].get("os") == "ubuntu":
+        return _check_host_ubuntu(ctx, o, t)
     e = o["expect"]
     ctx.exec("sh", "-c", "cat > /tmp/kh-host", input_=known_hosts(o))
     files = [f["path"] for f in e["files"]]
@@ -1271,7 +1408,8 @@ def main(run_dir: Path, only: str | None = None, expect_sha: str | None = None) 
             results[tid] = t
             continue
         fn = {"tls": check_tls, "ssh": check_ssh, "host": check_host, "postgres": check_postgres,
-              "mysql": check_mysql, "softhsm": check_softhsm, "code": check_code}.get(o["kind"])
+              "mysql": check_mysql, "softhsm": check_softhsm, "code": check_code, "idp": check_idp,
+              "receiver": check_receiver, "k8s": check_k8s}.get(o["kind"])
         try:
             results[tid] = check_listener(ctx, o, health) if o["kind"] == "listener" else fn(ctx, o)
         except Exception as exc:  # a crashed check is a lab problem, reported, never a pass

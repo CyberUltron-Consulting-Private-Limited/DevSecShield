@@ -19,7 +19,7 @@ from typing import Any
 
 from zs_scan_node import drivergate
 from zs_scan_node.jobctx import JobContext, register_asset_types
-from zs_scan_node.netutil import Blocked, Target, checked_target
+from zs_scan_node.netutil import Blocked, Target, checked_target, host_port
 
 register_asset_types("db_encryption", "db_login_policy", "db_crypto_policy", "key_store")
 
@@ -70,8 +70,10 @@ def nne_from_banners(banners: list[str]) -> dict[str, Any]:
 
 # python-oracledb wraps the reason a connection failed in DPY-6005 ("cannot connect to database"): the specific code
 # (DPY-3010, DPY-3001 ...) is on a later line of the message or in the chained cause, so look at all of them.
+# DPY-6001 / DPY-6003: thin mode's "(Similar to ORA-12514 / ORA-12505)": the listener answered, the service or SID is
+# not registered with it (#214: shown as "could not connect (DPY-6005)" before)
 _SPECIFIC = ("DPY-3001", "DPY-3010", "DPY-3015", "ORA-01017", "ORA-28000", "ORA-28001", "ORA-01045", "ORA-12514",
-             "ORA-12505")
+             "ORA-12505", "DPY-6001", "DPY-6003")
 
 
 def thin_error(exc: BaseException) -> tuple[str | None, str]:
@@ -130,7 +132,7 @@ def connect(ctx: JobContext, target: Target, port: int, config: dict, password: 
 
 
 def _classify(ctx: JobContext, target: Target, port: int, config: dict, code: str | None, message: str) -> OracleFail:
-    loc = f"{target.label}:{port}"
+    loc = host_port(target.label, port)
     if code == "DPY-3001" and "network encryption" in message.lower():  # DPY-3001 is "<feature> needs thick mode"
         ctx.emit("db_crypto_policy", target.label, f"{loc}#native-encryption", name="Oracle network encryption",
                  facts={"engine": "oracle", "native_encryption_required": True, "detail": message})
@@ -149,8 +151,11 @@ def _classify(ctx: JobContext, target: Target, port: int, config: dict, code: st
                                            "the scan node cannot read it")
     if code in ("ORA-01017", "ORA-28000", "ORA-28001", "ORA-01045"):
         return OracleFail("auth_failed", f"Oracle refused the login ({code})")
-    if code in ("ORA-12514", "ORA-12505"):
-        return OracleFail("error", f"the listener does not know the service name ({code})")
+    if code in ("ORA-12514", "ORA-12505", "DPY-6001", "DPY-6003"):
+        service = str(config.get("database_name") or "").strip()
+        what = f'the service "{service}"' if service else "the service name"
+        return OracleFail("error", f"the Oracle listener on {loc} is reachable but does not know {what}: check the "
+                                   "service name")
     if code == "DPY-6005" and ("certificate" in message.lower() or "SSL" in message):
         return OracleFail("identity_unverified", "the server's certificate does not chain to the uploaded CA "
                                                  "certificate; nothing was sent")

@@ -8,7 +8,10 @@ Environment:
   ZS_MAX_JOBS             jobs run in parallel (default 2)
   ZS_VAULT_PATH_PREFIX    allow vault credentials under this path prefix only (vault use is off without it)
   VAULT_ADDR / VAULT_TOKEN  HashiCorp Vault for vault credentials; AWS Secrets Manager uses the node's IAM role
+  ZS_VAULT_CA_FILE        the CA certificate (PEM) of a Vault with a private CA, for the Vault only (#365; Vault's own
+                          VAULT_CACERT / VAULT_CAPATH work too)
   HTTPS_PROXY / NO_PROXY  outbound proxy to ZeroShield (customer targets are always reached directly)
+  ZS_PROXY_AUTH_FILE      a file with one line user:password when that proxy needs a login (#199; read-only mount)
   ZS_CLIENT_CERT / ZS_CLIENT_KEY  PEM client certificate and key for mTLS to the ZeroShield proxy (optional)
   ZS_CA_FILE              CA bundle that replaces the default trust for the ZeroShield API (optional)
   ZS_MODE                 ``agentless`` (default: reaches other systems with stored credentials) or ``agent``: collect
@@ -44,6 +47,7 @@ from zs_scan_node.netutil import NeverScan, has_ipv6, local_ips
 from zs_scan_node.scrub import Scrubber
 from zs_scan_node.state import NodeState
 from zs_scan_node.tlsprobe import have_openssl
+from zs_scan_node.vault import capabilities as vault_capabilities
 
 POLL_SECONDS = 5
 CLAIM_GRACE = 0  # the heartbeat reports running jobs immediately after claim
@@ -204,7 +208,8 @@ class Agent:
 
     def capabilities(self) -> dict:
         return {"collectors": AGENT_CAPABILITIES if self.agent_mode else CAPABILITIES, "openssl": have_openssl(),
-                "ipv6": has_ipv6(), "max_jobs": self.max_jobs, "vault": bool(self.vault_prefix),
+                "ipv6": has_ipv6(), "max_jobs": self.max_jobs,
+                **vault_capabilities(self.vault_prefix),  # #364: vault (bool), providers, prefix, per-provider setup
                 "mode": "agent" if self.agent_mode else "agentless"}
 
     # ------------------------------------------------------------------ heartbeat
@@ -241,7 +246,8 @@ class Agent:
                 known = self.__dict__.setdefault("job_window_ends", {})
                 for key, value in list(ends.items())[:1000]:
                     moment = _parse_iso(value)
-                    if moment is not None and str(key).isdigit():
+                    # only jobs this node still runs: a job that ended before the answer arrived leaves nothing behind
+                    if moment is not None and str(key).isdigit() and int(key) in getattr(self, "running", {}):
                         known[int(key)] = moment
             if sent >= self.stop_sent:
                 self.stop_sent = sent
@@ -378,6 +384,7 @@ class Agent:
                          node_private_key_path=self.state.key_path, vault_prefix=self.vault_prefix,
                          agent_mode=self.agent_mode)
         ctx.cert_refresher = lambda: self.api.ssh_cert(job_id, attempt, lease_id)  # F1.4: SSH CA certificates
+        ctx.cert_reporter = lambda line: self.api.ssh_cert_report(job_id, attempt, lease_id, line)  # #61
         if self.stop_network.is_set() and is_network:
             ctx.stop_network.set()
         running = Running(job_id, lease_id, ctx, is_network, scope_never)
@@ -498,6 +505,8 @@ class Agent:
     def _done(self, running: Running) -> None:
         with self.lock:
             self.running.pop(running.job_id, None)
+            # a window end that arrived after the watcher's last tick is dropped with its job (review of #250)
+            getattr(self, "job_window_ends", {}).pop(running.job_id, None)
         close = getattr(running.ctx.never_scan, "close", None)
         if close is not None:
             close()  # the resolver stops looking up names no running job lists

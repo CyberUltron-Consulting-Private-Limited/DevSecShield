@@ -2,9 +2,9 @@
  "schema": "zs-cbom-d1-floors/1",
  "version": 1,
  "baseline": {
-  "product_git_sha": "3df26fd8ec020f44d9cdbec1e793b29327e03d39",
-  "kb_version": "2026.11.10.1",
-  "codemap_version": 1,
+  "product_git_sha": "233b8a4e627d31e3183c872b326de4e40ffa608d",
+  "kb_version": "2026.11.15.2",
+  "codemap_version": 4,
   "observed": "bench/cbom/d1/baseline/observed-*.json (the product rows these numbers came from)",
   "rule": "non-regression = the numbers on this build; a PR that changes them edits this file in the same PR"
  },
@@ -17,8 +17,8 @@
    "metric": "recall",
    "mode": "matched",
    "op": ">=",
-   "value": 0.2889,
-   "why": "today on dev 3df26fd"
+   "value": 0.7037,
+   "why": "CB-27 (Java literal flow) on b34398aae"
   },
   {
    "id": "NR-CAB-precision",
@@ -28,8 +28,8 @@
    "metric": "precision",
    "mode": "matched",
    "op": ">=",
-   "value": 0.8298,
-   "why": "today on dev 3df26fd"
+   "value": 0.9223,
+   "why": "CB-27 (Java literal flow) on b34398aae"
   },
   {
    "id": "NR-CAB-detected",
@@ -42,12 +42,38 @@
    "mode": "matched",
    "op": "superset",
    "value": [
+    "1.1.1",
+    "1.2.1",
+    "1.3.1",
+    "1.5.2",
+    "1.6.1",
+    "1.8.1",
+    "10.1.1",
+    "10.2.1",
+    "10.3.1",
+    "10.4.1",
+    "10.5.2",
+    "10.6.1",
+    "10.8.1",
     "11.1.1",
     "11.2.1",
     "11.3.1",
     "11.4.1",
     "11.6.1",
     "11.8.1",
+    "12.1.1",
+    "12.2.1",
+    "12.3.1",
+    "12.4.1",
+    "12.5.1",
+    "12.5.2",
+    "12.6.1",
+    "12.8.1",
+    "13.1.1",
+    "13.2.1",
+    "13.3.1",
+    "13.4.1",
+    "13.8.1",
     "14.1.1",
     "14.1.2",
     "14.1.3",
@@ -80,9 +106,39 @@
     "16.6.2",
     "16.8.1",
     "16.8.2",
-    "4.1.1"
+    "2.1.1",
+    "2.1.2",
+    "2.2.1",
+    "2.3.1",
+    "2.4.1",
+    "2.5.2",
+    "2.6.1",
+    "2.8.1",
+    "3.1.1",
+    "3.2.1",
+    "3.3.1",
+    "3.4.1",
+    "3.5.2",
+    "3.6.1",
+    "3.8.1",
+    "4.1.1",
+    "5.1.1",
+    "5.1.2",
+    "5.1.3",
+    "9.1.1",
+    "9.1.2",
+    "9.2.1",
+    "9.2.2",
+    "9.3.1",
+    "9.3.2",
+    "9.4.1",
+    "9.4.2",
+    "9.5.1",
+    "9.5.2",
+    "9.6.2",
+    "9.8.1"
    ],
-   "why": "every vulnerable case detected on dev 3df26fd stays detected"
+   "why": "CB-27 (Java literal flow) on b34398aae"
   },
   {
    "id": "NR-OWASP-recall",
@@ -347,8 +403,8 @@
    "metric": "recall",
    "mode": "matched",
    "op": ">=",
-   "value": 0.6491,
-   "why": "today on dev 3df26fd"
+   "value": 0.9474,
+   "why": "CB-28 (.NET, C and IaC detectors) on 233b8a4e6"
   },
   {
    "id": "NR-CORPUS-precision",
@@ -358,8 +414,8 @@
    "metric": "precision",
    "mode": "matched",
    "op": ">=",
-   "value": 0.9737,
-   "why": "today on dev 3df26fd"
+   "value": 1.0,
+   "why": "CB-28 (.NET, C and IaC detectors) on 233b8a4e6"
   },
   {
    "id": "NR-CORPUS-detected",
@@ -375,7 +431,11 @@
     "C1",
     "C10",
     "C2",
+    "C3",
+    "C4",
     "C5",
+    "C6",
+    "C7",
     "C8",
     "C9",
     "F1",
@@ -393,24 +453,37 @@
     "J1",
     "J10",
     "J11",
+    "J12",
     "J13",
     "J2",
+    "J3",
     "J5",
     "J6",
     "J8",
+    "J9",
+    "K1",
+    "K2",
     "N1",
+    "N10",
+    "N11",
+    "N12",
     "N2",
     "N3",
     "N4",
     "N5",
+    "N6",
     "N7",
+    "N8",
     "N9",
     "T1",
     "T2",
     "T3",
-    "T4"
+    "T4",
+    "T5",
+    "T6",
+    "T7"
    ],
-   "why": "every vulnerable case detected on dev 3df26fd stays detected"
+   "why": "CB-28 (.NET, C and IaC detectors) on 233b8a4e6"
   },
   {
    "id": "NR-CAB-no-new-fp",
@@ -537,8 +610,8 @@
    "metric": "recall",
    "mode": "matched",
    "op": ">=",
-   "value": 0.3333,
-   "why": "today on dev 3df26fd"
+   "value": 0.7778,
+   "why": "CB-27 (Java literal flow) on b34398aae"
   },
   {
    "id": "NR-CAB-field-sensitive-recall",
@@ -550,8 +623,8 @@
    "metric": "recall",
    "mode": "matched",
    "op": ">=",
-   "value": 0.3158,
-   "why": "today on dev 3df26fd"
+   "value": 0.6842,
+   "why": "CB-27 (Java literal flow) on b34398aae"
   },
   {
    "id": "NR-CAB-interprocedural-2-methods-recall",
@@ -563,8 +636,8 @@
    "metric": "recall",
    "mode": "matched",
    "op": ">=",
-   "value": 0.3,
-   "why": "today on dev 3df26fd"
+   "value": 0.7,
+   "why": "CB-27 (Java literal flow) on b34398aae"
   },
   {
    "id": "NR-CAB-interprocedural-field-sensitive-recall",
@@ -576,8 +649,8 @@
    "metric": "recall",
    "mode": "matched",
    "op": ">=",
-   "value": 0.3,
-   "why": "today on dev 3df26fd"
+   "value": 0.6,
+   "why": "CB-27 (Java literal flow) on b34398aae"
   },
   {
    "id": "NR-CAB-multiple-java-classes-recall",
@@ -589,8 +662,8 @@
    "metric": "recall",
    "mode": "matched",
    "op": ">=",
-   "value": 0.3158,
-   "why": "today on dev 3df26fd"
+   "value": 0.6842,
+   "why": "CB-27 (Java literal flow) on b34398aae"
   },
   {
    "id": "NR-CAB-pure-interprocedural-cases-recall",
@@ -602,8 +675,8 @@
    "metric": "recall",
    "mode": "matched",
    "op": ">=",
-   "value": 0.3,
-   "why": "today on dev 3df26fd"
+   "value": 0.7,
+   "why": "CB-27 (Java literal flow) on b34398aae"
   },
   {
    "id": "NR-OWASP-crypto-recall",
@@ -666,15 +739,16 @@
    "mode": "matched",
    "op": "subset",
    "value": [
-    "c/tls_client.c|11|WEAK_ALGORITHM|MD5",
-    "c/tls_client.c|11|WEAK_ALGORITHM|RC4",
     "go/main.go|23|HARDCODED_KEY|secret-key (inline, main.go)",
-    "iac/terraform/main.tf|5|WEAK_CIPHER_SUITE|TLS",
-    "iac/terraform/main.tf|5|WEAK_PROTOCOL|TLS",
+    "iac/terraform/main.tf|31|WEAK_CIPHER_SUITE|TLS",
     "java/src/main/java/com/bank/Crypto.java|22|WEAK_ALGORITHM|3DES",
     "java/src/main/java/com/bank/Crypto.java|46|WEAK_ALGORITHM|RSA"
    ],
-   "why": "no corpus finding off the labelled items beyond those on dev 3df26fd (CB-28: no new false positives)"
+   "why": "CB-28 (.NET, C and IaC detectors) on 233b8a4e6",
+   "lowered": {
+    "reason": "not a new finding: the CloudFront TLSv1 policy's weak-suite finding moved from main.tf line 5 (the file's first 'TLS' token, shared with the ELB listener) to line 31, the minimum_protocol_version attribute that carries it (T6 is now a hit there). Three extras went: c/tls_client.c 11 MD5 and RC4 (the cipher list is a suite policy, now C3's WEAK_CIPHER_SUITE) and main.tf 5 WEAK_PROTOCOL (T6 on its own line).",
+    "pr": "CB-28 (feat/cb-28-dotnet-c-iac)"
+   }
   },
   {
    "id": "NR-LIB-detected",
@@ -688,9 +762,12 @@
    "op": "superset",
    "value": [
     "L1",
-    "L5"
+    "L3",
+    "L4",
+    "L5",
+    "L6"
    ],
-   "why": "OSV-vulnerable libraries flagged on dev 3df26fd stay flagged",
+   "why": "OSV-vulnerable libraries flagged on dev 3df26fd (L1, L5) and since CB-29 (L3, L4, L6) stay flagged",
    "not_run_ok": "OSV.dev did not answer: library rows need the live oracle (O-2) and are reported NOT-RUN"
   },
   {
@@ -725,8 +802,7 @@
   },
   {
    "id": "T27-CAB-BB-dummycertvalidation",
-   "kind": "target",
-   "owner": "CB-27",
+   "kind": "non-regression",
    "bench": "cryptoapi-bench",
    "where": {
     "complexity": "basis-benchmark",
@@ -735,8 +811,8 @@
    "metric": "recall",
    "mode": "matched",
    "op": ">=",
-   "value": 0.9,
-   "why": "CB-27 exit: BB recall >= 0.9 in every misuse category (today 0/3)"
+   "value": 1.0,
+   "why": "CB-27 (Java literal flow) on b34398aae: met CB-27's target (CB-27 exit: BB recall >= 0.9 in every misuse category (today 0/3))"
   },
   {
    "id": "NR-CAB-BB-dummyhostnameverifier",
@@ -813,8 +889,7 @@
   },
   {
    "id": "T27-CAB-BB-pbeiteration",
-   "kind": "target",
-   "owner": "CB-27",
+   "kind": "non-regression",
    "bench": "cryptoapi-bench",
    "where": {
     "complexity": "basis-benchmark",
@@ -823,13 +898,12 @@
    "metric": "recall",
    "mode": "matched",
    "op": ">=",
-   "value": 0.9,
-   "why": "CB-27 exit: BB recall >= 0.9 in every misuse category (today 0/1)"
+   "value": 1.0,
+   "why": "CB-27 (Java literal flow) on b34398aae: met CB-27's target (CB-27 exit: BB recall >= 0.9 in every misuse category (today 0/1))"
   },
   {
    "id": "T27-CAB-BB-predictablecryptographickey",
-   "kind": "target",
-   "owner": "CB-27",
+   "kind": "non-regression",
    "bench": "cryptoapi-bench",
    "where": {
     "complexity": "basis-benchmark",
@@ -838,13 +912,12 @@
    "metric": "recall",
    "mode": "matched",
    "op": ">=",
-   "value": 0.9,
-   "why": "CB-27 exit: BB recall >= 0.9 in every misuse category (today 0/1)"
+   "value": 1.0,
+   "why": "CB-27 (Java literal flow) on b34398aae: met CB-27's target (CB-27 exit: BB recall >= 0.9 in every misuse category (today 0/1))"
   },
   {
    "id": "T27-CAB-BB-predictablekeystorepassword",
-   "kind": "target",
-   "owner": "CB-27",
+   "kind": "non-regression",
    "bench": "cryptoapi-bench",
    "where": {
     "complexity": "basis-benchmark",
@@ -853,13 +926,12 @@
    "metric": "recall",
    "mode": "matched",
    "op": ">=",
-   "value": 0.9,
-   "why": "CB-27 exit: BB recall >= 0.9 in every misuse category (today 0/1)"
+   "value": 1.0,
+   "why": "CB-27 (Java literal flow) on b34398aae: met CB-27's target (CB-27 exit: BB recall >= 0.9 in every misuse category (today 0/1))"
   },
   {
    "id": "T27-CAB-BB-predictablepbepassword",
-   "kind": "target",
-   "owner": "CB-27",
+   "kind": "non-regression",
    "bench": "cryptoapi-bench",
    "where": {
     "complexity": "basis-benchmark",
@@ -868,13 +940,12 @@
    "metric": "recall",
    "mode": "matched",
    "op": ">=",
-   "value": 0.9,
-   "why": "CB-27 exit: BB recall >= 0.9 in every misuse category (today 0/2)"
+   "value": 1.0,
+   "why": "CB-27 (Java literal flow) on b34398aae: met CB-27's target (CB-27 exit: BB recall >= 0.9 in every misuse category (today 0/2))"
   },
   {
    "id": "T27-CAB-BB-predictableseeds",
-   "kind": "target",
-   "owner": "CB-27",
+   "kind": "non-regression",
    "bench": "cryptoapi-bench",
    "where": {
     "complexity": "basis-benchmark",
@@ -883,13 +954,12 @@
    "metric": "recall",
    "mode": "matched",
    "op": ">=",
-   "value": 0.9,
-   "why": "CB-27 exit: BB recall >= 0.9 in every misuse category (today 0/2)"
+   "value": 1.0,
+   "why": "CB-27 (Java literal flow) on b34398aae: met CB-27's target (CB-27 exit: BB recall >= 0.9 in every misuse category (today 0/2))"
   },
   {
    "id": "T27-CAB-BB-staticinitializationvector",
-   "kind": "target",
-   "owner": "CB-27",
+   "kind": "non-regression",
    "bench": "cryptoapi-bench",
    "where": {
     "complexity": "basis-benchmark",
@@ -898,13 +968,12 @@
    "metric": "recall",
    "mode": "matched",
    "op": ">=",
-   "value": 0.9,
-   "why": "CB-27 exit: BB recall >= 0.9 in every misuse category (today 0/1)"
+   "value": 1.0,
+   "why": "CB-27 (Java literal flow) on b34398aae: met CB-27's target (CB-27 exit: BB recall >= 0.9 in every misuse category (today 0/1))"
   },
   {
    "id": "T27-CAB-BB-staticsalts",
-   "kind": "target",
-   "owner": "CB-27",
+   "kind": "non-regression",
    "bench": "cryptoapi-bench",
    "where": {
     "complexity": "basis-benchmark",
@@ -913,8 +982,8 @@
    "metric": "recall",
    "mode": "matched",
    "op": ">=",
-   "value": 0.9,
-   "why": "CB-27 exit: BB recall >= 0.9 in every misuse category (today 0/1)"
+   "value": 1.0,
+   "why": "CB-27 (Java literal flow) on b34398aae: met CB-27's target (CB-27 exit: BB recall >= 0.9 in every misuse category (today 0/1))"
   },
   {
    "id": "T27-CAB-BB-untrustedprng",
@@ -933,27 +1002,25 @@
   },
   {
    "id": "T27-CAB-recall",
-   "kind": "target",
-   "owner": "CB-27",
+   "kind": "non-regression",
    "bench": "cryptoapi-bench",
    "where": {},
    "metric": "recall",
    "mode": "matched",
    "op": ">=",
-   "value": 0.6,
-   "why": "CB-27 exit: overall recall >= 0.6 (today 39/135)"
+   "value": 0.7037,
+   "why": "CB-27 (Java literal flow) on b34398aae: met CB-27's target (CB-27 exit: overall recall >= 0.6 (today 39/135))"
   },
   {
    "id": "T27-CAB-precision",
-   "kind": "target",
-   "owner": "CB-27",
+   "kind": "non-regression",
    "bench": "cryptoapi-bench",
    "where": {},
    "metric": "precision",
    "mode": "matched",
    "op": ">=",
-   "value": 0.9,
-   "why": "CB-27 exit: precision on the correct files >= 0.9 (today 39/47)"
+   "value": 0.9223,
+   "why": "CB-27 (Java literal flow) on b34398aae: met CB-27's target (CB-27 exit: precision on the correct files >= 0.9 (today 39/47))"
   },
   {
    "id": "T27-OWASP-precision",
@@ -969,8 +1036,7 @@
   },
   {
    "id": "T28-dotnet-items",
-   "kind": "target",
-   "owner": "CB-28",
+   "kind": "non-regression",
    "bench": "corpus",
    "where": {
     "case_id": [
@@ -985,12 +1051,11 @@
    "mode": "matched",
    "op": ">=",
    "value": 1.0,
-   "why": "CB-28 exit: per-item corpus recall 100 % on its failing-first items (R2 corpus)"
+   "why": "CB-28 (.NET, C and IaC detectors) on 233b8a4e6: met CB-28's target (CB-28 exit: per-item corpus recall 100 % on its failing-first items (R2 corpus))"
   },
   {
    "id": "T28-c-items",
-   "kind": "target",
-   "owner": "CB-28",
+   "kind": "non-regression",
    "bench": "corpus",
    "where": {
     "case_id": [
@@ -1003,12 +1068,11 @@
    "mode": "matched",
    "op": ">=",
    "value": 1.0,
-   "why": "CB-28 exit: per-item corpus recall 100 % on its failing-first items (R2 corpus)"
+   "why": "CB-28 (.NET, C and IaC detectors) on 233b8a4e6: met CB-28's target (CB-28 exit: per-item corpus recall 100 % on its failing-first items (R2 corpus))"
   },
   {
    "id": "T28-iac-items",
-   "kind": "target",
-   "owner": "CB-28",
+   "kind": "non-regression",
    "bench": "corpus",
    "where": {
     "case_id": [
@@ -1022,12 +1086,11 @@
    "mode": "matched",
    "op": ">=",
    "value": 1.0,
-   "why": "CB-28 exit: per-item corpus recall 100 % on its failing-first items (R2 corpus)"
+   "why": "CB-28 (.NET, C and IaC detectors) on 233b8a4e6: met CB-28's target (CB-28 exit: per-item corpus recall 100 % on its failing-first items (R2 corpus))"
   },
   {
    "id": "T28-dotnet-trustall-fp",
-   "kind": "target",
-   "owner": "CB-28",
+   "kind": "non-regression",
    "bench": "corpus",
    "where": {
     "case_id": [
@@ -1038,11 +1101,11 @@
    "mode": "matched",
    "op": ">=",
    "value": 1.0,
-   "why": "CB-28: remove the C# TrustAll() false positive labelled java.trustall"
+   "why": "CB-28 (.NET, C and IaC detectors) on 233b8a4e6: met CB-28's target (CB-28: remove the C# TrustAll() false positive labelled java.trustall)"
   },
   {
    "id": "T29-libraries",
-   "kind": "target",
+   "kind": "non-regression",
    "owner": "CB-29",
    "bench": "libraries",
    "where": {
@@ -1056,7 +1119,7 @@
    "mode": "matched",
    "op": ">=",
    "value": 1.0,
-   "why": "CB-29 failing-first: BouncyCastle 1.8.1 (NuGet), System.IdentityModel.Tokens.Jwt 5.1.4, dgrijalva/jwt-go v3.2.0 flagged (oracle: OSV at test time)",
+   "why": "CB-29 met (offline OSV snapshot + .csproj PackageReference): BouncyCastle 1.8.1 (NuGet), System.IdentityModel.Tokens.Jwt 5.1.4, dgrijalva/jwt-go v3.2.0 flagged (oracle: OSV at test time); was a target",
    "not_run_ok": "OSV.dev did not answer: library rows need the live oracle (O-2) and are reported NOT-RUN"
   }
  ]

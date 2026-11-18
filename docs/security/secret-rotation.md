@@ -8,8 +8,8 @@ backend and worker images:
 
 | Exposed in git | What it holds (names only) |
 |---|---|
-| `backend/.env`, `backend/utilities/ai/.env`, `prod_database_migrations/.env` | backend settings: database, Mongo, RabbitMQ, JWT, mail, AWS |
-| `RabbitMQ/.env`, `RabbitMQ/worker/.env`, `RabbitMQ/worker/helpers/context/.env`, `RabbitMQ/worker/helpers/tests/.env` | scan worker settings |
+| `backend/.env`, `backend/utilities/ai/.env` (removed from the index, #18; still in history), `prod_database_migrations/.env` | backend settings: database, Mongo, RabbitMQ, JWT, mail, AWS |
+| `RabbitMQ/.env`, `RabbitMQ/worker/.env`, `RabbitMQ/worker/helpers/context/.env` (those two removed from the index, #18; still in history), `RabbitMQ/worker/helpers/tests/.env` | scan worker settings |
 | `RabbitMQ/dast_worker/.env`, `RabbitMQ/dast_worker/helpers/agent/.env`, `RabbitMQ/dast_worker/helpers/tests/.env` | DAST worker settings |
 | `RabbitMQ/guardrail_worker/.env` | guardrail worker settings |
 | `compose/.env`, `compose/vector-db/.env` | infrastructure passwords |
@@ -18,10 +18,15 @@ backend and worker images:
 | `backend/utilities/auth/auth_utils.py` (history) | two accounts that accepted a fixed sign-in code |
 | `.skill-workspace/prod_loadtest_30*.py` | production host, one of those accounts, its password and code |
 
-Decision D2 keeps the tracked files tracked (removing them would delete teammates' local copies on `git pull`), so
-the values stay readable. **Rotation is the only remedy.** Treat every non-empty value in the files above as
-known to an attacker, rotate it, and only then consider rewriting history (`git filter-repo`), which is a separate
-decision. `aibom/examples/shadow-demo/.env` and `aibom/tests/fixtures/**` hold planted test values, not secrets.
+Decision D2 kept tracked env files tracked so `git pull` would not delete a teammate's local copy. Issue #18
+overrides that for the four files that held the live AWS key (`backend/.env`, `backend/utilities/ai/.env`,
+`RabbitMQ/worker/.env`, `RabbitMQ/worker/helpers/context/.env`): they are removed from the index and ignored.
+`git pull` of that commit deletes a clean working copy of those four files. From each directory run
+`cp .env.example .env` and fill in values outside git. The other files in the table stay tracked until their own
+change. History still holds every old value, including access key ids `AKIA…H4XB` (dev and staging) and
+`AKIA…4I25` (main). **Rotation is still required:** deactivate and delete both keys in IAM. Rewriting history
+(`git filter-repo`) is a separate decision. `aibom/examples/shadow-demo/.env` and `aibom/tests/fixtures/**` hold
+planted test values, not secrets.
 
 What stops it happening again: `.gitignore` refuses new `.env*` (except `.env.example`) and `*.pem` / `*.key`
 files; every image build context excludes them (`scripts/deploy/check_image_contexts.sh` proves it, and

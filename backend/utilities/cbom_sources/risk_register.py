@@ -50,8 +50,9 @@ REGRADE_BATCH = 2000
 LIMIT_MAX = 500
 CSV_COLUMNS = ("item_key", "q_grade", "q_label", "q_reason", "label", "asset_type", "family", "exposure",
                "source_name", "application", "presence", "sources", "last_run_id", "last_observed_at",
-               "model_version")
+               "model_version", "owners", "data_classification")
 _RT = CbomRiskRegister.__table__
+USE_DIGESTS = True  # #352: narrow a write's keys with the content digests (False: every key, the reference path)
 
 
 # ----------------------------------------------------------------------------- the team's inputs now
@@ -89,7 +90,12 @@ def team_inputs(session: Session, team_id: int) -> TeamInputs:
 
 
 # ----------------------------------------------------------------------------- grading one key
-def _content(row: CbomCollectedAsset) -> str:
+_CA = CbomCollectedAsset.__table__  # type: ignore[attr-defined]
+_CONTENT = ("asset_type", "algorithm", "key_size", "protocol", "quantum_vulnerable", "target", "location",
+            "finding_codes", "facts")  # the columns _content reads
+
+
+def _content(row: Any) -> str:
     facts = row.facts if isinstance(row.facts, dict) else {}
     doc = [row.asset_type, row.algorithm, row.key_size, row.protocol, row.quantum_vulnerable, row.target,
            row.location, sorted(str(c) for c in (row.finding_codes or [])), facts]
@@ -226,8 +232,10 @@ def refresh(session: Session, team_id: int, keys: Iterable[str], now: _dt.dateti
         stored = {r.item_key: r for r in session.execute(sa.select(
             _RT.c.item_key, _RT.c.q_grade, _RT.c.q_reason, _RT.c.grade_digest).where(
             _RT.c.team_id == team_id, _RT.c.item_key.in_(list(part)))).all()}
-        assets = {a.asset_key: a for a in session.exec(select(CbomEstateAsset).where(
-            CbomEstateAsset.team_id == team_id, CbomEstateAsset.asset_key.in_(list(part)))).all()}  # type: ignore[attr-defined]
+        ea = CbomEstateAsset.__table__  # type: ignore[attr-defined]
+        assets = {a.asset_key: a for a in session.execute(sa.select(  # plain columns: no ORM object per key
+            ea.c.asset_key, ea.c.presence, ea.c.key_kind, ea.c.label, ea.c.asset_type).where(
+            ea.c.team_id == team_id, ea.c.asset_key.in_(list(part)))).all()}
         latest = E.latest_rows(session, team_id, [k for k in part if k in assets])
         chosen: dict[str, list[dict[str, Any]]] = {}
         for key in part:
@@ -240,27 +248,36 @@ def refresh(session: Session, team_id: int, keys: Iterable[str], now: _dt.dateti
             if obs:
                 chosen[key] = obs
         ids = sorted({o["asset_id"] for obs in chosen.values() for o in obs})
-        rows: dict[int, CbomCollectedAsset] = {}
-        for ids_part in _chunks(ids):
-            rows.update({r.id: r for r in session.exec(select(CbomCollectedAsset).where(
-                CbomCollectedAsset.id.in_(list(ids_part)))).all()})  # type: ignore[union-attr]
+        content: dict[int, str] = {}  # the digest's inputs, read as plain columns (#352); ORM rows are loaded only
+        for ids_part in _chunks(ids):  # for the keys whose digest changed, the few a run re-grades
+            content.update({r.id: _content(r) for r in session.execute(sa.select(
+                _CA.c.id, *(_CA.c[c] for c in _CONTENT)).where(_CA.c.id.in_(list(ids_part)))).all()})
         writes: list[dict[str, Any]] = []
         gone: list[str] = []
+        first = len(out.transitions)
+        due: list[tuple[str, list[dict[str, Any]], str]] = []
         for key in part:
             before = stored.get(key)
-            obs = [o for o in chosen.get(key, []) if o["asset_id"] in rows]
+            obs = [o for o in chosen.get(key, []) if o["asset_id"] in content]
             if not obs:
                 if before is not None:
                     gone.append(key)
                     out.transitions.append(Transition(key, (before.q_grade, before.q_reason), None))
                 continue
-            asset = assets[key]
             digest = hashlib.sha256(json.dumps([inputs.digest, model, sorted(
-                [o["source_ref"], o["presence"], _content(rows[o["asset_id"]])] for o in obs)],
+                [o["source_ref"], o["presence"], content[o["asset_id"]]] for o in obs)],
                 separators=(",", ":")).encode()).hexdigest()[:16]
             if before is not None and before.grade_digest == digest and not force:
                 out.skipped += 1
                 continue
+            due.append((key, obs, digest))
+        rows: dict[int, CbomCollectedAsset] = {}
+        for ids_part in _chunks(sorted({o["asset_id"] for _k, obs, _d in due for o in obs})):
+            rows.update({r.id: r for r in session.exec(select(CbomCollectedAsset).where(
+                CbomCollectedAsset.id.in_(list(ids_part)))).all()})  # type: ignore[union-attr]
+        for key, obs, digest in due:
+            before = stored.get(key)
+            asset = assets[key]
             graded = [(o["source_ref"], grader.grade(rows[o["asset_id"]])) for o in obs]
             ref, g = _worst(graded)
             g = not_correlated(g, asset.key_kind)
@@ -280,6 +297,7 @@ def refresh(session: Session, team_id: int, keys: Iterable[str], now: _dt.dateti
                 out.transitions.append(Transition(
                     key, (before.q_grade, before.q_reason) if before is not None else None, (g.q_grade, g.q_reason),
                     label=asset.label, source_ref=ref, source_name=src.get("name"), asset_type=asset.asset_type))
+        out.transitions[first:] = sorted(out.transitions[first:], key=lambda t: t.key)  # key order, as before
         _upsert(session, writes)
         if gone:
             session.execute(sa.delete(_RT).where(_RT.c.team_id == team_id, _RT.c.item_key.in_(gone)))
@@ -292,33 +310,133 @@ def refresh(session: Session, team_id: int, keys: Iterable[str], now: _dt.dateti
 # ----------------------------------------------------------------------------- the estate hook and the re-grade
 def apply_write(session: Session, write: Any) -> Refresh:
     """The run's keys (present observations of the sources it wrote, assets whose presence changed, keys that moved)
-    graded where their digest changed, rows of keys that left the store deleted."""
-    from backend.utilities.cbom_sources import estate as E
-
-    keys = set(E.present_keys(session, write.team_id, write.source_refs)) | set(write.changed)
-    keys |= {new for _old, new, _ref in write.rekeyed} | {old for old, _new, _ref in write.rekeyed}
-    keys |= set(write.removed_keys)
-    out = refresh(session, write.team_id, keys, write.at, run_id=write.run_id)
+    graded where their digest changed, rows of keys that left the store deleted. Only the keys whose grade inputs
+    may have changed are read (``write_keys``, #352); every other one would compute the digest it has."""
+    inputs = team_inputs(session, write.team_id)
+    keys = write_keys(session, write, inputs)
+    out = refresh(session, write.team_id, keys, write.at, run_id=write.run_id, inputs=inputs)
+    mark_through(session, write)
     if out.written or out.deleted:
         log("risk register written", team=write.team_id, run=write.run_id, **out.counts())
     return out
 
 
+def all_write_keys(session: Session, write: Any) -> set[str]:
+    """Every key ``apply_write`` would grade without the content digests (the path before #352; the tests' reference)."""
+    from backend.utilities.cbom_sources import estate as E
+
+    keys = set(E.present_keys(session, write.team_id, write.source_refs)) | set(write.changed)
+    keys |= {new for _old, new, _ref in write.rekeyed} | {old for old, _new, _ref in write.rekeyed}
+    return keys | set(write.removed_keys)
+
+
+def write_keys(session: Session, write: Any, inputs: TeamInputs) -> set[str]:
+    """The keys of ``all_write_keys`` whose grade digest may have changed (#352). A key is left out only when none of
+    its observations changed: the store did not touch them in this write (``state_run_id``), and each one of a source
+    this write re-read has the same content digest in the new job as in the job the register last graded that source
+    from (``register_through``, which must be the job the source pointed at before this write). Every key is kept
+    (the path before #352) while any register row was graded with another model or other inputs, or a live asset has
+    no register row: the write grades those keys, as it did."""
+    from backend.utilities.cbom_sources import agility_store as AS
+    from backend.utilities.cbom_sources import estate as E
+
+    team_id, run_id = write.team_id, int(write.run_id)
+    model = _grade_model()
+    if not USE_DIGESTS or any(session.execute(sa.select(_RT.c.id).where(cond).limit(1)).first() is not None
+           for cond in _other_model(team_id, model) + _other_inputs(team_id, model, inputs.digest)) \
+            or missing_count(session, team_id) > 0:
+        return all_write_keys(session, write)
+    _EO, _ES = E._EO, E._ES
+    keys = set(write.changed) | {k for _o, new, _r in write.rekeyed for k in (_o, new)} | set(write.removed_keys)
+    refs = list(write.source_refs or ())
+    touched = set(session.execute(sa.select(_EO.c.asset_key).where(
+        _EO.c.team_id == team_id, _EO.c.state_run_id == run_id).distinct()).scalars())
+    for chunk in _chunks(sorted(touched - keys)):  # touched keys among the ones the write grades
+        keys |= set(session.execute(sa.select(_EO.c.asset_key).where(
+            _EO.c.team_id == team_id, _EO.c.asset_key.in_(list(chunk)), _EO.c.presence == "present",
+            _EO.c.source_ref.in_(refs)).distinct()).scalars()) if refs else set()
+    previous = getattr(write, "previous", None) or {}
+    for r in session.execute(sa.select(_ES.c.source_ref, _ES.c.latest_job_id, _ES.c.latest_attempt,
+                                       _ES.c.register_through_job_id, _ES.c.register_through_attempt).where(
+            _ES.c.team_id == team_id, _ES.c.source_ref.in_(refs))).all() if refs else []:
+        latest = (int(r.latest_job_id), int(r.latest_attempt or 1))
+        through = (int(r.register_through_job_id), int(r.register_through_attempt)) \
+            if r.register_through_job_id is not None and r.register_through_attempt is not None else None
+        present = (_EO.c.team_id == team_id, _EO.c.source_ref == r.source_ref, _EO.c.presence == "present")
+        if through == latest:
+            continue
+        changed = AS.changed_condition(session, write, latest, through) \
+            if through is not None and through == previous.get(r.source_ref) else None
+        if changed is None:  # not known (or most of the job changed): every key, as before
+            keys |= set(E.present_keys(session, team_id, [r.source_ref]))
+        else:
+            keys |= set(session.execute(sa.select(_EO.c.asset_key).where(*present, changed)).scalars())
+    return keys
+
+
+def mark_through(session: Session, write: Any) -> None:
+    """The register's grades of the sources ``write`` re-read now follow their latest job (#352)."""
+    from backend.utilities.cbom_sources import estate as E
+
+    if write.source_refs:
+        session.execute(sa.update(E._ES).where(E._ES.c.team_id == write.team_id,
+                                               E._ES.c.source_ref.in_(list(write.source_refs))).values(
+            register_through_job_id=E._ES.c.latest_job_id, register_through_attempt=E._ES.c.latest_attempt))
+
+
+def _grade_model() -> str:
+    from backend.utilities.cbom_sources import qgrade as QG
+
+    return QG.GRADE_MODEL_VERSION
+
+
+def _ordered_keys(session: Session, conds: list[Any], limit: int) -> list[str]:
+    """Keys matching any of ``conds`` (each one simple enough for an index range), oldest grade first, at most
+    ``limit``. One statement per condition: an OR of ranges is read as a filter over the whole team (CB-32)."""
+    found: list[tuple[Any, str]] = []
+    for cond in conds:
+        found += session.execute(sa.select(_RT.c.updated_at, _RT.c.item_key).where(cond).order_by(
+            _RT.c.updated_at, _RT.c.item_key).limit(limit)).all()
+    found.sort(key=lambda r: (r[0] is not None, r[0] or _dt.datetime.min, r[1]))
+    return [k for _at, k in found[:limit]]
+
+
+def _other_model(team_id: int, model: str) -> list[Any]:
+    """``model_version <> model`` as two index ranges (ix_cbomriskregister_team_model_inputs)."""
+    return [sa.and_(_RT.c.team_id == team_id, _RT.c.model_version < model),
+            sa.and_(_RT.c.team_id == team_id, _RT.c.model_version > model)]
+
+
+def _other_inputs(team_id: int, model: str, digest: str) -> list[Any]:
+    """``model_version = model AND inputs_digest <> digest`` as two index ranges."""
+    return [sa.and_(_RT.c.team_id == team_id, _RT.c.model_version == model, _RT.c.inputs_digest < digest),
+            sa.and_(_RT.c.team_id == team_id, _RT.c.model_version == model, _RT.c.inputs_digest > digest)]
+
+
+def missing_count(session: Session, team_id: int, *, graded_live: int | None = None) -> int:
+    """Live estate assets the register has no row for, as a difference of two index-only counts (live assets minus
+    live register rows). Exact while the register follows the store (its hook runs in the store's write; a failed
+    write marks the store stale and the backfill, with hooks, repairs both). An anti-join of 1.5M keys took ~1 s per
+    call and ran on every summary and every scheduler tick (CB-32)."""
+    from backend.utilities.cbom_sources import estate_summary_ddl as SUMMARY
+
+    live = SUMMARY.count(session, team_id, "assets_live")  # CB-32: trigger-kept counters, not two 1.5M counts
+    graded = graded_live if graded_live is not None else sum(
+        n for _g, _r, _f, presence, n in SUMMARY.register_groups(session, team_id) if presence != "removed")
+    return max(0, live - graded)
+
+
 def _mismatched(session: Session, team_id: int, inputs: TeamInputs, model: str, limit: int
                 ) -> tuple[list[str], list[str], list[str]]:
     """(keys graded with another model, keys graded with other inputs, estate keys the register has not seen)."""
-    by_model = list(session.execute(sa.select(_RT.c.item_key).where(
-        _RT.c.team_id == team_id, _RT.c.model_version != model).order_by(_RT.c.updated_at, _RT.c.item_key)
-        .limit(limit)).scalars())
-    by_inputs = list(session.execute(sa.select(_RT.c.item_key).where(
-        _RT.c.team_id == team_id, _RT.c.model_version == model, _RT.c.inputs_digest != inputs.digest)
-        .order_by(_RT.c.updated_at, _RT.c.item_key).limit(max(0, limit - len(by_model)))).scalars())
+    by_model = _ordered_keys(session, _other_model(team_id, model), limit)
+    by_inputs = _ordered_keys(session, _other_inputs(team_id, model, inputs.digest), max(0, limit - len(by_model)))
     room = max(0, limit - len(by_model) - len(by_inputs))
     _EA = CbomEstateAsset.__table__
     missing = list(session.execute(sa.select(_EA.c.asset_key).select_from(_EA.outerjoin(_RT, sa.and_(
         _RT.c.team_id == _EA.c.team_id, _RT.c.item_key == _EA.c.asset_key))).where(
         _EA.c.team_id == team_id, _EA.c.presence != "removed", _RT.c.id.is_(None))
-        .order_by(_EA.c.asset_key).limit(room)).scalars()) if room else []
+        .order_by(_EA.c.asset_key).limit(room)).scalars()) if room and missing_count(session, team_id) else []
     return by_model, by_inputs, missing
 
 
@@ -365,19 +483,15 @@ def regrade_due(engine, now: _dt.datetime, *, limit: int = REGRADE_BATCH) -> dic
     return total
 
 
-def pending(session: Session, team_id: int) -> int:
+def pending(session: Session, team_id: int, *, graded_live: int | None = None) -> int:
     """Register rows still to re-grade after an inputs or model change, plus estate keys not graded yet."""
     from backend.utilities.cbom_sources import qgrade as QG
 
     inputs = team_inputs(session, team_id)
-    stale = session.execute(sa.select(sa.func.count()).select_from(_RT).where(
-        _RT.c.team_id == team_id, sa.or_(_RT.c.model_version != QG.GRADE_MODEL_VERSION,
-                                         _RT.c.inputs_digest != inputs.digest))).scalar_one()
-    _EA = CbomEstateAsset.__table__
-    missing = session.execute(sa.select(sa.func.count()).select_from(_EA.outerjoin(_RT, sa.and_(
-        _RT.c.team_id == _EA.c.team_id, _RT.c.item_key == _EA.c.asset_key))).where(
-        _EA.c.team_id == team_id, _EA.c.presence != "removed", _RT.c.id.is_(None))).scalar_one()
-    return int(stale) + int(missing)
+    model = QG.GRADE_MODEL_VERSION
+    stale = sum(int(session.execute(sa.select(sa.func.count()).select_from(_RT).where(cond)).scalar_one())
+                for cond in (*_other_model(team_id, model), *_other_inputs(team_id, model, inputs.digest)))
+    return stale + missing_count(session, team_id, graded_live=graded_live)
 
 
 # ----------------------------------------------------------------------------- the API
@@ -408,6 +522,18 @@ def _where(team_id: int, f: dict[str, Any]) -> list[Any]:
     return cond
 
 
+def _add_business(session: Session, team_id: int, items: list[dict[str, Any]]) -> None:
+    """Engine step 3: each row's owners and the data classification of the systems its asset sits in (its sources'
+    current metadata, ``estate_links.business``; no scan is read)."""
+    from backend.utilities.cbom_sources import estate_links as LINKS
+
+    biz = LINKS.business(session, team_id, [i["item_key"] for i in items])
+    for item in items:
+        b = biz.get(item["item_key"]) or {}
+        item["owners"] = b.get("owners", [])
+        item["data_classification"] = b.get("data_classification")
+
+
 def public_row(r: Any) -> dict[str, Any]:
     from backend.utilities.cbom_sources.qgrade import LABELS
 
@@ -419,16 +545,39 @@ def public_row(r: Any) -> dict[str, Any]:
             "model_version": r.model_version, "updated_at": iso_z(r.updated_at)}
 
 
+_SUMMARY_FILTERS = {"grade", "reason", "family", "presence"}
+
+
+def _total(session: Session, team_id: int, filters: dict[str, Any]) -> int:
+    """The filtered row count: from cbomregistersummary when every filter is one of its dimensions (CB-32), else a
+    count over the filter's index."""
+    active = {k: v for k, v in filters.items() if v}
+    if set(active) <= _SUMMARY_FILTERS:
+        from backend.utilities.cbom_sources import estate_summary_ddl as SUMMARY
+
+        want_grade = active.get("grade")
+        return sum(n for grade, reason, fam, presence, n in SUMMARY.register_groups(session, team_id)
+                   if (not want_grade or (grade is None if want_grade == "none" else grade == want_grade))
+                   and (not active.get("reason") or reason == active["reason"])
+                   and (not active.get("family") or fam == active["family"])
+                   and (not active.get("presence") or presence == active["presence"]))
+    return int(session.execute(sa.select(sa.func.count()).select_from(_RT).where(*_where(team_id, filters))).scalar_one())
+
+
 def list_register(session: Session, team_id: int, filters: dict[str, Any], *, after: tuple[int, str] | None,
                   limit: int) -> dict[str, Any]:
+    """One keyset page in (q_rank, item_key) order. ``total`` is counted on the first page only (``None`` on the
+    next ones; the UI reads the first page's): at 1.5M rows a count per page cost more than the page (CB-32)."""
     q = sa.select(_RT).where(*_where(team_id, filters))
-    if after is not None:
-        q = q.where(sa.or_(_RT.c.q_rank > after[0], sa.and_(_RT.c.q_rank == after[0], _RT.c.item_key > after[1])))
+    if after is not None:  # a row-value range, so the (…, q_rank, item_key) index seeks to it (CB-32)
+        q = q.where(sa.tuple_(_RT.c.q_rank, _RT.c.item_key) > sa.tuple_(after[0], after[1]))
     rows = list(session.execute(q.order_by(_RT.c.q_rank, _RT.c.item_key).limit(limit + 1)).all())
     more = len(rows) > limit
     rows = rows[:limit]
-    total = session.execute(sa.select(sa.func.count()).select_from(_RT).where(*_where(team_id, filters))).scalar_one()
-    return {"items": [public_row(r) for r in rows], "total": int(total),
+    total = None if after is not None else _total(session, team_id, filters)
+    items = [public_row(r) for r in rows]
+    _add_business(session, team_id, items)
+    return {"items": items, "total": total,
             "next_after": encode_after(rows[-1].q_rank, rows[-1].item_key) if more and rows else None}
 
 
@@ -437,14 +586,20 @@ def summary(session: Session, team_id: int, now: _dt.datetime, *, weeks: int = 1
     from backend.utilities.cbom_sources import estate as E
     from backend.utilities.cbom_sources import qgrade as QG
 
-    grades = dict(session.execute(sa.select(_RT.c.q_grade, sa.func.count()).where(_RT.c.team_id == team_id)
-                                  .group_by(_RT.c.q_grade)).all())
-    q0_reasons = dict(session.execute(sa.select(_RT.c.q_reason, sa.func.count()).where(
-        _RT.c.team_id == team_id, _RT.c.q_grade == "Q0").group_by(_RT.c.q_reason)).all())
+    # the tallies and the live rows "pending" needs come from cbomregistersummary, kept by triggers (CB-32)
+    from backend.utilities.cbom_sources import estate_summary_ddl as SUMMARY
+
+    grades: dict[str | None, int] = {}
+    q0_reasons: dict[str, int] = {}
     families: dict[str, dict[str, int]] = {}
-    for fam, grade, n in session.execute(sa.select(_RT.c.family, _RT.c.q_grade, sa.func.count()).where(
-            _RT.c.team_id == team_id).group_by(_RT.c.family, _RT.c.q_grade)).all():
-        families.setdefault(fam or "Other", {})[grade or "none"] = int(n)
+    live = 0
+    for grade, reason, fam, presence, n in SUMMARY.register_groups(session, team_id):
+        live += int(n) if presence != "removed" else 0
+        grades[grade] = grades.get(grade, 0) + int(n)
+        if grade == "Q0":
+            q0_reasons[reason] = q0_reasons.get(reason, 0) + int(n)
+        bucket = families.setdefault(fam or "Other", {})
+        bucket[grade or "none"] = bucket.get(grade or "none", 0) + int(n)
     gaps_open = dict(session.exec(select(CbomQ0Gap.reason, sa.func.count()).where(  # type: ignore[call-overload]
         CbomQ0Gap.team_id == team_id, CbomQ0Gap.closed_at.is_(None)).group_by(CbomQ0Gap.reason)).all())  # type: ignore[union-attr]
     start = (now - _dt.timedelta(days=now.weekday(), weeks=weeks - 1)).replace(hour=0, minute=0, second=0,
@@ -468,7 +623,7 @@ def summary(session: Session, team_id: int, now: _dt.datetime, *, weeks: int = 1
         "families": dict(sorted(families.items())),
         "closures_by_week": [{"week": w, "total": sum(c.values()), "by_cause": dict(sorted(c.items()))}
                              for w, c in sorted(weekly.items())],
-        "pending_regrade": pending(session, team_id), "estate": E.stale_status(session, team_id),
+        "pending_regrade": pending(session, team_id, graded_live=live), "estate": E.stale_status(session, team_id),
         "model_version": QG.GRADE_MODEL_VERSION, "server_time": iso_z(now),
     }
 
@@ -560,7 +715,9 @@ def get_item(session: Session, team_id: int, key: str) -> dict[str, Any] | None:
     gaps = session.exec(select(CbomQ0Gap).where(CbomQ0Gap.team_id == team_id,
                                                 CbomQ0Gap.item_key == f"asset:{key}")
                         .order_by(CbomQ0Gap.opened_at.desc())).all()  # type: ignore[union-attr,attr-defined]
-    return {"item": public_row(row), "observations": sorted(observations, key=lambda o: o["source_ref"]),
+    item = public_row(row)
+    _add_business(session, team_id, [item])
+    return {"item": item, "observations": sorted(observations, key=lambda o: o["source_ref"]),
             "q0_gaps": [public_gap(g, _dt.datetime.utcnow()) for g in gaps]}
 
 
@@ -583,7 +740,8 @@ def csv_rows(engine, team_id: int, filters: dict[str, Any], *, batch: int = 1000
         buf.seek(0)
         buf.truncate()
         for item in page["items"]:
-            writer.writerow([_csv_cell(item.get(c)) for c in CSV_COLUMNS])
+            writer.writerow([_csv_cell("; ".join(v) if isinstance(v := item.get(c), list) else v)
+                             for c in CSV_COLUMNS])
         yield buf.getvalue().encode()
         if not page["next_after"]:
             return

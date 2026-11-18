@@ -34,7 +34,7 @@ from sqlmodel import Session
 
 from backend.get_db import get_db
 from backend.utilities.cbom_sources import jobs as J
-from backend.utilities.cbom_sources.common import log, new_ref, utcnow
+from backend.utilities.cbom_sources.common import frames, log, new_ref, utcnow
 from backend.utilities.cbom_sources.settings import get_or_create_settings
 
 BATCH = 500
@@ -128,6 +128,7 @@ class _Job:
         self.requeue: str | None = None  # a slice AWS kept throttling: back to the queue after a backoff
         self.read = 0  # emitted rows that are assets, not coverage gaps
         self.store_failed: str | None = None  # an asset batch was lost to an error that is not the API's refusal
+        self.store_failed_frames: str | None = None  # where that error was raised (file:line:function, CB-31)
         self.lab_mode: str | None = None  # "same_account": an AWS source collected in lab mode (lab_mode.py)
 
     # -- leases and batches
@@ -174,6 +175,7 @@ class _Job:
                 # when the collector that called emit() or should_stop() swallows the exception, and it stops (no
                 # more reads of the customer's cloud, no next SSM command) since nothing more would be kept.
                 self.store_failed = type(exc).__name__
+                self.store_failed_frames = frames(exc)  # the ref is logged later, outside this except (CB-31 X3)
                 self.stop_reason = self.stop_reason or "Collection stopped: assets could not be stored"
                 log("cloud job asset batch NOT stored", team=self.job["team_id"], job=self.job["id"], assets=len(batch),
                     error=self.store_failed)
@@ -202,7 +204,8 @@ class _Job:
             pass
         if self.store_failed and status != "failure":  # a collector swallowed the failed store: the job still fails
             ref = new_ref()
-            log("cloud job FAILED", ref=ref, team=team_id, job=self.job["id"], error=self.store_failed)
+            log("cloud job FAILED", ref=ref, team=team_id, job=self.job["id"], error=self.store_failed,
+                frames=self.store_failed_frames)
             status, error = "failure", f"Collection failed (ref {ref})"
         if self.requeue and status != "failure" and not self.released:
             self._backoff_and_release(started)
@@ -522,6 +525,10 @@ def main() -> None:
     from backend.workers.cbom_scheduler import start_thread
 
     scheduler_stop = start_thread(engine)
+    # F3: repository discovery syncs, policy schedules and the fair repository-scan queue (REPO_SCHEDULER=0: off)
+    from backend.workers.repo_scheduler import start_thread as start_repo_scheduler
+
+    start_repo_scheduler(engine)
     # integrations forward events on their own thread too: a slow destination must not delay a schedule
     from backend.workers.integration_dispatcher import start_thread as start_dispatcher
 

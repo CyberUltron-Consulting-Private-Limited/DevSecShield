@@ -21,6 +21,7 @@ import {
   deleteCbomPolicy,
   listCbomCredentials,
   listCbomPolicies,
+  listCbomTransports,
   previewCbomPolicy,
   reconcileCbomFleet,
   updateCbomPolicy,
@@ -28,6 +29,7 @@ import {
   type CbomPolicyAction,
   type CbomPolicyPreview,
   type CbomPolicySchedule,
+  type CbomPolicyTransport,
   type CbomPolicyWrite,
   type CbomWriteEvaluation,
 } from "@/utils/api/cbom_fleet";
@@ -48,7 +50,9 @@ import {
 } from "./fleetLogic";
 import { cbomFleetKeys, refreshFleet } from "./keys";
 import type { FleetSectionProps } from "./sections";
+import { TRANSPORT_LABEL, applyText } from "./transportsLogic";
 import { useOpener } from "./useOpener";
+import { InfoTip } from "@/components/ui/info-tip";
 
 const FIELDS = ["kind", "account_id", "region", "platform"];
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -70,6 +74,9 @@ interface Draft {
   selector: SelectorDraft | null; // null: edited as JSON
   selectorJson: string;
   neverScan: boolean;
+  /** ssh (a credential, from a scan node), or the kind of the transport transportId names (#318) */
+  transport: CbomPolicyTransport;
+  transportId: number | null;
   credentialId: number | null;
   nodeId: number | null;
   tier: 1 | 2;
@@ -88,6 +95,8 @@ function draftOf(p?: CbomFleetPolicy | null): Draft {
     selector: draftFromSelector(p?.selector ?? {}),
     selectorJson: JSON.stringify(p?.selector ?? {}, null, 2),
     neverScan: !!a.never_scan,
+    transport: a.transport ?? "ssh",
+    transportId: a.transport_id ?? null,
     credentialId: a.credential_id ?? null,
     nodeId: a.node_id ?? null,
     tier: a.tier === 2 ? 2 : 1,
@@ -109,12 +118,14 @@ function bodyOf(d: Draft): CbomPolicyWrite {
       throw new Error("The selector is not valid JSON");
     }
   }
+  // SSH logs in with a credential; a transport needs none, and SSM runs from ZeroShield with no scan node
+  const how: CbomPolicyAction = d.transport === "ssh"
+    ? { transport: "ssh", credential_id: d.credentialId, node_id: d.nodeId }
+    : { transport: d.transport, transport_id: d.transportId, credential_id: null, node_id: d.transport === "ssm" ? null : d.nodeId };
   const action: CbomPolicyAction = d.neverScan
     ? { never_scan: true }
     : {
-        transport: "ssh",
-        credential_id: d.credentialId,
-        node_id: d.nodeId,
+        ...how,
         tier: d.tier,
         batch_size: d.batchSize,
         schedule: d.schedule === "none" ? null : {
@@ -128,6 +139,7 @@ function bodyOf(d: Draft): CbomPolicyWrite {
 function ConditionRow({ c, onChange, onRemove, index }: { c: Condition; onChange: (c: Condition) => void; onRemove: () => void; index: number }) {
   return (
     <div className="flex flex-wrap items-center gap-2" data-testid={`policy-condition-${index}`}>
+      <InfoTip id="fleet.pol.condition" />
       <Select value={c.on} onValueChange={(v) => onChange({ ...c, on: v as "tag" | "field", key: v === "field" ? "kind" : "" })}>
         <SelectTrigger className="w-24 cursor-pointer" aria-label="Condition on"><SelectValue /></SelectTrigger>
         <SelectContent>
@@ -136,15 +148,18 @@ function ConditionRow({ c, onChange, onRemove, index }: { c: Condition; onChange
         </SelectContent>
       </Select>
       {c.on === "tag" ? (
+        /* infotip-shared: the tag key belongs to the condition; the Condition tip before it explains it */
         <Input className="w-36" aria-label="Tag key" placeholder="e.g. env" value={c.key} onChange={(e) => onChange({ ...c, key: e.target.value })} />
       ) : (
         <Select value={c.key} onValueChange={(v) => onChange({ ...c, key: v })}>
+          {/* infotip-shared: the field belongs to the condition; the Condition tip before it explains it */}
           <SelectTrigger className="w-36 cursor-pointer" aria-label="Field"><SelectValue /></SelectTrigger>
           <SelectContent>
             {FIELDS.map((f) => <SelectItem key={f} value={f} className="cursor-pointer">{f}</SelectItem>)}
           </SelectContent>
         </Select>
       )}
+      <InfoTip id="fleet.pol.operator" />
       <Select value={c.op} onValueChange={(v) => onChange({ ...c, op: v as Condition["op"] })}>
         <SelectTrigger className="w-32 cursor-pointer" aria-label="Operator"><SelectValue /></SelectTrigger>
         <SelectContent>
@@ -152,6 +167,7 @@ function ConditionRow({ c, onChange, onRemove, index }: { c: Condition; onChange
         </SelectContent>
       </Select>
       {c.op !== "exists" && (
+        /* infotip-shared: the value is compared by the operator before it, whose tip explains it */
         <Input className="w-40" aria-label="Value" placeholder={c.op === "in" ? "e.g. prod, stage" : "e.g. prod"} value={c.value} onChange={(e) => onChange({ ...c, value: e.target.value })} />
       )}
       <Button variant="ghost" size="icon" className="cursor-pointer" aria-label="Remove condition" onClick={onRemove}>
@@ -161,8 +177,8 @@ function ConditionRow({ c, onChange, onRemove, index }: { c: Condition; onChange
   );
 }
 
-function PolicyForm({ teamId, editing, onDone, onCloseAutoFocus }: {
-  teamId: number; editing: CbomFleetPolicy | null; onDone: () => void; onCloseAutoFocus: (e: Event) => void;
+function PolicyForm({ teamId, editing, transportsOn, onDone, onCloseAutoFocus }: {
+  teamId: number; editing: CbomFleetPolicy | null; transportsOn: boolean; onDone: () => void; onCloseAutoFocus: (e: Event) => void;
 }) {
   const queryClient = useQueryClient();
   const [base, setBase] = useState<CbomFleetPolicy | null>(editing); // the version being edited (reloaded after a 409)
@@ -173,6 +189,14 @@ function PolicyForm({ teamId, editing, onDone, onCloseAutoFocus }: {
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => { setD((cur) => ({ ...cur, [k]: v })); setPreview(null); };
   const creds = useQuery({ queryKey: cbomFleetKeys.credentials(teamId), queryFn: () => listCbomCredentials(teamId) });
   const nodes = useQuery({ queryKey: cbomSourcesKeys.nodes(teamId), queryFn: () => listCbomScanNodes(teamId) });
+  // the transport routes are 404 while CBOM_FLEET_TRANSPORTS is off: asked only when it is on
+  const transports = useQuery({ queryKey: cbomFleetKeys.transports(teamId), queryFn: () => listCbomTransports(teamId), enabled: transportsOn });
+  const usable = (transports.data?.transports ?? []).filter((t) => t.enabled || t.id === d.transportId);
+  const chooseThrough = (value: string) => {
+    const t = usable.find((x) => String(x.id) === value);
+    setD((cur) => ({ ...cur, transport: t ? t.kind : "ssh", transportId: t ? t.id : null }));
+    setPreview(null);
+  };
   const agentless = (nodes.data?.nodes ?? []).filter((n) => (n.mode ?? "agentless") !== "agent");
   // an incomplete condition is named and blocks Preview and Save; it is never dropped from what is sent
   const problems = d.selector ? conditionProblems(d.selector) : [];
@@ -230,25 +254,28 @@ function PolicyForm({ teamId, editing, onDone, onCloseAutoFocus }: {
         </DialogHeader>
         <div className="space-y-4">
           <div className="grid sm:grid-cols-[1fr_140px] gap-3">
-            <Field label="Name" htmlFor="policy-name" required>
+            <Field infoId="fleet.pol.name" label="Name" htmlFor="policy-name" required>
               <Input id="policy-name" value={d.name} onChange={(e) => set("name", e.target.value)} placeholder="prod-weekly" />
             </Field>
-            <Field label="Priority" htmlFor="policy-priority" hint="0 to 1,000,000">
+            <Field infoId="fleet.pol.priority" label="Priority" htmlFor="policy-priority" hint="0 to 1,000,000">
               <Input id="policy-priority" type="number" min={0} value={d.priority} onChange={(e) => set("priority", Number(e.target.value))} />
             </Field>
           </div>
           <fieldset className="space-y-2">
-            <legend className="text-sm font-medium">Targets it matches</legend>
+            <legend className="text-sm font-medium">Targets it matches <InfoTip id="fleet.pol.selector" /></legend>
             {d.selector ? (
               <>
                 {conditions.length > 1 && (
-                  <Select value={d.selector.mode} onValueChange={(v) => set("selector", { mode: v as "all" | "any", conditions })}>
-                    <SelectTrigger className="w-56 cursor-pointer" aria-label="Combine conditions"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all" className="cursor-pointer">All conditions must hold</SelectItem>
-                      <SelectItem value="any" className="cursor-pointer">Any condition is enough</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <div className="flex items-center gap-1">
+                    <Select value={d.selector.mode} onValueChange={(v) => set("selector", { mode: v as "all" | "any", conditions })}>
+                      <SelectTrigger className="w-56 cursor-pointer" aria-label="Combine conditions"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all" className="cursor-pointer">All conditions must hold</SelectItem>
+                        <SelectItem value="any" className="cursor-pointer">Any condition is enough</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <InfoTip id="fleet.pol.combine" />
+                  </div>
                 )}
                 {conditions.length === 0 && <p className="text-sm text-zinc-500">No condition: the policy matches every target.</p>}
                 {conditions.map((c, i) => (
@@ -266,20 +293,35 @@ function PolicyForm({ teamId, editing, onDone, onCloseAutoFocus }: {
                 </Button>
               </>
             ) : (
-              <Field label="Selector (JSON)" htmlFor="policy-selector-json" hint="This selector uses 'not' or nesting, so it is edited as JSON">
+              <Field infoId="fleet.pol.selector_json" label="Selector (JSON)" htmlFor="policy-selector-json" hint="This selector uses 'not' or nesting, so it is edited as JSON">
                 <Textarea id="policy-selector-json" rows={6} className="font-mono text-xs" value={d.selectorJson} onChange={(e) => set("selectorJson", e.target.value)} />
               </Field>
             )}
           </fieldset>
           <fieldset className="space-y-3">
-            <legend className="text-sm font-medium">What happens to them</legend>
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input type="checkbox" checked={d.neverScan} onChange={(e) => set("neverScan", e.target.checked)} data-testid="policy-never-scan" />
-              Never scan them
-            </label>
+            <legend className="text-sm font-medium">What happens to them <InfoTip id="fleet.pol.action" /></legend>
+            <div className="flex items-center gap-1">
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input type="checkbox" checked={d.neverScan} onChange={(e) => set("neverScan", e.target.checked)} data-testid="policy-never-scan" />
+                Never scan them
+              </label>
+              <InfoTip id="fleet.pol.never_scan" />
+            </div>
             {!d.neverScan && (
               <div className="grid sm:grid-cols-2 gap-3">
-                <Field label="Credential (SSH)" htmlFor="policy-credential" required hint="Add one in Credentials below">
+                <Field infoId="fleet.pol.transport" label="Collect through" htmlFor="policy-transport" required className="sm:col-span-2"
+                  hint={transportsOn ? "Add a transport in Transports below" : undefined}>
+                  <select id="policy-transport" value={d.transport === "ssh" ? "ssh" : String(d.transportId ?? "")} onChange={(e) => chooseThrough(e.target.value)}
+                    className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-xs cursor-pointer dark:bg-input/30">
+                    <option value="ssh">SSH (a credential, from a scan node)</option>
+                    {usable.map((t) => <option key={t.id} value={String(t.id)}>{t.name} · {TRANSPORT_LABEL[t.kind]}</option>)}
+                    {d.transport !== "ssh" && !usable.some((t) => t.id === d.transportId) && (
+                      <option value={String(d.transportId ?? "")}>{d.transport.toUpperCase()} transport #{d.transportId} (not available)</option>
+                    )}
+                  </select>
+                </Field>
+                {d.transport === "ssh" && (
+                <Field infoId="fleet.pol.credential" label="Credential (SSH)" htmlFor="policy-credential" required hint="Add one in Credentials below">
                   <Select value={d.credentialId ? String(d.credentialId) : ""} onValueChange={(v) => set("credentialId", Number(v))}>
                     <SelectTrigger id="policy-credential" className="cursor-pointer"><SelectValue placeholder="Choose a credential" /></SelectTrigger>
                     <SelectContent>
@@ -289,10 +331,13 @@ function PolicyForm({ teamId, editing, onDone, onCloseAutoFocus }: {
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field label="Scan node" htmlFor="policy-node" required>
+                )}
+                {d.transport !== "ssm" && (
+                <Field infoId="fleet.pol.node" label="Scan node" htmlFor="policy-node" required>
                   <NodeSelect id="policy-node" nodes={agentless} value={d.nodeId} onChange={(v) => set("nodeId", v)} />
                 </Field>
-                <Field label="Tier" htmlFor="policy-tier">
+                )}
+                <Field infoId="fleet.pol.tier" label="Tier" htmlFor="policy-tier">
                   <Select value={String(d.tier)} onValueChange={(v) => set("tier", Number(v) as 1 | 2)}>
                     <SelectTrigger id="policy-tier" className="cursor-pointer"><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -301,10 +346,10 @@ function PolicyForm({ teamId, editing, onDone, onCloseAutoFocus }: {
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field label="Batch size" htmlFor="policy-batch" hint="Targets per managed source, 25 to 1,000">
+                <Field infoId="fleet.pol.batch" label="Batch size" htmlFor="policy-batch" hint="Targets per managed source, 25 to 1,000">
                   <Input id="policy-batch" type="number" min={25} max={1000} value={d.batchSize} onChange={(e) => set("batchSize", Number(e.target.value))} />
                 </Field>
-                <Field label="Schedule" htmlFor="policy-schedule">
+                <Field infoId="fleet.pol.schedule" label="Schedule" htmlFor="policy-schedule">
                   <Select value={d.schedule} onValueChange={(v) => set("schedule", v as Draft["schedule"])}>
                     <SelectTrigger id="policy-schedule" className="cursor-pointer"><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -317,11 +362,11 @@ function PolicyForm({ teamId, editing, onDone, onCloseAutoFocus }: {
                 </Field>
                 {d.schedule !== "none" && (
                   <div className="flex gap-2">
-                    <Field label="Time" htmlFor="policy-time">
+                    <Field infoId="fleet.pol.time" label="Time" htmlFor="policy-time">
                       <Input id="policy-time" type="time" value={d.timeOfDay} onChange={(e) => set("timeOfDay", e.target.value)} />
                     </Field>
                     {d.schedule === "weekly" && (
-                      <Field label="Day" htmlFor="policy-weekday">
+                      <Field infoId="fleet.pol.weekday" label="Day" htmlFor="policy-weekday">
                         <Select value={String(d.weekday)} onValueChange={(v) => set("weekday", Number(v))}>
                           <SelectTrigger id="policy-weekday" className="w-36 cursor-pointer"><SelectValue /></SelectTrigger>
                           <SelectContent>
@@ -331,7 +376,7 @@ function PolicyForm({ teamId, editing, onDone, onCloseAutoFocus }: {
                       </Field>
                     )}
                     {d.schedule === "monthly" && (
-                      <Field label="Day of month" htmlFor="policy-monthday">
+                      <Field infoId="fleet.pol.monthday" label="Day of month" htmlFor="policy-monthday">
                         <Input id="policy-monthday" type="number" min={1} max={28} value={d.monthday} onChange={(e) => set("monthday", Number(e.target.value))} />
                       </Field>
                     )}
@@ -379,7 +424,7 @@ function PolicyForm({ teamId, editing, onDone, onCloseAutoFocus }: {
   );
 }
 
-export default function PoliciesSection({ teamId }: FleetSectionProps) {
+export default function PoliciesSection({ teamId, status }: FleetSectionProps) {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<CbomFleetPolicy | null | "new">(null);
   const [removing, setRemoving] = useState<CbomFleetPolicy | null>(null);
@@ -412,8 +457,8 @@ export default function PoliciesSection({ teamId }: FleetSectionProps) {
     onSuccess: (r) => {
       // managed sources and schedules show on the other tabs too
       queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) });
-      if (!r.materialize) toast.success(`Decisions refreshed (${r.decisions_changed} changed); managed sources are turned off in this deployment`);
-      else toast.success(`Applied: ${r.sources_created} sources added, ${r.sources_updated} updated, ${r.sources_removed} removed, ${r.deferred} waiting for a running job`);
+      // #318: after a save already applied the policies, say what it did instead of "0 sources added"
+      toast.success(applyText(r));
       r.problems.slice(0, 3).forEach((p) => toast.error(p));
     },
     onError: (err) => toast.error(errorText(err, "Could not apply the policies")),
@@ -421,6 +466,7 @@ export default function PoliciesSection({ teamId }: FleetSectionProps) {
   const data = policies.data;
   return (
     <SectionCard
+      infoId="fleet.pol.section"
       id="fleet-policies"
       title="Policies"
       description={data?.order ? `Applied in this order: ${data.order}. The never-scan list overrides every policy.` : "Tag policies decide how each target is collected."}
@@ -458,10 +504,10 @@ export default function PoliciesSection({ teamId }: FleetSectionProps) {
             <TableHeader>
               <TableRow>
                 <TableHead className="w-10 hidden @2xl:table-cell">#</TableHead>
-                <TableHead>Policy</TableHead>
-                <TableHead className="hidden @2xl:table-cell">Matches</TableHead>
-                <TableHead className="hidden @2xl:table-cell">Does</TableHead>
-                <TableHead className="text-right hidden @2xl:table-cell">Targets (won / matched)</TableHead>
+                <TableHead>Policy <InfoTip id="fleet.pol.col.policy" /></TableHead>
+                <TableHead className="hidden @2xl:table-cell">Matches <InfoTip id="fleet.pol.col.matches" /></TableHead>
+                <TableHead className="hidden @2xl:table-cell">Does <InfoTip id="fleet.pol.col.does" /></TableHead>
+                <TableHead className="text-right hidden @2xl:table-cell">Targets (won / matched) <InfoTip id="fleet.pol.col.targets" /></TableHead>
                 <TableHead><span className="sr-only">Actions</span></TableHead>
               </TableRow>
             </TableHeader>
@@ -501,7 +547,7 @@ export default function PoliciesSection({ teamId }: FleetSectionProps) {
         </div>
       )}
       {editing !== null && (
-        <PolicyForm teamId={teamId} editing={editing === "new" ? null : editing} onDone={() => setEditing(null)} onCloseAutoFocus={opener.onCloseAutoFocus} />
+        <PolicyForm teamId={teamId} editing={editing === "new" ? null : editing} transportsOn={!!status?.transports} onDone={() => setEditing(null)} onCloseAutoFocus={opener.onCloseAutoFocus} />
       )}
       <ConfirmDialog
         open={removing !== null}
