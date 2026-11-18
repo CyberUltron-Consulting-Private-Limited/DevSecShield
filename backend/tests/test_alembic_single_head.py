@@ -59,7 +59,8 @@ def test_every_down_revision_exists_and_the_chain_reaches_the_root():
     roots = [rev for rev, downs in graph.items() if not downs]
     assert len(roots) == 1, f"expected one initial migration, found {roots}"
     (head,) = heads(graph)
-    # A merge revision lists every parent. Walk them all so both branches are one chain.
+    # A merge revision has several parents. Follow every one; a linear walk of downs[0] would
+    # report the other branch as skipped.
     seen: set[str] = set()
     pending = [head]
     while pending:

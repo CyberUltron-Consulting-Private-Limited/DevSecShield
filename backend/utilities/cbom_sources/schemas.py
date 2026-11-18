@@ -410,7 +410,7 @@ class PoolCreate(_Body):
     name: str = Field(max_length=64)
     segment: str = Field(default="", max_length=64)
     expires_in_hours: int = Field(default=24 * 7, ge=1, le=24 * 90)
-    max_enrollments: int = Field(default=50, ge=1, le=1000)
+    max_enrollments: int = Field(default=50, ge=1, le=1_000_000)  # capped by CBOM_MAX_POOL_ENROLLMENTS at create
 
     _n = field_validator("name")(classmethod(lambda cls, v: _name(v)))
 
@@ -436,11 +436,15 @@ class HeartbeatBody(_Body):
     capabilities: dict[str, Any] = Field(default_factory=dict)
     clock: str | None = Field(default=None, max_length=40)
     last_error: str | None = Field(default=None, max_length=2000)
+    # F1.1: the node's current ``claim_ticket``: its unused claims count towards this answer's grant (dispatch)
+    claim_ticket: str | None = Field(default=None, max_length=80)
 
 
 class ClaimBody(_Body):
     # the mode the node runs in now (older nodes send no body): a node reporting agent mode is never given a secret
     mode: Literal["agent", "agentless"] | None = None
+    # F1.1: the ``claim_ticket`` of the answer that granted this claim; any worker honours it (dispatch.read_ticket)
+    claim_ticket: str | None = Field(default=None, max_length=80)
 
 
 class ResultBody(_Body):
@@ -448,6 +452,7 @@ class ResultBody(_Body):
     status: Literal["success", "failure", "cancelled"]
     result: dict[str, Any] = Field(default_factory=dict)
     error: str | None = Field(default=None, max_length=4000)
+    claim_ticket: str | None = Field(default=None, max_length=80)  # F1.1: as HeartbeatBody.claim_ticket
 
     @model_validator(mode="after")
     def _check(self) -> "ResultBody":

@@ -229,11 +229,11 @@ def test_migration_is_the_one_head():
     for path in VERSIONS.glob("*.py"):
         text = path.read_text()
         rev = re.search(r"^revision(?::\s*str)?\s*=\s*['\"]([^'\"]+)['\"]", text, re.M)
-        down = re.search(r"^down_revision[^=]*=\s*(.*)$", text, re.M)
+        down = re.search(r"^down_revision[^=]*=\s*(.+)$", text, re.M)
         if rev:
             revisions.add(rev.group(1))
         if down:
-            parents.update(re.findall(r"['\"]([^'\"]+)['\"]", down.group(1)))
+            parents.update(re.findall(r"""['"]([^'"]+)['"]""", down.group(1)))
     # one head; later revisions (CB-19 cb19grade001) chain after this one
     assert len(revisions - parents) == 1 and "cb18evconf001" in parents
 
