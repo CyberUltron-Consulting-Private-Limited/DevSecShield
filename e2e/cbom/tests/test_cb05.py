@@ -96,14 +96,77 @@ def test_deferred_parts_are_covered_only_as_not_run():
     assert not ledger.verdict(results2, blocking2)
 
 
-def test_cb05_placeholder_rows_are_identity_pins():
-    """The steps CB-05 adds are still NOT-RUN identity pins on dev (v3), not v2 whole-ledger counts."""
+# Whole-step NOT-RUN pins copied from dev. The merged flow writes step.json status ran, so
+# load_step_checks does not emit these, and a pin of them is stale even when the new checks pass.
+_STALE_NOT_RUN = {
+    "G4/step", "G5b/step", "G6/step", "G7/step", "G8/step", "G13/step", "G13b/step",
+    "G12/schema_validation", "G12/vex_states",
+    "G11/oracle/run1/host/ssh",
+    "G11/oracle/run1/host:/srv/cbom-lab/certs/expired-rsa2048.crt",
+    "G11/oracle/run1/host:/srv/cbom-lab/certs/selfsigned-sha1.crt",
+    "G11/oracle/run1/host:/srv/cbom-lab/keys/legacy-rsa1024.key",
+    "G11/oracle/run1/host:/srv/cbom-lab/keystores/app.p12",
+    "G11/oracle/run1/host:/srv/cbom-lab/keystores/legacy.jks",
+    "G11/oracle/run1/idn-fass/*", "G11/oracle/run1/idn-punycode/*",
+    "G11/oracle/run1/pg-tls/auth", "G11/oracle/run1/pg-tls/cert[0]", "G11/oracle/run1/pg-tls/tls",
+}
+# Checks the flow still records as NOT-RUN, by the id it writes.
+_STILL_NOT_RUN = {
+    "CB05-steps": {"G7/idp_keys_eq_jwks", "G13/receiver_events"},
+    "CB05-named": {"G5/discovery_sweep", "G14/b_node_claims_no_a_job"},
+    "KF-8": {"G10/charge_after_runtime_skips"},
+}
+
+
+def test_cb05_pins_only_checks_the_flow_still_does_not_run():
+    """Ran steps are not pinned as NOT-RUN. Leftover unrun checks are pinned by the id the flow writes."""
     rows = {r["row"]: r for r in ledger.load(gate.DEFAULT_LEDGER)}
-    for name in ("CB05-steps", "CB05-sources", "CB05-named", "KF-7", "KF-8", "KF-11", "KF-12", "KF-13", "KF-14"):
+    pinned = {p["id"] for row in rows.values() for p in row["expect"]}
+    assert _STALE_NOT_RUN.isdisjoint(pinned)
+    for gone in ("CB05-sources", "KF-7", "KF-11", "KF-12", "KF-13", "KF-14"):
+        assert gone not in rows
+    for name, ids in _STILL_NOT_RUN.items():
         row = rows[name]
-        assert row["expect"], name
-        assert all(p["verdict"] == NOT_RUN for p in row["expect"]), name
-        assert row.get("not_run_ok"), name
+        assert {p["id"] for p in row["expect"]} == ids
+        assert all(p["verdict"] == NOT_RUN for p in row["expect"])
+        assert row.get("not_run_ok")
+    # a passing run of the steps the flow now drives, plus the leftover NOT-RUNs, holds
+    checks = Checks()
+    for cid, gate_, subject in (
+        ("G4/S-host_saved", "G4", {"check": "S-host_saved"}),
+        ("G5b/idna_punycode_reached", "G5b", {"check": "idna_punycode_reached"}),
+        ("G5b/idna_2003_name_untouched", "G5b", {"check": "idna_2003_name_untouched"}),
+        ("G6/db_saved", "G6", {"check": "db_saved"}),
+        ("G7/zeek_option_absent", "G7", {"check": "zeek_option_absent"}),
+        ("G8/evidence_effective_label_stale", "G8", {"check": "evidence_effective_label_stale"}),
+        ("G12/cdx_json_schema_run1", "G12", {"check": "schema_validation", "run": "1"}),
+        ("G12/vex_states_run1", "G12", {"check": "vex_states", "run": "1"}),
+        ("G13/drift_resolved", "G13", {"check": "drift_changes"}),
+        ("G13b/range_10.231.0.32/30_compared", "G13b", {"check": "range_with_never_scan_compared"}),
+    ):
+        checks.add(_flow(cid, gate_, "PASS", **subject))
+    for cid, gate_, check in (
+        ("G7/idp_keys_eq_jwks", "G7", "idp_keys_eq_jwks"),
+        ("G13/receiver_events", "G13", "receiver_events"),
+        ("G5/discovery_sweep", "G5", "discovery_sweep"),
+        ("G14/b_node_claims_no_a_job", "G14", "b_node_claims_no_a_job"),
+        ("G10/charge_after_runtime_skips", "G10", "charge_after_runtime_skips"),
+    ):
+        checks.add(_flow(cid, gate_, NOT_RUN, check=check))
+    subset = [rows[name] for name in _STILL_NOT_RUN]
+    results, blocking = ledger.apply(subset, checks)
+    assert blocking == []
+    assert {r.row: r.status for r in results} == {name: "not-run-ok" for name in _STILL_NOT_RUN}
+    assert ledger.verdict(results, blocking)
+    # a check the flow now runs is not swallowed: its FAIL stays unclaimed
+    failed = Checks()
+    failed.add(_flow("G5b/idna_2003_name_untouched", "G5b", FAIL, check="idna_2003_name_untouched"))
+    failed.add(_flow("G12/vex_states_run1", "G12", FAIL, check="vex_states", run="1"))
+    failed.add(_flow("G7/zeek_option_absent", "G7", FAIL, check="zeek_option_absent"))
+    _, blocking_fail = ledger.apply(list(rows.values()), failed)
+    assert {c.id for c in blocking_fail} == {
+        "G5b/idna_2003_name_untouched", "G12/vex_states_run1", "G7/zeek_option_absent"}
+    assert not ledger.verdict([], blocking_fail)
 
 
 def test_trace_zips_are_redacted(tmp_path):

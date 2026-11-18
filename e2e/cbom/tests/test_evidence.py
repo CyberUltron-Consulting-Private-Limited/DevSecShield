@@ -326,12 +326,13 @@ def test_the_repository_ledger_is_valid():
         assert str(row["owner"]).startswith(("CB-", "#")), row["row"]
 
 
-# Rows that #73 used to own, and the issue that owns each one now. The pins are unchanged; only the issue moved.
+# Rows that #73 used to own, and the issue that owns each one now.
+# KF-7, KF-11, KF-12, KF-13, KF-14 and CB05-sources pinned whole steps or sources the CB-05 flow now runs.
+# Those rows are gone: a check the flow records is not a NOT-RUN placeholder.
 _TRACKER_ROWS = {
     "PRE-build-identity": "#72", "KF-4": "#110", "KF-5": "#110", "KF-6": "#111", "KF-17": "#111",
-    "KF-4-5-derived": "#110", "KF-9": "#103", "KF-3": "#407", "KF-7": "#399", "KF-8": "#408",
-    "KF-10": "#409", "KF-11": "#134", "KF-12": "#410", "KF-13": "#173", "KF-14": "#411",
-    "CB05-steps": "#102", "CB05-sources": "#102", "CB05-named": "#102",
+    "KF-4-5-derived": "#110", "KF-9": "#103", "KF-3": "#407", "KF-8": "#408",
+    "KF-10": "#409", "CB05-steps": "#102", "CB05-named": "#102",
 }
 
 
