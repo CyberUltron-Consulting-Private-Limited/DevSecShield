@@ -80,7 +80,7 @@ jobs:
       (github.event.pull_request.head.repo.full_name == github.repository &&
        ((github.event.action == 'labeled' && github.event.label.name == 'publish-preview') ||
         (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'publish-preview'))))
-    runs-on: ubuntu-24.04
+    runs-on: dss-vm
     timeout-minutes: 10
     permissions:
       contents: read
@@ -155,7 +155,7 @@ jobs:
     if: >-
       needs.meta.outputs.publish == 'true' &&
       (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-    runs-on: ubuntu-24.04
+    runs-on: dss-vm
     timeout-minutes: 10
     permissions:
       packages: read
@@ -204,7 +204,7 @@ jobs:
     needs: [meta, exists]
     if: >-
       needs.meta.outputs.publish == 'true' && needs.exists.outputs.missing != ''
-    runs-on: ubuntu-24.04
+    runs-on: dss-vm
     timeout-minutes: 15
     permissions:
       contents: read
@@ -244,7 +244,7 @@ jobs:
           - {name: scan-node, context: scan_node, dockerfile: scan_node/Dockerfile}
           - {name: minio, context: deploy/local/minio, dockerfile: deploy/local/minio/Dockerfile}
         platform:
-          - {arch: amd64, runner: ubuntu-24.04}
+          - {arch: amd64, runner: dss-vm}
           - {arch: arm64, runner: ubuntu-24.04-arm}
     env:
       IMAGE: ${{ needs.meta.outputs.registry }}/devsecshield-${{ matrix.image.name }}
@@ -256,8 +256,9 @@ jobs:
           ref: ${{ needs.meta.outputs.sha }}
 
       - name: Free disk space
-        if: matrix.image.free-disk-space
+        if: matrix.image.free-disk-space && runner.environment == 'github-hosted'
         # The scan worker pulls torch through garak; the hosted runner's free space alone is not enough (#50).
+        # (Not on the self-hosted runners: no sudo for the job, and their Docker store is shared and keeps the cache.)
         run: |
           df -h /
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /usr/local/share/boost \
@@ -300,7 +301,10 @@ jobs:
             echo 'ZS_EOF'
           } | tee -a "$GITHUB_OUTPUT"
 
+      # The self-hosted runners share one long-lived BuildKit builder (dss-vm-builder, docker-container driver, so it
+      # can push by digest) whose layer cache outlives the job; GitHub's runners create one per job.
       - name: Set up Docker Buildx
+        if: runner.environment == 'github-hosted'
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Log in to GHCR
@@ -314,6 +318,7 @@ jobs:
         id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
+          builder: ${{ runner.environment == 'self-hosted' && 'dss-vm-builder' || '' }}
           context: ${{ matrix.image.context }}
           file: ${{ matrix.image.dockerfile }}
           build-contexts: ${{ matrix.image.build-contexts }}
@@ -357,7 +362,7 @@ jobs:
       (needs.build.result == 'success' ||
        (needs.build.result == 'skipped' && needs.exists.result == 'success' && needs.exists.outputs.missing == '')) &&
       (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-    runs-on: ubuntu-24.04
+    runs-on: dss-vm
     timeout-minutes: 20
     permissions:
       contents: read
@@ -458,7 +463,7 @@ jobs:
       !cancelled() && needs.meta.outputs.publish == 'true' && needs.meta.outputs.moving != '' &&
       needs.merge.result == 'success' &&
       (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-    runs-on: ubuntu-24.04
+    runs-on: dss-vm
     timeout-minutes: 15
     outputs:
       fresh: ${{ steps.fresh.outputs.fresh }}
@@ -641,7 +646,8 @@ jobs:
     # version and the image repository), so the GHCR chart and the downloaded chart of a version are the same bytes
     # (#361). It runs the repository's script, so it can write nothing: release pushes the file it uploads.
     if: needs.meta.outputs.publish == 'true' && needs.meta.outputs.node_release_tags != ''
-    runs-on: ubuntu-24.04
+    # python3 only (scripts/release/node_artifacts.py). No sudo and no Docker, so the self-hosted runners can do it.
+    runs-on: dss-vm
     timeout-minutes: 10
     permissions:
       contents: read
@@ -683,7 +689,7 @@ jobs:
       !cancelled() && needs.meta.outputs.publish == 'true' && needs.meta.outputs.node_release_tags != '' &&
       needs.promote.result == 'success' && needs.promote.outputs.fresh == 'true' && needs.chart.result == 'success' &&
       (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-    runs-on: ubuntu-24.04
+    runs-on: dss-vm
     timeout-minutes: 15
     permissions:
       contents: read

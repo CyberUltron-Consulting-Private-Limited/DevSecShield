@@ -25,7 +25,9 @@ import {
   type DastScanProfile,
   type DastScheduleKind,
 } from "@/utils/backend_api";
+import { refreshCreditBalance } from "@/utils/creditBalance";
 import { formatDateIst } from "@/utils/datetime";
+import { refreshCredits } from "@/utils/creditRefresh";
 import { DastScheduleFields, type DastScheduleState } from "@/components/dast/DastScheduleFields";
 
 function onceAtToIso(local: string): string | null {
@@ -177,6 +179,11 @@ export function DastProfilesTab() {
       if (data?.scan_id) {
         router.refresh();
       }
+    },
+    // a run is a DAST dispatch: it charges the team, or refunds a failed dispatch (#13)
+    onSettled: () => {
+      refreshCredits(queryClient);
+      return refreshCreditBalance(queryClient);
     },
   });
 

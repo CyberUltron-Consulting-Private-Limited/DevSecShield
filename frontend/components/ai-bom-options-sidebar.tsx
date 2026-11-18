@@ -35,9 +35,11 @@ import {
 import { toast } from "@/utils/toast";
 import { useParams, useRouter } from "next/navigation";
 import { handleApiError } from "@/utils/error-handler";
+import { refreshCreditBalance } from "@/utils/creditBalance";
 import { stateAfterError } from "@/utils/scanErrorRecovery";
 import { ScanRequestError } from "@/components/scan-request-error";
 import { scanFailureMessage } from "@/utils/scanFailure";
+import { refreshCredits } from "@/utils/creditRefresh";
 import { RerunNotice, RunAgainButton, useRerunPrefill } from "@/components/scan-run-again";
 import { CancelledScanPanel, CancelScanButton } from "@/components/scan-cancel";
 
@@ -158,6 +160,11 @@ export function AiBomOptionsSidebar({
       setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("ready");
     },
+    // the start charges credits (a refusal still shows the server's balance): one GET /teams (#13)
+    onSettled: () => {
+      refreshCredits(queryClient);
+      return refreshCreditBalance(queryClient);
+    },
   });
 
   const handleRunScan = () => {
@@ -248,6 +255,11 @@ export function AiBomOptionsSidebar({
     onError: (err) => {
       setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("error");
+    },
+    // a re-run can move credits (PR #57 charges the price difference): the balance shows what the server did
+    onSettled: () => {
+      refreshCredits(queryClient);
+      return refreshCreditBalance(queryClient);
     },
   });
 

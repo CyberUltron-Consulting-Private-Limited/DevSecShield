@@ -30,10 +30,13 @@ from backend.utilities.cbom_ai import service as S
 from backend.utilities.cbom_ai import transport as T
 from backend.utilities.cbom_ai import validator as V
 from backend.utilities.cbom_sources import crypto_kb
+from backend.utilities.cbom_sources import http as _cbom_http
+from backend.utilities.rbac.policy import Access
 from backend.utilities.cbom_sources.http import PRIVATE, CbomRoute, TeamId, authorize, read_limiter, server_error
 from backend.utilities.ratelimit import RateLimiter, user_key
 
 router = APIRouter(tags=["cbom-ai"], route_class=CbomRoute)
+access = Access(lambda: _cbom_http.get_db())  # route policies (utilities/rbac): the same database as authorize()
 AuthHeader = Annotated[str | None, Header()]
 BASE = "/{team_id}/cbom/ai"
 MAX_ID = 2_147_483_647
@@ -112,7 +115,7 @@ async def _available() -> tuple[C.AiConfig, list[dict]] | None:
     return cfg, egress
 
 
-@router.get(BASE + "/status", dependencies=[Depends(read_limiter)],
+@router.get(BASE + "/status", dependencies=[Depends(read_limiter), access.team("cbom.read")],
             summary="Whether the on-prem AI remediation assistant is configured for this deployment")
 async def ai_status(team_id: TeamId, Authorization: AuthHeader = None):
     await authorize(team_id, Authorization)
@@ -120,6 +123,9 @@ async def ai_status(team_id: TeamId, Authorization: AuthHeader = None):
     if found is None:
         return JSONResponse({"available": False}, headers=PRIVATE)
     cfg, egress = found
+    # the panel asks for status before its first question: build the Bedrock client now, off the answer's clock
+    # (only for credential sources that contact nothing; never raises)
+    await run_in_threadpool(T.warm_bedrock, cfg)
     return JSONResponse({"available": True, "provider": cfg.provider, "model": cfg.model, "region": cfg.region,
                          "kb_version": crypto_kb.version(), "egress": egress,
                          "allow_nonprivate": cfg.allow_nonprivate if cfg.provider == "openai_compat" else False},
@@ -154,7 +160,7 @@ def _scan_finding_grounding(engine, team_id: int, scan_id: int, finding_id: str,
     return G.for_code_finding(scan_id, finding_id, data, explain(data, "code"), minimise=minimise), FIX.window_of(data)
 
 
-@router.post(BASE + "/assist", dependencies=[Depends(assist_limiter)],
+@router.post(BASE + "/assist", dependencies=[Depends(assist_limiter), access.team("finding.remediate")],
              summary="Explain / plan / answer a question about / write a fix for one finding, grounded on the KB and "
                      "checked against it")
 async def ai_assist(team_id: TeamId, body: AssistBody, Authorization: AuthHeader = None):

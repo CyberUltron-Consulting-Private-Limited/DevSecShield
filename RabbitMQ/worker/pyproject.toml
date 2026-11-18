@@ -18,6 +18,8 @@ dependencies = [
     "langchain-qdrant>=0.2.1",
     "nvd-client>=0.1.3.2",
     "pymongo>=4.15.4",
+    # SOCKS (PySocks): garak's REST generator reaches the network only through the scan's guarded proxy (#53)
+    "requests[socks]>=2.32.3",
     "rich>=13.5.3",
     "semgrep==1.168.0",
     "sqlmodel>=0.0.27",

@@ -1299,9 +1299,9 @@ function FindingsTable({
                   <TableCell className="text-center">
                     <span
                       className={`inline-flex items-center justify-center min-w-9 px-2 py-1 rounded-md text-xs font-semibold tabular-nums ${
-                        riskScore >= 7 ? "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200" :
-                        riskScore >= 5 ? "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200" :
-                        riskScore >= 3 ? "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200" :
+                        riskScore >= 9 ? "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200" :
+                        riskScore >= 7 ? "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200" :
+                        riskScore >= 5 ? "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200" :
                         "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"
                       }`}
                     >

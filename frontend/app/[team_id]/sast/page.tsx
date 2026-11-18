@@ -40,6 +40,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/utils/toast";
 import { showErrorToast } from "@/utils/error-handler";
 import { formatDateIst as formatDate, formatChartDateIst } from "@/utils/datetime";
+import { fixRateText, fixRateTitle } from "@/utils/fixRate";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -78,6 +79,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { IfAllowed } from "@/components/rbac/team-access";
 import { criticalFixedPct } from "@/components/cbom/remediationKpis";
 
 type ScanStatus = "pending" | "started" | "retry" | "failure" | "success" | "not_started" | "cancelled";
@@ -343,15 +345,6 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
       .slice(0, 8);
   }, [scansListData, dashboardData.policy_compliance]);
 
-  const overallComplianceScore = useMemo(() => {
-    if (dashboardData.overall_compliance_score !== undefined) {
-      return dashboardData.overall_compliance_score;
-    }
-    if (policyCompliance.length === 0) return 0;
-    const sum = policyCompliance.reduce((acc, p) => acc + p.compliance, 0);
-    return Math.round((sum / policyCompliance.length) * 10) / 10;
-  }, [policyCompliance, dashboardData.overall_compliance_score]);
-
   // ── By language (from backend or fallback from scan_metadata.app_lang) ──
   const byLanguage = useMemo(() => {
     if (dashboardData.by_language && dashboardData.by_language.length > 0) {
@@ -608,7 +601,7 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-1">Policy Compliance <InfoTip id="sast.chart.policy" /></CardTitle>
-            <CardDescription>Security standards adherence</CardDescription>
+            <CardDescription>Share of compliance-control references in findings</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
@@ -616,26 +609,16 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
                 <p className="text-center text-sm text-zinc-500 py-8">No compliance data yet</p>
               ) : (
                 <>
+                  {/* a share of the references, not a pass rate: no pass/fail icons and no overall score (#36) */}
                   {policyCompliance.map((p) => (
                     <div key={p.name} className="flex items-center gap-3">
-                      {p.compliance >= 90 ? (
-                        <CheckCircle className="h-5 w-5 shrink-0 text-green-500" />
-                      ) : p.compliance >= 70 ? (
-                        <AlertTriangle className="h-5 w-5 shrink-0 text-amber-500" />
-                      ) : (
-                        <XCircle className="h-5 w-5 shrink-0 text-red-500" />
-                      )}
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-zinc-900 dark:text-white">{p.name}</p>
-                        <p className="text-xs text-zinc-500">{p.violations} violations {p.compliance}%</p>
+                        <p className="text-xs text-zinc-500">{p.violations} references · {p.compliance}% of all</p>
                         <Progress value={p.compliance} className="h-2 mt-1" />
                       </div>
                     </div>
                   ))}
-                  <div className="flex justify-between items-center pt-2">
-                    <span className="text-sm text-zinc-600 dark:text-zinc-400">Overall Compliance Score</span>
-                    <span className="text-xl font-bold text-zinc-900 dark:text-white">{overallComplianceScore}%</span>
-                  </div>
                 </>
               )}
             </div>
@@ -783,7 +766,8 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
               <p className="text-2xl font-bold text-zinc-900 dark:text-white mt-2">{averageRiskScore} out of 10</p>
               <div className="flex gap-6 mt-4 text-sm text-zinc-600 dark:text-zinc-400">
                 <span>{totalIssues} Total Issues</span>
-                <span>0% Fix Rate</span>
+                {/* findings marked Fixed / all stored findings, from the list dashboard; was a hard-coded 0% (#36) */}
+                <span title={fixRateTitle(dashboardData.fixed_findings, dashboardData.total_findings)}>{fixRateText(dashboardData.fixed_findings, dashboardData.total_findings)} Fix Rate</span>
                 <span>{criticalCount} Critical</span>
               </div>
             </div>
@@ -1212,9 +1196,11 @@ export default function SASTPage() {
               <p className="text-zinc-600 dark:text-zinc-400">Manage and view all your SAST scans.</p>
             </div>
             <div className="flex flex-row items-center gap-2">
+              <IfAllowed permission="scan.create">
               <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" onClick={() => setCreateDialogOpen(true)}>
                 <Plus className="h-4 w-4 mr-2" />New Scan
               </Button>
+              </IfAllowed>
               <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" onClick={() => queryClient.invalidateQueries({ queryKey: ['sast-conversations', team_id] })}>
                 <RefreshCcw className="h-4 w-4 mr-2" />Refresh
               </Button>
@@ -1441,9 +1427,11 @@ export default function SASTPage() {
                 {conversations.length === 0 ? (
                   <div className="text-center py-12">
                     <p className="text-zinc-600 dark:text-zinc-400 mb-4">No scans yet. Create your first SAST scan to get started.</p>
+                    <IfAllowed permission="scan.create">
                     <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" onClick={() => setCreateDialogOpen(true)}>
                       <Plus className="h-4 w-4 mr-2" />Create New Scan
                     </Button>
+                    </IfAllowed>
                   </div>
                 ) : filteredConversations.length === 0 ? (
                   <div className="text-center py-12">
@@ -1664,12 +1652,16 @@ export default function SASTPage() {
                                       <Eye className="h-4 w-4 mr-2" />View Results
                                     </DropdownMenuItem>
                                   )}
+                                  <IfAllowed permission="scan.update">
                                   <DropdownMenuItem className="cursor-pointer" onClick={() => handleRename(conversation)}>
                                     <Pencil className="h-4 w-4 mr-2" />Rename scan
                                   </DropdownMenuItem>
+                                  </IfAllowed>
+                                  <IfAllowed permission="scan.update">
                                   <DropdownMenuItem className="cursor-pointer" onClick={() => handleDelete(conversation)} variant="destructive">
                                     <Trash2 className="h-4 w-4 mr-2" />Delete scan
                                   </DropdownMenuItem>
+                                  </IfAllowed>
                                 </DropdownMenuContent>
                               </DropdownMenu>
                             </TableCell>

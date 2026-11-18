@@ -51,7 +51,7 @@ concurrency:
 jobs:
   changes:
     name: changes
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.pull_request && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'dss-vm' }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -145,6 +145,7 @@ jobs:
               - '.github/ci/pytest-deselect-worker.txt'
               - 'RabbitMQ/worker/**'
               - 'aibom/src/**'         # the sca_sbom_agent tests import aibom from source
+              - 'backend/utilities/cbom_sources/address_rule.py'  # MCP/LLM egress runs this file (helpers/net/guard.py)
             dast-worker:
               - *pipeline
               - '.github/ci/pytest-deselect-dast-worker.txt'
@@ -182,6 +183,7 @@ jobs:
               - 'scan_node/**'
             img-scan-worker:
               - 'RabbitMQ/worker/**'
+              - 'backend/utilities/cbom_sources/address_rule.py'  # copied into the image
               # a change to how images are built is proven on the largest image (#50: it filled the runner disk)
               - '.github/workflows/reusable-image-build.yml'
             img-scan-worker-aibom:
@@ -268,7 +270,7 @@ jobs:
     name: ci-selftest
     needs: changes
     if: needs.changes.outputs.pipeline == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.pull_request && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'dss-vm' }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -305,9 +307,6 @@ jobs:
       postgres-databases: c1 auth cbom p1
       # test_cbom_sources_as_results reads the generated PDFs with pdftotext (poppler-utils).
       apt-packages: poppler-utils
-      # test_ratelimit runs `nginx -t` on the staging site, which binds :80 / :443. The runner user is not root
-      # (a developer machine usually is), so allow unprivileged binds to low ports for this throwaway VM.
-      setup-command: sudo sysctl -w net.ipv4.ip_unprivileged_port_start=0
       # The posture-PDF tests call aibom/.venv/bin/python, so the aibom venv is installed too.
       install-command: uv sync --frozen && (cd ../aibom && uv sync --frozen --all-extras --dev)
       lint-diff-command: uvx ruff@0.15.18 check --output-format concise --exclude .venv .
@@ -369,7 +368,7 @@ jobs:
     name: cbom-action
     needs: changes
     if: needs.changes.outputs.cbom-action == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.pull_request && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'dss-vm' }}
     timeout-minutes: 15
     permissions:
       contents: read
@@ -489,7 +488,7 @@ jobs:
     name: worker-locks
     needs: changes
     if: needs.changes.outputs.worker-locks == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.pull_request && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'dss-vm' }}
     timeout-minutes: 10
     permissions:
       contents: read
@@ -571,7 +570,7 @@ jobs:
     if: always()
     needs: [changes, ci-selftest, pr-checks, backend, aibom, cbom-action, cbom-d1, scan-node, worker, dast-worker, worker-locks,
             frontend, security, codeql, images]
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.pull_request && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'dss-vm' }}
     timeout-minutes: 5
     permissions: {}
     steps:

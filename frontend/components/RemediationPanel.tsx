@@ -36,6 +36,7 @@ import {
   CheckCircle,
 } from "lucide-react";
 import { toast } from "@/utils/toast";
+import { refreshCreditBalance } from "@/utils/creditBalance";
 import KbFindingDetails from "@/components/cbom/KbFindingDetails";
 
 interface RemediationPanelProps {
@@ -511,7 +512,6 @@ function AiRemediationPanel({
       setRemediation(data);
       onRemediationGenerated?.(data);
       if (data.status === "completed") {
-        queryClient.invalidateQueries({ queryKey: ["teams"] });
         queryClient.invalidateQueries({ queryKey: ["teams-dashboard"] });
         queryClient.invalidateQueries({ queryKey: ["team-dashboard"] });
         toast.success("AI remediation generated");
@@ -521,6 +521,10 @@ function AiRemediationPanel({
     },
     onError: (err) => {
       showErrorToast(err, "Failed to generate remediation");
+    },
+    // a completed AI remediation is charged (backend routers/scans.py, REMEDIATION_CREDIT_COST)
+    onSettled: () => {
+      refreshCreditBalance(queryClient);
     },
   });
 

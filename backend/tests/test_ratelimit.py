@@ -13,6 +13,7 @@ import logging
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 from pathlib import Path
@@ -297,6 +298,14 @@ def _nginx_accepts(tmp_path, conf: str) -> None:
         if made.returncode != 0:
             return
         conf = conf.replace("/etc/nginx/certs/", f"{certs}/")
+    # `nginx -t` binds every listen address. The site's 80/443 need root (or a lowered ip_unprivileged_port_start)
+    # and may already be taken on a shared CI host, so the check binds two free loopback ports instead.
+    ports = {}
+    for name in ("80", "443"):
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            ports[name] = s.getsockname()[1]
+    conf = re.sub(r"\blisten (80|443)\b", lambda m: f"listen 127.0.0.1:{ports[m[1]]}", conf)
     site = tmp_path / "site.conf"
     site.write_text(conf)
     main = tmp_path / "nginx.conf"
@@ -406,7 +415,12 @@ def test_every_route_has_its_limiter_in_the_decorator():
                 problems.append(f"{path.name}:{node.name} takes a `dependencies` parameter")
             deps = [k.value for k in decorator.keywords if k.arg == "dependencies"]
             deps = [lists.get(d.id, d) if isinstance(d, ast.Name) else d for d in deps]
-            names ={getattr(c.args[0], "id", None) for d in deps if isinstance(d, ast.List) for c in d.elts
+            # [*READ, access.team("cbom.read")] (F4 route policies): READ's own elements count, as in dependencies=READ
+            elements = [e for d in deps if isinstance(d, ast.List) for e in d.elts]
+            elements = [x for e in elements for x in (
+                lists[e.value.id].elts if isinstance(e, ast.Starred) and isinstance(e.value, ast.Name)
+                and e.value.id in lists else [e])]
+            names = {getattr(c.args[0], "id", None) for c in elements
                      if isinstance(c, ast.Call) and getattr(c.func, "id", None) == "Depends" and c.args}
             if not names & (limiters | imported):
                 problems.append(f"{path.name}:{node.name} has no rate limiter in its decorator")

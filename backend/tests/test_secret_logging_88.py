@@ -63,7 +63,11 @@ def _format(scan_type: str, payload: dict) -> dict:
     return asyncio.run(FI.format_input_for_scan(scan_type, model))
 
 
-def test_llm_and_mcp_kwargs_never_print_the_api_key_or_header_values(console):
+def test_llm_and_mcp_kwargs_never_print_the_api_key_or_header_values(console, monkeypatch):
+    # #53: the MCP server and model hosts must resolve to public addresses; .test names never resolve (RFC 6761)
+    import socket
+    monkeypatch.setattr(socket, "getaddrinfo", lambda host, port, *a, **k: [
+        (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port))])
     s = _fresh()
     llm = _format("llm", {"model_type": "custom", "model_name": "m", "api_key": s["llm_key"],
                           "headers": {"X-Api-Key": s["llm_header"]}, "model_uri": "https://llm.example.test/v1"})
@@ -155,6 +159,8 @@ def test_estimate_never_prints_the_payload_headers(monkeypatch):
 
     monkeypatch.setattr(scans, "get_user_from_header_or_raise_exception", user)
     monkeypatch.setattr(scans, "check_if_user_is_in_team", not_in_team)
+    from backend.tests.support.rbac import stand_in_principal
+    stand_in_principal(monkeypatch, user_id=1, email="u@example.test", role="member")  # F4 route policy
     from backend.utilities import ratelimit
     ratelimit.reset_all()
     payload = {"mcp": {"server_url": "https://mcp.example.test/mcp", "server_mode": "sse",

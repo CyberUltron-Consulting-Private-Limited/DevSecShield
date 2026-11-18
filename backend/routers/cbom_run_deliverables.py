@@ -29,6 +29,8 @@ from backend.utilities.cbom_sources import heatmap as HEAT
 from backend.utilities.cbom_sources import posture as POSTURE
 from backend.utilities.cbom_sources import run_deliverables as RD
 from backend.utilities.cbom_sources.common import iso_z, log, utcnow
+from backend.utilities.cbom_sources import http as _cbom_http
+from backend.utilities.rbac.policy import Access
 from backend.utilities.cbom_sources.http import (
     PRIVATE,
     CbomRoute,
@@ -42,6 +44,7 @@ from backend.utilities.cbom_sources.settings import get_or_create_settings
 from backend.utilities.pdf.cbom_run_pdf import build_run_pdf
 
 router = APIRouter(tags=["cbom-sources"], route_class=CbomRoute)
+access = Access(lambda: _cbom_http.get_db())  # route policies (utilities/rbac): the same database as authorize()
 WRITE = [Depends(write_limiter)]
 AuthHeader = Annotated[str | None, Header()]
 RUN = "/{team_id}/cbom/sources/runs/{run_id}"
@@ -226,7 +229,7 @@ def _chunks(out: IO[bytes], size: int = 1024 * 1024) -> Iterator[bytes]:
 
 
 # ----------------------------------------------------------------------------- routes
-@router.get(RUN + "/vex", dependencies=WRITE,
+@router.get(RUN + "/vex", dependencies=[*WRITE, access.team("cbom.read")],
             summary="CycloneDX 1.6 VEX of a run's findings: exploitable, in triage (quantum-only or inferred), "
                     "resolved or will-not-fix per the remediation plan")
 async def run_vex(team_id: TeamId, run_id: ObjectId, Authorization: AuthHeader = None) -> Response:
@@ -235,7 +238,7 @@ async def run_vex(team_id: TeamId, run_id: ObjectId, Authorization: AuthHeader =
     return _attachment(body, VEX_MEDIA, f"cbom-sources-run-{run_id}.vex.json")
 
 
-@router.get(RUN + "/signature", dependencies=WRITE,
+@router.get(RUN + "/signature", dependencies=[*WRITE, access.team("cbom.read")],
             summary="HMAC-SHA256 signature (the code lane's bom_signature key and fields) over the exact bytes of the "
                     "run's CycloneDX JSON download")
 async def run_signature(team_id: TeamId, run_id: ObjectId, Authorization: AuthHeader = None) -> Response:
@@ -244,7 +247,7 @@ async def run_signature(team_id: TeamId, run_id: ObjectId, Authorization: AuthHe
     return _attachment(RD.signature_bytes(signature), JSON_MEDIA, f"cbom-sources-run-{run_id}-signature.json")
 
 
-@router.post(RUN + "/signature/verify", dependencies=WRITE,
+@router.post(RUN + "/signature/verify", dependencies=[*WRITE, access.team("cbom.read")],
              summary="Verify a downloaded run CycloneDX JSON (the request body, as downloaded) against the signature "
                      "sent in X-ZS-Signature-B64, else against the run's current CBOM")
 async def verify_run_signature(team_id: TeamId, run_id: ObjectId, request: Request,
@@ -263,7 +266,7 @@ async def verify_run_signature(team_id: TeamId, run_id: ObjectId, request: Reque
     return JSONResponse(result, headers=PRIVATE)
 
 
-@router.get(RUN + "/report.pdf", dependencies=WRITE,
+@router.get(RUN + "/report.pdf", dependencies=[*WRITE, access.team("cbom.read")],
             summary="PDF report of a run: posture, algorithm family x source, certificate expiry, top risks, "
                     "compliance, findings and provenance")
 async def run_report_pdf(team_id: TeamId, run_id: ObjectId, Authorization: AuthHeader = None) -> Response:
@@ -272,7 +275,7 @@ async def run_report_pdf(team_id: TeamId, run_id: ObjectId, Authorization: AuthH
     return _attachment(body, "application/pdf", f"cbom-sources-run-{run_id}-report.pdf")
 
 
-@router.get(RUN + "/evidence-pack", dependencies=WRITE,
+@router.get(RUN + "/evidence-pack", dependencies=[*WRITE, access.team("cbom.read")],
             summary="Zip of the run's CycloneDX JSON and XML, OSCAL, VEX, signature and PDF with a sha256 manifest")
 async def run_evidence_pack(team_id: TeamId, run_id: ObjectId, Authorization: AuthHeader = None) -> Response:
     engine, _user = await authorize(team_id, Authorization)

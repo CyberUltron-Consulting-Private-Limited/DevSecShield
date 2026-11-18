@@ -2,7 +2,7 @@ import datetime
 import uuid
 from typing import Dict, Literal
 from sqlmodel import JSON, Column, DateTime, Field, SQLModel, String, Relationship
-from sqlalchemy import Text, UniqueConstraint
+from sqlalchemy import BigInteger, CheckConstraint, Integer, Text, UniqueConstraint
 from sqlalchemy.types import TypeDecorator as _SaTypeDecorator
 from sqlalchemy import BigInteger as _SaBigInteger, Index as _SaIndex, func as _sa_func, text as _sa_text
 scan_types = Literal["sast", "llm", "mcp" , "iac" , "leakage" , "sbom_sca" , "agent_discovery", "dast", "cbom", "ai_bom"]
@@ -31,11 +31,16 @@ class AuthCounter(SQLModel,table=True):
 
 
 
+TEAM_ROLES = ("owner", "admin", "member", "viewer")  # the order and rules: backend/utilities/rbac/permissions.py
+
+
 # every user is a member of the "default-team" by default when a user is created ⭐
 class TeamMembership(SQLModel,table=True): # many-to-many relationship between team and user
+    __table_args__ = (CheckConstraint("role IN ('owner', 'admin', 'member', 'viewer')", name="ck_teammembership_role"),)
     team_id : int | None = Field(default=None,foreign_key="team.id",primary_key=True)
     user_id : int | None = Field(default=None,foreign_key="user.id",primary_key=True)
-    role : Literal["admin" , "member"] = Field(default="member",sa_type=String)
+    # owner > admin > member > viewer (F4 RBAC); what each may do: backend/utilities/rbac/permissions.py
+    role : Literal["owner", "admin", "member", "viewer"] = Field(default="member",sa_type=String)
 
     team : "Team" = Relationship(back_populates="team_memberships")
     user : "User" = Relationship(back_populates="team_memberships")
@@ -67,7 +72,7 @@ class Team(SQLModel,table=True):
 
 class User(SQLModel,table=True):
     id : int | None = Field(default=None,primary_key=True)
-    email : str
+    email : str = Field(index=True)  # ix_user_email: every access check finds the token's account by its email (F4)
     password : str
     first_name : str | None
     last_name : str | None
@@ -97,18 +102,25 @@ class User(SQLModel,table=True):
     dast_profiles : list["DastScanProfile"] = Relationship(back_populates="owner_user")
 
 
+
+# sign-in and invitation lookups compare lower(email) (auth_utils.user_by_email): an expression index (F4, r6f4rbac001)
+_SaIndex("ix_user_email_lower", _sa_func.lower(User.__table__.c.email))
+
 class TeamInvitation(SQLModel, table=True):
     """An offer to join a team, mailed as a link to /invite/<token>; nobody joins until the invitee accepts.
 
     The token is stored only as its SHA-256 (``token_hash``) and works once: accepting, declining, revoking or
     resending clears or replaces it.  One row per (team, address): inviting the address again reuses it.
     Times are naive UTC.  The inviter is a plain int so deleting that user is never blocked."""
-    __table_args__ = (UniqueConstraint("team_id", "email", name="uq_teaminvitation_team_email"),)
+    __table_args__ = (UniqueConstraint("team_id", "email", name="uq_teaminvitation_team_email"),
+                      CheckConstraint("role IN ('admin', 'member', 'viewer')", name="ck_teaminvitation_role"))
     id : int | None = Field(default=None, primary_key=True)
     team_id : int = Field(foreign_key="team.id", index=True, ondelete="CASCADE")
     email : str = Field(max_length=254)  # lower-cased, as on sign-up
     token_hash : str | None = Field(default=None, max_length=64, unique=True, index=True)
     status : str = Field(default="pending", max_length=16)  # pending | accepted | declined | revoked
+    # the role the invitee joins with (admin invites member / viewer; an owner may also invite an admin)
+    role : str = Field(default="member", max_length=16, sa_column_kwargs={"server_default": "member"})
     invited_by_user_id : int | None = Field(default=None)
     created_at : datetime.datetime = Field(sa_type=DateTime)
     expires_at : datetime.datetime = Field(sa_type=DateTime)
@@ -144,6 +156,53 @@ class Scan(SQLModel,table=True):
 
     class Config:
         arbitrary_types_allowed = True
+
+
+class CreditLedgerEntry(SQLModel, table=True):
+    """One movement of a team's credits and why (#33, #52): written by backend/utilities/team/credit_ledger.py, in the
+    same statement (PostgreSQL) or transaction as the balance change it records.
+
+    Integer milli-credits: ``delta_mc`` is negative when credits are taken from the team and positive when they are
+    given back; ``balance_after_mc`` is the team's balance right after it (NULL for an insert-only line settled later).
+    ``movement_key`` is unique: a movement can never be written twice. ``ref_type`` + ``ref_id`` name what it belongs
+    to (``scan`` / scan id, a CBOM run...); ``scan_id`` is set for scan lines. No foreign keys: a line outlives a deleted
+    scan or team. ``detail`` holds numbers and digests, never an input, a URL or a secret. The table refuses UPDATE,
+    DELETE and TRUNCATE by a trigger (migration r6t2ledger001); that is not a control against the database role itself.
+    Written today: reinitialize charges and refunds, cancel refunds, failure refunds; the other paths are #52."""
+    __tablename__ = "creditledger"
+    __table_args__ = (UniqueConstraint("movement_key", name="uq_creditledger_movement_key"),)
+    id: int | None = Field(default=None, sa_column=Column(
+        BigInteger().with_variant(Integer(), "sqlite"), primary_key=True, autoincrement=True))  # never pruned: int8
+    movement_key: str = Field(max_length=96)
+    team_id: int
+    ref_type: str = Field(max_length=32)
+    ref_id: str = Field(max_length=64)
+    scan_id: int | None = Field(default=None)
+    user_id: int | None = Field(default=None)  # who caused it
+    delta_mc: int = Field(sa_type=BigInteger)
+    balance_after_mc: int | None = Field(default=None, sa_type=BigInteger)
+    reason: str = Field(max_length=48)
+    detail: Dict | None = Field(default=None, sa_column=Column(JSON))
+    created_at: datetime.datetime = Field(
+        default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None), sa_type=DateTime)
+
+    @property
+    def delta(self) -> float:
+        """The movement in credits."""
+        return self.delta_mc / 1000
+
+    @property
+    def balance_after(self) -> float | None:
+        return None if self.balance_after_mc is None else self.balance_after_mc / 1000
+
+
+# reconciliation and statements read (team_id, id) ranges without touching the heap; scan and per-run lookups
+_SaIndex("ix_creditledger_team_id_id", CreditLedgerEntry.team_id, CreditLedgerEntry.id,
+         postgresql_include=["delta_mc", "created_at"])
+_SaIndex("ix_creditledger_scan_id", CreditLedgerEntry.scan_id,
+         postgresql_where=CreditLedgerEntry.scan_id.isnot(None), sqlite_where=CreditLedgerEntry.scan_id.isnot(None))
+_SaIndex("ix_creditledger_ref", CreditLedgerEntry.ref_type, CreditLedgerEntry.ref_id,
+         postgresql_where=CreditLedgerEntry.ref_type != "scan", sqlite_where=CreditLedgerEntry.ref_type != "scan")
 
 
 class DastScanProfile(SQLModel, table=True):
@@ -352,6 +411,10 @@ class CbomScanNode(SQLModel, table=True):
     mode: str = Field(default="agentless", max_length=16, sa_column_kwargs={"server_default": "agentless"})
     # the agent pool token it enrolled with (one node per Kubernetes node of a DaemonSet)
     pool_id: int | None = Field(default=None, foreign_key="cbomnodepool.id", index=True, ondelete="SET NULL")
+    # Protocol-2 anti-replay window (node_auth): the highest request sequence accepted and a bitmap of the 63 below
+    # it. Checked and advanced by one conditional UPDATE per request instead of a nonce row (F1.1).
+    replay_hwm: int = Field(default=0, sa_type=BigInteger, sa_column_kwargs={"server_default": "0"})
+    replay_bits: int = Field(default=0, sa_type=BigInteger, sa_column_kwargs={"server_default": "0"})
     row_version: int = Field(default=1)
     created_at: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
     last_updated: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
@@ -414,6 +477,8 @@ class CbomCollectionSource(SQLModel, table=True):
     name: str = Field(max_length=64)
     name_lower: str = Field(max_length=64)
     node_id: int | None = Field(default=None, foreign_key="cbomscannode.id", index=True)
+    # F1.1: no node_id and a segment = any agentless scan node of the team whose ``segment`` is this one runs its jobs
+    node_segment: str | None = Field(default=None, max_length=64)
     enabled: bool = Field(default=True)
     config: Dict | None = Field(default_factory=dict, sa_column=Column(JSON))
     secret_encrypted: str | None = Field(default=None, sa_type=Text)
@@ -482,6 +547,9 @@ class CbomCollectionJob(SQLModel, table=True):
     run_id: int | None = Field(default=None, foreign_key="cbomcollectionrun.id", index=True)
     source_id: int | None = Field(default=None, foreign_key="cbomcollectionsource.id", index=True)
     node_id: int | None = Field(default=None, foreign_key="cbomscannode.id", index=True)
+    # F1.1: set = a segment job: while pending (node_id NULL) any agentless node of the team in this segment may claim
+    # it (SKIP LOCKED); the claim sets node_id to the claimer, and a lease that expires clears it again
+    node_segment: str | None = Field(default=None, max_length=64)
     kind: str = Field(max_length=16)
     status: str = Field(default="pending", max_length=16, index=True)
     params: Dict | None = Field(default_factory=dict, sa_column=Column(JSON))
@@ -489,8 +557,12 @@ class CbomCollectionJob(SQLModel, table=True):
     weight_c: int = Field(default=0)
     refunded: bool = Field(default=False)
     # centi-credits given back (CB-14): weight_c for a failed / cancelled / nothing-read job, the runtime-skip share of
-    # it for a partly read one; its ledger row is cbomcreditentry "job:<id>:refund" (billing.py)
+    # it for a partly read one; its ledger row is cbomcreditentry "job:<id>:refund" (billing.py).  F1.1: while
+    # ``refund_due`` and not yet ``refunded`` it is the amount owed, which ``jobs.settle_refunds`` moves
     refunded_c: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
+    # F1.1 (DA C2): a job end only marks its credits as owed back here; ``jobs.settle_refunds`` moves the money in one
+    # pass per run (right after the job end commits, the reaper pass, run end, user cancel) and sets ``refunded`` once
+    refund_due: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
     attempts: int = Field(default=0)
     lease_id: str | None = Field(default=None, max_length=32)
     lease_expires_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
@@ -536,6 +608,29 @@ class CbomHostKeyReset(SQLModel, table=True):
     requested_at: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
     applied_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
     applied_job_id: int | None = Field(default=None)
+
+
+# Hot-path indexes (F1.1, migration r6f11node001). The partial ones cover only open jobs, so they stay small however
+# much history a team keeps: a claim reads (node, oldest pending), a heartbeat reads the node's claimed jobs, the reaper
+# reads expired leases and stale pending jobs, and a run's status is decided from (run, status) without loading its jobs.
+_PENDING = _sa_text("status = 'pending'")
+_CLAIMED = _sa_text("status = 'claimed'")
+_SaIndex("ix_cbomcollectionjob_run_status", CbomCollectionJob.run_id, CbomCollectionJob.status)
+_SaIndex("ix_cbomcollectionjob_node_pending", CbomCollectionJob.node_id, CbomCollectionJob.id,
+         postgresql_where=_PENDING, sqlite_where=_PENDING)
+_SaIndex("ix_cbomcollectionjob_node_claimed", CbomCollectionJob.node_id,
+         postgresql_where=_CLAIMED, sqlite_where=_CLAIMED)
+_SaIndex("ix_cbomcollectionjob_claimed_lease", CbomCollectionJob.lease_expires_at,
+         postgresql_where=_CLAIMED, sqlite_where=_CLAIMED)
+_SaIndex("ix_cbomcollectionjob_pending_created", CbomCollectionJob.created_at,
+         postgresql_where=_PENDING, sqlite_where=_PENDING)
+_SaIndex("ix_cbomcollectionjob_team_status_segment", CbomCollectionJob.team_id, CbomCollectionJob.status,
+         CbomCollectionJob.node_segment, CbomCollectionJob.id)
+# claims a node made after a claim ticket was issued (dispatch: a ticket's used claims, counted only when one is sent)
+_SaIndex("ix_cbomcollectionjob_node_claimed_at", CbomCollectionJob.node_id, CbomCollectionJob.claimed_at)
+_REFUND_DUE = _sa_text("refund_due AND NOT refunded")
+_SaIndex("ix_cbomcollectionjob_refund_due", CbomCollectionJob.run_id,
+         postgresql_where=_REFUND_DUE, sqlite_where=_REFUND_DUE)
 
 
 class CbomCollectedAsset(SQLModel, table=True):
@@ -1163,3 +1258,6 @@ _sa_event.listen(SQLModel.metadata, "after_create", _install_estate_summary)
 # The F3 tables live in their own module; importing it here registers them on SQLModel.metadata for alembic and
 # for everything that imports new_models (it imports nothing from this file, so the import cannot cycle).
 from backend.utilities.scm.models import *  # noqa: E402,F401,F403
+
+# ========================================= F4 access management: its tables live in backend/access_models.py
+from backend.access_models import *  # noqa: E402,F401,F403  (registers them on SQLModel.metadata with the rest)

@@ -331,6 +331,19 @@ def test_grants_cover_exactly_what_the_node_reads():
     assert templates.TEMPLATE_NAMES["vault-policy"][1] == "zs-cbom-vault-policy.hcl"
 
 
+def test_redis_grant_allows_every_command_the_node_sends():
+    """Lab test: `-@all` also removes PING, which the collector sends first, so a user made with the template got
+    "Redis refused PING" (Redis answers NOPERM)."""
+    node = (ROOT / "scan_node/zs_scan_node/collectors/database.py").read_text()
+    sent = {"client.ping()": "+ping", 'client.info("server")': "+info", "client.config_get(": "+config|get",
+            'execute_command("ACL", "WHOAMI")': "+acl|whoami"}
+    grant = templates.DB_GRANTS["redis"].split()
+    for call, rule in sent.items():
+        assert call in node, call
+        assert rule in grant, rule
+    assert grant.index("-@all") < min(grant.index(rule) for rule in sent.values())
+
+
 def test_postgres_grant_tells_rds_to_skip_the_hba_grants():
     """Lab UI round 5 (u1): run as the RDS master user, the two pg_hba_file_rules grants fail with "permission denied"
     (measured on RDS for PostgreSQL); the template's RDS note covered only the SECURITY DEFINER function."""

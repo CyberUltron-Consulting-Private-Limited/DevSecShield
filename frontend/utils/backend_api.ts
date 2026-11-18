@@ -4,6 +4,7 @@ import type { InstallLinks, NodeArtifacts } from "@/components/cbom/sources/logi
 import type { CbomSourceUsage } from "@/components/cbom/sources/sourceLimit"
 import { showErrorToast } from "./error-handler"
 import { toast } from "@/utils/toast";
+import type { HelperToastOptions } from "@/utils/toastPolicy";
 
 
 // -------------------------------------------------------------- Start scan payload types (matches backend schemas) --------------------------------------------------------------
@@ -176,6 +177,9 @@ export interface ScanListDashboardData {
         remediation_velocity: number
         high_priority_backlog: number
     }
+    /** The Fix rate (#36, utils/fixRate.ts): stored findings marked Fixed, and all stored findings of these scans */
+    fixed_findings?: number
+    total_findings?: number
 }
 
 export interface SastListResponse {
@@ -344,7 +348,7 @@ export interface SbomScanDashboardData {
     total_policy_violations: number
     total_license_risks: number
     total_high_risk_licenses: number
-    average_risk_score: number
+    average_risk_score: number | null
     total_reachable_issues: number
   }
   remediation_actions_required: {
@@ -441,13 +445,14 @@ const startSastScan = async (params: {
 
 
 
-const getExportResults = async (team_id: number, scan_id: number): Promise<any> => {
+/** The scan's PDF report. Toasts its outcome unless the caller shows its own (opts.toast false: utils/toastPolicy.ts). */
+const getExportResults = async (team_id: number, scan_id: number, opts: HelperToastOptions = {}): Promise<any> => {
     try {
         const response = await api.get(`/${team_id}/sast/scan/${scan_id}/export`, { responseType: "blob" })
-        toast.success("SAST report downloaded")
+        if (opts.toast !== false) toast.success("SAST report downloaded")
         return response.data
     } catch (error) {
-        showErrorToast(error,"Error fetching sast export results")
+        if (opts.toast !== false) showErrorToast(error,"Error fetching sast export results")
         throw error
     }
 }
@@ -778,13 +783,14 @@ const startLLMScan = async (
     }
 }
 
-const getLLMExportResults = async (team_id: number, scan_id: number): Promise<Blob> => {
+/** The scan's PDF report. Toasts its outcome unless the caller shows its own (opts.toast false: utils/toastPolicy.ts). */
+const getLLMExportResults = async (team_id: number, scan_id: number, opts: HelperToastOptions = {}): Promise<Blob> => {
     try {
         const response = await api.get(`/${team_id}/llm/scan/${scan_id}/export`, { responseType: "blob" })
-        toast.success("LLM report downloaded")
+        if (opts.toast !== false) toast.success("LLM report downloaded")
         return response.data
     } catch (error) {
-        showErrorToast(error, "Error fetching LLM export results")
+        if (opts.toast !== false) showErrorToast(error, "Error fetching LLM export results")
         throw error
     }
 }
@@ -1083,13 +1089,14 @@ const startMCPScan = async (
     }
 }
 
-const getMCPExportResults = async (team_id: number, scan_id: number): Promise<Blob> => {
+/** The scan's PDF report. Toasts its outcome unless the caller shows its own (opts.toast false: utils/toastPolicy.ts). */
+const getMCPExportResults = async (team_id: number, scan_id: number, opts: HelperToastOptions = {}): Promise<Blob> => {
     try {
         const response = await api.get(`/${team_id}/mcp/scan/${scan_id}/export`, { responseType: "blob" })
-        toast.success("MCP report downloaded")
+        if (opts.toast !== false) toast.success("MCP report downloaded")
         return response.data
     } catch (error) {
-        showErrorToast(error, "Error fetching MCP export results")
+        if (opts.toast !== false) showErrorToast(error, "Error fetching MCP export results")
         throw error
     }
 }
@@ -1359,15 +1366,12 @@ const getTeams = async (): Promise<TeamListItem[]> => {
     }
 }
 
+// A refused create, update, member change or delete is only thrown: the caller's onError shows the one error toast
+// (utils/toastPolicy.ts; both used to, #12 #27). The success toast stays here.
 const createTeam = async (data: CreateTeamData) => {
-    try {
-        const response = await api.post("/team", data)
-        toast.success("Team created")
-        return response.data as { team_id: number; team_name: string; team_description: string | null; team_members: string[] }
-    } catch (error) {
-        showErrorToast(error, "Error creating team")
-        throw error
-    }
+    const response = await api.post("/team", data)
+    toast.success("Team created")
+    return response.data as { team_id: number; team_name: string; team_description: string | null; team_members: string[] }
 }
 
 const getTeam = async (team_id: number): Promise<TeamDetails> => {
@@ -1380,29 +1384,21 @@ const getTeam = async (team_id: number): Promise<TeamDetails> => {
     }
 }
 
+// updateTeam, removeOrAddTeamMembers and deleteTeam only throw on a refusal: the caller's onError shows the error
+// (app/[team_id]/settings/page.tsx). Both used to, so one refused save showed two identical toasts (#12).
 const updateTeam = async (team_id: number, data: UpdateTeamData) => {
-    try {
-        const response = await api.put(`/team/${team_id}`, data)
-        toast.success("Team updated")
-        return response.data
-    } catch (error) {
-        showErrorToast(error, "Error updating team")
-        throw error
-    }
+    const response = await api.put(`/team/${team_id}`, data)
+    toast.success("Team updated")
+    return response.data
 }
 
 const removeOrAddTeamMembers = async (team_id: number, data: RemoveOrAddMembersToTeamData) => {
-    try {
-        const response = await api.patch(`/team/${team_id}`, data)
-        // "add" invites: nobody joins until they accept the mailed link
-        toast.success(data.intent === "add"
-            ? (response.data?.message ?? "Invitation sent")
-            : "Members removed successfully")
-        return response.data
-    } catch (error) {
-        showErrorToast(error, data.intent === "add" ? "Error sending the invitation" : "Error removing members")
-        throw error
-    }
+    const response = await api.patch(`/team/${team_id}`, data)
+    // "add" invites: nobody joins until they accept the mailed link
+    toast.success(data.intent === "add"
+        ? (response.data?.message ?? "Invitation sent")
+        : "Members removed successfully")
+    return response.data
 }
 
 /** An open invitation to the team, as its admins see it (backend utilities/team/invitations.py). */
@@ -1444,13 +1440,8 @@ const revokeTeamInvitation = async (team_id: number, invitation_id: number) => {
 }
 
 const deleteTeam = async (team_id: number) => {
-    try {
-        await api.delete(`/team/${team_id}`)
-        toast.success("Team deleted")
-    } catch (error) {
-        showErrorToast(error, "Error deleting team")
-        throw error
-    }
+    await api.delete(`/team/${team_id}`)
+    toast.success("Team deleted")
 }
 
 export {
@@ -1715,13 +1706,14 @@ const startIACScan = async (
 };
 
 /** Team-scoped: GET /{team_id}/iac/scan/{scan_id}/export */
-const getIACExportResults = async (team_id: number, scan_id: number): Promise<Blob | ArrayBuffer> => {
+/** The scan's PDF report. Toasts its outcome unless the caller shows its own (opts.toast false: utils/toastPolicy.ts). */
+const getIACExportResults = async (team_id: number, scan_id: number, opts: HelperToastOptions = {}): Promise<Blob | ArrayBuffer> => {
     try {
         const response = await api.get(`/${team_id}/iac/scan/${scan_id}/export`, { responseType: "blob" });
-        toast.success("IAC report downloaded");
+        if (opts.toast !== false) toast.success("IAC report downloaded");
         return response.data;
     } catch (error) {
-        showErrorToast(error, "Error fetching iac export results");
+        if (opts.toast !== false) showErrorToast(error, "Error fetching iac export results");
         throw error;
     }
 };
@@ -1838,7 +1830,7 @@ export interface SBOMSCADashboardData {
         total_policy_violations: number
         total_license_risks: number
         total_high_risk_licenses: number
-        average_risk_score: number
+        average_risk_score: number | null
         total_reachable_issues: number
     }
     average_risk_score_per_reachability_level: Record<string, number>
@@ -2081,13 +2073,14 @@ const getSCASBOMExportResults = async (conversation_id: number): Promise<any> =>
 }
 
 /** Team-scoped: GET /{team_id}/sbom_sca/scan/{scan_id}/export */
-const getSBOMExportResults = async (team_id: number, scan_id: number): Promise<Blob | ArrayBuffer> => {
+/** The scan's PDF report. Toasts its outcome unless the caller shows its own (opts.toast false: utils/toastPolicy.ts). */
+const getSBOMExportResults = async (team_id: number, scan_id: number, opts: HelperToastOptions = {}): Promise<Blob | ArrayBuffer> => {
     try {
         const response = await api.get(`/${team_id}/sbom_sca/scan/${scan_id}/export`, { responseType: "blob" });
-        toast.success("SCA + SBOM report downloaded");
+        if (opts.toast !== false) toast.success("SCA + SBOM report downloaded");
         return response.data;
     } catch (error) {
-        showErrorToast(error, "Error fetching sbom_sca export results");
+        if (opts.toast !== false) showErrorToast(error, "Error fetching sbom_sca export results");
         throw error;
     }
 };
@@ -2888,13 +2881,14 @@ const renameAIBOMScan = async ({
 };
 
 /** Team-scoped: GET /{team_id}/ai_bom/scan/{scan_id}/export */
-const getAIBOMExportResults = async (team_id: number, scan_id: number): Promise<Blob | ArrayBuffer> => {
+/** The scan's PDF report. Toasts its outcome unless the caller shows its own (opts.toast false: utils/toastPolicy.ts). */
+const getAIBOMExportResults = async (team_id: number, scan_id: number, opts: HelperToastOptions = {}): Promise<Blob | ArrayBuffer> => {
   try {
     const response = await api.get(`/${team_id}/ai_bom/scan/${scan_id}/export`, { responseType: "blob" });
-    toast.success("AI BOM report downloaded");
+    if (opts.toast !== false) toast.success("AI BOM report downloaded");
     return response.data;
   } catch (error) {
-    showErrorToast(error, "Error fetching AI BOM export results");
+    if (opts.toast !== false) showErrorToast(error, "Error fetching AI BOM export results");
     throw error;
   }
 };
@@ -3122,68 +3116,13 @@ const getDiscoveryConversationMessages = async ({queryKey}: {queryKey: ['discove
     }
 }
 
-const startDiscoveryScan = async (
-    {
-        conversation_id,
-        repo_url, 
-        PAT, 
-        mode
-    }: {
-        conversation_id: number,
-        repo_url: string, 
-        PAT: string, 
-        mode: "github" | "gitlab" | "bitbucket"
-    }) => {
-    try {
-        const response = await api.post(`/agent_discovery/conversation/${conversation_id}/scan`, { agent_discovery_data: { repo_url: repo_url, PAT: PAT, mode: mode } })
-        toast.success("Discovery scan started")
-        return response.data
-    } catch (error) {
-        throw error
-    }
-}
-
-const getDiscoveryExportResults = async (conversation_id: number): Promise<any> => {
-    try {   
-        const response = await api.get(`/agent_discovery/conversation/${conversation_id}/export`)
-        toast.success("Discovery report downloaded")
-        return response.data
-    } catch (error) {
-        showErrorToast(error,"Error fetching discovery export results")
-        throw error
-    }
-}
-
-const reinitializeDiscoveryScan = async (
-    {
-        conversation_id,
-        repo_url, 
-        PAT, 
-        mode
-    }: {
-        conversation_id: number,
-        repo_url: string, 
-        PAT: string, 
-        mode: "github" | "gitlab" | "bitbucket"
-    }) => {
-    try {
-        const response = await api.post(`/agent_discovery/conversation/${conversation_id}/reinitialize`, { agent_discovery_data: { repo_url: repo_url, PAT: PAT, mode: mode } })
-        toast.success("Discovery scan restarted")
-        return response.data
-    } catch (error) {
-        throw error
-    }
-}
-
+// The scan, export and re-run helpers went with the unused discovery sidebar (#29): the backend has none of their routes.
 export { 
     getDiscoveryConversations, 
     deleteDiscoveryConversation, 
     renameDiscoveryConversation, 
     createDiscoveryConversation,
     getDiscoveryConversationMessages,
-    startDiscoveryScan,
-    getDiscoveryExportResults,
-    reinitializeDiscoveryScan
 }
 
 // -------------------------------------------------------------- Leakage API Routes --------------------------------------------------------------
@@ -3263,68 +3202,13 @@ const getLeakageConversationMessages = async ({queryKey}: {queryKey: ['leakage-c
     }
 }
 
-const startLeakageScan = async (
-    {
-        conversation_id,
-        repo_url, 
-        PAT, 
-        mode
-    }: {
-        conversation_id: number,
-        repo_url: string, 
-        PAT: string, 
-        mode: "github" | "gitlab" | "bitbucket"
-    }) => {
-    try {
-        const response = await api.post(`/leakage/conversation/${conversation_id}/scan`, { leakage_data: { repo_url: repo_url, PAT: PAT, mode: mode } })
-        toast.success("Leakage scan started")
-        return response.data
-    } catch (error) {
-        throw error
-    }
-}
-
-const getLeakageExportResults = async (conversation_id: number): Promise<any> => {
-    try {   
-        const response = await api.get(`/leakage/conversation/${conversation_id}/export`)
-        toast.success("Leakage report downloaded")
-        return response.data
-    } catch (error) {
-        showErrorToast(error,"Error fetching leakage export results")
-        throw error
-    }
-}
-
-const reinitializeLeakageScan = async (
-    {
-        conversation_id,
-        repo_url, 
-        PAT, 
-        mode
-    }: {
-        conversation_id: number,
-        repo_url: string, 
-        PAT: string, 
-        mode: "github" | "gitlab" | "bitbucket"
-    }) => {
-    try {
-        const response = await api.post(`/leakage/conversation/${conversation_id}/reinitialize`, { leakage_data: { repo_url: repo_url, PAT: PAT, mode: mode } })
-        toast.success("Leakage scan restarted")
-        return response.data
-    } catch (error) {
-        throw error
-    }
-}
-
+// The scan, export and re-run helpers went with the unused leakage sidebar (#29): the backend has none of their routes.
 export { 
     getLeakageConversations, 
     deleteLeakageConversation, 
     renameLeakageConversation, 
     createLeakageConversation,
     getLeakageConversationMessages,
-    startLeakageScan,
-    getLeakageExportResults,
-    reinitializeLeakageScan
 }
 
 // -------------------------------------------------------------- Guardrails API Routes (DEPRECATED) --------------------------------------------------------------
@@ -3858,15 +3742,16 @@ const startDASTScan = async (
 }
 
 /** Export DAST scan results via GET /{team_id}/dast/scan/{scan_id}/export */
-const getDASTExportResults = async (team_id: number, scan_id: number): Promise<Blob> => {
+/** The scan's PDF report. Toasts its outcome unless the caller shows its own (opts.toast false: utils/toastPolicy.ts). */
+const getDASTExportResults = async (team_id: number, scan_id: number, opts: HelperToastOptions = {}): Promise<Blob> => {
     try {
         const response = await api.get(`/${team_id}/dast/scan/${scan_id}/export`, {
             responseType: "blob",
         })
-        toast.success("DAST report downloaded")
+        if (opts.toast !== false) toast.success("DAST report downloaded")
         return response.data
     } catch (error) {
-        showErrorToast(error, "Error fetching DAST export results")
+        if (opts.toast !== false) showErrorToast(error, "Error fetching DAST export results")
         throw error
     }
 }
@@ -4095,15 +3980,12 @@ export interface CicdIssuedApiKey {
     api_key_hint?: string
 }
 
+// A refused create, delete or update is only thrown: the CI/CD pages' onError shows the one error toast, and the pages
+// say a delete or an update succeeded themselves (utils/toastPolicy.ts; both used to, #27).
 const createCicdIntegration = async (team_id: number, data: CreateCicdIntegrationData): Promise<CicdIssuedApiKey> => {
-    try {
-        const response = await api.post(`/${team_id}/cicd/integration`, data)
-        toast.success("CI/CD integration created")
-        return response.data as CicdIssuedApiKey
-    } catch (error) {
-        showErrorToast(error,"Error creating CI/CD integration")
-        throw error
-    }
+    const response = await api.post(`/${team_id}/cicd/integration`, data)
+    toast.success("CI/CD integration created")
+    return response.data as CicdIssuedApiKey
 }
 
 /** Issue a new key (owner or team admin); the old key stops working at once */
@@ -4203,14 +4085,8 @@ const getCicdIntegrationDashboard = async ({queryKey}: {queryKey: ['cicd-integra
 }
 
 const deleteCicdIntegration = async (team_id: number, integration_id: number) => {
-    try {
-        const response = await api.delete(`/${team_id}/cicd/integration/${integration_id}`)
-        toast.success("CI/CD integration deleted")
-        return response.data
-    } catch (error) {
-        showErrorToast(error,"Error deleting CI/CD integration")
-        throw error
-    }
+    const response = await api.delete(`/${team_id}/cicd/integration/${integration_id}`)
+    return response.data
 }
 
 export interface CicdIntegrationSettingsData {
@@ -4235,14 +4111,8 @@ export interface UpdateCicdIntegrationData {
 }
 
 const updateCicdIntegration = async ({ team_id, integration_id, data }: { team_id: number; integration_id: number; data: UpdateCicdIntegrationData }) => {
-    try {
-        const response = await api.put(`/${team_id}/cicd/integration/${integration_id}`, data)
-        toast.success("CI/CD integration updated")
-        return response.data
-    } catch (error) {
-        showErrorToast(error,"Error updating CI/CD integration")
-        throw error
-    }
+    const response = await api.put(`/${team_id}/cicd/integration/${integration_id}`, data)
+    return response.data
 }
 
 /** @deprecated Use updateCicdIntegration with { team_id, integration_id, data: { title } } */
@@ -5791,6 +5661,9 @@ export interface CbomAiAnswer {
     withheld_reason?: string
     /** true when the steps and commands are the knowledge-base baseline (the model's answer was withheld) */
     baseline?: boolean
+    /** the model's answer was cut off at its output limit: status "ok" shows only its complete part (the first
+     * caveat says so), status "withheld" means nothing usable was complete */
+    truncated?: boolean
     dropped_commands: number
     provider?: "bedrock" | "openai_compat"
     region?: string | null
@@ -5804,7 +5677,8 @@ export interface CbomAiAnswer {
     checks?: { name: string; ok: boolean; note: string }[]
 }
 
-/** The UI gives the model 90 s (the backend's own limit is 60 s, CBOM_AI_TIMEOUT_S). */
+/** The UI waits 90 s, longer than the backend's own deadline for the whole request (CBOM_AI_DEADLINE_S: 50 s by
+ * default, at most 85 s), so the app's "took too long, try again" answer arrives before this gives up. */
 export const CBOM_AI_UI_TIMEOUT_MS = 90_000
 
 export const getCbomAiStatus = async (team_id: number): Promise<CbomAiStatus> => {

@@ -2,7 +2,13 @@ name: CBOM CT discovery live proof
 
 # Certificate Transparency discovery reads public CT search providers over the internet. The development box has no
 # outbound internet, so the provider responses used as test fixtures, and the live proof that the collector stores
-# exactly what the provider returned, are recorded here, on a GitHub runner.
+# exactly what the provider returned, are recorded here, on a GitHub-hosted runner.
+#
+# These jobs stay on ubuntu-latest even for a pull request from this repository. Cert Spotter's free quota is 10
+# full-domain queries an hour per source address, and the comment below counts on one fresh address per job. The
+# dss-vm runners share this host's one address, and the quota job spends it, so the row-by-row jobs answer 429 there
+# (run 43621427760: "the provider answered 429; the oracle cannot judge this run"). A fork is ubuntu-latest either
+# way; this file does not use the fork expression.
 #
 # Not part of ci-gate (a separate workflow; nothing requires it): a provider outage or rate limit must not block a
 # merge. It runs only when the CT files change, or by hand once this file is on the default branch.

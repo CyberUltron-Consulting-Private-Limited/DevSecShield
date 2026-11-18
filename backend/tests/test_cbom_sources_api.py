@@ -40,7 +40,8 @@ from backend.new_models import (  # noqa: E402
     TeamMembership,
     User,
 )
-from backend.routers import cbom_node, cbom_sources, cbom_vendor_public  # noqa: E402
+from backend.routers import auth as auth_router  # noqa: E402
+from backend.routers import cbom_node, cbom_node_sshca, cbom_sources, cbom_vendor_public  # noqa: E402
 from backend.utilities.auth import auth_utils  # noqa: E402
 from backend.utilities.cbom_sources import http as cbom_http  # noqa: E402
 from backend.utilities.cbom_sources import jobs as J  # noqa: E402
@@ -81,11 +82,15 @@ def world(tmp_path, monkeypatch):
         s.add(Scan(id=77, team_id=1, owner_user_id=ids["alice"], scan_type="cbom", title="code", scan_status="NOT_STARTED"))
         s.add(Scan(id=78, team_id=1, owner_user_id=ids["alice"], scan_type="sast", title="sast", scan_status="NOT_STARTED"))
         s.commit()
-    for module in (cbom_http, cbom_node, cbom_vendor_public, node_auth):
+    # every module the shared fixtures reach get_db() through, so no test depends on the process env (#433)
+    for module in (cbom_http, cbom_node, cbom_node_sshca, cbom_vendor_public, node_auth, auth_router):
         monkeypatch.setattr(module, "get_db", lambda: engine)
     for limiter in (cbom_http.read_limiter, cbom_http.write_limiter, cbom_http.node_limiter,
                     cbom_http.enroll_limiter, cbom_http.vendor_limiter):
         limiter.requests.clear()
+    from backend.utilities.cbom_sources import dispatch as _dispatch
+
+    _dispatch.reset(None)  # F1.1: every test starts with a full claim bucket (no permits drained by an earlier test)
     return engine, ids
 
 
@@ -456,7 +461,7 @@ def test_aws_validation_reports_platform_errors_without_crashing(monkeypatch):
 
 # ----------------------------------------------------------------------------- settings and network
 def test_settings_permissions_and_stop_all(api, world):
-    assert api("PATCH", "/1/cbom/sources/settings", "bob", json={"soc_email": "soc@bank.test"}).status_code == 400
+    assert api("PATCH", "/1/cbom/sources/settings", "bob", json={"soc_email": "soc@bank.test"}).status_code == 403  # admins only: the route policy refuses a member (F4 RBAC)
     ok = api("PATCH", "/1/cbom/sources/settings", json={"soc_email": "soc@bank.test", "network_exclusions": [
         {"cidr": "10.20.99.0/24", "reason": "OT plant"}, {"cidr": "10.20.99.0/24", "reason": "dup"}]})
     assert ok.status_code == 200 and len(ok.json()["settings"]["network_exclusions"]) == 1

@@ -51,7 +51,7 @@ permissions:
 jobs:
   branch-flow:
     name: branch-flow
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.pull_request && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'dss-vm' }}
     timeout-minutes: 5
     permissions: {}
     steps:
@@ -84,7 +84,7 @@ jobs:
 
   pr-hygiene:
     name: pr-hygiene
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.pull_request && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'dss-vm' }}
     timeout-minutes: 5
     permissions:
       contents: read

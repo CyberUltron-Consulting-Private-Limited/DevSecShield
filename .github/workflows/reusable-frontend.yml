@@ -65,9 +65,9 @@ on:
         type: number
         default: 30
       runs-on:
-        description: Runner label.
+        description: "Runner label. Empty: the self-hosted dss-vm runners, or ubuntu-latest for a fork's pull request."
         type: string
-        default: ubuntu-latest
+        default: ""
 
 permissions:
   contents: read
@@ -75,7 +75,7 @@ permissions:
 jobs:
   frontend:
     name: ${{ inputs.suite-name }}
-    runs-on: ${{ inputs.runs-on }}
+    runs-on: ${{ inputs.runs-on || (github.event.pull_request && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'dss-vm') }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
     permissions:
       contents: read
@@ -118,7 +118,9 @@ jobs:
           auth=$(printf 'x-access-token:%s' "$FETCH_TOKEN" | base64 -w0)
           echo "::add-mask::$auth"
           # Also the files the PR adds or modifies, and its renames, for the comparison.
+          # (prune: a self-hosted runner keeps .git, and a previous job's worktree in its old RUNNER_TEMP is gone)
           if git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" fetch -q --no-tags --depth=1 origin "$BASE_SHA" \
+             && git worktree prune \
              && git worktree add --detach "$RUNNER_TEMP/base" "$BASE_SHA" > /dev/null \
              && git -c core.quotePath=false diff --no-ext-diff -M --name-only --diff-filter=AMR "$BASE_SHA" HEAD > "$RUNNER_TEMP/changed.txt" \
              && git -c core.quotePath=false diff --no-ext-diff -M --name-status --diff-filter=R "$BASE_SHA" HEAD > "$RUNNER_TEMP/renames.tsv" \

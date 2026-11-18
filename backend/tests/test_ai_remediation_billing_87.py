@@ -147,6 +147,8 @@ def world(monkeypatch, tmp_path):
     monkeypatch.setattr(scans, "get_mongo_client_db", lambda: {"scan_findings": findings})
     monkeypatch.setattr(scans, "get_user_from_header_or_raise_exception", user)
     monkeypatch.setattr(scans, "check_if_user_is_in_team", lambda *_a, **_k: None)
+    from backend.tests.support.rbac import stand_in_principal
+    stand_in_principal(monkeypatch, user_id=1, email="u@example.test", role="member")  # F4 route policy
     monkeypatch.setattr(credits_mod, "get_db", lambda: engine)
     monkeypatch.setattr(remediation_mod, "generate_remediation", generate)
     for limiter in (scans.start_limiter, scans.remediate_limiter):

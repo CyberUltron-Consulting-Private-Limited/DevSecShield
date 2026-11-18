@@ -79,6 +79,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { IfAllowed } from "@/components/rbac/team-access";
 
 type ScanStatus = "pending" | "started" | "retry" | "failure" | "success" | "not_started" | "cancelled";
 
@@ -281,12 +282,12 @@ function SBOMSCAScanListDashboard({ dashboardData }: { dashboardData: SBOMSCADas
         <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
           <CardContent className="p-0">
             <div className="flex flex-col items-start gap-2">
-              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${card.average_risk_score >= 7 ? "bg-red-500/15 dark:bg-red-500/10" : card.average_risk_score >= 5 ? "bg-amber-500/15 dark:bg-amber-500/10" : "bg-green-500/15 dark:bg-green-500/10"}`}>
-                <Activity className={`h-4 w-4 ${card.average_risk_score >= 7 ? "text-red-500" : card.average_risk_score >= 5 ? "text-amber-500" : "text-green-500"}`} />
+              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${(card.average_risk_score ?? 0) >= 7 ? "bg-red-500/15 dark:bg-red-500/10" : (card.average_risk_score ?? 0) >= 5 ? "bg-amber-500/15 dark:bg-amber-500/10" : "bg-green-500/15 dark:bg-green-500/10"}`}>
+                <Activity className={`h-4 w-4 ${(card.average_risk_score ?? 0) >= 7 ? "text-red-500" : (card.average_risk_score ?? 0) >= 5 ? "text-amber-500" : "text-green-500"}`} />
               </div>
               <div>
                 <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Avg Risk Score <InfoTip id="sbom.kpi.avg_risk" /></p>
-                <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.average_risk_score.toFixed(1)}</p>
+                <p className="text-xl font-bold text-zinc-900 dark:text-white" title={card.average_risk_score == null ? "No known vulnerabilities" : undefined}>{card.average_risk_score == null ? "—" : card.average_risk_score.toFixed(1)}</p>
               </div>
             </div>
           </CardContent>
@@ -733,9 +734,11 @@ export default function SBOMSCAPage() {
               <p className="text-zinc-600 dark:text-zinc-400">Manage and view all your SCA + SBOM scans.</p>
             </div>
             <div className="flex flex-row items-center gap-2">
+              <IfAllowed permission="scan.create">
               <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" onClick={() => setCreateDialogOpen(true)}>
                 <Plus className="h-4 w-4 mr-2" />New Scan
               </Button>
+              </IfAllowed>
               <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" onClick={() => queryClient.invalidateQueries({ queryKey: ["sbom_sca-conversations", team_id] })}>
                 <RefreshCcw className="h-4 w-4 mr-2" />Refresh
               </Button>
@@ -904,9 +907,11 @@ export default function SBOMSCAPage() {
                 {conversations.length === 0 ? (
                   <div className="text-center py-12">
                     <p className="text-zinc-600 dark:text-zinc-400 mb-4">No scans yet. Create your first SCA + SBOM scan to get started.</p>
+                    <IfAllowed permission="scan.create">
                     <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" onClick={() => setCreateDialogOpen(true)}>
                       <Plus className="h-4 w-4 mr-2" />Create New Scan
                     </Button>
+                    </IfAllowed>
                   </div>
                 ) : filteredConversations.length === 0 ? (
                   <div className="text-center py-12">
@@ -1047,12 +1052,16 @@ export default function SBOMSCAPage() {
                                     <DropdownMenuItem className="cursor-pointer" onClick={(e) => { e.stopPropagation(); setMetadataScan(conversation); setMetadataDialogOpen(true); }}>
                                       <Eye className="h-4 w-4 mr-2" />View metadata
                                     </DropdownMenuItem>
+                                    <IfAllowed permission="scan.update">
                                     <DropdownMenuItem className="cursor-pointer" onClick={() => handleRename(conversation)}>
                                       <Pencil className="h-4 w-4 mr-2" />Rename scan
                                     </DropdownMenuItem>
+                                    </IfAllowed>
+                                    <IfAllowed permission="scan.update">
                                     <DropdownMenuItem className="cursor-pointer" onClick={() => handleDelete(conversation)} variant="destructive">
                                       <Trash2 className="h-4 w-4 mr-2" />Delete scan
                                     </DropdownMenuItem>
+                                    </IfAllowed>
                                   </DropdownMenuContent>
                                 </DropdownMenu>
                               </TableCell>

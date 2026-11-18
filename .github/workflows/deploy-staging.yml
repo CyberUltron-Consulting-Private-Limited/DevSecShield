@@ -67,7 +67,9 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # The self-hosted runners (dss-vm: 24 CPUs, one rootless BuildKit daemon whose layer cache outlives the job).
+    # Only a push to staging or a manual run gets here, never a pull request.
+    runs-on: dss-vm
     timeout-minutes: 120
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
@@ -121,6 +123,7 @@ jobs:
           DSS_TAG: ${{ steps.tag.outputs.tag }}
           NEXT_PUBLIC_BACKEND_URL: ${{ steps.settings.outputs.api_url }}
           DSS_EXPOSE_BUILD: ${{ steps.settings.outputs.expose_build == 'true' && '1' || '0' }}
+          DSS_BUILD_JOBS: "4"
         run: scripts/deploy/staging.sh build
 
       - name: Save images
@@ -160,11 +163,24 @@ jobs:
           compression-level: 0
           if-no-files-found: error
 
+      # The runner outlives the job: the archive (about 5 GB) and the tagged images go; the layer cache stays.
+      - name: Free this run's archive and images
+        if: always()
+        env:
+          DSS_TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          rm -rf deploy/staging/images
+          if [ -n "$DSS_TAG" ]; then
+            docker image ls --format '{{.Repository}}:{{.Tag}}' --filter "reference=dss-staging/*:$DSS_TAG" |
+              xargs -r docker image rm > /dev/null
+          fi
+
   deploy:
     needs: build
     if: needs.build.outputs.deploy == 'true'
-    runs-on: ubuntu-latest
-    # up to 45 minutes waiting for publish-ghcr.yml's scan node release (below), then the copy and deploy
+    # Only a push to staging or a manual run (never a pull request). The wait below is up to 45 minutes,
+    # then the copy and deploy, so the job limit is longer than that wait.
+    runs-on: dss-vm
     timeout-minutes: 100
     environment: staging
     steps:
@@ -216,15 +232,16 @@ jobs:
         continue-on-error: true
         run: scripts/deploy/staging.sh wait-node-release --timeout 2700
 
+      # In the job's own temporary directory: the self-hosted runners share one $HOME, so ~/.ssh would be another
+      # job's too.
       - name: SSH identity
         env:
           STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
           STAGING_SSH_KNOWN_HOSTS: ${{ secrets.STAGING_SSH_KNOWN_HOSTS }}
         run: |
-          install -d -m 700 "$HOME/.ssh"
-          printf '%s\n' "$STAGING_SSH_KEY" > "$HOME/.ssh/staging_key"
-          chmod 600 "$HOME/.ssh/staging_key"
-          printf '%s\n' "$STAGING_SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          install -d -m 700 "$RUNNER_TEMP/ssh"
+          (umask 077 && printf '%s\n' "$STAGING_SSH_KEY" > "$RUNNER_TEMP/ssh/staging_key")
+          printf '%s\n' "$STAGING_SSH_KNOWN_HOSTS" > "$RUNNER_TEMP/ssh/known_hosts"
 
       - name: Copy and deploy
         env:
@@ -270,9 +287,9 @@ jobs:
             0) export CBOM_NODE_REGISTRY_PUBLIC=0 ;;
             *) echo "::error::vars.CBOM_NODE_REGISTRY_PUBLIC must be 0 or 1"; exit 1 ;;
           esac
-          export SSH_OPTS="-i $HOME/.ssh/staging_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts"
+          export SSH_OPTS="-i $RUNNER_TEMP/ssh/staging_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$RUNNER_TEMP/ssh/known_hosts"
           scripts/deploy/staging.sh push "$STAGING_SSH_TARGET" "$STAGING_DIR"
 
-      - name: Remove the SSH key
+      - name: Remove the SSH key and the downloaded archive
         if: always()
-        run: rm -f "$HOME/.ssh/staging_key"
+        run: rm -rf "$RUNNER_TEMP/ssh" deploy/staging/images

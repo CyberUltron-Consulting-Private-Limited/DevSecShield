@@ -25,7 +25,8 @@ concurrency:
 jobs:
   waves:
     name: CBOM waves (hermetic)
-    runs-on: ubuntu-latest
+    # A schedule, never a pull request. ghrunner has no sudo: softhsm2 and poppler-utils are installed on the host.
+    runs-on: dss-vm
     timeout-minutes: 150
     env:
       PYTHONPATH: ${{ github.workspace }}
@@ -45,9 +46,25 @@ jobs:
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: "3.12"
+      - name: System packages
+        if: runner.environment == 'github-hosted'
+        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends softhsm2 poppler-utils
+
+      - name: System packages are on the self-hosted host
+        if: runner.environment == 'self-hosted'
+        run: |
+          set -euo pipefail
+          missing=""
+          for p in softhsm2 poppler-utils; do
+            dpkg-query -W -f='${Status}' "$p" 2>/dev/null | grep -q 'install ok installed' || missing="$missing $p"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::not installed on the self-hosted runners' host:$missing (the job has no sudo; install them there)"
+            exit 1
+          fi
+
       - name: Install the backend, aibom and scan node environments
         run: |
-          sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends softhsm2 poppler-utils
           (cd backend && uv sync --frozen)
           (cd aibom && uv sync --frozen --all-extras --dev)
           (cd scan_node && uv venv --python 3.12 .venv && \

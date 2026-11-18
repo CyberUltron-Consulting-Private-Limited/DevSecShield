@@ -71,6 +71,7 @@ import {
   Truncate,
   usePolledJob,
 } from "./shared";
+import { refreshCreditBalance } from "@/utils/creditBalance";
 import { InfoTip } from "@/components/ui/info-tip";
 import type { InfoTipId } from "@/content/infotips";
 
@@ -332,7 +333,10 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
   const deleteMutation = useMutation({
     mutationFn: (source: CbomSource) => deleteCbomSource(teamId, source.id),
     onSuccess: () => setDeletingRange(null),
-    onSettled: invalidate,
+    onSettled: () => {
+      invalidate();
+      refreshCreditBalance(queryClient); // deleting a source refunds its pending collect jobs
+    },
   });
 
   if (settingsQuery.isLoading || rangesQuery.isLoading) return <LoadingBlock />;

@@ -415,7 +415,8 @@ export default function AiBomResults({
       if (Number.isNaN(tid) || Number.isNaN(sid) || !tid || !sid) {
         throw new Error("Missing or invalid team or scan id");
       }
-      return getAIBOMExportResults(tid, sid);
+      // this page says the outcome, once (#27): the helper's own toasts are off
+      return getAIBOMExportResults(tid, sid, { toast: false });
     },
     onSuccess: (result) => {
       const blob = result instanceof Blob ? result : new Blob([result]);

@@ -5,6 +5,7 @@
     python3 -m harness.gate redact  <run> [--secrets-file F]                       scrub har/ api/ ui/ steps/ logs/
     python3 -m harness.gate sums    <run>                                          SHA256SUMS; prints its sha256
     python3 -m harness.gate verify  <run>                                          re-hash; exit 1 on any change
+    python3 -m harness.gate compare <run_a> <run_b>                                same-SHA verdicts identical (CB-05 F)
 
 Run from ``e2e/cbom`` (``cd e2e/cbom && python3 -m harness.gate ...``) or with ``PYTHONPATH=e2e/cbom``.
 
@@ -25,8 +26,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from . import (SCHEMA_REPORT, canary, derived, identity, join, ledger, logs, manifest, neverscan, oracle, redact,
-               riskfields, timing)
+from . import (SCHEMA_REPORT, canary, compare, derived, identity, join, ledger, logs, manifest, neverscan, oracle,
+               redact, riskfields, timing)
 from .checks import Check, Checks
 from .rundir import iso, read_json, run_steps, utc_now, write_json, write_text
 
@@ -225,8 +226,18 @@ def redact_zip(path: Path, run: Path, known: list[str], rewrite: bool = True) ->
     With ``rewrite`` False the members are only scanned."""
     import zipfile
     problems = []
-    with zipfile.ZipFile(path) as zin:
-        members = [(info, zin.read(info.filename)) for info in zin.infolist()]
+    try:
+        with zipfile.ZipFile(path) as zin:
+            members = [(info, zin.read(info.filename)) for info in zin.infolist()]
+    except (zipfile.BadZipFile, OSError):
+        # a trace cut short (the flow was stopped while writing it): unreadable, so it is removed when it holds a
+        # known secret (and the evidence may be rewritten), and reported either way
+        raw = path.read_bytes()
+        leaked = any(v and len(v) >= 8 and v.encode() in raw for v in known)
+        if leaked and rewrite:
+            path.unlink()
+        what = ("removed: held a known secret" if rewrite else "held a known secret") if leaked else "kept"
+        return [f"{path.relative_to(run).as_posix()}: unreadable zip ({what})"]
     changed = False
     out = []
     for info, data in members:
@@ -266,6 +277,9 @@ def main(argv: list[str] | None = None) -> int:
     j.add_argument("--ledger", type=Path, default=DEFAULT_LEDGER)
     for name in ("freeze-oracle", "sums", "verify"):
         sub.add_parser(name).add_argument("run", type=Path)
+    c = sub.add_parser("compare")
+    c.add_argument("run", type=Path)
+    c.add_argument("other", type=Path)
     r = sub.add_parser("redact")
     r.add_argument("run", type=Path)
     r.add_argument("--secrets-file", type=Path, help="JSON list of raw secret values the run used (deleted after)")
@@ -273,6 +287,13 @@ def main(argv: list[str] | None = None) -> int:
     if not args.run.is_dir():
         print(f"no such run directory: {args.run}", file=sys.stderr)
         return 2
+    if args.cmd == "compare":
+        if not args.other.is_dir():
+            print(f"no such run directory: {args.other}", file=sys.stderr)
+            return 2
+        result = compare.compare(args.run, args.other)
+        print(json.dumps(result, indent=1))
+        return 0 if result["identical"] else 1
     if args.cmd == "judge":
         try:
             passed, report = judge(args.run, args.ledger)

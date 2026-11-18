@@ -78,7 +78,8 @@ class BuildDriver(unittest.TestCase):
         self.assertIn("load: true", step("Build ${{ matrix.image.name }} (no push)"))
 
     def test_the_cache_needs_the_containerd_image_store(self):
-        self.assertIn("if: inputs.cache\n", step("Docker uses the containerd image store"))
+        # GitHub's runners only: the self-hosted runners keep a local layer cache and never use gha
+        self.assertIn("if: inputs.cache && runner.environment == 'github-hosted'\n", step("Docker uses the containerd image store"))
         script = step_script("Docker uses the containerd image store")
         with tempfile.TemporaryDirectory() as d:
             d = Path(d)

@@ -1,11 +1,14 @@
+import logging
 import os
+import time
+
 from pymongo import MongoClient
+from sqlalchemy.pool import QueuePool
 from sqlmodel import create_engine
 from dotenv import load_dotenv
 from fastapi import HTTPException, status
-from rich.console import Console
 
-_console = Console()
+log = logging.getLogger("backend.db")
 load_dotenv()
 
 _is_docker = os.getenv("IS_DOCKER_CONTAINER", "False") == "True"
@@ -15,16 +18,49 @@ PG_HOST = os.getenv("PG_HOST", "devsecshield-postgres" if _is_docker else "local
 PG_PORT = os.getenv("PG_PORT", "5432" if _is_docker else "4433")
 MONGO_HOST = os.getenv("MONGO_HOST", "devsecshield-mongodb" if _is_docker else "localhost")
 MONGO_PORT = os.getenv("MONGO_PORT", "27017")
+# The settings get_db() reads by name; a missing one is logged by its NAME only, never a value.
+PG_SETTINGS = ("PG_USER", "PG_USER_PASS", "PG_DB")
 
 # Singleton instances for connection pooling
 _pg_engine = None
 _mongo_db = None
 
 
+def _pool_setting(name: str, default: int, low: int, high: int) -> int:
+    raw = os.getenv(name, "").strip()
+    try:
+        value = int(raw) if raw else default
+    except ValueError:
+        value = default
+    return value if low <= value <= high else default
+
+
+def pool_settings() -> dict:
+    """Connection pool per process, from the environment (F1.1, DA E2).  Every gunicorn worker and every other process
+    (cloud worker, DAST scheduler, celery) opens its own pool, so the sum across processes plus a reserve must stay
+    below PostgreSQL ``max_connections`` (staging: 100).  Defaults keep the previous 10 + 20."""
+    return {"pool_size": _pool_setting("DB_POOL_SIZE", 10, 1, 500),
+            "max_overflow": _pool_setting("DB_MAX_OVERFLOW", 20, 0, 500),
+            "pool_timeout": _pool_setting("DB_POOL_TIMEOUT", 30, 1, 600)}
+
+
+class TimedQueuePool(QueuePool):
+    """QueuePool that adds the time each checkout took (waiting, connecting, pre-ping) to the current node request's
+    timing (``Server-Timing: pool;dur=``).  A no-op outside a node request."""
+
+    def connect(self):  # type: ignore[override]
+        from backend.utilities.request_timing import add_pool_wait
+
+        t0 = time.perf_counter()
+        try:
+            return super().connect()
+        finally:
+            add_pool_wait(time.perf_counter() - t0)
+
+
 def get_db():
 
     global _pg_engine
-    console = _console
     try:
         if _pg_engine is not None:
             return _pg_engine
@@ -34,11 +70,18 @@ def get_db():
         postgres_url = f"postgresql://{postgres_username}:{postgres_password}@{PG_HOST}:{PG_PORT}/{postgres_db}"
 
         # hide_parameters: SQL errors in logs never include bound values (credentials, configs).
-        _pg_engine = create_engine(postgres_url, pool_size=10, max_overflow=20, pool_pre_ping=True, hide_parameters=True)
+        _pg_engine = create_engine(postgres_url, poolclass=TimedQueuePool, **pool_settings(), pool_pre_ping=True,
+                                   hide_parameters=True)
         return _pg_engine
 
     except Exception as e:
-        console.print(f"Error getting database: connection to {PG_HOST}:{PG_PORT} failed", style="bold red")
+        # Nothing has connected yet (create_engine connects on first use): the error class and, for a missing setting,
+        # the NAMES of the unset variables. Never str(e) or a value: the URL above carries the password.
+        if isinstance(e, KeyError) and e.args and e.args[0] in PG_SETTINGS:
+            unset = ", ".join(name for name in PG_SETTINGS if name not in os.environ)
+            log.error("Error getting database: %s (%s not set)", type(e).__name__, unset)
+        else:
+            log.error("Error getting database: %s", type(e).__name__)
         raise e 
 
 def get_mongo_client_db():

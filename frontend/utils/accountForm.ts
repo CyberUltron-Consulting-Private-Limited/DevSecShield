@@ -11,3 +11,11 @@ export function changePasswordProblems(current: string, next: string, confirm: s
   if (!problems.next && confirm !== next) problems.confirm = "The two new passwords are not the same.";
   return problems;
 }
+
+/** Where the user menu's Account entry goes (components/user-menu.tsx, #14): the team's Account page inside a team,
+ * /home/account (the same page in the /home layout) outside one. Only a team id (an integer, backend Team.id) becomes
+ * part of the link: the segment comes from the URL, and a decoded "%5C" is a backslash, so "/\evil.example/account"
+ * would resolve to another origin. */
+export function accountPath(teamId: string | string[] | undefined): string {
+  return typeof teamId === "string" && /^\d+$/.test(teamId) ? `/${teamId}/account` : "/home/account";
+}

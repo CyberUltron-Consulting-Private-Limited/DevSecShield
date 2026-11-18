@@ -256,11 +256,10 @@ def ingest(monkeypatch):
         s.add(Scan(id=9, team_id=1, owner_user_id=1, scan_type="cbom", scan_status="started", task_id="t-9",
                    credit_consumed=3.0, credit_charged=2.0))
         s.commit()
-    state = {"result": _Result("SUCCESS", FIXTURE), "jira": 0, "refunds": []}
+    state = {"result": _Result("SUCCESS", FIXTURE), "jira": 0}
     mongo = FakeMongo()
     monkeypatch.setattr(cc, "get_celery_app", lambda: types.SimpleNamespace(AsyncResult=lambda _t: state["result"]))
     monkeypatch.setattr(cc, "get_mongo_client_db", lambda: mongo)
-    monkeypatch.setattr(cc, "refund_credits_to_team", lambda team, credits: state["refunds"].append(credits))
 
     def jira(_scan_id, _engine):
         state["jira"] += 1
@@ -314,9 +313,13 @@ def test_failure_refunds_the_charged_amount_once(ingest):
     state["result"] = _Result("FAILURE", RuntimeError("worker crashed\nTraceback ..."))
     cc.get_status_and_update_db(9, "t-9", Scan, engine)
     cc.get_status_and_update_db(9, "t-9", Scan, engine)
-    assert state["refunds"] == [2.0]  # credit_charged, not the 3.0 estimate; once
+    from backend.new_models import CreditLedgerEntry
+
     with Session(engine) as s:
         assert s.get(Scan, 9).info == {"error": "worker crashed"}
+        refunds = [line.delta for line in s.exec(select(CreditLedgerEntry)).all()]
+        assert refunds == [2.0]  # credit_charged, not the 3.0 estimate; once, with its ledger line
+        assert s.get(Team, 1).credit_balance == 12.0
 
 
 # ===================================================================================== credits
@@ -386,6 +389,8 @@ def http(monkeypatch):
         monkeypatch.setattr(mod, "check_if_user_is_in_team", lambda *_a, **_k: None)
         monkeypatch.setattr(mod, "get_user_from_header_or_raise_exception", fake_user)
     monkeypatch.setattr(credits_mod, "get_db", lambda: engine)
+    from backend.tests.support.rbac import stand_in_principal
+    stand_in_principal(monkeypatch, user_id=1, email="u@example.test")  # the route policy (F4): user 1, team owner
     monkeypatch.setattr(scans_router, "get_mongo_client_db", lambda: FakeMongo())
     monkeypatch.setattr(scans_router, "estimate_credits", fake_estimate)
     monkeypatch.setattr(scans_router, "start_scan_and_update_db", fake_dispatch)

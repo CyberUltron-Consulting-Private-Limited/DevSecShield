@@ -8,6 +8,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getDASTScan, type DASTScanResponse } from "@/utils/backend_api";
 import { useParams } from "next/navigation";
 import { toast } from "@/utils/toast";
+import { ReadOnlyGate } from "@/components/rbac/team-access";
 
 export default function DASTPage() {
   const params = useParams();
@@ -70,7 +71,9 @@ export default function DASTPage() {
           <ChatWindow query={query} progress={progress} />
         </div>
       </div>
+      <ReadOnlyGate permission="scan.run" className="contents">
       <DASTOptionsSidebar team_id={team_id} scan_id={scan_id} query={query} />
+      </ReadOnlyGate>
     </div>
   );
 }

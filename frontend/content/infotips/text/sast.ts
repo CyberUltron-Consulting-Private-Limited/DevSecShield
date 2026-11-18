@@ -7,21 +7,21 @@ import type { TipAreaText } from "../types";
 
 const TEXT = {
   // ────────────────────────────────────────────────────────────── SAST: scan configuration (components/sast-options-sidebar.tsx)
-  // src: RabbitMQ/worker/helpers/tools/sast_agent/main.py:51-92, RabbitMQ/worker/helpers/context/codebase_context.py:114-141 — today's behaviour: built-in exclusions and your patterns go through the same matcher on the file's full path (#37, #45)
+  // src: RabbitMQ/worker/helpers/tools/sast_agent/main.py:51-92, RabbitMQ/worker/helpers/context/codebase_context.py:119-170 — built-in exclusions and your patterns go through the same matcher, on the file's path inside the repository (#37, #45)
   "sast.cfg.scope": {
-    what: "Which files are analysed: the files of the chosen language, minus the language's built-in exclusions (such as node_modules, dist and build for JavaScript) and minus the patterns you add below. Exclusions are matched against each file's full path.",
+    what: "Which files are analysed: the files of the chosen language, minus the language's built-in exclusions (such as node_modules, dist and build for JavaScript) and minus the patterns you add below. Exclusions are matched against each file's path inside the repository.",
     why: "Files outside the scope are neither analysed nor charged, so it decides both coverage and cost.",
     example: "Add \"tests\" to leave the tests folders out of a Python scan.",
   },
-  // src: RabbitMQ/worker/helpers/context/codebase_context.py:114-141, RabbitMQ/worker/helpers/tools/sast_agent/main.py:91-92 — today's behaviour of file_path_matches_pattern: one name matches a path segment starting with it; two names one after the other; a third and later name is dropped; names are regular expressions (#37)
+  // src: RabbitMQ/worker/helpers/context/codebase_context.py:119-170, RabbitMQ/worker/helpers/tools/sast_agent/main.py:91-92 — file_path_matches_pattern: the path inside the repository; every name counts, as whole names one after the other at any depth; literal apart from * and a ** name; one name starting with a dot matches the names ending with it (#37, #45)
   "sast.cfg.exclude": {
-    what: "Each pattern is one or two folder or file names, one per box. One name skips every file whose path has a folder or file name starting with it; two names skip paths where they appear one after the other (a third name is ignored). Names are read as regular expressions, so a dot matches any character. Skipped files are not analysed and not charged.",
+    what: "Each pattern is one or more folder or file names, one per box. A file is skipped when its path inside the repository has these whole names one after the other, at any depth. * stands for any characters within a name and a box holding ** for any number of folders; other characters are literal. One name starting with a dot matches the names ending with it. Skipped files are not analysed and not charged.",
     why: "Leaving out vendored or generated code cuts noise and credits; leaving out real code hides findings.",
-    example: "\"vendor\" skips vendor/ and vendors/; \"src\" / \"legacy\" skips src/legacy.",
+    example: "\"vendor\" skips every vendor folder but not vendors; \"src\" / \"legacy\" skips src/legacy; \".min.js\" skips minified files.",
   },
-  // src: RabbitMQ/worker/helpers/tools/sast_agent/main.py:51-83 — one file extension per language; Ruby's built-in "tmp" exclusion matches the /tmp clone path, so Ruby scans analyse no file until #45 is fixed
+  // src: RabbitMQ/worker/helpers/tools/sast_agent/main.py:51-83 — one file extension per language
   "sast.cfg.language": {
-    what: "Only files with this language's extension are analysed: Python .py, JavaScript .js, Java .java, PHP .php, C .c, Ruby .rb, Rust .rs, Swift .swift, C# .cs, Kotlin .kt. Other files are ignored. Ruby scans currently analyse no files: Ruby's built-in tmp exclusion matches the folder the repository is cloned into.",
+    what: "Only files with this language's extension are analysed: Python .py, JavaScript .js, Java .java, PHP .php, C .c, Ruby .rb, Rust .rs, Swift .swift, C# .cs, Kotlin .kt. Other files are ignored.",
     why: "Only files of the chosen language are read, so the wrong choice analyses nothing useful.",
     example: "For a Node service choose JavaScript; note that .ts and .jsx files are not analysed.",
   },
@@ -87,11 +87,11 @@ const TEXT = {
     why: "Critical and High findings are the ones to fix first.",
     example: "Critical 4, High 12, Medium 30, Low 9.",
   },
-  // src: backend/utilities/dashboard/scan_list.py:735-747, backend/utilities/dashboard/scan_list.py:818-829 — "compliance" is each standard's share of the control references; overall = mean of the top 8 shares
+  // src: backend/utilities/dashboard/scan_list.py:735-747, backend/utilities/dashboard/scan_list.py:818-826 — "compliance" is each standard's share of the control references; the card shows no overall score (#36)
   "sast.chart.policy": {
-    what: "Findings are mapped to controls of standards such as PCI DSS or ISO 27001. Each row counts those references (violations) for one standard and shows its share of all references, top 8. It is not a pass rate. The overall score is the average of the shares shown.",
+    what: "Findings are mapped to controls of standards such as PCI DSS or ISO 27001. Each row counts those references for one standard and shows its share of all references, top 8. It is not a pass rate.",
     why: "Shows which compliance requirements your code findings put at risk.",
-    example: "60 references to PCI DSS and 40 to ISO 27001: PCI DSS 60%, ISO 27001 40%, overall 50%.",
+    example: "60 references to PCI DSS and 40 to ISO 27001: PCI DSS 60%, ISO 27001 40%.",
   },
   // src: backend/utilities/dashboard/scan_list.py:756-779, backend/utilities/dashboard/scan_list.py:839 — one entry per successful scan, top 5 by its 0-10 score
   "sast.chart.top_repos": {
@@ -141,43 +141,43 @@ const TEXT = {
     why: "Finding issues matters only if they get fixed; these show whether they do.",
     example: "Mark a finding Fixed in the results page and these numbers update.",
   },
-  // src: backend/utilities/dashboard/remediation_metrics.py:43-80, frontend/app/[team_id]/sast/page.tsx:936 — mean of (fixed_at or ignored_at - created_at); target 3 days
+  // src: backend/utilities/dashboard/remediation_metrics.py:43-80, frontend/app/[team_id]/sast/page.tsx:919 — mean of (fixed_at or ignored_at - created_at); target 3 days
   "sast.remed.mttr": {
     what: "Average time from when a finding was recorded to when it was marked Fixed or Ignored. The target is 3 days.",
     why: "A long time to fix keeps known weaknesses exploitable.",
     example: "One finding fixed after 2 days and one ignored after 4 days: 3.0 days.",
   },
-  // src: backend/utilities/dashboard/remediation_metrics.py:47-49, backend/utilities/dashboard/scan_list.py:796-809, frontend/app/[team_id]/sast/page.tsx:960-962 — fixed critical / all critical findings; target 95%
+  // src: backend/utilities/dashboard/remediation_metrics.py:47-49, backend/utilities/dashboard/scan_list.py:796-809, frontend/app/[team_id]/sast/page.tsx:943-945 — fixed critical / all critical findings; target 95%
   "sast.remed.critical_fixed": {
     what: "Critical findings marked Fixed, as a percentage of all Critical findings from successful SAST scans. Ignored findings do not count as fixed. The target is 95%.",
     why: "Critical findings are the most likely to be exploited.",
     example: "8 Critical findings, 6 marked Fixed: 75%.",
   },
-  // src: backend/utilities/dashboard/remediation_metrics.py:38-40, frontend/app/[team_id]/sast/page.tsx:984 — critical or high and not fixed/ignored; target 10
+  // src: backend/utilities/dashboard/remediation_metrics.py:38-40, frontend/app/[team_id]/sast/page.tsx:967 — critical or high and not fixed/ignored; target 10
   "sast.remed.backlog": {
     what: "Critical and High findings that are not yet marked Fixed or Ignored. The target is 10 or fewer.",
     why: "Open Critical and High findings are your current exposure.",
     example: "14 open Critical/High findings: 4 above target.",
   },
-  // src: backend/utilities/dashboard/remediation_metrics.py:30, backend/utilities/dashboard/remediation_metrics.py:55-69, frontend/app/[team_id]/sast/page.tsx:1006 — fixed_at/ignored_at date >= today - 7 days (UTC): 8 dates; target 20
+  // src: backend/utilities/dashboard/remediation_metrics.py:30, backend/utilities/dashboard/remediation_metrics.py:55-69, frontend/app/[team_id]/sast/page.tsx:989 — fixed_at/ignored_at date >= today - 7 days (UTC): 8 dates; target 20
   "sast.remed.velocity": {
     what: "Findings marked Fixed or Ignored today or on the 7 dates before it (UTC), so over up to 8 calendar days. The target is 20 a week.",
     why: "Shows whether fixes keep up with new findings.",
     example: "On Wednesday 12 Nov: 12 fixed and 3 ignored since Wednesday 5 Nov gives 15/week.",
   },
-  // src: frontend/app/[team_id]/sast/page.tsx:1169-1173,1346, backend/utilities/db/scan_list_item.py:38-41 — github/gitlab/bitbucket from repo_type, zip_file when a zip was used
+  // src: frontend/app/[team_id]/sast/page.tsx:1152-1156,1329, backend/utilities/db/scan_list_item.py:38-41 — github/gitlab/bitbucket from repo_type, zip_file when a zip was used
   "sast.filter.type": {
     what: "Shows only scans of one source: GitHub, GitLab or Bitbucket repositories, or zip uploads.",
     why: "Narrows the list to one code source.",
     example: "Choose Zip file to list only scans of uploaded archives.",
   },
-  // src: frontend/app/[team_id]/sast/page.tsx:107-115,1297, frontend/app/[team_id]/sast/page.tsx:98-105,1297 — tiers on the 0-10 per-scan risk score; scans without findings drop out
+  // src: frontend/app/[team_id]/sast/page.tsx:108-116,1280, frontend/app/[team_id]/sast/page.tsx:99-106,1280 — tiers on the 0-10 per-scan risk score; scans without findings drop out
   "sast.filter.risk": {
     what: "Shows only scans whose risk score (0 to 10) is in a tier: Critical 9 or more, High 7 to 9, Medium 5 to 7, Low under 5. Scans without findings have no score and are hidden by any tier.",
     why: "Focuses the list on the riskiest scans.",
     example: "High keeps a scan scored 7.5 and hides one scored 9.2.",
   },
-  // src: frontend/app/[team_id]/sast/page.tsx:1175-1190 — sorts the loaded rows
+  // src: frontend/app/[team_id]/sast/page.tsx:1158-1173 — sorts the loaded rows
   "sast.filter.sort": {
     what: "Orders the table by creation date, risk score, coverage or credits, ascending or descending. Scans with no value for the chosen column go last when sorting high to low.",
     why: "Brings the scans you care about to the top.",
@@ -195,7 +195,7 @@ const TEXT = {
     why: "Shows at a glance how serious this scan's findings are.",
     example: "2 red, 5 orange, 1 amber, 0 blue.",
   },
-  // src: backend/utilities/db/scan_list_item.py:82, frontend/app/[team_id]/sast/page.tsx:99-105,1465 — per-scan weighted sum / count / 4 * 10
+  // src: backend/utilities/db/scan_list_item.py:82, frontend/app/[team_id]/sast/page.tsx:100-106,1448 — per-scan weighted sum / count / 4 * 10
   "sast.table.risk": {
     what: "This scan's severity-weighted average, 0 to 10: Critical 4, High 3, Medium 2, Low 1, averaged over its findings, divided by 4 and multiplied by 10. Empty when it found nothing.",
     why: "Lets you compare scans by overall severity.",
@@ -207,13 +207,13 @@ const TEXT = {
     why: "Tells you where the scanned code came from.",
     example: "GitLab.",
   },
-  // src: backend/utilities/db/scan_list_item.py:76, frontend/app/[team_id]/sast/page.tsx:1609-1613,1467 — repo_url from the scan's settings; the SAST list item does not return zip_file_used, so a zip upload shows a dash until #49 is fixed
+  // src: backend/utilities/db/scan_list_item.py:76, frontend/app/[team_id]/sast/page.tsx:1592-1596,1450 — repo_url from the scan's settings; the SAST list item does not return zip_file_used, so a zip upload shows a dash until #49 is fixed
   "sast.table.source": {
     what: "The repository that was scanned (its last path segment; hover for the full URL). A scan of an uploaded zip file shows a dash.",
     why: "Tells you which code the findings belong to.",
     example: "payments-api for https://github.com/acme/payments-api.",
   },
-  // src: backend/utilities/db/scan_list_item.py:24-31, RabbitMQ/worker/helpers/context/codebase_context.py:210-213 — included / (included + excluded) files with the language's extension
+  // src: backend/utilities/db/scan_list_item.py:24-31, RabbitMQ/worker/helpers/context/codebase_context.py:227-230 — included / (included + excluded) files with the language's extension
   "sast.table.coverage": {
     what: "Share of the language's source files that were analysed: analysed files divided by analysed plus excluded files. Exclusions are the language defaults and your patterns.",
     why: "Low coverage means much of the code was not analysed, so a clean result proves less.",
@@ -305,7 +305,7 @@ const TEXT = {
     why: "Shows whether fixes keep up.",
     example: "5 fixed and 1 ignored since last Wednesday: 6/week.",
   },
-  // src: backend/utilities/dashboard/scan_metadata.py:79-99, RabbitMQ/worker/helpers/context/codebase_context.py:210-213 — included / (included + excluded) documents of the language
+  // src: backend/utilities/dashboard/scan_metadata.py:79-99, RabbitMQ/worker/helpers/context/codebase_context.py:227-230 — included / (included + excluded) documents of the language
   "sast.res.coverage": {
     what: "Share of the chosen language's source files that were analysed: analysed files divided by analysed plus excluded files. Exclusions are the language's built-in ones and your patterns.",
     why: "Low coverage means much of the code was not analysed, so a clean result proves less.",

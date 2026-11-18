@@ -7,7 +7,7 @@
 // same "Failures only" filter and attestation upload as the matrix). The framework groups are the matrix's.
 
 import { useEffect, useId, useRef, useState } from "react";
-import { Scale } from "lucide-react";
+import { ChevronRight, Scale } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,6 +15,8 @@ import { InfoTip } from "@/components/ui/info-tip";
 import { labelFramework } from "@/components/compliance/frameworkLabels";
 import type { AttestHandler, Compliance, ComplianceRequirement, FrameworkCoverage, FrameworkGroup } from "@/components/compliance/ComplianceMatrix";
 import { VERDICT_BADGE, VERDICT_COLOR, VERDICT_LABEL, isFailingVerdict } from "@/components/compliance/verdictTokens";
+
+import { CARD_ARROW, CLICKABLE_CARD } from "./findingTable";
 
 type Verdict = "pass" | "partial" | "fail" | "not_assessed";
 const VERDICT_CHIP: Record<Verdict, [string, string]> = {
@@ -200,14 +202,14 @@ export function ComplianceScorecards({ compliance, groups, enableFailingOnly = t
                 <li key={f.key} className="min-w-0" hidden={isHidden(f.key)}>
                   <button type="button" aria-expanded={on} aria-controls={detailId} onClick={() => { revealDetail.current = !on; setActive(on ? null : f.key); }}
                           data-testid={`compliance-card-${f.key}`} data-verdict={s.verdict} data-passed={s.passed} data-total={s.total}
-                          className={`flex h-full w-full flex-col gap-2 rounded-xl border p-3 text-left cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
-                            on ? "border-blue-500 bg-blue-50/60 dark:bg-blue-950/30" : "border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-zinc-300 dark:hover:border-zinc-700"}`}>
+                          className={`flex h-full w-full flex-col gap-2 rounded-xl border p-3 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:border-blue-500/70 dark:focus-visible:border-blue-400/70 ${CLICKABLE_CARD} ${
+                            on ? "border-blue-500 bg-blue-50/60 dark:bg-blue-950/30" : "border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900"}`}>
                     <span className="flex items-start justify-between gap-2">
-                      <span className="text-sm font-semibold text-zinc-900 dark:text-white break-words">{labelFramework(f.key)}</span>
+                      <span className="text-sm font-semibold text-zinc-900 dark:text-white break-words xl:min-h-[2.5rem]">{labelFramework(f.key)}</span>
                       <Badge variant="outline" className={chipClass}>{chip}</Badge>
                     </span>
                     {/* mockup F6: the ring above its figures, so five cards fit one row at 1280 px+ */}
-                    <span className="flex items-center gap-3 xl:mt-auto xl:flex-col xl:items-start xl:gap-2">
+                    <span className="flex items-center gap-3 xl:flex-col xl:items-start xl:gap-2">
                       <Ring score={s} />
                       <span className="space-y-0.5 text-xs text-zinc-600 dark:text-zinc-400">
                         <span className="block" data-testid={`compliance-card-${f.key}-failing`}>
@@ -218,6 +220,10 @@ export function ComplianceScorecards({ compliance, groups, enableFailingOnly = t
                         )}
                         {s.coverage != null && <span className="block">coverage {Math.round(s.coverage * 100)}%</span>}
                       </span>
+                    </span>
+                    {/* the cue that the card opens its clauses (the card itself is the button) */}
+                    <span aria-hidden="true" className="mt-auto inline-flex items-center gap-0.5 pt-1 text-xs font-medium text-blue-600 dark:text-blue-400 group-hover:underline">
+                      {on ? "Hide clauses" : "View clauses"} <ChevronRight className={`h-3.5 w-3.5 ${on ? "rotate-90" : `${CARD_ARROW} group-focus-visible:translate-x-1 motion-reduce:group-focus-visible:translate-x-0`}`} />
                     </span>
                   </button>
                 </li>

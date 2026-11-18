@@ -20,11 +20,11 @@ from backend.utilities.dashboard.sbom_license import (
     resolve_sbom_license_category,
     resolve_sbom_reachability,
 )
+from backend.utilities.dashboard.sbom_rows import vulnerability_findings, vulnerability_rows
 from backend.utilities.dashboard.bom_risk_score import (
     aibom_finding_risk_score,
     cbom_finding_risk_score,
 )
-
 risk_score_for_impact = {
     "critical" : 10.0,
     "high" : 7.5,
@@ -823,7 +823,7 @@ def generate_scan_dashboard(
                     "unknown" : average_risk_score_unknown,
                 }
             """
-            results_list = results if isinstance(results, list) else []
+            results_list = vulnerability_rows(results if isinstance(results, list) else [])  # no inventory rows (#46)
             severity_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
             reachability_counts: dict[str, int] = defaultdict(int)
             license_counts: dict[str, int] = defaultdict(int)
@@ -856,7 +856,7 @@ def generate_scan_dashboard(
 
             total_vulnerabilities = len(results_list)
             total_critical = severity_counts["critical"]
-            average_risk_score = round(risk_score_weighted_sum / total_vulnerabilities, 1) if total_vulnerabilities else 0.0
+            average_risk_score = round(risk_score_weighted_sum / total_vulnerabilities, 1) if total_vulnerabilities else None  # — (#46)
             total_license_risks = sum(
                 1
                 for item in results_list
@@ -868,7 +868,7 @@ def generate_scan_dashboard(
                 if resolve_sbom_license_category(item) in LICENSE_HIGH_RISK
             )
 
-            findings = get_findings_for_scan_id(scan_id)
+            findings = vulnerability_findings(get_findings_for_scan_id(scan_id))
             status_metrics = get_issue_status_metrics(findings) if findings else {"fixed": 0, "in_progress": 0, "not_started": 0, "ignored": 0}
             remediation_actions_required = {
                 "total_findings": len(findings),

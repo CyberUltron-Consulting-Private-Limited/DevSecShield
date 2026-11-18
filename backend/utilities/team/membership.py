@@ -32,13 +32,14 @@ def _valid_invite_emails(email_ids: list[str]) -> list[str]:
     return list(dict.fromkeys(cleaned))
 
 
-async def add_emails_to_team(email_ids: list[str], team_id: int, engine: Engine, invited_by_user_id: int | None = None) -> list[str]:
-    """Invite the addresses to the team (utilities/team/invitations.py): each gets a single-use link and joins only
-    when it accepts.  No account is created and no password is generated or mailed here."""
+async def add_emails_to_team(email_ids: list[str], team_id: int, engine: Engine, invited_by_user_id: int | None = None,
+                             role: str = "member") -> list[str]:
+    """Invite the addresses to the team (utilities/team/invitations.py) with ``role``: each gets a single-use link
+    and joins only when it accepts.  No account is created and no password is generated or mailed here."""
     email_ids = _valid_invite_emails(email_ids)
     if not email_ids:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Enter at least one email address")
-    return await invitations.invite_emails(email_ids, team_id, invited_by_user_id, engine)
+    return await invitations.invite_emails(email_ids, team_id, invited_by_user_id, engine, role=role)
 
 
 async def remove_emails_from_team(email_ids: list[str], team_id: int, engine: Engine) -> None:

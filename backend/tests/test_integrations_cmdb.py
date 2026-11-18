@@ -111,7 +111,7 @@ def test_preview_then_apply_updates_metadata_creates_groups_and_keeps_jobs(api, 
         job_before = s.exec(select(CbomCollectionJob).where(CbomCollectionJob.source_id == existing["id"],
                                                             CbomCollectionJob.kind == "collect")).one()
         conn_before = J.connection_version(s.get(CbomCollectionSource, existing["id"]))
-    assert api("POST", "/1/cbom/sources/cmdb/preview", "bob", json={"csv": CSV}).status_code == 400  # admin only
+    assert api("POST", "/1/cbom/sources/cmdb/preview", "bob", json={"csv": CSV}).status_code == 403  # admin only
     r = api("POST", "/1/cbom/sources/cmdb/preview", json={"csv": CSV, "node_id": node_id})
     assert r.status_code == 200, r.text
     plan = r.json()["plan"]

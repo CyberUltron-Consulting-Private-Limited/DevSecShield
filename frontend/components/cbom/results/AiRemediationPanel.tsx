@@ -23,6 +23,7 @@ import {
   MAX_QUESTION, aiPanelVisible, answerBadge, canAsk, citationLabel, egressLines, egressNote, outcomeNote,
 } from "./aiPanelLogic";
 import { InfoTip } from "@/components/ui/info-tip";
+import { useTeamAccess } from "@/components/rbac/team-access";
 
 export interface AiRemediationPanelProps {
   teamId: number;
@@ -43,6 +44,8 @@ function CitationChips({ cites, items }: { cites: string[]; items: CbomAiAnswer[
 }
 
 export default function AiRemediationPanel({ teamId, subject }: AiRemediationPanelProps) {
+  // F4 RBAC: the assistant generates remediations (finding.remediate, member and up); a viewer keeps the KB text
+  const { can } = useTeamAccess();
   const [mode, setMode] = useState<CbomAiMode | null>(null);
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState<CbomAiAnswer | null>(null);
@@ -61,7 +64,15 @@ export default function AiRemediationPanel({ teamId, subject }: AiRemediationPan
   });
 
   if (!aiPanelVisible(status.data)) return null;
+  if (!can("finding.remediate")) return null; // viewers: the knowledge-base remediation above only
   const note = outcomeNote(answer);
+  const caveats = answer?.caveats ?? [];
+  // an answer cut off at the model's output limit shows only its complete part: its first caveat says so, above it
+  const cutOff = answer?.status === "ok" && answer.truncated === true && caveats.length > 0;
+  // timeout / busy / error: the backend's own sentence (fixed text, never model output) says what to do next
+  const failedNote = answer && answer.status !== "ok" && answer.status !== "withheld" ? caveats[0] : undefined;
+  const noteText = cutOff ? caveats[0] : failedNote || note?.text;
+  const shownCaveats = cutOff ? caveats.slice(1) : caveats;
   const run = (m: CbomAiMode) => { if (canAsk(m, question) && !ask.isPending) ask.mutate(m); };
 
   return (
@@ -99,19 +110,19 @@ export default function AiRemediationPanel({ teamId, subject }: AiRemediationPan
         </div>
       )}
       {ask.isPending && (
-        <div className="flex items-center gap-2 text-xs text-zinc-500"><Loader2 className="h-4 w-4 animate-spin" /> Asking the model (up to 90 s)…</div>
+        <div className="flex items-center gap-2 text-xs text-zinc-500"><Loader2 className="h-4 w-4 animate-spin" /> Asking the model (up to a minute)…</div>
       )}
       {ask.isError && (
         <div className="flex items-center gap-2 text-xs text-amber-700 dark:text-amber-400" data-testid="cbom-ai-request-error">
-          <AlertTriangle className="h-4 w-4" /> The AI assistant could not be reached. The knowledge-base remediation above is unaffected.
+          <AlertTriangle className="h-4 w-4 shrink-0" /> The AI assistant could not be reached or took too long. Try again in a minute; the knowledge-base remediation above is unaffected.
         </div>
       )}
       {answer && (
         <div className="space-y-2" data-testid="cbom-ai-answer" data-status={answer.status}>
-          {note && (
+          {(note || cutOff) && (
             <div className="flex gap-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
               data-testid={answer.status === "withheld" ? "cbom-ai-withheld" : "cbom-ai-note"}>
-              <AlertTriangle className="h-4 w-4 shrink-0" />{note.text}
+              <AlertTriangle className="h-4 w-4 shrink-0" />{noteText}
             </div>
           )}
           {answer.summary && <p className="text-sm text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap">{answer.summary}</p>}
@@ -132,8 +143,8 @@ export default function AiRemediationPanel({ teamId, subject }: AiRemediationPan
               ))}
             </div>
           )}
-          {answer.caveats.length > 0 && answer.status === "ok" && (
-            <ul className="list-disc space-y-0.5 pl-5 text-xs text-zinc-500">{answer.caveats.map((c, i) => <li key={i}>{c}</li>)}</ul>
+          {shownCaveats.length > 0 && answer.status === "ok" && (
+            <ul className="list-disc space-y-0.5 pl-5 text-xs text-zinc-500">{shownCaveats.map((c, i) => <li key={i}>{c}</li>)}</ul>
           )}
           {(answer.status === "ok" || answer.status === "withheld") && (
             <Badge variant="outline" className="h-auto max-w-full whitespace-normal break-words text-left text-[10px] font-normal"

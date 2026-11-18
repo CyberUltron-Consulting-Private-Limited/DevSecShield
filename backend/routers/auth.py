@@ -31,6 +31,9 @@ from backend.utilities.auth.auth_schema import (
 )
 from backend.utilities.auth.auth_utils import (
     CodeSendLimited,
+    check_access_token,
+    check_bearer_header,
+    check_refresh_token,
     consume_verification_code,
     create_access_token,
     create_password_change_token,
@@ -48,6 +51,8 @@ from backend.utilities.auth.auth_utils import (
 )
 from backend.utilities.build_info import build_sha, build_version
 from backend.utilities.ratelimit import RateLimiter, ip_key, user_key
+from backend.utilities.rbac import audit
+from backend.utilities.rbac.policy import Access, public, request_meta
 
 log = logging.getLogger("backend.auth")
 
@@ -64,6 +69,25 @@ session_limiter = RateLimiter("auth.session", times=20, seconds=30, key_func=use
 change_password_limiter = RateLimiter("auth.change_password", times=5, seconds=600, key_func=user_key)
 # charged by hand with the (normalised) email from the body
 email_limiter = RateLimiter("auth.credentials_email", times=10, seconds=600, key_func=ip_key)
+
+
+# Route policies (utilities/rbac): bound to this module's get_db, which the tests replace.
+access = Access(lambda: get_db())
+
+
+def _audit_auth(engine, request: Request, action: str, user: User | None, outcome: str = "success",
+                email: str | None = None, **details) -> None:
+    """A sign-in event (never a password, code or token).  A failure to record it is logged, never raised: the
+    person's request has already been decided."""
+    meta = request_meta(request)
+    try:
+        audit.record_now(engine, action=action, outcome=outcome, actor_user_id=user.id if user else None,
+                         actor_email=(user.email if user else (email or "").strip().lower()[:254]) or None,
+                         actor_type="user" if user else "anonymous", object_type="account",
+                         object_id=user.id if user else None, ip=meta["ip"], user_agent=meta["user_agent"],
+                         details={k: v for k, v in details.items() if v is not None})
+    except Exception as exc:
+        log.error("audit: %s not recorded (%s)", action, type(exc).__name__)
 
 
 def _tokens(user: User) -> dict:
@@ -83,7 +107,7 @@ def _db_error(exc: Exception, what: str) -> HTTPException:
     return HTTPException(status_code=500, detail=f"Could not {what}, please try again later")
 
 
-@router.post('/signup', summary="Create new user", dependencies=[Depends(credentials_ip_limiter)])
+@router.post('/signup', summary="Create new user", dependencies=[Depends(credentials_ip_limiter), public("sign-up: the mailed code proves the address")])
 async def create_user(data: UserSignup, request: Request):
     """
     Request Fields:
@@ -126,12 +150,14 @@ async def create_user(data: UserSignup, request: Request):
                 teams =  [ new_team ],
                 default_team_id = new_team.id
             )
-            team_membership = TeamMembership( team=new_team, user=new_user, role="admin" )
+            team_membership = TeamMembership( team=new_team, user=new_user, role="owner" )  # they own their default team
             session.add(team_membership)
             session.commit()
             session.refresh(new_user)
+            default_team_id = new_user.default_team_id
             log.info("user signed up user_id=%s", new_user.id)
-            return _tokens(new_user)
+        await run_in_threadpool(_audit_auth, engine, request, "auth.signup", new_user, team_id=default_team_id)
+        return _tokens(new_user)
     except Exception as e:
         raise _db_error(e, "create user") from None
 
@@ -141,7 +167,8 @@ PASSWORD_CHANGE_MESSAGE = ("Choose a new password to continue: the password you 
 
 
 @router.post('/login', summary="Create access and refresh tokens for user",
-             response_model=TokenSchema | PasswordChangeRequired, dependencies=[Depends(credentials_ip_limiter)])
+             response_model=TokenSchema | PasswordChangeRequired,
+             dependencies=[Depends(credentials_ip_limiter), public("sign-in: password and the mailed code")])
 async def login(form_data: UserLogin, request: Request):
     """
     Request Fields:
@@ -154,6 +181,8 @@ async def login(form_data: UserLogin, request: Request):
         engine = get_db()
         if not await run_in_threadpool(consume_verification_code, engine, form_data.email,
                                        form_data.verification_code, allow_dev_code=True):
+            await run_in_threadpool(_audit_auth, engine, request, "auth.login", None, "denied",
+                                    email=form_data.email, reason="code")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid verification code",
@@ -161,6 +190,8 @@ async def login(form_data: UserLogin, request: Request):
         with Session(engine) as session:
             user = user_by_email(session, form_data.email)
         if user is None:
+            await run_in_threadpool(_audit_auth, engine, request, "auth.login", None, "denied",
+                                    email=form_data.email, reason="no account")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Incorrect email or password"
@@ -169,6 +200,7 @@ async def login(form_data: UserLogin, request: Request):
         is_valid, new_hash = await run_in_threadpool(verify_and_update_password, form_data.password, old_hash)
         if not is_valid:
             log.info("login refused: credentials do not match user_id=%s", user.id)
+            await run_in_threadpool(_audit_auth, engine, request, "auth.login", user, "denied", reason="credentials")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Incorrect email or password"
@@ -192,17 +224,20 @@ async def login(form_data: UserLogin, request: Request):
             session.commit()
             user = session.exec(select(User).where(User.id == user.id)).first()
             log.info("user logged in user_id=%s", user.id)
+        await run_in_threadpool(_audit_auth, engine, request, "auth.login", user, method="password")
         return _tokens(user)
     except Exception as e:
         raise _db_error(e, "login user") from None
 
 
-@router.post('/refresh', summary="Create new access token from refresh token", dependencies=[Depends(refresh_limiter)])
+@router.post('/refresh', summary="Create new access token from refresh token",
+             dependencies=[Depends(refresh_limiter), public("the refresh token in the body is the credential")])
 async def refresh(data:RefreshToken,Authorization: Annotated[str | None, Header()] = None, ):
     """
     Request Fields:
     - refresh_token: str
     """
+    check_refresh_token(data.refresh_token)  # before get_db(): a bad token gets the same 403 without a database
     try:
         engine = get_db()
         user = await get_current_user_from_refresh_token(engine, data.refresh_token)
@@ -217,13 +252,15 @@ async def refresh(data:RefreshToken,Authorization: Annotated[str | None, Header(
         raise HTTPException(status_code=403, detail="Could not refresh token, please try again later")
 
 
-@router.get('/version', summary="The build this API runs (signed-in users)", dependencies=[Depends(session_limiter)])
+@router.get('/version', summary="The build this API runs (signed-in users)",
+            dependencies=[Depends(session_limiter), access.authenticated()])
 async def version(Authorization: Annotated[str | None, Header()] = None):
     """The commit and version string of this API build, for signed-in users and operators. Public responses name
     the build only where the deployment exposes it (DSS_EXPOSE_BUILD, backend/utilities/build_info.py)."""
     parts = (Authorization or "").split(" ")
     if len(parts) != 2 or parts[0].lower() != "bearer":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authorization header is required")
+    check_access_token(parts[1])  # before get_db(): a forged or expired token is a 401 without a database
     try:
         await get_current_user_from_access_token(get_db(), parts[1])
     except HTTPException:
@@ -234,21 +271,23 @@ async def version(Authorization: Annotated[str | None, Header()] = None):
     return {"build": build_sha(), "version": build_version()}
 
 
-@router.get('/get_user', summary="Get user details", dependencies=[Depends(session_limiter)])
+@router.get('/get_user', summary="Get user details", dependencies=[Depends(session_limiter), access.authenticated()])
 async def get_user(Authorization: Annotated[str | None, Header()] = None):
+    # the credential first, without a database: a missing, malformed or forged one is a 401 even when get_db() fails
+    if Authorization is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization header is required"
+        )
+    parts = Authorization.split(" ")
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid Authorization header format"
+        )
+    check_access_token(parts[1])
     try:
         engine = get_db()
-        if Authorization is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authorization header is required"
-            )
-        parts = Authorization.split(" ")
-        if len(parts) != 2 or parts[0].lower() != "bearer":
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid Authorization header format"
-            )
         user = await get_current_user_from_access_token(engine, parts[1])
         return {
             "email": user.email,
@@ -265,7 +304,8 @@ async def get_user(Authorization: Annotated[str | None, Header()] = None):
         raise HTTPException(status_code=403, detail="Could not get user details, please try again later")
 
 
-@router.post("/send_code", summary="Send verification code to user", dependencies=[Depends(send_code_ip_limiter)])
+@router.post("/send_code", summary="Send verification code to user",
+             dependencies=[Depends(send_code_ip_limiter), public("mails a sign-in code to the address")])
 async def send_verification_code(data: CodeSend):
     """
     Request Fields:
@@ -309,7 +349,8 @@ async def send_verification_code(data: CodeSend):
     }
 
 
-@router.post("/reset_password", summary="Reset password for user", dependencies=[Depends(credentials_ip_limiter)])
+@router.post("/reset_password", summary="Reset password for user",
+             dependencies=[Depends(credentials_ip_limiter), public("the mailed code proves the address")])
 async def reset_password(data: ResetPassword, request: Request):
     """
     Request Fields:
@@ -339,6 +380,7 @@ async def reset_password(data: ResetPassword, request: Request):
             )
             session.commit()
             log.info("credential reset done, earlier tokens revoked user_id=%s", user.id)
+        await run_in_threadpool(_audit_auth, engine, request, "auth.password.reset", user)
         return {
             "message": f"Password reset successfully for user {data.email}"
         }
@@ -347,8 +389,9 @@ async def reset_password(data: ResetPassword, request: Request):
 
 
 @router.post("/change_password", summary="Choose a new password when sign-in asked for one",
-             response_model=TokenSchema, dependencies=[Depends(credentials_ip_limiter)])
-async def change_password(data: ChangePassword):
+             response_model=TokenSchema,
+             dependencies=[Depends(credentials_ip_limiter), public("the one-time change token in the body is the credential")])
+async def change_password(data: ChangePassword, request: Request):
     """
     Request Fields:
     - change_token: str (from /login, valid 10 minutes, works once)
@@ -385,14 +428,16 @@ async def change_password(data: ChangePassword):
             session.commit()
             user = session.exec(select(User).where(User.id == user.id)).first()
         log.info("credential replaced at sign-in, earlier tokens revoked (user_id=%s)", user.id)
+        await run_in_threadpool(_audit_auth, engine, request, "auth.password.change", user, reason="required at sign-in")
         return _tokens(user)
     except Exception as e:
         raise _db_error(e, "change password") from None
 
 
 @router.post("/account/password", summary="Change the password; every other session is signed out",
-             dependencies=[Depends(session_limiter), Depends(change_password_limiter)])
-async def change_account_password(data: AccountPasswordChange, Authorization: Annotated[str | None, Header()] = None):
+             dependencies=[Depends(session_limiter), Depends(change_password_limiter), access.authenticated()])
+async def change_account_password(data: AccountPasswordChange, request: Request,
+                                  Authorization: Annotated[str | None, Header()] = None):
     """
     Request Fields:
     - current_password: str
@@ -401,6 +446,7 @@ async def change_account_password(data: AccountPasswordChange, Authorization: An
     The Account page (X1, Nov 11: there was no way to change a password while signed in). Every token issued so far
     stops working (token_version is bumped, as at a reset or logout); the answer carries new tokens for this session.
     """
+    check_access_token(check_bearer_header(Authorization))  # before get_db(): a bad credential is a 401 without it
     try:
         engine = get_db()
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
@@ -425,6 +471,7 @@ async def change_account_password(data: AccountPasswordChange, Authorization: An
             session.commit()
             user = session.exec(select(User).where(User.id == user.id)).first()
         log.info("credential changed, earlier tokens revoked user_id=%s", user.id)  # no "password ... =": main.py redacts it
+        await run_in_threadpool(_audit_auth, engine, request, "auth.password.change", user, reason="account page")
         return {"message": "Password changed. Every other session was signed out.", **_tokens(user)}
     except Exception as e:
         if isinstance(e, HTTPException):
@@ -433,8 +480,9 @@ async def change_account_password(data: AccountPasswordChange, Authorization: An
         raise HTTPException(status_code=500, detail="Could not change the password, please try again later") from None
 
 
-@router.get("/logout", summary="Logout user", dependencies=[Depends(session_limiter)])
-async def logout(Authorization: Annotated[str | None, Header()] = None):
+@router.get("/logout", summary="Logout user",
+            dependencies=[Depends(session_limiter), access.authenticated(allow_inactive_session=True)])
+async def logout(request: Request, Authorization: Annotated[str | None, Header()] = None):
     """
     Request Fields:
     - Authorization: str
@@ -442,6 +490,7 @@ async def logout(Authorization: Annotated[str | None, Header()] = None):
     Every access and refresh token issued so far stops working for good (token_version is bumped): signing in
     again issues new tokens and never revives the old ones.
     """
+    check_access_token(check_bearer_header(Authorization))  # before get_db(): a bad credential is a 401 without it
     try:
         engine = get_db()
         user = await get_user_from_header_or_raise_exception(engine, Authorization, ignore_session_active=True)
@@ -450,6 +499,7 @@ async def logout(Authorization: Annotated[str | None, Header()] = None):
                          .values(session_active=False, token_version=User.token_version + 1))
             session.commit()
         log.info("user logged out user_id=%s", user.id)
+        await run_in_threadpool(_audit_auth, engine, request, "auth.logout", user)
         return {
             "message": f"User {user.email} logged out and session deactivated 🟩"
         }, 200

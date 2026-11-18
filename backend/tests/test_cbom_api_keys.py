@@ -31,8 +31,10 @@ from sqlmodel import Session, SQLModel, create_engine, select  # noqa: E402
 
 from backend.main import app  # noqa: E402
 from backend.new_models import CbomCollectionAuditEvent, Team, TeamMembership, User  # noqa: E402
+from backend.routers import auth as auth_router  # noqa: E402
 from backend.routers import cbom_api_keys as key_router  # noqa: E402
-from backend.routers import cbom_node, cbom_vendor_public  # noqa: E402
+from backend.routers import cbom_node, cbom_node_sshca, cbom_vendor_public  # noqa: E402
+from backend.routers import team as team_router  # noqa: E402
 from backend.utilities.auth import auth_utils  # noqa: E402
 from backend.utilities.cbom_sources import api_keys as AK  # noqa: E402
 from backend.utilities.cbom_sources import http as cbom_http  # noqa: E402
@@ -72,7 +74,9 @@ def world(tmp_path, monkeypatch):
             ids[who] = user.id
             s.add(TeamMembership(team_id=team, user_id=user.id, role=role))
         s.commit()
-    for module in (cbom_http, cbom_node, cbom_vendor_public, node_auth, AK, key_router):
+    # every module these tests reach get_db() through, so they never depend on the process env (#433)
+    for module in (cbom_http, cbom_node, cbom_node_sshca, cbom_vendor_public, node_auth, AK, key_router, auth_router,
+                   team_router):
         monkeypatch.setattr(module, "get_db", lambda: engine)
     for limiter in (cbom_http.read_limiter, cbom_http.write_limiter, cbom_http.node_limiter,
                     cbom_http.enroll_limiter, cbom_http.vendor_limiter):
@@ -166,7 +170,7 @@ def test_key_creation_is_validated_and_admin_only(api, world):
     assert api("POST", "/1/cbom/api-keys", json={"name": "x", "scopes": ["cbom.read"],
                                                   "expires_in_days": 10_000}).status_code == 400
     member = api("POST", "/1/cbom/api-keys", "bob", json={"name": "x", "scopes": ["cbom.read"]})
-    assert member.status_code == 400 and "admin" in member.json()["detail"]
+    assert member.status_code == 403 and "cannot create or revoke" in member.json()["detail"]
     assert api("POST", "/1/cbom/api-keys", "carol", json={"name": "x", "scopes": ["cbom.read"]}).status_code == 403
     assert api("GET", "/1/cbom/api-keys", "carol").status_code == 403
     listed = api("GET", "/1/cbom/api-keys", "bob")  # members see the keys (never a secret) but cannot manage them
@@ -257,7 +261,7 @@ def test_revoked_and_expired_keys_are_refused(api, world):
     engine, _ids, _db = world
     meta, key = make_key(api, ["cbom.read"], name="revoke-me")
     assert api("GET", "/1/cbom/sources/items", key=key).status_code == 200
-    assert api("POST", f"/1/cbom/api-keys/{meta['id']}/revoke", "bob").status_code == 400  # members cannot
+    assert api("POST", f"/1/cbom/api-keys/{meta['id']}/revoke", "bob").status_code == 403  # members cannot
     assert api("POST", f"/1/cbom/api-keys/{meta['id']}/revoke", "carol").status_code == 403  # other team
     r = api("POST", f"/1/cbom/api-keys/{meta['id']}/revoke")
     assert r.status_code == 200 and r.json()["api_key"]["status"] == "revoked"
@@ -418,11 +422,11 @@ def test_the_migration_is_the_one_head_and_round_trips(tmp_path):
     for path in versions.glob("*.py"):
         text = path.read_text()
         rev = re.search(r"^revision(?::\s*str)?\s*=\s*['\"]([^'\"]+)['\"]", text, re.M)
-        down = re.search(r"^down_revision[^=]*=\s*['\"]([^'\"]+)['\"]", text, re.M)
+        down = re.search(r"^down_revision[^=]*=\s*(.+)$", text, re.M)
         if rev:
             revisions.add(rev.group(1))
         if down:
-            parents.add(down.group(1))
+            parents.update(re.findall(r"""['"]([^'"]+)['"]""", down.group(1)))
     assert len(revisions - parents) == 1 and ("cb226apikey001" in parents or revisions - parents == {"cb226apikey001"})
     spec = importlib.util.spec_from_file_location("m226", versions / "cb226apikey001_cbom_api_keys.py")
     mod = importlib.util.module_from_spec(spec)

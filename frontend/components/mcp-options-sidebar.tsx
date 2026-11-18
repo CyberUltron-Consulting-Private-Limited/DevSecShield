@@ -34,8 +34,10 @@ import {
   type MCPConversationResponse,
 } from "@/utils/backend_api";
 import { handleApiError } from "@/utils/error-handler";
+import { refreshCreditBalance } from "@/utils/creditBalance";
 import { parseMcpHeaders } from "@/utils/mcpHeaders";
 import { scanFailureMessage } from "@/utils/scanFailure";
+import { refreshCredits } from "@/utils/creditRefresh";
 import { stateAfterError } from "@/utils/scanErrorRecovery";
 import { ScanRequestError } from "@/components/scan-request-error";
 import { NewScanRunAgainButton } from "@/components/scan-run-again";
@@ -163,6 +165,11 @@ export function MCPOptionsSidebar({
       setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("ready");
     },
+    // the start charges credits (a refusal still shows the server's balance): one GET /teams (#13)
+    onSettled: () => {
+      refreshCredits(queryClient);
+      return refreshCreditBalance(queryClient);
+    },
   });
 
   const handleRunEstimate = () => {
@@ -261,6 +268,11 @@ export function MCPOptionsSidebar({
     onError: (err) => {
       setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("error");
+    },
+    // a re-run can move credits (PR #57 charges the price difference): the balance shows what the server did
+    onSettled: () => {
+      refreshCredits(queryClient);
+      return refreshCreditBalance(queryClient);
     },
   });
 

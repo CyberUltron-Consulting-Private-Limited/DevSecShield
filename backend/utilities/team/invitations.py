@@ -97,9 +97,11 @@ async def _issue_and_mail(session: Session, row: TeamInvitation, team: Team, inv
     session.commit()
 
 
-async def invite_emails(emails: list[str], team_id: int, inviter_id: int | None, engine: Engine) -> list[str]:
-    """Invite already-validated, lower-cased addresses.  Refuses (before anything is stored or sent) an address
-    whose account is already a member, or that has a live invitation (Resend replaces it)."""
+async def invite_emails(emails: list[str], team_id: int, inviter_id: int | None, engine: Engine,
+                        role: str = "member") -> list[str]:
+    """Invite already-validated, lower-cased addresses with ``role`` (the caller checked the inviter may give it).
+    Refuses (before anything is stored or sent) an address whose account is already a member, or that has a live
+    invitation (Resend replaces it)."""
     now = utcnow()
     with Session(engine) as session:
         team = session.get(Team, team_id)
@@ -118,8 +120,9 @@ async def invite_emails(emails: list[str], team_id: int, inviter_id: int | None,
                                     detail=f"{email} already has a pending invitation (Resend sends a new link)")
             rows[email] = row
         for email, row in rows.items():
-            await _issue_and_mail(session, row or TeamInvitation(team_id=team_id, email=email, created_at=now,
-                                                                 expires_at=now), team, inviter_id, now)
+            row = row or TeamInvitation(team_id=team_id, email=email, created_at=now, expires_at=now)
+            row.role = role
+            await _issue_and_mail(session, row, team, inviter_id, now)
         log.info("team invitations sent team_id=%s count=%s by=%s", team_id, len(rows), inviter_id)
         return list(rows)
 
@@ -141,6 +144,7 @@ def list_invitations(team_id: int, engine: Engine) -> list[dict]:
         return [{
             "id": row.id,
             "email": row.email,
+            "role": row.role or "member",
             "status": "expired" if row.status == "pending" and is_expired(row, now) else row.status,
             "invited_by": _inviter_label(session, row.invited_by_user_id),
             "created_at": iso_z(row.created_at),
@@ -149,26 +153,34 @@ def list_invitations(team_id: int, engine: Engine) -> list[dict]:
         } for row in rows]
 
 
-async def resend_invitation(team_id: int, invitation_id: int, inviter_id: int | None, engine: Engine) -> None:
-    """A new link (new token, a fresh 7 days); the old link stops working."""
+async def resend_invitation(team_id: int, invitation_id: int, inviter_id: int | None, engine: Engine,
+                            may_give: tuple[str, ...] | None = None) -> dict:
+    """A new link (new token, a fresh 7 days); the old link stops working.  ``may_give``: the roles the person
+    resending may give; an invitation for another role (an owner's admin invitation, resent by an admin) is refused,
+    since resending it hands out that role again."""
     now = utcnow()
     with Session(engine) as session:
         row = _team_row(session, team_id, invitation_id)
+        if may_give is not None and (row.role or "member") not in may_give:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                                detail=f"Only an owner can resend an invitation for the {row.role} role")
         team = session.get(Team, team_id)
         account = user_by_email(session, row.email)
         if account is not None and account.id in _member_ids(session, team_id):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{row.email} is already in the team")
         await _issue_and_mail(session, row, team, inviter_id, now)
         log.info("team invitation re-sent team_id=%s invitation_id=%s by=%s", team_id, invitation_id, inviter_id)
+        return {"email": row.email, "role": row.role or "member"}
 
 
-def revoke_invitation(team_id: int, invitation_id: int, engine: Engine) -> None:
+def revoke_invitation(team_id: int, invitation_id: int, engine: Engine) -> dict:
     with Session(engine) as session:
         row = _team_row(session, team_id, invitation_id)
         row.status, row.token_hash, row.responded_at = "revoked", None, utcnow()
         session.add(row)
         session.commit()
         log.info("team invitation revoked team_id=%s invitation_id=%s", team_id, invitation_id)
+        return {"email": row.email, "role": row.role or "member"}
 
 
 # ------------------------------------------------------------------------------------------------ the invitee
@@ -212,11 +224,23 @@ def _close(session: Session, row: TeamInvitation, token: str, new_status: str, n
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=GONE)
 
 
-def _join(session: Session, team_id: int, user_id: int) -> None:
+def _join(session: Session, team_id: int, user_id: int, role: str = "member") -> None:
+    """Join with the invitation's role.  An existing membership is left as it is (never lowered or raised)."""
     exists = session.exec(select(TeamMembership).where(TeamMembership.team_id == team_id,
                                                        TeamMembership.user_id == user_id)).first()
     if exists is None:
-        session.add(TeamMembership(team_id=team_id, user_id=user_id, role="member"))
+        session.add(TeamMembership(team_id=team_id, user_id=user_id,
+                                   role=role if role in ("admin", "member", "viewer") else "member"))
+
+
+def _audit_joined(session: Session, row: TeamInvitation, account: User, meta: dict | None) -> None:
+    from backend.utilities.rbac import audit  # import here: audit -> new_models only, kept off the import path
+
+    meta = meta or {}
+    audit.record(session, action="team.members.join", team_id=row.team_id, actor_user_id=account.id,
+                 actor_email=normalise_email(account.email), object_type="member", object_id=account.id,
+                 ip=meta.get("ip"), user_agent=meta.get("user_agent"),
+                 details={"email": row.email, "role": row.role or "member", "invitation_id": row.id})
 
 
 def _require_invitee(session: Session, row: TeamInvitation, user: User | None) -> User:
@@ -232,13 +256,14 @@ def _require_invitee(session: Session, row: TeamInvitation, user: User | None) -
     return account
 
 
-def accept(token: str, user: User, engine: Engine) -> int:
+def accept(token: str, user: User, engine: Engine, meta: dict | None = None) -> int:
     now = utcnow()
     with Session(engine) as session:
         row = live_invitation(session, token, now)
         account = _require_invitee(session, row, user)
         _close(session, row, token, "accepted", now)
-        _join(session, row.team_id, account.id)
+        _join(session, row.team_id, account.id, row.role)
+        _audit_joined(session, row, account, meta)
         session.commit()
         log.info("team invitation accepted team_id=%s user_id=%s", row.team_id, account.id)
         return row.team_id
@@ -257,7 +282,8 @@ def decline(token: str, user: User | None, engine: Engine) -> None:
         log.info("team invitation declined team_id=%s", row.team_id)
 
 
-async def register(token: str, password: str, first_name: str, last_name: str, engine: Engine) -> tuple[User, int]:
+async def register(token: str, password: str, first_name: str, last_name: str, engine: Engine,
+                   meta: dict | None = None) -> tuple[User, int]:
     """A new address accepts: the account is created with the password the invitee chose (and its own default team,
     as on sign-up) and joins the team."""
     hashed = await run_in_threadpool(get_hashed_password, password)
@@ -275,8 +301,9 @@ async def register(token: str, password: str, first_name: str, last_name: str, e
                     profile_photo=None, session_active=True, default_team_id=default_team.id)
         session.add(user)
         session.flush()
-        session.add(TeamMembership(team_id=default_team.id, user_id=user.id, role="admin"))
-        _join(session, row.team_id, user.id)
+        session.add(TeamMembership(team_id=default_team.id, user_id=user.id, role="owner"))  # they made it
+        _join(session, row.team_id, user.id, row.role)
+        _audit_joined(session, row, user, meta)
         session.commit()
         session.refresh(user)
         log.info("account created from a team invitation team_id=%s user_id=%s", row.team_id, user.id)

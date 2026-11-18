@@ -19,7 +19,7 @@ const TEXT = {
     why: "Renaming keeps lists and reports readable without rerunning or losing anything.",
     example: "payments-api before the PCI audit.",
   },
-  // src: frontend/app/[team_id]/sast/page.tsx:1259 — case-insensitive match on the title, in the loaded list
+  // src: frontend/app/[team_id]/sast/page.tsx:1242 — case-insensitive match on the title, in the loaded list
   "scan.filter.search": {
     what: "Shows only the scans whose title contains this text (upper or lower case does not matter). It filters the list already loaded in this page.",
     why: "Finds one scan quickly in a long list without scrolling.",
@@ -105,17 +105,17 @@ const TEXT = {
     why: "Findings apply to this branch only.",
     example: "main.",
   },
-  // src: backend/utilities/db/scan_list_item.py:95-117, backend/utilities/db/scan_list_item.py:384-417, frontend/app/[team_id]/iac/page.tsx:123-126,959, frontend/app/[team_id]/dast/page.tsx:115-118,870 — today's scale for IaC and DAST: weights 4/3/2/1 averaged over findings, 0 without findings (#35)
+  // src: backend/utilities/db/scan_list_item.py:95-117, backend/utilities/db/scan_list_item.py:384-417, backend/utilities/db/scan_list_item.py:556-559, backend/utilities/dashboard/risk_scale.py:16,25-31, frontend/app/[team_id]/iac/page.tsx:123-126,959, frontend/app/[team_id]/dast/page.tsx:115-118,870 — IaC and DAST: the mean of 10/7.5/5/2.5 per finding, one decimal (the app's one 0-10 scale, risk_scale, #35); 0 without findings
   "scan.table.risk": {
-    what: "This scan's severity-weighted average on a 1 to 4 scale: Critical 4, High 3, Medium 2, Low 1, averaged over its findings. 0 when it found nothing or did not succeed.",
+    what: "This scan's severity-weighted average, 0 to 10, on the same scale as the dashboard and the Risk score filter: Critical 10, High 7.5, Medium 5, Low 2.5, averaged over its findings and rounded to one decimal. 0 when it found nothing or did not succeed.",
     why: "Lets you compare scans by overall severity.",
-    example: "1 High and 1 Low finding: (3 + 1) / 2 = 2.",
+    example: "1 High and 1 Low finding: (7.5 + 2.5) / 2 = 5.",
   },
-  // src: frontend/app/[team_id]/sbom_sca/page.tsx:118-125,818, frontend/app/[team_id]/iac/page.tsx:128-135,838, frontend/app/[team_id]/dast/page.tsx:120-127,766, frontend/app/[team_id]/ai_bom/page.tsx:114-121,719, frontend/app/[team_id]/llm/page.tsx:123-130,760, frontend/app/[team_id]/cbom/page.tsx:120-127,928 — tiers on the Risk score column; the column is 1-4 for SCA + SBOM, IaC and DAST today (#35), 0-10 for AI BOM, LLM and CBOM; a null score matches no tier
+  // src: frontend/app/[team_id]/sbom_sca/page.tsx:118-125,818, frontend/app/[team_id]/iac/page.tsx:128-135,838, frontend/app/[team_id]/dast/page.tsx:120-127,766, frontend/app/[team_id]/ai_bom/page.tsx:114-121,719, frontend/app/[team_id]/llm/page.tsx:123-130,760, frontend/app/[team_id]/cbom/page.tsx:120-127,928, backend/utilities/db/scan_list_item.py:556-559, backend/utilities/dashboard/risk_scale.py:16-17 — tiers on the Risk score column, which is 0-10 on every list (#35); a null score matches no tier
   "scan.filter.risk": {
-    what: "Shows only scans whose Risk score is in a tier: Critical 9 or more, High 7 to 9, Medium 5 to 7, Low under 5. Where this table's score runs from 1 to 4 (SCA + SBOM, IaC, DAST), every scored scan is in Low. A scan without a score (shown as a dash) is hidden by any tier.",
+    what: "Shows only scans whose Risk score (0 to 10) is in a tier: Critical 9 or more, High 7 to 9, Medium 5 to 7, Low under 5. A scan without a score (shown as a dash) is hidden by any tier.",
     why: "Focuses the list on the riskiest scans.",
-    example: "On the LLM list, High keeps a scan scored 7.5 and hides one scored 9.2.",
+    example: "High keeps a scan scored 7.5 (mostly High findings) and hides one scored 9.4 (mostly Critical).",
   },
   // src: frontend/app/[team_id]/sbom_sca/page.tsx:699-712, frontend/app/[team_id]/iac/page.tsx:719-732, frontend/app/[team_id]/dast/page.tsx:637-650, frontend/app/[team_id]/ai_bom/page.tsx:601-614, frontend/app/[team_id]/llm/page.tsx:568-581, frontend/app/[team_id]/cbom/page.tsx:668-681,971 — sorts the loaded rows; missing values count as -1
   "scan.filter.sort": {

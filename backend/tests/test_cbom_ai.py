@@ -35,7 +35,8 @@ from backend.utilities.cbom_ai import validator as V  # noqa: E402
 ROOT = Path(__file__).resolve().parents[2]
 ENV_KEYS = ("CBOM_AI_PROVIDER", "CBOM_AI_AWS_CREDENTIALS", "CBOM_AI_BEDROCK_ALLOW_LOOPBACK", "CBOM_AI_AWS_PROFILE", "CBOM_AI_BEDROCK_REGION", "CBOM_AI_BEDROCK_ENDPOINT_URL", "CBOM_AI_HONOR_PROXY",
             "CBOM_AI_BASE_URL", "CBOM_AI_MODEL", "CBOM_AI_API_KEY", "CBOM_AI_CA_FILE", "CBOM_AI_TIMEOUT_S",
-            "CBOM_AI_MAX_TOKENS", "CBOM_AI_CONCURRENCY", "CBOM_AI_REDACT_HOSTS", "CBOM_AI_ALLOW_NONPRIVATE",
+            "CBOM_AI_MAX_TOKENS", "CBOM_AI_DEADLINE_S", "CBOM_AI_CONCURRENCY", "CBOM_AI_REDACT_HOSTS",
+            "CBOM_AI_ALLOW_NONPRIVATE",
             "CBOM_AI_AWS_ACCESS_KEY_ID", "CBOM_AI_AWS_SECRET_ACCESS_KEY", "CBOM_AI_AWS_SESSION_TOKEN")
 
 
@@ -427,6 +428,10 @@ def test_cache_rate_limit_and_question(api, world, stub, monkeypatch):
     asset = items["10.20.0.1:443"]["id"]
     s = stub(lambda body: (200, {}, {"summary": "Accepts TLS 1.0 [K1]", "steps": [], "commands": []}))
     configure(monkeypatch, f"http://127.0.0.1:{s.port}/v1")
+    # The assist budget is one fixed window of the wall clock (now // 60). Pin it:
+    # a burst that crosses a minute boundary gets a fresh budget and stays under 20.
+    monkeypatch.setattr(R.assist_limiter, "clock", lambda: 1_700_000_100.0)
+    R.assist_limiter.reset()
     first = _assist(api, asset).json()
     second = _assist(api, asset).json()
     assert first["cached"] is False and second["cached"] is True and len(s.requests) == 1
@@ -624,7 +629,8 @@ def test_bedrock_only_contacts_the_regional_runtime_host(api, world, bedrock):
     auth = auth.decode() if isinstance(auth, bytes) else auth
     assert "/ap-south-1/bedrock/aws4_request" in auth  # SigV4 for Bedrock in the region
     body = json.loads(sent["body"])
-    assert body["inferenceConfig"] == {"maxTokens": 700, "temperature": 0}
+    # a plan's own output budget (#448: the old single 700-token cap cut every TLS plan)
+    assert body["inferenceConfig"] == {"maxTokens": S.MODE_MAX_TOKENS["plan"], "temperature": 0}
     # the prompt leaves the network: host names are redacted by default for Bedrock
     assert "10.20.0.1" not in sent["body"].decode() if isinstance(sent["body"], bytes) else "10.20.0.1" not in sent["body"]
     assert bedrock["connects"] == []  # nothing else was contacted (the proxy variables were ignored)
@@ -1109,6 +1115,8 @@ def test_scan_chat_without_aws_is_503_before_any_write(monkeypatch):
     monkeypatch.setattr(scans_router, "check_if_team_has_enough_credits",
                         lambda *a, **k: writes.append("credits") or True)
     monkeypatch.setitem(sys.modules, "backend.utilities.ai.chatbot", None)  # import fails like a box without AWS
+    from backend.tests.support.rbac import stand_in_principal
+    stand_in_principal(monkeypatch, user_id=1, email="u@example.test", role="member")  # the F4 route policy
     r = TestClient(app).post("/1/sast/scan/5/message", json={"user_message": "hi"},
                              headers={"Authorization": "Bearer t"})
     assert r.status_code == 503 and r.json()["detail"] == "AI chat is not configured on this deployment"

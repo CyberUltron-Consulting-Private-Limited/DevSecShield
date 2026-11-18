@@ -62,9 +62,9 @@ def test_harness_unit_suite_passes():
 
 
 def test_flow_command_rules_pass():
-    """The G3 allowed-diff rule (e2e/cbom/flow/command.mjs) under node's own test runner; needs only node."""
+    """The G3 allowed-diff rule (command.mjs) and CB-05's verdict helpers (cb05.mjs) under node's own test runner."""
     node = shutil.which("node")
     assert node, "node is required for the e2e flow tests (GitHub runners ship it)"
-    proc = subprocess.run([node, "--test", str(CBOM / "flow" / "command.test.mjs")], capture_output=True, text=True,
-                          timeout=120)
+    proc = subprocess.run([node, "--test", str(CBOM / "flow" / "command.test.mjs"), str(CBOM / "flow" / "cb05.test.mjs")],
+                          capture_output=True, text=True, timeout=120)
     assert proc.returncode == 0, proc.stdout[-4000:] + proc.stderr[-2000:]

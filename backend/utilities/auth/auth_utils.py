@@ -129,12 +129,52 @@ def access_token_subject(token: str) -> Optional[str]:
     return claims["sub"] if claims else None
 
 
+def access_token_claims(token: str) -> Optional[dict]:
+    """The claims of a validly signed, unexpired access token, or None (the RBAC dependency, utilities/rbac)."""
+    return _verified_claims(token, JWT_SECRET_KEY, "access")
+
+
 def _unauthorized() -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+
+def _refresh_refused() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+# The checks below need no database.  A route runs them BEFORE get_db(), so a missing, malformed or forged
+# credential gets the same answer whether or not the database is configured and up (#433); the checks that need
+# the database (the account exists, its tokens were not revoked, its session is active) follow in the helpers
+# further down.
+
+def check_bearer_header(authorization: Optional[str]) -> str:
+    """The token of an ``Authorization: Bearer <token>`` header; 401 when the header is missing or malformed."""
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    parts = authorization.split(" ")
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Invalid Authorization header format")
+    return parts[1]
+
+
+def check_access_token(token: str) -> None:
+    """401, as get_current_user_from_access_token answers, unless the signature, expiry and type verify."""
+    if _verified_claims(token, JWT_SECRET_KEY, "access") is None:
+        raise _unauthorized()
+
+
+def check_refresh_token(token: str) -> None:
+    """403, as get_current_user_from_refresh_token answers, unless the signature, expiry and type verify."""
+    if _verified_claims(token, JWT_REFRESH_SECRET_KEY, "refresh") is None:
+        raise _refresh_refused()
 
 
 async def get_current_user_from_access_token(engine: Engine, token: str, ignore_session_active: bool = False) -> User:
@@ -163,34 +203,21 @@ async def get_current_user_from_access_token(engine: Engine, token: str, ignore_
 async def get_current_user_from_refresh_token(engine: Engine, token: str) -> User:
     claims = _verified_claims(token, JWT_REFRESH_SECRET_KEY, "refresh")
     if claims is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Could not validate credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise _refresh_refused()
     with Session(engine) as session:
         user = session.exec(select(User).where(User.email == claims["sub"])).first()
     if user is None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Could not find user")
     if claims.get("ver", 0) < (user.token_version or 0):
         log.info("refresh token refused: issued before the account's tokens were revoked (user_id=%s)", user.id)
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Could not validate credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise _refresh_refused()
     if not user.session_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Session not active")
     return user
 
 
 async def get_user_from_header_or_raise_exception(engine: Engine,Authorization: str | None = None, ignore_session_active: bool = False)->User:
-    if not Authorization:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-    parts = Authorization.split(" ")
-    if len(parts) != 2 or parts[0].lower() != "bearer":
-        raise HTTPException(status_code=401, detail="Invalid Authorization header format")
-    access_token = parts[1]
+    access_token = check_bearer_header(Authorization)
     user = await get_current_user_from_access_token(engine, access_token, ignore_session_active)
     return user
 

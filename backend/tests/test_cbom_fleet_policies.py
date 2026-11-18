@@ -222,7 +222,7 @@ def test_policy_routes_show_which_policy_won(api, world):
     cred = _credential(api)
     _targets(api, 5)
     ssh = {"transport": "ssh", "credential_id": cred["id"], "node_id": node_id}
-    assert api("POST", f"{FLEET}/policies", "bob", json={"name": "x", "action": ssh}).status_code == 400  # admins only
+    assert api("POST", f"{FLEET}/policies", "bob", json={"name": "x", "action": ssh}).status_code == 403  # admins only (F4 route policy)
     broad = _policy(api, "all-pay", 10, {"tag": "team", "op": "eq", "value": "pay"}, ssh)
     prod = _policy(api, "prod-never", 90, {"tag": "env", "op": "eq", "value": "prod"}, {"never_scan": True})
     listed = api("GET", f"{FLEET}/policies", "bob").json()
@@ -360,7 +360,7 @@ def test_materializer_batches_sticky_defers_busy_sources_and_manages_the_schedul
     policy = _policy(api, "prod-weekly", 10, {"tag": "env", "op": "eq", "value": "prod"},
                      {"transport": "ssh", "credential_id": cred["id"], "node_id": node_id, "batch_size": 100,
                       "schedule": {"frequency": "weekly", "time_of_day": "02:00", "weekday": 6}})
-    assert api("POST", f"{FLEET}/reconcile", "bob").status_code == 400
+    assert api("POST", f"{FLEET}/reconcile", "bob").status_code == 403  # F4 route policy
     first = api("POST", f"{FLEET}/reconcile").json()
     assert (first["sources_created"], first["targets_assigned"], first["schedules_created"]) == (3, 250, 1), first
     sources = _managed(engine)

@@ -40,7 +40,9 @@ import {
 import { toast } from "@/utils/toast";
 import { useRouter } from "next/navigation";
 import { handleApiError } from "@/utils/error-handler";
+import { refreshCreditBalance } from "@/utils/creditBalance";
 import { scanFailureMessage } from "@/utils/scanFailure";
+import { refreshCredits } from "@/utils/creditRefresh";
 import { stateAfterError } from "@/utils/scanErrorRecovery";
 import { DAST_RERUN_NOTE, readDastRerun } from "@/utils/dastRerun";
 import { DastRunAgainButton } from "@/components/scan-run-again";
@@ -239,6 +241,11 @@ export function DASTOptionsSidebar({
       setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("ready");
     },
+    // the dispatch charged the team, or refunded a failed dispatch (utilities/dast/dispatch.py): the header follows (#13)
+    onSettled: () => {
+      refreshCredits(queryClient);
+      return refreshCreditBalance(queryClient);
+    },
   });
 
   /** Reset estimation when key scan inputs change so user must re-run estimate for new config. */
@@ -324,6 +331,11 @@ export function DASTOptionsSidebar({
     onError: (err) => {
       setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("error");
+    },
+    // a re-run can move credits (PR #57 charges the price difference): the balance shows what the server did
+    onSettled: () => {
+      refreshCredits(queryClient);
+      return refreshCreditBalance(queryClient);
     },
   });
 

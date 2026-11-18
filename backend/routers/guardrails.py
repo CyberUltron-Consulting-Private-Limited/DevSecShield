@@ -12,6 +12,7 @@ from fastapi import  APIRouter, HTTPException, Header, status, BackgroundTasks, 
 from sqlmodel import Session, select
 from rich.console import Console
 from backend.utilities.celery.celery_connection import get_celery_app
+from backend.utilities.rbac.policy import Access
 from celery.result import AsyncResult
 from backend.utilities.auth.auth_utils import get_user_from_header_or_raise_exception
 from backend.new_models import GuardrailsIntegration
@@ -27,12 +28,13 @@ from backend.utilities.team.validation import check_if_user_is_in_team
 console = Console()
 
 router = APIRouter(prefix="/guardrails", tags=["Guardrails (deprecated)"])
+access = Access(lambda: get_db())  # route policies (utilities/rbac), bound to this module's get_db (tests replace it)
 
 # revamped ✅
 # Per verified user, per worker (backend/utilities/ratelimit.py).
 read_limiter = RateLimiter("guardrails.read", times=120, seconds=60)
 write_limiter = RateLimiter("guardrails.write", times=20, seconds=60)
-@router.get("/{team_id}/integrations",summary="List all guardrails integrations for a team", deprecated=True, dependencies=[Depends(read_limiter)])
+@router.get("/{team_id}/integrations",summary="List all guardrails integrations for a team", deprecated=True, dependencies=[Depends(read_limiter), access.team("guardrails.read")])
 async def list_guardrails_integrations( 
     team_id: int,
     background_tasks: BackgroundTasks, 
@@ -86,7 +88,7 @@ async def list_guardrails_integrations(
 
 
 # revamped ✅
-@router.post("/{team_id}/integration",summary="Create a new guardrails integration for a team", deprecated=True, dependencies=[Depends(write_limiter)])
+@router.post("/{team_id}/integration",summary="Create a new guardrails integration for a team", deprecated=True, dependencies=[Depends(write_limiter), access.team("guardrails.manage")])
 async def create_guardrails_integration(
     team_id: int, 
     data: CreateGuardrailsIntegrationData, 
@@ -135,7 +137,7 @@ async def create_guardrails_integration(
 
 
 # revamped ✅
-@router.get("/{team_id}/integration/{integration_id}",summary="Get a guardrails integration", deprecated=True, dependencies=[Depends(read_limiter)])
+@router.get("/{team_id}/integration/{integration_id}",summary="Get a guardrails integration", deprecated=True, dependencies=[Depends(read_limiter), access.team("guardrails.read")])
 async def get_guardrails_integration(
     team_id: int, 
     integration_id: int, 
@@ -238,7 +240,7 @@ async def get_guardrails_integration(
 
 
 # revamped ✅
-@router.put("/{team_id}/integration/{integration_id}",summary="Update a guardrails integration", deprecated=True, dependencies=[Depends(write_limiter)])
+@router.put("/{team_id}/integration/{integration_id}",summary="Update a guardrails integration", deprecated=True, dependencies=[Depends(write_limiter), access.team("guardrails.manage")])
 async def update_guardrails_integration(
     team_id: int, 
     integration_id: int, 
@@ -300,7 +302,7 @@ async def update_guardrails_integration(
 
 
 # revamped ✅
-@router.delete("/{team_id}/integration/{integration_id}",summary="Delete a guardrails integration", deprecated=True, dependencies=[Depends(write_limiter)])
+@router.delete("/{team_id}/integration/{integration_id}",summary="Delete a guardrails integration", deprecated=True, dependencies=[Depends(write_limiter), access.team("guardrails.manage")])
 async def delete_guardrails_integration(
     team_id: int, 
     integration_id: int, 
@@ -350,7 +352,7 @@ async def delete_guardrails_integration(
 
 
 # revamped ✅
-@router.get("/{team_id}/integration/{integration_id}/settings",summary="Get the integration settings of all the scanners in the integration", deprecated=True, dependencies=[Depends(read_limiter)])
+@router.get("/{team_id}/integration/{integration_id}/settings",summary="Get the integration settings of all the scanners in the integration", deprecated=True, dependencies=[Depends(read_limiter), access.team("guardrails.read")])
 async def get_guardrails_integration_settings(
     team_id: int, 
     integration_id: int, 
@@ -384,7 +386,7 @@ async def get_guardrails_integration_settings(
 
 
 # new ✅
-@router.post("/{team_id}/integration/{integration_id}/rotate-key", summary="Rotate API key for a guardrails integration", deprecated=True, dependencies=[Depends(write_limiter)])
+@router.post("/{team_id}/integration/{integration_id}/rotate-key", summary="Rotate API key for a guardrails integration", deprecated=True, dependencies=[Depends(write_limiter), access.team("guardrails.manage")])
 async def rotate_guardrails_api_key(
     team_id: int,
     integration_id: int,

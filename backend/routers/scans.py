@@ -9,6 +9,7 @@ from fastapi import APIRouter, Form, UploadFile
 from fastapi import BackgroundTasks, Depends, HTTPException, Header, Query, Request, status
 from fastapi.responses import FileResponse, JSONResponse
 from backend.utilities.ratelimit import RateLimiter
+from backend.utilities.rbac.policy import Access
 from pydantic import ValidationError
 from sqlalchemy import update
 from sqlmodel import Session, select
@@ -17,7 +18,6 @@ from backend.get_db import get_db, get_mongo_client_db
 from backend.mongo_models import ActiveContextLog, MessageLog
 from backend.new_models import Scan
 from backend.utilities.dashboard.scan_metadata import get_scan_metadata
-from backend.utilities.team.credits import deduct_credits_from_team_for_message
 from backend.utilities.auth.auth_utils import get_user_from_header_or_raise_exception
 # from backend.utilities.celery.celery_connection import get_status_and_update_db
 from backend.utilities.db.functions import get_messages_from_scan, return_scan_list_for_type, update_status_of_scan_in_main_db 
@@ -37,10 +37,12 @@ from backend.utilities.dashboard.sbom_license import (
 )
 from backend.utilities.scan.start_scan import start_scan_and_update_db
 from backend.utilities.scan.cancel_scan import CancelRefused, cancel_scan, refunded_credits
+from backend.utilities.scan.reinitialize import ReinitializeRefused, reinitialize_scan as reinitialize_with_payload
 from backend.utilities.scan.estimate_scan import estimate_credits
 from backend.utilities.scan import credit_estimate
 from backend.utilities.team.credits import check_if_team_has_enough_credits , deduct_credits_from_team , update_scan_credit_consumed , refund_credits_to_team
 from backend.utilities.log_redaction import redact, safe_repr
+from backend.utilities.scan.format_input import require_public_targets
 from backend.utilities.db.schemas import * 
 from backend.utilities.celery.celery_connection import get_status_and_update_db
 from backend.utilities.db.encryption import decrypt_if_encrypted
@@ -50,7 +52,8 @@ from backend.utilities.dashboard.scan_list import generate_dashboard_data_for_sc
 from datetime import datetime, timezone
 
 
-router = APIRouter( tags=["scans"])   
+router = APIRouter( tags=["scans"])
+access = Access(lambda: get_db())  # route policies (utilities/rbac), bound to this module's get_db (tests replace it)
 console = Console()
 # Per verified user, per worker (backend/utilities/ratelimit.py).  Reads cover the 6-second status polling of
 # every open scan tab; finding toggles are high because bulk actions send one request per selected finding.
@@ -64,7 +67,7 @@ finding_limiter = RateLimiter("scans.finding", times=600, seconds=60)
 remediate_limiter = RateLimiter("scans.remediate", times=120, seconds=60)
     
 # revamped ✅
-@router.get("/{team_id}/{type}/scans",summary="List all scans for a team", dependencies=[Depends(read_limiter)])
+@router.get("/{team_id}/{type}/scans",summary="List all scans for a team", dependencies=[Depends(read_limiter), access.team("scan.read")])
 async def list_scans(
     team_id: int, 
     type: scan_types, 
@@ -131,7 +134,7 @@ async def list_scans(
 
     
 # revamped ✅
-@router.post("/{team_id}/{type}/scan",summary="Create a new scan", dependencies=[Depends(write_limiter)])
+@router.post("/{team_id}/{type}/scan",summary="Create a new scan", dependencies=[Depends(write_limiter), access.team("scan.create")])
 async def create_scan( 
     team_id: int,
     data: CreateScanData, 
@@ -175,7 +178,7 @@ async def create_scan(
 
 
 # revamped ✅
-@router.post("/{team_id}/{type}/scan/{scan_id}/message",summary="Send a message to a scan", dependencies=[Depends(write_limiter)])
+@router.post("/{team_id}/{type}/scan/{scan_id}/message",summary="Send a message to a scan", dependencies=[Depends(write_limiter), access.team("scan.update")])
 async def send_message_to_scan(
     team_id: int, 
     type: scan_types, 
@@ -211,7 +214,10 @@ async def send_message_to_scan(
             console.print(f"AI chat unavailable: {exc.__class__.__name__}", style="bold red")
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                                 detail="AI chat is not configured on this deployment")
-        if not check_if_team_has_enough_credits(team_id, 0.006):
+        from backend.utilities.ai import paid_chat as CHAT
+
+        # An early refusal only: the conditional debit in STEP [ 3b ] decides (#86).
+        if not check_if_team_has_enough_credits(team_id, CHAT.COST):
             return { "content" : "Team does not have enough credits to send a message" }
 
 
@@ -253,51 +259,56 @@ async def send_message_to_scan(
         messages_count = message_collection.count_documents({"scan_id": SCAN.id})
         if messages_count > MAX_MESSAGE_LIMIT:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Max message limit reached")
-        
-        message_instance = MessageLog(
-            scan_id=SCAN.id,
-            content=data.user_message,
-            type="message",
-            sender="user",
-            created_at=datetime.now(timezone.utc),
-        )
-        result = message_collection.insert_one(message_instance)
-        user_message_id = str(result.inserted_id)
-        console.print(f"User message added to mongo db" ,style="dim green")
-    
-        
-        
-        
-        # STEP [ 4 ] : =========== Add user message to the active context log ====================== ⭐
-        active_context_collection = mongo_db["active_context"]
-        active_context_instance = ActiveContextLog(
-            scan_id=SCAN.id,
-            content=data.user_message,
-            type="message",
-            sender="user",
-            created_at=datetime.now(timezone.utc),
-        )
-        result = active_context_collection.insert_one(active_context_instance)
-        active_context_message_id = str(result.inserted_id)
-        console.print(f"User message added to active context log with id: {active_context_message_id}" ,style="dim green")
+
+        # STEP [ 3b ] : =========== Charge the message before anything is stored or the model is called (#86) ===== ⭐
+        # One conditional debit and its credit ledger row, in one transaction (utilities/ai/paid_chat.py): however
+        # many messages arrive at once, the model answers only as many as the balance pays for. Every failure before
+        # the answer comes back (including a cancelled request) refunds the message once.
+        message_oid = ObjectId()  # the message's id in message_log and in its ledger rows
+        try:
+            CHAT.charge(engine, team_id, str(message_oid))
+            message_instance = MessageLog(
+                _id=message_oid,
+                scan_id=SCAN.id,
+                content=data.user_message,
+                type="message",
+                sender="user",
+                created_at=datetime.now(timezone.utc),
+            )
+            result = message_collection.insert_one(message_instance)
+            user_message_id = str(result.inserted_id)
+            console.print(f"User message added to mongo db" ,style="dim green")
 
 
-        
-        
-        
-        # STEP [ 5 ] : =========== Get the response from the model ======================
-        AI_RESPONSE = await create_response(
-            mongo_db=mongo_db,
-            scan_id=SCAN.id,
-            scan_type=type,
-            scan_results=json.dumps(SCAN_DATA, default=str),
-            content=data.user_message,
-            role="human", # doesnt get saved to any db , jsut for functional clarity 
-        )
+            # STEP [ 4 ] : =========== Add user message to the active context log ====================== ⭐
+            active_context_collection = mongo_db["active_context"]
+            active_context_instance = ActiveContextLog(
+                scan_id=SCAN.id,
+                content=data.user_message,
+                type="message",
+                sender="user",
+                created_at=datetime.now(timezone.utc),
+            )
+            result = active_context_collection.insert_one(active_context_instance)
+            active_context_message_id = str(result.inserted_id)
+            console.print(f"User message added to active context log with id: {active_context_message_id}" ,style="dim green")
 
 
-        # STEP [ 6 ] : =========== Deduct credits for message for team  ====================== ⭐
-        deduct_credits_from_team_for_message(team_id)
+            # STEP [ 5 ] : =========== Get the response from the model (already paid for) ======================
+            AI_RESPONSE = await create_response(
+                mongo_db=mongo_db,
+                scan_id=SCAN.id,
+                scan_type=type,
+                scan_results=json.dumps(SCAN_DATA, default=str),
+                content=data.user_message,
+                role="human", # doesnt get saved to any db , jsut for functional clarity 
+            )
+        except CHAT.InsufficientCredits:  # the debit was refused: nothing was charged, stored or sent to the model
+            return { "content" : "Team does not have enough credits to send a message" }
+        except BaseException as failure:
+            # once, and only for a charge that committed (a charge that raised may or may not have: the ledger knows)
+            CHAT.refund_unanswered(engine, team_id, str(message_oid), failure)
+            raise
 
 
         return AI_RESPONSE
@@ -311,7 +322,7 @@ async def send_message_to_scan(
 
 
 # revamped ✅
-@router.get("/{team_id}/{type}/scan/{scan_id}",summary="Get the scan status of a scan conversation", dependencies=[Depends(read_limiter)])
+@router.get("/{team_id}/{type}/scan/{scan_id}",summary="Get the scan status of a scan conversation", dependencies=[Depends(read_limiter), access.team("scan.read")])
 async def get_scan(
     type: scan_types, 
     scan_id: int, 
@@ -459,8 +470,7 @@ async def get_scan(
 
 
 def _payload_section(start_scan_payload: StartScanPayload, scan_type: str) -> dict:
-    section = getattr(start_scan_payload, scan_type, None)
-    return section.model_dump(mode="json") if section is not None and hasattr(section, "model_dump") else {}
+    return credit_estimate.payload_section(start_scan_payload, scan_type)
 
 
 async def _read_upload(uploaded_file: UploadFile | None) -> bytes | None:
@@ -527,7 +537,7 @@ def _release_scan_claim(engine, scan_id: int, team_id: int) -> None:
 
 
 # revamped ✅
-@router.post("/{team_id}/{type}/scan/{scan_id}/start",summary="Start a scan", dependencies=[Depends(start_limiter)])
+@router.post("/{team_id}/{type}/scan/{scan_id}/start",summary="Start a scan", dependencies=[Depends(start_limiter), access.team("scan.run")])
 async def start_scan(
     type: scan_types,
     scan_id: int,
@@ -628,6 +638,9 @@ async def start_scan(
         # scan is re-estimated here, before any credit moves. D3: CBOM code scans cost at least 1 credit.
         section = _payload_section(start_scan_payload, type)
         try:
+            # #53: an MCP server URL / custom model URI must resolve to public addresses before any credit moves (a
+            # stored estimate for this input is charged below without being re-run; the name may resolve elsewhere now)
+            await require_public_targets(type, start_scan_payload)
             measured = credit_estimate.input_digest(type, section, await _read_upload(uploaded_file))
             if credit_estimate.needs_reestimate(stored_estimate, measured):
                 console.print(f"Scan {scan_id}: input or formula changed since the estimate; re-estimating", style="bold yellow")
@@ -707,7 +720,7 @@ async def start_scan(
 
 
 @router.post("/{team_id}/{type}/scan/{scan_id}/cancel", summary="Cancel a pending or running code scan",
-             dependencies=[Depends(write_limiter)])
+             dependencies=[Depends(write_limiter), access.team("scan.run")])
 async def cancel_scan_route(
     type: scan_types,
     scan_id: int,
@@ -741,7 +754,7 @@ async def cancel_scan_route(
 
 
 # revamped ✅
-@router.delete("/{team_id}/{type}/scan/{scan_id}",summary="Delete a scan conversation", dependencies=[Depends(write_limiter)])
+@router.delete("/{team_id}/{type}/scan/{scan_id}",summary="Delete a scan conversation", dependencies=[Depends(write_limiter), access.team("scan.update")])
 async def delete_scan(
     type: scan_types, 
     scan_id: int, 
@@ -812,7 +825,7 @@ async def delete_scan(
 
 
 # revamped ✅
-@router.put("/{team_id}/{type}/scan/{scan_id}",summary="Update a scan . Use this for renaming the scan", dependencies=[Depends(write_limiter)])
+@router.put("/{team_id}/{type}/scan/{scan_id}",summary="Update a scan . Use this for renaming the scan", dependencies=[Depends(write_limiter), access.team("scan.update")])
 async def update_scan(
     type: scan_types, 
     scan_id: int, 
@@ -891,7 +904,7 @@ async def update_scan(
 
 
 # revamped ✅
-@router.get("/{team_id}/{type}/scan/{scan_id}/export",summary="Export the results of a scan", dependencies=[Depends(write_limiter)])
+@router.get("/{team_id}/{type}/scan/{scan_id}/export",summary="Export the results of a scan", dependencies=[Depends(write_limiter), access.team("scan.read")])
 async def export_scan(
     type: scan_types, 
     scan_id: int, 
@@ -955,7 +968,7 @@ async def export_scan(
 
 
 # revamped ✅
-@router.post("/{team_id}/{type}/scan/{scan_id}/reinitialize",summary="Reinitialize a scan", dependencies=[Depends(start_limiter)])
+@router.post("/{team_id}/{type}/scan/{scan_id}/reinitialize",summary="Reinitialize a scan", dependencies=[Depends(start_limiter), access.team("scan.run")])
 async def reinitialize_scan(
     type: scan_types,
     scan_id: int, 
@@ -964,15 +977,29 @@ async def reinitialize_scan(
     uploaded_file: UploadFile | None = None,
     Authorization: Annotated[str | None, Header()] = None ):
     """
-    Reinitialize a scan.
+    Replace the queued run of a dispatched scan the worker has not picked up yet with a run of this input (#33).
+
+    The input is priced like a new scan's and the scan pays the positive difference against what it has already paid
+    (never a refund for a cheaper input), recorded in the credits ledger; the same input costs nothing. The target
+    checks of a new scan run before any credit moves. Refusals, each with a stable ``code``:
+
+    * 402 ``insufficient_credits``: the balance does not cover the difference (nothing charged or sent);
+    * 409 ``not_pending``: the scan is not waiting in the queue (not started yet, picked up by the worker, finished,
+      failed or cancelled), whenever that is seen (nothing charged or sent);
+    * 409 ``starting``: /start or another reinitialize is still sending this scan's run; try again (nothing charged);
+    * 409 ``reinitialize_conflict``: the scan changed while this request priced it (nothing charged or sent);
+    * 409 ``superseded``: the scan was cancelled, or this request's claim was rolled back as stale, while its run was
+      being sent (the run is withdrawn; a cancel refunds everything, a rollback refunds this request's charge);
+    * 400 (wrong owner, a type that cannot be reinitialized) / 404, and 400/413/422 for the input, as for a new scan.
+
+    Rules and races: utilities/scan/reinitialize.py.
     """
     try:
         # STEP [ 0 ] : =========== Get the engine and user ======================
         engine = get_db()
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
-        # user = User(id=1) # for testing purposes
 
-        # -----------------> get start scan payload from the json formatted string in start_scan_payload_string -----------------
+        # -----------------> the payload; its validators are the git host allow-list -----------------
         try:
             start_scan_payload = StartScanPayload.model_validate_json(start_scan_payload_string)
         except ValidationError as ve:
@@ -980,35 +1007,19 @@ async def reinitialize_scan(
 
         # STEP [ 1 ] : =========== Check if user is in team ======================
         check_if_user_is_in_team(user.id, team_id, engine)
-        
 
-        
-        
-        # STEP [ 2 ] : =========== Validate getting the conversation from the main db ======================
-        with Session(engine) as session:
-            scan = None
-            scan = session.exec(select(Scan).where(Scan.id == scan_id).where(Scan.team_id == team_id).where(Scan.scan_type == type)).first()
-            if scan==None:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found or User not allowed to start this scan")
-            if scan.scan_status != "pending" : 
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan is not pending, cannot reinitialize")
-            if scan.owner_user_id != user.id: # only the user who created the scan can reinitialize the scan ⭐
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You do not have permission to reinitialize this scan")
-            
-        
-        # STEP [ 3 ] : =========== Reinitialize the scan and update the main db ======================
-        await start_scan_and_update_db(
-            scan_id=scan_id,
-            start_scan_payload=start_scan_payload,
-            team_id=team_id,
-            engine=engine,
+        # STEP [ 2 ] : =========== price, check, claim + charge, send (one place: utilities/scan/reinitialize.py) =====
+        return await reinitialize_with_payload(
+            engine,
             scan_type=type,
+            scan_id=scan_id,
+            team_id=team_id,
+            user_id=user.id,
+            start_scan_payload=start_scan_payload,
             uploaded_file=uploaded_file,
         )
-
-        return {
-            "message": "Scan reinitialized successfully",
-        }
+    except ReinitializeRefused as refused:
+        return JSONResponse(status_code=refused.status_code, content=refused.body())
     except Exception as e:
         console.print(f"Error in reinitializing {type} scan: {redact(str(e))}",style="bold red", markup=False)
         if isinstance(e,HTTPException):
@@ -1020,7 +1031,7 @@ async def reinitialize_scan(
 
 
 # new route ✅
-@router.post("/{team_id}/{type}/scan/{scan_id}/estimate_credits",summary="Estimate the credits for a scan", dependencies=[Depends(start_limiter)])
+@router.post("/{team_id}/{type}/scan/{scan_id}/estimate_credits",summary="Estimate the credits for a scan", dependencies=[Depends(start_limiter), access.team("scan.run")])
 async def estimate_credits_for_scan(
     type: scan_types,
     scan_id: int, 
@@ -1095,7 +1106,7 @@ async def estimate_credits_for_scan(
 
 
 # revamped ✅
-@router.post("/{team_id}/{type}/scan/{scan_id}/create_ticket",summary="Create a ticket for a scan", dependencies=[Depends(write_limiter)])
+@router.post("/{team_id}/{type}/scan/{scan_id}/create_ticket",summary="Create a ticket for a scan", dependencies=[Depends(write_limiter), access.team("finding.triage")])
 async def create_ticket(
     type: scan_types, 
     scan_id: int, 
@@ -1200,7 +1211,7 @@ async def create_ticket(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in creating ticket for scan , please try again later")
 
 
-@router.post("/{team_id}/{type}/scan/{scan_id}/finding",summary="Toggle finding state between fixed | ignored | in_progress | not_started ", dependencies=[Depends(finding_limiter)]) 
+@router.post("/{team_id}/{type}/scan/{scan_id}/finding",summary="Toggle finding state between fixed | ignored | in_progress | not_started ", dependencies=[Depends(finding_limiter), access.team("finding.triage")]) 
 async def toggle_finding_state(
     type: scan_types,
     scan_id: int,
@@ -1266,7 +1277,7 @@ async def toggle_finding_state(
 
 
 @router.post("/{team_id}/{type}/scan/{scan_id}/finding/{finding_id}/remediate",
-             summary="Generate AI remediation (fix code + exploit payload) for a finding", dependencies=[Depends(remediate_limiter)])
+             summary="Generate AI remediation (fix code + exploit payload) for a finding", dependencies=[Depends(remediate_limiter), access.team("finding.remediate")])
 async def generate_finding_remediation(
     request: Request,
     team_id: int,

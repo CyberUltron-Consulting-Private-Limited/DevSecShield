@@ -122,7 +122,7 @@ def test_only_a_team_admin_and_only_for_this_teams_source_and_job(api, world):  
     src = _tofu_source(api, node_id)
     job_id, _ = _run_test(api, token, src["id"], CHANGED)
     member = _decide(api, src["id"], who="bob", job_id=job_id, target="10.232.0.102", action="forget")
-    assert member.status_code == 400 and "team admin" in member.json()["detail"]
+    assert member.status_code == 403 and "team admin" in member.json()["detail"]  # F4 route policy (was 400)
     other_team = api("POST", f"/2/cbom/sources/items/{src['id']}/host-key-resets", "carol",
                      json={"job_id": job_id, "target": "10.232.0.102", "action": "forget"})
     assert other_team.status_code == 404

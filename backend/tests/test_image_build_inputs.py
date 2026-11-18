@@ -53,6 +53,6 @@ def test_backend_image_secret_check_covers_every_copied_tree():
     backend = (REPO / "backend" / "Dockerfile").read_text()
     copied = set(re.findall(r"^COPY --from=(?:migrations|aibom) \S+ (/[a-z_]+)(?:/|\s|$)", backend, re.MULTILINE))
     assert copied == {"/prod_database_migrations", "/opt"}, copied
-    line = re.search(r"^  assert_no_secrets backend (.+)$", BUILD, re.MULTILINE)
+    line = re.search(r"^\s+assert_no_secrets backend (.+)$", BUILD, re.MULTILINE)
     assert line, "build_images.sh does not check the backend image"
     assert set(line.group(1).split()) == {"/backend", "/prod_database_migrations", "/opt/aibom"}

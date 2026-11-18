@@ -63,7 +63,7 @@ def test_admin_only_secrets_write_only_and_cleared_when_the_destination_changes(
     listed = api("GET", "/1/integrations").json()
     assert [i["kind"] for i in listed["integrations"]] == ["servicenow", "syslog", "splunk_hec", "webhook", "oscal"]
     assert "hmac.new" in listed["webhook_verify_snippet"]
-    assert api("PUT", "/1/integrations/webhook", "bob", json=HOOK).status_code == 400  # member: never 403
+    assert api("PUT", "/1/integrations/webhook", "bob", json=HOOK).status_code == 403  # member: the route policy refuses (F4 RBAC)
     assert api("PUT", "/1/integrations/nope", json=HOOK).status_code == 404
     r = api("PUT", "/1/integrations/webhook", json=HOOK)
     assert r.status_code == 200, r.text
@@ -85,7 +85,7 @@ def test_admin_only_secrets_write_only_and_cleared_when_the_destination_changes(
     assert api("GET", "/2/integrations", "carol").json()["integrations"][3]["configured"] is False  # tenancy
     for text in api.seen:
         assert CANARY not in text
-    assert api("DELETE", "/1/integrations/webhook", "bob").status_code == 400
+    assert api("DELETE", "/1/integrations/webhook", "bob").status_code == 403  # admins only: the route policy refuses a member (F4 RBAC)
     assert api("DELETE", "/1/integrations/webhook").json() == {"deleted": "webhook"}
 
 
@@ -114,7 +114,7 @@ def test_test_button_goes_through_the_ssrf_guard(api, monkeypatch):
     listed = {i["kind"]: i for i in api("GET", "/1/integrations").json()["integrations"]}
     assert listed["syslog"]["last_test"]["status"] == "failed"
     assert api("POST", "/1/integrations/splunk_hec/test").status_code == 400  # not saved yet
-    assert api("POST", "/1/integrations/webhook/test", "bob").status_code == 400
+    assert api("POST", "/1/integrations/webhook/test", "bob").status_code == 403  # admins only: the route policy refuses a member (F4 RBAC)
 
 
 def test_a_udp_syslog_test_is_sent_unconfirmed_never_passed(api, monkeypatch):
@@ -218,7 +218,7 @@ def test_rejected_events_go_to_the_dead_letter_list_and_can_be_retried(api, worl
     assert out["dead"] == 1 and out["delivered"] == 2  # the queue moved on past the rejected event
     dead = api("GET", "/1/integrations/deliveries?status=dead").json()["deliveries"]
     assert len(dead) == 1 and dead[0]["result"] == "HTTP 400"
-    assert api("POST", "/1/integrations/deliveries/retry", "bob", json={"ids": [dead[0]["id"]]}).status_code == 400
+    assert api("POST", "/1/integrations/deliveries/retry", "bob", json={"ids": [dead[0]["id"]]}).status_code == 403  # admins only: the route policy refuses a member (F4 RBAC)
     assert api("POST", "/1/integrations/deliveries/retry", json={}).status_code == 400
     r = api("POST", "/1/integrations/deliveries/retry", json={"kind": "webhook", "all_dead": True})
     assert r.json() == {"requeued": 1}

@@ -68,6 +68,10 @@ def _mcp_failure(text: str) -> HTTPException:
     (helpers/tools/mcp_agent/mcp_client.py); an older worker's ExceptionGroup text is read for the same facts. Only
     fixed sentences and the status code are returned, never the server's answer."""
     lowered = text.lower()
+    if "address not allowed" in lowered:  # #53: the worker's connect-time address rule (DNS changed, or a redirect)
+        return HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                             detail="The MCP server URL resolves to, or redirected to, a private or reserved address. "
+                                    "Scans connect to public addresses only.")
     code = _MCP_HTTP_STATUS.search(text)
     if code:
         return HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
