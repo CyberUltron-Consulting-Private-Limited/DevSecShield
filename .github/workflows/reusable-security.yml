@@ -11,10 +11,12 @@
 # There is no secret scanning: the owner removed the gitleaks / GitGuardian job on 2026-11-12 (private repository on
 # the Enterprise plan). .gitleaks.toml and .gitleaksignore stay in the repository, but no workflow runs them.
 #
-# Gating ("diff" mode, the default for pull requests and pushes): a tool fails the job only on findings the change
-# ADDS. Each scanner also runs on the base commit and the two result sets are compared, ignoring line numbers, so
-# existing debt is reported but does not block unrelated work. Semgrep uses its own --baseline-commit.
-# "full" mode (schedule, workflow_dispatch, or a push with no usable base) scans everything and only reports.
+# Gating ("diff" mode, the default for pull requests, merge-queue entries and pushes): a tool fails the job only on
+# findings the change ADDS. Each scanner also runs on the base commit and the two result sets are compared, ignoring
+# line numbers, so existing debt is reported but does not block unrelated work. Semgrep uses its own
+# --baseline-commit. "full" mode (schedule, workflow_dispatch, or a push with no usable base) scans everything and
+# only reports. A pull request or merge-queue entry whose base commit is not in the checkout is scanned in full mode
+# too, for the reports, and then fails the job at its last step: without a base nothing was gated.
 #
 # Every tool writes SARIF (ShellCheck and actionlint write JSON / text). All reports are uploaded as the
 # `security-reports-scanners` artifact. Set `upload-sarif: true` to also send SARIF to GitHub code scanning; that
@@ -29,7 +31,7 @@ on:
   workflow_call:
     inputs:
       mode:
-        description: auto (PR / push -> diff, otherwise full), diff, or full.
+        description: auto (PR / merge queue / push -> diff, otherwise full), diff, or full.
         type: string
         default: auto
       exclude-regex:
@@ -142,8 +144,9 @@ on:
 # No workflow-level permissions: every job sets its own, and upload-sarif inherits what the caller grants.
 
 env:
-  # PR: the base branch commit. Push: the commit before the push. Empty otherwise.
-  BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || (github.event_name == 'push' && github.event.before || '') }}
+  # PR: the base branch commit. Merge queue: the target branch commit the queue entry is built on (#70). Push: the
+  # commit before the push. Empty otherwise.
+  BASE_SHA: ${{ (github.event_name == 'pull_request' && github.event.pull_request.base.sha) || (github.event_name == 'merge_group' && github.event.merge_group.base_sha) || (github.event_name == 'push' && github.event.before) || '' }}
   HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
   REQUESTED_MODE: ${{ inputs.mode }}
 
@@ -172,11 +175,15 @@ jobs:
           if [ "$mode" = diff ]; then
             if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = 0000000000000000000000000000000000000000 ] \
                || ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
-              if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
-                # A pull request always has a base; without it nothing could be gated, so this is not a pass.
-                echo "::error::the pull request's base commit ${BASE_SHA:-?} is not in the checkout; cannot gate"; exit 1
+              if [ "$GITHUB_EVENT_NAME" = pull_request ] || [ "$GITHUB_EVENT_NAME" = merge_group ]; then
+                # A pull request and a merge-queue entry always have a base; without it nothing can be gated, so the
+                # run must not pass. The tree is still scanned in full mode for the reports, and the job's last step
+                # ("Fail without a base commit") fails the job.
+                echo "::error::the ${GITHUB_EVENT_NAME} event's base commit ${BASE_SHA:-?} is not in the checkout; cannot gate. Scanning in full mode for the reports; the job fails at its last step."
+                echo "BASE_MISSING=true" >> "$GITHUB_ENV"
+              else
+                echo "::notice::No usable base commit (event ${GITHUB_EVENT_NAME}); scanning in full mode (report only)."
               fi
-              echo "::notice::No usable base commit (event ${GITHUB_EVENT_NAME}); scanning in full mode (report only)."
               mode="full"
             fi
           fi
@@ -659,6 +666,17 @@ jobs:
           path: security-reports/
           if-no-files-found: ignore
           retention-days: 14
+
+      - name: Fail without a base commit
+        # A pull request or merge-queue run whose base commit is not in the checkout was scanned in full mode for the
+        # reports (the Scope step). Nothing was compared with a base, so the run must not pass. Last, so that the
+        # scanners, the summary and the report upload run first.
+        if: always()
+        run: |
+          if [ "${BASE_MISSING:-}" = true ]; then
+            echo "::error::the ${GITHUB_EVENT_NAME} event's base commit ${BASE_SHA:-?} was not in the checkout, so nothing was gated and this run fails (the full-scan reports are in the security-reports-scanners artifact)"
+            exit 1
+          fi
 
   upload-sarif:
     # Only when asked: GitHub code scanning must be available, and the caller must grant security-events: write.
