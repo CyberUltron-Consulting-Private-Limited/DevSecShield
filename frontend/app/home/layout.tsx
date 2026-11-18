@@ -50,7 +50,7 @@ import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { getTeams, createTeam, type TeamListItem, type CreateTeamData } from "@/utils/backend_api";
 import { showErrorToast } from "@/utils/error-handler";
 import { MobileNavBar } from "@/components/mobile-nav-bar";
-// the team pages' user menu: Account and Sign out (#14: this layout had its own, "Logout" only)
+// the shared user menu: Account and Sign out (#14: this layout had its own, "Logout" only)
 import { UserMenu } from "@/components/user-menu";
 
 function CreateTeamTriggerWithDialog() {

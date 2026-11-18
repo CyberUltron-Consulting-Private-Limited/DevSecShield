@@ -2,8 +2,8 @@
  * #15: Admin > Create admin user said the new user "will receive an email with their credentials". The server
  * (POST /admin/create_admin_user, backend routers/admin.py) mails a single-use "choose your password" link and never a
  * password, and the password typed in the dialog is temporary: signing in with it asks for a new one first
- * (must_change_password, backend routers/auth.py). The dialog now says that.
- * Failing-first on origin/dev 1884f564: the dialog said "They will receive an email with their credentials."
+ * (must_change_password, backend routers/auth.py). The dialog now says that. The field is labeled Temporary password,
+ * and the title and field carry the admin info tips.
  * Browser check: as a superuser, Admin > Create admin user: the dialog describes the link and the temporary password.
  * Run: npx --yes tsx@4.23.15 utils/adminCreateUser.test.ts
  */
@@ -19,9 +19,14 @@ const description = dialog.slice(dialog.indexOf("<DialogDescription"), dialog.in
   .replace(/^<DialogDescription[^>]*>/, "").replace(/\s+/g, " ").trim();
 
 assert.ok(!/credential/i.test(description), `still says the credentials are emailed: ${description}`);
+assert.ok(!/email with (their|the) password/i.test(description));
 assert.ok(description.includes("a single-use link to choose their own password"), description);
 assert.ok(description.includes("never contains a password"), description);
 assert.ok(description.includes("The password you set here is temporary"), description);
+assert.ok(description.includes("they must choose a new one"), description);
+assert.ok(dialog.includes('InfoTip id="admin.create_user"'), "the dialog title keeps its info tip");
+assert.ok(dialog.includes('infoId="admin.password"') && dialog.includes(">Temporary password</FieldLabel>"),
+  "the field says the password is temporary and keeps its info tip");
 
 // what the server does, so the copy and the code cannot drift apart
 const admin = fs.readFileSync(path.join(root, "..", "backend", "routers", "admin.py"), "utf8");
