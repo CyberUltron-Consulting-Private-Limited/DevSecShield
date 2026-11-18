@@ -117,17 +117,17 @@ def test_no_scan_api_returns_a_header_value_for_an_old_row_or_a_new_one():
 def test_the_published_task_message_has_redacted_reprs_and_the_worker_still_gets_the_headers(monkeypatch):
     """``kwargsrepr`` is what Celery prints for a task (worker log records, ``celery events``, Flower); the body is
     what the worker runs with."""
-    import socket
-
     from celery import Celery
     from celery.signals import after_task_publish
+
+    # #53: the MCP server and model hosts must resolve to public addresses; .test names never resolve (RFC 6761)
+    import socket
+    monkeypatch.setattr(socket, "getaddrinfo", lambda host, port, *a, **k: [
+        (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port))])
 
     import backend.utilities.celery.celery_connection  # noqa: F401  (every backend publisher imports it)
     from backend.utilities.scan.format_input import format_input_for_scan
 
-    # .test names never resolve (RFC 6761); the address check needs a public answer
-    monkeypatch.setattr(socket, "getaddrinfo", lambda host, port, *a, **k: [
-        (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port))])
     s = _fresh()
     kwargs = asyncio.run(format_input_for_scan("mcp", _payload(_headers(s))))
     published = []
@@ -178,11 +178,11 @@ def test_the_migration_chains_onto_the_one_head():
     for path in VERSIONS.glob("*.py"):
         text = path.read_text()
         rev = re.search(r"^revision(?::\s*str)?\s*=\s*['\"]([^'\"]+)['\"]", text, re.M)
-        down_line = re.search(r"^down_revision\b.*", text, re.M)
+        down = re.search(r"^down_revision[^=]*=\s*(.+)$", text, re.M)
         if rev:
             revisions.add(rev.group(1))
-        if down_line:
-            parents.update(re.findall(r"['\"]([^'\"]+)['\"]", down_line.group(0)))
+        if down:
+            parents.update(re.findall(r"""['"]([^'"]+)['"]""", down.group(1)))
     assert mod.down_revision in revisions
     assert len(revisions - parents) == 1 and (revisions - parents == {"d44mcphdr001"} or "d44mcphdr001" in parents)
 

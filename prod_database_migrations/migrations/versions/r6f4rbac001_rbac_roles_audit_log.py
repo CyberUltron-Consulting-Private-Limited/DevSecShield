@@ -1,7 +1,7 @@
 """team roles owner / admin / member / viewer, invitation roles, append-only audit log (F4 RBAC)
 
 Revision ID: r6f4rbac001
-Revises: d44mcphdr001, r6t2ledger001 (dev's two heads, both of which revise r6f3repo001; joined here so there is one head)
+Revises: r6f11node001 (the node API migration already joined d44mcphdr001 and r6t2ledger001)
 Create Date: 2026-11-11 14:00:00.000000
 
 Roles: existing memberships keep their role (admin -> admin, member -> member); superusers are unchanged.  Every
@@ -29,7 +29,7 @@ import sqlmodel
 
 
 revision: str = 'r6f4rbac001'
-down_revision: Union[str, Sequence[str], None] = ('d44mcphdr001', 'r6t2ledger001')
+down_revision: Union[str, Sequence[str], None] = 'r6f11node001'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

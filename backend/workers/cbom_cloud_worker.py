@@ -15,8 +15,9 @@ a job another worker re-claimed.  An AWS collection is split into one slice per 
 finish for ``CBOM_CLOUD_SHUTDOWN_GRACE_S`` (default 20 s), then give their leases back so another replica takes
 them at once (a second signal releases at once).  Logs: ``cloud claim`` / ``cloud finish`` per job (team, job,
 account, region, ms, outcome) and ``cloud queue`` (depth and age) every ``CBOM_CLOUD_QUEUE_LOG_S`` (default 60 s).
-It also runs the job reaper for every team once a minute, so jobs no node or worker will finish are refunded on
-time.
+It also runs the job reaper for every team every 30 s on its own thread (a long collection never delays it), so a
+dead scan node's job goes back to the queue when its lease expires, refunds owed are settled, and jobs no node or
+worker will finish are refunded on time (F1.1).
 """
 from __future__ import annotations
 
@@ -34,11 +35,13 @@ from sqlmodel import Session
 
 from backend.get_db import get_db
 from backend.utilities.cbom_sources import jobs as J
+from backend.utilities.cbom_sources import node_auth as NA
 from backend.utilities.cbom_sources.common import frames, log, new_ref, utcnow
 from backend.utilities.cbom_sources.settings import get_or_create_settings
 
 BATCH = 500
-REAP_EVERY_S = 60
+REAP_EVERY_S = 30  # lease expiry, max runtime, unconfirmed cancels and pending TTLs for every team (F1.1)
+REAP_PASSES = 20  # a pass handles up to jobs.REAP_BATCH jobs per rule; a backlog is drained in up to this many passes
 IDLE_SLEEP_S = 5
 RELEASED = "Released: the cloud worker is shutting down"
 _stop = threading.Event()  # SIGTERM: claim nothing more
@@ -480,9 +483,79 @@ def run_once(engine, worker: str) -> bool:
     return True
 
 
-def reap_all(engine) -> None:
+_PASSES = [0]
+SUMMARY_EVERY = 10  # a reaper summary line at least every this many passes (and whenever anything changed)
+
+
+def _queue_facts(session, now) -> dict:
+    """Queue depth for the summary line, read through the partial indexes (pending, claimed, refund-due)."""
+    from sqlalchemy import func
+    from sqlmodel import select
+
+    from backend.new_models import CbomCollectionJob as Job
+
+    pending = session.exec(select(func.count()).select_from(Job).where(Job.status == "pending")).one()
+    claimed = session.exec(select(func.count()).select_from(Job).where(Job.status == "claimed")).one()
+    oldest = session.exec(select(func.min(Job.created_at)).where(Job.status == "pending")).one()
+    return {"pending": int(pending), "claimed": int(claimed),
+            "oldest_pending_s": int((now - oldest).total_seconds()) if oldest else None,
+            "refund_backlog": J.refund_backlog(session)}
+
+
+def reap_all(engine) -> int:
+    """One reaper pass over every team: lease and age rules (each rule reads only its jobs, through partial indexes,
+    committed every ``REAP_COMMIT_EVERY`` jobs), the run reconcile, refund settlement (one statement per run with a
+    refund due, so credits come back within one pass, about 30 s), and the protocol-1 nonce sweep (moved here from
+    the heartbeat, DA E4).  Logs ``reap pass ...`` when anything changed, and every ``SUMMARY_EVERY`` passes."""
+    moved = 0
+    stats: dict[str, int] = {}
+    settled = {"jobs": 0, "centi": 0}
+    swept = 0
+    for _ in range(REAP_PASSES):
+        with Session(engine) as session:
+            now = utcnow()
+            try:
+                n = J.reap(session, now, commit_every=J.REAP_COMMIT_EVERY, stats=stats)
+                session.commit()
+            except Exception as exc:  # a database hiccup: the next tick tries again
+                session.rollback()
+                log("reap FAILED", ref=new_ref(), error=type(exc).__name__)
+                return moved
+        moved += n
+        if n < J.REAP_BATCH:
+            break
     with Session(engine) as session:
-        J.safe_reap(session, utcnow())
+        now = utcnow()
+        try:
+            out = J.settle_refunds(session)
+            session.commit()
+            settled = {"jobs": out["jobs"], "centi": out["centi"]}
+            swept = NA.sweep_nonces(session, now, every_s=0)
+            session.commit()
+            _PASSES[0] += 1
+            if moved or settled["jobs"] or _PASSES[0] % SUMMARY_EVERY == 0:
+                log("reap pass", at=int(time.time()), moved=moved, lease_expired=stats.get("lease_expired", 0),
+                    expired=stats.get("expired", 0), max_runtime=stats.get("max_runtime", 0),
+                    cancel_unconfirmed=stats.get("cancel_unconfirmed", 0), refunds_settled=settled["jobs"],
+                    refunded_c=settled["centi"], nonces_swept=swept, **_queue_facts(session, now))
+        except Exception as exc:
+            session.rollback()
+            log("reap settle FAILED", ref=new_ref(), error=type(exc).__name__)
+    return moved
+
+
+def start_reaper(engine) -> threading.Event:
+    """Reap on its own thread: the job loop can be busy with one AWS collection for hours, and a dead scan node's job
+    must still go back to the queue when its lease expires."""
+    stop = threading.Event()
+
+    def loop() -> None:
+        while not stop.is_set():
+            reap_all(engine)
+            stop.wait(REAP_EVERY_S)
+
+    threading.Thread(target=loop, name="cbom-reaper", daemon=True).start()
+    return stop
 
 
 def log_queue(engine, worker: str) -> None:
@@ -541,12 +614,11 @@ def main() -> None:
                for i in range(workers)]
     for thread in threads:
         thread.start()
+    # the reaper runs on its own thread (F1.1): lease expiry, refunds owed and run reconcile never wait on this loop
+    reaper_stop = start_reaper(engine)
     queue_every = _env_int("CBOM_CLOUD_QUEUE_LOG_S", 60, 0, 86_400)
-    last_reap = last_queue = 0.0
+    last_queue = 0.0
     while not _stop.is_set():
-        if time.monotonic() - last_reap >= REAP_EVERY_S:
-            reap_all(engine)
-            last_reap = time.monotonic()
         if queue_every and time.monotonic() - last_queue >= queue_every:
             try:
                 log_queue(engine, host)
@@ -556,6 +628,7 @@ def main() -> None:
         _stop.wait(1.0)
     for thread in threads:
         thread.join()
+    reaper_stop.set()
     if scheduler_stop is not None:
         scheduler_stop.set()
     if dispatcher_stop is not None:

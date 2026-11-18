@@ -322,11 +322,11 @@ def test_migration_is_the_one_head():
     for path in VERSIONS.glob("*.py"):
         text = path.read_text()
         rev = re.search(r"^revision(?::\s*str)?\s*=\s*['\"]([^'\"]+)['\"]", text, re.M)
-        down_line = re.search(r"^down_revision\b.*", text, re.M)
+        down = re.search(r"^down_revision[^=]*=\s*(.+)$", text, re.M)
         if rev:
             revisions.add(rev.group(1))
-        if down_line:
-            parents.update(re.findall(r"['\"]([^'\"]+)['\"]", down_line.group(0)))
+        if down:
+            parents.update(re.findall(r"""['"]([^'"]+)['"]""", down.group(1)))
     assert mod.revision == "cb23q0gap001" and mod.down_revision in revisions
     # one head; later revisions (CB-23 PR-B cb23register001, then CB-25 cb25agility001) chain after this one
     assert len(revisions - parents) == 1 and ("cb23q0gap001" in parents or revisions - parents == {"cb23q0gap001"})
