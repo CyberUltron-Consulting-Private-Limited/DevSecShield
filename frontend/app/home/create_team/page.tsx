@@ -30,7 +30,8 @@ export default function CreateTeamPage() {
       queryClient.invalidateQueries({ queryKey: ["teams"] });
       router.push(`/${data.team_id}`);
     },
-    onError: (error) => showErrorToast(error),
+    // the one error toast: createTeam only throws a refusal (#27)
+    onError: (error) => showErrorToast(error, "Error creating team"),
   });
 
   const handleSubmit = (e: React.FormEvent) => {

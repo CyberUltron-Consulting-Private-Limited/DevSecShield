@@ -19,7 +19,7 @@ const TEXT = {
     why: "Renaming keeps lists and reports readable without rerunning or losing anything.",
     example: "payments-api before the PCI audit.",
   },
-  // src: frontend/app/[team_id]/sast/page.tsx:1259 — case-insensitive match on the title, in the loaded list
+  // src: frontend/app/[team_id]/sast/page.tsx:1242 — case-insensitive match on the title, in the loaded list
   "scan.filter.search": {
     what: "Shows only the scans whose title contains this text (upper or lower case does not matter). It filters the list already loaded in this page.",
     why: "Finds one scan quickly in a long list without scrolling.",

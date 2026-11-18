@@ -1684,7 +1684,8 @@ export default function SbomResults({ data, conversationId, teamId, dashboard, f
     mutationFn: () => {
       const tid = teamId ? parseInt(teamId, 10) : NaN;
       if (conversationId == null || Number.isNaN(tid)) throw new Error("Missing team or scan");
-      return getSBOMExportResults(tid, conversationId);
+      // this page says the outcome, once (#27): the helper's own toasts are off
+      return getSBOMExportResults(tid, conversationId, { toast: false });
     },
     onSuccess: (blob) => {
       const url = URL.createObjectURL(new Blob([blob], { type: "application/pdf" }));
@@ -1693,6 +1694,7 @@ export default function SbomResults({ data, conversationId, teamId, dashboard, f
       a.download = `sbom_sca_scan_${conversationId}_report.pdf`;
       a.click();
       URL.revokeObjectURL(url);
+      toast.success("SCA + SBOM report downloaded");
     },
     onError: (err) => {
       showErrorToast(err, "Failed to download scan report");
