@@ -31,6 +31,9 @@ from backend.utilities.auth.auth_schema import (
 )
 from backend.utilities.auth.auth_utils import (
     CodeSendLimited,
+    check_access_token,
+    check_bearer_header,
+    check_refresh_token,
     consume_verification_code,
     create_access_token,
     create_password_change_token,
@@ -203,6 +206,7 @@ async def refresh(data:RefreshToken,Authorization: Annotated[str | None, Header(
     Request Fields:
     - refresh_token: str
     """
+    check_refresh_token(data.refresh_token)  # before get_db(): a bad token gets the same 403 without a database
     try:
         engine = get_db()
         user = await get_current_user_from_refresh_token(engine, data.refresh_token)
@@ -224,6 +228,7 @@ async def version(Authorization: Annotated[str | None, Header()] = None):
     parts = (Authorization or "").split(" ")
     if len(parts) != 2 or parts[0].lower() != "bearer":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authorization header is required")
+    check_access_token(parts[1])  # before get_db(): a forged or expired token is a 401 without a database
     try:
         await get_current_user_from_access_token(get_db(), parts[1])
     except HTTPException:
@@ -236,19 +241,21 @@ async def version(Authorization: Annotated[str | None, Header()] = None):
 
 @router.get('/get_user', summary="Get user details", dependencies=[Depends(session_limiter)])
 async def get_user(Authorization: Annotated[str | None, Header()] = None):
+    # the credential first, without a database: a missing, malformed or forged one is a 401 even when get_db() fails
+    if Authorization is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization header is required"
+        )
+    parts = Authorization.split(" ")
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid Authorization header format"
+        )
+    check_access_token(parts[1])
     try:
         engine = get_db()
-        if Authorization is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authorization header is required"
-            )
-        parts = Authorization.split(" ")
-        if len(parts) != 2 or parts[0].lower() != "bearer":
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid Authorization header format"
-            )
         user = await get_current_user_from_access_token(engine, parts[1])
         return {
             "email": user.email,
@@ -401,6 +408,7 @@ async def change_account_password(data: AccountPasswordChange, Authorization: An
     The Account page (X1, Nov 11: there was no way to change a password while signed in). Every token issued so far
     stops working (token_version is bumped, as at a reset or logout); the answer carries new tokens for this session.
     """
+    check_access_token(check_bearer_header(Authorization))  # before get_db(): a bad credential is a 401 without it
     try:
         engine = get_db()
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
@@ -442,6 +450,7 @@ async def logout(Authorization: Annotated[str | None, Header()] = None):
     Every access and refresh token issued so far stops working for good (token_version is bumped): signing in
     again issues new tokens and never revives the old ones.
     """
+    check_access_token(check_bearer_header(Authorization))  # before get_db(): a bad credential is a 401 without it
     try:
         engine = get_db()
         user = await get_user_from_header_or_raise_exception(engine, Authorization, ignore_session_active=True)
