@@ -173,11 +173,11 @@ def test_the_migration_chains_onto_the_one_head():
     for path in VERSIONS.glob("*.py"):
         text = path.read_text()
         rev = re.search(r"^revision(?::\s*str)?\s*=\s*['\"]([^'\"]+)['\"]", text, re.M)
-        down = re.search(r"^down_revision[^=]*=\s*['\"]([^'\"]+)['\"]", text, re.M)
+        down = re.search(r"^down_revision[^=]*=\s*(.*)$", text, re.M)
         if rev:
             revisions.add(rev.group(1))
         if down:
-            parents.add(down.group(1))
+            parents.update(re.findall(r"['\"]([^'\"]+)['\"]", down.group(1)))
     assert mod.down_revision in revisions
     assert len(revisions - parents) == 1 and (revisions - parents == {"d44mcphdr001"} or "d44mcphdr001" in parents)
 
