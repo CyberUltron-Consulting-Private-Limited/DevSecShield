@@ -5659,6 +5659,9 @@ export interface CbomAiAnswer {
     withheld_reason?: string
     /** true when the steps and commands are the knowledge-base baseline (the model's answer was withheld) */
     baseline?: boolean
+    /** the model's answer was cut off at its output limit: status "ok" shows only its complete part (the first
+     * caveat says so), status "withheld" means nothing usable was complete */
+    truncated?: boolean
     dropped_commands: number
     provider?: "bedrock" | "openai_compat"
     region?: string | null
@@ -5672,7 +5675,8 @@ export interface CbomAiAnswer {
     checks?: { name: string; ok: boolean; note: string }[]
 }
 
-/** The UI gives the model 90 s (the backend's own limit is 60 s, CBOM_AI_TIMEOUT_S). */
+/** The UI waits 90 s, longer than the backend's own deadline for the whole request (CBOM_AI_DEADLINE_S: 50 s by
+ * default, at most 85 s), so the app's "took too long, try again" answer arrives before this gives up. */
 export const CBOM_AI_UI_TIMEOUT_MS = 90_000
 
 export const getCbomAiStatus = async (team_id: number): Promise<CbomAiStatus> => {

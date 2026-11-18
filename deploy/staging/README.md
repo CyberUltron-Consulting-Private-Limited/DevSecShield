@@ -623,8 +623,13 @@ in `backend.env`), not the `AWS_*` of `.env` that the SAST chat (and, on some ho
    "egress": [{"host": "bedrock-runtime.ap-south-1.amazonaws.com", "port": 443, ...}], ...}`; `{"available": false}`
    means off or misconfigured (the backend log says why, without values: `cbom_ai endpoint not usable: ...`). Then
    ask the panel to explain a finding: the backend log has a `cbom_ai audit outcome=ok ... provider=bedrock` line
-   (`outcome=endpoint_error` with an AWS error code, e.g. `AccessDeniedException`, means the key or policy is wrong).
+   (`outcome=endpoint_error` with an AWS error code, e.g. `AccessDeniedException`, means the key or policy is wrong;
+   `stop=` names Bedrock's stop reason of each attempt, `max_tokens` an answer cut at its output budget).
    Neither the status route, an error nor any log line ever contains a key value.
+
+Every AI request answers within `CBOM_AI_DEADLINE_S` (50 s by default), below the host proxy's 60 s read timeout, so
+the browser gets the app's own "took too long, try again" (with CORS headers) rather than the proxy's 504. A
+`CBOM_AI_TIMEOUT_S` above the deadline (the host had 180) has no effect.
 
 Turn it off with the environment variable `CBOM_AI_PROVIDER=off`, or, when that variable is unset,
 `CBOM_AI_PROVIDER=off` in the host's `backend.env` (a deploy writes `CBOM_AI_PROVIDER` only when the variable is set,

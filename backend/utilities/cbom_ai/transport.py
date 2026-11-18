@@ -6,10 +6,18 @@ Bedrock (primary provider):
 * boto3 is imported inside the call only (the backend imports without it), with the standard AWS credential chain;
 * the endpoint is ``bedrock-runtime.<region>.amazonaws.com`` (or its FIPS twin); an override must be a Bedrock
   PrivateLink name (``vpce-*.bedrock-runtime.<region>.vpce.amazonaws.com``) or a private address literal;
-* credentials come from exactly one configured source (``CBOM_AI_AWS_CREDENTIALS``), resolved on the first assist
-  only, never on a status check;
+* credentials come from exactly one configured source (``CBOM_AI_AWS_CREDENTIALS``), resolved on the first assist,
+  never on a status check (a status check only builds the client for the sources that need no network: static, env,
+  profile); the client is built in botocore's legacy defaults mode, so it never asks instance metadata for a region;
 * environment proxies and ``AWS_CA_BUNDLE`` are ignored unless ``CBOM_AI_HONOR_PROXY=1``, for the Bedrock call and
-  for the credential fetchers (IMDS, container endpoint, STS); no retries, so a redirect is an error, never followed.
+  for the credential fetchers (IMDS, container endpoint, STS); botocore makes one attempt, so a redirect is an error,
+  never followed (the assistant itself retries at most once, see service.assist);
+* connect + read timeouts fit the request deadline (``CBOM_AI_DEADLINE_S``); a pooled connection idle longer than
+  ``IDLE_REUSE_S`` is not reused (a NAT or load balancer may have dropped it silently: reusing it hangs until the read
+  timeout), and after a timeout or a dropped connection the pool is closed, so the next call starts fresh.
+
+Both providers return the text with the model's stop reason (Converse ``stopReason``, OpenAI ``finish_reason``), so a
+reply cut at the output-token cap is told apart from one that is not JSON.
 
 On-prem OpenAI-compatible endpoint:
 
@@ -25,10 +33,12 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import logging
 import re
 import socket
 import ssl
 import threading
+import time
 from dataclasses import dataclass
 from typing import Any, Callable
 from urllib.parse import urlsplit, urlunsplit
@@ -57,6 +67,28 @@ SLOT_WAIT_S = 2.0
 
 class EndpointError(Exception):
     """The endpoint answered with an error or something that is not a chat completion."""
+
+
+class ConnectionLost(EndpointError):
+    """The connection broke before an answer came (a reused keep-alive connection the far end had closed). The pool
+    is closed, so one retry goes out on a fresh connection."""
+
+
+# stop reasons of an answer cut at the output-token cap: Converse max_tokens (and the context window filling up),
+# OpenAI-compatible finish_reason length
+TRUNCATED_STOPS = frozenset({"max_tokens", "model_context_window_exceeded", "length"})
+DEFAULT_CALL_MAX_TOKENS = 1024  # a call made without a budget (service.assist always passes the mode's budget)
+
+
+@dataclass(frozen=True)
+class Reply:
+    """The model's text and why it stopped ("" when the endpoint did not say)."""
+    text: str
+    stop: str = ""
+
+    @property
+    def truncated(self) -> bool:
+        return self.stop in TRUNCATED_STOPS
 
 
 def system_resolve(host: str, port: int) -> list[str]:
@@ -143,16 +175,17 @@ def make_client(cfg: AiConfig, transport: httpx.AsyncBaseTransport | None = None
 
 
 async def chat(cfg: AiConfig, messages: list[dict[str, str]], *, resolve: Resolver = system_resolve,
-               transport: httpx.AsyncBaseTransport | None = None) -> str:
-    """One chat completion; returns the assistant message text. Raises EndpointRefused / EndpointError /
-    httpx.TimeoutException."""
+               transport: httpx.AsyncBaseTransport | None = None) -> Reply:
+    """One chat completion; returns the assistant message text and its finish_reason. Raises EndpointRefused /
+    EndpointError / httpx.TimeoutException."""
     address = pin_address(cfg, resolve)
     target = pinned_request(cfg, address)
     headers = {"Host": target.host_header, "Content-Type": "application/json", "Accept": "application/json"}
     if cfg.api_key:
         headers["Authorization"] = f"Bearer {cfg.api_key}"
     extensions = {"sni_hostname": target.sni} if target.sni else {}
-    body: dict[str, Any] = {"model": cfg.model, "messages": messages, "max_tokens": cfg.max_tokens,
+    body: dict[str, Any] = {"model": cfg.model, "messages": messages,
+                            "max_tokens": cfg.max_tokens or DEFAULT_CALL_MAX_TOKENS,
                             "temperature": 0, "stream": False, "response_format": {"type": "json_object"}}
     async with make_client(cfg, transport) as client:
         for attempt in (1, 2):
@@ -168,12 +201,22 @@ async def chat(cfg: AiConfig, messages: list[dict[str, str]], *, resolve: Resolv
         raise EndpointError(f"endpoint answered HTTP {response.status_code}")
     try:
         data = response.json()
-        content = data["choices"][0]["message"]["content"]
-    except (ValueError, KeyError, IndexError, TypeError):
+        choice = data["choices"][0]
+        content = choice["message"]["content"]
+        finish = choice.get("finish_reason")
+    except (ValueError, KeyError, IndexError, TypeError, AttributeError):
         raise EndpointError("endpoint answer is not an OpenAI-compatible chat completion") from None
+    stop = _stop_name(finish)
+    if content is None and stop in TRUNCATED_STOPS:
+        content = ""  # the budget ran out before any text (a reasoning model): a cut-off answer, not an error
     if not isinstance(content, str):
         raise EndpointError("endpoint answer has no text")
-    return content
+    return Reply(content, stop)
+
+
+def _stop_name(value: Any) -> str:
+    """A stop reason as it goes into the audit line: a short token, never the endpoint's free text."""
+    return re.sub(r"[^A-Za-z0-9_.-]", "", value)[:40] if isinstance(value, str) else ""
 
 
 # ================================================================================================ AWS Bedrock
@@ -181,10 +224,17 @@ _VPCE = r"vpce-[a-z0-9]+(?:-[a-z0-9]+)*\.bedrock-runtime\.{region}\.vpce\.amazon
 IMDS_HOST = "169.254.169.254"
 ECS_CONTAINER_HOST = "169.254.170.2"
 BEDROCK_CLIENT_HOOKS: list[Callable[[Any], None]] = []   # tests register botocore event handlers here
+# credential sources that read local configuration only: building their client contacts nothing, so a status check
+# may build it ahead of the first assist
+LOCAL_CREDENTIAL_SOURCES = ("static", "env", "profile")
+MARGIN_S = 3.0        # between the end of the worker thread's call and the request deadline
+IDLE_REUSE_S = 30.0   # a pooled connection idle longer than this is closed before the next call, not reused
 _clients: dict[tuple, Any] = {}
+_last_use: dict[tuple, float] = {}
 _clients_lock = threading.Lock()
 _slots: dict[int, threading.BoundedSemaphore] = {}
 _slots_lock = threading.Lock()
+log = logging.getLogger("backend.cbom_ai")
 
 
 def bedrock_hosts_allowed(cfg: AiConfig) -> tuple[str, ...]:
@@ -344,35 +394,47 @@ def _botocore_session(cfg: AiConfig) -> Any:
 
 
 def bedrock_timeouts(cfg: AiConfig) -> tuple[float, float]:
-    """(connect, read) for botocore, adding up to CBOM_AI_TIMEOUT_S, so a worker thread ends within it."""
-    connect = min(10.0, max(1.0, cfg.timeout_s / 4))
-    return connect, max(1.0, cfg.timeout_s - connect)
+    """(connect, read) for botocore. They add up to CBOM_AI_TIMEOUT_S, but never to more than the request deadline
+    leaves after the slot wait (and a margin), so a worker thread ends before the caller stops waiting: with the
+    default 50 s deadline that is 5 + 40 s, also when CBOM_AI_TIMEOUT_S is 180 (staging's value, #449)."""
+    attempt = max(2.0, min(cfg.timeout_s, cfg.deadline_s - SLOT_WAIT_S - MARGIN_S))
+    connect = min(5.0, max(1.0, attempt / 4))
+    return connect, max(1.0, attempt - connect)
 
 
 def bedrock_deadline_s(cfg: AiConfig) -> float:
-    """How long the caller waits for one Converse call: the slot wait, then botocore's connect + read timeouts (which
-    add up to CBOM_AI_TIMEOUT_S), plus a margin, so the waiter is not cancelled while the call is still running."""
-    return SLOT_WAIT_S + sum(bedrock_timeouts(cfg)) + 2
+    """How long the caller waits for the whole request (slot wait, Converse call, at most one retry):
+    CBOM_AI_DEADLINE_S. One call's slot wait + connect + read timeouts fit inside it (bedrock_timeouts)."""
+    return cfg.deadline_s
+
+
+def _client_key(cfg: AiConfig) -> tuple:
+    return (cfg.region, cfg.base_url, cfg.honor_proxy, cfg.ca_file, bedrock_timeouts(cfg), cfg.aws_profile,
+            cfg.aws_credentials, cfg.aws_settings)
 
 
 def _bedrock_client(cfg: AiConfig) -> Any:
-    """Created on the first assist only (it resolves credentials, which may contact the credential endpoint); the
-    status route never builds it."""
-    key = (cfg.region, cfg.base_url, cfg.honor_proxy, cfg.ca_file, cfg.timeout_s, cfg.aws_profile,
-           cfg.aws_credentials, cfg.aws_settings)
+    """Built once per configuration and reused (module level). It resolves credentials, which for the instance /
+    container / web_identity sources contacts their endpoint: the status route builds it only for
+    LOCAL_CREDENTIAL_SOURCES (warm_bedrock), never for those."""
+    key = _client_key(cfg)
     with _clients_lock:
         client = _clients.get(key)
         if client is not None:
             return client
         from botocore.config import Config  # lazily
 
+        connect, read = bedrock_timeouts(cfg)
         config = Config(
             region_name=cfg.region,
-            connect_timeout=bedrock_timeouts(cfg)[0],
-            read_timeout=bedrock_timeouts(cfg)[1],
+            connect_timeout=connect,
+            read_timeout=read,
             retries={"total_max_attempts": 1, "mode": "standard"},  # one attempt: an error or a redirect is final
             # {} (not None) means "no proxy": botocore reads HTTP(S)_PROXY from the environment only when this is None
             proxies=None if cfg.honor_proxy else {},
+            # "auto" (AWS_DEFAULTS_MODE or the AWS config file) asks instance metadata for the region on every client
+            # built: on a host that is not EC2 each probe waits for its timeout. The region is configured here.
+            defaults_mode="legacy",
         )
         # verify=True ignores AWS_CA_BUNDLE (the egress proxy's CA); None lets botocore read it when proxies are honoured
         verify: Any = cfg.ca_file or (None if cfg.honor_proxy else True)
@@ -384,9 +446,40 @@ def _bedrock_client(cfg: AiConfig) -> Any:
         return client
 
 
+def warm_bedrock(cfg: AiConfig) -> None:
+    """Build the client ahead of the first assist (the status route calls this), when that contacts nothing: only for
+    LOCAL_CREDENTIAL_SOURCES. Never raises: a problem shows on the assist, as before."""
+    if cfg.provider != "bedrock" or cfg.aws_credentials not in LOCAL_CREDENTIAL_SOURCES:
+        return
+    try:
+        _bedrock_client(cfg)
+    except Exception as exc:  # a broken shared credentials file, for example
+        log.warning("cbom_ai client warm-up failed: %s", exc.__class__.__name__)
+
+
+def _reuse_or_refresh(key: tuple, client: Any) -> None:
+    """Close the pool of a client that has been idle longer than IDLE_REUSE_S, so this call opens a fresh connection
+    instead of reusing one a NAT, firewall or load balancer may have dropped without a FIN reaching us (a call on it
+    hangs until the read timeout). Calls in flight keep their connection: closing the pool only drops idle ones."""
+    now = time.monotonic()
+    with _clients_lock:
+        last = _last_use.get(key)
+        _last_use[key] = now
+    if last is not None and now - last > IDLE_REUSE_S:
+        client.close()
+
+
+def _drop_pool(client: Any) -> None:
+    try:
+        client.close()
+    except Exception:  # pragma: no cover - closing idle sockets
+        pass
+
+
 def reset_bedrock_clients() -> None:
     with _clients_lock:
         _clients.clear()
+        _last_use.clear()
     with _slots_lock:
         _slots.clear()
 
@@ -399,12 +492,13 @@ def _slot(cfg: AiConfig) -> threading.BoundedSemaphore:
         return sem
 
 
-def bedrock_chat(cfg: AiConfig, messages: list[dict[str, str]], resolve: Resolver = system_resolve) -> str:
-    """One Converse call (blocking; run it in a thread). The concurrency slot is held in this thread until botocore
-    returns, so CBOM_AI_CONCURRENCY holds even when the caller has stopped waiting. Raises Busy (no slot within
-    SLOT_WAIT_S; nothing sent) / EndpointRefused / EndpointError / TimeoutError."""
-    from botocore.exceptions import (BotoCoreError, ClientError, ConnectTimeoutError, CredentialRetrievalError,
-                                     NoCredentialsError, ReadTimeoutError)
+def bedrock_chat(cfg: AiConfig, messages: list[dict[str, str]], resolve: Resolver = system_resolve) -> Reply:
+    """One Converse call (blocking; run it in a thread); returns the text and the Converse stopReason. The
+    concurrency slot is held in this thread until botocore returns, so CBOM_AI_CONCURRENCY holds even when the caller
+    has stopped waiting. Raises Busy (no slot within SLOT_WAIT_S; nothing sent) / EndpointRefused / EndpointError /
+    ConnectionLost (an EndpointError: retry once) / TimeoutError."""
+    from botocore.exceptions import (BotoCoreError, ClientError, ConnectionClosedError, ConnectTimeoutError,
+                                     CredentialRetrievalError, NoCredentialsError, ReadTimeoutError)
 
     check_bedrock_endpoint(cfg, resolve)
     credential_plan(cfg)
@@ -413,12 +507,21 @@ def bedrock_chat(cfg: AiConfig, messages: list[dict[str, str]], resolve: Resolve
     slot = _slot(cfg)
     if not slot.acquire(timeout=SLOT_WAIT_S):
         raise Busy()
+    client = None
     try:
-        response = _bedrock_client(cfg).converse(
+        client = _bedrock_client(cfg)
+        _reuse_or_refresh(_client_key(cfg), client)
+        response = client.converse(
             modelId=cfg.model, system=[{"text": system}] if system else [], messages=turns,
-            inferenceConfig={"maxTokens": cfg.max_tokens, "temperature": 0})
+            inferenceConfig={"maxTokens": cfg.max_tokens or DEFAULT_CALL_MAX_TOKENS, "temperature": 0})
     except (ReadTimeoutError, ConnectTimeoutError):
+        if client is not None:
+            _drop_pool(client)  # the user's next try starts on a fresh connection
         raise TimeoutError("Bedrock did not answer in time") from None
+    except ConnectionClosedError:
+        if client is not None:
+            _drop_pool(client)
+        raise ConnectionLost("Bedrock connection closed before an answer (stale pooled connection)") from None
     except (NoCredentialsError, CredentialRetrievalError):
         raise EndpointError(f"no AWS credentials from the {cfg.aws_credentials} source") from None
     except ClientError as exc:
@@ -428,9 +531,15 @@ def bedrock_chat(cfg: AiConfig, messages: list[dict[str, str]], resolve: Resolve
         code = (exc.response.get("Error") or {}).get("Code") or "error"
         raise EndpointError(f"Bedrock {code} (HTTP {status})") from None
     except BotoCoreError as exc:
+        if client is not None:
+            _drop_pool(client)
         raise EndpointError(f"Bedrock {exc.__class__.__name__}") from None
     finally:
         slot.release()
+        with _clients_lock:
+            if client is not None:
+                _last_use[_client_key(cfg)] = time.monotonic()
+    stop = _stop_name(response.get("stopReason") if isinstance(response, dict) else None)
     try:
         blocks = response["output"]["message"]["content"]
     except (KeyError, TypeError):
@@ -438,5 +547,7 @@ def bedrock_chat(cfg: AiConfig, messages: list[dict[str, str]], resolve: Resolve
     # reasoning models (gpt-oss) put reasoningContent blocks before the text
     texts = [b["text"] for b in blocks if isinstance(b, dict) and isinstance(b.get("text"), str)]
     if not texts:
+        if stop in TRUNCATED_STOPS:
+            return Reply("", stop)  # the budget went on reasoning: a cut-off answer, not an endpoint error
         raise EndpointError("Bedrock answer has no text")
-    return "\n".join(texts)
+    return Reply("\n".join(texts), stop)
