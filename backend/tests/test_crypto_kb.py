@@ -91,8 +91,10 @@ def test_every_reference_resolves():
             assert e["owasp_2021"] and e["owasp_2025"], code
             for key in e["compliance"]:
                 assert data["compliance"][key], (code, key)
-                for ref in data["compliance"][key]:
-                    assert ref["source"].startswith("https://"), ref
+                for clause in data["compliance"][key]:
+                    assert data["clauses"][clause]["source"].startswith("https://"), clause
+            for clause in e["clauses"] + [k for r in e["clause_rules"] for k in r["clauses"]]:  # #269
+                assert data["clauses"][clause]["source"].startswith("https://"), (code, clause)
             assert e["remediation"]["summary"]
 
 
@@ -151,6 +153,9 @@ def test_render_never_injects_shell_from_context():
     out = kb.render("node", ["PROTO_TLS10"], context={"host": "bücher.example", "port": "443; id"})
     cmds = " ".join(v["command"] for v in out[0]["verify"])
     assert "xn--bcher-kva.example" in cmds and "; id" not in cmds and "<port>" in cmds
+    out = kb.render("node", ["PROTO_TLS10"], context={"host": "faß.lab", "port": 443})
+    cmds = " ".join(v["command"] for v in out[0]["verify"])
+    assert "xn--fa-hia.lab" in cmds and "fass.lab" not in cmds
     out = kb.render("node", ["KEY_READABLE"], context={"path": "-rf /etc/ssl/k.pem"})
     assert "'./-rf /etc/ssl/k.pem'" in " ".join(v["command"] for v in out[0]["verify"])
 

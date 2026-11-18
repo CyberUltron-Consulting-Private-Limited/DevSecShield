@@ -1,4 +1,9 @@
 from backend.new_models import Scan
+from backend.utilities.dashboard import risk_scale, sbom_rows
+
+def owner_full_name(user) -> str | None:
+    """"First Last" of a scan's owner; a missing part is left out ("alice", never "alice None"); None when both are."""
+    return " ".join(p for p in (getattr(user, "first_name", None), getattr(user, "last_name", None)) if p) or None
 
 def return_sast_list_item(scan : Scan) -> dict:
     total_critical , total_high , total_medium , total_low  = 0,0,0,0
@@ -66,7 +71,7 @@ def return_sast_list_item(scan : Scan) -> dict:
 
         "estimated_credits": scan.credit_consumed,
         "owner_user_email": scan.owner_user.email,
-        "owner_user_full_name": f"{scan.owner_user.first_name} {scan.owner_user.last_name}",
+        "owner_user_full_name": owner_full_name(scan.owner_user),
 
 
         "info": scan.info, # sometimes maybe None or sometimes may be { "current" : 20 } where 20 is the progress percentage
@@ -107,9 +112,9 @@ def return_iac_list_item(scan : Scan) -> dict:
     }
 
 
-    # calculating average risk score
+    # calculating average risk score (0-10, #35); 0 without findings
     if sum([total_critical, total_high, total_medium, total_low]) > 0:
-        average_risk_score = (total_critical * 4 + total_high * 3 + total_medium * 2 + total_low * 1) / (total_critical + total_high + total_medium + total_low)
+        average_risk_score = average_risk_0_10(total_critical, total_high, total_medium, total_low)
         
     # calculating coverage % 
     scan_run_metadata = scan.scan_metadata.get("metadata",None)
@@ -129,7 +134,7 @@ def return_iac_list_item(scan : Scan) -> dict:
 
         "estimated_credits": scan.credit_consumed,
         "owner_user_email": scan.owner_user.email,
-        "owner_user_full_name": f"{scan.owner_user.first_name} {scan.owner_user.last_name}",
+        "owner_user_full_name": owner_full_name(scan.owner_user),
 
 
         "info": scan.info, # sometimes maybe None or sometimes may be { "current" : 20 } where 20 is the progress percentage
@@ -148,9 +153,10 @@ def return_iac_list_item(scan : Scan) -> dict:
 
 
 def return_sbom_sca_list_item(scan : Scan) -> dict:
-    total_critical , total_high , total_medium , total_low , average_risk_score  = 0,0,0,0,0
+    total_critical , total_high , total_medium , total_low  = 0,0,0,0
     if scan.scan_data and scan.scan_data != {} and "results" in scan.scan_data and scan.scan_status == "success":
-        for vulnerability in scan.scan_data["results"]:
+        # the known vulnerabilities only: the inventoried packages are the SBOM, not Low vulnerabilities (#46)
+        for vulnerability in sbom_rows.vulnerability_rows(scan.scan_data["results"]):
             if vulnerability["impact"].lower() == "critical":
                 total_critical += 1
             elif vulnerability["impact"].lower() == "high":
@@ -168,9 +174,8 @@ def return_sbom_sca_list_item(scan : Scan) -> dict:
     }
 
 
-    # calculating average risk score
-    if sum([total_critical, total_high, total_medium, total_low]) > 0:
-        average_risk_score = (total_critical * 4 + total_high * 3 + total_medium * 2 + total_low * 1) / (total_critical + total_high + total_medium + total_low)
+    # calculating average risk score (0-10, #35); None (shown "—") without a known vulnerability (#46)
+    average_risk_score = average_risk_0_10(total_critical, total_high, total_medium, total_low)
         
  
     return {
@@ -182,7 +187,7 @@ def return_sbom_sca_list_item(scan : Scan) -> dict:
 
         "estimated_credits": scan.credit_consumed,
         "owner_user_email": scan.owner_user.email,
-        "owner_user_full_name": f"{scan.owner_user.first_name} {scan.owner_user.last_name}",
+        "owner_user_full_name": owner_full_name(scan.owner_user),
 
 
         "info": scan.info, # sometimes maybe None or sometimes may be { "current" : 20 } where 20 is the progress percentage
@@ -211,7 +216,7 @@ def return_mcp_list_item(scan : Scan) -> dict:
                     total_medium += 1
                 elif vulnerability["impact"].lower() == "low":
                     total_low += 1
-        for prompt in scan.scan_data["results"]["prompts"] and "results" in scan.scan_data and scan.scan_status == "success":
+        for prompt in scan.scan_data["results"]["prompts"]:
             total_prompts += 1
             for vulnerability in prompt["vulnerabilities"]:
                 if vulnerability["impact"].lower() == "critical":
@@ -222,7 +227,7 @@ def return_mcp_list_item(scan : Scan) -> dict:
                     total_medium += 1
                 elif vulnerability["impact"].lower() == "low":
                     total_low += 1
-        for resource in scan.scan_data["results"]["resources"] and "results" in scan.scan_data and scan.scan_status == "success":
+        for resource in scan.scan_data["results"]["resources"]:
             total_resources += 1
             for vulnerability in resource["vulnerabilities"]:
                 if vulnerability["impact"].lower() == "critical":
@@ -255,9 +260,9 @@ def return_mcp_list_item(scan : Scan) -> dict:
                 risky_resources += 1
 
 
-    # calculating average risk score
+    # calculating average risk score (0-10, #35); 0 without findings
     if sum([total_critical, total_high, total_medium, total_low]) > 0:
-        average_risk_score = (total_critical * 4 + total_high * 3 + total_medium * 2 + total_low * 1) / (total_critical + total_high + total_medium + total_low)
+        average_risk_score = average_risk_0_10(total_critical, total_high, total_medium, total_low)
         
  
     return {
@@ -269,7 +274,7 @@ def return_mcp_list_item(scan : Scan) -> dict:
 
         "estimated_credits": scan.credit_consumed,
         "owner_user_email": scan.owner_user.email,
-        "owner_user_full_name": f"{scan.owner_user.first_name} {scan.owner_user.last_name}",
+        "owner_user_full_name": owner_full_name(scan.owner_user),
 
 
         "info": scan.info, # sometimes maybe None or sometimes may be { "current" : 20 } where 20 is the progress percentage
@@ -358,7 +363,7 @@ def return_llm_list_item(scan : Scan) -> dict:
 
         "estimated_credits": scan.credit_consumed,
         "owner_user_email": scan.owner_user.email,
-        "owner_user_full_name": f"{scan.owner_user.first_name} {scan.owner_user.last_name}",
+        "owner_user_full_name": owner_full_name(scan.owner_user),
 
         "info": scan.info,
         "risk_data": risk_data,
@@ -389,9 +394,15 @@ def return_dast_list_item(scan : Scan) -> dict:
             elif vulnerability["impact"].lower() == "low":
                 total_low += 1
         
-        if "metadata" in scan.scan_data and scan.scan_data["metadata"] != {} and "urls_scanned" in scan.scan_data["metadata"]:
-            urls_scanned = len(scan.scan_data["metadata"]["urls_included"])
-            urls_not_scanned = len(scan.scan_data["metadata"]["urls_excluded"])
+        # The crawler records the URLs it scanned and the ones the include/exclude patterns dropped
+        # (RabbitMQ/dast_worker/helpers/crawler/crawler.py). There is no top-level "urls_scanned" key: testing for one
+        # left both columns at 0 for every scan.
+        crawl = scan.scan_data.get("metadata") or {}
+        if isinstance(crawl, dict):
+            if isinstance(crawl.get("urls_included"), list):
+                urls_scanned = len(crawl["urls_included"])
+            if isinstance(crawl.get("urls_excluded"), list):
+                urls_not_scanned = len(crawl["urls_excluded"])
 
     risk_data = {
         "total_critical": total_critical,
@@ -401,9 +412,9 @@ def return_dast_list_item(scan : Scan) -> dict:
     }
 
 
-    # calculating average risk score
+    # calculating average risk score (0-10, #35); 0 without findings
     if sum([total_critical, total_high, total_medium, total_low]) > 0:
-        average_risk_score = (total_critical * 4 + total_high * 3 + total_medium * 2 + total_low * 1) / (total_critical + total_high + total_medium + total_low)
+        average_risk_score = average_risk_0_10(total_critical, total_high, total_medium, total_low)
         
  
     return {
@@ -415,7 +426,7 @@ def return_dast_list_item(scan : Scan) -> dict:
 
         "estimated_credits": scan.credit_consumed,
         "owner_user_email": scan.owner_user.email,
-        "owner_user_full_name": f"{scan.owner_user.first_name} {scan.owner_user.last_name}",
+        "owner_user_full_name": owner_full_name(scan.owner_user),
 
 
         "info": scan.info, # sometimes maybe None or sometimes may be { "current" : 20 } where 20 is the progress percentage
@@ -457,7 +468,7 @@ def return_cbom_list_item(scan : Scan) -> dict:
 
         "estimated_credits": scan.credit_consumed,
         "owner_user_email": scan.owner_user.email,
-        "owner_user_full_name": f"{scan.owner_user.first_name} {scan.owner_user.last_name}",
+        "owner_user_full_name": owner_full_name(scan.owner_user),
 
 
         "info": scan.info,
@@ -527,7 +538,7 @@ def return_ai_bom_list_item(scan : Scan) -> dict:
 
         "estimated_credits": scan.credit_consumed,
         "owner_user_email": scan.owner_user.email,
-        "owner_user_full_name": f"{scan.owner_user.first_name} {scan.owner_user.last_name}",
+        "owner_user_full_name": owner_full_name(scan.owner_user),
 
 
         "info": scan.info,
@@ -539,3 +550,10 @@ def return_ai_bom_list_item(scan : Scan) -> dict:
         "average_risk_score" : average_risk_score,
         "scan_binaries": scan.scan_metadata.get("scan_binaries", False) if scan.scan_metadata else False,
     }
+
+
+# Kept at the end of the file so the functions above keep their line numbers (the (i) tips cite them).
+def average_risk_0_10(total_critical: int, total_high: int, total_medium: int, total_low: int) -> float | None:
+    """A scan's Risk score on the app's one 0-10 scale (``risk_scale``, #35); None without findings."""
+    return risk_scale.average_risk({"critical": total_critical, "high": total_high, "medium": total_medium,
+                                    "low": total_low})

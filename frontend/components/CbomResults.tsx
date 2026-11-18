@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { FixClassChip, type FixClassFields } from "@/components/cbom/grade";
 import {
   Select,
   SelectContent,
@@ -14,29 +15,24 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  AlertTriangle,
   ArrowLeft,
   SlidersHorizontal,
   Download,
   Ticket,
   Pencil,
   CheckCircle,
+  Eye,
   EyeOff,
   Loader2,
   Circle,
   GitBranch,
   Archive,
-  Shield,
   Lock,
-  Key,
   ShieldCheck,
-  ShieldAlert,
-  Activity,
-  Clock,
-  Crosshair,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import RemediationPanel from "@/components/RemediationPanel";
+import AiRemediationPanel from "@/components/cbom/results/AiRemediationPanel";
 import {
   Dialog,
   DialogContent,
@@ -50,53 +46,20 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
 import { useRouter, useSearchParams, useParams } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { getCBOMExportResults, updateScan, toggleFindingState, createTicket, postCertInAttestation, postCertInSign, getCertInVex, getCertInEvidencePack, type CbomScanDashboardData, type CbomFinding, type CbomScanMetadata, type CbomGraph, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
 import { showErrorToast } from "@/utils/error-handler";
 import { downloadCbomScanBom, INFORMATIONAL_LABEL, type CbomCoverageReport, type CbomImportReport } from "@/utils/api/cbom_outputs";
 import { downloadOscal } from "@/utils/api/integrations";
-import { readinessText } from "@/utils/cbomReadiness";
-import { inventoryRows, isBrokenToday, matchesQuantumFilter } from "@/components/cbom/quantumFilter";
-import { importNoteLines, importReportHasNews } from "@/components/cbom/importNotes";
+import { inventoryRows, isBrokenToday, isUnidentified, matchesQuantumFilter } from "@/components/cbom/quantumFilter";
 import {
   buildRefAliasMap,
   findingMatchesRelatedRefs,
 } from "@/utils/relatedFindingMatch";
-import { OWASP_KEY_TO_LABEL, COMPLIANCE_KEY_TO_LABEL, OWASP_COLORS } from "@/lib/owasp-compliance-labels";
-import { FRAMEWORK_LABELS } from "@/components/compliance/frameworkLabels";
+import { OWASP_KEY_TO_LABEL, COMPLIANCE_KEY_TO_LABEL } from "@/lib/owasp-compliance-labels";
 
-/** Resolve a compliance-controls chart key to a short display label. */
-function complianceChartLabel(key: string): string {
-  const full =
-    COMPLIANCE_KEY_TO_LABEL[key] ?? FRAMEWORK_LABELS[key] ?? key;
-  // Keep Y-axis ticks single-line so they never wrap into neighboring rows.
-  return full.length > 32 ? `${full.slice(0, 30)}…` : full;
-}
-import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-  type ChartConfig,
-} from "@/components/ui/chart";
-import {
-  Area,
-  AreaChart,
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  PolarAngleAxis,
-  PolarGrid,
-  Radar,
-  RadarChart,
-  RadialBar,
-  RadialBarChart,
-  XAxis,
-  YAxis,
-} from "recharts";
-import { PieChart, BarChart3, TrendingUp, Search } from "lucide-react";
+import { BarChart3, Search } from "lucide-react";
 import { toast } from "@/utils/toast";
 import TicketingIntegrationsSettings from "@/components/ticketing-integrations-settings";
 import FindingSelectionMenu from "@/components/finding-selection-menu";
@@ -106,10 +69,42 @@ import {
   type CbomCompliance,
 } from "@/components/cbom/CbomCryptoCharts";
 import { RbiCsfRollup, type RbiCsfRollupData } from "@/components/rbi/RbiCsfRollup";
+import { CertHygieneSection } from "@/components/cbom/certificates/CertHygiene";
 import { CodeChanges } from "@/components/cbom/sources/ChangesPanel";
 import { CodeWavesPanel } from "@/components/cbom/sources/WavesControls";
 import { CertInLanePosture } from "@/components/certin/CertInLanePosture";
+import { CbomDashboardCharts } from "@/components/cbom/results/CbomDashboardCharts";
+import { getFindingStatusBadgeClass, getImpactBadgeClass, getRiskScoreBoxClass, getStrengthBadgeClass } from "@/components/cbom/results/badgeClasses";
 import { type CertInRollupData } from "@/components/certin/certinShared";
+import { InfoTip } from "@/components/ui/info-tip";
+import { CompareDialog } from "@/components/cbom/sources/ChangesPanel";
+import { applyPostureToDistributions, complianceRows, hasActiveFilters, parityNotes, resolveMigrationRows, RUN_TICKETING_TAB_AVAILABLE, tableTotal } from "@/components/cbom/results/model";
+import { useDialogNav } from "@/components/cbom/results/useDialogNav";
+import { InfoTipDrawerProvider } from "@/components/ui/info-tip-drawer";
+import { ComplianceMappingSection } from "@/components/cbom/results/ComplianceSummary";
+import { buildComplianceSummary, runDrillFilters, type DrillTarget } from "@/components/cbom/results/complianceSummary";
+import { RunFindingDialog } from "@/components/cbom/results/RunFindingDialog";
+import { ColumnChooser, useColumnPrefs } from "@/components/cbom/results/ColumnChooser";
+import { FINDING_DIALOG_BODY, FINDING_DIALOG_CONTENT, FINDING_DIALOG_FULLSCREEN_SM, rowOpenProps, SCAN_TABLE_COLUMNS, STICKY_ACTIONS } from "@/components/cbom/results/findingTable";
+import { RowOpenButton } from "@/components/cbom/results/RowOpenButton";
+import RunTicketingTab from "@/components/cbom/results/RunTicketingTab";
+// the Sources run views (results redesign): summary, detail views, URL and drill-downs
+import { CollectionView } from "@/components/cbom/results/views/CollectionView";
+import { ComplianceView } from "@/components/cbom/results/views/ComplianceView";
+import { createDrill, pqcRunAssetId, runRefsDrill, useResultsScroll } from "@/components/cbom/results/views/drill";
+import { InventoryView } from "@/components/cbom/results/views/InventoryView";
+import { MigrationView } from "@/components/cbom/results/views/MigrationView";
+import { QuantumView } from "@/components/cbom/results/views/QuantumView";
+import { RemediationView } from "@/components/cbom/results/views/RemediationView";
+import { ResultsHero } from "@/components/cbom/results/views/ResultsHero";
+import { CoverageNotesCard, ImportNotesCard } from "@/components/cbom/results/views/ScanNotes";
+import { SectionView } from "@/components/cbom/results/views/SectionView";
+import { SummaryView } from "@/components/cbom/results/views/SummaryView";
+import type { RunViewCtx } from "@/components/cbom/results/views/types";
+import { useResultsUrl, type DetailSection, type ResultsSection } from "@/components/cbom/results/views/url";
+import { useSectionNav } from "@/components/cbom/results/views/sectionNav";
+import type { ResultsSource } from "@/components/cbom/results/source";
+import { advisoryLine, readAdvisoryData, staleNote } from "@/components/cbom/advisoryData";
 
 interface CbomResultsProps {
   data: unknown;
@@ -122,42 +117,9 @@ interface CbomResultsProps {
   onIntegrationSettingsUpdated?: () => void;
   onFindingsUpdated?: () => void;
   backHref?: string;
-}
-
-function getImpactBadgeClass(impact: string): string {
-  const i = (impact || "").toLowerCase();
-  if (i === "critical") return "bg-red-600 hover:bg-red-700 text-white";
-  if (i === "high") return "bg-orange-500 hover:bg-orange-600 text-white";
-  if (i === "medium") return "bg-amber-500 hover:bg-amber-600 text-white";
-  if (i === "low") return "bg-blue-500 hover:bg-blue-600 text-white";
-  return "bg-zinc-500 hover:bg-zinc-600 text-white";
-}
-
-function getFindingStatusBadgeClass(status: string): string {
-  const s = (status ?? "").toLowerCase().replace(/\s/g, "_");
-  if (s === "fixed") return "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200";
-  if (s === "ignored") return "bg-zinc-100 text-zinc-700 dark:bg-zinc-700/50 dark:text-zinc-200";
-  if (s === "in_progress") return "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200";
-  if (s === "not_started") return "bg-slate-100 text-slate-600 dark:bg-slate-700/50 dark:text-slate-300";
-  return "bg-zinc-100 text-zinc-600 dark:bg-zinc-700/50 dark:text-zinc-300";
-}
-
-function getStrengthBadgeClass(strength: string | undefined | null): string {
-  const s = (strength ?? "").toLowerCase();
-  if (s === "weak") return "border-red-500/50 text-red-600 dark:text-red-400";
-  if (s === "moderate") return "border-amber-500/50 text-amber-600 dark:text-amber-400";
-  if (s === "strong") return "border-emerald-500/50 text-emerald-600 dark:text-emerald-400";
-  if (s === "quantum_safe") return "border-blue-500/50 text-blue-600 dark:text-blue-400";
-  return "border-zinc-400/50 text-zinc-600 dark:text-zinc-400";
-}
-
-/** Risk score color tiers on the 0–10 scale (Critical ≥9, High 7–9, Medium 5–7, Low <5), matching SBOM/SAST/list page. */
-function getRiskScoreBoxClass(score: number | null | undefined): string {
-  const s = score ?? 0;
-  if (s >= 9) return "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200";
-  if (s >= 7) return "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200";
-  if (s >= 5) return "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200";
-  return "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200";
+  /** The data source of this one template (CB-38): a CBOM Sources run (useSourcesRunSource). Absent: the code scan
+   * given by the props above (codeScanSource), exactly as before. */
+  source?: ResultsSource;
 }
 
 /** Safe entries for OWASP/compliance fields (handles dict or legacy array) */
@@ -179,29 +141,6 @@ function getOwaspComplianceEntries(val: OwaspOrCompliance): [string, string][] {
 
 const RISK_ORDER = ["Critical", "High", "Medium", "Low"] as const;
 
-const radarConfig = {
-  count: { label: "Count", color: "hsl(220 70% 50%)" },
-} satisfies ChartConfig;
-
-const barConfig = {
-  count: { label: "Count", color: "hsl(220 70% 50%)" },
-} satisfies ChartConfig;
-
-const owaspRadialChartConfig = {
-  count: { label: "Count" },
-  ...Object.fromEntries(OWASP_COLORS.map((color, i) => [`fill_${i}`, { label: `Category ${i + 1}`, color }])),
-} satisfies ChartConfig;
-
-const complianceBarChartConfig = {
-  name: { label: "Control" },
-  count: { label: "Count", color: "hsl(217 91% 60%)" },
-} satisfies ChartConfig;
-
-const riskScoreAreaChartConfig = {
-  finding: { label: "Finding" },
-  score: { label: "Risk score", color: "hsl(217 91% 60%)" },
-} satisfies ChartConfig;
-
 type RiskScoreFilter = "all" | "critical" | "high" | "medium" | "low";
 /** Risk score tiers (0–10 scale, matching SBOM/SAST/list page): Critical ≥9, High 7–9, Medium 5–7, Low <5 */
 function matchesRiskScoreFilter(score: number | null, filter: RiskScoreFilter): boolean {
@@ -214,544 +153,6 @@ function matchesRiskScoreFilter(score: number | null, filter: RiskScoreFilter): 
   return true;
 }
 
-function CbomDashboardCharts({
-  dashboard,
-  findingsList,
-}: {
-  dashboard: CbomScanDashboardData;
-  findingsList: CbomFinding[];
-}) {
-  const cardData = dashboard.card_data;
-  const remediation = dashboard.remediation_actions_required;
-  const remediationKpis = dashboard.remediation_metrics;
-  const totalFindings = remediation ? remediation.total_findings || 1 : 1;
-
-  // Charts data
-  const severityRadarData = useMemo(() => {
-    return RISK_ORDER.map((subject) => ({
-      subject,
-      count: dashboard.severity_distribution[subject.toLowerCase() as keyof typeof dashboard.severity_distribution] ?? 0,
-    }));
-  }, [dashboard]);
-
-  const algorithmTypeData = useMemo(() => {
-    return Object.entries(dashboard.algorithm_type_distribution)
-      .map(([name, count]) => ({ name: name.replace(/_/g, " "), count }))
-      .filter((d) => d.count > 0)
-      .sort((a, b) => b.count - a.count);
-  }, [dashboard]);
-
-  const strengthData = useMemo(() => {
-    const COLORS: Record<string, string> = {
-      weak: "hsl(0 72% 51%)",
-      moderate: "hsl(45 93% 47%)",
-      strong: "hsl(142 71% 45%)",
-      quantum_safe: "hsl(220 70% 50%)",
-    };
-    return Object.entries(dashboard.strength_distribution)
-      .map(([name, count]) => ({
-        name: name === "quantum_safe" ? "Quantum-Safe" : name.charAt(0).toUpperCase() + name.slice(1),
-        count,
-        fill: COLORS[name] ?? "hsl(220 9% 46%)",
-      }))
-      .filter((d) => d.count > 0);
-  }, [dashboard]);
-
-  const quantumData = useMemo(() => {
-    if (!dashboard.quantum_readiness) return [];
-    return [
-      { name: "Safe", count: dashboard.quantum_readiness.quantum_safe, fill: "hsl(142 71% 45%)" },
-      { name: "Vulnerable", count: dashboard.quantum_readiness.quantum_vulnerable, fill: "hsl(0 72% 51%)" },
-    ].filter((d) => d.count > 0);
-  }, [dashboard]);
-
-  // OWASP Top 10 data
-  const owaspMetrics = dashboard.owasp_top_10_issues ?? {};
-  const owaspEntries = useMemo(() => {
-    return Object.entries(owaspMetrics).map(([key, actualCount], index) => {
-      const displayValue = OWASP_KEY_TO_LABEL[key] ?? key;
-      return {
-        name: displayValue.length > 20 ? `${displayValue.slice(0, 20)}...` : displayValue,
-        key,
-        displayValue,
-        actualCount,
-        fill: OWASP_COLORS[index % OWASP_COLORS.length],
-      };
-    });
-  }, [owaspMetrics]);
-  const maxOwasp = Math.max(1, ...owaspEntries.map((d) => d.actualCount));
-  const owaspRadialData = owaspEntries.map((d) => ({
-    ...d,
-    count: maxOwasp > 0 ? (d.actualCount / maxOwasp) * 100 : 0,
-  }));
-  const hasOwaspData = owaspEntries.length > 0 && owaspEntries.some((d) => d.actualCount > 0);
-
-  // Compliance controls data
-  const complianceMetrics = dashboard.compliance_controls ?? {};
-  const complianceBarData = useMemo(() => {
-    return Object.entries(complianceMetrics)
-      .map(([key, count]) => ({
-        name: complianceChartLabel(key),
-        fullName: COMPLIANCE_KEY_TO_LABEL[key] ?? FRAMEWORK_LABELS[key] ?? key,
-        count,
-      }))
-      .sort((a, b) => b.count - a.count);
-  }, [complianceMetrics]);
-  const complianceChartRows = complianceBarData.slice(0, 10);
-  const complianceChartHeight = Math.max(280, complianceChartRows.length * 36);
-  const hasComplianceData = complianceBarData.length > 0;
-
-  // Risk scores per finding
-  const riskScoresAreaData = useMemo(() => {
-    if (!findingsList || findingsList.length === 0) return [];
-    return findingsList
-      .filter((f) => f.risk_score != null)
-      .map((f) => ({ finding: f.algorithm_name || f.title, score: f.risk_score, fullName: f.algorithm_name || f.title }))
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 24)
-      .map((row, i) => ({ ...row, finding: `F${i + 1}` }));
-  }, [findingsList]);
-  const hasRiskScoresData = riskScoresAreaData.length > 0;
-
-  const hasRiskData = severityRadarData.some((d) => d.count > 0);
-  const hasAlgorithmTypeData = algorithmTypeData.length > 0;
-  const hasStrengthData = strengthData.length > 0;
-  const hasQuantumData = quantumData.length > 0;
-  const criticalCount = dashboard.severity_distribution?.critical ?? 0;
-
-  const totalAll = remediation?.total_findings ?? 0;
-  const fixedPct = totalAll > 0 ? Math.round(((remediation?.total_fixed ?? 0) / totalAll) * 100) : 0;
-  const inProgressPct = totalAll > 0 ? Math.round(((remediation?.total_in_progress ?? 0) / totalAll) * 100) : 0;
-  const notStartedPct = totalAll > 0 ? Math.round(((remediation?.total_not_started ?? 0) / totalAll) * 100) : 0;
-  const ignoredPct = totalAll > 0 ? Math.round(((remediation?.total_ignored ?? 0) / totalAll) * 100) : 0;
-
-  return (
-    <div className="space-y-6">
-      {/* Summary cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4">
-        {[
-          { label: "Crypto assets", value: cardData.total_crypto_assets, icon: Lock, box: "bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400" },
-          { label: "Weak", value: cardData.total_weak_algorithms, icon: ShieldAlert, box: "bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400" },
-          { label: "Quantum vulnerable", value: cardData.total_quantum_vulnerable, icon: AlertTriangle, box: "bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400" },
-          { label: "Certificates", value: cardData.total_certificates, icon: ShieldCheck, box: "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400" },
-          { label: "Keys", value: cardData.total_keys, icon: Key, box: "bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400" },
-          { label: "Quantum ready", value: readinessText(cardData), icon: Shield, box: "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400" },
-          { label: "Avg risk score", value: cardData.average_risk_score?.toFixed(1) ?? "N/A", icon: Activity, box: "bg-teal-100 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400" },
-        ].map(({ label, value, icon: Icon, box }) => (
-          <Card key={label} className="border-zinc-200 dark:border-zinc-800">
-            <CardContent className="pt-4 pb-4 flex items-center gap-3">
-              <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${box}`}>
-                <Icon className="h-5 w-5" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">{label}</p>
-                <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 tabular-nums">{value}</p>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      {/* Remediation actions */}
-      {remediation && (
-        <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardHeader>
-            <CardTitle className="text-base">Remediation progress</CardTitle>
-            <CardDescription>Finding status breakdown</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {[
-                { label: "Fixed", value: remediation.total_fixed ?? 0, pct: fixedPct, icon: CheckCircle, color: "text-emerald-600 dark:text-emerald-400" },
-                { label: "In progress", value: remediation.total_in_progress ?? 0, pct: inProgressPct, icon: Loader2, color: "text-blue-600 dark:text-blue-400" },
-                { label: "Not started", value: remediation.total_not_started ?? 0, pct: notStartedPct, icon: Circle, color: "text-slate-600 dark:text-slate-400" },
-                { label: "Ignored", value: remediation.total_ignored ?? 0, pct: ignoredPct, icon: EyeOff, color: "text-zinc-600 dark:text-zinc-400" },
-              ].map(({ label, value, pct, icon: Icon, color }) => (
-                <div key={label} className="flex items-center gap-3">
-                  <Icon className={`h-5 w-5 shrink-0 ${color}`} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-zinc-900 dark:text-white">{label}</p>
-                    <p className="text-xs text-zinc-500">{value} · {pct}%</p>
-                    <Progress value={pct} className="h-2 mt-1" />
-                  </div>
-                </div>
-              ))}
-              <div className="flex justify-between items-center pt-2 border-t border-zinc-200 dark:border-zinc-700">
-                <span className="text-sm text-zinc-600 dark:text-zinc-400">Findings resolved</span>
-                <span className="text-lg font-bold text-zinc-900 dark:text-white tabular-nums">{remediation.total_fixed}/{totalFindings}</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Row 1: OWASP + Risk Radar + Compliance */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* OWASP Top 10 */}
-        <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <PieChart className="w-4 h-4" />
-              OWASP Top 10 issues
-            </CardTitle>
-            <CardDescription>Distribution by OWASP category</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {!hasOwaspData ? (
-              <div className="flex items-center justify-center min-h-[280px] text-zinc-500 dark:text-zinc-400 text-sm">No OWASP data available</div>
-            ) : (
-              <>
-                <ChartContainer config={owaspRadialChartConfig} className="mx-auto aspect-square max-h-[280px] cursor-pointer">
-                  <RadialBarChart data={owaspRadialData} innerRadius={40} outerRadius={100} startAngle={90} endAngle={-270}>
-                    <ChartTooltip
-                      cursor={false}
-                      content={
-                        <ChartTooltipContent
-                          nameKey="displayValue"
-                          labelFormatter={(_, payload) => (payload?.[0]?.payload as { displayValue?: string } | undefined)?.displayValue ?? "—"}
-                          formatter={(_, __, ___, ____, payload) => {
-                            const count = (payload as { actualCount?: number } | undefined)?.actualCount ?? 0;
-                            return <>Count: <span className="font-mono font-semibold tabular-nums">{count}</span></>;
-                          }}
-                        />
-                      }
-                    />
-                    <RadialBar dataKey="count" background className="cursor-pointer" />
-                  </RadialBarChart>
-                </ChartContainer>
-                <div className="mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-700 flex flex-wrap gap-x-4 gap-y-1.5 justify-center">
-                  {owaspEntries.map(({ key, displayValue, fill }) => (
-                    <div key={key} className="flex items-center gap-1.5 text-xs">
-                      <span className="shrink-0 w-3 h-3 rounded-full" style={{ backgroundColor: fill }} aria-hidden />
-                      <span className="text-zinc-600 dark:text-zinc-400">{displayValue}</span>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Severity Radar */}
-        <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4" />
-              Risk metrics
-            </CardTitle>
-            <CardDescription>Findings by impact severity</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {!hasRiskData ? (
-              <div className="flex items-center justify-center min-h-[280px] text-zinc-500 dark:text-zinc-400 text-sm">No data to display</div>
-            ) : (
-              <ChartContainer config={radarConfig} className="mx-auto aspect-square max-h-[280px] cursor-pointer">
-                <RadarChart data={severityRadarData} margin={{ top: 8, right: 24, bottom: 8, left: 24 }}>
-                  <ChartTooltip cursor={false} content={<ChartTooltipContent nameKey="subject" formatter={(value) => [value, "Count"]} />} />
-                  <PolarAngleAxis dataKey="subject" />
-                  <PolarGrid />
-                  <Radar dataKey="count" fill="hsl(220 70% 50%)" fillOpacity={0.4} stroke="hsl(220 70% 50%)" strokeWidth={2} dot={{ r: 4, fillOpacity: 1 }} />
-                </RadarChart>
-              </ChartContainer>
-            )}
-            <p className="mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-700 text-xs text-zinc-500 dark:text-zinc-400 text-center">
-              Findings for each impact level (Critical, High, Medium, Low)
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Compliance Controls */}
-        <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <BarChart3 className="w-4 h-4" />
-              Compliance controls
-            </CardTitle>
-            <CardDescription>Findings mapped to compliance frameworks</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {!hasComplianceData ? (
-              <div className="flex items-center justify-center min-h-[280px] text-zinc-500 dark:text-zinc-400 text-sm">No compliance data available</div>
-            ) : (
-              <ChartContainer
-                config={complianceBarChartConfig}
-                className="aspect-auto w-full cursor-pointer"
-                style={{ height: complianceChartHeight }}
-              >
-                <BarChart
-                  data={complianceChartRows}
-                  layout="vertical"
-                  margin={{ top: 4, right: 12, bottom: 4, left: 4 }}
-                  barCategoryGap={10}
-                >
-                  <CartesianGrid horizontal={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
-                  <XAxis type="number" hide />
-                  <YAxis
-                    dataKey="name"
-                    type="category"
-                    width={168}
-                    interval={0}
-                    tickLine={false}
-                    axisLine={false}
-                    tick={{ fontSize: 11 }}
-                    className="text-xs"
-                  />
-                  <ChartTooltip
-                    content={
-                      <ChartTooltipContent
-                        labelFormatter={(_, payload) =>
-                          String(
-                            (payload?.[0]?.payload as { fullName?: string } | undefined)
-                              ?.fullName ?? "",
-                          )
-                        }
-                      />
-                    }
-                  />
-                  <Bar dataKey="count" fill="hsl(217 91% 60%)" radius={[0, 4, 4, 0]} />
-                </BarChart>
-              </ChartContainer>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Row 2: CBOM-specific charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Algorithm Types */}
-        <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <BarChart3 className="w-4 h-4" />
-              Algorithm types
-            </CardTitle>
-            <CardDescription>Distribution by algorithm category</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {!hasAlgorithmTypeData ? (
-              <div className="flex items-center justify-center min-h-[280px] text-zinc-500 dark:text-zinc-400 text-sm">No data to display</div>
-            ) : (
-              <ChartContainer config={barConfig} className="aspect-auto h-[280px] w-full">
-                <BarChart data={algorithmTypeData} layout="vertical" margin={{ top: 0, right: 8, bottom: 0, left: 0 }}>
-                  <CartesianGrid horizontal={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
-                  <XAxis type="number" tickLine={false} axisLine={false} className="text-xs" />
-                  <YAxis dataKey="name" type="category" width={120} tickLine={false} axisLine={false} className="text-xs" />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Bar dataKey="count" fill="hsl(220 70% 50%)" radius={[0, 4, 4, 0]} />
-                </BarChart>
-              </ChartContainer>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Strength */}
-        <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4" />
-              Crypto strength
-            </CardTitle>
-            <CardDescription>Distribution by cryptographic strength</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {!hasStrengthData ? (
-              <div className="flex items-center justify-center min-h-[280px] text-zinc-500 dark:text-zinc-400 text-sm">No data to display</div>
-            ) : (
-              <ChartContainer config={barConfig} className="aspect-auto h-[280px] w-full">
-                <BarChart data={strengthData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-                  <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
-                  <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} className="text-xs" />
-                  <YAxis tickLine={false} axisLine={false} className="text-xs" />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Bar dataKey="count" radius={[4, 4, 0, 0]}>
-                    {strengthData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.fill} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ChartContainer>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Quantum Readiness */}
-        <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Shield className="w-4 h-4" />
-              Quantum readiness
-            </CardTitle>
-            <CardDescription>Safe vs vulnerable cryptographic assets</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {!hasQuantumData ? (
-              <div className="flex items-center justify-center min-h-[280px] text-zinc-500 dark:text-zinc-400 text-sm">No data to display</div>
-            ) : (
-              <ChartContainer config={barConfig} className="aspect-auto h-[280px] w-full">
-                <BarChart data={quantumData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-                  <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
-                  <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} className="text-xs" />
-                  <YAxis tickLine={false} axisLine={false} className="text-xs" />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Bar dataKey="count" radius={[4, 4, 0, 0]}>
-                    {quantumData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.fill} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ChartContainer>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Risk Scores per Finding */}
-        <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <TrendingUp className="w-4 h-4" />
-              Risk scores per finding
-            </CardTitle>
-            <CardDescription>Risk score by finding (top 24, descending)</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {!hasRiskScoresData ? (
-              <div className="flex items-center justify-center min-h-[280px] text-zinc-500 dark:text-zinc-400 text-sm">No risk score data to display</div>
-            ) : (
-              <ChartContainer config={riskScoreAreaChartConfig} className="aspect-auto h-[280px] w-full cursor-pointer">
-                <AreaChart data={riskScoresAreaData} margin={{ top: 8, right: 8, bottom: 28, left: 0 }}>
-                  <defs>
-                    <linearGradient id="fillCbomRiskScore" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="hsl(217 91% 60%)" stopOpacity={0.8} />
-                      <stop offset="95%" stopColor="hsl(217 91% 60%)" stopOpacity={0.1} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
-                  <XAxis dataKey="finding" tickLine={false} axisLine={false} tickMargin={8} minTickGap={16} height={40} interval={0} />
-                  <YAxis hide domain={[0, 10]} />
-                  <ChartTooltip
-                    cursor={false}
-                    content={
-                      <ChartTooltipContent
-                        className="gap-2 py-2.5 px-3 min-w-48"
-                        hideIndicator
-                        formatter={(value) => ["Risk score  :  ", value]}
-                        labelFormatter={(_, payload) => {
-                          const fullName = (payload?.[0]?.payload as { fullName?: string } | undefined)?.fullName;
-                          return fullName ? <span className="block font-medium text-zinc-900 dark:text-zinc-100">{fullName}</span> : "—";
-                        }}
-                      />
-                    }
-                  />
-                  <Area type="monotone" dataKey="score" fill="url(#fillCbomRiskScore)" stroke="hsl(217 91% 60%)" strokeWidth={2} />
-                </AreaChart>
-              </ChartContainer>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Remediation KPIs */}
-      {remediationKpis && (
-        <Card className="border-zinc-200 dark:border-zinc-800 shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-base">Remediation metrics</CardTitle>
-            <CardDescription>Performance and efficiency tracking</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              {(() => {
-                const [days, hours, minutes] = remediationKpis.mean_time_to_remediate;
-                const totalDays = days + hours / 24 + minutes / (60 * 24);
-                const targetDays = 3;
-                const progress = totalDays <= 0 ? 100 : Math.min(100, (targetDays / totalDays) * 100);
-                const delta = totalDays > 0 && targetDays > 0 ? `${Math.round(((totalDays - targetDays) / targetDays) * 100)}%` : "—";
-                return (
-                  <div className="space-y-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-500/15 dark:bg-teal-500/10">
-                      <Clock className="h-5 w-5 text-teal-600 dark:text-teal-400" />
-                    </div>
-                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Mean time to remediate</p>
-                    <p className="text-2xl font-bold text-zinc-900 dark:text-white">
-                      {totalDays < 0.1 && totalDays >= 0 ? "<0.1 days" : `${totalDays.toFixed(1)} days`}
-                    </p>
-                    <p className="text-xs text-zinc-500 dark:text-zinc-400">Target: {targetDays} days</p>
-                    <div className="flex items-center gap-2">
-                      <Progress value={progress} className="h-2 flex-1" />
-                      <span className="text-xs text-zinc-500 tabular-nums shrink-0">{delta}</span>
-                    </div>
-                  </div>
-                );
-              })()}
-              {(() => {
-                const fixed = remediationKpis.critical_issues_fixed;
-                const total = fixed + criticalCount;
-                const pct = total > 0 ? Math.round((fixed / total) * 100) : 0;
-                const targetPct = 95;
-                const progress = Math.min(100, (pct / targetPct) * 100);
-                const delta = pct >= targetPct ? "+0%" : `+${targetPct - pct}%`;
-                return (
-                  <div className="space-y-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-500/15 dark:bg-teal-500/10">
-                      <CheckCircle className="h-5 w-5 text-teal-600 dark:text-teal-400" />
-                    </div>
-                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Critical issues fixed</p>
-                    <p className="text-2xl font-bold text-zinc-900 dark:text-white">{pct}%</p>
-                    <p className="text-xs text-zinc-500 dark:text-zinc-400">Target: {targetPct}%</p>
-                    <div className="flex items-center gap-2">
-                      <Progress value={progress} className="h-2 flex-1" />
-                      <span className="text-xs text-zinc-500 tabular-nums shrink-0">{delta}</span>
-                    </div>
-                  </div>
-                );
-              })()}
-              {(() => {
-                const backlog = remediationKpis.high_priority_backlog;
-                const target = 10;
-                const progress = target <= 0 ? 100 : Math.max(0, Math.min(100, (1 - (backlog - target) / Math.max(target, backlog)) * 100));
-                const delta = backlog > target ? `-${backlog - target}` : backlog < target ? `+${target - backlog}` : "0";
-                return (
-                  <div className="space-y-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-500/15 dark:bg-teal-500/10">
-                      <Crosshair className="h-5 w-5 text-teal-600 dark:text-teal-400" />
-                    </div>
-                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">High priority backlog</p>
-                    <p className="text-2xl font-bold text-zinc-900 dark:text-white">{backlog}</p>
-                    <p className="text-xs text-zinc-500 dark:text-zinc-400">Target: {target}</p>
-                    <div className="flex items-center gap-2">
-                      <Progress value={backlog <= target ? 100 : Math.max(0, (target / backlog) * 100)} className="h-2 flex-1 [&>div]:bg-orange-500" />
-                      <span className="text-xs text-zinc-500 tabular-nums shrink-0">{delta}</span>
-                    </div>
-                  </div>
-                );
-              })()}
-              {(() => {
-                const velocity = remediationKpis.remediation_velocity;
-                const target = 20;
-                const progress = Math.min(100, (velocity / target) * 100);
-                const delta = velocity >= target ? "+0" : `+${target - velocity}`;
-                return (
-                  <div className="space-y-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-500/15 dark:bg-teal-500/10">
-                      <Activity className="h-5 w-5 text-teal-600 dark:text-teal-400" />
-                    </div>
-                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Remediation velocity</p>
-                    <p className="text-2xl font-bold text-zinc-900 dark:text-white">{velocity}/week</p>
-                    <p className="text-xs text-zinc-500 dark:text-zinc-400">Target: {target}/week</p>
-                    <div className="flex items-center gap-2">
-                      <Progress value={progress} className="h-2 flex-1" />
-                      <span className="text-xs text-zinc-500 tabular-nums shrink-0">{delta}</span>
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-    </div>
-  );
-}
-
 /** Quantum column: "Broken today" for a classically broken algorithm (MD5, SHA-1, DES …) instead of a misleading
  * "Safe"; "—" when quantum readiness does not apply (libraries, configuration, certificates). */
 function QuantumBadge({ quantumSafe, strength, yesNo = false }: { quantumSafe?: boolean | null; strength?: string | null; yesNo?: boolean }) {
@@ -762,6 +163,9 @@ function QuantumBadge({ quantumSafe, strength, yesNo = false }: { quantumSafe?: 
         Broken today
       </Badge>
     );
+  }
+  if (isUnidentified({ quantum_safe: quantumSafe, crypto_strength: strength })) {
+    return <span className="text-zinc-500 dark:text-zinc-400 text-xs" title="Not identified by the rule base: not judged, never counted as safe">Unknown</span>;
   }
   if (quantumSafe === true) {
     return <Badge variant="outline" className="border-emerald-500/50 text-emerald-600 dark:text-emerald-400">{yesNo ? "Yes" : "Safe"}</Badge>;
@@ -778,12 +182,19 @@ export default function CbomResults({
   teamId,
   dashboard,
   findings: findingsList = [],
-  scanMetadata,
+  scanMetadata: scanMetadataProp,
   integrationSettings,
   onIntegrationSettingsUpdated,
   onFindingsUpdated,
   backHref,
+  source,
 }: CbomResultsProps) {
+  // A Sources run fills the same sections from the run APIs; a code scan (no source, or kind "scan") renders as before.
+  const run = source?.kind === "run" && source.run ? source : null;
+  // A run's scan_metadata is /runs/{id}/parity's (the code scan's own keys: compliance readiness, RBI / CERT-In roll-ups,
+  // dependency graph, coverage notes); null on an older backend, which hides those sections as on a legacy scan.
+  const scanMetadata = run ? run.parity?.scan_metadata ?? null : scanMetadataProp;
+  const runParityNotes = run ? parityNotes(run.parityState, run.parity) : null;
   const router = useRouter();
   const params = useParams();
   const searchParams = useSearchParams();
@@ -791,8 +202,33 @@ export default function CbomResults({
   const team_id = teamId ?? params?.team_id;
   const scan_id = conversationId ?? params?.scan_id;
   const queryClient = useQueryClient();
+  const goBack = () => {
+    const backRoute = backHref
+      ? backHref
+      : origin === "chat" && team_id && scan_id != null
+        ? `/${team_id}/cbom/${scan_id}`
+        : team_id
+          ? `/${team_id}/cbom`
+          : "/cbom";
+    router.push(backRoute);
+  };
 
   const [activeTab, setActiveTab] = useState<"results" | "ticketing">("results");
+  // A run's view (?section=…): read from the URL every render, ignored on a code scan
+  const resultsUrl = useResultsUrl();
+  const section: ResultsSection = run ? resultsUrl.section : "";
+  const requestFindingsScroll = useResultsScroll(section, !!run && activeTab === "results");
+  // the run finding dialog's Previous / Next over the findings table (B3); inert on a code scan (nulls)
+  const { nav: dialogNav, openFromTable } = useDialogNav({
+    assetId: run?.dialog?.assetId ?? null,
+    open: (id) => run?.setDialog({ assetId: id }),
+    items: run?.page?.items,
+    page: run?.filters.page ?? 1,
+    pageSize: run?.filters.page_size ?? 50,
+    total: run?.page ? tableTotal(run.page, run.filters.view, hasActiveFilters(run.filters)) : 0,
+    placeholder: run?.pagePlaceholder ?? false,
+    goToPage: (p) => run?.onFilters({ page: p }),
+  });
   const [searchQuery, setSearchQuery] = useState("");
   const [relatedFindingRefs, setRelatedFindingRefs] = useState<string[]>([]);
   const [strengthFilter, setStrengthFilter] = useState("all");
@@ -802,6 +238,9 @@ export default function CbomResults({
   const [filterRiskScore, setFilterRiskScore] = useState<RiskScoreFilter>("all");
   const [selectedFinding, setSelectedFinding] = useState<CbomFinding | null>(null);
   const [selectedFindings, setSelectedFindings] = useState<Set<string>>(new Set());
+  // #267: the code findings table's visible columns (per user, localStorage); select and Actions always show
+  const scanColumns = useColumnPrefs("scan", SCAN_TABLE_COLUMNS);
+  const showCol = scanColumns.isVisible;
 
   // Jira ticketing state
   const jiraFromSettings =
@@ -997,7 +436,7 @@ export default function CbomResults({
       if (Number.isNaN(tid) || Number.isNaN(sid) || !tid || !sid) {
         throw new Error("Missing or invalid team or scan id");
       }
-      return getCBOMExportResults(tid, sid);
+      return getCBOMExportResults(tid, sid, { toast: false });
     },
     onSuccess: (result) => {
       const blob = result instanceof Blob ? result : new Blob([result]);
@@ -1091,6 +530,8 @@ export default function CbomResults({
   const importReport = ((scanMetadata as Record<string, unknown> | null)?.cbom_input ?? null) as CbomImportReport | null;
   // A code scan's coverage: archives, images, binaries and firmware it skipped or only counted (null when none)
   const coverageReport = ((scanMetadata as Record<string, unknown> | null)?.cbom_coverage ?? null) as CbomCoverageReport | null;
+  // CB-29: the crypto-library advisory data the code scan matched (offline OSV snapshot version and date)
+  const advisoryData = run ? null : readAdvisoryData(data, scanMetadata);
   const informationalRows = dashboard?.card_data?.total_informational ?? 0;
   // Every crypto asset (findings + clean inventory) for the readiness gauge, as the PDF and the scan list count them
   const allRows = useMemo(() => inventoryRows(data, findingsList ?? []), [data, findingsList]);
@@ -1099,11 +540,15 @@ export default function CbomResults({
   // on scans produced by the reconciled aibom lane; legacy worker CBOM scans
   // carry no `cbom_distributions`, so the charts simply don't render.
   const cryptoDistributions = useMemo<CbomDistributions | null>(() => {
+    if (run) {
+      const dist = run.results?.distributions;
+      return dist ? applyPostureToDistributions(resolveMigrationRows(dist), run.posture) : null;
+    }
     const fromData = (data as Record<string, unknown> | null)?.cbom_distributions;
     const fromMeta = (scanMetadata as Record<string, unknown> | null)?.cbom_distributions;
     const dist = (fromData ?? fromMeta) as CbomDistributions | undefined;
     return dist ?? null;
-  }, [data, scanMetadata]);
+  }, [data, scanMetadata, run]);
 
   // Crypto dependency graph (I1 cbom_graph). Same source precedence as the
   // distributions — present only on reconciled aibom-lane scans; F1's asset-type
@@ -1139,8 +584,66 @@ export default function CbomResults({
     return c && typeof c === "object" ? c : null;
   }, [data, scanMetadata]);
 
+  // Compliance mapping (#270): one view over the tri-state checks (code scans and runs) and, for a run, the knowledge
+  // base clauses its findings touch; every asset count drills into the findings table.
+  const complianceMapping = useMemo(() => {
+    const kb = run ? complianceRows(run.results, run.posture) : { rows: [], basis: "none" as const };
+    return {
+      basis: kb.basis,
+      frameworks: buildComplianceSummary({
+        engine: cryptoCompliance,
+        mapping: kb.rows,
+        findings: run ? null : findingsList ?? [],
+        refAliases: relatedRefAliases,
+        titles: Object.fromEntries((run?.posture?.top_codes ?? []).map((c) => [c.code, c.title])),
+      }),
+    };
+  }, [run, cryptoCompliance, findingsList, relatedRefAliases]);
+
+  // A run's views: a tile's Open pushes a history entry; every drill-down filters the findings table,
+  // returns to a view that has it and scrolls there once it is mounted (drillToFindings)
+  const { patch: patchResultsUrl } = resultsUrl;
+  // a tile's Open pushes; "Back to summary" goes back when the summary is behind; focus follows the view (sectionNav.ts)
+  const { goSection, backToSummary } = useSectionNav(section, patchResultsUrl);
+  const drillToFindings = (patch: Parameters<NonNullable<typeof run>["onFilters"]>[0]) => {
+    if (!run) return;
+    createDrill({ onFilters: run.onFilters, section, goSection, requestScroll: requestFindingsScroll })(patch);
+  };
+  // RBI CSF / CERT-In "view findings" on a run: their refs name run assets; a requirement with none says so
+  const handleViewRunRefs = (refs: string[]) => {
+    const d = runRefsDrill(refs, "Assets of this requirement");
+    if (!d) {
+      toast.info("This requirement names no asset of this run");
+      return;
+    }
+    drillToFindings(d.patch);
+    if (d.truncated) toast.warning("The findings table shows the first assets of this requirement only (one request carries up to 500)");
+  };
+  // a PQC list item on a run opens the run's finding dialog for its asset (never the code scan's dialog)
+  const openRunPqcFinding = (f: CbomFinding) => {
+    if (!run) return;
+    const id = pqcRunAssetId(f as CbomFinding & { asset_id?: number | null });
+    if (id != null) run.openAsset(id, f.algorithm_name || f.title || undefined);
+    else toast.info("This item names no asset of this run");
+  };
+
+  const handleComplianceDrill = (target: DrillTarget) => {
+    if (run) {
+      const { patch, truncated } = runDrillFilters(target);
+      drillToFindings(patch);
+      if (truncated) toast.warning("The findings table shows the first assets of this requirement only (one request carries up to 500)");
+    } else if (target.kind === "refs") {
+      handleViewRelatedFindings(target.refs);
+    } else {
+      // a code scan's findings carry their finding codes: the same filter, in the browser like its other filters
+      const refs = (findingsList ?? []).filter((f) => (f.finding_codes ?? []).some((c) => target.codes.includes(c))).map((f) => f.bom_ref || f.id);
+      if (refs.length) handleViewRelatedFindings(refs);
+      else toast.info("No finding of this scan carries these finding codes");
+    }
+  };
+
   const showTabs = team_id && scan_id != null;
-  const hasTicketingTab = showTabs && onIntegrationSettingsUpdated != null;
+  const hasTicketingTab = run ? RUN_TICKETING_TAB_AVAILABLE : showTabs && onIntegrationSettingsUpdated != null;
 
   const hasActiveFindingsFilters =
     searchQuery.trim() !== "" ||
@@ -1151,8 +654,81 @@ export default function CbomResults({
     typeFilter !== "all" ||
     quantumFilter !== "all";
 
+  // the Sources run's views: what they share (built from the figures above), and the one rendered for ?section=
+  const viewCtx: RunViewCtx | null = run ? {
+    run, meta, parityNotes: runParityNotes, distributions: cryptoDistributions, graph: cryptoGraph, graphCompact: cryptoGraphCompact,
+    graphExpanded: cryptoGraphExpanded, compliance: cryptoCompliance, complianceMapping, coverageReport, importReport,
+    onComplianceDrill: handleComplianceDrill, onViewRefs: handleViewRunRefs, onOpenPqcFinding: openRunPqcFinding,
+    drill: drillToFindings, openFromTable, section, goSection,
+  } : null;
+  const detailView = (s: DetailSection, ctx: RunViewCtx) => {
+    const r = ctx.run;
+    const resultsPending = r.resultsState.kind === "loading";
+    const back = backToSummary;
+    switch (s) {
+      case "collection": return <SectionView section={s} onBack={back}><CollectionView ctx={ctx} /></SectionView>;
+      case "quantum": return <SectionView section={s} onBack={back}><QuantumView ctx={ctx} /></SectionView>;
+      case "inventory": return <SectionView section={s} onBack={back} loading={resultsPending}><InventoryView ctx={ctx} /></SectionView>;
+      case "migration": return <SectionView section={s} onBack={back} loading={resultsPending}><MigrationView ctx={ctx} /></SectionView>;
+      case "compliance":
+        return <SectionView section={s} onBack={back} loading={resultsPending || r.parityState === "loading"}><ComplianceView ctx={ctx} /></SectionView>;
+      case "remediation": return <SectionView section={s} onBack={back}><RemediationView ctx={ctx} /></SectionView>;
+    }
+  };
+
+  const tabBar = (
+        <div className="flex gap-2 mb-6 border-b border-zinc-200 dark:border-zinc-800">
+          <button
+            type="button"
+            onClick={() => setActiveTab("results")}
+            className={`px-4 py-2 font-medium text-sm transition-colors border-b-2 cursor-pointer ${
+              activeTab === "results"
+                ? "border-blue-600 text-blue-600 dark:text-blue-400"
+                : "border-transparent text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <BarChart3 className="w-4 h-4" />
+              Results
+            </div>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("ticketing")}
+            className={`px-4 py-2 font-medium text-sm transition-colors border-b-2 cursor-pointer ${
+              activeTab === "ticketing"
+                ? "border-blue-600 text-blue-600 dark:text-blue-400"
+                : "border-transparent text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Ticket className="w-4 h-4" />
+              Ticketing integrations
+            </div>
+          </button>
+        </div>
+  );
+
   return (
     <div className="container mx-auto p-6 space-y-6">
+      {run && run.run && viewCtx ? (
+        // the Explanations drawer lists the tips of the view on screen (B3's manifest: run.summary, run.<section>)
+        <InfoTipDrawerProvider view={`run.${section || "summary"}`}>
+          {/* results redesign: the hero header on every view, the Results / Ticketing tabs, then the summary or one view */}
+          <ResultsHero teamId={run.teamId} run={run.run} sources={run.sources} posture={run.posture} assetTotal={run.page?.all_total ?? null}
+                       canCompare={run.canCompare} onCompare={() => run.setCompareOpen(true)} onBack={scan_id != null || team_id ? goBack : null}
+                       targets={run.page?.targets ?? null} showLabBanner={section !== "collection"} />
+          {hasTicketingTab && tabBar}
+          {activeTab === "ticketing" && hasTicketingTab ? (
+            <RunTicketingTab teamId={run.teamId} runId={run.runId} />
+          ) : section === "" ? (
+            <SummaryView ctx={viewCtx} />
+          ) : (
+            detailView(section, viewCtx)
+          )}
+        </InfoTipDrawerProvider>
+      ) : (
+        <>
       {/* Header: the export buttons wrap under the title on a narrow screen (they ran off a phone's right edge) */}
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex items-center gap-4">
@@ -1161,23 +737,14 @@ export default function CbomResults({
               variant="outline"
               size="icon"
                 aria-label="Back"
-              onClick={() => {
-                const backRoute = backHref
-                  ? backHref
-                  : origin === "chat" && team_id && scan_id != null
-                    ? `/${team_id}/cbom/${scan_id}`
-                    : team_id
-                      ? `/${team_id}/cbom`
-                      : "/cbom";
-                router.push(backRoute);
-              }}
+              onClick={goBack}
               className="cursor-pointer"
             >
               <ArrowLeft className="h-4 w-4" />
             </Button>
           )}
           <div>
-            <h1 className="text-3xl font-bold text-zinc-900 dark:text-white flex items-center gap-2">
+            <h1 className="text-3xl font-bold text-zinc-900 dark:text-white flex items-center gap-2" data-testid="cbom-results-title">
               <ShieldCheck className="h-7 w-7 text-blue-600 dark:text-blue-400" />
               CBOM Scan Results
             </h1>
@@ -1202,8 +769,10 @@ export default function CbomResults({
             </div>
           </div>
         </div>
-        {team_id && scan_id != null && (
-          <div className="flex items-center gap-2 flex-wrap lg:justify-end">
+        {/* A Sources run is this same [scan_id] route with ?run=1, so params.scan_id is set: its header is ResultsHero
+            (RunHeaderActions), rendered instead of this one. One toolbar: the run row, or this code-scan row. */}
+        {team_id && scan_id != null ? (
+          <div className="flex items-center gap-2 flex-wrap lg:justify-end" data-testid="cbom-scan-header-actions">
             <Button
               variant="outline"
               className="cursor-pointer"
@@ -1276,89 +845,22 @@ export default function CbomResults({
               Scan settings
             </Button>
           </div>
-        )}
+        ) : null}
       </div>
 
-      {importReport && importReportHasNews(importReport) && (
-        <Card className="mb-6 border-amber-300 dark:border-amber-700 bg-amber-50/60 dark:bg-amber-950/20" role="alert" data-testid="cbom-import-notes">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2 text-amber-800 dark:text-amber-300">
-              <AlertTriangle className="h-4 w-4 shrink-0" /> About the uploaded CBOM file
-            </CardTitle>
-            <CardDescription className="text-amber-900/80 dark:text-amber-200/80">
-              {importReport.imported ?? 0} of {importReport.crypto_assets ?? 0} cryptographic assets imported
-              {importReport.spec_version ? ` · CycloneDX ${importReport.spec_version}` : ""}
-              {importReport.skipped_not_crypto ? ` · ${importReport.skipped_not_crypto} non-crypto components skipped` : ""}
-              {importReport.skipped_invalid ? ` · ${importReport.skipped_invalid} unreadable` : ""}
-              {importReport.duplicates ? ` · ${importReport.duplicates} duplicates` : ""}
-              {importReport.truncated ? " · truncated" : ""}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ul className="list-disc pl-5 space-y-1 text-sm text-amber-900 dark:text-amber-200 break-words">
-              {importNoteLines(importReport).map((note, i) => <li key={i}>{note}</li>)}
-            </ul>
-          </CardContent>
-        </Card>
+      <ImportNotesCard report={importReport} />
+
+      <CoverageNotesCard report={coverageReport} />
+
+      {advisoryData && (
+        <p className={`mb-6 text-xs ${advisoryData.stale ? "text-amber-800 dark:text-amber-300" : "text-zinc-500 dark:text-zinc-400"}`}
+           data-testid="cbom-advisory-data" data-stale={advisoryData.stale ? "true" : "false"}
+           role={advisoryData.stale ? "status" : undefined}>
+          {advisoryLine(advisoryData)}{staleNote(advisoryData) ? ` ${staleNote(advisoryData)}` : ""}
+        </p>
       )}
 
-      {coverageReport && coverageReport.notes.length > 0 && (
-        <Card className={`mb-6 ${coverageReport.skipped > 0 ? "border-amber-300 dark:border-amber-700 bg-amber-50/60 dark:bg-amber-950/20" : "border-zinc-200 dark:border-zinc-800"}`}
-          role={coverageReport.skipped > 0 ? "alert" : undefined} data-testid="cbom-coverage-notes">
-          <CardHeader className="pb-2">
-            <CardTitle className={`text-sm flex items-center gap-2 ${coverageReport.skipped > 0 ? "text-amber-800 dark:text-amber-300" : "text-zinc-800 dark:text-zinc-200"}`}>
-              <AlertTriangle className="h-4 w-4 shrink-0" /> What this scan covered
-            </CardTitle>
-            <CardDescription className={coverageReport.skipped > 0 ? "text-amber-900/80 dark:text-amber-200/80" : undefined}>
-              {coverageReport.skipped > 0
-                ? `${coverageReport.skipped} kind(s) of input were skipped or only partly read; the CycloneDX file lists the same counts (crypto:coverage:*).`
-                : "Nothing was skipped; these notes say what was read and are also in the CycloneDX file (crypto:coverage:*)."}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ul className="list-disc pl-5 space-y-1 text-sm break-words">
-              {coverageReport.notes.map((note) => (
-                <li key={note.key} className={note.kind === "skipped" ? "text-amber-900 dark:text-amber-200" : "text-zinc-700 dark:text-zinc-300"}>
-                  {note.text}
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
-      )}
-
-      {hasTicketingTab && (
-        <div className="flex gap-2 mb-6 border-b border-zinc-200 dark:border-zinc-800">
-          <button
-            type="button"
-            onClick={() => setActiveTab("results")}
-            className={`px-4 py-2 font-medium text-sm transition-colors border-b-2 cursor-pointer ${
-              activeTab === "results"
-                ? "border-blue-600 text-blue-600 dark:text-blue-400"
-                : "border-transparent text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <BarChart3 className="w-4 h-4" />
-              Results
-            </div>
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab("ticketing")}
-            className={`px-4 py-2 font-medium text-sm transition-colors border-b-2 cursor-pointer ${
-              activeTab === "ticketing"
-                ? "border-blue-600 text-blue-600 dark:text-blue-400"
-                : "border-transparent text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <Ticket className="w-4 h-4" />
-              Ticketing integrations
-            </div>
-          </button>
-        </div>
-      )}
+      {hasTicketingTab && tabBar}
 
       {activeTab === "ticketing" && hasTicketingTab ? (
         <TicketingIntegrationsSettings
@@ -1388,7 +890,7 @@ export default function CbomResults({
                       <GitBranch className="h-5 w-5" />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Branch</p>
+                      <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Branch <InfoTip id="results.meta.branch" /></p>
                       <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{String(meta.branch)}</p>
                     </div>
                   </CardContent>
@@ -1401,7 +903,7 @@ export default function CbomResults({
                       <Archive className="h-5 w-5" />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Source</p>
+                      <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Source <InfoTip id="results.meta.source" /></p>
                       <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{meta.zip_file_used ? "ZIP upload" : "Repository"}</p>
                     </div>
                   </CardContent>
@@ -1414,7 +916,7 @@ export default function CbomResults({
                       <Lock className="h-5 w-5" />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Input</p>
+                      <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Input <InfoTip id="cbom.res.input" /></p>
                       <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">CBOM file</p>
                     </div>
                   </CardContent>
@@ -1423,6 +925,13 @@ export default function CbomResults({
             </div>
           )}
 
+          {/* Code scans have no Sources posture payload. The same heading still introduces the PQC charts
+              this page already renders, so a code scan and a Sources run share the section name. */}
+          {cryptoDistributions && (
+            <h2 className="text-base font-semibold text-zinc-900 dark:text-white" data-testid="code-posture-heading">
+              Post-quantum and risk posture
+            </h2>
+          )}
           {/* Crypto-asset charts (aibom CBOM lane) */}
           {cryptoDistributions && (
             <CbomCryptoCharts
@@ -1435,13 +944,21 @@ export default function CbomResults({
               findings={findingsList ?? []}
               inventory={allRows}
               onOpenFinding={(f) => setSelectedFinding(f)}
+              showCodeHeatmap
+              readinessScope="code"
             />
           )}
-          {cryptoDistributions && Number.isFinite(tid) && tid > 0 && Number.isFinite(sid) && sid > 0 && (
+          {/* the code scan's changes and waves: never on a run (they read and write code scan #<id>, and a run's id is not one) */}
+          {!run && cryptoDistributions && Number.isFinite(tid) && tid > 0 && Number.isFinite(sid) && sid > 0 && (
             <>
               <CodeChanges teamId={tid} scanId={sid} />
               <CodeWavesPanel teamId={tid} scanId={sid} />
             </>
+          )}
+          {Number.isFinite(tid) && tid > 0 && (
+            <div className="mt-6" data-testid="code-cert-hygiene">
+              <CertHygieneSection teamId={tid} />
+            </div>
           )}
           <RbiCsfRollup
             rollup={meta?.rbi_csf_rollup as RbiCsfRollupData | undefined}
@@ -1459,6 +976,9 @@ export default function CbomResults({
             refAliases={relatedRefAliases}
           />
 
+          <ComplianceMappingSection frameworks={complianceMapping.frameworks} onDrill={handleComplianceDrill} scope="scan"
+                                    note={null} footnote={null} />
+
           {/* Dashboard */}
           {dashboard && cardData && (
             <CbomDashboardCharts dashboard={dashboard} findingsList={findingsList ?? []} />
@@ -1467,7 +987,7 @@ export default function CbomResults({
           {/* Findings */}
           <Card id="bom-findings">
             <CardHeader>
-              <CardTitle>Cryptographic findings</CardTitle>
+              <CardTitle>Cryptographic findings <InfoTip id="cbom.res.findings" /></CardTitle>
               <CardDescription>
                 {filteredFindings.length} of {(findingsList ?? []).length} findings. Select rows to create Jira tickets; use Action to change finding state.
                 {informationalRows > 0 && (
@@ -1495,6 +1015,7 @@ export default function CbomResults({
                       aria-label="Search findings table"
                     />
                   </div>
+                  <InfoTip id="cbom.res.search" className="-ml-2" />
                   <Select value={filterImpact} onValueChange={setFilterImpact}>
                     <SelectTrigger className="h-9 min-w-[140px] cursor-pointer">
                       <SelectValue placeholder="Impact" />
@@ -1507,6 +1028,7 @@ export default function CbomResults({
                       <SelectItem value="low">Low</SelectItem>
                     </SelectContent>
                   </Select>
+                  <InfoTip id="results.filter.impact" className="-ml-2" />
                   <Select value={filterRiskScore} onValueChange={(v) => setFilterRiskScore(v as RiskScoreFilter)}>
                     <SelectTrigger className="h-9 min-w-[140px] cursor-pointer">
                       <SelectValue placeholder="Risk score" />
@@ -1519,6 +1041,7 @@ export default function CbomResults({
                       <SelectItem value="low">Low (&lt;5)</SelectItem>
                     </SelectContent>
                   </Select>
+                  <InfoTip id="cbom.res.filter.risk" className="-ml-2" />
                   <Select value={strengthFilter} onValueChange={setStrengthFilter}>
                     <SelectTrigger className="h-9 min-w-[140px] cursor-pointer">
                       <SelectValue placeholder="Strength" />
@@ -1531,6 +1054,7 @@ export default function CbomResults({
                       <SelectItem value="quantum_safe">Quantum-Safe</SelectItem>
                     </SelectContent>
                   </Select>
+                  <InfoTip id="cbom.res.filter.strength" className="-ml-2" />
                   <Select value={typeFilter} onValueChange={setTypeFilter}>
                     <SelectTrigger className="h-9 min-w-[150px] cursor-pointer">
                       <SelectValue placeholder="Type" />
@@ -1542,6 +1066,7 @@ export default function CbomResults({
                       ))}
                     </SelectContent>
                   </Select>
+                  <InfoTip id="cbom.res.filter.type" className="-ml-2" />
                   <Select value={quantumFilter} onValueChange={setQuantumFilter}>
                     <SelectTrigger className="h-9 min-w-[140px] cursor-pointer">
                       <SelectValue placeholder="Quantum" />
@@ -1553,6 +1078,11 @@ export default function CbomResults({
                       <SelectItem value="vulnerable">Vulnerable</SelectItem>
                     </SelectContent>
                   </Select>
+                  <InfoTip id="cbom.res.filter.quantum" className="-ml-2" />
+                  <div className="ml-auto">
+                    <ColumnChooser defs={SCAN_TABLE_COLUMNS} visible={scanColumns.visible} onToggle={scanColumns.toggle}
+                                   onReset={scanColumns.reset} testId="cbom-findings-columns" />
+                  </div>
                 </div>
               )}
               {hasActiveFindingsFilters && (
@@ -1573,32 +1103,38 @@ export default function CbomResults({
                 <Table className="min-w-max">
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-[48px]">
-                        <Checkbox
-                          checked={filteredFindings.length > 0 && selectedFindings.size === filteredFindings.length}
-                          onCheckedChange={() => {
-                            if (selectedFindings.size === filteredFindings.length) setSelectedFindings(new Set());
-                            else setSelectedFindings(new Set(filteredFindings.map((f) => f.id)));
-                          }}
-                          aria-label="Select all rows"
-                          className="cursor-pointer"
-                        />
+                      <TableHead data-col="select" className="w-[72px]">
+                        <div className="flex items-center gap-0.5">
+                          <Checkbox
+                            checked={filteredFindings.length > 0 && selectedFindings.size === filteredFindings.length}
+                            onCheckedChange={() => {
+                              if (selectedFindings.size === filteredFindings.length) setSelectedFindings(new Set());
+                              else setSelectedFindings(new Set(filteredFindings.map((f) => f.id)));
+                            }}
+                            aria-label="Select all rows"
+                            className="cursor-pointer"
+                          />
+                          <InfoTip id="cbom.res.select_all" />
+                        </div>
                       </TableHead>
-                      <TableHead className="min-w-[160px]">Algorithm</TableHead>
-                      <TableHead className="min-w-[120px]">Type</TableHead>
-                      <TableHead className="min-w-[90px]">Impact</TableHead>
-                      <TableHead className="min-w-[110px]">Strength</TableHead>
-                      <TableHead className="min-w-[100px]">Quantum</TableHead>
-                      <TableHead className="min-w-[90px] text-center">Risk score</TableHead>
-                      <TableHead className="min-w-[140px]">Location</TableHead>
-                      <TableHead className="min-w-[100px]">Status</TableHead>
-                      <TableHead className="min-w-[100px] text-right">Actions</TableHead>
+                      {showCol("algorithm") && <TableHead data-col="algorithm" className="min-w-[160px]">Algorithm <InfoTip id="cbom.res.col.algorithm" /></TableHead>}
+                      {showCol("type") && <TableHead data-col="type" className="min-w-[120px]">Type <InfoTip id="cbom.res.col.type" /></TableHead>}
+                      {showCol("impact") && <TableHead data-col="impact" className="min-w-[90px]">Impact <InfoTip id="results.table.impact" /></TableHead>}
+                      {showCol("strength") && <TableHead data-col="strength" className="min-w-[110px]">Strength <InfoTip id="cbom.res.col.strength" /></TableHead>}
+                      {showCol("quantum") && <TableHead data-col="quantum" className="min-w-[100px]">Quantum <InfoTip id="cbom.res.col.quantum" /></TableHead>}
+                      {showCol("fixclass") && <TableHead data-col="fixclass" className="min-w-[110px]">Fix class <InfoTip id="cbom.res.col.fix_class" /></TableHead>}
+                      {showCol("risk") && <TableHead data-col="risk" className="min-w-[90px] text-center">Risk score <InfoTip id="cbom.res.col.risk" /></TableHead>}
+                      {showCol("location") && <TableHead data-col="location" className="min-w-[140px]">Location <InfoTip id="cbom.res.col.location" /></TableHead>}
+                      {showCol("status") && <TableHead data-col="status" className="min-w-[100px]">Status <InfoTip id="results.table.status" /></TableHead>}
+                      <TableHead data-col="actions" className={`min-w-[150px] text-right ${STICKY_ACTIONS}`}>
+                        <span className="inline-flex items-center gap-1">Actions <InfoTip id="results.finding.action" /></span>
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {filteredFindings.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={10} className="text-center py-8 text-zinc-500 dark:text-zinc-400">
+                        <TableCell colSpan={2 + scanColumns.visible.length} className="text-center py-8 text-zinc-500 dark:text-zinc-400">
                           {relatedFindingRefs.length > 0
                             ? "No findings match these related assets. Related refs may point at inventory-only components without a finding row — clear the related-asset filter to see all findings."
                             : "No findings match your filters."}
@@ -1610,9 +1146,13 @@ export default function CbomResults({
                         return (
                           <TableRow
                             key={finding.id}
-                            className={`hover:bg-zinc-50 dark:hover:bg-zinc-800/50 ${selectedFindings.has(finding.id) ? "bg-zinc-100 dark:bg-zinc-800/70" : ""}`}
+                            data-testid={`cbom-finding-row-${finding.id}`}
+                            {...rowOpenProps(() => setSelectedFinding(finding), `Open details of ${finding.algorithm_name || finding.title}`)}
+                            className={`cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50 focus-visible:outline-none focus-visible:bg-blue-50 dark:focus-visible:bg-blue-950/40 ${selectedFindings.has(finding.id) ? "bg-zinc-100 dark:bg-zinc-800/70" : ""}`}
                           >
-                            <TableCell onClick={(e) => e.stopPropagation()} className="w-[48px]">
+                            <TableCell data-col="select" onClick={(e) => e.stopPropagation()} className="w-[72px]">
+                              <div className="flex items-center gap-1">
+                              {/* infotip-shared: one row of the selection; the Select all tip in the header explains it */}
                               <Checkbox
                                 checked={selectedFindings.has(finding.id)}
                                 onCheckedChange={() => {
@@ -1624,8 +1164,11 @@ export default function CbomResults({
                                 aria-label={`Select ${finding.algorithm_name || finding.title}`}
                                 className="cursor-pointer"
                               />
+                              <RowOpenButton label={`Open details of ${finding.algorithm_name || finding.title}`} onOpen={() => setSelectedFinding(finding)} />
+                              </div>
                             </TableCell>
-                            <TableCell className="font-medium">
+                            {showCol("algorithm") && (
+                            <TableCell data-col="algorithm" className="font-medium">
                               <button
                                 type="button"
                                 onClick={() => setSelectedFinding(finding)}
@@ -1635,21 +1178,36 @@ export default function CbomResults({
                                 {finding.algorithm_name || finding.title}
                               </button>
                             </TableCell>
-                            <TableCell className="text-sm text-zinc-600 dark:text-zinc-400">
+                            )}
+                            {showCol("type") && (
+                            <TableCell data-col="type" className="text-sm text-zinc-600 dark:text-zinc-400">
                               {finding.algorithm_type?.replace(/_/g, " ") ?? "—"}
                             </TableCell>
-                            <TableCell>
+                            )}
+                            {showCol("impact") && (
+                            <TableCell data-col="impact">
                               <Badge variant="outline" className={getImpactBadgeClass(finding.impact)}>{finding.impact}</Badge>
                             </TableCell>
-                            <TableCell>
+                            )}
+                            {showCol("strength") && (
+                            <TableCell data-col="strength">
                               <Badge variant="outline" className={getStrengthBadgeClass(finding.crypto_strength)}>
                                 {finding.crypto_strength ?? "—"}
                               </Badge>
                             </TableCell>
-                            <TableCell>
+                            )}
+                            {showCol("quantum") && (
+                            <TableCell data-col="quantum">
                               <QuantumBadge quantumSafe={finding.quantum_safe} strength={finding.crypto_strength} />
                             </TableCell>
-                            <TableCell className="text-center">
+                            )}
+                            {showCol("fixclass") && (
+                            <TableCell data-col="fixclass">
+                              <FixClassChip item={finding as FixClassFields} testId={`cbom-finding-fixclass-${finding.id}`} />
+                            </TableCell>
+                            )}
+                            {showCol("risk") && (
+                            <TableCell data-col="risk" className="text-center">
                               <span
                                 className={`inline-flex items-center justify-center min-w-9 px-2 py-1 rounded-md text-xs font-semibold tabular-nums ${getRiskScoreBoxClass(finding.risk_score)}`}
                                 title="Risk score"
@@ -1657,16 +1215,24 @@ export default function CbomResults({
                                 {finding.risk_score?.toFixed(1) ?? "—"}
                               </span>
                             </TableCell>
-                            <TableCell className="text-sm text-zinc-600 dark:text-zinc-400 max-w-[150px] truncate" title={finding.location ?? ""}>
+                            )}
+                            {showCol("location") && (
+                            <TableCell data-col="location" className="text-sm text-zinc-600 dark:text-zinc-400 max-w-[150px] truncate" title={finding.location ?? ""}>
                               {finding.location ?? "—"}
                             </TableCell>
-                            <TableCell>
+                            )}
+                            {showCol("status") && (
+                            <TableCell data-col="status">
                               <span className={`inline-flex items-center justify-center px-2.5 py-1 rounded-md text-xs font-medium capitalize ${getFindingStatusBadgeClass(finding.status ?? "not_started")}`}>
                                 {statusLabel}
                               </span>
                             </TableCell>
-                            <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                            )}
+                            <TableCell data-col="actions" className={`text-right whitespace-nowrap ${STICKY_ACTIONS}`} onClick={(e) => e.stopPropagation()}
+                                       data-testid={`cbom-finding-actions-${finding.id}`}>
+                              <div className="inline-flex items-center gap-1.5">
                               <DropdownMenu>
+                                {/* infotip-shared: explained by the (i) on the Actions column header */}
                                 <DropdownMenuTrigger asChild>
                                   <Button variant="outline" size="sm" className="cursor-pointer gap-1.5 h-8 shrink-0" aria-label="Finding actions">
                                     <Pencil className="h-3.5 w-3.5 opacity-70" />
@@ -1688,6 +1254,11 @@ export default function CbomResults({
                                   </DropdownMenuItem>
                                 </DropdownMenuContent>
                               </DropdownMenu>
+                              <Button variant="ghost" size="sm" className="cursor-pointer h-8 gap-1" data-testid={`cbom-finding-details-${finding.id}`}
+                                      aria-label={`Details of ${finding.algorithm_name || finding.title}`} onClick={() => setSelectedFinding(finding)}>
+                                <Eye className="h-3.5 w-3.5" /> Details
+                              </Button>
+                              </div>
                             </TableCell>
                           </TableRow>
                         );
@@ -1703,7 +1274,7 @@ export default function CbomResults({
           {dashboard?.top_risks && dashboard.top_risks.length > 0 && (
             <Card className="border-zinc-200 dark:border-zinc-800">
               <CardHeader>
-                <CardTitle className="text-base">Top cryptographic risks</CardTitle>
+                <CardTitle className="text-base">Top cryptographic risks <InfoTip id="cbom.res.top" /></CardTitle>
                 <CardDescription>Highest-risk cryptographic assets</CardDescription>
               </CardHeader>
               <CardContent>
@@ -1711,11 +1282,11 @@ export default function CbomResults({
                   <Table className="min-w-max">
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="min-w-[160px]">Algorithm</TableHead>
-                        <TableHead className="min-w-[120px]">Type</TableHead>
-                        <TableHead className="min-w-[110px]">Strength</TableHead>
-                        <TableHead className="min-w-[110px]">Quantum safe</TableHead>
-                        <TableHead className="min-w-[120px]">Impact</TableHead>
+                        <TableHead className="min-w-[160px]">Algorithm <InfoTip id="cbom.res.col.algorithm" /></TableHead>
+                        <TableHead className="min-w-[120px]">Type <InfoTip id="cbom.res.col.type" /></TableHead>
+                        <TableHead className="min-w-[110px]">Strength <InfoTip id="cbom.res.col.strength" /></TableHead>
+                        <TableHead className="min-w-[110px]">Quantum safe <InfoTip id="cbom.res.col.quantum_safe" /></TableHead>
+                        <TableHead className="min-w-[120px]">Impact <InfoTip id="results.table.impact" /></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1743,19 +1314,29 @@ export default function CbomResults({
         </>
       )}
 
-      {/* Finding Detail Dialog */}
-      <Dialog open={!!selectedFinding} onOpenChange={(open) => !open && setSelectedFinding(null)}>
-        <DialogContent className="sm:max-w-3xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden bg-white dark:bg-zinc-900">
+        </>
+      )}
+
+      {run && (
+        <RunFindingDialog teamId={run.teamId} runId={run.runId} subject={run.dialog} jobs={run.run?.jobs ?? []} waveOf={run.waveOf} onClose={() => run.setDialog(null)}
+                          pageItems={run.page?.items} nav={dialogNav} onSetStatus={run.setStatus} statusPending={run.statusPending}
+                          priorityOf={(id) => run.posture?.top_risks?.find((r) => r.id === id)?.score} />
+      )}
+      {run && run.compareOpen && (
+        <CompareDialog teamId={run.teamId} runId={run.runId} runs={run.compareRuns} onClose={() => run.setCompareOpen(false)} />
+      )}
+
+      {/* Finding Detail Dialog (code scans; a run opens RunFindingDialog) */}
+      <Dialog open={!run && !!selectedFinding} onOpenChange={(open) => !open && setSelectedFinding(null)}>
+        <DialogContent className={`${FINDING_DIALOG_CONTENT} ${FINDING_DIALOG_FULLSCREEN_SM}`}>
           <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
             <DialogTitle className="pr-8">{selectedFinding?.algorithm_name || selectedFinding?.title || "Finding details"}</DialogTitle>
           </DialogHeader>
           {selectedFinding && (
-            <div className="h-[70vh] min-h-0 shrink px-6 pb-6">
-              {/* Radix wraps the content in a display:table box that grows to its widest line: the exploit demo's
-                  unwrapped proof-of-concept script pushed every section past the dialog's right edge (text cut off,
-                  unreadable on a phone). As a block the content keeps the dialog's width; long code scrolls itself. */}
-              <ScrollArea className="h-full w-full rounded-md [&_[data-slot=scroll-area-viewport]>div]:!block" data-testid="cbom-finding-scroll">
-                <div className="space-y-4 pt-2 pr-4">
+            // #266: the body div is the dialog's one scroll container (a min-h-0 flex item of the max-h-[90vh] column),
+            // at every width; a plain block also keeps the exploit demo's long lines inside the dialog's width.
+            <div className={FINDING_DIALOG_BODY} tabIndex={0} role="region" aria-label="Finding details" data-testid="cbom-finding-scroll">
+                <div className="space-y-4 pt-2">
                   {/* Metadata grid */}
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                     <div>
@@ -1874,8 +1455,13 @@ export default function CbomResults({
                     snippetStart={selectedFinding.snippet_start}
                     line={selectedFinding.line}
                   />
+                  {/* CB-38 PR-6: optional AI assistant under the KB remediation; renders nothing unless configured */}
+                  <AiRemediationPanel
+                    key={selectedFinding.id}
+                    teamId={Number(team_id)}
+                    subject={{ kind: "scan_finding", scanId: Number(scan_id), findingId: selectedFinding.id }}
+                  />
                 </div>
-              </ScrollArea>
             </div>
           )}
         </DialogContent>

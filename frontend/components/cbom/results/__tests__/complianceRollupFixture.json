@@ -1,0 +1,256 @@
+{
+ "rbi_csf_rollup": {
+  "rbi_csf_rollup": {
+   "identification": {
+    "pass": 1,
+    "pass_with_evidence": 0,
+    "fail": 1,
+    "out_of_scope": 0,
+    "not_bom_evidenceable": 0,
+    "na": 0,
+    "coverage": 0.5,
+    "requirements": [
+     {
+      "id": "RBI-ID-1",
+      "framework": "RBI CSF",
+      "verdict": "pass",
+      "title": "Inventory of cryptographic assets maintained",
+      "source": "RBI Cyber Security Framework",
+      "evidence": "25 asset(s)",
+      "refs": [
+       "zs-asset-4401",
+       "zs-asset-4402",
+       "zs-asset-4403",
+       "zs-asset-4404",
+       "zs-asset-4405",
+       "zs-asset-4406",
+       "zs-asset-4414",
+       "zs-asset-4416"
+      ],
+      "attestable": true
+     },
+     {
+      "id": "RBI-ID-2",
+      "framework": "RBI CSF",
+      "verdict": "fail",
+      "title": "Weak or deprecated cryptography identified",
+      "source": "RBI Cyber Security Framework",
+      "evidence": "21 asset(s)",
+      "refs": [
+       "zs-asset-4401",
+       "zs-asset-4402",
+       "zs-asset-4414",
+       "zs-asset-4415",
+       "zs-asset-4416",
+       "zs-asset-4418",
+       "zs-asset-4419",
+       "zs-asset-4420"
+      ],
+      "attestable": false
+     }
+    ]
+   },
+   "protection": {
+    "pass": 0,
+    "pass_with_evidence": 0,
+    "fail": 2,
+    "out_of_scope": 0,
+    "not_bom_evidenceable": 1,
+    "na": 0,
+    "coverage": 0.0,
+    "requirements": [
+     {
+      "id": "RBI-PR-1",
+      "framework": "RBI CSF",
+      "verdict": "fail",
+      "title": "Strong protocols and cipher suites on transmission channels",
+      "source": "RBI Cyber Security Framework",
+      "evidence": "21 asset(s)",
+      "refs": [
+       "zs-asset-4401",
+       "zs-asset-4402",
+       "zs-asset-4414",
+       "zs-asset-4415",
+       "zs-asset-4416",
+       "zs-asset-4418",
+       "zs-asset-4419",
+       "zs-asset-4420"
+      ],
+      "attestable": false
+     },
+     {
+      "id": "RBI-PR-2",
+      "framework": "RBI CSF",
+      "verdict": "fail",
+      "title": "Key lengths meet the approved minimum",
+      "source": "RBI Cyber Security Framework",
+      "evidence": "4 asset(s)",
+      "refs": [
+       "zs-asset-4401",
+       "zs-asset-4402",
+       "zs-asset-4429",
+       "zs-asset-4443"
+      ],
+      "attestable": false
+     },
+     {
+      "id": "RBI-PR-3",
+      "framework": "RBI CSF",
+      "verdict": "not_bom_evidenceable",
+      "title": "Key management lifecycle documented",
+      "source": "RBI Cyber Security Framework",
+      "evidence": "0 asset(s)",
+      "refs": [],
+      "attestable": true
+     }
+    ]
+   },
+   "governance": {
+    "pass": 0,
+    "pass_with_evidence": 0,
+    "fail": 0,
+    "out_of_scope": 0,
+    "not_bom_evidenceable": 1,
+    "na": 0,
+    "coverage": null,
+    "requirements": [
+     {
+      "id": "RBI-GV-1",
+      "framework": "RBI CSF",
+      "verdict": "not_bom_evidenceable",
+      "title": "Cryptographic policy approved by the board",
+      "source": "RBI Cyber Security Framework",
+      "evidence": "0 asset(s)",
+      "refs": [],
+      "attestable": true
+     }
+    ]
+   }
+  },
+  "disclaimer": "Advisory mapping of BOM evidence to RBI CSF pillars; not an RBI assessment."
+ },
+ "certin_posture": {
+  "certin_posture": {
+   "cbom_crypto_assets": {
+    "pass": 3,
+    "pass_with_evidence": 0,
+    "fail": 2,
+    "out_of_scope": 0,
+    "not_bom_evidenceable": 0,
+    "na": 0,
+    "coverage": 0.6,
+    "requirements": [
+     {
+      "id": "CBOM-1",
+      "framework": "CERT-In",
+      "verdict": "pass",
+      "title": "Algorithms, protocols, certificates and keys inventoried",
+      "refs": [
+       "zs-asset-4401",
+       "zs-asset-4402",
+       "zs-asset-4403",
+       "zs-asset-4404",
+       "zs-asset-4405",
+       "zs-asset-4406",
+       "zs-asset-4414",
+       "zs-asset-4416"
+      ],
+      "attestable": true
+     },
+     {
+      "id": "CBOM-2",
+      "framework": "CERT-In",
+      "verdict": "pass",
+      "title": "Each asset carries its location and source",
+      "refs": [],
+      "attestable": true
+     },
+     {
+      "id": "CBOM-3",
+      "framework": "CERT-In",
+      "verdict": "pass",
+      "title": "Quantum-vulnerable assets flagged",
+      "refs": [
+       "zs-asset-4401",
+       "zs-asset-4402",
+       "zs-asset-4403",
+       "zs-asset-4404",
+       "zs-asset-4405",
+       "zs-asset-4406",
+       "zs-asset-4414",
+       "zs-asset-4416"
+      ],
+      "attestable": true
+     },
+     {
+      "id": "CBOM-4",
+      "framework": "CERT-In",
+      "verdict": "fail",
+      "title": "No deprecated protocols (SSLv3, TLS 1.0/1.1)",
+      "refs": [
+       "zs-asset-4415",
+       "zs-asset-4424",
+       "zs-asset-4431",
+       "zs-asset-4438",
+       "zs-asset-4440"
+      ],
+      "attestable": false
+     },
+     {
+      "id": "CBOM-5",
+      "framework": "CERT-In",
+      "verdict": "fail",
+      "title": "No weak ciphers or key sizes",
+      "refs": [
+       "zs-asset-4401",
+       "zs-asset-4402",
+       "zs-asset-4414",
+       "zs-asset-4415",
+       "zs-asset-4416",
+       "zs-asset-4418",
+       "zs-asset-4419",
+       "zs-asset-4420"
+      ],
+      "attestable": false
+     }
+    ]
+   },
+   "cbom_recommendations": {
+    "pass": 1,
+    "pass_with_evidence": 0,
+    "fail": 0,
+    "out_of_scope": 0,
+    "not_bom_evidenceable": 2,
+    "na": 0,
+    "coverage": 1.0,
+    "requirements": [
+     {
+      "id": "CBOM-R1",
+      "framework": "CERT-In",
+      "verdict": "pass",
+      "title": "CBOM produced in CycloneDX 1.6",
+      "refs": [],
+      "attestable": true
+     },
+     {
+      "id": "CBOM-R2",
+      "framework": "CERT-In",
+      "verdict": "not_bom_evidenceable",
+      "title": "PQC migration plan approved",
+      "refs": [],
+      "attestable": true
+     },
+     {
+      "id": "CBOM-R3",
+      "framework": "CERT-In",
+      "verdict": "not_bom_evidenceable",
+      "title": "CBOM refreshed on every change",
+      "refs": [],
+      "attestable": true
+     }
+    ]
+   }
+  },
+  "disclaimer": "Advisory; does not constitute CERT-In certification."
+ }
+}

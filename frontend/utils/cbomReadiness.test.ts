@@ -25,10 +25,12 @@ assert.equal(readinessText({ quantum_readiness_score: 25 }), "25%");
 
 // both cards use these helpers (the scan page printed `${score}%`, the list page coloured 0 red)
 const root = process.cwd();
-const scanPage = readFileSync(path.join(root, "components", "CbomResults.tsx"), "utf8");
+// the scan page's cards live in CbomDashboardCharts (moved out of CbomResults.tsx in CB-38; the run page uses it too)
+const scanPage = readFileSync(path.join(root, "components", "CbomResults.tsx"), "utf8") +
+  readFileSync(path.join(root, "components", "cbom", "results", "CbomDashboardCharts.tsx"), "utf8");
 const listPage = readFileSync(path.join(root, "app", "[team_id]", "cbom", "page.tsx"), "utf8");
 assert.ok(!scanPage.includes("`${cardData.quantum_readiness_score}%`"), "scan page prints the raw score");
-assert.match(scanPage, /label: "Quantum ready", value: readinessText\(cardData\)/);
+assert.match(scanPage, /label: "Quantum ready", value: \(cardData\) => readinessText\(cardData\)/);
 assert.ok(!listPage.includes("{card.quantum_readiness_score}%"), "scan list prints the raw score");
 assert.match(listPage, /\{readinessText\(card\)\}/);
 assert.match(listPage, /READINESS_BOX\[readinessTone\(card\)\]/);

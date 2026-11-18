@@ -12,10 +12,20 @@ import type { Query, QueryClient } from "@tanstack/react-query";
 /** The query the sidebar's balance reads (GET /teams). */
 export const CREDIT_BALANCE_QUERY_KEY = ["teams"] as const;
 
+/** One GET /teams per client while a refresh is already in flight. Call sites invoke this and refreshCredits
+ * (utils/creditRefresh.ts, the same refetch); the second joins the first instead of cancelling it. */
+const inflightBalanceRefresh = new WeakMap<QueryClient, Promise<void>>();
+
 /** Refetch the balance now. Call it from onSettled, not onSuccess: a refused start or cancel still shows the
  * current balance (another tab may have spent credits), and the refetch is one small GET. */
 export function refreshCreditBalance(queryClient: QueryClient): Promise<void> {
-  return queryClient.invalidateQueries({ queryKey: CREDIT_BALANCE_QUERY_KEY });
+  const current = inflightBalanceRefresh.get(queryClient);
+  if (current) return current;
+  const pending = queryClient.invalidateQueries({ queryKey: CREDIT_BALANCE_QUERY_KEY }).finally(() => {
+    if (inflightBalanceRefresh.get(queryClient) === pending) inflightBalanceRefresh.delete(queryClient);
+  });
+  inflightBalanceRefresh.set(queryClient, pending);
+  return pending;
 }
 
 /** For a caller that also invalidates every other query: leave the balance to refreshCreditBalance, otherwise

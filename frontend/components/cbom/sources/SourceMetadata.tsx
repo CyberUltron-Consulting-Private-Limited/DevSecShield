@@ -1,6 +1,7 @@
 "use client";
 
-// Source metadata: owner, application, data classification and data lifetime (next to business criticality). They
+// Source metadata: owner, application, data classification, data lifetime and who operates it (next to business
+// criticality). They
 // describe the source, not how it is reached, so saving them never cancels a job or resets the connection test. A
 // form block for the source tabs, and a bulk editor for Review & Run.
 
@@ -18,9 +19,19 @@ import { cbomSourcesKeys } from "./keys";
 import { EXPOSURE_CHOICES, exposureFrom, withMetadata, type ExposureChoice } from "./logic";
 import { Field, SectionCard, StatusBadge, Truncate } from "./shared";
 import { refreshCreditBalance } from "@/utils/creditBalance";
+import { InfoTip } from "@/components/ui/info-tip";
 
 export const CLASSIFICATIONS = ["public", "internal", "confidential", "restricted"] as const;
 export type Classification = (typeof CLASSIFICATIONS)[number];
+
+/** Who runs what the source reaches (CB-24): a vendor-operated source's findings are at least vendor-fixed.
+ * Not set = the team (the backend's default). */
+export const OPERATED_BY = ["us", "vendor"] as const;
+export type OperatedBy = (typeof OPERATED_BY)[number];
+export const OPERATED_BY_LABEL: Record<OperatedBy, string> = {
+  us: "Our team",
+  vendor: "A vendor (SaaS or managed service)",
+};
 
 export interface SourceMetadata {
   owner: string;
@@ -28,6 +39,8 @@ export interface SourceMetadata {
   data_classification: Classification | "";
   data_lifetime_years: string;
   environment: string;
+  /** "" = not set (single source: sends null) / keep (bulk); "clear" = bulk only: send null to every source */
+  operated_by: OperatedBy | "" | "clear";
 }
 
 export function metadataFrom(config: Record<string, unknown> | null | undefined): SourceMetadata {
@@ -39,6 +52,7 @@ export function metadataFrom(config: Record<string, unknown> | null | undefined)
       ? (c.data_classification as Classification) : "",
     data_lifetime_years: typeof c.data_lifetime_years === "number" ? String(c.data_lifetime_years) : "",
     environment: typeof c.environment === "string" ? c.environment : "",
+    operated_by: (OPERATED_BY as readonly string[]).includes(String(c.operated_by)) ? (c.operated_by as OperatedBy) : "",
   };
 }
 
@@ -52,24 +66,47 @@ export function metadataConfig(m: SourceMetadata): Record<string, unknown> | str
     data_classification: m.data_classification || null,
     data_lifetime_years: years === "" ? null : Number(years),
     environment: m.environment.trim() || null,
+    operated_by: m.operated_by === "clear" ? null : m.operated_by || null,
   };
 }
 
-export function MetadataFields({ value, onChange, idPrefix }: {
+/** The bulk editor's changes: only the fields the user filled in (empty = keep), criticality unless "keep", and
+ * `operated_by` set to us / vendor, or null for "Clear". A string is the message to show instead. */
+export function bulkMetadataChanges(draft: SourceMetadata, criticality: string): Record<string, unknown> | string {
+  const changes: Record<string, unknown> = {};
+  if (draft.owner.trim()) changes.owner = draft.owner.trim();
+  if (draft.application.trim()) changes.application = draft.application.trim();
+  if (draft.data_classification) changes.data_classification = draft.data_classification;
+  if (draft.environment.trim()) changes.environment = draft.environment.trim();
+  if (draft.data_lifetime_years.trim()) {
+    const parsed = metadataConfig(draft);
+    if (typeof parsed === "string") return parsed;
+    changes.data_lifetime_years = parsed.data_lifetime_years;
+  }
+  if (draft.operated_by === "clear") changes.operated_by = null;
+  else if (draft.operated_by) changes.operated_by = draft.operated_by;
+  if (criticality !== "keep") changes.business_criticality = criticality;
+  if (Object.keys(changes).length === 0) return "Enter at least one value to set";
+  return changes;
+}
+
+export function MetadataFields({ value, onChange, idPrefix, bulk = false }: {
   value: SourceMetadata;
   onChange: (v: SourceMetadata) => void;
   idPrefix: string;
+  /** the bulk editor: the empty choice of "Operated by" is "Keep", and "Clear (our team)" sends null */
+  bulk?: boolean;
 }) {
   const set = (patch: Partial<SourceMetadata>) => onChange({ ...value, ...patch });
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4" data-testid={`${idPrefix}-metadata`}>
-      <Field label="Owner" htmlFor={`${idPrefix}-owner`} hint="Team or person who answers for this source">
+      <Field infoId="cbsrc.meta.owner" label="Owner" htmlFor={`${idPrefix}-owner`} hint="Team or person who answers for this source">
         <Input id={`${idPrefix}-owner`} maxLength={128} value={value.owner} onChange={(e) => set({ owner: e.target.value })} />
       </Field>
-      <Field label="Application" htmlFor={`${idPrefix}-application`} hint="The business application it serves">
+      <Field infoId="cbsrc.meta.application" label="Application" htmlFor={`${idPrefix}-application`} hint="The business application it serves">
         <Input id={`${idPrefix}-application`} maxLength={128} value={value.application} onChange={(e) => set({ application: e.target.value })} />
       </Field>
-      <Field label="Data classification" htmlFor={`${idPrefix}-classification`}>
+      <Field infoId="cbsrc.meta.classification" label="Data classification" htmlFor={`${idPrefix}-classification`}>
         <Select value={value.data_classification || "unset"}
                 onValueChange={(v) => set({ data_classification: v === "unset" ? "" : (v as Classification) })}>
           <SelectTrigger id={`${idPrefix}-classification`} className="cursor-pointer"><SelectValue /></SelectTrigger>
@@ -79,13 +116,27 @@ export function MetadataFields({ value, onChange, idPrefix }: {
           </SelectContent>
         </Select>
       </Field>
-      <Field label="Data must stay secret for (years)" htmlFor={`${idPrefix}-lifetime`} hint="Mosca's X for this source's data">
+      <Field infoId="cbsrc.meta.lifetime" label="Data must stay secret for (years)" htmlFor={`${idPrefix}-lifetime`} hint="Mosca's X for this source's data">
         <Input id={`${idPrefix}-lifetime`} inputMode="numeric" value={value.data_lifetime_years}
                onChange={(e) => set({ data_lifetime_years: e.target.value })} />
       </Field>
-      <Field label="Environment" htmlFor={`${idPrefix}-environment`} hint="As your CMDB names it: production, staging, ...">
+      <Field infoId="cbsrc.meta.environment" label="Environment" htmlFor={`${idPrefix}-environment`} hint="As your CMDB names it: production, staging, ...">
         <Input id={`${idPrefix}-environment`} maxLength={32} value={value.environment}
                onChange={(e) => set({ environment: e.target.value })} />
+      </Field>
+      <Field infoId="cbom.source.operated_by" label="Operated by" htmlFor={`${idPrefix}-operated-by`}
+             hint="A vendor-operated source's findings are at least vendor-fixed (crypto-agility)">
+        <div className="flex flex-wrap items-center gap-2">
+          <Select value={value.operated_by || "unset"}
+                  onValueChange={(v) => set({ operated_by: v === "unset" ? "" : (v as OperatedBy | "clear") })}>
+            <SelectTrigger id={`${idPrefix}-operated-by`} className="cursor-pointer min-w-0 flex-1" data-testid={`${idPrefix}-operated-by`}><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="unset" className="cursor-pointer">{bulk ? "Keep" : "Not set (our team)"}</SelectItem>
+              {OPERATED_BY.map((o) => <SelectItem key={o} value={o} className="cursor-pointer">{OPERATED_BY_LABEL[o]}</SelectItem>)}
+              {bulk && <SelectItem value="clear" className="cursor-pointer">Clear (not set: our team)</SelectItem>}
+            </SelectContent>
+          </Select>
+        </div>
       </Field>
     </div>
   );
@@ -133,7 +184,7 @@ export function SourceMetadataDialog({ teamId, source, onClose }: {
         </DialogHeader>
         <div className="space-y-4">
           <MetadataFields value={meta} onChange={(v) => { setMeta(v); setError(null); }} idPrefix={`source-${source.id}`} />
-          <Field label="Internet exposure" htmlFor={`source-${source.id}-exposure`}
+          <Field infoId="cbsrc.meta.exposure" label="Internet exposure" htmlFor={`source-${source.id}-exposure`}
                  hint="Overrides what the collected facts say; internet-facing raises the risk score">
             <Select value={exposure} onValueChange={(v) => setExposure(v as ExposureChoice)}>
               <SelectTrigger id={`source-${source.id}-exposure`} className="cursor-pointer"><SelectValue /></SelectTrigger>
@@ -161,24 +212,14 @@ export function SourceMetadataCard({ teamId }: { teamId: number }) {
   const queryClient = useQueryClient();
   const query = useQuery({ queryKey: cbomSourcesKeys.sources(teamId, "all"), queryFn: () => listCbomSources(teamId), retry: 1 });
   const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [draft, setDraft] = useState<SourceMetadata>({ owner: "", application: "", data_classification: "", data_lifetime_years: "", environment: "" });
+  const [draft, setDraft] = useState<SourceMetadata>({ owner: "", application: "", data_classification: "", data_lifetime_years: "", environment: "", operated_by: "" });
   const [criticality, setCriticality] = useState("keep");
   const [error, setError] = useState<string | null>(null);
   const sources = query.data?.sources ?? [];
   const apply = useMutation({
     mutationFn: async (targets: CbomSource[]) => {
-      const changes: Record<string, unknown> = {};
-      if (draft.owner.trim()) changes.owner = draft.owner.trim();
-      if (draft.application.trim()) changes.application = draft.application.trim();
-      if (draft.data_classification) changes.data_classification = draft.data_classification;
-      if (draft.environment.trim()) changes.environment = draft.environment.trim();
-      if (draft.data_lifetime_years.trim()) {
-        const parsed = metadataConfig(draft);
-        if (typeof parsed === "string") throw new Error(parsed);
-        changes.data_lifetime_years = parsed.data_lifetime_years;
-      }
-      if (criticality !== "keep") changes.business_criticality = criticality;
-      if (Object.keys(changes).length === 0) throw new Error("Enter at least one value to set");
+      const changes = bulkMetadataChanges(draft, criticality);
+      if (typeof changes === "string") throw new Error(changes);
       let done = 0;
       for (const src of targets) {  // one at a time: each keeps its own expected version (a stale one gets a 409)
         await updateCbomSource(teamId, src.id, { config: { ...src.config, ...changes }, expected_version: src.row_version });
@@ -200,18 +241,19 @@ export function SourceMetadataCard({ teamId }: { teamId: number }) {
   if (query.isLoading || sources.length === 0) return null;
   const toggle = (id: number) => setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   return (
-    <SectionCard title="Owners, applications and data" description="Who answers for each source and how sensitive its data is; set several at once">
+    <SectionCard infoId="cbsrc.meta.bulk" title="Owners, applications and data" description="Who answers for each source and how sensitive its data is; set several at once">
       <div className="space-y-3" data-testid="metadata-bulk">
         <ul className="divide-y divide-zinc-200 dark:divide-zinc-800">
           <li className="py-1.5 flex items-center gap-2 text-xs text-zinc-500">
             <input type="checkbox" aria-label="Select all sources" checked={selected.size === sources.length}
                    onChange={(e) => setSelected(e.target.checked ? new Set(sources.map((s) => s.id)) : new Set())} />
-            Select all
+            Select all <InfoTip id="cbsrc.meta.select" />
           </li>
           {sources.map((src) => {
             const m = metadataFrom(src.config);
             return (
               <li key={src.id} className="py-1.5 flex flex-wrap items-center gap-2" data-testid={`metadata-row-${src.id}`}>
+                {/* infotip-shared: one row of the same selection; the select-all box's tip explains it */}
                 <input type="checkbox" aria-label={`Select ${src.name}`} checked={selected.has(src.id)} onChange={() => toggle(src.id)} />
                 <div className="min-w-0 w-48"><Truncate text={src.name} className="text-sm text-zinc-900 dark:text-white" /></div>
                 <span className="text-xs text-zinc-500">{m.owner || "no owner"}</span>
@@ -219,13 +261,14 @@ export function SourceMetadataCard({ teamId }: { teamId: number }) {
                 {m.data_classification && <StatusBadge tone={m.data_classification === "restricted" ? "red" : "zinc"}>{m.data_classification}</StatusBadge>}
                 {m.data_lifetime_years && <span className="text-xs text-zinc-500">· {m.data_lifetime_years} y</span>}
                 {m.environment && <span className="text-xs text-zinc-500">· {m.environment}</span>}
+                {m.operated_by === "vendor" && <span className="text-xs text-zinc-500">· vendor-operated</span>}
               </li>
             );
           })}
         </ul>
-        <MetadataFields value={draft} onChange={setDraft} idPrefix="bulk" />
+        <MetadataFields value={draft} onChange={setDraft} idPrefix="bulk" bulk />
         <div className="flex flex-wrap items-end gap-2">
-          <Field label="Business criticality" htmlFor="bulk-criticality">
+          <Field infoId="cbsrc.meta.criticality" label="Business criticality" htmlFor="bulk-criticality">
             <Select value={criticality} onValueChange={setCriticality}>
               <SelectTrigger id="bulk-criticality" className="w-[160px] cursor-pointer"><SelectValue /></SelectTrigger>
               <SelectContent>

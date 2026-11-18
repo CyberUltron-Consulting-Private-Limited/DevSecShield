@@ -21,7 +21,8 @@ assert.equal(stateAfterError("cancelled", true), "cancelled");
 
 const dir = path.join(__dirname, "..", "components");
 const sidebars = fs.readdirSync(dir).filter((f) => f.endsWith("-options-sidebar.tsx"));
-assert.equal(sidebars.length, 10, sidebars.join(","));
+// the eight products' sidebars (#29 removed the unused agent discovery and data leakage ones)
+assert.equal(sidebars.length, 8, sidebars.join(","));
 const section = (src: string, start: string) => {
   const i = src.indexOf(start);
   return i < 0 ? "" : src.slice(i, src.indexOf("\n  const ", i + start.length));
@@ -38,11 +39,9 @@ for (const file of sidebars) {
   }
   const start = section(src, "const startScanMutation = useMutation({");
   const startError = start.slice(start.indexOf("onError"));
-  if (file !== "discovery-options-sidebar.tsx" && file !== "leakage-options-sidebar.tsx") {
-    assert.ok(startError.includes('setOptionsSidebarState("ready")'), `${file}: a refused start does not keep the form`);
-    assert.ok(src.includes('scan_status === "failure"') && src.includes("scanFailureMessage(query.data)"),
-      `${file}: a failed scan does not say why`);
-    assert.ok(/<(Dast|NewScan)?RunAgainButton /.test(src), `${file}: a failed scan has no Run again`);
-  }
+  assert.ok(startError.includes('setOptionsSidebarState("ready")'), `${file}: a refused start does not keep the form`);
+  assert.ok(src.includes('scan_status === "failure"') && src.includes("scanFailureMessage(query.data)"),
+    `${file}: a failed scan does not say why`);
+  assert.ok(/<(Dast|NewScan)?RunAgainButton /.test(src), `${file}: a failed scan has no Run again`);
 }
 console.log("scan sidebars recover without a reload: tests passed");

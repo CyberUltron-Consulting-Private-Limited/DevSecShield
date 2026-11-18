@@ -22,7 +22,7 @@ export function UserMenu() {
   const teamId = useParams()?.team_id;
 
   const { data: userProfile, isLoading } = useQuery({
-    queryKey: ['user-profile'],
+    queryKey: ["user-profile"],
     queryFn: getUserProfile,
     retry: 1,
   });
@@ -39,10 +39,6 @@ export function UserMenu() {
       router.push("/login");
     },
   });
-
-  const handleLogout = () => {
-    logoutMutation.mutate();
-  };
 
   const getInitials = (firstName: string | undefined, lastName: string | undefined) => {
     const first = firstName?.charAt(0).toUpperCase() || "";
@@ -97,7 +93,7 @@ export function UserMenu() {
             <span>Account</span>
           </DropdownMenuItem>
           <DropdownMenuItem
-            onClick={handleLogout}
+            onClick={() => logoutMutation.mutate()}
             className="text-red-400 focus:text-red-300 focus:bg-red-500/10 cursor-pointer bg-zinc-800"
           >
             <LogOut className="h-4 w-4" />

@@ -8,18 +8,23 @@
   called) and only attributes ABOUT objects are read: class, key type, size or curve, label, id, the
   extractable/sensitive/local flags, the usage flags and dates.  Values are never requested: ``CKA_VALUE`` is read for
   certificates only (a certificate is public), never for a key, and no private-key component is ever named.
+* Lockout guard (CB-10): HSMs such as Luna lock a partition after a few failed logins, so a PIN is only ever tried
+  on the token it was entered for.  With more than one token and no token label the source is refused (nothing is
+  logged in to); two tokens with the same label are refused too.  A token that reports its user PIN as count-low,
+  final-try or locked gets no ``C_Login``: its public objects are read and a coverage row says why.
 * A vendor's library may itself talk to a network HSM; that connection is configured by the node operator in the
   vendor's client, not by ZeroShield, and is outside the scan node's network gate.
 """
 from __future__ import annotations
 
 import os
+import re
 import time
 from typing import Any
 
 from zs_scan_node.certparse import cert_facts, load_certs
-from zs_scan_node.collectors import ConfigError
-from zs_scan_node.jobctx import JobContext, register_asset_types
+from zs_scan_node.collectors import ConfigError, target_error
+from zs_scan_node.jobctx import JobContext, LeaseLost, register_asset_types
 from zs_scan_node.scrub import printable
 
 register_asset_types("key_store", "managed_key")
@@ -168,6 +173,39 @@ def key_facts(attrs: dict[str, Any]) -> tuple[str, str | None, int | None, dict[
     return key_class, algorithm, size, facts
 
 
+# Token class (CB-24 PR-4b): whether a token's keys live in hardware, for the fix class (agility R-HW, R-HW-UNREAD,
+# R-TYPE). Decided, never guessed, in this order:
+# 1. a reviewed software token, by the token's manufacturerID and model: SoftHSM v2 reports manufacturerID
+#    "SoftHSM project" and model "SoftHSM v2" (recorded from SoftHSM 2.6.1, Ubuntu softhsm2 2.6.1-2.2ubuntu3,
+#    2026-11-14; its slots carry only CKF_TOKEN_PRESENT);
+# 2. the slot's CKF_HW_SLOT flag: "TRUE if the slot is a hardware slot, as opposed to a software slot implementing a
+#    'soft token'" (PKCS#11 CK_SLOT_INFO, https://www.cryptsoft.com/pkcs11doc/v211/structCK__SLOT__INFO.html). A
+#    hardware slot whose reader takes removable devices (CKF_REMOVABLE_DEVICE) is reported as a smart card or USB
+#    token, any other hardware slot as an HSM; both are "hardware";
+# 3. anything else (no CKF_HW_SLOT and not a reviewed software token, or flags not read): not read (token_class None),
+#    so R-HW-UNREAD says "unknown" rather than calling it software.
+SOFTWARE_TOKENS: tuple[tuple[str, str], ...] = (("softhsm project", "softhsm"),)  # (manufacturerID, model prefix)
+
+
+def token_classification(info: dict[str, Any], slot_flags: list[str] | None) -> dict[str, Any]:
+    """{token_class: hardware | software | None, token_kind: hsm | smartcard | software | unknown, token_class_basis}
+    from a token's info strings and its slot's flags (names as python-pkcs11 gives them, e.g. HW_SLOT)."""
+    maker = str(info.get("token_manufacturer") or "").strip().lower()
+    model = str(info.get("token_model") or "").strip().lower()
+    for want_maker, model_prefix in SOFTWARE_TOKENS:
+        if maker == want_maker or model.startswith(model_prefix):
+            return {"token_class": "software", "token_kind": "software",
+                    "token_class_basis": f"software token {info.get('token_model') or info.get('token_manufacturer')}"}
+    flags = set(slot_flags or [])
+    if "HW_SLOT" in flags:
+        removable = "REMOVABLE_DEVICE" in flags
+        return {"token_class": "hardware", "token_kind": "smartcard" if removable else "hsm",
+                "token_class_basis": "slot flag CKF_HW_SLOT" + (" with CKF_REMOVABLE_DEVICE" if removable else "")}
+    reason = ("slot flags not read" if slot_flags is None else
+              "the slot is not flagged CKF_HW_SLOT and the token is not a reviewed software token")
+    return {"token_class": None, "token_kind": "unknown", "token_class_basis": f"not read: {reason}"}
+
+
 def _token_info(module: str, lib, slot, token) -> dict[str, Any]:
     info: dict[str, Any] = {"store": "pkcs11", "module": module}
     for key, getter in (("library_manufacturer", lambda: lib.manufacturer_id),
@@ -176,6 +214,7 @@ def _token_info(module: str, lib, slot, token) -> dict[str, Any]:
                         ("cryptoki_version", lambda: _version(lib.cryptoki_version)),
                         ("slot_description", lambda: slot.slot_description),
                         ("slot_manufacturer", lambda: slot.manufacturer_id),
+                        ("slot_flags", lambda: _flags(slot.flags)),
                         ("token_label", lambda: token.label), ("token_manufacturer", lambda: token.manufacturer_id),
                         ("token_model", lambda: token.model), ("token_serial", lambda: token.serial),
                         ("hardware_version", lambda: _version(token.hardware_version)),
@@ -190,7 +229,27 @@ def _token_info(module: str, lib, slot, token) -> dict[str, Any]:
                                                      "library_description", "token_manufacturer"))
     # PKCS#11 has no standard FIPS flag; only say what the vendor's own strings say
     info["fips_hint"] = "FIPS" in text.upper() or None
+    info.update(token_classification(info, info.get("slot_flags") if "slot_flags" in info else None))
     return info
+
+
+# CB-10: token flags that say one more failed login could lock the user PIN (or it already is locked)
+_PIN_AT_RISK = (("USER_PIN_LOCKED", "is locked"), ("USER_PIN_FINAL_TRY", "has one try left (final try)"),
+                ("USER_PIN_COUNT_LOW", "has had failed logins (count low)"))
+
+
+def pin_at_risk(token) -> str | None:
+    """Why no login may be tried on this token now, from its own flags (None: a login is safe to try)."""
+    from pkcs11 import TokenFlag
+
+    flags = token.flags
+    if flags is None:
+        return None
+    for name, words in _PIN_AT_RISK:
+        if flags & getattr(TokenFlag, name):
+            return (f"the token reports that its user PIN {words}; no login was tried, so a wrong PIN cannot lock it "
+                    "(only public objects were read). Check the PIN with the HSM administrator")
+    return None
 
 
 def _read_token(ctx: JobContext, module: str, lib, slot, token, pin: str | None) -> tuple[int, str | None]:
@@ -201,6 +260,9 @@ def _read_token(ctx: JobContext, module: str, lib, slot, token, pin: str | None)
     label = info.get("token_label") or f"slot-{getattr(slot, 'slot_id', '?')}"
     where = f"pkcs11:{module}/{label}"
     login_required = bool(token.flags & TokenFlag.LOGIN_REQUIRED) if token.flags is not None else True
+    at_risk = pin_at_risk(token) if (pin and login_required) else None
+    if at_risk:
+        pin = None  # CB-10: no C_Login on a token near (or at) its PIN lockout
     try:
         session = token.open(rw=False, user_pin=pin if (pin and login_required) else None)
     except (PinIncorrect, PinLocked, UserPinNotInitialized):
@@ -208,12 +270,14 @@ def _read_token(ctx: JobContext, module: str, lib, slot, token, pin: str | None)
         return 1, "auth_failed"
     except PKCS11Error as exc:
         ctx.emit("key_store", label, where, name=label, facts={**info, "logged_in": False})
-        ctx.coverage(label, f"PKCS#11 token {label}", "error", f"could not open a session: {exc.__class__.__name__}")
+        ctx.coverage(label, f"PKCS#11 token {label}", "error", f"could not open a session: {pkcs11_note(exc)[1]}")
         return 1, "error"
     n = 0
     counts: dict[str, int] = {}
     try:
-        if login_required and not pin:
+        if at_risk:
+            ctx.coverage(label, f"PKCS#11 token {label}", "denied", at_risk)
+        elif login_required and not pin:
             ctx.coverage(label, f"PKCS#11 token {label}", "denied", "no PIN stored: only public objects were read")
         for i, obj in enumerate(session.get_objects()):
             if i >= MAX_OBJECTS:
@@ -227,7 +291,9 @@ def _read_token(ctx: JobContext, module: str, lib, slot, token, pin: str | None)
                 key_class, algorithm, size, facts = key_facts(attrs)
                 name = _text(attrs.get("LABEL")) or (f"id {facts['id']}" if facts.get("id") else f"object {i}")
                 ctx.emit("managed_key", label, f"{where}/{key_class}/{name}", name=name, algorithm=algorithm, key_size=size,
-                         facts={**facts, "module": module, "token": label, "token_serial": info.get("token_serial")})
+                         facts={**facts, "module": module, "token": label, "token_serial": info.get("token_serial"),
+                                "token_class": info.get("token_class"), "token_kind": info.get("token_kind"),
+                                "token_class_basis": info.get("token_class_basis")})
                 n += 1
             elif klass == ObjectClass.CERTIFICATE:
                 attrs = read_attributes(obj, ("LABEL", "ID"))
@@ -262,6 +328,53 @@ def _open(config: dict):
         raise ConfigError(f"PKCS#11 module {name!r} did not load ({exc.__class__.__name__})") from None
 
 
+_PIN_NOTES = {
+    "PinIncorrect": "the HSM refused the PIN (CKR_PIN_INCORRECT); check the PIN of this token with the HSM administrator",
+    "PinLocked": "the token's PIN is locked (CKR_PIN_LOCKED); the HSM administrator must unlock it",
+    "PinExpired": "the token's PIN has expired (CKR_PIN_EXPIRED); the HSM administrator must set a new one",
+    "UserPinNotInitialized": "the token's user PIN is not set (CKR_USER_PIN_NOT_INITIALIZED); the HSM administrator "
+                             "must initialise it",
+}
+
+
+def _ckr(name: str) -> str:
+    """python-pkcs11's exception class as the PKCS#11 return value the HSM documentation uses (DeviceError ->
+    CKR_DEVICE_ERROR)."""
+    return "CKR_" + re.sub(r"(?<!^)(?=[A-Z])", "_", name).upper()
+
+
+def pkcs11_note(exc: BaseException) -> tuple[str, str]:
+    """#214: (status, note) for a PKCS#11 error opening a token session, in words."""
+    name = exc.__class__.__name__
+    if name in _PIN_NOTES:
+        return "auth_failed", _PIN_NOTES[name]
+    return "error", f"the HSM refused the session ({_ckr(name)})"
+
+
+def no_token_note(want: str, labels: list[str]) -> str:
+    """#214: no token to read: the label matched none of the module's tokens (name them), or there is none."""
+    if want and labels:
+        return f'no token labelled "{want}" on this module (its tokens: {", ".join(labels[:10])}); check the token label'
+    if want:
+        return f'no initialised token is present on this module (looked for the label "{want}")'
+    return "no initialised token is present on this module"
+
+
+def _token_labels(lib) -> list[str]:
+    from pkcs11 import TokenFlag
+
+    out = []
+    for slot in lib.get_slots(token_present=True):
+        try:
+            token = slot.get_token()
+        except Exception:  # noqa: BLE001 - a slot that cannot be read names nothing
+            continue
+        if token.flags is not None and not token.flags & TokenFlag.TOKEN_INITIALIZED:
+            continue
+        out.append(_text(token.label))
+    return sorted(set(out))
+
+
 def _tokens(lib, config: dict) -> list[tuple[Any, Any]]:
     from pkcs11 import TokenFlag
 
@@ -276,6 +389,13 @@ def _tokens(lib, config: dict) -> list[tuple[Any, Any]]:
         out.append((slot, token))
         if len(out) >= MAX_TOKENS:
             break
+    # CB-10: a PIN belongs to one token, so it is never tried on several
+    if want and len(out) > 1:
+        raise ConfigError(f"{len(out)} tokens are labelled {want!r} on this module; the PIN would be tried on each. "
+                          "Give the tokens distinct labels")
+    if not want and len(out) > 1:
+        raise ConfigError(f"this module has {len(out)} tokens; enter the token label the PIN belongs to (a PIN is never "
+                          "tried on more than one token, so a wrong one cannot lock other partitions)")
     return out
 
 
@@ -285,9 +405,9 @@ def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
     pin = _pin(ctx, config, secrets)
     tokens = _tokens(lib, config)
     if not tokens:
-        ctx.outcome(f"pkcs11:{name}", "unreachable", "no token is present" + (
-            f" with the label {config.get('token_label')}" if config.get("token_label") else ""), started=started)
-        return f"pkcs11 {name}: no token"
+        note = no_token_note(str(config.get("token_label") or "").strip(), _token_labels(lib))
+        ctx.outcome(f"pkcs11:{name}", "unreachable", note, started=started)
+        return f"pkcs11 {name}: {note}"
     for slot, token in tokens:
         t0 = time.monotonic()
         if ctx.should_stop():
@@ -311,21 +431,35 @@ def test(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
         return str(exc)
     pin = _pin(ctx, config, secrets)
     if not tokens:
+        note = no_token_note(str(config.get("token_label") or "").strip(), _token_labels(lib))
         ctx.samples.append({"target": f"pkcs11:{name}", "status": "unreachable", "reachable": False, "login": False,
-                            "privilege": None, "note": "no token is present"})
-        return "no token is present"
+                            "privilege": None, "note": note})
+        return note
     from pkcs11 import TokenFlag
     from pkcs11.exceptions import PKCS11Error
 
     for _slot, token in tokens[:5]:
         label = _text(token.label)
         login_required = bool(token.flags & TokenFlag.LOGIN_REQUIRED)
+        at_risk = pin_at_risk(token) if (pin and login_required) else None
+        if at_risk:  # CB-10: no C_Login on a token near its PIN lockout
+            with token.open(rw=False, user_pin=None):
+                pass
+            ctx.samples.append({"target": label, "status": "skipped_credential_refused", "reachable": True,
+                                "login": False, "privilege": None, "note": at_risk})
+            continue
         try:
             with token.open(rw=False, user_pin=pin if (pin and login_required) else None) as session:
                 count = sum(1 for _ in session.get_objects())
             ctx.samples.append({"target": label, "status": "ready", "reachable": True, "login": bool(pin),
                                 "privilege": None, "note": f"{count} objects visible"})
         except PKCS11Error as exc:
-            ctx.samples.append({"target": label, "status": "auth_failed" if "Pin" in exc.__class__.__name__ else "error",
-                                "reachable": True, "login": False, "privilege": None, "note": exc.__class__.__name__})
+            status, note = pkcs11_note(exc)
+            ctx.samples.append({"target": label, "status": status, "reachable": True, "login": False,
+                                "privilege": None, "note": note})
+        except LeaseLost:
+            raise
+        except Exception as exc:  # noqa: BLE001 - one token's error fails its sample, never the test job
+            ctx.samples.append({"target": label, "status": "error", "reachable": True, "login": False,
+                                "privilege": None, "note": ctx.scrubber.text(target_error(exc)[1])})
     return f"{sum(1 for s in ctx.samples if s['status'] == 'ready')} of {len(ctx.samples)} tokens ready"

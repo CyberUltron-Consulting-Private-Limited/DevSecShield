@@ -21,7 +21,10 @@ import {
   type CbomWaveStatus,
 } from "@/utils/api/cbom_ops";
 
+import { invalidateRunViews } from "./keys";
 import { ErrorBlock, LoadingBlock, SectionCard, StatusBadge, Truncate, type Tone } from "./shared";
+import { InfoTip } from "@/components/ui/info-tip";
+import { WaveLegend } from "@/components/cbom/results/WaveLegend";
 
 const WAVE_TONE: Record<number, Tone> = { 1: "red", 2: "amber", 3: "blue", 4: "zinc" };
 const STATUS_LABEL: Record<CbomWaveStatus, string> = { open: "Open", in_progress: "In progress", done: "Done", accepted_risk: "Risk accepted" };
@@ -41,11 +44,13 @@ export function WaveBadge({ item }: { item: CbomRemediationItem | undefined }) {
   );
 }
 
-export function useRunRemediation(teamId: number, runId: number, active: boolean) {
+/** ``enabled`` (default true): the run results page loads this whole-run list only when it needs it (CB-38). */
+export function useRunRemediation(teamId: number, runId: number, active: boolean, enabled = true) {
   const q = useQuery({
     queryKey: cbomOpsKeys.runRemediation(teamId, runId),
     queryFn: () => getCbomRunRemediation(teamId, runId),
     retry: 1,
+    enabled,
     refetchInterval: active ? 15000 : false,
   });
   const byAsset = useMemo(() => new Map((q.data?.items ?? []).map((i) => [i.asset_id ?? -1, i])), [q.data]);
@@ -79,7 +84,8 @@ export function BulkAssignBar({ teamId, target, keys, onDone }: {
     },
     onSuccess: (out) => {
       toast.success(`Updated ${out.updated} asset${out.updated === 1 ? "" : "s"}`);
-      queryClient.invalidateQueries({ queryKey: ["cbom-sources", teamId] });
+      // status and wave changes also refresh the CBOM Scans table's run rows
+      invalidateRunViews(queryClient, teamId);
       onDone();
     },
     onError: (err) => toast.error(errorText(err)),
@@ -97,10 +103,13 @@ export function BulkAssignBar({ teamId, target, keys, onDone }: {
           <SelectItem value="suggested" className="cursor-pointer">Use suggested</SelectItem>
         </SelectContent>
       </Select>
+      <InfoTip id="cbsrc.waves.bulk_wave" className="self-center" />
       <Input className="w-[160px]" placeholder="Owner" aria-label="Owner" value={owner} maxLength={128}
              onChange={(e) => setOwner(e.target.value)} data-testid="bulk-owner" />
+      <InfoTip id="cbsrc.waves.bulk_owner" className="self-center" />
       <Input className="w-[150px]" type="date" aria-label="Target date" value={date} onChange={(e) => setDate(e.target.value)}
              data-testid="bulk-date" />
+      <InfoTip id="cbsrc.waves.bulk_date" className="self-center" />
       <Select value={status} onValueChange={setStatus}>
         <SelectTrigger className="w-[150px] cursor-pointer" aria-label="Status"><SelectValue /></SelectTrigger>
         <SelectContent>
@@ -110,6 +119,7 @@ export function BulkAssignBar({ teamId, target, keys, onDone }: {
           ))}
         </SelectContent>
       </Select>
+      <InfoTip id="cbsrc.waves.bulk_status" className="self-center" />
       <Button size="sm" className="cursor-pointer" disabled={save.isPending} onClick={() => save.mutate()} data-testid="bulk-apply">
         Apply
       </Button>
@@ -132,7 +142,7 @@ export function CodeWavesPanel({ teamId, scanId }: { teamId: number; scanId: num
   const items = q.data.items.filter((i) => !onlyPlanned || i.wave != null);
   const toggle = (key: string) => setSelected((s) => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n; });
   return (
-    <SectionCard title="Remediation waves" description="Who fixes what, by when; plans carry over to later scans of this repository and branch">
+    <SectionCard infoId="cbsrc.waves.card" title="Remediation waves" description="Who fixes what, by when; plans carry over to later scans of this repository and branch">
       <div className="space-y-2" data-testid="code-waves">
         <div className="flex flex-wrap gap-2 text-xs">
           {Object.entries(q.data.by_wave).sort().map(([w, n]) => (
@@ -142,13 +152,16 @@ export function CodeWavesPanel({ teamId, scanId }: { teamId: number; scanId: num
             <input type="checkbox" checked={onlyPlanned} onChange={(e) => setOnlyPlanned(e.target.checked)} />
             Only assets that need action
           </label>
+          <InfoTip id="cbsrc.waves.only_planned" />
         </div>
+        {/* the same legend as a run's waves: the code-scan plan uses the same suggested_wave rules (waves.WAVE_RULES) */}
+        <WaveLegend byWave={q.data.by_wave} rules={q.data.rules} scope="code" />
         <BulkAssignBar teamId={teamId} target={{ scan_id: scanId }} keys={[...selected]} onDone={() => setSelected(new Set())} />
         <div className="overflow-x-auto max-h-96 border rounded-md">
           <table className="w-full text-xs">
             <thead className="sticky top-0 bg-white dark:bg-zinc-950">
               <tr className="text-left text-zinc-500">
-                <th className="p-2 w-6"><span className="sr-only">Select</span></th>
+                <th className="p-2 w-6"><span className="sr-only">Select</span><InfoTip id="cbsrc.waves.select" /></th>
                 <th className="p-2">Asset</th>
                 <th className="p-2">Impact</th>
                 <th className="p-2">Wave</th>
@@ -159,6 +172,7 @@ export function CodeWavesPanel({ teamId, scanId }: { teamId: number; scanId: num
               {items.map((i) => (
                 <tr key={i.asset_key} className="border-t border-zinc-100 dark:border-zinc-800">
                   <td className="p-2">
+                    {/* infotip-shared: one row of the selection; the Select column's tip explains it */}
                     <input type="checkbox" aria-label={`Select ${i.label}`} checked={selected.has(i.asset_key)} onChange={() => toggle(i.asset_key)} />
                   </td>
                   <td className="p-2 max-w-[360px]"><Truncate text={i.label} className="font-mono" /></td>

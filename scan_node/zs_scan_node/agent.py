@@ -8,7 +8,10 @@ Environment:
   ZS_MAX_JOBS             jobs run in parallel (default 2)
   ZS_VAULT_PATH_PREFIX    allow vault credentials under this path prefix only (vault use is off without it)
   VAULT_ADDR / VAULT_TOKEN  HashiCorp Vault for vault credentials; AWS Secrets Manager uses the node's IAM role
+  ZS_VAULT_CA_FILE        the CA certificate (PEM) of a Vault with a private CA, for the Vault only (#365; Vault's own
+                          VAULT_CACERT / VAULT_CAPATH work too)
   HTTPS_PROXY / NO_PROXY  outbound proxy to ZeroShield (customer targets are always reached directly)
+  ZS_PROXY_AUTH_FILE      a file with one line user:password when that proxy needs a login (#199; read-only mount)
   ZS_CLIENT_CERT / ZS_CLIENT_KEY  PEM client certificate and key for mTLS to the ZeroShield proxy (optional)
   ZS_CA_FILE              CA bundle that replaces the default trust for the ZeroShield API (optional)
   ZS_MODE                 ``agentless`` (default: reaches other systems with stored credentials) or ``agent``: collect
@@ -35,7 +38,7 @@ import threading
 import time
 import traceback
 
-from zs_scan_node import VERSION
+from zs_scan_node import node_build, reported_version
 from zs_scan_node.api import Api, ApiError, Unauthorized, WrongServer
 from zs_scan_node.collectors import AGENT_CAPABILITIES, CAPABILITIES, run_job
 from zs_scan_node.jobctx import JobContext, LeaseLost
@@ -44,6 +47,7 @@ from zs_scan_node.netutil import NeverScan, has_ipv6, local_ips
 from zs_scan_node.scrub import Scrubber
 from zs_scan_node.state import NodeState
 from zs_scan_node.tlsprobe import have_openssl
+from zs_scan_node.vault import capabilities as vault_capabilities
 
 POLL_SECONDS = 5
 CLAIM_GRACE = 0  # the heartbeat reports running jobs immediately after claim
@@ -101,6 +105,8 @@ class Agent:
                        deployment_id=self.state.deployment_id, on_deployment=self._adopt_deployment,
                        stop=self.shutdown)
         self.team_never: list[str] | None = None  # latest team never-scan list from the heartbeat
+        # N4: job id -> wall-clock end of its scan window (epoch seconds), from the heartbeat; applied by _watch
+        self.job_window_ends: dict[int, float] = {}
         self.stop_network = threading.Event()
         # When the requests behind the cached stop flag and never-scan list were sent (monotonic).  A claim is
         # answered from the server's current settings, so heartbeat answers to requests sent before it are older.
@@ -114,6 +120,10 @@ class Agent:
         g = global_scrubber()
         for secret in (reg, self.state.node_token, os.environ.get("VAULT_TOKEN")):
             g.add(secret)
+
+    def log_start(self) -> None:
+        log("scan node starting", version=reported_version(), build=node_build() or "unknown", api=self.api_url,
+            state=self.state.directory, openssl=have_openssl())
 
     # ------------------------------------------------------------------ enrollment
     def ensure_enrolled(self) -> None:
@@ -142,7 +152,7 @@ class Agent:
             # the key ZeroShield stored is still the one this node signs with.
             key = self.state.new_signing_key()
             self.api.signing_key = key
-            body = {"registration_token": reg, "hostname": socket.gethostname()[:255], "version": VERSION,
+            body = {"registration_token": reg, "hostname": socket.gethostname()[:255], "version": reported_version(),
                     "source_ips": local_ips(), "ssh_public_key": self.state.ssh_public_key(),
                     "capabilities": self.capabilities(), "clock": _now_iso(),
                     "signing_public_key": base64.b64encode(key.public_key().public_bytes_raw()).decode()}
@@ -198,14 +208,15 @@ class Agent:
 
     def capabilities(self) -> dict:
         return {"collectors": AGENT_CAPABILITIES if self.agent_mode else CAPABILITIES, "openssl": have_openssl(),
-                "ipv6": has_ipv6(), "max_jobs": self.max_jobs, "vault": bool(self.vault_prefix),
+                "ipv6": has_ipv6(), "max_jobs": self.max_jobs,
+                **vault_capabilities(self.vault_prefix),  # #364: vault (bool), providers, prefix, per-provider setup
                 "mode": "agent" if self.agent_mode else "agentless"}
 
     # ------------------------------------------------------------------ heartbeat
     def heartbeat_once(self) -> None:
         with self.lock:
             running = [{"job_id": r.job_id, "lease_id": r.lease_id} for r in self.running.values()]
-        body = {"hostname": socket.gethostname()[:255], "version": VERSION, "source_ips": local_ips(),
+        body = {"hostname": socket.gethostname()[:255], "version": reported_version(), "source_ips": local_ips(),
                 "capabilities": self.capabilities(), "clock": _now_iso(), "running": running}
         if self.last_error:
             body["last_error"] = global_scrubber().text(self.last_error)[:1900]
@@ -230,6 +241,14 @@ class Agent:
             if sent >= self.never_sent and isinstance(data.get("never_scan"), list):
                 self.never_sent = sent
                 self.team_never = [str(x) for x in data["never_scan"]][:10000]
+            ends = data.get("window_ends")
+            if isinstance(ends, dict):
+                known = self.__dict__.setdefault("job_window_ends", {})
+                for key, value in list(ends.items())[:1000]:
+                    moment = _parse_iso(value)
+                    # only jobs this node still runs: a job that ended before the answer arrived leaves nothing behind
+                    if moment is not None and str(key).isdigit() and int(key) in getattr(self, "running", {}):
+                        known[int(key)] = moment
             if sent >= self.stop_sent:
                 self.stop_sent = sent
                 if data.get("stop_all_network"):
@@ -251,6 +270,12 @@ class Agent:
 
     def heartbeat_loop(self) -> None:
         while not self.shutdown.is_set():
+            if not self.state.node_token:
+                # revoked (on_unauthorized cleared it): nothing to heartbeat with until the claim loop enrolls the
+                # node again; a token-less heartbeat only earns node_token_missing and a misleading "proxy" error
+                self.mark_alive()
+                self.shutdown.wait(5)
+                continue
             try:
                 self.heartbeat_once()
             except Unauthorized:
@@ -340,6 +365,8 @@ class Agent:
         for s in (self.state.node_token, os.environ.get("VAULT_TOKEN")):
             scrubber.add(s)
         scope_never = [str(x) for x in scope.get("never_scan") or []]
+        # No DNS here (this is the claim thread): the node-wide resolver looks the list's host names up, and the job's
+        # own threads wait for them (bounded) when they first check an address.
         never = NeverScan(scope_never + (self.team_never or []))
         deadline, reason = _deadline(scope, int(job.get("lease_seconds") or 900))
         lease_id = str(job.get("lease_id") or "")
@@ -356,6 +383,8 @@ class Agent:
                          deadline=deadline, deadline_reason=reason, poster=poster, state_dir=self.state.directory,
                          node_private_key_path=self.state.key_path, vault_prefix=self.vault_prefix,
                          agent_mode=self.agent_mode)
+        ctx.cert_refresher = lambda: self.api.ssh_cert(job_id, attempt, lease_id)  # F1.4: SSH CA certificates
+        ctx.cert_reporter = lambda line: self.api.ssh_cert_report(job_id, attempt, lease_id, line)  # #61
         if self.stop_network.is_set() and is_network:
             ctx.stop_network.set()
         running = Running(job_id, lease_id, ctx, is_network, scope_never)
@@ -404,7 +433,10 @@ class Agent:
     def _post_result(self, running: Running, status: str, error: str | None, summary: str | None) -> None:
         ctx = running.ctx
         result = ctx.result(summary)
-        result["node_version"] = VERSION
+        result["node_version"] = reported_version()
+        if result.get("never_scan_unresolved"):
+            ctx.log("never-scan host names did not resolve; targets were held", names=result["never_scan_unresolved"][:20],
+                    level="warn")
         body = {"lease_id": running.lease_id, "status": status, "result": result,
                 "error": ctx.scrubber.text(error)[:3900] if error else None}
         try:
@@ -423,6 +455,17 @@ class Agent:
         finally:
             self._done(running)
 
+    def apply_windows(self, running: Running) -> None:
+        """Move a running job's deadline to its scan window's end when ZeroShield reports an earlier one (the window
+        was closed or shortened while the job ran): it then stops at its next connection, keeping what it read."""
+        ends = getattr(self, "job_window_ends", None)  # an Agent built without it (tests) has nothing to apply
+        if not ends:
+            return
+        with self.lock:
+            end = ends.pop(running.job_id, None)
+        if end is not None and running.ctx.window_closes(end):
+            running.ctx.log("scan window closed; stopping at the next connection", level="warn")
+
     def _watch(self, running: Running) -> None:
         """Propagate the node-wide never-scan list and stop-all flag into a running job, and end a job whose
         collector is stuck on a target that stopped answering, so it cannot hold a job slot forever."""
@@ -430,10 +473,15 @@ class Agent:
         while running.job_id in self.running and not self.shutdown.is_set():
             if running.network and self.stop_network.is_set():
                 ctx.stop_network.set()
+            Agent.apply_windows(self, running)  # unbound: the watcher also runs on stand-ins in the tests
             team = self.team_never
             if team is not None and team != running.applied_team:
+                # at once: update() does no DNS (the node-wide resolver looks names up on its own threads)
                 ctx.never_scan.update(running.scope_never + team)  # union: never narrower than at claim
                 running.applied_team = team
+            sync = getattr(ctx.never_scan, "sync", None)
+            if sync is not None:
+                sync()  # no DNS: keep every answer the resolver got for the job's names (never narrower in a job)
             now = time.monotonic()
             if ctx.cancel.is_set() and running.cancel_seen is None:
                 running.cancel_seen = now
@@ -457,6 +505,11 @@ class Agent:
     def _done(self, running: Running) -> None:
         with self.lock:
             self.running.pop(running.job_id, None)
+            # a window end that arrived after the watcher's last tick is dropped with its job (review of #250)
+            getattr(self, "job_window_ends", {}).pop(running.job_id, None)
+        close = getattr(running.ctx.never_scan, "close", None)
+        if close is not None:
+            close()  # the resolver stops looking up names no running job lists
 
     # ------------------------------------------------------------------ main
     def run(self) -> None:
@@ -470,8 +523,7 @@ class Agent:
 
         signal.signal(signal.SIGTERM, stop)
         signal.signal(signal.SIGINT, stop)
-        log("scan node starting", version=VERSION, api=self.api_url, state=self.state.directory,
-            openssl=have_openssl())
+        self.log_start()
         self.ensure_enrolled()
         threading.Thread(target=self.heartbeat_loop, name="heartbeat", daemon=True).start()
         self.claim_loop()
@@ -486,6 +538,19 @@ SHUTDOWN_REASON = "scan node shutting down"
 
 def _now_iso() -> str:
     return _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _parse_iso(value) -> float | None:
+    """Epoch seconds of an ISO 8601 UTC time ("...Z"), or None."""
+    if not value:
+        return None
+    try:
+        moment = _dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=_dt.timezone.utc)
+    return moment.timestamp()
 
 
 def _deadline(scope: dict, lease_seconds: int) -> tuple[float, str]:

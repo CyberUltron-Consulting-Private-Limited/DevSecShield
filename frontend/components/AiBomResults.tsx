@@ -108,6 +108,7 @@ import { type CertInRollupData } from "@/components/certin/certinShared";
 import { toast } from "@/utils/toast";
 import TicketingIntegrationsSettings from "@/components/ticketing-integrations-settings";
 import FindingSelectionMenu from "@/components/finding-selection-menu";
+import { criticalFixedPct } from "@/components/cbom/remediationKpis";
 
 interface AiBomResultsProps {
   data: unknown;
@@ -414,7 +415,8 @@ export default function AiBomResults({
       if (Number.isNaN(tid) || Number.isNaN(sid) || !tid || !sid) {
         throw new Error("Missing or invalid team or scan id");
       }
-      return getAIBOMExportResults(tid, sid);
+      // this page says the outcome, once (#27): the helper's own toasts are off
+      return getAIBOMExportResults(tid, sid, { toast: false });
     },
     onSuccess: (result) => {
       const blob = result instanceof Blob ? result : new Blob([result]);
@@ -1235,8 +1237,8 @@ export default function AiBomResults({
                       })()}
                       {(() => {
                         const fixed = remediationKpis.critical_issues_fixed;
-                        const total = fixed + criticalCount;
-                        const pct = total > 0 ? Math.round((fixed / total) * 100) : 0;
+                        // the severity distribution counts every Critical asset, fixed ones included: fixed / all Critical
+                        const pct = criticalFixedPct(fixed, criticalCount);
                         const targetPct = 95;
                         const progress = Math.min(100, (pct / targetPct) * 100);
                         const delta = pct >= targetPct ? "+0%" : `+${targetPct - pct}%`;

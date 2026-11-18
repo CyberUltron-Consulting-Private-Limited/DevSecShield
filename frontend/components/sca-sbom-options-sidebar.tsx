@@ -4,7 +4,7 @@ import { Dispatch, SetStateAction, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { Label } from "@/components/ui/label";
+import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
 import { Input } from "@/components/ui/input";
 import {
   ScanIcon,
@@ -39,6 +39,7 @@ import { refreshCreditBalance } from "@/utils/creditBalance";
 import { stateAfterError } from "@/utils/scanErrorRecovery";
 import { ScanRequestError } from "@/components/scan-request-error";
 import { scanFailureMessage } from "@/utils/scanFailure";
+import { refreshCredits } from "@/utils/creditRefresh";
 import { RerunNotice, RunAgainButton, useRerunPrefill } from "@/components/scan-run-again";
 import { CancelledScanPanel, CancelScanButton } from "@/components/scan-cancel";
 
@@ -168,9 +169,10 @@ export function SCASBOMOptionsSidebar({
       setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("ready");
     },
-    // the start charges credits: the balance in the app sidebar shows it without a reload (#13)
+    // the start charges credits (a refusal still shows the server's balance): one GET /teams (#13)
     onSettled: () => {
-      refreshCreditBalance(queryClient);
+      refreshCredits(queryClient);
+      return refreshCreditBalance(queryClient);
     },
   });
 
@@ -230,6 +232,11 @@ export function SCASBOMOptionsSidebar({
     }
   }, [query.data?.scan_status, query.data?.scan_metadata, failureMessage]);
 
+  // the status check that saw the scan fail refunded its credits (#28): show the balance it gave back
+  useEffect(() => {
+    if (query.data?.scan_status === "failure") refreshCredits(queryClient);
+  }, [query.data?.scan_status, queryClient]);
+
   const exportMutation = useMutation({
     mutationFn: () => getSBOMExportResults(team_id, scan_id),
     onSuccess: (data) => {
@@ -266,7 +273,8 @@ export function SCASBOMOptionsSidebar({
     },
     // a re-run can move credits (PR #57 charges the price difference): the balance shows what the server did
     onSettled: () => {
-      refreshCreditBalance(queryClient);
+      refreshCredits(queryClient);
+      return refreshCreditBalance(queryClient);
     },
   });
 
@@ -325,6 +333,10 @@ export function SCASBOMOptionsSidebar({
                   </div>
                 </AccordionTrigger>
                 <AccordionContent className="pb-5 pt-0">
+                  <p className="text-xs text-zinc-500 mb-3 flex items-center gap-1">
+                    Builds the SBOM from your code, then checks every package for known vulnerabilities.
+                    <InfoTip id="sbom.cfg.repository" />
+                  </p>
                   <RepositoryCard
                     uploadedFile={uploaded_file}
                     setUploadedFile={onZipChange}
@@ -353,8 +365,9 @@ export function SCASBOMOptionsSidebar({
                   <p className="text-xs text-zinc-500 mb-3">
                     Upload an existing SBOM file (e.g. JSON). This will clear any repository or zip selection.
                   </p>
-                  <Label className="text-zinc-300 text-sm">SBOM file</Label>
+                  <FieldLabel htmlFor="sbom-file-upload" infoId="sbom.cfg.sbom_file" labelClassName="text-zinc-300 text-sm">SBOM file</FieldLabel>
                   <Input
+                    id="sbom-file-upload"
                     type="file"
                     accept=".json,application/json"
                     className="bg-zinc-800 h-fit p-2 border-zinc-700 text-white file:mr-2 file:rounded file:border-0 file:bg-blue-600 file:cursor-pointer file:px-3 file:py-1 file:text-sm file:text-white mt-1"
@@ -371,7 +384,7 @@ export function SCASBOMOptionsSidebar({
           <Separator className="bg-zinc-800" />
 
           <div className="p-6">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-2">Estimate scan credits</h3>
+            <h3 className="text-sm font-semibold text-zinc-200 mb-2 flex items-center gap-1">Estimate scan credits <InfoTip id="sbom.cfg.estimate" /></h3>
             <Button
               variant="ghost"
               size="sm"
@@ -403,7 +416,7 @@ export function SCASBOMOptionsSidebar({
           <Separator className="bg-zinc-800" />
 
           <div className="p-6">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-2">Run scan</h3>
+            <h3 className="text-sm font-semibold text-zinc-200 mb-2 flex items-center gap-1">Run scan <InfoTip id="scan.cfg.run" /></h3>
             {canRunScan ? (
               <div className="space-y-2">
                 <Button

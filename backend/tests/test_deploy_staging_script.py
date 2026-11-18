@@ -4,7 +4,9 @@ The stub (FAKE_DOCKER below) is a small model of what the scripts rely on: image
 own Alembic revisions; a Postgres whose alembic_version is a list; `compose up` that runs the migrate one-shot the way
 the backend entrypoint does (`alembic upgrade head`: fails with "Can't locate revision" when the database is at a
 revision the image does not know, and then nothing that waits for it starts); `compose run ... alembic downgrade`
-with the current tag's image; `compose ps` / `config`; `docker run ... alembic heads|show|history` and `find`.
+with the current tag's image; `compose ps` / `config`; `docker run ... alembic heads|show|history` and `find`;
+`docker load` of an archive (a list of the images it holds), `docker info`, `docker image ls` / `image rm`, and `df` /
+`du` over a small disk model (FAKE_DISK; test_staging_deploy_disk.py uses it).
 A "deploy" here is what `staging.sh push` does on the host: the release's files are put in place (each carrying a
 `# release-marker: <tag>` line so the test can tell whose files are in place), then `staging.sh deploy <tag>`.
 
@@ -33,6 +35,8 @@ FAKE_DOCKER = r'''#!/usr/bin/env python3
 import json, os, re, sys
 from pathlib import Path
 
+import fakedisk
+
 STATE = Path(os.environ["FAKE_DOCKER_STATE"])
 st = json.loads(STATE.read_text())
 argv = sys.argv[1:]
@@ -53,7 +57,7 @@ def save(entry):
 
 def image_tag(ref):  # tag of one of our images that exists, else None
     m = re.fullmatch(re.escape(PREFIX) + r"/(devsecshield-backend|devsecshield-frontend|scan-worker|dast-worker):(.+)", ref)
-    if not m or m.group(2) not in st["tags"] or ref in st["missing"]:
+    if not m or m.group(2) not in st["tags"] or ref in st["missing"] or ref in st["gone"]:
         return None
     return m.group(2)
 
@@ -71,12 +75,75 @@ if argv[:2] == ["image", "inspect"]:
     save({"cmd": "inspect"})
     sys.exit(0 if ok else 1)
 
-if argv[:1] == ["rmi"]:
-    st["removed"].append(argv[-1])
-    save({"cmd": "rmi"})
+if argv[:1] == ["info"]:
+    d = st["docker_info"]
+    print(f"{d['root']}|{d['driver']}|{json.dumps(d['status'])}")
     sys.exit(0)
 
-if argv[:1] in (["load"], ["buildx"]):
+if argv[:2] == ["image", "ls"]:  # every image on the host, whatever the filter says: the script must pick its own
+    for ref in fakedisk.present(st) + st["foreign"]:
+        repo, tag = ref.rsplit(":", 1)
+        print(f"{repo}\t{tag}\t{st['disk']['image_kib'] // 1000}MB")
+    sys.exit(0)
+
+if argv[:1] == ["rmi"] or argv[:2] == ["image", "rm"]:
+    ref = argv[-1]
+    users = [s for s, c in st["containers"].items() if c["image"] == ref]
+    if users:  # docker refuses to remove an image a container (running or stopped) was created from
+        save({"cmd": "rmi-refused", "ref": ref})
+        print(f"Error response from daemon: conflict: unable to remove repository reference \"{ref}\" (must force)"
+              f" - container {users[0]} is using its referenced image", file=sys.stderr)
+        sys.exit(1)
+    st["removed"].append(ref)
+    if ref in st["foreign"]:
+        st["foreign"].remove(ref)
+    elif ref not in st["gone"]:
+        st["gone"].append(ref)
+    save({"cmd": "rmi", "ref": ref})
+    sys.exit(0)
+
+if argv[:1] == ["load"]:
+    # The archive (Host.ship) lists the references it holds. Each image is stored, then unpacked into the image
+    # store; without room, the containerd image store still tags the image, prints "Error unpacking image" and exits
+    # 0 (Deploy staging run 43572299641), while the classic store fails the whole load with exit 1.
+    archive = Path(argv[argv.index("-i") + 1])
+    refs = json.loads(archive.read_text())
+    save({"cmd": "load", "archive": archive.name})
+    containerd = "io.containerd.snapshotter" in json.dumps(st["docker_info"]["status"])
+    store = fakedisk.mount_of(st, st["disk"]["store"])
+    for ref in refs:
+        room = fakedisk.avail(st, store) >= st["disk"]["image_kib"]
+        if not room and not containerd:
+            STATE.write_text(json.dumps(st))
+            print(f"Error processing tar file(exit status 1): write /var/lib/docker/tmp/{ref}: no space left on device",
+                  file=sys.stderr)
+            sys.exit(1)
+        if ref in st["gone"]:
+            st["gone"].remove(ref)
+        if ref in st["broken"]:
+            st["broken"].remove(ref)
+        print(f"Loaded image: {ref}")
+        if not room:
+            st["broken"].append(ref)
+            print(f"Error unpacking image {ref}: apply layer error for \"docker.io/{ref}\": failed to extract layer:"
+                  " no space left on device")
+        STATE.write_text(json.dumps(st))
+    sys.exit(0)
+
+if argv[:1] == ["save"]:
+    import io, tarfile
+    out = io.BytesIO()
+    with tarfile.open(fileobj=out, mode="w") as tf:
+        for name, data in [(f"blobs/sha256/{i:064x}", bytes.fromhex(h)) for i, h in enumerate(st.get("save_layers", []))] \
+                + [("manifest.json", json.dumps([{"RepoTags": argv[1:]}]).encode())]:
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            tf.addfile(info, io.BytesIO(data))
+    save({"cmd": "save"})
+    sys.stdout.buffer.write(out.getvalue())
+    sys.exit(0)
+
+if argv[:1] == ["buildx"]:
     save({"cmd": argv[0]})
     sys.exit(0)
 
@@ -112,6 +179,10 @@ if argv[:1] == ["run"]:
     tag = image_tag(ref)
     if tag is None:
         print(f"Unable to find image '{ref}' locally", file=sys.stderr)
+        sys.exit(125)
+    if ref in st["broken"]:  # tagged, but its layers were never unpacked (a load that ran out of disk)
+        print("docker: Error response from daemon: failed to create prepare snapshot dir: no space left on device",
+              file=sys.stderr)
         sys.exit(125)
     sub = args[args.index("--config") + 2:]
     if sub[0] == "heads":
@@ -162,6 +233,20 @@ if argv[:1] == ["compose"]:
             if svc in st["containers"] and st["containers"][svc]["state"] == "running":
                 st["containers"][svc].update(state="exited", health="", exit=0)
         save({"cmd": "stop", "tag": tag, "services": opts})
+        sys.exit(0)
+    if sub == "run" and "backend.utilities.cbom_sources.agility_store" in opts:  # the CB-25 agility heal one-shot
+        save({"cmd": "agility_heal", "tag": tag, "args": opts[opts.index("backend.utilities.cbom_sources.agility_store") + 1:]})
+        if st.get("fail_heal"):
+            print("agility heal: OperationalError", file=sys.stderr)
+            sys.exit(1)
+        print("team 1: 0 assets re-aggregated")
+        sys.exit(0)
+    if sub == "run" and "backend.utilities.cbom_sources.estate" in opts:  # the CB-20 estate backfill one-shot
+        save({"cmd": "estate_backfill", "tag": tag, "args": opts[opts.index("backend.utilities.cbom_sources.estate") + 1:]})
+        if st.get("fail_backfill"):
+            print("estate backfill: OperationalError", file=sys.stderr)
+            sys.exit(1)
+        print("{'runs': 0, 'sources': 0, 'inserted': 0, 'repaired_teams': 0}")
         sys.exit(0)
     if sub == "run":
         target = opts[-1]
@@ -221,6 +306,100 @@ print(f"fake docker: unhandled {argv}", file=sys.stderr)
 sys.exit(4)
 '''
 
+# The disk model shared by the docker, df and du stubs: each mount has a size; the archives in deploy/staging/images use
+# the mount that holds that directory (their size from file_kib, else their real size), and every image on the host
+# that is unpacked (ours and foreign ones) uses image_kib on the mount that holds the image store.
+FAKE_DISK = r'''import json, os
+from pathlib import Path
+
+REPOS = ("devsecshield-backend", "devsecshield-frontend", "scan-worker", "dast-worker")
+
+
+def load():
+    path = Path(os.environ["FAKE_DOCKER_STATE"])
+    return path, json.loads(path.read_text())
+
+
+def present(st):  # our images on the host (unpacked or not)
+    return [f"{st['prefix']}/{r}:{t}" for t in st["tags"] for r in REPOS
+            if f"{st['prefix']}/{r}:{t}" not in st["missing"] and f"{st['prefix']}/{r}:{t}" not in st["gone"]]
+
+
+def _under(p, m):
+    return p == m or p.startswith(m.rstrip("/") + "/")
+
+
+def mount_point(st, path):  # the mount point df names for <path>: a bind mount (alias) names itself
+    p = os.path.abspath(path)
+    found = [m for m in list(st["disk"]["mounts"]) + list(st["disk"]["alias"]) if _under(p, m)]
+    return max(found, key=len) if found else None
+
+
+def mount_of(st, path):  # the filesystem (a key of mounts) that holds <path>
+    m = mount_point(st, path)
+    return st["disk"]["alias"].get(m, m)
+
+
+def device_of(st, path):  # what `stat -c %d` says: one number per filesystem, whatever the mount point
+    m = mount_of(st, path)
+    return None if m is None else 100 + sorted(st["disk"]["mounts"]).index(m)
+
+
+def file_kib(st, f):
+    f = Path(f)
+    return st["disk"]["file_kib"].get(f.name, -(-f.stat().st_size // 1024))
+
+
+def avail(st, mount):
+    d, used = st["disk"], 0
+    images = Path(d["images_dir"])
+    if mount_of(st, images) == mount and images.is_dir():
+        used += sum(file_kib(st, f) for f in images.iterdir() if f.is_file())
+    if mount_of(st, d["store"]) == mount:
+        used += d["image_kib"] * (len([r for r in present(st) if r not in st["broken"]]) + len(st["foreign"]))
+    return d["mounts"][mount] - used
+'''
+
+FAKE_DF = r'''#!/usr/bin/env python3
+import sys
+import fakedisk
+
+_, st = fakedisk.load()
+path = sys.argv[-1]
+mount = fakedisk.mount_of(st, path)
+if mount is None:
+    print(f"df: {path}: No such file or directory", file=sys.stderr)
+    sys.exit(1)
+total = st["disk"]["mounts"][mount]
+free = max(0, fakedisk.avail(st, mount))
+print("Filesystem     1024-blocks      Used Available Capacity Mounted on")
+print(f"/dev/fake{fakedisk.device_of(st, path)} {total} {total - free} {free} 50% {fakedisk.mount_point(st, path)}")
+'''
+
+# `stat -c %d <path>` answers from the disk model (a bind mount has its filesystem's device); anything else is the
+# real stat.
+FAKE_STAT = r'''#!/usr/bin/env python3
+import os, sys
+import fakedisk
+
+if sys.argv[1:3] == ["-c", "%d"] and len(sys.argv) == 4:
+    _, st = fakedisk.load()
+    dev = fakedisk.device_of(st, sys.argv[3])
+    if dev is not None and os.path.exists(sys.argv[3]):
+        print(dev)
+        sys.exit(0)
+os.execv("/usr/bin/stat", ["stat", *sys.argv[1:]])
+'''
+
+FAKE_DU = r'''#!/usr/bin/env python3
+import sys
+import fakedisk
+
+_, st = fakedisk.load()
+for f in [a for a in sys.argv[1:] if not a.startswith("-")]:
+    print(f"{fakedisk.file_kib(st, f)}\t{f}")
+'''
+
 # Healthy API and a production login page whose chunk carries the API host.
 FAKE_CURL = r'''#!/usr/bin/env bash
 out=""; url=""; while (($#)); do case "$1" in -o) out=$2; shift 2;; -w|--max-time|--resolve|--noproxy) shift 2;; -*) shift;; *) url=$1; shift;; esac; done
@@ -240,7 +419,8 @@ class Host:
 
     def __init__(self, root: Path, tags: dict[str, list[str]]):
         self.root = root
-        for rel in ("scripts/deploy/staging.sh", "scripts/deploy/build_images.sh", "deploy/staging/docker-compose.yml"):
+        for rel in ("scripts/deploy/staging.sh", "scripts/deploy/build_images.sh", "scripts/deploy/archive_need.py",
+                    "deploy/staging/docker-compose.yml"):
             (root / rel).parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(ROOT / rel, root / rel)
         shutil.copytree(ROOT / "deploy/staging/nginx", root / "deploy/staging/nginx")
@@ -252,13 +432,24 @@ class Host:
         (root / "prod_database_migrations").mkdir()
         (root / "prod_database_migrations/alembic.ini").write_text("[alembic]\n")
         (root / "bin").mkdir()
-        for name, text in (("docker", FAKE_DOCKER), ("curl", FAKE_CURL)):
+        for name, text in (("docker", FAKE_DOCKER), ("curl", FAKE_CURL), ("df", FAKE_DF), ("du", FAKE_DU),
+                           ("stat", FAKE_STAT)):
             (root / "bin" / name).write_text(text)
             (root / "bin" / name).chmod(0o755)
+        (root / "bin/fakedisk.py").write_text(FAKE_DISK)
+        self.images_dir = root / "deploy/staging/images"
+        self.store = root / "var/lib/containerd"  # the containerd image store (STAGING_CONTAINERD_ROOT)
+        self.store.mkdir(parents=True)
         self.state_file = root / "docker-state.json"
         self.state_file.write_text(json.dumps({
             "prefix": "dss-staging", "services": SERVICES, "tags": {t: {"revs": r} for t, r in tags.items()},
-            "missing": [], "db": [], "containers": {}, "log": [], "removed": [], "find_mode": "clean"}))
+            "missing": [], "gone": [], "broken": [], "foreign": [], "db": [], "containers": {}, "log": [],
+            "removed": [], "find_mode": "clean",
+            "docker_info": {"root": str(root / "var/lib/docker"), "driver": "overlayfs",
+                            "status": [["driver-type", "io.containerd.snapshotter.v1"]]},
+            # one roomy filesystem by default; image_kib per unpacked image
+            "disk": {"mounts": {str(root): 10**10}, "alias": {}, "images_dir": str(self.images_dir),
+                     "store": str(self.store), "image_kib": 1000, "file_kib": {}}}))
 
     # ---- state
     @property
@@ -288,7 +479,8 @@ class Host:
     def run(self, script: str, *args: str, env: dict | None = None, typed: str | None = None) -> subprocess.CompletedProcess:
         """Runs a script; stdin is /dev/null, or with `typed` a terminal on which that line is typed."""
         full_env = {"PATH": f"{self.root / 'bin'}:{os.environ['PATH']}", "HOME": str(self.root),
-                    "TMPDIR": str(self.root), "LANG": "C", "FAKE_DOCKER_STATE": str(self.state_file)}
+                    "TMPDIR": str(self.root), "LANG": "C", "FAKE_DOCKER_STATE": str(self.state_file),
+                    "STAGING_CONTAINERD_ROOT": str(self.store)}
         full_env.update(env or {})
         cmd = [BASH, str(self.root / "scripts/deploy" / script), *args]
         if typed is None:
@@ -306,11 +498,27 @@ class Host:
     def staging(self, *args: str, **kw) -> subprocess.CompletedProcess:
         return self.run("staging.sh", *args, **kw)
 
+    def archive(self, tag: str) -> Path:
+        """The image archive of <tag> as `staging.sh push` copies it: here a list of the images it holds (every
+        image of the tag but those the test declared never shipped, `missing`), with its .sha256."""
+        st = self.state
+        refs = [f"dss-staging/{r}:{tag}" for r in ("devsecshield-backend", "devsecshield-frontend", "scan-worker",
+                                                    "dast-worker")]
+        self.images_dir.mkdir(parents=True, exist_ok=True)
+        path = self.images_dir / f"dss-staging-{tag}.tar.gz"
+        path.write_text(json.dumps([r for r in refs if r not in st["missing"]]))
+        digest = subprocess.run(["sha256sum", path.name], cwd=self.images_dir, check=True, capture_output=True,
+                                text=True).stdout
+        (self.images_dir / f"{path.name}.sha256").write_text(digest)
+        return path
+
     def ship(self, tag: str, env: dict | None = None) -> subprocess.CompletedProcess:
-        """What `staging.sh push` does on the host: the release's files in place, then `staging.sh deploy <tag>`."""
+        """What `staging.sh push` does on the host: the release's files and archive in place, then
+        `staging.sh deploy <tag>`."""
         for rel in MARKED:
             (self.root / rel).write_text((ROOT / rel).read_text() + f"\n# release-marker: {tag}\n")
         (self.root / "deploy/staging/releases/files-tag").unlink(missing_ok=True)
+        self.archive(tag)
         return self.staging("deploy", tag, env=env)
 
 
@@ -457,6 +665,72 @@ def test_redeploying_the_running_tag_keeps_its_rollback_target(tmp_path):
     assert host.history()[-1].split()[1:5] == ["deploy", "t2", "previous", "t1"]
     ok(host.staging("rollback"))
     assert host.env_tag() == "t1"
+
+
+
+# ------------------------------------------------------------------------------------------------ CB-20 estate backfill
+def test_every_deploy_runs_the_estate_backfill_with_its_own_image_after_the_checks(tmp_path):
+    """The estate store holds runs from before CB-20 only after `estate backfill` (idempotent): every deploy runs it
+    once the release is up and checked, with that release's image (DSS_TAG), never before the switch."""
+    host = Host(tmp_path, {"t1": ["r1"], "t2": ["r1"]})
+    ok(host.ship("t1"))
+    mark = len(host.state["log"])
+    proc = ok(host.ship("t2"))
+    log = host.log_since(mark)
+    runs = [e for e in log if e["cmd"] == "estate_backfill"]
+    assert [(e["tag"], e["args"]) for e in runs] == [("t2", ["backfill"])]
+    assert "estate backfill done" in proc.stdout + proc.stderr
+    assert host.history()[-1].split()[1:3] == ["deploy", "t2"]  # recorded before the backfill: the release is up
+
+
+def test_a_failed_estate_backfill_warns_and_keeps_the_deploy(tmp_path):
+    """The release is running and the dashboards fall back to the per-run view: a failed backfill is reported loudly,
+    the deploy still succeeds and `staging.sh estate-backfill` runs it again."""
+    host = Host(tmp_path, {"t1": ["r1"]})
+    host.update(fail_backfill=True)
+    proc = ok(host.ship("t1"))
+    assert "WARNING: estate backfill FAILED" in proc.stdout + proc.stderr
+    assert host.env_tag() == "t1" and "FAILED" not in host.history()[-1]
+    host.update(fail_backfill=False)
+    mark = len(host.state["log"])
+    rerun = ok(host.staging("estate-backfill"))
+    assert [e["cmd"] for e in host.log_since(mark)].count("estate_backfill") == 1
+    assert "estate backfill done" in rerun.stdout + rerun.stderr
+
+
+
+def test_every_deploy_heals_the_agility_store_after_the_estate_backfill(tmp_path):
+    """CB-25: missing or stale stored agility classes are computed after the deploy (else the first agility request
+    pays ~11 s at 50k), with the release's image, after the estate backfill that may add assets."""
+    host = Host(tmp_path, {"t1": ["r1"], "t2": ["r1"]})
+    ok(host.ship("t1"))
+    mark = len(host.state["log"])
+    proc = ok(host.ship("t2"))
+    steps = [(e["cmd"], e["tag"], e["args"]) for e in host.log_since(mark) if e["cmd"] in ("estate_backfill", "agility_heal")]
+    assert steps == [("estate_backfill", "t2", ["backfill"]), ("agility_heal", "t2", ["heal"])]
+    assert "agility heal done" in proc.stdout + proc.stderr
+
+
+def test_a_failed_agility_heal_warns_and_keeps_the_deploy(tmp_path):
+    host = Host(tmp_path, {"t1": ["r1"]})
+    host.update(fail_heal=True)
+    proc = ok(host.ship("t1"))
+    assert "WARNING: agility heal FAILED" in proc.stdout + proc.stderr
+    assert host.env_tag() == "t1" and "FAILED" not in host.history()[-1]
+    host.update(fail_heal=False)
+    mark = len(host.state["log"])
+    rerun = ok(host.staging("agility-heal"))
+    assert [e["cmd"] for e in host.log_since(mark)] == ["agility_heal"]
+    assert "agility heal done" in rerun.stdout + rerun.stderr
+
+
+def test_help_prints_the_whole_usage_header(tmp_path):
+    """--help prints every comment line of the header, up to the line before `set -euo pipefail`."""
+    host = Host(tmp_path, {"t1": ["r1"]})
+    out = ok(host.staging("--help")).stdout
+    lines = (ROOT / "scripts/deploy/staging.sh").read_text().splitlines()
+    last = lines.index("set -euo pipefail") - 1
+    assert lines[last].lstrip("#").strip() in out and "staging.sh agility-heal" in out
 
 
 # ------------------------------------------------------------------------------------------------ M1: deploy status

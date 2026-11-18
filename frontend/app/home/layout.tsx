@@ -50,6 +50,7 @@ import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { getTeams, createTeam, type TeamListItem, type CreateTeamData } from "@/utils/backend_api";
 import { showErrorToast } from "@/utils/error-handler";
 import { MobileNavBar } from "@/components/mobile-nav-bar";
+// the shared user menu: Account and Sign out (#14: this layout had its own, "Logout" only)
 import { UserMenu } from "@/components/user-menu";
 
 function CreateTeamTriggerWithDialog() {
@@ -68,7 +69,8 @@ function CreateTeamTriggerWithDialog() {
       setDescription("");
       router.push(`/${data.team_id}`);
     },
-    onError: (error) => showErrorToast(error),
+    // the one error toast: createTeam only throws a refusal (#27)
+    onError: (error) => showErrorToast(error, "Error creating team"),
   });
 
   const handleSubmit = (e: React.FormEvent) => {

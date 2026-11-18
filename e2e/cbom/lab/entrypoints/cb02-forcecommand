@@ -1,0 +1,26 @@
+#!/bin/sh
+# ForceCommand logger (oracle rule O-8, "read-only commands"): every command a login runs is recorded as one JSON line
+# {"ts","user","peer","command"} in /var/log/cb02/commands.log (lab/forcecommand.log in the run directory) and in the
+# container log, then executed. The harness compares the record with the command allow-list the product publishes.
+cmd=${SSH_ORIGINAL_COMMAND:-<interactive>}
+esc=$(printf '%s' "$cmd" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\t/\\t/g' | awk 'NR > 1 { printf "\\n" } { printf "%s", $0 }')
+line=$(printf '{"ts":"%s","user":"%s","peer":"%s","command":"%s"}' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(id -un)" \
+  "${SSH_CONNECTION%% *}" "$esc")
+# The Ubuntu host's file copy is root:root 0644. The login cannot append it; the fifo is what
+# reaches the container log. Alpine has no fifo and writes pid 1's stderr.
+if [ -w /var/log/cb02/commands.log ]; then
+  printf '%s\n' "$line" >> /var/log/cb02/commands.log
+fi
+if [ -p /run/cb02/cmd.pipe ]; then
+  printf '%s\n' "$line" > /run/cb02/cmd.pipe
+else
+  printf 'cb02-cmd %s\n' "$line" > /proc/1/fd/2 2>/dev/null || true
+fi
+case "$cmd" in
+  "<interactive>") exec /bin/sh -l ;;
+  sftp|internal-sftp)
+    if [ -x /usr/lib/openssh/sftp-server ]; then exec /usr/lib/openssh/sftp-server; fi
+    exec /usr/lib/ssh/sftp-server
+    ;;
+  *) exec /bin/sh -c "$cmd" ;;
+esac

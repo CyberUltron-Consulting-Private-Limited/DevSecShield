@@ -5,6 +5,7 @@ import time
 import pytest
 
 from zs_scan_node import commands as C
+from zs_scan_node import netutil
 from zs_scan_node.collectors import ConfigError
 from zs_scan_node.collectors.linux_ssh import _file_cmd
 from zs_scan_node.jobctx import JobContext, _fit
@@ -76,7 +77,10 @@ def test_vault_prefix():
 
 
 # ----------------------------------------------------------------------------- targets
-def test_expand_dedupes_and_respects_never_scan():
+def test_expand_dedupes_and_respects_never_scan(monkeypatch):
+    # a listed host name must resolve from the node, or no address is scanned at all (fail closed: it could be any
+    # of them); here it resolves outside the targets
+    monkeypatch.setattr(netutil, "resolve", lambda name, timeout=5.0: {"skip.example": ["192.0.2.10"]}[name])
     never = NeverScan(["10.0.0.0/30", "skip.example", "10.0.1.5-10.0.1.6"])
     targets, skipped = expand_targets(["10.0.0.1", "10.0.0.0/29", "10.0.0.6", "10.0.1.4-10.0.1.7", "skip.example"], never)
     ips = [t.ip for t in targets]
@@ -315,7 +319,12 @@ def test_winrm_name_must_not_resolve_to_a_never_scan_address(monkeypatch):
     with pytest.raises(W._Fail) as err:
         W.check_name(ctx, Target("winhost.corp", "10.0.0.5"))
     assert err.value.status == "skipped_never_scan"
-    W.check_name(ctx, Target("10.0.0.5", "10.0.0.5"))  # an IP target is the address that was checked
+    # #17: this job resolved winhost.corp to both addresses, so 10.0.0.5 is that never-scan host as an IP target too
+    with pytest.raises(W._Fail, match="an address of winhost.corp"):
+        W.check_name(ctx, Target("10.0.0.5", "10.0.0.5"))
+    ctx = _ctx()
+    ctx.never_scan = NeverScan(["10.0.0.6/32"])
+    W.check_name(ctx, Target("10.0.0.5", "10.0.0.5"))  # in a job that resolved no name of it: only the address itself
     ctx.never_scan.update(["10.0.0.6/32", "10.0.0.5/32"])  # added after the job started
     with pytest.raises(W._Fail) as err:
         W.check_name(ctx, Target("10.0.0.5", "10.0.0.5"))

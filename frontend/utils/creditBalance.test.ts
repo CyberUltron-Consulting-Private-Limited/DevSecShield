@@ -108,8 +108,6 @@ async function main() {
   const noRoute: Record<string, string> = {
     reinitializeIACScan: "/iac/conversation/{id}/reinitialize (the IaC sidebar uses reinitializeIACScanWithPayload)",
     reinitializeSCASBOMScan: "/sbom_sca/conversation/{id}/reinitialize (the SCA + SBOM sidebar uses ...WithPayload)",
-    reinitializeDiscoveryScan: "/agent_discovery/conversation/{id}/reinitialize (agent discovery has no page)",
-    reinitializeLeakageScan: "/leakage/conversation/{id}/reinitialize (data leakage shows ProductUnavailableNotice)",
   };
   assert.deepEqual([...apiSrc.matchAll(/\bconst (reinitialize\w+) = async\b/g)].map((m) => m[1]).sort(),
     [...Object.keys(movers).filter((n) => n.startsWith("reinitialize")), ...Object.keys(noRoute)].sort(),
@@ -126,7 +124,7 @@ async function main() {
     "components/cbom-options-sidebar.tsx": 3, // the code scan, its linked sources run, re-run
     "components/cbom/sources/AppliancesSection.tsx": 1, // delete
     "components/cbom/sources/ClustersDatabasesTab.tsx": 4, // delete; save a cluster, a database, a key manager
-    "components/cbom/sources/CloudIdentityTab.tsx": 6, // delete; save cloud, CA, IdP, two credential forms
+    "components/cbom/sources/CloudIdentityTab.tsx": 7, // delete; save cloud, CA, IdP, CT logs, two credential forms
     "components/cbom/sources/ContainerImagesSection.tsx": 1, // delete
     "components/cbom/sources/NetworkTab.tsx": 1, // delete a range
     "components/cbom/sources/ReviewRunTab.tsx": 2, // start and cancel a sources run

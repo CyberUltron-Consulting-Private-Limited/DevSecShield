@@ -4,7 +4,7 @@ import { Dispatch, SetStateAction, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { Label } from "@/components/ui/label";
+import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
 import {
   Select,
   SelectContent,
@@ -45,6 +45,7 @@ import { refreshCreditBalance } from "@/utils/creditBalance";
 import { stateAfterError } from "@/utils/scanErrorRecovery";
 import { ScanRequestError } from "@/components/scan-request-error";
 import { scanFailureMessage } from "@/utils/scanFailure";
+import { refreshCredits } from "@/utils/creditRefresh";
 import { RerunNotice, RunAgainButton, useRerunPrefill } from "@/components/scan-run-again";
 import { CancelledScanPanel, CancelScanButton } from "@/components/scan-cancel";
 
@@ -217,9 +218,10 @@ export function IACOptionsSidebar({
       setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("ready");
     },
-    // the start charges credits: the balance in the app sidebar shows it without a reload (#13)
+    // the start charges credits (a refusal still shows the server's balance): one GET /teams (#13)
     onSettled: () => {
-      refreshCreditBalance(queryClient);
+      refreshCredits(queryClient);
+      return refreshCreditBalance(queryClient);
     },
   });
 
@@ -278,6 +280,11 @@ export function IACOptionsSidebar({
     }
   }, [query.data?.scan_status, query.data?.scan_metadata, failureMessage]);
 
+  // the status check that saw the scan fail refunded its credits (#28): show the balance it gave back
+  useEffect(() => {
+    if (query.data?.scan_status === "failure") refreshCredits(queryClient);
+  }, [query.data?.scan_status, queryClient]);
+
   const exportMutation = useMutation({
     mutationFn: () => getIACExportResults(team_id, scan_id),
     onSuccess: (data) => {
@@ -309,7 +316,8 @@ export function IACOptionsSidebar({
     },
     // a re-run can move credits (PR #57 charges the price difference): the balance shows what the server did
     onSettled: () => {
-      refreshCreditBalance(queryClient);
+      refreshCredits(queryClient);
+      return refreshCreditBalance(queryClient);
     },
   });
 
@@ -381,14 +389,15 @@ export function IACOptionsSidebar({
             {/* Environment */}
             <Card className="border-zinc-700 bg-zinc-800/50 py-4 shadow-none">
               <CardHeader className="pb-2 px-4">
-                <CardTitle className="text-sm font-medium text-zinc-300">Environment</CardTitle>
+                <CardTitle className="text-sm font-medium text-zinc-300 flex items-center gap-1">Environment <InfoTip id="iac.cfg.environment" /></CardTitle>
                 <CardDescription className="text-zinc-500 text-xs">
                   Select the target environment for this IAC scan.
                 </CardDescription>
               </CardHeader>
               <CardContent className="px-4 pt-0">
+                {/* infotip-shared: the card's only field, explained by the (i) on the Environment card title */}
                 <Select value={environment} onValueChange={(v) => setEnvironment(v as IACEnvironment)}>
-                  <SelectTrigger className="h-8 bg-zinc-800 border-zinc-700 text-white text-xs cursor-pointer">
+                  <SelectTrigger aria-label="Environment" className="h-8 bg-zinc-800 border-zinc-700 text-white text-xs cursor-pointer">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="bg-zinc-800 border-zinc-700">
@@ -408,6 +417,7 @@ export function IACOptionsSidebar({
                 <CardTitle className="text-sm font-medium text-zinc-300 flex items-center gap-2">
                   <Filter className="h-4 w-4 text-zinc-400 shrink-0" />
                   IAC contexts
+                  <InfoTip id="iac.cfg.contexts" />
                 </CardTitle>
                 <CardDescription className="text-zinc-500 text-xs">
                   Add one or more contexts (Terraform, K8s, etc.). For non-Terraform contexts, use include path patterns to specify where to find these files in your repo.
@@ -420,13 +430,13 @@ export function IACOptionsSidebar({
                     className="rounded-md border border-zinc-700 bg-zinc-800/30 p-3 space-y-3"
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <Label className="text-zinc-300 text-xs">Context type</Label>
+                      <FieldLabel htmlFor={`iac-context-${ctx.id}`} infoId="iac.cfg.context_type" labelClassName="text-zinc-300 text-xs">Context type</FieldLabel>
                       <div className="flex items-center gap-1">
                         <Select
                           value={ctx.mode}
                           onValueChange={(v) => setContextMode(ctx.id, v as IACContextMode)}
                         >
-                          <SelectTrigger className="h-8 bg-zinc-800 border-zinc-700 text-white text-xs cursor-pointer w-[140px]">
+                          <SelectTrigger id={`iac-context-${ctx.id}`} className="h-8 bg-zinc-800 border-zinc-700 text-white text-xs cursor-pointer w-[140px]">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent className="bg-zinc-800 border-zinc-700">
@@ -458,9 +468,10 @@ export function IACOptionsSidebar({
                         </p>
                         <PathArraysInput
                           label="Include path patterns"
+                          infoId="iac.cfg.include"
                           value={ctx.include_path_arrays}
                           onChange={(v) => updateContext(ctx.id, { include_path_arrays: v })}
-                          segmentPlaceholder="ex: **/*.yaml or charts/"
+                          segmentPlaceholder="ex: charts or k8s"
                         />
                       </>
                     )}
@@ -484,7 +495,7 @@ export function IACOptionsSidebar({
           <Separator className="bg-zinc-800" />
 
           <div className="p-6">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-2">Estimate scan credits</h3>
+            <h3 className="text-sm font-semibold text-zinc-200 mb-2 flex items-center gap-1">Estimate scan credits <InfoTip id="iac.cfg.estimate" /></h3>
             <Button
               variant="ghost"
               size="sm"
@@ -513,7 +524,7 @@ export function IACOptionsSidebar({
           <Separator className="bg-zinc-800" />
 
           <div className="p-6">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-2">Run scan</h3>
+            <h3 className="text-sm font-semibold text-zinc-200 mb-2 flex items-center gap-1">Run scan <InfoTip id="scan.cfg.run" /></h3>
             {canRunScan ? (
               <div className="space-y-2">
                 <Button

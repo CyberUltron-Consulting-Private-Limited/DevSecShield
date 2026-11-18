@@ -486,7 +486,10 @@
       "WEAK_HASH"
      ],
      "location": "src/MD5-0.py",
-     "impact": "High"
+     "impact": "High",
+     "fix_class": "unknown",
+     "fix_class_floor": null,
+     "fix_class_confidence": null
     },
     {
      "title": "MD5-1",
@@ -499,7 +502,10 @@
       "WEAK_HASH"
      ],
      "location": "src/MD5-1.py",
-     "impact": "High"
+     "impact": "High",
+     "fix_class": "unknown",
+     "fix_class_floor": null,
+     "fix_class_confidence": null
     },
     {
      "title": "MD5-2",
@@ -512,7 +518,10 @@
       "WEAK_HASH"
      ],
      "location": "src/MD5-2.py",
-     "impact": "High"
+     "impact": "High",
+     "fix_class": "unknown",
+     "fix_class_floor": null,
+     "fix_class_confidence": null
     },
     {
      "title": "MD5-3",
@@ -525,7 +534,10 @@
       "WEAK_HASH"
      ],
      "location": "src/MD5-3.py",
-     "impact": "High"
+     "impact": "High",
+     "fix_class": "unknown",
+     "fix_class_floor": null,
+     "fix_class_confidence": null
     },
     {
      "title": "MD5-4",
@@ -538,7 +550,10 @@
       "WEAK_HASH"
      ],
      "location": "src/MD5-4.py",
-     "impact": "High"
+     "impact": "High",
+     "fix_class": "unknown",
+     "fix_class_floor": null,
+     "fix_class_confidence": null
     },
     {
      "title": "MD5-5",
@@ -551,7 +566,10 @@
       "WEAK_HASH"
      ],
      "location": "src/MD5-5.py",
-     "impact": "High"
+     "impact": "High",
+     "fix_class": "unknown",
+     "fix_class_floor": null,
+     "fix_class_confidence": null
     },
     {
      "title": "MD5-6",
@@ -564,7 +582,10 @@
       "WEAK_HASH"
      ],
      "location": "src/MD5-6.py",
-     "impact": "High"
+     "impact": "High",
+     "fix_class": "unknown",
+     "fix_class_floor": null,
+     "fix_class_confidence": null
     },
     {
      "title": "MD5-7",
@@ -577,7 +598,10 @@
       "WEAK_HASH"
      ],
      "location": "src/MD5-7.py",
-     "impact": "High"
+     "impact": "High",
+     "fix_class": "unknown",
+     "fix_class_floor": null,
+     "fix_class_confidence": null
     },
     {
      "title": "MD5-8",
@@ -590,7 +614,10 @@
       "WEAK_HASH"
      ],
      "location": "src/MD5-8.py",
-     "impact": "High"
+     "impact": "High",
+     "fix_class": "unknown",
+     "fix_class_floor": null,
+     "fix_class_confidence": null
     },
     {
      "title": "MD5-9",
@@ -603,7 +630,10 @@
       "WEAK_HASH"
      ],
      "location": "src/MD5-9.py",
-     "impact": "High"
+     "impact": "High",
+     "fix_class": "unknown",
+     "fix_class_floor": null,
+     "fix_class_confidence": null
     },
     {
      "title": "MD5-10",
@@ -616,7 +646,10 @@
       "WEAK_HASH"
      ],
      "location": "src/MD5-10.py",
-     "impact": "High"
+     "impact": "High",
+     "fix_class": "unknown",
+     "fix_class_floor": null,
+     "fix_class_confidence": null
     },
     {
      "title": "MD5-11",
@@ -629,7 +662,10 @@
       "WEAK_HASH"
      ],
      "location": "src/MD5-11.py",
-     "impact": "High"
+     "impact": "High",
+     "fix_class": "unknown",
+     "fix_class_floor": null,
+     "fix_class_confidence": null
     },
     {
      "title": "RSA-2048-0",
@@ -642,7 +678,10 @@
       "QUANTUM_VULNERABLE"
      ],
      "location": "src/RSA-2048-0.py",
-     "impact": "Medium"
+     "impact": "Medium",
+     "fix_class": "code-fixed",
+     "fix_class_floor": null,
+     "fix_class_confidence": "observed"
     },
     {
      "title": "RSA-2048-1",
@@ -655,7 +694,10 @@
       "QUANTUM_VULNERABLE"
      ],
      "location": "src/RSA-2048-1.py",
-     "impact": "Medium"
+     "impact": "Medium",
+     "fix_class": "code-fixed",
+     "fix_class_floor": null,
+     "fix_class_confidence": "observed"
     },
     {
      "title": "RSA-2048-2",
@@ -668,7 +710,10 @@
       "QUANTUM_VULNERABLE"
      ],
      "location": "src/RSA-2048-2.py",
-     "impact": "Medium"
+     "impact": "Medium",
+     "fix_class": "code-fixed",
+     "fix_class_floor": null,
+     "fix_class_confidence": "observed"
     },
     {
      "title": "RSA-2048-3",
@@ -681,7 +726,10 @@
       "QUANTUM_VULNERABLE"
      ],
      "location": "src/RSA-2048-3.py",
-     "impact": "Medium"
+     "impact": "Medium",
+     "fix_class": "code-fixed",
+     "fix_class_floor": null,
+     "fix_class_confidence": "observed"
     },
     {
      "title": "RSA-2048-4",
@@ -694,7 +742,10 @@
       "QUANTUM_VULNERABLE"
      ],
      "location": "src/RSA-2048-4.py",
-     "impact": "Medium"
+     "impact": "Medium",
+     "fix_class": "code-fixed",
+     "fix_class_floor": null,
+     "fix_class_confidence": "observed"
     },
     {
      "title": "RSA-2048-5",
@@ -707,7 +758,10 @@
       "QUANTUM_VULNERABLE"
      ],
      "location": "src/RSA-2048-5.py",
-     "impact": "Medium"
+     "impact": "Medium",
+     "fix_class": "code-fixed",
+     "fix_class_floor": null,
+     "fix_class_confidence": "observed"
     },
     {
      "title": "key-0",
@@ -720,7 +774,10 @@
       "HARDCODED_KEY"
      ],
      "location": "src/key-0.py",
-     "impact": "High"
+     "impact": "High",
+     "fix_class": "code-fixed",
+     "fix_class_floor": null,
+     "fix_class_confidence": "observed"
     },
     {
      "title": "key-1",
@@ -733,7 +790,10 @@
       "HARDCODED_KEY"
      ],
      "location": "src/key-1.py",
-     "impact": "High"
+     "impact": "High",
+     "fix_class": "code-fixed",
+     "fix_class_floor": null,
+     "fix_class_confidence": "observed"
     },
     {
      "title": "key-2",
@@ -746,7 +806,10 @@
       "HARDCODED_KEY"
      ],
      "location": "src/key-2.py",
-     "impact": "High"
+     "impact": "High",
+     "fix_class": "code-fixed",
+     "fix_class_floor": null,
+     "fix_class_confidence": "observed"
     },
     {
      "title": "key-3",
@@ -759,7 +822,10 @@
       "HARDCODED_KEY"
      ],
      "location": "src/key-3.py",
-     "impact": "High"
+     "impact": "High",
+     "fix_class": "code-fixed",
+     "fix_class_floor": null,
+     "fix_class_confidence": "observed"
     },
     {
      "title": "key-4",
@@ -772,7 +838,10 @@
       "HARDCODED_KEY"
      ],
      "location": "src/key-4.py",
-     "impact": "High"
+     "impact": "High",
+     "fix_class": "code-fixed",
+     "fix_class_floor": null,
+     "fix_class_confidence": "observed"
     },
     {
      "title": "key-5",
@@ -785,7 +854,10 @@
       "HARDCODED_KEY"
      ],
      "location": "src/key-5.py",
-     "impact": "High"
+     "impact": "High",
+     "fix_class": "code-fixed",
+     "fix_class_floor": null,
+     "fix_class_confidence": "observed"
     },
     {
      "title": "key-6",
@@ -798,7 +870,10 @@
       "HARDCODED_KEY"
      ],
      "location": "src/key-6.py",
-     "impact": "High"
+     "impact": "High",
+     "fix_class": "code-fixed",
+     "fix_class_floor": null,
+     "fix_class_confidence": "observed"
     },
     {
      "title": "key-7",
@@ -811,7 +886,10 @@
       "HARDCODED_KEY"
      ],
      "location": "src/key-7.py",
-     "impact": "High"
+     "impact": "High",
+     "fix_class": "code-fixed",
+     "fix_class_floor": null,
+     "fix_class_confidence": "observed"
     },
     {
      "title": "key-8",
@@ -824,7 +902,10 @@
       "HARDCODED_KEY"
      ],
      "location": "src/key-8.py",
-     "impact": "High"
+     "impact": "High",
+     "fix_class": "code-fixed",
+     "fix_class_floor": null,
+     "fix_class_confidence": "observed"
     },
     {
      "title": "key-9",
@@ -837,7 +918,10 @@
       "HARDCODED_KEY"
      ],
      "location": "src/key-9.py",
-     "impact": "High"
+     "impact": "High",
+     "fix_class": "code-fixed",
+     "fix_class_floor": null,
+     "fix_class_confidence": "observed"
     },
     {
      "title": "key-10",
@@ -850,7 +934,10 @@
       "HARDCODED_KEY"
      ],
      "location": "src/key-10.py",
-     "impact": "High"
+     "impact": "High",
+     "fix_class": "code-fixed",
+     "fix_class_floor": null,
+     "fix_class_confidence": "observed"
     },
     {
      "title": "key-11",
@@ -863,7 +950,10 @@
       "HARDCODED_KEY"
      ],
      "location": "src/key-11.py",
-     "impact": "High"
+     "impact": "High",
+     "fix_class": "code-fixed",
+     "fix_class_floor": null,
+     "fix_class_confidence": "observed"
     },
     {
      "title": "key-12",
@@ -876,7 +966,10 @@
       "HARDCODED_KEY"
      ],
      "location": "src/key-12.py",
-     "impact": "High"
+     "impact": "High",
+     "fix_class": "code-fixed",
+     "fix_class_floor": null,
+     "fix_class_confidence": "observed"
     },
     {
      "title": "key-13",
@@ -889,7 +982,10 @@
       "HARDCODED_KEY"
      ],
      "location": "src/key-13.py",
-     "impact": "High"
+     "impact": "High",
+     "fix_class": "code-fixed",
+     "fix_class_floor": null,
+     "fix_class_confidence": "observed"
     },
     {
      "title": "key-14",
@@ -902,7 +998,10 @@
       "HARDCODED_KEY"
      ],
      "location": "src/key-14.py",
-     "impact": "High"
+     "impact": "High",
+     "fix_class": "code-fixed",
+     "fix_class_floor": null,
+     "fix_class_confidence": "observed"
     },
     {
      "title": "ML-KEM-768",
@@ -912,7 +1011,10 @@
      "crypto_strength": "strong",
      "quantum_safe": true,
      "finding_codes": [],
-     "location": "src/ML-KEM-768.py"
+     "location": "src/ML-KEM-768.py",
+     "fix_class": "none",
+     "fix_class_floor": null,
+     "fix_class_confidence": null
     },
     {
      "title": "AES-256-GCM",
@@ -922,7 +1024,10 @@
      "crypto_strength": "strong",
      "quantum_safe": true,
      "finding_codes": [],
-     "location": "src/AES-256-GCM.py"
+     "location": "src/AES-256-GCM.py",
+     "fix_class": "none",
+     "fix_class_floor": null,
+     "fix_class_confidence": null
     },
     {
      "title": "SHA-256",
@@ -932,7 +1037,10 @@
      "crypto_strength": "strong",
      "quantum_safe": null,
      "finding_codes": [],
-     "location": "src/SHA-256.py"
+     "location": "src/SHA-256.py",
+     "fix_class": "none",
+     "fix_class_floor": null,
+     "fix_class_confidence": null
     }
    ]
   },
@@ -1164,7 +1272,10 @@
      "crypto_strength": "strong",
      "quantum_safe": true,
      "finding_codes": [],
-     "location": "src/ML-KEM-768.py"
+     "location": "src/ML-KEM-768.py",
+     "fix_class": "none",
+     "fix_class_floor": null,
+     "fix_class_confidence": null
     },
     {
      "title": "RSA-0",
@@ -1177,7 +1288,10 @@
       "QUANTUM_VULNERABLE"
      ],
      "location": "src/RSA-0.py",
-     "impact": "Medium"
+     "impact": "Medium",
+     "fix_class": "code-fixed",
+     "fix_class_floor": null,
+     "fix_class_confidence": "observed"
     },
     {
      "title": "RSA-1",
@@ -1190,7 +1304,10 @@
       "QUANTUM_VULNERABLE"
      ],
      "location": "src/RSA-1.py",
-     "impact": "Medium"
+     "impact": "Medium",
+     "fix_class": "code-fixed",
+     "fix_class_floor": null,
+     "fix_class_confidence": "observed"
     },
     {
      "title": "RSA-2",
@@ -1203,7 +1320,10 @@
       "QUANTUM_VULNERABLE"
      ],
      "location": "src/RSA-2.py",
-     "impact": "Medium"
+     "impact": "Medium",
+     "fix_class": "code-fixed",
+     "fix_class_floor": null,
+     "fix_class_confidence": "observed"
     },
     {
      "title": "RSA-3",
@@ -1216,7 +1336,10 @@
       "QUANTUM_VULNERABLE"
      ],
      "location": "src/RSA-3.py",
-     "impact": "Medium"
+     "impact": "Medium",
+     "fix_class": "code-fixed",
+     "fix_class_floor": null,
+     "fix_class_confidence": "observed"
     },
     {
      "title": "RSA-4",
@@ -1229,7 +1352,10 @@
       "QUANTUM_VULNERABLE"
      ],
      "location": "src/RSA-4.py",
-     "impact": "Medium"
+     "impact": "Medium",
+     "fix_class": "code-fixed",
+     "fix_class_floor": null,
+     "fix_class_confidence": "observed"
     },
     {
      "title": "RSA-5",
@@ -1242,7 +1368,10 @@
       "QUANTUM_VULNERABLE"
      ],
      "location": "src/RSA-5.py",
-     "impact": "Medium"
+     "impact": "Medium",
+     "fix_class": "code-fixed",
+     "fix_class_floor": null,
+     "fix_class_confidence": "observed"
     },
     {
      "title": "RSA-6",
@@ -1255,7 +1384,10 @@
       "QUANTUM_VULNERABLE"
      ],
      "location": "src/RSA-6.py",
-     "impact": "Medium"
+     "impact": "Medium",
+     "fix_class": "code-fixed",
+     "fix_class_floor": null,
+     "fix_class_confidence": "observed"
     },
     {
      "title": "RSA-7",
@@ -1268,7 +1400,10 @@
       "QUANTUM_VULNERABLE"
      ],
      "location": "src/RSA-7.py",
-     "impact": "Medium"
+     "impact": "Medium",
+     "fix_class": "code-fixed",
+     "fix_class_floor": null,
+     "fix_class_confidence": "observed"
     },
     {
      "title": "RSA-8",
@@ -1281,7 +1416,10 @@
       "QUANTUM_VULNERABLE"
      ],
      "location": "src/RSA-8.py",
-     "impact": "Medium"
+     "impact": "Medium",
+     "fix_class": "code-fixed",
+     "fix_class_floor": null,
+     "fix_class_confidence": "observed"
     },
     {
      "title": "RSA-9",
@@ -1294,7 +1432,10 @@
       "QUANTUM_VULNERABLE"
      ],
      "location": "src/RSA-9.py",
-     "impact": "Medium"
+     "impact": "Medium",
+     "fix_class": "code-fixed",
+     "fix_class_floor": null,
+     "fix_class_confidence": "observed"
     },
     {
      "title": "RSA-10",
@@ -1307,7 +1448,10 @@
       "QUANTUM_VULNERABLE"
      ],
      "location": "src/RSA-10.py",
-     "impact": "Medium"
+     "impact": "Medium",
+     "fix_class": "code-fixed",
+     "fix_class_floor": null,
+     "fix_class_confidence": "observed"
     },
     {
      "title": "RSA-11",
@@ -1320,7 +1464,10 @@
       "QUANTUM_VULNERABLE"
      ],
      "location": "src/RSA-11.py",
-     "impact": "Medium"
+     "impact": "Medium",
+     "fix_class": "code-fixed",
+     "fix_class_floor": null,
+     "fix_class_confidence": "observed"
     },
     {
      "title": "RSA-12",
@@ -1333,7 +1480,10 @@
       "QUANTUM_VULNERABLE"
      ],
      "location": "src/RSA-12.py",
-     "impact": "Medium"
+     "impact": "Medium",
+     "fix_class": "code-fixed",
+     "fix_class_floor": null,
+     "fix_class_confidence": "observed"
     },
     {
      "title": "RSA-13",
@@ -1346,7 +1496,10 @@
       "QUANTUM_VULNERABLE"
      ],
      "location": "src/RSA-13.py",
-     "impact": "Medium"
+     "impact": "Medium",
+     "fix_class": "code-fixed",
+     "fix_class_floor": null,
+     "fix_class_confidence": "observed"
     },
     {
      "title": "RSA-14",
@@ -1359,7 +1512,10 @@
       "QUANTUM_VULNERABLE"
      ],
      "location": "src/RSA-14.py",
-     "impact": "Medium"
+     "impact": "Medium",
+     "fix_class": "code-fixed",
+     "fix_class_floor": null,
+     "fix_class_confidence": "observed"
     }
    ]
   },
@@ -1413,7 +1569,10 @@
      ],
      "location": "src/openssl-1.0.2.py",
      "impact": "High",
-     "weak": true
+     "weak": true,
+     "fix_class": "code-fixed",
+     "fix_class_floor": null,
+     "fix_class_confidence": "observed"
     },
     {
      "title": "AES-256-GCM",
@@ -1423,7 +1582,10 @@
      "crypto_strength": "strong",
      "quantum_safe": true,
      "finding_codes": [],
-     "location": "src/AES-256-GCM.py"
+     "location": "src/AES-256-GCM.py",
+     "fix_class": "none",
+     "fix_class_floor": null,
+     "fix_class_confidence": null
     }
    ]
   }

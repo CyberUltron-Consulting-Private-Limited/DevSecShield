@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ScanInputHint } from "@/components/scan-input-hint";
 import { Separator } from "@/components/ui/separator";
-import { Label } from "@/components/ui/label";
+import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
 import {
   Select,
   SelectContent,
@@ -43,6 +43,7 @@ import { refreshCreditBalance } from "@/utils/creditBalance";
 import { stateAfterError } from "@/utils/scanErrorRecovery";
 import { ScanRequestError } from "@/components/scan-request-error";
 import { scanFailureMessage } from "@/utils/scanFailure";
+import { refreshCredits } from "@/utils/creditRefresh";
 import { RerunNotice, RunAgainButton, useRerunPrefill } from "@/components/scan-run-again";
 import { CancelledScanPanel, CancelScanButton } from "@/components/scan-cancel";
 
@@ -198,9 +199,10 @@ export function SASTOptionsSidebar({
       setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("ready");
     },
-    // the start charges credits: the balance in the app sidebar shows it without a reload (#13)
+    // the start charges credits (a refusal still shows the server's balance): one GET /teams (#13)
     onSettled: () => {
-      refreshCreditBalance(queryClient);
+      refreshCredits(queryClient);
+      return refreshCreditBalance(queryClient);
     },
   });
 
@@ -260,6 +262,11 @@ export function SASTOptionsSidebar({
       setErrorMessage(null);
     }
   }, [query.data?.scan_status, query.data?.scan_metadata, failureMessage]);
+
+  // the status check that saw the scan fail refunded its credits (#28): show the balance it gave back
+  useEffect(() => {
+    if (query.data?.scan_status === "failure") refreshCredits(queryClient);
+  }, [query.data?.scan_status, queryClient]);
 
 
 
@@ -339,7 +346,8 @@ export function SASTOptionsSidebar({
     },
     // a re-run can move credits (PR #57 charges the price difference): the balance shows what the server did
     onSettled: () => {
-      refreshCreditBalance(queryClient);
+      refreshCredits(queryClient);
+      return refreshCreditBalance(queryClient);
     },
   });
 
@@ -381,6 +389,7 @@ export function SASTOptionsSidebar({
                 <CardTitle className="text-sm font-medium text-zinc-300 flex items-center gap-2">
                   <Filter className="h-4 w-4 text-zinc-400 shrink-0" />
                   Scan scope
+                  <InfoTip id="sast.cfg.scope" />
                 </CardTitle>
                 <CardDescription className="text-zinc-500 text-xs">
                   Paths or patterns to exclude from the scan (e.g. vendor, node_modules).
@@ -389,6 +398,7 @@ export function SASTOptionsSidebar({
               <CardContent className="px-4 pt-0">
                 <PathArraysInput
                   label="Exclude path patterns"
+                  infoId="sast.cfg.exclude"
                   value={exclude_path_arrays}
                   onChange={setExcludePathArrays}
                   segmentPlaceholder="ex: directory or file_name.extension"
@@ -402,13 +412,14 @@ export function SASTOptionsSidebar({
                 <CardTitle className="text-sm font-medium text-zinc-300 flex items-center gap-2">
                   <Code className="h-4 w-4 text-zinc-400 shrink-0" />
                   App language
+                  {/* infotip-shared: the language field below carries the tip */}
                 </CardTitle>
                 <CardDescription className="text-zinc-500 text-xs">
                   Primary language of the application being scanned (used for analysis).
                 </CardDescription>
               </CardHeader>
               <CardContent className="px-4 pt-0">
-                <Label htmlFor="primary-language" className="text-zinc-300 text-sm">Primary app language <span className="text-red-500">*</span></Label>
+                <FieldLabel htmlFor="primary-language" infoId="sast.cfg.language" labelClassName="text-zinc-300 text-sm" required>Primary app language</FieldLabel>
                 <Select value={app_lang} onValueChange={(value) => setAppLang(value as AppLang)}>
                   <SelectTrigger
                     id="primary-language"
@@ -432,7 +443,7 @@ export function SASTOptionsSidebar({
 
           {/* Estimate scan credits */}
           <div className="p-6">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-2">Estimate scan credits</h3>
+            <h3 className="text-sm font-semibold text-zinc-200 mb-2 flex items-center gap-1">Estimate scan credits <InfoTip id="sast.cfg.estimate" /></h3>
             <Button
               variant="ghost"
               size="sm"
@@ -463,7 +474,7 @@ export function SASTOptionsSidebar({
 
           {/* Run scan — allowed only after estimation process has been run this session */}
           <div className="p-6">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-2">Run scan</h3>
+            <h3 className="text-sm font-semibold text-zinc-200 mb-2 flex items-center gap-1">Run scan <InfoTip id="scan.cfg.run" /></h3>
             {canRunScan ? (
               <div className="space-y-2">
                 <Button

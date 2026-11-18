@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { Label } from "@/components/ui/label";
+import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -37,6 +37,7 @@ import { handleApiError } from "@/utils/error-handler";
 import { refreshCreditBalance } from "@/utils/creditBalance";
 import { parseMcpHeaders } from "@/utils/mcpHeaders";
 import { scanFailureMessage } from "@/utils/scanFailure";
+import { refreshCredits } from "@/utils/creditRefresh";
 import { stateAfterError } from "@/utils/scanErrorRecovery";
 import { ScanRequestError } from "@/components/scan-request-error";
 import { NewScanRunAgainButton } from "@/components/scan-run-again";
@@ -164,9 +165,10 @@ export function MCPOptionsSidebar({
       setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("ready");
     },
-    // the start charges credits: the balance in the app sidebar shows it without a reload (#13)
+    // the start charges credits (a refusal still shows the server's balance): one GET /teams (#13)
     onSettled: () => {
-      refreshCreditBalance(queryClient);
+      refreshCredits(queryClient);
+      return refreshCreditBalance(queryClient);
     },
   });
 
@@ -269,9 +271,15 @@ export function MCPOptionsSidebar({
     },
     // a re-run can move credits (PR #57 charges the price difference): the balance shows what the server did
     onSettled: () => {
-      refreshCreditBalance(queryClient);
+      refreshCredits(queryClient);
+      return refreshCreditBalance(queryClient);
     },
   });
+
+  // the status check that saw the scan fail refunded its credits (#28): show the balance it gave back
+  useEffect(() => {
+    if (query.data?.scan_status === "failure") refreshCredits(queryClient);
+  }, [query.data?.scan_status, queryClient]);
 
   const exportMutation = useMutation({
     mutationFn: () => getMCPExportResults(team_id, scan_id),
@@ -308,9 +316,9 @@ export function MCPOptionsSidebar({
         <>
           <div className="p-6 space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="mcp-server-url" className="text-zinc-300">
-                MCP server URL <span className="text-red-500">*</span>
-              </Label>
+              <FieldLabel htmlFor="mcp-server-url" infoId="mcp.cfg.server_url" labelClassName="text-zinc-300" required>
+                MCP server URL
+              </FieldLabel>
               <Input
                 id="mcp-server-url"
                 type="url"
@@ -322,9 +330,9 @@ export function MCPOptionsSidebar({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="server-mode" className="text-zinc-300">
-                Server mode <span className="text-red-500">*</span>
-              </Label>
+              <FieldLabel htmlFor="server-mode" infoId="mcp.cfg.server_mode" labelClassName="text-zinc-300" required>
+                Server mode
+              </FieldLabel>
               <Select
                 value={serverMode}
                 onValueChange={(v) => setServerMode(v as ServerMode)}
@@ -350,9 +358,9 @@ export function MCPOptionsSidebar({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="mcp-environment" className="text-zinc-300">
+              <FieldLabel htmlFor="mcp-environment" infoId="mcp.cfg.environment" labelClassName="text-zinc-300">
                 Environment
-              </Label>
+              </FieldLabel>
               <Select
                 value={environment}
                 onValueChange={(v) => setEnvironment(v as MCPEnvironment)}
@@ -378,9 +386,9 @@ export function MCPOptionsSidebar({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="headers-json" className="text-zinc-300">
+              <FieldLabel htmlFor="headers-json" infoId="mcp.cfg.headers" labelClassName="text-zinc-300">
                 Headers (JSON, optional)
-              </Label>
+              </FieldLabel>
               <Textarea
                 id="headers-json"
                 placeholder='{"Authorization": "Bearer ...", "X-Custom": "value"}'
@@ -411,7 +419,7 @@ export function MCPOptionsSidebar({
           <Separator className="bg-zinc-800" />
 
           <div className="p-6">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-2">Estimate scan credits</h3>
+            <h3 className="text-sm font-semibold text-zinc-200 mb-2 flex items-center gap-1">Estimate scan credits <InfoTip id="mcp.cfg.estimate" /></h3>
             <Button
               variant="ghost"
               size="sm"
@@ -446,7 +454,7 @@ export function MCPOptionsSidebar({
           <Separator className="bg-zinc-800" />
 
           <div className="p-6">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-2">Run scan</h3>
+            <h3 className="text-sm font-semibold text-zinc-200 mb-2 flex items-center gap-1">Run scan <InfoTip id="scan.cfg.run" /></h3>
             {canRunScan ? (
               <div className="space-y-2">
                 <Button

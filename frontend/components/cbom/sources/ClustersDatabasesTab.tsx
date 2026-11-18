@@ -32,6 +32,9 @@ import ContainerImagesSection from "./ContainerImagesSection";
 import { cbomSourcesKeys, TERMINAL_JOB } from "./keys";
 import { MetadataFields, metadataConfig, metadataFrom, type SourceMetadata } from "./SourceMetadata";
 import { ago, pluralize, readTextFile } from "./logic";
+import { dbHostError } from "./dbHost";
+import { VAULT_PROVIDERS, unavailableProblem } from "./vaultProviders";
+import { VaultNodeSettings } from "./VaultNodeSettings";
 import {
   Checkbox2,
   ChoiceCards,
@@ -53,6 +56,8 @@ import {
   usePolledJob,
 } from "./shared";
 import { refreshCreditBalance } from "@/utils/creditBalance";
+import { InfoTip } from "@/components/ui/info-tip";
+import { contextProblem, kubeconfigSettingProblem, kubeconfigSummary } from "./kubeconfigSummary";
 
 // ---------------------------------------------------------------------------- constants (mirror backend kinds.py / templates.py)
 type Engine = "postgres" | "mysql" | "mssql" | "oracle" | "mongodb" | "redis";
@@ -75,7 +80,7 @@ const DB_DEFAULT_PORTS: Record<Engine, number> = { postgres: 5432, mysql: 3306, 
 const DB_DEFAULT_LOGIN: Record<Engine, string> = { postgres: "zs_cbom", mysql: "zs_cbom", mssql: "svc_zscbom", oracle: "zs_cbom", mongodb: "zs_cbom", redis: "zs_cbom" };
 const LOGIN_OPTIONAL: ReadonlySet<Engine> = new Set(["mongodb", "redis"]);
 // kinds.credential_target_problem: logins a fake server could read need TLS with the server's CA
-const CA_REQUIRED_ENGINES: ReadonlySet<Engine> = new Set(["mysql", "redis", "mssql"]);
+const CA_REQUIRED_ENGINES: ReadonlySet<Engine> = new Set(["mysql", "redis", "mssql", "oracle", "mongodb"]); // #216
 const GRANT_LANGUAGE: Record<Engine, string> = { postgres: "sql", mysql: "sql", mssql: "sql", oracle: "sql", mongodb: "javascript", redis: "bash" };
 
 // templates.py DB_READS (kept equal by test_command_lists_shown_to_customers_match_the_server_and_sudoers)
@@ -85,7 +90,7 @@ const DB_READS: Record<Engine, string[]> = {
     "Password hashing setting and the method of each HBA rule",
     "Password hash type of each login role (md5 or SCRAM; never the hash itself)",
     "TLS used by live client connections",
-    "pgcrypto use",
+    "Installed extensions and their versions (for example pgcrypto); not where they are used",
   ],
   mysql: [
     "require_secure_transport and TLS versions",
@@ -117,17 +122,9 @@ const DB_READS: Record<Engine, string[]> = {
   ],
 };
 
-const VAULT_PROVIDERS = [
-  { value: "hashicorp", label: "HashiCorp Vault" },
-  { value: "cyberark", label: "CyberArk" },
-  { value: "aws_secrets_manager", label: "AWS Secrets Manager" },
-  { value: "azure_key_vault", label: "Azure Key Vault" },
-];
-
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$/;
 const NAME_ERROR = "Use 1-64 letters, digits, spaces, dots, dashes or underscores, starting with a letter or digit.";
 const LOGIN_RE = /^[A-Za-z0-9._@$\\-]{1,64}$/;
-const HOST_RE = /^[A-Za-z0-9._:-]{1,253}$/;
 const MAX_PEM = 64 * 1024;
 const CLOUD_KINDS = new Set(["aws_account", "azure_subscription", "gcp_project"]);
 
@@ -194,7 +191,7 @@ function kubeconfigProblem(text: string): string | null {
     if (key(name).test(text)) return `This kubeconfig points at a file (${name}); embed the data instead`;
   }
   if (key("certificate-authority").test(text)) return "This kubeconfig points at a CA file; embed certificate-authority-data instead";
-  return null;
+  return kubeconfigSettingProblem(text); // #209
 }
 
 function endpointOf(source: CbomSource): string {
@@ -374,7 +371,7 @@ export default function ClustersDatabasesTab({ teamId, onNavigate }: { teamId: n
   return (
     <div className="space-y-6">
       {nodes.length === 0 ? (
-        <SectionCard title="Add Kubernetes clusters and databases" description="Both are read through a scan node inside your network.">
+        <SectionCard infoId="cbsrc.k8sdb.intro" title="Add Kubernetes clusters and databases" description="Both are read through a scan node inside your network.">
           <EmptyState
             title="Add a scan node first"
             body="Clusters and databases are reached through a scan node that runs inside your network, with accounts that can only read. Add a node on the Scan nodes tab, then come back here."
@@ -427,6 +424,7 @@ export default function ClustersDatabasesTab({ teamId, onNavigate }: { teamId: n
       <ContainerImagesSection teamId={teamId} nodes={nodes} isAdmin={isAdminForImages} />
 
       <SectionCard
+        infoId="cbsrc.k8sdb.list"
         title="Configured clusters and databases"
         description={
           rows.length
@@ -466,11 +464,11 @@ export default function ClustersDatabasesTab({ teamId, onNavigate }: { teamId: n
                 <TableHeader>
                   <TableRow>
                     <TableHead>Name</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Endpoint</TableHead>
-                    <TableHead>Access / login</TableHead>
-                    <TableHead>Node</TableHead>
-                    <TableHead>Last test</TableHead>
+                    <TableHead>Type <InfoTip id="cbsrc.col.type" /></TableHead>
+                    <TableHead>Endpoint <InfoTip id="cbsrc.col.endpoint" /></TableHead>
+                    <TableHead>Access / login <InfoTip id="cbsrc.col.access" /></TableHead>
+                    <TableHead>Node <InfoTip id="cbsrc.col.node" /></TableHead>
+                    <TableHead>Last test <InfoTip id="cbsrc.col.last_test" /></TableHead>
                     <TableHead className="w-12">
                       <span className="sr-only">Actions</span>
                     </TableHead>
@@ -614,6 +612,8 @@ function VaultFields({
   provider,
   path,
   error,
+  providerError,
+  node,
   onProvider,
   onPath,
   placeholder,
@@ -622,27 +622,31 @@ function VaultFields({
   provider: string;
   path: string;
   error?: string | null;
+  providerError?: string | null;
+  /** the source's scan node: what it reported for vault credentials is checked (#364) */
+  node: CbomScanNode | null;
   onProvider: (v: string) => void;
   onPath: (v: string) => void;
   placeholder: string;
 }) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-      <Field label="Vault" htmlFor={`${idPrefix}-vault-provider`}>
+      <Field infoId="cbsrc.common.vault_provider" label="Vault" htmlFor={`${idPrefix}-vault-provider`} error={providerError}>
         <Select value={provider} onValueChange={onProvider}>
           <SelectTrigger id={`${idPrefix}-vault-provider`} className="w-full cursor-pointer" data-testid={`${idPrefix}-vault-provider`}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             {VAULT_PROVIDERS.map((p) => (
-              <SelectItem key={p.value} value={p.value} className="cursor-pointer">
-                {p.label}
+              <SelectItem key={p.value} value={p.value} disabled={!p.available} className="cursor-pointer">
+                {p.optionLabel}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
       </Field>
       <Field
+        infoId="cbsrc.common.vault_path"
         label="Secret path"
         htmlFor={`${idPrefix}-vault-path`}
         required
@@ -660,6 +664,8 @@ function VaultFields({
           onChange={(e) => onPath(e.target.value)}
         />
       </Field>
+      <VaultNodeSettings provider={provider} path={path} node={node} testId={`${idPrefix}-vault-node-settings`}
+        className="sm:col-span-3" />
     </div>
   );
 }
@@ -798,6 +804,14 @@ function ClusterForm({
       (form.credentialType === "vault" ? `${form.vaultProvider}|${form.vaultPath.trim()}` : null) !==
         (cfg.vault ? `${cfg.vault.provider}|${cfg.vault.path}` : null));
   const templateName = form.tier === 2 ? "k8s-tier2" : "k8s-tier1";
+  const kubeSummary = useMemo(() => kubeconfigSummary(form.kubeconfig), [form.kubeconfig]); // #208
+  const stepsQuery = useQuery({ // #207: the kubeconfig from the template's long-lived token Secret
+    queryKey: cbomSourcesKeys.template(teamId, "k8s-kubeconfig"),
+    queryFn: () => getCbomTemplate(teamId, "k8s-kubeconfig"),
+    enabled: Number.isFinite(teamId),
+    retry: 1,
+    staleTime: Infinity,
+  });
   const roleQuery = useQuery({
     queryKey: cbomSourcesKeys.template(teamId, templateName),
     queryFn: () => getCbomTemplate(teamId, templateName),
@@ -844,8 +858,13 @@ function ClusterForm({
       }
     }
     if (form.context.trim().length > 128) e.context = "128 characters at most";
+    else if (form.credentialType === "kubeconfig" && form.kubeconfig) {
+      const problem = contextProblem(form.context, kubeSummary); // #208: the save refuses it too
+      if (problem) e.context = problem;
+    }
     if (form.credentialType === "vault" && !form.vaultPath.trim()) e.vaultPath = "Enter the secret path in your vault";
     if (form.credentialType === "vault" && !isAdmin) e.vaultPath = "Only a team admin can add or change a vault reference";
+    if (form.credentialType === "vault" && unavailableProblem(form.vaultProvider)) e.vaultProvider = unavailableProblem(form.vaultProvider) ?? undefined; // #364
     if (!form.nodeId) e.nodeId = "Choose the scan node that reaches this cluster";
     return e;
   };
@@ -911,6 +930,7 @@ function ClusterForm({
 
   return (
     <SectionCard
+      infoId="cbsrc.k8s.form"
       id="k8s-form"
       className="scroll-mt-4"
       title={source ? `Edit cluster ${source.name}` : "Add a Kubernetes cluster"}
@@ -918,10 +938,10 @@ function ClusterForm({
     >
       <div className="space-y-5">
         <div className="grid grid-cols-1 sm:grid-cols-5 gap-4">
-          <Field label="Cluster name" htmlFor="k8s-name" required error={errors.name} className="sm:col-span-2">
+          <Field infoId="cbsrc.k8s.name" label="Cluster name" htmlFor="k8s-name" required error={errors.name} className="sm:col-span-2">
             <Input id="k8s-name" data-testid="k8s-name" value={form.name} maxLength={64} placeholder="prod-payments" onChange={(e) => set({ name: e.target.value })} />
           </Field>
-          <Field label="API server URL" htmlFor="k8s-api-url" required error={errors.apiUrl} className="sm:col-span-3">
+          <Field infoId="cbsrc.k8s.api_url" label="API server URL" htmlFor="k8s-api-url" required error={errors.apiUrl} className="sm:col-span-3">
             <Input
               id="k8s-api-url"
               data-testid="k8s-api-url"
@@ -935,6 +955,7 @@ function ClusterForm({
         </div>
 
         <Field
+          infoId="cbsrc.k8s.ca"
           label="Cluster CA certificate"
           htmlFor="k8s-ca"
           error={errors.caPem ?? errors.caFile}
@@ -950,6 +971,7 @@ function ClusterForm({
             className="font-mono text-xs min-h-[72px] max-h-48 overflow-y-auto resize-y"
             onChange={(e) => set({ caPem: e.target.value })}
           />
+          {/* infotip-shared: file picker behind Upload PEM file; the field's tip covers it */}
           <input
             ref={caRef}
             type="file"
@@ -986,7 +1008,7 @@ function ClusterForm({
         <div className="space-y-3">
           <SubLabel>Credential</SubLabel>
           <div data-testid="k8s-credential">
-            <ChoiceCards<ClusterCred>
+            <ChoiceCards<ClusterCred> infoId="cbsrc.k8s.credential"
               name="k8s-credential"
               label="Cluster credential"
               value={form.credentialType}
@@ -1004,6 +1026,7 @@ function ClusterForm({
           {form.credentialType === "kubeconfig" ? (
             <div className="grid grid-cols-1 sm:grid-cols-5 gap-4">
               <Field
+                infoId="cbsrc.k8s.kubeconfig"
                 label="Kubeconfig file"
                 htmlFor="k8s-kubeconfig"
                 required={!kubeconfigStored}
@@ -1031,7 +1054,17 @@ function ClusterForm({
                         setErrors((er) => ({ ...er, kubeconfig: problem }));
                         return;
                       }
-                      set({ kubeconfig: text, kubeconfigName: file.name });
+                      // #208: offer the file's contexts; name the current one when there are several, and fill the
+                      // API server URL from the chosen context's cluster when it is still empty
+                      const summary = kubeconfigSummary(text);
+                      const chosen = form.context.trim() || (summary.contexts.length > 1 ? summary.current ?? "" : "");
+                      const server = summary.servers[chosen || summary.current || summary.contexts[0] || ""] ?? "";
+                      set({
+                        kubeconfig: text,
+                        kubeconfigName: file.name,
+                        context: chosen,
+                        apiUrl: form.apiUrl.trim() ? form.apiUrl : summary.servers[chosen] || server || form.apiUrl,
+                      });
                     } catch (err) {
                       setErrors((er) => ({ ...er, kubeconfig: (err as Error).message }));
                     }
@@ -1049,8 +1082,35 @@ function ClusterForm({
                   )}
                 </div>
               </Field>
-              <Field label="Context" htmlFor="k8s-context" error={errors.context} hint="Optional. Blank uses current-context." className="sm:col-span-2">
-                <Input id="k8s-context" data-testid="k8s-context" value={form.context} maxLength={128} onChange={(e) => set({ context: e.target.value })} />
+              <Field
+                infoId="cbsrc.k8s.context"
+                label="Context"
+                htmlFor="k8s-context"
+                error={errors.context}
+                hint={
+                  kubeSummary.contexts.length
+                    ? `In this kubeconfig: ${kubeSummary.contexts.join(", ")}. Blank uses current-context${kubeSummary.current ? ` (${kubeSummary.current})` : ""}.`
+                    : "Optional. Blank uses current-context."
+                }
+                className="sm:col-span-2"
+              >
+                <Input
+                  id="k8s-context"
+                  data-testid="k8s-context"
+                  list="k8s-contexts"
+                  value={form.context}
+                  maxLength={128}
+                  onChange={(e) => {
+                    const context = e.target.value;
+                    const server = kubeSummary.servers[context.trim()];
+                    set(server && !form.apiUrl.trim() ? { context, apiUrl: server } : { context });
+                  }}
+                />
+                <datalist id="k8s-contexts" data-testid="k8s-contexts">
+                  {kubeSummary.contexts.map((name) => (
+                    <option key={name} value={name} />
+                  ))}
+                </datalist>
               </Field>
             </div>
           ) : (
@@ -1059,6 +1119,8 @@ function ClusterForm({
               provider={form.vaultProvider}
               path={form.vaultPath}
               error={errors.vaultPath}
+              providerError={errors.vaultProvider}
+              node={nodes.find((n) => n.id === form.nodeId) ?? null}
               onProvider={(v) => set({ vaultProvider: v })}
               onPath={(v) => set({ vaultPath: v })}
               placeholder="secret/zs-cbom/k8s/prod-payments"
@@ -1069,14 +1131,24 @@ function ClusterForm({
         <div className="space-y-3">
           <SubLabel>Access tier</SubLabel>
           <div data-testid="k8s-tier">
-            <ChoiceCards<1 | 2>
+            <ChoiceCards<1 | 2> infoId="cbsrc.k8s.tier"
               name="k8s-tier"
               label="Access tier"
               value={form.tier}
               onChange={(v) => set({ tier: v })}
               options={[
-                { value: 1, title: "Tier 1 · no Secrets", description: "Certificates and issuers, ingress TLS, mesh mTLS mode, images in use" },
-                { value: 2, title: "Tier 2 · reads Secrets", description: "Adds TLS secrets and private keys left in Secrets or ConfigMaps" },
+                // Exactly what the tier's ClusterRole grants and the collector reads (CB36-BUG-04; pinned by
+                // backend/tests/test_cbom_node_core_classify.py). Container images are the Container images source.
+                {
+                  value: 1,
+                  title: "Tier 1 · no Secrets",
+                  description: "Cluster and node versions, API server TLS, ingress TLS hosts and Secret names, cert-manager Certificates, certificates and private keys in ConfigMaps, Istio and Linkerd mTLS policy",
+                },
+                {
+                  value: 2,
+                  title: "Tier 2 · reads Secrets",
+                  description: "Adds the certificates of TLS Secrets (kubernetes.io/tls); the API also returns their private keys, which are dropped unparsed and never stored or sent",
+                },
               ]}
             />
           </div>
@@ -1084,7 +1156,7 @@ function ClusterForm({
             <div role="note" className="flex items-start gap-3 rounded-lg border border-amber-500/50 px-4 py-3" data-testid="k8s-tier2-warning">
               <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
               <div className="text-sm">
-                <p className="font-medium text-amber-600 dark:text-amber-400">Tier 2 can read Secret values</p>
+                <p className="font-medium text-amber-600 dark:text-amber-400">Tier 2 can read Secret values <InfoTip id="cbsrc.k8s.tier2_warning" /></p>
                 <p className="text-zinc-700 dark:text-zinc-300">
                   Kubernetes cannot grant access to Secret names without their values, so this token can read them. Only metadata such as
                   fingerprints is sent to ZeroShield. Start with non-production clusters.
@@ -1095,7 +1167,7 @@ function ClusterForm({
           <div className="space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-xs font-medium text-zinc-500">
-                Apply this ClusterRole and binding for the service account zs-cbom (Tier {form.tier})
+                Apply this file: the zs-cbom namespace, service account and token Secret, and the ClusterRole and binding (Tier {form.tier})
               </p>
               <Button type="button" variant="outline" size="sm" className="cursor-pointer" onClick={downloadRole} data-testid="k8s-download-role">
                 <Download className="h-4 w-4 mr-1.5" />
@@ -1119,16 +1191,30 @@ function ClusterForm({
                 <CodeSnippet code={roleQuery.data} language="yaml" />
               </div>
             )}
+            <div className="space-y-1.5" data-testid="k8s-kubeconfig-steps">
+              <p className="text-xs font-medium text-zinc-500">
+                Then build the kubeconfig to upload, from the service account&apos;s long-lived token. Tokens from{" "}
+                <code className="font-mono">kubectl create token</code> expire (1 hour by default) and scheduled scans would then fail.
+              </p>
+              {stepsQuery.data ? (
+                <div className="max-h-72 overflow-y-auto rounded-md">
+                  <CodeSnippet code={stepsQuery.data} language="bash" />
+                </div>
+              ) : stepsQuery.isError ? (
+                <p className="text-xs text-zinc-500">Could not load the kubeconfig steps.</p>
+              ) : null}
+            </div>
           </div>
         </div>
 
         <div className="space-y-2">
-          <Checkbox2 id="k8s-managed" checked={form.managed} onChange={(v) => set({ managed: v })}>
+          <Checkbox2 infoId="cbsrc.k8s.managed" id="k8s-managed" checked={form.managed} onChange={(v) => set({ managed: v })}>
             Managed cluster (EKS, AKS, GKE): link the cloud account that runs it
           </Checkbox2>
           {form.managed &&
             (cloudSources.length ? (
               <Field
+                infoId="cbsrc.k8s.cloud"
                 label="Cloud account"
                 htmlFor="k8s-cloud"
                 hint="Secret encryption at rest is read from this account once cloud collection is available; until then it is stored as a link."
@@ -1157,7 +1243,7 @@ function ClusterForm({
             ))}
         </div>
 
-        <Field label="Reached through scan node" htmlFor="k8s-node" required error={errors.nodeId} hint="The node must reach the API server URL above.">
+        <Field infoId="cbsrc.common.node" label="Reached through scan node" htmlFor="k8s-node" required error={errors.nodeId} hint="The node must reach the API server URL above.">
           <div data-testid="k8s-node">
             <NodeSelect id="k8s-node" nodes={nodes} value={form.nodeId} onChange={(v) => set({ nodeId: v })} />
           </div>
@@ -1311,7 +1397,8 @@ function DatabaseForm({
   const validate = (): DbErrors => {
     const e: DbErrors = {};
     if (!NAME_RE.test(form.name.trim())) e.name = NAME_ERROR;
-    if (!HOST_RE.test(form.host.trim())) e.host = "Enter a host name or IP address";
+    const hostError = dbHostError(form.host);
+    if (hostError) e.host = hostError;
     if (form.port.trim()) {
       const port = Number(form.port.trim());
       if (!/^\d{1,5}$/.test(form.port.trim()) || port < 1 || port > 65535) e.port = "1 to 65535";
@@ -1326,6 +1413,7 @@ function DatabaseForm({
     if (passwordRequired && !form.password && !passwordStored) e.password = "Enter the password for this login";
     if (form.credentialType === "vault" && !form.vaultPath.trim()) e.vaultPath = "Enter the secret path in your vault";
     if (form.credentialType === "vault" && !isAdmin) e.vaultPath = "Only a team admin can add or change a vault reference";
+    if (form.credentialType === "vault" && unavailableProblem(form.vaultProvider)) e.vaultProvider = unavailableProblem(form.vaultProvider) ?? undefined; // #364
     const pemError = checkPem(form.caPem);
     if (pemError) e.caPem = pemError;
     else if (caRequired && !(form.requireTls && form.caPem.trim()))
@@ -1377,6 +1465,7 @@ function DatabaseForm({
 
   return (
     <SectionCard
+      infoId="cbsrc.db.form"
       id="db-form"
       className="scroll-mt-4"
       title={source ? `Edit database ${source.name}` : "Add a database"}
@@ -1384,10 +1473,10 @@ function DatabaseForm({
     >
       <div className="space-y-5">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Name" htmlFor="db-name" required error={errors.name}>
+          <Field infoId="cbsrc.db.name" label="Name" htmlFor="db-name" required error={errors.name}>
             <Input id="db-name" data-testid="db-name" value={form.name} maxLength={64} placeholder="pg-core-01" onChange={(e) => set({ name: e.target.value })} />
           </Field>
-          <Field label="Engine" htmlFor="db-engine">
+          <Field infoId="cbsrc.db.engine" label="Engine" htmlFor="db-engine">
             <Select value={form.engine} onValueChange={(v) => changeEngine(v as Engine)}>
               <SelectTrigger id="db-engine" className="w-full cursor-pointer" data-testid="db-engine">
                 <SelectValue />
@@ -1403,10 +1492,10 @@ function DatabaseForm({
           </Field>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-          <Field label="Host" htmlFor="db-host" required error={errors.host} className="sm:col-span-3">
+          <Field infoId="cbsrc.db.host" label="Host" htmlFor="db-host" required error={errors.host} className="sm:col-span-3">
             <Input id="db-host" data-testid="db-host" value={form.host} maxLength={253} placeholder="pg-core-01.bank.local" onChange={(e) => set({ host: e.target.value })} />
           </Field>
-          <Field label="Port" htmlFor="db-port" error={errors.port} hint={`Default ${DB_DEFAULT_PORTS[form.engine]}`}>
+          <Field infoId="cbsrc.db.port" label="Port" htmlFor="db-port" error={errors.port} hint={`Default ${DB_DEFAULT_PORTS[form.engine]}`}>
             <Input
               id="db-port"
               data-testid="db-port"
@@ -1419,6 +1508,7 @@ function DatabaseForm({
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field
+            infoId="cbsrc.db.login"
             label={loginOptional ? "Login (optional)" : "Login"}
             htmlFor="db-login"
             required={!loginOptional}
@@ -1428,6 +1518,7 @@ function DatabaseForm({
             <Input id="db-login" data-testid="db-login" value={form.login} maxLength={64} autoComplete="off" onChange={(e) => set({ login: e.target.value })} />
           </Field>
           <Field
+            infoId="cbsrc.db.database"
             label={form.engine === "oracle" ? "Service name" : "Database (optional)"}
             htmlFor="db-database"
             required={form.engine === "oracle"}
@@ -1441,7 +1532,7 @@ function DatabaseForm({
         <div className="space-y-3">
           <SubLabel>Credential</SubLabel>
           <div data-testid="db-credential">
-            <ChoiceCards<DbCred>
+            <ChoiceCards<DbCred> infoId="cbsrc.db.credential"
               name="db-credential"
               label="Database credential"
               value={form.credentialType}
@@ -1458,6 +1549,7 @@ function DatabaseForm({
           )}
           {form.credentialType === "password" ? (
             <SecretField
+              infoId="cbsrc.db.password"
               id="db-password"
               label={form.login.trim() ? `Password for ${form.login.trim()}` : "Password"}
               required={passwordRequired}
@@ -1473,6 +1565,8 @@ function DatabaseForm({
               provider={form.vaultProvider}
               path={form.vaultPath}
               error={errors.vaultPath}
+              providerError={errors.vaultProvider}
+              node={nodes.find((n) => n.id === form.nodeId) ?? null}
               onProvider={(v) => set({ vaultProvider: v })}
               onPath={(v) => set({ vaultPath: v })}
               placeholder="secret/zs-cbom/db/pg-core-01"
@@ -1482,11 +1576,12 @@ function DatabaseForm({
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
           <div className="sm:pt-7">
-            <Checkbox2 id="db-require-tls" checked={form.requireTls} onChange={(v) => set({ requireTls: v })}>
+            <Checkbox2 infoId="cbsrc.db.require_tls" id="db-require-tls" checked={form.requireTls} onChange={(v) => set({ requireTls: v })}>
               Require TLS to the database
             </Checkbox2>
           </div>
           <Field
+            infoId="cbsrc.db.ca"
             label="Database CA certificate"
             htmlFor="db-ca"
             error={errors.caPem}
@@ -1580,7 +1675,7 @@ function DatabaseForm({
           <p className="text-xs text-zinc-500">Turn on statement logging during the first scan to see for yourself that nothing else is sent.</p>
         </div>
 
-        <Field label="Reached through scan node" htmlFor="db-node" required error={errors.nodeId} hint="The node must reach the host and port above.">
+        <Field infoId="cbsrc.common.node" label="Reached through scan node" htmlFor="db-node" required error={errors.nodeId} hint="The node must reach the host and port above.">
           <div data-testid="db-node">
             <NodeSelect id="db-node" nodes={nodes} value={form.nodeId} onChange={(v) => set({ nodeId: v })} />
           </div>
@@ -1727,8 +1822,10 @@ function KeyManagerForm({
       if (form.tokenLabel.length > 32) e.tokenLabel = "32 characters at most (a PKCS#11 token label)";
       if (form.credentialType === "vault" && !form.vaultPath.trim()) e.vaultPath = "Enter the secret path of the PIN in your vault";
       if (form.credentialType === "vault" && !isAdmin) e.vaultPath = "Only a team admin can add or change a vault reference";
+      if (form.credentialType === "vault" && unavailableProblem(form.vaultProvider)) e.vaultProvider = unavailableProblem(form.vaultProvider) ?? undefined; // #364
     } else {
-      if (!HOST_RE.test(form.host.trim())) e.host = "Enter the KMIP server's host name or IP address";
+      const hostError = dbHostError(form.host, "Enter the KMIP server's host name or IP address");
+      if (hostError) e.host = hostError;
       const port = Number(form.port.trim() || 5696);
       if (!/^\d{0,5}$/.test(form.port.trim()) || port < 1 || port > 65535) e.port = "1 to 65535";
       const pemError = checkPem(form.caPem);
@@ -1776,17 +1873,18 @@ function KeyManagerForm({
 
   return (
     <SectionCard
+      infoId="cbsrc.km.form"
       id="km-form"
       className="scroll-mt-4"
       title={source ? `Edit ${source.name}` : "Add an HSM or key manager"}
       description="Keys are inventoried by their attributes only; no key value ever leaves the HSM or key manager."
     >
       <div className="space-y-5">
-        <Field label="Name" htmlFor="km-name" required error={errors.name}>
+        <Field infoId="cbsrc.km.name" label="Name" htmlFor="km-name" required error={errors.name}>
           <Input id="km-name" data-testid="km-name" value={form.name} maxLength={64} placeholder="hsm-payments-01" onChange={(e) => set({ name: e.target.value })} />
         </Field>
         <div data-testid="km-provider">
-          <ChoiceCards<KmProvider>
+          <ChoiceCards<KmProvider> infoId="cbsrc.km.provider"
             name="km-provider"
             label="Kind of key manager"
             value={form.provider}
@@ -1802,6 +1900,7 @@ function KeyManagerForm({
           <>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Field
+                infoId="cbsrc.km.module"
                 label="Module name"
                 htmlFor="km-module"
                 required
@@ -1810,13 +1909,13 @@ function KeyManagerForm({
               >
                 <Input id="km-module" data-testid="km-module" value={form.module} maxLength={64} placeholder="luna" onChange={(e) => set({ module: e.target.value })} />
               </Field>
-              <Field label="Token label (optional)" htmlFor="km-token" error={errors.tokenLabel} hint="Blank reads every initialised token the module shows">
+              <Field infoId="cbsrc.km.token" label="Token label (optional)" htmlFor="km-token" error={errors.tokenLabel} hint="Required when the module shows more than one token: a PIN is only ever tried on the token it belongs to, so a wrong PIN cannot lock other partitions. Blank works for a module with one token">
                 <Input id="km-token" data-testid="km-token" value={form.tokenLabel} maxLength={32} onChange={(e) => set({ tokenLabel: e.target.value })} />
               </Field>
             </div>
             <div className="space-y-3">
               <SubLabel>User PIN</SubLabel>
-              <ChoiceCards<KmCred>
+              <ChoiceCards<KmCred> infoId="cbsrc.km.pin_source"
                 name="km-credential"
                 label="PIN source"
                 value={form.credentialType}
@@ -1827,13 +1926,15 @@ function KeyManagerForm({
                 ]}
               />
               {form.credentialType === "password" ? (
-                <SecretField id="km-pin" label="User PIN (crypto user / partition role)" value={form.pin} onChange={(v) => set({ pin: v })} isSet={pinStored} error={errors.pin} />
+                <SecretField infoId="cbsrc.km.pin" id="km-pin" label="User PIN (crypto user / partition role)" value={form.pin} onChange={(v) => set({ pin: v })} isSet={pinStored} error={errors.pin} />
               ) : (
                 <VaultFields
                   idPrefix="km"
                   provider={form.vaultProvider}
                   path={form.vaultPath}
                   error={errors.vaultPath}
+                  providerError={errors.vaultProvider}
+                  node={nodes.find((n) => n.id === form.nodeId) ?? null}
                   onProvider={(v) => set({ vaultProvider: v })}
                   onPath={(v) => set({ vaultPath: v })}
                   placeholder="secret/zs-cbom/hsm/payments"
@@ -1844,14 +1945,15 @@ function KeyManagerForm({
         ) : (
           <>
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-              <Field label="Host" htmlFor="km-host" required error={errors.host} className="sm:col-span-3">
+              <Field infoId="cbsrc.km.host" label="Host" htmlFor="km-host" required error={errors.host} className="sm:col-span-3">
                 <Input id="km-host" data-testid="km-host" value={form.host} maxLength={253} placeholder="kms01.bank.local" onChange={(e) => set({ host: e.target.value })} />
               </Field>
-              <Field label="Port" htmlFor="km-port" error={errors.port} hint="Default 5696">
+              <Field infoId="cbsrc.km.port" label="Port" htmlFor="km-port" error={errors.port} hint="Default 5696">
                 <Input id="km-port" data-testid="km-port" inputMode="numeric" value={form.port} maxLength={5} onChange={(e) => set({ port: e.target.value.replace(/[^\d]/g, "") })} />
               </Field>
             </div>
             <Field
+              infoId="cbsrc.km.ca"
               label="Server CA certificate (optional)"
               htmlFor="km-ca"
               error={errors.caPem}
@@ -1860,8 +1962,8 @@ function KeyManagerForm({
               <Textarea id="km-ca" data-testid="km-ca" value={form.caPem} spellCheck={false} className="font-mono text-xs min-h-[72px]" placeholder="-----BEGIN CERTIFICATE-----" onChange={(e) => set({ caPem: e.target.value })} />
             </Field>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <SecretField id="km-client-cert" label="Client certificate (PEM)" multiline value={form.clientCert} onChange={(v) => set({ clientCert: v })} isSet={certStored && !kmipWhereChanged} required error={errors.clientCert} />
-              <SecretField id="km-client-key" label="Client private key (PEM, unencrypted)" multiline value={form.clientKey} onChange={(v) => set({ clientKey: v })} isSet={certStored && !kmipWhereChanged} required error={errors.clientKey} />
+              <SecretField infoId="cbsrc.km.client_cert" id="km-client-cert" label="Client certificate (PEM)" multiline value={form.clientCert} onChange={(v) => set({ clientCert: v })} isSet={certStored && !kmipWhereChanged} required error={errors.clientCert} />
+              <SecretField infoId="cbsrc.km.client_key" id="km-client-key" label="Client private key (PEM, unencrypted)" multiline value={form.clientKey} onChange={(v) => set({ clientKey: v })} isSet={certStored && !kmipWhereChanged} required error={errors.clientKey} />
             </div>
           </>
         )}
@@ -1875,7 +1977,7 @@ function KeyManagerForm({
           </ul>
         </div>
 
-        <Field label="Reached through scan node" htmlFor="km-node" required error={errors.nodeId} hint={form.provider === "pkcs11" ? "The node that has the vendor's PKCS#11 client installed." : "The node must reach the host and port above."}>
+        <Field infoId="cbsrc.common.node" label="Reached through scan node" htmlFor="km-node" required error={errors.nodeId} hint={form.provider === "pkcs11" ? "The node that has the vendor's PKCS#11 client installed." : "The node must reach the host and port above."}>
           <div data-testid="km-node">
             <NodeSelect id="km-node" nodes={nodes} value={form.nodeId} onChange={(v) => set({ nodeId: v })} />
           </div>

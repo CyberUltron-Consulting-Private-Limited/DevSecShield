@@ -849,24 +849,34 @@ def _control_table(
     return table
 
 
-def _basis_box(
-    view: TeamCbomView,
-    styles: Styles,
-    width: float,
-    extra: Sequence[str] | None = None,
-) -> Table:
+def basis_scans_line(view: TeamCbomView) -> str:
+    """The Basis box's first line. A CBOM Sources collection counts as an included scan (``merge_collections``), so
+    the line says how many of them there are; without collections it reads as before."""
     excluded = view.excluded or {}
 
     def count(key: str) -> int:
         return int(excluded.get(key, 0) or 0)
 
-    scans = authored.BASIS_SCANS.format(
+    line = authored.BASIS_SCANS.format(
         included=int(view.included),
         eligible=int(view.eligible),
         failed=count(EXCLUDED_FAILURE),
         not_completed=count(EXCLUDED_NOT_COMPLETED),
         no_data=count(EXCLUDED_NO_DATA),
     )
+    collections = len(view.collections or ())
+    if collections:
+        line += authored.BASIS_SCANS_COLLECTIONS.format(collections=collections)
+    return line
+
+
+def _basis_box(
+    view: TeamCbomView,
+    styles: Styles,
+    width: float,
+    extra: Sequence[str] | None = None,
+) -> Table:
+    scans = basis_scans_line(view)
     history = authored.BASIS_HISTORY.format(folded=int(view.included))
     if view.history_truncated:
         history += authored.BASIS_HISTORY_TRUNCATED.format(truncated=int(view.history_truncated))

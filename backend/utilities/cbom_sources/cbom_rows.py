@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from backend.utilities.cbom_sources.agility import code_row_fields
+
 # The row TYPE a code gives, as the engine's adapter writes it (aibom/integrations/cbom_devsecshield.py
 # _LIBRARY_TYPE_CODES / _CONFIG_TYPE_CODES): a library row, or a configuration (posture) row.
 LIBRARY_CODES = frozenset({"VULNERABLE_CRYPTO_LIBRARY", "LIBRARY_CVE_RANGE", "EOL_CRYPTO_LIBRARY"})
@@ -59,6 +61,7 @@ def page_row(row: dict[str, Any]) -> dict[str, Any]:
     strength = out.get("crypto_strength")
     if not strength or str(strength).lower() in ("unknown", "none", "null"):
         out["crypto_strength"] = "not-applicable"
+    out.update(code_row_fields(out))  # CB-24: crypto-agility fix class of the row
     return out
 
 

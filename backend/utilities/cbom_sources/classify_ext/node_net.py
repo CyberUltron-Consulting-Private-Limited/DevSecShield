@@ -6,6 +6,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from backend.utilities.cbom_sources import algid
 from backend.utilities.cbom_sources import classify as C
 
 # Names as the node reports them (zs_scan_node/ikeprobe.py) and as the appliance parsers normalise them.
@@ -65,16 +66,17 @@ SHA1_NOTE = ("RFC 8247 (IKEv2) and RFC 8221 (ESP) still list HMAC-SHA-1 as MUST-
 
 def _weak_findings(out: Any, enc: list[str], integ: list[str], dh: list[str], what: str) -> None:
     if enc:
-        out.add("IKE_WEAK_ENCR", "High", f"{what} accepts weak IKE encryption ({', '.join(enc[:5])})")
+        out.add("IKE_WEAK_ENCR", "High", f"{what} accepts weak IKE encryption ({', '.join(enc[:5])})", enc)
     if integ and _md5_class(integ):
         out.add("IKE_WEAK_INTEG", "Medium", f"{what} accepts MD5/SHA-1 in IKE ({', '.join(integ[:5])}); MD5 is MUST "
-                                            "NOT in RFC 8247")
+                                            "NOT in RFC 8247", integ)
     elif integ:
-        out.add("IKE_WEAK_INTEG", "Low", f"{what} accepts HMAC-SHA-1 in IKE ({', '.join(integ[:5])}); {SHA1_NOTE}")
+        out.add("IKE_WEAK_INTEG", "Low", f"{what} accepts HMAC-SHA-1 in IKE ({', '.join(integ[:5])}); {SHA1_NOTE}",
+                integ)
     if dh:
         high = any(g.split(" ")[0] in WEAK_GROUPS_HIGH or g.startswith("one of") for g in dh)
         out.add("IKE_WEAK_DH", "High" if high else "Medium",
-                f"{what} accepts weak Diffie-Hellman groups ({', '.join(dh[:5])})")
+                f"{what} accepts weak Diffie-Hellman groups ({', '.join(dh[:5])})", dh)
 
 
 def ike_rule(out: Any, facts: dict[str, Any], algorithm: Any, key_size: Any, now: Any) -> bool | None:
@@ -115,7 +117,7 @@ def ot_rule(out: Any, facts: dict[str, Any], algorithm: Any, key_size: Any, now:
                                                                                                      "Basic256")})
     if deprecated:
         out.add("OPCUA_DEPRECATED_POLICY", "Medium", f"OPC UA server offers deprecated security policies "
-                                                     f"({', '.join(deprecated)}: SHA-1, RSA PKCS#1 v1.5)")
+                                                     f"({', '.join(deprecated)}: SHA-1, RSA PKCS#1 v1.5)", deprecated)
     anon = [e for e in eps if any((t or {}).get("type") == "Anonymous" for t in e.get("user_tokens") or [])]
     if anon:
         on_none = any(e in none_eps for e in anon)
@@ -163,7 +165,7 @@ def mesh_destination_rule(out: Any, facts: dict[str, Any], algorithm: Any, key_s
 
 
 def mesh_server_rule(out: Any, facts: dict[str, Any], algorithm: Any, key_size: Any, now: Any) -> bool | None:
-    reasons = [str(r) for r in facts.get("unauthenticated_by") or []]
+    reasons = [str(r) for r in C.fact_list(facts.get("unauthenticated_by"))]
     if facts.get("unauthenticated") and reasons:
         out.add("LINKERD_UNAUTHENTICATED_SERVER", "Medium",
                 f"Linkerd Server {facts.get('namespace')}/{facts.get('name')} (port {facts.get('port')}) allows "
@@ -171,49 +173,84 @@ def mesh_server_rule(out: Any, facts: dict[str, Any], algorithm: Any, key_size: 
     return None
 
 
+_IKE_GROUP_NUMBER = re.compile(r"(?:group|dh-group|dh)\s*(\d{1,3})", re.I)
+
+
+def _pq_ike_group(group: Any) -> bool:
+    """A configured IKE group that is a post-quantum key exchange, in any spelling a parser keeps: the IKEv2
+    Transform Type 4 name or number ("group N"), whichever syntax the vendor used. A post-quantum signature is no
+    key exchange (classify.KEX_PRIMITIVES)."""
+    text = str(group or "").strip()
+    m = _IKE_GROUP_NUMBER.fullmatch(text)
+    found = algid.ike_ke(int(m.group(1))) if m else C.kex_identity(text, "ike_ke")
+    return found is not None and found.quantum in ("safe", "hybrid") and found.primitive in C.KEX_PRIMITIVES
+
+
+def _appliance_weak_dh(out: Any, facts: dict[str, Any], what: str) -> None:
+    """DH_LT_2048 for a configured finite-field DH size below 2048 bits on an appliance's TLS or SSH service:
+    'ip ssh dh min size 1024' (IOS: the smallest group-exchange group accepted), 'ssl dh-group group2' (ASA: the
+    group used for DHE), 'set dh-params 1024' (FortiOS).  IKE groups are judged by IKE_WEAK_DH (ike_policy rows)."""
+    found: list[tuple[int, str, str]] = []
+    if isinstance(facts.get("dh_min_bits"), int):
+        found.append((facts["dh_min_bits"], "Medium", f"accepts Diffie-Hellman groups from {facts['dh_min_bits']} bits"))
+    if isinstance(facts.get("dh_bits"), int):
+        found.append((facts["dh_bits"], "High", f"uses {facts['dh_bits']}-bit Diffie-Hellman"))
+    for name in C.fact_list(facts.get("dh_groups")):
+        m = re.fullmatch(r"MODP-(\d+)(-S\d+)?", str(name))
+        if m:
+            found.append((int(m.group(1)), "High", f"uses {int(m.group(1))}-bit Diffie-Hellman ({name})"))
+    weak = [f for f in found if 0 < f[0] < 2048]
+    if weak:
+        bits, impact, text = min(weak, key=lambda f: (f[0], f[1] != "High"))
+        out.add("DH_LT_2048", impact, f"{what} {text}; the minimum is 2048 bits")
+
+
 def appliance_rule(out: Any, facts: dict[str, Any], algorithm: Any, key_size: Any, now: Any) -> bool | None:
     kind = str(facts.get("kind") or "")
     vendor = str(facts.get("vendor_label") or facts.get("vendor") or "Appliance")
     what = f"{vendor} {facts.get('section') or kind}".strip()
     if kind == "ike_policy":
-        enc = [n for n in facts.get("encryption") or [] if WEAK_ENCR.match(str(n))]
-        integ = [n for n in facts.get("integrity") or [] if WEAK_INTEG.match(str(n))]
-        integ += ["PRF " + n for n in facts.get("prf") or [] if WEAK_INTEG.match(str(n))]
-        dh = [g for g in facts.get("groups") or [] if g in WEAK_GROUPS]
+        enc = [n for n in C.fact_list(facts.get("encryption")) if WEAK_ENCR.match(str(n))]
+        integ = [n for n in C.fact_list(facts.get("integrity")) if WEAK_INTEG.match(str(n))]
+        integ += [f"PRF {n}" for n in C.fact_list(facts.get("prf")) if WEAK_INTEG.match(str(n))]
+        dh = [g for g in C.fact_list(facts.get("groups")) if isinstance(g, str) and g in WEAK_GROUPS]
         _weak_findings(out, enc, integ, dh, what)
         if facts.get("version") == 1 and facts.get("active", True):
             out.add("IKEV1_ENABLED", "Medium", f"{what} configures IKEv1 (deprecated by RFC 9395)")
         if facts.get("aggressive") is True:
             out.add("IKE_AGGRESSIVE", "High", f"{what}: IKEv1 Aggressive Mode is allowed"
                     + (f" ({facts.get('aggressive_reason')})" if facts.get("aggressive_reason") else ""))
-        if facts.get("pq") is True:
+        if facts.get("pq") is True or any(_pq_ike_group(g) for g in C.fact_list(facts.get("groups"))):
             return False  # an ML-KEM additional key exchange is configured (RFC 9370)
         if facts.get("pq") is False:
             out.add("IKE_NO_PQ", "Low", f"{what} has no post-quantum (ML-KEM) key exchange")
         return True  # IKE without a configured ML-KEM exchange keys the SA with classical Diffie-Hellman only
     if kind == "ipsec_policy":
-        enc = [n for n in facts.get("encryption") or [] if WEAK_ENCR.match(str(n))]
-        integ = [n for n in facts.get("integrity") or [] if WEAK_INTEG.match(str(n))]
-        pfs = [f"PFS {g}" for g in facts.get("pfs_groups") or [] if g in WEAK_GROUPS]
+        enc = [n for n in C.fact_list(facts.get("encryption")) if WEAK_ENCR.match(str(n))]
+        integ = [n for n in C.fact_list(facts.get("integrity")) if WEAK_INTEG.match(str(n))]
+        pfs = [f"PFS {g}" for g in C.fact_list(facts.get("pfs_groups")) if isinstance(g, str) and g in WEAK_GROUPS]
         weak = enc + integ + pfs
         if enc or pfs or _md5_class(integ):
-            out.add("IPSEC_WEAK_TRANSFORM", "Medium", f"{what} allows weak ESP transforms ({', '.join(weak[:5])})")
+            out.add("IPSEC_WEAK_TRANSFORM", "Medium", f"{what} allows weak ESP transforms ({', '.join(weak[:5])})",
+                    weak)
         elif integ:
             out.add("IPSEC_WEAK_TRANSFORM", "Low", f"{what} allows HMAC-SHA-1 ESP integrity ({', '.join(integ[:5])}); "
-                                                   f"{SHA1_NOTE}")
+                                                   f"{SHA1_NOTE}", integ)
         return None
     if kind == "ssh":
-        versions = [int(v) for v in facts.get("versions") or [] if str(v).isdigit()]
+        versions = [int(v) for v in C.fact_list(facts.get("versions")) if str(v).isdigit()]
         if 1 in versions:
             out.add("SSH_V1_ENABLED", "High", f"{what} allows SSH protocol version 1")
+        _appliance_weak_dh(out, facts, what)
         if any(facts.get(k) for k in ("ciphers", "macs", "kex")):
             return C._ssh_rules(out, facts, what)
         return None
     if kind == "tls":
         C._tls_rules(out, {k: facts.get(k) for k in ("protocols", "min_version", "weak_ciphers")}, what)
+        _appliance_weak_dh(out, facts, what)
         if facts.get("strong_crypto") is False:
             out.add("WEAK_CIPHER", "High", f"{what}: strong-crypto is disabled, so weak ciphers and hashes stay "
-                                           "allowed for administrative TLS/SSH")
+                                           "allowed for administrative TLS/SSH")  # no algorithm named: not recorded
         return None
     return None
 

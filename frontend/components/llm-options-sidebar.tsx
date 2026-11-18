@@ -4,7 +4,7 @@ import { Dispatch, SetStateAction, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { Label } from "@/components/ui/label";
+import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
@@ -27,6 +27,7 @@ import {
 import { handleApiError } from "@/utils/error-handler";
 import { refreshCreditBalance } from "@/utils/creditBalance";
 import { scanFailureMessage } from "@/utils/scanFailure";
+import { refreshCredits } from "@/utils/creditRefresh";
 import { readFormRerun } from "@/utils/formRerun";
 import { NewScanRunAgainButton } from "@/components/scan-run-again";
 import { stateAfterError } from "@/utils/scanErrorRecovery";
@@ -226,9 +227,10 @@ export function LLMOptionsSidebar({
       setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("ready");
     },
-    // the start charges credits: the balance in the app sidebar shows it without a reload (#13)
+    // the start charges credits (a refusal still shows the server's balance): one GET /teams (#13)
     onSettled: () => {
-      refreshCreditBalance(queryClient);
+      refreshCredits(queryClient);
+      return refreshCreditBalance(queryClient);
     },
   });
 
@@ -295,7 +297,8 @@ export function LLMOptionsSidebar({
     },
     // a re-run can move credits (PR #57 charges the price difference): the balance shows what the server did
     onSettled: () => {
-      refreshCreditBalance(queryClient);
+      refreshCredits(queryClient);
+      return refreshCreditBalance(queryClient);
     },
   });
 
@@ -318,6 +321,10 @@ export function LLMOptionsSidebar({
       setErrorMessage(null);
     }
   }, [query.data?.scan_status, query.data?.scan_metadata]);
+  // the status check that saw the scan fail refunded its credits (#28): show the balance it gave back
+  useEffect(() => {
+    if (query.data?.scan_status === "failure") refreshCredits(queryClient);
+  }, [query.data?.scan_status, queryClient]);
 
   return (
     <ScrollArea className="w-full md:w-96 shrink-0 md:h-screen bg-neutral-900/70 border-t md:border-t-0 md:border-l border-zinc-800">
@@ -343,13 +350,13 @@ export function LLMOptionsSidebar({
             </div>
             <div className="grid grid-cols-1 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="modelType" className="text-zinc-300">Model Type *</Label>
+                <FieldLabel htmlFor="modelType" infoId="llm.cfg.model_type" labelClassName="text-zinc-300">Model Type *</FieldLabel>
                 <Select
                   value={creationData.model_type}
                   onValueChange={(value) => updateCreationData("model_type", value)}
                   required
                 >
-                  <SelectTrigger className="w-full cursor-pointer bg-zinc-700 border-zinc-600 text-white">
+                  <SelectTrigger id="modelType" className="w-full cursor-pointer bg-zinc-700 border-zinc-600 text-white">
                     <SelectValue placeholder="Select model provider" />
                   </SelectTrigger>
                   <SelectContent className="bg-zinc-800 border-zinc-700">
@@ -361,7 +368,7 @@ export function LLMOptionsSidebar({
                 </Select>
               </div>
               {creationData.model_type == "custom" && <div className="space-y-2">
-                <Label htmlFor="modelName" className="text-zinc-300">Model Name *</Label>
+                <FieldLabel htmlFor="modelName" infoId="llm.cfg.model_name" labelClassName="text-zinc-300">Model Name *</FieldLabel>
                 <Input 
                   className="w-full cursor-pointer bg-zinc-700 border-zinc-600 text-white placeholder:text-zinc-500"
                   id="modelName" 
@@ -372,7 +379,7 @@ export function LLMOptionsSidebar({
                 />
               </div>}
               {creationData.model_type !== "custom" && creationData.model_type !== "" && <div className="space-y-2">
-                <Label htmlFor="modelName" className="text-zinc-300">Model Name *</Label>
+                <FieldLabel htmlFor="modelName" infoId="llm.cfg.model_name" labelClassName="text-zinc-300">Model Name *</FieldLabel>
                  <div className="cursor-pointer">
                    <ModelChoicePicker creationData={creationData} updateCreationData={updateCreationData} />
                  </div>
@@ -380,7 +387,7 @@ export function LLMOptionsSidebar({
             </div>
             <div className="grid grid-cols-1 gap-4">
               {creationData.model_type !== "custom" && <div className="space-y-2">
-                <Label htmlFor="apiKey" className="text-zinc-300">API Key *</Label>
+                <FieldLabel htmlFor="apiKey" infoId="llm.cfg.api_key" labelClassName="text-zinc-300">API Key *</FieldLabel>
                 <Input 
                   className="w-full cursor-pointer bg-zinc-700 border-zinc-600 text-white placeholder:text-zinc-500"
                   id="apiKey" 
@@ -391,7 +398,7 @@ export function LLMOptionsSidebar({
                 />
               </div>}
               <div className="space-y-2">
-                <Label htmlFor="generations" className="text-zinc-300">Generations per benchmark</Label>
+                <FieldLabel htmlFor="generations" infoId="llm.cfg.generations" labelClassName="text-zinc-300">Generations per benchmark</FieldLabel>
                 <Input 
                   className="w-full cursor-pointer bg-zinc-700 border-zinc-600 text-white placeholder:text-zinc-500"
                   id="generations" 
@@ -414,7 +421,7 @@ export function LLMOptionsSidebar({
                 <p className="text-sm text-zinc-400">Configure custom model endpoint and request format</p>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="modelUri" className="text-zinc-300">Model URI *</Label>
+                <FieldLabel htmlFor="modelUri" infoId="llm.cfg.model_uri" labelClassName="text-zinc-300">Model URI *</FieldLabel>
                 <Input 
                   className="w-full cursor-pointer bg-zinc-700 border-zinc-600 text-white placeholder:text-zinc-500"
                   id="modelUri" 
@@ -425,7 +432,7 @@ export function LLMOptionsSidebar({
                 />
               </div>
               <div className="min-w-0 space-y-2">
-                <Label htmlFor="headersJson" className="text-zinc-300">Headers (JSON)</Label>
+                <FieldLabel htmlFor="headersJson" infoId="llm.cfg.headers" labelClassName="text-zinc-300">Headers (JSON)</FieldLabel>
                 <div className="min-w-0 overflow-hidden">
                   <Textarea
                     className="w-full min-w-0 max-w-full cursor-pointer resize-none overflow-x-auto bg-zinc-700 border-zinc-600 text-white placeholder:text-zinc-500 field-sizing-fixed"
@@ -437,7 +444,7 @@ export function LLMOptionsSidebar({
                 </div>
               </div>
               <div className="min-w-0 space-y-2">
-                <Label htmlFor="requestTemplate" className="text-zinc-300">Request Template *</Label>
+                <FieldLabel htmlFor="requestTemplate" infoId="llm.cfg.request_template" labelClassName="text-zinc-300">Request Template *</FieldLabel>
                 <div className="min-w-0 overflow-hidden">
                   <Textarea
                     className="w-full min-w-0 max-w-full cursor-pointer resize-none overflow-x-auto bg-zinc-700 border-zinc-600 text-white placeholder:text-zinc-500 field-sizing-fixed"
@@ -450,7 +457,7 @@ export function LLMOptionsSidebar({
                 </div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="responseJsonField" className="text-zinc-300">Response JSON Field *</Label>
+                <FieldLabel htmlFor="responseJsonField" infoId="llm.cfg.response_field" labelClassName="text-zinc-300">Response JSON Field *</FieldLabel>
                 <Input 
                   className="w-full cursor-pointer bg-zinc-700 border-zinc-600 text-white placeholder:text-zinc-500"
                   id="responseJsonField" 
@@ -466,12 +473,12 @@ export function LLMOptionsSidebar({
           {/* Security benchmark selection */}
           <div className="space-y-4">
             <div>
-              <h3 className="text-lg font-semibold text-white mb-1">Security Benchmarks *</h3>
+              <h3 className="text-lg font-semibold text-white mb-1 flex items-center gap-1">Security Benchmarks * <InfoTip id="llm.cfg.probes" /></h3>
               <p className="text-sm text-zinc-400">Select the security benchmarks to run against your LLM</p>
             </div>
             {/* Token usage warning */}
             <div className="bg-amber-500/10 border border-amber-500/50 rounded-lg p-3">
-              <p className="text-sm font-medium text-amber-400">⚠️ High Token Usage Warning</p>
+              <p className="text-sm font-medium text-amber-400">⚠️ High Token Usage Warning{/* infotip-shared: a warning; the Security Benchmarks and API Key tips explain the cost */}</p>
               <p className="text-xs text-amber-500 mt-1">
                 LLM security scans consume significant API tokens. Each benchmark runs multiple tests, and costs can add up quickly. Consider starting with fewer benchmarks and increasing as needed using multiple scans.
               </p>
@@ -481,15 +488,16 @@ export function LLMOptionsSidebar({
               <div className="grid grid-cols-1 gap-2 pr-4">
                 {AVAILABLE_PROBES.map((probe) => (
                   <div key={probe} className="flex items-center space-x-2">
+                    {/* infotip-shared: one benchmark of the list the Security Benchmarks (i) explains; its label's title describes it */}
                     <Checkbox
                       className="cursor-pointer"
                       id={probe}
                       checked={creationData.probes.includes(probe)}
                       onCheckedChange={() => toggleProbe(probe)}
                     />
-                    <Label title={getProbeDescription(probe)} htmlFor={probe} className="text-sm font-normal cursor-pointer text-zinc-300">
+                    <label title={getProbeDescription(probe)} htmlFor={probe} className="text-sm font-normal cursor-pointer text-zinc-300">
                       {getProbeDisplayName(probe)}
-                    </Label>
+                    </label>
                   </div>
                 ))}
               </div>
@@ -502,7 +510,7 @@ export function LLMOptionsSidebar({
           <Separator className="bg-zinc-800" />
 
           <div className="p-6">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-2">Estimate scan credits</h3>
+            <h3 className="text-sm font-semibold text-zinc-200 mb-2 flex items-center gap-1">Estimate scan credits <InfoTip id="llm.cfg.estimate" /></h3>
             <Button
               variant="ghost"
               size="sm"
@@ -536,7 +544,7 @@ export function LLMOptionsSidebar({
           <Separator className="bg-zinc-800" />
 
           <div className="p-6">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-2">Run scan</h3>
+            <h3 className="text-sm font-semibold text-zinc-200 mb-2 flex items-center gap-1">Run scan <InfoTip id="scan.cfg.run" /></h3>
             {canRunScan ? (
               <div className="space-y-2">
                 <Button

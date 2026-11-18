@@ -20,6 +20,7 @@ import {
   ShieldCheck,
   Settings,
 } from "lucide-react";
+import { FolderGit2 } from "lucide-react"; // F3: Repositories
 import {
   Sidebar,
   SidebarContent,
@@ -158,6 +159,7 @@ const toolsItems = [
 
 const workflowItems = [
   { name: "CI / CD", path: "ci_cd", icon: Link2 },
+  { name: "Repositories", path: "repositories", icon: FolderGit2 }, // F3: org-level import, policies, roll-up
   // Guardrails removed from user-facing nav (deprecated — routes retained for soft notice).
 ];
 

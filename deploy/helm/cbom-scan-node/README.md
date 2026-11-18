@@ -3,22 +3,43 @@
 Runs the ZeroShield CBOM scan node in Kubernetes. The command on **CBOM Sources > Scan nodes > Add scan node >
 Helm chart** installs the Deployment; **Create agent pool token** gives the DaemonSet command.
 
-```sh
-# agentless node (reaches your servers, clusters, databases and networks with the credentials you store)
-helm upgrade --install zs-scan-node oci://registry.zeroshield.ai/charts/cbom-scan-node \
-  --namespace zs-cbom --create-namespace \
-  --set image.repository='registry.zeroshield.ai/cbom/scan-node' --set image.tag='1.0' \
-  --set apiUrl='https://api.zeroshield.ai' --set registrationToken='zsr_...'
+The chart and the node image are downloads on the same page (**Download Helm chart**, **Download scan node image**:
+`cbom-scan-node-<version>.tgz`, `scan-node-<version>.tar.gz` and its `.sha256`), served by your ZeroShield server.
+Push the image to a registry your cluster pulls from, then install the downloaded chart. Set `ZS_API_URL` to **the
+API URL shown in the Add scan node wizard** (the wizard's own command already has it, with your registration token).
+Run it as one block: nothing is loaded, pushed or installed if the image file fails its SHA-256 check.
 
-# host agents: one pod per Kubernetes node, each reads only its own node, never gets a credential
-helm upgrade --install zs-host-agents oci://registry.zeroshield.ai/charts/cbom-scan-node \
+```sh
+REGISTRY=registry.example.internal/zeroshield    # a registry your cluster can pull from
+ZS_API_URL='<the API URL shown in the Add scan node wizard>'
+sha256sum -c scan-node-1.0.1.tar.gz.sha256 && \
+docker load -i scan-node-1.0.1.tar.gz && \
+docker tag localhost/zeroshield/cbom-scan-node:1.0.1 "$REGISTRY/cbom-scan-node:1.0.1" && \
+docker push "$REGISTRY/cbom-scan-node:1.0.1" && \
+helm upgrade --install zs-scan-node ./cbom-scan-node-1.0.1.tgz \
   --namespace zs-cbom --create-namespace \
-  --set image.repository='registry.zeroshield.ai/cbom/scan-node' --set image.tag='1.0' \
-  --set apiUrl='https://api.zeroshield.ai' \
+  --set image.repository="$REGISTRY/cbom-scan-node" --set image.tag='1.0.1' \
+  --set apiUrl="$ZS_API_URL" --set registrationToken='zsr_...'
+```
+
+That installs an agentless node (it reaches your servers, clusters, databases and networks with the credentials you
+store). Host agents (one pod per Kubernetes node, each reads only its own node and never gets a credential) use the
+command that **Create agent pool token** shows, or, with the image pushed as above:
+
+```sh
+helm upgrade --install zs-host-agents ./cbom-scan-node-1.0.1.tgz \
+  --namespace zs-cbom --create-namespace \
+  --set image.repository="$REGISTRY/cbom-scan-node" --set image.tag='1.0.1' \
+  --set apiUrl="$ZS_API_URL" \
   --set deployment.enabled=false --set agent.enabled=true --set agent.poolToken='zsp_...'
 ```
 
-(From a checkout, use `deploy/helm/cbom-scan-node` instead of the `oci://` reference.)
+The image file loads as `localhost/zeroshield/cbom-scan-node:<version>`: `localhost/` is a registry host that never
+resolves to a public registry, so nothing can be pulled under that name from the internet. It is also the chart's
+default `image.repository`, as a placeholder: the chart refuses to render with it (a `helm install` that forgot
+`--set image.repository=...` fails with that message) unless `image.pullPolicy=Never` (the image loaded on every node
+by hand, e.g. `ctr -n k8s.io images import`). When your ZeroShield server names a public registry for the node
+image, the wizard's command uses that image instead.
 
 ## What it creates
 
@@ -57,7 +78,7 @@ Both are ready while the node's heartbeat loop turns (the image health check: `$
 
 | Value | Default | |
 |---|---|---|
-| `image.repository`, `image.tag` | `registry.zeroshield.ai/cbom/scan-node`, appVersion | |
+| `image.repository`, `image.tag` | `localhost/zeroshield/cbom-scan-node` (the name the image file loads as), appVersion | |
 | `apiUrl` | (required) | ZeroShield API URL (`https://`) |
 | `registrationToken` / `existingSecret` | | Deployment enrollment |
 | `httpsProxy`, `noProxy` | | outbound proxy to ZeroShield |
@@ -68,6 +89,23 @@ Both are ready while the node's heartbeat loop turns (the image health check: `$
 | `agent.statePath` | `/var/lib/zs-node-agent/<namespace>.<release>` | set it to keep the path of an earlier install |
 | `agent.hostPID`, `agent.runAsRoot`, `agent.sysPtrace` | `false`, `false`, `false` | `sysPtrace` needs the other two |
 | `allowInsecureHttp` | `false` | lab only: an `http://` apiUrl |
+| `trust.caSecret` | | a Secret with `ca.pem`: a private CA for the ZeroShield API (`ZS_CA_FILE`) |
+| `trust.clientSecret` | | a `kubernetes.io/tls` Secret: the node's client certificate when the API requires mTLS (`ZS_CLIENT_CERT` / `ZS_CLIENT_KEY`) |
+
+### A private CA or an mTLS gateway in front of ZeroShield
+
+Only for an on-prem ZeroShield or a gateway with its own CA or client-certificate check. Create the Secrets in the
+release namespace from files on your machine (they never leave the cluster), then name them; the "Add scan node"
+wizard writes these lines when you tick its trust options:
+
+```sh
+kubectl -n zs-cbom create secret generic zs-node-ca --from-file=ca.pem=/path/to/zeroshield-ca.pem
+kubectl -n zs-cbom create secret tls zs-node-client --cert=/path/to/node.crt --key=/path/to/node.key
+helm upgrade --install ... --set trust.caSecret=zs-node-ca --set trust.clientSecret=zs-node-client
+```
+
+The files are mounted read-only under `/etc/zs-node/trust`; the key is readable by the node's group only. The CA
+replaces the default trust for the ZeroShield API only: your targets are checked as before.
 
 ## Proof
 

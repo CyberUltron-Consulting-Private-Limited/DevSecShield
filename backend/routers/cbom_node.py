@@ -88,18 +88,28 @@ def _clock_skew(value: str | None, now: _dt.datetime) -> int | None:
 def _ips(values: list[str]) -> list[str]:
     import ipaddress
 
+    from backend.utilities.cbom_sources.targets import ip_text
+
     out: list[str] = []
     for value in values[:32]:
         try:
-            out.append(str(ipaddress.ip_address(str(value).strip())))
+            out.append(ip_text(ipaddress.ip_address(str(value).strip())))  # one form on every Python (#126)
         except ValueError:
             continue
     return out
 
 
-def _node_for(token: str | None, session: Session) -> CbomScanNode:
+def require_node_token(token: str | None) -> str:
+    """The node token when one arrived intact, else 401 ``node_token_missing`` (never a revocation).  Needs no
+    database: every node route calls it before get_db(), so a request without a usable token gets this 401 even
+    when the database is not configured or down (#433)."""
     if not token or not token.startswith("zsn_") or len(token) > 128:
-        raise _TOKEN_MISSING  # no node token arrived intact: never a revocation
+        raise _TOKEN_MISSING
+    return token
+
+
+def _node_for(token: str | None, session: Session) -> CbomScanNode:
+    token = require_node_token(token)
     node = session.exec(select(CbomScanNode).where(CbomScanNode.node_token_hash == sha256_hex(token))).first()
     if node is None:
         raise _UNAUTHORIZED
@@ -302,6 +312,7 @@ async def enroll(request: Request):
 # ----------------------------------------------------------------------------- heartbeat
 def _heartbeat(token: str | None, req: NA.NodeRequest, raw: bytes, ip: str) -> dict:
     now = utcnow()
+    require_node_token(token)
     with Session(get_db()) as session:
         node = _authenticate(session, token, req, raw, now)
         body = _parse(HeartbeatBody, parse_json(raw))
@@ -341,11 +352,14 @@ def _heartbeat(token: str | None, req: NA.NodeRequest, raw: bytes, ip: str) -> d
         busy = session.exec(select(CbomCollectionJob.id).where(
             CbomCollectionJob.node_id == node.id, CbomCollectionJob.status == "claimed")).first() is not None
         exclusions = team_exclusions(settings)
+        window_ends = J.window_ends_for_node(session, node, settings, now)
         session.commit()
         if gap is not None and gap > 120:
             log("node back", team=node.team_id, node=node.id, gap_s=int(gap))
         return {"server_time": iso_z(now), "stop_all_network": settings.stop_all_network,
                 "never_scan": exclusions.normalized, "pending_jobs": pending, "cancel_job_ids": cancel_ids,
+                # N4: when each running job's scan window ends (now, if the customer closed it): the node stops there
+                "window_ends": window_ends,
                 # while a job runs, beat faster so a cancel or a network stop reaches the node within seconds
                 "heartbeat_interval_s": BUSY_HEARTBEAT_SECONDS if busy else HEARTBEAT_SECONDS}
 
@@ -360,6 +374,7 @@ async def heartbeat(request: Request, token: Annotated[str | None, Security(node
 # ----------------------------------------------------------------------------- claim
 def _claim(token: str | None, req: NA.NodeRequest, raw: bytes, ip: str) -> dict | None:
     now = utcnow()
+    require_node_token(token)
     with Session(get_db()) as session:
         node = _authenticate(session, token, req, raw, now)
         body = _parse(ClaimBody, parse_json(raw)) if raw else None  # older nodes send no body
@@ -387,6 +402,7 @@ async def claim(request: Request, token: Annotated[str | None, Security(node_tok
 # ----------------------------------------------------------------------------- assets
 def _assets(token: str | None, job_id: int, req: NA.NodeRequest, raw: bytes) -> dict:
     now = utcnow()
+    require_node_token(token)
     with Session(get_db()) as session:
         node = _authenticate(session, token, req, raw, now)
         body = _parse(AssetsBody, parse_json(raw))
@@ -417,6 +433,7 @@ async def assets(job_id: int, request: Request, token: Annotated[str | None, Sec
 # ----------------------------------------------------------------------------- result
 def _result(token: str | None, job_id: int, req: NA.NodeRequest, raw: bytes) -> dict:
     now = utcnow()
+    require_node_token(token)
     with Session(get_db()) as session:
         node = _authenticate(session, token, req, raw, now)
         body = _parse(ResultBody, parse_json(raw))
