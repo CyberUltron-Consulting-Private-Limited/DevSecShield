@@ -1,12 +1,8 @@
 """credits ledger: one line per movement of a team's credits, with its reason and a unique movement key (#33, #52)
 
 Revision ID: r6t2ledger001
-Revises: d44mcphdr001
+Revises: r6f3repo001
 Create Date: 2026-11-11 15:00:00.000000
-
-``down_revision`` was re-chained from ``r6f3repo001`` onto ``d44mcphdr001``: both revised ``r6f3repo001``, so dev had
-two alembic heads. ``d44mcphdr001`` landed on dev first (PR #439); this revision follows it. The upgrade body is
-unchanged.
 
 Table ``creditledger`` (backend/new_models.py CreditLedgerEntry; written by backend/utilities/team/credit_ledger.py):
 
@@ -36,7 +32,7 @@ import sqlmodel
 
 # revision identifiers, used by Alembic.
 revision: str = 'r6t2ledger001'
-down_revision: Union[str, Sequence[str], None] = 'd44mcphdr001'
+down_revision: Union[str, Sequence[str], None] = 'r6f3repo001'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

@@ -235,9 +235,9 @@ def test_one_head():
     for path in MIGRATION.parent.glob("*.py"):
         text = path.read_text()
         revs.add(re.search(r"^revision(?::\s*str)?\s*=\s*['\"]([^'\"]+)['\"]", text, re.MULTILINE).group(1))
-        down = re.search(r"^down_revision(?:[^=]*)=\s*['\"]([^'\"]+)['\"]", text, re.MULTILINE)
+        down = re.search(r"^down_revision[^=]*=\s*(.+)$", text, re.MULTILINE)
         if down:
-            downs.add(down.group(1))
+            downs.update(re.findall(r"""['"]([^'"]+)['"]""", down.group(1)))
     assert len(revs - downs) == 1 and _migration().down_revision in revs
 
 
