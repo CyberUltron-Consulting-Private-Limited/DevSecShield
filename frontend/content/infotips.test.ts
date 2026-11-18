@@ -84,12 +84,22 @@ export const COVERED: string[] = [
   // quantum-risk grade and crypto-agility, and the shared run results page (sections, findings, jobs, AI assistant)
   "components/cbom/grade",
   "components/cbom/results",
+  // Repositories (F3): import wizard, inventory, connections, scan policies, runs and queue, findings roll-up
+  "app/[team_id]/repositories/page.tsx",
+  "components/repositories",
 ];
 /** Files under a covered directory that are not covered yet, each with the reason. */
 export const NOT_YET_COVERED = new Map<string, string>([
 ]);
 /** Dashboards: their h2/h3 chart titles need a tip as well. */
-export const DASHBOARDS = new Set<string>(["app/[team_id]/page.tsx"]);
+export const DASHBOARDS = new Set<string>([
+  "app/[team_id]/page.tsx",
+  // the Sources run results views (results redesign): their h2 / h3 section and tile titles need a tip too
+  ...fs.readdirSync(path.join(frontend, "components/cbom/results/views")).filter((f) => f.endsWith(".tsx"))
+    .map((f) => `components/cbom/results/views/${f}`),
+  // the run finding dialog (results redesign): every tab's h3 heading carries its (i)
+  "components/cbom/results/RunFindingDialog.tsx",
+]);
 
 function expand(entry: string): string[] {
   const abs = path.join(frontend, entry);
@@ -389,6 +399,39 @@ const PROBES: { name: string; file: string; anchor: string; insert: string; wher
     insert: `<Card><CardHeader><CardTitle>Key sizes</CardTitle></CardHeader></Card>`,
     where: "after",
     gaps: ["heading"],
+  },
+  // the run results views (results redesign): a section heading, a KPI tile and a drill tile each need their own tip
+  {
+    name: "CBOM run summary: a section heading without a tip",
+    file: "components/cbom/results/views/SummaryView.tsx",
+    anchor: `<DrillTiles figures={figures}`,
+    insert: `<h2 className="text-base font-semibold">Exposure</h2>`,
+    where: "before",
+    gaps: ["h2"],
+  },
+  {
+    name: "CBOM run summary: a KPI tile without an infoId",
+    file: "components/cbom/results/views/SummaryKpis.tsx",
+    anchor: `{kpiTiles(model).map((t) => (`,
+    insert: `<KpiTile label="Expired" value="3" icon={Lock} box="" testId="run-kpi-expired" />`,
+    where: "before",
+    gaps: ["heading"],
+  },
+  {
+    name: "CBOM run summary: a drill tile without an infoId",
+    file: "components/cbom/results/views/DrillTiles.tsx",
+    anchor: `{DETAIL_SECTIONS.map((s) => (`,
+    insert: `<DrillTile section="quantum" title="Keys" holds="" figure={figures.quantum} onOpen={() => undefined} />`,
+    where: "before",
+    gaps: ["heading"],
+  },
+  {
+    name: "Run finding dialog: a tab heading without a tip",
+    file: "components/cbom/results/RunFindingDialog.tsx",
+    anchor: `{/* ------------------------------------------------------------------ Quantum & effort */}`,
+    insert: `<h3 className="text-sm">Probe heading</h3>`,
+    where: "after",
+    gaps: ["h2"],
   },
 ];
 for (const p of PROBES) {

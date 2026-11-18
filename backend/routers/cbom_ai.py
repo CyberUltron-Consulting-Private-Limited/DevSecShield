@@ -123,6 +123,9 @@ async def ai_status(team_id: TeamId, Authorization: AuthHeader = None):
     if found is None:
         return JSONResponse({"available": False}, headers=PRIVATE)
     cfg, egress = found
+    # the panel asks for status before its first question: build the Bedrock client now, off the answer's clock
+    # (only for credential sources that contact nothing; never raises)
+    await run_in_threadpool(T.warm_bedrock, cfg)
     return JSONResponse({"available": True, "provider": cfg.provider, "model": cfg.model, "region": cfg.region,
                          "kb_version": crypto_kb.version(), "egress": egress,
                          "allow_nonprivate": cfg.allow_nonprivate if cfg.provider == "openai_compat" else False},

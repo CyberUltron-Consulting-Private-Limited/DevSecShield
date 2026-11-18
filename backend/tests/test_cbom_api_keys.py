@@ -31,8 +31,10 @@ from sqlmodel import Session, SQLModel, create_engine, select  # noqa: E402
 
 from backend.main import app  # noqa: E402
 from backend.new_models import CbomCollectionAuditEvent, Team, TeamMembership, User  # noqa: E402
+from backend.routers import auth as auth_router  # noqa: E402
 from backend.routers import cbom_api_keys as key_router  # noqa: E402
-from backend.routers import cbom_node, cbom_vendor_public  # noqa: E402
+from backend.routers import cbom_node, cbom_node_sshca, cbom_vendor_public  # noqa: E402
+from backend.routers import team as team_router  # noqa: E402
 from backend.utilities.auth import auth_utils  # noqa: E402
 from backend.utilities.cbom_sources import api_keys as AK  # noqa: E402
 from backend.utilities.cbom_sources import http as cbom_http  # noqa: E402
@@ -72,7 +74,9 @@ def world(tmp_path, monkeypatch):
             ids[who] = user.id
             s.add(TeamMembership(team_id=team, user_id=user.id, role=role))
         s.commit()
-    for module in (cbom_http, cbom_node, cbom_vendor_public, node_auth, AK, key_router):
+    # every module these tests reach get_db() through, so they never depend on the process env (#433)
+    for module in (cbom_http, cbom_node, cbom_node_sshca, cbom_vendor_public, node_auth, AK, key_router, auth_router,
+                   team_router):
         monkeypatch.setattr(module, "get_db", lambda: engine)
     for limiter in (cbom_http.read_limiter, cbom_http.write_limiter, cbom_http.node_limiter,
                     cbom_http.enroll_limiter, cbom_http.vendor_limiter):

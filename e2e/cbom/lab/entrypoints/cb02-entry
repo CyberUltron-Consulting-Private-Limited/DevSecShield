@@ -23,14 +23,43 @@ case "$ROLE" in
   sshd)
     # sshd ignores host keys other users can read, and `find -xdev` (the node's file search) does not cross a bind
     # mount, so keys and planted files are copied into the container's own file system first.
+    install -d -m 0755 /etc/ssh/cb02 /run/sshd /var/log/cb02 /srv/cbom-lab
     for k in /lab/hostkeys/*; do
       case "$k" in *.pub) cp "$k" /etc/ssh/cb02/ ;; *) install -m 0600 "$k" /etc/ssh/cb02/ ;; esac
     done
-    if [ -r /lab/authorized_keys ]; then install -m 0600 /lab/authorized_keys /home/zs-cbom/.ssh/authorized_keys; fi
-    if [ -d /lab/plant ]; then
-      cp -R /lab/plant/. /srv/cbom-lab/
-      if [ -r /lab/plant.modes ]; then
-        while read -r mode path; do [ -n "$path" ] && chmod "$mode" "/srv/cbom-lab/$path"; done < /lab/plant.modes
+    if [ "$(id -u)" = 0 ]; then
+      chown root:root /etc/ssh/cb02/ssh_host_*_key 2>/dev/null || true
+      chmod 0600 /etc/ssh/cb02/ssh_host_*_key 2>/dev/null || true
+      if [ -d /lab/plant ]; then
+        cp -R /lab/plant/. /srv/cbom-lab/
+        chown -R root:root /srv/cbom-lab
+        if [ -r /lab/plant.modes ]; then
+          while read -r mode path; do [ -n "$path" ] && chmod "$mode" "/srv/cbom-lab/$path"; done < /lab/plant.modes
+        fi
+      fi
+      if [ -r /lab/sudoers ]; then install -m 0440 -o root -g root /lab/sudoers /etc/sudoers.d/zs-cbom; fi
+      install -m 0644 -o root -g root /dev/null /var/log/cb02/commands.log
+      install -d -m 0755 /run/cb02
+      rm -f /run/cb02/cmd.pipe
+      mkfifo -m 0622 /run/cb02/cmd.pipe
+      # Hold the fifo open for write so a short-lived ForceCommand does not deliver EOF and stop the reader.
+      ( trap '' HUP
+        exec 3<>/run/cb02/cmd.pipe
+        while IFS= read -r line <&3; do
+          [ -n "$line" ] && printf 'cb02-cmd %s\n' "$line"
+        done
+      ) >&2 &
+      if [ -r /lab/authorized_keys ]; then
+        install -d -m 0700 -o zs-cbom -g zs-cbom /home/zs-cbom/.ssh
+        install -m 0600 -o zs-cbom -g zs-cbom /lab/authorized_keys /home/zs-cbom/.ssh/authorized_keys
+      fi
+    else
+      if [ -r /lab/authorized_keys ]; then install -m 0600 /lab/authorized_keys /home/zs-cbom/.ssh/authorized_keys; fi
+      if [ -d /lab/plant ]; then
+        cp -R /lab/plant/. /srv/cbom-lab/
+        if [ -r /lab/plant.modes ]; then
+          while read -r mode path; do [ -n "$path" ] && chmod "$mode" "/srv/cbom-lab/$path"; done < /lab/plant.modes
+        fi
       fi
     fi
     exec /usr/sbin/sshd -D -e -f /lab/sshd_config

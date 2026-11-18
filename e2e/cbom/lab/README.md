@@ -79,7 +79,7 @@ that does not excludes it), `NO_PQ_KEX` excluded wherever a PQ group is accepted
 | core | sshd-legacy | .23:22 | OpenSSH 10, classic KEX only, hmac-sha1, RSA-1024 + Ed25519 host keys | ssh-keygen | nmap ssh2-enum-algos, ssh-keyscan blobs decoded by labread (type, size, SHA256), ssh-audit |
 | core | sshd-pq | .24:22 | OpenSSH 10, `mlkem768x25519-sha256` only, Ed25519 | ssh-keygen | same |
 | psp | sshd-psp | .28:22 | OpenSSH 10 with the default PerSourcePenalties; only the self-check (.11) is exempt (all other lab sshd exempt the lab network) | ssh-keygen; sshd -T | same, plus `sshd -T`, a burst from the throwaway `cb02-burst` (.12) that must be penalised (banners, sshd's own "Not allowed at this time" refusals, EOFs, connect errors and other payloads counted apart: only refusals and EOFs with a penalty for .12 in the sshd log count; a refused or timed-out connect never does), and a banner from .11 right after |
-| core | host | .40:22 | sshd as `zs-cbom` with a ForceCommand logger; /srv/cbom-lab: RSA-1024 key, expired cert, SHA-1 cert, PKCS#12, JKS (expired RSA-1024 trusted entry) | openssl, keytool -list -v | SSH login (known_hosts = oracle keys) + sha256sum/stat; files and served certificates by labread DER; keystores by the labread JKS reader and `openssl pkcs12 -nokeys` (OpenSSL, not Java) + labread DER; the logger must record the login |
+| core | host | .40:22 | Ubuntu sshd as `zs-cbom`, the product's Tier-2 sudoers, ForceCommand logger; planted files are root-owned (RSA-1024 key, expired cert, SHA-1 cert, PKCS#12, JKS) | openssl, keytool -list -v, `commands.sudoers_file` | root sha256sum; SSH as zs-cbom cannot read the files, `sudo -n /usr/sbin/sshd -T` works, `sudo -n /bin/cat` of the key is refused; the container log records the login and the file copy does not; keystores by the labread JKS reader and `openssl pkcs12` |
 | core | pg-tls | .41:5432 | PostgreSQL 16, TLS >= 1.2 with lab-CA cert, `md5` HBA line, pgcrypto, log_connections | openssl x509; pg_hba written by gen | tlscheck pg (SSLRequest) per version, psql (`SHOW ssl`, pg_hba_file_rules, pg_authid), server log |
 | core | canary / control | .33 / .34:443 | socat listeners (generated `listen.sh`/`accept.sh`): product peers in `lab/listeners/<id>.jsonl`, the lab's own (.11, .12, loopback) in `<id>.lab.jsonl`, both created empty at `up`; canary named `cbom-e2e-canary` (never-scan); control (and idn-punycode) expect one `coverage` row, status `not_tls`, scope the port, and no TLS asset (CB-12 #110) | - | health from /proc/net/tcp (never connects to the canary); control logs the self-check's accept in its lab log, and Go crypto/tls (tlscheck matrix) gets TCP but no handshake on any version; no lab peer in a product log |
 | core | idn-fass / idn-punycode | .44 / .45:443 | listeners named `fass.lab` / `xn--fa-hia.lab` (IDNA 2003 vs 2008 form of `faß.lab`) | - | name resolution, accept log |
@@ -114,18 +114,22 @@ z05 shows it, "no PQ KEX" only because sshd-pq offers it, `ssl=off` only because
 planted values; `compose.yml` is generated from it, a unit test keeps them equal); `labgen.py` the generator (runs in
 the tools image); `oraclefmt.py` the CB-01 oracle/lab/canary formats, the endpoint quantum verdict, `ranges`, the
 run-2 `drift` and the O-5 hash; `labcheck.py` the self-check; `labread.py` its independent readers; `labmutate.py` the run-2 change set; `labnegative.py` the failing-first proofs; `tlscheck/` the Go
-observer; `images/` the two lab images; `entrypoints/` the target container scripts; `tests/` unit tests (run in
+observer; `images/` the lab images (Alpine targets, Ubuntu host, tools); `entrypoints/` the target container scripts; `tests/` unit tests (run in
 CI through `backend/tests/test_cbom_e2e_lab.py`).
 
-## Deferred parts
-`lab/lab.json` and `oracle/run<k>.json` list them under `deferred` (part, address, gate rows, reason, issue #93, draft
-at `round6/cbom/cb-02/issue-deferred.md`), so the gate reports those rows NOT-RUN from the marking: the `.42` IdP (G7),
-the `.43` webhook receiver (G13, W-INT), an Ubuntu `.40` with the product's Tier-2 sudoers (G4, G15) and the kind
-wave (W-HOST). Realism gap until the Ubuntu host exists: sshd, its host keys and the planted files belong to the
-login user, so a Tier-1 login reads more than on a real host and can write the file copy of the command log. The
-authoritative command record is the container log (`docker logs cb02-host`, lines `cb02-cmd {...}`), exported to
-`lab/forcecommand.authoritative.jsonl` by `selfcheck`, `status` and `down --run-dir`; the self-check fails when the
-file copy lacks an entry of the container log.
+## Follow-up targets (issue #93)
+
+`deferred` is an empty list. The four parts that used to be deferred are targets:
+
+| Wave | Target | Address | What is planted | Self-check |
+|---|---|---|---|---|
+| core | idp | .42:443 | nginx, OIDC discovery + JWKS (RSA-2048 RS256, EC P-256 ES256) | HTTPS fetch; JWKS integers against the SPKI sizes |
+| core | receiver | .43:8080 | socat records `X-Cb02-Delivery` into `lab/listeners/receiver.jsonl` | two posts; both ids are in the log |
+| k8s | k8s | kind node on `cbom-e2e-net` | four `kubernetes.io/tls` secrets, a ConfigMap private key, an ingress, tier-1 and tier-2 service accounts | `kubectl get -o json` and `openssl x509` |
+
+`gen.py up --wave k8s` needs `kind` and `kubectl` on the host. `gen.py down` deletes the `cb02-k8s` cluster.
+The authoritative command record is still the container log (`docker logs cb02-host`, lines `cb02-cmd {...}`),
+exported to `lab/forcecommand.authoritative.jsonl`. The login user cannot append the file copy.
 
 ## Findings the lab surfaced (for the product tracks; also in round6/cbom/FINDINGS-LOG.md)
 * **OpenSSH >= 9.8 `PerSourcePenalties`** (defaults `noauth:1 min:15`): about 15 connections from one address that

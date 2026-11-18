@@ -42,6 +42,7 @@ import { handleApiError } from "@/utils/error-handler";
 import { stateAfterError } from "@/utils/scanErrorRecovery";
 import { ScanRequestError } from "@/components/scan-request-error";
 import { scanFailureMessage } from "@/utils/scanFailure";
+import { refreshCredits } from "@/utils/creditRefresh";
 import { RerunNotice, RunAgainButton, useRerunPrefill } from "@/components/scan-run-again";
 import { CancelledScanPanel, CancelScanButton } from "@/components/scan-cancel";
 
@@ -197,6 +198,10 @@ export function SASTOptionsSidebar({
       setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("ready");
     },
+    // the start charged the team (or a refused one moved nothing): the header shows the server's balance (#13)
+    onSettled: () => {
+      refreshCredits(queryClient);
+    },
   });
 
   const handleRunScan = () => {
@@ -255,6 +260,11 @@ export function SASTOptionsSidebar({
       setErrorMessage(null);
     }
   }, [query.data?.scan_status, query.data?.scan_metadata, failureMessage]);
+
+  // the status check that saw the scan fail refunded its credits (#28): show the balance it gave back
+  useEffect(() => {
+    if (query.data?.scan_status === "failure") refreshCredits(queryClient);
+  }, [query.data?.scan_status, queryClient]);
 
 
 
@@ -331,7 +341,10 @@ export function SASTOptionsSidebar({
     onError: (err) => {
       setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("error");
-    }
+    },
+    onSettled: () => {
+      refreshCredits(queryClient);
+    },
   });
 
 

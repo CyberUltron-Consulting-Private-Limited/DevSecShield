@@ -63,7 +63,11 @@ def _format(scan_type: str, payload: dict) -> dict:
     return asyncio.run(FI.format_input_for_scan(scan_type, model))
 
 
-def test_llm_and_mcp_kwargs_never_print_the_api_key_or_header_values(console):
+def test_llm_and_mcp_kwargs_never_print_the_api_key_or_header_values(console, monkeypatch):
+    # #53: the MCP server and model hosts must resolve to public addresses; .test names never resolve (RFC 6761)
+    import socket
+    monkeypatch.setattr(socket, "getaddrinfo", lambda host, port, *a, **k: [
+        (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port))])
     s = _fresh()
     llm = _format("llm", {"model_type": "custom", "model_name": "m", "api_key": s["llm_key"],
                           "headers": {"X-Api-Key": s["llm_header"]}, "model_uri": "https://llm.example.test/v1"})

@@ -26,7 +26,9 @@ GROUPS = ("servers", "kubernetes", "databases", "cloud", "identity", "network")
 VaultProvider = Literal["hashicorp", "cyberark", "aws_secrets_manager", "azure_key_vault"]
 _HOST_RE = re.compile(r"^[A-Za-z0-9._:-]{1,253}$")
 MAX_HOST_CAS = 20  # host CAs per Linux source (#59; scan_node hostcert.MAX_HOST_CAS)
-_LOGIN_RE = re.compile(r"^[A-Za-z0-9._@$\\-]{1,64}$")
+_LOGIN_RE = re.compile(r"^[A-Za-z0-9._@$\\:+-]{1,64}$")
+_CLIENT_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@+-]{0,127}$")
+_CUSTOMER_URI_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 _AWS_ROLE_RE = re.compile(r"^arn:aws(-cn|-us-gov)?:iam::(\d{12}):role/[A-Za-z0-9+=,.@_/-]{1,512}$")
 AWS_REGION_RE = re.compile(r"^[a-z]{2}(-gov|-iso[a-z]?)?-[a-z]+-\d$")
@@ -162,7 +164,7 @@ def check_login(value: str | None) -> str | None:
     if value is None or value == "":
         return None
     if not _LOGIN_RE.match(value):
-        raise ValueError("login may use letters, digits and . _ @ $ \\ - (64 at most)")
+        raise ValueError("login may use letters, digits and . _ @ $ \\ : + - (64 at most)")
     return value
 
 
@@ -722,13 +724,19 @@ class GcpConfig(_Source):
 
 
 # ----------------------------------------------------------------------------- identity
-CA_NODE_PROVIDERS = ("adcs", "vault", "ejbca")  # collected by a scan node inside the customer network
+# Collected by a scan node inside the customer network. "other" has no collector. aws_private_ca is read by the
+# AWS account collector, not by this node.
+CA_NODE_PROVIDERS = ("adcs", "vault", "ejbca", "venafi", "keyfactor", "digicert", "sectigo")
 
 
 class CaConnectorConfig(_Source):
     provider: Literal["adcs", "aws_private_ca", "vault", "venafi", "keyfactor", "digicert", "ejbca", "sectigo", "other"]
     api_url: str | None = Field(default=None, max_length=512)
     login: str | None = Field(default=None, max_length=64)
+    # Venafi: the API integration's client id, sent to POST /vedauth/authorize/oauth (not a password).
+    client_id: str | None = Field(default=None, max_length=128)
+    # Sectigo: the customer URI, sent as the customerUri header (not a password).
+    customer_uri: str | None = Field(default=None, max_length=128)
     aws_source_id: int | None = None
     # AD CS: the CA server reached over WinRM HTTPS (like a Windows server source)
     host: str | None = Field(default=None, max_length=253)
@@ -773,6 +781,22 @@ class CaConnectorConfig(_Source):
             self.host = self.port = None
         if self.provider == "aws_private_ca" and self.aws_source_id is None:
             raise ValueError("aws_source_id: pick the AWS account that holds the private CA")
+        if self.provider == "venafi":
+            if not self.login:
+                raise ValueError("login: enter the Venafi user name")
+            if not self.client_id or not _CLIENT_ID_RE.match(self.client_id):
+                raise ValueError("client_id: enter the API integration client id")
+        if self.provider == "sectigo":
+            if not self.login:
+                raise ValueError("login: enter the Sectigo user name")
+            if not self.customer_uri or not _CUSTOMER_URI_RE.match(self.customer_uri):
+                raise ValueError("customer_uri: enter the customer URI, for example cst1152")
+        if self.provider not in ("adcs", "venafi", "sectigo"):
+            self.login = None
+        if self.provider != "venafi":
+            self.client_id = None
+        if self.provider != "sectigo":
+            self.customer_uri = None
         return self
 
 
@@ -785,9 +809,15 @@ def _ca_secrets(cfg: CaConnectorConfig) -> set[str]:
         return {"token"}  # a read-only Vault token (policy template on the source's Privilege section)
     if cfg.provider == "ejbca":
         return {"client_cert", "client_key"}  # the EJBCA REST API authenticates clients by certificate
-    # Venafi, Keyfactor, DigiCert, Sectigo and "other" have no collector (not collectable): nothing would read a key,
-    # so none is asked for or stored.  A key stored before is dropped on the source's next save (_merge_secrets keeps
-    # only the fields this returns) and is never sent anywhere meanwhile.
+    if cfg.provider == "venafi":
+        return {"password"}  # sent once, to POST /vedauth/authorize/oauth
+    if cfg.provider == "keyfactor":
+        return {"token"}  # sent as Authorization: Bearer on GET /Certificates
+    if cfg.provider == "digicert":
+        return {"api_key"}  # sent as the X-DC-DEVKEY header
+    if cfg.provider == "sectigo":
+        return {"password"}  # sent as the password header, with login and customerUri
+    # "other" has no collector: nothing would read a key, so none is asked for or stored.
     return set()
 
 
@@ -1144,7 +1174,7 @@ KINDS: dict[str, KindSpec] = {
                             frozenset(), _never, _always, ("service_account_email",), node_less=True),
     "ca_connector": KindSpec("ca_connector", "identity", "Certificate authority", CaConnectorConfig, _ca_secrets,
                              frozenset(), _ca_on_node, _ca_on_node,
-                             ("api_url", "login", "provider", "host", "port", "ca_pem")),
+                             ("api_url", "login", "provider", "host", "port", "ca_pem", "client_id", "customer_uri")),
     # Signing keys are read from public metadata, so the IdP secret is optional (kept for API reads later).
     "idp": KindSpec("idp", "identity", "Identity provider", IdpConfig, lambda c: set(),
                     frozenset({"client_secret", "api_token"}), _never, _always, ("base_url", "tenant_id", "client_id", "provider", "metadata_url", "realm"),

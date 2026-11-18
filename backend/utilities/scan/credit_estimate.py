@@ -34,6 +34,12 @@ def formula_version(scan_type: str) -> str:
     return FORMULA_VERSIONS.get(scan_type, DEFAULT_FORMULA)
 
 
+def payload_section(start_scan_payload: Any, scan_type: str) -> dict[str, Any]:
+    """The part of a start payload a scan type reads, as JSON (what the digest and the minimum are computed on)."""
+    section = getattr(start_scan_payload, scan_type, None)
+    return section.model_dump(mode="json") if section is not None and hasattr(section, "model_dump") else {}
+
+
 def _without_secrets(value: Any) -> Any:
     if isinstance(value, dict):
         return {k: _without_secrets(v) for k, v in sorted(value.items()) if str(k).lower() not in _SECRET_KEYS}
@@ -76,4 +82,4 @@ def needs_reestimate(stored: dict[str, Any] | None, current: dict[str, Any]) -> 
 
 
 __all__ = ["CBOM_CODE_SCAN_MIN_CREDITS", "CBOM_FILE_CREDITS", "formula_version", "input_digest", "is_cbom_code_scan",
-           "minimum_credits", "needs_reestimate", "priced"]
+           "minimum_credits", "needs_reestimate", "payload_section", "priced"]

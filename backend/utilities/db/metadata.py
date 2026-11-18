@@ -1,4 +1,5 @@
 from backend.new_models import scan_types
+from backend.utilities.db.mcp_headers import seal_headers
 from backend.utilities.db.schemas import StartScanPayload
 from fastapi import HTTPException, status
 
@@ -43,7 +44,8 @@ def get_scan_metadata_for_type(scan_type: scan_types , start_scan_payload: Start
             return {
                 "server_url": start_scan_payload.mcp.server_url,
                 "server_mode": start_scan_payload.mcp.server_mode,
-                "headers": start_scan_payload.mcp.headers,
+                # the header names in the clear, their values (usually the server's credential) encrypted (#44)
+                **seal_headers(start_scan_payload.mcp.headers),
                 "environment": start_scan_payload.mcp.environment if start_scan_payload.mcp.environment else "development",
             }
         case "llm":

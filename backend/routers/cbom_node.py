@@ -100,9 +100,17 @@ def _ips(values: list[str]) -> list[str]:
     return out
 
 
-def _node_for(token: str | None, session: Session) -> CbomScanNode:
+def require_node_token(token: str | None) -> str:
+    """The node token when one arrived intact, else 401 ``node_token_missing`` (never a revocation).  Needs no
+    database: every node route calls it before get_db(), so a request without a usable token gets this 401 even
+    when the database is not configured or down (#433)."""
     if not token or not token.startswith("zsn_") or len(token) > 128:
-        raise _TOKEN_MISSING  # no node token arrived intact: never a revocation
+        raise _TOKEN_MISSING
+    return token
+
+
+def _node_for(token: str | None, session: Session) -> CbomScanNode:
+    token = require_node_token(token)
     node = session.exec(select(CbomScanNode).where(CbomScanNode.node_token_hash == sha256_hex(token))).first()
     if node is None:
         raise _UNAUTHORIZED
@@ -305,6 +313,7 @@ async def enroll(request: Request):
 # ----------------------------------------------------------------------------- heartbeat
 def _heartbeat(token: str | None, req: NA.NodeRequest, raw: bytes, ip: str) -> dict:
     now = utcnow()
+    require_node_token(token)
     with Session(get_db()) as session:
         node = _authenticate(session, token, req, raw, now)
         body = _parse(HeartbeatBody, parse_json(raw))
@@ -366,6 +375,7 @@ async def heartbeat(request: Request, token: Annotated[str | None, Security(node
 # ----------------------------------------------------------------------------- claim
 def _claim(token: str | None, req: NA.NodeRequest, raw: bytes, ip: str) -> dict | None:
     now = utcnow()
+    require_node_token(token)
     with Session(get_db()) as session:
         node = _authenticate(session, token, req, raw, now)
         body = _parse(ClaimBody, parse_json(raw)) if raw else None  # older nodes send no body
@@ -393,6 +403,7 @@ async def claim(request: Request, token: Annotated[str | None, Security(node_tok
 # ----------------------------------------------------------------------------- assets
 def _assets(token: str | None, job_id: int, req: NA.NodeRequest, raw: bytes) -> dict:
     now = utcnow()
+    require_node_token(token)
     with Session(get_db()) as session:
         node = _authenticate(session, token, req, raw, now)
         body = _parse(AssetsBody, parse_json(raw))
@@ -423,6 +434,7 @@ async def assets(job_id: int, request: Request, token: Annotated[str | None, Sec
 # ----------------------------------------------------------------------------- result
 def _result(token: str | None, job_id: int, req: NA.NodeRequest, raw: bytes) -> dict:
     now = utcnow()
+    require_node_token(token)
     with Session(get_db()) as session:
         node = _authenticate(session, token, req, raw, now)
         body = _parse(ResultBody, parse_json(raw))

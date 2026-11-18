@@ -75,11 +75,29 @@ def _truthy(value) -> bool:
     return value not in (None, False, "", 0)
 
 
+def _number(value) -> float:
+    """GitHub's number coercion for a comparison of two different types."""
+    if value is None or value is False:
+        return 0.0
+    if value is True:
+        return 1.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip()
+    if text == "":
+        return 0.0
+    try:
+        return float(int(text, 16)) if text.lower().startswith("0x") else float(text)
+    except ValueError:
+        return float("nan")
+
+
 def evaluate(expr: str, ctx: dict):
     """Evaluate a GitHub Actions expression: enough of the language for this workflow's `if:` conditions (&&, ||, !,
     ==, !=, parentheses, '...' strings, context paths, status functions). `ctx` maps flat paths such as
     `needs.build.result` or `cancelled()` to values; an unknown path is null, as in GitHub. Strings compare
-    case-insensitively and null equals '' (GitHub's loose equality)."""
+    case-insensitively; values of different types are compared as numbers (null and '' are 0, a string that is not a
+    number is NaN), as GitHub does: an unset variable != '0' is false."""
     tokens, pos, expr = [], 0, expr.strip()
     while pos < len(expr):
         m = _EXPR_TOKEN.match(expr, pos)
@@ -121,8 +139,10 @@ def evaluate(expr: str, ctx: dict):
         if peek() in (("op", "=="), ("op", "!=")):
             op = take()[1]
             r = unary()
-            a, b = ("" if v is None else v), ("" if r is None else r)
-            eq = a.casefold() == b.casefold() if isinstance(a, str) and isinstance(b, str) else a == b
+            if isinstance(v, str) and isinstance(r, str):
+                eq = v.casefold() == r.casefold()
+            else:  # GitHub coerces both to numbers when the types differ (null and '' are 0, other text NaN)
+                eq = _number(v) == _number(r)
             return eq if op == "==" else not eq
         return v
 
@@ -386,6 +406,13 @@ class Tags(unittest.TestCase):
         self.assertEqual(ghcr_meta.release_tags("12.40.3"), ["12.40.3", "12.40", "latest"])
         self.assertEqual(ghcr_meta.release_tags("2.0.0-rc.1"), ["2.0.0-rc.1"])  # never latest, never the minor line
 
+    def test_dev_publish_reads_the_scan_node_version_constant(self):
+        """Dev, PR and manual images bake VERSION from __init__.py and do not write the immutable release tag."""
+        init = ROOT / "scan_node" / "zs_scan_node" / "__init__.py"
+        self.assertRegex(init.read_text(encoding="utf-8"), r'(?m)^VERSION = "1\.0\.1"$')
+        rc, out, err = meta("tags", PREFIX="dev", SHA=SHA, NODE_VERSION_FILE=str(init))
+        self.assertEqual((rc, out["node_version"], out["node_release_tags"]), (0, "1.0.1", ""), err)
+
     def test_no_release_tags_without_a_release(self):
         f = self._version_file('VERSION = "1.0.0"\n')
         for prefix in ("dev", "pr-93", "manual"):
@@ -642,6 +669,15 @@ class JobConditions(unittest.TestCase):
             "run cancelled": ok | {"cancelled()": True},
         }.items():
             self.assertFalse(job_runs("release", state), name)
+
+    def test_mixed_types_compare_as_numbers_as_in_github(self):
+        # observed on GitHub (deploy-staging run 43688443051): an unset variable != '0' is false
+        self.assertFalse(evaluate("vars.X != '0'", {}))
+        self.assertTrue(evaluate("vars.X == ''", {}))  # null and '' are both 0
+        self.assertTrue(evaluate("vars.X != 'true'", {}))  # 'true' is NaN: never equal
+        self.assertTrue(evaluate("(vars.X || '1') != '0'", {}))
+        self.assertFalse(evaluate("(vars.X || '1') != '0'", {"vars.X": "0"}))
+        self.assertTrue(evaluate("vars.X != '0'", {"vars.X": ""}))  # two strings compare as strings
 
     def test_the_evaluator_follows_github_semantics(self):
         self.assertTrue(evaluate("!cancelled() && a == 'X'", {"cancelled()": False, "a": "x"}))

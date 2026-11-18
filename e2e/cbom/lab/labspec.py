@@ -35,7 +35,7 @@ PROFILES = {
     "hsm": "SoftHSM2 tokens (files; no container)",
     "code": "CryptoAPI-Bench repository and archive (files; no container)",
     "psp": "one sshd that keeps OpenSSH's default PerSourcePenalties (the product's behaviour against them)",
-    "k8s": "kind cluster with kubernetes.io/tls secrets (deferred: see DEFERRED)",
+    "k8s": "one-node kind cluster: kubernetes.io/tls secrets, a private-key ConfigMap, an ingress, two service accounts",
     "tools": "the self-check container cb02-tools",
 }
 
@@ -132,9 +132,11 @@ TARGETS: list[dict] = [
      "macs": ["hmac-sha2-256-etm@openssh.com"], "force_command": False, "penalties": "default",
      "penalty_exempt": TOOLS_IP + "/32"},
     {"id": "host", "kind": "host", "ip": "10.231.0.40", "port": 22, "profile": "core", "world": "open",
-     "purpose": "Linux host reached over SSH as zs-cbom; ForceCommand logger; planted keys, certificates, keystores",
+     "os": "ubuntu",
+     "purpose": "Ubuntu host reached over SSH as zs-cbom; product Tier-2 sudoers; planted files are root-owned "
+                "and not readable by the login user. PQ-only SSH stays on sshd-pq (Alpine OpenSSH 10)",
      "host_keys": ["rsa:3072", "ecdsa:256", "ed25519"],
-     "kex": ["mlkem768x25519-sha256", "sntrup761x25519-sha512", "curve25519-sha256", "ecdh-sha2-nistp256",
+     "kex": ["sntrup761x25519-sha512@openssh.com", "curve25519-sha256", "ecdh-sha2-nistp256",
              "diffie-hellman-group14-sha256"],
      "host_key_algorithms": ["ssh-ed25519", "ecdsa-sha2-nistp256", "rsa-sha2-512", "rsa-sha2-256"],
      "ciphers": ["chacha20-poly1305@openssh.com", "aes256-gcm@openssh.com", "aes128-ctr"],
@@ -143,9 +145,9 @@ TARGETS: list[dict] = [
      "plant": [
          {"path": "keys/legacy-rsa1024.key", "make": "rsa_key", "bits": 1024, "mode": "0600"},
          {"path": "certs/expired-rsa2048.crt", "make": "cert", "key": "rsa:2048", "sig": "sha256", "issuer": "ca",
-          **EXPIRED, "mode": "0644"},
+          **EXPIRED, "mode": "0640"},
          {"path": "certs/selfsigned-sha1.crt", "make": "cert", "key": "rsa:2048", "sig": "sha1", "issuer": "self",
-          **VALID, "mode": "0644"},
+          **VALID, "mode": "0640"},
          {"path": "keystores/app.p12", "make": "pkcs12", "mode": "0640", "entries": [
              {"alias": "app", "type": "PrivateKeyEntry", "key": "rsa:2048", "sig": "sha256", **VALID}]},
          {"path": "keystores/legacy.jks", "make": "jks", "mode": "0640", "entries": [
@@ -183,6 +185,25 @@ TARGETS: list[dict] = [
              {"label": "aes-128-wrap", "make": "secret", "key_type": "AES:16", "extractable": True}]},
          {"label": "cb02-tok-b", "objects": [
              {"label": "aes-256-decoy", "make": "secret", "key_type": "AES:32", "extractable": False}]}]},
+    {"id": "idp", "kind": "idp", "ip": "10.231.0.42", "port": 443, "profile": "core", "world": "closed",
+     "purpose": "OIDC discovery and JWKS: RSA-2048 RS256 and EC P-256 ES256. The oracle is the public keys",
+     "issuer": "https://idp.lab",
+     "keys": [{"kid": "rsa-2048", "kty": "RSA", "alg": "RS256", "use": "sig", "key": "rsa:2048"},
+              {"kid": "ec-p256", "kty": "EC", "alg": "ES256", "use": "sig", "crv": "P-256", "key": "ec:P-256"}]},
+    {"id": "receiver", "kind": "receiver", "ip": "10.231.0.43", "port": 8080, "profile": "core", "world": "closed",
+     "purpose": "webhook receiver: a posted delivery is one line of the receiver log (G13, W-INT)"},
+    {"id": "k8s", "kind": "k8s", "profile": "k8s", "world": "closed",
+     "purpose": "one-node kind cluster on the lab network: four kubernetes.io/tls secrets, a ConfigMap private key, "
+                "an ingress, tier-1 and tier-2 service accounts",
+     "namespace": "cb02",
+     "secrets": [
+         {"name": "rsa-2048-valid", "key": "rsa:2048", "sig": "sha256", "issuer": "ca", **VALID},
+         {"name": "ec-p256-valid", "key": "ec:P-256", "sig": "sha256", "issuer": "ca", **VALID},
+         {"name": "rsa-2048-expired", "key": "rsa:2048", "sig": "sha256", "issuer": "ca", **EXPIRED},
+         {"name": "rsa-1024", "key": "rsa:1024", "sig": "sha1", "issuer": "self", **VALID},
+     ],
+     "configmap": "leaked-key", "ingress_secret": "rsa-2048-valid",
+     "service_accounts": ["zs-cbom-tier1", "zs-cbom-tier2"]},
     {"id": "code-cryptoapi-bench", "kind": "code", "profile": "code", "world": "closed",
      "purpose": "CryptoAPI-Bench at a pinned commit; expected results are the benchmark's own labels",
      "repo": "https://github.com/CryptoGuardOSS/cryptoapi-bench",
@@ -198,21 +219,11 @@ BENCH_PINNED = {"labels_sha256": "d08d3586d0d71f1000e4c693286fc2eaf7c6c1aae152b3
                 "judgeable_secure": 35, "unresolved_files": ["PredictableSeedsABPM2.java", "PredictableSeedsABPMCase2.java"],
                 "date_typed_line_cells": 18}
 
-# Lab parts this build does not provide. lab.json lists them, so the gate reports their rows NOT-RUN from this marking.
+# Nothing in this build is deferred. Issue #93 built the IdP, the webhook receiver, the Ubuntu Tier-2 host and the
+# kind wave. DEFERRED stays a list so lab.json's `deferred` key is always present (an empty list emits no NOT-RUN).
 DEFERRED_DRAFT = "round6/cbom/cb-02/issue-deferred.md"
-DEFERRED_ISSUE = "#93"  # filed by CB-01 from the draft (INTERFACES v6, ledger row LAB-deferred)
-DEFERRED = [
-    {"part": "idp", "address": "10.231.0.42", "gate": ["G7"],
-     "reason": "OIDC discovery + JWKS target not in the CB-02 brief's target list"},
-    {"part": "receiver", "address": "10.231.0.43", "gate": ["G13", "W-INT"],
-     "reason": "webhook receiver (scripts/integrations_lab) not in the CB-02 brief's target list"},
-    {"part": "ubuntu-tier2", "address": "10.231.0.40", "gate": ["G4", "G15"],
-     "reason": ".40 is Alpine + OpenSSH 10 without the product's Tier-2 sudoers; sshd, host keys and planted files "
-               "belong to the login user, so a Tier-1 login reads more than on a real host and can write the file "
-               "copy of the command log (the container log is the authoritative record)"},
-    {"part": "k8s", "address": None, "gate": ["W-HOST"],
-     "reason": "kind node image needs ~2.5 GB of disk; the shared machine had 3.8-7 GB free (rule: keep >= 3 GB)"},
-]
+DEFERRED_ISSUE = "#93"
+DEFERRED: list[dict] = []
 
 # The drift change set applied between run 1 and run 2 (DEVILS-ADVOCATE §4.3 G13 / G13b).
 RUN2_CHANGES = [

@@ -15,9 +15,13 @@
 # AI remediation (CB-38; deploy/staging/README.md "AI remediation"): CBOM_AI_PROVIDER is written only when the
 # environment's variable of that name is set (bedrock / off); unset, the host's backend.env value stands (a hand edit
 # of CBOM_AI_PROVIDER=off on the host is never reset). CBOM_AI_BEDROCK_REGION (default ap-south-1) and
-# CBOM_AI_AWS_CREDENTIALS are set from the variables of those names; the credential source defaults to static when
-# the assistant's own IAM user is configured, else env (the AWS_* of the host's .env):
+# CBOM_AI_AWS_CREDENTIALS are set from the variables of those names; the credential source is written as static when
+# both secrets of the assistant's own IAM user are set, and not written at all without them (half a pair fails):
 #   secrets  CBOM_AI_AWS_ACCESS_KEY_ID, CBOM_AI_AWS_SECRET_ACCESS_KEY   (Bedrock invoke only; unset: host value stays)
+# Certificate Transparency discovery (#369; deploy/staging/README.md "Certificate Transparency discovery on staging"):
+# CBOM_CT_DISCOVERY is not a secret. Every staging deploy writes it into the host's backend.env (1 when the staging
+# environment variable of that name is unset, so discovery stays on; set the variable to 0 to turn it off). Production
+# env files are not set. Compose does not put the variable in `environment:` (that would hide backend.env).
 # The scan node from the public registry (deploy/staging/README.md, "Public registry"): the GHCR packages are public,
 # so a push deploy points the Add scan node wizard at ghcr.io/<owner>/devsecshield-scan-node:<version> and the chart
 # (docker pull / helm oci://, no login) by default; a manual run clears them (it may deploy any commit).
@@ -206,8 +210,9 @@ jobs:
       # chart), built in parallel: wait until anyone can pull both, and check the GHCR chart is the downloaded chart
       # byte for byte (#361). A failure here is shown but does not stop the deploy: the host offers a docker pull or
       # helm oci:// only for what it can pull and what matches (staging.sh set_node_refs), the downloads always.
+      # (the `|| '1'`: GitHub compares an unset variable with '0' as numbers, 0 != 0, so without it the wait never ran)
       - name: Wait for the scan node release (GHCR)
-        if: github.event_name == 'push' && vars.CBOM_NODE_REGISTRY_PUBLIC != '0'
+        if: github.event_name == 'push' && (vars.CBOM_NODE_REGISTRY_PUBLIC || '1') != '0'
         continue-on-error: true
         run: scripts/deploy/staging.sh wait-node-release --timeout 2700
 
@@ -239,10 +244,24 @@ jobs:
           STAGING_SET_CBOM_AI_BEDROCK_REGION: ${{ vars.CBOM_AI_BEDROCK_REGION || 'ap-south-1' }}
           STAGING_SET_CBOM_AI_AWS_ACCESS_KEY_ID: ${{ secrets.CBOM_AI_AWS_ACCESS_KEY_ID }}
           STAGING_SET_CBOM_AI_AWS_SECRET_ACCESS_KEY: ${{ secrets.CBOM_AI_AWS_SECRET_ACCESS_KEY }}
-          STAGING_SET_CBOM_AI_AWS_CREDENTIALS: ${{ vars.CBOM_AI_AWS_CREDENTIALS || (secrets.CBOM_AI_AWS_ACCESS_KEY_ID != '' && 'static') || 'env' }}
+          # static with the whole pair; without it nothing is written (the host's value stays: never a fall-back to
+          # the host's AWS_*); half a pair fails this step below. The environment variable still overrides.
+          STAGING_SET_CBOM_AI_AWS_CREDENTIALS: ${{ vars.CBOM_AI_AWS_CREDENTIALS || (secrets.CBOM_AI_AWS_ACCESS_KEY_ID != '' && secrets.CBOM_AI_AWS_SECRET_ACCESS_KEY != '' && 'static') || '' }}
+          # Certificate Transparency (#369). Not a secret. Unset staging variable -> 1, so a deploy leaves discovery
+          # on. Set the variable to 0 to turn it off. Written into backend.env like CBOM_AI_PROVIDER (stdin only).
+          STAGING_SET_CBOM_CT_DISCOVERY: ${{ vars.CBOM_CT_DISCOVERY || '1' }}
           NODE_REGISTRY_PUBLIC: ${{ vars.CBOM_NODE_REGISTRY_PUBLIC }}
           EVENT: ${{ github.event_name }}
         run: |
+          # The AI assistant's key pair: both secrets or neither (one alone would leave the host with half a pair).
+          # Only whether each is set is tested; no value is printed.
+          ai_key_id=0; ai_secret=0
+          [ -z "${STAGING_SET_CBOM_AI_AWS_ACCESS_KEY_ID:-}" ] || ai_key_id=1
+          [ -z "${STAGING_SET_CBOM_AI_AWS_SECRET_ACCESS_KEY:-}" ] || ai_secret=1
+          if [ "$ai_key_id" != "$ai_secret" ]; then
+            echo "::error::set both staging environment secrets CBOM_AI_AWS_ACCESS_KEY_ID and CBOM_AI_AWS_SECRET_ACCESS_KEY, or neither (one of them is empty); not deploying"
+            exit 1
+          fi
           # The scan node registry refs (staging.sh set_node_refs): only a push deploys a commit that publish-ghcr.yml
           # released (devsecshield-scan-node:<version>); a manual run of any other commit gets none.
           # The packages are public (owner, 14 Nov): on unless the staging environment says 0.

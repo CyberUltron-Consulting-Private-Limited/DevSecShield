@@ -13,7 +13,7 @@ from backend.utilities.dashboard.sbom_license import (
     resolve_sbom_license_category,
     resolve_sbom_reachability,
 )
-
+from backend.utilities.dashboard.sbom_rows import vulnerability_findings, vulnerability_rows
 console = Console()
 
 
@@ -847,12 +847,10 @@ def generate_sast_dashboard_data(scans: list[Scan]) -> dict:
         "scans_created_today": scans_created_today,
         "scans_updated_today": scans_updated_today
     }
-
     findings = []
     for scan in scans:
         findings.extend(get_findings_for_scan_id(scan_id=scan.id))
     remediation_metrics = get_remediation_metrics(findings=findings)
-
     return {
         "card_data": card_data,
         "repos_scanned": list(set(repos_scanned)),
@@ -869,6 +867,8 @@ def generate_sast_dashboard_data(scans: list[Scan]) -> dict:
         "by_language": by_language,
         "top_repos_by_risk": top_repos_by_risk,
         "remediation_metrics": remediation_metrics,
+        "fixed_findings": sum(1 for f in findings if f.get("finding_status") == "fixed"),  # the Fix rate is fixed / all (#36)
+        "total_findings": len(findings),  # every stored finding of these scans, the same ones remediation_metrics reads
     }
 
 
@@ -953,12 +953,12 @@ def generate_sbom_sca_dashboard_data(scans: list[Scan]) -> dict:
     
     """
     sbom_scans = [s for s in scans if s.scan_type == "sbom_sca"]
-    all_results: list[dict] = []
-    all_findings: list = []
+    all_results: list[dict] = []  # known vulnerabilities only: the inventoried packages are the SBOM (#46)
+    all_findings: list = []  # their stored findings, without the inventory rows' findings (#46)
     for scan in sbom_scans:
         if scan.scan_status == "success":
-            all_results.extend(_sbom_results(scan))
-        all_findings.extend(get_findings_for_scan_id(scan.id))
+            all_results.extend(vulnerability_rows(_sbom_results(scan)))
+        all_findings.extend(vulnerability_findings(get_findings_for_scan_id(scan.id)))
 
     severity_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
     reachability_counts: dict[str, int] = defaultdict(int)
@@ -980,7 +980,7 @@ def generate_sbom_sca_dashboard_data(scans: list[Scan]) -> dict:
     for scan in sbom_scans:
         if scan.scan_status != "success":
             continue
-        results = _sbom_results(scan)
+        results = vulnerability_rows(_sbom_results(scan))
         if not results:
             continue
         date_key = str(scan.created_at.date()) if scan.created_at else ""
@@ -1074,7 +1074,7 @@ def generate_sbom_sca_dashboard_data(scans: list[Scan]) -> dict:
     total_high_license = sum(license_counts.get(k, 0) for k in license_high_risk)
     total_medium_license = sum(license_counts.get(k, 0) for k in license_medium_risk)
     total_license_risks = total_high_license + total_medium_license
-    average_risk_score = round(risk_score_weighted_sum / risk_score_count, 1) if risk_score_count > 0 else 0.0
+    average_risk_score = round(risk_score_weighted_sum / risk_score_count, 1) if risk_score_count > 0 else None  # — (#46)
     card_data = {
         "total_vulnerabilities": len(all_results),
         "total_critical_vulnerabilities": severity_counts["critical"],

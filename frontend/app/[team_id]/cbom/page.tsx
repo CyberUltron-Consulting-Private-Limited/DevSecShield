@@ -47,7 +47,7 @@ import type { CBOMConversation } from "@/utils/backend_api";
 import type { CBOMDashboardData } from "@/utils/backend_api";
 import type { CbomDeliverableSlug } from "@/utils/backend_api";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 import { showErrorToast } from "@/utils/error-handler";
 import { formatDateIst as formatDate } from "@/utils/datetime";
 import { readinessText, readinessTone, type ReadinessTone } from "@/utils/cbomReadiness";

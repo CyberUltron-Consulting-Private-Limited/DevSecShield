@@ -61,8 +61,24 @@ deploy/local/init-env.sh dev          # writes deploy/local/.env (mode 600) with
 ```
 
 It copies `.env.example` and replaces every `change-me` with a fresh random value (it never overwrites an existing
-`.env`). Or copy the file yourself and replace each `change-me`. `.env` is git-ignored; never commit it. To change the
-tag later, edit `DSS_TAG` in `.env`.
+`.env`). Or copy the file yourself:
+
+```sh
+cp .env.example .env
+```
+
+`.env` is git-ignored; never commit it. To change the tag later, edit `DSS_TAG` in `.env`.
+
+Running the API or the scan worker from a checkout (not this compose file) uses a gitignored `.env` next to the
+code. Staging does not read those files; it uses `/opt/devsecshield-staging/deploy/staging/backend.env`. From the
+repository root:
+
+```sh
+cp backend/.env.example backend/.env
+cp backend/utilities/ai/.env.example backend/utilities/ai/.env
+cp RabbitMQ/worker/.env.example RabbitMQ/worker/.env
+cp RabbitMQ/worker/helpers/context/.env.example RabbitMQ/worker/helpers/context/.env
+```
 
 ## 4. Start
 
@@ -239,7 +255,13 @@ there are no retries.
 | `CBOM_AI_API_KEY`, `CBOM_AI_CA_FILE` | Bearer key if the server wants one; PEM bundle for a private CA (https). |
 | `CBOM_AI_ALLOW_NONPRIVATE` | The host must resolve only to loopback / RFC 1918 / ULA addresses unless this is `1`; link-local (cloud metadata) is refused always. The resolved address is pinned for the request. |
 
-Both: `CBOM_AI_TIMEOUT_S` (60), `CBOM_AI_MAX_TOKENS` (700), `CBOM_AI_CONCURRENCY` (2 requests at a time). 20 requests
+Both: `CBOM_AI_DEADLINE_S` (50, at most 85: the whole request, slot wait, model call and at most one retry, answers
+within it, so a proxy with nginx's 60 s default read timeout never cuts it; slower, the panel says "took too long, try
+again"), `CBOM_AI_TIMEOUT_S` (60, one model call; the deadline caps it), `CBOM_AI_MAX_TOKENS` (unset: each mode's own
+output budget, explain 1,500, plan and question 2,400, fix 2,000, doubled once when an answer is cut off; set it only
+for a model with a small output or context limit, for example about 1,000 for a 4 k-token context),
+`CBOM_AI_CONCURRENCY` (2 requests at a time). The backend's `cbom_ai audit` line names the stop reason and output
+budget of each attempt (`stop=max_tokens,end_turn max_tokens=2400,4096`). 20 requests
 per minute per user. The rate limit, the concurrency limit and the answer cache are per backend process: with N
 workers or replicas the deployment allows N times as many. Example, Ollama on the compose network: `docker run -d --name ollama --network <compose network>
 -v ollama:/root/.ollama ollama/ollama`, `docker exec ollama ollama pull qwen3:8b`, then
@@ -290,6 +312,14 @@ to 3 times; only its last try reports the throttle, as an `error` row. Each clai
 
 Other scans: SAST, IaC and the SCA + SBOM chat need Amazon Bedrock and a Qdrant store (`QDRANT_*`, `LLM_MODEL`); without
 them they end as "failed". CBOM and AI-BOM code scans need neither.
+
+MCP and LLM scans connect from the scan worker to the MCP server URL or model URI the scan names, and only to public
+addresses (#53, the CBOM SSRF guard's rule): a host that resolves to a private (RFC 1918, unique-local), loopback,
+link-local (169.254.169.254), CGNAT or other reserved address is refused when the scan is estimated or started, and
+again for every connection the worker makes, redirects included. No setting opens a private address to these scans.
+The worker connects directly: `HTTP(S)_PROXY` and `ALL_PROXY` are not used for these connections (a proxy would resolve
+the name again, after the check), so the scan worker needs direct egress to the MCP servers and model endpoints it
+scans.
 
 ## 8. Stop, reset, update
 

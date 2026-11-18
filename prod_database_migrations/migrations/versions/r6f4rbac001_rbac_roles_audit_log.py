@@ -1,7 +1,7 @@
 """team roles owner / admin / member / viewer, invitation roles, append-only audit log (F4 RBAC)
 
 Revision ID: r6f4rbac001
-Revises: r6f3repo001 (re-chained from rv6p1nodename001 when dev was merged in on 2026-11-15: one head)
+Revises: d44mcphdr001, r6t2ledger001 (dev's two heads, both of which revise r6f3repo001; joined here so there is one head)
 Create Date: 2026-11-11 14:00:00.000000
 
 Roles: existing memberships keep their role (admin -> admin, member -> member); superusers are unchanged.  Every
@@ -29,7 +29,7 @@ import sqlmodel
 
 
 revision: str = 'r6f4rbac001'
-down_revision: Union[str, Sequence[str], None] = 'r6f3repo001'
+down_revision: Union[str, Sequence[str], None] = ('d44mcphdr001', 'r6t2ledger001')
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -65,11 +65,6 @@ BEGIN RAISE EXCEPTION USING
   HINT = 'Add a compensating row instead.';
 END $$
 """
-TRIGGERS = (
-    ("auditevent_no_update", "BEFORE UPDATE ON auditevent FOR EACH ROW EXECUTE FUNCTION auditevent_append_only()"),
-    ("auditevent_no_delete", "BEFORE DELETE ON auditevent FOR EACH ROW EXECUTE FUNCTION zs_append_only()"),
-    ("auditevent_no_truncate", "BEFORE TRUNCATE ON auditevent FOR EACH STATEMENT EXECUTE FUNCTION zs_append_only()"),
-)
 # one admin per ownerless team: the one whose default team it is, else the lowest user id; ``why`` names the rule.
 # Two complete SQL literals (no string building, not even of constants).
 OWNER_PICK_COUNTS = """
@@ -180,11 +175,21 @@ def upgrade() -> None:
         bind.execute(sa.text(APPEND_ONLY_FUNCTION))
         bind.execute(sa.text(SHARED_APPEND_ONLY_FUNCTION))
         # an archive restored above keeps the triggers a downgrade left on it (and an archive from an older version
-        # of this revision has the former combined trigger): recreate them all under their current names
-        for name in ("auditevent_no_update_delete", *(n for n, _ in TRIGGERS)):
-            bind.execute(sa.text(f"DROP TRIGGER IF EXISTS {name} ON auditevent"))
-        for name, spec in TRIGGERS:
-            bind.execute(sa.text(f"CREATE TRIGGER {name} {spec}"))
+        # of this revision has the former combined trigger): recreate them all under their current names.
+        # Complete literals: a constructed statement is what semgrep's avoid-sqlalchemy-text flags.
+        bind.execute(sa.text("DROP TRIGGER IF EXISTS auditevent_no_update_delete ON auditevent"))
+        bind.execute(sa.text("DROP TRIGGER IF EXISTS auditevent_no_update ON auditevent"))
+        bind.execute(sa.text("DROP TRIGGER IF EXISTS auditevent_no_delete ON auditevent"))
+        bind.execute(sa.text("DROP TRIGGER IF EXISTS auditevent_no_truncate ON auditevent"))
+        bind.execute(sa.text(
+            "CREATE TRIGGER auditevent_no_update BEFORE UPDATE ON auditevent "
+            "FOR EACH ROW EXECUTE FUNCTION auditevent_append_only()"))
+        bind.execute(sa.text(
+            "CREATE TRIGGER auditevent_no_delete BEFORE DELETE ON auditevent "
+            "FOR EACH ROW EXECUTE FUNCTION zs_append_only()"))
+        bind.execute(sa.text(
+            "CREATE TRIGGER auditevent_no_truncate BEFORE TRUNCATE ON auditevent "
+            "FOR EACH STATEMENT EXECUTE FUNCTION zs_append_only()"))
 
     # ---- last: the role CHECK (ACCESS EXCLUSIVE on teammembership, which every request's policy reads, held only
     # to the end of this revision: env.py runs each revision in its own transaction)

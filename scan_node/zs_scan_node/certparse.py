@@ -12,6 +12,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import dsa, ec, ed448, ed25519, rsa, x448, x25519
 from cryptography.x509.oid import AuthorityInformationAccessOID, ExtensionOID, NameOID
 
+from zs_scan_node import algid
 from zs_scan_node.scrub import printable
 
 MAX_SAN = 50
@@ -59,6 +60,32 @@ def _common_name(value: x509.Name) -> str:
         return ""
 
 
+def _named_oid(dotted: str | None) -> str | None:
+    """algid's name for an algorithm OID, or the dotted OID when algid does not know it."""
+    if not dotted:
+        return None
+    found = algid.resolve(dotted)
+    if found is not None and found.name:
+        return found.name
+    return dotted
+
+
+def _public_key_oid(cert: x509.Certificate) -> str | None:
+    """The SubjectPublicKeyInfo algorithm OID. cryptography names it on recent releases; older ones still
+    expose the TBS certificate, which algid reads without loading the key."""
+    try:
+        dotted = cert.public_key_algorithm_oid.dotted_string  # type: ignore[attr-defined]
+        if isinstance(dotted, str) and dotted:
+            return dotted
+    except Exception:
+        pass
+    try:
+        found = algid.tbs_spki_alg(cert.tbs_certificate_bytes)
+    except Exception:
+        return None
+    return found[0] if found else None
+
+
 def cert_facts(cert: x509.Certificate, source: str) -> dict[str, Any]:
     facts: dict[str, Any] = {"source": source}
     facts["subject"] = _name(cert.subject)
@@ -68,16 +95,29 @@ def cert_facts(cert: x509.Certificate, source: str) -> dict[str, Any]:
     facts["not_after"] = _iso(getattr(cert, "not_valid_after_utc", None) or cert.not_valid_after)
     try:
         oid = cert.signature_algorithm_oid
-        facts["sig_alg"] = getattr(oid, "_name", None) or oid.dotted_string
+        # cryptography sets ObjectIdentifier._name to "Unknown OID" for an OID it does not list. That
+        # placeholder is truthy, so it used to hide post-quantum signature OIDs (scan_node/tests/test_certparse_*
+        # has the case). A name it does list stays as printed; a placeholder is resolved through algid, else kept
+        # as the dotted OID. Algorithm names and OIDs live in algid only (test_algid_single_source).
+        label = getattr(oid, "_name", None)
+        if isinstance(label, str) and label and not algid.is_sentinel(label):
+            facts["sig_alg"] = label
+        else:
+            facts["sig_alg"] = _named_oid(oid.dotted_string) or "unknown"
     except Exception:
         facts["sig_alg"] = "unknown"
     try:
         facts.update(key_facts(cert.public_key()))
     except Exception:
-        try:  # e.g. ML-DSA / unsupported algorithms: keep the OID
-            facts["key_alg"] = cert.public_key_algorithm_oid.dotted_string  # type: ignore[attr-defined]
-        except Exception:
-            facts["key_alg"] = "unknown"
+        # Keys cryptography cannot load (post-quantum signature keys among them): name them through algid, the
+        # way the IdP reader does (CB-04).
+        dotted = _public_key_oid(cert)
+        facts["key_alg"] = _named_oid(dotted) or "unknown"
+        found = algid.resolve(dotted) if dotted else None
+        if found is not None and found.key_size is not None:
+            facts["key_size"] = found.key_size
+        if dotted:
+            facts["key_alg_oid"] = dotted
     san: list[str] = []
     try:
         ext = cert.extensions.get_extension_for_oid(ExtensionOID.SUBJECT_ALTERNATIVE_NAME).value

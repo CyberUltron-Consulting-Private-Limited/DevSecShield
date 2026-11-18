@@ -40,7 +40,8 @@ from backend.new_models import (  # noqa: E402
     TeamMembership,
     User,
 )
-from backend.routers import cbom_node, cbom_sources, cbom_vendor_public  # noqa: E402
+from backend.routers import auth as auth_router  # noqa: E402
+from backend.routers import cbom_node, cbom_node_sshca, cbom_sources, cbom_vendor_public  # noqa: E402
 from backend.utilities.auth import auth_utils  # noqa: E402
 from backend.utilities.cbom_sources import http as cbom_http  # noqa: E402
 from backend.utilities.cbom_sources import jobs as J  # noqa: E402
@@ -81,7 +82,8 @@ def world(tmp_path, monkeypatch):
         s.add(Scan(id=77, team_id=1, owner_user_id=ids["alice"], scan_type="cbom", title="code", scan_status="NOT_STARTED"))
         s.add(Scan(id=78, team_id=1, owner_user_id=ids["alice"], scan_type="sast", title="sast", scan_status="NOT_STARTED"))
         s.commit()
-    for module in (cbom_http, cbom_node, cbom_vendor_public, node_auth):
+    # every module the shared fixtures reach get_db() through, so no test depends on the process env (#433)
+    for module in (cbom_http, cbom_node, cbom_node_sshca, cbom_vendor_public, node_auth, auth_router):
         monkeypatch.setattr(module, "get_db", lambda: engine)
     for limiter in (cbom_http.read_limiter, cbom_http.write_limiter, cbom_http.node_limiter,
                     cbom_http.enroll_limiter, cbom_http.vendor_limiter):

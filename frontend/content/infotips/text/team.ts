@@ -13,9 +13,9 @@ const TEXT = {
     why: "Shows how actively the team is testing across products.",
     example: "A SAST scan and a CBOM Sources run both count as one scan each.",
   },
-  // src: backend/utilities/dashboard/team.py:173-190 — stored findings of all scans + Sources findings not already found by a code scan
+  // src: backend/utilities/dashboard/team.py:173-190, backend/utilities/dashboard/team.py:107-110, backend/utilities/db/findings.py:18-26 — stored findings of all scans (clean inventory rows of CBOM and SCA + SBOM left out, #46) + Sources findings not already found by a code scan
   "team.kpi.findings": {
-    what: "Findings stored for all scans of this team, in any product, plus CBOM Sources findings that no code scan already reported.",
+    what: "Findings stored for all scans of this team, in any product, plus CBOM Sources findings that no code scan already reported. Packages with no known vulnerability (SCA + SBOM) and clean algorithms (CBOM) are part of the bill of materials, not findings.",
     why: "Sizes the team's total security backlog.",
     example: "40 SAST + 12 SCA + 8 CBOM findings: 60.",
   },

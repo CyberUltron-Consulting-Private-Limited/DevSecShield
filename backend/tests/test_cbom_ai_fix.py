@@ -147,6 +147,28 @@ def test_unsafe_fixes_are_withheld_with_the_reason(code, reason):
     assert out["fix"] is None and out["baseline"] is True and out["summary"]  # the KB remediation instead
 
 
+def test_pyca_gcm_nonce_argument_is_shown():
+    """Staging withheld Cipher(..., modes.GCM(nonce)) as 'nonce written into another value'. That call is the
+    nonce parameter of an approved mode, so the rewrite is shown."""
+    window = (
+        "from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes\n"
+        "import os\n"
+        "\n"
+        "def encrypt(data, key):\n"
+        "    cipher = Cipher(algorithms.AES(key), modes.ECB())\n"
+        "    return cipher.encryptor()\n"
+    )
+    fixed = window.replace(
+        "    cipher = Cipher(algorithms.AES(key), modes.ECB())",
+        "    nonce = os.urandom(12)\n    cipher = Cipher(algorithms.AES(key), modes.GCM(nonce))",
+    )
+    finding = {**FINDING, "snippet": window, "line": 5, "snippet_start": 1,
+               "location": "sample/crypto_app.py:5"}
+    out = FIX.validate(_fix_answer(fixed), _grounding(finding), _window(finding))
+    assert out["status"] == "ok", out.get("withheld_reason")
+    assert out["fix"] and "modes.GCM(nonce)" in out["fix"]["fixed_code"]
+
+
 def test_changes_far_from_the_finding_are_withheld_but_imports_are_allowed():
     lines = ECB.rstrip("\n").split("\n") + [f"x{i} = {i}" for i in range(20)] + ["y = 1"]
     finding = {**FINDING, "snippet": "\n".join(lines)}

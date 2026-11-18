@@ -1474,7 +1474,8 @@ export default function SASTResults({ conversationId, dashboard, findings, teamI
     mutationFn: () => {
       const tid = teamId ? parseInt(teamId, 10) : NaN;
       if (conversationId == null || Number.isNaN(tid)) throw new Error("Missing team or scan");
-      return getExportResults(tid, conversationId);
+      // this page says the outcome, once (#27): the helper's own toasts are off
+      return getExportResults(tid, conversationId, { toast: false });
     },
     onSuccess: (data) => {
       const blob = new Blob([data], { type: "application/pdf" });
@@ -1484,6 +1485,7 @@ export default function SASTResults({ conversationId, dashboard, findings, teamI
       a.download = `sast_scan_${conversationId}_report.pdf`;
       a.click();
       URL.revokeObjectURL(url);
+      toast.success("SAST report downloaded");
     },
     onError: (err) => {
       showErrorToast(err, "Failed to download scan report");

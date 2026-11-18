@@ -108,6 +108,42 @@ test("RunInsights stacks heat-map then calendar, both full width (no 50/50 row)"
   assert.ok(html.indexOf('data-testid="run-heatmap"') < html.indexOf('data-testid="run-cert-calendar"'), "heat-map first");
 });
 
+test("11-A: the run heat-map names its columns in full, totals each family and column, names its legend; calendar below", () => {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const data: CbomRunHeatmap = {
+    by: "source", rows: ["RSA", "Elliptic curve"], columns: ["Datacenter firewall PAN-OS", "net-b"],
+    cells: [{ row: "RSA", column: "Datacenter firewall PAN-OS", count: 2, worst: "High", by_impact: { High: 2 } },
+            { row: "RSA", column: "net-b", count: 1, worst: "Low", by_impact: { Low: 1 } },
+            { row: "Elliptic curve", column: "net-b", count: 4, worst: "Medium", by_impact: { Medium: 4 } }],
+    certificates: [web4(443), web4(8443)],
+  } as CbomRunHeatmap;
+  qc.setQueryData(cbomOpsKeys.heatmap(1, 12, "source"), data);
+  const html = renderToStaticMarkup(h(QueryClientProvider, { client: qc }, h(RunInsights, { teamId: 1, runId: 12, active: false })));
+  // a long source name wraps (two lines, full name in the title) instead of being cut to "Datacenter fi…"
+  const head = html.match(/<div role="columnheader" title="Datacenter firewall PAN-OS" class="([^"]*)"/);
+  assert.ok(head, "column header found");
+  assert.ok(!/\btruncate\b/.test(head![1]) && /\bline-clamp-2\b/.test(head![1]), head![1]);
+  assert.match(html, /data-testid="run-heatmap-row-total-RSA">3</);
+  assert.match(html, /data-testid="run-heatmap-row-total-Elliptic curve">4</);
+  const totals = html.slice(html.indexOf('data-testid="run-heatmap-totals"'));
+  assert.match(totals, /Total/);
+  assert.deepEqual([...totals.matchAll(/role="gridcell"[^>]*>(\d+)</g)].slice(0, 2).map((m) => m[1]), ["2", "5"]);
+  assert.ok(html.replace(/<[^>]+>/g, "").includes("Colour: worst impact in the cell"));
+  // both switches and every cell button (keyboard, drill) are kept
+  assert.match(html, /aria-label="Heat-map columns"/);
+  assert.match(html, /data-testid="run-heatmap-metric-grade"/);
+  assert.match(html, /data-testid="heat-cell-RSA-net-b"/);
+  assert.ok(html.indexOf('data-testid="run-heatmap"') < html.indexOf('data-testid="run-cert-calendar"'), "calendar below the map");
+  assert.ok(html.replace(/<[^>]+>/g, "").includes("2 certificates with an expiry date."));
+  // calendar={false}: the inventory view shows the calendar in the Certificates card instead
+  const noCal = renderToStaticMarkup(h(QueryClientProvider, { client: qc }, h(RunInsights, { teamId: 1, runId: 12, active: false, calendar: false })));
+  assert.match(noCal, /data-testid="run-heatmap"/);
+  assert.doesNotMatch(noCal, /run-cert-calendar/);
+  // the code page's map is unchanged (no totals, compact headers): codeModeSnapshot.test.ts pins its markup
+  const code = renderToStaticMarkup(h(CryptoHeatmap, { data, testId: "hm" }));
+  assert.doesNotMatch(code, /hm-totals|row-total/);
+});
+
 test("code scans use the same stacked layout (CodeHeatmapAndCalendar)", () => {
   const src = read("../CbomCryptoCharts.tsx");
   const body = src.slice(src.indexOf("function CodeHeatmapAndCalendar"));

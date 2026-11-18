@@ -112,6 +112,7 @@ from backend.utilities.cbom_sources.schemas import (
 from backend.utilities.cbom_sources.node_release import server_release
 from backend.utilities.cbom_sources.serialize import (
     last_collects,
+    pca_reads,
     public_area,
     public_job,
     public_node,
@@ -644,6 +645,13 @@ async def create_source(team_id: TeamId, body: SourceCreate, Authorization: Auth
     return _ok(result, 201)
 
 
+def _with_pca(item: dict[str, Any], pcas: dict[int, dict[str, Any] | None]) -> dict[str, Any]:
+    """An AWS Private CA source carries ``pca_read`` (None until its account was collected); other sources do not."""
+    if item["id"] in pcas:
+        item["pca_read"] = pcas[item["id"]]
+    return item
+
+
 # #225: server-side search, filters and keyset paging for the source tables
 NOT_AVAILABLE = "Validation for this source is not available yet"
 SOURCE_STATUSES = ("enabled", "disabled", "never", "pending", "passed", "partial", "failed", "error", "not_available")
@@ -705,13 +713,15 @@ def _list_sources(engine, team_id: int, kind: str | None, group: str | None, q: 
         nodes = {n.id: n for n in session.exec(select(CbomScanNode).where(
             CbomScanNode.team_id == team_id, CbomScanNode.id.in_(node_ids or [-1]))).all()}  # type: ignore[union-attr]
         collects = last_collects(session, team_id, [r.id for r in rows])
+        pcas = pca_reads(session, team_id, list(rows))  # #368: the account's ACM PCA read, on its Private CA sources
         # the team's network ranges, once: every range of the list is counted with the same skip map and never-scan
         # list (one query, one pass over the ranges, whatever the number of ranges; review of #273)
         ranges = session.exec(select(CbomCollectionSource).where(
             CbomCollectionSource.team_id == team_id, CbomCollectionSource.kind == "network_range")).all()
         ctx = RangeContext.of_sources(list(ranges), settings)
         out = {"server_time": iso_z(now),
-               "sources": [public_source(r, settings, nodes.get(r.node_id), now, collects.get(r.id), ctx) for r in rows],
+               "sources": [_with_pca(public_source(r, settings, nodes.get(r.node_id), now, collects.get(r.id), ctx), pcas)
+                           for r in rows],
                **page, "limits": {"sources": SOURCE_CAP.usage(session, team_id)}}
         if group in (None, "network") and kind in (None, "network_range"):
             out["network_totals"] = network_sweep_totals(list(ranges), settings, ctx)  # N7: unique, enabled ranges
@@ -746,7 +756,8 @@ def _get_source(engine, team_id: int, source_id: int) -> dict:
         settings = get_or_create_settings(session, team_id)
         node = session.get(CbomScanNode, source.node_id) if source.node_id else None
         collect = last_collects(session, team_id, [source.id]).get(source.id)
-        return {"source": public_source(source, settings, node, now, collect), "server_time": iso_z(now)}
+        return {"source": _with_pca(public_source(source, settings, node, now, collect), pca_reads(session, team_id, [source])),
+                "server_time": iso_z(now)}
 
 
 @router.get(BASE + "/items/{source_id}", dependencies=[*READ, access.team("cbom.read")], summary="Get a source")

@@ -335,6 +335,24 @@ def assets_for(o: dict, now: str | None = None) -> tuple[list[dict], list[dict]]
                 assets.append({"oracle_id": f"{t}/{tok['label']}/{obj['label']}/{obj['class']}",
                                "asset_type": "managed_key", "location": tok["label"], "expect": exp,
                                "provenance": _prov(o, "objects")})
+    elif kind == "idp":
+        for key in e["keys"]:
+            exp = {"algorithm": key["kty"] if key["kty"] != "EC" else "EC", "key_size": key["bits"]}
+            if key.get("crv"):
+                exp["curve"] = key["crv"]
+            if key["kty"] in QUANTUM_VULNERABLE or exp["algorithm"] in QUANTUM_VULNERABLE:
+                exp["quantum_vulnerable"] = True
+            assets.append({"oracle_id": f"{t}/key/{key['kid']}", "asset_type": "signing_key",
+                           "location": f"{e['jwks_uri']}#{key['kid']}", "expect": exp,
+                           "provenance": _prov(o, "keys")})
+    elif kind == "k8s":
+        for sec in e["secrets"]:
+            assets.append({"oracle_id": f"{t}/secret/{sec['name']}", "asset_type": "certificate",
+                           "location": f"{e['namespace']}/secret/{sec['name']}",
+                           "expect": {"algorithm": sec["algorithm"], "key_size": sec["key_bits"],
+                                      "fingerprint_sha256": sec["fingerprint_sha256"],
+                                      "not_after": sec["not_after"]},
+                           "provenance": _prov(o, "secrets")})
     for a in assets:
         apply_codes(a, now, db_auth if a["asset_type"] == "database_user_auth" else None)
         if kf:
@@ -498,6 +516,14 @@ def sources_for(facts: list[dict]) -> tuple[list[dict], dict]:
         sources.append({"name": "S-host", "kind": "linux_servers", "targets": [ids["host"]["address"]],
                         "login": "zs-cbom", "auth": "node key (CB-05 installs the node's public key)"})
         by_target["host"] = "S-host"
+    if "idp" in ids:
+        sources.append({"name": "S-idp", "kind": "identity_provider", "targets": ["idp.lab"],
+                        "metadata_url": ids["idp"]["expect"]["issuer"] + "/.well-known/openid-configuration"})
+        by_target["idp"] = "S-idp"
+    if "receiver" in ids:
+        sources.append({"name": "S-receiver", "kind": "webhook", "address": ids["receiver"]["address"],
+                        "port": ids["receiver"]["port"]})
+        by_target["receiver"] = "S-receiver"
     for o in facts:
         if o["kind"] in ("postgres", "mysql"):
             name = f"DB-{o['target']}"

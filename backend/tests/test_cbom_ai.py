@@ -35,7 +35,8 @@ from backend.utilities.cbom_ai import validator as V  # noqa: E402
 ROOT = Path(__file__).resolve().parents[2]
 ENV_KEYS = ("CBOM_AI_PROVIDER", "CBOM_AI_AWS_CREDENTIALS", "CBOM_AI_BEDROCK_ALLOW_LOOPBACK", "CBOM_AI_AWS_PROFILE", "CBOM_AI_BEDROCK_REGION", "CBOM_AI_BEDROCK_ENDPOINT_URL", "CBOM_AI_HONOR_PROXY",
             "CBOM_AI_BASE_URL", "CBOM_AI_MODEL", "CBOM_AI_API_KEY", "CBOM_AI_CA_FILE", "CBOM_AI_TIMEOUT_S",
-            "CBOM_AI_MAX_TOKENS", "CBOM_AI_CONCURRENCY", "CBOM_AI_REDACT_HOSTS", "CBOM_AI_ALLOW_NONPRIVATE",
+            "CBOM_AI_MAX_TOKENS", "CBOM_AI_DEADLINE_S", "CBOM_AI_CONCURRENCY", "CBOM_AI_REDACT_HOSTS",
+            "CBOM_AI_ALLOW_NONPRIVATE",
             "CBOM_AI_AWS_ACCESS_KEY_ID", "CBOM_AI_AWS_SECRET_ACCESS_KEY", "CBOM_AI_AWS_SESSION_TOKEN")
 
 
@@ -183,7 +184,7 @@ def test_cbom_ai_imports_no_cloud_sdk():
     no boto3."""
     code = (
         "import os, sys, json\n"
-        # backend/.env is tracked in the repo and holds AWS_* keys; an air-gapped install has none, so dotenv is off
+        # backend/.env is gitignored (cp .env.example .env). An air-gapped install has no AWS_* keys, so dotenv is off
         "import dotenv\n"
         "dotenv.load_dotenv = lambda *a, **k: False\n"
         "import backend.utilities.cbom_ai, backend.utilities.cbom_ai.service, backend.utilities.cbom_ai.transport\n"
@@ -624,7 +625,8 @@ def test_bedrock_only_contacts_the_regional_runtime_host(api, world, bedrock):
     auth = auth.decode() if isinstance(auth, bytes) else auth
     assert "/ap-south-1/bedrock/aws4_request" in auth  # SigV4 for Bedrock in the region
     body = json.loads(sent["body"])
-    assert body["inferenceConfig"] == {"maxTokens": 700, "temperature": 0}
+    # a plan's own output budget (#448: the old single 700-token cap cut every TLS plan)
+    assert body["inferenceConfig"] == {"maxTokens": S.MODE_MAX_TOKENS["plan"], "temperature": 0}
     # the prompt leaves the network: host names are redacted by default for Bedrock
     assert "10.20.0.1" not in sent["body"].decode() if isinstance(sent["body"], bytes) else "10.20.0.1" not in sent["body"]
     assert bedrock["connects"] == []  # nothing else was contacted (the proxy variables were ignored)
@@ -1153,8 +1155,8 @@ def test_withheld_baseline_commands_are_unique(api, world):
 
 
 def test_aws_keys_alone_never_turn_the_assistant_on(api, world, monkeypatch):
-    """The tracked backend/.env gives load_dotenv() AWS keys: without CBOM_AI_PROVIDER (or CBOM_AI_BASE_URL) the
-    assistant stays off."""
+    """AWS keys in the environment, without CBOM_AI_PROVIDER (or CBOM_AI_BASE_URL), leave the assistant off.
+    A local backend/.env, if present, must not set CBOM_AI_."""
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", "AKIAEXAMPLEEXAMPLE00")
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "x")
     monkeypatch.setenv("AWS_DEFAULT_REGION", "ap-south-1")

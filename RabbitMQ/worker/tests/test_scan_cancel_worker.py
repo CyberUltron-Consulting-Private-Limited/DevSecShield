@@ -3,7 +3,8 @@
 * a task picked up after its cancel is never run, and its upload is deleted;
 * a running scan stops at its next progress write / when its tool dies, and the tool's whole process group
   (a fake long-running tool with a child and a grandchild) is killed;
-* the five code-scan tasks are wired to it, and a tool timeout still kills the tool's children.
+* the five code-scan tasks and the MCP and LLM runs are wired to it, and a tool timeout still kills the tool's
+  children.
 
 Run: /tmp/claude-0/wvenv/bin/python -m pytest -q RabbitMQ/worker/tests/test_scan_cancel_worker.py
 """
@@ -249,13 +250,15 @@ def test_a_mongo_outage_never_stops_a_scan():
     watch.check()  # does not raise
 
 
-def test_the_five_code_scan_tasks_are_cancellable_and_tools_run_through_run_tool():
+def test_every_scan_task_is_cancellable_and_tools_run_through_run_tool():
+    """The five code scans (cancel) and the MCP and LLM runs (a reinitialize withdraws the queued run it replaces;
+    backend tests/test_reinitialize_withdraws_every_type.py checks every type the backend sends)."""
     tree = ast.parse((WORKER / "scan_worker.py").read_text())
     decorated = {
         node.name for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)
         and any(isinstance(d, ast.Name) and d.id == "cancellable" for d in node.decorator_list)
     }
-    assert decorated == {"sast", "sbom_sca", "iac", "cbom", "ai_bom"}
+    assert decorated == {"sast", "sbom_sca", "iac", "cbom", "ai_bom", "mcp_scan", "llm_benchmark_scan"}
     for rel in ("helpers/tools/sast_agent/semgrep_util.py", "helpers/tools/sca_sbom_agent/syft.py",
                 "helpers/tools/sca_sbom_agent/grype.py", "helpers/tools/sca_sbom_agent/cdxgen_run.py",
                 "helpers/tools/cbom_agent/binary_scanner.py"):

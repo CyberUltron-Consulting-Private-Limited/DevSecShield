@@ -286,9 +286,17 @@ def _safe_value(kind: str, value: Any) -> str | None:
         return text if text.isdigit() and len(text) <= 6 else None
     if kind == "host":
         if not text.isascii():
+            # IDNA 2008 (UTS #46, non-transitional), the same rule as stored host names. Python's codec
+            # is IDNA 2003 and would turn faß.lab into fass.lab in a command the customer pastes.
+            import unicodedata
+
+            import idna
+            folded = unicodedata.normalize("NFC", text.strip().rstrip("."))
+            if "\u200c" in folded or "\u200d" in folded:
+                return None
             try:
-                text = ".".join(p.encode("idna").decode("ascii") if p else p for p in text.split("."))
-            except UnicodeError:
+                text = idna.encode(folded, uts46=True, transitional=False).decode("ascii")
+            except (idna.IDNAError, UnicodeError):
                 return None
         allowed = r"[A-Za-z0-9.\-:\[\]]+"
     elif kind in ("name", "resource"):

@@ -38,7 +38,7 @@
 #   staging.sh backend-env               read KEY=VALUE lines on stdin and set exactly those keys in backend.env (only
 #                                        the BACKEND_ENV_KEYS below; empty values are skipped; never prints a value).
 #                                        `push` runs it just before `deploy` when STAGING_SET_<KEY> is set (CI: the
-#                                        staging environment's CBOM_AWS_* / CBOM_AI_AWS_* secrets; README "AWS")
+#                                        staging environment's CBOM_AWS_* / CBOM_AI_* / CBOM_CT_DISCOVERY; README)
 #   staging.sh rollback [--allow-downgrade]
 #                                        back to the previously deployed tag and its own deploy files (compose file,
 #                                        nginx, this script). When that tag's migrations do not contain the database's
@@ -105,12 +105,13 @@ DSS_REPOS=(devsecshield-backend devsecshield-frontend scan-worker dast-worker)
 # classic-store builder holds uncompressed layer tars and needs about 4x: set STAGING_DISK_FACTOR=4 for one.
 DEFAULT_DISK_FACTOR=3.3
 DEFAULT_DISK_RESERVE_MB=1024  # left free on every filesystem after the copy and the load (the host is shared)
-# The only backend.env keys a deploy may set (push -> backend-env): the AWS collector identity, the lab switch, and
+# The only backend.env keys a deploy may set (push -> backend-env): the AWS collector identity, the lab switch,
 # the AI remediation settings (CB-38: AWS Bedrock; the provider, region and credential source are not secrets, the
-# assistant's own IAM user keys are, and travel like the collector's: stdin only, never printed).
+# assistant's own IAM user keys are, and travel like the collector's: stdin only, never printed), and
+# CBOM_CT_DISCOVERY (not a secret: 1 or 0; README "Certificate Transparency discovery on staging").
 BACKEND_ENV_KEYS=(CBOM_AWS_ACCESS_KEY_ID CBOM_AWS_SECRET_ACCESS_KEY CBOM_AWS_PRINCIPAL_ARN CBOM_AWS_LAB_SAME_ACCOUNT
   CBOM_AI_PROVIDER CBOM_AI_BEDROCK_REGION CBOM_AI_AWS_CREDENTIALS CBOM_AI_AWS_ACCESS_KEY_ID
-  CBOM_AI_AWS_SECRET_ACCESS_KEY)
+  CBOM_AI_AWS_SECRET_ACCESS_KEY CBOM_CT_DISCOVERY)
 
 log() { printf '[staging %s] %s\n' "$(date -u +%H:%M:%S)" "$*"; }
 die() { printf '[staging] ERROR: %s\n' "$*" >&2; exit 1; }
@@ -355,7 +356,11 @@ cmd_backend_env() { # stdin: KEY=VALUE lines; sets exactly those keys in backend
     [[ "${line}" == *=* ]] || die "backend-env: a line without KEY=VALUE"
     known=0
     for k in "${BACKEND_ENV_KEYS[@]}"; do [[ "${k}" == "${key}" ]] && known=1; done
-    ((known)) || die "backend-env: ${key:0:64} is not one of: ${BACKEND_ENV_KEYS[*]}"
+    # name a refused key only when it looks like one: a multi-line secret's next line must not show up here, in part
+    if ! ((known)); then
+      [[ "${key}" =~ ^[A-Z0-9_]{1,64}$ ]] || die "backend-env: an unknown key is not one of: ${BACKEND_ENV_KEYS[*]}"
+      die "backend-env: ${key} is not one of: ${BACKEND_ENV_KEYS[*]}"
+    fi
     [[ -n "${value}" ]] || continue # not provided: leave the host's value
     # AWS key ids, secret keys and ARNs, or 0/1: nothing that could break the env file or a shell
     [[ "${value}" =~ ^[A-Za-z0-9/+=:@._,-]{1,512}$ ]] || die "backend-env: the value of ${key} has characters an env file cannot hold"
@@ -401,12 +406,24 @@ set_env_line() { # <KEY> <value>: set one line of .env (added when missing); the
 
 DEFAULT_NODE_REGISTRY=ghcr.io/cyberultron-consulting-private-limited
 
+# #197 review: can this host reach the registry at all? One request to <host>/v2/ (any HTTP answer, 401 included, is
+# "reachable"); unreachable, set_node_refs skips every per-tag probe (each would wait for its own timeout) and says
+# why, instead of reporting a missing or private package. REGISTRY_UNREACHABLE holds curl's reason.
+REGISTRY_UNREACHABLE=""
+registry_reachable() { # <host>
+  local code err
+  err="$(mktemp)"
+  code="$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 5 --max-time 10 "https://$1/v2/" 2>"${err}")" || true
+  REGISTRY_UNREACHABLE="$(tr -s '\n' ' ' <"${err}" | cut -c1-200)"
+  rm -f "${err}"
+  [[ "${code}" =~ ^[1-5][0-9][0-9]$ ]]
+}
 registry_manifest() { # <host>/<repository> <tag> <file>: the manifest anyone can read, into <file> (no login)
   local host=${1%%/*} repo=${1#*/} token
-  token="$(curl -fsS --max-time 10 "https://${host}/token?scope=repository:${repo}:pull" 2>/dev/null |
+  token="$(curl -fsS --connect-timeout 5 --max-time 10 "https://${host}/token?scope=repository:${repo}:pull" 2>/dev/null |
     sed -n -E 's/.*"token":"([A-Za-z0-9._~+\/=-]+)".*/\1/p' || true)"
   [[ -n "${token}" ]] || return 1
-  curl -fsS -o "$3" --max-time 10 -H "Authorization: Bearer ${token}" \
+  curl -fsS -o "$3" --connect-timeout 5 --max-time 10 -H "Authorization: Bearer ${token}" \
     -H "Accept: application/vnd.oci.image.manifest.v1+json, application/vnd.oci.image.index.v1+json" \
     "https://${host}/v2/${repo}/manifests/$2" 2>/dev/null
 }
@@ -420,7 +437,7 @@ anonymous_pull() { # <host>/<repository> <tag>: 0 when anyone can read the manif
 # downloaded chart exactly when that digest is the download's sha256.
 HELM_CHART_LAYER=application/vnd.cncf.helm.chart.content.v1.tar+gzip
 chart_layer_digest() { # <manifest file>: sha256:<hex> of its chart content layer (empty when it has none)
-  tr '{}' '\n\n' <"$1" | grep -F "${HELM_CHART_LAYER}" | grep -oE 'sha256:[0-9a-f]{64}' | head -n 1 || true
+  tr '{}' '\n' <"$1" | grep -F "${HELM_CHART_LAYER}" | grep -oE 'sha256:[0-9a-f]{64}' | head -n 1 || true
 }
 
 ghcr_chart_matches() { # <registry> <version> <chart file>: 0 = GHCR's chart <version> is that file, byte for byte;
@@ -462,7 +479,9 @@ set_node_refs() { # <tag>
     [[ "${registry}" =~ ^[a-z0-9.-]+(:[0-9]{1,5})?(/[a-z0-9._-]+)+$ ]] || die "CBOM_NODE_REGISTRY ${registry:0:80} is not <host>/<path> (lower case)"
     version="$(sed -n -E 's/^[[:space:]]*"version": "([0-9][0-9A-Za-z.-]{0,18})".*$/\1/p' \
       "${NODE_ARTIFACTS_DIR}/${tag}/manifest.json" 2>/dev/null | head -n 1 || true)"
-    if [[ -n "${version}" ]]; then
+    if ! registry_reachable "${registry%%/*}"; then
+      log "WARNING: registry ${registry%%/*} cannot be reached from this host (${REGISTRY_UNREACHABLE:-no HTTP answer}): no docker pull or helm oci:// offered; the wizard installs the downloaded files"
+    elif [[ -n "${version}" ]]; then
       # the release the wizard pins: written once by publish-ghcr.yml (job release), never a moving tag; offered only
       # once anyone can pull it (#361: never a docker pull of a version that is not published)
       if anonymous_pull "${registry}/devsecshield-scan-node" "${version}"; then

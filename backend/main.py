@@ -146,6 +146,11 @@ app = DssApp(lifespan=lifespan, dependencies=[
     Middleware(AuditMiddleware),
 ])
 
+# a refused request body never comes back (or reaches a log) through its 422: no "input" (review 5909551771)
+from backend.utilities.validation_errors import request_validation_handler  # noqa: E402
+
+app.add_exception_handler(RequestValidationError, request_validation_handler)
+
 # setting the environment variable to False for local development
 # os.environ["IS_DOCKER_CONTAINER"] = "True"  # ⚠️⚠️⚠️⚠️⚠️⚠️⚠️
 

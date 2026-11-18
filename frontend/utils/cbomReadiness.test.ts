@@ -30,7 +30,7 @@ const scanPage = readFileSync(path.join(root, "components", "CbomResults.tsx"), 
   readFileSync(path.join(root, "components", "cbom", "results", "CbomDashboardCharts.tsx"), "utf8");
 const listPage = readFileSync(path.join(root, "app", "[team_id]", "cbom", "page.tsx"), "utf8");
 assert.ok(!scanPage.includes("`${cardData.quantum_readiness_score}%`"), "scan page prints the raw score");
-assert.match(scanPage, /label: "Quantum ready", value: readinessText\(cardData\)/);
+assert.match(scanPage, /label: "Quantum ready", value: \(cardData\) => readinessText\(cardData\)/);
 assert.ok(!listPage.includes("{card.quantum_readiness_score}%"), "scan list prints the raw score");
 assert.match(listPage, /\{readinessText\(card\)\}/);
 assert.match(listPage, /READINESS_BOX\[readinessTone\(card\)\]/);

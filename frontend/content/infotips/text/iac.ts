@@ -7,11 +7,11 @@ import type { TipAreaText } from "../types";
 
 const TEXT = {
   // ────────────────────────────────────────────────────────────── IaC: scan configuration (components/iac-options-sidebar.tsx)
-  // src: RabbitMQ/worker/helpers/tools/iac_agent/main.py:56-88, RabbitMQ/worker/helpers/context/codebase_context.py:56-82, RabbitMQ/worker/helpers/context/codebase_context.py:114-141, RabbitMQ/worker/helpers/context/codebase_context.py:228-233 — no pattern: every file of the formats; patterns and extensions of all formats are merged; one name matches a path segment starting with it, a third and later name is dropped (#37)
+  // src: RabbitMQ/worker/helpers/tools/iac_agent/main.py:56-88, RabbitMQ/worker/helpers/context/codebase_context.py:59-93, RabbitMQ/worker/helpers/context/codebase_context.py:119-170, RabbitMQ/worker/helpers/context/codebase_context.py:245-250 — no pattern: every file of the formats; patterns and extensions of all formats are merged; the path inside the repository, every name, whole names at any depth, * and a ** name are globs (#37, #45)
   "iac.cfg.include": {
-    what: "Only files of this format whose full path matches a pattern are analysed. A pattern is one or two folder or file names, one per box; one name matches any folder or file name starting with it. No pattern means every file of the format, but the patterns of all formats in the scan are combined: next to Terraform, give each other format a pattern.",
+    what: "Only files of this format whose path inside the repository matches a pattern are analysed. A pattern is one or more whole folder or file names, one per box, at any depth; * stands for any characters within a name, a box holding ** for any number of folders. No pattern means every file of the format, but the patterns of all formats in the scan are combined: next to Terraform, give each other format a pattern.",
     why: "Files that match no pattern are not analysed, so a wrong pattern hides misconfigurations.",
-    example: "\"charts\" includes every charts folder; \"deploy\" / \"k8s\" includes deploy/k8s.",
+    example: "\"charts\" includes every charts folder; \"deploy\" / \"k8s\" includes deploy/k8s; \"k8s*\" also includes k8s-prod.",
   },
 
   // ────────────────────────────────────────────────────────────── IaC: scan configuration (components/iac-options-sidebar.tsx)
@@ -27,7 +27,7 @@ const TEXT = {
     why: "Each format is read only if it has a context, so a missing one is a blind spot.",
     example: "A repository with Terraform and Helm charts: add both contexts.",
   },
-  // src: RabbitMQ/worker/helpers/tools/iac_agent/main.py:56-88, RabbitMQ/worker/helpers/context/codebase_context.py:228-233 — the format decides the extensions; Terraform adds its own .tf patterns; the other formats' include patterns narrow their files (merged across formats: see iac.cfg.include)
+  // src: RabbitMQ/worker/helpers/tools/iac_agent/main.py:56-88, RabbitMQ/worker/helpers/context/codebase_context.py:245-250 — the format decides the extensions; Terraform adds its own .tf patterns; the other formats' include patterns narrow their files (merged across formats: see iac.cfg.include)
   "iac.cfg.context_type": {
     what: "The infrastructure format of this context; it decides which file extensions are read. Terraform needs no pattern: its files are found by extension anywhere. For the other formats, the include patterns below narrow which files are read.",
     why: "The format decides which files are read.",

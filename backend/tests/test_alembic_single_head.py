@@ -59,12 +59,18 @@ def test_every_down_revision_exists_and_the_chain_reaches_the_root():
     roots = [rev for rev, downs in graph.items() if not downs]
     assert len(roots) == 1, f"expected one initial migration, found {roots}"
     (head,) = heads(graph)
-    walked, rev = [], head
-    while rev is not None:
-        walked.append(rev)
-        downs = graph[rev]
-        rev = downs[0] if downs else None
-    assert walked[-1] == roots[0] and len(walked) == len(graph), "the chain from the head skips a migration"
+    # Follow every parent. A revision may join two heads (dev landed d44mcphdr001 and r6t2ledger001 side by side);
+    # walking only the first parent would report that join as a skipped migration.
+    seen: set[str] = set()
+    stack = [head]
+    while stack:
+        rev = stack.pop()
+        if rev in seen:
+            continue
+        seen.add(rev)
+        stack.extend(graph[rev])
+    skipped = sorted(set(graph) - seen)
+    assert not skipped and roots[0] in seen, f"the chain from the head skips a migration: {skipped}"
 
 
 def test_the_checker_sees_a_second_head():

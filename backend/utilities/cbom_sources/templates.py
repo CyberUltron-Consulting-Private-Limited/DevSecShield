@@ -279,7 +279,7 @@ DB_GRANTS = {
         "db.createUser({ user: \"zs_cbom\", pwd: \"<from your vault>\", roles: [ { role: \"clusterMonitor\", db: \"admin\" } ] })\n"
     ),
     "redis": (
-        "ACL SETUSER zs_cbom on ><from your vault> -@all +info +config|get +acl|whoami\n"
+        "ACL SETUSER zs_cbom on ><from your vault> -@all +ping +info +config|get +acl|whoami\n"
     ),
 }
 

@@ -117,7 +117,6 @@ ALLOWED = {
     "frontend/components/cbom/sources/RunPosture.tsx": 1,
     "scan_node/Dockerfile": 1,
     "scan_node/README.md": 2,
-    "scan_node/zs_scan_node/certparse.py": 1,
     "scan_node/zs_scan_node/collectors/network.py": 1,
     "scan_node/zs_scan_node/ikeprobe.py": 5,
     "scan_node/zs_scan_node/kmip_ttlv.py": 5,

@@ -310,8 +310,8 @@ export default function TransportsSection({ teamId }: FleetSectionProps) {
           <h4 className="text-sm font-semibold">Files to install on your side</h4>
           <p className="text-xs text-zinc-600 dark:text-zinc-400">
             {data.release
-              ? `zs-collect ${data.release.version} · signed with key ${data.release.fingerprint}. AWX: the Ansible collection; Salt: the state; SSM: the document and the role template.`
-              : "No verified zs-collect release is active in this deployment yet: only the role template and the signing key can be made."}
+              ? `zs-collect ${data.release.version} · signed with key ${data.release.fingerprint}. AWX: the Ansible collection and the SSH CA trust role; Salt: the state and the SSH CA trust state; SSM: the document, the role template and the SSH CA trust document.`
+              : "No verified zs-collect release is active in this deployment yet: the role template, the signing key and the SSH CA trust installers can be made. The collector files wait for a release."}
           </p>
           <div className="flex flex-wrap gap-2">
             {FILES.map((name) => {
