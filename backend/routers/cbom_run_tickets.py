@@ -17,6 +17,8 @@ from sqlmodel import Session
 from backend.new_models import Team
 from backend.utilities.cbom_sources import run_tickets as TICKETS
 from backend.utilities.cbom_sources.common import audit, log, utcnow
+from backend.utilities.cbom_sources import http as _cbom_http
+from backend.utilities.rbac.policy import Access
 from backend.utilities.cbom_sources.http import (
     PRIVATE,
     CbomRoute,
@@ -34,6 +36,7 @@ from backend.utilities.cbom_sources.http import (
 from backend.utilities.cbom_sources.settings import get_or_create_settings
 
 router = APIRouter(tags=["cbom-sources"], route_class=CbomRoute)
+access = Access(lambda: _cbom_http.get_db())  # route policies (utilities/rbac): the same database as authorize()
 AuthHeader = Annotated[str | None, Header()]
 READ = [Depends(read_limiter)]
 WRITE = [Depends(write_limiter)]
@@ -60,7 +63,7 @@ def _get_ticketing(engine, team_id: int, user_id: int) -> dict:
                                                           is_admin=is_team_admin(session, user_id, team_id))}
 
 
-@router.get(BASE + "/ticketing", dependencies=READ,
+@router.get(BASE + "/ticketing", dependencies=[*READ, access.team("cbom.read")],
             summary="Jira for CBOM Sources: whether the team's Jira is connected, the project and the issue type")
 async def get_ticketing(team_id: TeamId, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
@@ -89,14 +92,14 @@ def _put_ticketing(engine, team_id: int, user_id: int, body: TICKETS.JiraSetting
         return {"ticketing": TICKETS.public_jira_settings(settings, session.get(Team, team_id), is_admin=True)}
 
 
-@router.put(BASE + "/ticketing", dependencies=WRITE,
+@router.put(BASE + "/ticketing", dependencies=[*WRITE, access.team("team.integrations.manage")],
             summary="Set the Jira project and issue type for CBOM Sources tickets (team admin)")
 async def put_ticketing(team_id: TeamId, body: TICKETS.JiraSettingsBody, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
     return _ok(await _run("put ticketing", team_id, _put_ticketing, engine, team_id, user.id, body))
 
 
-@router.post(BASE + "/runs/{run_id}/tickets", dependencies=WRITE,
+@router.post(BASE + "/runs/{run_id}/tickets", dependencies=[*WRITE, access.team("finding.triage")],
              summary="Open one Jira issue per finding asset of a run (idempotent per stable asset key)")
 async def create_run_tickets(team_id: TeamId, run_id: ObjectId, body: TICKETS.TicketBody,
                              Authorization: AuthHeader = None):

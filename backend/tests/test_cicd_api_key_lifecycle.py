@@ -81,7 +81,8 @@ def _world(monkeypatch: pytest.MonkeyPatch, eng):
         session.refresh(team_a)
         session.refresh(team_b)
         for name, team, role in (("owner", team_a, "member"), ("admin", team_a, "admin"),
-                                 ("member", team_a, "member"), ("outsider", team_b, "admin")):
+                                 ("member", team_a, "member"), ("outsider", team_b, "admin"),
+                                 ("teamowner", team_a, "owner")):  # F4: owners hold every admin right
             user = User(email=f"{name}@example.com", password="x", first_name=name, last_name="u",
                         default_team_id=team.id)
             session.add(user)
@@ -94,13 +95,16 @@ def _world(monkeypatch: pytest.MonkeyPatch, eng):
 
     async def _user(_engine, authorization):
         with Session(eng) as session:
-            return session.get(User, people[authorization])
+            return session.get(User, people[authorization.split(" ")[-1]])
 
     monkeypatch.setattr(router, "get_user_from_header_or_raise_exception", _user)
+    from backend.tests.support.rbac import stand_in_principal
+    # F4 route policy: the real role check, with each placeholder token standing for its person's real membership
+    stand_in_principal(monkeypatch, engine=eng, user_for_token=lambda token: people[token])
     http = TestClient(app)
 
     def call(method: str, path: str, who: str, **kw):
-        return http.request(method, path, headers={"Authorization": who}, **kw)
+        return http.request(method, path, headers={"Authorization": f"Bearer {who}"}, **kw)
 
     yield call, eng, ids
 
@@ -211,7 +215,7 @@ def test_the_integration_survives_revoke_with_its_settings(env):
     assert detail["api_key_hint"] == rotated["api_key"][-4:]
 
 
-@pytest.mark.parametrize("who, allowed", [("owner", True), ("admin", True), ("member", False)])
+@pytest.mark.parametrize("who, allowed", [("owner", True), ("admin", True), ("teamowner", True), ("member", False)])
 def test_only_the_owner_or_a_team_admin_rotates_or_revokes(env, who, allowed):
     call, eng, ids = env
     body = _create(call, ids, who="owner")

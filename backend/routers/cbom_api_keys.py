@@ -21,12 +21,15 @@ from backend.new_models import User
 from backend.utilities.auth.auth_utils import get_user_from_header_or_raise_exception
 from backend.utilities.cbom_sources import api_keys as AK
 from backend.utilities.cbom_sources.common import audit, log, sha256_hex, utcnow
+from backend.utilities.cbom_sources import http as _cbom_http
+from backend.utilities.rbac.policy import Access
 from backend.utilities.cbom_sources.http import (PRIVATE, CbomRoute, ObjectId, TeamId, is_team_admin, read_limiter,
                                                  server_error, write_limiter)
 from backend.utilities.cbom_sources.schemas import _Body, _name
 from backend.utilities.team import check_if_user_is_in_team
 
 router = APIRouter(tags=["cbom-api-keys"], route_class=CbomRoute)
+access = Access(lambda: _cbom_http.get_db())  # route policies (utilities/rbac): the same database as authorize()
 AuthHeader = Annotated[str | None, Header()]
 BASE = "/{team_id}/cbom/api-keys"
 ONLY_ADMINS = "Only a team admin can create or revoke API keys"
@@ -133,14 +136,14 @@ async def _run(what: str, team_id: int, fn, *args):
         raise server_error(f"cbom api keys {what}", exc, team=team_id) from None
 
 
-@router.get(BASE, dependencies=[Depends(read_limiter)],
+@router.get(BASE, dependencies=[Depends(read_limiter), access.team("cbom.read")],
             summary="The team's CBOM API keys (name, scopes, expiry, last use; never a secret)")
 async def list_keys(team_id: TeamId, Authorization: AuthHeader = None):
     engine, user = await _session_user(team_id, Authorization)
     return JSONResponse(await _run("list", team_id, _list, engine, team_id, user.id), headers=PRIVATE)
 
 
-@router.post(BASE, dependencies=[Depends(write_limiter)],
+@router.post(BASE, dependencies=[Depends(write_limiter), access.team("cbom.api_keys.manage")],
              summary="Create a CBOM API key (team admins; the secret is in this response only)")
 async def create_key(team_id: TeamId, body: KeyCreate, Authorization: AuthHeader = None):
     engine, user = await _session_user(team_id, Authorization)
@@ -148,7 +151,7 @@ async def create_key(team_id: TeamId, body: KeyCreate, Authorization: AuthHeader
                         headers=PRIVATE)
 
 
-@router.post(BASE + "/{key_id}/revoke", dependencies=[Depends(write_limiter)],
+@router.post(BASE + "/{key_id}/revoke", dependencies=[Depends(write_limiter), access.team("cbom.api_keys.manage")],
              summary="Revoke a CBOM API key (team admins; immediate, idempotent)")
 async def revoke_key(team_id: TeamId, key_id: ObjectId, Authorization: AuthHeader = None):
     engine, user = await _session_user(team_id, Authorization)

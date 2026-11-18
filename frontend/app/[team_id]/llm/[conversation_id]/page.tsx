@@ -9,6 +9,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getLLMConversationMessages } from "@/utils/backend_api";
 import { useParams, usePathname } from "next/navigation";
 import { toast } from "@/utils/toast";
+import { ReadOnlyGate } from "@/components/rbac/team-access";
 
 export default function LLMPage() {
   const params = useParams();
@@ -79,7 +80,9 @@ export default function LLMPage() {
       </div>
 
       {/* Right Sidebar - LLM Options */}
+      <ReadOnlyGate permission="scan.run" className="contents">
       <LLMOptionsSidebar query={query} team_id={team_id} scan_id={conversation_id} />
+      </ReadOnlyGate>
     </div>
   );
 }

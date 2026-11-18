@@ -55,6 +55,7 @@ import { getTeams, type TeamListItem } from "@/utils/backend_api";
 import { Button } from "@/components/ui/button";
 import { Check, Users } from "lucide-react";
 import { MobileNavBar } from "@/components/mobile-nav-bar";
+import { ReadOnlyBanner, TeamAccessProvider } from "@/components/rbac/team-access";
 import { UserMenu } from "@/components/user-menu";
 
 function TeamSwitcher() {
@@ -334,8 +335,11 @@ export default function HomeLayout({
         </Sidebar>
 
         <SidebarInset className="overflow-auto">
-          <MobileNavBar />
-          {children}
+          <TeamAccessProvider teamId={team_id}>
+            <MobileNavBar />
+            <ReadOnlyBanner />
+            {children}
+          </TeamAccessProvider>
         </SidebarInset>
     </SidebarProvider>
     {/* <ReactQueryDevtools initialIsOpen={false} /> */}

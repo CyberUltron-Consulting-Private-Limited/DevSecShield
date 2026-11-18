@@ -66,6 +66,8 @@ from backend.utilities.scm.models import (
 )
 from backend.utilities.scm.providers import ScmError, provider_for_connection
 
+from backend.utilities.rbac.policy import machine  # F4: the webhook's policy
+
 router = APIRouter(tags=["scm"], route_class=CbomRoute)
 AuthHeader = Annotated[str | None, Header()]
 READ = [Depends(read_limiter)]
@@ -1091,8 +1093,11 @@ def _webhook(provider: str, uid: str, body: bytes, headers: Any) -> JSONResponse
 
 
 # Public: no account; the credential is the connection's webhook secret (HMAC or token, constant-time). No
-# x-zs-permission marker (that names a team permission); F4's public(...) policy is added once F4 is on dev.
-@router.post("/scm/webhooks/{provider}/{webhook_uid}", dependencies=[Depends(webhook_limiter)],
+# x-zs-permission marker (that names a team permission): F4's machine(...) policy says what the handler checks.
+@router.post("/scm/webhooks/{provider}/{webhook_uid}",
+             dependencies=[Depends(webhook_limiter),
+                           machine("connection webhook secret", "the handler verifies the provider's signature or "
+                                   "token against the connection's webhook secret (constant time)")],
              summary="Inbound GitHub / GitLab / Bitbucket webhook (signed)")
 async def receive_webhook(provider: Literal["github", "gitlab", "bitbucket"], request: Request,
                           webhook_uid: Annotated[str, Path(max_length=64)]):

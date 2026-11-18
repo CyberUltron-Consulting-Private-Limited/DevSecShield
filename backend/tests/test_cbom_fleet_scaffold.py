@@ -168,6 +168,9 @@ def test_the_aggregator_is_registered_and_every_fleet_route_declares_its_permiss
         assert marker.startswith("cbom.") or machine, route.path
 
 
+from backend.utilities.rbac.policy import PermissionMarker  # noqa: E402
+
+
 def route_problems(routes) -> list[str]:
     """The rules every route of the aggregator follows (``cbom_fleet.py`` and ``fleet/http.py`` docstrings)."""
     problems = []
@@ -198,7 +201,10 @@ def route_problems(routes) -> list[str]:
             before = calls[: calls.index(require_member)]  # dependencies run in this order
             if limiters and not any(isinstance(call, RateLimiter) for call in before):
                 problems.append(f"{name}: authentication runs before the rate limiter")
-            others = [getattr(c, "__name__", type(c).__name__) for c in before if not isinstance(c, RateLimiter)]
+            # F4 RBAC: the app-level PermissionMarker enforces x-zs-permission (token, account, membership, role);
+            # it is the authentication, so it may run first (it reads no body)
+            others = [getattr(c, "__name__", type(c).__name__) for c in before
+                      if not isinstance(c, (RateLimiter, PermissionMarker))]
             if others:  # M6: nothing but the limiter may run before authentication (a body read, say)
                 problems.append(f"{name}: {', '.join(others)} runs before authentication")
     return problems

@@ -3,7 +3,8 @@
 * Validation errors become a 400 with one readable sentence and never echo the submitted value
   (FastAPI's default 422 includes ``input``, which would put a mistyped password in the response,
   and the frontend shows only "Validation error" for a 422).
-* No 403 is raised here for ordinary denials: the frontend logs the user out on a 403.
+* The handlers' own object-level refusals ("only the creator or a team admin") stay 400s.  Role refusals are 403s
+  from the route policy (utilities/rbac); the frontend signs out only on "Session not active".
 """
 from __future__ import annotations
 
@@ -179,7 +180,8 @@ async def authorize(team_id: int, authorization: str | None):
     engine = get_db()
     parts = (authorization or "").split(" ")
     if len(parts) == 2 and parts[0].lower() == "bearer" and API_KEYS.looks_like_key(parts[1]):
-        user, key_id = await run_in_threadpool(API_KEYS.authenticate, engine, team_id, parts[1])
+        user, key_id = (API_KEYS.verified_for(team_id, parts[1])
+                        or await run_in_threadpool(API_KEYS.authenticate, engine, team_id, parts[1]))
         API_KEYS.mark_active(key_id)
         return engine, user
     user = await get_user_from_header_or_raise_exception(engine, authorization)
@@ -191,7 +193,7 @@ def is_team_admin(session: Session, user_id: int, team_id: int) -> bool:
     row = session.exec(
         select(TeamMembership).where(TeamMembership.user_id == user_id, TeamMembership.team_id == team_id)
     ).first()
-    return bool(row and row.role == "admin")
+    return bool(row and row.role in ("admin", "owner"))  # owners hold every admin right (utilities/rbac)
 
 
 def require_owner_or_admin(session: Session, user_id: int, team_id: int, owner_user_id: int | None, what: str) -> None:

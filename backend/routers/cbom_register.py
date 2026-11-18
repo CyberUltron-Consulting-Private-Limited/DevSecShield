@@ -25,9 +25,12 @@ from sqlmodel import Session
 from backend.utilities.cbom_sources import q0register as REG
 from backend.utilities.cbom_sources import risk_register as RISK
 from backend.utilities.cbom_sources.common import utcnow
+from backend.utilities.cbom_sources import http as _cbom_http
+from backend.utilities.rbac.policy import Access
 from backend.utilities.cbom_sources.http import PRIVATE, CbomRoute, TeamId, authorize, read_limiter, server_error
 
 router = APIRouter(tags=["cbom-register"], route_class=CbomRoute)
+access = Access(lambda: _cbom_http.get_db())  # route policies (utilities/rbac): the same database as authorize()
 AuthHeader = Annotated[str | None, Header()]
 READ = [Depends(read_limiter)]
 
@@ -48,7 +51,7 @@ def _q0(engine, team_id: int, status: str, kind: str | None, reason: str | None,
                              limit=limit)
 
 
-@router.get("/{team_id}/cbom/register/q0", dependencies=READ,
+@router.get("/{team_id}/cbom/register/q0", dependencies=[*READ, access.team("cbom.read")],
             summary="Q0 gaps of the quantum risk register (open or closed; keyset paging with after)")
 async def register_q0(team_id: TeamId,
                       status: str = Query(default="open", pattern="^(open|closed)$"),
@@ -100,7 +103,7 @@ async def _call(what: str, team_id: int, fn, *args) -> Any:
         raise server_error(f"cbom register {what}", exc, team=team_id) from None
 
 
-@router.get("/{team_id}/cbom/register", dependencies=READ,
+@router.get("/{team_id}/cbom/register", dependencies=[*READ, access.team("cbom.read")],
             summary="Quantum risk register: one row per asset with its current grade (worst first, keyset paging)")
 async def register_list(team_id: TeamId, grade: str | None = GradeQ, reason: str | None = Query(default=None, max_length=32),
                         kind: str | None = Query(default=None, max_length=16), source: str | None = TextQ,
@@ -123,7 +126,7 @@ def _summary(engine, team_id: int) -> dict[str, Any]:
         return RISK.summary(session, team_id, utcnow())
 
 
-@router.get("/{team_id}/cbom/register/summary", dependencies=READ,
+@router.get("/{team_id}/cbom/register/summary", dependencies=[*READ, access.team("cbom.read")],
             summary="Register distribution, Q0 by reason, family x grade, closures per week, re-grade backlog")
 async def register_summary(team_id: TeamId, Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
@@ -135,7 +138,7 @@ def _heatmap(engine, team_id: int) -> dict[str, Any]:
         return RISK.heatmap(session, team_id)
 
 
-@router.get("/{team_id}/cbom/register/heatmap", dependencies=READ,
+@router.get("/{team_id}/cbom/register/heatmap", dependencies=[*READ, access.team("cbom.read")],
             summary="Algorithm family x source: grade counts and worst known grade per cell (drill down with the "
                     "list's family and source filters)")
 async def register_heatmap(team_id: TeamId, Authorization: AuthHeader = None):
@@ -151,7 +154,7 @@ def _item(engine, team_id: int, key: str) -> dict[str, Any]:
     return out
 
 
-@router.get("/{team_id}/cbom/register/items/{item_key}", dependencies=READ,
+@router.get("/{team_id}/cbom/register/items/{item_key}", dependencies=[*READ, access.team("cbom.read")],
             summary="One register row with its observations per source and its Q0 history")
 async def register_item(team_id: TeamId, item_key: str, Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
@@ -160,7 +163,7 @@ async def register_item(team_id: TeamId, item_key: str, Authorization: AuthHeade
     return JSONResponse(await _call("item", team_id, _item, engine, team_id, item_key), headers=PRIVATE)
 
 
-@router.get("/{team_id}/cbom/register.csv", dependencies=READ, summary="The register as CSV (filters as the list)")
+@router.get("/{team_id}/cbom/register.csv", dependencies=[*READ, access.team("cbom.read")], summary="The register as CSV (filters as the list)")
 async def register_csv(team_id: TeamId, grade: str | None = GradeQ, reason: str | None = Query(default=None, max_length=32),
                        source: str | None = TextQ, application: str | None = Query(default=None, max_length=128),
                        family: str | None = Query(default=None, max_length=32),

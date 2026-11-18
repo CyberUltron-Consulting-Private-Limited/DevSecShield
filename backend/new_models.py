@@ -2,7 +2,7 @@ import datetime
 import uuid
 from typing import Dict, Literal
 from sqlmodel import JSON, Column, DateTime, Field, SQLModel, String, Relationship
-from sqlalchemy import BigInteger, Integer, Text, UniqueConstraint
+from sqlalchemy import BigInteger, CheckConstraint, Integer, Text, UniqueConstraint
 from sqlalchemy.types import TypeDecorator as _SaTypeDecorator
 from sqlalchemy import BigInteger as _SaBigInteger, Index as _SaIndex, func as _sa_func, text as _sa_text
 scan_types = Literal["sast", "llm", "mcp" , "iac" , "leakage" , "sbom_sca" , "agent_discovery", "dast", "cbom", "ai_bom"]
@@ -31,11 +31,16 @@ class AuthCounter(SQLModel,table=True):
 
 
 
+TEAM_ROLES = ("owner", "admin", "member", "viewer")  # the order and rules: backend/utilities/rbac/permissions.py
+
+
 # every user is a member of the "default-team" by default when a user is created ⭐
 class TeamMembership(SQLModel,table=True): # many-to-many relationship between team and user
+    __table_args__ = (CheckConstraint("role IN ('owner', 'admin', 'member', 'viewer')", name="ck_teammembership_role"),)
     team_id : int | None = Field(default=None,foreign_key="team.id",primary_key=True)
     user_id : int | None = Field(default=None,foreign_key="user.id",primary_key=True)
-    role : Literal["admin" , "member"] = Field(default="member",sa_type=String)
+    # owner > admin > member > viewer (F4 RBAC); what each may do: backend/utilities/rbac/permissions.py
+    role : Literal["owner", "admin", "member", "viewer"] = Field(default="member",sa_type=String)
 
     team : "Team" = Relationship(back_populates="team_memberships")
     user : "User" = Relationship(back_populates="team_memberships")
@@ -67,7 +72,7 @@ class Team(SQLModel,table=True):
 
 class User(SQLModel,table=True):
     id : int | None = Field(default=None,primary_key=True)
-    email : str
+    email : str = Field(index=True)  # ix_user_email: every access check finds the token's account by its email (F4)
     password : str
     first_name : str | None
     last_name : str | None
@@ -97,18 +102,25 @@ class User(SQLModel,table=True):
     dast_profiles : list["DastScanProfile"] = Relationship(back_populates="owner_user")
 
 
+
+# sign-in and invitation lookups compare lower(email) (auth_utils.user_by_email): an expression index (F4, r6f4rbac001)
+_SaIndex("ix_user_email_lower", _sa_func.lower(User.__table__.c.email))
+
 class TeamInvitation(SQLModel, table=True):
     """An offer to join a team, mailed as a link to /invite/<token>; nobody joins until the invitee accepts.
 
     The token is stored only as its SHA-256 (``token_hash``) and works once: accepting, declining, revoking or
     resending clears or replaces it.  One row per (team, address): inviting the address again reuses it.
     Times are naive UTC.  The inviter is a plain int so deleting that user is never blocked."""
-    __table_args__ = (UniqueConstraint("team_id", "email", name="uq_teaminvitation_team_email"),)
+    __table_args__ = (UniqueConstraint("team_id", "email", name="uq_teaminvitation_team_email"),
+                      CheckConstraint("role IN ('admin', 'member', 'viewer')", name="ck_teaminvitation_role"))
     id : int | None = Field(default=None, primary_key=True)
     team_id : int = Field(foreign_key="team.id", index=True, ondelete="CASCADE")
     email : str = Field(max_length=254)  # lower-cased, as on sign-up
     token_hash : str | None = Field(default=None, max_length=64, unique=True, index=True)
     status : str = Field(default="pending", max_length=16)  # pending | accepted | declined | revoked
+    # the role the invitee joins with (admin invites member / viewer; an owner may also invite an admin)
+    role : str = Field(default="member", max_length=16, sa_column_kwargs={"server_default": "member"})
     invited_by_user_id : int | None = Field(default=None)
     created_at : datetime.datetime = Field(sa_type=DateTime)
     expires_at : datetime.datetime = Field(sa_type=DateTime)
@@ -1246,3 +1258,6 @@ _sa_event.listen(SQLModel.metadata, "after_create", _install_estate_summary)
 # The F3 tables live in their own module; importing it here registers them on SQLModel.metadata for alembic and
 # for everything that imports new_models (it imports nothing from this file, so the import cannot cycle).
 from backend.utilities.scm.models import *  # noqa: E402,F401,F403
+
+# ========================================= F4 access management: its tables live in backend/access_models.py
+from backend.access_models import *  # noqa: E402,F401,F403  (registers them on SQLModel.metadata with the rest)

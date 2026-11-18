@@ -85,7 +85,7 @@ def needing_admin_save(session: Session, team_id: int) -> tuple[list[dict[str, A
     """Enabled ``ssh_ca`` sources whose last saver is no longer a team admin (offboarding): they get no certificate
     until an admin saves them.  (first ``MAX_LISTED`` of them, total)."""
     admins = set(session.exec(select(TeamMembership.user_id).where(TeamMembership.team_id == team_id,
-                                                                   TeamMembership.role == "admin")).all())
+                                                                   TeamMembership.role.in_(("admin", "owner")))).all())  # type: ignore[attr-defined]
     rows = session.exec(select(CbomCollectionSource).where(
         CbomCollectionSource.team_id == team_id, CbomCollectionSource.kind.in_(KINDS_WITH_CA),  # type: ignore[attr-defined]
         CbomCollectionSource.enabled.is_(True)).order_by(CbomCollectionSource.id)).all()  # type: ignore[attr-defined]

@@ -90,6 +90,8 @@ def api(monkeypatch: pytest.MonkeyPatch):
         "backend.routers.dast_profiles.get_user_from_header_or_raise_exception",
         fake_user,
     )
+    from backend.tests.support.rbac import stand_in_principal
+    stand_in_principal(monkeypatch, user_id=ids["user_id"], email="u@example.com", role="admin")  # route policy (F4)
     yield TestClient(app), ids
 
 

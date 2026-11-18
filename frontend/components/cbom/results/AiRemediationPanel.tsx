@@ -23,6 +23,7 @@ import {
   MAX_QUESTION, aiPanelVisible, answerBadge, canAsk, citationLabel, egressLines, egressNote, outcomeNote,
 } from "./aiPanelLogic";
 import { InfoTip } from "@/components/ui/info-tip";
+import { useTeamAccess } from "@/components/rbac/team-access";
 
 export interface AiRemediationPanelProps {
   teamId: number;
@@ -43,6 +44,8 @@ function CitationChips({ cites, items }: { cites: string[]; items: CbomAiAnswer[
 }
 
 export default function AiRemediationPanel({ teamId, subject }: AiRemediationPanelProps) {
+  // F4 RBAC: the assistant generates remediations (finding.remediate, member and up); a viewer keeps the KB text
+  const { can } = useTeamAccess();
   const [mode, setMode] = useState<CbomAiMode | null>(null);
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState<CbomAiAnswer | null>(null);
@@ -61,6 +64,7 @@ export default function AiRemediationPanel({ teamId, subject }: AiRemediationPan
   });
 
   if (!aiPanelVisible(status.data)) return null;
+  if (!can("finding.remediate")) return null; // viewers: the knowledge-base remediation above only
   const note = outcomeNote(answer);
   const caveats = answer?.caveats ?? [];
   // an answer cut off at the model's output limit shows only its complete part: its first caveat says so, above it
