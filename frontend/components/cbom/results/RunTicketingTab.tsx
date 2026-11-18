@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cbomSourcesKeys } from "@/components/cbom/sources/keys";
+import { useTeamAccess } from "@/components/rbac/team-access";
 import { ErrorBlock, LoadingBlock, StatusBadge, Truncate, type Tone } from "@/components/cbom/sources/shared";
 import { toast } from "@/utils/toast";
 import {
@@ -122,6 +123,7 @@ function ProjectSettings({ teamId, ticketing }: { teamId: number; ticketing: Cbo
 
 export default function RunTicketingTab({ teamId, runId }: { teamId: number; runId: number }) {
   const queryClient = useQueryClient();
+  const access = useTeamAccess();
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [lastResult, setLastResult] = useState<TicketOutcome[] | null>(null);
@@ -138,6 +140,7 @@ export default function RunTicketingTab({ teamId, runId }: { teamId: number; run
   const selectable = useMemo(() => selectableIds(items), [items]);
   const state = ticketingState(ticketingQuery.data);
   const canCreate = state === "ready";
+  const mayTicket = access.can("finding.triage"); // F4 RBAC: viewers read tickets; the API refuses them anyway
 
   const create = useMutation({
     // every batch is reported: a batch that fails as a whole (network, 504, a project cleared meanwhile) lists its
@@ -222,11 +225,12 @@ export default function RunTicketingTab({ teamId, runId }: { teamId: number; run
         </p>
         <Button
           type="button"
-          disabled={!canCreate || selected.size === 0 || create.isPending}
+          disabled={!canCreate || !mayTicket || selected.size === 0 || create.isPending}
           onClick={() => create.mutate([...selected])}
           className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
           data-testid="run-ticketing-create"
-          title={canCreate ? undefined : "Connect Jira and set the project first"}
+          title={!mayTicket ? "Your role cannot create tickets. Ask a team admin for the Member role."
+            : canCreate ? undefined : "Connect Jira and set the project first"}
         >
           {create.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Ticket className="w-4 h-4 mr-2" />}
           Create Jira tickets{selected.size > 0 ? ` (${selected.size})` : ""}

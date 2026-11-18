@@ -1384,6 +1384,8 @@ const getTeam = async (team_id: number): Promise<TeamDetails> => {
     }
 }
 
+// updateTeam, removeOrAddTeamMembers and deleteTeam only throw on a refusal: the caller's onError shows the error
+// (app/[team_id]/settings/page.tsx). Both used to, so one refused save showed two identical toasts (#12).
 const updateTeam = async (team_id: number, data: UpdateTeamData) => {
     const response = await api.put(`/team/${team_id}`, data)
     toast.success("Team updated")

@@ -26,6 +26,7 @@ import {
 
 import { cbomSourcesKeys } from "./keys";
 import { ConfirmDialog, EmptyState, Field, NodeSelect, SectionCard, TestStatusBadge, Truncate } from "./shared";
+import { refreshCreditBalance } from "@/utils/creditBalance";
 import { InfoTip } from "@/components/ui/info-tip";
 
 // registry/repository:tag or @sha256:digest (same grammar as the API and the node)
@@ -49,7 +50,7 @@ export default function ContainerImagesSection({ teamId, nodes, isAdmin }: { tea
   const agentless = nodes.filter((n) => n.mode !== "agent");
   const invalidate = () => queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) });
   const test = useMutation({ mutationFn: (id: number) => testCbomSource(teamId, id), onSettled: invalidate });
-  const remove = useMutation({ mutationFn: (id: number) => deleteCbomSource(teamId, id), onSettled: invalidate, onSuccess: () => setDeleting(null) });
+  const remove = useMutation({ mutationFn: (id: number) => deleteCbomSource(teamId, id), onSettled: () => { invalidate(); refreshCreditBalance(queryClient); }, onSuccess: () => setDeleting(null) });
 
   return (
     <SectionCard

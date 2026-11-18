@@ -38,7 +38,7 @@ pull_request into dev / staging / main, merge_group, push to dev / staging / mai
 | Event | What runs |
 |---|---|
 | Pull request into dev, staging or main | pr-checks, security, and the suites and images whose paths changed |
-| `merge_group` (a merge queue entry) | security, and the suites and images whose paths changed between the queue's base commit and its merge commit. The suites' tests and the image builds run as on a PR. Their lint-diff steps (ruff, mypy, ESLint "no new findings") run in report mode only, as on a push, and the security jobs scan in report mode (see [Known limits](#known-limits), #70). There are no pr-checks: there is no PR event, and the PR's own run checked them. `ci-gate` reports on the queue commit, so a queue can require it |
+| `merge_group` (a merge queue entry) | security, and the suites and images whose paths changed between the queue's base commit and its merge commit. The suites' tests and the image builds run as on a PR. The security scanners gate in diff mode against the queue's base commit (`merge_group.base_sha`, #70). The suites' lint-diff steps (ruff, mypy, ESLint "no new findings") run in report mode only, as on a push (see [Known limits](#known-limits)). There are no pr-checks: there is no PR event, and the PR's own run checked them. `ci-gate` reports on the queue commit, so a queue can require it |
 | Push to `dev` (a merge) | security, and the suites and images whose paths changed since the commit before the push |
 | Push to `staging` or `main` (a promotion) | security and the changed images only. The commit arrived through a PR whose run already tested the merged tree (branch protection requires branches to be up to date), so the suites are not run a second time |
 | `workflow_dispatch` | everything; scanners in report mode |
@@ -109,9 +109,9 @@ The repository carries a lot of existing findings (see [Current debt](#current-d
 that failed on all of them would block every pull request, so people would learn to ignore it. That is exactly
 what happened to the old `cbom-gates.yml`, which was red on 59 of 59 runs. The rule instead is:
 
-- **Pull requests ("diff" mode; the scanners also on pushes):** each linter and scanner also runs on the base
-  commit (PR: the base branch; push: the commit before the push). The job **fails only on findings the change
-  adds.** A finding is keyed on (rule, file, message). The message is normalised to its first line, with checkout
+- **Pull requests ("diff" mode; the scanners also on merge-queue entries and pushes):** each linter and scanner
+  also runs on the base commit (PR: the base branch; merge queue: `merge_group.base_sha`, the target branch commit
+  the entry is built on; push: the commit before the push). The job **fails only on findings the change adds.** A finding is keyed on (rule, file, message). The message is normalised to its first line, with checkout
   paths, `line 123` references, ruff's `(130 > 88)` measurement and OSV's `@<version>` removed, and a file the
   change renamed is compared under its new name (`git diff -M`). So identical code at another path, moved or
   renamed code, a shortened line that is still too long, and a dependency bump that leaves a CVE open are never
@@ -120,9 +120,11 @@ what happened to the old `cbom-gates.yml`, which was red on 59 of 59 runs. The r
 - **A gate that could not run never passes.** A linter that exits with anything but 0 or 1 (crashed, missing,
   rejected its config), or exits 1 without a finding the gate can read, fails the step, on every event. The Python
   lint runs each line of `lint-diff-command` as its own command, so aibom's ruff and mypy each keep their exit
-  code. On a pull request, a base commit that cannot be checked out fails the step. If the linter fails on the
-  base commit (for example an upgrade whose new version cannot load the base's config), every finding in a file
-  the PR adds or modifies counts as new, never every finding in the repository.
+  code. On a pull request, a base commit that cannot be checked out fails the lint step. For the security
+  scanners, on a pull request or a merge-queue entry, it does not stop the scan: the tree is scanned in full mode,
+  the reports are uploaded, and the job then fails at its last step (`Fail without a base commit`). If the linter
+  fails on the base commit (for example an upgrade whose new version cannot load the base's config), every finding
+  in a file the PR adds or modifies counts as new, never every finding in the repository.
 - **`workflow_dispatch` and the weekly scan ("full" mode):** everything is scanned and **reported**: SARIF and JSON
   in the artifacts, counts in the run summary. Nothing is gated.
 - **Tests, type checks and builds always block.** pytest, `tsc --noEmit`, the tsx tests, `next build`, `uv lock
@@ -441,7 +443,7 @@ Every input of every reusable workflow is listed below. `ci-selftest` fails when
 
 | Input | Default |
 |---|---|
-| `mode` | `auto`: PRs and pushes use diff, everything else full |
+| `mode` | `auto`: PRs, merge-queue entries and pushes use diff, everything else full |
 | `exclude-regex` | `node_modules`, `.venv`, `venv`, `.next`, `dist`. `ci.yml` adds this repo's fixture roots, anchored (`^aibom/tests/fixtures/`, ...), so a future product directory named `fixtures` or `examples` is still scanned |
 | `semgrep-version`, `semgrep-configs` | `1.181.1`, `p/ci p/python p/typescript p/dockerfile` (no `p/secrets`) |
 | `semgrep-credential-cwes`, `semgrep-credential-rule-regex` | `CWE-798 CWE-259 CWE-321`, `(^\|\.)secrets\.\|hardcode\|credential`: findings of credential rules (tagged with one of these CWEs, or whose rule id matches) are dropped from Semgrep's SARIF before the gate and the report |
@@ -538,16 +540,15 @@ images without the layer cache written from `dev`. That is inferred from GitHub'
 queue run for `CACHED` steps (#71). Keep *Maximum pull requests to build* small: invalidated queue runs are not
 cancelled.
 
-**Until #70 lands, a queue commit is not security-gated.** On `merge_group` the security jobs run in report mode,
-and the suites' lint-diff steps report without blocking (see [Known limits](#known-limits)). A new finding that exists only in the
-merged tree therefore passes the queue, and the push run reports it only after the merge. The merged tree differs
-from the tree the PR's own run gated when:
-- the base moved after the PR's last run, or PRs ahead in the queue add commits;
-- the base changed the Semgrep or Checkov rules or configuration;
-- the OSV or Trivy advisory data changed.
+**A queue commit is security-gated, but its lint is not.** On `merge_group` the security scanners compare the queue
+commit with `merge_group.base_sha` and fail on findings it adds, as on a pull request (#70). The suites' lint-diff
+steps (ruff, mypy, ESLint) still report without blocking there (see [Known limits](#known-limits)). A new lint
+finding that exists only in the merged tree therefore passes the queue, and the push run reports it only after the
+merge. The merged tree differs from the tree the PR's own run gated when the base moved after the PR's last run, or
+when PRs ahead in the queue add commits.
 
-So keep *Require branches to be up to date* on `staging` and `main` even with a queue: it makes the PR run's
-diff-mode security run on the exact tree that lands. On `dev`, the push run after each merge reports such findings.
+So keep *Require branches to be up to date* on `staging` and `main` even with a queue: it makes the PR run's lint
+diff run on the exact tree that lands. On `dev`, the push run after each merge reports such findings.
 
 **Make `dev` the default branch** (Settings → General). Schedules run only from the default branch, so today
 `security-scheduled.yml` and the weekly benchmarks would run July code from `main`. Dependabot security updates also
@@ -651,8 +652,8 @@ cd frontend && npm ci && npx tsc --noEmit && npx eslint . && \
   OSV-Scanner and Trivy fs block new ones in the lockfiles.
 - **Checkov** renders Helm charts into `ci-rendered-charts/` (not a dot directory: Checkov skips those) and fails
   when a rendered chart produced no evaluated check.
-- **Merge-queue runs scan security in report mode.** The scanner gates compare with a base commit taken
-  from the pull request or push event; a `merge_group` event has neither, so they scan in full mode and report
-  without blocking. The suites' lint-diff steps run in report mode only too, as on a push. The PR's own run already gated
-  its diff, but a finding that exists only in the merged tree passes the queue (see Branch protection). Gating the
-  queue commit against `merge_group.base_sha` is #70.
+- **Merge-queue runs lint in report mode.** The security scanners gate a queue commit against
+  `merge_group.base_sha` (#70). The suites' lint-diff steps (ruff, mypy, ESLint) take their base commit from the
+  pull request event, which a `merge_group` run does not have, so there they report without blocking, as on a push.
+  The PR's own run already gated its diff, but a lint finding that exists only in the merged tree passes the queue
+  (see Branch protection).

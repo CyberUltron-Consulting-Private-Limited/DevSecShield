@@ -53,11 +53,14 @@ from sqlmodel import Session
 from backend.get_db import get_db
 from backend.new_models import CbomScanNode
 from backend.utilities.cbom_sources.common import audit, iso_z, log, utcnow
+from backend.utilities.cbom_sources import http as _cbom_http
+from backend.utilities.rbac.policy import Access
 from backend.utilities.cbom_sources.http import PRIVATE, CbomRoute, TeamId, authorize, read_limiter, write_limiter
 from backend.utilities.cbom_sources.node_release import image_freshness, manifest_build, server_label
 from backend.utilities.team import check_if_user_is_in_team
 
 router = APIRouter(tags=["cbom-sources"], route_class=CbomRoute)
+access = Access(lambda: _cbom_http.get_db())  # route policies (utilities/rbac): the same database as authorize()
 AuthHeader = Annotated[str | None, Header()]
 BASE = "/{team_id}/cbom/node-artifacts"
 
@@ -311,13 +314,13 @@ def node_ticket_node(engine, ticket: str, team_id: int, kind: str) -> int:
 
 
 # ------------------------------------------------------------------------------------------------ routes
-@router.get(BASE, dependencies=[Depends(read_limiter)], summary="Scan node files this server offers")
+@router.get(BASE, dependencies=[Depends(read_limiter), access.team("cbom.read")], summary="Scan node files this server offers")
 async def list_artifacts(team_id: TeamId, Authorization: AuthHeader = None):
     await authorize(team_id, Authorization)
     return JSONResponse(await run_in_threadpool(listing), headers=PRIVATE)
 
 
-@router.post(BASE + "/{kind}/link", dependencies=[Depends(write_limiter)], summary="A short-lived download link")
+@router.post(BASE + "/{kind}/link", dependencies=[Depends(write_limiter), access.team("cbom.read")], summary="A short-lived download link")
 async def download_link(team_id: TeamId, kind: Kind, Authorization: AuthHeader = None):
     _engine, user = await authorize(team_id, Authorization)
     directory, manifest = await run_in_threadpool(_state)
@@ -340,7 +343,9 @@ def _record(engine, team_id: int, actor: tuple[str, int], kind: str, version: st
         bytes=size)
 
 
-@router.get(BASE + "/{kind}", dependencies=[Depends(read_limiter)], summary="Download a scan node file",
+@router.get(BASE + "/{kind}", dependencies=[Depends(read_limiter), access.team_or_ticket(
+                "cbom.read", ticket_params=("ticket", "node_ticket"),
+                reason="a link from POST .../link (its user must still be a member) or a scan node's install ticket")], summary="Download a scan node file",
             response_class=Response)
 async def download(team_id: TeamId, kind: Kind, Authorization: AuthHeader = None,
                    ticket: Annotated[str | None, Query(max_length=200)] = None,

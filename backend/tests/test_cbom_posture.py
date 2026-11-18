@@ -125,7 +125,7 @@ def test_run_posture_endpoint(api, world):
     patched = api("PATCH", "/1/cbom/sources/settings", json={"risk_model": {"data_shelf_life_years": 10,
                                                                               "migration_years": 5, "threat_years": 12}})
     assert patched.status_code == 200 and patched.json()["settings"]["risk_model"]["threat_years"] == 12
-    assert api("PATCH", "/1/cbom/sources/settings", "bob", json={"risk_model": {"threat_years": 1}}).status_code == 400  # admins only
+    assert api("PATCH", "/1/cbom/sources/settings", "bob", json={"risk_model": {"threat_years": 1}}).status_code == 403  # admins only
     assert api("PATCH", "/1/cbom/sources/settings", json={"risk_model": {"threat_years": 500}}).status_code == 400
     out = api("GET", f"/1/cbom/sources/runs/{run['id']}/posture").json()["posture"]
     # CB-19 PR-2: the run keeps the Mosca it was started with (unset); the team's new values are shown beside it

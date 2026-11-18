@@ -143,6 +143,8 @@ def test_the_team_page_judges_admin_by_account_not_by_address(engine, monkeypatc
     monkeypatch.setattr(team_router, "get_db", lambda: engine)
     monkeypatch.setattr(team_router, "get_user_from_header_or_raise_exception", as_member)
     monkeypatch.setattr(team_router, "check_if_user_is_in_team", lambda *_a, **_k: None)
+    from backend.tests.support.rbac import stand_in_principal
+    stand_in_principal(monkeypatch, engine=engine, user_for_token=lambda _t: member)  # the route policy (F4)
     r = TestClient(app).get(f"/team/{team}", headers={"Authorization": "Bearer t"})
     assert r.status_code == 200, r.text
     assert r.json()["is_team_admin"] is False

@@ -4,7 +4,7 @@ import contextlib
 import logging
 import re
 from rich.console import Console
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
 from backend.routers.auth import router as auth_router
@@ -36,6 +36,8 @@ from backend.routers.guardrails_public import router as guardrails_public_router
 from backend.routers.admin import router as admin_router
 from backend.routers.team import router as team_router
 from backend.routers.invitations import router as invitations_router
+from backend.utilities.rbac.audit import AuditMiddleware
+from backend.utilities.rbac.policy import PermissionMarker, public
 from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
 import json
@@ -123,7 +125,12 @@ class DssApp(FastAPI):
         return BuildIdentityMiddleware(super().build_middleware_stack())
 
 
-app = DssApp(lifespan=lifespan, middleware=[
+# F4 RBAC: enforces openapi_extra={"x-zs-permission": ...} on routes that declare no access policy of their own, and
+# refuses any route that declares none (runtime default-deny); every marker is resolved at the end of this module
+permission_marker = PermissionMarker()
+app = DssApp(lifespan=lifespan, dependencies=[
+    Depends(permission_marker),
+], middleware=[
     Middleware(
         CORSMiddleware,
         allow_origins=CORS_ALLOWED_ORIGINS,
@@ -135,6 +142,8 @@ app = DssApp(lifespan=lifespan, middleware=[
     ),
     # X-ZS-Deployment on every /cbom/node/* response (401s included), so a scan node can tell its own server apart
     Middleware(NodeDeploymentHeader),
+    # F4 RBAC: every successful privileged request is written to the append-only audit log (utilities/rbac/audit.py)
+    Middleware(AuditMiddleware),
 ])
 
 # a refused request body never comes back (or reaches a log) through its 422: no "input" (review 5909551771)
@@ -180,7 +189,7 @@ app.include_router(team_router)
 app.include_router(invitations_router)  # /invite/<token>: the invitee accepts or declines
 
 # Health check endpoint for container orchestration
-@app.get("/health", tags=["health"])
+@app.get("/health", tags=["health"], dependencies=[public("container and load-balancer health probe")])
 async def health_check():
     """
     Health check endpoint for Docker health checks and load balancer probes.
@@ -212,3 +221,7 @@ if __name__=="__main__":
 # signed inbound webhooks (/{team_id}/scm/... and /scm/webhooks/...).
 from backend.routers.scm import router as scm_router  # noqa: E402
 app.include_router(scm_router)
+
+# Last: every route is declared.  An unknown or malformed x-zs-permission marker stops the app here (an import
+# error), never a 500 per request.
+permission_marker.prepare(app)

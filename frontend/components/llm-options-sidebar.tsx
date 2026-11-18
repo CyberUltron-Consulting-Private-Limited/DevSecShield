@@ -25,6 +25,7 @@ import {
   reinitializeLLMScan,
 } from "@/utils/backend_api";
 import { handleApiError } from "@/utils/error-handler";
+import { refreshCreditBalance } from "@/utils/creditBalance";
 import { scanFailureMessage } from "@/utils/scanFailure";
 import { refreshCredits } from "@/utils/creditRefresh";
 import { readFormRerun } from "@/utils/formRerun";
@@ -226,9 +227,10 @@ export function LLMOptionsSidebar({
       setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("ready");
     },
-    // the start charged the team (or a refused one moved nothing): the header shows the server's balance (#13)
+    // the start charges credits (a refusal still shows the server's balance): one GET /teams (#13)
     onSettled: () => {
       refreshCredits(queryClient);
+      return refreshCreditBalance(queryClient);
     },
   });
 
@@ -293,8 +295,10 @@ export function LLMOptionsSidebar({
       setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("error");
     },
+    // a re-run can move credits (PR #57 charges the price difference): the balance shows what the server did
     onSettled: () => {
       refreshCredits(queryClient);
+      return refreshCreditBalance(queryClient);
     },
   });
 
@@ -317,10 +321,6 @@ export function LLMOptionsSidebar({
       setErrorMessage(null);
     }
   }, [query.data?.scan_status, query.data?.scan_metadata]);
-  // the status check that saw the scan fail refunded its credits (#28): show the balance it gave back
-  useEffect(() => {
-    if (query.data?.scan_status === "failure") refreshCredits(queryClient);
-  }, [query.data?.scan_status, queryClient]);
 
   return (
     <ScrollArea className="w-full md:w-96 shrink-0 md:h-screen bg-neutral-900/70 border-t md:border-t-0 md:border-l border-zinc-800">

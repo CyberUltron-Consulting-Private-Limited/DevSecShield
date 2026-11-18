@@ -267,6 +267,7 @@ export const INFO_TIP_LABELS = {
   "team.section.integrations": "Your Team's Integrations",
   "settings.members": "Team members",
   "settings.invite": "Invite by email",
+  "settings.invite.role": "Role",
   "settings.invitations": "Pending invitations",
   "settings.jira": "Jira",
   "settings.jira.email": "Jira email",

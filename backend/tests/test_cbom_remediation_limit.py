@@ -49,6 +49,8 @@ def client(monkeypatch):
 
     monkeypatch.setattr(scans, "get_db", lambda: None)
     monkeypatch.setattr(scans, "get_user_from_header_or_raise_exception", refused)
+    from backend.tests.support.rbac import stand_in_principal
+    stand_in_principal(monkeypatch)  # the route policy (F4) lets the request through to the handler's refusal
     for limiter in (scans.start_limiter, scans.remediate_limiter):
         monkeypatch.setattr(limiter, "clock", Clock(9_000_000.0 + 3))
     ratelimit.reset_all()

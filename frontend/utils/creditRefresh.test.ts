@@ -4,11 +4,13 @@
  * MCP, LLM or DAST scan charges the team; the status check that sees a scan fail refunds it (backend
  * utilities/celery/celery_connection.py); a cancel refunds it (utilities/scan/cancel_scan.py); running a saved DAST
  * profile charges it; every scan chat message is charged (routers/scans.py, deduct_credits_from_team_for_message).
- * Only CBOM refreshed the balance. Now each of them calls refreshCredits (utils/creditRefresh.ts) when it settles.
- * Failing-first on origin/dev 1884f564: 24 places did not refresh the balance (7 sidebars x start, re-run and failed
- * scan; cancel; chat message; DAST profile run).
+ * Start, re-run and cancel call refreshCredits (utils/creditRefresh.ts) when they settle. The refund on a failed
+ * scan is creditBalanceWatcher, which refetches when the failure response arrives. A status effect that also calls
+ * refreshCredits runs after paint and starts a second GET /teams (same-turn refreshCredits and refreshCreditBalance
+ * in onSettled are one request; the later effect is not).
  * Browser check: note the balance, start a SAST scan: it drops without a reload; a scan that fails (an unreachable
- * repository) gives it back when the sidebar shows the failure; a chat message on a results page charges it.
+ * repository) gives it back when the sidebar shows the failure, with one GET /teams; a chat message on a results
+ * page charges it.
  * Run: npx --yes tsx@4.23.15 utils/creditRefresh.test.ts
  */
 import assert from "node:assert/strict";
@@ -37,7 +39,10 @@ async function main() {
       if (!options) problems.push(`${file}: no ${m}`);
       else if (!refreshes(options.get("onSettled"))) problems.push(`${file}: ${m} does not refresh the balance when it settles`);
     }
-    if (!ifBranches(src, isFailure).some(refreshes)) problems.push(`${file}: a failed scan's refund does not refresh the balance`);
+    // The failure response already refreshes through creditBalanceWatcher. This branch paints later.
+    if (ifBranches(src, isFailure).some(refreshes)) {
+      problems.push(`${file}: a failed scan refreshes the balance again after it paints`);
+    }
   }
   if (!refreshes(mutationOptions(read("components/scan-cancel.tsx"), "cancel")?.get("onSettled"))) {
     problems.push("components/scan-cancel.tsx: a cancel does not refresh the balance");
@@ -48,16 +53,19 @@ async function main() {
   if (!refreshes(mutationOptions(read("components/dast/DastProfilesTab.tsx"), "runMutation")?.get("onSettled"))) {
     problems.push("components/dast/DastProfilesTab.tsx: running a saved DAST profile does not refresh the balance");
   }
-  // CBOM (the eighth product, another lane's file) already refreshed it on start and when a scan fails; either form
+  // CBOM refreshes on start. Success moves no credits, and a failure is the watcher: neither status may refresh again.
   const cbom = read("components/cbom-options-sidebar.tsx");
   const cbomRefresh = (text: string | undefined) =>
     refreshes(text) || /invalidateQueries\(\{ queryKey: \["teams"\] \}\)/.test(text ?? "");
   const cbomStart = mutationOptions(cbom, "startScanMutation");
-  if (!cbomStart || ![...cbomStart.values()].some(cbomRefresh) ||
-    !ifBranches(cbom, (c) => c.includes('scan_status==="failure"')).some(cbomRefresh)) {
-    problems.push("components/cbom-options-sidebar.tsx: CBOM no longer refreshes the balance");
+  if (!cbomStart || ![...cbomStart.values()].some(cbomRefresh)) {
+    problems.push("components/cbom-options-sidebar.tsx: CBOM no longer refreshes the balance on start");
   }
-  assert.deepEqual(problems, [], `the header balance is not refreshed:\n  ${problems.join("\n  ")}`);
+  const finished = (c: string) => c.includes('scan_status==="failure"') || c.includes('scan_status==="success"');
+  if (ifBranches(cbom, finished).some(cbomRefresh)) {
+    problems.push("components/cbom-options-sidebar.tsx: a finished scan refreshes the balance again after it paints");
+  }
+  assert.deepEqual(problems, [], `credit refresh wiring:\n  ${problems.join("\n  ")}`);
 
   // 2. the helper refreshes the query the header reads, and only that one
   const layout = read("app/[team_id]/layout.tsx");

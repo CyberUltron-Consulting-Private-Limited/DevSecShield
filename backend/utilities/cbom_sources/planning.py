@@ -78,6 +78,18 @@ def node_status(node: CbomScanNode | None, now: _dt.datetime) -> str:
     return "offline"
 
 
+def segment_status(nodes: dict[int, CbomScanNode], segment: str, now: _dt.datetime) -> str:
+    """A segment source's "node" status (F1.1): online when an enrolled, SIGNED agentless node of that segment is
+    online, offline when such nodes exist but none is, missing when the team has none (only signed nodes take segment
+    jobs, which carry decrypted credentials: security review S3)."""
+    members = [n for n in nodes.values()
+               if (n.segment or "") == segment and (n.mode or "agentless") != "agent" and n.node_token_hash is not None
+               and n.signing_public_key]
+    if not members:
+        return "missing"
+    return "online" if any(node_status(n, now) == "online" for n in members) else "offline"
+
+
 def team_range_cidrs(session, team_id: int) -> list[str]:
     """Every network range the team configured (enabled or not): together they are the networks the customer entered,
     whose outer network/broadcast addresses the sweep leaves out (targets.boundary_skips, N3).  One query."""
@@ -277,6 +289,7 @@ def plan_run(
     plan = Plan()
     listed_names = len(team_exclusions(settings).hostnames)
     counted_blocks: list[T.Interval] = []
+    segments: dict[str, str] = {}
     for source in sources:
         spec = KINDS.get(source.kind)
         if spec is None:
@@ -288,11 +301,13 @@ def plan_run(
         if wanted is not None and source.id not in wanted:
             continue
         node = nodes.get(source.node_id) if source.node_id else None
+        segment = getattr(source, "node_segment", None) if not source.node_id else None
         info = source_targets(source, settings, range_ctx)
         units = int(info["units"])
         if org_estimate_stale(source):
             log("aws org estimate stale: re-validate", team=team_id, source=source.id, accounts=units)
-        item = PlanItem(source.id, source.name, source.kind, group, source.node_id, node.name if node else None,
+        item = PlanItem(source.id, source.name, source.kind, group, source.node_id,
+                        node.name if node else (f"segment {segment}" if segment else None),
                         units, info["unit"], 0, "skipped")
         try:
             cfg_model = spec.model.model_validate(source.config or {})
@@ -300,7 +315,9 @@ def plan_run(
             cfg_model = None
         needs_node = bool(cfg_model is not None and spec.needs_node(cfg_model))
         collectable = bool(cfg_model is not None and spec.collectable(cfg_model))
-        status = node_status(node, now) if needs_node else "n/a"
+        if segment and segment not in segments:
+            segments[segment] = segment_status(nodes, segment, now)  # once per segment, not once per source
+        status = (segments[segment] if segment else node_status(node, now)) if needs_node else "n/a"
         if not source.enabled:
             item.reason = "Disabled"
         elif cfg_model is None:
@@ -310,7 +327,9 @@ def plan_run(
                            else _AWS_PCA if getattr(cfg_model, "provider", None) == "aws_private_ca"
                            else "Certificate Transparency discovery is not enabled on this server"
                            if source.kind == "ct_logs" else "Collection for this connector is not available yet")
-        elif needs_node and node is None:
+        elif needs_node and segment and status == "missing":
+            item.reason = f"No enrolled, signed agentless scan node is in segment {segment}"
+        elif needs_node and node is None and not segment:
             item.reason = "No scan node assigned"
         elif needs_node and status in ("pending_registration", "registration_expired"):
             item.reason = f"Scan node {node.name} has not registered yet"

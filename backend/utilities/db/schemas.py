@@ -50,6 +50,13 @@ class UpdateScanData(BaseModel):
 class RemoveOrAddMembersToTeamData(BaseModel):
     intent : Literal["remove" , "add"]
     email_ids: list[str]
+    # "add" only: the role the invitees join with (default member); who may give which: utilities/rbac/permissions.py
+    role : Literal["owner", "admin", "member", "viewer"] | None = None
+
+
+class ChangeMemberRoleData(BaseModel):
+    email : str
+    role : Literal["owner", "admin", "member", "viewer"]
 
 class CreateTicketData(BaseModel):
     ticket_type: Literal["jira"]
