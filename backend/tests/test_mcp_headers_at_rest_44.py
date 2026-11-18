@@ -114,9 +114,15 @@ def test_no_scan_api_returns_a_header_value_for_an_old_row_or_a_new_one():
 
 
 # ============================================================================ the task message
-def test_the_published_task_message_has_redacted_reprs_and_the_worker_still_gets_the_headers():
+def test_the_published_task_message_has_redacted_reprs_and_the_worker_still_gets_the_headers(monkeypatch):
     """``kwargsrepr`` is what Celery prints for a task (worker log records, ``celery events``, Flower); the body is
     what the worker runs with."""
+    # #53: the MCP server host must resolve to a public address; .test names never resolve (RFC 6761).
+    import socket
+
+    monkeypatch.setattr(socket, "getaddrinfo", lambda host, port, *a, **k: [
+        (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port))])
+
     from celery import Celery
     from celery.signals import after_task_publish
 
