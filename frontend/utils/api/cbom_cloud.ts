@@ -18,8 +18,8 @@ export async function getCbomAwsReaderTemplate(teamId: number, scope: "account" 
   return response.data as string;
 }
 
-/** Read-only role scripts for Azure Key Vault and Google Cloud (metadata only, never values). */
-export async function getCbomCloudReaderScript(teamId: number, provider: "azure" | "gcp"): Promise<string> {
+/** Read-only role scripts for Azure Key Vault, Google Cloud and Oracle Cloud (metadata only, never values). */
+export async function getCbomCloudReaderScript(teamId: number, provider: "azure" | "gcp" | "oci"): Promise<string> {
   const response = await api.get(`${base(teamId)}/templates/${provider}-reader`, { responseType: "text", transformResponse: (d: unknown) => d });
   return response.data as string;
 }

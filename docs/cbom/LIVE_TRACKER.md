@@ -5,6 +5,30 @@ The live sheet the owner reads is GitHub issue
 Session C updates that issue. This file is a short pointer. It contains no
 credentials.
 
+## Staging 30ae3a59 (saved path patterns keep their meaning)
+
+Staging SHA `30ae3a59` via
+[PR #469](https://github.com/CyberUltron-Consulting-Private-Limited/DevSecShield/pull/469), which promotes
+[#468](https://github.com/CyberUltron-Consulting-Private-Limited/DevSecShield/pull/468): SAST excludes and IaC
+includes saved before #443 keep their meaning (translated to the glob matching the same files), and an exclude of
+only `*` / `**` is refused. Agent reviews R-pp, R-pp2 and R-promo4 approved; every check was green.
+[Deploy run 44458364023](https://github.com/CyberUltron-Consulting-Private-Limited/DevSecShield/actions/runs/44458364023)
+succeeded after a 45-minute wait on the scan-node release (see the follow-up below). API health is 200; all
+services, the scan worker included, run `30ae3a597c62`.
+
+Checked live on 19 Nov in Chrome (staging, team 1):
+- `zs-build` names `30ae3a59`.
+- SAST scan 6: an exclude of `**` shows "The exclude pattern "**" matches every file ..." and keeps Estimate off.
+  `estimate_credits` and `start` with `**`, `**/*` or `*` answer 422 with that message; the scan stays not started.
+- CI/CD integration 1 (SAST): the settings form shows the same message and keeps Save off; a PUT with `**` answers 422;
+  a PUT with `test` and `path_pattern_v: 1` is stored with `path_pattern_v: 2` (the server sets it).
+- Not checkable live: team 1 has no SAST / IaC scan or CI/CD integration saved before #443, so the translation of old
+  patterns ("Run again" notice, settings page) rests on the unit tests and the reviewers' equivalence runs.
+
+Follow-up: Publish images' "release tags + Helm chart (scan node)" job fails at checkout ("'scan_node/release.json'
+is not a directory") on every staging push since at least `1b084aec`, so each deploy waits 45 minutes for a scan-node
+release that never comes.
+
 ## Staging b73861db (results redesign)
 
 Staging SHA `b73861db` via

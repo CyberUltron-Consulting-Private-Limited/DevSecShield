@@ -126,7 +126,7 @@ const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$/;
 const NAME_ERROR = "Use 1-64 letters, digits, spaces, dots, dashes or underscores, starting with a letter or digit.";
 const LOGIN_RE = /^[A-Za-z0-9._@$\\-]{1,64}$/;
 const MAX_PEM = 64 * 1024;
-const CLOUD_KINDS = new Set(["aws_account", "azure_subscription", "gcp_project"]);
+const CLOUD_KINDS = new Set(["aws_account", "azure_subscription", "gcp_project", "oci_tenancy"]);
 
 // ---------------------------------------------------------------------------- helpers
 function httpStatus(err: unknown): number | undefined {
@@ -1209,7 +1209,7 @@ function ClusterForm({
 
         <div className="space-y-2">
           <Checkbox2 infoId="cbsrc.k8s.managed" id="k8s-managed" checked={form.managed} onChange={(v) => set({ managed: v })}>
-            Managed cluster (EKS, AKS, GKE): link the cloud account that runs it
+            Managed cluster (EKS, AKS, GKE, OKE): link the cloud account that runs it
           </Checkbox2>
           {form.managed &&
             (cloudSources.length ? (

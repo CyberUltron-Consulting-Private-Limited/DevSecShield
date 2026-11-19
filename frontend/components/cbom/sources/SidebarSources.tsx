@@ -134,7 +134,7 @@ export function SourcesAccordionItems({
           <Line label="Cloud accounts" value={cloudAccounts || "Not added"} />
           <Line label="CAs and identity providers" value={g.identity?.sources || "Not added"} />
           <p className="text-xs text-zinc-500 mt-2">
-            AWS, Azure and Google Cloud accounts are read from ZeroShield&apos;s cloud (4 credits each; an AWS role must pass validation first,
+            AWS, Azure, Google Cloud and Oracle Cloud accounts are read from ZeroShield&apos;s cloud (4 credits each; an AWS role must pass validation first,
             and an account whose last validation failed is skipped). Identity-provider signing keys are free.
           </p>
           {cloudAccounts + (g.identity?.sources ?? 0) > 0 && (

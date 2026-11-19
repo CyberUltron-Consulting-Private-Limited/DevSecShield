@@ -76,6 +76,7 @@ const KIND_SHORT: Record<string, string> = {
   aws_account: "AWS",
   azure_subscription: "Azure",
   gcp_project: "Google Cloud",
+  oci_tenancy: "Oracle Cloud",
   ca_connector: "CA",
   idp: "IdP",
   host_agent: "Host agent",

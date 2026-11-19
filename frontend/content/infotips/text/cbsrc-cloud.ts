@@ -1,5 +1,5 @@
 /**
- * (i) tip text of the "cbsrc-cloud" area (ids: cbsrc.cloud.*, cbsrc.aws.*, cbsrc.azure.*, cbsrc.gcp.*, cbsrc.idp.*, cbsrc.ca.*, cbsrc.cert.*, cbsrc.ct.*), loaded on demand by
+ * (i) tip text of the "cbsrc-cloud" area (ids: cbsrc.cloud.*, cbsrc.aws.*, cbsrc.azure.*, cbsrc.gcp.*, cbsrc.oci.*, cbsrc.idp.*, cbsrc.ca.*, cbsrc.cert.*, cbsrc.ct.*), loaded on demand by
  * content/infotips/load.ts. The label of each tip is in content/infotips/labels.ts; the rules for the text are in
  * content/infotips/index.ts (checked by content/infotips.test.ts).
  */
@@ -7,9 +7,9 @@ import type { TipAreaText } from "../types";
 
 const TEXT = {
   // ────────────────────────────────────────────────────────────── CBOM Sources: Cloud & Identity (components/cbom/sources/CloudIdentityTab.tsx)
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:75-89,520 — AWS by role, Azure by app registration, Google Cloud by service account
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:96-116 — AWS by role, Azure by app registration, Google Cloud by service account, Oracle Cloud by a user's API key
   "cbsrc.cloud.connect": {
-    what: "Connect an AWS account (ZeroShield assumes a read-only role with your external ID, no keys exchanged), an Azure subscription (Key Vault metadata through an app registration) or Google Cloud (KMS, CA Service and Secret Manager metadata through a service account).",
+    what: "Connect an AWS account (ZeroShield assumes a read-only role with your external ID, no keys exchanged), an Azure subscription (Key Vault metadata through an app registration), Google Cloud (KMS, CA Service and Secret Manager metadata through a service account) or Oracle Cloud (Vault and certificate metadata through a read-only user and its API key).",
     why: "Cloud KMS keys, certificates and secrets are a large part of the crypto estate and are invisible to network scans.",
     example: "AWS account 111122223333 with the ZeroShieldCBOMReader role in eu-west-1 and ap-south-1.",
   },
@@ -27,19 +27,19 @@ const TEXT = {
   },
   // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:624 — the provider's account or tenant
   "cbsrc.cloud.col.account": {
-    what: "The cloud provider and the account, subscription or project identifier.",
+    what: "The cloud provider and the account, subscription, project or tenancy identifier.",
     why: "Tells you where to make a fix in the provider's console.",
     example: "AWS 111122223333.",
   },
   // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1115-1125 — one account or a whole AWS Organization
   "cbsrc.cloud.col.scope": {
-    what: "What the connection covers: one account, or every member account of an AWS Organization through a StackSet.",
+    what: "What the connection covers: one account, or every member account of an AWS Organization through a StackSet. For Oracle Cloud, the whole tenancy or the number of compartments listed.",
     why: "An Organization connection picks up new member accounts without another setup.",
     example: "Whole AWS Organization · 37 accounts.",
   },
   // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1259-1266 — regions read in each run
   "cbsrc.cloud.col.regions": {
-    what: "For an AWS account, how many regions are read in each run; resources in other regions are not inventoried. A dash for Azure and Google Cloud.",
+    what: "For an AWS account, how many regions are read in each run; resources in other regions are not inventoried. For an Oracle Cloud tenancy, the number of regions listed, or All (every subscribed region). A dash for Azure and Google Cloud.",
     why: "Keys and certificates in a forgotten region are a common blind spot.",
     example: "2: eu-west-1 and ap-south-1.",
   },
@@ -186,6 +186,78 @@ const TEXT = {
     what: "Pick the .json key file instead of pasting it; it fills the key field above. Up to 64 KB.",
     why: "Uploading avoids copy-paste errors in the long key.",
     example: "zs-cbom-payments-prod-3f2a.json.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1822-1835 — three ways: Resource Manager stack, generated key added in the Console, own API key
+  "cbsrc.oci.method": {
+    what: "Deploy to Oracle Cloud: ZeroShield creates an API key pair and a Resource Manager stack that adds a read-only user, group and policy. Generate a key, run a script: the same key pair, with a Cloud Shell script that creates the read-only user, group and policy and adds the key (or adds it to a user you name). Use my own API key: upload the private key of an existing user.",
+    why: "With the first two the private key is created by ZeroShield and never downloaded, so no key file is left on a laptop.",
+    example: "Deploy to Oracle Cloud, then paste the stack's user_ocid output.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1925-1927 — up to 64 characters
+  "cbsrc.oci.name": {
+    what: "A name for this Oracle Cloud connection, 1 to 64 characters, shown in lists, run results and reports.",
+    why: "Each asset found records it as its source.",
+    example: "oci-prod.",
+  },
+  // src: frontend/components/cbom/sources/ociTenancy.ts:10, frontend/components/cbom/sources/ociTenancy.ts:130, frontend/components/cbom/sources/CloudIdentityTab.tsx:1931-1953 — commercial realm oc1; changing it clears the stored key
+  "cbsrc.oci.tenancy": {
+    what: "The OCID of your tenancy, from Profile menu > Tenancy. Commercial realm (oc1) only. Changing it clears the stored key: a generated key is replaced by a new one, an uploaded key must be entered again.",
+    why: "Every request ZeroShield signs is for this tenancy; the user, group and policy live in it.",
+    example: "ocid1.tenancy.oc1..aaaaaaaaba3pv6wkcr4jqae5f15p2b2m2yt2j6rx32uzr4h25vqstifsfdsq.",
+  },
+  // src: frontend/components/cbom/sources/ociTenancy.ts:14, frontend/components/cbom/sources/CloudIdentityTab.tsx:1956-1968 — a region identifier; the stack is created there
+  "cbsrc.oci.home_region": {
+    what: "The identifier of the tenancy's home region, shown on the tenancy's page. ZeroShield reads it when other regions cannot be listed.",
+    why: "Users, groups and policies live in the home region; the stack creates them there wherever it is applied, and the Cloud Shell script must run there.",
+    example: "us-ashburn-1.",
+  },
+  // src: frontend/components/cbom/sources/ociTenancy.ts:15, frontend/components/cbom/sources/CloudIdentityTab.tsx:1994-2004 — one per line, up to 60; blank reads every subscribed region
+  "cbsrc.oci.regions": {
+    what: "Optional: the regions to read, one identifier per line, up to 60. Blank reads every region the tenancy subscribes to.",
+    why: "Vaults and load balancers in a region left out are not inventoried.",
+    example: "eu-frankfurt-1 and ap-mumbai-1.",
+  },
+  // src: frontend/components/cbom/sources/ociTenancy.ts:12, frontend/components/cbom/sources/ociTenancy.ts:16, frontend/components/cbom/sources/CloudIdentityTab.tsx:2006-2022 — compartment or tenancy OCIDs, up to 200; blank reads the whole tenancy
+  "cbsrc.oci.compartments": {
+    what: "Optional: the compartments to read, one OCID per line, up to 200 (a tenancy OCID stands for the root compartment). Blank reads every compartment in the tenancy.",
+    why: "Narrowing it keeps other units of a shared tenancy out of this inventory.",
+    example: "ocid1.compartment.oc1..aaaaaaaa… for the payments compartment.",
+  },
+  // src: frontend/components/cbom/sources/ociTenancy.ts:11, frontend/components/cbom/sources/CloudIdentityTab.tsx:1972-1990 — needed before Save and validate
+  "cbsrc.oci.user": {
+    what: "The OCID of the user ZeroShield signs in as: the stack's user_ocid output, or the user you added the public key to. Needed for Save and validate.",
+    why: "OCI checks each signed request against this user's API keys and its group's policy.",
+    example: "ocid1.user.oc1..aaaaaaaa….",
+  },
+  // src: frontend/components/cbom/sources/ociTenancy.ts:72-83, frontend/components/cbom/sources/CloudIdentityTab.tsx:2067-2086 — unencrypted PEM; encrypted at rest; changing the tenancy clears it
+  "cbsrc.oci.private_key": {
+    what: "The unencrypted PEM private key of the user's API key (RSA), pasted or uploaded. Encrypted at rest by ZeroShield and never shown again; changing the tenancy OCID clears it.",
+    why: "Anyone with this key can sign in as the user, so the user should hold the read-only policy only.",
+    example: "The .pem file saved by Add API key > Generate API key pair in the Console.",
+  },
+  // src: frontend/components/cbom/sources/ociTenancy.ts:17, frontend/components/cbom/sources/CloudIdentityTab.tsx:2088-2105 — .pem up to 64 KB
+  "cbsrc.oci.key_file": {
+    what: "Pick the .pem private key file instead of pasting it; it fills the key field above. Up to 64 KB.",
+    why: "Uploading avoids copy-paste errors in the long key.",
+    example: "oci_api_key.pem.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2024-2038, frontend/components/cbom/sources/CloudIdentityTab.tsx:2219-2231 — the stored key's fingerprint; Generate a new key replaces the pair
+  "cbsrc.oci.fingerprint": {
+    what: "The fingerprint of the API key ZeroShield created, as the Console shows it next to the user's API keys. Generate a new key replaces the pair; the new public key must then be added to the user again.",
+    why: "If the Console shows another fingerprint, the user holds a different key and validation fails.",
+    example: "12:34:56:78:90:ab:cd:ef:12:34:56:78:90:ab:cd:ef.",
+  },
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2184-2189 — the public half, pasted under API keys
+  "cbsrc.oci.public_key": {
+    what: "The public half of the key pair ZeroShield created, in PEM. Paste it under Identity > Users > API keys > Add API key > Paste public key. The private key stays in ZeroShield.",
+    why: "A public key reveals nothing secret; it only lets OCI check ZeroShield's signed requests.",
+    example: "-----BEGIN PUBLIC KEY----- MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8A… -----END PUBLIC KEY-----.",
+  },
+  // src: frontend/components/cbom/sources/ociTenancy.ts:22-33, frontend/components/cbom/sources/CloudIdentityTab.tsx:2236-2258 — inspect and read only; never use keys or read bundles
+  "cbsrc.oci.policy": {
+    what: "The statements for the group ZeroShieldCBOMReaders: inspect and read only, on the tenancy (to list subscribed regions), compartments, vaults, keys, secrets, certificate authorities, load balancers and Object Storage. Never use keys, read secret-bundles or read leaf-certificate-bundles.",
+    why: "Inspect and read return metadata, so ZeroShield cannot use a key or read a secret's value.",
+    example: "Allow group ZeroShieldCBOMReaders to read keys in tenancy.",
   },
   // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1831, frontend/components/cbom/sources/CloudIdentityTab.tsx:1830-1836 — up to 200 domains; saved, not yet searched
   "cbsrc.cert.domains": {

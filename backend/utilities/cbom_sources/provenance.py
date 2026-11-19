@@ -9,7 +9,7 @@ judged field by field, and a missing field must read as a defect, not as "not ap
 
 * ``collector``: the code that read the asset: a scan-node collector module (``linux_ssh``, ``windows_winrm``,
   ``kubernetes``, ``database``, ``network``, ``key_manager``, ``ca``, ``appliance``, ``container_images``,
-  ``host_agent``) or a cloud-worker collector (``aws``, ``azure``, ``gcp``, ``idp``); ``zs_collect`` for hosts read
+  ``host_agent``) or a cloud-worker collector (``aws``, ``azure``, ``gcp``, ``oci``, ``idp``); ``zs_collect`` for hosts read
   through the customer's own automation (F1.3).
 * ``method``: ``agentless`` (logged in to or probed from outside; nothing installed), ``agent`` (an agent-mode node read
   its own host), ``api`` (a read-only management or metadata API). ``evidence`` (customer evidence) and ``code`` (code
@@ -73,6 +73,7 @@ _KINDS: dict[str, KindProvenance] = {
     "aws_account": KindProvenance("aws", "api", "direct"),
     "azure_subscription": KindProvenance("azure", "api", "direct"),
     "gcp_project": KindProvenance("gcp", "api", "direct"),
+    "oci_tenancy": KindProvenance("oci", "api", "direct"),
     "idp": KindProvenance("idp", "api", "direct"),
     "ct_logs": KindProvenance("ct", "api", "direct"),  # public CT search providers, read by the cloud worker
     "host_agent": KindProvenance("host_agent", "agent", "local"),

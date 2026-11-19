@@ -263,7 +263,7 @@ DATA_STORE_KINDS = frozenset(
 AT_REST_KINDS = DATA_STORE_KINDS | frozenset(
     {"backup", "k8s_secrets_etcd", "k8s_storage_class", "disk_encryption"}
 )
-MANAGED_TLS_PROVIDERS = frozenset({"aws", "azure", "gcp", "kubernetes"})
+MANAGED_TLS_PROVIDERS = frozenset({"aws", "azure", "gcp", "oci", "kubernetes"})
 DATABASE_KINDS = frozenset({"relational_db", "nosql_db", "cache", "search_index"})
 
 
